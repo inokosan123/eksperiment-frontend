@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Pressable,
-  StyleSheet, Animated, Dimensions, Image,
+  StyleSheet, Dimensions, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -68,46 +68,17 @@ const LAST_7 = [
 
 // ─── Streak circle with PNG flame ─────────────────────────────────────────────
 function StreakCircle({ active, label }: { active: boolean; label: string }) {
-  const scale  = useRef(new Animated.Value(1)).current;
-  const shadow = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (!active) return;
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(scale,  { toValue: 1.14, duration: 850, useNativeDriver: true }),
-        Animated.timing(scale,  { toValue: 1,    duration: 850, useNativeDriver: true }),
-      ])
-    ).start();
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(shadow, { toValue: 1, duration: 850, useNativeDriver: false }),
-        Animated.timing(shadow, { toValue: 0, duration: 850, useNativeDriver: false }),
-      ])
-    ).start();
-  }, [active]);
-
-  const shadowOpacity = shadow.interpolate({ inputRange: [0,1], outputRange: [0.2, 0.55] });
-
   return (
     <View style={sc.col}>
-      <Animated.View style={[
+      <View style={[
         sc.circle,
         active ? sc.circleActive : sc.circleInactive,
-        active && {
-          transform: [{ scale }],
-          shadowColor: '#f97316',
-          shadowOffset: { width: 0, height: 0 },
-          shadowRadius: 10,
-          shadowOpacity,
-          elevation: 6,
-        },
       ]}>
         <Image
           source={FLAME_PNG}
           style={[sc.flameImg, { opacity: active ? 1 : 0.18 }]}
         />
-      </Animated.View>
+      </View>
       <Text style={[sc.label, { color: active ? GOLD : C.textMuted }]}>{label}</Text>
     </View>
   );
