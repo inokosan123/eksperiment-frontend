@@ -24,32 +24,33 @@ export default function SectionCard({
   return (
     <TouchableOpacity
       onPress={onPress}
-      activeOpacity={0.85}
+      activeOpacity={0.82}
       style={[s.card, { backgroundColor: bg, borderColor: border }]}
     >
-      {/* Subtle white highlight from top */}
+      {/* Dijagonalni sheen — svetlo gore-levo, tamnije dole-desno */}
       <LinearGradient
-        colors={['rgba(255,255,255,0.32)', 'rgba(255,255,255,0)']}
-        start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+        colors={['rgba(255,255,255,0.45)', 'rgba(255,255,255,0.06)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
 
-      {/* Decor — faded, top-right, behind content */}
+      {/* Decor — suptilna ikona gore desno */}
       {decor && (
         <View style={s.decor} pointerEvents="none">
           {decor}
         </View>
       )}
 
-      {/* Text content — padded right to avoid decor overlap */}
+      {/* Tekst — padded desno da ne ulazi pod decor */}
       <View style={s.content}>
         <Text style={[s.label, { color: labelColor }]}>{label}</Text>
         <Text style={[s.title, { color: titleColor }]}>{title}</Text>
         <Text style={[s.desc,  { color: bodyColor  }]}>{description}</Text>
       </View>
 
-      {/* Arrow — bottom-right corner, clear of decor */}
+      {/* Strelica — donji desni ugao, ispod decora */}
       <View style={[s.arrow, { backgroundColor: arrowBg }]}>
         <ArrowUpRight s={18} c="#fff" w={2.6} />
       </View>
@@ -60,62 +61,63 @@ export default function SectionCard({
 const s = StyleSheet.create({
   card: {
     position: 'relative',
-    padding: 18,
-    paddingBottom: 66,      // space for bottom-right arrow (42px + 14px margin + 10px buffer)
-    borderRadius: 22,
+    padding: 20,
+    paddingBottom: 58,      // 42px arrow + 14px margin + 2px buffer
+    borderRadius: 24,
     borderWidth: 1,
     marginBottom: 14,
     overflow: 'hidden',
+    // Elegantna senka sa bojom
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
   decor: {
     position: 'absolute',
-    right: 12,
-    top: 12,
-    width: 76,
-    height: 76,
+    right: 14,
+    top: 14,
+    width: 80,
+    height: 80,
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.16,
+    opacity: 0.18,
   },
   content: {
-    paddingRight: 88,       // keep text from going under decor icon
+    paddingRight: 86,
   },
   label: {
     fontSize: 11,
     fontFamily: 'Inter_700Bold',
-    letterSpacing: 2.2,
+    letterSpacing: 2.4,
     textTransform: 'uppercase',
-    marginBottom: 6,
+    marginBottom: 7,
   },
   title: {
     fontFamily: 'EBGaramond_600SemiBold',
     fontSize: 36,
     lineHeight: 40,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   desc: {
     fontSize: 18,
-    lineHeight: 25,
+    lineHeight: 26,
     fontFamily: 'EBGaramond_400Regular',
   },
   arrow: {
     position: 'absolute',
     right: 14,
-    bottom: 14,             // bottom-right — does NOT overlap decor (top-right)
+    bottom: 14,
     width: 42,
     height: 42,
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 5,
   },
 });
