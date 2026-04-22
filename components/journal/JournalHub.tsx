@@ -21,9 +21,6 @@ const BG      = '#FAF7F0';
 const GOLD    = '#C5A059';
 const PURPLE  = '#7C6EAF';
 const TEAL    = '#4A9E8F';
-const W       = Dimensions.get('window').width;
-// 2-column grid: screen - padding*2 - gap
-const TOOL_W  = (W - 32 - 10) / 2;
 
 const FLAME_PNG = require('@/assets/images/streak-flame.png');
 
@@ -66,17 +63,20 @@ const LAST_7 = [
   { l:'W', active: true  },
 ];
 
-// ─── Streak circle with PNG flame ─────────────────────────────────────────────
-function StreakCircle({ active, label }: { active: boolean; label: string }) {
+// ─── Streak circle — fully responsive, scales to fit any screen ───────────────
+function StreakCircle({ active, label, size }: { active: boolean; label: string; size: number }) {
+  const flameSize = Math.round(size * 0.54);
   return (
     <View style={sc.col}>
       <View style={[
         sc.circle,
+        { width: size, height: size, borderRadius: size / 2 },
         active ? sc.circleActive : sc.circleInactive,
       ]}>
         <Image
           source={FLAME_PNG}
-          style={[sc.flameImg, { opacity: active ? 1 : 0.18 }]}
+          style={{ width: flameSize, height: flameSize, opacity: active ? 1 : 0.18 }}
+          resizeMode="contain"
         />
       </View>
       <Text style={[sc.label, { color: active ? GOLD : C.textMuted }]}>{label}</Text>
@@ -85,11 +85,10 @@ function StreakCircle({ active, label }: { active: boolean; label: string }) {
 }
 
 const sc = StyleSheet.create({
-  col:            { alignItems: 'center', gap: 7 },
-  circle:         { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
+  col:            { flex: 1, alignItems: 'center', gap: 6 },
+  circle:         { alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
   circleActive:   { borderColor: '#f97316', backgroundColor: '#FFF7ED' },
   circleInactive: { borderColor: '#e5e2db', backgroundColor: '#F5F3EF' },
-  flameImg:       { width: 26, height: 26, resizeMode: 'contain' },
   label:          { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1 },
 });
 
@@ -239,8 +238,11 @@ const mc = StyleSheet.create({
   status:  { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 0.5 },
 });
 
-// ─── Streak section with Lottie flame ────────────────────────────────────────
+// ─── Streak section — circles scale to fill available width ──────────────────
 function StreakSection() {
+  const [rowW, setRowW] = useState(280);
+  const circleSize = Math.floor((rowW - 6 * 6) / 7); // 7 circles, 6 gaps × 6px
+
   return (
     <View style={st.card}>
       <View style={st.headline}>
@@ -249,9 +251,12 @@ function StreakSection() {
         <Text style={st.label}>day streak</Text>
       </View>
 
-      <View style={st.dayRow}>
+      <View
+        style={st.dayRow}
+        onLayout={e => setRowW(e.nativeEvent.layout.width)}
+      >
         {LAST_7.map((d, i) => (
-          <StreakCircle key={i} active={d.active} label={d.l} />
+          <StreakCircle key={i} active={d.active} label={d.l} size={circleSize} />
         ))}
       </View>
     </View>
@@ -262,7 +267,7 @@ const st = StyleSheet.create({
   headline: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 18 },
   number:   { fontFamily: F.serifSemiBold, fontSize: 36, color: GOLD, lineHeight: 40 },
   label:    { fontFamily: F.serifMedium, fontSize: 18, color: C.textSecondary },
-  dayRow:   { flexDirection: 'row', justifyContent: 'space-between' },
+  dayRow:   { flexDirection: 'row', gap: 6 },
 });
 
 // ─── Tool card ────────────────────────────────────────────────────────────────
@@ -286,21 +291,20 @@ const TOOLS: ToolItem[] = [
   { Icon: Grid3x3,       label: 'Year in Pixels', status: '13 entries',   iconBg: '#EEEAF5', iconFg: '#6D5AAE', wide: true },
 ];
 
-function ToolCard({ tool, onPress }: { tool: ToolItem; onPress: () => void }) {
+// toolW passed from parent (measured via onLayout)
+function ToolCard({ tool, toolW, onPress }: { tool: ToolItem; toolW: number; onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         tc.card,
-        tool.wide ? { width: '100%' } : { width: TOOL_W },
+        tool.wide ? { width: '100%' } : { width: toolW },
         pressed && tc.pressed,
       ]}
     >
-      {/* Faded background decor */}
       <View style={tc.decorWrap} pointerEvents="none">
         <tool.Icon s={56} c={tool.iconFg} w={1.2} />
       </View>
-      {/* Icon box */}
       <View style={[tc.iconBox, { backgroundColor: tool.iconBg }]}>
         <tool.Icon s={22} c={tool.iconFg} w={1.9} />
       </View>
@@ -321,17 +325,21 @@ const tc = StyleSheet.create({
 function ToolsSection({ onNav }: { onNav: (r: string) => void }) {
   const regular = TOOLS.filter(t => !t.wide);
   const wide    = TOOLS.filter(t =>  t.wide);
+  // Measure actual grid width so cards always fit exactly 2 per row
+  const [gridW, setGridW] = useState(Dimensions.get('window').width - 32);
+  const toolW = (gridW - 10) / 2;
 
   return (
     <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
       <Text style={tls.heading}>TOOLS</Text>
 
-      {/* 2-column grid — explicit widths, no flex issues */}
-      <View style={tls.grid}>
+      {/* 2-column grid — onLayout measures real width, no Dimensions guessing */}
+      <View style={tls.grid} onLayout={e => setGridW(e.nativeEvent.layout.width)}>
         {regular.map((tool, i) => (
           <ToolCard
             key={i}
             tool={tool}
+            toolW={toolW}
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); if (tool.route) onNav(tool.route); }}
           />
         ))}
@@ -342,6 +350,7 @@ function ToolsSection({ onNav }: { onNav: (r: string) => void }) {
         <View key={i} style={{ marginTop: 10 }}>
           <ToolCard
             tool={tool}
+            toolW={toolW}
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); if (tool.route) onNav(tool.route); }}
           />
         </View>
