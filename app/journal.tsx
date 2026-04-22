@@ -1,5 +1,5 @@
-import JournalView from '@/components/journal/JournalView';
+import JournalHub from '@/components/journal/JournalHub';
 
 export default function JournalScreen() {
-  return <JournalView />;
+  return <JournalHub />;
 }
