@@ -23,18 +23,7 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png",
-      "headers": [
-        {
-          "source": "/(.*)",
-          "headers": [
-            {
-              "key": "Content-Security-Policy",
-              "value": "script-src 'self' 'unsafe-eval' 'unsafe-inline'; object-src 'none';"
-            }
-          ]
-        }
-      ]
+      "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       "expo-router",
