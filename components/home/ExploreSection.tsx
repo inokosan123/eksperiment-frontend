@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowUpRight, Sun, Notebook, Book, Feather } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 
@@ -28,9 +29,18 @@ export default function ExploreSection() {
             activeOpacity={0.85}
             style={[s.card, { backgroundColor: th.bg, borderColor: th.border }]}
           >
-            {/* Large faded decor — centered on right half */}
+            {/* Beli gradient odozgo — isti efekat kao na SectionCard */}
+            <LinearGradient
+              colors={['rgba(255,255,255,0.35)', 'rgba(255,255,255,0)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+            />
+
+            {/* Original decor veličina */}
             <View style={s.decorWrap} pointerEvents="none">
-              <card.Icon s={72} c={th.labelC} w={1.3} />
+              <card.Icon s={56} c={th.labelC} w={1.3} />
             </View>
 
             <View style={s.content}>
@@ -60,7 +70,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
     marginBottom: 10,
-    minHeight: 120,
+    minHeight: 110,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.07,
@@ -69,15 +79,11 @@ const s = StyleSheet.create({
   },
   decorWrap: {
     position: 'absolute',
-    right: 8,
-    top: 0,
-    bottom: 0,
-    width: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-    opacity: 0.18,
+    right: 12,
+    top: 12,
+    opacity: 0.16,
   },
-  content: { paddingRight: 96 },
+  content: { paddingRight: 80 },
   label: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4 },
   title: { fontFamily: F.serifMedium, fontSize: 22, marginTop: 4, lineHeight: 26 },
   desc: { fontFamily: F.sans, fontSize: 12, marginTop: 5, lineHeight: 17 },

@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowUpRight } from '@/components/icons/Icons';
 import { F } from '@/constants/tokens';
 import { ReactNode } from 'react';
@@ -26,21 +27,28 @@ export default function SectionCard({
       activeOpacity={0.85}
       style={[styles.card, { backgroundColor: bg, borderColor: border }]}
     >
-      {/* Large faded decor icon — right side, vertically centered */}
+      {/* Suptilni beli gradient odozgo — čini svaku boju lepšom i dubinskijom */}
+      <LinearGradient
+        colors={['rgba(255,255,255,0.35)', 'rgba(255,255,255,0)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+
+      {/* Decor — original veličina iz dizajna */}
       {decor && (
         <View style={styles.decorWrap} pointerEvents="none">
           {decor}
         </View>
       )}
 
-      {/* Text content — leaves space for decor */}
       <View style={styles.content}>
         <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
         <Text style={[styles.title, { color: titleColor }]}>{title}</Text>
         <Text style={[styles.desc, { color: bodyColor }]}>{description}</Text>
       </View>
 
-      {/* Arrow at absolute bottom-right */}
       <View style={[styles.arrow, { backgroundColor: arrowBg }]}>
         <ArrowUpRight s={16} c="#fff" w={2.6} />
       </View>
@@ -52,13 +60,12 @@ const styles = StyleSheet.create({
   card: {
     position: 'relative',
     padding: 18,
-    paddingBottom: 52,        // room for bottom-right arrow
+    paddingBottom: 52,
     borderRadius: 22,
     borderWidth: 1,
     marginBottom: 12,
     overflow: 'hidden',
-    minHeight: 140,
-    // Subtle lift shadow — the "glow" effect
+    minHeight: 130,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.07,
@@ -67,16 +74,16 @@ const styles = StyleSheet.create({
   },
   decorWrap: {
     position: 'absolute',
-    right: 10,
-    top: 0,
-    bottom: 0,
-    width: 100,
+    right: 14,
+    top: 14,
+    width: 72,
+    height: 72,
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.18,
+    opacity: 0.16,
   },
   content: {
-    paddingRight: 100,        // keep text from overlapping decor
+    paddingRight: 90,
   },
   label: {
     fontSize: 10,
