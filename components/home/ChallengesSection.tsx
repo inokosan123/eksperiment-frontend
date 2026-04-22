@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import { Book, OpenBook, Plus, ChevronRight } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
@@ -13,7 +14,13 @@ function ChallengeCard({
 }) {
   const pct = Math.round((count / total) * 100);
   return (
-    <View style={s.card}>
+    // LinearGradient gives the warm gold glow from the original design
+    <LinearGradient
+      colors={['#FFFDF6', '#ffffff']}
+      start={{ x: 0.135, y: 0 }}
+      end={{ x: 0.865, y: 1 }}
+      style={s.card}
+    >
       <View style={s.cardRow}>
         <View style={s.iconWrap}>
           <Icon s={16} c={C.gold} />
@@ -34,7 +41,7 @@ function ChallengeCard({
       <View style={s.bar}>
         <View style={[s.barFill, { width: `${pct}%` as any }]} />
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -50,7 +57,7 @@ export default function ChallengesSection() {
       </View>
 
       <ChallengeCard title="Read the Gospels" count={12} total={89} streak={7} Icon={Book} />
-      <ChallengeCard title="40-Day Psalter" count={6} total={40} streak={6} Icon={OpenBook} />
+      <ChallengeCard title="40-Day Psalter"   count={6}  total={40} streak={6} Icon={OpenBook} />
 
       <TouchableOpacity style={s.addBtn} activeOpacity={0.8}>
         <Plus s={15} c={C.text} w={2.4} />
@@ -71,9 +78,14 @@ const s = StyleSheet.create({
     borderRightWidth: 4,
     borderColor: C.gold,
     borderRadius: 22,
-    backgroundColor: '#FFFDF6',
     padding: 14,
     marginBottom: 8,
+    // Warm glow that matches the gold gradient card from the original
+    shadowColor: 'rgba(197,160,89,0.4)',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    elevation: 4,
   },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   iconWrap: {

@@ -10,10 +10,10 @@ const EXPLORE_THEMES = {
 };
 
 const CARDS = [
-  { label: 'RULE OF PRAYER', title: 'Prayer Book',  description: 'Morning, evening, and mealtime prayers to guide your rhythm of life.', theme: 'blue',  Icon: Sun     },
-  { label: 'SELF-CORRECTION', title: 'Notes',        description: 'Quick thoughts and reflections throughout the day.',                      theme: 'amber', Icon: Notebook },
-  { label: 'BIBLE & PSALTER', title: 'Scripture',    description: 'The divinely inspired Word of God.',                                      theme: 'red',   Icon: Book    },
-  { label: 'REFLECT',         title: 'Journal',       description: 'Capture your daily thoughts and spiritual progress.',                      theme: 'stone', Icon: Feather  },
+  { label: 'RULE OF PRAYER',  title: 'Prayer Book', description: 'Morning, evening, and mealtime prayers to guide your rhythm of life.', theme: 'blue',  Icon: Sun     },
+  { label: 'SELF-CORRECTION', title: 'Notes',        description: 'Quick thoughts and reflections throughout the day.',                    theme: 'amber', Icon: Notebook },
+  { label: 'BIBLE & PSALTER', title: 'Scripture',    description: 'The divinely inspired Word of God.',                                    theme: 'red',   Icon: Book    },
+  { label: 'REFLECT',         title: 'Journal',      description: 'Capture your daily thoughts and spiritual progress.',                   theme: 'stone', Icon: Feather  },
 ];
 
 export default function ExploreSection() {
@@ -28,14 +28,17 @@ export default function ExploreSection() {
             activeOpacity={0.85}
             style={[s.card, { backgroundColor: th.bg, borderColor: th.border }]}
           >
+            {/* Large faded decor — centered on right half */}
             <View style={s.decorWrap} pointerEvents="none">
-              <card.Icon s={56} c={th.labelC} w={1.3} />
+              <card.Icon s={72} c={th.labelC} w={1.3} />
             </View>
+
             <View style={s.content}>
               <Text style={[s.label, { color: th.labelC }]}>{card.label}</Text>
               <Text style={[s.title, { color: th.titleC }]}>{card.title}</Text>
               <Text style={[s.desc, { color: th.bodyC }]}>{card.description}</Text>
             </View>
+
             <View style={[s.arrow, { backgroundColor: th.arrowBg }]}>
               <ArrowUpRight s={15} c="#fff" w={2.6} />
             </View>
@@ -52,19 +55,29 @@ const s = StyleSheet.create({
   card: {
     position: 'relative',
     padding: 16,
+    paddingBottom: 52,
     borderRadius: 20,
     borderWidth: 1,
     overflow: 'hidden',
     marginBottom: 10,
-    minHeight: 100,
+    minHeight: 120,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+    elevation: 3,
   },
   decorWrap: {
     position: 'absolute',
-    right: 12,
-    top: 12,
-    opacity: 0.16,
+    right: 8,
+    top: 0,
+    bottom: 0,
+    width: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.18,
   },
-  content: { paddingRight: 80 },
+  content: { paddingRight: 96 },
   label: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4 },
   title: { fontFamily: F.serifMedium, fontSize: 22, marginTop: 4, lineHeight: 26 },
   desc: { fontFamily: F.sans, fontSize: 12, marginTop: 5, lineHeight: 17 },
@@ -79,8 +92,8 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
   },
 });

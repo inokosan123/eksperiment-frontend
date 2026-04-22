@@ -26,16 +26,21 @@ export default function SectionCard({
       activeOpacity={0.85}
       style={[styles.card, { backgroundColor: bg, borderColor: border }]}
     >
+      {/* Large faded decor icon — right side, vertically centered */}
       {decor && (
         <View style={styles.decorWrap} pointerEvents="none">
           {decor}
         </View>
       )}
+
+      {/* Text content — leaves space for decor */}
       <View style={styles.content}>
         <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
         <Text style={[styles.title, { color: titleColor }]}>{title}</Text>
         <Text style={[styles.desc, { color: bodyColor }]}>{description}</Text>
       </View>
+
+      {/* Arrow at absolute bottom-right */}
       <View style={[styles.arrow, { backgroundColor: arrowBg }]}>
         <ArrowUpRight s={16} c="#fff" w={2.6} />
       </View>
@@ -47,24 +52,31 @@ const styles = StyleSheet.create({
   card: {
     position: 'relative',
     padding: 18,
+    paddingBottom: 52,        // room for bottom-right arrow
     borderRadius: 22,
     borderWidth: 1,
     marginBottom: 12,
     overflow: 'hidden',
-    minHeight: 110,
+    minHeight: 140,
+    // Subtle lift shadow — the "glow" effect
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+    elevation: 3,
   },
   decorWrap: {
     position: 'absolute',
-    right: 14,
-    top: 14,
-    width: 72,
-    height: 72,
+    right: 10,
+    top: 0,
+    bottom: 0,
+    width: 100,
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.16,
+    opacity: 0.18,
   },
   content: {
-    paddingRight: 90,
+    paddingRight: 100,        // keep text from overlapping decor
   },
   label: {
     fontSize: 10,
@@ -95,8 +107,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
   },
 });
