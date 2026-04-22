@@ -41,6 +41,7 @@ const CARDS = [
     bg: '#FBF6E1', border: '#F0E7BA', labelColor: '#A78542', titleColor: '#6E4F14',
     bodyColor: '#A78542', arrowBg: '#8A5A1A',
     decor: <Star s={64} c="#A78542" w={1.3} />,
+    route: '/bucket-list',
   },
   {
     label: 'STUDY TIMER', title: 'Focus Zone',
@@ -63,7 +64,7 @@ export default function InnerLifeView() {
       >
         {/* Scripture quote — matches original Capacitor app */}
         <View style={s.quoteWrap}>
-          <Text style={s.quote}>"The Kingdom of God is within you."</Text>
+          <Text style={s.quote}>{"The Kingdom of God is within you."}</Text>
           <Text style={s.ref}>LUKE 17:21</Text>
         </View>
 
@@ -82,7 +83,7 @@ export default function InnerLifeView() {
 }
 
 const s = StyleSheet.create({
-  quoteWrap: { paddingHorizontal: 28, paddingTop: 6, paddingBottom: 4, alignItems: 'center' },
-  quote:     { fontFamily: F.serifMediumItalic, fontSize: 16, color: C.textSecondary, lineHeight: 24, textAlign: 'center' },
-  ref:       { marginTop: 8, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.gold },
+  quoteWrap: { paddingHorizontal: 22, paddingTop: 10, paddingBottom: 6, alignItems: 'center' },
+  quote:     { fontFamily: F.serifMediumItalic, fontSize: 20, color: C.textSecondary, lineHeight: 30, textAlign: 'center' },
+  ref:       { marginTop: 10, fontFamily: F.sansBold, fontSize: 13, letterSpacing: 2.4, color: C.gold },
 });

@@ -95,8 +95,8 @@ const s = StyleSheet.create({
     marginBottom: 8,
   },
   desc: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 18,
+    lineHeight: 25,
     fontFamily: 'EBGaramond_400Regular',
   },
   arrow: {

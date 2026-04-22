@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     fontFamily: F.serifMedium,
-    fontSize: 22,
+    fontSize: 28,
     letterSpacing: 4,
     color: C.text,
     textAlign: 'center',

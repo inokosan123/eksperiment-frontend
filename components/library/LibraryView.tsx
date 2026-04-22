@@ -76,7 +76,7 @@ export default function LibraryView() {
 }
 
 const s = StyleSheet.create({
-  quoteWrap: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6, alignItems: 'center' },
-  quote: { fontFamily: F.serifMediumItalic, fontSize: 14, color: C.textSecondary, lineHeight: 21, textAlign: 'center' },
-  ref: { marginTop: 8, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.gold },
+  quoteWrap: { paddingHorizontal: 22, paddingTop: 10, paddingBottom: 6, alignItems: 'center' },
+  quote: { fontFamily: F.serifMediumItalic, fontSize: 20, color: C.textSecondary, lineHeight: 30, textAlign: 'center' },
+  ref: { marginTop: 10, fontFamily: F.sansBold, fontSize: 13, letterSpacing: 2.4, color: C.gold },
 });
