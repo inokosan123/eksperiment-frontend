@@ -1,5 +1,4 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowUpRight } from '@/components/icons/Icons';
 import { F } from '@/constants/tokens';
 import { ReactNode } from 'react';
@@ -25,94 +24,88 @@ export default function SectionCard({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.85}
-      style={[styles.card, { backgroundColor: bg, borderColor: border }]}
+      style={[s.card, { backgroundColor: bg, borderColor: border }]}
     >
-      {/* Subtle white gradient for depth */}
-      <LinearGradient
-        colors={['rgba(255,255,255,0.35)', 'rgba(255,255,255,0)']}
-        start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
-
-      {/* Decor icon — faded top-right */}
+      {/* Large faded decor icon — positioned absolute top-right, behind content */}
       {decor && (
-        <View style={styles.decorWrap} pointerEvents="none">
+        <View style={s.decorWrap} pointerEvents="none">
           {decor}
         </View>
       )}
 
-      {/* Text content */}
-      <View style={styles.content}>
-        <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
-        <Text style={[styles.title, { color: titleColor }]}>{title}</Text>
-        <Text style={[styles.desc, { color: bodyColor }]}>{description}</Text>
-      </View>
+      {/* Flex row: text left, arrow right — no dead space */}
+      <View style={s.row}>
+        <View style={s.textCol}>
+          <Text style={[s.label, { color: labelColor }]}>{label}</Text>
+          <Text style={[s.title, { color: titleColor }]}>{title}</Text>
+          <Text style={[s.desc,  { color: bodyColor  }]}>{description}</Text>
+        </View>
 
-      {/* Arrow button — absolute bottom-right */}
-      <View style={[styles.arrow, { backgroundColor: arrowBg }]}>
-        <ArrowUpRight s={17} c="#fff" w={2.6} />
+        {/* Arrow button — vertically centered next to text */}
+        <View style={[s.arrow, { backgroundColor: arrowBg }]}>
+          <ArrowUpRight s={18} c="#fff" w={2.6} />
+        </View>
       </View>
     </TouchableOpacity>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   card: {
-    position: 'relative',
-    padding: 20,
-    paddingBottom: 60,
     borderRadius: 22,
     borderWidth: 1,
     marginBottom: 14,
     overflow: 'hidden',
-    minHeight: 155,
+    padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.07,
+    shadowOpacity: 0.06,
     shadowRadius: 10,
     elevation: 3,
   },
   decorWrap: {
     position: 'absolute',
-    right: 14,
-    top: 14,
-    width: 72,
-    height: 72,
+    right: 12,
+    top: 12,
+    width: 80,
+    height: 80,
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.16,
+    opacity: 0.15,
   },
-  content: {
-    paddingRight: 90,
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  textCol: {
+    flex: 1,
   },
   label: {
     fontSize: 11,
     fontFamily: 'Inter_700Bold',
-    letterSpacing: 2.4,
+    letterSpacing: 2.2,
     textTransform: 'uppercase',
+    marginBottom: 6,
   },
   title: {
-    fontFamily: 'EBGaramond_500Medium',
-    fontSize: 30,
-    lineHeight: 34,
-    marginTop: 6,
+    fontFamily: 'EBGaramond_600SemiBold',  // SemiBold — matches original's bold look
+    fontSize: 36,
+    lineHeight: 40,
+    marginBottom: 8,
   },
   desc: {
     fontSize: 14,
-    lineHeight: 21,
-    marginTop: 8,
-    fontFamily: 'Inter_400Regular',
+    lineHeight: 20,
+    fontFamily: 'EBGaramond_400Regular',
   },
   arrow: {
-    position: 'absolute',
-    right: 16,
-    bottom: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,

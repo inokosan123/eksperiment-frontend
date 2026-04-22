@@ -22,6 +22,7 @@ export const F = {
   serifMedium: 'EBGaramond_500Medium',
   serifMediumItalic: 'EBGaramond_500Medium_Italic',
   serifSemiBold: 'EBGaramond_600SemiBold',
+  serifBold: 'EBGaramond_700Bold',
   sans: 'Inter_400Regular',
   sansMedium: 'Inter_500Medium',
   sansSemiBold: 'Inter_600SemiBold',

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Settings, Calendar, ChevronLeft, ChevronRight, Clock, Book, Sun, Moon, Feather, Plus, ArrowUpRight } from '@/components/icons/Icons';
+import { Settings, Calendar, ChevronLeft, ChevronRight, Clock, Book, Sun, Moon, Feather, Plus, ArrowUpRight, CheckSmall, Skip } from '@/components/icons/Icons';
 import DateStrip from './DateStrip';
 import WeeklyRhythm from './WeeklyRhythm';
 import ChallengesSection from './ChallengesSection';
@@ -34,8 +34,10 @@ function HomeHeader() {
 
       <View style={h.quoteWrap}>
         <Text style={h.quote}>
-          "Awake thou that sleepest, and <Text style={{ textDecorationLine: 'underline' }}>arise</Text>{' '}
-          <Text style={{ color: C.gold }}>(anasta)</Text> from the dead, and Christ shall give thee light."
+          {'"Awake thou that sleepest, and '}
+          <Text style={{ textDecorationLine: 'underline' }}>arise</Text>{' '}
+          <Text style={{ color: C.gold }}>(anasta)</Text>
+          {' from the dead, and Christ shall give thee light."'}
         </Text>
         <Text style={h.ref}>EPHESIANS 5:14</Text>
       </View>
@@ -194,7 +196,7 @@ export default function HomeView() {
       <View style={{ paddingHorizontal: 20, paddingTop: 18 }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <View>
-            <Text style={{ fontFamily: F.serifMedium, fontSize: 22, color: C.text }}>Today's Tasks</Text>
+            <Text style={{ fontFamily: F.serifMedium, fontSize: 22, color: C.text }}>{"Today's Tasks"}</Text>
             <Text style={{ fontFamily: F.sans, fontSize: 12, color: C.textMuted, marginTop: 4 }}>33% Completed</Text>
           </View>
           <View style={{ marginTop: 8 }}><ProgressBar pct={33} /></View>
