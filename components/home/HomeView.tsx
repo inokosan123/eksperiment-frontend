@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Settings, Calendar, ChevronLeft, ChevronRight, Clock, Book, Sun, Moon, Feather, Plus, ArrowUpRight } from '@/components/icons/Icons';
@@ -186,7 +186,7 @@ export default function HomeView() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: C.bg }}
-      contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 120 }}
+      contentContainerStyle={{ paddingTop: Math.max(insets.top, Platform.OS === 'web' ? 24 : insets.top) + 4, paddingBottom: 120 }}
       showsVerticalScrollIndicator={false}
     >
       <HomeHeader />

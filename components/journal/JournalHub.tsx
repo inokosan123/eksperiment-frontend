@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Pressable,
-  StyleSheet, Dimensions, Image,
+  StyleSheet, Dimensions, Image, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -86,7 +86,7 @@ function StreakCircle({ active, label }: { active: boolean; label: string }) {
 
 const sc = StyleSheet.create({
   col:            { alignItems: 'center', gap: 7 },
-  circle:         { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
+  circle:         { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
   circleActive:   { borderColor: '#f97316', backgroundColor: '#FFF7ED' },
   circleInactive: { borderColor: '#e5e2db', backgroundColor: '#F5F3EF' },
   flameImg:       { width: 26, height: 26, resizeMode: 'contain' },
@@ -159,20 +159,20 @@ function MonthCalendar({ month, year }: { month: number; year: number }) {
 const cal = StyleSheet.create({
   card:          { marginHorizontal: 16, marginTop: 14, backgroundColor: '#fff', borderRadius: 24, borderWidth: 1, borderColor: '#EDE9E0', padding: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   headerRow:     { flexDirection: 'row', marginBottom: 6 },
-  headerTxt:     { flex: 1, textAlign: 'center', fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1, color: C.textMuted },
-  row:           { flexDirection: 'row', marginBottom: 4 },
-  cell:          { flex: 1, alignItems: 'center', paddingVertical: 4 },
-  dayCircle:     { width: 32, height: 32, borderRadius: 16, borderWidth: 1.5, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
+  headerTxt:     { flex: 1, textAlign: 'center', fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.2, color: C.textMuted },
+  row:           { flexDirection: 'row', marginBottom: 2 },
+  cell:          { flex: 1, alignItems: 'center', paddingVertical: 5 },
+  dayCircle:     { width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
   todayCircle:   { borderColor: GOLD },
-  dayNum:        { fontFamily: F.serifMedium, fontSize: 15, color: C.text },
+  dayNum:        { fontFamily: F.serifMedium, fontSize: 17, color: C.text },
   dayNumToday:   { color: GOLD, fontFamily: F.serifSemiBold },
   dayNumFuture:  { color: C.textMuted, opacity: 0.35 },
-  dotRow:        { flexDirection: 'row', gap: 2, marginTop: 2, height: 5 },
-  dot:           { width: 5, height: 5, borderRadius: 2.5 },
+  dotRow:        { flexDirection: 'row', gap: 3, marginTop: 3, height: 7 },
+  dot:           { width: 7, height: 7, borderRadius: 3.5 },
   legend:        { flexDirection: 'row', justifyContent: 'space-around', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F0EDE6' },
-  legendItem:    { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  legendDot:     { width: 7, height: 7, borderRadius: 3.5 },
-  legendTxt:     { fontFamily: F.sans, fontSize: 11, color: C.textSecondary },
+  legendItem:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot:     { width: 8, height: 8, borderRadius: 4 },
+  legendTxt:     { fontFamily: F.sans, fontSize: 12, color: C.textSecondary },
 });
 
 // ─── Daily Task banner ────────────────────────────────────────────────────────
@@ -232,11 +232,11 @@ function ModeCards({ onNav }: { onNav: (r: string) => void }) {
 }
 const mc = StyleSheet.create({
   row:     { flexDirection: 'row', marginHorizontal: 16, marginTop: 14, gap: 10 },
-  card:    { flex: 1, backgroundColor: '#fff', borderRadius: 20, borderWidth: 1, borderColor: '#EDE9E0', paddingVertical: 18, paddingHorizontal: 8, alignItems: 'center', gap: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
+  card:    { flex: 1, backgroundColor: '#fff', borderRadius: 20, borderWidth: 1, borderColor: '#EDE9E0', paddingVertical: 20, paddingHorizontal: 8, alignItems: 'center', gap: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
-  iconBox: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  label:   { fontFamily: F.serifMedium, fontSize: 13, color: C.text, textAlign: 'center', lineHeight: 18 },
-  status:  { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 0.5 },
+  iconBox: { width: 60, height: 60, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  label:   { fontFamily: F.serifMedium, fontSize: 15, color: C.text, textAlign: 'center', lineHeight: 20 },
+  status:  { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 0.5 },
 });
 
 // ─── Streak section with Lottie flame ────────────────────────────────────────
@@ -260,8 +260,8 @@ function StreakSection() {
 const st = StyleSheet.create({
   card:     { marginHorizontal: 16, marginTop: 14, backgroundColor: '#fff', borderRadius: 24, borderWidth: 1, borderColor: '#EDE9E0', padding: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
   headline: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 18 },
-  number:   { fontFamily: F.serifSemiBold, fontSize: 32, color: GOLD, lineHeight: 36 },
-  label:    { fontFamily: F.serifMedium, fontSize: 17, color: C.textSecondary },
+  number:   { fontFamily: F.serifSemiBold, fontSize: 36, color: GOLD, lineHeight: 40 },
+  label:    { fontFamily: F.serifMedium, fontSize: 18, color: C.textSecondary },
   dayRow:   { flexDirection: 'row', justifyContent: 'space-between' },
 });
 
@@ -364,13 +364,13 @@ export default function JournalHub() {
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
       {/* Header */}
-      <View style={[hd.wrap, { paddingTop: insets.top + 8 }]}>
+      <View style={[hd.wrap, { paddingTop: Math.max(insets.top, Platform.OS === 'web' ? 24 : insets.top) + 14 }]}>
         <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }} style={hd.btn} activeOpacity={0.7}>
-          <ArrowLeft s={22} c={C.textMuted} />
+          <ArrowLeft s={26} c={C.textSecondary} />
         </TouchableOpacity>
         <Text style={hd.title}>JOURNAL</Text>
         <TouchableOpacity onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)} style={hd.btn} activeOpacity={0.7}>
-          <SlidersHorizontal s={18} c={C.textMuted} />
+          <SlidersHorizontal s={20} c={C.textMuted} />
         </TouchableOpacity>
       </View>
 
@@ -397,9 +397,9 @@ export default function JournalHub() {
 }
 
 const hd = StyleSheet.create({
-  wrap:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: 4, backgroundColor: BG },
-  btn:   { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  title: { fontFamily: F.serifMedium, fontSize: 20, letterSpacing: 4, color: C.text },
+  wrap:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: 10, backgroundColor: BG },
+  btn:   { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  title: { fontFamily: F.serifMedium, fontSize: 24, letterSpacing: 4, color: C.text, flex: 1, textAlign: 'center' },
 });
 const mn = StyleSheet.create({
   row:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, paddingVertical: 10, backgroundColor: BG },

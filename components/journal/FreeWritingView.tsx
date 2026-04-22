@@ -18,7 +18,7 @@ export default function FreeWritingView() {
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
       {/* Header */}
-      <View style={[hd.wrap, { paddingTop: insets.top + 8 }]}>
+      <View style={[hd.wrap, { paddingTop: Math.max(insets.top, 24) + 10 }]}>
         <TouchableOpacity
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
           style={hd.btn} activeOpacity={0.7}

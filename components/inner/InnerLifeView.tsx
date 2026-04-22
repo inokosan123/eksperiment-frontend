@@ -1,9 +1,9 @@
-import { ScrollView, View } from 'react-native';
+import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SectionCard from '@/components/shared/SectionCard';
 import { Notebook, CheckSmall, Heart, Star, HourGlass } from '@/components/icons/Icons';
-import { C } from '@/constants/tokens';
+import { C, F } from '@/constants/tokens';
 
 const CARDS = [
   {
@@ -58,17 +58,31 @@ export default function InnerLifeView() {
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScreenTitleBar title="INNER LIFE" />
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 120 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
       >
-        {CARDS.map((card, i) => (
-          <SectionCard
-            key={i}
-            {...card}
-            onPress={card.route ? () => router.push(card.route as any) : undefined}
-          />
-        ))}
+        {/* Scripture quote — matches original Capacitor app */}
+        <View style={s.quoteWrap}>
+          <Text style={s.quote}>"The Kingdom of God is within you."</Text>
+          <Text style={s.ref}>LUKE 17:21</Text>
+        </View>
+
+        <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
+          {CARDS.map((card, i) => (
+            <SectionCard
+              key={i}
+              {...card}
+              onPress={card.route ? () => router.push(card.route as any) : undefined}
+            />
+          ))}
+        </View>
       </ScrollView>
     </View>
   );
 }
+
+const s = StyleSheet.create({
+  quoteWrap: { paddingHorizontal: 28, paddingTop: 6, paddingBottom: 4, alignItems: 'center' },
+  quote:     { fontFamily: F.serifMediumItalic, fontSize: 16, color: C.textSecondary, lineHeight: 24, textAlign: 'center' },
+  ref:       { marginTop: 8, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.gold },
+});

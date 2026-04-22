@@ -27,30 +27,31 @@ export default function SectionCard({
       activeOpacity={0.85}
       style={[styles.card, { backgroundColor: bg, borderColor: border }]}
     >
-      {/* Suptilni beli gradient odozgo — čini svaku boju lepšom i dubinskijom */}
+      {/* Subtle white gradient for depth */}
       <LinearGradient
         colors={['rgba(255,255,255,0.35)', 'rgba(255,255,255,0)']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
+        start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
 
-      {/* Decor — original veličina iz dizajna */}
+      {/* Decor icon — faded top-right */}
       {decor && (
         <View style={styles.decorWrap} pointerEvents="none">
           {decor}
         </View>
       )}
 
+      {/* Text content */}
       <View style={styles.content}>
         <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
         <Text style={[styles.title, { color: titleColor }]}>{title}</Text>
         <Text style={[styles.desc, { color: bodyColor }]}>{description}</Text>
       </View>
 
+      {/* Arrow button — absolute bottom-right */}
       <View style={[styles.arrow, { backgroundColor: arrowBg }]}>
-        <ArrowUpRight s={16} c="#fff" w={2.6} />
+        <ArrowUpRight s={17} c="#fff" w={2.6} />
       </View>
     </TouchableOpacity>
   );
@@ -59,13 +60,13 @@ export default function SectionCard({
 const styles = StyleSheet.create({
   card: {
     position: 'relative',
-    padding: 18,
-    paddingBottom: 52,
+    padding: 20,
+    paddingBottom: 60,
     borderRadius: 22,
     borderWidth: 1,
-    marginBottom: 12,
+    marginBottom: 14,
     overflow: 'hidden',
-    minHeight: 130,
+    minHeight: 155,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.07,
@@ -86,20 +87,20 @@ const styles = StyleSheet.create({
     paddingRight: 90,
   },
   label: {
-    fontSize: 10,
+    fontSize: 11,
     fontFamily: 'Inter_700Bold',
     letterSpacing: 2.4,
     textTransform: 'uppercase',
   },
   title: {
     fontFamily: 'EBGaramond_500Medium',
-    fontSize: 26,
-    lineHeight: 30,
+    fontSize: 30,
+    lineHeight: 34,
     marginTop: 6,
   },
   desc: {
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 14,
+    lineHeight: 21,
     marginTop: 8,
     fontFamily: 'Inter_400Regular',
   },
@@ -107,9 +108,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 16,
     bottom: 16,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
