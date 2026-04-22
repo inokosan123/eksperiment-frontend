@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import LottieView from 'lottie-react-native';
+import LottieFlame from './LottieFlame';
 import {
   ArrowLeft, SlidersHorizontal, CalendarCheck,
   ChevronLeft, ChevronRight,
@@ -273,13 +273,7 @@ function StreakSection() {
   return (
     <View style={st.card}>
       <View style={st.headline}>
-        {/* Lottie animated flame */}
-        <LottieView
-          source={require('@/assets/animations/flame.json')}
-          autoPlay
-          loop
-          style={st.lottie}
-        />
+        <LottieFlame size={36} />
         <Text style={st.number}>{STREAK}</Text>
         <Text style={st.label}>day streak</Text>
       </View>
@@ -295,7 +289,6 @@ function StreakSection() {
 const st = StyleSheet.create({
   card:     { marginHorizontal: 16, marginTop: 14, backgroundColor: '#fff', borderRadius: 24, borderWidth: 1, borderColor: '#EDE9E0', padding: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
   headline: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 18 },
-  lottie:   { width: 36, height: 36 },
   number:   { fontFamily: F.serifSemiBold, fontSize: 32, color: GOLD, lineHeight: 36 },
   label:    { fontFamily: F.serifMedium, fontSize: 17, color: C.textSecondary },
   dayRow:   { flexDirection: 'row', justifyContent: 'space-between' },
