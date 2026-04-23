@@ -1,32 +1,34 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Pressable,
-  TextInput, StyleSheet, Animated,
+  StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { ArrowLeft, SlidersHorizontal, CheckSmall } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
+import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
+import { TextFormatToolbar, TextSelection } from '@/components/shared/TextFormatToolbar';
+import { LinedTextInput } from '@/components/shared/LinedTextInput';
 
-const BG   = '#FAF7F0';
+const BG = '#FAF7F0';
 const GOLD = '#C5A059';
 
-// ─── Mood picker ──────────────────────────────────────────────────────────────
 const MOODS = [
-  { emoji: '😔', label: 'Sad'     },
-  { emoji: '😕', label: 'Low'     },
+  { emoji: '😔', label: 'Sad' },
+  { emoji: '😕', label: 'Low' },
   { emoji: '😐', label: 'Neutral' },
-  { emoji: '🙂', label: 'Good'    },
-  { emoji: '😊', label: 'Great'   },
+  { emoji: '🙂', label: 'Good' },
+  { emoji: '😊', label: 'Great' },
 ];
 
 const ENERGIES = [
   { emoji: '🪫', label: 'Drained' },
-  { emoji: '😴', label: 'Low'     },
-  { emoji: '⚡', label: 'Normal'  },
-  { emoji: '🔥', label: 'High'    },
-  { emoji: '💪', label: 'Peak'    },
+  { emoji: '😴', label: 'Low' },
+  { emoji: '⚡', label: 'Normal' },
+  { emoji: '🔥', label: 'High' },
+  { emoji: '💪', label: 'Peak' },
 ];
 
 function EmojiPicker({
@@ -65,24 +67,23 @@ function EmojiPicker({
 
 const ep = StyleSheet.create({
   wrap:          { paddingHorizontal: 20, paddingTop: 18 },
-  title:         { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.textMuted, marginBottom: 10, textTransform: 'uppercase' },
+  title:         { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2, color: C.textMuted, marginBottom: 12, textTransform: 'uppercase' },
   row:           { flexDirection: 'row', justifyContent: 'space-between' },
-  item:          { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 14, borderWidth: 1, borderColor: 'transparent' },
+  item:          { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: 'transparent' },
   itemActive:    { backgroundColor: '#FBF7EE', borderColor: '#F0E2B8' },
-  emoji:         { fontSize: 22, transform: [{ scale: 1 }] },
+  emoji:         { fontSize: 26, transform: [{ scale: 1 }] },
   emojiSelected: { transform: [{ scale: 1.12 }] },
-  label:         { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5, color: C.textMuted, marginTop: 5, textTransform: 'uppercase' },
+  label:         { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4, color: C.textMuted, marginTop: 6, textTransform: 'uppercase' },
   labelActive:   { color: GOLD },
 });
 
-// ─── Satisfaction slider ──────────────────────────────────────────────────────
 function SatisfactionSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const color =
     value <= 2 ? C.red :
     value <= 4 ? '#D97706' :
     value <= 7 ? GOLD : '#16A34A';
 
-  const SAT_LABELS = ['','','Very Low','Low','Okay','Okay','Satisfied','Satisfied','Very Satisfied','Very Satisfied','Excellent'];
+  const SAT_LABELS = ['', '', 'Very Low', 'Low', 'Okay', 'Okay', 'Satisfied', 'Satisfied', 'Very Satisfied', 'Very Satisfied', 'Excellent'];
 
   return (
     <View style={sl.wrap}>
@@ -110,20 +111,19 @@ function SatisfactionSlider({ value, onChange }: { value: number; onChange: (v: 
 const sl = StyleSheet.create({
   wrap:      { marginHorizontal: 20, marginTop: 18, backgroundColor: '#fff', borderRadius: 20, borderWidth: 1, borderColor: '#EDE9E0', padding: 16 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  title:     { fontFamily: F.serifMedium, fontSize: 15, color: C.text },
-  value:     { fontFamily: F.serifSemiBold, fontSize: 26, lineHeight: 30 },
+  title:     { fontFamily: F.serifMedium, fontSize: 17, color: C.text },
+  value:     { fontFamily: F.serifSemiBold, fontSize: 30, lineHeight: 34 },
   track:     { height: 6, backgroundColor: '#F0EDE6', borderRadius: 3, overflow: 'hidden', marginBottom: 8 },
   fill:      { height: '100%', borderRadius: 3 },
   btns:      { flexDirection: 'row', justifyContent: 'space-between' },
-  pip:       { width: 22, height: 22, borderRadius: 11, backgroundColor: '#EDE9E0' },
-  sublabel:  { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.5, textAlign: 'center', marginTop: 8 },
+  pip:       { width: 24, height: 24, borderRadius: 12, backgroundColor: '#EDE9E0' },
+  sublabel:  { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.5, textAlign: 'center', marginTop: 8 },
 });
 
-// ─── Guided prompt ────────────────────────────────────────────────────────────
 const PROMPTS = [
   { q: 'What am I grateful for today?', a: '' },
-  { q: 'What challenged me today?',     a: '' },
-  { q: 'What do I want to remember?',   a: '' },
+  { q: 'What challenged me today?', a: '' },
+  { q: 'What do I want to remember?', a: '' },
 ];
 
 function GuidedPrompts({
@@ -132,35 +132,55 @@ function GuidedPrompts({
   prompts: { q: string; a: string }[];
   onChange: (i: number, val: string) => void;
 }) {
+  const [selections, setSelections] = useState<Record<number, TextSelection>>({});
+
+  const setPromptSelection = (index: number, selection: TextSelection) => {
+    setSelections(prev => ({ ...prev, [index]: selection }));
+  };
+
   return (
     <View style={gp.wrap}>
       <Text style={gp.sectionLabel}>DAILY REFLECTIONS</Text>
-      {prompts.map((p, i) => (
-        <View key={i} style={gp.block}>
-          <Text style={gp.question}>{p.q}</Text>
-          <TextInput
-            style={gp.input}
-            placeholder="Write your answer..."
-            placeholderTextColor={C.textMuted}
-            multiline
-            value={p.a}
-            onChangeText={v => onChange(i, v)}
-          />
-        </View>
-      ))}
+      {prompts.map((p, i) => {
+        const selection = selections[i] ?? { start: 0, end: 0 };
+
+        return (
+          <View key={i} style={gp.block}>
+            <Text style={gp.question}>{p.q}</Text>
+            <TextFormatToolbar
+              value={p.a}
+              selection={selection}
+              onChangeText={value => onChange(i, value)}
+              onSelectionChange={nextSelection => setPromptSelection(i, nextSelection)}
+              style={gp.toolbar}
+            />
+            <LinedTextInput
+              placeholder="Write your answer..."
+              placeholderTextColor={C.textMuted}
+              value={p.a}
+              onChangeText={v => onChange(i, v)}
+              selection={selection}
+              onSelectionChange={nextSelection => setPromptSelection(i, nextSelection)}
+              minLines={3}
+              lineHeight={27}
+              inputStyle={gp.input}
+            />
+          </View>
+        );
+      })}
     </View>
   );
 }
 
 const gp = StyleSheet.create({
   wrap:         { paddingHorizontal: 20, marginTop: 18 },
-  sectionLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.textMuted, marginBottom: 12, textTransform: 'uppercase' },
-  block:        { backgroundColor: '#fff', borderRadius: 18, borderWidth: 1, borderColor: '#EDE9E0', padding: 14, marginBottom: 10 },
-  question:     { fontFamily: F.serifMedium, fontSize: 15, color: C.textSecondary, marginBottom: 8 },
-  input:        { fontFamily: F.serif, fontSize: 15, color: C.text, minHeight: 60, lineHeight: 24 },
+  sectionLabel: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2, color: C.textMuted, marginBottom: 12, textTransform: 'uppercase' },
+  block:        { backgroundColor: '#fff', borderRadius: 18, borderWidth: 1, borderColor: '#EDE9E0', padding: 16, marginBottom: 10 },
+  question:     { fontFamily: F.serifMedium, fontSize: 17, color: C.textSecondary, marginBottom: 8 },
+  toolbar:      { marginBottom: 10 },
+  input:        { fontFamily: F.serif, fontSize: 17, color: C.text, lineHeight: 27 },
 });
 
-// ─── Gratitude section ────────────────────────────────────────────────────────
 function GratitudeSection() {
   const ITEMS = ['My faith and prayer', 'Health and family', 'This peaceful morning'];
   return (
@@ -178,19 +198,18 @@ function GratitudeSection() {
 
 const gr = StyleSheet.create({
   wrap:  { paddingHorizontal: 20, marginTop: 18 },
-  label: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.textMuted, marginBottom: 10, textTransform: 'uppercase' },
-  item:  { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#F0E2B8', borderRadius: 14, padding: 12, marginBottom: 8 },
-  heart: { fontSize: 16, color: GOLD },
-  txt:   { fontFamily: F.serifMedium, fontSize: 15, color: C.text, flex: 1 },
+  label: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2, color: C.textMuted, marginBottom: 10, textTransform: 'uppercase' },
+  item:  { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#F0E2B8', borderRadius: 14, padding: 13, marginBottom: 8 },
+  heart: { fontSize: 18, color: GOLD },
+  txt:   { fontFamily: F.serifMedium, fontSize: 17, color: C.text, flex: 1 },
 });
 
-// ─── Root ─────────────────────────────────────────────────────────────────────
 export default function DailyEntryView() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [mood, setMood]       = useState(3);
-  const [energy, setEnergy]   = useState(2);
-  const [sat, setSat]         = useState(7);
+  const [mood, setMood] = useState(3);
+  const [energy, setEnergy] = useState(2);
+  const [sat, setSat] = useState(7);
   const [prompts, setPrompts] = useState(PROMPTS.map(p => ({ ...p })));
 
   const updatePrompt = (i: number, val: string) => {
@@ -199,10 +218,9 @@ export default function DailyEntryView() {
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
-      {/* Header */}
-      <View style={[hd.wrap, { paddingTop: Math.max(insets.top, 24) + 10 }]}>
+      <View style={[hd.wrap, { paddingTop: getTitleBarTopPadding(insets.top) }]}>
         <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }} style={hd.btn} activeOpacity={0.7}>
-          <ArrowLeft s={22} c={C.textMuted} />
+          <ArrowLeft s={24} c={C.textMuted} />
         </TouchableOpacity>
         <Text style={hd.title}>Daily Journal</Text>
         <TouchableOpacity onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)} style={hd.btn} activeOpacity={0.7}>
@@ -210,21 +228,19 @@ export default function DailyEntryView() {
         </TouchableOpacity>
       </View>
 
-      {/* Date */}
       <View style={{ alignItems: 'center', paddingVertical: 8 }}>
-        <Text style={{ fontFamily: F.serifMediumItalic, fontSize: 14, color: C.textMuted }}>Wednesday, April 22</Text>
+        <Text style={{ fontFamily: F.serifMediumItalic, fontSize: 15, color: C.textMuted }}>Wednesday, April 22</Text>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
-        <EmojiPicker title="How are you feeling?" items={MOODS}    selected={mood}   onSelect={setMood}   />
-        <EmojiPicker title="Energy level"          items={ENERGIES} selected={energy} onSelect={setEnergy} />
+        <EmojiPicker title="How are you feeling?" items={MOODS} selected={mood} onSelect={setMood} />
+        <EmojiPicker title="Energy level" items={ENERGIES} selected={energy} onSelect={setEnergy} />
         <SatisfactionSlider value={sat} onChange={setSat} />
         <GuidedPrompts prompts={prompts} onChange={updatePrompt} />
         <GratitudeSection />
         <View style={{ height: 20 }} />
       </ScrollView>
 
-      {/* Finish button */}
       <View style={[fin.wrap, { paddingBottom: insets.bottom + 12 }]}>
         <TouchableOpacity
           style={fin.btn}
@@ -234,7 +250,7 @@ export default function DailyEntryView() {
             router.back();
           }}
         >
-          <CheckSmall s={18} c="#fff" w={2.8} />
+          <CheckSmall s={20} c="#fff" w={2.8} />
           <Text style={fin.txt}>Finish</Text>
         </TouchableOpacity>
       </View>
@@ -243,13 +259,13 @@ export default function DailyEntryView() {
 }
 
 const hd = StyleSheet.create({
-  wrap:  { backgroundColor: BG, paddingBottom: 4, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  btn:   { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  title: { fontFamily: F.serifMedium, fontSize: 18, color: C.text },
+  wrap:  { backgroundColor: BG, paddingBottom: TITLE_BAR_BOTTOM_PADDING, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  btn:   { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  title: { fontFamily: F.serifMedium, fontSize: 20, color: C.text },
 });
 
 const fin = StyleSheet.create({
   wrap: { paddingHorizontal: 20, paddingTop: 10, backgroundColor: BG, borderTopWidth: 1, borderTopColor: 'rgba(197,160,89,0.1)' },
-  btn:  { backgroundColor: GOLD, borderRadius: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, shadowColor: GOLD, shadowOffset:{width:0,height:4}, shadowOpacity:0.35, shadowRadius:10, elevation:6 },
-  txt:  { fontFamily: F.sansBold, fontSize: 15, color: '#fff', letterSpacing: 1 },
+  btn:  { backgroundColor: GOLD, borderRadius: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, shadowColor: GOLD, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 6 },
+  txt:  { fontFamily: F.sansBold, fontSize: 16, color: '#fff', letterSpacing: 1 },
 });

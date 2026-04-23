@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { Sun, Utensils, Moon, Sparkles, CalendarCheck, ChevronRight, Play } from '@/components/icons/Icons';
+import { Sun, Utensils, Moon, Sparkles, Play } from '@/components/icons/Icons';
+import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
 import { C, F } from '@/constants/tokens';
 
 type Category = 'morning' | 'meal' | 'evening' | 'other';
@@ -39,16 +40,7 @@ export default function PrayerBookView() {
       >
         {/* Set as Daily Task banner */}
         <View style={s.bannerWrap}>
-          <View style={[s.banner, { backgroundColor: C.goldBg }]}>
-            <View style={s.bannerIcon}>
-              <CalendarCheck s={20} c={C.goldDark} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.bannerTitle}>Set as Daily Task</Text>
-              <Text style={s.bannerSub}>Add to your daily routine</Text>
-            </View>
-            <ChevronRight s={18} c={C.textMuted} />
-          </View>
+          <SetAsDailyTaskCard onPress={() => {}} variant="soft" />
         </View>
 
         {/* Category tabs */}
@@ -120,10 +112,6 @@ export default function PrayerBookView() {
 
 const s = StyleSheet.create({
   bannerWrap: { padding: 16, paddingBottom: 0 },
-  banner: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 12, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1, borderColor: '#F0E2B8' },
-  bannerIcon: { width: 38, height: 38, borderRadius: 10, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
-  bannerTitle: { fontFamily: F.sansBold, fontSize: 15, color: C.text },
-  bannerSub: { fontFamily: F.sans, fontSize: 12, color: C.textSecondary, marginTop: 2 },
 
   catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, padding: 18, paddingBottom: 0 },
   catBtn: { flex: 1, minWidth: '22%', borderRadius: 14, paddingVertical: 11, paddingHorizontal: 4, alignItems: 'center', gap: 6 },

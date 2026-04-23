@@ -1,7 +1,8 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { CalendarCheck, ChevronLeft, ChevronRight, Pencil, Feather, FileEdit } from '@/components/icons/Icons';
+import { ChevronLeft, ChevronRight, Pencil, Feather, FileEdit } from '@/components/icons/Icons';
+import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
 import { C, F } from '@/constants/tokens';
 
 // April 2026
@@ -142,16 +143,7 @@ export default function JournalView() {
 
         {/* Set as Daily Task */}
         <View style={{ paddingHorizontal: 18, paddingTop: 14 }}>
-          <TouchableOpacity style={jv.banner} activeOpacity={0.85}>
-            <View style={jv.bannerIcon}>
-              <CalendarCheck s={20} c={C.goldDark} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={jv.bannerTitle}>Set as Daily Task</Text>
-              <Text style={jv.bannerSub}>Add to your daily routine</Text>
-            </View>
-            <ChevronRight s={18} c={C.textMuted} />
-          </TouchableOpacity>
+          <SetAsDailyTaskCard onPress={() => {}} variant="soft" />
         </View>
 
         {/* Mode cards */}
@@ -166,9 +158,5 @@ export default function JournalView() {
 }
 
 const jv = StyleSheet.create({
-  banner: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 12, paddingHorizontal: 14, borderRadius: 16, backgroundColor: C.goldBg, borderWidth: 1, borderColor: '#F0E2B8' },
-  bannerIcon: { width: 38, height: 38, borderRadius: 10, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
-  bannerTitle: { fontFamily: F.sansBold, fontSize: 15, color: C.text },
-  bannerSub: { fontFamily: F.sans, fontSize: 12, color: C.textSecondary, marginTop: 2 },
   modeRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 18, paddingTop: 14 },
 });

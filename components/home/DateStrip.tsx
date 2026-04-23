@@ -1,97 +1,146 @@
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C, F } from '@/constants/tokens';
 
-type DayItem = {
-  d: string;
-  n: number;
-  selected?: boolean;
-  sunday?: boolean;
-  feast?: boolean;
-};
+function toDateKey(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
-const DAYS: DayItem[] = [
-  { d: 'Fri', n: 17 },
-  { d: 'Sat', n: 18 },
-  { d: 'Sun', n: 19, sunday: true },
-  { d: 'Mon', n: 20, selected: true },
-  { d: 'Tue', n: 21 },
-  { d: 'Wed', n: 22 },
-  { d: 'Thu', n: 23, feast: true },
-];
+function buildDays() {
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+
+  const start = new Date(today);
+  start.setDate(today.getDate() - 6);
+
+  return Array.from({ length: 15 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    const dow = date.toLocaleDateString('en-US', { weekday: 'short' });
+    const key = toDateKey(date);
+
+    return {
+      key,
+      dow,
+      date: date.getDate(),
+      sunday: date.getDay() === 0,
+      feast: date.getDay() === 4,
+    };
+  });
+}
 
 export default function DateStrip() {
+  const days = useMemo(() => buildDays(), []);
+  const [selectedKey, setSelectedKey] = useState(() => {
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    return toDateKey(today);
+  });
+
   return (
-    <View style={s.row}>
-      {DAYS.map((day, i) => {
-        const sel = !!day.selected;
-        const accent = day.sunday || day.feast;
-        const numC = sel ? '#fff' : accent ? C.red : C.text;
-        const dowC = sel ? 'rgba(255,255,255,0.88)' : C.textMuted;
+    <View style={s.wrap}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={s.row}
+        decelerationRate="fast"
+      >
+        {days.map(day => {
+          const selected = day.key === selectedKey;
+          const accent = day.sunday || day.feast;
+          const numColor = selected ? '#FFFFFF' : accent ? C.red : C.text;
+          const dowColor = selected ? 'rgba(255,255,255,0.92)' : accent ? '#B7AEA1' : C.textMuted;
 
-        if (sel) {
+          if (selected) {
+            return (
+              <TouchableOpacity
+                key={day.key}
+                activeOpacity={0.9}
+                onPress={() => setSelectedKey(day.key)}
+              >
+                <LinearGradient
+                  colors={['#D5B06A', '#B98B42']}
+                  start={{ x: 0.18, y: 0 }}
+                  end={{ x: 0.82, y: 1 }}
+                  style={[s.day, s.daySelected]}
+                >
+                  <Text style={[s.dow, { color: dowColor }]}>{day.dow}</Text>
+                  <Text style={[s.num, s.numSelected, { color: numColor }]}>{day.date}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            );
+          }
+
           return (
-            <LinearGradient
-              key={i}
-              colors={['#D4B06A', '#B88C45']}
-              start={{ x: 0.2, y: 0 }}
-              end={{ x: 0.8, y: 1 }}
-              style={[s.day, s.daySelected]}
+            <TouchableOpacity
+              key={day.key}
+              activeOpacity={0.82}
+              onPress={() => setSelectedKey(day.key)}
+              style={s.dayPress}
             >
-              <Text style={[s.dow, { color: dowC }]}>{day.d}</Text>
-              <Text style={[s.num, s.numSelected, { color: numC }]}>{day.n}</Text>
-            </LinearGradient>
+              <View style={s.day}>
+                <Text style={[s.dow, { color: dowColor }]}>{day.dow}</Text>
+                <Text style={[s.num, { color: numColor }]}>{day.date}</Text>
+              </View>
+            </TouchableOpacity>
           );
-        }
-
-        return (
-          <View key={i} style={s.day}>
-            <Text style={[s.dow, { color: dowC }]}>{day.d}</Text>
-            <Text style={[s.num, { color: numC }]}>{day.n}</Text>
-          </View>
-        );
-      })}
+        })}
+      </ScrollView>
     </View>
   );
 }
 
 const s = StyleSheet.create({
+  wrap: {
+    paddingTop: 6,
+    paddingBottom: 2,
+  },
   row: {
-    flexDirection: 'row',
-    paddingHorizontal: 14,
-    paddingTop: 8,
-    paddingBottom: 4,
-    gap: 3,
+    paddingHorizontal: 16,
+    gap: 4,
+  },
+  dayPress: {
+    borderRadius: 20,
   },
   day: {
-    flex: 1,
+    width: 52,
     alignItems: 'center',
+    justifyContent: 'center',
     paddingTop: 8,
     paddingBottom: 10,
     borderRadius: 18,
   },
   daySelected: {
+    width: 52,
     shadowColor: '#B88C45',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.32,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.26,
+    shadowRadius: 14,
+    elevation: 7,
   },
   dow: {
     fontFamily: F.serifMediumItalic,
     fontSize: 11,
-    letterSpacing: 0.2,
+    letterSpacing: 0.15,
   },
   num: {
     fontFamily: F.serifMedium,
     fontSize: 20,
-    fontWeight: '500',
-    marginTop: 3,
+    marginTop: 4,
     lineHeight: 22,
-    letterSpacing: -0.2,
   },
   numSelected: {
     fontSize: 22,
-    fontWeight: '600',
+    lineHeight: 24,
   },
 });

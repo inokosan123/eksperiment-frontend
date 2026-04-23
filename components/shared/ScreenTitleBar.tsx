@@ -1,9 +1,10 @@
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { ArrowLeft } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
+import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from './titleBar';
 
 type Props = {
   title: string;
@@ -17,7 +18,7 @@ export default function ScreenTitleBar({ title, showBack = false, rightElement, 
   const router = useRouter();
 
   // On web insets.top = 0 — ensure minimum breathing room from top
-  const topPad = Math.max(insets.top, Platform.OS === 'web' ? 20 : insets.top) + 14;
+  const topPad = getTitleBarTopPadding(insets.top);
 
   return (
     <View style={[styles.wrap, { paddingTop: topPad, backgroundColor: bg ?? C.bg }]}>
@@ -50,7 +51,7 @@ const styles = StyleSheet.create({
   wrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingBottom: 14,
+    paddingBottom: TITLE_BAR_BOTTOM_PADDING,
     paddingHorizontal: 18,
   },
   side: {
@@ -67,8 +68,8 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     fontFamily: F.serifMedium,
-    fontSize: 28,
-    letterSpacing: 4,
+    fontSize: 24,
+    letterSpacing: 3.1,
     color: C.text,
     textAlign: 'center',
   },

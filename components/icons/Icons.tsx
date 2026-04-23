@@ -25,6 +25,18 @@ export const ChevronRight = ({ s = 22, c = d, w = 2 }: P) => (
   </Svg>
 );
 
+export const ChevronDown = ({ s = 22, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Polyline points="6 9 12 15 18 9" />
+  </Svg>
+);
+
+export const ChevronUp = ({ s = 22, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Polyline points="18 15 12 9 6 15" />
+  </Svg>
+);
+
 export const Calendar = ({ s = 20, c = d, w = 2 }: P) => (
   <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
     <Rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -57,6 +69,12 @@ export const Heart = ({ s = 22, c = d, w = 2 }: P) => (
 export const Plus = ({ s = 18, c = d, w = 2.2 }: P) => (
   <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
     <Line x1="12" y1="5" x2="12" y2="19" />
+    <Line x1="5" y1="12" x2="19" y2="12" />
+  </Svg>
+);
+
+export const Minus = ({ s = 18, c = d, w = 2.2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
     <Line x1="5" y1="12" x2="19" y2="12" />
   </Svg>
 );
@@ -115,6 +133,13 @@ export const Play = ({ s = 18, c = d }: P) => (
   </Svg>
 );
 
+export const Pause = ({ s = 18, c = d }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill={c}>
+    <Rect x="6" y="4" width="4" height="16" rx="1" />
+    <Rect x="14" y="4" width="4" height="16" rx="1" />
+  </Svg>
+);
+
 export const CircleIcon = ({ s = 24, c = d, w = 2 }: P) => (
   <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w}>
     <Circle cx="12" cy="12" r="10" />
@@ -132,6 +157,29 @@ export const Clock = ({ s = 12, c = d, w = 2 }: P) => (
   <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
     <Circle cx="12" cy="12" r="10" />
     <Polyline points="12 6 12 12 16 14" />
+  </Svg>
+);
+
+export const Search = ({ s = 18, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Circle cx="11" cy="11" r="8" />
+    <Line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </Svg>
+);
+
+export const RotateCcw = ({ s = 18, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M3 12a9 9 0 1 0 3-6.7" />
+    <Polyline points="3 4 3 10 9 10" />
+  </Svg>
+);
+
+export const BarChart3 = ({ s = 20, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M3 3v18h18" />
+    <Rect x="7" y="12" width="3" height="5" rx="1" />
+    <Rect x="12" y="8" width="3" height="9" rx="1" />
+    <Rect x="17" y="5" width="3" height="12" rx="1" />
   </Svg>
 );
 
@@ -183,6 +231,16 @@ export const Star = ({ s = 90, c = d, w = 1.4 }: P) => (
   </Svg>
 );
 
+export const Trophy = ({ s = 22, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M8 21h8" />
+    <Path d="M12 17v4" />
+    <Path d="M7 4h10v4a5 5 0 0 1-10 0V4Z" />
+    <Path d="M17 5h3v2a4 4 0 0 1-4 4h-1" />
+    <Path d="M7 5H4v2a4 4 0 0 0 4 4h1" />
+  </Svg>
+);
+
 export const OpenBook = ({ s = 90, c = d, w = 1.4 }: P) => (
   <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
     <Path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
@@ -209,6 +267,39 @@ export const HourGlass = ({ s = 90, c = d, w = 1.4 }: P) => (
 export const CheckSmall = ({ s = 20, c = d, w = 2.5 }: P) => (
   <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
     <Polyline points="20 6 9 17 4 12" />
+  </Svg>
+);
+
+export const X = ({ s = 20, c = d, w = 2.5 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Line x1="18" y1="6" x2="6" y2="18" />
+    <Line x1="6" y1="6" x2="18" y2="18" />
+  </Svg>
+);
+
+export const Trash2 = ({ s = 20, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Polyline points="3 6 5 6 21 6" />
+    <Path d="M19 6 18 20a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    <Path d="M10 11v6" />
+    <Path d="M14 11v6" />
+    <Path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+  </Svg>
+);
+
+export const PartyPopper = ({ s = 22, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <G>
+      <Path d="M5.8 11.3 2 22l10.7-3.8" />
+      <Path d="M4 19.5 14.5 9" />
+      <Path d="M10.5 13.5 8 16" />
+      <Path d="M13 2v3" />
+      <Path d="M20 8h3" />
+      <Path d="m17.5 3.5 2 2" />
+      <Path d="m18 12 2.5 2.5" />
+      <Path d="M8.5 6.5 6 4" />
+      <Path d="M15.5 8.5c1.4-1.4 3.2-1.8 4-1" />
+    </G>
   </Svg>
 );
 

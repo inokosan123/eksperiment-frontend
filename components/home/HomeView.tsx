@@ -376,7 +376,7 @@ export default function HomeView() {
           </LinearGradient>
         </TouchableOpacity>
 
-        <TouchableOpacity activeOpacity={0.82} style={{ marginTop: 8 }}>
+        <TouchableOpacity activeOpacity={0.82} style={{ marginTop: 8 }} onPress={() => router.push('/my-routine')}>
           <LinearGradient
             colors={['#FFFFFF', '#FDF3D8']}
             start={{ x: 0, y: 0 }}

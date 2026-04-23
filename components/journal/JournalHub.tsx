@@ -1,20 +1,21 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Pressable,
-  StyleSheet, Dimensions, Image, Platform,
+  StyleSheet, Dimensions, Image,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import LottieFlame from './LottieFlame';
 import {
-  ArrowLeft, SlidersHorizontal, CalendarCheck,
+  ArrowLeft, SlidersHorizontal,
   ChevronLeft, ChevronRight,
   Pencil, Feather, FileEdit,
   Star, ListChecks, BookMarked, Target, CalendarHeart, Grid3x3,
 } from '@/components/icons/Icons';
+import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
 import { C, F } from '@/constants/tokens';
+import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const BG      = '#FAF7F0';
@@ -28,11 +29,6 @@ type DotKind = 'journal' | 'morning' | 'free';
 const DOT_COLORS: Record<DotKind, string> = {
   journal: GOLD, morning: PURPLE, free: TEAL,
 };
-const MONTH_NAMES = [
-  'January','February','March','April','May','June',
-  'July','August','September','October','November','December',
-];
-
 // ─── Mock data ────────────────────────────────────────────────────────────────
 const CAL_ROWS = [
   [null, null, 1,  2,  3,  4,  5 ],
@@ -89,7 +85,7 @@ const sc = StyleSheet.create({
   circle:         { alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
   circleActive:   { borderColor: '#f97316', backgroundColor: '#FFF7ED' },
   circleInactive: { borderColor: '#e5e2db', backgroundColor: '#F5F3EF' },
-  label:          { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1 },
+  label:          { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1 },
 });
 
 // ─── Month calendar ───────────────────────────────────────────────────────────
@@ -158,12 +154,12 @@ function MonthCalendar({ month, year }: { month: number; year: number }) {
 const cal = StyleSheet.create({
   card:          { marginHorizontal: 16, marginTop: 14, backgroundColor: '#fff', borderRadius: 24, borderWidth: 1, borderColor: '#EDE9E0', padding: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   headerRow:     { flexDirection: 'row', marginBottom: 6 },
-  headerTxt:     { flex: 1, textAlign: 'center', fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.2, color: C.textMuted },
+  headerTxt:     { flex: 1, textAlign: 'center', fontFamily: F.sansBold, fontSize: 12, letterSpacing: 1.2, color: C.textMuted },
   row:           { flexDirection: 'row', marginBottom: 2 },
   cell:          { flex: 1, alignItems: 'center', paddingVertical: 5 },
   dayCircle:     { width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
   todayCircle:   { borderColor: GOLD },
-  dayNum:        { fontFamily: F.serifMedium, fontSize: 17, color: C.text },
+  dayNum:        { fontFamily: F.serifMedium, fontSize: 18, color: C.text },
   dayNumToday:   { color: GOLD, fontFamily: F.serifSemiBold },
   dayNumFuture:  { color: C.textMuted, opacity: 0.35 },
   dotRow:        { flexDirection: 'row', gap: 3, marginTop: 3, height: 7 },
@@ -171,36 +167,21 @@ const cal = StyleSheet.create({
   legend:        { flexDirection: 'row', justifyContent: 'space-around', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F0EDE6' },
   legendItem:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot:     { width: 8, height: 8, borderRadius: 4 },
-  legendTxt:     { fontFamily: F.sans, fontSize: 12, color: C.textSecondary },
+  legendTxt:     { fontFamily: F.sans, fontSize: 13, color: C.textSecondary },
 });
 
 // ─── Daily Task banner ────────────────────────────────────────────────────────
 function DailyTaskBanner() {
   return (
-    <TouchableOpacity
-      activeOpacity={0.8}
+    <SetAsDailyTaskCard
+      variant="soft"
       style={dtb.wrap}
       onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-    >
-      <LinearGradient colors={['#FFFBF2','#FFF8E7']} start={{ x:0, y:0 }} end={{ x:1, y:0 }} style={dtb.inner}>
-        <View style={dtb.iconWrap}>
-          <CalendarCheck s={20} c={C.goldDark} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={dtb.title}>Set as Daily Task</Text>
-          <Text style={dtb.sub}>Add to your daily routine</Text>
-        </View>
-        <ChevronRight s={18} c={C.textMuted} />
-      </LinearGradient>
-    </TouchableOpacity>
+    />
   );
 }
 const dtb = StyleSheet.create({
   wrap:     { marginHorizontal: 16, marginTop: 14 },
-  inner:    { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(232,220,196,0.7)' },
-  iconWrap: { width: 40, height: 40, borderRadius: 11, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
-  title:    { fontFamily: F.sansBold, fontSize: 15, color: C.text },
-  sub:      { fontFamily: F.sans, fontSize: 12, color: C.textSecondary, marginTop: 2 },
 });
 
 // ─── Mode cards ───────────────────────────────────────────────────────────────
@@ -231,11 +212,11 @@ function ModeCards({ onNav }: { onNav: (r: string) => void }) {
 }
 const mc = StyleSheet.create({
   row:     { flexDirection: 'row', marginHorizontal: 16, marginTop: 14, gap: 10 },
-  card:    { flex: 1, backgroundColor: '#fff', borderRadius: 20, borderWidth: 1, borderColor: '#EDE9E0', paddingVertical: 20, paddingHorizontal: 8, alignItems: 'center', gap: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
+  card:    { flex: 1, backgroundColor: '#fff', borderRadius: 20, borderWidth: 1, borderColor: '#EDE9E0', paddingVertical: 21, paddingHorizontal: 8, alignItems: 'center', gap: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
   iconBox: { width: 60, height: 60, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  label:   { fontFamily: F.serifMedium, fontSize: 15, color: C.text, textAlign: 'center', lineHeight: 20 },
-  status:  { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 0.5 },
+  label:   { fontFamily: F.serifMedium, fontSize: 17, color: C.text, textAlign: 'center', lineHeight: 22 },
+  status:  { fontFamily: F.sansBold, fontSize: 13, letterSpacing: 0.5 },
 });
 
 // ─── Streak section — circles scale to fill available width ──────────────────
@@ -266,7 +247,7 @@ const st = StyleSheet.create({
   card:     { marginHorizontal: 16, marginTop: 14, backgroundColor: '#fff', borderRadius: 24, borderWidth: 1, borderColor: '#EDE9E0', padding: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
   headline: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 18 },
   number:   { fontFamily: F.serifSemiBold, fontSize: 36, color: GOLD, lineHeight: 40 },
-  label:    { fontFamily: F.serifMedium, fontSize: 18, color: C.textSecondary },
+  label:    { fontFamily: F.serifMedium, fontSize: 19, color: C.textSecondary },
   dayRow:   { flexDirection: 'row', gap: 6 },
 });
 
@@ -285,7 +266,7 @@ const TOOLS: ToolItem[] = [
   { Icon: Star,          label: 'Ideal Self',    status: '5 daily goals', iconBg: '#FBF3DE', iconFg: GOLD       },
   { Icon: ListChecks,    label: 'Habits',         status: '4 active',     iconBg: '#E4EFE4', iconFg: '#4E7F52'  },
   { Icon: BookMarked,    label: 'Reading List',   status: 'Add books',    iconBg: '#E8EAF4', iconFg: '#4E5394'  },
-  { Icon: Target,        label: 'Bucket List',    status: '1 remaining',  iconBg: '#FBE6E9', iconFg: '#BE123C'  },
+  { Icon: Target,        label: 'Bucket List',    status: 'Dream big',     iconBg: '#FBE6E9', iconFg: '#BE123C', route: '/bucket-list' },
   { Icon: Target,        label: 'Monthly Goals',  status: '2 active',     iconBg: '#FBF3DE', iconFg: '#A9863F'  },
   { Icon: CalendarHeart, label: 'Big Events',     status: '1 upcoming',   iconBg: '#FBE6E9', iconFg: '#B54155'  },
   { Icon: Grid3x3,       label: 'Year in Pixels', status: '13 entries',   iconBg: '#EEEAF5', iconFg: '#6D5AAE', wide: true },
@@ -314,12 +295,12 @@ function ToolCard({ tool, toolW, onPress }: { tool: ToolItem; toolW: number; onP
   );
 }
 const tc = StyleSheet.create({
-  card:      { backgroundColor: '#fff', borderRadius: 22, borderWidth: 1, borderColor: '#EDE9E0', padding: 16, paddingTop: 14, minHeight: 130, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
+  card:      { backgroundColor: '#fff', borderRadius: 22, borderWidth: 1, borderColor: '#EDE9E0', padding: 16, paddingTop: 14, minHeight: 136, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
   pressed:   { opacity: 0.72, transform: [{ scale: 0.97 }] },
   decorWrap: { position: 'absolute', right: 8, top: 8, opacity: 0.1 },
   iconBox:   { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  label:     { fontFamily: F.serifMedium, fontSize: 15, color: C.text, lineHeight: 19 },
-  status:    { fontFamily: F.sans, fontSize: 12, color: C.textMuted, marginTop: 3 },
+  label:     { fontFamily: F.serifMedium, fontSize: 17, color: C.text, lineHeight: 22 },
+  status:    { fontFamily: F.sans, fontSize: 13, color: C.textMuted, marginTop: 3 },
 });
 
 function ToolsSection({ onNav }: { onNav: (r: string) => void }) {
@@ -359,7 +340,7 @@ function ToolsSection({ onNav }: { onNav: (r: string) => void }) {
   );
 }
 const tls = StyleSheet.create({
-  heading: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted, marginBottom: 12 },
+  heading: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.4, color: C.textMuted, marginBottom: 12 },
   grid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
 });
 
@@ -373,7 +354,7 @@ export default function JournalHub() {
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
       {/* Header */}
-      <View style={[hd.wrap, { paddingTop: Math.max(insets.top, Platform.OS === 'web' ? 24 : insets.top) + 14 }]}>
+      <View style={[hd.wrap, { paddingTop: getTitleBarTopPadding(insets.top) }]}>
         <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }} style={hd.btn} activeOpacity={0.7}>
           <ArrowLeft s={26} c={C.textSecondary} />
         </TouchableOpacity>
@@ -406,7 +387,7 @@ export default function JournalHub() {
 }
 
 const hd = StyleSheet.create({
-  wrap:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: 10, backgroundColor: BG },
+  wrap:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: TITLE_BAR_BOTTOM_PADDING, backgroundColor: BG },
   btn:   { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   title: { fontFamily: F.serifMedium, fontSize: 24, letterSpacing: 4, color: C.text, flex: 1, textAlign: 'center' },
 });
