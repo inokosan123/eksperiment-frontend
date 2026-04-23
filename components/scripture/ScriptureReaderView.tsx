@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
@@ -16,7 +16,7 @@ import {
 import { BIBLE_BOOKS, getBibleBook, ScriptureLanguage } from '@/constants/scripture';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
-import { TextFormatToolbar, TextSelection } from '@/components/shared/TextFormatToolbar';
+import { FormatState, RichTextEditor, RichTextEditorRef, RichToolbar } from '@/components/shared/RichTextEditor';
 import { InnerNote, NoteKind, NoteSourceRef, useInnerTools } from '@/components/inner-tools/InnerToolsContext';
 import { CategoryChipPicker, CategoryEditorModal, CategoryEditorPanel } from './CategoryColorTools';
 import { BibleVerse, ScriptureAnnotation, useScripture } from './ScriptureContext';
@@ -862,7 +862,8 @@ function CommentModal({
 }) {
   const accent = getAnnotationColorHex(selectedColor);
   const categoryLabel = getAnnotationCategoryLabel(categories, selectedColor);
-  const [selection, setSelection] = useState<TextSelection>({ start: 0, end: 0 });
+  const editorRef = useRef<RichTextEditorRef>(null);
+  const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
 
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
@@ -895,24 +896,16 @@ function CommentModal({
           />
           <Text style={[s.commentCategoryName, { color: accent }]}>{categoryLabel}</Text>
 
-          <TextFormatToolbar
-            value={value}
-            selection={selection}
-            onChangeText={onValue}
-            onSelectionChange={setSelection}
-            style={s.commentToolbar}
-          />
-
-          <TextInput
-            value={value}
-            onChangeText={onValue}
-            selection={selection}
-            onSelectionChange={event => setSelection(event.nativeEvent.selection)}
-            multiline
-            textAlignVertical="top"
+          <RichToolbar editorRef={editorRef} activeFormats={fmt} style={s.commentToolbar} />
+          <RichTextEditor
+            ref={editorRef}
+            initialHTML={value}
+            onChange={onValue}
+            onFormatChange={setFmt}
             placeholder="Write your reflection..."
-            placeholderTextColor="#CFCAC2"
-            style={s.commentInput}
+            backgroundColor="#FFFFFF"
+            color="#3D3229"
+            style={s.commentEditor}
           />
 
           <TouchableOpacity onPress={onSave} style={s.commentSave} activeOpacity={0.85}>
@@ -1459,16 +1452,10 @@ const s = StyleSheet.create({
     backgroundColor: '#E7EAF0',
     marginVertical: 13,
   },
-  commentInput: {
+  commentEditor: {
     minHeight: 132,
     borderRadius: 18,
-    borderWidth: 0,
     backgroundColor: '#F8F8FA',
-    padding: 18,
-    fontFamily: F.serif,
-    fontSize: 19,
-    lineHeight: 27,
-    color: '#111827',
   },
   commentSave: {
     minHeight: 50,

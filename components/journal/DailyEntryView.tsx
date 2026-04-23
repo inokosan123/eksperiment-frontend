@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Pressable,
   StyleSheet,
@@ -9,8 +9,7 @@ import * as Haptics from 'expo-haptics';
 import { ArrowLeft, SlidersHorizontal, CheckSmall } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
-import { TextFormatToolbar, TextSelection } from '@/components/shared/TextFormatToolbar';
-import { LinedTextInput } from '@/components/shared/LinedTextInput';
+import { FormatState, RichTextEditor, RichTextEditorRef, RichToolbar } from '@/components/shared/RichTextEditor';
 
 const BG = '#FAF7F0';
 const GOLD = '#C5A059';
@@ -126,48 +125,39 @@ const PROMPTS = [
   { q: 'What do I want to remember?', a: '' },
 ];
 
+function PromptBlock({ question, value, onChange }: { question: string; value: string; onChange: (v: string) => void }) {
+  const editorRef = useRef<RichTextEditorRef>(null);
+  const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
+  return (
+    <View style={gp.block}>
+      <Text style={gp.question}>{question}</Text>
+      <RichToolbar editorRef={editorRef} activeFormats={fmt} style={gp.toolbar} />
+      <RichTextEditor
+        ref={editorRef}
+        initialHTML={value}
+        onChange={onChange}
+        onFormatChange={setFmt}
+        placeholder="Write your answer..."
+        backgroundColor="#fff"
+        color={C.text}
+        style={gp.editor}
+      />
+    </View>
+  );
+}
+
 function GuidedPrompts({
   prompts, onChange,
 }: {
   prompts: { q: string; a: string }[];
   onChange: (i: number, val: string) => void;
 }) {
-  const [selections, setSelections] = useState<Record<number, TextSelection>>({});
-
-  const setPromptSelection = (index: number, selection: TextSelection) => {
-    setSelections(prev => ({ ...prev, [index]: selection }));
-  };
-
   return (
     <View style={gp.wrap}>
       <Text style={gp.sectionLabel}>DAILY REFLECTIONS</Text>
-      {prompts.map((p, i) => {
-        const selection = selections[i] ?? { start: 0, end: 0 };
-
-        return (
-          <View key={i} style={gp.block}>
-            <Text style={gp.question}>{p.q}</Text>
-            <TextFormatToolbar
-              value={p.a}
-              selection={selection}
-              onChangeText={value => onChange(i, value)}
-              onSelectionChange={nextSelection => setPromptSelection(i, nextSelection)}
-              style={gp.toolbar}
-            />
-            <LinedTextInput
-              placeholder="Write your answer..."
-              placeholderTextColor={C.textMuted}
-              value={p.a}
-              onChangeText={v => onChange(i, v)}
-              selection={selection}
-              onSelectionChange={nextSelection => setPromptSelection(i, nextSelection)}
-              minLines={3}
-              lineHeight={27}
-              inputStyle={gp.input}
-            />
-          </View>
-        );
-      })}
+      {prompts.map((p, i) => (
+        <PromptBlock key={i} question={p.q} value={p.a} onChange={v => onChange(i, v)} />
+      ))}
     </View>
   );
 }
@@ -177,8 +167,8 @@ const gp = StyleSheet.create({
   sectionLabel: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2, color: C.textMuted, marginBottom: 12, textTransform: 'uppercase' },
   block:        { backgroundColor: '#fff', borderRadius: 18, borderWidth: 1, borderColor: '#EDE9E0', padding: 16, marginBottom: 10 },
   question:     { fontFamily: F.serifMedium, fontSize: 17, color: C.textSecondary, marginBottom: 8 },
-  toolbar:      { marginBottom: 10 },
-  input:        { fontFamily: F.serif, fontSize: 17, color: C.text, lineHeight: 27 },
+  toolbar:      { marginBottom: 8 },
+  editor:       { minHeight: 120 },
 });
 
 function GratitudeSection() {

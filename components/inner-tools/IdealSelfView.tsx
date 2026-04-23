@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import {
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
@@ -10,8 +10,7 @@ import {
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
-import { TextFormatToolbar, TextSelection } from '@/components/shared/TextFormatToolbar';
-import { LinedTextInput } from '@/components/shared/LinedTextInput';
+import { FormatState, RichTextEditor, RichTextEditorRef, RichToolbar } from '@/components/shared/RichTextEditor';
 import { IdealSelfItem, IdealSelfProfile, useInnerTools } from './InnerToolsContext';
 
 type Step = 'description' | 'gap' | 'change' | 'items' | 'done';
@@ -250,27 +249,21 @@ export default function IdealSelfView() {
 }
 
 function PromptCard({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
-  const [selection, setSelection] = useState<TextSelection>({ start: 0, end: 0 });
+  const editorRef = useRef<RichTextEditorRef>(null);
+  const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
 
   return (
     <View style={s.promptCard}>
-      <TextFormatToolbar
-        value={value}
-        selection={selection}
-        onChangeText={onChange}
-        onSelectionChange={setSelection}
-        style={s.promptToolbar}
-      />
-      <LinedTextInput
-        value={value}
-        onChangeText={onChange}
-        selection={selection}
-        onSelectionChange={setSelection}
+      <RichToolbar editorRef={editorRef} activeFormats={fmt} style={s.promptToolbar} />
+      <RichTextEditor
+        ref={editorRef}
+        initialHTML={value}
+        onChange={onChange}
+        onFormatChange={setFmt}
         placeholder={placeholder}
-        placeholderTextColor="#D6D3D1"
-        minLines={7}
-        lineHeight={28}
-        inputStyle={s.promptInput}
+        backgroundColor="#fff"
+        color={C.text}
+        style={s.promptEditor}
       />
     </View>
   );
@@ -300,8 +293,8 @@ const s = StyleSheet.create({
   title: { fontFamily: F.serifMedium, fontSize: 28, lineHeight: 33, color: C.text },
   subtitle: { marginTop: 7, fontFamily: F.serif, fontSize: 16, lineHeight: 23, color: C.textMuted },
   promptCard: { borderRadius: 22, borderWidth: 1, borderColor: '#F5F5F4', backgroundColor: '#fff', minHeight: 230, paddingTop: 14, paddingHorizontal: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2, overflow: 'hidden' },
-  promptToolbar: { marginBottom: 10 },
-  promptInput: { paddingHorizontal: 0, paddingVertical: 0, fontFamily: F.serif, fontSize: 18, lineHeight: 28, color: C.text },
+  promptToolbar: { marginBottom: 8 },
+  promptEditor: { minHeight: 180 },
   itemList: { gap: 11 },
   itemCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 20, borderWidth: 1, borderColor: '#F5F5F4', backgroundColor: '#fff', padding: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 7, elevation: 2 },
   itemNum: { width: 28, height: 28, borderRadius: 10, backgroundColor: 'rgba(197,160,89,0.12)', alignItems: 'center', justifyContent: 'center' },

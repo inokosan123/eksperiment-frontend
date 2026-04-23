@@ -763,6 +763,25 @@ function EditorModal({
             style={[s.richEditor, { paddingHorizontal: 24 }]}
           />
 
+          {/* Quote cards below editor */}
+          {editorBlocks.filter(b => b.type === 'quote').length > 0 && (
+            <ScrollView
+              style={s.quotesArea}
+              contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 12, gap: 10 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {editorBlocks.filter(b => b.type === 'quote').map((block, index) => (
+                block.type === 'quote' && (
+                  <ScriptureQuoteCard
+                    key={index}
+                    sourceRef={block.sourceRef}
+                    onRemove={() => removeQuoteAt(editorBlocks.indexOf(block))}
+                  />
+                )
+              ))}
+            </ScrollView>
+          )}
+
         </View>
     </Modal>
   );
@@ -789,60 +808,23 @@ function ScriptureQuoteCard({
   isDragging?: boolean;
   visualState?: 'default' | 'ghost';
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const panResponder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => false,
-    onMoveShouldSetPanResponder: (_, gesture) => !!onDragMove && Math.abs(gesture.dy) > 2,
-    onPanResponderTerminationRequest: () => false,
-    onPanResponderGrant: () => {
-      onDragStart?.();
-    },
-    onPanResponderMove: (_, gesture) => {
-      onDragMove?.(gesture.dy);
-    },
-    onPanResponderRelease: () => {
-      onDragEnd?.();
-    },
-    onPanResponderTerminate: () => {
-      onDragCancel?.();
-    },
-  }), [onDragCancel, onDragEnd, onDragMove, onDragStart]);
   const verseTexts = sourceRef.verseTexts && sourceRef.verseTexts.length > 0
     ? sourceRef.verseTexts
     : [{ verse: sourceRef.startVerse ?? 1, text: sourceRef.text }];
-  const visibleVerses = expanded ? verseTexts : verseTexts.slice(0, 2);
-  const hasMore = verseTexts.length > 2;
 
   return (
-    <View
-      style={[
-        s.quoteCard,
-        isDimmed && s.quoteCardDimmed,
-        visualState === 'ghost' && s.quoteCardGhost,
-      ]}
-    >
-      <View
-        {...panResponder.panHandlers}
-        style={[s.quoteHandle, (isDragging || visualState === 'ghost') && s.quoteHandleActive]}
-      >
-        <Text style={s.quoteHandleText}>::::</Text>
-      </View>
+    <View style={[s.quoteCard, isDimmed && s.quoteCardDimmed]}>
       {onRemove && (
         <TouchableOpacity activeOpacity={0.78} onPress={onRemove} style={s.quoteRemove}>
           <X s={13} c="#C5A059" />
         </TouchableOpacity>
       )}
-      {visibleVerses.map(item => (
+      {verseTexts.map(item => (
         <View key={`${item.verse}-${item.text.slice(0, 8)}`} style={s.quoteVerseRow}>
           <Text style={s.quoteVerseNumber}>{item.verse}</Text>
           <Text style={s.quoteText}>{item.text}</Text>
         </View>
       ))}
-      {hasMore && (
-        <TouchableOpacity onPress={() => setExpanded(value => !value)} activeOpacity={0.78}>
-          <Text style={s.quoteExpand}>{expanded ? 'SHOW LESS' : `SHOW ALL ${verseTexts.length} VERSES`}</Text>
-        </TouchableOpacity>
-      )}
       <Text style={s.quoteSource}>- {sourceRef.label}</Text>
     </View>
   );
@@ -1009,6 +991,10 @@ const s = StyleSheet.create({
   richEditor: {
     flex: 1,
     backgroundColor: 'transparent',
+  },
+  quotesArea: {
+    maxHeight: 260,
+    flexShrink: 1,
   },
   quoteCard: {
     position: 'relative',
