@@ -10,11 +10,11 @@ export default function InnerLifeView() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScreenTitleBar title="INNER LIFE" />
       <ScrollView
         contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
       >
+        <ScreenTitleBar title="INNER LIFE" />
         <View style={s.quoteWrap}>
           <Text style={s.quote}>{'"The Kingdom of God is within you."'}</Text>
           <Text style={s.ref}>LUKE 17:21</Text>
@@ -35,7 +35,7 @@ export default function InnerLifeView() {
 }
 
 const s = StyleSheet.create({
-  quoteWrap: { paddingHorizontal: 26, paddingTop: 20, paddingBottom: 6, alignItems: 'center' },
+  quoteWrap: { paddingHorizontal: 26, paddingTop: 8, paddingBottom: 6, alignItems: 'center' },
   quote: { fontFamily: F.serifMediumItalic, fontSize: 17, color: C.textSecondary, lineHeight: 26, textAlign: 'center' },
   ref: { marginTop: 10, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.gold },
 });

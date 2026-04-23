@@ -10,17 +10,17 @@ export default function LibraryView() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScreenTitleBar title="LIBRARY" />
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
       >
+        <ScreenTitleBar title="LIBRARY" />
         <View style={s.quoteWrap}>
           <Text style={s.quote}>{'"Thy word is a lamp unto my feet, and a light unto my path."'}</Text>
           <Text style={s.ref}>PSALM 119:105</Text>
         </View>
 
-        <View style={{ paddingTop: 14 }}>
+        <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
           {LIBRARY_SECTION_CARDS.map(card => (
             <SectionCard
               key={card.id}
@@ -35,7 +35,7 @@ export default function LibraryView() {
 }
 
 const s = StyleSheet.create({
-  quoteWrap: { paddingHorizontal: 26, paddingTop: 20, paddingBottom: 6, alignItems: 'center' },
+  quoteWrap: { paddingHorizontal: 26, paddingTop: 8, paddingBottom: 6, alignItems: 'center' },
   quote: { fontFamily: F.serifMediumItalic, fontSize: 17, color: C.textSecondary, lineHeight: 26, textAlign: 'center' },
   ref: { marginTop: 10, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.gold },
 });
