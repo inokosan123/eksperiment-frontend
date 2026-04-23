@@ -11,7 +11,7 @@ import {
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
-import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
+import { RichTextEditor, RichToolbar, RichTextEditorRef } from '@/components/shared/RichTextEditor';
 import type { TextSelection } from '@/components/shared/TextFormatToolbar';
 import { InnerNote, NoteColor, NoteKind, NoteSourceRef, useInnerTools } from './InnerToolsContext';
 
@@ -552,7 +552,7 @@ function EditorModal({
   const insets = useSafeAreaInsets();
   const isNote = type === 'note';
   const palette = isNote ? NOTE_COLORS[color] : NOTE_COLORS.gold;
-  const richEditorRef = useRef<RichEditor>(null);
+  const richEditorRef = useRef<RichTextEditorRef>(null);
   const [dragState, setDragState] = useState<QuoteDragState | null>(null);
   const [blockLayouts, setBlockLayouts] = useState<Record<number, { top: number; height: number }>>({});
   const [paperHeight, setPaperHeight] = useState(0);
@@ -561,7 +561,7 @@ function EditorModal({
 
   useEffect(() => {
     if (!visible) return;
-    const timeout = setTimeout(() => richEditorRef.current?.focusContentEditor(), 300);
+    const timeout = setTimeout(() => richEditorRef.current?.focus(), 300);
     return () => clearTimeout(timeout);
   }, [visible]);
 
@@ -740,33 +740,19 @@ function EditorModal({
           )}
 
           <RichToolbar
-            editor={richEditorRef}
-            actions={[
-              actions.setBold,
-              actions.setItalic,
-              actions.setUnderline,
-              actions.insertBulletsList,
-              actions.insertOrderedList,
-            ]}
+            editorRef={richEditorRef}
             style={[s.richToolbar, { borderColor: `${palette.accent}28` }]}
-            selectedButtonStyle={s.richToolbarSelected}
-            iconTint={palette.accent === '#D1D5DB' ? '#9CA3AF' : palette.accent}
-            selectedIconTint={palette.accent}
           />
 
-          <RichEditor
+          <RichTextEditor
             ref={richEditorRef}
-            initialContentHTML={content}
+            initialHTML={content}
             onChange={onContent}
             placeholder={isNote ? 'Write your note...' : 'Write what will help you return...'}
+            backgroundColor={palette.editorBg}
+            color="#3D3229"
+            accentColor={palette.accent}
             style={s.richEditor}
-            editorStyle={{
-              backgroundColor: 'transparent',
-              color: '#3D3229',
-              contentCSSText: 'font-family: Georgia, serif; font-size: 18px; line-height: 1.7; color: #3D3229; padding: 0;',
-            }}
-            useContainer
-            scrollEnabled={false}
           />
 
           {/* Quote cards still rendered for scripture references */}
