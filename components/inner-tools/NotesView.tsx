@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput,
-  TouchableOpacity, View,
+  TouchableOpacity, View, StyleProp, TextStyle,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,8 +11,7 @@ import {
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
-import { BlockFormat, TextFormatToolbar, TextSelection } from '@/components/shared/TextFormatToolbar';
-import { TextStyle } from 'react-native';
+import { TextFormatToolbar, TextSelection } from '@/components/shared/TextFormatToolbar';
 import { LinedTextInput } from '@/components/shared/LinedTextInput';
 import { InnerNote, NoteColor, NoteKind, NoteSourceRef, useInnerTools } from './InnerToolsContext';
 
@@ -85,6 +84,31 @@ function normalizeNewlines(value: string) {
 function splitParagraphs(value: string) {
   const parts = normalizeNewlines(value).split('\n');
   return parts.length > 0 ? parts : [''];
+}
+
+function MarkdownText({
+  text,
+  style,
+  lineHeight,
+}: {
+  text: string;
+  style?: StyleProp<TextStyle>;
+  lineHeight?: number;
+}) {
+  const parts = text.split(/(\*\*.*?\*\*|\*.*?\*|<u>.*?<\/u>)/s);
+  return (
+    <Text style={[style, lineHeight ? { lineHeight } : null]}>
+      {parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**'))
+          return <Text key={i} style={{ fontFamily: F.serifBold }}>{part.slice(2, -2)}</Text>;
+        if (part.startsWith('*') && part.endsWith('*'))
+          return <Text key={i} style={{ fontFamily: F.serifItalic }}>{part.slice(1, -1)}</Text>;
+        if (part.startsWith('<u>') && part.endsWith('</u>'))
+          return <Text key={i} style={{ textDecorationLine: 'underline' }}>{part.slice(3, -4)}</Text>;
+        return <Text key={i}>{part}</Text>;
+      })}
+    </Text>
+  );
 }
 
 function normalizeEditorBlocks(blocks: NoteEditorBlock[]) {
@@ -529,7 +553,6 @@ function EditorModal({
   const isNote = type === 'note';
   const palette = isNote ? NOTE_COLORS[color] : NOTE_COLORS.gold;
   const [blockSelections, setBlockSelections] = useState<Record<number, TextSelection>>({});
-  const [blockFormats, setBlockFormats] = useState<Record<number, BlockFormat>>({});
   const [activeBlockIndex, setActiveBlockIndex] = useState(0);
   const textInputRefs = useRef<Record<number, TextInput | null>>({});
   const pendingFocusRef = useRef<{ index: number; selection?: TextSelection } | null>(null);
@@ -568,32 +591,6 @@ function EditorModal({
       setActiveBlockIndex(firstTextIndex);
     }
   }, [activeBlockIndex, editorBlocks]);
-
-  useEffect(() => {
-    if (!visible) setBlockFormats({});
-  }, [visible]);
-
-  const toggleBlockFormat = (format: keyof BlockFormat) => {
-    const idx = editorBlocks[activeBlockIndex]?.type === 'text'
-      ? activeBlockIndex
-      : Math.max(0, editorBlocks.findIndex(b => b.type === 'text'));
-    setBlockFormats(prev => {
-      const current = prev[idx] ?? { bold: false, italic: false, underline: false };
-      return { ...prev, [idx]: { ...current, [format]: !current[format] } };
-    });
-  };
-
-  const getFormatInputStyle = (fmt?: BlockFormat): TextStyle => {
-    if (!fmt) return {};
-    let fontFamily: string = F.serif;
-    if (fmt.bold && fmt.italic) fontFamily = F.serifMediumItalic;
-    else if (fmt.bold) fontFamily = F.serifBold;
-    else if (fmt.italic) fontFamily = F.serifItalic;
-    return {
-      fontFamily,
-      textDecorationLine: fmt.underline ? 'underline' : 'none',
-    };
-  };
 
   const commitBlocks = (nextBlocks: NoteEditorBlock[]) => {
     const serialized = serializeEditorBlocks(nextBlocks);
@@ -843,8 +840,6 @@ function EditorModal({
             selection={toolbarSelection}
             onChangeText={toolbarChange}
             onSelectionChange={toolbarSelectionChange}
-            blockFormat={blockFormats[resolvedActiveIndex] ?? { bold: false, italic: false, underline: false }}
-            onToggleBlockFormat={toggleBlockFormat}
             style={s.formatToolbar}
           />
 
@@ -858,24 +853,39 @@ function EditorModal({
                 onLayout={event => storeBlockLayout(index, event.nativeEvent.layout.y, event.nativeEvent.layout.height)}
               >
                 {block.type === 'text' ? (
-                  <LinedTextInput
-                    ref={ref => { textInputRefs.current[index] = ref; }}
-                    value={block.text}
-                    onChangeText={value => updateTextBlock(index, value)}
-                    selection={blockSelections[index]}
-                    onSelectionChange={selection => setBlockSelection(index, selection)}
-                    onFocus={() => setActiveBlockIndex(index)}
-                    onKeyPress={event => {
-                      if (event.nativeEvent.key === 'Backspace') {
-                        removeEmptyTextBlock(index);
-                      }
-                    }}
-                    minLines={1}
-                    lineHeight={33}
-                    placeholder={index === 0 ? (isNote ? 'Write your note...' : hasQuote ? 'Write before the quote...' : 'Write what will help you return...') : ''}
-                    placeholderTextColor="#CFCAC2"
-                    inputStyle={[s.contentInput, getFormatInputStyle(blockFormats[index])]}
-                  />
+                  <View>
+                    <LinedTextInput
+                      ref={ref => { textInputRefs.current[index] = ref; }}
+                      value={block.text}
+                      onChangeText={value => updateTextBlock(index, value)}
+                      selection={blockSelections[index]}
+                      onSelectionChange={selection => setBlockSelection(index, selection)}
+                      onFocus={() => setActiveBlockIndex(index)}
+                      onKeyPress={event => {
+                        if (event.nativeEvent.key === 'Backspace') {
+                          removeEmptyTextBlock(index);
+                        }
+                      }}
+                      minLines={1}
+                      lineHeight={33}
+                      placeholder={index === 0 ? (isNote ? 'Write your note...' : hasQuote ? 'Write before the quote...' : 'Write what will help you return...') : ''}
+                      placeholderTextColor="#CFCAC2"
+                      inputStyle={s.contentInput}
+                      wrapStyle={activeBlockIndex !== index ? s.hiddenInput : undefined}
+                    />
+                    {activeBlockIndex !== index && block.text.length > 0 && (
+                      <TouchableOpacity
+                        style={StyleSheet.absoluteFillObject}
+                        activeOpacity={0.9}
+                        onPress={() => {
+                          setActiveBlockIndex(index);
+                          setTimeout(() => textInputRefs.current[index]?.focus(), 50);
+                        }}
+                      >
+                        <MarkdownText text={block.text} style={s.contentInput} lineHeight={33} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 ) : (
                   <ScriptureQuoteCard
                     sourceRef={block.sourceRef}
@@ -1212,4 +1222,5 @@ const s = StyleSheet.create({
   quoteText: { flex: 1, fontFamily: F.serifItalic, fontSize: 18, lineHeight: 29, color: '#5C4B2A' },
   quoteExpand: { marginTop: 2, marginBottom: 8, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4, color: GOLD },
   quoteSource: { marginTop: 4, fontFamily: F.serifMedium, fontSize: 13, color: GOLD },
+  hiddenInput: { opacity: 0 },
 });

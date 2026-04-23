@@ -1,40 +1,47 @@
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useMemo } from 'react';
 import { StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { C, F } from '@/constants/tokens';
 
-export type TextSelection = {
-  start: number;
-  end: number;
-};
+export type TextSelection = { start: number; end: number };
+export type InlineFormatAction = 'bold' | 'italic' | 'underline' | 'bulletList' | 'numberedList';
 
-export type BlockFormat = { bold: boolean; italic: boolean; underline: boolean };
-
-type ListAction = 'bulletList' | 'numberedList';
-
-type TextFormatResult = {
-  text: string;
-  selection: TextSelection;
-};
+export type TextFormatResult = { text: string; selection: TextSelection };
 
 type TextFormatToolbarProps = {
   value: string;
   selection: TextSelection;
   onChangeText: (value: string) => void;
   onSelectionChange: (selection: TextSelection) => void;
-  blockFormat?: BlockFormat;
-  onToggleBlockFormat?: (format: keyof BlockFormat) => void;
   style?: StyleProp<ViewStyle>;
 };
 
-function clampSelection(selection: TextSelection, text: string): TextSelection {
-  const start = Math.max(0, Math.min(selection.start, text.length));
-  const end = Math.max(0, Math.min(selection.end, text.length));
-  return start <= end ? { start, end } : { start: end, end: start };
+const FORMAT_MARKERS: Record<'bold' | 'italic' | 'underline', { before: string; after: string }> = {
+  bold:      { before: '**', after: '**' },
+  italic:    { before: '*',  after: '*'  },
+  underline: { before: '<u>', after: '</u>' },
+};
+
+function clampSel(sel: TextSelection, len: number): TextSelection {
+  const s = Math.max(0, Math.min(sel.start, len));
+  const e = Math.max(0, Math.min(sel.end, len));
+  return s <= e ? { start: s, end: e } : { start: e, end: s };
 }
 
-function getLineRange(text: string, selection: TextSelection) {
-  const { start, end } = clampSelection(selection, text);
+function applyInlineFormat(
+  text: string,
+  selection: TextSelection,
+  marker: { before: string; after: string },
+): TextFormatResult {
+  const { start, end } = clampSel(selection, text.length);
+  const selected = text.slice(start, end);
+  const nextText = `${text.slice(0, start)}${marker.before}${selected}${marker.after}${text.slice(end)}`;
+  const nextStart = start + marker.before.length;
+  return { text: nextText, selection: { start: nextStart, end: nextStart + selected.length } };
+}
+
+function getLineRange(text: string, sel: TextSelection) {
+  const { start, end } = clampSel(sel, text.length);
   const lineStart = text.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
   const nextBreak = text.indexOf('\n', end);
   const lineEnd = nextBreak === -1 ? text.length : nextBreak;
@@ -45,18 +52,16 @@ function stripListPrefix(line: string) {
   return line.replace(/^(\s*)(?:[-*]|\d+\.)\s+/, '$1');
 }
 
-function applyListFormat(text: string, selection: TextSelection, ordered: boolean): TextFormatResult {
-  const { lineStart, lineEnd } = getLineRange(text, selection);
+function applyListFormat(text: string, sel: TextSelection, ordered: boolean): TextFormatResult {
+  const { lineStart, lineEnd } = getLineRange(text, sel);
   const block = text.slice(lineStart, lineEnd);
   const lines = block.length ? block.split('\n') : [''];
-
-  const formatted = lines.map((line, index) => {
+  const formatted = lines.map((line, i) => {
     const cleaned = stripListPrefix(line);
     const indent = cleaned.match(/^\s*/)?.[0] ?? '';
     const body = cleaned.slice(indent.length);
-    return ordered ? `${indent}${index + 1}. ${body}` : `${indent}- ${body}`;
+    return ordered ? `${indent}${i + 1}. ${body}` : `${indent}- ${body}`;
   });
-
   const nextBlock = formatted.join('\n');
   const nextText = `${text.slice(0, lineStart)}${nextBlock}${text.slice(lineEnd)}`;
   return { text: nextText, selection: { start: lineStart, end: lineStart + nextBlock.length } };
@@ -65,9 +70,33 @@ function applyListFormat(text: string, selection: TextSelection, ordered: boolea
 export function applyTextFormat(
   text: string,
   selection: TextSelection,
-  action: ListAction,
+  action: InlineFormatAction,
 ): TextFormatResult {
-  return applyListFormat(text, selection, action === 'numberedList');
+  if (action === 'bulletList')   return applyListFormat(text, selection, false);
+  if (action === 'numberedList') return applyListFormat(text, selection, true);
+  return applyInlineFormat(text, selection, FORMAT_MARKERS[action]);
+}
+
+// Detect whether cursor sits inside a markdown span
+function detectActiveFormats(text: string, sel: TextSelection) {
+  const pos = sel.start;
+  let bold = false, italic = false, underline = false;
+
+  const boldRe = /\*\*(?:[^*]|\*(?!\*))+\*\*/g;
+  const italicRe = /(?<!\*)\*(?:[^*])+\*(?!\*)/g;
+  const underlineRe = /<u>(?:[^<])+<\/u>/g;
+
+  let m: RegExpExecArray | null;
+  while ((m = boldRe.exec(text)) !== null) {
+    if (pos > m.index && pos <= m.index + m[0].length) { bold = true; break; }
+  }
+  while ((m = italicRe.exec(text)) !== null) {
+    if (pos > m.index && pos <= m.index + m[0].length) { italic = true; break; }
+  }
+  while ((m = underlineRe.exec(text)) !== null) {
+    if (pos > m.index && pos <= m.index + m[0].length) { underline = true; break; }
+  }
+  return { bold, italic, underline };
 }
 
 export function TextFormatToolbar({
@@ -75,47 +104,27 @@ export function TextFormatToolbar({
   selection,
   onChangeText,
   onSelectionChange,
-  blockFormat,
-  onToggleBlockFormat,
   style,
 }: TextFormatToolbarProps) {
-  const runList = (action: ListAction) => {
+  const active = useMemo(() => detectActiveFormats(value, selection), [value, selection]);
+
+  const run = (action: InlineFormatAction) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const result = applyListFormat(value, selection, action === 'numberedList');
+    const result = applyTextFormat(value, selection, action);
     onChangeText(result.text);
     onSelectionChange(result.selection);
   };
 
-  const toggleFmt = (format: keyof BlockFormat) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onToggleBlockFormat?.(format);
-  };
-
   return (
     <View style={[styles.wrap, style]}>
-      <FormatButton
-        label="B"
-        onPress={() => toggleFmt('bold')}
-        textStyle={styles.boldText}
-        active={blockFormat?.bold}
-      />
-      <FormatButton
-        label="I"
-        onPress={() => toggleFmt('italic')}
-        textStyle={styles.italicText}
-        active={blockFormat?.italic}
-      />
-      <FormatButton
-        label="U"
-        onPress={() => toggleFmt('underline')}
-        textStyle={styles.underlineText}
-        active={blockFormat?.underline}
-      />
+      <FormatButton label="B" onPress={() => run('bold')}      textStyle={styles.boldText}      active={active.bold} />
+      <FormatButton label="I" onPress={() => run('italic')}    textStyle={styles.italicText}    active={active.italic} />
+      <FormatButton label="U" onPress={() => run('underline')} textStyle={styles.underlineText} active={active.underline} />
       <View style={styles.separator} />
-      <FormatButton onPress={() => runList('bulletList')}>
+      <FormatButton onPress={() => run('bulletList')}>
         <BulletListGlyph />
       </FormatButton>
-      <FormatButton onPress={() => runList('numberedList')}>
+      <FormatButton onPress={() => run('numberedList')}>
         <NumberedListGlyph />
       </FormatButton>
     </View>
@@ -123,29 +132,13 @@ export function TextFormatToolbar({
 }
 
 function FormatButton({
-  label,
-  children,
-  onPress,
-  textStyle,
-  active,
+  label, children, onPress, textStyle, active,
 }: {
-  label?: string;
-  children?: ReactNode;
-  onPress: () => void;
-  textStyle?: object;
-  active?: boolean;
+  label?: string; children?: ReactNode; onPress: () => void; textStyle?: object; active?: boolean;
 }) {
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.76}
-      style={[styles.button, active && styles.buttonActive]}
-    >
-      {children ?? (
-        <Text style={[styles.buttonText, textStyle, active && styles.buttonTextActive]}>
-          {label}
-        </Text>
-      )}
+    <TouchableOpacity onPress={onPress} activeOpacity={0.76} style={[styles.button, active && styles.buttonActive]}>
+      {children ?? <Text style={[styles.buttonText, textStyle, active && styles.buttonTextActive]}>{label}</Text>}
     </TouchableOpacity>
   );
 }
@@ -212,55 +205,19 @@ const styles = StyleSheet.create({
   buttonTextActive: {
     color: '#C5A059',
   },
-  boldText: {
-    fontFamily: F.serifBold,
-    fontSize: 15,
-  },
-  italicText: {
-    fontFamily: F.serifMediumItalic,
-    fontSize: 16,
-  },
-  underlineText: {
-    textDecorationLine: 'underline',
-  },
+  boldText:      { fontFamily: F.serifBold, fontSize: 15 },
+  italicText:    { fontFamily: F.serifMediumItalic, fontSize: 16 },
+  underlineText: { textDecorationLine: 'underline' },
   separator: {
     width: 1,
     height: 20,
     marginHorizontal: 4,
     backgroundColor: 'rgba(197,160,89,0.16)',
   },
-  listGlyph: {
-    width: 20,
-    gap: 4,
-  },
-  numberedGlyph: {
-    width: 22,
-    gap: 3,
-  },
-  glyphRow: {
-    height: 5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  bulletDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: C.textSecondary,
-  },
-  numberMark: {
-    width: 9,
-    fontFamily: F.sansBold,
-    fontSize: 6.5,
-    lineHeight: 8,
-    color: C.textSecondary,
-    textAlign: 'right',
-  },
-  glyphLine: {
-    flex: 1,
-    height: 1.5,
-    borderRadius: 1,
-    backgroundColor: C.textSecondary,
-  },
+  listGlyph:     { width: 20, gap: 4 },
+  numberedGlyph: { width: 22, gap: 3 },
+  glyphRow:      { height: 5, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  bulletDot:     { width: 4, height: 4, borderRadius: 2, backgroundColor: C.textSecondary },
+  numberMark:    { width: 9, fontFamily: F.sansBold, fontSize: 6.5, lineHeight: 8, color: C.textSecondary, textAlign: 'right' },
+  glyphLine:     { flex: 1, height: 1.5, borderRadius: 1, backgroundColor: C.textSecondary },
 });
