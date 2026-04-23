@@ -220,6 +220,18 @@ export default function HomeView() {
         },
       },
       {
+        id: 'routine-demo',
+        task: {
+          variant: 'routine',
+          title: 'Evening Walk',
+          time: '19:00',
+          subtitle: 'Daily',
+          state: 'pending',
+          type: 'custom',
+          habitIconName: 'Activity',
+        },
+      },
+      {
         id: 'reading-task',
         route: '/reading-list',
         task: {

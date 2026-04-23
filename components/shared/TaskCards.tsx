@@ -1,6 +1,9 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Icons from '@/components/icons/Icons';
+import {
+  Activity, Book, Candle, CheckSmall, CircleIcon, Clock, Cross,
+  Feather, Flame, Heart, Home, Moon, Skip, Sparkles, Sun, Target, Utensils,
+} from '@/components/icons/Icons';
 import { F } from '@/constants/tokens';
 
 export type TaskVariant = 'spiritual' | 'routine' | 'quick' | 'habit' | 'challenge';
@@ -12,7 +15,7 @@ export type TaskData = {
   time?: string;
   subtitle?: string;
   state: TaskState;
-  type?: 'prayer' | 'reading' | 'journal' | 'church' | 'custom';
+  type?: 'prayer' | 'reading' | 'journal' | 'church' | 'gratitude' | 'custom';
   habitColor?: string;
   habitIconName?: string;
 };
@@ -22,18 +25,25 @@ const TYPE_COLORS = {
   reading: { bg: '#FEE2E2', fg: '#DC2626', border: 'rgba(239,68,68,0.25)' },
   journal: { bg: '#E7E5E4', fg: '#57534E', border: 'rgba(168,162,158,0.4)' },
   church:  { bg: '#E7E5E4', fg: '#44403C', border: 'rgba(168,162,158,0.4)' },
+  gratitude: { bg: '#FFE4E6', fg: '#E11D48', border: 'rgba(244,63,94,0.25)' },
   custom:  { bg: '#E5E7EB', fg: '#6B7280', border: 'rgba(156,163,175,0.4)' },
 };
 
-const TYPE_ICONS: Record<string, keyof typeof Icons> = {
-  prayer: 'Sun', reading: 'Book', journal: 'Feather', church: 'Cross', custom: 'Sparkles',
+type BadgeIcon = React.ComponentType<{ s?: number; c?: string; w?: number }>;
+
+const ICONS: Record<string, BadgeIcon> = {
+  Activity, Book, Candle, Cross, Feather, Heart, Home, Moon, Sparkles, Sun, Target, Utensils,
+};
+
+const TYPE_ICONS: Record<string, keyof typeof ICONS> = {
+  prayer: 'Sun', reading: 'Book', journal: 'Feather', church: 'Cross', gratitude: 'Heart', custom: 'Sparkles',
 };
 
 function StreakBadge({ count }: { count?: number }) {
   if (!count || count < 2) return null;
   return (
     <View style={sb.wrap}>
-      <Icons.Flame s={10} filled color="#F97316" />
+      <Flame s={10} filled color="#F97316" />
       <Text style={sb.txt}>{count}</Text>
     </View>
   );
@@ -69,27 +79,34 @@ function TaskCheck({ variant, state, size, habitColor }: { variant: TaskVariant;
 
   return (
     <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: bg, borderWidth, borderColor, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      {isDone && <Icons.CheckSmall s={size * 0.52} c="#fff" w={2.8} />}
-      {isSkipped && <Icons.Skip s={size * 0.44} c={iconColor} w={2.4} />}
-      {(isLocked || (!isDone && !isSkipped)) && <Icons.CircleIcon s={size * 0.56} c={iconColor} w={2} />}
+      {isDone && <CheckSmall s={size * 0.52} c="#fff" w={2.8} />}
+      {isSkipped && <Skip s={size * 0.44} c={iconColor} w={2.4} />}
+      {(isLocked || (!isDone && !isSkipped)) && <CircleIcon s={size * 0.56} c={iconColor} w={2} />}
     </View>
   );
 }
 
 function TypeBadge({ variant, type, habitColor, habitIconName }: { variant: TaskVariant; type?: string; habitColor?: string; habitIconName?: string }) {
   if (variant === 'habit') {
-    const HIconName = (habitIconName || 'Heart') as keyof typeof Icons;
-    const HIcon = Icons[HIconName] as React.ComponentType<{ s: number; c: string }>;
+    const HIcon = ICONS[habitIconName || 'Heart'] ?? Heart;
     return (
       <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: (habitColor || '#C5A059') + '1F', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
         <HIcon s={16} c={habitColor || '#C5A059'} />
       </View>
     );
   }
+  if (variant === 'routine' && habitIconName) {
+    const RIcon = ICONS[habitIconName] ?? Sparkles;
+    return (
+      <View style={{ padding: 8, borderRadius: 9, backgroundColor: '#F5F4F0', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <RIcon s={16} c="#78716C" />
+      </View>
+    );
+  }
   if (!type || type === 'custom') return null;
   const ct = TYPE_COLORS[type as keyof typeof TYPE_COLORS];
-  const iconName = TYPE_ICONS[type] as keyof typeof Icons;
-  const Icon = Icons[iconName] as React.ComponentType<{ s: number; c: string }>;
+  const iconName = TYPE_ICONS[type];
+  const Icon = iconName ? ICONS[iconName] : Sparkles;
   const isRoutine = variant === 'routine';
   return (
     <View style={{ padding: isRoutine ? 7 : 8, borderRadius: isRoutine ? 9 : 11, backgroundColor: ct.bg, borderWidth: 1, borderColor: ct.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -131,7 +148,7 @@ function TaskMeta({ time, subtitle, variant, habitColor, state }: { time?: strin
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
       {time && (
         <>
-          <Icons.Clock s={9} c={c} />
+          <Clock s={9} c={c} />
           <Text style={{ fontFamily: F.sansBold, fontSize: 10.5, color: c }}>{time}</Text>
           <Text style={{ color: c, opacity: 0.65, fontSize: 10 }}>•</Text>
         </>
