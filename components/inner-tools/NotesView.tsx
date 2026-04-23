@@ -11,7 +11,7 @@ import {
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
-import { RichTextEditor, RichToolbar, RichTextEditorRef } from '@/components/shared/RichTextEditor';
+import { FormatState, RichTextEditor, RichToolbar, RichTextEditorRef } from '@/components/shared/RichTextEditor';
 import type { TextSelection } from '@/components/shared/TextFormatToolbar';
 import { InnerNote, NoteColor, NoteKind, NoteSourceRef, useInnerTools } from './InnerToolsContext';
 
@@ -553,6 +553,7 @@ function EditorModal({
   const isNote = type === 'note';
   const palette = isNote ? NOTE_COLORS[color] : NOTE_COLORS.gold;
   const richEditorRef = useRef<RichTextEditorRef>(null);
+  const [formatState, setFormatState] = useState<FormatState>({ bold: false, italic: false, underline: false });
   const [dragState, setDragState] = useState<QuoteDragState | null>(null);
   const [blockLayouts, setBlockLayouts] = useState<Record<number, { top: number; height: number }>>({});
   const [paperHeight, setPaperHeight] = useState(0);
@@ -741,6 +742,7 @@ function EditorModal({
 
           <RichToolbar
             editorRef={richEditorRef}
+            activeFormats={formatState}
             style={[s.richToolbar, { borderColor: `${palette.accent}28` }]}
           />
 
@@ -748,10 +750,10 @@ function EditorModal({
             ref={richEditorRef}
             initialHTML={content}
             onChange={onContent}
+            onFormatChange={setFormatState}
             placeholder={isNote ? 'Write your note...' : 'Write what will help you return...'}
             backgroundColor={palette.editorBg}
             color="#3D3229"
-            accentColor={palette.accent}
             style={s.richEditor}
           />
 

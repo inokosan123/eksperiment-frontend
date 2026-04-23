@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { StyleProp, StyleSheet, TouchableOpacity, View, ViewStyle, Text } from 'react-native';
 import WebView from 'react-native-webview';
 import { F, C } from '@/constants/tokens';
@@ -12,13 +12,19 @@ export type RichTextEditorRef = {
   focus: () => void;
 };
 
+export type FormatState = {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+};
+
 type Props = {
   initialHTML?: string;
   onChange: (html: string) => void;
+  onFormatChange?: (fmt: FormatState) => void;
   placeholder?: string;
   backgroundColor?: string;
   color?: string;
-  accentColor?: string;
   minHeight?: number;
   style?: StyleProp<ViewStyle>;
 };
@@ -29,25 +35,23 @@ function buildEditorHTML(opts: {
   backgroundColor: string;
   color: string;
 }) {
+  // Built once on mount — never rebuilt during editing
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <style>
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body {
-      margin: 0; padding: 0;
-      background: ${opts.backgroundColor};
+    html, body { margin: 0; padding: 0; background: ${opts.backgroundColor}; }
+    #editor {
+      min-height: 280px;
+      padding: 12px 0 60px 0;
+      outline: none;
+      word-wrap: break-word;
       font-family: Georgia, 'Times New Roman', serif;
       font-size: 18px;
       line-height: 1.7;
       color: ${opts.color};
-    }
-    #editor {
-      min-height: 300px;
-      padding: 12px 0 40px 0;
-      outline: none;
-      word-wrap: break-word;
       -webkit-user-select: text;
       user-select: text;
     }
@@ -69,37 +73,37 @@ function buildEditorHTML(opts: {
   >${opts.initialHTML}</div>
   <script>
     var editor = document.getElementById('editor');
-    var lastHTML = editor.innerHTML;
 
-    function notifyChange() {
-      var html = editor.innerHTML;
-      if (html !== lastHTML) {
-        lastHTML = html;
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'change', html: html }));
-      }
+    function post(obj) {
+      window.ReactNativeWebView.postMessage(JSON.stringify(obj));
     }
 
-    editor.addEventListener('input', notifyChange);
-    editor.addEventListener('keyup', notifyChange);
+    // Notify content changes
+    editor.addEventListener('input', function() {
+      post({ type: 'change', html: editor.innerHTML });
+    });
 
-    function execCmd(cmd, value) {
+    // Notify format state on every selection change
+    document.addEventListener('selectionchange', function() {
+      post({
+        type: 'fmt',
+        bold:      document.queryCommandState('bold'),
+        italic:    document.queryCommandState('italic'),
+        underline: document.queryCommandState('underline'),
+      });
+    });
+
+    function execCmd(cmd) {
+      document.execCommand(cmd, false, null);
       editor.focus();
-      document.execCommand(cmd, false, value || null);
-      notifyChange();
+      post({ type: 'change', html: editor.innerHTML });
+      post({
+        type: 'fmt',
+        bold:      document.queryCommandState('bold'),
+        italic:    document.queryCommandState('italic'),
+        underline: document.queryCommandState('underline'),
+      });
     }
-
-    function setContent(html) {
-      editor.innerHTML = html;
-      lastHTML = html;
-    }
-
-    // Notify height changes so WebView can grow
-    function notifyHeight() {
-      var h = document.body.scrollHeight;
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'height', height: h }));
-    }
-    var ro = new ResizeObserver(notifyHeight);
-    ro.observe(document.body);
   </script>
 </body>
 </html>`;
@@ -109,10 +113,10 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
   {
     initialHTML = '',
     onChange,
+    onFormatChange,
     placeholder = 'Write here...',
     backgroundColor = '#FFFFFF',
     color = '#3D3229',
-    accentColor = '#C5A059',
     minHeight = 320,
     style,
   },
@@ -120,9 +124,17 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
 ) {
   const webViewRef = useRef<WebView>(null);
 
-  const inject = (cmd: string, value?: string) => {
-    const script = `execCmd(${JSON.stringify(cmd)}${value ? `, ${JSON.stringify(value)}` : ''}); true;`;
-    webViewRef.current?.injectJavaScript(script);
+  // Build source ONCE on mount — never update it.
+  // Rebuilding source would reload the WebView and dismiss the keyboard on every keystroke.
+  const sourceRef = useRef<{ html: string } | null>(null);
+  if (!sourceRef.current) {
+    sourceRef.current = {
+      html: buildEditorHTML({ initialHTML, placeholder, backgroundColor, color }),
+    };
+  }
+
+  const inject = (cmd: string) => {
+    webViewRef.current?.injectJavaScript(`execCmd(${JSON.stringify(cmd)}); true;`);
   };
 
   useImperativeHandle(ref, () => ({
@@ -134,13 +146,11 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
     focus:       () => webViewRef.current?.injectJavaScript('editor.focus(); true;'),
   }));
 
-  const html = buildEditorHTML({ initialHTML, placeholder, backgroundColor, color });
-
   return (
     <WebView
       ref={webViewRef}
       originWhitelist={['*']}
-      source={{ html }}
+      source={sourceRef.current}
       style={[{ minHeight, backgroundColor }, style]}
       scrollEnabled={false}
       keyboardDisplayRequiresUserAction={false}
@@ -149,49 +159,83 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
         try {
           const msg = JSON.parse(event.nativeEvent.data);
           if (msg.type === 'change') onChange(msg.html);
+          if (msg.type === 'fmt') {
+            onFormatChange?.({ bold: msg.bold, italic: msg.italic, underline: msg.underline });
+          }
         } catch { /* ignore */ }
       }}
     />
   );
 });
 
+// ─── Toolbar ─────────────────────────────────────────────────────────────────
+
 type ToolbarProps = {
   editorRef: React.RefObject<RichTextEditorRef | null>;
-  accentColor?: string;
+  activeFormats?: FormatState;
   style?: StyleProp<ViewStyle>;
 };
 
-export function RichToolbar({ editorRef, accentColor = '#C5A059', style }: ToolbarProps) {
-  const btn = (label: string, onPress: () => void, labelStyle?: object) => (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.72}
-      style={tb.button}
-    >
-      <Text style={[tb.label, labelStyle]}>{label}</Text>
-    </TouchableOpacity>
-  );
+export function RichToolbar({ editorRef, activeFormats, style }: ToolbarProps) {
+  const fmt = activeFormats ?? { bold: false, italic: false, underline: false };
 
   return (
     <View style={[tb.wrap, style]}>
-      {btn('B',  () => editorRef.current?.bold(),        { fontFamily: F.serifBold,        fontSize: 15 })}
-      {btn('I',  () => editorRef.current?.italic(),      { fontFamily: F.serifMediumItalic, fontSize: 16 })}
-      {btn('U',  () => editorRef.current?.underline(),   { textDecorationLine: 'underline' })}
+      <FmtButton
+        label="B"
+        active={fmt.bold}
+        labelStyle={{ fontFamily: F.serifBold, fontSize: 15 }}
+        onPress={() => editorRef.current?.bold()}
+      />
+      <FmtButton
+        label="I"
+        active={fmt.italic}
+        labelStyle={{ fontFamily: F.serifMediumItalic, fontSize: 16 }}
+        onPress={() => editorRef.current?.italic()}
+      />
+      <FmtButton
+        label="U"
+        active={fmt.underline}
+        labelStyle={{ textDecorationLine: 'underline' }}
+        onPress={() => editorRef.current?.underline()}
+      />
       <View style={tb.sep} />
-      <TouchableOpacity onPress={() => editorRef.current?.bulletList()}  activeOpacity={0.72} style={tb.button}>
+      <FmtButton onPress={() => editorRef.current?.bulletList()}>
         <BulletGlyph />
-      </TouchableOpacity>
-      <TouchableOpacity onPress={() => editorRef.current?.orderedList()} activeOpacity={0.72} style={tb.button}>
+      </FmtButton>
+      <FmtButton onPress={() => editorRef.current?.orderedList()}>
         <NumberedGlyph />
-      </TouchableOpacity>
+      </FmtButton>
     </View>
+  );
+}
+
+function FmtButton({
+  label, children, onPress, active, labelStyle,
+}: {
+  label?: string;
+  children?: React.ReactNode;
+  onPress: () => void;
+  active?: boolean;
+  labelStyle?: object;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.72}
+      style={[tb.button, active && tb.buttonActive]}
+    >
+      {children ?? (
+        <Text style={[tb.label, labelStyle, active && tb.labelActive]}>{label}</Text>
+      )}
+    </TouchableOpacity>
   );
 }
 
 function BulletGlyph() {
   return (
     <View style={{ gap: 4 }}>
-      {[0,1,2].map(i => (
+      {[0, 1, 2].map(i => (
         <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 5 }}>
           <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: C.textSecondary }} />
           <View style={{ width: 16, height: 1.5, borderRadius: 1, backgroundColor: C.textSecondary }} />
@@ -204,7 +248,7 @@ function BulletGlyph() {
 function NumberedGlyph() {
   return (
     <View style={{ gap: 3 }}>
-      {[1,2,3].map(n => (
+      {[1, 2, 3].map(n => (
         <View key={n} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 5 }}>
           <Text style={{ width: 9, fontFamily: F.sansBold, fontSize: 6.5, lineHeight: 8, color: C.textSecondary, textAlign: 'right' }}>{n}.</Text>
           <View style={{ width: 14, height: 1.5, borderRadius: 1, backgroundColor: C.textSecondary }} />
@@ -239,10 +283,16 @@ const tb = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  buttonActive: {
+    backgroundColor: 'rgba(197,160,89,0.18)',
+  },
   label: {
     fontFamily: F.sansBold,
     fontSize: 14,
     color: C.textSecondary,
+  },
+  labelActive: {
+    color: '#C5A059',
   },
   sep: {
     width: 1,
