@@ -346,18 +346,6 @@ function dateKey(timestamp: number) {
   return new Date(timestamp).toISOString().split('T')[0];
 }
 
-function getReadingAccent(category?: string) {
-  switch (category) {
-    case 'Spirituality':
-      return { main: '#C5A059', soft: '#FBF5E7', border: '#EEDCB4', text: '#8B6B2F' };
-    case 'Productivity':
-      return { main: '#15803D', soft: '#EEF9F0', border: '#CEEED4', text: '#166534' };
-    case 'Philosophy':
-      return { main: '#6D28D9', soft: '#F3EEFF', border: '#DFD0FF', text: '#5B21B6' };
-    default:
-      return { main: '#7C3AED', soft: '#F3EFFF', border: '#E4D7FF', text: '#5B21B6' };
-  }
-}
 
 function HomeReadingCard({
   task,
@@ -366,59 +354,42 @@ function HomeReadingCard({
   task: TaskData;
   book?: { author?: string; category?: string; totalMinutes?: number; sessions?: number };
 }) {
-  const accent = getReadingAccent(book?.category);
   const isDone = task.state === 'done';
   const isLocked = task.state === 'locked';
 
   return (
-    <View
-      style={[
-        custom.readingCard,
-        { borderColor: accent.border, opacity: isLocked ? 0.7 : 1 },
-      ]}
-    >
-      {/* Left category accent bar */}
-      <View style={[custom.readingBar, { backgroundColor: accent.main }]} />
-
-      {/* Left checker */}
-      <View style={[custom.readingCheck, isDone && { backgroundColor: accent.main, borderColor: accent.main }]}>
-        {isDone
-          ? <CheckSmall s={18} c="#FFFFFF" w={2.8} />
-          : <CircleIcon s={19} c={accent.border} w={2} />
-        }
+    <View style={[custom.readingCard, { opacity: isLocked ? 0.7 : 1 }]}>
+      {/* Checker */}
+      <View style={[custom.readingCheck, isDone && custom.readingCheckDone]}>
+        {isDone && <CheckSmall s={18} c="#FFFFFF" w={2.8} />}
       </View>
 
-      {/* Content */}
+      {/* Content — 2 lines max */}
       <View style={custom.readingMid}>
         <Text style={custom.readingTitle} numberOfLines={1}>{task.title}</Text>
-        {!!book?.author && (
-          <Text style={custom.readingAuthorCompact} numberOfLines={1}>{book.author}</Text>
-        )}
-        <View style={custom.readingMetaRowCompact}>
+        <View style={custom.readingMetaRow}>
           {task.time ? (
             <>
-              <Clock s={9} c={accent.text} />
-              <Text style={[custom.readingMetaCompact, { color: accent.text }]}>{task.time}</Text>
-              <Text style={{ color: accent.text, opacity: 0.55, fontSize: 10 }}>•</Text>
+              <Clock s={9} c="#a8a29e" />
+              <Text style={custom.readingMeta}>{task.time}</Text>
+              <Text style={custom.readingDot}>•</Text>
             </>
           ) : null}
-          {task.subtitle ? (
-            <Text style={[custom.readingMetaCompact, { color: accent.text, opacity: 0.75 }]}>
-              {task.subtitle}
-            </Text>
-          ) : null}
+          <Text style={custom.readingMeta} numberOfLines={1}>
+            {book?.author ?? task.subtitle ?? 'Reading Task'}
+          </Text>
         </View>
       </View>
 
-      {/* Right badge */}
+      {/* Right badge — red/rose reading color */}
       {book?.sessions ? (
-        <View style={[custom.readingSessionBadge, { backgroundColor: accent.soft, borderColor: accent.border }]}>
-          <Book s={11} c={accent.main} />
-          <Text style={[custom.readingSessionText, { color: accent.text }]}>{book.sessions}</Text>
+        <View style={custom.readingSessionBadge}>
+          <Book s={11} c="#DC2626" />
+          <Text style={custom.readingSessionText}>{book.sessions}</Text>
         </View>
       ) : (
-        <View style={[custom.readingIconBadge, { backgroundColor: accent.soft, borderColor: accent.border }]}>
-          <Book s={16} c={accent.main} />
+        <View style={custom.readingIconBadge}>
+          <Book s={16} c="#DC2626" />
         </View>
       )}
     </View>
@@ -452,17 +423,26 @@ function HomeGratitudeCard({
         </View>
 
         <View style={custom.gratitudeMid}>
-          <View style={custom.gratitudeBadgeRow}>
-            <Text style={custom.gratitudeBadge}>Daily Gratitude</Text>
-            {blessingsToday > 0 && !isDone ? (
-              <Text style={custom.gratitudeCount}>{blessingsToday} today</Text>
-            ) : null}
-          </View>
           <Text style={custom.gratitudeTitle}>{task.title}</Text>
-          <Text style={custom.gratitudeMeta}>
-            {task.time ? `${task.time} • ` : ''}
-            {isDone ? "You completed today's blessings." : task.subtitle || 'Three blessings'}
-          </Text>
+          <View style={custom.gratitudeMetaRow}>
+            {task.time ? (
+              <>
+                <Clock s={9} c="#FB7185" />
+                <Text style={custom.gratitudeMeta}>{task.time}</Text>
+                <Text style={custom.gratitudeDot}>•</Text>
+              </>
+            ) : null}
+            <Text style={custom.gratitudeMeta} numberOfLines={1}>
+              {isDone
+                ? (blessingsToday > 0 ? `${blessingsToday} blessings` : 'Completed')
+                : task.subtitle || 'Daily Gratitude'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Small heart type badge */}
+        <View style={custom.gratitudeTypeBox}>
+          <Heart s={16} c="#F43F5E" />
         </View>
       </View>
     </LinearGradient>
@@ -492,67 +472,52 @@ const s = StyleSheet.create({
 });
 
 const custom = StyleSheet.create({
-  // Reading card — compact redesign
+  // Reading card — neutral, compact, 2-line
   readingCard: {
-    position: 'relative',
-    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     padding: 13,
-    paddingLeft: 18,
     borderWidth: 1,
     borderRadius: 16,
+    borderColor: '#f2f1ec',
     marginBottom: 10,
-    backgroundColor: '#FFFFFF',
-  },
-  readingBar: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    borderTopLeftRadius: 16,
-    borderBottomLeftRadius: 16,
+    backgroundColor: '#fff',
   },
   readingCheck: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#e7e5e4',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
-  readingMid: {
-    flex: 1,
-    minWidth: 0,
+  readingCheckDone: {
+    backgroundColor: '#1c1917',
+    borderColor: '#1c1917',
   },
+  readingMid: { flex: 1, minWidth: 0 },
   readingTitle: {
     fontFamily: F.serifMedium,
     fontSize: 15.5,
     lineHeight: 19,
     color: '#1C1917',
   },
-  readingAuthorCompact: {
-    marginTop: 1,
-    fontFamily: F.serifItalic,
-    fontSize: 11,
-    color: '#78716C',
-  },
-  readingMetaRowCompact: {
+  readingMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     marginTop: 3,
   },
-  readingMetaCompact: {
-    fontFamily: F.sansBold,
+  readingMeta: {
+    fontFamily: F.sansMedium,
     fontSize: 10.5,
-    letterSpacing: 0.8,
+    color: '#a8a29e',
   },
+  readingDot: { color: '#a8a29e', opacity: 0.65, fontSize: 10 },
   readingSessionBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -561,22 +526,27 @@ const custom = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 10,
     borderWidth: 1,
+    backgroundColor: '#FEE2E2',
+    borderColor: 'rgba(239,68,68,0.25)',
     flexShrink: 0,
   },
   readingSessionText: {
     fontFamily: F.sansBold,
     fontSize: 11,
+    color: '#DC2626',
   },
   readingIconBadge: {
     padding: 7,
     borderRadius: 9,
     borderWidth: 1,
+    backgroundColor: '#FEE2E2',
+    borderColor: 'rgba(239,68,68,0.25)',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
 
-  // Gratitude card — same size as other cards, no right heart
+  // Gratitude card — 2-line, same size as other cards
   gratitudeCard: {
     borderRadius: 16,
     borderWidth: 1,
@@ -604,44 +574,33 @@ const custom = StyleSheet.create({
     backgroundColor: '#F43F5E',
     borderColor: '#F43F5E',
   },
-  gratitudeMid: {
-    flex: 1,
-    minWidth: 0,
-  },
-  gratitudeBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 2,
-    flexWrap: 'wrap',
-  },
-  gratitudeBadge: {
-    fontFamily: F.sansBold,
-    fontSize: 8.5,
-    letterSpacing: 1.8,
-    textTransform: 'uppercase',
-    color: '#F43F5E',
-    backgroundColor: '#FFF1F2',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  gratitudeCount: {
-    fontFamily: F.sansSemiBold,
-    fontSize: 10,
-    color: '#FB7185',
-  },
+  gratitudeMid: { flex: 1, minWidth: 0 },
   gratitudeTitle: {
     fontFamily: F.serifMedium,
     fontSize: 15.5,
     lineHeight: 19,
     color: '#1C1917',
   },
-  gratitudeMeta: {
+  gratitudeMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     marginTop: 3,
+  },
+  gratitudeMeta: {
     fontFamily: F.sansMedium,
     fontSize: 10.5,
-    lineHeight: 15,
     color: '#FB7185',
+  },
+  gratitudeDot: { color: '#FB7185', opacity: 0.65, fontSize: 10 },
+  gratitudeTypeBox: {
+    padding: 7,
+    borderRadius: 9,
+    borderWidth: 1,
+    backgroundColor: '#FFE4E6',
+    borderColor: 'rgba(244,63,94,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
 });
