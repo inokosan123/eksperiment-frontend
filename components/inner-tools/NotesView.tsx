@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView,
+  Keyboard, Modal, PanResponder, Pressable, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View, StyleProp, TextStyle,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -554,6 +554,7 @@ function EditorModal({
   const palette = isNote ? NOTE_COLORS[color] : NOTE_COLORS.gold;
   const richEditorRef = useRef<RichTextEditorRef>(null);
   const [formatState, setFormatState] = useState<FormatState>({ bold: false, italic: false, underline: false });
+  const [kbHeight, setKbHeight] = useState(0);
   const [dragState, setDragState] = useState<QuoteDragState | null>(null);
   const [blockLayouts, setBlockLayouts] = useState<Record<number, { top: number; height: number }>>({});
   const [paperHeight, setPaperHeight] = useState(0);
@@ -565,6 +566,12 @@ function EditorModal({
     const timeout = setTimeout(() => richEditorRef.current?.focus(), 300);
     return () => clearTimeout(timeout);
   }, [visible]);
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardWillShow', e => setKbHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKbHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   const commitBlocks = (nextBlocks: NoteEditorBlock[]) => {
     const serialized = serializeEditorBlocks(nextBlocks);
@@ -688,11 +695,7 @@ function EditorModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <View style={[s.editorScreen, { backgroundColor: palette.editorBg }]}>
+        <View style={[s.editorScreen, { backgroundColor: palette.editorBg, paddingBottom: kbHeight }]}>
 
           {/* Fixed header */}
           <View style={[s.editorHeader, { paddingTop: getTitleBarTopPadding(insets.top), borderBottomColor: `${palette.accent}22` }]}>
@@ -761,7 +764,6 @@ function EditorModal({
           />
 
         </View>
-      </KeyboardAvoidingView>
     </Modal>
   );
 }
