@@ -24,19 +24,20 @@ import {
 } from '@/components/icons/Icons';
 import DateStrip from './DateStrip';
 import WeeklyRhythm from './WeeklyRhythm';
-import ChallengesSection, { ACTIVE_CHALLENGES } from './ChallengesSection';
+import ChallengesSection from './ChallengesSection';
 import ExploreSection from './ExploreSection';
 import { C, F } from '@/constants/tokens';
 import { AnyTaskCard, TaskData, TaskState } from '@/components/shared/TaskCards';
 import { useReadingList } from '@/components/library/ReadingListContext';
 import { useInnerTools } from '@/components/inner-tools/InnerToolsContext';
 import { HabitItem, INITIAL_HABITS } from '@/components/habits/habitData';
+import { useChallenges } from '@/components/challenges/ChallengesContext';
 
 type HomeCard = {
   id: string;
   task: TaskData;
   streak?: number;
-  route?: '/prayer' | '/habits' | '/reading-list' | '/gratitude';
+  route?: '/prayer' | '/habits' | '/reading-list' | '/gratitude' | '/challenges';
 };
 
 function isScheduledToday(
@@ -162,6 +163,7 @@ export default function HomeView() {
     gratitudeTaskFrequency,
     gratitudeTaskTime,
   } = useInnerTools();
+  const { activeChallenges, pausedChallenges } = useChallenges();
 
   const homeCards = useMemo<HomeCard[]>(() => {
     const todayKey = new Date().toISOString().split('T')[0];
@@ -187,7 +189,7 @@ export default function HomeView() {
       && isScheduledToday(gratitudeTaskFrequency, gratitudeTaskFrequency === 'daily' ? undefined : [1, 2, 3, 4, 5]);
     const gratitudeDoneToday = gratitudeTodayCount >= 3;
 
-    const primaryChallenge = ACTIVE_CHALLENGES[0];
+    const primaryChallenge = activeChallenges[0] ?? pausedChallenges[0];
 
     return [
       {
@@ -247,18 +249,19 @@ export default function HomeView() {
       },
       {
         id: 'challenge-task',
+        route: '/challenges',
         streak: primaryChallenge?.streak,
         task: {
           variant: 'challenge',
           title: primaryChallenge?.title ?? 'Challenges',
-          time: primaryChallenge ? `${primaryChallenge.count}/${primaryChallenge.total}` : undefined,
-          subtitle: primaryChallenge ? 'Reading challenge' : 'No active challenges',
-          state: primaryChallenge ? 'active' : 'locked',
+          time: primaryChallenge?.progressTotal ? `${primaryChallenge.progressCurrent}/${primaryChallenge.progressTotal}` : primaryChallenge?.time,
+          subtitle: primaryChallenge ? primaryChallenge.subline : 'No active challenges',
+          state: primaryChallenge ? (primaryChallenge.status === 'paused' ? 'pending' : 'active') : 'locked',
           type: 'reading',
         },
       },
     ];
-  }, [books, gratitudeEntries, gratitudeTaskEnabled, gratitudeTaskFrequency, gratitudeTaskTime]);
+  }, [activeChallenges, books, gratitudeEntries, gratitudeTaskEnabled, gratitudeTaskFrequency, gratitudeTaskTime, pausedChallenges]);
 
   const scheduledToday = homeCards.filter(card => card.task.state !== 'locked').length;
   const completedToday = homeCards.filter(card => card.task.state === 'done').length;
@@ -359,18 +362,21 @@ function HomeReadingCard({
 
   return (
     <View style={[custom.readingCard, { opacity: isLocked ? 0.7 : 1 }]}>
+      {/* Left ink accent bar */}
+      <View style={custom.readingBar} />
+
       {/* Checker */}
       <View style={[custom.readingCheck, isDone && custom.readingCheckDone]}>
         {isDone && <CheckSmall s={18} c="#FFFFFF" w={2.8} />}
       </View>
 
-      {/* Content — 2 lines max */}
+      {/* Content */}
       <View style={custom.readingMid}>
         <Text style={custom.readingTitle} numberOfLines={1}>{task.title}</Text>
         <View style={custom.readingMetaRow}>
           {task.time ? (
             <>
-              <Clock s={9} c="#a8a29e" />
+              <Clock s={9} c="#78716C" />
               <Text style={custom.readingMeta}>{task.time}</Text>
               <Text style={custom.readingDot}>•</Text>
             </>
@@ -381,17 +387,10 @@ function HomeReadingCard({
         </View>
       </View>
 
-      {/* Right badge — red/rose reading color */}
-      {book?.sessions ? (
-        <View style={custom.readingSessionBadge}>
-          <Book s={11} c="#DC2626" />
-          <Text style={custom.readingSessionText}>{book.sessions}</Text>
-        </View>
-      ) : (
-        <View style={custom.readingIconBadge}>
-          <Book s={16} c="#DC2626" />
-        </View>
-      )}
+      {/* Book icon badge — no number */}
+      <View style={custom.readingIconBadge}>
+        <Book s={16} c="#57534E" />
+      </View>
     </View>
   );
 }
@@ -472,32 +471,45 @@ const s = StyleSheet.create({
 });
 
 const custom = StyleSheet.create({
-  // Reading card — neutral, compact, 2-line
+  // Reading card — parchment/ink aesthetic, compact
   readingCard: {
+    position: 'relative',
+    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     padding: 13,
+    paddingLeft: 18,
     borderWidth: 1,
     borderRadius: 16,
-    borderColor: '#f2f1ec',
+    borderColor: '#E8E4DF',
     marginBottom: 10,
-    backgroundColor: '#fff',
+    backgroundColor: '#F9F7F4',
+  },
+  readingBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
+    backgroundColor: '#44403C',
   },
   readingCheck: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e7e5e4',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#C5BDB7',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
   readingCheckDone: {
-    backgroundColor: '#1c1917',
-    borderColor: '#1c1917',
+    backgroundColor: '#44403C',
+    borderColor: '#44403C',
   },
   readingMid: { flex: 1, minWidth: 0 },
   readingTitle: {
@@ -515,32 +527,15 @@ const custom = StyleSheet.create({
   readingMeta: {
     fontFamily: F.sansMedium,
     fontSize: 10.5,
-    color: '#a8a29e',
+    color: '#78716C',
   },
-  readingDot: { color: '#a8a29e', opacity: 0.65, fontSize: 10 },
-  readingSessionBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 10,
-    borderWidth: 1,
-    backgroundColor: '#FEE2E2',
-    borderColor: 'rgba(239,68,68,0.25)',
-    flexShrink: 0,
-  },
-  readingSessionText: {
-    fontFamily: F.sansBold,
-    fontSize: 11,
-    color: '#DC2626',
-  },
+  readingDot: { color: '#78716C', opacity: 0.65, fontSize: 10 },
   readingIconBadge: {
-    padding: 7,
+    padding: 8,
     borderRadius: 9,
     borderWidth: 1,
-    backgroundColor: '#FEE2E2',
-    borderColor: 'rgba(239,68,68,0.25)',
+    backgroundColor: '#F0EDE9',
+    borderColor: 'rgba(168,162,158,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
