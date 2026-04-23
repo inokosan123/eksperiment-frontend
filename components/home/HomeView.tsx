@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  ArrowUpRight,
   Book,
   Calendar,
   CheckSmall,
@@ -374,6 +375,27 @@ export default function HomeView() {
             <Text style={s.addBtnTxt}>ADD QUICK TASK</Text>
           </LinearGradient>
         </TouchableOpacity>
+
+        <TouchableOpacity activeOpacity={0.82} style={{ marginTop: 8 }}>
+          <LinearGradient
+            colors={['#FFFFFF', '#FDF3D8']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={s.myRoutineBtn}
+          >
+            <View pointerEvents="none" style={s.myRoutineWatermark}>
+              <Settings s={120} c="#C5A059" w={1} />
+            </View>
+            <View style={s.myRoutineContent}>
+              <Text style={s.myRoutineLabel}>Foundation</Text>
+              <Text style={s.myRoutineTitle}>My Routine</Text>
+              <Text style={s.myRoutineSub}>Establish your rhythm</Text>
+            </View>
+            <View style={s.myRoutineArrow}>
+              <ArrowUpRight s={18} c="#FFFFFF" w={2.5} />
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
       </View>
 
       <WeeklyRhythm />
@@ -511,6 +533,63 @@ const s = StyleSheet.create({
     elevation: 2,
   },
   addBtnTxt: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.5, color: '#1C1917', textTransform: 'uppercase' },
+  myRoutineBtn: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#C5A059',
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#C5A059',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  myRoutineWatermark: {
+    position: 'absolute',
+    right: -18,
+    bottom: -18,
+    opacity: 0.1,
+  },
+  myRoutineContent: { flex: 1 },
+  myRoutineLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 2.5,
+    textTransform: 'uppercase',
+    color: 'rgba(197,160,89,0.8)',
+    marginBottom: 6,
+  },
+  myRoutineTitle: {
+    fontFamily: F.serifMedium,
+    fontSize: 26,
+    lineHeight: 28,
+    color: '#C5A059',
+    marginBottom: 4,
+  },
+  myRoutineSub: {
+    fontFamily: F.serifItalic,
+    fontSize: 12,
+    color: 'rgba(197,160,89,0.7)',
+  },
+  myRoutineArrow: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#C5A059',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    shadowColor: '#C5A059',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 3,
+  },
 });
 
 const custom = StyleSheet.create({
