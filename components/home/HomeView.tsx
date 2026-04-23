@@ -1,15 +1,98 @@
-import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import React, { useMemo } from 'react';
+import {
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Settings, Calendar, ChevronLeft, ChevronRight, Clock, Book, Sun, Moon, Feather, Plus, ArrowUpRight, CheckSmall, Skip } from '@/components/icons/Icons';
+import {
+  Book,
+  Calendar,
+  CheckSmall,
+  ChevronLeft,
+  ChevronRight,
+  CircleIcon,
+  Clock,
+  Heart,
+  Plus,
+  Settings,
+} from '@/components/icons/Icons';
 import DateStrip from './DateStrip';
 import WeeklyRhythm from './WeeklyRhythm';
-import ChallengesSection from './ChallengesSection';
+import ChallengesSection, { ACTIVE_CHALLENGES } from './ChallengesSection';
 import ExploreSection from './ExploreSection';
 import { C, F } from '@/constants/tokens';
+import { AnyTaskCard, TaskData, TaskState } from '@/components/shared/TaskCards';
+import { useReadingList } from '@/components/library/ReadingListContext';
+import { useInnerTools } from '@/components/inner-tools/InnerToolsContext';
+import { HabitItem, INITIAL_HABITS } from '@/components/habits/habitData';
 
-// ── Header ──────────────────────────────────────────────────────
+type HomeCard = {
+  id: string;
+  task: TaskData;
+  streak?: number;
+  route?: '/prayer' | '/habits' | '/reading-list' | '/gratitude';
+};
+
+function isScheduledToday(
+  frequency?: 'daily' | 'weekdays' | 'weekends' | 'specific_days',
+  selectedDays?: number[],
+) {
+  const day = new Date().getDay();
+
+  switch (frequency) {
+    case 'weekdays':
+      return day >= 1 && day <= 5;
+    case 'weekends':
+      return day === 0 || day === 6;
+    case 'specific_days':
+      return (selectedDays ?? []).includes(day);
+    case 'daily':
+    default:
+      return true;
+  }
+}
+
+function getScheduleLabel(
+  frequency?: 'daily' | 'weekdays' | 'weekends' | 'specific_days',
+  selectedDays?: number[],
+) {
+  switch (frequency) {
+    case 'weekdays':
+      return 'Weekdays';
+    case 'weekends':
+      return 'Weekends';
+    case 'specific_days':
+      return selectedDays && selectedDays.length > 0 ? `${selectedDays.length} days` : 'Custom schedule';
+    case 'daily':
+    default:
+      return 'Daily';
+  }
+}
+
+function getHabitState(habit: HabitItem): TaskState {
+  if (!habit.active) return 'locked';
+
+  const total = habit.steps.length;
+  const done = habit.steps.filter(step => step.completedToday).length;
+
+  if (total > 0 && done === total) return 'done';
+  if (done > 0) return 'active';
+  return 'pending';
+}
+
+function getHabitIconName(habit: HabitItem): TaskData['habitIconName'] {
+  if (habit.name.toLowerCase().includes('morning')) return 'Sun';
+  if (habit.name.toLowerCase().includes('study')) return 'Book';
+  if (habit.name.toLowerCase().includes('review')) return 'Feather';
+  return 'Heart';
+}
+
 function HomeHeader() {
   return (
     <>
@@ -56,162 +139,200 @@ const h = StyleSheet.create({
   ref: { marginTop: 8, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.gold },
 });
 
-// ── Task row (Home screen simplified version) ────────────────────
-const TASK_TYPES = {
-  morning: { tint: '#FBF7EE', iconBg: '#F5ECD7', iconColor: C.gold,  labelLight: C.gold,  Icon: Sun    },
-  gospel:  { tint: '#FBE6E9', iconBg: '#F5CDD3', iconColor: C.red,   labelLight: C.red,   Icon: Book   },
-  journal: { tint: '#F2F1EC', iconBg: '#E7E5E0', iconColor: '#57534e', labelLight: '#57534e', Icon: Feather },
-  evening: { tint: '#FBF7EE', iconBg: '#F5ECD7', iconColor: C.gold,  labelLight: C.gold,  Icon: Moon   },
-};
-
-type TaskRowProps = {
-  title: string; time: string; subtitle: string;
-  type: keyof typeof TASK_TYPES;
-  state: 'active' | 'done' | 'skipped' | 'pending';
-};
-
-function TaskRow({ title, time, subtitle, type, state }: TaskRowProps) {
-  const t = TASK_TYPES[type];
-  const done = state === 'done';
-  const skipped = state === 'skipped';
-  const isActive = state === 'active';
-
-  let leftIcon: React.ReactElement;
-  if (done) {
-    leftIcon = (
-      <View style={[tr.circle, { backgroundColor: t.iconBg }]}>
-        <View style={tr.checkMark}>
-          <Text style={{ color: t.iconColor, fontSize: 14, fontWeight: '700' }}>✓</Text>
-        </View>
-      </View>
-    );
-  } else if (skipped) {
-    leftIcon = <View style={[tr.circle, { backgroundColor: '#a8a29e' }]}><Text style={{ color: '#fff', fontSize: 12 }}>→</Text></View>;
-  } else if (isActive) {
-    leftIcon = (
-      <View style={[tr.circle, { borderWidth: 1.8, borderColor: t.iconColor, backgroundColor: 'transparent' }]}>
-        <View style={[tr.dot, { borderColor: t.iconColor }]} />
-      </View>
-    );
-  } else {
-    leftIcon = <View style={[tr.circle, { borderWidth: 1.8, borderColor: '#d6d3d1', backgroundColor: 'transparent' }]} />;
-  }
-
-  const titleColor = done || skipped ? C.textMuted : C.text;
-  const metaColor = done || skipped ? C.textMuted : t.labelLight;
-
-  return (
-    <View style={[tr.row, { backgroundColor: isActive ? t.tint : '#FCFAF6', borderColor: isActive ? t.iconBg : '#f2efe5' }]}>
-      {leftIcon}
-      <View style={{ flex: 1 }}>
-        <Text style={[tr.title, { color: titleColor, textDecorationLine: skipped ? 'line-through' : 'none', opacity: done ? 0.75 : 1 }]}>
-          {title}
-        </Text>
-        <View style={tr.metaRow}>
-          <Clock s={10} c={metaColor} />
-          <Text style={[tr.meta, { color: metaColor }]}>{time}</Text>
-          <Text style={[tr.meta, { color: metaColor, opacity: 0.5 }]}>•</Text>
-          <Text style={[tr.meta, { color: metaColor }]}>{subtitle}</Text>
-        </View>
-      </View>
-      <View style={[tr.badge, { backgroundColor: t.iconBg }]}>
-        <t.Icon s={15} c={t.iconColor} />
-      </View>
-    </View>
-  );
-}
-
-const tr = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, marginBottom: 8 },
-  circle: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1.8 },
-  checkMark: { alignItems: 'center', justifyContent: 'center' },
-  title: { fontFamily: F.serifMedium, fontSize: 18, lineHeight: 22 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
-  meta: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase' },
-  badge: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-});
-
-// ── My Routine card ──────────────────────────────────────────────
-function MyRoutineCard() {
-  return (
-    <LinearGradient
-      colors={['#FBF0D9', '#F6E7C6']}
-      start={{ x: 0.135, y: 0 }}
-      end={{ x: 0.865, y: 1 }}
-      style={mc.card}
-    >
-      <View style={mc.row}>
-        <View style={{ flex: 1, paddingRight: 16 }}>
-          <Text style={mc.label}>FOUNDATION</Text>
-          <Text style={mc.title}>My Routine</Text>
-          <Text style={mc.sub}>Establish your rhythm</Text>
-        </View>
-        <TouchableOpacity style={mc.btn} activeOpacity={0.8}>
-          <ArrowUpRight s={16} c="#fff" w={2.6} />
-        </TouchableOpacity>
-      </View>
-    </LinearGradient>
-  );
-}
-
-const mc = StyleSheet.create({
-  card: { marginTop: 10, padding: 16, borderRadius: 18, borderWidth: 1, borderColor: '#EAD9A8' },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  label: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: '#A57F3D' },
-  title: { fontFamily: F.serifMedium, fontSize: 22, color: '#8B6B2F', marginTop: 5, lineHeight: 26 },
-  sub: { fontFamily: F.sans, fontSize: 12, color: '#A57F3D', marginTop: 3 },
-  btn: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center', flexShrink: 0, shadowColor: C.gold, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 4 },
-});
-
-// ── Progress bar ─────────────────────────────────────────────────
 function ProgressBar({ pct }: { pct: number }) {
   return (
-    <View style={{ width: 110, height: 3, borderRadius: 3, backgroundColor: '#ece9de', overflow: 'hidden' }}>
-      <View style={{ width: `${pct}%` as any, height: '100%', backgroundColor: C.gold, borderRadius: 3 }} />
+    <View style={progress.track}>
+      <View style={[progress.fill, { width: `${pct}%` }]} />
     </View>
   );
 }
 
-// ── Sample tasks ─────────────────────────────────────────────────
-const SAMPLE_TASKS: TaskRowProps[] = [
-  { title: 'Morning Prayer', time: '06:00', subtitle: '6:00 AM',         type: 'morning', state: 'done'    },
-  { title: 'Daily Gospel',   time: '07:00', subtitle: 'MORNING READING', type: 'gospel',  state: 'skipped' },
-  { title: 'Journaling',     time: '20:00', subtitle: 'EVENING',         type: 'journal', state: 'active'  },
-  { title: 'Evening Prayer', time: '21:00', subtitle: '9:00 PM',         type: 'evening', state: 'pending' },
-];
+const progress = StyleSheet.create({
+  track: { width: 110, height: 3, borderRadius: 3, backgroundColor: '#ece9de', overflow: 'hidden' },
+  fill: { height: '100%', backgroundColor: C.gold, borderRadius: 3 },
+});
 
-// ── Main ─────────────────────────────────────────────────────────
 export default function HomeView() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { books } = useReadingList();
+  const {
+    gratitudeEntries,
+    gratitudeTaskEnabled,
+    gratitudeTaskFrequency,
+    gratitudeTaskTime,
+  } = useInnerTools();
+
+  const homeCards = useMemo<HomeCard[]>(() => {
+    const todayKey = new Date().toISOString().split('T')[0];
+    const featuredHabit = INITIAL_HABITS.find(habit => habit.active && habit.steps.some(step => !step.completedToday))
+      ?? INITIAL_HABITS.find(habit => habit.active)
+      ?? INITIAL_HABITS[0];
+    const habitDone = featuredHabit.steps.filter(step => step.completedToday).length;
+    const habitTotal = featuredHabit.steps.length;
+    const nextHabitStep = featuredHabit.steps.find(step => !step.completedToday) ?? featuredHabit.steps[0];
+
+    const featuredReading = books.find(book => book.showOnHome && book.status === 'reading')
+      ?? books.find(book => book.showOnHome)
+      ?? books.find(book => book.status === 'reading');
+    const readingScheduled = featuredReading
+      ? isScheduledToday(featuredReading.taskFrequency, featuredReading.taskSelectedDays)
+      : false;
+    const readingDoneToday = !!(featuredReading?.lastSessionAt && dateKey(featuredReading.lastSessionAt) === todayKey);
+
+    const gratitudeTodayCount = gratitudeEntries.filter(
+      entry => entry.kind === 'daily' && entry.date === todayKey,
+    ).length;
+    const gratitudeScheduled = gratitudeTaskEnabled
+      && isScheduledToday(gratitudeTaskFrequency, gratitudeTaskFrequency === 'daily' ? undefined : [1, 2, 3, 4, 5]);
+    const gratitudeDoneToday = gratitudeTodayCount >= 3;
+
+    const primaryChallenge = ACTIVE_CHALLENGES[0];
+
+    return [
+      {
+        id: 'spiritual-routine',
+        route: '/prayer',
+        streak: 4,
+        task: {
+          variant: 'spiritual',
+          title: 'Morning Prayer',
+          time: '07:00',
+          subtitle: 'Spiritual routine',
+          state: 'active',
+          type: 'prayer',
+        },
+      },
+      {
+        id: 'habit-flow',
+        route: '/habits',
+        streak: nextHabitStep?.currentStreak ?? 0,
+        task: {
+          variant: 'habit',
+          title: featuredHabit?.name ?? 'Habits',
+          time: nextHabitStep?.time,
+          subtitle: featuredHabit ? `${habitDone}/${habitTotal} steps today` : 'Create your first habit',
+          state: featuredHabit ? getHabitState(featuredHabit) : 'locked',
+          habitColor: featuredHabit?.color ?? C.gold,
+          habitIconName: featuredHabit ? getHabitIconName(featuredHabit) : 'Heart',
+        },
+      },
+      {
+        id: 'reading-task',
+        route: '/reading-list',
+        task: {
+          variant: 'routine',
+          title: featuredReading?.title ?? 'Reading List',
+          time: featuredReading?.taskTime,
+          subtitle: featuredReading
+            ? getScheduleLabel(featuredReading.taskFrequency, featuredReading.taskSelectedDays)
+            : 'Add a reading task',
+          state: featuredReading ? (readingDoneToday ? 'done' : readingScheduled ? 'active' : 'locked') : 'locked',
+          type: 'reading',
+        },
+      },
+      {
+        id: 'gratitude-task',
+        route: '/gratitude',
+        task: {
+          variant: 'routine',
+          title: 'Gratitude',
+          time: gratitudeTaskEnabled ? gratitudeTaskTime : undefined,
+          subtitle: gratitudeTaskEnabled
+            ? getScheduleLabel(gratitudeTaskFrequency)
+            : 'Set as daily task',
+          state: gratitudeTaskEnabled ? (gratitudeDoneToday ? 'done' : gratitudeScheduled ? 'active' : 'locked') : 'locked',
+          type: 'gratitude',
+        },
+      },
+      {
+        id: 'challenge-task',
+        streak: primaryChallenge?.streak,
+        task: {
+          variant: 'challenge',
+          title: primaryChallenge?.title ?? 'Challenges',
+          time: primaryChallenge ? `${primaryChallenge.count}/${primaryChallenge.total}` : undefined,
+          subtitle: primaryChallenge ? 'Reading challenge' : 'No active challenges',
+          state: primaryChallenge ? 'active' : 'locked',
+          type: 'reading',
+        },
+      },
+    ];
+  }, [books, gratitudeEntries, gratitudeTaskEnabled, gratitudeTaskFrequency, gratitudeTaskTime]);
+
+  const scheduledToday = homeCards.filter(card => card.task.state !== 'locked').length;
+  const completedToday = homeCards.filter(card => card.task.state === 'done').length;
+  const progressPct = scheduledToday === 0 ? 0 : Math.round((completedToday / scheduledToday) * 100);
+  const statusLine = scheduledToday === 0
+    ? 'Set up tasks to fill your Home flow'
+    : completedToday > 0
+      ? `${completedToday} of ${scheduledToday} completed`
+      : `${scheduledToday} active today`;
 
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: C.bg }}
-      contentContainerStyle={{ paddingTop: Math.max(insets.top, Platform.OS === 'web' ? 24 : insets.top) + 4, paddingBottom: 120 }}
+      contentContainerStyle={{
+        paddingTop: Math.max(insets.top, Platform.OS === 'web' ? 24 : insets.top) + 4,
+        paddingBottom: 120,
+      }}
       showsVerticalScrollIndicator={false}
     >
       <HomeHeader />
 
-      <View style={{ paddingHorizontal: 20, paddingTop: 18 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <View style={s.tasksWrap}>
+        <View style={s.tasksHead}>
           <View>
-            <Text style={{ fontFamily: F.serifMedium, fontSize: 22, color: C.text }}>{"Today's Tasks"}</Text>
-            <Text style={{ fontFamily: F.sans, fontSize: 12, color: C.textMuted, marginTop: 4 }}>33% Completed</Text>
+            <Text style={s.tasksTitle}>{"Today's Tasks"}</Text>
+            <Text style={s.tasksSub}>{statusLine}</Text>
           </View>
-          <View style={{ marginTop: 8 }}><ProgressBar pct={33} /></View>
+          <View style={s.progressWrap}>
+            <ProgressBar pct={progressPct} />
+          </View>
         </View>
 
-        <View style={{ marginTop: 14 }}>
-          {SAMPLE_TASKS.map((t, i) => <TaskRow key={i} {...t} />)}
+        <View style={s.cardsList}>
+          {homeCards.map(card => {
+            const content = card.id === 'reading-task'
+              ? (
+                <HomeReadingCard
+                  task={card.task}
+                  book={books.find(book => book.title === card.task.title)}
+                />
+              )
+              : card.id === 'gratitude-task'
+                ? (
+                  <HomeGratitudeCard
+                    task={card.task}
+                    blessingsToday={gratitudeEntries.filter(
+                      entry => entry.kind === 'daily' && entry.date === new Date().toISOString().split('T')[0],
+                    ).length}
+                  />
+                )
+                : <AnyTaskCard task={card.task} streak={card.streak} />;
+
+            if (!card.route) {
+              return <View key={card.id}>{content}</View>;
+            }
+
+            const route = card.route;
+
+            return (
+              <TouchableOpacity
+                key={card.id}
+                activeOpacity={0.84}
+                onPress={() => router.push(route)}
+              >
+                {content}
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        <TouchableOpacity style={add.btn} activeOpacity={0.8}>
+        <TouchableOpacity style={s.addBtn} activeOpacity={0.8}>
           <Plus s={15} c={C.text} w={2.4} />
-          <Text style={add.txt}>ADD QUICK TASK</Text>
+          <Text style={s.addBtnTxt}>ADD QUICK TASK</Text>
         </TouchableOpacity>
-
-        <MyRoutineCard />
       </View>
 
       <WeeklyRhythm />
@@ -221,7 +342,306 @@ export default function HomeView() {
   );
 }
 
-const add = StyleSheet.create({
-  btn: { marginTop: 10, padding: 13, borderRadius: 16, borderWidth: 1.5, borderColor: C.text, backgroundColor: '#FCFAF6', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  txt: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2, color: C.text, textTransform: 'uppercase' },
+function dateKey(timestamp: number) {
+  return new Date(timestamp).toISOString().split('T')[0];
+}
+
+function getReadingAccent(category?: string) {
+  switch (category) {
+    case 'Spirituality':
+      return { main: '#C5A059', soft: '#FBF5E7', border: '#EEDCB4', text: '#8B6B2F' };
+    case 'Productivity':
+      return { main: '#15803D', soft: '#EEF9F0', border: '#CEEED4', text: '#166534' };
+    case 'Philosophy':
+      return { main: '#6D28D9', soft: '#F3EEFF', border: '#DFD0FF', text: '#5B21B6' };
+    default:
+      return { main: '#7C3AED', soft: '#F3EFFF', border: '#E4D7FF', text: '#5B21B6' };
+  }
+}
+
+function HomeReadingCard({
+  task,
+  book,
+}: {
+  task: TaskData;
+  book?: { author?: string; category?: string; totalMinutes?: number; sessions?: number };
+}) {
+  const accent = getReadingAccent(book?.category);
+  const isDone = task.state === 'done';
+  const isLocked = task.state === 'locked';
+
+  return (
+    <View
+      style={[
+        custom.readingCard,
+        { borderColor: accent.border, opacity: isLocked ? 0.7 : 1 },
+      ]}
+    >
+      {/* Left category accent bar */}
+      <View style={[custom.readingBar, { backgroundColor: accent.main }]} />
+
+      {/* Left checker */}
+      <View style={[custom.readingCheck, isDone && { backgroundColor: accent.main, borderColor: accent.main }]}>
+        {isDone
+          ? <CheckSmall s={18} c="#FFFFFF" w={2.8} />
+          : <CircleIcon s={19} c={accent.border} w={2} />
+        }
+      </View>
+
+      {/* Content */}
+      <View style={custom.readingMid}>
+        <Text style={custom.readingTitle} numberOfLines={1}>{task.title}</Text>
+        {!!book?.author && (
+          <Text style={custom.readingAuthorCompact} numberOfLines={1}>{book.author}</Text>
+        )}
+        <View style={custom.readingMetaRowCompact}>
+          {task.time ? (
+            <>
+              <Clock s={9} c={accent.text} />
+              <Text style={[custom.readingMetaCompact, { color: accent.text }]}>{task.time}</Text>
+              <Text style={{ color: accent.text, opacity: 0.55, fontSize: 10 }}>•</Text>
+            </>
+          ) : null}
+          {task.subtitle ? (
+            <Text style={[custom.readingMetaCompact, { color: accent.text, opacity: 0.75 }]}>
+              {task.subtitle}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+
+      {/* Right badge */}
+      {book?.sessions ? (
+        <View style={[custom.readingSessionBadge, { backgroundColor: accent.soft, borderColor: accent.border }]}>
+          <Book s={11} c={accent.main} />
+          <Text style={[custom.readingSessionText, { color: accent.text }]}>{book.sessions}</Text>
+        </View>
+      ) : (
+        <View style={[custom.readingIconBadge, { backgroundColor: accent.soft, borderColor: accent.border }]}>
+          <Book s={16} c={accent.main} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+function HomeGratitudeCard({
+  task,
+  blessingsToday,
+}: {
+  task: TaskData;
+  blessingsToday: number;
+}) {
+  const isDone = task.state === 'done';
+  const isLocked = task.state === 'locked';
+
+  return (
+    <LinearGradient
+      colors={['#FFF7F9', '#FFFFFF', '#FFF1F4']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[custom.gratitudeCard, { opacity: isLocked ? 0.72 : 1 }]}
+    >
+      <View style={custom.gratitudeRow}>
+        {/* Standard task checker, rose-accented */}
+        <View style={[custom.gratitudeCheck, isDone && custom.gratitudeCheckDone]}>
+          {isDone
+            ? <CheckSmall s={19} c="#FFFFFF" w={2.8} />
+            : <CircleIcon s={19} c="rgba(251,113,133,0.5)" w={2} />
+          }
+        </View>
+
+        <View style={custom.gratitudeMid}>
+          <View style={custom.gratitudeBadgeRow}>
+            <Text style={custom.gratitudeBadge}>Daily Gratitude</Text>
+            {blessingsToday > 0 && !isDone ? (
+              <Text style={custom.gratitudeCount}>{blessingsToday} today</Text>
+            ) : null}
+          </View>
+          <Text style={custom.gratitudeTitle}>{task.title}</Text>
+          <Text style={custom.gratitudeMeta}>
+            {task.time ? `${task.time} • ` : ''}
+            {isDone ? "You completed today's blessings." : task.subtitle || 'Three blessings'}
+          </Text>
+        </View>
+      </View>
+    </LinearGradient>
+  );
+}
+
+const s = StyleSheet.create({
+  tasksWrap: { paddingHorizontal: 20, paddingTop: 18 },
+  tasksHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 },
+  tasksTitle: { fontFamily: F.serifMedium, fontSize: 22, color: C.text },
+  tasksSub: { fontFamily: F.sans, fontSize: 12, color: C.textMuted, marginTop: 4 },
+  progressWrap: { marginTop: 8 },
+  cardsList: { marginTop: 14 },
+  addBtn: {
+    marginTop: 8,
+    padding: 13,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: C.text,
+    backgroundColor: '#FCFAF6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  addBtnTxt: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2, color: C.text, textTransform: 'uppercase' },
+});
+
+const custom = StyleSheet.create({
+  // Reading card — compact redesign
+  readingCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 13,
+    paddingLeft: 18,
+    borderWidth: 1,
+    borderRadius: 16,
+    marginBottom: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  readingBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
+  },
+  readingCheck: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#e7e5e4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  readingMid: {
+    flex: 1,
+    minWidth: 0,
+  },
+  readingTitle: {
+    fontFamily: F.serifMedium,
+    fontSize: 15.5,
+    lineHeight: 19,
+    color: '#1C1917',
+  },
+  readingAuthorCompact: {
+    marginTop: 1,
+    fontFamily: F.serifItalic,
+    fontSize: 11,
+    color: '#78716C',
+  },
+  readingMetaRowCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  readingMetaCompact: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    letterSpacing: 0.8,
+  },
+  readingSessionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexShrink: 0,
+  },
+  readingSessionText: {
+    fontFamily: F.sansBold,
+    fontSize: 11,
+  },
+  readingIconBadge: {
+    padding: 7,
+    borderRadius: 9,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+
+  // Gratitude card — same size as other cards, no right heart
+  gratitudeCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#FDE2E8',
+    marginBottom: 10,
+    padding: 13,
+  },
+  gratitudeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  gratitudeCheck: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#FBCFE8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  gratitudeCheckDone: {
+    backgroundColor: '#F43F5E',
+    borderColor: '#F43F5E',
+  },
+  gratitudeMid: {
+    flex: 1,
+    minWidth: 0,
+  },
+  gratitudeBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
+    flexWrap: 'wrap',
+  },
+  gratitudeBadge: {
+    fontFamily: F.sansBold,
+    fontSize: 8.5,
+    letterSpacing: 1.8,
+    textTransform: 'uppercase',
+    color: '#F43F5E',
+    backgroundColor: '#FFF1F2',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  gratitudeCount: {
+    fontFamily: F.sansSemiBold,
+    fontSize: 10,
+    color: '#FB7185',
+  },
+  gratitudeTitle: {
+    fontFamily: F.serifMedium,
+    fontSize: 15.5,
+    lineHeight: 19,
+    color: '#1C1917',
+  },
+  gratitudeMeta: {
+    marginTop: 3,
+    fontFamily: F.sansMedium,
+    fontSize: 10.5,
+    lineHeight: 15,
+    color: '#FB7185',
+  },
 });
