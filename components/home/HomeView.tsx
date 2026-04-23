@@ -130,14 +130,21 @@ function HomeHeader() {
 }
 
 const h = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 4, paddingBottom: 4 },
   iconBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#f5f4f0', alignItems: 'center', justifyContent: 'center' },
   monthWrap: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   month: { fontFamily: F.serifMedium, fontSize: 28, color: C.red, lineHeight: 32 },
   year: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, color: C.textMuted, marginTop: 3 },
-  quoteWrap: { paddingHorizontal: 26, paddingTop: 18, paddingBottom: 4, alignItems: 'center' },
-  quote: { fontFamily: F.serifMediumItalic, fontSize: 14, color: C.textSecondary, lineHeight: 21, textAlign: 'center' },
-  ref: { marginTop: 8, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.gold },
+  quoteWrap: { paddingHorizontal: 30, paddingTop: 18, paddingBottom: 6, alignItems: 'center' },
+  quote: {
+    maxWidth: 330,
+    fontFamily: F.serifMediumItalic,
+    fontSize: 16,
+    color: '#8C8277',
+    lineHeight: 25,
+    textAlign: 'center',
+  },
+  ref: { marginTop: 10, fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.5, color: C.gold },
 });
 
 function ProgressBar({ pct }: { pct: number }) {
@@ -164,6 +171,9 @@ export default function HomeView() {
     gratitudeTaskTime,
   } = useInnerTools();
   const { activeChallenges, pausedChallenges } = useChallenges();
+  const topPadding = Platform.OS === 'web'
+    ? 10
+    : Math.max(insets.top, 0) + 4;
 
   const homeCards = useMemo<HomeCard[]>(() => {
     const todayKey = new Date().toISOString().split('T')[0];
@@ -288,7 +298,7 @@ export default function HomeView() {
     <ScrollView
       style={{ flex: 1, backgroundColor: C.bg }}
       contentContainerStyle={{
-        paddingTop: Math.max(insets.top, Platform.OS === 'web' ? 24 : insets.top) + 4,
+        paddingTop: topPadding,
         paddingBottom: 120,
       }}
       showsVerticalScrollIndicator={false}
@@ -373,11 +383,13 @@ function HomeReadingCard({
   const isLocked = task.state === 'locked';
 
   return (
-    <View style={[custom.readingCard, { opacity: isLocked ? 0.7 : 1 }]}>
-      {/* Left ink accent bar */}
-      <View style={custom.readingBar} />
-
-      {/* Checker */}
+    <LinearGradient
+      colors={['#F8F6FE', '#FDFCFF']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[custom.readingCard, { opacity: isLocked ? 0.7 : 1 }]}
+    >
+      {/* Checker — indigo ring */}
       <View style={[custom.readingCheck, isDone && custom.readingCheckDone]}>
         {isDone && <CheckSmall s={18} c="#FFFFFF" w={2.8} />}
       </View>
@@ -385,25 +397,28 @@ function HomeReadingCard({
       {/* Content */}
       <View style={custom.readingMid}>
         <Text style={custom.readingTitle} numberOfLines={1}>{task.title}</Text>
+        {!!book?.author && (
+          <Text style={custom.readingAuthor} numberOfLines={1}>{book.author}</Text>
+        )}
         <View style={custom.readingMetaRow}>
           {task.time ? (
             <>
-              <Clock s={9} c="#78716C" />
+              <Clock s={9} c="#7C6FB0" />
               <Text style={custom.readingMeta}>{task.time}</Text>
               <Text style={custom.readingDot}>•</Text>
             </>
           ) : null}
-          <Text style={custom.readingMeta} numberOfLines={1}>
-            {book?.author ?? task.subtitle ?? 'Reading Task'}
-          </Text>
+          {task.subtitle ? (
+            <Text style={custom.readingMeta} numberOfLines={1}>{task.subtitle}</Text>
+          ) : null}
         </View>
       </View>
 
-      {/* Book icon badge — no number */}
+      {/* Book icon badge — indigo/purple */}
       <View style={custom.readingIconBadge}>
-        <Book s={16} c="#57534E" />
+        <Book s={16} c="#6D28D9" />
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -483,30 +498,16 @@ const s = StyleSheet.create({
 });
 
 const custom = StyleSheet.create({
-  // Reading card — parchment/ink aesthetic, compact
+  // Reading card — indigo/literary aesthetic
   readingCard: {
-    position: 'relative',
-    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    padding: 13,
-    paddingLeft: 18,
+    padding: 12,
     borderWidth: 1,
-    borderRadius: 16,
-    borderColor: '#E8E4DF',
+    borderRadius: 18,
+    borderColor: 'rgba(109,40,217,0.14)',
     marginBottom: 10,
-    backgroundColor: '#F9F7F4',
-  },
-  readingBar: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    borderTopLeftRadius: 16,
-    borderBottomLeftRadius: 16,
-    backgroundColor: '#44403C',
   },
   readingCheck: {
     width: 36,
@@ -514,21 +515,28 @@ const custom = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
-    borderColor: '#C5BDB7',
+    borderColor: 'rgba(109,40,217,0.3)',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
   readingCheckDone: {
-    backgroundColor: '#44403C',
-    borderColor: '#44403C',
+    backgroundColor: '#6D28D9',
+    borderColor: '#6D28D9',
   },
   readingMid: { flex: 1, minWidth: 0 },
   readingTitle: {
     fontFamily: F.serifMedium,
-    fontSize: 15.5,
-    lineHeight: 19,
+    fontSize: 16,
+    lineHeight: 20,
     color: '#1C1917',
+  },
+  readingAuthor: {
+    fontFamily: F.serifItalic,
+    fontSize: 11.5,
+    lineHeight: 15,
+    color: '#7C6FB0',
+    marginTop: 1,
   },
   readingMetaRow: {
     flexDirection: 'row',
@@ -538,16 +546,14 @@ const custom = StyleSheet.create({
   },
   readingMeta: {
     fontFamily: F.sansMedium,
-    fontSize: 10.5,
-    color: '#78716C',
+    fontSize: 10,
+    color: '#7C6FB0',
   },
-  readingDot: { color: '#78716C', opacity: 0.65, fontSize: 10 },
+  readingDot: { color: '#7C6FB0', opacity: 0.6, fontSize: 9 },
   readingIconBadge: {
     padding: 8,
-    borderRadius: 9,
-    borderWidth: 1,
-    backgroundColor: '#F0EDE9',
-    borderColor: 'rgba(168,162,158,0.4)',
+    borderRadius: 10,
+    backgroundColor: '#ECE8F5',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,

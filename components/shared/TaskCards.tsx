@@ -72,7 +72,7 @@ function TaskCheck({ variant, state, size, habitColor }: { variant: TaskVariant;
     bg = fillColor; borderColor = fillColor; iconColor = '#fff';
   } else {
     if (variant === 'habit') { borderColor = (habitColor || '#C5A059') + '60'; }
-    else if (variant === 'routine') { borderColor = '#e7e5e4'; borderWidth = 1; }
+    else if (variant === 'routine') { borderColor = 'rgba(28,25,23,0.28)'; borderWidth = 1.5; }
     else if (variant === 'challenge') { borderColor = 'rgba(197,160,89,0.55)'; borderWidth = 2.5; }
     else { borderColor = 'rgba(197,160,89,0.4)'; }
   }
@@ -98,8 +98,17 @@ function TypeBadge({ variant, type, habitColor, habitIconName }: { variant: Task
   if (variant === 'routine' && habitIconName) {
     const RIcon = ICONS[habitIconName] ?? Sparkles;
     return (
-      <View style={{ padding: 8, borderRadius: 9, backgroundColor: '#F5F4F0', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <RIcon s={16} c="#78716C" />
+      <View style={{ padding: 9, borderRadius: 10, backgroundColor: '#ECEAE8', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <RIcon s={18} c="#1C1917" />
+      </View>
+    );
+  }
+  if (variant === 'challenge') {
+    const iconName = type ? TYPE_ICONS[type] : undefined;
+    const CIcon = (iconName ? ICONS[iconName] : null) ?? Sparkles;
+    return (
+      <View style={{ padding: 8, borderRadius: 11, backgroundColor: '#F5E6C8', borderWidth: 1, borderColor: 'rgba(197,160,89,0.3)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <CIcon s={17} c="#9A7426" />
       </View>
     );
   }
@@ -175,14 +184,15 @@ export function SpiritualTaskCard({ task, streak }: { task: TaskData; streak?: n
 export function RoutineTaskCard({ task, streak }: { task: TaskData; streak?: number }) {
   const isDimmed = task.state === 'done' || task.state === 'skipped';
   return (
-    <View style={[cs.base, { backgroundColor: isDimmed ? 'rgba(249,250,251,0.7)' : '#fff', borderColor: '#f2f1ec', borderRadius: 16, marginBottom: 10 }]}>
+    <View style={[cs.base, cs.routineCard, isDimmed && { backgroundColor: '#F8F8F7' }]}>
+      <View style={cs.routineBar} />
       <TaskCheck variant="routine" state={task.state} size={36} />
       <View style={cs.mid}>
         <TaskTitle title={task.title} variant="routine" state={task.state} />
         <TaskMeta time={task.time} subtitle={task.subtitle} variant="routine" state={task.state} />
       </View>
       <StreakBadge count={streak} />
-      <TypeBadge variant="routine" type={task.type} />
+      <TypeBadge variant="routine" type={task.type} habitIconName={task.habitIconName} />
     </View>
   );
 }
@@ -258,5 +268,23 @@ const cs = StyleSheet.create({
     width: 4,
     borderTopLeftRadius: 16,
     borderBottomLeftRadius: 16,
+  },
+  routineCard: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(28,25,23,0.14)',
+    borderRadius: 16,
+    marginBottom: 10,
+    paddingLeft: 18,
+    overflow: 'hidden',
+  },
+  routineBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
+    backgroundColor: '#1C1917',
   },
 });
