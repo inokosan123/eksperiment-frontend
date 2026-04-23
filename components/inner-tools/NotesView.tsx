@@ -11,8 +11,8 @@ import {
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
-import { TextFormatToolbar, TextSelection } from '@/components/shared/TextFormatToolbar';
-import { LinedTextInput } from '@/components/shared/LinedTextInput';
+import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
+import type { TextSelection } from '@/components/shared/TextFormatToolbar';
 import { InnerNote, NoteColor, NoteKind, NoteSourceRef, useInnerTools } from './InnerToolsContext';
 
 const BG = '#FDFBF5';
@@ -552,62 +552,23 @@ function EditorModal({
   const insets = useSafeAreaInsets();
   const isNote = type === 'note';
   const palette = isNote ? NOTE_COLORS[color] : NOTE_COLORS.gold;
-  const [blockSelections, setBlockSelections] = useState<Record<number, TextSelection>>({});
-  const [activeBlockIndex, setActiveBlockIndex] = useState(0);
-  const textInputRefs = useRef<Record<number, TextInput | null>>({});
-  const pendingFocusRef = useRef<{ index: number; selection?: TextSelection } | null>(null);
+  const richEditorRef = useRef<RichEditor>(null);
+  const [dragState, setDragState] = useState<QuoteDragState | null>(null);
   const [blockLayouts, setBlockLayouts] = useState<Record<number, { top: number; height: number }>>({});
   const [paperHeight, setPaperHeight] = useState(0);
-  const [dragState, setDragState] = useState<QuoteDragState | null>(null);
   const editorBlocks = useMemo(() => buildEditorBlocks(content, sourceRefs), [content, sourceRefs]);
   const hasQuote = sourceRefs.length > 0;
-  const textBlockCount = useMemo(
-    () => editorBlocks.filter(block => block.type === 'text').length,
-    [editorBlocks],
-  );
 
   useEffect(() => {
-    const pending = pendingFocusRef.current;
-    if (!visible || !pending) return;
-
-    const timeout = setTimeout(() => {
-      const target = textInputRefs.current[pending.index];
-      if (target) {
-        if (pending.selection) {
-          setBlockSelections(prev => ({ ...prev, [pending.index]: pending.selection! }));
-        }
-        target.focus();
-      }
-      pendingFocusRef.current = null;
-    }, 0);
-
+    if (!visible) return;
+    const timeout = setTimeout(() => richEditorRef.current?.focusContentEditor(), 300);
     return () => clearTimeout(timeout);
-  }, [editorBlocks, visible]);
-
-  useEffect(() => {
-    if (editorBlocks[activeBlockIndex]?.type === 'text') return;
-    const firstTextIndex = editorBlocks.findIndex(block => block.type === 'text');
-    if (firstTextIndex >= 0) {
-      setActiveBlockIndex(firstTextIndex);
-    }
-  }, [activeBlockIndex, editorBlocks]);
+  }, [visible]);
 
   const commitBlocks = (nextBlocks: NoteEditorBlock[]) => {
     const serialized = serializeEditorBlocks(nextBlocks);
     onSourceRefs(serialized.sourceRefs);
     onContent(serialized.content);
-  };
-
-  const findClosestTextIndex = (blocks: NoteEditorBlock[], startIndex: number) => {
-    for (let offset = 0; offset < blocks.length; offset += 1) {
-      const backward = startIndex - offset;
-      if (backward >= 0 && blocks[backward]?.type === 'text') return backward;
-
-      const forward = startIndex + offset;
-      if (forward < blocks.length && blocks[forward]?.type === 'text') return forward;
-    }
-
-    return 0;
   };
 
   const storeBlockLayout = (index: number, top: number, height: number) => {
@@ -718,67 +679,10 @@ function EditorModal({
     setDragState(null);
   };
 
-  const updateTextBlock = (index: number, value: string) => {
-    const normalizedValue = normalizeNewlines(value);
-
-    if (normalizedValue.includes('\n')) {
-      const nextBlocks = [...editorBlocks];
-      const parts = normalizedValue.split('\n');
-      nextBlocks.splice(index, 1, ...parts.map(text => ({ type: 'text', text }) satisfies NoteEditorTextBlock));
-      const focusIndex = Math.min(index + parts.length - 1, nextBlocks.length - 1);
-      pendingFocusRef.current = { index: focusIndex, selection: { start: 0, end: 0 } };
-      setActiveBlockIndex(focusIndex);
-      commitBlocks(nextBlocks);
-      return;
-    }
-
-    const nextBlocks = [...editorBlocks];
-    nextBlocks[index] = { type: 'text', text: normalizedValue };
-    commitBlocks(nextBlocks);
-  };
-
-  const setBlockSelection = (index: number, selection: TextSelection) => {
-    setBlockSelections(prev => ({ ...prev, [index]: selection }));
-  };
-
-  const removeEmptyTextBlock = (index: number) => {
-    if (textBlockCount <= 1) return;
-    const block = editorBlocks[index];
-    if (!block || block.type !== 'text' || block.text.length > 0) return;
-
-    const nextBlocks = [...editorBlocks];
-    nextBlocks.splice(index, 1);
-    const fallbackIndex = findClosestTextIndex(nextBlocks, Math.max(0, index - 1));
-    pendingFocusRef.current = {
-      index: fallbackIndex,
-      selection: {
-        start: nextBlocks[fallbackIndex]?.type === 'text' ? nextBlocks[fallbackIndex].text.length : 0,
-        end: nextBlocks[fallbackIndex]?.type === 'text' ? nextBlocks[fallbackIndex].text.length : 0,
-      },
-    };
-    setActiveBlockIndex(fallbackIndex);
-    commitBlocks(nextBlocks);
-  };
-
   const removeQuoteAt = (index: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const nextBlocks = editorBlocks.filter((_, blockIndex) => blockIndex !== index);
     commitBlocks(nextBlocks);
-  };
-
-  const resolvedActiveIndex = editorBlocks[activeBlockIndex]?.type === 'text'
-    ? activeBlockIndex
-    : editorBlocks.findIndex(block => block.type === 'text');
-  const toolbarBlock = resolvedActiveIndex >= 0 && editorBlocks[resolvedActiveIndex]?.type === 'text'
-    ? editorBlocks[resolvedActiveIndex]
-    : undefined;
-  const toolbarValue = toolbarBlock?.text ?? '';
-  const toolbarSelection = blockSelections[resolvedActiveIndex] ?? { start: 0, end: 0 };
-  const toolbarChange = (value: string) => {
-    if (resolvedActiveIndex >= 0) updateTextBlock(resolvedActiveIndex, value);
-  };
-  const toolbarSelectionChange = (selection: TextSelection) => {
-    if (resolvedActiveIndex >= 0) setBlockSelection(resolvedActiveIndex, selection);
   };
 
   return (
@@ -835,83 +739,46 @@ function EditorModal({
             </View>
           )}
 
-          <TextFormatToolbar
-            value={toolbarValue}
-            selection={toolbarSelection}
-            onChangeText={toolbarChange}
-            onSelectionChange={toolbarSelectionChange}
-            style={s.formatToolbar}
+          <RichToolbar
+            editor={richEditorRef}
+            actions={[
+              actions.setBold,
+              actions.setItalic,
+              actions.setUnderline,
+              actions.insertBulletsList,
+              actions.insertOrderedList,
+            ]}
+            style={[s.richToolbar, { borderColor: `${palette.accent}28` }]}
+            selectedButtonStyle={s.richToolbarSelected}
+            iconTint={palette.accent === '#D1D5DB' ? '#9CA3AF' : palette.accent}
+            selectedIconTint={palette.accent}
           />
 
-          <View
-            style={[s.linedPaper, isNote && !hasQuote && { backgroundColor: 'transparent' }]}
-            onLayout={event => setPaperHeight(event.nativeEvent.layout.height)}
-          >
-            {editorBlocks.map((block, index) => (
-              <View
-                key={`${block.type}-${index}`}
-                onLayout={event => storeBlockLayout(index, event.nativeEvent.layout.y, event.nativeEvent.layout.height)}
-              >
-                {block.type === 'text' ? (
-                  <View>
-                    <LinedTextInput
-                      ref={ref => { textInputRefs.current[index] = ref; }}
-                      value={block.text}
-                      onChangeText={value => updateTextBlock(index, value)}
-                      selection={blockSelections[index]}
-                      onSelectionChange={selection => setBlockSelection(index, selection)}
-                      onFocus={() => setActiveBlockIndex(index)}
-                      onKeyPress={event => {
-                        if (event.nativeEvent.key === 'Backspace') {
-                          removeEmptyTextBlock(index);
-                        }
-                      }}
-                      minLines={1}
-                      lineHeight={33}
-                      placeholder={index === 0 ? (isNote ? 'Write your note...' : hasQuote ? 'Write before the quote...' : 'Write what will help you return...') : ''}
-                      placeholderTextColor="#CFCAC2"
-                      inputStyle={s.contentInput}
-                      wrapStyle={activeBlockIndex !== index ? s.hiddenInput : undefined}
-                    />
-                    {activeBlockIndex !== index && block.text.length > 0 && (
-                      <TouchableOpacity
-                        style={StyleSheet.absoluteFillObject}
-                        activeOpacity={0.9}
-                        onPress={() => {
-                          setActiveBlockIndex(index);
-                          setTimeout(() => textInputRefs.current[index]?.focus(), 50);
-                        }}
-                      >
-                        <MarkdownText text={block.text} style={s.contentInput} lineHeight={33} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ) : (
-                  <ScriptureQuoteCard
-                    sourceRef={block.sourceRef}
-                    onRemove={() => removeQuoteAt(index)}
-                    onDragStart={() => startQuoteDrag(index)}
-                    onDragMove={updateQuoteDrag}
-                    onDragEnd={finishQuoteDrag}
-                    onDragCancel={cancelQuoteDrag}
-                    isDimmed={dragState?.index === index}
-                    isDragging={dragState?.index === index}
-                  />
-                )}
-              </View>
-            ))}
-            {dragState && (
-              <>
-                <View pointerEvents="none" style={[s.quoteDropIndicator, { top: dragState.indicatorY }]} />
-                <View pointerEvents="none" style={[s.quoteDragOverlay, { top: dragState.top }]}>
-                  <ScriptureQuoteCard
-                    sourceRef={dragState.block.sourceRef}
-                    visualState="ghost"
-                  />
-                </View>
-              </>
-            )}
-          </View>
+          <RichEditor
+            ref={richEditorRef}
+            initialContentHTML={content}
+            onChange={onContent}
+            placeholder={isNote ? 'Write your note...' : 'Write what will help you return...'}
+            style={s.richEditor}
+            editorStyle={{
+              backgroundColor: 'transparent',
+              color: '#3D3229',
+              contentCSSText: 'font-family: Georgia, serif; font-size: 18px; line-height: 1.7; color: #3D3229; padding: 0;',
+            }}
+            useContainer
+            scrollEnabled={false}
+          />
+
+          {/* Quote cards still rendered for scripture references */}
+          {editorBlocks.filter(b => b.type === 'quote').map((block, index) => (
+            block.type === 'quote' && (
+              <ScriptureQuoteCard
+                key={index}
+                sourceRef={block.sourceRef}
+                onRemove={() => removeQuoteAt(editorBlocks.indexOf(block))}
+              />
+            )
+          ))}
         </ScrollView>
       </View>
     </Modal>
@@ -1140,9 +1007,25 @@ const s = StyleSheet.create({
   titleInput: { fontFamily: F.serifMedium, fontSize: 30, lineHeight: 36, color: '#3D3229', paddingVertical: 0, marginBottom: 18 },
   swatches: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 18 },
   swatch: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  formatToolbar: { marginBottom: 13 },
-  linedPaper: { position: 'relative', minHeight: 380, borderTopWidth: 1, borderTopColor: 'rgba(197,160,89,0.10)', paddingTop: 12 },
-  contentInput: { fontFamily: F.serif, fontSize: 20, lineHeight: 33, color: '#3D3229', textAlignVertical: 'top', padding: 0 },
+  richToolbar: {
+    marginBottom: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.86)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 1,
+  },
+  richToolbarSelected: {
+    backgroundColor: 'rgba(197,160,89,0.18)',
+    borderRadius: 6,
+  },
+  richEditor: {
+    minHeight: 320,
+    backgroundColor: 'transparent',
+  },
   quoteCard: {
     position: 'relative',
     borderRadius: 14,
@@ -1222,5 +1105,4 @@ const s = StyleSheet.create({
   quoteText: { flex: 1, fontFamily: F.serifItalic, fontSize: 18, lineHeight: 29, color: '#5C4B2A' },
   quoteExpand: { marginTop: 2, marginBottom: 8, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4, color: GOLD },
   quoteSource: { marginTop: 4, fontFamily: F.serifMedium, fontSize: 13, color: GOLD },
-  hiddenInput: { opacity: 0 },
 });
