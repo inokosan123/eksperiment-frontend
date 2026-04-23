@@ -16,7 +16,7 @@ export default function InnerLifeView() {
         showsVerticalScrollIndicator={false}
       >
         <View style={s.quoteWrap}>
-          <Text style={s.quote}>{"The Kingdom of God is within you."}</Text>
+          <Text style={s.quote}>{'"The Kingdom of God is within you."'}</Text>
           <Text style={s.ref}>LUKE 17:21</Text>
         </View>
 
