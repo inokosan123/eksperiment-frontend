@@ -270,6 +270,15 @@ export default function HomeView() {
         },
       },
       {
+        id: 'quick-task-demo',
+        task: {
+          variant: 'quick',
+          title: 'Reply to Father Nikolaj',
+          state: 'pending',
+          type: 'custom',
+        },
+      },
+      {
         id: 'challenge-task',
         route: '/challenges',
         streak: primaryChallenge?.streak,
@@ -354,9 +363,16 @@ export default function HomeView() {
           })}
         </View>
 
-        <TouchableOpacity style={s.addBtn} activeOpacity={0.8}>
-          <Plus s={15} c={C.text} w={2.4} />
-          <Text style={s.addBtnTxt}>ADD QUICK TASK</Text>
+        <TouchableOpacity activeOpacity={0.82} style={{ marginTop: 8 }}>
+          <LinearGradient
+            colors={['#FFFFFF', '#F0FDF4']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={s.addBtn}
+          >
+            <Plus s={16} c="#1C1917" w={2.5} />
+            <Text style={s.addBtnTxt}>ADD QUICK TASK</Text>
+          </LinearGradient>
         </TouchableOpacity>
       </View>
 
@@ -480,18 +496,21 @@ const s = StyleSheet.create({
   progressWrap: { marginTop: 8 },
   cardsList: { marginTop: 14 },
   addBtn: {
-    marginTop: 8,
-    padding: 13,
+    padding: 14,
     borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: C.text,
-    backgroundColor: '#FCFAF6',
+    borderWidth: 2,
+    borderColor: '#1C1917',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  addBtnTxt: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2, color: C.text, textTransform: 'uppercase' },
+  addBtnTxt: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.5, color: '#1C1917', textTransform: 'uppercase' },
 });
 
 const custom = StyleSheet.create({
