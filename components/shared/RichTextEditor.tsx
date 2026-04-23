@@ -25,7 +25,6 @@ type Props = {
   placeholder?: string;
   backgroundColor?: string;
   color?: string;
-  minHeight?: number;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -78,13 +77,28 @@ function buildEditorHTML(opts: {
       window.ReactNativeWebView.postMessage(JSON.stringify(obj));
     }
 
-    // Notify content changes
+    // Scroll to keep cursor visible above keyboard
+    function scrollToCursor() {
+      var sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      var rect = sel.getRangeAt(0).getBoundingClientRect();
+      if (rect.height === 0) return;
+      var cursorBottom = rect.bottom + window.scrollY;
+      var viewBottom = window.scrollY + window.innerHeight - 20;
+      if (cursorBottom > viewBottom) {
+        window.scrollTo(0, cursorBottom - window.innerHeight + 60);
+      }
+    }
+
+    // Notify content changes + scroll cursor into view
     editor.addEventListener('input', function() {
+      scrollToCursor();
       post({ type: 'change', html: editor.innerHTML });
     });
 
     // Notify format state on every selection change
     document.addEventListener('selectionchange', function() {
+      scrollToCursor();
       post({
         type: 'fmt',
         bold:      document.queryCommandState('bold'),
@@ -117,7 +131,6 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
     placeholder = 'Write here...',
     backgroundColor = '#FFFFFF',
     color = '#3D3229',
-    minHeight = 320,
     style,
   },
   ref,
@@ -151,8 +164,8 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
       ref={webViewRef}
       originWhitelist={['*']}
       source={sourceRef.current}
-      style={[{ minHeight, backgroundColor }, style]}
-      scrollEnabled={false}
+      style={[{ flex: 1, backgroundColor }, style]}
+      scrollEnabled
       keyboardDisplayRequiresUserAction={false}
       showsVerticalScrollIndicator={false}
       onMessage={event => {

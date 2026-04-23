@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput,
-  TouchableOpacity, View, StyleProp, TextStyle,
+  KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView,
+  StyleSheet, Text, TextInput, TouchableOpacity, View, StyleProp, TextStyle,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -688,64 +688,67 @@ function EditorModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={[s.editorScreen, { backgroundColor: palette.editorBg }]}>
-        <View style={[s.editorHeader, { paddingTop: getTitleBarTopPadding(insets.top), borderBottomColor: `${palette.accent}22` }]}>
-          <TouchableOpacity onPress={onClose} style={s.headerBtn} activeOpacity={0.7}>
-            <ArrowLeft s={24} c="#A8A29E" />
-          </TouchableOpacity>
-          <View style={{ alignItems: 'center' }}>
-            <Text style={s.editorKicker}>{editing ? 'Editing' : 'New'} {isNote ? 'Note' : 'Quick Help'}</Text>
-            <Text style={s.editorDate}>{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</Text>
-          </View>
-          <View style={s.editorActions}>
-            {onDelete && (
-              <TouchableOpacity onPress={onDelete} style={s.editorIconBtn} activeOpacity={0.7}>
-                <Trash2 s={20} c="#EF4444" />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={onSave} style={s.editorIconBtn} activeOpacity={0.7}>
-              <CheckSmall s={21} c={palette.accent} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={[s.editorScreen, { backgroundColor: palette.editorBg }]}>
+
+          {/* Fixed header */}
+          <View style={[s.editorHeader, { paddingTop: getTitleBarTopPadding(insets.top), borderBottomColor: `${palette.accent}22` }]}>
+            <TouchableOpacity onPress={onClose} style={s.headerBtn} activeOpacity={0.7}>
+              <ArrowLeft s={24} c="#A8A29E" />
             </TouchableOpacity>
-          </View>
-        </View>
-
-        <ScrollView
-          contentContainerStyle={[s.editorContent, { paddingBottom: insets.bottom + 40 }]}
-          keyboardShouldPersistTaps="handled"
-          scrollEnabled={!dragState}
-        >
-          <TextInput
-            value={title}
-            onChangeText={onTitle}
-            placeholder="Title"
-            placeholderTextColor="#D6D3D1"
-            style={s.titleInput}
-          />
-
-          {isNote && (
-            <View style={s.swatches}>
-              {COLOR_KEYS.map(key => {
-                const c = NOTE_COLORS[key];
-                const active = key === color;
-                return (
-                  <Pressable
-                    key={key}
-                    onPress={() => onColor(key)}
-                    style={[s.swatch, { backgroundColor: c.cardBg, borderColor: active ? c.accent : c.border }]}
-                  >
-                    {active && <CheckSmall s={12} c={c.accent} />}
-                  </Pressable>
-                );
-              })}
+            <View style={{ alignItems: 'center' }}>
+              <Text style={s.editorKicker}>{editing ? 'Editing' : 'New'} {isNote ? 'Note' : 'Quick Help'}</Text>
+              <Text style={s.editorDate}>{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</Text>
             </View>
-          )}
+            <View style={s.editorActions}>
+              {onDelete && (
+                <TouchableOpacity onPress={onDelete} style={s.editorIconBtn} activeOpacity={0.7}>
+                  <Trash2 s={20} c="#EF4444" />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={onSave} style={s.editorIconBtn} activeOpacity={0.7}>
+                <CheckSmall s={21} c={palette.accent} />
+              </TouchableOpacity>
+            </View>
+          </View>
 
-          <RichToolbar
-            editorRef={richEditorRef}
-            activeFormats={formatState}
-            style={[s.richToolbar, { borderColor: `${palette.accent}28` }]}
-          />
+          {/* Top area — title, swatches, toolbar (no scroll needed, always compact) */}
+          <View style={[s.editorTop, { paddingHorizontal: 24 }]}>
+            <TextInput
+              value={title}
+              onChangeText={onTitle}
+              placeholder="Title"
+              placeholderTextColor="#D6D3D1"
+              style={s.titleInput}
+            />
+            {isNote && (
+              <View style={s.swatches}>
+                {COLOR_KEYS.map(key => {
+                  const c = NOTE_COLORS[key];
+                  const active = key === color;
+                  return (
+                    <Pressable
+                      key={key}
+                      onPress={() => onColor(key)}
+                      style={[s.swatch, { backgroundColor: c.cardBg, borderColor: active ? c.accent : c.border }]}
+                    >
+                      {active && <CheckSmall s={12} c={c.accent} />}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+            <RichToolbar
+              editorRef={richEditorRef}
+              activeFormats={formatState}
+              style={[s.richToolbar, { borderColor: `${palette.accent}28` }]}
+            />
+          </View>
 
+          {/* Editor fills remaining space — scrolls internally to keep cursor visible */}
           <RichTextEditor
             ref={richEditorRef}
             initialHTML={content}
@@ -754,21 +757,11 @@ function EditorModal({
             placeholder={isNote ? 'Write your note...' : 'Write what will help you return...'}
             backgroundColor={palette.editorBg}
             color="#3D3229"
-            style={s.richEditor}
+            style={[s.richEditor, { paddingHorizontal: 24 }]}
           />
 
-          {/* Quote cards still rendered for scripture references */}
-          {editorBlocks.filter(b => b.type === 'quote').map((block, index) => (
-            block.type === 'quote' && (
-              <ScriptureQuoteCard
-                key={index}
-                sourceRef={block.sourceRef}
-                onRemove={() => removeQuoteAt(editorBlocks.indexOf(block))}
-              />
-            )
-          ))}
-        </ScrollView>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -992,6 +985,7 @@ const s = StyleSheet.create({
   editorActions: { minWidth: 44, flexDirection: 'row', justifyContent: 'flex-end', gap: 2 },
   editorIconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   editorContent: { paddingHorizontal: 24, paddingTop: 22 },
+  editorTop: { paddingTop: 22 },
   titleInput: { fontFamily: F.serifMedium, fontSize: 30, lineHeight: 36, color: '#3D3229', paddingVertical: 0, marginBottom: 18 },
   swatches: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 18 },
   swatch: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
@@ -1011,7 +1005,7 @@ const s = StyleSheet.create({
     borderRadius: 6,
   },
   richEditor: {
-    minHeight: 320,
+    flex: 1,
     backgroundColor: 'transparent',
   },
   quoteCard: {
