@@ -35,7 +35,7 @@ export default function InnerLifeView() {
 }
 
 const s = StyleSheet.create({
-  quoteWrap: { paddingHorizontal: 26, paddingTop: 18, paddingBottom: 4, alignItems: 'center' },
-  quote: { fontFamily: F.serifMediumItalic, fontSize: 14, color: C.textSecondary, lineHeight: 21, textAlign: 'center' },
-  ref: { marginTop: 8, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.gold },
+  quoteWrap: { paddingHorizontal: 26, paddingTop: 20, paddingBottom: 6, alignItems: 'center' },
+  quote: { fontFamily: F.serifMediumItalic, fontSize: 17, color: C.textSecondary, lineHeight: 26, textAlign: 'center' },
+  ref: { marginTop: 10, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.gold },
 });
