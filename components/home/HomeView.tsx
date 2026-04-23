@@ -397,9 +397,6 @@ function HomeReadingCard({
       {/* Content */}
       <View style={custom.readingMid}>
         <Text style={custom.readingTitle} numberOfLines={1}>{task.title}</Text>
-        {!!book?.author && (
-          <Text style={custom.readingAuthor} numberOfLines={1}>{book.author}</Text>
-        )}
         <View style={custom.readingMetaRow}>
           {task.time ? (
             <>
@@ -408,9 +405,9 @@ function HomeReadingCard({
               <Text style={custom.readingDot}>•</Text>
             </>
           ) : null}
-          {task.subtitle ? (
-            <Text style={custom.readingMeta} numberOfLines={1}>{task.subtitle}</Text>
-          ) : null}
+          <Text style={custom.readingMeta} numberOfLines={1}>
+            {book?.author ?? task.subtitle ?? 'Reading Task'}
+          </Text>
         </View>
       </View>
 
@@ -434,7 +431,7 @@ function HomeGratitudeCard({
 
   return (
     <LinearGradient
-      colors={['#FFF7F9', '#FFFFFF', '#FFF1F4']}
+      colors={['#FFEDF2', '#FFF6F8']}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={[custom.gratitudeCard, { opacity: isLocked ? 0.72 : 1 }]}
@@ -444,7 +441,7 @@ function HomeGratitudeCard({
         <View style={[custom.gratitudeCheck, isDone && custom.gratitudeCheckDone]}>
           {isDone
             ? <CheckSmall s={19} c="#FFFFFF" w={2.8} />
-            : <CircleIcon s={19} c="rgba(251,113,133,0.5)" w={2} />
+            : <CircleIcon s={19} c="#F472B6" w={2} />
           }
         </View>
 
@@ -453,7 +450,7 @@ function HomeGratitudeCard({
           <View style={custom.gratitudeMetaRow}>
             {task.time ? (
               <>
-                <Clock s={9} c="#FB7185" />
+                <Clock s={9} c="#E11D48" />
                 <Text style={custom.gratitudeMeta}>{task.time}</Text>
                 <Text style={custom.gratitudeDot}>•</Text>
               </>
@@ -468,7 +465,7 @@ function HomeGratitudeCard({
 
         {/* Small heart type badge */}
         <View style={custom.gratitudeTypeBox}>
-          <Heart s={16} c="#F43F5E" />
+          <Heart s={16} c="#E11D48" />
         </View>
       </View>
     </LinearGradient>
@@ -531,13 +528,6 @@ const custom = StyleSheet.create({
     lineHeight: 20,
     color: '#1C1917',
   },
-  readingAuthor: {
-    fontFamily: F.serifItalic,
-    fontSize: 11.5,
-    lineHeight: 15,
-    color: '#7C6FB0',
-    marginTop: 1,
-  },
   readingMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -563,7 +553,7 @@ const custom = StyleSheet.create({
   gratitudeCard: {
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#FDE2E8',
+    borderColor: '#F9A8D4',
     marginBottom: 10,
     padding: 13,
   },
@@ -578,14 +568,14 @@ const custom = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
-    borderColor: '#FBCFE8',
+    borderColor: '#F472B6',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
   gratitudeCheckDone: {
-    backgroundColor: '#F43F5E',
-    borderColor: '#F43F5E',
+    backgroundColor: '#E11D48',
+    borderColor: '#E11D48',
   },
   gratitudeMid: { flex: 1, minWidth: 0 },
   gratitudeTitle: {
@@ -603,15 +593,15 @@ const custom = StyleSheet.create({
   gratitudeMeta: {
     fontFamily: F.sansMedium,
     fontSize: 10.5,
-    color: '#FB7185',
+    color: '#E11D48',
   },
-  gratitudeDot: { color: '#FB7185', opacity: 0.65, fontSize: 10 },
+  gratitudeDot: { color: '#E11D48', opacity: 0.65, fontSize: 10 },
   gratitudeTypeBox: {
     padding: 7,
     borderRadius: 9,
     borderWidth: 1,
-    backgroundColor: '#FFE4E6',
-    borderColor: 'rgba(244,63,94,0.25)',
+    backgroundColor: '#FFD6DF',
+    borderColor: 'rgba(225,29,72,0.3)',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,

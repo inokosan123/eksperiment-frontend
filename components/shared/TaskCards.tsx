@@ -128,7 +128,9 @@ function TaskTitle({ title, variant, state }: { title: string; variant: TaskVari
   const isDone = state === 'done', isSkipped = state === 'skipped';
   let color = '#1c1917';
   if (isSkipped) color = '#a8a29e';
-  else if (isDone) color = (variant === 'spiritual' || variant === 'challenge') ? 'rgba(120,83,20,0.45)' : '#a8a29e';
+  else if (isDone) color =
+    (variant === 'spiritual' || variant === 'challenge') ? 'rgba(120,83,20,0.45)' :
+    variant === 'routine' ? 'rgba(28,25,23,0.3)' : '#a8a29e';
   else if (variant === 'spiritual') color = '#451a03';
 
   return (
@@ -151,6 +153,7 @@ function TaskTitle({ title, variant, state }: { title: string; variant: TaskVari
 function TaskMeta({ time, subtitle, variant, habitColor, state }: { time?: string; subtitle?: string; variant: TaskVariant; habitColor?: string; state: TaskState }) {
   let c =
     (variant === 'spiritual' || variant === 'challenge') ? 'rgba(197,160,89,0.75)' :
+    variant === 'routine' ? 'rgba(28,25,23,0.45)' :
     variant === 'habit' ? ((habitColor || '#C5A059') + 'DD') : '#a8a29e';
   if (state === 'done' || state === 'skipped') c = '#a8a29e';
   return (
@@ -184,8 +187,12 @@ export function SpiritualTaskCard({ task, streak }: { task: TaskData; streak?: n
 export function RoutineTaskCard({ task, streak }: { task: TaskData; streak?: number }) {
   const isDimmed = task.state === 'done' || task.state === 'skipped';
   return (
-    <View style={[cs.base, cs.routineCard, isDimmed && { backgroundColor: '#F8F8F7' }]}>
-      <View style={cs.routineBar} />
+    <LinearGradient
+      colors={['#F2F1EF', '#FFFFFF']}
+      start={{ x: 0.135, y: 0 }}
+      end={{ x: 0.865, y: 1 }}
+      style={[cs.base, { borderColor: 'rgba(28,25,23,0.18)', borderRadius: 16, marginBottom: 10, opacity: isDimmed ? 0.7 : 1 }]}
+    >
       <TaskCheck variant="routine" state={task.state} size={36} />
       <View style={cs.mid}>
         <TaskTitle title={task.title} variant="routine" state={task.state} />
@@ -193,7 +200,7 @@ export function RoutineTaskCard({ task, streak }: { task: TaskData; streak?: num
       </View>
       <StreakBadge count={streak} />
       <TypeBadge variant="routine" type={task.type} habitIconName={task.habitIconName} />
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -268,23 +275,5 @@ const cs = StyleSheet.create({
     width: 4,
     borderTopLeftRadius: 16,
     borderBottomLeftRadius: 16,
-  },
-  routineCard: {
-    backgroundColor: '#FFFFFF',
-    borderColor: 'rgba(28,25,23,0.14)',
-    borderRadius: 16,
-    marginBottom: 10,
-    paddingLeft: 18,
-    overflow: 'hidden',
-  },
-  routineBar: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    borderTopLeftRadius: 16,
-    borderBottomLeftRadius: 16,
-    backgroundColor: '#1C1917',
   },
 });
