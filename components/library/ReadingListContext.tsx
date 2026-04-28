@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 
 export type ReadingStatus = 'to_read' | 'reading' | 'finished';
-export type ReadingFrequency = 'daily' | 'weekdays' | 'weekends' | 'specific_days';
+export type ReadingFrequency = 'daily' | 'weekdays' | 'weekends' | 'specific_days' | 'monthly';
+export type ReadingNotificationMode = 'none' | 'single' | 'double';
 
 export type ReadingBook = {
   id: string;
@@ -19,7 +20,11 @@ export type ReadingBook = {
   taskTime?: string;
   taskFrequency?: ReadingFrequency;
   taskSelectedDays?: number[];
+  taskMonthlyDays?: number[];
   taskSameTimeEveryDay?: boolean;
+  taskDayTimes?: Record<number, string>;
+  taskNotificationMode?: ReadingNotificationMode;
+  taskReminderMinutes?: number;
   sessions: number;
   totalMinutes: number;
   lastSessionAt?: number;
@@ -47,7 +52,11 @@ const INITIAL_BOOKS: ReadingBook[] = [
     showOnHome: true,
     taskTime: '21:00',
     taskFrequency: 'daily',
+    taskMonthlyDays: [1],
     taskSameTimeEveryDay: true,
+    taskDayTimes: {},
+    taskNotificationMode: 'single',
+    taskReminderMinutes: 15,
     sessions: 9,
     totalMinutes: 242,
     lastSessionAt: Date.now() - 86400000,
@@ -66,8 +75,12 @@ const INITIAL_BOOKS: ReadingBook[] = [
     showOnHome: false,
     taskFrequency: 'weekdays',
     taskSelectedDays: [1, 2, 3, 4, 5],
+    taskMonthlyDays: [1],
     taskTime: '18:30',
     taskSameTimeEveryDay: true,
+    taskDayTimes: {},
+    taskNotificationMode: 'none',
+    taskReminderMinutes: 15,
   },
   {
     id: 'book_3',

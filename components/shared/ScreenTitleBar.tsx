@@ -11,9 +11,13 @@ type Props = {
   showBack?: boolean;
   rightElement?: React.ReactNode;
   bg?: string;
+  titleSize?: number;
+  subtitle?: string;
+  onBackOverride?: () => void;
+  compactBottom?: boolean;
 };
 
-export default function ScreenTitleBar({ title, showBack = false, rightElement, bg }: Props) {
+export default function ScreenTitleBar({ title, showBack = false, rightElement, bg, titleSize, subtitle, onBackOverride, compactBottom }: Props) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
@@ -21,12 +25,16 @@ export default function ScreenTitleBar({ title, showBack = false, rightElement, 
   const topPad = getTitleBarTopPadding(insets.top);
 
   return (
-    <View style={[styles.wrap, { paddingTop: topPad, backgroundColor: bg ?? C.bg }]}>
+    <View style={[styles.wrap, { paddingTop: topPad, paddingBottom: compactBottom ? 4 : TITLE_BAR_BOTTOM_PADDING, backgroundColor: bg ?? C.bg }]}>
       {/* Left — back button or spacer */}
       <View style={styles.side}>
         {showBack && (
           <TouchableOpacity
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              if (onBackOverride) onBackOverride();
+              else router.back();
+            }}
             style={styles.backBtn}
             activeOpacity={0.7}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -36,8 +44,11 @@ export default function ScreenTitleBar({ title, showBack = false, rightElement, 
         )}
       </View>
 
-      {/* Center — title */}
-      <Text style={styles.title}>{title}</Text>
+      {/* Center — title + optional subtitle */}
+      <View style={styles.titleWrap}>
+        <Text style={[styles.title, titleSize ? { fontSize: titleSize } : null]}>{title}</Text>
+        {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+      </View>
 
       {/* Right — optional element or spacer */}
       <View style={styles.side}>
@@ -65,12 +76,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  title: {
+  titleWrap: {
     flex: 1,
+    alignItems: 'center',
+  },
+  title: {
     fontFamily: F.serifMedium,
     fontSize: 24,
     letterSpacing: 3.1,
     color: C.text,
     textAlign: 'center',
+  },
+  subtitle: {
+    marginTop: 2,
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 2.2,
+    color: C.gold,
+    textTransform: 'uppercase',
   },
 });

@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Modal, Pressable, ScrollView, StyleSheet, Text, TextInput,
+  Animated, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -8,12 +8,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
   ArrowLeft, CalendarCheck, CheckSmall, ChevronDown, ChevronUp,
-  Heart, Pencil, Plus, Trash2, X,
+  Heart, Pencil, Plus, RotateCcw, Trash2, X,
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
-import { TextFormatToolbar, TextSelection } from '@/components/shared/TextFormatToolbar';
-import { LinedTextInput } from '@/components/shared/LinedTextInput';
+import { RichTextEditor, RichToolbar, RichTextEditorRef, FormatState } from '@/components/shared/RichTextEditor';
+import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
+import ConfirmModal from '@/components/shared/ConfirmModal';
+import TaskTimeEditor from '@/components/shared/TaskTimeEditor';
+import { useTasks } from '@/components/tasks/TaskProvider';
+import type { TaskDraft } from '@/components/tasks/taskTypes';
 import { GratitudeEntry, GratitudeKind, useInnerTools } from './InnerToolsContext';
 
 const ROSE = '#F43F5E';
@@ -39,24 +43,86 @@ const WISDOM_QUOTES = [
   },
 ];
 
-const TIME_PRESETS = [
-  { label: 'Morning', sub: 'Start the day', value: '07:00' },
-  { label: 'Midday', sub: 'Lunch break', value: '12:00' },
-  { label: 'Evening', sub: 'Wind down', value: '20:00' },
+const FREQ_OPTIONS: { label: string; sub: string; value: 'daily' | 'weekdays' }[] = [
+  { label: 'Every Day', sub: '7 days a week', value: 'daily' },
+  { label: 'Weekdays', sub: 'Mon - Fri', value: 'weekdays' },
 ];
+
+const ALL_DAY_INDEXES = [0, 1, 2, 3, 4, 5, 6];
+const WEEKDAY_INDEXES = [0, 1, 2, 3, 4];
+
+function getTodayTaskDayIndex() {
+  const jsDay = new Date().getDay();
+  return jsDay === 0 ? 6 : jsDay - 1;
+}
 
 function newId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+const GRATITUDE_TASK_ID = 'gratitude_daily_task';
+
+function buildGratitudeTaskDraft({
+  time,
+  frequency,
+  sameTimeEveryDay,
+  dayTimes,
+}: {
+  time: string;
+  frequency: 'daily' | 'weekdays';
+  sameTimeEveryDay: boolean;
+  dayTimes: Record<number, string>;
+}): TaskDraft {
+  return {
+    id: GRATITUDE_TASK_ID,
+    title: 'Daily Gratitude',
+    subtitle: frequency === 'weekdays' ? 'Weekdays - three blessings' : 'Every day - three blessings',
+    level: 1,
+    source: 'gratitude',
+    type: 'gratitude',
+    targetView: '/gratitude',
+    schedule: {
+      frequency,
+      selectedDays: [],
+      monthlyDays: [1],
+      time,
+      sameTimeEveryDay,
+      dayTimes: sameTimeEveryDay ? {} : dayTimes,
+    },
+    notificationMode: 'none',
+    journalConfig: {
+      journalType: 'gratitude',
+      technique: 'gratitude',
+    },
+  };
+}
+
+function useChoiceMotion(active: boolean) {
+  const progress = useRef(new Animated.Value(active ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(progress, {
+      toValue: active ? 1 : 0,
+      friction: 15,
+      tension: 145,
+      useNativeDriver: false,
+    }).start();
+  }, [active, progress]);
+
+  return progress;
+}
+
 export default function GratitudeView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { createOrUpdateTask, remove: removeTask } = useTasks();
   const {
     gratitudeEntries, upsertGratitudeEntry, deleteGratitudeEntry,
     gratitudeTaskEnabled, setGratitudeTaskEnabled,
     gratitudeTaskTime, setGratitudeTaskTime,
     gratitudeTaskFrequency, setGratitudeTaskFrequency,
+    gratitudeTaskSameTimeEveryDay, setGratitudeTaskSameTimeEveryDay,
+    gratitudeTaskDayTimes, setGratitudeTaskDayTimes,
   } = useInnerTools();
 
   const [formKind, setFormKind] = useState<GratitudeKind | null>(null);
@@ -65,6 +131,8 @@ export default function GratitudeView() {
   const [content, setContent] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [taskSheet, setTaskSheet] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [confirmDisableTask, setConfirmDisableTask] = useState(false);
 
   const lifeEntries = useMemo(() => gratitudeEntries.filter(entry => entry.kind === 'life').sort((a, b) => b.createdAt - a.createdAt), [gratitudeEntries]);
   const dailyEntries = useMemo(() => gratitudeEntries.filter(entry => entry.kind === 'daily').sort((a, b) => b.createdAt - a.createdAt), [gratitudeEntries]);
@@ -112,7 +180,12 @@ export default function GratitudeView() {
   return (
     <View style={s.screen}>
       <Header top={insets.top} onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 120 }]} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 120 }]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+      >
         <View style={s.scripture}>
           <Text style={s.scriptureText}>{'"In everything give thanks, for this is the will of God in Christ Jesus for you."'}</Text>
           <Text style={s.scriptureRef}>1 THESSALONIANS 5:18</Text>
@@ -129,6 +202,7 @@ export default function GratitudeView() {
         />
         {formKind === 'life' && (
           <GratitudeForm
+            editorKey={`life-${editing?.id ?? 'new'}`}
             color="amber"
             title={title}
             content={content}
@@ -153,7 +227,7 @@ export default function GratitudeView() {
                 showDate={false}
                 onToggle={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
                 onEdit={() => openEdit(entry)}
-                onDelete={() => deleteGratitudeEntry(entry.id)}
+                onDelete={() => setDeleteTarget(entry.id)}
               />
             ))}
           </View>
@@ -163,11 +237,16 @@ export default function GratitudeView() {
           enabled={gratitudeTaskEnabled}
           time={gratitudeTaskTime}
           frequency={gratitudeTaskFrequency}
+          sameTimeEveryDay={gratitudeTaskSameTimeEveryDay}
+          dayTimes={gratitudeTaskDayTimes}
           onOpen={() => setTaskSheet(true)}
           onToggle={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            if (gratitudeTaskEnabled) setGratitudeTaskEnabled(false);
-            else setTaskSheet(true);
+            if (gratitudeTaskEnabled) {
+              setConfirmDisableTask(true);
+              return;
+            }
+            setTaskSheet(true);
           }}
         />
 
@@ -182,6 +261,7 @@ export default function GratitudeView() {
         />
         {formKind === 'daily' && (
           <GratitudeForm
+            editorKey={`daily-${editing?.id ?? 'new'}`}
             color="rose"
             title={title}
             content={content}
@@ -206,7 +286,7 @@ export default function GratitudeView() {
                   showDate
                   onToggle={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
                   onEdit={() => openEdit(entry)}
-                  onDelete={() => deleteGratitudeEntry(entry.id)}
+                  onDelete={() => setDeleteTarget(entry.id)}
                 />
               </View>
             ))}
@@ -214,19 +294,60 @@ export default function GratitudeView() {
         )}
 
         <View style={s.bottomQuotes}>
-          <WisdomCard quote={WISDOM_QUOTES[2]} />
           <WisdomCard quote={WISDOM_QUOTES[3]} />
         </View>
       </ScrollView>
+
+      <ConfirmModal
+        visible={!!deleteTarget}
+        icon={<Trash2 s={22} c="#EF4444" />}
+        iconBg="#FEF2F2"
+        title="Delete entry?"
+        body="This gratitude entry will be permanently removed."
+        cancelLabel="KEEP"
+        confirmLabel="DELETE"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) deleteGratitudeEntry(deleteTarget);
+          setDeleteTarget(null);
+        }}
+      />
+
+      <ConfirmModal
+        visible={confirmDisableTask}
+        icon={<CalendarCheck s={22} c={C.gold} />}
+        iconBg="#FFF8E0"
+        title="Stop daily task?"
+        body="Gratitude will be removed from your daily routine."
+        cancelLabel="KEEP"
+        confirmLabel="STOP"
+        confirmColor={C.gold}
+        onCancel={() => setConfirmDisableTask(false)}
+        onConfirm={() => {
+          void removeTask(GRATITUDE_TASK_ID);
+          setGratitudeTaskEnabled(false);
+          setConfirmDisableTask(false);
+        }}
+      />
 
       <TaskSheet
         visible={taskSheet}
         time={gratitudeTaskTime}
         frequency={gratitudeTaskFrequency}
+        sameTimeEveryDay={gratitudeTaskSameTimeEveryDay}
+        dayTimes={gratitudeTaskDayTimes}
         onTime={setGratitudeTaskTime}
         onFrequency={setGratitudeTaskFrequency}
+        onSameTimeEveryDay={setGratitudeTaskSameTimeEveryDay}
+        onDayTimes={setGratitudeTaskDayTimes}
         onClose={() => setTaskSheet(false)}
-        onSave={() => {
+        onSave={async () => {
+          await createOrUpdateTask(buildGratitudeTaskDraft({
+            time: gratitudeTaskTime,
+            frequency: gratitudeTaskFrequency,
+            sameTimeEveryDay: gratitudeTaskSameTimeEveryDay,
+            dayTimes: gratitudeTaskDayTimes,
+          }));
           setGratitudeTaskEnabled(true);
           setTaskSheet(false);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -272,8 +393,9 @@ function SectionHeader({
 }
 
 function GratitudeForm({
-  color, title, content, isEditing, placeholder, onTitle, onContent, onCancel, onSave,
+  editorKey, color, title, content, isEditing, placeholder, onTitle, onContent, onCancel, onSave,
 }: {
+  editorKey: string;
   color: 'amber' | 'rose';
   title: string;
   content: string;
@@ -285,10 +407,14 @@ function GratitudeForm({
   onSave: () => void;
 }) {
   const accent = color === 'amber' ? GOLD : ROSE;
-  const [contentSelection, setContentSelection] = useState<TextSelection>({ start: 0, end: 0 });
+  const editorRef = useRef<RichTextEditorRef>(null);
+  const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
+  const [titleHeight, setTitleHeight] = useState(44);
+  const bg = color === 'amber' ? '#FFFBEB' : '#FFF1F2';
+  const editorBg = color === 'amber' ? '#FFFDF8' : '#FFF8F8';
 
   return (
-    <View style={[s.formFrame, { borderColor: accent, backgroundColor: color === 'amber' ? '#FFFBEB' : '#FFF1F2' }]}>
+    <View style={[s.formFrame, { borderColor: accent, backgroundColor: bg }]}>
       <View style={s.formInner}>
         <Text style={[s.formKicker, { color: accent }]}>{isEditing ? 'Edit Entry' : 'New Entry'}</Text>
         <TextInput
@@ -296,27 +422,23 @@ function GratitudeForm({
           onChangeText={onTitle}
           placeholder={placeholder}
           placeholderTextColor={color === 'amber' ? '#E1C780' : '#FDA4AF'}
-          style={[s.formInput, { backgroundColor: color === 'amber' ? '#FFFBEB' : '#FFF1F2' }]}
+          multiline
+          scrollEnabled={false}
+          textAlignVertical="top"
+          onContentSizeChange={e => setTitleHeight(Math.max(44, e.nativeEvent.contentSize.height))}
+          style={[s.formInput, { backgroundColor: bg, height: titleHeight }]}
         />
-        <TextFormatToolbar
-          value={content}
-          selection={contentSelection}
-          onChangeText={onContent}
-          onSelectionChange={setContentSelection}
-          style={s.formToolbar}
-        />
-        <LinedTextInput
-          value={content}
-          onChangeText={onContent}
-          selection={contentSelection}
-          onSelectionChange={setContentSelection}
+        <RichToolbar editorRef={editorRef} activeFormats={fmt} style={s.formToolbar} />
+        <RichTextEditor
+          key={editorKey}
+          ref={editorRef}
+          initialHTML={content}
+          onChange={onContent}
+          onFormatChange={setFmt}
           placeholder="Add more detail... (optional)"
-          placeholderTextColor={color === 'amber' ? '#E1C780' : '#FDA4AF'}
-          minLines={3}
-          lineHeight={23}
-          wrapStyle={s.formAreaWrap}
-          inputStyle={[s.formInput, s.formArea]}
-          lineColor={color === 'amber' ? 'rgba(197,160,89,0.14)' : 'rgba(244,63,94,0.12)'}
+          backgroundColor={editorBg}
+          color="#3D3229"
+          style={s.formEditor}
         />
         <View style={s.formActions}>
           <TouchableOpacity onPress={onCancel} style={s.cancelBtn} activeOpacity={0.8}>
@@ -329,6 +451,30 @@ function GratitudeForm({
       </View>
     </View>
   );
+}
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div)>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '- ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&rsquo;/g, "'")
+    .replace(/&lsquo;/g, "'")
+    .replace(/&rdquo;/g, '"')
+    .replace(/&ldquo;/g, '"')
+    .replace(/\u00e2\u20ac\u00a2/g, '-')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
 }
 
 function GratitudeCard({
@@ -344,7 +490,8 @@ function GratitudeCard({
 }) {
   const isAmber = color === 'amber';
   const accent = isAmber ? GOLD : ROSE;
-  const long = entry.content.length > 110 || entry.content.split('\n').length > 3;
+  const plainContent = stripHtml(entry.content);
+  const long = plainContent.length > 110 || plainContent.split('\n').length > 3;
   return (
     <View style={[s.gCard, isAmber ? s.gAmber : s.gRose]}>
       <View style={[s.gAccent, { backgroundColor: accent }]} />
@@ -363,8 +510,8 @@ function GratitudeCard({
             </TouchableOpacity>
           </View>
         </View>
-        {!!entry.content && (
-          <Text style={s.gText} numberOfLines={expanded ? undefined : 3}>{entry.content}</Text>
+        {!!plainContent && (
+          <Text style={s.gText} numberOfLines={expanded ? undefined : 3}>{plainContent}</Text>
         )}
         {long && (
           <TouchableOpacity onPress={onToggle} style={s.moreBtn} activeOpacity={0.7}>
@@ -388,14 +535,18 @@ function EmptyHint({ color, text }: { color: 'amber' | 'rose'; text: string }) {
 }
 
 function TaskToggleCard({
-  enabled, time, frequency, onOpen, onToggle,
+  enabled, time, frequency, sameTimeEveryDay, dayTimes, onOpen, onToggle,
 }: {
   enabled: boolean;
   time: string;
   frequency: 'daily' | 'weekdays';
+  sameTimeEveryDay: boolean;
+  dayTimes: Record<number, string>;
   onOpen: () => void;
   onToggle: () => void;
 }) {
+  const displayTime = sameTimeEveryDay ? time : dayTimes[getTodayTaskDayIndex()] ?? time;
+
   return (
     <View style={[s.taskCard, enabled && s.taskCardEnabled]}>
       <TouchableOpacity onPress={enabled ? onOpen : onToggle} style={s.taskMain} activeOpacity={0.82}>
@@ -404,7 +555,9 @@ function TaskToggleCard({
         </View>
         <View style={{ flex: 1 }}>
           <Text style={s.taskTitle}>Set as Daily Task</Text>
-          <Text style={[s.taskSub, enabled && { color: ROSE }]}>{enabled ? `${frequency === 'weekdays' ? 'Mon - Fri' : 'Every day'} · ${time}` : 'Add gratitude to your daily routine'}</Text>
+          <Text style={[s.taskSub, enabled && { color: ROSE }]}>
+            {enabled ? `${frequency === 'weekdays' ? 'Mon - Fri' : 'Every day'} - ${displayTime}` : 'Add gratitude to your daily routine'}
+          </Text>
         </View>
       </TouchableOpacity>
       <TouchableOpacity onPress={onToggle} style={[s.switch, enabled && s.switchOn]} activeOpacity={0.8}>
@@ -417,81 +570,139 @@ function TaskToggleCard({
 function WisdomCard({ quote, compact = false }: { quote: { text: string; author: string }; compact?: boolean }) {
   return (
     <View style={[s.wisdom, compact && s.wisdomCompact]}>
-      <Text style={[s.wisdomText, compact && s.wisdomTextCompact]}>{`"${quote.text}"`}</Text>
-      <Text style={s.wisdomAuthor}>- {quote.author}</Text>
+      <Text style={s.wisdomText}>
+        <Text style={s.wisdomQuote}>{'"'}</Text>
+        {quote.text}
+        <Text style={s.wisdomQuote}>{'"'}</Text>
+      </Text>
+      <Text style={s.wisdomAuthor}>— {quote.author.toUpperCase()}</Text>
     </View>
   );
 }
 
 function TaskSheet({
-  visible, time, frequency, onTime, onFrequency, onClose, onSave,
+  visible, time, frequency, sameTimeEveryDay, dayTimes,
+  onTime, onFrequency, onSameTimeEveryDay, onDayTimes, onClose, onSave,
 }: {
   visible: boolean;
   time: string;
   frequency: 'daily' | 'weekdays';
+  sameTimeEveryDay: boolean;
+  dayTimes: Record<number, string>;
   onTime: (time: string) => void;
   onFrequency: (freq: 'daily' | 'weekdays') => void;
+  onSameTimeEveryDay: (sameTimeEveryDay: boolean) => void;
+  onDayTimes: (dayTimes: Record<number, string>) => void;
   onClose: () => void;
   onSave: () => void;
 }) {
+  const activeDayIndexes = frequency === 'weekdays' ? WEEKDAY_INDEXES : ALL_DAY_INDEXES;
+
   return (
-    <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={s.sheetOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={s.sheet}>
-          <View style={s.sheetHandle} />
-          <View style={s.sheetHead}>
-            <TouchableOpacity onPress={onClose} style={s.sheetHeadBtn} activeOpacity={0.7}>
-              <X s={22} c="#A8A29E" />
-            </TouchableOpacity>
-            <View style={{ alignItems: 'center' }}>
-              <Text style={s.sheetKicker}>Daily Task</Text>
-              <Text style={s.sheetTitle}>Daily Gratitude</Text>
-            </View>
-            <TouchableOpacity onPress={onSave} style={[s.sheetHeadBtn, s.sheetSave]} activeOpacity={0.85}>
-              <CheckSmall s={20} c="#fff" />
-            </TouchableOpacity>
-          </View>
+    <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheet} keyboardAware>
+      <View style={s.sheetHandle} />
+      <View style={s.sheetHead}>
+        <TouchableOpacity onPress={onClose} style={s.sheetHeadBtn} activeOpacity={0.75}>
+          <X s={21} c="#A8A29E" />
+        </TouchableOpacity>
+        <View style={{ alignItems: 'center' }}>
+          <Text style={s.sheetKicker}>Set as Task</Text>
+          <Text style={s.sheetTitle}>Daily Gratitude</Text>
+        </View>
+        <TouchableOpacity onPress={onSave} style={[s.sheetHeadBtn, s.sheetSave]} activeOpacity={0.86}>
+          <CheckSmall s={20} c="#fff" />
+        </TouchableOpacity>
+      </View>
 
-          <View style={s.sheetBlock}>
-            <Text style={s.sheetLabel}>FREQUENCY</Text>
-            <View style={s.freqRow}>
-              {([
-                { label: 'Every Day', sub: '7 days a week', value: 'daily' as const },
-                { label: 'Weekdays', sub: 'Mon - Fri', value: 'weekdays' as const },
-              ]).map(option => {
-                const active = frequency === option.value;
-                return (
-                  <TouchableOpacity key={option.value} onPress={() => onFrequency(option.value)} style={[s.freqCard, active && s.freqActive]} activeOpacity={0.85}>
-                    <View style={[s.freqDot, active && s.freqDotActive]}>
-                      {active && <CheckSmall s={9} c="#fff" />}
-                    </View>
-                    <Text style={[s.freqTitle, active && s.freqTitleActive]}>{option.label}</Text>
-                    <Text style={[s.freqSub, active && s.freqSubActive]}>{option.sub}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.sheetContent}>
+        <View style={s.taskPreview}>
+          <View style={s.taskPreviewIcon}>
+            <Heart s={21} c={ROSE} />
           </View>
-
-          <View style={s.sheetBlock}>
-            <Text style={s.sheetLabel}>TIME</Text>
-            <View style={s.presetRow}>
-              {TIME_PRESETS.map(preset => {
-                const active = time === preset.value;
-                return (
-                  <TouchableOpacity key={preset.value} onPress={() => onTime(preset.value)} style={[s.timePreset, active && s.timePresetActive]} activeOpacity={0.85}>
-                    <Text style={[s.timePresetTitle, active && s.timeActiveText]}>{preset.label}</Text>
-                    <Text style={[s.timePresetSub, active && s.timeActiveSub]}>{preset.value}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+          <View style={s.taskPreviewCopy}>
+            <Text style={s.taskPreviewKicker}>Gratitude Practice</Text>
+            <Text style={s.taskPreviewTitle}>Three blessings each day</Text>
+            <View style={s.taskPreviewQuote}>
+              <Text style={s.taskPreviewQuoteText}>{`"${WISDOM_QUOTES[2].text}"`}</Text>
+              <Text style={s.taskPreviewQuoteAuthor}>- {WISDOM_QUOTES[2].author.toUpperCase()}</Text>
             </View>
-            <TextInput value={time} onChangeText={onTime} style={s.timeInput} keyboardType="numbers-and-punctuation" />
           </View>
         </View>
-      </View>
-    </Modal>
+
+        <View style={s.sheetBlock}>
+          <View style={s.sheetLabelRow}>
+            <Text style={s.sheetLabel}>Frequency</Text>
+            <RotateCcw s={14} c="#FDA4AF" />
+          </View>
+          <View style={s.freqColumn}>
+            {FREQ_OPTIONS.map(option => (
+              <FrequencyCard
+                key={option.value}
+                option={option}
+                active={frequency === option.value}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  onFrequency(option.value);
+                }}
+              />
+            ))}
+          </View>
+        </View>
+
+        <View style={s.sheetBlock}>
+          <TaskTimeEditor
+            time={time}
+            sameTimeEveryDay={sameTimeEveryDay}
+            dayTimes={dayTimes}
+            onTimeChange={onTime}
+            onSameTimeEveryDayChange={onSameTimeEveryDay}
+            onDayTimesChange={onDayTimes}
+            activeDayIndexes={activeDayIndexes}
+            accent={ROSE}
+            softBg="#FFF7F8"
+            borderColor="#FFE4E6"
+            mutedColor="#FB7185"
+          />
+        </View>
+
+        <TouchableOpacity onPress={onSave} activeOpacity={0.88} style={s.sheetPrimary}>
+          <Text style={s.sheetPrimaryText}>SAVE DAILY TASK</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SmoothBottomSheet>
+  );
+}
+
+function FrequencyCard({
+  option,
+  active,
+  onPress,
+}: {
+  option: typeof FREQ_OPTIONS[number];
+  active: boolean;
+  onPress: () => void;
+}) {
+  const progress = useChoiceMotion(active);
+  const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.02] });
+  const backgroundColor = progress.interpolate({ inputRange: [0, 1], outputRange: ['#FFFFFF', '#FFF1F2'] });
+  const borderColor = progress.interpolate({ inputRange: [0, 1], outputRange: ['#F1E7EA', '#F43F5E'] });
+  const shadowOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0.02, 0.16] });
+  const dotScale = progress.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] });
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={s.freqTouch}>
+      <Animated.View style={[s.freqCard, { backgroundColor, borderColor, shadowOpacity, transform: [{ scale }] }]}>
+        <View style={s.freqCopy}>
+          <Text style={[s.freqTitle, active && s.freqTitleActive]}>{option.label}</Text>
+          <Text style={[s.freqSub, active && s.freqSubActive]}>{option.sub}</Text>
+        </View>
+        <View style={[s.freqDot, active && s.freqDotActive]}>
+          <Animated.View style={{ opacity: progress, transform: [{ scale: dotScale }] }}>
+            <CheckSmall s={9} c="#fff" />
+          </Animated.View>
+        </View>
+      </Animated.View>
+    </TouchableOpacity>
   );
 }
 
@@ -499,16 +710,18 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: TITLE_BAR_BOTTOM_PADDING, backgroundColor: 'rgba(255,255,255,0.96)', borderBottomWidth: 1, borderBottomColor: '#F5F5F4' },
   headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 25, letterSpacing: 3.4, color: C.text },
+  headerTitle: { flex: 1, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 20, letterSpacing: 2.8, color: C.text },
   content: { paddingHorizontal: 20 },
-  scripture: { alignItems: 'center', paddingTop: 18, paddingBottom: 10, paddingHorizontal: 12 },
-  scriptureText: { fontFamily: F.serifMediumItalic, fontSize: 15, lineHeight: 22, color: C.textMuted, textAlign: 'center' },
-  scriptureRef: { marginTop: 6, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.2, color: GOLD },
-  wisdom: { borderRadius: 22, backgroundColor: '#1C1917', paddingHorizontal: 20, paddingVertical: 17, marginVertical: 8 },
-  wisdomCompact: { paddingHorizontal: 16, paddingVertical: 13, marginVertical: 8 },
-  wisdomText: { fontFamily: F.serifItalic, fontSize: 15, lineHeight: 23, color: '#D6D3D1' },
-  wisdomTextCompact: { fontSize: 13, lineHeight: 20 },
-  wisdomAuthor: { marginTop: 8, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: GOLD, textTransform: 'uppercase' },
+
+  scripture: { alignItems: 'center', paddingTop: 18, paddingBottom: 16, paddingHorizontal: 10 },
+  scriptureText: { fontFamily: F.serifMediumItalic, fontSize: 19, lineHeight: 30, color: '#3D3229', textAlign: 'center' },
+  scriptureRef: { marginTop: 10, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.4, color: GOLD },
+
+  wisdom: { borderRadius: 22, backgroundColor: '#1C1917', paddingHorizontal: 22, paddingVertical: 18, marginVertical: 6, borderLeftWidth: 3, borderLeftColor: GOLD },
+  wisdomCompact: { marginVertical: 8 },
+  wisdomText: { fontFamily: F.serifItalic, fontSize: 16, lineHeight: 26, color: '#EAE5DC', marginBottom: 10 },
+  wisdomQuote: { color: GOLD },
+  wisdomAuthor: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.2, color: GOLD },
   sectionHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 6, marginBottom: 10 },
   sectionKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.1, textTransform: 'uppercase', marginBottom: 4 },
   sectionTitle: { fontFamily: F.serifMedium, fontSize: 23, color: C.text },
@@ -519,9 +732,8 @@ const s = StyleSheet.create({
   formInner: { borderRadius: 22, backgroundColor: '#fff', padding: 15, gap: 11 },
   formKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, textTransform: 'uppercase' },
   formInput: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontFamily: F.serif, fontSize: 16, color: C.text },
-  formToolbar: { marginTop: 2 },
-  formAreaWrap: { paddingHorizontal: 14 },
-  formArea: { lineHeight: 23, paddingHorizontal: 0, paddingVertical: 0 },
+  formToolbar: { marginTop: 2, marginBottom: 6 },
+  formEditor: { height: 180, borderRadius: 10, overflow: 'hidden' },
   formActions: { flexDirection: 'row', gap: 9 },
   cancelBtn: { flex: 1, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', paddingVertical: 12, alignItems: 'center' },
   cancelText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.7, color: C.textSecondary, textTransform: 'uppercase' },
@@ -556,31 +768,35 @@ const s = StyleSheet.create({
   dailyCarousel: { gap: 12, paddingBottom: 14 },
   dailySlide: { width: 292 },
   bottomQuotes: { gap: 4, marginTop: 6 },
-  sheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.36)' },
-  sheet: { borderTopLeftRadius: 32, borderTopRightRadius: 32, backgroundColor: '#FAFAFA', paddingBottom: 28, maxHeight: '86%' },
-  sheetHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginTop: 12, marginBottom: 8 },
-  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F5F5F4' },
+  sheet: { borderTopLeftRadius: 34, borderTopRightRadius: 34, backgroundColor: '#FAFAFA', paddingBottom: 22, maxHeight: '88%', overflow: 'hidden' },
+  sheetHandle: { width: 42, height: 4, borderRadius: 999, backgroundColor: '#D6D3D1', alignSelf: 'center', marginTop: 12, marginBottom: 6 },
+  sheetHead: { minHeight: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: '#F0EDE6' },
   sheetHeadBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  sheetSave: { backgroundColor: ROSE },
-  sheetKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.textMuted, textTransform: 'uppercase' },
-  sheetTitle: { fontFamily: F.serifMedium, fontSize: 19, color: C.text, marginTop: 2 },
-  sheetBlock: { marginHorizontal: 22, marginTop: 18, borderRadius: 22, backgroundColor: '#fff', borderWidth: 1, borderColor: '#F5F5F4', padding: 18 },
-  sheetLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, color: ROSE, textTransform: 'uppercase', marginBottom: 14 },
-  freqRow: { flexDirection: 'row', gap: 12 },
-  freqCard: { flex: 1, borderRadius: 18, borderWidth: 2, borderColor: '#F5F5F4', backgroundColor: '#FAFAFA', paddingVertical: 15, paddingHorizontal: 10, alignItems: 'center' },
-  freqActive: { borderColor: ROSE, backgroundColor: '#FFF1F2' },
-  freqDot: { width: 17, height: 17, borderRadius: 9, borderWidth: 2, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  sheetSave: { backgroundColor: ROSE, shadowColor: ROSE, shadowOpacity: 0.25, shadowOffset: { width: 0, height: 7 }, shadowRadius: 12, elevation: 3 },
+  sheetKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.9, color: '#FDA4AF', textTransform: 'uppercase' },
+  sheetTitle: { fontFamily: F.serifMedium, fontSize: 21, color: C.text, marginTop: 1 },
+  sheetContent: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 20, gap: 14 },
+  taskPreview: { flexDirection: 'row', gap: 12, borderRadius: 24, borderWidth: 1, borderColor: '#FFE4E6', backgroundColor: '#FFF7F8', padding: 16 },
+  taskPreviewIcon: { width: 48, height: 48, borderRadius: 17, backgroundColor: '#FFE4E6', alignItems: 'center', justifyContent: 'center' },
+  taskPreviewCopy: { flex: 1, minWidth: 0, paddingTop: 1 },
+  taskPreviewKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.9, color: ROSE, textTransform: 'uppercase' },
+  taskPreviewTitle: { marginTop: 5, fontFamily: F.serifMedium, fontSize: 20, color: C.text },
+  taskPreviewQuote: { marginTop: 10, borderLeftWidth: 2, borderLeftColor: '#FDA4AF', paddingLeft: 10 },
+  taskPreviewQuoteText: { fontFamily: F.serifMediumItalic, fontSize: 14, lineHeight: 21, color: '#6F3A44' },
+  taskPreviewQuoteAuthor: { marginTop: 7, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.7, color: ROSE, textTransform: 'uppercase' },
+  sheetBlock: { borderRadius: 24, backgroundColor: '#fff', borderWidth: 1, borderColor: '#F1E7EA', padding: 16, gap: 13 },
+  sheetLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sheetLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, color: ROSE, textTransform: 'uppercase' },
+  freqColumn: { gap: 9 },
+  freqTouch: { width: '100%' },
+  freqCard: { minHeight: 62, borderRadius: 20, borderWidth: 1.5, borderColor: '#F5F5F4', backgroundColor: '#FAFAFA', paddingVertical: 12, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, shadowColor: ROSE, shadowOffset: { width: 0, height: 8 }, shadowRadius: 16, elevation: 2 },
+  freqCopy: { flex: 1, minWidth: 0 },
+  freqDot: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
   freqDotActive: { borderColor: ROSE, backgroundColor: ROSE },
-  freqTitle: { fontFamily: F.sansBold, fontSize: 13, color: C.textSecondary },
+  freqTitle: { fontFamily: F.sansBold, fontSize: 13.5, color: C.textSecondary },
   freqTitleActive: { color: '#9F1239' },
-  freqSub: { fontFamily: F.sans, fontSize: 10, color: C.textMuted, marginTop: 3 },
+  freqSub: { fontFamily: F.sans, fontSize: 10.5, color: C.textMuted, marginTop: 3 },
   freqSubActive: { color: ROSE },
-  presetRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  timePreset: { flex: 1, borderRadius: 14, borderWidth: 1, borderColor: '#F5F5F4', backgroundColor: '#FAFAFA', alignItems: 'center', paddingVertical: 12 },
-  timePresetActive: { borderColor: '#FDA4AF', backgroundColor: '#FFF1F2' },
-  timePresetTitle: { fontFamily: F.sansBold, fontSize: 11, color: C.textSecondary },
-  timePresetSub: { fontFamily: F.sans, fontSize: 10, color: C.textMuted, marginTop: 3 },
-  timeActiveText: { color: '#9F1239' },
-  timeActiveSub: { color: ROSE },
-  timeInput: { borderRadius: 16, borderWidth: 1, borderColor: '#FFE4E6', backgroundColor: '#FFF1F2', color: ROSE, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 32, paddingVertical: 12 },
+  sheetPrimary: { minHeight: 56, borderRadius: 22, backgroundColor: ROSE, alignItems: 'center', justifyContent: 'center', shadowColor: ROSE, shadowOpacity: 0.24, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
+  sheetPrimaryText: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 2, color: '#fff' },
 });

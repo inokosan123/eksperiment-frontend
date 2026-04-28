@@ -6,17 +6,17 @@ import { C, F } from '@/constants/tokens';
 export default function CelebrationOverlay() {
   return (
     <View style={s.wrap} pointerEvents="none">
-      <View style={s.card}>
-        <PartyPopper s={40} c={C.gold} />
-        <Text style={s.title}>Dream Achieved!</Text>
-        <Text style={s.label}>CONGRATULATIONS</Text>
-      </View>
       <LottieView
         source={require('@/assets/animations/task-complete.json')}
         autoPlay
         loop={false}
         webStyle={s.lottieWeb as any}
       />
+      <View style={s.card}>
+        <PartyPopper s={40} c={C.gold} />
+        <Text style={s.title}>Dream Achieved!</Text>
+        <Text style={s.label}>CONGRATULATIONS</Text>
+      </View>
     </View>
   );
 }

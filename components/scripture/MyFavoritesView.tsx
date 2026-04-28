@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowLeft, Search, SlidersHorizontal, Star, Trash2, X,
 } from '@/components/icons/Icons';
+import ConfirmModal from '@/components/shared/ConfirmModal';
 import {
   getAnnotationCategoryLabel, getAnnotationColorHex, hexToRgba,
   HighlightColor, ColorCategory,
@@ -55,6 +56,7 @@ export default function MyFavoritesView() {
   const [kind, setKind] = useState<TypeFilter>('all');
   const [source, setSource] = useState<SourceFilter>('all');
   const [deleteTarget, setDeleteTarget] = useState<ScriptureAnnotation | null>(null);
+  const [colorDeleteGroup, setColorDeleteGroup] = useState<{ annotation: ScriptureAnnotation; colors: string[] } | null>(null);
   const [colorEditorOpen, setColorEditorOpen] = useState(false);
 
   const filtered = useMemo(() => annotations
@@ -72,35 +74,95 @@ export default function MyFavoritesView() {
     .sort((a, b) => b.updatedAt - a.updatedAt), [annotations, color, kind, search, source]);
 
   const displayItems = useMemo(() => {
+    function groupKey(annotation: ScriptureAnnotation): string {
+      if (annotation.kind === 'highlight') {
+        // Group by passage (book+chapter+text) — ignore color so multi-color highlights merge
+        return ['highlight', annotation.bookId, annotation.chapter, annotation.text].join('\x00');
+      }
+      if (annotation.kind === 'comment') {
+        return ['comment', annotation.bookId, annotation.chapter, annotation.text, annotation.comment ?? ''].join('\x00');
+      }
+      return annotation.id;
+    }
+
+    const groupVerses = new Map<string, number[]>();
+    const groupColors = new Map<string, string[]>();
+
+    for (const annotation of filtered) {
+      const key = groupKey(annotation);
+      const existingVerses = groupVerses.get(key);
+      if (existingVerses) {
+        if (!existingVerses.includes(annotation.verse)) existingVerses.push(annotation.verse);
+      } else {
+        groupVerses.set(key, [annotation.verse]);
+      }
+      const existingColors = groupColors.get(key);
+      if (existingColors) {
+        if (!existingColors.includes(annotation.color)) existingColors.push(annotation.color);
+      } else {
+        groupColors.set(key, [annotation.color]);
+      }
+    }
+
     const seen = new Set<string>();
-    return filtered.filter(annotation => {
-      const key = annotation.kind === 'comment'
-        ? [
-          annotation.kind,
-          annotation.bookId,
-          annotation.chapter,
-          annotation.color,
-          annotation.text,
-          annotation.comment ?? '',
-        ].join(':')
-        : annotation.id;
-      if (seen.has(key)) return false;
+    return filtered.map(annotation => {
+      const key = groupKey(annotation);
+      if (seen.has(key)) return null;
       seen.add(key);
-      return true;
-    });
+
+      const verses = (groupVerses.get(key) ?? [annotation.verse]).sort((a, b) => a - b);
+      const colors = groupColors.get(key) ?? [annotation.color];
+      const bookName = BOOK_BY_ID.get(annotation.bookId)?.name ?? `Book ${annotation.bookId}`;
+      const verseRange = verses.length > 1
+        ? `${bookName} ${annotation.chapter}:${verses[0]}–${verses[verses.length - 1]}`
+        : annotationLocation(annotation);
+
+      return { annotation, verseRange, verses, colors };
+    }).filter((item): item is { annotation: ScriptureAnnotation; verseRange: string; verses: number[]; colors: string[] } => item !== null);
   }, [filtered]);
+
+  const handleDeletePress = (annotation: ScriptureAnnotation, colors: string[]) => {
+    if (colors.length > 1) {
+      setColorDeleteGroup({ annotation, colors });
+    } else {
+      setDeleteTarget(annotation);
+    }
+  };
+
+  const deleteOneColor = async (colorKey: string) => {
+    if (!colorDeleteGroup) return;
+    const { annotation } = colorDeleteGroup;
+    const group = annotations.filter(a =>
+      a.kind === 'highlight'
+      && a.bookId === annotation.bookId
+      && a.chapter === annotation.chapter
+      && a.color === colorKey
+      && a.text === annotation.text);
+    await Promise.all(group.map(a => deleteAnnotation(a.id)));
+    const remaining = colorDeleteGroup.colors.filter(c => c !== colorKey);
+    if (remaining.length === 0) setColorDeleteGroup(null);
+    else setColorDeleteGroup({ annotation, colors: remaining });
+  };
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    if (deleteTarget.kind === 'comment') {
-      const groupedComments = annotations.filter(annotation =>
+    if (deleteTarget.kind === 'highlight') {
+      const group = annotations.filter(annotation =>
+        annotation.kind === 'highlight'
+        && annotation.bookId === deleteTarget.bookId
+        && annotation.chapter === deleteTarget.chapter
+        && annotation.color === deleteTarget.color
+        && annotation.text === deleteTarget.text);
+      await Promise.all(group.map(annotation => deleteAnnotation(annotation.id)));
+    } else if (deleteTarget.kind === 'comment') {
+      const group = annotations.filter(annotation =>
         annotation.kind === 'comment'
         && annotation.bookId === deleteTarget.bookId
         && annotation.chapter === deleteTarget.chapter
         && annotation.color === deleteTarget.color
         && annotation.text === deleteTarget.text
         && annotation.comment === deleteTarget.comment);
-      await Promise.all(groupedComments.map(annotation => deleteAnnotation(annotation.id)));
+      await Promise.all(group.map(annotation => deleteAnnotation(annotation.id)));
     } else {
       await deleteAnnotation(deleteTarget.id);
     }
@@ -221,10 +283,13 @@ export default function MyFavoritesView() {
           </View>
         ) : (
           <View style={s.list}>
-            {displayItems.map(annotation => (
+            {displayItems.map(({ annotation, verseRange, verses, colors }) => (
               <AnnotationCard
                 key={annotation.id}
                 annotation={annotation}
+                verseRange={verseRange}
+                verses={verses}
+                colors={colors}
                 categories={categories}
                 onOpen={() => router.push({
                   pathname: '/scripture-reader',
@@ -234,7 +299,7 @@ export default function MyFavoritesView() {
                     verse: String(annotation.verse),
                   },
                 })}
-                onDelete={() => setDeleteTarget(annotation)}
+                onDelete={() => handleDeletePress(annotation, colors)}
               />
             ))}
           </View>
@@ -242,6 +307,15 @@ export default function MyFavoritesView() {
       </ScrollView>
 
       <DeleteModal visible={!!deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={confirmDelete} />
+
+      {colorDeleteGroup && (
+        <ColorDeleteModal
+          colors={colorDeleteGroup.colors}
+          categories={categories}
+          onClose={() => setColorDeleteGroup(null)}
+          onDeleteColor={deleteOneColor}
+        />
+      )}
       <CategoryEditorModal
         visible={colorEditorOpen}
         categories={categories}
@@ -273,16 +347,21 @@ function Header({ top, onBack }: { top: number; onBack: () => void }) {
   );
 }
 
+const PREVIEW_COUNT = 2;
+
 function AnnotationCard({
-  annotation, categories, onOpen, onDelete,
+  annotation, verseRange, verses, colors, categories, onOpen, onDelete,
 }: {
   annotation: ScriptureAnnotation;
+  verseRange: string;
+  verses: number[];
+  colors: string[];
   categories: ColorCategory[];
   onOpen: () => void;
   onDelete: () => void;
 }) {
-  const accent = getAnnotationColorHex(annotation.color);
-  const categoryLabel = getAnnotationCategoryLabel(categories, annotation.color);
+  const [expanded, setExpanded] = useState(false);
+  const accent = getAnnotationColorHex(colors[0] ?? annotation.color);
   const kindLabel = annotation.kind === 'comment'
     ? 'Comment'
     : annotation.kind === 'favorite'
@@ -295,6 +374,10 @@ function AnnotationCard({
     .map(line => line.trim())
     .filter(Boolean);
 
+  const hasMore = quoteLines.length > PREVIEW_COUNT;
+  const visibleLines = hasMore && !expanded ? quoteLines.slice(0, PREVIEW_COUNT) : quoteLines;
+  const hiddenCount = quoteLines.length - PREVIEW_COUNT;
+
   return (
     <TouchableOpacity
       onPress={onOpen}
@@ -304,9 +387,15 @@ function AnnotationCard({
       <View style={s.cardTop}>
         <View style={s.cardTags}>
           <View style={[s.cardDot, { backgroundColor: accent }]} />
-          <View style={[s.cardChip, { backgroundColor: hexToRgba(accent, 0.10), borderColor: hexToRgba(accent, 0.18) }]}>
-            <Text style={[s.cardChipText, { color: accent }]}>{categoryLabel}</Text>
-          </View>
+          {colors.map(c => {
+            const hex = getAnnotationColorHex(c);
+            const label = getAnnotationCategoryLabel(categories, c);
+            return (
+              <View key={c} style={[s.cardChip, { backgroundColor: hexToRgba(hex, 0.10), borderColor: hexToRgba(hex, 0.18) }]}>
+                <Text style={[s.cardChipText, { color: hex }]}>{label}</Text>
+              </View>
+            );
+          })}
           <View style={[s.cardChip, s.cardKindChip]}>
             <Text style={[s.cardChipText, { color: '#9A7426' }]}>{kindLabel}</Text>
           </View>
@@ -315,21 +404,88 @@ function AnnotationCard({
           <Trash2 s={15} c="#D8A6A6" />
         </Pressable>
       </View>
-      <Text style={s.cardRef}>{annotationLocation(annotation)}</Text>
+      <Text style={s.cardRef}>{verseRange}</Text>
       <View style={s.quoteBlock}>
-        {quoteLines.map((line, index) => (
+        {visibleLines.map((line, index) => (
           <View key={`${annotation.id}-${index}`}>
-            <Text style={s.quoteText}>{`"${line}"`}</Text>
-            {index < quoteLines.length - 1 && <View style={s.quoteDivider} />}
+            <View style={s.quoteLine}>
+              {(verses.length > 1 || colors.length > 1) && (
+                <Text style={s.quoteVerseNum}>{verses[index] ?? verses[0] ?? ''}</Text>
+              )}
+              <Text style={[s.quoteText, verses.length > 1 && s.quoteTextIndented]}>{`"${line}"`}</Text>
+            </View>
+            {index < visibleLines.length - 1 && <View style={s.quoteDivider} />}
           </View>
         ))}
       </View>
+
+      {hasMore && (
+        <TouchableOpacity
+          onPress={e => { e.stopPropagation?.(); setExpanded(v => !v); }}
+          activeOpacity={0.7}
+          style={s.seeMoreBtn}
+        >
+          <Text style={[s.seeMoreText, { color: accent }]}>
+            {expanded ? 'See less' : `See ${hiddenCount} more verse${hiddenCount > 1 ? 's' : ''}`}
+          </Text>
+          <View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
+            <Text style={[s.seeMoreArrow, { color: accent }]}>›</Text>
+          </View>
+        </TouchableOpacity>
+      )}
+
       {!!annotation.comment && (
         <View style={s.commentBox}>
           <Text style={s.commentText}>{annotation.comment}</Text>
         </View>
       )}
     </TouchableOpacity>
+  );
+}
+
+function ColorDeleteModal({
+  colors, categories, onClose, onDeleteColor,
+}: {
+  colors: string[];
+  categories: ColorCategory[];
+  onClose: () => void;
+  onDeleteColor: (color: string) => void;
+}) {
+  return (
+    <Modal transparent visible animationType="fade" onRequestClose={onClose}>
+      <View style={s.cdOverlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={s.cdCard}>
+          <View style={s.cdHeader}>
+            <Text style={s.cdTitle}>Remove highlight</Text>
+            <TouchableOpacity onPress={onClose} activeOpacity={0.7} style={s.cdClose}>
+              <X s={16} c="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+          <Text style={s.cdSub}>Choose which color to remove</Text>
+          <View style={s.cdChips}>
+            {colors.map(colorKey => {
+              const accent = getAnnotationColorHex(colorKey as HighlightColor);
+              const label = getAnnotationCategoryLabel(categories, colorKey as HighlightColor);
+              return (
+                <TouchableOpacity
+                  key={colorKey}
+                  onPress={() => onDeleteColor(colorKey)}
+                  activeOpacity={0.82}
+                  style={[s.cdChip, { backgroundColor: hexToRgba(accent, 0.10), borderColor: hexToRgba(accent, 0.30) }]}
+                >
+                  <View style={[s.cdDot, { backgroundColor: accent }]} />
+                  <Text style={[s.cdChipText, { color: accent }]}>{label}</Text>
+                  <View style={[s.cdXBox, { backgroundColor: hexToRgba(accent, 0.15) }]}>
+                    <X s={10} c={accent} />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -341,24 +497,16 @@ function DeleteModal({
   onConfirm: () => void;
 }) {
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
-      <View style={s.deleteOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
-        <View style={s.deleteCard}>
-          <Trash2 s={24} c="#F87171" />
-          <Text style={s.deleteTitle}>Delete saved passage?</Text>
-          <Text style={s.deleteBody}>This removes it from My Favorites.</Text>
-          <View style={s.deleteActions}>
-            <TouchableOpacity onPress={onCancel} style={s.cancelBtn} activeOpacity={0.85}>
-              <Text style={s.cancelText}>CANCEL</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onConfirm} style={s.deleteBtn} activeOpacity={0.85}>
-              <Text style={s.deleteText}>DELETE</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
+    <ConfirmModal
+      visible={visible}
+      icon={<Trash2 s={22} c="#EF4444" />}
+      iconBg="#FEF2F2"
+      title="Delete saved passage?"
+      body="This removes it from My Favorites."
+      confirmLabel="DELETE"
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    />
   );
 }
 
@@ -378,8 +526,8 @@ const s = StyleSheet.create({
   headerTitle: { flex: 1, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 22, letterSpacing: 2.3, color: C.text },
   content: { paddingHorizontal: 14, paddingTop: 16 },
   filterCard: { borderRadius: 22, borderWidth: 1, borderColor: '#ECE4D7', backgroundColor: '#FFFDF9', padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.04, shadowRadius: 24, elevation: 2 },
-  searchBox: { minHeight: 44, borderRadius: 17, borderWidth: 1, borderColor: '#EEE5D8', backgroundColor: '#fff', paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  searchInput: { flex: 1, fontFamily: F.serif, fontSize: 15, color: '#44403C', paddingVertical: 0 },
+  searchBox: { height: 46, borderRadius: 17, borderWidth: 1, borderColor: '#EEE5D8', backgroundColor: '#fff', paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  searchInput: { flex: 1, height: 46, fontFamily: F.serif, fontSize: 15, color: '#44403C', paddingVertical: 0 },
   colorWrap: { marginTop: 18 },
   filterTitle: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10, paddingLeft: 3 },
   sectionKicker: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, color: '#A8A29E' },
@@ -440,17 +588,26 @@ const s = StyleSheet.create({
   cardRef: { marginBottom: 12, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.7, color: '#C0B8AE', textTransform: 'uppercase' },
   trashBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
   quoteBlock: { paddingHorizontal: 18 },
-  quoteText: { fontFamily: F.serifItalic, fontSize: 17, lineHeight: 28, color: '#4B5563' },
+  quoteLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  quoteVerseNum: { minWidth: 22, paddingTop: 5, fontFamily: F.sansBold, fontSize: 10, color: 'rgba(190,18,60,0.45)', textAlign: 'right' },
+  quoteText: { flex: 1, fontFamily: F.serifItalic, fontSize: 17, lineHeight: 28, color: '#4B5563' },
+  quoteTextIndented: { flex: 1 },
   quoteDivider: { height: 1, backgroundColor: '#E7EAF0', marginVertical: 13 },
   commentBox: { marginTop: 14, borderRadius: 16, borderWidth: 1, borderColor: '#F2E4C8', backgroundColor: '#FFF8EF', padding: 12 },
   commentText: { fontFamily: F.serif, fontSize: 16, lineHeight: 23, color: '#6F5320' },
-  deleteOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, backgroundColor: 'rgba(0,0,0,0.28)' },
-  deleteCard: { width: '100%', maxWidth: 292, borderRadius: 24, backgroundColor: '#fff', padding: 20, alignItems: 'center' },
-  deleteTitle: { marginTop: 10, fontFamily: F.serifMedium, fontSize: 18, color: '#3D3229' },
-  deleteBody: { marginTop: 4, fontFamily: F.sans, fontSize: 11, color: '#9CA3AF', marginBottom: 18 },
-  deleteActions: { flexDirection: 'row', gap: 9, width: '100%' },
-  cancelBtn: { flex: 1, minHeight: 44, borderRadius: 15, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' },
-  deleteBtn: { flex: 1, minHeight: 44, borderRadius: 15, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' },
-  cancelText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#6B7280' },
-  deleteText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#fff' },
+  seeMoreBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10, alignSelf: 'flex-start' },
+  seeMoreText: { fontFamily: F.sansSemiBold, fontSize: 12, letterSpacing: 0.3 },
+  seeMoreArrow: { fontSize: 18, lineHeight: 18, fontFamily: F.serifMedium },
+
+  cdOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  cdCard: { width: '100%', maxWidth: 320, borderRadius: 28, backgroundColor: '#FFFFFF', padding: 22, shadowColor: '#000', shadowOpacity: 0.18, shadowOffset: { width: 0, height: 16 }, shadowRadius: 28, elevation: 12 },
+  cdHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  cdTitle: { fontFamily: F.serifMedium, fontSize: 20, color: '#111827' },
+  cdClose: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F5F5F4', alignItems: 'center', justifyContent: 'center' },
+  cdSub: { fontFamily: F.serif, fontSize: 14, color: '#9CA3AF', marginBottom: 18 },
+  cdChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  cdChip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingLeft: 10, paddingRight: 6, paddingVertical: 7 },
+  cdDot: { width: 8, height: 8, borderRadius: 4 },
+  cdChipText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase' },
+  cdXBox: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
 });

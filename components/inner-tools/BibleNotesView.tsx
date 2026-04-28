@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Modal, Pressable, ScrollView, StyleSheet, Text, TextInput,
+  Animated, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, useWindowDimensions, View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -9,10 +9,10 @@ import * as Haptics from 'expo-haptics';
 import {
   ArrowLeft, CheckSmall, ChevronDown, Search, Trash2, X,
 } from '@/components/icons/Icons';
+import ConfirmModal from '@/components/shared/ConfirmModal';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
-import { TextFormatToolbar, TextSelection } from '@/components/shared/TextFormatToolbar';
-import { LinedTextInput } from '@/components/shared/LinedTextInput';
+import { RichTextEditor, RichToolbar, RichTextEditorRef, FormatState } from '@/components/shared/RichTextEditor';
 import { ScriptureBibleNote, useScripture } from '@/components/scripture/ScriptureContext';
 
 const BG = '#F5F3EE';
@@ -119,7 +119,20 @@ export default function BibleNotesView() {
 
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<BibleTab>('nt');
-  const [expandedBookId, setExpandedBookId] = useState<number | null>(43);
+  const pillAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const idx = activeTab === 'nt' ? 0 : activeTab === 'psalms' ? 1 : 2;
+    Animated.spring(pillAnim, {
+      toValue: idx,
+      useNativeDriver: false,
+      tension: 68,
+      friction: 11,
+    }).start();
+    if (activeTab === 'psalms') setExpandedBookId(PSALMS_ID);
+    else setExpandedBookId(null);
+  }, [activeTab, pillAnim]);
+  const [expandedBookId, setExpandedBookId] = useState<number | null>(null);
   const [activeChapter, setActiveChapter] = useState<{ book: BibleBook; chapter: number; note?: ScriptureBibleNote } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ScriptureBibleNote | null>(null);
   const [observations, setObservations] = useState('');
@@ -222,6 +235,14 @@ export default function BibleNotesView() {
 
       <View style={s.tabsWrap}>
         <View style={s.tabs}>
+          {/* Animated sliding pill */}
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              s.tabPill,
+              { left: pillAnim.interpolate({ inputRange: [0, 1, 2], outputRange: ['0.9%', '33.9%', '66.9%'] }) },
+            ]}
+          />
           <TabButton label="New Test." active={activeTab === 'nt'} count={tabCount('nt')} onPress={() => setActiveTab('nt')} />
           <TabButton label="Psalter" active={activeTab === 'psalms'} count={tabCount('psalms')} onPress={() => setActiveTab('psalms')} />
           <TabButton label="Old Test." active={activeTab === 'ot'} count={tabCount('ot')} onPress={() => setActiveTab('ot')} />
@@ -240,23 +261,25 @@ export default function BibleNotesView() {
 
             return (
               <View key={book.id}>
-                <TouchableOpacity
-                  onPress={() => setExpandedBookId(isExpanded ? null : book.id)}
-                  activeOpacity={0.88}
-                  style={[
-                    s.bookCard,
-                    isExpanded && s.bookCardExpanded,
-                    !hasAnyNote && !isExpanded && s.bookCardMuted,
-                  ]}
-                >
-                  <Text style={[s.bookName, !hasAnyNote && s.bookNameMuted]}>{book.name}</Text>
-                  {hasAnyNote && (
-                    <Text style={s.bookCount}>{chaptersWithNotes.length}</Text>
-                  )}
-                  <View style={isExpanded && s.chevronOpen}>
-                    <ChevronDown s={15} c={isExpanded ? GOLD : '#D1D5DB'} />
-                  </View>
-                </TouchableOpacity>
+                {activeTab !== 'psalms' && (
+                  <TouchableOpacity
+                    onPress={() => setExpandedBookId(isExpanded ? null : book.id)}
+                    activeOpacity={0.88}
+                    style={[
+                      s.bookCard,
+                      isExpanded && s.bookCardExpanded,
+                      !hasAnyNote && !isExpanded && s.bookCardMuted,
+                    ]}
+                  >
+                    <Text style={[s.bookName, !hasAnyNote && s.bookNameMuted]}>{book.name}</Text>
+                    {hasAnyNote && (
+                      <Text style={s.bookCount}>{chaptersWithNotes.length}</Text>
+                    )}
+                    <View style={isExpanded && s.chevronOpen}>
+                      <ChevronDown s={15} c={isExpanded ? GOLD : '#D1D5DB'} />
+                    </View>
+                  </TouchableOpacity>
+                )}
 
                 {isExpanded && (
                   <View style={s.chapterGrid}>
@@ -360,6 +383,7 @@ function ChapterEditor({
   onDelete?: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const chapterKey = chapter ? `${chapter.book.id}-${chapter.chapter}` : 'empty';
 
   return (
     <Modal visible={!!chapter} animationType="slide" onRequestClose={onClose}>
@@ -384,21 +408,27 @@ function ChapterEditor({
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={[s.editorContent, { paddingBottom: insets.bottom + 42 }]} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={[s.editorContent, { paddingBottom: insets.bottom + 42 }]}
+          keyboardShouldPersistTaps="handled"
+        >
           <BibleField
             label="OBSERVATIONS"
+            editorKey={`${chapterKey}-observations`}
             value={observations}
             onChange={onObservations}
             placeholder="What do you notice in this chapter?"
           />
           <BibleField
             label="LESSONS"
+            editorKey={`${chapterKey}-lessons`}
             value={lessons}
             onChange={onLessons}
             placeholder="What is God teaching here?"
           />
           <BibleField
             label="APPLICATION"
+            editorKey={`${chapterKey}-application`}
             value={application}
             onChange={onApplication}
             placeholder="How will you live this today?"
@@ -410,35 +440,31 @@ function ChapterEditor({
 }
 
 function BibleField({
-  label, value, onChange, placeholder,
+  label, editorKey, value, onChange, placeholder,
 }: {
   label: string;
+  editorKey: string;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
 }) {
-  const [selection, setSelection] = useState<TextSelection>({ start: 0, end: 0 });
+  const editorRef = useRef<RichTextEditorRef>(null);
+  const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
 
   return (
     <View style={s.fieldCard}>
       <Text style={s.fieldLabel}>{label}</Text>
-      <TextFormatToolbar
-        value={value}
-        selection={selection}
-        onChangeText={onChange}
-        onSelectionChange={setSelection}
-        style={s.fieldToolbar}
-      />
-      <LinedTextInput
-        value={value}
-        onChangeText={onChange}
-        selection={selection}
-        onSelectionChange={setSelection}
-        minLines={4}
-        lineHeight={27}
+      <RichToolbar editorRef={editorRef} activeFormats={fmt} style={s.fieldToolbar} />
+      <RichTextEditor
+        key={editorKey}
+        ref={editorRef}
+        initialHTML={value}
+        onChange={onChange}
+        onFormatChange={setFmt}
         placeholder={placeholder}
-        placeholderTextColor="#CFCAC2"
-        inputStyle={s.fieldInput}
+        backgroundColor="#FFFEFB"
+        color="#3D3229"
+        style={s.fieldEditor}
       />
     </View>
   );
@@ -452,26 +478,16 @@ function DeleteBibleModal({
   onConfirm: () => void;
 }) {
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
-      <View style={s.confirmOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
-        <View style={s.confirmCard}>
-          <View style={s.confirmIcon}>
-            <Trash2 s={22} c="#F87171" />
-          </View>
-          <Text style={s.confirmTitle}>Delete this Bible note?</Text>
-          <Text style={s.confirmText}>This will permanently delete your note for this chapter.</Text>
-          <View style={s.confirmActions}>
-            <TouchableOpacity onPress={onCancel} activeOpacity={0.86} style={s.cancelBtn}>
-              <Text style={s.cancelText}>CANCEL</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onConfirm} activeOpacity={0.86} style={s.deleteBtn}>
-              <Text style={s.deleteText}>DELETE</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
+    <ConfirmModal
+      visible={visible}
+      icon={<Trash2 s={22} c="#EF4444" />}
+      iconBg="#FEF2F2"
+      title="Delete this Bible note?"
+      body="This will permanently delete your note for this chapter."
+      confirmLabel="DELETE"
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    />
   );
 }
 
@@ -488,10 +504,10 @@ const s = StyleSheet.create({
     borderBottomColor: 'rgba(0,0,0,0.05)',
   },
   headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 23, letterSpacing: 1.4, color: C.text },
+  headerTitle: { flex: 1, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 20, letterSpacing: 2.8, color: C.text },
   searchWrap: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 9 },
   searchBox: {
-    minHeight: 44,
+    height: 46,
     borderRadius: 18,
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.06)',
@@ -501,7 +517,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 9,
   },
-  searchInput: { flex: 1, fontFamily: F.serif, fontSize: 15, color: '#44403C', paddingVertical: 0 },
+  searchInput: { flex: 1, height: 46, fontFamily: F.serif, fontSize: 15, color: '#44403C', paddingVertical: 0 },
   tabsWrap: { paddingHorizontal: 16, paddingBottom: 12 },
   tabs: {
     flexDirection: 'row',
@@ -517,9 +533,23 @@ const s = StyleSheet.create({
     shadowRadius: 6,
     elevation: 1,
   },
-  tabButton: { flex: 1, minHeight: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5 },
-  tabActive: { backgroundColor: GOLD, shadowColor: GOLD, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.28, shadowRadius: 9, elevation: 2 },
-  tabText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.2, color: '#9CA3AF', textTransform: 'uppercase' },
+  tabPill: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    width: '32%',
+    borderRadius: 14,
+    backgroundColor: GOLD,
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.28,
+    shadowRadius: 9,
+    elevation: 2,
+    zIndex: 0,
+  },
+  tabButton: { flex: 1, minHeight: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5, zIndex: 1 },
+  tabActive: {},
+  tabText: { fontFamily: F.serifMedium, fontSize: 13, color: '#B5ADA0' },
   tabTextActive: { color: '#FFFFFF' },
   tabCount: { minWidth: 17, height: 17, borderRadius: 9, backgroundColor: 'rgba(197,160,89,0.15)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   tabCountActive: { backgroundColor: 'rgba(255,255,255,0.25)' },
@@ -528,49 +558,49 @@ const s = StyleSheet.create({
   bookList: { paddingHorizontal: 16, gap: 7 },
   noBooks: { textAlign: 'center', paddingVertical: 60, fontFamily: F.serif, fontSize: 17, color: '#D1D5DB' },
   bookCard: {
-    minHeight: 52,
+    minHeight: 54,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(232,216,186,0.50)',
+    borderColor: 'rgba(232,216,186,0.45)',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
-    shadowRadius: 4,
+    shadowRadius: 5,
     elevation: 1,
   },
-  bookCardExpanded: { backgroundColor: '#FFFEF9', borderColor: 'rgba(197,160,89,0.25)' },
-  bookCardMuted: { backgroundColor: 'rgba(255,255,255,0.50)', borderColor: 'transparent', shadowOpacity: 0 },
-  bookName: { flex: 1, fontFamily: F.serif, fontSize: 17, color: '#292524' },
-  bookNameMuted: { color: '#C7C2BA' },
-  bookCount: { fontFamily: F.sansBold, fontSize: 10, color: GOLD, backgroundColor: 'rgba(197,160,89,0.12)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  bookCardExpanded: { backgroundColor: '#FFFDF7', borderColor: 'rgba(197,160,89,0.30)' },
+  bookCardMuted: { backgroundColor: 'rgba(255,255,255,0.45)', borderColor: 'transparent', shadowOpacity: 0 },
+  bookName: { flex: 1, fontFamily: F.serifMedium, fontSize: 17, color: '#2D2520' },
+  bookNameMuted: { fontFamily: F.serif, color: '#C9C3BA' },
+  bookCount: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 0.8, color: GOLD, backgroundColor: 'rgba(197,160,89,0.10)', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 10, overflow: 'hidden' },
   chevronOpen: { transform: [{ rotate: '180deg' }] },
   chapterGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     columnGap: CHAPTER_GAP,
-    rowGap: 7,
+    rowGap: 8,
     paddingHorizontal: CHAPTER_GRID_SIDE_PADDING,
-    paddingTop: 7,
-    paddingBottom: 2,
+    paddingTop: 10,
+    paddingBottom: 6,
   },
   chapterCell: {
-    minHeight: 42,
-    borderRadius: 13,
+    minHeight: 44,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'transparent',
-    backgroundColor: 'rgba(255,255,255,0.80)',
+    borderColor: 'rgba(232,216,186,0.28)',
+    backgroundColor: 'rgba(255,255,255,0.85)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  chapterCellActive: { backgroundColor: '#FFFEF9', borderColor: 'rgba(197,160,89,0.42)' },
-  chapterText: { fontFamily: F.serif, fontSize: 15, color: '#C7C2BA' },
-  chapterTextActive: { color: C.text },
-  noteDot: { position: 'absolute', top: 6, right: 7, width: 6, height: 6, borderRadius: 3, backgroundColor: GOLD },
+  chapterCellActive: { backgroundColor: '#FFFDF7', borderColor: 'rgba(197,160,89,0.45)' },
+  chapterText: { fontFamily: F.serifMedium, fontSize: 15, color: '#D4CEC6' },
+  chapterTextActive: { color: '#3D3229' },
+  noteDot: { position: 'absolute', top: 7, right: 8, width: 5, height: 5, borderRadius: 3, backgroundColor: GOLD },
 
   editorScreen: { flex: 1, backgroundColor: '#FDFBF5' },
   editorHeader: {
@@ -601,17 +631,7 @@ const s = StyleSheet.create({
     elevation: 1,
   },
   fieldLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.9, color: GOLD, marginBottom: 10 },
-  fieldToolbar: { marginBottom: 12 },
-  fieldInput: { fontFamily: F.serif, fontSize: 18, lineHeight: 27, color: '#3D3229', padding: 0, textAlignVertical: 'top' },
+  fieldToolbar: { marginBottom: 8 },
+  fieldEditor: { height: 220 },
 
-  confirmOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, backgroundColor: 'rgba(0,0,0,0.30)' },
-  confirmCard: { width: '100%', maxWidth: 292, borderRadius: 24, backgroundColor: '#FFFFFF', padding: 20, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 8 },
-  confirmIcon: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  confirmTitle: { fontFamily: F.serifMedium, fontSize: 18, color: '#3D3229', marginBottom: 4 },
-  confirmText: { fontFamily: F.sans, fontSize: 11, lineHeight: 17, color: '#9CA3AF', marginBottom: 20, textAlign: 'center' },
-  confirmActions: { flexDirection: 'row', gap: 9, width: '100%' },
-  cancelBtn: { flex: 1, minHeight: 44, borderRadius: 15, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  deleteBtn: { flex: 1, minHeight: 44, borderRadius: 15, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' },
-  cancelText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#6B7280' },
-  deleteText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#FFFFFF' },
 });

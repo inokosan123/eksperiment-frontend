@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+import React, { forwardRef, useImperativeHandle, useRef } from 'react';
 import { StyleProp, StyleSheet, TouchableOpacity, View, ViewStyle, Text } from 'react-native';
 import WebView from 'react-native-webview';
 import { F, C } from '@/constants/tokens';

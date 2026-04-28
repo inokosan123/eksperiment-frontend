@@ -172,7 +172,7 @@ function TaskMeta({ time, subtitle, variant, habitColor, state }: { time?: strin
 
 export function SpiritualTaskCard({ task, streak }: { task: TaskData; streak?: number }) {
   return (
-    <LinearGradient colors={['#FFFBEB', '#ffffff']} start={{ x: 0.135, y: 0 }} end={{ x: 0.865, y: 1 }} style={[cs.base, { borderColor: 'rgba(197,160,89,0.3)', borderRadius: 16, marginBottom: 10 }]}>
+    <LinearGradient colors={['#FFFBEB', '#ffffff']} start={{ x: 0.135, y: 0 }} end={{ x: 0.865, y: 1 }} style={[cs.base, { borderColor: 'rgba(197,160,89,0.3)', borderRadius: 16, marginBottom: 6 }]}>
       <TaskCheck variant="spiritual" state={task.state} size={38} />
       <View style={cs.mid}>
         <TaskTitle title={task.title} variant="spiritual" state={task.state} />
@@ -191,7 +191,7 @@ export function RoutineTaskCard({ task, streak }: { task: TaskData; streak?: num
       colors={['#F2F1EF', '#FFFFFF']}
       start={{ x: 0.135, y: 0 }}
       end={{ x: 0.865, y: 1 }}
-      style={[cs.base, { borderColor: 'rgba(28,25,23,0.18)', borderRadius: 16, marginBottom: 10, opacity: isDimmed ? 0.7 : 1 }]}
+      style={[cs.base, { borderColor: 'rgba(28,25,23,0.18)', borderRadius: 16, marginBottom: 6, opacity: isDimmed ? 0.7 : 1 }]}
     >
       <TaskCheck variant="routine" state={task.state} size={36} />
       <View style={cs.mid}>
@@ -206,7 +206,7 @@ export function RoutineTaskCard({ task, streak }: { task: TaskData; streak?: num
 
 export function QuickTaskCard({ task }: { task: TaskData }) {
   return (
-    <LinearGradient colors={['#fff', '#F0FDF4']} start={{ x: 0.135, y: 0 }} end={{ x: 0.865, y: 1 }} style={[cs.base, { borderColor: 'rgba(28,25,23,0.2)', borderRadius: 16, marginBottom: 10 }]}>
+    <LinearGradient colors={['#fff', '#F0FDF4']} start={{ x: 0.135, y: 0 }} end={{ x: 0.865, y: 1 }} style={[cs.base, { borderColor: 'rgba(28,25,23,0.2)', borderRadius: 16, marginBottom: 6 }]}>
       <TaskCheck variant="quick" state={task.state} size={36} />
       <View style={cs.mid}>
         <TaskTitle title={task.title} variant="quick" state={task.state} />
@@ -220,7 +220,7 @@ export function HabitTaskCard({ task, streak }: { task: TaskData; streak?: numbe
   const habitColor = task.habitColor || '#C5A059';
   const isSkipped = task.state === 'skipped';
   return (
-    <View style={[cs.base, { backgroundColor: '#fff', borderColor: '#f2f1ec', borderRadius: 16, marginBottom: 10, paddingLeft: 18, overflow: 'hidden' }]}>
+    <View style={[cs.base, { backgroundColor: '#fff', borderColor: '#f2f1ec', borderRadius: 16, marginBottom: 6, paddingLeft: 18, overflow: 'hidden' }]}>
       <View style={[cs.habitBar, { backgroundColor: isSkipped ? '#d1d5db' : habitColor }]} />
       <TaskCheck variant="habit" state={task.state} size={36} habitColor={habitColor} />
       <View style={cs.mid}>
@@ -235,7 +235,7 @@ export function HabitTaskCard({ task, streak }: { task: TaskData; streak?: numbe
 
 export function ChallengeTaskCard({ task, streak }: { task: TaskData; streak?: number }) {
   return (
-    <LinearGradient colors={['#FFFDF7', '#ffffff']} start={{ x: 0.135, y: 0 }} end={{ x: 0.865, y: 1 }} style={[cs.base, { borderColor: 'rgba(197,160,89,0.35)', borderLeftWidth: 5, borderLeftColor: '#C5A059', borderRightWidth: 5, borderRightColor: '#C5A059', borderRadius: 22, marginBottom: 10 }]}>
+    <LinearGradient colors={['#FFFDF7', '#ffffff']} start={{ x: 0.135, y: 0 }} end={{ x: 0.865, y: 1 }} style={[cs.base, { borderColor: 'rgba(197,160,89,0.35)', borderLeftWidth: 5, borderLeftColor: '#C5A059', borderRightWidth: 5, borderRightColor: '#C5A059', borderRadius: 22, marginBottom: 6 }]}>
       <TaskCheck variant="challenge" state={task.state} size={38} />
       <View style={cs.mid}>
         <TaskTitle title={task.title} variant="challenge" state={task.state} />

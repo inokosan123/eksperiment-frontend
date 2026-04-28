@@ -14,6 +14,8 @@ import {
   Star, ListChecks, BookMarked, Target, CalendarHeart, Grid3x3,
 } from '@/components/icons/Icons';
 import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
+import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
+import { useTasks } from '@/components/tasks/TaskProvider';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 
@@ -61,7 +63,7 @@ const LAST_7 = [
 
 // ─── Streak circle — fully responsive, scales to fit any screen ───────────────
 function StreakCircle({ active, label, size }: { active: boolean; label: string; size: number }) {
-  const flameSize = Math.round(size * 0.54);
+  const flameSize = Math.round(size * 0.52);
   return (
     <View style={sc.col}>
       <View style={[
@@ -71,21 +73,21 @@ function StreakCircle({ active, label, size }: { active: boolean; label: string;
       ]}>
         <Image
           source={FLAME_PNG}
-          style={{ width: flameSize, height: flameSize, opacity: active ? 1 : 0.18 }}
+          style={{ width: flameSize, height: flameSize, opacity: active ? 0.88 : 0.14 }}
           resizeMode="contain"
         />
       </View>
-      <Text style={[sc.label, { color: active ? GOLD : C.textMuted }]}>{label}</Text>
+      <Text style={[sc.label, { color: active ? GOLD : '#C4BAA8' }]}>{label}</Text>
     </View>
   );
 }
 
 const sc = StyleSheet.create({
-  col:            { flex: 1, alignItems: 'center', gap: 6 },
+  col:            { flex: 1, alignItems: 'center', gap: 5 },
   circle:         { alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
-  circleActive:   { borderColor: '#f97316', backgroundColor: '#FFF7ED' },
-  circleInactive: { borderColor: '#e5e2db', backgroundColor: '#F5F3EF' },
-  label:          { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1 },
+  circleActive:   { borderColor: GOLD, backgroundColor: '#FDF8EE' },
+  circleInactive: { borderColor: 'rgba(197,160,89,0.20)', backgroundColor: 'rgba(197,160,89,0.05)' },
+  label:          { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1 },
 });
 
 // ─── Month calendar ───────────────────────────────────────────────────────────
@@ -171,12 +173,19 @@ const cal = StyleSheet.create({
 });
 
 // ─── Daily Task banner ────────────────────────────────────────────────────────
-function DailyTaskBanner() {
+function DailyTaskBanner({
+  subtitle,
+  onPress,
+}: {
+  subtitle: string;
+  onPress: () => void;
+}) {
   return (
     <SetAsDailyTaskCard
       variant="soft"
       style={dtb.wrap}
-      onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+      subtitle={subtitle}
+      onPress={onPress}
     />
   );
 }
@@ -204,7 +213,6 @@ function ModeCards({ onNav }: { onNav: (r: string) => void }) {
             <m.Icon s={22} c={m.iconFg} w={1.8} />
           </View>
           <Text style={mc.label}>{m.label}</Text>
-          <Text style={[mc.status, { color: m.status === 'Done' ? C.textMuted : m.iconFg }]}>{m.status}</Text>
         </Pressable>
       ))}
     </View>
@@ -222,15 +230,19 @@ const mc = StyleSheet.create({
 // ─── Streak section — circles scale to fill available width ──────────────────
 function StreakSection() {
   const [rowW, setRowW] = useState(280);
-  const circleSize = Math.floor((rowW - 6 * 6) / 7); // 7 circles, 6 gaps × 6px
+  const circleSize = Math.floor((rowW - 6 * 8) / 7); // 7 circles, 6 gaps × 8px
 
   return (
     <View style={st.card}>
       <View style={st.headline}>
-        <LottieFlame size={36} />
-        <Text style={st.number}>{STREAK}</Text>
-        <Text style={st.label}>day streak</Text>
+        <LottieFlame size={30} />
+        <View style={st.headlineText}>
+          <Text style={st.number}>{STREAK}</Text>
+          <Text style={st.label}>day streak</Text>
+        </View>
       </View>
+
+      <View style={st.divider} />
 
       <View
         style={st.dayRow}
@@ -244,11 +256,13 @@ function StreakSection() {
   );
 }
 const st = StyleSheet.create({
-  card:     { marginHorizontal: 16, marginTop: 14, backgroundColor: '#fff', borderRadius: 24, borderWidth: 1, borderColor: '#EDE9E0', padding: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
-  headline: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 18 },
-  number:   { fontFamily: F.serifSemiBold, fontSize: 36, color: GOLD, lineHeight: 40 },
-  label:    { fontFamily: F.serifMedium, fontSize: 19, color: C.textSecondary },
-  dayRow:   { flexDirection: 'row', gap: 6 },
+  card:         { marginHorizontal: 16, marginTop: 14, backgroundColor: '#FDF9F0', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)', padding: 16, shadowColor: '#C5A059', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 1 },
+  headline:     { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headlineText: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+  number:       { fontFamily: F.serifSemiBold, fontSize: 30, color: GOLD, lineHeight: 34 },
+  label:        { fontFamily: F.serifMediumItalic, fontSize: 15, color: '#B09B6E', lineHeight: 20 },
+  divider:      { height: 1, backgroundColor: 'rgba(197,160,89,0.16)', marginVertical: 13 },
+  dayRow:       { flexDirection: 'row', gap: 8 },
 });
 
 // ─── Tool card ────────────────────────────────────────────────────────────────
@@ -348,8 +362,15 @@ const tls = StyleSheet.create({
 export default function JournalHub() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { createOrUpdateTask } = useTasks();
+  const [taskSheetOpen, setTaskSheetOpen] = useState(false);
+  const [taskSummary, setTaskSummary] = useState('Add to your daily routine');
 
   const nav = (route: string) => router.push(route as any);
+  const openTaskSheet = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTaskSheetOpen(true);
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
@@ -377,11 +398,19 @@ export default function JournalHub() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}>
         <MonthCalendar month={3} year={2026} />
-        <DailyTaskBanner />
+        <DailyTaskBanner subtitle={taskSummary} onPress={openTaskSheet} />
         <ModeCards onNav={nav} />
         <StreakSection />
         <ToolsSection onNav={nav} />
       </ScrollView>
+
+      <SetAsTaskSheet
+        visible={taskSheetOpen}
+        context="journal"
+        onClose={() => setTaskSheetOpen(false)}
+        onSummaryChange={setTaskSummary}
+        onTaskDraft={createOrUpdateTask}
+      />
     </View>
   );
 }

@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { ChevronLeft, ChevronRight, Pencil, Feather, FileEdit } from '@/components/icons/Icons';
 import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
+import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
+import { useTasks } from '@/components/tasks/TaskProvider';
 import { C, F } from '@/constants/tokens';
 
 // April 2026
@@ -131,6 +134,9 @@ const mc = StyleSheet.create({
 
 export default function JournalView() {
   const insets = useSafeAreaInsets();
+  const { createOrUpdateTask } = useTasks();
+  const [showTaskSheet, setShowTaskSheet] = useState(false);
+  const [taskSummary, setTaskSummary] = useState('Add to your daily routine');
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -143,7 +149,7 @@ export default function JournalView() {
 
         {/* Set as Daily Task */}
         <View style={{ paddingHorizontal: 18, paddingTop: 14 }}>
-          <SetAsDailyTaskCard onPress={() => {}} variant="soft" />
+          <SetAsDailyTaskCard onPress={() => setShowTaskSheet(true)} variant="soft" subtitle={taskSummary} />
         </View>
 
         {/* Mode cards */}
@@ -153,6 +159,14 @@ export default function JournalView() {
           <ModeCard Icon={FileEdit} title="Free Writing"   status="Continue" tone={{ bg: '#DFF1EC', fg: '#3E9B89' }} />
         </View>
       </ScrollView>
+
+      <SetAsTaskSheet
+        visible={showTaskSheet}
+        context="journal"
+        onClose={() => setShowTaskSheet(false)}
+        onSummaryChange={setTaskSummary}
+        onTaskDraft={createOrUpdateTask}
+      />
     </View>
   );
 }

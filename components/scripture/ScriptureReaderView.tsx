@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput,
+  ActivityIndicator, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
-  ArrowLeft, CheckSmall, ChevronLeft, ChevronRight, FileEdit, Notebook, Pencil, Star, X,
+  ArrowLeft, CheckSmall, ChevronLeft, ChevronRight, CircleIcon, FileEdit, Notebook, Pencil, Star, X,
 } from '@/components/icons/Icons';
 import {
   getAnnotationCategoryLabel, getAnnotationColorHex, hexToRgba, HighlightColor,
@@ -17,6 +17,7 @@ import { BIBLE_BOOKS, getBibleBook, ScriptureLanguage } from '@/constants/script
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import { FormatState, RichTextEditor, RichTextEditorRef, RichToolbar } from '@/components/shared/RichTextEditor';
+import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { InnerNote, NoteKind, NoteSourceRef, useInnerTools } from '@/components/inner-tools/InnerToolsContext';
 import { CategoryChipPicker, CategoryEditorModal, CategoryEditorPanel } from './CategoryColorTools';
 import { BibleVerse, ScriptureAnnotation, useScripture } from './ScriptureContext';
@@ -46,6 +47,11 @@ export default function ScriptureReaderView() {
 
   const [bookId] = useState(initialBookId);
   const [chapter, setChapter] = useState(initialChapter);
+  const [showFocus, setShowFocus] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setShowFocus(false), 1500);
+    return () => clearTimeout(t);
+  }, []);
   const [verses, setVerses] = useState<BibleVerse[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedVerseNumbers, setSelectedVerseNumbers] = useState<number[]>([]);
@@ -128,20 +134,23 @@ export default function ScriptureReaderView() {
 
   const applyHighlight = async () => {
     if (selectedVerses.length === 0) return;
+    const joinedText = selectedVerses.map(verse => verse.text).join('\n\n');
     for (const verse of selectedVerses) {
-      const existingHighlights = annotations.filter(annotation =>
+      // Only replace same-color highlight — preserve other colors
+      const sameColor = annotations.find(annotation =>
         annotation.kind === 'highlight'
         && annotation.bookId === verse.bookId
         && annotation.chapter === verse.chapter
-        && annotation.verse === verse.verse);
-      await Promise.all(existingHighlights.map(annotation => deleteAnnotation(annotation.id)));
+        && annotation.verse === verse.verse
+        && annotation.color === selectedColor);
+      if (sameColor) await deleteAnnotation(sameColor.id);
       await upsertAnnotation({
         kind: 'highlight',
         color: selectedColor,
         bookId: verse.bookId,
         chapter: verse.chapter,
         verse: verse.verse,
-        text: verse.text,
+        text: joinedText,
       });
     }
     clearSelection();
@@ -308,7 +317,8 @@ export default function ScriptureReaderView() {
                 selected={selectedVerseSet.has(verse.verse)}
                 selectionActive={selectionActive}
                 annotations={currentAnnotations.filter(annotation => annotation.verse === verse.verse)}
-                autoFocus={initialVerse === verse.verse}
+                categories={categories}
+                autoFocus={showFocus && initialVerse === verse.verse && chapter === initialChapter}
                 onPress={() => toggleSelection(verse)}
                 onLongPress={() => startSelection(verse)}
                 onOpenComment={openCommentPreview}
@@ -475,10 +485,7 @@ function ChooseNoteModal({
   const newLabel = isQuick ? 'New Quick Help' : 'New Note';
 
   return (
-    <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={s.chooseOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={s.chooseSheet}>
+    <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.chooseSheet}>
           <View style={s.chooseHeader}>
             <TouchableOpacity onPress={onClose} activeOpacity={0.75} style={s.chooseBack}>
               <ArrowLeft s={20} c="#9CA3AF" />
@@ -513,9 +520,7 @@ function ChooseNoteModal({
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    </SmoothBottomSheet>
   );
 }
 
@@ -571,10 +576,11 @@ function ChapterBar({
 }
 
 function VerseRow({
-  verse, annotations, selected, selectionActive, autoFocus, onPress, onLongPress, onOpenComment,
+  verse, annotations, categories, selected, selectionActive, autoFocus, onPress, onLongPress, onOpenComment,
 }: {
   verse: BibleVerse;
   annotations: ScriptureAnnotation[];
+  categories: ColorCategory[];
   selected: boolean;
   selectionActive: boolean;
   autoFocus: boolean;
@@ -582,7 +588,11 @@ function VerseRow({
   onLongPress: () => void;
   onOpenComment: (annotation: ScriptureAnnotation) => void;
 }) {
-  const highlight = annotations.find(annotation => annotation.kind === 'highlight');
+  const allHighlights = annotations
+    .filter(a => a.kind === 'highlight')
+    .filter((a, i, arr) => arr.findIndex(b => b.color === a.color) === i);
+  const highlight = allHighlights[0];
+  const extraHighlights = allHighlights.slice(1); // additional colors beyond the first
   const underline = annotations.find(annotation => annotation.kind === 'underline');
   const favorite = annotations.find(annotation => annotation.kind === 'favorite');
   const comment = annotations.find(annotation => annotation.kind === 'comment');
@@ -621,18 +631,10 @@ function VerseRow({
       <View style={s.verseBody}>
         {markerAccent && !selectionActive && (
           <TouchableOpacity
-            onPress={() => {
-              if (comment) onOpenComment(comment);
-            }}
+            onPress={() => { if (comment) onOpenComment(comment); }}
             activeOpacity={0.82}
             hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
-            style={[
-              s.commentStarBadge,
-              {
-                borderColor: hexToRgba(markerAccent, 0.20),
-                backgroundColor: hexToRgba(markerAccent, 0.08),
-              },
-            ]}
+            style={[s.commentStarBadge, { borderColor: hexToRgba(markerAccent, 0.20), backgroundColor: hexToRgba(markerAccent, 0.08) }]}
           >
             <Star s={14} c={markerAccent} />
           </TouchableOpacity>
@@ -662,7 +664,25 @@ function VerseRow({
           >
             {verse.text}
           </Text>
+
         </View>
+
+        {/* Extra color tray */}
+        {!selectionActive && extraHighlights.length > 0 && (
+          <View style={s.extraColorTray}>
+            <Text style={s.extraColorLabel}>ALSO IN</Text>
+            {extraHighlights.map(h => {
+              const accent = getAnnotationColorHex(h.color);
+              const label = getAnnotationCategoryLabel(categories, h.color);
+              return (
+                <View key={h.color} style={[s.extraColorChip, { borderColor: hexToRgba(accent, 0.35), backgroundColor: hexToRgba(accent, 0.08) }]}>
+                  <View style={[s.extraColorDot, { backgroundColor: accent }]} />
+                  <Text style={[s.extraColorChipText, { color: accent }]}>{label}</Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -723,10 +743,24 @@ function SelectionTools({
   }
 
   return (
-    <Modal transparent visible animationType="slide" onRequestClose={onCloseSheet}>
-      <View style={s.selectionOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onCloseSheet} />
-        <View style={[s.selectionSheet, { paddingBottom: Math.max(bottom, 16) + 12 }]}>
+    <SmoothBottomSheet
+      visible={sheetOpen}
+      onClose={onCloseSheet}
+      overlayStyle={s.selectionOverlay}
+      backdropOpacity={0.08}
+      sheetStyle={[s.selectionSheet, { paddingBottom: Math.max(bottom, 16) + 12 }]}
+      overlayChildren={colorEditorOpen ? (
+        <View style={s.selectionEditorLayer}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={onCloseColorEditor} />
+          <CategoryEditorPanel
+            categories={categories}
+            onClose={onCloseColorEditor}
+            onSaveCategory={onSaveCategory}
+            style={s.selectionEditorCard}
+          />
+        </View>
+      ) : null}
+    >
           <View style={s.actionHandle} />
 
           <View style={s.selectionTop}>
@@ -786,21 +820,7 @@ function SelectionTools({
               onPress={onBibleNote}
             />
           </View>
-        </View>
-
-        {colorEditorOpen && (
-          <View style={s.selectionEditorLayer}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={onCloseColorEditor} />
-            <CategoryEditorPanel
-              categories={categories}
-              onClose={onCloseColorEditor}
-              onSaveCategory={onSaveCategory}
-              style={s.selectionEditorCard}
-            />
-          </View>
-        )}
-      </View>
-    </Modal>
+    </SmoothBottomSheet>
   );
 }
 
@@ -864,10 +884,19 @@ function CommentModal({
   const categoryLabel = getAnnotationCategoryLabel(categories, selectedColor);
   const editorRef = useRef<RichTextEditorRef>(null);
   const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
+  const [kbHeight, setKbHeight] = useState(0);
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardWillShow', e => setKbHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKbHeight(0));
+    const showA = Keyboard.addListener('keyboardDidShow', e => setKbHeight(e.endCoordinates.height));
+    const hideA = Keyboard.addListener('keyboardDidHide', () => setKbHeight(0));
+    return () => { show.remove(); hide.remove(); showA.remove(); hideA.remove(); };
+  }, []);
 
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-      <View style={s.commentOverlay}>
+      <View style={[s.commentOverlay, { paddingBottom: kbHeight > 0 ? kbHeight : 54 }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <View style={s.commentCard}>
           <View style={s.commentHeader}>
@@ -1139,12 +1168,12 @@ const s = StyleSheet.create({
   },
   chapterBtn: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
   chapterTitle: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 4.2, color: ROSE },
-  content: { paddingHorizontal: 28, paddingTop: 26 },
+  content: { paddingHorizontal: 16, paddingTop: 26 },
   chapterLoading: { paddingVertical: 70 },
   verseList: { gap: 18 },
   verseRow: { flexDirection: 'row', gap: 10, borderRadius: 14, paddingVertical: 5, paddingHorizontal: 3, borderWidth: 1, borderColor: 'transparent' },
   verseRowSelected: { borderColor: 'rgba(197,160,89,0.38)', backgroundColor: '#FFFEF9' },
-  verseRowFocused: { backgroundColor: '#FFFBEB' },
+  verseRowFocused: {},
   verseMarker: { width: 24, alignItems: 'flex-end', paddingTop: 5 },
   verseNum: { width: 20, textAlign: 'right', fontFamily: F.sansBold, fontSize: 10, color: 'rgba(190,18,60,0.42)', paddingTop: 3 },
   selectCircle: {
@@ -1171,6 +1200,40 @@ const s = StyleSheet.create({
     paddingVertical: 1,
   },
   verseText: { fontFamily: F.serif, fontSize: 23, lineHeight: 31, color: '#252525' },
+  extraColorTray: {
+    alignSelf: 'flex-end',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FEFCF9',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 3,
+    maxWidth: '100%',
+  },
+  extraColorLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    color: '#C4BDB5',
+  },
+  extraColorChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  extraColorChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  extraColorDot: { width: 6, height: 6, borderRadius: 3 },
+  extraColorChipText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 0.8 },
   commentStarBadge: {
     position: 'absolute',
     top: 2,
@@ -1323,9 +1386,9 @@ const s = StyleSheet.create({
   commentOverlay: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     paddingHorizontal: 18,
-    paddingTop: 54,
+    paddingTop: 20,
     backgroundColor: 'rgba(0,0,0,0.40)',
   },
   commentCard: {

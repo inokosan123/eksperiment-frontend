@@ -39,7 +39,31 @@ export type ChallengeCatalogEntry = {
   descriptor: string;
   defaultTime?: string;
   scheduleLabel: string;
+  totalUnits?: number;
   paceOptions?: PaceOption[];
+};
+
+export type ChallengeScriptureConfig = {
+  chaptersPerDay: number;
+  time?: string;
+  sameTimeEveryDay?: boolean;
+  dayTimes?: Record<number, string>;
+  notificationMode?: 'none' | 'single' | 'double';
+  reminderMinutes?: number;
+};
+
+export type ChallengePrayerConfig = {
+  taskKind: 'guided_rule' | 'personal_rule' | 'jesus_prayer';
+  prayerType?: 'morning' | 'evening';
+  prayerRule?: 'standard' | 'short' | 'seraphim' | 'personal';
+  jesusPrayerMode?: 'duration' | 'count';
+  jesusPrayerDuration?: number;
+  jesusPrayerCount?: number;
+  time?: string;
+  sameTimeEveryDay?: boolean;
+  dayTimes?: Record<number, string>;
+  notificationMode?: 'none' | 'single' | 'double';
+  reminderMinutes?: number;
 };
 
 export type ChallengeRecord = {
@@ -62,6 +86,10 @@ export type ChallengeRecord = {
   scheduleLabel: string;
   paceLabel?: string;
   endedLabel?: string;
+  totalUnits?: number;
+  durationDays?: number;
+  scriptureConfig?: ChallengeScriptureConfig;
+  prayerConfig?: ChallengePrayerConfig;
 };
 
 export const TAB_ACTIVE_COLORS: Record<ChallengeTab, string> = {
@@ -119,6 +147,7 @@ export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
     descriptor: 'Church-calendar setup',
     defaultTime: '06:30',
     scheduleLabel: 'Daily',
+    totalUnits: 0,
   },
   {
     id: 'nt_full',
@@ -132,6 +161,7 @@ export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
     descriptor: 'Structured chapter plan',
     defaultTime: '21:00',
     scheduleLabel: 'Daily',
+    totalUnits: 260,
     paceOptions: [
       { id: '60d', label: '60 Days', caption: 'Steady pace' },
       { id: '90d', label: '90 Days', caption: 'Gentler pace' },
@@ -150,6 +180,7 @@ export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
     descriptor: 'Structured chapter plan',
     defaultTime: '21:00',
     scheduleLabel: 'Daily',
+    totalUnits: 89,
     paceOptions: [
       { id: '30d', label: '30 Days', caption: 'Focused pace' },
       { id: '45d', label: '45 Days', caption: 'Balanced pace' },
@@ -168,6 +199,7 @@ export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
     descriptor: 'Single-book challenge',
     defaultTime: '21:00',
     scheduleLabel: 'Daily',
+    totalUnits: 28,
   },
   {
     id: 'gospel_mark',
@@ -181,6 +213,7 @@ export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
     descriptor: 'Single-book challenge',
     defaultTime: '21:00',
     scheduleLabel: 'Daily',
+    totalUnits: 16,
   },
   {
     id: 'gospel_luke',
@@ -194,6 +227,7 @@ export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
     descriptor: 'Single-book challenge',
     defaultTime: '21:00',
     scheduleLabel: 'Daily',
+    totalUnits: 24,
   },
   {
     id: 'gospel_john',
@@ -207,6 +241,63 @@ export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
     descriptor: 'Single-book challenge',
     defaultTime: '21:00',
     scheduleLabel: 'Daily',
+    totalUnits: 21,
+  },
+  {
+    id: 'nt_acts',
+    templateId: 'nt_acts',
+    title: 'Acts of the Apostles',
+    description: '28 chapters.',
+    category: 'scripture',
+    groupKey: 'new_testament',
+    groupLabel: 'New Testament',
+    icon: 'book',
+    descriptor: 'Single-book challenge',
+    defaultTime: '21:00',
+    scheduleLabel: 'Daily',
+    totalUnits: 28,
+  },
+  {
+    id: 'nt_paul_epistles',
+    templateId: 'nt_paul_epistles',
+    title: 'Epistles of St. Paul',
+    description: '14 epistles, Romans to Hebrews.',
+    category: 'scripture',
+    groupKey: 'new_testament',
+    groupLabel: 'New Testament',
+    icon: 'openBook',
+    descriptor: 'Structured chapter plan',
+    defaultTime: '21:00',
+    scheduleLabel: 'Daily',
+    totalUnits: 100,
+  },
+  {
+    id: 'nt_catholic_epistles',
+    templateId: 'nt_catholic_epistles',
+    title: 'Catholic Epistles',
+    description: 'James, Peter, John and Jude.',
+    category: 'scripture',
+    groupKey: 'new_testament',
+    groupLabel: 'New Testament',
+    icon: 'openBook',
+    descriptor: 'Structured chapter plan',
+    defaultTime: '21:00',
+    scheduleLabel: 'Daily',
+    totalUnits: 21,
+  },
+  {
+    id: 'nt_revelation',
+    templateId: 'nt_revelation',
+    title: 'Revelation',
+    description: '22 chapters.',
+    category: 'scripture',
+    groupKey: 'new_testament',
+    groupLabel: 'New Testament',
+    icon: 'book',
+    descriptor: 'Single-book challenge',
+    defaultTime: '21:00',
+    scheduleLabel: 'Daily',
+    totalUnits: 22,
   },
   {
     id: 'psalter_full',
@@ -220,6 +311,7 @@ export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
     descriptor: 'Psalm-by-psalm plan',
     defaultTime: '06:45',
     scheduleLabel: 'Daily',
+    totalUnits: 151,
     paceOptions: [
       { id: '20d', label: '20 Days', caption: 'Fast cycle' },
       { id: '40d', label: '40 Days', caption: 'Classic pace' },
@@ -238,11 +330,68 @@ export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
     descriptor: 'Long-form scripture plan',
     defaultTime: '20:30',
     scheduleLabel: 'Daily',
+    totalUnits: 929,
     paceOptions: [
       { id: '180d', label: '180 Days', caption: 'Focused' },
       { id: '270d', label: '270 Days', caption: 'Balanced' },
       { id: '365d', label: '365 Days', caption: 'Year pace' },
     ],
+  },
+  {
+    id: 'ot_pentateuch',
+    templateId: 'ot_pentateuch',
+    title: 'Pentateuch',
+    description: 'Genesis, Exodus, Leviticus, Numbers, Deuteronomy.',
+    category: 'scripture',
+    groupKey: 'old_testament',
+    groupLabel: 'Old Testament',
+    icon: 'openBook',
+    descriptor: 'Structured chapter plan',
+    defaultTime: '20:30',
+    scheduleLabel: 'Daily',
+    totalUnits: 187,
+  },
+  {
+    id: 'ot_history',
+    templateId: 'ot_history',
+    title: 'Historical Books',
+    description: 'Joshua through Esther.',
+    category: 'scripture',
+    groupKey: 'old_testament',
+    groupLabel: 'Old Testament',
+    icon: 'openBook',
+    descriptor: 'Structured chapter plan',
+    defaultTime: '20:30',
+    scheduleLabel: 'Daily',
+    totalUnits: 249,
+  },
+  {
+    id: 'ot_wisdom',
+    templateId: 'ot_wisdom',
+    title: 'Wisdom Books',
+    description: 'Job, Proverbs, Ecclesiastes, Song of Songs.',
+    category: 'scripture',
+    groupKey: 'old_testament',
+    groupLabel: 'Old Testament',
+    icon: 'openBook',
+    descriptor: 'Structured chapter plan',
+    defaultTime: '20:30',
+    scheduleLabel: 'Daily',
+    totalUnits: 93,
+  },
+  {
+    id: 'ot_prophets',
+    templateId: 'ot_prophets',
+    title: 'Prophetic Books',
+    description: 'Isaiah through Malachi.',
+    category: 'scripture',
+    groupKey: 'old_testament',
+    groupLabel: 'Old Testament',
+    icon: 'openBook',
+    descriptor: 'Structured chapter plan',
+    defaultTime: '20:30',
+    scheduleLabel: 'Daily',
+    totalUnits: 252,
   },
   {
     id: 'prayer_morning',
@@ -314,6 +463,7 @@ export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
       { id: '14d', label: '14 Days', caption: 'Short reset' },
       { id: '30d', label: '30 Days', caption: 'Full month' },
       { id: '90d', label: '90 Days', caption: 'Longer consistency' },
+      { id: '365d', label: '365 Days', caption: 'One year' },
     ],
   },
   {
@@ -332,6 +482,7 @@ export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
       { id: '14d', label: '14 Days', caption: 'Short reset' },
       { id: '30d', label: '30 Days', caption: 'Classic month' },
       { id: '60d', label: '60 Days', caption: 'Longer habit' },
+      { id: '365d', label: '365 Days', caption: 'One year' },
     ],
   },
   {
@@ -350,6 +501,7 @@ export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
       { id: '14d', label: '14 Days', caption: 'Short reset' },
       { id: '30d', label: '30 Days', caption: 'Balanced' },
       { id: '90d', label: '90 Days', caption: 'Longer consistency' },
+      { id: '365d', label: '365 Days', caption: 'One year' },
     ],
   },
 ];
@@ -364,16 +516,25 @@ export const INITIAL_CHALLENGES: ChallengeRecord[] = [
     groupKey: 'new_testament',
     icon: 'book',
     status: 'active',
-    progressCurrent: 12,
-    progressTotal: 89,
-    progressUnit: 'chapters',
-    headline: '12 of 89 chapters',
-    subline: '77 chapters left',
+    progressCurrent: 6,
+    progressTotal: 45,
+    progressUnit: 'days',
+    headline: 'Day 7 of 45',
+    subline: '6/45 days completed',
     showBar: true,
     streak: 7,
     time: '21:00',
     scheduleLabel: 'Daily',
-    paceLabel: '45 Days',
+    paceLabel: '2 chapters/day',
+    totalUnits: 89,
+    durationDays: 45,
+    scriptureConfig: {
+      chaptersPerDay: 2,
+      time: '21:00',
+      sameTimeEveryDay: true,
+      notificationMode: 'single',
+      reminderMinutes: 15,
+    },
   },
   {
     id: 'challenge_psalter',
@@ -393,7 +554,16 @@ export const INITIAL_CHALLENGES: ChallengeRecord[] = [
     streak: 6,
     time: '06:45',
     scheduleLabel: 'Daily',
-    paceLabel: '40 Days',
+    paceLabel: '4 psalms/day',
+    totalUnits: 151,
+    durationDays: 40,
+    scriptureConfig: {
+      chaptersPerDay: 4,
+      time: '06:45',
+      sameTimeEveryDay: true,
+      notificationMode: 'single',
+      reminderMinutes: 15,
+    },
   },
   {
     id: 'challenge_morning_prayer',

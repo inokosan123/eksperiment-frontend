@@ -14,7 +14,9 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, Plus, X, CheckSmall, Trash2, PartyPopper, Pencil } from '@/components/icons/Icons';
+import { Ionicons } from '@expo/vector-icons';
+import { ArrowLeft, Plus, X, CheckSmall, Trash2, Pencil } from '@/components/icons/Icons';
+import SharedConfirmModal from '@/components/shared/ConfirmModal';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import CelebrationOverlay from './CelebrationOverlay';
@@ -64,47 +66,19 @@ function ConfirmationModal({
   onConfirm: () => void;
 }) {
   const warm = tone === 'warm';
-  const iconBg = warm ? '#F7EFE0' : '#FEF2F2';
-  const toneColor = warm ? C.gold : '#EF4444';
-  const confirmBg = warm ? C.gold : '#EF4444';
-
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={cm.wrap}>
-        <Pressable style={cm.scrim} onPress={onClose} />
-        <View style={cm.card}>
-          <View style={[cm.iconCircle, { backgroundColor: iconBg }]}>
-            {warm ? <CheckSmall s={22} c={toneColor} w={2.8} /> : <Trash2 s={22} c={toneColor} />}
-          </View>
-          <Text style={cm.title}>{title}</Text>
-          <Text style={cm.message}>{message}</Text>
-
-          <View style={cm.actions}>
-            <TouchableOpacity
-              style={cm.cancelBtn}
-              activeOpacity={0.75}
-              onPress={() => {
-                feedback();
-                onClose();
-              }}
-            >
-              <Text style={cm.cancelTxt}>{cancelLabel}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[cm.confirmBtn, { backgroundColor: confirmBg, shadowColor: confirmBg }]}
-              activeOpacity={0.82}
-              onPress={() => {
-                feedback();
-                onConfirm();
-                onClose();
-              }}
-            >
-              <Text style={cm.confirmTxt}>{confirmLabel}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
+    <SharedConfirmModal
+      visible={visible}
+      icon={warm ? <CheckSmall s={22} c={C.gold} w={2.8} /> : <Trash2 s={22} c="#EF4444" />}
+      iconBg={warm ? '#F7EFE0' : '#FEF2F2'}
+      title={title}
+      body={message}
+      cancelLabel={cancelLabel}
+      confirmLabel={confirmLabel}
+      confirmColor={warm ? C.gold : '#EF4444'}
+      onCancel={() => { feedback(); onClose(); }}
+      onConfirm={() => { feedback(); onConfirm(); onClose(); }}
+    />
   );
 }
 
@@ -137,7 +111,7 @@ function AddDreamCard({ value, onChange, onAdd }: { value: string; onChange: (v:
 function SectionHeading({ achieved, label, count }: { achieved?: boolean; label: string; count: number }) {
   return (
     <View style={sh.row}>
-      {achieved && <PartyPopper s={21} c={C.gold} />}
+      {achieved && <Ionicons name="trophy" size={20} color={C.gold} />}
       <Text style={[sh.text, achieved && sh.textAchieved]}>{label}</Text>
       <Text style={[sh.count, achieved && sh.countAchieved]}>({count})</Text>
     </View>
@@ -334,9 +308,11 @@ export default function BucketListView() {
 
   const handleComplete = (id: string) => {
     completeBucketItem(id);
-    setShowConfetti(true);
     successFeedback();
-    setTimeout(() => setShowConfetti(false), 3000);
+    setTimeout(() => {
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 3000);
+    }, 350);
   };
 
   const handleConfirmToggle = () => {
@@ -383,7 +359,9 @@ export default function BucketListView() {
 
   return (
     <View style={screen.root}>
-      {showConfetti && <CelebrationOverlay />}
+      <Modal visible={showConfetti} transparent animationType="none" statusBarTranslucent onRequestClose={() => {}}>
+        <CelebrationOverlay />
+      </Modal>
 
       <ConfirmationModal
         visible={!!confirmToggle}
@@ -716,87 +694,3 @@ const empty = StyleSheet.create({
   },
 });
 
-const cm = StyleSheet.create({
-  wrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  scrim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  card: {
-    width: '100%',
-    maxWidth: 380,
-    borderRadius: 32,
-    backgroundColor: '#fff',
-    padding: 24,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.2,
-    shadowRadius: 28,
-    elevation: 18,
-  },
-  iconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  title: {
-    fontFamily: F.serifMedium,
-    fontSize: 21,
-    color: '#111827',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  message: {
-    fontFamily: F.serif,
-    fontSize: 14,
-    lineHeight: 21,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  cancelBtn: {
-    flex: 1,
-    borderRadius: 13,
-    backgroundColor: '#F9FAFB',
-    paddingVertical: 13,
-    alignItems: 'center',
-  },
-  cancelTxt: {
-    fontFamily: F.sansBold,
-    fontSize: 12,
-    letterSpacing: 1.7,
-    color: '#4B5563',
-    textTransform: 'uppercase',
-  },
-  confirmBtn: {
-    flex: 1,
-    borderRadius: 13,
-    paddingVertical: 13,
-    alignItems: 'center',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.22,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  confirmTxt: {
-    fontFamily: F.sansBold,
-    fontSize: 12,
-    letterSpacing: 1.7,
-    color: '#fff',
-    textTransform: 'uppercase',
-  },
-});

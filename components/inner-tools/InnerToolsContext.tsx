@@ -60,11 +60,14 @@ export type IdealSelfProfile = {
 };
 
 type GratitudeTaskFrequency = 'daily' | 'weekdays';
+type GratitudeTaskDayTimes = Record<number, string>;
 
 type GratitudeTaskSettings = {
   enabled: boolean;
   time: string;
   frequency: GratitudeTaskFrequency;
+  sameTimeEveryDay: boolean;
+  dayTimes: GratitudeTaskDayTimes;
 };
 
 type InnerToolsSnapshot = {
@@ -87,6 +90,10 @@ type InnerToolsContextValue = {
   setGratitudeTaskTime: (time: string) => void;
   gratitudeTaskFrequency: GratitudeTaskFrequency;
   setGratitudeTaskFrequency: (frequency: GratitudeTaskFrequency) => void;
+  gratitudeTaskSameTimeEveryDay: boolean;
+  setGratitudeTaskSameTimeEveryDay: (sameTimeEveryDay: boolean) => void;
+  gratitudeTaskDayTimes: GratitudeTaskDayTimes;
+  setGratitudeTaskDayTimes: (dayTimes: GratitudeTaskDayTimes) => void;
   idealSelf: IdealSelfProfile | null;
   saveIdealSelf: (profile: IdealSelfProfile) => void;
 };
@@ -103,6 +110,8 @@ const DEFAULT_GRATITUDE_TASK: GratitudeTaskSettings = {
   enabled: false,
   time: '08:00',
   frequency: 'daily',
+  sameTimeEveryDay: true,
+  dayTimes: {},
 };
 
 function normalizeNoteType(value: unknown): NoteKind {
@@ -200,14 +209,38 @@ function normalizeIdealSelf(value: unknown): IdealSelfProfile | null {
   };
 }
 
+function normalizeTaskTime(value: unknown, fallback = DEFAULT_GRATITUDE_TASK.time) {
+  if (typeof value !== 'string') return fallback;
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return fallback;
+
+  const hour = Math.min(23, Math.max(0, Number(match[1])));
+  const minute = Math.min(59, Math.max(0, Number(match[2])));
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function normalizeTaskDayTimes(value: unknown, fallbackTime: string): GratitudeTaskDayTimes {
+  if (!value || typeof value !== 'object') return {};
+
+  return Object.entries(value as Record<string, unknown>).reduce<GratitudeTaskDayTimes>((acc, [key, timeValue]) => {
+    const index = Number(key);
+    if (!Number.isInteger(index) || index < 0 || index > 6) return acc;
+    acc[index] = normalizeTaskTime(timeValue, fallbackTime);
+    return acc;
+  }, {});
+}
+
 function normalizeGratitudeTaskSettings(value: unknown): GratitudeTaskSettings {
   if (!value || typeof value !== 'object') return DEFAULT_GRATITUDE_TASK;
 
   const raw = value as Record<string, unknown>;
+  const time = normalizeTaskTime(raw.time);
   return {
     enabled: Boolean(raw.enabled),
-    time: typeof raw.time === 'string' && raw.time.trim() ? raw.time : DEFAULT_GRATITUDE_TASK.time,
+    time,
     frequency: raw.frequency === 'weekdays' ? 'weekdays' : 'daily',
+    sameTimeEveryDay: typeof raw.sameTimeEveryDay === 'boolean' ? raw.sameTimeEveryDay : true,
+    dayTimes: normalizeTaskDayTimes(raw.dayTimes, time),
   };
 }
 
@@ -401,6 +434,22 @@ export function InnerToolsProvider({ children }: { children: React.ReactNode }) 
     setGratitudeTaskFrequency: (frequency) => {
       setGratitudeTask(prev => {
         const next = { ...prev, frequency };
+        void persistGratitudeTask(next);
+        return next;
+      });
+    },
+    gratitudeTaskSameTimeEveryDay: gratitudeTask.sameTimeEveryDay,
+    setGratitudeTaskSameTimeEveryDay: (sameTimeEveryDay) => {
+      setGratitudeTask(prev => {
+        const next = { ...prev, sameTimeEveryDay };
+        void persistGratitudeTask(next);
+        return next;
+      });
+    },
+    gratitudeTaskDayTimes: gratitudeTask.dayTimes,
+    setGratitudeTaskDayTimes: (dayTimes) => {
+      setGratitudeTask(prev => {
+        const next = { ...prev, dayTimes };
         void persistGratitudeTask(next);
         return next;
       });

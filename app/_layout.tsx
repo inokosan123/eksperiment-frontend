@@ -12,6 +12,7 @@ import { InnerToolsProvider } from '@/components/inner-tools/InnerToolsContext';
 import { ScriptureProvider } from '@/components/scripture/ScriptureContext';
 import { ReadingListProvider } from '@/components/library/ReadingListContext';
 import { ChallengesProvider } from '@/components/challenges/ChallengesContext';
+import { TaskProvider } from '@/components/tasks/TaskProvider';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -48,33 +49,36 @@ export default function RootLayout() {
         <ScriptureProvider>
           <ReadingListProvider>
             <ChallengesProvider>
-              <BucketListProvider>
-                <InnerToolsProvider>
-                  <Stack>
-                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                    <Stack.Screen name="prayer"          options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="journal"         options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="journal-daily"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="journal-morning" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="journal-free"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="bucket-list"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="focus-zone"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="notes"           options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="scripture"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="scripture-reader" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="favorites"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="bible-notes"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="gratitude"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="ideal-self"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="reading-list"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="reading-analytics" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="habits"          options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="challenges"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    <Stack.Screen name="my-routine"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                  </Stack>
-                </InnerToolsProvider>
-                <StatusBar style="dark" backgroundColor={C.bg} />
-              </BucketListProvider>
+              <TaskProvider>
+                <BucketListProvider>
+                  <InnerToolsProvider>
+                    <Stack>
+                      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                      <Stack.Screen name="prayer"          options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="journal"         options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="journal-daily"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="journal-morning" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="journal-free"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="bucket-list"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="focus-zone"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="notes"           options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="scripture"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="scripture-reader" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="favorites"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="bible-notes"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="gratitude"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="ideal-self"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="reading-list"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="reading-analytics" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="reading-session"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="habits"          options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="challenges"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                      <Stack.Screen name="my-routine"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                    </Stack>
+                  </InnerToolsProvider>
+                  <StatusBar style="dark" backgroundColor={C.bg} />
+                </BucketListProvider>
+              </TaskProvider>
             </ChallengesProvider>
           </ReadingListProvider>
         </ScriptureProvider>

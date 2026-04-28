@@ -1,16 +1,23 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, TextInput,
-  Pressable, ScrollView, Image, useWindowDimensions, Animated, Easing,
+  Pressable, ScrollView, Image, useWindowDimensions,
 } from 'react-native';
+import Animated, {
+  useSharedValue, useAnimatedStyle, useAnimatedProps, withRepeat, withTiming, withDelay,
+  withSequence, Easing as REasing, interpolate,
+} from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import {
-  ArrowLeft, BarChart3, ChevronLeft, ChevronRight, Minus, Pause,
+  ArrowLeft, ChevronLeft, ChevronRight, Minus, Pause,
   Play, Plus, RotateCcw, Settings, X,
 } from '@/components/icons/Icons';
+import { Feather } from '@expo/vector-icons';
 import { F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import FocusLottie from '@/components/focus/FocusLottie';
@@ -42,6 +49,7 @@ const INK = '#1C1917';
 const BG = '#FFFFFF';
 const TARGET_RADIUS = 45;
 const CIRCUMFERENCE = 2 * Math.PI * TARGET_RADIUS;
+
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const FLAME_ICON = require('@/assets/images/streak-flame-512.png');
@@ -80,8 +88,11 @@ export default function FocusZoneView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const activeAnim = useRef(new Animated.Value(0)).current;
-  const entryAnim = useRef(new Animated.Value(0)).current;
+  const activeAnim = useSharedValue(0);
+  const entryAnim = useSharedValue(0);
+  const breathe = useSharedValue(0);
+  const r1 = useSharedValue(0);
+  const r2 = useSharedValue(0);
 
   const [focusDuration, setFocusDuration] = useState(25);
   const [breakDuration, setBreakDuration] = useState(5);
@@ -107,7 +118,7 @@ export default function FocusZoneView() {
   const ringColor = isActive ? activeColor : INK;
   const trackColor = isActive ? '#E7E5E4' : INK;
   const timerProgress = Math.max(0, Math.min(1, timeLeft / Math.max(1, totalTimeForMode)));
-  const diameter = Math.min(width - 36, 340);
+  const diameter = Math.min(width - 24, 380);
   const timeFont = Math.round(diameter * 0.282);
   const colonFont = Math.round(diameter * 0.105);
 
@@ -274,28 +285,32 @@ export default function FocusZoneView() {
   }, [handleTimerComplete, isActive, timeLeft]);
 
   useEffect(() => {
-    if (!isActive) {
-      setTimeLeft(mode === 'focus' ? focusDuration * 60 : breakDuration * 60);
+    setTimeLeft(mode === 'focus' ? focusDuration * 60 : breakDuration * 60);
+  }, [breakDuration, focusDuration, mode]);
+
+  useEffect(() => {
+    entryAnim.value = withTiming(1, { duration: 360, easing: REasing.out(REasing.cubic) });
+  }, []);
+
+  useEffect(() => {
+    activeAnim.value = withTiming(isActive ? 1 : 0, { duration: 520, easing: REasing.out(REasing.cubic) });
+    if (isActive) {
+      breathe.value = withRepeat(
+        withSequence(
+          withTiming(1, { duration: 2400, easing: REasing.inOut(REasing.sin) }),
+          withTiming(0.3, { duration: 2400, easing: REasing.inOut(REasing.sin) }),
+        ), -1, false,
+      );
+      r1.value = 0;
+      r1.value = withRepeat(withTiming(1, { duration: 1800, easing: REasing.out(REasing.quad) }), -1, false);
+      r2.value = 0;
+      r2.value = withDelay(750, withRepeat(withTiming(1, { duration: 1800, easing: REasing.out(REasing.quad) }), -1, false));
+    } else {
+      breathe.value = withTiming(0, { duration: 500 });
+      r1.value = withTiming(0, { duration: 400 });
+      r2.value = withTiming(0, { duration: 400 });
     }
-  }, [breakDuration, focusDuration, isActive, mode]);
-
-  useEffect(() => {
-    Animated.timing(activeAnim, {
-      toValue: isActive ? 1 : 0,
-      duration: 520,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [activeAnim, isActive]);
-
-  useEffect(() => {
-    Animated.timing(entryAnim, {
-      toValue: 1,
-      duration: 360,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [entryAnim]);
+  }, [isActive]);
 
   const handleBack = useCallback(() => {
     if (showSettings) {
@@ -318,7 +333,11 @@ export default function FocusZoneView() {
   }, [isActive, router, showCompletion, showSettings, showStats]);
 
   const toggleTimer = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (isActive) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
     setIsActive(prev => !prev);
   };
 
@@ -389,17 +408,41 @@ export default function FocusZoneView() {
 
   const maxSessionBar = Math.max(...statsData.weekDays, 1);
   const maxMinuteBar = Math.max(...statsData.weekDaysMin, 1);
-  const activeProgress = isActive ? 1 : 0;
-  const timerTranslateY = activeAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -16] });
-  const sandyOpacity = activeAnim.interpolate({ inputRange: [0, 0.45, 1], outputRange: [0, 0, 1] });
-  const sandyTranslateY = activeAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] });
-  const auraOpacity = activeAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.08] });
-  const auraScale = activeAnim.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] });
-  const entryOpacity = entryAnim;
-  const entryTranslateY = entryAnim.interpolate({ inputRange: [0, 1], outputRange: [18, 0] });
+
+  const screenStyle = useAnimatedStyle(() => ({
+    opacity: entryAnim.value,
+    transform: [{ translateY: interpolate(entryAnim.value, [0, 1], [18, 0]) }],
+  }));
+
+  const timerTextStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(activeAnim.value, [0, 1], [0, -12]) }],
+  }));
+
+  const sandyStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(activeAnim.value, [0, 0.45, 1], [0, 0, 1]),
+    transform: [{ translateY: interpolate(activeAnim.value, [0, 1], [10, 0]) }],
+  }));
+
+  const glowProps = useAnimatedProps(() => ({
+    opacity: breathe.value * 0.12,
+  }));
+
+  const pulse1Props = useAnimatedProps(() => ({
+    opacity: (1 - r1.value) * 0.35,
+    r: TARGET_RADIUS + r1.value * 4,
+  }));
+
+  const pulse2Props = useAnimatedProps(() => ({
+    opacity: (1 - r2.value) * 0.25,
+    r: TARGET_RADIUS + r2.value * 4.5,
+  }));
+
+  const sandyBreathStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 0.94 + breathe.value * 0.07 }],
+  }));
 
   return (
-    <Animated.View style={[s.screen, { opacity: entryOpacity, transform: [{ translateY: entryTranslateY }] }]}>
+    <Animated.View style={[s.screen, screenStyle]}>
       <View style={[s.header, { paddingTop: getTitleBarTopPadding(insets.top) }]}>
         <TouchableOpacity onPress={handleBack} style={s.headerBtn} activeOpacity={0.72}>
           <ArrowLeft s={24} c="rgba(28,25,23,0.42)" />
@@ -416,51 +459,28 @@ export default function FocusZoneView() {
           style={s.headerBtn}
           activeOpacity={0.72}
         >
-          <BarChart3 s={24} c="rgba(28,25,23,0.42)" />
+          <Feather name="pie-chart" size={28} color="rgba(28,25,23,0.42)" />
         </TouchableOpacity>
       </View>
 
       <View style={s.center}>
         <View style={[s.timerWrap, { width: diameter, height: diameter }]}>
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              s.glowOuter,
-              {
-                width: diameter + 150,
-                height: diameter + 150,
-                borderRadius: (diameter + 150) / 2,
-                left: -75,
-                top: -75,
-                backgroundColor: activeColor,
-                opacity: auraOpacity,
-                transform: [{ scale: auraScale }],
-              },
-            ]}
-          />
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              s.glowMid,
-              {
-                width: diameter + 82,
-                height: diameter + 82,
-                borderRadius: (diameter + 82) / 2,
-                left: -41,
-                top: -41,
-                borderColor: activeColor,
-                opacity: activeAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.16] }),
-              },
-            ]}
-          />
           <Svg width={diameter} height={diameter} viewBox="0 0 100 100" style={s.ring}>
-            <Circle cx="50" cy="50" r={TARGET_RADIUS} strokeWidth="1.2" fill="white" stroke={trackColor} />
+            {/* Inner glow — breathes while active */}
+            <AnimatedCircle cx="50" cy="50" r={TARGET_RADIUS - 0.5} fill={activeColor} animatedProps={glowProps} />
+            {/* Pulse ring 1 — expands outward and fades */}
+            <AnimatedCircle cx="50" cy="50" fill="none" stroke={activeColor} strokeWidth="0.8" animatedProps={pulse1Props} />
+            {/* Pulse ring 2 — offset 750ms */}
+            <AnimatedCircle cx="50" cy="50" fill="none" stroke={activeColor} strokeWidth="0.5" animatedProps={pulse2Props} />
+            {/* Track (fill none — white bg shows through from parent) */}
+            <Circle cx="50" cy="50" r={TARGET_RADIUS} strokeWidth="1.6" fill="none" stroke={trackColor} strokeLinecap="round" />
+            {/* Progress */}
             <Circle
               cx="50"
               cy="50"
               r={TARGET_RADIUS}
-              strokeWidth="1.25"
-              fill="transparent"
+              strokeWidth="1.7"
+              fill="none"
               strokeLinecap="round"
               stroke={ringColor}
               strokeDasharray={`${CIRCUMFERENCE}`}
@@ -469,14 +489,23 @@ export default function FocusZoneView() {
             />
           </Svg>
 
-          <Animated.View style={[s.timerTextWrap, { transform: [{ translateY: timerTranslateY }] }]}>
+          <Animated.View style={[s.timerTextWrap, timerTextStyle]}>
             <Text style={[s.timeText, { color: ringColor, fontSize: timeFont, lineHeight: timeFont + 4 }]}>{timeObj.m}</Text>
             <Text style={[s.colon, { color: ringColor, fontSize: colonFont }]}>:</Text>
             <Text style={[s.timeText, { color: ringColor, fontSize: timeFont, lineHeight: timeFont + 4 }]}>{timeObj.s}</Text>
           </Animated.View>
 
-          <Animated.View style={[s.sandyWrap, { opacity: sandyOpacity, transform: [{ translateY: sandyTranslateY }] }]}>
-            <FocusLottie name="sandy" loop speed={0.4} style={s.sandyLottie} />
+          {/* Sandy hourglass — new animation for focus, green sandy for break */}
+          <Animated.View style={[s.sandyWrap, sandyStyle]}>
+            <Animated.View style={sandyBreathStyle}>
+              {mode === 'focus' ? (
+                <FocusLottie name="sandy-work" loop speed={0.4} style={s.sandyLottie} />
+              ) : (
+                <View style={{ filter: 'hue-rotate(-55deg) brightness(0.85)' }}>
+                  <FocusLottie name="sandy" loop speed={0.4} style={s.sandyLottie} />
+                </View>
+              )}
+            </Animated.View>
           </Animated.View>
         </View>
 
@@ -491,8 +520,8 @@ export default function FocusZoneView() {
             style={[
               s.mainControl,
               {
-                backgroundColor: activeProgress ? activeColor : INK,
-                shadowColor: activeProgress ? activeColor : INK,
+                backgroundColor: isActive ? activeColor : INK,
+                shadowColor: isActive ? activeColor : INK,
               },
             ]}
           >
@@ -675,19 +704,24 @@ function CompletionModal({
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onSkip}>
       <View style={completion.overlay}>
-        <FocusLottie name="fire" loop style={completion.fire} />
-        <Text style={completion.title}>Well Done!</Text>
-        <View style={completion.sessionsRow}>
-          <Text style={completion.sessionsNum}>{dailySessions}</Text>
-          <Text style={completion.sessionsText}>sessions today</Text>
-        </View>
-        <View style={completion.actions}>
-          <TouchableOpacity onPress={onBreak} style={completion.breakBtn} activeOpacity={0.88}>
-            <Text style={completion.breakText}>Take a {breakDuration}m Break</Text>
+        <View style={completion.card}>
+          <TouchableOpacity onPress={onSkip} style={completion.closeBtn} activeOpacity={0.7}>
+            <X s={20} c={INK} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={onSkip} style={completion.skipBtn} activeOpacity={0.72}>
-            <Text style={completion.skipText}>Skip Break</Text>
-          </TouchableOpacity>
+          <FocusLottie name="fire" loop style={completion.fire} />
+          <Text style={completion.title}>Well Done!</Text>
+          <View style={completion.sessionsRow}>
+            <Text style={completion.sessionsNum}>{dailySessions}</Text>
+            <Text style={completion.sessionsText}>sessions today</Text>
+          </View>
+          <View style={completion.actions}>
+            <TouchableOpacity onPress={onBreak} style={completion.breakBtn} activeOpacity={0.88}>
+              <Text style={completion.breakText}>Take a {breakDuration}m Break</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onSkip} style={completion.skipBtn} activeOpacity={0.72}>
+              <Text style={completion.skipText}>Skip Break</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
@@ -704,20 +738,20 @@ function ExitWarningModal({
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onResume}>
       <View style={modal.overlayDark}>
-        <View style={[modal.card, modal.centerCard]}>
+        <View style={modal.warningCard}>
           <View style={modal.warningIcon}>
-            <View style={{ transform: [{ rotate: '90deg' }] }}>
-              <Play s={24} c="#EF4444" />
-            </View>
+            <X s={22} c="#EF4444" w={2.5} />
           </View>
-          <Text style={modal.title}>Stop Session?</Text>
-          <Text style={modal.warningText}>You are in the middle of a focus session. Leaving now will reset your current progress.</Text>
+          <Text style={modal.warningTitle}>Stop Session?</Text>
+          <Text style={modal.warningBody}>
+            You are in the middle of a focus session. Leaving now will reset your current progress.
+          </Text>
           <View style={modal.warningRow}>
             <TouchableOpacity onPress={onResume} style={modal.resumeBtn} activeOpacity={0.82}>
-              <Text style={modal.resumeText}>Resume</Text>
+              <Text style={modal.resumeText}>RESUME</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={onEnd} style={modal.endBtn} activeOpacity={0.82}>
-              <Text style={modal.endText}>End Session</Text>
+              <Text style={modal.endText}>END</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -747,6 +781,19 @@ function StatsModal({
   onPrevMonth: () => void;
   onNextMonth: () => void;
 }) {
+  const pillAnim = useSharedValue(statsMode === 'time' ? 1 : 0);
+  const [toggleWidth, setToggleWidth] = useState(0);
+
+  const pillStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: pillAnim.value * (toggleWidth - 8) / 2 }],
+  }));
+
+  const handleSetMode = (mode: StatsMode) => {
+    pillAnim.value = withTiming(mode === 'time' ? 1 : 0, { duration: 220 });
+    setStatsMode(mode);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
   const rows = [
     [
       { label: 'Today', sessions: statsData.today, mins: statsData.todayMin, accent: true },
@@ -766,28 +813,26 @@ function StatsModal({
     <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
       <View style={stats.screen}>
         <View style={[stats.header, { paddingTop: getTitleBarTopPadding(insetsTop) }]}>
-          <View style={stats.headerTitleRow}>
-            <BarChart3 s={20} c={GOLD} />
-            <Text style={stats.headerTitle}>Analytics</Text>
-          </View>
-          <TouchableOpacity onPress={onClose} style={stats.closeBtn} activeOpacity={0.7}>
-            <X s={20} c={INK} />
+          <TouchableOpacity onPress={onClose} style={stats.headerBtn} activeOpacity={0.7}>
+            <ArrowLeft s={24} c="#9CA3AF" />
           </TouchableOpacity>
+          <Text style={stats.headerTitle}>ANALYTICS</Text>
+          <View style={stats.headerBtn} />
         </View>
 
         <ScrollView contentContainerStyle={stats.content} showsVerticalScrollIndicator={false}>
-          <View style={stats.toggle}>
-            <Pressable
-              onPress={() => setStatsMode('streak')}
-              style={[stats.toggleBtn, statsMode === 'streak' && stats.toggleActive]}
-            >
+          <View
+            style={stats.toggle}
+            onLayout={e => setToggleWidth(e.nativeEvent.layout.width)}
+          >
+            {toggleWidth > 0 && (
+              <Animated.View style={[stats.togglePill, { width: (toggleWidth - 8) / 2 }, pillStyle]} />
+            )}
+            <Pressable onPress={() => handleSetMode('streak')} style={stats.toggleBtn}>
               <Image source={FLAME_ICON} style={[stats.toggleFlame, statsMode !== 'streak' && { opacity: 0.35 }]} />
               <Text style={[stats.toggleText, statsMode === 'streak' && stats.toggleTextActive]}>Streak</Text>
             </Pressable>
-            <Pressable
-              onPress={() => setStatsMode('time')}
-              style={[stats.toggleBtn, statsMode === 'time' && stats.toggleActive]}
-            >
+            <Pressable onPress={() => handleSetMode('time')} style={stats.toggleBtn}>
               <Text style={[stats.toggleText, statsMode === 'time' && stats.toggleTextActive]}>Focused Time</Text>
             </Pressable>
           </View>
@@ -874,12 +919,18 @@ function StatsModal({
                       <Text style={[stats.calendarDay, isToday && stats.todayDay]}>{cell.day}</Text>
                       {statsMode === 'streak' && cell.count > 0 && (
                         <View style={stats.calendarActivity}>
+                          <Text style={stats.calendarCount} numberOfLines={1}>
+                            {cell.count > 99 ? '99+' : cell.count}
+                          </Text>
                           <Image source={FLAME_ICON} style={stats.calendarFlame} />
-                          <Text style={stats.calendarCount}>{cell.count}</Text>
                         </View>
                       )}
                       {statsMode === 'time' && cell.minutes > 0 && (
-                        <Text style={stats.calendarMinutes}>{formatMinutes(cell.minutes)}</Text>
+                        <Text style={stats.calendarMinutes} numberOfLines={1}>
+                          {cell.minutes < 60
+                            ? `${cell.minutes}m`
+                            : `${Math.floor(cell.minutes / 60)}h${cell.minutes % 60 > 0 ? `${cell.minutes % 60}` : ''}`}
+                        </Text>
                       )}
                     </View>
                   </View>
@@ -902,17 +953,14 @@ const s = StyleSheet.create({
   flameWeb: { width: 48, height: 48 },
   sessionCount: { fontFamily: F.sansBold, fontSize: 20, color: '#44403C' },
   sessionLabel: { fontFamily: F.sans, fontSize: 16, color: '#D6D3D1' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, paddingBottom: 24 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, paddingBottom: 24 },
   timerWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
-  glowOuter: { position: 'absolute' },
-  glowMid: { position: 'absolute', borderWidth: 1 },
   ring: { position: 'absolute' },
   timerTextWrap: { position: 'absolute', flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center' },
-  timeText: { fontFamily: F.serifMedium, letterSpacing: -1 },
-  colon: { fontFamily: F.serifMedium, opacity: 0.3, marginHorizontal: 4 },
-  sandyWrap: { position: 'absolute', bottom: 38, left: 0, right: 0, alignItems: 'center' },
+  timeText: { fontFamily: F.serifBold, letterSpacing: -1 },
+  colon: { fontFamily: F.serifBold, opacity: 0.4, marginHorizontal: 4 },
+  sandyWrap: { position: 'absolute', top: '64%', left: 0, right: 0, alignItems: 'center' },
   sandyLottie: { width: 80, height: 80 },
-  sandyWeb: { width: 80, height: 80 },
   controlsDeck: { flexDirection: 'row', alignItems: 'center', gap: 24, backgroundColor: '#fff', padding: 12, paddingRight: 16, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(28,25,23,0.05)', shadowColor: '#000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.08, shadowRadius: 30, elevation: 9 },
   smallControl: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
   disabledControl: { opacity: 0.2 },
@@ -936,24 +984,27 @@ const modal = StyleSheet.create({
   minuteLabel: { fontFamily: F.sans, fontSize: 14, color: '#A8A29E' },
   saveBtn: { width: '100%', paddingVertical: 16, borderRadius: 18, backgroundColor: '#000', alignItems: 'center', marginTop: 2 },
   saveText: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 2, color: '#fff', textTransform: 'uppercase' },
-  warningIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  warningText: { fontFamily: F.sans, fontSize: 14, lineHeight: 22, color: '#6B7280', textAlign: 'center', marginTop: 8, marginBottom: 24 },
-  warningRow: { flexDirection: 'row', gap: 12 },
-  resumeBtn: { flex: 1, borderRadius: 14, backgroundColor: '#F3F4F6', paddingVertical: 13, alignItems: 'center' },
-  endBtn: { flex: 1, borderRadius: 14, backgroundColor: '#EF4444', paddingVertical: 13, alignItems: 'center' },
-  resumeText: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 1.4, color: '#374151', textTransform: 'uppercase' },
-  endText: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 1.4, color: '#fff', textTransform: 'uppercase' },
+  warningCard: { width: '100%', maxWidth: 320, borderRadius: 28, backgroundColor: '#fff', padding: 24, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.18, shadowRadius: 28, elevation: 12 },
+  warningIcon: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  warningTitle: { fontFamily: F.serifMedium, fontSize: 21, color: '#111827', textAlign: 'center', marginBottom: 8 },
+  warningBody: { fontFamily: F.serif, fontSize: 15, lineHeight: 23, color: '#6B7280', textAlign: 'center', marginBottom: 22 },
+  warningRow: { flexDirection: 'row', gap: 10, width: '100%' },
+  resumeBtn: { flex: 1, borderRadius: 13, backgroundColor: '#F9FAFB', paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: '#E5E7EB' },
+  endBtn: { flex: 1, borderRadius: 13, backgroundColor: '#EF4444', paddingVertical: 13, alignItems: 'center' },
+  resumeText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.8, color: '#4B5563' },
+  endText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.8, color: '#fff' },
 });
 
 const completion = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center', padding: 32 },
-  fire: { width: 220, height: 220 },
-  fireWeb: { width: 220, height: 220 },
-  title: { fontFamily: F.serifMedium, fontSize: 40, color: '#111827', marginTop: 8, marginBottom: 8 },
-  sessionsRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 40 },
-  sessionsNum: { fontFamily: F.serifMedium, fontSize: 72, color: GOLD },
-  sessionsText: { fontFamily: F.sans, fontSize: 20, color: 'rgba(197,160,89,0.62)', marginLeft: 8 },
-  actions: { width: '100%', maxWidth: 320, gap: 12 },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.38)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  card: { width: '100%', maxWidth: 380, borderRadius: 32, backgroundColor: '#fff', paddingHorizontal: 28, paddingTop: 16, paddingBottom: 28, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 24 }, shadowOpacity: 0.18, shadowRadius: 40, elevation: 16 },
+  closeBtn: { alignSelf: 'flex-end', width: 40, height: 40, borderRadius: 20, backgroundColor: '#F5F5F4', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  fire: { width: 180, height: 180 },
+  title: { fontFamily: F.serifMedium, fontSize: 36, color: '#111827', marginTop: 4, marginBottom: 6 },
+  sessionsRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 28 },
+  sessionsNum: { fontFamily: F.serifMedium, fontSize: 64, color: GOLD },
+  sessionsText: { fontFamily: F.sans, fontSize: 18, color: 'rgba(197,160,89,0.62)', marginLeft: 8 },
+  actions: { width: '100%', gap: 12 },
   breakBtn: { borderRadius: 18, borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)', backgroundColor: '#FFFBEB', paddingVertical: 16, alignItems: 'center' },
   breakText: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 1.8, color: GOLD, textTransform: 'uppercase' },
   skipBtn: { paddingVertical: 16, alignItems: 'center' },
@@ -962,14 +1013,14 @@ const completion = StyleSheet.create({
 
 const stats = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#FDFCF8' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingBottom: TITLE_BAR_BOTTOM_PADDING, backgroundColor: '#FDFCF8' },
-  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: { fontFamily: F.serifMedium, fontSize: 22, color: '#111827' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: TITLE_BAR_BOTTOM_PADDING, backgroundColor: '#FDFCF8', borderBottomWidth: 1, borderBottomColor: '#EDE9E0' },
+  headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { flex: 1, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 21, letterSpacing: 2.8, color: '#111827' },
   closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F5F5F4', alignItems: 'center', justifyContent: 'center' },
-  content: { paddingHorizontal: 24, paddingBottom: 48 },
+  content: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 48 },
   toggle: { flexDirection: 'row', backgroundColor: '#F5F5F4', borderRadius: 18, padding: 4, marginBottom: 24 },
-  toggleBtn: { flex: 1, minHeight: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
-  toggleActive: { backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
+  toggleBtn: { flex: 1, minHeight: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, zIndex: 1 },
+  togglePill: { position: 'absolute', top: 0, left: 4, bottom: 0, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 5, elevation: 3 },
   toggleText: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 1.4, textTransform: 'uppercase', color: '#A8A29E' },
   toggleTextActive: { color: '#1C1917' },
   toggleFlame: { width: 22, height: 22, resizeMode: 'contain' },
@@ -986,35 +1037,35 @@ const stats = StyleSheet.create({
   accentValue: { color: GOLD },
   cellFlame: { width: 24, height: 24, resizeMode: 'contain' },
   card: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#F5F5F4', borderRadius: 24, padding: 22, marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
-  cardHeading: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: '#A8A29E', textTransform: 'uppercase', marginBottom: 16 },
+  cardHeading: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.2, color: '#A8A29E', textTransform: 'uppercase', marginBottom: 16 },
   weekBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   weekCol: { flex: 1, alignItems: 'center', gap: 6 },
-  barValueSlot: { height: 30, alignItems: 'center', justifyContent: 'flex-end' },
-  barValueStack: { alignItems: 'center', gap: 1 },
-  barFlame: { width: 12, height: 12, resizeMode: 'contain' },
-  barValue: { fontFamily: F.serifBold, fontSize: 10, color: '#57534E' },
+  barValueSlot: { height: 40, alignItems: 'center', justifyContent: 'flex-end' },
+  barValueStack: { alignItems: 'center', gap: 2 },
+  barFlame: { width: 15, height: 15, resizeMode: 'contain' },
+  barValue: { fontFamily: F.serifBold, fontSize: 13, color: '#57534E' },
   bar: { width: '100%', borderRadius: 8 },
   barToday: { backgroundColor: GOLD },
   barActive: { backgroundColor: 'rgba(197,160,89,0.30)' },
   barEmpty: { backgroundColor: '#F5F5F4' },
   timeBarToday: { backgroundColor: '#1C1917' },
   timeBarActive: { backgroundColor: 'rgba(28,25,23,0.20)' },
-  dayLabel: { fontFamily: F.serifBold, fontSize: 10, color: '#D6D3D1', textTransform: 'uppercase', marginTop: 2 },
+  dayLabel: { fontFamily: F.serifBold, fontSize: 13, color: '#D6D3D1', textTransform: 'uppercase', marginTop: 2 },
   todayGold: { color: GOLD },
   monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  monthBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  monthTitle: { fontFamily: F.serifMedium, fontSize: 17, color: '#44403C' },
+  monthBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  monthTitle: { fontFamily: F.serifMedium, fontSize: 20, color: '#44403C' },
   calendarHeader: { flexDirection: 'row', marginBottom: 6 },
-  calendarHeadText: { width: `${100 / 7}%`, textAlign: 'center', fontFamily: F.serifBold, fontSize: 9, color: '#D6D3D1' },
+  calendarHeadText: { width: `${100 / 7}%`, textAlign: 'center', fontFamily: F.sansBold, fontSize: 12, color: '#D6D3D1' },
   calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   calendarCellOuter: { width: `${100 / 7}%`, aspectRatio: 1, padding: 2 },
-  calendarCell: { flex: 1, borderRadius: 9, backgroundColor: 'rgba(245,245,244,0.5)', alignItems: 'center', justifyContent: 'center' },
+  calendarCell: { flex: 1, borderRadius: 10, backgroundColor: 'rgba(245,245,244,0.5)', alignItems: 'center', justifyContent: 'center' },
   todayCell: { borderWidth: 2, borderColor: '#1C1917' },
   activityCell: { backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)' },
-  calendarDay: { fontFamily: F.serif, fontSize: 10, color: '#A8A29E', lineHeight: 12 },
+  calendarDay: { fontFamily: F.serifMedium, fontSize: 13, color: '#A8A29E', lineHeight: 15 },
   todayDay: { fontFamily: F.serifBold, color: '#1C1917' },
-  calendarActivity: { flexDirection: 'row', alignItems: 'center', gap: 1, marginTop: 2 },
-  calendarFlame: { width: 10, height: 10, resizeMode: 'contain' },
-  calendarCount: { fontFamily: F.serifBold, fontSize: 8, color: '#EF4444', lineHeight: 9 },
-  calendarMinutes: { fontFamily: F.serifBold, fontSize: 7, color: GOLD, marginTop: 2, lineHeight: 8 },
+  calendarActivity: { flexDirection: 'row', alignItems: 'center', gap: 1, marginTop: 1 },
+  calendarFlame: { width: 13, height: 13, resizeMode: 'contain' },
+  calendarCount: { fontFamily: F.serifBold, fontSize: 12, color: '#F97316', lineHeight: 13 },
+  calendarMinutes: { fontFamily: F.serifBold, fontSize: 12, color: GOLD, marginTop: 1, lineHeight: 13 },
 });

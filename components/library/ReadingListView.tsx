@@ -1,6 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Keyboard,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,13 +12,22 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
+import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
+import ConfirmModal from '@/components/shared/ConfirmModal';
+import NotificationSettings, { type NotificationMode } from '@/components/shared/NotificationSettings';
+import TaskFrequencyEditor from '@/components/shared/TaskFrequencyEditor';
+import TaskTimeEditor from '@/components/shared/TaskTimeEditor';
+import { useTasks } from '@/components/tasks/TaskProvider';
+import type { TaskDraft } from '@/components/tasks/taskTypes';
 import {
   BarChart3,
   Book,
   CalendarCheck,
   CheckSmall,
   ChevronDown,
+  ChevronRight,
   Pencil,
   Play,
   Plus,
@@ -35,23 +46,28 @@ type CategoryDef = {
 };
 
 const CATEGORIES: CategoryDef[] = [
-  { label: 'Fiction', color: '#7C3AED' },
-  { label: 'Biography', color: '#2563EB' },
-  { label: 'Self-Help', color: '#C5A059' },
-  { label: 'Business', color: '#1C1917' },
-  { label: 'Productivity', color: '#16A34A' },
   { label: 'Spirituality', color: '#B8860B' },
-  { label: 'History', color: '#92400E' },
-  { label: 'Science', color: '#0891B2' },
-  { label: 'Psychology', color: '#DB2777' },
+  { label: 'Theology', color: '#92400E' },
+  { label: 'Patristics', color: '#7C3AED' },
+  { label: 'Prayer', color: '#C5A059' },
   { label: 'Philosophy', color: '#6D28D9' },
-];
-
-const FREQUENCY_OPTIONS: { value: ReadingFrequency; label: string }[] = [
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekdays', label: 'Weekdays' },
-  { value: 'weekends', label: 'Weekends' },
-  { value: 'specific_days', label: 'Specific Days' },
+  { label: 'Psychology', color: '#DB2777' },
+  { label: 'Biography', color: '#2563EB' },
+  { label: 'Memoir', color: '#0F766E' },
+  { label: 'History', color: '#B45309' },
+  { label: 'Classic', color: '#1C1917' },
+  { label: 'Literature', color: '#4338CA' },
+  { label: 'Fiction', color: '#7C3AED' },
+  { label: 'Poetry', color: '#9D174D' },
+  { label: 'Self-Help', color: '#16A34A' },
+  { label: 'Productivity', color: '#0891B2' },
+  { label: 'Business', color: '#374151' },
+  { label: 'Leadership', color: '#1D4ED8' },
+  { label: 'Science', color: '#065F46' },
+  { label: 'Health', color: '#DC2626' },
+  { label: 'Nature', color: '#15803D' },
+  { label: 'Art', color: '#7E22CE' },
+  { label: 'Travel', color: '#0369A1' },
 ];
 
 const DAY_OPTIONS = [
@@ -63,6 +79,10 @@ const DAY_OPTIONS = [
   { key: 6, label: 'S' },
   { key: 0, label: 'S' },
 ];
+
+const ALL_TASK_DAY_INDEXES = [0, 1, 2, 3, 4, 5, 6];
+const WEEKDAY_TASK_INDEXES = [0, 1, 2, 3, 4];
+const WEEKEND_TASK_INDEXES = [5, 6];
 
 function getCategoryDef(label?: string) {
   return CATEGORIES.find(item => item.label === label) ?? (label ? { label, color: '#6B7280' } : null);
@@ -96,20 +116,81 @@ function getFrequencySummary(book: ReadingBook) {
         .map(day => DAY_OPTIONS.find(item => item.key === day)?.label)
         .filter(Boolean)
         .join(' ');
+    case 'monthly':
+      return book.taskMonthlyDays?.length ? `Monthly ${book.taskMonthlyDays.join(', ')}` : 'Monthly';
     default:
       return 'Daily';
   }
 }
 
+function jsDayToTaskIndex(day: number) {
+  return day === 0 ? 6 : day - 1;
+}
+
+function taskIndexToJsDay(index: number) {
+  return index === 6 ? 0 : index + 1;
+}
+
+function todayTaskIndex() {
+  return jsDayToTaskIndex(new Date().getDay());
+}
+
+function getBookTaskTime(book: ReadingBook) {
+  if (book.taskSameTimeEveryDay === false && book.taskDayTimes) {
+    return book.taskDayTimes[todayTaskIndex()] ?? book.taskTime ?? '--:--';
+  }
+  return book.taskTime ?? '--:--';
+}
+
+function getActiveTaskDayIndexes(frequency: ReadingFrequency, selectedDays: number[]) {
+  if (frequency === 'weekdays') return WEEKDAY_TASK_INDEXES;
+  if (frequency === 'weekends') return WEEKEND_TASK_INDEXES;
+  if (frequency === 'specific_days') return selectedDays.length ? selectedDays : [];
+  return ALL_TASK_DAY_INDEXES;
+}
+
+function readingTaskId(bookId: string) {
+  return `reading_book_${bookId}`;
+}
+
+function readingBookToTaskDraft(book: ReadingBook): TaskDraft {
+  const frequency = book.taskFrequency ?? 'daily';
+  return {
+    id: readingTaskId(book.id),
+    title: book.title,
+    subtitle: [book.author, getFrequencySummary(book)].filter(Boolean).join(' - '),
+    level: 2,
+    source: 'reading_book',
+    type: 'reading',
+    icon: 'Book',
+    targetView: '/reading-list',
+    schedule: {
+      frequency,
+      selectedDays: frequency === 'specific_days'
+        ? (book.taskSelectedDays ?? []).map(jsDayToTaskIndex).sort((a, b) => a - b)
+        : [],
+      monthlyDays: frequency === 'monthly' ? book.taskMonthlyDays ?? [1] : [1],
+      time: book.taskTime ?? '21:00',
+      sameTimeEveryDay: book.taskSameTimeEveryDay !== false,
+      dayTimes: book.taskSameTimeEveryDay === false ? book.taskDayTimes ?? {} : {},
+    },
+    notificationMode: book.taskNotificationMode ?? 'none',
+    reminderMinutes: book.taskNotificationMode === 'double' ? book.taskReminderMinutes : undefined,
+    readingBookConfig: { bookId: book.id },
+  };
+}
+
 export default function ReadingListView() {
   const router = useRouter();
   const { books, addBook, updateBook, deleteBook, recordSession } = useReadingList();
+  const { createOrUpdateTask, remove: removeTask } = useTasks();
+  const [categoryDefs, setCategoryDefs] = useState<CategoryDef[]>(CATEGORIES);
   const [tab, setTab] = useState<TabFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [tagEditorOpen, setTagEditorOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ReadingBook | null>(null);
-  const [sessionTarget, setSessionTarget] = useState<ReadingBook | null | 'free'>(null);
   const [scheduleTarget, setScheduleTarget] = useState<ReadingBook | null>(null);
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
@@ -134,6 +215,11 @@ export default function ReadingListView() {
 
   const usedCategories = useMemo(() => Array.from(new Set(books.map(book => book.category).filter(Boolean))) as string[], [books]);
 
+  const getActiveDef = (label?: string): CategoryDef | null => {
+    if (!label) return null;
+    return categoryDefs.find(c => c.label === label) ?? { label, color: '#6B7280' };
+  };
+
   const addNewBook = () => {
     if (!title.trim()) return;
     addBook({
@@ -147,7 +233,11 @@ export default function ReadingListView() {
       totalMinutes: 0,
       showOnHome: false,
       taskFrequency: 'daily',
+      taskMonthlyDays: [1],
       taskSameTimeEveryDay: true,
+      taskDayTimes: {},
+      taskNotificationMode: 'none',
+      taskReminderMinutes: 15,
     });
     setTitle('');
     setAuthor('');
@@ -156,7 +246,10 @@ export default function ReadingListView() {
     setShowForm(false);
   };
 
-  const changeStatus = (book: ReadingBook, status: ReadingBook['status']) => {
+  const changeStatus = async (book: ReadingBook, status: ReadingBook['status']) => {
+    if (status !== 'reading' && book.showOnHome) {
+      await removeTask(readingTaskId(book.id));
+    }
     updateBook(book.id, {
       status,
       startedAt: status === 'reading' ? (book.startedAt ?? Date.now()) : book.startedAt,
@@ -165,48 +258,51 @@ export default function ReadingListView() {
     });
   };
 
-  const saveField = (bookId: string, field: 'review' | 'keyLessons', value: string) => {
-    updateBook(bookId, { [field]: value } as Partial<ReadingBook>);
-  };
-
   return (
     <View style={s.screen}>
-      <ScreenTitleBar
-        title="READING LIST"
-        showBack
-        rightElement={(
-          <View style={s.headerActions}>
-            <TouchableOpacity onPress={() => router.push('/reading-analytics')} activeOpacity={0.76} style={s.headBtn}>
-              <BarChart3 s={18} c="#9CA3AF" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setShowForm(value => !value)} activeOpacity={0.76} style={s.headBtn}>
-              {showForm ? <X s={18} c="#9CA3AF" /> : <Plus s={18} c={C.gold} />}
-            </TouchableOpacity>
-          </View>
-        )}
-      />
+      <ScreenTitleBar title="READING LIST" showBack />
 
       <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-        <TouchableOpacity onPress={() => setSessionTarget('free')} activeOpacity={0.84} style={s.startCard}>
-          <View style={s.startAccent} />
-          <View style={[s.startIcon, { backgroundColor: 'rgba(197,160,89,0.12)' }]}>
-            <Play s={15} c={C.gold} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={s.startTitle}>Start Reading</Text>
-            <Text style={s.startKicker}>FREE SESSION</Text>
-          </View>
-          <View style={[s.startMini, { backgroundColor: 'rgba(197,160,89,0.12)' }]}>
-            <Play s={10} c={C.gold} />
-          </View>
-        </TouchableOpacity>
+        {/* Action Hub */}
+        <View style={s.actionHub}>
+          <LinearGradient
+            colors={['#FFFDF8', '#FFF3D4']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabRow}>
+          <TouchableOpacity onPress={() => router.push('/reading-session')} activeOpacity={0.84} style={s.hubPrimary}>
+            <View style={s.hubPlayCircle}>
+              <Play s={16} c="#FFFFFF" />
+            </View>
+            <Text style={s.hubPrimaryTitle}>Start Reading</Text>
+            <ChevronRight s={16} c="rgba(197,160,89,0.45)" />
+          </TouchableOpacity>
+
+          <View style={s.hubDivider} />
+
+          <View style={s.hubSecondaryRow}>
+            <TouchableOpacity onPress={() => router.push('/reading-analytics')} activeOpacity={0.82} style={s.hubSecondaryBtn}>
+              <BarChart3 s={14} c="#B8B0A8" />
+              <Text style={s.hubSecondaryLabel}>Analytics</Text>
+            </TouchableOpacity>
+            <View style={s.hubVertDivider} />
+            <TouchableOpacity onPress={() => setShowForm(v => !v)} activeOpacity={0.82} style={s.hubSecondaryBtn}>
+              {showForm ? <X s={14} c="#B8B0A8" /> : <Plus s={14} c={C.gold} />}
+              <Text style={[s.hubSecondaryLabel, !showForm && s.hubSecondaryLabelGold]}>
+                {showForm ? 'Cancel' : 'Add Book'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.edgeScroll} contentContainerStyle={s.tabRow}>
           {[
-            { key: 'all' as const, label: `All (${counts.all})` },
-            { key: 'to_read' as const, label: `To Read (${counts.to_read})` },
-            { key: 'reading' as const, label: `Reading (${counts.reading})` },
-            { key: 'finished' as const, label: `Done (${counts.finished})` },
+            { key: 'all' as const, label: 'All', count: counts.all },
+            { key: 'to_read' as const, label: 'To Read', count: counts.to_read },
+            { key: 'reading' as const, label: 'Reading', count: counts.reading },
+            { key: 'finished' as const, label: 'Done', count: counts.finished },
           ].map(item => {
             const active = tab === item.key;
             return (
@@ -216,32 +312,45 @@ export default function ReadingListView() {
                 activeOpacity={0.82}
                 style={[s.tabChip, active && s.tabChipActive]}
               >
-                <Text style={[s.tabChipText, active && s.tabChipTextActive]}>{item.label}</Text>
+                <Text style={[s.tabChipLabel, active && s.tabChipLabelActive]}>{item.label}</Text>
+                <View style={[s.tabChipBadge, active && s.tabChipBadgeActive]}>
+                  <Text style={[s.tabChipCount, active && s.tabChipCountActive]}>{item.count}</Text>
+                </View>
               </TouchableOpacity>
             );
           })}
         </ScrollView>
 
-        {usedCategories.length > 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.categoryRow}>
-            <TouchableOpacity
-              onPress={() => setCategoryFilter(null)}
-              activeOpacity={0.82}
-              style={[s.filterChip, !categoryFilter && s.filterChipActive]}
-            >
-              <Text style={[s.filterChipText, !categoryFilter && s.filterChipTextActive]}>All Tags</Text>
-            </TouchableOpacity>
-            {usedCategories.map(item => (
-              <CategoryChip
-                key={item}
-                label={item}
-                color={(getCategoryDef(item)?.color ?? '#6B7280')}
-                active={categoryFilter === item}
-                onPress={() => setCategoryFilter(current => current === item ? null : item)}
-              />
-            ))}
-          </ScrollView>
-        )}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.edgeScroll} contentContainerStyle={s.categoryRow}>
+          <TouchableOpacity
+            onPress={() => setCategoryFilter(null)}
+            activeOpacity={0.82}
+            style={[s.filterChip, !categoryFilter && s.filterChipActive]}
+          >
+            <Text style={[s.filterChipText, !categoryFilter && s.filterChipTextActive]}>All</Text>
+          </TouchableOpacity>
+          {categoryDefs.map(def => (
+            <CategoryChip
+              key={def.label}
+              label={def.label}
+              color={def.color}
+              active={categoryFilter === def.label}
+              onPress={() => setCategoryFilter(current => current === def.label ? null : def.label)}
+            />
+          ))}
+          {usedCategories.filter(t => !categoryDefs.find(d => d.label === t)).map(item => (
+            <CategoryChip
+              key={item}
+              label={item}
+              color="#6B7280"
+              active={categoryFilter === item}
+              onPress={() => setCategoryFilter(current => current === item ? null : item)}
+            />
+          ))}
+          <TouchableOpacity onPress={() => setTagEditorOpen(true)} activeOpacity={0.82} style={s.editTagChip}>
+            <Pencil s={12} c="#9CA3AF" />
+          </TouchableOpacity>
+        </ScrollView>
 
         {showForm && (
           <View style={s.formShell}>
@@ -292,7 +401,7 @@ export default function ReadingListView() {
         <View style={s.bookList}>
           {filtered.map(book => {
             const expanded = expandedId === book.id;
-            const categoryDef = getCategoryDef(book.category);
+            const categoryDef = getActiveDef(book.category);
             const accent = categoryDef?.color ?? C.gold;
             return (
               <View
@@ -335,11 +444,18 @@ export default function ReadingListView() {
                       )}
                       {book.status === 'finished' && !!book.rating && (
                         <View style={s.starRow}>
-                          {Array.from({ length: 5 }, (_, index) => (
-                            <TouchableOpacity key={index} onPress={() => updateBook(book.id, { rating: index + 1 })} activeOpacity={0.85}>
-                              <Star s={12} c={index < (book.rating ?? 0) ? C.gold : '#E5E7EB'} />
-                            </TouchableOpacity>
-                          ))}
+                          {Array.from({ length: 5 }, (_, index) => {
+                            const active = index < (book.rating ?? 0);
+                            return (
+                              <Star
+                                key={index}
+                                s={12}
+                                c={active ? C.gold : '#D1D5DB'}
+                                fill={active ? C.gold : 'none'}
+                                w={active ? 0 : 1.5}
+                              />
+                            );
+                          })}
                         </View>
                       )}
                     </View>
@@ -379,75 +495,121 @@ export default function ReadingListView() {
                       })}
                     </View>
 
-                    <View style={s.scheduleCard}>
-                      <View style={s.scheduleCopy}>
-                        <Text style={s.scheduleKicker}>HOME TASK</Text>
-                        <Text style={s.scheduleTitle}>
-                          {book.showOnHome ? `${book.taskTime ?? '--:--'} / ${getFrequencySummary(book)}` : 'Not on Home yet'}
-                        </Text>
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => setScheduleTarget(book)}
-                        activeOpacity={0.82}
-                        style={[s.scheduleBtn, { backgroundColor: book.showOnHome ? `${accent}12` : '#F5F5F4' }]}
+                    {/* Set as Daily Task — samo u READING modu */}
+                    {book.status === 'reading' && (
+                      <LinearGradient
+                        colors={['#FFFBF2', '#FFF8E7']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={s.taskToggle}
                       >
-                        <CalendarCheck s={16} c={book.showOnHome ? accent : '#A8A29E'} />
+                        <TouchableOpacity
+                          onPress={() => setScheduleTarget(book)}
+                          activeOpacity={0.82}
+                          style={s.taskToggleMain}
+                        >
+                          <View style={s.taskToggleIcon}>
+                            <CalendarCheck s={16} c={C.gold} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={s.taskToggleTitle}>Set as Daily Task</Text>
+                            <Text style={s.taskToggleSub}>
+                              {book.showOnHome
+                                ? `${getBookTaskTime(book)} - ${getFrequencySummary(book)}`
+                                : 'Add to your daily routine'}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={async () => {
+                            if (book.showOnHome) {
+                              await removeTask(readingTaskId(book.id));
+                              updateBook(book.id, { showOnHome: false });
+                              return;
+                            }
+                            setScheduleTarget(book);
+                          }}
+                          activeOpacity={0.8}
+                          style={[s.taskSwitch, book.showOnHome && { backgroundColor: C.gold }]}
+                        >
+                          <View style={[s.taskSwitchKnob, book.showOnHome && s.taskSwitchKnobOn]} />
+                        </TouchableOpacity>
+                      </LinearGradient>
+                    )}
+
+                    {/* Start Reading — samo u READING modu */}
+                    {book.status === 'reading' && (
+                      <TouchableOpacity
+                        onPress={() => router.push({ pathname: '/reading-session', params: { bookId: book.id, title: book.title, author: book.author ?? '' } })}
+                        activeOpacity={0.84}
+                        style={[s.actionRow, { borderColor: hexToRgba(accent, 0.20), backgroundColor: hexToRgba(accent, 0.05) }]}
+                      >
+                        <View style={[s.actionRowIcon, { backgroundColor: hexToRgba(accent, 0.14) }]}>
+                          <Play s={15} c={accent} />
+                        </View>
+                        <View style={s.actionRowCopy}>
+                          <Text style={s.actionRowKicker}>READING SESSION</Text>
+                          <Text style={[s.actionRowTitle, { color: accent }]}>Start Reading</Text>
+                        </View>
+                        <View style={[s.actionRowArrow, { backgroundColor: hexToRgba(accent, 0.12) }]}>
+                          <Play s={11} c={accent} />
+                        </View>
                       </TouchableOpacity>
-                    </View>
+                    )}
 
-                    <View style={s.actionGrid}>
-                      <MiniActionCard
-                        icon={<Play s={14} c={accent} />}
-                        kicker="SESSION"
-                        title="Start reading"
-                        onPress={() => setSessionTarget(book)}
-                        accent={accent}
-                      />
-                      <MiniActionCard
-                        icon={<Pencil s={14} c={accent} />}
-                        kicker="REVIEW"
-                        title="Write notes"
-                        onPress={() => {}}
-                        accent={accent}
-                      />
-                    </View>
-
-                    <Text style={s.fieldLabel}>REVIEW</Text>
-                    <TextInput
-                      value={book.review ?? ''}
-                      onChangeText={value => saveField(book.id, 'review', value)}
-                      placeholder="What stayed with you from this book?"
-                      placeholderTextColor="#D1D5DB"
-                      multiline
-                      style={s.areaInput}
-                    />
-
-                    <Text style={s.fieldLabel}>KEY LESSONS</Text>
-                    <TextInput
-                      value={book.keyLessons ?? ''}
-                      onChangeText={value => saveField(book.id, 'keyLessons', value)}
-                      placeholder="Write the lessons you want to remember."
-                      placeholderTextColor="#D1D5DB"
-                      multiline
-                      style={s.areaInput}
-                    />
+                    {/* Write Notes — uvek */}
+                    <TouchableOpacity
+                      onPress={() => router.push('/notes')}
+                      activeOpacity={0.84}
+                      style={[s.actionRow, { borderColor: 'rgba(120,113,108,0.14)', backgroundColor: 'rgba(120,113,108,0.04)' }]}
+                    >
+                      <View style={[s.actionRowIcon, { backgroundColor: 'rgba(120,113,108,0.10)' }]}>
+                        <Pencil s={15} c="#78716C" />
+                      </View>
+                      <View style={s.actionRowCopy}>
+                        <Text style={s.actionRowKicker}>PERSONAL NOTES</Text>
+                        <Text style={[s.actionRowTitle, { color: '#78716C' }]}>Write Notes</Text>
+                      </View>
+                      <View style={[s.actionRowArrow, { backgroundColor: 'rgba(120,113,108,0.08)' }]}>
+                        <Pencil s={11} c="#78716C" />
+                      </View>
+                    </TouchableOpacity>
 
                     {book.status === 'finished' && (
-                      <>
-                        <Text style={s.fieldLabel}>RATING</Text>
-                        <View style={s.finishRatingRow}>
-                          {Array.from({ length: 5 }, (_, index) => (
-                            <TouchableOpacity key={index} onPress={() => updateBook(book.id, { rating: index + 1 })} activeOpacity={0.82} style={s.finishStarBtn}>
-                              <Star s={18} c={index < (book.rating ?? 0) ? C.gold : '#E5E7EB'} />
-                            </TouchableOpacity>
-                          ))}
+                      <View style={s.ratingCard}>
+                        <View style={s.ratingCardHead}>
+                          <Text style={s.ratingCardLabel}>YOUR RATING</Text>
+                          {!!book.rating && (
+                            <Text style={s.ratingScoreText}>{book.rating} / 5</Text>
+                          )}
                         </View>
-                      </>
+                        <View style={s.ratingStarsRow}>
+                          {Array.from({ length: 5 }, (_, index) => {
+                            const active = index < (book.rating ?? 0);
+                            return (
+                              <TouchableOpacity
+                                key={index}
+                                onPress={() => updateBook(book.id, { rating: index + 1 })}
+                                activeOpacity={0.72}
+                                style={s.ratingStarTouch}
+                                hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+                              >
+                                <Star
+                                  s={30}
+                                  c={active ? C.gold : '#D1D5DB'}
+                                  fill={active ? C.gold : 'none'}
+                                  w={active ? 0 : 1.4}
+                                />
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
                     )}
 
                     <TouchableOpacity onPress={() => setDeleteTarget(book)} activeOpacity={0.84} style={s.deleteRow}>
                       <Trash2 s={14} c="#DC2626" />
-                      <Text style={s.deleteText}>Delete book</Text>
+                      <Text style={s.deleteText}>Delete Book</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -457,35 +619,46 @@ export default function ReadingListView() {
         </View>
       </ScrollView>
 
-      <SessionModal
-        visible={!!sessionTarget}
-        title={sessionTarget === 'free' ? 'Reading Session' : sessionTarget?.title ?? 'Reading Session'}
-        subtitle={sessionTarget && sessionTarget !== 'free' ? sessionTarget.author : 'Free reading session'}
-        onClose={() => setSessionTarget(null)}
-        onStart={minutes => {
-          recordSession(sessionTarget && sessionTarget !== 'free' ? sessionTarget.id : null, minutes);
-          setSessionTarget(null);
-        }}
-      />
 
       <ScheduleModal
         book={scheduleTarget}
         onClose={() => setScheduleTarget(null)}
-        onSave={(bookId, updates) => {
+        onSave={async (bookId, updates) => {
+          const book = books.find(item => item.id === bookId);
+          if (!book) return;
+          const nextBook = { ...book, ...updates };
+          await createOrUpdateTask(readingBookToTaskDraft(nextBook));
           updateBook(bookId, updates);
           setScheduleTarget(null);
         }}
       />
 
-      <ConfirmDeleteModal
+      <ConfirmModal
         visible={!!deleteTarget}
-        title={deleteTarget?.title ?? ''}
+        icon={<Trash2 s={22} c="#EF4444" />}
+        iconBg="#FEF2F2"
+        title="Delete this book?"
+        body={deleteTarget?.title}
+        cancelLabel="KEEP"
+        confirmLabel="DELETE"
         onCancel={() => setDeleteTarget(null)}
-        onConfirm={() => {
-          if (deleteTarget) deleteBook(deleteTarget.id);
+        onConfirm={async () => {
+          if (deleteTarget) {
+            await removeTask(readingTaskId(deleteTarget.id));
+            deleteBook(deleteTarget.id);
+          }
           setDeleteTarget(null);
           setExpandedId(null);
         }}
+      />
+
+      <TagEditorModal
+        visible={tagEditorOpen}
+        categoryDefs={categoryDefs}
+        books={books}
+        updateBook={updateBook}
+        onClose={() => setTagEditorOpen(false)}
+        onSave={setCategoryDefs}
       />
     </View>
   );
@@ -524,76 +697,6 @@ function CategoryChip({
   );
 }
 
-function MiniActionCard({
-  icon,
-  kicker,
-  title,
-  onPress,
-  accent,
-}: {
-  icon: React.ReactNode;
-  kicker: string;
-  title: string;
-  onPress: () => void;
-  accent: string;
-}) {
-  return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.84} style={s.miniCard}>
-      <View style={[s.miniIcon, { backgroundColor: hexToRgba(accent, 0.1) }]}>{icon}</View>
-      <View style={{ flex: 1 }}>
-        <Text style={[s.miniKicker, { color: accent }]}>{kicker}</Text>
-        <Text style={s.miniTitle}>{title}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function SessionModal({
-  visible,
-  title,
-  subtitle,
-  onClose,
-  onStart,
-}: {
-  visible: boolean;
-  title: string;
-  subtitle?: string;
-  onClose: () => void;
-  onStart: (minutes: number) => void;
-}) {
-  const [minutes, setMinutes] = useState(25);
-
-  React.useEffect(() => {
-    if (visible) setMinutes(25);
-  }, [visible]);
-
-  return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-      <View style={s.overlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={s.centerModal}>
-          <Text style={s.centerTitle}>{title}</Text>
-          {!!subtitle && <Text style={s.centerSubtitle}>{subtitle}</Text>}
-          <View style={s.counterRow}>
-            <TouchableOpacity onPress={() => setMinutes(value => Math.max(5, value - 5))} activeOpacity={0.84} style={s.counterBtn}>
-              <Text style={s.counterBtnText}>-</Text>
-            </TouchableOpacity>
-            <View style={s.counterValue}>
-              <Text style={s.counterMinutes}>{minutes}</Text>
-              <Text style={s.counterLabel}>MINUTES</Text>
-            </View>
-            <TouchableOpacity onPress={() => setMinutes(value => Math.min(120, value + 5))} activeOpacity={0.84} style={s.counterBtn}>
-              <Text style={s.counterBtnText}>+</Text>
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity onPress={() => onStart(minutes)} activeOpacity={0.86} style={s.startSessionBtn}>
-            <Text style={s.startSessionText}>START SESSION</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-}
 
 function ScheduleModal({
   book,
@@ -602,144 +705,228 @@ function ScheduleModal({
 }: {
   book: ReadingBook | null;
   onClose: () => void;
-  onSave: (bookId: string, updates: Partial<ReadingBook>) => void;
+  onSave: (bookId: string, updates: Partial<ReadingBook>) => void | Promise<void>;
 }) {
   const [time, setTime] = useState('21:00');
   const [frequency, setFrequency] = useState<ReadingFrequency>('daily');
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
-  const [showOnHome, setShowOnHome] = useState(false);
+  const [monthlyDays, setMonthlyDays] = useState<number[]>([1]);
+  const [sameTimeEveryDay, setSameTimeEveryDay] = useState(true);
+  const [dayTimes, setDayTimes] = useState<Record<number, string>>({});
+  const [notificationMode, setNotificationMode] = useState<NotificationMode>('none');
+  const [reminderMinutes, setReminderMinutes] = useState(15);
 
   React.useEffect(() => {
     if (!book) return;
     setTime(book.taskTime ?? '21:00');
     setFrequency(book.taskFrequency ?? 'daily');
-    setSelectedDays(book.taskSelectedDays ?? []);
-    setShowOnHome(!!book.showOnHome);
+    setSelectedDays((book.taskSelectedDays ?? []).map(jsDayToTaskIndex).sort((a, b) => a - b));
+    setMonthlyDays(book.taskMonthlyDays?.length ? book.taskMonthlyDays : [1]);
+    setSameTimeEveryDay(book.taskSameTimeEveryDay !== false);
+    setDayTimes(book.taskDayTimes ?? {});
+    setNotificationMode(book.taskNotificationMode ?? 'none');
+    setReminderMinutes(book.taskReminderMinutes ?? 15);
   }, [book]);
 
   if (!book) return null;
 
+  const categoryDef = getCategoryDef(book.category);
+  const accent = categoryDef?.color ?? C.gold;
+  const softAccent = hexToRgba(accent, 0.08);
+  const activeDayIndexes = getActiveTaskDayIndexes(frequency, selectedDays);
+  const canSave = (frequency !== 'specific_days' || selectedDays.length > 0)
+    && (frequency !== 'monthly' || monthlyDays.length > 0);
+  const actionLabel = book.showOnHome ? 'SAVE CHANGES' : 'START TASK';
+
+  const saveSchedule = async () => {
+    if (!canSave) return;
+
+    await onSave(book.id, {
+      taskTime: time,
+      taskFrequency: frequency,
+      taskSelectedDays: frequency === 'specific_days' ? selectedDays.map(taskIndexToJsDay) : undefined,
+      taskMonthlyDays: frequency === 'monthly' ? monthlyDays : undefined,
+      showOnHome: true,
+      taskSameTimeEveryDay: frequency === 'monthly' ? true : sameTimeEveryDay,
+      taskDayTimes: sameTimeEveryDay || frequency === 'monthly' ? {} : dayTimes,
+      taskNotificationMode: notificationMode,
+      taskReminderMinutes: notificationMode === 'double' ? reminderMinutes : 15,
+    });
+  };
+
   return (
-    <Modal transparent visible animationType="slide" onRequestClose={onClose}>
-      <View style={s.sheetOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={s.sheet}>
-          <View style={s.sheetHandle} />
-          <View style={s.sheetHead}>
-            <TouchableOpacity onPress={onClose} style={s.sheetHeadBtn} activeOpacity={0.7}>
-              <X s={18} c="#9CA3AF" />
-            </TouchableOpacity>
-            <View style={{ alignItems: 'center' }}>
-              <Text style={s.sheetKicker}>Home Task</Text>
-              <Text style={s.sheetTitle}>Reading Schedule</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => onSave(book.id, {
-                taskTime: time,
-                taskFrequency: frequency,
-                taskSelectedDays: frequency === 'specific_days' ? selectedDays : undefined,
-                showOnHome,
-                taskSameTimeEveryDay: true,
-              })}
-              style={[s.sheetHeadBtn, s.sheetSave]}
-              activeOpacity={0.84}
-            >
-              <CheckSmall s={16} c="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView contentContainerStyle={s.sheetContent} showsVerticalScrollIndicator={false}>
-            <View style={s.sheetBlock}>
-              <Text style={s.sheetBlockLabel}>SHOW ON HOME</Text>
-              <View style={s.toggleRow}>
-                <Text style={s.toggleCopy}>Add this reading task to your daily Home flow.</Text>
-                <TouchableOpacity onPress={() => setShowOnHome(value => !value)} activeOpacity={0.84} style={[s.toggle, showOnHome && s.toggleActive]}>
-                  <View style={[s.toggleKnob, showOnHome && s.toggleKnobActive]} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={s.sheetBlock}>
-              <Text style={s.sheetBlockLabel}>TIME</Text>
-              <TextInput
-                value={time}
-                onChangeText={setTime}
-                placeholder="21:00"
-                placeholderTextColor="#D1D5DB"
-                style={s.timeInput}
-              />
-            </View>
-
-            <View style={s.sheetBlock}>
-              <Text style={s.sheetBlockLabel}>FREQUENCY</Text>
-              <View style={s.frequencyWrap}>
-                {FREQUENCY_OPTIONS.map(item => {
-                  const active = frequency === item.value;
-                  return (
-                    <TouchableOpacity key={item.value} onPress={() => setFrequency(item.value)} activeOpacity={0.84} style={[s.frequencyChip, active && s.frequencyChipActive]}>
-                      <Text style={[s.frequencyText, active && s.frequencyTextActive]}>{item.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            {frequency === 'specific_days' && (
-              <View style={s.sheetBlock}>
-                <Text style={s.sheetBlockLabel}>DAYS</Text>
-                <View style={s.daysRow}>
-                  {DAY_OPTIONS.map(item => {
-                    const active = selectedDays.includes(item.key);
-                    return (
-                      <TouchableOpacity
-                        key={`${item.key}-${item.label}`}
-                        onPress={() => setSelectedDays(current => current.includes(item.key)
-                          ? current.filter(day => day !== item.key)
-                          : [...current, item.key].sort())}
-                        activeOpacity={0.84}
-                        style={[s.dayChip, active && s.dayChipActive]}
-                      >
-                        <Text style={[s.dayChipText, active && s.dayChipTextActive]}>{item.label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            )}
-          </ScrollView>
+    <SmoothBottomSheet visible={!!book} onClose={onClose} sheetStyle={s.sheet}>
+      <View style={s.sheetHandle} />
+      <View style={s.sheetHead}>
+        <TouchableOpacity onPress={onClose} style={s.sheetHeadBtn} activeOpacity={0.7}>
+          <X s={19} c="#9CA3AF" />
+        </TouchableOpacity>
+        <View style={s.sheetTitleWrap}>
+          <Text style={s.sheetKicker}>Daily Task</Text>
+          <Text style={s.sheetTitle} numberOfLines={1}>{book.title}</Text>
         </View>
+        <TouchableOpacity
+          onPress={saveSchedule}
+          disabled={!canSave}
+          style={[s.sheetHeadBtn, s.sheetSave, { backgroundColor: accent, opacity: canSave ? 1 : 0.38 }]}
+          activeOpacity={0.84}
+        >
+          <CheckSmall s={17} c="#FFFFFF" />
+        </TouchableOpacity>
       </View>
-    </Modal>
+
+      <ScrollView contentContainerStyle={s.sheetContent} showsVerticalScrollIndicator={false}>
+        <View style={[s.schedulePreview, { borderColor: hexToRgba(accent, 0.18), backgroundColor: softAccent }]}>
+          <View style={[s.schedulePreviewIcon, { backgroundColor: hexToRgba(accent, 0.12) }]}>
+            <Book s={22} c={accent} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[s.schedulePreviewKicker, { color: accent }]}>Reading Practice</Text>
+            <Text style={s.schedulePreviewTitle} numberOfLines={2}>{book.title}</Text>
+            {!!book.author && <Text style={s.schedulePreviewSub} numberOfLines={1}>{book.author}</Text>}
+          </View>
+        </View>
+
+        <View style={s.sheetBlock}>
+          <TaskFrequencyEditor
+            frequency={frequency}
+            selectedDays={selectedDays}
+            monthlyDays={monthlyDays}
+            accent={accent}
+            label="Schedule"
+            onFrequencyChange={nextFrequency => {
+              setFrequency(nextFrequency);
+              if (nextFrequency === 'weekdays') setSelectedDays([0, 1, 2, 3, 4]);
+              if (nextFrequency === 'weekends') setSelectedDays([5, 6]);
+              if (nextFrequency === 'monthly') setSameTimeEveryDay(true);
+            }}
+            onSelectedDaysChange={setSelectedDays}
+            onMonthlyDaysChange={setMonthlyDays}
+          />
+        </View>
+
+        <View style={s.sheetBlock}>
+          <TaskTimeEditor
+            time={time}
+            sameTimeEveryDay={sameTimeEveryDay}
+            dayTimes={dayTimes}
+            onTimeChange={setTime}
+            onSameTimeEveryDayChange={setSameTimeEveryDay}
+            onDayTimesChange={setDayTimes}
+            activeDayIndexes={activeDayIndexes}
+            allowPerDayTimes={frequency !== 'monthly' && (frequency !== 'specific_days' || selectedDays.length > 0)}
+            accent={accent}
+            softBg={hexToRgba(accent, 0.06)}
+            borderColor={hexToRgba(accent, 0.18)}
+            mutedColor="#A8AFBC"
+          />
+        </View>
+
+        <View style={s.sheetBlock}>
+          <NotificationSettings
+            mode={notificationMode}
+            reminderMinutes={reminderMinutes}
+            onModeChange={setNotificationMode}
+            onReminderChange={setReminderMinutes}
+            accent={accent}
+          />
+        </View>
+
+        <TouchableOpacity
+          onPress={saveSchedule}
+          disabled={!canSave}
+          activeOpacity={0.88}
+          style={[s.sheetPrimary, { backgroundColor: accent, shadowColor: accent, opacity: canSave ? 1 : 0.38 }]}
+        >
+          <CalendarCheck s={16} c="#FFFFFF" />
+          <Text style={s.sheetPrimaryText}>{actionLabel}</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SmoothBottomSheet>
   );
 }
 
-function ConfirmDeleteModal({
+function TagEditorModal({
   visible,
-  title,
-  onCancel,
-  onConfirm,
+  categoryDefs,
+  books,
+  updateBook,
+  onClose,
+  onSave,
 }: {
   visible: boolean;
-  title: string;
-  onCancel: () => void;
-  onConfirm: () => void;
+  categoryDefs: CategoryDef[];
+  books: ReadingBook[];
+  updateBook: (id: string, updates: Partial<ReadingBook>) => void;
+  onClose: () => void;
+  onSave: (defs: CategoryDef[]) => void;
 }) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [kbHeight, setKbHeight] = useState(0);
+
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', e => setKbHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKbHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
+  useEffect(() => {
+    if (visible) {
+      const initial: Record<string, string> = {};
+      categoryDefs.forEach(def => { initial[def.color] = def.label; });
+      setDrafts(initial);
+    }
+  }, [visible]);
+
+  const save = () => {
+    const updated = categoryDefs.map(def => {
+      const newLabel = (drafts[def.color] ?? def.label).trim() || def.label;
+      if (newLabel !== def.label) {
+        books.forEach(book => {
+          if (book.category === def.label) {
+            updateBook(book.id, { category: newLabel });
+          }
+        });
+      }
+      return { ...def, label: newLabel };
+    });
+    onSave(updated);
+    onClose();
+  };
+
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
-      <View style={s.overlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
-        <View style={s.confirmCard}>
-          <View style={s.confirmIcon}><Trash2 s={18} c="#DC2626" /></View>
-          <Text style={s.confirmTitle}>Delete this book?</Text>
-          <Text style={s.confirmBody}>{title}</Text>
-          <View style={s.confirmRow}>
-            <TouchableOpacity onPress={onCancel} activeOpacity={0.84} style={s.confirmCancel}>
-              <Text style={s.confirmCancelText}>KEEP</Text>
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+      <View style={[s.tagEditorOverlay, kbHeight > 0 && { paddingBottom: kbHeight }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={s.tagEditorCard}>
+          <View style={s.tagEditorHeader}>
+            <TouchableOpacity onPress={onClose} activeOpacity={0.84} style={s.tagEditorClose}>
+              <X s={18} c="#9CA3AF" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={onConfirm} activeOpacity={0.84} style={s.confirmDelete}>
-              <Text style={s.confirmDeleteText}>DELETE</Text>
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              <Text style={s.tagEditorKicker}>READING LIST</Text>
+              <Text style={s.tagEditorTitle}>Tag Names</Text>
+            </View>
+            <TouchableOpacity onPress={save} activeOpacity={0.84} style={s.tagEditorSaveBtn}>
+              <CheckSmall s={17} c="#FFFFFF" />
             </TouchableOpacity>
           </View>
+
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+            {categoryDefs.map(def => (
+              <View key={def.color} style={[s.tagEditorRow, { borderColor: hexToRgba(def.color, 0.2), backgroundColor: hexToRgba(def.color, 0.05) }]}>
+                <View style={[s.tagEditorDot, { backgroundColor: def.color }]} />
+                <TextInput
+                  value={drafts[def.color] ?? def.label}
+                  onChangeText={val => setDrafts(prev => ({ ...prev, [def.color]: val }))}
+                  placeholder={def.label}
+                  placeholderTextColor="#D1D5DB"
+                  style={s.tagEditorInput}
+                  autoCapitalize="words"
+                />
+              </View>
+            ))}
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -763,33 +950,33 @@ const s = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center' },
   headBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18 },
   content: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 130 },
-  startCard: {
-    minHeight: 70,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.16)',
-    backgroundColor: '#FFFFFF',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 15,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 14,
-    elevation: 2,
+  actionHub: {
+    marginHorizontal: -20,
+    overflow: 'hidden',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(197,160,89,0.18)',
+    marginBottom: 4,
   },
-  startAccent: { width: 5, alignSelf: 'stretch', borderRadius: 999, backgroundColor: C.gold },
-  startIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  startTitle: { fontFamily: F.serifMedium, fontSize: 19, color: '#111827' },
-  startKicker: { marginTop: 3, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: '#A8A29E' },
-  startMini: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  tabRow: { gap: 8, paddingTop: 16, paddingBottom: 8 },
-  tabChip: { paddingHorizontal: 14, minHeight: 36, borderRadius: 18, borderWidth: 1, borderColor: '#F0EDE6', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  tabChipActive: { backgroundColor: C.gold, borderColor: C.gold },
-  tabChipText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4, color: '#78716C', textTransform: 'uppercase' },
-  tabChipTextActive: { color: '#FFFFFF' },
-  categoryRow: { gap: 8, paddingBottom: 8 },
+  hubPlayCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center', shadowColor: C.gold, shadowOpacity: 0.38, shadowOffset: { width: 0, height: 4 }, shadowRadius: 10, elevation: 4 },
+  hubPrimary: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 17 },
+  hubPrimaryTitle: { fontFamily: F.serifMedium, fontSize: 20, color: '#1C1917', flex: 1 },
+  hubDivider: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(197,160,89,0.35)', marginHorizontal: 20 },
+  hubSecondaryRow: { flexDirection: 'row' },
+  hubVertDivider: { width: StyleSheet.hairlineWidth, backgroundColor: 'rgba(197,160,89,0.3)', marginVertical: 12 },
+  hubSecondaryBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 14 },
+  hubSecondaryLabel: { fontFamily: F.sansMedium, fontSize: 13, color: '#A8A29E' },
+  hubSecondaryLabelGold: { color: C.gold },
+  edgeScroll: { marginHorizontal: -20 },
+  tabRow: { gap: 8, paddingTop: 14, paddingBottom: 8, paddingHorizontal: 20 },
+  tabChip: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#EAE5DC', backgroundColor: '#F9F7F4' },
+  tabChipActive: { backgroundColor: 'rgba(197,160,89,0.09)', borderColor: 'rgba(197,160,89,0.42)' },
+  tabChipLabel: { fontFamily: F.sansMedium, fontSize: 12, letterSpacing: 0.2, color: '#A8A29E' },
+  tabChipLabelActive: { fontFamily: F.sansBold, color: C.gold },
+  tabChipBadge: { minWidth: 20, height: 18, borderRadius: 9, backgroundColor: '#EDEAE4', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
+  tabChipBadgeActive: { backgroundColor: 'rgba(197,160,89,0.16)' },
+  tabChipCount: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 0.2, color: '#B8B0A6' },
+  tabChipCountActive: { color: C.goldDark },
+  categoryRow: { gap: 8, paddingBottom: 8, paddingHorizontal: 20 },
   filterChip: { paddingHorizontal: 12, minHeight: 32, borderRadius: 16, borderWidth: 1, borderColor: '#E7E5E4', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   filterChipActive: { backgroundColor: '#1C1917', borderColor: '#1C1917' },
   filterChipText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.35, color: '#A8A29E', textTransform: 'uppercase' },
@@ -855,51 +1042,72 @@ const s = StyleSheet.create({
   segmentedRow: { flexDirection: 'row', gap: 8, marginTop: 14, marginBottom: 14 },
   segmentedChip: { flex: 1, minHeight: 38, borderRadius: 18, borderWidth: 1, borderColor: '#F0EDE6', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   segmentedText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.3, color: '#A8A29E', textTransform: 'uppercase' },
-  scheduleCard: { borderRadius: 20, borderWidth: 1, borderColor: '#F2F1EC', backgroundColor: '#FAFAFA', paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 14 },
-  scheduleCopy: { flex: 1 },
-  scheduleKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, color: '#A8A29E', textTransform: 'uppercase' },
-  scheduleTitle: { marginTop: 3, fontFamily: F.serif, fontSize: 17, color: '#3F3F46' },
-  scheduleBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  actionGrid: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  miniCard: { flex: 1, borderRadius: 20, borderWidth: 1, borderColor: '#F2F1EC', backgroundColor: '#FFFFFF', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  miniIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  miniKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, textTransform: 'uppercase' },
-  miniTitle: { marginTop: 3, fontFamily: F.serif, fontSize: 16, color: '#2F2B27' },
-  fieldLabel: { marginTop: 16, marginBottom: 8, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, color: '#A8A29E', textTransform: 'uppercase' },
-  areaInput: { minHeight: 96, borderRadius: 22, borderWidth: 1, borderColor: '#F2F1EC', backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingVertical: 14, textAlignVertical: 'top', fontFamily: F.serif, fontSize: 18, lineHeight: 24, color: '#1F2937' },
-  finishRatingRow: { flexDirection: 'row', gap: 8 },
-  finishStarBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#FFFBEB', alignItems: 'center', justifyContent: 'center' },
+  taskToggle: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(232,220,196,0.7)', paddingHorizontal: 16, paddingVertical: 13, marginBottom: 10 },
+  taskToggleMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  taskToggleIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(197,160,89,0.10)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  taskToggleTitle: { fontFamily: F.sansSemiBold, fontSize: 14, color: '#374151', lineHeight: 18 },
+  taskToggleSub: { fontFamily: F.sans, fontSize: 12, color: '#9CA3AF', marginTop: 2, lineHeight: 16 },
+  taskSwitch: { width: 46, height: 26, borderRadius: 13, backgroundColor: '#E5E7EB', padding: 3, flexShrink: 0 },
+  taskSwitchKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFFFFF' },
+  taskSwitchKnobOn: { transform: [{ translateX: 20 }] },
+  actionStack: { gap: 8, marginBottom: 4 },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+  },
+  actionRowIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  actionRowCopy: { flex: 1 },
+  actionRowKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, color: '#A8A29E', textTransform: 'uppercase' },
+  actionRowTitle: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 17, lineHeight: 21 },
+  actionRowArrow: { width: 32, height: 32, borderRadius: 11, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  ratingCard: {
+    marginTop: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    backgroundColor: 'rgba(197,160,89,0.05)',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  ratingCardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  ratingCardLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, color: '#A8A29E', textTransform: 'uppercase' },
+  ratingScoreText: { fontFamily: F.serifMedium, fontSize: 15, color: C.gold },
+  ratingStarsRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 2 },
+  ratingStarTouch: { padding: 4 },
   deleteRow: { marginTop: 16, minHeight: 44, borderRadius: 18, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
   deleteText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, color: '#DC2626', textTransform: 'uppercase' },
   overlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.32)' },
-  centerModal: { width: '100%', maxWidth: 340, borderRadius: 30, backgroundColor: '#FFFFFF', padding: 22, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.22, shadowOffset: { width: 0, height: 14 }, shadowRadius: 34, elevation: 14 },
-  centerTitle: { fontFamily: F.serifMedium, fontSize: 28, color: '#111827', textAlign: 'center' },
-  centerSubtitle: { marginTop: 6, fontFamily: F.serifItalic, fontSize: 15, color: '#9CA3AF', textAlign: 'center' },
-  counterRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 20, marginBottom: 18 },
-  counterBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#F8F5ED', alignItems: 'center', justifyContent: 'center' },
-  counterBtnText: { fontFamily: F.serifMedium, fontSize: 26, color: C.gold, marginTop: -3 },
-  counterValue: { minWidth: 112, alignItems: 'center' },
-  counterMinutes: { fontFamily: F.serifMedium, fontSize: 50, lineHeight: 52, color: C.gold },
-  counterLabel: { marginTop: 4, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: '#A8A29E' },
-  startSessionBtn: { width: '100%', minHeight: 50, borderRadius: 24, backgroundColor: '#000000', alignItems: 'center', justifyContent: 'center' },
-  startSessionText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2, color: '#FFFFFF' },
   sheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.34)' },
-  sheet: { borderTopLeftRadius: 32, borderTopRightRadius: 32, backgroundColor: '#FAFAFA', paddingBottom: 28, maxHeight: '88%' },
-  sheetHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginTop: 12, marginBottom: 8 },
-  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F5F5F4' },
+  sheet: { borderTopLeftRadius: 34, borderTopRightRadius: 34, backgroundColor: '#FAFAFA', paddingBottom: 22, maxHeight: '88%', overflow: 'hidden' },
+  sheetHandle: { width: 42, height: 4, borderRadius: 999, backgroundColor: '#D6D3D1', alignSelf: 'center', marginTop: 12, marginBottom: 6 },
+  sheetHead: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: '#F0EDE6' },
   sheetHeadBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  sheetSave: { backgroundColor: C.gold },
+  sheetSave: { backgroundColor: C.gold, shadowColor: C.gold, shadowOpacity: 0.24, shadowOffset: { width: 0, height: 7 }, shadowRadius: 12, elevation: 3 },
+  sheetTitleWrap: { flex: 1, minWidth: 0, alignItems: 'center', paddingHorizontal: 8 },
   sheetKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.textMuted, textTransform: 'uppercase' },
-  sheetTitle: { fontFamily: F.serifMedium, fontSize: 19, color: C.text, marginTop: 2 },
-  sheetContent: { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 12, gap: 16 },
-  sheetBlock: { borderRadius: 24, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F2F1EC', padding: 18 },
-  sheetBlockLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.gold, textTransform: 'uppercase', marginBottom: 12 },
+  sheetTitle: { fontFamily: F.serifMedium, fontSize: 19, color: C.text, marginTop: 2, maxWidth: 220 },
+  sheetContent: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 20, gap: 14 },
+  sheetBlock: { borderRadius: 24, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F2F1EC', padding: 16, gap: 13 },
+  sheetBlockHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sheetBlockLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.gold, textTransform: 'uppercase' },
+  schedulePreview: { minHeight: 90, borderRadius: 24, borderWidth: 1, padding: 15, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  schedulePreviewIcon: { width: 48, height: 48, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  schedulePreviewKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, textTransform: 'uppercase' },
+  schedulePreviewTitle: { marginTop: 4, fontFamily: F.serifMedium, fontSize: 19, lineHeight: 23, color: '#111827' },
+  schedulePreviewSub: { marginTop: 2, fontFamily: F.sans, fontSize: 11, color: '#9CA3AF' },
   toggleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   toggleCopy: { flex: 1, fontFamily: F.serif, fontSize: 16, lineHeight: 20, color: '#6B7280' },
   toggle: { width: 50, height: 30, borderRadius: 16, backgroundColor: '#E5E7EB', padding: 3 },
   toggleActive: { backgroundColor: C.gold },
   toggleKnob: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#FFFFFF' },
   toggleKnobActive: { transform: [{ translateX: 20 }] },
+  sheetPrimary: { minHeight: 56, borderRadius: 22, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, shadowOpacity: 0.24, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
+  sheetPrimaryText: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 2, color: '#FFFFFF' },
   timeInput: { minHeight: 52, borderRadius: 20, backgroundColor: '#FAFAFA', borderWidth: 1, borderColor: '#F2F1EC', paddingHorizontal: 16, fontFamily: F.serif, fontSize: 22, color: '#1F2937' },
   frequencyWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   frequencyChip: { minHeight: 34, borderRadius: 17, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFFFFF', paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
@@ -908,16 +1116,18 @@ const s = StyleSheet.create({
   frequencyTextActive: { color: C.gold },
   daysRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   dayChip: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  editTagChip: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: '#EAE5DC', backgroundColor: '#F9F7F4', alignItems: 'center', justifyContent: 'center' },
+  tagEditorOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 18, backgroundColor: 'rgba(0,0,0,0.42)' },
+  tagEditorCard: { width: '100%', maxWidth: 360, height: '88%', maxHeight: 690, borderRadius: 30, backgroundColor: '#FAFAF8', padding: 0, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.22, shadowOffset: { width: 0, height: 14 }, shadowRadius: 34, elevation: 16 },
+  tagEditorHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0EDE6', marginBottom: 0 },
+  tagEditorKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.textMuted, textTransform: 'uppercase' },
+  tagEditorTitle: { fontFamily: F.serifMedium, fontSize: 20, color: C.text, marginTop: 2 },
+  tagEditorClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F2F0EC', alignItems: 'center', justifyContent: 'center' },
+  tagEditorSaveBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center', shadowColor: C.gold, shadowOpacity: 0.3, shadowOffset: { width: 0, height: 4 }, shadowRadius: 8, elevation: 3 },
+  tagEditorRow: { minHeight: 52, borderRadius: 14, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 14, marginHorizontal: 18, marginBottom: 8 },
+  tagEditorDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
+  tagEditorInput: { flex: 1, fontFamily: F.serifMedium, fontSize: 17, color: '#1C1917', paddingVertical: 0 },
   dayChipActive: { backgroundColor: '#F8F5ED', borderColor: '#E8DCC4' },
   dayChipText: { fontFamily: F.sansBold, fontSize: 11, color: '#A8A29E' },
   dayChipTextActive: { color: C.gold },
-  confirmCard: { width: '100%', maxWidth: 320, borderRadius: 28, backgroundColor: '#FFFFFF', padding: 22, alignItems: 'center' },
-  confirmIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  confirmTitle: { fontFamily: F.serifMedium, fontSize: 24, color: '#111827' },
-  confirmBody: { marginTop: 6, fontFamily: F.serifItalic, fontSize: 15, color: '#9CA3AF', textAlign: 'center' },
-  confirmRow: { flexDirection: 'row', gap: 10, marginTop: 20 },
-  confirmCancel: { flex: 1, minHeight: 46, borderRadius: 22, backgroundColor: '#F5F5F4', alignItems: 'center', justifyContent: 'center' },
-  confirmDelete: { flex: 1, minHeight: 46, borderRadius: 22, backgroundColor: '#DC2626', alignItems: 'center', justifyContent: 'center' },
-  confirmCancelText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, color: '#6B7280' },
-  confirmDeleteText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, color: '#FFFFFF' },
 });

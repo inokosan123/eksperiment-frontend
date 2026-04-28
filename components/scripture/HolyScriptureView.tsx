@@ -1,8 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated, Easing, LayoutAnimation, Platform, UIManager,
   ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, useWindowDimensions, View,
 } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,6 +21,8 @@ import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import { ScriptureSearchResult, useScripture } from './ScriptureContext';
 import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
+import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
+import { useTasks } from '@/components/tasks/TaskProvider';
 
 const BG = '#FCFCFC';
 const GOLD = '#C5A059';
@@ -23,7 +30,6 @@ const GREEN = '#5E7B55';
 const ROSE = '#BE123C';
 
 type ScriptureTab = 'bible' | 'psalter';
-type SectionKey = 'new' | 'old' | null;
 
 const NEW_TESTAMENT = BIBLE_BOOKS.filter(book => book.testament === 'nt');
 const OLD_TESTAMENT = BIBLE_BOOKS.filter(book => book.testament !== 'nt' && book.id !== PSALMS_ID);
@@ -35,12 +41,17 @@ export default function HolyScriptureView() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { ready, searchVerses } = useScripture();
+  const { createOrUpdateTask } = useTasks();
 
   const [tab, setTab] = useState<ScriptureTab>('bible');
-  const [openSection, setOpenSection] = useState<SectionKey>(null);
+  const pillAnim = useRef(new Animated.Value(0)).current;
+  const [activeSection, setActiveSection] = useState<'new' | 'old'>('new');
+  const sectionPillAnim = useRef(new Animated.Value(0)).current;
   const [expandedBookId, setExpandedBookId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ScriptureSearchResult[]>([]);
+  const [showTaskSheet, setShowTaskSheet] = useState(false);
+  const [taskSummary, setTaskSummary] = useState('Add to your daily routine');
 
   const query = searchQuery.trim().toLowerCase();
   const psalmCardWidth = useMemo(() => {
@@ -81,6 +92,17 @@ export default function HolyScriptureView() {
     return source.filter(book => book.name.toLowerCase().includes(query)).slice(0, 12);
   }, [query, tab]);
 
+  const switchTab = (next: ScriptureTab) => {
+    setTab(next);
+    setExpandedBookId(null);
+    Animated.timing(pillAnim, {
+      toValue: next === 'bible' ? 0 : 1,
+      duration: 200,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  };
+
   const openReader = (book: BibleBook, chapter = 1, verse?: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push({
@@ -93,8 +115,25 @@ export default function HolyScriptureView() {
     });
   };
 
+  const smooth = () => LayoutAnimation.configureNext(
+    LayoutAnimation.create(240, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity)
+  );
+
+  const switchSection = (next: 'new' | 'old') => {
+    smooth();
+    setActiveSection(next);
+    setExpandedBookId(null);
+    Animated.timing(sectionPillAnim, {
+      toValue: next === 'new' ? 0 : 1,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  };
+
   const toggleBook = (book: BibleBook) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    smooth();
     setExpandedBookId(expandedBookId === book.id ? null : book.id);
   };
 
@@ -123,52 +162,49 @@ export default function HolyScriptureView() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 110 }]}
       >
-        <View style={s.quickList}>
-          <ActionCard
-            tone="gold"
-            icon={<Star s={16} c={GOLD} />}
-            label="MY FAVORITES"
-            text="Saved highlights, comments, and passages."
-            onPress={() => router.push('/favorites')}
-          />
-          <ActionCard
-            tone="green"
-            icon={<Notebook s={15} c={GREEN} />}
-            label="BIBLE NOTES"
-            text="Your chapter notes - study reflections."
-            onPress={() => router.push('/bible-notes')}
-          />
-          <ActionCard
-            tone="gold"
-            icon={null}
-            label="SET AS DAILY TASK"
-            text="Add to your daily routine"
-            onPress={() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)}
-            forceDailyTask
-          />
+        {/* Quick access — 2-col grid */}
+        <View style={s.quickGrid}>
+          <TouchableOpacity onPress={() => router.push('/favorites')} activeOpacity={0.86} style={[s.quickCard, s.quickCardGold]}>
+            <View style={s.quickCardRow}>
+              <View style={[s.quickIcon, { backgroundColor: 'rgba(197,160,89,0.12)' }]}>
+                <Star s={15} c={GOLD} />
+              </View>
+              <Text style={[s.quickLabel, { color: GOLD }]}>Favorites</Text>
+            </View>
+            <Text style={s.quickDesc}>{'  '}Highlights & saved passages</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/bible-notes')} activeOpacity={0.86} style={[s.quickCard, s.quickCardGreen]}>
+            <View style={s.quickCardRow}>
+              <View style={[s.quickIcon, { backgroundColor: 'rgba(94,123,85,0.12)' }]}>
+                <Notebook s={14} c={GREEN} />
+              </View>
+              <Text style={[s.quickLabel, { color: GREEN }]}>Bible Notes</Text>
+            </View>
+            <Text style={s.quickDesc}>{'  '}Chapter notes & reflections</Text>
+          </TouchableOpacity>
         </View>
 
+        {/* Set as Daily Task — compact row */}
+        <SetAsDailyTaskCard variant="scripture" onPress={() => setShowTaskSheet(true)} subtitle={taskSummary} />
+
+        {/* Bible / Psalter toggle + search */}
         <View style={s.selectorPanel}>
           <View style={s.segmented}>
+            <Animated.View
+              pointerEvents="none"
+              style={[s.segPill, { left: pillAnim.interpolate({ inputRange: [0, 1], outputRange: ['2%', '51%'] }) }]}
+            />
             <TabButton
               active={tab === 'bible'}
               icon={<Book s={14} c={tab === 'bible' ? GREEN : '#A8A29E'} />}
               label="BIBLE"
-              onPress={() => {
-                setTab('bible');
-                setOpenSection(null);
-                setExpandedBookId(null);
-              }}
+              onPress={() => switchTab('bible')}
             />
             <TabButton
               active={tab === 'psalter'}
               icon={<OpenBook s={14} c={tab === 'psalter' ? GREEN : '#A8A29E'} />}
               label="PSALTER"
-              onPress={() => {
-                setTab('psalter');
-                setOpenSection(null);
-                setExpandedBookId(null);
-              }}
+              onPress={() => switchTab('psalter')}
             />
           </View>
 
@@ -202,39 +238,55 @@ export default function HolyScriptureView() {
           <SearchPanel bookMatches={bookMatches} results={searchResults} onBook={openReader} onResult={openResult} />
         ) : (
           <View style={s.sections}>
-            <BookSection
-              title="New Testament"
-              count={NEW_TESTAMENT.length}
-              books={NEW_TESTAMENT}
-              open={openSection === 'new'}
-              accent={GREEN}
-              tone="green"
+            {/* NT / OT animated tab selector */}
+            <View style={s.sectionTabWrap}>
+              <Animated.View style={[
+                s.sectionTabPill,
+                {
+                  left: sectionPillAnim.interpolate({ inputRange: [0, 1], outputRange: ['2%', '51%'] }),
+                  backgroundColor: activeSection === 'new'
+                    ? 'rgba(94,123,85,0.14)' : 'rgba(180,155,103,0.14)',
+                  borderColor: activeSection === 'new'
+                    ? 'rgba(94,123,85,0.35)' : 'rgba(180,155,103,0.35)',
+                },
+              ]} />
+              <TouchableOpacity onPress={() => switchSection('new')} activeOpacity={0.82} style={s.sectionTabBtn}>
+                <Text style={[s.sectionTabText, activeSection === 'new' && { color: GREEN, fontFamily: F.serifMedium }]}>
+                  New Testament
+                </Text>
+                <View style={[s.sectionTabBadge, activeSection === 'new' && { backgroundColor: 'rgba(94,123,85,0.12)' }]}>
+                  <Text style={[s.sectionTabCount, activeSection === 'new' && { color: GREEN }]}>{NEW_TESTAMENT.length}</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => switchSection('old')} activeOpacity={0.82} style={s.sectionTabBtn}>
+                <Text style={[s.sectionTabText, activeSection === 'old' && { color: '#8B6B2F', fontFamily: F.serifMedium }]}>
+                  Old Testament
+                </Text>
+                <View style={[s.sectionTabBadge, activeSection === 'old' && { backgroundColor: 'rgba(180,155,103,0.12)' }]}>
+                  <Text style={[s.sectionTabCount, activeSection === 'old' && { color: '#8B6B2F' }]}>{OLD_TESTAMENT.length}</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {/* Book list for selected section */}
+            <BookList
+              books={activeSection === 'new' ? NEW_TESTAMENT : OLD_TESTAMENT}
+              tone={activeSection === 'new' ? 'green' : 'stone'}
               expandedBookId={expandedBookId}
-              onToggle={() => {
-                setOpenSection(openSection === 'new' ? null : 'new');
-                setExpandedBookId(null);
-              }}
-              onBook={toggleBook}
-              onChapter={openReader}
-            />
-            <BookSection
-              title="Old Testament"
-              count={OLD_TESTAMENT.length}
-              books={OLD_TESTAMENT}
-              open={openSection === 'old'}
-              accent={GOLD}
-              tone="stone"
-              expandedBookId={expandedBookId}
-              onToggle={() => {
-                setOpenSection(openSection === 'old' ? null : 'old');
-                setExpandedBookId(null);
-              }}
               onBook={toggleBook}
               onChapter={openReader}
             />
           </View>
         )}
       </ScrollView>
+
+      <SetAsTaskSheet
+        visible={showTaskSheet}
+        context="scripture"
+        onClose={() => setShowTaskSheet(false)}
+        onSummaryChange={setTaskSummary}
+        onTaskDraft={createOrUpdateTask}
+      />
     </View>
   );
 }
@@ -248,42 +300,6 @@ function Header({ top, onBack }: { top: number; onBack: () => void }) {
       <Text style={s.headerTitle}>HOLY SCRIPTURE</Text>
       <View style={s.headerBtn} />
     </View>
-  );
-}
-
-function ActionCard({
-  tone, icon, label, text, onPress, forceDailyTask = false,
-}: {
-  tone: 'gold' | 'green';
-  icon: React.ReactNode;
-  label: string;
-  text: string;
-  onPress: () => void;
-  forceDailyTask?: boolean;
-}) {
-  if (forceDailyTask) {
-    return <SetAsDailyTaskCard variant="scripture" onPress={onPress} />;
-  }
-  const accent = tone === 'green' ? GREEN : GOLD;
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.86}
-      style={[
-        s.actionCard,
-        {
-          borderColor: tone === 'green' ? 'rgba(94,123,85,0.28)' : 'rgba(197,160,89,0.30)',
-          backgroundColor: tone === 'green' ? '#F4FAF1' : '#FFFDF8',
-        },
-      ]}
-    >
-      <View style={[s.actionIcon, { borderColor: `${accent}30` }]}>{icon}</View>
-      <View style={s.actionCopy}>
-        <Text style={[s.actionLabel, { color: accent }]}>{label}</Text>
-        <Text style={s.actionText} numberOfLines={2}>{text}</Text>
-      </View>
-      <ChevronRight s={18} c={accent} />
-    </TouchableOpacity>
   );
 }
 
@@ -303,6 +319,46 @@ function TabButton({
   );
 }
 
+function BookList({
+  books, tone, expandedBookId, onBook, onChapter,
+}: {
+  books: BibleBook[];
+  tone: 'green' | 'stone';
+  expandedBookId: number | null;
+  onBook: (book: BibleBook) => void;
+  onChapter: (book: BibleBook, chapter?: number) => void;
+}) {
+  const isGreen = tone === 'green';
+  const panelColors = (isGreen ? ['#FCFDF9', '#F4F8EF'] : ['#FFFDF9', '#F8F4EC']) as [string, string];
+  return (
+    <LinearGradient
+      colors={panelColors}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+      style={[s.bookListPanel, { borderColor: isGreen ? '#DCE5D7' : '#ECE4D7' }]}
+    >
+      {books.map(book => (
+        <React.Fragment key={book.id}>
+          <PremiumBookCard
+            book={book}
+            title={isGreen ? 'New Testament' : 'Old Testament'}
+            tone={tone}
+            expanded={expandedBookId === book.id}
+            onPress={() => onBook(book)}
+          />
+          {expandedBookId === book.id && (
+            <ChapterPanel
+              book={book}
+              tone={tone}
+              onChapter={chapter => onChapter(book, chapter)}
+            />
+          )}
+        </React.Fragment>
+      ))}
+    </LinearGradient>
+  );
+}
+
 function BookSection({
   title, count, books, open, accent, tone, expandedBookId, onToggle, onBook, onChapter,
 }: {
@@ -318,8 +374,8 @@ function BookSection({
   onChapter: (book: BibleBook, chapter?: number) => void;
 }) {
   const isGreen = tone === 'green';
-  const sectionColors = (isGreen ? ['#FFFEFC', '#F3F8EE'] : ['#FFFEFC', '#FAF7F1']) as [string, string];
-  const panelColors = (isGreen ? ['#FCFDF9', '#F4F8EF'] : ['#FFFDF9', '#F8F4EC']) as [string, string];
+  const sectionColors = (isGreen ? ['#F6FAF3', '#EBF4E5'] : ['#FAF7F2', '#F2EBE0']) as [string, string];
+  const panelColors = (isGreen ? ['#F4F9F0', '#EDF5E7'] : ['#F8F4ED', '#F2EBE0']) as [string, string];
 
   return (
     <View style={s.sectionWrap}>
@@ -337,7 +393,7 @@ function BookSection({
           ]}
         >
           <View style={s.sectionHead}>
-            <Text style={[s.sectionTitle, { color: isGreen ? '#445C3C' : '#4F4536' }]}>{title}</Text>
+            <Text style={[s.sectionTitle, { color: isGreen ? '#2E4726' : '#3A3020' }]}>{title}</Text>
             <View style={s.sectionRight}>
               <View style={[s.countPill, { borderColor: isGreen ? '#D7E2D3' : '#ECE4D6' }]}>
                 <Text style={[s.countText, { color: isGreen ? '#72876A' : '#B49B67' }]}>{count}</Text>
@@ -489,38 +545,47 @@ function ChapterPanel({
 }
 
 function PsalterBrowse({
-  psalms, results, searching, cardWidth, onPsalm, onResult,
+  psalms, results, searching, onPsalm, onResult,
 }: {
   psalms: number[];
   results: ScriptureSearchResult[];
   searching: boolean;
-  cardWidth: number;
+  cardWidth?: number;
   onPsalm: (psalm: number) => void;
   onResult: (result: ScriptureSearchResult) => void;
 }) {
+  const rows = Array.from({ length: Math.ceil(psalms.length / 5) }, (_, i) => i);
+
   return (
     <View style={s.psalterWrap}>
-      <View style={s.psalterIntro}>
-        <View style={s.psalterIntroCopy}>
-          <Text style={s.psalterKicker}>THE PSALMS OF DAVID</Text>
-          <Text style={s.psalterDesc}>A prayerful collection for daily reading, chanting, and reflection.</Text>
-        </View>
-        <View style={s.psalterBadge}>
-          <Text style={s.psalterBadgeText}>{psalms.length}</Text>
-        </View>
-      </View>
-
-      {psalms.length > 0 && (
-        <View style={s.psalmGrid}>
-          {psalms.map(psalm => (
-            <PsalmCard
-              key={psalm}
-              psalm={psalm}
-              width={cardWidth}
-              onPress={() => onPsalm(psalm)}
-            />
-          ))}
-        </View>
+      {psalms.length > 0 && !searching && (
+        <LinearGradient
+          colors={['#FFFDF9', '#FFF6E8']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={s.psalmPanel}
+        >
+          <View style={s.chapterGrid}>
+            {rows.map(rowIndex => (
+              <View key={rowIndex} style={s.chapterGridRow}>
+                {Array.from({ length: 5 }, (_, offset) => {
+                  const psalm = psalms[rowIndex * 5 + offset];
+                  if (!psalm) return <View key={`e-${rowIndex}-${offset}`} style={s.chapterSpacer} />;
+                  return (
+                    <TouchableOpacity
+                      key={psalm}
+                      onPress={() => onPsalm(psalm)}
+                      activeOpacity={0.78}
+                      style={[s.chapterCell, { borderColor: '#E8DECD', backgroundColor: '#FFFFFF' }]}
+                    >
+                      <Text style={[s.chapterCellText, { color: '#6F5E41' }]}>{psalm}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))}
+          </View>
+        </LinearGradient>
       )}
 
       {searching && results.length > 0 && (
@@ -547,38 +612,6 @@ function PsalterBrowse({
         </View>
       )}
     </View>
-  );
-}
-
-function PsalmCard({
-  psalm, width, onPress,
-}: {
-  psalm: number;
-  width: number;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.86}>
-      <LinearGradient
-        colors={['#FFFEFB', '#FFF8EF']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={[s.psalmCard, { width }]}
-      >
-        <View style={s.psalmCardTop}>
-          <View style={s.psalmNumber}>
-            <Text style={s.psalmNumberText}>{psalm}</Text>
-          </View>
-          <View style={s.psalmArrow}>
-            <ChevronRight s={15} c="#C7A162" />
-          </View>
-        </View>
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82} style={s.psalmTitle}>
-          Psalm {psalm}
-        </Text>
-        <Text style={s.psalmMeta}>PSALTER</Text>
-      </LinearGradient>
-    </TouchableOpacity>
   );
 }
 
@@ -647,62 +680,45 @@ const s = StyleSheet.create({
   },
   headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { flex: 1, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 23, letterSpacing: 2.8, color: '#111827' },
-  content: { width: '100%', maxWidth: 430, alignSelf: 'center', paddingHorizontal: 22, paddingTop: 14 },
-  quickList: { gap: 10 },
-  actionCard: {
-    minHeight: 74,
-    borderRadius: 20,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  content: { width: '100%', maxWidth: 430, alignSelf: 'center', paddingHorizontal: 22, paddingTop: 14, gap: 8 },
+
+  quickGrid: { flexDirection: 'row', gap: 10 },
+  quickCard: {
+    flex: 1, borderRadius: 18, borderWidth: 1,
+    paddingHorizontal: 12, paddingVertical: 12, gap: 4,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowOffset: { width: 0, height: 4 }, shadowRadius: 12, elevation: 2,
   },
-  actionIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.72)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionCopy: { flex: 1, minWidth: 0 },
-  actionLabel: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.2 },
-  actionText: { marginTop: 2, fontFamily: F.serif, fontSize: 17, lineHeight: 21, color: '#8A8F9A' },
-  selectorPanel: {
-    marginTop: 18,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.18)',
-    backgroundColor: '#FFFDF8',
-    padding: 14,
-    gap: 14,
-  },
+  quickCardGold: { backgroundColor: '#FFFDF8', borderColor: 'rgba(197,160,89,0.28)' },
+  quickCardGreen: { backgroundColor: '#F4FAF1', borderColor: 'rgba(94,123,85,0.22)' },
+  quickCardRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  quickIcon: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  quickLabel: { fontFamily: F.sansSemiBold, fontSize: 13, letterSpacing: 0.2, flex: 1 },
+  quickDesc: { fontFamily: F.serif, fontSize: 12, lineHeight: 17, color: '#A8A29E' },
+  selectorPanel: { gap: 10 },
   segmented: {
     minHeight: 46,
     borderRadius: 17,
     borderWidth: 1,
     borderColor: 'rgba(17,24,39,0.07)',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F3F2EF',
     padding: 4,
     flexDirection: 'row',
     gap: 4,
+    position: 'relative',
   },
-  tabBtn: { flex: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
-  tabBtnActive: {
+  segPill: {
+    position: 'absolute',
+    top: 4, bottom: 4, width: '47%',
+    borderRadius: 13,
     backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 8,
-    elevation: 2,
+    shadowColor: '#000', shadowOpacity: 0.07, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 2,
   },
+  tabBtn: { flex: 1, borderRadius: 13, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, zIndex: 1 },
+  tabBtnActive: {},
   tabText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.2, color: '#A8A29E' },
   tabTextActive: { color: GREEN },
   searchBox: {
-    minHeight: 52,
+    height: 52,
     borderRadius: 17,
     borderWidth: 1,
     borderColor: 'rgba(17,24,39,0.07)',
@@ -712,8 +728,58 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  searchInput: { flex: 1, fontFamily: F.serif, fontSize: 18, color: '#3D3229', paddingVertical: 0 },
-  sections: { gap: 24, marginTop: 20 },
+  searchInput: { flex: 1, height: 52, fontFamily: F.serif, fontSize: 18, color: '#3D3229', paddingVertical: 0 },
+  sections: { gap: 2 },
+
+  sectionTabWrap: {
+    position: 'relative',
+    flexDirection: 'row',
+    backgroundColor: '#F5F3EF',
+    borderRadius: 20,
+    padding: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(28,25,23,0.06)',
+  },
+  sectionTabPill: {
+    position: 'absolute',
+    top: 5,
+    bottom: 5,
+    width: '47%',
+    borderRadius: 15,
+    borderWidth: 1,
+    zIndex: 0,
+  },
+  sectionTabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 11,
+    borderRadius: 15,
+    zIndex: 1,
+  },
+  sectionTabText: {
+    fontFamily: F.serif,
+    fontSize: 16,
+    color: '#A8A29E',
+    letterSpacing: 0.2,
+  },
+  sectionTabBadge: {
+    minWidth: 26,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(28,25,23,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  sectionTabCount: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    letterSpacing: 0.5,
+    color: '#B8B0A6',
+  },
   sectionWrap: {
     gap: 0,
   },
@@ -727,14 +793,14 @@ const s = StyleSheet.create({
     elevation: 2,
   },
   sectionHead: {
-    minHeight: 74,
+    minHeight: 56,
     paddingHorizontal: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
   },
-  sectionTitle: { flex: 1, fontFamily: F.serifMedium, fontSize: 27, letterSpacing: 0.3 },
+  sectionTitle: { flex: 1, fontFamily: F.serifMedium, fontSize: 21, letterSpacing: 0.2 },
   sectionRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   countPill: {
     minWidth: 46,
@@ -848,86 +914,19 @@ const s = StyleSheet.create({
   },
   chapterSpacer: { flex: 1, minHeight: 44 },
   chapterCellText: { fontFamily: F.serif, fontSize: 18, lineHeight: 21 },
-  psalterWrap: { marginTop: 18, gap: 14 },
-  psalterIntro: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 16,
-    paddingHorizontal: 6,
-    paddingTop: 2,
-  },
-  psalterIntroCopy: { flex: 1, minWidth: 0 },
-  psalterKicker: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.5, color: '#8C95A3' },
-  psalterDesc: { marginTop: 8, fontFamily: F.serif, fontSize: 19, lineHeight: 27, color: '#5D6673' },
-  psalterBadge: {
-    minWidth: 48,
-    height: 30,
-    borderRadius: 15,
+  psalterWrap: { gap: 14 },
+  psalmPanel: {
+    borderRadius: 23,
     borderWidth: 1,
-    borderColor: '#ECE4D6',
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.07,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 10,
-    elevation: 1,
-  },
-  psalterBadgeText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#B49B67' },
-  psalmGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    columnGap: 10,
-    rowGap: 10,
-  },
-  psalmCard: {
-    minHeight: 108,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E8DECD',
+    borderColor: '#E8E0D4',
+    overflow: 'hidden',
     padding: 12,
     shadowColor: '#0F172A',
-    shadowOpacity: 0.04,
     shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 16,
-    elevation: 1,
+    shadowOpacity: 0.04,
+    shadowRadius: 18,
+    elevation: 2,
   },
-  psalmCardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  psalmNumber: {
-    width: 38,
-    height: 38,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#F0D7AF',
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.06,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 8,
-    elevation: 1,
-  },
-  psalmNumberText: { fontFamily: F.serifMedium, fontSize: 19, color: '#A56412' },
-  psalmArrow: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: '#EED9B8',
-    backgroundColor: 'rgba(255,255,255,0.90)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  psalmTitle: { fontFamily: F.serif, fontSize: 21, lineHeight: 25, color: '#1F2933' },
-  psalmMeta: { marginTop: 4, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.1, color: '#BE8A45' },
   searchPanel: { marginTop: 18, gap: 18 },
   searchBlock: { gap: 9 },
   searchKicker: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.2, color: GOLD },

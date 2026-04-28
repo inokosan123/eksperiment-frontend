@@ -1,32 +1,48 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Modal,
-  Pressable,
+  LayoutAnimation,
+  Platform,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
+import NotificationSettings, { type NotificationMode as SharedNotificationMode } from '@/components/shared/NotificationSettings';
+import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
+import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
+import TaskFrequencyEditor, { type TaskFrequency } from '@/components/shared/TaskFrequencyEditor';
+import TaskTimeEditor, { type TaskDayTimes } from '@/components/shared/TaskTimeEditor';
 import {
   Activity,
+  Apple,
   Book,
+  Brain,
+  Briefcase,
   Calendar,
   Candle,
   CheckSmall,
   ChevronDown,
   ChevronRight,
+  Clock,
+  Coffee,
   Cross,
+  Droplets,
+  Dumbbell,
+  Eye,
   Feather,
   Flame,
   Heart,
   Home,
+  Leaf,
   ListChecks,
   Moon,
+  Music,
+  Pill,
   Plus,
   Sparkles,
   Sun,
@@ -34,35 +50,80 @@ import {
   Trash2,
   Trophy,
   Utensils,
+  Waves,
+  Wind,
   X,
 } from '@/components/icons/Icons';
 import { AnyTaskCard, TaskData } from '@/components/shared/TaskCards';
 import { C, F } from '@/constants/tokens';
-import { DAY_OPTIONS, HabitItem, INITIAL_HABITS, getFreqLabel } from '@/components/habits/habitData';
+import { HabitItem, INITIAL_HABITS, getFreqLabel } from '@/components/habits/habitData';
 import { useChallenges } from '@/components/challenges/ChallengesContext';
+import { useTasks } from '@/components/tasks/TaskProvider';
+import type { TaskDefinition, TaskDraft } from '@/components/tasks/taskTypes';
 
-type RoutineFrequency = 'daily' | 'weekdays' | 'weekends' | 'specific_days';
-type NotificationMode = 'none' | 'normal' | 'double';
+type RoutineFrequency = TaskFrequency;
+type NotificationMode = SharedNotificationMode;
 type RoutineLevel = 1 | 2;
 type SpiritualType = 'prayer' | 'reading' | 'journal' | 'church' | 'custom';
+type RoutineTaskSheetContext = 'prayer' | 'journal' | 'scripture';
 type RoutineIconName =
   | 'Activity'
+  | 'Apple'
   | 'Book'
+  | 'Brain'
+  | 'Briefcase'
+  | 'Calendar'
   | 'Candle'
+  | 'Clock'
+  | 'Coffee'
   | 'Cross'
+  | 'Droplets'
+  | 'Dumbbell'
+  | 'Eye'
   | 'Feather'
   | 'Heart'
   | 'Home'
+  | 'Leaf'
+  | 'ListChecks'
   | 'Moon'
+  | 'Music'
+  | 'Pill'
   | 'Sparkles'
   | 'Sun'
   | 'Target'
-  | 'Utensils';
+  | 'Utensils'
+  | 'Waves'
+  | 'Wind';
 
 type DayOverride = {
   jsDay: number;
   time: string;
 };
+
+if (Platform.OS === 'android' && typeof UIManager.setLayoutAnimationEnabledExperimental === 'function') {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+function animateRoutineLayoutChange() {
+  try {
+    LayoutAnimation.configureNext({
+      duration: 280,
+      create: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+      update: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+      },
+      delete: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+    });
+  } catch {
+    // Web may ignore LayoutAnimation; native gets the smoother drawer.
+  }
+}
 
 type RoutineTask = {
   id: string;
@@ -73,17 +134,11 @@ type RoutineTask = {
   time: string;
   frequency: RoutineFrequency;
   selectedDays?: number[];
+  monthlyDays?: number[];
   sameTimeEveryDay: boolean;
   dayTimeOverrides?: DayOverride[];
   notificationMode: NotificationMode;
   reminderMinutes?: number;
-};
-
-type DayModel = {
-  id: string;
-  name: string;
-  color: string;
-  taskCount: number;
 };
 
 const DAY_TABS = [
@@ -117,83 +172,76 @@ const ROUTINE_ICONS: {
 }[] = [
   { id: 'Activity', label: 'Fitness', Icon: Activity },
   { id: 'Book', label: 'Study', Icon: Book },
+  { id: 'Briefcase', label: 'Work', Icon: Briefcase },
+  { id: 'Home', label: 'Home', Icon: Home },
+  { id: 'Heart', label: 'Health', Icon: Heart },
+  { id: 'Dumbbell', label: 'Workout', Icon: Dumbbell },
+  { id: 'Droplets', label: 'Water', Icon: Droplets },
+  { id: 'Apple', label: 'Food', Icon: Apple },
+  { id: 'Coffee', label: 'Coffee', Icon: Coffee },
+  { id: 'Pill', label: 'Medicine', Icon: Pill },
+  { id: 'Moon', label: 'Evening', Icon: Moon },
+  { id: 'Sun', label: 'Morning', Icon: Sun },
+  { id: 'Utensils', label: 'Meal', Icon: Utensils },
+  { id: 'Feather', label: 'Write', Icon: Feather },
+  { id: 'Target', label: 'Goal', Icon: Target },
+  { id: 'ListChecks', label: 'Tasks', Icon: ListChecks },
+  { id: 'Brain', label: 'Mind', Icon: Brain },
+  { id: 'Eye', label: 'Focus', Icon: Eye },
+  { id: 'Leaf', label: 'Nature', Icon: Leaf },
+  { id: 'Music', label: 'Music', Icon: Music },
+  { id: 'Wind', label: 'Breath', Icon: Wind },
+  { id: 'Waves', label: 'Calm', Icon: Waves },
+  { id: 'Calendar', label: 'Plan', Icon: Calendar },
+  { id: 'Clock', label: 'Time', Icon: Clock },
+  { id: 'Sparkles', label: 'Custom', Icon: Sparkles },
   { id: 'Candle', label: 'Quiet', Icon: Candle },
   { id: 'Cross', label: 'Prayer', Icon: Cross },
-  { id: 'Feather', label: 'Write', Icon: Feather },
-  { id: 'Heart', label: 'Health', Icon: Heart },
-  { id: 'Home', label: 'Home', Icon: Home },
-  { id: 'Moon', label: 'Evening', Icon: Moon },
-  { id: 'Sparkles', label: 'Custom', Icon: Sparkles },
-  { id: 'Sun', label: 'Morning', Icon: Sun },
-  { id: 'Target', label: 'Goal', Icon: Target },
-  { id: 'Utensils', label: 'Meal', Icon: Utensils },
 ];
 
-const MODEL_COLORS = ['#C5A059', '#16A34A', '#2563EB', '#DB2777', '#7C3AED', '#EA580C', '#0F766E'];
+const VISIBLE_ROUTINE_ICON_COUNT = 16;
 
-const INITIAL_TASKS: RoutineTask[] = [
-  {
-    id: 'routine_1',
-    title: 'Morning Prayer',
-    level: 1,
-    type: 'prayer',
-    time: '07:00',
-    frequency: 'daily',
-    sameTimeEveryDay: true,
-    notificationMode: 'normal',
-  },
-  {
-    id: 'routine_2',
-    title: 'Read the Gospels',
-    level: 1,
-    type: 'reading',
-    time: '07:20',
-    frequency: 'daily',
-    sameTimeEveryDay: true,
-    notificationMode: 'normal',
-  },
-  {
-    id: 'routine_3',
-    title: 'Water and vitamins',
-    level: 2,
-    type: 'custom',
-    icon: 'Heart',
-    time: '08:15',
-    frequency: 'weekdays',
-    sameTimeEveryDay: true,
-    notificationMode: 'none',
-  },
-  {
-    id: 'routine_4',
-    title: 'Evening Walk',
-    level: 2,
-    type: 'custom',
-    icon: 'Activity',
-    time: '19:00',
-    frequency: 'specific_days',
-    selectedDays: [1, 3, 5],
-    sameTimeEveryDay: false,
-    dayTimeOverrides: [
-      { jsDay: 1, time: '19:00' },
-      { jsDay: 3, time: '18:30' },
-      { jsDay: 5, time: '19:20' },
-    ],
-    notificationMode: 'double',
-    reminderMinutes: 15,
-  },
-];
+function jsDayToTaskIndex(day: number) {
+  return day === 0 ? 6 : day - 1;
+}
 
-const INITIAL_MODELS: DayModel[] = [
-  { id: 'model_1', name: 'Travel Day', color: '#C5A059', taskCount: 4 },
-  { id: 'model_2', name: 'Study Retreat', color: '#7C3AED', taskCount: 6 },
-];
+function taskIndexToJsDay(index: number) {
+  return index === 6 ? 0 : index + 1;
+}
 
-const FREQUENCY_OPTIONS: { value: RoutineFrequency; label: string }[] = [
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekdays', label: 'Weekdays' },
-  { value: 'weekends', label: 'Weekends' },
-  { value: 'specific_days', label: 'Specific Days' },
-];
+function selectedDaysToTaskIndexes(days: number[] = []) {
+  return days.map(jsDayToTaskIndex).sort((a, b) => a - b);
+}
+
+function taskIndexesToSelectedDays(indexes: number[] = []) {
+  return indexes.map(taskIndexToJsDay).sort((a, b) => a - b);
+}
+
+function taskDayTimesToOverrides(dayTimes: TaskDayTimes, activeIndexes: number[]) {
+  return activeIndexes
+    .filter(index => !!dayTimes[index])
+    .map(index => ({ jsDay: taskIndexToJsDay(index), time: dayTimes[index] }));
+}
+
+function overridesToTaskDayTimes(overrides: DayOverride[] = []) {
+  return overrides.reduce<TaskDayTimes>((acc, item) => {
+    acc[jsDayToTaskIndex(item.jsDay)] = item.time;
+    return acc;
+  }, {});
+}
+
+function getActiveTaskIndexesForFrequency(frequency: RoutineFrequency, selectedDays: number[] = []) {
+  switch (frequency) {
+    case 'weekdays':
+      return [0, 1, 2, 3, 4];
+    case 'weekends':
+      return [5, 6];
+    case 'specific_days':
+      return selectedDaysToTaskIndexes(selectedDays);
+    default:
+      return [0, 1, 2, 3, 4, 5, 6];
+  }
+}
 
 function matchesTaskForDay(task: RoutineTask, jsDay: number) {
   switch (task.frequency) {
@@ -203,6 +251,8 @@ function matchesTaskForDay(task: RoutineTask, jsDay: number) {
       return jsDay === 0 || jsDay === 6;
     case 'specific_days':
       return (task.selectedDays ?? []).includes(jsDay);
+    case 'monthly':
+      return (task.monthlyDays ?? [1]).includes(new Date().getDate());
     case 'daily':
     default:
       return true;
@@ -217,6 +267,8 @@ function getActiveDays(task: RoutineTask) {
       return DAY_TABS.filter(day => day.jsDay === 0 || day.jsDay === 6);
     case 'specific_days':
       return DAY_TABS.filter(day => (task.selectedDays ?? []).includes(day.jsDay));
+    case 'monthly':
+      return DAY_TABS;
     case 'daily':
     default:
       return [...DAY_TABS];
@@ -239,6 +291,8 @@ function getTaskFrequencyLabel(task: RoutineTask) {
         .filter(day => (task.selectedDays ?? []).includes(day.jsDay))
         .map(day => day.short)
         .join(' ');
+    case 'monthly':
+      return `Monthly ${(task.monthlyDays ?? [1]).join(', ')}`;
     case 'daily':
     default:
       return 'Daily';
@@ -269,43 +323,70 @@ function toTaskCardData(task: RoutineTask, jsDay: number): TaskData {
   };
 }
 
-function arraysEqual(a?: number[], b?: number[]) {
-  return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+function taskDefinitionToRoutineTask(task: TaskDefinition): RoutineTask {
+  return {
+    id: task.id,
+    title: task.title,
+    level: task.level === 1 ? 1 : 2,
+    type: task.type === 'reading' ? 'reading' : task.type === 'journal' ? 'journal' : task.type === 'church' ? 'church' : task.type === 'prayer' ? 'prayer' : 'custom',
+    icon: task.icon as RoutineIconName | undefined,
+    time: task.schedule.time,
+    frequency: task.schedule.frequency,
+    selectedDays: taskIndexesToSelectedDays(task.schedule.selectedDays),
+    monthlyDays: task.schedule.monthlyDays,
+    sameTimeEveryDay: task.schedule.sameTimeEveryDay,
+    dayTimeOverrides: taskDayTimesToOverrides(task.schedule.dayTimes, [0, 1, 2, 3, 4, 5, 6]),
+    notificationMode: task.notificationMode,
+    reminderMinutes: task.reminderMinutes,
+  };
 }
 
-function overridesEqual(a?: DayOverride[], b?: DayOverride[]) {
-  return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
-}
-
-function hasScheduleChanged(original: RoutineTask, next: RoutineTask) {
-  return (
-    original.time !== next.time
-    || original.frequency !== next.frequency
-    || original.sameTimeEveryDay !== next.sameTimeEveryDay
-    || original.notificationMode !== next.notificationMode
-    || (original.reminderMinutes ?? 0) !== (next.reminderMinutes ?? 0)
-    || !arraysEqual(original.selectedDays, next.selectedDays)
-    || !overridesEqual(original.dayTimeOverrides, next.dayTimeOverrides)
-  );
+function routineTaskToDraft(task: RoutineTask): TaskDraft {
+  const dayTimes = overridesToTaskDayTimes(task.dayTimeOverrides ?? []);
+  return {
+    id: task.id,
+    title: task.title,
+    subtitle: getTaskFrequencyLabel(task),
+    level: task.level,
+    source: task.level === 1 ? 'spiritual' : 'routine',
+    type: task.type === 'reading' ? 'reading' : task.type === 'journal' ? 'journal' : task.type === 'church' ? 'church' : task.type === 'prayer' ? 'prayer' : 'custom',
+    icon: task.level === 2 ? task.icon : undefined,
+    status: 'active',
+    schedule: {
+      frequency: task.frequency,
+      selectedDays: task.frequency === 'specific_days' ? selectedDaysToTaskIndexes(task.selectedDays ?? []) : [],
+      monthlyDays: task.frequency === 'monthly' ? task.monthlyDays ?? [1] : [1],
+      time: task.time,
+      sameTimeEveryDay: task.sameTimeEveryDay,
+      dayTimes: task.sameTimeEveryDay ? {} : dayTimes,
+    },
+    notificationMode: task.notificationMode,
+    reminderMinutes: task.reminderMinutes,
+  };
 }
 
 export default function MyRoutineView() {
   const router = useRouter();
   const { activeChallenges } = useChallenges();
-  const [tasks, setTasks] = useState<RoutineTask[]>(INITIAL_TASKS);
+  const {
+    tasks: backendTasks,
+    createOrUpdateTask,
+    remove: removeTask,
+  } = useTasks();
+  const tasks = useMemo(
+    () => backendTasks.map(taskDefinitionToRoutineTask),
+    [backendTasks],
+  );
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [showSpiritualTypePicker, setShowSpiritualTypePicker] = useState(false);
+  const [spiritualTaskContext, setSpiritualTaskContext] = useState<RoutineTaskSheetContext | null>(null);
   const [editorVisible, setEditorVisible] = useState(false);
   const [editorTask, setEditorTask] = useState<RoutineTask | null>(null);
   const [editorDefaultLevel, setEditorDefaultLevel] = useState<RoutineLevel | undefined>(undefined);
   const [editorDefaultType, setEditorDefaultType] = useState<SpiritualType | undefined>(undefined);
-  const [pendingApplyTask, setPendingApplyTask] = useState<RoutineTask | null>(null);
   const [habitTab, setHabitTab] = useState<'active' | 'paused'>('active');
   const [habits, setHabits] = useState<HabitItem[]>(INITIAL_HABITS);
   const [expandedHabitId, setExpandedHabitId] = useState<string | null>(INITIAL_HABITS[0]?.id ?? null);
-  const [dayModels, setDayModels] = useState<DayModel[]>(INITIAL_MODELS);
-  const [modelEditorVisible, setModelEditorVisible] = useState(false);
-  const [editingModel, setEditingModel] = useState<DayModel | null>(null);
 
   const selectedDay = DAY_TABS[selectedDayIndex];
 
@@ -337,34 +418,16 @@ export default function MyRoutineView() {
     setEditorVisible(true);
   };
 
-  const handleTaskSave = (task: RoutineTask) => {
-    if (editorTask && hasScheduleChanged(editorTask, task)) {
-      setPendingApplyTask(task);
-      return;
-    }
-
-    setTasks(current => {
-      const exists = current.some(item => item.id === task.id);
-      return exists
-        ? current.map(item => item.id === task.id ? task : item)
-        : [...current, task];
-    });
+  const handleTaskSave = async (task: RoutineTask) => {
+    await createOrUpdateTask(routineTaskToDraft(task));
     setEditorVisible(false);
     setEditorTask(null);
     setEditorDefaultLevel(undefined);
     setEditorDefaultType(undefined);
   };
 
-  const applyPendingTask = () => {
-    if (!pendingApplyTask) return;
-    setTasks(current => current.map(item => item.id === pendingApplyTask.id ? pendingApplyTask : item));
-    setPendingApplyTask(null);
-    setEditorVisible(false);
-    setEditorTask(null);
-  };
-
-  const handleTaskDelete = (taskId: string) => {
-    setTasks(current => current.filter(item => item.id !== taskId));
+  const handleTaskDelete = async (taskId: string) => {
+    await removeTask(taskId);
     setEditorVisible(false);
     setEditorTask(null);
   };
@@ -384,27 +447,6 @@ export default function MyRoutineView() {
     const total = habit.steps.length;
     const done = habit.steps.filter(step => step.completedToday).length;
     return { total, done, pct: total === 0 ? 0 : Math.round((done / total) * 100) };
-  };
-
-  const openNewModel = () => {
-    setEditingModel(null);
-    setModelEditorVisible(true);
-  };
-
-  const openEditModel = (model: DayModel) => {
-    setEditingModel(model);
-    setModelEditorVisible(true);
-  };
-
-  const saveModel = (model: DayModel) => {
-    setDayModels(current => {
-      const exists = current.some(item => item.id === model.id);
-      return exists
-        ? current.map(item => item.id === model.id ? model : item)
-        : [...current, model];
-    });
-    setModelEditorVisible(false);
-    setEditingModel(null);
   };
 
   return (
@@ -623,36 +665,6 @@ export default function MyRoutineView() {
           </View>
         </View>
 
-        <SectionDivider icon={<Target s={14} c="#D1D5DB" />} />
-
-        <View>
-          <View style={s.sectionBetween}>
-            <View style={s.sectionHead}>
-              <Target s={16} c={C.gold} />
-              <Text style={s.sectionKicker}>Day Models</Text>
-            </View>
-            <TouchableOpacity onPress={openNewModel} activeOpacity={0.84} style={s.roundMiniBtn}>
-              <Plus s={18} c={C.gold} />
-            </TouchableOpacity>
-          </View>
-          <Text style={s.helperBody}>For travel, vacations, or shift days - keep alternate templates ready.</Text>
-
-          <View style={s.modelGrid}>
-            {dayModels.map(model => (
-              <TouchableOpacity key={model.id} onPress={() => openEditModel(model)} activeOpacity={0.84} style={[s.modelCard, { borderLeftColor: model.color }]}>
-                <Text style={s.modelTitle}>{model.name}</Text>
-                <Text style={s.modelMeta}>{model.taskCount} tasks</Text>
-              </TouchableOpacity>
-            ))}
-
-            <TouchableOpacity onPress={openNewModel} activeOpacity={0.84} style={s.newModelCard}>
-              <View style={s.newModelCircle}>
-                <Plus s={16} c="#C5A059" />
-              </View>
-              <Text style={s.newModelText}>New Model</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
       </ScrollView>
 
       <SpiritualTypePickerSheet
@@ -660,12 +672,28 @@ export default function MyRoutineView() {
         onClose={() => setShowSpiritualTypePicker(false)}
         onSelect={type => {
           setShowSpiritualTypePicker(false);
+          if (type === 'prayer' || type === 'journal' || type === 'reading') {
+            setSpiritualTaskContext(type === 'reading' ? 'scripture' : type);
+            return;
+          }
           setEditorTask(null);
           setEditorDefaultLevel(1);
           setEditorDefaultType(type);
           setEditorVisible(true);
         }}
       />
+
+      {spiritualTaskContext && (
+        <SetAsTaskSheet
+          visible={!!spiritualTaskContext}
+          context={spiritualTaskContext}
+          onClose={() => setSpiritualTaskContext(null)}
+          onTaskDraft={async draft => {
+            await createOrUpdateTask(draft);
+            setSpiritualTaskContext(null);
+          }}
+        />
+      )}
 
       <RoutineTaskEditorSheet
         visible={editorVisible}
@@ -682,21 +710,6 @@ export default function MyRoutineView() {
         onDelete={handleTaskDelete}
       />
 
-      <ApplyModeSheet
-        visible={!!pendingApplyTask}
-        onClose={() => setPendingApplyTask(null)}
-        onSelect={() => applyPendingTask()}
-      />
-
-      <DayModelEditorSheet
-        visible={modelEditorVisible}
-        model={editingModel}
-        onClose={() => {
-          setModelEditorVisible(false);
-          setEditingModel(null);
-        }}
-        onSave={saveModel}
-      />
     </View>
   );
 }
@@ -723,10 +736,7 @@ function SpiritualTypePickerSheet({
   if (!visible) return null;
 
   return (
-    <Modal transparent visible animationType="fade" onRequestClose={onClose}>
-      <View style={s.sheetOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={s.sheetShell}>
+    <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheetShell} keyboardAware>
           <View style={s.sheetHandle} />
           <View style={s.sheetHeader}>
             <TouchableOpacity onPress={onClose} activeOpacity={0.84} style={s.sheetHeaderIcon}>
@@ -749,9 +759,7 @@ function SpiritualTypePickerSheet({
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    </SmoothBottomSheet>
   );
 }
 
@@ -775,25 +783,29 @@ function RoutineTaskEditorSheet({
   const [title, setTitle] = useState('');
   const [level, setLevel] = useState<RoutineLevel>(1);
   const [type, setType] = useState<SpiritualType>('prayer');
-  const [icon, setIcon] = useState<RoutineIconName>('Sparkles');
+  const [icon, setIcon] = useState<RoutineIconName>('ListChecks');
   const [time, setTime] = useState('08:00');
   const [frequency, setFrequency] = useState<RoutineFrequency>('daily');
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
+  const [monthlyDays, setMonthlyDays] = useState<number[]>([1]);
   const [sameTimeEveryDay, setSameTimeEveryDay] = useState(true);
   const [dayTimeOverrides, setDayTimeOverrides] = useState<DayOverride[]>([]);
   const [notificationMode, setNotificationMode] = useState<NotificationMode>('none');
   const [reminderMinutes, setReminderMinutes] = useState(15);
+  const [showAllRoutineIcons, setShowAllRoutineIcons] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
+    setShowAllRoutineIcons(false);
     if (task) {
       setTitle(task.title);
       setLevel(task.level);
       setType(task.type);
-      setIcon(task.icon ?? 'Sparkles');
+      setIcon(task.icon ?? 'ListChecks');
       setTime(task.time);
       setFrequency(task.frequency);
       setSelectedDays(task.selectedDays ?? []);
+      setMonthlyDays(task.monthlyDays ?? [1]);
       setSameTimeEveryDay(task.sameTimeEveryDay);
       setDayTimeOverrides(task.dayTimeOverrides ?? []);
       setNotificationMode(task.notificationMode);
@@ -804,10 +816,11 @@ function RoutineTaskEditorSheet({
     setTitle('');
     setLevel(defaultLevel ?? 1);
     setType(defaultType ?? 'prayer');
-    setIcon('Sparkles');
+    setIcon('ListChecks');
     setTime('08:00');
     setFrequency('daily');
     setSelectedDays([]);
+    setMonthlyDays([1]);
     setSameTimeEveryDay(true);
     setDayTimeOverrides([]);
     setNotificationMode('none');
@@ -826,6 +839,7 @@ function RoutineTaskEditorSheet({
     time,
     frequency,
     selectedDays: frequency === 'specific_days' ? selectedDays : undefined,
+    monthlyDays: frequency === 'monthly' ? monthlyDays : undefined,
     sameTimeEveryDay,
     dayTimeOverrides: sameTimeEveryDay ? undefined : dayTimeOverrides,
     notificationMode,
@@ -833,10 +847,21 @@ function RoutineTaskEditorSheet({
   };
 
   const activeDays = getActiveDays(draftTask);
+  const activeTaskIndexes = getActiveTaskIndexesForFrequency(frequency, selectedDays);
+  const selectedDayIndexes = selectedDaysToTaskIndexes(selectedDays);
+  const dayTimes = overridesToTaskDayTimes(dayTimeOverrides);
+  const allowPerDayTimes = frequency !== 'monthly' && (frequency !== 'specific_days' || selectedDays.length > 0);
+  const compactRoutineIcons = ROUTINE_ICONS.slice(0, VISIBLE_ROUTINE_ICON_COUNT);
+  const selectedRoutineIcon = ROUTINE_ICONS.find(item => item.id === icon);
+  const visibleRoutineIcons = showAllRoutineIcons
+    ? ROUTINE_ICONS
+    : compactRoutineIcons.some(item => item.id === icon) || !selectedRoutineIcon
+      ? compactRoutineIcons
+      : [...compactRoutineIcons.slice(0, VISIBLE_ROUTINE_ICON_COUNT - 1), selectedRoutineIcon];
 
   const save = () => {
     if (!title.trim()) return;
-    const normalizedOverrides = sameTimeEveryDay
+    const normalizedOverrides = sameTimeEveryDay || !allowPerDayTimes
       ? undefined
       : activeDays.map(day => ({
           jsDay: day.jsDay,
@@ -844,6 +869,9 @@ function RoutineTaskEditorSheet({
         }));
     onSave({
       ...draftTask,
+      sameTimeEveryDay: allowPerDayTimes ? sameTimeEveryDay : true,
+      selectedDays: frequency === 'specific_days' ? selectedDays : undefined,
+      monthlyDays: frequency === 'monthly' ? monthlyDays : undefined,
       dayTimeOverrides: normalizedOverrides,
     });
   };
@@ -851,10 +879,7 @@ function RoutineTaskEditorSheet({
   if (!visible) return null;
 
   return (
-    <Modal transparent visible animationType="slide" onRequestClose={onClose}>
-      <View style={s.sheetOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={s.sheetShell}>
+    <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheetShell} keyboardAware>
           <View style={s.sheetHandle} />
 
           <View style={s.editorHeader}>
@@ -914,7 +939,7 @@ function RoutineTaskEditorSheet({
               <View style={s.editorBlock}>
                 <Text style={s.mutedLabel}>Icon</Text>
                 <View style={s.iconGrid}>
-                  {ROUTINE_ICONS.map(item => {
+                  {visibleRoutineIcons.map(item => {
                     const active = icon === item.id;
                     return (
                       <TouchableOpacity key={item.id} onPress={() => setIcon(item.id)} activeOpacity={0.84} style={[s.iconChip, active && s.iconChipActive]}>
@@ -924,115 +949,72 @@ function RoutineTaskEditorSheet({
                     );
                   })}
                 </View>
+                {ROUTINE_ICONS.length > VISIBLE_ROUTINE_ICON_COUNT && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      animateRoutineLayoutChange();
+                      setShowAllRoutineIcons(value => !value);
+                    }}
+                    activeOpacity={0.84}
+                    style={s.viewMoreIconsBtn}
+                  >
+                    <Text style={s.viewMoreIconsText}>{showAllRoutineIcons ? 'View Less' : 'View More'}</Text>
+                    <View style={showAllRoutineIcons ? s.viewMoreIconOpen : undefined}>
+                      <ChevronDown s={15} c="#8B909A" />
+                    </View>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
 
             <View style={s.editorBlock}>
-              <Text style={s.mutedLabel}>Schedule</Text>
+              <TaskFrequencyEditor
+                frequency={frequency}
+                selectedDays={selectedDayIndexes}
+                monthlyDays={monthlyDays}
+                onFrequencyChange={nextFrequency => {
+                  animateRoutineLayoutChange();
+                  setFrequency(nextFrequency);
+                  if (nextFrequency === 'daily') setSelectedDays([]);
+                  if (nextFrequency === 'weekdays') setSelectedDays([1, 2, 3, 4, 5]);
+                  if (nextFrequency === 'weekends') setSelectedDays([6, 0]);
+                  if (nextFrequency === 'monthly') setSameTimeEveryDay(true);
+                }}
+                onSelectedDaysChange={indexes => setSelectedDays(taskIndexesToSelectedDays(indexes))}
+                onMonthlyDaysChange={setMonthlyDays}
+                accent={accent}
+                label="Schedule"
+              />
+            </View>
 
-              <View style={s.scheduleCard}>
-                <Text style={s.scheduleLabel}>Time</Text>
-                <TextInput
-                  value={time}
-                  onChangeText={setTime}
-                  placeholder="08:00"
-                  placeholderTextColor="#D1D5DB"
-                  style={s.timeInput}
-                />
+            <View style={s.editorBlock}>
+              <TaskTimeEditor
+                time={time}
+                sameTimeEveryDay={sameTimeEveryDay}
+                dayTimes={dayTimes}
+                onTimeChange={setTime}
+                onSameTimeEveryDayChange={nextValue => {
+                  animateRoutineLayoutChange();
+                  setSameTimeEveryDay(nextValue);
+                }}
+                onDayTimesChange={nextTimes => setDayTimeOverrides(taskDayTimesToOverrides(nextTimes, activeTaskIndexes))}
+                activeDayIndexes={activeTaskIndexes}
+                allowPerDayTimes={allowPerDayTimes}
+                accent={accent}
+                softBg={isSpiritual ? '#FFFBEB' : '#F9FAFB'}
+                borderColor={isSpiritual ? 'rgba(197,160,89,0.24)' : '#E5E7EB'}
+                mutedColor="#8B909A"
+              />
+            </View>
 
-                <Text style={[s.scheduleLabel, { marginTop: 16 }]}>Frequency</Text>
-                <View style={s.frequencyRow}>
-                  {FREQUENCY_OPTIONS.map(option => {
-                    const active = frequency === option.value;
-                    return (
-                      <TouchableOpacity key={option.value} onPress={() => setFrequency(option.value)} activeOpacity={0.84} style={[s.frequencyChip, active && { borderColor: accent, backgroundColor: `${accent}10` }]}>
-                        <Text style={[s.frequencyChipText, active && { color: accent }]}>{option.label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {frequency === 'specific_days' && (
-                  <>
-                    <Text style={[s.scheduleLabel, { marginTop: 16 }]}>Days</Text>
-                    <View style={s.daysRow}>
-                      {DAY_OPTIONS.map(day => {
-                        const active = selectedDays.includes(day.key);
-                        return (
-                          <TouchableOpacity
-                            key={day.key}
-                            onPress={() => setSelectedDays(current => active ? current.filter(item => item !== day.key) : [...current, day.key])}
-                            activeOpacity={0.84}
-                            style={[s.dayChip, active && { borderColor: accent, backgroundColor: `${accent}12` }]}
-                          >
-                            <Text style={[s.dayChipText, active && { color: accent }]}>{day.label}</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  </>
-                )}
-
-                <View style={s.sameTimeRow}>
-                  <View>
-                    <Text style={s.scheduleLabel}>Same time every day</Text>
-                    <Text style={s.scheduleHint}>Turn off to place different times on different days.</Text>
-                  </View>
-                  <Switch value={sameTimeEveryDay} onValueChange={setSameTimeEveryDay} trackColor={{ true: `${accent}55`, false: '#E5E7EB' }} thumbColor={sameTimeEveryDay ? accent : '#FFFFFF'} />
-                </View>
-
-                {!sameTimeEveryDay && activeDays.length > 0 && (
-                  <View style={s.overrideList}>
-                    {activeDays.map(day => (
-                      <View key={day.jsDay} style={s.overrideRow}>
-                        <Text style={s.overrideLabel}>{day.label}</Text>
-                        <TextInput
-                          value={dayTimeOverrides.find(item => item.jsDay === day.jsDay)?.time ?? time}
-                          onChangeText={value => setDayTimeOverrides(current => {
-                            const existing = current.find(item => item.jsDay === day.jsDay);
-                            if (existing) {
-                              return current.map(item => item.jsDay === day.jsDay ? { ...item, time: value } : item);
-                            }
-                            return [...current, { jsDay: day.jsDay, time: value }];
-                          })}
-                          placeholder="08:00"
-                          placeholderTextColor="#D1D5DB"
-                          style={s.overrideInput}
-                        />
-                      </View>
-                    ))}
-                  </View>
-                )}
-
-                <Text style={[s.scheduleLabel, { marginTop: 16 }]}>Notifications</Text>
-                <View style={s.notificationRow}>
-                  {([
-                    { key: 'none' as NotificationMode, label: 'None' },
-                    { key: 'normal' as NotificationMode, label: 'At time' },
-                    { key: 'double' as NotificationMode, label: 'Reminder' },
-                  ]).map(option => {
-                    const active = notificationMode === option.key;
-                    return (
-                      <TouchableOpacity key={option.key} onPress={() => setNotificationMode(option.key)} activeOpacity={0.84} style={[s.notificationChip, active && { borderColor: accent, backgroundColor: `${accent}10` }]}>
-                        <Text style={[s.notificationChipText, active && { color: accent }]}>{option.label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {notificationMode === 'double' && (
-                  <View style={s.reminderRow}>
-                    {[10, 15, 30].map(value => {
-                      const active = reminderMinutes === value;
-                      return (
-                        <TouchableOpacity key={value} onPress={() => setReminderMinutes(value)} activeOpacity={0.84} style={[s.reminderChip, active && { backgroundColor: accent }]}>
-                          <Text style={[s.reminderChipText, active && { color: '#FFFFFF' }]}>{value} min</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                )}
-              </View>
+            <View style={s.editorBlock}>
+              <NotificationSettings
+                mode={notificationMode}
+                reminderMinutes={reminderMinutes}
+                onModeChange={setNotificationMode}
+                onReminderChange={setReminderMinutes}
+                accent={accent}
+              />
             </View>
 
             {task && (
@@ -1042,136 +1024,7 @@ function RoutineTaskEditorSheet({
               </TouchableOpacity>
             )}
           </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-function ApplyModeSheet({
-  visible,
-  onClose,
-  onSelect,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onSelect: (mode: 'today' | 'tomorrow') => void;
-}) {
-  if (!visible) return null;
-
-  return (
-    <Modal transparent visible animationType="fade" onRequestClose={onClose}>
-      <View style={s.overlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={s.applyCard}>
-          <Text style={s.applyTitle}>Apply schedule change</Text>
-          <Text style={s.applyBody}>
-            This activity is already part of your routine. Do you want the new timing to start today or from tomorrow?
-          </Text>
-          <View style={s.applyChoices}>
-            <TouchableOpacity onPress={() => onSelect('today')} activeOpacity={0.84} style={s.applyChoice}>
-              <Text style={s.applyChoiceTitle}>Today</Text>
-              <Text style={s.applyChoiceBody}>Apply immediately.</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => onSelect('tomorrow')} activeOpacity={0.84} style={s.applyChoice}>
-              <Text style={s.applyChoiceTitle}>Tomorrow</Text>
-              <Text style={s.applyChoiceBody}>Keep today unchanged.</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-function DayModelEditorSheet({
-  visible,
-  model,
-  onClose,
-  onSave,
-}: {
-  visible: boolean;
-  model: DayModel | null;
-  onClose: () => void;
-  onSave: (model: DayModel) => void;
-}) {
-  const [name, setName] = useState('');
-  const [color, setColor] = useState(MODEL_COLORS[0]);
-  const [taskCount, setTaskCount] = useState('4');
-
-  useEffect(() => {
-    if (!visible) return;
-    setName(model?.name ?? '');
-    setColor(model?.color ?? MODEL_COLORS[0]);
-    setTaskCount(String(model?.taskCount ?? 4));
-  }, [model, visible]);
-
-  if (!visible) return null;
-
-  return (
-    <Modal transparent visible animationType="slide" onRequestClose={onClose}>
-      <View style={s.sheetOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={s.sheetShell}>
-          <View style={s.sheetHandle} />
-          <View style={s.editorHeader}>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.84} style={s.sheetHeaderIcon}>
-              <X s={22} c="#9CA3AF" />
-            </TouchableOpacity>
-            <Text style={s.editorHeaderTitle}>{model ? 'Edit Day Model' : 'New Day Model'}</Text>
-            <TouchableOpacity
-              onPress={() => onSave({
-                id: model?.id ?? `model_${Date.now()}`,
-                name: name.trim() || 'Untitled Model',
-                color,
-                taskCount: Number.parseInt(taskCount || '0', 10) || 0,
-              })}
-              activeOpacity={0.84}
-              style={[s.saveCircle, { backgroundColor: C.gold }]}
-            >
-              <CheckSmall s={18} c="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView contentContainerStyle={s.editorContent} showsVerticalScrollIndicator={false}>
-            <View style={s.editorBlock}>
-              <Text style={[s.editorBlockLabel, { color: C.gold }]}>Model Name</Text>
-              <TextInput
-                value={name}
-                onChangeText={setName}
-                placeholder="e.g. Travel Day"
-                placeholderTextColor="#D1D5DB"
-                style={s.titleInput}
-              />
-            </View>
-
-            <View style={s.editorBlock}>
-              <Text style={s.mutedLabel}>Accent</Text>
-              <View style={s.colorRow}>
-                {MODEL_COLORS.map(item => {
-                  const active = color === item;
-                  return (
-                    <TouchableOpacity key={item} onPress={() => setColor(item)} activeOpacity={0.84} style={[s.colorDot, { backgroundColor: item }, active && s.colorDotActive]} />
-                  );
-                })}
-              </View>
-            </View>
-
-            <View style={s.editorBlock}>
-              <Text style={s.mutedLabel}>Tasks</Text>
-              <TextInput
-                value={taskCount}
-                onChangeText={setTaskCount}
-                keyboardType="number-pad"
-                placeholder="4"
-                placeholderTextColor="#D1D5DB"
-                style={s.timeInput}
-              />
-            </View>
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    </SmoothBottomSheet>
   );
 }
 
@@ -1343,35 +1196,6 @@ const s = StyleSheet.create({
     backgroundColor: '#FFFDF7',
   },
   viewAllChallengesText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, color: C.gold, textTransform: 'uppercase' },
-  modelGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingTop: 12 },
-  modelCard: {
-    width: '47%',
-    borderRadius: 22,
-    backgroundColor: '#FFFFFF',
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#F0EDE6',
-    borderLeftWidth: 4,
-  },
-  modelTitle: { fontFamily: F.serifMedium, fontSize: 16, color: '#111827' },
-  modelMeta: { marginTop: 8, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.4, color: '#D1D5DB', textTransform: 'uppercase' },
-  newModelCard: {
-    width: '47%',
-    borderRadius: 22,
-    borderWidth: 1.5,
-    borderColor: '#E9D6AF',
-    borderStyle: 'dashed',
-    padding: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 110,
-    backgroundColor: '#FFFBEB',
-    gap: 8,
-  },
-  newModelCircle: { width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: '#E9D6AF', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
-  newModelText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.5, color: C.gold, textTransform: 'uppercase' },
-  overlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.34)' },
-  sheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.36)' },
   sheetShell: { maxHeight: '88%', borderTopLeftRadius: 32, borderTopRightRadius: 32, backgroundColor: '#FAFAFA', paddingBottom: 24 },
   sheetHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginTop: 12, marginBottom: 8 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
@@ -1403,6 +1227,9 @@ const s = StyleSheet.create({
   iconChip: { width: '22%', minHeight: 74, borderRadius: 18, backgroundColor: '#F7F7F5', borderWidth: 1, borderColor: '#F2F1EC', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 6 },
   iconChipActive: { backgroundColor: '#111827', borderColor: '#111827' },
   iconChipText: { fontFamily: F.sansBold, fontSize: 7, letterSpacing: 1.1, color: '#9CA3AF', textTransform: 'uppercase', textAlign: 'center' },
+  viewMoreIconsBtn: { marginTop: 10, minHeight: 38, borderRadius: 16, borderWidth: 1, borderStyle: 'dashed', borderColor: '#D6D3D1', backgroundColor: '#FAFAFA', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  viewMoreIconsText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.7, color: '#6B7280', textTransform: 'uppercase' },
+  viewMoreIconOpen: { transform: [{ rotate: '180deg' }] },
   scheduleCard: { borderRadius: 22, backgroundColor: '#FAFAFA', borderWidth: 1, borderColor: '#F2F1EC', padding: 16 },
   scheduleLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5, color: '#A8A29E', textTransform: 'uppercase' },
   scheduleHint: { marginTop: 4, fontFamily: F.serif, fontSize: 12, lineHeight: 18, color: '#A8A29E', maxWidth: 220 },
@@ -1426,14 +1253,4 @@ const s = StyleSheet.create({
   reminderChipText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.2, color: '#6B7280', textTransform: 'uppercase' },
   deleteBtn: { marginTop: 4, minHeight: 50, borderRadius: 18, backgroundColor: '#FEF2F2', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   deleteBtnText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, color: '#EF4444', textTransform: 'uppercase' },
-  applyCard: { width: '100%', maxWidth: 340, borderRadius: 28, backgroundColor: '#FFFFFF', padding: 22 },
-  applyTitle: { fontFamily: F.serifMedium, fontSize: 24, color: '#111827', textAlign: 'center' },
-  applyBody: { marginTop: 8, fontFamily: F.serif, fontSize: 15, lineHeight: 22, color: '#9CA3AF', textAlign: 'center' },
-  applyChoices: { gap: 10, marginTop: 20 },
-  applyChoice: { borderRadius: 20, borderWidth: 1, borderColor: '#F0EDE6', backgroundColor: '#FAFAFA', padding: 16 },
-  applyChoiceTitle: { fontFamily: F.serifMedium, fontSize: 18, color: '#111827' },
-  applyChoiceBody: { marginTop: 4, fontFamily: F.sans, fontSize: 12, color: '#9CA3AF' },
-  colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  colorDot: { width: 32, height: 32, borderRadius: 16 },
-  colorDotActive: { shadowColor: '#000', shadowOpacity: 0.15, shadowOffset: { width: 0, height: 4 }, shadowRadius: 10, elevation: 3 },
 });

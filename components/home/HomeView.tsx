@@ -1,5 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import {
+  Animated,
+  PanResponder,
   Platform,
   ScrollView,
   StyleSheet,
@@ -8,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -33,19 +36,32 @@ import { useReadingList } from '@/components/library/ReadingListContext';
 import { useInnerTools } from '@/components/inner-tools/InnerToolsContext';
 import { HabitItem, INITIAL_HABITS } from '@/components/habits/habitData';
 import { useChallenges } from '@/components/challenges/ChallengesContext';
+import { useTasks } from '@/components/tasks/TaskProvider';
+import {
+  getEffectiveTaskTime,
+  getLocalDateKey,
+  parseTaskTimeToDate,
+  scheduleMatchesDate,
+} from '@/components/tasks/taskScheduler';
+import type { TaskDefinition } from '@/components/tasks/taskTypes';
 
 type HomeCard = {
   id: string;
+  instanceId?: string;
+  instanceStatus?: string;
   task: TaskData;
   streak?: number;
-  route?: '/prayer' | '/habits' | '/reading-list' | '/gratitude' | '/challenges';
+  route?: string;
+  backend?: boolean;
 };
 
 function isScheduledToday(
-  frequency?: 'daily' | 'weekdays' | 'weekends' | 'specific_days',
+  frequency?: 'daily' | 'weekdays' | 'weekends' | 'specific_days' | 'monthly',
   selectedDays?: number[],
+  monthlyDays?: number[],
 ) {
   const day = new Date().getDay();
+  const date = new Date().getDate();
 
   switch (frequency) {
     case 'weekdays':
@@ -54,6 +70,8 @@ function isScheduledToday(
       return day === 0 || day === 6;
     case 'specific_days':
       return (selectedDays ?? []).includes(day);
+    case 'monthly':
+      return (monthlyDays ?? [1]).includes(date);
     case 'daily':
     default:
       return true;
@@ -61,8 +79,9 @@ function isScheduledToday(
 }
 
 function getScheduleLabel(
-  frequency?: 'daily' | 'weekdays' | 'weekends' | 'specific_days',
+  frequency?: 'daily' | 'weekdays' | 'weekends' | 'specific_days' | 'monthly',
   selectedDays?: number[],
+  monthlyDays?: number[],
 ) {
   switch (frequency) {
     case 'weekdays':
@@ -71,10 +90,17 @@ function getScheduleLabel(
       return 'Weekends';
     case 'specific_days':
       return selectedDays && selectedDays.length > 0 ? `${selectedDays.length} days` : 'Custom schedule';
+    case 'monthly':
+      return monthlyDays && monthlyDays.length > 0 ? `Monthly ${monthlyDays.join(', ')}` : 'Monthly';
     case 'daily':
     default:
       return 'Daily';
   }
+}
+
+function getTodayTaskDayIndex() {
+  const jsDay = new Date().getDay();
+  return jsDay === 0 ? 6 : jsDay - 1;
 }
 
 function getHabitState(habit: HabitItem): TaskState {
@@ -95,7 +121,90 @@ function getHabitIconName(habit: HabitItem): TaskData['habitIconName'] {
   return 'Heart';
 }
 
-function HomeHeader() {
+function shiftMonth(dateKey: string, delta: number) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const next = new Date(year, month - 1 + delta, 1, 12, 0, 0, 0);
+  const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(day, lastDay));
+  return getLocalDateKey(next);
+}
+
+function addLocalDays(dateKey: string, days: number) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const next = new Date(year, month - 1, day, 12, 0, 0, 0);
+  next.setDate(next.getDate() + days);
+  return getLocalDateKey(next);
+}
+
+function getMonthMeta(dateKey: string) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = new Date(year, month - 1, day, 12, 0, 0, 0);
+  return {
+    month: date.toLocaleDateString('en-US', { month: 'long' }),
+    year: String(date.getFullYear()),
+  };
+}
+
+function getDateFromKey(dateKey: string) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(year, month - 1, day, 12, 0, 0, 0);
+}
+
+function getOrdinalDay(day: number) {
+  const teen = day % 100;
+  if (teen >= 11 && teen <= 13) return `${day}th`;
+  switch (day % 10) {
+    case 1:
+      return `${day}st`;
+    case 2:
+      return `${day}nd`;
+    case 3:
+      return `${day}rd`;
+    default:
+      return `${day}th`;
+  }
+}
+
+function getTaskSectionTitle(selectedDate: string, todayKey: string) {
+  if (selectedDate === todayKey) return "Today's Tasks";
+  if (selectedDate === addLocalDays(todayKey, -1)) return "Yesterday's Tasks";
+  if (selectedDate === addLocalDays(todayKey, 1)) return "Tomorrow's Tasks";
+  const date = getDateFromKey(selectedDate);
+  const month = date.toLocaleDateString('en-US', { month: 'short' });
+  return `Tasks for ${month} ${getOrdinalDay(date.getDate())}`;
+}
+
+function firstScheduledTaskToday(tasks: TaskDefinition[], todayKey: string) {
+  return tasks
+    .filter(task => task.status === 'active' && scheduleMatchesDate(task.schedule, todayKey))
+    .map(task => parseTaskTimeToDate(todayKey, getEffectiveTaskTime(task.schedule, todayKey)))
+    .filter((date): date is Date => !!date)
+    .sort((a, b) => a.getTime() - b.getTime())[0];
+}
+
+function canMutateTaskDate(selectedDate: string, tasks: TaskDefinition[]) {
+  const now = new Date();
+  const todayKey = getLocalDateKey(now);
+  if (selectedDate === todayKey) return true;
+
+  const yesterdayKey = addLocalDays(todayKey, -1);
+  if (selectedDate !== yesterdayKey) return false;
+
+  const firstToday = firstScheduledTaskToday(tasks, todayKey);
+  return firstToday ? now.getTime() < firstToday.getTime() : true;
+}
+
+function HomeHeader({
+  selectedDate,
+  todayKey,
+  onSelectDate,
+}: {
+  selectedDate: string;
+  todayKey: string;
+  onSelectDate: (dateKey: string) => void;
+}) {
+  const monthMeta = getMonthMeta(selectedDate);
+
   return (
     <>
       <View style={h.row}>
@@ -103,19 +212,23 @@ function HomeHeader() {
           <Settings s={18} c={C.text} />
         </TouchableOpacity>
         <View style={h.monthWrap}>
-          <ChevronLeft s={18} c={C.textMuted} />
+          <TouchableOpacity activeOpacity={0.72} onPress={() => onSelectDate(shiftMonth(selectedDate, -1))} style={h.monthNavBtn}>
+            <ChevronLeft s={18} c={C.textMuted} />
+          </TouchableOpacity>
           <View style={{ alignItems: 'center' }}>
-            <Text style={h.month}>April</Text>
-            <Text style={h.year}>2026</Text>
+            <Text style={h.month}>{monthMeta.month}</Text>
+            <Text style={h.year}>{monthMeta.year}</Text>
           </View>
-          <ChevronRight s={18} c={C.textMuted} />
+          <TouchableOpacity activeOpacity={0.72} onPress={() => onSelectDate(shiftMonth(selectedDate, 1))} style={h.monthNavBtn}>
+            <ChevronRight s={18} c={C.textMuted} />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity style={h.iconBtn} activeOpacity={0.7}>
+        <TouchableOpacity style={h.iconBtn} activeOpacity={0.7} onPress={() => onSelectDate(todayKey)}>
           <Calendar s={18} c={C.text} />
         </TouchableOpacity>
       </View>
 
-      <DateStrip />
+      <DateStrip selectedKey={selectedDate} todayKey={todayKey} onSelect={onSelectDate} />
 
       <View style={h.quoteWrap}>
         <Text style={h.quote}>
@@ -134,6 +247,7 @@ const h = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 4, paddingBottom: 4 },
   iconBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#f5f4f0', alignItems: 'center', justifyContent: 'center' },
   monthWrap: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  monthNavBtn: { width: 28, height: 34, alignItems: 'center', justifyContent: 'center' },
   month: { fontFamily: F.serifMedium, fontSize: 28, color: C.red, lineHeight: 32 },
   year: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, color: C.textMuted, marginTop: 3 },
   quoteWrap: { paddingHorizontal: 30, paddingTop: 18, paddingBottom: 6, alignItems: 'center' },
@@ -170,14 +284,41 @@ export default function HomeView() {
     gratitudeTaskEnabled,
     gratitudeTaskFrequency,
     gratitudeTaskTime,
+    gratitudeTaskSameTimeEveryDay,
+    gratitudeTaskDayTimes,
   } = useInnerTools();
   const { activeChallenges, pausedChallenges } = useChallenges();
+  const {
+    ready: taskBackendReady,
+    selectedDate,
+    tasks: taskDefinitions,
+    listItems: backendTasks,
+    refresh: refreshTasks,
+    completeInstance,
+    skipInstance,
+    resetInstance,
+  } = useTasks();
   const topPadding = Platform.OS === 'web'
     ? 10
     : Math.max(insets.top, 0) + 4;
 
+  const todayKey = getLocalDateKey();
+  const canMutateSelectedDate = canMutateTaskDate(selectedDate, taskDefinitions);
+
+  const selectDate = useCallback((dateKey: string) => {
+    void refreshTasks(dateKey);
+  }, [refreshTasks]);
+
+  const refreshTasksRef = useRef(refreshTasks);
+  refreshTasksRef.current = refreshTasks;
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshTasksRef.current(getLocalDateKey());
+    }, []),
+  );
+
   const homeCards = useMemo<HomeCard[]>(() => {
-    const todayKey = new Date().toISOString().split('T')[0];
     const featuredHabit = INITIAL_HABITS.find(habit => habit.active && habit.steps.some(step => !step.completedToday))
       ?? INITIAL_HABITS.find(habit => habit.active)
       ?? INITIAL_HABITS[0];
@@ -189,9 +330,12 @@ export default function HomeView() {
       ?? books.find(book => book.showOnHome)
       ?? books.find(book => book.status === 'reading');
     const readingScheduled = featuredReading
-      ? isScheduledToday(featuredReading.taskFrequency, featuredReading.taskSelectedDays)
+      ? isScheduledToday(featuredReading.taskFrequency, featuredReading.taskSelectedDays, featuredReading.taskMonthlyDays)
       : false;
     const readingDoneToday = !!(featuredReading?.lastSessionAt && dateKey(featuredReading.lastSessionAt) === todayKey);
+    const readingDisplayTime = featuredReading?.taskSameTimeEveryDay === false
+      ? featuredReading.taskDayTimes?.[getTodayTaskDayIndex()] ?? featuredReading.taskTime
+      : featuredReading?.taskTime;
 
     const gratitudeTodayCount = gratitudeEntries.filter(
       entry => entry.kind === 'daily' && entry.date === todayKey,
@@ -199,10 +343,13 @@ export default function HomeView() {
     const gratitudeScheduled = gratitudeTaskEnabled
       && isScheduledToday(gratitudeTaskFrequency, gratitudeTaskFrequency === 'daily' ? undefined : [1, 2, 3, 4, 5]);
     const gratitudeDoneToday = gratitudeTodayCount >= 3;
+    const gratitudeDisplayTime = gratitudeTaskSameTimeEveryDay
+      ? gratitudeTaskTime
+      : gratitudeTaskDayTimes[getTodayTaskDayIndex()] ?? gratitudeTaskTime;
 
     const primaryChallenge = activeChallenges[0] ?? pausedChallenges[0];
 
-    return [
+    const legacyCards: HomeCard[] = [
       {
         id: 'spiritual-routine',
         route: '/prayer',
@@ -248,9 +395,9 @@ export default function HomeView() {
         task: {
           variant: 'routine',
           title: featuredReading?.title ?? 'Reading List',
-          time: featuredReading?.taskTime,
+          time: readingDisplayTime,
           subtitle: featuredReading
-            ? getScheduleLabel(featuredReading.taskFrequency, featuredReading.taskSelectedDays)
+            ? getScheduleLabel(featuredReading.taskFrequency, featuredReading.taskSelectedDays, featuredReading.taskMonthlyDays)
             : 'Add a reading task',
           state: featuredReading ? (readingDoneToday ? 'done' : readingScheduled ? 'active' : 'locked') : 'locked',
           type: 'reading',
@@ -262,7 +409,7 @@ export default function HomeView() {
         task: {
           variant: 'routine',
           title: 'Gratitude',
-          time: gratitudeTaskEnabled ? gratitudeTaskTime : undefined,
+          time: gratitudeTaskEnabled ? gratitudeDisplayTime : undefined,
           subtitle: gratitudeTaskEnabled
             ? getScheduleLabel(gratitudeTaskFrequency)
             : 'Set as daily task',
@@ -293,16 +440,77 @@ export default function HomeView() {
         },
       },
     ];
-  }, [activeChallenges, books, gratitudeEntries, gratitudeTaskEnabled, gratitudeTaskFrequency, gratitudeTaskTime, pausedChallenges]);
 
-  const scheduledToday = homeCards.filter(card => card.task.state !== 'locked').length;
-  const completedToday = homeCards.filter(card => card.task.state === 'done').length;
+    if (!taskBackendReady) return legacyCards.filter(() => false);
+
+    if (backendTasks.length > 0) {
+      return backendTasks.map(item => ({
+        id: item.instance.id,
+        instanceId: item.instance.id,
+        instanceStatus: item.instance.status,
+        route: item.route,
+        task: item.card,
+        backend: true,
+      }));
+    }
+
+    return [];
+  }, [
+    activeChallenges,
+    backendTasks,
+    books,
+    gratitudeEntries,
+    gratitudeTaskDayTimes,
+    gratitudeTaskEnabled,
+    gratitudeTaskFrequency,
+    gratitudeTaskSameTimeEveryDay,
+    gratitudeTaskTime,
+    pausedChallenges,
+    taskBackendReady,
+    todayKey,
+  ]);
+
+  const scheduledToday = backendTasks.length > 0
+    ? homeCards.filter(card => card.task.state !== 'locked').length
+    : 0;
+  const completedToday = backendTasks.length > 0
+    ? homeCards.filter(card => card.task.state === 'done').length
+    : 0;
   const progressPct = scheduledToday === 0 ? 0 : Math.round((completedToday / scheduledToday) * 100);
-  const statusLine = scheduledToday === 0
-    ? 'Set up tasks to fill your Home flow'
-    : completedToday > 0
-      ? `${completedToday} of ${scheduledToday} completed`
-      : `${scheduledToday} active today`;
+  const statusLine = !taskBackendReady
+    ? 'Loading your routine...'
+    : backendTasks.length === 0 && taskDefinitions.length > 0
+      ? 'No tasks for this date'
+      : scheduledToday === 0
+        ? 'Set up tasks to fill your Home flow'
+        : completedToday > 0
+          ? `${completedToday} of ${scheduledToday} completed`
+          : selectedDate === todayKey
+            ? `${scheduledToday} active today`
+            : `${scheduledToday} tasks scheduled`;
+
+  const hasBackendTasks = taskBackendReady && taskDefinitions.some(task => task.status !== 'archived');
+  const taskSectionTitle = getTaskSectionTitle(selectedDate, todayKey);
+
+  const toggleTaskInstance = useCallback((card: HomeCard, state: TaskState) => {
+    if (!card.instanceId || !canMutateSelectedDate || state === 'locked') return;
+    if (state === 'done') {
+      void resetInstance(card.instanceId);
+      return;
+    }
+    void completeInstance(card.instanceId);
+  }, [canMutateSelectedDate, completeInstance, resetInstance]);
+
+  const skipTaskInstance = useCallback((card: HomeCard, state: TaskState) => {
+    if (
+      !card.instanceId ||
+      !canMutateSelectedDate ||
+      state === 'locked' ||
+      state === 'done' ||
+      state === 'skipped'
+    ) return;
+    void skipInstance(card.instanceId);
+  }, [canMutateSelectedDate, skipInstance]);
 
   return (
     <ScrollView
@@ -313,12 +521,12 @@ export default function HomeView() {
       }}
       showsVerticalScrollIndicator={false}
     >
-      <HomeHeader />
+      <HomeHeader selectedDate={selectedDate} todayKey={todayKey} onSelectDate={selectDate} />
 
       <View style={s.tasksWrap}>
         <View style={s.tasksHead}>
           <View>
-            <Text style={s.tasksTitle}>{"Today's Tasks"}</Text>
+            <Text style={s.tasksTitle}>{taskSectionTitle}</Text>
             <Text style={s.tasksSub}>{statusLine}</Text>
           </View>
           <View style={s.progressWrap}>
@@ -326,45 +534,86 @@ export default function HomeView() {
           </View>
         </View>
 
+        {!hasBackendTasks && taskBackendReady && (
+          <TouchableOpacity activeOpacity={0.84} onPress={() => router.push('/my-routine')} style={s.emptyTaskCard}>
+            <Text style={s.emptyTaskTitle}>No tasks yet</Text>
+            <Text style={s.emptyTaskBody}>Create your first routine, prayer, reading, habit, or challenge task.</Text>
+          </TouchableOpacity>
+        )}
+
+        {hasBackendTasks && taskBackendReady && homeCards.length === 0 && (
+          <View style={s.emptyTaskCard}>
+            <Text style={s.emptyTaskTitle}>No tasks for this date</Text>
+            <Text style={s.emptyTaskBody}>Choose another day or adjust your routine schedule.</Text>
+          </View>
+        )}
+
         <View style={s.cardsList}>
           {homeCards.map(card => {
-            const content = card.id === 'reading-task'
+            const displayTask = card.backend
+              ? canMutateSelectedDate && card.instanceStatus === 'missed'
+                ? { ...card.task, state: 'pending' as TaskState }
+                : !canMutateSelectedDate && card.task.state !== 'done' && card.task.state !== 'skipped'
+                  ? { ...card.task, state: 'locked' as TaskState }
+                  : card.task
+              : card.task;
+            const content = card.backend
+              ? <AnyTaskCard task={displayTask} streak={card.streak} />
+              : card.id === 'reading-task'
               ? (
                 <HomeReadingCard
-                  task={card.task}
-                  book={books.find(book => book.title === card.task.title)}
+                  task={displayTask}
+                  book={books.find(book => book.title === displayTask.title)}
                 />
               )
               : card.id === 'gratitude-task'
                 ? (
                   <HomeGratitudeCard
-                    task={card.task}
+                    task={displayTask}
                     blessingsToday={gratitudeEntries.filter(
-                      entry => entry.kind === 'daily' && entry.date === new Date().toISOString().split('T')[0],
+                      entry => entry.kind === 'daily' && entry.date === todayKey,
                     ).length}
                   />
                 )
-                : <AnyTaskCard task={card.task} streak={card.streak} />;
+                : <AnyTaskCard task={displayTask} streak={card.streak} />;
 
-            if (!card.route) {
-              return <View key={card.id}>{content}</View>;
-            }
+            const canToggle = !!card.instanceId && canMutateSelectedDate && displayTask.state !== 'locked';
+            const canSkip = canToggle && displayTask.state !== 'done' && displayTask.state !== 'skipped';
 
             const route = card.route;
-
-            return (
+            const cardBody = route ? (
               <TouchableOpacity
-                key={card.id}
                 activeOpacity={0.84}
-                onPress={() => router.push(route)}
+                onPress={() => router.push(route as any)}
               >
                 {content}
               </TouchableOpacity>
+            ) : (
+              <View>{content}</View>
+            );
+
+            return (
+              <SwipeTaskRow
+                key={card.id}
+                disabled={!canSkip}
+                onSkip={() => skipTaskInstance(card, displayTask.state)}
+              >
+                <View style={s.taskTouchableWrap}>
+                  {cardBody}
+                  {canToggle && (
+                    <TouchableOpacity
+                      activeOpacity={0.72}
+                      onPress={() => toggleTaskInstance(card, displayTask.state)}
+                      style={s.checkHitArea}
+                    />
+                  )}
+                </View>
+              </SwipeTaskRow>
             );
           })}
         </View>
 
-        <TouchableOpacity activeOpacity={0.82} style={{ marginTop: 8 }}>
+        <TouchableOpacity activeOpacity={0.82} style={{ marginTop: 8 }} onPress={() => router.push('/my-routine')}>
           <LinearGradient
             colors={['#FFFFFF', '#F0FDF4']}
             start={{ x: 0, y: 0 }}
@@ -405,6 +654,60 @@ export default function HomeView() {
   );
 }
 
+function SwipeTaskRow({
+  children,
+  disabled,
+  onSkip,
+}: {
+  children: React.ReactNode;
+  disabled: boolean;
+  onSkip: () => void;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+
+  const resetPosition = useCallback(() => {
+    Animated.spring(translateX, {
+      toValue: 0,
+      friction: 16,
+      tension: 170,
+      useNativeDriver: true,
+    }).start();
+  }, [translateX]);
+
+  const panResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gesture) => (
+      !disabled &&
+      Math.abs(gesture.dx) > 12 &&
+      Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25
+    ),
+    onPanResponderMove: (_, gesture) => {
+      translateX.setValue(Math.max(-92, Math.min(0, gesture.dx)));
+    },
+    onPanResponderRelease: (_, gesture) => {
+      const shouldSkip = gesture.dx < -68 || gesture.vx < -0.75;
+      if (shouldSkip) onSkip();
+      resetPosition();
+    },
+    onPanResponderTerminate: resetPosition,
+  }), [disabled, onSkip, resetPosition, translateX]);
+
+  return (
+    <View style={s.swipeWrap}>
+      {!disabled && (
+        <View pointerEvents="none" style={s.skipReveal}>
+          <Text style={s.skipRevealText}>SKIP</Text>
+        </View>
+      )}
+      <Animated.View
+        {...panResponder.panHandlers}
+        style={{ transform: [{ translateX }] }}
+      >
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
+
 function dateKey(timestamp: number) {
   return new Date(timestamp).toISOString().split('T')[0];
 }
@@ -429,7 +732,10 @@ function HomeReadingCard({
     >
       {/* Checker — indigo ring */}
       <View style={[custom.readingCheck, isDone && custom.readingCheckDone]}>
-        {isDone && <CheckSmall s={18} c="#FFFFFF" w={2.8} />}
+        {isDone
+          ? <CheckSmall s={18} c="#FFFFFF" w={2.8} />
+          : <CircleIcon s={18} c="rgba(109,40,217,0.30)" w={2} />
+        }
       </View>
 
       {/* Content */}
@@ -517,6 +823,45 @@ const s = StyleSheet.create({
   tasksSub: { fontFamily: F.sans, fontSize: 12, color: C.textMuted, marginTop: 4 },
   progressWrap: { marginTop: 8 },
   cardsList: { marginTop: 14 },
+  swipeWrap: { position: 'relative', marginBottom: 0 },
+  skipReveal: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 6,
+    width: 92,
+    borderRadius: 16,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  skipRevealText: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    letterSpacing: 1.8,
+    color: '#DC2626',
+  },
+  taskTouchableWrap: { position: 'relative' },
+  checkHitArea: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 6,
+    width: 64,
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
+  },
+  emptyTaskCard: {
+    marginTop: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E8DCC4',
+    backgroundColor: '#FFFDF8',
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+  },
+  emptyTaskTitle: { fontFamily: F.serifMedium, fontSize: 20, color: C.text },
+  emptyTaskBody: { marginTop: 5, fontFamily: F.sans, fontSize: 12, lineHeight: 18, color: C.textMuted },
   addBtn: {
     padding: 14,
     borderRadius: 16,
@@ -602,7 +947,7 @@ const custom = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 18,
     borderColor: 'rgba(109,40,217,0.14)',
-    marginBottom: 10,
+    marginBottom: 6,
   },
   readingCheck: {
     width: 36,
@@ -652,7 +997,7 @@ const custom = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#F9A8D4',
-    marginBottom: 10,
+    marginBottom: 6,
     padding: 13,
   },
   gratitudeRow: {

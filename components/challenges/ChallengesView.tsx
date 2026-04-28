@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
+import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
+import ConfirmModal from '@/components/shared/ConfirmModal';
 import {
   ArrowUpRight,
   Book,
@@ -554,11 +556,9 @@ export default function ChallengesView() {
         ) : null}
       </ScrollView>
 
-      <Modal visible={!!manageTarget} transparent animationType="fade" onRequestClose={() => setManageTarget(null)}>
-        <View style={s.modalWrap}>
-          <Pressable style={s.modalBackdrop} onPress={() => setManageTarget(null)} />
+      <SmoothBottomSheet visible={!!manageTarget} onClose={() => setManageTarget(null)} sheetStyle={s.sheet}>
           {manageTarget ? (
-            <View style={s.sheet}>
+            <>
               <View style={s.sheetHandle} />
               <View style={s.sheetHead}>
                 <Text style={s.sheetTitle}>{manageTarget.title}</Text>
@@ -617,16 +617,13 @@ export default function ChallengesView() {
                 <Trash2 s={15} c="#DC2626" />
                 <Text style={s.endBtnText}>END CHALLENGE</Text>
               </TouchableOpacity>
-            </View>
+            </>
           ) : null}
-        </View>
-      </Modal>
+      </SmoothBottomSheet>
 
-      <Modal visible={!!scheduleTarget} transparent animationType="fade" onRequestClose={() => setScheduleTarget(null)}>
-        <View style={s.modalWrap}>
-          <Pressable style={s.modalBackdrop} onPress={() => setScheduleTarget(null)} />
+      <SmoothBottomSheet visible={!!scheduleTarget} onClose={() => setScheduleTarget(null)} sheetStyle={s.sheet}>
           {scheduleTarget ? (
-            <View style={s.sheet}>
+            <>
               <View style={s.sheetHandle} />
               <View style={s.sheetHead}>
                 <Text style={s.sheetTitle}>Edit Schedule</Text>
@@ -678,36 +675,25 @@ export default function ChallengesView() {
                 <CheckSmall s={14} c="#FFFFFF" />
                 <Text style={s.saveBtnText}>SAVE SCHEDULE</Text>
               </TouchableOpacity>
-            </View>
+            </>
           ) : null}
-        </View>
-      </Modal>
+      </SmoothBottomSheet>
 
-      <Modal visible={!!confirmEndId} transparent animationType="fade" onRequestClose={() => setConfirmEndId(null)}>
-        <View style={s.modalWrap}>
-          <Pressable style={s.modalBackdrop} onPress={() => setConfirmEndId(null)} />
-          <View style={s.confirmCard}>
-            <Text style={s.confirmTitle}>End challenge?</Text>
-            <Text style={s.confirmBody}>Progress stays in history, but the challenge leaves your active routine.</Text>
-            <View style={s.confirmRow}>
-              <TouchableOpacity activeOpacity={0.84} style={s.confirmGhost} onPress={() => setConfirmEndId(null)}>
-                <Text style={s.confirmGhostText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                activeOpacity={0.84}
-                style={s.confirmDanger}
-                onPress={() => {
-                  endChallenge(confirmEndId!);
-                  setConfirmEndId(null);
-                  setManageTarget(null);
-                }}
-              >
-                <Text style={s.confirmDangerText}>End</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <ConfirmModal
+        visible={!!confirmEndId}
+        icon={<X s={22} c="#EF4444" w={2.5} />}
+        iconBg="#FEF2F2"
+        title="End challenge?"
+        body="Progress stays in history, but the challenge leaves your active routine."
+        cancelLabel="CANCEL"
+        confirmLabel="END"
+        onCancel={() => setConfirmEndId(null)}
+        onConfirm={() => {
+          endChallenge(confirmEndId!);
+          setConfirmEndId(null);
+          setManageTarget(null);
+        }}
+      />
     </View>
   );
 }
@@ -1037,14 +1023,6 @@ const s = StyleSheet.create({
     color: C.textMuted,
     textTransform: 'uppercase',
   },
-  modalWrap: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.36)',
-  },
   sheet: {
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
@@ -1181,59 +1159,6 @@ const s = StyleSheet.create({
     fontFamily: F.sansBold,
     fontSize: 10.5,
     letterSpacing: 2,
-    color: '#FFFFFF',
-  },
-  confirmCard: {
-    marginHorizontal: 18,
-    marginBottom: 28,
-    borderRadius: 28,
-    backgroundColor: '#FFFFFF',
-    padding: 20,
-  },
-  confirmTitle: {
-    fontFamily: F.serifMedium,
-    fontSize: 28,
-    color: C.text,
-  },
-  confirmBody: {
-    marginTop: 8,
-    fontFamily: F.sans,
-    fontSize: 13,
-    lineHeight: 19,
-    color: C.textSecondary,
-  },
-  confirmRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 18,
-  },
-  confirmGhost: {
-    flex: 1,
-    minHeight: 46,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#EDE7DA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  confirmGhostText: {
-    fontFamily: F.sansBold,
-    fontSize: 10.5,
-    letterSpacing: 1.8,
-    color: C.textSecondary,
-  },
-  confirmDanger: {
-    flex: 1,
-    minHeight: 46,
-    borderRadius: 18,
-    backgroundColor: '#DC2626',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  confirmDangerText: {
-    fontFamily: F.sansBold,
-    fontSize: 10.5,
-    letterSpacing: 1.8,
     color: '#FFFFFF',
   },
 });

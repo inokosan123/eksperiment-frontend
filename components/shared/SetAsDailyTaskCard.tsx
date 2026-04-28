@@ -31,17 +31,19 @@ export default function SetAsDailyTaskCard({
         style={[s.base, scripture ? s.scriptureBase : s.softBase]}
       >
         <View style={[s.iconBase, scripture ? s.scriptureIconBase : s.softIconBase]}>
-          <CalendarCheck s={scripture ? 13 : 16} c={C.gold} />
+          <CalendarCheck s={scripture ? 13 : 20} c={C.gold} />
         </View>
 
         <View style={s.copy}>
           <Text style={[s.titleBase, scripture ? s.scriptureTitle : s.softTitle]}>{title}</Text>
-          <Text style={[s.subtitleBase, scripture ? s.scriptureSubtitle : s.softSubtitle]} numberOfLines={2}>
+          <Text style={[s.subtitleBase, scripture ? s.scriptureSubtitle : s.softSubtitle]} numberOfLines={scripture ? 1 : 2}>
             {subtitle}
           </Text>
         </View>
 
-        <ChevronRight s={scripture ? 14 : 15} c={scripture ? '#D1B37E' : 'rgba(197,160,89,0.4)'} />
+        <View style={s.chevronSlot}>
+          <ChevronRight s={scripture ? 14 : 15} c={scripture ? '#D1B37E' : 'rgba(197,160,89,0.4)'} />
+        </View>
       </LinearGradient>
     </TouchableOpacity>
   );
@@ -54,20 +56,21 @@ const s = StyleSheet.create({
     width: '100%',
   },
   softBase: {
-    gap: 12,
-    borderRadius: 16,
+    gap: 14,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(232,220,196,0.7)',
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingVertical: 12,
   },
   scriptureBase: {
-    justifyContent: 'space-between',
+    minHeight: 58,
+    gap: 10,
     borderRadius: 19,
     borderWidth: 1,
     borderColor: '#E8D8BA',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
@@ -80,9 +83,9 @@ const s = StyleSheet.create({
     flexShrink: 0,
   },
   softIconBase: {
-    width: 32,
-    height: 32,
-    borderRadius: 11,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     backgroundColor: 'rgba(197,160,89,0.1)',
   },
   scriptureIconBase: {
@@ -96,20 +99,29 @@ const s = StyleSheet.create({
   copy: {
     flex: 1,
     minWidth: 0,
+    paddingRight: 2,
+  },
+  chevronSlot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   titleBase: {
     color: '#374151',
   },
   softTitle: {
     fontFamily: F.sansSemiBold,
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 14,
+    lineHeight: 18,
   },
   scriptureTitle: {
     fontFamily: F.sansBold,
     fontSize: 9.5,
-    lineHeight: 12,
-    letterSpacing: 1.8,
+    lineHeight: 13,
+    letterSpacing: 1.65,
     textTransform: 'uppercase',
     color: '#B08A47',
   },
@@ -119,12 +131,12 @@ const s = StyleSheet.create({
   },
   softSubtitle: {
     fontFamily: F.sans,
-    fontSize: 9,
-    lineHeight: 12,
+    fontSize: 12,
+    lineHeight: 16,
   },
   scriptureSubtitle: {
     fontFamily: F.serif,
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 11.5,
+    lineHeight: 15,
   },
 });

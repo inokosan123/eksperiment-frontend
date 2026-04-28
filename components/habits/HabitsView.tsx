@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,6 +8,14 @@ import {
   View,
 } from 'react-native';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
+import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
+import ConfirmModal from '@/components/shared/ConfirmModal';
+import NotificationSettings, { NotificationMode } from '@/components/shared/NotificationSettings';
+import TaskFrequencyEditor, { TaskFrequency } from '@/components/shared/TaskFrequencyEditor';
+import TaskTimeEditor, { TaskDayTimes } from '@/components/shared/TaskTimeEditor';
+import { useTasks } from '@/components/tasks/TaskProvider';
+import { buildInstanceId, getLocalDateKey } from '@/components/tasks/taskScheduler';
+import type { TaskDraft } from '@/components/tasks/taskTypes';
 import {
   BarChart3,
   Calendar,
@@ -26,7 +32,7 @@ import {
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 
-type HabitFrequency = 'daily' | 'weekdays' | 'weekends' | 'specific_days';
+type HabitFrequency = TaskFrequency;
 
 type HabitStep = {
   id: string;
@@ -34,6 +40,11 @@ type HabitStep = {
   time: string;
   frequency: HabitFrequency;
   selectedDays?: number[];
+  monthlyDays?: number[];
+  sameTimeEveryDay?: boolean;
+  dayTimes?: TaskDayTimes;
+  notificationMode?: NotificationMode;
+  reminderMinutes?: number;
   completedToday: boolean;
   currentStreak: number;
   bestStreak: number;
@@ -53,13 +64,13 @@ const HABIT_COLORS = ['#C5A059', '#16A34A', '#2563EB', '#DB2777', '#7C3AED', '#E
 const HABIT_ICONS = ['🙏', '📖', '🕯️', '💧', '🏃', '☀️', '🌙', '🎵', '🧠', '🍎', '✍️', '❤️'];
 
 const DAY_OPTIONS = [
-  { key: 1, label: 'M' },
-  { key: 2, label: 'T' },
-  { key: 3, label: 'W' },
-  { key: 4, label: 'T' },
-  { key: 5, label: 'F' },
+  { key: 0, label: 'M' },
+  { key: 1, label: 'T' },
+  { key: 2, label: 'W' },
+  { key: 3, label: 'T' },
+  { key: 4, label: 'F' },
+  { key: 5, label: 'S' },
   { key: 6, label: 'S' },
-  { key: 0, label: 'S' },
 ];
 
 const INITIAL_HABITS: HabitItem[] = [
@@ -92,13 +103,15 @@ const INITIAL_HABITS: HabitItem[] = [
     icon: '📖',
     active: false,
     steps: [
-      { id: 'h3s1', title: 'Read 20 minutes', time: '18:30', frequency: 'specific_days', selectedDays: [1, 3, 5], completedToday: false, currentStreak: 0, bestStreak: 10, completionRate: 54 },
+      { id: 'h3s1', title: 'Read 20 minutes', time: '18:30', frequency: 'specific_days', selectedDays: [0, 2, 4], completedToday: false, currentStreak: 0, bestStreak: 10, completionRate: 54 },
     ],
   },
 ];
 
 function getFreqLabel(step: HabitStep) {
   switch (step.frequency) {
+    case 'monthly':
+      return `Monthly ${step.monthlyDays?.length ? step.monthlyDays.join(', ') : '1'}`;
     case 'weekdays':
       return 'Weekdays';
     case 'weekends':
@@ -111,6 +124,66 @@ function getFreqLabel(step: HabitStep) {
     default:
       return 'Daily';
   }
+}
+
+function todayTaskDayIndex() {
+  const jsDay = new Date().getDay();
+  return jsDay === 0 ? 6 : jsDay - 1;
+}
+
+function getActiveDayIndexes(frequency: HabitFrequency, selectedDays: number[] = []) {
+  switch (frequency) {
+    case 'weekdays':
+      return [0, 1, 2, 3, 4];
+    case 'weekends':
+      return [5, 6];
+    case 'specific_days':
+      return selectedDays;
+    default:
+      return [0, 1, 2, 3, 4, 5, 6];
+  }
+}
+
+function getStepDisplayTime(step: HabitStep) {
+  if (step.sameTimeEveryDay === false) {
+    return step.dayTimes?.[todayTaskDayIndex()] || step.time;
+  }
+  return step.time;
+}
+
+function habitStepTaskId(habitId: string, stepId: string) {
+  return `habit_${habitId}_${stepId}`;
+}
+
+function habitStepToTaskDraft(habit: HabitItem, step: HabitStep): TaskDraft {
+  const sameTimeEveryDay = step.sameTimeEveryDay ?? true;
+  return {
+    id: habitStepTaskId(habit.id, step.id),
+    title: step.title,
+    subtitle: `${habit.name} - ${getFreqLabel(step)}`,
+    level: 3,
+    source: 'habit',
+    type: 'custom',
+    icon: 'Heart',
+    habitColor: habit.color,
+    targetView: '/habits',
+    targetTab: habit.id,
+    status: habit.active ? 'active' : 'paused',
+    schedule: {
+      frequency: step.frequency,
+      selectedDays: step.frequency === 'specific_days' ? step.selectedDays ?? [] : [],
+      monthlyDays: step.frequency === 'monthly' ? step.monthlyDays ?? [1] : [1],
+      time: step.time,
+      sameTimeEveryDay,
+      dayTimes: sameTimeEveryDay ? {} : step.dayTimes ?? {},
+    },
+    notificationMode: step.notificationMode ?? 'none',
+    reminderMinutes: step.notificationMode === 'double' ? step.reminderMinutes : undefined,
+    habitConfig: {
+      habitId: habit.id,
+      habitStepId: step.id,
+    },
+  };
 }
 
 function buildCalendarSeed(step: HabitStep) {
@@ -133,6 +206,13 @@ function buildCalendarSeed(step: HabitStep) {
 }
 
 export default function HabitsView() {
+  const {
+    createOrUpdateTask,
+    remove: removeTask,
+    pause: pauseTask,
+    completeInstance,
+    resetInstance,
+  } = useTasks();
   const [habits, setHabits] = useState<HabitItem[]>(INITIAL_HABITS);
   const [tab, setTab] = useState<'active' | 'paused'>('active');
   const [expandedId, setExpandedId] = useState<string | null>(INITIAL_HABITS[0].id);
@@ -140,7 +220,6 @@ export default function HabitsView() {
   const [editTarget, setEditTarget] = useState<HabitItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<HabitItem | null>(null);
   const [pauseConfirmTarget, setPauseConfirmTarget] = useState<HabitItem | null>(null);
-  const [lifecycleTarget, setLifecycleTarget] = useState<{ habit: HabitItem; mode: 'pause' | 'resume' } | null>(null);
   const [analyticsTarget, setAnalyticsTarget] = useState<HabitItem | null>(null);
   const [taskDetail, setTaskDetail] = useState<{ habit: HabitItem; step: HabitStep } | null>(null);
 
@@ -148,14 +227,35 @@ export default function HabitsView() {
   const pausedHabits = useMemo(() => habits.filter(item => !item.active), [habits]);
   const visibleHabits = tab === 'active' ? activeHabits : pausedHabits;
 
-  const toggleStep = (habitId: string, stepId: string) => {
+  useEffect(() => {
+    void Promise.all(INITIAL_HABITS.flatMap(habit =>
+      habit.steps.map(step => createOrUpdateTask(habitStepToTaskDraft(habit, step))),
+    ));
+  }, [createOrUpdateTask]);
+
+  const toggleStep = async (habitId: string, stepId: string) => {
+    const habit = habits.find(item => item.id === habitId);
+    const step = habit?.steps.find(item => item.id === stepId);
+    if (!habit || !step) return;
+    const nextCompleted = !step.completedToday;
     setHabits(current => current.map(habit => habit.id === habitId ? {
       ...habit,
       steps: habit.steps.map(step => step.id === stepId ? { ...step, completedToday: !step.completedToday } : step),
     } : habit));
+    const instanceId = buildInstanceId(habitStepTaskId(habitId, stepId), getLocalDateKey());
+    if (nextCompleted) await completeInstance(instanceId);
+    else await resetInstance(instanceId);
   };
 
-  const saveHabit = (habit: HabitItem) => {
+  const saveHabit = async (habit: HabitItem) => {
+    const previous = habits.find(item => item.id === habit.id);
+    const nextStepIds = new Set(habit.steps.map(step => step.id));
+    if (previous) {
+      await Promise.all(previous.steps
+        .filter(step => !nextStepIds.has(step.id))
+        .map(step => removeTask(habitStepTaskId(previous.id, step.id))));
+    }
+    await Promise.all(habit.steps.map(step => createOrUpdateTask(habitStepToTaskDraft(habit, step))));
     setHabits(current => {
       const exists = current.some(item => item.id === habit.id);
       return exists
@@ -164,6 +264,19 @@ export default function HabitsView() {
     });
     setEditorOpen(false);
     setEditTarget(null);
+    setExpandedId(habit.id);
+  };
+
+  const setHabitActiveState = async (habit: HabitItem, active: boolean) => {
+    if (active) {
+      const nextHabit = { ...habit, active: true };
+      await Promise.all(nextHabit.steps.map(step => createOrUpdateTask(habitStepToTaskDraft(nextHabit, step))));
+    } else {
+      await Promise.all(habit.steps.map(step => pauseTask(habitStepTaskId(habit.id, step.id))));
+    }
+
+    setHabits(current => current.map(item => item.id === habit.id ? { ...item, active } : item));
+    setTab(active ? 'active' : 'paused');
     setExpandedId(habit.id);
   };
 
@@ -246,7 +359,7 @@ export default function HabitsView() {
                         <View style={{ flex: 1 }}>
                           <Text style={[s.stepTitle, step.completedToday && s.stepTitleDone]}>{step.title}</Text>
                           <View style={s.stepMetaRow}>
-                            <Text style={s.stepMeta}>{step.time}</Text>
+                            <Text style={s.stepMeta}>{getStepDisplayTime(step)}</Text>
                             <Text style={s.stepMetaSlash}>/</Text>
                             <Text style={s.stepMeta}>{getFreqLabel(step)}</Text>
                           </View>
@@ -260,7 +373,7 @@ export default function HabitsView() {
                         label={habit.active ? 'Pause' : 'Resume'}
                         active={false}
                         filled={!habit.active}
-                        onPress={() => habit.active ? setPauseConfirmTarget(habit) : setLifecycleTarget({ habit, mode: 'resume' })}
+                        onPress={() => habit.active ? setPauseConfirmTarget(habit) : void setHabitActiveState(habit, true)}
                       />
                       <ActionIconButton
                         icon={<Pencil s={16} c="#6B7280" />}
@@ -307,45 +420,35 @@ export default function HabitsView() {
 
       <ConfirmModal
         visible={!!deleteTarget}
+        icon={<Trash2 s={22} c="#EF4444" />}
+        iconBg="#FEF2F2"
         title="Delete Habit"
         body={deleteTarget ? `"${deleteTarget.name}" and all its steps will be removed.` : ''}
         confirmLabel="DELETE"
-        danger
         onCancel={() => setDeleteTarget(null)}
-        onConfirm={() => {
-          if (deleteTarget) setHabits(current => current.filter(item => item.id !== deleteTarget.id));
+        onConfirm={async () => {
+          if (deleteTarget) {
+            await Promise.all(deleteTarget.steps.map(step => removeTask(habitStepTaskId(deleteTarget.id, step.id))));
+            setHabits(current => current.filter(item => item.id !== deleteTarget.id));
+          }
           setDeleteTarget(null);
         }}
       />
 
       <ConfirmModal
         visible={!!pauseConfirmTarget}
+        icon={<Pause s={22} c={C.gold} />}
+        iconBg="#FFF8E8"
         title="Pause Habit"
         body={pauseConfirmTarget ? `"${pauseConfirmTarget.name}" will stop appearing in your active habit list.` : ''}
         confirmLabel="CONTINUE"
+        confirmColor={C.gold}
         onCancel={() => setPauseConfirmTarget(null)}
         onConfirm={() => {
           if (pauseConfirmTarget) {
-            setLifecycleTarget({ habit: pauseConfirmTarget, mode: 'pause' });
+            void setHabitActiveState(pauseConfirmTarget, false);
           }
           setPauseConfirmTarget(null);
-        }}
-      />
-
-      <ApplyModeSheet
-        visible={!!lifecycleTarget}
-        title={lifecycleTarget?.mode === 'pause' ? 'Pause habit from when?' : 'Resume habit from when?'}
-        body={lifecycleTarget?.mode === 'pause'
-          ? 'Choose whether the pause should affect today or start tomorrow.'
-          : 'Choose whether the habit should return today or start tomorrow.'}
-        onClose={() => { setLifecycleTarget(null); }}
-        onSelect={() => {
-          if (lifecycleTarget) {
-            setHabits(current => current.map(item => item.id === lifecycleTarget.habit.id ? { ...item, active: lifecycleTarget.mode === 'resume' } : item));
-            setTab(lifecycleTarget.mode === 'pause' ? 'paused' : 'active');
-            setExpandedId(lifecycleTarget.habit.id);
-          }
-          setLifecycleTarget(null);
         }}
       />
 
@@ -410,6 +513,7 @@ function HabitEditorSheet({
   const [steps, setSteps] = useState<HabitStep[]>([]);
   const [taskOpen, setTaskOpen] = useState(false);
   const [editStep, setEditStep] = useState<HabitStep | null>(null);
+  const [pendingDeleteStep, setPendingDeleteStep] = useState<HabitStep | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -418,6 +522,7 @@ function HabitEditorSheet({
       setColor(editHabit.color);
       setIcon(editHabit.icon);
       setSteps(editHabit.steps);
+      setPendingDeleteStep(null);
       return;
     }
     setName('');
@@ -425,16 +530,14 @@ function HabitEditorSheet({
     setIcon(HABIT_ICONS[0]);
     setSteps([]);
     setEditStep(null);
+    setPendingDeleteStep(null);
   }, [editHabit, visible]);
 
   if (!visible) return null;
 
   return (
     <>
-      <Modal transparent visible animationType="slide" onRequestClose={onClose}>
-        <View style={s.sheetOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-          <View style={s.sheet}>
+      <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheet} keyboardAware>
             <View style={s.sheetHandle} />
             <View style={s.sheetHead}>
               <TouchableOpacity onPress={onClose} style={s.sheetHeadBtn} activeOpacity={0.7}>
@@ -536,20 +639,21 @@ function HabitEditorSheet({
                         <Text style={s.stepDraftMeta}>{step.time} / {getFreqLabel(step)}</Text>
                       </View>
                       <TouchableOpacity
-                        onPress={() => setSteps(current => current.filter(item => item.id !== step.id))}
+                        onPress={event => {
+                          event.stopPropagation();
+                          setPendingDeleteStep(step);
+                        }}
                         activeOpacity={0.8}
                         style={s.stepDraftDelete}
                       >
-                        <Trash2 s={12} c="#D1D5DB" />
+                        <Trash2 s={17} c="#EF4444" />
                       </TouchableOpacity>
                     </TouchableOpacity>
                   ))}
                 </View>
               </View>
             </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      </SmoothBottomSheet>
 
       <HabitTaskEditorSheet
         visible={taskOpen}
@@ -563,6 +667,23 @@ function HabitEditorSheet({
           });
           setTaskOpen(false);
           setEditStep(null);
+        }}
+      />
+
+      <ConfirmModal
+        visible={!!pendingDeleteStep}
+        icon={<Trash2 s={22} c="#EF4444" />}
+        iconBg="#FEF2F2"
+        title="Delete Step"
+        body={pendingDeleteStep ? `"${pendingDeleteStep.title}" will be removed from this habit.` : ''}
+        confirmLabel="DELETE"
+        confirmColor="#EF4444"
+        onCancel={() => setPendingDeleteStep(null)}
+        onConfirm={() => {
+          if (pendingDeleteStep) {
+            setSteps(current => current.filter(item => item.id !== pendingDeleteStep.id));
+          }
+          setPendingDeleteStep(null);
         }}
       />
     </>
@@ -586,6 +707,11 @@ function HabitTaskEditorSheet({
   const [time, setTime] = useState('07:00');
   const [frequency, setFrequency] = useState<HabitFrequency>('daily');
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
+  const [monthlyDays, setMonthlyDays] = useState<number[]>([1]);
+  const [sameTimeEveryDay, setSameTimeEveryDay] = useState(true);
+  const [dayTimes, setDayTimes] = useState<TaskDayTimes>({});
+  const [notificationMode, setNotificationMode] = useState<NotificationMode>('none');
+  const [reminderMinutes, setReminderMinutes] = useState(15);
 
   useEffect(() => {
     if (!visible) return;
@@ -594,90 +720,144 @@ function HabitTaskEditorSheet({
       setTime(step.time);
       setFrequency(step.frequency);
       setSelectedDays(step.selectedDays ?? []);
+      setMonthlyDays(step.monthlyDays ?? [1]);
+      setSameTimeEveryDay(step.sameTimeEveryDay ?? true);
+      setDayTimes(step.dayTimes ?? {});
+      setNotificationMode(step.notificationMode ?? 'none');
+      setReminderMinutes(step.reminderMinutes ?? 15);
       return;
     }
     setTitle('');
     setTime('07:00');
     setFrequency('daily');
     setSelectedDays([]);
+    setMonthlyDays([1]);
+    setSameTimeEveryDay(true);
+    setDayTimes({});
+    setNotificationMode('none');
+    setReminderMinutes(15);
   }, [step, visible]);
+
+  const activeDayIndexes = useMemo(
+    () => getActiveDayIndexes(frequency, selectedDays),
+    [frequency, selectedDays],
+  );
+  const allowPerDayTimes = frequency !== 'monthly' && (frequency !== 'specific_days' || selectedDays.length > 0);
+  const canSave = title.trim().length > 0
+    && (frequency !== 'specific_days' || selectedDays.length > 0)
+    && (frequency !== 'monthly' || monthlyDays.length > 0);
+
+  const saveStep = () => {
+    if (!canSave) return;
+    onSave({
+      id: step?.id ?? `step_${Date.now()}`,
+      title: title.trim(),
+      time,
+      frequency,
+      selectedDays: frequency === 'specific_days' ? selectedDays : undefined,
+      monthlyDays: frequency === 'monthly' ? monthlyDays : undefined,
+      sameTimeEveryDay: allowPerDayTimes ? sameTimeEveryDay : true,
+      dayTimes: allowPerDayTimes && !sameTimeEveryDay ? dayTimes : undefined,
+      notificationMode,
+      reminderMinutes: notificationMode === 'double' ? reminderMinutes : 15,
+      completedToday: step?.completedToday ?? false,
+      currentStreak: step?.currentStreak ?? 0,
+      bestStreak: step?.bestStreak ?? 0,
+      completionRate: step?.completionRate ?? 70,
+    });
+  };
 
   if (!visible) return null;
 
   return (
-    <Modal transparent visible animationType="fade" onRequestClose={onClose}>
-      <View style={s.overlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={s.taskSheet}>
-          <View style={s.taskSheetHead}>
-            <Text style={s.taskSheetTitle}>{step ? 'Edit Step' : 'New Step'}</Text>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.84} style={s.taskClose}>
-              <X s={18} c="#9CA3AF" />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={s.sheetBlockLabel}>TITLE</Text>
-          <TextInput value={title} onChangeText={setTitle} placeholder="Step name..." placeholderTextColor="#D1D5DB" style={s.sheetInput} />
-
-          <Text style={s.sheetBlockLabel}>TIME</Text>
-          <TextInput value={time} onChangeText={setTime} placeholder="07:00" placeholderTextColor="#D1D5DB" style={s.sheetInput} />
-
-          <Text style={s.sheetBlockLabel}>FREQUENCY</Text>
-          <View style={s.frequencyWrap}>
-            {FREQUENCY_OPTIONS.map(item => {
-              const active = frequency === item.value;
-              return (
-                <TouchableOpacity key={item.value} onPress={() => setFrequency(item.value)} activeOpacity={0.84} style={[s.frequencyChip, active && s.frequencyChipActive]}>
-                  <Text style={[s.frequencyText, active && { color: accent }]}>{item.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {frequency === 'specific_days' && (
-            <>
-              <Text style={[s.sheetBlockLabel, { marginTop: 16 }]}>DAYS</Text>
-              <View style={s.daysRow}>
-                {DAY_OPTIONS.map(item => {
-                  const active = selectedDays.includes(item.key);
-                  return (
-                    <TouchableOpacity
-                      key={`${item.key}-${item.label}`}
-                      onPress={() => setSelectedDays(current => current.includes(item.key) ? current.filter(day => day !== item.key) : [...current, item.key].sort())}
-                      activeOpacity={0.84}
-                      style={[s.dayChip, active && { borderColor: accent, backgroundColor: hexToRgba(accent, 0.1) }]}
-                    >
-                      <Text style={[s.dayChipText, active && { color: accent }]}>{item.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </>
-          )}
-
-          <TouchableOpacity
-            onPress={() => {
-              if (!title.trim()) return;
-              onSave({
-                id: step?.id ?? `step_${Date.now()}`,
-                title: title.trim(),
-                time,
-                frequency,
-                selectedDays: frequency === 'specific_days' ? selectedDays : undefined,
-                completedToday: step?.completedToday ?? false,
-                currentStreak: step?.currentStreak ?? 0,
-                bestStreak: step?.bestStreak ?? 0,
-                completionRate: step?.completionRate ?? 70,
-              });
-            }}
-            activeOpacity={0.86}
-            style={[s.taskSaveBtn, { backgroundColor: accent }]}
-          >
-            <Text style={s.taskSaveText}>SAVE STEP</Text>
-          </TouchableOpacity>
+    <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.taskBottomSheet} keyboardAware>
+      <View style={s.sheetHandle} />
+      <View style={s.sheetHead}>
+        <TouchableOpacity onPress={onClose} style={s.sheetHeadBtn} activeOpacity={0.7}>
+          <X s={18} c="#9CA3AF" />
+        </TouchableOpacity>
+        <View style={{ alignItems: 'center' }}>
+          <Text style={s.sheetKicker}>{step ? 'Edit Step' : 'New Step'}</Text>
+          <Text style={s.sheetTitle}>Habit Schedule</Text>
         </View>
+        <TouchableOpacity
+          onPress={saveStep}
+          disabled={!canSave}
+          style={[s.sheetHeadBtn, s.sheetSave, { backgroundColor: accent, opacity: canSave ? 1 : 0.38 }]}
+          activeOpacity={0.84}
+        >
+          <CheckSmall s={16} c="#FFFFFF" />
+        </TouchableOpacity>
       </View>
-    </Modal>
+
+      <ScrollView contentContainerStyle={s.taskContent} showsVerticalScrollIndicator={false}>
+        <View style={s.sheetBlock}>
+          <Text style={[s.sheetBlockLabel, { color: accent }]}>Step Name</Text>
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Step name..."
+            placeholderTextColor="#D1D5DB"
+            style={s.sheetInput}
+          />
+        </View>
+
+        <View style={s.sheetBlock}>
+          <TaskFrequencyEditor
+            frequency={frequency}
+            selectedDays={selectedDays}
+            monthlyDays={monthlyDays}
+            onFrequencyChange={nextFrequency => {
+              setFrequency(nextFrequency);
+              if (nextFrequency === 'weekdays') setSelectedDays([0, 1, 2, 3, 4]);
+              if (nextFrequency === 'weekends') setSelectedDays([5, 6]);
+              if (nextFrequency === 'daily') setSelectedDays([]);
+              if (nextFrequency === 'monthly') setSameTimeEveryDay(true);
+            }}
+            onSelectedDaysChange={setSelectedDays}
+            onMonthlyDaysChange={setMonthlyDays}
+            accent={accent}
+            label="Schedule"
+          />
+        </View>
+
+        <View style={s.sheetBlock}>
+          <TaskTimeEditor
+            time={time}
+            sameTimeEveryDay={sameTimeEveryDay}
+            dayTimes={dayTimes}
+            onTimeChange={setTime}
+            onSameTimeEveryDayChange={setSameTimeEveryDay}
+            onDayTimesChange={setDayTimes}
+            activeDayIndexes={activeDayIndexes}
+            allowPerDayTimes={allowPerDayTimes}
+            accent={accent}
+            softBg={hexToRgba(accent, 0.06)}
+            borderColor={hexToRgba(accent, 0.22)}
+            mutedColor="#8B909A"
+          />
+        </View>
+
+        <View style={s.sheetBlock}>
+          <NotificationSettings
+            mode={notificationMode}
+            reminderMinutes={reminderMinutes}
+            onModeChange={setNotificationMode}
+            onReminderChange={setReminderMinutes}
+            accent={accent}
+          />
+        </View>
+
+        <TouchableOpacity
+          onPress={saveStep}
+          disabled={!canSave}
+          activeOpacity={0.86}
+          style={[s.taskSaveBtn, { backgroundColor: accent, opacity: canSave ? 1 : 0.38, shadowColor: accent }]}
+        >
+          <Text style={s.taskSaveText}>SAVE CHANGES</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SmoothBottomSheet>
   );
 }
 
@@ -697,10 +877,7 @@ function HabitAnalyticsSheet({
   const worstStep = [...habit.steps].sort((a, b) => a.completionRate - b.completionRate)[0];
 
   return (
-    <Modal transparent visible animationType="slide" onRequestClose={onClose}>
-      <View style={s.sheetOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={s.analyticsSheet}>
+    <SmoothBottomSheet visible={!!habit} onClose={onClose} sheetStyle={s.analyticsSheet}>
           <View style={s.sheetHandle} />
           <View style={s.analyticsHead}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -765,9 +942,7 @@ function HabitAnalyticsSheet({
               ))}
             </View>
           </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    </SmoothBottomSheet>
   );
 }
 
@@ -803,10 +978,7 @@ function TaskDetailSheet({
   for (let day = 1; day <= daysInMonth; day += 1) cells.push(day);
 
   return (
-    <Modal transparent visible animationType="slide" onRequestClose={onClose}>
-      <View style={s.sheetOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={s.analyticsSheet}>
+    <SmoothBottomSheet visible={!!detail} onClose={onClose} sheetStyle={s.analyticsSheet}>
           <View style={s.sheetHandle} />
           <View style={s.analyticsHead}>
             <View style={{ flex: 1 }}>
@@ -876,9 +1048,7 @@ function TaskDetailSheet({
               </View>
             </View>
           </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    </SmoothBottomSheet>
   );
 }
 
@@ -894,85 +1064,6 @@ function ConsistencyRow({ label, pct, color }: { label: string; pct: number; col
   );
 }
 
-function ConfirmModal({
-  visible,
-  title,
-  body,
-  onCancel,
-  onConfirm,
-  confirmLabel,
-  danger = false,
-}: {
-  visible: boolean;
-  title: string;
-  body: string;
-  onCancel: () => void;
-  onConfirm: () => void;
-  confirmLabel: string;
-  danger?: boolean;
-}) {
-  return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
-      <View style={s.overlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
-        <View style={s.confirmCard}>
-          <View style={[s.confirmIcon, danger && { backgroundColor: '#FEF2F2' }]}>
-            {danger ? <Trash2 s={18} c="#DC2626" /> : <Pause s={18} c={C.gold} />}
-          </View>
-          <Text style={s.confirmTitle}>{title}</Text>
-          <Text style={s.confirmBody}>{body}</Text>
-          <View style={s.confirmRow}>
-            <TouchableOpacity onPress={onCancel} activeOpacity={0.84} style={s.confirmCancel}>
-              <Text style={s.confirmCancelText}>CANCEL</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onConfirm} activeOpacity={0.84} style={[s.confirmDelete, !danger && { backgroundColor: C.gold }]}>
-              <Text style={s.confirmDeleteText}>{confirmLabel}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-function ApplyModeSheet({
-  visible,
-  title,
-  body,
-  onClose,
-  onSelect,
-}: {
-  visible: boolean;
-  title: string;
-  body: string;
-  onClose: () => void;
-  onSelect: (mode: 'today' | 'tomorrow') => void;
-}) {
-  if (!visible) return null;
-  return (
-    <Modal transparent visible animationType="slide" onRequestClose={onClose}>
-      <View style={s.sheetOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={s.applySheet}>
-          <View style={s.sheetHandle} />
-          <Text style={s.applyTitle}>{title}</Text>
-          <Text style={s.applyBody}>{body}</Text>
-          <View style={s.applyOptions}>
-            <TouchableOpacity onPress={() => onSelect('today')} activeOpacity={0.84} style={s.applyOption}>
-              <Text style={s.applyOptionTitle}>Today</Text>
-              <Text style={s.applyOptionBody}>Apply immediately.</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => onSelect('tomorrow')} activeOpacity={0.84} style={s.applyOption}>
-              <Text style={s.applyOptionTitle}>Tomorrow</Text>
-              <Text style={s.applyOptionBody}>Keep today unchanged.</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
 function hexToRgba(hex: string, alpha: number) {
   const normalized = hex.replace('#', '');
   const safe = normalized.length === 3 ? normalized.split('').map(char => `${char}${char}`).join('') : normalized;
@@ -982,13 +1073,6 @@ function hexToRgba(hex: string, alpha: number) {
   const b = parsed & 255;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
-
-const FREQUENCY_OPTIONS = [
-  { value: 'daily' as const, label: 'Daily' },
-  { value: 'weekdays' as const, label: 'Weekdays' },
-  { value: 'weekends' as const, label: 'Weekends' },
-  { value: 'specific_days' as const, label: 'Specific Days' },
-];
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#FAFAFA' },
@@ -1063,7 +1147,9 @@ const s = StyleSheet.create({
   stepDraftCard: { borderRadius: 18, backgroundColor: '#FAFAFA', borderWidth: 1, borderColor: '#F2F1EC', paddingHorizontal: 14, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
   stepDraftTitle: { fontFamily: F.serifMedium, fontSize: 18, color: '#111827' },
   stepDraftMeta: { marginTop: 3, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.3, color: '#A8A29E', textTransform: 'uppercase' },
-  stepDraftDelete: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  stepDraftDelete: { width: 38, height: 38, borderRadius: 16, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center' },
+  taskBottomSheet: { borderTopLeftRadius: 32, borderTopRightRadius: 32, backgroundColor: '#FAFAFA', paddingBottom: 22, maxHeight: '90%' },
+  taskContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24, gap: 14 },
   taskSheet: { width: '100%', maxWidth: 360, borderRadius: 28, backgroundColor: '#FFFFFF', padding: 22 },
   taskSheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   taskSheetTitle: { fontFamily: F.serifMedium, fontSize: 24, color: '#111827' },
@@ -1077,15 +1163,6 @@ const s = StyleSheet.create({
   dayChipText: { fontFamily: F.sansBold, fontSize: 11, color: '#A8A29E' },
   taskSaveBtn: { minHeight: 50, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginTop: 20 },
   taskSaveText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2, color: '#FFFFFF' },
-  confirmCard: { width: '100%', maxWidth: 320, borderRadius: 28, backgroundColor: '#FFFFFF', padding: 22, alignItems: 'center' },
-  confirmIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#FFF8E8', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  confirmTitle: { fontFamily: F.serifMedium, fontSize: 24, color: '#111827' },
-  confirmBody: { marginTop: 6, fontFamily: F.serifItalic, fontSize: 15, color: '#9CA3AF', textAlign: 'center' },
-  confirmRow: { flexDirection: 'row', gap: 10, marginTop: 20 },
-  confirmCancel: { flex: 1, minHeight: 46, borderRadius: 22, backgroundColor: '#F5F5F4', alignItems: 'center', justifyContent: 'center' },
-  confirmDelete: { flex: 1, minHeight: 46, borderRadius: 22, backgroundColor: '#DC2626', alignItems: 'center', justifyContent: 'center' },
-  confirmCancelText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, color: '#6B7280' },
-  confirmDeleteText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, color: '#FFFFFF' },
   applySheet: { borderTopLeftRadius: 32, borderTopRightRadius: 32, backgroundColor: '#FFFFFF', paddingHorizontal: 22, paddingBottom: 28 },
   applyTitle: { marginTop: 4, fontFamily: F.serifMedium, fontSize: 24, color: '#111827', textAlign: 'center' },
   applyBody: { marginTop: 8, fontFamily: F.serif, fontSize: 16, lineHeight: 22, color: '#9CA3AF', textAlign: 'center' },

@@ -9,6 +9,7 @@ import * as Haptics from 'expo-haptics';
 import {
   ArrowLeft, BookMarked, CheckSmall, ChevronRight, Notebook, Plus, Trash2, X,
 } from '@/components/icons/Icons';
+import ConfirmModal from '@/components/shared/ConfirmModal';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import { FormatState, RichTextEditor, RichToolbar, RichTextEditorRef } from '@/components/shared/RichTextEditor';
@@ -508,26 +509,16 @@ function DeleteConfirmModal({
   onConfirm: () => void;
 }) {
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
-      <View style={s.confirmOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
-        <View style={s.confirmCard}>
-          <View style={s.confirmIcon}>
-            <Trash2 s={22} c="#F87171" />
-          </View>
-          <Text style={s.confirmTitle}>Delete this {type === 'note' ? 'note' : 'quick help'}?</Text>
-          <Text style={s.confirmText}>This cannot be undone.</Text>
-          <View style={s.confirmActions}>
-            <TouchableOpacity onPress={onCancel} activeOpacity={0.86} style={s.cancelBtn}>
-              <Text style={s.cancelText}>CANCEL</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onConfirm} activeOpacity={0.86} style={s.deleteBtn}>
-              <Text style={s.deleteText}>DELETE</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
+    <ConfirmModal
+      visible={visible}
+      icon={<Trash2 s={22} c="#EF4444" />}
+      iconBg="#FEF2F2"
+      title={`Delete this ${type === 'note' ? 'note' : 'quick help'}?`}
+      body="This cannot be undone."
+      confirmLabel="DELETE"
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    />
   );
 }
 
@@ -951,16 +942,6 @@ const s = StyleSheet.create({
   tileSource: { marginTop: 8, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.2, color: GOLD, textTransform: 'uppercase' },
   tileDate: { marginTop: 'auto', paddingTop: 14, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.7, color: '#D1D5DB', textTransform: 'uppercase' },
 
-  confirmOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, backgroundColor: 'rgba(0,0,0,0.30)' },
-  confirmCard: { width: '100%', maxWidth: 290, borderRadius: 24, backgroundColor: '#FFFFFF', padding: 20, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 8 },
-  confirmIcon: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  confirmTitle: { fontFamily: F.serifMedium, fontSize: 18, color: '#3D3229', marginBottom: 4 },
-  confirmText: { fontFamily: F.sans, fontSize: 11, color: '#9CA3AF', marginBottom: 20 },
-  confirmActions: { flexDirection: 'row', gap: 9, width: '100%' },
-  cancelBtn: { flex: 1, minHeight: 44, borderRadius: 15, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  deleteBtn: { flex: 1, minHeight: 44, borderRadius: 15, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' },
-  cancelText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#6B7280' },
-  deleteText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#FFFFFF' },
 
   editorScreen: { flex: 1 },
   editorHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: TITLE_BAR_BOTTOM_PADDING, borderBottomWidth: 1 },
