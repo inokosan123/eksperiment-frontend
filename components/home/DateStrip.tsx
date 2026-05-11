@@ -56,7 +56,7 @@ export default function DateStrip({
   const days = useMemo(() => buildMonthDays(selectedKey), [selectedKey]);
 
   useEffect(() => {
-    const cellWidth = 54;
+    const cellWidth = 46;
     const gap = 5;
     const horizontalPadding = 16;
     const itemWidth = cellWidth + gap;
@@ -180,8 +180,8 @@ function DateCell({
 
 const s = StyleSheet.create({
   wrap: {
-    paddingTop: 6,
-    paddingBottom: 4,
+    paddingTop: 4,
+    paddingBottom: 8,
   },
   row: {
     paddingHorizontal: 16,
@@ -192,29 +192,29 @@ const s = StyleSheet.create({
   },
   day: {
     position: 'relative',
-    width: 54,
+    width: 46,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 10,
-    paddingBottom: 12,
-    borderRadius: 18,
+    paddingTop: 8,
+    paddingBottom: 9,
+    borderRadius: 16,
   },
   dayMotion: {},
   todayFill: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(197,160,89,0.10)',
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.18)',
   },
   selectedFillWrap: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 18,
+    borderRadius: 16,
     overflow: 'hidden',
   },
   selectedFill: {
     flex: 1,
-    borderRadius: 18,
+    borderRadius: 16,
   },
   selectedSheen: {
     position: 'absolute',
@@ -222,13 +222,13 @@ const s = StyleSheet.create({
     left: 1,
     right: 1,
     height: '42%',
-    borderTopLeftRadius: 17,
-    borderTopRightRadius: 17,
+    borderTopLeftRadius: 15,
+    borderTopRightRadius: 15,
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
   selectedRim: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(150,108,40,0.30)',
   },
@@ -242,13 +242,13 @@ const s = StyleSheet.create({
   },
   dow: {
     fontFamily: F.serifMediumItalic,
-    fontSize: 10.5,
+    fontSize: 10,
     letterSpacing: 0.4,
   },
   num: {
     fontFamily: F.serifMedium,
-    fontSize: 20,
+    fontSize: 18,
     marginTop: 2,
-    lineHeight: 22,
+    lineHeight: 20,
   },
 });
