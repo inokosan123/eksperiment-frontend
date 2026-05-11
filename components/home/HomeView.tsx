@@ -351,7 +351,7 @@ function BigEventRow({
   return (
     <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={beb.row}>
       <View style={[beb.iconBox, { backgroundColor: tint }]}>
-        <NotoEmoji name={normalizeHabitIcon(event.icon)} size={22} />
+        <NotoEmoji name={normalizeHabitIcon(event.icon)} size={18} />
       </View>
       <View style={beb.copy}>
         <Text style={[beb.title, !isToday && beb.titleLarge]} numberOfLines={1} ellipsizeMode="tail">{event.title}</Text>
@@ -378,27 +378,27 @@ const beb = StyleSheet.create({
   headTitle: { fontFamily: F.serifMedium, fontSize: 18, color: C.text },
   headSub: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, color: '#A8A29E', textTransform: 'uppercase' },
   row: {
-    flexDirection: 'row', alignItems: 'center', columnGap: 12,
-    backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#EDE9E0',
-    paddingLeft: 7, paddingRight: 18, paddingVertical: 7, marginBottom: 5,
+    flexDirection: 'row', alignItems: 'center', columnGap: 10,
+    backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#EDE9E0',
+    paddingLeft: 6, paddingRight: 16, paddingVertical: 5, marginBottom: 4,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
   },
-  iconBox:   { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  iconBox:   { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   copy:      { flex: 1, minWidth: 0 },
-  title:     { fontFamily: F.serifMedium, fontSize: 16, color: C.text, flexShrink: 1, minWidth: 0 },
-  titleLarge:{ fontSize: 18 },
-  todayHint: { marginTop: 2, fontFamily: F.serifMediumItalic, fontSize: 12 },
-  count:     { flexDirection: 'row', alignItems: 'baseline', columnGap: 5, flexShrink: 0 },
-  countNum:  { fontFamily: F.serifSemiBold, fontSize: 22, lineHeight: 24 },
-  countLabel:{ fontFamily: F.sansMedium, fontSize: 13, color: '#A8A29E' },
+  title:     { fontFamily: F.serifMedium, fontSize: 15, color: C.text, flexShrink: 1, minWidth: 0 },
+  titleLarge:{ fontSize: 16 },
+  todayHint: { marginTop: 2, fontFamily: F.serifMediumItalic, fontSize: 11 },
+  count:     { flexDirection: 'row', alignItems: 'baseline', columnGap: 4, flexShrink: 0 },
+  countNum:  { fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 21 },
+  countLabel:{ fontFamily: F.sansMedium, fontSize: 11, color: '#A8A29E' },
   todayPill: {
-    flexDirection: 'row', alignItems: 'center', columnGap: 6,
-    paddingHorizontal: 11, paddingVertical: 7, borderRadius: 11,
+    flexDirection: 'row', alignItems: 'center', columnGap: 5,
+    paddingHorizontal: 9, paddingVertical: 5, borderRadius: 10,
     flexShrink: 0,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 4, elevation: 3,
   },
-  todayDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.95)' },
-  todayPillText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#FFFFFF' },
+  todayDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: 'rgba(255,255,255,0.95)' },
+  todayPillText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4, color: '#FFFFFF' },
 });
 
 export default function HomeView() {
