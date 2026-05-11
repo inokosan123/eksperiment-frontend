@@ -67,11 +67,17 @@ function Candle({ pct, mode }: { pct: number | null; mode: DayMode }) {
 
   return (
     <View style={s.candleCol}>
-      {/* Top slot — flame only at 100%; otherwise just the bare wick */}
+      {/* Top slot — flame at 100%, otherwise wick (with ember tip while
+          there is progress, plain wick when the day is still cold). */}
       <View style={s.candleFlameSlot}>
-        {isFull
-          ? <Image source={FLAME_PNG} style={s.candleFlameImg} />
-          : <View style={s.candleWick} pointerEvents="none" />}
+        {isFull ? (
+          <Image source={FLAME_PNG} style={s.candleFlameImg} />
+        ) : (
+          <>
+            <View style={s.candleWick} pointerEvents="none" />
+            {!isEmpty && <View style={s.candleEmber} pointerEvents="none" />}
+          </>
+        )}
       </View>
 
       {/* Body */}
@@ -417,11 +423,27 @@ const s = StyleSheet.create({
     position: 'absolute',
     bottom: 5,
     left: '50%',
-    marginLeft: -0.75,
-    width: 1.5,
-    height: 5,
-    borderRadius: 1,
-    backgroundColor: '#2A2522',
+    marginLeft: -0.7,
+    width: 1.4,
+    height: 6,
+    borderTopLeftRadius: 0.7,
+    borderTopRightRadius: 0.7,
+    backgroundColor: '#3B2A1F',
+  },
+  candleEmber: {
+    position: 'absolute',
+    bottom: 10,
+    left: '50%',
+    marginLeft: -1.25,
+    width: 2.5,
+    height: 2.5,
+    borderRadius: 1.25,
+    backgroundColor: '#E07A2A',
+    shadowColor: '#FFB347',
+    shadowOpacity: 0.7,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 2.5,
+    elevation: 1,
   },
   candleBody: {
     width: CANDLE_W,
