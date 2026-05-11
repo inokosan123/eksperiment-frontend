@@ -19,8 +19,8 @@ const TILE_SIZE = 32;
 const ICON_SIZE = 20;
 const CANDLE_W = 22;
 const CANDLE_H = 56;
-const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-const DAY_MS = 24 * 60 * 60 * 1000;
+// Indexed by Date.getDay() — Sun=0, Mon=1, ..., Sat=6
+const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 type DayMode = 'no-tasks' | 'all-skipped' | 'normal';
 
@@ -40,18 +40,16 @@ function formatLocalDateKey(date: Date) {
 function buildWeek(): { dateKey: string; letter: string; isToday: boolean; isFuture: boolean }[] {
   const today = new Date();
   const todayKey = formatLocalDateKey(today);
-  // Monday-start week
-  const jsDay = today.getDay();
-  const offsetToMonday = jsDay === 0 ? 6 : jsDay - 1;
-  const monday = new Date(today.getTime() - offsetToMonday * DAY_MS);
+  // Rolling 7-day window ending today: index 0 = 6 days ago, index 6 = today.
   return Array.from({ length: 7 }).map((_, i) => {
-    const d = new Date(monday.getTime() + i * DAY_MS);
+    const d = new Date(today);
+    d.setDate(today.getDate() - (6 - i));
     const key = formatLocalDateKey(d);
     return {
       dateKey: key,
-      letter: DAY_LETTERS[i],
+      letter: DAY_LETTERS[d.getDay()],
       isToday: key === todayKey,
-      isFuture: key > todayKey,
+      isFuture: false,
     };
   });
 }
