@@ -62,25 +62,32 @@ function Candle({ pct, mode }: { pct: number | null; mode: DayMode }) {
   }
 
   const filled = Math.max(0, Math.min(100, pct));
-  const lit = filled > 0;
   const isEmpty = filled === 0;
+  const isFull = filled >= 100;
 
   return (
     <View style={s.candleCol}>
-      {/* Flame slot */}
+      {/* Top slot — flame only at 100%; otherwise just the bare wick */}
       <View style={s.candleFlameSlot}>
-        {lit ? <Image source={FLAME_PNG} style={s.candleFlameImg} /> : null}
+        {isFull
+          ? <Image source={FLAME_PNG} style={s.candleFlameImg} />
+          : <View style={s.candleWick} pointerEvents="none" />}
       </View>
 
       {/* Body */}
       <View style={[s.candleBody, isEmpty && s.candleBodyDimmed]}>
         {filled > 0 && (
-          <View style={[s.candleFill, { height: `${filled}%` }]}>
+          <LinearGradient
+            colors={['#E2BD75', '#C5A059', '#A87E33']}
+            locations={[0, 0.55, 1]}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={[s.candleFill, { height: `${filled}%` }]}
+          >
             {filled < 100 && <View style={s.candleFillTopLine} pointerEvents="none" />}
-          </View>
+          </LinearGradient>
         )}
         <View style={[s.candleRim, isEmpty && s.candleRimDimmed]} pointerEvents="none" />
-        <View style={[s.candleRimShadow, isEmpty && s.candleRimShadowDimmed]} pointerEvents="none" />
         <View style={[s.candleBase, isEmpty && s.candleBaseDimmed]} pointerEvents="none" />
       </View>
     </View>
@@ -406,73 +413,69 @@ const s = StyleSheet.create({
     overflow: 'visible',
   },
   candleFlameImg: { width: 20, height: 20, resizeMode: 'contain' },
+  candleWick: {
+    position: 'absolute',
+    bottom: 5,
+    left: '50%',
+    marginLeft: -0.75,
+    width: 1.5,
+    height: 5,
+    borderRadius: 1,
+    backgroundColor: '#2A2522',
+  },
   candleBody: {
     width: CANDLE_W,
     height: CANDLE_H,
     borderTopLeftRadius: 6,
     borderTopRightRadius: 6,
-    borderBottomLeftRadius: 3,
-    borderBottomRightRadius: 3,
-    backgroundColor: '#FFF6E0',
-    borderWidth: 1.8,
-    borderColor: '#B07A35',
+    borderBottomLeftRadius: 5,
+    borderBottomRightRadius: 5,
+    backgroundColor: '#FFFBF1',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.32)',
     overflow: 'hidden',
     position: 'relative',
   },
   candleBodyDimmed: {
-    backgroundColor: '#F5F3EE',
-    borderColor: '#C9C4B7',
+    backgroundColor: '#F8F6EF',
+    borderColor: 'rgba(168,162,158,0.30)',
   },
   candleFill: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#E2A93D',
   },
   candleFillTopLine: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: 1.5,
-    backgroundColor: '#B07F25',
-    opacity: 0.65,
+    height: 1,
+    backgroundColor: 'rgba(168,108,40,0.30)',
   },
   candleRim: {
     position: 'absolute',
     top: 2,
     left: 2,
     right: 2,
-    height: 1.6,
-    backgroundColor: 'rgba(176,122,53,0.55)',
+    height: 1.2,
+    backgroundColor: 'rgba(168,108,40,0.25)',
     borderRadius: 1,
   },
   candleRimDimmed: {
-    backgroundColor: 'rgba(168,162,158,0.40)',
-  },
-  candleRimShadow: {
-    position: 'absolute',
-    top: 5,
-    left: 3,
-    right: 3,
-    height: 1.2,
-    backgroundColor: 'rgba(176,122,53,0.25)',
-    borderRadius: 1,
-  },
-  candleRimShadowDimmed: {
-    backgroundColor: 'rgba(168,162,158,0.20)',
+    backgroundColor: 'rgba(168,162,158,0.25)',
   },
   candleBase: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: 3,
-    backgroundColor: 'rgba(176,122,53,0.25)',
+    height: 2.5,
+    backgroundColor: 'rgba(168,108,40,0.10)',
   },
   candleBaseDimmed: {
-    backgroundColor: 'rgba(168,162,158,0.25)',
+    backgroundColor: 'rgba(168,162,158,0.12)',
   },
   analyticsBtn: {
     marginTop: 10,
