@@ -83,15 +83,9 @@ function Candle({ pct, mode }: { pct: number | null; mode: DayMode }) {
       {/* Body */}
       <View style={[s.candleBody, isEmpty && s.candleBodyDimmed]}>
         {filled > 0 && (
-          <LinearGradient
-            colors={['#E2BD75', '#C5A059', '#A87E33']}
-            locations={[0, 0.55, 1]}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={[s.candleFill, { height: `${filled}%` }]}
-          >
+          <View style={[s.candleFill, { height: `${filled}%` }]}>
             {filled < 100 && <View style={s.candleFillTopLine} pointerEvents="none" />}
-          </LinearGradient>
+          </View>
         )}
         <View style={[s.candleRim, isEmpty && s.candleRimDimmed]} pointerEvents="none" />
         <View style={[s.candleBase, isEmpty && s.candleBaseDimmed]} pointerEvents="none" />
@@ -428,7 +422,7 @@ const s = StyleSheet.create({
     height: 6,
     borderTopLeftRadius: 0.7,
     borderTopRightRadius: 0.7,
-    backgroundColor: '#3B2A1F',
+    backgroundColor: '#1F1310',
   },
   candleEmber: {
     position: 'absolute',
@@ -452,29 +446,30 @@ const s = StyleSheet.create({
     borderTopRightRadius: 6,
     borderBottomLeftRadius: 5,
     borderBottomRightRadius: 5,
-    backgroundColor: '#FFFBF1',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.32)',
+    backgroundColor: '#FFF4C9',
+    borderWidth: 1.8,
+    borderColor: '#1F1310',
     overflow: 'hidden',
     position: 'relative',
   },
   candleBodyDimmed: {
-    backgroundColor: '#F8F6EF',
-    borderColor: 'rgba(168,162,158,0.30)',
+    backgroundColor: '#F2EDD8',
+    borderColor: '#3B2A1F',
   },
   candleFill: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
+    backgroundColor: '#F2A046',
   },
   candleFillTopLine: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: 1,
-    backgroundColor: 'rgba(168,108,40,0.30)',
+    height: 1.5,
+    backgroundColor: 'rgba(31,19,16,0.50)',
   },
   candleRim: {
     position: 'absolute',
@@ -482,11 +477,11 @@ const s = StyleSheet.create({
     left: 2,
     right: 2,
     height: 1.2,
-    backgroundColor: 'rgba(168,108,40,0.25)',
+    backgroundColor: 'rgba(31,19,16,0.20)',
     borderRadius: 1,
   },
   candleRimDimmed: {
-    backgroundColor: 'rgba(168,162,158,0.25)',
+    backgroundColor: 'rgba(31,19,16,0.12)',
   },
   candleBase: {
     position: 'absolute',
@@ -494,10 +489,10 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     height: 2.5,
-    backgroundColor: 'rgba(168,108,40,0.10)',
+    backgroundColor: 'rgba(31,19,16,0.15)',
   },
   candleBaseDimmed: {
-    backgroundColor: 'rgba(168,162,158,0.12)',
+    backgroundColor: 'rgba(31,19,16,0.08)',
   },
   analyticsBtn: {
     marginTop: 10,
