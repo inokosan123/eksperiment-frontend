@@ -67,26 +67,30 @@ function Candle({ pct, mode }: { pct: number | null; mode: DayMode }) {
 
   return (
     <View style={s.candleCol}>
-      {/* Top slot — flame at 100%, otherwise wick (with ember tip while
-          there is progress, plain wick when the day is still cold). */}
+      {/* Top slot — flame at 100%, otherwise tapered cotton wick with
+          ember tip while there is progress. */}
       <View style={s.candleFlameSlot}>
         {isFull ? (
           <Image source={FLAME_PNG} style={s.candleFlameImg} />
         ) : (
           <>
-            <View style={s.candleWick} pointerEvents="none" />
+            <View style={s.candleWickWrap} pointerEvents="none">
+              <View style={s.candleWickTip} />
+              <View style={s.candleWickBase} />
+            </View>
             {!isEmpty && <View style={s.candleEmber} pointerEvents="none" />}
           </>
         )}
       </View>
 
       {/* Body */}
-      <View style={[s.candleBody, isEmpty && s.candleBodyDimmed]}>
+      <View style={[s.candleBody, isEmpty && s.candleBodyDimmed, isFull && s.candleBodyFull]}>
         {filled > 0 && (
           <View style={[s.candleFill, { height: `${filled}%` }]}>
             {filled < 100 && <View style={s.candleFillTopLine} pointerEvents="none" />}
           </View>
         )}
+        <View style={s.candleSideHighlight} pointerEvents="none" />
         <View style={[s.candleRim, isEmpty && s.candleRimDimmed]} pointerEvents="none" />
         <View style={[s.candleBase, isEmpty && s.candleBaseDimmed]} pointerEvents="none" />
       </View>
@@ -413,31 +417,41 @@ const s = StyleSheet.create({
     overflow: 'visible',
   },
   candleFlameImg: { width: 20, height: 20, resizeMode: 'contain' },
-  candleWick: {
+  candleWickWrap: {
     position: 'absolute',
     bottom: 5,
     left: '50%',
-    marginLeft: -0.7,
-    width: 1.4,
+    marginLeft: -0.75,
+    width: 1.5,
     height: 6,
-    borderTopLeftRadius: 0.7,
-    borderTopRightRadius: 0.7,
+    alignItems: 'center',
+  },
+  candleWickTip: {
+    width: 1.1,
+    height: 2,
+    backgroundColor: '#0F0807',
+    borderTopLeftRadius: 0.55,
+    borderTopRightRadius: 0.55,
+  },
+  candleWickBase: {
+    width: 1.4,
+    height: 4,
     backgroundColor: '#1F1310',
   },
   candleEmber: {
     position: 'absolute',
-    bottom: 10,
+    bottom: 11,
     left: '50%',
-    marginLeft: -1.25,
-    width: 2.5,
-    height: 2.5,
-    borderRadius: 1.25,
-    backgroundColor: '#E07A2A',
+    marginLeft: -1.5,
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#FF8B2E',
     shadowColor: '#FFB347',
-    shadowOpacity: 0.7,
+    shadowOpacity: 0.85,
     shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 2.5,
-    elevation: 1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   candleBody: {
     width: CANDLE_W,
@@ -455,6 +469,22 @@ const s = StyleSheet.create({
   candleBodyDimmed: {
     backgroundColor: '#F2EDD8',
     borderColor: '#3B2A1F',
+  },
+  candleBodyFull: {
+    shadowColor: '#FFC857',
+    shadowOpacity: 0.75,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 7,
+    elevation: 4,
+  },
+  candleSideHighlight: {
+    position: 'absolute',
+    top: 5,
+    bottom: 4,
+    left: 3,
+    width: 1.4,
+    backgroundColor: 'rgba(255,255,255,0.32)',
+    borderRadius: 0.7,
   },
   candleFill: {
     position: 'absolute',
