@@ -39,7 +39,6 @@ import {
 } from '@/components/icons/Icons';
 import DateStrip from './DateStrip';
 import WeeklyRhythm from './WeeklyRhythm';
-import ChallengesSection from './ChallengesSection';
 import ExploreSection from './ExploreSection';
 import { C, F } from '@/constants/tokens';
 import { AnyTaskCard, TaskData, TaskState } from '@/components/shared/TaskCards';
@@ -882,7 +881,6 @@ export default function HomeView() {
       </View>
 
         <WeeklyRhythm />
-        <ChallengesSection />
         <ExploreSection />
       </ScrollView>
       <QuickTaskSheet

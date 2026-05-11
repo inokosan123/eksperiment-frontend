@@ -11,6 +11,7 @@ import {
   OpenBook,
   Star,
   Target,
+  Trophy,
 } from '@/components/icons/Icons';
 
 export type SectionCardRoute =
@@ -27,7 +28,8 @@ export type SectionCardRoute =
   | '/bucket-list'
   | '/monthly-goals'
   | '/big-events'
-  | '/focus-zone';
+  | '/focus-zone'
+  | '/challenges';
 
 export type SectionCardConfig = {
   id: string;
@@ -256,6 +258,21 @@ export const FOCUS_ZONE_CARD: SectionCardConfig = {
   route: '/focus-zone',
 };
 
+export const CHALLENGES_CARD: SectionCardConfig = {
+  id: 'challenges',
+  label: 'SACRED EFFORTS',
+  title: 'Challenges',
+  description: 'Take on fasts, prayer rules, and disciplined seasons that shape who you become.',
+  bg: '#FBF3DE',
+  border: '#F0E3B8',
+  labelColor: '#A9863F',
+  titleColor: '#451A03',
+  bodyColor: '#A9863F',
+  arrowBg: '#78350F',
+  decor: <Trophy s={84} c="#B45309" w={1} />,
+  route: '/challenges',
+};
+
 export const LIBRARY_SECTION_CARDS = [
   PRAYER_BOOK_CARD,
   HOLY_SCRIPTURE_CARD,
@@ -281,4 +298,5 @@ export const HOME_EXPLORE_SECTION_CARDS = [
   NOTES_CARD,
   HOLY_SCRIPTURE_CARD,
   JOURNAL_CARD,
+  CHALLENGES_CARD,
 ];
