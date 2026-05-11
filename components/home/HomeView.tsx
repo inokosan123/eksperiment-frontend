@@ -275,7 +275,7 @@ const h = StyleSheet.create({
   monthNavBtn: { width: 24, height: 28, alignItems: 'center', justifyContent: 'center' },
   month: { fontFamily: F.serifMedium, fontSize: 27, color: C.red, lineHeight: 32 },
   year: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.textMuted, marginTop: 2 },
-  quoteWrap: { paddingHorizontal: 30, paddingTop: 6, paddingBottom: 10, alignItems: 'center' },
+  quoteWrap: { paddingHorizontal: 30, paddingTop: 6, paddingBottom: 4, alignItems: 'center' },
   quote: {
     maxWidth: 330,
     fontFamily: F.serifMediumItalic,
@@ -373,7 +373,7 @@ function BigEventRow({
 }
 
 const beb = StyleSheet.create({
-  section: { marginHorizontal: 16, marginTop: 10, marginBottom: 0 },
+  section: { marginHorizontal: 16, marginTop: 6, marginBottom: 0 },
   head: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 4 },
   headTitle: { fontFamily: F.serifMedium, fontSize: 18, color: C.text },
   headSub: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, color: '#A8A29E', textTransform: 'uppercase' },
@@ -1419,7 +1419,7 @@ const s = StyleSheet.create({
     position: 'relative',
     backgroundColor: C.bg,
   },
-  tasksWrap: { paddingHorizontal: 20, paddingTop: 18 },
+  tasksWrap: { paddingHorizontal: 20, paddingTop: 12 },
   tasksHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 },
   tasksTitle: { fontFamily: F.serifMedium, fontSize: 22, color: C.text },
   tasksSub: { fontFamily: F.sans, fontSize: 12, color: C.textMuted, marginTop: 4 },
