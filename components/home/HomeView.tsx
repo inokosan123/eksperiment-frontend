@@ -1437,7 +1437,7 @@ const s = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: C.goldLight,
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.45)',
+    borderColor: 'rgba(197,160,89,0.39)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
