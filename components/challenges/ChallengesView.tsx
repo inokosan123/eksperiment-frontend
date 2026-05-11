@@ -1,7 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
-  Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,11 +7,23 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect } from '@react-navigation/native';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import ConfirmModal from '@/components/shared/ConfirmModal';
+import NotificationSettings, { type NotificationMode } from '@/components/shared/NotificationSettings';
+import TaskFrequencyEditor, { type TaskFrequency } from '@/components/shared/TaskFrequencyEditor';
+import TaskTimeEditor, { type TaskDayTimes } from '@/components/shared/TaskTimeEditor';
 import {
-  ArrowUpRight,
+  buildPrayerChallengeConfig,
+  ChallengePanel,
+  defaultChallengeSchedule,
+  prayerChallengeDetail,
+  scriptureApproxDays,
+  scriptureDailyAmountLabel,
+  type ChallengeScheduleDraft,
+  type JesusPrayerMode,
+  type PrayerChallengeRuleChoice,
+} from '@/components/shared/SetAsTaskSheet';
+import {
   Book,
   BookMarked,
   CalendarCheck,
@@ -25,22 +35,21 @@ import {
   Moon,
   Notebook,
   OpenBook,
-  Pause,
   Play,
   Sparkles,
   Sun,
-  Trash2,
-  X,
+  Trophy,
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { useChallenges } from './ChallengesContext';
+import { useTasks } from '@/components/tasks/TaskProvider';
 import {
   ChallengeCatalogEntry,
+  type ChallengeChurchConfig,
   ChallengeIconKey,
   ChallengeRecord,
   ChallengeTab,
-  GROUP_LABELS,
-  GROUP_ORDER,
+  type ChallengeCategory,
   TAB_ACTIVE_COLORS,
 } from './challengeData';
 
@@ -131,6 +140,92 @@ function ChallengeIcon({
   }
 }
 
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = hex.replace('#', '');
+  if (normalized.length !== 6) return hex;
+  const r = Number.parseInt(normalized.slice(0, 2), 16);
+  const g = Number.parseInt(normalized.slice(2, 4), 16);
+  const b = Number.parseInt(normalized.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+type ChurchScheduleDraft = {
+  frequency: TaskFrequency;
+  selectedDays: number[];
+  monthlyDays: number[];
+  time: string;
+  sameTimeEveryDay: boolean;
+  dayTimes: TaskDayTimes;
+  notificationMode: NotificationMode;
+  reminderMinutes: number;
+};
+
+const CHURCH_DEFAULT_DAYS = [6];
+const CHURCH_DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+
+function defaultChurchSchedule(time = '09:00'): ChurchScheduleDraft {
+  return {
+    frequency: 'specific_days',
+    selectedDays: CHURCH_DEFAULT_DAYS,
+    monthlyDays: [1],
+    time,
+    sameTimeEveryDay: true,
+    dayTimes: {},
+    notificationMode: 'single',
+    reminderMinutes: 15,
+  };
+}
+
+function churchActiveDayIndexes(schedule: ChurchScheduleDraft) {
+  switch (schedule.frequency) {
+    case 'weekdays':
+      return [0, 1, 2, 3, 4];
+    case 'weekends':
+      return [5, 6];
+    case 'specific_days':
+      return schedule.selectedDays.length ? schedule.selectedDays : CHURCH_DEFAULT_DAYS;
+    case 'daily':
+    case 'monthly':
+    default:
+      return [0, 1, 2, 3, 4, 5, 6];
+  }
+}
+
+function churchScheduleLabel(schedule: ChurchScheduleDraft) {
+  switch (schedule.frequency) {
+    case 'daily':
+      return 'Daily';
+    case 'weekdays':
+      return 'Weekdays';
+    case 'weekends':
+      return 'Weekends';
+    case 'monthly':
+      return `Monthly ${schedule.monthlyDays.join(', ')}`;
+    case 'specific_days': {
+      const days = schedule.selectedDays.length ? schedule.selectedDays : CHURCH_DEFAULT_DAYS;
+      if (days.length === 1 && days[0] === 6) return 'Every Sunday';
+      return days.map(day => CHURCH_DAY_LABELS[day]).join(' / ');
+    }
+    default:
+      return 'Every Sunday';
+  }
+}
+
+function churchScheduleToConfig(schedule: ChurchScheduleDraft): ChallengeChurchConfig {
+  return {
+    frequency: schedule.frequency,
+    selectedDays: schedule.frequency === 'specific_days'
+      ? (schedule.selectedDays.length ? schedule.selectedDays : CHURCH_DEFAULT_DAYS)
+      : [],
+    monthlyDays: schedule.frequency === 'monthly' ? schedule.monthlyDays : [1],
+    time: schedule.time,
+    sameTimeEveryDay: schedule.sameTimeEveryDay,
+    dayTimes: schedule.sameTimeEveryDay ? {} : schedule.dayTimes,
+    notificationMode: schedule.notificationMode,
+    reminderMinutes: schedule.notificationMode === 'double' ? schedule.reminderMinutes : undefined,
+  };
+}
+
 function TabPill({
   active,
   label,
@@ -148,15 +243,17 @@ function TabPill({
       activeOpacity={0.84}
       style={[
         s.tabPill,
-        active ? { backgroundColor: color, borderColor: color } : null,
+        active
+          ? { backgroundColor: color, borderColor: color }
+          : { backgroundColor: hexToRgba(color, 0.08), borderColor: hexToRgba(color, 0.18) },
       ]}
     >
-      <Text style={[s.tabText, active ? s.tabTextActive : null]}>{label}</Text>
+      <Text style={[s.tabText, active ? s.tabTextActive : { color: hexToRgba(color, 0.72) }]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
-function ChallengeLifecycleCard({
+export function ChallengeLifecycleCard({
   challenge,
   onPress,
 }: {
@@ -222,22 +319,27 @@ function ChallengeLifecycleCard({
   );
 }
 
-function CatalogEntryCard({
+export function CatalogEntryCard({
   entry,
   expanded,
   selectedPaceId,
+  churchSchedule,
   onToggle,
   onSelectPace,
+  onChurchScheduleChange,
   onStart,
 }: {
   entry: ChallengeCatalogEntry;
   expanded: boolean;
   selectedPaceId?: string;
+  churchSchedule?: ChurchScheduleDraft;
   onToggle: () => void;
   onSelectPace: (paceId: string) => void;
+  onChurchScheduleChange?: (schedule: ChurchScheduleDraft) => void;
   onStart: () => void;
 }) {
   const tone = getTone(entry.category);
+  const showChurchSchedule = entry.category === 'church' && churchSchedule && onChurchScheduleChange;
 
   return (
     <View style={[s.catalogCard, { borderColor: tone.border, backgroundColor: '#FFFFFF' }]}>
@@ -285,6 +387,65 @@ function CatalogEntryCard({
             </View>
           ) : null}
 
+          {showChurchSchedule ? (
+            <View style={s.churchSetupStack}>
+              <TaskFrequencyEditor
+                frequency={churchSchedule.frequency}
+                selectedDays={churchSchedule.selectedDays}
+                monthlyDays={churchSchedule.monthlyDays}
+                accent={tone.accent}
+                label="Schedule"
+                onFrequencyChange={frequency => onChurchScheduleChange({
+                  ...churchSchedule,
+                  frequency,
+                  selectedDays: frequency === 'specific_days' && churchSchedule.selectedDays.length === 0
+                    ? CHURCH_DEFAULT_DAYS
+                    : churchSchedule.selectedDays,
+                  monthlyDays: frequency === 'monthly' && churchSchedule.monthlyDays.length === 0
+                    ? [1]
+                    : churchSchedule.monthlyDays,
+                  sameTimeEveryDay: frequency === 'monthly' ? true : churchSchedule.sameTimeEveryDay,
+                })}
+                onSelectedDaysChange={selectedDays => onChurchScheduleChange({
+                  ...churchSchedule,
+                  selectedDays: selectedDays.length ? selectedDays : CHURCH_DEFAULT_DAYS,
+                })}
+                onMonthlyDaysChange={monthlyDays => onChurchScheduleChange({
+                  ...churchSchedule,
+                  monthlyDays: monthlyDays.length ? monthlyDays : [1],
+                })}
+              />
+
+              <View style={s.churchSetupBlock}>
+                <TaskTimeEditor
+                  time={churchSchedule.time}
+                  sameTimeEveryDay={churchSchedule.sameTimeEveryDay}
+                  dayTimes={churchSchedule.dayTimes}
+                  activeDayIndexes={churchActiveDayIndexes(churchSchedule)}
+                  accent={tone.accent}
+                  softBg={tone.soft}
+                  borderColor={tone.border}
+                  mutedColor={C.textMuted}
+                  allowPerDayTimes={churchSchedule.frequency !== 'monthly'}
+                  onTimeChange={time => onChurchScheduleChange({ ...churchSchedule, time })}
+                  onSameTimeEveryDayChange={sameTimeEveryDay => onChurchScheduleChange({
+                    ...churchSchedule,
+                    sameTimeEveryDay,
+                  })}
+                  onDayTimesChange={dayTimes => onChurchScheduleChange({ ...churchSchedule, dayTimes })}
+                />
+              </View>
+
+              <NotificationSettings
+                mode={churchSchedule.notificationMode}
+                reminderMinutes={churchSchedule.reminderMinutes}
+                accent={tone.accent}
+                onModeChange={notificationMode => onChurchScheduleChange({ ...churchSchedule, notificationMode })}
+                onReminderChange={reminderMinutes => onChurchScheduleChange({ ...churchSchedule, reminderMinutes })}
+              />
+            </View>
+          ) : null}
+
           <TouchableOpacity
             activeOpacity={0.84}
             onPress={onStart}
@@ -305,17 +466,89 @@ function HistoryCard({
   challenge: ChallengeRecord;
 }) {
   const tone = getTone(challenge.category);
+  const badge = getCategoryBadge(challenge.category);
+  const progressTotal = challenge.progressTotal ?? challenge.durationDays ?? challenge.totalUnits ?? 0;
+  const progressPercent = progressTotal > 0
+    ? Math.min(100, Math.round((challenge.progressCurrent / progressTotal) * 100))
+    : 100;
+  const progressLabel = progressTotal > 0
+    ? `${challenge.progressCurrent}/${progressTotal} ${challenge.progressUnit}`
+    : challenge.headline;
 
   return (
-    <View style={[s.historyCard, { borderColor: tone.border }]}>
+    <View style={[
+      s.historyCard,
+      s.historyCardCompleted,
+      { borderColor: tone.border },
+    ]}>
       <View style={s.historyTop}>
-        <View style={[s.historyDot, { backgroundColor: challenge.status === 'completed' ? tone.accent : '#E7E5E4' }]} />
-        <Text style={s.historyTitle}>{challenge.title}</Text>
+        <View style={[
+          s.historyIconBubble,
+          {
+            backgroundColor: tone.iconBg,
+            borderColor: tone.border,
+          },
+        ]}>
+          <Trophy s={17} c={tone.accent} />
+        </View>
+
+        <View style={s.historyCopy}>
+          <View style={s.historyBadgeRow}>
+            <View style={[s.historyCategoryBadge, { backgroundColor: badge.bg }]}>
+              <Text style={[s.historyCategoryText, { color: badge.text }]}>{badge.label}</Text>
+            </View>
+            <View style={[
+              s.historyStateBadge,
+              s.historyStateCompleted,
+            ]}>
+              <CheckSmall s={10} c={C.gold} />
+              <Text style={[
+                s.historyStateText,
+                s.historyStateTextCompleted,
+              ]}>
+                Completed
+              </Text>
+            </View>
+          </View>
+          <Text style={s.historyTitle}>{challenge.title}</Text>
+          <Text style={s.historyFoot}>{challenge.endedLabel || 'Completed'}</Text>
+        </View>
       </View>
-      <Text style={s.historyBody}>{challenge.headline}</Text>
-      <Text style={s.historyFoot}>{challenge.endedLabel || challenge.subline}</Text>
+
+      <Text style={s.historyBody}>
+        This challenge was completed successfully.
+      </Text>
+
+      <View style={s.historyMetaRow}>
+        <Text style={s.historyProgressText}>{progressLabel}</Text>
+        {challenge.bestStreak || challenge.streak ? (
+          <View style={s.historyStreakPill}>
+            <Flame s={10} filled color="#F97316" />
+            <Text style={s.historyStreakText}>{challenge.bestStreak ?? challenge.streak}</Text>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={s.historyProgressTrack}>
+        <View
+          style={[
+            s.historyProgressFill,
+            {
+              width: `${Math.max(100, progressPercent)}%`,
+              backgroundColor: tone.accent,
+            },
+          ]}
+        />
+      </View>
     </View>
   );
+}
+
+type PanelChallengeContext = ChallengeCategory;
+const PANEL_CONTEXTS: PanelChallengeContext[] = ['prayer', 'scripture', 'journal', 'church'];
+
+function isPanelChallengeContext(value: ChallengeTab): value is PanelChallengeContext {
+  return value === 'prayer' || value === 'scripture' || value === 'journal' || value === 'church';
 }
 
 export default function ChallengesView() {
@@ -323,69 +556,40 @@ export default function ChallengesView() {
     activeChallenges,
     pausedChallenges,
     completedChallenges,
-    cancelledChallenges,
     availableCatalogEntries,
     pauseChallenge,
     resumeChallenge,
     endChallenge,
     startChallenge,
     updateChallenge,
+    refreshChallenges,
   } = useChallenges();
+  const { refresh: refreshTasks } = useTasks();
   const [activeTab, setActiveTab] = useState<ChallengeTab>('active');
-  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
-  const [selectedPaces, setSelectedPaces] = useState<Record<string, string>>({});
-  const [manageTarget, setManageTarget] = useState<ChallengeRecord | null>(null);
-  const [scheduleTarget, setScheduleTarget] = useState<ChallengeRecord | null>(null);
-  const [draftTime, setDraftTime] = useState('21:00');
-  const [draftSchedule, setDraftSchedule] = useState('Daily');
-  const [confirmEndId, setConfirmEndId] = useState<string | null>(null);
+  const [selectedCatalog, setSelectedCatalog] = useState<ChallengeCatalogEntry | null>(null);
+  const [selectedPaceId, setSelectedPaceId] = useState<string | null>(null);
+  const [challengeSchedule, setChallengeSchedule] = useState<ChallengeScheduleDraft>(defaultChallengeSchedule('08:00'));
+  const [scriptureDailyAmount, setScriptureDailyAmount] = useState(1);
+  const [challengePrayerRule, setChallengePrayerRule] = useState<PrayerChallengeRuleChoice>('personal');
+  const [challengeJesusMode, setChallengeJesusMode] = useState<JesusPrayerMode>('duration');
+  const [challengeJesusDuration, setChallengeJesusDuration] = useState('15');
+  const [challengeJesusCount, setChallengeJesusCount] = useState('100');
+  const [churchSchedule, setChurchSchedule] = useState<ChurchScheduleDraft>(defaultChurchSchedule());
+  const [expandedChallengeId, setExpandedChallengeId] = useState<string | null>(null);
+  const [recentlyStartedTemplateId, setRecentlyStartedTemplateId] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshChallenges();
+      void refreshTasks();
+    }, [refreshChallenges, refreshTasks]),
+  );
 
   const ongoingChallenges = useMemo(
     () => [...activeChallenges, ...pausedChallenges],
     [activeChallenges, pausedChallenges],
   );
-
-  const historyCount = completedChallenges.length + cancelledChallenges.length;
-
-  const currentTabChallenges = useMemo(() => {
-    switch (activeTab) {
-      case 'prayer':
-        return ongoingChallenges.filter(item => item.category === 'prayer');
-      case 'scripture':
-        return ongoingChallenges.filter(item => item.category === 'scripture');
-      case 'journal':
-        return ongoingChallenges.filter(item => item.category === 'journal');
-      case 'church':
-        return ongoingChallenges.filter(item => item.category === 'church');
-      default:
-        return ongoingChallenges;
-    }
-  }, [activeTab, ongoingChallenges]);
-
-  const currentTabCatalog = useMemo(() => {
-    switch (activeTab) {
-      case 'prayer':
-        return availableCatalogEntries.filter(item => item.category === 'prayer');
-      case 'scripture':
-        return availableCatalogEntries.filter(item => item.category === 'scripture');
-      case 'journal':
-        return availableCatalogEntries.filter(item => item.category === 'journal');
-      case 'church':
-        return availableCatalogEntries.filter(item => item.category === 'church');
-      default:
-        return [];
-    }
-  }, [activeTab, availableCatalogEntries]);
-
-  const groupedScriptureCatalog = useMemo(() => (
-    GROUP_ORDER
-      .map(groupKey => ({
-        key: groupKey,
-        label: GROUP_LABELS[groupKey],
-        entries: currentTabCatalog.filter(item => item.groupKey === groupKey),
-      }))
-      .filter(group => group.entries.length > 0)
-  ), [currentTabCatalog]);
+  const historyCount = completedChallenges.length;
 
   const tabs: { key: ChallengeTab; label: string }[] = [
     { key: 'active', label: `ACTIVE (${ongoingChallenges.length})` },
@@ -395,6 +599,204 @@ export default function ChallengesView() {
     { key: 'church', label: 'CHURCH' },
     { key: 'history', label: `HISTORY (${historyCount})` },
   ];
+
+  const openUnifiedChallengeSetup = (entry: ChallengeCatalogEntry) => {
+    setExpandedChallengeId(null);
+    if (selectedCatalog?.id === entry.id) {
+      setSelectedCatalog(null);
+      setSelectedPaceId(null);
+      return;
+    }
+
+    setSelectedCatalog(entry);
+    setSelectedPaceId(entry.paceOptions?.[0]?.id ?? null);
+    setChallengeSchedule(defaultChallengeSchedule(entry.defaultTime ?? '08:00'));
+    setScriptureDailyAmount(1);
+    setChallengePrayerRule('personal');
+    setChallengeJesusMode('duration');
+    setChallengeJesusDuration('15');
+    setChallengeJesusCount('100');
+    if (entry.category === 'church') {
+      setChurchSchedule(defaultChurchSchedule(entry.defaultTime ?? '09:00'));
+    }
+  };
+
+  const startUnifiedChallenge = async () => {
+    if (!selectedCatalog) return;
+    const selectedPace = selectedCatalog.paceOptions?.find(option => option.id === selectedPaceId)
+      ?? selectedCatalog.paceOptions?.[0]
+      ?? null;
+
+    if (selectedCatalog.category === 'church') {
+      const record = await startChallenge(selectedCatalog.id, selectedPace, {
+        time: churchSchedule.time,
+        scheduleLabel: churchScheduleLabel(churchSchedule),
+        churchConfig: churchScheduleToConfig(churchSchedule),
+      });
+      await refreshChallenges();
+      await refreshTasks();
+      setRecentlyStartedTemplateId(record?.templateId ?? selectedCatalog.templateId);
+      setSelectedCatalog(null);
+      setExpandedChallengeId(null);
+      setTimeout(() => setRecentlyStartedTemplateId(null), 700);
+      return;
+    }
+
+    if (selectedCatalog.category === 'scripture') {
+      const chaptersPerDay = selectedCatalog.id === 'lectionary_daily' ? 0 : Math.max(1, scriptureDailyAmount);
+      const totalDays = selectedCatalog.id === 'lectionary_daily'
+        ? 365
+        : scriptureApproxDays(selectedCatalog, chaptersPerDay) || 1;
+      const record = await startChallenge(selectedCatalog.id, null, {
+        title: selectedCatalog.id === 'lectionary_daily' ? `${selectedCatalog.title} - 365 Days` : selectedCatalog.title,
+        time: challengeSchedule.time,
+        scheduleLabel: selectedCatalog.scheduleLabel,
+        paceLabel: selectedCatalog.id === 'lectionary_daily'
+          ? undefined
+          : scriptureDailyAmountLabel(selectedCatalog, chaptersPerDay),
+        durationDays: totalDays,
+        progressTotal: selectedCatalog.id === 'lectionary_daily' ? 0 : totalDays,
+        progressUnit: 'days',
+        headline: selectedCatalog.id === 'lectionary_daily' ? 'Day 1' : `Day 1 of ${totalDays}`,
+        subline: selectedCatalog.id === 'lectionary_daily'
+          ? 'Church-calendar daily readings'
+          : `0/${totalDays} days completed`,
+        showBar: selectedCatalog.id !== 'lectionary_daily',
+        totalUnits: selectedCatalog.totalUnits ?? 0,
+        scriptureConfig: {
+          chaptersPerDay,
+          time: challengeSchedule.time,
+          sameTimeEveryDay: challengeSchedule.sameTimeEveryDay,
+          dayTimes: challengeSchedule.sameTimeEveryDay ? {} : challengeSchedule.dayTimes,
+          notificationMode: challengeSchedule.notificationMode,
+          reminderMinutes: challengeSchedule.notificationMode === 'double' ? challengeSchedule.reminderMinutes : undefined,
+        },
+      });
+      await refreshChallenges();
+      await refreshTasks();
+      setRecentlyStartedTemplateId(record?.templateId ?? selectedCatalog.templateId);
+      setSelectedCatalog(null);
+      setExpandedChallengeId(null);
+      setTimeout(() => setRecentlyStartedTemplateId(null), 700);
+      return;
+    }
+
+    const prayerDetail = prayerChallengeDetail(
+      selectedCatalog,
+      challengePrayerRule,
+      challengeJesusMode,
+      challengeJesusDuration,
+      challengeJesusCount,
+    );
+    const prayerConfig = buildPrayerChallengeConfig(
+      selectedCatalog,
+      challengePrayerRule,
+      challengeJesusMode,
+      challengeJesusDuration,
+      challengeJesusCount,
+      challengeSchedule,
+    );
+    const paceLabel = selectedCatalog.category === 'prayer'
+      ? [selectedPace?.label, prayerDetail].filter(Boolean).join(' · ')
+      : selectedPace?.label;
+
+    const record = await startChallenge(selectedCatalog.id, selectedPace, {
+      time: challengeSchedule.time,
+      scheduleLabel: selectedCatalog.scheduleLabel,
+      paceLabel,
+      prayerConfig: selectedCatalog.category === 'prayer' ? prayerConfig : undefined,
+    });
+    await refreshChallenges();
+    await refreshTasks();
+    setRecentlyStartedTemplateId(record?.templateId ?? selectedCatalog.templateId);
+    setSelectedCatalog(null);
+    setExpandedChallengeId(null);
+    setTimeout(() => setRecentlyStartedTemplateId(null), 700);
+  };
+
+  const renderUnifiedPanel = (
+    context: PanelChallengeContext,
+    includeAvailable = true,
+    options?: {
+      includeActive?: boolean;
+      includePaused?: boolean;
+      showActiveLabel?: boolean;
+      showPausedLabel?: boolean;
+    },
+  ) => {
+    const includeActive = options?.includeActive ?? true;
+    const includePaused = options?.includePaused ?? true;
+    const activeItems = includeActive
+      ? [...activeChallenges]
+          .filter(item => item.category === context)
+          .sort((a, b) => {
+            const pctA = a.progressTotal && a.progressTotal > 0
+              ? (a.progressCurrent / a.progressTotal) * 100 : 0;
+            const pctB = b.progressTotal && b.progressTotal > 0
+              ? (b.progressCurrent / b.progressTotal) * 100 : 0;
+            return pctB - pctA;
+          })
+      : [];
+    const pausedItems = includePaused ? pausedChallenges.filter(item => item.category === context) : [];
+    const availableItems = includeAvailable
+      ? availableCatalogEntries.filter(item => item.category === context)
+      : [];
+
+    if (!includeAvailable && activeItems.length === 0 && pausedItems.length === 0) return null;
+
+    return (
+      <ChallengePanel
+        context={context}
+        activeItems={activeItems}
+        pausedItems={pausedItems}
+        availableItems={availableItems}
+        selectedCatalog={selectedCatalog}
+        selectedPaceId={selectedPaceId}
+        challengeSchedule={challengeSchedule}
+        scriptureDailyAmount={scriptureDailyAmount}
+        challengePrayerRule={challengePrayerRule}
+        challengeJesusMode={challengeJesusMode}
+        challengeJesusDuration={challengeJesusDuration}
+        challengeJesusCount={challengeJesusCount}
+        churchSchedule={churchSchedule}
+        expandedChallengeId={expandedChallengeId}
+        recentlyStartedTemplateId={recentlyStartedTemplateId}
+        showActiveLabel={options?.showActiveLabel ?? includeAvailable}
+        showPausedLabel={options?.showPausedLabel ?? true}
+        onOpenSetup={openUnifiedChallengeSetup}
+        onSelectedPaceIdChange={setSelectedPaceId}
+        onChallengeScheduleChange={setChallengeSchedule}
+        onScriptureDailyAmountChange={setScriptureDailyAmount}
+        onChallengePrayerRuleChange={setChallengePrayerRule}
+        onChallengeJesusModeChange={setChallengeJesusMode}
+        onChallengeJesusDurationChange={setChallengeJesusDuration}
+        onChallengeJesusCountChange={setChallengeJesusCount}
+        onChurchScheduleChange={setChurchSchedule}
+        onStartChallenge={startUnifiedChallenge}
+        onExpandedChallengeChange={setExpandedChallengeId}
+        onPauseChallenge={async id => {
+          await pauseChallenge(id);
+          await refreshChallenges();
+          await refreshTasks();
+        }}
+        onResumeChallenge={async id => {
+          await resumeChallenge(id);
+          await refreshChallenges();
+          await refreshTasks();
+        }}
+        onEndChallenge={async id => {
+          await endChallenge(id);
+          await refreshChallenges();
+          await refreshTasks();
+        }}
+        onUpdateChallenge={async (id, updates) => {
+          await updateChallenge(id, updates);
+          await refreshChallenges();
+          await refreshTasks();
+        }}
+      />
+    );
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -414,7 +816,8 @@ export default function ChallengesView() {
             color={TAB_ACTIVE_COLORS[tab.key]}
             onPress={() => {
               setActiveTab(tab.key);
-              setExpandedEntryId(null);
+              setExpandedChallengeId(null);
+              setSelectedCatalog(null);
             }}
           />
         ))}
@@ -434,95 +837,40 @@ export default function ChallengesView() {
               </View>
             ) : null}
 
-            {activeChallenges.map(challenge => (
-              <ChallengeLifecycleCard
-                key={challenge.id}
-                challenge={challenge}
-                onPress={() => setManageTarget(challenge)}
-              />
+            {activeChallenges.length > 0 ? (
+              <Text style={[s.sectionLabel, { color: '#10B981' }]}>ACTIVE</Text>
+            ) : null}
+
+            {PANEL_CONTEXTS.map(context => (
+              <View key={context}>
+                {renderUnifiedPanel(context, false, {
+                  includePaused: false,
+                  showActiveLabel: false,
+                  showPausedLabel: false,
+                })}
+              </View>
             ))}
 
             {pausedChallenges.length > 0 ? (
-              <View style={s.sectionBlock}>
-                <Text style={s.sectionLabel}>PAUSED</Text>
-                {pausedChallenges.map(challenge => (
-                  <ChallengeLifecycleCard
-                    key={challenge.id}
-                    challenge={challenge}
-                    onPress={() => setManageTarget(challenge)}
-                  />
-                ))}
-              </View>
+              <Text style={[s.sectionLabel, { color: '#A8A29E' }]}>PAUSED</Text>
             ) : null}
+
+            {PANEL_CONTEXTS.map(context => (
+              <View key={`${context}-paused`}>
+                {renderUnifiedPanel(context, false, {
+                  includeActive: false,
+                  showActiveLabel: false,
+                  showPausedLabel: false,
+                })}
+              </View>
+            ))}
+
           </View>
         ) : null}
 
-        {(activeTab === 'prayer' || activeTab === 'scripture' || activeTab === 'journal' || activeTab === 'church') ? (
+        {isPanelChallengeContext(activeTab) ? (
           <View style={s.sectionStack}>
-            {currentTabChallenges.length > 0 ? (
-              <View style={s.sectionBlock}>
-                <Text style={s.sectionLabel}>ACTIVE</Text>
-                {currentTabChallenges.map(challenge => (
-                  <ChallengeLifecycleCard
-                    key={challenge.id}
-                    challenge={challenge}
-                    onPress={() => setManageTarget(challenge)}
-                  />
-                ))}
-              </View>
-            ) : null}
-
-            {currentTabCatalog.length > 0 ? (
-              <View style={s.sectionBlock}>
-                <Text style={s.sectionLabel}>{currentTabChallenges.length > 0 ? 'START NEW' : 'AVAILABLE'}</Text>
-
-                {activeTab === 'scripture'
-                  ? groupedScriptureCatalog.map(group => (
-                    <View key={group.key} style={s.groupBlock}>
-                      <Text style={s.groupLabel}>{group.label}</Text>
-                      {group.entries.map(entry => (
-                        <CatalogEntryCard
-                          key={entry.id}
-                          entry={entry}
-                          expanded={expandedEntryId === entry.id}
-                          selectedPaceId={selectedPaces[entry.id]}
-                          onToggle={() => setExpandedEntryId(current => current === entry.id ? null : entry.id)}
-                          onSelectPace={paceId => setSelectedPaces(current => ({ ...current, [entry.id]: paceId }))}
-                          onStart={() => {
-                            const pace = entry.paceOptions?.find(item => item.id === selectedPaces[entry.id]) || entry.paceOptions?.[0] || null;
-                            startChallenge(entry.id, pace);
-                            setExpandedEntryId(null);
-                            setActiveTab('active');
-                          }}
-                        />
-                      ))}
-                    </View>
-                  ))
-                  : currentTabCatalog.map(entry => (
-                    <CatalogEntryCard
-                      key={entry.id}
-                      entry={entry}
-                      expanded={expandedEntryId === entry.id}
-                      selectedPaceId={selectedPaces[entry.id]}
-                      onToggle={() => setExpandedEntryId(current => current === entry.id ? null : entry.id)}
-                      onSelectPace={paceId => setSelectedPaces(current => ({ ...current, [entry.id]: paceId }))}
-                      onStart={() => {
-                        const pace = entry.paceOptions?.find(item => item.id === selectedPaces[entry.id]) || entry.paceOptions?.[0] || null;
-                        startChallenge(entry.id, pace);
-                        setExpandedEntryId(null);
-                        setActiveTab('active');
-                      }}
-                    />
-                  ))}
-              </View>
-            ) : null}
-
-            {currentTabChallenges.length === 0 && currentTabCatalog.length === 0 ? (
-              <View style={s.emptyWrap}>
-                <Text style={s.emptyTitle}>All caught up</Text>
-                <Text style={s.emptyBody}>No challenges available in this category right now.</Text>
-              </View>
-            ) : null}
+            {renderUnifiedPanel(activeTab, true)}
           </View>
         ) : null}
 
@@ -537,163 +885,15 @@ export default function ChallengesView() {
               </View>
             ) : null}
 
-            {cancelledChallenges.length > 0 ? (
-              <View style={s.sectionBlock}>
-                <Text style={s.sectionLabel}>ENDED EARLY</Text>
-                {cancelledChallenges.map(challenge => (
-                  <HistoryCard key={challenge.id} challenge={challenge} />
-                ))}
-              </View>
-            ) : null}
-
-            {completedChallenges.length === 0 && cancelledChallenges.length === 0 ? (
+            {completedChallenges.length === 0 ? (
               <View style={s.emptyWrap}>
                 <Text style={s.emptyTitle}>No history yet</Text>
-                <Text style={s.emptyBody}>Finished and ended challenges will live here.</Text>
+                <Text style={s.emptyBody}>Successfully completed challenges will live here.</Text>
               </View>
             ) : null}
           </View>
         ) : null}
       </ScrollView>
-
-      <SmoothBottomSheet visible={!!manageTarget} onClose={() => setManageTarget(null)} sheetStyle={s.sheet}>
-          {manageTarget ? (
-            <>
-              <View style={s.sheetHandle} />
-              <View style={s.sheetHead}>
-                <Text style={s.sheetTitle}>{manageTarget.title}</Text>
-                <TouchableOpacity onPress={() => setManageTarget(null)} activeOpacity={0.75} style={s.closeCircle}>
-                  <X s={16} c={C.textMuted} />
-                </TouchableOpacity>
-              </View>
-              <Text style={s.sheetBody}>{manageTarget.headline} | {manageTarget.scheduleLabel}</Text>
-
-              <View style={s.actionGrid}>
-                <TouchableOpacity
-                  activeOpacity={0.84}
-                  style={s.actionCard}
-                  onPress={() => {
-                    setDraftTime(manageTarget.time || '21:00');
-                    setDraftSchedule(manageTarget.scheduleLabel || 'Daily');
-                    setScheduleTarget(manageTarget);
-                  }}
-                >
-                  <ArrowUpRight s={15} c={C.gold} />
-                  <Text style={s.actionLabel}>Edit Schedule</Text>
-                </TouchableOpacity>
-
-                {manageTarget.status === 'active' ? (
-                  <TouchableOpacity
-                    activeOpacity={0.84}
-                    style={s.actionCard}
-                    onPress={() => {
-                      pauseChallenge(manageTarget.id);
-                      setManageTarget(null);
-                    }}
-                  >
-                    <Pause s={15} c={C.gold} />
-                    <Text style={s.actionLabel}>Pause</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    activeOpacity={0.84}
-                    style={s.actionCard}
-                    onPress={() => {
-                      resumeChallenge(manageTarget.id);
-                      setManageTarget(null);
-                    }}
-                  >
-                    <Play s={13} c={C.gold} />
-                    <Text style={s.actionLabel}>Resume</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              <TouchableOpacity
-                activeOpacity={0.84}
-                style={s.endBtn}
-                onPress={() => setConfirmEndId(manageTarget.id)}
-              >
-                <Trash2 s={15} c="#DC2626" />
-                <Text style={s.endBtnText}>END CHALLENGE</Text>
-              </TouchableOpacity>
-            </>
-          ) : null}
-      </SmoothBottomSheet>
-
-      <SmoothBottomSheet visible={!!scheduleTarget} onClose={() => setScheduleTarget(null)} sheetStyle={s.sheet}>
-          {scheduleTarget ? (
-            <>
-              <View style={s.sheetHandle} />
-              <View style={s.sheetHead}>
-                <Text style={s.sheetTitle}>Edit Schedule</Text>
-                <TouchableOpacity onPress={() => setScheduleTarget(null)} activeOpacity={0.75} style={s.closeCircle}>
-                  <X s={16} c={C.textMuted} />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={s.formLabel}>TIME</Text>
-              <View style={s.presetRow}>
-                {['06:30', '07:00', '21:00', '22:00'].map(option => (
-                  <TouchableOpacity
-                    key={option}
-                    activeOpacity={0.84}
-                    onPress={() => setDraftTime(option)}
-                    style={[s.presetChip, draftTime === option ? s.presetChipActive : null]}
-                  >
-                    <Text style={[s.presetChipText, draftTime === option ? s.presetChipTextActive : null]}>{option}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={s.formLabel}>FREQUENCY</Text>
-              <View style={s.presetRow}>
-                {['Daily', 'Weekdays', 'Every Sunday'].map(option => (
-                  <TouchableOpacity
-                    key={option}
-                    activeOpacity={0.84}
-                    onPress={() => setDraftSchedule(option)}
-                    style={[s.presetChip, draftSchedule === option ? s.presetChipActive : null]}
-                  >
-                    <Text style={[s.presetChipText, draftSchedule === option ? s.presetChipTextActive : null]}>{option}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <TouchableOpacity
-                activeOpacity={0.84}
-                style={s.saveBtn}
-                onPress={() => {
-                  updateChallenge(scheduleTarget.id, {
-                    time: draftTime,
-                    scheduleLabel: draftSchedule,
-                  });
-                  setScheduleTarget(null);
-                  setManageTarget(null);
-                }}
-              >
-                <CheckSmall s={14} c="#FFFFFF" />
-                <Text style={s.saveBtnText}>SAVE SCHEDULE</Text>
-              </TouchableOpacity>
-            </>
-          ) : null}
-      </SmoothBottomSheet>
-
-      <ConfirmModal
-        visible={!!confirmEndId}
-        icon={<X s={22} c="#EF4444" w={2.5} />}
-        iconBg="#FEF2F2"
-        title="End challenge?"
-        body="Progress stays in history, but the challenge leaves your active routine."
-        cancelLabel="CANCEL"
-        confirmLabel="END"
-        onCancel={() => setConfirmEndId(null)}
-        onConfirm={() => {
-          endChallenge(confirmEndId!);
-          setConfirmEndId(null);
-          setManageTarget(null);
-        }}
-      />
     </View>
   );
 }
@@ -723,7 +923,7 @@ const s = StyleSheet.create({
   },
   tabText: {
     fontFamily: F.sansBold,
-    fontSize: 9,
+    fontSize: 9.8,
     letterSpacing: 1.5,
     color: '#B4AE9F',
   },
@@ -778,7 +978,9 @@ const s = StyleSheet.create({
     borderRightWidth: 4,
     borderColor: C.gold,
     borderRadius: 24,
-    padding: 14,
+    paddingHorizontal: 16,
+    paddingTop: 9,
+    paddingBottom: 11,
     shadowColor: '#B6913D',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.12,
@@ -797,22 +999,23 @@ const s = StyleSheet.create({
   },
   categoryBadge: {
     alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
     borderRadius: 999,
     marginBottom: 7,
   },
   categoryBadgeText: {
     fontFamily: F.sansBold,
-    fontSize: 8,
+    fontSize: 8.5,
+    lineHeight: 11,
     letterSpacing: 1.5,
     textTransform: 'uppercase',
   },
   lifecycleTitle: {
     fontFamily: F.serifMedium,
-    fontSize: 15,
+    fontSize: 19,
     color: C.text,
-    lineHeight: 19,
+    lineHeight: 24,
   },
   lifecycleRight: {
     flexDirection: 'row',
@@ -830,7 +1033,7 @@ const s = StyleSheet.create({
   },
   streakText: {
     fontFamily: F.sansBold,
-    fontSize: 11,
+    fontSize: 10.5,
     color: '#B45309',
   },
   lifecycleMetaRow: {
@@ -848,7 +1051,7 @@ const s = StyleSheet.create({
   },
   lifecycleMeta: {
     fontFamily: F.sansMedium,
-    fontSize: 11,
+    fontSize: 10.5,
     color: '#AAA397',
   },
   lifecycleMetaDot: {
@@ -973,6 +1176,16 @@ const s = StyleSheet.create({
     fontSize: 11,
     color: C.textMuted,
   },
+  churchSetupStack: {
+    gap: 14,
+  },
+  churchSetupBlock: {
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#F0E5CE',
+    backgroundColor: '#FFFDF8',
+    padding: 14,
+  },
   startBtn: {
     minHeight: 48,
     borderRadius: 20,
@@ -989,39 +1202,146 @@ const s = StyleSheet.create({
   },
   historyCard: {
     borderWidth: 1,
-    borderRadius: 22,
-    padding: 14,
+    borderLeftWidth: 4,
+    borderRightWidth: 4,
+    borderRadius: 26,
+    padding: 15,
     backgroundColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  historyCardCompleted: {
+    backgroundColor: '#FFFDF8',
+    shadowColor: '#C5A059',
+  },
+  historyCardEnded: {
+    backgroundColor: '#FFFDFD',
+    shadowColor: '#EF4444',
   },
   historyTop: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    alignItems: 'flex-start',
+    gap: 12,
   },
-  historyDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+  historyIconBubble: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  historyBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 6,
+  },
+  historyCategoryBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  historyCategoryText: {
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+  },
+  historyStateBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  historyStateCompleted: {
+    borderColor: 'rgba(197,160,89,0.18)',
+    backgroundColor: '#FFF8E8',
+  },
+  historyStateEnded: {
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
+  },
+  historyStateText: {
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 1.3,
+    textTransform: 'uppercase',
+  },
+  historyStateTextCompleted: {
+    color: C.gold,
+  },
+  historyStateTextEnded: {
+    color: '#EF4444',
   },
   historyTitle: {
     fontFamily: F.serifMedium,
-    fontSize: 16,
+    fontSize: 17,
+    lineHeight: 22,
     color: C.text,
   },
   historyBody: {
-    marginTop: 8,
-    fontFamily: F.sans,
-    fontSize: 12,
-    lineHeight: 18,
+    marginTop: 12,
+    fontFamily: F.serif,
+    fontSize: 14,
+    lineHeight: 20,
     color: C.textSecondary,
   },
   historyFoot: {
-    marginTop: 8,
     fontFamily: F.sansBold,
     fontSize: 9,
     letterSpacing: 1.6,
     color: C.textMuted,
     textTransform: 'uppercase',
+  },
+  historyMetaRow: {
+    marginTop: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  historyProgressText: {
+    flex: 1,
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 1.5,
+    color: '#9A7A3F',
+    textTransform: 'uppercase',
+  },
+  historyStreakPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 999,
+    backgroundColor: '#FFF7ED',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  historyStreakText: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    color: '#F97316',
+  },
+  historyProgressTrack: {
+    marginTop: 10,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#F1ECE2',
+    overflow: 'hidden',
+  },
+  historyProgressFill: {
+    height: '100%',
+    borderRadius: 999,
   },
   sheet: {
     borderTopLeftRadius: 28,

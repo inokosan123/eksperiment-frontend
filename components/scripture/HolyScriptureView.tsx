@@ -1,15 +1,18 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback, useEffect, useMemo, useState,
+} from 'react';
 import {
-  Animated, Easing, LayoutAnimation, Platform, UIManager,
   ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, useWindowDimensions, View,
 } from 'react-native';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+import Reanimated, {
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
@@ -41,12 +44,18 @@ export default function HolyScriptureView() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { ready, searchVerses } = useScripture();
-  const { createOrUpdateTask } = useTasks();
+  const { createOrUpdateTask, refresh: refreshTasks } = useTasks();
 
   const [tab, setTab] = useState<ScriptureTab>('bible');
-  const pillAnim = useRef(new Animated.Value(0)).current;
+  const tabProgress = useSharedValue(0);
+  const [segWidth, setSegWidth] = useState(0);
   const [activeSection, setActiveSection] = useState<'new' | 'old'>('new');
-  const sectionPillAnim = useRef(new Animated.Value(0)).current;
+  const sectionProgress = useSharedValue(0);
+  const [sectionWrapWidth, setSectionWrapWidth] = useState(0);
+  const segPillWidth = segWidth > 0 ? (segWidth - 12) / 2 : 0;
+  const segPillTravel = segPillWidth + 4;
+  const sectionPillWidth = sectionWrapWidth > 0 ? (sectionWrapWidth - 14) / 2 : 0;
+  const sectionPillTravel = sectionPillWidth + 4;
   const [expandedBookId, setExpandedBookId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ScriptureSearchResult[]>([]);
@@ -68,6 +77,12 @@ export default function HolyScriptureView() {
       || `psalms ${number}`.includes(query)
       || (!!numberPart && String(number).includes(numberPart)));
   }, [query]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setExpandedBookId(null);
+    }, []),
+  );
 
   useEffect(() => {
     if (!ready || query.length < 2) {
@@ -92,19 +107,36 @@ export default function HolyScriptureView() {
     return source.filter(book => book.name.toLowerCase().includes(query)).slice(0, 12);
   }, [query, tab]);
 
+  const tabPillMotionStyle = useAnimatedStyle(() => ({
+    width: segPillWidth,
+    transform: [{ translateX: tabProgress.value * segPillTravel }],
+  }), [segPillWidth, segPillTravel]);
+
+  const sectionPillMotionStyle = useAnimatedStyle(() => ({
+    width: sectionPillWidth,
+    transform: [{ translateX: sectionProgress.value * sectionPillTravel }],
+    backgroundColor: interpolateColor(
+      sectionProgress.value,
+      [0, 1],
+      ['rgba(94,123,85,0.14)', 'rgba(180,155,103,0.14)']
+    ),
+    borderColor: interpolateColor(
+      sectionProgress.value,
+      [0, 1],
+      ['rgba(94,123,85,0.35)', 'rgba(180,155,103,0.35)']
+    ),
+  }), [sectionPillWidth, sectionPillTravel]);
+
   const switchTab = (next: ScriptureTab) => {
+    if (next === tab) return;
     setTab(next);
     setExpandedBookId(null);
-    Animated.timing(pillAnim, {
-      toValue: next === 'bible' ? 0 : 1,
-      duration: 200,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
+    tabProgress.value = withTiming(next === 'bible' ? 0 : 1, { duration: 212 });
   };
 
   const openReader = (book: BibleBook, chapter = 1, verse?: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setExpandedBookId(null);
     router.push({
       pathname: '/scripture-reader',
       params: {
@@ -115,25 +147,15 @@ export default function HolyScriptureView() {
     });
   };
 
-  const smooth = () => LayoutAnimation.configureNext(
-    LayoutAnimation.create(240, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity)
-  );
-
   const switchSection = (next: 'new' | 'old') => {
-    smooth();
+    if (next === activeSection) return;
     setActiveSection(next);
     setExpandedBookId(null);
-    Animated.timing(sectionPillAnim, {
-      toValue: next === 'new' ? 0 : 1,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
+    sectionProgress.value = withTiming(next === 'new' ? 0 : 1, { duration: 212 });
   };
 
   const toggleBook = (book: BibleBook) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    smooth();
     setExpandedBookId(expandedBookId === book.id ? null : book.id);
   };
 
@@ -189,10 +211,10 @@ export default function HolyScriptureView() {
 
         {/* Bible / Psalter toggle + search */}
         <View style={s.selectorPanel}>
-          <View style={s.segmented}>
-            <Animated.View
+          <View style={s.segmented} onLayout={e => setSegWidth(e.nativeEvent.layout.width)}>
+            <Reanimated.View
               pointerEvents="none"
-              style={[s.segPill, { left: pillAnim.interpolate({ inputRange: [0, 1], outputRange: ['2%', '51%'] }) }]}
+              style={[s.segPill, tabPillMotionStyle]}
             />
             <TabButton
               active={tab === 'bible'}
@@ -239,32 +261,20 @@ export default function HolyScriptureView() {
         ) : (
           <View style={s.sections}>
             {/* NT / OT animated tab selector */}
-            <View style={s.sectionTabWrap}>
-              <Animated.View style={[
-                s.sectionTabPill,
-                {
-                  left: sectionPillAnim.interpolate({ inputRange: [0, 1], outputRange: ['2%', '51%'] }),
-                  backgroundColor: activeSection === 'new'
-                    ? 'rgba(94,123,85,0.14)' : 'rgba(180,155,103,0.14)',
-                  borderColor: activeSection === 'new'
-                    ? 'rgba(94,123,85,0.35)' : 'rgba(180,155,103,0.35)',
-                },
-              ]} />
+            <View
+              style={s.sectionTabWrap}
+              onLayout={e => setSectionWrapWidth(e.nativeEvent.layout.width)}
+            >
+              <Reanimated.View style={[s.sectionTabPill, sectionPillMotionStyle]} />
               <TouchableOpacity onPress={() => switchSection('new')} activeOpacity={0.82} style={s.sectionTabBtn}>
                 <Text style={[s.sectionTabText, activeSection === 'new' && { color: GREEN, fontFamily: F.serifMedium }]}>
                   New Testament
                 </Text>
-                <View style={[s.sectionTabBadge, activeSection === 'new' && { backgroundColor: 'rgba(94,123,85,0.12)' }]}>
-                  <Text style={[s.sectionTabCount, activeSection === 'new' && { color: GREEN }]}>{NEW_TESTAMENT.length}</Text>
-                </View>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => switchSection('old')} activeOpacity={0.82} style={s.sectionTabBtn}>
                 <Text style={[s.sectionTabText, activeSection === 'old' && { color: '#8B6B2F', fontFamily: F.serifMedium }]}>
                   Old Testament
                 </Text>
-                <View style={[s.sectionTabBadge, activeSection === 'old' && { backgroundColor: 'rgba(180,155,103,0.12)' }]}>
-                  <Text style={[s.sectionTabCount, activeSection === 'old' && { color: '#8B6B2F' }]}>{OLD_TESTAMENT.length}</Text>
-                </View>
               </TouchableOpacity>
             </View>
 
@@ -286,6 +296,7 @@ export default function HolyScriptureView() {
         onClose={() => setShowTaskSheet(false)}
         onSummaryChange={setTaskSummary}
         onTaskDraft={createOrUpdateTask}
+        onTaskMutation={refreshTasks}
       />
     </View>
   );
@@ -338,7 +349,7 @@ function BookList({
       style={[s.bookListPanel, { borderColor: isGreen ? '#DCE5D7' : '#ECE4D7' }]}
     >
       {books.map(book => (
-        <React.Fragment key={book.id}>
+        <View key={book.id} style={s.bookListItem}>
           <PremiumBookCard
             book={book}
             title={isGreen ? 'New Testament' : 'Old Testament'}
@@ -347,13 +358,15 @@ function BookList({
             onPress={() => onBook(book)}
           />
           {expandedBookId === book.id && (
-            <ChapterPanel
-              book={book}
-              tone={tone}
-              onChapter={chapter => onChapter(book, chapter)}
-            />
+            <View style={s.chapterPanelWrap}>
+              <ChapterPanel
+                book={book}
+                tone={tone}
+                onChapter={chapter => onChapter(book, chapter)}
+              />
+            </View>
           )}
-        </React.Fragment>
+        </View>
       ))}
     </LinearGradient>
   );
@@ -708,7 +721,7 @@ const s = StyleSheet.create({
   },
   segPill: {
     position: 'absolute',
-    top: 4, bottom: 4, width: '47%',
+    top: 4, bottom: 4, left: 4,
     borderRadius: 13,
     backgroundColor: '#FFFFFF',
     shadowColor: '#000', shadowOpacity: 0.07, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 2,
@@ -728,7 +741,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  searchInput: { flex: 1, height: 52, fontFamily: F.serif, fontSize: 18, color: '#3D3229', paddingVertical: 0 },
+  searchInput: { flex: 1, height: 52, fontFamily: F.serif, fontSize: 18, lineHeight: 24, color: '#3D3229' },
   sections: { gap: 2 },
 
   sectionTabWrap: {
@@ -744,7 +757,7 @@ const s = StyleSheet.create({
     position: 'absolute',
     top: 5,
     bottom: 5,
-    width: '47%',
+    left: 5,
     borderRadius: 15,
     borderWidth: 1,
     zIndex: 0,
@@ -764,21 +777,6 @@ const s = StyleSheet.create({
     fontSize: 16,
     color: '#A8A29E',
     letterSpacing: 0.2,
-  },
-  sectionTabBadge: {
-    minWidth: 26,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: 'rgba(28,25,23,0.06)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  sectionTabCount: {
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 0.5,
-    color: '#B8B0A6',
   },
   sectionWrap: {
     gap: 0,
@@ -829,11 +827,19 @@ const s = StyleSheet.create({
     borderWidth: 1,
     padding: 12,
     gap: 8,
+    overflow: 'hidden',
     shadowColor: '#0F172A',
     shadowOpacity: 0.04,
     shadowOffset: { width: 0, height: 12 },
     shadowRadius: 28,
     elevation: 1,
+  },
+  bookListItem: {
+    overflow: 'hidden',
+    borderRadius: 18,
+  },
+  chapterPanelWrap: {
+    overflow: 'hidden',
   },
   premiumBook: {
     minHeight: 70,
@@ -864,10 +870,12 @@ const s = StyleSheet.create({
   bookMetaDot: { fontFamily: F.sansBold, fontSize: 11, color: '#D5D0C9' },
   bookMetaMuted: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.2, color: '#D0D5DD' },
   chapterPanel: {
-    marginTop: -8,
+    marginTop: 0,
     marginBottom: 8,
     borderBottomLeftRadius: 18,
     borderBottomRightRadius: 18,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
     borderWidth: 1,
     borderTopWidth: 0,
     paddingHorizontal: 14,

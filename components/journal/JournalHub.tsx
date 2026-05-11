@@ -1,426 +1,927 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, Pressable,
-  StyleSheet, Dimensions, Image,
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import LottieFlame from './LottieFlame';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
-  ArrowLeft, SlidersHorizontal,
-  ChevronLeft, ChevronRight,
-  Pencil, Feather, FileEdit,
-  Star, ListChecks, BookMarked, Target, CalendarHeart, Grid3x3,
+  ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  Feather,
+  FileEdit,
+  Grid3x3,
+  Pencil,
 } from '@/components/icons/Icons';
+import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
 import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
 import { useTasks } from '@/components/tasks/TaskProvider';
-import { C, F } from '@/constants/tokens';
-import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
+import { useJournal, type JournalDotKind } from '@/components/journal/JournalContext';
+import { F } from '@/constants/tokens';
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-const BG      = '#FAF7F0';
-const GOLD    = '#C5A059';
-const PURPLE  = '#7C6EAF';
-const TEAL    = '#4A9E8F';
+const BG = '#FAF7F0';
+const GOLD = '#C5A059';
+const PURPLE = '#7C6EAF';
+const TEAL = '#4A9E8F';
+const INK = '#1C1917';
+const BORDER = '#EDE5D6';
 
 const FLAME_PNG = require('@/assets/images/streak-flame.png');
 
-type DotKind = 'journal' | 'morning' | 'free';
-const DOT_COLORS: Record<DotKind, string> = {
-  journal: GOLD, morning: PURPLE, free: TEAL,
-};
-// ─── Mock data ────────────────────────────────────────────────────────────────
-const CAL_ROWS = [
-  [null, null, 1,  2,  3,  4,  5 ],
-  [6,   7,    8,  9,  10, 11, 12 ],
-  [13,  14,   15, 16, 17, 18, 19 ],
-  [20,  21,   22, 23, 24, 25, 26 ],
-  [27,  28,   29, 30, null, null, null],
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
 ];
-const TODAY_NUM = 22;
+const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-const DOTS: Record<number, DotKind[]> = {
-  1:  ['journal','morning','free'],
-  2:  ['journal','free'],
-  4:  ['journal','morning'],
-  5:  ['journal'],
-  6:  ['journal','morning','free'],
-  14: ['journal','free'],
-  15: ['journal','morning','free'],
-  20: ['journal','free'],
-  22: ['journal'],
-};
+type JournalKind = JournalDotKind;
+type Route = '/journal-daily' | '/journal-morning' | '/journal-free';
 
-const STREAK = 3;
-const LAST_7 = [
-  { l:'T', active: false }, { l:'F', active: false },
-  { l:'S', active: false }, { l:'S', active: false },
-  { l:'M', active: true  }, { l:'T', active: true  },
-  { l:'W', active: true  },
-];
-
-// ─── Streak circle — fully responsive, scales to fit any screen ───────────────
-function StreakCircle({ active, label, size }: { active: boolean; label: string; size: number }) {
-  const flameSize = Math.round(size * 0.52);
-  return (
-    <View style={sc.col}>
-      <View style={[
-        sc.circle,
-        { width: size, height: size, borderRadius: size / 2 },
-        active ? sc.circleActive : sc.circleInactive,
-      ]}>
-        <Image
-          source={FLAME_PNG}
-          style={{ width: flameSize, height: flameSize, opacity: active ? 0.88 : 0.14 }}
-          resizeMode="contain"
-        />
-      </View>
-      <Text style={[sc.label, { color: active ? GOLD : '#C4BAA8' }]}>{label}</Text>
-    </View>
-  );
-}
-
-const sc = StyleSheet.create({
-  col:            { flex: 1, alignItems: 'center', gap: 5 },
-  circle:         { alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
-  circleActive:   { borderColor: GOLD, backgroundColor: '#FDF8EE' },
-  circleInactive: { borderColor: 'rgba(197,160,89,0.20)', backgroundColor: 'rgba(197,160,89,0.05)' },
-  label:          { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1 },
-});
-
-// ─── Month calendar ───────────────────────────────────────────────────────────
-function MonthCalendar({ month, year }: { month: number; year: number }) {
-  const HEADERS = ['MON','TUE','WED','THU','FRI','SAT','SUN'];
-
-  return (
-    <View style={cal.card}>
-      <View style={cal.headerRow}>
-        {HEADERS.map(h => (
-          <Text key={h} style={cal.headerTxt}>{h}</Text>
-        ))}
-      </View>
-
-      {CAL_ROWS.map((row, ri) => (
-        <View key={ri} style={cal.row}>
-          {row.map((d, ci) => {
-            if (d === null) return <View key={ci} style={cal.cell} />;
-            const isToday  = d === TODAY_NUM;
-            const isFuture = d > TODAY_NUM;
-            const dots     = DOTS[d] || [];
-
-            return (
-              <Pressable
-                key={ci}
-                style={({ pressed }) => [cal.cell, pressed && { opacity: 0.6 }]}
-                onPress={() => {
-                  if (isFuture) return;
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }}
-              >
-                <View style={[cal.dayCircle, isToday && cal.todayCircle]}>
-                  <Text style={[
-                    cal.dayNum,
-                    isToday  && cal.dayNumToday,
-                    isFuture && cal.dayNumFuture,
-                  ]}>
-                    {d}
-                  </Text>
-                </View>
-                <View style={cal.dotRow}>
-                  {dots.map((kind, j) => (
-                    <View key={j} style={[cal.dot, { backgroundColor: DOT_COLORS[kind] }]} />
-                  ))}
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-      ))}
-
-      <View style={cal.legend}>
-        {(['journal','morning','free'] as DotKind[]).map(kind => (
-          <View key={kind} style={cal.legendItem}>
-            <View style={[cal.legendDot, { backgroundColor: DOT_COLORS[kind] }]} />
-            <Text style={cal.legendTxt}>
-              {kind === 'journal' ? 'Daily Journal' : kind === 'morning' ? 'Morning Pages' : 'Free Writing'}
-            </Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-const cal = StyleSheet.create({
-  card:          { marginHorizontal: 16, marginTop: 14, backgroundColor: '#fff', borderRadius: 24, borderWidth: 1, borderColor: '#EDE9E0', padding: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
-  headerRow:     { flexDirection: 'row', marginBottom: 6 },
-  headerTxt:     { flex: 1, textAlign: 'center', fontFamily: F.sansBold, fontSize: 12, letterSpacing: 1.2, color: C.textMuted },
-  row:           { flexDirection: 'row', marginBottom: 2 },
-  cell:          { flex: 1, alignItems: 'center', paddingVertical: 5 },
-  dayCircle:     { width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
-  todayCircle:   { borderColor: GOLD },
-  dayNum:        { fontFamily: F.serifMedium, fontSize: 18, color: C.text },
-  dayNumToday:   { color: GOLD, fontFamily: F.serifSemiBold },
-  dayNumFuture:  { color: C.textMuted, opacity: 0.35 },
-  dotRow:        { flexDirection: 'row', gap: 3, marginTop: 3, height: 7 },
-  dot:           { width: 7, height: 7, borderRadius: 3.5 },
-  legend:        { flexDirection: 'row', justifyContent: 'space-around', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F0EDE6' },
-  legendItem:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legendDot:     { width: 8, height: 8, borderRadius: 4 },
-  legendTxt:     { fontFamily: F.sans, fontSize: 13, color: C.textSecondary },
-});
-
-// ─── Daily Task banner ────────────────────────────────────────────────────────
-function DailyTaskBanner({
-  subtitle,
-  onPress,
-}: {
-  subtitle: string;
-  onPress: () => void;
-}) {
-  return (
-    <SetAsDailyTaskCard
-      variant="soft"
-      style={dtb.wrap}
-      subtitle={subtitle}
-      onPress={onPress}
-    />
-  );
-}
-const dtb = StyleSheet.create({
-  wrap:     { marginHorizontal: 16, marginTop: 14 },
-});
-
-// ─── Mode cards ───────────────────────────────────────────────────────────────
-const MODES = [
-  { Icon: Pencil,   label: 'Daily\nJournal',  status: 'Done',  iconBg: '#F5ECD7', iconFg: GOLD,   route: '/journal-daily'   },
-  { Icon: Feather,  label: 'Morning\nPages',  status: 'Start', iconBg: '#ECE8F5', iconFg: PURPLE, route: '/journal-morning'  },
-  { Icon: FileEdit, label: 'Free\nWriting',   status: 'Start', iconBg: '#DFF1EC', iconFg: TEAL,   route: '/journal-free'    },
-];
-
-function ModeCards({ onNav }: { onNav: (r: string) => void }) {
-  return (
-    <View style={mc.row}>
-      {MODES.map((m, i) => (
-        <Pressable
-          key={i}
-          style={({ pressed }) => [mc.card, pressed && mc.pressed]}
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onNav(m.route); }}
-        >
-          <View style={[mc.iconBox, { backgroundColor: m.iconBg }]}>
-            <m.Icon s={22} c={m.iconFg} w={1.8} />
-          </View>
-          <Text style={mc.label}>{m.label}</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-const mc = StyleSheet.create({
-  row:     { flexDirection: 'row', marginHorizontal: 16, marginTop: 14, gap: 10 },
-  card:    { flex: 1, backgroundColor: '#fff', borderRadius: 20, borderWidth: 1, borderColor: '#EDE9E0', paddingVertical: 21, paddingHorizontal: 8, alignItems: 'center', gap: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
-  pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
-  iconBox: { width: 60, height: 60, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  label:   { fontFamily: F.serifMedium, fontSize: 17, color: C.text, textAlign: 'center', lineHeight: 22 },
-  status:  { fontFamily: F.sansBold, fontSize: 13, letterSpacing: 0.5 },
-});
-
-// ─── Streak section — circles scale to fill available width ──────────────────
-function StreakSection() {
-  const [rowW, setRowW] = useState(280);
-  const circleSize = Math.floor((rowW - 6 * 8) / 7); // 7 circles, 6 gaps × 8px
-
-  return (
-    <View style={st.card}>
-      <View style={st.headline}>
-        <LottieFlame size={30} />
-        <View style={st.headlineText}>
-          <Text style={st.number}>{STREAK}</Text>
-          <Text style={st.label}>day streak</Text>
-        </View>
-      </View>
-
-      <View style={st.divider} />
-
-      <View
-        style={st.dayRow}
-        onLayout={e => setRowW(e.nativeEvent.layout.width)}
-      >
-        {LAST_7.map((d, i) => (
-          <StreakCircle key={i} active={d.active} label={d.l} size={circleSize} />
-        ))}
-      </View>
-    </View>
-  );
-}
-const st = StyleSheet.create({
-  card:         { marginHorizontal: 16, marginTop: 14, backgroundColor: '#FDF9F0', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)', padding: 16, shadowColor: '#C5A059', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 1 },
-  headline:     { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headlineText: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
-  number:       { fontFamily: F.serifSemiBold, fontSize: 30, color: GOLD, lineHeight: 34 },
-  label:        { fontFamily: F.serifMediumItalic, fontSize: 15, color: '#B09B6E', lineHeight: 20 },
-  divider:      { height: 1, backgroundColor: 'rgba(197,160,89,0.16)', marginVertical: 13 },
-  dayRow:       { flexDirection: 'row', gap: 8 },
-});
-
-// ─── Tool card ────────────────────────────────────────────────────────────────
-type ToolItem = {
-  Icon: React.ComponentType<any>;
+type WriteCard = {
+  key: JournalKind;
   label: string;
-  status: string;
-  iconBg: string;
-  iconFg: string;
-  wide?: boolean;
-  route?: string;
+  title: string;
+  description: string;
+  bg: string;
+  border: string;
+  labelColor: string;
+  titleColor: string;
+  bodyColor: string;
+  arrowBg: string;
+  Decor: React.ComponentType<any>;
+  decorColor: string;
+  route: Route;
 };
 
-const TOOLS: ToolItem[] = [
-  { Icon: Star,          label: 'Ideal Self',    status: '5 daily goals', iconBg: '#FBF3DE', iconFg: GOLD       },
-  { Icon: ListChecks,    label: 'Habits',         status: '4 active',     iconBg: '#E4EFE4', iconFg: '#4E7F52'  },
-  { Icon: BookMarked,    label: 'Reading List',   status: 'Add books',    iconBg: '#E8EAF4', iconFg: '#4E5394'  },
-  { Icon: Target,        label: 'Bucket List',    status: 'Dream big',     iconBg: '#FBE6E9', iconFg: '#BE123C', route: '/bucket-list' },
-  { Icon: Target,        label: 'Monthly Goals',  status: '2 active',     iconBg: '#FBF3DE', iconFg: '#A9863F'  },
-  { Icon: CalendarHeart, label: 'Big Events',     status: '1 upcoming',   iconBg: '#FBE6E9', iconFg: '#B54155'  },
-  { Icon: Grid3x3,       label: 'Year in Pixels', status: '13 entries',   iconBg: '#EEEAF5', iconFg: '#6D5AAE', wide: true },
+const WRITE_CARDS: WriteCard[] = [
+  {
+    key: 'daily',
+    label: 'EVENING REFLECTION',
+    title: 'Daily Journal',
+    description: 'Capture your day, notice grace, return with a clearer heart.',
+    bg: '#FBF3DE',
+    border: '#F0E3B8',
+    labelColor: '#A9863F',
+    titleColor: '#6D4F13',
+    bodyColor: '#A9863F',
+    arrowBg: '#8A5A1A',
+    Decor: Pencil,
+    decorColor: '#B45309',
+    route: '/journal-daily',
+  },
+  {
+    key: 'morning',
+    label: 'CLEAR YOUR MIND',
+    title: 'Morning Pages',
+    description: 'Three pages of stream-of-thought to start the day untangled.',
+    bg: '#EEEAF5',
+    border: '#DDD5ED',
+    labelColor: '#6D5AAE',
+    titleColor: '#3B2F76',
+    bodyColor: '#6D5AAE',
+    arrowBg: '#2E2478',
+    Decor: Feather,
+    decorColor: '#6D5AAE',
+    route: '/journal-morning',
+  },
+  {
+    key: 'free',
+    label: 'OPEN PAGE',
+    title: 'Free Writing',
+    description: 'Write whatever flows. No prompts, no rules - just the page.',
+    bg: '#E1F1EC',
+    border: '#C8E6DD',
+    labelColor: '#3D8273',
+    titleColor: '#1F4E45',
+    bodyColor: '#3D8273',
+    arrowBg: '#2A6E5F',
+    Decor: FileEdit,
+    decorColor: '#3D8273',
+    route: '/journal-free',
+  },
 ];
 
-// toolW passed from parent (measured via onLayout)
-function ToolCard({ tool, toolW, onPress }: { tool: ToolItem; toolW: number; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        tc.card,
-        tool.wide ? { width: '100%' } : { width: toolW },
-        pressed && tc.pressed,
-      ]}
-    >
-      <View style={tc.decorWrap} pointerEvents="none">
-        <tool.Icon s={56} c={tool.iconFg} w={1.2} />
-      </View>
-      <View style={[tc.iconBox, { backgroundColor: tool.iconBg }]}>
-        <tool.Icon s={22} c={tool.iconFg} w={1.9} />
-      </View>
-      <Text style={tc.label}>{tool.label}</Text>
-      <Text style={tc.status}>{tool.status}</Text>
-    </Pressable>
-  );
+const DOT_COLORS: Record<JournalKind, string> = {
+  daily: GOLD,
+  morning: PURPLE,
+  free: TEAL,
+};
+
+function localDateKey(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
-const tc = StyleSheet.create({
-  card:      { backgroundColor: '#fff', borderRadius: 22, borderWidth: 1, borderColor: '#EDE9E0', padding: 16, paddingTop: 14, minHeight: 136, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
-  pressed:   { opacity: 0.72, transform: [{ scale: 0.97 }] },
-  decorWrap: { position: 'absolute', right: 8, top: 8, opacity: 0.1 },
-  iconBox:   { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  label:     { fontFamily: F.serifMedium, fontSize: 17, color: C.text, lineHeight: 22 },
-  status:    { fontFamily: F.sans, fontSize: 13, color: C.textMuted, marginTop: 3 },
-});
 
-function ToolsSection({ onNav }: { onNav: (r: string) => void }) {
-  const regular = TOOLS.filter(t => !t.wide);
-  const wide    = TOOLS.filter(t =>  t.wide);
-  // Measure actual grid width so cards always fit exactly 2 per row
-  const [gridW, setGridW] = useState(Dimensions.get('window').width - 32);
-  const toolW = (gridW - 10) / 2;
-
-  return (
-    <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
-      <Text style={tls.heading}>TOOLS</Text>
-
-      {/* 2-column grid — onLayout measures real width, no Dimensions guessing */}
-      <View style={tls.grid} onLayout={e => setGridW(e.nativeEvent.layout.width)}>
-        {regular.map((tool, i) => (
-          <ToolCard
-            key={i}
-            tool={tool}
-            toolW={toolW}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); if (tool.route) onNav(tool.route); }}
-          />
-        ))}
-      </View>
-
-      {/* Year in Pixels — full width */}
-      {wide.map((tool, i) => (
-        <View key={i} style={{ marginTop: 10 }}>
-          <ToolCard
-            tool={tool}
-            toolW={toolW}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); if (tool.route) onNav(tool.route); }}
-          />
-        </View>
-      ))}
-    </View>
-  );
+function dateFromKey(key: string) {
+  const [year, month, day] = key.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1, 12);
 }
-const tls = StyleSheet.create({
-  heading: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.4, color: C.textMuted, marginBottom: 12 },
-  grid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-});
 
-// ─── Root ─────────────────────────────────────────────────────────────────────
-export default function JournalHub() {
-  const insets = useSafeAreaInsets();
-  const router = useRouter();
-  const { createOrUpdateTask } = useTasks();
-  const [taskSheetOpen, setTaskSheetOpen] = useState(false);
-  const [taskSummary, setTaskSummary] = useState('Add to your daily routine');
+function dateKey(year: number, month: number, day: number) {
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
 
-  const nav = (route: string) => router.push(route as any);
-  const openTaskSheet = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setTaskSheetOpen(true);
-  };
+function previousDateKey(key: string) {
+  const date = dateFromKey(key);
+  date.setDate(date.getDate() - 1);
+  return localDateKey(date);
+}
+
+function lastSevenDays(todayKey: string) {
+  const today = dateFromKey(todayKey);
+  const labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (6 - index));
+    return {
+      key: localDateKey(date),
+      label: labels[date.getDay()],
+    };
+  });
+}
+
+function monthCells(year: number, month: number) {
+  const first = new Date(year, month, 1);
+  const days = new Date(year, month + 1, 0).getDate();
+  const offset = (first.getDay() + 6) % 7;
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < offset; i += 1) cells.push(null);
+  for (let d = 1; d <= days; d += 1) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
+function AppText(props: React.ComponentProps<typeof Text>) {
+  return <Text {...props} allowFontScaling={false} maxFontSizeMultiplier={1} />;
+}
+
+function CalendarStreakCard({
+  year,
+  month,
+  todayKey,
+  onPrev,
+  onNext,
+  canNext,
+  selectedDate,
+  onSelect,
+  dotsByDate,
+  completedDates,
+  currentStreak,
+}: {
+  year: number;
+  month: number;
+  todayKey: string;
+  onPrev: () => void;
+  onNext: () => void;
+  canNext: boolean;
+  selectedDate: string;
+  onSelect: (key: string) => void;
+  dotsByDate: Record<string, JournalKind[]>;
+  completedDates: string[];
+  currentStreak: number;
+}) {
+  const cells = useMemo(() => monthCells(year, month), [year, month]);
+  const completedSet = useMemo(() => new Set(completedDates), [completedDates]);
+  const streakDays = useMemo(() => lastSevenDays(todayKey), [todayKey]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: BG }}>
-      {/* Header */}
-      <View style={[hd.wrap, { paddingTop: getTitleBarTopPadding(insets.top) }]}>
-        <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }} style={hd.btn} activeOpacity={0.7}>
-          <ArrowLeft s={26} c={C.textSecondary} />
-        </TouchableOpacity>
-        <Text style={hd.title}>JOURNAL</Text>
-        <TouchableOpacity onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)} style={hd.btn} activeOpacity={0.7}>
-          <SlidersHorizontal s={20} c={C.textMuted} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Month navigation */}
-      <View style={mn.row}>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}>
+    <View style={s.card}>
+      <View style={s.monthHead}>
+        <TouchableOpacity style={s.monthBtn} activeOpacity={0.75} onPress={onPrev} hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}>
           <ChevronLeft s={20} c={GOLD} />
         </TouchableOpacity>
-        <Text style={mn.title}>April 2026</Text>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}>
+        <View style={s.monthCenter}>
+          <AppText style={s.monthName}>{MONTH_NAMES[month]}</AppText>
+          <AppText style={s.monthYear}>{year}</AppText>
+        </View>
+        <TouchableOpacity
+          style={[s.monthBtn, !canNext && s.disabled]}
+          activeOpacity={0.75}
+          onPress={onNext}
+          disabled={!canNext}
+          hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+        >
           <ChevronRight s={20} c={GOLD} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}>
-        <MonthCalendar month={3} year={2026} />
-        <DailyTaskBanner subtitle={taskSummary} onPress={openTaskSheet} />
-        <ModeCards onNav={nav} />
-        <StreakSection />
-        <ToolsSection onNav={nav} />
+      <View style={s.weekRow}>
+        {WEEKDAYS.map((w, i) => (
+          <View key={`${w}-${i}`} style={s.weekCell}>
+            <AppText style={s.weekText}>{w}</AppText>
+          </View>
+        ))}
+      </View>
+
+      <View style={s.calendarGrid}>
+        {cells.map((day, index) => {
+          if (!day) return <View key={`empty-${index}`} style={s.dateSlot} />;
+          const key = dateKey(year, month, day);
+          const isToday = key === todayKey;
+          const isSelected = key === selectedDate;
+          const isFuture = key > todayKey;
+          const dots = dotsByDate[key] || [];
+
+          return (
+            <View key={key} style={s.dateSlot}>
+              <Pressable
+                disabled={isFuture}
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                style={({ pressed }) => [
+                  s.dateShell,
+                  isToday && s.dateCellToday,
+                  isSelected && s.dateCellSelected,
+                  pressed && !isFuture && s.pressed,
+                ]}
+                onPress={() => onSelect(key)}
+              >
+                <View style={s.dateNumberLayer} pointerEvents="none">
+                  <AppText
+                    numberOfLines={1}
+                    style={[
+                      s.dateText,
+                      isToday && s.todayText,
+                      isSelected && s.selectedDateText,
+                      isFuture && s.futureText,
+                    ]}
+                  >
+                    {day}
+                  </AppText>
+                </View>
+                <View style={s.dateDotsLayer} pointerEvents="none">
+                  <View style={s.dots}>
+                    {dots.slice(0, 3).map((kind, dotIndex) => (
+                      <View key={`${kind}-${dotIndex}`} style={[s.dot, { backgroundColor: DOT_COLORS[kind] }]} />
+                    ))}
+                  </View>
+                </View>
+              </Pressable>
+            </View>
+          );
+        })}
+      </View>
+
+      <View style={s.legend}>
+        <View style={s.legendItem}>
+          <View style={[s.legendDot, { backgroundColor: GOLD }]} />
+          <AppText style={s.legendText}>Daily</AppText>
+        </View>
+        <View style={s.legendItem}>
+          <View style={[s.legendDot, { backgroundColor: PURPLE }]} />
+          <AppText style={s.legendText}>Morning</AppText>
+        </View>
+        <View style={s.legendItem}>
+          <View style={[s.legendDot, { backgroundColor: TEAL }]} />
+          <AppText style={s.legendText}>Free</AppText>
+        </View>
+      </View>
+
+      <View style={s.divider} />
+
+      <View style={s.streakHead}>
+        <View style={s.flameBox}>
+          <Image source={FLAME_PNG} style={s.flame} resizeMode="contain" />
+        </View>
+        <AppText style={s.streakNumber}>{currentStreak}</AppText>
+        <AppText style={s.streakLabel}>day streak</AppText>
+      </View>
+
+      <View style={s.streakRow}>
+        {streakDays.map((item) => {
+          const active = completedSet.has(item.key);
+          return (
+          <View key={item.key} style={s.streakDay}>
+            <View
+              style={[
+                s.streakCircle,
+                active && s.streakCircleActive,
+              ]}
+            >
+              <Image
+                source={FLAME_PNG}
+                style={{ width: 17, height: 17, opacity: active ? 0.9 : 0.18 }}
+                resizeMode="contain"
+              />
+            </View>
+            <AppText style={[s.streakDayText, active && s.streakDayTextActive]}>{item.label}</AppText>
+          </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function DayChoicesPanel({
+  date,
+  kinds,
+  editable,
+  onClose,
+  onOpen,
+}: {
+  date: string;
+  kinds: JournalKind[];
+  editable: boolean;
+  onClose: () => void;
+  onOpen: (route: Route, readOnly: boolean) => void;
+}) {
+  const choices = WRITE_CARDS;
+  const displayDate = dateFromKey(date).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+
+  if (!date) return null;
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={s.choiceOverlay} onPress={onClose}>
+        <Pressable style={s.choicePanel} onPress={() => {}}>
+          <View style={s.choiceHead}>
+            <View>
+              <AppText style={s.choiceKicker}>{displayDate}</AppText>
+              <AppText style={s.choiceTitle}>{editable ? 'Choose Technique' : 'Saved Entries'}</AppText>
+              <AppText style={s.choiceDate}>
+                {editable ? 'Write or edit today\'s reflection.' : 'Only completed entries can be opened.'}
+              </AppText>
+            </View>
+            <TouchableOpacity onPress={onClose} style={s.choiceClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <AppText style={s.choiceCloseText}>x</AppText>
+            </TouchableOpacity>
+          </View>
+          <View style={s.choiceRow}>
+            {choices.map(item => {
+              const enabled = editable || kinds.includes(item.key);
+              return (
+                <Pressable
+                  key={item.key}
+                  disabled={!enabled}
+                  style={({ pressed }) => [
+                    s.choiceChip,
+                    { backgroundColor: item.bg, borderColor: item.border },
+                    !enabled && s.choiceChipDisabled,
+                    pressed && enabled && s.pressed,
+                  ]}
+                  onPress={() => onOpen(item.route, !editable)}
+                >
+                  <View style={[
+                    s.choiceIcon,
+                    { backgroundColor: '#FFFFFF', borderColor: item.border },
+                    !enabled && s.choiceIconDisabled,
+                  ]}>
+                    <item.Decor s={18} c={enabled ? item.labelColor : '#BDB7AD'} w={1.8} />
+                  </View>
+                  <AppText style={[
+                    s.choiceChipText,
+                    { color: enabled ? item.titleColor : '#BDB7AD' },
+                  ]}>
+                    {item.title}
+                  </AppText>
+                  <AppText style={[
+                    s.choiceChipHint,
+                    { color: enabled ? item.labelColor : '#C6C0B7' },
+                  ]}>
+                    {enabled ? (editable ? 'Open' : 'Saved') : 'Empty'}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function WriteSectionCard({ card, onPress }: { card: WriteCard; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.85}
+      style={[s.writeCard, { backgroundColor: card.bg, borderColor: card.border }]}
+    >
+      <LinearGradient
+        colors={[card.bg, '#FFFFFF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+
+      <View style={s.writeWatermark} pointerEvents="none">
+        <card.Decor s={110} c={card.decorColor} w={1} />
+      </View>
+
+      <View style={[s.writeArrow, { backgroundColor: card.arrowBg }]} pointerEvents="none">
+        <View style={s.writeArrowRotated}>
+          <ArrowUpRight s={16} c="#fff" w={2.5} />
+        </View>
+      </View>
+
+      <View style={s.writeContent}>
+        <AppText style={[s.writeLabel, { color: card.labelColor }]}>{card.label}</AppText>
+        <AppText style={[s.writeTitle, { color: card.titleColor }]}>{card.title}</AppText>
+        <AppText style={[s.writeDesc, { color: card.bodyColor }]}>{card.description}</AppText>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function YearInPixelsSection({
+  onPress,
+  entryCount,
+}: {
+  onPress: () => void;
+  entryCount: number;
+}) {
+  return (
+    <View style={s.toolsWrap}>
+      <View style={s.sectionHead}>
+        <AppText style={s.sectionTitle}>YEAR IN PIXELS</AppText>
+        <AppText style={s.sectionHint}>Reflect gently</AppText>
+      </View>
+      <TouchableOpacity activeOpacity={0.84} onPress={onPress} style={s.yearPixelCard}>
+        <View style={s.yearPixelIcon}>
+          <Grid3x3 s={23} c={PURPLE} />
+        </View>
+        <View style={s.yearPixelCopy}>
+          <AppText style={s.yearPixelTitle}>Year in Pixels</AppText>
+          <AppText style={s.yearPixelSub}>
+            {entryCount === 0 ? 'No entries yet' : `${entryCount} ${entryCount === 1 ? 'entry' : 'entries'}`}
+          </AppText>
+        </View>
+        <ChevronRight s={20} c="#A8A29E" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+export default function JournalHub() {
+  const router = useRouter();
+  const { createOrUpdateTask, refresh: refreshTasks } = useTasks();
+  const { dotsByDate, streak, entries } = useJournal();
+  const today = useMemo(() => new Date(), []);
+  const todayKey = localDateKey(today);
+  const yesterdayKey = useMemo(() => previousDateKey(todayKey), [todayKey]);
+  const [month, setMonth] = useState(today.getMonth());
+  const [year, setYear] = useState(today.getFullYear());
+  const [taskOpen, setTaskOpen] = useState(false);
+  const [taskSummary, setTaskSummary] = useState('Add to your daily routine');
+  const [chosenDate, setChosenDate] = useState('');
+  const chosenKinds = chosenDate ? dotsByDate[chosenDate] ?? [] : [];
+  const chosenDateEditable = chosenDate === todayKey || chosenDate === yesterdayKey;
+  const canNext = year < today.getFullYear() || (year === today.getFullYear() && month < today.getMonth());
+
+  const nav = (route?: string, date?: string, readOnly = false) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (!route) return;
+    if (date) {
+      router.push({ pathname: route as any, params: { date, ...(readOnly ? { readOnly: '1' } : {}) } });
+      return;
+    }
+    router.push(route as any);
+  };
+
+  const prevMonth = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (month === 0) {
+      setMonth(11);
+      setYear(v => v - 1);
+    } else {
+      setMonth(v => v - 1);
+    }
+  };
+
+  const nextMonth = () => {
+    if (!canNext) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (month === 11) {
+      setMonth(0);
+      setYear(v => v + 1);
+    } else {
+      setMonth(v => v + 1);
+    }
+  };
+
+  const selectDate = (key: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const dots = dotsByDate[key] || [];
+    const isEditableDate = key === todayKey || key === yesterdayKey;
+
+    if (isEditableDate || dots.length > 0) {
+      setChosenDate(key);
+      return;
+    }
+
+    setChosenDate('');
+  };
+
+  return (
+    <View style={s.screen}>
+      <ScreenTitleBar title="JOURNAL" showBack bg={BG} />
+      <ScrollView
+        style={s.scroll}
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="never"
+      >
+        <View style={s.body}>
+          <CalendarStreakCard
+            year={year}
+            month={month}
+            todayKey={todayKey}
+            onPrev={prevMonth}
+            onNext={nextMonth}
+            canNext={canNext}
+            selectedDate={chosenDate}
+            onSelect={selectDate}
+            dotsByDate={dotsByDate}
+            completedDates={streak.completedDates}
+            currentStreak={streak.currentStreak}
+          />
+
+          <DayChoicesPanel
+            date={chosenDate}
+            kinds={chosenKinds}
+            editable={chosenDateEditable}
+            onClose={() => setChosenDate('')}
+            onOpen={(route, readOnly) => nav(route, chosenDate, readOnly)}
+          />
+
+          <View style={s.writeStack}>
+            {WRITE_CARDS.map(card => (
+              <WriteSectionCard key={card.key} card={card} onPress={() => nav(card.route, todayKey)} />
+            ))}
+          </View>
+
+          <View style={s.taskCardWrap}>
+            <SetAsDailyTaskCard
+              variant="soft"
+              subtitle={taskSummary}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setTaskOpen(true);
+              }}
+              textMaxFontSizeMultiplier={1}
+            />
+          </View>
+
+          <YearInPixelsSection
+            entryCount={entries.length}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              router.push('/year-in-pixels');
+            }}
+          />
+        </View>
       </ScrollView>
 
       <SetAsTaskSheet
-        visible={taskSheetOpen}
+        visible={taskOpen}
         context="journal"
-        onClose={() => setTaskSheetOpen(false)}
+        onClose={() => setTaskOpen(false)}
         onSummaryChange={setTaskSummary}
         onTaskDraft={createOrUpdateTask}
+        onTaskMutation={refreshTasks}
       />
     </View>
   );
 }
 
-const hd = StyleSheet.create({
-  wrap:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: TITLE_BAR_BOTTOM_PADDING, backgroundColor: BG },
-  btn:   { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  title: { fontFamily: F.serifMedium, fontSize: 24, letterSpacing: 4, color: C.text, flex: 1, textAlign: 'center' },
-});
-const mn = StyleSheet.create({
-  row:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, paddingVertical: 10, backgroundColor: BG },
-  title: { fontFamily: F.serifMedium, fontSize: 20, color: C.text, minWidth: 160, textAlign: 'center' },
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: BG },
+  scroll: { flex: 1 },
+  scrollContent: { paddingBottom: 140 },
+  body: { width: '100%', paddingHorizontal: 16, paddingTop: 6, alignItems: 'stretch' },
+
+  card: {
+    width: '100%',
+    alignSelf: 'stretch',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 18,
+    shadowColor: '#8C7A4F',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  monthHead: {
+    height: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  monthBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFFBF2',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disabled: { opacity: 0.32 },
+  monthCenter: { alignItems: 'center', justifyContent: 'center' },
+  monthName: { fontFamily: F.serifSemiBold, fontSize: 23, lineHeight: 27, color: INK },
+  monthYear: { marginTop: 1, fontFamily: F.sansBold, fontSize: 10, lineHeight: 12, letterSpacing: 2.4, color: GOLD },
+  weekRow: { width: '100%', alignSelf: 'stretch', marginTop: 14, flexDirection: 'row' },
+  weekCell: { flex: 1, height: 20, alignItems: 'center', justifyContent: 'center' },
+  weekText: { fontFamily: F.sansBold, fontSize: 10, lineHeight: 12, letterSpacing: 1.2, color: '#A5A09A' },
+  calendarGrid: {
+    width: '100%',
+    alignSelf: 'stretch',
+    marginTop: 6,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  dateSlot: {
+    width: `${100 / 7}%`,
+    height: 58,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateShell: {
+    width: 48,
+    height: 52,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#ECE2D1',
+    backgroundColor: '#FFFDF8',
+    position: 'relative',
+    alignItems: 'center',
+  },
+  dateCellToday: { backgroundColor: '#FFF8E7', borderColor: GOLD, borderWidth: 1.4 },
+  dateCellSelected: { backgroundColor: '#FFF2D8', borderColor: GOLD, borderWidth: 1.6 },
+  dateNumberLayer: {
+    width: '100%',
+    height: 25,
+    marginTop: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateDotsLayer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 34,
+    height: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+    elevation: 2,
+  },
+  dateText: {
+    fontFamily: F.serifMedium,
+    fontSize: 17,
+    lineHeight: 21,
+    color: INK,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
+  },
+  todayText: { fontFamily: F.serifSemiBold, color: GOLD },
+  selectedDateText: { fontFamily: F.serifSemiBold, color: '#9A6B1E' },
+  futureText: { color: '#D7D1C8' },
+  pressed: { opacity: 0.76, transform: [{ scale: 0.985 }] },
+  dots: {
+    width: '100%',
+    height: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dot: { width: 4.6, height: 4.6, borderRadius: 3, marginHorizontal: 1.2 },
+
+  legend: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F2EDE4',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 16,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', columnGap: 6 },
+  legendDot: { width: 7, height: 7, borderRadius: 4 },
+  legendText: { fontFamily: F.sansMedium, fontSize: 11, lineHeight: 13, color: '#918A80' },
+
+  divider: { height: 1, marginTop: 14, marginBottom: 14, backgroundColor: '#F2EDE4' },
+
+  streakHead: { flexDirection: 'row', alignItems: 'center' },
+  flameBox: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFF3D3', alignItems: 'center', justifyContent: 'center' },
+  flame: { width: 20, height: 20 },
+  streakNumber: { marginLeft: 11, fontFamily: F.serifSemiBold, fontSize: 28, lineHeight: 31, color: GOLD },
+  streakLabel: { marginLeft: 7, fontFamily: F.serifMediumItalic, fontSize: 16, lineHeight: 20, color: '#B29A67' },
+  streakRow: { marginTop: 12, flexDirection: 'row' },
+  streakDay: { flex: 1, alignItems: 'center' },
+  streakCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1.5,
+    borderColor: 'rgba(197,160,89,0.18)',
+    backgroundColor: 'rgba(197,160,89,0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streakCircleActive: { borderColor: GOLD, backgroundColor: '#FFFFFF' },
+  streakDayText: { marginTop: 5, fontFamily: F.sansBold, fontSize: 10, lineHeight: 12, color: '#C4BAA8' },
+  streakDayTextActive: { color: GOLD },
+
+  choiceOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(28, 25, 23, 0.34)',
+    paddingHorizontal: 22,
+  },
+  choicePanel: {
+    width: '100%',
+    maxWidth: 360,
+    alignSelf: 'center',
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: '#EFE3CF',
+    backgroundColor: '#FFFFFF',
+    padding: 18,
+    paddingTop: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 28,
+    elevation: 12,
+  },
+  choiceHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  choiceKicker: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    lineHeight: 12,
+    letterSpacing: 1.8,
+    color: GOLD,
+    textTransform: 'uppercase',
+  },
+  choiceTitle: { marginTop: 2, fontFamily: F.serifSemiBold, fontSize: 23, lineHeight: 28, color: INK },
+  choiceDate: { marginTop: 3, fontFamily: F.serifItalic, fontSize: 13, lineHeight: 17, color: '#A29A91' },
+  choiceClose: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F6F4F0', alignItems: 'center', justifyContent: 'center' },
+  choiceCloseText: { fontFamily: F.serifMedium, fontSize: 24, lineHeight: 28, color: '#A8A29E' },
+  choiceRow: { rowGap: 10, marginTop: 18 },
+  choiceChip: {
+    width: '100%',
+    minHeight: 68,
+    borderRadius: 19,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  choiceChipDisabled: { backgroundColor: '#F3F0EA', borderColor: '#E6E0D6', opacity: 0.62 },
+  choiceIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  choiceIconDisabled: { backgroundColor: '#F7F4EE', borderColor: '#E2DCD2' },
+  choiceChipText: {
+    flex: 1,
+    fontFamily: F.serifMedium,
+    fontSize: 17,
+    lineHeight: 21,
+    textAlign: 'left',
+  },
+  choiceChipHint: {
+    marginLeft: 10,
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    lineHeight: 12,
+    letterSpacing: 1.1,
+    textAlign: 'right',
+    textTransform: 'uppercase',
+  },
+
+  writeStack: { width: '100%', alignSelf: 'stretch', marginTop: 14, rowGap: 12 },
+  writeCard: {
+    position: 'relative',
+    borderRadius: 28,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  writeWatermark: {
+    position: 'absolute',
+    bottom: -8,
+    right: 14,
+    width: 110,
+    height: 110,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.12,
+  },
+  writeArrow: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  writeArrowRotated: { transform: [{ rotate: '-15deg' }] },
+  writeContent: { padding: 18, paddingRight: 70, maxWidth: '88%' },
+  writeLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    lineHeight: 13,
+    letterSpacing: 2.2,
+    marginBottom: 6,
+  },
+  writeTitle: {
+    fontFamily: F.serifMedium,
+    fontSize: 24,
+    lineHeight: 28,
+    marginBottom: 6,
+  },
+  writeDesc: {
+    fontFamily: F.serif,
+    fontSize: 14,
+    lineHeight: 19,
+  },
+
+  taskCardWrap: { width: '100%', alignSelf: 'stretch', marginTop: 14 },
+
+  toolsWrap: { width: '100%', alignSelf: 'stretch', marginTop: 18 },
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  sectionTitle: { fontFamily: F.sansBold, fontSize: 10, lineHeight: 13, letterSpacing: 2.3, color: GOLD },
+  sectionHint: { fontFamily: F.serifMediumItalic, fontSize: 14, lineHeight: 18, color: '#A7A098' },
+  yearPixelCard: {
+    width: '100%',
+    minHeight: 92,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E9DEC9',
+    backgroundColor: '#FFFDF8',
+    paddingHorizontal: 15,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 14,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 7,
+    elevation: 1,
+  },
+  yearPixelIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 16,
+    backgroundColor: '#EEEAF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  yearPixelCopy: { flex: 1, minWidth: 0 },
+  yearPixelTitle: { fontFamily: F.serifMedium, fontSize: 18, lineHeight: 22, color: INK },
+  yearPixelSub: { marginTop: 4, fontFamily: F.sans, fontSize: 12, lineHeight: 15, color: '#999287' },
 });

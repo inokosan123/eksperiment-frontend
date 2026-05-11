@@ -1,14 +1,16 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Animated,
-  LayoutAnimation,
-  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
-  UIManager,
   View,
 } from 'react-native';
+import Reanimated, {
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 
 import { CalendarCheck } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
@@ -36,6 +38,15 @@ const FREQUENCY_OPTIONS: { value: TaskFrequency; label: string; desc: string }[]
 
 const WEEKDAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
+function currentWeekdayIndex() {
+  const jsDay = new Date().getDay();
+  return jsDay === 0 ? 6 : jsDay - 1;
+}
+
+function ensureSelectedDays(days: number[]) {
+  return days.length ? days : [currentWeekdayIndex()];
+}
+
 function withAlpha(hex: string, alpha: number) {
   const normalized = hex.replace('#', '');
   if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return `rgba(197,160,89,${alpha})`;
@@ -46,41 +57,15 @@ function withAlpha(hex: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-if (Platform.OS === 'android' && typeof UIManager.setLayoutAnimationEnabledExperimental === 'function') {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-function animateLayout() {
-  try {
-    LayoutAnimation.configureNext({
-      duration: 260,
-      create: {
-        type: LayoutAnimation.Types.easeInEaseOut,
-        property: LayoutAnimation.Properties.opacity,
-      },
-      update: {
-        type: LayoutAnimation.Types.easeInEaseOut,
-      },
-      delete: {
-        type: LayoutAnimation.Types.easeInEaseOut,
-        property: LayoutAnimation.Properties.opacity,
-      },
-    });
-  } catch {
-    // Native gets the drawer animation; web can safely ignore this.
-  }
-}
-
 function useSelectionMotion(active: boolean) {
-  const progress = useRef(new Animated.Value(active ? 1 : 0)).current;
+  const progress = useSharedValue(active ? 1 : 0);
 
   useEffect(() => {
-    Animated.spring(progress, {
-      toValue: active ? 1 : 0,
-      friction: 15,
-      tension: 145,
-      useNativeDriver: false,
-    }).start();
+    progress.value = withSpring(active ? 1 : 0, {
+      damping: 18,
+      stiffness: 235,
+      mass: 0.72,
+    });
   }, [active, progress]);
 
   return progress;
@@ -105,6 +90,13 @@ export default function TaskFrequencyEditor({
   const monthlyCellSize = gridWidth
     ? Math.max(30, Math.min(42, Math.floor((gridWidth - monthlyGap * 6) / 7)))
     : 36;
+  const effectiveSelectedDays = frequency === 'specific_days' ? ensureSelectedDays(selectedDays) : selectedDays;
+
+  useEffect(() => {
+    if (frequency === 'specific_days' && selectedDays.length === 0) {
+      onSelectedDaysChange(ensureSelectedDays(selectedDays));
+    }
+  }, [frequency, selectedDays, onSelectedDaysChange]);
 
   return (
     <View style={s.wrap}>
@@ -121,41 +113,41 @@ export default function TaskFrequencyEditor({
             active={frequency === option.value}
             accent={accent}
             onPress={() => {
-              animateLayout();
               onFrequencyChange(option.value);
+              if (option.value === 'specific_days' && selectedDays.length === 0) {
+                onSelectedDaysChange(ensureSelectedDays(selectedDays));
+              }
+              if (option.value === 'monthly' && monthlyDays.length === 0) {
+                onMonthlyDaysChange([1]);
+              }
             }}
           />
         ))}
       </View>
 
       {frequency === 'specific_days' && (
-        <View style={s.gridMeasure} onLayout={event => setGridWidth(Math.floor(event.nativeEvent.layout.width))}>
+        <View
+          style={s.gridMeasure}
+          onLayout={event => setGridWidth(Math.floor(event.nativeEvent.layout.width))}
+        >
           <Text style={[s.subLabel, { color: accent }]}>Choose Days</Text>
           <View style={[s.dayChipRow, { columnGap: weekdayGap }]}>
             {WEEKDAY_LABELS.map((day, index) => {
-              const active = selectedDays.includes(index);
+              const active = effectiveSelectedDays.includes(index);
               return (
-                <TouchableOpacity
+                <WeekdayChoice
                   key={`${day}-${index}`}
+                  label={day}
+                  active={active}
+                  accent={accent}
+                  size={weekdaySize}
                   onPress={() => {
-                    animateLayout();
+                    if (active && effectiveSelectedDays.length === 1) return;
                     onSelectedDaysChange(active
-                      ? selectedDays.filter(item => item !== index)
-                      : [...selectedDays, index].sort((a, b) => a - b));
+                      ? effectiveSelectedDays.filter(item => item !== index)
+                      : [...effectiveSelectedDays, index].sort((a, b) => a - b));
                   }}
-                  activeOpacity={0.84}
-                  style={[
-                    s.dayChip,
-                    {
-                      width: weekdaySize,
-                      height: weekdaySize,
-                      borderRadius: Math.round(weekdaySize / 2),
-                    },
-                    active && { borderColor: accent, backgroundColor: withAlpha(accent, 0.07) },
-                  ]}
-                >
-                  <Text style={[s.dayChipText, active && { color: accent }]}>{day}</Text>
-                </TouchableOpacity>
+                />
               );
             })}
           </View>
@@ -163,34 +155,29 @@ export default function TaskFrequencyEditor({
       )}
 
       {frequency === 'monthly' && (
-        <View style={s.monthlyWrap} onLayout={event => setGridWidth(Math.floor(event.nativeEvent.layout.width))}>
+        <View
+          style={s.monthlyWrap}
+          onLayout={event => setGridWidth(Math.floor(event.nativeEvent.layout.width))}
+        >
           <Text style={[s.subLabel, { color: accent }]}>Days of Month</Text>
           <Text style={s.monthlyHint}>Choose one or more dates for the monthly repeat.</Text>
           <View style={[s.monthlyGrid, { gap: monthlyGap }]}>
             {Array.from({ length: 31 }, (_, index) => index + 1).map(day => {
               const active = monthlyDays.includes(day);
               return (
-                <TouchableOpacity
+                <MonthlyDayChoice
                   key={day}
+                  day={day}
+                  active={active}
+                  accent={accent}
+                  size={monthlyCellSize}
                   onPress={() => {
-                    animateLayout();
                     const next = active
                       ? monthlyDays.filter(item => item !== day)
                       : [...monthlyDays, day].sort((a, b) => a - b);
                     onMonthlyDaysChange(next.length ? next : [day]);
                   }}
-                  activeOpacity={0.84}
-                  style={[
-                    s.monthlyCell,
-                    {
-                      width: monthlyCellSize,
-                      minHeight: monthlyCellSize,
-                    },
-                    active && { borderColor: accent, backgroundColor: withAlpha(accent, 0.07) },
-                  ]}
-                >
-                  <Text style={[s.monthlyText, active && { color: accent }]}>{day}</Text>
-                </TouchableOpacity>
+                />
               );
             })}
           </View>
@@ -212,28 +199,23 @@ function FrequencyChoice({
   onPress: () => void;
 }) {
   const progress = useSelectionMotion(active);
-  const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.006] });
-  const backgroundColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#FFFFFF', withAlpha(accent, 0.055)],
-  });
-  const borderColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#F0EDE6', accent],
-  });
-  const shadowOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0.015, 0.10] });
+  const activeBg = withAlpha(accent, 0.055);
+  const activeRingBorder = withAlpha(accent, 0.34);
+  const motionStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', activeBg]),
+    borderColor: interpolateColor(progress.value, [0, 1], ['#F0EDE6', accent]),
+    shadowOpacity: 0.015 + progress.value * 0.085,
+    transform: [{ scale: 1 + progress.value * 0.006 }],
+  }), [accent, activeBg]);
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={s.frequencyTouch}>
-      <Animated.View
+      <Reanimated.View
         style={[
           s.frequencyChip,
+          motionStyle,
           {
-            backgroundColor,
-            borderColor,
             shadowColor: accent,
-            shadowOpacity,
-            transform: [{ scale }],
           },
         ]}
       >
@@ -241,10 +223,95 @@ function FrequencyChoice({
           <Text style={[s.frequencyText, active && { color: accent }]} numberOfLines={1}>{option.label}</Text>
           <Text style={[s.frequencySub, active && { color: accent }]} numberOfLines={1}>{option.desc}</Text>
         </View>
-        <View style={[s.frequencyDotRing, active && { borderColor: withAlpha(accent, 0.34), backgroundColor: '#FFFDF8' }]}>
+        <View style={[s.frequencyDotRing, active && { borderColor: activeRingBorder, backgroundColor: '#FFFDF8' }]}>
           {active && <View style={[s.frequencyDot, { backgroundColor: accent }]} />}
         </View>
-      </Animated.View>
+      </Reanimated.View>
+    </TouchableOpacity>
+  );
+}
+
+function WeekdayChoice({
+  label,
+  active,
+  accent,
+  size,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  accent: string;
+  size: number;
+  onPress: () => void;
+}) {
+  const progress = useSelectionMotion(active);
+  const activeBg = withAlpha(accent, 0.075);
+  const chipStyle = useAnimatedStyle(() => ({
+    borderColor: interpolateColor(progress.value, [0, 1], ['#E5E7EB', accent]),
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', activeBg]),
+    transform: [{ scale: 1 + progress.value * 0.055 }],
+  }), [accent, activeBg]);
+  const textStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(progress.value, [0, 1], ['#9CA3AF', accent]),
+  }), [accent]);
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.86}>
+      <Reanimated.View
+        style={[
+          s.dayChip,
+          {
+            width: size,
+            height: size,
+            borderRadius: Math.round(size / 2),
+          },
+          chipStyle,
+        ]}
+      >
+        <Reanimated.Text style={[s.dayChipText, textStyle]}>{label}</Reanimated.Text>
+      </Reanimated.View>
+    </TouchableOpacity>
+  );
+}
+
+function MonthlyDayChoice({
+  day,
+  active,
+  accent,
+  size,
+  onPress,
+}: {
+  day: number;
+  active: boolean;
+  accent: string;
+  size: number;
+  onPress: () => void;
+}) {
+  const progress = useSelectionMotion(active);
+  const activeBg = withAlpha(accent, 0.075);
+  const cellStyle = useAnimatedStyle(() => ({
+    borderColor: interpolateColor(progress.value, [0, 1], ['rgba(232,216,186,0.46)', accent]),
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['rgba(255,255,255,0.86)', activeBg]),
+    transform: [{ scale: 1 + progress.value * 0.035 }],
+  }), [accent, activeBg]);
+  const textStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(progress.value, [0, 1], ['#8A8177', accent]),
+  }), [accent]);
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.86}>
+      <Reanimated.View
+        style={[
+          s.monthlyCell,
+          {
+            width: size,
+            minHeight: size,
+          },
+          cellStyle,
+        ]}
+      >
+        <Reanimated.Text style={[s.monthlyText, textStyle]}>{day}</Reanimated.Text>
+      </Reanimated.View>
     </TouchableOpacity>
   );
 }

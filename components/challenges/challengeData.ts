@@ -66,6 +66,17 @@ export type ChallengePrayerConfig = {
   reminderMinutes?: number;
 };
 
+export type ChallengeChurchConfig = {
+  frequency: 'daily' | 'weekdays' | 'weekends' | 'specific_days' | 'monthly';
+  selectedDays?: number[];
+  monthlyDays?: number[];
+  time?: string;
+  sameTimeEveryDay?: boolean;
+  dayTimes?: Record<number, string>;
+  notificationMode?: 'none' | 'single' | 'double';
+  reminderMinutes?: number;
+};
+
 export type ChallengeRecord = {
   id: string;
   templateId: string;
@@ -88,8 +99,17 @@ export type ChallengeRecord = {
   endedLabel?: string;
   totalUnits?: number;
   durationDays?: number;
+  startedAt?: string;
+  pausedAt?: string;
+  completedAt?: string;
+  cancelledAt?: string;
+  completedDates?: string[];
+  skippedDates?: string[];
+  lastCompletedDate?: string;
+  bestStreak?: number;
   scriptureConfig?: ChallengeScriptureConfig;
   prayerConfig?: ChallengePrayerConfig;
+  churchConfig?: ChallengeChurchConfig;
 };
 
 export const TAB_ACTIVE_COLORS: Record<ChallengeTab, string> = {
@@ -437,7 +457,7 @@ export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
     category: 'prayer',
     groupKey: 'prayer',
     groupLabel: 'Prayer',
-    icon: 'sparkles',
+    icon: 'cross',
     descriptor: 'Dedicated prayer setup',
     defaultTime: '13:00',
     scheduleLabel: 'Daily',
@@ -592,7 +612,7 @@ export const INITIAL_CHALLENGES: ChallengeRecord[] = [
     description: 'Kept the prayer active every day for the full cycle.',
     category: 'prayer',
     groupKey: 'prayer',
-    icon: 'sparkles',
+    icon: 'cross',
     status: 'completed',
     progressCurrent: 30,
     progressTotal: 30,

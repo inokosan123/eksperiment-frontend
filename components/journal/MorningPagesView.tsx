@@ -2,15 +2,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Keyboard, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, CheckSmall, Feather } from '@/components/icons/Icons';
+import { ArrowLeft, CheckSmall } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import { FormatState, RichTextEditor, RichTextEditorRef, RichToolbar } from '@/components/shared/RichTextEditor';
+import { useJournal } from '@/components/journal/JournalContext';
+import { countWords } from '@/components/journal/journalLogic';
 
 const BG = '#FAF7F0';
-const PURPLE = '#7C6EAF';
 const TARGET = 750;
 
 const DAILY_PROMPTS = [
@@ -20,20 +21,27 @@ const DAILY_PROMPTS = [
   'What would make today wonderful?',
 ];
 
-function countWordsInHTML(html: string) {
-  const plain = html.replace(/<[^>]*>/g, ' ').trim();
-  return plain === '' ? 0 : plain.trim().split(/\s+/).length;
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export default function MorningPagesView() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ date?: string; readOnly?: string }>();
+  const selectedDateKey = typeof params.date === 'string' && params.date ? params.date : todayKey();
+  const isReadOnly = params.readOnly === '1' || params.readOnly === 'true';
+  const { ready: journalReady, getEntry, upsertEntry } = useJournal();
   const [html, setHtml] = useState('');
   const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
   const [showInfo, setShowInfo] = useState(false);
   const [kbHeight, setKbHeight] = useState(0);
   const editorRef = useRef<RichTextEditorRef>(null);
-  const wordCount = countWordsInHTML(html);
+  const hydratedDateRef = useRef('');
+  const dirtyRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wordCount = countWords(html);
   const pct = Math.min(wordCount / TARGET, 1);
   const isDone = wordCount >= TARGET;
   const promptIdx = new Date().getDay();
@@ -43,6 +51,46 @@ export default function MorningPagesView() {
     const hide = Keyboard.addListener('keyboardWillHide', () => setKbHeight(0));
     return () => { show.remove(); hide.remove(); };
   }, []);
+
+  useEffect(() => {
+    if (!journalReady || hydratedDateRef.current === selectedDateKey) return;
+    const entry = getEntry(selectedDateKey);
+    setHtml(entry.morningPagesHtml ?? '');
+    hydratedDateRef.current = selectedDateKey;
+    dirtyRef.current = false;
+  }, [journalReady, selectedDateKey, getEntry]);
+
+  useEffect(() => {
+    if (isReadOnly) return;
+    if (!dirtyRef.current || hydratedDateRef.current !== selectedDateKey) return;
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+
+    saveTimerRef.current = setTimeout(() => {
+      void upsertEntry(selectedDateKey, {
+        morningPagesHtml: html,
+        morningPagesWordCount: countWords(html),
+      });
+      dirtyRef.current = false;
+    }, 350);
+
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, [html, isReadOnly, selectedDateKey, upsertEntry]);
+
+  const saveNow = async () => {
+    if (isReadOnly) return;
+    await upsertEntry(selectedDateKey, {
+      morningPagesHtml: html,
+      morningPagesWordCount: countWords(html),
+    });
+    dirtyRef.current = false;
+  };
 
   return (
     <View style={[s.screen, { paddingBottom: kbHeight }]}>
@@ -73,16 +121,22 @@ export default function MorningPagesView() {
 
       <Text style={s.prompt}>{`"${DAILY_PROMPTS[promptIdx % DAILY_PROMPTS.length]}"`}</Text>
 
-      <RichToolbar editorRef={editorRef} activeFormats={fmt} style={s.toolbar} />
+      {!isReadOnly && <RichToolbar editorRef={editorRef} activeFormats={fmt} style={s.toolbar} />}
 
       <RichTextEditor
+        key={selectedDateKey}
         ref={editorRef}
         initialHTML={html}
-        onChange={setHtml}
+        onChange={(value) => {
+          if (isReadOnly) return;
+          dirtyRef.current = true;
+          setHtml(value);
+        }}
         onFormatChange={setFmt}
         placeholder="Write 3 pages of stream-of-consciousness..."
         backgroundColor={BG}
         color={C.text}
+        editable={!isReadOnly}
         style={s.editor}
       />
 
@@ -99,18 +153,20 @@ export default function MorningPagesView() {
             <Text style={[s.countNum, isDone && { color: '#16A34A' }]}>{wordCount}</Text>
             {` / ${TARGET} words`}
           </Text>
+          {!isReadOnly && (
           <TouchableOpacity
             style={[s.doneBtn, isDone && s.doneBtnSuccess]}
             activeOpacity={0.85}
             onPress={() => {
               if (isDone) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.back();
+              void saveNow().finally(() => router.back());
             }}
           >
             <CheckSmall s={18} c="#fff" w={2.8} />
             <Text style={s.doneTxt}>Done</Text>
           </TouchableOpacity>
+          )}
         </View>
       </View>
     </View>

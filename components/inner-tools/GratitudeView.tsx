@@ -1,22 +1,35 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated, ScrollView, StyleSheet, Text, TextInput,
-  TouchableOpacity, View,
+  Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable,
+  ScrollView, StyleSheet, Text, TextInput,
+  TouchableOpacity, useWindowDimensions, View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import Reanimated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
-  ArrowLeft, CalendarCheck, CheckSmall, ChevronDown, ChevronUp,
+  ArrowLeft, CalendarCheck, CheckSmall, ChevronDown,
   Heart, Pencil, Plus, RotateCcw, Trash2, X,
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import { RichTextEditor, RichToolbar, RichTextEditorRef, FormatState } from '@/components/shared/RichTextEditor';
+import RichCommentText from '@/components/shared/RichCommentText';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import TaskTimeEditor from '@/components/shared/TaskTimeEditor';
 import { useTasks } from '@/components/tasks/TaskProvider';
+import { buildInstanceId, getLocalDateKey } from '@/components/tasks/taskScheduler';
 import type { TaskDraft } from '@/components/tasks/taskTypes';
 import { GratitudeEntry, GratitudeKind, useInnerTools } from './InnerToolsContext';
 
@@ -98,15 +111,14 @@ function buildGratitudeTaskDraft({
 }
 
 function useChoiceMotion(active: boolean) {
-  const progress = useRef(new Animated.Value(active ? 1 : 0)).current;
+  const progress = useSharedValue(active ? 1 : 0);
 
   useEffect(() => {
-    Animated.spring(progress, {
-      toValue: active ? 1 : 0,
-      friction: 15,
-      tension: 145,
-      useNativeDriver: false,
-    }).start();
+    progress.value = withSpring(active ? 1 : 0, {
+      damping: 15,
+      stiffness: 160,
+      mass: 1,
+    });
   }, [active, progress]);
 
   return progress;
@@ -114,8 +126,14 @@ function useChoiceMotion(active: boolean) {
 
 export default function GratitudeView() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ task?: string; kind?: GratitudeKind; taskDate?: string }>();
   const insets = useSafeAreaInsets();
-  const { createOrUpdateTask, remove: removeTask } = useTasks();
+  const {
+    createOrUpdateTask,
+    remove: removeTask,
+    completeInstance,
+    resetInstance,
+  } = useTasks();
   const {
     gratitudeEntries, upsertGratitudeEntry, deleteGratitudeEntry,
     gratitudeTaskEnabled, setGratitudeTaskEnabled,
@@ -129,13 +147,41 @@ export default function GratitudeView() {
   const [editing, setEditing] = useState<GratitudeEntry | null>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [taskSheet, setTaskSheet] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [confirmDisableTask, setConfirmDisableTask] = useState(false);
+  const [dailyPageIndex, setDailyPageIndex] = useState(0);
+  const handledTaskOpenRef = useRef(false);
+  const { width: windowWidth } = useWindowDimensions();
+  const dailyPageWidth = Math.max(0, windowWidth - 40);
 
   const lifeEntries = useMemo(() => gratitudeEntries.filter(entry => entry.kind === 'life').sort((a, b) => b.createdAt - a.createdAt), [gratitudeEntries]);
   const dailyEntries = useMemo(() => gratitudeEntries.filter(entry => entry.kind === 'daily').sort((a, b) => b.createdAt - a.createdAt), [gratitudeEntries]);
+  const dailyPages = useMemo(() => {
+    const pages: GratitudeEntry[][] = [];
+    for (let i = 0; i < dailyEntries.length; i += 5) {
+      pages.push(dailyEntries.slice(i, i + 5));
+    }
+    return pages;
+  }, [dailyEntries]);
+
+  useEffect(() => {
+    if (dailyPageIndex >= dailyPages.length && dailyPages.length > 0) {
+      setDailyPageIndex(dailyPages.length - 1);
+    } else if (dailyPages.length === 0 && dailyPageIndex !== 0) {
+      setDailyPageIndex(0);
+    }
+  }, [dailyPages.length, dailyPageIndex]);
+
+  const taskEntryDate = params.taskDate ?? getLocalDateKey();
+
+  const syncGratitudeTaskCompletion = async (nextEntries: GratitudeEntry[], forceEnabled = false, date = taskEntryDate) => {
+    if (!forceEnabled && !gratitudeTaskEnabled) return;
+    const count = nextEntries.filter(entry => entry.kind === 'daily' && entry.date === date).length;
+    const instanceId = buildInstanceId(GRATITUDE_TASK_ID, date);
+    if (count >= 3) await completeInstance(instanceId, date);
+    else await resetInstance(instanceId, date);
+  };
 
   const openAdd = (kind: GratitudeKind) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -160,19 +206,31 @@ export default function GratitudeView() {
     setContent('');
   };
 
+  useEffect(() => {
+    if (handledTaskOpenRef.current || params.task !== '1') return;
+    handledTaskOpenRef.current = true;
+    openAdd(params.kind === 'life' ? 'life' : 'daily');
+  }, [params.kind, params.task]);
+
   const saveEntry = () => {
     const cleanTitle = title.trim();
     const cleanContent = content.trim();
     if (!cleanTitle && !cleanContent) return;
 
-    upsertGratitudeEntry({
+    const nextEntry: GratitudeEntry = {
       id: editing?.id ?? newId('gratitude'),
       kind: formKind ?? 'life',
       title: cleanTitle || cleanContent,
       content: cleanContent,
-      date: editing?.date ?? new Date().toISOString().split('T')[0],
+      date: editing?.date ?? (formKind === 'daily' ? taskEntryDate : getLocalDateKey()),
       createdAt: editing?.createdAt ?? Date.now(),
-    });
+    };
+    const nextEntries = gratitudeEntries.some(entry => entry.id === nextEntry.id)
+      ? gratitudeEntries.map(entry => entry.id === nextEntry.id ? nextEntry : entry)
+      : [nextEntry, ...gratitudeEntries];
+
+    upsertGratitudeEntry(nextEntry);
+    void syncGratitudeTaskCompletion(nextEntries, false, nextEntry.date);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     closeForm();
   };
@@ -184,7 +242,6 @@ export default function GratitudeView() {
         contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        automaticallyAdjustKeyboardInsets
       >
         <View style={s.scripture}>
           <Text style={s.scriptureText}>{'"In everything give thanks, for this is the will of God in Christ Jesus for you."'}</Text>
@@ -200,20 +257,6 @@ export default function GratitudeView() {
           count={lifeEntries.length}
           onAdd={() => openAdd('life')}
         />
-        {formKind === 'life' && (
-          <GratitudeForm
-            editorKey={`life-${editing?.id ?? 'new'}`}
-            color="amber"
-            title={title}
-            content={content}
-            isEditing={!!editing}
-            placeholder="I'm always grateful for..."
-            onTitle={setTitle}
-            onContent={setContent}
-            onCancel={closeForm}
-            onSave={saveEntry}
-          />
-        )}
         {lifeEntries.length === 0 && formKind !== 'life' ? (
           <EmptyHint color="amber" text="What are you always grateful for?" />
         ) : (
@@ -223,9 +266,8 @@ export default function GratitudeView() {
                 key={entry.id}
                 entry={entry}
                 color="amber"
-                expanded={expandedId === entry.id}
                 showDate={false}
-                onToggle={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
+                collapsible
                 onEdit={() => openEdit(entry)}
                 onDelete={() => setDeleteTarget(entry.id)}
               />
@@ -259,44 +301,71 @@ export default function GratitudeView() {
           count={dailyEntries.length}
           onAdd={() => openAdd('daily')}
         />
-        {formKind === 'daily' && (
-          <GratitudeForm
-            editorKey={`daily-${editing?.id ?? 'new'}`}
-            color="rose"
-            title={title}
-            content={content}
-            isEditing={!!editing}
-            placeholder="Today I'm grateful for..."
-            onTitle={setTitle}
-            onContent={setContent}
-            onCancel={closeForm}
-            onSave={saveEntry}
-          />
-        )}
         {dailyEntries.length === 0 && formKind !== 'daily' ? (
           <EmptyHint color="rose" text="What are you thankful for today?" />
         ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.dailyCarousel}>
-            {dailyEntries.map(entry => (
-              <View key={entry.id} style={s.dailySlide}>
-                <GratitudeCard
-                  entry={entry}
-                  color="rose"
-                  expanded={expandedId === entry.id}
-                  showDate
-                  onToggle={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
-                  onEdit={() => openEdit(entry)}
-                  onDelete={() => setDeleteTarget(entry.id)}
-                />
+          <View style={s.dailyPager}>
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              decelerationRate="fast"
+              snapToInterval={dailyPageWidth}
+              snapToAlignment="start"
+              disableIntervalMomentum
+              onMomentumScrollEnd={e => {
+                if (dailyPageWidth <= 0) return;
+                const idx = Math.round(e.nativeEvent.contentOffset.x / dailyPageWidth);
+                if (idx !== dailyPageIndex) setDailyPageIndex(idx);
+              }}
+            >
+              {dailyPages.map((page, idx) => (
+                <View key={idx} style={[s.dailyPage, { width: dailyPageWidth }]}>
+                  {page.map(entry => (
+                    <GratitudeCard
+                      key={entry.id}
+                      entry={entry}
+                      color="rose"
+                      showDate
+                      collapsible
+                      onEdit={() => openEdit(entry)}
+                      onDelete={() => setDeleteTarget(entry.id)}
+                    />
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+            {dailyPages.length > 1 && (
+              <View style={s.pageDots}>
+                {dailyPages.map((_, idx) => (
+                  <View
+                    key={idx}
+                    style={[s.pageDot, idx === dailyPageIndex && s.pageDotActive]}
+                  />
+                ))}
               </View>
-            ))}
-          </ScrollView>
+            )}
+          </View>
         )}
 
         <View style={s.bottomQuotes}>
           <WisdomCard quote={WISDOM_QUOTES[3]} />
         </View>
       </ScrollView>
+
+      <GratitudeForm
+        visible={!!formKind}
+        editorKey={`${formKind ?? 'none'}-${editing?.id ?? 'new'}`}
+        color={formKind === 'daily' ? 'rose' : 'amber'}
+        title={title}
+        content={content}
+        isEditing={!!editing}
+        placeholder={formKind === 'daily' ? "Today I'm grateful for..." : "I'm always grateful for..."}
+        onTitle={setTitle}
+        onContent={setContent}
+        onCancel={closeForm}
+        onSave={saveEntry}
+      />
 
       <ConfirmModal
         visible={!!deleteTarget}
@@ -308,7 +377,11 @@ export default function GratitudeView() {
         confirmLabel="DELETE"
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => {
-          if (deleteTarget) deleteGratitudeEntry(deleteTarget);
+          if (deleteTarget) {
+            const nextEntries = gratitudeEntries.filter(entry => entry.id !== deleteTarget);
+            deleteGratitudeEntry(deleteTarget);
+            void syncGratitudeTaskCompletion(nextEntries);
+          }
           setDeleteTarget(null);
         }}
       />
@@ -324,9 +397,11 @@ export default function GratitudeView() {
         confirmColor={C.gold}
         onCancel={() => setConfirmDisableTask(false)}
         onConfirm={() => {
-          void removeTask(GRATITUDE_TASK_ID);
-          setGratitudeTaskEnabled(false);
-          setConfirmDisableTask(false);
+          void (async () => {
+            await removeTask(GRATITUDE_TASK_ID);
+            setGratitudeTaskEnabled(false);
+            setConfirmDisableTask(false);
+          })();
         }}
       />
 
@@ -349,6 +424,7 @@ export default function GratitudeView() {
             dayTimes: gratitudeTaskDayTimes,
           }));
           setGratitudeTaskEnabled(true);
+          await syncGratitudeTaskCompletion(gratitudeEntries, true);
           setTaskSheet(false);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }}
@@ -393,8 +469,9 @@ function SectionHeader({
 }
 
 function GratitudeForm({
-  editorKey, color, title, content, isEditing, placeholder, onTitle, onContent, onCancel, onSave,
+  visible, editorKey, color, title, content, isEditing, placeholder, onTitle, onContent, onCancel, onSave,
 }: {
+  visible: boolean;
   editorKey: string;
   color: 'amber' | 'rose';
   title: string;
@@ -407,49 +484,108 @@ function GratitudeForm({
   onSave: () => void;
 }) {
   const accent = color === 'amber' ? GOLD : ROSE;
+  const insets = useSafeAreaInsets();
   const editorRef = useRef<RichTextEditorRef>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const toolbarYRef = useRef(0);
   const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
-  const [titleHeight, setTitleHeight] = useState(44);
-  const bg = color === 'amber' ? '#FFFBEB' : '#FFF1F2';
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const editorBg = color === 'amber' ? '#FFFDF8' : '#FFF8F8';
+  const titleBg = color === 'amber' ? '#FFFBEB' : '#FFF1F2';
+  const titlePlaceholderColor = color === 'amber' ? '#E1C780' : '#FDA4AF';
+  const saveBg = color === 'amber' ? '#78350F' : ROSE;
+
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardOpen(false);
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvt, () => {
+      setKeyboardOpen(true);
+      // Scroll so toolbar sits at top of the visible scroll — title input scrolls out,
+      // toolbar + editor + Save are the focused area above the keyboard.
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({ y: Math.max(0, toolbarYRef.current - 4), animated: true });
+      });
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      setKeyboardOpen(false);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [visible]);
 
   return (
-    <View style={[s.formFrame, { borderColor: accent, backgroundColor: bg }]}>
-      <View style={s.formInner}>
-        <Text style={[s.formKicker, { color: accent }]}>{isEditing ? 'Edit Entry' : 'New Entry'}</Text>
-        <TextInput
-          value={title}
-          onChangeText={onTitle}
-          placeholder={placeholder}
-          placeholderTextColor={color === 'amber' ? '#E1C780' : '#FDA4AF'}
-          multiline
-          scrollEnabled={false}
-          textAlignVertical="top"
-          onContentSizeChange={e => setTitleHeight(Math.max(44, e.nativeEvent.contentSize.height))}
-          style={[s.formInput, { backgroundColor: bg, height: titleHeight }]}
-        />
-        <RichToolbar editorRef={editorRef} activeFormats={fmt} style={s.formToolbar} />
-        <RichTextEditor
-          key={editorKey}
-          ref={editorRef}
-          initialHTML={content}
-          onChange={onContent}
-          onFormatChange={setFmt}
-          placeholder="Add more detail... (optional)"
-          backgroundColor={editorBg}
-          color="#3D3229"
-          style={s.formEditor}
-        />
-        <View style={s.formActions}>
-          <TouchableOpacity onPress={onCancel} style={s.cancelBtn} activeOpacity={0.8}>
-            <Text style={s.cancelText}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onSave} style={[s.saveBtn, { backgroundColor: color === 'amber' ? '#78350F' : ROSE }]} activeOpacity={0.88}>
-            <Text style={s.saveText}>{isEditing ? 'Save Changes' : 'Save'}</Text>
-          </TouchableOpacity>
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
+      <KeyboardAvoidingView
+        style={[
+          s.gratFormOverlay,
+          { paddingTop: Math.max(insets.top + 14, 36), paddingBottom: Math.max(insets.bottom + 14, 28) },
+        ]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={StyleSheet.absoluteFill} pointerEvents="none" />
+        <View style={s.gratFormCard}>
+          <View style={s.gratFormHeader}>
+            <Text style={[s.gratFormTitle, { color: accent }]} numberOfLines={1}>
+              {isEditing ? 'EDIT ENTRY' : 'NEW ENTRY'}
+            </Text>
+            <TouchableOpacity onPress={onCancel} style={s.gratFormCloseBtn} activeOpacity={0.85} hitSlop={6}>
+              <X s={16} c="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            ref={scrollRef}
+            style={s.gratFormScroll}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={s.gratFormScrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <TextInput
+              value={title}
+              onChangeText={value => onTitle(value.replace(/\r?\n/g, ' '))}
+              placeholder={placeholder}
+              placeholderTextColor={titlePlaceholderColor}
+              returnKeyType="done"
+              blurOnSubmit
+              style={[s.gratFormTitleInput, { backgroundColor: titleBg, borderColor: accent }]}
+            />
+            <View onLayout={e => { toolbarYRef.current = e.nativeEvent.layout.y; }}>
+              <RichToolbar editorRef={editorRef} activeFormats={fmt} style={s.gratFormToolbar} />
+            </View>
+            <View style={[s.gratFormEditorBox, keyboardOpen && s.gratFormEditorBoxCompact, { backgroundColor: editorBg, borderColor: accent }]}>
+              <RichTextEditor
+                key={editorKey}
+                ref={editorRef}
+                initialHTML={content}
+                onChange={onContent}
+                onFormatChange={setFmt}
+                placeholder="Add more detail... (optional)"
+                backgroundColor={editorBg}
+                color="#3D3229"
+              />
+            </View>
+          </ScrollView>
+
+          <View style={s.gratFormActions}>
+            <TouchableOpacity onPress={onCancel} style={s.gratFormCancel} activeOpacity={0.85}>
+              <Text style={s.gratFormCancelText}>CANCEL</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onSave} style={[s.gratFormSave, { backgroundColor: saveBg }]} activeOpacity={0.85}>
+              <Text style={s.gratFormSaveText}>{isEditing ? 'SAVE CHANGES' : 'SAVE'}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-    </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -478,49 +614,106 @@ function stripHtml(html: string): string {
 }
 
 function GratitudeCard({
-  entry, color, expanded, showDate, onToggle, onEdit, onDelete,
+  entry, color, showDate, collapsible, onEdit, onDelete,
 }: {
   entry: GratitudeEntry;
   color: 'amber' | 'rose';
-  expanded: boolean;
   showDate: boolean;
-  onToggle: () => void;
+  collapsible?: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const isAmber = color === 'amber';
   const accent = isAmber ? GOLD : ROSE;
-  const plainContent = stripHtml(entry.content);
-  const long = plainContent.length > 110 || plainContent.split('\n').length > 3;
+  const tint = isAmber ? 'rgba(197,160,89,0.10)' : 'rgba(244,63,94,0.08)';
+  const border = isAmber ? 'rgba(197,160,89,0.20)' : 'rgba(244,63,94,0.18)';
+  const stripe = isAmber ? 'rgba(197,160,89,0.55)' : 'rgba(244,63,94,0.45)';
+  const dateColor = isAmber ? 'rgba(155,127,67,0.85)' : 'rgba(190,58,82,0.85)';
+
+  const hasContent = !!stripHtml(entry.content);
+  const hasTitle = !!entry.title?.trim();
+
+  const [expanded, setExpanded] = useState(!collapsible);
+  const isExpanded = !collapsible || expanded;
+
+  const rotProgress = useSharedValue(isExpanded ? 1 : 0);
+  useEffect(() => {
+    rotProgress.value = withTiming(isExpanded ? 1 : 0, { duration: 200 });
+  }, [isExpanded, rotProgress]);
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotProgress.value * 180}deg` }],
+  }));
+
+  const toggle = () => {
+    if (!collapsible) return;
+    Haptics.selectionAsync();
+    setExpanded(v => !v);
+  };
+
+  const actions = (
+    <View style={s.gActions}>
+      <TouchableOpacity onPress={onEdit} style={s.gActionBtn} activeOpacity={0.7} hitSlop={6}>
+        <Pencil s={15} c="#A8A29E" w={1.8} />
+      </TouchableOpacity>
+      <TouchableOpacity onPress={onDelete} style={s.gActionBtn} activeOpacity={0.7} hitSlop={6}>
+        <Trash2 s={15} c="#A8A29E" w={1.8} />
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
-    <View style={[s.gCard, isAmber ? s.gAmber : s.gRose]}>
-      <View style={[s.gAccent, { backgroundColor: accent }]} />
-      <View style={s.gContent}>
-        <View style={s.gTop}>
-          <View style={{ flex: 1 }}>
-            {showDate && <Text style={s.gDate}>{new Date(entry.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>}
-            <Text style={s.gTitle}>{entry.title}</Text>
+    <Reanimated.View
+      style={[s.gCard, { borderColor: border }]}
+      layout={LinearTransition.springify().damping(15).stiffness(160).mass(1)}
+    >
+      <View style={[s.gAccent, { backgroundColor: stripe }]} pointerEvents="none" />
+      <View style={s.gInner}>
+        <Pressable onPress={toggle} style={s.gHead} disabled={!collapsible}>
+          <View style={[s.gIconCircle, { backgroundColor: tint }]}>
+            <Heart s={13} c={accent} w={2} />
           </View>
-          <View style={s.gActions}>
-            <TouchableOpacity onPress={onEdit} style={s.gActionBtn} activeOpacity={0.7}>
-              <Pencil s={13} c="#A8A29E" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onDelete} style={s.gActionBtn} activeOpacity={0.7}>
-              <Trash2 s={13} c="#F87171" />
-            </TouchableOpacity>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            {showDate && (
+              <Text style={[s.gDate, { color: dateColor }]}>
+                {new Date(entry.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
+              </Text>
+            )}
+            {hasTitle && (
+              <Text style={s.gTitle} numberOfLines={isExpanded ? 0 : 2}>{entry.title}</Text>
+            )}
           </View>
-        </View>
-        {!!plainContent && (
-          <Text style={s.gText} numberOfLines={expanded ? undefined : 3}>{plainContent}</Text>
+          {collapsible && (
+            <Reanimated.View style={[s.gChevron, chevronStyle]}>
+              <ChevronDown s={18} c="#A8A29E" w={2} />
+            </Reanimated.View>
+          )}
+        </Pressable>
+
+        {isExpanded && (hasContent || !collapsible) && (
+          <Reanimated.View
+            entering={FadeIn.duration(180)}
+            exiting={FadeOut.duration(120)}
+          >
+            {hasContent ? (
+              <View style={s.gBody}>
+                <RichCommentText
+                  html={entry.content}
+                  color="#5B554F"
+                  collapsedLines={isAmber ? 4 : 3}
+                  rightSlot={actions}
+                />
+              </View>
+            ) : (
+              <View style={s.gActionsOnlyRow}>{actions}</View>
+            )}
+          </Reanimated.View>
         )}
-        {long && (
-          <TouchableOpacity onPress={onToggle} style={s.moreBtn} activeOpacity={0.7}>
-            {expanded ? <ChevronUp s={12} c={accent} /> : <ChevronDown s={12} c={accent} />}
-            <Text style={[s.moreText, { color: accent }]}>{expanded ? 'less' : 'more'}</Text>
-          </TouchableOpacity>
+
+        {isExpanded && collapsible && !hasContent && (
+          <View style={s.gActionsOnlyRow}>{actions}</View>
         )}
       </View>
-    </View>
+    </Reanimated.View>
   );
 }
 
@@ -683,25 +876,30 @@ function FrequencyCard({
   onPress: () => void;
 }) {
   const progress = useChoiceMotion(active);
-  const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.02] });
-  const backgroundColor = progress.interpolate({ inputRange: [0, 1], outputRange: ['#FFFFFF', '#FFF1F2'] });
-  const borderColor = progress.interpolate({ inputRange: [0, 1], outputRange: ['#F1E7EA', '#F43F5E'] });
-  const shadowOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0.02, 0.16] });
-  const dotScale = progress.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] });
+  const cardMotionStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', '#FFF1F2']),
+    borderColor: interpolateColor(progress.value, [0, 1], ['#F1E7EA', '#F43F5E']),
+    shadowOpacity: 0.02 + progress.value * 0.14,
+    transform: [{ scale: 1 + progress.value * 0.02 }],
+  }));
+  const dotMotionStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scale: 0.7 + progress.value * 0.3 }],
+  }));
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={s.freqTouch}>
-      <Animated.View style={[s.freqCard, { backgroundColor, borderColor, shadowOpacity, transform: [{ scale }] }]}>
+      <Reanimated.View style={[s.freqCard, cardMotionStyle]}>
         <View style={s.freqCopy}>
           <Text style={[s.freqTitle, active && s.freqTitleActive]}>{option.label}</Text>
           <Text style={[s.freqSub, active && s.freqSubActive]}>{option.sub}</Text>
         </View>
         <View style={[s.freqDot, active && s.freqDotActive]}>
-          <Animated.View style={{ opacity: progress, transform: [{ scale: dotScale }] }}>
+          <Reanimated.View style={dotMotionStyle}>
             <CheckSmall s={9} c="#fff" />
-          </Animated.View>
+          </Reanimated.View>
         </View>
-      </Animated.View>
+      </Reanimated.View>
     </TouchableOpacity>
   );
 }
@@ -734,24 +932,139 @@ const s = StyleSheet.create({
   formInput: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontFamily: F.serif, fontSize: 16, color: C.text },
   formToolbar: { marginTop: 2, marginBottom: 6 },
   formEditor: { height: 180, borderRadius: 10, overflow: 'hidden' },
+  formEditorCompact: { height: 140 },
+
+  // Modal-based gratitude form (mirrors CommentModal layout for keyboard handling)
+  gratFormOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    backgroundColor: 'rgba(0,0,0,0.40)',
+  },
+  gratFormCard: {
+    width: '100%',
+    maxWidth: 380,
+    maxHeight: '100%',
+    flexShrink: 1,
+    flexDirection: 'column',
+    borderRadius: 26,
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 16 },
+    shadowRadius: 38,
+    elevation: 18,
+  },
+  gratFormHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 10,
+    marginBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#EEEFF2',
+  },
+  gratFormTitle: { flex: 1, fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.2, marginRight: 12 },
+  gratFormCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F4F5F7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gratFormScroll: { flexShrink: 1, flexGrow: 0 },
+  gratFormScrollContent: { paddingBottom: 4 },
+  gratFormTitleInput: {
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 0,
+    fontFamily: F.serif,
+    fontSize: 16,
+    color: C.text,
+    marginBottom: 10,
+  },
+  gratFormToolbar: { marginTop: 4, marginBottom: 8 },
+  gratFormEditorBox: {
+    height: 220,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  gratFormEditorBoxCompact: { height: 170 },
+  gratFormActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  gratFormCancel: {
+    flex: 1,
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gratFormCancelText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.8, color: C.textSecondary },
+  gratFormSave: {
+    flex: 1.6,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gratFormSaveText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.8, color: '#fff' },
   formActions: { flexDirection: 'row', gap: 9 },
   cancelBtn: { flex: 1, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', paddingVertical: 12, alignItems: 'center' },
   cancelText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.7, color: C.textSecondary, textTransform: 'uppercase' },
   saveBtn: { flex: 2, borderRadius: 16, paddingVertical: 12, alignItems: 'center' },
   saveText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.7, color: '#fff', textTransform: 'uppercase' },
-  gCard: { borderRadius: 20, borderWidth: 1, overflow: 'hidden', flexDirection: 'row' },
-  gAmber: { backgroundColor: '#FFFEF9', borderColor: 'rgba(197,160,89,0.20)' },
-  gRose: { backgroundColor: '#fff', borderColor: 'rgba(244,63,94,0.14)' },
-  gAccent: { width: 4 },
-  gContent: { flex: 1, padding: 15 },
-  gTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
-  gDate: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: 'rgba(244,63,94,0.60)', textTransform: 'uppercase', marginBottom: 4 },
-  gTitle: { fontFamily: F.serifMedium, fontSize: 17, lineHeight: 22, color: C.text },
-  gActions: { flexDirection: 'row', alignItems: 'center' },
-  gActionBtn: { padding: 7 },
-  gText: { marginTop: 8, fontFamily: F.sans, fontSize: 13, lineHeight: 20, color: C.textMuted },
-  moreBtn: { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 3 },
-  moreText: { fontFamily: F.sansSemiBold, fontSize: 11 },
+  gCard: {
+    position: 'relative',
+    borderRadius: 20,
+    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  gAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 14,
+    bottom: 14,
+    width: 3,
+    borderRadius: 2,
+  },
+  gInner: { padding: 16, paddingLeft: 22 },
+  gHead: { flexDirection: 'row', alignItems: 'center', columnGap: 11 },
+  gIconCircle: {
+    width: 28, height: 28, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  gDate: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, textTransform: 'uppercase' },
+  gTitle: {
+    marginTop: 1,
+    fontFamily: F.serifMedium,
+    fontSize: 15,
+    lineHeight: 20,
+    color: '#2A2622',
+  },
+  gBody: { marginTop: 10 },
+  gActions: { flexDirection: 'row', alignItems: 'center', columnGap: 4 },
+  gActionBtn: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  gActionsOnlyRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
+  gChevron: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
   empty: { alignItems: 'center', paddingVertical: 24, marginBottom: 10 },
   emptyText: { marginTop: 8, fontFamily: F.serifMediumItalic, fontSize: 16, textAlign: 'center' },
   taskCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 20, borderWidth: 1, borderColor: '#FFE4E6', backgroundColor: '#FFF7F8', paddingHorizontal: 14, paddingVertical: 13, marginBottom: 12 },
@@ -765,8 +1078,11 @@ const s = StyleSheet.create({
   switchOn: { backgroundColor: ROSE },
   switchKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff' },
   switchKnobOn: { transform: [{ translateX: 22 }] },
-  dailyCarousel: { gap: 12, paddingBottom: 14 },
-  dailySlide: { width: 292 },
+  dailyPager: { marginHorizontal: -20, marginBottom: 4 },
+  dailyPage: { paddingHorizontal: 20, gap: 11 },
+  pageDots: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, paddingTop: 14, paddingBottom: 6 },
+  pageDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#E7E5E4' },
+  pageDotActive: { backgroundColor: ROSE, width: 18 },
   bottomQuotes: { gap: 4, marginTop: 6 },
   sheet: { borderTopLeftRadius: 34, borderTopRightRadius: 34, backgroundColor: '#FAFAFA', paddingBottom: 22, maxHeight: '88%', overflow: 'hidden' },
   sheetHandle: { width: 42, height: 4, borderRadius: 999, backgroundColor: '#D6D3D1', alignSelf: 'center', marginTop: 12, marginBottom: 6 },

@@ -1,16 +1,20 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import {
-  Animated,
-  LayoutAnimation,
-  Platform,
   StyleProp,
   StyleSheet,
   Text,
   TouchableOpacity,
-  UIManager,
   View,
   ViewStyle,
 } from 'react-native';
+import Reanimated, {
+  FadeInUp,
+  FadeOutUp,
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 
 import { Bell, BellOff, BellRing } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
@@ -35,41 +39,15 @@ const MODE_OPTIONS = [
 
 const REMINDER_OPTIONS = [5, 10, 15, 30, 60];
 
-if (Platform.OS === 'android' && typeof UIManager.setLayoutAnimationEnabledExperimental === 'function') {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-function animateNotificationLayout() {
-  try {
-    LayoutAnimation.configureNext({
-      duration: 260,
-      create: {
-        type: LayoutAnimation.Types.easeInEaseOut,
-        property: LayoutAnimation.Properties.opacity,
-      },
-      update: {
-        type: LayoutAnimation.Types.easeInEaseOut,
-      },
-      delete: {
-        type: LayoutAnimation.Types.easeInEaseOut,
-        property: LayoutAnimation.Properties.opacity,
-      },
-    });
-  } catch {
-    // Web can ignore LayoutAnimation; native gets the smooth drawer.
-  }
-}
-
 function useSelectionMotion(active: boolean) {
-  const progress = useRef(new Animated.Value(active ? 1 : 0)).current;
+  const progress = useSharedValue(active ? 1 : 0);
 
   useEffect(() => {
-    Animated.spring(progress, {
-      toValue: active ? 1 : 0,
-      friction: 15,
-      tension: 145,
-      useNativeDriver: false,
-    }).start();
+    progress.value = withSpring(active ? 1 : 0, {
+      damping: 18,
+      stiffness: 235,
+      mass: 0.72,
+    });
   }, [active, progress]);
 
   return progress;
@@ -98,10 +76,7 @@ export default function NotificationSettings({
               label={optionLabel}
               Icon={Icon}
               accent={accent}
-              onPress={() => {
-                animateNotificationLayout();
-                onModeChange(key);
-              }}
+              onPress={() => onModeChange(key)}
             />
           );
         })}
@@ -128,34 +103,27 @@ function NotificationModeButton({
   onPress: () => void;
 }) {
   const progress = useSelectionMotion(active);
-  const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.018] });
-  const backgroundColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#FFFFFF', accent],
-  });
-  const borderColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#ECE8E0', accent],
-  });
-  const shadowOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0.015, 0.16] });
+  const motionStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', accent]),
+    borderColor: interpolateColor(progress.value, [0, 1], ['#ECE8E0', accent]),
+    shadowOpacity: 0.015 + progress.value * 0.145,
+    transform: [{ scale: 1 + progress.value * 0.018 }],
+  }));
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={s.modeTouch}>
-      <Animated.View
+      <Reanimated.View
         style={[
           s.modeButton,
+          motionStyle,
           {
-            backgroundColor,
-            borderColor,
-            shadowOpacity,
             shadowColor: accent,
-            transform: [{ scale }],
           },
         ]}
       >
         <Icon s={20} c={active ? '#FFFFFF' : '#A8AFBC'} w={2} />
         <Text style={[s.modeText, active && s.modeTextActive]}>{label}</Text>
-      </Animated.View>
+      </Reanimated.View>
     </TouchableOpacity>
   );
 }
@@ -169,33 +137,8 @@ function ReminderRow({
   reminderMinutes: number;
   onReminderChange: (minutes: number) => void;
 }) {
-  const appear = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(appear, {
-      toValue: 1,
-      duration: 230,
-      useNativeDriver: true,
-    }).start();
-  }, [appear]);
-
   return (
-    <Animated.View
-      style={[
-        s.reminderRow,
-        {
-          opacity: appear,
-          transform: [
-            {
-              translateY: appear.interpolate({
-                inputRange: [0, 1],
-                outputRange: [-6, 0],
-              }),
-            },
-          ],
-        },
-      ]}
-    >
+    <Reanimated.View entering={FadeInUp.duration(180)} exiting={FadeOutUp.duration(140)} style={s.reminderRow}>
       {REMINDER_OPTIONS.map(minutes => {
         const active = reminderMinutes === minutes;
         return (
@@ -208,7 +151,7 @@ function ReminderRow({
           />
         );
       })}
-    </Animated.View>
+    </Reanimated.View>
   );
 }
 
@@ -224,36 +167,25 @@ function ReminderButton({
   onPress: () => void;
 }) {
   const progress = useSelectionMotion(active);
-  const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] });
-  const backgroundColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#FFFFFF', accent],
-  });
-  const borderColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#ECE8E0', accent],
-  });
+  const motionStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', accent]),
+    borderColor: interpolateColor(progress.value, [0, 1], ['#ECE8E0', accent]),
+    transform: [{ scale: 1 + progress.value * 0.04 }],
+  }));
 
   return (
     <TouchableOpacity
-      onPress={() => {
-        animateNotificationLayout();
-        onPress();
-      }}
+      onPress={onPress}
       activeOpacity={0.9}
     >
-      <Animated.View
+      <Reanimated.View
         style={[
           s.reminderButton,
-          {
-            backgroundColor,
-            borderColor,
-            transform: [{ scale }],
-          },
+          motionStyle,
         ]}
       >
         <Text style={[s.reminderText, active && s.reminderTextActive]}>{minutes}m</Text>
-      </Animated.View>
+      </Reanimated.View>
     </TouchableOpacity>
   );
 }

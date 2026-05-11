@@ -1,16 +1,21 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { PropsWithChildren } from 'react';
 import {
+  cleanupLegacyDemoHabitTasks,
   ensureTaskInstancesForDate,
+  listTaskInstancesForDate,
   listTasks,
+  markDueTaskInstancesMissed,
   pauseTask,
   resumeTask,
   saveTask,
   setTaskInstanceStatus,
   softDeleteTask,
+  syncTaskInstancesWindow,
 } from '@/components/tasks/taskDb';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
 import { taskInstanceToListItem } from '@/components/tasks/taskAdapters';
+import { syncChallengeProgressForTaskInstance } from '@/components/challenges/challengeDb';
 import type { TaskDefinition, TaskDraft, TaskInstance, TaskListItem } from '@/components/tasks/taskTypes';
 
 type TaskContextValue = {
@@ -24,9 +29,9 @@ type TaskContextValue = {
   pause: (taskId: string) => Promise<void>;
   resume: (taskId: string) => Promise<void>;
   remove: (taskId: string) => Promise<void>;
-  completeInstance: (instanceId: string) => Promise<void>;
-  skipInstance: (instanceId: string) => Promise<void>;
-  resetInstance: (instanceId: string) => Promise<void>;
+  completeInstance: (instanceId: string, refreshDate?: string) => Promise<void>;
+  skipInstance: (instanceId: string, refreshDate?: string) => Promise<void>;
+  resetInstance: (instanceId: string, refreshDate?: string) => Promise<void>;
 };
 
 const TaskContext = createContext<TaskContextValue | null>(null);
@@ -46,9 +51,12 @@ export function TaskProvider({ children }: PropsWithChildren) {
     refreshSeqRef.current = refreshSeq;
     selectedDateRef.current = targetDate;
     setSelectedDate(targetDate);
+    await cleanupLegacyDemoHabitTasks();
+    await ensureTaskInstancesForDate(targetDate);
+    await markDueTaskInstancesMissed();
     const [nextTasks, nextInstances] = await Promise.all([
       listTasks(),
-      ensureTaskInstancesForDate(targetDate),
+      listTaskInstancesForDate(targetDate),
     ]);
     if (refreshSeq !== refreshSeqRef.current) return;
     setTasks(nextTasks);
@@ -57,7 +65,12 @@ export function TaskProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    refresh(getLocalDateKey()).catch(error => {
+    const boot = async () => {
+      await syncTaskInstancesWindow();
+      await refresh(getLocalDateKey());
+    };
+
+    boot().catch(error => {
       console.warn('Task backend refresh failed:', error);
       setReady(true);
     });
@@ -65,38 +78,68 @@ export function TaskProvider({ children }: PropsWithChildren) {
 
   const createOrUpdateTask = useCallback(async (draft: TaskDraft) => {
     const task = await saveTask(draft);
+    await syncTaskInstancesWindow();
     await refresh();
     return task;
   }, [refresh]);
 
   const pause = useCallback(async (taskId: string) => {
     await pauseTask(taskId);
+    await syncTaskInstancesWindow();
     await refresh();
   }, [refresh]);
 
   const resume = useCallback(async (taskId: string) => {
     await resumeTask(taskId);
+    await syncTaskInstancesWindow();
     await refresh();
   }, [refresh]);
 
   const remove = useCallback(async (taskId: string) => {
     await softDeleteTask(taskId);
+    await syncTaskInstancesWindow();
     await refresh();
   }, [refresh]);
 
-  const completeInstance = useCallback(async (instanceId: string) => {
-    await setTaskInstanceStatus(instanceId, 'completed');
-    await refresh();
+  const completeInstance = useCallback(async (instanceId: string, refreshDate?: string) => {
+    if (refreshDate) await ensureTaskInstancesForDate(refreshDate);
+    const updated = await setTaskInstanceStatus(instanceId, 'completed');
+    if (updated) await syncChallengeProgressForTaskInstance(instanceId, 'completed');
+    await refresh(refreshDate);
   }, [refresh]);
 
-  const skipInstance = useCallback(async (instanceId: string) => {
-    await setTaskInstanceStatus(instanceId, 'skipped');
-    await refresh();
+  const skipInstance = useCallback(async (instanceId: string, refreshDate?: string) => {
+    if (refreshDate) await ensureTaskInstancesForDate(refreshDate);
+    const updated = await setTaskInstanceStatus(instanceId, 'skipped');
+    if (updated) await syncChallengeProgressForTaskInstance(instanceId, 'skipped');
+    await refresh(refreshDate);
   }, [refresh]);
 
-  const resetInstance = useCallback(async (instanceId: string) => {
-    await setTaskInstanceStatus(instanceId, 'pending');
-    await refresh();
+  const resetInstance = useCallback(async (instanceId: string, refreshDate?: string) => {
+    if (refreshDate) await ensureTaskInstancesForDate(refreshDate);
+    const updated = await setTaskInstanceStatus(instanceId, 'pending');
+    if (updated) await syncChallengeProgressForTaskInstance(instanceId, 'pending');
+    await refresh(refreshDate);
+  }, [refresh]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const reconcile = async () => {
+      const changed = await markDueTaskInstancesMissed();
+      if (!changed || cancelled) return;
+      await refresh(selectedDateRef.current);
+    };
+
+    void reconcile();
+    const interval = setInterval(() => {
+      void reconcile();
+    }, 60_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [refresh]);
 
   const listItems = useMemo(() => instances.map(taskInstanceToListItem), [instances]);

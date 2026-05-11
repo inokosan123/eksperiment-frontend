@@ -1,7 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Animated,
-  Easing,
   Keyboard,
   Modal,
   Platform,
@@ -12,6 +10,13 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import Reanimated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 type SmoothBottomSheetProps = {
   visible: boolean;
@@ -26,6 +31,11 @@ type SmoothBottomSheetProps = {
   durationOut?: number;
   statusBarTranslucent?: boolean;
   keyboardAware?: boolean;
+  // When true the sheet renders inline (no native Modal). Use this when
+  // nesting one SmoothBottomSheet inside another's `overlayChildren` —
+  // iOS UIKit refuses to present a second Modal while another is already
+  // shown, which silently breaks nested sheets like Habit Builder → Add Step.
+  embedded?: boolean;
 };
 
 export default function SmoothBottomSheet({
@@ -41,9 +51,10 @@ export default function SmoothBottomSheet({
   durationOut = 200,
   statusBarTranslucent = true,
   keyboardAware = false,
+  embedded = false,
 }: SmoothBottomSheetProps) {
   const { height } = useWindowDimensions();
-  const progress = useRef(new Animated.Value(0)).current;
+  const progress = useSharedValue(0);
   const [mounted, setMounted] = useState(visible);
   const [kbHeight, setKbHeight] = useState(0);
 
@@ -63,43 +74,54 @@ export default function SmoothBottomSheet({
   useEffect(() => {
     if (visible) {
       setMounted(true);
-      progress.setValue(0);
+      progress.value = 0;
       const frame = requestAnimationFrame(() => {
-        Animated.timing(progress, {
-          toValue: 1,
+        progress.value = withTiming(1, {
           duration: durationIn,
           easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }).start();
+        });
       });
       return () => cancelAnimationFrame(frame);
     }
 
     if (!mounted) return undefined;
 
-    Animated.timing(progress, {
-      toValue: 0,
+    progress.value = withTiming(0, {
       duration: durationOut,
       easing: Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) setMounted(false);
+    }, finished => {
+      if (finished) runOnJS(setMounted)(false);
     });
 
     return undefined;
   }, [durationIn, durationOut, mounted, progress, visible]);
 
+  const startOffset = Math.max(430, height * 0.72);
+  const scrimStyle = useAnimatedStyle(() => ({
+    opacity: progress.value * backdropOpacity,
+  }));
+  const sheetMotionStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: (1 - progress.value) * startOffset }],
+  }));
+
   if (!mounted) return null;
 
-  const translateY = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [Math.max(430, height * 0.72), 0],
-  });
+  const inner = (
+    <View style={[styles.root, overlayStyle, keyboardAware && kbHeight > 0 && { paddingBottom: kbHeight }]}>
+      <Reanimated.View pointerEvents="none" style={[styles.scrim, scrimStyle]} />
+      {closeOnBackdropPress && (
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      )}
+      <Reanimated.View style={[sheetStyle, sheetMotionStyle]}>
+        {children}
+      </Reanimated.View>
+      {overlayChildren}
+    </View>
+  );
 
-  const scrimOpacity = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, backdropOpacity],
-  });
+  if (embedded) {
+    return <View style={StyleSheet.absoluteFill}>{inner}</View>;
+  }
 
   return (
     <Modal
@@ -109,16 +131,7 @@ export default function SmoothBottomSheet({
       onRequestClose={onClose}
       statusBarTranslucent={statusBarTranslucent}
     >
-      <View style={[styles.root, overlayStyle, keyboardAware && kbHeight > 0 && { paddingBottom: kbHeight }]}>
-        <Animated.View pointerEvents="none" style={[styles.scrim, { opacity: scrimOpacity }]} />
-        {closeOnBackdropPress && (
-          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        )}
-        <Animated.View style={[sheetStyle, { transform: [{ translateY }] }]}>
-          {children}
-        </Animated.View>
-        {overlayChildren}
-      </View>
+      {inner}
     </Modal>
   );
 }

@@ -25,6 +25,7 @@ type Props = {
   placeholder?: string;
   backgroundColor?: string;
   color?: string;
+  editable?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -33,6 +34,7 @@ function buildEditorHTML(opts: {
   placeholder: string;
   backgroundColor: string;
   color: string;
+  editable: boolean;
 }) {
   // Built once on mount — never rebuilt during editing
   return `<!DOCTYPE html>
@@ -67,7 +69,7 @@ function buildEditorHTML(opts: {
 <body>
   <div
     id="editor"
-    contenteditable="true"
+    contenteditable="${opts.editable ? 'true' : 'false'}"
     data-placeholder="${opts.placeholder.replace(/"/g, '&quot;')}"
   >${opts.initialHTML}</div>
   <script>
@@ -131,6 +133,7 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
     placeholder = 'Write here...',
     backgroundColor = '#FFFFFF',
     color = '#3D3229',
+    editable = true,
     style,
   },
   ref,
@@ -142,7 +145,7 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
   const sourceRef = useRef<{ html: string } | null>(null);
   if (!sourceRef.current) {
     sourceRef.current = {
-      html: buildEditorHTML({ initialHTML, placeholder, backgroundColor, color }),
+      html: buildEditorHTML({ initialHTML, placeholder, backgroundColor, color, editable }),
     };
   }
 

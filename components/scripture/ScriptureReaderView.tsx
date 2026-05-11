@@ -1,44 +1,48 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput,
-  TouchableOpacity, View,
+  ActivityIndicator, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView,
+  StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Reanimated, {
+  interpolateColor,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
-  ArrowLeft, CheckSmall, ChevronLeft, ChevronRight, CircleIcon, FileEdit, Notebook, Pencil, Star, X,
+  ArrowLeft, CheckSmall, ChevronLeft, ChevronRight, CircleIcon, Feather, Notebook, Pencil, Star, Trash2, X,
 } from '@/components/icons/Icons';
+import ConfirmModal from '@/components/shared/ConfirmModal';
 import {
   getAnnotationCategoryLabel, getAnnotationColorHex, hexToRgba, HighlightColor,
   ColorCategory,
 } from '@/constants/annotationColors';
-import { BIBLE_BOOKS, getBibleBook, ScriptureLanguage } from '@/constants/scripture';
+import { BIBLE_BOOKS, getBibleBook, PSALMS_ID, ScriptureLanguage } from '@/constants/scripture';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import { FormatState, RichTextEditor, RichTextEditorRef, RichToolbar } from '@/components/shared/RichTextEditor';
+import RichCommentText from '@/components/shared/RichCommentText';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import { InnerNote, NoteKind, NoteSourceRef, useInnerTools } from '@/components/inner-tools/InnerToolsContext';
 import { CategoryChipPicker, CategoryEditorModal, CategoryEditorPanel } from './CategoryColorTools';
 import { BibleVerse, ScriptureAnnotation, useScripture } from './ScriptureContext';
 
 const BG = '#FCFCFC';
 const GOLD = '#C5A059';
 const ROSE = '#BE123C';
-const NOTE_QUOTE_MARKER = '\n\n[[ANASTA_QUOTE]]\n\n';
-
-function newNoteId() {
-  return `scripture_note_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-}
 
 export default function ScriptureReaderView() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ bookId?: string; chapter?: string; verse?: string; lang?: ScriptureLanguage }>();
+  const params = useLocalSearchParams<{ bookId?: string; chapter?: string; verse?: string; lang?: ScriptureLanguage; editCommentId?: string }>();
   const insets = useSafeAreaInsets();
   const {
     ready, annotations, categories, getChapter, upsertAnnotation, deleteAnnotation, updateCategory,
   } = useScripture();
-  const { notes, upsertNote } = useInnerTools();
 
   const initialBookId = Number(params.bookId) || 42;
   const initialChapter = Number(params.chapter) || 3;
@@ -54,15 +58,16 @@ export default function ScriptureReaderView() {
   }, []);
   const [verses, setVerses] = useState<BibleVerse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [chapterError, setChapterError] = useState<string | null>(null);
   const [selectedVerseNumbers, setSelectedVerseNumbers] = useState<number[]>([]);
   const [selectedColor, setSelectedColor] = useState<HighlightColor>('gold');
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
   const [commentOpen, setCommentOpen] = useState(false);
+  const [commentSession, setCommentSession] = useState(0);
+  const [commentMode, setCommentMode] = useState<'add' | 'edit'>('add');
   const [viewingComment, setViewingComment] = useState<ScriptureAnnotation | null>(null);
   const [colorEditorOpen, setColorEditorOpen] = useState(false);
-  const [sendTypeOpen, setSendTypeOpen] = useState(false);
-  const [notePickerType, setNotePickerType] = useState<NoteKind | null>(null);
 
   const currentBook = getBibleBook(bookId) ?? BIBLE_BOOKS[41];
   const currentAnnotations = useMemo(
@@ -79,15 +84,34 @@ export default function ScriptureReaderView() {
     [selectedVerses],
   );
   const selectionActive = selectedVerseNumbers.length > 0;
+  const hasCommentOverlap = useMemo(
+    () => selectedVerses.some(verse =>
+      annotations.some(annotation =>
+        annotation.kind === 'comment'
+        && annotation.bookId === verse.bookId
+        && annotation.chapter === verse.chapter
+        && annotation.verse === verse.verse)),
+    [annotations, selectedVerses],
+  );
 
   useEffect(() => {
     if (!ready) return;
     let active = true;
     setLoading(true);
+    setChapterError(null);
     getChapter(bookId, chapter, lang)
       .then(nextVerses => {
         if (!active) return;
         setVerses(nextVerses);
+        if (nextVerses.length === 0) {
+          setChapterError('This chapter could not be loaded.');
+        }
+      })
+      .catch(error => {
+        console.warn('Failed to load scripture chapter', error);
+        if (!active) return;
+        setVerses([]);
+        setChapterError('This chapter could not be loaded.');
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -97,6 +121,19 @@ export default function ScriptureReaderView() {
       active = false;
     };
   }, [bookId, chapter, getChapter, lang, ready]);
+
+  const handledEditCommentIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!ready || loading) return;
+    const editId = params.editCommentId;
+    if (!editId || handledEditCommentIdRef.current === editId) return;
+    const target = annotations.find(annotation => annotation.id === editId && annotation.kind === 'comment');
+    if (!target) return;
+    handledEditCommentIdRef.current = editId;
+    startEditFlow(target);
+    router.setParams({ editCommentId: undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, loading, annotations, params.editCommentId]);
 
   const goChapter = (next: number) => {
     const bounded = Math.max(1, Math.min(currentBook.chapters, next));
@@ -111,6 +148,7 @@ export default function ScriptureReaderView() {
     setActionSheetOpen(false);
     setCommentOpen(false);
     setCommentDraft('');
+    setCommentMode('add');
   };
 
   const startSelection = (verse: BibleVerse) => {
@@ -157,23 +195,18 @@ export default function ScriptureReaderView() {
   };
 
   const openComment = () => {
-    const firstVerse = selectedVerses[0];
-    if (!firstVerse) return;
-    const existingComment = selectedVerses.length === 1
-      ? annotations.find(annotation =>
-        annotation.kind === 'comment'
-        && annotation.bookId === firstVerse.bookId
-        && annotation.chapter === firstVerse.chapter
-        && annotation.verse === firstVerse.verse)
-      : undefined;
-    if (existingComment) setSelectedColor(existingComment.color);
-    setCommentDraft(existingComment?.comment ?? '');
+    if (selectedVerses.length === 0) return;
+    if (hasCommentOverlap) return;
+    setCommentDraft('');
+    setCommentMode('add');
+    setCommentSession(value => value + 1);
     setActionSheetOpen(false);
     setCommentOpen(true);
   };
 
   const saveComment = async () => {
-    if (selectedVerses.length === 0 || !commentDraft.trim()) return;
+    const cleanComment = commentDraft.trim();
+    if (selectedVerses.length === 0 || !plainRichText(cleanComment)) return;
     const selectionText = selectedQuoteLines.join('\n\n');
     for (const verse of selectedVerses) {
       const existingComments = annotations.filter(annotation =>
@@ -189,7 +222,7 @@ export default function ScriptureReaderView() {
         chapter: verse.chapter,
         verse: verse.verse,
         text: selectionText,
-        comment: commentDraft.trim(),
+        comment: cleanComment,
       });
     }
     clearSelection();
@@ -200,17 +233,77 @@ export default function ScriptureReaderView() {
     setViewingComment(annotation);
   };
 
+  const getGroupedCommentAnnotations = (target: ScriptureAnnotation | null) => {
+    if (!target) return [];
+    return annotations
+      .filter(annotation =>
+        annotation.kind === 'comment'
+        && annotation.bookId === target.bookId
+        && annotation.chapter === target.chapter
+        && annotation.color === target.color
+        && annotation.text === target.text
+        && annotation.comment === target.comment)
+      .sort((a, b) => a.verse - b.verse);
+  };
+
+  const getCommentVerseRange = (target: ScriptureAnnotation | null) => {
+    if (!target) return '';
+    const book = getBibleBook(target.bookId)?.name ?? currentBook.name;
+    const group = getGroupedCommentAnnotations(target);
+    const first = group[0]?.verse ?? target.verse;
+    const last = group[group.length - 1]?.verse ?? first;
+    return `${book.toUpperCase()} ${target.chapter}:${first}${last !== first ? `-${last}` : ''}`;
+  };
+
   const deleteViewingComment = async () => {
     if (!viewingComment) return;
-    const groupedComments = annotations.filter(annotation =>
-      annotation.kind === 'comment'
-      && annotation.bookId === viewingComment.bookId
-      && annotation.chapter === viewingComment.chapter
-      && annotation.color === viewingComment.color
-      && annotation.text === viewingComment.text
-      && annotation.comment === viewingComment.comment);
+    const groupedComments = getGroupedCommentAnnotations(viewingComment);
     await Promise.all(groupedComments.map(annotation => deleteAnnotation(annotation.id)));
     setViewingComment(null);
+  };
+
+  const startEditFlow = (target: ScriptureAnnotation) => {
+    const groupedComments = getGroupedCommentAnnotations(target);
+    const verseNumbers = groupedComments
+      .map(annotation => annotation.verse)
+      .sort((a, b) => a - b);
+    setSelectedVerseNumbers(verseNumbers.length > 0 ? verseNumbers : [target.verse]);
+    setSelectedColor(target.color);
+    setCommentDraft(target.comment ?? '');
+    setCommentMode('edit');
+    setCommentSession(value => value + 1);
+    setActionSheetOpen(false);
+    setViewingComment(null);
+    setCommentOpen(true);
+  };
+
+  const editViewingComment = () => {
+    if (!viewingComment) return;
+    startEditFlow(viewingComment);
+  };
+
+  const saveViewingCommentEdit = async (target: ScriptureAnnotation, newCommentHtml: string) => {
+    const cleanComment = newCommentHtml.trim();
+    if (!plainRichText(cleanComment)) return;
+    const groupedComments = getGroupedCommentAnnotations(target);
+    const targets = groupedComments.length > 0 ? groupedComments : [target];
+
+    for (const old of targets) {
+      await deleteAnnotation(old.id);
+      await upsertAnnotation({
+        kind: 'comment',
+        color: old.color,
+        bookId: old.bookId,
+        chapter: old.chapter,
+        verse: old.verse,
+        text: old.text,
+        comment: cleanComment,
+      });
+    }
+
+    // Keep the popup open with an updated reference so the local "savedDraft"
+    // reflects what's now in storage, not the stale annotation row.
+    setViewingComment(prev => (prev ? { ...prev, comment: cleanComment } : prev));
   };
 
   const openBibleNote = () => {
@@ -218,59 +311,6 @@ export default function ScriptureReaderView() {
       pathname: '/bible-notes',
       params: { bookId: String(bookId), chapter: String(chapter), open: '1' },
     });
-  };
-
-  const buildSelectedSourceRef = (): NoteSourceRef | null => {
-    if (selectedVerses.length === 0) return null;
-    const firstVerse = selectedVerses[0];
-    const lastVerse = selectedVerses[selectedVerses.length - 1];
-    const label = `${currentBook.name} ${chapter}:${firstVerse.verse}${lastVerse.verse !== firstVerse.verse ? `-${lastVerse.verse}` : ''}`;
-    return {
-      bookId,
-      chapter,
-      startVerse: firstVerse.verse,
-      endVerse: lastVerse.verse,
-      label,
-      text: selectedQuoteLines.join('\n\n'),
-      verseTexts: selectedVerses.map(verse => ({ verse: verse.verse, text: verse.text })),
-    };
-  };
-
-  const openBibleNoteForSelection = () => {
-    if (selectedVerses.length === 0) return;
-    setActionSheetOpen(false);
-    setSendTypeOpen(true);
-  };
-
-  const sendSelectionToNote = async (type: NoteKind, existingNote?: InnerNote) => {
-    const sourceRef = buildSelectedSourceRef();
-    if (!sourceRef) return;
-    const noteId = newNoteId();
-    const noteSourceRefs = existingNote
-      ? existingNote.sourceRefs && existingNote.sourceRefs.length > 0
-        ? existingNote.sourceRefs
-        : existingNote.sourceRef ? [existingNote.sourceRef] : []
-      : [];
-    const targetId = existingNote?.id ?? noteId;
-
-    await upsertNote({
-      id: targetId,
-      type,
-      title: existingNote?.title ?? '',
-      content: `${existingNote?.content ?? ''}${NOTE_QUOTE_MARKER}`,
-      createdAt: existingNote?.createdAt ?? Date.now(),
-      color: type === 'note' ? (existingNote?.color ?? 'white') : 'gold',
-      sourceRef: noteSourceRefs[0] ?? sourceRef,
-      sourceRefs: [...noteSourceRefs, sourceRef],
-    });
-
-    setSendTypeOpen(false);
-    setNotePickerType(null);
-    router.push({
-      pathname: '/notes',
-      params: { openNoteId: targetId },
-    });
-    clearSelection();
   };
 
   if (!ready) {
@@ -294,6 +334,7 @@ export default function ScriptureReaderView() {
 
       <ChapterBar
         chapter={chapter}
+        label={currentBook.id === PSALMS_ID ? 'PSALM' : 'CHAPTER'}
         canGoPrev={chapter > 1}
         canGoNext={chapter < currentBook.chapters}
         onPrev={() => goChapter(chapter - 1)}
@@ -307,6 +348,12 @@ export default function ScriptureReaderView() {
         {loading ? (
           <View style={s.chapterLoading}>
             <ActivityIndicator color={GOLD} />
+          </View>
+        ) : chapterError ? (
+          <View style={s.emptyChapter}>
+            <Notebook s={24} c="#C5A059" />
+            <Text style={s.emptyChapterTitle}>Scripture is reloading</Text>
+            <Text style={s.emptyChapterText}>{chapterError}</Text>
           </View>
         ) : (
           <View style={s.verseList}>
@@ -335,13 +382,13 @@ export default function ScriptureReaderView() {
         categories={categories}
         selectedColor={selectedColor}
         selectedCount={selectedVerses.length}
+        commentDisabled={hasCommentOverlap}
         onOpenSheet={() => setActionSheetOpen(true)}
         onClose={clearSelection}
         onCloseSheet={() => setActionSheetOpen(false)}
         onSelectColor={setSelectedColor}
         onHighlight={applyHighlight}
         onComment={openComment}
-        onBibleNote={openBibleNoteForSelection}
         onEditColors={() => setColorEditorOpen(true)}
         colorEditorOpen={colorEditorOpen}
         onCloseColorEditor={() => setColorEditorOpen(false)}
@@ -349,9 +396,14 @@ export default function ScriptureReaderView() {
       />
 
       <CommentModal
+        editorKey={`scripture-comment-${commentSession}`}
         visible={commentOpen}
+        mode={commentMode}
         value={commentDraft}
-        quoteLines={selectedQuoteLines}
+        verseTexts={selectedVerses.map(verse => ({ verse: verse.verse, text: verse.text }))}
+        verseRange={selectedVerses.length > 0
+          ? `${currentBook.name.toUpperCase()} ${chapter}:${selectedVerses[0].verse}${selectedVerses.length > 1 ? `-${selectedVerses[selectedVerses.length - 1].verse}` : ''}`
+          : ''}
         categories={categories}
         selectedColor={selectedColor}
         onSelectColor={setSelectedColor}
@@ -364,8 +416,9 @@ export default function ScriptureReaderView() {
       <CommentPreviewModal
         annotation={viewingComment}
         categories={categories}
-        bookName={viewingComment ? (getBibleBook(viewingComment.bookId)?.name ?? currentBook.name) : currentBook.name}
+        verseRange={getCommentVerseRange(viewingComment)}
         onClose={() => setViewingComment(null)}
+        onSave={saveViewingCommentEdit}
         onDelete={deleteViewingComment}
       />
 
@@ -376,151 +429,7 @@ export default function ScriptureReaderView() {
         onSaveCategory={updateCategory}
       />
 
-      <SendToNotesModal
-        visible={sendTypeOpen}
-        onClose={() => setSendTypeOpen(false)}
-        onChoose={type => {
-          setSendTypeOpen(false);
-          setNotePickerType(type);
-        }}
-      />
-
-      <ChooseNoteModal
-        visible={!!notePickerType}
-        type={notePickerType ?? 'yellow'}
-        notes={notes.filter(note => note.type === (notePickerType ?? 'yellow'))}
-        onClose={() => setNotePickerType(null)}
-        onNew={() => {
-          if (notePickerType) sendSelectionToNote(notePickerType);
-        }}
-        onExisting={note => {
-          if (notePickerType) sendSelectionToNote(notePickerType, note);
-        }}
-      />
     </View>
-  );
-}
-
-function SendToNotesModal({
-  visible,
-  onClose,
-  onChoose,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onChoose: (type: NoteKind) => void;
-}) {
-  return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-      <View style={s.sendOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={s.sendCard}>
-          <Text style={s.sendKicker}>SEND TO</Text>
-          <SendChoice
-            title="Quick Help"
-            subtitle="Save as a quick reference card"
-            tone="gold"
-            icon={<Notebook s={18} c={GOLD} />}
-            onPress={() => onChoose('yellow')}
-          />
-          <SendChoice
-            title="Note"
-            subtitle="Create a detailed note"
-            tone="stone"
-            icon={<FileEdit s={18} c="#6B7280" />}
-            onPress={() => onChoose('note')}
-          />
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-function SendChoice({
-  title,
-  subtitle,
-  tone,
-  icon,
-  onPress,
-}: {
-  title: string;
-  subtitle: string;
-  tone: 'gold' | 'stone';
-  icon: React.ReactNode;
-  onPress: () => void;
-}) {
-  const isGold = tone === 'gold';
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.88}
-      style={[s.sendChoice, isGold ? s.sendChoiceGold : s.sendChoiceStone]}
-    >
-      <View style={[s.sendChoiceIcon, isGold ? s.sendChoiceIconGold : s.sendChoiceIconStone]}>{icon}</View>
-      <View style={{ flex: 1 }}>
-        <Text style={s.sendChoiceTitle}>{title}</Text>
-        <Text style={s.sendChoiceSubtitle}>{subtitle}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function ChooseNoteModal({
-  visible,
-  type,
-  notes,
-  onClose,
-  onNew,
-  onExisting,
-}: {
-  visible: boolean;
-  type: NoteKind;
-  notes: InnerNote[];
-  onClose: () => void;
-  onNew: () => void;
-  onExisting: (note: InnerNote) => void;
-}) {
-  const isQuick = type === 'yellow';
-  const title = isQuick ? 'CHOOSE QUICK HELP' : 'CHOOSE NOTE';
-  const newLabel = isQuick ? 'New Quick Help' : 'New Note';
-
-  return (
-    <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.chooseSheet}>
-          <View style={s.chooseHeader}>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.75} style={s.chooseBack}>
-              <ArrowLeft s={20} c="#9CA3AF" />
-            </TouchableOpacity>
-            <Text style={s.chooseKicker}>{title}</Text>
-            <View style={s.chooseBack} />
-          </View>
-
-          <TouchableOpacity onPress={onNew} activeOpacity={0.88} style={s.newNoteCard}>
-            <View style={s.newNoteIcon}>
-              <Text style={s.newNotePlus}>+</Text>
-            </View>
-            <Text style={s.newNoteTitle}>{newLabel}</Text>
-          </TouchableOpacity>
-
-          <Text style={s.existingLabel}>EXISTING</Text>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.existingList}>
-            {notes.map(note => (
-              <TouchableOpacity
-                key={note.id}
-                onPress={() => onExisting(note)}
-                activeOpacity={0.88}
-                style={s.existingCard}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={s.existingTitle} numberOfLines={1}>
-                    {note.title || (isQuick ? 'Quick help' : 'Untitled note')}
-                  </Text>
-                  <Text style={s.existingDate}>{new Date(note.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
-                </View>
-                <ChevronRight s={16} c="#E5E7EB" />
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-    </SmoothBottomSheet>
   );
 }
 
@@ -535,12 +444,19 @@ function Header({
 }) {
   return (
     <View style={[s.header, { paddingTop: getTitleBarTopPadding(top) }]}>
+      <View style={s.headerTitleAbs} pointerEvents="none">
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.62}
+          style={s.headerTitle}
+        >
+          {title.toUpperCase()}
+        </Text>
+      </View>
       <TouchableOpacity onPress={onBack} style={s.headerBtn} activeOpacity={0.7}>
         <ArrowLeft s={24} c="#9CA3AF" />
       </TouchableOpacity>
-      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={s.headerTitle}>
-        {title.toUpperCase()}
-      </Text>
       <View style={s.headerActions}>
         <TouchableOpacity onPress={onBibleNote} style={s.headerIconBtn} activeOpacity={0.7}>
           <Notebook s={20} c="#9CA3AF" />
@@ -554,9 +470,10 @@ function Header({
 }
 
 function ChapterBar({
-  chapter, canGoPrev, canGoNext, onPrev, onNext,
+  chapter, label, canGoPrev, canGoNext, onPrev, onNext,
 }: {
   chapter: number;
+  label: 'CHAPTER' | 'PSALM';
   canGoPrev: boolean;
   canGoNext: boolean;
   onPrev: () => void;
@@ -564,12 +481,16 @@ function ChapterBar({
 }) {
   return (
     <View style={s.chapterBar}>
-      <TouchableOpacity onPress={onPrev} disabled={!canGoPrev} style={s.chapterBtn} activeOpacity={0.75}>
-        <ChevronLeft s={23} c={canGoPrev ? '#9CA3AF' : '#E5E7EB'} />
+      <TouchableOpacity onPress={onPrev} disabled={!canGoPrev} style={s.chapterBtn} activeOpacity={0.65}>
+        <ChevronLeft s={20} c={canGoPrev ? '#9CA3AF' : '#E5E7EB'} />
       </TouchableOpacity>
-      <Text style={s.chapterTitle}>CHAPTER {chapter}</Text>
-      <TouchableOpacity onPress={onNext} disabled={!canGoNext} style={s.chapterBtn} activeOpacity={0.75}>
-        <ChevronRight s={23} c={canGoNext ? '#9CA3AF' : '#E5E7EB'} />
+      <View style={s.chapterPill}>
+        <View style={s.chapterPillDot} />
+        <Text style={s.chapterTitle}>{label} {chapter}</Text>
+        <View style={s.chapterPillDot} />
+      </View>
+      <TouchableOpacity onPress={onNext} disabled={!canGoNext} style={s.chapterBtn} activeOpacity={0.65}>
+        <ChevronRight s={20} c={canGoNext ? '#9CA3AF' : '#E5E7EB'} />
       </TouchableOpacity>
     </View>
   );
@@ -602,28 +523,83 @@ function VerseRow({
   const favoriteAccent = favorite ? getAnnotationColorHex(favorite.color) : undefined;
   const decorationAccent = commentAccent ?? underlineAccent;
   const markerAccent = commentAccent ?? favoriteAccent;
+  const selectedMotion = useSharedValue(selected ? 1 : 0);
+  const pressMotion = useSharedValue(0);
 
-  const handlePress = () => {
+  useEffect(() => {
+    selectedMotion.value = withSpring(selected ? 1 : 0, {
+      damping: 18,
+      stiffness: 230,
+      mass: 0.72,
+    });
+  }, [selected, selectedMotion]);
+
+  const handlePress = useCallback(() => {
     if (selectionActive) {
       onPress();
       return;
     }
     if (comment) onOpenComment(comment);
-  };
+  }, [comment, onOpenComment, onPress, selectionActive]);
+
+  const rowGesture = useMemo(() => {
+    const tap = Gesture.Tap()
+      .maxDuration(260)
+      .onBegin(() => {
+        pressMotion.value = withTiming(1, { duration: 70 });
+      })
+      .onEnd((_event, success) => {
+        if (success) runOnJS(handlePress)();
+      })
+      .onFinalize(() => {
+        pressMotion.value = withTiming(0, { duration: 120 });
+      });
+
+    const longPress = Gesture.LongPress()
+      .minDuration(620)
+      .maxDistance(14)
+      .onBegin(() => {
+        pressMotion.value = withTiming(1, { duration: 90 });
+      })
+      .onEnd((_event, success) => {
+        if (success) runOnJS(onLongPress)();
+      })
+      .onFinalize(() => {
+        pressMotion.value = withTiming(0, { duration: 120 });
+      });
+
+    return Gesture.Exclusive(longPress, tap);
+  }, [handlePress, onLongPress, pressMotion]);
+
+  const rowMotionStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      selectedMotion.value,
+      [0, 1],
+      ['rgba(255,255,255,0)', '#FFFEF9']
+    ),
+    borderColor: interpolateColor(
+      selectedMotion.value,
+      [0, 1],
+      ['rgba(197,160,89,0)', 'rgba(197,160,89,0.38)']
+    ),
+    opacity: 1 - pressMotion.value * 0.05,
+  }));
+
+  const selectCircleMotionStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(selectedMotion.value, [0, 1], ['#FFFFFF', GOLD]),
+    borderColor: interpolateColor(selectedMotion.value, [0, 1], ['rgba(197,160,89,0.36)', GOLD]),
+  }));
 
   return (
-    <TouchableOpacity
-      onPress={handlePress}
-      onLongPress={onLongPress}
-      delayLongPress={460}
-      activeOpacity={0.88}
-      style={[s.verseRow, selected && s.verseRowSelected, autoFocus && s.verseRowFocused]}
-    >
+    <GestureDetector gesture={rowGesture}>
+      <Reanimated.View
+        style={[s.verseRow, rowMotionStyle, autoFocus && s.verseRowFocused]}
+      >
       <View style={s.verseMarker}>
         {selectionActive ? (
-          <View style={[s.selectCircle, selected && s.selectCircleActive]}>
+          <Reanimated.View style={[s.selectCircle, selectCircleMotionStyle]}>
             {selected && <CheckSmall s={13} c="#fff" />}
-          </View>
+          </Reanimated.View>
         ) : (
           <Text style={s.verseNum}>{verse.verse}</Text>
         )}
@@ -684,7 +660,8 @@ function VerseRow({
           </View>
         )}
       </View>
-    </TouchableOpacity>
+      </Reanimated.View>
+    </GestureDetector>
   );
 }
 
@@ -695,13 +672,13 @@ function SelectionTools({
   categories,
   selectedColor,
   selectedCount,
+  commentDisabled,
   onOpenSheet,
   onClose,
   onCloseSheet,
   onSelectColor,
   onHighlight,
   onComment,
-  onBibleNote,
   onEditColors,
   colorEditorOpen,
   onCloseColorEditor,
@@ -713,13 +690,13 @@ function SelectionTools({
   categories: ColorCategory[];
   selectedColor: HighlightColor;
   selectedCount: number;
+  commentDisabled: boolean;
   onOpenSheet: () => void;
   onClose: () => void;
   onCloseSheet: () => void;
   onSelectColor: (color: HighlightColor) => void;
   onHighlight: () => void;
   onComment: () => void;
-  onBibleNote: () => void;
   onEditColors: () => void;
   colorEditorOpen: boolean;
   onCloseColorEditor: () => void;
@@ -735,9 +712,12 @@ function SelectionTools({
       <TouchableOpacity
         onPress={onOpenSheet}
         activeOpacity={0.88}
-        style={[s.pencilFab, { bottom: bottom + 30 }]}
+        style={[s.pencilFabWrap, { bottom: bottom + 30 }]}
       >
-        <Pencil s={18} c={GOLD} w={2.3} />
+        <View style={s.pencilFab}>
+          <Pencil s={18} c={GOLD} w={2.3} />
+        </View>
+        <Text style={s.pencilFabLabel}>ANNOTATE</Text>
       </TouchableOpacity>
     );
   }
@@ -779,7 +759,6 @@ function SelectionTools({
             </TouchableOpacity>
           </View>
 
-          <Text style={s.selectionCategory}>{categoryLabel}</Text>
           <View style={s.sheetDivider} />
 
           <TouchableOpacity
@@ -804,63 +783,79 @@ function SelectionTools({
             <View style={[s.highlightAccent, { backgroundColor: hexToRgba(accent, 0.52) }]} />
           </TouchableOpacity>
 
-          <View style={s.sheetActionGrid}>
-            <SheetActionCard
-              icon={<Pencil s={15} c={accent} w={2.3} />}
-              kicker="COMMENT"
-              title="Add reflection"
-              accent={accent}
-              onPress={onComment}
-            />
-            <SheetActionCard
-              icon={<FileEdit s={15} c={GOLD} w={2.2} />}
-              kicker="NOTES"
-              title="Send to notes"
-              tone="gold"
-              onPress={onBibleNote}
-            />
-          </View>
+          <TouchableOpacity
+            onPress={commentDisabled ? undefined : onComment}
+            activeOpacity={commentDisabled ? 1 : 0.88}
+            disabled={commentDisabled}
+            style={[
+              s.commentAction,
+              commentDisabled
+                ? { borderColor: '#E5E7EB', backgroundColor: '#F6F6F7', opacity: 0.55 }
+                : {
+                    borderColor: hexToRgba(accent, 0.22),
+                    backgroundColor: '#FFFFFF',
+                  },
+            ]}
+          >
+            <View
+              style={[
+                s.highlightIconCircle,
+                commentDisabled && { backgroundColor: '#ECECEE' },
+              ]}
+            >
+              <Feather s={18} c={commentDisabled ? '#9CA3AF' : accent} w={2.2} />
+            </View>
+            <View style={s.sheetActionCopy}>
+              <Text
+                style={[
+                  s.highlightKicker,
+                  { color: commentDisabled ? '#9CA3AF' : accent },
+                ]}
+              >COMMENT</Text>
+              <Text
+                style={[
+                  s.highlightTitle,
+                  { color: commentDisabled ? '#9CA3AF' : '#2F2B27' },
+                ]}
+              >{commentDisabled ? 'Already commented' : 'Add reflection'}</Text>
+            </View>
+          </TouchableOpacity>
     </SmoothBottomSheet>
   );
 }
 
-function SheetActionCard({
-  icon, kicker, title, tone = 'neutral', accent, onPress,
-}: {
-  icon: React.ReactNode;
-  kicker: string;
-  title: string;
-  tone?: 'neutral' | 'gold';
-  accent?: string;
-  onPress: () => void;
-}) {
-  const gold = tone === 'gold';
-  const actionAccent = accent ?? (gold ? GOLD : '#9CA3AF');
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.88}
-      style={[
-        s.sheetActionCard,
-        {
-          borderColor: hexToRgba(actionAccent, gold ? 0.20 : 0.24),
-          backgroundColor: hexToRgba(actionAccent, gold ? 0.055 : 0.075),
-        },
-      ]}
-    >
-      <View style={[s.sheetActionIcon, { backgroundColor: hexToRgba(actionAccent, 0.10) }]}>{icon}</View>
-      <View style={s.sheetActionCopy}>
-        <Text style={[s.sheetActionKicker, { color: actionAccent }]}>{kicker}</Text>
-        <Text style={[s.sheetActionTitle, { color: gold ? '#4C3B2D' : '#2F2B27' }]}>{title}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+const COMMENT_VERSE_PREVIEW_COUNT = 2;
+
+function plainRichText(html?: string) {
+  return (html ?? '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div)>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '- ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&rsquo;/g, "'")
+    .replace(/&lsquo;/g, "'")
+    .replace(/&rdquo;/g, '"')
+    .replace(/&ldquo;/g, '"')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
 }
 
 function CommentModal({
+  editorKey,
   visible,
+  mode,
   value,
-  quoteLines,
+  verseTexts,
+  verseRange,
   categories,
   selectedColor,
   onSelectColor,
@@ -869,9 +864,12 @@ function CommentModal({
   onClose,
   onSave,
 }: {
+  editorKey: string;
   visible: boolean;
+  mode: 'add' | 'edit';
   value: string;
-  quoteLines: string[];
+  verseTexts: { verse: number; text: string }[];
+  verseRange: string;
   categories: ColorCategory[];
   selectedColor: HighlightColor;
   onSelectColor: (color: HighlightColor) => void;
@@ -882,37 +880,112 @@ function CommentModal({
 }) {
   const accent = getAnnotationColorHex(selectedColor);
   const categoryLabel = getAnnotationCategoryLabel(categories, selectedColor);
+  const insets = useSafeAreaInsets();
   const editorRef = useRef<RichTextEditorRef>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const toolbarYRef = useRef(0);
   const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
-  const [kbHeight, setKbHeight] = useState(0);
+  const [versesExpanded, setVersesExpanded] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
 
   useEffect(() => {
-    const show = Keyboard.addListener('keyboardWillShow', e => setKbHeight(e.endCoordinates.height));
-    const hide = Keyboard.addListener('keyboardWillHide', () => setKbHeight(0));
-    const showA = Keyboard.addListener('keyboardDidShow', e => setKbHeight(e.endCoordinates.height));
-    const hideA = Keyboard.addListener('keyboardDidHide', () => setKbHeight(0));
-    return () => { show.remove(); hide.remove(); showA.remove(); hideA.remove(); };
-  }, []);
+    if (!visible) {
+      setVersesExpanded(false);
+      setKeyboardOpen(false);
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvt, () => {
+      setKeyboardOpen(true);
+      // Scroll so toolbar sits at top of viewport — verse card scrolls out of the way,
+      // toolbar + editor + Save become the focus (matches the user's reference layout).
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({ y: Math.max(0, toolbarYRef.current - 4), animated: true });
+      });
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      setKeyboardOpen(false);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [visible]);
+
+  const hasMoreVerses = verseTexts.length > COMMENT_VERSE_PREVIEW_COUNT;
+  const visibleVerses = hasMoreVerses && !versesExpanded
+    ? verseTexts.slice(0, COMMENT_VERSE_PREVIEW_COUNT)
+    : verseTexts;
+  const hiddenVerseCount = verseTexts.length - COMMENT_VERSE_PREVIEW_COUNT;
+  const showVerseNumbers = verseTexts.length > 1;
 
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-      <View style={[s.commentOverlay, { paddingBottom: kbHeight > 0 ? kbHeight : 54 }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+      <KeyboardAvoidingView
+        style={[
+          s.commentOverlay,
+          { paddingTop: Math.max(insets.top + 14, 36), paddingBottom: Math.max(insets.bottom + 14, 28) },
+        ]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={StyleSheet.absoluteFill} pointerEvents="none" />
         <View style={s.commentCard}>
           <View style={s.commentHeader}>
-            <Text style={s.commentTitle}>Add Comment</Text>
-            <TouchableOpacity onPress={onClose} style={s.commentCloseBtn} activeOpacity={0.85}>
-              <X s={18} c="#9CA3AF" />
+            <Text style={s.commentTitle} numberOfLines={1}>{mode === 'edit' ? 'Edit Comment' : 'Add Comment'}</Text>
+            <TouchableOpacity onPress={onClose} style={s.commentCloseBtn} activeOpacity={0.85} hitSlop={6}>
+              <X s={16} c="#9CA3AF" />
             </TouchableOpacity>
           </View>
 
-          <AnnotationPreviewCard
-            color={selectedColor}
-            categories={categories}
-            kindLabel="COMMENT"
-            quoteLines={quoteLines}
-            compact
-          />
+          <ScrollView
+            ref={scrollRef}
+            style={s.commentScroll}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={s.commentScrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+          <View style={[s.commentVerseCard, { borderColor: hexToRgba(accent, 0.22) }]}>
+            <View style={s.commentVerseTags}>
+              <View style={[s.commentVerseDot, { backgroundColor: accent }]} />
+              <View style={[s.commentVerseChip, { backgroundColor: hexToRgba(accent, 0.10), borderColor: hexToRgba(accent, 0.18) }]}>
+                <Text style={[s.commentVerseChipText, { color: accent }]}>{categoryLabel}</Text>
+              </View>
+            </View>
+            {!!verseRange && <Text style={s.commentVerseRef}>{verseRange}</Text>}
+            <View style={s.commentVerseQuoteBlock}>
+              {visibleVerses.map((vt, index) => (
+                <View key={`${vt.verse}-${index}`}>
+                  <View style={s.commentVerseLine}>
+                    {showVerseNumbers && (
+                      <Text style={s.commentVerseNum}>{vt.verse}</Text>
+                    )}
+                    <Text style={[s.commentVerseText, showVerseNumbers && s.commentVerseTextIndented]}>
+                      {`"${vt.text}"`}
+                    </Text>
+                  </View>
+                  {index < visibleVerses.length - 1 && <View style={s.commentVerseDivider} />}
+                </View>
+              ))}
+            </View>
+            {hasMoreVerses && (
+              <TouchableOpacity
+                onPress={() => setVersesExpanded(value => !value)}
+                activeOpacity={0.7}
+                style={s.commentVerseSeeMore}
+              >
+                <Text style={[s.commentVerseSeeMoreText, { color: accent }]}>
+                  {versesExpanded ? 'See less' : `See ${hiddenVerseCount} more verse${hiddenVerseCount > 1 ? 's' : ''}`}
+                </Text>
+                <View style={{ transform: [{ rotate: versesExpanded ? '180deg' : '0deg' }] }}>
+                  <Text style={[s.commentVerseSeeMoreArrow, { color: accent }]}>›</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          </View>
 
           <Text style={s.commentTagLabel}>TAG CATEGORY</Text>
           <CategoryChipPicker
@@ -923,25 +996,29 @@ function CommentModal({
             layout="scroll"
             contentStyle={s.commentChipContent}
           />
-          <Text style={[s.commentCategoryName, { color: accent }]}>{categoryLabel}</Text>
 
-          <RichToolbar editorRef={editorRef} activeFormats={fmt} style={s.commentToolbar} />
-          <RichTextEditor
-            ref={editorRef}
-            initialHTML={value}
-            onChange={onValue}
-            onFormatChange={setFmt}
-            placeholder="Write your reflection..."
-            backgroundColor="#FFFFFF"
-            color="#3D3229"
-            style={s.commentEditor}
-          />
+          <View onLayout={e => { toolbarYRef.current = e.nativeEvent.layout.y; }}>
+            <RichToolbar editorRef={editorRef} activeFormats={fmt} style={s.commentToolbar} />
+          </View>
+          <View style={[s.commentEditorBox, keyboardOpen && s.commentEditorBoxCompact]}>
+            <RichTextEditor
+              key={editorKey}
+              ref={editorRef}
+              initialHTML={value}
+              onChange={onValue}
+              onFormatChange={setFmt}
+              placeholder="Write your reflection..."
+              backgroundColor="#FFFDF8"
+              color="#3D3229"
+            />
+          </View>
+          </ScrollView>
 
           <TouchableOpacity onPress={onSave} style={s.commentSave} activeOpacity={0.85}>
             <Text style={s.commentSaveText}>SAVE COMMENT</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -1007,54 +1084,187 @@ function AnnotationPreviewCard({
 function CommentPreviewModal({
   annotation,
   categories,
-  bookName,
+  verseRange,
   onClose,
+  onSave,
   onDelete,
 }: {
   annotation: ScriptureAnnotation | null;
   categories: ColorCategory[];
-  bookName: string;
+  verseRange: string;
   onClose: () => void;
+  onSave: (target: ScriptureAnnotation, newCommentHtml: string) => Promise<void> | void;
   onDelete: () => void;
 }) {
+  const insets = useSafeAreaInsets();
+  const editorRef = useRef<RichTextEditorRef>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const toolbarYRef = useRef(0);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  // Holds the most-recently-saved comment HTML so the popup can keep showing
+  // the updated text after Save without waiting for a new annotation prop.
+  const [savedDraft, setSavedDraft] = useState<string | null>(null);
+  const [editorKey, setEditorKey] = useState(0);
+  const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+  const annotationId = annotation?.id;
+
+  // Reset every time a different annotation is opened
+  useEffect(() => {
+    setEditing(false);
+    setSavedDraft(null);
+    setKeyboardOpen(false);
+    setConfirmDeleteOpen(false);
+    setDraft(annotation?.comment ?? '');
+    setEditorKey(k => k + 1);
+  }, [annotationId]);
+
+  // Keyboard listeners only matter while editing
+  useEffect(() => {
+    if (!editing) return;
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvt, () => {
+      setKeyboardOpen(true);
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({ y: Math.max(0, toolbarYRef.current - 4), animated: true });
+      });
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      setKeyboardOpen(false);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [editing]);
+
   if (!annotation) return null;
 
   const accent = getAnnotationColorHex(annotation.color);
   const categoryLabel = getAnnotationCategoryLabel(categories, annotation.color);
-  const ref = `${bookName.toUpperCase()} ${annotation.chapter}:${annotation.verse}`;
   const quoteLines = splitQuoteLines(annotation.text);
 
+  // Comment to display in view mode — prefer the in-session saved draft
+  const displayedComment = savedDraft ?? annotation.comment ?? '';
+
+  const handleStartEdit = () => {
+    setDraft(displayedComment);
+    setEditorKey(k => k + 1);
+    setEditing(true);
+  };
+
+  const handleSaveEdit = async () => {
+    const cleanCheck = plainRichText(draft).trim();
+    if (!cleanCheck) return;
+    await onSave(annotation, draft);
+    setSavedDraft(draft);
+    setEditing(false);
+    setKeyboardOpen(false);
+    Keyboard.dismiss();
+  };
+
   return (
-    <Modal transparent visible animationType="fade" onRequestClose={onClose}>
-      <View style={s.previewOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+    <Modal transparent visible animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+      <KeyboardAvoidingView
+        style={[
+          s.previewOverlay,
+          { paddingTop: Math.max(insets.top + 14, 36), paddingBottom: Math.max(insets.bottom + 14, 28) },
+        ]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={StyleSheet.absoluteFill} pointerEvents="none" />
         <View style={[s.previewCard, { borderTopColor: accent }]}>
           <View style={s.previewHeader}>
             <View style={[s.previewChip, { backgroundColor: accent }]}>
               <Text style={s.previewChipText}>{categoryLabel}</Text>
             </View>
-            <Text numberOfLines={1} style={s.previewRef}>{ref}</Text>
-            <TouchableOpacity onPress={onClose} style={s.previewClose} activeOpacity={0.82}>
-              <X s={18} c="#9CA3AF" />
+            <Text numberOfLines={1} style={s.previewRef}>{verseRange}</Text>
+            <TouchableOpacity onPress={onClose} style={s.previewClose} activeOpacity={0.82} hitSlop={6}>
+              <X s={16} c="#9CA3AF" />
             </TouchableOpacity>
           </View>
 
-          <AnnotationPreviewCard
-            color={annotation.color}
-            categories={categories}
-            kindLabel="COMMENT"
-            quoteLines={quoteLines}
-          />
+          <ScrollView
+            ref={scrollRef}
+            style={s.previewScroll}
+            contentContainerStyle={s.previewScrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <AnnotationPreviewCard
+              color={annotation.color}
+              categories={categories}
+              kindLabel="COMMENT"
+              quoteLines={quoteLines}
+            />
 
-          <View style={s.previewCommentBox}>
-            <Text style={s.previewCommentText}>{annotation.comment}</Text>
-          </View>
+            {editing ? (
+              <>
+                <View onLayout={e => { toolbarYRef.current = e.nativeEvent.layout.y; }}>
+                  <RichToolbar editorRef={editorRef} activeFormats={fmt} style={s.commentToolbar} />
+                </View>
+                <View style={[s.commentEditorBox, keyboardOpen && s.commentEditorBoxCompact]}>
+                  <RichTextEditor
+                    key={editorKey}
+                    ref={editorRef}
+                    initialHTML={draft}
+                    onChange={setDraft}
+                    onFormatChange={setFmt}
+                    placeholder="Write your reflection..."
+                    backgroundColor="#FFFDF8"
+                    color="#3D3229"
+                  />
+                </View>
+              </>
+            ) : (
+              <View style={s.previewCommentBox}>
+                <RichCommentText html={displayedComment} color="#1C1917" />
+              </View>
+            )}
+          </ScrollView>
 
-          <TouchableOpacity onPress={onDelete} activeOpacity={0.86} style={s.previewDelete}>
-            <Text style={s.previewDeleteText}>DELETE COMMENT</Text>
-          </TouchableOpacity>
+          {editing ? (
+            <TouchableOpacity onPress={handleSaveEdit} style={s.commentSave} activeOpacity={0.85}>
+              <Text style={s.commentSaveText}>SAVE COMMENT</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={s.previewActions}>
+              <TouchableOpacity onPress={handleStartEdit} activeOpacity={0.86} style={s.previewEdit}>
+                <Pencil s={14} c="#FFFFFF" w={2.4} />
+                <Text style={s.previewEditText}>EDIT</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setConfirmDeleteOpen(true)}
+                activeOpacity={0.86}
+                style={s.previewDelete}
+              >
+                <Text style={s.previewDeleteText}>DELETE</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
+
+      <ConfirmModal
+        visible={confirmDeleteOpen}
+        embedded
+        icon={<Trash2 s={22} c="#EF4444" w={2.2} />}
+        iconBg="#FEF2F2"
+        title="Delete this comment?"
+        body="This comment will be permanently removed."
+        cancelLabel="CANCEL"
+        confirmLabel="DELETE"
+        confirmColor="#EF4444"
+        onCancel={() => setConfirmDeleteOpen(false)}
+        onConfirm={() => {
+          setConfirmDeleteOpen(false);
+          onDelete();
+        }}
+      />
     </Modal>
   );
 }
@@ -1063,119 +1273,94 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
   loadingScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG },
   loadingText: { marginTop: 12, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, color: C.textMuted, textTransform: 'uppercase' },
-  sendOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 22,
-    backgroundColor: 'rgba(0,0,0,0.38)',
-  },
-  sendCard: {
-    borderRadius: 28,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 22,
-    paddingTop: 22,
-    paddingBottom: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.22,
-    shadowOffset: { width: 0, height: 14 },
-    shadowRadius: 30,
-    elevation: 14,
-  },
-  sendKicker: { textAlign: 'center', fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.2, color: '#9CA3AF', marginBottom: 12 },
-  sendChoice: {
-    minHeight: 82,
-    borderRadius: 18,
-    borderWidth: 1,
-    paddingHorizontal: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    marginBottom: 12,
-  },
-  sendChoiceGold: { borderColor: '#E8DCC4', backgroundColor: '#FFFBF2' },
-  sendChoiceStone: { borderColor: '#E5E7EB', backgroundColor: '#FFFFFF' },
-  sendChoiceIcon: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
-  sendChoiceIconGold: { backgroundColor: 'rgba(197,160,89,0.12)' },
-  sendChoiceIconStone: { backgroundColor: '#F4F4F5' },
-  sendChoiceTitle: { fontFamily: F.serifMedium, fontSize: 22, color: C.text },
-  sendChoiceSubtitle: { marginTop: 3, fontFamily: F.sans, fontSize: 12, color: '#8B95A5' },
-  chooseOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.38)' },
-  chooseSheet: {
-    maxHeight: '78%',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingTop: 18,
-    paddingBottom: 18,
-  },
-  chooseHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  chooseBack: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
-  chooseKicker: { flex: 1, textAlign: 'center', fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.3, color: '#9CA3AF' },
-  newNoteCard: {
-    minHeight: 84,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#E8DCC4',
-    backgroundColor: '#FFFBF2',
-    paddingHorizontal: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    marginBottom: 22,
-  },
-  newNoteIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(197,160,89,0.12)', alignItems: 'center', justifyContent: 'center' },
-  newNotePlus: { fontFamily: F.serif, fontSize: 25, lineHeight: 26, color: GOLD },
-  newNoteTitle: { fontFamily: F.serifMedium, fontSize: 22, color: C.text },
-  existingLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: '#D1D5DB', marginBottom: 12 },
-  existingList: { gap: 11, paddingBottom: 28 },
-  existingCard: {
-    minHeight: 72,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#E8DCC4',
-    backgroundColor: '#FAF6EE',
-    paddingHorizontal: 17,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  existingTitle: { fontFamily: F.serifMedium, fontSize: 19, color: '#3D3229' },
-  existingDate: { marginTop: 3, fontFamily: F.sansBold, fontSize: 10, color: '#C7C2BA', textTransform: 'uppercase' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
+    paddingHorizontal: 14,
     paddingBottom: TITLE_BAR_BOTTOM_PADDING,
     backgroundColor: 'rgba(252,252,252,0.98)',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(17,24,39,0.05)',
+    position: 'relative',
   },
   headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 23, letterSpacing: 2.2, color: '#111827' },
-  headerActions: { width: 88, height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4 },
+  headerTitleAbs: {
+    position: 'absolute',
+    left: 96,
+    right: 96,
+    top: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: TITLE_BAR_BOTTOM_PADDING + 10,
+  },
+  headerTitle: { fontFamily: F.serifMedium, fontSize: 22, letterSpacing: 2.2, color: '#111827', textAlign: 'center' },
+  headerActions: { height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4 },
   headerIconBtn: { width: 38, height: 44, alignItems: 'center', justifyContent: 'center' },
   chapterBar: {
-    minHeight: 62,
-    paddingHorizontal: 18,
+    minHeight: 46,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(17,24,39,0.08)',
+    borderBottomColor: 'rgba(17,24,39,0.06)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  chapterBtn: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
-  chapterTitle: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 4.2, color: ROSE },
-  content: { paddingHorizontal: 16, paddingTop: 26 },
+  chapterBtn: { width: 38, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17 },
+  chapterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 16,
+    backgroundColor: 'rgba(190,18,60,0.05)',
+  },
+  chapterPillDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: 'rgba(190,18,60,0.32)' },
+  chapterTitle: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 3.6, color: ROSE },
+  content: { paddingHorizontal: 16, paddingTop: 24 },
   chapterLoading: { paddingVertical: 70 },
-  verseList: { gap: 18 },
-  verseRow: { flexDirection: 'row', gap: 10, borderRadius: 14, paddingVertical: 5, paddingHorizontal: 3, borderWidth: 1, borderColor: 'transparent' },
+  emptyChapter: {
+    marginTop: 70,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+    backgroundColor: '#FFFEFA',
+    paddingHorizontal: 22,
+    paddingVertical: 26,
+    alignItems: 'center',
+    gap: 8,
+  },
+  emptyChapterTitle: {
+    marginTop: 4,
+    fontFamily: F.serifMedium,
+    fontSize: 21,
+    color: '#2F2B27',
+  },
+  emptyChapterText: {
+    fontFamily: F.serif,
+    fontSize: 15,
+    lineHeight: 21,
+    color: '#9CA3AF',
+    textAlign: 'center',
+  },
+  verseList: { gap: 16 },
+  verseRow: { flexDirection: 'row', gap: 11, borderRadius: 14, paddingVertical: 6, paddingHorizontal: 3, borderWidth: 1, borderColor: 'transparent' },
   verseRowSelected: { borderColor: 'rgba(197,160,89,0.38)', backgroundColor: '#FFFEF9' },
   verseRowFocused: {},
-  verseMarker: { width: 24, alignItems: 'flex-end', paddingTop: 5 },
-  verseNum: { width: 20, textAlign: 'right', fontFamily: F.sansBold, fontSize: 10, color: 'rgba(190,18,60,0.42)', paddingTop: 3 },
+  verseMarker: { width: 22, alignItems: 'flex-end', paddingTop: 6 },
+  verseNum: {
+    width: 22,
+    textAlign: 'right',
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    color: 'rgba(190,18,60,0.55)',
+    letterSpacing: 0.3,
+    paddingTop: 3,
+  },
   selectCircle: {
     width: 21,
     height: 21,
@@ -1199,7 +1384,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 3,
     paddingVertical: 1,
   },
-  verseText: { fontFamily: F.serif, fontSize: 23, lineHeight: 31, color: '#252525' },
+  verseText: { fontFamily: F.serif, fontSize: 21, lineHeight: 32, color: '#1F1F1F', letterSpacing: 0.1 },
   extraColorTray: {
     alignSelf: 'flex-end',
     flexDirection: 'row',
@@ -1251,9 +1436,12 @@ const s = StyleSheet.create({
     shadowRadius: 6,
     elevation: 1,
   },
-  pencilFab: {
+  pencilFabWrap: {
     position: 'absolute',
     right: 22,
+    alignItems: 'center',
+  },
+  pencilFab: {
     width: 58,
     height: 58,
     borderRadius: 29,
@@ -1267,6 +1455,25 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     shadowRadius: 18,
     elevation: 8,
+  },
+  pencilFabLabel: {
+    marginTop: 6,
+    fontSize: 9.5,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    color: GOLD,
+    backgroundColor: '#FFFDF7',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.40)',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 10,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.10,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    elevation: 3,
   },
   selectionOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.08)', position: 'relative' },
   selectionSheet: {
@@ -1315,7 +1522,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  selectionCategory: { marginTop: 8, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: '#9CA3AF', textTransform: 'uppercase' },
   sheetDivider: { height: 1, backgroundColor: '#F1F5F9', marginTop: 15, marginBottom: 13 },
   highlightAction: {
     minHeight: 78,
@@ -1345,33 +1551,19 @@ const s = StyleSheet.create({
   highlightTitle: { marginTop: 2, fontFamily: F.serif, fontSize: 21, lineHeight: 24 },
   selectionCount: { marginTop: 3, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.4, color: '#9CA3AF', textTransform: 'uppercase' },
   highlightAccent: { width: 26, height: 26, borderRadius: 13, marginLeft: 'auto' },
-  sheetActionGrid: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  sheetActionCard: {
-    flex: 1,
-    minHeight: 90,
-    borderRadius: 20,
+  sheetActionCopy: { flex: 1, minWidth: 0 },
+  commentAction: {
+    minHeight: 78,
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#ECE3D7',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 13,
+    paddingHorizontal: 16,
     paddingVertical: 13,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 10,
-    elevation: 2,
+    gap: 13,
+    overflow: 'hidden',
+    marginTop: 12,
   },
-  sheetActionCardGold: { borderColor: '#E8DCC4', backgroundColor: '#FAF6EE' },
-  sheetActionIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#F7F3EB', alignItems: 'center', justifyContent: 'center' },
-  sheetActionIconGold: { backgroundColor: 'rgba(255,255,255,0.90)' },
-  sheetActionCopy: { flex: 1, minWidth: 0 },
-  sheetActionKicker: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: '#9CA3AF' },
-  sheetActionKickerGold: { color: GOLD },
-  sheetActionTitle: { marginTop: 4, fontFamily: F.serif, fontSize: 17, lineHeight: 20, color: '#2F2B27' },
-  sheetActionTitleGold: { color: '#4C3B2D' },
   actionOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.18)' },
   actionSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#fff', padding: 20, paddingBottom: 30 },
   actionHandle: { width: 44, height: 4, borderRadius: 2, backgroundColor: '#E7E5E4', alignSelf: 'center', marginBottom: 14 },
@@ -1388,28 +1580,42 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 18,
-    paddingTop: 20,
     backgroundColor: 'rgba(0,0,0,0.40)',
   },
   commentCard: {
     width: '100%',
-    maxWidth: 350,
-    borderRadius: 30,
+    maxWidth: 380,
+    maxHeight: '100%',
+    flexShrink: 1,
+    flexDirection: 'column',
+    borderRadius: 26,
     backgroundColor: '#fff',
-    padding: 24,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 12,
     shadowColor: '#000',
     shadowOpacity: 0.24,
     shadowOffset: { width: 0, height: 16 },
     shadowRadius: 38,
     elevation: 18,
   },
-  commentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 },
-  commentTitle: { fontFamily: F.serifMedium, fontSize: 23, color: '#111827' },
+  commentScroll: { flexShrink: 1, flexGrow: 0 },
+  commentScrollContent: { paddingBottom: 4 },
+  commentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 10,
+    marginBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#EEEFF2',
+  },
+  commentTitle: { flex: 1, fontFamily: F.serifMedium, fontSize: 19, color: '#111827', marginRight: 12 },
   commentCloseBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F8F8FA',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F4F5F7',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1471,8 +1677,71 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   commentColorInner: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#fff' },
-  commentCategoryName: { marginTop: 8, marginBottom: 15, fontFamily: F.serif, fontSize: 15 },
-  commentToolbar: { marginBottom: 10 },
+  commentToolbar: { marginTop: 14, marginBottom: 10 },
+  commentVerseCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 14,
+    marginBottom: 16,
+  },
+  commentVerseTags: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  commentVerseDot: { width: 10, height: 10, borderRadius: 5 },
+  commentVerseChip: {
+    minHeight: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commentVerseChipText: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 1.7,
+    textTransform: 'uppercase',
+  },
+  commentVerseRef: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 1.7,
+    color: '#C0B8AE',
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  commentVerseQuoteBlock: { paddingHorizontal: 2 },
+  commentVerseLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  commentVerseNum: {
+    minWidth: 20,
+    paddingTop: 4,
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    color: 'rgba(190,18,60,0.45)',
+    textAlign: 'right',
+  },
+  commentVerseText: {
+    flex: 1,
+    fontFamily: F.serifItalic,
+    fontSize: 16,
+    lineHeight: 25,
+    color: '#4B5563',
+  },
+  commentVerseTextIndented: { flex: 1 },
+  commentVerseDivider: { height: 1, backgroundColor: '#E7EAF0', marginVertical: 11 },
+  commentVerseSeeMore: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10, alignSelf: 'flex-start' },
+  commentVerseSeeMoreText: { fontFamily: F.sansSemiBold, fontSize: 12, letterSpacing: 0.3 },
+  commentVerseSeeMoreArrow: { fontSize: 18, lineHeight: 18, fontFamily: F.serifMedium },
+  commentEditorBox: {
+    height: 220,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+  },
+  commentEditorBoxCompact: { height: 170 },
   annotationPreviewCard: {
     borderRadius: 16,
     borderWidth: 1,
@@ -1515,70 +1784,78 @@ const s = StyleSheet.create({
     backgroundColor: '#E7EAF0',
     marginVertical: 13,
   },
-  commentEditor: {
-    minHeight: 132,
-    borderRadius: 18,
-    backgroundColor: '#F8F8FA',
-  },
   commentSave: {
-    minHeight: 50,
-    borderRadius: 24,
-    backgroundColor: '#000000',
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#1C1917',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 18,
+    marginTop: 12,
   },
-  commentSaveText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2, color: '#fff' },
+  commentSaveText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.8, color: '#fff' },
   previewOverlay: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 17,
+    paddingHorizontal: 18,
     backgroundColor: 'rgba(0,0,0,0.42)',
   },
   previewCard: {
     width: '100%',
-    maxWidth: 350,
-    borderRadius: 30,
-    borderTopWidth: 6,
+    maxWidth: 380,
+    maxHeight: '100%',
+    flexShrink: 1,
+    flexDirection: 'column',
+    borderRadius: 26,
+    borderTopWidth: 4,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 26,
-    paddingTop: 24,
-    paddingBottom: 22,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 12,
     shadowColor: '#000',
     shadowOpacity: 0.25,
     shadowOffset: { width: 0, height: 18 },
     shadowRadius: 42,
     elevation: 20,
   },
-  previewHeader: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 12 },
+  previewScroll: { flexShrink: 1 },
+  previewScrollContent: { paddingBottom: 4 },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingBottom: 10,
+    marginBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#EEEFF2',
+  },
   previewChip: {
     maxWidth: 130,
-    minHeight: 24,
-    borderRadius: 12,
-    paddingHorizontal: 13,
+    minHeight: 22,
+    borderRadius: 11,
+    paddingHorizontal: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
   previewChipText: {
     fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 1.6,
+    fontSize: 9.5,
+    letterSpacing: 1.5,
     color: '#FFFFFF',
     textTransform: 'uppercase',
   },
   previewRef: {
     flex: 1,
     fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 1.9,
+    fontSize: 9.5,
+    letterSpacing: 1.7,
     color: '#A0A7B2',
   },
   previewClose: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#F8F8FA',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F4F5F7',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1590,28 +1867,46 @@ const s = StyleSheet.create({
     marginBottom: 24,
   },
   previewCommentBox: {
-    minHeight: 88,
-    borderRadius: 22,
+    borderRadius: 18,
     backgroundColor: '#F8F8FA',
     borderWidth: 1,
     borderColor: '#F0F1F4',
-    paddingHorizontal: 24,
-    paddingVertical: 22,
-    justifyContent: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 16,
   },
-  previewCommentText: { fontFamily: F.serif, fontSize: 21, lineHeight: 29, color: '#111827' },
+  previewActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  previewEdit: {
+    flex: 1.4,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#1C1917',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  previewEditText: {
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    letterSpacing: 1.8,
+    color: '#FFFFFF',
+  },
   previewDelete: {
-    minHeight: 48,
-    borderRadius: 24,
+    flex: 1,
+    height: 44,
+    borderRadius: 14,
     backgroundColor: '#FFF1F1',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
   },
   previewDeleteText: {
     fontFamily: F.sansBold,
     fontSize: 11,
-    letterSpacing: 2,
+    letterSpacing: 1.8,
     color: '#DC2626',
   },
 });

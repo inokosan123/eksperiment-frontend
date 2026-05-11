@@ -1,9 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, {
+  useEffect, useMemo, useRef, useState,
+} from 'react';
 import {
   KeyboardAvoidingView,
-  Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -282,6 +282,13 @@ export default function BucketListView() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [confirmToggle, setConfirmToggle] = useState<{ item: BucketListItem; mode: ToggleMode } | null>(null);
+  const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (celebrationTimerRef.current) {
+      clearTimeout(celebrationTimerRef.current);
+    }
+  }, []);
 
   const pending = useMemo(
     () => bucketList.filter(item => !item.isCompleted).sort((a, b) => a.order - b.order),
@@ -309,20 +316,29 @@ export default function BucketListView() {
   const handleComplete = (id: string) => {
     completeBucketItem(id);
     successFeedback();
-    setTimeout(() => {
-      setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 3000);
-    }, 350);
+    setShowConfetti(true);
+    if (celebrationTimerRef.current) {
+      clearTimeout(celebrationTimerRef.current);
+    }
+    celebrationTimerRef.current = setTimeout(() => {
+      setShowConfetti(false);
+      celebrationTimerRef.current = null;
+    }, 5000);
   };
 
   const handleConfirmToggle = () => {
     if (!confirmToggle) return;
-    if (confirmToggle.mode === 'check') {
-      handleComplete(confirmToggle.item.id);
-    } else {
-      uncompleteBucketItem(confirmToggle.item.id);
-    }
+    const nextToggle = confirmToggle;
     setConfirmToggle(null);
+
+    if (confirmToggle.mode === 'check') {
+      setTimeout(() => {
+        handleComplete(nextToggle.item.id);
+      }, 260);
+      return;
+    }
+
+    uncompleteBucketItem(nextToggle.item.id);
   };
 
   const startEdit = (item: BucketListItem) => {
@@ -359,10 +375,6 @@ export default function BucketListView() {
 
   return (
     <View style={screen.root}>
-      <Modal visible={showConfetti} transparent animationType="none" statusBarTranslucent onRequestClose={() => {}}>
-        <CelebrationOverlay />
-      </Modal>
-
       <ConfirmationModal
         visible={!!confirmToggle}
         onClose={() => setConfirmToggle(null)}
@@ -459,6 +471,8 @@ export default function BucketListView() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {showConfetti && <CelebrationOverlay />}
     </View>
   );
 }
@@ -693,4 +707,3 @@ const empty = StyleSheet.create({
     textAlign: 'center',
   },
 });
-

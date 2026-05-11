@@ -2,12 +2,18 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import {
   ScrollView,
   StyleSheet,
-  Text,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Reanimated, {
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { C, F } from '@/constants/tokens';
 
 function toDateKey(date: Date) {
@@ -50,10 +56,18 @@ export default function DateStrip({
   const days = useMemo(() => buildMonthDays(selectedKey), [selectedKey]);
 
   useEffect(() => {
-    const itemWidth = 56;
+    const cellWidth = 54;
+    const gap = 5;
+    const horizontalPadding = 16;
+    const itemWidth = cellWidth + gap;
     const selectedIndex = days.findIndex(day => day.key === selectedKey);
     if (selectedIndex < 0) return;
-    const centeredOffset = Math.max(0, 16 + selectedIndex * itemWidth - (width - 52) / 2);
+    const cellLeft = horizontalPadding + selectedIndex * itemWidth;
+    const cellCenter = cellLeft + cellWidth / 2;
+    const targetOffset = cellCenter - width / 2;
+    const contentWidth = horizontalPadding * 2 + days.length * itemWidth - gap;
+    const maxOffset = Math.max(0, contentWidth - width);
+    const centeredOffset = Math.max(0, Math.min(maxOffset, targetOffset));
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({ x: centeredOffset, animated: true });
     });
@@ -66,112 +80,175 @@ export default function DateStrip({
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={s.row}
-        decelerationRate="fast"
+        decelerationRate="normal"
       >
-        {days.map(day => {
-          const selected = day.key === selectedKey;
-          const isToday = day.key === todayKey;
-          const accent = day.sunday || day.feast;
-          const numColor = selected ? '#FFFFFF' : accent ? C.red : C.text;
-          const dowColor = selected
-            ? 'rgba(255,255,255,0.92)'
-            : isToday
-              ? C.gold
-              : accent ? '#B7AEA1' : C.textMuted;
-
-          if (selected) {
-            return (
-              <TouchableOpacity
-                key={day.key}
-                activeOpacity={0.9}
-                onPress={() => onSelect(day.key)}
-              >
-                <LinearGradient
-                  colors={['#D5B06A', '#B98B42']}
-                  start={{ x: 0.18, y: 0 }}
-                  end={{ x: 0.82, y: 1 }}
-                  style={[s.day, s.daySelected]}
-                >
-                  <Text style={[s.dow, { color: dowColor }]}>{day.dow}</Text>
-                  <Text style={[s.num, s.numSelected, { color: numColor }]}>{day.date}</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            );
-          }
-
-          return (
-            <TouchableOpacity
-              key={day.key}
-              activeOpacity={0.82}
-              onPress={() => onSelect(day.key)}
-              style={s.dayPress}
-            >
-              <View style={[s.day, isToday && s.todayDay]}>
-                <Text style={[s.dow, { color: dowColor }]}>{day.dow}</Text>
-                <Text style={[s.num, { color: numColor }]}>{day.date}</Text>
-                {isToday && <View style={s.todayDot} />}
-              </View>
-            </TouchableOpacity>
-          );
-        })}
+        {days.map(day => (
+          <DateCell
+            key={day.key}
+            day={day}
+            selected={day.key === selectedKey}
+            isToday={day.key === todayKey}
+            onPress={() => onSelect(day.key)}
+          />
+        ))}
       </ScrollView>
     </View>
+  );
+}
+
+function DateCell({
+  day,
+  selected,
+  isToday,
+  onPress,
+}: {
+  day: ReturnType<typeof buildMonthDays>[number];
+  selected: boolean;
+  isToday: boolean;
+  onPress: () => void;
+}) {
+  const progress = useSharedValue(selected ? 1 : 0);
+  const todayProgress = useSharedValue(isToday && !selected ? 1 : 0);
+  const numIdleColor = C.text;
+  const dowIdleColor = isToday ? C.gold : C.textMuted;
+
+  useEffect(() => {
+    progress.value = withSpring(selected ? 1 : 0, {
+      damping: 18,
+      stiffness: 230,
+      mass: 0.75,
+    });
+  }, [progress, selected]);
+
+  useEffect(() => {
+    todayProgress.value = withTiming(isToday && !selected ? 1 : 0, { duration: 140 });
+  }, [isToday, selected, todayProgress]);
+
+  const shellStyle = useAnimatedStyle(() => ({}));
+
+  const selectedStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+  }));
+
+  const todayStyle = useAnimatedStyle(() => ({
+    opacity: todayProgress.value,
+  }));
+
+  const dowStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      progress.value,
+      [0, 1],
+      [dowIdleColor, 'rgba(255,255,255,0.92)']
+    ),
+  }));
+
+  const numStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(progress.value, [0, 1], [numIdleColor, '#FFFFFF']),
+  }));
+
+  const dotStyle = useAnimatedStyle(() => ({
+    opacity: todayProgress.value,
+    transform: [{ scale: todayProgress.value }],
+  }));
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.84}
+      onPress={onPress}
+      style={s.dayPress}
+    >
+      <Reanimated.View style={[s.day, s.dayMotion, shellStyle]}>
+        <Reanimated.View pointerEvents="none" style={[s.todayFill, todayStyle]} />
+        <Reanimated.View pointerEvents="none" style={[s.selectedFillWrap, selectedStyle]}>
+          <LinearGradient
+            colors={['#E2BD75', '#C5A059', '#A87E33']}
+            locations={[0, 0.55, 1]}
+            start={{ x: 0.15, y: 0 }}
+            end={{ x: 0.85, y: 1 }}
+            style={s.selectedFill}
+          />
+          <View style={s.selectedSheen} pointerEvents="none" />
+          <View style={s.selectedRim} pointerEvents="none" />
+        </Reanimated.View>
+        <Reanimated.Text style={[s.dow, dowStyle]}>{day.dow}</Reanimated.Text>
+        <Reanimated.Text style={[s.num, numStyle]}>{day.date}</Reanimated.Text>
+        {isToday && <Reanimated.View style={[s.todayUnderline, dotStyle]} />}
+      </Reanimated.View>
+    </TouchableOpacity>
   );
 }
 
 const s = StyleSheet.create({
   wrap: {
     paddingTop: 6,
-    paddingBottom: 2,
+    paddingBottom: 4,
   },
   row: {
     paddingHorizontal: 16,
-    gap: 4,
+    gap: 5,
   },
   dayPress: {
     borderRadius: 20,
   },
   day: {
     position: 'relative',
-    width: 52,
+    width: 54,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 8,
-    paddingBottom: 10,
+    paddingTop: 10,
+    paddingBottom: 12,
     borderRadius: 18,
   },
-  todayDay: {
-    backgroundColor: 'rgba(197,160,89,0.08)',
+  dayMotion: {},
+  todayFill: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(197,160,89,0.10)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
   },
-  todayDot: {
+  selectedFillWrap: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  selectedFill: {
+    flex: 1,
+    borderRadius: 18,
+  },
+  selectedSheen: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    height: '42%',
+    borderTopLeftRadius: 17,
+    borderTopRightRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  selectedRim: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(150,108,40,0.30)',
+  },
+  todayUnderline: {
     position: 'absolute',
     bottom: 5,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+    width: 14,
+    height: 1.5,
+    borderRadius: 1,
     backgroundColor: C.gold,
-  },
-  daySelected: {
-    width: 52,
-    shadowColor: '#B88C45',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.26,
-    shadowRadius: 14,
-    elevation: 7,
   },
   dow: {
     fontFamily: F.serifMediumItalic,
-    fontSize: 11,
-    letterSpacing: 0.15,
+    fontSize: 10.5,
+    letterSpacing: 0.4,
   },
   num: {
     fontFamily: F.serifMedium,
     fontSize: 20,
-    marginTop: 4,
+    marginTop: 2,
     lineHeight: 22,
-  },
-  numSelected: {
-    fontSize: 22,
-    lineHeight: 24,
   },
 });

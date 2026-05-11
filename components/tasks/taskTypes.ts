@@ -44,6 +44,7 @@ export type TaskDefinition = {
   activatedAt: number;
   pausedAt?: string;
   removedAt?: string;
+  quickConfig?: QuickTaskConfig;
 };
 
 export type TaskInstance = {
@@ -111,7 +112,13 @@ export type ChallengeTaskConfig = {
   progressUnit?: string;
 };
 
-export type TaskDraft = Omit<TaskDefinition, 'id' | 'createdAt' | 'activatedAt' | 'status'> & {
+export type QuickTaskConfig = {
+  taskId: string;
+  date: string;
+  note?: string;
+};
+
+export type TaskDraft = Omit<TaskDefinition, 'id' | 'createdAt' | 'activatedAt' | 'status' | 'quickConfig'> & {
   id?: string;
   status?: TaskLifecycleStatus;
   createdAt?: number;
@@ -122,6 +129,7 @@ export type TaskDraft = Omit<TaskDefinition, 'id' | 'createdAt' | 'activatedAt' 
   readingBookConfig?: Omit<ReadingBookTaskConfig, 'taskId'>;
   habitConfig?: Omit<HabitTaskConfig, 'taskId'>;
   challengeConfig?: Omit<ChallengeTaskConfig, 'taskId'>;
+  quickConfig?: Omit<QuickTaskConfig, 'taskId'>;
 };
 
 export type TaskListItem = {

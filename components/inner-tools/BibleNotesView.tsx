@@ -1,8 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput,
+  Modal, Pressable, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, useWindowDimensions, View,
 } from 'react-native';
+import Reanimated, {
+  FadeInDown,
+  FadeOutUp,
+  LinearTransition,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -22,6 +30,7 @@ const CHAPTER_COLUMNS = 5;
 const CHAPTER_GAP = 7;
 const PAGE_SIDE_PADDING = 16;
 const CHAPTER_GRID_SIDE_PADDING = 4;
+const bibleNotesLayout = LinearTransition.springify().damping(19).stiffness(218).mass(0.82);
 
 type BibleTab = 'nt' | 'psalms' | 'ot';
 type BibleBook = {
@@ -119,21 +128,29 @@ export default function BibleNotesView() {
 
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<BibleTab>('nt');
-  const pillAnim = useRef(new Animated.Value(0)).current;
+  const tabProgress = useSharedValue(0);
+  const [tabsWidth, setTabsWidth] = useState(0);
+  const tabPillWidth = tabsWidth > 0 ? (tabsWidth - 14) / 3 : 0;
+  const tabPillTravel = tabPillWidth + 3;
 
   useEffect(() => {
     const idx = activeTab === 'nt' ? 0 : activeTab === 'psalms' ? 1 : 2;
-    Animated.spring(pillAnim, {
-      toValue: idx,
-      useNativeDriver: false,
-      tension: 68,
-      friction: 11,
-    }).start();
+    tabProgress.value = withTiming(idx, { duration: 212 });
     if (activeTab === 'psalms') setExpandedBookId(PSALMS_ID);
     else setExpandedBookId(null);
-  }, [activeTab, pillAnim]);
+  }, [activeTab, tabProgress]);
+
+  const tabPillMotionStyle = useAnimatedStyle(() => ({
+    width: tabPillWidth,
+    transform: [{ translateX: tabProgress.value * tabPillTravel }],
+  }), [tabPillWidth, tabPillTravel]);
+
   const [expandedBookId, setExpandedBookId] = useState<number | null>(null);
   const [activeChapter, setActiveChapter] = useState<{ book: BibleBook; chapter: number; note?: ScriptureBibleNote } | null>(null);
+  // True only when the editor was opened via deep-link (Scripture → Bible Notes).
+  // In that case, pressing back inside the editor should pop one extra route to
+  // return all the way to Scripture, instead of leaving the user on the index list.
+  const openedFromDeepLinkRef = useRef(false);
   const [deleteTarget, setDeleteTarget] = useState<ScriptureBibleNote | null>(null);
   const [observations, setObservations] = useState('');
   const [lessons, setLessons] = useState('');
@@ -176,6 +193,7 @@ export default function BibleNotesView() {
       setObservations(note?.observations ?? '');
       setLessons(note?.lessons ?? '');
       setApplication(note?.application ?? '');
+      openedFromDeepLinkRef.current = true;
     }
   }, [notesByChapter, params.bookId, params.chapter, params.open]);
 
@@ -234,14 +252,11 @@ export default function BibleNotesView() {
       </View>
 
       <View style={s.tabsWrap}>
-        <View style={s.tabs}>
+        <View style={s.tabs} onLayout={event => setTabsWidth(event.nativeEvent.layout.width)}>
           {/* Animated sliding pill */}
-          <Animated.View
+          <Reanimated.View
             pointerEvents="none"
-            style={[
-              s.tabPill,
-              { left: pillAnim.interpolate({ inputRange: [0, 1, 2], outputRange: ['0.9%', '33.9%', '66.9%'] }) },
-            ]}
+            style={[s.tabPill, tabPillMotionStyle]}
           />
           <TabButton label="New Test." active={activeTab === 'nt'} count={tabCount('nt')} onPress={() => setActiveTab('nt')} />
           <TabButton label="Psalter" active={activeTab === 'psalms'} count={tabCount('psalms')} onPress={() => setActiveTab('psalms')} />
@@ -260,7 +275,7 @@ export default function BibleNotesView() {
             const isExpanded = expandedBookId === book.id;
 
             return (
-              <View key={book.id}>
+              <Reanimated.View key={book.id} layout={bibleNotesLayout}>
                 {activeTab !== 'psalms' && (
                   <TouchableOpacity
                     onPress={() => setExpandedBookId(isExpanded ? null : book.id)}
@@ -282,7 +297,15 @@ export default function BibleNotesView() {
                 )}
 
                 {isExpanded && (
-                  <View style={s.chapterGrid}>
+                  <Reanimated.View
+                    entering={FadeInDown.duration(185).springify().damping(19).stiffness(220).withInitialValues({
+                      opacity: 0,
+                      transform: [{ translateY: 14 }],
+                    })}
+                    exiting={FadeOutUp.duration(140)}
+                    layout={bibleNotesLayout}
+                    style={s.chapterGrid}
+                  >
                     {Array.from({ length: book.chapters }, (_, index) => index + 1).map(chapter => {
                       const hasNote = notesByChapter.has(noteKey(book.id, chapter));
                       return (
@@ -297,9 +320,9 @@ export default function BibleNotesView() {
                         </TouchableOpacity>
                       );
                     })}
-                  </View>
+                  </Reanimated.View>
                 )}
-              </View>
+              </Reanimated.View>
             );
           })
         )}
@@ -313,15 +336,18 @@ export default function BibleNotesView() {
         onObservations={setObservations}
         onLessons={setLessons}
         onApplication={setApplication}
-        onClose={() => setActiveChapter(null)}
+        onClose={() => {
+          setActiveChapter(null);
+          if (openedFromDeepLinkRef.current) {
+            openedFromDeepLinkRef.current = false;
+            router.back();
+          }
+        }}
         onSave={saveChapter}
         onDelete={activeChapter?.note ? () => setDeleteTarget(activeChapter.note ?? null) : undefined}
-      />
-
-      <DeleteBibleModal
-        visible={!!deleteTarget}
-        onCancel={() => setDeleteTarget(null)}
-        onConfirm={confirmDelete}
+        deleteVisible={!!deleteTarget}
+        onCancelDelete={() => setDeleteTarget(null)}
+        onConfirmDelete={confirmDelete}
       />
     </View>
   );
@@ -370,6 +396,9 @@ function ChapterEditor({
   onClose,
   onSave,
   onDelete,
+  deleteVisible,
+  onCancelDelete,
+  onConfirmDelete,
 }: {
   chapter: { book: BibleBook; chapter: number; note?: ScriptureBibleNote } | null;
   observations: string;
@@ -381,6 +410,9 @@ function ChapterEditor({
   onClose: () => void;
   onSave: () => void;
   onDelete?: () => void;
+  deleteVisible: boolean;
+  onCancelDelete: () => void;
+  onConfirmDelete: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const chapterKey = chapter ? `${chapter.book.id}-${chapter.chapter}` : 'empty';
@@ -434,11 +466,40 @@ function ChapterEditor({
             placeholder="How will you live this today?"
           />
         </ScrollView>
+
+        <DeleteBibleModal
+          visible={deleteVisible}
+          embedded
+          onCancel={onCancelDelete}
+          onConfirm={onConfirmDelete}
+        />
       </View>
     </Modal>
   );
 }
 
+function DeleteBibleModal({
+  visible, embedded = false, onCancel, onConfirm,
+}: {
+  visible: boolean;
+  embedded?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <ConfirmModal
+      visible={visible}
+      embedded={embedded}
+      icon={<Trash2 s={22} c="#EF4444" />}
+      iconBg="#FEF2F2"
+      title="Delete this Bible note?"
+      body="This will permanently delete your note for this chapter."
+      confirmLabel="DELETE"
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    />
+  );
+}
 function BibleField({
   label, editorKey, value, onChange, placeholder,
 }: {
@@ -470,27 +531,6 @@ function BibleField({
   );
 }
 
-function DeleteBibleModal({
-  visible, onCancel, onConfirm,
-}: {
-  visible: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <ConfirmModal
-      visible={visible}
-      icon={<Trash2 s={22} c="#EF4444" />}
-      iconBg="#FEF2F2"
-      title="Delete this Bible note?"
-      body="This will permanently delete your note for this chapter."
-      confirmLabel="DELETE"
-      onCancel={onCancel}
-      onConfirm={onConfirm}
-    />
-  );
-}
-
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
   header: {
@@ -517,7 +557,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 9,
   },
-  searchInput: { flex: 1, height: 46, fontFamily: F.serif, fontSize: 15, color: '#44403C', paddingVertical: 0 },
+  searchInput: { flex: 1, height: 46, fontFamily: F.serif, fontSize: 15, lineHeight: 21, color: '#44403C' },
   tabsWrap: { paddingHorizontal: 16, paddingBottom: 12 },
   tabs: {
     flexDirection: 'row',
@@ -537,6 +577,7 @@ const s = StyleSheet.create({
     position: 'absolute',
     top: 4,
     bottom: 4,
+    left: 4,
     width: '32%',
     borderRadius: 14,
     backgroundColor: GOLD,

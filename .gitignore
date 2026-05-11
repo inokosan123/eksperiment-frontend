@@ -29,6 +29,10 @@ yarn-error.*
 expo-*.log
 expo-*.err.log
 
+# tool snapshots / logs
+.codex/
+.playwright-mcp/
+
 # macOS
 .DS_Store
 *.pem

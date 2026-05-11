@@ -8,8 +8,6 @@ import Animated, {
   withSequence, Easing as REasing, interpolate,
 } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
-
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -22,6 +20,8 @@ import { F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import FocusLottie from '@/components/focus/FocusLottie';
 import { getAllFocusSessions, logFocusSession } from '@/components/focus/focusDb';
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 type Mode = 'focus' | 'break';
 type StatsMode = 'streak' | 'time';
@@ -73,8 +73,19 @@ function clampDuration(value: string | number, min: number, max: number, fallbac
   return Math.min(max, Math.max(min, parsed));
 }
 
+function toLocalDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function dateKey(timestamp: number) {
-  return new Date(timestamp).toISOString().split('T')[0];
+  return toLocalDateKey(new Date(timestamp));
+}
+
+function mondayFirstDayIndex(date: Date = new Date()) {
+  return (date.getDay() + 6) % 7;
 }
 
 function formatMinutes(mins: number) {
@@ -149,7 +160,7 @@ export default function FocusZoneView() {
     return map;
   }, [sessions]);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = toLocalDateKey(new Date());
   const dailySessions = sessionsByDate[todayStr] || 0;
   const totalMinutes = sessions.reduce((sum, session) => sum + session.duration, 0);
 
@@ -160,8 +171,7 @@ export default function FocusZoneView() {
     const bestDayMin = Object.values(minutesByDate).length ? Math.max(...Object.values(minutesByDate)) : 0;
 
     const now = new Date();
-    const dayOfWeek = now.getDay();
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const mondayOffset = -mondayFirstDayIndex(now);
     const monday = new Date(now);
     monday.setDate(now.getDate() + mondayOffset);
     monday.setHours(0, 0, 0, 0);
@@ -174,7 +184,7 @@ export default function FocusZoneView() {
     for (let i = 0; i < 7; i += 1) {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
-      const key = d.toISOString().split('T')[0];
+      const key = toLocalDateKey(d);
       weekDays[i] = sessionsByDate[key] || 0;
       weekDaysMin[i] = minutesByDate[key] || 0;
       thisWeek += weekDays[i];
@@ -401,10 +411,7 @@ export default function FocusZoneView() {
     }
   };
 
-  const todayDayIndex = (() => {
-    const day = new Date().getDay();
-    return day === 0 ? 6 : day - 1;
-  })();
+  const todayDayIndex = mondayFirstDayIndex();
 
   const maxSessionBar = Math.max(...statsData.weekDays, 1);
   const maxMinuteBar = Math.max(...statsData.weekDaysMin, 1);
@@ -445,13 +452,12 @@ export default function FocusZoneView() {
     <Animated.View style={[s.screen, screenStyle]}>
       <View style={[s.header, { paddingTop: getTitleBarTopPadding(insets.top) }]}>
         <TouchableOpacity onPress={handleBack} style={s.headerBtn} activeOpacity={0.72}>
-          <ArrowLeft s={24} c="rgba(28,25,23,0.42)" />
+          <ArrowLeft s={26} c="rgba(28,25,23,0.55)" />
         </TouchableOpacity>
 
         <View style={s.sessionPill}>
-          <FocusLottie name="flame" loop style={s.flameLottie} />
           <Text style={s.sessionCount}>{dailySessions}</Text>
-          <Text style={s.sessionLabel}>Today</Text>
+          <FocusLottie name="flame" loop style={s.flameLottie} />
         </View>
 
         <TouchableOpacity
@@ -459,7 +465,7 @@ export default function FocusZoneView() {
           style={s.headerBtn}
           activeOpacity={0.72}
         >
-          <Feather name="pie-chart" size={28} color="rgba(28,25,23,0.42)" />
+          <Feather name="pie-chart" size={26} color="rgba(28,25,23,0.55)" />
         </TouchableOpacity>
       </View>
 
@@ -501,9 +507,7 @@ export default function FocusZoneView() {
               {mode === 'focus' ? (
                 <FocusLottie name="sandy-work" loop speed={0.4} style={s.sandyLottie} />
               ) : (
-                <View style={{ filter: 'hue-rotate(-55deg) brightness(0.85)' }}>
-                  <FocusLottie name="sandy" loop speed={0.4} style={s.sandyLottie} />
-                </View>
+                <FocusLottie name="sandy" loop speed={0.4} style={s.sandyLottie} />
               )}
             </Animated.View>
           </Animated.View>
@@ -946,13 +950,12 @@ function StatsModal({
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG, overflow: 'hidden' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, paddingBottom: TITLE_BAR_BOTTOM_PADDING, zIndex: 10 },
-  headerBtn: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 24 },
-  sessionPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 4, paddingRight: 16, height: 49, borderRadius: 25, backgroundColor: '#fff', borderWidth: 1, borderColor: '#F5F5F4', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3, overflow: 'hidden' },
-  flameLottie: { width: 48, height: 48 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: TITLE_BAR_BOTTOM_PADDING, zIndex: 10 },
+  headerBtn: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 23 },
+  sessionPill: { flexDirection: 'row', alignItems: 'center', gap: 0, paddingLeft: 18, paddingRight: 4, height: 50, borderRadius: 25, backgroundColor: '#fff', borderWidth: 1, borderColor: '#F0EDE6', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 10, elevation: 3, overflow: 'hidden' },
+  flameLottie: { width: 46, height: 46, marginLeft: -6 },
   flameWeb: { width: 48, height: 48 },
-  sessionCount: { fontFamily: F.sansBold, fontSize: 20, color: '#44403C' },
-  sessionLabel: { fontFamily: F.sans, fontSize: 16, color: '#D6D3D1' },
+  sessionCount: { fontFamily: F.sansBold, fontSize: 22, color: '#44403C' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, paddingBottom: 24 },
   timerWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
   ring: { position: 'absolute' },

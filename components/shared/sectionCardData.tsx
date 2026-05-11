@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import {
   Book,
+  CalendarHeart,
   CheckSmall,
   Cross,
   Feather,
@@ -9,6 +10,7 @@ import {
   Notebook,
   OpenBook,
   Star,
+  Target,
 } from '@/components/icons/Icons';
 
 export type SectionCardRoute =
@@ -23,6 +25,8 @@ export type SectionCardRoute =
   | '/gratitude'
   | '/ideal-self'
   | '/bucket-list'
+  | '/monthly-goals'
+  | '/big-events'
   | '/focus-zone';
 
 export type SectionCardConfig = {
@@ -37,6 +41,7 @@ export type SectionCardConfig = {
   bodyColor: string;
   arrowBg: string;
   decor: ReactNode;
+  decorUpright?: boolean;
   route: SectionCardRoute;
 };
 
@@ -51,7 +56,8 @@ export const PRAYER_BOOK_CARD: SectionCardConfig = {
   titleColor: '#3B2F76',
   bodyColor: '#6D5AAE',
   arrowBg: '#2E2478',
-  decor: <Cross s={128} c="#6D5AAE" w={1} />,
+  decor: <Cross s={84} c="#6D5AAE" w={1} />,
+  decorUpright: true,
   route: '/prayer',
 };
 
@@ -66,7 +72,7 @@ export const HOLY_SCRIPTURE_CARD: SectionCardConfig = {
   titleColor: '#7F1B2D',
   bodyColor: '#B54155',
   arrowBg: '#8C2636',
-  decor: <OpenBook s={128} c="#B54155" w={1} />,
+  decor: <OpenBook s={84} c="#B54155" w={1} />,
   route: '/scripture',
 };
 
@@ -81,7 +87,7 @@ export const FAVORITES_CARD: SectionCardConfig = {
   titleColor: '#6D4F13',
   bodyColor: '#A9863F',
   arrowBg: '#8A5A1A',
-  decor: <Star s={128} c="#A9863F" w={1} />,
+  decor: <Star s={84} c="#A9863F" w={1} />,
   route: '/favorites',
 };
 
@@ -96,7 +102,7 @@ export const BIBLE_NOTES_CARD: SectionCardConfig = {
   titleColor: '#1C1917',
   bodyColor: '#5B564F',
   arrowBg: '#1C1917',
-  decor: <Notebook s={128} c="#5B564F" w={1} />,
+  decor: <Notebook s={84} c="#5B564F" w={1} />,
   route: '/bible-notes',
 };
 
@@ -111,7 +117,7 @@ export const READING_LIST_CARD: SectionCardConfig = {
   titleColor: '#1E4E27',
   bodyColor: '#4B8152',
   arrowBg: '#2C6A36',
-  decor: <Book s={128} c="#4B8152" w={1} />,
+  decor: <Book s={84} c="#4B8152" w={1} />,
   route: '/reading-list',
 };
 
@@ -126,7 +132,7 @@ export const JOURNAL_CARD: SectionCardConfig = {
   titleColor: '#0C0A09',
   bodyColor: '#57534E',
   arrowBg: '#1C1917',
-  decor: <Feather s={128} c="#57534E" w={1} />,
+  decor: <Feather s={84} c="#57534E" w={1} />,
   route: '/journal',
 };
 
@@ -141,7 +147,7 @@ export const HABITS_CARD: SectionCardConfig = {
   titleColor: '#1E4E27',
   bodyColor: '#4B8152',
   arrowBg: '#2C6A36',
-  decor: <CheckSmall s={128} c="#15803D" w={1} />,
+  decor: <CheckSmall s={84} c="#15803D" w={1} />,
   route: '/habits',
 };
 
@@ -156,7 +162,7 @@ export const NOTES_CARD: SectionCardConfig = {
   titleColor: '#451A03',
   bodyColor: '#A9863F',
   arrowBg: '#78350F',
-  decor: <Notebook s={128} c="#B45309" w={1} />,
+  decor: <Notebook s={84} c="#B45309" w={1} />,
   route: '/notes',
 };
 
@@ -171,7 +177,7 @@ export const GRATITUDE_CARD: SectionCardConfig = {
   titleColor: '#7F1B2D',
   bodyColor: '#B54155',
   arrowBg: '#5E1E1E',
-  decor: <Heart s={128} c="#7F1D1D" w={1} />,
+  decor: <Heart s={84} c="#7F1D1D" w={1} />,
   route: '/gratitude',
 };
 
@@ -186,7 +192,7 @@ export const IDEAL_SELF_CARD: SectionCardConfig = {
   titleColor: '#451A03',
   bodyColor: '#A9863F',
   arrowBg: '#78350F',
-  decor: <Star s={128} c="#B45309" w={1} />,
+  decor: <Star s={84} c="#B45309" w={1} />,
   route: '/ideal-self',
 };
 
@@ -201,8 +207,38 @@ export const BUCKET_LIST_CARD: SectionCardConfig = {
   titleColor: '#451A03',
   bodyColor: '#A9863F',
   arrowBg: '#78350F',
-  decor: <Star s={128} c="#B45309" w={1} />,
+  decor: <Star s={84} c="#B45309" w={1} />,
   route: '/bucket-list',
+};
+
+export const MONTHLY_GOALS_CARD: SectionCardConfig = {
+  id: 'monthly-goals',
+  label: 'MONTHLY AIM',
+  title: 'Monthly Goals',
+  description: 'Choose a few intentions for the month and keep them visible as you reflect.',
+  bg: '#E1F1EC',
+  border: '#C8E6DD',
+  labelColor: '#3D8273',
+  titleColor: '#1F4E45',
+  bodyColor: '#3D8273',
+  arrowBg: '#2A6E5F',
+  decor: <Target s={84} c="#3D8273" w={1} />,
+  route: '/monthly-goals',
+};
+
+export const BIG_EVENTS_CARD: SectionCardConfig = {
+  id: 'big-events',
+  label: 'COMING DAYS',
+  title: 'Big Events',
+  description: 'Track important dates, countdowns, and moments you are preparing for.',
+  bg: '#FBE6E9',
+  border: '#F5CDD3',
+  labelColor: '#B54155',
+  titleColor: '#7F1B2D',
+  bodyColor: '#B54155',
+  arrowBg: '#8C2636',
+  decor: <CalendarHeart s={84} c="#B54155" w={1} />,
+  route: '/big-events',
 };
 
 export const FOCUS_ZONE_CARD: SectionCardConfig = {
@@ -216,7 +252,7 @@ export const FOCUS_ZONE_CARD: SectionCardConfig = {
   titleColor: '#1E1B4B',
   bodyColor: '#4F46E5',
   arrowBg: '#312E81',
-  decor: <HourGlass s={128} c="#4F46E5" w={1} />,
+  decor: <HourGlass s={84} c="#4F46E5" w={1} />,
   route: '/focus-zone',
 };
 
@@ -234,7 +270,9 @@ export const INNER_SECTION_CARDS = [
   NOTES_CARD,
   GRATITUDE_CARD,
   IDEAL_SELF_CARD,
+  MONTHLY_GOALS_CARD,
   BUCKET_LIST_CARD,
+  BIG_EVENTS_CARD,
   FOCUS_ZONE_CARD,
 ];
 

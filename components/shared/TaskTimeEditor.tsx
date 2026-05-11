@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Animated,
   Modal,
   Platform,
   Pressable,
@@ -10,6 +9,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Reanimated, {
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { ChevronDown, Clock, X } from '@/components/icons/Icons';
 import { F } from '@/constants/tokens';
 
@@ -58,15 +63,14 @@ function formatTimeFromDate(date: Date) {
 }
 
 function useToggleMotion(active: boolean) {
-  const progress = useRef(new Animated.Value(active ? 1 : 0)).current;
+  const progress = useSharedValue(active ? 1 : 0);
 
   useEffect(() => {
-    Animated.spring(progress, {
-      toValue: active ? 1 : 0,
-      friction: 15,
-      tension: 145,
-      useNativeDriver: false,
-    }).start();
+    progress.value = withSpring(active ? 1 : 0, {
+      damping: 18,
+      stiffness: 235,
+      mass: 0.72,
+    });
   }, [active, progress]);
 
   return progress;
@@ -149,21 +153,19 @@ function ToggleRow({
   onPress: () => void;
 }) {
   const progress = useToggleMotion(active);
-  const trackColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#E5E7EB', accent],
-  });
-  const thumbTranslateX = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 16],
-  });
+  const trackStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#E5E7EB', accent]),
+  }));
+  const thumbStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: progress.value * 16 }],
+  }));
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.84} style={s.toggleRow}>
       <Text style={[s.toggleText, { color: mutedColor }]}>{label}</Text>
-      <Animated.View style={[s.toggleTrack, { backgroundColor: trackColor }]}>
-        <Animated.View style={[s.toggleThumb, { transform: [{ translateX: thumbTranslateX }] }]} />
-      </Animated.View>
+      <Reanimated.View style={[s.toggleTrack, trackStyle]}>
+        <Reanimated.View style={[s.toggleThumb, thumbStyle]} />
+      </Reanimated.View>
     </TouchableOpacity>
   );
 }

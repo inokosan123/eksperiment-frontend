@@ -11,7 +11,9 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
+import ConfirmModal from '@/components/shared/ConfirmModal';
 import NotificationSettings, { type NotificationMode as SharedNotificationMode } from '@/components/shared/NotificationSettings';
 import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
@@ -20,6 +22,8 @@ import TaskTimeEditor, { type TaskDayTimes } from '@/components/shared/TaskTimeE
 import {
   Activity,
   Apple,
+  BarChart3,
+  Bell,
   Book,
   Brain,
   Briefcase,
@@ -35,16 +39,18 @@ import {
   Dumbbell,
   Eye,
   Feather,
-  Flame,
   Heart,
   Home,
   Leaf,
   ListChecks,
   Moon,
   Music,
+  Notebook,
+  Pencil,
   Pill,
   Plus,
   Sparkles,
+  Star,
   Sun,
   Target,
   Trash2,
@@ -55,20 +61,27 @@ import {
   X,
 } from '@/components/icons/Icons';
 import { AnyTaskCard, TaskData } from '@/components/shared/TaskCards';
+import ChallengeSummaryCard from '@/components/shared/ChallengeSummaryCard';
 import { C, F } from '@/constants/tokens';
-import { HabitItem, INITIAL_HABITS, getFreqLabel } from '@/components/habits/habitData';
+import type { HabitItem, HabitStep } from '@/components/habits/habitDb';
+import { habitStepTaskId, listHabitsWithStats, setHabitRecordActive } from '@/components/habits/habitDb';
+import { NotoEmoji } from '@/components/shared/NotoEmoji';
+import { normalizeHabitIcon } from '@/components/shared/notoEmoji/legacyMap';
 import { useChallenges } from '@/components/challenges/ChallengesContext';
 import { useTasks } from '@/components/tasks/TaskProvider';
-import type { TaskDefinition, TaskDraft } from '@/components/tasks/taskTypes';
+import { resolveDisplayIcon, resolveDisplayType, resolveTaskVariant } from '@/components/tasks/taskAdapters';
+import type { TaskDefinition, TaskDraft, TaskLevel } from '@/components/tasks/taskTypes';
 
 type RoutineFrequency = TaskFrequency;
 type NotificationMode = SharedNotificationMode;
-type RoutineLevel = 1 | 2;
-type SpiritualType = 'prayer' | 'reading' | 'journal' | 'church' | 'custom';
+type RoutineLevel = TaskLevel;
+type SpiritualType = TaskDefinition['type'];
 type RoutineTaskSheetContext = 'prayer' | 'journal' | 'scripture';
 type RoutineIconName =
   | 'Activity'
   | 'Apple'
+  | 'BarChart3'
+  | 'Bell'
   | 'Book'
   | 'Brain'
   | 'Briefcase'
@@ -87,10 +100,14 @@ type RoutineIconName =
   | 'ListChecks'
   | 'Moon'
   | 'Music'
+  | 'Notebook'
+  | 'Pencil'
   | 'Pill'
   | 'Sparkles'
+  | 'Star'
   | 'Sun'
   | 'Target'
+  | 'Trophy'
   | 'Utensils'
   | 'Waves'
   | 'Wind';
@@ -128,9 +145,15 @@ function animateRoutineLayoutChange() {
 type RoutineTask = {
   id: string;
   title: string;
+  subtitle?: string;
   level: RoutineLevel;
+  source: TaskDefinition['source'];
   type: SpiritualType;
   icon?: RoutineIconName;
+  habitColor?: string;
+  targetView?: string;
+  targetTab?: string;
+  status: TaskDefinition['status'];
   time: string;
   frequency: RoutineFrequency;
   selectedDays?: number[];
@@ -186,6 +209,12 @@ const ROUTINE_ICONS: {
   { id: 'Feather', label: 'Write', Icon: Feather },
   { id: 'Target', label: 'Goal', Icon: Target },
   { id: 'ListChecks', label: 'Tasks', Icon: ListChecks },
+  { id: 'Pencil', label: 'Note', Icon: Pencil },
+  { id: 'Notebook', label: 'Journal', Icon: Notebook },
+  { id: 'Star', label: 'Favorite', Icon: Star },
+  { id: 'Trophy', label: 'Win', Icon: Trophy },
+  { id: 'Bell', label: 'Reminder', Icon: Bell },
+  { id: 'BarChart3', label: 'Stats', Icon: BarChart3 },
   { id: 'Brain', label: 'Mind', Icon: Brain },
   { id: 'Eye', label: 'Focus', Icon: Eye },
   { id: 'Leaf', label: 'Nature', Icon: Leaf },
@@ -199,7 +228,7 @@ const ROUTINE_ICONS: {
   { id: 'Cross', label: 'Prayer', Icon: Cross },
 ];
 
-const VISIBLE_ROUTINE_ICON_COUNT = 16;
+const VISIBLE_ROUTINE_ICON_COUNT = 20;
 
 function jsDayToTaskIndex(day: number) {
   return day === 0 ? 6 : day - 1;
@@ -299,6 +328,28 @@ function getTaskFrequencyLabel(task: RoutineTask) {
   }
 }
 
+function getHabitFrequencyLabel(step: HabitStep) {
+  switch (step.frequency) {
+    case 'weekdays':
+      return 'Weekdays';
+    case 'weekends':
+      return 'Weekends';
+    case 'specific_days': {
+      const selected = step.selectedDays ?? [];
+      const labels = DAY_TABS
+        .filter(day => selected.includes(jsDayToTaskIndex(day.jsDay)) || selected.includes(day.jsDay))
+        .map(day => day.short)
+        .join(' ');
+      return labels || 'Specific days';
+    }
+    case 'monthly':
+      return `Monthly ${(step.monthlyDays ?? [1]).join(', ')}`;
+    case 'daily':
+    default:
+      return 'Daily';
+  }
+}
+
 function formatTimeGap(fromTime: string, toTime: string) {
   const [fromHour, fromMinute] = fromTime.split(':').map(Number);
   const [toHour, toMinute] = toTime.split(':').map(Number);
@@ -312,14 +363,29 @@ function formatTimeGap(fromTime: string, toTime: string) {
 }
 
 function toTaskCardData(task: RoutineTask, jsDay: number): TaskData {
+  // Use the shared resolver so MyRoutine and Home end up with identical
+  // variant / type / icon assignments — including 'reading' for book tasks
+  // and prayer-icon overrides for spiritual rule tasks.
+  const lookInput = {
+    source: task.source,
+    type: task.type,
+    level: task.level,
+    title: task.title,
+    subtitle: task.subtitle,
+    icon: task.icon,
+    targetView: task.targetView,
+  };
+  const variant = resolveTaskVariant(lookInput);
+
   return {
-    variant: task.level === 1 ? 'spiritual' : 'routine',
+    variant,
     title: task.title,
     time: getTaskTimeForDay(task, jsDay),
-    subtitle: task.level === 1 ? getTaskFrequencyLabel(task) : getTaskFrequencyLabel(task),
-    state: 'active',
-    type: task.level === 1 ? task.type : 'custom',
-    habitIconName: task.level === 2 ? task.icon : undefined,
+    subtitle: task.subtitle || getTaskFrequencyLabel(task),
+    state: task.status === 'paused' ? 'locked' : 'active',
+    type: resolveDisplayType(lookInput, variant),
+    habitColor: task.habitColor,
+    habitIconName: resolveDisplayIcon(lookInput, variant),
   };
 }
 
@@ -327,9 +393,15 @@ function taskDefinitionToRoutineTask(task: TaskDefinition): RoutineTask {
   return {
     id: task.id,
     title: task.title,
-    level: task.level === 1 ? 1 : 2,
-    type: task.type === 'reading' ? 'reading' : task.type === 'journal' ? 'journal' : task.type === 'church' ? 'church' : task.type === 'prayer' ? 'prayer' : 'custom',
+    subtitle: task.subtitle,
+    level: task.level,
+    source: task.source,
+    type: task.type,
     icon: task.icon as RoutineIconName | undefined,
+    habitColor: task.habitColor,
+    targetView: task.targetView,
+    targetTab: task.targetTab,
+    status: task.status,
     time: task.schedule.time,
     frequency: task.schedule.frequency,
     selectedDays: taskIndexesToSelectedDays(task.schedule.selectedDays),
@@ -341,17 +413,37 @@ function taskDefinitionToRoutineTask(task: TaskDefinition): RoutineTask {
   };
 }
 
+function sourceRouteForTask(task: RoutineTask) {
+  switch (task.source) {
+    case 'habit':
+      return '/habits';
+    case 'challenge':
+      return '/challenges';
+    case 'reading_book':
+      return '/reading-list';
+    case 'gratitude':
+      return '/gratitude';
+    default:
+      return null;
+  }
+}
+
 function routineTaskToDraft(task: RoutineTask): TaskDraft {
   const dayTimes = overridesToTaskDayTimes(task.dayTimeOverrides ?? []);
   return {
     id: task.id,
     title: task.title,
-    subtitle: getTaskFrequencyLabel(task),
+    subtitle: task.source === 'routine' || task.source === 'spiritual'
+      ? getTaskFrequencyLabel(task)
+      : task.subtitle ?? getTaskFrequencyLabel(task),
     level: task.level,
-    source: task.level === 1 ? 'spiritual' : 'routine',
-    type: task.type === 'reading' ? 'reading' : task.type === 'journal' ? 'journal' : task.type === 'church' ? 'church' : task.type === 'prayer' ? 'prayer' : 'custom',
-    icon: task.level === 2 ? task.icon : undefined,
-    status: 'active',
+    source: task.source,
+    type: task.type,
+    icon: task.icon,
+    habitColor: task.habitColor,
+    targetView: task.targetView,
+    targetTab: task.targetTab,
+    status: task.status,
     schedule: {
       frequency: task.frequency,
       selectedDays: task.frequency === 'specific_days' ? selectedDaysToTaskIndexes(task.selectedDays ?? []) : [],
@@ -365,6 +457,37 @@ function routineTaskToDraft(task: RoutineTask): TaskDraft {
   };
 }
 
+function habitStepToTaskDraft(habit: HabitItem, step: HabitStep): TaskDraft {
+  const sameTimeEveryDay = step.sameTimeEveryDay ?? true;
+  return {
+    id: habitStepTaskId(habit.id, step.id),
+    title: step.title,
+    subtitle: `${habit.name} - ${getHabitFrequencyLabel(step)}`,
+    level: 3,
+    source: 'habit',
+    type: 'custom',
+    icon: habit.icon,
+    habitColor: habit.color,
+    targetView: '/habits',
+    targetTab: habit.id,
+    status: habit.active ? 'active' : 'paused',
+    schedule: {
+      frequency: step.frequency,
+      selectedDays: step.frequency === 'specific_days' ? step.selectedDays ?? [] : [],
+      monthlyDays: step.frequency === 'monthly' ? step.monthlyDays ?? [1] : [1],
+      time: step.time,
+      sameTimeEveryDay,
+      dayTimes: sameTimeEveryDay ? {} : step.dayTimes ?? {},
+    },
+    notificationMode: step.notificationMode ?? 'none',
+    reminderMinutes: step.notificationMode === 'double' ? step.reminderMinutes : undefined,
+    habitConfig: {
+      habitId: habit.id,
+      habitStepId: step.id,
+    },
+  };
+}
+
 export default function MyRoutineView() {
   const router = useRouter();
   const { activeChallenges } = useChallenges();
@@ -372,9 +495,13 @@ export default function MyRoutineView() {
     tasks: backendTasks,
     createOrUpdateTask,
     remove: removeTask,
+    pause: pauseTask,
+    refresh: refreshTasks,
   } = useTasks();
   const tasks = useMemo(
-    () => backendTasks.map(taskDefinitionToRoutineTask),
+    () => backendTasks
+      .filter(task => task.source !== 'quick' && task.status !== 'archived')
+      .map(taskDefinitionToRoutineTask),
     [backendTasks],
   );
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
@@ -385,8 +512,8 @@ export default function MyRoutineView() {
   const [editorDefaultLevel, setEditorDefaultLevel] = useState<RoutineLevel | undefined>(undefined);
   const [editorDefaultType, setEditorDefaultType] = useState<SpiritualType | undefined>(undefined);
   const [habitTab, setHabitTab] = useState<'active' | 'paused'>('active');
-  const [habits, setHabits] = useState<HabitItem[]>(INITIAL_HABITS);
-  const [expandedHabitId, setExpandedHabitId] = useState<string | null>(INITIAL_HABITS[0]?.id ?? null);
+  const [habits, setHabits] = useState<HabitItem[]>([]);
+  const [expandedHabitId, setExpandedHabitId] = useState<string | null>(null);
 
   const selectedDay = DAY_TABS[selectedDayIndex];
 
@@ -399,6 +526,18 @@ export default function MyRoutineView() {
   const activeHabits = useMemo(() => habits.filter(item => item.active), [habits]);
   const pausedHabits = useMemo(() => habits.filter(item => !item.active), [habits]);
   const visibleHabits = habitTab === 'active' ? activeHabits : pausedHabits;
+
+  useEffect(() => {
+    let cancelled = false;
+    listHabitsWithStats()
+      .then(nextHabits => {
+        if (!cancelled) setHabits(nextHabits);
+      })
+      .catch(error => console.warn('Routine habits failed to load:', error));
+    return () => {
+      cancelled = true;
+    };
+  }, [backendTasks]);
 
   const openAddSpiritual = () => {
     setShowSpiritualTypePicker(true);
@@ -416,6 +555,15 @@ export default function MyRoutineView() {
     setEditorDefaultLevel(undefined);
     setEditorDefaultType(undefined);
     setEditorVisible(true);
+  };
+
+  const openTask = (task: RoutineTask) => {
+    const route = sourceRouteForTask(task);
+    if (route) {
+      router.push(route as never);
+      return;
+    }
+    openEditTask(task);
   };
 
   const handleTaskSave = async (task: RoutineTask) => {
@@ -439,8 +587,29 @@ export default function MyRoutineView() {
     } : habit));
   };
 
-  const toggleHabitActive = (habitId: string) => {
-    setHabits(current => current.map(habit => habit.id === habitId ? { ...habit, active: !habit.active } : habit));
+  const toggleHabitActive = async (habitId: string) => {
+    const habit = habits.find(item => item.id === habitId);
+    if (!habit) return;
+    const nextActive = !habit.active;
+
+    setHabits(current => current.map(item => item.id === habitId ? { ...item, active: nextActive } : item));
+
+    try {
+      await setHabitRecordActive(habit.id, nextActive);
+      if (nextActive) {
+        const nextHabit = { ...habit, active: true };
+        await Promise.all(nextHabit.steps.map(step => createOrUpdateTask(habitStepToTaskDraft(nextHabit, step))));
+      } else {
+        await Promise.all(habit.steps.map(step => pauseTask(habitStepTaskId(habit.id, step.id))));
+      }
+      const nextHabits = await listHabitsWithStats();
+      setHabits(nextHabits);
+      await refreshTasks();
+    } catch (error) {
+      console.warn('Habit active state failed to update:', error);
+      const nextHabits = await listHabitsWithStats();
+      setHabits(nextHabits);
+    }
   };
 
   const progressForHabit = (habit: HabitItem) => {
@@ -468,14 +637,61 @@ export default function MyRoutineView() {
                   key={day.label}
                   onPress={() => setSelectedDayIndex(index)}
                   activeOpacity={0.84}
-                  style={[s.dayTab, active && s.dayTabActive]}
+                  style={s.dayTabPress}
                 >
-                  <Text style={[s.dayTabLabel, active && s.dayTabLabelActive]}>{day.label}</Text>
-                  {active && <View style={s.dayTabMarker} />}
+                  {active ? (
+                    <LinearGradient
+                      colors={['#E2BD75', '#C5A059', '#A87E33']}
+                      locations={[0, 0.55, 1]}
+                      start={{ x: 0.15, y: 0 }}
+                      end={{ x: 0.85, y: 1 }}
+                      style={[s.dayTab, s.dayTabActive]}
+                    >
+                      <View pointerEvents="none" style={s.dayTabSheen} />
+                      <View pointerEvents="none" style={s.dayTabRim} />
+                      <Text style={[s.dayTabLabel, s.dayTabLabelActive]}>{day.label}</Text>
+                      <View style={s.dayTabMarker} />
+                    </LinearGradient>
+                  ) : (
+                    <View style={s.dayTab}>
+                      <Text style={s.dayTabLabel}>{day.label}</Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               );
             })}
           </ScrollView>
+
+          <View style={s.addRow}>
+            <TouchableOpacity onPress={openAddSpiritual} activeOpacity={0.84} style={s.addBtnPress}>
+              <LinearGradient
+                colors={['#FFFBEB', '#FFF4D5']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[s.addBtn, s.addSpiritualBtn]}
+              >
+                <View style={s.addIconCircle}>
+                  <Plus s={12} c={C.gold} w={2.4} />
+                </View>
+                <Text style={s.addSpiritualText}>Spiritual</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={openAddRoutine} activeOpacity={0.84} style={s.addBtnPress}>
+              <LinearGradient
+                colors={['#FFFFFF', '#F4F6F8']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[s.addBtn, s.addRoutineBtn]}
+              >
+                <View style={s.addIconCircleNeutral}>
+                  <Plus s={12} c="#6B7280" w={2.4} />
+                </View>
+                <Text style={s.addRoutineText}>Routine</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+
+          <View style={s.addRowDivider} />
 
           <View style={s.taskStack}>
             {tasksForDay.map((task, index) => {
@@ -493,11 +709,8 @@ export default function MyRoutineView() {
                     </View>
                   )}
 
-                  <TouchableOpacity onPress={() => openEditTask(task)} activeOpacity={0.86} style={s.taskCardWrap}>
+                  <TouchableOpacity onPress={() => openTask(task)} activeOpacity={0.86} style={s.taskCardWrap}>
                     <AnyTaskCard task={toTaskCardData(task, selectedDay.jsDay)} />
-                    <View style={s.frequencyBadge}>
-                      <Text style={s.frequencyBadgeText}>{getTaskFrequencyLabel(task)}</Text>
-                    </View>
                   </TouchableOpacity>
                 </React.Fragment>
               );
@@ -508,17 +721,6 @@ export default function MyRoutineView() {
                 <Text style={s.emptyTitle}>No activities for {selectedDay.label}</Text>
               </View>
             )}
-
-            <View style={s.addRow}>
-              <TouchableOpacity onPress={openAddSpiritual} activeOpacity={0.84} style={s.addSpiritualBtn}>
-                <Plus s={14} c={C.gold} />
-                <Text style={s.addSpiritualText}>Spiritual</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={openAddRoutine} activeOpacity={0.84} style={s.addRoutineBtn}>
-                <Plus s={14} c="#6B7280" />
-                <Text style={s.addRoutineText}>Routine</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
 
@@ -563,7 +765,7 @@ export default function MyRoutineView() {
                 <View key={habit.id} style={[s.habitCard, !habit.active && s.habitCardPaused]}>
                   <TouchableOpacity onPress={() => setExpandedHabitId(current => current === habit.id ? null : habit.id)} activeOpacity={0.84} style={s.habitHead}>
                     <View style={[s.habitIconWrap, { backgroundColor: `${habit.color}18` }]}>
-                      <Text style={s.habitEmoji}>{habit.icon}</Text>
+                      <NotoEmoji name={normalizeHabitIcon(habit.icon)} size={26} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <View style={s.habitTitleRow}>
@@ -594,7 +796,7 @@ export default function MyRoutineView() {
                           </View>
                           <View style={{ flex: 1 }}>
                             <Text style={[s.habitStepTitle, step.completedToday && s.habitStepTitleDone]}>{step.title}</Text>
-                            <Text style={s.habitStepMeta}>{step.time} / {getFreqLabel(step)}</Text>
+                            <Text style={s.habitStepMeta}>{step.time} / {getHabitFrequencyLabel(step)}</Text>
                           </View>
                         </TouchableOpacity>
                       ))}
@@ -630,33 +832,13 @@ export default function MyRoutineView() {
           </View>
 
           <View style={s.challengeList}>
-            {activeChallenges.map(challenge => {
-              const progressTotal = challenge.progressTotal ?? 0;
-              const progressCurrent = challenge.progressCurrent ?? 0;
-              const pct = progressTotal > 0
-                ? Math.round((progressCurrent / progressTotal) * 100)
-                : 0;
-              return (
-                <TouchableOpacity key={challenge.id} onPress={() => router.push('/challenges')} activeOpacity={0.84} style={s.challengeCard}>
-                  <View style={s.challengeTop}>
-                    <Text style={s.challengeBadge}>{challenge.category.toUpperCase()}</Text>
-                    {challenge.streak > 0 && (
-                      <View style={s.challengeStreak}>
-                        <Flame s={10} color="#F97316" filled />
-                        <Text style={s.challengeStreakText}>{challenge.streak}</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={s.challengeTitle}>{challenge.title}</Text>
-                  <Text style={s.challengeMeta}>{challenge.time} / {challenge.headline}</Text>
-                  {progressTotal > 0 && (
-                    <View style={s.challengeProgressTrack}>
-                      <View style={[s.challengeProgressFill, { width: `${pct}%` }]} />
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
+            {activeChallenges.map(challenge => (
+              <ChallengeSummaryCard
+                key={challenge.id}
+                challenge={challenge}
+                onPress={() => router.push('/challenges')}
+              />
+            ))}
 
             <TouchableOpacity onPress={() => router.push('/challenges')} activeOpacity={0.84} style={s.viewAllChallenges}>
               <Trophy s={14} c={C.gold} />
@@ -688,6 +870,7 @@ export default function MyRoutineView() {
           visible={!!spiritualTaskContext}
           context={spiritualTaskContext}
           onClose={() => setSpiritualTaskContext(null)}
+          onTaskMutation={refreshTasks}
           onTaskDraft={async draft => {
             await createOrUpdateTask(draft);
             setSpiritualTaskContext(null);
@@ -778,7 +961,7 @@ function RoutineTaskEditorSheet({
   defaultType?: SpiritualType;
   onClose: () => void;
   onSave: (task: RoutineTask) => void;
-  onDelete: (taskId: string) => void;
+  onDelete: (taskId: string) => void | Promise<void>;
 }) {
   const [title, setTitle] = useState('');
   const [level, setLevel] = useState<RoutineLevel>(1);
@@ -793,10 +976,13 @@ function RoutineTaskEditorSheet({
   const [notificationMode, setNotificationMode] = useState<NotificationMode>('none');
   const [reminderMinutes, setReminderMinutes] = useState(15);
   const [showAllRoutineIcons, setShowAllRoutineIcons] = useState(false);
+  const [routineIconGridWidth, setRoutineIconGridWidth] = useState(0);
+  const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
     setShowAllRoutineIcons(false);
+    setConfirmDeleteVisible(false);
     if (task) {
       setTitle(task.title);
       setLevel(task.level);
@@ -833,9 +1019,15 @@ function RoutineTaskEditorSheet({
   const draftTask: RoutineTask = {
     id: task?.id ?? `routine_${Date.now()}`,
     title: title.trim(),
+    subtitle: task?.subtitle,
     level,
-    type: isSpiritual ? type : 'custom',
-    icon: isSpiritual ? undefined : icon,
+    source: task?.source ?? (isSpiritual ? 'spiritual' : 'routine'),
+    type: task ? task.type : isSpiritual ? type : 'custom',
+    icon: isSpiritual ? task?.icon : icon,
+    habitColor: task?.habitColor,
+    targetView: task?.targetView,
+    targetTab: task?.targetTab,
+    status: task?.status ?? 'active',
     time,
     frequency,
     selectedDays: frequency === 'specific_days' ? selectedDays : undefined,
@@ -851,6 +1043,7 @@ function RoutineTaskEditorSheet({
   const selectedDayIndexes = selectedDaysToTaskIndexes(selectedDays);
   const dayTimes = overridesToTaskDayTimes(dayTimeOverrides);
   const allowPerDayTimes = frequency !== 'monthly' && (frequency !== 'specific_days' || selectedDays.length > 0);
+  const canEditRoutineIcon = !isSpiritual && (!task || task.source === 'routine');
   const compactRoutineIcons = ROUTINE_ICONS.slice(0, VISIBLE_ROUTINE_ICON_COUNT);
   const selectedRoutineIcon = ROUTINE_ICONS.find(item => item.id === icon);
   const visibleRoutineIcons = showAllRoutineIcons
@@ -858,6 +1051,10 @@ function RoutineTaskEditorSheet({
     : compactRoutineIcons.some(item => item.id === icon) || !selectedRoutineIcon
       ? compactRoutineIcons
       : [...compactRoutineIcons.slice(0, VISIBLE_ROUTINE_ICON_COUNT - 1), selectedRoutineIcon];
+  const routineIconGap = 8;
+  const routineIconChipSize = routineIconGridWidth > 0
+    ? Math.max(42, Math.min(58, Math.floor((routineIconGridWidth - routineIconGap * 4) / 5)))
+    : 50;
 
   const save = () => {
     if (!title.trim()) return;
@@ -879,6 +1076,7 @@ function RoutineTaskEditorSheet({
   if (!visible) return null;
 
   return (
+    <>
     <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheetShell} keyboardAware>
           <View style={s.sheetHandle} />
 
@@ -904,28 +1102,44 @@ function RoutineTaskEditorSheet({
               />
             </View>
 
-            {defaultLevel == null && (
+            {!task && defaultLevel == null && (
               <View style={s.editorBlock}>
                 <Text style={s.mutedLabel}>Category</Text>
                 <View style={s.toggleRow}>
-                  <TouchableOpacity onPress={() => setLevel(1)} activeOpacity={0.84} style={[s.categoryBtn, level === 1 && s.categoryBtnWarm]}>
+                  <TouchableOpacity
+                    onPress={() => setLevel(1)}
+                    activeOpacity={0.84}
+                    style={[s.categoryBtn, level === 1 && s.categoryBtnWarm]}
+                  >
                     <Text style={[s.categoryBtnText, level === 1 && { color: C.gold }]}>Spiritual</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setLevel(2)} activeOpacity={0.84} style={[s.categoryBtn, level === 2 && s.categoryBtnNeutral]}>
+                  <TouchableOpacity
+                    onPress={() => setLevel(2)}
+                    activeOpacity={0.84}
+                    style={[s.categoryBtn, level === 2 && s.categoryBtnNeutral]}
+                  >
                     <Text style={[s.categoryBtnText, level === 2 && { color: '#111827' }]}>Routine</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             )}
 
-            {isSpiritual && defaultType == null && (
+            {!task && isSpiritual && defaultType == null && (
               <View style={s.editorBlock}>
                 <Text style={s.mutedLabel}>Type</Text>
                 <View style={s.typeGrid}>
                   {SPIRITUAL_TYPES.map(item => {
                     const active = type === item.id;
                     return (
-                      <TouchableOpacity key={item.id} onPress={() => setType(item.id)} activeOpacity={0.84} style={[s.typeChip, active && { backgroundColor: accent, borderColor: accent }]}>
+                      <TouchableOpacity
+                        key={item.id}
+                        onPress={() => setType(item.id)}
+                        activeOpacity={0.84}
+                        style={[
+                          s.typeChip,
+                          active && { backgroundColor: accent, borderColor: accent },
+                        ]}
+                      >
                         <item.Icon s={18} c={active ? '#FFFFFF' : '#9CA3AF'} />
                         <Text style={[s.typeChipText, active && { color: '#FFFFFF' }]}>{item.label}</Text>
                       </TouchableOpacity>
@@ -935,16 +1149,26 @@ function RoutineTaskEditorSheet({
               </View>
             )}
 
-            {!isSpiritual && (
+            {canEditRoutineIcon && (
               <View style={s.editorBlock}>
                 <Text style={s.mutedLabel}>Icon</Text>
-                <View style={s.iconGrid}>
+                <View style={s.iconGrid} onLayout={event => setRoutineIconGridWidth(event.nativeEvent.layout.width)}>
                   {visibleRoutineIcons.map(item => {
                     const active = icon === item.id;
                     return (
-                      <TouchableOpacity key={item.id} onPress={() => setIcon(item.id)} activeOpacity={0.84} style={[s.iconChip, active && s.iconChipActive]}>
-                        <item.Icon s={18} c={active ? '#FFFFFF' : '#6B7280'} />
-                        <Text style={[s.iconChipText, active && { color: '#FFFFFF' }]}>{item.label}</Text>
+                      <TouchableOpacity
+                        key={item.id}
+                        onPress={() => setIcon(item.id)}
+                        activeOpacity={0.84}
+                        style={[
+                          s.iconChip,
+                          { width: routineIconChipSize, height: routineIconChipSize },
+                          active && s.iconChipActive,
+                        ]}
+                      >
+                        <View style={s.iconGlyphBox}>
+                          <item.Icon s={22} c={active ? '#FFFFFF' : '#4B5563'} w={1.8} />
+                        </View>
                       </TouchableOpacity>
                     );
                   })}
@@ -1018,13 +1242,28 @@ function RoutineTaskEditorSheet({
             </View>
 
             {task && (
-              <TouchableOpacity onPress={() => onDelete(task.id)} activeOpacity={0.84} style={s.deleteBtn}>
+              <TouchableOpacity onPress={() => setConfirmDeleteVisible(true)} activeOpacity={0.84} style={s.deleteBtn}>
                 <Trash2 s={16} c="#EF4444" />
                 <Text style={s.deleteBtnText}>Delete Activity</Text>
               </TouchableOpacity>
             )}
           </ScrollView>
     </SmoothBottomSheet>
+    <ConfirmModal
+      visible={confirmDeleteVisible}
+      icon={<Trash2 s={22} c="#EF4444" />}
+      title="Delete Activity?"
+      body={task ? `"${task.title}" will be removed from your routine and Home tasks.` : ''}
+      confirmLabel="DELETE"
+      confirmColor="#EF4444"
+      onCancel={() => setConfirmDeleteVisible(false)}
+      onConfirm={() => {
+        if (!task) return;
+        setConfirmDeleteVisible(false);
+        void onDelete(task.id);
+      }}
+    />
+    </>
   );
 }
 
@@ -1034,9 +1273,10 @@ const s = StyleSheet.create({
   sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, paddingHorizontal: 4 },
   sectionBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingHorizontal: 4 },
   sectionKicker: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.8, color: C.gold, textTransform: 'uppercase' },
-  dayTabsRow: { gap: 8, paddingBottom: 2 },
+  dayTabsRow: { gap: 7, paddingBottom: 2, paddingHorizontal: 1 },
+  dayTabPress: { borderRadius: 16 },
   dayTab: {
-    minWidth: 58,
+    minWidth: 60,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 16,
@@ -1044,66 +1284,100 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F0EDE6',
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 11,
+    overflow: 'hidden',
+    position: 'relative',
   },
   dayTabActive: {
-    backgroundColor: C.gold,
-    borderColor: C.gold,
-    shadowColor: C.gold,
-    shadowOpacity: 0.25,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 18,
-    elevation: 3,
+    borderWidth: 0,
+    shadowColor: '#A87E33',
+    shadowOpacity: 0.28,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 14,
+    elevation: 4,
   },
-  dayTabLabel: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.2, color: '#A8A29E', textTransform: 'uppercase' },
-  dayTabLabelActive: { color: '#FFFFFF' },
-  dayTabMarker: { position: 'absolute', bottom: 6, width: 16, height: 2, borderRadius: 2, backgroundColor: '#FFFFFF' },
-  taskStack: { paddingTop: 14 },
-  gapRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 6 },
+  dayTabSheen: {
+    position: 'absolute',
+    top: 1, left: 1, right: 1,
+    height: '46%',
+    borderTopLeftRadius: 15,
+    borderTopRightRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  dayTabRim: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(150,108,40,0.32)',
+  },
+  dayTabLabel: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#A8A29E', textTransform: 'uppercase' },
+  dayTabLabelActive: { color: '#FFFFFF', letterSpacing: 1.6 },
+  dayTabMarker: { position: 'absolute', bottom: 5, width: 14, height: 1.5, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.85)' },
+  taskStack: { paddingTop: 4 },
+  gapRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 1 },
   gapLine: { width: 34, borderTopWidth: 1, borderStyle: 'dashed', borderColor: '#D6D3D1' },
   gapText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.3, color: '#A8A29E', textTransform: 'uppercase' },
-  taskCardWrap: { position: 'relative', marginBottom: 6 },
-  frequencyBadge: {
-    position: 'absolute',
-    right: 14,
-    bottom: 12,
-    backgroundColor: '#FAFAFA',
-    borderRadius: 10,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-  },
-  frequencyBadgeText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.2, color: '#A8A29E', textTransform: 'uppercase' },
+  taskCardWrap: { position: 'relative', marginBottom: 3 },
   emptyBlock: { paddingVertical: 28, alignItems: 'center' },
   emptyTitle: { fontFamily: F.serifItalic, fontSize: 15, color: '#A8A29E' },
-  addRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
-  addSpiritualBtn: {
-    flex: 1,
-    minHeight: 50,
+  addRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  addRowDivider: {
+    height: 1,
+    backgroundColor: '#EDE9E0',
+    marginTop: 18,
+    marginHorizontal: 22,
+    opacity: 0.7,
+  },
+  addBtnPress: { flex: 1, borderRadius: 18 },
+  addBtn: {
+    minHeight: 52,
     borderRadius: 18,
-    borderWidth: 2,
-    borderColor: 'rgba(197,160,89,0.35)',
+    borderWidth: 1.5,
     borderStyle: 'dashed',
-    backgroundColor: '#FFFBEB',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 8,
+    paddingHorizontal: 14,
+  },
+  addSpiritualBtn: {
+    borderColor: 'rgba(197,160,89,0.45)',
+    shadowColor: '#C5A059',
+    shadowOpacity: 0.10,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 1,
   },
   addRoutineBtn: {
-    flex: 1,
-    minHeight: 50,
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: '#D6D3D1',
-    borderStyle: 'dashed',
+    borderColor: '#CBD5E1',
+    shadowColor: '#1F2937',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 1,
+  },
+  addIconCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: '#FFFFFF',
-    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.32)',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
   },
-  addSpiritualText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.8, color: C.gold, textTransform: 'uppercase' },
-  addRoutineText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.8, color: '#6B7280', textTransform: 'uppercase' },
+  addIconCircleNeutral: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addSpiritualText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.8, color: C.gold, textTransform: 'uppercase' },
+  addRoutineText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.8, color: '#6B7280', textTransform: 'uppercase' },
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 6 },
   dividerLine: { flex: 1, height: 1, backgroundColor: '#E7E5E4' },
   roundMiniBtn: {
@@ -1223,9 +1497,10 @@ const s = StyleSheet.create({
   typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   typeChip: { width: '31%', minHeight: 74, borderRadius: 18, backgroundColor: '#F7F7F5', borderWidth: 1, borderColor: '#F2F1EC', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 6 },
   typeChipText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.2, color: '#9CA3AF', textTransform: 'uppercase', textAlign: 'center' },
-  iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  iconChip: { width: '22%', minHeight: 74, borderRadius: 18, backgroundColor: '#F7F7F5', borderWidth: 1, borderColor: '#F2F1EC', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 6 },
+  iconGrid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 8, rowGap: 8 },
+  iconChip: { borderRadius: 14, backgroundColor: '#F7F7F5', borderWidth: 1, borderColor: '#F2F1EC', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   iconChipActive: { backgroundColor: '#111827', borderColor: '#111827' },
+  iconGlyphBox: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   iconChipText: { fontFamily: F.sansBold, fontSize: 7, letterSpacing: 1.1, color: '#9CA3AF', textTransform: 'uppercase', textAlign: 'center' },
   viewMoreIconsBtn: { marginTop: 10, minHeight: 38, borderRadius: 16, borderWidth: 1, borderStyle: 'dashed', borderColor: '#D6D3D1', backgroundColor: '#FAFAFA', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   viewMoreIconsText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.7, color: '#6B7280', textTransform: 'uppercase' },

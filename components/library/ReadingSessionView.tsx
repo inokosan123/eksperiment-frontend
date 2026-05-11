@@ -1,8 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Animated, BackHandler, FlatList, Platform,
+  BackHandler, FlatList, Platform,
   StyleSheet, Text, TouchableOpacity, View, useWindowDimensions,
 } from 'react-native';
+import Reanimated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,7 +16,7 @@ import FocusLottie from '@/components/focus/FocusLottie';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { ArrowLeft, CheckSmall, Pause, Pencil, Play, X } from '@/components/icons/Icons';
+import { ArrowLeft, CheckSmall, Clock, Pause, Play, X } from '@/components/icons/Icons';
 import { F } from '@/constants/tokens';
 import { useReadingList } from '@/components/library/ReadingListContext';
 
@@ -37,8 +43,9 @@ type Props = {
   title: string;
   author?: string;
   isTask?: boolean;
+  sessionDate?: string;
   onBack: () => void;
-  onComplete?: () => void;
+  onComplete?: () => void | Promise<void>;
 };
 
 export default function ReadingSessionView({
@@ -46,10 +53,11 @@ export default function ReadingSessionView({
   title,
   author,
   isTask = false,
+  sessionDate,
   onBack,
   onComplete,
 }: Props) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const { recordSession } = useReadingList();
   const isFree = !bookId;
 
@@ -64,13 +72,12 @@ export default function ReadingSessionView({
   const celebrated = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Animated
-  const numShift   = useRef(new Animated.Value(0)).current;
-  const sandyAnim  = useRef(new Animated.Value(0)).current;
-  const glowAnim   = useRef(new Animated.Value(0)).current;
+  const timerLift = useSharedValue(0);
+  const sandyOpacity = useSharedValue(0);
 
   // Dimensions — same approach as Focus Zone
-  const diameter = Math.min(width - 24, 360);
+  const isCompactHeight = height < 720;
+  const diameter = Math.min(width - (isCompactHeight ? 72 : 30), isCompactHeight ? 292 : 348);
   const timeFont = Math.round(diameter * 0.265);
   const colonFont = Math.round(diameter * 0.10);
 
@@ -101,12 +108,21 @@ export default function ReadingSessionView({
 
   // Animate on running change
   useEffect(() => {
-    Animated.parallel([
-      Animated.spring(numShift, { toValue: running ? -14 : 0, useNativeDriver: true, tension: 60, friction: 10 }),
-      Animated.timing(sandyAnim, { toValue: running ? 1 : 0, duration: 400, useNativeDriver: true }),
-      Animated.timing(glowAnim,  { toValue: running ? 1 : 0, duration: 700, useNativeDriver: true }),
-    ]).start();
-  }, [running]);
+    timerLift.value = withSpring(running ? -14 : 0, {
+      damping: 17,
+      stiffness: 190,
+      mass: 0.8,
+    });
+    sandyOpacity.value = withTiming(running ? 1 : 0, { duration: running ? 340 : 180 });
+  }, [running, sandyOpacity, timerLift]);
+
+  const timerTextMotionStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: timerLift.value }],
+  }));
+
+  const sandyMotionStyle = useAnimatedStyle(() => ({
+    opacity: sandyOpacity.value,
+  }));
 
   // Android back
   useEffect(() => {
@@ -141,13 +157,13 @@ export default function ReadingSessionView({
     setShowPicker(false);
   }, []);
 
-  const handleFinish = useCallback(() => {
+  const handleFinish = useCallback(async () => {
     const elapsed = Math.round((selectedSecs - timerSecs) / 60);
-    if (elapsed >= 1 && bookId) recordSession(bookId, elapsed);
+    if (elapsed >= 1 && bookId) await recordSession(bookId, elapsed, sessionDate);
     if (isTask && Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onComplete?.();
+    await onComplete?.();
     onBack();
-  }, [selectedSecs, timerSecs, bookId, isTask, onComplete, onBack]);
+  }, [selectedSecs, timerSecs, bookId, recordSession, sessionDate, isTask, onComplete, onBack]);
 
   return (
     <View style={s.screen}>
@@ -165,7 +181,7 @@ export default function ReadingSessionView({
       <Text style={s.quoteRef}>{QUOTE_REF}</Text>
 
       {/* Center — presets + ring + controls */}
-      <View style={s.center}>
+      <View style={[s.center, isCompactHeight && s.centerCompact]}>
 
         {/* Presets */}
         {/* Segmented control + custom link */}
@@ -191,9 +207,9 @@ export default function ReadingSessionView({
             activeOpacity={running ? 1 : 0.7}
             style={s.customLink}
           >
-            <Pencil s={11} c={isCustom ? GOLD : '#B8B0A8'} />
+            <Clock s={12} c={isCustom ? GOLD : '#9C948C'} w={2} />
             <Text style={[s.customLinkText, isCustom && s.customLinkTextActive]}>
-              {isCustom ? `${currentMins} min — custom` : 'Custom time'}
+              {isCustom ? `${currentMins} min — custom` : 'Set custom time'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -206,7 +222,7 @@ export default function ReadingSessionView({
         />
 
         {/* Ring — Focus Zone proportions */}
-        <View style={[s.timerWrap, { width: diameter, height: diameter }]}>
+        <View style={[s.timerWrap, isCompactHeight && s.timerWrapCompact, { width: diameter, height: diameter }]}>
           <Svg
             width={diameter}
             height={diameter}
@@ -240,28 +256,28 @@ export default function ReadingSessionView({
             </View>
           ) : (
             <>
-              <Animated.View style={[s.timerTextWrap, { transform: [{ translateY: numShift }] }]}>
+              <Reanimated.View style={[s.timerTextWrap, timerTextMotionStyle]}>
                 <Text style={[s.timeText, { color: ringColor, fontSize: timeFont, lineHeight: timeFont + 4 }]}>{mins}</Text>
                 <Text style={[s.colonText, { color: ringColor, fontSize: colonFont }]}>:</Text>
                 <Text style={[s.timeText, { color: ringColor, fontSize: timeFont, lineHeight: timeFont + 4 }]}>{secs}</Text>
-              </Animated.View>
+              </Reanimated.View>
 
-              <Animated.View style={[s.sandyWrap, { opacity: sandyAnim }]}>
+              <Reanimated.View style={[s.sandyWrap, sandyMotionStyle]}>
                 <FocusLottie name="meru-book" loop speed={0.6} style={s.sandyLottie} />
-              </Animated.View>
+              </Reanimated.View>
             </>
           )}
         </View>
 
         {/* Controls deck — Focus Zone pill style */}
-        <View style={s.controlsDeck}>
+        <View style={[s.controlsDeck, isCompactHeight && s.controlsDeckCompact]}>
           {/* Finish — small left */}
           <TouchableOpacity
             onPress={() => isTask ? setShowFinish(true) : handleFinish()}
             activeOpacity={0.78}
-            style={s.smallControl}
+            style={[s.smallControl, isCompactHeight && s.smallControlCompact]}
           >
-            <CheckSmall s={22} c="rgba(28,25,23,0.38)" w={1.8} />
+            <CheckSmall s={isCompactHeight ? 19 : 22} c="rgba(28,25,23,0.38)" w={1.8} />
             <Text style={s.smallLabel}>Finish</Text>
           </TouchableOpacity>
 
@@ -272,18 +288,19 @@ export default function ReadingSessionView({
             disabled={done}
             style={[
               s.mainControl,
+              isCompactHeight && s.mainControlCompact,
               { backgroundColor: running ? GOLD : INK, shadowColor: running ? GOLD : INK },
               done && { opacity: 0.35 },
             ]}
           >
-            {running ? <Pause s={30} c="#FFFFFF" /> : <Play s={30} c="#FFFFFF" />}
+            {running ? <Pause s={isCompactHeight ? 26 : 30} c="#FFFFFF" /> : <Play s={isCompactHeight ? 26 : 30} c="#FFFFFF" />}
           </TouchableOpacity>
 
           {/* Reset — small right */}
           <TouchableOpacity
             onPress={() => selectPreset(selectedSecs / 60)}
             activeOpacity={0.78}
-            style={[s.smallControl, running && { opacity: 0.22 }]}
+            style={[s.smallControl, isCompactHeight && s.smallControlCompact, running && { opacity: 0.22 }]}
             disabled={running}
           >
             <Text style={s.resetGlyph}>↺</Text>
@@ -438,43 +455,54 @@ const ps = StyleSheet.create({
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#FFFFFF', overflow: 'hidden' },
 
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, paddingBottom: 28, paddingTop: 0 },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingBottom: 86,
+    paddingTop: 12,
+  },
+  centerCompact: {
+    paddingBottom: 18,
+    paddingTop: 14,
+  },
 
   quote: {
     fontFamily: F.serifItalic,
-    fontSize: 17,
-    lineHeight: 26,
+    fontSize: 18,
+    lineHeight: 27,
     color: 'rgba(122,98,69,0.8)',
     textAlign: 'center',
-    paddingHorizontal: 28,
-    marginTop: 18,
-    marginBottom: 6,
+    paddingHorizontal: 26,
+    marginTop: 24,
+    marginBottom: 8,
   },
   quoteRef: {
     fontFamily: F.sansBold,
-    fontSize: 9,
+    fontSize: 9.5,
     letterSpacing: 2,
     color: 'rgba(197,160,89,0.6)',
     textTransform: 'uppercase',
     textAlign: 'center',
-    marginBottom: 0,
-    marginTop: 2,
+    marginBottom: 9,
+    marginTop: 3,
   },
 
-  segWrap: { width: '100%', alignItems: 'center', gap: 8, marginBottom: 8 },
+  segWrap: { width: '100%', alignItems: 'center', gap: 6, marginBottom: 4 },
   segDisabled: { opacity: 0.32 },
 
   seg: {
     flexDirection: 'row',
-    width: '100%',
+    width: '74%',
     backgroundColor: '#F3F2EF',
-    borderRadius: 20,
-    padding: 4,
-    gap: 4,
+    borderRadius: 19,
+    padding: 3,
+    gap: 3,
   },
   segItem: {
     flex: 1,
-    height: 38,
+    height: 36,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -492,18 +520,30 @@ const s = StyleSheet.create({
   segText: { fontFamily: F.sansBold, fontSize: 13, letterSpacing: 0.8, color: '#A8A29E' },
   segTextActive: { fontFamily: F.sansBold, fontSize: 13, letterSpacing: 0.8, color: GOLD },
 
-  customLink: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
-  customLinkText: { fontFamily: F.sansMedium, fontSize: 14, color: '#A8A29E', letterSpacing: 0.3 },
+  customLink: {
+    minHeight: 29,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#FFFBF4',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.16)',
+  },
+  customLinkText: { fontFamily: F.sansMedium, fontSize: 13.5, color: '#9C948C', letterSpacing: 0.25 },
   customLinkTextActive: { color: GOLD, fontFamily: F.sansSemiBold },
 
 
   // Ring — Focus Zone style
-  timerWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center', marginBottom: 28 },
+  timerWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center', marginTop: 5, marginBottom: 20 },
+  timerWrapCompact: { marginTop: 0, marginBottom: 10 },
   timerTextWrap: { position: 'absolute', flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center' },
   timeText: { fontFamily: F.serifBold, letterSpacing: -1 },
   colonText: { fontFamily: F.serifBold, opacity: 0.35, marginHorizontal: 3 },
-  sandyWrap: { position: 'absolute', top: '55%', left: 0, right: 0, alignItems: 'center' },
-  sandyLottie: { width: 180, height: 180 },
+  sandyWrap: { position: 'absolute', top: '54%', left: 0, right: 0, alignItems: 'center' },
+  sandyLottie: { width: 158, height: 158 },
 
   doneWrap: { position: 'absolute', alignItems: 'center', gap: 8 },
   doneCircle: {
@@ -517,10 +557,10 @@ const s = StyleSheet.create({
   controlsDeck: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 24,
+    gap: 20,
     backgroundColor: '#FFFFFF',
-    padding: 12,
-    paddingHorizontal: 16,
+    padding: 10,
+    paddingHorizontal: 14,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(28,25,23,0.06)',
@@ -530,13 +570,20 @@ const s = StyleSheet.create({
     shadowRadius: 30,
     elevation: 9,
   },
+  controlsDeckCompact: {
+    gap: 16,
+    padding: 8,
+    paddingHorizontal: 12,
+  },
   mainControl: {
-    width: 80, height: 80, borderRadius: 40,
+    width: 74, height: 74, borderRadius: 37,
     alignItems: 'center', justifyContent: 'center',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.28, shadowRadius: 18, elevation: 10,
   },
-  smallControl: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+  mainControlCompact: { width: 64, height: 64, borderRadius: 32 },
+  smallControl: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  smallControlCompact: { width: 48, height: 48, borderRadius: 24 },
   smallLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 0.8, color: 'rgba(28,25,23,0.32)', marginTop: 2, textTransform: 'uppercase' },
   resetGlyph: { fontSize: 22, color: 'rgba(28,25,23,0.38)', lineHeight: 24 },
 });

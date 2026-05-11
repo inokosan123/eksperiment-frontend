@@ -1,39 +1,58 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { useEffect, useState } from 'react';
+import {
+  Modal, View, Text, StyleSheet,
+} from 'react-native';
 import LottieView from 'lottie-react-native';
 import { PartyPopper } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 
 export default function CelebrationOverlay() {
+  const [showConfetti, setShowConfetti] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowConfetti(true), 430);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
-    <View style={s.wrap} pointerEvents="none">
-      <LottieView
-        source={require('@/assets/animations/task-complete.json')}
-        autoPlay
-        loop={false}
-        webStyle={s.lottieWeb as any}
-      />
-      <View style={s.card}>
-        <PartyPopper s={40} c={C.gold} />
-        <Text style={s.title}>Dream Achieved!</Text>
-        <Text style={s.label}>CONGRATULATIONS</Text>
+    <Modal transparent visible animationType="none">
+      <View style={s.wrap} pointerEvents="none">
+        <View style={s.scrim} />
+        <View style={s.card}>
+          <PartyPopper s={40} c={C.gold} />
+          <Text style={s.title}>Dream Achieved!</Text>
+          <Text style={s.label}>CONGRATULATIONS</Text>
+        </View>
+        {showConfetti && (
+          <LottieView
+            source={require('@/assets/animations/task-complete.json')}
+            autoPlay
+            loop={false}
+            webStyle={s.lottieWeb as any}
+          />
+        )}
       </View>
-    </View>
+    </Modal>
   );
 }
 
 const s = StyleSheet.create({
   wrap: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 50,
+    zIndex: 5000,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(17,17,17,0.38)',
   },
   lottieWeb: {
     position: 'absolute',
     inset: 0,
     width: '100%',
     height: '100%',
+    zIndex: 3,
   },
   card: {
     zIndex: 2,

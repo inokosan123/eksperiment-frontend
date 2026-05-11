@@ -1,5 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Reanimated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import FocusLottie from '@/components/focus/FocusLottie';
 import { Book, ChevronLeft, ChevronRight, Clock } from '@/components/icons/Icons';
@@ -51,24 +56,41 @@ function formatMinutes(minutes: number) {
   return rest > 0 ? `${hours}h ${rest}m` : `${hours}h`;
 }
 
+function toLocalDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function mondayFirstDayIndex(date: Date) {
+  return (date.getDay() + 6) % 7;
+}
+
 export default function ReadingAnalyticsView() {
-  const { books } = useReadingList();
+  const { books, sessions } = useReadingList();
   const [tab, setTab] = useState<StatsTab>('sessions');
-  const pillAnim = useRef(new Animated.Value(0)).current;
-  const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
-  const todayDayIndex = today.getDay() === 0 ? 6 : today.getDay() - 1;
+  const tabProgress = useSharedValue(0);
+  const [toggleWidth, setToggleWidth] = useState(0);
+  const togglePillWidth = toggleWidth > 0 ? (toggleWidth - 8) / 2 : 0;
+  const today = useMemo(() => new Date(), []);
+  const todayStr = toLocalDateKey(today);
+  const todayDayIndex = mondayFirstDayIndex(today);
   const [calMonth, setCalMonth] = useState(today.getMonth());
   const [calYear, setCalYear] = useState(today.getFullYear());
 
   useEffect(() => {
-    Animated.spring(pillAnim, {
-      toValue: tab === 'sessions' ? 0 : 1,
-      useNativeDriver: false,
-      tension: 60,
-      friction: 10,
-    }).start();
-  }, [tab]);
+    tabProgress.value = withSpring(tab === 'sessions' ? 0 : 1, {
+      damping: 19,
+      stiffness: 220,
+      mass: 0.75,
+    });
+  }, [tab, tabProgress]);
+
+  const togglePillStyle = useAnimatedStyle(() => ({
+    width: togglePillWidth,
+    transform: [{ translateX: tabProgress.value * togglePillWidth }],
+  }), [togglePillWidth]);
 
   const totals = useMemo(() => books.reduce((acc, book) => ({
     sessions: acc.sessions + book.sessions,
@@ -80,19 +102,26 @@ export default function ReadingAnalyticsView() {
     .sort((a, b) => tab === 'sessions' ? b.sessions - a.sessions : b.totalMinutes - a.totalMinutes),
   [books, tab]);
 
-  // Weekly bars — sessions & minutes per day (mock seeded from real book data)
+  // Weekly bars — real session data, Monday to Sunday.
   const weekData = useMemo(() => {
     const days = Array.from({ length: 7 }, (_, i) => ({ sessions: 0, minutes: 0 }));
-    books.forEach(book => {
-      if (book.lastSessionAt) {
-        const d = new Date(book.lastSessionAt);
-        const idx = d.getDay() === 0 ? 6 : d.getDay() - 1;
-        days[idx].sessions += book.sessions > 0 ? Math.max(1, Math.round(book.sessions / 7)) : 0;
-        days[idx].minutes += book.totalMinutes > 0 ? Math.max(5, Math.round(book.totalMinutes / 7)) : 0;
-      }
+    const weekStart = new Date(today);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(today.getDate() - todayDayIndex);
+    const weekStartKey = toLocalDateKey(weekStart);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    const weekEndKey = toLocalDateKey(weekEnd);
+
+    sessions.forEach(session => {
+      if (session.sessionDate < weekStartKey || session.sessionDate > weekEndKey) return;
+      const d = new Date(`${session.sessionDate}T12:00:00`);
+      const idx = mondayFirstDayIndex(d);
+      days[idx].sessions += 1;
+      days[idx].minutes += session.minutes;
     });
     return days;
-  }, [books]);
+  }, [sessions, today, todayDayIndex]);
 
   const maxSessionBar = Math.max(...weekData.map(d => d.sessions), 1);
   const maxMinuteBar = Math.max(...weekData.map(d => d.minutes), 1);
@@ -106,14 +135,13 @@ export default function ReadingAnalyticsView() {
     for (let i = 0; i < offset; i++) cells.push({ day: 0, dateStr: '', count: 0, minutes: 0 });
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      // Seed activity from books with sessions
-      const hasSessions = books.some(b => b.sessions > 0 && b.lastSessionAt && new Date(b.lastSessionAt).getMonth() === calMonth);
-      const count = hasSessions && d % 3 !== 0 ? Math.ceil(Math.random() * 3) : 0;
-      const minutes = count * 30;
+      const daySessions = sessions.filter(session => session.sessionDate === dateStr);
+      const count = daySessions.length;
+      const minutes = daySessions.reduce((sum, session) => sum + session.minutes, 0);
       cells.push({ day: d, dateStr, count, minutes });
     }
     return cells;
-  }, [calMonth, calYear, books]);
+  }, [calMonth, calYear, sessions]);
 
   return (
     <View style={s.screen}>
@@ -136,11 +164,8 @@ export default function ReadingAnalyticsView() {
         </View>
 
         {/* Toggle — animated pill */}
-        <View style={s.toggle}>
-          <Animated.View style={[
-            s.togglePill,
-            { left: pillAnim.interpolate({ inputRange: [0, 1], outputRange: ['2%', '50%'] }) },
-          ]} />
+        <View style={s.toggle} onLayout={event => setToggleWidth(event.nativeEvent.layout.width)}>
+          <Reanimated.View style={[s.togglePill, togglePillStyle]} />
           <TouchableOpacity onPress={() => setTab('sessions')} activeOpacity={0.85} style={s.toggleBtn}>
             <FocusLottie name="fire" loop style={[s.toggleFlame, tab !== 'sessions' && { opacity: 0.3 }]} />
             <Text style={[s.toggleText, tab === 'sessions' && s.toggleTextActive]}>Sessions</Text>
@@ -327,7 +352,7 @@ const s = StyleSheet.create({
   togglePill: {
     position: 'absolute',
     top: 4,
-    width: '48%',
+    left: 4,
     bottom: 4,
     borderRadius: 14,
     backgroundColor: '#FFFFFF',

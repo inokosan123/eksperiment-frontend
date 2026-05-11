@@ -312,6 +312,35 @@ export const Trash2 = ({ s = 20, c = d, w = 2 }: P) => (
   </Svg>
 );
 
+export const Crown = ({ s = 22, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z" />
+    <Path d="M5 19h14" />
+  </Svg>
+);
+
+export const AlertTriangle = ({ s = 22, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+    <Line x1="12" y1="9" x2="12" y2="13" />
+    <Line x1="12" y1="17" x2="12.01" y2="17" />
+  </Svg>
+);
+
+export const TrendingUp = ({ s = 22, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+    <Polyline points="17 6 23 6 23 12" />
+  </Svg>
+);
+
+export const TrendingDown = ({ s = 22, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Polyline points="23 18 13.5 8.5 8.5 13.5 1 6" />
+    <Polyline points="17 18 23 18 23 12" />
+  </Svg>
+);
+
 export const PartyPopper = ({ s = 22, c = d, w = 2 }: P) => (
   <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
     <Path d="M5.8 11.3 2 22l10.7-3.8" />
@@ -335,10 +364,12 @@ export const Activity = ({ s = 18, c = d, w = 2 }: P) => (
 export const Dumbbell = ({ s = 20, c = d, w = 2 }: P) => (
   <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
     <Path d="m6.5 6.5 11 11" />
-    <Path d="m21 14-7 7" />
+    <Path d="m21 21-1-1" />
+    <Path d="m3 3 1 1" />
+    <Path d="m18 22 4-4" />
+    <Path d="m2 6 4-4" />
     <Path d="m3 10 7-7" />
-    <Path d="m18 11 3 3" />
-    <Path d="m3 10 3 3" />
+    <Path d="m14 21 7-7" />
   </Svg>
 );
 

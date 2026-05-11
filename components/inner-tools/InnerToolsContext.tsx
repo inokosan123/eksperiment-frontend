@@ -44,17 +44,26 @@ export type GratitudeEntry = {
   createdAt: number;
 };
 
-export type IdealSelfItem = {
-  id: string;
-  text: string;
-  order: number;
-};
-
+// Anasta IdealSelf — nine-step "ideal self" flow split into LIFE + FAITH.
+// Vision:               free text picture of the future self.
+// Qualities:            5–10 short tags describing that person.
+// Obstacles:            life-side blockers ("what separates you most").
+// Actions:              life-side daily moves toward that person.
+// Routines:             rhythms / habits that person keeps.
+// RelationshipWithGod:  free text — the bond / trust / prayer they want.
+// SpiritualObstacles:   what blocks that relationship most.
+// SpiritualActions:     what they do daily to draw closer.
+// FaithPractice:        concrete prayer / scripture / fasting practices.
 export type IdealSelfProfile = {
-  description: string;
-  gapDescription: string;
-  changeDescription: string;
-  items: IdealSelfItem[];
+  vision: string;
+  qualities: string[];
+  obstacles: string[];
+  actions: string[];
+  routines: string[];
+  relationshipWithGod: string;
+  spiritualObstacles: string[];
+  spiritualActions: string[];
+  faithPractice: string[];
   createdAt: number;
   updatedAt: number;
 };
@@ -96,6 +105,22 @@ type InnerToolsContextValue = {
   setGratitudeTaskDayTimes: (dayTimes: GratitudeTaskDayTimes) => void;
   idealSelf: IdealSelfProfile | null;
   saveIdealSelf: (profile: IdealSelfProfile) => void;
+};
+
+type GratitudeEntryRow = {
+  id: string;
+  kind: GratitudeKind;
+  title: string | null;
+  content: string | null;
+  entry_date: string;
+  created_at: number;
+};
+
+type GratitudeTaskRow = {
+  enabled: number;
+  time: string;
+  frequency: GratitudeTaskFrequency;
+  same_time_every_day: number;
 };
 
 const InnerToolsContext = createContext<InnerToolsContextValue | null>(null);
@@ -186,24 +211,71 @@ function normalizeGratitudeEntries(value: unknown): GratitudeEntry[] {
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
+function rowToGratitudeEntry(row: GratitudeEntryRow): GratitudeEntry {
+  return {
+    id: row.id,
+    kind: normalizeGratitudeKind(row.kind),
+    title: row.title ?? '',
+    content: row.content ?? '',
+    date: row.entry_date,
+    createdAt: row.created_at,
+  };
+}
+
+function toStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(item => typeof item === 'string' ? item.trim() : '')
+    .filter(item => item.length > 0);
+}
+
 function normalizeIdealSelf(value: unknown): IdealSelfProfile | null {
   if (!value || typeof value !== 'object') return null;
 
   const raw = value as Record<string, unknown>;
-  const rawItems = Array.isArray(raw.items) ? raw.items : [];
+  const vision = typeof raw.vision === 'string' ? raw.vision : '';
+  // Migrate legacy 'calling' → 'relationshipWithGod'. Old saved profiles
+  // still have the calling field; new shape stores it under the relationship
+  // key. Whichever exists, prefer the new key.
+  const relationshipWithGod =
+    typeof raw.relationshipWithGod === 'string' ? raw.relationshipWithGod
+    : typeof raw.calling === 'string' ? raw.calling
+    : '';
+  const qualities = toStringList(raw.qualities);
+  const obstacles = toStringList(raw.obstacles);
+  const actions = toStringList(raw.actions);
+  const routines = toStringList(raw.routines);
+  const spiritualObstacles = toStringList(raw.spiritualObstacles);
+  const spiritualActions = toStringList(raw.spiritualActions);
+  const faithPractice = toStringList(raw.faithPractice);
+
+  // Treat a profile as missing if every field is empty — older data shapes
+  // (description/gap/change/items) won't satisfy this and will trigger the
+  // first-time flow rather than rendering a half-empty summary.
+  if (
+    !vision &&
+    !relationshipWithGod &&
+    qualities.length === 0 &&
+    obstacles.length === 0 &&
+    actions.length === 0 &&
+    routines.length === 0 &&
+    spiritualObstacles.length === 0 &&
+    spiritualActions.length === 0 &&
+    faithPractice.length === 0
+  ) {
+    return null;
+  }
 
   return {
-    description: String(raw.description ?? ''),
-    gapDescription: String(raw.gapDescription ?? ''),
-    changeDescription: String(raw.changeDescription ?? ''),
-    items: rawItems
-      .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
-      .map((item, index) => ({
-        id: String(item.id ?? `ideal_self_${index}`),
-        text: String(item.text ?? ''),
-        order: Number(item.order ?? index),
-      }))
-      .sort((a, b) => a.order - b.order),
+    vision,
+    qualities,
+    obstacles,
+    actions,
+    routines,
+    relationshipWithGod,
+    spiritualObstacles,
+    spiritualActions,
+    faithPractice,
     createdAt: Number(raw.createdAt ?? Date.now()),
     updatedAt: Number(raw.updatedAt ?? raw.createdAt ?? Date.now()),
   };
@@ -244,6 +316,21 @@ function normalizeGratitudeTaskSettings(value: unknown): GratitudeTaskSettings {
   };
 }
 
+function rowToGratitudeTaskSettings(
+  row: GratitudeTaskRow | null,
+  dayTimes: GratitudeTaskDayTimes,
+): GratitudeTaskSettings {
+  if (!row) return DEFAULT_GRATITUDE_TASK;
+  const time = normalizeTaskTime(row.time);
+  return {
+    enabled: Number(row.enabled || 0) === 1,
+    time,
+    frequency: row.frequency === 'weekdays' ? 'weekdays' : 'daily',
+    sameTimeEveryDay: Number(row.same_time_every_day || 0) === 1,
+    dayTimes: normalizeTaskDayTimes(dayTimes, time),
+  };
+}
+
 async function initInnerToolsDb(db: SQLite.SQLiteDatabase) {
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS journal_store (
@@ -265,21 +352,150 @@ async function initInnerToolsDb(db: SQLite.SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_notes_type ON notes(type);
     CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_notes_updated_at ON notes(updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS gratitude_entries (
+      id TEXT PRIMARY KEY NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'life',
+      title TEXT,
+      content TEXT NOT NULL DEFAULT '',
+      entry_date TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS gratitude_task_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      time TEXT NOT NULL DEFAULT '08:00',
+      frequency TEXT NOT NULL DEFAULT 'daily',
+      same_time_every_day INTEGER NOT NULL DEFAULT 1,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS gratitude_task_day_times (
+      day_index INTEGER PRIMARY KEY NOT NULL,
+      time TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_gratitude_entries_kind_date ON gratitude_entries(kind, entry_date);
+    CREATE INDEX IF NOT EXISTS idx_gratitude_entries_created_at ON gratitude_entries(created_at DESC);
   `);
 }
 
+async function saveGratitudeTaskSettingsToDb(
+  db: SQLite.SQLiteDatabase,
+  settings: GratitudeTaskSettings,
+) {
+  const time = normalizeTaskTime(settings.time);
+  await db.runAsync(
+    `INSERT INTO gratitude_task_settings (
+      id, enabled, time, frequency, same_time_every_day, updated_at
+    ) VALUES ('default', ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      enabled = excluded.enabled,
+      time = excluded.time,
+      frequency = excluded.frequency,
+      same_time_every_day = excluded.same_time_every_day,
+      updated_at = excluded.updated_at`,
+    settings.enabled ? 1 : 0,
+    time,
+    settings.frequency === 'weekdays' ? 'weekdays' : 'daily',
+    settings.sameTimeEveryDay ? 1 : 0,
+    Date.now(),
+  );
+
+  await db.runAsync('DELETE FROM gratitude_task_day_times');
+  if (!settings.sameTimeEveryDay) {
+    const normalizedDayTimes = normalizeTaskDayTimes(settings.dayTimes, time);
+    for (const [dayIndex, dayTime] of Object.entries(normalizedDayTimes)) {
+      await db.runAsync(
+        'INSERT OR REPLACE INTO gratitude_task_day_times (day_index, time) VALUES (?, ?)',
+        Number(dayIndex),
+        dayTime,
+      );
+    }
+  }
+}
+
+async function migrateLegacyGratitude(db: SQLite.SQLiteDatabase) {
+  const entryCount = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) AS count FROM gratitude_entries',
+  );
+  if (!entryCount?.count) {
+    const legacyEntries = normalizeGratitudeEntries(
+      await getStoredJson<unknown>(db, STORE_KEYS.gratitudeNotes, []),
+    );
+    for (const entry of legacyEntries) {
+      await db.runAsync(
+        `INSERT OR IGNORE INTO gratitude_entries (
+          id, kind, title, content, entry_date, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        entry.id,
+        entry.kind,
+        entry.title || null,
+        entry.content ?? '',
+        entry.date,
+        entry.createdAt,
+        entry.createdAt,
+      );
+    }
+  }
+
+  const taskCount = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) AS count FROM gratitude_task_settings',
+  );
+  if (!taskCount?.count) {
+    const legacyTask = normalizeGratitudeTaskSettings(
+      await getStoredJson<unknown>(db, STORE_KEYS.gratitudeTask, DEFAULT_GRATITUDE_TASK),
+    );
+    await saveGratitudeTaskSettingsToDb(db, legacyTask);
+  }
+}
+
+async function loadGratitudeEntries(db: SQLite.SQLiteDatabase) {
+  const rows = await db.getAllAsync<GratitudeEntryRow>(
+    `SELECT id, kind, title, content, entry_date, created_at
+     FROM gratitude_entries
+     ORDER BY created_at DESC`,
+  );
+  return rows.map(rowToGratitudeEntry);
+}
+
+async function loadGratitudeTaskSettings(db: SQLite.SQLiteDatabase) {
+  const [row, dayRows] = await Promise.all([
+    db.getFirstAsync<GratitudeTaskRow>(
+      `SELECT enabled, time, frequency, same_time_every_day
+       FROM gratitude_task_settings
+       WHERE id = 'default'
+       LIMIT 1`,
+    ),
+    db.getAllAsync<{ day_index: number; time: string }>(
+      'SELECT day_index, time FROM gratitude_task_day_times ORDER BY day_index ASC',
+    ),
+  ]);
+
+  const dayTimes = dayRows.reduce<GratitudeTaskDayTimes>((acc, item) => {
+    acc[item.day_index] = item.time;
+    return acc;
+  }, {});
+
+  return rowToGratitudeTaskSettings(row, dayTimes);
+}
+
 async function loadInnerToolsSnapshot(db: SQLite.SQLiteDatabase): Promise<InnerToolsSnapshot> {
-  const [noteRows, gratitudeBlob, gratitudeTaskBlob, idealSelfBlob] = await Promise.all([
+  await migrateLegacyGratitude(db);
+
+  const [noteRows, gratitudeRows, gratitudeTaskSettings, idealSelfBlob] = await Promise.all([
     db.getAllAsync<Record<string, unknown>>('SELECT * FROM notes ORDER BY created_at DESC'),
-    getStoredJson<unknown>(db, STORE_KEYS.gratitudeNotes, []),
-    getStoredJson<unknown>(db, STORE_KEYS.gratitudeTask, DEFAULT_GRATITUDE_TASK),
+    loadGratitudeEntries(db),
+    loadGratitudeTaskSettings(db),
     getStoredJson<unknown>(db, STORE_KEYS.idealSelf, null),
   ]);
 
   return {
     notes: noteRows.map(rowToInnerNote),
-    gratitudeEntries: normalizeGratitudeEntries(gratitudeBlob),
-    gratitudeTask: normalizeGratitudeTaskSettings(gratitudeTaskBlob),
+    gratitudeEntries: gratitudeRows,
+    gratitudeTask: gratitudeTaskSettings,
     idealSelf: normalizeIdealSelf(idealSelfBlob),
   };
 }
@@ -315,15 +531,39 @@ export function InnerToolsProvider({ children }: { children: React.ReactNode }) 
     applySnapshot(await loadInnerToolsSnapshot(db));
   }, [applySnapshot, userDb]);
 
-  const persistGratitudeEntries = useCallback(async (entries: GratitudeEntry[]) => {
+  const persistGratitudeEntry = useCallback(async (entry: GratitudeEntry) => {
     const db = await getReadyDb();
-    await saveStoredJson(db, STORE_KEYS.gratitudeNotes, entries);
+    const now = Date.now();
+    await db.runAsync(
+      `INSERT INTO gratitude_entries (
+        id, kind, title, content, entry_date, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        kind = excluded.kind,
+        title = excluded.title,
+        content = excluded.content,
+        entry_date = excluded.entry_date,
+        updated_at = excluded.updated_at`,
+      entry.id,
+      normalizeGratitudeKind(entry.kind),
+      entry.title || null,
+      entry.content ?? '',
+      entry.date,
+      entry.createdAt || now,
+      now,
+    );
+    await refreshInnerTools(db);
+  }, [getReadyDb, refreshInnerTools]);
+
+  const persistDeleteGratitudeEntry = useCallback(async (id: string) => {
+    const db = await getReadyDb();
+    await db.runAsync('DELETE FROM gratitude_entries WHERE id = ?', id);
     await refreshInnerTools(db);
   }, [getReadyDb, refreshInnerTools]);
 
   const persistGratitudeTask = useCallback(async (settings: GratitudeTaskSettings) => {
     const db = await getReadyDb();
-    await saveStoredJson(db, STORE_KEYS.gratitudeTask, settings);
+    await saveGratitudeTaskSettingsToDb(db, settings);
     await refreshInnerTools(db);
   }, [getReadyDb, refreshInnerTools]);
 
@@ -401,16 +641,14 @@ export function InnerToolsProvider({ children }: { children: React.ReactNode }) 
           ? prev.map(item => item.id === entry.id ? entry : item)
           : [entry, ...prev];
 
-        void persistGratitudeEntries(
-          [...next].sort((a, b) => b.createdAt - a.createdAt),
-        );
-        return next;
+        void persistGratitudeEntry(entry);
+        return [...next].sort((a, b) => b.createdAt - a.createdAt);
       });
     },
     deleteGratitudeEntry: (id) => {
       setGratitudeEntries(prev => {
         const next = prev.filter(item => item.id !== id);
-        void persistGratitudeEntries(next);
+        void persistDeleteGratitudeEntry(id);
         return next;
       });
     },
@@ -465,7 +703,8 @@ export function InnerToolsProvider({ children }: { children: React.ReactNode }) 
     gratitudeTask,
     idealSelf,
     notes,
-    persistGratitudeEntries,
+    persistDeleteGratitudeEntry,
+    persistGratitudeEntry,
     persistGratitudeTask,
     persistIdealSelf,
     upsertNote,

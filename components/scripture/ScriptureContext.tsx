@@ -7,7 +7,7 @@ import { HighlightColor, DEFAULT_CATEGORIES, ColorCategory } from '@/constants/a
 import {
   BIBLE_BOOKS, BibleBook, ScriptureLanguage, formatScriptureRef, getBibleBook,
 } from '@/constants/scripture';
-import { USER_CONTENT_DB_NAME } from '@/constants/userDatabase';
+import { openUserContentDb } from '@/data/userContentDb';
 
 export type BibleVerse = {
   bookId: number;
@@ -76,6 +76,10 @@ type ScriptureContextValue = {
 
 const ScriptureContext = createContext<ScriptureContextValue | null>(null);
 
+type TableInfoRow = {
+  name: string;
+};
+
 function buildFtsQuery(query: string) {
   const terms = query
     .trim()
@@ -134,7 +138,63 @@ function rowToCategory(row: Record<string, unknown>): ColorCategory {
   };
 }
 
+async function getTableColumns(db: SQLite.SQLiteDatabase, table: string) {
+  const rows = await db.getAllAsync<TableInfoRow>(`PRAGMA table_info(${table})`);
+  return new Set(rows.map(row => row.name));
+}
+
+async function renameIfMissingCoreColumns(
+  db: SQLite.SQLiteDatabase,
+  table: string,
+  requiredColumns: string[],
+) {
+  const columns = await getTableColumns(db, table);
+  if (columns.size === 0) return;
+  if (requiredColumns.every(column => columns.has(column))) return;
+
+  await db.execAsync(`ALTER TABLE ${table} RENAME TO ${table}_legacy_${Date.now()};`);
+}
+
+async function ensureColumn(
+  db: SQLite.SQLiteDatabase,
+  table: string,
+  column: string,
+  definition: string,
+) {
+  const columns = await getTableColumns(db, table);
+  if (columns.has(column)) return;
+  await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
+}
+
+async function prepareLegacyScriptureTables(db: SQLite.SQLiteDatabase) {
+  await renameIfMissingCoreColumns(db, 'scripture_annotations', ['id']);
+  await renameIfMissingCoreColumns(db, 'bible_notes', ['book_id', 'chapter']);
+  await renameIfMissingCoreColumns(db, 'color_categories', ['color']);
+}
+
+async function ensureScriptureColumns(db: SQLite.SQLiteDatabase) {
+  await ensureColumn(db, 'scripture_annotations', 'kind', "TEXT NOT NULL DEFAULT 'highlight'");
+  await ensureColumn(db, 'scripture_annotations', 'color', "TEXT NOT NULL DEFAULT 'gold'");
+  await ensureColumn(db, 'scripture_annotations', 'text', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn(db, 'scripture_annotations', 'book_id', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn(db, 'scripture_annotations', 'chapter', 'INTEGER NOT NULL DEFAULT 1');
+  await ensureColumn(db, 'scripture_annotations', 'verse', 'INTEGER NOT NULL DEFAULT 1');
+  await ensureColumn(db, 'scripture_annotations', 'comment', 'TEXT');
+  await ensureColumn(db, 'scripture_annotations', 'created_at', `INTEGER NOT NULL DEFAULT ${Date.now()}`);
+  await ensureColumn(db, 'scripture_annotations', 'updated_at', `INTEGER NOT NULL DEFAULT ${Date.now()}`);
+
+  await ensureColumn(db, 'bible_notes', 'observations', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn(db, 'bible_notes', 'lessons', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn(db, 'bible_notes', 'application', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn(db, 'bible_notes', 'created_at', `INTEGER NOT NULL DEFAULT ${Date.now()}`);
+  await ensureColumn(db, 'bible_notes', 'updated_at', `INTEGER NOT NULL DEFAULT ${Date.now()}`);
+
+  await ensureColumn(db, 'color_categories', 'label', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn(db, 'color_categories', 'updated_at', `INTEGER NOT NULL DEFAULT ${Date.now()}`);
+}
+
 async function initUserDb(db: SQLite.SQLiteDatabase) {
+  await prepareLegacyScriptureTables(db);
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS scripture_annotations (
@@ -149,10 +209,6 @@ async function initUserDb(db: SQLite.SQLiteDatabase) {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_scripture_annotations_ref
-      ON scripture_annotations(book_id, chapter, verse);
-    CREATE INDEX IF NOT EXISTS idx_scripture_annotations_kind
-      ON scripture_annotations(kind);
 
     CREATE TABLE IF NOT EXISTS bible_notes (
       book_id INTEGER NOT NULL,
@@ -164,13 +220,20 @@ async function initUserDb(db: SQLite.SQLiteDatabase) {
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (book_id, chapter)
     );
-    CREATE INDEX IF NOT EXISTS idx_bible_notes_book ON bible_notes(book_id);
 
     CREATE TABLE IF NOT EXISTS color_categories (
       color TEXT PRIMARY KEY NOT NULL,
       label TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     );
+  `);
+  await ensureScriptureColumns(db);
+  await db.execAsync(`
+    CREATE INDEX IF NOT EXISTS idx_scripture_annotations_ref
+      ON scripture_annotations(book_id, chapter, verse);
+    CREATE INDEX IF NOT EXISTS idx_scripture_annotations_kind
+      ON scripture_annotations(kind);
+    CREATE INDEX IF NOT EXISTS idx_bible_notes_book ON bible_notes(book_id);
   `);
 
   const now = Date.now();
@@ -194,32 +257,44 @@ export function ScriptureProvider({ children }: { children: React.ReactNode }) {
 
   const refreshScriptureData = useCallback(async () => {
     if (!userDb) return;
-    const annotationRows = await userDb.getAllAsync<Record<string, unknown>>(
-      'SELECT * FROM scripture_annotations ORDER BY updated_at DESC',
-    );
-    const noteRows = await userDb.getAllAsync<Record<string, unknown>>(
-      'SELECT * FROM bible_notes ORDER BY updated_at DESC',
-    );
-    const categoryRows = await userDb.getAllAsync<Record<string, unknown>>(
-      'SELECT * FROM color_categories',
-    );
-    const categoryMap = new Map(categoryRows.map(row => {
-      const category = rowToCategory(row);
-      return [category.color, category];
-    }));
-    setAnnotations(annotationRows.map(rowToAnnotation));
-    setBibleNotes(noteRows.map(rowToBibleNote));
-    setCategories(DEFAULT_CATEGORIES.map(category => categoryMap.get(category.color) ?? category));
+    try {
+      const annotationRows = await userDb.getAllAsync<Record<string, unknown>>(
+        'SELECT * FROM scripture_annotations ORDER BY updated_at DESC',
+      );
+      const noteRows = await userDb.getAllAsync<Record<string, unknown>>(
+        'SELECT * FROM bible_notes ORDER BY updated_at DESC',
+      );
+      const categoryRows = await userDb.getAllAsync<Record<string, unknown>>(
+        'SELECT * FROM color_categories',
+      );
+      const categoryMap = new Map(categoryRows.map(row => {
+        const category = rowToCategory(row);
+        return [category.color, category];
+      }));
+      setAnnotations(annotationRows.map(rowToAnnotation));
+      setBibleNotes(noteRows.map(rowToBibleNote));
+      setCategories(DEFAULT_CATEGORIES.map(category => categoryMap.get(category.color) ?? category));
+    } catch (error) {
+      console.warn('Scripture user data refresh failed', error);
+      setAnnotations([]);
+      setBibleNotes([]);
+      setCategories(DEFAULT_CATEGORIES);
+    }
   }, [userDb]);
 
   useEffect(() => {
     let active = true;
 
     (async () => {
-      const db = await SQLite.openDatabaseAsync(USER_CONTENT_DB_NAME);
-      await initUserDb(db);
-      if (!active) return;
-      setUserDb(db);
+      try {
+        const db = await openUserContentDb();
+        await initUserDb(db);
+        if (!active) return;
+        setUserDb(db);
+      } catch (error) {
+        console.warn('Scripture user DB init failed', error);
+        if (active) setReady(true);
+      }
     })();
 
     return () => {
@@ -229,7 +304,7 @@ export function ScriptureProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!userDb) return;
-    refreshScriptureData().then(() => setReady(true));
+    refreshScriptureData().finally(() => setReady(true));
   }, [refreshScriptureData, userDb]);
 
   const getChapter = useCallback(async (bookId: number, chapter: number, lang: ScriptureLanguage) => {

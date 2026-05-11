@@ -1,13 +1,19 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { deleteChallengeRecord, listChallengeRecords, saveChallengeRecord } from '@/components/challenges/challengeDb';
+import {
+  endChallengeTask,
+  pauseChallengeTask,
+  resumeChallengeTask,
+  upsertChallengeTask,
+} from '@/components/challenges/challengeTaskSync';
 import {
   CATALOG_ENTRIES,
   ChallengeCatalogEntry,
+  ChallengeChurchConfig,
   ChallengePrayerConfig,
   ChallengeRecord,
   ChallengeScriptureConfig,
-  ChallengeStatus,
   GROUP_ORDER,
-  INITIAL_CHALLENGES,
   PaceOption,
 } from './challengeData';
 
@@ -16,6 +22,7 @@ type ChallengeScheduleUpdate = {
   scheduleLabel?: string;
   paceLabel?: string;
   prayerConfig?: ChallengePrayerConfig;
+  churchConfig?: ChallengeChurchConfig;
 };
 
 type ChallengeStartOverrides = {
@@ -35,9 +42,11 @@ type ChallengeStartOverrides = {
   durationDays?: number;
   scriptureConfig?: ChallengeScriptureConfig;
   prayerConfig?: ChallengePrayerConfig;
+  churchConfig?: ChallengeChurchConfig;
 };
 
 type ChallengesContextValue = {
+  ready: boolean;
   challenges: ChallengeRecord[];
   activeChallenges: ChallengeRecord[];
   pausedChallenges: ChallengeRecord[];
@@ -45,21 +54,18 @@ type ChallengesContextValue = {
   cancelledChallenges: ChallengeRecord[];
   catalogEntries: ChallengeCatalogEntry[];
   availableCatalogEntries: ChallengeCatalogEntry[];
-  startChallenge: (entryId: string, pace?: PaceOption | null, overrides?: ChallengeStartOverrides) => void;
-  updateChallenge: (id: string, updates: ChallengeScheduleUpdate) => void;
-  pauseChallenge: (id: string) => void;
-  resumeChallenge: (id: string) => void;
-  endChallenge: (id: string) => void;
+  refreshChallenges: () => Promise<void>;
+  startChallenge: (entryId: string, pace?: PaceOption | null, overrides?: ChallengeStartOverrides) => Promise<ChallengeRecord | null>;
+  updateChallenge: (id: string, updates: ChallengeScheduleUpdate) => Promise<void>;
+  pauseChallenge: (id: string) => Promise<void>;
+  resumeChallenge: (id: string) => Promise<void>;
+  endChallenge: (id: string) => Promise<void>;
 };
 
 const ChallengesContext = createContext<ChallengesContextValue | null>(null);
 
-function todayLabel(prefix: 'Completed' | 'Ended') {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    day: 'numeric',
-    month: 'short',
-  });
-  return `${prefix} ${formatter.format(new Date())}`;
+function newChallengeId(entryId: string) {
+  return `${entryId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function buildScriptureChallengeFromSetup(
@@ -76,7 +82,7 @@ function buildScriptureChallengeFromSetup(
   const isPsalter = entry.groupKey === 'psalter';
 
   return {
-    id: `${entry.id}_${Date.now()}`,
+    id: newChallengeId(entry.id),
     templateId: entry.templateId,
     title: overrides.title ?? entry.title,
     description: overrides.description ?? entry.description,
@@ -100,6 +106,7 @@ function buildScriptureChallengeFromSetup(
     ),
     totalUnits,
     durationDays: totalDays,
+    startedAt: getTodayDateKey(),
     scriptureConfig: overrides.scriptureConfig,
   };
 }
@@ -115,7 +122,7 @@ function buildNewChallenge(entry: ChallengeCatalogEntry, pace?: PaceOption | nul
     case 'church':
       {
         const base: ChallengeRecord = {
-          id: `${entry.id}_${Date.now()}`,
+          id: newChallengeId(entry.id),
           templateId: entry.templateId,
           title: entry.title,
           description: entry.description,
@@ -133,6 +140,8 @@ function buildNewChallenge(entry: ChallengeCatalogEntry, pace?: PaceOption | nul
           time: entry.defaultTime,
           scheduleLabel: entry.scheduleLabel,
           paceLabel,
+          startedAt: getTodayDateKey(),
+          churchConfig: overrides?.churchConfig,
         };
         return overrides ? { ...base, ...overrides } : base;
       }
@@ -141,7 +150,7 @@ function buildNewChallenge(entry: ChallengeCatalogEntry, pace?: PaceOption | nul
       {
         const totalDays = Number.parseInt(pace?.id || '30', 10) || 30;
         const base: ChallengeRecord = {
-          id: `${entry.id}_${Date.now()}`,
+          id: newChallengeId(entry.id),
           templateId: entry.templateId,
           title: entry.title,
           description: entry.description,
@@ -159,6 +168,7 @@ function buildNewChallenge(entry: ChallengeCatalogEntry, pace?: PaceOption | nul
           time: entry.defaultTime,
           scheduleLabel: entry.scheduleLabel,
           paceLabel,
+          startedAt: getTodayDateKey(),
         };
         return overrides ? { ...base, ...overrides } : base;
       }
@@ -166,7 +176,7 @@ function buildNewChallenge(entry: ChallengeCatalogEntry, pace?: PaceOption | nul
       {
         const totalDays = Number.parseInt(pace?.id || '40', 10) || 40;
         const base: ChallengeRecord = {
-          id: `${entry.id}_${Date.now()}`,
+          id: newChallengeId(entry.id),
           templateId: entry.templateId,
           title: paceLabel ? `${paceLabel} Psalter` : entry.title,
           description: entry.description,
@@ -184,13 +194,14 @@ function buildNewChallenge(entry: ChallengeCatalogEntry, pace?: PaceOption | nul
           time: entry.defaultTime,
           scheduleLabel: entry.scheduleLabel,
           paceLabel,
+          startedAt: getTodayDateKey(),
         };
         return overrides ? { ...base, ...overrides } : base;
       }
     case 'lectionary':
       {
         const base: ChallengeRecord = {
-          id: `${entry.id}_${Date.now()}`,
+          id: newChallengeId(entry.id),
           templateId: entry.templateId,
           title: entry.title,
           description: entry.description,
@@ -208,6 +219,7 @@ function buildNewChallenge(entry: ChallengeCatalogEntry, pace?: PaceOption | nul
           time: entry.defaultTime,
           scheduleLabel: entry.scheduleLabel,
           paceLabel,
+          startedAt: getTodayDateKey(),
         };
         return overrides ? { ...base, ...overrides } : base;
       }
@@ -221,7 +233,7 @@ function buildNewChallenge(entry: ChallengeCatalogEntry, pace?: PaceOption | nul
               : 89
         );
         const base: ChallengeRecord = {
-          id: `${entry.id}_${Date.now()}`,
+          id: newChallengeId(entry.id),
           templateId: entry.templateId,
           title: entry.title,
           description: entry.description,
@@ -240,22 +252,37 @@ function buildNewChallenge(entry: ChallengeCatalogEntry, pace?: PaceOption | nul
           scheduleLabel: entry.scheduleLabel,
           paceLabel,
           totalUnits: totalChapters,
+          startedAt: getTodayDateKey(),
         };
         return overrides ? { ...base, ...overrides } : base;
       }
   }
 }
 
-function setStatus(items: ChallengeRecord[], id: string, status: ChallengeStatus, endedPrefix?: 'Completed' | 'Ended') {
-  return items.map(item => item.id === id ? {
-    ...item,
-    status,
-    endedLabel: endedPrefix ? todayLabel(endedPrefix) : item.endedLabel,
-  } : item);
+function getTodayDateKey() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
 }
 
 export function ChallengesProvider({ children }: { children: React.ReactNode }) {
-  const [challenges, setChallenges] = useState<ChallengeRecord[]>(INITIAL_CHALLENGES);
+  const [ready, setReady] = useState(false);
+  const [challenges, setChallenges] = useState<ChallengeRecord[]>([]);
+  const startingTemplateIdsRef = useRef(new Set<string>());
+
+  const refreshChallenges = useCallback(async () => {
+    const records = await listChallengeRecords();
+    setChallenges(records);
+    setReady(true);
+  }, []);
+
+  useEffect(() => {
+    refreshChallenges().catch(error => {
+      console.warn('Challenge backend refresh failed:', error);
+      setReady(true);
+    });
+  }, [refreshChallenges]);
 
   const value = useMemo<ChallengesContextValue>(() => {
     const activeChallenges = challenges.filter(item => item.status === 'active');
@@ -276,6 +303,7 @@ export function ChallengesProvider({ children }: { children: React.ReactNode }) 
       });
 
     return {
+      ready,
       challenges,
       activeChallenges,
       pausedChallenges,
@@ -283,25 +311,76 @@ export function ChallengesProvider({ children }: { children: React.ReactNode }) 
       cancelledChallenges,
       catalogEntries: CATALOG_ENTRIES,
       availableCatalogEntries,
-      startChallenge: (entryId, pace, overrides) => {
+      refreshChallenges,
+      startChallenge: async (entryId, pace, overrides) => {
         const entry = CATALOG_ENTRIES.find(item => item.id === entryId);
-        if (!entry) return;
-        setChallenges(current => [buildNewChallenge(entry, pace, overrides), ...current]);
+        if (!entry) return null;
+
+        const existing = challenges.find(item => (
+          item.templateId === entry.templateId &&
+          (item.status === 'active' || item.status === 'paused')
+        ));
+        if (existing) return existing;
+        if (startingTemplateIdsRef.current.has(entry.templateId)) return null;
+
+        startingTemplateIdsRef.current.add(entry.templateId);
+        try {
+          const persistedRecords = await listChallengeRecords();
+          const persistedExisting = persistedRecords.find(item => (
+            item.templateId === entry.templateId &&
+            (item.status === 'active' || item.status === 'paused')
+          ));
+          if (persistedExisting) {
+            setChallenges(persistedRecords);
+            return persistedExisting;
+          }
+
+          const next = await saveChallengeRecord(buildNewChallenge(entry, pace, overrides));
+          await upsertChallengeTask(next);
+          setChallenges(current => [next, ...current.filter(item => item.id !== next.id)]);
+          return next;
+        } finally {
+          startingTemplateIdsRef.current.delete(entry.templateId);
+        }
       },
-      updateChallenge: (id, updates) => {
-        setChallenges(current => current.map(item => item.id === id ? { ...item, ...updates } : item));
+      updateChallenge: async (id, updates) => {
+        const current = challenges.find(item => item.id === id);
+        if (!current) return;
+        const next = await saveChallengeRecord({ ...current, ...updates });
+        await upsertChallengeTask(next);
+        setChallenges(items => items.map(item => item.id === id ? next : item));
       },
-      pauseChallenge: id => {
-        setChallenges(current => setStatus(current, id, 'paused'));
+      pauseChallenge: async id => {
+        const current = challenges.find(item => item.id === id);
+        if (!current) return;
+        const next = await saveChallengeRecord({
+          ...current,
+          status: 'paused',
+          pausedAt: getTodayDateKey(),
+        });
+        await pauseChallengeTask(id);
+        setChallenges(items => items.map(item => item.id === id ? next : item));
       },
-      resumeChallenge: id => {
-        setChallenges(current => setStatus(current, id, 'active'));
+      resumeChallenge: async id => {
+        const current = challenges.find(item => item.id === id);
+        if (!current) return;
+        const next = await saveChallengeRecord({
+          ...current,
+          status: 'active',
+          pausedAt: undefined,
+        });
+        await resumeChallengeTask(id);
+        setChallenges(items => items.map(item => item.id === id ? next : item));
       },
-      endChallenge: id => {
-        setChallenges(current => setStatus(current, id, 'cancelled', 'Ended'));
+      endChallenge: async id => {
+        const current = challenges.find(item => item.id === id);
+        if (!current) return;
+        await endChallengeTask(id);
+        await deleteChallengeRecord(id);
+        setChallenges(items => items.filter(item => item.id !== id));
       },
     };
-  }, [challenges]);
+  }, [ready, challenges, refreshChallenges]);
 
   return (
     <ChallengesContext.Provider value={value}>

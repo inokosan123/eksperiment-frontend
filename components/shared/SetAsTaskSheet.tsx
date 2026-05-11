@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated,
-  Easing,
   LayoutAnimation,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -15,6 +14,16 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import Reanimated, {
+  Easing,
+  interpolateColor,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import {
   Book,
   BookMarked,
@@ -30,6 +39,7 @@ import {
   Pause,
   Pencil,
   Plus,
+  RotateCcw,
   Sparkles,
   Sun,
   Trash2,
@@ -39,34 +49,37 @@ import {
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { useChallenges } from '@/components/challenges/ChallengesContext';
+import { challengeRecordToTaskDraft } from '@/components/challenges/challengeTaskSync';
 import NotificationSettings, { type NotificationMode } from '@/components/shared/NotificationSettings';
 import {
   ChallengeCatalogEntry,
+  ChallengeChurchConfig,
   ChallengeIconKey,
   ChallengePrayerConfig,
   ChallengeRecord,
   GROUP_ORDER,
 } from '@/components/challenges/challengeData';
-import type { TaskDraft, TaskSchedule, TaskType } from '@/components/tasks/taskTypes';
+import type { TaskDraft, TaskSchedule } from '@/components/tasks/taskTypes';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const DateTimePickerModule = Platform.OS === 'web' ? null : require('@react-native-community/datetimepicker');
 const NativeDateTimePicker = DateTimePickerModule?.default ?? null;
 const NativeDateTimePickerAndroid = DateTimePickerModule?.DateTimePickerAndroid ?? null;
+const STREAK_FLAME_PNG = require('@/assets/images/streak-flame.png');
 
 if (Platform.OS === 'android' && typeof UIManager.setLayoutAnimationEnabledExperimental === 'function') {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-type TaskSheetContext = 'prayer' | 'journal' | 'scripture';
+type TaskSheetContext = 'prayer' | 'journal' | 'scripture' | 'church';
 type TaskTab = 'spiritual' | 'challenge';
 type RuleFrequency = 'daily' | 'weekdays' | 'weekends' | 'specific_days' | 'monthly';
 type PrayerType = 'morning' | 'evening' | 'meal' | 'jesus' | 'custom';
 type JournalTechnique = 'daily' | 'morning_pages' | 'free_writing';
 type ScriptureReadingType = 'new_testament' | 'old_testament' | 'psalter' | 'church_calendar' | 'custom';
 type PrayerRuleChoice = 'standard' | 'short' | 'seraphim' | 'personal' | 'breakfast' | 'lunch' | 'dinner';
-type PrayerChallengeRuleChoice = Extract<PrayerRuleChoice, 'standard' | 'short' | 'seraphim' | 'personal'>;
-type JesusPrayerMode = 'duration' | 'count';
+export type PrayerChallengeRuleChoice = Extract<PrayerRuleChoice, 'standard' | 'short' | 'seraphim' | 'personal'>;
+export type JesusPrayerMode = 'duration' | 'count';
 
 type ScheduleDraft = {
   time: string;
@@ -79,7 +92,9 @@ type ScheduleDraft = {
   reminderMinutes: number;
 };
 
-type ChallengeScheduleDraft = {
+export type ChallengeChurchScheduleDraft = ScheduleDraft;
+
+export type ChallengeScheduleDraft = {
   time: string;
   sameTimeEveryDay: boolean;
   dayTimes: Record<number, string>;
@@ -93,14 +108,24 @@ type Props = {
   onClose: () => void;
   onSummaryChange?: (subtitle: string) => void;
   onTaskDraft?: (draft: TaskDraft) => void | Promise<unknown>;
+  onTaskMutation?: () => void | Promise<void>;
 };
 
 type ChallengeConfirmAction = {
-  mode: 'pause' | 'end';
+  mode: 'pause' | 'resume' | 'end';
   item: ChallengeRecord;
 };
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+
+function currentWeekdayIndex() {
+  const jsDay = new Date().getDay();
+  return jsDay === 0 ? 6 : jsDay - 1;
+}
+
+function ensureSelectedWeekdays(days: number[]) {
+  return days.length ? days : [currentWeekdayIndex()];
+}
 
 const PRAYER_TYPES: {
   key: PrayerType;
@@ -116,7 +141,7 @@ const PRAYER_TYPES: {
   { key: 'morning', label: 'Morning', short: 'MORN', Icon: Sun, accent: '#D59D2C', tint: '#FFF7E7', border: '#F0D8A8', defaultTitle: 'Morning Prayer', defaultTime: '07:00' },
   { key: 'evening', label: 'Evening', short: 'EVE', Icon: Moon, accent: '#7867C6', tint: '#F3F0FF', border: '#DDD5FF', defaultTitle: 'Evening Prayer', defaultTime: '21:00' },
   { key: 'meal', label: 'Meals', short: 'MEALS', Icon: Utensils, accent: '#7D8FC9', tint: '#F1F5FF', border: '#D9E1F7', defaultTitle: 'Meal Prayer', defaultTime: '12:00' },
-  { key: 'jesus', label: 'Jesus', short: 'JESUS', Icon: Sparkles, accent: '#B98228', tint: '#FFF3E2', border: '#E9C98E', defaultTitle: 'Jesus Prayer', defaultTime: '13:00' },
+  { key: 'jesus', label: 'Jesus', short: 'JESUS', Icon: Cross, accent: '#B98228', tint: '#FFF3E2', border: '#E9C98E', defaultTitle: 'Jesus Prayer', defaultTime: '13:00' },
   { key: 'custom', label: 'Custom', short: 'CUSTOM', Icon: Feather, accent: '#5F9F97', tint: '#EDF8F6', border: '#CBE7E3', defaultTitle: 'Custom Prayer', defaultTime: '08:00' },
 ];
 
@@ -167,6 +192,22 @@ const PRAYER_RULES: Record<Exclude<PrayerType, 'jesus' | 'custom'>, { key: Praye
   ],
 };
 
+function prayerTaskIcon(prayerType: PrayerType) {
+  switch (prayerType) {
+    case 'evening':
+      return 'Moon';
+    case 'jesus':
+      return 'Cross';
+    case 'meal':
+      return 'Utensils';
+    case 'custom':
+      return 'Feather';
+    case 'morning':
+    default:
+      return 'Sun';
+  }
+}
+
 const FULL_FREQUENCY_OPTIONS: { value: RuleFrequency; label: string; desc: string }[] = [
   { value: 'daily', label: 'Daily', desc: 'Every day' },
   { value: 'weekdays', label: 'Weekdays', desc: 'Mon - Fri' },
@@ -194,7 +235,7 @@ function defaultSchedule(time = '08:00', notificationMode: NotificationMode = 'n
   };
 }
 
-function defaultChallengeSchedule(time = '08:00', notificationMode: NotificationMode = 'single'): ChallengeScheduleDraft {
+export function defaultChallengeSchedule(time = '08:00', notificationMode: NotificationMode = 'single'): ChallengeScheduleDraft {
   return {
     time,
     sameTimeEveryDay: true,
@@ -207,7 +248,7 @@ function defaultChallengeSchedule(time = '08:00', notificationMode: Notification
 function scheduleDraftToTaskSchedule(schedule: ScheduleDraft): TaskSchedule {
   return {
     frequency: schedule.frequency,
-    selectedDays: schedule.frequency === 'specific_days' ? schedule.selectedDays : [],
+    selectedDays: schedule.frequency === 'specific_days' ? ensureSelectedWeekdays(schedule.selectedDays) : [],
     monthlyDays: schedule.frequency === 'monthly' ? schedule.monthlyDays : [1],
     time: schedule.time,
     sameTimeEveryDay: schedule.sameTimeEveryDay,
@@ -215,50 +256,95 @@ function scheduleDraftToTaskSchedule(schedule: ScheduleDraft): TaskSchedule {
   };
 }
 
-function challengeScheduleToTaskSchedule(schedule: ChallengeScheduleDraft): TaskSchedule {
-  return {
-    frequency: 'daily',
-    selectedDays: [],
-    monthlyDays: [1],
-    time: schedule.time,
-    sameTimeEveryDay: schedule.sameTimeEveryDay,
-    dayTimes: schedule.sameTimeEveryDay ? {} : schedule.dayTimes,
-  };
-}
-
-function taskTypeForChallengeCategory(category: ChallengeCatalogEntry['category']): TaskType {
-  switch (category) {
-    case 'prayer':
-      return 'prayer';
-    case 'journal':
-      return 'journal';
-    case 'scripture':
-      return 'reading';
-    case 'church':
-      return 'church';
-    default:
-      return 'custom';
-  }
-}
-
-function journalTypeForChallenge(entry: ChallengeCatalogEntry) {
-  if (entry.templateId.includes('morning')) return 'morning_pages' as const;
-  if (entry.templateId.includes('free')) return 'free_writing' as const;
-  return 'daily' as const;
-}
-
-function scriptureReadingTypeForChallenge(entry: ChallengeCatalogEntry) {
-  if (entry.groupKey === 'psalter') return 'psalter' as const;
-  if (entry.groupKey === 'old_testament') return 'old_testament' as const;
-  if (entry.groupKey === 'lectionary') return 'church_calendar' as const;
-  return 'new_testament' as const;
-}
-
 function challengeCategoryForContext(context: TaskSheetContext) {
   switch (context) {
     case 'prayer': return 'prayer';
     case 'journal': return 'journal';
     case 'scripture': return 'scripture';
+    case 'church': return 'church';
+  }
+}
+
+const CHURCH_DEFAULT_DAYS = [6];
+
+function defaultChurchChallengeSchedule(time = '09:00'): ChallengeChurchScheduleDraft {
+  return {
+    ...defaultSchedule(time, 'single'),
+    frequency: 'specific_days',
+    selectedDays: CHURCH_DEFAULT_DAYS,
+  };
+}
+
+function churchScheduleLabel(schedule: ChallengeChurchScheduleDraft) {
+  switch (schedule.frequency) {
+    case 'daily':
+      return 'Daily';
+    case 'weekdays':
+      return 'Weekdays';
+    case 'weekends':
+      return 'Weekends';
+    case 'monthly':
+      return `Monthly ${formatMonthlyDays(schedule.monthlyDays)}`;
+    case 'specific_days': {
+      const selectedDays = schedule.selectedDays.length ? schedule.selectedDays : CHURCH_DEFAULT_DAYS;
+      if (selectedDays.length === 1 && selectedDays[0] === 6) return 'Every Sunday';
+      return selectedDays.map(day => WEEKDAY_LABELS[day]).join(' / ');
+    }
+    default:
+      return 'Every Sunday';
+  }
+}
+
+function churchScheduleToConfig(schedule: ChallengeChurchScheduleDraft): ChallengeChurchConfig {
+  return {
+    frequency: schedule.frequency,
+    selectedDays: schedule.frequency === 'specific_days'
+      ? (schedule.selectedDays.length ? schedule.selectedDays : CHURCH_DEFAULT_DAYS)
+      : [],
+    monthlyDays: schedule.frequency === 'monthly' ? schedule.monthlyDays : [1],
+    time: schedule.time,
+    sameTimeEveryDay: schedule.sameTimeEveryDay,
+    dayTimes: schedule.sameTimeEveryDay ? {} : schedule.dayTimes,
+    notificationMode: schedule.notificationMode,
+    reminderMinutes: schedule.notificationMode === 'double' ? schedule.reminderMinutes : undefined,
+  };
+}
+
+function challengePanelTone(category: ChallengeRecord['category'] | ChallengeCatalogEntry['category']) {
+  switch (category) {
+    case 'prayer':
+      return {
+        accent: '#C58A2D',
+        border: 'rgba(197,138,45,0.28)',
+        badgeBg: '#FFF6E8',
+        badgeText: '#B7791F',
+        meta: '#B78331',
+      };
+    case 'journal':
+      return {
+        accent: '#8B5CF6',
+        border: 'rgba(139,92,246,0.26)',
+        badgeBg: '#F4EEFF',
+        badgeText: '#7C3AED',
+        meta: '#7C6EAF',
+      };
+    case 'church':
+      return {
+        accent: '#2F8A62',
+        border: 'rgba(47,138,98,0.26)',
+        badgeBg: '#EAF8F1',
+        badgeText: '#17603F',
+        meta: '#2F8A62',
+      };
+    case 'scripture':
+    default:
+      return {
+        accent: '#2C9AEF',
+        border: 'rgba(44,154,239,0.24)',
+        badgeBg: '#EDF7FF',
+        badgeText: '#2C9AEF',
+        meta: '#8B6B2F',
+      };
   }
 }
 
@@ -330,9 +416,9 @@ function formatSummaryFrequency(
         ? `Monthly on ${formatMonthlyDays(schedule.monthlyDays)}`
         : 'Monthly';
     case 'specific_days':
-      return schedule.selectedDays.length
-        ? schedule.selectedDays.map(day => WEEKDAY_LABELS[day]).join(' ')
-        : 'Selected days';
+      return ensureSelectedWeekdays(schedule.selectedDays)
+        .map(day => WEEKDAY_LABELS[day])
+        .join(' ');
     case 'daily':
     default:
       return 'Daily';
@@ -355,7 +441,7 @@ function needsScriptureDailyAmount(entry: ChallengeCatalogEntry | null) {
   return isScriptureChallengeEntry(entry) && entry?.id !== 'lectionary_daily';
 }
 
-function scriptureDailyAmountLabel(entry: ChallengeCatalogEntry | null, amount: number) {
+export function scriptureDailyAmountLabel(entry: ChallengeCatalogEntry | null, amount: number) {
   const isPsalter = entry?.groupKey === 'psalter';
   const singular = isPsalter ? 'psalm' : 'chapter';
   const plural = isPsalter ? 'psalms' : 'chapters';
@@ -366,7 +452,7 @@ function scriptureDailyAmountTitle(entry: ChallengeCatalogEntry | null) {
   return entry?.groupKey === 'psalter' ? 'Psalms per Day' : 'Chapters per Day';
 }
 
-function scriptureApproxDays(entry: ChallengeCatalogEntry | null, amount: number) {
+export function scriptureApproxDays(entry: ChallengeCatalogEntry | null, amount: number) {
   if (!entry?.totalUnits || !needsScriptureDailyAmount(entry)) return null;
   return Math.max(1, Math.ceil(entry.totalUnits / Math.max(1, amount)));
 }
@@ -404,7 +490,7 @@ function jesusPrayerSummary(mode: JesusPrayerMode, duration: string, count: stri
   return mode === 'duration' ? `${value} min` : `${value} times`;
 }
 
-function prayerChallengeDetail(
+export function prayerChallengeDetail(
   entry: ChallengeCatalogEntry | ChallengeRecord | null,
   rule: PrayerChallengeRuleChoice,
   mode: JesusPrayerMode,
@@ -416,7 +502,7 @@ function prayerChallengeDetail(
   return null;
 }
 
-function buildPrayerChallengeConfig(
+export function buildPrayerChallengeConfig(
   entry: ChallengeCatalogEntry | ChallengeRecord,
   rule: PrayerChallengeRuleChoice,
   mode: JesusPrayerMode,
@@ -453,15 +539,14 @@ function buildPrayerChallengeConfig(
 }
 
 function useSelectionMotion(active: boolean) {
-  const progress = useRef(new Animated.Value(active ? 1 : 0)).current;
+  const progress = useSharedValue(active ? 1 : 0);
 
   useEffect(() => {
-    Animated.spring(progress, {
-      toValue: active ? 1 : 0,
-      friction: 15,
-      tension: 145,
-      useNativeDriver: false,
-    }).start();
+    progress.value = withSpring(active ? 1 : 0, {
+      damping: 18,
+      stiffness: 235,
+      mass: 0.72,
+    });
   }, [active, progress]);
 
   return progress;
@@ -515,6 +600,7 @@ export default function SetAsTaskSheet({
   onClose,
   onSummaryChange,
   onTaskDraft,
+  onTaskMutation,
 }: Props) {
   const { height: windowHeight } = useWindowDimensions();
   const {
@@ -558,9 +644,9 @@ export default function SetAsTaskSheet({
   const [recentlyStartedTemplateId, setRecentlyStartedTemplateId] = useState<string | null>(null);
   const contentScrollRef = useRef<ScrollView>(null);
   const recentStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sheetProgress = useRef(new Animated.Value(0)).current;
-  const tabMotion = useRef(new Animated.Value(0)).current;
-  const tabContentMotion = useRef(new Animated.Value(1)).current;
+  const sheetProgress = useSharedValue(0);
+  const tabMotion = useSharedValue(0);
+  const tabContentMotion = useSharedValue(1);
   const [mounted, setMounted] = useState(visible);
   const [segmentWidth, setSegmentWidth] = useState(0);
 
@@ -589,43 +675,37 @@ export default function SetAsTaskSheet({
   }, [context, visible]);
 
   useEffect(() => {
-    Animated.spring(tabMotion, {
-      toValue: taskTab === 'challenge' ? 1 : 0,
-      friction: 16,
-      tension: 145,
-      useNativeDriver: false,
-    }).start();
+    tabMotion.value = withSpring(taskTab === 'challenge' ? 1 : 0, {
+      damping: 18,
+      stiffness: 235,
+      mass: 0.72,
+    });
 
-    tabContentMotion.setValue(0);
-    Animated.timing(tabContentMotion, {
-      toValue: 1,
+    tabContentMotion.value = 0;
+    tabContentMotion.value = withTiming(1, {
       duration: 230,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
+    });
   }, [tabContentMotion, tabMotion, taskTab]);
 
   useEffect(() => {
     if (visible) {
       setMounted(true);
+      sheetProgress.value = 0;
       requestAnimationFrame(() => {
-        Animated.timing(sheetProgress, {
-          toValue: 1,
+        sheetProgress.value = withTiming(1, {
           duration: 280,
           easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }).start();
+        });
       });
       return;
     }
 
-    Animated.timing(sheetProgress, {
-      toValue: 0,
+    sheetProgress.value = withTiming(0, {
       duration: 200,
       easing: Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) setMounted(false);
+    }, finished => {
+      if (finished) runOnJS(setMounted)(false);
     });
   }, [sheetProgress, visible]);
 
@@ -700,6 +780,7 @@ export default function SetAsTaskSheet({
         level: 1,
         source: 'spiritual',
         type: 'prayer',
+        icon: prayerTaskIcon(prayerType),
         targetView: '/prayer',
         schedule: scheduleDraftToTaskSchedule(prayerSchedule),
         notificationMode: prayerSchedule.notificationMode,
@@ -787,7 +868,7 @@ export default function SetAsTaskSheet({
     }, 180);
   };
 
-  const handleStartChallenge = () => {
+  const handleStartChallenge = async () => {
     if (!selectedCatalog) return;
     const selectedPace = selectedCatalog.paceOptions?.find(item => item.id === selectedPaceId) ?? null;
     const prayerDetail = prayerChallengeDetail(
@@ -808,52 +889,18 @@ export default function SetAsTaskSheet({
     );
 
     playChallengeStartTransition(selectedCatalog);
-    startChallenge(selectedCatalog.id, selectedPace, selectedCatalog.category === 'prayer' ? {
+    const record = await startChallenge(selectedCatalog.id, selectedPace, selectedCatalog.category === 'prayer' ? {
       time: challengeSchedule.time,
       paceLabel: paceParts.join(' · '),
       prayerConfig,
-    } : undefined);
-    void onTaskDraft?.({
-      title: selectedCatalog.title,
-      subtitle: `${paceParts.join(' - ') || selectedCatalog.scheduleLabel} - ${challengeSchedule.time}`,
-      level: 1,
-      source: 'challenge',
-      type: taskTypeForChallengeCategory(selectedCatalog.category),
-      targetView: '/challenges',
-      targetTab: selectedCatalog.category,
-      schedule: challengeScheduleToTaskSchedule(challengeSchedule),
-      notificationMode: challengeSchedule.notificationMode,
-      reminderMinutes: challengeSchedule.notificationMode === 'double' ? challengeSchedule.reminderMinutes : undefined,
-      challengeConfig: {
-        challengeId: selectedCatalog.id,
-        templateId: selectedCatalog.templateId,
-        progressCurrent: 0,
-        progressTotal: selectedCatalog.totalUnits,
-        progressUnit: selectedCatalog.category === 'church' ? 'weeks' : 'days',
-      },
-      prayerConfig: selectedCatalog.category === 'prayer' && prayerConfig
-        ? {
-            prayerType: prayerConfig.prayerType,
-            prayerRule: prayerConfig.prayerRule,
-            prayerTaskKind: prayerConfig.taskKind,
-            jesusPrayerMode: prayerConfig.jesusPrayerMode,
-            jesusPrayerDuration: prayerConfig.jesusPrayerDuration,
-            jesusPrayerCount: prayerConfig.jesusPrayerCount,
-          }
-        : undefined,
-      journalConfig: selectedCatalog.category === 'journal'
-        ? {
-            journalType: journalTypeForChallenge(selectedCatalog),
-            technique: journalTypeForChallenge(selectedCatalog),
-          }
-        : undefined,
-    });
+    } : { time: challengeSchedule.time });
+    if (record) await onTaskDraft?.(challengeRecordToTaskDraft(record));
     const paceLabel = paceParts.length ? ` · ${paceParts.join(' · ')}` : '';
     onSummaryChange?.(`${selectedCatalog.title}${paceLabel} · ${challengeSchedule.time}`);
     setSelectedCatalogId(null);
   };
 
-  const handleConfiguredChallengeStart = () => {
+  const handleConfiguredChallengeStart = async () => {
     if (!selectedCatalog) return;
     playChallengeStartTransition(selectedCatalog);
 
@@ -863,7 +910,7 @@ export default function SetAsTaskSheet({
         ? scriptureDailyAmountLabel(selectedCatalog, challengeScriptureDailyAmount)
         : undefined;
 
-      startChallenge(selectedCatalog.id, null, {
+      const record = await startChallenge(selectedCatalog.id, null, {
         time: challengeSchedule.time,
         scheduleLabel: selectedCatalog.scheduleLabel,
         paceLabel,
@@ -889,30 +936,7 @@ export default function SetAsTaskSheet({
         },
       });
 
-      void onTaskDraft?.({
-        title: selectedCatalog.title,
-        subtitle: `${paceLabel ?? selectedCatalog.scheduleLabel} - ${challengeSchedule.time}`,
-        level: 1,
-        source: 'challenge',
-        type: 'reading',
-        targetView: '/challenges',
-        targetTab: selectedCatalog.category,
-        schedule: challengeScheduleToTaskSchedule(challengeSchedule),
-        notificationMode: challengeSchedule.notificationMode,
-        reminderMinutes: challengeSchedule.notificationMode === 'double' ? challengeSchedule.reminderMinutes : undefined,
-        scriptureConfig: {
-          readingType: scriptureReadingTypeForChallenge(selectedCatalog),
-          chaptersPerDay: selectedCatalog.id === 'lectionary_daily' ? 0 : challengeScriptureDailyAmount,
-          totalUnitsRead: 0,
-        },
-        challengeConfig: {
-          challengeId: selectedCatalog.id,
-          templateId: selectedCatalog.templateId,
-          progressCurrent: 0,
-          progressTotal: selectedCatalog.id === 'lectionary_daily' ? 0 : (totalDays ?? selectedCatalog.totalUnits),
-          progressUnit: 'days',
-        },
-      });
+      if (record) await onTaskDraft?.(challengeRecordToTaskDraft(record));
 
       const summaryBits = [
         selectedCatalog.title,
@@ -923,7 +947,10 @@ export default function SetAsTaskSheet({
       onSummaryChange?.(summaryBits.join(' · '));
     } else {
       const selectedPace = selectedCatalog.paceOptions?.find(item => item.id === selectedPaceId) ?? null;
-      startChallenge(selectedCatalog.id, selectedPace);
+      const record = await startChallenge(selectedCatalog.id, selectedPace, {
+        time: challengeSchedule.time,
+      });
+      if (record) await onTaskDraft?.(challengeRecordToTaskDraft(record));
       const paceLabel = selectedPace?.label ? ` · ${selectedPace.label}` : '';
       onSummaryChange?.(`${selectedCatalog.title}${paceLabel} · ${challengeSchedule.time}`);
     }
@@ -931,25 +958,35 @@ export default function SetAsTaskSheet({
     setSelectedCatalogId(null);
   };
 
-  if (!mounted) return null;
+  const sheetStartY = Math.max(430, windowHeight * 0.72);
+  const scrimMotionStyle = useAnimatedStyle(() => ({
+    opacity: sheetProgress.value,
+  }));
+  const sheetMotionStyle = useAnimatedStyle(() => ({
+    opacity: sheetProgress.value,
+    transform: [{ translateY: (1 - sheetProgress.value) * sheetStartY }],
+  }));
+  const segmentPillMotionStyle = useAnimatedStyle(() => ({
+    transform: [{
+      translateX: tabMotion.value * (((segmentWidth - 12) / 2) + 4),
+    }],
+  }));
+  const tabContentMotionStyle = useAnimatedStyle(() => ({
+    opacity: tabContentMotion.value,
+    transform: [{ translateY: (1 - tabContentMotion.value) * 10 }],
+  }));
 
-  const sheetTranslateY = sheetProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [Math.max(430, windowHeight * 0.72), 0],
-  });
+  if (!mounted) return null;
 
   return (
     <Modal transparent visible={mounted} animationType="none" onRequestClose={onClose}>
       <View style={s.overlay}>
-        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, s.overlayScrim, { opacity: sheetProgress }]} />
+        <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, s.overlayScrim, scrimMotionStyle]} />
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <Animated.View
+        <Reanimated.View
           style={[
             s.sheetShell,
-            {
-              opacity: sheetProgress,
-              transform: [{ translateY: sheetTranslateY }],
-            },
+            sheetMotionStyle,
           ]}
         >
           <View style={s.handle} />
@@ -967,19 +1004,14 @@ export default function SetAsTaskSheet({
             onLayout={event => setSegmentWidth(event.nativeEvent.layout.width)}
           >
             {segmentWidth > 0 && (
-              <Animated.View
+              <Reanimated.View
                 pointerEvents="none"
                 style={[
                   s.segmentPill,
                   {
                     width: (segmentWidth - 12) / 2,
-                    transform: [{
-                      translateX: tabMotion.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, (segmentWidth - 12) / 2 + 4],
-                      }),
-                    }],
                   },
+                  segmentPillMotionStyle,
                 ]}
               />
             )}
@@ -1002,17 +1034,7 @@ export default function SetAsTaskSheet({
           </View>
 
           <ScrollView ref={contentScrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
-            <Animated.View
-              style={{
-                opacity: tabContentMotion,
-                transform: [{
-                  translateY: tabContentMotion.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [10, 0],
-                  }),
-                }],
-              }}
-            >
+            <Reanimated.View style={tabContentMotionStyle}>
               {taskTab === 'spiritual' && (
                 <>
                   {context === 'prayer' && (
@@ -1087,15 +1109,27 @@ export default function SetAsTaskSheet({
                   onChallengeJesusCountChange={setChallengeJesusCount}
                   onStartChallenge={context === 'scripture' ? handleConfiguredChallengeStart : handleStartChallenge}
                   onExpandedChallengeChange={setExpandedChallengeId}
-                  onPauseChallenge={pauseChallenge}
-                  onResumeChallenge={resumeChallenge}
-                  onEndChallenge={endChallenge}
-                  onUpdateChallenge={updateChallenge}
+                  onPauseChallenge={async id => {
+                    await pauseChallenge(id);
+                    await onTaskMutation?.();
+                  }}
+                  onResumeChallenge={async id => {
+                    await resumeChallenge(id);
+                    await onTaskMutation?.();
+                  }}
+                  onEndChallenge={async id => {
+                    await endChallenge(id);
+                    await onTaskMutation?.();
+                  }}
+                  onUpdateChallenge={async (id, updates) => {
+                    await updateChallenge(id, updates);
+                    await onTaskMutation?.();
+                  }}
                 />
               )}
-            </Animated.View>
+            </Reanimated.View>
           </ScrollView>
-        </Animated.View>
+        </Reanimated.View>
       </View>
     </Modal>
   );
@@ -1222,34 +1256,27 @@ function PrayerTypeChoice({
   onPress: () => void;
 }) {
   const progress = useSelectionMotion(active);
-  const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.014] });
-  const backgroundColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [item.tint, item.accent],
-  });
-  const borderColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [item.border, item.accent],
-  });
-  const shadowOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0.015, 0.16] });
+  const motionStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], [item.tint, item.accent]),
+    borderColor: interpolateColor(progress.value, [0, 1], [item.border, item.accent]),
+    shadowOpacity: 0.015 + progress.value * 0.145,
+    transform: [{ scale: 1 + progress.value * 0.014 }],
+  }));
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={s.prayerTypeTouch}>
-      <Animated.View
+      <Reanimated.View
         style={[
           s.prayerTypeBtn,
+          motionStyle,
           {
-            backgroundColor,
-            borderColor,
             shadowColor: item.accent,
-            shadowOpacity,
-            transform: [{ scale }],
           },
         ]}
       >
         <item.Icon s={20} c={active ? '#FFFFFF' : item.accent} w={active ? 2.2 : 1.8} />
         <Text style={[s.prayerTypeText, { color: active ? '#FFFFFF' : item.accent }]}>{item.short}</Text>
-      </Animated.View>
+      </Reanimated.View>
     </TouchableOpacity>
   );
 }
@@ -1264,19 +1291,15 @@ function PrayerRuleOption({
   onPress: () => void;
 }) {
   const progress = useSelectionMotion(active);
-  const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.008] });
-  const backgroundColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#FFFFFF', '#FFF9EE'],
-  });
-  const borderColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#F0EDE6', '#D8B56E'],
-  });
+  const motionStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', '#FFF9EE']),
+    borderColor: interpolateColor(progress.value, [0, 1], ['#F0EDE6', '#D8B56E']),
+    transform: [{ scale: 1 + progress.value * 0.008 }],
+  }));
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.9}>
-      <Animated.View style={[s.optionCard, { backgroundColor, borderColor, transform: [{ scale }] }]}>
+      <Reanimated.View style={[s.optionCard, motionStyle]}>
         <View style={[s.optionRadio, active && s.optionRadioActive]}>
           {active && <View style={s.optionRadioInner} />}
         </View>
@@ -1285,7 +1308,7 @@ function PrayerRuleOption({
           <Text style={s.optionBody}>{item.desc}</Text>
         </View>
         {active && <CheckSmall s={16} c={C.gold} />}
-      </Animated.View>
+      </Reanimated.View>
     </TouchableOpacity>
   );
 }
@@ -1309,17 +1332,19 @@ function JesusPrayerConfigurator({
     ? [5, 10, 15, 30]
     : [33, 50, 100, 300];
   const selected = Number.parseInt(mode === 'duration' ? duration : count, 10);
-  const modeMotion = useRef(new Animated.Value(mode === 'count' ? 1 : 0)).current;
+  const modeMotion = useSharedValue(mode === 'count' ? 1 : 0);
   const [modeWidth, setModeWidth] = useState(0);
 
   useEffect(() => {
-    Animated.spring(modeMotion, {
-      toValue: mode === 'count' ? 1 : 0,
-      friction: 16,
-      tension: 145,
-      useNativeDriver: false,
-    }).start();
+    modeMotion.value = withSpring(mode === 'count' ? 1 : 0, {
+      damping: 18,
+      stiffness: 235,
+      mass: 0.72,
+    });
   }, [mode, modeMotion]);
+  const modePillMotionStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: modeMotion.value * ((modeWidth - 8) / 2) }],
+  }));
 
   return (
     <View style={s.jesusConfigStack}>
@@ -1328,19 +1353,14 @@ function JesusPrayerConfigurator({
         onLayout={event => setModeWidth(event.nativeEvent.layout.width)}
       >
         {modeWidth > 0 && (
-          <Animated.View
+          <Reanimated.View
             pointerEvents="none"
             style={[
               s.jesusModePill,
               {
                 width: (modeWidth - 8) / 2,
-                transform: [{
-                  translateX: modeMotion.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, (modeWidth - 8) / 2],
-                  }),
-                }],
               },
+              modePillMotionStyle,
             ]}
           />
         )}
@@ -1399,36 +1419,26 @@ function JesusValueChoice({
   onPress: () => void;
 }) {
   const progress = useSelectionMotion(active);
-  const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] });
-  const backgroundColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#FFFFFF', '#FFF7E8'],
-  });
-  const borderColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#EEE8DE', '#D7AA54'],
-  });
-  const shadowOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0.02, 0.15] });
-  const textColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#717782', '#B6822D'],
-  });
+  const motionStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', '#FFF7E8']),
+    borderColor: interpolateColor(progress.value, [0, 1], ['#EEE8DE', '#D7AA54']),
+    shadowOpacity: 0.02 + progress.value * 0.13,
+    transform: [{ scale: 1 + progress.value * 0.04 }],
+  }));
+  const textMotionStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(progress.value, [0, 1], ['#717782', '#B6822D']),
+  }));
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={s.jesusValueTouch}>
-      <Animated.View
+      <Reanimated.View
         style={[
           s.jesusValueChip,
-          {
-            backgroundColor,
-            borderColor,
-            shadowOpacity,
-            transform: [{ scale }],
-          },
+          motionStyle,
         ]}
       >
-        <Animated.Text style={[s.jesusValueText, { color: textColor }]}>{label}</Animated.Text>
-      </Animated.View>
+        <Reanimated.Text style={[s.jesusValueText, textMotionStyle]}>{label}</Reanimated.Text>
+      </Reanimated.View>
     </TouchableOpacity>
   );
 }
@@ -1521,34 +1531,27 @@ function TechniqueChoice({
   onPress: () => void;
 }) {
   const progress = useSelectionMotion(active);
-  const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.012] });
-  const backgroundColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#FFFFFF', item.color],
-  });
-  const borderColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#F0EDE6', item.color],
-  });
-  const shadowOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0.015, 0.18] });
+  const motionStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', item.color]),
+    borderColor: interpolateColor(progress.value, [0, 1], ['#F0EDE6', item.color]),
+    shadowOpacity: 0.015 + progress.value * 0.165,
+    transform: [{ scale: 1 + progress.value * 0.012 }],
+  }));
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={s.techniqueTouch}>
-      <Animated.View
+      <Reanimated.View
         style={[
           s.techniqueBtn,
+          motionStyle,
           {
-            backgroundColor,
-            borderColor,
             shadowColor: item.color,
-            shadowOpacity,
-            transform: [{ scale }],
           },
         ]}
       >
         <item.Icon s={20} c={active ? '#FFFFFF' : item.color} />
         <Text style={[s.techniqueBtnText, active && s.techniqueBtnTextActive]}>{item.label}</Text>
-      </Animated.View>
+      </Reanimated.View>
     </TouchableOpacity>
   );
 }
@@ -1651,7 +1654,7 @@ function ScriptureSpiritualPanel({
   );
 }
 
-function ChallengePanel({
+export function ChallengePanel({
   context,
   activeItems,
   pausedItems,
@@ -1664,8 +1667,11 @@ function ChallengePanel({
   challengeJesusMode,
   challengeJesusDuration,
   challengeJesusCount,
+  churchSchedule,
   expandedChallengeId,
   recentlyStartedTemplateId,
+  showActiveLabel = true,
+  showPausedLabel = true,
   onOpenSetup,
   onSelectedPaceIdChange,
   onChallengeScheduleChange,
@@ -1674,6 +1680,7 @@ function ChallengePanel({
   onChallengeJesusModeChange,
   onChallengeJesusDurationChange,
   onChallengeJesusCountChange,
+  onChurchScheduleChange,
   onStartChallenge,
   onExpandedChallengeChange,
   onPauseChallenge,
@@ -1693,8 +1700,11 @@ function ChallengePanel({
   challengeJesusMode: JesusPrayerMode;
   challengeJesusDuration: string;
   challengeJesusCount: string;
+  churchSchedule?: ChallengeChurchScheduleDraft;
   expandedChallengeId: string | null;
   recentlyStartedTemplateId: string | null;
+  showActiveLabel?: boolean;
+  showPausedLabel?: boolean;
   onOpenSetup: (entry: ChallengeCatalogEntry) => void;
   onSelectedPaceIdChange: (id: string | null) => void;
   onChallengeScheduleChange: (value: ChallengeScheduleDraft) => void;
@@ -1703,12 +1713,13 @@ function ChallengePanel({
   onChallengeJesusModeChange: (value: JesusPrayerMode) => void;
   onChallengeJesusDurationChange: (value: string) => void;
   onChallengeJesusCountChange: (value: string) => void;
-  onStartChallenge: () => void;
+  onChurchScheduleChange?: (value: ChallengeChurchScheduleDraft) => void;
+  onStartChallenge: () => void | Promise<void>;
   onExpandedChallengeChange: (id: string | null) => void;
-  onPauseChallenge: (id: string) => void;
-  onResumeChallenge: (id: string) => void;
-  onEndChallenge: (id: string) => void;
-  onUpdateChallenge: (id: string, updates: { time?: string; scheduleLabel?: string; paceLabel?: string; prayerConfig?: ChallengePrayerConfig }) => void;
+  onPauseChallenge: (id: string) => void | Promise<void>;
+  onResumeChallenge: (id: string) => void | Promise<void>;
+  onEndChallenge: (id: string) => void | Promise<void>;
+  onUpdateChallenge: (id: string, updates: { time?: string; scheduleLabel?: string; paceLabel?: string; prayerConfig?: ChallengePrayerConfig; churchConfig?: ChallengeChurchConfig }) => void | Promise<void>;
 }) {
   const [confirmAction, setConfirmAction] = useState<ChallengeConfirmAction | null>(null);
 
@@ -1723,6 +1734,21 @@ function ChallengePanel({
   }, [availableItems, context]);
 
   const seedActiveChallengeEditor = (item: ChallengeRecord) => {
+    if (item.category === 'church') {
+      onChurchScheduleChange?.({
+        ...defaultChurchChallengeSchedule(item.time ?? '09:00'),
+        frequency: item.churchConfig?.frequency ?? 'specific_days',
+        selectedDays: item.churchConfig?.selectedDays?.length ? item.churchConfig.selectedDays : CHURCH_DEFAULT_DAYS,
+        monthlyDays: item.churchConfig?.monthlyDays?.length ? item.churchConfig.monthlyDays : [1],
+        time: item.churchConfig?.time ?? item.time ?? '09:00',
+        sameTimeEveryDay: item.churchConfig?.sameTimeEveryDay ?? true,
+        dayTimes: item.churchConfig?.dayTimes ?? {},
+        notificationMode: item.churchConfig?.notificationMode ?? 'single',
+        reminderMinutes: item.churchConfig?.reminderMinutes ?? 15,
+      });
+      return;
+    }
+
     const savedSchedule = item.prayerConfig ?? item.scriptureConfig;
     onChallengeScheduleChange({
       time: savedSchedule?.time ?? item.time ?? '08:00',
@@ -1764,29 +1790,70 @@ function ChallengePanel({
     onExpandedChallengeChange(item.id);
   };
 
+  const saveChallengeEdits = (item: ChallengeRecord) => {
+    if (item.category === 'church' && churchSchedule) {
+      return Promise.resolve(onUpdateChallenge(item.id, {
+        time: churchSchedule.time,
+        scheduleLabel: churchScheduleLabel(churchSchedule),
+        churchConfig: churchScheduleToConfig(churchSchedule),
+      })).finally(() => onExpandedChallengeChange(null));
+    }
+
+    const prayerConfig = buildPrayerChallengeConfig(
+      item,
+      challengePrayerRule,
+      challengeJesusMode,
+      challengeJesusDuration,
+      challengeJesusCount,
+      challengeSchedule,
+    );
+    const prayerDetail = prayerChallengeDetail(
+      item,
+      challengePrayerRule,
+      challengeJesusMode,
+      challengeJesusDuration,
+      challengeJesusCount,
+    );
+    const paceLabel = prayerDetail
+      ? [item.paceLabel?.split(' · ')[0], prayerDetail].filter(Boolean).join(' · ')
+      : item.paceLabel;
+
+    return Promise.resolve(onUpdateChallenge(item.id, {
+      time: challengeSchedule.time,
+      paceLabel,
+      scheduleLabel: item.scheduleLabel,
+      prayerConfig,
+    })).finally(() => onExpandedChallengeChange(null));
+  };
+
   return (
     <View style={s.stack}>
       {activeItems.length > 0 && (
         <View style={s.stack}>
-          <SectionLabel text="Active" accent="#10B981" />
+          {showActiveLabel && <SectionLabel text="Active" accent="#10B981" />}
+          <View style={s.challengeCardList}>
           {activeItems.map(item => {
             const expanded = expandedChallengeId === item.id;
             const recentlyStarted = item.templateId === recentlyStartedTemplateId;
+            const tone = challengePanelTone(item.category);
             return (
-              <View key={item.id} style={[s.challengeCardShell, recentlyStarted && s.challengeCardShellStarted]}>
+              <View
+                key={item.id}
+                style={[
+                  s.challengeCardShell,
+                  recentlyStarted && s.challengeCardShellStarted,
+                ]}
+              >
                 <TouchableOpacity
                   onPress={() => toggleActiveChallenge(item, expanded)}
                   activeOpacity={0.84}
                   style={s.challengeCard}
                 >
                   <View style={s.challengeTop}>
-                    <View style={s.challengeBadge}>
-                      <Text style={s.challengeBadgeText}>{item.category.toUpperCase()}</Text>
+                    <View style={[s.challengeBadge, { backgroundColor: tone.badgeBg }]}>
+                      <Text style={[s.challengeBadgeText, { color: tone.badgeText }]}>{item.category.toUpperCase()}</Text>
                     </View>
-                    <View style={s.challengeFlame}>
-                      <Flame s={12} filled color="#F97316" />
-                      <Text style={s.challengeFlameText}>{item.streak}</Text>
-                    </View>
+                    <ChallengeStreakPill count={item.streak} />
                   </View>
 
                   <View style={s.challengeTitleRow}>
@@ -1802,7 +1869,17 @@ function ChallengePanel({
 
                   {item.showBar && item.progressTotal ? (
                     <View style={s.challengeProgressTrack}>
-                      <View style={[s.challengeProgressFill, { width: `${Math.min(100, Math.round((item.progressCurrent / item.progressTotal) * 100))}%` }]} />
+                      <LinearGradient
+                        colors={['#E0B770', C.gold, '#B6913D']}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 1, y: 0.5 }}
+                        style={[
+                          s.challengeProgressFill,
+                          {
+                            width: `${Math.min(100, Math.round((item.progressCurrent / item.progressTotal) * 100))}%`,
+                          },
+                        ]}
+                      />
                     </View>
                   ) : (
                     <View style={[s.challengeProgressTrack, { opacity: 0.4 }]} />
@@ -1836,14 +1913,20 @@ function ChallengePanel({
                       </View>
                     )}
 
-                    <ChallengeTimeEditor value={challengeSchedule} onChange={onChallengeScheduleChange} />
+                    {item.category === 'church' && churchSchedule && onChurchScheduleChange ? (
+                      <ScheduleEditor value={churchSchedule} onChange={onChurchScheduleChange} showFrequency />
+                    ) : (
+                      <>
+                        <ChallengeTimeEditor value={challengeSchedule} onChange={onChallengeScheduleChange} />
 
-                    <NotificationSettings
-                      mode={challengeSchedule.notificationMode}
-                      reminderMinutes={challengeSchedule.reminderMinutes}
-                      onModeChange={mode => onChallengeScheduleChange({ ...challengeSchedule, notificationMode: mode })}
-                      onReminderChange={reminderMinutes => onChallengeScheduleChange({ ...challengeSchedule, reminderMinutes })}
-                    />
+                        <NotificationSettings
+                          mode={challengeSchedule.notificationMode}
+                          reminderMinutes={challengeSchedule.reminderMinutes}
+                          onModeChange={mode => onChallengeScheduleChange({ ...challengeSchedule, notificationMode: mode })}
+                          onReminderChange={reminderMinutes => onChallengeScheduleChange({ ...challengeSchedule, reminderMinutes })}
+                        />
+                      </>
+                    )}
 
                     {!!item.paceLabel && (
                       <Text style={s.smallHint}>Current pace: {item.paceLabel}</Text>
@@ -1852,6 +1935,10 @@ function ChallengePanel({
                     <View style={s.challengeActionRow}>
                       <TouchableOpacity
                         onPress={() => {
+                          if (item.category === 'church') {
+                            void saveChallengeEdits(item);
+                            return;
+                          }
                           const prayerConfig = buildPrayerChallengeConfig(
                             item,
                             challengePrayerRule,
@@ -1870,13 +1957,13 @@ function ChallengePanel({
                           const paceLabel = prayerDetail
                             ? [item.paceLabel?.split(' · ')[0], prayerDetail].filter(Boolean).join(' · ')
                             : item.paceLabel;
-                          onUpdateChallenge(item.id, {
+                          void Promise.resolve(onUpdateChallenge(item.id, {
                             time: challengeSchedule.time,
                             paceLabel,
                             scheduleLabel: item.scheduleLabel,
                             prayerConfig,
-                          });
-                          onExpandedChallengeChange(null);
+                          }))
+                            .finally(() => onExpandedChallengeChange(null));
                         }}
                         activeOpacity={0.84}
                         style={s.secondaryBtn}
@@ -1885,8 +1972,12 @@ function ChallengePanel({
                       </TouchableOpacity>
 
                       {item.status === 'paused' ? (
-                        <TouchableOpacity onPress={() => onResumeChallenge(item.id)} activeOpacity={0.84} style={s.secondaryBtn}>
-                          <Text style={s.secondaryBtnText}>Resume</Text>
+                        <TouchableOpacity
+                          onPress={() => setConfirmAction({ mode: 'resume', item })}
+                          activeOpacity={0.84}
+                          style={s.resumeBtn}
+                        >
+                          <Text style={s.resumeBtnText}>Resume</Text>
                         </TouchableOpacity>
                       ) : (
                         <TouchableOpacity
@@ -1911,87 +2002,228 @@ function ChallengePanel({
               </View>
             );
           })}
+          </View>
         </View>
       )}
 
       {pausedItems.length > 0 && (
         <View style={s.stack}>
-          <SectionLabel text="Paused" accent="#A8A29E" />
-          {pausedItems.map(item => (
-            <View key={item.id} style={[s.challengeCardShell, { opacity: 0.84 }]}>
-              <TouchableOpacity onPress={() => onResumeChallenge(item.id)} activeOpacity={0.84} style={s.challengeCard}>
+          {showPausedLabel && <SectionLabel text="Paused" accent="#A8A29E" />}
+          <View style={s.challengeCardList}>
+          {pausedItems.map(item => {
+            const expanded = expandedChallengeId === item.id;
+            const tone = challengePanelTone(item.category);
+            return (
+            <View
+              key={item.id}
+              style={[
+                s.challengeCardShell,
+                s.challengeCardShellPaused,
+              ]}
+            >
+              <TouchableOpacity
+                onPress={() => {
+                  toggleActiveChallenge(item, expanded);
+                }}
+                activeOpacity={0.84}
+                style={[s.challengeCard, s.challengeCardPaused]}
+              >
                 <View style={s.challengeTop}>
-                  <View style={s.challengeBadgeMuted}>
-                    <Text style={s.challengeBadgeMutedText}>{item.category.toUpperCase()}</Text>
+                  <View style={[s.challengeBadgeMuted, { backgroundColor: tone.badgeBg }]}>
+                    <Text style={[s.challengeBadgeMutedText, { color: tone.badgeText }]}>{item.category.toUpperCase()}</Text>
                   </View>
-                  <Text style={s.challengePausedText}>PAUSED</Text>
+                  <View style={s.challengePausedPill}>
+                    <Text style={s.challengePausedText}>PAUSED</Text>
+                  </View>
                 </View>
-                <Text style={s.challengeTitle}>{item.title}</Text>
+                <View style={s.challengeTitleRow}>
+                  <Text style={[s.challengeTitle, s.challengeTitlePaused]}>{item.title}</Text>
+                  <View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
+                    <ChevronDown s={14} c="#BEB6A8" />
+                  </View>
+                </View>
+                {item.showBar && item.progressTotal ? (
+                  <View style={[s.challengeProgressTrack, s.challengeProgressTrackPaused]}>
+                    <View
+                      style={[
+                        s.challengeProgressFill,
+                        s.challengeProgressFillPaused,
+                        { width: `${Math.min(100, Math.round((item.progressCurrent / item.progressTotal) * 100))}%` },
+                      ]}
+                    />
+                  </View>
+                ) : (
+                  <View style={[s.challengeProgressTrack, { opacity: 0.28 }]} />
+                )}
                 <Text style={s.challengeMetaText}>{item.time || '--:--'}  ·  {item.paceLabel || item.scheduleLabel}</Text>
               </TouchableOpacity>
+              {expanded && (
+                <View style={s.challengeEditor}>
+                  <View style={s.pausedNotice}>
+                    <Text style={s.pausedNoticeLabel}>Paused</Text>
+                    <Text style={s.pausedNoticeBody}>
+                      This challenge is saved. Resume it when you are ready to continue.
+                    </Text>
+                  </View>
+
+                  {isPrayerRuleChallenge(item) && (
+                    <View style={s.catalogSetupBlock}>
+                      <Text style={s.scriptureSetupLabel}>Prayer Rule</Text>
+                      <PrayerChallengeRuleEditor
+                        entry={item}
+                        value={challengePrayerRule}
+                        onChange={onChallengePrayerRuleChange}
+                      />
+                    </View>
+                  )}
+
+                  {isJesusPrayerChallenge(item) && (
+                    <View style={s.catalogSetupBlock}>
+                      <Text style={s.scriptureSetupLabel}>Jesus Prayer</Text>
+                      <JesusPrayerConfigurator
+                        mode={challengeJesusMode}
+                        duration={challengeJesusDuration}
+                        count={challengeJesusCount}
+                        onModeChange={onChallengeJesusModeChange}
+                        onDurationChange={onChallengeJesusDurationChange}
+                        onCountChange={onChallengeJesusCountChange}
+                      />
+                    </View>
+                  )}
+
+                  {item.category === 'church' && churchSchedule && onChurchScheduleChange ? (
+                    <ScheduleEditor value={churchSchedule} onChange={onChurchScheduleChange} showFrequency />
+                  ) : (
+                    <>
+                      <ChallengeTimeEditor value={challengeSchedule} onChange={onChallengeScheduleChange} />
+
+                      <NotificationSettings
+                        mode={challengeSchedule.notificationMode}
+                        reminderMinutes={challengeSchedule.reminderMinutes}
+                        onModeChange={mode => onChallengeScheduleChange({ ...challengeSchedule, notificationMode: mode })}
+                        onReminderChange={reminderMinutes => onChallengeScheduleChange({ ...challengeSchedule, reminderMinutes })}
+                      />
+                    </>
+                  )}
+
+                  {!!item.paceLabel && (
+                    <Text style={s.smallHint}>Saved pace: {item.paceLabel}</Text>
+                  )}
+
+                  <View style={s.challengeActionRow}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        void saveChallengeEdits(item);
+                      }}
+                      activeOpacity={0.84}
+                      style={s.secondaryBtn}
+                    >
+                      <Text style={s.secondaryBtnText}>Save</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => setConfirmAction({ mode: 'resume', item })}
+                      activeOpacity={0.84}
+                      style={s.resumeBtn}
+                    >
+                      <Text style={s.resumeBtnText}>Resume</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => setConfirmAction({ mode: 'end', item })}
+                      activeOpacity={0.84}
+                      style={s.dangerBtn}
+                    >
+                      <Text style={s.dangerBtnText}>End</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
             </View>
-          ))}
+            );
+          })}
+          </View>
         </View>
       )}
 
-      <View style={s.stack}>
-        {context !== 'scripture' && <SectionLabel text="Start New" accent="#C5A059" />}
+      {availableItems.length > 0 && (
+        <View style={s.stack}>
+          {context !== 'scripture' && <SectionLabel text="Start New" accent="#C5A059" />}
 
-        {context === 'scripture' && groupedAvailable
-          ? Object.entries(groupedAvailable).map(([group, entries]) => (
-              <View key={group} style={s.stack}>
-                <Text style={s.groupTitle}>{group.toUpperCase()}</Text>
-                {entries.map(entry => (
-                  <ScriptureCatalogEntryCard
-                    key={entry.id}
-                    entry={entry}
-                    expanded={selectedCatalog?.id === entry.id}
-                    scriptureDailyAmount={scriptureDailyAmount}
-                    challengeSchedule={challengeSchedule}
-                    onToggle={() => onOpenSetup(entry)}
-                    onScriptureDailyAmountChange={onScriptureDailyAmountChange}
-                    onChallengeScheduleChange={onChallengeScheduleChange}
-                    onStart={onStartChallenge}
-                  />
-                ))}
-              </View>
-            ))
-          : availableItems.map(entry => (
-              <ChallengeCatalogEntryCard
-                key={entry.id}
-                entry={entry}
-                expanded={selectedCatalog?.id === entry.id}
-                selectedPaceId={selectedPaceId}
-                challengeSchedule={challengeSchedule}
-                challengePrayerRule={challengePrayerRule}
-                challengeJesusMode={challengeJesusMode}
-                challengeJesusDuration={challengeJesusDuration}
-                challengeJesusCount={challengeJesusCount}
-                onToggle={() => onOpenSetup(entry)}
-                onSelectedPaceIdChange={onSelectedPaceIdChange}
-                onChallengeScheduleChange={onChallengeScheduleChange}
-                onChallengePrayerRuleChange={onChallengePrayerRuleChange}
-                onChallengeJesusModeChange={onChallengeJesusModeChange}
-                onChallengeJesusDurationChange={onChallengeJesusDurationChange}
-                onChallengeJesusCountChange={onChallengeJesusCountChange}
-                onStart={onStartChallenge}
-              />
-            ))}
-      </View>
+          {context === 'scripture' && groupedAvailable
+            ? Object.entries(groupedAvailable).map(([group, entries]) => (
+                <View key={group} style={s.stack}>
+                  <Text style={s.groupTitle}>{group.toUpperCase()}</Text>
+                  {entries.map(entry => (
+                    <ScriptureCatalogEntryCard
+                      key={entry.id}
+                      entry={entry}
+                      expanded={selectedCatalog?.id === entry.id}
+                      scriptureDailyAmount={scriptureDailyAmount}
+                      challengeSchedule={challengeSchedule}
+                      onToggle={() => onOpenSetup(entry)}
+                      onScriptureDailyAmountChange={onScriptureDailyAmountChange}
+                      onChallengeScheduleChange={onChallengeScheduleChange}
+                      onStart={onStartChallenge}
+                    />
+                  ))}
+                </View>
+              ))
+            : availableItems.map(entry => (
+                <ChallengeCatalogEntryCard
+                  key={entry.id}
+                  entry={entry}
+                  expanded={selectedCatalog?.id === entry.id}
+                  selectedPaceId={selectedPaceId}
+                  challengeSchedule={challengeSchedule}
+                  challengePrayerRule={challengePrayerRule}
+                  challengeJesusMode={challengeJesusMode}
+                  challengeJesusDuration={challengeJesusDuration}
+                  challengeJesusCount={challengeJesusCount}
+                  churchSchedule={churchSchedule}
+                  onToggle={() => onOpenSetup(entry)}
+                  onSelectedPaceIdChange={onSelectedPaceIdChange}
+                  onChallengeScheduleChange={onChallengeScheduleChange}
+                  onChallengePrayerRuleChange={onChallengePrayerRuleChange}
+                  onChallengeJesusModeChange={onChallengeJesusModeChange}
+                  onChallengeJesusDurationChange={onChallengeJesusDurationChange}
+                  onChallengeJesusCountChange={onChallengeJesusCountChange}
+                  onChurchScheduleChange={onChurchScheduleChange}
+                  onStart={onStartChallenge}
+                />
+              ))}
+        </View>
+      )}
 
       <ChallengeActionConfirmModal
         action={confirmAction}
         onCancel={() => setConfirmAction(null)}
         onConfirm={action => {
-          if (action.mode === 'pause') {
-            onPauseChallenge(action.item.id);
-          } else {
-            onEndChallenge(action.item.id);
-          }
-          onExpandedChallengeChange(null);
-          setConfirmAction(null);
+          void (async () => {
+            if (action.mode === 'pause') {
+              await onPauseChallenge(action.item.id);
+            } else if (action.mode === 'resume') {
+              await saveChallengeEdits(action.item);
+              await onResumeChallenge(action.item.id);
+            } else {
+              await onEndChallenge(action.item.id);
+            }
+            onExpandedChallengeChange(null);
+            setConfirmAction(null);
+          })();
         }}
       />
+    </View>
+  );
+}
+
+function ChallengeStreakPill({ count }: { count: number }) {
+  return (
+    <View style={s.challengeFlame}>
+      <Text style={s.challengeFlameText}>{count}</Text>
+      <View style={s.challengeFlameIcon}>
+        <Image source={STREAK_FLAME_PNG} style={s.challengeFlameImage} resizeMode="contain" />
+      </View>
     </View>
   );
 }
@@ -2006,32 +2238,39 @@ function ChallengeActionConfirmModal({
   onConfirm: (action: ChallengeConfirmAction) => void;
 }) {
   const danger = action?.mode === 'end';
-  const title = danger ? 'End Challenge?' : 'Pause Challenge?';
+  const resume = action?.mode === 'resume';
+  const title = danger ? 'End Challenge?' : resume ? 'Resume Challenge?' : 'Pause Challenge?';
   const itemTitle = action?.item.title ?? 'this challenge';
   const body = danger
-    ? `Progress stays in history, but "${itemTitle}" leaves your active routine.`
-    : `"${itemTitle}" will move to Paused and stop showing as active until you resume it.`;
+    ? `"${itemTitle}" will be removed and its progress will be deleted. Pause it instead if you want to save it for later.`
+    : resume
+      ? `"${itemTitle}" will return to your active challenge flow.`
+      : `"${itemTitle}" will move to Paused and stop showing as active until you resume it.`;
 
   return (
     <Modal transparent visible={!!action} animationType="fade" onRequestClose={onCancel}>
       <View style={s.challengeConfirmOverlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
         <View style={s.challengeConfirmCard}>
-          <View style={[s.challengeConfirmIcon, danger && s.challengeConfirmIconDanger]}>
-            {danger ? <Trash2 s={19} c="#DC2626" /> : <Pause s={18} c={C.gold} />}
+          <View style={[s.challengeConfirmIcon, danger && s.challengeConfirmIconDanger, resume && s.challengeConfirmIconResume]}>
+            {danger
+              ? <Trash2 s={19} c="#DC2626" />
+              : resume
+                ? <RotateCcw s={18} c="#16A34A" />
+                : <Pause s={18} c={C.gold} />}
           </View>
           <Text style={s.challengeConfirmTitle}>{title}</Text>
           <Text style={s.challengeConfirmBody}>{body}</Text>
           <View style={s.challengeConfirmRow}>
             <TouchableOpacity onPress={onCancel} activeOpacity={0.84} style={s.challengeConfirmCancel}>
-              <Text style={s.challengeConfirmCancelText}>{danger ? 'CANCEL' : 'KEEP ACTIVE'}</Text>
+              <Text style={s.challengeConfirmCancelText}>{danger ? 'CANCEL' : resume ? 'KEEP PAUSED' : 'KEEP ACTIVE'}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => action && onConfirm(action)}
               activeOpacity={0.84}
-              style={[s.challengeConfirmPrimary, danger && s.challengeConfirmDanger]}
+              style={[s.challengeConfirmPrimary, danger && s.challengeConfirmDanger, resume && s.challengeConfirmResume]}
             >
-              <Text style={s.challengeConfirmPrimaryText}>{danger ? 'END' : 'PAUSE'}</Text>
+              <Text style={s.challengeConfirmPrimaryText}>{danger ? 'END' : resume ? 'RESUME' : 'PAUSE'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2057,7 +2296,7 @@ function ScriptureCatalogEntryCard({
   onToggle: () => void;
   onScriptureDailyAmountChange: (value: number) => void;
   onChallengeScheduleChange: (value: ChallengeScheduleDraft) => void;
-  onStart: () => void;
+  onStart: () => void | Promise<void>;
 }) {
   const displayTitle = entry.id === 'lectionary_daily' ? `${entry.title} — 365 Days` : entry.title;
 
@@ -2139,6 +2378,7 @@ function ChallengeCatalogEntryCard({
   challengeJesusMode,
   challengeJesusDuration,
   challengeJesusCount,
+  churchSchedule,
   onToggle,
   onSelectedPaceIdChange,
   onChallengeScheduleChange,
@@ -2146,6 +2386,7 @@ function ChallengeCatalogEntryCard({
   onChallengeJesusModeChange,
   onChallengeJesusDurationChange,
   onChallengeJesusCountChange,
+  onChurchScheduleChange,
   onStart,
 }: {
   entry: ChallengeCatalogEntry;
@@ -2156,6 +2397,7 @@ function ChallengeCatalogEntryCard({
   challengeJesusMode: JesusPrayerMode;
   challengeJesusDuration: string;
   challengeJesusCount: string;
+  churchSchedule?: ChallengeChurchScheduleDraft;
   onToggle: () => void;
   onSelectedPaceIdChange: (id: string | null) => void;
   onChallengeScheduleChange: (value: ChallengeScheduleDraft) => void;
@@ -2163,10 +2405,9 @@ function ChallengeCatalogEntryCard({
   onChallengeJesusModeChange: (value: JesusPrayerMode) => void;
   onChallengeJesusDurationChange: (value: string) => void;
   onChallengeJesusCountChange: (value: string) => void;
-  onStart: () => void;
+  onChurchScheduleChange?: (value: ChallengeChurchScheduleDraft) => void;
+  onStart: () => void | Promise<void>;
 }) {
-  const selectedPace = entry.paceOptions?.find(option => option.id === selectedPaceId) ?? entry.paceOptions?.[0] ?? null;
-
   return (
     <View style={[s.catalogStartCard, expanded && s.catalogStartCardExpanded]}>
       <TouchableOpacity onPress={onToggle} activeOpacity={0.84} style={s.catalogStartTap}>
@@ -2178,9 +2419,6 @@ function ChallengeCatalogEntryCard({
             <View style={s.catalogStartCopy}>
               <Text style={s.catalogStartTitle}>{entry.title}</Text>
               <Text style={s.catalogStartBody}>{entry.description}</Text>
-              {selectedPace && !expanded ? (
-                <Text style={s.catalogStartMeta}>{selectedPace.label.toUpperCase()} · {entry.defaultTime ?? '08:00'}</Text>
-              ) : null}
             </View>
           </View>
           <View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
@@ -2240,17 +2478,23 @@ function ChallengeCatalogEntryCard({
             </View>
           )}
 
-          <View style={s.catalogScheduleShell}>
-            <Text style={s.scriptureSetupLabel}>Schedule</Text>
-            <ChallengeTimeEditor value={challengeSchedule} onChange={onChallengeScheduleChange} />
-          </View>
+          {entry.category === 'church' && churchSchedule && onChurchScheduleChange ? (
+            <ScheduleEditor value={churchSchedule} onChange={onChurchScheduleChange} showFrequency />
+          ) : (
+            <>
+              <View style={s.catalogScheduleShell}>
+                <Text style={s.scriptureSetupLabel}>Schedule</Text>
+                <ChallengeTimeEditor value={challengeSchedule} onChange={onChallengeScheduleChange} />
+              </View>
 
-          <NotificationSettings
-            mode={challengeSchedule.notificationMode}
-            reminderMinutes={challengeSchedule.reminderMinutes}
-            onModeChange={mode => onChallengeScheduleChange({ ...challengeSchedule, notificationMode: mode })}
-            onReminderChange={reminderMinutes => onChallengeScheduleChange({ ...challengeSchedule, reminderMinutes })}
-          />
+              <NotificationSettings
+                mode={challengeSchedule.notificationMode}
+                reminderMinutes={challengeSchedule.reminderMinutes}
+                onModeChange={mode => onChallengeScheduleChange({ ...challengeSchedule, notificationMode: mode })}
+                onReminderChange={reminderMinutes => onChallengeScheduleChange({ ...challengeSchedule, reminderMinutes })}
+              />
+            </>
+          )}
 
           <PrimaryButton label="Start Challenge" onPress={onStart} />
         </View>
@@ -2276,11 +2520,14 @@ function ScheduleEditor({
       case 'weekends':
         return [5, 6];
       case 'specific_days':
-        return value.selectedDays.length ? value.selectedDays : [0, 1, 2, 3, 4, 5, 6];
+        return ensureSelectedWeekdays(value.selectedDays);
       default:
         return [0, 1, 2, 3, 4, 5, 6];
     }
   }, [value.frequency, value.selectedDays]);
+  const effectiveSelectedDays = value.frequency === 'specific_days'
+    ? ensureSelectedWeekdays(value.selectedDays)
+    : value.selectedDays;
   const isCompactGrid = gridWidth > 0 && gridWidth < 284;
   const weekdayGap = isCompactGrid ? 6 : 8;
   const monthlyGap = isCompactGrid ? 4 : 6;
@@ -2309,6 +2556,9 @@ function ScheduleEditor({
                     onPress={() => onChange({
                       ...value,
                       frequency: option.value,
+                      selectedDays: option.value === 'specific_days'
+                        ? ensureSelectedWeekdays(value.selectedDays)
+                        : value.selectedDays,
                       sameTimeEveryDay: option.value === 'monthly' ? true : value.sameTimeEveryDay,
                       monthlyDays: option.value === 'monthly' && !value.monthlyDays.length ? [1] : value.monthlyDays,
                     })}
@@ -2321,16 +2571,19 @@ function ScheduleEditor({
               <View style={s.gridMeasure} onLayout={event => setGridWidth(Math.floor(event.nativeEvent.layout.width))}>
                 <View style={[s.dayChipRow, { columnGap: weekdayGap }]}>
                   {WEEKDAY_LABELS.map((label, index) => {
-                    const active = value.selectedDays.includes(index);
+                    const active = effectiveSelectedDays.includes(index);
                     return (
                       <TouchableOpacity
                         key={label}
-                        onPress={() => onChange({
-                          ...value,
-                          selectedDays: active
-                            ? value.selectedDays.filter(day => day !== index)
-                            : [...value.selectedDays, index].sort((a, b) => a - b),
-                        })}
+                        onPress={() => {
+                          if (active && effectiveSelectedDays.length === 1) return;
+                          onChange({
+                            ...value,
+                            selectedDays: active
+                              ? effectiveSelectedDays.filter(day => day !== index)
+                              : [...effectiveSelectedDays, index].sort((a, b) => a - b),
+                          });
+                        }}
                         activeOpacity={0.84}
                         style={[
                           s.dayChip,
@@ -2449,17 +2702,16 @@ function FrequencyChoice({
   onPress: () => void;
 }) {
   const progress = useSelectionMotion(active);
-  const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.01] });
-  const backgroundColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#FFFFFF', '#FFF9EE'],
-  });
-  const borderColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#F0EDE6', '#D6B067'],
-  });
-  const shadowOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0.015, 0.10] });
-  const dotScale = progress.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] });
+  const motionStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', '#FFF9EE']),
+    borderColor: interpolateColor(progress.value, [0, 1], ['#F0EDE6', '#D6B067']),
+    shadowOpacity: 0.015 + progress.value * 0.085,
+    transform: [{ scale: 1 + progress.value * 0.01 }],
+  }));
+  const dotMotionStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scale: 0.55 + progress.value * 0.45 }],
+  }));
   const handlePress = () => {
     animateSoftLayoutChange();
     onPress();
@@ -2467,15 +2719,10 @@ function FrequencyChoice({
 
   return (
     <TouchableOpacity onPress={handlePress} activeOpacity={0.9}>
-      <Animated.View
+      <Reanimated.View
         style={[
           s.frequencyChip,
-          {
-            backgroundColor,
-            borderColor,
-            shadowOpacity,
-            transform: [{ scale }],
-          },
+          motionStyle,
         ]}
       >
         <View style={s.frequencyCopy}>
@@ -2483,17 +2730,9 @@ function FrequencyChoice({
           <Text style={[s.frequencyChipSub, active && s.frequencyChipSubActive]}>{option.desc}</Text>
         </View>
         <View style={[s.frequencyDotRing, active && s.frequencyDotRingActive]}>
-          <Animated.View
-            style={[
-              s.frequencyDot,
-              {
-                opacity: progress,
-                transform: [{ scale: dotScale }],
-              },
-            ]}
-          />
+          <Reanimated.View style={[s.frequencyDot, dotMotionStyle]} />
         </View>
-      </Animated.View>
+      </Reanimated.View>
     </TouchableOpacity>
   );
 }
@@ -2803,14 +3042,12 @@ function ToggleRow({
   onPress: () => void;
 }) {
   const progress = useSelectionMotion(active);
-  const trackColor = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#E5E7EB', C.gold],
-  });
-  const thumbTranslateX = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 16],
-  });
+  const trackMotionStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#E5E7EB', C.gold]),
+  }));
+  const thumbMotionStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: progress.value * 16 }],
+  }));
 
   const handlePress = () => {
     animateSoftLayoutChange();
@@ -2820,9 +3057,9 @@ function ToggleRow({
   return (
     <TouchableOpacity onPress={handlePress} activeOpacity={0.84} style={s.toggleRow}>
       <Text style={s.toggleText}>{label}</Text>
-      <Animated.View style={[s.toggleTrack, { backgroundColor: trackColor }]}>
-        <Animated.View style={[s.toggleThumb, { transform: [{ translateX: thumbTranslateX }] }]} />
-      </Animated.View>
+      <Reanimated.View style={[s.toggleTrack, trackMotionStyle]}>
+        <Reanimated.View style={[s.toggleThumb, thumbMotionStyle]} />
+      </Reanimated.View>
     </TouchableOpacity>
   );
 }
@@ -2952,6 +3189,7 @@ const s = StyleSheet.create({
     gap: 18,
   },
   stack: { gap: 16 },
+  challengeCardList: {},
   stackTight: { gap: 10 },
   rowGap10: { gap: 10 },
   cardBlock: {
@@ -3064,8 +3302,8 @@ const s = StyleSheet.create({
     minHeight: 50,
     fontFamily: F.serif,
     fontSize: 24,
+    lineHeight: 32,
     color: '#1F2937',
-    paddingVertical: 0,
   },
   timeLikeInput: {
     minHeight: 50,
@@ -3820,20 +4058,23 @@ const s = StyleSheet.create({
     color: '#9CA3AF',
   },
   challengeCardShell: {
-    borderRadius: 32,
+    borderRadius: 24,
     borderWidth: 1,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderColor: 'rgba(197,160,89,0.22)',
+    borderLeftWidth: 4,
+    borderRightWidth: 4,
+    borderColor: 'rgba(197,160,89,0.34)',
+    borderTopColor: 'rgba(197,160,89,0.40)',
+    borderBottomColor: 'rgba(197,160,89,0.40)',
     borderLeftColor: C.gold,
     borderRightColor: C.gold,
     backgroundColor: '#FFFFFF',
     overflow: 'hidden',
-    shadowColor: '#C5A059',
+    marginBottom: 4,
+    shadowColor: '#1C1917',
     shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 18,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 3,
   },
   challengeCardShellStarted: {
     borderColor: 'rgba(197,160,89,0.48)',
@@ -3844,27 +4085,40 @@ const s = StyleSheet.create({
     shadowRadius: 24,
     elevation: 4,
   },
+  challengeCardShellPaused: {
+    borderColor: '#E9E3D8',
+    borderLeftColor: '#D8C49A',
+    borderRightColor: '#D8C49A',
+    backgroundColor: '#FBFAF7',
+    shadowColor: '#A8A29E',
+    shadowOpacity: 0.035,
+  },
+  challengeCardPaused: {
+    backgroundColor: '#FBFAF7',
+  },
   challengeCard: {
-    paddingHorizontal: 18,
-    paddingVertical: 18,
+    paddingHorizontal: 16,
+    paddingTop: 9,
+    paddingBottom: 11,
   },
   challengeTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 9,
+    marginBottom: 1,
   },
   challengeBadge: {
     alignSelf: 'flex-start',
     borderRadius: 999,
     backgroundColor: '#EFF6FF',
     paddingHorizontal: 9,
-    paddingVertical: 5,
+    paddingVertical: 3.5,
   },
   challengeBadgeText: {
     fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 1.3,
+    fontSize: 8.5,
+    lineHeight: 11,
+    letterSpacing: 1.5,
     color: '#3B82F6',
     textTransform: 'uppercase',
   },
@@ -3873,28 +4127,48 @@ const s = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#F5F5F4',
     paddingHorizontal: 9,
-    paddingVertical: 5,
+    paddingVertical: 3.5,
   },
   challengeBadgeMutedText: {
     fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 1.3,
+    fontSize: 8.5,
+    lineHeight: 11,
+    letterSpacing: 1.5,
     color: '#A8A29E',
     textTransform: 'uppercase',
   },
   challengeFlame: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    borderRadius: 999,
-    backgroundColor: '#FFF7ED',
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    gap: 0,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFF5E7',
+    borderWidth: 1,
+    borderColor: '#FBE0BE',
+    paddingLeft: 10,
+    paddingRight: 4,
+  },
+  challengeFlameIcon: {
+    width: 17,
+    height: 17,
+    borderRadius: 8.5,
+    backgroundColor: '#FFF1D6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  challengeFlameImage: {
+    width: 12,
+    height: 12,
   },
   challengeFlameText: {
     fontFamily: F.sansBold,
-    fontSize: 11,
-    color: '#F97316',
+    fontSize: 10.5,
+    color: '#C46A19',
+    minWidth: 10,
+    textAlign: 'right',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   challengeTitleRow: {
     flexDirection: 'row',
@@ -3905,35 +4179,57 @@ const s = StyleSheet.create({
   challengeTitle: {
     flex: 1,
     fontFamily: F.serifMedium,
-    fontSize: 17,
-    lineHeight: 23,
-    color: '#1F2937',
+    fontSize: 19,
+    lineHeight: 24,
+    color: '#1A1714',
+  },
+  challengeTitlePaused: {
+    color: '#4B5563',
   },
   challengeMetaText: {
-    marginTop: 7,
+    marginTop: 9,
+    marginBottom: 1,
     fontFamily: F.sansBold,
     fontSize: 10.5,
     letterSpacing: 1.1,
     color: '#B49B67',
   },
+  challengeMetaTextPaused: {
+    color: '#A8A29E',
+  },
+  challengePausedPill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E7E5E4',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
   challengePausedText: {
     fontFamily: F.sansBold,
     fontSize: 8,
+    lineHeight: 10,
     letterSpacing: 1.4,
     color: '#A8A29E',
     textTransform: 'uppercase',
   },
   challengeProgressTrack: {
-    marginTop: 13,
+    marginTop: 0,
     height: 6,
     borderRadius: 999,
-    backgroundColor: 'rgba(197,160,89,0.15)',
+    backgroundColor: 'rgba(197,160,89,0.13)',
     overflow: 'hidden',
+  },
+  challengeProgressTrackPaused: {
+    backgroundColor: '#EEEAE2',
   },
   challengeProgressFill: {
     height: '100%',
     borderRadius: 999,
     backgroundColor: C.gold,
+  },
+  challengeProgressFillPaused: {
+    backgroundColor: '#D6D3D1',
   },
   challengeEditor: {
     paddingHorizontal: 18,
@@ -3965,6 +4261,28 @@ const s = StyleSheet.create({
     color: '#6B7280',
     textTransform: 'uppercase',
   },
+  resumeBtn: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 18,
+    backgroundColor: C.gold,
+    borderWidth: 1,
+    borderColor: C.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: C.gold,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  resumeBtnText: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    letterSpacing: 1.4,
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+  },
   dangerBtn: {
     flex: 1,
     minHeight: 46,
@@ -3981,6 +4299,28 @@ const s = StyleSheet.create({
     letterSpacing: 1.4,
     color: '#EF4444',
     textTransform: 'uppercase',
+  },
+  pausedNotice: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E7E5E4',
+    backgroundColor: '#FAFAF9',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  pausedNoticeLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 1.8,
+    color: '#A8A29E',
+    textTransform: 'uppercase',
+  },
+  pausedNoticeBody: {
+    marginTop: 5,
+    fontFamily: F.serif,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#6B7280',
   },
   challengeConfirmOverlay: {
     flex: 1,
@@ -4013,6 +4353,9 @@ const s = StyleSheet.create({
   },
   challengeConfirmIconDanger: {
     backgroundColor: '#FEF2F2',
+  },
+  challengeConfirmIconResume: {
+    backgroundColor: '#ECFDF3',
   },
   challengeConfirmTitle: {
     fontFamily: F.serifMedium,
@@ -4052,6 +4395,9 @@ const s = StyleSheet.create({
   },
   challengeConfirmDanger: {
     backgroundColor: '#DC2626',
+  },
+  challengeConfirmResume: {
+    backgroundColor: '#16A34A',
   },
   challengeConfirmCancelText: {
     fontFamily: F.sansBold,

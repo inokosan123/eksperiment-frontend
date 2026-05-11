@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Keyboard,
   Modal,
@@ -36,39 +36,19 @@ import {
   X,
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
-import { ReadingBook, ReadingFrequency, useReadingList } from './ReadingListContext';
+import {
+  type ReadingBook,
+  type ReadingCategoryDef,
+  type ReadingFrequency,
+  useReadingList,
+} from './ReadingListContext';
+import { DEFAULT_READING_CATEGORIES, readingTaskId } from './readingListDb';
 
 type TabFilter = 'all' | 'to_read' | 'reading' | 'finished';
 
-type CategoryDef = {
-  label: string;
-  color: string;
-};
+type CategoryDef = ReadingCategoryDef;
 
-const CATEGORIES: CategoryDef[] = [
-  { label: 'Spirituality', color: '#B8860B' },
-  { label: 'Theology', color: '#92400E' },
-  { label: 'Patristics', color: '#7C3AED' },
-  { label: 'Prayer', color: '#C5A059' },
-  { label: 'Philosophy', color: '#6D28D9' },
-  { label: 'Psychology', color: '#DB2777' },
-  { label: 'Biography', color: '#2563EB' },
-  { label: 'Memoir', color: '#0F766E' },
-  { label: 'History', color: '#B45309' },
-  { label: 'Classic', color: '#1C1917' },
-  { label: 'Literature', color: '#4338CA' },
-  { label: 'Fiction', color: '#7C3AED' },
-  { label: 'Poetry', color: '#9D174D' },
-  { label: 'Self-Help', color: '#16A34A' },
-  { label: 'Productivity', color: '#0891B2' },
-  { label: 'Business', color: '#374151' },
-  { label: 'Leadership', color: '#1D4ED8' },
-  { label: 'Science', color: '#065F46' },
-  { label: 'Health', color: '#DC2626' },
-  { label: 'Nature', color: '#15803D' },
-  { label: 'Art', color: '#7E22CE' },
-  { label: 'Travel', color: '#0369A1' },
-];
+const CATEGORIES: CategoryDef[] = DEFAULT_READING_CATEGORIES;
 
 const DAY_OPTIONS = [
   { key: 1, label: 'M' },
@@ -84,8 +64,8 @@ const ALL_TASK_DAY_INDEXES = [0, 1, 2, 3, 4, 5, 6];
 const WEEKDAY_TASK_INDEXES = [0, 1, 2, 3, 4];
 const WEEKEND_TASK_INDEXES = [5, 6];
 
-function getCategoryDef(label?: string) {
-  return CATEGORIES.find(item => item.label === label) ?? (label ? { label, color: '#6B7280' } : null);
+function getCategoryDef(label?: string, categoryDefs: CategoryDef[] = CATEGORIES) {
+  return categoryDefs.find(item => item.label === label) ?? (label ? { label, color: '#6B7280' } : null);
 }
 
 function hexToRgba(hex: string, alpha: number) {
@@ -149,16 +129,12 @@ function getActiveTaskDayIndexes(frequency: ReadingFrequency, selectedDays: numb
   return ALL_TASK_DAY_INDEXES;
 }
 
-function readingTaskId(bookId: string) {
-  return `reading_book_${bookId}`;
-}
-
 function readingBookToTaskDraft(book: ReadingBook): TaskDraft {
   const frequency = book.taskFrequency ?? 'daily';
   return {
     id: readingTaskId(book.id),
     title: book.title,
-    subtitle: [book.author, getFrequencySummary(book)].filter(Boolean).join(' - '),
+    subtitle: getFrequencySummary(book),
     level: 2,
     source: 'reading_book',
     type: 'reading',
@@ -182,9 +158,15 @@ function readingBookToTaskDraft(book: ReadingBook): TaskDraft {
 
 export default function ReadingListView() {
   const router = useRouter();
-  const { books, addBook, updateBook, deleteBook, recordSession } = useReadingList();
+  const {
+    books,
+    categoryDefs,
+    addBook,
+    updateBook,
+    deleteBook,
+    saveCategoryDefs,
+  } = useReadingList();
   const { createOrUpdateTask, remove: removeTask } = useTasks();
-  const [categoryDefs, setCategoryDefs] = useState<CategoryDef[]>(CATEGORIES);
   const [tab, setTab] = useState<TabFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -192,6 +174,20 @@ export default function ReadingListView() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ReadingBook | null>(null);
   const [scheduleTarget, setScheduleTarget] = useState<ReadingBook | null>(null);
+  const [confirmDisableTarget, setConfirmDisableTarget] = useState<ReadingBook | null>(null);
+  const subtitleMigratedRef = useRef(false);
+
+  // One-time per session: refresh stored task subtitles for any reading book
+  // that's been promoted to the home routine. Older drafts stored
+  // "Author - Daily"; the current format is just the frequency summary.
+  // Idempotent — calling createOrUpdateTask with the same id replaces the row.
+  useEffect(() => {
+    if (subtitleMigratedRef.current || books.length === 0) return;
+    subtitleMigratedRef.current = true;
+    const enabled = books.filter(book => book.showOnHome);
+    if (enabled.length === 0) return;
+    void Promise.all(enabled.map(book => createOrUpdateTask(readingBookToTaskDraft(book))));
+  }, [books, createOrUpdateTask]);
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [category, setCategory] = useState<string | null>(null);
@@ -215,14 +211,11 @@ export default function ReadingListView() {
 
   const usedCategories = useMemo(() => Array.from(new Set(books.map(book => book.category).filter(Boolean))) as string[], [books]);
 
-  const getActiveDef = (label?: string): CategoryDef | null => {
-    if (!label) return null;
-    return categoryDefs.find(c => c.label === label) ?? { label, color: '#6B7280' };
-  };
+  const getActiveDef = (label?: string): CategoryDef | null => getCategoryDef(label, categoryDefs);
 
-  const addNewBook = () => {
+  const addNewBook = async () => {
     if (!title.trim()) return;
-    addBook({
+    await addBook({
       id: `book_${Date.now()}`,
       title: title.trim(),
       author: author.trim() || undefined,
@@ -250,7 +243,7 @@ export default function ReadingListView() {
     if (status !== 'reading' && book.showOnHome) {
       await removeTask(readingTaskId(book.id));
     }
-    updateBook(book.id, {
+    await updateBook(book.id, {
       status,
       startedAt: status === 'reading' ? (book.startedAt ?? Date.now()) : book.startedAt,
       finishedAt: status === 'finished' ? (book.finishedAt ?? Date.now()) : undefined,
@@ -372,7 +365,7 @@ export default function ReadingListView() {
               />
               <Text style={s.formLabel}>CATEGORY</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.formCategoryRow}>
-                {CATEGORIES.map(item => (
+                {categoryDefs.map(item => (
                   <CategoryChip
                     key={item.label}
                     label={item.label}
@@ -396,6 +389,22 @@ export default function ReadingListView() {
               </TouchableOpacity>
             </View>
           </View>
+        )}
+
+        {filtered.length === 0 && !showForm && (
+          <TouchableOpacity
+            activeOpacity={0.84}
+            onPress={() => setShowForm(true)}
+            style={s.emptyCard}
+          >
+            <Text style={s.emptyTitle}>
+              {tab === 'all' ? 'No books yet' :
+                tab === 'reading' ? 'No books in progress' :
+                tab === 'finished' ? 'No finished books yet' :
+                'Nothing to read yet'}
+            </Text>
+            <Text style={s.emptyBody}>Tap to add your first book.</Text>
+          </TouchableOpacity>
         )}
 
         <View style={s.bookList}>
@@ -464,7 +473,7 @@ export default function ReadingListView() {
                       <Text style={s.metaInline}>{book.sessions} sessions</Text>
                       <Text style={s.metaSlash}>/</Text>
                       <Text style={s.metaInline}>{formatMinutes(book.totalMinutes)}</Text>
-                      {book.taskTime && (
+                      {book.status === 'reading' && book.taskTime && (
                         <>
                           <Text style={s.metaSlash}>/</Text>
                           <Text style={s.metaInline}>{book.taskTime}</Text>
@@ -521,10 +530,9 @@ export default function ReadingListView() {
                           </View>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          onPress={async () => {
+                          onPress={() => {
                             if (book.showOnHome) {
-                              await removeTask(readingTaskId(book.id));
-                              updateBook(book.id, { showOnHome: false });
+                              setConfirmDisableTarget(book);
                               return;
                             }
                             setScheduleTarget(book);
@@ -622,13 +630,14 @@ export default function ReadingListView() {
 
       <ScheduleModal
         book={scheduleTarget}
+        categoryDefs={categoryDefs}
         onClose={() => setScheduleTarget(null)}
         onSave={async (bookId, updates) => {
           const book = books.find(item => item.id === bookId);
           if (!book) return;
           const nextBook = { ...book, ...updates };
           await createOrUpdateTask(readingBookToTaskDraft(nextBook));
-          updateBook(bookId, updates);
+          await updateBook(bookId, updates);
           setScheduleTarget(null);
         }}
       />
@@ -645,10 +654,29 @@ export default function ReadingListView() {
         onConfirm={async () => {
           if (deleteTarget) {
             await removeTask(readingTaskId(deleteTarget.id));
-            deleteBook(deleteTarget.id);
+            await deleteBook(deleteTarget.id);
           }
           setDeleteTarget(null);
           setExpandedId(null);
+        }}
+      />
+
+      <ConfirmModal
+        visible={!!confirmDisableTarget}
+        icon={<CalendarCheck s={22} c={C.gold} />}
+        iconBg="#FFF8E0"
+        title="Stop daily task?"
+        body={confirmDisableTarget ? `"${confirmDisableTarget.title}" will be removed from your daily routine.` : ''}
+        cancelLabel="KEEP"
+        confirmLabel="STOP"
+        confirmColor={C.gold}
+        onCancel={() => setConfirmDisableTarget(null)}
+        onConfirm={async () => {
+          if (confirmDisableTarget) {
+            await removeTask(readingTaskId(confirmDisableTarget.id));
+            await updateBook(confirmDisableTarget.id, { showOnHome: false });
+          }
+          setConfirmDisableTarget(null);
         }}
       />
 
@@ -658,7 +686,7 @@ export default function ReadingListView() {
         books={books}
         updateBook={updateBook}
         onClose={() => setTagEditorOpen(false)}
-        onSave={setCategoryDefs}
+        onSave={saveCategoryDefs}
       />
     </View>
   );
@@ -700,10 +728,12 @@ function CategoryChip({
 
 function ScheduleModal({
   book,
+  categoryDefs,
   onClose,
   onSave,
 }: {
   book: ReadingBook | null;
+  categoryDefs: CategoryDef[];
   onClose: () => void;
   onSave: (bookId: string, updates: Partial<ReadingBook>) => void | Promise<void>;
 }) {
@@ -730,7 +760,7 @@ function ScheduleModal({
 
   if (!book) return null;
 
-  const categoryDef = getCategoryDef(book.category);
+  const categoryDef = getCategoryDef(book.category, categoryDefs);
   const accent = categoryDef?.color ?? C.gold;
   const softAccent = hexToRgba(accent, 0.08);
   const activeDayIndexes = getActiveTaskDayIndexes(frequency, selectedDays);
@@ -857,9 +887,9 @@ function TagEditorModal({
   visible: boolean;
   categoryDefs: CategoryDef[];
   books: ReadingBook[];
-  updateBook: (id: string, updates: Partial<ReadingBook>) => void;
+  updateBook: (id: string, updates: Partial<ReadingBook>) => void | Promise<void>;
   onClose: () => void;
-  onSave: (defs: CategoryDef[]) => void;
+  onSave: (defs: CategoryDef[]) => void | Promise<void>;
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [kbHeight, setKbHeight] = useState(0);
@@ -876,21 +906,26 @@ function TagEditorModal({
       categoryDefs.forEach(def => { initial[def.color] = def.label; });
       setDrafts(initial);
     }
-  }, [visible]);
+  }, [visible, categoryDefs]);
 
-  const save = () => {
+  const save = async () => {
+    const renameOps: Promise<void>[] = [];
     const updated = categoryDefs.map(def => {
       const newLabel = (drafts[def.color] ?? def.label).trim() || def.label;
       if (newLabel !== def.label) {
         books.forEach(book => {
           if (book.category === def.label) {
-            updateBook(book.id, { category: newLabel });
+            const result = updateBook(book.id, { category: newLabel });
+            if (result && typeof (result as Promise<void>).then === 'function') {
+              renameOps.push(result as Promise<void>);
+            }
           }
         });
       }
       return { ...def, label: newLabel };
     });
-    onSave(updated);
+    await Promise.all(renameOps);
+    await onSave(updated);
     onClose();
   };
 
@@ -1009,6 +1044,19 @@ const s = StyleSheet.create({
   formSaveDisabled: { opacity: 0.35 },
   formSaveText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2, color: '#FFFFFF' },
   bookList: { gap: 14, paddingTop: 8 },
+  emptyCard: {
+    marginTop: 16,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 44,
+    paddingHorizontal: 26,
+    alignItems: 'center',
+  },
+  emptyTitle: { fontFamily: F.serifMediumItalic, fontSize: 22, color: '#9CA3AF', textAlign: 'center' },
+  emptyBody: { marginTop: 8, fontFamily: F.sans, fontSize: 12, color: '#D1D5DB', textAlign: 'center' },
   bookCard: {
     position: 'relative',
     borderRadius: 30,
@@ -1058,7 +1106,13 @@ const s = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 13,
+    paddingVertical: 14,
+    marginTop: 10,
+    shadowColor: '#1C1917',
+    shadowOpacity: 0.04,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    elevation: 1,
   },
   actionRowIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   actionRowCopy: { flex: 1 },
@@ -1126,7 +1180,7 @@ const s = StyleSheet.create({
   tagEditorSaveBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center', shadowColor: C.gold, shadowOpacity: 0.3, shadowOffset: { width: 0, height: 4 }, shadowRadius: 8, elevation: 3 },
   tagEditorRow: { minHeight: 52, borderRadius: 14, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 14, marginHorizontal: 18, marginBottom: 8 },
   tagEditorDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
-  tagEditorInput: { flex: 1, fontFamily: F.serifMedium, fontSize: 17, color: '#1C1917', paddingVertical: 0 },
+  tagEditorInput: { flex: 1, minHeight: 26, fontFamily: F.serifMedium, fontSize: 17, lineHeight: 23, color: '#1C1917' },
   dayChipActive: { backgroundColor: '#F8F5ED', borderColor: '#E8DCC4' },
   dayChipText: { fontFamily: F.sansBold, fontSize: 11, color: '#A8A29E' },
   dayChipTextActive: { color: C.gold },

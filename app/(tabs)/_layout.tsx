@@ -32,6 +32,8 @@ function FloatingTabBar({ state, navigation }: TabBarProps) {
             <TouchableOpacity
               key={tab.name}
               onPress={() => navigation.navigate(tab.name)}
+              // flex:1 so each tab fills exactly 1/3 of the bar width —
+              // taps register anywhere in that third, not only on the icon.
               style={[styles.tabBtn, { opacity: isActive ? 1 : 0.42 }]}
               activeOpacity={0.7}
             >
@@ -55,11 +57,8 @@ const styles = StyleSheet.create({
   },
   pill: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'stretch',
     borderRadius: 9999,
-    paddingVertical: 10,
-    paddingHorizontal: 40,
-    gap: 44,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.7)',
@@ -69,9 +68,17 @@ const styles = StyleSheet.create({
     shadowRadius: 15,
     elevation: 8,
   },
+  // The previous design relied on `gap: 44` between tabs and `paddingHorizontal: 40`
+  // on the pill — that put 44px of dead, untappable space between each tab.
+  // Now the pill is content-sized again (no fixed width = no widening) and the
+  // gap is folded into each tab's own paddingHorizontal, so the whole pill is
+  // tap-active without changing its visual size.
   tabBtn: {
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 3,
+    paddingVertical: 10,
+    paddingHorizontal: 22,
   },
   tabLabel: {
     fontSize: 9,

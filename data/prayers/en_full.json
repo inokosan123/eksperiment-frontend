@@ -1,0 +1,1839 @@
+{
+  "language": "en",
+  "tradition": "spc",
+  "short_rule": {
+    "morning": {
+      "title": "Short Morning Rule",
+      "blocks": [
+        {
+          "type": "instruction",
+          "content": "Upon rising from sleep, make the sign of the Cross and say:"
+        },
+        {
+          "type": "title",
+          "content": "The Lord's Prayer (Repeat 3 times)"
+        },
+        {
+          "type": "text",
+          "content": "Our Father, Who art in the heavens, hallowed be Thy name."
+        },
+        {
+          "type": "text",
+          "content": "Thy kingdom come, Thy will be done, on earth as it is in heaven."
+        },
+        {
+          "type": "text",
+          "content": "Give us this day our daily bread,"
+        },
+        {
+          "type": "text",
+          "content": "and forgive us our debts, as we forgive our debtors;"
+        },
+        {
+          "type": "text",
+          "content": "and lead us not into temptation, but deliver us from the evil one."
+        },
+        {
+          "type": "title",
+          "content": "O Theotokos and Virgin (Repeat 3 times)"
+        },
+        {
+          "type": "text",
+          "content": "O Theotokos and Virgin, rejoice, Mary, full of grace, the Lord is with thee;"
+        },
+        {
+          "type": "text",
+          "content": "blessed art thou among women, and blessed is the fruit of thy womb,"
+        },
+        {
+          "type": "text",
+          "content": "for thou hast borne the Saviour of our souls."
+        },
+        {
+          "type": "title",
+          "content": "The Symbol of Faith (Once)"
+        },
+        {
+          "type": "text",
+          "content": "I believe in one God, the Father Almighty, Maker of heaven and earth, and of all things visible and invisible."
+        },
+        {
+          "type": "text",
+          "content": "And in one Lord Jesus Christ, the Son of God, the Only-begotten, begotten of the Father before all ages;"
+        },
+        {
+          "type": "text",
+          "content": "Light of Light; true God of true God; begotten, not made; of one essence with the Father; by Whom all things were made;"
+        },
+        {
+          "type": "text",
+          "content": "Who for us men, and for our salvation, came down from the heavens, and was incarnate of the Holy Spirit and the Virgin Mary, and became man;"
+        },
+        {
+          "type": "text",
+          "content": "And was crucified for us under Pontius Pilate, and suffered, and was buried;"
+        },
+        {
+          "type": "text",
+          "content": "And arose again on the third day according to the Scriptures;"
+        },
+        {
+          "type": "text",
+          "content": "And ascended into the heavens, and sitteth at the right hand of the Father;"
+        },
+        {
+          "type": "text",
+          "content": "And shall come again, with glory, to judge both the living and the dead; Whose kingdom shall have no end."
+        },
+        {
+          "type": "text",
+          "content": "And in the Holy Spirit, the Lord, the Giver of Life; Who proceedeth from the Father; Who with the Father and the Son together is worshipped and glorified; Who spake by the prophets."
+        },
+        {
+          "type": "text",
+          "content": "In One, Holy, Catholic, and Apostolic Church."
+        },
+        {
+          "type": "text",
+          "content": "I confess one baptism for the remission of sins."
+        },
+        {
+          "type": "text",
+          "content": "I look for the resurrection of the dead."
+        },
+        {
+          "type": "text",
+          "content": "And the life of the age to come. Amen."
+        }
+      ]
+    },
+    "evening": {
+      "title": "Short Evening Rule",
+      "blocks": [
+        {
+          "type": "instruction",
+          "content": "Before sleep, make the sign of the Cross and say:"
+        },
+        {
+          "type": "title",
+          "content": "The Lord's Prayer (Repeat 3 times)"
+        },
+        {
+          "type": "text",
+          "content": "Our Father, Who art in the heavens, hallowed be Thy name."
+        },
+        {
+          "type": "text",
+          "content": "Thy kingdom come, Thy will be done, on earth as it is in heaven."
+        },
+        {
+          "type": "text",
+          "content": "Give us this day our daily bread,"
+        },
+        {
+          "type": "text",
+          "content": "and forgive us our debts, as we forgive our debtors;"
+        },
+        {
+          "type": "text",
+          "content": "and lead us not into temptation, but deliver us from the evil one."
+        },
+        {
+          "type": "title",
+          "content": "O Theotokos and Virgin (Repeat 3 times)"
+        },
+        {
+          "type": "text",
+          "content": "O Theotokos and Virgin, rejoice, Mary, full of grace, the Lord is with thee;"
+        },
+        {
+          "type": "text",
+          "content": "blessed art thou among women, and blessed is the fruit of thy womb,"
+        },
+        {
+          "type": "text",
+          "content": "for thou hast borne the Saviour of our souls."
+        },
+        {
+          "type": "title",
+          "content": "The Symbol of Faith (Once)"
+        },
+        {
+          "type": "text",
+          "content": "I believe in one God, the Father Almighty, Maker of heaven and earth, and of all things visible and invisible."
+        },
+        {
+          "type": "text",
+          "content": "And in one Lord Jesus Christ, the Son of God, the Only-begotten, begotten of the Father before all ages;"
+        },
+        {
+          "type": "text",
+          "content": "Light of Light; true God of true God; begotten, not made; of one essence with the Father; by Whom all things were made;"
+        },
+        {
+          "type": "text",
+          "content": "Who for us men, and for our salvation, came down from the heavens, and was incarnate of the Holy Spirit and the Virgin Mary, and became man;"
+        },
+        {
+          "type": "text",
+          "content": "And was crucified for us under Pontius Pilate, and suffered, and was buried;"
+        },
+        {
+          "type": "text",
+          "content": "And arose again on the third day according to the Scriptures;"
+        },
+        {
+          "type": "text",
+          "content": "And ascended into the heavens, and sitteth at the right hand of the Father;"
+        },
+        {
+          "type": "text",
+          "content": "And shall come again, with glory, to judge both the living and the dead; Whose kingdom shall have no end."
+        },
+        {
+          "type": "text",
+          "content": "And in the Holy Spirit, the Lord, the Giver of Life; Who proceedeth from the Father; Who with the Father and the Son together is worshipped and glorified; Who spake by the prophets."
+        },
+        {
+          "type": "text",
+          "content": "In One, Holy, Catholic, and Apostolic Church."
+        },
+        {
+          "type": "text",
+          "content": "I confess one baptism for the remission of sins."
+        },
+        {
+          "type": "text",
+          "content": "I look for the resurrection of the dead."
+        },
+        {
+          "type": "text",
+          "content": "And the life of the age to come. Amen."
+        },
+        {
+          "type": "instruction",
+          "content": "Having completed this rule, let him occupy himself with the work to which he has been appointed or called."
+        },
+        {
+          "type": "instruction",
+          "content": "While working at home or traveling, wherever he may be, let him quietly say the Jesus Prayer: 'O Lord Jesus Christ, Son of God, have mercy on me, a sinner!'"
+        },
+        {
+          "type": "instruction",
+          "content": "If he is among people, while attending to his work let him say only in his mind: 'Lord, have mercy,' and so continue until dinner."
+        },
+        {
+          "type": "instruction",
+          "content": "Before dinner, let him perform the morning rule described above. After dinner, while attending to his work, let every Christian quietly say: 'Most Holy Theotokos, save me, a sinner,' and let him continue this until sleep. If it happens that he spends time in solitude, let him say: 'O Lord Jesus Christ, through the Theotokos, have mercy on me, a sinner.'"
+        },
+        {
+          "type": "instruction",
+          "content": "When going to rest, let him again recite the rule given above, and then let him fall asleep, signing himself with the Cross."
+        },
+        {
+          "type": "instruction",
+          "content": "By keeping this rule it is possible to attain the measure of Christian perfection, for these three prayers are the foundation of Christianity: the first was given by the Lord Himself as the model of all prayers; the second was brought from heaven by the Archangel in greeting the Virgin Mary; and the third contains, in brief, all the dogmas of the Christian faith."
+        }
+      ]
+    }
+  },
+  "medium_rule": {
+    "morning": {
+      "title": "Morning Prayers (Medium Rule)",
+      "blocks": [
+        {
+          "type": "instruction",
+          "content": "Having arisen from bed and prepared thyself, stand before the icon, gather thy mind, and say with piety and the fear of God, making the sign of the Cross:"
+        },
+        {
+          "type": "text",
+          "content": "In the name of the Father, and of the Son, and of the Holy Spirit. Amen."
+        },
+        {
+          "type": "instruction",
+          "content": "Then stand for a little while in silence, until all thy senses are calmed, and make three small bows, saying:"
+        },
+        {
+          "type": "text",
+          "content": "O Lord Jesus Christ, Son of God, for the sake of the prayers of Thy Mother and all the saints, have mercy on me. Amen."
+        },
+        {
+          "type": "instruction",
+          "content": "Then say:"
+        },
+        {
+          "type": "text",
+          "content": "Glory to Thee, our God, glory to Thee."
+        },
+        {
+          "type": "text",
+          "content": "O Heavenly King, Comforter, Spirit of Truth, Who art everywhere present and fillest all things, Treasury of good things and Giver of life: come and dwell in us, and cleanse us of all impurity, and save our souls, O Good One."
+        },
+        {
+          "type": "text",
+          "content": "Holy God, Holy Mighty, Holy Immortal, have mercy on us."
+        },
+        {
+          "type": "instruction",
+          "content": "(three times)"
+        },
+        {
+          "type": "text",
+          "content": "Glory to the Father, and to the Son, and to the Holy Spirit, both now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "text",
+          "content": "O Most Holy Trinity, have mercy on us. O Lord, blot out our sins. O Master, pardon our iniquities. O Holy One, visit and heal our infirmities for Thy name's sake."
+        },
+        {
+          "type": "text",
+          "content": "Lord, have mercy! (three times)"
+        },
+        {
+          "type": "text",
+          "content": "Glory to the Father, and to the Son, and to the Holy Spirit, both now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "The Lord's Prayer"
+        },
+        {
+          "type": "text",
+          "content": "Our Father, Who art in the heavens, hallowed be Thy name. Thy kingdom come, Thy will be done, on earth as it is in heaven. Give us this day our daily bread, and forgive us our debts, as we forgive our debtors; and lead us not into temptation, but deliver us from the evil one."
+        },
+        {
+          "type": "instruction",
+          "content": "Then these Troparia to the Holy Trinity:"
+        },
+        {
+          "type": "text",
+          "content": "Having risen from sleep, we fall down before Thee, O Good One, and the angelical hymn we cry aloud to Thee, O Mighty One: Holy, Holy, Holy art Thou, O God; through the Theotokos, have mercy on us."
+        },
+        {
+          "type": "text",
+          "content": "Glory to the Father, and to the Son, and to the Holy Spirit:"
+        },
+        {
+          "type": "text",
+          "content": "From bed and sleep hast Thou raised me up, O Lord: enlighten my mind and heart, and open my lips that I may hymn Thee, O Holy Trinity: Holy, Holy, Holy art Thou, O God; through the Theotokos, have mercy on us."
+        },
+        {
+          "type": "text",
+          "content": "Both now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "text",
+          "content": "Suddenly the Judge shall come, and the deeds of each shall be laid bare; but with fear do we cry at midnight: Holy, Holy, Holy art Thou, O God; through the Theotokos, have mercy on us."
+        },
+        {
+          "type": "text",
+          "content": "Lord, have mercy."
+        },
+        {
+          "type": "instruction",
+          "content": "(twelve times)"
+        },
+        {
+          "type": "instruction",
+          "content": "Then:"
+        },
+        {
+          "type": "text",
+          "content": "O come let us worship God our King!"
+        },
+        {
+          "type": "text",
+          "content": "O come let us worship and fall down before Christ our King and God!"
+        },
+        {
+          "type": "text",
+          "content": "O come let us worship and fall down before Christ Himself, our King and God!"
+        },
+        {
+          "type": "title",
+          "content": "Psalm 50"
+        },
+        {
+          "type": "text",
+          "content": "Have mercy on me, O God, according to Thy great mercy; and according to the multitude of Thy compassions blot out my transgression. Wash me thoroughly from mine iniquity, and cleanse me from my sin. For I know mine iniquity, and my sin is ever before me."
+        },
+        {
+          "type": "text",
+          "content": "Against Thee only have I sinned and done this evil before Thee, that Thou mightest be justified in Thy words, and prevail when Thou art judged. For behold, I was conceived in iniquities, and in sins did my mother bear me."
+        },
+        {
+          "type": "text",
+          "content": "For behold, Thou hast loved truth; the hidden and secret things of Thy wisdom hast Thou made manifest unto me. Thou shalt sprinkle me with hyssop, and I shall be made clean; Thou shalt wash me, and I shall be made whiter than snow. Thou shalt make me to hear joy and gladness; the bones that be humbled, they shall rejoice."
+        },
+        {
+          "type": "text",
+          "content": "Turn Thy face away from my sins, and blot out all mine iniquities. Create in me a clean heart, O God, and renew a right spirit within me. Cast me not away from Thy presence, and take not Thy Holy Spirit from me. Restore unto me the joy of Thy salvation, and with Thy governing Spirit establish me."
+        },
+        {
+          "type": "text",
+          "content": "I shall teach transgressors Thy ways, and the ungodly shall turn back unto Thee. Deliver me from blood-guiltiness, O God, Thou God of my salvation; my tongue shall rejoice in Thy righteousness."
+        },
+        {
+          "type": "text",
+          "content": "O Lord, Thou shalt open my lips, and my mouth shall declare Thy praise. For if Thou hadst desired sacrifice, I had given it; with whole-burnt offerings Thou shalt not be pleased. A sacrifice unto God is a broken spirit; a heart that is broken and humbled God will not despise. Do good, O Lord, in Thy good pleasure unto Sion, and let the walls of Jerusalem be builded. Then shalt Thou be pleased with a sacrifice of righteousness, with oblation and whole-burnt offerings. Then shall they offer bullocks upon Thine altar."
+        },
+        {
+          "type": "title",
+          "content": "The Symbol of Faith"
+        },
+        {
+          "type": "text",
+          "content": "I believe in one God, the Father Almighty, Maker of heaven and earth, and of all things visible and invisible."
+        },
+        {
+          "type": "text",
+          "content": "And in one Lord Jesus Christ, the Son of God, the Only-begotten, begotten of the Father before all ages; Light of Light; true God of true God; begotten, not made; of one essence with the Father; by Whom all things were made;"
+        },
+        {
+          "type": "text",
+          "content": "Who for us men, and for our salvation, came down from the heavens, and was incarnate of the Holy Spirit and the Virgin Mary, and became man;"
+        },
+        {
+          "type": "text",
+          "content": "And was crucified for us under Pontius Pilate, and suffered, and was buried;"
+        },
+        {
+          "type": "text",
+          "content": "And arose again on the third day according to the Scriptures;"
+        },
+        {
+          "type": "text",
+          "content": "And ascended into the heavens, and sitteth at the right hand of the Father;"
+        },
+        {
+          "type": "text",
+          "content": "And shall come again, with glory, to judge both the living and the dead; Whose kingdom shall have no end."
+        },
+        {
+          "type": "text",
+          "content": "And in the Holy Spirit, the Lord, the Giver of Life; Who proceedeth from the Father; Who with the Father and the Son together is worshipped and glorified; Who spake by the prophets."
+        },
+        {
+          "type": "text",
+          "content": "In One, Holy, Catholic, and Apostolic Church."
+        },
+        {
+          "type": "text",
+          "content": "I confess one baptism for the remission of sins."
+        },
+        {
+          "type": "text",
+          "content": "I look for the resurrection of the dead."
+        },
+        {
+          "type": "text",
+          "content": "And the life of the age to come. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer I, of St. Macarius the Great"
+        },
+        {
+          "type": "text",
+          "content": "O God, cleanse me a sinner, for I have never done anything good in Thy sight; but deliver me from the evil one, and let Thy will be done in me, that I may open mine unworthy mouth without condemnation and praise Thy holy name: of the Father, and of the Son, and of the Holy Spirit, now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer II, of the same saint"
+        },
+        {
+          "type": "text",
+          "content": "Having risen from sleep, I hasten to Thee, O Master, Lover of mankind, and by Thy loving-kindness, I strive to do Thy work, and I pray to Thee: Help me at all times, in everything, and deliver me from every worldly, evil thing and every impulse of the devil, and save me, and lead me into Thine eternal kingdom. For Thou art my Creator, and the Giver and Provider of everything good, and in Thee is all my hope, and unto Thee do I send up glory, now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer III, of the same saint"
+        },
+        {
+          "type": "text",
+          "content": "O Lord, Who in Thine abundant goodness and Thy great compassion hast granted me, Thy servant, to go through the time of the night that is past without attack from any opposing evil; Do Thou Thyself, O Master, Creator of all things, vouchsafe me by Thy true light and with an enlightened heart to do Thy will, now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "O Theotokos and Virgin"
+        },
+        {
+          "type": "text",
+          "content": "O Theotokos and Virgin, rejoice, Mary, full of grace, the Lord is with thee; blessed art thou among women, and blessed is the fruit of thy womb, for thou hast borne the Saviour of our souls."
+        }
+      ]
+    },
+    "evening": {
+      "title": "Evening Prayers (Medium Rule)",
+      "blocks": [
+        {
+          "type": "instruction",
+          "content": "Having made the sign of the Cross before the icon, say:"
+        },
+        {
+          "type": "text",
+          "content": "In the name of the Father, and of the Son, and of the Holy Spirit. Amen."
+        },
+        {
+          "type": "text",
+          "content": "Through the prayers of our holy fathers, O Lord Jesus Christ our God, have mercy on us. Amen."
+        },
+        {
+          "type": "instruction",
+          "content": "Then:"
+        },
+        {
+          "type": "text",
+          "content": "Holy God, Holy Mighty, Holy Immortal, have mercy on us."
+        },
+        {
+          "type": "instruction",
+          "content": "(say this three times)"
+        },
+        {
+          "type": "text",
+          "content": "Glory to the Father, and to the Son, and to the Holy Spirit, both now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "text",
+          "content": "O Most Holy Trinity, have mercy on us. O Lord, blot out our sins. O Master, pardon our iniquities. O Holy One, visit and heal our infirmities for Thy name's sake."
+        },
+        {
+          "type": "text",
+          "content": "Lord, have mercy."
+        },
+        {
+          "type": "instruction",
+          "content": "(three times)"
+        },
+        {
+          "type": "text",
+          "content": "Glory to the Father, and to the Son, and to the Holy Spirit, both now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "The Lord's Prayer"
+        },
+        {
+          "type": "text",
+          "content": "Our Father, Who art in the heavens, hallowed be Thy name. Thy kingdom come, Thy will be done, on earth as it is in heaven. Give us this day our daily bread, and forgive us our debts, as we forgive our debtors; and lead us not into temptation, but deliver us from the evil one."
+        },
+        {
+          "type": "instruction",
+          "content": "Then these Troparia:"
+        },
+        {
+          "type": "text",
+          "content": "Have mercy on us, O Lord, have mercy on us; for at a loss for any defence, this prayer do we sinners offer unto Thee as Master: have mercy on us."
+        },
+        {
+          "type": "text",
+          "content": "Glory to the Father, and to the Son, and to the Holy Spirit:"
+        },
+        {
+          "type": "text",
+          "content": "Lord, have mercy on us; for we have hoped in Thee, be not angry with us greatly, neither remember our iniquities; but look upon us now as Thou art compassionate, and deliver us from our enemies, for Thou art our God, and we, Thy people; all are the works of Thy hands, and we call upon Thy name."
+        },
+        {
+          "type": "text",
+          "content": "Both now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "text",
+          "content": "The door of compassion open unto us, O blessed Theotokos, for, hoping in thee, let us not perish; through thee may we be delivered from adversities, for thou art the salvation of the Christian race."
+        },
+        {
+          "type": "text",
+          "content": "Lord, have mercy."
+        },
+        {
+          "type": "instruction",
+          "content": "(twelve times)"
+        },
+        {
+          "type": "title",
+          "content": "Prayer I, of St. Macarius the Great, to God the Father"
+        },
+        {
+          "type": "text",
+          "content": "O Eternal God and King of all creation, Who hast vouchsafed me to arrive at this hour, forgive me the sins that I have committed this day in deed, word, and thought; and cleanse, O Lord, my lowly soul of all impurity of flesh and spirit, and grant me, O Lord, to pass the sleep of this night in peace; that, rising from my lowly bed, I may please Thy most holy name all the days of my life, and thwart the enemies, fleshly and bodiless, that war against me. And deliver me, O Lord, from vain thoughts and evil desires which defile me. For Thine is the kingdom, and the power, and the glory: of the Father, and of the Son, and of the Holy Spirit, now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer II"
+        },
+        {
+          "type": "text",
+          "content": "O Lord our God, forgive all the sins I have committed this day in word, deed, or thought, for Thou art good and lovest mankind. Grant me peaceful and untroubled sleep, and send Thy guardian angel to protect and keep me from every evil: for Thou art the guardian of our souls and bodies, and to Thee we send up glory, to the Father and to the Son and to the Holy Spirit, now and ever and unto ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer III, to the Holy Guardian Angel"
+        },
+        {
+          "type": "text",
+          "content": "O angel of Christ, my holy guardian and protector of my soul and body, forgive me for all the sins I have committed this day. Deliver me from all the evil of my militant enemy, that I may not anger my God by any sin. Pray for me, thy sinful and unworthy servant, that thou mayest present me worthy of the goodness and mercy of the all-holy Trinity, and the Mother of my Lord Jesus Christ, and of all the saints. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer of St. Ioannikios"
+        },
+        {
+          "type": "text",
+          "content": "My hope is the Father; my refuge is the Son; my protection is the Holy Spirit. O Holy Trinity, glory to Thee."
+        },
+        {
+          "type": "instruction",
+          "content": "Then:"
+        },
+        {
+          "type": "text",
+          "content": "It is truly meet to bless thee, the Theotokos, ever-blessed and most blameless, and Mother of our God. More honourable than the Cherubim, and beyond compare more glorious than the Seraphim, who without corruption gavest birth to God the Word, the very Theotokos, thee do we magnify."
+        }
+      ]
+    }
+  },
+  "standard_rule": {
+    "morning": {
+      "title": "Morning Prayers (Full Rule)",
+      "blocks": [
+        {
+          "type": "instruction",
+          "content": "Upon awakening from sleep, arise immediately, gather thy mind, and say this with piety and the fear of God, making the sign of the Cross:"
+        },
+        {
+          "type": "text",
+          "content": "In the name of the Father, and of the Son, and of the Holy Spirit. Amen."
+        },
+        {
+          "type": "instruction",
+          "content": "Then stand for a little while in silence until all thy senses are calmed, and make three bows, saying:"
+        },
+        {
+          "type": "text",
+          "content": "O Lord Jesus Christ, Son of God, have mercy on me, a sinner."
+        },
+        {
+          "type": "text",
+          "content": "O Lord Jesus Christ, Son of God, for the sake of the prayers of Thy most pure Mother and all the saints, have mercy on us. Amen."
+        },
+        {
+          "type": "instruction",
+          "content": "Then:"
+        },
+        {
+          "type": "text",
+          "content": "Glory to Thee, our God, glory to Thee."
+        },
+        {
+          "type": "text",
+          "content": "O Heavenly King, Comforter, Spirit of Truth, Who art everywhere present and fillest all things, Treasury of good things and Giver of life: come and dwell in us, and cleanse us of all impurity, and save our souls, O Good One."
+        },
+        {
+          "type": "text",
+          "content": "Holy God, Holy Mighty, Holy Immortal, have mercy on us."
+        },
+        {
+          "type": "instruction",
+          "content": "(three times)"
+        },
+        {
+          "type": "text",
+          "content": "Glory to the Father, and to the Son, and to the Holy Spirit, both now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "text",
+          "content": "O Most Holy Trinity, have mercy on us. O Lord, blot out our sins. O Master, pardon our iniquities. O Holy One, visit and heal our infirmities for Thy name's sake."
+        },
+        {
+          "type": "text",
+          "content": "Lord, have mercy."
+        },
+        {
+          "type": "instruction",
+          "content": "(three times)"
+        },
+        {
+          "type": "text",
+          "content": "Glory to the Father, and to the Son, and to the Holy Spirit, both now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "text",
+          "content": "Our Father, Who art in the heavens, hallowed be Thy name. Thy kingdom come, Thy will be done, on earth as it is in heaven. Give us this day our daily bread, and forgive us our debts, as we forgive our debtors; and lead us not into temptation, but deliver us from the evil one."
+        },
+        {
+          "type": "title",
+          "content": "Troparia to the Holy Trinity"
+        },
+        {
+          "type": "instruction",
+          "content": "Troparion, Tone 1:"
+        },
+        {
+          "type": "text",
+          "content": "Having risen from sleep, we fall down before Thee, O Good One, and the angelical hymn we cry aloud to Thee, O Mighty One: Holy, Holy, Holy art Thou, O God; through the Theotokos, have mercy on us."
+        },
+        {
+          "type": "text",
+          "content": "Glory to the Father, and to the Son, and to the Holy Spirit:"
+        },
+        {
+          "type": "text",
+          "content": "From bed and sleep hast Thou raised me up, O Lord: enlighten my mind and heart, and open my lips that I may hymn Thee, O Holy Trinity: Holy, Holy, Holy art Thou, O God; through the Theotokos, have mercy on us."
+        },
+        {
+          "type": "text",
+          "content": "Both now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "text",
+          "content": "Suddenly the Judge shall come, and the deeds of each shall be laid bare; but with fear do we cry at midnight: Holy, Holy, Holy art Thou, O God; through the Theotokos, have mercy on us."
+        },
+        {
+          "type": "text",
+          "content": "Lord, have mercy."
+        },
+        {
+          "type": "instruction",
+          "content": "(12 times)"
+        },
+        {
+          "type": "title",
+          "content": "Prayer"
+        },
+        {
+          "type": "text",
+          "content": "As I rise from sleep, I thank Thee, O Holy Trinity, for through Thy great goodness and patience Thou wast not angry with me, an idler and sinner, nor hast Thou destroyed me with mine iniquities, but hast shown Thy usual love for mankind; and when I was prostrate in despair, Thou hast raised me up to keep the morning watch and glorify Thy power. And now enlighten my mind's eye, and open my mouth that I may meditate on Thy words, and understand Thy commandments, and do Thy will, and hymn Thee in heartfelt confession, and sing praises to Thine all-holy name: of the Father, and of the Son, and of the Holy Spirit, now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "instruction",
+          "content": "Then:"
+        },
+        {
+          "type": "text",
+          "content": "Glory to Thee, O King, God Almighty, who by Thy divine and man-loving providence hast counted me, a sinner and unworthy, worthy to rise from sleep and behold Thy bright day. Receive, O Lord, the voice of my prayer as that of Thy holy noetic Powers, and grant that with a pure heart and a humble spirit I may offer Thee praise from my unclean lips, that I too, a sinner, with the lamp of my soul burning, may be numbered among the wise virgins, glorifying Thee, God the Son, who art glorified in the Father and the Holy Spirit. Amen."
+        },
+        {
+          "type": "text",
+          "content": "O come let us worship God our King!"
+        },
+        {
+          "type": "text",
+          "content": "O come let us worship and fall down before Christ our King and God!"
+        },
+        {
+          "type": "text",
+          "content": "O come let us worship and fall down before Christ Himself, our King and God!"
+        },
+        {
+          "type": "title",
+          "content": "Psalm 50"
+        },
+        {
+          "type": "text",
+          "content": "Have mercy on me, O God, according to Thy great mercy; and according to the multitude of Thy compassions blot out my transgression. Wash me thoroughly from mine iniquity, and cleanse me from my sin. For I know mine iniquity, and my sin is ever before me."
+        },
+        {
+          "type": "text",
+          "content": "Against Thee only have I sinned and done this evil before Thee, that Thou mightest be justified in Thy words, and prevail when Thou art judged. For behold, I was conceived in iniquities, and in sins did my mother bear me."
+        },
+        {
+          "type": "text",
+          "content": "For behold, Thou hast loved truth; the hidden and secret things of Thy wisdom hast Thou made manifest unto me. Thou shalt sprinkle me with hyssop, and I shall be made clean; Thou shalt wash me, and I shall be made whiter than snow. Thou shalt make me to hear joy and gladness; the bones that be humbled, they shall rejoice."
+        },
+        {
+          "type": "text",
+          "content": "Turn Thy face away from my sins, and blot out all mine iniquities. Create in me a clean heart, O God, and renew a right spirit within me. Cast me not away from Thy presence, and take not Thy Holy Spirit from me. Restore unto me the joy of Thy salvation, and with Thy governing Spirit establish me."
+        },
+        {
+          "type": "text",
+          "content": "I shall teach transgressors Thy ways, and the ungodly shall turn back unto Thee. Deliver me from blood-guiltiness, O God, Thou God of my salvation; my tongue shall rejoice in Thy righteousness."
+        },
+        {
+          "type": "text",
+          "content": "O Lord, Thou shalt open my lips, and my mouth shall declare Thy praise. For if Thou hadst desired sacrifice, I had given it; with whole-burnt offerings Thou shalt not be pleased. A sacrifice unto God is a broken spirit; a heart that is broken and humbled God will not despise. Do good, O Lord, in Thy good pleasure unto Sion, and let the walls of Jerusalem be builded. Then shalt Thou be pleased with a sacrifice of righteousness, with oblation and whole-burnt offerings. Then shall they offer bullocks upon Thine altar."
+        },
+        {
+          "type": "title",
+          "content": "The Symbol of Faith"
+        },
+        {
+          "type": "text",
+          "content": "I believe in one God, the Father Almighty, Maker of heaven and earth, and of all things visible and invisible."
+        },
+        {
+          "type": "text",
+          "content": "And in one Lord Jesus Christ, the Son of God, the Only-begotten, begotten of the Father before all ages; Light of Light; true God of true God; begotten, not made; of one essence with the Father; by Whom all things were made;"
+        },
+        {
+          "type": "text",
+          "content": "Who for us men, and for our salvation, came down from the heavens, and was incarnate of the Holy Spirit and the Virgin Mary, and became man;"
+        },
+        {
+          "type": "text",
+          "content": "And was crucified for us under Pontius Pilate, and suffered, and was buried;"
+        },
+        {
+          "type": "text",
+          "content": "And arose again on the third day according to the Scriptures;"
+        },
+        {
+          "type": "text",
+          "content": "And ascended into the heavens, and sitteth at the right hand of the Father;"
+        },
+        {
+          "type": "text",
+          "content": "And shall come again, with glory, to judge both the living and the dead; Whose kingdom shall have no end."
+        },
+        {
+          "type": "text",
+          "content": "And in the Holy Spirit, the Lord, the Giver of Life; Who proceedeth from the Father; Who with the Father and the Son together is worshipped and glorified; Who spake by the prophets."
+        },
+        {
+          "type": "text",
+          "content": "In One, Holy, Catholic, and Apostolic Church."
+        },
+        {
+          "type": "text",
+          "content": "I confess one baptism for the remission of sins."
+        },
+        {
+          "type": "text",
+          "content": "I look for the resurrection of the dead."
+        },
+        {
+          "type": "text",
+          "content": "And the life of the age to come. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer I, of St. Macarius the Great"
+        },
+        {
+          "type": "text",
+          "content": "O God, cleanse me a sinner, for I have never done anything good in Thy sight; but deliver me from the evil one, and let Thy will be done in me, that I may open mine unworthy mouth without condemnation and praise Thy holy name: of the Father, and of the Son, and of the Holy Spirit, now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer II, of the same saint"
+        },
+        {
+          "type": "text",
+          "content": "Having risen from sleep, I offer unto Thee, O Saviour, the midnight hymn, and falling down I cry unto Thee: Grant me not to fall asleep in the death of sin, but have compassion on me, O Thou Who wast voluntarily crucified, and hasten to raise me who am reclining in idleness, and save me in prayer and intercession; and after the night's sleep shine upon me a sinless day, O Christ God, and save me."
+        },
+        {
+          "type": "title",
+          "content": "Prayer III, of the same saint"
+        },
+        {
+          "type": "text",
+          "content": "Having risen from sleep, I hasten to Thee, O Master, Lover of mankind, and by Thy loving-kindness, I strive to do Thy work, and I pray to Thee: Help me at all times, in everything, and deliver me from every worldly, evil thing and every impulse of the devil, and save me, and lead me into Thine eternal kingdom. For Thou art my Creator, and the Giver and Provider of everything good, and in Thee is all my hope, and unto Thee do I send up glory, now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer IV, of St. Macarius"
+        },
+        {
+          "type": "text",
+          "content": "O Lord, Who in Thine abundant goodness and Thy great compassion hast granted me, Thy servant, to go through the time of the night that is past without attack from any opposing evil; Do Thou Thyself, O Master, Creator of all things, vouchsafe me by Thy true light and with an enlightened heart to do Thy will, now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer V"
+        },
+        {
+          "type": "text",
+          "content": "O Lord God Almighty, who receivest from Thy heavenly Powers the thrice-holy hymn, accept also from me, Thine unworthy servant, this nocturnal prayer, and grant that all the days of my life and at every hour I may offer praise to Thee, the Father, and the Son, and the Holy Spirit, now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer VI, of St. Basil the Great"
+        },
+        {
+          "type": "text",
+          "content": "O Lord Almighty, God of powers and of all flesh, who livest on high yet takest care for things below, who triest hearts and reins and clearly foreknowest the secrets of men: thou art the Light without beginning, who ever art, in whom there is neither variation nor shadow of change. O King immortal, accept the prayers which we, trusting in the multitude of Thy compassions, now offer Thee from defiled lips. Forgive all the iniquities we have committed in deed or word or thought, in knowledge or in ignorance. Cleanse us from all defilement of flesh and spirit."
+        },
+        {
+          "type": "text",
+          "content": "Grant us to pass through the entire night of this present life with wakeful heart and sober mind, awaiting the coming of the radiant day of the appearing of Thine Only-begotten Son, our Lord and God and Saviour Jesus Christ, when the Judge of all shall come with glory to reward each according to his deeds. May we not be found fallen and idle, but alert and roused to action, prepared to enter into his joy and the divine bridal chamber of his glory, where the voice of those who feast is unceasing, and the sweetness of those who behold the ineffable beauty of Thy countenance is beyond telling."
+        },
+        {
+          "type": "text",
+          "content": "For Thou art the true Light that enlightens and sanctifies all things, and all creation doth extol Thee in song, unto ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer VII, of the same saint"
+        },
+        {
+          "type": "text",
+          "content": "We bless Thee, O God Most High and Lord of mercies, who ever doest among us great and unsearchable things, glorious and extraordinary, which cannot be numbered, who grantest to us sleep for rest from our infirmities and repose from the burdens of our much-toiling flesh."
+        },
+        {
+          "type": "text",
+          "content": "We thank Thee that Thou hast not destroyed us with our sins but hast loved us as always, and though we are sunk in despair, Thou hast raised us up to glorify Thy might."
+        },
+        {
+          "type": "text",
+          "content": "Therefore, we implore Thine incomparable goodness to enlighten the eyes of our understanding and to raise up our minds from the heavy sleep of indolence: open our mouth and fill it with Thy praise, that we may be able undistracted to sing and chant and confess unto Thee, who art God, glorified in all and by all, the Father without beginning, together with Thine Only-begotten Son, and Thine all-holy, good, and life-giving Spirit, now and ever and unto ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer VIII, Midnight Song to the Most Holy Theotokos"
+        },
+        {
+          "type": "text",
+          "content": "I sing Thy grace, O Lady, and beseech Thee: grant grace to my mind. Teach me to walk aright on the path of Christ's commandments. Strengthen me to keep watch with song, dispelling the torpor of sleep. I am bound by fetters of sin: free me by Thy prayers, O Bride of God."
+        },
+        {
+          "type": "text",
+          "content": "Guard me by night and by day, delivering me from foes that war against me. Thou didst bear God, the Giver of life: give life to me, who am slain by passions. Thou didst bear the Light that knows no evening: enlighten my blinded soul. O wondrous palace of the Master, make of me a home for the divine Spirit."
+        },
+        {
+          "type": "text",
+          "content": "Thou didst bear the Physician: heal my soul of its besetting passions. I am tossed in the tempest of life: direct me toward the path of repentance. Deliver me from the eternal fire, from the wicked worm, and from hell. Make me not a joy of demons, though I am guilty of many sins."
+        },
+        {
+          "type": "text",
+          "content": "Make me new, O most immaculate Lady: I have grown old and unfeeling in my sins. Keep me away from every torment, and pray fervently to the Master of all. Grant that I may inherit the joys of heaven, together with all the saints."
+        },
+        {
+          "type": "text",
+          "content": "Most pure and holy Virgin, give ear to the voice of Thine unfruitful servant. Grant me a torrent of tears to wash out the filth from my soul. The groans of my heart I offer Thee unceasingly: open Thy heart, O Lady. Accept my prayerful service, and offer it up to the God of compassion."
+        },
+        {
+          "type": "text",
+          "content": "Thou who art far higher than the angels, raise me far above the world's confusion. O bright and heavenly shade, overshadow and enlighten me with spiritual grace. Though my hands and lips are defiled by sin, nevertheless I raise them in praise of thee, all-immaculate Queen. Deliver me from soul-corrupting dangers, and pray fervently to Christ, to whom are due honor and worship, now and ever and unto ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer IX, to our Lord Jesus Christ"
+        },
+        {
+          "type": "text",
+          "content": "My most merciful and all-merciful God, O Lord Jesus Christ: in Thy great love, Thou didst come down and take flesh in order to save all. And so I pray Thee, O Saviour: save me by grace. If Thou shouldst save me because of my deeds, this would not be a gift, but merely a duty."
+        },
+        {
+          "type": "text",
+          "content": "O Thou who aboundest in compassion and art inexpressible in mercy, for Thou hast said, O my Christ: He who believes in Me shall live and never see death. If faith in Thee saves the desperate, behold, I believe. Save me, for Thou art my God and my Creator."
+        },
+        {
+          "type": "text",
+          "content": "May faith be accounted to me in place of deeds, for Thou shalt find no deeds to justify me. May my faith suffice for everything: may it answer for me; may it justify me; may it make me a partaker of Thine eternal glory. Do not let Satan seize me and boast that he has torn me from Thy hand and fold."
+        },
+        {
+          "type": "text",
+          "content": "But rather, Christ my Saviour, save me whether I want it or not. Come quickly, hurry, for I am perishing: for Thou art my God from my mother's womb. O Lord, grant that now I may love Thee as I once loved sin, and that I may labor for Thee without laziness just as I once labored for Satan the deceiver. All the more shall I labor for Thee, my Lord and God, Jesus Christ, all the days of my life, now and ever and unto ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer X, to the Guardian Angel"
+        },
+        {
+          "type": "text",
+          "content": "O holy angel, standing guard over my wretched soul and my passionate life, do not abandon me, a sinner, neither depart from me because of my lack of self-control. Leave no room for the evil demon to gain control over me by subduing this mortal body. Strengthen my weak and feeble hand, and guide me toward the path of salvation."
+        },
+        {
+          "type": "text",
+          "content": "O holy angel of God, the guardian and protector of my wretched soul and body: forgive me all the sorrows I have caused thee every day of my life; and if I have sinned during the night now past, yet protect me throughout the present day. Keep me from every temptation of the enemy, that I may not anger God by some sin. Pray to the Lord on my behalf, that He may establish me in His fear and make me, His servant, worthy of His goodness. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Final Morning Prayer, to the Most Holy Theotokos"
+        },
+        {
+          "type": "text",
+          "content": "O my Lady, most holy Theotokos, through Thy holy and all-powerful prayers, drive from me, Thy humble and wretched servant, despair, forgetfulness, indiscretion, indifference, and all filthy, evil, and blasphemous thoughts, removing them from my wretched heart and darkened mind. Extinguish the flame of my passions, for I am poor and wretched."
+        },
+        {
+          "type": "text",
+          "content": "Deliver me from my many wicked memories and plans, and free me from all evil activity. For Thou art blessed by all generations, and Thy most precious name is glorified unto ages of ages. Amen."
+        },
+        {
+          "type": "text",
+          "content": "O Theotokos and Virgin, rejoice, Mary, full of grace, the Lord is with thee; blessed art thou among women, and blessed is the fruit of thy womb, for thou hast borne the Saviour of our souls."
+        },
+        {
+          "type": "text",
+          "content": "Through the prayers of our holy fathers, O Lord Jesus Christ our God, have mercy on us. Amen."
+        }
+      ]
+    },
+    "evening": {
+      "title": "Prayers Before Sleep (Full Rule)",
+      "blocks": [
+        {
+          "type": "instruction",
+          "content": "Before sleep, stand before the icon, make the sign of the Cross, and say:"
+        },
+        {
+          "type": "text",
+          "content": "Through the prayers of our holy fathers, O Lord Jesus Christ our God, have mercy on us."
+        },
+        {
+          "type": "text",
+          "content": "Holy God, Holy Mighty, Holy Immortal, have mercy on us."
+        },
+        {
+          "type": "instruction",
+          "content": "(three times)"
+        },
+        {
+          "type": "text",
+          "content": "Glory to the Father, and to the Son, and to the Holy Spirit, both now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "text",
+          "content": "O Most Holy Trinity, have mercy on us. O Lord, blot out our sins. O Master, pardon our iniquities. O Holy One, visit and heal our infirmities for Thy name's sake."
+        },
+        {
+          "type": "text",
+          "content": "Lord, have mercy."
+        },
+        {
+          "type": "instruction",
+          "content": "(three times)"
+        },
+        {
+          "type": "text",
+          "content": "Glory to the Father, and to the Son, and to the Holy Spirit, both now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "text",
+          "content": "Our Father, Who art in the heavens, hallowed be Thy name. Thy kingdom come, Thy will be done, on earth as it is in heaven. Give us this day our daily bread, and forgive us our debts, as we forgive our debtors; and lead us not into temptation, but deliver us from the evil one."
+        },
+        {
+          "type": "text",
+          "content": "I believe in one God, the Father Almighty, Maker of heaven and earth, and of all things visible and invisible."
+        },
+        {
+          "type": "text",
+          "content": "And in one Lord Jesus Christ, the Son of God, the Only-begotten, begotten of the Father before all ages; Light of Light; true God of true God; begotten, not made; of one essence with the Father; by Whom all things were made;"
+        },
+        {
+          "type": "text",
+          "content": "Who for us men, and for our salvation, came down from the heavens, and was incarnate of the Holy Spirit and the Virgin Mary, and became man;"
+        },
+        {
+          "type": "text",
+          "content": "And was crucified for us under Pontius Pilate, and suffered, and was buried;"
+        },
+        {
+          "type": "text",
+          "content": "And arose again on the third day according to the Scriptures;"
+        },
+        {
+          "type": "text",
+          "content": "And ascended into the heavens, and sitteth at the right hand of the Father;"
+        },
+        {
+          "type": "text",
+          "content": "And shall come again, with glory, to judge both the living and the dead; Whose kingdom shall have no end."
+        },
+        {
+          "type": "text",
+          "content": "And in the Holy Spirit, the Lord, the Giver of Life; Who proceedeth from the Father; Who with the Father and the Son together is worshipped and glorified; Who spake by the prophets."
+        },
+        {
+          "type": "text",
+          "content": "In One, Holy, Catholic, and Apostolic Church."
+        },
+        {
+          "type": "text",
+          "content": "I confess one baptism for the remission of sins."
+        },
+        {
+          "type": "text",
+          "content": "I look for the resurrection of the dead."
+        },
+        {
+          "type": "text",
+          "content": "And the life of the age to come. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Troparia, Tone 6"
+        },
+        {
+          "type": "text",
+          "content": "Have mercy on us, O Lord, have mercy on us; for at a loss for any defence, this prayer do we sinners offer unto Thee as Master: have mercy on us."
+        },
+        {
+          "type": "text",
+          "content": "Glory to the Father, and to the Son, and to the Holy Spirit:"
+        },
+        {
+          "type": "text",
+          "content": "O Lord, have mercy on us, for in Thee have we put our trust. Be not angry with us greatly, nor remember our iniquities, but look down on us even now, since Thou art compassionate and deliver us from our enemies; for Thou art our God and we are Thy people; we are all the work of Thy hands and we call on Thy Name."
+        },
+        {
+          "type": "text",
+          "content": "Both now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "text",
+          "content": "O blessed Theotokos, open the doors of compassion to us whose hope is in thee, that we may not perish but be delivered from adversity through thee who art the salvation of the Christian people."
+        },
+        {
+          "type": "text",
+          "content": "Lord, have mercy!"
+        },
+        {
+          "type": "instruction",
+          "content": "(12 times)"
+        },
+        {
+          "type": "title",
+          "content": "Prayer I, to God the Father, of St. Macarius the Great"
+        },
+        {
+          "type": "text",
+          "content": "O Eternal God and King of all creation, Who hast vouchsafed me to arrive at this hour, forgive me the sins that I have committed this day in deed, word, and thought; and cleanse, O Lord, my lowly soul of all impurity of flesh and spirit."
+        },
+        {
+          "type": "text",
+          "content": "Grant that I may sleep through this night in peace, O Lord; and, arising from my humble bed, let me please Thy all-holy Name every day of my life and trample underfoot all the enemies, visible and invisible, which wage war against me. Deliver me, O Lord, from useless thoughts which defile me and from all evil desires."
+        },
+        {
+          "type": "text",
+          "content": "For Thine is the kingdom, and the power, and the glory: of the Father and of the Son and of the Holy Spirit, now and ever and unto the ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer II, to our Lord Jesus Christ, of St. Antiochus"
+        },
+        {
+          "type": "text",
+          "content": "O almighty and perfect Word of the Father, Jesus Christ, in Thy abundant compassion, do not separate Thyself from me, Thy servant; instead, ever rest within me."
+        },
+        {
+          "type": "text",
+          "content": "O Jesus, Good Shepherd of Thy sheep, do not give me over to the temptations of the serpent or leave me to the desires of Satan, for the seed of corruption is in me. O Lord God whom we worship, holy King, Jesus Christ, guard me in my sleep with the unfading light, Thy Holy Spirit, by whom Thou granted sanctification to Thy Apostles. Though I am unworthy, grant me Thy salvation on my bed, for I am Thy servant. Illumine my mind with the light of the understanding of Thy holy Gospel; my soul with the love of Thy Cross; my heart with the purity of Thy Word; my body with the invincibility of Thy Passion. Keep my thought in Thy humility and raise me up in due time to glorify Thee."
+        },
+        {
+          "type": "text",
+          "content": "For Thou art most-glorious, together with Thy Father who has no beginning and Thy all-holy Spirit, unto all ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer III, to the Holy Spirit"
+        },
+        {
+          "type": "text",
+          "content": "O Lord, Heavenly King, the Comforter, the Spirit of Truth, show Thy compassion to me, Thy sinful servant; have mercy on me and forgive me, the unworthy one, for all the sins which I have committed against Thee today as a man and not only as a man but even worse than a beast. Forgive all my sins committed voluntarily or involuntarily, in knowledge or in ignorance, whether from immaturity or from bad habits, whether from weakness or from laziness."
+        },
+        {
+          "type": "text",
+          "content": "If I have sworn by Thy Name or blasphemed it in thought; if I have rebuked anyone or in my anger have spoken ill of another or provoked anyone; if I became angry or lied or slept too much or if a poor man came to me and I did not receive him; if I have provoked my brother or quarrelled with him; if I condemned anyone or exalted myself; if I have boasted or lost my temper or while in prayer my mind turned to vain worldly cares; if I rebelled in thought or if I have overeaten or drunk too much; if I have laughed foolishly or thought evil or if I have seen the beauty of another and been wounded by it in my heart; if I have spoken unnecessarily or laughed at my brother's sin while my own sins are countless; if I have neglected to pray or committed some other sin which I do not remember, for I have done all this and much more."
+        },
+        {
+          "type": "text",
+          "content": "O my Master and Creator, have mercy on me, Thy lazy and unworthy servant. Loose, remit and forgive me, for Thou art good and the Lover of mankind; thus, wretched, impure and sinner that I am, I may lie down in peace and worship, sing, and glorify Thy all-honourable Name, together with the Father and His only-begotten Son, now and ever and unto ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer IV, of St. Macarius the Great"
+        },
+        {
+          "type": "text",
+          "content": "What shall I offer Thee, or what shall I give Thee, O greatly-gifted, immortal King, O compassionate Lord Who lovest mankind? For though I have been slothful in pleasing Thee and have done nothing good, Thou hast led me to the close of this day that is past, establishing the conversion and salvation of my soul. Be merciful to me a sinner, bereft of every good deed."
+        },
+        {
+          "type": "text",
+          "content": "Raise up my fallen soul which hath become defiled by countless sins, and take away from me every evil thought of this visible life. Forgive my sins, O Only Sinless One, in which I have sinned against Thee this day, known or unknown, in word, and deed, and thought, and in all my senses."
+        },
+        {
+          "type": "text",
+          "content": "Do Thou Thyself protect and guard me from every opposing circumstance, by Thy divine authority and power and inexpressible love for mankind. Blot out, O God, blot out the multitude of my sins. Be pleased, O Lord, to deliver me from the net of the evil one, and save my passionate soul. And overshadow me with the light of Thy countenance when Thou shalt come in glory; and cause me, uncondemned now, to sleep a dreamless sleep."
+        },
+        {
+          "type": "text",
+          "content": "Keep Thy servant untroubled by thoughts, and drive away from me all satanic deeds; and enlighten for me the eyes of my heart with understanding, lest I sleep unto death. And send me an angel of peace, a guardian and guide of my soul and body, that he may deliver me from mine enemies."
+        },
+        {
+          "type": "text",
+          "content": "Yea, O Lord, hearken unto me, Thy sinful and wretched servant, in confession and conscience; grant me, when I arise, to be instructed by Thy sayings; and through Thine angels cause demonic despondency to be driven far from me: that I may bless Thy holy Name, and glorify and extol the most pure Theotokos Mary, whom Thou hast given to us sinners as a protectress, and accept her who prayeth for us."
+        },
+        {
+          "type": "text",
+          "content": "Through her intercessions, and by the sign of the precious Cross, and for the sake of all Thy saints, preserve my wretched soul, O Jesus Christ our God, for holy art Thou and most-glorious forever. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer V"
+        },
+        {
+          "type": "text",
+          "content": "O Lord our God, forgive all my sins committed this day in thought, word or deed, for Thou art good and the Lover of mankind. Grant me peaceful and undisturbed sleep. Send me Thy guardian angel to protect and keep me from all evil, for Thou art the Guardian of our souls and bodies and to Thee we send up glory: to the Father and to the Son and to the Holy Spirit, now and ever and unto the ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer VI"
+        },
+        {
+          "type": "text",
+          "content": "O Lord our God, in whom we believe and whose Name we call upon above every name: grant us, as we prepare for sleep, relaxation of soul and body and keep us from all dreams and dark pleasures; calm the onslaught of the passions; quench the burning of bodily tensions that arise in the flesh."
+        },
+        {
+          "type": "text",
+          "content": "Grant that we may live in purity of thought and deed, that in obtaining a life of virtue, we may not fall away from Thy promised blessing, for Thou art blessed forever. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer VII, of St. John Chrysostom, Supplications for the twenty-four hours of day and night"
+        },
+        {
+          "type": "instruction",
+          "content": "For the day:"
+        },
+        {
+          "type": "text",
+          "content": "Lord, deprive me not of Thy heavenly blessings. Lord, deliver me from eternal torments. Lord, whether I have sinned in thought or intent, word or deed, forgive me. Lord, deliver me from all ignorance, forgetfulness, cowardice, and callous insensitivity. Lord, deliver me from every temptation. Lord, enlighten my heart which evil desires have darkened."
+        },
+        {
+          "type": "text",
+          "content": "Lord, as a man I have sinned; do Thou, as the compassionate God, have mercy on me, knowing the weakness of my soul. Lord, send Thy grace to my aid, that I may glorify Thy holy Name. Lord Jesus Christ, inscribe me, Thy servant, in the book of life, and grant me a good end. Lord, my God, although I have done nothing good before Thee, grant by Thy grace that I may make a good beginning. Lord, sprinkle in my heart the dew of Thy grace. Lord of heaven and earth, remember me, Thy sinful, shameful, and unclean servant, in Thy kingdom. Amen."
+        },
+        {
+          "type": "instruction",
+          "content": "For the night:"
+        },
+        {
+          "type": "text",
+          "content": "Lord, accept me in repentance. Lord, do not abandon me. Lord, lead me not into temptation. Lord, grant me good thoughts. Lord, grant me tears, the remembrance of death, and compunction. Lord, give me the intention to confess my sins. Lord, grant me humility, chastity, and obedience."
+        },
+        {
+          "type": "text",
+          "content": "Lord, grant me patience, courage, and meekness. Lord, plant within me the root of all blessings: the fear of Thee in my heart. Lord, grant me to love Thee with my whole soul and intention, and to do Thy will in all things. Lord, protect me from trials coming from men or demons or passions, and from any other unseemly thing. Lord, Thou knowest Thy creation and doest with it as Thou wilt: may Thy will be done in me, a sinner, for blessed art Thou forever. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer VIII, to our Lord Jesus Christ"
+        },
+        {
+          "type": "text",
+          "content": "Lord Jesus Christ, Son of God, for the sake of Thy most honorable Mother; Thy fleshless angels; Thy Prophet, Forerunner, and Baptist; the divinely inspired Apostles; the radiant and victorious martyrs; the venerable and God-bearing fathers; and of all the saints: deliver me from this present assault of the devil."
+        },
+        {
+          "type": "text",
+          "content": "Yea, my Lord and Creator, who desirest not the death of the sinner, but that he should turn to Thee and live: grant repentance to me, wretched and unworthy, and snatch me from the jaws of the serpent, ravenous and perilous, who would devour me and drag me down to hell alive."
+        },
+        {
+          "type": "text",
+          "content": "Yea, my Lord, my Comfort, who didst put on corruptible flesh for the sake of my wretchedness, lift me up from this wretchedness and bring comfort to my wretched soul. Plant in my heart the desire to keep Thy precepts, to renounce my evil deeds, and to obtain Thy blessings. In Thee, O Lord, have I trusted: save me."
+        },
+        {
+          "type": "title",
+          "content": "Prayer IX, to the Most Holy Theotokos, of Peter the Studite"
+        },
+        {
+          "type": "text",
+          "content": "O most pure Mother of God, in my wretched state I fall down before thee in prayer: thou knowest, O Queen, that I constantly sin and anger thy Son and my God. But though I repent many times, and repent with trembling, yet I appear a liar before God. Shall not God smite me? But an hour passes and I do the same things again."
+        },
+        {
+          "type": "text",
+          "content": "Knowing this, my Lady, my Queen and Theotokos, I pray thee: have mercy on me, strengthen me, and grant me to do good. O my Lady Theotokos, thou knowest that I abhor my evil deeds and love the Law of my God with all my thought. But, most pure Lady, I do not understand how I can hate what I love and turn away from what is good."
+        },
+        {
+          "type": "text",
+          "content": "Do not allow my will to be done, O Most Pure, for it is not pleasing to God; but rather may the will of thy Son and my God be done. May He save and enlighten me, and give me the grace of His Holy Spirit, so that henceforth I may abandon my squalid activity and live the remainder of my life in obedience to thy Son, to whom belongs all glory, honor, and dominion, together with His Father who is without beginning and His all-holy, good, and life-giving Spirit, now and ever and unto ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Prayer X, to the Most Holy Theotokos"
+        },
+        {
+          "type": "text",
+          "content": "O good Mother of the good King, most pure and blessed Theotokos, Mary, pour out the mercy of thy Son and our God upon my passionate soul, and guide me toward good deeds through thy prayers, that I may pass through the remainder of my life without stain, and find paradise through thee, O Virgin Mother of God, who alone art pure and blessed."
+        },
+        {
+          "type": "title",
+          "content": "Prayer XI, to the Holy Guardian Angel"
+        },
+        {
+          "type": "text",
+          "content": "Angel of Christ, my holy guardian and protector of my soul and body, forgive me for all the sins I have committed this day, and deliver me from all the wiles of the enemy who opposes me, lest I anger my God by some sin. Pray for me, thy sinful and unworthy servant, that thou mayest show me worthy of the goodness and mercy of the All-holy Trinity, of the Mother of my Lord Jesus Christ, and of all the saints. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Kontakion to the Theotokos"
+        },
+        {
+          "type": "text",
+          "content": "O victorious leader of triumphant hosts, we, thy servants, delivered from evil, sing our grateful thanks to thee, O Theotokos. As thou dost possess invincible might, set us free from every calamity, so that we may sing: Rejoice, O Unwedded Bride!"
+        },
+        {
+          "type": "instruction",
+          "content": "Then:"
+        },
+        {
+          "type": "text",
+          "content": "Most glorious, ever-virgin Mother of Christ our God, present our prayer to thy Son and our God, that through thee He may save our souls."
+        },
+        {
+          "type": "text",
+          "content": "All my hope I place in thee, O Mother of God: keep me under thy protection."
+        },
+        {
+          "type": "text",
+          "content": "Virgin Theotokos, do not despise me, a sinner, for I am in need of thy help and intercession. My soul has hoped in thee: have mercy on me."
+        },
+        {
+          "type": "title",
+          "content": "Prayer of St. Ioannikios"
+        },
+        {
+          "type": "text",
+          "content": "My hope is the Father. My refuge is the Son. My protection is the Holy Spirit. O Holy Trinity, glory to Thee."
+        },
+        {
+          "type": "instruction",
+          "content": "Then:"
+        },
+        {
+          "type": "text",
+          "content": "It is truly meet to bless thee, the Theotokos, ever-blessed and most blameless, and Mother of our God. More honourable than the Cherubim, and beyond compare more glorious than the Seraphim, who without corruption gavest birth to God the Word, the very Theotokos, thee do we magnify."
+        },
+        {
+          "type": "text",
+          "content": "Glory to the Father, and to the Son, and to the Holy Spirit, both now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "text",
+          "content": "Lord, have mercy!"
+        },
+        {
+          "type": "instruction",
+          "content": "(three times)"
+        },
+        {
+          "type": "instruction",
+          "content": "Bless."
+        },
+        {
+          "type": "title",
+          "content": "Dismissal"
+        },
+        {
+          "type": "text",
+          "content": "O Lord Jesus Christ, Son of God, for the sake of the prayers of Thy most pure Mother, our holy and God-bearing fathers and all the saints, save me, a sinner."
+        },
+        {
+          "type": "title",
+          "content": "Prayer of St. John Damascene"
+        },
+        {
+          "type": "instruction",
+          "content": "Which is to be said while pointing to thy bed:"
+        },
+        {
+          "type": "text",
+          "content": "O Lord Jesus Christ, Lover of mankind, is this bed to be my grave, or wilt Thou shine upon my wretched soul with the light of another day? Behold, the grave lies before me and death confronts me."
+        },
+        {
+          "type": "text",
+          "content": "I fear Thy judgment, O Lord, and the eternal torments, but still I do not cease from my evil ways, continually angering Thee, my Lord God, together with Thy immaculate Mother, all the Heavenly Hosts, and my holy Guardian Angel."
+        },
+        {
+          "type": "text",
+          "content": "I know, O Lord, that I am unworthy of Thy love for mankind and that I deserve every condemnation and torment; but I implore Thee, O Lord, save me according to the abundance of Thy goodness; for it is no great deed if Thou grantest salvation to the righteous, nor is it a miracle for Thee to have mercy on those who are pure, for they deserve Thy lovingkindness. But work the wonder of Thy mercy on me, a sinner, and thus reveal Thy love for mankind, that my wickedness may not prevail over Thy unspeakable goodness and mercy. Order my life as Thou wilt. Amen."
+        },
+        {
+          "type": "instruction",
+          "content": "Then, with a full bow, say:"
+        },
+        {
+          "type": "text",
+          "content": "I worship Thee, O Most Holy Trinity, one in essence, life-giving, and indivisible: Father, Son, and Holy Spirit; I believe in Thee and confess Thee, I glorify Thee, give thanks to Thee, praise Thee, honor Thee, and magnify Thee, and I pray to Thee: have mercy on me, Thine unprofitable servant."
+        },
+        {
+          "type": "instruction",
+          "content": "(three times)"
+        },
+        {
+          "type": "text",
+          "content": "I worship thee, O Most Holy Theotokos, who by thy birth-giving hast shown us the true Light, O Queen of heaven and earth, hope of the hopeless, helper of the infirm, and intercessor for all sinners; cover me and preserve me from every danger and affliction of soul and body; and I pray thee, by thine all-powerful prayers, be thou my intercessor."
+        },
+        {
+          "type": "instruction",
+          "content": "(bow)"
+        },
+        {
+          "type": "text",
+          "content": "O Most Holy Lady Theotokos, accept this small supplication and bring it to thy Son and our God, that for thy sake He may save and enlighten our souls."
+        },
+        {
+          "type": "instruction",
+          "content": "(bow)"
+        },
+        {
+          "type": "text",
+          "content": "All ye heavenly ranks: Seraphim, Cherubim, Thrones, Dominions, Powers, Authorities, Principalities, Archangels, and Angels, I pray and beseech you: pray to God for me, a sinner."
+        },
+        {
+          "type": "instruction",
+          "content": "(bow)"
+        },
+        {
+          "type": "text",
+          "content": "O holy and great John, Prophet, Forerunner, and Baptist of the Lord, who didst suffer for Christ and hast obtained boldness before the Lord, pray for me, a sinner, that I may be saved through thy prayers."
+        },
+        {
+          "type": "instruction",
+          "content": "(bow)"
+        },
+        {
+          "type": "text",
+          "content": "Holy Apostles of God, Prophets, Martyrs, Hierarchs, Fasters, Venerable Ones, Righteous Ones, Hermits, Monastics, Patriarchs, and all Saints, ye suffered for Christ and obtained boldness before the Lord; pray for me, a sinner, that I may be saved through your prayers."
+        },
+        {
+          "type": "instruction",
+          "content": "(bow)"
+        },
+        {
+          "type": "text",
+          "content": "Saints John Chrysostom, Basil the Great, Gregory the Theologian, and Nicholas the Wonderworker, and all holy hierarchs, help me and have mercy on me by your prayers to God and by your intercession."
+        },
+        {
+          "type": "instruction",
+          "content": "(bow)"
+        },
+        {
+          "type": "text",
+          "content": "Venerable and God-bearing fathers of ours: Anthony and Theodosius, Euthymius, Theoctistus, Sabbas, Onuphrius, John of Damascus, Symeon the New Theologian, Justin, and all the venerable ones, pray to God for me, a sinner."
+        },
+        {
+          "type": "instruction",
+          "content": "(bow)"
+        },
+        {
+          "type": "text",
+          "content": "Holy Serbian enlighteners and teachers: Sava, Symeon, Arsenius, Maximus, Basil, Peter, Nikolai, and all saints, ascetics, hermits, confessors, and martyrs of the Serbian land, by your unceasing prayers to the sweetest Lord, enlighten, instruct, and save me, a sinner."
+        },
+        {
+          "type": "instruction",
+          "content": "(bow)"
+        },
+        {
+          "type": "text",
+          "content": "All holy women: Myrrh-bearers, Martyrs, Venerable Mothers, and Virgins, who worthily served Christ, pray to God for me, a sinner."
+        },
+        {
+          "type": "instruction",
+          "content": "(bow)"
+        },
+        {
+          "type": "text",
+          "content": "O invincible and divine power of the precious and life-giving Cross of the Lord, forsake me not, a sinner, but by thy power protect me from every temptation of soul and body."
+        },
+        {
+          "type": "instruction",
+          "content": "(bow)"
+        },
+        {
+          "type": "text",
+          "content": "O Most Holy Lady Theotokos, hope of all Christians, we have no other hope and trust except thee, O my most pure Lady, Mistress Theotokos, Mother of Christ my God. Therefore have mercy on me and deliver me from all my evils, and entreat thy merciful Son and my God, that He may have mercy on my wretched soul, deliver me from eternal torments, and make me worthy of His Kingdom."
+        },
+        {
+          "type": "instruction",
+          "content": "(bow)"
+        },
+        {
+          "type": "text",
+          "content": "O my Holy Angel and guardian, cover me with the wings of your goodness, cast away from me every evil work of the devil, and pray to God for me, a sinner."
+        },
+        {
+          "type": "instruction",
+          "content": "(bow)"
+        },
+        {
+          "type": "instruction",
+          "content": "And then say this:"
+        },
+        {
+          "type": "text",
+          "content": "Enlighten mine eyes, O Christ God, lest I sleep unto death, lest mine enemy say: I have prevailed over him."
+        },
+        {
+          "type": "text",
+          "content": "Glory to the Father, and to the Son, and to the Holy Spirit:"
+        },
+        {
+          "type": "text",
+          "content": "Be my soul's advocate, O good God, for I walk in the midst of many snares. Deliver me from them and save me in Thy love for mankind."
+        },
+        {
+          "type": "text",
+          "content": "Both now and ever, and unto the ages of ages. Amen."
+        },
+        {
+          "type": "text",
+          "content": "With all our heart and never-silent mouths let us praise the most glorious Mother of God, more holy than the holy angels. Let us confess her as Theotokos, for in very truth she gave birth to God made flesh, and without ceasing she prays for our souls."
+        },
+        {
+          "type": "instruction",
+          "content": "Then kiss thy cross, and make the sign of the Cross over thy bed from head to foot and from side to side, saying the Prayer to the Precious Cross:"
+        },
+        {
+          "type": "text",
+          "content": "Glory, O Lord, to Thy precious Cross!"
+        },
+        {
+          "type": "text",
+          "content": "Let God arise; let His enemies be scattered. Let those who hate Him flee from before His face. As smoke vanishes, so let them vanish; as wax melts before the fire, so let the demons perish before those who love God and sign themselves with the Sign of the Cross, saying with joy:"
+        },
+        {
+          "type": "text",
+          "content": "Rejoice, most precious and life-giving Cross of the Lord, which drivest demons away through the power of our Lord Jesus Christ, who was crucified on thee, who descended into hell, trampled down the power of the devil, and gave to us His precious Cross for the routing of all enemies."
+        },
+        {
+          "type": "text",
+          "content": "Help me forever, most precious and life-giving Cross of the Lord, together with the holy Lady Virgin Theotokos and all the saints. Amen."
+        },
+        {
+          "type": "title",
+          "content": "In Place of Forgiveness"
+        },
+        {
+          "type": "text",
+          "content": "Loose, forgive, remit, O God, our transgressions committed voluntarily and involuntarily; of word and of deed; those done in knowledge and in ignorance; those of the night and of the day; those of the mind and of thought: forgive them all, for Thou art good and the Lover of mankind."
+        },
+        {
+          "type": "title",
+          "content": "Prayer"
+        },
+        {
+          "type": "text",
+          "content": "O Lord, Lover of mankind, forgive them that hate and wrong us. Do good to them that do good. Grant our brethren and kindred their saving petitions and life eternal; visit the infirm and grant them healing. Guide those at sea. Journey with them that travel. Help Orthodox Christians to struggle. To them that serve and are kind to us grant remission of sins."
+        },
+        {
+          "type": "text",
+          "content": "On them that have charged us, the unworthy, to pray for them, have mercy according to Thy great mercy. Remember, O Lord, our fathers and brethren departed before us, and grant them rest where the light of Thy countenance shall visit them. Remember, O Lord, our brethren in captivity, and deliver them from every misfortune."
+        },
+        {
+          "type": "text",
+          "content": "Remember, O Lord, those that bear fruit and do good works in Thy holy churches, and grant them their saving petitions and life eternal. Remember also, O Lord, us Thy lowly and sinful and unworthy servants, and enlighten our minds with the light of Thy knowledge, and guide us in the way of Thy commandments; through the intercessions of our most pure Lady, the Theotokos and Ever-Virgin Mary, and of all Thy saints, for blessed art Thou unto the ages of ages. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Daily Confession of Sins"
+        },
+        {
+          "type": "text",
+          "content": "I confess to Thee, my Lord God and Creator, in one Holy Trinity glorified and worshipped, to the Father, Son, and Holy Spirit, all my sins which I have committed in all the days of my life and at every hour, at the present time and in the past, day and night, by deed, word, thought, gluttony, drunkenness, secret eating, idle talking, despondency, indolence, contradiction, disobedience, slandering, condemning, negligence, self-love, acquisitiveness, extortion, lying, dishonesty, mercenariness, jealousy, envy, anger, remembrance of wrongs, hatred, bribery, and by all my senses: sight, hearing, smell, taste, and touch; and by the rest of my sins, of the soul together with the bodily, through which I have angered Thee, my God and Creator, and dealt unjustly with my neighbour. Sorrowing for these, I stand guilty before Thee, my God, but I have the will to repent."
+        },
+        {
+          "type": "text",
+          "content": "Only help me, O Lord my God, with tears I humbly entreat Thee. Forgive my past sins through Thy compassion, and absolve from all these which I have said in Thy presence, for Thou art good and the Lover of mankind."
+        },
+        {
+          "type": "title",
+          "content": "Before Sleep / Examination of the Day"
+        },
+        {
+          "type": "instruction",
+          "content": "Before you lie down upon your bed, bring this through your mind and consider it carefully:"
+        },
+        {
+          "type": "instruction",
+          "content": "First: Give thanks to God Almighty, who by His grace has granted you to pass the past day alive and in health."
+        },
+        {
+          "type": "instruction",
+          "content": "Second: Question yourself and examine your conscience, going step by step and carefully reviewing all the time of the past day, beginning from the moment when you rose from bed, and bringing to remembrance where you went, what you did, with whom you spoke and what you said. Remember and examine with the greatest attention all the deeds you did, the words you spoke, and the thoughts you had, from morning until evening."
+        },
+        {
+          "type": "instruction",
+          "content": "Third: If you have done anything good during the day, do not consider that it came from yourself, but from God Himself, who gives us every good thing without our deserving it. Ascribe it to Him and give thanks, and pray that He confirm you in that good, and help and grant you to do other good things also."
+        },
+        {
+          "type": "instruction",
+          "content": "Fourth: If, however, you have done anything evil, say to yourself that it came from yourself and from your weakness, or from an evil habit and will. Repent and pray to the Lover of mankind that He would be pleased to grant you forgiveness for it, promising firmly that henceforth you will do it no more."
+        },
+        {
+          "type": "instruction",
+          "content": "Fifth: With tears pray to your Creator that He have mercy and grant you this night quiet, peaceful, pure, and sinless, and that He grant you to spend the coming day wholly in glorifying His holy Name."
+        },
+        {
+          "type": "instruction",
+          "content": "Sixth: If you find that your pillow is soft, remove it, and in its place put a stone for Christ's sake. If you are cold while sleeping, endure it, saying that others do not sleep at all. (The Paterikon, Word Four)"
+        }
+      ]
+    }
+  },
+  "meals": {
+    "breakfast": {
+      "before": {
+        "title": "Before Breakfast",
+        "blocks": [
+          {
+            "type": "title",
+            "content": "Prayer Before Breakfast"
+          },
+          {
+            "type": "instruction",
+            "content": "Having made the sign of the Cross, say this prayer:"
+          },
+          {
+            "type": "text",
+            "content": "O Most Holy Trinity, have mercy on us. O Lord, blot out our sins. O Master, pardon our iniquities. O Holy One, visit and heal our infirmities for Thy name's sake."
+          },
+          {
+            "type": "instruction",
+            "content": "Then:"
+          },
+          {
+            "type": "text",
+            "content": "Glory to the Father, and to the Son, and to the Holy Spirit, now and ever, and unto ages of ages. Amen."
+          },
+          {
+            "type": "text",
+            "content": "Lord, have mercy! (thrice)."
+          },
+          {
+            "type": "text",
+            "content": "Through the prayers of our holy fathers, O Lord Jesus Christ our God, have mercy on us. Amen."
+          },
+          {
+            "type": "instruction",
+            "content": "Having made the sign of the Cross, sit at table."
+          }
+        ]
+      },
+      "after": {
+        "title": "After Breakfast",
+        "blocks": [
+          {
+            "type": "title",
+            "content": "Prayer After Breakfast"
+          },
+          {
+            "type": "instruction",
+            "content": "After rising from table, make the sign of the Cross and say:"
+          },
+          {
+            "type": "text",
+            "content": "It is truly meet to bless thee, the Theotokos, ever-blessed and most blameless, and Mother of our God. More honourable than the Cherubim, and beyond compare more glorious than the Seraphim, who without corruption gavest birth to God the Word, the very Theotokos, thee do we magnify."
+          },
+          {
+            "type": "instruction",
+            "content": "Then:"
+          },
+          {
+            "type": "text",
+            "content": "Glory to the Father, and to the Son, and to the Holy Spirit, now and ever, and unto ages of ages. Amen."
+          },
+          {
+            "type": "text",
+            "content": "Lord, have mercy! (thrice)."
+          },
+          {
+            "type": "text",
+            "content": "Through the prayers of our holy fathers, O Lord Jesus Christ our God, have mercy on us. Amen."
+          },
+          {
+            "type": "instruction",
+            "content": "And make the sign of the Cross."
+          }
+        ]
+      }
+    },
+    "lunch": {
+      "before": {
+        "title": "Before Lunch",
+        "blocks": [
+          {
+            "type": "title",
+            "content": "Prayer Before Lunch"
+          },
+          {
+            "type": "instruction",
+            "content": "Having made the sign of the Cross, read this prayer:"
+          },
+          {
+            "type": "text",
+            "content": "Our Father, Who art in the heavens, hallowed be Thy name. Thy kingdom come, Thy will be done, on earth as it is in heaven. Give us this day our daily bread, and forgive us our debts, as we forgive our debtors; and lead us not into temptation, but deliver us from the evil one."
+          },
+          {
+            "type": "instruction",
+            "content": "Then:"
+          },
+          {
+            "type": "text",
+            "content": "Glory to the Father, and to the Son, and to the Holy Spirit, now and ever, and unto ages of ages. Amen."
+          },
+          {
+            "type": "text",
+            "content": "Lord, have mercy! (thrice)."
+          },
+          {
+            "type": "text",
+            "content": "Through the prayers of our holy fathers, O Lord Jesus Christ our God, have mercy on us. Amen."
+          },
+          {
+            "type": "instruction",
+            "content": "Then make the sign of the Cross and sit at table."
+          }
+        ]
+      },
+      "after": {
+        "title": "After Lunch",
+        "blocks": [
+          {
+            "type": "title",
+            "content": "Prayer After Lunch"
+          },
+          {
+            "type": "instruction",
+            "content": "After rising from table and making the sign of the Cross, read:"
+          },
+          {
+            "type": "text",
+            "content": "We thank thee, O Christ our God, for thou hast satisfied us with thine earthly gifts. Deprive us not of thy heavenly kingdom, but as thou camest among thy disciples, O Savior, giving them peace, so come to us and save us."
+          },
+          {
+            "type": "instruction",
+            "content": "Then:"
+          },
+          {
+            "type": "text",
+            "content": "Glory to the Father, and to the Son, and to the Holy Spirit, now and ever, and unto ages of ages. Amen."
+          },
+          {
+            "type": "text",
+            "content": "Lord, have mercy! (thrice)."
+          },
+          {
+            "type": "text",
+            "content": "Through the prayers of our holy fathers, O Lord Jesus Christ our God, have mercy on us. Amen."
+          },
+          {
+            "type": "instruction",
+            "content": "And make the sign of the Cross."
+          }
+        ]
+      }
+    },
+    "dinner": {
+      "before": {
+        "title": "Before Dinner",
+        "blocks": [
+          {
+            "type": "title",
+            "content": "Prayer Before Dinner"
+          },
+          {
+            "type": "instruction",
+            "content": "Having made the sign of the Cross, read:"
+          },
+          {
+            "type": "text",
+            "content": "The poor shall eat and be satisfied, and they that seek the Lord shall praise Him; their hearts shall live forever."
+          },
+          {
+            "type": "instruction",
+            "content": "Then:"
+          },
+          {
+            "type": "text",
+            "content": "Glory to the Father, and to the Son, and to the Holy Spirit, now and ever, and unto ages of ages. Amen."
+          },
+          {
+            "type": "text",
+            "content": "Lord, have mercy! (thrice)."
+          },
+          {
+            "type": "text",
+            "content": "Through the prayers of our holy fathers, O Lord Jesus Christ our God, have mercy on us. Amen."
+          },
+          {
+            "type": "instruction",
+            "content": "Make the sign of the Cross and sit at table."
+          }
+        ]
+      },
+      "after": {
+        "title": "After Dinner",
+        "blocks": [
+          {
+            "type": "title",
+            "content": "Prayer After Dinner"
+          },
+          {
+            "type": "instruction",
+            "content": "After rising from table and making the sign of the Cross, read:"
+          },
+          {
+            "type": "text",
+            "content": "Thy womb, O Theotokos, became a heavenly table, bearing the heavenly Bread, Christ our God. Whosoever eats of Him shall not perish: so said the Nourisher of all."
+          },
+          {
+            "type": "instruction",
+            "content": "Then, if it is a water-only fast:"
+          },
+          {
+            "type": "text",
+            "content": "More honourable than the Cherubim, and beyond compare more glorious than the Seraphim, who without corruption gavest birth to God the Word, the very Theotokos, thee do we magnify."
+          },
+          {
+            "type": "instruction",
+            "content": "But if there is a relaxation of the fast, then we read the following prayer:"
+          },
+          {
+            "type": "text",
+            "content": "Thou, O Lord, hast made us glad by Thy creation, and in the works of Thy hands will we rejoice. The light of Thy countenance has been signed upon us, O Lord. Thou hast put gladness into my heart. From the fruit of their wheat and wine and oil have they been multiplied. In peace will I both lie down and sleep, for Thou alone, O Lord, hast made me dwell in hope."
+          },
+          {
+            "type": "instruction",
+            "content": "Then:"
+          },
+          {
+            "type": "text",
+            "content": "Glory to the Father, and to the Son, and to the Holy Spirit, now and ever, and unto ages of ages. Amen."
+          },
+          {
+            "type": "text",
+            "content": "Lord, have mercy! (thrice)."
+          },
+          {
+            "type": "text",
+            "content": "Through the prayers of our holy fathers, O Lord Jesus Christ our God, have mercy on us. Amen."
+          },
+          {
+            "type": "instruction",
+            "content": "Make the sign of the Cross."
+          }
+        ]
+      }
+    }
+  },
+  "other": [
+    {
+      "title": "Prayer When Troubled by Impure Thoughts",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "O Master, Lord my God, in whose hands is my lot, save me according to Thy mercy. Do not let me perish in my sins, and do not allow me to follow the impure desires of the flesh that defile my soul. For I am Thy creation; despise not the work of Thy hands. Do not turn away from me; be merciful and put me not to shame. Forsake me not, O Lord, for I am weak and flee unto Thee, my God and Protector. Heal my soul, for I have sinned against Thee."
+        }
+      ]
+    },
+    {
+      "title": "Prayer Before Lessons",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "O Most-good Lord, send down upon us the grace of Thy Holy Spirit, who granteth gifts and strengtheneth the powers of our souls, so that by attending to the teaching given us, we may grow to the glory of Thee, our Creator, to the comfort of our parents, and to the service of the Church and our native land."
+        }
+      ]
+    },
+    {
+      "title": "Prayer After Lessons",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "We thank Thee, our Creator, that Thou hast granted us Thy grace to attend to this instruction. Bless our parents and teachers who are leading us to knowledge of good, and grant us energy and strength to persevere in our studies."
+        }
+      ]
+    }
+  ]
+}

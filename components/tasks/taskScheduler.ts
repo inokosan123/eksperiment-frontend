@@ -82,6 +82,9 @@ export function shouldTaskExistOnDate(
   if (task.status !== 'active') return false;
   if (task.removedAt && dateKey >= task.removedAt) return false;
   if (task.pausedAt && dateKey >= task.pausedAt) return false;
+  if (task.source === 'quick' && task.quickConfig?.date) {
+    return dateKey === task.quickConfig.date;
+  }
   if (!scheduleMatchesDate(task.schedule, dateKey)) return false;
 
   const activatedDate = getLocalDateKey(new Date(task.activatedAt));
@@ -91,6 +94,8 @@ export function shouldTaskExistOnDate(
   const effectiveTime = getEffectiveTaskTime(task.schedule, dateKey);
   const scheduledAt = parseTaskTimeToDate(dateKey, effectiveTime);
   if (!scheduledAt) return true;
+
+  if (task.source === 'quick') return true;
 
   const activationAt = new Date(task.activatedAt);
   return activationAt.getTime() <= scheduledAt.getTime();
@@ -108,10 +113,16 @@ export function isTaskInstanceLocked(status: TaskInstance['status']) {
   return status === 'completed' || status === 'skipped' || status === 'missed';
 }
 
-export function shouldMarkMissed(dateKey: string, _time: string, referenceDate: Date = new Date()) {
+export function shouldMarkMissed(dateKey: string, time?: string, referenceDate: Date = new Date()) {
   const today = getLocalDateKey(referenceDate);
   if (dateKey < today) return true;
-  return false;
+  if (dateKey > today) return false;
+
+  const dueAt = time
+    ? parseTaskTimeToDate(dateKey, time)?.getTime()
+    : new Date(`${dateKey}T23:59:59.999`).getTime();
+
+  return dueAt ? referenceDate.getTime() >= dueAt : false;
 }
 
 export function addDays(date: Date, days: number) {
@@ -131,8 +142,14 @@ export function buildTaskInstance(
   existing?: Partial<TaskInstance>,
   referenceDate: Date = new Date(),
 ): TaskInstance {
-  const time = getEffectiveTaskTime(task.schedule, dateKey);
-  const status = existing?.status ?? (shouldMarkMissed(dateKey, time, referenceDate) ? 'missed' : 'pending');
+  const today = getLocalDateKey(referenceDate);
+  const preserveSnapshot = !!existing && dateKey < today;
+  const time = preserveSnapshot && existing.time
+    ? existing.time
+    : getEffectiveTaskTime(task.schedule, dateKey);
+  const existingStatus = existing?.status === 'not_applicable' ? undefined : existing?.status;
+  const shouldAutoMiss = !existingStatus && dateKey < today && shouldMarkMissed(dateKey, time, referenceDate);
+  const status = existingStatus ?? (shouldAutoMiss ? 'missed' : 'pending');
 
   return {
     id: buildInstanceId(task.id, dateKey),
@@ -140,16 +157,16 @@ export function buildTaskInstance(
     date: dateKey,
     time,
     status,
-    locked: isTaskInstanceLocked(status),
-    title: task.title,
-    subtitle: task.subtitle,
-    level: task.level,
-    source: task.source,
-    type: task.type,
-    icon: task.icon,
-    habitColor: task.habitColor,
-    targetView: task.targetView,
-    targetTab: task.targetTab,
+    locked: existing?.locked ?? isTaskInstanceLocked(status),
+    title: preserveSnapshot && existing.title ? existing.title : task.title,
+    subtitle: preserveSnapshot ? existing.subtitle ?? task.subtitle : task.subtitle,
+    level: preserveSnapshot && existing.level ? existing.level : task.level,
+    source: preserveSnapshot && existing.source ? existing.source : task.source,
+    type: preserveSnapshot && existing.type ? existing.type : task.type,
+    icon: preserveSnapshot ? existing.icon ?? task.icon : task.icon,
+    habitColor: preserveSnapshot ? existing.habitColor ?? task.habitColor : task.habitColor,
+    targetView: preserveSnapshot ? existing.targetView ?? task.targetView : task.targetView,
+    targetTab: preserveSnapshot ? existing.targetTab ?? task.targetTab : task.targetTab,
     createdAt: existing?.createdAt ?? Date.now(),
     resolvedAt: existing?.resolvedAt,
   };

@@ -11,6 +11,7 @@ type Props = {
   title?: string;
   subtitle?: string;
   style?: StyleProp<ViewStyle>;
+  textMaxFontSizeMultiplier?: number;
 };
 
 export default function SetAsDailyTaskCard({
@@ -19,6 +20,7 @@ export default function SetAsDailyTaskCard({
   title = 'Set as Daily Task',
   subtitle = 'Add to your daily routine',
   style,
+  textMaxFontSizeMultiplier = 1.08,
 }: Props) {
   const scripture = variant === 'scripture';
 
@@ -35,8 +37,24 @@ export default function SetAsDailyTaskCard({
         </View>
 
         <View style={s.copy}>
-          <Text style={[s.titleBase, scripture ? s.scriptureTitle : s.softTitle]}>{title}</Text>
-          <Text style={[s.subtitleBase, scripture ? s.scriptureSubtitle : s.softSubtitle]} numberOfLines={scripture ? 1 : 2}>
+          <Text
+            style={[s.titleBase, scripture ? s.scriptureTitle : s.softTitle]}
+            allowFontScaling={false}
+            maxFontSizeMultiplier={textMaxFontSizeMultiplier}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.82}
+          >
+            {title}
+          </Text>
+          <Text
+            style={[s.subtitleBase, scripture ? s.scriptureSubtitle : s.softSubtitle]}
+            allowFontScaling={false}
+            numberOfLines={scripture ? 1 : 2}
+            maxFontSizeMultiplier={textMaxFontSizeMultiplier}
+            adjustsFontSizeToFit={scripture}
+            minimumFontScale={0.82}
+          >
             {subtitle}
           </Text>
         </View>

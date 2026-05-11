@@ -5,7 +5,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  ArrowLeft, Search, SlidersHorizontal, Star, Trash2, X,
+  ArrowLeft, Pencil, Search, SlidersHorizontal, Star, Trash2, X,
 } from '@/components/icons/Icons';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import {
@@ -16,6 +16,7 @@ import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import { BIBLE_BOOKS, PSALMS_ID } from '@/constants/scripture';
 import { CategoryChipPicker, CategoryEditorModal } from './CategoryColorTools';
+import RichCommentText from '@/components/shared/RichCommentText';
 import {
   annotationLocation, ScriptureAnnotation, useScripture,
 } from './ScriptureContext';
@@ -44,6 +45,29 @@ function matchesSource(annotation: ScriptureAnnotation, source: SourceFilter) {
   return annotation.bookId !== PSALMS_ID && book.testament !== 'nt';
 }
 
+function plainRichText(html?: string) {
+  return (html ?? '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div)>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '- ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&rsquo;/g, "'")
+    .replace(/&lsquo;/g, "'")
+    .replace(/&rdquo;/g, '"')
+    .replace(/&ldquo;/g, '"')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
+}
+
 export default function MyFavoritesView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -68,7 +92,7 @@ export default function MyFavoritesView() {
       const q = search.trim().toLowerCase();
       if (!q) return true;
       return annotation.text.toLowerCase().includes(q)
-        || annotation.comment?.toLowerCase().includes(q)
+        || plainRichText(annotation.comment).toLowerCase().includes(q)
         || annotationLocation(annotation).toLowerCase().includes(q);
     })
     .sort((a, b) => b.updatedAt - a.updatedAt), [annotations, color, kind, search, source]);
@@ -299,6 +323,15 @@ export default function MyFavoritesView() {
                     verse: String(annotation.verse),
                   },
                 })}
+                onEdit={annotation.kind === 'comment' ? () => router.push({
+                  pathname: '/scripture-reader',
+                  params: {
+                    bookId: String(annotation.bookId),
+                    chapter: String(annotation.chapter),
+                    verse: String(annotation.verse),
+                    editCommentId: annotation.id,
+                  },
+                }) : undefined}
                 onDelete={() => handleDeletePress(annotation, colors)}
               />
             ))}
@@ -350,7 +383,7 @@ function Header({ top, onBack }: { top: number; onBack: () => void }) {
 const PREVIEW_COUNT = 2;
 
 function AnnotationCard({
-  annotation, verseRange, verses, colors, categories, onOpen, onDelete,
+  annotation, verseRange, verses, colors, categories, onOpen, onEdit, onDelete,
 }: {
   annotation: ScriptureAnnotation;
   verseRange: string;
@@ -358,6 +391,7 @@ function AnnotationCard({
   colors: string[];
   categories: ColorCategory[];
   onOpen: () => void;
+  onEdit?: () => void;
   onDelete: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -377,6 +411,8 @@ function AnnotationCard({
   const hasMore = quoteLines.length > PREVIEW_COUNT;
   const visibleLines = hasMore && !expanded ? quoteLines.slice(0, PREVIEW_COUNT) : quoteLines;
   const hiddenCount = quoteLines.length - PREVIEW_COUNT;
+  const commentText = plainRichText(annotation.comment);
+  const hasComment = !!commentText;
 
   return (
     <TouchableOpacity
@@ -400,9 +436,16 @@ function AnnotationCard({
             <Text style={[s.cardChipText, { color: '#9A7426' }]}>{kindLabel}</Text>
           </View>
         </View>
-        <Pressable onPress={onDelete} hitSlop={8} style={s.trashBtn}>
-          <Trash2 s={15} c="#D8A6A6" />
-        </Pressable>
+        <View style={s.cardActions}>
+          {onEdit && (
+            <Pressable onPress={onEdit} hitSlop={8} style={s.editBtn}>
+              <Pencil s={14} c="#A8A29E" w={2.1} />
+            </Pressable>
+          )}
+          <Pressable onPress={onDelete} hitSlop={8} style={s.trashBtn}>
+            <Trash2 s={15} c="#D8A6A6" />
+          </Pressable>
+        </View>
       </View>
       <Text style={s.cardRef}>{verseRange}</Text>
       <View style={s.quoteBlock}>
@@ -434,9 +477,9 @@ function AnnotationCard({
         </TouchableOpacity>
       )}
 
-      {!!annotation.comment && (
+      {hasComment && (
         <View style={s.commentBox}>
-          <Text style={s.commentText}>{annotation.comment}</Text>
+          <RichCommentText html={annotation.comment ?? ''} color="#6F5320" />
         </View>
       )}
     </TouchableOpacity>
@@ -527,7 +570,7 @@ const s = StyleSheet.create({
   content: { paddingHorizontal: 14, paddingTop: 16 },
   filterCard: { borderRadius: 22, borderWidth: 1, borderColor: '#ECE4D7', backgroundColor: '#FFFDF9', padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.04, shadowRadius: 24, elevation: 2 },
   searchBox: { height: 46, borderRadius: 17, borderWidth: 1, borderColor: '#EEE5D8', backgroundColor: '#fff', paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  searchInput: { flex: 1, height: 46, fontFamily: F.serif, fontSize: 15, color: '#44403C', paddingVertical: 0 },
+  searchInput: { flex: 1, height: 46, fontFamily: F.serif, fontSize: 15, lineHeight: 21, color: '#44403C' },
   colorWrap: { marginTop: 18 },
   filterTitle: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10, paddingLeft: 3 },
   sectionKicker: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, color: '#A8A29E' },
@@ -586,15 +629,16 @@ const s = StyleSheet.create({
   cardKindChip: { backgroundColor: '#FFF7EA', borderColor: '#EEDCB6' },
   cardChipText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.8, textTransform: 'uppercase' },
   cardRef: { marginBottom: 12, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.7, color: '#C0B8AE', textTransform: 'uppercase' },
+  cardActions: { flexDirection: 'row', alignItems: 'center', gap: 2, flexShrink: 0 },
+  editBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
   trashBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-  quoteBlock: { paddingHorizontal: 18 },
+  quoteBlock: { paddingHorizontal: 0 },
   quoteLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   quoteVerseNum: { minWidth: 22, paddingTop: 5, fontFamily: F.sansBold, fontSize: 10, color: 'rgba(190,18,60,0.45)', textAlign: 'right' },
   quoteText: { flex: 1, fontFamily: F.serifItalic, fontSize: 17, lineHeight: 28, color: '#4B5563' },
   quoteTextIndented: { flex: 1 },
   quoteDivider: { height: 1, backgroundColor: '#E7EAF0', marginVertical: 13 },
-  commentBox: { marginTop: 14, borderRadius: 16, borderWidth: 1, borderColor: '#F2E4C8', backgroundColor: '#FFF8EF', padding: 12 },
-  commentText: { fontFamily: F.serif, fontSize: 16, lineHeight: 23, color: '#6F5320' },
+  commentBox: { marginTop: 14, borderRadius: 16, borderWidth: 1, borderColor: '#F2E4C8', backgroundColor: '#FFF8EF', padding: 14 },
   seeMoreBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10, alignSelf: 'flex-start' },
   seeMoreText: { fontFamily: F.sansSemiBold, fontSize: 12, letterSpacing: 0.3 },
   seeMoreArrow: { fontSize: 18, lineHeight: 18, fontFamily: F.serifMedium },

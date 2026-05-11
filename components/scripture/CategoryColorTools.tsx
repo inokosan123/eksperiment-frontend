@@ -284,10 +284,11 @@ const s = StyleSheet.create({
   },
   editorInput: {
     flex: 1,
+    minHeight: 26,
     fontFamily: F.serif,
     fontSize: 17,
+    lineHeight: 23,
     color: '#252525',
-    paddingVertical: 0,
   },
   saveButton: {
     minHeight: 52,

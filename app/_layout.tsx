@@ -2,13 +2,17 @@ import '../global.css';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SQLiteProvider } from 'expo-sqlite';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts, EBGaramond_400Regular, EBGaramond_400Regular_Italic, EBGaramond_500Medium, EBGaramond_500Medium_Italic, EBGaramond_600SemiBold, EBGaramond_700Bold } from '@expo-google-fonts/eb-garamond';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Text, TextInput } from 'react-native';
 import { C } from '@/constants/tokens';
 import { BucketListProvider } from '@/components/bucket/BucketListContext';
 import { InnerToolsProvider } from '@/components/inner-tools/InnerToolsContext';
+import { MonthlyGoalsProvider } from '@/components/inner-tools/MonthlyGoalsContext';
+import { BigEventsProvider } from '@/components/journal/BigEventsContext';
+import { JournalProvider } from '@/components/journal/JournalContext';
 import { ScriptureProvider } from '@/components/scripture/ScriptureContext';
 import { ReadingListProvider } from '@/components/library/ReadingListContext';
 import { ChallengesProvider } from '@/components/challenges/ChallengesContext';
@@ -17,6 +21,21 @@ import { TaskProvider } from '@/components/tasks/TaskProvider';
 export const unstable_settings = {
   anchor: '(tabs)',
 };
+
+type ScalableNativeComponent = {
+  defaultProps?: Record<string, unknown>;
+};
+
+function lockNativeFontScaling(Component: ScalableNativeComponent) {
+  Component.defaultProps = {
+    ...Component.defaultProps,
+    allowFontScaling: false,
+    maxFontSizeMultiplier: 1,
+  };
+}
+
+lockNativeFontScaling(Text as unknown as ScalableNativeComponent);
+lockNativeFontScaling(TextInput as unknown as ScalableNativeComponent);
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -41,48 +60,61 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      <SQLiteProvider
-        databaseName="bible.db"
-        assetSource={{ assetId: require('../assets/databases/bible.db') }}
-      >
-        <ScriptureProvider>
-          <ReadingListProvider>
-            <ChallengesProvider>
-              <TaskProvider>
-                <BucketListProvider>
-                  <InnerToolsProvider>
-                    <Stack>
-                      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                      <Stack.Screen name="prayer"          options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="journal"         options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="journal-daily"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="journal-morning" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="journal-free"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="bucket-list"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="focus-zone"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="notes"           options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="scripture"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="scripture-reader" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="favorites"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="bible-notes"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="gratitude"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="ideal-self"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="reading-list"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="reading-analytics" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="reading-session"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="habits"          options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="challenges"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                      <Stack.Screen name="my-routine"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                    </Stack>
-                  </InnerToolsProvider>
-                  <StatusBar style="dark" backgroundColor={C.bg} />
-                </BucketListProvider>
-              </TaskProvider>
-            </ChallengesProvider>
-          </ReadingListProvider>
-        </ScriptureProvider>
-      </SQLiteProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <SQLiteProvider
+          databaseName="anasta_bible_v1.db"
+          assetSource={{ assetId: require('../assets/databases/bible.db') }}
+        >
+          <ScriptureProvider>
+            <ReadingListProvider>
+              <ChallengesProvider>
+                <TaskProvider>
+                  <BucketListProvider>
+                    <InnerToolsProvider>
+                      <BigEventsProvider>
+                        <MonthlyGoalsProvider>
+                        <JournalProvider>
+                          <Stack>
+                            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                            <Stack.Screen name="prayer"          options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="journal"         options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="journal-daily"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="journal-morning" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="journal-free"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="bucket-list"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="big-events"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="focus-zone"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="notes"           options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="scripture"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="scripture-reader" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="favorites"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="bible-notes"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="gratitude"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="gratitude-task"  options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="ideal-self"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="reading-list"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="reading-analytics" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="reading-session"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="habits"          options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="challenges"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="my-routine"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="year-in-pixels"  options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="monthly-goals"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="statistics"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                          </Stack>
+                        </JournalProvider>
+                        </MonthlyGoalsProvider>
+                      </BigEventsProvider>
+                    </InnerToolsProvider>
+                    <StatusBar style="dark" backgroundColor={C.bg} />
+                  </BucketListProvider>
+                </TaskProvider>
+              </ChallengesProvider>
+            </ReadingListProvider>
+          </ScriptureProvider>
+        </SQLiteProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

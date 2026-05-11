@@ -15,20 +15,37 @@ type Props = {
   bodyColor: string;
   arrowBg: string;
   decor?: ReactNode;
+  // When true, the watermark icon is rendered without the playful tilt — used
+  // for symbols that would read as broken if rotated (e.g. the Cross).
+  decorUpright?: boolean;
   onPress?: () => void;
 };
 
+// Mix the per-card bg color with white so the gradient end stays bright
+// without going to pure white — keeps the whole card visibly tinted.
+function gradientEnd(hex: string): string {
+  const m = hex.replace('#', '');
+  const v = m.length === 3 ? m.split('').map(c => c + c).join('') : m;
+  const n = parseInt(v, 16);
+  if (Number.isNaN(n)) return '#FFFFFF';
+  const mix = 0.78; // 78% white, 22% bg tint
+  const r = Math.round(((n >> 16) & 255) * (1 - mix) + 255 * mix);
+  const g = Math.round(((n >> 8) & 255) * (1 - mix) + 255 * mix);
+  const b = Math.round((n & 255) * (1 - mix) + 255 * mix);
+  return `rgb(${r},${g},${b})`;
+}
+
 export default function SectionCard({
-  label, title, description, bg, border, labelColor, titleColor, bodyColor, arrowBg, decor, onPress,
+  label, title, description, bg, border, labelColor, titleColor, bodyColor, arrowBg, decor, decorUpright, onPress,
 }: Props) {
   return (
     <TouchableOpacity
       onPress={onPress}
-      activeOpacity={0.82}
+      activeOpacity={0.86}
       style={[s.card, { backgroundColor: bg, borderColor: border }]}
     >
       <LinearGradient
-        colors={[bg, '#FFFFFF']}
+        colors={[bg, gradientEnd(bg)]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
@@ -36,14 +53,17 @@ export default function SectionCard({
       />
 
       {decor && (
-        <View style={s.watermark} pointerEvents="none">
+        <View
+          style={[s.watermark, decorUpright && s.watermarkUpright]}
+          pointerEvents="none"
+        >
           {decor}
         </View>
       )}
 
       <View style={[s.arrowWrap, { backgroundColor: arrowBg }]} pointerEvents="none">
         <View style={s.arrowRotated}>
-          <ArrowUpRight s={18} c="#fff" w={2.5} />
+          <ArrowUpRight s={15} c="#fff" w={2.5} />
         </View>
       </View>
 
@@ -61,45 +81,52 @@ export default function SectionCard({
 const s = StyleSheet.create({
   card: {
     position: 'relative',
-    borderRadius: 32,
+    borderRadius: 26,
     borderWidth: 1,
-    marginBottom: 14,
+    marginBottom: 10,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
     elevation: 4,
   },
   watermark: {
     position: 'absolute',
-    bottom: -10,
-    right: 12,
-    width: 118,
-    height: 118,
+    bottom: -6,
+    right: 6,
+    width: 96,
+    height: 96,
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.1,
+    opacity: 0.13,
+    transform: [{ rotate: '-8deg' }],
+  },
+  watermarkUpright: {
+    transform: [{ rotate: '0deg' }],
   },
   row: {
-    padding: 20,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 18,
   },
   textCol: {
     maxWidth: '84%',
-    paddingRight: 14,
+    paddingRight: 12,
   },
   label: {
     fontSize: 10,
     fontFamily: F.sansBold,
     letterSpacing: 2.4,
     textTransform: 'uppercase',
-    marginBottom: 7,
+    marginBottom: 8,
   },
   title: {
     fontFamily: F.serifMedium,
     fontSize: 26,
     lineHeight: 30,
-    marginBottom: 8,
+    letterSpacing: -0.3,
+    marginBottom: 4,
   },
   desc: {
     fontSize: 16,
@@ -108,18 +135,20 @@ const s = StyleSheet.create({
   },
   arrowWrap: {
     position: 'absolute',
-    top: 18,
-    right: 18,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    top: 14,
+    right: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
     shadowRadius: 6,
-    elevation: 5,
+    elevation: 4,
   },
   arrowRotated: {
     transform: [{ rotate: '-15deg' }],
