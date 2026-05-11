@@ -274,7 +274,7 @@ const h = StyleSheet.create({
   iconBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#f5f4f0', alignItems: 'center', justifyContent: 'center' },
   monthWrap: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   monthNavBtn: { width: 24, height: 28, alignItems: 'center', justifyContent: 'center' },
-  month: { fontFamily: F.serifMedium, fontSize: 22, color: C.text, lineHeight: 26 },
+  month: { fontFamily: F.serifMedium, fontSize: 25, color: C.red, lineHeight: 29 },
   year: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.textMuted, marginTop: 2 },
   quoteWrap: { paddingHorizontal: 30, paddingTop: 12, paddingBottom: 14, alignItems: 'center' },
   quote: {
