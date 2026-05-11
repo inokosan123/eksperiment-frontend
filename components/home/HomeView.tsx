@@ -269,13 +269,13 @@ function HomeHeader({
 }
 
 const h = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 6 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
   iconBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#f5f4f0', alignItems: 'center', justifyContent: 'center' },
   monthWrap: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   monthNavBtn: { width: 24, height: 28, alignItems: 'center', justifyContent: 'center' },
-  month: { fontFamily: F.serifMedium, fontSize: 25, color: C.red, lineHeight: 29 },
+  month: { fontFamily: F.serifMedium, fontSize: 27, color: C.red, lineHeight: 32 },
   year: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.textMuted, marginTop: 2 },
-  quoteWrap: { paddingHorizontal: 30, paddingTop: 12, paddingBottom: 14, alignItems: 'center' },
+  quoteWrap: { paddingHorizontal: 30, paddingTop: 6, paddingBottom: 10, alignItems: 'center' },
   quote: {
     maxWidth: 330,
     fontFamily: F.serifMediumItalic,
@@ -284,7 +284,7 @@ const h = StyleSheet.create({
     lineHeight: 22,
     textAlign: 'center',
   },
-  ref: { marginTop: 6, fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2.5, color: C.gold },
+  ref: { marginTop: 4, fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2.5, color: C.gold },
 });
 
 function ProgressBar({ pct, mode = 'normal' }: { pct: number; mode?: 'normal' | 'all-skipped' }) {

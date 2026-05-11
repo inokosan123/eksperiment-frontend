@@ -181,7 +181,7 @@ function DateCell({
 const s = StyleSheet.create({
   wrap: {
     paddingTop: 4,
-    paddingBottom: 8,
+    paddingBottom: 4,
   },
   row: {
     paddingHorizontal: 16,
