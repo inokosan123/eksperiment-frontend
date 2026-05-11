@@ -11,8 +11,8 @@ import {
   OpenBook,
   Star,
   Target,
-  Trophy,
 } from '@/components/icons/Icons';
+import { NotoEmoji } from '@/components/shared/NotoEmoji';
 
 export type SectionCardRoute =
   | '/prayer'
@@ -269,7 +269,7 @@ export const CHALLENGES_CARD: SectionCardConfig = {
   titleColor: '#451A03',
   bodyColor: '#A9863F',
   arrowBg: '#78350F',
-  decor: <Trophy s={84} c="#B45309" w={2.5} />,
+  decor: <NotoEmoji name="trophy" size={84} />,
   route: '/challenges',
 };
 
