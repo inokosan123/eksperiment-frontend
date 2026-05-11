@@ -1449,6 +1449,7 @@ const s = StyleSheet.create({
     elevation: 2,
   },
   dayActionBtnSkip: {
+    backgroundColor: '#EFEDE6',
     borderColor: 'rgba(28,25,23,0.32)',
     shadowColor: '#1C1917',
   },
