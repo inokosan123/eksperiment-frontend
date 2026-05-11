@@ -366,7 +366,7 @@ function BigEventRow({
       ) : (
         <View style={beb.count}>
           <Text style={[beb.countNum, { color: event.color }]}>{days}</Text>
-          <Text style={beb.countLabel}>{days === 1 ? 'DAY' : 'DAYS'}</Text>
+          <Text style={beb.countLabel}>{days === 1 ? 'day' : 'days'}</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -381,7 +381,7 @@ const beb = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', columnGap: 12,
     backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#EDE9E0',
-    paddingLeft: 7, paddingRight: 13, paddingVertical: 7, marginBottom: 5,
+    paddingLeft: 7, paddingRight: 18, paddingVertical: 7, marginBottom: 5,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
   },
   iconBox:   { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
@@ -389,9 +389,9 @@ const beb = StyleSheet.create({
   title:     { fontFamily: F.serifMedium, fontSize: 16, color: C.text, flexShrink: 1, minWidth: 0 },
   titleLarge:{ fontSize: 18 },
   todayHint: { marginTop: 2, fontFamily: F.serifMediumItalic, fontSize: 12 },
-  count:     { alignItems: 'flex-end', minWidth: 50, flexShrink: 0 },
+  count:     { flexDirection: 'row', alignItems: 'baseline', columnGap: 5, flexShrink: 0 },
   countNum:  { fontFamily: F.serifSemiBold, fontSize: 22, lineHeight: 24 },
-  countLabel:{ marginTop: 1, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.4, color: '#A8A29E' },
+  countLabel:{ fontFamily: F.sansMedium, fontSize: 13, color: '#A8A29E' },
   todayPill: {
     flexDirection: 'row', alignItems: 'center', columnGap: 6,
     paddingHorizontal: 11, paddingVertical: 7, borderRadius: 11,
