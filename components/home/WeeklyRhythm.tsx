@@ -461,7 +461,7 @@ const s = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#F2A046',
+    backgroundColor: '#FFC857',
   },
   candleFillTopLine: {
     position: 'absolute',
