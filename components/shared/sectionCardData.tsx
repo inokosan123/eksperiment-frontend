@@ -4,7 +4,6 @@ import {
   CalendarHeart,
   CheckSmall,
   Cross,
-  Crown,
   Feather,
   Heart,
   HourGlass,
@@ -12,6 +11,7 @@ import {
   OpenBook,
   Star,
   Target,
+  Trophy,
 } from '@/components/icons/Icons';
 
 export type SectionCardRoute =
@@ -269,7 +269,7 @@ export const CHALLENGES_CARD: SectionCardConfig = {
   titleColor: '#451A03',
   bodyColor: '#A9863F',
   arrowBg: '#78350F',
-  decor: <Crown s={84} c="#B45309" w={1} />,
+  decor: <Trophy s={84} c="#B45309" w={2.5} />,
   route: '/challenges',
 };
 
