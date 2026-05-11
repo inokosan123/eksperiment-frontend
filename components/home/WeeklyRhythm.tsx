@@ -86,7 +86,7 @@ function Candle({ pct, mode }: { pct: number | null; mode: DayMode }) {
       {/* Body */}
       <View style={[s.candleBody, isEmpty && s.candleBodyDimmed]}>
         {filled > 0 && (
-          <View style={[s.candleFill, { height: `${filled}%` }]}>
+          <View style={[s.candleFill, { height: `${filled}%` }, isFull && s.candleFillFull]}>
             {filled < 100 && <View style={s.candleFillTopLine} pointerEvents="none" />}
           </View>
         )}
@@ -485,6 +485,10 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: '#FFC857',
+  },
+  candleFillFull: {
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
   },
   candleFillTopLine: {
     position: 'absolute',
