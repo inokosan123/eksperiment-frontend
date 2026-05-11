@@ -4,6 +4,7 @@ import {
   CalendarHeart,
   CheckSmall,
   Cross,
+  Crown,
   Feather,
   Heart,
   HourGlass,
@@ -12,7 +13,6 @@ import {
   Star,
   Target,
 } from '@/components/icons/Icons';
-import { NotoEmoji } from '@/components/shared/NotoEmoji';
 
 export type SectionCardRoute =
   | '/prayer'
@@ -269,7 +269,7 @@ export const CHALLENGES_CARD: SectionCardConfig = {
   titleColor: '#451A03',
   bodyColor: '#A9863F',
   arrowBg: '#78350F',
-  decor: <NotoEmoji name="trophy" size={84} />,
+  decor: <Crown s={84} c="#B45309" w={1} />,
   route: '/challenges',
 };
 
