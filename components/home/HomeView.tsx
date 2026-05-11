@@ -832,14 +832,14 @@ export default function HomeView() {
             <TouchableOpacity
               activeOpacity={skipDayDisabled ? 1 : 0.82}
               disabled={skipDayDisabled}
-              style={[s.dayActionBtn, skipDayDisabled && s.dayActionBtnDisabled]}
+              style={[s.dayActionBtn, s.dayActionBtnSkip, skipDayDisabled && s.dayActionBtnDisabled]}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
                 setSkipDayConfirmOpen(true);
               }}
             >
-              <Skip s={14} c={skipDayDisabled ? '#D6D3D1' : C.gold} w={2.2} />
-              <Text style={[s.dayActionTxt, skipDayDisabled && s.dayActionTxtDisabled]}>SKIP DAY</Text>
+              <Skip s={14} c={skipDayDisabled ? '#D6D3D1' : C.textSecondary} w={2.2} />
+              <Text style={[s.dayActionTxt, s.dayActionTxtSkip, skipDayDisabled && s.dayActionTxtDisabled]}>SKIP DAY</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -1448,6 +1448,10 @@ const s = StyleSheet.create({
     shadowRadius: 5,
     elevation: 2,
   },
+  dayActionBtnSkip: {
+    borderColor: 'rgba(28,25,23,0.32)',
+    shadowColor: '#1C1917',
+  },
   dayActionBtnDisabled: {
     backgroundColor: '#FAFAF7',
     borderColor: '#F4F2EC',
@@ -1460,6 +1464,7 @@ const s = StyleSheet.create({
     letterSpacing: 1.8,
     color: C.gold,
   },
+  dayActionTxtSkip: { color: C.textSecondary },
   dayActionTxtDisabled: { color: '#D6D3D1' },
   inactiveDateShell: {
     position: 'relative',
