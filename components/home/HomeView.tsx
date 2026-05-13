@@ -1,12 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, InteractionManager, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -63,7 +56,11 @@ import {
   parseTaskTimeToDate,
   scheduleMatchesDate,
 } from '@/components/tasks/taskScheduler';
-import type { TaskDefinition, TaskDraft } from '@/components/tasks/taskTypes';
+import { getPrayerTaskConfig, getScriptureTaskConfig } from '@/components/tasks/taskDb';
+import { consumeTaskCompletionReturnAnimations } from '@/components/tasks/taskReturnAnimation';
+import type { PrayerTaskConfig, TaskDefinition, TaskDraft } from '@/components/tasks/taskTypes';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 type HomeCard = {
   id: string;
@@ -115,7 +112,64 @@ function isCompletionFlowTask(card: HomeCard) {
   return card.task.variant === 'reading'
     || card.task.variant === 'gratitude'
     || card.task.type === 'gratitude'
-    || !!card.taskId?.startsWith('reading_book_');
+    || isSpiritualScriptureCandidate(card)
+    || (card.task.variant === 'challenge' && card.task.type === 'reading')
+    || !!card.taskId?.startsWith('reading_book_')
+    || isPrayerFlowCandidate(card);
+}
+
+function isSpiritualScriptureCandidate(card: HomeCard) {
+  return card.task.variant === 'spiritual' && card.task.type === 'reading';
+}
+
+function isPrayerFlowCandidate(card: HomeCard) {
+  return card.task.type === 'prayer'
+    && (card.task.variant === 'spiritual' || card.task.variant === 'challenge');
+}
+
+function prayerOptionIdForTaskConfig(config: PrayerTaskConfig) {
+  if (config.prayerTaskKind === 'jesus_prayer' || config.prayerType === 'jesus') return 'jesus';
+
+  switch (config.prayerRule) {
+    case 'seraphim':
+      return 'short';
+    case 'short':
+      return 'medium';
+    case 'breakfast':
+    case 'lunch':
+    case 'dinner':
+      return config.prayerRule;
+    case 'standard':
+    default:
+      return 'standard';
+  }
+}
+
+function prayerCategoryForTaskConfig(config: PrayerTaskConfig) {
+  if (config.prayerTaskKind === 'jesus_prayer' || config.prayerType === 'jesus') return 'jesus';
+  if (config.prayerType === 'morning' || config.prayerType === 'evening' || config.prayerType === 'meal') {
+    return config.prayerType;
+  }
+  return null;
+}
+
+function isPersonalRuleTaskConfig(config: PrayerTaskConfig | undefined) {
+  return config?.prayerTaskKind === 'personal_rule' || config?.prayerRule === 'personal';
+}
+
+function isJesusPrayerTaskConfig(config: PrayerTaskConfig | undefined) {
+  return config?.prayerTaskKind === 'jesus_prayer' || config?.prayerType === 'jesus';
+}
+
+function prayerLaunchForTaskConfig(config: PrayerTaskConfig | undefined) {
+  if (!config || isPersonalRuleTaskConfig(config)) return null;
+  const category = prayerCategoryForTaskConfig(config);
+  if (!category) return null;
+
+  return {
+    category,
+    optionId: prayerOptionIdForTaskConfig(config),
+  };
 }
 
 
@@ -302,6 +356,40 @@ function ProgressBar({ pct, mode = 'normal' }: { pct: number; mode?: 'normal' | 
   );
 }
 
+function TaskLoadingCard() {
+  const reveal = useSharedValue(0);
+
+  useEffect(() => {
+    reveal.value = withTiming(1, { duration: 180 });
+  }, [reveal]);
+
+  const cardStyle = useAnimatedStyle(() => ({
+    opacity: reveal.value,
+    transform: [{ translateY: (1 - reveal.value) * 6 }],
+  }));
+
+  return (
+    <Reanimated.View style={[s.loadingCard, cardStyle]}>
+      <ActivityIndicator color={C.gold} size="small" />
+    </Reanimated.View>
+  );
+}
+
+function TaskContentAppear({ children }: { children: React.ReactNode }) {
+  const reveal = useSharedValue(0);
+
+  useEffect(() => {
+    reveal.value = withTiming(1, { duration: 260 });
+  }, [reveal]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: reveal.value,
+    transform: [{ translateY: (1 - reveal.value) * 8 }],
+  }));
+
+  return <Reanimated.View style={style}>{children}</Reanimated.View>;
+}
+
 const progress = StyleSheet.create({
   track: { width: 110, height: 3, borderRadius: 3, backgroundColor: '#ece9de', overflow: 'hidden' },
   fill: { height: '100%', backgroundColor: C.gold, borderRadius: 3 },
@@ -410,6 +498,8 @@ export default function HomeView() {
   const {
     ready: taskBackendReady,
     selectedDate,
+    taskDataDate,
+    isDateLoading,
     tasks: taskDefinitions,
     listItems: backendTasks,
     refresh: refreshTasks,
@@ -423,7 +513,9 @@ export default function HomeView() {
     : Math.max(insets.top, 0) + 4;
 
   const todayKey = getLocalDateKey();
-  const canMutateSelectedDate = canMutateTaskDate(selectedDate, taskDefinitions);
+  const taskContentDate = taskBackendReady && !isDateLoading ? selectedDate : taskDataDate;
+  const isTaskContentLoading = !taskBackendReady || isDateLoading;
+  const canMutateSelectedDate = !isTaskContentLoading && canMutateTaskDate(taskContentDate, taskDefinitions);
   const [optimisticStates, setOptimisticStates] = useState<Record<string, TaskState>>({});
   const [quickTaskSheetOpen, setQuickTaskSheetOpen] = useState(false);
   const [analyticsCard, setAnalyticsCard] = useState<HomeCard | null>(null);
@@ -441,10 +533,67 @@ export default function HomeView() {
 
   const refreshTasksRef = useRef(refreshTasks);
   refreshTasksRef.current = refreshTasks;
+  const returnAnimationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => () => {
+    for (const timer of returnAnimationTimersRef.current) {
+      clearTimeout(timer);
+    }
+    returnAnimationTimersRef.current = [];
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       void refreshTasksRef.current(getLocalDateKey());
+      const returnedCompletions = consumeTaskCompletionReturnAnimations();
+      if (returnedCompletions.length === 0) return;
+      const returnedCompletionIds = returnedCompletions.map(item => item.instanceId);
+      const animationDelayMs = Math.max(...returnedCompletions.map(item => item.delayMs));
+
+      setOptimisticStates(prev => {
+        const next = { ...prev };
+        for (const instanceId of returnedCompletionIds) {
+          next[instanceId] = 'pending';
+        }
+        return next;
+      });
+
+      let cancelled = false;
+      const interactionHandle = InteractionManager.runAfterInteractions(() => {
+        if (cancelled) return;
+        const doneTimer = setTimeout(() => {
+          if (cancelled) return;
+          void playTaskCompleteFeedback();
+          setOptimisticStates(prev => {
+            const next = { ...prev };
+            for (const instanceId of returnedCompletionIds) {
+              next[instanceId] = 'done';
+            }
+            return next;
+          });
+
+          const clearTimer = setTimeout(() => {
+            if (cancelled) return;
+            setOptimisticStates(prev => {
+              let changed = false;
+              const next = { ...prev };
+              for (const instanceId of returnedCompletionIds) {
+                if (next[instanceId] !== 'done') continue;
+                delete next[instanceId];
+                changed = true;
+              }
+              return changed ? next : prev;
+            });
+          }, 1500);
+          returnAnimationTimersRef.current.push(clearTimer);
+        }, animationDelayMs);
+        returnAnimationTimersRef.current.push(doneTimer);
+      });
+
+      return () => {
+        cancelled = true;
+        interactionHandle.cancel();
+      };
     }, []),
   );
 
@@ -508,7 +657,7 @@ export default function HomeView() {
   const resolvedToday = backendTasks.length > 0
     ? homeCards.filter(card => card.task.state === 'done' || card.task.state === 'skipped').length
     : 0;
-  const progressTotal = selectedDate < todayKey && visibleTaskCount > 0 ? visibleTaskCount : scheduledToday;
+  const progressTotal = taskContentDate < todayKey && visibleTaskCount > 0 ? visibleTaskCount : scheduledToday;
 
   // Universal rule (matches WeeklyRhythm):
   //  - All tasks skipped → black bar, 100%
@@ -529,12 +678,12 @@ export default function HomeView() {
   const statusLine = !taskBackendReady
     ? 'Loading your routine...'
     : backendTasks.length === 0 && taskDefinitions.length > 0
-      ? getNoTasksCopy(selectedDate, todayKey).status
-      : selectedDate < todayKey && visibleTaskCount > 0
+      ? getNoTasksCopy(taskContentDate, todayKey).status
+      : taskContentDate < todayKey && visibleTaskCount > 0
         ? resolvedToday > 0
           ? `${resolvedToday} of ${visibleTaskCount} resolved`
           : `${visibleTaskCount} task snapshot`
-      : selectedDate > todayKey && visibleTaskCount > 0
+      : taskContentDate > todayKey && visibleTaskCount > 0
         ? `${visibleTaskCount} tasks scheduled`
       : scheduledToday === 0
         ? 'Set up tasks to fill your Home flow'
@@ -542,15 +691,15 @@ export default function HomeView() {
           ? `${resolvedToday} of ${scheduledToday} resolved`
         : completedToday > 0
           ? `${completedToday} of ${scheduledToday} completed`
-          : selectedDate === todayKey
+          : taskContentDate === todayKey
             ? `${scheduledToday} active today`
             : `${scheduledToday} tasks scheduled`;
 
   const hasBackendTasks = taskBackendReady && (
     backendTasks.length > 0 || taskDefinitions.some(task => task.status !== 'archived')
   );
-  const taskSectionTitle = getTaskSectionTitle(selectedDate, todayKey);
-  const noTasksCopy = getNoTasksCopy(selectedDate, todayKey);
+  const taskSectionTitle = getTaskSectionTitle(taskContentDate, todayKey);
+  const noTasksCopy = getNoTasksCopy(taskContentDate, todayKey);
 
   const resetTaskInstance = useCallback((instanceId: string, date: string) => {
     playTaskUndoFeedback();
@@ -587,17 +736,45 @@ export default function HomeView() {
     });
   }, [skipInstance]);
 
-  const openCompletionFlowTask = useCallback((card: HomeCard) => {
-    if (!card.instanceId) return;
+  const openCompletionFlowTask = useCallback(async (card: HomeCard) => {
+    if (!card.instanceId) return false;
     if (card.task.variant === 'gratitude' || card.task.type === 'gratitude') {
       router.push({
         pathname: '/gratitude-task',
         params: {
           taskInstanceId: card.instanceId,
-          taskDate: selectedDate,
+          taskDate: taskContentDate,
         },
       } as any);
-      return;
+      return true;
+    }
+
+    if (isSpiritualScriptureCandidate(card) && card.taskId) {
+      const config = await getScriptureTaskConfig(card.taskId);
+      if (config?.readingType === 'church_calendar') return false;
+      router.push({
+        pathname: '/scripture-checkpoint',
+        params: {
+          title: card.task.title,
+          readingType: config?.readingType ?? 'custom',
+          plannedCount: String(config?.chaptersPerDay ?? 1),
+          taskInstanceId: card.instanceId,
+          taskDate: taskContentDate,
+        },
+      } as any);
+      return true;
+    }
+
+    if (card.task.variant === 'challenge' && card.task.type === 'reading') {
+      router.push({
+        pathname: '/scripture-challenge',
+        params: {
+          title: card.task.title,
+          taskInstanceId: card.instanceId,
+          taskDate: taskContentDate,
+        },
+      } as any);
+      return true;
     }
 
     if (card.task.variant === 'reading' || card.taskId?.startsWith('reading_book_')) {
@@ -615,11 +792,63 @@ export default function HomeView() {
           author: book?.author ?? '',
           isTask: 'true',
           taskInstanceId: card.instanceId,
-          taskDate: selectedDate,
+          taskDate: taskContentDate,
         },
       } as any);
+      return true;
     }
-  }, [books, router, selectedDate]);
+
+    if (isPrayerFlowCandidate(card) && card.taskId) {
+      const config = await getPrayerTaskConfig(card.taskId);
+      if (isJesusPrayerTaskConfig(config)) {
+        router.push({
+          pathname: '/jesus-prayer',
+          params: {
+            title: card.task.title,
+            mode: config?.jesusPrayerMode ?? 'duration',
+            duration: String(config?.jesusPrayerDuration ?? 15),
+            count: String(config?.jesusPrayerCount ?? 100),
+            isTask: 'true',
+            taskInstanceId: card.instanceId,
+            taskDate: taskContentDate,
+          },
+        } as any);
+        return true;
+      }
+
+      if (isPersonalRuleTaskConfig(config)) {
+        router.push({
+          pathname: '/personal-rule',
+          params: {
+            title: card.task.title,
+            prayerType: config?.prayerType ?? '',
+            isTask: 'true',
+            taskInstanceId: card.instanceId,
+            taskDate: taskContentDate,
+          },
+        } as any);
+        return true;
+      }
+
+      const launch = prayerLaunchForTaskConfig(config);
+      if (!launch) return false;
+
+      router.push({
+        pathname: '/prayer',
+        params: {
+          category: launch.category,
+          optionId: launch.optionId,
+          autoStart: 'true',
+          isTask: 'true',
+          taskInstanceId: card.instanceId,
+          taskDate: taskContentDate,
+        },
+      } as any);
+      return true;
+    }
+
+    return false;
+  }, [books, router, taskContentDate]);
 
   const toggleTaskInstance = useCallback((card: HomeCard, state: TaskState) => {
     if (!card.instanceId || !canMutateSelectedDate || state === 'locked') return;
@@ -627,17 +856,23 @@ export default function HomeView() {
       setTaskConfirmAction({
         mode: state === 'skipped' ? 'unskip' : 'uncheck',
         instanceId: card.instanceId,
-        date: selectedDate,
+        date: taskContentDate,
         title: card.task.title,
       });
       return;
     }
     if (isCompletionFlowTask(card)) {
-      openCompletionFlowTask(card);
+      void openCompletionFlowTask(card)
+        .then(handled => {
+          if (!handled && card.instanceId) completeTaskInstance(card.instanceId, taskContentDate);
+        })
+        .catch(() => {
+          if (card.instanceId) completeTaskInstance(card.instanceId, taskContentDate);
+        });
       return;
     }
-    completeTaskInstance(card.instanceId, selectedDate);
-  }, [canMutateSelectedDate, completeTaskInstance, openCompletionFlowTask, selectedDate]);
+    completeTaskInstance(card.instanceId, taskContentDate);
+  }, [canMutateSelectedDate, completeTaskInstance, openCompletionFlowTask, taskContentDate]);
 
   const requestSkipTaskInstance = useCallback((card: HomeCard, state: TaskState) => {
     if (
@@ -650,11 +885,11 @@ export default function HomeView() {
     setTaskConfirmAction({
       mode: 'skip',
       instanceId: card.instanceId,
-      date: selectedDate,
+      date: taskContentDate,
       title: card.task.title,
     });
     return true;
-  }, [canMutateSelectedDate, selectedDate]);
+  }, [canMutateSelectedDate, taskContentDate]);
 
   const confirmTaskAction = useCallback(() => {
     if (!taskConfirmAction) return;
@@ -678,9 +913,9 @@ export default function HomeView() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     for (const card of skippableCards) {
       if (!card.instanceId) continue;
-      void skipInstance(card.instanceId, selectedDate).catch(() => {});
+      void skipInstance(card.instanceId, taskContentDate).catch(() => {});
     }
-  }, [skippableCards, skipInstance, selectedDate]);
+  }, [skippableCards, skipInstance, taskContentDate]);
 
   return (
     <View style={s.homeRoot}>
@@ -711,14 +946,18 @@ export default function HomeView() {
           </View>
         </View>
 
-        {!hasBackendTasks && taskBackendReady && (
+        {isTaskContentLoading && (
+          <TaskLoadingCard />
+        )}
+
+        {!isTaskContentLoading && !hasBackendTasks && taskBackendReady && (
           <TouchableOpacity activeOpacity={0.84} onPress={() => router.push('/my-routine')} style={s.emptyTaskCard}>
             <Text style={s.emptyTaskTitle}>No tasks yet</Text>
             <Text style={s.emptyTaskBody}>Create your first routine, prayer, reading, habit, or challenge task.</Text>
           </TouchableOpacity>
         )}
 
-        {hasBackendTasks && taskBackendReady && homeCards.length === 0 && (
+        {!isTaskContentLoading && hasBackendTasks && taskBackendReady && homeCards.length === 0 && (
           <View style={s.emptyTaskCard}>
             <View style={s.emptyTaskText}>
               <Text style={s.emptyTaskEyebrow}>{noTasksCopy.eyebrow}</Text>
@@ -733,90 +972,94 @@ export default function HomeView() {
           </View>
         )}
 
-        <View style={s.cardsList}>
-          {homeCards.map(card => {
-            const dateInactive = !!card.backend && selectedDate !== todayKey && !canMutateSelectedDate;
-            const futureInactive = dateInactive && selectedDate > todayKey;
-            const baseDisplayTask = card.backend
-              ? canMutateSelectedDate && card.instanceStatus === 'missed'
-                ? { ...card.task, state: 'pending' as TaskState }
-                : !canMutateSelectedDate && card.task.state !== 'done' && card.task.state !== 'skipped'
-                  ? { ...card.task, state: 'locked' as TaskState }
-                  : card.task
-              : card.task;
-            const optimisticState = card.instanceId ? optimisticStates[card.instanceId] : undefined;
-            const displayTask = optimisticState
-              ? { ...baseDisplayTask, state: optimisticState }
-              : baseDisplayTask;
-            const content = card.backend
-              ? <AnyTaskCard task={displayTask} streak={card.streak} />
-              : card.id === 'reading-task'
-              ? (
-                <HomeReadingCard
-                  task={displayTask}
-                  book={books.find(book => book.title === displayTask.title)}
-                />
-              )
-              : card.id === 'gratitude-task'
-                ? (
-                  <HomeGratitudeCard
-                    task={displayTask}
-                    blessingsToday={gratitudeEntries.filter(
-                      entry => entry.kind === 'daily' && entry.date === todayKey,
-                    ).length}
-                  />
-                )
-                : <AnyTaskCard task={displayTask} streak={card.streak} />;
-            const datedContent = dateInactive
-              ? (
-                <DateInactiveTaskShell future={futureInactive}>
-                  {content}
-                </DateInactiveTaskShell>
-              )
-              : content;
-
-            const canToggle = !!card.instanceId && canMutateSelectedDate && displayTask.state !== 'locked';
-            const canSkip = canToggle && displayTask.state !== 'done' && displayTask.state !== 'skipped';
-            const canShowAnalytics = !!card.backend && !!card.taskId && displayTask.variant !== 'quick';
-            return (
-              <SwipeTaskRow
-                key={card.id}
-                disabled={!canSkip}
-                onSkip={() => requestSkipTaskInstance(card, displayTask.state)}
-              >
-                <StatusAnimatedTaskRow state={displayTask.state}>
-                  <View style={s.taskTouchableWrap}>
-                    <LongPressGate
-                      enabled={canShowAnalytics}
-                      onActivate={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-                        setAnalyticsCard(card);
-                      }}
-                    >
-                      {datedContent}
-                    </LongPressGate>
-                    {canToggle && (
-                      <CompletionFlourish
-                        done={displayTask.state === 'done'}
-                        color="#C5A059"
-                        layerStyle={s.checkFlourishLayer}
+        {!isTaskContentLoading && (
+          <TaskContentAppear key={taskContentDate}>
+            <View style={s.cardsList}>
+              {homeCards.map(card => {
+                const dateInactive = !!card.backend && taskContentDate !== todayKey && !canMutateSelectedDate;
+                const futureInactive = dateInactive && taskContentDate > todayKey;
+                const baseDisplayTask = card.backend
+                  ? canMutateSelectedDate && card.instanceStatus === 'missed'
+                    ? { ...card.task, state: 'pending' as TaskState }
+                    : !canMutateSelectedDate && card.task.state !== 'done' && card.task.state !== 'skipped'
+                      ? { ...card.task, state: 'locked' as TaskState }
+                      : card.task
+                  : card.task;
+                const optimisticState = card.instanceId ? optimisticStates[card.instanceId] : undefined;
+                const displayTask = optimisticState
+                  ? { ...baseDisplayTask, state: optimisticState }
+                  : baseDisplayTask;
+                const content = card.backend
+                  ? <AnyTaskCard task={displayTask} streak={card.streak} />
+                  : card.id === 'reading-task'
+                  ? (
+                    <HomeReadingCard
+                      task={displayTask}
+                      book={books.find(book => book.title === displayTask.title)}
+                    />
+                  )
+                  : card.id === 'gratitude-task'
+                    ? (
+                      <HomeGratitudeCard
+                        task={displayTask}
+                        blessingsToday={gratitudeEntries.filter(
+                          entry => entry.kind === 'daily' && entry.date === taskContentDate,
+                        ).length}
                       />
-                    )}
-                    {canToggle && (
-                      <TouchableOpacity
-                        activeOpacity={0.72}
-                        onPress={() => toggleTaskInstance(card, displayTask.state)}
-                        style={s.checkHitArea}
-                      />
-                    )}
-                  </View>
-                </StatusAnimatedTaskRow>
-              </SwipeTaskRow>
-            );
-          })}
-        </View>
+                    )
+                    : <AnyTaskCard task={displayTask} streak={card.streak} />;
+                const datedContent = dateInactive
+                  ? (
+                    <DateInactiveTaskShell future={futureInactive}>
+                      {content}
+                    </DateInactiveTaskShell>
+                  )
+                  : content;
 
-        {hasBackendTasks && taskBackendReady && (
+                const canToggle = !!card.instanceId && canMutateSelectedDate && displayTask.state !== 'locked';
+                const canSkip = canToggle && displayTask.state !== 'done' && displayTask.state !== 'skipped';
+                const canShowAnalytics = !!card.backend && !!card.taskId && displayTask.variant !== 'quick';
+                return (
+                  <SwipeTaskRow
+                    key={card.id}
+                    disabled={!canSkip}
+                    onSkip={() => requestSkipTaskInstance(card, displayTask.state)}
+                  >
+                    <StatusAnimatedTaskRow state={displayTask.state}>
+                      <View style={s.taskTouchableWrap}>
+                        <LongPressGate
+                          enabled={canShowAnalytics}
+                          onActivate={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                            setAnalyticsCard(card);
+                          }}
+                        >
+                          {datedContent}
+                        </LongPressGate>
+                        {canToggle && (
+                          <CompletionFlourish
+                            done={displayTask.state === 'done'}
+                            color="#C5A059"
+                            layerStyle={s.checkFlourishLayer}
+                          />
+                        )}
+                        {canToggle && (
+                          <TouchableOpacity
+                            activeOpacity={0.72}
+                            onPress={() => toggleTaskInstance(card, displayTask.state)}
+                            style={s.checkHitArea}
+                          />
+                        )}
+                      </View>
+                    </StatusAnimatedTaskRow>
+                  </SwipeTaskRow>
+                );
+              })}
+            </View>
+          </TaskContentAppear>
+        )}
+
+        {!isTaskContentLoading && hasBackendTasks && taskBackendReady && (
           <View style={s.dayActionsRow}>
             <TouchableOpacity
               activeOpacity={0.82}
@@ -1424,6 +1667,17 @@ const s = StyleSheet.create({
   tasksTitle: { fontFamily: F.serifMedium, fontSize: 22, color: C.text },
   tasksSub: { fontFamily: F.sans, fontSize: 12, color: C.textMuted, marginTop: 4 },
   progressWrap: { marginTop: 8 },
+  loadingCard: {
+    minHeight: 58,
+    marginTop: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F1EDE5',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
   cardsList: { marginTop: 14 },
   swipeWrap: { position: 'relative', marginBottom: 0 },
   dayActionsRow: {

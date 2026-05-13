@@ -1,11 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
   interpolateColor,
@@ -15,6 +9,8 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import { C, F } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 function toDateKey(date: Date) {
   const y = date.getFullYear();

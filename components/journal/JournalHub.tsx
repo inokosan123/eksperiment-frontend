@@ -2,11 +2,9 @@ import React, { useMemo, useState } from 'react';
 import {
   Image,
   Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -27,6 +25,8 @@ import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { useJournal, type JournalDotKind } from '@/components/journal/JournalContext';
 import { F } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 
 const BG = '#FAF7F0';
 const GOLD = '#C5A059';

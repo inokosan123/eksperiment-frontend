@@ -1,5 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Image, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import {
+  useEffect,
+  useMemo,
+  useState } from 'react';
+import { Image,
+  View,
+  Text,
+  StyleSheet,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
@@ -10,15 +17,15 @@ import { C, F } from '@/constants/tokens';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { listTaskInstancesBetween } from '@/components/tasks/taskDb';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 
-const AnimatedLinearGradient = Reanimated.createAnimatedComponent(LinearGradient);
 
 const FLAME_PNG = require('@/assets/images/streak-flame-512.png');
 
 const TILE_SIZE = 32;
 const ICON_SIZE = 20;
-const CANDLE_W = 22;
-const CANDLE_H = 56;
+const CANDLE_W = 24;
+const CANDLE_H = 58;
 // Indexed by Date.getDay() — Sun=0, Mon=1, ..., Sat=6
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -58,7 +65,7 @@ function buildWeek(): { dateKey: string; letter: string; isToday: boolean; isFut
 function Candle({ pct, mode }: { pct: number | null; mode: DayMode }) {
   // No-tasks day OR all-skipped day → no candle at all (empty space)
   if (pct === null || mode === 'no-tasks' || mode === 'all-skipped') {
-    return <View style={[s.candleCol, { height: CANDLE_H + 22 }]} />;
+    return <View style={[s.candleCol, { height: CANDLE_H + 24 }]} />;
   }
 
   const filled = Math.max(0, Math.min(100, pct));
@@ -71,7 +78,10 @@ function Candle({ pct, mode }: { pct: number | null; mode: DayMode }) {
           ember tip while there is progress. */}
       <View style={s.candleFlameSlot}>
         {isFull ? (
-          <Image source={FLAME_PNG} style={s.candleFlameImg} />
+          <>
+            <View style={s.candleFlameAura} pointerEvents="none" />
+            <Image source={FLAME_PNG} style={s.candleFlameImg} />
+          </>
         ) : (
           <>
             <View style={s.candleWickWrap} pointerEvents="none">
@@ -84,15 +94,37 @@ function Candle({ pct, mode }: { pct: number | null; mode: DayMode }) {
       </View>
 
       {/* Body */}
-      <View style={[s.candleBody, isEmpty && s.candleBodyDimmed]}>
-        {filled > 0 && (
-          <View style={[s.candleFill, { height: `${filled}%` }, isFull && s.candleFillFull]}>
-            <View style={s.candleSideHighlight} pointerEvents="none" />
-            {filled < 100 && <View style={s.candleFillTopLine} pointerEvents="none" />}
-          </View>
-        )}
-        <View style={[s.candleRim, isEmpty && s.candleRimDimmed]} pointerEvents="none" />
-        <View style={[s.candleBase, isEmpty && s.candleBaseDimmed]} pointerEvents="none" />
+      <View style={s.candleBodyWrap}>
+        <View style={[s.candleBodyHalo, isFull && s.candleBodyHaloFull, isEmpty && s.candleBodyHaloDimmed]} pointerEvents="none" />
+        <View style={[s.candleBody, isEmpty && s.candleBodyDimmed]}>
+          <LinearGradient
+            colors={isEmpty ? ['#F7F3E7', '#EDE6D6'] : ['#FFFDF6', '#FFF1CA', '#E9C66E']}
+            locations={[0, 0.52, 1]}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+          <View style={[s.candleInnerShade, isEmpty && s.candleInnerShadeDimmed]} pointerEvents="none" />
+          {filled > 0 && (
+            <View style={[s.candleFill, { height: `${filled}%` }, isFull && s.candleFillFull]}>
+              <LinearGradient
+                colors={isFull ? ['#FFE6A2', '#E8B955', '#C88B2E'] : ['#FFD982', '#F0B94F', '#D49431']}
+                locations={[0, 0.58, 1]}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              />
+              <View style={s.candleFillBloom} pointerEvents="none" />
+              <View style={s.candleSideHighlight} pointerEvents="none" />
+              {filled < 100 && <View style={s.candleFillTopLine} pointerEvents="none" />}
+            </View>
+          )}
+          <View style={s.candleWickInset} pointerEvents="none" />
+          <View style={[s.candleWaxLip, isFull && s.candleWaxLipFull, isEmpty && s.candleWaxLipDimmed]} pointerEvents="none" />
+          <View style={[s.candleWaxDrop, isEmpty && s.candleWaxDropDimmed]} pointerEvents="none" />
+          <View style={[s.candleWaxDropSmall, isEmpty && s.candleWaxDropDimmed]} pointerEvents="none" />
+          <View style={s.candleGloss} pointerEvents="none" />
+          <View style={[s.candleRim, isEmpty && s.candleRimDimmed]} pointerEvents="none" />
+          <View style={[s.candleBase, isEmpty && s.candleBaseDimmed]} pointerEvents="none" />
+        </View>
       </View>
     </View>
   );
@@ -116,7 +148,7 @@ function FlameTile({ pct, mode }: { pct: number | null; mode: DayMode }) {
     return (
       <View style={s.flameWrap}>
         <View style={[s.flameTile, s.flameColored, s.flameGlow]}>
-          <FocusLottie name="flame" loop style={s.flameLottie} />
+          <FocusLottie name="flame" loop speed={1} style={s.flameLottie} />
         </View>
       </View>
     );
@@ -156,12 +188,14 @@ function DailyProgressBar({ pct, mode }: { pct: number; mode: DayMode }) {
         {isBlackFull ? (
           <Reanimated.View style={[s.barFill, s.barFillBlack, fillStyle]} />
         ) : (
-          <AnimatedLinearGradient
-            colors={['#E0B770', C.gold]}
-            start={{ x: 0, y: 0.5 }}
-            end={{ x: 1, y: 0.5 }}
-            style={[s.barFill, fillStyle]}
-          />
+          <Reanimated.View style={[s.barFill, fillStyle]}>
+            <LinearGradient
+              colors={['#E0B770', C.gold]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Reanimated.View>
         )}
       </View>
       {!isBlackFull && (
@@ -324,7 +358,7 @@ const s = StyleSheet.create({
     shadowRadius: 4,
     elevation: 1,
   },
-  cardLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: C.textMuted, marginBottom: 12 },
+  cardLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: C.textMuted, marginBottom: 4 },
   barRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
   barTrack: {
     flex: 1,
@@ -342,9 +376,9 @@ const s = StyleSheet.create({
   },
   barPct: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 0.4, color: C.gold, minWidth: 36, textAlign: 'right' },
   barPctBlack: { color: '#1c1917' },
-  divider: { height: 1, backgroundColor: '#F0EFEB', marginTop: 14, marginBottom: 14 },
+  divider: { height: 1, backgroundColor: '#F0EFEB', marginTop: 12, marginBottom: 10 },
   daysRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  daysLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 10 },
+  daysLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, marginBottom: 6 },
   weekCol: { flex: 1, alignItems: 'center' },
   dayLetter: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 0.6 },
 
@@ -405,25 +439,38 @@ const s = StyleSheet.create({
   },
 
   /* Candle */
-  candlesRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: 2 },
+  candlesRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: 4 },
   candleCol: { alignItems: 'center' },
   candleFlameSlot: {
-    width: 26,
-    height: 22,
+    width: 30,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'flex-end',
-    marginBottom: -5,
+    marginBottom: -4,
     zIndex: 2,
     overflow: 'visible',
   },
-  candleFlameImg: { width: 20, height: 20, resizeMode: 'contain' },
+  candleFlameAura: {
+    position: 'absolute',
+    bottom: 1,
+    width: 22,
+    height: 16,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,198,87,0.22)',
+    shadowColor: '#F4A62A',
+    shadowOpacity: 0.42,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 9,
+    elevation: 3,
+  },
+  candleFlameImg: { width: 21, height: 21, resizeMode: 'contain' },
   candleWickWrap: {
     position: 'absolute',
-    bottom: 5,
+    bottom: 4,
     left: '50%',
     marginLeft: -0.75,
     width: 1.5,
-    height: 6,
+    height: 8,
     alignItems: 'center',
   },
   candleWickTip: {
@@ -435,91 +482,213 @@ const s = StyleSheet.create({
   },
   candleWickBase: {
     width: 1.4,
-    height: 4,
-    backgroundColor: '#1F1310',
+    height: 6,
+    backgroundColor: '#2A1B16',
   },
   candleEmber: {
     position: 'absolute',
-    bottom: 11,
+    bottom: 13,
     left: '50%',
-    marginLeft: -1.5,
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: '#FF8B2E',
+    marginLeft: -2,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#FF9E3C',
     shadowColor: '#FFB347',
-    shadowOpacity: 0.85,
+    shadowOpacity: 0.9,
     shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 3,
+    shadowRadius: 4,
     elevation: 2,
+  },
+  candleBodyWrap: {
+    width: CANDLE_W + 8,
+    height: CANDLE_H + 4,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    position: 'relative',
+  },
+  candleBodyHalo: {
+    position: 'absolute',
+    top: 8,
+    width: CANDLE_W + 8,
+    height: CANDLE_H - 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(197,160,89,0.12)',
+    shadowColor: '#C5A059',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 1,
+  },
+  candleBodyHaloFull: {
+    backgroundColor: 'rgba(255,202,91,0.20)',
+    shadowOpacity: 0.30,
+    shadowRadius: 10,
+  },
+  candleBodyHaloDimmed: {
+    backgroundColor: 'rgba(160,145,117,0.08)',
+    shadowOpacity: 0.04,
   },
   candleBody: {
     width: CANDLE_W,
     height: CANDLE_H,
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
-    borderBottomLeftRadius: 5,
-    borderBottomRightRadius: 5,
-    backgroundColor: '#FFF4C9',
-    borderWidth: 1.8,
-    borderColor: '#1F1310',
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    borderBottomLeftRadius: 6,
+    borderBottomRightRadius: 6,
+    backgroundColor: '#FFF8DF',
+    borderWidth: 1,
+    borderColor: '#9C7A39',
     overflow: 'hidden',
     position: 'relative',
+    shadowColor: '#C5A059',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 2,
   },
   candleBodyDimmed: {
     backgroundColor: '#F2EDD8',
-    borderColor: '#3B2A1F',
+    borderColor: '#D7CBAE',
+    shadowOpacity: 0.05,
+  },
+  candleInnerShade: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 7,
+    borderRightWidth: 3,
+    borderRightColor: 'rgba(122,82,22,0.10)',
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(255,255,255,0.52)',
+  },
+  candleInnerShadeDimmed: {
+    borderRightColor: 'rgba(91,76,52,0.08)',
+    borderLeftColor: 'rgba(255,255,255,0.34)',
   },
   candleSideHighlight: {
     position: 'absolute',
-    top: 3,
-    bottom: 3,
-    left: 2.5,
-    width: 1.4,
-    backgroundColor: 'rgba(255,255,255,0.38)',
-    borderRadius: 0.7,
+    top: 4,
+    bottom: 4,
+    left: 3,
+    width: 2,
+    backgroundColor: 'rgba(255,255,255,0.46)',
+    borderRadius: 1,
   },
   candleFill: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#FFC857',
+    backgroundColor: '#F0B94F',
+    overflow: 'hidden',
+  },
+  candleFillBloom: {
+    position: 'absolute',
+    left: 4,
+    right: 4,
+    top: 4,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.20)',
   },
   candleFillFull: {
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
+    borderTopLeftRadius: 7,
+    borderTopRightRadius: 7,
   },
   candleFillTopLine: {
     position: 'absolute',
     top: 0,
-    left: 0,
-    right: 0,
-    height: 1.5,
-    backgroundColor: 'rgba(31,19,16,0.50)',
+    left: 2,
+    right: 2,
+    height: 2,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,243,203,0.76)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(154,105,35,0.20)',
+  },
+  candleWickInset: {
+    position: 'absolute',
+    top: 2,
+    left: '50%',
+    marginLeft: -0.75,
+    width: 1.5,
+    height: 8,
+    borderRadius: 1,
+    backgroundColor: '#2A1B16',
+  },
+  candleWaxLip: {
+    position: 'absolute',
+    top: 0,
+    left: 1,
+    right: 1,
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,254,248,0.84)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(197,160,89,0.20)',
+  },
+  candleWaxLipFull: {
+    backgroundColor: 'rgba(255,227,157,0.74)',
+    borderBottomColor: 'rgba(168,111,34,0.24)',
+  },
+  candleWaxLipDimmed: {
+    backgroundColor: 'rgba(255,255,255,0.44)',
+    borderBottomColor: 'rgba(139,116,83,0.12)',
+  },
+  candleWaxDrop: {
+    position: 'absolute',
+    top: 7,
+    right: 4,
+    width: 4,
+    height: 14,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,250,235,0.72)',
+  },
+  candleWaxDropSmall: {
+    position: 'absolute',
+    top: 9,
+    left: 5,
+    width: 3,
+    height: 8,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,252,241,0.56)',
+  },
+  candleWaxDropDimmed: {
+    backgroundColor: 'rgba(255,255,255,0.24)',
+  },
+  candleGloss: {
+    position: 'absolute',
+    top: 10,
+    bottom: 8,
+    left: 4,
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.24)',
   },
   candleRim: {
     position: 'absolute',
-    top: 2,
-    left: 2,
-    right: 2,
-    height: 1.2,
-    backgroundColor: 'rgba(31,19,16,0.20)',
-    borderRadius: 1,
+    top: 1,
+    left: 3,
+    right: 3,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.82)',
+    borderRadius: 999,
   },
   candleRimDimmed: {
-    backgroundColor: 'rgba(31,19,16,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.40)',
   },
   candleBase: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: 2.5,
-    backgroundColor: 'rgba(31,19,16,0.15)',
+    height: 4,
+    backgroundColor: 'rgba(105,68,20,0.16)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.24)',
   },
   candleBaseDimmed: {
-    backgroundColor: 'rgba(31,19,16,0.08)',
+    backgroundColor: 'rgba(91,76,52,0.08)',
+    borderTopColor: 'rgba(255,255,255,0.12)',
   },
   analyticsBtn: {
     marginTop: 10,

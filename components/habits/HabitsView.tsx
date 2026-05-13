@@ -1,13 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import Reanimated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import Reanimated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
@@ -51,6 +44,8 @@ import { normalizeHabitIcon } from '@/components/shared/notoEmoji/legacyMap';
 import type { HabitEmojiName } from '@/components/shared/notoEmoji/habits';
 import { playTaskCompleteFeedback, playTaskUndoFeedback } from '@/components/shared/taskFeedback';
 import { AnimatedProgressFill, AnimatedTaskRow, CompletionFlourish } from '@/components/shared/taskAnimations';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 const HABIT_COLORS = [
   '#C5A059', // gold
@@ -90,6 +85,11 @@ const DAY_OPTIONS = [
   { key: 5, label: 'S' },
   { key: 6, label: 'S' },
 ];
+const SEGMENT_SPRING = {
+  damping: 18,
+  stiffness: 235,
+  mass: 0.72,
+};
 
 function getFreqLabel(step: HabitStep) {
   switch (step.frequency) {
@@ -708,7 +708,7 @@ function HabitTabBar({
   const pillTravel = pillWidth + 4;
 
   useEffect(() => {
-    tabProgress.value = withTiming(tab === 'active' ? 0 : 1, { duration: 212 });
+    tabProgress.value = withSpring(tab === 'active' ? 0 : 1, SEGMENT_SPRING);
   }, [tab, tabProgress]);
 
   const pillStyle = useAnimatedStyle(() => ({

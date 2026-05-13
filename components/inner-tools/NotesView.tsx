@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Keyboard, Modal, PanResponder, Pressable, ScrollView,
-  StyleSheet, Text, TextInput, TouchableOpacity, View, StyleProp, TextStyle,
+  Keyboard,
+  Modal,
+  PanResponder,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  StyleProp,
+  TextStyle,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +23,8 @@ import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/sh
 import { FormatState, RichTextEditor, RichToolbar, RichTextEditorRef } from '@/components/shared/RichTextEditor';
 import type { TextSelection } from '@/components/shared/TextFormatToolbar';
 import { InnerNote, NoteColor, NoteKind, NoteSourceRef, useInnerTools } from './InnerToolsContext';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 
 const BG = '#FDFBF5';
 const GOLD = '#C5A059';

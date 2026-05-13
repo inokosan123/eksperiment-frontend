@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  BackHandler, FlatList, Platform,
-  StyleSheet, Text, TouchableOpacity, View, useWindowDimensions,
+  BackHandler,
+  FlatList,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
 } from 'react-native';
 import Reanimated, {
   useAnimatedStyle,
@@ -19,6 +24,8 @@ import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { ArrowLeft, CheckSmall, Clock, Pause, Play, X } from '@/components/icons/Icons';
 import { F } from '@/constants/tokens';
 import { useReadingList } from '@/components/library/ReadingListContext';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 // Minutes values: 5, 10, 15, ... 300
 const MINUTE_VALUES = Array.from({ length: 60 }, (_, i) => (i + 1) * 5);
@@ -160,10 +167,9 @@ export default function ReadingSessionView({
   const handleFinish = useCallback(async () => {
     const elapsed = Math.round((selectedSecs - timerSecs) / 60);
     if (elapsed >= 1 && bookId) await recordSession(bookId, elapsed, sessionDate);
-    if (isTask && Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await onComplete?.();
     onBack();
-  }, [selectedSecs, timerSecs, bookId, recordSession, sessionDate, isTask, onComplete, onBack]);
+  }, [selectedSecs, timerSecs, bookId, recordSession, sessionDate, onComplete, onBack]);
 
   return (
     <View style={s.screen}>

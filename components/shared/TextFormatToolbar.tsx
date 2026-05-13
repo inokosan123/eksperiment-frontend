@@ -1,7 +1,9 @@
 import React, { ReactNode, useMemo } from 'react';
-import { StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { C, F } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 export type TextSelection = { start: number; end: number };
 export type InlineFormatAction = 'bold' | 'italic' | 'underline' | 'bulletList' | 'numberedList';

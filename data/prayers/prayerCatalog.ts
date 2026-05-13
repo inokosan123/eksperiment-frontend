@@ -50,10 +50,10 @@ export type PrayerOption = {
   section: PrayerSection;
 };
 
-export const PRAYER_LANGUAGES: { key: PrayerLanguage; label: string }[] = [
-  { key: 'en', label: 'EN' },
-  { key: 'sr', label: 'SR' },
-  { key: 'ru', label: 'RU' },
+export const PRAYER_LANGUAGES: { key: PrayerLanguage; label: string; name: string }[] = [
+  { key: 'sr', label: 'SR', name: '\u0421\u0440\u043f\u0441\u043a\u0438' },
+  { key: 'en', label: 'EN', name: 'English' },
+  { key: 'ru', label: 'RU', name: '\u0420\u0443\u0441\u0441\u043a\u0438\u0439' },
 ];
 
 const PRAYER_BOOKS: Record<PrayerLanguage, PrayerBookData> = {
@@ -62,11 +62,12 @@ const PRAYER_BOOKS: Record<PrayerLanguage, PrayerBookData> = {
   ru: ruPrayerBook as PrayerBookData,
 };
 
-const RULE_LABELS: Record<PrayerLanguage, Record<'standard' | 'medium' | 'short' | 'breakfast' | 'lunch' | 'dinner' | 'standardJesus' | 'shortJesus' | 'personalJesus', string>> = {
+const RULE_LABELS: Record<PrayerLanguage, Record<'personal' | 'standard' | 'medium' | 'short' | 'breakfast' | 'lunch' | 'dinner' | 'standardJesus' | 'shortJesus' | 'personalJesus', string>> = {
   en: {
-    standard: 'Standard',
-    medium: 'Medium',
-    short: 'Short',
+    personal: 'Personal Rule',
+    standard: 'Standard Rule',
+    medium: 'Shortened Rule',
+    short: 'Rule of Saint Seraphim',
     breakfast: 'Breakfast',
     lunch: 'Lunch',
     dinner: 'Dinner',
@@ -75,9 +76,10 @@ const RULE_LABELS: Record<PrayerLanguage, Record<'standard' | 'medium' | 'short'
     personalJesus: 'Prayer Rope',
   },
   sr: {
-    standard: 'Пуно',
-    medium: 'Средње',
-    short: 'Кратко',
+    personal: 'Personal Rule',
+    standard: 'Стандардно правило',
+    medium: 'Скраћено правило',
+    short: 'Правило Светог Серафима',
     breakfast: 'Доручак',
     lunch: 'Ручак',
     dinner: 'Вечера',
@@ -86,9 +88,10 @@ const RULE_LABELS: Record<PrayerLanguage, Record<'standard' | 'medium' | 'short'
     personalJesus: 'Бројаница',
   },
   ru: {
-    standard: 'Полное',
-    medium: 'Среднее',
-    short: 'Краткое',
+    personal: 'Personal Rule',
+    standard: 'Стандартное правило',
+    medium: 'Сокращённое правило',
+    short: 'Правило святого Серафима',
     breakfast: 'Завтрак',
     lunch: 'Обед',
     dinner: 'Ужин',
@@ -131,15 +134,25 @@ function buildMealSection(title: string, section: MealSection): PrayerSection {
   };
 }
 
-function buildJesusSection(lang: PrayerLanguage, mode: 'standard' | 'short' | 'personal'): PrayerSection {
+function buildJesusSection(lang: PrayerLanguage): PrayerSection {
   const prayer = JESUS_PRAYER[lang];
-  const text = mode === 'short' ? prayer.short : prayer.standard;
 
   return {
     title: prayer.title,
     blocks: [
-      ...(mode === 'personal' ? [{ type: 'instruction' as const, content: prayer.personalInstruction }] : []),
-      { type: 'text', content: text },
+      { type: 'text', content: prayer.standard },
+    ],
+  };
+}
+
+function buildPersonalRuleSection(label: string): PrayerSection {
+  return {
+    title: label,
+    blocks: [
+      {
+        type: 'instruction',
+        content: 'Use your own prayer book or prayer rule. Start the timer when you begin, then finish when your rule is complete.',
+      },
     ],
   };
 }
@@ -150,6 +163,7 @@ export function getPrayerOptions(lang: PrayerLanguage, category: PrayerCategory)
 
   if (category === 'morning') {
     return [
+      { id: 'personal', label: labels.personal, section: buildPersonalRuleSection(labels.personal) },
       { id: 'standard', label: labels.standard, section: book.standard_rule.morning },
       { id: 'medium', label: labels.medium, section: book.medium_rule.morning },
       { id: 'short', label: labels.short, section: book.short_rule.morning },
@@ -158,6 +172,7 @@ export function getPrayerOptions(lang: PrayerLanguage, category: PrayerCategory)
 
   if (category === 'evening') {
     return [
+      { id: 'personal', label: labels.personal, section: buildPersonalRuleSection(labels.personal) },
       { id: 'standard', label: labels.standard, section: book.standard_rule.evening },
       { id: 'medium', label: labels.medium, section: book.medium_rule.evening },
       { id: 'short', label: labels.short, section: book.short_rule.evening },
@@ -174,9 +189,7 @@ export function getPrayerOptions(lang: PrayerLanguage, category: PrayerCategory)
 
   if (category === 'jesus') {
     return [
-      { id: 'standard', label: labels.standardJesus, section: buildJesusSection(lang, 'standard') },
-      { id: 'short', label: labels.shortJesus, section: buildJesusSection(lang, 'short') },
-      { id: 'personal', label: labels.personalJesus, section: buildJesusSection(lang, 'personal') },
+      { id: 'jesus', label: JESUS_PRAYER[lang].title, section: buildJesusSection(lang) },
     ];
   }
 
@@ -188,5 +201,6 @@ export function getPrayerOptions(lang: PrayerLanguage, category: PrayerCategory)
 }
 
 export function getDefaultPrayerOption(lang: PrayerLanguage, category: PrayerCategory): PrayerOption {
-  return getPrayerOptions(lang, category)[0];
+  const options = getPrayerOptions(lang, category);
+  return options.find(option => option.id === 'standard') ?? options[0];
 }

@@ -1,5 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  useEffect,
+  useMemo,
+  useState } from 'react';
+import { ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
@@ -8,6 +15,8 @@ import { C, F } from '@/constants/tokens';
 import { useTasks } from './TaskProvider';
 import type { NotificationMode } from '@/components/shared/NotificationSettings';
 import type { TaskDefinition, TaskDraft } from './taskTypes';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 type Props = {
   visible: boolean;

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   LayoutAnimation,
   Platform,
@@ -6,16 +6,26 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   UIManager,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import Reanimated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import NotificationSettings, { type NotificationMode as SharedNotificationMode } from '@/components/shared/NotificationSettings';
-import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
+import SetAsTaskSheet, {
+  ChallengePanel,
+  defaultChallengeSchedule,
+  type ChallengeChurchScheduleDraft,
+  type ChallengeScheduleDraft,
+  type PrayerChallengeRuleChoice,
+} from '@/components/shared/SetAsTaskSheet';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import TaskFrequencyEditor, { type TaskFrequency } from '@/components/shared/TaskFrequencyEditor';
 import TaskTimeEditor, { type TaskDayTimes } from '@/components/shared/TaskTimeEditor';
@@ -64,19 +74,24 @@ import { AnyTaskCard, TaskData } from '@/components/shared/TaskCards';
 import ChallengeSummaryCard from '@/components/shared/ChallengeSummaryCard';
 import { C, F } from '@/constants/tokens';
 import type { HabitItem, HabitStep } from '@/components/habits/habitDb';
-import { habitStepTaskId, listHabitsWithStats, setHabitRecordActive } from '@/components/habits/habitDb';
+import { habitStepTaskId, listHabitsWithStats, saveHabitRecord, setHabitRecordActive } from '@/components/habits/habitDb';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
 import { normalizeHabitIcon } from '@/components/shared/notoEmoji/legacyMap';
 import { useChallenges } from '@/components/challenges/ChallengesContext';
+import type { ChallengeRecord } from '@/components/challenges/challengeData';
 import { useTasks } from '@/components/tasks/TaskProvider';
+import { getPrayerTaskConfig } from '@/components/tasks/taskDb';
 import { resolveDisplayIcon, resolveDisplayType, resolveTaskVariant } from '@/components/tasks/taskAdapters';
-import type { TaskDefinition, TaskDraft, TaskLevel } from '@/components/tasks/taskTypes';
+import type { PrayerTaskConfig, TaskDefinition, TaskDraft, TaskLevel } from '@/components/tasks/taskTypes';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 type RoutineFrequency = TaskFrequency;
 type NotificationMode = SharedNotificationMode;
 type RoutineLevel = TaskLevel;
 type SpiritualType = TaskDefinition['type'];
 type RoutineTaskSheetContext = 'prayer' | 'journal' | 'scripture';
+type JesusPrayerMode = 'duration' | 'count';
 type RoutineIconName =
   | 'Activity'
   | 'Apple'
@@ -162,6 +177,7 @@ type RoutineTask = {
   dayTimeOverrides?: DayOverride[];
   notificationMode: NotificationMode;
   reminderMinutes?: number;
+  prayerConfig?: Omit<PrayerTaskConfig, 'taskId'>;
 };
 
 const DAY_TABS = [
@@ -410,6 +426,7 @@ function taskDefinitionToRoutineTask(task: TaskDefinition): RoutineTask {
     dayTimeOverrides: taskDayTimesToOverrides(task.schedule.dayTimes, [0, 1, 2, 3, 4, 5, 6]),
     notificationMode: task.notificationMode,
     reminderMinutes: task.reminderMinutes,
+    prayerConfig: undefined,
   };
 }
 
@@ -430,12 +447,15 @@ function sourceRouteForTask(task: RoutineTask) {
 
 function routineTaskToDraft(task: RoutineTask): TaskDraft {
   const dayTimes = overridesToTaskDayTimes(task.dayTimeOverrides ?? []);
+  const subtitle = isJesusPrayerRoutineTask(task)
+    ? getJesusPrayerRoutineSubtitle(task)
+    : task.source === 'routine' || task.source === 'spiritual'
+      ? getTaskFrequencyLabel(task)
+      : task.subtitle ?? getTaskFrequencyLabel(task);
   return {
     id: task.id,
     title: task.title,
-    subtitle: task.source === 'routine' || task.source === 'spiritual'
-      ? getTaskFrequencyLabel(task)
-      : task.subtitle ?? getTaskFrequencyLabel(task),
+    subtitle,
     level: task.level,
     source: task.source,
     type: task.type,
@@ -454,7 +474,37 @@ function routineTaskToDraft(task: RoutineTask): TaskDraft {
     },
     notificationMode: task.notificationMode,
     reminderMinutes: task.reminderMinutes,
+    prayerConfig: task.prayerConfig,
   };
+}
+
+function isJesusPrayerRoutineTask(task: RoutineTask | null | undefined) {
+  const label = `${task?.title ?? ''} ${task?.subtitle ?? ''}`.toLowerCase();
+  return task?.type === 'prayer'
+    && (
+      task.prayerConfig?.prayerTaskKind === 'jesus_prayer'
+      || task.prayerConfig?.prayerType === 'jesus'
+      || task.targetView === '/jesus-prayer'
+      || label.includes('jesus')
+      || label.includes('isus')
+    );
+}
+
+function normalizeJesusMode(value?: string): JesusPrayerMode {
+  return value === 'count' ? 'count' : 'duration';
+}
+
+function normalizeJesusQuantity(value: number | string | undefined, fallback: number) {
+  const parsed = typeof value === 'number' ? value : Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getJesusPrayerRoutineSubtitle(task: RoutineTask) {
+  const mode = normalizeJesusMode(task.prayerConfig?.jesusPrayerMode);
+  if (mode === 'count') {
+    return `${normalizeJesusQuantity(task.prayerConfig?.jesusPrayerCount, 100)} repetitions - ${getTaskFrequencyLabel(task)}`;
+  }
+  return `${normalizeJesusQuantity(task.prayerConfig?.jesusPrayerDuration, 15)} min - ${getTaskFrequencyLabel(task)}`;
 }
 
 function habitStepToTaskDraft(habit: HabitItem, step: HabitStep): TaskDraft {
@@ -488,9 +538,72 @@ function habitStepToTaskDraft(habit: HabitItem, step: HabitStep): TaskDraft {
   };
 }
 
+function habitStepToRoutineTask(habit: HabitItem, step: HabitStep): RoutineTask {
+  return {
+    id: habitStepTaskId(habit.id, step.id),
+    title: step.title,
+    subtitle: `${habit.name} - ${getHabitFrequencyLabel(step)}`,
+    level: 3,
+    source: 'habit',
+    type: 'custom',
+    icon: habit.icon as RoutineIconName,
+    habitColor: habit.color,
+    targetView: '/habits',
+    targetTab: habit.id,
+    status: habit.active ? 'active' : 'paused',
+    time: step.time,
+    frequency: step.frequency,
+    selectedDays: taskIndexesToSelectedDays(step.selectedDays ?? []),
+    monthlyDays: step.monthlyDays ?? [1],
+    sameTimeEveryDay: step.sameTimeEveryDay ?? true,
+    dayTimeOverrides: taskDayTimesToOverrides(step.dayTimes ?? {}, [0, 1, 2, 3, 4, 5, 6]),
+    notificationMode: step.notificationMode ?? 'none',
+    reminderMinutes: step.reminderMinutes,
+  };
+}
+
+function challengeScheduleFromRecord(challenge: ChallengeRecord): ChallengeScheduleDraft {
+  const saved = challenge.scriptureConfig ?? challenge.prayerConfig;
+  return {
+    time: saved?.time ?? challenge.time ?? '08:00',
+    sameTimeEveryDay: saved?.sameTimeEveryDay ?? true,
+    dayTimes: saved?.dayTimes ?? {},
+    notificationMode: saved?.notificationMode ?? 'single',
+    reminderMinutes: saved?.reminderMinutes ?? 15,
+  };
+}
+
+function churchScheduleFromRecord(challenge: ChallengeRecord): ChallengeChurchScheduleDraft {
+  return {
+    frequency: challenge.churchConfig?.frequency ?? 'specific_days',
+    selectedDays: challenge.churchConfig?.selectedDays?.length ? challenge.churchConfig.selectedDays : [6],
+    monthlyDays: challenge.churchConfig?.monthlyDays?.length ? challenge.churchConfig.monthlyDays : [1],
+    time: challenge.churchConfig?.time ?? challenge.time ?? '09:00',
+    sameTimeEveryDay: challenge.churchConfig?.sameTimeEveryDay ?? true,
+    dayTimes: challenge.churchConfig?.dayTimes ?? {},
+    notificationMode: challenge.churchConfig?.notificationMode ?? 'single',
+    reminderMinutes: challenge.churchConfig?.reminderMinutes ?? 15,
+  };
+}
+
+function prayerRuleFromChallenge(challenge: ChallengeRecord): PrayerChallengeRuleChoice {
+  if (challenge.prayerConfig?.taskKind === 'personal_rule') return 'personal';
+  const rule = challenge.prayerConfig?.prayerRule;
+  if (rule === 'standard' || rule === 'short' || rule === 'seraphim' || rule === 'personal') return rule;
+  return 'personal';
+}
+
 export default function MyRoutineView() {
   const router = useRouter();
-  const { activeChallenges } = useChallenges();
+  const {
+    challenges,
+    activeChallenges,
+    refreshChallenges,
+    updateChallenge,
+    pauseChallenge,
+    resumeChallenge,
+    endChallenge,
+  } = useChallenges();
   const {
     tasks: backendTasks,
     createOrUpdateTask,
@@ -511,9 +624,32 @@ export default function MyRoutineView() {
   const [editorTask, setEditorTask] = useState<RoutineTask | null>(null);
   const [editorDefaultLevel, setEditorDefaultLevel] = useState<RoutineLevel | undefined>(undefined);
   const [editorDefaultType, setEditorDefaultType] = useState<SpiritualType | undefined>(undefined);
+  const [challengeEditorItem, setChallengeEditorItem] = useState<ChallengeRecord | null>(null);
+  const [challengeExpandedId, setChallengeExpandedId] = useState<string | null>(null);
+  const [challengeSchedule, setChallengeSchedule] = useState<ChallengeScheduleDraft>(defaultChallengeSchedule('08:00'));
+  const [challengePrayerRule, setChallengePrayerRule] = useState<PrayerChallengeRuleChoice>('personal');
+  const [challengeJesusMode, setChallengeJesusMode] = useState<JesusPrayerMode>('duration');
+  const [challengeJesusDuration, setChallengeJesusDuration] = useState('15');
+  const [challengeJesusCount, setChallengeJesusCount] = useState('100');
+  const [churchSchedule, setChurchSchedule] = useState<ChallengeChurchScheduleDraft>({
+    frequency: 'specific_days',
+    selectedDays: [6],
+    monthlyDays: [1],
+    time: '09:00',
+    sameTimeEveryDay: true,
+    dayTimes: {},
+    notificationMode: 'single',
+    reminderMinutes: 15,
+  });
   const [habitTab, setHabitTab] = useState<'active' | 'paused'>('active');
   const [habits, setHabits] = useState<HabitItem[]>([]);
   const [expandedHabitId, setExpandedHabitId] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshChallenges();
+    }, [refreshChallenges]),
+  );
 
   const selectedDay = DAY_TABS[selectedDayIndex];
 
@@ -526,18 +662,37 @@ export default function MyRoutineView() {
   const activeHabits = useMemo(() => habits.filter(item => item.active), [habits]);
   const pausedHabits = useMemo(() => habits.filter(item => !item.active), [habits]);
   const visibleHabits = habitTab === 'active' ? activeHabits : pausedHabits;
+  const habitTabMotion = useSharedValue(habitTab === 'paused' ? 1 : 0);
+  const [habitSegmentWidth, setHabitSegmentWidth] = useState(0);
+
+  useEffect(() => {
+    habitTabMotion.value = withSpring(habitTab === 'paused' ? 1 : 0, {
+      damping: 18,
+      stiffness: 235,
+      mass: 0.72,
+    });
+  }, [habitTab, habitTabMotion]);
+
+  const habitSegmentPillStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: habitTabMotion.value * ((habitSegmentWidth - 8) / 2) }],
+  }));
+
+  const refreshHabits = useCallback(async () => {
+    const nextHabits = await listHabitsWithStats();
+    setHabits(nextHabits);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    listHabitsWithStats()
-      .then(nextHabits => {
-        if (!cancelled) setHabits(nextHabits);
+    refreshHabits()
+      .then(() => {
+        if (cancelled) return;
       })
       .catch(error => console.warn('Routine habits failed to load:', error));
     return () => {
       cancelled = true;
     };
-  }, [backendTasks]);
+  }, [backendTasks, refreshHabits]);
 
   const openAddSpiritual = () => {
     setShowSpiritualTypePicker(true);
@@ -552,22 +707,100 @@ export default function MyRoutineView() {
 
   const openEditTask = (task: RoutineTask) => {
     setEditorTask(task);
+    void (async () => {
+      const prayerConfig = task.type === 'prayer'
+        ? await getPrayerTaskConfig(task.id).catch(() => undefined)
+        : undefined;
+      setEditorTask(prayerConfig ? {
+        ...task,
+        prayerConfig: {
+          prayerType: prayerConfig.prayerType,
+          prayerRule: prayerConfig.prayerRule,
+          prayerTaskKind: prayerConfig.prayerTaskKind,
+          jesusPrayerMode: prayerConfig.jesusPrayerMode,
+          jesusPrayerDuration: prayerConfig.jesusPrayerDuration,
+          jesusPrayerCount: prayerConfig.jesusPrayerCount,
+        },
+      } : task);
+    })();
     setEditorDefaultLevel(undefined);
     setEditorDefaultType(undefined);
     setEditorVisible(true);
   };
 
+  const openChallengeEdit = (challenge: ChallengeRecord) => {
+    setChallengeEditorItem(challenge);
+    setChallengeExpandedId(challenge.id);
+    setChallengeSchedule(challengeScheduleFromRecord(challenge));
+    setChurchSchedule(churchScheduleFromRecord(challenge));
+    setChallengePrayerRule(prayerRuleFromChallenge(challenge));
+    setChallengeJesusMode(normalizeJesusMode(challenge.prayerConfig?.jesusPrayerMode));
+    setChallengeJesusDuration(String(challenge.prayerConfig?.jesusPrayerDuration ?? 15));
+    setChallengeJesusCount(String(challenge.prayerConfig?.jesusPrayerCount ?? 100));
+  };
+
+  const openHabitStepEdit = (habit: HabitItem, step: HabitStep) => {
+    const taskId = habitStepTaskId(habit.id, step.id);
+    const existing = tasks.find(item => item.id === taskId);
+    openEditTask(existing ?? habitStepToRoutineTask(habit, step));
+  };
+
   const openTask = (task: RoutineTask) => {
-    const route = sourceRouteForTask(task);
-    if (route) {
-      router.push(route as never);
-      return;
+    if (task.source === 'challenge') {
+      const challenge = challenges.find(item => item.id === task.targetTab || task.id.includes(item.id));
+      if (challenge) {
+        openChallengeEdit(challenge);
+        return;
+      }
     }
     openEditTask(task);
   };
 
+  const saveHabitBackedTask = async (task: RoutineTask) => {
+    const habit = habits.find(item => item.id === task.targetTab || task.id.startsWith(`habit_${item.id}_`));
+    if (!habit) {
+      await createOrUpdateTask(routineTaskToDraft(task));
+      return;
+    }
+
+    const prefix = `habit_${habit.id}_`;
+    const stepId = task.id.startsWith(prefix) ? task.id.slice(prefix.length) : undefined;
+    const currentStep = habit.steps.find(step => step.id === stepId);
+    if (!currentStep) {
+      await createOrUpdateTask(routineTaskToDraft(task));
+      return;
+    }
+
+    const dayTimes = overridesToTaskDayTimes(task.dayTimeOverrides ?? []);
+    const nextStep: HabitStep = {
+      ...currentStep,
+      title: task.title,
+      time: task.time,
+      frequency: task.frequency,
+      selectedDays: task.frequency === 'specific_days' ? selectedDaysToTaskIndexes(task.selectedDays ?? []) : [],
+      monthlyDays: task.frequency === 'monthly' ? task.monthlyDays ?? [1] : [1],
+      sameTimeEveryDay: task.sameTimeEveryDay,
+      dayTimes: task.sameTimeEveryDay ? {} : dayTimes,
+      notificationMode: task.notificationMode,
+      reminderMinutes: task.notificationMode === 'double' ? task.reminderMinutes : undefined,
+    };
+    const nextHabit: HabitItem = {
+      ...habit,
+      steps: habit.steps.map(step => step.id === nextStep.id ? nextStep : step),
+    };
+
+    await saveHabitRecord(nextHabit);
+    await createOrUpdateTask(habitStepToTaskDraft(nextHabit, nextStep));
+    setHabits(current => current.map(item => item.id === nextHabit.id ? nextHabit : item));
+  };
+
   const handleTaskSave = async (task: RoutineTask) => {
-    await createOrUpdateTask(routineTaskToDraft(task));
+    if (task.source === 'habit') {
+      await saveHabitBackedTask(task);
+    } else {
+      await createOrUpdateTask(routineTaskToDraft(task));
+    }
+    await refreshHabits();
     setEditorVisible(false);
     setEditorTask(null);
     setEditorDefaultLevel(undefined);
@@ -575,16 +808,24 @@ export default function MyRoutineView() {
   };
 
   const handleTaskDelete = async (taskId: string) => {
+    const targetTask = editorTask;
+    if (targetTask?.source === 'habit') {
+      const habit = habits.find(item => item.id === targetTask.targetTab || targetTask.id.startsWith(`habit_${item.id}_`));
+      if (habit) {
+        const prefix = `habit_${habit.id}_`;
+        const stepId = targetTask.id.startsWith(prefix) ? targetTask.id.slice(prefix.length) : undefined;
+        const nextHabit = {
+          ...habit,
+          steps: habit.steps.filter(step => step.id !== stepId),
+        };
+        await saveHabitRecord(nextHabit);
+        setHabits(current => current.map(item => item.id === nextHabit.id ? nextHabit : item));
+      }
+    }
     await removeTask(taskId);
+    await refreshHabits();
     setEditorVisible(false);
     setEditorTask(null);
-  };
-
-  const toggleHabitStep = (habitId: string, stepId: string) => {
-    setHabits(current => current.map(habit => habit.id === habitId ? {
-      ...habit,
-      steps: habit.steps.map(step => step.id === stepId ? { ...step, completedToday: !step.completedToday } : step),
-    } : habit));
   };
 
   const toggleHabitActive = async (habitId: string) => {
@@ -737,14 +978,27 @@ export default function MyRoutineView() {
             </TouchableOpacity>
           </View>
 
-          <View style={s.segmentWrap}>
+          <View
+            style={s.segmentWrap}
+            onLayout={event => setHabitSegmentWidth(event.nativeEvent.layout.width)}
+          >
+            {habitSegmentWidth > 0 && (
+              <Reanimated.View
+                pointerEvents="none"
+                style={[
+                  s.segmentPill,
+                  { width: (habitSegmentWidth - 8) / 2 },
+                  habitSegmentPillStyle,
+                ]}
+              />
+            )}
             {([
               { key: 'active' as const, label: `Active (${activeHabits.length})` },
               { key: 'paused' as const, label: `Paused (${pausedHabits.length})` },
             ]).map(item => {
               const active = habitTab === item.key;
               return (
-                <TouchableOpacity key={item.key} onPress={() => setHabitTab(item.key)} activeOpacity={0.84} style={[s.segmentBtn, active && s.segmentBtnActive]}>
+                <TouchableOpacity key={item.key} onPress={() => setHabitTab(item.key)} activeOpacity={0.84} style={s.segmentBtn}>
                   <Text style={[s.segmentText, active && s.segmentTextActive]}>{item.label}</Text>
                 </TouchableOpacity>
               );
@@ -787,7 +1041,7 @@ export default function MyRoutineView() {
                       {habit.steps.map(step => (
                         <TouchableOpacity
                           key={step.id}
-                          onPress={() => habit.active && toggleHabitStep(habit.id, step.id)}
+                          onPress={() => openHabitStepEdit(habit, step)}
                           activeOpacity={0.84}
                           style={[s.habitStepRow, !habit.active && { opacity: 0.6 }]}
                         >
@@ -836,7 +1090,7 @@ export default function MyRoutineView() {
               <ChallengeSummaryCard
                 key={challenge.id}
                 challenge={challenge}
-                onPress={() => router.push('/challenges')}
+                onPress={() => openChallengeEdit(challenge)}
               />
             ))}
 
@@ -877,6 +1131,94 @@ export default function MyRoutineView() {
           }}
         />
       )}
+
+      <SmoothBottomSheet
+        visible={!!challengeEditorItem}
+        onClose={() => {
+          setChallengeEditorItem(null);
+          setChallengeExpandedId(null);
+        }}
+        sheetStyle={s.sheetShell}
+        keyboardAware
+      >
+        <View style={s.sheetHandle} />
+        <View style={s.sheetHeader}>
+          <TouchableOpacity
+            onPress={() => {
+              setChallengeEditorItem(null);
+              setChallengeExpandedId(null);
+            }}
+            activeOpacity={0.84}
+            style={s.sheetHeaderIcon}
+          >
+            <X s={20} c="#9CA3AF" />
+          </TouchableOpacity>
+          <Text style={s.sheetHeaderTitle}>Edit Challenge</Text>
+          <View style={s.sheetHeaderSpacer} />
+        </View>
+        <ScrollView contentContainerStyle={s.challengeEditorSheetContent} showsVerticalScrollIndicator={false}>
+          {challengeEditorItem && (
+            <ChallengePanel
+              context={challengeEditorItem.category as any}
+              activeItems={challengeEditorItem.status === 'active' ? [challengeEditorItem] : []}
+              pausedItems={challengeEditorItem.status === 'paused' ? [challengeEditorItem] : []}
+              availableItems={[]}
+              selectedCatalog={null}
+              selectedPaceId={null}
+              challengeSchedule={challengeSchedule}
+              scriptureDailyAmount={challengeEditorItem.scriptureConfig?.chaptersPerDay ?? 1}
+              challengePrayerRule={challengePrayerRule}
+              challengeJesusMode={challengeJesusMode}
+              challengeJesusDuration={challengeJesusDuration}
+              challengeJesusCount={challengeJesusCount}
+              churchSchedule={churchSchedule}
+              expandedChallengeId={challengeExpandedId}
+              recentlyStartedTemplateId={null}
+              showActiveLabel={false}
+              showPausedLabel={false}
+              onOpenSetup={() => {}}
+              onSelectedPaceIdChange={() => {}}
+              onChallengeScheduleChange={setChallengeSchedule}
+              onScriptureDailyAmountChange={() => {}}
+              onChallengePrayerRuleChange={setChallengePrayerRule}
+              onChallengeJesusModeChange={setChallengeJesusMode}
+              onChallengeJesusDurationChange={setChallengeJesusDuration}
+              onChallengeJesusCountChange={setChallengeJesusCount}
+              onChurchScheduleChange={setChurchSchedule}
+              onStartChallenge={() => {}}
+              onExpandedChallengeChange={setChallengeExpandedId}
+              onPauseChallenge={async id => {
+                await pauseChallenge(id);
+                await refreshChallenges();
+                await refreshTasks();
+                setChallengeEditorItem(null);
+                setChallengeExpandedId(null);
+              }}
+              onResumeChallenge={async id => {
+                await resumeChallenge(id);
+                await refreshChallenges();
+                await refreshTasks();
+                setChallengeEditorItem(null);
+                setChallengeExpandedId(null);
+              }}
+              onEndChallenge={async id => {
+                await endChallenge(id);
+                await refreshChallenges();
+                await refreshTasks();
+                setChallengeEditorItem(null);
+                setChallengeExpandedId(null);
+              }}
+              onUpdateChallenge={async (id, updates) => {
+                await updateChallenge(id, updates);
+                await refreshChallenges();
+                await refreshTasks();
+                setChallengeEditorItem(null);
+                setChallengeExpandedId(null);
+              }}
+            />
+          )}
+        </ScrollView>
+      </SmoothBottomSheet>
 
       <RoutineTaskEditorSheet
         visible={editorVisible}
@@ -946,6 +1288,135 @@ function SpiritualTypePickerSheet({
   );
 }
 
+function RoutineJesusPrayerEditor({
+  mode,
+  duration,
+  count,
+  onModeChange,
+  onDurationChange,
+  onCountChange,
+}: {
+  mode: JesusPrayerMode;
+  duration: string;
+  count: string;
+  onModeChange: (mode: JesusPrayerMode) => void;
+  onDurationChange: (value: string) => void;
+  onCountChange: (value: string) => void;
+}) {
+  const values = mode === 'duration'
+    ? [5, 10, 15, 30, 45, 60]
+    : [33, 50, 100, 200, 300];
+  const selected = Number.parseInt(mode === 'duration' ? duration : count, 10);
+  const [customFocused, setCustomFocused] = useState(false);
+  const customValue = mode === 'duration' ? duration : count;
+  const customActive = customFocused || (Number.isFinite(selected) && !values.includes(selected));
+  const customUnit = mode === 'duration' ? 'min' : 'reps';
+  const modeMotion = useSharedValue(mode === 'count' ? 1 : 0);
+  const [modeWidth, setModeWidth] = useState(0);
+
+  useEffect(() => {
+    modeMotion.value = withSpring(mode === 'count' ? 1 : 0, {
+      damping: 18,
+      stiffness: 235,
+      mass: 0.72,
+    });
+  }, [mode, modeMotion]);
+
+  const modePillMotionStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: modeMotion.value * ((modeWidth - 8) / 2) }],
+  }));
+
+  const setValue = (next: number) => {
+    if (mode === 'duration') {
+      onDurationChange(String(next));
+      return;
+    }
+    onCountChange(String(next));
+  };
+
+  const setCustomValue = (text: string) => {
+    const clean = text.replace(/[^\d]/g, '');
+    if (mode === 'duration') {
+      onDurationChange(clean);
+      return;
+    }
+    onCountChange(clean);
+  };
+
+  return (
+    <View style={s.jesusEditorStack}>
+      <View style={s.jesusModeRow} onLayout={event => setModeWidth(event.nativeEvent.layout.width)}>
+        {modeWidth > 0 && (
+          <Reanimated.View
+            pointerEvents="none"
+            style={[
+              s.jesusModePill,
+              { width: (modeWidth - 8) / 2 },
+              modePillMotionStyle,
+            ]}
+          />
+        )}
+        {([
+          { id: 'duration' as const, label: 'By Time' },
+          { id: 'count' as const, label: 'By Count' },
+        ]).map(item => {
+          const active = mode === item.id;
+          return (
+            <TouchableOpacity
+              key={item.id}
+              onPress={() => onModeChange(item.id)}
+              activeOpacity={0.84}
+              style={s.jesusModeBtn}
+            >
+              <Text style={[s.jesusModeText, active && s.jesusModeTextActive]}>{item.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <View style={s.jesusPresetRow}>
+        {values.map(value => {
+          const active = selected === value;
+          return (
+            <TouchableOpacity
+              key={value}
+              onPress={() => setValue(value)}
+              activeOpacity={0.84}
+              style={[s.jesusPresetChip, active && s.jesusPresetChipActive]}
+            >
+              <Text style={[s.jesusPresetText, active && s.jesusPresetTextActive]}>
+                {mode === 'duration' ? `${value} min` : `${value}`}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <View style={[s.jesusCustomBox, customActive && s.jesusCustomBoxActive]}>
+        <View style={s.jesusCustomHeader}>
+          <Text style={[s.jesusCustomLabel, customActive && s.jesusCustomLabelActive]}>
+            Custom {mode === 'duration' ? 'time' : 'count'}
+          </Text>
+        </View>
+        <View style={[s.jesusCustomInputWrap, customFocused && s.jesusCustomInputWrapFocused]}>
+          <TextInput
+            value={customValue}
+            onChangeText={setCustomValue}
+            onFocus={() => setCustomFocused(true)}
+            onBlur={() => setCustomFocused(false)}
+            keyboardType="number-pad"
+            placeholder={mode === 'duration' ? '15' : '100'}
+            placeholderTextColor="#D1D5DB"
+            style={s.jesusCustomInput}
+          />
+          <View style={s.jesusCustomDivider} />
+          <Text style={s.jesusCustomSuffix}>{customUnit}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function RoutineTaskEditorSheet({
   visible,
   task,
@@ -975,9 +1446,26 @@ function RoutineTaskEditorSheet({
   const [dayTimeOverrides, setDayTimeOverrides] = useState<DayOverride[]>([]);
   const [notificationMode, setNotificationMode] = useState<NotificationMode>('none');
   const [reminderMinutes, setReminderMinutes] = useState(15);
+  const [jesusMode, setJesusMode] = useState<JesusPrayerMode>('duration');
+  const [jesusDuration, setJesusDuration] = useState('15');
+  const [jesusCount, setJesusCount] = useState('100');
+  const categoryMotion = useSharedValue(level === 2 ? 1 : 0);
+  const [categorySegmentWidth, setCategorySegmentWidth] = useState(0);
   const [showAllRoutineIcons, setShowAllRoutineIcons] = useState(false);
   const [routineIconGridWidth, setRoutineIconGridWidth] = useState(0);
   const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
+
+  useEffect(() => {
+    categoryMotion.value = withSpring(level === 2 ? 1 : 0, {
+      damping: 18,
+      stiffness: 235,
+      mass: 0.72,
+    });
+  }, [categoryMotion, level]);
+
+  const categoryPillStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: categoryMotion.value * ((categorySegmentWidth - 8) / 2) }],
+  }));
 
   useEffect(() => {
     if (!visible) return;
@@ -996,6 +1484,15 @@ function RoutineTaskEditorSheet({
       setDayTimeOverrides(task.dayTimeOverrides ?? []);
       setNotificationMode(task.notificationMode);
       setReminderMinutes(task.reminderMinutes ?? 15);
+      if (isJesusPrayerRoutineTask(task)) {
+        setJesusMode(normalizeJesusMode(task.prayerConfig?.jesusPrayerMode));
+        setJesusDuration(String(task.prayerConfig?.jesusPrayerDuration ?? 15));
+        setJesusCount(String(task.prayerConfig?.jesusPrayerCount ?? 100));
+      } else {
+        setJesusMode('duration');
+        setJesusDuration('15');
+        setJesusCount('100');
+      }
       return;
     }
 
@@ -1011,6 +1508,9 @@ function RoutineTaskEditorSheet({
     setDayTimeOverrides([]);
     setNotificationMode('none');
     setReminderMinutes(15);
+    setJesusMode('duration');
+    setJesusDuration('15');
+    setJesusCount('100');
   }, [defaultLevel, defaultType, task, visible]);
 
   const isSpiritual = level === 1;
@@ -1036,6 +1536,7 @@ function RoutineTaskEditorSheet({
     dayTimeOverrides: sameTimeEveryDay ? undefined : dayTimeOverrides,
     notificationMode,
     reminderMinutes: notificationMode === 'double' ? reminderMinutes : undefined,
+    prayerConfig: task?.prayerConfig,
   };
 
   const activeDays = getActiveDays(draftTask);
@@ -1043,6 +1544,7 @@ function RoutineTaskEditorSheet({
   const selectedDayIndexes = selectedDaysToTaskIndexes(selectedDays);
   const dayTimes = overridesToTaskDayTimes(dayTimeOverrides);
   const allowPerDayTimes = frequency !== 'monthly' && (frequency !== 'specific_days' || selectedDays.length > 0);
+  const isJesusPrayerTask = isJesusPrayerRoutineTask(draftTask);
   const canEditRoutineIcon = !isSpiritual && (!task || task.source === 'routine');
   const compactRoutineIcons = ROUTINE_ICONS.slice(0, VISIBLE_ROUTINE_ICON_COUNT);
   const selectedRoutineIcon = ROUTINE_ICONS.find(item => item.id === icon);
@@ -1066,6 +1568,23 @@ function RoutineTaskEditorSheet({
         }));
     onSave({
       ...draftTask,
+      subtitle: isJesusPrayerTask
+        ? `${jesusMode === 'duration'
+          ? `${Number.parseInt(jesusDuration || '15', 10) || 15} min`
+          : `${Number.parseInt(jesusCount || '100', 10) || 100} repetitions`} - ${getTaskFrequencyLabel(draftTask)}`
+        : draftTask.subtitle,
+      prayerConfig: isJesusPrayerTask
+        ? {
+          ...(draftTask.prayerConfig ?? {}),
+          prayerType: 'jesus',
+          prayerTaskKind: 'jesus_prayer',
+          jesusPrayerMode: jesusMode,
+          jesusPrayerDuration: jesusMode === 'duration' ? Number.parseInt(jesusDuration || '15', 10) || 15 : undefined,
+          jesusPrayerCount: jesusMode === 'count' ? Number.parseInt(jesusCount || '100', 10) || 100 : undefined,
+        }
+        : draftTask.prayerConfig,
+      targetView: isJesusPrayerTask ? '/jesus-prayer' : draftTask.targetView,
+      icon: isJesusPrayerTask ? 'Cross' : draftTask.icon,
       sameTimeEveryDay: allowPerDayTimes ? sameTimeEveryDay : true,
       selectedDays: frequency === 'specific_days' ? selectedDays : undefined,
       monthlyDays: frequency === 'monthly' ? monthlyDays : undefined,
@@ -1102,21 +1621,51 @@ function RoutineTaskEditorSheet({
               />
             </View>
 
+            {isJesusPrayerTask && (
+              <View style={s.editorBlock}>
+                <Text style={[s.editorBlockLabel, { color: C.gold }]}>Jesus Prayer</Text>
+                <RoutineJesusPrayerEditor
+                  mode={jesusMode}
+                  duration={jesusDuration}
+                  count={jesusCount}
+                  onModeChange={nextMode => {
+                    animateRoutineLayoutChange();
+                    setJesusMode(nextMode);
+                  }}
+                  onDurationChange={setJesusDuration}
+                  onCountChange={setJesusCount}
+                />
+              </View>
+            )}
+
             {!task && defaultLevel == null && (
               <View style={s.editorBlock}>
                 <Text style={s.mutedLabel}>Category</Text>
-                <View style={s.toggleRow}>
+                <View
+                  style={s.categorySegmentWrap}
+                  onLayout={event => setCategorySegmentWidth(event.nativeEvent.layout.width)}
+                >
+                  {categorySegmentWidth > 0 && (
+                    <Reanimated.View
+                      pointerEvents="none"
+                      style={[
+                        s.categorySegmentPill,
+                        { width: (categorySegmentWidth - 8) / 2 },
+                        categoryPillStyle,
+                      ]}
+                    />
+                  )}
                   <TouchableOpacity
                     onPress={() => setLevel(1)}
                     activeOpacity={0.84}
-                    style={[s.categoryBtn, level === 1 && s.categoryBtnWarm]}
+                    style={s.categoryBtn}
                   >
                     <Text style={[s.categoryBtnText, level === 1 && { color: C.gold }]}>Spiritual</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => setLevel(2)}
                     activeOpacity={0.84}
-                    style={[s.categoryBtn, level === 2 && s.categoryBtnNeutral]}
+                    style={s.categoryBtn}
                   >
                     <Text style={[s.categoryBtnText, level === 2 && { color: '#111827' }]}>Routine</Text>
                   </TouchableOpacity>
@@ -1390,9 +1939,9 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  segmentWrap: { flexDirection: 'row', backgroundColor: '#F4F0E7', borderRadius: 20, padding: 4, gap: 4 },
-  segmentBtn: { flex: 1, minHeight: 42, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  segmentBtnActive: { backgroundColor: '#FFFFFF' },
+  segmentWrap: { minHeight: 50, flexDirection: 'row', alignItems: 'center', backgroundColor: '#F4F0E7', borderRadius: 20, padding: 4, position: 'relative', overflow: 'hidden' },
+  segmentPill: { position: 'absolute', left: 4, top: 4, bottom: 4, borderRadius: 16, backgroundColor: '#FFFFFF', shadowColor: C.gold, shadowOpacity: 0.12, shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, elevation: 2 },
+  segmentBtn: { flex: 1, minHeight: 42, borderRadius: 16, alignItems: 'center', justifyContent: 'center', zIndex: 1 },
   segmentText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.3, color: '#9CA3AF', textTransform: 'uppercase' },
   segmentTextActive: { color: C.gold },
   helperBody: { marginTop: 10, paddingHorizontal: 4, fontFamily: F.serif, fontSize: 13, lineHeight: 20, color: '#A8A29E' },
@@ -1476,6 +2025,7 @@ const s = StyleSheet.create({
   sheetHeaderTitle: { fontFamily: F.serifMedium, fontSize: 20, color: '#111827' },
   sheetHeaderIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   sheetHeaderSpacer: { width: 38 },
+  challengeEditorSheetContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 24 },
   typeSheetContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 20, gap: 10 },
   typeOptionCard: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 22, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F3F4F6', padding: 16 },
   typeOptionIcon: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
@@ -1489,10 +2039,34 @@ const s = StyleSheet.create({
   editorBlockLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 12 },
   mutedLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, color: '#A8A29E', textTransform: 'uppercase', marginBottom: 12 },
   titleInput: { minHeight: 52, borderRadius: 18, backgroundColor: '#FAFAFA', borderWidth: 1, borderColor: '#F2F1EC', paddingHorizontal: 16, fontFamily: F.serif, fontSize: 22, color: '#111827' },
-  toggleRow: { flexDirection: 'row', gap: 10 },
-  categoryBtn: { flex: 1, minHeight: 48, borderRadius: 18, backgroundColor: '#F7F7F5', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'transparent' },
-  categoryBtnWarm: { backgroundColor: '#FFFBEB', borderColor: 'rgba(197,160,89,0.35)' },
-  categoryBtnNeutral: { backgroundColor: '#FFFFFF', borderColor: '#111827' },
+  jesusEditorStack: { gap: 12 },
+  jesusModeRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', padding: 4, borderRadius: 18, borderWidth: 1, borderColor: '#EEE3D1', backgroundColor: '#FFFDF8', position: 'relative', overflow: 'hidden' },
+  jesusModePill: { position: 'absolute', left: 4, top: 4, bottom: 4, borderRadius: 14, backgroundColor: C.gold, shadowColor: C.gold, shadowOpacity: 0.26, shadowOffset: { width: 0, height: 7 }, shadowRadius: 12, elevation: 3 },
+  jesusModeBtn: { flex: 1, minHeight: 36, borderRadius: 14, alignItems: 'center', justifyContent: 'center', zIndex: 1 },
+  jesusModeText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.35, color: '#9CA3AF', textTransform: 'uppercase' },
+  jesusModeTextActive: { color: '#FFFFFF' },
+  jesusPresetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  jesusPresetChip: { flexGrow: 1, flexBasis: '30%', minHeight: 40, borderRadius: 15, borderWidth: 1, borderColor: '#EEE8DE', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+  jesusPresetChipActive: { borderColor: '#D7AA54', backgroundColor: '#FFF7E8' },
+  jesusPresetText: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 1.1, color: '#717782', textTransform: 'uppercase' },
+  jesusPresetTextActive: { color: '#B6822D' },
+  jesusCustomBox: { alignSelf: 'center', width: '54%', minWidth: 154, maxWidth: 188, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(197,160,89,0.18)', backgroundColor: '#FFFBF4', paddingHorizontal: 9, paddingVertical: 8, gap: 6 },
+  jesusCustomBoxActive: { borderColor: 'rgba(197,160,89,0.42)', backgroundColor: '#FFF8EA', shadowColor: C.gold, shadowOpacity: 0.08, shadowOffset: { width: 0, height: 8 }, shadowRadius: 16, elevation: 2 },
+  jesusCustomHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  jesusCustomLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.25, color: '#9C948C', textTransform: 'uppercase', textAlign: 'center' },
+  jesusCustomLabelActive: { color: '#B6822D' },
+  jesusCustomUnitPill: { borderRadius: 999, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F0E7D8', paddingHorizontal: 8, paddingVertical: 4 },
+  jesusCustomUnitPillActive: { backgroundColor: '#FFF2D8', borderColor: 'rgba(197,160,89,0.28)' },
+  jesusCustomUnitPillText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1, color: '#B7B0A7', textTransform: 'uppercase' },
+  jesusCustomUnitPillTextActive: { color: '#B6822D' },
+  jesusCustomInputWrap: { minHeight: 42, borderRadius: 14, borderWidth: 1, borderColor: '#EEE8DE', backgroundColor: '#FFFFFF', paddingLeft: 12, paddingRight: 10, flexDirection: 'row', alignItems: 'center' },
+  jesusCustomInputWrapFocused: { borderColor: '#D7AA54' },
+  jesusCustomInput: { flex: 1, minHeight: 40, padding: 0, fontFamily: F.serifMedium, fontSize: 20, color: C.text, textAlign: 'center' },
+  jesusCustomDivider: { width: 1, height: 20, backgroundColor: '#F0EDE6', marginLeft: 8, marginRight: 8 },
+  jesusCustomSuffix: { minWidth: 30, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1, color: '#B6822D', textTransform: 'uppercase', textAlign: 'right' },
+  categorySegmentWrap: { minHeight: 52, flexDirection: 'row', alignItems: 'center', padding: 4, borderRadius: 20, borderWidth: 1, borderColor: '#F0EDE6', backgroundColor: '#F7F7F5', position: 'relative', overflow: 'hidden' },
+  categorySegmentPill: { position: 'absolute', left: 4, top: 4, bottom: 4, borderRadius: 16, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)', shadowColor: C.gold, shadowOpacity: 0.13, shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, elevation: 2 },
+  categoryBtn: { flex: 1, minHeight: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center', zIndex: 1 },
   categoryBtnText: { fontFamily: F.serifMedium, fontSize: 17, color: '#9CA3AF' },
   typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   typeChip: { width: '31%', minHeight: 74, borderRadius: 18, backgroundColor: '#F7F7F5', borderWidth: 1, borderColor: '#F2F1EC', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 6 },

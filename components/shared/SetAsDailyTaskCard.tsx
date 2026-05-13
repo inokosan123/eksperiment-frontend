@@ -1,7 +1,9 @@
-import { StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CalendarCheck, ChevronRight } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 type Variant = 'soft' | 'scripture';
 

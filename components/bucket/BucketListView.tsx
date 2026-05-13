@@ -8,7 +8,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -21,6 +20,8 @@ import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import CelebrationOverlay from './CelebrationOverlay';
 import { BucketListItem, useBucketList } from './BucketListContext';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 type ToggleMode = 'check' | 'uncheck';
 type ConfirmTone = 'warm' | 'danger';

@@ -1,8 +1,8 @@
 import React from 'react';
-import {
-  Modal, Pressable, StyleSheet, Text, TouchableOpacity, View,
-} from 'react-native';
+import { Modal, StyleSheet, Text, View } from 'react-native';
 import { F } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 
 type Props = {
   visible: boolean;

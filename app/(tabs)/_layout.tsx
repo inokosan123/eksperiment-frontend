@@ -1,9 +1,15 @@
-import { Tabs } from 'expo-router';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import {
+  Tabs } from 'expo-router';
+import { View,
+  Text,
+  StyleSheet,
+} from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Icons from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 type TabBarProps = {
   state: { index: number; routes: { name: string }[] };

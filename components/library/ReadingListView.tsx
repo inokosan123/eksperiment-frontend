@@ -3,12 +3,10 @@ import {
   Keyboard,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -43,6 +41,8 @@ import {
   useReadingList,
 } from './ReadingListContext';
 import { DEFAULT_READING_CATEGORIES, readingTaskId } from './readingListDb';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 
 type TabFilter = 'all' | 'to_read' | 'reading' | 'finished';
 

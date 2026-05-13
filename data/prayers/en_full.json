@@ -15,23 +15,7 @@
         },
         {
           "type": "text",
-          "content": "Our Father, Who art in the heavens, hallowed be Thy name."
-        },
-        {
-          "type": "text",
-          "content": "Thy kingdom come, Thy will be done, on earth as it is in heaven."
-        },
-        {
-          "type": "text",
-          "content": "Give us this day our daily bread,"
-        },
-        {
-          "type": "text",
-          "content": "and forgive us our debts, as we forgive our debtors;"
-        },
-        {
-          "type": "text",
-          "content": "and lead us not into temptation, but deliver us from the evil one."
+          "content": "Our Father, Who art in the heavens, hallowed be Thy name. Thy kingdom come, Thy will be done, on earth as it is in heaven. Give us this day our daily bread, and forgive us our debts, as we forgive our debtors; and lead us not into temptation, but deliver us from the evil one."
         },
         {
           "type": "title",
@@ -104,6 +88,38 @@
         {
           "type": "text",
           "content": "And the life of the age to come. Amen."
+        },
+        {
+          "type": "title",
+          "content": "Explanation of the Rule"
+        },
+        {
+          "type": "text",
+          "content": "This short prayer rule was handed down by St. Seraphim of Sarov for Christians who, because they are unlearned, burdened with duties, or short of time, cannot always read the longer morning and evening prayers."
+        },
+        {
+          "type": "text",
+          "content": "Upon rising from sleep, let the Christian stand before the holy icons, make the sign of the Cross, and read: the Lord's Prayer three times, in honour of the Most Holy Trinity; O Theotokos and Virgin three times; and the Symbol of Faith once."
+        },
+        {
+          "type": "text",
+          "content": "Having completed this rule, let him attend to the work to which he has been appointed or called."
+        },
+        {
+          "type": "text",
+          "content": "While working at home, traveling, or going about the duties of the day, let him quietly say the Jesus Prayer: O Lord Jesus Christ, Son of God, have mercy on me, a sinner. If he is surrounded by people, let him say inwardly: Lord, have mercy, and continue in this way until lunch."
+        },
+        {
+          "type": "text",
+          "content": "Before lunch, let him read the same rule again. After lunch, while attending to his work, let him quietly say: Most Holy Theotokos, save me, a sinner, and continue in this way until sleep. If he is in solitude, he may say: O Lord Jesus Christ, through the Theotokos, have mercy on me, a sinner."
+        },
+        {
+          "type": "text",
+          "content": "Before sleep, let him read the same rule once more, and then fall asleep, protecting himself with the sign of the Cross."
+        },
+        {
+          "type": "text",
+          "content": "St. Seraphim said that these three prayers are the foundation of Christianity: the Lord's Prayer was given to us by the Lord Himself; O Theotokos and Virgin is the angelic greeting to the Most Holy Theotokos; and the Symbol of Faith contains in brief the saving truths of the Orthodox faith."
         }
       ]
     },
@@ -120,23 +136,7 @@
         },
         {
           "type": "text",
-          "content": "Our Father, Who art in the heavens, hallowed be Thy name."
-        },
-        {
-          "type": "text",
-          "content": "Thy kingdom come, Thy will be done, on earth as it is in heaven."
-        },
-        {
-          "type": "text",
-          "content": "Give us this day our daily bread,"
-        },
-        {
-          "type": "text",
-          "content": "and forgive us our debts, as we forgive our debtors;"
-        },
-        {
-          "type": "text",
-          "content": "and lead us not into temptation, but deliver us from the evil one."
+          "content": "Our Father, Who art in the heavens, hallowed be Thy name. Thy kingdom come, Thy will be done, on earth as it is in heaven. Give us this day our daily bread, and forgive us our debts, as we forgive our debtors; and lead us not into temptation, but deliver us from the evil one."
         },
         {
           "type": "title",
@@ -209,30 +209,6 @@
         {
           "type": "text",
           "content": "And the life of the age to come. Amen."
-        },
-        {
-          "type": "instruction",
-          "content": "Having completed this rule, let him occupy himself with the work to which he has been appointed or called."
-        },
-        {
-          "type": "instruction",
-          "content": "While working at home or traveling, wherever he may be, let him quietly say the Jesus Prayer: 'O Lord Jesus Christ, Son of God, have mercy on me, a sinner!'"
-        },
-        {
-          "type": "instruction",
-          "content": "If he is among people, while attending to his work let him say only in his mind: 'Lord, have mercy,' and so continue until dinner."
-        },
-        {
-          "type": "instruction",
-          "content": "Before dinner, let him perform the morning rule described above. After dinner, while attending to his work, let every Christian quietly say: 'Most Holy Theotokos, save me, a sinner,' and let him continue this until sleep. If it happens that he spends time in solitude, let him say: 'O Lord Jesus Christ, through the Theotokos, have mercy on me, a sinner.'"
-        },
-        {
-          "type": "instruction",
-          "content": "When going to rest, let him again recite the rule given above, and then let him fall asleep, signing himself with the Cross."
-        },
-        {
-          "type": "instruction",
-          "content": "By keeping this rule it is possible to attain the measure of Christian perfection, for these three prayers are the foundation of Christianity: the first was given by the Lord Himself as the model of all prayers; the second was brought from heaven by the Archangel in greeting the Virgin Mary; and the third contains, in brief, all the dogmas of the Christian faith."
         }
       ]
     }
@@ -327,11 +303,7 @@
         },
         {
           "type": "text",
-          "content": "Lord, have mercy."
-        },
-        {
-          "type": "instruction",
-          "content": "(twelve times)"
+          "content": "Lord, have mercy. (12 times)"
         },
         {
           "type": "instruction",
@@ -431,7 +403,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer I, of St. Macarius the Great"
+          "content": "Prayer 1, of St. Macarius the Great"
         },
         {
           "type": "text",
@@ -439,7 +411,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer II, of the same saint"
+          "content": "Prayer 2, of the same saint"
         },
         {
           "type": "text",
@@ -447,7 +419,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer III, of the same saint"
+          "content": "Prayer 3, of the same saint"
         },
         {
           "type": "text",
@@ -544,15 +516,11 @@
         },
         {
           "type": "text",
-          "content": "Lord, have mercy."
-        },
-        {
-          "type": "instruction",
-          "content": "(twelve times)"
+          "content": "Lord, have mercy. (12 times)"
         },
         {
           "type": "title",
-          "content": "Prayer I, of St. Macarius the Great, to God the Father"
+          "content": "Prayer 1, of St. Macarius the Great, to God the Father"
         },
         {
           "type": "text",
@@ -560,7 +528,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer II"
+          "content": "Prayer 2"
         },
         {
           "type": "text",
@@ -568,7 +536,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer III, to the Holy Guardian Angel"
+          "content": "Prayer 3, to the Holy Guardian Angel"
         },
         {
           "type": "text",
@@ -691,11 +659,7 @@
         },
         {
           "type": "text",
-          "content": "Lord, have mercy."
-        },
-        {
-          "type": "instruction",
-          "content": "(12 times)"
+          "content": "Lord, have mercy. (12 times)"
         },
         {
           "type": "title",
@@ -807,7 +771,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer I, of St. Macarius the Great"
+          "content": "Prayer 1, of St. Macarius the Great"
         },
         {
           "type": "text",
@@ -815,7 +779,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer II, of the same saint"
+          "content": "Prayer 2, of the same saint"
         },
         {
           "type": "text",
@@ -823,7 +787,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer III, of the same saint"
+          "content": "Prayer 3, of the same saint"
         },
         {
           "type": "text",
@@ -831,7 +795,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer IV, of St. Macarius"
+          "content": "Prayer 4, of St. Macarius"
         },
         {
           "type": "text",
@@ -839,7 +803,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer V"
+          "content": "Prayer 5"
         },
         {
           "type": "text",
@@ -847,7 +811,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer VI, of St. Basil the Great"
+          "content": "Prayer 6, of St. Basil the Great"
         },
         {
           "type": "text",
@@ -863,7 +827,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer VII, of the same saint"
+          "content": "Prayer 7, of the same saint"
         },
         {
           "type": "text",
@@ -879,7 +843,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer VIII, Midnight Song to the Most Holy Theotokos"
+          "content": "Prayer 8, Midnight Song to the Most Holy Theotokos"
         },
         {
           "type": "text",
@@ -907,7 +871,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer IX, to our Lord Jesus Christ"
+          "content": "Prayer 9, to our Lord Jesus Christ"
         },
         {
           "type": "text",
@@ -927,7 +891,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer X, to the Guardian Angel"
+          "content": "Prayer 10, to the Guardian Angel"
         },
         {
           "type": "text",
@@ -1076,15 +1040,11 @@
         },
         {
           "type": "text",
-          "content": "Lord, have mercy!"
-        },
-        {
-          "type": "instruction",
-          "content": "(12 times)"
+          "content": "Lord, have mercy! (12 times)"
         },
         {
           "type": "title",
-          "content": "Prayer I, to God the Father, of St. Macarius the Great"
+          "content": "Prayer 1, to God the Father, of St. Macarius the Great"
         },
         {
           "type": "text",
@@ -1100,7 +1060,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer II, to our Lord Jesus Christ, of St. Antiochus"
+          "content": "Prayer 2, to our Lord Jesus Christ, of St. Antiochus"
         },
         {
           "type": "text",
@@ -1116,7 +1076,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer III, to the Holy Spirit"
+          "content": "Prayer 3, to the Holy Spirit"
         },
         {
           "type": "text",
@@ -1132,7 +1092,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer IV, of St. Macarius the Great"
+          "content": "Prayer 4, of St. Macarius the Great"
         },
         {
           "type": "text",
@@ -1160,7 +1120,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer V"
+          "content": "Prayer 5"
         },
         {
           "type": "text",
@@ -1168,7 +1128,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer VI"
+          "content": "Prayer 6"
         },
         {
           "type": "text",
@@ -1180,7 +1140,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer VII, of St. John Chrysostom, Supplications for the twenty-four hours of day and night"
+          "content": "Prayer 7, of St. John Chrysostom, Supplications for the twenty-four hours of day and night"
         },
         {
           "type": "instruction",
@@ -1208,7 +1168,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer VIII, to our Lord Jesus Christ"
+          "content": "Prayer 8, to our Lord Jesus Christ"
         },
         {
           "type": "text",
@@ -1224,7 +1184,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer IX, to the Most Holy Theotokos, of Peter the Studite"
+          "content": "Prayer 9, to the Most Holy Theotokos, of Peter the Studite"
         },
         {
           "type": "text",
@@ -1240,7 +1200,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer X, to the Most Holy Theotokos"
+          "content": "Prayer 10, to the Most Holy Theotokos"
         },
         {
           "type": "text",
@@ -1248,7 +1208,7 @@
         },
         {
           "type": "title",
-          "content": "Prayer XI, to the Holy Guardian Angel"
+          "content": "Prayer 11, to the Holy Guardian Angel"
         },
         {
           "type": "text",

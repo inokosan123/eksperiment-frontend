@@ -78,6 +78,8 @@ export default function RootLayout() {
                           <Stack>
                             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                             <Stack.Screen name="prayer"          options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="personal-rule"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="jesus-prayer"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                             <Stack.Screen name="journal"         options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                             <Stack.Screen name="journal-daily"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                             <Stack.Screen name="journal-morning" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
@@ -88,6 +90,8 @@ export default function RootLayout() {
                             <Stack.Screen name="notes"           options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                             <Stack.Screen name="scripture"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                             <Stack.Screen name="scripture-reader" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="scripture-challenge" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                            <Stack.Screen name="scripture-checkpoint" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                             <Stack.Screen name="favorites"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                             <Stack.Screen name="bible-notes"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                             <Stack.Screen name="gratitude"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />

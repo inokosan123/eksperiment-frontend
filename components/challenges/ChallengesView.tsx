@@ -1,11 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
@@ -43,6 +37,8 @@ import {
 import { C, F } from '@/constants/tokens';
 import { useChallenges } from './ChallengesContext';
 import { useTasks } from '@/components/tasks/TaskProvider';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 import {
   ChallengeCatalogEntry,
   type ChallengeChurchConfig,

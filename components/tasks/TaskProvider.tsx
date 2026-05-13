@@ -16,11 +16,14 @@ import {
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
 import { taskInstanceToListItem } from '@/components/tasks/taskAdapters';
 import { syncChallengeProgressForTaskInstance } from '@/components/challenges/challengeDb';
+import { rollbackScriptureCheckpointForTaskInstance } from '@/components/scripture/scriptureCheckpointDb';
 import type { TaskDefinition, TaskDraft, TaskInstance, TaskListItem } from '@/components/tasks/taskTypes';
 
 type TaskContextValue = {
   ready: boolean;
   selectedDate: string;
+  taskDataDate: string;
+  isDateLoading: boolean;
   tasks: TaskDefinition[];
   instances: TaskInstance[];
   listItems: TaskListItem[];
@@ -40,8 +43,11 @@ export function TaskProvider({ children }: PropsWithChildren) {
   const [ready, setReady] = useState(false);
   const initialDate = useMemo(() => getLocalDateKey(), []);
   const selectedDateRef = useRef(initialDate);
+  const taskDataDateRef = useRef(initialDate);
   const refreshSeqRef = useRef(0);
   const [selectedDate, setSelectedDate] = useState(initialDate);
+  const [taskDataDate, setTaskDataDate] = useState(initialDate);
+  const [isDateLoading, setIsDateLoading] = useState(false);
   const [tasks, setTasks] = useState<TaskDefinition[]>([]);
   const [instances, setInstances] = useState<TaskInstance[]>([]);
 
@@ -51,6 +57,8 @@ export function TaskProvider({ children }: PropsWithChildren) {
     refreshSeqRef.current = refreshSeq;
     selectedDateRef.current = targetDate;
     setSelectedDate(targetDate);
+    const dateWillChange = targetDate !== taskDataDateRef.current;
+    if (dateWillChange) setIsDateLoading(true);
     await cleanupLegacyDemoHabitTasks();
     await ensureTaskInstancesForDate(targetDate);
     await markDueTaskInstancesMissed();
@@ -59,8 +67,11 @@ export function TaskProvider({ children }: PropsWithChildren) {
       listTaskInstancesForDate(targetDate),
     ]);
     if (refreshSeq !== refreshSeqRef.current) return;
+    taskDataDateRef.current = targetDate;
     setTasks(nextTasks);
     setInstances(nextInstances);
+    setTaskDataDate(targetDate);
+    setIsDateLoading(false);
     setReady(true);
   }, []);
 
@@ -72,6 +83,7 @@ export function TaskProvider({ children }: PropsWithChildren) {
 
     boot().catch(error => {
       console.warn('Task backend refresh failed:', error);
+      setIsDateLoading(false);
       setReady(true);
     });
   }, [refresh]);
@@ -118,7 +130,10 @@ export function TaskProvider({ children }: PropsWithChildren) {
   const resetInstance = useCallback(async (instanceId: string, refreshDate?: string) => {
     if (refreshDate) await ensureTaskInstancesForDate(refreshDate);
     const updated = await setTaskInstanceStatus(instanceId, 'pending');
-    if (updated) await syncChallengeProgressForTaskInstance(instanceId, 'pending');
+    if (updated) {
+      await syncChallengeProgressForTaskInstance(instanceId, 'pending');
+      await rollbackScriptureCheckpointForTaskInstance(instanceId);
+    }
     await refresh(refreshDate);
   }, [refresh]);
 
@@ -147,6 +162,8 @@ export function TaskProvider({ children }: PropsWithChildren) {
   const value = useMemo<TaskContextValue>(() => ({
     ready,
     selectedDate,
+    taskDataDate,
+    isDateLoading,
     tasks,
     instances,
     listItems,
@@ -161,6 +178,8 @@ export function TaskProvider({ children }: PropsWithChildren) {
   }), [
     ready,
     selectedDate,
+    taskDataDate,
+    isDateLoading,
     tasks,
     instances,
     listItems,

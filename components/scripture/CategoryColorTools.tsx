@@ -1,13 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
-  StyleProp, ViewStyle,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  StyleProp,
+  ViewStyle,
 } from 'react-native';
 import { Pencil, X } from '@/components/icons/Icons';
 import {
   ColorCategory, getAnnotationColorHex, hexToRgba, HighlightColor,
 } from '@/constants/annotationColors';
 import { F } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 
 type CategoryChipPickerProps = {
   categories: ColorCategory[];

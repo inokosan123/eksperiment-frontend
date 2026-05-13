@@ -1,13 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  Pressable,
-  StyleSheet,
-  TextInput,
-} from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TextInput } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
@@ -47,6 +39,10 @@ import AnimatedSlider from './AnimatedSlider';
 import CustomizeJournalSheet from './CustomizeJournalSheet';
 import { useJournal } from './JournalContext';
 import type { JournalPromptAnswer } from './journalDb';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+import { useTasks } from '@/components/tasks/TaskProvider';
+import { buildInstanceId } from '@/components/tasks/taskScheduler';
+
 import {
   DEFAULT_SECTIONS,
   SECTION_META,
@@ -58,6 +54,7 @@ const BG = '#FAF7F0';
 const GOLD = '#C5A059';
 const CARD_BG = '#FFFFFF';
 const CARD_BORDER = '#EDE9E0';
+const GRATITUDE_TASK_ID = 'gratitude_daily_task';
 
 const WEEKDAYS_FULL = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 const MONTH_NAMES_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -186,46 +183,84 @@ function EmojiPicker<K extends 'mood' | 'energy'>({
 }) {
   return (
     <View style={ep.row}>
-      {items.map((item, i) => (
-        <Pressable
-          key={i}
-          style={({ pressed }) => [
-            ep.item,
-            selected === i && ep.itemActive,
-            pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] },
-          ]}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            onSelect(i);
-          }}
-        >
-          <NotoLottie kind={kind as any} name={item.name as any} size={44} selected={selected === i} />
-          <Text style={[ep.label, selected === i && ep.labelActive]}>{item.label}</Text>
-        </Pressable>
-      ))}
+      {items.map((item, i) => {
+        const isSelected = selected === i;
+        return (
+          <Pressable
+            key={i}
+            style={({ pressed }) => [
+              ep.item,
+              pressed && { opacity: 0.75, transform: [{ scale: 0.96 }] },
+            ]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onSelect(i);
+            }}
+          >
+            <View style={ep.emojiFrame}>
+              {isSelected && (
+                <Animated.View
+                  entering={FadeIn.duration(200)}
+                  exiting={FadeOut.duration(150)}
+                  style={ep.glowRing}
+                  pointerEvents="none"
+                />
+              )}
+              <NotoLottie kind={kind as any} name={item.name as any} size={44} selected={isSelected} />
+            </View>
+            <Text style={[ep.label, isSelected && ep.labelActive]} numberOfLines={1}>{item.label}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
 
 const ep = StyleSheet.create({
-  row:        { flexDirection: 'row', justifyContent: 'space-between' },
-  item:       { flex: 1, alignItems: 'center', paddingVertical: 6, paddingHorizontal: 2, borderRadius: 14, borderWidth: 1, borderColor: 'transparent' },
-  itemActive: { backgroundColor: '#FBF7EE', borderColor: '#F0E2B8' },
-  label:      { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4, color: C.textMuted, marginTop: 6, textTransform: 'uppercase' },
-  labelActive:{ color: GOLD },
+  row:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  item:       { flex: 1, alignItems: 'center', justifyContent: 'flex-start', paddingVertical: 4, paddingHorizontal: 2 },
+  emojiFrame: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
+  glowRing: {
+    position: 'absolute',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(197,160,89,0.10)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(197,160,89,0.42)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 6,
+  },
+  label:       { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4, color: C.textMuted, marginTop: 8, textTransform: 'uppercase', textAlign: 'center' },
+  labelActive: { color: GOLD },
 });
 
 // ────────────────────────────────────────────────────────────────────────────
 // Satisfaction
 // ────────────────────────────────────────────────────────────────────────────
 
-const SAT_LABELS = ['', 'Very Low', 'Very Low', 'Low', 'Low', 'Okay', 'Okay', 'Satisfied', 'Satisfied', 'Very Satisfied', 'Excellent'];
+// Each scale value (1-10) maps to a single band with a unique (label, color)
+// pair. Single source of truth — never let label and color drift apart again.
+type ScaleBand = { label: string; color: string };
+const SCALE_BANDS: ScaleBand[] = [
+  { label: '',                color: GOLD }, // index 0 placeholder (values are 1-10)
+  { label: 'Very Low',        color: '#DC2626' }, // 1
+  { label: 'Very Low',        color: '#DC2626' }, // 2
+  { label: 'Low',             color: '#D97706' }, // 3
+  { label: 'Low',             color: '#D97706' }, // 4
+  { label: 'Okay',            color: '#C5A059' }, // 5
+  { label: 'Okay',            color: '#C5A059' }, // 6
+  { label: 'Satisfied',       color: '#A8853C' }, // 7
+  { label: 'Satisfied',       color: '#A8853C' }, // 8
+  { label: 'Very Satisfied',  color: '#16A34A' }, // 9
+  { label: 'Excellent',       color: '#0F8C4E' }, // 10
+];
 
-function valueColor(v: number) {
-  if (v <= 2) return C.red;
-  if (v <= 4) return '#D97706';
-  if (v <= 7) return GOLD;
-  return '#16A34A';
+function bandFor(v: number): ScaleBand {
+  const i = Math.max(1, Math.min(10, Math.round(v)));
+  return SCALE_BANDS[i];
 }
 
 function clampScaleValue(value: unknown, fallback = 5) {
@@ -244,24 +279,27 @@ function sanitizeScaleValues(values: Record<string, number> | undefined) {
 
 function SatisfactionSection({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const safeValue = clampScaleValue(value, 7);
-  const color = valueColor(safeValue);
+  const { label, color } = bandFor(safeValue);
   return (
     <SectionCard>
       <View style={sat.head}>
         <Text style={sat.title}>How satisfied are you with yourself today?</Text>
-        <Text style={[sat.value, { color }]}>{safeValue}</Text>
+        <View style={sat.rightCol}>
+          <Text style={[sat.value, { color }]}>{safeValue}</Text>
+          <Text style={[sat.sub, { color }]} numberOfLines={1}>{label}</Text>
+        </View>
       </View>
       <AnimatedSlider value={safeValue} onChange={onChange} color={color} edgeLabels={{ left: '1', right: '10' }} />
-      <Text style={[sat.sub, { color }]}>{SAT_LABELS[safeValue]}</Text>
     </SectionCard>
   );
 }
 
 const sat = StyleSheet.create({
-  head:  { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12, columnGap: 12 },
-  title: { flex: 1, fontFamily: F.serifMedium, fontSize: 16, lineHeight: 21, color: C.text },
-  value: { fontFamily: F.serifSemiBold, fontSize: 28, lineHeight: 32 },
-  sub:   { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.5, textAlign: 'center', marginTop: 8 },
+  head:     { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14, columnGap: 12 },
+  title:    { flex: 1, fontFamily: F.serifMedium, fontSize: 16, lineHeight: 21, color: C.text, paddingTop: 4 },
+  rightCol: { alignItems: 'flex-end', minWidth: 72 },
+  value:    { fontFamily: F.serifSemiBold, fontSize: 32, lineHeight: 34, letterSpacing: -0.5 },
+  sub:      { fontFamily: F.serifMediumItalic, fontSize: 13, lineHeight: 16, marginTop: 2 },
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -276,22 +314,20 @@ function CustomScaleSection({
   onChange: (v: number) => void;
 }) {
   const safeValue = clampScaleValue(value);
-  const color = valueColor(safeValue);
-  const label = (section.customLabel || 'Custom Scale').toUpperCase();
+  const { color } = bandFor(safeValue);
+  const label = section.customLabel || 'Custom Scale';
   return (
     <SectionCard>
       <View style={sat.head}>
-        <Text style={[card.label, { marginBottom: 0, flex: 1 }]} numberOfLines={2}>{label}</Text>
-        <Text style={[sat.value, { color }]}>{safeValue}<Text style={cs.over}>/10</Text></Text>
+        <Text style={sat.title} numberOfLines={2}>{label}</Text>
+        <View style={sat.rightCol}>
+          <Text style={[sat.value, { color }]}>{safeValue}</Text>
+        </View>
       </View>
       <AnimatedSlider value={safeValue} onChange={onChange} color={color} edgeLabels={{ left: '1', right: '10' }} />
     </SectionCard>
   );
 }
-
-const cs = StyleSheet.create({
-  over: { fontFamily: F.serifMedium, fontSize: 16, color: C.textMuted },
-});
 
 // ────────────────────────────────────────────────────────────────────────────
 // Guided Prompts (CRUD)
@@ -521,26 +557,37 @@ const gp = StyleSheet.create({
 
 function GratitudeSection({ date, readOnly = false }: { date: string; readOnly?: boolean }) {
   const { gratitudeEntries, upsertGratitudeEntry, deleteGratitudeEntry } = useInnerTools();
+  const { completeInstance, resetInstance } = useTasks();
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState('');
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const todays = gratitudeEntries.filter(e => e.kind === 'daily' && e.date === date);
   const confirmingItem = confirmId ? todays.find(e => e.id === confirmId) : null;
+  const syncTaskCompletion = (nextEntries: typeof gratitudeEntries) => {
+    const count = nextEntries.filter(entry => entry.kind === 'daily' && entry.date === date).length;
+    const instanceId = buildInstanceId(GRATITUDE_TASK_ID, date);
+    void (count >= 3
+      ? completeInstance(instanceId, date)
+      : resetInstance(instanceId, date)
+    ).catch(() => {});
+  };
 
   const submit = () => {
     if (readOnly) return;
     const text = draft.trim();
     if (!text) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    upsertGratitudeEntry({
+    const nextEntry = {
       id: uid(),
       kind: 'daily',
       title: '',
       content: text,
       date,
       createdAt: Date.now(),
-    });
+    } as const;
+    upsertGratitudeEntry(nextEntry);
+    syncTaskCompletion([nextEntry, ...gratitudeEntries]);
     setDraft('');
     setAdding(false);
   };
@@ -555,6 +602,7 @@ function GratitudeSection({ date, readOnly = false }: { date: string; readOnly?:
     if (readOnly) return;
     if (!confirmId) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    syncTaskCompletion(gratitudeEntries.filter(entry => entry.id !== confirmId));
     deleteGratitudeEntry(confirmId);
     setConfirmId(null);
   };

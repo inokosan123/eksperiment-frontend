@@ -2,11 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import Reanimated, {
@@ -17,6 +15,8 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { ChevronDown, Clock, X } from '@/components/icons/Icons';
 import { F } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const DateTimePickerModule = Platform.OS === 'web' ? null : require('@react-native-community/datetimepicker');

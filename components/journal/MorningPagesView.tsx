@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Keyboard, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Keyboard, View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -10,6 +10,8 @@ import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/sh
 import { FormatState, RichTextEditor, RichTextEditorRef, RichToolbar } from '@/components/shared/RichTextEditor';
 import { useJournal } from '@/components/journal/JournalContext';
 import { countWords } from '@/components/journal/journalLogic';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 const BG = '#FAF7F0';
 const TARGET = 750;

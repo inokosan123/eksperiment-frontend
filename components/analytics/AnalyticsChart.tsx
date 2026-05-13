@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import Svg, { Defs, LinearGradient as SvgLinearGradient, Path, Stop, Line, Circle } from 'react-native-svg';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Path, Stop, Line, Circle, Text as SvgText } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronLeft, ChevronRight, Minus, TrendingDown, TrendingUp } from '@/components/icons/Icons';
 import {
@@ -16,6 +16,8 @@ import {
   type SourceFilter,
 } from '@/components/analytics/analyticsOverview';
 import { F } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 
 const PERIODS: { key: AnalyticsPeriod; label: string }[] = [
   { key: '1m', label: 'Monthly' },
@@ -32,11 +34,13 @@ const CRITERIA: { key: AnalyticsCriteria; label: string }[] = [
 ];
 
 const ACCENT = '#C5A059';
-const CHART_HEIGHT = 200;
-const CHART_PAD_LEFT = 30;
-const CHART_PAD_RIGHT = 12;
-const CHART_PAD_TOP = 8;
-const CHART_PAD_BOTTOM = 22;
+const CHART_HEIGHT = 222;
+const CHART_PAD_LEFT = 38;
+const CHART_PAD_RIGHT = 14;
+const CHART_PAD_TOP = 22;
+const CHART_PAD_BOTTOM = 26;
+const AXIS_LABEL_COLOR = '#A8A29E';
+const AXIS_LABEL_SIZE = 11;
 
 interface Props {
   snapshots: DailyAnalyticsSnapshot[];
@@ -286,6 +290,8 @@ function ChartArea({
   color: string;
   width: number;
 }) {
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+
   const innerW = width - CHART_PAD_LEFT - CHART_PAD_RIGHT;
   const innerH = CHART_HEIGHT - CHART_PAD_TOP - CHART_PAD_BOTTOM;
 
@@ -304,20 +310,41 @@ function ChartArea({
     y: CHART_PAD_TOP + innerH * (1 - (d[criteria] / (maxVal || 1))),
   }));
 
+  // Monotone cubic interpolation (Fritsch–Carlson tangents): guarantees the
+  // curve does not overshoot local extrema, so peaks never poke above the
+  // chart frame.
+  const yMin = CHART_PAD_TOP;
+  const yMax = CHART_PAD_TOP + innerH;
   const linePath = (() => {
     if (points.length === 0) return '';
     if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+    const n = points.length;
+    const dx: number[] = new Array(n - 1);
+    const slopes: number[] = new Array(n - 1);
+    for (let i = 0; i < n - 1; i++) {
+      dx[i] = points[i + 1].x - points[i].x;
+      slopes[i] = (points[i + 1].y - points[i].y) / dx[i];
+    }
+    const tan: number[] = new Array(n);
+    tan[0] = slopes[0];
+    tan[n - 1] = slopes[n - 2];
+    for (let i = 1; i < n - 1; i++) {
+      if (slopes[i - 1] * slopes[i] <= 0) {
+        tan[i] = 0; // local extremum — flat tangent kills overshoot
+      } else {
+        const w1 = 2 * dx[i] + dx[i - 1];
+        const w2 = dx[i] + 2 * dx[i - 1];
+        tan[i] = (w1 + w2) / (w1 / slopes[i - 1] + w2 / slopes[i]);
+      }
+    }
+    const clampY = (y: number) => Math.max(yMin, Math.min(yMax, y));
     let d = `M ${points[0].x} ${points[0].y}`;
-    for (let i = 0; i < points.length - 1; i++) {
-      const p0 = points[i - 1] ?? points[i];
-      const p1 = points[i];
-      const p2 = points[i + 1];
-      const p3 = points[i + 2] ?? p2;
-      const cp1x = p1.x + (p2.x - p0.x) / 6;
-      const cp1y = p1.y + (p2.y - p0.y) / 6;
-      const cp2x = p2.x - (p3.x - p1.x) / 6;
-      const cp2y = p2.y - (p3.y - p1.y) / 6;
-      d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+    for (let i = 0; i < n - 1; i++) {
+      const cp1x = points[i].x + dx[i] / 3;
+      const cp1y = clampY(points[i].y + (tan[i] * dx[i]) / 3);
+      const cp2x = points[i + 1].x - dx[i] / 3;
+      const cp2y = clampY(points[i + 1].y - (tan[i + 1] * dx[i]) / 3);
+      d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${points[i + 1].x} ${points[i + 1].y}`;
     }
     return d;
   })();
@@ -329,8 +356,33 @@ function ChartArea({
     return `${linePath} L ${last.x} ${baseY} L ${points[0].x} ${baseY} Z`;
   })();
 
-  // X labels — show every Nth depending on density
+  // Guard against stale selectedIdx when underlying data length changes
+  const safeSelected =
+    selectedIdx !== null && selectedIdx >= 0 && selectedIdx < data.length ? selectedIdx : null;
+
+  // Tooltip metrics — clamp to chart bounds so it never falls off the edge
+  const tooltipText =
+    safeSelected !== null
+      ? `${data[safeSelected].label} · ${
+          isPercentage ? `${data[safeSelected][criteria]}%` : data[safeSelected][criteria]
+        }`
+      : '';
+  const TOOLTIP_W = 110;
+  const TOOLTIP_H = 30;
+  const tooltipLeft =
+    safeSelected !== null
+      ? Math.max(
+          CHART_PAD_LEFT - 4,
+          Math.min(width - TOOLTIP_W - 4, points[safeSelected].x - TOOLTIP_W / 2),
+        )
+      : 0;
+  const tooltipTop =
+    safeSelected !== null
+      ? Math.max(2, points[safeSelected].y - TOOLTIP_H - 10)
+      : 0;
+
   return (
+    <View style={{ width, height: CHART_HEIGHT, position: 'relative' }}>
     <Svg width={width} height={CHART_HEIGHT}>
       <Defs>
         <SvgLinearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
@@ -339,7 +391,7 @@ function ChartArea({
         </SvgLinearGradient>
       </Defs>
 
-      {/* Y-axis grid */}
+      {/* Y-axis grid + labels */}
       {yTicks.map(t => {
         const y = CHART_PAD_TOP + innerH * (1 - t / (maxVal || 1));
         return (
@@ -353,6 +405,17 @@ function ChartArea({
               strokeWidth={1}
               strokeDasharray={t === 0 ? undefined : '3 4'}
             />
+            <SvgText
+              x={CHART_PAD_LEFT - 6}
+              y={y + AXIS_LABEL_SIZE / 3}
+              fontSize={AXIS_LABEL_SIZE}
+              fill={AXIS_LABEL_COLOR}
+              textAnchor="end"
+              fontFamily="System"
+              fontWeight="bold"
+            >
+              {isPercentage ? `${t}%` : String(t)}
+            </SvgText>
           </React.Fragment>
         );
       })}
@@ -363,22 +426,93 @@ function ChartArea({
       {/* Line */}
       {linePath !== '' && <Path d={linePath} stroke={color} strokeWidth={2.5} fill="none" />}
 
-      {/* Last data point dot */}
-      {points.length > 0 && (
-        <Circle
-          cx={points[points.length - 1].x}
-          cy={points[points.length - 1].y}
-          r={4}
-          fill={color}
-          stroke="#FFFFFF"
-          strokeWidth={2}
-        />
-      )}
+      {/* Dots only — values revealed on tap (tooltip rendered as RN overlay below) */}
+      {points.map((p, i) => {
+        const isLast = i === points.length - 1;
+        const isSelected = i === safeSelected;
+        return (
+          <Circle
+            key={`pt-${i}`}
+            cx={p.x}
+            cy={p.y}
+            r={isSelected ? 5 : isLast ? 4 : 2.6}
+            fill={color}
+            stroke="#FFFFFF"
+            strokeWidth={isSelected ? 2.5 : isLast ? 2 : 1.5}
+          />
+        );
+      })}
 
-      {/* Y-axis labels (left) — react-native-svg supports Text but importing
-          it conflicts with rn Text. We render labels via View/Text overlay
-          for sharper rendering across iOS/Android. */}
+      {/* X-axis labels — adaptive density: dense data shows ~5 evenly spaced */}
+      {(() => {
+        if (data.length === 0) return null;
+        const maxLabels = 5;
+        let idxs: number[];
+        if (data.length <= maxLabels) {
+          idxs = data.map((_, i) => i);
+        } else {
+          idxs = Array.from({ length: maxLabels }, (_, k) =>
+            Math.round((k * (data.length - 1)) / (maxLabels - 1)),
+          );
+        }
+        const xAxisY = CHART_PAD_TOP + innerH + AXIS_LABEL_SIZE + 6;
+        return idxs.map(i => (
+          <SvgText
+            key={`xlabel-${i}`}
+            x={points[i].x}
+            y={xAxisY}
+            fontSize={AXIS_LABEL_SIZE}
+            fill={AXIS_LABEL_COLOR}
+            textAnchor={i === 0 ? 'start' : i === data.length - 1 ? 'end' : 'middle'}
+            fontFamily="System"
+            fontWeight="bold"
+          >
+            {data[i].label}
+          </SvgText>
+        ));
+      })()}
     </Svg>
+
+      {/* Tap hit-zones — one per point, larger than visible dot for easy tap */}
+      {points.map((p, i) => (
+        <Pressable
+          key={`tap-${i}`}
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setSelectedIdx(prev => (prev === i ? null : i));
+          }}
+          hitSlop={6}
+          style={{
+            position: 'absolute',
+            left: p.x - 16,
+            top: p.y - 16,
+            width: 32,
+            height: 32,
+          }}
+        />
+      ))}
+
+      {/* Tooltip — shown only when a dot is selected */}
+      {safeSelected !== null && (
+        <View
+          pointerEvents="none"
+          style={[
+            s.tooltip,
+            {
+              left: tooltipLeft,
+              top: tooltipTop,
+              width: TOOLTIP_W,
+              height: TOOLTIP_H,
+              borderColor: color,
+            },
+          ]}
+        >
+          <Text style={[s.tooltipText, { color }]} numberOfLines={1}>
+            {tooltipText}
+          </Text>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -398,7 +532,7 @@ const s = StyleSheet.create({
   },
   headerWrap: { paddingHorizontal: 16, rowGap: 10 },
   headerRow: { flexDirection: 'row', alignItems: 'center', columnGap: 6 },
-  headerKicker: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: ACCENT },
+  headerKicker: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 2.2, color: ACCENT },
 
   pillsRow: { columnGap: 6, paddingRight: 4, paddingBottom: 2 },
   pill: {
@@ -423,7 +557,7 @@ const s = StyleSheet.create({
     backgroundColor: '#1C1917',
     borderColor: '#1C1917',
   },
-  pillLabel: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 0.6, color: '#78716C' },
+  pillLabel: { fontFamily: F.sansBold, fontSize: 11.5, letterSpacing: 0.6, color: '#78716C' },
   pillLabelActive: { color: '#FFFFFF', letterSpacing: 0.8 },
   pillLabelInk: { color: '#FFFFFF' },
 
@@ -447,7 +581,7 @@ const s = StyleSheet.create({
   monthBtnDisabled: { opacity: 0.45 },
   monthLabel: {
     fontFamily: F.serifMedium,
-    fontSize: 14,
+    fontSize: 15,
     color: '#1A1714',
     minWidth: 130,
     textAlign: 'center',
@@ -463,9 +597,29 @@ const s = StyleSheet.create({
     borderRadius: 999,
   },
   badgeFlat: { backgroundColor: '#F5F5F4' },
-  badgeText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 0.4 },
+  badgeText: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 0.4 },
 
   chartWrap: { paddingTop: 14, paddingHorizontal: 4 },
   emptyChart: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { fontFamily: F.serifMediumItalic, fontSize: 14, color: '#A8A29E' },
+  emptyText: { fontFamily: F.serifMediumItalic, fontSize: 15, color: '#A8A29E' },
+
+  tooltip: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1C1917',
+    shadowOpacity: 0.12,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  tooltipText: {
+    fontFamily: F.sansBold,
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
 });

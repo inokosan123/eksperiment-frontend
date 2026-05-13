@@ -1,6 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +22,8 @@ import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/sh
 import { BIBLE_BOOKS, PSALMS_ID } from '@/constants/scripture';
 import { CategoryChipPicker, CategoryEditorModal } from './CategoryColorTools';
 import RichCommentText from '@/components/shared/RichCommentText';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 import {
   annotationLocation, ScriptureAnnotation, useScripture,
 } from './ScriptureContext';

@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
   type LayoutChangeEvent,
   type StyleProp,
@@ -18,6 +17,8 @@ import Reanimated, {
 import { CheckSmall } from '@/components/icons/Icons';
 import { CompletionFlourish } from '@/components/shared/taskAnimations';
 import { playTaskCompleteFeedback, playTaskUndoFeedback } from '@/components/shared/taskFeedback';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 const GOLD = '#C5A059';
 

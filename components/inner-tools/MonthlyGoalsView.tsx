@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,6 +15,8 @@ import { ChevronLeft, ChevronRight, Plus, Trash2 } from '@/components/icons/Icon
 import { useMonthlyGoals } from '@/components/inner-tools/MonthlyGoalsContext';
 import { AnimatedGoalCheck, AnimatedStrikeText, fireGoalToggleHaptic } from '@/components/inner-tools/MonthlyGoalRow';
 import { F } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 const BG = '#FAF7F0';
 const GOLD = '#C5A059';

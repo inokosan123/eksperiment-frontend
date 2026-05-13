@@ -1,16 +1,30 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import ReadingSessionView from '@/components/library/ReadingSessionView';
+import JesusPrayerTaskView from '@/components/prayer/JesusPrayerTaskView';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
 import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
 
-export default function ReadingSessionScreen() {
+function numberParam(value: string | undefined, fallback: number) {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export default function JesusPrayerScreen() {
   const router = useRouter();
   const { completeInstance } = useTasks();
-  const { bookId, title, author, isTask, taskInstanceId, taskDate } = useLocalSearchParams<{
-    bookId?: string;
-    title: string;
-    author?: string;
+  const {
+    title,
+    mode,
+    duration,
+    count,
+    isTask,
+    taskInstanceId,
+    taskDate,
+  } = useLocalSearchParams<{
+    title?: string;
+    mode?: string;
+    duration?: string;
+    count?: string;
     isTask?: string;
     taskInstanceId?: string;
     taskDate?: string;
@@ -19,19 +33,18 @@ export default function ReadingSessionScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <ReadingSessionView
-        bookId={bookId ?? null}
-        title={title ?? 'Reading Session'}
-        author={author}
+      <JesusPrayerTaskView
+        title={title}
+        mode={mode}
+        durationMinutes={numberParam(duration, 15)}
+        targetCount={numberParam(count, 100)}
         isTask={isTask === 'true'}
-        sessionDate={taskDate}
         onBack={() => router.back()}
         onComplete={async () => {
           if (taskInstanceId) {
             await completeInstance(taskInstanceId, taskDate ?? getLocalDateKey());
-            queueTaskCompletionReturnAnimation(taskInstanceId, 760);
+            queueTaskCompletionReturnAnimation(taskInstanceId, 300);
           }
-          return undefined;
         }}
       />
     </>

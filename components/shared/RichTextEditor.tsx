@@ -1,7 +1,9 @@
 import React, { forwardRef, useImperativeHandle, useRef } from 'react';
-import { StyleProp, StyleSheet, TouchableOpacity, View, ViewStyle, Text } from 'react-native';
+import { StyleProp, StyleSheet, View, ViewStyle, Text } from 'react-native';
 import WebView from 'react-native-webview';
 import { F, C } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 export type RichTextEditorRef = {
   bold: () => void;

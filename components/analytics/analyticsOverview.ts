@@ -24,6 +24,12 @@ export type AnalyticsHabit = {
   active: boolean;
 };
 
+export type AnalyticsTaskMeta = {
+  title: string;
+  source: TaskInstance['source'];
+  type: TaskType;
+};
+
 export type BalanceBucket = 'spiritual' | 'challenges' | 'other';
 
 export interface CountBucket {
@@ -39,12 +45,7 @@ export interface DailyAnalyticsSnapshot {
   day: number;
   overall: CountBucket;
   balance: Record<BalanceBucket, CountBucket>;
-  source: {
-    habits: CountBucket;
-    challenges: CountBucket;
-    routines: CountBucket;
-    quickTasks: CountBucket;
-  };
+  source: Record<AnalyticsSourceKey, CountBucket>;
   completionPct: number;
   perfectDay: boolean;
   activeDay: boolean;
@@ -55,12 +56,7 @@ export interface DailyAnalyticsSnapshot {
 export interface RangeAnalyticsSummary {
   overall: CountBucket;
   balance: Record<BalanceBucket, CountBucket>;
-  source: {
-    habits: CountBucket;
-    challenges: CountBucket;
-    routines: CountBucket;
-    quickTasks: CountBucket;
-  };
+  source: Record<AnalyticsSourceKey, CountBucket>;
   perfectDays: number;
   activeDays: number;
   avgDailyCompletion: number;
@@ -92,16 +88,35 @@ export interface AnalyticsOverviewData {
 export interface AnalyticsInput {
   taskInstances: TaskInstance[];
   habitIdByTaskId: Record<string, string>;
+  taskMetaById?: Record<string, AnalyticsTaskMeta>;
   habits: AnalyticsHabit[];
   challenges: ChallengeRecord[];
   minStartDate?: string;
   todayDate?: Date;
 }
 
-const SPIRITUAL_TYPES = new Set<TaskType>(['prayer', 'reading', 'church']);
+const SPIRITUAL_TYPES = new Set<TaskType>(['prayer', 'church']);
+export type AnalyticsSourceKey =
+  | 'habits'
+  | 'challenges'
+  | 'routineTasks'
+  | 'spiritualTasks'
+  | 'otherTasks'
+  | 'quickTasks';
 
 function emptyBucket(): CountBucket {
   return { scheduled: 0, completed: 0, skipped: 0, missed: 0, pct: 0 };
+}
+
+function emptySourceBuckets(): Record<AnalyticsSourceKey, CountBucket> {
+  return {
+    habits: emptyBucket(),
+    challenges: emptyBucket(),
+    routineTasks: emptyBucket(),
+    spiritualTasks: emptyBucket(),
+    otherTasks: emptyBucket(),
+    quickTasks: emptyBucket(),
+  };
 }
 
 function finalizeBucket(b: CountBucket): CountBucket {
@@ -147,19 +162,37 @@ export function getMonthLabel(monthKey: string): string {
     .format(new Date(y, m - 1, 1));
 }
 
-function getBalanceBucket(instance: TaskInstance): BalanceBucket {
-  if (instance.source === 'challenge') return 'challenges';
-  if (instance.source === 'reading_book') return 'spiritual';
-  if (instance.source === 'spiritual') return 'spiritual';
-  if (SPIRITUAL_TYPES.has(instance.type)) return 'spiritual';
+function getBalanceBucketForMeta(meta: Pick<TaskInstance, 'source' | 'type'>): BalanceBucket {
+  if (meta.source === 'challenge') return 'challenges';
+  if (meta.source === 'spiritual') return 'spiritual';
+  if (SPIRITUAL_TYPES.has(meta.type)) return 'spiritual';
   return 'other';
 }
 
-function getSourceFamily(instance: TaskInstance): 'habits' | 'challenges' | 'routines' | 'quickTasks' {
+function getSourceFamily(instance: Pick<TaskInstance, 'source' | 'type'>): AnalyticsSourceKey {
   if (instance.source === 'habit') return 'habits';
   if (instance.source === 'challenge') return 'challenges';
   if (instance.source === 'quick') return 'quickTasks';
-  return 'routines';
+  if (instance.source === 'spiritual') return 'spiritualTasks';
+  if (instance.source === 'gratitude' || instance.source === 'reading_book') return 'otherTasks';
+  if (instance.type === 'gratitude' || instance.type === 'reading') return 'otherTasks';
+  if (SPIRITUAL_TYPES.has(instance.type)) return 'spiritualTasks';
+  return 'routineTasks';
+}
+
+function getInstanceMeta(
+  instance: TaskInstance,
+  taskMetaById: Record<string, AnalyticsTaskMeta> = {},
+): Pick<TaskInstance, 'source' | 'type'> {
+  return taskMetaById[instance.taskId] ?? instance;
+}
+
+function getTaskTitle(
+  taskId: string,
+  fallback: string | undefined,
+  taskMetaById: Record<string, AnalyticsTaskMeta> = {},
+) {
+  return taskMetaById[taskId]?.title ?? fallback ?? 'Task';
 }
 
 function getEffectiveInstanceStatus(
@@ -186,6 +219,7 @@ function buildSnapshot(
   instances: TaskInstance[],
   referenceDate: Date,
   habitIdByTaskId: Record<string, string>,
+  taskMetaById: Record<string, AnalyticsTaskMeta> = {},
 ): DailyAnalyticsSnapshot {
   const overall = emptyBucket();
   const balance: Record<BalanceBucket, CountBucket> = {
@@ -193,29 +227,23 @@ function buildSnapshot(
     challenges: emptyBucket(),
     other: emptyBucket(),
   };
-  const source = {
-    habits: emptyBucket(),
-    challenges: emptyBucket(),
-    routines: emptyBucket(),
-    quickTasks: emptyBucket(),
-  };
+  const source = emptySourceBuckets();
   const byHabit: Record<string, CountBucket> = {};
   const byTaskId: Record<string, CountBucket> = {};
 
   for (const inst of instances) {
+    const meta = getInstanceMeta(inst, taskMetaById);
     addInstance(overall, inst, referenceDate);
-    const balanceKey = getBalanceBucket(inst);
+    const balanceKey = getBalanceBucketForMeta(meta);
     addInstance(balance[balanceKey], inst, referenceDate);
 
-    const sourceKey = getSourceFamily(inst);
+    const sourceKey = getSourceFamily(meta);
     addInstance(source[sourceKey], inst, referenceDate);
 
-    if (inst.source === 'habit') {
-      const habitId = habitIdByTaskId[inst.taskId];
-      if (habitId) {
-        byHabit[habitId] = byHabit[habitId] ?? emptyBucket();
-        addInstance(byHabit[habitId], inst, referenceDate);
-      }
+    const habitId = habitIdByTaskId[inst.taskId];
+    if (habitId) {
+      byHabit[habitId] = byHabit[habitId] ?? emptyBucket();
+      addInstance(byHabit[habitId], inst, referenceDate);
     }
 
     byTaskId[inst.taskId] = byTaskId[inst.taskId] ?? emptyBucket();
@@ -235,7 +263,9 @@ function buildSnapshot(
     source: {
       habits: finalizeBucket(source.habits),
       challenges: finalizeBucket(source.challenges),
-      routines: finalizeBucket(source.routines),
+      routineTasks: finalizeBucket(source.routineTasks),
+      spiritualTasks: finalizeBucket(source.spiritualTasks),
+      otherTasks: finalizeBucket(source.otherTasks),
       quickTasks: finalizeBucket(source.quickTasks),
     },
     completionPct: finalizedOverall.pct,
@@ -263,9 +293,7 @@ function summarizeSnapshots(snapshots: DailyAnalyticsSnapshot[]): RangeAnalytics
   const balance: Record<BalanceBucket, CountBucket> = {
     spiritual: emptyBucket(), challenges: emptyBucket(), other: emptyBucket(),
   };
-  const source = {
-    habits: emptyBucket(), challenges: emptyBucket(), routines: emptyBucket(), quickTasks: emptyBucket(),
-  };
+  const source = emptySourceBuckets();
 
   let perfectDays = 0;
   let activeDays = 0;
@@ -285,7 +313,9 @@ function summarizeSnapshots(snapshots: DailyAnalyticsSnapshot[]): RangeAnalytics
     (Object.keys(balance) as BalanceBucket[]).forEach(k => merge(balance[k], snap.balance[k]));
     merge(source.habits, snap.source.habits);
     merge(source.challenges, snap.source.challenges);
-    merge(source.routines, snap.source.routines);
+    merge(source.routineTasks, snap.source.routineTasks);
+    merge(source.spiritualTasks, snap.source.spiritualTasks);
+    merge(source.otherTasks, snap.source.otherTasks);
     merge(source.quickTasks, snap.source.quickTasks);
 
     if (snap.perfectDay) perfectDays++;
@@ -334,7 +364,9 @@ function summarizeSnapshots(snapshots: DailyAnalyticsSnapshot[]): RangeAnalytics
     source: {
       habits: finalizeBucket(source.habits),
       challenges: finalizeBucket(source.challenges),
-      routines: finalizeBucket(source.routines),
+      routineTasks: finalizeBucket(source.routineTasks),
+      spiritualTasks: finalizeBucket(source.spiritualTasks),
+      otherTasks: finalizeBucket(source.otherTasks),
       quickTasks: finalizeBucket(source.quickTasks),
     },
     perfectDays,
@@ -362,7 +394,13 @@ export function buildAnalyticsOverview(input: AnalyticsInput): AnalyticsOverview
   const dailySnapshots: DailyAnalyticsSnapshot[] = [];
   for (let cursor = startDate; cursor <= today; cursor = addDays(cursor, 1)) {
     const list = instancesByDate.get(cursor) ?? [];
-    dailySnapshots.push(buildSnapshot(cursor, list, referenceDate, input.habitIdByTaskId));
+    dailySnapshots.push(buildSnapshot(
+      cursor,
+      list,
+      referenceDate,
+      input.habitIdByTaskId,
+      input.taskMetaById,
+    ));
   }
 
   const global = summarizeSnapshots(dailySnapshots);
@@ -410,7 +448,7 @@ export interface ChartDataPoint {
 
 export type AnalyticsPeriod = '1m' | '3m' | '6m' | '1y';
 export type AnalyticsCriteria = 'completed' | 'skipped' | 'missed' | 'successRate';
-export type SourceFilter = 'all' | 'challenges' | 'habits' | 'routines' | 'quickTasks';
+export type SourceFilter = 'all' | AnalyticsSourceKey;
 
 function getSourceBucket(snap: DailyAnalyticsSnapshot, filter: SourceFilter): CountBucket {
   if (filter === 'all') return snap.overall;
@@ -645,6 +683,7 @@ export function getStreakLeaders(
   snapshots: DailyAnalyticsSnapshot[],
   filter: SourceFilter,
   taskInstances: TaskInstance[] = [],
+  taskMetaById: Record<string, AnalyticsTaskMeta> = {},
 ): {
   bestStreakEver: StreakLeader | null;
   worstStreakEver: StreakLeader | null;
@@ -696,14 +735,25 @@ export function getStreakLeaders(
     }
   }
 
-  if (filter === 'all' || filter === 'routines') {
-    const routineNames = new Map<string, string>();
+  if (
+    filter === 'all' ||
+    filter === 'routineTasks' ||
+    filter === 'spiritualTasks' ||
+    filter === 'otherTasks'
+  ) {
+    // Collect standalone taskIds by their analytics category.
+    const taskIds = new Set<string>();
     for (const inst of taskInstances) {
-      if (inst.source === 'habit' || inst.source === 'challenge' || inst.source === 'quick') continue;
-      routineNames.set(inst.taskId, inst.title);
+      const meta = getInstanceMeta(inst, taskMetaById);
+      if (meta.source === 'habit' || meta.source === 'challenge' || meta.source === 'quick') continue;
+      const sourceFamily = getSourceFamily(meta);
+      if (filter !== 'all' && sourceFamily !== filter) continue;
+      taskIds.add(inst.taskId);
     }
 
-    for (const [taskId, name] of routineNames) {
+    for (const taskId of taskIds) {
+      // Title pulled from definitions map (single source of truth).
+      const name = getTaskTitle(taskId, undefined, taskMetaById);
       const buckets = snapshots.map(s => s.byTaskId[taskId] ?? emptyBucket());
       const totals = summarizeBuckets(buckets);
       if (totals.scheduled === 0) continue;
@@ -775,15 +825,9 @@ export function getPerChallengeBreakdown(
 export function getPerHabitBreakdown(
   habits: AnalyticsHabit[],
   snapshots: DailyAnalyticsSnapshot[],
-  taskInstances: TaskInstance[],
   habitIdByTaskId: Record<string, string>,
+  taskMetaById: Record<string, AnalyticsTaskMeta> = {},
 ): PerItemBreakdown[] {
-  // Per-task aggregation (subTasks) — group by taskId, but only for habit tasks.
-  const taskTitle = new Map<string, string>();
-  for (const inst of taskInstances) {
-    if (inst.source !== 'habit') continue;
-    taskTitle.set(inst.taskId, inst.title);
-  }
 
   return habits
     .map(h => {
@@ -801,7 +845,7 @@ export function getPerHabitBreakdown(
           const { current: cur, best: bst } = streakFromBuckets(taskBuckets);
           return {
             id: taskId,
-            name: taskTitle.get(taskId) ?? 'Task',
+            name: getTaskTitle(taskId, undefined, taskMetaById),
             completed: stat.completed,
             scheduled: stat.scheduled,
             skipped: stat.skipped,
@@ -838,27 +882,37 @@ export function getPerHabitBreakdown(
     });
 }
 
-export function getPerRoutineBreakdown(
+export function getPerTaskCategoryBreakdown(
   taskInstances: TaskInstance[],
   snapshots: DailyAnalyticsSnapshot[],
-): { spiritual: PerItemBreakdown[]; other: PerItemBreakdown[] } {
+  taskMetaById: Record<string, AnalyticsTaskMeta> = {},
+): Record<'routineTasks' | 'spiritualTasks' | 'otherTasks', PerItemBreakdown[]> {
+  // Single pass to collect standalone taskIds + their type/source. Title comes
+  // from the definitions map (single source of truth) — avoids re-iterating
+  // thousands of instances just to read denormalized title snapshots.
   const taskMeta = new Map<string, {
-    name: string;
+    title?: string;
     type: TaskType;
     source: TaskInstance['source'];
   }>();
 
   for (const inst of taskInstances) {
-    if (inst.source === 'habit' || inst.source === 'challenge' || inst.source === 'quick') continue;
-    taskMeta.set(inst.taskId, {
-      name: inst.title,
-      type: inst.type,
-      source: inst.source,
-    });
+    const meta = taskMetaById[inst.taskId] ?? inst;
+    if (meta.source === 'habit' || meta.source === 'challenge' || meta.source === 'quick') continue;
+    if (!taskMeta.has(inst.taskId)) {
+      taskMeta.set(inst.taskId, {
+        title: taskMetaById[inst.taskId]?.title ?? inst.title,
+        type: meta.type,
+        source: meta.source,
+      });
+    }
   }
 
-  const spiritual: PerItemBreakdown[] = [];
-  const other: PerItemBreakdown[] = [];
+  const breakdown = {
+    routineTasks: [] as PerItemBreakdown[],
+    spiritualTasks: [] as PerItemBreakdown[],
+    otherTasks: [] as PerItemBreakdown[],
+  };
 
   for (const [taskId, meta] of taskMeta) {
     const buckets = snapshots.map(s => s.byTaskId[taskId] ?? emptyBucket());
@@ -867,7 +921,7 @@ export function getPerRoutineBreakdown(
     const { current: cur, best: bst } = streakFromBuckets(buckets);
     const item: PerItemBreakdown = {
       id: taskId,
-      name: meta.name,
+      name: getTaskTitle(taskId, meta.title, taskMetaById),
       completed: stat.completed,
       scheduled: stat.scheduled,
       skipped: stat.skipped,
@@ -876,15 +930,16 @@ export function getPerRoutineBreakdown(
       currentStreak: cur,
       bestStreak: bst,
     };
-    const isSpiritual = meta.source === 'spiritual'
-      || meta.source === 'reading_book'
-      || SPIRITUAL_TYPES.has(meta.type);
-    (isSpiritual ? spiritual : other).push(item);
+    const sourceFamily = getSourceFamily(meta);
+    if (sourceFamily === 'routineTasks' || sourceFamily === 'spiritualTasks' || sourceFamily === 'otherTasks') {
+      breakdown[sourceFamily].push(item);
+    }
   }
 
-  spiritual.sort((a, b) => b.pct - a.pct);
-  other.sort((a, b) => b.pct - a.pct);
-  return { spiritual, other };
+  breakdown.routineTasks.sort((a, b) => b.pct - a.pct);
+  breakdown.spiritualTasks.sort((a, b) => b.pct - a.pct);
+  breakdown.otherTasks.sort((a, b) => b.pct - a.pct);
+  return breakdown;
 }
 
 export function getQuickTaskHighlights(snapshots: DailyAnalyticsSnapshot[]): {

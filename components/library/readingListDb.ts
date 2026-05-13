@@ -476,6 +476,29 @@ export async function recordReadingSession(bookId: string | null, minutes: numbe
   await setTaskInstanceStatus(buildInstanceId(readingTaskId(bookId), targetDate), 'completed');
 }
 
+export async function syncReadingTaskCompletionsFromSessions(fromDate: string, toDate: string) {
+  await initReadingListDb();
+  const db = await openTaskDb();
+  const rows = await db.getAllAsync<{ book_id: string; session_date: string }>(
+    `SELECT book_id, session_date
+     FROM reading_sessions
+     WHERE session_date >= ? AND session_date <= ?
+     GROUP BY book_id, session_date`,
+    fromDate,
+    toDate,
+  );
+
+  let changed = 0;
+  for (const row of rows) {
+    const updated = await setTaskInstanceStatus(
+      buildInstanceId(readingTaskId(row.book_id), row.session_date),
+      'completed',
+    );
+    if (updated) changed += 1;
+  }
+  return changed;
+}
+
 export async function listReadingCategories() {
   await initReadingListDb();
   const db = await openTaskDb();

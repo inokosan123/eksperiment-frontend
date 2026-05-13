@@ -163,12 +163,13 @@ const s = StyleSheet.create({
   edgeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 4,
+    marginTop: 2,
+    paddingHorizontal: 2,
   },
   edgeText: {
-    fontFamily: F.sansBold,
-    fontSize: 11,
-    letterSpacing: 1,
-    color: '#A8A29E',
+    fontFamily: F.serifMediumItalic,
+    fontSize: 13,
+    lineHeight: 16,
+    color: '#B8AC97',
   },
 });

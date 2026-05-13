@@ -1,10 +1,12 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { ArrowLeft } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from './titleBar';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 type Props = {
   title: string;
@@ -21,12 +23,11 @@ export default function ScreenTitleBar({ title, showBack = false, rightElement, 
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  // On web insets.top = 0 — ensure minimum breathing room from top
   const topPad = getTitleBarTopPadding(insets.top);
+  const bottomPad = compactBottom ? 4 : TITLE_BAR_BOTTOM_PADDING;
 
   return (
-    <View style={[styles.wrap, { paddingTop: topPad, paddingBottom: compactBottom ? 4 : TITLE_BAR_BOTTOM_PADDING, backgroundColor: bg ?? C.bg }]}>
-      {/* Left — back button or spacer */}
+    <View style={[styles.wrap, { paddingTop: topPad, paddingBottom: bottomPad, backgroundColor: bg ?? C.bg }]}>
       <View style={styles.side}>
         {showBack && (
           <TouchableOpacity
@@ -44,13 +45,11 @@ export default function ScreenTitleBar({ title, showBack = false, rightElement, 
         )}
       </View>
 
-      {/* Center — title + optional subtitle */}
       <View style={styles.titleWrap}>
         <Text style={[styles.title, titleSize ? { fontSize: titleSize } : null]}>{title}</Text>
         {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
       </View>
 
-      {/* Right — optional element or spacer */}
       <View style={styles.side}>
         {rightElement}
       </View>

@@ -2,12 +2,10 @@ import React, { useMemo, useState } from 'react';
 import {
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
@@ -39,6 +37,8 @@ import {
   todayKey,
 } from './bigEventsLogic';
 import type { BigEvent } from './bigEventsDb';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 
 const DateTimePickerModule = Platform.OS === 'web' ? null : require('@react-native-community/datetimepicker');
 const NativeDateTimePicker = DateTimePickerModule?.default ?? null;

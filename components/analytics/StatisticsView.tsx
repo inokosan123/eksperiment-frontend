@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
@@ -17,7 +17,7 @@ import HighlightCards, { QuickTaskHighlightCards } from '@/components/analytics/
 import {
   getPerChallengeBreakdown,
   getPerHabitBreakdown,
-  getPerRoutineBreakdown,
+  getPerTaskCategoryBreakdown,
   getQuickTaskHighlights,
   getStreakLeaders,
   type CountBucket,
@@ -26,22 +26,26 @@ import {
 } from '@/components/analytics/analyticsOverview';
 import { useAnalytics } from '@/components/analytics/useAnalytics';
 import { F } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 const BG = '#FAF7F0';
 const GOLD = '#C5A059';
 
-type FilterTab = 'all' | 'challenges' | 'habits' | 'routines' | 'quickTasks';
+type FilterTab = SourceFilter;
 
 const TABS: { key: FilterTab; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'challenges', label: 'Challenges' },
   { key: 'habits', label: 'Habits' },
-  { key: 'routines', label: 'Routines' },
+  { key: 'routineTasks', label: 'Routine Tasks' },
+  { key: 'spiritualTasks', label: 'Spiritual Tasks' },
+  { key: 'otherTasks', label: 'Other Tasks' },
   { key: 'quickTasks', label: 'Quick Tasks' },
 ];
 
 export default function StatisticsView() {
-  const { ready, overview, instances, habits, habitIdByTaskId, challenges } = useAnalytics();
+  const { ready, overview, instances, habits, habitIdByTaskId, taskMetaById, challenges } = useAnalytics();
   const [tab, setTab] = useState<FilterTab>('all');
 
   const sourceFilter: SourceFilter = tab;
@@ -54,8 +58,8 @@ export default function StatisticsView() {
 
   const streakLeaders = useMemo(() => {
     if (!overview) return null;
-    return getStreakLeaders(challenges, habits, overview.dailySnapshots, sourceFilter, instances);
-  }, [overview, challenges, habits, sourceFilter, instances]);
+    return getStreakLeaders(challenges, habits, overview.dailySnapshots, sourceFilter, instances, taskMetaById);
+  }, [overview, challenges, habits, sourceFilter, instances, taskMetaById]);
 
   const quickHighlights = useMemo(() => {
     if (!overview) return null;
@@ -69,17 +73,17 @@ export default function StatisticsView() {
 
   const habitBreakdown = useMemo(() => {
     if (!overview) return [];
-    return getPerHabitBreakdown(habits, overview.dailySnapshots, instances, habitIdByTaskId);
-  }, [overview, habits, instances, habitIdByTaskId]);
+    return getPerHabitBreakdown(habits, overview.dailySnapshots, habitIdByTaskId, taskMetaById);
+  }, [overview, habits, habitIdByTaskId, taskMetaById]);
 
-  const routineBreakdown = useMemo(() => {
-    if (!overview) return { spiritual: [], other: [] };
-    return getPerRoutineBreakdown(instances, overview.dailySnapshots);
-  }, [overview, instances]);
+  const taskCategoryBreakdown = useMemo(() => {
+    if (!overview) return { routineTasks: [], spiritualTasks: [], otherTasks: [] };
+    return getPerTaskCategoryBreakdown(instances, overview.dailySnapshots, taskMetaById);
+  }, [overview, instances, taskMetaById]);
 
   return (
     <View style={s.screen}>
-      <ScreenTitleBar title="ANALYTICS" showBack bg={BG} titleSize={18} />
+      <ScreenTitleBar title="ANALYTICS" showBack bg={BG} />
 
       {/* Tab strip */}
       <View style={s.tabsWrap}>
@@ -150,7 +154,9 @@ export default function StatisticsView() {
               <CategorySection
                 challengesPct={overview.global.source.challenges.pct}
                 habitsPct={overview.global.source.habits.pct}
-                routinesPct={overview.global.source.routines.pct}
+                routineTasksPct={overview.global.source.routineTasks.pct}
+                spiritualTasksPct={overview.global.source.spiritualTasks.pct}
+                otherTasksPct={overview.global.source.otherTasks.pct}
                 quickTasksPct={overview.global.source.quickTasks.pct}
                 onJump={key => setTab(key)}
               />
@@ -165,7 +171,32 @@ export default function StatisticsView() {
 
             {tab === 'habits' && <HabitBreakdownSection items={habitBreakdown} />}
 
-            {tab === 'routines' && <RoutineBreakdownSection {...routineBreakdown} />}
+            {tab === 'routineTasks' && (
+              <TaskBreakdownSection
+                title="ROUTINE TASKS"
+                items={taskCategoryBreakdown.routineTasks}
+                accent="#16A34A"
+                bg="#FFFFFF"
+              />
+            )}
+
+            {tab === 'spiritualTasks' && (
+              <TaskBreakdownSection
+                title="SPIRITUAL TASKS"
+                items={taskCategoryBreakdown.spiritualTasks}
+                accent={GOLD}
+                bg="#FFFBEB"
+              />
+            )}
+
+            {tab === 'otherTasks' && (
+              <TaskBreakdownSection
+                title="OTHER TASKS"
+                items={taskCategoryBreakdown.otherTasks}
+                accent="#374151"
+                bg="#FFFFFF"
+              />
+            )}
 
             {tab === 'quickTasks' && (
               <QuickTaskOverview
@@ -223,13 +254,17 @@ function Stat({ value, label, color }: { value: number; label: string; color: st
 function CategorySection({
   challengesPct,
   habitsPct,
-  routinesPct,
+  routineTasksPct,
+  spiritualTasksPct,
+  otherTasksPct,
   quickTasksPct,
   onJump,
 }: {
   challengesPct: number;
   habitsPct: number;
-  routinesPct: number;
+  routineTasksPct: number;
+  spiritualTasksPct: number;
+  otherTasksPct: number;
   quickTasksPct: number;
   onJump: (key: FilterTab) => void;
 }) {
@@ -242,7 +277,9 @@ function CategorySection({
       <View style={{ rowGap: 8 }}>
         <CategoryRow label="Challenges" pct={challengesPct} accent={GOLD} onPress={() => onJump('challenges')} />
         <CategoryRow label="Habits" pct={habitsPct} accent="#2563EB" onPress={() => onJump('habits')} />
-        <CategoryRow label="Routines" pct={routinesPct} accent="#16A34A" onPress={() => onJump('routines')} />
+        <CategoryRow label="Routine Tasks" pct={routineTasksPct} accent="#16A34A" onPress={() => onJump('routineTasks')} />
+        <CategoryRow label="Spiritual Tasks" pct={spiritualTasksPct} accent={GOLD} onPress={() => onJump('spiritualTasks')} />
+        <CategoryRow label="Other Tasks" pct={otherTasksPct} accent="#374151" onPress={() => onJump('otherTasks')} />
         <CategoryRow label="Quick Tasks" pct={quickTasksPct} accent="#D97706" onPress={() => onJump('quickTasks')} />
       </View>
     </View>
@@ -437,21 +474,24 @@ function MiniStat({
 
 /* ─── Section: Routines ─── */
 
-function RoutineBreakdownSection({
-  spiritual,
-  other,
+function TaskBreakdownSection({
+  title,
+  items,
+  accent,
+  bg,
 }: {
-  spiritual: PerItemBreakdown[];
-  other: PerItemBreakdown[];
+  title: string;
+  items: PerItemBreakdown[];
+  accent: string;
+  bg: string;
 }) {
   return (
     <View style={{ rowGap: 8 }}>
       <View style={section.head}>
-        <CheckSmall s={14} c={GOLD} w={2.4} />
-        <Text style={section.kicker}>ROUTINE TASKS</Text>
+        <CheckSmall s={14} c={accent} w={2.4} />
+        <Text style={[section.kicker, { color: accent }]}>{title}</Text>
       </View>
-      <RoutineGroupCard title="Spiritual" items={spiritual} accent={GOLD} bg="#FFFBEB" />
-      <RoutineGroupCard title="Other" items={other} accent="#374151" bg="#FFFFFF" />
+      <RoutineGroupCard title={title} items={items} accent={accent} bg={bg} />
     </View>
   );
 }
@@ -554,7 +594,7 @@ const s = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
-  tabLabel: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 0.6, color: '#78716C' },
+  tabLabel: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 0.6, color: '#78716C' },
   tabLabelActive: { color: '#FFFFFF', letterSpacing: 0.8 },
   content: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 80, rowGap: 14 },
 });
@@ -583,10 +623,10 @@ const hs = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  circlePct: { fontFamily: F.serifSemiBold, fontSize: 22, color: GOLD },
+  circlePct: { fontFamily: F.serifSemiBold, fontSize: 24, color: GOLD },
   stats: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', columnGap: 4 },
-  statValue: { fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 21 },
-  statLabel: { marginTop: 4, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.9, color: '#A8A29E' },
+  statValue: { fontFamily: F.serifSemiBold, fontSize: 20, lineHeight: 23 },
+  statLabel: { marginTop: 4, fontFamily: F.sansBold, fontSize: 11, letterSpacing: 0.9, color: '#A8A29E' },
   bar: {
     marginTop: 14,
     height: 6,
@@ -598,7 +638,7 @@ const hs = StyleSheet.create({
   summary: {
     marginTop: 8,
     fontFamily: F.sans,
-    fontSize: 11,
+    fontSize: 13,
     color: '#A8A29E',
     textAlign: 'center',
   },
@@ -618,7 +658,7 @@ const cs = StyleSheet.create({
     elevation: 1,
   },
   head: { flexDirection: 'row', alignItems: 'center', columnGap: 6, marginBottom: 12 },
-  kicker: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: GOLD },
+  kicker: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 2.2, color: GOLD },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -630,7 +670,7 @@ const cs = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F0EDE6',
   },
-  rowLabel: { fontFamily: F.serifMedium, fontSize: 14, color: '#1A1714' },
+  rowLabel: { fontFamily: F.serifMedium, fontSize: 15, color: '#1A1714' },
   rowBar: {
     marginTop: 6,
     height: 6,
@@ -639,7 +679,7 @@ const cs = StyleSheet.create({
     overflow: 'hidden',
   },
   rowBarFill: { height: '100%', borderRadius: 3 },
-  rowPct: { fontFamily: F.serifSemiBold, fontSize: 16 },
+  rowPct: { fontFamily: F.serifSemiBold, fontSize: 17 },
 });
 
 const section = StyleSheet.create({
@@ -649,7 +689,7 @@ const section = StyleSheet.create({
     columnGap: 6,
     paddingHorizontal: 4,
   },
-  kicker: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: GOLD },
+  kicker: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 2.2, color: GOLD },
   empty: {
     borderRadius: 18,
     borderWidth: 1,
@@ -658,7 +698,7 @@ const section = StyleSheet.create({
     paddingVertical: 28,
     alignItems: 'center',
   },
-  emptyText: { fontFamily: F.serifMediumItalic, fontSize: 14, color: '#A8A29E' },
+  emptyText: { fontFamily: F.serifMediumItalic, fontSize: 15, color: '#A8A29E' },
 });
 
 const ch = StyleSheet.create({
@@ -687,7 +727,7 @@ const ch = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  title: { fontFamily: F.serifMedium, fontSize: 14, color: '#1A1714' },
+  title: { fontFamily: F.serifMedium, fontSize: 15, color: '#1A1714' },
   bar: {
     marginTop: 6,
     height: 5,
@@ -696,7 +736,7 @@ const ch = StyleSheet.create({
     overflow: 'hidden',
   },
   barFill: { height: '100%', borderRadius: 3, backgroundColor: GOLD },
-  pct: { fontFamily: F.serifSemiBold, fontSize: 16, color: GOLD },
+  pct: { fontFamily: F.serifSemiBold, fontSize: 17, color: GOLD },
   expanded: {
     borderTopWidth: 1,
     borderTopColor: 'rgba(197,160,89,0.20)',
@@ -709,8 +749,8 @@ const ch = StyleSheet.create({
     rowGap: 8,
   },
   expandStat: { width: '46%', alignItems: 'center' },
-  expandLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.6, color: '#A8A29E' },
-  expandValue: { marginTop: 4, fontFamily: F.serifMedium, fontSize: 14 },
+  expandLabel: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.6, color: '#A8A29E' },
+  expandValue: { marginTop: 4, fontFamily: F.serifMedium, fontSize: 15 },
 });
 
 const hb = StyleSheet.create({
@@ -728,7 +768,7 @@ const hb = StyleSheet.create({
     paddingHorizontal: 13,
     paddingVertical: 11,
   },
-  title: { fontFamily: F.serifMedium, fontSize: 14, color: '#1A1714' },
+  title: { fontFamily: F.serifMedium, fontSize: 15, color: '#1A1714' },
   bar: {
     marginTop: 6,
     height: 5,
@@ -737,7 +777,7 @@ const hb = StyleSheet.create({
     overflow: 'hidden',
   },
   barFill: { height: '100%', borderRadius: 3 },
-  pct: { fontFamily: F.serifSemiBold, fontSize: 16 },
+  pct: { fontFamily: F.serifSemiBold, fontSize: 17 },
   expanded: {
     borderTopWidth: 1,
     borderTopColor: '#F0EDE6',
@@ -745,7 +785,7 @@ const hb = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: '#FAFAF9',
   },
-  expandedKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.6, color: '#A8A29E' },
+  expandedKicker: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.6, color: '#A8A29E' },
   statsGrid: {
     marginTop: 8,
     flexDirection: 'row',
@@ -759,8 +799,8 @@ const hb = StyleSheet.create({
     padding: 10,
   },
   subTaskHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', columnGap: 8 },
-  subTaskTitle: { flex: 1, fontFamily: F.serifMedium, fontSize: 12, color: '#1A1714' },
-  subTaskPct: { fontFamily: F.serifSemiBold, fontSize: 13 },
+  subTaskTitle: { flex: 1, fontFamily: F.serifMedium, fontSize: 14, color: '#1A1714' },
+  subTaskPct: { fontFamily: F.serifSemiBold, fontSize: 14 },
   subTaskGrid: { marginTop: 8, flexDirection: 'row', columnGap: 4 },
 });
 
@@ -775,10 +815,10 @@ const ms = StyleSheet.create({
     alignItems: 'center',
   },
   tileSmall: { paddingVertical: 6 },
-  value: { fontFamily: F.serifSemiBold, fontSize: 13 },
-  valueSmall: { fontSize: 12 },
-  label: { marginTop: 2, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.4, color: '#A8A29E' },
-  labelSmall: { fontSize: 7 },
+  value: { fontFamily: F.serifSemiBold, fontSize: 14 },
+  valueSmall: { fontSize: 13 },
+  label: { marginTop: 2, fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#A8A29E' },
+  labelSmall: { fontSize: 10 },
 });
 
 const rg = StyleSheet.create({
@@ -789,11 +829,11 @@ const rg = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  title: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, color: '#78716C' },
-  empty: { marginTop: 8, fontFamily: F.serifMediumItalic, fontSize: 13, color: '#A8A29E' },
+  title: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 2, color: '#78716C' },
+  empty: { marginTop: 8, fontFamily: F.serifMediumItalic, fontSize: 14, color: '#A8A29E' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', columnGap: 8 },
-  rowName: { flex: 1, fontFamily: F.serifMedium, fontSize: 14, color: '#1A1714' },
-  rowPct: { fontFamily: F.serifSemiBold, fontSize: 14 },
+  rowName: { flex: 1, fontFamily: F.serifMedium, fontSize: 15, color: '#1A1714' },
+  rowPct: { fontFamily: F.serifSemiBold, fontSize: 15 },
 });
 
 const qt = StyleSheet.create({
@@ -818,6 +858,6 @@ const qt = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
   },
-  tileLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.6, color: '#A8A29E' },
-  tileValue: { marginTop: 6, fontFamily: F.serifMedium, fontSize: 20, color: '#1A1714' },
+  tileLabel: { fontFamily: F.sansBold, fontSize: 11.5, letterSpacing: 1.6, color: '#A8A29E' },
+  tileValue: { marginTop: 6, fontFamily: F.serifMedium, fontSize: 22, color: '#1A1714' },
 });

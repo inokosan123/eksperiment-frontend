@@ -8,6 +8,13 @@ import type {
   ChallengeStatus,
 } from '@/components/challenges/challengeData';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
+import {
+  getScriptureChallengeProgressUnit,
+  getScriptureChallengeTotal,
+  getScriptureChallengeUnitLabel,
+  getScriptureChallengeUnits,
+  type ScriptureChallengeUnit,
+} from '@/components/scripture/scriptureChallengePlan';
 
 type ChallengeRow = {
   id: string;
@@ -85,6 +92,43 @@ type DailyStatusRow = {
   challenge_id: string;
   date: string;
   status: 'completed' | 'skipped' | 'pending';
+};
+
+type ScriptureSessionRow = {
+  instance_id: string;
+  challenge_id: string;
+  date: string;
+  start_unit_index: number;
+  read_units: number;
+  target_units: number;
+  completed: number;
+  created_at: number;
+  updated_at: number;
+};
+
+export type ScriptureChallengeReaderSession = {
+  instanceId: string;
+  taskId: string;
+  date: string;
+  challenge: ChallengeRecord;
+  allUnits: ScriptureChallengeUnit[];
+  plannedUnits: ScriptureChallengeUnit[];
+  startUnitIndex: number;
+  targetUnits: number;
+  progressBefore: number;
+  progressTotal: number;
+  progressUnit: string;
+  unitLabel: string;
+  existingReadUnits: number;
+};
+
+export type ScriptureChallengeSessionResult = {
+  challengeId: string;
+  progressBefore: number;
+  progressAfter: number;
+  progressTotal: number;
+  readUnits: number;
+  completed: boolean;
 };
 
 let initPromise: Promise<void> | null = null;
@@ -223,8 +267,22 @@ export async function initChallengeDb(db?: SQLite.SQLiteDatabase) {
           FOREIGN KEY (challenge_id) REFERENCES challenges(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS challenge_scripture_sessions (
+          instance_id TEXT PRIMARY KEY,
+          challenge_id TEXT NOT NULL,
+          date TEXT NOT NULL,
+          start_unit_index INTEGER NOT NULL DEFAULT 0,
+          read_units INTEGER NOT NULL DEFAULT 0,
+          target_units INTEGER NOT NULL DEFAULT 0,
+          completed INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY (challenge_id) REFERENCES challenges(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_challenges_status ON challenges(status, started_at DESC);
         CREATE INDEX IF NOT EXISTS idx_challenge_daily_status ON challenge_daily_status(date, status);
+        CREATE INDEX IF NOT EXISTS idx_challenge_scripture_sessions ON challenge_scripture_sessions(challenge_id, date);
       `);
     })();
   }
@@ -477,6 +535,7 @@ export async function saveChallengeRecord(record: ChallengeRecord) {
 export async function deleteChallengeRecord(challengeId: string) {
   const db = await openChallengeDb();
   await db.runAsync('DELETE FROM challenge_daily_status WHERE challenge_id = ?', challengeId);
+  await db.runAsync('DELETE FROM challenge_scripture_sessions WHERE challenge_id = ?', challengeId);
   await db.runAsync('DELETE FROM challenge_scripture_day_times WHERE challenge_id = ?', challengeId);
   await db.runAsync('DELETE FROM challenge_scripture_config WHERE challenge_id = ?', challengeId);
   await db.runAsync('DELETE FROM challenge_prayer_day_times WHERE challenge_id = ?', challengeId);
@@ -559,6 +618,68 @@ function recalcStreak(rows: DailyStatusRow[]) {
   };
 }
 
+function clampProgress(value: number, total: number) {
+  if (total <= 0) return Math.max(0, value);
+  return Math.max(0, Math.min(total, value));
+}
+
+function legacyScriptureProgressOffset(record: ChallengeRecord) {
+  const total = getScriptureChallengeTotal(record);
+  if (record.progressUnit === 'days') {
+    const chaptersPerDay = Math.max(1, record.scriptureConfig?.chaptersPerDay ?? 1);
+    return clampProgress(record.progressCurrent * chaptersPerDay, total);
+  }
+  return clampProgress(record.progressCurrent, total);
+}
+
+function sumScriptureReadUnits(rows: ScriptureSessionRow[]) {
+  return rows.reduce((sum, row) => sum + Math.max(0, row.read_units), 0);
+}
+
+function scriptureRowsProgress(rows: ScriptureSessionRow[], total: number) {
+  const summed = sumScriptureReadUnits(rows);
+  const furthest = rows.reduce(
+    (max, row) => Math.max(max, row.start_unit_index + Math.max(0, row.read_units)),
+    0,
+  );
+  return clampProgress(Math.max(summed, furthest), total);
+}
+
+async function getScriptureSessionRows(db: SQLite.SQLiteDatabase, challengeId: string) {
+  return db.getAllAsync<ScriptureSessionRow>(
+    `SELECT instance_id, challenge_id, date, start_unit_index, read_units, target_units, completed, created_at, updated_at
+     FROM challenge_scripture_sessions
+     WHERE challenge_id = ?
+     ORDER BY date ASC, created_at ASC`,
+    challengeId,
+  );
+}
+
+function progressFromScriptureRows(record: ChallengeRecord, rows: ScriptureSessionRow[]) {
+  const total = getScriptureChallengeTotal(record);
+  if (rows.length > 0) return scriptureRowsProgress(rows, total);
+  return legacyScriptureProgressOffset(record);
+}
+
+function scriptureProgressCopy(record: ChallengeRecord, progress: number, completedAt?: string) {
+  const total = getScriptureChallengeTotal(record);
+  const unitLabel = getScriptureChallengeUnitLabel(record, progress || 2);
+
+  if (completedAt) {
+    return {
+      headline: `Completed ${total || progress} ${unitLabel}`,
+      subline: 'Challenge completed',
+    };
+  }
+
+  const units = getScriptureChallengeUnits(record);
+  const nextUnit = total > 0 ? units[Math.min(progress, Math.max(0, total - 1))] : undefined;
+  return {
+    headline: total > 0 ? `${progress}/${total} ${unitLabel}` : 'Ready for Scripture',
+    subline: nextUnit ? `Next: ${nextUnit.ref}` : record.subline,
+  };
+}
+
 function progressCopy(record: ChallengeRecord, progress: number, completedAt?: string) {
   const total = record.progressTotal ?? record.durationDays ?? record.totalUnits ?? 0;
   if (completedAt) {
@@ -582,6 +703,320 @@ function progressCopy(record: ChallengeRecord, progress: number, completedAt?: s
   };
 }
 
+async function getTaskChallengeConfig(db: SQLite.SQLiteDatabase, taskId: string) {
+  return db.getFirstAsync<{ challenge_id: string; task_id: string }>(
+    'SELECT task_id, challenge_id FROM task_challenge_config WHERE task_id = ? LIMIT 1',
+    taskId,
+  );
+}
+
+async function getChallengeRecord(challengeId: string) {
+  return (await listChallengeRecords()).find(item => item.id === challengeId);
+}
+
+function scriptureSessionTarget(record: ChallengeRecord, startUnitIndex: number) {
+  const total = getScriptureChallengeTotal(record);
+  const remaining = Math.max(0, total - startUnitIndex);
+  const requested = Math.max(1, record.scriptureConfig?.chaptersPerDay ?? 1);
+  return Math.min(requested, remaining);
+}
+
+async function getScriptureStartIndex(
+  db: SQLite.SQLiteDatabase,
+  record: ChallengeRecord,
+  challengeId: string,
+  excludeInstanceId?: string,
+) {
+  const rows = await getScriptureSessionRows(db, challengeId);
+  const relevant = excludeInstanceId
+    ? rows.filter(row => row.instance_id !== excludeInstanceId)
+    : rows;
+  if (relevant.length > 0) {
+    return scriptureRowsProgress(relevant, getScriptureChallengeTotal(record));
+  }
+  return legacyScriptureProgressOffset(record);
+}
+
+export async function getScriptureChallengeReaderSession(
+  instanceId: string,
+): Promise<ScriptureChallengeReaderSession | null> {
+  const parsed = parseInstanceId(instanceId);
+  if (!parsed) return null;
+
+  const db = await openChallengeDb();
+  const config = await getTaskChallengeConfig(db, parsed.taskId);
+  if (!config) return null;
+
+  const challenge = await getChallengeRecord(config.challenge_id);
+  if (!challenge || challenge.category !== 'scripture') return null;
+
+  const allUnits = getScriptureChallengeUnits(challenge);
+  const progressTotal = getScriptureChallengeTotal(challenge);
+  if (!allUnits.length || progressTotal <= 0) return null;
+
+  const existing = await db.getFirstAsync<ScriptureSessionRow>(
+    `SELECT instance_id, challenge_id, date, start_unit_index, read_units, target_units, completed, created_at, updated_at
+     FROM challenge_scripture_sessions
+     WHERE instance_id = ?
+     LIMIT 1`,
+    instanceId,
+  );
+  const startUnitIndex = existing
+    ? clampProgress(existing.start_unit_index, progressTotal)
+    : await getScriptureStartIndex(db, challenge, config.challenge_id);
+  const targetUnits = existing?.target_units
+    ? Math.min(existing.target_units, Math.max(0, progressTotal - startUnitIndex))
+    : scriptureSessionTarget(challenge, startUnitIndex);
+  const plannedUnits = allUnits.slice(startUnitIndex, startUnitIndex + targetUnits);
+
+  return {
+    instanceId,
+    taskId: parsed.taskId,
+    date: parsed.date,
+    challenge,
+    allUnits,
+    plannedUnits,
+    startUnitIndex,
+    targetUnits,
+    progressBefore: startUnitIndex,
+    progressTotal,
+    progressUnit: getScriptureChallengeProgressUnit(challenge),
+    unitLabel: getScriptureChallengeUnitLabel(challenge, Math.max(1, targetUnits)),
+    existingReadUnits: existing?.read_units ?? 0,
+  };
+}
+
+export async function saveScriptureChallengeSessionProgress(
+  instanceId: string,
+  readUnits: number,
+): Promise<ScriptureChallengeSessionResult | null> {
+  const parsed = parseInstanceId(instanceId);
+  if (!parsed) return null;
+
+  const db = await openChallengeDb();
+  const config = await getTaskChallengeConfig(db, parsed.taskId);
+  if (!config) return null;
+
+  const challenge = await getChallengeRecord(config.challenge_id);
+  if (!challenge || challenge.category !== 'scripture') return null;
+
+  const total = getScriptureChallengeTotal(challenge);
+  if (total <= 0) return null;
+
+  const existing = await db.getFirstAsync<ScriptureSessionRow>(
+    `SELECT instance_id, challenge_id, date, start_unit_index, read_units, target_units, completed, created_at, updated_at
+     FROM challenge_scripture_sessions
+     WHERE instance_id = ?
+     LIMIT 1`,
+    instanceId,
+  );
+  const startUnitIndex = existing
+    ? clampProgress(existing.start_unit_index, total)
+    : await getScriptureStartIndex(db, challenge, config.challenge_id, instanceId);
+  const remaining = Math.max(0, total - startUnitIndex);
+  if (remaining <= 0) {
+    return {
+      challengeId: config.challenge_id,
+      progressBefore: startUnitIndex,
+      progressAfter: startUnitIndex,
+      progressTotal: total,
+      readUnits: 0,
+      completed: true,
+    };
+  }
+
+  const targetUnits = existing?.target_units && existing.target_units > 0
+    ? existing.target_units
+    : scriptureSessionTarget(challenge, startUnitIndex);
+  const boundedReadUnits = Math.min(remaining, Math.max(1, Math.round(readUnits)));
+  const now = Date.now();
+
+  await db.runAsync(
+    `INSERT OR REPLACE INTO challenge_scripture_sessions (
+      instance_id, challenge_id, date, start_unit_index, read_units, target_units,
+      completed, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM challenge_scripture_sessions WHERE instance_id = ?), ?), ?)`,
+    instanceId,
+    config.challenge_id,
+    parsed.date,
+    startUnitIndex,
+    boundedReadUnits,
+    Math.max(targetUnits, boundedReadUnits),
+    boundedReadUnits >= remaining ? 1 : 0,
+    instanceId,
+    now,
+    now,
+  );
+
+  const progressAfter = clampProgress(startUnitIndex + boundedReadUnits, total);
+  return {
+    challengeId: config.challenge_id,
+    progressBefore: startUnitIndex,
+    progressAfter,
+    progressTotal: total,
+    readUnits: boundedReadUnits,
+    completed: progressAfter >= total,
+  };
+}
+
+async function ensureDefaultScriptureSession(
+  db: SQLite.SQLiteDatabase,
+  instanceId: string,
+  date: string,
+  challenge: ChallengeRecord,
+  challengeId: string,
+) {
+  const existing = await db.getFirstAsync<{ instance_id: string }>(
+    'SELECT instance_id FROM challenge_scripture_sessions WHERE instance_id = ? LIMIT 1',
+    instanceId,
+  );
+  if (existing) return;
+
+  const startUnitIndex = await getScriptureStartIndex(db, challenge, challengeId, instanceId);
+  const total = getScriptureChallengeTotal(challenge);
+  const targetUnits = scriptureSessionTarget(challenge, startUnitIndex);
+  const readUnits = Math.min(targetUnits, Math.max(0, total - startUnitIndex));
+  if (readUnits <= 0) return;
+
+  const now = Date.now();
+  await db.runAsync(
+    `INSERT OR REPLACE INTO challenge_scripture_sessions (
+      instance_id, challenge_id, date, start_unit_index, read_units, target_units,
+      completed, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    instanceId,
+    challengeId,
+    date,
+    startUnitIndex,
+    readUnits,
+    targetUnits,
+    startUnitIndex + readUnits >= total ? 1 : 0,
+    now,
+    now,
+  );
+}
+
+async function updateTaskChallengeProgress(
+  db: SQLite.SQLiteDatabase,
+  taskId: string,
+  record: ChallengeRecord,
+  fromDate: string,
+) {
+  const subtitle = [
+    record.paceLabel,
+    record.progressTotal ? `${record.progressCurrent}/${record.progressTotal} ${record.progressUnit}` : null,
+  ].filter(Boolean).join(' - ') || record.scheduleLabel;
+
+  await db.runAsync(
+    'UPDATE tasks SET subtitle = ? WHERE id = ?',
+    subtitle,
+    taskId,
+  );
+  await db.runAsync(
+    `UPDATE task_challenge_config
+     SET progress_current = ?, progress_total = ?, progress_unit = ?
+     WHERE task_id = ?`,
+    record.progressCurrent,
+    record.progressTotal ?? 0,
+    record.progressUnit,
+    taskId,
+  );
+  await db.runAsync(
+    'UPDATE task_scripture_config SET total_units_read = ? WHERE task_id = ?',
+    record.progressCurrent,
+    taskId,
+  );
+  await db.runAsync(
+    `UPDATE task_instances
+     SET subtitle = ?
+     WHERE task_id = ? AND date >= ? AND status <> 'not_applicable'`,
+    subtitle,
+    taskId,
+    fromDate,
+  );
+}
+
+async function applyTaskLifecycleForChallengeCompletion(
+  db: SQLite.SQLiteDatabase,
+  taskId: string,
+  previousRecord: ChallengeRecord,
+  nextRecord: ChallengeRecord,
+  fallbackDate: string,
+) {
+  if (nextRecord.completedAt) {
+    await db.runAsync(
+      'UPDATE tasks SET status = ?, removed_at = ? WHERE id = ?',
+      'archived',
+      nextRecord.completedAt,
+      taskId,
+    );
+    await db.runAsync(
+      'UPDATE task_active_periods SET end_date = ? WHERE task_id = ? AND end_date IS NULL',
+      nextRecord.completedAt,
+      taskId,
+    );
+  } else if (previousRecord.status === 'completed' && nextRecord.status === 'active') {
+    await db.runAsync(
+      'UPDATE tasks SET status = ?, removed_at = NULL WHERE id = ?',
+      'active',
+      taskId,
+    );
+    await db.runAsync(
+      `INSERT INTO task_active_periods (task_id, start_date, activated_at)
+       SELECT ?, ?, ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM task_active_periods WHERE task_id = ? AND end_date IS NULL
+       )`,
+      taskId,
+      fallbackDate,
+      Date.now(),
+      taskId,
+    );
+  }
+}
+
+async function syncScriptureChallengeRecord(
+  db: SQLite.SQLiteDatabase,
+  taskId: string,
+  challengeId: string,
+  record: ChallengeRecord,
+  date: string,
+  emptySessionProgressFallback?: number,
+) {
+  const dailyRows = await db.getAllAsync<DailyStatusRow>(
+    'SELECT challenge_id, date, status FROM challenge_daily_status WHERE challenge_id = ? ORDER BY date ASC',
+    challengeId,
+  );
+  const sessionRows = await getScriptureSessionRows(db, challengeId);
+  const progressTotal = getScriptureChallengeTotal(record);
+  const progressCurrent = sessionRows.length > 0
+    ? progressFromScriptureRows(record, sessionRows)
+    : clampProgress(emptySessionProgressFallback ?? legacyScriptureProgressOffset(record), progressTotal);
+  const completedAt = progressTotal > 0 && progressCurrent >= progressTotal ? date : undefined;
+  const streak = recalcStreak(dailyRows);
+  const copy = scriptureProgressCopy(record, progressCurrent, completedAt);
+
+  const nextRecord: ChallengeRecord = {
+    ...record,
+    status: completedAt ? 'completed' : record.status === 'completed' ? 'active' : record.status,
+    progressCurrent,
+    progressTotal,
+    progressUnit: getScriptureChallengeProgressUnit(record),
+    totalUnits: progressTotal,
+    streak: streak.currentStreak,
+    bestStreak: Math.max(record.bestStreak ?? record.streak, streak.currentStreak),
+    lastCompletedDate: streak.lastCompletedDate,
+    completedAt,
+    endedLabel: completedAt ? `Completed ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(`${completedAt}T12:00:00`))}` : undefined,
+    headline: copy.headline,
+    subline: copy.subline,
+  };
+
+  await saveChallengeRecord(nextRecord);
+  await applyTaskLifecycleForChallengeCompletion(db, taskId, record, nextRecord, date);
+  await updateTaskChallengeProgress(db, taskId, nextRecord, date);
+}
+
 export async function syncChallengeProgressForTaskInstance(
   instanceId: string,
   nextStatus: 'pending' | 'completed' | 'skipped',
@@ -589,10 +1024,7 @@ export async function syncChallengeProgressForTaskInstance(
   const parsed = parseInstanceId(instanceId);
   if (!parsed) return;
   const db = await openChallengeDb();
-  const config = await db.getFirstAsync<{ challenge_id: string; task_id: string }>(
-    'SELECT task_id, challenge_id FROM task_challenge_config WHERE task_id = ? LIMIT 1',
-    parsed.taskId,
-  );
+  const config = await getTaskChallengeConfig(db, parsed.taskId);
   if (!config) return;
 
   const previous = await db.getFirstAsync<{ status: DailyStatusRow['status'] }>(
@@ -620,8 +1052,28 @@ export async function syncChallengeProgressForTaskInstance(
     );
   }
 
-  const record = (await listChallengeRecords()).find(item => item.id === config.challenge_id);
+  const record = await getChallengeRecord(config.challenge_id);
   if (!record) return;
+
+  if (record.category === 'scripture') {
+    let removedSessionProgress: number | undefined;
+    if (nextStatus === 'pending') {
+      const removedSession = await db.getFirstAsync<Pick<ScriptureSessionRow, 'start_unit_index'>>(
+        'SELECT start_unit_index FROM challenge_scripture_sessions WHERE instance_id = ? LIMIT 1',
+        instanceId,
+      );
+      removedSessionProgress = removedSession?.start_unit_index;
+      await db.runAsync(
+        'DELETE FROM challenge_scripture_sessions WHERE instance_id = ?',
+        instanceId,
+      );
+    } else if (nextStatus === 'completed') {
+      await ensureDefaultScriptureSession(db, instanceId, parsed.date, record, config.challenge_id);
+    }
+
+    await syncScriptureChallengeRecord(db, config.task_id, config.challenge_id, record, parsed.date, removedSessionProgress);
+    return;
+  }
 
   const dailyRows = await db.getAllAsync<DailyStatusRow>(
     'SELECT challenge_id, date, status FROM challenge_daily_status WHERE challenge_id = ? ORDER BY date ASC',
@@ -647,43 +1099,6 @@ export async function syncChallengeProgressForTaskInstance(
   };
 
   await saveChallengeRecord(nextRecord);
-  if (completedAt) {
-    await db.runAsync(
-      'UPDATE tasks SET status = ?, removed_at = ? WHERE id = ?',
-      'archived',
-      completedAt,
-      config.task_id,
-    );
-    await db.runAsync(
-      'UPDATE task_active_periods SET end_date = ? WHERE task_id = ? AND end_date IS NULL',
-      completedAt,
-      config.task_id,
-    );
-  } else if (record.status === 'completed' && nextRecord.status === 'active') {
-    await db.runAsync(
-      'UPDATE tasks SET status = ?, removed_at = NULL WHERE id = ?',
-      'active',
-      config.task_id,
-    );
-    await db.runAsync(
-      `INSERT INTO task_active_periods (task_id, start_date, activated_at)
-       SELECT ?, ?, ?
-       WHERE NOT EXISTS (
-         SELECT 1 FROM task_active_periods WHERE task_id = ? AND end_date IS NULL
-       )`,
-      config.task_id,
-      parsed.date,
-      Date.now(),
-      config.task_id,
-    );
-  }
-  await db.runAsync(
-    `UPDATE task_challenge_config
-     SET progress_current = ?, progress_total = ?, progress_unit = ?
-     WHERE task_id = ?`,
-    nextRecord.progressCurrent,
-    nextRecord.progressTotal ?? 0,
-    nextRecord.progressUnit,
-    config.task_id,
-  );
+  await applyTaskLifecycleForChallengeCompletion(db, config.task_id, record, nextRecord, parsed.date);
+  await updateTaskChallengeProgress(db, config.task_id, nextRecord, parsed.date);
 }

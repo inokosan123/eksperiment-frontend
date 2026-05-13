@@ -55,11 +55,12 @@ export function NotoLottie({ kind, name, size = 64, selected = false, style }: P
   }, [selected]);
 
   return (
-    <View style={[{ width: size, height: size }, style]}>
+    <View style={[{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }, style]}>
       <LottieView
         ref={lottieRef}
         source={source}
         style={{ width: size, height: size }}
+        resizeMode="contain"
         autoPlay={false}
         loop={false}
       />

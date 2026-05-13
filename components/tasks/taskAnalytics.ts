@@ -3,7 +3,7 @@
 // were intentionally dropped — they only existed to bridge a legacy event-log
 // table that doesn't exist in this RN app.
 
-import { listTaskInstancesBetween, syncTaskInstancesWindow } from './taskDb';
+import { listTaskInstancesForTaskBetween } from './taskDb';
 import { getLocalDateKey } from './taskScheduler';
 import type { TaskInstance } from './taskTypes';
 
@@ -58,8 +58,6 @@ function getInstanceState(instance: TaskInstance, referenceDate: Date): Analytic
   if (instance.status === 'skipped') return 'skipped';
   if (instance.status === 'missed') return 'missed';
   if (instance.status === 'not_applicable') return 'not_applicable';
-  const todayStr = getLocalDateKey(referenceDate);
-  if (instance.date === todayStr) return 'pending';
   return isDueTaskInstanceForAnalytics(instance, referenceDate) ? 'missed' : 'pending';
 }
 
@@ -151,12 +149,16 @@ function buildAnalyticsFromInstances(
 }
 
 export async function getTaskAnalytics(taskId: string): Promise<TaskAnalyticsData | null> {
+  // Skip syncTaskInstancesWindow — TaskProvider already keeps the window fresh
+  // when the user is interacting with tasks. `getInstanceState` below also
+  // applies the "virtual missed" rule in-memory for any pending-past-time rows
+  // so a stale DB doesn't produce incorrect counts here.
   const referenceDate = new Date();
-  await syncTaskInstancesWindow(referenceDate);
   const todayKey = getLocalDateKey(referenceDate);
   const fromKey = shiftDateKey(todayKey, -WINDOW_DAYS);
   const toKey = shiftDateKey(todayKey, FUTURE_DAYS);
-  const all = await listTaskInstancesBetween(fromKey, toKey);
-  const taskInstances = all.filter(inst => inst.taskId === taskId);
+  // Task-specific query — only rows for this task instead of pulling the whole
+  // window and filtering in memory.
+  const taskInstances = await listTaskInstancesForTaskBetween(taskId, fromKey, toKey);
   return buildAnalyticsFromInstances(taskInstances, referenceDate);
 }

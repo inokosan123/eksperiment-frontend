@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -18,7 +17,10 @@ import ConfirmModal from '@/components/shared/ConfirmModal';
 import { C, F } from '@/constants/tokens';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
+import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
 import { GratitudeEntry, useInnerTools } from './InnerToolsContext';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 type DraftBlessing = {
   title: string;
@@ -121,10 +123,11 @@ export default function GratitudeTaskView() {
 
     if (taskInstanceId) {
       await completeInstance(taskInstanceId, taskDate);
-    }
-    if (Platform.OS !== 'web') {
+      queueTaskCompletionReturnAnimation(taskInstanceId);
+    } else if (Platform.OS !== 'web') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
+
     router.back();
   };
 

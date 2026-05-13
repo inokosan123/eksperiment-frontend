@@ -89,9 +89,10 @@ export default function HeatmapCalendar({
 
   const cellSize = 12;
   const gap = 3;
-  const labelWidth = 28;
-  const headerHeight = 18;
-  const svgWidth = labelWidth + weekCount * (cellSize + gap);
+  const labelWidth = 36; // wider — gives 3-letter day labels (Mon/Wed/Fri) breathing room
+  const headerHeight = 22;
+  const trailingPad = 26; // room for the last month label so "May" doesn't clip at right edge
+  const svgWidth = labelWidth + weekCount * (cellSize + gap) + trailingPad;
   const svgHeight = headerHeight + 7 * (cellSize + gap);
 
   return (
@@ -108,9 +109,9 @@ export default function HeatmapCalendar({
             <SvgText
               key={`month-${i}`}
               x={labelWidth + m.weekIndex * (cellSize + gap)}
-              y={12}
-              fill="#A8A29E"
-              fontSize={9}
+              y={15}
+              fill="#78716C"
+              fontSize={11}
               fontFamily="System"
               fontWeight="bold"
             >
@@ -118,16 +119,17 @@ export default function HeatmapCalendar({
             </SvgText>
           ))}
 
-          {/* Day labels */}
+          {/* Day labels — centered vertically against each cell row */}
           {DAY_LABELS.map((label, i) =>
             label ? (
               <SvgText
                 key={`day-${i}`}
-                x={0}
-                y={headerHeight + i * (cellSize + gap) + cellSize - 2}
-                fill="#A8A29E"
-                fontSize={9}
+                x={4}
+                y={headerHeight + i * (cellSize + gap) + cellSize / 2 + 4}
+                fill="#78716C"
+                fontSize={11}
                 fontFamily="System"
+                fontWeight="600"
               >
                 {label}
               </SvgText>
@@ -154,10 +156,12 @@ export default function HeatmapCalendar({
       <View style={s.legend}>
         <Text style={s.legendText}>Less</Text>
         {[0, 25, 50, 75, 100].map(pct => (
-          <View
-            key={pct}
-            style={[s.legendSwatch, { backgroundColor: heatColor(pct, accentColor, 1) }]}
-          />
+          <View key={pct} style={s.legendItem}>
+            <View
+              style={[s.legendSwatch, { backgroundColor: heatColor(pct, accentColor, 1) }]}
+            />
+            <Text style={s.legendValue}>{pct}%</Text>
+          </View>
         ))}
         <Text style={s.legendText}>More</Text>
       </View>
@@ -180,14 +184,19 @@ const s = StyleSheet.create({
   },
   head: { flexDirection: 'row', alignItems: 'center', columnGap: 8, marginBottom: 14 },
   swatch: { width: 11, height: 11, borderRadius: 3 },
-  kicker: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: ACCENT },
+  kicker: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 2.2, color: ACCENT },
   legend: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    columnGap: 6,
-    marginTop: 12,
+    justifyContent: 'center',
+    columnGap: 10,
+    marginTop: 18,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#F0EDE6',
   },
-  legendSwatch: { width: 10, height: 10, borderRadius: 2.5 },
-  legendText: { fontFamily: F.sans, fontSize: 9, color: '#A8A29E' },
+  legendItem: { alignItems: 'center', rowGap: 2 },
+  legendSwatch: { width: 14, height: 14, borderRadius: 3 },
+  legendValue: { fontFamily: F.sansBold, fontSize: 10, color: '#78716C', letterSpacing: 0.4 },
+  legendText: { fontFamily: F.sans, fontSize: 11, color: '#A8A29E' },
 });

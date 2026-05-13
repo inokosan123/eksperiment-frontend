@@ -16,6 +16,12 @@ import {
   GROUP_ORDER,
   PaceOption,
 } from './challengeData';
+import {
+  getScriptureChallengeProgressUnit,
+  getScriptureChallengeTotal,
+  getScriptureChallengeUnitLabel,
+  getScriptureChallengeUnits,
+} from '@/components/scripture/scriptureChallengePlan';
 
 type ChallengeScheduleUpdate = {
   time?: string;
@@ -76,9 +82,19 @@ function buildScriptureChallengeFromSetup(
     ? 0
     : Math.max(1, overrides.scriptureConfig?.chaptersPerDay || 1);
   const totalUnits = overrides.totalUnits ?? entry.totalUnits ?? 0;
+  const planKey = {
+    templateId: entry.templateId,
+    groupKey: entry.groupKey,
+    totalUnits,
+    progressTotal: overrides.progressTotal,
+  };
+  const plannedTotal = getScriptureChallengeTotal(planKey);
+  const planUnits = getScriptureChallengeUnits(planKey);
+  const progressUnit = getScriptureChallengeProgressUnit(planKey);
+  const progressLabel = getScriptureChallengeUnitLabel(planKey, 2);
   const totalDays = entry.id === 'lectionary_daily'
     ? (overrides.durationDays ?? 365)
-    : Math.max(1, overrides.durationDays ?? Math.ceil(totalUnits / chaptersPerDay));
+    : Math.max(1, overrides.durationDays ?? Math.ceil((plannedTotal || totalUnits) / chaptersPerDay));
   const isPsalter = entry.groupKey === 'psalter';
 
   return {
@@ -91,10 +107,10 @@ function buildScriptureChallengeFromSetup(
     icon: entry.icon,
     status: 'active',
     progressCurrent: overrides.progressCurrent ?? 0,
-    progressTotal: overrides.progressTotal ?? (entry.id === 'lectionary_daily' ? 0 : totalDays),
-    progressUnit: overrides.progressUnit ?? 'days',
-    headline: overrides.headline ?? (entry.id === 'lectionary_daily' ? 'Day 1' : `Day 1 of ${totalDays}`),
-    subline: overrides.subline ?? (entry.id === 'lectionary_daily' ? 'Church-calendar daily readings' : `0/${totalDays} days completed`),
+    progressTotal: overrides.progressTotal ?? (entry.id === 'lectionary_daily' ? 0 : plannedTotal),
+    progressUnit: overrides.progressUnit ?? progressUnit,
+    headline: overrides.headline ?? (entry.id === 'lectionary_daily' ? 'Day 1' : `0/${plannedTotal} ${progressLabel}`),
+    subline: overrides.subline ?? (entry.id === 'lectionary_daily' ? 'Church-calendar daily readings' : (planUnits[0] ? `Next: ${planUnits[0].ref}` : `0/${plannedTotal} ${progressLabel} completed`)),
     showBar: overrides.showBar ?? (entry.id !== 'lectionary_daily'),
     streak: overrides.streak ?? 0,
     time: overrides.time ?? overrides.scriptureConfig?.time ?? entry.defaultTime,
@@ -104,7 +120,7 @@ function buildScriptureChallengeFromSetup(
         ? undefined
         : `${chaptersPerDay} ${isPsalter ? (chaptersPerDay === 1 ? 'psalm/day' : 'psalms/day') : (chaptersPerDay === 1 ? 'chapter/day' : 'chapters/day')}`
     ),
-    totalUnits,
+    totalUnits: plannedTotal || totalUnits,
     durationDays: totalDays,
     startedAt: getTodayDateKey(),
     scriptureConfig: overrides.scriptureConfig,

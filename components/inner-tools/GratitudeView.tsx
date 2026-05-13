@@ -1,8 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable,
-  ScrollView, StyleSheet, Text, TextInput,
-  TouchableOpacity, useWindowDimensions, View,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
 } from 'react-native';
 import Reanimated, {
   FadeIn,
@@ -32,6 +39,8 @@ import { useTasks } from '@/components/tasks/TaskProvider';
 import { buildInstanceId, getLocalDateKey } from '@/components/tasks/taskScheduler';
 import type { TaskDraft } from '@/components/tasks/taskTypes';
 import { GratitudeEntry, GratitudeKind, useInnerTools } from './InnerToolsContext';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 
 const ROSE = '#F43F5E';
 const GOLD = '#C5A059';

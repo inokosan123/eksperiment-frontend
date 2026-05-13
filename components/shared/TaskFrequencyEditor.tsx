@@ -1,10 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import {
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import Reanimated, {
   interpolateColor,
   useAnimatedStyle,
@@ -14,6 +9,8 @@ import Reanimated, {
 
 import { CalendarCheck } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 export type TaskFrequency = 'daily' | 'weekdays' | 'weekends' | 'specific_days' | 'monthly';
 

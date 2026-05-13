@@ -25,6 +25,7 @@ import {
   parseTaskTimeToDate,
   scheduleMatchesDate,
   shouldMarkMissed,
+  isTaskInstanceLocked,
 } from '@/components/tasks/taskScheduler';
 
 type TaskRow = {
@@ -75,6 +76,25 @@ type ActivePeriodRow = {
   start_date: string;
   end_date: string | null;
   activated_at: number;
+};
+
+type PrayerConfigRow = {
+  task_id: string;
+  prayer_type: string | null;
+  prayer_rule: string | null;
+  prayer_task_kind: string | null;
+  jesus_prayer_mode: string | null;
+  jesus_prayer_duration: number | null;
+  jesus_prayer_count: number | null;
+};
+
+type ScriptureConfigRow = {
+  task_id: string;
+  reading_type: ScriptureTaskConfig['readingType'];
+  start_book_id: number | null;
+  start_chapter: number | null;
+  chapters_per_day: number | null;
+  total_units_read: number | null;
 };
 
 let initPromise: Promise<void> | null = null;
@@ -638,6 +658,52 @@ export async function listTasks() {
   ));
 }
 
+export async function getPrayerTaskConfig(taskId: string): Promise<PrayerTaskConfig | undefined> {
+  const db = await openTaskDb();
+  const row = await db.getFirstAsync<PrayerConfigRow>(
+    `SELECT task_id, prayer_type, prayer_rule, prayer_task_kind,
+            jesus_prayer_mode, jesus_prayer_duration, jesus_prayer_count
+     FROM task_prayer_config
+     WHERE task_id = ?
+     LIMIT 1`,
+    taskId,
+  );
+
+  if (!row) return undefined;
+
+  return {
+    taskId: row.task_id,
+    prayerType: row.prayer_type ?? undefined,
+    prayerRule: row.prayer_rule ?? undefined,
+    prayerTaskKind: row.prayer_task_kind ?? undefined,
+    jesusPrayerMode: row.jesus_prayer_mode ?? undefined,
+    jesusPrayerDuration: row.jesus_prayer_duration ?? undefined,
+    jesusPrayerCount: row.jesus_prayer_count ?? undefined,
+  };
+}
+
+export async function getScriptureTaskConfig(taskId: string): Promise<ScriptureTaskConfig | undefined> {
+  const db = await openTaskDb();
+  const row = await db.getFirstAsync<ScriptureConfigRow>(
+    `SELECT task_id, reading_type, start_book_id, start_chapter, chapters_per_day, total_units_read
+     FROM task_scripture_config
+     WHERE task_id = ?
+     LIMIT 1`,
+    taskId,
+  );
+
+  if (!row) return undefined;
+
+  return {
+    taskId: row.task_id,
+    readingType: row.reading_type,
+    startBookId: row.start_book_id ?? undefined,
+    startChapter: row.start_chapter ?? undefined,
+    chaptersPerDay: row.chapters_per_day ?? undefined,
+    totalUnitsRead: row.total_units_read ?? undefined,
+  };
+}
+
 async function getTaskLifecycleStopDate(db: SQLite.SQLiteDatabase, taskId: string) {
   const today = getLocalDateKey();
   const todayInstance = await db.getFirstAsync<{ status: TaskInstanceStatus }>(
@@ -761,6 +827,12 @@ function taskInstanceResolvedAt(dateKey: string, time?: string) {
     ? parseTaskTimeToDate(dateKey, time)
     : new Date(`${dateKey}T23:59:59.999`);
   return dueAt?.getTime() ?? Date.now();
+}
+
+function parseTaskInstanceId(instanceId: string) {
+  const match = instanceId.match(/^(.*)_(\d{4}-\d{2}-\d{2})$/);
+  if (!match) return null;
+  return { taskId: match[1], date: match[2] };
 }
 
 function fallbackActivePeriodForTask(task: TaskDefinition): ActivePeriodRow {
@@ -1072,6 +1144,56 @@ export async function listTaskInstancesBetween(fromDate: string, toDate: string)
   return rows.map(rowToInstance);
 }
 
+// Single-task range query: only rows for the given taskId. Used by the
+// per-task analytics popup so we don't pull thousands of unrelated rows
+// just to filter one task in memory.
+export async function listTaskInstancesForTaskBetween(
+  taskId: string,
+  fromDate: string,
+  toDate: string,
+) {
+  const db = await openTaskDb();
+  const rows = await db.getAllAsync<InstanceRow>(
+    `SELECT * FROM task_instances
+     WHERE task_id = ? AND date >= ? AND date <= ? AND status <> 'not_applicable'
+     ORDER BY date ASC, time ASC, created_at ASC`,
+    taskId,
+    fromDate,
+    toDate,
+  );
+  return rows.map(rowToInstance);
+}
+
+// Lightweight title lookup for analytics: { taskId → current title }.
+// Avoids iterating thousands of denormalized inst.title snapshots to find
+// the latest name for each task. Source of truth = tasks definition table.
+export type TaskAnalyticsMeta = {
+  title: string;
+  source: TaskDefinition['source'];
+  type: TaskDefinition['type'];
+};
+
+export async function listTaskAnalyticsMeta(): Promise<Record<string, TaskAnalyticsMeta>> {
+  const db = await openTaskDb();
+  const rows = await db.getAllAsync<{
+    id: string;
+    title: string;
+    source: TaskDefinition['source'];
+    type: TaskDefinition['type'];
+  }>(
+    'SELECT id, title, source, type FROM tasks',
+  );
+  const map: Record<string, TaskAnalyticsMeta> = {};
+  for (const row of rows) {
+    map[row.id] = {
+      title: row.title,
+      source: row.source,
+      type: row.type,
+    };
+  }
+  return map;
+}
+
 // Lightweight lookup table for analytics: { taskId → habitId } for every
 // task that's tied to a habit. Lets per-habit aggregation happen in pure
 // memory without joining task_habit_config row-by-row.
@@ -1094,12 +1216,31 @@ export async function setTaskInstanceStatus(
 ) {
   const db = await openTaskDb();
   const resolved = status === 'completed' || status === 'skipped';
-  const result = await db.runAsync(
+  const locked = isTaskInstanceLocked(status);
+  const updateStatus = () => db.runAsync(
     'UPDATE task_instances SET status = ?, locked = ?, resolved_at = ? WHERE id = ?',
     status,
-    1,
+    boolToInt(locked),
     resolved ? Date.now() : null,
     instanceId,
   );
+
+  let result = await updateStatus();
+  if (result.changes > 0) return true;
+
+  const parsed = parseTaskInstanceId(instanceId);
+  if (!parsed) return false;
+
+  const tasks = await listTasks();
+  const task = tasks.find(item => item.id === parsed.taskId);
+  if (!task) return false;
+
+  const activePeriodsByTask = await loadActivePeriodsByTask(db);
+  if (!shouldTaskHaveSnapshotOnDate(task, parsed.date, activePeriodsByTask)) return false;
+
+  const instance = buildTaskInstance(task, parsed.date, undefined, new Date());
+  await upsertInstance(db, instance);
+
+  result = await updateStatus();
   return result.changes > 0;
 }

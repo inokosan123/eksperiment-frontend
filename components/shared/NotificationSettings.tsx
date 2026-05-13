@@ -1,12 +1,5 @@
 import React, { useEffect } from 'react';
-import {
-  StyleProp,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  ViewStyle,
-} from 'react-native';
+import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import Reanimated, {
   FadeInUp,
   FadeOutUp,
@@ -18,6 +11,8 @@ import Reanimated, {
 
 import { Bell, BellOff, BellRing } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 export type NotificationMode = 'none' | 'single' | 'double';
 

@@ -2,14 +2,19 @@ import React, {
   useCallback, useEffect, useMemo, useState,
 } from 'react';
 import {
-  ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput,
-  TouchableOpacity, useWindowDimensions, View,
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
 } from 'react-native';
 import Reanimated, {
   interpolateColor,
   useAnimatedStyle,
   useSharedValue,
-  withTiming,
+  withSpring,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -26,6 +31,8 @@ import { ScriptureSearchResult, useScripture } from './ScriptureContext';
 import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
 import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
 import { useTasks } from '@/components/tasks/TaskProvider';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 
 const BG = '#FCFCFC';
 const GOLD = '#C5A059';
@@ -33,6 +40,11 @@ const GREEN = '#5E7B55';
 const ROSE = '#BE123C';
 
 type ScriptureTab = 'bible' | 'psalter';
+const SEGMENT_SPRING = {
+  damping: 18,
+  stiffness: 235,
+  mass: 0.72,
+};
 
 const NEW_TESTAMENT = BIBLE_BOOKS.filter(book => book.testament === 'nt');
 const OLD_TESTAMENT = BIBLE_BOOKS.filter(book => book.testament !== 'nt' && book.id !== PSALMS_ID);
@@ -131,7 +143,7 @@ export default function HolyScriptureView() {
     if (next === tab) return;
     setTab(next);
     setExpandedBookId(null);
-    tabProgress.value = withTiming(next === 'bible' ? 0 : 1, { duration: 212 });
+    tabProgress.value = withSpring(next === 'bible' ? 0 : 1, SEGMENT_SPRING);
   };
 
   const openReader = (book: BibleBook, chapter = 1, verse?: number) => {
@@ -151,7 +163,7 @@ export default function HolyScriptureView() {
     if (next === activeSection) return;
     setActiveSection(next);
     setExpandedBookId(null);
-    sectionProgress.value = withTiming(next === 'new' ? 0 : 1, { duration: 212 });
+    sectionProgress.value = withSpring(next === 'new' ? 0 : 1, SEGMENT_SPRING);
   };
 
   const toggleBook = (book: BibleBook) => {
@@ -207,6 +219,24 @@ export default function HolyScriptureView() {
         </View>
 
         {/* Set as Daily Task — compact row */}
+        <TouchableOpacity
+          onPress={() => router.push({
+            pathname: '/scripture-checkpoint',
+            params: { readingType: 'custom', title: 'Scripture Checkpoints' },
+          } as any)}
+          activeOpacity={0.86}
+          style={s.checkpointCard}
+        >
+          <View style={s.checkpointIcon}>
+            <Book s={17} c={GOLD} w={2.1} />
+          </View>
+          <View style={s.checkpointTextWrap}>
+            <Text style={s.checkpointKicker}>CHECKPOINTS</Text>
+            <Text style={s.checkpointTitle}>Continue scripture reading</Text>
+          </View>
+          <ChevronRight s={18} c="#BBA47A" w={2.4} />
+        </TouchableOpacity>
+
         <SetAsDailyTaskCard variant="scripture" onPress={() => setShowTaskSheet(true)} subtitle={taskSummary} />
 
         {/* Bible / Psalter toggle + search */}
@@ -707,6 +737,21 @@ const s = StyleSheet.create({
   quickIcon: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   quickLabel: { fontFamily: F.sansSemiBold, fontSize: 13, letterSpacing: 0.2, flex: 1 },
   quickDesc: { fontFamily: F.serif, fontSize: 12, lineHeight: 17, color: '#A8A29E' },
+  checkpointCard: {
+    minHeight: 58,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.30)',
+    backgroundColor: '#FFFCF5',
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  checkpointIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: 'rgba(197,160,89,0.12)', alignItems: 'center', justifyContent: 'center' },
+  checkpointTextWrap: { flex: 1, minWidth: 0 },
+  checkpointKicker: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.6, color: GOLD, textTransform: 'uppercase' },
+  checkpointTitle: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 16, color: '#2B2723' },
   selectorPanel: { gap: 10 },
   segmented: {
     minHeight: 46,

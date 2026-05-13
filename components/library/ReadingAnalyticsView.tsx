@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Reanimated, {
   useAnimatedStyle,
   useSharedValue,
@@ -10,6 +10,8 @@ import FocusLottie from '@/components/focus/FocusLottie';
 import { Book, ChevronLeft, ChevronRight, Clock } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { useReadingList } from './ReadingListContext';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 const FLAME_IMG = require('@/assets/images/streak-flame-512.png');
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];

@@ -1,8 +1,17 @@
-import { Image, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  Image,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronDown, ChevronRight } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import type { ChallengeRecord } from '@/components/challenges/challengeData';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 const STREAK_FLAME_PNG = require('@/assets/images/streak-flame.png');
 

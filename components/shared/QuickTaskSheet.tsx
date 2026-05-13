@@ -3,12 +3,10 @@ import {
   Keyboard,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -21,6 +19,8 @@ import TaskTimeEditor from '@/components/shared/TaskTimeEditor';
 import NotificationSettings, { type NotificationMode } from '@/components/shared/NotificationSettings';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
 import type { TaskDraft } from '@/components/tasks/taskTypes';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const DateTimePickerModule = Platform.OS === 'web' ? null : require('@react-native-community/datetimepicker');
@@ -262,7 +262,7 @@ export default function QuickTaskSheet({
           <TextInput
             value={title}
             onChangeText={setTitle}
-            placeholder="Write a task..."
+            placeholder="Unesi ime taska..."
             placeholderTextColor="#C9C5BD"
             style={s.titleInput}
             returnKeyType="done"

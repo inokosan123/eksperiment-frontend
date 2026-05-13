@@ -1,11 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Modal, TextInput,
-  Pressable, ScrollView, Image, useWindowDimensions,
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  TextInput,
+  ScrollView,
+  Image,
+  useWindowDimensions,
 } from 'react-native';
 import Animated, {
   useSharedValue, useAnimatedStyle, useAnimatedProps, withRepeat, withTiming, withDelay,
-  withSequence, Easing as REasing, interpolate,
+  withSequence, withSpring, Easing as REasing, interpolate,
 } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,11 +26,18 @@ import { F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import FocusLottie from '@/components/focus/FocusLottie';
 import { getAllFocusSessions, logFocusSession } from '@/components/focus/focusDb';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 type Mode = 'focus' | 'break';
 type StatsMode = 'streak' | 'time';
+const SEGMENT_SPRING = {
+  damping: 18,
+  stiffness: 235,
+  mass: 0.72,
+};
 type FocusSession = { id: string; duration: number; completedAt: number };
 type FocusStatsData = {
   today: number;
@@ -793,7 +806,7 @@ function StatsModal({
   }));
 
   const handleSetMode = (mode: StatsMode) => {
-    pillAnim.value = withTiming(mode === 'time' ? 1 : 0, { duration: 220 });
+    pillAnim.value = withSpring(mode === 'time' ? 1 : 0, SEGMENT_SPRING);
     setStatsMode(mode);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };

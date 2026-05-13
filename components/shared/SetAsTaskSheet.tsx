@@ -4,12 +4,10 @@ import {
   Image,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   UIManager,
   useWindowDimensions,
   View,
@@ -57,9 +55,12 @@ import {
   ChallengeIconKey,
   ChallengePrayerConfig,
   ChallengeRecord,
+  ChallengeScriptureConfig,
   GROUP_ORDER,
 } from '@/components/challenges/challengeData';
 import type { TaskDraft, TaskSchedule } from '@/components/tasks/taskTypes';
+import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const DateTimePickerModule = Platform.OS === 'web' ? null : require('@react-native-community/datetimepicker');
@@ -781,7 +782,11 @@ export default function SetAsTaskSheet({
         source: 'spiritual',
         type: 'prayer',
         icon: prayerTaskIcon(prayerType),
-        targetView: '/prayer',
+        targetView: prayerType === 'jesus'
+          ? '/jesus-prayer'
+          : prayerRule === 'personal'
+            ? '/personal-rule'
+            : '/prayer',
         schedule: scheduleDraftToTaskSchedule(prayerSchedule),
         notificationMode: prayerSchedule.notificationMode,
         reminderMinutes: prayerSchedule.notificationMode === 'double' ? prayerSchedule.reminderMinutes : undefined,
@@ -840,7 +845,7 @@ export default function SetAsTaskSheet({
         reminderMinutes: scriptureSchedule.notificationMode === 'double' ? scriptureSchedule.reminderMinutes : undefined,
         scriptureConfig: {
           readingType: scriptureType,
-          chaptersPerDay: scriptureType === 'church_calendar' ? 0 : 1,
+          chaptersPerDay: scriptureType === 'church_calendar' ? 0 : scriptureDailyAmount,
           totalUnitsRead: 0,
         },
       });
@@ -1330,10 +1335,14 @@ function JesusPrayerConfigurator({
 }) {
   const options = mode === 'duration'
     ? [5, 10, 15, 30]
-    : [33, 50, 100, 300];
+    : [33, 50, 100, 200, 300];
   const selected = Number.parseInt(mode === 'duration' ? duration : count, 10);
   const modeMotion = useSharedValue(mode === 'count' ? 1 : 0);
   const [modeWidth, setModeWidth] = useState(0);
+  const [customFocused, setCustomFocused] = useState(false);
+  const customValue = mode === 'duration' ? duration : count;
+  const customActive = customFocused || (Number.isFinite(selected) && !options.includes(selected));
+  const customUnit = mode === 'duration' ? 'min' : 'reps';
 
   useEffect(() => {
     modeMotion.value = withSpring(mode === 'count' ? 1 : 0, {
@@ -1404,6 +1413,35 @@ function JesusPrayerConfigurator({
             />
           );
         })}
+      </View>
+
+      <View style={[s.jesusCustomBox, customActive && s.jesusCustomBoxActive]}>
+        <View style={s.jesusCustomHeader}>
+          <Text style={[s.jesusCustomLabel, customActive && s.jesusCustomLabelActive]}>
+            Custom {mode === 'duration' ? 'time' : 'count'}
+          </Text>
+        </View>
+        <View style={[s.jesusCustomInputWrap, customFocused && s.jesusCustomInputWrapFocused]}>
+          <TextInput
+            value={customValue}
+            onChangeText={text => {
+              const clean = text.replace(/[^\d]/g, '');
+              if (mode === 'duration') {
+                onDurationChange(clean);
+              } else {
+                onCountChange(clean);
+              }
+            }}
+            onFocus={() => setCustomFocused(true)}
+            onBlur={() => setCustomFocused(false)}
+            keyboardType="number-pad"
+            placeholder={mode === 'duration' ? '15' : '100'}
+            placeholderTextColor="#D1D5DB"
+            style={s.jesusCustomInput}
+          />
+          <View style={s.jesusCustomDivider} />
+          <Text style={s.jesusCustomSuffix}>{customUnit}</Text>
+        </View>
       </View>
     </View>
   );
@@ -1719,7 +1757,7 @@ export function ChallengePanel({
   onPauseChallenge: (id: string) => void | Promise<void>;
   onResumeChallenge: (id: string) => void | Promise<void>;
   onEndChallenge: (id: string) => void | Promise<void>;
-  onUpdateChallenge: (id: string, updates: { time?: string; scheduleLabel?: string; paceLabel?: string; prayerConfig?: ChallengePrayerConfig; churchConfig?: ChallengeChurchConfig }) => void | Promise<void>;
+  onUpdateChallenge: (id: string, updates: { time?: string; scheduleLabel?: string; paceLabel?: string; prayerConfig?: ChallengePrayerConfig; scriptureConfig?: ChallengeScriptureConfig; churchConfig?: ChallengeChurchConfig }) => void | Promise<void>;
 }) {
   const [confirmAction, setConfirmAction] = useState<ChallengeConfirmAction | null>(null);
 
@@ -1796,6 +1834,21 @@ export function ChallengePanel({
         time: churchSchedule.time,
         scheduleLabel: churchScheduleLabel(churchSchedule),
         churchConfig: churchScheduleToConfig(churchSchedule),
+      })).finally(() => onExpandedChallengeChange(null));
+    }
+
+    if (item.category === 'scripture' && item.scriptureConfig) {
+      return Promise.resolve(onUpdateChallenge(item.id, {
+        time: challengeSchedule.time,
+        scheduleLabel: item.scheduleLabel,
+        scriptureConfig: {
+          ...item.scriptureConfig,
+          time: challengeSchedule.time,
+          sameTimeEveryDay: challengeSchedule.sameTimeEveryDay,
+          dayTimes: challengeSchedule.sameTimeEveryDay ? {} : challengeSchedule.dayTimes,
+          notificationMode: challengeSchedule.notificationMode,
+          reminderMinutes: challengeSchedule.notificationMode === 'double' ? challengeSchedule.reminderMinutes : undefined,
+        },
       })).finally(() => onExpandedChallengeChange(null));
     }
 
@@ -1935,7 +1988,7 @@ export function ChallengePanel({
                     <View style={s.challengeActionRow}>
                       <TouchableOpacity
                         onPress={() => {
-                          if (item.category === 'church') {
+                          if (item.category === 'church' || item.category === 'scripture') {
                             void saveChallengeEdits(item);
                             return;
                           }
@@ -3659,6 +3712,105 @@ const s = StyleSheet.create({
     fontSize: 10.5,
     letterSpacing: 1.2,
     textTransform: 'uppercase',
+  },
+  jesusCustomBox: {
+    alignSelf: 'center',
+    width: '54%',
+    minWidth: 154,
+    maxWidth: 188,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    backgroundColor: '#FFFBF4',
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  jesusCustomBoxActive: {
+    borderColor: 'rgba(197,160,89,0.42)',
+    backgroundColor: '#FFF8EA',
+    shadowColor: C.gold,
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  jesusCustomHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  jesusCustomLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 8.5,
+    letterSpacing: 1.25,
+    color: '#9C948C',
+    textTransform: 'uppercase',
+    textAlign: 'center',
+  },
+  jesusCustomLabelActive: {
+    color: '#B6822D',
+  },
+  jesusCustomUnitPill: {
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#F0E7D8',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  jesusCustomUnitPillActive: {
+    backgroundColor: '#FFF2D8',
+    borderColor: 'rgba(197,160,89,0.28)',
+  },
+  jesusCustomUnitPillText: {
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 1,
+    color: '#B7B0A7',
+    textTransform: 'uppercase',
+  },
+  jesusCustomUnitPillTextActive: {
+    color: '#B6822D',
+  },
+  jesusCustomInputWrap: {
+    minHeight: 42,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#EEE8DE',
+    backgroundColor: '#FFFFFF',
+    paddingLeft: 12,
+    paddingRight: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  jesusCustomInputWrapFocused: {
+    borderColor: '#D7AA54',
+  },
+  jesusCustomInput: {
+    flex: 1,
+    minHeight: 40,
+    padding: 0,
+    fontFamily: F.serifMedium,
+    fontSize: 20,
+    color: C.text,
+    textAlign: 'center',
+  },
+  jesusCustomDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: '#F0EDE6',
+    marginLeft: 8,
+    marginRight: 8,
+  },
+  jesusCustomSuffix: {
+    minWidth: 30,
+    fontFamily: F.sansBold,
+    fontSize: 8.5,
+    letterSpacing: 1,
+    color: '#B6822D',
+    textTransform: 'uppercase',
+    textAlign: 'right',
   },
   techniqueRow: {
     flexDirection: 'row',

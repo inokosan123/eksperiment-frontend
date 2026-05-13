@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Reanimated, {
   Easing,
   useAnimatedStyle,
@@ -15,6 +15,8 @@ import { Calendar, Flame, Skip, Target, TrendingUp, X } from '@/components/icons
 import { C, F } from '@/constants/tokens';
 import { getTaskAnalytics, type ConsistencyBucket, type TaskAnalyticsData } from './taskAnalytics';
 import { getLocalDateKey } from './taskScheduler';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 const SPRING = { damping: 15, stiffness: 160, mass: 1 };
 
@@ -366,7 +368,7 @@ const s = StyleSheet.create({
   title: { fontFamily: F.serifSemiBold, fontSize: 20, color: C.text, letterSpacing: -0.2 },
   subtitle: {
     fontFamily: F.sansBold,
-    fontSize: 9,
+    fontSize: 10.5,
     letterSpacing: 1.6,
     color: C.textMuted,
     textTransform: 'uppercase',
@@ -381,7 +383,7 @@ const s = StyleSheet.create({
   emptyTitle: { fontFamily: F.serif, fontSize: 14, color: C.textMuted, marginTop: 6 },
   emptyBody: {
     fontFamily: F.sansBold,
-    fontSize: 9,
+    fontSize: 10.5,
     letterSpacing: 1.4,
     color: '#C8C5BD',
     textTransform: 'uppercase',
@@ -416,7 +418,7 @@ const s = StyleSheet.create({
   heroNumberMuted: { color: C.textSecondary },
   heroLabel: {
     fontFamily: F.sansBold,
-    fontSize: 9,
+    fontSize: 10.5,
     letterSpacing: 1.6,
     color: C.textMuted,
     marginTop: 4,
@@ -425,7 +427,7 @@ const s = StyleSheet.create({
   trackingSince: {
     textAlign: 'center',
     fontFamily: F.sansBold,
-    fontSize: 9,
+    fontSize: 10.5,
     letterSpacing: 1.6,
     color: '#C8C5BD',
     textTransform: 'uppercase',
@@ -448,7 +450,7 @@ const s = StyleSheet.create({
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 16 },
   cardEyebrow: {
     fontFamily: F.sansBold,
-    fontSize: 9.5,
+    fontSize: 11,
     letterSpacing: 1.7,
     color: C.textMuted,
     textTransform: 'uppercase',
@@ -460,7 +462,7 @@ const s = StyleSheet.create({
   },
   footLabel: {
     fontFamily: F.sansBold,
-    fontSize: 9.5,
+    fontSize: 11,
     letterSpacing: 1.5,
     color: C.textMuted,
     textTransform: 'uppercase',
@@ -468,7 +470,7 @@ const s = StyleSheet.create({
 
   /* consistency row */
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  rowLabel: { fontFamily: F.serif, fontSize: 13, color: C.textSecondary, width: 92 },
+  rowLabel: { fontFamily: F.serif, fontSize: 14, color: C.textSecondary, width: 92 },
   barTrack: {
     flex: 1,
     height: 7,
@@ -477,8 +479,8 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   barFill: { height: '100%', borderRadius: 4 },
-  rowCount: { fontFamily: F.serifSemiBold, fontSize: 12, color: C.textSecondary, width: 44, textAlign: 'right' },
-  rowPct: { fontFamily: F.sansBold, fontSize: 10, color: '#C8C5BD', width: 36, textAlign: 'right' },
+  rowCount: { fontFamily: F.serifSemiBold, fontSize: 13, color: C.textSecondary, width: 44, textAlign: 'right' },
+  rowPct: { fontFamily: F.sansBold, fontSize: 11, color: '#C8C5BD', width: 36, textAlign: 'right' },
 
   /* calendar */
   dowRow: { flexDirection: 'row', marginBottom: 8 },
@@ -486,7 +488,7 @@ const s = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
     fontFamily: F.sansBold,
-    fontSize: 9,
+    fontSize: 10.5,
     color: '#C8C5BD',
     letterSpacing: 0.8,
   },
@@ -498,7 +500,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  calCellText: { fontFamily: F.serifMedium, fontSize: 12 },
+  calCellText: { fontFamily: F.serifMedium, fontSize: 14 },
 
   /* legend */
   legendRow: {
@@ -509,5 +511,5 @@ const s = StyleSheet.create({
   },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   legendSwatch: { width: 11, height: 11, borderRadius: 3.5 },
-  legendText: { fontFamily: F.sans, fontSize: 9.5, color: C.textMuted },
+  legendText: { fontFamily: F.sans, fontSize: 10.5, color: C.textMuted },
 });

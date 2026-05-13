@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { ChevronLeft, ChevronRight } from '@/components/icons/Icons';
@@ -11,6 +11,8 @@ import {
   isMorningPagesComplete,
 } from '@/components/journal/journalLogic';
 import { F } from '@/constants/tokens';
+import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+
 
 const BG = '#FAF7F0';
 const GOLD = '#C5A059';

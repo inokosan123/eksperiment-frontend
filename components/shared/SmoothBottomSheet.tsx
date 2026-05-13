@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+
 import {
   Keyboard,
   Modal,
   Platform,
-  Pressable,
   StyleProp,
   StyleSheet,
   useWindowDimensions,
