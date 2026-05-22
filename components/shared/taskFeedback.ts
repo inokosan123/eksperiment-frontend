@@ -4,9 +4,12 @@ import type { AudioPlayer } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 
 const TASK_CHECK_SOUND = require('@/assets/audio/task-check.wav');
+const ACHIEVEMENT_COMPLETE_SOUND = require('@/assets/audio/achievement-complete.wav');
 
 let checkPlayer: AudioPlayer | null = null;
+let achievementPlayer: AudioPlayer | null = null;
 let audioInitPromise: Promise<void> | null = null;
+let achievementAudioInitPromise: Promise<void> | null = null;
 
 function wait(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -27,7 +30,7 @@ async function ensureCheckPlayer() {
         updateInterval: 1000,
         keepAudioSessionActive: true,
       });
-      checkPlayer.volume = 0.9;
+      checkPlayer.volume = 0.82;
     })().catch(() => {
       audioInitPromise = null;
     });
@@ -36,8 +39,36 @@ async function ensureCheckPlayer() {
   await audioInitPromise;
 }
 
+async function ensureAchievementPlayer() {
+  if (Platform.OS === 'web') return;
+  if (achievementPlayer?.isLoaded) return;
+
+  if (!achievementAudioInitPromise) {
+    achievementAudioInitPromise = (async () => {
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        interruptionMode: 'mixWithOthers',
+      });
+
+      achievementPlayer = createAudioPlayer(ACHIEVEMENT_COMPLETE_SOUND, {
+        updateInterval: 1000,
+        keepAudioSessionActive: true,
+      });
+      achievementPlayer.volume = 0.78;
+    })().catch(() => {
+      achievementAudioInitPromise = null;
+    });
+  }
+
+  await achievementAudioInitPromise;
+}
+
 export function preloadTaskFeedbackSound() {
   void ensureCheckPlayer();
+}
+
+export function preloadAchievementFeedbackSound() {
+  void ensureAchievementPlayer();
 }
 
 function playTaskCheckSound() {
@@ -51,7 +82,25 @@ function playTaskCheckSound() {
       if (player.playing) {
         player.pause();
       }
-      player.volume = 0.9;
+      player.volume = 0.82;
+      await player.seekTo(0);
+      player.play();
+    } catch {}
+  });
+}
+
+function playAchievementSound() {
+  if (Platform.OS === 'web') return;
+
+  void ensureAchievementPlayer().then(async () => {
+    const player = achievementPlayer;
+    if (!player) return;
+
+    try {
+      if (player.playing) {
+        player.pause();
+      }
+      player.volume = 0.78;
       await player.seekTo(0);
       player.play();
     } catch {}
@@ -72,6 +121,21 @@ export async function playTaskCompleteFeedback() {
     await wait(50);
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await wait(90);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  } catch {}
+}
+
+export async function playAchievementCompleteFeedback() {
+  if (Platform.OS === 'web') return;
+  playAchievementSound();
+
+  // Achievement feedback is related to task completion, but softer and more
+  // ceremonial: a firm click, then success confirmation, then a light tail.
+  try {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await wait(55);
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await wait(115);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   } catch {}
 }

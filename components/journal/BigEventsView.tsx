@@ -47,13 +47,58 @@ const NativeDateTimePickerAndroid = DateTimePickerModule?.DateTimePickerAndroid 
 const BG = '#FAF7F0';
 const GOLD = '#C5A059';
 const DEFAULT_EVENT_COLOR = GOLD;
+const EVENT_ICON_CHIP_SIZE = 54;
+const EVENT_ICON_MIN_GAP = 9;
 
-const EVENT_ICONS: HabitEmojiName[] = [
-  'bullseye', 'red-heart', 'fire', 'sunrise',
-  'praying-hands', 'briefcase', 'chart-increasing', 'handshake',
-  'money-bag', 'light-bulb', 'books', 'evergreen-tree',
-  'red-apple', 'person-running', 'flexed-biceps', 'candle',
+const EVENT_ICON_GROUPS: { label: string; icons: HabitEmojiName[] }[] = [
+  {
+    label: 'Life & celebration',
+    icons: [
+      'party-popper', 'birthday-cake', 'balloon', 'wrapped-gift', 'bottle-with-popping-cork',
+      'clinking-glasses', 'confetti-ball', 'sparkles', 'partying-face', 'red-heart',
+      'bouquet', 'ring', 'crown', 'handshake', 'candle',
+    ],
+  },
+  {
+    label: 'Family & home',
+    icons: ['baby', 'house', 'church', 'calendar', 'spiral-calendar', 'fork-and-knife-with-plate', 'wine-glass', 'cocktail-glass'],
+  },
+  {
+    label: 'Travel & adventure',
+    icons: ['airplane', 'luggage', 'world-map', 'compass', 'beach-with-umbrella', 'rocket', 'sunrise', 'sun'],
+  },
+  {
+    label: 'Wins & work',
+    icons: [
+      'trophy', 'first-place-medal', 'sports-medal', 'military-medal', 'gem-stone',
+      'chequered-flag', 'bullseye', 'briefcase', 'chart-increasing', 'money-bag', 'laptop',
+    ],
+  },
+  {
+    label: 'Study & craft',
+    icons: [
+      'graduation-cap', 'books', 'open-book', 'writing-hand', 'light-bulb',
+      'artist-palette', 'camera', 'movie-camera', 'musical-notes', 'microphone', 'ticket', 'alarm-clock',
+    ],
+  },
+  {
+    label: 'Health & fitness',
+    icons: [
+      'person-running', 'person-walking', 'flexed-biceps', 'soccer-ball',
+      'green-salad', 'red-apple', 'droplet', 'shower',
+    ],
+  },
+  {
+    label: 'Faith & quiet',
+    icons: ['praying-hands', 'latin-cross', 'crescent-moon', 'hot-beverage', 'glowing-star', 'star'],
+  },
+  {
+    label: 'Nature & growth',
+    icons: ['evergreen-tree', 'seedling'],
+  },
 ];
+
+const EVENT_ICONS = Array.from(new Set(EVENT_ICON_GROUPS.flatMap(group => group.icons))) as HabitEmojiName[];
 
 function dateFromKey(key: string): Date {
   const [y, m, d] = key.split('-').map(Number);
@@ -222,6 +267,15 @@ function EventForm({
 }) {
   const canSave = !!form.title.trim() && !!form.endDate;
   const isEdit = form.id !== null;
+  const [iconGridWidth, setIconGridWidth] = useState(0);
+  const iconColumns = iconGridWidth > 0
+    ? Math.max(3, Math.floor((iconGridWidth + EVENT_ICON_MIN_GAP) / (EVENT_ICON_CHIP_SIZE + EVENT_ICON_MIN_GAP)))
+    : 5;
+  const trailingSpacerCount = (iconColumns - (EVENT_ICONS.length % iconColumns)) % iconColumns;
+  const trailingSpacers = useMemo(
+    () => Array.from({ length: trailingSpacerCount }, (_, index) => index),
+    [trailingSpacerCount],
+  );
 
   return (
     <Animated.View
@@ -254,13 +308,18 @@ function EventForm({
 
       <View>
         <Text style={ef.sectionLabel}>ICON</Text>
-        <View style={ef.iconGrid}>
+        <View
+          style={ef.iconGrid}
+          onLayout={event => setIconGridWidth(Math.floor(event.nativeEvent.layout.width))}
+        >
           {EVENT_ICONS.map(ic => {
             const active = form.icon === ic;
             return (
               <Pressable
                 key={ic}
                 onPress={() => { Haptics.selectionAsync(); onChange({ ...form, icon: ic }); }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
                 style={({ pressed }) => [
                   ef.iconChip,
                   active && ef.iconChipActive,
@@ -268,11 +327,19 @@ function EventForm({
                 ]}
               >
                 <View style={ef.iconGlyphBox}>
-                  <NotoEmoji name={ic} size={27} />
+                  <NotoEmoji name={ic} size={32} />
                 </View>
+                {active && (
+                  <View pointerEvents="none" style={ef.iconSelectedBadge}>
+                    <CheckSmall s={12} c="#FFFFFF" w={3} />
+                  </View>
+                )}
               </Pressable>
             );
           })}
+          {trailingSpacers.map(index => (
+            <View key={`icon-spacer-${index}`} pointerEvents="none" style={ef.iconGridSpacer} />
+          ))}
         </View>
       </View>
 
@@ -306,15 +373,45 @@ const ef = StyleSheet.create({
 
   sectionLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.8, color: C.textMuted, marginBottom: 8 },
 
-  iconGrid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 8, rowGap: 10 },
-  iconChip: {
-    width: 50, height: 50,
-    borderRadius: 18, borderWidth: 1, borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  iconGrid: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: EVENT_ICON_MIN_GAP,
   },
-  iconChipActive: { borderColor: GOLD, backgroundColor: 'rgba(197,160,89,0.10)' },
-  iconGlyphBox: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
+  iconChip: {
+    width: EVENT_ICON_CHIP_SIZE, height: EVENT_ICON_CHIP_SIZE,
+    borderRadius: 19, borderWidth: 1, borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center', overflow: 'visible',
+    shadowColor: '#8C7A4F', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.035, shadowRadius: 8, elevation: 1,
+  },
+  iconChipActive: {
+    borderWidth: 2,
+    borderColor: GOLD,
+    backgroundColor: '#FFF4D6',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.26,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  iconGlyphBox: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
+  iconSelectedBadge: {
+    position: 'absolute',
+    right: -4,
+    bottom: -4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    backgroundColor: GOLD,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconGridSpacer: { width: EVENT_ICON_CHIP_SIZE, height: 0 },
 
   saveBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8,

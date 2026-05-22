@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Platform, View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
   Easing,
@@ -29,6 +29,20 @@ function hexToRgba(hex: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function mixHex(hex: string, target: string, amount: number) {
+  const normalize = (value: string) => {
+    const raw = value.replace('#', '');
+    return raw.length === 3 ? raw.split('').map(char => `${char}${char}`).join('') : raw;
+  };
+  const from = Number.parseInt(normalize(hex), 16);
+  const to = Number.parseInt(normalize(target), 16);
+  const mix = (a: number, b: number) => Math.round(a + (b - a) * amount);
+  const r = mix((from >> 16) & 255, (to >> 16) & 255);
+  const g = mix((from >> 8) & 255, (to >> 8) & 255);
+  const b = mix(from & 255, to & 255);
+  return `#${[r, g, b].map(channel => channel.toString(16).padStart(2, '0')).join('')}`;
+}
+
 export type TaskData = {
   variant: TaskVariant;
   title: string;
@@ -38,7 +52,20 @@ export type TaskData = {
   type?: 'prayer' | 'reading' | 'journal' | 'church' | 'gratitude' | 'custom';
   habitColor?: string;
   habitIconName?: string;
+  hideTypeBadge?: boolean;
+  reservedRightSpace?: number;
 };
+
+const META_SEPARATOR = ` ${String.fromCharCode(183)} `;
+const DEFAULT_HABIT_CARD_COLOR = '#EAB308';
+
+function cleanTaskMetaText(value?: string) {
+  if (!value) return '';
+  return value
+    .replace(/\s*\u00C2\u00B7\s*/g, META_SEPARATOR)
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
 
 const TYPE_COLORS = {
   prayer:  { bg: 'rgba(197,160,89,0.14)', fg: '#A8853C', border: 'rgba(197,160,89,0.22)' },
@@ -101,6 +128,74 @@ const sb = StyleSheet.create({
   txt: { fontSize: 10, fontFamily: F.sansSemiBold, color: '#F97316' },
 });
 
+export function CompletedTaskCheck({
+  size,
+  accent,
+  coreColor = accent,
+}: {
+  size: number;
+  accent: string;
+  coreColor?: string;
+}) {
+  const coreSize = Math.round(size * 0.68);
+  const checkSize = Math.round(size * 0.44);
+
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: hexToRgba(accent, 0.11),
+        borderWidth: 1.35,
+        borderColor: hexToRgba(accent, 0.34),
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        shadowColor: accent,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.10,
+        shadowRadius: 5,
+        elevation: 1,
+      }}
+    >
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: 3,
+          left: 4,
+          width: Math.max(6, size * 0.28),
+          height: Math.max(3, size * 0.10),
+          borderRadius: size,
+          backgroundColor: '#FFFFFF',
+          opacity: 0.58,
+          transform: [{ rotate: '-18deg' }],
+        }}
+      />
+      <View
+        style={{
+          width: coreSize,
+          height: coreSize,
+          borderRadius: coreSize / 2,
+          backgroundColor: coreColor,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.42)',
+          shadowColor: coreColor,
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.16,
+          shadowRadius: 4,
+          elevation: 1,
+        }}
+      >
+        <CheckSmall s={checkSize} c="#FFFFFF" w={2.85} />
+      </View>
+    </View>
+  );
+}
+
 function TaskCheck({ variant, state, size, habitColor }: { variant: TaskVariant; state: TaskState; size: number; habitColor?: string }) {
   const isDone = state === 'done';
   const isSkipped = state === 'skipped';
@@ -115,21 +210,30 @@ function TaskCheck({ variant, state, size, habitColor }: { variant: TaskVariant;
     bg = '#f5f5f4'; borderColor = '#d6d3d1'; iconColor = '#a8a29e';
   } else if (isDone) {
     const fillColor =
-      variant === 'habit' ? (habitColor || '#C5A059') :
+      variant === 'habit' ? (habitColor || DEFAULT_HABIT_CARD_COLOR) :
       variant === 'gratitude' ? '#F43F5E' :
       variant === 'quick' || variant === 'routine' ? '#1c1917' : '#C5A059';
     bg = fillColor; borderColor = fillColor; iconColor = '#fff';
   } else {
-    if (variant === 'habit') { borderColor = (habitColor || '#C5A059') + '60'; }
+    if (variant === 'habit') { borderColor = (habitColor || DEFAULT_HABIT_CARD_COLOR) + '60'; }
     else if (variant === 'routine') { borderColor = 'rgba(28,25,23,0.28)'; borderWidth = 1.5; }
     else if (variant === 'challenge') { borderColor = 'rgba(197,160,89,0.55)'; borderWidth = 2.5; }
     else if (variant === 'gratitude') { borderColor = 'rgba(244,63,94,0.45)'; }
     else { borderColor = 'rgba(197,160,89,0.4)'; }
   }
 
+  if (isDone) {
+    const accent =
+      variant === 'habit' ? (habitColor || DEFAULT_HABIT_CARD_COLOR) :
+      variant === 'gratitude' ? '#E11D48' :
+      variant === 'quick' || variant === 'routine' ? '#8A8177' : '#C5A059';
+    const coreColor =
+      variant === 'quick' || variant === 'routine' ? '#8A8177' : accent;
+    return <CompletedTaskCheck size={size} accent={accent} coreColor={coreColor} />;
+  }
+
   return (
     <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: bg, borderWidth, borderColor, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      {isDone && <CheckSmall s={size * 0.52} c="#fff" w={2.8} />}
       {isSkipped && <Skip s={size * 0.44} c={iconColor} w={2.4} />}
       {(isLocked || (!isDone && !isSkipped)) && <CircleIcon s={size * 0.56} c={iconColor} w={2} />}
     </View>
@@ -145,28 +249,28 @@ function isNotoIconName(name: string | undefined): boolean {
 
 function TypeBadge({ variant, type, habitColor, habitIconName }: { variant: TaskVariant; type?: string; habitColor?: string; habitIconName?: string }) {
   if (variant === 'habit') {
-    const color = habitColor || '#C5A059';
+    const color = habitColor || DEFAULT_HABIT_CARD_COLOR;
     const isLucide = !!habitIconName && !!ICONS[habitIconName];
     const isNoto = !isLucide && isNotoIconName(habitIconName);
     const HIcon = ICONS[habitIconName || 'Heart'] ?? Heart;
     return (
       <View
         style={{
-          width: 38,
-          height: 38,
-          borderRadius: 13,
-          backgroundColor: hexToRgba(color, 0.12),
+          width: 36,
+          height: 36,
+          borderRadius: 12,
+          backgroundColor: hexToRgba(color, 0.10),
           borderWidth: 1,
-          borderColor: hexToRgba(color, 0.20),
+          borderColor: hexToRgba(color, 0.18),
           alignItems: 'center',
           justifyContent: 'center',
           flexShrink: 0,
         }}
       >
         {isNoto ? (
-          <NotoEmoji name={normalizeHabitIcon(habitIconName)} size={22} />
+          <NotoEmoji name={normalizeHabitIcon(habitIconName)} size={21} />
         ) : (
-          <HIcon s={17} c={color} />
+          <HIcon s={16} c={color} />
         )}
       </View>
     );
@@ -203,7 +307,7 @@ function TypeBadge({ variant, type, habitColor, habitIconName }: { variant: Task
     );
   }
   if (variant === 'spiritual') {
-    // Spiritual tasks (prayer / scripture / journal / church / custom) keep
+    // Spiritual tasks (prayer / scripture) keep
     // their per-type icon shape (Sun, Book, Feather, Cross, Sparkles) but
     // share one uniform gold/cream "spiritual" badge so the whole spiritual
     // family reads as one visual category in lists.
@@ -338,11 +442,12 @@ function TaskTitle({ title, variant, state }: { title: string; variant: TaskVari
 }
 
 function TaskMeta({ time, subtitle, variant, habitColor, state }: { time?: string; subtitle?: string; variant: TaskVariant; habitColor?: string; state: TaskState }) {
+  const cleanSubtitle = cleanTaskMetaText(subtitle);
   let c =
     (variant === 'spiritual' || variant === 'challenge') ? 'rgba(197,160,89,0.75)' :
     variant === 'gratitude' ? 'rgba(225,29,72,0.78)' :
     variant === 'routine' ? 'rgba(28,25,23,0.45)' :
-    variant === 'habit' ? ((habitColor || '#C5A059') + 'DD') : '#a8a29e';
+    variant === 'habit' ? ((habitColor || DEFAULT_HABIT_CARD_COLOR) + 'DD') : '#a8a29e';
   if (state === 'done' || state === 'skipped') c = '#a8a29e';
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2, minWidth: 0, overflow: 'hidden' }}>
@@ -355,14 +460,19 @@ function TaskMeta({ time, subtitle, variant, habitColor, state }: { time?: strin
           <Text style={{ color: c, opacity: 0.65, fontSize: 10 }}>•</Text>
         </>
       )}
-      {subtitle && <Text style={{ fontFamily: F.sansMedium, fontSize: 9.5, color: c, letterSpacing: 0.8, textTransform: 'uppercase', flexShrink: 1, minWidth: 0 }} numberOfLines={1} ellipsizeMode="tail">{subtitle}</Text>}
+      {cleanSubtitle && <Text style={{ fontFamily: F.sansMedium, fontSize: 9.5, color: c, letterSpacing: 0.8, textTransform: 'uppercase', flexShrink: 1, minWidth: 0 }} numberOfLines={1} ellipsizeMode="tail">{cleanSubtitle}</Text>}
     </View>
   );
 }
 
 export function SpiritualTaskCard({ task, streak }: { task: TaskData; streak?: number }) {
   return (
-    <LinearGradient colors={['#FFFBEB', '#ffffff']} start={{ x: 0.135, y: 0 }} end={{ x: 0.865, y: 1 }} style={[cs.base, { borderColor: 'rgba(197,160,89,0.3)', borderRadius: 16, marginBottom: 4 }]}>
+    <LinearGradient
+      colors={['#FFFBEB', '#FFFDF8']}
+      start={{ x: 0.135, y: 0 }}
+      end={{ x: 0.865, y: 1 }}
+      style={[cs.base, { borderColor: 'rgba(197,160,89,0.3)', borderRadius: 16, marginBottom: 4 }]}
+    >
       <TaskCheck variant="spiritual" state={task.state} size={34} />
       <View style={cs.mid}>
         <TaskTitle title={task.title} variant="spiritual" state={task.state} />
@@ -407,67 +517,71 @@ export function QuickTaskCard({ task }: { task: TaskData }) {
 }
 
 export function HabitTaskCard({ task, streak }: { task: TaskData; streak?: number }) {
-  const habitColor = task.habitColor || '#C5A059';
+  const habitColor = task.habitColor || DEFAULT_HABIT_CARD_COLOR;
   const isSkipped = task.state === 'skipped';
   const isDone = task.state === 'done';
-  // Two layered gradients form a distinctive "color spotlight" pattern:
-  //   1. Bottom diagonal — color blooms from bottom-right corner only (most of
-  //      the card stays pure white, color anchors the emoji badge area).
-  //   2. Top overlay — vertical fade from a faint top tint down to nothing,
-  //      adding a soft "halo from above" without flooding the whole card.
-  // Together they look like sun light hitting paper from one direction —
-  // different from the simple corner-to-corner fade used elsewhere.
-  const baseAlpha = isSkipped ? 0 : (isDone ? 0.04 : 0.10);
-  const topAlpha = isSkipped ? 0 : (isDone ? 0.015 : 0.04);
-  const accentColor = isSkipped ? '#D1D5DB' : habitColor;
-  return (
-    <View
+  const isIOS = Platform.OS === 'ios';
+  const habitColors = useMemo(() => {
+    const accentColor = isSkipped ? '#D1D5DB' : habitColor;
+    const surfaceStart = isSkipped ? '#FFFFFF' : mixHex(habitColor, '#FFFFFF', isDone ? 0.94 : 0.88);
+    const surfaceEnd = isSkipped ? '#FAFAFA' : mixHex(habitColor, '#FFFFFF', isDone ? 0.98 : 0.95);
+    const bloomColor = isSkipped ? '#F3F4F6' : mixHex(habitColor, '#FFFFFF', isDone ? 0.90 : 0.82);
+    const leftGlowColor = isSkipped ? '#F9FAFB' : mixHex(habitColor, '#FFFFFF', isDone ? 0.88 : 0.74);
+
+    return {
+      accentColor,
+      bloomColor,
+      leftGlowColor,
+      gradientColors: [surfaceStart, surfaceEnd] as const,
+      borderColor: hexToRgba(accentColor, isSkipped ? 0.16 : 0.24),
+      shadowColor: isSkipped ? '#1C1917' : habitColor,
+    };
+  }, [habitColor, isDone, isSkipped]);
+  const card = (
+    <LinearGradient
+      colors={habitColors.gradientColors}
+      start={{ x: 0.135, y: 0 }}
+      end={{ x: 0.865, y: 1 }}
       style={[
         cs.base,
+        cs.habitCard,
         {
-          backgroundColor: '#FFFFFF',
-          borderColor: hexToRgba(habitColor, isSkipped ? 0.10 : 0.20),
-          borderRadius: 20,
-          marginBottom: 4,
-          overflow: 'hidden',
-          shadowColor: '#1C1917',
-          shadowOpacity: 0.05,
+          borderColor: habitColors.borderColor,
+          marginBottom: isIOS ? 0 : 4,
+          opacity: isSkipped ? 0.82 : 1,
+          shadowColor: habitColors.shadowColor,
+          shadowOpacity: isIOS ? 0 : 0.045,
           shadowOffset: { width: 0, height: 2 },
-          shadowRadius: 6,
-          elevation: 1,
+          shadowRadius: 5,
+          elevation: isIOS ? 0 : 1,
         },
       ]}
     >
-      {/* Layer 1 — bottom-right "spotlight" (most of card white, color blooms in corner) */}
-      <LinearGradient
-        colors={['#FFFFFF', '#FFFFFF', hexToRgba(habitColor, baseAlpha)]}
-        locations={[0, 0.55, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={cs.habitGradientLayer}
-        pointerEvents="none"
-      />
-      {/* Layer 2 — soft top tint that fades to nothing partway down */}
-      <LinearGradient
-        colors={[hexToRgba(habitColor, topAlpha), 'rgba(255,255,255,0)']}
-        locations={[0, 0.55]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={cs.habitGradientLayer}
-        pointerEvents="none"
-      />
-      {/* Distinctive habit-only ornament: small color "L" corners */}
-      <View style={[cs.habitCornerRibbonTop, { backgroundColor: accentColor }]} />
-      <View style={[cs.habitCornerRibbonBottom, { backgroundColor: accentColor, opacity: 0.55 }]} />
+      <View pointerEvents="none" style={[cs.habitLeftGlow, { backgroundColor: habitColors.leftGlowColor }]} />
+      <View pointerEvents="none" style={[cs.habitRightBloom, { backgroundColor: habitColors.bloomColor }]} />
+      <View pointerEvents="none" style={cs.habitSheen} />
+      <View style={[cs.habitCornerRibbonTop, { backgroundColor: habitColors.accentColor }]} />
+      <View style={[cs.habitCornerRibbonBottom, { backgroundColor: habitColors.accentColor, opacity: 0.55 }]} />
       <TaskCheck variant="habit" state={task.state} size={32} habitColor={habitColor} />
       <View style={cs.mid}>
         <TaskTitle title={task.title} variant="habit" state={task.state} />
         <TaskMeta time={task.time} subtitle={task.subtitle} variant="habit" habitColor={habitColor} state={task.state} />
       </View>
       <StreakBadge count={streak} />
-      <TypeBadge variant="habit" habitColor={habitColor} habitIconName={task.habitIconName} />
-    </View>
+      {!task.hideTypeBadge && <TypeBadge variant="habit" habitColor={habitColor} habitIconName={task.habitIconName} />}
+      {!!task.reservedRightSpace && <View style={{ width: task.reservedRightSpace, flexShrink: 0 }} />}
+    </LinearGradient>
   );
+
+  if (isIOS) {
+    return (
+      <View style={cs.habitIOSShadowWrap}>
+        {card}
+      </View>
+    );
+  }
+
+  return card;
 }
 
 export function ReadingTaskCard({ task, streak }: { task: TaskData; streak?: number }) {
@@ -575,6 +689,47 @@ const cs = StyleSheet.create({
     borderWidth: 1,
   },
   mid: { flex: 1, minWidth: 0, overflow: 'hidden' },
+  habitCard: {
+    paddingVertical: 7,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  habitIOSShadowWrap: {
+    marginBottom: 4,
+    borderRadius: 16,
+    shadowColor: '#1C1917',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+  },
+  habitRightBloom: {
+    position: 'absolute',
+    right: -26,
+    top: -18,
+    width: 120,
+    height: 86,
+    borderRadius: 60,
+    opacity: 0.46,
+  },
+  habitLeftGlow: {
+    position: 'absolute',
+    left: -18,
+    top: -16,
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    opacity: 0.32,
+  },
+  habitSheen: {
+    position: 'absolute',
+    right: 76,
+    top: -10,
+    width: 34,
+    height: 74,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    transform: [{ rotate: '11deg' }],
+  },
   habitBar: {
     position: 'absolute',
     left: 0,

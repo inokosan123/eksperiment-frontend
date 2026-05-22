@@ -6,6 +6,29 @@ type P = { s?: number; c?: string; w?: number };
 
 const d = '#1c1917';
 
+export const Globe = ({ s = 20, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Circle cx="12" cy="12" r="10" />
+    <Line x1="2" y1="12" x2="22" y2="12" />
+    <Path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+  </Svg>
+);
+
+export const User = ({ s = 20, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+    <Circle cx="12" cy="7" r="4" />
+  </Svg>
+);
+
+export const LogOut = ({ s = 20, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+    <Polyline points="16 17 21 12 16 7" />
+    <Line x1="21" y1="12" x2="9" y2="12" />
+  </Svg>
+);
+
 export const Settings = ({ s = 20, c = d, w = 2 }: P) => (
   <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
     <Path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
@@ -277,6 +300,15 @@ export const Cross = ({ s = 90, c = d, w = 1.4 }: P) => (
   <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round">
     <Line x1="12" y1="3" x2="12" y2="21" />
     <Line x1="7" y1="9" x2="17" y2="9" />
+  </Svg>
+);
+
+export const OrthodoxCross = ({ s = 20, c = d, w = 1.4 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Line x1="12" y1="3" x2="12" y2="21" />
+    <Line x1="10" y1="6" x2="14" y2="6" />
+    <Line x1="7" y1="10" x2="17" y2="10" />
+    <Line x1="8" y1="17" x2="16" y2="15" />
   </Svg>
 );
 

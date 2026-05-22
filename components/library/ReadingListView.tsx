@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Keyboard,
   Modal,
@@ -156,9 +156,14 @@ function readingBookToTaskDraft(book: ReadingBook): TaskDraft {
   };
 }
 
+function isReadingBookTask(task: { id: string; source?: string }) {
+  return task.source === 'reading_book' || task.id.startsWith('reading_book_');
+}
+
 export default function ReadingListView() {
   const router = useRouter();
   const {
+    ready: readingListReady,
     books,
     categoryDefs,
     addBook,
@@ -166,7 +171,7 @@ export default function ReadingListView() {
     deleteBook,
     saveCategoryDefs,
   } = useReadingList();
-  const { createOrUpdateTask, remove: removeTask } = useTasks();
+  const { tasks, createOrUpdateTask, createOrUpdateTasks, archiveTasksImmediately } = useTasks();
   const [tab, setTab] = useState<TabFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -177,17 +182,43 @@ export default function ReadingListView() {
   const [confirmDisableTarget, setConfirmDisableTarget] = useState<ReadingBook | null>(null);
   const subtitleMigratedRef = useRef(false);
 
+  const validReadingTaskIds = useMemo(() => new Set(
+    books
+      .filter(book => book.status === 'reading' && book.showOnHome)
+      .map(book => readingTaskId(book.id)),
+  ), [books]);
+
+  const archiveReadingTasks = useCallback(async (taskIds: string[]) => {
+    const uniqueIds = [...new Set(taskIds)];
+    if (uniqueIds.length === 0) return;
+    await archiveTasksImmediately(uniqueIds);
+  }, [archiveTasksImmediately]);
+
+  useEffect(() => {
+    if (!readingListReady) return;
+    const invalidTaskIds = tasks
+      .filter(task => isReadingBookTask(task))
+      .filter(task => task.status !== 'archived')
+      .filter(task => !validReadingTaskIds.has(task.id))
+      .map(task => task.id);
+
+    if (invalidTaskIds.length === 0) return;
+    void archiveReadingTasks(invalidTaskIds).catch(error => {
+      console.warn('Reading task cleanup failed:', error);
+    });
+  }, [archiveReadingTasks, readingListReady, tasks, validReadingTaskIds]);
+
   // One-time per session: refresh stored task subtitles for any reading book
   // that's been promoted to the home routine. Older drafts stored
   // "Author - Daily"; the current format is just the frequency summary.
   // Idempotent — calling createOrUpdateTask with the same id replaces the row.
   useEffect(() => {
-    if (subtitleMigratedRef.current || books.length === 0) return;
+    if (!readingListReady || subtitleMigratedRef.current || books.length === 0) return;
     subtitleMigratedRef.current = true;
-    const enabled = books.filter(book => book.showOnHome);
+    const enabled = books.filter(book => book.status === 'reading' && book.showOnHome);
     if (enabled.length === 0) return;
-    void Promise.all(enabled.map(book => createOrUpdateTask(readingBookToTaskDraft(book))));
-  }, [books, createOrUpdateTask]);
+    void createOrUpdateTasks(enabled.map(book => readingBookToTaskDraft(book)));
+  }, [books, createOrUpdateTasks, readingListReady]);
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [category, setCategory] = useState<string | null>(null);
@@ -241,7 +272,7 @@ export default function ReadingListView() {
 
   const changeStatus = async (book: ReadingBook, status: ReadingBook['status']) => {
     if (status !== 'reading' && book.showOnHome) {
-      await removeTask(readingTaskId(book.id));
+      await archiveReadingTasks([readingTaskId(book.id)]);
     }
     await updateBook(book.id, {
       status,
@@ -653,7 +684,7 @@ export default function ReadingListView() {
         onCancel={() => setDeleteTarget(null)}
         onConfirm={async () => {
           if (deleteTarget) {
-            await removeTask(readingTaskId(deleteTarget.id));
+            await archiveReadingTasks([readingTaskId(deleteTarget.id)]);
             await deleteBook(deleteTarget.id);
           }
           setDeleteTarget(null);
@@ -673,7 +704,7 @@ export default function ReadingListView() {
         onCancel={() => setConfirmDisableTarget(null)}
         onConfirm={async () => {
           if (confirmDisableTarget) {
-            await removeTask(readingTaskId(confirmDisableTarget.id));
+            await archiveReadingTasks([readingTaskId(confirmDisableTarget.id)]);
             await updateBook(confirmDisableTarget.id, { showOnHome: false });
           }
           setConfirmDisableTarget(null);

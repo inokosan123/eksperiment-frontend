@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { LayoutAnimation, Platform, ScrollView, StyleSheet, Text, TextInput, UIManager, View } from 'react-native';
 import Reanimated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
@@ -16,6 +16,7 @@ import {
   archiveHabitRecord,
   habitStepTaskId,
   listHabitsWithStats,
+  DEFAULT_HABIT_COLOR,
   saveHabitRecord,
   setHabitRecordActive,
   type HabitFrequency,
@@ -27,13 +28,11 @@ import {
   Calendar,
   CheckSmall,
   ChevronDown,
-  CircleIcon,
   Flame,
   Pause,
   Pencil,
   Play,
   Plus,
-  Skip,
   Target,
   Trash2,
   X,
@@ -42,38 +41,54 @@ import { C, F } from '@/constants/tokens';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
 import { normalizeHabitIcon } from '@/components/shared/notoEmoji/legacyMap';
 import type { HabitEmojiName } from '@/components/shared/notoEmoji/habits';
+import { AnyTaskCard, type TaskData, type TaskState } from '@/components/shared/TaskCards';
 import { playTaskCompleteFeedback, playTaskUndoFeedback } from '@/components/shared/taskFeedback';
 import { AnimatedProgressFill, AnimatedTaskRow, CompletionFlourish } from '@/components/shared/taskAnimations';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 
 
 const HABIT_COLORS = [
-  '#C5A059', // gold
+  DEFAULT_HABIT_COLOR, // yellow
   '#16A34A', // green
+  '#84CC16', // lime
   '#0EA5E9', // sky blue
   '#2563EB', // royal blue
+  '#4F46E5', // indigo
   '#7C3AED', // purple
+  '#A855F7', // violet
   '#DB2777', // pink
+  '#F43F5E', // rose
   '#DC2626', // red
   '#EA580C', // orange
+  '#F97316', // tangerine
   '#0F766E', // teal
+  '#14B8A6', // aqua
   '#475569', // slate
 ];
 const HABIT_ICONS: HabitEmojiName[] = [
-  // Spiritual (4)
-  'praying-hands', 'open-book', 'candle', 'latin-cross',
-  // Body & health (7)
-  'droplet', 'person-running', 'person-walking', 'flexed-biceps',
-  'green-salad', 'red-apple', 'shower',
-  // Work, business, focus (7)
-  'briefcase', 'laptop', 'chart-increasing', 'bullseye',
-  'alarm-clock', 'handshake', 'money-bag',
-  // Learning & creative (4)
-  'writing-hand', 'books', 'light-bulb', 'artist-palette',
-  // Time of day & nature (5)
-  'sun', 'crescent-moon', 'sunrise', 'seedling', 'evergreen-tree',
-  // Activity & motivation (3)
-  'hot-beverage', 'red-heart', 'fire',
+  // Faith & spiritual rhythm
+  'praying-hands', 'open-book', 'scroll', 'candle', 'latin-cross', 'church', 'glowing-star',
+  // Time, rest & reminders
+  'sunrise', 'sun', 'crescent-moon', 'bed', 'sleeping-face',
+  'alarm-clock', 'stopwatch', 'hourglass-done', 'bell', 'calendar', 'spiral-calendar',
+  // Body, meals & care
+  'droplet', 'red-apple', 'green-salad', 'bread', 'bowl-with-spoon', 'cooking',
+  'fork-and-knife-with-plate', 'shower', 'soap', 'toothbrush', 'pill', 'stethoscope',
+  // Movement & strength
+  'person-running', 'person-walking', 'running-shoe', 'bicycle',
+  'flexed-biceps', 'person-lifting-weights', 'soccer-ball',
+  // Home, order & upkeep
+  'house', 'broom', 'sponge', 'toolbox', 'hammer-and-wrench', 'wrench',
+  // Work, focus & learning
+  'briefcase', 'laptop', 'chart-increasing', 'bullseye', 'memo', 'notebook',
+  'writing-hand', 'books', 'graduation-cap', 'bookmark', 'newspaper', 'brain',
+  'light-bulb', 'handshake', 'money-bag',
+  // Creative practice
+  'artist-palette', 'camera', 'movie-camera', 'microphone', 'musical-notes', 'headphones', 'guitar',
+  // Growth & motivation
+  'seedling', 'potted-plant', 'herb', 'leaf-flutter', 'evergreen-tree',
+  'hot-beverage', 'red-heart', 'fire', 'rocket', 'chequered-flag',
+  'trophy', 'first-place-medal', 'sports-medal', 'sparkles',
 ];
 
 const DAY_OPTIONS = [
@@ -90,6 +105,31 @@ const SEGMENT_SPRING = {
   stiffness: 235,
   mass: 0.72,
 };
+
+if (Platform.OS === 'android' && typeof UIManager.setLayoutAnimationEnabledExperimental === 'function') {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+function animateHabitExpand() {
+  try {
+    LayoutAnimation.configureNext({
+      duration: 280,
+      create: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+      update: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+      },
+      delete: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+    });
+  } catch {
+    // Web may ignore LayoutAnimation; native gets the smoother drawer.
+  }
+}
 
 function getFreqLabel(step: HabitStep) {
   switch (step.frequency) {
@@ -135,7 +175,30 @@ function getStepDisplayTime(step: HabitStep) {
 }
 
 function isStepActiveToday(step: HabitStep) {
-  return getActiveDayIndexes(step.frequency, step.selectedDays).includes(todayTaskDayIndex());
+  const today = getLocalDateKey();
+  return step.history?.scheduled?.includes(today) ?? false;
+}
+
+function stepCardState(step: HabitStep, habitActive: boolean, availableToday: boolean): TaskState {
+  if (!habitActive || !availableToday) return 'locked';
+  if (step.completedToday) return 'done';
+  if (step.skippedToday) return 'skipped';
+  return 'pending';
+}
+
+function habitStepTaskCardData(habit: HabitItem, step: HabitStep, state: TaskState): TaskData {
+  return {
+    variant: 'habit',
+    title: step.title,
+    time: getStepDisplayTime(step),
+    subtitle: getFreqLabel(step),
+    state,
+    type: 'custom',
+    habitColor: habit.color,
+    habitIconName: habit.icon,
+    hideTypeBadge: true,
+    reservedRightSpace: 36,
+  };
 }
 
 function habitStepToTaskDraft(habit: HabitItem, step: HabitStep): TaskDraft {
@@ -242,11 +305,25 @@ function aggregateWindowStats(perStep: StepWindowStats[]): StepWindowStats {
   };
 }
 
-export default function HabitsView() {
+export type HabitsViewHandle = {
+  openAddHabit: () => void;
+};
+
+export type HabitsViewProps = {
+  /** Hide screen-level chrome (title bar + own ScrollView) for embedding inside another scroll. */
+  compact?: boolean;
+  /** Used by My Routine: show only active habits and hide the paused-management tab. */
+  activeOnly?: boolean;
+  /** Fires whenever habits are loaded or mutated — lets an embedded parent reuse the fresh list. */
+  onHabitsChanged?: (habits: HabitItem[]) => void;
+};
+
+const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function HabitsView({ compact = false, activeOnly = false, onHabitsChanged }, ref) {
   const {
     createOrUpdateTask,
-    remove: removeTask,
-    pause: pauseTask,
+    createOrUpdateTasks,
+    removeTasks,
+    pauseTasks,
     completeInstance,
     resetInstance,
     refresh: refreshTasks,
@@ -264,14 +341,23 @@ export default function HabitsView() {
 
   const activeHabits = useMemo(() => habits.filter(item => item.active), [habits]);
   const pausedHabits = useMemo(() => habits.filter(item => !item.active), [habits]);
-  const visibleHabits = tab === 'active' ? activeHabits : pausedHabits;
+  const visibleHabits = activeOnly ? activeHabits : tab === 'active' ? activeHabits : pausedHabits;
+  const showingActiveHabits = activeOnly || tab === 'active';
+
+  useImperativeHandle(ref, () => ({
+    openAddHabit: () => {
+      setEditTarget(null);
+      setEditorOpen(true);
+    },
+  }), []);
 
   const loadHabits = useCallback(async () => {
     const today = getLocalDateKey();
     await refreshTasks(today);
     const nextHabits = await listHabitsWithStats(today);
     setHabits(nextHabits);
-  }, [refreshTasks]);
+    onHabitsChanged?.(nextHabits);
+  }, [refreshTasks, onHabitsChanged]);
 
   useFocusEffect(
     useCallback(() => {
@@ -305,39 +391,66 @@ export default function HabitsView() {
         ? habit.steps.map(step => step.id === nextStep.id ? nextStep : step)
         : [...habit.steps, nextStep],
     };
+    setHabits(current => current.map(item => item.id === updatedHabit.id ? updatedHabit : item));
     await createOrUpdateTask(habitStepToTaskDraft(updatedHabit, nextStep));
     await saveHabitRecord(updatedHabit);
     await loadHabits();
   };
 
+  const deleteStepEdit = async (habit: HabitItem, step: HabitStep) => {
+    const updatedHabit: HabitItem = {
+      ...habit,
+      steps: habit.steps.filter(item => item.id !== step.id),
+    };
+    setHabits(current => current.map(item => item.id === updatedHabit.id ? updatedHabit : item));
+    await saveHabitRecord(updatedHabit);
+    await removeTasks([habitStepTaskId(habit.id, step.id)], getLocalDateKey());
+    await loadHabits();
+  };
+
   const saveHabit = async (habit: HabitItem) => {
     const previous = habits.find(item => item.id === habit.id);
-    const nextStepIds = new Set(habit.steps.map(step => step.id));
-    if (previous) {
-      await Promise.all(previous.steps
-        .filter(step => !nextStepIds.has(step.id))
-        .map(step => removeTask(habitStepTaskId(previous.id, step.id))));
-    }
-    await Promise.all(habit.steps.map(step => createOrUpdateTask(habitStepToTaskDraft(habit, step))));
-    await saveHabitRecord(habit);
-    await loadHabits();
     setEditorOpen(false);
     setEditTarget(null);
     setExpandedId(habit.id);
+    setHabits(current => {
+      const exists = current.some(item => item.id === habit.id);
+      return exists
+        ? current.map(item => item.id === habit.id ? habit : item)
+        : [habit, ...current];
+    });
+
+    const nextStepIds = new Set(habit.steps.map(step => step.id));
+    const today = getLocalDateKey();
+    if (previous) {
+      const removedTaskIds = previous.steps
+        .filter(step => !nextStepIds.has(step.id))
+        .map(step => habitStepTaskId(previous.id, step.id));
+      if (removedTaskIds.length) {
+        await removeTasks(removedTaskIds, today);
+      }
+    }
+    await saveHabitRecord(habit);
+    if (habit.steps.length) {
+      await createOrUpdateTasks(habit.steps.map(step => habitStepToTaskDraft(habit, step)), today);
+    }
+    await loadHabits();
   };
 
   const setHabitActiveState = async (habit: HabitItem, active: boolean) => {
+    const today = getLocalDateKey();
+    const nextHabit = { ...habit, active };
+    setHabits(current => current.map(item => item.id === habit.id ? nextHabit : item));
+    setTab(active || activeOnly ? 'active' : 'paused');
+    setExpandedId(active ? habit.id : null);
     await setHabitRecordActive(habit.id, active);
     if (active) {
-      const nextHabit = { ...habit, active: true };
-      await Promise.all(nextHabit.steps.map(step => createOrUpdateTask(habitStepToTaskDraft(nextHabit, step))));
+      await createOrUpdateTasks(nextHabit.steps.map(step => habitStepToTaskDraft(nextHabit, step)), today);
     } else {
-      await Promise.all(habit.steps.map(step => pauseTask(habitStepTaskId(habit.id, step.id))));
+      await pauseTasks(habit.steps.map(step => habitStepTaskId(habit.id, step.id)), today);
     }
 
     await loadHabits();
-    setTab(active ? 'active' : 'paused');
-    setExpandedId(habit.id);
   };
 
   const progressFor = (habit: HabitItem) => {
@@ -352,31 +465,24 @@ export default function HabitsView() {
     return { total, done, pct: effective === 0 ? 0 : Math.round((done / effective) * 100) };
   };
 
-  return (
-    <View style={s.screen}>
-      <ScreenTitleBar
-        title="HABITS"
-        showBack
-        rightElement={(
-          <TouchableOpacity onPress={() => { setEditTarget(null); setEditorOpen(true); }} activeOpacity={0.76} style={s.headerBtn}>
-            <Plus s={24} c={C.gold} w={2.4} />
-          </TouchableOpacity>
-        )}
-      />
-
-      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+  const innerContent = (
+    <>
+      {!activeOnly && (
         <HabitTabBar
           tab={tab}
           activeCount={activeHabits.length}
           pausedCount={pausedHabits.length}
           onChange={key => { setTab(key); setExpandedId(null); }}
         />
+      )}
 
+      {!activeOnly && !compact && (
         <Text style={s.helperText}>
           {tab === 'active'
             ? 'Active habits appear in your daily flow and can be checked off each day.'
             : 'Paused habits stay here so you can resume them whenever you want.'}
         </Text>
+      )}
 
         <View style={s.habitList}>
           {visibleHabits.map(habit => {
@@ -389,7 +495,7 @@ export default function HabitsView() {
               : `${todaysSteps.length} ${todaysSteps.length === 1 ? 'step' : 'steps'} today`;
             return (
               <View key={habit.id} style={s.habitCard}>
-                <TouchableOpacity onPress={() => setExpandedId(current => current === habit.id ? null : habit.id)} activeOpacity={0.85} style={s.habitHead}>
+                <TouchableOpacity onPress={() => { animateHabitExpand(); setExpandedId(current => current === habit.id ? null : habit.id); }} activeOpacity={0.85} style={s.habitHead}>
                   <LinearGradient
                     colors={[hexToRgba(habit.color, 0.18), hexToRgba(habit.color, 0.06)]}
                     start={{ x: 0, y: 0 }}
@@ -418,77 +524,23 @@ export default function HabitsView() {
                     {todaysSteps.length > 0 ? (
                       <View style={s.stepsContainer}>
                         {todaysSteps.map(step => {
-                          const isSkipped = step.skippedToday;
-                          const isResolved = step.completedToday || isSkipped;
-                          const stepBaseAlpha = !habit.active ? 0 : (isResolved ? 0.04 : 0.10);
-                          const stepTopAlpha = !habit.active ? 0 : (isResolved ? 0.015 : 0.04);
-                          const stepAccentColor = !habit.active || isSkipped ? '#D1D5DB' : habit.color;
+                          const isResolved = step.completedToday || step.skippedToday;
+                          const state = stepCardState(step, habit.active, true);
                           return (
                             <AnimatedTaskRow key={step.id} done={isResolved}>
-                              <TouchableOpacity
-                                onPress={() => habit.active && toggleStep(habit.id, step.id)}
-                                activeOpacity={0.84}
-                                style={[
-                                  s.stepCard,
-                                  { borderColor: hexToRgba(habit.color, !habit.active ? 0.10 : 0.20) },
-                                  !habit.active && s.stepCardDim,
-                                  isSkipped && s.stepCardSkipped,
-                                ]}
-                              >
-                                <LinearGradient
-                                  colors={['#FFFFFF', '#FFFFFF', hexToRgba(habit.color, stepBaseAlpha)]}
-                                  locations={[0, 0.55, 1]}
-                                  start={{ x: 0, y: 0 }}
-                                  end={{ x: 1, y: 1 }}
-                                  style={s.stepGradientLayer}
-                                  pointerEvents="none"
-                                />
-                                <LinearGradient
-                                  colors={[hexToRgba(habit.color, stepTopAlpha), 'rgba(255,255,255,0)']}
-                                  locations={[0, 0.55]}
-                                  start={{ x: 0.5, y: 0 }}
-                                  end={{ x: 0.5, y: 1 }}
-                                  style={s.stepGradientLayer}
-                                  pointerEvents="none"
-                                />
-                                <View style={[s.stepCornerRibbonTop, { backgroundColor: stepAccentColor }]} />
-                                <View style={[s.stepCornerRibbonBottom, { backgroundColor: stepAccentColor, opacity: 0.55 }]} />
-                                <View
-                                  style={[
-                                    s.stepCheckLg,
-                                    { borderColor: hexToRgba(habit.color, 0.45) },
-                                    step.completedToday && { backgroundColor: habit.color, borderColor: habit.color },
-                                    isSkipped && { backgroundColor: '#F5F5F4', borderColor: '#D6D3D1' },
-                                  ]}
+                              <View style={s.stepTaskCardShell}>
+                                <TouchableOpacity
+                                  onPress={() => habit.active && toggleStep(habit.id, step.id)}
+                                  activeOpacity={0.84}
+                                  disabled={!habit.active}
                                 >
-                                  {step.completedToday
-                                    ? <CheckSmall s={16} c="#FFFFFF" />
-                                    : isSkipped
-                                      ? <Skip s={14} c="#A8A29E" w={2.4} />
-                                      : <CircleIcon s={16} c={hexToRgba(habit.color, 0.45)} w={2} />}
-                                </View>
+                                  <AnyTaskCard task={habitStepTaskCardData(habit, step, state)} />
+                                </TouchableOpacity>
                                 <CompletionFlourish
                                   done={step.completedToday}
                                   color={habit.color}
-                                  layerStyle={{ left: 14, top: 0, bottom: 0, width: 28 }}
+                                  layerStyle={s.stepTaskFlourish}
                                 />
-                                <View style={{ flex: 1, minWidth: 0 }}>
-                                  <Text
-                                    style={[
-                                      s.stepCardTitle,
-                                      step.completedToday && s.stepCardTitleDone,
-                                      isSkipped && s.stepCardTitleSkipped,
-                                    ]}
-                                    numberOfLines={1}
-                                  >
-                                    {step.title}
-                                  </Text>
-                                  <View style={s.stepCardMetaRow}>
-                                    <Text style={[s.stepCardMeta, { color: habit.active && !isSkipped ? habit.color : '#A8A29E' }]}>{getStepDisplayTime(step)}</Text>
-                                    <Text style={s.stepCardMetaDot}>·</Text>
-                                    <Text style={s.stepCardMeta}>{getFreqLabel(step)}</Text>
-                                  </View>
-                                </View>
                                 <TouchableOpacity
                                   onPress={e => {
                                     e.stopPropagation?.();
@@ -496,12 +548,11 @@ export default function HabitsView() {
                                   }}
                                   activeOpacity={0.7}
                                   hitSlop={8}
-                                  style={s.stepEditBtn}
+                                  style={s.stepTaskEditBtn}
                                 >
                                   <Pencil s={14} c="#A8A29E" w={2} />
-                                  <Text style={s.stepEditLabel}>EDIT</Text>
                                 </TouchableOpacity>
-                              </TouchableOpacity>
+                              </View>
                             </AnimatedTaskRow>
                           );
                         })}
@@ -516,42 +567,22 @@ export default function HabitsView() {
                       <View style={s.otherStepsBlock}>
                         <Text style={s.otherStepsLabel}>OTHER DAYS</Text>
                         <View style={s.stepsContainer}>
-                          {otherSteps.map(step => (
-                            <View
-                              key={step.id}
-                              style={[
-                                s.stepCard,
-                                s.stepCardDim,
-                                { borderColor: hexToRgba(habit.color, 0.10) },
-                              ]}
-                            >
-                              <View
-                                style={[
-                                  s.stepCheckLg,
-                                  { borderColor: '#E7E5E4', backgroundColor: '#FAFAF9' },
-                                ]}
-                              >
-                                <CircleIcon s={16} c="#D6D3D1" w={2} />
-                              </View>
-                              <View style={{ flex: 1, minWidth: 0 }}>
-                                <Text style={[s.stepCardTitle, s.stepCardTitleSkipped]} numberOfLines={1}>{step.title}</Text>
-                                <View style={s.stepCardMetaRow}>
-                                  <Text style={[s.stepCardMeta, { color: '#A8A29E' }]}>{getStepDisplayTime(step)}</Text>
-                                  <Text style={s.stepCardMetaDot}>·</Text>
-                                  <Text style={s.stepCardMeta}>{getFreqLabel(step)}</Text>
-                                </View>
-                              </View>
+                          {otherSteps.map(step => {
+                            const state = stepCardState(step, habit.active, false);
+                            return (
+                              <View key={step.id} style={[s.stepTaskCardShell, s.stepTaskCardInactive]}>
+                                <AnyTaskCard task={habitStepTaskCardData(habit, step, state)} />
                               <TouchableOpacity
                                 onPress={() => setStepEditTarget({ habit, step })}
                                 activeOpacity={0.7}
                                 hitSlop={8}
-                                style={s.stepEditBtn}
+                                style={s.stepTaskEditBtn}
                               >
                                 <Pencil s={14} c="#A8A29E" w={2} />
-                                <Text style={s.stepEditLabel}>EDIT</Text>
                               </TouchableOpacity>
-                            </View>
-                          ))}
+                              </View>
+                            );
+                          })}
                         </View>
                       </View>
                     )}
@@ -599,9 +630,9 @@ export default function HabitsView() {
 
         {visibleHabits.length === 0 && (
           <View style={s.emptyCard}>
-            <Text style={s.emptyTitle}>{tab === 'active' ? 'No active habits' : 'No paused habits'}</Text>
+            <Text style={s.emptyTitle}>{showingActiveHabits ? 'No active habits' : 'No paused habits'}</Text>
             <Text style={s.emptyBody}>
-              {tab === 'active'
+              {showingActiveHabits
                 ? 'Tap + to add your first habit.'
                 : 'Paused habits will appear here.'}
             </Text>
@@ -616,8 +647,11 @@ export default function HabitsView() {
           <Plus s={16} c={C.gold} w={2.4} />
           <Text style={s.addHabitText}>Add Habit</Text>
         </TouchableOpacity>
-      </ScrollView>
+    </>
+  );
 
+  const modals = (
+    <>
       <HabitEditorSheet
         visible={editorOpen}
         editHabit={editTarget}
@@ -634,12 +668,17 @@ export default function HabitsView() {
         confirmLabel="DELETE"
         onCancel={() => setDeleteTarget(null)}
         onConfirm={async () => {
-          if (deleteTarget) {
-            await Promise.all(deleteTarget.steps.map(step => removeTask(habitStepTaskId(deleteTarget.id, step.id))));
-            await archiveHabitRecord(deleteTarget.id);
+          const target = deleteTarget;
+          setDeleteTarget(null);
+          if (target) {
+            setHabits(current => current.filter(item => item.id !== target.id));
+            const taskIds = target.steps.map(step => habitStepTaskId(target.id, step.id));
+            if (taskIds.length) {
+              await removeTasks(taskIds, getLocalDateKey());
+            }
+            await archiveHabitRecord(target.id);
             await loadHabits();
           }
-          setDeleteTarget(null);
         }}
       />
 
@@ -682,10 +721,45 @@ export default function HabitsView() {
           }
           setStepEditTarget(null);
         }}
+        onDelete={async step => {
+          if (stepEditTarget) {
+            await deleteStepEdit(stepEditTarget.habit, step);
+          }
+          setStepEditTarget(null);
+        }}
       />
+    </>
+  );
+
+  if (compact) {
+    return (
+      <View>
+        {innerContent}
+        {modals}
+      </View>
+    );
+  }
+
+  return (
+    <View style={s.screen}>
+      <ScreenTitleBar
+        title="HABITS"
+        showBack
+        rightElement={(
+          <TouchableOpacity onPress={() => { setEditTarget(null); setEditorOpen(true); }} activeOpacity={0.76} style={s.headerBtn}>
+            <Plus s={24} c={C.gold} w={2.4} />
+          </TouchableOpacity>
+        )}
+      />
+      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+        {innerContent}
+      </ScrollView>
+      {modals}
     </View>
   );
-}
+});
+
+export default HabitsView;
 
 function HabitTabBar({
   tab,
@@ -780,7 +854,7 @@ function HabitEditorSheet({
   visible: boolean;
   editHabit: HabitItem | null;
   onClose: () => void;
-  onSave: (habit: HabitItem) => void;
+  onSave: (habit: HabitItem) => void | Promise<void>;
 }) {
   const [name, setName] = useState('');
   const [color, setColor] = useState(HABIT_COLORS[0]);
@@ -791,10 +865,16 @@ function HabitEditorSheet({
   const [editStep, setEditStep] = useState<HabitStep | null>(null);
   const [habitIconGridWidth, setHabitIconGridWidth] = useState(0);
   const [pendingDeleteStep, setPendingDeleteStep] = useState<HabitStep | null>(null);
+  const [pendingNoSteps, setPendingNoSteps] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     if (!visible) return;
     setIconExpanded(false);
+    submittingRef.current = false;
+    setSubmitting(false);
+    setPendingNoSteps(false);
     if (editHabit) {
       setName(editHabit.name);
       setColor(editHabit.color);
@@ -840,6 +920,11 @@ function HabitEditorSheet({
           setTaskOpen(false);
           setEditStep(null);
         }}
+        onDelete={step => {
+          setSteps(current => current.filter(item => item.id !== step.id));
+          setTaskOpen(false);
+          setEditStep(null);
+        }}
       />
       <ConfirmModal
         embedded
@@ -856,6 +941,23 @@ function HabitEditorSheet({
             setSteps(current => current.filter(item => item.id !== pendingDeleteStep.id));
           }
           setPendingDeleteStep(null);
+        }}
+      />
+      <ConfirmModal
+        embedded
+        visible={pendingNoSteps}
+        icon={<Target s={22} c={color} w={2.2} />}
+        iconBg={hexToRgba(color, 0.12)}
+        title="Add at least one step"
+        body="A habit is the rhythm you want to build. Steps are the concrete actions that appear on Home and help you practice it."
+        cancelLabel="CLOSE"
+        confirmLabel="ADD STEP"
+        confirmColor={color}
+        onCancel={() => setPendingNoSteps(false)}
+        onConfirm={() => {
+          setPendingNoSteps(false);
+          setEditStep(null);
+          setTaskOpen(true);
         }}
       />
     </>
@@ -875,17 +977,32 @@ function HabitEditorSheet({
               </View>
               <TouchableOpacity
                 onPress={() => {
-                  if (!name.trim() || steps.length === 0) return;
-                  onSave({
+                  if (submittingRef.current) return;
+                  if (steps.length === 0) {
+                    setPendingNoSteps(true);
+                    return;
+                  }
+                  if (!name.trim()) return;
+                  submittingRef.current = true;
+                  setSubmitting(true);
+                  void Promise.resolve(onSave({
                     id: editHabit?.id ?? `habit_${Date.now()}`,
                     name: name.trim(),
                     color,
                     icon,
                     active: editHabit?.active ?? true,
                     steps,
-                  });
+                  }))
+                    .catch(error => {
+                      console.warn('Failed to save habit:', error);
+                    })
+                    .finally(() => {
+                      submittingRef.current = false;
+                      setSubmitting(false);
+                    });
                 }}
-                style={[s.sheetHeadBtn, s.sheetSave]}
+                disabled={submitting}
+                style={[s.sheetHeadBtn, s.sheetSave, submitting && s.sheetSaveDisabled]}
                 activeOpacity={0.84}
               >
                 <CheckSmall s={16} c="#FFFFFF" />
@@ -941,7 +1058,7 @@ function HabitEditorSheet({
               <View style={s.sheetBlock}>
                 <Text style={s.sheetBlockLabel}>Icon</Text>
                 {(() => {
-                  const COLLAPSED = 20; // 4 rows × 5 chips
+                  const COLLAPSED = 25; // 5 rows x 5 chips
                   const total = HABIT_ICONS.length;
                   const hasMore = total > COLLAPSED;
                   let visibleIcons = iconExpanded ? HABIT_ICONS : HABIT_ICONS.slice(0, COLLAPSED);
@@ -958,16 +1075,24 @@ function HabitEditorSheet({
                             <TouchableOpacity
                               key={item}
                               onPress={() => setIcon(item)}
+                              accessibilityRole="button"
+                              accessibilityState={{ selected: active }}
                               activeOpacity={0.84}
                               style={[
                                 s.iconChip,
                                 { width: habitIconChipSize, height: habitIconChipSize },
-                                active && { borderColor: color, backgroundColor: hexToRgba(color, 0.08) },
+                                active && s.iconChipActive,
+                                active && { borderColor: color, backgroundColor: hexToRgba(color, 0.12), shadowColor: color },
                               ]}
                             >
                               <View style={s.iconGlyphBox}>
-                                <NotoEmoji name={item} size={27} />
+                                <NotoEmoji name={item} size={29} />
                               </View>
+                              {active && (
+                                <View pointerEvents="none" style={[s.iconSelectedBadge, { backgroundColor: color }]}>
+                                  <CheckSmall s={12} c="#FFFFFF" w={3} />
+                                </View>
+                              )}
                             </TouchableOpacity>
                           );
                         })}
@@ -1063,6 +1188,7 @@ function HabitTaskEditorSheet({
   accent,
   onClose,
   onSave,
+  onDelete,
   embedded = false,
 }: {
   visible: boolean;
@@ -1070,6 +1196,7 @@ function HabitTaskEditorSheet({
   accent: string;
   onClose: () => void;
   onSave: (step: HabitStep) => void;
+  onDelete?: (step: HabitStep) => void | Promise<void>;
   embedded?: boolean;
 }) {
   const [title, setTitle] = useState('');
@@ -1081,9 +1208,11 @@ function HabitTaskEditorSheet({
   const [dayTimes, setDayTimes] = useState<TaskDayTimes>({});
   const [notificationMode, setNotificationMode] = useState<NotificationMode>('none');
   const [reminderMinutes, setReminderMinutes] = useState(15);
+  const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
+    setConfirmDeleteVisible(false);
     if (step) {
       setTitle(step.title);
       setTime(step.time);
@@ -1112,6 +1241,7 @@ function HabitTaskEditorSheet({
     [frequency, selectedDays],
   );
   const allowPerDayTimes = frequency !== 'monthly' && (frequency !== 'specific_days' || selectedDays.length > 0);
+  const canDelete = !!step && !!onDelete;
   const canSave = title.trim().length > 0
     && (frequency !== 'specific_days' || selectedDays.length > 0)
     && (frequency !== 'monthly' || monthlyDays.length > 0);
@@ -1139,8 +1269,36 @@ function HabitTaskEditorSheet({
 
   if (!visible) return null;
 
+  const deleteConfirmOverlay = canDelete ? (
+    <ConfirmModal
+      embedded
+      visible={confirmDeleteVisible}
+      icon={<Trash2 s={22} c="#EF4444" />}
+      iconBg="#FEF2F2"
+      title="Delete Step?"
+      body={step ? `"${step.title}" will be removed from this habit.` : ''}
+      confirmLabel="DELETE"
+      confirmColor="#EF4444"
+      onCancel={() => setConfirmDeleteVisible(false)}
+      onConfirm={() => {
+        if (!step || !onDelete) return;
+        setConfirmDeleteVisible(false);
+        void Promise.resolve(onDelete(step)).catch(error => {
+          console.warn('Habit step delete failed:', error);
+        });
+      }}
+    />
+  ) : null;
+
   return (
-    <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.taskBottomSheet} keyboardAware embedded={embedded}>
+    <SmoothBottomSheet
+      visible={visible}
+      onClose={onClose}
+      sheetStyle={s.taskBottomSheet}
+      keyboardAware
+      embedded={embedded}
+      overlayChildren={deleteConfirmOverlay}
+    >
       <View style={s.sheetHandle} />
       <View style={s.sheetHead}>
         <TouchableOpacity onPress={onClose} style={s.sheetHeadBtn} activeOpacity={0.7}>
@@ -1162,7 +1320,7 @@ function HabitTaskEditorSheet({
 
       <ScrollView contentContainerStyle={s.taskContent} showsVerticalScrollIndicator={false}>
         <View style={s.sheetBlock}>
-          <Text style={[s.sheetBlockLabel, { color: accent }]}>Step Name</Text>
+          <Text style={[s.sheetBlockLabel, { color: accent }]}>Activity Name</Text>
           <TextInput
             value={title}
             onChangeText={setTitle}
@@ -1226,6 +1384,17 @@ function HabitTaskEditorSheet({
         >
           <Text style={s.taskSaveText}>SAVE CHANGES</Text>
         </TouchableOpacity>
+
+        {canDelete && (
+          <TouchableOpacity
+            onPress={() => setConfirmDeleteVisible(true)}
+            activeOpacity={0.84}
+            style={s.taskDeleteBtn}
+          >
+            <Trash2 s={16} c="#EF4444" />
+            <Text style={s.taskDeleteText}>DELETE STEP</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </SmoothBottomSheet>
   );
@@ -1505,6 +1674,23 @@ const s = StyleSheet.create({
     borderTopColor: 'rgba(120,113,108,0.14)',
   },
   stepsContainer: { gap: 8, marginBottom: 12 },
+  stepTaskCardShell: { position: 'relative' },
+  stepTaskCardInactive: { opacity: 0.72 },
+  stepTaskEditBtn: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(168,162,158,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 4,
+  },
+  stepTaskFlourish: { left: 4, top: 0, bottom: 6, width: 52 },
   stepCard: {
     position: 'relative',
     flexDirection: 'row',
@@ -1599,6 +1785,7 @@ const s = StyleSheet.create({
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F5F5F4' },
   sheetHeadBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   sheetSave: { backgroundColor: C.gold },
+  sheetSaveDisabled: { opacity: 0.45 },
   sheetKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.textMuted, textTransform: 'uppercase' },
   sheetTitle: { fontFamily: F.serifMedium, fontSize: 19, color: C.text, marginTop: 2 },
   sheetContent: { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 12, gap: 16 },
@@ -1610,7 +1797,7 @@ const s = StyleSheet.create({
   sheetBlock: { borderRadius: 24, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F2F1EC', padding: 18 },
   sheetBlockLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.gold, textTransform: 'uppercase', marginBottom: 12 },
   editStepsLabel: { fontFamily: F.serifMedium, fontSize: 17, color: '#1C1917', letterSpacing: 0.2 },
-  sheetInput: { minHeight: 52, borderRadius: 20, backgroundColor: '#FAFAFA', borderWidth: 1, borderColor: '#F2F1EC', paddingHorizontal: 16, fontFamily: F.serif, fontSize: 22, color: '#1F2937' },
+  sheetInput: { minHeight: 52, borderRadius: 18, backgroundColor: '#FAFAFA', borderWidth: 1, borderColor: '#F2F1EC', paddingHorizontal: 16, fontFamily: F.serif, fontSize: 22, color: '#111827' },
   colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   colorRing: {
     width: 40,
@@ -1643,9 +1830,33 @@ const s = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
+    overflow: 'visible',
+    shadowColor: '#8C7A4F',
+    shadowOpacity: 0.035,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
+    elevation: 1,
   },
-  iconGlyphBox: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
+  iconChipActive: {
+    borderWidth: 2,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 11,
+    elevation: 4,
+  },
+  iconGlyphBox: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
+  iconSelectedBadge: {
+    position: 'absolute',
+    right: -4,
+    bottom: -4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   iconChipText: { fontSize: 26, textAlign: 'center', includeFontPadding: false, marginTop: -3 },
   iconMoreBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 12, alignSelf: 'flex-start' },
   iconMoreText: { fontFamily: F.sansSemiBold, fontSize: 12, letterSpacing: 0.4 },
@@ -1733,6 +1944,18 @@ const s = StyleSheet.create({
   dayChipText: { fontFamily: F.sansBold, fontSize: 11, color: '#A8A29E' },
   taskSaveBtn: { minHeight: 50, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginTop: 20 },
   taskSaveText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2, color: '#FFFFFF' },
+  taskDeleteBtn: {
+    minHeight: 50,
+    borderRadius: 22,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  taskDeleteText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.7, color: '#EF4444' },
   applySheet: { borderTopLeftRadius: 32, borderTopRightRadius: 32, backgroundColor: '#FFFFFF', paddingHorizontal: 22, paddingBottom: 28 },
   applyTitle: { marginTop: 4, fontFamily: F.serifMedium, fontSize: 24, color: '#111827', textAlign: 'center' },
   applyBody: { marginTop: 8, fontFamily: F.serif, fontSize: 16, lineHeight: 22, color: '#9CA3AF', textAlign: 'center' },

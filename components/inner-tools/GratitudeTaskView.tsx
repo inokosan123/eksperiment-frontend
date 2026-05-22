@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BackHandler,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -9,11 +10,17 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Reanimated, {
+  FadeInDown,
+  FadeOutUp,
+  LinearTransition,
+} from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, CheckSmall, Plus, X } from '@/components/icons/Icons';
+import { CheckSmall, Pencil, Plus, X } from '@/components/icons/Icons';
 import ConfirmModal from '@/components/shared/ConfirmModal';
+import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { C, F } from '@/constants/tokens';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
@@ -27,8 +34,15 @@ type DraftBlessing = {
   content: string;
 };
 
+const gratitudeTaskLayout = LinearTransition.springify().damping(18).stiffness(190).mass(0.82);
+const HOME_RETURN_DELAY_MS = 760;
+
 function newId(index: number) {
   return `gratitude_task_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function makeEmptyDrafts(existingCount: number) {
+  return Array.from({ length: Math.max(1, 3 - existingCount) }, () => ({ title: '', content: '' }));
 }
 
 function firstParam(value: string | string[] | undefined) {
@@ -55,19 +69,32 @@ export default function GratitudeTaskView() {
   );
 
   const [items, setItems] = useState<DraftBlessing[]>(
-    Array.from({ length: Math.max(1, 3 - existingDaily.length) }, () => ({ title: '', content: '' })),
+    makeEmptyDrafts(existingDaily.length),
   );
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<GratitudeEntry | null>(null);
+  const [isFinishing, setIsFinishing] = useState(false);
+  const [finishingEntryIds, setFinishingEntryIds] = useState<string[]>([]);
+  const [finishingTotalCount, setFinishingTotalCount] = useState<number | null>(null);
 
   const titleRefs = useRef<(TextInput | null)[]>([]);
 
   const filledItems = items.filter(item => item.title.trim().length > 0);
-  const totalCount = existingDaily.length + filledItems.length;
-  const canFinish = totalCount >= 3;
-  const hasAnyInput = items.some(item => item.title.trim() || item.content.trim());
-  const needed = Math.max(0, 3 - totalCount);
+  const countedExisting = existingDaily.filter(entry => entry.id !== editingEntry?.id);
+  const totalCount = countedExisting.length + filledItems.length;
+  const progressCount = finishingTotalCount ?? totalCount;
+  const activeEditIsValid = !editingEntry || filledItems.length > 0;
+  const readyToFinish = totalCount >= 3 && activeEditIsValid;
+  const canFinish = readyToFinish && !isFinishing;
+  const hasAnyInput = !isFinishing && (items.some(item => item.title.trim() || item.content.trim()) || !!editingEntry);
+  const needed = Math.max(0, 3 - progressCount);
+  const visibleExistingDaily = useMemo(
+    () => existingDaily.filter(entry => entry.id !== editingEntry?.id && !finishingEntryIds.includes(entry.id)),
+    [editingEntry?.id, existingDaily, finishingEntryIds],
+  );
 
   const handleBack = () => {
+    if (isFinishing) return;
     if (hasAnyInput) {
       setShowExitConfirm(true);
       return;
@@ -82,6 +109,14 @@ export default function GratitudeTaskView() {
     });
     return () => sub.remove();
   });
+
+  useEffect(() => {
+    if (editingEntry || isFinishing) return;
+    setItems(prev => {
+      if (prev.some(item => item.title.trim() || item.content.trim())) return prev;
+      return makeEmptyDrafts(existingDaily.length);
+    });
+  }, [editingEntry, existingDaily.length, isFinishing]);
 
   const updateItem = (index: number, field: keyof DraftBlessing, value: string) => {
     setItems(prev => prev.map((item, itemIndex) => (
@@ -105,25 +140,105 @@ export default function GratitudeTaskView() {
     });
   };
 
+  const editEntry = (entry: GratitudeEntry) => {
+    Keyboard.dismiss();
+    setEditingEntry(entry);
+    setItems([{ title: entry.title, content: entry.content }]);
+    requestAnimationFrame(() => {
+      titleRefs.current[0]?.focus();
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingEntry(null);
+    setItems(makeEmptyDrafts(existingDaily.length));
+  };
+
+  const saveDraftItem = (index: number) => {
+    if (editingEntry) return;
+    const item = items[index];
+    const title = item?.title.trim() ?? '';
+    if (!title) return;
+
+    const entry: GratitudeEntry = {
+      id: newId(index),
+      kind: 'daily',
+      title,
+      content: item.content.trim(),
+      date: taskDate,
+      createdAt: Date.now(),
+    };
+
+    upsertGratitudeEntry(entry);
+    if (Platform.OS !== 'web') {
+      Haptics.selectionAsync();
+    }
+    setItems(prev => {
+      const next = prev.filter((_, itemIndex) => itemIndex !== index);
+      return next.length > 0 ? next : makeEmptyDrafts(existingDaily.length + 1);
+    });
+  };
+
+  const saveEdit = () => {
+    if (!editingEntry) return;
+    const item = items[0];
+    const title = item?.title.trim() ?? '';
+    if (!title) return;
+
+    upsertGratitudeEntry({
+      ...editingEntry,
+      title,
+      content: item.content.trim(),
+      date: taskDate,
+    });
+    if (Platform.OS !== 'web') {
+      Haptics.selectionAsync();
+    }
+    setEditingEntry(null);
+    setItems(makeEmptyDrafts(existingDaily.length));
+  };
+
   const finishTask = async () => {
     if (!canFinish) return;
     const now = Date.now();
 
-    filledItems.forEach((item, index) => {
-      const entry: GratitudeEntry = {
+    const entriesToSave = filledItems.map((item, index): GratitudeEntry => {
+      const title = item.title.trim();
+      const content = item.content.trim();
+
+      if (editingEntry && index === 0) {
+        return {
+          ...editingEntry,
+          title,
+          content,
+          date: taskDate,
+        };
+      }
+
+      return {
         id: newId(index),
         kind: 'daily',
-        title: item.title.trim(),
-        content: item.content.trim(),
+        title,
+        content,
         date: taskDate,
         createdAt: now + index,
       };
+    });
+
+    Keyboard.dismiss();
+    setIsFinishing(true);
+    setFinishingEntryIds(entriesToSave.map(entry => entry.id));
+    setFinishingTotalCount(totalCount);
+    setItems([]);
+    setEditingEntry(null);
+
+    entriesToSave.forEach((entry) => {
       upsertGratitudeEntry(entry);
     });
 
     if (taskInstanceId) {
       await completeInstance(taskInstanceId, taskDate);
-      queueTaskCompletionReturnAnimation(taskInstanceId);
+      queueTaskCompletionReturnAnimation(taskInstanceId, HOME_RETURN_DELAY_MS);
     } else if (Platform.OS !== 'web') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
@@ -133,20 +248,23 @@ export default function GratitudeTaskView() {
 
   return (
     <View style={s.screen}>
-      <View style={[s.header, { paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity onPress={handleBack} activeOpacity={0.72} style={s.backBtn}>
-          <ArrowLeft s={25} c="#9CA3AF" w={2} />
-        </TouchableOpacity>
-        <Text style={s.headerTitle}>GRATITUDE</Text>
+      <ScreenTitleBar
+        title="GRATITUDE"
+        showBack
+        bg="#FDFBF5"
+        onBackOverride={handleBack}
+        sideWidth={104}
+        rightElement={(
         <TouchableOpacity
           onPress={finishTask}
           disabled={!canFinish}
           activeOpacity={0.82}
-          style={[s.finishBtn, canFinish && s.finishBtnReady]}
+          style={[s.finishBtn, readyToFinish && s.finishBtnReady]}
         >
-          <Text style={[s.finishText, canFinish && s.finishTextReady]}>FINISH</Text>
+          <Text style={[s.finishText, readyToFinish && s.finishTextReady]}>FINISH</Text>
         </TouchableOpacity>
-      </View>
+        )}
+      />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -158,16 +276,16 @@ export default function GratitudeTaskView() {
           contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 42 }]}
         >
           <View style={s.progressBlock}>
-            <Text style={s.progressLabel}>{totalCount} / 3 MINIMUM</Text>
+            <Text style={s.progressLabel}>{progressCount} / 3 MINIMUM</Text>
             <View style={s.progressBars}>
               {[0, 1, 2].map(index => (
                 <View
                   key={index}
-                  style={[s.progressBar, index < Math.min(totalCount, 3) && s.progressBarActive]}
+                  style={[s.progressBar, index < Math.min(progressCount, 3) && s.progressBarActive]}
                 />
               ))}
             </View>
-            {canFinish ? (
+            {readyToFinish ? (
               <Text style={s.progressHint}>Ready to finish</Text>
             ) : (
               <Text style={s.progressHint}>
@@ -176,24 +294,77 @@ export default function GratitudeTaskView() {
             )}
           </View>
 
-          {existingDaily.length > 0 && (
-            <View style={s.existingBlock}>
+          {visibleExistingDaily.length > 0 && (
+            <Reanimated.View
+              style={s.existingBlock}
+              layout={gratitudeTaskLayout}
+              entering={FadeInDown.duration(160)}
+              exiting={FadeOutUp.duration(120)}
+            >
               <Text style={s.sectionEyebrow}>ALREADY ADDED TODAY</Text>
-              {existingDaily.map(entry => (
-                <View key={entry.id} style={s.existingCard}>
+              {visibleExistingDaily.map(entry => (
+                <Reanimated.View
+                  key={entry.id}
+                  style={s.existingCard}
+                  layout={gratitudeTaskLayout}
+                  exiting={FadeOutUp.duration(120)}
+                >
                   <View style={s.existingCheck}>
                     <CheckSmall s={12} c="#FFFFFF" w={3} />
                   </View>
                   <Text style={s.existingTitle} numberOfLines={1}>{entry.title}</Text>
-                </View>
+                  <TouchableOpacity
+                    onPress={() => editEntry(entry)}
+                    activeOpacity={0.78}
+                    hitSlop={8}
+                    haptic="selection"
+                    style={s.editSavedBtn}
+                  >
+                    <Pencil s={14} c="#A8A29E" w={1.9} />
+                  </TouchableOpacity>
+                </Reanimated.View>
               ))}
-            </View>
+            </Reanimated.View>
           )}
 
-          <View style={s.itemsStack}>
-            {existingDaily.length > 0 && <Text style={s.sectionEyebrow}>ADD MORE</Text>}
+          {!isFinishing && (
+          <Reanimated.View
+            style={s.itemsStack}
+            layout={gratitudeTaskLayout}
+            exiting={FadeOutUp.duration(120)}
+          >
+            {editingEntry ? (
+              <View style={s.editingHeader}>
+                <Text style={s.sectionEyebrow}>EDIT SAVED ENTRY</Text>
+                <View style={s.editActions}>
+                  <TouchableOpacity
+                    onPress={cancelEdit}
+                    activeOpacity={0.8}
+                    hitSlop={8}
+                    style={s.cancelEditBtn}
+                  >
+                    <Text style={s.cancelEditText}>CANCEL</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={saveEdit}
+                    disabled={!filledItems[0]?.title.trim()}
+                    activeOpacity={0.84}
+                    hitSlop={8}
+                    style={[s.saveEditBtn, !filledItems[0]?.title.trim() && s.saveEditBtnDisabled]}
+                  >
+                    <CheckSmall s={13} c="#FFFFFF" w={3} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : visibleExistingDaily.length > 0 ? (
+              <Text style={s.sectionEyebrow}>ADD MORE</Text>
+            ) : null}
             {items.map((item, index) => (
-              <View key={index} style={s.itemCard}>
+              <Reanimated.View
+                key={`${editingEntry?.id ?? 'draft'}-${index}`}
+                style={s.itemCard}
+                layout={gratitudeTaskLayout}
+              >
                 <View style={s.itemTitleRow}>
                   <Text style={s.heart}>♥</Text>
                   <TextInput
@@ -202,21 +373,34 @@ export default function GratitudeTaskView() {
                     onChangeText={value => updateItem(index, 'title', value)}
                     placeholder="I'm grateful for..."
                     placeholderTextColor="#D9D4CE"
-                    autoFocus={index === 0 && existingDaily.length === 0}
+                    autoFocus={index === 0 && existingDaily.length === 0 && !editingEntry}
                     returnKeyType="next"
                     onSubmitEditing={() => {
                       titleRefs.current[index + 1]?.focus();
                     }}
                     style={s.titleInput}
                   />
-                  <TouchableOpacity
-                    onPress={() => removeItem(index)}
-                    activeOpacity={0.72}
-                    hitSlop={8}
-                    style={s.clearBtn}
-                  >
-                    <X s={15} c="#DDD6CE" w={2.3} />
-                  </TouchableOpacity>
+                  <View style={s.draftActions}>
+                    {!editingEntry && (
+                      <TouchableOpacity
+                        onPress={() => saveDraftItem(index)}
+                        disabled={!item.title.trim()}
+                        activeOpacity={0.84}
+                        hitSlop={8}
+                        style={[s.draftConfirmBtn, !item.title.trim() && s.draftConfirmBtnDisabled]}
+                      >
+                        <CheckSmall s={12} c="#FFFFFF" w={3} />
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      onPress={() => removeItem(index)}
+                      activeOpacity={0.72}
+                      hitSlop={8}
+                      style={s.clearBtn}
+                    >
+                      <X s={15} c="#DDD6CE" w={2.3} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
                 <TextInput
                   value={item.content}
@@ -227,14 +411,17 @@ export default function GratitudeTaskView() {
                   scrollEnabled={false}
                   style={s.contentInput}
                 />
-              </View>
+              </Reanimated.View>
             ))}
 
+            {!editingEntry && (
             <TouchableOpacity onPress={addItem} activeOpacity={0.82} style={s.addBtn}>
               <Plus s={16} c="#9CA3AF" w={2.1} />
               <Text style={s.addText}>ADD ANOTHER</Text>
             </TouchableOpacity>
-          </View>
+            )}
+          </Reanimated.View>
+          )}
 
           <View style={s.quoteBlock}>
             <Text style={s.quoteText}>
@@ -249,8 +436,8 @@ export default function GratitudeTaskView() {
         visible={showExitConfirm}
         icon={<X s={24} c="#BE123C" />}
         iconBg="#FEF2F2"
-        title="Leave without finishing?"
-        body="Your new entries won't be saved."
+        title={editingEntry ? 'Leave without saving?' : 'Leave without finishing?'}
+        body={editingEntry ? "Your changes won't be saved." : "Your new entries won't be saved."}
         cancelLabel="STAY"
         confirmLabel="LEAVE"
         confirmColor="#BE123C"
@@ -268,36 +455,6 @@ const s = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#FDFBF5',
-  },
-  header: {
-    minHeight: 108,
-    paddingHorizontal: 22,
-    paddingBottom: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(197,160,89,0.13)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(253,251,245,0.96)',
-  },
-  backBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    position: 'absolute',
-    left: 86,
-    right: 86,
-    bottom: 26,
-    textAlign: 'center',
-    fontFamily: F.serifMedium,
-    fontSize: 22,
-    lineHeight: 27,
-    letterSpacing: 1.4,
-    color: C.text,
   },
   finishBtn: {
     minWidth: 88,
@@ -397,8 +554,62 @@ const s = StyleSheet.create({
     fontSize: 17,
     color: '#6B625A',
   },
+  editSavedBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(250,248,244,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   itemsStack: {
     gap: 14,
+  },
+  editingHeader: {
+    minHeight: 28,
+    paddingRight: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cancelEditBtn: {
+    paddingHorizontal: 10,
+    height: 27,
+    borderRadius: 14,
+    backgroundColor: 'rgba(197,160,89,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelEditText: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 1.6,
+    color: 'rgba(155,127,67,0.82)',
+  },
+  saveEditBtn: {
+    width: 29,
+    height: 29,
+    borderRadius: 15,
+    backgroundColor: C.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: C.gold,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.16,
+    shadowRadius: 9,
+    elevation: 2,
+  },
+  saveEditBtnDisabled: {
+    backgroundColor: '#D8D2CA',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   itemCard: {
     borderRadius: 18,
@@ -434,6 +645,29 @@ const s = StyleSheet.create({
     fontFamily: F.serif,
     fontSize: 18,
     color: '#3D3229',
+  },
+  draftActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  draftConfirmBtn: {
+    width: 27,
+    height: 27,
+    borderRadius: 14,
+    backgroundColor: C.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: C.gold,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 7,
+    elevation: 2,
+  },
+  draftConfirmBtnDisabled: {
+    backgroundColor: '#D8D2CA',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   clearBtn: {
     width: 27,

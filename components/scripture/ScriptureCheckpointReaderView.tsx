@@ -1,12 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
@@ -15,25 +18,33 @@ import {
   CheckSmall,
   ChevronLeft,
   ChevronRight,
-  RotateCcw,
+  Plus,
   Target,
+  Trash2,
+  X,
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
-import { getTitleBarTopPadding } from '@/components/shared/titleBar';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import type { BibleBook } from '@/constants/scripture';
+import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
+import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
+import { normalizeScriptureLanguage, type BibleBook } from '@/constants/scripture';
+import { useAppSettings } from '@/components/settings/SettingsContext';
 import type { ScriptureTaskConfig } from '@/components/tasks/taskTypes';
 import { BibleVerse, useScripture } from '@/components/scripture/ScriptureContext';
+import ScriptureReaderView from '@/components/scripture/ScriptureReaderView';
 import {
+  createScriptureCheckpoint,
+  deleteScriptureCheckpoint,
   getBooksForCheckpointKind,
   getScriptureCheckpointKindsForReadingType,
   getScriptureCheckpointReaderSession,
   getScriptureCheckpointTitle,
-  getScriptureCheckpointUnits,
   listScriptureCheckpoints,
-  setScriptureCheckpointStart,
+  moveScriptureCheckpointHistory,
+  restoreScriptureCheckpointLatest,
   type ScriptureCheckpoint,
+  type ScriptureCheckpointHistoryDirection,
   type ScriptureCheckpointKind,
   type ScriptureCheckpointProgressResult,
   type ScriptureCheckpointReaderSession,
@@ -50,13 +61,14 @@ type Props = {
   taskInstanceId?: string;
   onBack: () => void;
   onComplete: (
+    checkpointId: string,
     kind: ScriptureCheckpointKind,
     readUnits: number,
   ) => Promise<ScriptureCheckpointProgressResult | null> | ScriptureCheckpointProgressResult | null;
 };
 
 export default function ScriptureCheckpointReaderView({
-  readingType = 'custom',
+  readingType,
   title,
   plannedCount = 1,
   taskInstanceId,
@@ -65,64 +77,112 @@ export default function ScriptureCheckpointReaderView({
 }: Props) {
   const insets = useSafeAreaInsets();
   const { ready, getChapter } = useScripture();
+  const { settings } = useAppSettings();
+  const scriptureLanguage = normalizeScriptureLanguage(settings.bibleLang);
   const availableKinds = useMemo(
-    () => getScriptureCheckpointKindsForReadingType(readingType),
-    [readingType],
+    () => getScriptureCheckpointKindsForReadingType(readingType ?? title ?? 'custom'),
+    [readingType, title],
   );
+  const plannedUnitCount = useMemo(() => {
+    if (!Number.isFinite(plannedCount) || plannedCount <= 0) return 1;
+    return Math.round(plannedCount);
+  }, [plannedCount]);
+  const showKindHeaders = availableKinds.length > 1;
   const [checkpoints, setCheckpoints] = useState<ScriptureCheckpoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<ScriptureCheckpointReaderSession | null>(null);
   const [cursor, setCursor] = useState(0);
-  const [readLimit, setReadLimit] = useState(Math.max(1, plannedCount));
+  const [readLimit, setReadLimit] = useState(plannedUnitCount);
   const [verses, setVerses] = useState<BibleVerse[]>([]);
   const [chapterLoading, setChapterLoading] = useState(false);
+  const chapterNavLockedRef = useRef(false);
+  const [chapterNavLocked, setChapterNavLocked] = useState(false);
   const [chapterError, setChapterError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
-  const [editingKind, setEditingKind] = useState<ScriptureCheckpointKind | null>(null);
+  const [exitConfirmVisible, setExitConfirmVisible] = useState(false);
+  const [creatingKind, setCreatingKind] = useState<ScriptureCheckpointKind | null>(null);
+  const [createSheetVisible, setCreateSheetVisible] = useState(false);
+  const [checkpointActionError, setCheckpointActionError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ScriptureCheckpoint | null>(null);
 
-  const loadCheckpoints = useCallback(async () => {
-    setLoading(true);
-    try {
-      const next = await listScriptureCheckpoints(availableKinds);
-      setCheckpoints(next);
-    } catch (error) {
-      console.warn('Failed to load scripture checkpoints', error);
-      setCheckpoints([]);
-    } finally {
-      setLoading(false);
-    }
+  const lockChapterNavigation = useCallback(() => {
+    chapterNavLockedRef.current = true;
+    setChapterNavLocked(true);
+  }, []);
+
+  const releaseChapterNavigation = useCallback(() => {
+    chapterNavLockedRef.current = false;
+    setChapterNavLocked(false);
+  }, []);
+
+  const sortCheckpoints = useCallback((items: ScriptureCheckpoint[]) => {
+    const kindOrder = new Map(availableKinds.map((kind, index) => [kind, index]));
+    return [...items].sort((left, right) => {
+      const byKind = (kindOrder.get(left.kind) ?? 0) - (kindOrder.get(right.kind) ?? 0);
+      if (byKind !== 0) return byKind;
+      const byUpdated = right.updatedAt - left.updatedAt;
+      if (byUpdated !== 0) return byUpdated;
+      return right.createdAt - left.createdAt;
+    });
   }, [availableKinds]);
 
+  const upsertCheckpoint = useCallback((checkpoint: ScriptureCheckpoint) => {
+    setCheckpoints(prev => sortCheckpoints([
+      ...prev.filter(item => item.id !== checkpoint.id),
+      checkpoint,
+    ]));
+  }, [sortCheckpoints]);
+
+  const loadCheckpoints = useCallback(async (showFullLoading = false) => {
+    if (showFullLoading) setLoading(true);
+    try {
+      if (showFullLoading) {
+        await restoreScriptureCheckpointLatest(availableKinds);
+      }
+      const next = await listScriptureCheckpoints(availableKinds);
+      setCheckpoints(sortCheckpoints(next));
+    } catch (error) {
+      console.warn('Failed to load scripture checkpoints', error);
+      if (showFullLoading) setCheckpoints([]);
+    } finally {
+      if (showFullLoading) setLoading(false);
+    }
+  }, [availableKinds, sortCheckpoints]);
+
   useEffect(() => {
-    void loadCheckpoints();
+    void loadCheckpoints(true);
   }, [loadCheckpoints]);
+
+  useEffect(() => {
+    if (createSheetVisible || !creatingKind) return undefined;
+    const timeout = setTimeout(() => setCreatingKind(null), 220);
+    return () => clearTimeout(timeout);
+  }, [createSheetVisible, creatingKind]);
+
+  useEffect(() => {
+    if (session) return;
+    setReadLimit(plannedUnitCount);
+  }, [plannedUnitCount, session]);
 
   const visibleUnits = useMemo(() => {
     if (!session) return [];
     return session.units.slice(session.startUnitIndex, session.startUnitIndex + readLimit);
   }, [readLimit, session]);
   const currentUnit = visibleUnits[cursor];
-  const firstUnit = visibleUnits[0];
-  const lastUnit = visibleUnits[Math.max(0, visibleUnits.length - 1)];
   const canGoPrev = cursor > 0;
   const canReadMore = !!session && session.startUnitIndex + readLimit < session.units.length;
   const atVisibleEnd = visibleUnits.length > 0 && cursor >= visibleUnits.length - 1;
   const currentReadUnits = visibleUnits.length > 0 ? cursor + 1 : 0;
-  const currentProgress = session ? Math.min(session.units.length, session.startUnitIndex + currentReadUnits) : 0;
-  const unitLabel = currentUnit?.noun === 'psalm' ? 'PSALM' : 'CHAPTER';
   const nextButtonLabel = currentUnit?.noun === 'psalm' ? 'NEXT PSALM' : 'NEXT CHAPTER';
-  const pluralUnit = currentUnit?.noun === 'psalm' ? 'psalms' : 'chapters';
-  const finishSubject = firstUnit && lastUnit
-    ? `${firstUnit.ref}${firstUnit.ref !== lastUnit.ref ? ` - ${lastUnit.ref}` : ''}`
-    : undefined;
+  const chapterControlsDisabled = chapterLoading || chapterNavLocked;
 
   useEffect(() => {
     if (!ready || !currentUnit) return;
     let active = true;
     setChapterLoading(true);
     setChapterError(null);
-    getChapter(currentUnit.bookId, currentUnit.chapter, 'en')
+    getChapter(currentUnit.bookId, currentUnit.chapter, scriptureLanguage)
       .then(nextVerses => {
         if (!active) return;
         setVerses(nextVerses);
@@ -135,64 +195,136 @@ export default function ScriptureCheckpointReaderView({
         setChapterError('This passage could not be loaded.');
       })
       .finally(() => {
-        if (active) setChapterLoading(false);
+        if (!active) return;
+        setChapterLoading(false);
+        releaseChapterNavigation();
       });
 
     return () => {
       active = false;
     };
-  }, [currentUnit, getChapter, ready]);
+  }, [currentUnit, getChapter, ready, releaseChapterNavigation, scriptureLanguage]);
 
-  const startReading = useCallback(async (kind: ScriptureCheckpointKind) => {
+  const startReading = useCallback(async (checkpointId: string) => {
     if (Platform.OS !== 'web') Haptics.selectionAsync().catch(() => {});
-    const next = await getScriptureCheckpointReaderSession(kind, plannedCount);
-    if (!next) return;
+    setChapterLoading(true);
+    const next = await getScriptureCheckpointReaderSession(checkpointId, plannedUnitCount);
+    if (!next) {
+      setChapterLoading(false);
+      releaseChapterNavigation();
+      return;
+    }
     setSession(next);
-    setReadLimit(next.plannedUnits.length || Math.max(1, plannedCount));
+    setReadLimit(next.plannedUnits.length || plannedUnitCount);
     setCursor(0);
-    setEditingKind(null);
-  }, [plannedCount]);
+    setCreatingKind(null);
+  }, [plannedUnitCount, releaseChapterNavigation]);
 
   const goPrev = useCallback(() => {
-    if (!canGoPrev) return;
+    if (!canGoPrev || chapterLoading || chapterNavLockedRef.current) return;
+    lockChapterNavigation();
     if (Platform.OS !== 'web') Haptics.selectionAsync().catch(() => {});
     setCursor(value => Math.max(0, value - 1));
-  }, [canGoPrev]);
+  }, [canGoPrev, chapterLoading, lockChapterNavigation]);
 
   const goNext = useCallback(() => {
-    if (!currentUnit || cursor >= visibleUnits.length - 1) return;
+    if (!currentUnit || cursor >= visibleUnits.length - 1 || chapterLoading || chapterNavLockedRef.current) return;
+    lockChapterNavigation();
     if (Platform.OS !== 'web') Haptics.selectionAsync().catch(() => {});
     setCursor(value => Math.min(visibleUnits.length - 1, value + 1));
-  }, [currentUnit, cursor, visibleUnits.length]);
+  }, [chapterLoading, currentUnit, cursor, lockChapterNavigation, visibleUnits.length]);
 
   const readOneMore = useCallback(() => {
-    if (!canReadMore) return;
+    if (!canReadMore || chapterLoading || chapterNavLockedRef.current) return;
+    lockChapterNavigation();
     if (Platform.OS !== 'web') Haptics.selectionAsync().catch(() => {});
     setReadLimit(value => value + 1);
     setCursor(value => value + 1);
-  }, [canReadMore]);
+  }, [canReadMore, chapterLoading, lockChapterNavigation]);
 
   const confirmFinish = useCallback(async () => {
-    if (!session || !currentUnit || finishing) return;
+    if (!session || !currentUnit || finishing || chapterLoading || chapterNavLockedRef.current) return;
     setConfirmVisible(false);
     setFinishing(true);
     try {
-      await onComplete(session.checkpoint.kind, currentReadUnits);
-      if (Platform.OS !== 'web') {
+      await onComplete(session.checkpoint.id, session.checkpoint.kind, currentReadUnits);
+      if (!taskInstanceId && Platform.OS !== 'web') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       }
       onBack();
     } finally {
       setFinishing(false);
     }
-  }, [currentReadUnits, currentUnit, finishing, onBack, onComplete, session]);
+  }, [chapterLoading, currentReadUnits, currentUnit, finishing, onBack, onComplete, session, taskInstanceId]);
 
-  const saveStart = useCallback(async (kind: ScriptureCheckpointKind, bookId: number, chapter: number) => {
+  const requestExitReading = useCallback(() => {
+    setConfirmVisible(false);
+    setExitConfirmVisible(true);
+  }, []);
+
+  const confirmExitReading = useCallback(() => {
+    setExitConfirmVisible(false);
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    releaseChapterNavigation();
+    setChapterLoading(false);
+    setSession(null);
+  }, [releaseChapterNavigation]);
+
+  const openCreateCheckpoint = useCallback((kind: ScriptureCheckpointKind) => {
+    setCreatingKind(kind);
+    setCreateSheetVisible(true);
+  }, []);
+
+  const createCheckpoint = useCallback(async (kind: ScriptureCheckpointKind, bookId: number, chapter: number, name: string) => {
     if (Platform.OS !== 'web') Haptics.selectionAsync().catch(() => {});
-    await setScriptureCheckpointStart(kind, bookId, chapter);
-    await loadCheckpoints();
-    setEditingKind(null);
-  }, [loadCheckpoints]);
+    setCheckpointActionError(null);
+    try {
+      const created = await createScriptureCheckpoint({ kind, bookId, chapter, name });
+      if (created) upsertCheckpoint(created);
+      else await loadCheckpoints(false);
+      setCreateSheetVisible(false);
+    } catch (error) {
+      console.warn('Failed to create scripture checkpoint', error);
+      setCheckpointActionError('Checkpoint could not be created. Please try again.');
+    }
+  }, [loadCheckpoints, upsertCheckpoint]);
+
+  const moveCheckpoint = useCallback(async (
+    checkpointId: string,
+    direction: ScriptureCheckpointHistoryDirection,
+  ) => {
+    if (Platform.OS !== 'web') Haptics.selectionAsync().catch(() => {});
+    setCreateSheetVisible(false);
+    setCheckpointActionError(null);
+    try {
+      const updated = await moveScriptureCheckpointHistory(checkpointId, direction);
+      if (updated) upsertCheckpoint(updated);
+      else await loadCheckpoints(false);
+    } catch (error) {
+      console.warn('Failed to move scripture checkpoint history', error);
+      setCheckpointActionError('Checkpoint could not be moved. Please try again.');
+    }
+  }, [loadCheckpoints, upsertCheckpoint]);
+
+  const requestDeleteCheckpoint = useCallback((checkpoint: ScriptureCheckpoint) => {
+    setDeleteTarget(checkpoint);
+  }, []);
+
+  const confirmDeleteCheckpoint = useCallback(async () => {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    setCheckpointActionError(null);
+    setCheckpoints(prev => prev.filter(checkpoint => checkpoint.id !== target.id));
+    try {
+      await deleteScriptureCheckpoint(target.id);
+      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    } catch (error) {
+      console.warn('Failed to delete scripture checkpoint', error);
+      setCheckpointActionError('Checkpoint could not be deleted. Please try again.');
+      await loadCheckpoints(false);
+    }
+  }, [deleteTarget, loadCheckpoints]);
 
   if (!ready || loading) {
     return (
@@ -207,7 +339,12 @@ export default function ScriptureCheckpointReaderView({
     if (!currentUnit) {
       return (
         <View style={s.screen}>
-          <Header top={insets.top} title={session.checkpoint.title} onBack={() => setSession(null)} />
+          <ScreenTitleBar
+            title={session.checkpoint.name.toUpperCase()}
+            showBack
+            bg={BG}
+            onBackOverride={() => setSession(null)}
+          />
           <View style={s.emptyState}>
             <CheckSmall s={26} c={GOLD} w={2.5} />
             <Text style={s.emptyTitle}>Checkpoint complete</Text>
@@ -220,113 +357,110 @@ export default function ScriptureCheckpointReaderView({
       );
     }
 
-    return (
-      <View style={s.screen}>
-        <Header top={insets.top} title={title ?? session.checkpoint.title} onBack={() => setSession(null)} />
-
-        <View style={s.planWrap}>
-          <View style={[s.planPill, { borderColor: `${session.checkpoint.accent}33` }]}>
-            <Text style={[s.planEyebrow, { color: session.checkpoint.accent }]}>CHECKPOINT</Text>
-            <Text style={s.planText} numberOfLines={1} adjustsFontSizeToFit>
-              {finishSubject}
-            </Text>
-          </View>
-          <Text style={s.progressText}>
-            {currentProgress}/{session.units.length} {pluralUnit}
-          </Text>
-        </View>
-
-        <ChapterBar
-          chapter={currentUnit.chapter}
-          label={unitLabel}
-          canGoPrev={canGoPrev}
-          onPrev={goPrev}
-        />
-
-        <ScrollView
-          contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 155 }]}
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={s.bookTitle}>{currentUnit.bookName.toUpperCase()}</Text>
-          {chapterLoading ? (
-            <View style={s.chapterLoading}>
-              <ActivityIndicator color={GOLD} />
-            </View>
-          ) : chapterError ? (
-            <View style={s.emptyChapter}>
-              <Book s={24} c={GOLD} />
-              <Text style={s.emptyTitle}>Scripture is reloading</Text>
-              <Text style={s.emptyText}>{chapterError}</Text>
-            </View>
+    const checkpointDock = (
+      <View style={[s.actionDockWrap, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+        <View style={s.actionDock}>
+          {!atVisibleEnd ? (
+            <>
+              <TouchableOpacity
+                onPress={() => setConfirmVisible(true)}
+                disabled={finishing || chapterControlsDisabled}
+                activeOpacity={0.82}
+                style={[s.secondaryBtn, (finishing || chapterControlsDisabled) && s.disabledBtn]}
+              >
+                <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.secondaryText}>FINISH EARLY</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={goNext}
+                disabled={chapterControlsDisabled}
+                activeOpacity={0.84}
+                style={[s.primaryBtn, chapterControlsDisabled && s.disabledBtn]}
+              >
+                <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.primaryText}>{nextButtonLabel}</Text>
+                <ChevronRight s={16} c="#FFFFFF" w={2.4} />
+              </TouchableOpacity>
+            </>
           ) : (
-            <View style={s.verseList}>
-              {verses.map(verse => (
-                <VerseRow key={verse.verse} verse={verse} />
-              ))}
-            </View>
-          )}
-        </ScrollView>
-
-        <View style={[s.actionDockWrap, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-          <View style={s.actionDock}>
-            {!atVisibleEnd ? (
-              <>
+            <>
+              <TouchableOpacity
+                onPress={() => setConfirmVisible(true)}
+                disabled={finishing || chapterControlsDisabled}
+                activeOpacity={0.84}
+                style={[s.primaryBtn, !canReadMore && s.primaryBtnWide, (finishing || chapterControlsDisabled) && s.disabledBtn]}
+              >
+                <CheckSmall s={15} c="#FFFFFF" w={2.6} />
+                <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.primaryText}>FINISH</Text>
+              </TouchableOpacity>
+              {canReadMore ? (
                 <TouchableOpacity
-                  onPress={() => setConfirmVisible(true)}
-                  disabled={finishing}
+                  onPress={readOneMore}
+                  disabled={chapterControlsDisabled}
                   activeOpacity={0.82}
-                  style={[s.secondaryBtn, finishing && s.disabledBtn]}
+                  style={[s.secondaryBtn, chapterControlsDisabled && s.disabledBtn]}
                 >
-                  <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.secondaryText}>FINISH EARLY</Text>
+                  <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.72} style={s.secondaryText}>
+                    READ ONE MORE
+                  </Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={goNext} activeOpacity={0.84} style={s.primaryBtn}>
-                  <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.primaryText}>{nextButtonLabel}</Text>
-                  <ChevronRight s={16} c="#FFFFFF" w={2.4} />
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <TouchableOpacity
-                  onPress={() => setConfirmVisible(true)}
-                  disabled={finishing}
-                  activeOpacity={0.84}
-                  style={[s.primaryBtn, !canReadMore && s.primaryBtnWide, finishing && s.disabledBtn]}
-                >
-                  <CheckSmall s={15} c="#FFFFFF" w={2.6} />
-                  <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.primaryText}>CONFIRM</Text>
-                </TouchableOpacity>
-                {canReadMore ? (
-                  <TouchableOpacity onPress={readOneMore} activeOpacity={0.82} style={s.secondaryBtn}>
-                    <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.72} style={s.secondaryText}>
-                      READ ONE MORE
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
-              </>
-            )}
-          </View>
+              ) : null}
+            </>
+          )}
         </View>
+      </View>
+    );
+
+    return (
+      <>
+        <ScriptureReaderView
+          bookId={currentUnit.bookId}
+          chapter={currentUnit.chapter}
+          lang={scriptureLanguage}
+          onBack={requestExitReading}
+          canGoPrevChapter={!chapterControlsDisabled && canGoPrev}
+          canGoNextChapter={!chapterControlsDisabled && !atVisibleEnd}
+          onPrevChapter={goPrev}
+          onNextChapter={goNext}
+          bottomDock={checkpointDock}
+          bottomDockHeight={172}
+        />
 
         <ConfirmModal
           visible={confirmVisible}
           icon={<CheckSmall s={24} c="#FFFFFF" w={2.8} />}
           iconBg={GOLD}
-          title="Confirm reading?"
-          body={`This will move your ${session.checkpoint.title} checkpoint forward by ${currentReadUnits} ${currentReadUnits === 1 ? currentUnit.noun : pluralUnit}.`}
-          subject={finishSubject}
+          title="Finish reading?"
+          body="Are you sure you want to finish this reading session?"
           cancelLabel="KEEP READING"
-          confirmLabel="CONFIRM"
+          confirmLabel="FINISH"
           confirmColor={GOLD}
           onCancel={() => setConfirmVisible(false)}
           onConfirm={confirmFinish}
         />
-      </View>
+        <ConfirmModal
+          visible={exitConfirmVisible}
+          icon={<ArrowLeft s={24} c="#FFFFFF" w={2.4} />}
+          iconBg="#DC2626"
+          title="Leave reading?"
+          body="Are you sure you want to exit? Progress from this reading session will not be saved."
+          cancelLabel="KEEP READING"
+          confirmLabel="EXIT"
+          confirmColor="#DC2626"
+          onCancel={() => setExitConfirmVisible(false)}
+          onConfirm={confirmExitReading}
+        />
+      </>
     );
+
   }
 
   return (
     <View style={s.screen}>
-      <Header top={insets.top} title={title ?? 'Scripture Checkpoints'} onBack={onBack} />
+      <ScreenTitleBar
+        title="CHECKPOINTS"
+        showBack
+        bg={BG}
+        onBackOverride={onBack}
+      />
       <ScrollView
         contentContainerStyle={[s.selectorContent, { paddingBottom: insets.bottom + 34 }]}
         showsVerticalScrollIndicator={false}
@@ -339,10 +473,16 @@ export default function ScriptureCheckpointReaderView({
             <Text style={s.heroKicker}>CHECKPOINT READING</Text>
             <Text style={s.heroTitle}>Continue where you stopped</Text>
             <Text style={s.heroBody}>
-              Choose a checkpoint, read the assigned passage, then confirm it to move the marker forward.
+              Choose a checkpoint, read the assigned passage, then finish it to move the marker forward.
             </Text>
           </View>
         </View>
+
+        {checkpointActionError ? (
+          <View style={s.actionErrorBox}>
+            <Text style={s.actionErrorText}>{checkpointActionError}</Text>
+          </View>
+        ) : null}
 
         {availableKinds.length === 0 ? (
           <View style={s.emptyStateInline}>
@@ -350,41 +490,99 @@ export default function ScriptureCheckpointReaderView({
             <Text style={s.emptyTitle}>No checkpoint path</Text>
             <Text style={s.emptyText}>This reading type does not use checkpoints yet.</Text>
           </View>
-        ) : checkpoints.map(checkpoint => (
-          <CheckpointCard
-            key={checkpoint.kind}
-            checkpoint={checkpoint}
-            plannedCount={plannedCount}
-            editing={editingKind === checkpoint.kind}
-            onStart={() => startReading(checkpoint.kind)}
-            onToggleEdit={() => setEditingKind(value => value === checkpoint.kind ? null : checkpoint.kind)}
-            onSaveStart={saveStart}
-          />
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
+        ) : availableKinds.map(kind => {
+          const kindCheckpoints = checkpoints.filter(checkpoint => checkpoint.kind === kind);
+          const accent = kindCheckpoints[0]?.accent ?? GOLD;
+          return (
+            <Animated.View
+              key={kind}
+              style={s.kindBlock}
+              layout={LinearTransition.duration(180)}
+            >
+              {showKindHeaders ? (
+                <View style={s.kindHeader}>
+                  <View style={s.kindTitleRow}>
+                    <View style={[s.kindAccent, { backgroundColor: accent }]} />
+                    <View style={s.kindTitleCopy}>
+                      <Text style={s.kindKicker}>CHECKPOINT PATH</Text>
+                      <Text style={s.kindTitle} numberOfLines={1}>{getScriptureCheckpointTitle(kind)}</Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => openCreateCheckpoint(kind)}
+                    haptic="selection"
+                    activeOpacity={0.84}
+                    style={[s.addCheckpointBtn, { borderColor: `${accent}45` }]}
+                  >
+                    <Plus s={14} c={accent} w={2.4} />
+                    <Text
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.76}
+                      style={[s.addCheckpointText, { color: accent }]}
+                    >
+                      NEW CHECKPOINT
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={s.singleKindToolbar}>
+                  <TouchableOpacity
+                    onPress={() => openCreateCheckpoint(kind)}
+                    haptic="selection"
+                    activeOpacity={0.84}
+                    style={[s.addCheckpointBtn, s.addCheckpointBtnSingle, { borderColor: `${accent}45` }]}
+                  >
+                    <Plus s={14} c={accent} w={2.4} />
+                    <Text
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.76}
+                      style={[s.addCheckpointText, { color: accent }]}
+                    >
+                      NEW CHECKPOINT
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
-function Header({
-  top,
-  title,
-  onBack,
-}: {
-  top: number;
-  title: string;
-  onBack: () => void;
-}) {
-  return (
-    <View style={[s.header, { paddingTop: getTitleBarTopPadding(top) }]}>
-      <View style={s.headerTitleAbs} pointerEvents="none">
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62} style={s.headerTitle}>
-          {title.toUpperCase()}
-        </Text>
-      </View>
-      <TouchableOpacity onPress={onBack} style={s.headerBtn} activeOpacity={0.7}>
-        <ArrowLeft s={24} c="#9CA3AF" />
-      </TouchableOpacity>
+              {kindCheckpoints.map(checkpoint => (
+                <CheckpointCard
+                  key={checkpoint.id}
+                  checkpoint={checkpoint}
+                  plannedCount={plannedUnitCount}
+                  onStart={() => startReading(checkpoint.id)}
+                  onMove={(direction) => { void moveCheckpoint(checkpoint.id, direction); }}
+                  onDelete={() => requestDeleteCheckpoint(checkpoint)}
+                />
+              ))}
+            </Animated.View>
+          );
+        })}
+      </ScrollView>
+      {creatingKind ? (
+        <CheckpointCreateSheet
+          visible={createSheetVisible}
+          kind={creatingKind}
+          accent={checkpoints.find(checkpoint => checkpoint.kind === creatingKind)?.accent ?? GOLD}
+          bottomInset={insets.bottom}
+          onClose={() => setCreateSheetVisible(false)}
+          onCreate={createCheckpoint}
+        />
+      ) : null}
+      <ConfirmModal
+        visible={!!deleteTarget}
+        icon={<Trash2 s={23} c="#DC2626" w={2.1} />}
+        iconBg="#FEF2F2"
+        title="Delete checkpoint?"
+        body="This will remove this checkpoint and its reading history."
+        subject={deleteTarget?.name}
+        cancelLabel="CANCEL"
+        confirmLabel="DELETE"
+        confirmColor="#DC2626"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => { void confirmDeleteCheckpoint(); }}
+      />
     </View>
   );
 }
@@ -392,92 +590,194 @@ function Header({
 function CheckpointCard({
   checkpoint,
   plannedCount,
-  editing,
   onStart,
-  onToggleEdit,
-  onSaveStart,
+  onMove,
+  onDelete,
 }: {
   checkpoint: ScriptureCheckpoint;
   plannedCount: number;
-  editing: boolean;
   onStart: () => void;
-  onToggleEdit: () => void;
-  onSaveStart: (kind: ScriptureCheckpointKind, bookId: number, chapter: number) => void | Promise<void>;
+  onMove: (direction: ScriptureCheckpointHistoryDirection) => void;
+  onDelete: () => void;
 }) {
   const nextCopy = checkpoint.nextUnit?.ref ?? 'Complete';
-  const units = getScriptureCheckpointUnits(checkpoint.kind);
-  const progressPct = units.length ? checkpoint.unitIndex / units.length : 0;
+  const stoppedCopy = checkpoint.completed ? 'Complete' : nextCopy;
+  const canGoBack = checkpoint.availableBackSteps > 0;
+  const canGoForward = checkpoint.availableForwardSteps > 0;
   return (
-    <View style={[s.checkpointCard, { borderColor: `${checkpoint.accent}2E` }]}>
+    <Animated.View
+      entering={FadeIn.duration(180)}
+      exiting={FadeOut.duration(120)}
+      layout={LinearTransition.duration(180)}
+      style={[s.checkpointCard, { borderColor: `${checkpoint.accent}2E` }]}
+    >
+      <TouchableOpacity
+        onPress={onDelete}
+        haptic="medium"
+        activeOpacity={0.78}
+        style={s.deleteCheckpointBtn}
+        hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+      >
+        <Trash2 s={15} c="#DC2626" w={2.05} />
+      </TouchableOpacity>
       <View style={s.checkpointHead}>
         <View style={[s.checkpointIcon, { backgroundColor: `${checkpoint.accent}14` }]}>
           <Book s={20} c={checkpoint.accent} w={2.1} />
         </View>
         <View style={s.checkpointTitleWrap}>
-          <Text style={s.checkpointKicker}>{getScriptureCheckpointTitle(checkpoint.kind)}</Text>
-          <Text style={s.checkpointTitle} numberOfLines={1}>{nextCopy}</Text>
-          <Text style={s.checkpointMeta}>
+          <Text style={s.checkpointTitle} numberOfLines={1}>{checkpoint.name}</Text>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={[s.checkpointStopped, { color: checkpoint.accent }]}>
+            {checkpoint.completed ? 'Reading path complete' : `Stopped at ${stoppedCopy}`}
+          </Text>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={s.checkpointMeta}>
             {checkpoint.completed
               ? 'Path complete'
               : `${Math.max(1, plannedCount)} ${checkpoint.kind === 'psalter' ? 'psalm' : 'chapter'}${Math.max(1, plannedCount) === 1 ? '' : 's'} planned`}
           </Text>
         </View>
       </View>
-      <View style={s.progressTrack}>
-        <View style={[s.progressFill, { width: `${Math.min(100, Math.round(progressPct * 100))}%`, backgroundColor: checkpoint.accent }]} />
-      </View>
       <View style={s.checkpointActions}>
-        <TouchableOpacity onPress={onToggleEdit} activeOpacity={0.82} style={s.secondarySmallBtn}>
-          <RotateCcw s={14} c="#8D7C62" w={2.2} />
-          <Text style={s.secondarySmallText}>CHANGE START</Text>
-        </TouchableOpacity>
+        <View style={s.historyControls}>
+          <TouchableOpacity
+            onPress={() => onMove('back')}
+            disabled={!canGoBack}
+            activeOpacity={0.82}
+            style={[s.historyBtn, !canGoBack && s.historyBtnDisabled]}
+          >
+            <ChevronLeft s={17} c={canGoBack ? '#8D7C62' : '#D8D1C7'} w={2.4} />
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78} style={[s.historyBtnText, !canGoBack && s.historyBtnTextDisabled]}>
+              BACK
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => onMove('forward')}
+            disabled={!canGoForward}
+            activeOpacity={0.82}
+            style={[s.historyBtn, !canGoForward && s.historyBtnDisabled]}
+          >
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78} style={[s.historyBtnText, !canGoForward && s.historyBtnTextDisabled]}>
+              FORWARD
+            </Text>
+            <ChevronRight s={17} c={canGoForward ? '#8D7C62' : '#D8D1C7'} w={2.4} />
+          </TouchableOpacity>
+        </View>
         <TouchableOpacity
           onPress={onStart}
           disabled={checkpoint.completed}
           activeOpacity={0.84}
           style={[s.startBtn, { backgroundColor: checkpoint.accent }, checkpoint.completed && s.startBtnDisabled]}
         >
-          <Text style={s.startText}>{checkpoint.completed ? 'COMPLETE' : 'START'}</Text>
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={s.startText}>{checkpoint.completed ? 'COMPLETE' : 'START'}</Text>
           <ChevronRight s={16} c="#FFFFFF" w={2.3} />
         </TouchableOpacity>
       </View>
-      {editing ? (
+    </Animated.View>
+  );
+}
+
+function CheckpointCreateSheet({
+  visible,
+  kind,
+  accent,
+  bottomInset,
+  onClose,
+  onCreate,
+}: {
+  visible: boolean;
+  kind: ScriptureCheckpointKind;
+  accent: string;
+  bottomInset: number;
+  onClose: () => void;
+  onCreate: (kind: ScriptureCheckpointKind, bookId: number, chapter: number, name: string) => void | Promise<void>;
+}) {
+  const [keyboardLift, setKeyboardLift] = useState(0);
+
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardLift(0);
+      return undefined;
+    }
+
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, event => {
+      const height = event.endCoordinates.height;
+      setKeyboardLift(Math.min(170, Math.max(116, height * 0.42)));
+    });
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardLift(0));
+
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [visible]);
+
+  return (
+    <SmoothBottomSheet
+      visible={visible}
+      onClose={onClose}
+      closeOnBackdropPress={false}
+      overlayStyle={keyboardLift > 0 ? { paddingBottom: keyboardLift } : undefined}
+      sheetStyle={[s.createCheckpointSheet, { paddingBottom: Math.max(bottomInset, 12) + 18 }]}
+    >
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        onScrollBeginDrag={() => Keyboard.dismiss()}
+        nestedScrollEnabled
+        contentContainerStyle={s.createSheetScroll}
+      >
         <CheckpointStartPicker
-          kind={checkpoint.kind}
-          accent={checkpoint.accent}
-          currentBookId={checkpoint.nextUnit?.bookId}
-          currentChapter={checkpoint.nextUnit?.chapter}
-          onSave={onSaveStart}
+          kind={kind}
+          accent={accent}
+          mode="create"
+          onClose={onClose}
+          onCreate={onCreate}
         />
-      ) : null}
-    </View>
+      </ScrollView>
+    </SmoothBottomSheet>
   );
 }
 
 function CheckpointStartPicker({
+  checkpointId,
   kind,
   accent,
+  mode,
+  initialName,
   currentBookId,
   currentChapter,
+  onClose,
   onSave,
+  onCreate,
 }: {
+  checkpointId?: string;
   kind: ScriptureCheckpointKind;
   accent: string;
+  mode: 'edit' | 'create';
+  initialName?: string;
   currentBookId?: number;
   currentChapter?: number;
-  onSave: (kind: ScriptureCheckpointKind, bookId: number, chapter: number) => void | Promise<void>;
+  onClose?: () => void;
+  onSave?: (checkpointId: string, kind: ScriptureCheckpointKind, bookId: number, chapter: number, name: string) => void | Promise<void>;
+  onCreate?: (kind: ScriptureCheckpointKind, bookId: number, chapter: number, name: string) => void | Promise<void>;
 }) {
   const books = useMemo(() => getBooksForCheckpointKind(kind), [kind]);
   const initialBook = currentBookId ?? books[0]?.id ?? 40;
   const [bookId, setBookId] = useState(initialBook);
   const book = books.find(item => item.id === bookId) ?? books[0];
   const [chapter, setChapter] = useState(currentChapter ?? 1);
+  const [name, setName] = useState(initialName ?? '');
+  const [submitAttempted, setSubmitAttempted] = useState(false);
 
   useEffect(() => {
     const nextBook = currentBookId ?? books[0]?.id ?? 40;
     setBookId(nextBook);
     setChapter(currentChapter ?? 1);
-  }, [books, currentBookId, currentChapter]);
+    setName(initialName ?? '');
+    setSubmitAttempted(false);
+  }, [books, currentBookId, currentChapter, initialName]);
 
   useEffect(() => {
     if (!book) return;
@@ -487,9 +787,69 @@ function CheckpointStartPicker({
   if (!book) return null;
 
   const chapters = Array.from({ length: book.chapters }, (_, index) => index + 1);
+  const saveLabel = mode === 'create' ? 'CREATE CHECKPOINT' : 'SAVE START POINT';
+  const namePlaceholder = kind === 'new_testament'
+    ? 'Example: Morning Matthew'
+    : kind === 'old_testament'
+      ? 'Example: Evening Prophets'
+      : 'Example: Night Psalms';
+  const cleanName = name.trim();
+  const nameMissing = cleanName.length === 0;
+  const placeMissing = !book || !chapter;
+  const showValidation = submitAttempted && (nameMissing || placeMissing);
+
+  const handleSubmit = () => {
+    setSubmitAttempted(true);
+    if (nameMissing || placeMissing) {
+      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      return;
+    }
+    Keyboard.dismiss();
+    if (mode === 'edit' && checkpointId && onSave) {
+      void onSave(checkpointId, kind, book.id, chapter, cleanName);
+    } else if (mode === 'create' && onCreate) {
+      void onCreate(kind, book.id, chapter, cleanName);
+    }
+  };
 
   return (
     <View style={s.pickerBox}>
+      {onClose ? (
+        <View style={s.createSheetHeader}>
+          <TouchableOpacity
+            onPress={() => {
+              Keyboard.dismiss();
+              onClose();
+            }}
+            activeOpacity={0.78}
+            style={s.sheetIconBtn}
+          >
+            <X s={18} c="#A8A29E" w={2.4} />
+          </TouchableOpacity>
+          <View style={s.createSheetTitleWrap}>
+            <Text style={s.createSheetKicker}>NEW CHECKPOINT</Text>
+            <Text style={s.createSheetTitle}>{getScriptureCheckpointTitle(kind)}</Text>
+          </View>
+          <TouchableOpacity onPress={handleSubmit} activeOpacity={0.78} style={[s.sheetIconBtn, s.sheetConfirmBtn, { backgroundColor: accent }]}>
+            <CheckSmall s={18} c="#FFFFFF" w={2.7} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
+      <Text style={s.pickerLabel}>CHECKPOINT NAME</Text>
+      <TextInput
+        value={name}
+        onChangeText={setName}
+        placeholder={namePlaceholder}
+        placeholderTextColor="#CFC6B8"
+        style={[s.nameInput, showValidation && nameMissing && s.inputError]}
+      />
+      {showValidation ? (
+        <Text style={s.validationText}>
+          {nameMissing ? 'Enter a checkpoint name.' : 'Choose where this checkpoint should start.'}
+        </Text>
+      ) : (
+        <Text style={s.helperText}>Name it and choose the place where this reading path begins.</Text>
+      )}
       <Text style={s.pickerLabel}>START FROM</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.bookChipRow}>
         {books.map(item => {
@@ -498,6 +858,7 @@ function CheckpointStartPicker({
             <TouchableOpacity
               key={item.id}
               onPress={() => {
+                Keyboard.dismiss();
                 setBookId(item.id);
                 setChapter(1);
               }}
@@ -515,7 +876,10 @@ function CheckpointStartPicker({
           return (
             <TouchableOpacity
               key={item}
-              onPress={() => setChapter(item)}
+              onPress={() => {
+                Keyboard.dismiss();
+                setChapter(item);
+              }}
               activeOpacity={0.84}
               style={[s.chapterChip, active && { borderColor: accent, backgroundColor: accent }]}
             >
@@ -524,8 +888,12 @@ function CheckpointStartPicker({
           );
         })}
       </View>
-      <TouchableOpacity onPress={() => onSave(kind, book.id, chapter)} activeOpacity={0.84} style={[s.saveStartBtn, { backgroundColor: accent }]}>
-        <Text style={s.saveStartText}>SAVE START POINT</Text>
+      <TouchableOpacity
+        onPress={handleSubmit}
+        activeOpacity={0.84}
+        style={[s.saveStartBtn, { backgroundColor: accent }]}
+      >
+        <Text style={s.saveStartText}>{saveLabel}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -574,10 +942,6 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
   loadingScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG, gap: 12 },
   loadingText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.8, color: '#A8A29E', textTransform: 'uppercase' },
-  header: { minHeight: 86, justifyContent: 'flex-end', paddingHorizontal: 18, paddingBottom: 14, backgroundColor: BG },
-  headerTitleAbs: { position: 'absolute', left: 70, right: 70, bottom: 16, alignItems: 'center' },
-  headerTitle: { fontFamily: F.serifMedium, fontSize: 18, letterSpacing: 2.5, color: INK, textAlign: 'center' },
-  headerBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   selectorContent: { paddingHorizontal: 18, paddingTop: 4, gap: 14 },
   heroCard: {
     borderRadius: 28,
@@ -598,40 +962,186 @@ const s = StyleSheet.create({
   heroKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, color: GOLD, textTransform: 'uppercase' },
   heroTitle: { marginTop: 4, fontFamily: F.serifMedium, fontSize: 20, color: INK },
   heroBody: { marginTop: 5, fontFamily: F.serif, fontSize: 13, lineHeight: 20, color: '#8D8A84' },
-  checkpointCard: {
-    borderRadius: 26,
+  actionErrorBox: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#F3D8C8',
+    backgroundColor: '#FFF7F2',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  actionErrorText: { fontFamily: F.sansBold, fontSize: 10, lineHeight: 16, letterSpacing: 1, color: '#A15C37', textTransform: 'uppercase', textAlign: 'center' },
+  kindBlock: { gap: 10 },
+  kindHeader: {
+    minHeight: 48,
+    borderRadius: 20,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    padding: 16,
-    gap: 13,
+    borderColor: '#F0EDE6',
+    paddingLeft: 12,
+    paddingRight: 8,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
-  checkpointHead: { flexDirection: 'row', alignItems: 'center', gap: 13 },
-  checkpointIcon: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  checkpointTitleWrap: { flex: 1, minWidth: 0 },
-  checkpointKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.6, color: '#A8A29E', textTransform: 'uppercase' },
-  checkpointTitle: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 19, color: INK },
-  checkpointMeta: { marginTop: 3, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.1, color: '#A8A29E', textTransform: 'uppercase' },
-  progressTrack: { height: 6, borderRadius: 999, backgroundColor: '#F0EDE6', overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 999 },
-  checkpointActions: { flexDirection: 'row', gap: 10 },
-  secondarySmallBtn: {
-    flex: 1,
-    minHeight: 42,
+  kindTitleRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  kindAccent: { width: 4, height: 28, borderRadius: 3 },
+  kindTitleCopy: { flex: 1, minWidth: 0 },
+  kindKicker: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.6, color: '#B9AEA0', textTransform: 'uppercase' },
+  kindTitle: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 17, color: INK },
+  singleKindToolbar: { alignItems: 'flex-end', paddingHorizontal: 2 },
+  addCheckpointBtn: {
+    minHeight: 34,
+    maxWidth: 142,
     borderRadius: 15,
     borderWidth: 1,
-    borderColor: '#EEE8DE',
-    backgroundColor: '#FFFCF7',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 6,
+    flexShrink: 0,
   },
-  secondarySmallText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.3, color: '#8D7C62', textTransform: 'uppercase' },
-  startBtn: { flex: 1, minHeight: 42, borderRadius: 15, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4 },
+  addCheckpointBtnSingle: { maxWidth: 164, backgroundColor: '#FFFCF7' },
+  addCheckpointText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.3, textTransform: 'uppercase' },
+  newCheckpointCard: {
+    borderRadius: 26,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    padding: 16,
+    shadowColor: '#8C7A4F',
+    shadowOpacity: 0.07,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 18,
+    elevation: 2,
+  },
+  createCheckpointSheet: {
+    maxHeight: '88%',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    shadowColor: '#000000',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: -10 },
+    shadowRadius: 26,
+    elevation: 14,
+  },
+  createSheetScroll: {
+    paddingTop: 4,
+  },
+  checkpointCard: {
+    position: 'relative',
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    gap: 10,
+    shadowColor: '#8C7A4F',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 18,
+    elevation: 2,
+  },
+  deleteCheckpointBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#F8D7D7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  checkpointHead: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  checkpointIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  checkpointTitleWrap: { flex: 1, minWidth: 0, paddingRight: 32 },
+  checkpointKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.6, color: '#A8A29E', textTransform: 'uppercase' },
+  checkpointTitle: { marginTop: 1, fontFamily: F.serifMedium, fontSize: 19, color: INK },
+  checkpointStopped: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 15, lineHeight: 18 },
+  checkpointMeta: { marginTop: 1, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 0.85, color: '#A8A29E', textTransform: 'uppercase' },
+  checkpointActions: { flexDirection: 'row', gap: 8, alignItems: 'stretch' },
+  historyControls: {
+    flex: 1.55,
+    minHeight: 40,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#EEE8DE',
+    backgroundColor: '#FFFCF7',
+    padding: 3,
+    flexDirection: 'row',
+    gap: 4,
+  },
+  historyBtn: {
+    flex: 1,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 3,
+    backgroundColor: '#FFFFFF',
+  },
+  historyBtnDisabled: { backgroundColor: 'transparent' },
+  historyBtnText: { fontFamily: F.sansBold, fontSize: 8.4, letterSpacing: 0.9, color: '#8D7C62', textTransform: 'uppercase' },
+  historyBtnTextDisabled: { color: '#D8D1C7' },
+  startBtn: { flex: 0.82, minHeight: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4, paddingHorizontal: 8 },
   startBtnDisabled: { opacity: 0.52 },
   startText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.5, color: '#FFFFFF', textTransform: 'uppercase' },
-  pickerBox: { borderRadius: 20, backgroundColor: '#FFFCF7', borderWidth: 1, borderColor: '#F0E3CE', padding: 12, gap: 10 },
+  pickerBox: { borderRadius: 24, backgroundColor: '#FFFCF7', borderWidth: 1, borderColor: '#F0E3CE', padding: 14, gap: 10 },
+  createSheetHeader: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 4,
+  },
+  sheetIconBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#F0EDE6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetConfirmBtn: {
+    borderColor: 'transparent',
+    shadowColor: '#C5A059',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  createSheetTitleWrap: { flex: 1, minWidth: 0, alignItems: 'center' },
+  createSheetKicker: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.8, color: GOLD, textTransform: 'uppercase' },
+  createSheetTitle: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 21, color: INK, textAlign: 'center' },
   pickerLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5, color: '#A08A63', textTransform: 'uppercase' },
+  nameInput: {
+    minHeight: 58,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E9E1D4',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 15,
+    fontFamily: F.serifMedium,
+    fontSize: 21,
+    lineHeight: 27,
+    color: INK,
+  },
+  inputError: { borderColor: '#D97757', backgroundColor: '#FFF8F3' },
+  helperText: { marginTop: -4, fontFamily: F.serif, fontSize: 13, lineHeight: 18, color: '#9A9287' },
+  validationText: { marginTop: -4, fontFamily: F.sansBold, fontSize: 9.5, lineHeight: 15, letterSpacing: 0.8, color: '#B45335', textTransform: 'uppercase' },
   bookChipRow: { gap: 8, paddingRight: 8 },
   bookChip: { minHeight: 34, borderRadius: 17, borderWidth: 1, borderColor: '#E9E1D4', backgroundColor: '#FFFFFF', paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   bookChipText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.1, color: '#918A81', textTransform: 'uppercase' },
@@ -660,14 +1170,28 @@ const s = StyleSheet.create({
   verseMarker: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#F8F1E4', alignItems: 'center', justifyContent: 'center', marginTop: 2 },
   verseNum: { fontFamily: F.sansBold, fontSize: 10, color: GOLD },
   verseText: { flex: 1, fontFamily: F.serif, fontSize: 19, lineHeight: 31, color: '#2B2723' },
-  actionDockWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 18, paddingTop: 16, backgroundColor: 'rgba(252,252,252,0.94)' },
-  actionDock: { minHeight: 66, borderRadius: 26, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F0EDE6', padding: 8, flexDirection: 'row', gap: 8, shadowColor: '#C5A059', shadowOpacity: 0.13, shadowOffset: { width: 0, height: 12 }, shadowRadius: 26, elevation: 5 },
-  primaryBtn: { flex: 1.2, minHeight: 50, borderRadius: 19, backgroundColor: GOLD, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5, paddingHorizontal: 10 },
+  actionDockWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 18, paddingTop: 16, backgroundColor: 'transparent' },
+  actionDock: {
+    minHeight: 56,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    padding: 7,
+    flexDirection: 'row',
+    gap: 8,
+    shadowColor: '#8B7354',
+    shadowOpacity: 0.11,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 20,
+    elevation: 5,
+  },
+  primaryBtn: { flex: 1.2, minHeight: 39, borderRadius: 14, backgroundColor: GOLD, borderWidth: 1, borderColor: '#D8B769', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingVertical: 5 },
   primaryBtnWide: { flex: 1 },
   primaryWide: { marginTop: 18, minHeight: 48, borderRadius: 18, backgroundColor: GOLD, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
-  primaryText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4, color: '#FFFFFF', textTransform: 'uppercase', textAlign: 'center' },
-  secondaryBtn: { flex: 1, minHeight: 50, borderRadius: 19, backgroundColor: '#F8F5EF', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9 },
-  secondaryText: { fontFamily: F.sansBold, fontSize: 9.2, letterSpacing: 1.25, color: '#8D7C62', textTransform: 'uppercase', textAlign: 'center' },
+  primaryText: { fontFamily: F.sansBold, fontSize: 11, lineHeight: 14, letterSpacing: 1.05, color: '#FFFFFF', textTransform: 'uppercase', textAlign: 'center' },
+  secondaryBtn: { flex: 1, minHeight: 39, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)', backgroundColor: '#FFFCF6', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, paddingVertical: 5 },
+  secondaryText: { fontFamily: F.sansBold, fontSize: 10, lineHeight: 13, letterSpacing: 0.95, color: '#7D6A4D', textTransform: 'uppercase', textAlign: 'center' },
   disabledBtn: { opacity: 0.58 },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 34, gap: 10 },
   emptyStateInline: { borderRadius: 24, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F0EDE6', padding: 22, alignItems: 'center', gap: 10 },

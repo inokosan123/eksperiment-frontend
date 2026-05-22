@@ -1,9 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Modal,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -11,16 +9,16 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
-  ArrowLeft,
   Book,
   CheckSmall,
   ChevronLeft,
   ChevronRight,
-  Trophy,
 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { F } from '@/constants/tokens';
-import { getTitleBarTopPadding } from '@/components/shared/titleBar';
+import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
+import { useAppSettings } from '@/components/settings/SettingsContext';
+import { normalizeScriptureLanguage } from '@/constants/scripture';
 import {
   getScriptureChallengeReaderSession,
   type ScriptureChallengeReaderSession,
@@ -28,6 +26,7 @@ import {
 } from '@/components/challenges/challengeDb';
 import { getScriptureChallengeUnitLabel } from '@/components/scripture/scriptureChallengePlan';
 import { BibleVerse, useScripture } from '@/components/scripture/ScriptureContext';
+import ScriptureReaderView from '@/components/scripture/ScriptureReaderView';
 
 const BG = '#FCFCFC';
 const GOLD = '#C5A059';
@@ -48,6 +47,8 @@ export default function ScriptureChallengeReaderView({
 }: Props) {
   const insets = useSafeAreaInsets();
   const { ready, getChapter } = useScripture();
+  const { settings } = useAppSettings();
+  const scriptureLanguage = normalizeScriptureLanguage(settings.bibleLang);
   const [session, setSession] = useState<ScriptureChallengeReaderSession | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -55,9 +56,20 @@ export default function ScriptureChallengeReaderView({
   const [readLimit, setReadLimit] = useState(0);
   const [verses, setVerses] = useState<BibleVerse[]>([]);
   const [chapterLoading, setChapterLoading] = useState(true);
+  const chapterNavLockedRef = useRef(false);
+  const [chapterNavLocked, setChapterNavLocked] = useState(false);
   const [chapterError, setChapterError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
-  const [celebrationVisible, setCelebrationVisible] = useState(false);
+
+  const lockChapterNavigation = useCallback(() => {
+    chapterNavLockedRef.current = true;
+    setChapterNavLocked(true);
+  }, []);
+
+  const releaseChapterNavigation = useCallback(() => {
+    chapterNavLockedRef.current = false;
+    setChapterNavLocked(false);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -104,13 +116,14 @@ export default function ScriptureChallengeReaderView({
   const readMoreLabel = session
     ? `READ ONE MORE ${getScriptureChallengeUnitLabel(session.challenge, 1).toUpperCase()}`
     : 'READ ONE MORE';
+  const chapterControlsDisabled = chapterLoading || chapterNavLocked;
 
   useEffect(() => {
     if (!ready || !currentUnit) return;
     let active = true;
     setChapterLoading(true);
     setChapterError(null);
-    getChapter(currentUnit.bookId, currentUnit.chapter, 'en')
+    getChapter(currentUnit.bookId, currentUnit.chapter, scriptureLanguage)
       .then(nextVerses => {
         if (!active) return;
         setVerses(nextVerses);
@@ -125,55 +138,52 @@ export default function ScriptureChallengeReaderView({
         setChapterError('This passage could not be loaded.');
       })
       .finally(() => {
-        if (active) setChapterLoading(false);
+        if (!active) return;
+        setChapterLoading(false);
+        releaseChapterNavigation();
       });
 
     return () => {
       active = false;
     };
-  }, [currentUnit, getChapter, ready]);
+  }, [currentUnit, getChapter, ready, releaseChapterNavigation, scriptureLanguage]);
 
   const goPrev = useCallback(() => {
-    if (!canGoPrev) return;
+    if (!canGoPrev || chapterLoading || chapterNavLockedRef.current) return;
+    lockChapterNavigation();
     if (Platform.OS !== 'web') Haptics.selectionAsync().catch(() => {});
     setCursor(value => Math.max(0, value - 1));
-  }, [canGoPrev]);
+  }, [canGoPrev, chapterLoading, lockChapterNavigation]);
 
   const goNext = useCallback(() => {
-    if (!currentUnit || cursor >= visibleUnits.length - 1) return;
+    if (!currentUnit || cursor >= visibleUnits.length - 1 || chapterLoading || chapterNavLockedRef.current) return;
+    lockChapterNavigation();
     if (Platform.OS !== 'web') Haptics.selectionAsync().catch(() => {});
     setCursor(value => Math.min(visibleUnits.length - 1, value + 1));
-  }, [currentUnit, cursor, visibleUnits.length]);
+  }, [chapterLoading, currentUnit, cursor, lockChapterNavigation, visibleUnits.length]);
 
   const readOneMore = useCallback(() => {
-    if (!canReadMore) return;
+    if (!canReadMore || chapterLoading || chapterNavLockedRef.current) return;
+    lockChapterNavigation();
     if (Platform.OS !== 'web') Haptics.selectionAsync().catch(() => {});
     setReadLimit(value => value + 1);
     setCursor(value => value + 1);
-  }, [canReadMore]);
+  }, [canReadMore, chapterLoading, lockChapterNavigation]);
 
   const finish = useCallback(async () => {
-    if (!currentUnit || finishing) return;
+    if (!currentUnit || finishing || chapterLoading || chapterNavLockedRef.current) return;
     setFinishing(true);
     try {
       const result = await onComplete(currentReadUnits);
       if (result?.completed) {
-        if (Platform.OS !== 'web') {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        }
-        setCelebrationVisible(true);
+        onBack();
         return;
       }
       onBack();
     } finally {
       setFinishing(false);
     }
-  }, [currentReadUnits, currentUnit, finishing, onBack, onComplete]);
-
-  const closeCelebration = useCallback(() => {
-    setCelebrationVisible(false);
-    onBack();
-  }, [onBack]);
+  }, [chapterLoading, currentReadUnits, currentUnit, finishing, onBack, onComplete]);
 
   if (!ready || sessionLoading) {
     return (
@@ -187,7 +197,7 @@ export default function ScriptureChallengeReaderView({
   if (sessionError || !session || !currentUnit) {
     return (
       <View style={s.screen}>
-        <Header top={insets.top} title={title ?? 'Scripture Challenge'} onBack={onBack} />
+        <ScreenTitleBar title={(title ?? 'Scripture Challenge').toUpperCase()} showBack bg={BG} onBackOverride={onBack} />
         <View style={s.emptyState}>
           <Book s={26} c={GOLD} />
           <Text style={s.emptyTitle}>Reading plan unavailable</Text>
@@ -197,121 +207,73 @@ export default function ScriptureChallengeReaderView({
     );
   }
 
-  return (
-    <View style={s.screen}>
-      <Header top={insets.top} title={title ?? session.challenge.title} onBack={onBack} />
-
-      <View style={s.planWrap}>
-        <View style={s.planPill}>
-          <Text style={s.planEyebrow}>TODAY</Text>
-          <Text style={s.planText} numberOfLines={1} adjustsFontSizeToFit>
-            {plannedFirst?.ref ?? currentUnit.ref}{plannedLast && plannedLast.ref !== plannedFirst?.ref ? ` - ${plannedLast.ref}` : ''}
-          </Text>
-        </View>
-        <Text style={s.progressText}>
-          {currentProgress}/{session.progressTotal} {session.progressUnit}
-        </Text>
-      </View>
-
-      <ChapterBar
-        chapter={currentUnit.chapter}
-        label={currentUnitLabel}
-        canGoPrev={canGoPrev}
-        onPrev={goPrev}
-      />
-
-      <ScrollView
-        contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 155 }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={s.bookTitle}>{currentUnit.bookName.toUpperCase()}</Text>
-        {chapterLoading ? (
-          <View style={s.chapterLoading}>
-            <ActivityIndicator color={GOLD} />
-          </View>
-        ) : chapterError ? (
-          <View style={s.emptyChapter}>
-            <Book s={24} c={GOLD} />
-            <Text style={s.emptyTitle}>Scripture is reloading</Text>
-            <Text style={s.emptyText}>{chapterError}</Text>
-          </View>
+  const challengeDock = (
+    <View style={[s.actionDockWrap, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+      <View style={s.actionDock}>
+        {!atVisibleEnd ? (
+          <>
+            <TouchableOpacity
+              onPress={finish}
+              disabled={finishing || chapterControlsDisabled}
+              activeOpacity={0.82}
+              style={[s.secondaryBtn, (finishing || chapterControlsDisabled) && s.disabledBtn]}
+            >
+              <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.secondaryText}>FINISH EARLY</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={goNext}
+              disabled={chapterControlsDisabled}
+              activeOpacity={0.84}
+              style={[s.primaryBtn, chapterControlsDisabled && s.disabledBtn]}
+            >
+              <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.primaryText}>{nextButtonLabel}</Text>
+              <ChevronRight s={16} c="#FFFFFF" w={2.4} />
+            </TouchableOpacity>
+          </>
         ) : (
-          <View style={s.verseList}>
-            {verses.map(verse => (
-              <ChallengeVerseRow key={verse.verse} verse={verse} />
-            ))}
-          </View>
-        )}
-      </ScrollView>
-
-      <View style={[s.actionDockWrap, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <View style={s.actionDock}>
-          {!atVisibleEnd ? (
-            <>
-              <TouchableOpacity
+          <>
+            <TouchableOpacity
                 onPress={finish}
-                disabled={finishing}
-                activeOpacity={0.82}
-                style={[s.secondaryBtn, finishing && s.disabledBtn]}
-              >
-                <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.secondaryText}>FINISH EARLY</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={goNext} activeOpacity={0.84} style={s.primaryBtn}>
-                <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.primaryText}>{nextButtonLabel}</Text>
-                <ChevronRight s={16} c="#FFFFFF" w={2.4} />
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <TouchableOpacity
-                onPress={finish}
-                disabled={finishing}
+                disabled={finishing || chapterControlsDisabled}
                 activeOpacity={0.84}
-                style={[s.primaryBtn, !canReadMore && s.primaryBtnWide, finishing && s.disabledBtn]}
+                style={[s.primaryBtn, !canReadMore && s.primaryBtnWide, (finishing || chapterControlsDisabled) && s.disabledBtn]}
               >
                 <CheckSmall s={15} c="#FFFFFF" w={2.6} />
                 <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.primaryText}>FINISH</Text>
               </TouchableOpacity>
-              {canReadMore ? (
-                <TouchableOpacity onPress={readOneMore} activeOpacity={0.82} style={s.secondaryBtn}>
-                  <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.72} style={s.secondaryText}>{readMoreLabel}</Text>
-                </TouchableOpacity>
-              ) : null}
-            </>
-          )}
-        </View>
+            {canReadMore ? (
+              <TouchableOpacity
+                onPress={readOneMore}
+                disabled={chapterControlsDisabled}
+                activeOpacity={0.82}
+                style={[s.secondaryBtn, chapterControlsDisabled && s.disabledBtn]}
+              >
+                <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.72} style={s.secondaryText}>{readMoreLabel}</Text>
+              </TouchableOpacity>
+            ) : null}
+          </>
+        )}
       </View>
-
-      <CelebrationModal
-        visible={celebrationVisible}
-        title={session.challenge.title}
-        onContinue={closeCelebration}
-      />
     </View>
   );
-}
 
-function Header({
-  top,
-  title,
-  onBack,
-}: {
-  top: number;
-  title: string;
-  onBack: () => void;
-}) {
   return (
-    <View style={[s.header, { paddingTop: getTitleBarTopPadding(top) }]}>
-      <View style={s.headerTitleAbs} pointerEvents="none">
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62} style={s.headerTitle}>
-          {title.toUpperCase()}
-        </Text>
-      </View>
-      <TouchableOpacity onPress={onBack} style={s.headerBtn} activeOpacity={0.7}>
-        <ArrowLeft s={24} c="#9CA3AF" />
-      </TouchableOpacity>
-    </View>
+    <>
+      <ScriptureReaderView
+        bookId={currentUnit.bookId}
+        chapter={currentUnit.chapter}
+        lang={scriptureLanguage}
+        onBack={onBack}
+        canGoPrevChapter={!chapterControlsDisabled && canGoPrev}
+        canGoNextChapter={!chapterControlsDisabled && !atVisibleEnd}
+        onPrevChapter={goPrev}
+        onNextChapter={goNext}
+        bottomDock={challengeDock}
+        bottomDockHeight={172}
+      />
+    </>
   );
+
 }
 
 function ChapterBar({
@@ -353,36 +315,6 @@ function ChallengeVerseRow({ verse }: { verse: BibleVerse }) {
   );
 }
 
-function CelebrationModal({
-  visible,
-  title,
-  onContinue,
-}: {
-  visible: boolean;
-  title: string;
-  onContinue: () => void;
-}) {
-  return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onContinue}>
-      <View style={s.modalOverlay}>
-        <View style={s.celebrationCard}>
-          <View style={s.trophyCircle}>
-            <Trophy s={30} c={GOLD} w={2.1} />
-          </View>
-          <Text style={s.celebrationKicker}>CHALLENGE COMPLETE</Text>
-          <Text style={s.celebrationTitle}>{title}</Text>
-          <Text style={s.celebrationBody}>
-            The final passage is finished. Your trophy is waiting in challenge history.
-          </Text>
-          <TouchableOpacity onPress={onContinue} activeOpacity={0.85} style={s.continueBtn}>
-            <Text style={s.continueText}>CONTINUE</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
 const s = StyleSheet.create({
   screen: {
     flex: 1,
@@ -401,34 +333,6 @@ const s = StyleSheet.create({
     letterSpacing: 1.5,
     color: '#A8A29E',
     textTransform: 'uppercase',
-  },
-  header: {
-    minHeight: 73,
-    paddingHorizontal: 16,
-    paddingBottom: 11,
-    justifyContent: 'flex-end',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(28,25,23,0.05)',
-  },
-  headerTitleAbs: {
-    position: 'absolute',
-    left: 62,
-    right: 62,
-    bottom: 17,
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontFamily: F.serifMedium,
-    fontSize: 16,
-    letterSpacing: 1.8,
-    color: '#0F172A',
-  },
-  headerBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 22,
   },
   planWrap: {
     paddingHorizontal: 16,
@@ -577,38 +481,38 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    backgroundColor: 'rgba(252,252,252,0.96)',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(28,25,23,0.06)',
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    backgroundColor: 'transparent',
   },
   actionDock: {
-    minHeight: 68,
-    borderRadius: 26,
+    minHeight: 56,
+    borderRadius: 20,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: 'rgba(28,25,23,0.06)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.09,
-    shadowRadius: 24,
-    elevation: 7,
-    padding: 10,
+    borderColor: 'rgba(197,160,89,0.18)',
+    padding: 7,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    gap: 8,
+    shadowColor: '#8B7354',
+    shadowOpacity: 0.11,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 20,
+    elevation: 5,
   },
   primaryBtn: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 18,
+    flex: 1.2,
+    minHeight: 39,
+    borderRadius: 14,
     backgroundColor: GOLD,
+    borderWidth: 1,
+    borderColor: '#D8B769',
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    gap: 7,
+    gap: 6,
     paddingHorizontal: 12,
+    paddingVertical: 5,
   },
   primaryBtnWide: {
     flex: 1,
@@ -616,57 +520,86 @@ const s = StyleSheet.create({
   primaryText: {
     fontFamily: F.sansBold,
     fontSize: 11,
-    letterSpacing: 1.5,
+    lineHeight: 14,
+    letterSpacing: 1.05,
     color: '#FFFFFF',
+    textTransform: 'uppercase',
     textAlign: 'center',
   },
   secondaryBtn: {
     flex: 1,
-    minHeight: 48,
-    borderRadius: 18,
+    minHeight: 39,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.24)',
-    backgroundColor: '#FFFDF8',
+    borderColor: 'rgba(197,160,89,0.22)',
+    backgroundColor: '#FFFCF6',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 10,
+    paddingVertical: 5,
   },
   secondaryText: {
     fontFamily: F.sansBold,
     fontSize: 10,
-    letterSpacing: 1.35,
-    color: '#8B7354',
+    lineHeight: 13,
+    letterSpacing: 0.95,
+    color: '#7D6A4D',
+    textTransform: 'uppercase',
     textAlign: 'center',
   },
   disabledBtn: {
-    opacity: 0.55,
+    opacity: 0.58,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.36)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
   },
+  modalScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(18,16,12,0.46)',
+  },
   celebrationCard: {
     width: '100%',
-    maxWidth: 330,
-    borderRadius: 28,
+    maxWidth: 348,
+    borderRadius: 30,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingVertical: 26,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 22,
     alignItems: 'center',
-  },
-  trophyCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#FFF6E8',
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.24)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.22,
+    shadowRadius: 34,
+    elevation: 16,
+  },
+  celebrationGradient: {
+    width: '100%',
+    height: 184,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  trophyStage: {
+    width: 196,
+    height: 178,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trophyGlow: {
+    position: 'absolute',
+    width: 148,
+    height: 148,
+    borderRadius: 74,
+    backgroundColor: '#F4C95D',
   },
   celebrationKicker: {
     fontFamily: F.sansBold,

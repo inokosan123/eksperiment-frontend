@@ -62,6 +62,7 @@ export type ReadingSession = {
 };
 
 type ReadingListContextValue = {
+  ready: boolean;
   books: ReadingBook[];
   sessions: ReadingSession[];
   categoryDefs: ReadingCategoryDef[];
@@ -76,6 +77,7 @@ type ReadingListContextValue = {
 const ReadingListContext = createContext<ReadingListContextValue | null>(null);
 
 export function ReadingListProvider({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(false);
   const [books, setBooks] = useState<ReadingBook[]>(DEFAULT_READING_BOOKS);
   const [sessions, setSessions] = useState<ReadingSession[]>([]);
   const [categoryDefs, setCategoryDefs] = useState<ReadingCategoryDef[]>(DEFAULT_READING_CATEGORIES);
@@ -98,6 +100,7 @@ export function ReadingListProvider({ children }: { children: React.ReactNode })
   const refresh = useCallback(async () => {
     const snapshot = await loadReadingListSnapshot();
     applySnapshot(snapshot);
+    setReady(true);
   }, [applySnapshot]);
 
   useEffect(() => {
@@ -106,9 +109,13 @@ export function ReadingListProvider({ children }: { children: React.ReactNode })
     (async () => {
       try {
         const snapshot = await loadReadingListSnapshot();
-        if (active) applySnapshot(snapshot);
+        if (active) {
+          applySnapshot(snapshot);
+          setReady(true);
+        }
       } catch (error) {
         console.warn('Reading list backend failed to load:', error);
+        if (active) setReady(true);
       }
     })();
 
@@ -126,7 +133,11 @@ export function ReadingListProvider({ children }: { children: React.ReactNode })
   const updateBook = useCallback(async (id: string, updates: Partial<ReadingBook>) => {
     const currentBook = booksRef.current.find(book => book.id === id);
     if (!currentBook) return;
-    const nextBook = { ...currentBook, ...updates };
+    const nextUpdates = {
+      ...updates,
+      ...(updates.status && updates.status !== 'reading' ? { showOnHome: false } : {}),
+    };
+    const nextBook = { ...currentBook, ...nextUpdates };
 
     setBooks(current => current.map(book => (book.id === id ? nextBook : book)));
     await saveReadingBook(nextBook);
@@ -174,6 +185,7 @@ export function ReadingListProvider({ children }: { children: React.ReactNode })
   }, [refresh]);
 
   const value = useMemo<ReadingListContextValue>(() => ({
+    ready,
     books,
     sessions,
     categoryDefs,
@@ -184,6 +196,7 @@ export function ReadingListProvider({ children }: { children: React.ReactNode })
     recordSession,
     saveCategoryDefs,
   }), [
+    ready,
     books,
     sessions,
     categoryDefs,

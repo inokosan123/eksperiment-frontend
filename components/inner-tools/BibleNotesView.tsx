@@ -20,11 +20,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
-  ArrowLeft, CheckSmall, ChevronDown, Search, Trash2, X,
+  CheckSmall, ChevronDown, Search, Trash2, X,
 } from '@/components/icons/Icons';
 import ConfirmModal from '@/components/shared/ConfirmModal';
+import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { C, F } from '@/constants/tokens';
-import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import { RichTextEditor, RichToolbar, RichTextEditorRef, FormatState } from '@/components/shared/RichTextEditor';
 import { ScriptureBibleNote, useScripture } from '@/components/scripture/ScriptureContext';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
@@ -238,7 +238,7 @@ export default function BibleNotesView() {
 
   return (
     <View style={s.screen}>
-      <Header title="BIBLE NOTES" top={insets.top} onBack={() => router.back()} />
+      <ScreenTitleBar title="BIBLE NOTES" showBack bg={BG} />
 
       <View style={s.searchWrap}>
         <View style={s.searchBox}>
@@ -360,18 +360,6 @@ export default function BibleNotesView() {
   );
 }
 
-function Header({ title, top, onBack }: { title: string; top: number; onBack: () => void }) {
-  return (
-    <View style={[s.header, { paddingTop: getTitleBarTopPadding(top) }]}>
-      <TouchableOpacity onPress={onBack} style={s.headerBtn} activeOpacity={0.7}>
-        <ArrowLeft s={24} c="#9CA3AF" />
-      </TouchableOpacity>
-      <Text style={s.headerTitle}>{title}</Text>
-      <View style={s.headerBtn} />
-    </View>
-  );
-}
-
 function TabButton({
   label, active, count, onPress,
 }: {
@@ -427,15 +415,15 @@ function ChapterEditor({
   return (
     <Modal visible={!!chapter} animationType="slide" onRequestClose={onClose}>
       <View style={s.editorScreen}>
-        <View style={[s.editorHeader, { paddingTop: getTitleBarTopPadding(insets.top) }]}>
-          <TouchableOpacity onPress={onClose} style={s.headerBtn} activeOpacity={0.7}>
-            <ArrowLeft s={24} c="#9CA3AF" />
-          </TouchableOpacity>
-          <View style={s.editorTitleBlock}>
-            <Text style={s.editorTitle}>{chapter ? `${chapter.book.name} ${chapter.chapter}` : 'Bible Note'}</Text>
-            <Text style={s.editorSub}>Chapter study note</Text>
-          </View>
-          <View style={s.editorActions}>
+        <ScreenTitleBar
+          title={(chapter ? `${chapter.book.name} ${chapter.chapter}` : 'Bible Note').toUpperCase()}
+          subtitle="Chapter study note"
+          showBack
+          bg={BG}
+          onBackOverride={onClose}
+          sideWidth={88}
+          rightElement={(
+            <View style={s.editorActions}>
             {onDelete && (
               <TouchableOpacity onPress={onDelete} style={s.editorIconBtn} activeOpacity={0.7}>
                 <Trash2 s={19} c="#EF4444" />
@@ -444,8 +432,9 @@ function ChapterEditor({
             <TouchableOpacity onPress={onSave} style={s.editorIconBtn} activeOpacity={0.7}>
               <CheckSmall s={21} c={GOLD} />
             </TouchableOpacity>
-          </View>
-        </View>
+            </View>
+          )}
+        />
 
         <ScrollView
           contentContainerStyle={[s.editorContent, { paddingBottom: insets.bottom + 42 }]}
@@ -540,18 +529,6 @@ function BibleField({
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: TITLE_BAR_BOTTOM_PADDING,
-    backgroundColor: 'rgba(245,243,238,0.96)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
-  },
-  headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 20, letterSpacing: 2.8, color: C.text },
   searchWrap: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 9 },
   searchBox: {
     height: 46,
@@ -651,18 +628,6 @@ const s = StyleSheet.create({
   noteDot: { position: 'absolute', top: 7, right: 8, width: 5, height: 5, borderRadius: 3, backgroundColor: GOLD },
 
   editorScreen: { flex: 1, backgroundColor: '#FDFBF5' },
-  editorHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: TITLE_BAR_BOTTOM_PADDING,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(197,160,89,0.12)',
-  },
-  editorTitleBlock: { flex: 1, alignItems: 'center' },
-  editorTitle: { fontFamily: F.serifMedium, fontSize: 21, letterSpacing: 1, color: C.text },
-  editorSub: { marginTop: 2, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5, color: GOLD, textTransform: 'uppercase' },
   editorActions: { width: 78, flexDirection: 'row', justifyContent: 'flex-end', gap: 2 },
   editorIconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   editorContent: { padding: 18, gap: 14 },

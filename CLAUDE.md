@@ -18,3 +18,10 @@
 
 - Task interactions should update optimistically first, then save to SQL.
 - Keep check/skip feedback light: Reanimated micro-motion plus haptic, no heavy sound or confetti on the critical path.
+
+## Regression Safety
+
+- Before making changes, understand the existing flow around the touched component and preserve current behavior unless the user explicitly asks to change it.
+- Keep edits narrowly scoped so fixes in one screen do not accidentally affect other app areas.
+- Pay special attention to shared components, task flows, scripture flows, navigation, persistence, and overlays; changes there must not create bugs, layout regressions, broken taps, or degraded behavior in existing elements.
+- After editing, run the lightest relevant verification available and call out any parts that still need phone testing.

@@ -15,11 +15,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
-  ArrowLeft, BookMarked, CheckSmall, ChevronRight, Notebook, Plus, Trash2, X,
+  BookMarked, CheckSmall, ChevronRight, Notebook, Plus, Trash2, X,
 } from '@/components/icons/Icons';
 import ConfirmModal from '@/components/shared/ConfirmModal';
+import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { C, F } from '@/constants/tokens';
-import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import { FormatState, RichTextEditor, RichToolbar, RichTextEditorRef } from '@/components/shared/RichTextEditor';
 import type { TextSelection } from '@/components/shared/TextFormatToolbar';
 import { InnerNote, NoteColor, NoteKind, NoteSourceRef, useInnerTools } from './InnerToolsContext';
@@ -310,7 +310,7 @@ export default function NotesView() {
 
   return (
     <View style={s.screen}>
-      <Header title="NOTES" top={insets.top} onBack={() => router.back()} />
+      <ScreenTitleBar title="NOTES" showBack bg={BG} />
       <ScrollView contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 120 }]} showsVerticalScrollIndicator={false}>
         <BibleNotesShortcut onPress={() => router.push('/bible-notes')} />
 
@@ -389,18 +389,6 @@ export default function NotesView() {
         onCancel={() => setDeleteTarget(null)}
         onConfirm={confirmDelete}
       />
-    </View>
-  );
-}
-
-function Header({ title, top, onBack }: { title: string; top: number; onBack: () => void }) {
-  return (
-    <View style={[s.header, { paddingTop: getTitleBarTopPadding(top) }]}>
-      <TouchableOpacity onPress={onBack} style={s.headerBtn} activeOpacity={0.7}>
-        <ArrowLeft s={24} c="#9CA3AF" />
-      </TouchableOpacity>
-      <Text style={s.headerTitle}>{title}</Text>
-      <View style={s.headerBtn} />
     </View>
   );
 }
@@ -698,16 +686,15 @@ function EditorModal({
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
         <View style={[s.editorScreen, { backgroundColor: palette.editorBg, paddingBottom: kbHeight }]}>
 
-          {/* Fixed header */}
-          <View style={[s.editorHeader, { paddingTop: getTitleBarTopPadding(insets.top), borderBottomColor: `${palette.accent}22` }]}>
-            <TouchableOpacity onPress={onClose} style={s.headerBtn} activeOpacity={0.7}>
-              <ArrowLeft s={24} c="#A8A29E" />
-            </TouchableOpacity>
-            <View style={{ alignItems: 'center' }}>
-              <Text style={s.editorKicker}>{editing ? 'Editing' : 'New'} {isNote ? 'Note' : 'Quick Help'}</Text>
-              <Text style={s.editorDate}>{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</Text>
-            </View>
-            <View style={s.editorActions}>
+          <ScreenTitleBar
+            title={`${editing ? 'Editing' : 'New'} ${isNote ? 'Note' : 'Quick Help'}`.toUpperCase()}
+            subtitle={new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
+            showBack
+            bg={palette.editorBg}
+            onBackOverride={onClose}
+            sideWidth={88}
+            rightElement={(
+              <View style={s.editorActions}>
               {onDelete && (
                 <TouchableOpacity onPress={onDelete} style={s.editorIconBtn} activeOpacity={0.7}>
                   <Trash2 s={20} c="#EF4444" />
@@ -716,8 +703,9 @@ function EditorModal({
               <TouchableOpacity onPress={onSave} style={s.editorIconBtn} activeOpacity={0.7}>
                 <CheckSmall s={21} c={palette.accent} />
               </TouchableOpacity>
-            </View>
-          </View>
+              </View>
+            )}
+          />
 
           {/* Top area — title, swatches, toolbar (no scroll needed, always compact) */}
           <View style={[s.editorTop, { paddingHorizontal: 24 }]}>
@@ -833,18 +821,6 @@ function ScriptureQuoteCard({
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingBottom: TITLE_BAR_BOTTOM_PADDING,
-    backgroundColor: 'rgba(253,251,245,0.96)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(197,160,89,0.10)',
-  },
-  headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 22, letterSpacing: 2.6, color: C.text },
   content: { paddingHorizontal: 20, paddingTop: 14 },
 
   bibleShortcut: {
@@ -954,9 +930,6 @@ const s = StyleSheet.create({
 
 
   editorScreen: { flex: 1 },
-  editorHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: TITLE_BAR_BOTTOM_PADDING, borderBottomWidth: 1 },
-  editorKicker: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, color: C.textMuted, textTransform: 'uppercase' },
-  editorDate: { marginTop: 3, fontFamily: F.serifMediumItalic, fontSize: 13, color: C.textMuted },
   editorActions: { minWidth: 44, flexDirection: 'row', justifyContent: 'flex-end', gap: 2 },
   editorIconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   editorContent: { paddingHorizontal: 24, paddingTop: 22 },

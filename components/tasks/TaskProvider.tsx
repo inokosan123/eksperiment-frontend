@@ -3,6 +3,7 @@ import type { PropsWithChildren } from 'react';
 import {
   cleanupLegacyDemoHabitTasks,
   ensureTaskInstancesForDate,
+  archiveTaskImmediately,
   listTaskInstancesForDate,
   listTasks,
   markDueTaskInstancesMissed,
@@ -16,7 +17,10 @@ import {
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
 import { taskInstanceToListItem } from '@/components/tasks/taskAdapters';
 import { syncChallengeProgressForTaskInstance } from '@/components/challenges/challengeDb';
-import { rollbackScriptureCheckpointForTaskInstance } from '@/components/scripture/scriptureCheckpointDb';
+import {
+  cancelNotificationsForInstance,
+  cancelNotificationsForTask,
+} from '@/components/notifications/notificationService';
 import type { TaskDefinition, TaskDraft, TaskInstance, TaskListItem } from '@/components/tasks/taskTypes';
 
 type TaskContextValue = {
@@ -28,16 +32,32 @@ type TaskContextValue = {
   instances: TaskInstance[];
   listItems: TaskListItem[];
   refresh: (date?: string) => Promise<void>;
-  createOrUpdateTask: (draft: TaskDraft) => Promise<TaskDefinition>;
+  createOrUpdateTask: (draft: TaskDraft, refreshDate?: string) => Promise<TaskDefinition>;
+  createOrUpdateTasks: (drafts: TaskDraft[], refreshDate?: string) => Promise<TaskDefinition[]>;
   pause: (taskId: string) => Promise<void>;
+  pauseTasks: (taskIds: string[], refreshDate?: string) => Promise<void>;
   resume: (taskId: string) => Promise<void>;
   remove: (taskId: string) => Promise<void>;
+  removeTasks: (taskIds: string[], refreshDate?: string) => Promise<void>;
+  archiveTasksImmediately: (taskIds: string[], refreshDate?: string) => Promise<void>;
   completeInstance: (instanceId: string, refreshDate?: string) => Promise<void>;
   skipInstance: (instanceId: string, refreshDate?: string) => Promise<void>;
   resetInstance: (instanceId: string, refreshDate?: string) => Promise<void>;
 };
 
 const TaskContext = createContext<TaskContextValue | null>(null);
+
+let legacyHabitCleanupPromise: Promise<void> | null = null;
+
+function cleanupLegacyDemoHabitTasksOnce() {
+  if (!legacyHabitCleanupPromise) {
+    legacyHabitCleanupPromise = cleanupLegacyDemoHabitTasks().catch(error => {
+      legacyHabitCleanupPromise = null;
+      throw error;
+    });
+  }
+  return legacyHabitCleanupPromise;
+}
 
 export function TaskProvider({ children }: PropsWithChildren) {
   const [ready, setReady] = useState(false);
@@ -59,7 +79,7 @@ export function TaskProvider({ children }: PropsWithChildren) {
     setSelectedDate(targetDate);
     const dateWillChange = targetDate !== taskDataDateRef.current;
     if (dateWillChange) setIsDateLoading(true);
-    await cleanupLegacyDemoHabitTasks();
+    await cleanupLegacyDemoHabitTasksOnce();
     await ensureTaskInstancesForDate(targetDate);
     await markDueTaskInstancesMissed();
     const [nextTasks, nextInstances] = await Promise.all([
@@ -88,35 +108,79 @@ export function TaskProvider({ children }: PropsWithChildren) {
     });
   }, [refresh]);
 
-  const createOrUpdateTask = useCallback(async (draft: TaskDraft) => {
+  const createOrUpdateTask = useCallback(async (draft: TaskDraft, refreshDate?: string) => {
     const task = await saveTask(draft);
+    await cancelNotificationsForTask(task.id);
     await syncTaskInstancesWindow();
-    await refresh();
+    await refresh(refreshDate);
     return task;
+  }, [refresh]);
+
+  const createOrUpdateTasks = useCallback(async (drafts: TaskDraft[], refreshDate?: string) => {
+    const saved: TaskDefinition[] = [];
+    for (const draft of drafts) {
+      const task = await saveTask(draft);
+      saved.push(task);
+    }
+    await Promise.all(saved.map(task => cancelNotificationsForTask(task.id)));
+    await syncTaskInstancesWindow();
+    await refresh(refreshDate);
+    return saved;
   }, [refresh]);
 
   const pause = useCallback(async (taskId: string) => {
     await pauseTask(taskId);
+    await cancelNotificationsForTask(taskId);
     await syncTaskInstancesWindow();
     await refresh();
   }, [refresh]);
 
+  const pauseTasks = useCallback(async (taskIds: string[], refreshDate?: string) => {
+    for (const taskId of taskIds) {
+      await pauseTask(taskId);
+    }
+    await Promise.all(taskIds.map(taskId => cancelNotificationsForTask(taskId)));
+    await syncTaskInstancesWindow();
+    await refresh(refreshDate);
+  }, [refresh]);
+
   const resume = useCallback(async (taskId: string) => {
     await resumeTask(taskId);
+    await cancelNotificationsForTask(taskId);
     await syncTaskInstancesWindow();
     await refresh();
   }, [refresh]);
 
   const remove = useCallback(async (taskId: string) => {
     await softDeleteTask(taskId);
+    await cancelNotificationsForTask(taskId);
     await syncTaskInstancesWindow();
     await refresh();
+  }, [refresh]);
+
+  const removeTasks = useCallback(async (taskIds: string[], refreshDate?: string) => {
+    for (const taskId of taskIds) {
+      await softDeleteTask(taskId);
+    }
+    await Promise.all(taskIds.map(taskId => cancelNotificationsForTask(taskId)));
+    await syncTaskInstancesWindow();
+    await refresh(refreshDate);
+  }, [refresh]);
+
+  const archiveTasksImmediately = useCallback(async (taskIds: string[], refreshDate?: string) => {
+    for (const taskId of taskIds) {
+      await archiveTaskImmediately(taskId);
+    }
+    await Promise.all(taskIds.map(taskId => cancelNotificationsForTask(taskId)));
+    await syncTaskInstancesWindow();
+    await refresh(refreshDate);
   }, [refresh]);
 
   const completeInstance = useCallback(async (instanceId: string, refreshDate?: string) => {
     if (refreshDate) await ensureTaskInstancesForDate(refreshDate);
     const updated = await setTaskInstanceStatus(instanceId, 'completed');
     if (updated) await syncChallengeProgressForTaskInstance(instanceId, 'completed');
+    if (updated) await cancelNotificationsForInstance(instanceId);
     await refresh(refreshDate);
   }, [refresh]);
 
@@ -124,6 +188,7 @@ export function TaskProvider({ children }: PropsWithChildren) {
     if (refreshDate) await ensureTaskInstancesForDate(refreshDate);
     const updated = await setTaskInstanceStatus(instanceId, 'skipped');
     if (updated) await syncChallengeProgressForTaskInstance(instanceId, 'skipped');
+    if (updated) await cancelNotificationsForInstance(instanceId);
     await refresh(refreshDate);
   }, [refresh]);
 
@@ -132,7 +197,6 @@ export function TaskProvider({ children }: PropsWithChildren) {
     const updated = await setTaskInstanceStatus(instanceId, 'pending');
     if (updated) {
       await syncChallengeProgressForTaskInstance(instanceId, 'pending');
-      await rollbackScriptureCheckpointForTaskInstance(instanceId);
     }
     await refresh(refreshDate);
   }, [refresh]);
@@ -169,9 +233,13 @@ export function TaskProvider({ children }: PropsWithChildren) {
     listItems,
     refresh,
     createOrUpdateTask,
+    createOrUpdateTasks,
     pause,
+    pauseTasks,
     resume,
     remove,
+    removeTasks,
+    archiveTasksImmediately,
     completeInstance,
     skipInstance,
     resetInstance,
@@ -185,9 +253,13 @@ export function TaskProvider({ children }: PropsWithChildren) {
     listItems,
     refresh,
     createOrUpdateTask,
+    createOrUpdateTasks,
     pause,
+    pauseTasks,
     resume,
     remove,
+    removeTasks,
+    archiveTasksImmediately,
     completeInstance,
     skipInstance,
     resetInstance,

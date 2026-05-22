@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import {
   emptyJournalEntry,
+  backfillJournalEntrySections,
   listJournalEntries,
   listJournalSections,
   saveJournalSections,
@@ -21,7 +22,7 @@ import {
 } from '@/components/journal/journalLogic';
 import type { JournalSection } from '@/components/journal/journalSections';
 
-export type JournalDotKind = 'daily' | 'morning' | 'free';
+export type JournalDotKind = 'daily' | 'morning' | 'morningDraft' | 'free';
 
 export type JournalEntryPatch = Partial<
   Pick<
@@ -29,6 +30,7 @@ export type JournalEntryPatch = Partial<
     | 'mood'
     | 'energy'
     | 'satisfaction'
+    | 'dailySections'
     | 'freeWritingHtml'
     | 'morningPagesHtml'
     | 'morningPagesWordCount'
@@ -79,6 +81,7 @@ function mergeEntry(base: JournalEntry, patch: JournalEntryPatch): JournalEntry 
   return {
     ...base,
     ...patch,
+    dailySections: patch.dailySections ?? base.dailySections,
     prompts: normalizePrompts(patch.prompts ?? base.prompts),
     whoChecks: patch.whoChecks ?? base.whoChecks ?? {},
     scaleValues: patch.scaleValues ?? base.scaleValues ?? {},
@@ -160,9 +163,14 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
   }, [entriesByDate]);
 
   const setJournalSections = useCallback(async (nextSections: JournalSection[]) => {
+    const previousSections = sections.length ? sections : nextSections;
+    await backfillJournalEntrySections(previousSections);
+    setEntries(prev => prev.map(entry => (
+      entry.dailySections?.length ? entry : { ...entry, dailySections: previousSections }
+    )));
     setSections(nextSections);
     await saveJournalSections(nextSections);
-  }, []);
+  }, [sections]);
 
   const value = useMemo<JournalContextValue>(() => ({
     ready,

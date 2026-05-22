@@ -1,5 +1,5 @@
 import React, {
-  useEffect, useMemo, useRef, useState,
+  useEffect, useMemo, useState,
 } from 'react';
 import {
   KeyboardAvoidingView,
@@ -10,14 +10,15 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import Reanimated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { ArrowLeft, Plus, X, CheckSmall, Trash2, Pencil } from '@/components/icons/Icons';
+import { Plus, X, CheckSmall, Trash2, Pencil } from '@/components/icons/Icons';
 import SharedConfirmModal from '@/components/shared/ConfirmModal';
+import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
+import { playAchievementCompleteFeedback, preloadAchievementFeedbackSound } from '@/components/shared/taskFeedback';
 import { C, F } from '@/constants/tokens';
-import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import CelebrationOverlay from './CelebrationOverlay';
 import { BucketListItem, useBucketList } from './BucketListContext';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
@@ -26,15 +27,13 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 type ToggleMode = 'check' | 'uncheck';
 type ConfirmTone = 'warm' | 'danger';
 
+const ROW_LAYOUT = LinearTransition.duration(210);
+const ROW_ENTER = FadeIn.duration(150);
+const ROW_EXIT = FadeOut.duration(120);
+
 function feedback(style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Light) {
   if (Platform.OS !== 'web') {
     Haptics.impactAsync(style);
-  }
-}
-
-function successFeedback() {
-  if (Platform.OS !== 'web') {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }
 }
 
@@ -184,7 +183,12 @@ function DreamRow({
   onAskDelete: (id: string) => void;
 }) {
   return (
-    <View style={row.card}>
+    <Reanimated.View
+      layout={ROW_LAYOUT}
+      entering={ROW_ENTER}
+      exiting={ROW_EXIT}
+      style={row.card}
+    >
       {editing ? (
         <EditableRow
           item={item}
@@ -199,8 +203,10 @@ function DreamRow({
             onPress={() => onAskToggle(item, 'check')}
             activeOpacity={0.75}
             style={row.emptyCheck}
-          />
-          <Text style={row.text}>{item.text}</Text>
+          >
+            <View style={row.emptyCheckCore} />
+          </TouchableOpacity>
+          <Text style={row.text} numberOfLines={3}>{item.text}</Text>
           <TouchableOpacity onPress={() => onStartEdit(item)} activeOpacity={0.75} style={row.iconBtn}>
             <Pencil s={18} c="#c8c8c8" w={2} />
           </TouchableOpacity>
@@ -209,7 +215,7 @@ function DreamRow({
           </TouchableOpacity>
         </>
       )}
-    </View>
+    </Reanimated.View>
   );
 }
 
@@ -233,7 +239,12 @@ function AchievedRow({
   onAskToggle: (item: BucketListItem, mode: ToggleMode) => void;
 }) {
   return (
-    <View style={[row.card, row.completedCard]}>
+    <Reanimated.View
+      layout={ROW_LAYOUT}
+      entering={ROW_ENTER}
+      exiting={ROW_EXIT}
+      style={[row.card, row.completedCard]}
+    >
       {editing ? (
         <EditableRow
           item={item}
@@ -261,12 +272,11 @@ function AchievedRow({
           </TouchableOpacity>
         </>
       )}
-    </View>
+    </Reanimated.View>
   );
 }
 
 export default function BucketListView() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const {
     bucketList,
@@ -283,13 +293,6 @@ export default function BucketListView() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [confirmToggle, setConfirmToggle] = useState<{ item: BucketListItem; mode: ToggleMode } | null>(null);
-  const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => {
-    if (celebrationTimerRef.current) {
-      clearTimeout(celebrationTimerRef.current);
-    }
-  }, []);
 
   const pending = useMemo(
     () => bucketList.filter(item => !item.isCompleted).sort((a, b) => a.order - b.order),
@@ -299,6 +302,10 @@ export default function BucketListView() {
     () => bucketList.filter(item => item.isCompleted).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)),
     [bucketList]
   );
+
+  useEffect(() => {
+    preloadAchievementFeedbackSound();
+  }, []);
 
   const handleAdd = () => {
     const text = newText.trim();
@@ -316,15 +323,9 @@ export default function BucketListView() {
 
   const handleComplete = (id: string) => {
     completeBucketItem(id);
-    successFeedback();
-    setShowConfetti(true);
-    if (celebrationTimerRef.current) {
-      clearTimeout(celebrationTimerRef.current);
-    }
-    celebrationTimerRef.current = setTimeout(() => {
-      setShowConfetti(false);
-      celebrationTimerRef.current = null;
-    }, 5000);
+    void playAchievementCompleteFeedback();
+    setShowConfetti(false);
+    requestAnimationFrame(() => setShowConfetti(true));
   };
 
   const handleConfirmToggle = () => {
@@ -333,9 +334,7 @@ export default function BucketListView() {
     setConfirmToggle(null);
 
     if (confirmToggle.mode === 'check') {
-      setTimeout(() => {
-        handleComplete(nextToggle.item.id);
-      }, 260);
+      handleComplete(nextToggle.item.id);
       return;
     }
 
@@ -369,9 +368,7 @@ export default function BucketListView() {
   };
 
   const confirmMessage = confirmToggle
-    ? confirmToggle.mode === 'check'
-      ? `Do you want to mark "${confirmToggle.item.text}" as achieved?`
-      : `Do you want to mark "${confirmToggle.item.text}" as not achieved yet?`
+    ? `Move "${confirmToggle.item.text}" back to Dreams?`
     : '';
 
   return (
@@ -380,9 +377,9 @@ export default function BucketListView() {
         visible={!!confirmToggle}
         onClose={() => setConfirmToggle(null)}
         onConfirm={handleConfirmToggle}
-        title={confirmToggle?.mode === 'check' ? 'Check Bucket List Item?' : 'Uncheck Bucket List Item?'}
+        title="Move back to dreams?"
         message={confirmMessage}
-        confirmLabel={confirmToggle?.mode === 'check' ? 'Check' : 'Uncheck'}
+        confirmLabel="Move Back"
         tone="warm"
       />
 
@@ -396,20 +393,7 @@ export default function BucketListView() {
         tone="danger"
       />
 
-      <View style={[header.wrap, { paddingTop: getTitleBarTopPadding(insets.top) }]}>
-        <TouchableOpacity
-          onPress={() => {
-            feedback();
-            router.back();
-          }}
-          style={header.back}
-          activeOpacity={0.7}
-        >
-          <ArrowLeft s={24} c="#9CA3AF" />
-        </TouchableOpacity>
-        <Text style={header.title}>Bucket List</Text>
-        <View style={header.spacer} />
-      </View>
+      <ScreenTitleBar title="BUCKET LIST" showBack bg="#FAFAFA" />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -423,7 +407,7 @@ export default function BucketListView() {
           <AddDreamCard value={newText} onChange={setNewText} onAdd={handleAdd} />
 
           {pending.length > 0 && (
-            <View style={section.block}>
+            <Reanimated.View layout={ROW_LAYOUT} style={section.block}>
               <SectionHeading label="Dreams" count={pending.length} />
               {pending.map(item => (
                 <DreamRow
@@ -436,17 +420,21 @@ export default function BucketListView() {
                   onCancelEdit={cancelEdit}
                   onSaveEdit={saveEdit}
                   onAskToggle={(nextItem, mode) => {
+                    if (mode === 'check') {
+                      handleComplete(nextItem.id);
+                      return;
+                    }
                     feedback();
                     setConfirmToggle({ item: nextItem, mode });
                   }}
                   onAskDelete={id => setDeleteConfirmId(id)}
                 />
               ))}
-            </View>
+            </Reanimated.View>
           )}
 
           {completed.length > 0 && (
-            <View style={[section.block, section.achievedBlock]}>
+            <Reanimated.View layout={ROW_LAYOUT} style={[section.block, section.achievedBlock]}>
               <SectionHeading achieved label="Achieved" count={completed.length} />
               {completed.map(item => (
                 <AchievedRow
@@ -458,10 +446,13 @@ export default function BucketListView() {
                   onStartEdit={startEdit}
                   onCancelEdit={cancelEdit}
                   onSaveEdit={saveEdit}
-                  onAskToggle={(nextItem, mode) => setConfirmToggle({ item: nextItem, mode })}
+                  onAskToggle={(nextItem, mode) => {
+                    feedback();
+                    setConfirmToggle({ item: nextItem, mode });
+                  }}
                 />
               ))}
-            </View>
+            </Reanimated.View>
           )}
 
           {bucketList.length === 0 && (
@@ -473,7 +464,7 @@ export default function BucketListView() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {showConfetti && <CelebrationOverlay />}
+      {showConfetti && <CelebrationOverlay onClose={() => setShowConfetti(false)} />}
     </View>
   );
 }
@@ -484,74 +475,42 @@ const screen = StyleSheet.create({
     backgroundColor: '#FAFAFA',
   },
   content: {
-    paddingHorizontal: 20,
-    paddingTop: 22,
-    gap: 18,
-  },
-});
-
-const header = StyleSheet.create({
-  wrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingBottom: TITLE_BAR_BOTTOM_PADDING,
-    backgroundColor: 'rgba(250,250,250,0.96)',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  back: {
-    width: 44,
-    height: 44,
-    marginLeft: -10,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    flex: 1,
-    textAlign: 'center',
-    fontFamily: F.serifMedium,
-    fontSize: 21,
-    letterSpacing: 1.1,
-    color: '#111827',
-    textTransform: 'uppercase',
-  },
-  spacer: {
-    width: 44,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    gap: 15,
   },
 });
 
 const add = StyleSheet.create({
   card: {
     backgroundColor: '#fff',
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#F3F4F6',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
+    borderColor: '#F0ECE4',
+    shadowColor: '#8B7354',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
     elevation: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    padding: 13,
-    paddingLeft: 16,
+    gap: 9,
+    padding: 10,
+    paddingLeft: 14,
   },
   input: {
     flex: 1,
-    minHeight: 46,
+    minHeight: 40,
     paddingHorizontal: 4,
     fontFamily: F.serif,
-    fontSize: 18,
-    lineHeight: 24,
+    fontSize: 17,
+    lineHeight: 23,
     color: '#1F2937',
   },
   btn: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 42,
+    height: 42,
+    borderRadius: 13,
     backgroundColor: C.gold,
     alignItems: 'center',
     justifyContent: 'center',
@@ -563,10 +522,10 @@ const add = StyleSheet.create({
 
 const section = StyleSheet.create({
   block: {
-    gap: 8,
+    gap: 7,
   },
   achievedBlock: {
-    marginTop: 2,
+    marginTop: 1,
   },
 });
 
@@ -574,12 +533,14 @@ const sh = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 7,
     paddingHorizontal: 4,
+    marginBottom: 1,
   },
   text: {
     fontFamily: F.serifMedium,
-    fontSize: 21,
+    fontSize: 19,
+    lineHeight: 24,
     color: '#111827',
   },
   textAchieved: {
@@ -600,35 +561,45 @@ const sh = StyleSheet.create({
 const row = StyleSheet.create({
   card: {
     backgroundColor: '#fff',
-    borderRadius: 18,
+    borderRadius: 15,
     borderWidth: 1,
-    borderColor: '#F3F4F6',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
+    borderColor: '#F0ECE4',
+    shadowColor: '#8B7354',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.055,
+    shadowRadius: 12,
     elevation: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingVertical: 17,
-    paddingHorizontal: 16,
+    gap: 11,
+    paddingVertical: 12,
+    paddingHorizontal: 13,
   },
   completedCard: {
-    backgroundColor: 'rgba(255,255,255,0.62)',
+    backgroundColor: '#FFFDF8',
+    borderColor: 'rgba(197,160,89,0.22)',
   },
   emptyCheck: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     borderWidth: 2,
-    borderColor: '#D1D5DB',
+    borderColor: '#DDD6C9',
+    backgroundColor: '#FFFEFB',
+    alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
   },
+  emptyCheckCore: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: 'rgba(197,160,89,0.12)',
+  },
   completedCheck: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: C.gold,
     alignItems: 'center',
     justifyContent: 'center',
@@ -637,46 +608,47 @@ const row = StyleSheet.create({
   text: {
     flex: 1,
     fontFamily: F.serif,
-    fontSize: 18,
-    lineHeight: 25,
+    fontSize: 17,
+    lineHeight: 23,
     color: '#1F2937',
   },
   completedText: {
     fontFamily: F.serif,
-    fontSize: 18,
-    lineHeight: 25,
-    color: '#9CA3AF',
+    fontSize: 17,
+    lineHeight: 23,
+    color: '#8F8A81',
     textDecorationLine: 'line-through',
   },
   date: {
-    marginTop: 3,
+    marginTop: 2,
     fontFamily: F.sans,
     fontSize: 9,
-    color: '#D1D5DB',
+    letterSpacing: 0.8,
+    color: 'rgba(197,160,89,0.58)',
   },
   iconBtn: {
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
   editInput: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 40,
     borderRadius: 12,
     backgroundColor: '#F9FAFB',
     paddingHorizontal: 12,
     fontFamily: F.serif,
-    fontSize: 18,
+    fontSize: 17,
     color: '#1F2937',
   },
   editInputCompleted: {
     backgroundColor: '#fff',
   },
   smallGoldBtn: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderRadius: 12,
     backgroundColor: C.gold,
     alignItems: 'center',

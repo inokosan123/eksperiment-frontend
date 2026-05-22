@@ -35,7 +35,7 @@ const TEAL = '#4A9E8F';
 const INK = '#1C1917';
 const BORDER = '#EDE5D6';
 
-const FLAME_PNG = require('@/assets/images/streak-flame.png');
+const FLAME_PNG = require('@/assets/images/streak-flame-512.png');
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -43,11 +43,11 @@ const MONTH_NAMES = [
 ];
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-type JournalKind = JournalDotKind;
+type JournalTechniqueKind = 'daily' | 'morning' | 'free';
 type Route = '/journal-daily' | '/journal-morning' | '/journal-free';
 
 type WriteCard = {
-  key: JournalKind;
+  key: JournalTechniqueKind;
   label: string;
   title: string;
   description: string;
@@ -110,11 +110,29 @@ const WRITE_CARDS: WriteCard[] = [
   },
 ];
 
-const DOT_COLORS: Record<JournalKind, string> = {
+const MORNING_DRAFT_PURPLE = '#C9BDE6';
+
+const DOT_COLORS: Record<JournalDotKind, string> = {
   daily: GOLD,
   morning: PURPLE,
+  morningDraft: MORNING_DRAFT_PURPLE,
   free: TEAL,
 };
+
+function hasTechniqueDot(kinds: JournalDotKind[], technique: JournalTechniqueKind) {
+  if (technique === 'morning') {
+    return kinds.includes('morning') || kinds.includes('morningDraft');
+  }
+  return kinds.includes(technique);
+}
+
+function techniqueHint(kinds: JournalDotKind[], technique: JournalTechniqueKind, editable: boolean) {
+  if (editable) return 'Open';
+  if (technique === 'morning' && kinds.includes('morningDraft') && !kinds.includes('morning')) {
+    return 'Draft';
+  }
+  return 'Saved';
+}
 
 function localDateKey(date: Date) {
   const y = date.getFullYear();
@@ -187,7 +205,7 @@ function CalendarStreakCard({
   canNext: boolean;
   selectedDate: string;
   onSelect: (key: string) => void;
-  dotsByDate: Record<string, JournalKind[]>;
+  dotsByDate: Record<string, JournalDotKind[]>;
   completedDates: string[];
   currentStreak: number;
 }) {
@@ -282,6 +300,10 @@ function CalendarStreakCard({
           <AppText style={s.legendText}>Morning</AppText>
         </View>
         <View style={s.legendItem}>
+          <View style={[s.legendDot, { backgroundColor: MORNING_DRAFT_PURPLE }]} />
+          <AppText style={s.legendText}>Draft</AppText>
+        </View>
+        <View style={s.legendItem}>
           <View style={[s.legendDot, { backgroundColor: TEAL }]} />
           <AppText style={s.legendText}>Free</AppText>
         </View>
@@ -310,7 +332,10 @@ function CalendarStreakCard({
             >
               <Image
                 source={FLAME_PNG}
-                style={{ width: 17, height: 17, opacity: active ? 0.9 : 0.18 }}
+                style={[
+                  s.streakFlame,
+                  !active && { tintColor: '#C9C4B7' },
+                ]}
                 resizeMode="contain"
               />
             </View>
@@ -331,7 +356,7 @@ function DayChoicesPanel({
   onOpen,
 }: {
   date: string;
-  kinds: JournalKind[];
+  kinds: JournalDotKind[];
   editable: boolean;
   onClose: () => void;
   onOpen: (route: Route, readOnly: boolean) => void;
@@ -350,7 +375,7 @@ function DayChoicesPanel({
               <AppText style={s.choiceKicker}>{displayDate}</AppText>
               <AppText style={s.choiceTitle}>{editable ? 'Choose Technique' : 'Saved Entries'}</AppText>
               <AppText style={s.choiceDate}>
-                {editable ? 'Write or edit today\'s reflection.' : 'Only completed entries can be opened.'}
+                {editable ? 'Write or edit today\'s reflection.' : 'Saved drafts and entries can be opened.'}
               </AppText>
             </View>
             <TouchableOpacity onPress={onClose} style={s.choiceClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -359,16 +384,16 @@ function DayChoicesPanel({
           </View>
           <View style={s.choiceRow}>
             {choices.map(item => {
-              const enabled = editable || kinds.includes(item.key);
+              const enabled = editable || hasTechniqueDot(kinds, item.key);
               return (
-                <Pressable
+                <TouchableOpacity
                   key={item.key}
                   disabled={!enabled}
-                  style={({ pressed }) => [
+                  activeOpacity={0.85}
+                  style={[
                     s.choiceChip,
                     { backgroundColor: item.bg, borderColor: item.border },
                     !enabled && s.choiceChipDisabled,
-                    pressed && enabled && s.pressed,
                   ]}
                   onPress={() => onOpen(item.route, !editable)}
                 >
@@ -377,7 +402,7 @@ function DayChoicesPanel({
                     { backgroundColor: '#FFFFFF', borderColor: item.border },
                     !enabled && s.choiceIconDisabled,
                   ]}>
-                    <item.Decor s={18} c={enabled ? item.labelColor : '#BDB7AD'} w={1.8} />
+                    <item.Decor s={24} c={enabled ? item.labelColor : '#9C948A'} w={2} />
                   </View>
                   <AppText style={[
                     s.choiceChipText,
@@ -389,9 +414,9 @@ function DayChoicesPanel({
                     s.choiceChipHint,
                     { color: enabled ? item.labelColor : '#C6C0B7' },
                   ]}>
-                    {enabled ? (editable ? 'Open' : 'Saved') : 'Empty'}
+                    {enabled ? techniqueHint(kinds, item.key, editable) : 'Empty'}
                   </AppText>
-                </Pressable>
+                </TouchableOpacity>
               );
             })}
           </View>
@@ -553,7 +578,11 @@ export default function JournalHub() {
             kinds={chosenKinds}
             editable={chosenDateEditable}
             onClose={() => setChosenDate('')}
-            onOpen={(route, readOnly) => nav(route, chosenDate, readOnly)}
+            onOpen={(route, readOnly) => {
+              const date = chosenDate;
+              setChosenDate('');
+              nav(route, date, readOnly);
+            }}
           />
 
           <View style={s.writeStack}>
@@ -730,16 +759,17 @@ const s = StyleSheet.create({
   streakRow: { marginTop: 12, flexDirection: 'row' },
   streakDay: { flex: 1, alignItems: 'center' },
   streakCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: 'rgba(197,160,89,0.18)',
-    backgroundColor: 'rgba(197,160,89,0.04)',
+    backgroundColor: '#F6F4EE',
+    borderColor: '#E5E1D6',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  streakCircleActive: { borderColor: GOLD, backgroundColor: '#FFFFFF' },
+  streakCircleActive: { borderColor: GOLD, backgroundColor: '#FFF3D8' },
+  streakFlame: { width: 20, height: 20 },
   streakDayText: { marginTop: 5, fontFamily: F.sansBold, fontSize: 10, lineHeight: 12, color: '#C4BAA8' },
   streakDayTextActive: { color: GOLD },
 
@@ -796,7 +826,7 @@ const s = StyleSheet.create({
     shadowRadius: 14,
     elevation: 2,
   },
-  choiceChipDisabled: { backgroundColor: '#F3F0EA', borderColor: '#E6E0D6', opacity: 0.62 },
+  choiceChipDisabled: { backgroundColor: '#F3F0EA', borderColor: '#E6E0D6', opacity: 0.74 },
   choiceIcon: {
     width: 42,
     height: 42,

@@ -21,15 +21,15 @@ import Reanimated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
-  ArrowLeft, CalendarCheck, CheckSmall, ChevronDown,
+  CalendarCheck, CheckSmall, ChevronDown,
   Heart, Pencil, Plus, RotateCcw, Trash2, X,
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
-import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
+import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { RichTextEditor, RichToolbar, RichTextEditorRef, FormatState } from '@/components/shared/RichTextEditor';
 import RichCommentText from '@/components/shared/RichCommentText';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
@@ -134,7 +134,6 @@ function useChoiceMotion(active: boolean) {
 }
 
 export default function GratitudeView() {
-  const router = useRouter();
   const params = useLocalSearchParams<{ task?: string; kind?: GratitudeKind; taskDate?: string }>();
   const insets = useSafeAreaInsets();
   const {
@@ -246,7 +245,7 @@ export default function GratitudeView() {
 
   return (
     <View style={s.screen}>
-      <Header top={insets.top} onBack={() => router.back()} />
+      <ScreenTitleBar title="GRATITUDE" showBack bg={BG} />
       <ScrollView
         contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
@@ -438,18 +437,6 @@ export default function GratitudeView() {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }}
       />
-    </View>
-  );
-}
-
-function Header({ top, onBack }: { top: number; onBack: () => void }) {
-  return (
-    <View style={[s.header, { paddingTop: getTitleBarTopPadding(top) }]}>
-      <TouchableOpacity onPress={onBack} style={s.headerBtn} activeOpacity={0.7}>
-        <ArrowLeft s={24} c={C.textMuted} />
-      </TouchableOpacity>
-      <Text style={s.headerTitle}>GRATITUDE</Text>
-      <View style={s.headerBtn} />
     </View>
   );
 }
@@ -915,9 +902,6 @@ function FrequencyCard({
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: TITLE_BAR_BOTTOM_PADDING, backgroundColor: 'rgba(255,255,255,0.96)', borderBottomWidth: 1, borderBottomColor: '#F5F5F4' },
-  headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 20, letterSpacing: 2.8, color: C.text },
   content: { paddingHorizontal: 20 },
 
   scripture: { alignItems: 'center', paddingTop: 18, paddingBottom: 16, paddingHorizontal: 10 },

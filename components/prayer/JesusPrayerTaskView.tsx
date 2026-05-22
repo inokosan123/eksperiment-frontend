@@ -11,11 +11,13 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
+  Easing,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withSequence,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
@@ -24,9 +26,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import { CheckSmall, ChevronDown, Pause, Play, RotateCcw, Settings } from '@/components/icons/Icons';
+import { CheckSmall, ChevronDown, Clock, Minus, Pause, Play, Plus, RotateCcw, Settings, Target, X } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import { playPrayerCompleteFeedback, preloadPrayerCompleteSound } from '@/components/prayer/prayerFeedback';
 
 type JesusPrayerMode = 'duration' | 'count';
 
@@ -88,10 +91,11 @@ export default function JesusPrayerTaskView({
 }: Props) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const prayerMode = normalizeMode(mode);
+  const initialMode = normalizeMode(mode);
   const initialDuration = clampPositive(durationMinutes, 15, 360);
   const initialCount = clampPositive(targetCount, 100, 10000);
 
+  const [prayerMode, setPrayerMode] = useState<JesusPrayerMode>(initialMode);
   const [duration, setDuration] = useState(initialDuration);
   const [countTarget, setCountTarget] = useState(initialCount);
   const [remainingSecs, setRemainingSecs] = useState(initialDuration * 60);
@@ -103,6 +107,7 @@ export default function JesusPrayerTaskView({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finishLockRef = useRef(false);
   const celebratedRef = useRef(false);
+  const pulseActiveRef = useRef(false);
   const pulse = useSharedValue(0);
   const tapPulse = useSharedValue(0);
 
@@ -143,6 +148,9 @@ export default function JesusPrayerTaskView({
 
   useEffect(() => {
     const active = running || (prayerMode === 'count' && count > 0 && !completed);
+    if (active === pulseActiveRef.current) return;
+    pulseActiveRef.current = active;
+
     pulse.value = active
       ? withRepeat(
         withSequence(
@@ -156,11 +164,13 @@ export default function JesusPrayerTaskView({
   }, [completed, count, prayerMode, pulse, running]);
 
   useEffect(() => {
+    preloadPrayerCompleteSound();
+  }, []);
+
+  useEffect(() => {
     if (!completed || celebratedRef.current) return;
     celebratedRef.current = true;
-    if (Platform.OS !== 'web') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    }
+    void playPrayerCompleteFeedback();
   }, [completed]);
 
   useEffect(() => {
@@ -225,7 +235,7 @@ export default function JesusPrayerTaskView({
       withTiming(0, { duration: 160 }),
     );
     if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
     }
 
     setCount(prev => {
@@ -245,25 +255,24 @@ export default function JesusPrayerTaskView({
       })
   ), [completed, incrementCount, prayerMode]);
 
-  const applyCustomValue = useCallback((value: number) => {
-    if (prayerMode === 'duration') {
+  const applyValue = useCallback((nextMode: JesusPrayerMode, value: number) => {
+    setRunning(false);
+    setCompleted(false);
+    celebratedRef.current = false;
+    setPrayerMode(nextMode);
+
+    if (nextMode === 'duration') {
       const next = clampPositive(value, duration, 360);
       setDuration(next);
       setRemainingSecs(next * 60);
+      setCount(0);
     } else {
       const next = clampPositive(value, countTarget, 10000);
       setCountTarget(next);
-      setCount(current => Math.min(current, next));
-      setCompleted(count >= next);
+      setCount(0);
     }
-    setRunning(false);
-    celebratedRef.current = false;
     setShowValueSheet(false);
-  }, [count, countTarget, duration, prayerMode]);
-
-  const choosePreset = useCallback((value: number) => {
-    applyCustomValue(value);
-  }, [applyCustomValue]);
+  }, [countTarget, duration]);
 
   return (
     <View style={s.screen}>
@@ -371,7 +380,7 @@ export default function JesusPrayerTaskView({
           <TouchableOpacity onPress={finish} activeOpacity={0.78} style={[s.smallControl, isCompactHeight && s.smallControlCompact]}>
             <CheckSmall s={isCompactHeight ? 19 : 22} c={completed ? DONE_COLOR : 'rgba(28,25,23,0.38)'} w={1.8} />
             <Text style={[s.smallLabel, completed && s.smallLabelDone]}>
-              {completed ? 'Finish' : 'Early'}
+              Finish
             </Text>
           </TouchableOpacity>
         </View>
@@ -395,13 +404,12 @@ export default function JesusPrayerTaskView({
 
       <JesusValueSheet
         visible={showValueSheet}
-        mode={prayerMode}
-        value={prayerMode === 'duration' ? duration : countTarget}
-        presets={prayerMode === 'duration' ? DURATION_PRESETS : COUNT_PRESETS}
+        initialMode={prayerMode}
+        initialDuration={duration}
+        initialCount={countTarget}
         bottomInset={insets.bottom}
         onClose={() => setShowValueSheet(false)}
-        onPreset={choosePreset}
-        onSave={applyCustomValue}
+        onSave={applyValue}
       />
     </View>
   );
@@ -409,33 +417,118 @@ export default function JesusPrayerTaskView({
 
 function JesusValueSheet({
   visible,
-  mode,
-  value,
-  presets,
+  initialMode,
+  initialDuration,
+  initialCount,
   bottomInset,
   onClose,
-  onPreset,
   onSave,
 }: {
   visible: boolean;
-  mode: JesusPrayerMode;
-  value: number;
-  presets: number[];
+  initialMode: JesusPrayerMode;
+  initialDuration: number;
+  initialCount: number;
   bottomInset: number;
   onClose: () => void;
-  onPreset: (value: number) => void;
-  onSave: (value: number) => void;
+  onSave: (mode: JesusPrayerMode, value: number) => void;
 }) {
-  const [draft, setDraft] = useState(String(value));
+  const [draftMode, setDraftMode] = useState<JesusPrayerMode>(initialMode);
+  const [draftDuration, setDraftDuration] = useState(initialDuration);
+  const [draftCount, setDraftCount] = useState(initialCount);
+  const [customDraft, setCustomDraft] = useState('');
+  const [focused, setFocused] = useState(false);
+  const [segmentWidth, setSegmentWidth] = useState(0);
+  const tabMotion = useSharedValue(initialMode === 'count' ? 1 : 0);
+  const tabContentMotion = useSharedValue(1);
+
+  const isDuration = draftMode === 'duration';
+  const value = isDuration ? draftDuration : draftCount;
+  const presets = isDuration ? DURATION_PRESETS : COUNT_PRESETS;
+  const max = isDuration ? 360 : 10000;
+  const step = 1;
+  const unit = isDuration ? 'min' : 'reps';
+  const longUnit = isDuration ? 'minutes' : 'repetitions';
 
   useEffect(() => {
     if (!visible) return;
-    setDraft(String(value));
-  }, [value, visible]);
+    setDraftMode(initialMode);
+    setDraftDuration(initialDuration);
+    setDraftCount(initialCount);
+    tabMotion.value = initialMode === 'count' ? 1 : 0;
+    tabContentMotion.value = 1;
+  }, [visible, initialMode, initialDuration, initialCount, tabMotion, tabContentMotion]);
 
-  const parsed = Number.parseInt(draft, 10);
-  const canSave = Number.isFinite(parsed) && parsed > 0;
-  const unit = mode === 'duration' ? 'min' : 'reps';
+  useEffect(() => {
+    tabMotion.value = withSpring(draftMode === 'count' ? 1 : 0, {
+      damping: 18,
+      stiffness: 235,
+      mass: 0.72,
+    });
+    tabContentMotion.value = 0;
+    tabContentMotion.value = withTiming(1, {
+      duration: 230,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [draftMode, tabContentMotion, tabMotion]);
+
+  useEffect(() => {
+    setCustomDraft(String(value));
+  }, [value]);
+
+  const setValue = useCallback((next: number) => {
+    const clamped = clampPositive(next, value, max);
+    if (isDuration) setDraftDuration(clamped);
+    else setDraftCount(clamped);
+  }, [isDuration, max, value]);
+
+  const switchMode = (next: JesusPrayerMode) => {
+    if (next === draftMode) return;
+    if (Platform.OS !== 'web') Haptics.selectionAsync().catch(() => {});
+    setDraftMode(next);
+  };
+
+  const choosePreset = (preset: number) => {
+    if (Platform.OS !== 'web') Haptics.selectionAsync().catch(() => {});
+    setValue(preset);
+  };
+
+  const adjust = (delta: number) => {
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setValue(value + delta);
+  };
+
+  const resolveCustom = useCallback(() => {
+    const parsed = Number.parseInt(customDraft, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return clampPositive(parsed, value, max);
+    return value;
+  }, [customDraft, max, value]);
+
+  const commitCustom = () => {
+    const next = resolveCustom();
+    if (next !== value) setValue(next);
+    else setCustomDraft(String(value));
+  };
+
+  const handleSave = () => {
+    const finalValue = resolveCustom();
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    onSave(draftMode, finalValue);
+  };
+
+  const segmentPillStyle = useAnimatedStyle(() => ({
+    transform: [{
+      translateX: tabMotion.value * (((segmentWidth - 12) / 2) + 4),
+    }],
+  }));
+
+  const tabContentMotionStyle = useAnimatedStyle(() => ({
+    opacity: tabContentMotion.value,
+    transform: [{ translateY: (1 - tabContentMotion.value) * 10 }],
+  }));
+
+  const customTrimmed = customDraft.replace(/^0+(?=\d)/, '');
+  const customParsed = Number.parseInt(customDraft, 10);
+  const customValid = Number.isFinite(customParsed) && customParsed > 0;
 
   return (
     <SmoothBottomSheet
@@ -446,55 +539,117 @@ function JesusValueSheet({
     >
       <View style={s.sheetHandle} />
       <View style={s.sheetHead}>
-        <Text style={s.sheetTitle}>{mode === 'duration' ? 'Prayer Time' : 'Prayer Count'}</Text>
+        <View>
+          <Text style={s.sheetEyebrow}>Prayer Setup</Text>
+          <Text style={s.sheetTitle}>Choose your rhythm</Text>
+        </View>
         <TouchableOpacity onPress={onClose} activeOpacity={0.82} style={s.sheetClose}>
-          <Text style={s.sheetCloseText}>×</Text>
+          <X s={16} c="#A8A29E" w={2.4} />
         </TouchableOpacity>
       </View>
 
-      <View style={s.presetRow}>
-        {presets.map(item => {
-          const active = item === value;
+      <View
+        style={s.segmentWrap}
+        onLayout={event => setSegmentWidth(event.nativeEvent.layout.width)}
+      >
+        {segmentWidth > 0 && (
+          <Reanimated.View
+            pointerEvents="none"
+            style={[
+              s.segmentPill,
+              { width: (segmentWidth - 12) / 2 },
+              segmentPillStyle,
+            ]}
+          />
+        )}
+        <TouchableOpacity
+          onPress={() => switchMode('duration')}
+          activeOpacity={0.86}
+          style={s.segmentBtn}
+        >
+          <Clock s={14} c={isDuration ? '#FFFFFF' : '#A8A29E'} w={2.2} />
+          <Text style={[s.segmentText, isDuration && s.segmentTextActive]}>BY TIME</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => switchMode('count')}
+          activeOpacity={0.86}
+          style={s.segmentBtn}
+        >
+          <Target s={14} c={!isDuration ? '#FFFFFF' : '#A8A29E'} w={2.2} />
+          <Text style={[s.segmentText, !isDuration && s.segmentTextActive]}>BY COUNT</Text>
+        </TouchableOpacity>
+      </View>
 
-          return (
+      <Reanimated.View style={[s.tabContent, tabContentMotionStyle]}>
+        <View style={s.presetSection}>
+          <Text style={s.presetSectionLabel}>QUICK CHOICE</Text>
+          <View style={s.presetGrid}>
+            {presets.map(item => {
+              const active = item === value;
+              return (
+                <TouchableOpacity
+                  key={item}
+                  onPress={() => choosePreset(item)}
+                  activeOpacity={0.84}
+                  style={[s.presetChip, active && s.presetChipActive]}
+                >
+                  <Text style={[s.presetNum, active && s.presetNumActive]}>{item}</Text>
+                  <Text style={[s.presetUnit, active && s.presetUnitActive]}>{unit}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={s.customSection}>
+          <Text style={s.presetSectionLabel}>CUSTOM {isDuration ? 'TIME' : 'COUNT'}</Text>
+          <View style={[s.customRow, focused && s.customRowFocused]}>
             <TouchableOpacity
-              key={item}
-              onPress={() => onPreset(item)}
-              activeOpacity={0.84}
-              style={[s.presetChip, active && s.presetChipActive]}
+              onPress={() => adjust(-step)}
+              activeOpacity={0.74}
+              style={s.stepperBtn}
+              disabled={value <= 1}
             >
-              <Text style={[s.presetText, active && s.presetTextActive]}>
-                {item} {unit}
-              </Text>
+              <Minus s={16} c={value <= 1 ? '#D6D3D1' : GOLD} w={2.6} />
             </TouchableOpacity>
-          );
-        })}
-      </View>
 
-      <View style={s.customBox}>
-        <Text style={s.customLabel}>Custom {mode === 'duration' ? 'time' : 'count'}</Text>
-        <TextInput
-          value={draft}
-          onChangeText={text => setDraft(text.replace(/[^\d]/g, ''))}
-          keyboardType="number-pad"
-          placeholder={mode === 'duration' ? '15' : '100'}
-          placeholderTextColor="#C9C5BD"
-          style={s.customInput}
-          returnKeyType="done"
-          onSubmitEditing={() => {
-            Keyboard.dismiss();
-            if (canSave) onSave(parsed);
-          }}
-        />
-      </View>
+            <View style={s.customCenter}>
+              <TextInput
+                value={customTrimmed}
+                onChangeText={text => setCustomDraft(text.replace(/[^\d]/g, '').slice(0, 5))}
+                onFocus={() => setFocused(true)}
+                onBlur={() => { setFocused(false); commitCustom(); }}
+                keyboardType="number-pad"
+                placeholder={isDuration ? '15' : '100'}
+                placeholderTextColor="#D6D3D1"
+                style={s.customInput}
+                returnKeyType="done"
+                onSubmitEditing={() => { Keyboard.dismiss(); commitCustom(); }}
+                maxLength={5}
+                selectTextOnFocus
+              />
+              <Text style={s.customUnit}>{longUnit}</Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => adjust(step)}
+              activeOpacity={0.74}
+              style={s.stepperBtn}
+              disabled={value >= max}
+            >
+              <Plus s={16} c={value >= max ? '#D6D3D1' : GOLD} w={2.6} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Reanimated.View>
 
       <TouchableOpacity
-        onPress={() => canSave && onSave(parsed)}
-        disabled={!canSave}
+        onPress={handleSave}
+        disabled={!customValid && customDraft !== ''}
         activeOpacity={0.88}
-        style={[s.saveValueBtn, !canSave && s.saveValueBtnDisabled]}
+        style={[s.saveValueBtn, (!customValid && customDraft !== '') && s.saveValueBtnDisabled]}
       >
-        <Text style={s.saveValueText}>SET {mode === 'duration' ? 'TIME' : 'COUNT'}</Text>
+        <Text style={s.saveValueText}>START PRAYER · {resolveCustom()} {unit}</Text>
       </TouchableOpacity>
     </SmoothBottomSheet>
   );
@@ -518,10 +673,12 @@ const s = StyleSheet.create({
   valuePillText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.8, color: GOLD, textTransform: 'uppercase' },
   prayerText: {
     fontFamily: F.serifItalic,
-    fontSize: 18,
-    lineHeight: 27,
-    color: 'rgba(122,98,69,0.82)',
+    fontSize: 21,
+    lineHeight: 31,
+    letterSpacing: 0.25,
+    color: 'rgba(94,71,42,0.92)',
     textAlign: 'center',
+    paddingHorizontal: 6,
   },
   center: {
     flex: 1,
@@ -590,48 +747,190 @@ const s = StyleSheet.create({
   smallControlCompact: { width: 48, height: 48, borderRadius: 24 },
   smallLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 0.8, color: 'rgba(28,25,23,0.32)', marginTop: 2, textTransform: 'uppercase' },
   smallLabelDone: { color: DONE_COLOR },
-  valueSheet: { borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: '#FFFEFB', paddingHorizontal: 18, paddingTop: 12, gap: 16 },
-  sheetHandle: { width: 42, height: 4, borderRadius: 999, backgroundColor: '#D6D3D1', alignSelf: 'center' },
-  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sheetTitle: { fontFamily: F.serifMedium, fontSize: 22, color: '#1F2937' },
-  sheetClose: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F2EC' },
-  sheetCloseText: { fontFamily: F.sansBold, fontSize: 24, lineHeight: 28, color: '#A8A29E' },
-  presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  presetChip: {
-    minHeight: 42,
-    minWidth: 92,
+  valueSheet: {
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    backgroundColor: '#FFFEFB',
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    gap: 18,
+  },
+  sheetHandle: { width: 42, height: 4, borderRadius: 999, backgroundColor: '#E7E5E4', alignSelf: 'center' },
+  sheetHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+  },
+  sheetEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 2,
+    color: GOLD,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  sheetTitle: { fontFamily: F.serifMedium, fontSize: 22, lineHeight: 26, color: C.text },
+  sheetClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5F2EC',
+  },
+
+  segmentWrap: {
+    flexDirection: 'row',
+    padding: 4,
+    gap: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#ECE8E0',
+    backgroundColor: '#FAF7F0',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  segmentPill: {
+    position: 'absolute',
+    left: 4,
+    top: 4,
+    bottom: 4,
     borderRadius: 16,
+    backgroundColor: GOLD,
+    shadowColor: GOLD,
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  segmentBtn: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    zIndex: 1,
+  },
+  segmentText: {
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    letterSpacing: 2,
+    color: '#A8A29E',
+    textTransform: 'uppercase',
+  },
+  segmentTextActive: { color: '#FFFFFF' },
+
+  tabContent: { gap: 18 },
+  presetSection: { gap: 10 },
+  presetSectionLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 2,
+    color: '#A8A29E',
+    textTransform: 'uppercase',
+    paddingHorizontal: 2,
+  },
+  presetGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  presetChip: {
+    flexBasis: '30%',
+    flexGrow: 1,
+    minHeight: 58,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: '#EEE8DE',
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
   },
-  presetChipActive: { borderColor: '#D7AA54', backgroundColor: '#FFF7E8' },
-  presetText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.2, color: '#717782', textTransform: 'uppercase' },
-  presetTextActive: { color: '#B6822D' },
-  customBox: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.18)',
+  presetChipActive: {
+    borderColor: GOLD,
+    backgroundColor: '#FFF7E8',
+    shadowColor: GOLD,
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  presetNum: { fontFamily: F.serifMedium, fontSize: 22, lineHeight: 26, color: '#78716C' },
+  presetNumActive: { color: GOLD },
+  presetUnit: {
+    marginTop: 2,
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 1.6,
+    color: '#A8A29E',
+    textTransform: 'uppercase',
+  },
+  presetUnitActive: { color: '#B6822D' },
+
+  customSection: { gap: 10 },
+  customRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 76,
+    borderRadius: 22,
+    borderWidth: 1.2,
+    borderColor: 'rgba(197,160,89,0.22)',
     backgroundColor: '#FFFBF4',
-    padding: 14,
-    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 12,
   },
-  customLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, color: '#9C948C', textTransform: 'uppercase' },
-  customInput: {
-    minHeight: 54,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#EEE8DE',
+  customRowFocused: {
+    borderColor: GOLD,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    fontFamily: F.serifMedium,
-    fontSize: 24,
-    color: C.text,
+    shadowColor: GOLD,
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 14,
+    elevation: 3,
   },
-  saveValueBtn: { minHeight: 56, borderRadius: 22, backgroundColor: GOLD, alignItems: 'center', justifyContent: 'center', shadowColor: GOLD, shadowOpacity: 0.24, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
+  stepperBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.20)',
+  },
+  customCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  customInput: {
+    fontFamily: F.serifBold,
+    fontSize: 38,
+    lineHeight: 42,
+    color: C.text,
+    textAlign: 'center',
+    padding: 0,
+    minWidth: 80,
+  },
+  customUnit: {
+    marginTop: 2,
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 1.8,
+    color: '#A8A29E',
+    textTransform: 'uppercase',
+  },
+
+  saveValueBtn: {
+    minHeight: 56,
+    borderRadius: 22,
+    backgroundColor: GOLD,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: GOLD,
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  },
   saveValueBtnDisabled: { backgroundColor: '#D6D3D1', shadowOpacity: 0 },
-  saveValueText: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 2, color: '#FFFFFF' },
+  saveValueText: { fontFamily: F.sansBold, fontSize: 11.5, letterSpacing: 2, color: '#FFFFFF' },
 });

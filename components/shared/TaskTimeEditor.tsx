@@ -239,10 +239,24 @@ function TimePickerButton({
           { backgroundColor: softBg, borderColor },
         ]}
       >
-        <Text style={[s.timeValue, compact && s.timeValueCompact, { color: compact ? '#2F3440' : '#1F2937' }]}>
-          {formatTimeValue(normalized.hour, normalized.minute)}
-        </Text>
-        <ChevronDown s={compact ? 14 : 16} c={accent} />
+        {compact ? (
+          <>
+            <Text style={[s.timeValue, s.timeValueCompact, { color: '#2F3440' }]}>
+              {formatTimeValue(normalized.hour, normalized.minute)}
+            </Text>
+            <ChevronDown s={14} c={accent} />
+          </>
+        ) : (
+          <>
+            <Text style={[s.timeValue, { color: '#1F2937' }]}>
+              {formatTimeValue(normalized.hour, normalized.minute)}
+            </Text>
+            <View style={[s.timeActionPill, { borderColor }]}>
+              <Text style={[s.timeActionText, { color: accent }]}>Change</Text>
+              <ChevronDown s={14} c={accent} />
+            </View>
+          </>
+        )}
       </TouchableOpacity>
 
       <Modal transparent visible={visible} animationType="fade" onRequestClose={() => setVisible(false)}>
@@ -303,14 +317,15 @@ const s = StyleSheet.create({
   labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   label: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, textTransform: 'uppercase' },
   timeButton: {
-    minHeight: 56,
-    borderRadius: 20,
+    minHeight: 52,
+    borderRadius: 18,
     borderWidth: 1,
-    paddingHorizontal: 18,
+    paddingLeft: 16,
+    paddingRight: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 10,
   },
   timeButtonCompact: {
     minHeight: 44,
@@ -318,9 +333,26 @@ const s = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 14,
     marginLeft: 'auto',
+    justifyContent: 'space-between',
   },
   timeValue: { fontFamily: F.serifMedium, fontSize: 24, letterSpacing: 0.2 },
   timeValueCompact: { fontSize: 18 },
+  timeActionPill: {
+    minHeight: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  timeActionText: {
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+  },
   toggleRow: {
     minHeight: 38,
     flexDirection: 'row',

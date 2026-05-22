@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
@@ -32,12 +32,12 @@ import {
   Play,
   Sparkles,
   Sun,
-  Trophy,
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { useChallenges } from './ChallengesContext';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import { AnimatedProgressFill } from '@/components/shared/taskAnimations';
 
 import {
   ChallengeCatalogEntry,
@@ -48,6 +48,7 @@ import {
   type ChallengeCategory,
   TAB_ACTIVE_COLORS,
 } from './challengeData';
+import { StaticChallengeTrophy } from './ChallengeTrophy';
 
 function getTone(category: ChallengeRecord['category'] | ChallengeCatalogEntry['category']) {
   switch (category) {
@@ -143,6 +144,95 @@ function hexToRgba(hex: string, alpha: number) {
   const g = Number.parseInt(normalized.slice(2, 4), 16);
   const b = Number.parseInt(normalized.slice(4, 6), 16);
   return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function dateValue(date?: string) {
+  if (!date) return 0;
+  const value = new Date(`${date}T12:00:00`).getTime();
+  return Number.isFinite(value) ? value : 0;
+}
+
+function shortDateLabel(date?: string, fallback?: string) {
+  if (!date) return fallback ?? 'Completed';
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(`${date}T12:00:00`));
+}
+
+function completionWord(count: number) {
+  return count === 1 ? 'completion' : 'completions';
+}
+
+function completionMilestoneLabel(count: number) {
+  if (count >= 100) return 'Century series';
+  if (count >= 25) return 'Legacy run';
+  if (count >= 10) return 'Tenfold victory';
+  if (count >= 2) return 'Repeat victory';
+  return 'First trophy';
+}
+
+function progressTotalFor(challenge: ChallengeRecord) {
+  return challenge.progressTotal ?? challenge.durationDays ?? challenge.totalUnits ?? 0;
+}
+
+function progressPercentFor(challenge: ChallengeRecord) {
+  const total = progressTotalFor(challenge);
+  if (total <= 0) return 100;
+  return Math.min(100, Math.round((challenge.progressCurrent / total) * 100));
+}
+
+function compareHistoryAttempts(a: ChallengeRecord, b: ChallengeRecord) {
+  return dateValue(b.completedAt) - dateValue(a.completedAt);
+}
+
+function compareBestAttempt(a: ChallengeRecord, b: ChallengeRecord) {
+  const streakDiff = (b.bestStreak ?? b.streak ?? 0) - (a.bestStreak ?? a.streak ?? 0);
+  if (streakDiff !== 0) return streakDiff;
+  const progressDiff = progressPercentFor(b) - progressPercentFor(a);
+  if (progressDiff !== 0) return progressDiff;
+  return compareHistoryAttempts(a, b);
+}
+
+function compareActiveChallengeCards(a: ChallengeRecord, b: ChallengeRecord) {
+  const pctA = a.progressTotal && a.progressTotal > 0
+    ? (a.progressCurrent / a.progressTotal) * 100
+    : 0;
+  const pctB = b.progressTotal && b.progressTotal > 0
+    ? (b.progressCurrent / b.progressTotal) * 100
+    : 0;
+  if (pctB !== pctA) return pctB - pctA;
+  return dateValue(b.startedAt) - dateValue(a.startedAt);
+}
+
+type ChallengeHistoryGroup = {
+  templateId: string;
+  title: string;
+  category: ChallengeRecord['category'];
+  attempts: ChallengeRecord[];
+  latest: ChallengeRecord;
+  best: ChallengeRecord;
+};
+
+function buildHistoryGroups(challenges: ChallengeRecord[]): ChallengeHistoryGroup[] {
+  const groups = new Map<string, ChallengeRecord[]>();
+  challenges.forEach(challenge => {
+    const key = challenge.templateId || challenge.id;
+    groups.set(key, [...(groups.get(key) ?? []), challenge]);
+  });
+
+  return [...groups.entries()]
+    .map(([templateId, attempts]) => {
+      const sortedAttempts = [...attempts].sort(compareHistoryAttempts);
+      const best = [...attempts].sort(compareBestAttempt)[0] ?? sortedAttempts[0];
+      const latest = sortedAttempts[0] ?? best;
+      return {
+        templateId,
+        title: latest?.title ?? best?.title ?? 'Challenge',
+        category: latest?.category ?? best?.category ?? 'scripture',
+        attempts: sortedAttempts,
+        latest,
+        best,
+      };
+    })
+    .sort((a, b) => dateValue(b.latest.completedAt) - dateValue(a.latest.completedAt));
 }
 
 type ChurchScheduleDraft = {
@@ -457,35 +547,57 @@ export function CatalogEntryCard({
 }
 
 function HistoryCard({
-  challenge,
+  group,
 }: {
-  challenge: ChallengeRecord;
+  group: ChallengeHistoryGroup;
 }) {
-  const tone = getTone(challenge.category);
-  const badge = getCategoryBadge(challenge.category);
-  const progressTotal = challenge.progressTotal ?? challenge.durationDays ?? challenge.totalUnits ?? 0;
-  const progressPercent = progressTotal > 0
-    ? Math.min(100, Math.round((challenge.progressCurrent / progressTotal) * 100))
-    : 100;
+  const { width: viewportWidth } = useWindowDimensions();
+  const { attempts, best, latest } = group;
+  const tone = getTone(group.category);
+  const badge = getCategoryBadge(group.category);
+  const completionCount = attempts.length;
+  const progressTotal = progressTotalFor(best);
+  const progressPercent = progressPercentFor(best);
   const progressLabel = progressTotal > 0
-    ? `${challenge.progressCurrent}/${progressTotal} ${challenge.progressUnit}`
-    : challenge.headline;
+    ? `${best.progressCurrent}/${progressTotal} ${best.progressUnit}`
+    : best.headline;
+  const bestStreak = best.bestStreak ?? best.streak;
+  const shelfWidth = Math.max(220, viewportWidth - 80);
+  const maxShelfTrophies = Math.max(4, Math.min(10, Math.floor((shelfWidth - 78) / 30) + 1));
+  const shownTrophies = attempts.slice(0, Math.min(completionCount, maxShelfTrophies));
+  const hiddenTrophies = Math.max(0, completionCount - shownTrophies.length);
+  const recentAttempts = attempts.slice(0, 3);
+  const milestoneLabel = completionMilestoneLabel(completionCount);
+  const latestLabel = shortDateLabel(latest.completedAt, latest.endedLabel);
+  const cardColors = [tone.soft, '#FFFFFF', '#FFFDF7'] as const;
 
   return (
-    <View style={[
-      s.historyCard,
-      s.historyCardCompleted,
-      { borderColor: tone.border },
-    ]}>
+    <LinearGradient
+      colors={cardColors}
+      start={{ x: 0.04, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[
+        s.historyCard,
+        s.historyCardCompleted,
+        { borderColor: tone.border },
+      ]}
+    >
+      <View style={s.historyShine} />
+      <View style={[s.historyAccentRail, { backgroundColor: tone.accent }]} />
+      <View style={[s.historyTopLine, { backgroundColor: hexToRgba(tone.accent, 0.3) }]} />
       <View style={s.historyTop}>
-        <View style={[
-          s.historyIconBubble,
-          {
-            backgroundColor: tone.iconBg,
-            borderColor: tone.border,
-          },
-        ]}>
-          <Trophy s={17} c={tone.accent} />
+        <View style={s.historyTrophyStage}>
+          <LinearGradient
+            colors={['#FFFFFF', '#FFF0C2']}
+            start={{ x: 0.18, y: 0 }}
+            end={{ x: 0.86, y: 1 }}
+            style={s.historyTrophyHalo}
+          />
+          <View style={s.historyTrophyBaseShadow} />
+          <StaticChallengeTrophy size={70} />
+          <View style={s.historyCountBadge}>
+            <Text style={s.historyCountText}>x{completionCount}</Text>
+          </View>
         </View>
 
         <View style={s.historyCopy}>
@@ -506,37 +618,89 @@ function HistoryCard({
               </Text>
             </View>
           </View>
-          <Text style={s.historyTitle}>{challenge.title}</Text>
-          <Text style={s.historyFoot}>{challenge.endedLabel || 'Completed'}</Text>
+          <Text style={s.historyTitle}>{group.title}</Text>
+          <Text style={s.historyFoot}>
+            {completionCount} {completionWord(completionCount)} | Latest {latestLabel}
+          </Text>
+        </View>
+      </View>
+
+      <View style={[s.seriesPlaque, { borderColor: hexToRgba(tone.accent, 0.2) }]}>
+        <View style={[s.seriesPlaqueMark, { backgroundColor: tone.accent }]} />
+        <View style={s.seriesPlaqueCopy}>
+          <Text style={[s.seriesPlaqueLabel, { color: tone.text }]}>{milestoneLabel}</Text>
+          <Text style={s.seriesPlaqueText} numberOfLines={1}>
+            {best.id === latest.id ? 'Latest run is also the best run' : `Best saved from ${shortDateLabel(best.completedAt, best.endedLabel)}`}
+          </Text>
         </View>
       </View>
 
       <Text style={s.historyBody}>
-        This challenge was completed successfully.
+        {completionCount === 1
+          ? 'Finished with momentum. This is the first trophy in the series.'
+          : `Finished ${completionCount} times. Best run is highlighted below, with every trophy kept on the shelf.`}
       </Text>
 
-      <View style={s.historyMetaRow}>
-        <Text style={s.historyProgressText}>{progressLabel}</Text>
-        {challenge.bestStreak || challenge.streak ? (
-          <View style={s.historyStreakPill}>
-            <Flame s={10} filled color="#F97316" />
-            <Text style={s.historyStreakText}>{challenge.bestStreak ?? challenge.streak}</Text>
+      <View style={s.trophyShelf}>
+        <View style={s.trophyShelfRail} />
+        {shownTrophies.map((attempt, index) => (
+          <View
+            key={attempt.id}
+            style={[
+              s.shelfTrophy,
+              attempt.id === best.id && s.shelfTrophyBest,
+              index > 0 && { marginLeft: -6 },
+            ]}
+          >
+            <StaticChallengeTrophy size={24} />
+          </View>
+        ))}
+        {hiddenTrophies > 0 ? (
+          <View style={[s.shelfMore, shownTrophies.length > 0 && { marginLeft: -2 }]}>
+            <Text style={s.shelfMoreText}>+{hiddenTrophies}</Text>
           </View>
         ) : null}
       </View>
 
-      <View style={s.historyProgressTrack}>
-        <View
-          style={[
-            s.historyProgressFill,
-            {
-              width: `${Math.max(100, progressPercent)}%`,
-              backgroundColor: tone.accent,
-            },
-          ]}
-        />
+      <View style={s.historyMetaRow}>
+        <View style={s.historyMetric}>
+          <Text style={s.historyMetricLabel}>BEST RUN</Text>
+          <Text style={s.historyProgressText}>{progressLabel}</Text>
+        </View>
+        <View style={s.historyMetric}>
+          <Text style={s.historyMetricLabel}>BEST STREAK</Text>
+          <View style={s.historyStreakPill}>
+            <Flame s={10} filled color="#F97316" />
+            <Text style={s.historyStreakText}>{bestStreak || 0}</Text>
+          </View>
+        </View>
+        <View style={s.historyMetric}>
+          <Text style={s.historyMetricLabel}>LATEST</Text>
+          <Text style={s.historyProgressText}>{latestLabel}</Text>
+        </View>
       </View>
-    </View>
+
+      {recentAttempts.length > 1 ? (
+        <View style={s.attemptStack}>
+          {recentAttempts.map((attempt, index) => {
+            const isBest = attempt.id === best.id;
+            return (
+              <View key={attempt.id} style={s.attemptRow}>
+                <View style={[s.attemptDot, isBest && { backgroundColor: tone.accent }]} />
+                <Text style={s.attemptText} numberOfLines={1}>
+                  {index === 0 ? 'Latest' : `Run ${completionCount - index}`} | {shortDateLabel(attempt.completedAt, attempt.endedLabel)}
+                </Text>
+                {isBest ? <Text style={[s.attemptBest, { color: tone.accent }]}>BEST</Text> : null}
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+
+      <View style={s.historyProgressTrack}>
+        <AnimatedProgressFill percent={Math.max(100, progressPercent)} color={tone.accent} height={5} />
+      </View>
+    </LinearGradient>
   );
 }
 
@@ -586,6 +750,20 @@ export default function ChallengesView() {
     [activeChallenges, pausedChallenges],
   );
   const historyCount = completedChallenges.length;
+  const historyGroups = useMemo(() => buildHistoryGroups(completedChallenges), [completedChallenges]);
+  const activeLifecycleChallenges = useMemo(
+    () => PANEL_CONTEXTS.flatMap(context => [...activeChallenges]
+      .filter(item => item.category === context)
+      .sort(compareActiveChallengeCards)),
+    [activeChallenges],
+  );
+  const pausedLifecycleChallenges = useMemo(
+    () => PANEL_CONTEXTS.flatMap(context => pausedChallenges.filter(item => item.category === context)),
+    [pausedChallenges],
+  );
+  const onlyPausedOnActiveTab = activeTab === 'active'
+    && activeChallenges.length === 0
+    && pausedChallenges.length > 0;
 
   const tabs: { key: ChallengeTab; label: string }[] = [
     { key: 'active', label: `ACTIVE (${ongoingChallenges.length})` },
@@ -629,7 +807,6 @@ export default function ChallengesView() {
         scheduleLabel: churchScheduleLabel(churchSchedule),
         churchConfig: churchScheduleToConfig(churchSchedule),
       });
-      await refreshChallenges();
       await refreshTasks();
       setRecentlyStartedTemplateId(record?.templateId ?? selectedCatalog.templateId);
       setSelectedCatalog(null);
@@ -668,7 +845,6 @@ export default function ChallengesView() {
           reminderMinutes: challengeSchedule.notificationMode === 'double' ? challengeSchedule.reminderMinutes : undefined,
         },
       });
-      await refreshChallenges();
       await refreshTasks();
       setRecentlyStartedTemplateId(record?.templateId ?? selectedCatalog.templateId);
       setSelectedCatalog(null);
@@ -702,7 +878,6 @@ export default function ChallengesView() {
       paceLabel,
       prayerConfig: selectedCatalog.category === 'prayer' ? prayerConfig : undefined,
     });
-    await refreshChallenges();
     await refreshTasks();
     setRecentlyStartedTemplateId(record?.templateId ?? selectedCatalog.templateId);
     setSelectedCatalog(null);
@@ -772,27 +947,75 @@ export default function ChallengesView() {
         onExpandedChallengeChange={setExpandedChallengeId}
         onPauseChallenge={async id => {
           await pauseChallenge(id);
-          await refreshChallenges();
           await refreshTasks();
         }}
         onResumeChallenge={async id => {
           await resumeChallenge(id);
-          await refreshChallenges();
           await refreshTasks();
         }}
         onEndChallenge={async id => {
           await endChallenge(id);
-          await refreshChallenges();
           await refreshTasks();
         }}
         onUpdateChallenge={async (id, updates) => {
           await updateChallenge(id, updates);
-          await refreshChallenges();
           await refreshTasks();
         }}
       />
     );
   };
+
+  const renderLifecyclePanel = (
+    activeItems: ChallengeRecord[],
+    pausedItems: ChallengeRecord[],
+  ) => (
+    <ChallengePanel
+      context="scripture"
+      activeItems={activeItems}
+      pausedItems={pausedItems}
+      availableItems={[]}
+      selectedCatalog={selectedCatalog}
+      selectedPaceId={selectedPaceId}
+      challengeSchedule={challengeSchedule}
+      scriptureDailyAmount={scriptureDailyAmount}
+      challengePrayerRule={challengePrayerRule}
+      challengeJesusMode={challengeJesusMode}
+      challengeJesusDuration={challengeJesusDuration}
+      challengeJesusCount={challengeJesusCount}
+      churchSchedule={churchSchedule}
+      expandedChallengeId={expandedChallengeId}
+      recentlyStartedTemplateId={recentlyStartedTemplateId}
+      showActiveLabel={false}
+      showPausedLabel={false}
+      onOpenSetup={openUnifiedChallengeSetup}
+      onSelectedPaceIdChange={setSelectedPaceId}
+      onChallengeScheduleChange={setChallengeSchedule}
+      onScriptureDailyAmountChange={setScriptureDailyAmount}
+      onChallengePrayerRuleChange={setChallengePrayerRule}
+      onChallengeJesusModeChange={setChallengeJesusMode}
+      onChallengeJesusDurationChange={setChallengeJesusDuration}
+      onChallengeJesusCountChange={setChallengeJesusCount}
+      onChurchScheduleChange={setChurchSchedule}
+      onStartChallenge={startUnifiedChallenge}
+      onExpandedChallengeChange={setExpandedChallengeId}
+      onPauseChallenge={async id => {
+        await pauseChallenge(id);
+        await refreshTasks();
+      }}
+      onResumeChallenge={async id => {
+        await resumeChallenge(id);
+        await refreshTasks();
+      }}
+      onEndChallenge={async id => {
+        await endChallenge(id);
+        await refreshTasks();
+      }}
+      onUpdateChallenge={async (id, updates) => {
+        await updateChallenge(id, updates);
+        await refreshTasks();
+      }}
+    />
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -821,7 +1044,7 @@ export default function ChallengesView() {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 128, paddingTop: 10 }}
+        contentContainerStyle={[s.scrollContent, onlyPausedOnActiveTab && s.scrollContentOnlyPaused]}
         showsVerticalScrollIndicator={false}
       >
         {activeTab === 'active' ? (
@@ -837,29 +1060,17 @@ export default function ChallengesView() {
               <Text style={[s.sectionLabel, { color: '#10B981' }]}>ACTIVE</Text>
             ) : null}
 
-            {PANEL_CONTEXTS.map(context => (
-              <View key={context}>
-                {renderUnifiedPanel(context, false, {
-                  includePaused: false,
-                  showActiveLabel: false,
-                  showPausedLabel: false,
-                })}
-              </View>
-            ))}
+            {activeLifecycleChallenges.length > 0
+              ? renderLifecyclePanel(activeLifecycleChallenges, [])
+              : null}
 
             {pausedChallenges.length > 0 ? (
               <Text style={[s.sectionLabel, { color: '#A8A29E' }]}>PAUSED</Text>
             ) : null}
 
-            {PANEL_CONTEXTS.map(context => (
-              <View key={`${context}-paused`}>
-                {renderUnifiedPanel(context, false, {
-                  includeActive: false,
-                  showActiveLabel: false,
-                  showPausedLabel: false,
-                })}
-              </View>
-            ))}
+            {pausedLifecycleChallenges.length > 0
+              ? renderLifecyclePanel([], pausedLifecycleChallenges)
+              : null}
 
           </View>
         ) : null}
@@ -875,8 +1086,8 @@ export default function ChallengesView() {
             {completedChallenges.length > 0 ? (
               <View style={s.sectionBlock}>
                 <Text style={[s.sectionLabel, { color: C.gold }]}>ACHIEVEMENTS</Text>
-                {completedChallenges.map(challenge => (
-                  <HistoryCard key={challenge.id} challenge={challenge} />
+                {historyGroups.map(group => (
+                  <HistoryCard key={group.templateId} group={group} />
                 ))}
               </View>
             ) : null}
@@ -895,6 +1106,14 @@ export default function ChallengesView() {
 }
 
 const s = StyleSheet.create({
+  scrollContent: {
+    paddingHorizontal: 18,
+    paddingBottom: 128,
+    paddingTop: 10,
+  },
+  scrollContentOnlyPaused: {
+    paddingTop: 4,
+  },
   tabsScroll: {
     flexGrow: 0,
     maxHeight: 52,
@@ -1200,13 +1419,15 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderLeftWidth: 4,
     borderRightWidth: 4,
-    borderRadius: 26,
-    padding: 15,
+    borderRadius: 28,
+    padding: 17,
+    paddingTop: 18,
     backgroundColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.13,
+    shadowRadius: 24,
+    elevation: 5,
+    overflow: 'hidden',
   },
   historyCardCompleted: {
     backgroundColor: '#FFFDF8',
@@ -1219,7 +1440,86 @@ const s = StyleSheet.create({
   historyTop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
+    gap: 14,
+    zIndex: 1,
+  },
+  historyShine: {
+    position: 'absolute',
+    top: -44,
+    right: -24,
+    width: 180,
+    height: 108,
+    borderRadius: 54,
+    backgroundColor: 'rgba(255, 222, 122, 0.22)',
+    transform: [{ rotate: '-12deg' }],
+  },
+  historyAccentRail: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    opacity: 0.95,
+  },
+  historyTopLine: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    top: 0,
+    height: 1,
+  },
+  historyTrophyStage: {
+    width: 82,
+    height: 82,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyTrophyHalo: {
+    position: 'absolute',
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.20)',
+    shadowColor: '#C5A059',
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 2,
+    transform: [{ rotate: '-4deg' }],
+  },
+  historyTrophyBaseShadow: {
+    position: 'absolute',
+    bottom: 5,
+    width: 58,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: 'rgba(104,72,24,0.10)',
+  },
+  historyCountBadge: {
+    position: 'absolute',
+    right: -4,
+    bottom: 4,
+    minWidth: 34,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: '#1C1917',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 7,
+    shadowColor: '#000000',
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  historyCountText: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 0.4,
+    color: '#FFFFFF',
   },
   historyIconBubble: {
     width: 42,
@@ -1281,16 +1581,108 @@ const s = StyleSheet.create({
   },
   historyTitle: {
     fontFamily: F.serifMedium,
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 18,
+    lineHeight: 23,
     color: C.text,
   },
+  seriesPlaque: {
+    marginTop: 14,
+    minHeight: 54,
+    borderRadius: 19,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.64)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    zIndex: 1,
+  },
+  seriesPlaqueMark: {
+    width: 6,
+    height: 34,
+    borderRadius: 3,
+  },
+  seriesPlaqueCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  seriesPlaqueLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    letterSpacing: 1.9,
+    textTransform: 'uppercase',
+  },
+  seriesPlaqueText: {
+    marginTop: 3,
+    fontFamily: F.serif,
+    fontSize: 13,
+    lineHeight: 17,
+    color: '#6F665B',
+  },
   historyBody: {
-    marginTop: 12,
+    marginTop: 13,
     fontFamily: F.serif,
     fontSize: 14,
     lineHeight: 20,
     color: C.textSecondary,
+    zIndex: 1,
+  },
+  trophyShelf: {
+    marginTop: 14,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'relative',
+    paddingHorizontal: 5,
+    zIndex: 1,
+  },
+  trophyShelfRail: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 6,
+    height: 9,
+    borderRadius: 999,
+    backgroundColor: 'rgba(197,160,89,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.12)',
+  },
+  shelfTrophy: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  shelfTrophyBest: {
+    borderColor: '#C5A059',
+    backgroundColor: '#FFF7D6',
+    shadowColor: '#C5A059',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 3,
+  },
+  shelfMore: {
+    minWidth: 42,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(28,25,23,0.08)',
+    backgroundColor: '#1C1917',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  shelfMoreText: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    color: '#FFFFFF',
   },
   historyFoot: {
     fontFamily: F.sansBold,
@@ -1300,17 +1692,40 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
   historyMetaRow: {
-    marginTop: 11,
+    marginTop: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 8,
+    zIndex: 1,
+  },
+  historyMetric: {
+    flex: 1,
+    minHeight: 56,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.76)',
+    paddingHorizontal: 9,
+    paddingVertical: 9,
+    justifyContent: 'center',
+  },
+  historyStreakMetric: {
+    flex: 0.72,
+  },
+  historyMetricLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 7.5,
+    letterSpacing: 1.4,
+    color: '#B8A783',
+    textTransform: 'uppercase',
+    marginBottom: 4,
   },
   historyProgressText: {
-    flex: 1,
     fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 1.5,
+    fontSize: 8.5,
+    lineHeight: 12,
+    letterSpacing: 1.2,
     color: '#9A7A3F',
     textTransform: 'uppercase',
   },
@@ -1328,12 +1743,48 @@ const s = StyleSheet.create({
     fontSize: 10,
     color: '#F97316',
   },
+  attemptStack: {
+    marginTop: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.62)',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    gap: 7,
+    zIndex: 1,
+  },
+  attemptRow: {
+    minHeight: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  attemptDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#D8D2C5',
+  },
+  attemptText: {
+    flex: 1,
+    fontFamily: F.sansMedium,
+    fontSize: 10,
+    lineHeight: 14,
+    color: '#8A8177',
+  },
+  attemptBest: {
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 1.2,
+  },
   historyProgressTrack: {
-    marginTop: 10,
+    marginTop: 12,
     height: 5,
     borderRadius: 999,
     backgroundColor: '#F1ECE2',
     overflow: 'hidden',
+    zIndex: 1,
   },
   historyProgressFill: {
     height: '100%',

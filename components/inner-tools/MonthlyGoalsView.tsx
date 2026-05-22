@@ -115,6 +115,7 @@ export default function MonthlyGoalsView() {
 
   const confirmDelete = async () => {
     if (!deleteTargetId) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     const id = deleteTargetId;
     setDeleteTargetId(null);
     await deleteGoal(id);
@@ -122,7 +123,7 @@ export default function MonthlyGoalsView() {
 
   return (
     <View style={s.screen}>
-      <ScreenTitleBar title="MONTHLY GOALS" showBack bg={BG} titleSize={18} />
+      <ScreenTitleBar title="MONTHLY GOALS" showBack bg={BG} />
 
       <ScrollView
         style={{ flex: 1 }}
@@ -138,7 +139,7 @@ export default function MonthlyGoalsView() {
             activeOpacity={0.7}
             style={[s.yearBtn, !canPrevYear && s.yearBtnDisabled]}
           >
-            <ChevronLeft s={20} c={canPrevYear ? GOLD : '#D6D3D1'} />
+            <ChevronLeft s={18} c={canPrevYear ? GOLD : '#D6D3D1'} />
           </TouchableOpacity>
           <Text style={s.yearText}>{viewYear}</Text>
           <TouchableOpacity
@@ -147,7 +148,7 @@ export default function MonthlyGoalsView() {
             activeOpacity={0.7}
             style={[s.yearBtn, !canNextYear && s.yearBtnDisabled]}
           >
-            <ChevronRight s={20} c={canNextYear ? GOLD : '#D6D3D1'} />
+            <ChevronRight s={18} c={canNextYear ? GOLD : '#D6D3D1'} />
           </TouchableOpacity>
         </View>
 
@@ -173,7 +174,7 @@ export default function MonthlyGoalsView() {
               return (
                 <TouchableOpacity
                   key={key}
-                  onPress={() => setSelectedMonth(key)}
+                  onPress={() => { Haptics.selectionAsync().catch(() => {}); setSelectedMonth(key); }}
                   activeOpacity={0.84}
                   style={s.monthCellWrap}
                 >
@@ -219,12 +220,13 @@ export default function MonthlyGoalsView() {
             return (
               <TouchableOpacity
                 key={key}
-                onPress={() => setSelectedMonth(key)}
+                onPress={() => { Haptics.selectionAsync().catch(() => {}); setSelectedMonth(key); }}
                 activeOpacity={0.84}
                 style={s.monthCellWrap}
               >
                 <View style={cellStyle}>
                   <Text style={labelStyle}>{label}</Text>
+                  {isCurrent && <View style={s.monthCurrentUnderline} />}
                   {dotColor && (
                     <View style={[s.monthDot, { backgroundColor: dotColor }]} />
                   )}
@@ -295,7 +297,7 @@ export default function MonthlyGoalsView() {
                 textStyle={s.goalText}
               />
               <TouchableOpacity
-                onPress={() => setDeleteTargetId(goal.id)}
+                onPress={() => { Haptics.selectionAsync().catch(() => {}); setDeleteTargetId(goal.id); }}
                 activeOpacity={0.7}
                 hitSlop={8}
                 style={s.deleteBtn}
@@ -358,56 +360,53 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 2,
     paddingBottom: 60,
-    rowGap: 14,
+    rowGap: 12,
   },
 
   yearRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    columnGap: 10,
+    columnGap: 14,
     paddingVertical: 2,
   },
   yearBtn: {
-    width: 36, height: 36, borderRadius: 18,
+    width: 34, height: 34, borderRadius: 17,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1, borderColor: '#F0EDE6',
+    backgroundColor: 'rgba(197,160,89,0.08)',
+    borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)',
   },
-  yearBtnDisabled: { opacity: 0.45 },
+  yearBtnDisabled: { opacity: 0.38, backgroundColor: '#FFFFFF', borderColor: '#F0EDE6' },
   yearText: {
     fontFamily: F.serifSemiBold,
     fontSize: 22,
+    lineHeight: 26,
     color: '#1A1714',
-    minWidth: 80,
+    minWidth: 90,
     textAlign: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: 'rgba(197,160,89,0.08)',
-    overflow: 'hidden',
+    letterSpacing: 0.5,
   },
 
   monthsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    columnGap: 7,
-    rowGap: 7,
+    columnGap: 8,
+    rowGap: 8,
   },
   monthCellWrap: {
     width: '23%', // 4 per row → fits nicely with column gap
   },
   monthCell: {
-    minHeight: 40,
+    minHeight: 54,
     paddingHorizontal: 6,
-    borderRadius: 13,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#F0EDE6',
+    borderColor: '#EFE9DD',
     overflow: 'hidden',
     position: 'relative',
   },
@@ -415,14 +414,14 @@ const s = StyleSheet.create({
     position: 'absolute',
     top: 1, left: 1, right: 1,
     height: '46%',
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
+    borderTopLeftRadius: 15,
+    borderTopRightRadius: 15,
     backgroundColor: 'rgba(255,255,255,0.18)',
   },
   monthLabel: {
     fontFamily: F.sansBold,
-    fontSize: 11,
-    letterSpacing: 1.4,
+    fontSize: 11.5,
+    letterSpacing: 1.5,
     color: '#78716C',
     textTransform: 'uppercase',
   },
@@ -431,20 +430,27 @@ const s = StyleSheet.create({
   monthCellSelected: {
     borderWidth: 0,
     shadowColor: '#A87E33',
-    shadowOpacity: 0.26,
+    shadowOpacity: 0.22,
     shadowOffset: { width: 0, height: 5 },
-    shadowRadius: 12,
+    shadowRadius: 10,
     elevation: 3,
   },
-  monthLabelActive: { color: '#FFFFFF', letterSpacing: 1.6 },
+  monthLabelActive: { color: '#FFFFFF', letterSpacing: 1.7 },
 
-  // Current month, not selected — gold ring
+  // Current month, not selected — clean cell with subtle gold underline
   monthCellCurrent: {
-    borderWidth: 1.5,
-    borderColor: GOLD,
-    backgroundColor: '#FFFCF3',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#EFE9DD',
   },
-  monthLabelCurrent: { color: '#A8853C' },
+  monthLabelCurrent: { color: '#1A1714' },
+  monthCurrentUnderline: {
+    position: 'absolute',
+    bottom: 8,
+    width: 18,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: GOLD,
+  },
 
   // Past + has goals — solid white, full-strength label, dot indicator
   monthCellPastFilled: {
@@ -455,16 +461,16 @@ const s = StyleSheet.create({
 
   // Past + no goals — faded, lower visual weight (nothing was set)
   monthCellPastEmpty: {
-    backgroundColor: '#F5F1EA',
+    backgroundColor: '#F8F5EE',
     borderColor: '#ECE6DA',
-    opacity: 0.55,
+    opacity: 0.48,
   },
   monthLabelPastEmpty: { color: '#A8A29E' },
 
-  // Future + has goals — solid white with dashed gold border (planning intent)
+  // Future + has goals — solid white with subtle dashed gold border (planning intent)
   monthCellFutureFilled: {
     backgroundColor: '#FFFCF3',
-    borderColor: 'rgba(197,160,89,0.40)',
+    borderColor: 'rgba(197,160,89,0.30)',
     borderStyle: 'dashed',
   },
   monthLabelFutureFilled: { color: '#A8853C' },
@@ -478,39 +484,45 @@ const s = StyleSheet.create({
 
   monthDot: {
     position: 'absolute',
-    top: 5,
-    right: 5,
-    width: 5,
-    height: 5,
+    top: 6,
+    right: 6,
+    width: 6,
+    height: 6,
     borderRadius: 3,
+    shadowColor: '#1C1917',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 2,
+    elevation: 1,
   },
 
   card: {
-    borderRadius: 18,
+    borderRadius: 22,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#F0EDE6',
-    padding: 14,
-    shadowColor: '#1C1917',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 7,
+    borderColor: '#EFE9DD',
+    padding: 16,
+    shadowColor: GOLD,
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
     elevation: 1,
   },
   progressHead: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   progressKicker: {
     fontFamily: F.sansBold,
-    fontSize: 9.5,
+    fontSize: 10,
     letterSpacing: 2,
-    color: '#A8853C',
+    color: GOLD,
+    textTransform: 'uppercase',
   },
-  progressCount: { fontFamily: F.serifSemiBold, fontSize: 20 },
-  progressCountMuted: { color: '#C9C5BD', fontSize: 16 },
+  progressCount: { fontFamily: F.serifSemiBold, fontSize: 22, letterSpacing: 0.3 },
+  progressCountMuted: { color: '#C9C5BD', fontSize: 17 },
   progressTrack: {
     height: 7,
     borderRadius: 4,
@@ -530,15 +542,15 @@ const s = StyleSheet.create({
     alignItems: 'center',
     columnGap: 12,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: '#EDE9E0',
-    paddingHorizontal: 13,
-    paddingVertical: 11,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     shadowColor: '#1C1917',
     shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
     elevation: 1,
   },
   goalCardDone: { opacity: 0.7 },

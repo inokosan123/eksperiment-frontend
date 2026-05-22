@@ -97,6 +97,12 @@ type ScriptureConfigRow = {
   total_units_read: number | null;
 };
 
+type JournalConfigRow = {
+  task_id: string;
+  journal_type: JournalTaskConfig['journalType'];
+  technique: string | null;
+};
+
 let initPromise: Promise<void> | null = null;
 
 const LEGACY_DEMO_HABIT_TASK_IDS = [
@@ -112,6 +118,27 @@ const TASK_INSTANCE_GAP_FILL_DAYS = 120;
 
 function boolToInt(value: boolean) {
   return value ? 1 : 0;
+}
+
+async function ensureColumn(
+  db: SQLite.SQLiteDatabase,
+  table: string,
+  column: string,
+  definition: string,
+) {
+  const rows = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+  if (rows.some(row => row.name === column)) return;
+  await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+async function ensureTaskNotificationColumns(db: SQLite.SQLiteDatabase) {
+  await ensureColumn(db, 'task_notifications', 'instance_id', 'TEXT');
+  await ensureColumn(db, 'task_notifications', 'native_id', 'TEXT');
+  await ensureColumn(db, 'task_notifications', 'route', 'TEXT');
+  await ensureColumn(db, 'task_notifications', 'source', 'TEXT');
+  await ensureColumn(db, 'task_notifications', 'type', 'TEXT');
+  await ensureColumn(db, 'task_notifications', 'payload_json', 'TEXT');
+  await ensureColumn(db, 'task_notifications', 'status', "TEXT NOT NULL DEFAULT 'scheduled'");
 }
 
 function intToBool(value: unknown) {
@@ -131,6 +158,51 @@ function defaultSchedule(): TaskSchedule {
     sameTimeEveryDay: true,
     dayTimes: {},
   };
+}
+
+function inferScriptureReadingTypeForTask(title: string, subtitle?: string | null): ScriptureTaskConfig['readingType'] {
+  const label = `${title} ${subtitle ?? ''}`.toLowerCase();
+  if (label.includes('church') || label.includes('lectionary')) return 'church_calendar';
+  if (label.includes('psalter') || label.includes('psalm')) return 'psalter';
+  if (label.includes('old testament')) return 'old_testament';
+  if (label.includes('new testament')) return 'new_testament';
+  return 'custom';
+}
+
+function inferScriptureChaptersPerDayForTask(
+  title: string,
+  subtitle: string | null | undefined,
+  readingType: ScriptureTaskConfig['readingType'],
+) {
+  if (readingType === 'church_calendar') return 0;
+  const label = `${title} ${subtitle ?? ''}`;
+  const match = label.match(/\b(\d{1,2})\s*(?:chapter|chapters|psalm|psalms)\b/i)
+    ?? label.match(/\b(?:chapter|chapters|psalm|psalms)\s*(?:per\s*day|\/day)?\D{0,8}(\d{1,2})\b/i);
+  const parsed = Number.parseInt(match?.[1] ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 1;
+}
+
+async function repairMissingScriptureTaskConfigs(db: SQLite.SQLiteDatabase) {
+  const missingRows = await db.getAllAsync<{ id: string; title: string; subtitle: string | null }>(
+    `SELECT t.id, t.title, t.subtitle
+     FROM tasks t
+     LEFT JOIN task_scripture_config c ON c.task_id = t.id
+     WHERE c.task_id IS NULL
+       AND t.source = 'spiritual'
+       AND t.type = 'reading'`,
+  );
+
+  for (const row of missingRows) {
+    const readingType = inferScriptureReadingTypeForTask(row.title, row.subtitle);
+    await db.runAsync(
+      `INSERT OR IGNORE INTO task_scripture_config (
+        task_id, reading_type, start_book_id, start_chapter, chapters_per_day, total_units_read
+      ) VALUES (?, ?, NULL, NULL, ?, 0)`,
+      row.id,
+      readingType,
+      inferScriptureChaptersPerDayForTask(row.title, row.subtitle, readingType),
+    );
+  }
 }
 
 function normalizeSchedule(schedule: TaskSchedule): TaskSchedule {
@@ -212,6 +284,34 @@ function normalizeDraft(draft: TaskDraft, existing?: TaskDefinition): TaskDefini
     removedAt: draft.removedAt,
     quickConfig: draft.quickConfig ? { taskId: id, ...draft.quickConfig } : undefined,
   };
+}
+
+function nullableText(value?: string | null) {
+  return value ?? null;
+}
+
+function taskDisplayTextChanged(existing: TaskDefinition, next: TaskDefinition) {
+  return existing.title !== next.title
+    || nullableText(existing.subtitle) !== nullableText(next.subtitle);
+}
+
+async function refreshTaskDisplaySnapshotsFromDate(
+  db: SQLite.SQLiteDatabase,
+  task: TaskDefinition,
+  fromDate: string,
+) {
+  await db.runAsync(
+    `UPDATE task_instances
+     SET title = ?,
+         subtitle = ?
+     WHERE task_id = ?
+       AND date >= ?
+       AND status <> 'not_applicable'`,
+    task.title,
+    task.subtitle ?? null,
+    task.id,
+    fromDate,
+  );
 }
 
 export async function openTaskDb() {
@@ -372,11 +472,18 @@ export async function initTaskDb(db?: SQLite.SQLiteDatabase) {
         CREATE TABLE IF NOT EXISTS task_notifications (
           id INTEGER PRIMARY KEY,
           task_id TEXT NOT NULL,
+          instance_id TEXT,
           instance_date TEXT NOT NULL,
           kind TEXT NOT NULL,
           fire_at INTEGER NOT NULL,
           title TEXT NOT NULL,
           body TEXT NOT NULL,
+          native_id TEXT,
+          route TEXT,
+          source TEXT,
+          type TEXT,
+          payload_json TEXT,
+          status TEXT NOT NULL DEFAULT 'scheduled',
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL,
           FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
@@ -386,6 +493,32 @@ export async function initTaskDb(db?: SQLite.SQLiteDatabase) {
         CREATE INDEX IF NOT EXISTS idx_instances_date ON task_instances(date, status);
         CREATE INDEX IF NOT EXISTS idx_notifications_fire_at ON task_notifications(fire_at);
       `);
+
+      await ensureTaskNotificationColumns(conn);
+
+      await conn.execAsync(`
+        CREATE INDEX IF NOT EXISTS idx_notifications_native_id ON task_notifications(native_id);
+        CREATE INDEX IF NOT EXISTS idx_notifications_task_instance ON task_notifications(task_id, instance_id, status);
+      `);
+
+      await conn.runAsync(
+        `UPDATE tasks
+         SET source = 'routine',
+             level = 2,
+             icon = COALESCE(icon, 'Feather')
+         WHERE source = 'spiritual'
+           AND type = 'journal'`,
+      );
+      await conn.runAsync(
+        `UPDATE task_instances
+         SET source = 'routine',
+             level = 2,
+             icon = COALESCE(icon, 'Feather')
+         WHERE source = 'spiritual'
+           AND type = 'journal'`,
+      );
+
+      await repairMissingScriptureTaskConfigs(conn);
     })();
   }
 
@@ -455,6 +588,10 @@ async function saveConfigs(db: SQLite.SQLiteDatabase, taskId: string, draft: Tas
 
   if (draft.scriptureConfig) {
     const config: ScriptureTaskConfig = { taskId, ...draft.scriptureConfig };
+    const rawChaptersPerDay = Number(config.chaptersPerDay);
+    const chaptersPerDay = config.readingType === 'church_calendar'
+      ? 0
+      : Math.max(1, Math.round(Number.isFinite(rawChaptersPerDay) ? rawChaptersPerDay : 1));
     await db.runAsync(
       `INSERT OR REPLACE INTO task_scripture_config (
         task_id, reading_type, start_book_id, start_chapter, chapters_per_day, total_units_read
@@ -463,7 +600,7 @@ async function saveConfigs(db: SQLite.SQLiteDatabase, taskId: string, draft: Tas
       config.readingType,
       config.startBookId ?? null,
       config.startChapter ?? null,
-      config.chaptersPerDay ?? null,
+      chaptersPerDay,
       config.totalUnitsRead ?? 0,
     );
   }
@@ -520,33 +657,83 @@ export async function saveTask(draft: TaskDraft) {
     : undefined;
   const task = normalizeDraft(draft, existing);
 
-  await db.runAsync(
-    `INSERT OR REPLACE INTO tasks (
-      id, title, subtitle, level, source, type, icon, habit_color,
-      target_view, target_tab, status, frequency, time, same_time_every_day,
-      notification_mode, reminder_minutes, created_at, activated_at, paused_at, removed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    task.id,
-    task.title,
-    task.subtitle ?? null,
-    task.level,
-    task.source,
-    task.type,
-    task.icon ?? null,
-    task.habitColor ?? null,
-    task.targetView ?? null,
-    task.targetTab ?? null,
-    task.status,
-    task.schedule.frequency,
-    task.schedule.time,
-    boolToInt(task.schedule.sameTimeEveryDay),
-    task.notificationMode,
-    task.reminderMinutes ?? null,
-    task.createdAt,
-    task.activatedAt,
-    task.pausedAt ?? null,
-    task.removedAt ?? null,
-  );
+  if (existing) {
+    await db.runAsync(
+      `UPDATE tasks
+       SET title = ?,
+           subtitle = ?,
+           level = ?,
+           source = ?,
+           type = ?,
+           icon = ?,
+           habit_color = ?,
+           target_view = ?,
+           target_tab = ?,
+           status = ?,
+           frequency = ?,
+           time = ?,
+           same_time_every_day = ?,
+           notification_mode = ?,
+           reminder_minutes = ?,
+           created_at = ?,
+           activated_at = ?,
+           paused_at = ?,
+           removed_at = ?
+       WHERE id = ?`,
+      task.title,
+      task.subtitle ?? null,
+      task.level,
+      task.source,
+      task.type,
+      task.icon ?? null,
+      task.habitColor ?? null,
+      task.targetView ?? null,
+      task.targetTab ?? null,
+      task.status,
+      task.schedule.frequency,
+      task.schedule.time,
+      boolToInt(task.schedule.sameTimeEveryDay),
+      task.notificationMode,
+      task.reminderMinutes ?? null,
+      task.createdAt,
+      task.activatedAt,
+      task.pausedAt ?? null,
+      task.removedAt ?? null,
+      task.id,
+    );
+
+    if (taskDisplayTextChanged(existing, task)) {
+      await refreshTaskDisplaySnapshotsFromDate(db, task, getLocalDateKey());
+    }
+  } else {
+    await db.runAsync(
+      `INSERT INTO tasks (
+        id, title, subtitle, level, source, type, icon, habit_color,
+        target_view, target_tab, status, frequency, time, same_time_every_day,
+        notification_mode, reminder_minutes, created_at, activated_at, paused_at, removed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      task.id,
+      task.title,
+      task.subtitle ?? null,
+      task.level,
+      task.source,
+      task.type,
+      task.icon ?? null,
+      task.habitColor ?? null,
+      task.targetView ?? null,
+      task.targetTab ?? null,
+      task.status,
+      task.schedule.frequency,
+      task.schedule.time,
+      boolToInt(task.schedule.sameTimeEveryDay),
+      task.notificationMode,
+      task.reminderMinutes ?? null,
+      task.createdAt,
+      task.activatedAt,
+      task.pausedAt ?? null,
+      task.removedAt ?? null,
+    );
+  }
 
   await replaceNumberRows(db, 'task_schedule_days', 'day_index', task.id, task.schedule.selectedDays);
   await replaceNumberRows(db, 'task_schedule_month_days', 'month_day', task.id, task.schedule.monthlyDays);
@@ -693,14 +880,37 @@ export async function getScriptureTaskConfig(taskId: string): Promise<ScriptureT
   );
 
   if (!row) return undefined;
+  const rawChaptersPerDay = Number(row.chapters_per_day);
+  const chaptersPerDay = row.reading_type === 'church_calendar'
+    ? 0
+    : Math.max(1, Math.round(Number.isFinite(rawChaptersPerDay) ? rawChaptersPerDay : 1));
 
   return {
     taskId: row.task_id,
     readingType: row.reading_type,
     startBookId: row.start_book_id ?? undefined,
     startChapter: row.start_chapter ?? undefined,
-    chaptersPerDay: row.chapters_per_day ?? undefined,
+    chaptersPerDay,
     totalUnitsRead: row.total_units_read ?? undefined,
+  };
+}
+
+export async function getJournalTaskConfig(taskId: string): Promise<JournalTaskConfig | undefined> {
+  const db = await openTaskDb();
+  const row = await db.getFirstAsync<JournalConfigRow>(
+    `SELECT task_id, journal_type, technique
+     FROM task_journal_config
+     WHERE task_id = ?
+     LIMIT 1`,
+    taskId,
+  );
+
+  if (!row) return undefined;
+
+  return {
+    taskId: row.task_id,
+    journalType: row.journal_type,
+    technique: row.technique ?? undefined,
   };
 }
 
@@ -744,8 +954,40 @@ export async function resumeTask(taskId: string) {
 export async function softDeleteTask(taskId: string) {
   const db = await openTaskDb();
   const date = await getTaskLifecycleStopDate(db, taskId);
+  const today = getLocalDateKey();
   await db.runAsync('UPDATE tasks SET status = ?, removed_at = ? WHERE id = ?', 'archived', date, taskId);
   await db.runAsync('UPDATE task_active_periods SET end_date = ? WHERE task_id = ? AND end_date IS NULL', date, taskId);
+
+  if (date === today) {
+    await db.runAsync(
+      `UPDATE task_instances
+       SET status = ?, locked = 0, resolved_at = NULL
+       WHERE task_id = ?
+         AND date = ?
+         AND status NOT IN ('completed', 'skipped')`,
+      'not_applicable',
+      taskId,
+      today,
+    );
+    await db.runAsync(
+      `UPDATE task_instances
+       SET status = ?, locked = 0, resolved_at = NULL
+       WHERE task_id = ? AND date > ?`,
+      'not_applicable',
+      taskId,
+      today,
+    );
+    return;
+  }
+
+  await db.runAsync(
+    `UPDATE task_instances
+     SET status = ?, locked = 0, resolved_at = NULL
+     WHERE task_id = ? AND date >= ?`,
+    'not_applicable',
+    taskId,
+    date,
+  );
 }
 
 export async function archiveTaskImmediately(taskId: string) {

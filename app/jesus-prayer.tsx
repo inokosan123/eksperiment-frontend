@@ -43,7 +43,7 @@ export default function JesusPrayerScreen() {
         onComplete={async () => {
           if (taskInstanceId) {
             await completeInstance(taskInstanceId, taskDate ?? getLocalDateKey());
-            queueTaskCompletionReturnAnimation(taskInstanceId, 300);
+            queueTaskCompletionReturnAnimation(taskInstanceId);
           }
         }}
       />

@@ -207,6 +207,8 @@ function MiniCalendar({ analytics }: { analytics: TaskAnalyticsData }) {
   const year = today.getFullYear();
   const month = today.getMonth();
   const monthLabel = today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const [calendarWidth, setCalendarWidth] = useState(0);
+  const cellWidth = calendarWidth > 0 ? (calendarWidth - 1) / 7 : undefined;
 
   const cells = useMemo(() => {
     const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -228,38 +230,44 @@ function MiniCalendar({ analytics }: { analytics: TaskAnalyticsData }) {
         <Text style={s.cardEyebrow}>{monthLabel}</Text>
       </View>
 
-      <View style={s.dowRow}>
-        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-          <Text key={`${d}-${i}`} style={s.dowText}>{d}</Text>
-        ))}
-      </View>
+      <View
+        style={s.calendarMeasure}
+        onLayout={event => setCalendarWidth(Math.floor(event.nativeEvent.layout.width))}
+      >
+        <View style={s.dowRow}>
+          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
+            <Text key={`${d}-${i}`} style={[s.dowText, cellWidth ? { width: cellWidth } : null]}>{d}</Text>
+          ))}
+        </View>
 
-      <View style={s.calGrid}>
-        {cells.map((cell, idx) => {
-          if (cell.kind === 'pad') return <View key={cell.key} style={s.calCell} />;
-          const isToday = cell.dateStr === todayKey;
-          const isCompleted = analytics.completedDates.has(cell.dateStr);
-          const isSkipped = analytics.skippedDates.has(cell.dateStr);
-          const isMissed = analytics.missedDates.has(cell.dateStr);
-          const isFuture = cell.dateStr > todayKey;
-          return (
-            <CalendarCell
-              key={cell.dateStr}
-              day={cell.day}
-              index={idx}
-              isToday={isToday}
-              isCompleted={isCompleted}
-              isSkipped={isSkipped}
-              isMissed={isMissed}
-              isFuture={isFuture}
-            />
-          );
-        })}
+        <View style={s.calGrid}>
+          {cells.map((cell, idx) => {
+            if (cell.kind === 'pad') return <View key={cell.key} style={[s.calCell, cellWidth ? { width: cellWidth } : null]} />;
+            const isToday = cell.dateStr === todayKey;
+            const isCompleted = analytics.completedDates.has(cell.dateStr);
+            const isSkipped = analytics.skippedDates.has(cell.dateStr);
+            const isMissed = analytics.missedDates.has(cell.dateStr);
+            const isFuture = cell.dateStr > todayKey;
+            return (
+              <CalendarCell
+                key={cell.dateStr}
+                day={cell.day}
+                index={idx}
+                cellWidth={cellWidth}
+                isToday={isToday}
+                isCompleted={isCompleted}
+                isSkipped={isSkipped}
+                isMissed={isMissed}
+                isFuture={isFuture}
+              />
+            );
+          })}
+        </View>
       </View>
 
       <View style={s.legendRow}>
-        <LegendDot color="#FFFBEB" border={C.gold + '4D'} label="Done" />
-        <LegendDot color="#FFFFFF" border={C.text} label="Skipped" />
+        <LegendDot color="#FFF7E6" border="rgba(197,160,89,0.58)" label="Done" />
+        <LegendDot color="#F2F1EE" border="#D6D3D1" label="Skipped" />
         <LegendDot color="#FEE2E2" border="transparent" label="Missed" />
         <LegendDot color="#FAFAF9" border={C.border} label="N/A" />
       </View>
@@ -268,10 +276,11 @@ function MiniCalendar({ analytics }: { analytics: TaskAnalyticsData }) {
 }
 
 function CalendarCell({
-  day, index, isToday, isCompleted, isSkipped, isMissed, isFuture,
+  day, index, cellWidth, isToday, isCompleted, isSkipped, isMissed, isFuture,
 }: {
   day: number;
   index: number;
+  cellWidth?: number;
   isToday: boolean;
   isCompleted: boolean;
   isSkipped: boolean;
@@ -293,37 +302,42 @@ function CalendarCell({
   }));
 
   const bg =
-    isCompleted ? '#FFFBEB' :
-    isSkipped ? '#FFFFFF' :
+    isCompleted ? '#FFF7E6' :
+    isSkipped ? '#F2F1EE' :
     isMissed ? '#FEE2E2' :
     'transparent';
 
   const borderColor =
-    isCompleted ? C.gold + '4D' :
-    isSkipped ? C.text :
+    isCompleted ? 'rgba(197,160,89,0.58)' :
+    isSkipped ? '#D6D3D1' :
     isMissed ? 'transparent' :
     isToday ? C.gold : 'transparent';
 
   const borderWidth =
-    isCompleted ? 1 :
-    isSkipped ? 1.5 :
+    isCompleted ? 1.4 :
+    isSkipped ? 1.2 :
     isToday && !isMissed ? 1.5 :
     0;
 
   const textColor =
     isCompleted ? C.gold :
-    isSkipped ? C.text :
+    isSkipped ? '#78716C' :
     isMissed ? '#F87171' :
     isToday ? C.gold :
     isFuture ? C.border : '#E5E5E2';
 
   return (
-    <Reanimated.View style={[s.calCell, animStyle]}>
-      <View style={[s.calCellInner, { backgroundColor: bg, borderColor, borderWidth }]}>
+    <Reanimated.View style={[s.calCell, cellWidth ? { width: cellWidth } : null, animStyle]}>
+      <View style={[
+        s.calCellInner,
+        { backgroundColor: bg, borderColor, borderWidth },
+        isCompleted && s.calCellInnerDone,
+        isSkipped && s.calCellInnerSkipped,
+      ]}>
         {isCompleted ? (
-          <Flame s={12} filled color={C.gold} />
+          <Flame s={16} filled color={C.gold} />
         ) : isSkipped ? (
-          <Flame s={12} color={C.text} />
+          <Flame s={15} filled color="#A8A29E" />
         ) : (
           <Text style={[s.calCellText, { color: textColor, fontWeight: isToday ? '600' : '400' }]}>{day}</Text>
         )}
@@ -483,9 +497,10 @@ const s = StyleSheet.create({
   rowPct: { fontFamily: F.sansBold, fontSize: 11, color: '#C8C5BD', width: 36, textAlign: 'right' },
 
   /* calendar */
+  calendarMeasure: { width: '100%' },
   dowRow: { flexDirection: 'row', marginBottom: 8 },
   dowText: {
-    flex: 1,
+    width: `${100 / 7}%`,
     textAlign: 'center',
     fontFamily: F.sansBold,
     fontSize: 10.5,
@@ -499,6 +514,20 @@ const s = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  calCellInnerDone: {
+    shadowColor: C.gold,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.10,
+    shadowRadius: 5,
+    elevation: 1,
+  },
+  calCellInnerSkipped: {
+    shadowColor: '#78716C',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.055,
+    shadowRadius: 3,
+    elevation: 1,
   },
   calCellText: { fontFamily: F.serifMedium, fontSize: 14 },
 

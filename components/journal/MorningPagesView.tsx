@@ -1,27 +1,26 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Keyboard, View, Text, StyleSheet } from 'react-native';
+import { Keyboard, View, Text, StyleSheet, TextInput } from 'react-native';
+import Animated, { useAnimatedProps, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+
+const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, CheckSmall } from '@/components/icons/Icons';
+import { CheckSmall } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
-import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
+import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { FormatState, RichTextEditor, RichTextEditorRef, RichToolbar } from '@/components/shared/RichTextEditor';
 import { useJournal } from '@/components/journal/JournalContext';
-import { countWords } from '@/components/journal/journalLogic';
+import { countWords, JOURNAL_MORNING_PAGES_MINIMUM_WORDS } from '@/components/journal/journalLogic';
+import { useTasks } from '@/components/tasks/TaskProvider';
+import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 
 
 const BG = '#FAF7F0';
 const TARGET = 750;
-
-const DAILY_PROMPTS = [
-  'What is on your mind right now?',
-  'What are you afraid of today?',
-  'What do you truly desire?',
-  'What would make today wonderful?',
-];
+const COMPLETE_MINIMUM = JOURNAL_MORNING_PAGES_MINIMUM_WORDS;
 
 function todayKey() {
   const d = new Date();
@@ -31,22 +30,50 @@ function todayKey() {
 export default function MorningPagesView() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const params = useLocalSearchParams<{ date?: string; readOnly?: string }>();
+  const params = useLocalSearchParams<{
+    date?: string;
+    readOnly?: string;
+    title?: string;
+    isTask?: string;
+    taskInstanceId?: string;
+    taskDate?: string;
+  }>();
   const selectedDateKey = typeof params.date === 'string' && params.date ? params.date : todayKey();
   const isReadOnly = params.readOnly === '1' || params.readOnly === 'true';
+  const isTaskLaunch = params.isTask === 'true' || !!params.taskInstanceId;
+  const taskTitle = typeof params.title === 'string' && params.title.trim() ? params.title.trim() : 'Morning Pages';
   const { ready: journalReady, getEntry, upsertEntry } = useJournal();
+  const { completeInstance } = useTasks();
   const [html, setHtml] = useState('');
   const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
   const [showInfo, setShowInfo] = useState(false);
   const [kbHeight, setKbHeight] = useState(0);
+  const [editorContentKey, setEditorContentKey] = useState(`morning:${selectedDateKey}:pending`);
   const editorRef = useRef<RichTextEditorRef>(null);
   const hydratedDateRef = useRef('');
   const dirtyRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wordCount = countWords(html);
   const pct = Math.min(wordCount / TARGET, 1);
-  const isDone = wordCount >= TARGET;
-  const promptIdx = new Date().getDay();
+  const isComplete = wordCount >= COMPLETE_MINIMUM;
+  const reachedTarget = wordCount >= TARGET;
+
+  const animPct = useSharedValue(pct);
+  const animCount = useSharedValue(wordCount);
+
+  useEffect(() => {
+    animPct.value = withTiming(pct, { duration: 320 });
+    animCount.value = withTiming(wordCount, { duration: 320 });
+  }, [pct, wordCount, animPct, animCount]);
+
+  const barFillStyle = useAnimatedStyle(() => ({
+    width: `${Math.max(0, Math.min(100, animPct.value * 100))}%`,
+  }));
+
+  const countAnimatedProps = useAnimatedProps(() => ({
+    text: String(Math.round(animCount.value)),
+    defaultValue: String(Math.round(animCount.value)),
+  }) as any);
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardWillShow', e => setKbHeight(e.endCoordinates.height));
@@ -55,9 +82,16 @@ export default function MorningPagesView() {
   }, []);
 
   useEffect(() => {
+    hydratedDateRef.current = '';
+    dirtyRef.current = false;
+    setEditorContentKey(`morning:${selectedDateKey}:pending`);
+  }, [selectedDateKey]);
+
+  useEffect(() => {
     if (!journalReady || hydratedDateRef.current === selectedDateKey) return;
     const entry = getEntry(selectedDateKey);
     setHtml(entry.morningPagesHtml ?? '');
+    setEditorContentKey(`morning:${selectedDateKey}:${entry.updatedAt || 0}`);
     hydratedDateRef.current = selectedDateKey;
     dirtyRef.current = false;
   }, [journalReady, selectedDateKey, getEntry]);
@@ -74,8 +108,11 @@ export default function MorningPagesView() {
       void upsertEntry(selectedDateKey, {
         morningPagesHtml: html,
         morningPagesWordCount: countWords(html),
+      }).then(() => {
+        dirtyRef.current = false;
+      }).catch(error => {
+        console.warn('Morning pages autosave failed', error);
       });
-      dirtyRef.current = false;
     }, 350);
 
     return () => {
@@ -87,6 +124,11 @@ export default function MorningPagesView() {
 
   const saveNow = async () => {
     if (isReadOnly) return;
+    if (!dirtyRef.current || hydratedDateRef.current !== selectedDateKey) return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
     await upsertEntry(selectedDateKey, {
       morningPagesHtml: html,
       morningPagesWordCount: countWords(html),
@@ -94,23 +136,38 @@ export default function MorningPagesView() {
     dirtyRef.current = false;
   };
 
+  const finish = async () => {
+    const shouldCompleteTask = isTaskLaunch && !!params.taskInstanceId && isComplete;
+    if (!shouldCompleteTask) {
+      if (isComplete) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    await saveNow();
+    if (shouldCompleteTask && params.taskInstanceId) {
+      const completionDate = params.taskDate ?? selectedDateKey;
+      await completeInstance(params.taskInstanceId, completionDate);
+      queueTaskCompletionReturnAnimation(params.taskInstanceId, 420);
+    }
+    router.back();
+  };
+
   return (
     <View style={[s.screen, { paddingBottom: kbHeight }]}>
-      <View style={[s.header, { paddingTop: getTitleBarTopPadding(insets.top) }]}>
-        <TouchableOpacity
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
-          style={s.btn} activeOpacity={0.7}
-        >
-          <ArrowLeft s={24} c={C.textMuted} />
-        </TouchableOpacity>
-        <Text style={s.title}>Morning Pages</Text>
-        <TouchableOpacity
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowInfo(v => !v); }}
-          style={s.btn} activeOpacity={0.7}
-        >
-          <View style={s.infoBadge}><Text style={s.infoTxt}>i</Text></View>
-        </TouchableOpacity>
-      </View>
+      <ScreenTitleBar
+        title={taskTitle.toUpperCase()}
+        showBack
+        bg={BG}
+        onBackOverride={() => router.back()}
+        rightElement={(
+          <TouchableOpacity
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowInfo(v => !v); }}
+            style={s.btn}
+            activeOpacity={0.7}
+          >
+            <View style={s.infoBadge}><Text style={s.infoTxt}>i</Text></View>
+          </TouchableOpacity>
+        )}
+      />
 
       {showInfo && (
         <View style={s.infoCard}>
@@ -121,14 +178,13 @@ export default function MorningPagesView() {
         </View>
       )}
 
-      <Text style={s.prompt}>{`"${DAILY_PROMPTS[promptIdx % DAILY_PROMPTS.length]}"`}</Text>
-
       {!isReadOnly && <RichToolbar editorRef={editorRef} activeFormats={fmt} style={s.toolbar} />}
 
       <RichTextEditor
         key={selectedDateKey}
         ref={editorRef}
         initialHTML={html}
+        contentKey={editorContentKey}
         onChange={(value) => {
           if (isReadOnly) return;
           dirtyRef.current = true;
@@ -142,28 +198,33 @@ export default function MorningPagesView() {
         style={s.editor}
       />
 
-      <View style={s.bar}>
+      <View style={[s.bar, { paddingBottom: kbHeight > 0 ? 0 : Math.max(insets.bottom + 4, 18) }]}>
         <View style={s.track}>
-          <LinearGradient
-            colors={isDone ? ['#16A34A', '#22C55E'] : ['#C5A059', '#D4B06A']}
-            start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }}
-            style={[s.fill, { width: `${pct * 100}%` as any }]}
-          />
+          <Animated.View style={[s.fill, barFillStyle]}>
+            <LinearGradient
+              colors={reachedTarget ? ['#16A34A', '#22C55E'] : ['#C5A059', '#D4B06A']}
+              start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Animated.View>
         </View>
         <View style={s.barRow}>
-          <Text style={s.count}>
-            <Text style={[s.countNum, isDone && { color: '#16A34A' }]}>{wordCount}</Text>
-            {` / ${TARGET} words`}
-          </Text>
+          <View style={s.countWrap}>
+            <AnimatedTextInput
+              editable={false}
+              caretHidden
+              underlineColorAndroid="transparent"
+              defaultValue={String(wordCount)}
+              animatedProps={countAnimatedProps}
+              style={[s.countNum, isComplete && { color: '#7C6EAF' }, reachedTarget && { color: '#16A34A' }]}
+            />
+            <Text style={s.count}>{` / ${TARGET} words`}</Text>
+          </View>
           {!isReadOnly && (
           <TouchableOpacity
-            style={[s.doneBtn, isDone && s.doneBtnSuccess]}
+            style={[s.doneBtn, isComplete && s.doneBtnSuccess]}
             activeOpacity={0.85}
-            onPress={() => {
-              if (isDone) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              void saveNow().finally(() => router.back());
-            }}
+            onPress={() => { void finish(); }}
           >
             <CheckSmall s={18} c="#fff" w={2.8} />
             <Text style={s.doneTxt}>Done</Text>
@@ -177,23 +238,21 @@ export default function MorningPagesView() {
 
 const s = StyleSheet.create({
   screen:        { flex: 1, backgroundColor: BG },
-  header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: TITLE_BAR_BOTTOM_PADDING, backgroundColor: BG },
   btn:           { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title:         { fontFamily: F.serifMedium, fontSize: 20, color: C.text },
   infoBadge:     { width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, borderColor: C.textMuted, alignItems: 'center', justifyContent: 'center' },
   infoTxt:       { fontFamily: F.sansBold, fontSize: 13, color: C.textMuted },
   infoCard:      { marginHorizontal: 16, marginBottom: 10, backgroundColor: '#fff', borderRadius: 18, borderWidth: 1, borderColor: '#E8E3F0', padding: 16 },
   infoHeading:   { fontFamily: F.serifMedium, fontSize: 17, color: C.text, marginBottom: 8 },
   infoBody:      { fontFamily: F.sans, fontSize: 14, color: C.textSecondary, lineHeight: 22 },
-  prompt:        { textAlign: 'center', fontFamily: F.serifMediumItalic, fontSize: 14, color: C.textMuted, marginBottom: 8, paddingHorizontal: 20 },
   toolbar:       { marginHorizontal: 16, marginBottom: 8 },
   editor:        { flex: 1, marginHorizontal: 16 },
-  bar:           { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12, backgroundColor: BG, borderTopWidth: 1, borderTopColor: 'rgba(124,110,175,0.1)' },
+  bar:           { paddingHorizontal: 20, paddingTop: 12, backgroundColor: BG, borderTopWidth: 1, borderTopColor: 'rgba(124,110,175,0.1)' },
   track:         { height: 4, borderRadius: 4, backgroundColor: '#EDE9E0', overflow: 'hidden', marginBottom: 10 },
   fill:          { height: '100%', borderRadius: 4 },
   barRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  countWrap:     { flexDirection: 'row', alignItems: 'baseline' },
   count:         { fontFamily: F.sans, fontSize: 14, color: C.textMuted },
-  countNum:      { fontFamily: F.sansBold, fontSize: 16, color: C.text },
+  countNum:      { fontFamily: F.sansBold, fontSize: 16, color: C.text, padding: 0, margin: 0, minWidth: 18, textAlignVertical: 'center', includeFontPadding: false },
   doneBtn:       { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.textMuted, paddingVertical: 11, paddingHorizontal: 20, borderRadius: 14 },
   doneBtnSuccess:{ backgroundColor: '#16A34A', shadowColor: '#16A34A', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 },
   doneTxt:       { fontFamily: F.sansBold, fontSize: 14, color: '#fff' },

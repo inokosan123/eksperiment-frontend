@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
+  FadeInDown,
+  FadeOut,
   interpolateColor,
   runOnJS,
   useAnimatedStyle,
@@ -24,16 +26,17 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
-  ArrowLeft, CheckSmall, ChevronLeft, ChevronRight, CircleIcon, Feather, Notebook, Pencil, Star, Trash2, X,
+  CheckSmall, ChevronLeft, ChevronRight, CircleIcon, Feather, Notebook, Pencil, Star, Trash2, X,
 } from '@/components/icons/Icons';
 import ConfirmModal from '@/components/shared/ConfirmModal';
+import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import {
   getAnnotationCategoryLabel, getAnnotationColorHex, hexToRgba, HighlightColor,
   ColorCategory,
 } from '@/constants/annotationColors';
-import { BIBLE_BOOKS, getBibleBook, PSALMS_ID, ScriptureLanguage } from '@/constants/scripture';
+import { BIBLE_BOOKS, getBibleBook, normalizeScriptureLanguage, PSALMS_ID, ScriptureLanguage } from '@/constants/scripture';
 import { C, F } from '@/constants/tokens';
-import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
+import { useAppSettings } from '@/components/settings/SettingsContext';
 import { FormatState, RichTextEditor, RichTextEditorRef, RichToolbar } from '@/components/shared/RichTextEditor';
 import RichCommentText from '@/components/shared/RichCommentText';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
@@ -46,21 +49,50 @@ const BG = '#FCFCFC';
 const GOLD = '#C5A059';
 const ROSE = '#BE123C';
 
-export default function ScriptureReaderView() {
+type ScriptureReaderViewProps = {
+  bookId?: number;
+  chapter?: number;
+  initialVerse?: number;
+  lang?: ScriptureLanguage;
+  onBack?: () => void;
+  canGoPrevChapter?: boolean;
+  canGoNextChapter?: boolean;
+  onPrevChapter?: () => void;
+  onNextChapter?: () => void;
+  bottomDock?: React.ReactNode;
+  bottomDockHeight?: number;
+};
+
+export default function ScriptureReaderView({
+  bookId: controlledBookId,
+  chapter: controlledChapter,
+  initialVerse: controlledInitialVerse,
+  lang: controlledLang,
+  onBack,
+  canGoPrevChapter,
+  canGoNextChapter,
+  onPrevChapter,
+  onNextChapter,
+  bottomDock,
+  bottomDockHeight = 155,
+}: ScriptureReaderViewProps = {}) {
   const router = useRouter();
   const params = useLocalSearchParams<{ bookId?: string; chapter?: string; verse?: string; lang?: ScriptureLanguage; editCommentId?: string }>();
   const insets = useSafeAreaInsets();
+  const { settings } = useAppSettings();
   const {
     ready, annotations, categories, getChapter, upsertAnnotation, deleteAnnotation, updateCategory,
   } = useScripture();
 
-  const initialBookId = Number(params.bookId) || 42;
-  const initialChapter = Number(params.chapter) || 3;
-  const initialVerse = Number(params.verse) || 0;
-  const lang = params.lang ?? 'en';
+  const initialBookId = controlledBookId ?? (Number(params.bookId) || 42);
+  const initialChapter = controlledChapter ?? (Number(params.chapter) || 3);
+  const initialVerse = controlledInitialVerse ?? (Number(params.verse) || 0);
+  const lang = controlledLang ?? normalizeScriptureLanguage(params.lang ?? settings.bibleLang);
 
-  const [bookId] = useState(initialBookId);
-  const [chapter, setChapter] = useState(initialChapter);
+  const [localBookId] = useState(initialBookId);
+  const [localChapter, setLocalChapter] = useState(initialChapter);
+  const bookId = controlledBookId ?? localBookId;
+  const chapter = controlledChapter ?? localChapter;
   const [showFocus, setShowFocus] = useState(true);
   useEffect(() => {
     const t = setTimeout(() => setShowFocus(false), 1500);
@@ -68,6 +100,8 @@ export default function ScriptureReaderView() {
   }, []);
   const [verses, setVerses] = useState<BibleVerse[]>([]);
   const [loading, setLoading] = useState(true);
+  const chapterNavLockedRef = useRef(false);
+  const [chapterNavLocked, setChapterNavLocked] = useState(false);
   const [chapterError, setChapterError] = useState<string | null>(null);
   const [selectedVerseNumbers, setSelectedVerseNumbers] = useState<number[]>([]);
   const [selectedColor, setSelectedColor] = useState<HighlightColor>('gold');
@@ -78,6 +112,9 @@ export default function ScriptureReaderView() {
   const [commentMode, setCommentMode] = useState<'add' | 'edit'>('add');
   const [viewingComment, setViewingComment] = useState<ScriptureAnnotation | null>(null);
   const [colorEditorOpen, setColorEditorOpen] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const verseLayoutYRef = useRef<Record<number, number>>({});
+  const handledInitialScrollKeyRef = useRef<string | null>(null);
 
   const currentBook = getBibleBook(bookId) ?? BIBLE_BOOKS[41];
   const currentAnnotations = useMemo(
@@ -94,6 +131,10 @@ export default function ScriptureReaderView() {
     [selectedVerses],
   );
   const selectionActive = selectedVerseNumbers.length > 0;
+  const targetInitialVerse = initialVerse > 0 && bookId === initialBookId && chapter === initialChapter
+    ? initialVerse
+    : 0;
+  const initialScrollKey = targetInitialVerse > 0 ? `${bookId}:${chapter}:${targetInitialVerse}` : null;
   const hasCommentOverlap = useMemo(
     () => selectedVerses.some(verse =>
       annotations.some(annotation =>
@@ -124,13 +165,48 @@ export default function ScriptureReaderView() {
         setChapterError('This chapter could not be loaded.');
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (!active) return;
+        setLoading(false);
+        chapterNavLockedRef.current = false;
+        setChapterNavLocked(false);
       });
 
     return () => {
       active = false;
     };
   }, [bookId, chapter, getChapter, lang, ready]);
+
+  useEffect(() => {
+    verseLayoutYRef.current = {};
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+  }, [bookId, chapter]);
+
+  const scrollToInitialVerse = useCallback(() => {
+    if (!initialScrollKey || handledInitialScrollKeyRef.current === initialScrollKey || loading || chapterError) return;
+    if (!verses.some(verse => verse.verse === targetInitialVerse)) return;
+
+    const targetY = verseLayoutYRef.current[targetInitialVerse];
+    if (typeof targetY !== 'number') return;
+
+    handledInitialScrollKeyRef.current = initialScrollKey;
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, targetY - 18),
+        animated: true,
+      });
+    });
+  }, [chapterError, initialScrollKey, loading, targetInitialVerse, verses]);
+
+  useEffect(() => {
+    scrollToInitialVerse();
+  }, [scrollToInitialVerse]);
+
+  const handleVerseLayout = useCallback((verseNumber: number, y: number) => {
+    verseLayoutYRef.current[verseNumber] = y;
+    if (verseNumber === targetInitialVerse) scrollToInitialVerse();
+  }, [scrollToInitialVerse, targetInitialVerse]);
 
   const handledEditCommentIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -145,21 +221,26 @@ export default function ScriptureReaderView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, loading, annotations, params.editCommentId]);
 
-  const goChapter = (next: number) => {
-    const bounded = Math.max(1, Math.min(currentBook.chapters, next));
-    if (bounded === chapter) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setChapter(bounded);
-    clearSelection();
-  };
-
-  const clearSelection = () => {
+  const clearSelection = useCallback(() => {
     setSelectedVerseNumbers([]);
     setActionSheetOpen(false);
     setCommentOpen(false);
     setCommentDraft('');
     setCommentMode('add');
-  };
+  }, []);
+
+  useEffect(() => {
+    if (typeof controlledBookId !== 'number' && typeof controlledChapter !== 'number') return;
+    clearSelection();
+  }, [clearSelection, controlledBookId, controlledChapter]);
+
+  const goChapter = useCallback((next: number) => {
+    const bounded = Math.max(1, Math.min(currentBook.chapters, next));
+    if (bounded === chapter) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setLocalChapter(bounded);
+    clearSelection();
+  }, [chapter, clearSelection, currentBook.chapters]);
 
   const startSelection = (verse: BibleVerse) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -323,6 +404,49 @@ export default function ScriptureReaderView() {
     });
   };
 
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+      return;
+    }
+    router.back();
+  };
+
+  const canNavigatePrevChapter = canGoPrevChapter ?? chapter > 1;
+  const canNavigateNextChapter = canGoNextChapter ?? chapter < currentBook.chapters;
+
+  const handlePrevChapter = () => {
+    if (!canNavigatePrevChapter || loading || chapterNavLocked || chapterNavLockedRef.current) return;
+    if (onPrevChapter) {
+      chapterNavLockedRef.current = true;
+      setChapterNavLocked(true);
+      onPrevChapter();
+      clearSelection();
+      return;
+    }
+    chapterNavLockedRef.current = true;
+    setChapterNavLocked(true);
+    goChapter(chapter - 1);
+  };
+
+  const handleNextChapter = () => {
+    if (!canNavigateNextChapter || loading || chapterNavLocked || chapterNavLockedRef.current) return;
+    if (onNextChapter) {
+      chapterNavLockedRef.current = true;
+      setChapterNavLocked(true);
+      onNextChapter();
+      clearSelection();
+      return;
+    }
+    chapterNavLockedRef.current = true;
+    setChapterNavLocked(true);
+    goChapter(chapter + 1);
+  };
+
+  const hasBottomDock = !!bottomDock;
+  const selectionFabBottom = insets.bottom + (hasBottomDock ? 92 : 0);
+  const selectionSheetBottom = insets.bottom;
+
   if (!ready) {
     return (
       <View style={s.loadingScreen}>
@@ -335,9 +459,8 @@ export default function ScriptureReaderView() {
   return (
     <View style={s.screen}>
       <Header
-        top={insets.top}
         title={currentBook.name}
-        onBack={() => router.back()}
+        onBack={handleBack}
         onBibleNote={openBibleNote}
         onFavorites={() => router.push('/favorites')}
       />
@@ -345,50 +468,65 @@ export default function ScriptureReaderView() {
       <ChapterBar
         chapter={chapter}
         label={currentBook.id === PSALMS_ID ? 'PSALM' : 'CHAPTER'}
-        canGoPrev={chapter > 1}
-        canGoNext={chapter < currentBook.chapters}
-        onPrev={() => goChapter(chapter - 1)}
-        onNext={() => goChapter(chapter + 1)}
+        canGoPrev={!loading && !chapterNavLocked && canNavigatePrevChapter}
+        canGoNext={!loading && !chapterNavLocked && canNavigateNextChapter}
+        onPrev={handlePrevChapter}
+        onNext={handleNextChapter}
       />
 
       <ScrollView
-        contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 120 }]}
+        ref={scrollRef}
+        contentContainerStyle={[s.content, { paddingBottom: insets.bottom + (hasBottomDock ? bottomDockHeight : 120) }]}
         showsVerticalScrollIndicator={false}
       >
-        {loading ? (
-          <View style={s.chapterLoading}>
-            <ActivityIndicator color={GOLD} />
-          </View>
-        ) : chapterError ? (
-          <View style={s.emptyChapter}>
-            <Notebook s={24} c="#C5A059" />
-            <Text style={s.emptyChapterTitle}>Scripture is reloading</Text>
-            <Text style={s.emptyChapterText}>{chapterError}</Text>
-          </View>
-        ) : (
-          <View style={s.verseList}>
-            {verses.map(verse => (
-              <VerseRow
-                key={verse.verse}
-                verse={verse}
-                selected={selectedVerseSet.has(verse.verse)}
-                selectionActive={selectionActive}
-                annotations={currentAnnotations.filter(annotation => annotation.verse === verse.verse)}
-                categories={categories}
-                autoFocus={showFocus && initialVerse === verse.verse && chapter === initialChapter}
-                onPress={() => toggleSelection(verse)}
-                onLongPress={() => startSelection(verse)}
-                onOpenComment={openCommentPreview}
-              />
-            ))}
-          </View>
-        )}
+        <Reanimated.View
+          key={`${bookId}:${chapter}:${loading ? 'loading' : chapterError ? 'error' : 'ready'}`}
+          entering={FadeInDown.duration(240)}
+          exiting={FadeOut.duration(120)}
+          style={s.chapterTransition}
+        >
+          {loading ? (
+            <View style={s.chapterLoading}>
+              <ActivityIndicator color={GOLD} />
+            </View>
+          ) : chapterError ? (
+            <View style={s.emptyChapter}>
+              <Notebook s={24} c="#C5A059" />
+              <Text style={s.emptyChapterTitle}>Scripture is reloading</Text>
+              <Text style={s.emptyChapterText}>{chapterError}</Text>
+            </View>
+          ) : (
+            <View style={s.verseList}>
+              {verses.map(verse => (
+                <View
+                  key={verse.verse}
+                  onLayout={event => handleVerseLayout(verse.verse, event.nativeEvent.layout.y)}
+                >
+                  <VerseRow
+                    verse={verse}
+                    selected={selectedVerseSet.has(verse.verse)}
+                    selectionActive={selectionActive}
+                    annotations={currentAnnotations.filter(annotation => annotation.verse === verse.verse)}
+                    categories={categories}
+                    autoFocus={showFocus && initialVerse === verse.verse && chapter === initialChapter}
+                    onPress={() => toggleSelection(verse)}
+                    onLongPress={() => startSelection(verse)}
+                    onOpenComment={openCommentPreview}
+                  />
+                </View>
+              ))}
+            </View>
+          )}
+        </Reanimated.View>
       </ScrollView>
+
+      {bottomDock}
 
       <SelectionTools
         visible={selectionActive}
         sheetOpen={actionSheetOpen}
-        bottom={insets.bottom}
+        fabBottom={selectionFabBottom}
+        sheetBottom={selectionSheetBottom}
         categories={categories}
         selectedColor={selectedColor}
         selectedCount={selectedVerses.length}
@@ -444,38 +582,31 @@ export default function ScriptureReaderView() {
 }
 
 function Header({
-  top, title, onBack, onBibleNote, onFavorites,
+  title, onBack, onBibleNote, onFavorites,
 }: {
-  top: number;
   title: string;
   onBack: () => void;
   onBibleNote: () => void;
   onFavorites: () => void;
 }) {
   return (
-    <View style={[s.header, { paddingTop: getTitleBarTopPadding(top) }]}>
-      <View style={s.headerTitleAbs} pointerEvents="none">
-        <Text
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.62}
-          style={s.headerTitle}
-        >
-          {title.toUpperCase()}
-        </Text>
-      </View>
-      <TouchableOpacity onPress={onBack} style={s.headerBtn} activeOpacity={0.7}>
-        <ArrowLeft s={24} c="#9CA3AF" />
-      </TouchableOpacity>
-      <View style={s.headerActions}>
-        <TouchableOpacity onPress={onBibleNote} style={s.headerIconBtn} activeOpacity={0.7}>
-          <Notebook s={20} c="#9CA3AF" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={onFavorites} style={s.headerIconBtn} activeOpacity={0.7}>
-          <Star s={22} c="#9CA3AF" />
-        </TouchableOpacity>
-      </View>
-    </View>
+    <ScreenTitleBar
+      title={title.toUpperCase()}
+      showBack
+      bg={BG}
+      onBackOverride={onBack}
+      sideWidth={88}
+      rightElement={(
+        <View style={s.headerActions}>
+          <TouchableOpacity onPress={onBibleNote} style={s.headerIconBtn} activeOpacity={0.7}>
+            <Notebook s={20} c="#9CA3AF" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onFavorites} style={s.headerIconBtn} activeOpacity={0.7}>
+            <Star s={22} c="#9CA3AF" />
+          </TouchableOpacity>
+        </View>
+      )}
+    />
   );
 }
 
@@ -678,7 +809,8 @@ function VerseRow({
 function SelectionTools({
   visible,
   sheetOpen,
-  bottom,
+  fabBottom,
+  sheetBottom,
   categories,
   selectedColor,
   selectedCount,
@@ -696,7 +828,8 @@ function SelectionTools({
 }: {
   visible: boolean;
   sheetOpen: boolean;
-  bottom: number;
+  fabBottom: number;
+  sheetBottom: number;
   categories: ColorCategory[];
   selectedColor: HighlightColor;
   selectedCount: number;
@@ -722,7 +855,7 @@ function SelectionTools({
       <TouchableOpacity
         onPress={onOpenSheet}
         activeOpacity={0.88}
-        style={[s.pencilFabWrap, { bottom: bottom + 30 }]}
+        style={[s.pencilFabWrap, { bottom: fabBottom + 30 }]}
       >
         <View style={s.pencilFab}>
           <Pencil s={18} c={GOLD} w={2.3} />
@@ -738,7 +871,7 @@ function SelectionTools({
       onClose={onCloseSheet}
       overlayStyle={s.selectionOverlay}
       backdropOpacity={0.08}
-      sheetStyle={[s.selectionSheet, { paddingBottom: Math.max(bottom, 16) + 12 }]}
+      sheetStyle={[s.selectionSheet, { paddingBottom: Math.max(sheetBottom, 16) + 12 }]}
       overlayChildren={colorEditorOpen ? (
         <View style={s.selectionEditorLayer}>
           <Pressable style={StyleSheet.absoluteFill} onPress={onCloseColorEditor} />
@@ -1283,29 +1416,6 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
   loadingScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG },
   loadingText: { marginTop: 12, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, color: C.textMuted, textTransform: 'uppercase' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingBottom: TITLE_BAR_BOTTOM_PADDING,
-    backgroundColor: 'rgba(252,252,252,0.98)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(17,24,39,0.05)',
-    position: 'relative',
-  },
-  headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerTitleAbs: {
-    position: 'absolute',
-    left: 96,
-    right: 96,
-    top: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: TITLE_BAR_BOTTOM_PADDING + 10,
-  },
-  headerTitle: { fontFamily: F.serifMedium, fontSize: 22, letterSpacing: 2.2, color: '#111827', textAlign: 'center' },
   headerActions: { height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4 },
   headerIconBtn: { width: 38, height: 44, alignItems: 'center', justifyContent: 'center' },
   chapterBar: {
@@ -1331,7 +1441,8 @@ const s = StyleSheet.create({
   },
   chapterPillDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: 'rgba(190,18,60,0.32)' },
   chapterTitle: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 3.6, color: ROSE },
-  content: { paddingHorizontal: 16, paddingTop: 24 },
+  content: { paddingHorizontal: 14, paddingTop: 24 },
+  chapterTransition: { minHeight: 240 },
   chapterLoading: { paddingVertical: 70 },
   emptyChapter: {
     marginTop: 70,
@@ -1357,13 +1468,13 @@ const s = StyleSheet.create({
     color: '#9CA3AF',
     textAlign: 'center',
   },
-  verseList: { gap: 16 },
-  verseRow: { flexDirection: 'row', gap: 11, borderRadius: 14, paddingVertical: 6, paddingHorizontal: 3, borderWidth: 1, borderColor: 'transparent' },
+  verseList: { gap: 9 },
+  verseRow: { flexDirection: 'row', gap: 7, borderRadius: 14, paddingVertical: 3, paddingHorizontal: 2, borderWidth: 1, borderColor: 'transparent' },
   verseRowSelected: { borderColor: 'rgba(197,160,89,0.38)', backgroundColor: '#FFFEF9' },
   verseRowFocused: {},
-  verseMarker: { width: 22, alignItems: 'flex-end', paddingTop: 6 },
+  verseMarker: { width: 20, alignItems: 'flex-end', paddingTop: 6 },
   verseNum: {
-    width: 22,
+    width: 20,
     textAlign: 'right',
     fontFamily: F.sansBold,
     fontSize: 10,

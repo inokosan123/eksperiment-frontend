@@ -52,7 +52,7 @@ export default function PersonalRuleScreen() {
         onComplete={async () => {
           if (taskInstanceId) {
             await completeInstance(taskInstanceId, taskDate ?? getLocalDateKey());
-            queueTaskCompletionReturnAnimation(taskInstanceId, 300);
+            queueTaskCompletionReturnAnimation(taskInstanceId);
           }
         }}
       />

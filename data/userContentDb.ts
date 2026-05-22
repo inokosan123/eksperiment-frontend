@@ -10,6 +10,7 @@ export async function openUserContentDb() {
 
   const db = await userContentDbPromise;
   await db.execAsync('PRAGMA journal_mode = WAL;');
+  await db.execAsync('PRAGMA foreign_keys = ON;');
   return db;
 }
 

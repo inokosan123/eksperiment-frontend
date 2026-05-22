@@ -16,7 +16,7 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { CheckSmall } from '@/components/icons/Icons';
 import { CompletionFlourish } from '@/components/shared/taskAnimations';
-import { playTaskCompleteFeedback, playTaskUndoFeedback } from '@/components/shared/taskFeedback';
+import { playAchievementCompleteFeedback, playTaskUndoFeedback, preloadAchievementFeedbackSound } from '@/components/shared/taskFeedback';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 
 
@@ -39,6 +39,10 @@ export function AnimatedGoalCheck({
 }: AnimatedGoalCheckProps) {
   const fill = useSharedValue(done ? 1 : 0);
   const previousDone = useRef(done);
+
+  useEffect(() => {
+    preloadAchievementFeedbackSound();
+  }, []);
 
   useEffect(() => {
     const becameDone = !previousDone.current && done;
@@ -225,13 +229,11 @@ export function AnimatedStrikeText({
   );
 }
 
-// Convenience: fires the same celebratory feedback as task completion —
-// soft chime + Heavy/Success/Light haptic cascade on complete, light tap
-// on uncomplete. Called from the row's onPress so Home / Page / Daily
-// Entry all share one feedback vocabulary.
+// Monthly-goal achievements use their own sibling sound to task completion,
+// while undo keeps the shared light tap.
 export function fireGoalToggleHaptic(willComplete: boolean) {
   if (willComplete) {
-    void playTaskCompleteFeedback();
+    void playAchievementCompleteFeedback();
   } else {
     playTaskUndoFeedback();
   }

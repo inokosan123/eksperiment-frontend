@@ -3,6 +3,7 @@ import React, {
 } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,15 +22,24 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
-  ArrowLeft, Book, ChevronDown, ChevronRight, Notebook,
-  OpenBook, Search, Star, X,
+  CheckSmall,
+  Book, ChevronDown, ChevronRight, Notebook,
+  OpenBook, Search, Settings, Star, X,
 } from '@/components/icons/Icons';
-import { BIBLE_BOOKS, BibleBook, PSALMS_ID } from '@/constants/scripture';
+import {
+  BIBLE_BOOKS,
+  BibleBook,
+  normalizeScriptureLanguage,
+  PSALMS_ID,
+  SCRIPTURE_LANGUAGES,
+  ScriptureLanguage,
+} from '@/constants/scripture';
 import { C, F } from '@/constants/tokens';
-import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import { ScriptureSearchResult, useScripture } from './ScriptureContext';
 import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
 import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
+import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
+import { useAppSettings } from '@/components/settings/SettingsContext';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 
@@ -50,12 +60,19 @@ const NEW_TESTAMENT = BIBLE_BOOKS.filter(book => book.testament === 'nt');
 const OLD_TESTAMENT = BIBLE_BOOKS.filter(book => book.testament !== 'nt' && book.id !== PSALMS_ID);
 const PSALTER = BIBLE_BOOKS.filter(book => book.id === PSALMS_ID);
 const PSALMS_BOOK = PSALTER[0];
+const SCRIPTURE_LANGUAGE_NAMES: Record<ScriptureLanguage, string> = {
+  en: 'English',
+  sr: 'Serbian',
+  ru: 'Russian',
+};
 
 export default function HolyScriptureView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { ready, searchVerses } = useScripture();
+  const { settings, updateSettings } = useAppSettings();
+  const scriptureLanguage = normalizeScriptureLanguage(settings.bibleLang);
   const { createOrUpdateTask, refresh: refreshTasks } = useTasks();
 
   const [tab, setTab] = useState<ScriptureTab>('bible');
@@ -71,6 +88,7 @@ export default function HolyScriptureView() {
   const [expandedBookId, setExpandedBookId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ScriptureSearchResult[]>([]);
+  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const [showTaskSheet, setShowTaskSheet] = useState(false);
   const [taskSummary, setTaskSummary] = useState('Add to your daily routine');
 
@@ -103,7 +121,7 @@ export default function HolyScriptureView() {
     }
 
     const timer = setTimeout(() => {
-      searchVerses(query, 'en').then(results => {
+      searchVerses(query, scriptureLanguage).then(results => {
         setSearchResults(tab === 'psalter'
           ? results.filter(result => result.bookId === PSALMS_ID)
           : results);
@@ -111,7 +129,7 @@ export default function HolyScriptureView() {
     }, 240);
 
     return () => clearTimeout(timer);
-  }, [query, ready, searchVerses, tab]);
+  }, [query, ready, scriptureLanguage, searchVerses, tab]);
 
   const bookMatches = useMemo(() => {
     if (!query) return [];
@@ -146,6 +164,13 @@ export default function HolyScriptureView() {
     tabProgress.value = withSpring(next === 'bible' ? 0 : 1, SEGMENT_SPRING);
   };
 
+  const handleLanguageChange = (lang: ScriptureLanguage) => {
+    Haptics.selectionAsync().catch(() => {});
+    updateSettings({ bibleLang: lang });
+    setSearchResults([]);
+    setShowLanguageMenu(false);
+  };
+
   const openReader = (book: BibleBook, chapter = 1, verse?: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setExpandedBookId(null);
@@ -154,6 +179,7 @@ export default function HolyScriptureView() {
       params: {
         bookId: String(book.id),
         chapter: String(chapter),
+        lang: scriptureLanguage,
         ...(verse ? { verse: String(verse) } : {}),
       },
     });
@@ -190,7 +216,65 @@ export default function HolyScriptureView() {
 
   return (
     <View style={s.screen}>
-      <Header top={insets.top} onBack={() => router.back()} />
+      <ScreenTitleBar
+        title="HOLY SCRIPTURE"
+        showBack
+        bg={BG}
+        rightElement={(
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setShowLanguageMenu(value => !value);
+            }}
+            style={s.titleSettingsBtn}
+            activeOpacity={0.76}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Settings s={19} c={C.textSecondary} w={2} />
+          </TouchableOpacity>
+        )}
+      />
+
+      <Modal
+        visible={showLanguageMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLanguageMenu(false)}
+      >
+        <View style={s.languageModalRoot}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowLanguageMenu(false)} />
+          <View style={[s.languageMenu, { top: insets.top + 58 }]}>
+            <Text style={s.languageMenuTitle}>Holy Scripture Language</Text>
+            <View style={s.languageOptions}>
+              {SCRIPTURE_LANGUAGES.map(language => {
+                const active = language.key === scriptureLanguage;
+
+                return (
+                  <TouchableOpacity
+                    key={language.key}
+                    onPress={() => handleLanguageChange(language.key)}
+                    activeOpacity={0.78}
+                    style={[
+                      s.languageOption,
+                      active
+                        ? s.languageOptionActive
+                        : s.languageOptionInactive,
+                    ]}
+                  >
+                    <View style={s.languageCopy}>
+                      <Text style={[s.languageName, { color: active ? GREEN : C.text }]}>
+                        {SCRIPTURE_LANGUAGE_NAMES[language.key]}
+                      </Text>
+                      <Text style={s.languageCode}>{language.label}</Text>
+                    </View>
+                    {active && <CheckSmall s={18} c={GREEN} w={2.4} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -328,18 +412,6 @@ export default function HolyScriptureView() {
         onTaskDraft={createOrUpdateTask}
         onTaskMutation={refreshTasks}
       />
-    </View>
-  );
-}
-
-function Header({ top, onBack }: { top: number; onBack: () => void }) {
-  return (
-    <View style={[s.header, { paddingTop: getTitleBarTopPadding(top) }]}>
-      <TouchableOpacity onPress={onBack} style={s.headerBtn} activeOpacity={0.7}>
-        <ArrowLeft s={24} c="#9CA3AF" />
-      </TouchableOpacity>
-      <Text style={s.headerTitle}>HOLY SCRIPTURE</Text>
-      <View style={s.headerBtn} />
     </View>
   );
 }
@@ -711,18 +783,40 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
   loadingScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG },
   loadingText: { marginTop: 12, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, color: C.textMuted, textTransform: 'uppercase' },
-  header: {
+  titleSettingsBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  languageModalRoot: { flex: 1 },
+  languageMenu: {
+    position: 'absolute',
+    right: 17,
+    width: 218,
+    borderRadius: 22,
+    padding: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(17,24,39,0.08)',
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.11,
+    shadowOffset: { width: 0, height: 16 },
+    shadowRadius: 28,
+    elevation: 10,
+  },
+  languageMenuTitle: { paddingHorizontal: 4, paddingBottom: 9, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.8, color: '#A8A29E', textTransform: 'uppercase' },
+  languageOptions: { gap: 7 },
+  languageOption: {
+    minHeight: 48,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingBottom: TITLE_BAR_BOTTOM_PADDING,
-    backgroundColor: 'rgba(252,252,252,0.98)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(17,24,39,0.05)',
+    gap: 10,
   },
-  headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 23, letterSpacing: 2.8, color: '#111827' },
+  languageOptionActive: { backgroundColor: '#F4FAF1', borderColor: 'rgba(94,123,85,0.28)' },
+  languageOptionInactive: { backgroundColor: '#FFFFFF', borderColor: 'rgba(17,24,39,0.06)' },
+  languageCopy: { flex: 1, minWidth: 0 },
+  languageName: { fontFamily: F.serifMedium, fontSize: 16, lineHeight: 20 },
+  languageCode: { marginTop: 1, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.8, color: '#B7B1A7' },
   content: { width: '100%', maxWidth: 430, alignSelf: 'center', paddingHorizontal: 22, paddingTop: 14, gap: 8 },
 
   quickGrid: { flexDirection: 'row', gap: 10 },

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,15 +11,15 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  ArrowLeft, Pencil, Search, SlidersHorizontal, Star, Trash2, X,
+  Pencil, Search, SlidersHorizontal, Star, Trash2, X,
 } from '@/components/icons/Icons';
 import ConfirmModal from '@/components/shared/ConfirmModal';
+import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import {
   getAnnotationCategoryLabel, getAnnotationColorHex, hexToRgba,
   HighlightColor, ColorCategory,
 } from '@/constants/annotationColors';
 import { C, F } from '@/constants/tokens';
-import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import { BIBLE_BOOKS, PSALMS_ID } from '@/constants/scripture';
 import { CategoryChipPicker, CategoryEditorModal } from './CategoryColorTools';
 import RichCommentText from '@/components/shared/RichCommentText';
@@ -202,7 +203,7 @@ export default function MyFavoritesView() {
 
   return (
     <View style={s.screen}>
-      <Header top={insets.top} onBack={() => router.back()} />
+      <ScreenTitleBar title="MY FAVORITES" showBack bg={BG} />
       <ScrollView contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 110 }]} showsVerticalScrollIndicator={false}>
         <View style={s.filterCard}>
           <View style={s.searchBox}>
@@ -327,7 +328,7 @@ export default function MyFavoritesView() {
                   params: {
                     bookId: String(annotation.bookId),
                     chapter: String(annotation.chapter),
-                    verse: String(annotation.verse),
+                    verse: String(verses[0] ?? annotation.verse),
                   },
                 })}
                 onEdit={annotation.kind === 'comment' ? () => router.push({
@@ -335,7 +336,7 @@ export default function MyFavoritesView() {
                   params: {
                     bookId: String(annotation.bookId),
                     chapter: String(annotation.chapter),
-                    verse: String(annotation.verse),
+                    verse: String(verses[0] ?? annotation.verse),
                     editCommentId: annotation.id,
                   },
                 }) : undefined}
@@ -371,18 +372,6 @@ function FilterTitle({ label }: { label: string }) {
     <View style={s.filterTitle}>
       <SlidersHorizontal s={14} c={GOLD} w={2.1} />
       <Text style={s.sectionKicker}>{label}</Text>
-    </View>
-  );
-}
-
-function Header({ top, onBack }: { top: number; onBack: () => void }) {
-  return (
-    <View style={[s.header, { paddingTop: getTitleBarTopPadding(top) }]}>
-      <TouchableOpacity onPress={onBack} style={s.headerBtn} activeOpacity={0.7}>
-        <ArrowLeft s={24} c="#9CA3AF" />
-      </TouchableOpacity>
-      <Text style={s.headerTitle}>MY FAVORITES</Text>
-      <View style={s.headerBtn} />
     </View>
   );
 }
@@ -562,18 +551,6 @@ function DeleteModal({
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingBottom: TITLE_BAR_BOTTOM_PADDING,
-    backgroundColor: 'rgba(255,255,255,0.96)',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1E8DA',
-  },
-  headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 22, letterSpacing: 2.3, color: C.text },
   content: { paddingHorizontal: 14, paddingTop: 16 },
   filterCard: { borderRadius: 22, borderWidth: 1, borderColor: '#ECE4D7', backgroundColor: '#FFFDF9', padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.04, shadowRadius: 24, elevation: 2 },
   searchBox: { height: 46, borderRadius: 17, borderWidth: 1, borderColor: '#EEE5D8', backgroundColor: '#fff', paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -642,9 +619,14 @@ const s = StyleSheet.create({
   quoteBlock: { paddingHorizontal: 0 },
   quoteLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   quoteVerseNum: { minWidth: 22, paddingTop: 5, fontFamily: F.sansBold, fontSize: 10, color: 'rgba(190,18,60,0.45)', textAlign: 'right' },
-  quoteText: { flex: 1, fontFamily: F.serifItalic, fontSize: 17, lineHeight: 28, color: '#4B5563' },
+  quoteText: { flex: 1, fontFamily: F.serifMedium, fontSize: 16, lineHeight: 26, color: '#4B5563' },
   quoteTextIndented: { flex: 1 },
-  quoteDivider: { height: 1, backgroundColor: '#E7EAF0', marginVertical: 13 },
+  quoteDivider: {
+    height: 1,
+    backgroundColor: '#E7EAF0',
+    marginTop: Platform.OS === 'ios' ? 9 : 13,
+    marginBottom: 13,
+  },
   commentBox: { marginTop: 14, borderRadius: 16, borderWidth: 1, borderColor: '#F2E4C8', backgroundColor: '#FFF8EF', padding: 14 },
   seeMoreBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10, alignSelf: 'flex-start' },
   seeMoreText: { fontFamily: F.sansSemiBold, fontSize: 12, letterSpacing: 0.3 },

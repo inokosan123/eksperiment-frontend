@@ -277,14 +277,15 @@ export default function ReadingSessionView({
 
         {/* Controls deck — Focus Zone pill style */}
         <View style={[s.controlsDeck, isCompactHeight && s.controlsDeckCompact]}>
-          {/* Finish — small left */}
+          {/* Reset — small left */}
           <TouchableOpacity
-            onPress={() => isTask ? setShowFinish(true) : handleFinish()}
+            onPress={() => selectPreset(selectedSecs / 60)}
             activeOpacity={0.78}
-            style={[s.smallControl, isCompactHeight && s.smallControlCompact]}
+            style={[s.smallControl, isCompactHeight && s.smallControlCompact, running && { opacity: 0.22 }]}
+            disabled={running}
           >
-            <CheckSmall s={isCompactHeight ? 19 : 22} c="rgba(28,25,23,0.38)" w={1.8} />
-            <Text style={s.smallLabel}>Finish</Text>
+            <Text style={s.resetGlyph}>↺</Text>
+            <Text style={s.smallLabel}>Reset</Text>
           </TouchableOpacity>
 
           {/* Start/Pause — main center */}
@@ -302,15 +303,14 @@ export default function ReadingSessionView({
             {running ? <Pause s={isCompactHeight ? 26 : 30} c="#FFFFFF" /> : <Play s={isCompactHeight ? 26 : 30} c="#FFFFFF" />}
           </TouchableOpacity>
 
-          {/* Reset — small right */}
+          {/* Finish — small right */}
           <TouchableOpacity
-            onPress={() => selectPreset(selectedSecs / 60)}
+            onPress={() => isTask ? setShowFinish(true) : handleFinish()}
             activeOpacity={0.78}
-            style={[s.smallControl, isCompactHeight && s.smallControlCompact, running && { opacity: 0.22 }]}
-            disabled={running}
+            style={[s.smallControl, isCompactHeight && s.smallControlCompact]}
           >
-            <Text style={s.resetGlyph}>↺</Text>
-            <Text style={s.smallLabel}>Reset</Text>
+            <CheckSmall s={isCompactHeight ? 19 : 22} c="rgba(28,25,23,0.38)" w={1.8} />
+            <Text style={s.smallLabel}>Finish</Text>
           </TouchableOpacity>
         </View>
 

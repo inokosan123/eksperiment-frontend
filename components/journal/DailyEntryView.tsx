@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TextInput } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TextInput, Keyboard, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
@@ -37,11 +37,13 @@ import { useBigEvents } from './BigEventsContext';
 import { getBigEventCountdown, getBigEventsForDate, todayKey as bigEventsToday } from './bigEventsLogic';
 import AnimatedSlider from './AnimatedSlider';
 import CustomizeJournalSheet from './CustomizeJournalSheet';
-import { useJournal } from './JournalContext';
-import type { JournalPromptAnswer } from './journalDb';
+import { useJournal, type JournalEntryPatch } from './JournalContext';
+import type { JournalEntry, JournalPromptAnswer } from './journalDb';
+import { hasDailyJournalContent, stripRichTextToPlainText } from './journalLogic';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { buildInstanceId } from '@/components/tasks/taskScheduler';
+import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
 
 import {
   DEFAULT_SECTIONS,
@@ -178,7 +180,7 @@ function EmojiPicker<K extends 'mood' | 'energy'>({
 }: {
   kind: K;
   items: { name: K extends 'mood' ? MoodName : EnergyName; label: string }[];
-  selected: number;
+  selected?: number;
   onSelect: (i: number) => void;
 }) {
   return (
@@ -277,8 +279,70 @@ function sanitizeScaleValues(values: Record<string, number> | undefined) {
   return next;
 }
 
+function cloneJournalSections(value: JournalSection[]): JournalSection[] {
+  return value.map(section => ({
+    id: section.id,
+    type: section.type,
+    active: section.active,
+    customLabel: section.customLabel,
+  }));
+}
+
+function hasSectionData(section: JournalSection, entry: JournalEntry) {
+  switch (section.type) {
+    case 'mood':
+      return entry.mood !== undefined;
+    case 'energy':
+      return entry.energy !== undefined;
+    case 'satisfaction':
+      return entry.satisfaction !== undefined;
+    case 'guidedPrompts':
+      return entry.prompts.length > 0;
+    case 'whoIWantToBe':
+      return Object.keys(entry.whoChecks ?? {}).length > 0;
+    case 'freeWriting':
+      return stripRichTextToPlainText(entry.freeWritingHtml ?? '').length > 0;
+    case 'customScale':
+      return entry.scaleValues?.[section.id] !== undefined;
+    default:
+      return false;
+  }
+}
+
+function recoverLegacySections(entry: JournalEntry, currentSections: JournalSection[]) {
+  const base = currentSections.length ? currentSections : DEFAULT_SECTIONS;
+  const seen = new Set(base.map(section => section.id));
+  const next = cloneJournalSections(base).map(section => (
+    hasSectionData(section, entry) ? { ...section, active: true } : section
+  ));
+
+  for (const section of DEFAULT_SECTIONS) {
+    if (seen.has(section.id) || !hasSectionData(section, entry)) continue;
+    seen.add(section.id);
+    next.push({ ...section, active: true });
+  }
+
+  for (const scaleId of Object.keys(entry.scaleValues ?? {})) {
+    if (seen.has(scaleId)) continue;
+    next.push({
+      id: scaleId,
+      type: 'customScale',
+      active: true,
+      customLabel: 'Custom Scale',
+    });
+  }
+
+  return next;
+}
+
+function sectionsForEntry(entry: JournalEntry, currentSections: JournalSection[], dateKey: string) {
+  if (entry.dailySections?.length) return cloneJournalSections(entry.dailySections);
+  if (dateKey < todayKey()) return recoverLegacySections(entry, currentSections);
+  return cloneJournalSections(currentSections.length ? currentSections : DEFAULT_SECTIONS);
+}
+
 function SatisfactionSection({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const safeValue = clampScaleValue(value, 7);
+  const safeValue = clampScaleValue(value, 5);
   const { label, color } = bandFor(safeValue);
   return (
     <SectionCard>
@@ -335,7 +399,7 @@ function CustomScaleSection({
 
 function PromptBlock({
   prompt, canMoveUp, canMoveDown,
-  onAnswerChange, onMoveUp, onMoveDown, onDelete, readOnly = false,
+  onAnswerChange, onMoveUp, onMoveDown, onDelete, onCursorScreenY, contentKey, readOnly = false,
 }: {
   prompt: PromptItem;
   canMoveUp: boolean;
@@ -344,6 +408,8 @@ function PromptBlock({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onDelete: () => void;
+  onCursorScreenY?: (y: number) => void;
+  contentKey?: string;
   readOnly?: boolean;
 }) {
   const editorRef = useRef<RichTextEditorRef>(null);
@@ -352,7 +418,7 @@ function PromptBlock({
   return (
     <Animated.View
       style={gp.block}
-      layout={LinearTransition.springify().damping(18).stiffness(200)}
+      layout={LinearTransition.duration(120)}
       entering={FadeIn.duration(220)}
       exiting={FadeOut.duration(140)}
     >
@@ -386,6 +452,7 @@ function PromptBlock({
       <RichTextEditor
         ref={editorRef}
         initialHTML={prompt.a}
+        contentKey={contentKey ? `${contentKey}:prompt:${prompt.id}` : prompt.id}
         onChange={value => {
           if (!readOnly) onAnswerChange(value);
         }}
@@ -394,6 +461,8 @@ function PromptBlock({
         backgroundColor="#fff"
         color={C.text}
         editable={!readOnly}
+        autoHeight
+        onCursorScreenY={onCursorScreenY}
         style={gp.editor}
       />
     </Animated.View>
@@ -401,10 +470,12 @@ function PromptBlock({
 }
 
 function GuidedPromptsSection({
-  prompts, onPromptsChange, readOnly = false,
+  prompts, onPromptsChange, onCursorScreenY, contentKey, readOnly = false,
 }: {
   prompts: PromptItem[];
   onPromptsChange: (next: PromptItem[]) => void;
+  onCursorScreenY?: (y: number) => void;
+  contentKey?: string;
   readOnly?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
@@ -464,6 +535,8 @@ function GuidedPromptsSection({
           onMoveUp={() => move(i, -1)}
           onMoveDown={() => move(i, 1)}
           onDelete={() => askDelete(p.id)}
+          onCursorScreenY={onCursorScreenY}
+          contentKey={contentKey}
           readOnly={readOnly}
         />
       ))}
@@ -559,8 +632,10 @@ function GratitudeSection({ date, readOnly = false }: { date: string; readOnly?:
   const { gratitudeEntries, upsertGratitudeEntry, deleteGratitudeEntry } = useInnerTools();
   const { completeInstance, resetInstance } = useTasks();
   const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState('');
+  const [draftTitle, setDraftTitle] = useState('');
+  const [draftContent, setDraftContent] = useState('');
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const titleInputRef = useRef<TextInput>(null);
 
   const todays = gratitudeEntries.filter(e => e.kind === 'daily' && e.date === date);
   const confirmingItem = confirmId ? todays.find(e => e.id === confirmId) : null;
@@ -575,21 +650,28 @@ function GratitudeSection({ date, readOnly = false }: { date: string; readOnly?:
 
   const submit = () => {
     if (readOnly) return;
-    const text = draft.trim();
-    if (!text) return;
+    const titleText = draftTitle.trim();
+    if (!titleText) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const nextEntry = {
       id: uid(),
       kind: 'daily',
-      title: '',
-      content: text,
+      title: titleText,
+      content: draftContent.trim(),
       date,
       createdAt: Date.now(),
     } as const;
     upsertGratitudeEntry(nextEntry);
     syncTaskCompletion([nextEntry, ...gratitudeEntries]);
-    setDraft('');
+    setDraftTitle('');
+    setDraftContent('');
     setAdding(false);
+  };
+
+  const cancelAdd = () => {
+    setAdding(false);
+    setDraftTitle('');
+    setDraftContent('');
   };
 
   const askDelete = (id: string) => {
@@ -613,17 +695,39 @@ function GratitudeSection({ date, readOnly = false }: { date: string; readOnly?:
         <Text style={grat.empty}>Nothing yet — what are you thankful for today?</Text>
       )}
 
-      {todays.map(item => (
-        <Animated.View key={item.id} style={grat.item} entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)} layout={LinearTransition.springify().damping(20)}>
-          <Text style={grat.heart}>♥</Text>
-          <Text style={grat.txt} numberOfLines={3}>{item.content}</Text>
-          {!readOnly && (
-          <TouchableOpacity onPress={() => askDelete(item.id)} style={grat.del} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
-            <Trash2 s={15} c={C.textMuted} w={1.8} />
-          </TouchableOpacity>
-          )}
-        </Animated.View>
-      ))}
+      {todays.map(item => {
+        const hasTitle = !!item.title?.trim();
+        const hasContent = !!item.content?.trim();
+        const displayTitle = hasTitle ? item.title : item.content;
+        const displayContent = hasTitle && hasContent ? item.content : '';
+        return (
+          <Animated.View
+            key={item.id}
+            style={grat.entryCard}
+            entering={FadeIn.duration(180)}
+            exiting={FadeOut.duration(120)}
+            layout={LinearTransition.springify().damping(20)}
+          >
+            <View style={grat.entryTitleRow}>
+              <Text style={grat.heart}>♥</Text>
+              <Text style={grat.entryTitle} numberOfLines={2}>{displayTitle}</Text>
+              {!readOnly && (
+                <TouchableOpacity
+                  onPress={() => askDelete(item.id)}
+                  activeOpacity={0.72}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                  style={grat.clearBtn}
+                >
+                  <Trash2 s={15} c="#C8BDB1" w={1.8} />
+                </TouchableOpacity>
+              )}
+            </View>
+            {!!displayContent && (
+              <Text style={grat.entryContent}>{displayContent}</Text>
+            )}
+          </Animated.View>
+        );
+      })}
 
       {!readOnly && (
       <ConfirmModal
@@ -632,7 +736,7 @@ function GratitudeSection({ date, readOnly = false }: { date: string; readOnly?:
         iconBg="#FEE2E2"
         title="Remove gratitude?"
         body="This entry will also disappear from the Gratitude page."
-        subject={confirmingItem?.content}
+        subject={confirmingItem?.title || confirmingItem?.content}
         confirmLabel="REMOVE"
         confirmColor="#EF4444"
         onCancel={() => setConfirmId(null)}
@@ -641,24 +745,44 @@ function GratitudeSection({ date, readOnly = false }: { date: string; readOnly?:
       )}
 
       {!readOnly && (adding ? (
-        <Animated.View style={grat.addBox} entering={FadeIn.duration(180)}>
-          <TextInput
-            value={draft}
-            onChangeText={setDraft}
-            placeholder="Today I'm thankful for..."
-            placeholderTextColor={C.textMuted}
-            style={grat.input}
-            autoFocus
-            multiline
-            returnKeyType="done"
-            blurOnSubmit
-            onSubmitEditing={submit}
-          />
-          <View style={grat.addBtns}>
-            <TouchableOpacity onPress={() => { setAdding(false); setDraft(''); }} style={grat.cancelBtn}>
-              <X s={18} c={C.textMuted} />
+        <Animated.View style={grat.entryCard} entering={FadeIn.duration(180)}>
+          <View style={grat.entryTitleRow}>
+            <Text style={grat.heart}>♥</Text>
+            <TextInput
+              ref={titleInputRef}
+              value={draftTitle}
+              onChangeText={setDraftTitle}
+              placeholder="I'm grateful for..."
+              placeholderTextColor="#D9D4CE"
+              autoFocus
+              returnKeyType="next"
+              style={grat.titleInput}
+            />
+            <TouchableOpacity
+              onPress={cancelAdd}
+              activeOpacity={0.72}
+              hitSlop={8}
+              style={grat.clearBtn}
+            >
+              <X s={15} c="#DDD6CE" w={2.3} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={submit} style={[grat.confirmBtn, !draft.trim() && grat.confirmBtnDisabled]} disabled={!draft.trim()}>
+          </View>
+          <TextInput
+            value={draftContent}
+            onChangeText={setDraftContent}
+            placeholder="Description (optional)"
+            placeholderTextColor="#E3DED8"
+            multiline
+            scrollEnabled={false}
+            style={grat.contentInput}
+          />
+          <View style={grat.addBtnsRow}>
+            <TouchableOpacity
+              onPress={submit}
+              disabled={!draftTitle.trim()}
+              activeOpacity={0.85}
+              style={[grat.confirmBtn, !draftTitle.trim() && grat.confirmBtnDisabled]}
+            >
               <CheckSmall s={16} c="#fff" w={3} />
               <Text style={grat.confirmText}>ADD</Text>
             </TouchableOpacity>
@@ -680,10 +804,70 @@ function GratitudeSection({ date, readOnly = false }: { date: string; readOnly?:
 
 const grat = StyleSheet.create({
   empty: { fontFamily: F.serifMediumItalic, fontSize: 14, color: C.textMuted, textAlign: 'center', marginBottom: 12 },
-  item:  { flexDirection: 'row', alignItems: 'center', columnGap: 10, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#F0E2B8', borderRadius: 14, padding: 13, marginBottom: 8 },
-  heart: { fontSize: 18, color: GOLD, lineHeight: 22 },
-  txt:   { fontFamily: F.serifMedium, fontSize: 16, lineHeight: 21, color: C.text, flex: 1 },
-  del:   { width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
+
+  entryCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#EEEAE3',
+    backgroundColor: '#FFFFFF',
+    paddingTop: 15,
+    paddingBottom: 13,
+    paddingHorizontal: 17,
+    marginBottom: 10,
+    shadowColor: '#8C7A4F',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.10,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  entryTitleRow: { flexDirection: 'row', alignItems: 'center', columnGap: 12 },
+  heart: {
+    width: 18,
+    fontSize: 16,
+    lineHeight: 18,
+    color: 'rgba(197,160,89,0.62)',
+    textAlign: 'center',
+    transform: [{ translateY: -1 }],
+  },
+  entryTitle: {
+    flex: 1,
+    fontFamily: F.serif,
+    fontSize: 18,
+    lineHeight: 24,
+    color: '#3D3229',
+  },
+  entryContent: {
+    marginLeft: 30,
+    marginTop: 5,
+    fontFamily: F.serif,
+    fontSize: 17,
+    lineHeight: 22,
+    color: '#80766D',
+  },
+  clearBtn: { width: 27, height: 27, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  titleInput: {
+    flex: 1,
+    minHeight: 32,
+    paddingVertical: 0,
+    fontFamily: F.serif,
+    fontSize: 18,
+    color: '#3D3229',
+  },
+  contentInput: {
+    minHeight: 33,
+    marginLeft: 30,
+    marginTop: 5,
+    paddingTop: 0,
+    paddingBottom: 0,
+    fontFamily: F.serif,
+    fontSize: 17,
+    lineHeight: 22,
+    color: '#80766D',
+  },
+  addBtnsRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 10 },
+  confirmBtn: { flexDirection: 'row', alignItems: 'center', columnGap: 6, backgroundColor: GOLD, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 12 },
+  confirmBtnDisabled: { backgroundColor: '#D6D3CC' },
+  confirmText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#fff' },
 
   addBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8,
@@ -691,14 +875,6 @@ const grat = StyleSheet.create({
     paddingVertical: 12, marginTop: 4,
   },
   addBtnText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.6, color: C.gold },
-
-  addBox: { backgroundColor: '#FFFBEB', borderRadius: 14, borderWidth: 1, borderColor: '#F0E2B8', padding: 14, marginTop: 4 },
-  input:  { fontFamily: F.serifMedium, fontSize: 16, lineHeight: 22, color: C.text, minHeight: 50 },
-  addBtns:{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', columnGap: 8, marginTop: 8 },
-  cancelBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  confirmBtn:{ flexDirection: 'row', alignItems: 'center', columnGap: 6, backgroundColor: GOLD, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 12 },
-  confirmBtnDisabled: { backgroundColor: '#D6D3CC' },
-  confirmText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#fff' },
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -728,8 +904,9 @@ function IdealQualityRow({
   }));
 
   return (
-    <Pressable
-      style={({ pressed }) => [who.row, pressed && { opacity: 0.85 }]}
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={who.row}
       onPress={onPress}
     >
       <Animated.View style={[who.box, isChecked && who.boxChecked, boxStyle]}>
@@ -740,7 +917,7 @@ function IdealQualityRow({
         )}
       </Animated.View>
       <Text style={[who.label, isChecked && who.labelChecked]} numberOfLines={2}>{quality}</Text>
-    </Pressable>
+    </TouchableOpacity>
   );
 }
 
@@ -815,8 +992,8 @@ const who = StyleSheet.create({
   setupBtn:  { backgroundColor: GOLD, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingVertical: 11 },
   setupText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.6, color: '#fff' },
 
-  row:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, columnGap: 12 },
-  box:       { width: 22, height: 22, borderRadius: 11, borderWidth: 1.6, borderColor: '#D4CDBE', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
+  row:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 5, columnGap: 12 },
+  box:       { width: 24, height: 24, borderRadius: 12, borderWidth: 1.6, borderColor: '#D4CDBE', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
   boxChecked:{ borderColor: GOLD, backgroundColor: GOLD },
   label:     { flex: 1, fontFamily: F.serifMedium, fontSize: 16, lineHeight: 21, color: C.text },
   labelChecked: { color: C.textSecondary },
@@ -946,18 +1123,21 @@ function UpcomingEventsSection() {
     <SectionCard label="UPCOMING EVENTS">
       {events.map(event => {
         const days = getBigEventCountdown(event, today);
+        const tint = `${event.color}1F`;
         const isToday = days === 0;
         return (
-          <Pressable
+          <TouchableOpacity
             key={event.id}
+            activeOpacity={0.85}
             onPress={goManage}
-            style={({ pressed }) => [ue.row, pressed && { opacity: 0.78 }]}
+            style={ue.row}
           >
-            <View style={[ue.iconBox, { backgroundColor: `${event.color}22` }]}>
-              <NotoEmoji name={normalizeHabitIcon(event.icon)} size={22} />
+            <View style={[ue.iconBox, { backgroundColor: tint }]}>
+              <NotoEmoji name={normalizeHabitIcon(event.icon)} size={18} />
             </View>
             <View style={ue.copy}>
-              <Text style={ue.title} numberOfLines={1}>{event.title}</Text>
+              <Text style={[ue.title, !isToday && ue.titleLarge]} numberOfLines={1} ellipsizeMode="tail">{event.title}</Text>
+              {isToday && <Text style={[ue.todayHint, { color: event.color }]}>The day is here</Text>}
             </View>
             {isToday ? (
               <View style={[ue.todayPill, { backgroundColor: event.color }]}>
@@ -970,7 +1150,7 @@ function UpcomingEventsSection() {
                 <Text style={ue.countLabel}>{days === 1 ? 'day' : 'days'}</Text>
               </View>
             )}
-          </Pressable>
+          </TouchableOpacity>
         );
       })}
     </SectionCard>
@@ -978,18 +1158,25 @@ function UpcomingEventsSection() {
 }
 
 const ue = StyleSheet.create({
-  row:       { flexDirection: 'row', alignItems: 'center', columnGap: 12, paddingVertical: 8 },
-  iconBox:   { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  row: {
+    flexDirection: 'row', alignItems: 'center', columnGap: 10,
+    paddingVertical: 6, paddingHorizontal: 2, marginBottom: 2,
+  },
+  iconBox:   { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   copy:      { flex: 1, minWidth: 0 },
-  title:     { fontFamily: F.serifMedium, fontSize: 15, color: C.text },
-  count:     { alignItems: 'flex-end', minWidth: 44 },
-  countNum:  { fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 22 },
-  countLabel:{ marginTop: 1, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.2, color: '#A8A29E', textTransform: 'uppercase' },
+  title:     { fontFamily: F.serifMedium, fontSize: 16, color: C.text, flexShrink: 1, minWidth: 0 },
+  titleLarge:{ fontSize: 17 },
+  todayHint: { marginTop: 2, fontFamily: F.serifMediumItalic, fontSize: 11 },
+  count:     { flexDirection: 'row', alignItems: 'baseline', columnGap: 4, flexShrink: 0 },
+  countNum:  { fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 21 },
+  countLabel:{ fontFamily: F.sansMedium, fontSize: 11, color: '#A8A29E' },
   todayPill: {
     flexDirection: 'row', alignItems: 'center', columnGap: 5,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 11,
+    paddingHorizontal: 9, paddingVertical: 5, borderRadius: 10,
+    flexShrink: 0,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 4, elevation: 3,
   },
-  todayDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.95)' },
+  todayDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: 'rgba(255,255,255,0.95)' },
   todayPillText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4, color: '#FFFFFF' },
   addBtn:    {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8,
@@ -1003,7 +1190,7 @@ const ue = StyleSheet.create({
 // Free Writing (inline rich text editor)
 // ────────────────────────────────────────────────────────────────────────────
 
-function FreeWritingSection({ value, onChange, readOnly = false }: { value: string; onChange: (v: string) => void; readOnly?: boolean }) {
+function FreeWritingSection({ value, onChange, onCursorScreenY, contentKey, readOnly = false }: { value: string; onChange: (v: string) => void; onCursorScreenY?: (y: number) => void; contentKey?: string; readOnly?: boolean }) {
   const editorRef = useRef<RichTextEditorRef>(null);
   const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
   return (
@@ -1012,6 +1199,7 @@ function FreeWritingSection({ value, onChange, readOnly = false }: { value: stri
       <RichTextEditor
         ref={editorRef}
         initialHTML={value}
+        contentKey={contentKey ? `${contentKey}:freeWriting` : 'freeWriting'}
         onChange={next => {
           if (!readOnly) onChange(next);
         }}
@@ -1020,6 +1208,8 @@ function FreeWritingSection({ value, onChange, readOnly = false }: { value: stri
         backgroundColor="#fff"
         color={C.text}
         editable={!readOnly}
+        autoHeight
+        onCursorScreenY={onCursorScreenY}
         style={{ minHeight: 140 }}
       />
     </SectionCard>
@@ -1033,9 +1223,20 @@ function FreeWritingSection({ value, onChange, readOnly = false }: { value: stri
 export default function DailyEntryView() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const params = useLocalSearchParams<{ date?: string; readOnly?: string }>();
+  const params = useLocalSearchParams<{
+    date?: string;
+    readOnly?: string;
+    title?: string;
+    isTask?: string;
+    taskInstanceId?: string;
+    taskDate?: string;
+  }>();
   const selectedDateKey = typeof params.date === 'string' && params.date ? params.date : todayKey();
   const isReadOnly = params.readOnly === '1' || params.readOnly === 'true';
+  const isTaskLaunch = params.isTask === 'true' || !!params.taskInstanceId;
+  const taskTitle = typeof params.title === 'string' && params.title.trim()
+    ? params.title.trim().toUpperCase()
+    : 'DAILY JOURNAL';
   const selectedDate = useMemo(() => dateFromKey(selectedDateKey), [selectedDateKey]);
   const {
     ready: journalReady,
@@ -1044,18 +1245,58 @@ export default function DailyEntryView() {
     upsertEntry,
     setJournalSections,
   } = useJournal();
+  const { completeInstance } = useTasks();
   const hydratedDateRef = useRef('');
   const dirtyRef = useRef(false);
+  const touchedFieldsRef = useRef({ mood: false, energy: false, satisfaction: false });
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollYRef = useRef(0);
+  const kbHeightRef = useRef(0);
+  const windowHRef = useRef(Dimensions.get('window').height);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardWillShow', e => {
+      kbHeightRef.current = e.endCoordinates.height;
+    });
+    const hideSub = Keyboard.addListener('keyboardWillHide', () => {
+      kbHeightRef.current = 0;
+    });
+    const dimSub = Dimensions.addEventListener('change', ({ window }) => {
+      windowHRef.current = window.height;
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+      dimSub.remove();
+    };
+  }, []);
+
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollYRef.current = e.nativeEvent.contentOffset.y;
+  }, []);
+
+  // Called by RichTextEditor when the cursor moves. If the cursor is below
+  // the visible area (above the keyboard), nudge the outer ScrollView so
+  // the cursor stays in view as the user types.
+  const handleCursorScreenY = useCallback((screenY: number) => {
+    const kb = kbHeightRef.current;
+    if (kb === 0) return;
+    const visibleBottom = windowHRef.current - kb - 60;
+    if (screenY <= visibleBottom) return;
+    const delta = screenY - visibleBottom;
+    scrollRef.current?.scrollTo({ y: scrollYRef.current + delta, animated: false });
+  }, []);
 
   const [sections, setSections] = useState<JournalSection[]>(DEFAULT_SECTIONS);
-  const [mood, setMood] = useState(3);
-  const [energy, setEnergy] = useState(2);
-  const [satisfaction, setSatisfaction] = useState(7);
+  const [mood, setMood] = useState<number | undefined>(undefined);
+  const [energy, setEnergy] = useState<number | undefined>(undefined);
+  const [satisfaction, setSatisfaction] = useState(5);
   const [prompts, setPrompts] = useState<PromptItem[]>(DEFAULT_PROMPTS.map(p => ({ ...p })));
   const [whoChecks, setWhoChecks] = useState<Record<string, boolean>>({});
   const [scaleValues, setScaleValues] = useState<Record<string, number>>({});
   const [freeWriting, setFreeWriting] = useState('');
+  const [editorContentKey, setEditorContentKey] = useState(`daily:${selectedDateKey}:pending`);
   const [customizeOpen, setCustomizeOpen] = useState(false);
 
   const markDirty = () => {
@@ -1063,20 +1304,48 @@ export default function DailyEntryView() {
     dirtyRef.current = true;
   };
 
+  const buildEntryPatch = useCallback((): JournalEntryPatch => {
+    const patch: JournalEntryPatch = {
+      dailySections: cloneJournalSections(sections),
+      prompts: promptsToEntry(prompts),
+      whoChecks,
+      scaleValues,
+      freeWritingHtml: freeWriting,
+    };
+
+    if (touchedFieldsRef.current.mood && mood !== undefined) patch.mood = mood;
+    if (touchedFieldsRef.current.energy && energy !== undefined) patch.energy = energy;
+    if (touchedFieldsRef.current.satisfaction) patch.satisfaction = satisfaction;
+
+    return patch;
+  }, [mood, energy, satisfaction, sections, prompts, whoChecks, scaleValues, freeWriting]);
+
+  useEffect(() => {
+    hydratedDateRef.current = '';
+    dirtyRef.current = false;
+    touchedFieldsRef.current = { mood: false, energy: false, satisfaction: false };
+    setMood(undefined);
+    setEnergy(undefined);
+    setSatisfaction(5);
+    setEditorContentKey(`daily:${selectedDateKey}:pending`);
+  }, [selectedDateKey]);
+
   useEffect(() => {
     if (!journalReady || hydratedDateRef.current === selectedDateKey) return;
 
     const entry = getEntry(selectedDateKey);
-    setSections(storedSections.length ? storedSections : DEFAULT_SECTIONS);
-    setMood(entry.mood ?? 3);
-    setEnergy(entry.energy ?? 2);
-    setSatisfaction(clampScaleValue(entry.satisfaction ?? 7, 7));
+    setSections(sectionsForEntry(entry, storedSections, selectedDateKey));
+    setMood(entry.mood);
+    setEnergy(entry.energy);
+    setSatisfaction(clampScaleValue(entry.satisfaction ?? 5, 5));
     setPrompts(promptsFromEntry(entry.prompts));
     setWhoChecks(entry.whoChecks ?? {});
     setScaleValues(sanitizeScaleValues(entry.scaleValues));
     setFreeWriting(entry.freeWritingHtml ?? '');
+    setEditorContentKey(`daily:${selectedDateKey}:${entry.updatedAt || 0}`);
     hydratedDateRef.current = selectedDateKey;
     dirtyRef.current = false;
+    touchedFieldsRef.current = { mood: false, energy: false, satisfaction: false };
   }, [journalReady, selectedDateKey, getEntry, storedSections]);
 
   useEffect(() => {
@@ -1088,16 +1357,11 @@ export default function DailyEntryView() {
     }
 
     saveTimerRef.current = setTimeout(() => {
-      void upsertEntry(selectedDateKey, {
-        mood,
-        energy,
-        satisfaction,
-        prompts: promptsToEntry(prompts),
-        whoChecks,
-        scaleValues,
-        freeWritingHtml: freeWriting,
+      void upsertEntry(selectedDateKey, buildEntryPatch()).then(() => {
+        dirtyRef.current = false;
+      }).catch(error => {
+        console.warn('Daily journal autosave failed', error);
       });
-      dirtyRef.current = false;
     }, 350);
 
     return () => {
@@ -1107,30 +1371,40 @@ export default function DailyEntryView() {
     };
   }, [
     selectedDateKey,
-    mood,
-    energy,
-    satisfaction,
-    prompts,
-    whoChecks,
-    scaleValues,
-    freeWriting,
     isReadOnly,
+    buildEntryPatch,
     upsertEntry,
   ]);
 
   const saveNow = async () => {
     if (isReadOnly) return;
     if (!dirtyRef.current || hydratedDateRef.current !== selectedDateKey) return;
-    await upsertEntry(selectedDateKey, {
-      mood,
-      energy,
-      satisfaction,
-      prompts: promptsToEntry(prompts),
-      whoChecks,
-      scaleValues,
-      freeWritingHtml: freeWriting,
-    });
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    await upsertEntry(selectedDateKey, buildEntryPatch());
     dirtyRef.current = false;
+  };
+
+  const finish = async () => {
+    const completionEntry = {
+      ...getEntry(selectedDateKey),
+      ...buildEntryPatch(),
+    };
+    const shouldCompleteTask = hasDailyJournalContent(completionEntry);
+    const shouldDeferTaskFeedback = isTaskLaunch && !!params.taskInstanceId && shouldCompleteTask;
+    if (!shouldDeferTaskFeedback) {
+      if (shouldCompleteTask) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    await saveNow();
+    if (isTaskLaunch && params.taskInstanceId && shouldCompleteTask) {
+      const completionDate = params.taskDate ?? selectedDateKey;
+      await completeInstance(params.taskInstanceId, completionDate);
+      queueTaskCompletionReturnAnimation(params.taskInstanceId, 420);
+    }
+    router.back();
   };
 
   const toggleWho = (q: string) => {
@@ -1148,6 +1422,7 @@ export default function DailyEntryView() {
 
   const applySections = (next: JournalSection[]) => {
     setSections(next);
+    markDirty();
     void setJournalSections(next);
   };
 
@@ -1175,6 +1450,7 @@ export default function DailyEntryView() {
           <SectionCard key={section.id} label="HOW ARE YOU FEELING?">
             <EmojiPicker kind="mood" items={MOODS} selected={mood} onSelect={(value) => {
               if (isReadOnly) return;
+              touchedFieldsRef.current.mood = true;
               markDirty();
               setMood(value);
             }} />
@@ -1185,6 +1461,7 @@ export default function DailyEntryView() {
           <SectionCard key={section.id} label="ENERGY LEVEL">
             <EmojiPicker kind="energy" items={ENERGIES} selected={energy} onSelect={(value) => {
               if (isReadOnly) return;
+              touchedFieldsRef.current.energy = true;
               markDirty();
               setEnergy(value);
             }} />
@@ -1193,11 +1470,12 @@ export default function DailyEntryView() {
       case 'satisfaction':
         return <SatisfactionSection key={section.id} value={satisfaction} onChange={(value) => {
           if (isReadOnly) return;
+          touchedFieldsRef.current.satisfaction = true;
           markDirty();
-          setSatisfaction(clampScaleValue(value, 7));
+          setSatisfaction(clampScaleValue(value, 5));
         }} />;
       case 'guidedPrompts':
-        return <GuidedPromptsSection key={section.id} prompts={prompts} readOnly={isReadOnly} onPromptsChange={(next) => {
+        return <GuidedPromptsSection key={section.id} prompts={prompts} contentKey={editorContentKey} readOnly={isReadOnly} onCursorScreenY={handleCursorScreenY} onPromptsChange={(next) => {
           if (isReadOnly) return;
           markDirty();
           setPrompts(next);
@@ -1211,7 +1489,7 @@ export default function DailyEntryView() {
       case 'upcomingEvents':
         return <View key={section.id} pointerEvents={isReadOnly ? 'none' : 'auto'}><UpcomingEventsSection /></View>;
       case 'freeWriting':
-        return <FreeWritingSection key={section.id} value={freeWriting} readOnly={isReadOnly} onChange={(value) => {
+        return <FreeWritingSection key={section.id} value={freeWriting} contentKey={editorContentKey} readOnly={isReadOnly} onCursorScreenY={handleCursorScreenY} onChange={(value) => {
           if (isReadOnly) return;
           markDirty();
           setFreeWriting(value);
@@ -1237,7 +1515,7 @@ export default function DailyEntryView() {
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
       <ScreenTitleBar
-        title="DAILY JOURNAL"
+        title={taskTitle}
         showBack
         bg={BG}
         rightElement={isReadOnly ? undefined : (
@@ -1253,19 +1531,22 @@ export default function DailyEntryView() {
       />
 
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
         keyboardShouldPersistTaps="handled"
+        onScroll={onScroll}
+        scrollEventThrottle={16}
       >
         <DateBanner date={selectedDate} />
 
-        <Animated.View layout={LinearTransition.springify().damping(18).stiffness(200)}>
+        <Animated.View layout={LinearTransition.duration(120)}>
           {activeSections.map(section => (
             <Animated.View
               key={section.id}
               entering={FadeIn.duration(200)}
               exiting={FadeOut.duration(140)}
-              layout={LinearTransition.springify().damping(18).stiffness(200)}
+              layout={LinearTransition.duration(120)}
             >
               {renderSection(section)}
             </Animated.View>
@@ -1280,10 +1561,7 @@ export default function DailyEntryView() {
         <TouchableOpacity
           style={fin.btn}
           activeOpacity={0.85}
-          onPress={() => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            void saveNow().finally(() => router.back());
-          }}
+          onPress={() => { void finish(); }}
         >
           <CheckSmall s={20} c="#fff" w={2.8} />
           <Text style={fin.txt}>Finish</Text>

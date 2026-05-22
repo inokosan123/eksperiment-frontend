@@ -13,8 +13,8 @@ import {
   ChallengePrayerConfig,
   ChallengeRecord,
   ChallengeScriptureConfig,
-  GROUP_ORDER,
   PaceOption,
+  compareChallengeCatalogEntries,
 } from './challengeData';
 import {
   getScriptureChallengeProgressUnit,
@@ -312,11 +312,7 @@ export function ChallengesProvider({ children }: { children: React.ReactNode }) 
     );
     const availableCatalogEntries = [...CATALOG_ENTRIES]
       .filter(entry => !ongoingTemplateIds.has(entry.templateId))
-      .sort((a, b) => {
-        const groupDiff = GROUP_ORDER.indexOf(a.groupKey) - GROUP_ORDER.indexOf(b.groupKey);
-        if (groupDiff !== 0) return groupDiff;
-        return a.title.localeCompare(b.title);
-      });
+      .sort(compareChallengeCatalogEntries);
 
     return {
       ready,

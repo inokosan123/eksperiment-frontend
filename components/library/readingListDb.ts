@@ -282,12 +282,15 @@ async function syncReadingTaskFlags() {
     SET show_on_home = 0,
         updated_at = ?
     WHERE show_on_home = 1
-      AND NOT EXISTS (
-        SELECT 1
-        FROM tasks
-        WHERE tasks.id = 'reading_book_' || reading_books.id
-          AND tasks.status = 'active'
-          AND tasks.removed_at IS NULL
+      AND (
+        status <> 'reading'
+        OR NOT EXISTS (
+          SELECT 1
+          FROM tasks
+          WHERE tasks.id = 'reading_book_' || reading_books.id
+            AND tasks.status = 'active'
+            AND tasks.removed_at IS NULL
+        )
       )
   `, Date.now());
 }
@@ -353,6 +356,8 @@ export async function listReadingSessions() {
 async function persistReadingBook(book: ReadingBook) {
   const db = await openTaskDb();
   const now = Date.now();
+  const status = normalizeStatus(book.status);
+  const showOnHome = status === 'reading' && !!book.showOnHome;
 
   await db.runAsync(
     `INSERT INTO reading_books (
@@ -386,14 +391,14 @@ async function persistReadingBook(book: ReadingBook) {
     book.title.trim() || 'Untitled Book',
     book.author?.trim() || null,
     book.category?.trim() || null,
-    normalizeStatus(book.status),
+    status,
     book.createdAt || now,
     book.startedAt ?? null,
     book.finishedAt ?? null,
     book.rating ?? null,
     book.review ?? null,
     book.keyLessons ?? null,
-    boolToInt(book.showOnHome),
+    boolToInt(showOnHome),
     book.taskTime ?? '21:00',
     normalizeFrequency(book.taskFrequency),
     boolToInt(book.taskSameTimeEveryDay !== false),

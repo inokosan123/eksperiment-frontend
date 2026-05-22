@@ -21,30 +21,34 @@ import * as Haptics from 'expo-haptics';
 import FocusLottie from '@/components/focus/FocusLottie';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { ArrowLeft, CheckSmall, ChevronDown, Pause, Play, RotateCcw, X } from '@/components/icons/Icons';
+import { ArrowLeft, CheckSmall, ChevronDown, OrthodoxCross, Pause, Play, RotateCcw, X } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const QUOTE = '"Continue in prayer, and watch in the same with thanksgiving."';
-const QUOTE_REF = 'Colossians 4:2';
+const QUOTE = '"Pray without ceasing."';
+const QUOTE_REF = '1 Thessalonians 5:17';
 const VB_R = 45;
 
 export type PersonalPrayerRuleChoice = 'personal' | 'standard' | 'short' | 'seraphim';
 
 const RULE_OPTIONS: { id: PersonalPrayerRuleChoice; label: string }[] = [
-  { id: 'personal', label: 'Personal Rule' },
+  { id: 'personal', label: 'My Rule' },
   { id: 'standard', label: 'Standard Rule' },
   { id: 'short', label: 'Shortened Rule' },
   { id: 'seraphim', label: 'Rule of Saint Seraphim' },
 ];
 
 const RULE_DESCRIPTIONS: Record<PersonalPrayerRuleChoice, string> = {
-  personal: 'Your own prayer book or private rule',
+  personal: 'For anyone praying from their own prayer book or in their own way — Orthodox, Catholic, Protestant, Evangelical, or any other tradition.',
   standard: 'Full prayer rule',
   short: 'Abbreviated prayer rule',
   seraphim: 'Rule of St. Seraphim of Sarov',
 };
+
+function isOrthodoxRule(rule: PersonalPrayerRuleChoice) {
+  return rule !== 'personal';
+}
 
 const PERSONAL_RULE_THEMES = {
   morning: { accent: '#D97706', bg: '#FEF3C7', border: '#FDE68A' },
@@ -64,9 +68,9 @@ type Props = {
 
 function titleForPrayer(type?: string, title?: string) {
   if (title?.trim()) return title.trim();
-  if (type === 'evening') return 'Evening Personal Rule';
-  if (type === 'morning') return 'Morning Personal Rule';
-  return 'Personal Rule';
+  if (type === 'evening') return 'My Evening Rule';
+  if (type === 'morning') return 'My Morning Rule';
+  return 'My Rule';
 }
 
 function canSwitchPrayerRule(type?: string) {
@@ -325,7 +329,7 @@ export default function PersonalRuleTaskView({
         visible={showExit}
         icon={<ArrowLeft s={22} c="#EF4444" />}
         iconBg="#FEF2F2"
-        title="Exit Personal Rule?"
+        title="Exit My Rule?"
         body="Your prayer timer progress will be lost."
         cancelLabel="STAY"
         confirmLabel="EXIT"
@@ -374,6 +378,7 @@ export default function PersonalRuleTaskView({
             <View style={s.selectorList}>
               {RULE_OPTIONS.map(rule => {
                 const active = rule.id === selectedRule;
+                const showOrthodoxBadge = isOrthodoxRule(rule.id);
 
                 return (
                   <TouchableOpacity
@@ -393,7 +398,17 @@ export default function PersonalRuleTaskView({
                       </Text>
                       <Text style={s.selectorOptionSub}>{RULE_DESCRIPTIONS[rule.id]}</Text>
                     </View>
-                    {active && <CheckSmall s={18} c={theme.accent} />}
+                    {(showOrthodoxBadge || active) && (
+                      <View style={s.selectorOptionTrailing}>
+                        {showOrthodoxBadge && (
+                          <View style={s.selectorOrthodoxBadge}>
+                            <OrthodoxCross s={11} c={theme.accent} w={1.35} />
+                            <Text style={[s.selectorOrthodoxBadgeText, { color: theme.accent }]}>ORTH.</Text>
+                          </View>
+                        )}
+                        {active && <CheckSmall s={18} c={theme.accent} />}
+                      </View>
+                    )}
                   </TouchableOpacity>
                 );
               })}
@@ -423,9 +438,10 @@ const s = StyleSheet.create({
   readerRuleText: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' },
   quote: {
     fontFamily: F.serifItalic,
-    fontSize: 18,
-    lineHeight: 27,
-    color: 'rgba(122,98,69,0.8)',
+    fontSize: 20,
+    lineHeight: 30,
+    letterSpacing: 0.2,
+    color: 'rgba(94,71,42,0.9)',
     textAlign: 'center',
     paddingHorizontal: 26,
     marginTop: 24,
@@ -433,13 +449,13 @@ const s = StyleSheet.create({
   },
   quoteRef: {
     fontFamily: F.sansBold,
-    fontSize: 9.5,
-    letterSpacing: 2,
-    color: 'rgba(197,160,89,0.6)',
+    fontSize: 10,
+    letterSpacing: 2.2,
+    color: 'rgba(197,160,89,0.78)',
     textTransform: 'uppercase',
     textAlign: 'center',
     marginBottom: 9,
-    marginTop: 3,
+    marginTop: 4,
   },
   center: {
     flex: 1,
@@ -530,6 +546,37 @@ const s = StyleSheet.create({
   selectorOption: { minHeight: 72, borderRadius: 18, borderWidth: 1, paddingHorizontal: 15, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
   selectorOptionInactive: { backgroundColor: '#FAFAF9', borderColor: '#EEE9E0' },
   selectorCopy: { flex: 1, minWidth: 0 },
-  selectorOptionTitle: { fontFamily: F.serifMedium, fontSize: 19, lineHeight: 23 },
-  selectorOptionSub: { marginTop: 3, fontFamily: F.sansBold, fontSize: 9, lineHeight: 13, letterSpacing: 1.5, color: '#A8A29E', textTransform: 'uppercase' },
+  selectorOptionTitle: { fontFamily: F.serifMedium, fontSize: 19, lineHeight: 23, flexShrink: 1 },
+  selectorOptionTrailing: {
+    minWidth: 56,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  selectorOrthodoxBadge: {
+    minHeight: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E8DCC4',
+    backgroundColor: '#FFFBEB',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  selectorOrthodoxBadgeText: {
+    fontFamily: F.sansBold,
+    fontSize: 7.5,
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+  },
+  selectorOptionSub: {
+    marginTop: 4,
+    fontFamily: F.sans,
+    fontSize: 12,
+    lineHeight: 17,
+    letterSpacing: 0,
+    color: '#8A8178',
+  },
 });

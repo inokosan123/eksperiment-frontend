@@ -1,5 +1,6 @@
-import React, { forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle, Text } from 'react-native';
+import Svg, { Line, Path } from 'react-native-svg';
 import WebView from 'react-native-webview';
 import { F, C } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
@@ -22,12 +23,21 @@ export type FormatState = {
 
 type Props = {
   initialHTML?: string;
+  contentKey?: string | number;
   onChange: (html: string) => void;
   onFormatChange?: (fmt: FormatState) => void;
   placeholder?: string;
   backgroundColor?: string;
   color?: string;
   editable?: boolean;
+  // When true, WebView grows to fit content (no internal scroll). Outer
+  // page must handle keyboard. When false (default), WebView fills its
+  // parent and scrolls internally.
+  autoHeight?: boolean;
+  // Fires with the cursor's absolute Y position on screen when it moves.
+  // Used by the outer ScrollView (in autoHeight mode) to scroll the page
+  // so the cursor stays visible above the keyboard.
+  onCursorScreenY?: (screenY: number) => void;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -45,14 +55,14 @@ function buildEditorHTML(opts: {
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <style>
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body { margin: 0; padding: 0; background: ${opts.backgroundColor}; }
+    html, body { margin: 0; padding: 0; background: ${opts.backgroundColor}; overflow: hidden; }
     #editor {
-      min-height: 280px;
-      padding: 12px 0 60px 0;
+      min-height: 80px;
+      padding: 14px 12px 36px 12px;
       outline: none;
       word-wrap: break-word;
       font-family: Georgia, 'Times New Roman', serif;
-      font-size: 18px;
+      font-size: 17px;
       line-height: 1.7;
       color: ${opts.color};
       -webkit-user-select: text;
@@ -81,34 +91,50 @@ function buildEditorHTML(opts: {
       window.ReactNativeWebView.postMessage(JSON.stringify(obj));
     }
 
-    // Scroll to keep cursor visible above keyboard
-    function scrollToCursor() {
+    // Report total content height back to React Native so the WebView
+    // can grow to fit content (no internal scroll).
+    var lastReported = 0;
+    var heightTimer = null;
+    function reportHeight() {
+      var h = Math.ceil(document.documentElement.scrollHeight);
+      if (h === lastReported) return;
+      lastReported = h;
+      post({ type: 'height', height: h });
+    }
+    function scheduleHeight() {
+      if (heightTimer) clearTimeout(heightTimer);
+      heightTimer = setTimeout(reportHeight, 16);
+    }
+
+    // Send current cursor Y position (relative to WebView top) so outer
+    // page can scroll to keep cursor visible above keyboard.
+    function postCursor() {
       var sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) return;
       var rect = sel.getRangeAt(0).getBoundingClientRect();
-      if (rect.height === 0) return;
-      var cursorBottom = rect.bottom + window.scrollY;
-      var viewBottom = window.scrollY + window.innerHeight - 20;
-      if (cursorBottom > viewBottom) {
-        window.scrollTo(0, cursorBottom - window.innerHeight + 60);
-      }
+      if (rect.height === 0 && rect.width === 0) return;
+      post({ type: 'cursor', y: rect.bottom });
     }
 
-    // Notify content changes + scroll cursor into view
     editor.addEventListener('input', function() {
-      scrollToCursor();
       post({ type: 'change', html: editor.innerHTML });
+      scheduleHeight();
+      postCursor();
+    });
+
+    editor.addEventListener('focus', function() {
+      setTimeout(postCursor, 60);
     });
 
     // Notify format state on every selection change
     document.addEventListener('selectionchange', function() {
-      scrollToCursor();
       post({
         type: 'fmt',
         bold:      document.queryCommandState('bold'),
         italic:    document.queryCommandState('italic'),
         underline: document.queryCommandState('underline'),
       });
+      postCursor();
     });
 
     function execCmd(cmd) {
@@ -121,6 +147,16 @@ function buildEditorHTML(opts: {
         italic:    document.queryCommandState('italic'),
         underline: document.queryCommandState('underline'),
       });
+      scheduleHeight();
+    }
+
+    // Initial measurement after layout
+    setTimeout(reportHeight, 30);
+    setTimeout(reportHeight, 200);
+
+    // Watch for any layout shifts (font load, formatting toggles, etc.)
+    if (window.ResizeObserver) {
+      new ResizeObserver(scheduleHeight).observe(editor);
     }
   </script>
 </body>
@@ -130,25 +166,33 @@ function buildEditorHTML(opts: {
 export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function RichTextEditor(
   {
     initialHTML = '',
+    contentKey,
     onChange,
     onFormatChange,
     placeholder = 'Write here...',
     backgroundColor = '#FFFFFF',
     color = '#3D3229',
     editable = true,
+    autoHeight = false,
+    onCursorScreenY,
     style,
   },
   ref,
 ) {
   const webViewRef = useRef<WebView>(null);
+  const wrapperRef = useRef<View>(null);
+  const [contentHeight, setContentHeight] = useState(110);
 
   // Build source ONCE on mount — never update it.
   // Rebuilding source would reload the WebView and dismiss the keyboard on every keystroke.
+  const sourceKey = contentKey ?? 'initial';
   const sourceRef = useRef<{ html: string } | null>(null);
-  if (!sourceRef.current) {
+  const sourceKeyRef = useRef<string | number | null>(null);
+  if (!sourceRef.current || sourceKeyRef.current !== sourceKey) {
     sourceRef.current = {
       html: buildEditorHTML({ initialHTML, placeholder, backgroundColor, color, editable }),
     };
+    sourceKeyRef.current = sourceKey;
   }
 
   const inject = (cmd: string) => {
@@ -165,24 +209,43 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
   }));
 
   return (
-    <WebView
-      ref={webViewRef}
-      originWhitelist={['*']}
-      source={sourceRef.current}
-      style={[{ flex: 1, backgroundColor }, style]}
-      scrollEnabled
-      keyboardDisplayRequiresUserAction={false}
-      showsVerticalScrollIndicator={false}
-      onMessage={event => {
-        try {
-          const msg = JSON.parse(event.nativeEvent.data);
-          if (msg.type === 'change') onChange(msg.html);
-          if (msg.type === 'fmt') {
-            onFormatChange?.({ bold: msg.bold, italic: msg.italic, underline: msg.underline });
-          }
-        } catch { /* ignore */ }
-      }}
-    />
+    <View
+      ref={wrapperRef}
+      style={
+        autoHeight
+          ? [{ height: contentHeight, backgroundColor, overflow: 'hidden' }, style]
+          : [{ flex: 1, backgroundColor }, style]
+      }
+    >
+      <WebView
+        key={String(sourceKey)}
+        ref={webViewRef}
+        originWhitelist={['*']}
+        source={sourceRef.current}
+        style={{ flex: 1, backgroundColor }}
+        scrollEnabled={!autoHeight}
+        keyboardDisplayRequiresUserAction={false}
+        showsVerticalScrollIndicator={false}
+        onMessage={event => {
+          try {
+            const msg = JSON.parse(event.nativeEvent.data);
+            if (msg.type === 'change') onChange(msg.html);
+            if (msg.type === 'fmt') {
+              onFormatChange?.({ bold: msg.bold, italic: msg.italic, underline: msg.underline });
+            }
+            if (msg.type === 'height' && autoHeight) {
+              const next = Math.max(80, Math.ceil(msg.height));
+              setContentHeight(prev => prev === next ? prev : next);
+            }
+            if (msg.type === 'cursor' && onCursorScreenY) {
+              wrapperRef.current?.measureInWindow((_x, y) => {
+                onCursorScreenY(y + msg.y);
+              });
+            }
+          } catch { /* ignore */ }
+        }}
+      />
+    </View>
   );
 });
 
@@ -250,29 +313,29 @@ function FmtButton({
   );
 }
 
-function BulletGlyph() {
+function BulletGlyph({ color = C.textSecondary }: { color?: string }) {
   return (
-    <View style={{ gap: 4 }}>
-      {[0, 1, 2].map(i => (
-        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 5 }}>
-          <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: C.textSecondary }} />
-          <View style={{ width: 16, height: 1.5, borderRadius: 1, backgroundColor: C.textSecondary }} />
-        </View>
-      ))}
-    </View>
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+      <Line x1="8" y1="6" x2="21" y2="6" />
+      <Line x1="8" y1="12" x2="21" y2="12" />
+      <Line x1="8" y1="18" x2="21" y2="18" />
+      <Line x1="3.5" y1="6" x2="3.51" y2="6" />
+      <Line x1="3.5" y1="12" x2="3.51" y2="12" />
+      <Line x1="3.5" y1="18" x2="3.51" y2="18" />
+    </Svg>
   );
 }
 
-function NumberedGlyph() {
+function NumberedGlyph({ color = C.textSecondary }: { color?: string }) {
   return (
-    <View style={{ gap: 3 }}>
-      {[1, 2, 3].map(n => (
-        <View key={n} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 5 }}>
-          <Text style={{ width: 9, fontFamily: F.sansBold, fontSize: 6.5, lineHeight: 8, color: C.textSecondary, textAlign: 'right' }}>{n}.</Text>
-          <View style={{ width: 14, height: 1.5, borderRadius: 1, backgroundColor: C.textSecondary }} />
-        </View>
-      ))}
-    </View>
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+      <Line x1="10" y1="6" x2="21" y2="6" />
+      <Line x1="10" y1="12" x2="21" y2="12" />
+      <Line x1="10" y1="18" x2="21" y2="18" />
+      <Path d="M4 6h1v4" />
+      <Path d="M4 10h2" />
+      <Path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" />
+    </Svg>
   );
 }
 

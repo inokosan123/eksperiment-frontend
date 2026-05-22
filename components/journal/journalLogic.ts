@@ -1,6 +1,6 @@
 import type { JournalEntry } from '@/components/journal/journalDb';
 
-const MORNING_PAGES_MINIMUM_WORDS = 750;
+const MORNING_PAGES_MINIMUM_WORDS = 50;
 
 function normalizeText(value: string) {
   return value.replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
@@ -56,7 +56,7 @@ export function hasDailyJournalContent(entry?: JournalEntry) {
     entry.mood !== undefined ||
     entry.energy !== undefined ||
     entry.satisfaction !== undefined ||
-    entry.prompts.some(prompt => normalizeText(prompt.answer).length > 0) ||
+    entry.prompts.some(prompt => stripRichTextToPlainText(prompt.answer).length > 0) ||
     Object.values(entry.whoChecks).some(Boolean) ||
     Object.keys(entry.scaleValues).length > 0
   );
@@ -67,9 +67,13 @@ export function isJournalDayComplete(entry?: JournalEntry) {
 }
 
 export function getJournalKindsForEntry(entry?: JournalEntry) {
-  const kinds: ('daily' | 'morning' | 'free')[] = [];
+  const kinds: ('daily' | 'morning' | 'morningDraft' | 'free')[] = [];
   if (hasDailyJournalContent(entry)) kinds.push('daily');
-  if (hasMorningPagesDraft(entry)) kinds.push('morning');
+  if (isMorningPagesComplete(entry)) {
+    kinds.push('morning');
+  } else if (hasMorningPagesDraft(entry)) {
+    kinds.push('morningDraft');
+  }
   if (hasFreeWritingContent(entry)) kinds.push('free');
   return kinds;
 }

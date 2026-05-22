@@ -258,11 +258,11 @@ export default function QuickTaskSheet({
         </View>
 
         <View style={s.card}>
-          <Text style={s.label}>Task</Text>
+          <Text style={s.label}>Name Activity</Text>
           <TextInput
             value={title}
             onChangeText={setTitle}
-            placeholder="Unesi ime taska..."
+            placeholder="Enter task name..."
             placeholderTextColor="#C9C5BD"
             style={s.titleInput}
             returnKeyType="done"
@@ -544,16 +544,15 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
   titleInput: {
-    minHeight: 56,
+    minHeight: 52,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E7E5E4',
-    backgroundColor: '#FAFAF9',
+    borderColor: '#F2F1EC',
+    backgroundColor: '#FAFAFA',
     paddingHorizontal: 16,
-    fontFamily: F.serifMedium,
+    fontFamily: F.serif,
     fontSize: 22,
-    lineHeight: 28,
-    color: '#1C1917',
+    color: '#111827',
   },
   dateButton: {
     minHeight: 62,

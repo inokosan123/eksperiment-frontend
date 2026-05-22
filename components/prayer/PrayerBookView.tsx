@@ -15,10 +15,11 @@ import * as Haptics from 'expo-haptics';
 import Reanimated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { Sun, Utensils, Moon, Sparkles, Heart, Play, X, Settings, CheckSmall } from '@/components/icons/Icons';
+import { Sun, Utensils, Moon, Sparkles, Heart, Play, X, Settings, CheckSmall, OrthodoxCross } from '@/components/icons/Icons';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
 import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
+import { useAppSettings } from '@/components/settings/SettingsContext';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
 import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
@@ -27,6 +28,7 @@ import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressabl
 
 import {
   getPrayerOptions,
+  PERSONAL_RULE_PREVIEW,
   PRAYER_LANGUAGES,
   PrayerBlock,
   PrayerCategory,
@@ -49,6 +51,12 @@ function firstParam(value: string | string[] | undefined) {
 function normalizePrayerCategory(value: string | string[] | undefined): PrayerCategory | undefined {
   const category = firstParam(value);
   return PRAYER_CATEGORIES.includes(category as PrayerCategory) ? category as PrayerCategory : undefined;
+}
+
+function normalizePrayerLanguage(value: string | undefined): PrayerLanguage {
+  return PRAYER_LANGUAGES.some(language => language.key === value)
+    ? value as PrayerLanguage
+    : DEFAULT_PRAYER_LANGUAGE;
 }
 
 function defaultOptionId(options: PrayerOption[]) {
@@ -516,7 +524,8 @@ export default function PrayerBookView() {
   const taskDate = firstParam(params.taskDate) ?? getLocalDateKey();
   const isTaskLaunch = firstParam(params.isTask) === 'true' || !!taskInstanceId;
   const { createOrUpdateTask, refresh: refreshTasks, completeInstance } = useTasks();
-  const [prayerLanguage, setPrayerLanguage] = useState<PrayerLanguage>(DEFAULT_PRAYER_LANGUAGE);
+  const { settings, updateSettings } = useAppSettings();
+  const prayerLanguage = normalizePrayerLanguage(settings.prayerLang);
   const [category, setCategory] = useState<PrayerCategory>(launchedCategory ?? 'morning');
   const [optionId, setOptionId] = useState(launchedOptionId ?? 'standard');
   const [isReaderActive, setIsReaderActive] = useState(launchedAutoStart && !!launchedCategory);
@@ -533,6 +542,8 @@ export default function PrayerBookView() {
   const canChooseRule = options.length > 1;
   const previewTitle = PREVIEW_CATEGORY_TITLES[prayerLanguage][category] ?? stripParentheticalTitle(section.title);
   const previewRuleSubtitle = hasRulePreviewSubtitle(category) ? selectedOption.label : '';
+  const isOrthodoxRule = (category === 'morning' || category === 'evening')
+    && (selectedOption?.id === 'standard' || selectedOption?.id === 'medium' || selectedOption?.id === 'short');
 
   useEffect(() => {
     if (!launchedAutoStart || !launchedCategory) return;
@@ -578,7 +589,7 @@ export default function PrayerBookView() {
   const handleLanguageChange = (lang: PrayerLanguage) => {
     Haptics.selectionAsync().catch(() => {});
     const nextOptions = getPrayerOptions(lang, category);
-    setPrayerLanguage(lang);
+    updateSettings({ prayerLang: lang });
     setOptionId(currentOptionId => (
       nextOptions.some(option => option.id === currentOptionId)
         ? currentOptionId
@@ -593,7 +604,7 @@ export default function PrayerBookView() {
     const route = {
       pathname: '/personal-rule',
       params: {
-        title: titleOverride ?? selectedOption?.label ?? 'Personal Rule',
+        title: titleOverride ?? selectedOption?.label ?? 'My Rule',
         prayerType: category,
         isTask: isTaskLaunch ? 'true' : 'false',
         taskInstanceId: taskInstanceId ?? '',
@@ -611,17 +622,27 @@ export default function PrayerBookView() {
   }, [category, isTaskLaunch, router, selectedOption?.label, taskDate, taskInstanceId]);
 
   const handleOptionChange = useCallback((id: string) => {
-    if (isPersonalRuleOption(category, id)) {
-      openPersonalRule(options.find(option => option.id === id)?.label);
-      return;
-    }
-
     setOptionId(id);
-  }, [category, openPersonalRule, options]);
+  }, []);
 
   const handleStartPrayer = () => {
     if (isPersonalRuleOption(category, selectedOption?.id)) {
       openPersonalRule();
+      return;
+    }
+
+    if (category === 'jesus') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      router.push({
+        pathname: '/jesus-prayer',
+        params: {
+          title: selectedOption?.label ?? 'The Jesus Prayer',
+          mode: 'duration',
+          duration: '10',
+          count: '100',
+          isTask: 'false',
+        },
+      } as any);
       return;
     }
 
@@ -640,6 +661,7 @@ export default function PrayerBookView() {
         topInset={insets.top}
         bottomInset={insets.bottom}
         canChooseRule={canChooseRule}
+        deferFinishFeedback={isTaskLaunch}
         onClose={closeReader}
         onFinish={finishReader}
         onOptionChange={handleOptionChange}
@@ -779,6 +801,12 @@ export default function PrayerBookView() {
 
         <View style={s.cardWrap}>
           <View style={[s.prayerCard, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+            {isOrthodoxRule && (
+              <View style={s.orthodoxBadge} pointerEvents="none">
+                <OrthodoxCross s={12} c={theme.accent} w={1.35} />
+                <Text style={[s.orthodoxLabel, { color: theme.accent }]}>ORTH.</Text>
+              </View>
+            )}
             <Text style={[s.prayerCat, { color: theme.accent }]}>
               {category === 'jesus' ? 'JESUS PRAYER' : CATEGORIES.find(c => c.id === category)?.label}
             </Text>
@@ -790,15 +818,19 @@ export default function PrayerBookView() {
             )}
             <View style={[s.divider, { backgroundColor: theme.accent, opacity: 0.4 }]} />
 
-            <View style={s.blockStack}>
-              {section.blocks.map((block, index) => (
-                <PrayerBlockView
-                  key={`${block.type}-${index}`}
-                  block={block}
-                  accent={theme.accent}
-                />
-              ))}
-            </View>
+            {isPersonalRuleOption(category, selectedOption?.id) ? (
+              <PersonalRulePreview lang={prayerLanguage} accent={theme.accent} />
+            ) : (
+              <View style={s.blockStack}>
+                {section.blocks.map((block, index) => (
+                  <PrayerBlockView
+                    key={`${block.type}-${index}`}
+                    block={block}
+                    accent={theme.accent}
+                  />
+                ))}
+              </View>
+            )}
           </View>
         </View>
       </ScrollView>
@@ -824,6 +856,32 @@ export default function PrayerBookView() {
         onTaskDraft={createOrUpdateTask}
         onTaskMutation={refreshTasks}
       />
+    </View>
+  );
+}
+
+function PersonalRulePreview({ lang, accent }: { lang: PrayerLanguage; accent: string }) {
+  const content = PERSONAL_RULE_PREVIEW[lang];
+
+  return (
+    <View style={s.personalPreviewWrap}>
+      <Text style={s.personalIntro}>{content.intro}</Text>
+
+      <Text style={s.personalListHeading}>{content.listHeading}</Text>
+
+      <View style={s.personalListStack}>
+        {content.listItems.map((item, index) => (
+          <View key={index} style={s.personalListRow}>
+            <Text style={[s.personalBullet, { color: accent }]}>•</Text>
+            <Text style={s.personalListItem}>{item}</Text>
+          </View>
+        ))}
+      </View>
+
+      <Text style={s.personalStart}>{content.startLine}</Text>
+
+      <View style={[s.personalNoteDivider, { backgroundColor: accent, opacity: 0.25 }]} />
+      <Text style={s.personalNote}>{content.note}</Text>
     </View>
   );
 }
@@ -898,6 +956,7 @@ function PrayerReader({
   topInset,
   bottomInset,
   canChooseRule,
+  deferFinishFeedback,
   onClose,
   onFinish,
   onOptionChange,
@@ -910,6 +969,7 @@ function PrayerReader({
   topInset: number;
   bottomInset: number;
   canChooseRule: boolean;
+  deferFinishFeedback: boolean;
   onClose: () => void;
   onFinish: () => void | Promise<void>;
   onOptionChange: (id: string) => void;
@@ -1048,7 +1108,7 @@ function PrayerReader({
     if (isLast) {
       if (finishLockRef.current) return;
       finishLockRef.current = true;
-      finishHaptic();
+      if (!deferFinishFeedback) finishHaptic();
       void Promise.resolve(onFinish()).catch(error => {
         finishLockRef.current = false;
         console.warn('Prayer task completion failed:', error);
@@ -1235,6 +1295,7 @@ function PrayerReader({
             <View style={s.selectorList}>
               {options.map(option => {
                 const active = option.id === selectedOption.id;
+                const showOrthodoxBadge = option.id !== 'personal';
 
                 return (
                   <TouchableOpacity
@@ -1254,7 +1315,17 @@ function PrayerReader({
                       </Text>
                       <Text style={s.selectorOptionSub}>{option.section.title}</Text>
                     </View>
-                    {active && <CheckSmall s={18} c={theme.accent} />}
+                    {(showOrthodoxBadge || active) && (
+                      <View style={s.selectorOptionTrailing}>
+                        {showOrthodoxBadge && (
+                          <View style={s.selectorOrthodoxBadge}>
+                            <OrthodoxCross s={11} c={theme.accent} w={1.35} />
+                            <Text style={[s.selectorOrthodoxBadgeText, { color: theme.accent }]}>ORTH.</Text>
+                          </View>
+                        )}
+                        {active && <CheckSmall s={18} c={theme.accent} />}
+                      </View>
+                    )}
                   </TouchableOpacity>
                 );
               })}
@@ -1320,6 +1391,20 @@ const s = StyleSheet.create({
 
   cardWrap: { padding: 14, paddingBottom: 16 },
   prayerCard: { padding: 22, paddingBottom: 28, borderRadius: 26, borderWidth: 1, alignItems: 'center' },
+  orthodoxBadge: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    opacity: 0.92,
+  },
+  orthodoxLabel: {
+    marginTop: 4,
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 1.8,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+  },
   prayerCat: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, textTransform: 'uppercase' },
   prayerTitle: { fontFamily: F.serifMedium, fontSize: 30, lineHeight: 35, color: C.text, marginTop: 8, textAlign: 'center' },
   prayerRuleSubtitle: { marginTop: 8, fontFamily: F.sansBold, fontSize: 10, lineHeight: 14, letterSpacing: 1.8, textAlign: 'center', textTransform: 'uppercase' },
@@ -1328,6 +1413,17 @@ const s = StyleSheet.create({
   blockTitle: { fontFamily: F.serifSemiBold, fontSize: 23, lineHeight: 28, marginTop: 8, textAlign: 'center' },
   prayerInstr: { fontFamily: F.serifMediumItalic, fontSize: 17, lineHeight: 26, textAlign: 'center' },
   prayerText: { fontFamily: F.serifMedium, fontSize: 19, lineHeight: 29, color: C.text, textAlign: 'center' },
+
+  personalPreviewWrap: { width: '100%', marginTop: 22, paddingHorizontal: 4 },
+  personalIntro: { fontFamily: F.serifMedium, fontSize: 16, lineHeight: 24, color: C.text, textAlign: 'center', marginBottom: 22 },
+  personalListHeading: { fontFamily: F.serifSemiBold, fontSize: 16, lineHeight: 22, color: C.text, textAlign: 'left', marginBottom: 12 },
+  personalListStack: { width: '100%', gap: 8, marginBottom: 22 },
+  personalListRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingRight: 4 },
+  personalBullet: { fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22 },
+  personalListItem: { flex: 1, fontFamily: F.serifMedium, fontSize: 15, lineHeight: 22, color: C.text, textAlign: 'left' },
+  personalStart: { fontFamily: F.serifMedium, fontSize: 15, lineHeight: 22, color: C.text, textAlign: 'center', marginBottom: 18 },
+  personalNoteDivider: { width: '40%', height: 1, alignSelf: 'center', marginBottom: 12 },
+  personalNote: { fontFamily: F.serifMedium, fontSize: 13, lineHeight: 19, color: 'rgba(60, 47, 31, 0.55)', textAlign: 'center' },
 
   startWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center', pointerEvents: 'box-none' },
   startBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 16, paddingHorizontal: 32, borderRadius: 9999, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.45, shadowRadius: 12, elevation: 8 },
@@ -1429,6 +1525,37 @@ const s = StyleSheet.create({
   selectorOption: { minHeight: 72, borderRadius: 18, borderWidth: 1, paddingHorizontal: 15, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
   selectorOptionInactive: { backgroundColor: '#FAFAF9', borderColor: '#EEE9E0' },
   selectorCopy: { flex: 1, minWidth: 0 },
-  selectorOptionTitle: { fontFamily: F.serifMedium, fontSize: 19, lineHeight: 23 },
-  selectorOptionSub: { marginTop: 3, fontFamily: F.sansBold, fontSize: 9, lineHeight: 13, letterSpacing: 1.5, color: '#A8A29E', textTransform: 'uppercase' },
+  selectorOptionTitle: { fontFamily: F.serifMedium, fontSize: 19, lineHeight: 23, flexShrink: 1 },
+  selectorOptionTrailing: {
+    minWidth: 56,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  selectorOrthodoxBadge: {
+    minHeight: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E8DCC4',
+    backgroundColor: '#FFFBEB',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  selectorOrthodoxBadgeText: {
+    fontFamily: F.sansBold,
+    fontSize: 7.5,
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+  },
+  selectorOptionSub: {
+    marginTop: 4,
+    fontFamily: F.sans,
+    fontSize: 12,
+    lineHeight: 17,
+    letterSpacing: 0,
+    color: '#8A8178',
+  },
 });

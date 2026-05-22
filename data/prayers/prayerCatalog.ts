@@ -64,7 +64,7 @@ const PRAYER_BOOKS: Record<PrayerLanguage, PrayerBookData> = {
 
 const RULE_LABELS: Record<PrayerLanguage, Record<'personal' | 'standard' | 'medium' | 'short' | 'breakfast' | 'lunch' | 'dinner' | 'standardJesus' | 'shortJesus' | 'personalJesus', string>> = {
   en: {
-    personal: 'Personal Rule',
+    personal: 'My Rule',
     standard: 'Standard Rule',
     medium: 'Shortened Rule',
     short: 'Rule of Saint Seraphim',
@@ -76,7 +76,7 @@ const RULE_LABELS: Record<PrayerLanguage, Record<'personal' | 'standard' | 'medi
     personalJesus: 'Prayer Rope',
   },
   sr: {
-    personal: 'Personal Rule',
+    personal: 'Моје правило',
     standard: 'Стандардно правило',
     medium: 'Скраћено правило',
     short: 'Правило Светог Серафима',
@@ -88,7 +88,7 @@ const RULE_LABELS: Record<PrayerLanguage, Record<'personal' | 'standard' | 'medi
     personalJesus: 'Бројаница',
   },
   ru: {
-    personal: 'Personal Rule',
+    personal: 'Моё правило',
     standard: 'Стандартное правило',
     medium: 'Сокращённое правило',
     short: 'Правило святого Серафима',
@@ -145,15 +145,63 @@ function buildJesusSection(lang: PrayerLanguage): PrayerSection {
   };
 }
 
+export type PersonalRulePreviewContent = {
+  intro: string;
+  listHeading: string;
+  listItems: string[];
+  startLine: string;
+  note: string;
+};
+
+export const PERSONAL_RULE_PREVIEW: Record<PrayerLanguage, PersonalRulePreviewContent> = {
+  en: {
+    intro: 'For Christians of every tradition — Catholic, Protestant, Evangelical, Pentecostal, Anglican, Orthodox, non-denominational, and any other.',
+    listHeading: 'No preset prayer text. Use this for:',
+    listItems: [
+      'prayer from a physical prayer book',
+      'a daily devotional',
+      'prayer with a rosary, prayer rope, or prayer beads',
+      'memorized prayers',
+      'prayer in your own words',
+      '… or any other way you pray',
+    ],
+    startLine: 'Start Prayer opens a quiet timer that runs while you pray.',
+    note: 'The other Morning and Evening rules in the app (Standard, Shortened, St. Seraphim) follow the Orthodox tradition.',
+  },
+  sr: {
+    intro: 'За хришћане сваке традиције — католике, протестанте, евангелисте, пентикосталце, англиканце, православне, независне хришћане и сваке друге.',
+    listHeading: 'Без унапред задатих молитава. Користите ово за:',
+    listItems: [
+      'молитву из физичког молитвеника',
+      'дневни девоционал',
+      'молитву уз бројаницу или крунички',
+      'молитве које знате напамет',
+      'молитву сопственим речима',
+      '… или било који други начин молитве',
+    ],
+    startLine: 'Притиском на Start Prayer отвара се тих тајмер док се молите.',
+    note: 'Остала јутарња и вечерња правила у апликацији (Стандардно, Скраћено, Светог Серафима) су из православне традиције.',
+  },
+  ru: {
+    intro: 'Для христиан любой традиции — католиков, протестантов, евангелистов, пятидесятников, англикан, православных, внеконфессиональных и любых других.',
+    listHeading: 'Без предустановленных молитв. Используйте это для:',
+    listItems: [
+      'молитвы по физическому молитвослову',
+      'ежедневного духовного чтения',
+      'молитвы с чётками или розарием',
+      'заученных молитв',
+      'молитвы своими словами',
+      '… или любого другого вида молитвы',
+    ],
+    startLine: 'Нажмите Start Prayer — откроется тихий таймер на время вашей молитвы.',
+    note: 'Другие утренние и вечерние правила в приложении (Стандартное, Сокращённое, Святого Серафима) — из православной традиции.',
+  },
+};
+
 function buildPersonalRuleSection(label: string): PrayerSection {
   return {
     title: label,
-    blocks: [
-      {
-        type: 'instruction',
-        content: 'Use your own prayer book or prayer rule. Start the timer when you begin, then finish when your rule is complete.',
-      },
-    ],
+    blocks: [],
   };
 }
 

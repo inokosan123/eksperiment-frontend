@@ -17,6 +17,8 @@ import { ScriptureProvider } from '@/components/scripture/ScriptureContext';
 import { ReadingListProvider } from '@/components/library/ReadingListContext';
 import { ChallengesProvider } from '@/components/challenges/ChallengesContext';
 import { TaskProvider } from '@/components/tasks/TaskProvider';
+import { SettingsProvider } from '@/components/settings/SettingsContext';
+import NotificationBridge from '@/components/notifications/NotificationBridge';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -71,46 +73,52 @@ export default function RootLayout() {
               <ChallengesProvider>
                 <TaskProvider>
                   <BucketListProvider>
-                    <InnerToolsProvider>
-                      <BigEventsProvider>
-                        <MonthlyGoalsProvider>
-                        <JournalProvider>
-                          <Stack>
-                            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                            <Stack.Screen name="prayer"          options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="personal-rule"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="jesus-prayer"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="journal"         options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="journal-daily"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="journal-morning" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="journal-free"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="bucket-list"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="big-events"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="focus-zone"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="notes"           options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="scripture"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="scripture-reader" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="scripture-challenge" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="scripture-checkpoint" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="favorites"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="bible-notes"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="gratitude"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="gratitude-task"  options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="ideal-self"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="reading-list"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="reading-analytics" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="reading-session"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="habits"          options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="challenges"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="my-routine"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="year-in-pixels"  options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="monthly-goals"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                            <Stack.Screen name="statistics"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                          </Stack>
-                        </JournalProvider>
-                        </MonthlyGoalsProvider>
-                      </BigEventsProvider>
-                    </InnerToolsProvider>
+                    <SettingsProvider>
+                      <NotificationBridge />
+                      <InnerToolsProvider>
+                        <BigEventsProvider>
+                          <MonthlyGoalsProvider>
+                            <JournalProvider>
+                              <Stack>
+                                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                                <Stack.Screen name="prayer"          options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="personal-rule"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="jesus-prayer"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="journal"         options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="journal-daily"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="journal-morning" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="journal-free"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="bucket-list"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="big-events"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="focus-zone"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="notes"           options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="scripture"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="scripture-reader" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="scripture-challenge" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="scripture-checkpoint" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="favorites"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="bible-notes"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="gratitude"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="gratitude-task"  options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="ideal-self"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="reading-list"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="reading-analytics" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="reading-session"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="habits"          options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="challenges"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="my-routine"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="year-in-pixels"  options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="monthly-goals"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="statistics"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="settings"        options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="account"         options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                <Stack.Screen name="onboarding"      options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'fade' }} />
+                              </Stack>
+                            </JournalProvider>
+                          </MonthlyGoalsProvider>
+                        </BigEventsProvider>
+                      </InnerToolsProvider>
+                    </SettingsProvider>
                     <StatusBar style="dark" backgroundColor={C.bg} />
                   </BucketListProvider>
                 </TaskProvider>

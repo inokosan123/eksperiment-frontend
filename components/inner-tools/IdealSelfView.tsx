@@ -16,8 +16,8 @@ import {
 import { C, F } from '@/constants/tokens';
 import {
   getTitleBarTopPadding,
-  TITLE_BAR_BOTTOM_PADDING,
 } from '@/components/shared/titleBar';
+import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
@@ -226,13 +226,7 @@ export default function IdealSelfView() {
   if (mode === 'summary' && idealSelf) {
     return (
       <View style={s.screen}>
-        <View style={[s.titleBar, { paddingTop: getTitleBarTopPadding(insets.top) }]}>
-          <TouchableOpacity onPress={() => router.back()} style={s.titleBarBtn} activeOpacity={0.72}>
-            <ArrowLeft s={22} c="#9CA3AF" />
-          </TouchableOpacity>
-          <Text style={s.titleBarText}>IDEAL SELF</Text>
-          <View style={s.titleBarBtn} />
-        </View>
+        <ScreenTitleBar title="IDEAL SELF" showBack bg={BG} />
         <Summary
           profile={idealSelf}
           onRefine={startRefine}
@@ -1548,20 +1542,7 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
 
   // Top bars
-  titleBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingBottom: TITLE_BAR_BOTTOM_PADDING,
-  },
   titleBarBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  titleBarText: {
-    fontFamily: F.serifMedium,
-    fontSize: 17,
-    letterSpacing: 4,
-    color: '#1F2937',
-  },
   flowHeader: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -10,7 +10,7 @@ const LEGACY_EMOJI_MAP: Record<string, HabitEmojiName> = {
   '🕯': 'candle',
   '✝️': 'latin-cross',
   '✝': 'latin-cross',
-  '⛪': 'praying-hands',     // church removed → fall back to a spiritual neighbour
+  '⛪': 'church',
   '📿': 'praying-hands',     // prayer-beads removed
   '💧': 'droplet',
   '🏃': 'person-running',
@@ -18,10 +18,10 @@ const LEGACY_EMOJI_MAP: Record<string, HabitEmojiName> = {
   '💪': 'flexed-biceps',
   '🥗': 'green-salad',
   '🍎': 'red-apple',
-  '😴': 'crescent-moon',     // sleeping-face removed → moon (rest)
+  '😴': 'sleeping-face',
   '🚿': 'shower',
   '💼': 'briefcase',
-  '💊': 'red-apple',         // pill removed → apple (health)
+  '💊': 'pill',
   '👔': 'briefcase',
   '✍️': 'writing-hand',
   '✍': 'writing-hand',
@@ -31,10 +31,10 @@ const LEGACY_EMOJI_MAP: Record<string, HabitEmojiName> = {
   '☀️': 'sun',
   '☀': 'sun',
   '🌙': 'crescent-moon',
-  '⭐': 'sun',                // star removed → sun
+  '⭐': 'star',
   '🌅': 'sunrise',
-  '🎵': 'artist-palette',    // music removed → creative
-  '🎸': 'artist-palette',
+  '🎵': 'musical-notes',
+  '🎸': 'guitar',
   '🎨': 'artist-palette',
   '☕': 'hot-beverage',
   '🚗': 'briefcase',         // car removed → work commute
@@ -45,7 +45,7 @@ const LEGACY_EMOJI_MAP: Record<string, HabitEmojiName> = {
   '❤️': 'red-heart',
   '❤': 'red-heart',
   '🤝': 'handshake',
-  '🧠': 'light-bulb',         // brain removed → idea
+  '🧠': 'brain',
 };
 
 const FALLBACK: HabitEmojiName = 'praying-hands';

@@ -24,6 +24,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
+import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import FocusLottie from '@/components/focus/FocusLottie';
 import { getAllFocusSessions, logFocusSession } from '@/components/focus/focusDb';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
@@ -598,7 +599,6 @@ export default function FocusZoneView() {
 
       <StatsModal
         visible={showStats}
-        insetsTop={insets.top}
         statsMode={statsMode}
         setStatsMode={setStatsMode}
         statsData={statsData}
@@ -778,12 +778,11 @@ function ExitWarningModal({
 }
 
 function StatsModal({
-  visible, insetsTop, statsMode, setStatsMode, statsData, todayDayIndex,
+  visible, statsMode, setStatsMode, statsData, todayDayIndex,
   maxSessionBar, maxMinuteBar, calendarDays, calMonth, calYear, todayStr,
   onClose, onPrevMonth, onNextMonth,
 }: {
   visible: boolean;
-  insetsTop: number;
   statsMode: StatsMode;
   setStatsMode: (mode: StatsMode) => void;
   statsData: FocusStatsData;
@@ -829,13 +828,7 @@ function StatsModal({
   return (
     <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
       <View style={stats.screen}>
-        <View style={[stats.header, { paddingTop: getTitleBarTopPadding(insetsTop) }]}>
-          <TouchableOpacity onPress={onClose} style={stats.headerBtn} activeOpacity={0.7}>
-            <ArrowLeft s={24} c="#9CA3AF" />
-          </TouchableOpacity>
-          <Text style={stats.headerTitle}>ANALYTICS</Text>
-          <View style={stats.headerBtn} />
-        </View>
+        <ScreenTitleBar title="ANALYTICS" showBack bg="#FDFCF8" onBackOverride={onClose} />
 
         <ScrollView contentContainerStyle={stats.content} showsVerticalScrollIndicator={false}>
           <View
@@ -1029,9 +1022,6 @@ const completion = StyleSheet.create({
 
 const stats = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#FDFCF8' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: TITLE_BAR_BOTTOM_PADDING, backgroundColor: '#FDFCF8', borderBottomWidth: 1, borderBottomColor: '#EDE9E0' },
-  headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, textAlign: 'center', fontFamily: F.serifMedium, fontSize: 21, letterSpacing: 2.8, color: '#111827' },
   closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F5F5F4', alignItems: 'center', justifyContent: 'center' },
   content: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 48 },
   toggle: { flexDirection: 'row', backgroundColor: '#F5F5F4', borderRadius: 18, padding: 4, marginBottom: 24 },

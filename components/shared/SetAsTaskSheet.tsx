@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutAnimation,
   Image,
@@ -34,6 +34,7 @@ import {
   Moon,
   Notebook,
   OpenBook,
+  OrthodoxCross,
   Pause,
   Pencil,
   Plus,
@@ -56,7 +57,7 @@ import {
   ChallengePrayerConfig,
   ChallengeRecord,
   ChallengeScriptureConfig,
-  GROUP_ORDER,
+  compareChallengeCatalogEntries,
 } from '@/components/challenges/challengeData';
 import type { TaskDraft, TaskSchedule } from '@/components/tasks/taskTypes';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
@@ -67,13 +68,17 @@ const DateTimePickerModule = Platform.OS === 'web' ? null : require('@react-nati
 const NativeDateTimePicker = DateTimePickerModule?.default ?? null;
 const NativeDateTimePickerAndroid = DateTimePickerModule?.DateTimePickerAndroid ?? null;
 const STREAK_FLAME_PNG = require('@/assets/images/streak-flame.png');
+const ROUTINE_TASK_ACCENT = '#1F2937';
+const ROUTINE_TASK_ACCENT_MUTED = '#57534E';
+const ROUTINE_TASK_SOFT = '#F5F5F4';
+const ROUTINE_TASK_BORDER = '#D6D3D1';
 
 if (Platform.OS === 'android' && typeof UIManager.setLayoutAnimationEnabledExperimental === 'function') {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
 type TaskSheetContext = 'prayer' | 'journal' | 'scripture' | 'church';
-type TaskTab = 'spiritual' | 'challenge';
+type TaskTab = 'spiritual' | 'routine' | 'challenge';
 type RuleFrequency = 'daily' | 'weekdays' | 'weekends' | 'specific_days' | 'monthly';
 type PrayerType = 'morning' | 'evening' | 'meal' | 'jesus' | 'custom';
 type JournalTechnique = 'daily' | 'morning_pages' | 'free_writing';
@@ -81,6 +86,10 @@ type ScriptureReadingType = 'new_testament' | 'old_testament' | 'psalter' | 'chu
 type PrayerRuleChoice = 'standard' | 'short' | 'seraphim' | 'personal' | 'breakfast' | 'lunch' | 'dinner';
 export type PrayerChallengeRuleChoice = Extract<PrayerRuleChoice, 'standard' | 'short' | 'seraphim' | 'personal'>;
 export type JesusPrayerMode = 'duration' | 'count';
+
+function isOrthodoxRuleChoice(rule: PrayerRuleChoice) {
+  return rule !== 'personal';
+}
 
 type ScheduleDraft = {
   time: string;
@@ -154,9 +163,9 @@ const JOURNAL_TECHNIQUES: {
   defaultTitle: string;
   defaultTime: string;
 }[] = [
-  { key: 'daily', label: 'Daily Journal', Icon: Pencil, color: '#C5A059', defaultTitle: 'Daily Journal', defaultTime: '21:30' },
-  { key: 'morning_pages', label: 'Morning Pages', Icon: Feather, color: '#7C6EAF', defaultTitle: 'Morning Pages', defaultTime: '07:15' },
-  { key: 'free_writing', label: 'Free Writing', Icon: Notebook, color: '#4A9E8F', defaultTitle: 'Free Writing', defaultTime: '20:45' },
+  { key: 'daily', label: 'Daily Journal', Icon: Pencil, color: '#1F2937', defaultTitle: 'Daily Journal', defaultTime: '21:30' },
+  { key: 'morning_pages', label: 'Morning Pages', Icon: Feather, color: '#44403C', defaultTitle: 'Morning Pages', defaultTime: '07:15' },
+  { key: 'free_writing', label: 'Free Writing', Icon: Notebook, color: '#57534E', defaultTitle: 'Free Writing', defaultTime: '20:45' },
 ];
 
 const SCRIPTURE_TYPES: {
@@ -173,20 +182,38 @@ const SCRIPTURE_TYPES: {
   { key: 'custom', label: 'Custom', Icon: Sparkles, defaultTitle: 'Custom Scripture Reading', accent: '#7C6EAF' },
 ];
 
+function scriptureSessionAmountLabel(type: ScriptureReadingType, amount: number) {
+  if (type === 'church_calendar') return 'Church readings';
+  const safeAmount = Math.max(1, Math.round(Number.isFinite(amount) ? amount : 1));
+  if (type === 'psalter') return `${safeAmount} ${safeAmount === 1 ? 'psalm' : 'psalms'}/day`;
+  return `${safeAmount} ${safeAmount === 1 ? 'chapter' : 'chapters'}/day`;
+}
+
+const META_SEPARATOR = ` ${String.fromCharCode(183)} `;
+
+function cleanMetaSeparators(value?: string) {
+  if (!value) return '';
+  return value
+    .replace(/\s*\u00C2\u00B7\s*/g, META_SEPARATOR)
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 const PRAYER_RULES: Record<Exclude<PrayerType, 'jesus' | 'custom'>, { key: PrayerRuleChoice; label: string; desc: string }[]> = {
   morning: [
-    { key: 'personal', label: 'Personal Rule', desc: 'Reading from your physical prayer book' },
+    { key: 'personal', label: 'My Rule', desc: 'From your own prayer book or in your own way — any tradition' },
     { key: 'standard', label: 'Standard Rule', desc: 'Full morning prayers' },
     { key: 'short', label: 'Shortened Rule', desc: 'Abbreviated prayer rule' },
     { key: 'seraphim', label: 'St. Seraphim Rule', desc: 'Rule of St. Seraphim of Sarov' },
   ],
   evening: [
-    { key: 'personal', label: 'Personal Rule', desc: 'Reading from your physical prayer book' },
+    { key: 'personal', label: 'My Rule', desc: 'From your own prayer book or in your own way — any tradition' },
     { key: 'standard', label: 'Standard Rule', desc: 'Full evening prayers' },
     { key: 'short', label: 'Shortened Rule', desc: 'Abbreviated prayer rule' },
     { key: 'seraphim', label: 'St. Seraphim Rule', desc: 'Rule of St. Seraphim of Sarov' },
   ],
   meal: [
+    { key: 'personal', label: 'My Rule', desc: 'Your own meal prayer or blessing' },
     { key: 'breakfast', label: 'Breakfast Prayer', desc: 'Prayer before the morning meal' },
     { key: 'lunch', label: 'Lunch Prayer', desc: 'Prayer before the midday meal' },
     { key: 'dinner', label: 'Dinner Prayer', desc: 'Prayer before the evening meal' },
@@ -206,6 +233,18 @@ function prayerTaskIcon(prayerType: PrayerType) {
     case 'morning':
     default:
       return 'Sun';
+  }
+}
+
+function journalTaskIcon(technique: JournalTechnique) {
+  switch (technique) {
+    case 'morning_pages':
+      return 'Feather';
+    case 'free_writing':
+      return 'Notebook';
+    case 'daily':
+    default:
+      return 'Pencil';
   }
 }
 
@@ -349,8 +388,8 @@ function challengePanelTone(category: ChallengeRecord['category'] | ChallengeCat
   }
 }
 
-function challengeIcon(icon: ChallengeIconKey, color: string) {
-  const common = { s: 18, c: color, w: 1.9 };
+function challengeIcon(icon: ChallengeIconKey, color: string, size = 18) {
+  const common = { s: size, c: color, w: 1.9 };
   switch (icon) {
     case 'sun': return <Sun {...common} />;
     case 'moon': return <Moon {...common} />;
@@ -427,11 +466,7 @@ function formatSummaryFrequency(
 }
 
 function groupedEntries(entries: ChallengeCatalogEntry[]) {
-  return [...entries].sort((a, b) => {
-    const groupDiff = GROUP_ORDER.indexOf(a.groupKey) - GROUP_ORDER.indexOf(b.groupKey);
-    if (groupDiff !== 0) return groupDiff;
-    return a.title.localeCompare(b.title);
-  });
+  return [...entries].sort(compareChallengeCatalogEntries);
 }
 
 function isScriptureChallengeEntry(entry: ChallengeCatalogEntry | null) {
@@ -476,7 +511,7 @@ function prayerRuleSummary(rule: PrayerRuleChoice) {
     case 'standard': return 'Standard Rule';
     case 'short': return 'Shortened Rule';
     case 'seraphim': return 'St. Seraphim Rule';
-    case 'personal': return 'Personal Rule';
+    case 'personal': return 'My Rule';
     case 'breakfast': return 'Breakfast Prayer';
     case 'lunch': return 'Lunch Prayer';
     case 'dinner': return 'Dinner Prayer';
@@ -615,7 +650,7 @@ export default function SetAsTaskSheet({
     endChallenge,
   } = useChallenges();
 
-  const [taskTab, setTaskTab] = useState<TaskTab>('spiritual');
+  const [taskTab, setTaskTab] = useState<TaskTab>(context === 'journal' ? 'routine' : 'spiritual');
   const [selectedCatalogId, setSelectedCatalogId] = useState<string | null>(null);
   const [expandedChallengeId, setExpandedChallengeId] = useState<string | null>(null);
 
@@ -650,6 +685,12 @@ export default function SetAsTaskSheet({
   const tabContentMotion = useSharedValue(1);
   const [mounted, setMounted] = useState(visible);
   const [segmentWidth, setSegmentWidth] = useState(0);
+  const primaryTaskTab: TaskTab = context === 'journal' ? 'routine' : 'spiritual';
+  const primaryTaskTabActive = taskTab === primaryTaskTab;
+  const primaryTaskTabLabel = context === 'journal' ? 'ROUTINE' : 'SPIRITUAL';
+  const primaryTaskTabAccent = context === 'journal' ? ROUTINE_TASK_ACCENT : C.gold;
+  const primaryTaskTabMuted = context === 'journal' ? ROUTINE_TASK_ACCENT_MUTED : C.gold;
+  const activeSegmentColor = taskTab === 'challenge' ? C.gold : primaryTaskTabAccent;
 
   const activeForContext = useMemo(
     () => activeChallenges.filter(item => item.category === challengeCategoryForContext(context)),
@@ -670,7 +711,7 @@ export default function SetAsTaskSheet({
 
   useEffect(() => {
     if (!visible) return;
-    setTaskTab('spiritual');
+    setTaskTab(context === 'journal' ? 'routine' : 'spiritual');
     setSelectedCatalogId(null);
     setExpandedChallengeId(null);
   }, [context, visible]);
@@ -728,7 +769,7 @@ export default function SetAsTaskSheet({
     const meta = PRAYER_TYPES.find(item => item.key === next);
     setPrayerTitle(meta?.defaultTitle ?? 'Prayer');
     setPrayerSchedule(defaultSchedule(meta?.defaultTime ?? '08:00'));
-    setPrayerRule(next === 'meal' ? 'breakfast' : (next === 'morning' || next === 'evening' ? 'personal' : 'standard'));
+    setPrayerRule(next === 'meal' || next === 'morning' || next === 'evening' ? 'personal' : 'standard');
     setJesusMode('duration');
     setJesusDuration('15');
     setJesusCount('100');
@@ -769,13 +810,13 @@ export default function SetAsTaskSheet({
     });
   };
 
-  const handleSaveSpiritual = () => {
+  const handleSaveSpiritual = async () => {
     if (context === 'prayer') {
       if (!prayerType || !prayerTitle.trim()) return;
       const prayerDetail = prayerType === 'jesus'
         ? jesusPrayerSummary(jesusMode, jesusDuration, jesusCount)
         : prayerRuleSummary(prayerRule);
-      void onTaskDraft?.({
+      await onTaskDraft?.({
         title: prayerTitle.trim(),
         subtitle: `${prayerDetail} - ${formatSummaryFrequency(prayerSchedule)}`,
         level: 1,
@@ -784,7 +825,7 @@ export default function SetAsTaskSheet({
         icon: prayerTaskIcon(prayerType),
         targetView: prayerType === 'jesus'
           ? '/jesus-prayer'
-          : prayerRule === 'personal'
+          : prayerRule === 'personal' && prayerType !== 'meal'
             ? '/personal-rule'
             : '/prayer',
         schedule: scheduleDraftToTaskSchedule(prayerSchedule),
@@ -809,12 +850,13 @@ export default function SetAsTaskSheet({
     if (context === 'journal') {
       const technique = JOURNAL_TECHNIQUES.find(item => item.key === journalTechnique);
       if (!technique) return;
-      void onTaskDraft?.({
+      await onTaskDraft?.({
         title: technique.defaultTitle,
         subtitle: `${formatSummaryFrequency(journalTime)} - ${journalTime.time}`,
-        level: 1,
-        source: 'spiritual',
+        level: 2,
+        source: 'routine',
         type: 'journal',
+        icon: journalTaskIcon(journalTechnique),
         targetView: journalTechnique === 'daily'
           ? '/journal-daily'
           : journalTechnique === 'morning_pages'
@@ -833,9 +875,10 @@ export default function SetAsTaskSheet({
 
     if (context === 'scripture') {
       if (!scriptureType || !scriptureTitle.trim()) return;
-      void onTaskDraft?.({
+      const amountLabel = scriptureSessionAmountLabel(scriptureType, scriptureDailyAmount);
+      await onTaskDraft?.({
         title: scriptureTitle.trim(),
-        subtitle: `${formatSummaryFrequency(scriptureSchedule)} - ${scriptureSchedule.time}`,
+        subtitle: `${amountLabel} - ${formatSummaryFrequency(scriptureSchedule)} - ${scriptureSchedule.time}`,
         level: 1,
         source: 'spiritual',
         type: 'reading',
@@ -849,7 +892,7 @@ export default function SetAsTaskSheet({
           totalUnitsRead: 0,
         },
       });
-      onSummaryChange?.(`${scriptureTitle.trim()} · ${formatSummaryFrequency(scriptureSchedule)} · ${scriptureSchedule.time}`);
+      onSummaryChange?.(`${scriptureTitle.trim()} · ${amountLabel} · ${formatSummaryFrequency(scriptureSchedule)} · ${scriptureSchedule.time}`);
     }
 
     onClose();
@@ -1015,18 +1058,24 @@ export default function SetAsTaskSheet({
                   s.segmentPill,
                   {
                     width: (segmentWidth - 12) / 2,
+                    backgroundColor: activeSegmentColor,
+                    shadowColor: activeSegmentColor,
                   },
                   segmentPillMotionStyle,
                 ]}
               />
             )}
             <TouchableOpacity
-              onPress={() => switchTaskTab('spiritual')}
+              onPress={() => switchTaskTab(primaryTaskTab)}
               activeOpacity={0.86}
               style={s.segmentBtn}
             >
-              <Flame s={16} color={taskTab === 'spiritual' ? '#FFFFFF' : '#C5A059'} filled={taskTab === 'spiritual'} />
-              <Text style={[s.segmentText, taskTab === 'spiritual' && s.segmentTextActive]}>SPIRITUAL</Text>
+              {context === 'journal' ? (
+                <Notebook s={16} c={primaryTaskTabActive ? '#FFFFFF' : primaryTaskTabMuted} />
+              ) : (
+                <Flame s={16} color={primaryTaskTabActive ? '#FFFFFF' : primaryTaskTabMuted} filled={primaryTaskTabActive} />
+              )}
+              <Text style={[s.segmentText, primaryTaskTabActive && s.segmentTextActive]}>{primaryTaskTabLabel}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => switchTaskTab('challenge')}
@@ -1040,7 +1089,7 @@ export default function SetAsTaskSheet({
 
           <ScrollView ref={contentScrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
             <Reanimated.View style={tabContentMotionStyle}>
-              {taskTab === 'spiritual' && (
+              {primaryTaskTabActive && (
                 <>
                   {context === 'prayer' && (
                     <PrayerSpiritualPanel
@@ -1063,7 +1112,7 @@ export default function SetAsTaskSheet({
                   )}
 
                   {context === 'journal' && (
-                    <JournalSpiritualPanel
+                    <JournalRoutinePanel
                       journalTechnique={journalTechnique}
                       schedule={journalTime}
                       onTechniqueChange={setJournalTechnique}
@@ -1197,13 +1246,13 @@ function PrayerSpiritualPanel({
 
       {!!prayerType && (
         <>
-          <CardBlock label="Task Name">
+          <CardBlock label="Name Activity">
             <TextInput
               value={prayerTitle}
               onChangeText={onTitleChange}
               placeholder="e.g. Morning Prayer"
               placeholderTextColor="#D1D5DB"
-              style={s.bigTitleInput}
+              style={s.activityNameInput}
             />
           </CardBlock>
 
@@ -1296,6 +1345,7 @@ function PrayerRuleOption({
   onPress: () => void;
 }) {
   const progress = useSelectionMotion(active);
+  const showOrthodoxBadge = isOrthodoxRuleChoice(item.key);
   const motionStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', '#FFF9EE']),
     borderColor: interpolateColor(progress.value, [0, 1], ['#F0EDE6', '#D8B56E']),
@@ -1312,7 +1362,17 @@ function PrayerRuleOption({
           <Text style={[s.optionTitle, active && s.optionTitleActive]}>{item.label}</Text>
           <Text style={s.optionBody}>{item.desc}</Text>
         </View>
-        {active && <CheckSmall s={16} c={C.gold} />}
+        {(showOrthodoxBadge || active) && (
+          <View style={s.optionTrailing}>
+            {showOrthodoxBadge && (
+              <View style={s.orthodoxRuleBadge}>
+                <OrthodoxCross s={11} c={C.gold} w={1.35} />
+                <Text style={s.orthodoxRuleBadgeText}>ORTH.</Text>
+              </View>
+            )}
+            {active && <CheckSmall s={16} c={C.gold} />}
+          </View>
+        )}
       </Reanimated.View>
     </TouchableOpacity>
   );
@@ -1518,7 +1578,7 @@ function PrayerChallengeRuleEditor({
   );
 }
 
-function JournalSpiritualPanel({
+function JournalRoutinePanel({
   journalTechnique,
   schedule,
   onTechniqueChange,
@@ -1533,7 +1593,7 @@ function JournalSpiritualPanel({
 }) {
   return (
     <View style={s.stack}>
-      <CardBlock label="Technique">
+      <CardBlock label="Technique" accent={ROUTINE_TASK_ACCENT}>
         <View style={s.techniqueRow}>
           {JOURNAL_TECHNIQUES.map(item => {
             const active = journalTechnique === item.key;
@@ -1552,9 +1612,9 @@ function JournalSpiritualPanel({
         </View>
       </CardBlock>
 
-      <ScheduleEditor value={schedule} onChange={onScheduleChange} showFrequency />
+      <ScheduleEditor value={schedule} onChange={onScheduleChange} showFrequency accent={ROUTINE_TASK_ACCENT} />
 
-      <PrimaryButton label="Save Spiritual Task" onPress={onSave} />
+      <PrimaryButton label="Save Routine Task" onPress={onSave} accent={ROUTINE_TASK_ACCENT} />
     </View>
   );
 }
@@ -1638,13 +1698,13 @@ function ScriptureSpiritualPanel({
 
       {!!scriptureType && (
         <>
-          <CardBlock label="Task Name">
+          <CardBlock label="Name Activity">
             <TextInput
               value={scriptureTitle}
               onChangeText={onTitleChange}
               placeholder="e.g. Daily Bible Reading"
               placeholderTextColor="#D1D5DB"
-              style={s.bigTitleInput}
+              style={s.activityNameInput}
             />
           </CardBlock>
 
@@ -1708,6 +1768,7 @@ export function ChallengePanel({
   churchSchedule,
   expandedChallengeId,
   recentlyStartedTemplateId,
+  externalSaveRequestId = 0,
   showActiveLabel = true,
   showPausedLabel = true,
   onOpenSetup,
@@ -1741,6 +1802,7 @@ export function ChallengePanel({
   churchSchedule?: ChallengeChurchScheduleDraft;
   expandedChallengeId: string | null;
   recentlyStartedTemplateId: string | null;
+  externalSaveRequestId?: number;
   showActiveLabel?: boolean;
   showPausedLabel?: boolean;
   onOpenSetup: (entry: ChallengeCatalogEntry) => void;
@@ -1760,6 +1822,7 @@ export function ChallengePanel({
   onUpdateChallenge: (id: string, updates: { time?: string; scheduleLabel?: string; paceLabel?: string; prayerConfig?: ChallengePrayerConfig; scriptureConfig?: ChallengeScriptureConfig; churchConfig?: ChallengeChurchConfig }) => void | Promise<void>;
 }) {
   const [confirmAction, setConfirmAction] = useState<ChallengeConfirmAction | null>(null);
+  const handledExternalSaveRef = useRef(0);
 
   const groupedAvailable = useMemo(() => {
     if (context !== 'scripture') return null;
@@ -1808,6 +1871,11 @@ export function ChallengePanel({
       return;
     }
 
+    if (item.category === 'scripture' && item.scriptureConfig) {
+      onScriptureDailyAmountChange(Math.max(1, item.scriptureConfig.chaptersPerDay || 1));
+      return;
+    }
+
     if (item.prayerConfig?.prayerRule) {
       onChallengePrayerRuleChange(item.prayerConfig.prayerRule);
       return;
@@ -1828,7 +1896,7 @@ export function ChallengePanel({
     onExpandedChallengeChange(item.id);
   };
 
-  const saveChallengeEdits = (item: ChallengeRecord) => {
+  const saveChallengeEdits = useCallback((item: ChallengeRecord) => {
     if (item.category === 'church' && churchSchedule) {
       return Promise.resolve(onUpdateChallenge(item.id, {
         time: churchSchedule.time,
@@ -1838,11 +1906,18 @@ export function ChallengePanel({
     }
 
     if (item.category === 'scripture' && item.scriptureConfig) {
+      const chaptersPerDay = Math.max(1, Math.round(scriptureDailyAmount || item.scriptureConfig.chaptersPerDay || 1));
+      const pacePrefix = cleanMetaSeparators(item.paceLabel).split(META_SEPARATOR)[0];
+      const paceLabel = [pacePrefix, `${chaptersPerDay} ${item.groupKey === 'psalter' ? (chaptersPerDay === 1 ? 'psalm/day' : 'psalms/day') : (chaptersPerDay === 1 ? 'chapter/day' : 'chapters/day')}`]
+        .filter(Boolean)
+        .join(META_SEPARATOR);
       return Promise.resolve(onUpdateChallenge(item.id, {
         time: challengeSchedule.time,
         scheduleLabel: item.scheduleLabel,
+        paceLabel,
         scriptureConfig: {
           ...item.scriptureConfig,
+          chaptersPerDay,
           time: challengeSchedule.time,
           sameTimeEveryDay: challengeSchedule.sameTimeEveryDay,
           dayTimes: challengeSchedule.sameTimeEveryDay ? {} : challengeSchedule.dayTimes,
@@ -1877,7 +1952,27 @@ export function ChallengePanel({
       scheduleLabel: item.scheduleLabel,
       prayerConfig,
     })).finally(() => onExpandedChallengeChange(null));
-  };
+  }, [
+    challengeJesusCount,
+    challengeJesusDuration,
+    challengeJesusMode,
+    challengePrayerRule,
+    challengeSchedule,
+    scriptureDailyAmount,
+    churchSchedule,
+    onExpandedChallengeChange,
+    onUpdateChallenge,
+  ]);
+
+  useEffect(() => {
+    if (!externalSaveRequestId || handledExternalSaveRef.current === externalSaveRequestId) return;
+    handledExternalSaveRef.current = externalSaveRequestId;
+    const item = [...activeItems, ...pausedItems].find(entry => entry.id === expandedChallengeId)
+      ?? activeItems[0]
+      ?? pausedItems[0];
+    if (!item) return;
+    void saveChallengeEdits(item);
+  }, [externalSaveRequestId, activeItems, pausedItems, expandedChallengeId, saveChallengeEdits]);
 
   return (
     <View style={s.stack}>
@@ -1963,6 +2058,27 @@ export function ChallengePanel({
                           onDurationChange={onChallengeJesusDurationChange}
                           onCountChange={onChallengeJesusCountChange}
                         />
+                      </View>
+                    )}
+
+                    {item.category === 'scripture' && item.scriptureConfig && item.scriptureConfig.chaptersPerDay > 0 && (
+                      <View style={s.scriptureSetupBlock}>
+                        <Text style={s.scriptureSetupLabel}>{item.groupKey === 'psalter' ? 'Psalms per Day' : 'Chapters per Day'}</Text>
+                        <View style={s.scriptureAmountRow}>
+                          {[1, 2, 3, 4, 5].map(amount => {
+                            const active = scriptureDailyAmount === amount;
+                            return (
+                              <TouchableOpacity
+                                key={amount}
+                                onPress={() => onScriptureDailyAmountChange(amount)}
+                                activeOpacity={0.84}
+                                style={[s.scriptureAmountChip, active && s.scriptureAmountChipActive]}
+                              >
+                                <Text style={[s.scriptureAmountValue, active && s.scriptureAmountValueActive]}>{amount}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
                       </View>
                     )}
 
@@ -2144,6 +2260,27 @@ export function ChallengePanel({
                     </View>
                   )}
 
+                  {item.category === 'scripture' && item.scriptureConfig && item.scriptureConfig.chaptersPerDay > 0 && (
+                    <View style={s.scriptureSetupBlock}>
+                      <Text style={s.scriptureSetupLabel}>{item.groupKey === 'psalter' ? 'Psalms per Day' : 'Chapters per Day'}</Text>
+                      <View style={s.scriptureAmountRow}>
+                        {[1, 2, 3, 4, 5].map(amount => {
+                          const active = scriptureDailyAmount === amount;
+                          return (
+                            <TouchableOpacity
+                              key={amount}
+                              onPress={() => onScriptureDailyAmountChange(amount)}
+                              activeOpacity={0.84}
+                              style={[s.scriptureAmountChip, active && s.scriptureAmountChipActive]}
+                            >
+                              <Text style={[s.scriptureAmountValue, active && s.scriptureAmountValueActive]}>{amount}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  )}
+
                   {item.category === 'church' && churchSchedule && onChurchScheduleChange ? (
                     <ScheduleEditor value={churchSchedule} onChange={onChurchScheduleChange} showFrequency />
                   ) : (
@@ -2200,12 +2337,12 @@ export function ChallengePanel({
       )}
 
       {availableItems.length > 0 && (
-        <View style={s.stack}>
+        <View style={s.challengeCatalogStack}>
           {context !== 'scripture' && <SectionLabel text="Start New" accent="#C5A059" />}
 
           {context === 'scripture' && groupedAvailable
             ? Object.entries(groupedAvailable).map(([group, entries]) => (
-                <View key={group} style={s.stack}>
+                <View key={group} style={s.scriptureChallengeGroup}>
                   <Text style={s.groupTitle}>{group.toUpperCase()}</Text>
                   {entries.map(entry => (
                     <ScriptureCatalogEntryCard
@@ -2360,16 +2497,16 @@ function ScriptureCatalogEntryCard({
           <View style={s.scriptureStartMain}>
             <View style={s.scriptureStartIconWrap}>
               {entry.id === 'lectionary_daily'
-                ? challengeIcon(entry.icon, '#C5A059')
-                : <OpenBook s={18} c="#C5A059" w={1.9} />}
+                ? challengeIcon(entry.icon, '#C5A059', 16)
+                : <OpenBook s={16} c="#C5A059" w={1.9} />}
             </View>
             <View style={s.scriptureStartCopy}>
-              <Text style={s.scriptureStartTitle}>{displayTitle}</Text>
-              <Text style={s.scriptureStartBody}>{entry.description}</Text>
+              <Text style={s.scriptureStartTitle} numberOfLines={2}>{displayTitle}</Text>
+              <Text style={s.scriptureStartBody} numberOfLines={expanded ? 3 : 2}>{entry.description}</Text>
             </View>
           </View>
-          <View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
-            <ChevronDown s={15} c="#C9B18A" />
+          <View style={[s.startChevronCircle, expanded && s.startChevronCircleExpanded, { transform: [{ rotate: expanded ? '180deg' : '0deg' }] }]}>
+            <ChevronDown s={13} c="#C9B18A" />
           </View>
         </View>
       </TouchableOpacity>
@@ -2467,15 +2604,15 @@ function ChallengeCatalogEntryCard({
         <View style={s.catalogStartTopRow}>
           <View style={s.catalogStartMain}>
             <View style={s.catalogStartIconWrap}>
-              {challengeIcon(entry.icon, '#C5A059')}
+              {challengeIcon(entry.icon, '#C5A059', 16)}
             </View>
             <View style={s.catalogStartCopy}>
-              <Text style={s.catalogStartTitle}>{entry.title}</Text>
-              <Text style={s.catalogStartBody}>{entry.description}</Text>
+              <Text style={s.catalogStartTitle} numberOfLines={2}>{entry.title}</Text>
+              <Text style={s.catalogStartBody} numberOfLines={expanded ? 3 : 2}>{entry.description}</Text>
             </View>
           </View>
-          <View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
-            <ChevronDown s={15} c="#C9B18A" />
+          <View style={[s.startChevronCircle, expanded && s.startChevronCircleExpanded, { transform: [{ rotate: expanded ? '180deg' : '0deg' }] }]}>
+            <ChevronDown s={13} c="#C9B18A" />
           </View>
         </View>
       </TouchableOpacity>
@@ -2560,10 +2697,12 @@ function ScheduleEditor({
   value,
   onChange,
   showFrequency,
+  accent = C.gold,
 }: {
   value: ScheduleDraft;
   onChange: (value: ScheduleDraft) => void;
   showFrequency: boolean;
+  accent?: string;
 }) {
   const [gridWidth, setGridWidth] = useState(0);
   const activeDayIndexes = useMemo(() => {
@@ -2594,7 +2733,7 @@ function ScheduleEditor({
   const showBaseTime = value.sameTimeEveryDay || value.frequency === 'monthly';
 
   return (
-    <CardBlock label="Schedule">
+    <CardBlock label="Schedule" accent={accent}>
       <View style={s.stack}>
         {showFrequency && (
           <>
@@ -2606,6 +2745,7 @@ function ScheduleEditor({
                     key={option.value}
                     option={option}
                     active={active}
+                    accent={accent}
                     onPress={() => onChange({
                       ...value,
                       frequency: option.value,
@@ -2646,6 +2786,10 @@ function ScheduleEditor({
                             borderRadius: Math.round(weekdaySize / 2),
                           },
                           active && s.dayChipActive,
+                          active && {
+                            borderColor: accent,
+                            backgroundColor: accent === C.gold ? '#FFF9EE' : ROUTINE_TASK_SOFT,
+                          },
                         ]}
                       >
                         <Text
@@ -2653,6 +2797,7 @@ function ScheduleEditor({
                             s.dayChipText,
                             { fontSize: weekdayFontSize },
                             active && s.dayChipTextActive,
+                            active && { color: accent },
                           ]}
                         >
                           {label[0]}
@@ -2669,7 +2814,7 @@ function ScheduleEditor({
                 style={s.monthlyGridWrap}
                 onLayout={event => setGridWidth(Math.floor(event.nativeEvent.layout.width))}
               >
-                <SectionLabel text="Days of Month" accent="#C5A059" compact />
+                <SectionLabel text="Days of Month" accent={accent} compact />
                 <Text style={s.monthlyHint}>Choose one or more dates for the monthly repeat.</Text>
                 <View style={[s.monthlyGrid, { gap: monthlyGap }]}>
                   {Array.from({ length: 31 }, (_, index) => index + 1).map(day => {
@@ -2695,6 +2840,7 @@ function ScheduleEditor({
                             minHeight: monthlyCellSize,
                           },
                           active && s.chapterCellActive,
+                          active && { borderColor: accent, backgroundColor: accent },
                         ]}
                       >
                         <Text style={[s.chapterCellTextSmall, active && s.chapterCellTextSmallActive]}>{day}</Text>
@@ -2708,13 +2854,14 @@ function ScheduleEditor({
         )}
 
         {showBaseTime && (
-          <TimeField label="Time" value={value.time} onChangeText={time => onChange({ ...value, time })} />
+          <TimeField label="Time" value={value.time} onChangeText={time => onChange({ ...value, time })} accent={accent} />
         )}
 
         {value.frequency !== 'monthly' && (
           <ToggleRow
             label="Different time per day"
             active={!value.sameTimeEveryDay}
+            accent={accent}
             onPress={() => onChange({ ...value, sameTimeEveryDay: !value.sameTimeEveryDay })}
           />
         )}
@@ -2727,6 +2874,7 @@ function ScheduleEditor({
                 <TimePickerButton
                   value={value.dayTimes[index] || value.time}
                   onChangeText={time => onChange({ ...value, dayTimes: { ...value.dayTimes, [index]: time } })}
+                  accent={accent}
                   compact
                 />
               </View>
@@ -2739,6 +2887,7 @@ function ScheduleEditor({
           reminderMinutes={value.reminderMinutes}
           onModeChange={mode => onChange({ ...value, notificationMode: mode })}
           onReminderChange={reminderMinutes => onChange({ ...value, reminderMinutes })}
+          accent={accent}
         />
       </View>
     </CardBlock>
@@ -2748,16 +2897,21 @@ function ScheduleEditor({
 function FrequencyChoice({
   option,
   active,
+  accent,
   onPress,
 }: {
   option: typeof FULL_FREQUENCY_OPTIONS[number];
   active: boolean;
+  accent: string;
   onPress: () => void;
 }) {
+  const softAccent = accent === C.gold ? '#FFF9EE' : ROUTINE_TASK_SOFT;
+  const borderAccent = accent === C.gold ? '#D6B067' : ROUTINE_TASK_BORDER;
+  const subAccent = accent === C.gold ? '#B08A47' : ROUTINE_TASK_ACCENT_MUTED;
   const progress = useSelectionMotion(active);
   const motionStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', '#FFF9EE']),
-    borderColor: interpolateColor(progress.value, [0, 1], ['#F0EDE6', '#D6B067']),
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', softAccent]),
+    borderColor: interpolateColor(progress.value, [0, 1], ['#F0EDE6', borderAccent]),
     shadowOpacity: 0.015 + progress.value * 0.085,
     transform: [{ scale: 1 + progress.value * 0.01 }],
   }));
@@ -2776,14 +2930,15 @@ function FrequencyChoice({
         style={[
           s.frequencyChip,
           motionStyle,
+          { shadowColor: accent },
         ]}
       >
         <View style={s.frequencyCopy}>
           <Text style={[s.frequencyChipText, active && s.frequencyChipTextActive]}>{option.label}</Text>
-          <Text style={[s.frequencyChipSub, active && s.frequencyChipSubActive]}>{option.desc}</Text>
+          <Text style={[s.frequencyChipSub, active && s.frequencyChipSubActive, active && { color: subAccent }]}>{option.desc}</Text>
         </View>
-        <View style={[s.frequencyDotRing, active && s.frequencyDotRingActive]}>
-          <Reanimated.View style={[s.frequencyDot, dotMotionStyle]} />
+        <View style={[s.frequencyDotRing, active && s.frequencyDotRingActive, active && { borderColor: borderAccent, backgroundColor: softAccent }]}>
+          <Reanimated.View style={[s.frequencyDot, { backgroundColor: accent }, dotMotionStyle]} />
         </View>
       </Reanimated.View>
     </TouchableOpacity>
@@ -2837,13 +2992,15 @@ function ChallengeTimeEditor({
 function CardBlock({
   label,
   children,
+  accent = C.gold,
 }: {
   label: string;
   children: React.ReactNode;
+  accent?: string;
 }) {
   return (
     <View style={s.cardBlock}>
-      <Text style={s.blockLabel}>{label}</Text>
+      <Text style={[s.blockLabel, { color: accent }]}>{label}</Text>
       {children}
     </View>
   );
@@ -2852,10 +3009,12 @@ function CardBlock({
 function TimePickerButton({
   value,
   onChangeText,
+  accent = C.gold,
   compact = false,
 }: {
   value: string;
   onChangeText: (text: string) => void;
+  accent?: string;
   compact?: boolean;
 }) {
   const normalized = parseTimeParts(value);
@@ -2864,6 +3023,8 @@ function TimePickerButton({
   const [minute, setMinute] = useState(normalized.minute);
   const hourScrollRef = useRef<ScrollView>(null);
   const minuteScrollRef = useRef<ScrollView>(null);
+  const timeButtonBorder = accent === C.gold ? '#E9DEC9' : ROUTINE_TASK_BORDER;
+  const timeButtonBg = accent === C.gold ? '#FFFBEB' : ROUTINE_TASK_SOFT;
   const nativeDate = useMemo(() => {
     const next = new Date();
     next.setHours(Number(hour), Number(minute), 0, 0);
@@ -2884,7 +3045,7 @@ function TimePickerButton({
         is24Hour: true,
         display: 'spinner',
         minuteInterval: 5,
-        positiveButton: { label: 'Save', textColor: '#B08A47' },
+        positiveButton: { label: 'Save', textColor: accent },
         negativeButton: { label: 'Cancel', textColor: '#9CA3AF' },
         onChange: (event: { type?: string }, selectedDate?: Date) => {
           if (event?.type !== 'set' || !selectedDate) return;
@@ -2939,12 +3100,30 @@ function TimePickerButton({
       <TouchableOpacity
         onPress={openPicker}
         activeOpacity={0.84}
-        style={[s.timeButton, compact && s.timeButtonCompact]}
+        style={[
+          s.timeButton,
+          compact && s.timeButtonCompact,
+          { borderColor: compact ? '#ECE2CF' : timeButtonBorder, backgroundColor: compact ? '#FFFFFF' : timeButtonBg },
+        ]}
       >
-        <Text style={[s.timeButtonValue, compact && s.timeButtonValueCompact]}>
-          {formatTimeValue(hour, minute)}
-        </Text>
-        <ChevronDown s={compact ? 14 : 16} c="#C5A059" />
+        {compact ? (
+          <>
+            <Text style={[s.timeButtonValue, s.timeButtonValueCompact]}>
+              {formatTimeValue(hour, minute)}
+            </Text>
+            <ChevronDown s={14} c={accent} />
+          </>
+        ) : (
+          <>
+            <Text style={s.timeButtonValue}>
+              {formatTimeValue(hour, minute)}
+            </Text>
+            <View style={[s.timeActionPill, { borderColor: timeButtonBorder }]}>
+              <Text style={[s.timeActionText, { color: accent }]}>Change</Text>
+              <ChevronDown s={14} c={accent} />
+            </View>
+          </>
+        )}
       </TouchableOpacity>
 
       <Modal transparent visible={visible} animationType="fade" onRequestClose={() => setVisible(false)}>
@@ -2962,7 +3141,7 @@ function TimePickerButton({
 
               <View style={s.timePreviewInline}>
                 <Text style={s.timePreviewInlineLabel}>Selected</Text>
-                <Text style={s.timePreviewInlineValue}>{formatTimeValue(hour, minute)}</Text>
+                <Text style={[s.timePreviewInlineValue, { color: accent }]}>{formatTimeValue(hour, minute)}</Text>
               </View>
 
               <View style={s.nativeIosPickerWrap}>
@@ -2983,7 +3162,7 @@ function TimePickerButton({
                 />
               </View>
 
-              <TouchableOpacity onPress={applyValue} activeOpacity={0.86} style={s.timeSaveButton}>
+              <TouchableOpacity onPress={applyValue} activeOpacity={0.86} style={[s.timeSaveButton, { backgroundColor: accent, shadowColor: accent }]}>
                 <Text style={s.timeSaveButtonText}>Save</Text>
               </TouchableOpacity>
             </View>
@@ -2999,11 +3178,11 @@ function TimePickerButton({
 
               <View style={s.timePreviewInline}>
                 <Text style={s.timePreviewInlineLabel}>Selected</Text>
-                <Text style={s.timePreviewInlineValue}>{formatTimeValue(hour, minute)}</Text>
+                <Text style={[s.timePreviewInlineValue, { color: accent }]}>{formatTimeValue(hour, minute)}</Text>
               </View>
 
               <View style={s.timeWheelCard}>
-                <View style={s.timeWheelSelectionBand} />
+                <View style={[s.timeWheelSelectionBand, { borderColor: accent === C.gold ? '#EAD9B7' : ROUTINE_TASK_BORDER, backgroundColor: accent === C.gold ? '#FFFBEB' : ROUTINE_TASK_SOFT }]} />
 
                 <View style={s.timeWheelFadeTop} pointerEvents="none" />
                 <View style={s.timeWheelFadeBottom} pointerEvents="none" />
@@ -3024,7 +3203,7 @@ function TimePickerButton({
                         const active = option === hour;
                         return (
                           <View key={option} style={s.timeWheelItem}>
-                            <Text style={[s.timeWheelItemText, active && s.timeWheelItemTextActive]}>{option}</Text>
+                            <Text style={[s.timeWheelItemText, active && s.timeWheelItemTextActive, active && { color: accent }]}>{option}</Text>
                           </View>
                         );
                       })}
@@ -3048,7 +3227,7 @@ function TimePickerButton({
                         const active = option === minute;
                         return (
                           <View key={option} style={s.timeWheelItem}>
-                            <Text style={[s.timeWheelItemText, active && s.timeWheelItemTextActive]}>{option}</Text>
+                            <Text style={[s.timeWheelItemText, active && s.timeWheelItemTextActive, active && { color: accent }]}>{option}</Text>
                           </View>
                         );
                       })}
@@ -3057,7 +3236,7 @@ function TimePickerButton({
                 </View>
               </View>
 
-              <TouchableOpacity onPress={applyValue} activeOpacity={0.86} style={s.timeSaveButton}>
+              <TouchableOpacity onPress={applyValue} activeOpacity={0.86} style={[s.timeSaveButton, { backgroundColor: accent, shadowColor: accent }]}>
                 <Text style={s.timeSaveButtonText}>Save</Text>
               </TouchableOpacity>
             </View>
@@ -3072,15 +3251,17 @@ function TimeField({
   label,
   value,
   onChangeText,
+  accent = C.gold,
 }: {
   label: string;
   value: string;
   onChangeText: (text: string) => void;
+  accent?: string;
 }) {
   return (
     <View style={s.stackTight}>
-      <SectionLabel text={label} accent="#C5A059" compact />
-      <TimePickerButton value={value} onChangeText={onChangeText} />
+      <SectionLabel text={label} accent={accent} compact />
+      <TimePickerButton value={value} onChangeText={onChangeText} accent={accent} />
     </View>
   );
 }
@@ -3088,15 +3269,17 @@ function TimeField({
 function ToggleRow({
   label,
   active,
+  accent = C.gold,
   onPress,
 }: {
   label: string;
   active: boolean;
+  accent?: string;
   onPress: () => void;
 }) {
   const progress = useSelectionMotion(active);
   const trackMotionStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(progress.value, [0, 1], ['#E5E7EB', C.gold]),
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#E5E7EB', accent]),
   }));
   const thumbMotionStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: progress.value * 16 }],
@@ -3134,12 +3317,14 @@ function SectionLabel({
 function PrimaryButton({
   label,
   onPress,
+  accent = C.gold,
 }: {
   label: string;
   onPress: () => void;
+  accent?: string;
 }) {
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.84} style={s.primaryBtn}>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.84} style={[s.primaryBtn, { backgroundColor: accent, shadowColor: accent }]}>
       <Text style={s.primaryBtnText}>{label}</Text>
     </TouchableOpacity>
   );
@@ -3242,6 +3427,8 @@ const s = StyleSheet.create({
     gap: 18,
   },
   stack: { gap: 16 },
+  challengeCatalogStack: { gap: 9 },
+  scriptureChallengeGroup: { gap: 7 },
   challengeCardList: {},
   stackTight: { gap: 10 },
   rowGap10: { gap: 10 },
@@ -3351,12 +3538,16 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
     textAlign: 'center',
   },
-  bigTitleInput: {
-    minHeight: 50,
+  activityNameInput: {
+    minHeight: 52,
+    borderRadius: 18,
+    backgroundColor: '#FAFAFA',
+    borderWidth: 1,
+    borderColor: '#F2F1EC',
+    paddingHorizontal: 16,
     fontFamily: F.serif,
-    fontSize: 24,
-    lineHeight: 32,
-    color: '#1F2937',
+    fontSize: 22,
+    color: '#111827',
   },
   timeLikeInput: {
     minHeight: 50,
@@ -3371,25 +3562,23 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
   timeButton: {
-    minHeight: 56,
-    borderRadius: 20,
+    minHeight: 52,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E9DEC9',
-    backgroundColor: '#FFFBEB',
-    paddingHorizontal: 18,
+    paddingLeft: 16,
+    paddingRight: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 10,
   },
   timeButtonCompact: {
     minHeight: 44,
     minWidth: 108,
     borderRadius: 16,
     paddingHorizontal: 14,
-    backgroundColor: '#FFFFFF',
-    borderColor: '#ECE2CF',
     marginLeft: 'auto',
+    justifyContent: 'space-between',
   },
   timeButtonValue: {
     fontFamily: F.serifMedium,
@@ -3399,6 +3588,22 @@ const s = StyleSheet.create({
   },
   timeButtonValueCompact: {
     fontSize: 18,
+  },
+  timeActionPill: {
+    minHeight: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  timeActionText: {
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
   },
   pickerOverlay: {
     flex: 1,
@@ -3604,8 +3809,34 @@ const s = StyleSheet.create({
     fontFamily: F.serifMedium,
     fontSize: 15,
     color: '#4B5563',
+    flexShrink: 1,
   },
   optionTitleActive: { color: '#111827' },
+  optionTrailing: {
+    minWidth: 54,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  orthodoxRuleBadge: {
+    minHeight: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E8DCC4',
+    backgroundColor: '#FFFBEB',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  orthodoxRuleBadgeText: {
+    fontFamily: F.sansBold,
+    fontSize: 7.5,
+    letterSpacing: 0.9,
+    color: C.gold,
+    textTransform: 'uppercase',
+  },
   optionBody: {
     marginTop: 2,
     fontFamily: F.sans,
@@ -4246,7 +4477,7 @@ const s = StyleSheet.create({
     shadowOpacity: 0.035,
   },
   challengeCardPaused: {
-    backgroundColor: '#FBFAF7',
+    backgroundColor: 'transparent',
   },
   challengeCard: {
     paddingHorizontal: 16,
@@ -4602,21 +4833,21 @@ const s = StyleSheet.create({
     color: '#9CA3AF',
   },
   catalogStartCard: {
-    borderRadius: 28,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
+    borderRadius: 24,
+    borderLeftWidth: 3,
+    borderRightWidth: 3,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderLeftColor: 'rgba(197,160,89,0.34)',
-    borderRightColor: 'rgba(197,160,89,0.34)',
-    borderTopColor: 'rgba(197,160,89,0.18)',
-    borderBottomColor: 'rgba(197,160,89,0.18)',
-    backgroundColor: '#FFFDF8',
+    borderLeftColor: 'rgba(197,160,89,0.40)',
+    borderRightColor: 'rgba(197,160,89,0.30)',
+    borderTopColor: 'rgba(197,160,89,0.16)',
+    borderBottomColor: 'rgba(197,160,89,0.14)',
+    backgroundColor: '#FFFDF9',
     overflow: 'hidden',
     shadowColor: '#C5A059',
-    shadowOpacity: 0.07,
-    shadowOffset: { width: 0, height: 7 },
-    shadowRadius: 16,
+    shadowOpacity: 0.055,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 12,
     elevation: 2,
   },
   catalogStartCardExpanded: {
@@ -4630,8 +4861,8 @@ const s = StyleSheet.create({
     elevation: 4,
   },
   catalogStartTap: {
-    paddingHorizontal: 16,
-    paddingVertical: 17,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   catalogStartTopRow: {
     flexDirection: 'row',
@@ -4644,12 +4875,12 @@ const s = StyleSheet.create({
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
+    gap: 10,
   },
   catalogStartIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 15,
+    width: 36,
+    height: 36,
+    borderRadius: 13,
     backgroundColor: '#FBF4E7',
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.18)',
@@ -4659,19 +4890,19 @@ const s = StyleSheet.create({
   catalogStartCopy: {
     flex: 1,
     minWidth: 0,
-    paddingTop: 1,
+    paddingTop: 0,
   },
   catalogStartTitle: {
     fontFamily: F.serifMedium,
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 16.8,
+    lineHeight: 21,
     color: '#231F20',
   },
   catalogStartBody: {
-    marginTop: 4,
+    marginTop: 2,
     fontFamily: F.sans,
-    fontSize: 12.2,
-    lineHeight: 16,
+    fontSize: 11.6,
+    lineHeight: 15,
     color: '#A1A4B2',
   },
   catalogStartMeta: {
@@ -4720,21 +4951,21 @@ const s = StyleSheet.create({
     color: '#8B8E96',
   },
   scriptureStartCard: {
-    borderRadius: 32,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
+    borderRadius: 25,
+    borderLeftWidth: 3,
+    borderRightWidth: 3,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderLeftColor: 'rgba(197,160,89,0.38)',
-    borderRightColor: 'rgba(197,160,89,0.38)',
-    borderTopColor: 'rgba(197,160,89,0.16)',
-    borderBottomColor: 'rgba(197,160,89,0.16)',
-    backgroundColor: '#FFFFFF',
+    borderLeftColor: 'rgba(197,160,89,0.42)',
+    borderRightColor: 'rgba(197,160,89,0.30)',
+    borderTopColor: 'rgba(197,160,89,0.15)',
+    borderBottomColor: 'rgba(197,160,89,0.13)',
+    backgroundColor: '#FFFDFB',
     overflow: 'hidden',
     shadowColor: '#C5A059',
-    shadowOpacity: 0.06,
-    shadowOffset: { width: 0, height: 7 },
-    shadowRadius: 16,
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 12,
     elevation: 1,
   },
   scriptureStartCardExpanded: {
@@ -4745,8 +4976,8 @@ const s = StyleSheet.create({
     backgroundColor: '#FFFDF7',
   },
   scriptureStartCardTap: {
-    paddingHorizontal: 18,
-    paddingVertical: 19,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   scriptureStartTopRow: {
     flexDirection: 'row',
@@ -4759,12 +4990,12 @@ const s = StyleSheet.create({
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
+    gap: 10,
   },
   scriptureStartIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 15,
+    width: 36,
+    height: 36,
+    borderRadius: 13,
     backgroundColor: '#FBF4E7',
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.16)',
@@ -4774,19 +5005,19 @@ const s = StyleSheet.create({
   scriptureStartCopy: {
     flex: 1,
     minWidth: 0,
-    paddingTop: 1,
+    paddingTop: 0,
   },
   scriptureStartTitle: {
     fontFamily: F.serifMedium,
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 16.8,
+    lineHeight: 21,
     color: '#231F20',
   },
   scriptureStartBody: {
-    marginTop: 5,
+    marginTop: 2,
     fontFamily: F.sans,
-    fontSize: 12.5,
-    lineHeight: 17,
+    fontSize: 11.6,
+    lineHeight: 15,
     color: '#A3A3B2',
   },
   scriptureSetupInline: {
@@ -4908,7 +5139,22 @@ const s = StyleSheet.create({
     letterSpacing: 2,
     color: '#A8A29E',
     textTransform: 'uppercase',
-    marginBottom: -4,
+    marginBottom: -1,
+  },
+  startChevronCircle: {
+    width: 27,
+    height: 27,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.16)',
+    backgroundColor: 'rgba(255,248,232,0.62)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  startChevronCircleExpanded: {
+    borderColor: 'rgba(197,160,89,0.30)',
+    backgroundColor: '#FFF6E4',
   },
   primaryBtn: {
     minHeight: 52,

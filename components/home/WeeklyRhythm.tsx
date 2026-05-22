@@ -8,6 +8,7 @@ import { Image,
   StyleSheet,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle, Path } from 'react-native-svg';
 import Reanimated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -24,8 +25,8 @@ const FLAME_PNG = require('@/assets/images/streak-flame-512.png');
 
 const TILE_SIZE = 32;
 const ICON_SIZE = 20;
-const CANDLE_W = 24;
-const CANDLE_H = 58;
+const CANDLE_W = 32;
+const CANDLE_H = 60;
 // Indexed by Date.getDay() — Sun=0, Mon=1, ..., Sat=6
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -71,6 +72,21 @@ function Candle({ pct, mode }: { pct: number | null; mode: DayMode }) {
   const filled = Math.max(0, Math.min(100, pct));
   const isEmpty = filled === 0;
   const isFull = filled >= 100;
+  const bodyX = 6;
+  const bodyY = 4;
+  const bodyW = 20;
+  const bodyH = 54;
+  const fillH = (bodyH * filled) / 100;
+  const fillY = bodyY + bodyH - fillH;
+  const fillTopY = isFull ? bodyY + 8.5 : fillY;
+  const fillLineY = Math.max(bodyY + 8, Math.min(bodyY + bodyH - 3, fillY));
+  const fillPath = `M${bodyX + 1.2} ${fillTopY}
+    H${bodyX + bodyW - 1.2}
+    V${bodyY + bodyH - 6}
+    Q${bodyX + bodyW - 1.2} ${bodyY + bodyH - 1.2} ${bodyX + bodyW - 6} ${bodyY + bodyH - 1.2}
+    H${bodyX + 6}
+    Q${bodyX + 1.2} ${bodyY + bodyH - 1.2} ${bodyX + 1.2} ${bodyY + bodyH - 6}
+    Z`;
 
   return (
     <View style={s.candleCol}>
@@ -96,35 +112,142 @@ function Candle({ pct, mode }: { pct: number | null; mode: DayMode }) {
       {/* Body */}
       <View style={s.candleBodyWrap}>
         <View style={[s.candleBodyHalo, isFull && s.candleBodyHaloFull, isEmpty && s.candleBodyHaloDimmed]} pointerEvents="none" />
-        <View style={[s.candleBody, isEmpty && s.candleBodyDimmed]}>
-          <LinearGradient
-            colors={isEmpty ? ['#F7F3E7', '#EDE6D6'] : ['#FFFDF6', '#FFF1CA', '#E9C66E']}
-            locations={[0, 0.52, 1]}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
+        <Svg width={CANDLE_W} height={CANDLE_H} viewBox="0 0 32 60">
+          <Path
+            d="M7 10 C7 6.6 10.1 4 16 4 C21.9 4 25 6.6 25 10 V51 C25 54.6 21.7 58 16 58 C10.3 58 7 54.6 7 51 Z"
+            fill={isEmpty ? '#F3EDDD' : '#FFF4DE'}
+            stroke={isEmpty ? '#D8CDB6' : '#C8A15D'}
+            strokeWidth={1.45}
           />
-          <View style={[s.candleInnerShade, isEmpty && s.candleInnerShadeDimmed]} pointerEvents="none" />
-          {filled > 0 && (
-            <View style={[s.candleFill, { height: `${filled}%` }, isFull && s.candleFillFull]}>
-              <LinearGradient
-                colors={isFull ? ['#FFE6A2', '#E8B955', '#C88B2E'] : ['#FFD982', '#F0B94F', '#D49431']}
-                locations={[0, 0.58, 1]}
-                style={StyleSheet.absoluteFill}
-                pointerEvents="none"
-              />
-              <View style={s.candleFillBloom} pointerEvents="none" />
-              <View style={s.candleSideHighlight} pointerEvents="none" />
-              {filled < 100 && <View style={s.candleFillTopLine} pointerEvents="none" />}
-            </View>
+          {!isEmpty && (
+            <Path d={fillPath} fill={isFull ? '#D6A246' : '#D7A348'} />
           )}
-          <View style={s.candleWickInset} pointerEvents="none" />
-          <View style={[s.candleWaxLip, isFull && s.candleWaxLipFull, isEmpty && s.candleWaxLipDimmed]} pointerEvents="none" />
-          <View style={[s.candleWaxDrop, isEmpty && s.candleWaxDropDimmed]} pointerEvents="none" />
-          <View style={[s.candleWaxDropSmall, isEmpty && s.candleWaxDropDimmed]} pointerEvents="none" />
-          <View style={s.candleGloss} pointerEvents="none" />
-          <View style={[s.candleRim, isEmpty && s.candleRimDimmed]} pointerEvents="none" />
-          <View style={[s.candleBase, isEmpty && s.candleBaseDimmed]} pointerEvents="none" />
-        </View>
+          {isFull && (
+            <>
+              <Path
+                d="M9.4 14 C11.2 17.5 11.1 42.4 9.9 49.8 C12.4 52.5 19.5 52.4 22.1 49.7 C21.3 40.9 21.1 23.3 22.6 14.3 C19.4 15.2 12.8 15.1 9.4 14 Z"
+                fill="#E1B75A"
+                opacity={0.62}
+              />
+              <Path
+                d="M21.5 15 C22.1 24.1 22 39.3 20.7 49.4 C21.7 48.8 22.5 47.7 22.9 46.5 C23 36.6 22.9 25.4 22.5 15.7 Z"
+                fill="#9C6423"
+                opacity={0.22}
+              />
+              <Path
+                d="M11.1 16.3 C10.5 25.3 10.6 39.8 11.7 49.2"
+                fill="none"
+                stroke="#FFE8AE"
+                strokeWidth={1.35}
+                strokeLinecap="round"
+                opacity={0.74}
+              />
+              <Path
+                d="M13.2 51.2 C15.3 52.2 18.7 52.1 20.7 50.9"
+                fill="none"
+                stroke="#F8D482"
+                strokeWidth={1.1}
+                strokeLinecap="round"
+                opacity={0.58}
+              />
+              <Circle cx={20.5} cy={25.2} r={0.95} fill="#F8D88F" opacity={0.72} />
+              <Circle cx={19.8} cy={32.4} r={0.62} fill="#FBE3A6" opacity={0.5} />
+            </>
+          )}
+          {!isEmpty && !isFull && (
+            <>
+              <Path
+                d={`M8.9 ${fillLineY - 0.5} C11.2 ${fillLineY - 1.7} 13.6 ${fillLineY - 0.4} 16 ${fillLineY - 1.15} C18.8 ${fillLineY - 2} 21.2 ${fillLineY - 1.25} 23.1 ${fillLineY - 0.45}`}
+                fill="none"
+                stroke="#FFE6A8"
+                strokeWidth={2.25}
+                strokeLinecap="round"
+              />
+              <Path
+                d={`M9.1 ${fillLineY + 1.35} C12 ${fillLineY + 2.1} 19.6 ${fillLineY + 2} 22.9 ${fillLineY + 1.25}`}
+                fill="none"
+                stroke="#9F6824"
+                strokeWidth={0.8}
+                strokeLinecap="round"
+                opacity={0.34}
+              />
+            </>
+          )}
+          {isFull && (
+            <Path
+              d="M11.3 47 C13.4 48.4 18.4 48.2 20.8 46.5"
+              fill="none"
+              stroke="#F3C86B"
+              strokeWidth={1.3}
+              strokeLinecap="round"
+              opacity={0.62}
+            />
+          )}
+          {isFull ? (
+            <>
+              <Path
+                d="M8.1 9 C9.9 6.8 13.3 6.2 16 7.2 C18.9 6.2 22.2 6.8 23.9 9 V13.1 C22 14.7 19.3 13.3 16.1 13.2 C12.9 13.1 10 14.7 8.1 13.1 Z"
+                fill="#FFF0B9"
+                stroke="#D0A45A"
+                strokeWidth={1.05}
+              />
+              <Path
+                d="M10.1 9.5 C12.1 8.3 14.4 8.2 16.2 8.8 C18.1 8.2 20.6 8.4 22 9.6"
+                fill="none"
+                stroke="#FFF9DF"
+                strokeWidth={1.2}
+                strokeLinecap="round"
+                opacity={0.82}
+              />
+              <Path
+                d="M9.5 12.4 C12 13.2 13.8 11.9 16.1 12 C18.5 12.1 20.7 13.1 22.7 12.2"
+                fill="none"
+                stroke="#B87828"
+                strokeWidth={0.75}
+                strokeLinecap="round"
+                opacity={0.26}
+              />
+              <Path
+                d="M22.1 12.4 C22.5 17.7 20.3 19 19.1 17.2 C18.3 16 19.3 14.2 19.2 12.8"
+                fill="#F7C86F"
+                stroke="#D0A45A"
+                strokeWidth={0.9}
+                strokeLinejoin="round"
+              />
+              <Path
+                d="M10.3 12.8 C10 16 11.3 17.1 12.3 16 C12.9 15.1 12.1 14 12.2 12.7"
+                fill="#FFF7D8"
+                stroke="#D8B975"
+                strokeWidth={0.85}
+                strokeLinejoin="round"
+              />
+            </>
+          ) : (
+            <Path
+              d="M8.3 9.5 C10.2 7.4 13.4 6.7 16 7.4 C18.7 6.7 21.8 7.4 23.7 9.5 V12 C21.8 13.3 19.2 12.2 16 12.2 C12.8 12.2 10.2 13.3 8.3 12 Z"
+              fill={isEmpty ? '#F8F1E2' : '#FFF9EA'}
+              stroke={isEmpty ? '#DED3BF' : '#D8BD82'}
+              strokeWidth={0.95}
+            />
+          )}
+          <Path
+            d="M11.2 18 C10.6 28.5 10.8 39.8 11.9 50.2"
+            fill="none"
+            stroke="#FFFFFF"
+            strokeWidth={1.7}
+            strokeLinecap="round"
+            opacity={isEmpty ? 0.42 : 0.72}
+          />
+          <Circle cx={20.4} cy={22} r={1.15} fill={isEmpty ? '#ECE2CF' : '#F6DFAE'} opacity={0.55} />
+          <Path
+            d="M8 51.5 C10.7 54.5 21.4 54.5 24 51.4"
+            fill="none"
+            stroke={isEmpty ? '#D9CEB8' : '#A87933'}
+            strokeWidth={1.3}
+            strokeLinecap="round"
+            opacity={0.78}
+          />
+        </Svg>
       </View>
     </View>
   );
@@ -290,7 +413,7 @@ export default function WeeklyRhythm() {
         <Text style={s.heading}>Your Progress</Text>
       </View>
 
-      <TouchableOpacity style={s.card} activeOpacity={0.85}>
+      <View style={s.card}>
         <Text style={s.cardLabel}>TODAY</Text>
         <DailyProgressBar pct={todayPct} mode={todayMode} />
 
@@ -324,7 +447,7 @@ export default function WeeklyRhythm() {
             </View>
           ))}
         </View>
-      </TouchableOpacity>
+      </View>
 
       <TouchableOpacity activeOpacity={0.86} onPress={openAnalytics}>
         <LinearGradient
@@ -446,31 +569,31 @@ const s = StyleSheet.create({
     height: 24,
     alignItems: 'center',
     justifyContent: 'flex-end',
-    marginBottom: -4,
+    marginBottom: -5,
     zIndex: 2,
     overflow: 'visible',
   },
   candleFlameAura: {
     position: 'absolute',
-    bottom: 1,
-    width: 22,
-    height: 16,
-    borderRadius: 11,
-    backgroundColor: 'rgba(255,198,87,0.22)',
+    bottom: -1,
+    width: 24,
+    height: 18,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,199,82,0.16)',
     shadowColor: '#F4A62A',
-    shadowOpacity: 0.42,
+    shadowOpacity: 0.36,
     shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 9,
+    shadowRadius: 8,
     elevation: 3,
   },
-  candleFlameImg: { width: 21, height: 21, resizeMode: 'contain' },
+  candleFlameImg: { width: 19, height: 19, resizeMode: 'contain', zIndex: 2 },
   candleWickWrap: {
     position: 'absolute',
-    bottom: 4,
+    bottom: -2,
     left: '50%',
-    marginLeft: -0.75,
-    width: 1.5,
-    height: 8,
+    marginLeft: -0.8,
+    width: 1.6,
+    height: 9,
     alignItems: 'center',
   },
   candleWickTip: {
@@ -481,13 +604,13 @@ const s = StyleSheet.create({
     borderTopRightRadius: 0.55,
   },
   candleWickBase: {
-    width: 1.4,
-    height: 6,
-    backgroundColor: '#2A1B16',
+    width: 1.5,
+    height: 7,
+    backgroundColor: '#1D1512',
   },
   candleEmber: {
     position: 'absolute',
-    bottom: 13,
+    bottom: 5,
     left: '50%',
     marginLeft: -2,
     width: 4,
@@ -501,194 +624,33 @@ const s = StyleSheet.create({
     elevation: 2,
   },
   candleBodyWrap: {
-    width: CANDLE_W + 8,
-    height: CANDLE_H + 4,
+    width: CANDLE_W + 4,
+    height: CANDLE_H + 2,
     alignItems: 'center',
     justifyContent: 'flex-start',
     position: 'relative',
   },
   candleBodyHalo: {
     position: 'absolute',
-    top: 8,
-    width: CANDLE_W + 8,
-    height: CANDLE_H - 6,
-    borderRadius: 12,
-    backgroundColor: 'rgba(197,160,89,0.12)',
+    top: 9,
+    width: CANDLE_W + 2,
+    height: CANDLE_H - 10,
+    borderRadius: 13,
+    backgroundColor: 'rgba(197,160,89,0.08)',
     shadowColor: '#C5A059',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.13,
+    shadowRadius: 6,
     elevation: 1,
   },
   candleBodyHaloFull: {
-    backgroundColor: 'rgba(255,202,91,0.20)',
-    shadowOpacity: 0.30,
-    shadowRadius: 10,
+    backgroundColor: 'rgba(255,198,80,0.13)',
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
   },
   candleBodyHaloDimmed: {
     backgroundColor: 'rgba(160,145,117,0.08)',
     shadowOpacity: 0.04,
-  },
-  candleBody: {
-    width: CANDLE_W,
-    height: CANDLE_H,
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-    borderBottomLeftRadius: 6,
-    borderBottomRightRadius: 6,
-    backgroundColor: '#FFF8DF',
-    borderWidth: 1,
-    borderColor: '#9C7A39',
-    overflow: 'hidden',
-    position: 'relative',
-    shadowColor: '#C5A059',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  candleBodyDimmed: {
-    backgroundColor: '#F2EDD8',
-    borderColor: '#D7CBAE',
-    shadowOpacity: 0.05,
-  },
-  candleInnerShade: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 7,
-    borderRightWidth: 3,
-    borderRightColor: 'rgba(122,82,22,0.10)',
-    borderLeftWidth: 1,
-    borderLeftColor: 'rgba(255,255,255,0.52)',
-  },
-  candleInnerShadeDimmed: {
-    borderRightColor: 'rgba(91,76,52,0.08)',
-    borderLeftColor: 'rgba(255,255,255,0.34)',
-  },
-  candleSideHighlight: {
-    position: 'absolute',
-    top: 4,
-    bottom: 4,
-    left: 3,
-    width: 2,
-    backgroundColor: 'rgba(255,255,255,0.46)',
-    borderRadius: 1,
-  },
-  candleFill: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#F0B94F',
-    overflow: 'hidden',
-  },
-  candleFillBloom: {
-    position: 'absolute',
-    left: 4,
-    right: 4,
-    top: 4,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.20)',
-  },
-  candleFillFull: {
-    borderTopLeftRadius: 7,
-    borderTopRightRadius: 7,
-  },
-  candleFillTopLine: {
-    position: 'absolute',
-    top: 0,
-    left: 2,
-    right: 2,
-    height: 2,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,243,203,0.76)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(154,105,35,0.20)',
-  },
-  candleWickInset: {
-    position: 'absolute',
-    top: 2,
-    left: '50%',
-    marginLeft: -0.75,
-    width: 1.5,
-    height: 8,
-    borderRadius: 1,
-    backgroundColor: '#2A1B16',
-  },
-  candleWaxLip: {
-    position: 'absolute',
-    top: 0,
-    left: 1,
-    right: 1,
-    height: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,254,248,0.84)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(197,160,89,0.20)',
-  },
-  candleWaxLipFull: {
-    backgroundColor: 'rgba(255,227,157,0.74)',
-    borderBottomColor: 'rgba(168,111,34,0.24)',
-  },
-  candleWaxLipDimmed: {
-    backgroundColor: 'rgba(255,255,255,0.44)',
-    borderBottomColor: 'rgba(139,116,83,0.12)',
-  },
-  candleWaxDrop: {
-    position: 'absolute',
-    top: 7,
-    right: 4,
-    width: 4,
-    height: 14,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,250,235,0.72)',
-  },
-  candleWaxDropSmall: {
-    position: 'absolute',
-    top: 9,
-    left: 5,
-    width: 3,
-    height: 8,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,252,241,0.56)',
-  },
-  candleWaxDropDimmed: {
-    backgroundColor: 'rgba(255,255,255,0.24)',
-  },
-  candleGloss: {
-    position: 'absolute',
-    top: 10,
-    bottom: 8,
-    left: 4,
-    width: 3,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.24)',
-  },
-  candleRim: {
-    position: 'absolute',
-    top: 1,
-    left: 3,
-    right: 3,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.82)',
-    borderRadius: 999,
-  },
-  candleRimDimmed: {
-    backgroundColor: 'rgba(255,255,255,0.40)',
-  },
-  candleBase: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 4,
-    backgroundColor: 'rgba(105,68,20,0.16)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.24)',
-  },
-  candleBaseDimmed: {
-    backgroundColor: 'rgba(91,76,52,0.08)',
-    borderTopColor: 'rgba(255,255,255,0.12)',
   },
   analyticsBtn: {
     marginTop: 10,

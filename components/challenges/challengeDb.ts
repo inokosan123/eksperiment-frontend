@@ -154,6 +154,11 @@ function parseInstanceId(instanceId: string) {
   };
 }
 
+function startOfDateKey(dateKey: string) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(year, month - 1, day, 0, 0, 0, 0).getTime();
+}
+
 export async function openChallengeDb() {
   const db = await openUserContentDb();
   await initChallengeDb(db);
@@ -961,6 +966,19 @@ async function applyTaskLifecycleForChallengeCompletion(
       'active',
       taskId,
     );
+    const reopened = await db.runAsync(
+      `UPDATE task_active_periods
+       SET end_date = NULL
+       WHERE task_id = ? AND end_date = ?`,
+      taskId,
+      fallbackDate,
+    );
+    if (reopened.changes > 0) return;
+
+    const taskRow = await db.getFirstAsync<{ activated_at: number | null }>(
+      'SELECT activated_at FROM tasks WHERE id = ? LIMIT 1',
+      taskId,
+    );
     await db.runAsync(
       `INSERT INTO task_active_periods (task_id, start_date, activated_at)
        SELECT ?, ?, ?
@@ -969,7 +987,7 @@ async function applyTaskLifecycleForChallengeCompletion(
        )`,
       taskId,
       fallbackDate,
-      Date.now(),
+      taskRow?.activated_at ?? startOfDateKey(fallbackDate),
       taskId,
     );
   }

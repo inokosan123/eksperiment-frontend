@@ -87,6 +87,16 @@ type OrphanHabitTaskRow = {
 };
 
 let initPromise: Promise<void> | null = null;
+let migrationPromise: Promise<void> | null = null;
+let iconSyncPromise: Promise<void> | null = null;
+
+const LEGACY_HABIT_GOLD = '#C5A059';
+export const DEFAULT_HABIT_COLOR = '#EAB308';
+
+export function normalizeHabitColor(color?: string | null) {
+  if (!color) return DEFAULT_HABIT_COLOR;
+  return color.toUpperCase() === LEGACY_HABIT_GOLD ? DEFAULT_HABIT_COLOR : color;
+}
 
 function boolToInt(value: boolean) {
   return value ? 1 : 0;
@@ -283,7 +293,7 @@ async function migrateTaskBackedHabits() {
       ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, NULL)`,
       habitId,
       habitNameFromSubtitle(first.subtitle),
-      first.habit_color ?? '#C5A059',
+      normalizeHabitColor(first.habit_color),
       first.icon && first.icon !== 'Heart' ? first.icon : '*',
       boolToInt(active),
       createdAt,
@@ -327,6 +337,16 @@ async function migrateTaskBackedHabits() {
       await replaceDayTimes(habitId, stepId, dayTimesByTask.get(row.task_id) ?? {});
     }
   }
+}
+
+async function migrateTaskBackedHabitsOnce() {
+  if (!migrationPromise) {
+    migrationPromise = migrateTaskBackedHabits().catch(error => {
+      migrationPromise = null;
+      throw error;
+    });
+  }
+  return migrationPromise;
 }
 
 async function loadNumberMap(table: string, column: string) {
@@ -462,10 +482,20 @@ async function syncHabitStepTaskIcons() {
   );
 }
 
+async function syncHabitStepTaskIconsOnce() {
+  if (!iconSyncPromise) {
+    iconSyncPromise = syncHabitStepTaskIcons().catch(error => {
+      iconSyncPromise = null;
+      throw error;
+    });
+  }
+  return iconSyncPromise;
+}
+
 export async function listHabitsWithStats(today = getLocalDateKey()) {
   await initHabitDb();
-  await migrateTaskBackedHabits();
-  await syncHabitStepTaskIcons();
+  await migrateTaskBackedHabitsOnce();
+  await syncHabitStepTaskIconsOnce();
 
   const db = await openTaskDb();
   const [habitRows, stepRows, selectedDays, monthlyDays, dayTimes] = await Promise.all([
@@ -518,7 +548,7 @@ export async function listHabitsWithStats(today = getLocalDateKey()) {
   return habitRows.map<HabitItem>(row => ({
     id: row.id,
     name: row.name,
-    color: row.color,
+    color: normalizeHabitColor(row.color),
     icon: row.icon,
     active: intToBool(row.is_active),
     steps: stepsByHabit.get(row.id) ?? [],
@@ -527,8 +557,8 @@ export async function listHabitsWithStats(today = getLocalDateKey()) {
 
 export async function listHabitsForAnalytics() {
   await initHabitDb();
-  await migrateTaskBackedHabits();
-  await syncHabitStepTaskIcons();
+  await migrateTaskBackedHabitsOnce();
+  await syncHabitStepTaskIconsOnce();
 
   const db = await openTaskDb();
   const rows = await db.getAllAsync<Required<Pick<HabitRow, 'id' | 'name' | 'color' | 'icon' | 'is_active' | 'is_archived' | 'created_at'>>>(
@@ -540,7 +570,7 @@ export async function listHabitsForAnalytics() {
   return rows.map(row => ({
     id: row.id,
     name: row.name,
-    color: row.color,
+    color: normalizeHabitColor(row.color),
     icon: row.icon,
     active: intToBool(row.is_active) && !intToBool(row.is_archived),
   }));
@@ -566,7 +596,7 @@ export async function saveHabitRecord(habit: HabitItem) {
       archived_at = NULL`,
     habit.id,
     habit.name,
-    habit.color,
+    normalizeHabitColor(habit.color),
     habit.icon,
     boolToInt(habit.active),
     now,

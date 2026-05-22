@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { ChevronLeft, ChevronRight } from '@/components/icons/Icons';
@@ -20,8 +21,10 @@ const PURPLE = '#7C6EAF';
 const TEAL = '#4A9E8F';
 const INK = '#1C1917';
 
-const PIXEL_SIZE = 10;
+const PIXEL_SIZE = 12;
 const PIXEL_GAP = 3;
+const RING_R = 42;
+const RING_CIRC = 2 * Math.PI * RING_R;
 
 const MOOD_COLORS = ['', '#EF4444', '#F97316', '#EAB308', '#84CC16', '#22C55E'];
 const ENERGY_COLORS = ['', '#EF4444', '#F97316', '#EAB308', '#84CC16', '#22C55E'];
@@ -236,7 +239,7 @@ export default function YearInPixelsView() {
             activeOpacity={0.7}
             style={[s.yearBtn, !canPrevYear && s.yearBtnDisabled]}
           >
-            <ChevronLeft s={20} c={canPrevYear ? GOLD : '#D6D3D1'} />
+            <ChevronLeft s={18} c={canPrevYear ? GOLD : '#D6D3D1'} />
           </TouchableOpacity>
           <Text style={s.yearText}>{year}</Text>
           <TouchableOpacity
@@ -245,7 +248,7 @@ export default function YearInPixelsView() {
             activeOpacity={0.7}
             style={[s.yearBtn, !canNextYear && s.yearBtnDisabled]}
           >
-            <ChevronRight s={20} c={canNextYear ? GOLD : '#D6D3D1'} />
+            <ChevronRight s={18} c={canNextYear ? GOLD : '#D6D3D1'} />
           </TouchableOpacity>
         </View>
 
@@ -293,27 +296,54 @@ export default function YearInPixelsView() {
           })}
         </ScrollView>
 
-        {/* Stats card */}
-        <View style={s.card}>
-          <View style={s.statsRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.statsMain}>
-                {coloredCount} {coloredCount === 1 ? 'day' : 'days'} tracked
+        {/* Hero stats card with circular progress ring */}
+        <View style={s.heroCard}>
+          <View style={s.heroLeft}>
+            <Text style={s.heroEyebrow}>DAYS TRACKED</Text>
+            <Text style={s.heroBigNum}>{coloredCount}</Text>
+            <Text style={s.heroMeta}>
+              of {daysAvailable} {daysAvailable === 1 ? 'day' : 'days'} this year
+            </Text>
+            <Text style={s.heroSubMeta}>
+              {filledDays} {filledDays === 1 ? 'journal entry' : 'journal entries'}
+            </Text>
+          </View>
+          <View style={s.heroRing}>
+            <Svg width={76} height={76} viewBox="0 0 100 100">
+              <Circle
+                cx="50"
+                cy="50"
+                r={RING_R}
+                stroke="rgba(197,160,89,0.14)"
+                strokeWidth={7}
+                fill="none"
+              />
+              <Circle
+                cx="50"
+                cy="50"
+                r={RING_R}
+                stroke={GOLD}
+                strokeWidth={7}
+                fill="none"
+                strokeLinecap="round"
+                strokeDasharray={`${RING_CIRC}`}
+                strokeDashoffset={RING_CIRC * (1 - fillPercent / 100)}
+                transform="rotate(-90 50 50)"
+              />
+            </Svg>
+            <View style={s.heroRingCenter} pointerEvents="none">
+              <Text style={s.heroRingPct}>
+                {fillPercent}
+                <Text style={s.heroRingPctSmall}>%</Text>
               </Text>
-              <Text style={s.statsSub}>
-                {filledDays} {filledDays === 1 ? 'entry' : 'entries'} this year
-              </Text>
-            </View>
-            <View style={s.pctWrap}>
-              <Text style={s.statsPct}>{fillPercent}%</Text>
-              <Text style={s.statsPctLabel}>OF YEAR</Text>
             </View>
           </View>
         </View>
 
         {/* Pixel grid */}
         <View style={s.card}>
-          <View style={{ rowGap: 6 }}>
+          <Text style={s.gridKicker}>{activeTab.label.toUpperCase()} · {year}</Text>
+          <View style={{ rowGap: 8 }}>
             {months.map(month => (
               <View key={month.name} style={s.monthRow}>
                 <Text style={s.monthLabel}>{month.name.toUpperCase()}</Text>
@@ -390,23 +420,31 @@ export default function YearInPixelsView() {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 80, paddingTop: 8, rowGap: 14 },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 80, paddingTop: 2, rowGap: 12 },
 
   yearRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    columnGap: 10,
-    paddingVertical: 4,
+    columnGap: 14,
+    paddingVertical: 2,
   },
   yearBtn: {
-    width: 36, height: 36, borderRadius: 18,
+    width: 34, height: 34, borderRadius: 17,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1, borderColor: '#F0EDE6',
+    backgroundColor: 'rgba(197,160,89,0.08)',
+    borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)',
   },
-  yearBtnDisabled: { opacity: 0.45 },
-  yearText: { fontFamily: F.serifSemiBold, fontSize: 22, color: INK, minWidth: 80, textAlign: 'center' },
+  yearBtnDisabled: { opacity: 0.38, backgroundColor: '#FFFFFF', borderColor: '#F0EDE6' },
+  yearText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 22,
+    lineHeight: 26,
+    color: INK,
+    minWidth: 90,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
 
   tabsRow: {
     columnGap: 8,
@@ -415,23 +453,23 @@ const s = StyleSheet.create({
   },
   tabPress: { borderRadius: 18 },
   tabPill: {
-    minHeight: 34,
-    paddingHorizontal: 14,
+    minHeight: 36,
+    paddingHorizontal: 16,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#F0EDE6',
+    borderColor: '#EEE9E0',
     overflow: 'hidden',
     position: 'relative',
   },
   tabPillActive: {
     borderWidth: 0,
     shadowColor: '#A87E33',
-    shadowOpacity: 0.26,
-    shadowOffset: { width: 0, height: 5 },
-    shadowRadius: 12,
+    shadowOpacity: 0.28,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 14,
     elevation: 3,
   },
   tabSheen: {
@@ -442,36 +480,114 @@ const s = StyleSheet.create({
     borderTopRightRadius: 17,
     backgroundColor: 'rgba(255,255,255,0.18)',
   },
-  tabLabel: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#A8A29E', textTransform: 'uppercase' },
-  tabLabelActive: { color: '#FFFFFF', letterSpacing: 1.6 },
+  tabLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    letterSpacing: 1.6,
+    color: '#9C948C',
+    textTransform: 'uppercase',
+  },
+  tabLabelActive: { color: '#FFFFFF', letterSpacing: 1.8 },
 
   card: {
-    borderRadius: 18,
+    borderRadius: 22,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#F0EDE6',
-    padding: 14,
+    padding: 16,
     shadowColor: '#1C1917',
     shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
     elevation: 1,
   },
 
-  statsRow: { flexDirection: 'row', alignItems: 'center' },
-  statsMain: { fontFamily: F.serifMedium, fontSize: 16, color: '#1A1714' },
-  statsSub: { marginTop: 3, fontFamily: F.sans, fontSize: 11.5, color: '#8A8177' },
-  pctWrap: { alignItems: 'flex-end' },
-  statsPct: { fontFamily: F.serifSemiBold, fontSize: 22, color: GOLD, lineHeight: 24 },
-  statsPctLabel: { marginTop: 2, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.6, color: '#A8A29E' },
-
-  monthRow: { flexDirection: 'row', alignItems: 'flex-start', columnGap: 10 },
-  monthLabel: {
-    width: 30,
-    paddingTop: 2,
+  heroCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EFE9DD',
+    padding: 20,
+    columnGap: 18,
+    shadowColor: '#1C1917',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 1,
+  },
+  heroLeft: { flex: 1, minWidth: 0 },
+  heroEyebrow: {
     fontFamily: F.sansBold,
     fontSize: 9,
-    letterSpacing: 1.3,
+    letterSpacing: 2,
+    color: GOLD,
+    textTransform: 'uppercase',
+  },
+  heroBigNum: {
+    marginTop: 8,
+    fontFamily: F.serifSemiBold,
+    fontSize: 30,
+    lineHeight: 34,
+    color: INK,
+    letterSpacing: 0.3,
+  },
+  heroMeta: {
+    marginTop: 4,
+    fontFamily: F.serif,
+    fontSize: 12.5,
+    lineHeight: 17,
+    color: '#9C948C',
+  },
+  heroSubMeta: {
+    marginTop: 1,
+    fontFamily: F.serifItalic,
+    fontSize: 11.5,
+    lineHeight: 15,
+    color: '#B5A990',
+  },
+  heroRing: {
+    width: 76,
+    height: 76,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  heroRingCenter: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroRingPct: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 19,
+    lineHeight: 22,
+    color: GOLD,
+  },
+  heroRingPctSmall: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 11.5,
+    color: GOLD,
+  },
+
+  gridKicker: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 2,
+    color: GOLD,
+    textTransform: 'uppercase',
+    marginBottom: 14,
+    paddingHorizontal: 2,
+  },
+
+  monthRow: { flexDirection: 'row', alignItems: 'flex-start', columnGap: 12 },
+  monthLabel: {
+    width: 34,
+    paddingTop: 3,
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 1.6,
     color: '#A8A29E',
   },
   monthDays: {
@@ -484,13 +600,13 @@ const s = StyleSheet.create({
   pixel: {
     width: PIXEL_SIZE,
     height: PIXEL_SIZE,
-    borderRadius: 2.5,
+    borderRadius: 3,
   },
   pixelEmpty: { backgroundColor: '#F0EDE6' },
-  pixelFuture: { backgroundColor: '#FAF7F0' },
+  pixelFuture: { backgroundColor: 'rgba(197,160,89,0.05)' },
   pixelToday: {
-    backgroundColor: '#E7E5E4',
-    borderWidth: 1,
+    backgroundColor: 'rgba(197,160,89,0.18)',
+    borderWidth: 1.5,
     borderColor: GOLD,
   },
 
@@ -498,23 +614,25 @@ const s = StyleSheet.create({
     fontFamily: F.sansBold,
     fontSize: 9.5,
     letterSpacing: 2.2,
-    color: '#A8A29E',
-    marginBottom: 14,
+    color: GOLD,
+    textTransform: 'uppercase',
+    marginBottom: 16,
+    paddingHorizontal: 2,
   },
-  legendRow: { flexDirection: 'row', justifyContent: 'center', columnGap: 26 },
-  legendRowSpread: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', columnGap: 10 },
-  legendItemCol: { alignItems: 'center', rowGap: 6 },
-  legendSwatchLg: { width: 22, height: 22, borderRadius: 6 },
+  legendRow: { flexDirection: 'row', justifyContent: 'center', columnGap: 30 },
+  legendRowSpread: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 6 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', columnGap: 11 },
+  legendItemCol: { alignItems: 'center', rowGap: 7 },
+  legendSwatchLg: { width: 24, height: 24, borderRadius: 7 },
   legendSwatchShadow: {
     shadowColor: '#1C1917',
-    shadowOpacity: 0.10,
+    shadowOpacity: 0.1,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 4,
     elevation: 2,
   },
-  legendText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 0.5, color: '#57534E' },
+  legendText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 0.6, color: '#57534E' },
   legendTextMuted: { fontFamily: F.sans, fontSize: 11, color: '#A8A29E' },
-  legendEmoji: { fontSize: 16 },
-  legendNumLabel: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 0.6, color: '#78716C' },
+  legendEmoji: { fontSize: 17 },
+  legendNumLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 0.6, color: '#78716C' },
 });

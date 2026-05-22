@@ -19,22 +19,23 @@ import {
   Bell,
   Book,
   Calendar,
-  CheckSmall,
   ChevronLeft,
   ChevronRight,
   CircleIcon,
   Clock,
   Heart,
-  Minus,
   Plus,
+  AlertTriangle,
   Settings,
   Skip,
+  User,
+  X,
 } from '@/components/icons/Icons';
 import DateStrip from './DateStrip';
 import WeeklyRhythm from './WeeklyRhythm';
 import ExploreSection from './ExploreSection';
 import { C, F } from '@/constants/tokens';
-import { AnyTaskCard, TaskData, TaskState } from '@/components/shared/TaskCards';
+import { AnyTaskCard, CompletedTaskCheck, TaskData, TaskState } from '@/components/shared/TaskCards';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import { CompletionFlourish } from '@/components/shared/taskAnimations';
 import { playTaskCompleteFeedback, playTaskUndoFeedback, preloadTaskFeedbackSound } from '@/components/shared/taskFeedback';
@@ -56,10 +57,14 @@ import {
   parseTaskTimeToDate,
   scheduleMatchesDate,
 } from '@/components/tasks/taskScheduler';
-import { getPrayerTaskConfig, getScriptureTaskConfig } from '@/components/tasks/taskDb';
-import { consumeTaskCompletionReturnAnimations } from '@/components/tasks/taskReturnAnimation';
+import { getJournalTaskConfig, getPrayerTaskConfig, getScriptureTaskConfig } from '@/components/tasks/taskDb';
+import {
+  consumeTaskCompletionReturnAnimations,
+  type QueuedCompletionAnimation,
+} from '@/components/tasks/taskReturnAnimation';
 import type { PrayerTaskConfig, TaskDefinition, TaskDraft } from '@/components/tasks/taskTypes';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import ChallengeCompletionHomeModal from '@/components/challenges/ChallengeCompletionHomeModal';
 
 
 type HomeCard = {
@@ -73,14 +78,55 @@ type HomeCard = {
   backend?: boolean;
 };
 
+function taskStateToInstanceStatus(state: TaskState, fallback?: string) {
+  if (state === 'done') return 'completed';
+  if (state === 'skipped') return 'skipped';
+  if (state === 'pending' || state === 'active') return 'pending';
+  return fallback;
+}
+
+function inferScriptureReadingTypeFromTitle(title?: string) {
+  const key = String(title ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (!key) return undefined;
+  if (key.includes('psalter') || key.includes('psalm')) return 'psalter';
+  if (key.includes('old_testament')) return 'old_testament';
+  if (key.includes('new_testament')) return 'new_testament';
+  return undefined;
+}
+
+function positiveWholeNumber(value: unknown) {
+  const numeric = typeof value === 'number'
+    ? value
+    : Number.parseInt(String(value ?? '').trim(), 10);
+  if (!Number.isFinite(numeric) || numeric <= 0) return undefined;
+  return Math.round(numeric);
+}
+
+function inferScripturePlannedCount(card: HomeCard, configuredCount?: number) {
+  const fromConfig = positiveWholeNumber(configuredCount);
+  if (fromConfig) return fromConfig;
+
+  const label = `${card.task.title ?? ''} ${card.task.subtitle ?? ''}`;
+  const countMatch = label.match(/\b(\d{1,2})\s*(?:chapter|chapters|psalm|psalms)\b/i)
+    ?? label.match(/\b(?:chapter|chapters|psalm|psalms)\s*(?:per\s*day|\/day)?\D{0,8}(\d{1,2})\b/i);
+  return positiveWholeNumber(countMatch?.[1]) ?? 1;
+}
+
 type TaskConfirmAction = {
   mode: 'uncheck' | 'unskip' | 'skip';
   instanceId: string;
   date: string;
   title: string;
+  warning?: 'scriptureChallengeProgress';
 } | null;
 
-function TaskConfirmGlyph({ mode }: { mode: NonNullable<TaskConfirmAction>['mode'] }) {
+function TaskConfirmGlyph({
+  mode,
+  warning,
+}: {
+  mode: NonNullable<TaskConfirmAction>['mode'];
+  warning?: NonNullable<TaskConfirmAction>['warning'];
+}) {
   if (mode === 'skip') {
     return <Skip s={21} c="#9A3412" w={2.25} />;
   }
@@ -89,33 +135,70 @@ function TaskConfirmGlyph({ mode }: { mode: NonNullable<TaskConfirmAction>['mode
     return <Plus s={22} c={C.gold} w={2.6} />;
   }
 
-  return (
-    <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-      <CheckSmall s={22} c={C.gold} w={2.6} />
-      <View style={{
-        position: 'absolute',
-        bottom: 4,
-        width: 17,
-        height: 17,
-        borderRadius: 9,
-        backgroundColor: '#FFF7E6',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-        <Minus s={12} c={C.goldDark} w={2.6} />
-      </View>
-    </View>
-  );
+  if (warning === 'scriptureChallengeProgress') {
+    return <AlertTriangle s={23} c="#9A3412" w={2.15} />;
+  }
+
+  return <X s={23} c="#B85C5C" w={2.45} />;
+}
+
+function isScriptureChallengeReadingTask(card: HomeCard) {
+  return card.task.variant === 'challenge' && card.task.type === 'reading';
+}
+
+function isReadingBookTaskRef(taskId?: string, source?: string) {
+  return source === 'reading_book' || !!taskId?.startsWith('reading_book_');
+}
+
+function getTaskConfirmBody(action: TaskConfirmAction) {
+  if (!action) return '';
+  if (action.mode === 'skip') return 'Do you want to skip this task for today?';
+  if (action.mode === 'unskip') return 'Do you want to return this task to your list?';
+  if (action.warning === 'scriptureChallengeProgress') {
+    return 'This will mark the task as incomplete and delete the reading progress from this session. Your challenge progress will move back.';
+  }
+  return 'Do you want to mark this task as incomplete?';
+}
+
+function getTaskConfirmIconBg(action: TaskConfirmAction) {
+  if (action?.mode === 'skip') return '#FFF1E8';
+  if (action?.mode === 'unskip') return '#FFF7E6';
+  if (action?.warning === 'scriptureChallengeProgress') return '#FFF1E8';
+  return '#FFF1F2';
+}
+
+function getTaskConfirmColor(action: TaskConfirmAction) {
+  if (action?.mode === 'skip' || action?.mode === 'unskip') return '#1C1917';
+  if (action?.warning === 'scriptureChallengeProgress') return '#B45335';
+  return '#B85C5C';
 }
 
 function isCompletionFlowTask(card: HomeCard) {
   return card.task.variant === 'reading'
     || card.task.variant === 'gratitude'
     || card.task.type === 'gratitude'
+    || isJournalFlowCandidate(card)
     || isSpiritualScriptureCandidate(card)
     || (card.task.variant === 'challenge' && card.task.type === 'reading')
     || !!card.taskId?.startsWith('reading_book_')
     || isPrayerFlowCandidate(card);
+}
+
+type JournalTaskRoute = '/journal-daily' | '/journal-morning' | '/journal-free';
+
+function journalTaskRouteFromPath(route?: string): JournalTaskRoute | null {
+  if (route === '/journal-daily' || route === '/journal-morning' || route === '/journal-free') return route;
+  return null;
+}
+
+function journalTaskRouteForTechnique(technique?: string | null): JournalTaskRoute {
+  if (technique === 'morning_pages') return '/journal-morning';
+  if (technique === 'free_writing') return '/journal-free';
+  return '/journal-daily';
+}
+
+function isJournalFlowCandidate(card: HomeCard) {
+  return card.task.type === 'journal' || !!card.route?.startsWith('/journal');
 }
 
 function isSpiritualScriptureCandidate(card: HomeCard) {
@@ -155,6 +238,10 @@ function prayerCategoryForTaskConfig(config: PrayerTaskConfig) {
 
 function isPersonalRuleTaskConfig(config: PrayerTaskConfig | undefined) {
   return config?.prayerTaskKind === 'personal_rule' || config?.prayerRule === 'personal';
+}
+
+function shouldLaunchPersonalRuleTimer(config: PrayerTaskConfig | undefined) {
+  return isPersonalRuleTaskConfig(config) && config?.prayerType !== 'meal';
 }
 
 function isJesusPrayerTaskConfig(config: PrayerTaskConfig | undefined) {
@@ -253,6 +340,59 @@ function getNoTasksCopy(selectedDate: string, todayKey: string) {
   };
 }
 
+function parseTaskTimeMinutes(time?: string) {
+  if (!time) return null;
+  const match = time.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (
+    !Number.isFinite(hours) ||
+    !Number.isFinite(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+  return hours * 60 + minutes;
+}
+
+function formatTimeBridgeDuration(minutes: number) {
+  const safeMinutes = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(safeMinutes / 60);
+  const remainingMinutes = safeMinutes % 60;
+  if (hours > 0 && remainingMinutes > 0) return `${hours}h ${remainingMinutes}m`;
+  if (hours > 0) return `${hours}h`;
+  return `${Math.max(1, remainingMinutes)}m`;
+}
+
+function getActiveTimeBridge(cards: HomeCard[], currentMinute: number) {
+  const nextUnresolvedIndex = cards.findIndex(card => {
+    if (card.task.state === 'done' || card.task.state === 'skipped' || card.task.state === 'locked') {
+      return false;
+    }
+
+    const minute = parseTaskTimeMinutes(card.task.time);
+    return minute != null && minute > currentMinute;
+  });
+  if (nextUnresolvedIndex <= 0) return null;
+
+  const nextCard = cards[nextUnresolvedIndex];
+  const afterCard = cards[nextUnresolvedIndex - 1];
+  const nextMinute = parseTaskTimeMinutes(nextCard.task.time);
+  if (!afterCard || nextMinute == null) return null;
+
+  const minutesLeft = nextMinute - currentMinute;
+  if (minutesLeft <= 0) return null;
+
+  return {
+    afterCardId: afterCard.id,
+    nextLabel: `Next task in ${formatTimeBridgeDuration(minutesLeft)}`,
+  };
+}
+
 function firstScheduledTaskToday(tasks: TaskDefinition[], todayKey: string) {
   return tasks
     .filter(task => task.status === 'active' && scheduleMatchesDate(task.schedule, todayKey))
@@ -282,13 +422,21 @@ function HomeHeader({
   todayKey: string;
   onSelectDate: (dateKey: string) => void;
 }) {
+  const router = useRouter();
   const monthMeta = getMonthMeta(selectedDate);
 
   return (
     <>
       <View style={h.row}>
-        <TouchableOpacity style={h.iconBtn} activeOpacity={0.7}>
-          <Settings s={18} c={C.text} />
+        <TouchableOpacity
+          style={h.iconBtn}
+          activeOpacity={0.7}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/account' as any);
+          }}
+        >
+          <User s={18} c={C.text} />
         </TouchableOpacity>
         <View style={h.monthWrap}>
           <TouchableOpacity activeOpacity={0.72} onPress={() => onSelectDate(shiftMonth(selectedDate, -1))} style={h.monthNavBtn}>
@@ -302,8 +450,15 @@ function HomeHeader({
             <ChevronRight s={18} c={C.textMuted} />
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={h.iconBtn} activeOpacity={0.7} onPress={() => onSelectDate(todayKey)}>
-          <Calendar s={18} c={C.text} />
+        <TouchableOpacity
+          style={h.iconBtn}
+          activeOpacity={0.7}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/settings' as any);
+          }}
+        >
+          <Settings s={18} c={C.text} />
         </TouchableOpacity>
       </View>
 
@@ -323,7 +478,7 @@ function HomeHeader({
 }
 
 const h = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, paddingTop: 9, paddingBottom: 6 },
   iconBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#f5f4f0', alignItems: 'center', justifyContent: 'center' },
   monthWrap: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   monthNavBtn: { width: 24, height: 28, alignItems: 'center', justifyContent: 'center' },
@@ -388,6 +543,57 @@ function TaskContentAppear({ children }: { children: React.ReactNode }) {
   }));
 
   return <Reanimated.View style={style}>{children}</Reanimated.View>;
+}
+
+function ActiveTimeBridge({ nextLabel }: { nextLabel: string }) {
+  const reveal = useSharedValue(0);
+
+  useEffect(() => {
+    reveal.value = withTiming(1, { duration: 260 });
+  }, [reveal]);
+
+  const wrapStyle = useAnimatedStyle(() => ({
+    opacity: reveal.value,
+    transform: [{ translateY: (1 - reveal.value) * -4 }],
+  }));
+
+  const ruleStyle = useAnimatedStyle(() => ({
+    opacity: 0.36 + reveal.value * 0.64,
+    transform: [{ scaleX: 0.82 + reveal.value * 0.18 }],
+  }));
+
+  return (
+    <Reanimated.View pointerEvents="none" style={[s.timeBridgeWrap, wrapStyle]}>
+      <View style={s.timeBridgeSpine}>
+        <View style={s.timeBridgeSpineLine} />
+        <LinearGradient
+          colors={['#FFFDF8', '#F2DCA8']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={s.timeBridgeDotOuter}
+        >
+          <View style={s.timeBridgeDotHalo} />
+          <View style={s.timeBridgeDotInner} />
+        </LinearGradient>
+      </View>
+      <View style={s.timeBridgeContent}>
+        <Reanimated.View style={[s.timeBridgeRule, ruleStyle]} />
+        <LinearGradient
+          colors={['#FFFDF8', '#F8EED8']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={s.timeBridgePill}
+        >
+          <View style={s.timeBridgePillGlow} />
+          <View style={s.timeBridgeIconBadge}>
+            <Clock s={10} c="#A8853C" w={2.2} />
+          </View>
+          <Text style={s.timeBridgeNextText} numberOfLines={1}>{nextLabel}</Text>
+        </LinearGradient>
+        <Reanimated.View style={[s.timeBridgeRule, ruleStyle]} />
+      </View>
+    </Reanimated.View>
+  );
 }
 
 const progress = StyleSheet.create({
@@ -492,7 +698,7 @@ const beb = StyleSheet.create({
 export default function HomeView() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { books } = useReadingList();
+  const { books, ready: readingListReady } = useReadingList();
   const { gratitudeEntries } = useInnerTools();
   const { bigEvents } = useBigEvents();
   const {
@@ -504,6 +710,7 @@ export default function HomeView() {
     listItems: backendTasks,
     refresh: refreshTasks,
     createOrUpdateTask,
+    archiveTasksImmediately,
     completeInstance,
     skipInstance,
     resetInstance,
@@ -513,19 +720,70 @@ export default function HomeView() {
     : Math.max(insets.top, 0) + 4;
 
   const todayKey = getLocalDateKey();
+  const validReadingTaskIds = useMemo(() => new Set(
+    books
+      .filter(book => book.status === 'reading' && book.showOnHome)
+      .map(book => `reading_book_${book.id}`),
+  ), [books]);
+  const visibleTaskDefinitions = useMemo(() => (
+    taskDefinitions.filter(task => (
+      !isReadingBookTaskRef(task.id, task.source) || !readingListReady || validReadingTaskIds.has(task.id)
+    ))
+  ), [readingListReady, taskDefinitions, validReadingTaskIds]);
+  const visibleBackendTasks = useMemo(() => (
+    backendTasks.filter(item => (
+      !isReadingBookTaskRef(item.instance.taskId, item.instance.source)
+        || !readingListReady
+        || validReadingTaskIds.has(item.instance.taskId)
+    ))
+  ), [backendTasks, readingListReady, validReadingTaskIds]);
   const taskContentDate = taskBackendReady && !isDateLoading ? selectedDate : taskDataDate;
   const isTaskContentLoading = !taskBackendReady || isDateLoading;
-  const canMutateSelectedDate = !isTaskContentLoading && canMutateTaskDate(taskContentDate, taskDefinitions);
+  const canMutateSelectedDate = !isTaskContentLoading && canMutateTaskDate(taskContentDate, visibleTaskDefinitions);
   const [optimisticStates, setOptimisticStates] = useState<Record<string, TaskState>>({});
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const [quickTaskSheetOpen, setQuickTaskSheetOpen] = useState(false);
   const [analyticsCard, setAnalyticsCard] = useState<HomeCard | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [skipDayConfirmOpen, setSkipDayConfirmOpen] = useState(false);
   const [taskConfirmAction, setTaskConfirmAction] = useState<TaskConfirmAction>(null);
+  const [challengeCompletionModal, setChallengeCompletionModal] = useState<{
+    title: string;
+    completions: QueuedCompletionAnimation[];
+  } | null>(null);
 
   useEffect(() => {
     preloadTaskFeedbackSound();
   }, []);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const timeout = setTimeout(() => {
+      setNowTick(Date.now());
+      interval = setInterval(() => {
+        setNowTick(Date.now());
+      }, 60_000);
+    }, 60_000 - (Date.now() % 60_000) + 50);
+
+    return () => {
+      clearTimeout(timeout);
+      if (interval) clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!readingListReady) return;
+    const invalidReadingTaskIds = backendTasks
+      .filter(item => isReadingBookTaskRef(item.instance.taskId, item.instance.source))
+      .filter(item => !validReadingTaskIds.has(item.instance.taskId))
+      .map(item => item.instance.taskId);
+
+    const uniqueIds = [...new Set(invalidReadingTaskIds)];
+    if (uniqueIds.length === 0) return;
+    void archiveTasksImmediately(uniqueIds, selectedDate).catch(error => {
+      console.warn('Reading task cleanup failed:', error);
+    });
+  }, [archiveTasksImmediately, backendTasks, readingListReady, selectedDate, validReadingTaskIds]);
 
   const selectDate = useCallback((dateKey: string) => {
     void refreshTasks(dateKey);
@@ -534,6 +792,7 @@ export default function HomeView() {
   const refreshTasksRef = useRef(refreshTasks);
   refreshTasksRef.current = refreshTasks;
   const returnAnimationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const mutatingInstancesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => () => {
     for (const timer of returnAnimationTimersRef.current) {
@@ -542,59 +801,93 @@ export default function HomeView() {
     returnAnimationTimersRef.current = [];
   }, []);
 
+  const markReturnedCompletionsPending = useCallback((completions: QueuedCompletionAnimation[]) => {
+    const returnedCompletionIds = completions.map(item => item.instanceId);
+    if (returnedCompletionIds.length === 0) return;
+
+    setOptimisticStates(prev => {
+      const next = { ...prev };
+      for (const instanceId of returnedCompletionIds) {
+        next[instanceId] = 'pending';
+      }
+      return next;
+    });
+  }, []);
+
+  const scheduleReturnedCompletionCheck = useCallback((
+    completions: QueuedCompletionAnimation[],
+    delayMs?: number,
+    shouldCancel?: () => boolean,
+  ) => {
+    const returnedCompletionIds = completions.map(item => item.instanceId);
+    if (returnedCompletionIds.length === 0) return;
+    const animationDelayMs = delayMs ?? Math.max(...completions.map(item => item.delayMs));
+
+    const doneTimer = setTimeout(() => {
+      if (shouldCancel?.()) return;
+      void playTaskCompleteFeedback();
+      setOptimisticStates(prev => {
+        const next = { ...prev };
+        for (const instanceId of returnedCompletionIds) {
+          next[instanceId] = 'done';
+        }
+        return next;
+      });
+
+      const clearTimer = setTimeout(() => {
+        if (shouldCancel?.()) return;
+        setOptimisticStates(prev => {
+          let changed = false;
+          const next = { ...prev };
+          for (const instanceId of returnedCompletionIds) {
+            if (next[instanceId] !== 'done') continue;
+            delete next[instanceId];
+            changed = true;
+          }
+          return changed ? next : prev;
+        });
+      }, 1500);
+      returnAnimationTimersRef.current.push(clearTimer);
+    }, animationDelayMs);
+    returnAnimationTimersRef.current.push(doneTimer);
+  }, []);
+
+  const finishChallengeCompletionModal = useCallback(() => {
+    const completions = challengeCompletionModal?.completions ?? [];
+    setChallengeCompletionModal(null);
+    scheduleReturnedCompletionCheck(completions, 120);
+  }, [challengeCompletionModal, scheduleReturnedCompletionCheck]);
+
   useFocusEffect(
     useCallback(() => {
       void refreshTasksRef.current(getLocalDateKey());
       const returnedCompletions = consumeTaskCompletionReturnAnimations();
       if (returnedCompletions.length === 0) return;
-      const returnedCompletionIds = returnedCompletions.map(item => item.instanceId);
-      const animationDelayMs = Math.max(...returnedCompletions.map(item => item.delayMs));
+      const challengeCelebration = returnedCompletions.find(
+        item => item.celebration?.type === 'challengeComplete',
+      )?.celebration;
 
-      setOptimisticStates(prev => {
-        const next = { ...prev };
-        for (const instanceId of returnedCompletionIds) {
-          next[instanceId] = 'pending';
-        }
-        return next;
-      });
+      markReturnedCompletionsPending(returnedCompletions);
+
+      if (challengeCelebration) {
+        setChallengeCompletionModal({
+          title: challengeCelebration.title ?? 'Challenge Complete',
+          completions: returnedCompletions,
+        });
+        return;
+      }
 
       let cancelled = false;
       const interactionHandle = InteractionManager.runAfterInteractions(() => {
         if (cancelled) return;
-        const doneTimer = setTimeout(() => {
-          if (cancelled) return;
-          void playTaskCompleteFeedback();
-          setOptimisticStates(prev => {
-            const next = { ...prev };
-            for (const instanceId of returnedCompletionIds) {
-              next[instanceId] = 'done';
-            }
-            return next;
-          });
-
-          const clearTimer = setTimeout(() => {
-            if (cancelled) return;
-            setOptimisticStates(prev => {
-              let changed = false;
-              const next = { ...prev };
-              for (const instanceId of returnedCompletionIds) {
-                if (next[instanceId] !== 'done') continue;
-                delete next[instanceId];
-                changed = true;
-              }
-              return changed ? next : prev;
-            });
-          }, 1500);
-          returnAnimationTimersRef.current.push(clearTimer);
-        }, animationDelayMs);
-        returnAnimationTimersRef.current.push(doneTimer);
+        scheduleReturnedCompletionCheck(returnedCompletions, undefined, () => cancelled);
       });
 
       return () => {
         cancelled = true;
         interactionHandle.cancel();
       };
-    }, []),
+    }, [markReturnedCompletionsPending, scheduleReturnedCompletionCheck]),
   );
 
   useEffect(() => {
@@ -607,7 +900,7 @@ export default function HomeView() {
       const next: Record<string, TaskState> = {};
 
       for (const [instanceId, state] of Object.entries(prev)) {
-        const backend = backendTasks.find(item => item.instance.id === instanceId);
+        const backend = visibleBackendTasks.find(item => item.instance.id === instanceId);
         if (backend && backend.card.state !== state) {
           next[instanceId] = state;
         } else {
@@ -617,46 +910,68 @@ export default function HomeView() {
 
       return changed ? next : prev;
     });
-  }, [backendTasks]);
+  }, [visibleBackendTasks]);
 
   const homeCards = useMemo<HomeCard[]>(() => {
-    if (!taskBackendReady || backendTasks.length === 0) return [];
-    return backendTasks.map(item => ({
-      id: item.instance.id,
-      taskId: item.instance.taskId,
-      instanceId: item.instance.id,
-      instanceStatus: item.instance.status,
-      route: item.route,
-      task: item.card,
-      backend: true,
-    }));
-  }, [backendTasks, taskBackendReady]);
+    if (!taskBackendReady || visibleBackendTasks.length === 0) return [];
+    return visibleBackendTasks.map(item => {
+      const optimisticState = optimisticStates[item.instance.id];
+      return {
+        id: item.instance.id,
+        taskId: item.instance.taskId,
+        instanceId: item.instance.id,
+        instanceStatus: optimisticState
+          ? taskStateToInstanceStatus(optimisticState, item.instance.status)
+          : item.instance.status,
+        route: item.route,
+        task: optimisticState ? { ...item.card, state: optimisticState } : item.card,
+        backend: true,
+      };
+    });
+  }, [optimisticStates, taskBackendReady, visibleBackendTasks]);
 
-  const visibleTaskCount = backendTasks.length > 0 ? homeCards.length : 0;
-  const scheduledToday = backendTasks.length > 0
-    ? homeCards.filter(card => card.task.state !== 'locked').length
-    : 0;
-  const completedToday = backendTasks.length > 0
-    ? homeCards.filter(card => card.task.state === 'done').length
-    : 0;
-  const skippedToday = backendTasks.length > 0
-    ? homeCards.filter(card => card.task.state === 'skipped').length
-    : 0;
+  const taskStats = useMemo(() => {
+    const hasVisibleBackendTasks = visibleBackendTasks.length > 0;
+    const stats = {
+      visibleTaskCount: hasVisibleBackendTasks ? homeCards.length : 0,
+      scheduledToday: 0,
+      completedToday: 0,
+      skippedToday: 0,
+      resolvedToday: 0,
+      skippableCards: [] as HomeCard[],
+    };
+
+    if (!hasVisibleBackendTasks) return stats;
+
+    for (const card of homeCards) {
+      const state = card.task.state;
+      if (state !== 'locked') stats.scheduledToday += 1;
+      if (state === 'done') stats.completedToday += 1;
+      if (state === 'skipped') stats.skippedToday += 1;
+      if (state === 'done' || state === 'skipped') stats.resolvedToday += 1;
+      if (
+        card.instanceId
+        && (card.instanceStatus === 'pending' || card.instanceStatus === 'missed')
+      ) {
+        stats.skippableCards.push(card);
+      }
+    }
+
+    return stats;
+  }, [homeCards, visibleBackendTasks.length]);
+  const {
+    visibleTaskCount,
+    scheduledToday,
+    completedToday,
+    skippedToday,
+    resolvedToday,
+    skippableCards,
+  } = taskStats;
   // Skip All Day must capture every unresolved task for the day — including
   // past-due ones the reconcile loop already auto-marked as 'missed'. The
   // adapter maps 'missed' → 'locked' for display, so filter on instanceStatus
   // (raw DB status) instead of card state.
-  const skippableCards = useMemo(
-    () => homeCards.filter(
-      card => !!card.instanceId
-        && (card.instanceStatus === 'pending' || card.instanceStatus === 'missed'),
-    ),
-    [homeCards],
-  );
   const skipDayDisabled = !canMutateSelectedDate || skippableCards.length === 0;
-  const resolvedToday = backendTasks.length > 0
-    ? homeCards.filter(card => card.task.state === 'done' || card.task.state === 'skipped').length
-    : 0;
   const progressTotal = taskContentDate < todayKey && visibleTaskCount > 0 ? visibleTaskCount : scheduledToday;
 
   // Universal rule (matches WeeklyRhythm):
@@ -677,7 +992,7 @@ export default function HomeView() {
         : Math.round((completedToday / effectiveProgressTotal) * 100);
   const statusLine = !taskBackendReady
     ? 'Loading your routine...'
-    : backendTasks.length === 0 && taskDefinitions.length > 0
+    : visibleBackendTasks.length === 0 && visibleTaskDefinitions.length > 0
       ? getNoTasksCopy(taskContentDate, todayKey).status
       : taskContentDate < todayKey && visibleTaskCount > 0
         ? resolvedToday > 0
@@ -696,44 +1011,76 @@ export default function HomeView() {
             : `${scheduledToday} tasks scheduled`;
 
   const hasBackendTasks = taskBackendReady && (
-    backendTasks.length > 0 || taskDefinitions.some(task => task.status !== 'archived')
+    visibleBackendTasks.length > 0 || visibleTaskDefinitions.some(task => task.status !== 'archived')
   );
   const taskSectionTitle = getTaskSectionTitle(taskContentDate, todayKey);
   const noTasksCopy = getNoTasksCopy(taskContentDate, todayKey);
+  const currentMinute = useMemo(() => {
+    const now = new Date(nowTick);
+    return now.getHours() * 60 + now.getMinutes();
+  }, [nowTick]);
+  const activeTimeBridge = useMemo(
+    () => taskContentDate === todayKey ? getActiveTimeBridge(homeCards, currentMinute) : null,
+    [currentMinute, homeCards, taskContentDate, todayKey],
+  );
+  const gratitudeDailyCountForTaskDate = useMemo(
+    () => gratitudeEntries.reduce((count, entry) => (
+      entry.kind === 'daily' && entry.date === taskContentDate ? count + 1 : count
+    ), 0),
+    [gratitudeEntries, taskContentDate],
+  );
 
   const resetTaskInstance = useCallback((instanceId: string, date: string) => {
+    if (mutatingInstancesRef.current.has(instanceId)) return;
+    mutatingInstancesRef.current.add(instanceId);
     playTaskUndoFeedback();
     setOptimisticStates(prev => ({ ...prev, [instanceId]: 'pending' }));
-    void resetInstance(instanceId, date).catch(() => {
-      setOptimisticStates(prev => {
-        const next = { ...prev };
-        delete next[instanceId];
-        return next;
+    void resetInstance(instanceId, date)
+      .catch(() => {
+        setOptimisticStates(prev => {
+          const next = { ...prev };
+          delete next[instanceId];
+          return next;
+        });
+      })
+      .finally(() => {
+        mutatingInstancesRef.current.delete(instanceId);
       });
-    });
   }, [resetInstance]);
 
   const completeTaskInstance = useCallback((instanceId: string, date: string) => {
+    if (mutatingInstancesRef.current.has(instanceId)) return;
+    mutatingInstancesRef.current.add(instanceId);
     void playTaskCompleteFeedback();
     setOptimisticStates(prev => ({ ...prev, [instanceId]: 'done' }));
-    void completeInstance(instanceId, date).catch(() => {
-      setOptimisticStates(prev => {
-        const next = { ...prev };
-        delete next[instanceId];
-        return next;
+    void completeInstance(instanceId, date)
+      .catch(() => {
+        setOptimisticStates(prev => {
+          const next = { ...prev };
+          delete next[instanceId];
+          return next;
+        });
+      })
+      .finally(() => {
+        mutatingInstancesRef.current.delete(instanceId);
       });
-    });
   }, [completeInstance]);
 
   const skipTaskInstance = useCallback((instanceId: string, date: string) => {
+    if (mutatingInstancesRef.current.has(instanceId)) return;
+    mutatingInstancesRef.current.add(instanceId);
     setOptimisticStates(prev => ({ ...prev, [instanceId]: 'skipped' }));
-    void skipInstance(instanceId, date).catch(() => {
-      setOptimisticStates(prev => {
-        const next = { ...prev };
-        delete next[instanceId];
-        return next;
+    void skipInstance(instanceId, date)
+      .catch(() => {
+        setOptimisticStates(prev => {
+          const next = { ...prev };
+          delete next[instanceId];
+          return next;
+        });
+      })
+      .finally(() => {
+        mutatingInstancesRef.current.delete(instanceId);
       });
-    });
   }, [skipInstance]);
 
   const openCompletionFlowTask = useCallback(async (card: HomeCard) => {
@@ -749,15 +1096,37 @@ export default function HomeView() {
       return true;
     }
 
+    if (isJournalFlowCandidate(card)) {
+      let journalRoute = journalTaskRouteFromPath(card.route);
+      if (!journalRoute && card.taskId) {
+        const config = await getJournalTaskConfig(card.taskId);
+        journalRoute = journalTaskRouteForTechnique(config?.technique ?? config?.journalType);
+      }
+
+      router.push({
+        pathname: journalRoute ?? '/journal-daily',
+        params: {
+          date: taskContentDate,
+          title: card.task.title,
+          isTask: 'true',
+          taskInstanceId: card.instanceId,
+          taskDate: taskContentDate,
+        },
+      } as any);
+      return true;
+    }
+
     if (isSpiritualScriptureCandidate(card) && card.taskId) {
       const config = await getScriptureTaskConfig(card.taskId);
-      if (config?.readingType === 'church_calendar') return false;
+      const readingType = config?.readingType ?? inferScriptureReadingTypeFromTitle(card.task.title) ?? 'custom';
+      if (readingType === 'church_calendar') return false;
+      const plannedCount = inferScripturePlannedCount(card, config?.chaptersPerDay);
       router.push({
         pathname: '/scripture-checkpoint',
         params: {
           title: card.task.title,
-          readingType: config?.readingType ?? 'custom',
-          plannedCount: String(config?.chaptersPerDay ?? 1),
+          readingType,
+          plannedCount: String(plannedCount),
           taskInstanceId: card.instanceId,
           taskDate: taskContentDate,
         },
@@ -816,7 +1185,7 @@ export default function HomeView() {
         return true;
       }
 
-      if (isPersonalRuleTaskConfig(config)) {
+      if (shouldLaunchPersonalRuleTimer(config)) {
         router.push({
           pathname: '/personal-rule',
           params: {
@@ -852,12 +1221,16 @@ export default function HomeView() {
 
   const toggleTaskInstance = useCallback((card: HomeCard, state: TaskState) => {
     if (!card.instanceId || !canMutateSelectedDate || state === 'locked') return;
+    if (mutatingInstancesRef.current.has(card.instanceId)) return;
     if (state === 'done' || state === 'skipped') {
       setTaskConfirmAction({
         mode: state === 'skipped' ? 'unskip' : 'uncheck',
         instanceId: card.instanceId,
         date: taskContentDate,
         title: card.task.title,
+        warning: state === 'done' && isScriptureChallengeReadingTask(card)
+          ? 'scriptureChallengeProgress'
+          : undefined,
       });
       return;
     }
@@ -877,6 +1250,7 @@ export default function HomeView() {
   const requestSkipTaskInstance = useCallback((card: HomeCard, state: TaskState) => {
     if (
       !card.instanceId ||
+      mutatingInstancesRef.current.has(card.instanceId) ||
       !canMutateSelectedDate ||
       state === 'locked' ||
       state === 'done' ||
@@ -903,9 +1277,8 @@ export default function HomeView() {
   }, [resetTaskInstance, skipTaskInstance, taskConfirmAction]);
 
   const createQuickTask = useCallback(async (draft: TaskDraft) => {
-    await createOrUpdateTask(draft);
-    await refreshTasks(draft.quickConfig?.date ?? selectedDate);
-  }, [createOrUpdateTask, refreshTasks, selectedDate]);
+    await createOrUpdateTask(draft, selectedDate);
+  }, [createOrUpdateTask, selectedDate]);
 
   const confirmSkipAllDay = useCallback(() => {
     setSkipDayConfirmOpen(false);
@@ -1002,9 +1375,7 @@ export default function HomeView() {
                     ? (
                       <HomeGratitudeCard
                         task={displayTask}
-                        blessingsToday={gratitudeEntries.filter(
-                          entry => entry.kind === 'daily' && entry.date === taskContentDate,
-                        ).length}
+                        blessingsToday={gratitudeDailyCountForTaskDate}
                       />
                     )
                     : <AnyTaskCard task={displayTask} streak={card.streak} />;
@@ -1020,39 +1391,43 @@ export default function HomeView() {
                 const canSkip = canToggle && displayTask.state !== 'done' && displayTask.state !== 'skipped';
                 const canShowAnalytics = !!card.backend && !!card.taskId && displayTask.variant !== 'quick';
                 return (
-                  <SwipeTaskRow
-                    key={card.id}
-                    disabled={!canSkip}
-                    onSkip={() => requestSkipTaskInstance(card, displayTask.state)}
-                  >
-                    <StatusAnimatedTaskRow state={displayTask.state}>
-                      <View style={s.taskTouchableWrap}>
-                        <LongPressGate
-                          enabled={canShowAnalytics}
-                          onActivate={() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-                            setAnalyticsCard(card);
-                          }}
-                        >
-                          {datedContent}
-                        </LongPressGate>
-                        {canToggle && (
-                          <CompletionFlourish
-                            done={displayTask.state === 'done'}
-                            color="#C5A059"
-                            layerStyle={s.checkFlourishLayer}
-                          />
-                        )}
-                        {canToggle && (
-                          <TouchableOpacity
-                            activeOpacity={0.72}
-                            onPress={() => toggleTaskInstance(card, displayTask.state)}
-                            style={s.checkHitArea}
-                          />
-                        )}
-                      </View>
-                    </StatusAnimatedTaskRow>
-                  </SwipeTaskRow>
+                  <React.Fragment key={card.id}>
+                    <SwipeTaskRow
+                      disabled={!canSkip}
+                      onSkip={() => requestSkipTaskInstance(card, displayTask.state)}
+                    >
+                      <StatusAnimatedTaskRow state={displayTask.state}>
+                        <View style={s.taskTouchableWrap}>
+                          <LongPressGate
+                            enabled={canShowAnalytics}
+                            onActivate={() => {
+                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                              setAnalyticsCard(card);
+                            }}
+                          >
+                            {datedContent}
+                          </LongPressGate>
+                          {canToggle && (
+                            <CompletionFlourish
+                              done={displayTask.state === 'done'}
+                              color="#C5A059"
+                              layerStyle={s.checkFlourishLayer}
+                            />
+                          )}
+                          {canToggle && (
+                            <TouchableOpacity
+                              activeOpacity={0.72}
+                              onPress={() => toggleTaskInstance(card, displayTask.state)}
+                              style={s.checkHitArea}
+                            />
+                          )}
+                        </View>
+                      </StatusAnimatedTaskRow>
+                    </SwipeTaskRow>
+                    {activeTimeBridge?.afterCardId === card.id && (
+                      <ActiveTimeBridge nextLabel={activeTimeBridge.nextLabel} />
+                    )}
+                  </React.Fragment>
                 );
               })}
             </View>
@@ -1086,7 +1461,6 @@ export default function HomeView() {
             </TouchableOpacity>
           </View>
         )}
-
         <TouchableOpacity activeOpacity={0.82} style={{ marginTop: 8 }} onPress={() => setQuickTaskSheetOpen(true)}>
           <LinearGradient
             colors={['#FFFFFF', '#F0FDF4']}
@@ -1128,7 +1502,7 @@ export default function HomeView() {
       </ScrollView>
       <QuickTaskSheet
         visible={quickTaskSheetOpen}
-        defaultDate={selectedDate >= todayKey ? selectedDate : todayKey}
+        defaultDate={todayKey}
         onClose={() => setQuickTaskSheetOpen(false)}
         onTaskDraft={createQuickTask}
       />
@@ -1144,6 +1518,11 @@ export default function HomeView() {
         selectedDate={selectedDate}
         onClose={() => setNotificationsOpen(false)}
       />
+      <ChallengeCompletionHomeModal
+        visible={!!challengeCompletionModal}
+        title={challengeCompletionModal?.title ?? 'Challenge Complete'}
+        onExited={finishChallengeCompletionModal}
+      />
       <ConfirmModal
         visible={skipDayConfirmOpen}
         icon={<Skip s={21} c="#9A3412" w={2.25} />}
@@ -1157,25 +1536,23 @@ export default function HomeView() {
       />
       <ConfirmModal
         visible={!!taskConfirmAction}
-        icon={<TaskConfirmGlyph mode={taskConfirmAction?.mode ?? 'uncheck'} />}
-        iconBg={taskConfirmAction?.mode === 'skip' ? '#FFF1E8' : '#FFF7E6'}
+        icon={<TaskConfirmGlyph mode={taskConfirmAction?.mode ?? 'uncheck'} warning={taskConfirmAction?.warning} />}
+        iconBg={getTaskConfirmIconBg(taskConfirmAction)}
         title={taskConfirmAction?.mode === 'skip'
           ? 'Skip this task?'
           : taskConfirmAction?.mode === 'unskip'
             ? 'Unskip this task?'
+            : taskConfirmAction?.warning === 'scriptureChallengeProgress'
+              ? 'Delete reading progress?'
             : 'Uncheck this task?'}
-        body={taskConfirmAction?.mode === 'skip'
-          ? 'Do you want to skip this task for today?'
-          : taskConfirmAction?.mode === 'unskip'
-            ? 'Do you want to return this task to your list?'
-            : 'Do you want to mark this task as incomplete?'}
+        body={getTaskConfirmBody(taskConfirmAction)}
         subject={taskConfirmAction?.title}
         confirmLabel={taskConfirmAction?.mode === 'skip'
           ? 'SKIP'
           : taskConfirmAction?.mode === 'unskip'
             ? 'UNSKIP'
             : 'UNCHECK'}
-        confirmColor="#1C1917"
+        confirmColor={getTaskConfirmColor(taskConfirmAction)}
         onCancel={() => setTaskConfirmAction(null)}
         onConfirm={confirmTaskAction}
       />
@@ -1277,12 +1654,12 @@ function MonthlyGoalsHomeCard() {
       <ConfirmModal
         visible={!!uncheckConfirm}
         icon={<TaskConfirmGlyph mode="uncheck" />}
-        iconBg="#FFF7E6"
+        iconBg="#FFF1F2"
         title="Uncheck this goal?"
         body="Do you want to mark this goal as incomplete?"
         subject={uncheckConfirm?.text}
         confirmLabel="UNCHECK"
-        confirmColor="#1C1917"
+        confirmColor="#B85C5C"
         onCancel={() => setUncheckConfirm(null)}
         onConfirm={confirmUncheck}
       />
@@ -1420,13 +1797,6 @@ function DateInactiveTaskShell({
       <View style={[s.inactiveDateContent, future && s.futureDateContent]}>
         {children}
       </View>
-      <View
-        pointerEvents="none"
-        style={[
-          s.inactiveDateOverlay,
-          future ? s.futureDateOverlay : s.pastDateOverlay,
-        ]}
-      />
     </View>
   );
 }
@@ -1571,12 +1941,13 @@ function HomeReadingCard({
       style={[custom.readingCard, { opacity: isLocked ? 0.7 : 1 }]}
     >
       {/* Checker — indigo ring */}
-      <View style={[custom.readingCheck, isDone && custom.readingCheckDone]}>
-        {isDone
-          ? <CheckSmall s={18} c="#FFFFFF" w={2.8} />
-          : <CircleIcon s={18} c="rgba(109,40,217,0.30)" w={2} />
-        }
-      </View>
+      {isDone ? (
+        <CompletedTaskCheck size={36} accent="#6D28D9" />
+      ) : (
+        <View style={custom.readingCheck}>
+          <CircleIcon s={18} c="rgba(109,40,217,0.30)" w={2} />
+        </View>
+      )}
 
       {/* Content */}
       <View style={custom.readingMid}>
@@ -1622,12 +1993,13 @@ function HomeGratitudeCard({
     >
       <View style={custom.gratitudeRow}>
         {/* Standard task checker, rose-accented */}
-        <View style={[custom.gratitudeCheck, isDone && custom.gratitudeCheckDone]}>
-          {isDone
-            ? <CheckSmall s={19} c="#FFFFFF" w={2.8} />
-            : <CircleIcon s={19} c="#F472B6" w={2} />
-          }
-        </View>
+        {isDone ? (
+          <CompletedTaskCheck size={36} accent="#E11D48" />
+        ) : (
+          <View style={custom.gratitudeCheck}>
+            <CircleIcon s={19} c="#F472B6" w={2} />
+          </View>
+        )}
 
         <View style={custom.gratitudeMid}>
           <Text style={custom.gratitudeTitle} numberOfLines={1} ellipsizeMode="tail">{task.title}</Text>
@@ -1679,6 +2051,117 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   cardsList: { marginTop: 14 },
+  timeBridgeWrap: {
+    height: 30,
+    marginTop: -4,
+    marginBottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timeBridgeSpine: {
+    width: 60,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timeBridgeSpineLine: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 2,
+    borderRadius: 2,
+    backgroundColor: 'rgba(197,160,89,0.34)',
+    shadowColor: '#C5A059',
+    shadowOpacity: 0.10,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  timeBridgeDotOuter: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.40)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#C5A059',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 5,
+    elevation: 1,
+  },
+  timeBridgeDotHalo: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(197,160,89,0.10)',
+  },
+  timeBridgeDotInner: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#B88B36',
+    opacity: 0.88,
+  },
+  timeBridgeContent: {
+    flex: 1,
+    minWidth: 0,
+    paddingLeft: 4,
+    paddingRight: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  timeBridgeRule: {
+    flex: 1,
+    height: 1,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.16)',
+  },
+  timeBridgePill: {
+    minHeight: 27,
+    paddingHorizontal: 8,
+    paddingRight: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.28)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    shadowColor: '#C5A059',
+    shadowOpacity: 0.10,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 7,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  timeBridgePillGlow: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    top: 2,
+    height: 1,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,255,255,0.86)',
+  },
+  timeBridgeIconBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timeBridgeNextText: {
+    fontFamily: F.sansBold,
+    fontSize: 10.75,
+    letterSpacing: 0,
+    color: '#8F7138',
+  },
   swipeWrap: { position: 'relative', marginBottom: 0 },
   dayActionsRow: {
     flexDirection: 'row',
@@ -1723,28 +2206,12 @@ const s = StyleSheet.create({
   dayActionTxtDisabled: { color: '#D6D3D1' },
   inactiveDateShell: {
     position: 'relative',
-    borderRadius: 22,
-    overflow: 'hidden',
   },
   inactiveDateContent: {
     opacity: 0.72,
   },
   futureDateContent: {
     opacity: 0.62,
-  },
-  inactiveDateOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    bottom: 6,
-    borderRadius: 22,
-    borderWidth: 1,
-  },
-  pastDateOverlay: {
-    backgroundColor: 'rgba(245,245,244,0.28)',
-    borderColor: 'rgba(168,162,158,0.16)',
-  },
-  futureDateOverlay: {
-    backgroundColor: 'rgba(231,229,228,0.42)',
-    borderColor: 'rgba(168,162,158,0.24)',
   },
   skipReveal: {
     position: 'absolute',
@@ -1766,7 +2233,7 @@ const s = StyleSheet.create({
   taskTouchableWrap: { position: 'relative' },
   checkFlourishLayer: {
     position: 'absolute',
-    left: 9,
+    left: 4,
     top: 0,
     bottom: 6,
     width: 52,

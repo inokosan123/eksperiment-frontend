@@ -147,7 +147,7 @@ export default function ReadingAnalyticsView() {
 
   return (
     <View style={s.screen}>
-      <ScreenTitleBar title="READING STATS" showBack titleSize={18} />
+      <ScreenTitleBar title="READING STATS" showBack />
 
       <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
 

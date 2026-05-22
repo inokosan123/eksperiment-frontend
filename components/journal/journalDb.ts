@@ -16,6 +16,7 @@ export type JournalEntry = {
   mood?: number;
   energy?: number;
   satisfaction?: number;
+  dailySections?: JournalSection[];
   freeWritingHtml?: string;
   morningPagesHtml?: string;
   morningPagesWordCount?: number;
@@ -34,6 +35,7 @@ type EntryRow = {
   free_writing_html: string | null;
   morning_pages_html: string | null;
   morning_pages_word_count: number | null;
+  daily_sections_json: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -138,6 +140,7 @@ async function ensureJournalColumns(db: SQLite.SQLiteDatabase) {
   await ensureColumn(db, 'journal_entries', 'mood', 'INTEGER');
   await ensureColumn(db, 'journal_entries', 'energy', 'INTEGER');
   await ensureColumn(db, 'journal_entries', 'satisfaction', 'INTEGER');
+  await ensureColumn(db, 'journal_entries', 'daily_sections_json', 'TEXT');
   await ensureColumn(db, 'journal_entries', 'free_writing_html', 'TEXT');
   await ensureColumn(db, 'journal_entries', 'morning_pages_html', 'TEXT');
   await ensureColumn(db, 'journal_entries', 'morning_pages_word_count', 'INTEGER');
@@ -170,6 +173,7 @@ export async function initJournalDb(db?: SQLite.SQLiteDatabase) {
           mood INTEGER,
           energy INTEGER,
           satisfaction INTEGER,
+          daily_sections_json TEXT,
           free_writing_html TEXT,
           morning_pages_html TEXT,
           morning_pages_word_count INTEGER,
@@ -244,6 +248,7 @@ function rowToEntry(
     mood: row.mood ?? undefined,
     energy: row.energy ?? undefined,
     satisfaction: row.satisfaction ?? undefined,
+    dailySections: parseDailySections(row.daily_sections_json),
     freeWritingHtml: row.free_writing_html ?? undefined,
     morningPagesHtml: row.morning_pages_html ?? undefined,
     morningPagesWordCount: row.morning_pages_word_count ?? undefined,
@@ -253,6 +258,24 @@ function rowToEntry(
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function parseDailySections(value: string | null | undefined) {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as JournalSection[];
+    if (!Array.isArray(parsed)) return undefined;
+    return parsed
+      .filter(section => section && typeof section.id === 'string' && typeof section.type === 'string')
+      .map(section => ({
+        id: section.id,
+        type: section.type,
+        active: section.active !== false,
+        customLabel: section.customLabel,
+      }));
+  } catch {
+    return undefined;
+  }
 }
 
 async function loadEntryChildren(db: SQLite.SQLiteDatabase, dates: string[]) {
@@ -331,67 +354,71 @@ export async function upsertJournalEntry(entry: JournalEntry) {
   const createdAt = entry.createdAt || now;
   const updatedAt = entry.updatedAt || now;
 
-  await db.runAsync(
-    `INSERT INTO journal_entries (
-      date, mood, energy, satisfaction, free_writing_html, morning_pages_html,
-      morning_pages_word_count, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(date) DO UPDATE SET
-      mood = excluded.mood,
-      energy = excluded.energy,
-      satisfaction = excluded.satisfaction,
-      free_writing_html = excluded.free_writing_html,
-      morning_pages_html = excluded.morning_pages_html,
-      morning_pages_word_count = excluded.morning_pages_word_count,
-      updated_at = excluded.updated_at`,
-    entry.date,
-    entry.mood ?? null,
-    entry.energy ?? null,
-    entry.satisfaction ?? null,
-    entry.freeWritingHtml ?? null,
-    entry.morningPagesHtml ?? null,
-    entry.morningPagesWordCount ?? null,
-    createdAt,
-    updatedAt,
-  );
-
-  await db.runAsync('DELETE FROM journal_prompt_answers WHERE entry_date = ?', entry.date);
-  for (const prompt of entry.prompts) {
+  await db.withTransactionAsync(async () => {
     await db.runAsync(
-      `INSERT OR REPLACE INTO journal_prompt_answers
-       (entry_date, prompt_id, question, answer)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO journal_entries (
+        date, mood, energy, satisfaction, daily_sections_json, free_writing_html,
+        morning_pages_html, morning_pages_word_count, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(date) DO UPDATE SET
+        mood = excluded.mood,
+        energy = excluded.energy,
+        satisfaction = excluded.satisfaction,
+        daily_sections_json = excluded.daily_sections_json,
+        free_writing_html = excluded.free_writing_html,
+        morning_pages_html = excluded.morning_pages_html,
+        morning_pages_word_count = excluded.morning_pages_word_count,
+        updated_at = excluded.updated_at`,
       entry.date,
-      prompt.id,
-      prompt.question,
-      prompt.answer,
+      entry.mood ?? null,
+      entry.energy ?? null,
+      entry.satisfaction ?? null,
+      entry.dailySections ? JSON.stringify(entry.dailySections) : null,
+      entry.freeWritingHtml ?? null,
+      entry.morningPagesHtml ?? null,
+      entry.morningPagesWordCount ?? null,
+      createdAt,
+      updatedAt,
     );
-  }
 
-  await db.runAsync('DELETE FROM journal_ideal_checks WHERE entry_date = ?', entry.date);
-  for (const [quality, checked] of Object.entries(entry.whoChecks)) {
-    await db.runAsync(
-      `INSERT OR REPLACE INTO journal_ideal_checks
-       (entry_date, quality, checked)
-       VALUES (?, ?, ?)`,
-      entry.date,
-      quality,
-      boolToInt(checked),
-    );
-  }
+    await db.runAsync('DELETE FROM journal_prompt_answers WHERE entry_date = ?', entry.date);
+    for (const prompt of entry.prompts) {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO journal_prompt_answers
+         (entry_date, prompt_id, question, answer)
+         VALUES (?, ?, ?, ?)`,
+        entry.date,
+        prompt.id,
+        prompt.question,
+        prompt.answer,
+      );
+    }
 
-  await db.runAsync('DELETE FROM journal_scale_values WHERE entry_date = ?', entry.date);
-  for (const [scaleId, value] of Object.entries(entry.scaleValues)) {
-    await db.runAsync(
-      `INSERT OR REPLACE INTO journal_scale_values
-       (entry_date, scale_id, label, value)
-       VALUES (?, ?, ?, ?)`,
-      entry.date,
-      scaleId,
-      null,
-      value,
-    );
-  }
+    await db.runAsync('DELETE FROM journal_ideal_checks WHERE entry_date = ?', entry.date);
+    for (const [quality, checked] of Object.entries(entry.whoChecks)) {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO journal_ideal_checks
+         (entry_date, quality, checked)
+         VALUES (?, ?, ?)`,
+        entry.date,
+        quality,
+        boolToInt(checked),
+      );
+    }
+
+    await db.runAsync('DELETE FROM journal_scale_values WHERE entry_date = ?', entry.date);
+    for (const [scaleId, value] of Object.entries(entry.scaleValues)) {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO journal_scale_values
+         (entry_date, scale_id, label, value)
+         VALUES (?, ?, ?, ?)`,
+        entry.date,
+        scaleId,
+        null,
+        value,
+      );
+    }
+  });
 
   return { ...entry, createdAt, updatedAt };
 }
@@ -434,4 +461,15 @@ export async function saveJournalSections(sections: JournalSection[]) {
       now,
     );
   }
+}
+
+export async function backfillJournalEntrySections(sections: JournalSection[]) {
+  if (!sections.length) return;
+  const db = await openJournalDb();
+  await db.runAsync(
+    `UPDATE journal_entries
+     SET daily_sections_json = ?
+     WHERE daily_sections_json IS NULL`,
+    JSON.stringify(sections),
+  );
 }

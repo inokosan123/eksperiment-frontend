@@ -133,13 +133,50 @@ export const GROUP_LABELS: Record<ChallengeGroupKey, string> = {
 
 export const GROUP_ORDER: ChallengeGroupKey[] = [
   'church',
-  'lectionary',
   'new_testament',
   'psalter',
   'old_testament',
+  'lectionary',
   'prayer',
   'journal',
 ];
+
+const CATALOG_ENTRY_ORDER: Record<string, number> = {
+  nt_full: 10,
+  gospel_four: 20,
+  gospel_matthew: 30,
+  gospel_mark: 40,
+  gospel_luke: 50,
+  gospel_john: 60,
+  nt_acts: 70,
+  nt_paul_epistles: 80,
+  nt_catholic_epistles: 90,
+  nt_revelation: 100,
+  ot_full: 200,
+  ot_pentateuch: 210,
+  ot_history: 220,
+  ot_wisdom: 230,
+  ot_prophets: 240,
+  psalter_full: 150,
+  lectionary_daily: 300,
+  church_weekly: 400,
+  prayer_morning: 500,
+  prayer_evening: 510,
+  prayer_jesus: 520,
+  journal_daily: 600,
+  journal_morning_pages: 610,
+  journal_free_writing: 620,
+};
+
+export function compareChallengeCatalogEntries(a: ChallengeCatalogEntry, b: ChallengeCatalogEntry) {
+  const groupDiff = GROUP_ORDER.indexOf(a.groupKey) - GROUP_ORDER.indexOf(b.groupKey);
+  if (groupDiff !== 0) return groupDiff;
+
+  const orderDiff = (CATALOG_ENTRY_ORDER[a.id] ?? 9999) - (CATALOG_ENTRY_ORDER[b.id] ?? 9999);
+  if (orderDiff !== 0) return orderDiff;
+
+  return a.title.localeCompare(b.title);
+}
 
 export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
   {
@@ -154,20 +191,6 @@ export const CATALOG_ENTRIES: ChallengeCatalogEntry[] = [
     descriptor: 'Weekly Sunday rhythm',
     defaultTime: '09:00',
     scheduleLabel: 'Every Sunday',
-  },
-  {
-    id: 'lectionary_daily',
-    templateId: 'lectionary_daily',
-    title: 'Daily Church Readings',
-    description: 'Epistle and Gospel readings following the Church calendar.',
-    category: 'scripture',
-    groupKey: 'lectionary',
-    groupLabel: 'Lectionary',
-    icon: 'calendarCheck',
-    descriptor: 'Church-calendar setup',
-    defaultTime: '06:30',
-    scheduleLabel: 'Daily',
-    totalUnits: 0,
   },
   {
     id: 'nt_full',

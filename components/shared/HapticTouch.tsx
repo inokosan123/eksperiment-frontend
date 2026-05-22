@@ -25,7 +25,7 @@ function hasManualHaptic(handler?: unknown) {
   if (typeof handler !== 'function') return false;
 
   const source = Function.prototype.toString.call(handler);
-  return /Haptics|haptic|impactAsync|selectionAsync|notificationAsync|performTaskFeedback/i.test(source);
+  return /Haptics|haptic|impactAsync|selectionAsync|notificationAsync|play[A-Za-z]*Feedback|performTaskFeedback|toggleTaskInstance|completeTaskInstance|skipTaskInstance|resetTaskInstance|requestSkipTaskInstance/i.test(source);
 }
 
 function triggerTouchHaptic(mode: HapticTouchMode) {

@@ -9,11 +9,19 @@ export type BibleBook = {
 
 export type ScriptureLanguage = 'en' | 'sr' | 'ru';
 
+export const DEFAULT_SCRIPTURE_LANGUAGE: ScriptureLanguage = 'sr';
+
 export const SCRIPTURE_LANGUAGES: { key: ScriptureLanguage; label: string }[] = [
   { key: 'en', label: 'EN' },
   { key: 'sr', label: 'SR' },
   { key: 'ru', label: 'RU' },
 ];
+
+export function normalizeScriptureLanguage(value?: string | null): ScriptureLanguage {
+  return SCRIPTURE_LANGUAGES.some(language => language.key === value)
+    ? value as ScriptureLanguage
+    : DEFAULT_SCRIPTURE_LANGUAGE;
+}
 
 export const PSALMS_ID = 19;
 

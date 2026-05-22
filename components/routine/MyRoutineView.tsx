@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutAnimation,
   Platform,
@@ -56,6 +56,7 @@ import {
   Moon,
   Music,
   Notebook,
+  OrthodoxCross,
   Pencil,
   Pill,
   Plus,
@@ -74,15 +75,18 @@ import { AnyTaskCard, TaskData } from '@/components/shared/TaskCards';
 import ChallengeSummaryCard from '@/components/shared/ChallengeSummaryCard';
 import { C, F } from '@/constants/tokens';
 import type { HabitItem, HabitStep } from '@/components/habits/habitDb';
-import { habitStepTaskId, listHabitsWithStats, saveHabitRecord, setHabitRecordActive } from '@/components/habits/habitDb';
+import { habitStepTaskId, listHabitsWithStats, saveHabitRecord } from '@/components/habits/habitDb';
+import HabitsView, { type HabitsViewHandle } from '@/components/habits/HabitsView';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
 import { normalizeHabitIcon } from '@/components/shared/notoEmoji/legacyMap';
+import { useInnerTools } from '@/components/inner-tools/InnerToolsContext';
+import { useReadingList } from '@/components/library/ReadingListContext';
 import { useChallenges } from '@/components/challenges/ChallengesContext';
 import type { ChallengeRecord } from '@/components/challenges/challengeData';
 import { useTasks } from '@/components/tasks/TaskProvider';
-import { getPrayerTaskConfig } from '@/components/tasks/taskDb';
+import { getPrayerTaskConfig, getScriptureTaskConfig } from '@/components/tasks/taskDb';
 import { resolveDisplayIcon, resolveDisplayType, resolveTaskVariant } from '@/components/tasks/taskAdapters';
-import type { PrayerTaskConfig, TaskDefinition, TaskDraft, TaskLevel } from '@/components/tasks/taskTypes';
+import type { PrayerTaskConfig, ScriptureTaskConfig, TaskDefinition, TaskDraft, TaskLevel } from '@/components/tasks/taskTypes';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 
 
@@ -92,6 +96,8 @@ type RoutineLevel = TaskLevel;
 type SpiritualType = TaskDefinition['type'];
 type RoutineTaskSheetContext = 'prayer' | 'journal' | 'scripture';
 type JesusPrayerMode = 'duration' | 'count';
+type RoutinePrayerType = 'morning' | 'evening' | 'meal';
+type RoutinePrayerRuleChoice = PrayerChallengeRuleChoice | 'breakfast' | 'lunch' | 'dinner';
 type RoutineIconName =
   | 'Activity'
   | 'Apple'
@@ -157,6 +163,16 @@ function animateRoutineLayoutChange() {
   }
 }
 
+function hexToRgba(hex: string | undefined, alpha: number) {
+  const normalized = hex?.replace('#', '') ?? '';
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return `rgba(31, 41, 55, ${alpha})`;
+  const value = Number.parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 type RoutineTask = {
   id: string;
   title: string;
@@ -178,6 +194,7 @@ type RoutineTask = {
   notificationMode: NotificationMode;
   reminderMinutes?: number;
   prayerConfig?: Omit<PrayerTaskConfig, 'taskId'>;
+  scriptureConfig?: Omit<ScriptureTaskConfig, 'taskId'>;
 };
 
 const DAY_TABS = [
@@ -199,10 +216,12 @@ const SPIRITUAL_TYPES: {
 }[] = [
   { id: 'prayer', label: 'Prayer', desc: 'Morning, evening, and meal prayer tasks', accent: '#C5A059', Icon: Sun },
   { id: 'reading', label: 'Scripture', desc: 'Bible, Psalter, and reading rhythms', accent: '#B54155', Icon: Book },
-  { id: 'journal', label: 'Journal', desc: 'Reflections, gratitude, and notes', accent: '#5B564F', Icon: Feather },
   { id: 'church', label: 'Church', desc: 'Liturgy and church attendance reminders', accent: '#7C3AED', Icon: Cross },
   { id: 'custom', label: 'Custom', desc: 'Create your own spiritual activity', accent: '#374151', Icon: Sparkles },
 ];
+
+const GRATITUDE_ACCENT = '#F43F5E';
+const READING_TASK_ID_PREFIX = 'reading_book_';
 
 const ROUTINE_ICONS: {
   id: RoutineIconName;
@@ -245,6 +264,19 @@ const ROUTINE_ICONS: {
 ];
 
 const VISIBLE_ROUTINE_ICON_COUNT = 20;
+const ROUTINE_PRAYER_RULES: { key: PrayerChallengeRuleChoice; label: string; desc: string }[] = [
+  { key: 'personal', label: 'My Rule', desc: 'For anyone praying from their own prayer book or in their own way — Orthodox, Catholic, Protestant, Evangelical, or any other tradition.' },
+  { key: 'standard', label: 'Standard Rule', desc: 'Full morning or evening prayers' },
+  { key: 'short', label: 'Shortened Rule', desc: 'Abbreviated prayer rule' },
+  { key: 'seraphim', label: 'St. Seraphim Rule', desc: 'Rule of St. Seraphim of Sarov' },
+];
+
+const ROUTINE_MEAL_PRAYER_RULES: { key: RoutinePrayerRuleChoice; label: string; desc: string }[] = [
+  { key: 'personal', label: 'My Rule', desc: 'Your own meal prayer or blessing' },
+  { key: 'breakfast', label: 'Breakfast Prayer', desc: 'Prayer before the morning meal' },
+  { key: 'lunch', label: 'Lunch Prayer', desc: 'Prayer before the midday meal' },
+  { key: 'dinner', label: 'Dinner Prayer', desc: 'Prayer before the evening meal' },
+];
 
 function jsDayToTaskIndex(day: number) {
   return day === 0 ? 6 : day - 1;
@@ -427,6 +459,7 @@ function taskDefinitionToRoutineTask(task: TaskDefinition): RoutineTask {
     notificationMode: task.notificationMode,
     reminderMinutes: task.reminderMinutes,
     prayerConfig: undefined,
+    scriptureConfig: undefined,
   };
 }
 
@@ -445,10 +478,20 @@ function sourceRouteForTask(task: RoutineTask) {
   }
 }
 
+function readingBookIdFromTaskId(taskId: string) {
+  return taskId.startsWith(READING_TASK_ID_PREFIX)
+    ? taskId.slice(READING_TASK_ID_PREFIX.length)
+    : null;
+}
+
 function routineTaskToDraft(task: RoutineTask): TaskDraft {
   const dayTimes = overridesToTaskDayTimes(task.dayTimeOverrides ?? []);
   const subtitle = isJesusPrayerRoutineTask(task)
     ? getJesusPrayerRoutineSubtitle(task)
+    : isScriptureRoutineTask(task)
+      ? getScriptureRoutineSubtitle(task)
+    : isRoutinePrayerRuleTask(task)
+      ? getPrayerRuleRoutineSubtitle(task)
     : task.source === 'routine' || task.source === 'spiritual'
       ? getTaskFrequencyLabel(task)
       : task.subtitle ?? getTaskFrequencyLabel(task);
@@ -475,7 +518,58 @@ function routineTaskToDraft(task: RoutineTask): TaskDraft {
     notificationMode: task.notificationMode,
     reminderMinutes: task.reminderMinutes,
     prayerConfig: task.prayerConfig,
+    scriptureConfig: task.scriptureConfig,
   };
+}
+
+function isScriptureRoutineTask(task: RoutineTask | null | undefined) {
+  return task?.source === 'spiritual'
+    && task.type === 'reading'
+    && task.targetView !== '/reading-list';
+}
+
+function inferScriptureReadingType(task: RoutineTask | null | undefined): ScriptureTaskConfig['readingType'] {
+  const configured = task?.scriptureConfig?.readingType;
+  if (
+    configured === 'new_testament'
+    || configured === 'old_testament'
+    || configured === 'psalter'
+    || configured === 'church_calendar'
+    || configured === 'custom'
+  ) {
+    return configured;
+  }
+
+  const label = `${task?.title ?? ''} ${task?.subtitle ?? ''}`.toLowerCase();
+  if (label.includes('church') || label.includes('lectionary')) return 'church_calendar';
+  if (label.includes('psalter') || label.includes('psalm')) return 'psalter';
+  if (label.includes('old testament')) return 'old_testament';
+  if (label.includes('new testament')) return 'new_testament';
+  return 'custom';
+}
+
+function normalizeScriptureChaptersPerDay(task: RoutineTask | null | undefined, readingType = inferScriptureReadingType(task)) {
+  if (readingType === 'church_calendar') return 0;
+  const configured = Number(task?.scriptureConfig?.chaptersPerDay);
+  if (Number.isFinite(configured) && configured > 0) return Math.round(configured);
+
+  const label = `${task?.title ?? ''} ${task?.subtitle ?? ''}`;
+  const match = label.match(/\b(\d{1,2})\s*(?:chapter|chapters|psalm|psalms)\b/i)
+    ?? label.match(/\b(?:chapter|chapters|psalm|psalms)\s*(?:per\s*day|\/day)?\D{0,8}(\d{1,2})\b/i);
+  const parsed = Number.parseInt(match?.[1] ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 1;
+}
+
+function scriptureAmountLabel(readingType: ScriptureTaskConfig['readingType'], amount: number) {
+  if (readingType === 'church_calendar') return 'Church readings';
+  const safeAmount = Math.max(1, Math.round(Number.isFinite(amount) ? amount : 1));
+  if (readingType === 'psalter') return `${safeAmount} ${safeAmount === 1 ? 'psalm' : 'psalms'}/day`;
+  return `${safeAmount} ${safeAmount === 1 ? 'chapter' : 'chapters'}/day`;
+}
+
+function getScriptureRoutineSubtitle(task: RoutineTask) {
+  const readingType = inferScriptureReadingType(task);
+  return `${scriptureAmountLabel(readingType, normalizeScriptureChaptersPerDay(task, readingType))} - ${getTaskFrequencyLabel(task)}`;
 }
 
 function isJesusPrayerRoutineTask(task: RoutineTask | null | undefined) {
@@ -505,6 +599,72 @@ function getJesusPrayerRoutineSubtitle(task: RoutineTask) {
     return `${normalizeJesusQuantity(task.prayerConfig?.jesusPrayerCount, 100)} repetitions - ${getTaskFrequencyLabel(task)}`;
   }
   return `${normalizeJesusQuantity(task.prayerConfig?.jesusPrayerDuration, 15)} min - ${getTaskFrequencyLabel(task)}`;
+}
+
+function routinePrayerType(task: RoutineTask | null | undefined): RoutinePrayerType | null {
+  if (
+    task?.prayerConfig?.prayerType === 'morning'
+    || task?.prayerConfig?.prayerType === 'evening'
+    || task?.prayerConfig?.prayerType === 'meal'
+  ) {
+    return task.prayerConfig.prayerType;
+  }
+
+  const label = `${task?.title ?? ''} ${task?.subtitle ?? ''}`.toLowerCase();
+  const rule = task?.prayerConfig?.prayerRule;
+  if (
+    rule === 'breakfast'
+    || rule === 'lunch'
+    || rule === 'dinner'
+    || label.includes('meal')
+    || label.includes('breakfast')
+    || label.includes('lunch')
+    || label.includes('dinner')
+  ) return 'meal';
+  if (label.includes('evening')) return 'evening';
+  if (label.includes('morning')) return 'morning';
+  return null;
+}
+
+function isRoutinePrayerRuleTask(task: RoutineTask | null | undefined) {
+  if (!task || task.type !== 'prayer' || isJesusPrayerRoutineTask(task)) return false;
+  const type = routinePrayerType(task);
+  return type === 'morning' || type === 'evening' || type === 'meal';
+}
+
+function normalizeRoutinePrayerRule(task: RoutineTask | null | undefined): RoutinePrayerRuleChoice {
+  if (task?.prayerConfig?.prayerTaskKind === 'personal_rule' || task?.targetView === '/personal-rule') return 'personal';
+  const rule = task?.prayerConfig?.prayerRule;
+  if (routinePrayerType(task) === 'meal') {
+    if (rule === 'personal' || rule === 'breakfast' || rule === 'lunch' || rule === 'dinner') return rule;
+    return 'breakfast';
+  }
+  if (rule === 'personal' || rule === 'standard' || rule === 'short' || rule === 'seraphim') return rule;
+  return 'standard';
+}
+
+function routinePrayerRuleSummary(rule: RoutinePrayerRuleChoice) {
+  switch (rule) {
+    case 'personal': return 'My Rule';
+    case 'standard': return 'Standard Rule';
+    case 'short': return 'Shortened Rule';
+    case 'seraphim': return 'St. Seraphim Rule';
+    case 'breakfast': return 'Breakfast Prayer';
+    case 'lunch': return 'Lunch Prayer';
+    case 'dinner': return 'Dinner Prayer';
+    default: return 'Prayer Rule';
+  }
+}
+
+function getPrayerRuleRoutineSubtitle(task: RoutineTask, rule = normalizeRoutinePrayerRule(task)) {
+  return `${routinePrayerRuleSummary(rule)} - ${getTaskFrequencyLabel(task)}`;
+}
+
+function prayerRuleAccentForTask(task: RoutineTask | null | undefined) {
+  const type = routinePrayerType(task);
+  if (type === 'evening') return '#7867C6';
+  if (type === 'meal') return '#7D8FC9';
+  return '#D59D2C';
 }
 
 function habitStepToTaskDraft(habit: HabitItem, step: HabitStep): TaskDraft {
@@ -608,12 +768,13 @@ export default function MyRoutineView() {
     tasks: backendTasks,
     createOrUpdateTask,
     remove: removeTask,
-    pause: pauseTask,
     refresh: refreshTasks,
   } = useTasks();
+  const { updateBook } = useReadingList();
+  const { setGratitudeTaskEnabled } = useInnerTools();
   const tasks = useMemo(
     () => backendTasks
-      .filter(task => task.source !== 'quick' && task.status !== 'archived')
+      .filter(task => task.source !== 'quick' && task.status === 'active')
       .map(taskDefinitionToRoutineTask),
     [backendTasks],
   );
@@ -626,11 +787,13 @@ export default function MyRoutineView() {
   const [editorDefaultType, setEditorDefaultType] = useState<SpiritualType | undefined>(undefined);
   const [challengeEditorItem, setChallengeEditorItem] = useState<ChallengeRecord | null>(null);
   const [challengeExpandedId, setChallengeExpandedId] = useState<string | null>(null);
+  const [challengeSaveRequestId, setChallengeSaveRequestId] = useState(0);
   const [challengeSchedule, setChallengeSchedule] = useState<ChallengeScheduleDraft>(defaultChallengeSchedule('08:00'));
   const [challengePrayerRule, setChallengePrayerRule] = useState<PrayerChallengeRuleChoice>('personal');
   const [challengeJesusMode, setChallengeJesusMode] = useState<JesusPrayerMode>('duration');
   const [challengeJesusDuration, setChallengeJesusDuration] = useState('15');
   const [challengeJesusCount, setChallengeJesusCount] = useState('100');
+  const [challengeScriptureDailyAmount, setChallengeScriptureDailyAmount] = useState(1);
   const [churchSchedule, setChurchSchedule] = useState<ChallengeChurchScheduleDraft>({
     frequency: 'specific_days',
     selectedDays: [6],
@@ -641,9 +804,8 @@ export default function MyRoutineView() {
     notificationMode: 'single',
     reminderMinutes: 15,
   });
-  const [habitTab, setHabitTab] = useState<'active' | 'paused'>('active');
   const [habits, setHabits] = useState<HabitItem[]>([]);
-  const [expandedHabitId, setExpandedHabitId] = useState<string | null>(null);
+  const habitsRef = useRef<HabitsViewHandle>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -659,26 +821,12 @@ export default function MyRoutineView() {
       .sort((left, right) => getTaskTimeForDay(left, selectedDay.jsDay).localeCompare(getTaskTimeForDay(right, selectedDay.jsDay)))
   ), [selectedDay.jsDay, tasks]);
 
-  const activeHabits = useMemo(() => habits.filter(item => item.active), [habits]);
-  const pausedHabits = useMemo(() => habits.filter(item => !item.active), [habits]);
-  const visibleHabits = habitTab === 'active' ? activeHabits : pausedHabits;
-  const habitTabMotion = useSharedValue(habitTab === 'paused' ? 1 : 0);
-  const [habitSegmentWidth, setHabitSegmentWidth] = useState(0);
-
-  useEffect(() => {
-    habitTabMotion.value = withSpring(habitTab === 'paused' ? 1 : 0, {
-      damping: 18,
-      stiffness: 235,
-      mass: 0.72,
-    });
-  }, [habitTab, habitTabMotion]);
-
-  const habitSegmentPillStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: habitTabMotion.value * ((habitSegmentWidth - 8) / 2) }],
-  }));
-
   const refreshHabits = useCallback(async () => {
     const nextHabits = await listHabitsWithStats();
+    setHabits(nextHabits);
+  }, []);
+
+  const handleHabitsChanged = useCallback((nextHabits: HabitItem[]) => {
     setHabits(nextHabits);
   }, []);
 
@@ -692,7 +840,7 @@ export default function MyRoutineView() {
     return () => {
       cancelled = true;
     };
-  }, [backendTasks, refreshHabits]);
+  }, [refreshHabits]);
 
   const openAddSpiritual = () => {
     setShowSpiritualTypePicker(true);
@@ -708,20 +856,32 @@ export default function MyRoutineView() {
   const openEditTask = (task: RoutineTask) => {
     setEditorTask(task);
     void (async () => {
-      const prayerConfig = task.type === 'prayer'
-        ? await getPrayerTaskConfig(task.id).catch(() => undefined)
-        : undefined;
-      setEditorTask(prayerConfig ? {
+      const [prayerConfig, scriptureConfig] = await Promise.all([
+        task.type === 'prayer'
+          ? getPrayerTaskConfig(task.id).catch(() => undefined)
+          : Promise.resolve(undefined),
+        isScriptureRoutineTask(task)
+          ? getScriptureTaskConfig(task.id).catch(() => undefined)
+          : Promise.resolve(undefined),
+      ]);
+      setEditorTask({
         ...task,
-        prayerConfig: {
+        prayerConfig: prayerConfig ? {
           prayerType: prayerConfig.prayerType,
           prayerRule: prayerConfig.prayerRule,
           prayerTaskKind: prayerConfig.prayerTaskKind,
           jesusPrayerMode: prayerConfig.jesusPrayerMode,
           jesusPrayerDuration: prayerConfig.jesusPrayerDuration,
           jesusPrayerCount: prayerConfig.jesusPrayerCount,
-        },
-      } : task);
+        } : task.prayerConfig,
+        scriptureConfig: scriptureConfig ? {
+          readingType: scriptureConfig.readingType,
+          startBookId: scriptureConfig.startBookId,
+          startChapter: scriptureConfig.startChapter,
+          chaptersPerDay: scriptureConfig.chaptersPerDay,
+          totalUnitsRead: scriptureConfig.totalUnitsRead,
+        } : task.scriptureConfig,
+      });
     })();
     setEditorDefaultLevel(undefined);
     setEditorDefaultType(undefined);
@@ -737,12 +897,21 @@ export default function MyRoutineView() {
     setChallengeJesusMode(normalizeJesusMode(challenge.prayerConfig?.jesusPrayerMode));
     setChallengeJesusDuration(String(challenge.prayerConfig?.jesusPrayerDuration ?? 15));
     setChallengeJesusCount(String(challenge.prayerConfig?.jesusPrayerCount ?? 100));
+    setChallengeScriptureDailyAmount(Math.max(1, challenge.scriptureConfig?.chaptersPerDay ?? 1));
   };
 
   const openHabitStepEdit = (habit: HabitItem, step: HabitStep) => {
     const taskId = habitStepTaskId(habit.id, step.id);
     const existing = tasks.find(item => item.id === taskId);
-    openEditTask(existing ?? habitStepToRoutineTask(habit, step));
+    openEditTask(existing
+      ? {
+        ...existing,
+        icon: existing.icon ?? habit.icon as RoutineIconName,
+        habitColor: habit.color,
+        targetView: existing.targetView ?? '/habits',
+        targetTab: existing.targetTab ?? habit.id,
+      }
+      : habitStepToRoutineTask(habit, step));
   };
 
   const openTask = (task: RoutineTask) => {
@@ -750,6 +919,19 @@ export default function MyRoutineView() {
       const challenge = challenges.find(item => item.id === task.targetTab || task.id.includes(item.id));
       if (challenge) {
         openChallengeEdit(challenge);
+        return;
+      }
+    }
+    if (task.source === 'habit') {
+      const habit = habits.find(item => item.id === task.targetTab || task.id.startsWith(`habit_${item.id}_`));
+      if (habit) {
+        openEditTask({
+          ...task,
+          icon: task.icon ?? habit.icon as RoutineIconName,
+          habitColor: habit.color,
+          targetView: task.targetView ?? '/habits',
+          targetTab: task.targetTab ?? habit.id,
+        });
         return;
       }
     }
@@ -822,35 +1004,22 @@ export default function MyRoutineView() {
         setHabits(current => current.map(item => item.id === nextHabit.id ? nextHabit : item));
       }
     }
+
+    if (targetTask?.source === 'reading_book') {
+      const bookId = readingBookIdFromTaskId(targetTask.id);
+      if (bookId) {
+        await updateBook(bookId, { showOnHome: false });
+      }
+    }
+
+    if (targetTask?.source === 'gratitude' || targetTask?.type === 'gratitude') {
+      setGratitudeTaskEnabled(false);
+    }
+
     await removeTask(taskId);
     await refreshHabits();
     setEditorVisible(false);
     setEditorTask(null);
-  };
-
-  const toggleHabitActive = async (habitId: string) => {
-    const habit = habits.find(item => item.id === habitId);
-    if (!habit) return;
-    const nextActive = !habit.active;
-
-    setHabits(current => current.map(item => item.id === habitId ? { ...item, active: nextActive } : item));
-
-    try {
-      await setHabitRecordActive(habit.id, nextActive);
-      if (nextActive) {
-        const nextHabit = { ...habit, active: true };
-        await Promise.all(nextHabit.steps.map(step => createOrUpdateTask(habitStepToTaskDraft(nextHabit, step))));
-      } else {
-        await Promise.all(habit.steps.map(step => pauseTask(habitStepTaskId(habit.id, step.id))));
-      }
-      const nextHabits = await listHabitsWithStats();
-      setHabits(nextHabits);
-      await refreshTasks();
-    } catch (error) {
-      console.warn('Habit active state failed to update:', error);
-      const nextHabits = await listHabitsWithStats();
-      setHabits(nextHabits);
-    }
   };
 
   const progressForHabit = (habit: HabitItem) => {
@@ -965,7 +1134,7 @@ export default function MyRoutineView() {
           </View>
         </View>
 
-        <SectionDivider icon={<ListChecks s={14} c="#D1D5DB" />} />
+        <SectionDivider icon={<ListChecks s={17} c="#D1D5DB" />} />
 
         <View>
           <View style={s.sectionBetween}>
@@ -973,105 +1142,19 @@ export default function MyRoutineView() {
               <ListChecks s={16} c="#16A34A" />
               <Text style={[s.sectionKicker, { color: '#16A34A' }]}>Habits</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/habits')} activeOpacity={0.84} style={s.roundMiniBtn}>
+            <TouchableOpacity onPress={() => habitsRef.current?.openAddHabit()} activeOpacity={0.84} style={s.roundMiniBtn}>
               <Plus s={18} c="#16A34A" />
             </TouchableOpacity>
           </View>
 
-          <View
-            style={s.segmentWrap}
-            onLayout={event => setHabitSegmentWidth(event.nativeEvent.layout.width)}
-          >
-            {habitSegmentWidth > 0 && (
-              <Reanimated.View
-                pointerEvents="none"
-                style={[
-                  s.segmentPill,
-                  { width: (habitSegmentWidth - 8) / 2 },
-                  habitSegmentPillStyle,
-                ]}
-              />
-            )}
-            {([
-              { key: 'active' as const, label: `Active (${activeHabits.length})` },
-              { key: 'paused' as const, label: `Paused (${pausedHabits.length})` },
-            ]).map(item => {
-              const active = habitTab === item.key;
-              return (
-                <TouchableOpacity key={item.key} onPress={() => setHabitTab(item.key)} activeOpacity={0.84} style={s.segmentBtn}>
-                  <Text style={[s.segmentText, active && s.segmentTextActive]}>{item.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={s.helperBody}>
-            {habitTab === 'active'
-              ? 'Active habits stay in your daily flow and appear on Home when scheduled.'
-              : 'Paused habits stay here so you can resume them whenever you want.'}
-          </Text>
-
-          <View style={s.habitList}>
-            {visibleHabits.map(habit => {
-              const expanded = expandedHabitId === habit.id;
-              const progress = progressForHabit(habit);
-              return (
-                <View key={habit.id} style={[s.habitCard, !habit.active && s.habitCardPaused]}>
-                  <TouchableOpacity onPress={() => setExpandedHabitId(current => current === habit.id ? null : habit.id)} activeOpacity={0.84} style={s.habitHead}>
-                    <View style={[s.habitIconWrap, { backgroundColor: `${habit.color}18` }]}>
-                      <NotoEmoji name={normalizeHabitIcon(habit.icon)} size={26} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={s.habitTitleRow}>
-                        <Text style={s.habitTitle}>{habit.name}</Text>
-                        <Text style={[s.habitCount, { color: habit.color }]}>{progress.done}/{progress.total}</Text>
-                      </View>
-                      <Text style={s.habitMeta}>
-                        {habit.active ? `${habit.steps.length} scheduled steps` : 'Hidden from Home until resumed'}
-                      </Text>
-                      <View style={s.habitBar}>
-                        <View style={[s.habitBarFill, { width: `${habit.active ? progress.pct : 100}%`, backgroundColor: habit.active ? habit.color : '#D6D3D1' }]} />
-                      </View>
-                    </View>
-                    <ChevronDown s={16} c="#D1D5DB" />
-                  </TouchableOpacity>
-
-                  {expanded && (
-                    <View style={s.habitBody}>
-                      {habit.steps.map(step => (
-                        <TouchableOpacity
-                          key={step.id}
-                          onPress={() => openHabitStepEdit(habit, step)}
-                          activeOpacity={0.84}
-                          style={[s.habitStepRow, !habit.active && { opacity: 0.6 }]}
-                        >
-                          <View style={[s.habitStepCheck, step.completedToday && { backgroundColor: habit.color, borderColor: habit.color }]}>
-                            {step.completedToday && <CheckSmall s={12} c="#FFFFFF" />}
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[s.habitStepTitle, step.completedToday && s.habitStepTitleDone]}>{step.title}</Text>
-                            <Text style={s.habitStepMeta}>{step.time} / {getHabitFrequencyLabel(step)}</Text>
-                          </View>
-                        </TouchableOpacity>
-                      ))}
-
-                      <View style={s.inlineActionGrid}>
-                        <TouchableOpacity onPress={() => toggleHabitActive(habit.id)} activeOpacity={0.84} style={[s.inlineActionBtn, habit.active ? s.inlineActionNeutral : s.inlineActionWarm]}>
-                          <Text style={[s.inlineActionText, habit.active ? { color: '#6B7280' } : { color: '#8D7750' }]}>{habit.active ? 'Pause Habit' : 'Resume Habit'}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => router.push('/habits')} activeOpacity={0.84} style={s.inlineActionBtn}>
-                          <Text style={s.inlineActionText}>Manage</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-          </View>
+          <HabitsView
+            compact
+            ref={habitsRef}
+            onHabitsChanged={handleHabitsChanged}
+          />
         </View>
 
-        <SectionDivider icon={<Trophy s={14} c="#D1D5DB" />} />
+        <SectionDivider icon={<Trophy s={17} c="#D1D5DB" />} />
 
         <View>
           <View style={s.sectionBetween}>
@@ -1095,8 +1178,14 @@ export default function MyRoutineView() {
             ))}
 
             <TouchableOpacity onPress={() => router.push('/challenges')} activeOpacity={0.84} style={s.viewAllChallenges}>
-              <Trophy s={14} c={C.gold} />
-              <Text style={s.viewAllChallengesText}>View All Challenges</Text>
+              <View style={s.viewAllChallengesIconWrap}>
+                <Trophy s={15} c={C.gold} />
+              </View>
+              <View style={s.viewAllChallengesCopy}>
+                <Text style={s.viewAllChallengesText}>View All Challenges</Text>
+                <Text style={s.viewAllChallengesHint}>Browse the challenge library</Text>
+              </View>
+              <ChevronRight s={16} c={C.gold} w={2.2} />
             </TouchableOpacity>
           </View>
         </View>
@@ -1108,7 +1197,7 @@ export default function MyRoutineView() {
         onClose={() => setShowSpiritualTypePicker(false)}
         onSelect={type => {
           setShowSpiritualTypePicker(false);
-          if (type === 'prayer' || type === 'journal' || type === 'reading') {
+          if (type === 'prayer' || type === 'reading') {
             setSpiritualTaskContext(type === 'reading' ? 'scripture' : type);
             return;
           }
@@ -1154,7 +1243,13 @@ export default function MyRoutineView() {
             <X s={20} c="#9CA3AF" />
           </TouchableOpacity>
           <Text style={s.sheetHeaderTitle}>Edit Challenge</Text>
-          <View style={s.sheetHeaderSpacer} />
+          <TouchableOpacity
+            onPress={() => setChallengeSaveRequestId(current => current + 1)}
+            activeOpacity={0.84}
+            style={[s.saveCircle, { backgroundColor: C.gold }]}
+          >
+            <CheckSmall s={18} c="#FFFFFF" />
+          </TouchableOpacity>
         </View>
         <ScrollView contentContainerStyle={s.challengeEditorSheetContent} showsVerticalScrollIndicator={false}>
           {challengeEditorItem && (
@@ -1166,7 +1261,7 @@ export default function MyRoutineView() {
               selectedCatalog={null}
               selectedPaceId={null}
               challengeSchedule={challengeSchedule}
-              scriptureDailyAmount={challengeEditorItem.scriptureConfig?.chaptersPerDay ?? 1}
+              scriptureDailyAmount={challengeScriptureDailyAmount}
               challengePrayerRule={challengePrayerRule}
               challengeJesusMode={challengeJesusMode}
               challengeJesusDuration={challengeJesusDuration}
@@ -1174,12 +1269,13 @@ export default function MyRoutineView() {
               churchSchedule={churchSchedule}
               expandedChallengeId={challengeExpandedId}
               recentlyStartedTemplateId={null}
+              externalSaveRequestId={challengeSaveRequestId}
               showActiveLabel={false}
               showPausedLabel={false}
               onOpenSetup={() => {}}
               onSelectedPaceIdChange={() => {}}
               onChallengeScheduleChange={setChallengeSchedule}
-              onScriptureDailyAmountChange={() => {}}
+              onScriptureDailyAmountChange={setChallengeScriptureDailyAmount}
               onChallengePrayerRuleChange={setChallengePrayerRule}
               onChallengeJesusModeChange={setChallengeJesusMode}
               onChallengeJesusDurationChange={setChallengeJesusDuration}
@@ -1189,28 +1285,24 @@ export default function MyRoutineView() {
               onExpandedChallengeChange={setChallengeExpandedId}
               onPauseChallenge={async id => {
                 await pauseChallenge(id);
-                await refreshChallenges();
                 await refreshTasks();
                 setChallengeEditorItem(null);
                 setChallengeExpandedId(null);
               }}
               onResumeChallenge={async id => {
                 await resumeChallenge(id);
-                await refreshChallenges();
                 await refreshTasks();
                 setChallengeEditorItem(null);
                 setChallengeExpandedId(null);
               }}
               onEndChallenge={async id => {
                 await endChallenge(id);
-                await refreshChallenges();
                 await refreshTasks();
                 setChallengeEditorItem(null);
                 setChallengeExpandedId(null);
               }}
               onUpdateChallenge={async (id, updates) => {
                 await updateChallenge(id, updates);
-                await refreshChallenges();
                 await refreshTasks();
                 setChallengeEditorItem(null);
                 setChallengeExpandedId(null);
@@ -1417,6 +1509,131 @@ function RoutineJesusPrayerEditor({
   );
 }
 
+function RoutinePrayerRuleEditor({
+  value,
+  prayerType,
+  onChange,
+  accent,
+}: {
+  value: RoutinePrayerRuleChoice;
+  prayerType: RoutinePrayerType;
+  onChange: (value: RoutinePrayerRuleChoice) => void;
+  accent: string;
+}) {
+  const rules = prayerType === 'meal' ? ROUTINE_MEAL_PRAYER_RULES : ROUTINE_PRAYER_RULES;
+
+  return (
+    <View style={s.prayerRuleStack}>
+      {rules.map(item => {
+        const active = value === item.key;
+        const orthodox = item.key !== 'personal';
+        const desc = prayerType !== 'meal' && item.key === 'standard'
+          ? `Full ${prayerType} prayers`
+          : item.desc;
+
+        return (
+          <TouchableOpacity
+            key={item.key}
+            onPress={() => onChange(item.key)}
+            activeOpacity={0.86}
+            style={[
+              s.prayerRuleCard,
+              active && {
+                borderColor: accent,
+                backgroundColor: hexToRgba(accent, 0.08),
+              },
+            ]}
+          >
+            <View style={[s.prayerRuleRadio, active && { borderColor: accent }]}>
+              {active && <View style={[s.prayerRuleRadioDot, { backgroundColor: accent }]} />}
+            </View>
+            <View style={s.prayerRuleCopy}>
+              <Text style={[s.prayerRuleTitle, active && { color: accent }]}>{item.label}</Text>
+              <Text style={s.prayerRuleDesc}>{desc}</Text>
+            </View>
+            {(orthodox || active) && (
+              <View style={s.prayerRuleTrailing}>
+                {orthodox && (
+                  <View style={[s.prayerRuleBadge, { borderColor: hexToRgba(accent, 0.26), backgroundColor: hexToRgba(accent, 0.08) }]}>
+                    <OrthodoxCross s={10} c={accent} w={1.35} />
+                    <Text style={[s.prayerRuleBadgeText, { color: accent }]}>ORTH.</Text>
+                  </View>
+                )}
+                {active && <CheckSmall s={16} c={accent} />}
+              </View>
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+function RoutineScriptureAmountEditor({
+  readingType,
+  amount,
+  onAmountChange,
+  accent,
+}: {
+  readingType: ScriptureTaskConfig['readingType'];
+  amount: number;
+  onAmountChange: (amount: number) => void;
+  accent: string;
+}) {
+  const amountValue = Math.max(1, Math.round(Number.isFinite(amount) ? amount : 1));
+  const noun = readingType === 'psalter' ? 'Psalm' : 'Chapter';
+  const presetValues = [1, 2, 3, 4, 5];
+
+  return (
+    <View style={s.scriptureAmountStack}>
+      <View style={[s.scriptureAmountPanel, { borderColor: `${accent}26`, backgroundColor: `${accent}08` }]}>
+        <TouchableOpacity
+          onPress={() => onAmountChange(Math.max(1, amountValue - 1))}
+          activeOpacity={0.84}
+          style={s.scriptureAmountStepper}
+        >
+          <Text style={[s.scriptureAmountStepperText, { color: accent }]}>-</Text>
+        </TouchableOpacity>
+        <View style={s.scriptureAmountCenter}>
+          <Text style={[s.scriptureAmountNumber, { color: accent }]}>{amountValue}</Text>
+          <Text style={s.scriptureAmountCaption}>
+            {amountValue === 1 ? noun : `${noun}s`} per session
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => onAmountChange(Math.min(10, amountValue + 1))}
+          activeOpacity={0.84}
+          style={s.scriptureAmountStepper}
+        >
+          <Plus s={18} c={accent} w={2.4} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={s.scripturePresetRow}>
+        {presetValues.map(value => {
+          const active = amountValue === value;
+          return (
+            <TouchableOpacity
+              key={value}
+              onPress={() => onAmountChange(value)}
+              activeOpacity={0.84}
+              style={[
+                s.scripturePresetChip,
+                active && {
+                  borderColor: accent,
+                  backgroundColor: `${accent}12`,
+                },
+              ]}
+            >
+              <Text style={[s.scripturePresetText, active && { color: accent }]}>{value}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 function RoutineTaskEditorSheet({
   visible,
   task,
@@ -1446,9 +1663,12 @@ function RoutineTaskEditorSheet({
   const [dayTimeOverrides, setDayTimeOverrides] = useState<DayOverride[]>([]);
   const [notificationMode, setNotificationMode] = useState<NotificationMode>('none');
   const [reminderMinutes, setReminderMinutes] = useState(15);
+  const [prayerRule, setPrayerRule] = useState<RoutinePrayerRuleChoice>('standard');
   const [jesusMode, setJesusMode] = useState<JesusPrayerMode>('duration');
   const [jesusDuration, setJesusDuration] = useState('15');
   const [jesusCount, setJesusCount] = useState('100');
+  const [scriptureReadingType, setScriptureReadingType] = useState<ScriptureTaskConfig['readingType']>('custom');
+  const [scriptureChaptersPerDay, setScriptureChaptersPerDay] = useState(1);
   const categoryMotion = useSharedValue(level === 2 ? 1 : 0);
   const [categorySegmentWidth, setCategorySegmentWidth] = useState(0);
   const [showAllRoutineIcons, setShowAllRoutineIcons] = useState(false);
@@ -1484,6 +1704,7 @@ function RoutineTaskEditorSheet({
       setDayTimeOverrides(task.dayTimeOverrides ?? []);
       setNotificationMode(task.notificationMode);
       setReminderMinutes(task.reminderMinutes ?? 15);
+      setPrayerRule(normalizeRoutinePrayerRule(task));
       if (isJesusPrayerRoutineTask(task)) {
         setJesusMode(normalizeJesusMode(task.prayerConfig?.jesusPrayerMode));
         setJesusDuration(String(task.prayerConfig?.jesusPrayerDuration ?? 15));
@@ -1493,6 +1714,9 @@ function RoutineTaskEditorSheet({
         setJesusDuration('15');
         setJesusCount('100');
       }
+      const nextScriptureType = inferScriptureReadingType(task);
+      setScriptureReadingType(nextScriptureType);
+      setScriptureChaptersPerDay(Math.max(1, normalizeScriptureChaptersPerDay(task, nextScriptureType) || 1));
       return;
     }
 
@@ -1508,13 +1732,30 @@ function RoutineTaskEditorSheet({
     setDayTimeOverrides([]);
     setNotificationMode('none');
     setReminderMinutes(15);
+    setPrayerRule('standard');
     setJesusMode('duration');
     setJesusDuration('15');
     setJesusCount('100');
+    setScriptureReadingType('custom');
+    setScriptureChaptersPerDay(1);
   }, [defaultLevel, defaultType, task, visible]);
 
   const isSpiritual = level === 1;
-  const accent = isSpiritual ? C.gold : '#1F2937';
+  const habitAccent = task?.source === 'habit' ? task.habitColor : undefined;
+  const gratitudeAccent = task?.source === 'gratitude' || task?.type === 'gratitude' ? GRATITUDE_ACCENT : undefined;
+  const editorAccent = habitAccent ?? gratitudeAccent;
+  const accent = editorAccent ?? (isSpiritual ? C.gold : '#1F2937');
+  const softAccentBg = editorAccent
+    ? hexToRgba(editorAccent, 0.055)
+    : isSpiritual ? '#FFFBEB' : '#F9FAFB';
+  const softAccentBorder = editorAccent
+    ? hexToRgba(editorAccent, 0.22)
+    : isSpiritual ? 'rgba(197,160,89,0.24)' : '#E5E7EB';
+  const themedHeaderStyle = editorAccent ? { borderBottomColor: hexToRgba(editorAccent, 0.16) } : undefined;
+  const themedBlockStyle = editorAccent ? { borderColor: hexToRgba(editorAccent, 0.16) } : undefined;
+  const themedTitleInputStyle = editorAccent
+    ? { backgroundColor: hexToRgba(editorAccent, 0.045), borderColor: hexToRgba(editorAccent, 0.18) }
+    : undefined;
 
   const draftTask: RoutineTask = {
     id: task?.id ?? `routine_${Date.now()}`,
@@ -1537,6 +1778,7 @@ function RoutineTaskEditorSheet({
     notificationMode,
     reminderMinutes: notificationMode === 'double' ? reminderMinutes : undefined,
     prayerConfig: task?.prayerConfig,
+    scriptureConfig: task?.scriptureConfig,
   };
 
   const activeDays = getActiveDays(draftTask);
@@ -1545,6 +1787,11 @@ function RoutineTaskEditorSheet({
   const dayTimes = overridesToTaskDayTimes(dayTimeOverrides);
   const allowPerDayTimes = frequency !== 'monthly' && (frequency !== 'specific_days' || selectedDays.length > 0);
   const isJesusPrayerTask = isJesusPrayerRoutineTask(draftTask);
+  const isPrayerRuleTask = isRoutinePrayerRuleTask(draftTask);
+  const prayerRuleType = routinePrayerType(draftTask) ?? 'morning';
+  const prayerRuleAccent = prayerRuleAccentForTask(draftTask);
+  const isScriptureTask = isScriptureRoutineTask(draftTask);
+  const isHabitTask = task?.source === 'habit';
   const canEditRoutineIcon = !isSpiritual && (!task || task.source === 'routine');
   const compactRoutineIcons = ROUTINE_ICONS.slice(0, VISIBLE_ROUTINE_ICON_COUNT);
   const selectedRoutineIcon = ROUTINE_ICONS.find(item => item.id === icon);
@@ -1572,6 +1819,10 @@ function RoutineTaskEditorSheet({
         ? `${jesusMode === 'duration'
           ? `${Number.parseInt(jesusDuration || '15', 10) || 15} min`
           : `${Number.parseInt(jesusCount || '100', 10) || 100} repetitions`} - ${getTaskFrequencyLabel(draftTask)}`
+        : isScriptureTask
+          ? `${scriptureAmountLabel(scriptureReadingType, scriptureChaptersPerDay)} - ${getTaskFrequencyLabel(draftTask)}`
+        : isPrayerRuleTask
+          ? `${routinePrayerRuleSummary(prayerRule)} - ${getTaskFrequencyLabel(draftTask)}`
         : draftTask.subtitle,
       prayerConfig: isJesusPrayerTask
         ? {
@@ -1582,8 +1833,30 @@ function RoutineTaskEditorSheet({
           jesusPrayerDuration: jesusMode === 'duration' ? Number.parseInt(jesusDuration || '15', 10) || 15 : undefined,
           jesusPrayerCount: jesusMode === 'count' ? Number.parseInt(jesusCount || '100', 10) || 100 : undefined,
         }
+        : isPrayerRuleTask
+          ? {
+            ...(draftTask.prayerConfig ?? {}),
+            prayerType: prayerRuleType,
+            prayerRule,
+            prayerTaskKind: prayerRule === 'personal' ? 'personal_rule' : 'guided_rule',
+            jesusPrayerMode: undefined,
+            jesusPrayerDuration: undefined,
+            jesusPrayerCount: undefined,
+          }
         : draftTask.prayerConfig,
-      targetView: isJesusPrayerTask ? '/jesus-prayer' : draftTask.targetView,
+      scriptureConfig: isScriptureTask
+        ? {
+          ...(draftTask.scriptureConfig ?? {}),
+          readingType: scriptureReadingType,
+          chaptersPerDay: scriptureReadingType === 'church_calendar' ? 0 : Math.max(1, Math.round(scriptureChaptersPerDay)),
+          totalUnitsRead: draftTask.scriptureConfig?.totalUnitsRead ?? 0,
+        }
+        : draftTask.scriptureConfig,
+      targetView: isJesusPrayerTask
+        ? '/jesus-prayer'
+        : isPrayerRuleTask
+          ? prayerRule === 'personal' && prayerRuleType !== 'meal' ? '/personal-rule' : '/prayer'
+          : draftTask.targetView,
       icon: isJesusPrayerTask ? 'Cross' : draftTask.icon,
       sameTimeEveryDay: allowPerDayTimes ? sameTimeEveryDay : true,
       selectedDays: frequency === 'specific_days' ? selectedDays : undefined,
@@ -1594,14 +1867,50 @@ function RoutineTaskEditorSheet({
 
   if (!visible) return null;
 
+  const deleteConfirmOverlay = (
+    <>
+      <ConfirmModal
+        embedded
+        visible={confirmDeleteVisible}
+        icon={<Trash2 s={22} c="#EF4444" />}
+        title={isHabitTask ? 'Delete Step?' : 'Delete Activity?'}
+        body={task
+          ? isHabitTask
+            ? `"${task.title}" will be removed from this habit.`
+            : `"${task.title}" will be removed from your routine and Home tasks.`
+          : ''}
+        confirmLabel="DELETE"
+        confirmColor="#EF4444"
+        onCancel={() => setConfirmDeleteVisible(false)}
+        onConfirm={() => {
+          if (!task) return;
+          setConfirmDeleteVisible(false);
+          void Promise.resolve(onDelete(task.id)).catch(error => {
+            console.warn('Routine activity delete failed:', error);
+          });
+        }}
+      />
+    </>
+  );
+
   return (
     <>
-    <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheetShell} keyboardAware>
-          <View style={s.sheetHandle} />
+    <SmoothBottomSheet
+      visible={visible}
+      onClose={onClose}
+      sheetStyle={s.sheetShell}
+      keyboardAware
+      overlayChildren={deleteConfirmOverlay}
+    >
+          <View style={[s.sheetHandle, editorAccent && { backgroundColor: hexToRgba(editorAccent, 0.28) }]} />
 
-          <View style={s.editorHeader}>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.84} style={s.sheetHeaderIcon}>
-              <X s={22} c="#9CA3AF" />
+          <View style={[s.editorHeader, themedHeaderStyle]}>
+            <TouchableOpacity
+              onPress={onClose}
+              activeOpacity={0.84}
+              style={[s.sheetHeaderIcon, editorAccent && { backgroundColor: hexToRgba(editorAccent, 0.09) }]}
+            >
+              <X s={22} c={editorAccent ?? '#9CA3AF'} />
             </TouchableOpacity>
             <Text style={s.editorHeaderTitle}>{task ? 'Edit Activity' : 'New Activity'}</Text>
             <TouchableOpacity onPress={save} activeOpacity={0.84} style={[s.saveCircle, { backgroundColor: accent, opacity: title.trim() ? 1 : 0.35 }]}>
@@ -1610,19 +1919,34 @@ function RoutineTaskEditorSheet({
           </View>
 
           <ScrollView contentContainerStyle={s.editorContent} showsVerticalScrollIndicator={false}>
-            <View style={s.editorBlock}>
+            <View style={[s.editorBlock, themedBlockStyle]}>
               <Text style={[s.editorBlockLabel, { color: accent }]}>Activity Name</Text>
               <TextInput
                 value={title}
                 onChangeText={setTitle}
                 placeholder={isSpiritual ? 'e.g. Morning Prayer' : 'e.g. Evening Walk'}
                 placeholderTextColor="#D1D5DB"
-                style={s.titleInput}
+                style={[s.titleInput, themedTitleInputStyle]}
               />
             </View>
 
+            {isPrayerRuleTask && (
+              <View style={[s.editorBlock, themedBlockStyle]}>
+                <Text style={[s.editorBlockLabel, { color: prayerRuleAccent }]}>Prayer Rule</Text>
+                <RoutinePrayerRuleEditor
+                  value={prayerRule}
+                  prayerType={prayerRuleType}
+                  accent={prayerRuleAccent}
+                  onChange={nextRule => {
+                    animateRoutineLayoutChange();
+                    setPrayerRule(nextRule);
+                  }}
+                />
+              </View>
+            )}
+
             {isJesusPrayerTask && (
-              <View style={s.editorBlock}>
+              <View style={[s.editorBlock, themedBlockStyle]}>
                 <Text style={[s.editorBlockLabel, { color: C.gold }]}>Jesus Prayer</Text>
                 <RoutineJesusPrayerEditor
                   mode={jesusMode}
@@ -1638,8 +1962,20 @@ function RoutineTaskEditorSheet({
               </View>
             )}
 
+            {isScriptureTask && scriptureReadingType !== 'church_calendar' && (
+              <View style={[s.editorBlock, themedBlockStyle]}>
+                <Text style={[s.editorBlockLabel, { color: C.gold }]}>Scripture Amount</Text>
+                <RoutineScriptureAmountEditor
+                  readingType={scriptureReadingType}
+                  amount={scriptureChaptersPerDay}
+                  onAmountChange={setScriptureChaptersPerDay}
+                  accent={C.gold}
+                />
+              </View>
+            )}
+
             {!task && defaultLevel == null && (
-              <View style={s.editorBlock}>
+              <View style={[s.editorBlock, themedBlockStyle]}>
                 <Text style={s.mutedLabel}>Category</Text>
                 <View
                   style={s.categorySegmentWrap}
@@ -1674,7 +2010,7 @@ function RoutineTaskEditorSheet({
             )}
 
             {!task && isSpiritual && defaultType == null && (
-              <View style={s.editorBlock}>
+              <View style={[s.editorBlock, themedBlockStyle]}>
                 <Text style={s.mutedLabel}>Type</Text>
                 <View style={s.typeGrid}>
                   {SPIRITUAL_TYPES.map(item => {
@@ -1699,7 +2035,7 @@ function RoutineTaskEditorSheet({
             )}
 
             {canEditRoutineIcon && (
-              <View style={s.editorBlock}>
+              <View style={[s.editorBlock, themedBlockStyle]}>
                 <Text style={s.mutedLabel}>Icon</Text>
                 <View style={s.iconGrid} onLayout={event => setRoutineIconGridWidth(event.nativeEvent.layout.width)}>
                   {visibleRoutineIcons.map(item => {
@@ -1713,6 +2049,7 @@ function RoutineTaskEditorSheet({
                           s.iconChip,
                           { width: routineIconChipSize, height: routineIconChipSize },
                           active && s.iconChipActive,
+                          active && { backgroundColor: accent, borderColor: accent },
                         ]}
                       >
                         <View style={s.iconGlyphBox}>
@@ -1740,7 +2077,7 @@ function RoutineTaskEditorSheet({
               </View>
             )}
 
-            <View style={s.editorBlock}>
+            <View style={[s.editorBlock, themedBlockStyle]}>
               <TaskFrequencyEditor
                 frequency={frequency}
                 selectedDays={selectedDayIndexes}
@@ -1760,7 +2097,7 @@ function RoutineTaskEditorSheet({
               />
             </View>
 
-            <View style={s.editorBlock}>
+            <View style={[s.editorBlock, themedBlockStyle]}>
               <TaskTimeEditor
                 time={time}
                 sameTimeEveryDay={sameTimeEveryDay}
@@ -1774,13 +2111,13 @@ function RoutineTaskEditorSheet({
                 activeDayIndexes={activeTaskIndexes}
                 allowPerDayTimes={allowPerDayTimes}
                 accent={accent}
-                softBg={isSpiritual ? '#FFFBEB' : '#F9FAFB'}
-                borderColor={isSpiritual ? 'rgba(197,160,89,0.24)' : '#E5E7EB'}
+                softBg={softAccentBg}
+                borderColor={softAccentBorder}
                 mutedColor="#8B909A"
               />
             </View>
 
-            <View style={s.editorBlock}>
+            <View style={[s.editorBlock, themedBlockStyle]}>
               <NotificationSettings
                 mode={notificationMode}
                 reminderMinutes={reminderMinutes}
@@ -1793,25 +2130,11 @@ function RoutineTaskEditorSheet({
             {task && (
               <TouchableOpacity onPress={() => setConfirmDeleteVisible(true)} activeOpacity={0.84} style={s.deleteBtn}>
                 <Trash2 s={16} c="#EF4444" />
-                <Text style={s.deleteBtnText}>Delete Activity</Text>
+                <Text style={s.deleteBtnText}>{isHabitTask ? 'Delete Step' : 'Delete Activity'}</Text>
               </TouchableOpacity>
             )}
           </ScrollView>
     </SmoothBottomSheet>
-    <ConfirmModal
-      visible={confirmDeleteVisible}
-      icon={<Trash2 s={22} c="#EF4444" />}
-      title="Delete Activity?"
-      body={task ? `"${task.title}" will be removed from your routine and Home tasks.` : ''}
-      confirmLabel="DELETE"
-      confirmColor="#EF4444"
-      onCancel={() => setConfirmDeleteVisible(false)}
-      onConfirm={() => {
-        if (!task) return;
-        setConfirmDeleteVisible(false);
-        void onDelete(task.id);
-      }}
-    />
     </>
   );
 }
@@ -1819,9 +2142,9 @@ function RoutineTaskEditorSheet({
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#FAFAFA' },
   content: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 120, gap: 28 },
-  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, paddingHorizontal: 4 },
-  sectionBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingHorizontal: 4 },
-  sectionKicker: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.8, color: C.gold, textTransform: 'uppercase' },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, paddingHorizontal: 4 },
+  sectionBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 4 },
+  sectionKicker: { fontFamily: F.sansBold, fontSize: 11.5, letterSpacing: 1.8, color: C.gold, textTransform: 'uppercase' },
   dayTabsRow: { gap: 7, paddingBottom: 2, paddingHorizontal: 1 },
   dayTabPress: { borderRadius: 16 },
   dayTab: {
@@ -1985,7 +2308,7 @@ const s = StyleSheet.create({
   inlineActionText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4, color: '#6B7280', textTransform: 'uppercase' },
   inlineTextBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   inlineTextBtnLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.2, color: '#A8A29E', textTransform: 'uppercase' },
-  challengeList: { gap: 10, paddingTop: 6 },
+  challengeList: { gap: 6, paddingTop: 0 },
   challengeCard: {
     borderRadius: 28,
     borderWidth: 1,
@@ -2006,19 +2329,45 @@ const s = StyleSheet.create({
   challengeProgressTrack: { marginTop: 12, height: 6, borderRadius: 999, backgroundColor: 'rgba(197,160,89,0.15)', overflow: 'hidden' },
   challengeProgressFill: { height: '100%', borderRadius: 999, backgroundColor: C.gold },
   viewAllChallenges: {
-    marginTop: 6,
-    minHeight: 52,
-    borderRadius: 22,
+    minHeight: 64,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.35)',
-    borderStyle: 'dashed',
+    borderColor: 'rgba(197,160,89,0.28)',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#FFFDF7',
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFBF0',
+    shadowColor: C.gold,
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 2,
   },
-  viewAllChallengesText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, color: C.gold, textTransform: 'uppercase' },
+  viewAllChallengesIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(197,160,89,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewAllChallengesCopy: { flex: 1, minWidth: 0 },
+  viewAllChallengesText: {
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    letterSpacing: 1.8,
+    color: C.gold,
+    textTransform: 'uppercase',
+  },
+  viewAllChallengesHint: {
+    marginTop: 3,
+    fontFamily: F.serif,
+    fontSize: 12.5,
+    lineHeight: 16,
+    color: '#9C8F73',
+  },
   sheetShell: { maxHeight: '88%', borderTopLeftRadius: 32, borderTopRightRadius: 32, backgroundColor: '#FAFAFA', paddingBottom: 24 },
   sheetHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginTop: 12, marginBottom: 8 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
@@ -2064,6 +2413,81 @@ const s = StyleSheet.create({
   jesusCustomInput: { flex: 1, minHeight: 40, padding: 0, fontFamily: F.serifMedium, fontSize: 20, color: C.text, textAlign: 'center' },
   jesusCustomDivider: { width: 1, height: 20, backgroundColor: '#F0EDE6', marginLeft: 8, marginRight: 8 },
   jesusCustomSuffix: { minWidth: 30, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1, color: '#B6822D', textTransform: 'uppercase', textAlign: 'right' },
+  prayerRuleStack: { gap: 9 },
+  prayerRuleCard: {
+    minHeight: 72,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#F0EDE6',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 13,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 11,
+  },
+  prayerRuleRadio: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: '#D8D1C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  prayerRuleRadioDot: { width: 8, height: 8, borderRadius: 4 },
+  prayerRuleCopy: { flex: 1, minWidth: 0, paddingRight: 2 },
+  prayerRuleTitle: { fontFamily: F.serifMedium, fontSize: 17, lineHeight: 21, color: C.text },
+  prayerRuleDesc: { marginTop: 3, fontFamily: F.sans, fontSize: 12, lineHeight: 17, color: '#8A8178', flexShrink: 1 },
+  prayerRuleTrailing: { minWidth: 54, alignItems: 'flex-end', justifyContent: 'center', gap: 6, alignSelf: 'center' },
+  prayerRuleBadge: {
+    minHeight: 19,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  prayerRuleBadgeText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 0.8, textTransform: 'uppercase' },
+  scriptureAmountStack: { gap: 10 },
+  scriptureAmountPanel: {
+    minHeight: 82,
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  scriptureAmountStepper: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EFE6D6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scriptureAmountStepperText: { fontFamily: F.serifMedium, fontSize: 27, lineHeight: 29 },
+  scriptureAmountCenter: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' },
+  scriptureAmountNumber: { fontFamily: F.serifMedium, fontSize: 34, lineHeight: 39 },
+  scriptureAmountCaption: { marginTop: 1, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.25, color: '#9C948C', textTransform: 'uppercase', textAlign: 'center' },
+  scripturePresetRow: { flexDirection: 'row', gap: 8 },
+  scripturePresetChip: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#EEE8DE',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scripturePresetText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.1, color: '#8B909A', textTransform: 'uppercase' },
   categorySegmentWrap: { minHeight: 52, flexDirection: 'row', alignItems: 'center', padding: 4, borderRadius: 20, borderWidth: 1, borderColor: '#F0EDE6', backgroundColor: '#F7F7F5', position: 'relative', overflow: 'hidden' },
   categorySegmentPill: { position: 'absolute', left: 4, top: 4, bottom: 4, borderRadius: 16, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)', shadowColor: C.gold, shadowOpacity: 0.13, shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, elevation: 2 },
   categoryBtn: { flex: 1, minHeight: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center', zIndex: 1 },

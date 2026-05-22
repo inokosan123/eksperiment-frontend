@@ -30,7 +30,18 @@ export default function ScriptureChallengeScreen() {
           const result = await saveScriptureChallengeSessionProgress(instanceId, readUnits);
           await completeInstance(instanceId, date);
           await refreshChallenges();
-          queueTaskCompletionReturnAnimation(instanceId, result?.completed ? 520 : 420);
+          queueTaskCompletionReturnAnimation(
+            instanceId,
+            result?.completed ? 680 : 420,
+            result?.completed
+              ? {
+                celebration: {
+                  type: 'challengeComplete',
+                  title: title ?? 'Challenge Complete',
+                },
+              }
+              : undefined,
+          );
           return result;
         }}
       />
