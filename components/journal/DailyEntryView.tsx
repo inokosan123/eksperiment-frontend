@@ -1388,21 +1388,36 @@ export default function DailyEntryView() {
   };
 
   const finish = async () => {
+    const existingEntry = getEntry(selectedDateKey);
+    const entryPatch = buildEntryPatch();
     const completionEntry = {
-      ...getEntry(selectedDateKey),
-      ...buildEntryPatch(),
+      ...existingEntry,
+      ...entryPatch,
     };
     const shouldCompleteTask = hasDailyJournalContent(completionEntry);
+    const hadContentBefore = hasDailyJournalContent(existingEntry);
     const shouldDeferTaskFeedback = isTaskLaunch && !!params.taskInstanceId && shouldCompleteTask;
     if (!shouldDeferTaskFeedback) {
       if (shouldCompleteTask) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    await saveNow();
-    if (isTaskLaunch && params.taskInstanceId && shouldCompleteTask) {
-      const completionDate = params.taskDate ?? selectedDateKey;
-      await completeInstance(params.taskInstanceId, completionDate);
-      queueTaskCompletionReturnAnimation(params.taskInstanceId, 420);
+    try {
+      if (!shouldCompleteTask && !hadContentBefore) {
+        if (saveTimerRef.current) {
+          clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+        }
+        dirtyRef.current = false;
+      } else {
+        await saveNow();
+      }
+      if (isTaskLaunch && params.taskInstanceId && shouldCompleteTask) {
+        const completionDate = params.taskDate ?? selectedDateKey;
+        await completeInstance(params.taskInstanceId, completionDate);
+        queueTaskCompletionReturnAnimation(params.taskInstanceId, 420);
+      }
+    } catch (error) {
+      console.warn('Daily journal finish failed', error);
     }
     router.back();
   };

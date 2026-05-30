@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import type { StyleProp, ViewStyle } from 'react-native';
+import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import LottieView from 'lottie-react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import FocusLottie from '@/components/focus/FocusLottie';
 import Reanimated, {
   FadeIn,
   FadeInLeft,
@@ -17,34 +19,48 @@ import Reanimated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withRepeat,
   withTiming,
 } from 'react-native-reanimated';
 import {
   BellRing,
   BookMarked,
+  Calendar,
   Candle,
   CheckSmall,
+  ChevronLeft,
   ChevronRight,
   Clock,
   Cross,
   Crown,
   Feather,
   Heart,
+  Home,
   Hourglass,
   ListChecks,
   OpenBook,
+  Play,
   SlidersHorizontal,
   Sparkles,
+  Settings,
   Target,
+  User,
 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import { NotoEmoji } from '@/components/shared/NotoEmoji';
 import { AnyTaskCard, type TaskData } from '@/components/shared/TaskCards';
-import { playAchievementCompleteFeedback, preloadAchievementFeedbackSound } from '@/components/shared/taskFeedback';
+import { normalizeHabitIcon } from '@/components/shared/notoEmoji/legacyMap';
+import {
+  playAchievementCompleteFeedback,
+  playTaskCompleteFeedback,
+  preloadAchievementFeedbackSound,
+  preloadTaskFeedbackSound,
+} from '@/components/shared/taskFeedback';
 import { C, F } from '@/constants/tokens';
 
 type ChristianAnswer = 'yes' | 'exploring' | 'no' | 'prefer_not';
-type TraditionAnswer = 'orthodox' | 'catholic' | 'protestant' | 'oriental' | 'other' | 'prefer_not';
-type AgeAnswer = 'under_18' | '18_24' | '25_34' | '35_44' | '45_plus';
+type TraditionAnswer = 'catholic' | 'orthodox' | 'protestant' | 'nondenominational' | 'oriental' | 'other' | 'prefer_not';
+type AgeAnswer = 'under_18' | '18_24' | '25_34' | '35_44' | '45_54' | '55_plus';
 type GenderAnswer = 'male' | 'female';
 type ReasonAnswer =
   | 'organize'
@@ -59,11 +75,29 @@ type ReasonAnswer =
   | 'screen_time'
   | 'procrastination'
   | 'routines';
+type ValueReflectAnswer =
+  | 'protect_time'
+  | 'organize_life'
+  | 'daily_discipline'
+  | 'spiritual_discipline'
+  | 'grow_spiritually'
+  | 'consistent'
+  | 'meant_to_be';
+type CommitmentAnswer = 'all_in' | 'committed' | 'try' | 'exploring';
+type OnboardingChapter = 'protect' | 'build';
 type RoutineAnswer = 'morning' | 'evening' | 'prayer' | 'work';
 type FocusAnswer = 'pomodoro' | 'blockers' | 'deep_work' | 'screen_time';
 type PillarAnswer = 'organize' | 'focus' | 'spiritual';
 type StepId =
   | 'welcome'
+  | 'nameIntro'
+  | 'valueOrganize'
+  | 'valueDiscipline'
+  | 'valueFocus'
+  | 'valueFaith'
+  | 'valueTools'
+  | 'valueReflect'
+  | 'commitment'
   | 'questionIntro'
   | 'christian'
   | 'tradition'
@@ -71,6 +105,31 @@ type StepId =
   | 'gender'
   | 'reason'
   | 'processing'
+  | 'setupStart'
+  | 'protectIntro'
+  | 'protectPain'
+  | 'protectScreenTime'
+  | 'protectCalculation'
+  | 'protectReframe'
+  | 'protectAppBlockers'
+  | 'protectWebsiteBlockers'
+  | 'protectFocusBlock'
+  | 'protectComplete'
+  | 'buildIntro'
+  | 'buildBigEvents'
+  | 'buildMonthlyGoals'
+  | 'buildWeeklyRhythm'
+  | 'buildTaskTypes'
+  | 'buildHabits'
+  | 'buildSpiritualTasks'
+  | 'buildRoutineTasks'
+  | 'buildChallenges'
+  | 'buildQuickTasks'
+  | 'buildMyRoutine'
+  | 'buildHomePreview'
+  | 'buildComplete'
+  | 'chapterCheckpointFirst'
+  | 'chapterCheckpointFinal'
   | 'bridge'
   | 'pillars'
   | 'organizeIntro'
@@ -96,12 +155,17 @@ type SectionProgress = {
 };
 
 type Answers = {
+  displayName?: string;
+  valueReflection?: ValueReflectAnswer[];
+  commitment?: CommitmentAnswer;
   christian?: ChristianAnswer;
   tradition?: TraditionAnswer;
   age?: AgeAnswer;
   gender?: GenderAnswer;
   reasons?: ReasonAnswer[];
   primaryPillar?: PillarAnswer;
+  firstChapter?: OnboardingChapter;
+  screenTimeHours?: number;
   routine?: RoutineAnswer;
   focus?: FocusAnswer;
 };
@@ -139,74 +203,74 @@ const CHRISTIAN_OPTIONS: Option<ChristianAnswer>[] = [
     value: 'yes',
     title: 'Yes',
     body: 'I follow Christ.',
-    response: 'Good. We will keep your spiritual life close to your daily rhythm.',
+    response: "So your faith leads the way - and we'll help you build a life around it.",
     icon: <Cross s={22} c={GOLD} w={1.8} />,
   },
   {
     value: 'exploring',
     title: "I'm exploring",
-    body: 'I am open, curious, or returning.',
-    response: 'Then Anasta can give you a quiet place to begin without pressure.',
+    body: "I'm open, curious, or returning.",
+    response: 'Then this is a good place to begin - quietly, and at your own pace.',
     icon: <Sparkles s={21} c={GOLD} w={1.9} />,
   },
   {
     value: 'no',
     title: 'No',
-    body: 'I mainly want discipline and structure.',
-    response: 'Then we will focus on order, routines, focus, and steady progress.',
+    body: 'I want discipline and structure.',
+    response: "So you're here to become more disciplined - and we'd love to help you get there.",
     icon: <ListChecks s={22} c={GOLD} w={1.9} />,
   },
   {
     value: 'prefer_not',
     title: 'Prefer not to say',
-    body: 'Keep this private.',
-    response: 'That is fine. Your path can still be built with care and clarity.',
+    body: "I'd rather keep that private.",
+    response: "Of course. Whatever you're reaching for, we hope to help you find it.",
     icon: <Heart s={21} c={GOLD} w={1.8} />,
   },
 ];
 
 const TRADITION_OPTIONS: Option<TraditionAnswer>[] = [
   {
-    value: 'orthodox',
-    title: 'Orthodox',
-    body: 'Prayer, Scripture, feasts, and spiritual rhythm.',
-    response: 'Beautiful. Anasta will be shaped around rhythm, return, and practice.',
+    value: 'catholic',
+    title: 'Catholic',
+    body: '',
     icon: <Cross s={22} c={GOLD} w={1.8} />,
   },
   {
-    value: 'catholic',
-    title: 'Catholic',
-    body: 'Daily discipline with room for prayer and devotion.',
-    response: 'Good. We will build a structure that helps faith become regular.',
-    icon: <BookMarked s={22} c={GOLD} w={1.8} />,
+    value: 'orthodox',
+    title: 'Orthodox',
+    body: '',
+    icon: <Cross s={22} c={GOLD} w={1.8} />,
   },
   {
     value: 'protestant',
     title: 'Protestant',
-    body: 'Scripture, prayer, habits, and personal growth.',
-    response: 'Good. We will keep the Word and your daily practice easy to return to.',
-    icon: <Feather s={22} c={GOLD} w={1.8} />,
+    body: '',
+    icon: <Cross s={22} c={GOLD} w={1.8} />,
+  },
+  {
+    value: 'nondenominational',
+    title: 'Non-denominational',
+    body: '',
+    icon: <Cross s={22} c={GOLD} w={1.8} />,
   },
   {
     value: 'oriental',
     title: 'Oriental Orthodox',
-    body: 'Ancient rhythm, prayer, fasting, and remembrance.',
-    response: 'Good. Anasta can support a serious spiritual rhythm without noise.',
-    icon: <Crown s={22} c={GOLD} w={1.8} />,
+    body: '',
+    icon: <Cross s={22} c={GOLD} w={1.8} />,
   },
   {
     value: 'other',
     title: 'Other Christian',
-    body: 'A Christian tradition not listed here.',
-    response: 'Understood. We will keep this flexible and centered on practice.',
-    icon: <Sparkles s={21} c={GOLD} w={1.9} />,
+    body: '',
+    icon: <Cross s={22} c={GOLD} w={1.8} />,
   },
   {
     value: 'prefer_not',
     title: 'Prefer not to say',
-    body: 'Skip this detail.',
-    response: 'No problem. Anasta will stay useful without needing every label.',
-    icon: <Heart s={21} c={GOLD} w={1.8} />,
+    body: '',
+    icon: <Cross s={22} c={GOLD} w={1.8} />,
   },
 ];
 
@@ -214,36 +278,43 @@ const AGE_OPTIONS: Option<AgeAnswer>[] = [
   {
     value: 'under_18',
     title: 'Under 18',
-    body: 'Build structure for what matters to you now.',
-    response: 'Good. We are glad to help you organize your goals, faith, focus, and daily rhythm with care.',
+    body: '',
+    response: 'Thank you. This helps us understand who Anasta is serving.',
     icon: <Sparkles s={21} c={GOLD} w={1.9} />,
   },
   {
     value: '18_24',
     title: '18-24',
-    body: 'Create rhythm, direction, and discipline.',
-    response: 'Good. Anasta can help turn intention into a clear rhythm you can return to every day.',
+    body: '',
+    response: 'Thank you. This helps us understand who Anasta is serving.',
     icon: <Target s={22} c={GOLD} w={1.8} />,
   },
   {
     value: '25_34',
     title: '25-34',
-    body: 'Keep your priorities visible and organized.',
-    response: 'Good. We will help you keep daily responsibilities, spiritual life, and long-term goals in one calm structure.',
+    body: '',
+    response: 'Thank you. This helps us understand who Anasta is serving.',
     icon: <ListChecks s={22} c={GOLD} w={1.9} />,
   },
   {
     value: '35_44',
     title: '35-44',
-    body: 'Strengthen your rhythm and protect your attention.',
-    response: 'Good. Anasta can help you carry what matters with more clarity, less noise, and a steadier daily system.',
+    body: '',
+    response: 'Thank you. This helps us understand who Anasta is serving.',
     icon: <Crown s={22} c={GOLD} w={1.8} />,
   },
   {
-    value: '45_plus',
-    title: '45+',
-    body: 'Bring more order, reflection, and consistency.',
-    response: 'Good. We are glad to help you build a system that respects your priorities and supports your daily walk.',
+    value: '45_54',
+    title: '45-54',
+    body: '',
+    response: 'Thank you. This helps us understand who Anasta is serving.',
+    icon: <Heart s={21} c={GOLD} w={1.8} />,
+  },
+  {
+    value: '55_plus',
+    title: '55+',
+    body: '',
+    response: 'Thank you. This helps us understand who Anasta is serving.',
     icon: <Heart s={21} c={GOLD} w={1.8} />,
   },
 ];
@@ -252,14 +323,14 @@ const GENDER_OPTIONS: Option<GenderAnswer>[] = [
   {
     value: 'male',
     title: 'Male',
-    body: 'A little context for the people Anasta serves.',
+    body: '',
     response: 'Thank you. This helps us understand who Anasta is serving.',
     icon: <Crown s={22} c={GOLD} w={1.8} />,
   },
   {
     value: 'female',
     title: 'Female',
-    body: 'A little context for the people Anasta serves.',
+    body: '',
     response: 'Thank you. This helps us understand who Anasta is serving.',
     icon: <Heart s={21} c={GOLD} w={1.8} />,
   },
@@ -406,6 +477,89 @@ const FOCUS_OPTIONS: Option<FocusAnswer>[] = [
   },
 ];
 
+const VALUE_REFLECT_OPTIONS: Option<ValueReflectAnswer>[] = [
+  {
+    value: 'protect_time',
+    title: 'Protect my time',
+    body: 'Take back the hours my phone quietly takes.',
+    response: 'Good. Your time is worth protecting.',
+    icon: <Hourglass s={22} c={GOLD} w={1.7} />,
+  },
+  {
+    value: 'organize_life',
+    title: 'Organize my life',
+    body: 'Bring events, goals, and tasks into one clear place.',
+    response: 'Good. A clear life is easier to return to.',
+    icon: <ListChecks s={22} c={GOLD} w={1.9} />,
+  },
+  {
+    value: 'daily_discipline',
+    title: 'Build daily discipline',
+    body: 'Turn the right actions into a routine I can keep.',
+    response: 'Good. Discipline grows through repeated action.',
+    icon: <Target s={22} c={GOLD} w={1.8} />,
+  },
+  {
+    value: 'spiritual_discipline',
+    title: 'Build spiritual discipline',
+    body: 'Make prayer and Scripture a steady practice, not an afterthought.',
+    response: 'Good. Your spiritual life deserves a visible rhythm.',
+    icon: <Cross s={22} c={GOLD} w={1.8} />,
+  },
+  {
+    value: 'grow_spiritually',
+    title: 'Grow spiritually',
+    body: 'Reflect, return, and stay close to what matters.',
+    response: 'Good. Anasta should help you keep returning.',
+    icon: <Candle s={22} c={GOLD} w={1.7} />,
+  },
+  {
+    value: 'consistent',
+    title: 'Stay consistent',
+    body: 'Stop starting over and build something that lasts.',
+    response: 'Good. Consistency is built one return at a time.',
+    icon: <Crown s={22} c={GOLD} w={1.8} />,
+  },
+  {
+    value: 'meant_to_be',
+    title: "Become who I'm meant to be",
+    body: "Grow into the person I'm called to be.",
+    response: 'Good. That is the path Anasta is built for.',
+    icon: <Sparkles s={21} c={GOLD} w={1.9} />,
+  },
+];
+
+const COMMITMENT_OPTIONS: Option<CommitmentAnswer>[] = [
+  {
+    value: 'all_in',
+    title: "I'm all in.",
+    body: "I'm ready to commit and show up every day.",
+    response: 'Good. Then let us build this with intention.',
+    icon: <Crown s={22} c={GOLD} w={1.8} />,
+  },
+  {
+    value: 'committed',
+    title: "I'm committed.",
+    body: "I want this and I'll put in the work.",
+    response: 'Good. Commitment gives structure something to carry.',
+    icon: <Target s={22} c={GOLD} w={1.8} />,
+  },
+  {
+    value: 'try',
+    title: 'I want to try.',
+    body: "I'm hopeful but still finding my footing.",
+    response: 'Good. A faithful start is still a start.',
+    icon: <Sparkles s={21} c={GOLD} w={1.9} />,
+  },
+  {
+    value: 'exploring',
+    title: "I'm just exploring.",
+    body: "I'm curious and seeing if this fits.",
+    response: 'That is okay. Start calmly and see what helps.',
+    icon: <Feather s={22} c={GOLD} w={1.8} />,
+  },
+];
+
 const PILLAR_OPTIONS: Option<PillarAnswer>[] = [
   {
     value: 'organize',
@@ -433,25 +587,46 @@ const PILLAR_OPTIONS: Option<PillarAnswer>[] = [
 function stepOrder(answers: Answers): StepId[] {
   const questionSteps: StepId[] =
     answers.christian === 'yes'
-      ? ['christian', 'tradition', 'age', 'gender', 'reason']
-      : ['christian', 'age', 'gender', 'reason'];
+      ? ['christian', 'tradition', 'age', 'gender']
+      : ['christian', 'age', 'gender'];
+  const protectSteps: StepId[] = ['protectPain'];
+  const buildSteps: StepId[] = [
+    'buildIntro',
+    'buildBigEvents',
+    'buildMonthlyGoals',
+    'buildWeeklyRhythm',
+    'buildTaskTypes',
+    'buildHabits',
+    'buildSpiritualTasks',
+    'buildRoutineTasks',
+    'buildChallenges',
+    'buildQuickTasks',
+    'buildMyRoutine',
+    'buildHomePreview',
+  ];
+  const firstChapter = answers.firstChapter ?? 'protect';
+  const firstChapterSteps = firstChapter === 'protect' ? protectSteps : buildSteps;
+  const secondChapterSteps = firstChapter === 'protect' ? buildSteps : protectSteps;
 
   return [
     'welcome',
+    'nameIntro',
+    'valueOrganize',
+    'valueDiscipline',
+    'valueFocus',
     'questionIntro',
     ...questionSteps,
     'processing',
-    'bridge',
-    'organizeIntro',
-    'taskTypes',
-    'taskSetup',
-    'taskManagement',
-    'focusCost',
-    'blockers',
-    'focusSetup',
+    'setupStart',
+    ...firstChapterSteps,
+    'chapterCheckpointFirst',
+    ...secondChapterSteps,
+    'chapterCheckpointFinal',
     'bibleFree',
     'bibleReading',
     'bibleTools',
+    'valueReflect',
+    'commitment',
     'paywall',
   ];
 }
@@ -461,6 +636,7 @@ function selectedFor(step: StepId, answers: Answers) {
   if (step === 'tradition') return answers.tradition;
   if (step === 'age') return answers.age;
   if (step === 'gender') return answers.gender;
+  if (step === 'commitment') return answers.commitment;
   if (step === 'pillars') return answers.primaryPillar;
   if (step === 'routine') return answers.routine;
   if (step === 'focus') return answers.focus;
@@ -468,12 +644,15 @@ function selectedFor(step: StepId, answers: Answers) {
 }
 
 function selectedValuesFor(step: StepId, answers: Answers): string[] {
+  if (step === 'valueReflect') return answers.valueReflection ?? [];
   if (step === 'reason') return answers.reasons ?? [];
   const selected = selectedFor(step, answers);
   return selected ? [selected] : [];
 }
 
 function getOptions(step: StepId): Option<string>[] {
+  if (step === 'valueReflect') return VALUE_REFLECT_OPTIONS;
+  if (step === 'commitment') return COMMITMENT_OPTIONS;
   if (step === 'christian') return CHRISTIAN_OPTIONS;
   if (step === 'tradition') return TRADITION_OPTIONS;
   if (step === 'age') return AGE_OPTIONS;
@@ -483,25 +662,39 @@ function getOptions(step: StepId): Option<string>[] {
 }
 
 function questionCopy(step: StepId) {
+  if (step === 'valueReflect') {
+    return {
+      eyebrow: 'Goals',
+      title: 'What do you want to achieve with Anasta?',
+      subtitle: 'Choose all that matter to you.',
+    };
+  }
+  if (step === 'commitment') {
+    return {
+      eyebrow: 'Commitment',
+      title: 'How committed are you to reaching these goals?',
+      subtitle: 'Choose the answer that feels most honest right now.',
+    };
+  }
   if (step === 'christian') {
     return {
       eyebrow: 'First, a little context',
       title: 'Are you Christian?',
-      subtitle: 'Anasta can be used for daily structure, spiritual growth, or both. This helps us start in the right place.',
+      subtitle: 'Anasta works for daily structure, spiritual growth, or both. This helps us start in the right place.',
     };
   }
   if (step === 'tradition') {
     return {
       eyebrow: 'Your faith',
       title: 'Which tradition are you part of?',
-      subtitle: 'We will use this carefully, mostly to shape the spiritual language and prayer context.',
+      subtitle: 'We use this gently, mostly to shape spiritual language and prayer context.',
     };
   }
   if (step === 'age') {
     return {
       eyebrow: 'Your season',
       title: 'How old are you?',
-      subtitle: 'Different seasons need different rhythms. Keep it broad, keep it simple.',
+      subtitle: 'This helps us understand who Anasta serves.',
     };
   }
   if (step === 'gender') {
@@ -528,10 +721,25 @@ function runAdvanceHaptic() {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 }
 
-function optionEntrance(index: number) {
+function runBubbleHaptic() {
+  if (Platform.OS === 'web') return;
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+}
+
+function runStrongHaptic() {
+  if (Platform.OS === 'web') return;
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+}
+
+function runTypingHaptic() {
+  if (Platform.OS === 'web') return;
+  Haptics.selectionAsync().catch(() => {});
+}
+
+function optionEntrance(index: number, baseDelay = 70) {
   const entrance = index % 2 === 0 ? FadeInLeft : FadeInRight;
   return entrance
-    .delay(70 + index * 42)
+    .delay(baseDelay + index * 42)
     .duration(320)
     .withInitialValues({
       opacity: 0,
@@ -582,47 +790,87 @@ function AnimatedCta({
   children,
   active = true,
   delay = 220,
+  duration = 620,
+  distance = 24,
   style,
+  pointerEvents = 'auto',
 }: {
   children: React.ReactNode;
   active?: boolean;
   delay?: number;
+  duration?: number;
+  distance?: number;
   style?: StyleProp<ViewStyle>;
+  pointerEvents?: 'auto' | 'none' | 'box-none' | 'box-only';
 }) {
   const progress = useSharedValue(0);
 
   useEffect(() => {
+    if (!active) {
+      progress.value = withTiming(0, {
+        duration: 240,
+        easing: Easing.out(Easing.cubic),
+      });
+      return undefined;
+    }
+
     progress.value = 0;
-    if (!active) return undefined;
     const timer = setTimeout(() => {
       progress.value = withTiming(1, {
-        duration: 620,
+        duration,
         easing: Easing.out(Easing.cubic),
       });
     }, delay);
 
     return () => clearTimeout(timer);
-  }, [active, delay, progress]);
+  }, [active, delay, duration, progress]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
-    transform: [{ translateY: interpolate(progress.value, [0, 1], [24, 0]) }],
+    transform: [{ translateY: interpolate(progress.value, [0, 1], [distance, 0]) }],
   }));
 
-  return <Reanimated.View style={[style, animatedStyle]}>{children}</Reanimated.View>;
+  return <Reanimated.View pointerEvents={pointerEvents} style={[style, animatedStyle]}>{children}</Reanimated.View>;
 }
 
-function progressForStep(step: StepId): SectionProgress | null {
-  if (step === 'christian' || step === 'tradition') return { key: 'questions', index: 0, total: 4 };
-  if (step === 'age') return { key: 'questions', index: 1, total: 4 };
-  if (step === 'gender') return { key: 'questions', index: 2, total: 4 };
-  if (step === 'reason') return { key: 'questions', index: 3, total: 4 };
+function progressForStep(step: StepId, answers: Answers): SectionProgress | null {
+  const hasTraditionStep = answers.christian === 'yes';
+  const total = hasTraditionStep ? 4 : 3;
+  if (step === 'christian') return { key: 'questions', index: 0, total: 4 };
+  if (step === 'tradition') return { key: 'questions', index: 1, total: 4 };
+  if (step === 'age') return { key: 'questions', index: hasTraditionStep ? 2 : 1, total };
+  if (step === 'gender') return { key: 'questions', index: hasTraditionStep ? 3 : 2, total };
 
   return null;
 }
 
 function isGuidedWalkthroughStep(step: StepId) {
   return (
+    step === 'setupStart' ||
+    step === 'protectIntro' ||
+    step === 'protectPain' ||
+    step === 'protectScreenTime' ||
+    step === 'protectCalculation' ||
+    step === 'protectReframe' ||
+    step === 'protectAppBlockers' ||
+    step === 'protectWebsiteBlockers' ||
+    step === 'protectFocusBlock' ||
+    step === 'protectComplete' ||
+    step === 'buildIntro' ||
+    step === 'buildBigEvents' ||
+    step === 'buildMonthlyGoals' ||
+    step === 'buildWeeklyRhythm' ||
+    step === 'buildTaskTypes' ||
+    step === 'buildHabits' ||
+    step === 'buildSpiritualTasks' ||
+    step === 'buildRoutineTasks' ||
+    step === 'buildChallenges' ||
+    step === 'buildQuickTasks' ||
+    step === 'buildMyRoutine' ||
+    step === 'buildHomePreview' ||
+    step === 'buildComplete' ||
+    step === 'chapterCheckpointFirst' ||
+    step === 'chapterCheckpointFinal' ||
     step === 'taskTypes' ||
     step === 'taskSetup' ||
     step === 'taskManagement' ||
@@ -636,6 +884,38 @@ function isGuidedWalkthroughStep(step: StepId) {
     step === 'bibleTools' ||
     step === 'paywall'
   );
+}
+
+type ValueStepId = 'valueOrganize' | 'valueDiscipline' | 'valueFocus';
+type ValuePhoneKind = 'protect' | 'rhythm' | 'rise';
+
+const VALUE_STEP_IDS: ValueStepId[] = [
+  'valueOrganize',
+  'valueDiscipline',
+  'valueFocus',
+];
+const VALUE_FLOW_DOT_COUNT = VALUE_STEP_IDS.length;
+
+const VALUE_SLIDES: Record<ValueStepId, { title: string; body: string; kind: ValuePhoneKind }> = {
+  valueOrganize: {
+    title: 'Protect your time.',
+    body: 'Block what pulls you away.',
+    kind: 'protect',
+  },
+  valueDiscipline: {
+    title: 'Build your rhythm.',
+    body: 'Discipline in daily life and spiritual life.',
+    kind: 'rhythm',
+  },
+  valueFocus: {
+    title: 'Rise again.',
+    body: 'Return to what matters.',
+    kind: 'rise',
+  },
+};
+
+function isValueStep(step: StepId): step is ValueStepId {
+  return VALUE_STEP_IDS.includes(step as ValueStepId);
 }
 
 function ProgressBar({ progress }: { progress: SectionProgress }) {
@@ -702,7 +982,6 @@ function OnboardingPreload({
             <Image source={APP_LOGO} style={s.preloadLogo} resizeMode="cover" />
           </View>
         </View>
-        <Text style={s.preloadBrand}>ANASTA</Text>
       </Reanimated.View>
     </LinearGradient>
   );
@@ -791,7 +1070,7 @@ function WelcomeSlide({ onNext, ready }: { onNext: () => void; ready: boolean })
             loop={false}
             speed={0.92}
             resizeMode="cover"
-            renderMode="AUTOMATIC"
+            renderMode="SOFTWARE"
             style={[StyleSheet.absoluteFill, s.confettiLottie]}
           />
         </Reanimated.View>
@@ -800,51 +1079,943 @@ function WelcomeSlide({ onNext, ready }: { onNext: () => void; ready: boolean })
   );
 }
 
-function AutoMessageSlide({ bottomInset, onNext }: { bottomInset: number; onNext: () => void }) {
+function nameForDisplay(value?: string) {
+  const trimmed = value?.trim();
+  if (!trimmed) return '';
+  return trimmed.replace(/\s+/g, ' ');
+}
+
+type TypedTextSegment = { text: string; highlight?: boolean };
+
+function joinTypedSegments(segments: TypedTextSegment[]) {
+  return segments.map(segment => segment.text).join('');
+}
+
+function TypedSegmentText({
+  segments,
+  count,
+  textStyle,
+  highlightStyle,
+  caretStyle,
+}: {
+  segments: TypedTextSegment[];
+  count: number;
+  textStyle: StyleProp<TextStyle>;
+  highlightStyle: StyleProp<TextStyle>;
+  caretStyle: StyleProp<TextStyle>;
+}) {
+  let remaining = count;
+  const totalLength = segments.reduce((sum, segment) => sum + segment.text.length, 0);
+
   return (
-    <View style={s.introSlide}>
-      <View pointerEvents="none" style={s.introWarmth}>
+    <Text style={textStyle}>
+      {segments.map((segment, index) => {
+        if (remaining <= 0) return null;
+        const visible = segment.text.slice(0, remaining);
+        remaining -= visible.length;
+        return (
+          <Text key={`${segment.text}-${index}`} style={segment.highlight ? highlightStyle : undefined}>
+            {visible}
+          </Text>
+        );
+      })}
+      {count < totalLength ? <Text style={caretStyle}>|</Text> : null}
+    </Text>
+  );
+}
+
+function NameIntroSlide({
+  value,
+  bottomInset,
+  onNameChange,
+  onNext,
+}: {
+  value?: string;
+  bottomInset: number;
+  onNameChange: (name: string) => void;
+  onNext: () => void;
+}) {
+  const [draft, setDraft] = useState(value ?? '');
+  const [submitted, setSubmitted] = useState(Boolean(value?.trim()));
+  const [typedCount, setTypedCount] = useState(0);
+  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(false);
+  const cleanName = draft.trim();
+  const displayName = nameForDisplay(cleanName || value);
+  const canSubmit = cleanName.length > 0;
+  const replySegments = useMemo<TypedTextSegment[]>(() => [
+    { text: displayName ? `Nice to meet you, ${displayName}. Here are ` : 'Nice to meet you. Here are ' },
+    { text: '3 things', highlight: true },
+    { text: ' Anasta can help you with.' },
+  ], [displayName]);
+  const replyText = useMemo(() => joinTypedSegments(replySegments), [replySegments]);
+
+  const handlePrimary = () => {
+    if (!submitted) {
+      if (!canSubmit) return;
+      runSelectionHaptic();
+      onNameChange(displayName);
+      setTypedCount(0);
+      setAutoAdvanceEnabled(true);
+      setSubmitted(true);
+      return;
+    }
+
+    onNext();
+  };
+
+  useEffect(() => {
+    if (!submitted) {
+      setTypedCount(0);
+      return undefined;
+    }
+
+    setTypedCount(0);
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let advanceTimer: ReturnType<typeof setTimeout> | undefined;
+    const startTimer = setTimeout(() => {
+      interval = setInterval(() => {
+        setTypedCount(prev => {
+          if (prev >= replyText.length) {
+            if (interval) clearInterval(interval);
+            if (autoAdvanceEnabled) {
+              advanceTimer = setTimeout(() => {
+                runAdvanceHaptic();
+                onNext();
+              }, 1500);
+            }
+            return prev;
+          }
+          const next = prev + 1;
+          if (next % 3 === 0) runTypingHaptic();
+          return next;
+        });
+      }, 34);
+    }, 520);
+
+    return () => {
+      clearTimeout(startTimer);
+      if (interval) clearInterval(interval);
+      if (advanceTimer) clearTimeout(advanceTimer);
+    };
+  }, [autoAdvanceEnabled, onNext, replyText, submitted]);
+
+  useEffect(() => {
+    const firstBubbleTimer = setTimeout(runBubbleHaptic, 260);
+    const questionBubbleTimer = setTimeout(runBubbleHaptic, 1110);
+    return () => {
+      clearTimeout(firstBubbleTimer);
+      clearTimeout(questionBubbleTimer);
+    };
+  }, []);
+
+  return (
+    <LinearGradient
+      colors={['#FFFDF8', '#FFFDF8', '#F8EEDC', '#D9B98E']}
+      locations={[0, 0.56, 0.86, 1]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={s.nameIntroSlide}
+    >
+      <View pointerEvents="none" style={s.nameIntroBackdrop}>
+        <View style={s.nameIntroGlow} />
+        <View style={s.nameIntroLine} />
+      </View>
+
+      <ScrollView
+        style={s.nameIntroScroll}
+        contentContainerStyle={s.nameIntroContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Reanimated.View
+          entering={FadeIn.duration(520).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 14 }, { scale: 0.985 }],
+          })}
+          style={s.nameConversation}
+        >
+          <View style={s.nameBotRow}>
+            <Reanimated.View
+              entering={FadeInLeft.duration(660).withInitialValues({
+                opacity: 0,
+                transform: [{ translateX: -28 }, { translateY: 8 }, { rotate: '-3deg' }, { scale: 0.94 }],
+              })}
+              style={s.nameAvatarShellSmall}
+            >
+              <Image source={APP_LOGO} style={s.nameAvatarLogoSmall} resizeMode="cover" />
+            </Reanimated.View>
+            <Reanimated.View
+              entering={FadeInRight.delay(260).duration(620).withInitialValues({
+                opacity: 0,
+                transform: [{ translateX: 18 }, { translateY: 9 }, { scale: 0.94 }],
+              })}
+              style={s.nameBubble}
+            >
+              <View style={s.nameBubbleTail} />
+              <View style={s.nameBubbleTailJoin} />
+              <Text style={s.nameBubbleText}>Hi, Welcome!</Text>
+            </Reanimated.View>
+          </View>
+
+          <View style={[s.nameBotRow, s.nameBotRowSecond]}>
+            <Reanimated.View
+              entering={FadeInLeft.delay(820).duration(720).withInitialValues({
+                opacity: 0,
+                transform: [{ translateX: -34 }, { translateY: 7 }, { rotate: '-7deg' }, { scale: 0.93 }],
+              })}
+              style={[s.nameAvatarShell, s.nameQuestionAvatarShell]}
+            >
+              <View style={s.nameAvatarHalo} />
+              <Image source={APP_LOGO} style={s.nameAvatarLogo} resizeMode="cover" />
+            </Reanimated.View>
+            <Reanimated.View
+              entering={FadeInRight.delay(1110).duration(650).withInitialValues({
+                opacity: 0,
+                transform: [{ translateX: 20 }, { translateY: 10 }, { scale: 0.93 }],
+              })}
+              style={[s.nameBubble, s.nameQuestionBubble]}
+            >
+              <View style={s.nameBubbleTail} />
+              <View style={s.nameBubbleTailJoin} />
+              <Text style={s.nameBubbleText}>What is your name?</Text>
+            </Reanimated.View>
+          </View>
+
+          {!submitted ? (
+            <Reanimated.View
+              entering={FadeIn.delay(1740).duration(560).withInitialValues({
+                opacity: 0,
+                transform: [{ translateY: 18 }, { scale: 0.975 }],
+              })}
+              style={s.nameInputBlock}
+            >
+              <Text style={s.nameInputLabel}>Your name</Text>
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                placeholder="Enter your name"
+                placeholderTextColor="rgba(25,23,20,0.34)"
+                autoCapitalize="words"
+                autoCorrect={false}
+                returnKeyType="done"
+                onSubmitEditing={handlePrimary}
+                style={s.nameInput}
+              />
+            </Reanimated.View>
+          ) : (
+            <>
+              <Reanimated.View entering={FadeIn.delay(120).duration(340)} style={s.nameUserRow}>
+                <View style={s.nameUserBubble}>
+                  <Text style={s.nameUserText}>{displayName}</Text>
+                </View>
+              </Reanimated.View>
+              <Reanimated.View entering={FadeIn.delay(360).duration(420)} style={s.nameBotRow}>
+                <View style={s.nameAvatarShellSmall}>
+                  <Image source={APP_LOGO} style={s.nameAvatarLogoSmall} resizeMode="cover" />
+                </View>
+                <View style={[s.nameBubble, s.nameReplyBubble]}>
+                  <View style={s.nameBubbleTail} />
+                  <View style={s.nameBubbleTailJoin} />
+                  <TypedSegmentText
+                    segments={replySegments}
+                    count={typedCount}
+                    textStyle={s.nameBubbleText}
+                    highlightStyle={s.inlineGoldUnderline}
+                    caretStyle={s.nameTypingCaret}
+                  />
+                </View>
+              </Reanimated.View>
+            </>
+          )}
+        </Reanimated.View>
+      </ScrollView>
+
+      <AnimatedCta delay={260} style={[s.bottomAction, s.introBottomAction, { paddingBottom: bottomInset + 8 }]}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            haptic={submitted ? 'medium' : 'light'}
+            disabled={!submitted && !canSubmit}
+            onPress={handlePrimary}
+            style={[s.primaryButton, !submitted && !canSubmit && s.primaryButtonDisabled]}
+          >
+            <Text style={[s.primaryButtonText, !submitted && !canSubmit && s.primaryButtonDisabledText]}>
+              {submitted ? 'Show me' : 'Continue'}
+            </Text>
+            <ChevronRight s={19} c={submitted || canSubmit ? '#FFFFFF' : 'rgba(25,23,20,0.34)'} w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </LinearGradient>
+  );
+}
+
+function ValuePreviewSlide({
+  step,
+  topInset,
+  bottomInset,
+  onNext,
+  onBack,
+}: {
+  step: ValueStepId;
+  topInset: number;
+  bottomInset: number;
+  onNext: () => void;
+  onBack: () => void;
+}) {
+  const { width } = useWindowDimensions();
+  const index = VALUE_STEP_IDS.indexOf(step);
+  const isLast = index === VALUE_STEP_IDS.length - 1;
+  const pagePosition = useSharedValue(index);
+  const dragX = useSharedValue(0);
+
+  useEffect(() => {
+    pagePosition.value = index;
+    dragX.value = 0;
+  }, [dragX, index, pagePosition]);
+
+  const swipeGesture = useMemo(() => Gesture.Pan()
+    .activeOffsetX([-14, 14])
+    .failOffsetY([-18, 18])
+    .onUpdate(event => {
+      const raw = event.translationX;
+      const canMoveRight = index > 0;
+
+      if (raw < 0) {
+        dragX.value = raw;
+        return;
+      }
+      if (raw > 0 && canMoveRight) {
+        dragX.value = raw;
+        return;
+      }
+
+      dragX.value = raw * 0.16;
+    })
+    .onEnd(event => {
+      const threshold = Math.min(88, width * 0.22);
+      const shouldAdvance = event.translationX < -threshold || event.velocityX < -520;
+      const shouldReturn = index > 0 && (event.translationX > threshold || event.velocityX > 520);
+
+      if (shouldAdvance) {
+        if (isLast) {
+          dragX.value = withTiming(-width, { duration: 460, easing: Easing.inOut(Easing.cubic) }, () => {
+            runOnJS(onNext)();
+          });
+        } else {
+          dragX.value = withTiming(0, { duration: 360, easing: Easing.out(Easing.cubic) });
+          pagePosition.value = withTiming(index + 1, { duration: 360, easing: Easing.out(Easing.cubic) }, () => {
+            runOnJS(onNext)();
+          });
+        }
+        return;
+      }
+
+      if (shouldReturn) {
+        dragX.value = withTiming(0, { duration: 360, easing: Easing.out(Easing.cubic) });
+        pagePosition.value = withTiming(index - 1, { duration: 360, easing: Easing.out(Easing.cubic) }, () => {
+          runOnJS(onBack)();
+        });
+        return;
+      }
+
+      dragX.value = withTiming(0, { duration: 260, easing: Easing.out(Easing.cubic) });
+    }), [dragX, index, isLast, onBack, onNext, pagePosition, width]);
+
+  const trackStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: -(pagePosition.value * width) + dragX.value },
+    ],
+  }));
+
+  return (
+    <LinearGradient
+      colors={['#FFFDF8', '#FFFDF8', '#F8EEDC', '#D9B98E']}
+      locations={[0, 0.52, 0.82, 1]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={s.valueSlide}
+    >
+      <View pointerEvents="none" style={s.valueBackdrop}>
+        <View style={s.valueBackdropBandTop} />
+        <View style={s.valueBackdropBandBottom} />
+        <View style={s.valueBackdropLineOne} />
+        <View style={s.valueBackdropLineTwo} />
+      </View>
+
+      <View style={s.valueCarouselViewport}>
+        <GestureDetector gesture={swipeGesture}>
+          <Reanimated.View style={[s.valueCarouselTrack, { width: width * VALUE_STEP_IDS.length }, trackStyle]}>
+            {VALUE_STEP_IDS.map((valueStep, slideIndex) => (
+              <ValuePreviewPage
+                key={valueStep}
+                width={width}
+                topInset={topInset}
+                number={slideIndex + 1}
+                slide={VALUE_SLIDES[valueStep]}
+                animateIntro={slideIndex === 0}
+              />
+            ))}
+          </Reanimated.View>
+        </GestureDetector>
+      </View>
+
+      <View style={[s.valueDots, { bottom: bottomInset + 22 }]}>
+        {Array.from({ length: VALUE_FLOW_DOT_COUNT }).map((_, dotIndex) => (
+          <View
+            key={`value-flow-${dotIndex}`}
+            style={[
+              s.valueDot,
+              dotIndex === index && s.valueDotActive,
+              dotIndex >= VALUE_STEP_IDS.length && s.valueDotUpcoming,
+            ]}
+          />
+        ))}
+      </View>
+    </LinearGradient>
+  );
+}
+
+function ValuePreviewPage({
+  width,
+  topInset,
+  number,
+  slide,
+  animateIntro,
+}: {
+  width: number;
+  topInset: number;
+  number: number;
+  slide: { title: string; body: string; kind: ValuePhoneKind };
+  animateIntro?: boolean;
+}) {
+  const copyEntering = animateIntro
+    ? FadeIn.duration(620).withInitialValues({
+      opacity: 0,
+      transform: [{ translateY: 18 }, { scale: 0.985 }],
+    })
+    : undefined;
+  const phoneEntering = animateIntro
+    ? FadeIn.delay(180).duration(760).withInitialValues({
+      opacity: 0,
+      transform: [{ translateY: 34 }, { scale: 0.965 }],
+    })
+    : undefined;
+
+  return (
+    <View style={[s.valuePage, { width }]}>
+      <Reanimated.View entering={copyEntering} style={[s.valueCopy, { paddingTop: topInset + 46 }]}>
+        <View style={s.valueTitleShell}>
+          <View style={s.valueTitleNumber}>
+            <Text style={s.valueTitleNumberText}>{number}</Text>
+          </View>
+          <View style={s.valueTitleTextWrap}>
+            <Text style={s.valueTitle}>{slide.title}</Text>
+            <View style={s.valueTitleUnderline} />
+          </View>
+        </View>
+        <View style={s.valueSubtitleFrame}>
+          <ValueSubtitleText kind={slide.kind} />
+        </View>
+      </Reanimated.View>
+
+      <Reanimated.View entering={phoneEntering} style={s.valuePhoneStage}>
+        <ValuePhoneMock kind={slide.kind} />
+      </Reanimated.View>
+    </View>
+  );
+}
+
+function ValueSubtitleWord({ children, underline }: { children: React.ReactNode; underline?: boolean }) {
+  return (
+    <Text style={[s.valueSubtitleWord, underline && s.valueSubtitleWordUnderline]}>
+      {children}
+    </Text>
+  );
+}
+
+function ValueSubtitleText({ kind }: { kind: ValuePhoneKind }) {
+  if (kind === 'protect') {
+    return (
+      <View style={s.valueSubtitleLine}>
+        <ValueSubtitleWord>Block</ValueSubtitleWord>
+        <ValueSubtitleWord>what</ValueSubtitleWord>
+        <ValueSubtitleWord underline>pulls</ValueSubtitleWord>
+        <ValueSubtitleWord>you</ValueSubtitleWord>
+        <ValueSubtitleWord underline>away.</ValueSubtitleWord>
+      </View>
+    );
+  }
+
+  if (kind === 'rhythm') {
+    return (
+      <View style={s.valueSubtitleLine}>
+        <ValueSubtitleWord>Discipline</ValueSubtitleWord>
+        <ValueSubtitleWord>in</ValueSubtitleWord>
+        <ValueSubtitleWord underline>daily</ValueSubtitleWord>
+        <ValueSubtitleWord>life</ValueSubtitleWord>
+        <ValueSubtitleWord>and</ValueSubtitleWord>
+        <ValueSubtitleWord underline>spiritual</ValueSubtitleWord>
+        <ValueSubtitleWord>life.</ValueSubtitleWord>
+      </View>
+    );
+  }
+
+  return (
+    <View style={s.valueSubtitleLine}>
+      <ValueSubtitleWord>Return</ValueSubtitleWord>
+      <ValueSubtitleWord>to</ValueSubtitleWord>
+      <ValueSubtitleWord underline>what</ValueSubtitleWord>
+      <ValueSubtitleWord underline>matters.</ValueSubtitleWord>
+    </View>
+  );
+}
+
+function ValuePhoneMock({ kind }: { kind: ValuePhoneKind }) {
+  return (
+    <View style={s.valuePhoneOuter}>
+      <View style={s.valuePhoneSideButtonLeft} />
+      <View style={s.valuePhoneSideButtonRightTop} />
+      <View style={s.valuePhoneSideButtonRightBottom} />
+      <View style={s.valuePhoneBezel}>
+        <View style={s.valuePhoneNotch}>
+          <View style={s.valuePhoneSpeaker} />
+          <View style={s.valuePhoneCamera} />
+        </View>
+        <View style={s.valuePhoneScreen}>
+          {kind === 'protect' && <ValueProtectPhone />}
+          {kind === 'rhythm' && <ValueOrganizePhone />}
+          {kind === 'rise' && <ValueRisePhone />}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function ValuePhoneRow({
+  icon,
+  title,
+  meta,
+  tone = 'gold',
+}: {
+  icon: React.ReactNode;
+  title: string;
+  meta: string;
+  tone?: 'gold' | 'purple' | 'rose' | 'green' | 'ink';
+}) {
+  const toneStyle =
+    tone === 'purple' ? s.valueTonePurple :
+    tone === 'rose' ? s.valueToneRose :
+    tone === 'green' ? s.valueToneGreen :
+    tone === 'ink' ? s.valueToneInk :
+    s.valueToneGold;
+
+  return (
+    <View style={s.valuePhoneRow}>
+      <View style={[s.valuePhoneRowIcon, toneStyle]}>{icon}</View>
+      <View style={s.valuePhoneRowCopy}>
+        <Text style={s.valuePhoneRowTitle}>{title}</Text>
+        <Text style={s.valuePhoneRowMeta}>{meta}</Text>
+      </View>
+      <View style={s.valuePhoneRowCheck} />
+    </View>
+  );
+}
+
+function ValuePhoneTaskCard({ item }: { item: TaskTypePreview }) {
+  return (
+    <View style={s.valueMiniTaskFrame}>
+      <View style={s.valueMiniTaskScale}>
+        <AnyTaskCard task={item.task} />
+      </View>
+    </View>
+  );
+}
+
+function ValueProtectStat({ value, label }: { value: string; label: string }) {
+  return (
+    <View style={s.valueProtectStat}>
+      <View style={s.valueProtectStatGlow} />
+      <Text style={s.valueProtectStatValue}>{value}</Text>
+      <Text style={s.valueProtectStatLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function ValueProtectHourTicks() {
+  return (
+    <View style={s.valueProtectHourGrid}>
+      {Array.from({ length: 16 }).map((_, index) => (
+        <View
+          key={`protect-hour-${index}`}
+          style={[s.valueProtectHourTick, index < 7 && s.valueProtectHourTickActive]}
+        />
+      ))}
+    </View>
+  );
+}
+
+function ValueProtectBlockerPill({ label, tone }: { label: string; tone: 'rose' | 'purple' | 'gold' | 'ink' }) {
+  return (
+    <View style={[
+      s.valueProtectBlockerPill,
+      tone === 'rose' && s.valueProtectBlockerPillRose,
+      tone === 'purple' && s.valueProtectBlockerPillPurple,
+      tone === 'gold' && s.valueProtectBlockerPillGold,
+      tone === 'ink' && s.valueProtectBlockerPillInk,
+    ]}>
+      <View style={[
+        s.valueProtectBlockerDot,
+        tone === 'rose' && s.valueProtectBlockerDotRose,
+        tone === 'purple' && s.valueProtectBlockerDotPurple,
+        tone === 'gold' && s.valueProtectBlockerDotGold,
+        tone === 'ink' && s.valueProtectBlockerDotInk,
+      ]} />
+      <Text style={s.valueProtectBlockerText}>{label}</Text>
+    </View>
+  );
+}
+
+function ValueProtectPhone() {
+  return (
+    <View style={s.valueProtectPhone}>
+      <View style={s.valueProtectMetricCard}>
         <LinearGradient
-          colors={['rgba(255,255,255,0)', 'rgba(246,225,202,0.46)', 'rgba(255,241,225,0.98)']}
-          locations={[0, 0.52, 1]}
+          colors={['#FFFDF8', '#FFF6E8', '#F8EEDC']}
+          locations={[0, 0.54, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={s.valueProtectMetricTop}>
+          <Hourglass s={15} c={GOLD} w={1.9} />
+          <Text style={s.valueProtectMetricEyebrow}>Average Gen Z phone time</Text>
+        </View>
+        <View style={s.valueProtectMetricRow}>
+          <Text style={s.valueProtectMetric}>7<Text style={s.valueProtectMetricSuffix}>h</Text></Text>
+          <View style={s.valueProtectMetricCopy}>
+            <Text style={s.valueProtectMetricUnit}>every day</Text>
+            <Text style={s.valueProtectMetricSub}>of 16h usable time</Text>
+          </View>
+        </View>
+        <View style={s.valueProtectTickPanel}>
+          <ValueProtectHourTicks />
+          <View style={s.valueProtectTickLegend}>
+            <Text style={s.valueProtectTickLegendActive}>7 phone hours</Text>
+            <Text style={s.valueProtectTickLegendMuted}>9 usable hours left</Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={s.valueProtectStatGrid}>
+        <ValueProtectStat value="43%" label="of usable time" />
+        <ValueProtectStat value="106" label="days every year" />
+      </View>
+
+      <View style={s.valueProtectLifetimeCard}>
+        <Text style={s.valueProtectLifetimeLabel}>On average</Text>
+        <Text style={s.valueProtectLifetimeValue}>25 years</Text>
+        <Text style={s.valueProtectLifetimeText}>over an 85-year life.</Text>
+      </View>
+
+      <View style={s.valueProtectBlockerCard}>
+        <View style={s.valueProtectBlockerTop}>
+          <SlidersHorizontal s={14} c={GOLD} w={2} />
+          <Text style={s.valueProtectBlockerTitle}>Block addictive websites and apps</Text>
+        </View>
+        <View style={s.valueProtectBlockerGrid}>
+          <ValueProtectBlockerPill label="Adult content" tone="ink" />
+          <ValueProtectBlockerPill label="Gambling" tone="rose" />
+          <ValueProtectBlockerPill label="Gaming" tone="purple" />
+          <ValueProtectBlockerPill label="Others" tone="gold" />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function ValueOrganizePhone() {
+  const days = [
+    { day: 'Tue', date: '19' },
+    { day: 'Wed', date: '20' },
+    { day: 'Thu', date: '21' },
+    { day: 'Fri', date: '22', active: true },
+    { day: 'Sat', date: '23' },
+    { day: 'Sun', date: '24' },
+    { day: 'Mon', date: '25' },
+  ];
+  const taskPreviewItems = [
+    TASK_TYPES.find(item => item.key === 'habit') ?? TASK_TYPES[0],
+    TASK_TYPES.find(item => item.key === 'spiritual') ?? TASK_TYPES[2],
+    TASK_TYPES.find(item => item.key === 'routine') ?? TASK_TYPES[1],
+    TASK_TYPES.find(item => item.key === 'challenge') ?? TASK_TYPES[3],
+    TASK_TYPES.find(item => item.key === 'gratitude') ?? TASK_TYPES[4],
+    TASK_TYPES.find(item => item.key === 'reading') ?? TASK_TYPES[5],
+    TASK_TYPES.find(item => item.key === 'quick') ?? TASK_TYPES[6],
+  ];
+
+  return (
+    <View style={s.valueHomeScreen}>
+      <View style={s.valueMonthHeader}>
+        <View style={s.valueHomeIconButton}>
+          <User s={11.5} c={INK} w={2} />
+        </View>
+        <View style={s.valueMonthCenter}>
+          <View style={s.valueMonthNavRow}>
+            <ChevronLeft s={12} c="rgba(25,23,20,0.46)" w={2.2} />
+            <Text style={s.valueMonthTitle}>May</Text>
+            <ChevronRight s={12} c="rgba(25,23,20,0.46)" w={2.2} />
+          </View>
+          <Text style={s.valueMonthYear}>2026</Text>
+        </View>
+        <View style={s.valueHomeIconButton}>
+          <Settings s={11.5} c={INK} w={2} />
+        </View>
+      </View>
+
+      <View style={s.valueDateRail}>
+        {days.map((item, dayIndex) => {
+          const active = !!item.active;
+          return (
+            <View key={`${item.day}-${dayIndex}`} style={[s.valueDatePill, active && s.valueDatePillActive]}>
+              {active ? (
+                <View pointerEvents="none" style={s.valueDateSelectedFillWrap}>
+                  <LinearGradient
+                    colors={['#D4B06A', '#C5A059', '#8B6B2F']}
+                    locations={[0, 0.50, 1]}
+                    start={{ x: 0.15, y: 0 }}
+                    end={{ x: 0.85, y: 1 }}
+                    style={s.valueDateSelectedFill}
+                  />
+                  <View pointerEvents="none" style={s.valueDateSelectedSheen} />
+                  <View pointerEvents="none" style={s.valueDateSelectedRim} />
+                </View>
+              ) : null}
+              <Text style={[s.valueDateDay, active && s.valueDateDayActive]}>{item.day}</Text>
+              <Text style={[s.valueDateNumber, active && s.valueDateNumberActive]}>{item.date}</Text>
+            </View>
+          );
+        })}
+      </View>
+
+      <View style={s.valueVerseBlock}>
+        <Text style={s.valueVerseText}>
+          &quot;Awake thou that sleepest, and arise (anasta) from the dead,
+          and Christ shall give thee light.&quot;
+        </Text>
+        <Text style={s.valueVerseRef}>EPHESIANS 5:14</Text>
+      </View>
+
+      <View style={s.valueBigEventsHead}>
+        <Text style={s.valueBigEventsHeading}>Big Upcoming Events</Text>
+        <Text style={s.valueBigEventsSub}>1 active</Text>
+      </View>
+      <View style={s.valueBigEventCard}>
+        <View style={s.valueBigEventIconBox}>
+          <NotoEmoji name={normalizeHabitIcon('birthday-cake')} size={13} />
+        </View>
+        <View style={s.valueBigEventCopy}>
+          <Text style={s.valueBigEventTitle} numberOfLines={1}>Birthday</Text>
+        </View>
+        <View style={s.valueBigEventCount}>
+          <Text style={s.valueBigEventCountNum}>7</Text>
+          <Text style={s.valueBigEventCountLabel}>days</Text>
+        </View>
+      </View>
+
+      <View style={s.valueTasksHeader}>
+        <View>
+          <Text style={s.valueHomeSectionTitle}>Today&apos;s Tasks</Text>
+          <Text style={s.valueHomeSectionMeta}>7 active today</Text>
+        </View>
+        <View style={s.valueTasksRule} />
+      </View>
+
+      <View style={s.valueHomeTaskStack}>
+        {taskPreviewItems.map(item => (
+          <ValuePhoneTaskCard key={item.key} item={item} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function ValueRisePhone() {
+  return (
+    <View style={s.valuePhoneContent}>
+      <Text style={s.valuePhoneHeading}>Rise again</Text>
+      <View style={s.valueScriptureCard}>
+        <Text style={s.valueScriptureRef}>EPHESIANS 5:14</Text>
+        <Text style={s.valueScriptureText}>Awake thou that sleepest, and arise...</Text>
+      </View>
+      <ValuePhoneRow icon={<Candle s={15} c={GOLD} w={1.8} />} title="Prayer Book" meta="Morning & evening" />
+      <ValuePhoneRow icon={<OpenBook s={15} c="#A8853C" w={1.9} />} title="Bible Reading" meta="Saved passages" />
+      <ValuePhoneRow icon={<Feather s={15} c="#1C1917" w={1.8} />} title="Journal" meta="Notice and return" tone="ink" />
+    </View>
+  );
+}
+
+function ValueDisciplinePhone() {
+  return (
+    <View style={s.valuePhoneContent}>
+      <Text style={s.valuePhoneHeading}>Weekly rhythm</Text>
+      <View style={s.valueWeekBars}>
+        {[0.42, 0.64, 0.52, 0.78, 0.7, 0.46, 0.58].map((height, index) => (
+          <View key={index} style={s.valueWeekBarTrack}>
+            <View style={[s.valueWeekBarFill, { height: `${height * 100}%` }]} />
+          </View>
+        ))}
+      </View>
+      <ValuePhoneRow icon={<Sparkles s={15} c="#8B5CF6" w={1.9} />} title="Habit task" meta="4 day streak" tone="purple" />
+      <ValuePhoneRow icon={<Feather s={15} c="#1C1917" w={1.9} />} title="Routine task" meta="Every morning" tone="ink" />
+    </View>
+  );
+}
+
+function ValueFocusPhone() {
+  return (
+    <View style={s.valuePhoneContent}>
+      <Text style={s.valuePhoneHeading}>Focus guard</Text>
+      <View style={s.valueFocusTimer}>
+        <Text style={s.valueFocusTime}>25:00</Text>
+        <Text style={s.valueFocusLabel}>Deep work session</Text>
+      </View>
+      <ValuePhoneRow icon={<Target s={15} c="#16A34A" w={2} />} title="Focus mode" meta="Do not disturb" tone="green" />
+      <ValuePhoneRow icon={<BellRing s={15} c="#DC2626" w={2} />} title="Distractions blocked" meta="Social apps & sites" tone="rose" />
+    </View>
+  );
+}
+
+function ValueFaithPhone() {
+  return (
+    <View style={s.valuePhoneContent}>
+      <Text style={s.valuePhoneHeading}>Scripture</Text>
+      <View style={s.valueScriptureCard}>
+        <Text style={s.valueScriptureRef}>EPHESIANS 5:14</Text>
+        <Text style={s.valueScriptureText}>Awake thou that sleepest, and arise...</Text>
+      </View>
+      <ValuePhoneRow icon={<Candle s={15} c={GOLD} w={1.8} />} title="Prayer book" meta="Morning & evening" />
+      <ValuePhoneRow icon={<Feather s={15} c="#A8853C" w={1.8} />} title="Bible notes" meta="Saved thought" />
+    </View>
+  );
+}
+
+function ValueToolsPhone() {
+  return (
+    <View style={s.valuePhoneContent}>
+      <Text style={s.valuePhoneHeading}>Inner work</Text>
+      <View style={s.valueJournalCard}>
+        <Text style={s.valueJournalLabel}>Morning pages</Text>
+        <Text style={s.valueJournalText}>What needs to be named before the day begins?</Text>
+      </View>
+      <ValuePhoneRow icon={<Heart s={15} c="#E11D48" w={1.8} />} title="Gratitude" meta="3 blessings" tone="rose" />
+      <ValuePhoneRow icon={<Crown s={15} c="#1C1917" w={1.8} />} title="Progress review" meta="Notice patterns" tone="ink" />
+    </View>
+  );
+}
+
+function AutoMessageSlide({
+  bottomInset,
+  displayName,
+  onNext,
+}: {
+  bottomInset: number;
+  displayName?: string;
+  onNext: () => void;
+}) {
+  const name = nameForDisplay(displayName);
+  const messageSegments = useMemo<TypedTextSegment[]>(() => [
+    { text: name ? `${name}, before we start,\nI have ` : 'Before we start,\nI have ' },
+    { text: '4 quick questions', highlight: true },
+    { text: '.' },
+  ], [name]);
+  const message = useMemo(() => joinTypedSegments(messageSegments), [messageSegments]);
+  const [typedCount, setTypedCount] = useState(0);
+  const advancedRef = useRef(false);
+
+  const advance = useCallback(() => {
+    if (advancedRef.current) return;
+    advancedRef.current = true;
+    runAdvanceHaptic();
+    onNext();
+  }, [onNext]);
+
+  useEffect(() => {
+    advancedRef.current = false;
+    setTypedCount(0);
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let advanceTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const startTimer = setTimeout(() => {
+      interval = setInterval(() => {
+        setTypedCount(prev => {
+          if (prev >= message.length) {
+            if (interval) clearInterval(interval);
+            advanceTimer = setTimeout(advance, 3100);
+            return prev;
+          }
+          const next = prev + 1;
+          if (next % 3 === 0) runTypingHaptic();
+          return next;
+        });
+      }, 33);
+    }, 900);
+    const bubbleHapticTimer = setTimeout(runBubbleHaptic, 560);
+
+    return () => {
+      clearTimeout(startTimer);
+      clearTimeout(bubbleHapticTimer);
+      if (interval) clearInterval(interval);
+      if (advanceTimer) clearTimeout(advanceTimer);
+    };
+  }, [advance, message]);
+
+  return (
+    <View style={s.messageSlide}>
+      <View pointerEvents="none" style={s.messageWarmth}>
+        <LinearGradient
+          colors={['rgba(255,255,255,0)', 'rgba(255,247,232,0.58)', 'rgba(217,185,142,0.22)']}
+          locations={[0, 0.48, 1]}
           style={StyleSheet.absoluteFill}
         />
       </View>
 
-      <View style={s.introContent}>
+      <View style={s.messageContent}>
         <Reanimated.View
-          entering={FadeInLeft.duration(520).withInitialValues({
+          entering={FadeIn.duration(760).withInitialValues({
             opacity: 0,
-            transform: [{ translateX: -18 }],
+            transform: [{ translateY: 20 }, { scale: 0.94 }],
           })}
-          style={s.introLogoFrame}
+          style={s.messageLogoFrame}
         >
-          <View style={s.introLogoPlate}>
-            <Image source={APP_LOGO} style={s.introLogo} resizeMode="cover" />
+          <View style={s.messageLogoHalo} />
+          <View style={s.messageLogoPlate}>
+            <Image source={APP_LOGO} style={s.messageLogo} resizeMode="cover" />
           </View>
         </Reanimated.View>
 
         <Reanimated.View
-          entering={FadeIn.delay(120).duration(380)}
-          style={s.introRule}
-        />
-
-        <Reanimated.View
-          entering={FadeInRight.delay(180).duration(560).withInitialValues({
+          entering={FadeIn.delay(560).duration(620).withInitialValues({
             opacity: 0,
-            transform: [{ translateX: 18 }],
+            transform: [{ translateY: 18 }, { scale: 0.965 }],
           })}
-          style={s.introCopy}
+          style={s.messageBubble}
         >
-          <Text style={s.introTitle}>Let&apos;s start with{'\n'}4 quick questions.</Text>
-          <Text style={s.introBody}>So we can start at the right place.</Text>
+          <View style={s.messageBubbleTail} />
+          <TypedSegmentText
+            segments={messageSegments}
+            count={typedCount}
+            textStyle={s.messageText}
+            highlightStyle={s.inlineGoldUnderline}
+            caretStyle={s.nameTypingCaret}
+          />
         </Reanimated.View>
       </View>
 
-      <AnimatedCta delay={420} style={[s.bottomAction, s.introBottomAction, { paddingBottom: bottomInset + 8 }]}>
+      <AnimatedCta delay={900} style={[s.bottomAction, s.introBottomAction, { paddingBottom: bottomInset + 8 }]}>
         <View style={s.ctaIsland}>
-          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-            <Text style={s.primaryButtonText}>Continue</Text>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={advance} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>OK</Text>
             <ChevronRight s={19} c="#FFFFFF" w={2.5} />
           </TouchableOpacity>
         </View>
@@ -981,23 +2152,63 @@ function GuidedSetupShell({
   children,
   onNext,
   ctaLabel = 'Continue',
+  ctaDelay = 220,
+  ctaDuration = 620,
+  ctaDistance = 24,
+  scrollDelay = 210,
+  scrollSignal,
+  autoScrollOnContentChange = false,
+  ctaVisible = true,
 }: {
   children: React.ReactNode;
   onNext: () => void;
   ctaLabel?: string;
+  ctaDelay?: number;
+  ctaDuration?: number;
+  ctaDistance?: number;
+  scrollDelay?: number;
+  scrollSignal?: unknown;
+  autoScrollOnContentChange?: boolean;
+  ctaVisible?: boolean;
 }) {
+  const scrollRef = useRef<ScrollView>(null);
+  const scheduleScrollToEnd = useCallback(() => {
+    return setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }, scrollDelay);
+  }, [scrollDelay]);
+  const handleContentSizeChange = useCallback(() => {
+    if (!autoScrollOnContentChange) return;
+    scheduleScrollToEnd();
+  }, [autoScrollOnContentChange, scheduleScrollToEnd]);
+
+  useEffect(() => {
+    if (scrollSignal === undefined) return undefined;
+    const timer = scheduleScrollToEnd();
+    return () => clearTimeout(timer);
+  }, [scrollSignal, scheduleScrollToEnd]);
+
   return (
     <View style={s.setupSlide}>
       <ScrollView
+        ref={scrollRef}
         style={s.setupScroll}
         contentContainerStyle={s.guidedScrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        onContentSizeChange={autoScrollOnContentChange ? handleContentSizeChange : undefined}
       >
         {children}
       </ScrollView>
 
-      <AnimatedCta delay={220} style={s.questionFooter}>
+      <AnimatedCta
+        active={ctaVisible}
+        delay={ctaDelay}
+        duration={ctaDuration}
+        distance={ctaDistance}
+        pointerEvents={ctaVisible ? 'auto' : 'none'}
+        style={s.questionFooter}
+      >
         <View style={s.ctaIsland}>
           <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
             <Text style={s.primaryButtonText}>{ctaLabel}</Text>
@@ -1263,7 +2474,7 @@ function TaskTypeCard({
     <Reanimated.View entering={optionEntrance(index)}>
       <View style={s.taskTypePreviewWrap}>
         <TouchableOpacity activeOpacity={0.9} haptic="none" onPress={onPress}>
-          <AnyTaskCard task={item.task} streak={item.streak} />
+          <AnyTaskCard task={item.task} />
         </TouchableOpacity>
         {open && (
           <Reanimated.View
@@ -1363,7 +2574,7 @@ function TaskSetupSlide({ bottomInset, onNext }: { bottomInset: number; onNext: 
           entering={FadeIn.delay(260).duration(420)}
           style={s.setupCoachSpotlight}
         >
-          <AnyTaskCard task={habitPreview.task} streak={habitPreview.streak} />
+          <AnyTaskCard task={habitPreview.task} />
         </Reanimated.View>
       </View>
 
@@ -1435,6 +2646,3259 @@ function ManagementCard({
   );
 }
 
+const SCREEN_TIME_MIN_HOURS = 4;
+const SCREEN_TIME_MAX_HOURS = 10;
+const DEFAULT_SCREEN_TIME_HOURS = 4;
+const USABLE_DAY_HOURS = 16;
+const SLEEP_HOURS_PER_DAY = 8;
+const DAY_HOURS = 24;
+const PROTECT_LIFESPAN_YEARS = 85;
+
+function clampNumber(value: number, min: number, max: number) {
+  'worklet';
+  return Math.min(max, Math.max(min, value));
+}
+
+function roundToHalfHour(value: number) {
+  'worklet';
+  return Math.round(value * 2) / 2;
+}
+
+function formatHourValue(hours: number) {
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+}
+
+function formatYearValue(years: number) {
+  return Number.isInteger(years) ? String(years) : years.toFixed(1);
+}
+
+function protectStats(screenTimeHours?: number) {
+  const hours = clampNumber(screenTimeHours ?? DEFAULT_SCREEN_TIME_HOURS, SCREEN_TIME_MIN_HOURS, SCREEN_TIME_MAX_HOURS);
+  const usablePercent = Math.round((hours / USABLE_DAY_HOURS) * 100);
+  const yearlyDays = Math.round((hours * 365) / 24);
+  const lifetimeYears = Number(((hours * PROTECT_LIFESPAN_YEARS) / 24).toFixed(1));
+  const reclaimedDays = Math.round(yearlyDays * 0.4);
+  const reclaimedYears = Number((lifetimeYears * 0.4).toFixed(1));
+  return { hours, usablePercent, yearlyDays, lifetimeYears, reclaimedDays, reclaimedYears };
+}
+
+function screenTimeDayParts(stat: ReturnType<typeof protectStats>) {
+  const sleep = SLEEP_HOURS_PER_DAY;
+  const phone = Math.max(1, Math.min(DAY_HOURS - sleep, Math.round(stat.hours)));
+  const awake = Math.max(0, DAY_HOURS - sleep - phone);
+  return { sleep, phone, awake };
+}
+
+function screenTimeYearParts(stat: ReturnType<typeof protectStats>) {
+  const sleep = Math.round((SLEEP_HOURS_PER_DAY * 365) / DAY_HOURS);
+  const phone = Math.max(0, Math.min(365 - sleep, stat.yearlyDays));
+  const awake = Math.max(0, 365 - sleep - phone);
+  return { sleep, phone, awake };
+}
+
+function screenTimeLifetimeParts(stat: ReturnType<typeof protectStats>) {
+  const sleep = Math.round((SLEEP_HOURS_PER_DAY * PROTECT_LIFESPAN_YEARS) / DAY_HOURS);
+  const phone = Math.max(0, Math.min(PROTECT_LIFESPAN_YEARS - sleep, Math.round(stat.lifetimeYears)));
+  const awake = Math.max(0, PROTECT_LIFESPAN_YEARS - sleep - phone);
+  return { sleep, phone, awake };
+}
+
+type PromptSegment = { text: string; highlight?: boolean; gold?: boolean };
+
+function ProtectPromptText({ segments }: { segments: PromptSegment[] }) {
+  return (
+    <Text style={[s.speechQuestion, s.protectSpeechQuestion]}>
+      {segments.map((segment, index) => (
+        <Text
+          key={`${segment.text}-${index}`}
+          style={[
+            segment.highlight ? s.protectSpeechHighlight : undefined,
+            segment.gold ? s.protectSpeechGoldHighlight : undefined,
+          ]}
+        >
+          {segment.text}
+        </Text>
+      ))}
+    </Text>
+  );
+}
+
+function ProtectSidePrompt({
+  segments,
+  motionKey,
+  compact = false,
+}: {
+  segments: PromptSegment[];
+  motionKey?: string;
+  compact?: boolean;
+}) {
+  const mascotIntro = useSharedValue(0);
+  const bubbleIntro = useSharedValue(0);
+
+  useEffect(() => {
+    mascotIntro.value = 0;
+    bubbleIntro.value = 0;
+    mascotIntro.value = withTiming(1, {
+      duration: 860,
+      easing: Easing.out(Easing.cubic),
+    });
+    const timer = setTimeout(() => {
+      runBubbleHaptic();
+      bubbleIntro.value = withTiming(1, {
+        duration: 620,
+        easing: Easing.out(Easing.cubic),
+      });
+    }, 680);
+    return () => clearTimeout(timer);
+  }, [bubbleIntro, mascotIntro, motionKey]);
+
+  const mascotMotionStyle = useAnimatedStyle(() => {
+    const intro = mascotIntro.value;
+    return {
+      opacity: interpolate(intro, [0, 0.28, 1], [0, 1, 1]),
+      transform: [
+        { translateX: interpolate(intro, [0, 1], [-34, 0]) },
+        { translateY: interpolate(intro, [0, 0.72, 1], [2, 0, 0]) },
+        { rotate: `${interpolate(intro, [0, 0.7, 1], [-3, 0.75, 0])}deg` },
+        { scale: interpolate(intro, [0, 0.78, 1], [0.96, 1.015, 1]) },
+      ],
+    };
+  });
+  const mascotHaloStyle = useAnimatedStyle(() => {
+    const intro = mascotIntro.value;
+    return {
+      opacity: interpolate(intro, [0, 0.38, 1], [0, 0.9, 1]),
+      transform: [
+        { rotate: `${interpolate(intro, [0, 1], [4, 12])}deg` },
+        { scale: interpolate(intro, [0, 0.72, 1], [0.86, 1.04, 1]) },
+      ],
+    };
+  });
+  const speechBubbleIntroStyle = useAnimatedStyle(() => {
+    const intro = bubbleIntro.value;
+    return {
+      opacity: intro,
+      transform: [
+        { translateX: interpolate(intro, [0, 1], [-10, 0]) },
+        { translateY: interpolate(intro, [0, 0.78, 1], [8, -1, 0]) },
+        { scale: interpolate(intro, [0, 0.74, 1], [0.92, 1.018, 1]) },
+      ],
+    };
+  });
+
+  return (
+    <Reanimated.View entering={FadeIn.duration(320)} style={s.protectPrompt}>
+      <View style={s.promptRow}>
+        <Reanimated.View style={mascotMotionStyle}>
+          <View style={s.mascotShell}>
+            <Reanimated.View style={[s.mascotHalo, mascotHaloStyle]} />
+            <Image source={APP_LOGO} style={s.mascotLogo} resizeMode="cover" />
+          </View>
+        </Reanimated.View>
+        <Reanimated.View style={[s.speechBubble, s.protectSpeechBubble, compact && s.protectSpeechBubbleCompact, speechBubbleIntroStyle]}>
+          <View style={[s.speechTail, compact && s.speechTailCompact]} />
+          <View style={[s.speechTailJoin, compact && s.speechTailJoinCompact]} />
+          <Reanimated.View key={motionKey ?? segments.map(segment => segment.text).join('')} entering={FadeIn.delay(120).duration(340)}>
+            <ProtectPromptText segments={segments} />
+          </Reanimated.View>
+        </Reanimated.View>
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function ProtectTypingBubble({
+  message,
+  delay = 360,
+  intervalMs = 24,
+  bubbleStyle,
+  textStyle,
+}: {
+  message: string;
+  delay?: number;
+  intervalMs?: number;
+  bubbleStyle?: StyleProp<ViewStyle>;
+  textStyle?: StyleProp<TextStyle>;
+}) {
+  const [typedCount, setTypedCount] = useState(0);
+  const typedMessage = message.slice(0, typedCount);
+
+  useEffect(() => {
+    setTypedCount(0);
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const startTimer = setTimeout(() => {
+      interval = setInterval(() => {
+        setTypedCount(prev => {
+          if (prev >= message.length) {
+            if (interval) clearInterval(interval);
+            return prev;
+          }
+          const next = prev + 1;
+          if (next % 3 === 0) runTypingHaptic();
+          return next;
+        });
+      }, intervalMs);
+    }, delay);
+    const bubbleHapticTimer = setTimeout(runBubbleHaptic, Math.max(0, delay - 120));
+
+    return () => {
+      clearTimeout(startTimer);
+      clearTimeout(bubbleHapticTimer);
+      if (interval) clearInterval(interval);
+    };
+  }, [delay, intervalMs, message]);
+
+  return (
+    <Reanimated.View
+      entering={FadeIn.delay(Math.max(0, delay - 120)).duration(520).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 16 }, { scale: 0.965 }],
+      })}
+      style={[s.protectCoachBubble, bubbleStyle]}
+    >
+      <View style={s.protectCoachBubbleTail} />
+      <Text style={[s.protectCoachText, textStyle]}>
+        {typedMessage}
+        {typedCount < message.length ? <Text style={s.nameTypingCaret}>|</Text> : null}
+      </Text>
+    </Reanimated.View>
+  );
+}
+
+function ProtectCoachMark({ delay = 0, compact = false }: { delay?: number; compact?: boolean }) {
+  return (
+    <Reanimated.View
+      entering={FadeIn.delay(delay).duration(560).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 18 }, { scale: 0.92 }],
+      })}
+      style={[s.protectCoachLogoFrame, compact && s.protectCoachLogoFrameCompact]}
+    >
+      <View style={s.protectCoachLogoHalo} />
+      <View style={[s.protectCoachLogoPlate, compact && s.protectCoachLogoPlateCompact]}>
+        <Image source={APP_LOGO} style={s.protectCoachLogo} resizeMode="cover" />
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function ProtectStrikeText({
+  text,
+  done,
+  textStyle,
+  lineColor = 'rgba(197,160,89,0.62)',
+}: {
+  text: string;
+  done: boolean;
+  textStyle?: StyleProp<TextStyle>;
+  lineColor?: string;
+}) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withTiming(done ? 1 : 0, {
+      duration: done ? 980 : 220,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [done, progress]);
+
+  const lineStyle = useAnimatedStyle(() => ({
+    width: `${progress.value * 100}%`,
+    opacity: progress.value,
+  }));
+  const textFadeStyle = useAnimatedStyle(() => ({
+    opacity: 1 - progress.value * 0.36,
+  }));
+
+  return (
+    <View style={s.protectStrikeWrap}>
+      <Reanimated.Text numberOfLines={1} style={[textStyle, textFadeStyle]}>
+        {text}
+      </Reanimated.Text>
+      <Reanimated.View pointerEvents="none" style={[s.protectStrikeLine, { backgroundColor: lineColor }, lineStyle]} />
+    </View>
+  );
+}
+
+function ProtectGuardrailItem({
+  index,
+  title,
+  body,
+  done,
+  icon,
+}: {
+  index: number;
+  title: string;
+  body: string;
+  done: boolean;
+  icon: React.ReactNode;
+}) {
+  return (
+    <Reanimated.View
+      entering={optionEntrance(index, 170)}
+      style={[s.protectGuardrailItem, done && s.protectGuardrailItemDone]}
+    >
+      <View style={[s.protectGuardrailIcon, done && s.protectGuardrailIconDone]}>
+        {done ? <CheckSmall s={15} c="#FFFFFF" w={2.8} /> : icon}
+      </View>
+      <View style={s.protectGuardrailCopy}>
+        <ProtectStrikeText text={title} done={done} textStyle={s.protectGuardrailTitle} />
+        <Text style={[s.protectGuardrailBody, done && s.protectGuardrailBodyDone]}>{body}</Text>
+      </View>
+    </Reanimated.View>
+  );
+}
+
+const PROTECT_GUARDRAILS = [
+  {
+    title: 'Block addictive apps',
+    body: 'Put the loudest loops behind a real boundary.',
+    icon: <SlidersHorizontal s={17} c={GOLD} w={1.9} />,
+  },
+  {
+    title: 'Block harmful websites',
+    body: 'Keep weak moments far from the first tap.',
+    icon: <Target s={17} c={GOLD} w={1.9} />,
+  },
+  {
+    title: 'Quiet interruptions',
+    body: 'Protect the hours you want to use well.',
+    icon: <BellRing s={17} c={GOLD} w={1.9} />,
+  },
+] as const;
+
+const PROTECT_INTRO_VISUAL_DELAY_MS = 220;
+const DISTRACTION_CARD_REVEAL_DELAYS = [520, 1040, 1420, 1730, 1990, 2210, 2400, 2570] as const;
+const DISTRACTION_SEQUENCE_COMPLETE_MS = 3300;
+
+function ProtectIntroSlide({ onNext }: { onNext: () => void }) {
+  const [reveal, setReveal] = useState(0);
+
+  useEffect(() => {
+    const timers = [
+      setTimeout(() => {
+        runSelectionHaptic();
+        setReveal(1);
+      }, 120),
+      setTimeout(() => setReveal(2), 1650),
+      setTimeout(() => setReveal(3), 3150),
+    ];
+    return () => timers.forEach(timer => clearTimeout(timer));
+  }, []);
+
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel="Let's start" ctaVisible={reveal >= 3}>
+      <View style={s.protectIntroPromptOnly}>
+        <View style={s.protectIntroPromptSlot}>
+          {reveal >= 2 ? (
+            <ProtectSidePrompt
+              motionKey="protect-intro"
+              segments={[
+                { text: "Let's start with " },
+                { text: 'protecting your time', highlight: true },
+                { text: '.' },
+              ]}
+            />
+          ) : null}
+        </View>
+
+        {reveal >= 1 ? (
+          <Reanimated.View
+            pointerEvents="none"
+            entering={FadeIn.duration(820).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 20 }, { scale: 0.9 }],
+            })}
+            style={s.protectIntroVisual}
+          >
+            <ProtectDistractionVisual />
+          </Reanimated.View>
+        ) : null}
+      </View>
+    </GuidedSetupShell>
+  );
+}
+
+function ProtectGuardrailChecklist({ animate = false }: { animate?: boolean }) {
+  const [completedCount, setCompletedCount] = useState(0);
+
+  useEffect(() => {
+    if (!animate) {
+      setCompletedCount(PROTECT_GUARDRAILS.length);
+      return undefined;
+    }
+    const timers = [
+      setTimeout(() => setCompletedCount(1), 520),
+      setTimeout(() => setCompletedCount(2), 1040),
+      setTimeout(() => setCompletedCount(3), 1560),
+    ];
+    return () => timers.forEach(timer => clearTimeout(timer));
+  }, [animate]);
+  return (
+    <View style={s.protectGuardrailList}>
+      {PROTECT_GUARDRAILS.map((item, index) => (
+        <ProtectGuardrailItem
+          key={item.title}
+          index={index}
+          title={item.title}
+          body={item.body}
+          icon={item.icon}
+          done={completedCount > index}
+        />
+      ))}
+    </View>
+  );
+}
+
+function ProtectPathItem({ index, title, active }: { index: number; title: string; active?: boolean }) {
+  return (
+    <View style={[s.protectPathItem, active && s.protectPathItemActive]}>
+      <View style={[s.protectPathNumber, active && s.protectPathNumberActive]}>
+        <Text style={[s.protectPathNumberText, active && s.protectPathNumberTextActive]}>{index}</Text>
+      </View>
+      <Text style={[s.protectPathText, active && s.protectPathTextActive]}>{title}</Text>
+    </View>
+  );
+}
+
+const DISTRACTION_CARDS = [
+  {
+    label: 'Social media',
+    icon: <Sparkles s={15} c="#5B8A75" w={1.9} />,
+    style: 'social',
+    tone: '#EAF4ED',
+    startX: -34,
+    startRotate: '-18deg',
+  },
+  {
+    label: 'Notifications',
+    icon: <BellRing s={15} c="#9B6C2C" w={1.9} />,
+    style: 'notifications',
+    tone: '#FFF3D8',
+    startX: 28,
+    startRotate: '16deg',
+  },
+  {
+    label: 'Messaging',
+    icon: <BellRing s={15} c="#536A9D" w={1.9} />,
+    style: 'messaging',
+    tone: '#EEF0FA',
+    startX: 22,
+    startRotate: '14deg',
+  },
+  {
+    label: 'Streaming',
+    icon: <Play s={15} c="#7D5D91" w={1.9} />,
+    style: 'streaming',
+    tone: '#F2EAF5',
+    startX: -22,
+    startRotate: '-12deg',
+  },
+  {
+    label: 'Gaming',
+    icon: <Target s={15} c="#6A7F54" w={1.9} />,
+    style: 'gaming',
+    tone: '#EEF5E9',
+    startX: -30,
+    startRotate: '-17deg',
+  },
+  {
+    label: 'Apps',
+    icon: <SlidersHorizontal s={15} c="#4D8586" w={1.9} />,
+    style: 'apps',
+    tone: '#E7F4F4',
+    startX: 30,
+    startRotate: '17deg',
+  },
+  {
+    label: 'Content',
+    icon: <OpenBook s={15} c="#8F5D6C" w={1.9} />,
+    style: 'content',
+    tone: '#F6E9EE',
+    startX: -18,
+    startRotate: '-10deg',
+  },
+  {
+    label: 'Noise',
+    icon: <Sparkles s={15} c="#85723F" w={1.9} />,
+    style: 'noise',
+    tone: '#F2EEDC',
+    startX: 18,
+    startRotate: '10deg',
+  },
+] as const;
+
+function DistractionCard({
+  item,
+  index,
+}: {
+  item: (typeof DISTRACTION_CARDS)[number];
+  index: number;
+}) {
+  const drift = useSharedValue(0);
+  const revealDelay = DISTRACTION_CARD_REVEAL_DELAYS[index] ?? 2600 + index * 120;
+  const styleByKey: Record<(typeof DISTRACTION_CARDS)[number]['style'], StyleProp<ViewStyle>> = {
+    social: s.distractionCardSocial,
+    notifications: s.distractionCardNotifications,
+    messaging: s.distractionCardMessaging,
+    streaming: s.distractionCardStreaming,
+    gaming: s.distractionCardGaming,
+    apps: s.distractionCardApps,
+    content: s.distractionCardContent,
+    noise: s.distractionCardNoise,
+  };
+
+  useEffect(() => {
+    const hapticTimer = setTimeout(runStrongHaptic, revealDelay + 80);
+    const floatTimer = setTimeout(() => {
+      drift.value = withRepeat(
+        withTiming(1, {
+          duration: 1850 + index * 95,
+          easing: Easing.inOut(Easing.cubic),
+        }),
+        -1,
+        true
+      );
+    }, revealDelay + 560);
+
+    return () => {
+      clearTimeout(hapticTimer);
+      clearTimeout(floatTimer);
+      drift.value = 0;
+    };
+  }, [drift, index, revealDelay]);
+
+  const floatStyle = useAnimatedStyle(() => {
+    const side = index % 2 === 0 ? 1 : -1;
+    const depth = index % 3 === 0 ? 1 : 0.84;
+    return {
+      transform: [
+        { translateX: interpolate(drift.value, [0, 1], [0, side * 13.5 * depth]) },
+        { translateY: interpolate(drift.value, [0, 1], [0, -16 * depth]) },
+        { rotate: `${interpolate(drift.value, [0, 1], [0, side * 3.2])}deg` },
+      ],
+    };
+  });
+
+  return (
+    <Reanimated.View
+      entering={FadeIn
+        .delay(revealDelay)
+        .duration(560)
+        .withInitialValues({
+          opacity: 0,
+          transform: [
+            { translateY: 22 },
+            { translateX: item.startX * 0.36 },
+            { rotate: item.startRotate },
+            { scale: 0.72 },
+          ],
+        })}
+      style={[s.distractionCardSlot, styleByKey[item.style]]}
+    >
+      <Reanimated.View style={[s.distractionCard, { backgroundColor: item.tone }, floatStyle]}>
+        <View style={s.distractionCardIcon}>{item.icon}</View>
+        <Text style={s.distractionCardText} numberOfLines={1}>{item.label}</Text>
+      </Reanimated.View>
+    </Reanimated.View>
+  );
+}
+
+function ProtectDistractionVisual() {
+  return (
+    <View style={s.distractionStage}>
+      <Reanimated.View
+        pointerEvents="none"
+        entering={FadeIn.duration(520).withInitialValues({
+          opacity: 0,
+          transform: [{ scale: 0.78 }],
+        })}
+        style={s.distractionGlow}
+      />
+      <Reanimated.View
+        pointerEvents="none"
+        entering={FadeIn.delay(90).duration(540).withInitialValues({
+          opacity: 0,
+          transform: [{ scale: 0.8 }],
+        })}
+        style={s.distractionOuterRing}
+      />
+      <Reanimated.View
+        pointerEvents="none"
+        entering={FadeIn.delay(160).duration(520).withInitialValues({
+          opacity: 0,
+          transform: [{ scale: 0.78 }],
+        })}
+        style={s.distractionInnerCutout}
+      />
+
+      <Reanimated.View
+        entering={FadeIn.delay(230).duration(560).withInitialValues({
+          opacity: 0,
+          transform: [{ scale: 0.76 }, { translateY: 8 }],
+        })}
+        style={s.distractionCore}
+      >
+        <View style={s.distractionCoreLogoWrap}>
+          <Image source={APP_LOGO} style={s.distractionCoreLogo} resizeMode="cover" />
+        </View>
+        <View style={s.distractionCoreBadge}>
+          <Target s={17} c="#FFFFFF" w={2.1} />
+        </View>
+      </Reanimated.View>
+
+      {DISTRACTION_CARDS.map((item, index) => (
+        <DistractionCard key={item.label} item={item} index={index} />
+      ))}
+
+      <Reanimated.View
+        pointerEvents="none"
+        entering={FadeIn.delay(360).duration(520).withInitialValues({
+          opacity: 0,
+          transform: [{ scaleX: 0.7 }],
+        })}
+        style={s.distractionGroundShadow}
+      />
+    </View>
+  );
+}
+
+type ProtectProblemPhase = 'intro' | 'stats' | 'problemIntro' | 'slider' | 'badNews' | 'goodNews';
+type DidYouKnowAnswer = 'yes' | 'no';
+
+function protectProblemCtaLabel(phase: ProtectProblemPhase) {
+  if (phase === 'intro') return "Let's do it!";
+  if (phase === 'stats') return 'Continue';
+  if (phase === 'problemIntro') return 'OK';
+  if (phase === 'slider') return 'Continue';
+  if (phase === 'badNews') return 'OK';
+  if (phase === 'goodNews') return "Let's do it!";
+  return 'OK';
+}
+
+function ProtectPainSlide({
+  hours,
+  onChange,
+  onNext,
+}: {
+  hours?: number;
+  onChange: (value: number) => void;
+  onNext: () => void;
+}) {
+  const [phase, setPhase] = useState<ProtectProblemPhase>('intro');
+  const [introReveal, setIntroReveal] = useState(0);
+  const [problemReveal, setProblemReveal] = useState(0);
+  const [badReveal, setBadReveal] = useState(0);
+  const [goodReveal, setGoodReveal] = useState(0);
+  const [firstStatsAnswer, setFirstStatsAnswer] = useState<DidYouKnowAnswer | null>(null);
+  const [secondStatsAnswer, setSecondStatsAnswer] = useState<DidYouKnowAnswer | null>(null);
+  const [introExiting, setIntroExiting] = useState(false);
+  const [sliderExiting, setSliderExiting] = useState(false);
+  const introExitMotion = useSharedValue(0);
+  const sliderExitMotion = useSharedValue(0);
+  const statsExitMotion = useSharedValue(1);
+  const introExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sliderExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeHours = protectStats(hours).hours;
+  const showBadNews = phase === 'badNews' || phase === 'goodNews';
+  const showGoodNews = phase === 'goodNews';
+  const showIntroContent = phase === 'intro' || phase === 'stats' || introExiting;
+  const showStats = phase === 'stats';
+  const showSlider = (phase === 'stats' && problemReveal >= 10) || phase === 'slider';
+  const shouldAutoScroll = phase === 'stats' || phase === 'slider' || phase === 'badNews' || phase === 'goodNews';
+  const ctaVisible =
+    (phase === 'intro' && introReveal >= 3) ||
+    (phase === 'stats' && problemReveal >= 10 && !sliderExiting) ||
+    (phase === 'problemIntro' && problemReveal >= 3) ||
+    (phase === 'slider' && problemReveal >= 1 && !sliderExiting) ||
+    (phase === 'badNews' && badReveal >= 6) ||
+    (phase === 'goodNews' && goodReveal >= 5);
+
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    if (phase === 'intro') {
+      setIntroReveal(0);
+      setProblemReveal(0);
+      setBadReveal(0);
+      setGoodReveal(0);
+      setFirstStatsAnswer(null);
+      setSecondStatsAnswer(null);
+      setIntroExiting(false);
+      introExitMotion.value = 0;
+      sliderExitMotion.value = 0;
+      statsExitMotion.value = 1;
+      timers.push(setTimeout(() => setIntroReveal(1), PROTECT_INTRO_VISUAL_DELAY_MS));
+      timers.push(setTimeout(() => {
+        runStrongHaptic();
+        setIntroReveal(2);
+      }, DISTRACTION_SEQUENCE_COMPLETE_MS));
+      timers.push(setTimeout(() => setIntroReveal(3), DISTRACTION_SEQUENCE_COMPLETE_MS + 1580));
+    }
+
+    if (phase === 'stats') {
+      setProblemReveal(0);
+      setBadReveal(0);
+      setGoodReveal(0);
+      setSliderExiting(false);
+      sliderExitMotion.value = 0;
+      statsExitMotion.value = 1;
+      timers.push(setTimeout(() => setProblemReveal(1), 280));
+    }
+
+    if (phase === 'problemIntro') {
+      setProblemReveal(0);
+      setBadReveal(0);
+      setGoodReveal(0);
+      [180, 1040, 2860].forEach((delay, index) => {
+        timers.push(setTimeout(() => setProblemReveal(index + 1), delay));
+      });
+    }
+
+    if (phase === 'badNews') {
+      setBadReveal(0);
+      setGoodReveal(0);
+      [140, 1280, 3920, 5660, 6840, 8020].forEach((delay, index) => {
+        timers.push(setTimeout(() => setBadReveal(index + 1), delay));
+      });
+    }
+
+    if (phase === 'goodNews') {
+      setBadReveal(6);
+      setGoodReveal(0);
+      [360, 1860, 4500, 5700, 6900].forEach((delay, index) => {
+        timers.push(setTimeout(() => setGoodReveal(index + 1), delay));
+      });
+    }
+
+    if (phase === 'slider') {
+      setProblemReveal(0);
+      setBadReveal(0);
+      setGoodReveal(0);
+      setSliderExiting(false);
+      sliderExitMotion.value = 0;
+      statsExitMotion.value = 1;
+      timers.push(setTimeout(() => {
+        setProblemReveal(1);
+        sliderExitMotion.value = 0;
+        sliderExitMotion.value = withTiming(1, {
+          duration: 980,
+          easing: Easing.bezier(0.16, 1, 0.28, 1),
+        });
+      }, 300));
+    }
+
+    return () => {
+      timers.forEach(timer => clearTimeout(timer));
+    };
+  }, [introExitMotion, phase, sliderExitMotion, statsExitMotion]);
+
+  useEffect(() => {
+    return () => {
+      if (introExitTimerRef.current) {
+        clearTimeout(introExitTimerRef.current);
+        introExitTimerRef.current = null;
+      }
+      if (sliderExitTimerRef.current) {
+        clearTimeout(sliderExitTimerRef.current);
+        sliderExitTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const introTransitionStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(introExitMotion.value, [0, 0.62, 1], [1, 0.38, 0]),
+    transform: [
+      { translateY: interpolate(introExitMotion.value, [0, 1], [0, -18]) },
+      { scale: interpolate(introExitMotion.value, [0, 1], [1, 0.972]) },
+    ],
+  }));
+  const sliderTransitionStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(sliderExitMotion.value, [0, 0.18, 1], [0, 1, 1]),
+    transform: [
+      { translateY: interpolate(sliderExitMotion.value, [0, 0.58, 1], [24, -3, 0]) },
+      { scale: interpolate(sliderExitMotion.value, [0, 0.58, 1], [0.965, 1.008, 1]) },
+    ],
+  }));
+  const statsExitStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(statsExitMotion.value, [0, 0.38, 1], [0, 0.72, 1]),
+    transform: [
+      { translateY: interpolate(statsExitMotion.value, [0, 1], [-18, 0]) },
+      { scale: interpolate(statsExitMotion.value, [0, 1], [0.982, 1]) },
+    ],
+  }));
+
+  const handleNext = () => {
+    if (phase === 'intro') {
+      runSelectionHaptic();
+      setPhase('stats');
+      return;
+    }
+    if (phase === 'stats') {
+      runSelectionHaptic();
+      if (sliderExiting) return;
+      setSliderExiting(true);
+      statsExitMotion.value = withTiming(0, {
+        duration: 760,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      });
+      sliderExitMotion.value = withTiming(0, {
+        duration: 820,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      });
+      sliderExitTimerRef.current = setTimeout(() => {
+        sliderExitTimerRef.current = null;
+        setPhase('badNews');
+        setSliderExiting(false);
+      }, 960);
+      return;
+    }
+    if (phase === 'problemIntro') {
+      runSelectionHaptic();
+      setPhase('badNews');
+      return;
+    }
+    if (phase === 'slider') {
+      runSelectionHaptic();
+      if (sliderExiting) return;
+      setSliderExiting(true);
+      statsExitMotion.value = withTiming(0, {
+        duration: 760,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      });
+      sliderExitMotion.value = withTiming(0, {
+        duration: 820,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      });
+      sliderExitTimerRef.current = setTimeout(() => {
+        sliderExitTimerRef.current = null;
+        setPhase('badNews');
+        setSliderExiting(false);
+      }, 960);
+      return;
+    }
+    if (phase === 'badNews') {
+      if (badReveal < 6) {
+        setBadReveal(6);
+        return;
+      }
+      runSelectionHaptic();
+      setPhase('goodNews');
+      return;
+    }
+    if (phase === 'goodNews') {
+      if (goodReveal < 5) {
+        setGoodReveal(5);
+        return;
+      }
+      runSelectionHaptic();
+      onNext();
+      return;
+    }
+  };
+
+  const handleStatsSliderReady = useCallback(() => {
+    sliderExitMotion.value = 0;
+    sliderExitMotion.value = withTiming(1, {
+      duration: 980,
+      easing: Easing.bezier(0.16, 1, 0.28, 1),
+    });
+  }, [sliderExitMotion]);
+
+  return (
+    <GuidedSetupShell
+      onNext={handleNext}
+      ctaLabel={protectProblemCtaLabel(phase)}
+      ctaDelay={phase === 'stats' || phase === 'slider' ? 980 : phase === 'goodNews' ? 940 : 220}
+      ctaDuration={phase === 'goodNews' ? 940 : 620}
+      ctaDistance={phase === 'goodNews' ? 34 : 24}
+      scrollDelay={phase === 'stats' || phase === 'slider' ? 980 : 210}
+      scrollSignal={`${phase}-${introReveal}-${introExiting ? 'intro-exit' : 'intro-idle'}-${sliderExiting ? 'slider-exit' : 'slider-idle'}-${problemReveal}-${badReveal}-${goodReveal}`}
+      autoScrollOnContentChange={shouldAutoScroll}
+      ctaVisible={ctaVisible}
+    >
+      {showIntroContent && (
+        <Reanimated.View style={[introTransitionStyle, phase === 'stats' ? statsExitStyle : null]}>
+          <View style={s.protectPainIntroPromptSlot}>
+            {introReveal >= 2 && (
+              <ProtectSidePrompt
+                motionKey="protect-pain-start"
+                compact
+                segments={[
+                  { text: "Let's start " },
+                  { text: 'protecting your time', highlight: true },
+                  { text: '.' },
+                ]}
+              />
+            )}
+          </View>
+
+          {introReveal >= 1 && (
+            <Reanimated.View
+              pointerEvents="none"
+              entering={FadeIn.duration(620).withInitialValues({
+                opacity: 0,
+                transform: [{ translateY: 14 }, { scale: 0.96 }],
+              })}
+              style={s.protectIntroVisual}
+            >
+              <ProtectDistractionVisual />
+            </Reanimated.View>
+          )}
+        </Reanimated.View>
+      )}
+
+      {showStats && (
+        <Reanimated.View pointerEvents={sliderExiting ? 'none' : 'auto'} style={statsExitStyle}>
+          <ProtectStatsConversation
+            reveal={problemReveal}
+            firstAnswer={firstStatsAnswer}
+            secondAnswer={secondStatsAnswer}
+            onFirstAnswer={answer => {
+              runSelectionHaptic();
+              setFirstStatsAnswer(answer);
+              setProblemReveal(2);
+            }}
+            onSecondAnswer={answer => {
+              runSelectionHaptic();
+              setSecondStatsAnswer(answer);
+              setProblemReveal(7);
+            }}
+            onReveal={setProblemReveal}
+            onSliderReady={handleStatsSliderReady}
+          />
+        </Reanimated.View>
+      )}
+
+      {showSlider && problemReveal >= 1 && (
+        <Reanimated.View
+          pointerEvents={sliderExiting ? 'none' : 'auto'}
+          style={sliderTransitionStyle}
+        >
+          <ScreenTimeSlider value={hours} onChange={onChange} />
+        </Reanimated.View>
+      )}
+
+      {phase === 'problemIntro' && problemReveal >= 3 && (
+        <Reanimated.View
+          entering={FadeIn.duration(620).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 18 }, { scale: 0.975 }],
+          })}
+        >
+          <ScreenTimeSlider value={hours} onChange={onChange} />
+        </Reanimated.View>
+      )}
+
+      {showBadNews && <ScreenTimeBadNewsConversation hours={activeHours} reveal={badReveal} />}
+
+      {showGoodNews && <ScreenTimeGoodNewsConversation hours={activeHours} reveal={goodReveal} />}
+
+    </GuidedSetupShell>
+  );
+}
+
+function ProtectStatsConversation({
+  reveal,
+  firstAnswer,
+  secondAnswer,
+  onFirstAnswer,
+  onSecondAnswer,
+  onReveal,
+  onSliderReady,
+}: {
+  reveal: number;
+  firstAnswer: DidYouKnowAnswer | null;
+  secondAnswer: DidYouKnowAnswer | null;
+  onFirstAnswer: (answer: DidYouKnowAnswer) => void;
+  onSecondAnswer: (answer: DidYouKnowAnswer) => void;
+  onReveal: (reveal: number) => void;
+  onSliderReady: () => void;
+}) {
+  useEffect(() => {
+    if (!firstAnswer) return undefined;
+    const timers = [
+      setTimeout(() => onReveal(3), 920),
+      setTimeout(() => onReveal(4), 3380),
+    ];
+    return () => timers.forEach(timer => clearTimeout(timer));
+  }, [firstAnswer, onReveal]);
+
+  useEffect(() => {
+    if (!secondAnswer) return undefined;
+    const timers = [
+      setTimeout(() => onReveal(8), 880),
+      setTimeout(() => onReveal(9), 2280),
+      setTimeout(() => {
+        onReveal(10);
+        onSliderReady();
+      }, 3880),
+    ];
+    return () => timers.forEach(timer => clearTimeout(timer));
+  }, [onReveal, onSliderReady, secondAnswer]);
+
+  return (
+    <View style={s.protectStatsConversation}>
+      {reveal >= 1 && (
+        <DidYouKnowCard
+          motionKey="distraction-every-ten"
+          questionSegments={[
+            { text: 'On average, people check their phone at least once every ' },
+            { text: '10 minutes', gold: true },
+            { text: '!' },
+          ]}
+          selected={firstAnswer}
+          onSelect={onFirstAnswer}
+        />
+      )}
+
+      {firstAnswer && reveal >= 2 && <UserMessageBubble text={firstAnswer === 'yes' ? 'Yes.' : 'No.'} delay={120} />}
+
+      {reveal >= 3 && (
+        <ProtectSidePrompt
+          motionKey="distraction-attention-fight"
+          segments={[
+            { text: 'Every app on your phone is fighting\nfor one thing - your ' },
+            { text: 'attention', gold: true },
+            { text: '!' },
+          ]}
+        />
+      )}
+
+      {reveal >= 4 && (
+        <DidYouKnowCard
+          motionKey="distraction-return-focus"
+          questionSegments={[
+            { text: 'It takes exactly ' },
+            { text: '23 minutes and 15 seconds', gold: true },
+            { text: ' to ' },
+            { text: 'return', highlight: true },
+            { text: ' to the same level of focus after a distraction.' },
+          ]}
+          selected={secondAnswer}
+          onSelect={onSecondAnswer}
+        />
+      )}
+
+      {secondAnswer && reveal >= 7 && <UserMessageBubble text={secondAnswer === 'yes' ? 'Yes.' : 'No.'} delay={120} />}
+
+      {reveal >= 8 && (
+        <ProtectSidePrompt
+          motionKey="distraction-by-design-second"
+          compact
+          segments={[
+            { text: 'That is ' },
+            { text: 'by design', highlight: true },
+            { text: '.' },
+          ]}
+        />
+      )}
+
+      {reveal >= 9 && (
+        <ProtectSidePrompt
+          motionKey="distraction-time-at-stake"
+          segments={[
+            { text: "Let's see how much of your " },
+            { text: 'time', highlight: true },
+            { text: ' is really at ' },
+            { text: 'stake', highlight: true },
+            { text: '.' },
+          ]}
+        />
+      )}
+    </View>
+  );
+}
+
+function DidYouKnowCard({
+  motionKey,
+  question,
+  questionSegments,
+  value,
+  valueLabel,
+  valueTone = 'ink',
+  selected,
+  onSelect,
+}: {
+  motionKey: string;
+  question?: string;
+  questionSegments?: PromptSegment[];
+  value?: string;
+  valueLabel?: string;
+  valueTone?: 'ink' | 'gold';
+  selected: DidYouKnowAnswer | null;
+  onSelect: (answer: DidYouKnowAnswer) => void;
+}) {
+  const choicesProgress = useSharedValue(selected === null ? 1 : 0);
+
+  useEffect(() => {
+    choicesProgress.value = withTiming(selected === null ? 1 : 0, {
+      duration: selected === null ? 320 : 660,
+      easing: Easing.bezier(0.19, 1, 0.22, 1),
+    });
+  }, [choicesProgress, selected]);
+
+  const choicesStyle = useAnimatedStyle(() => ({
+    height: interpolate(choicesProgress.value, [0, 1], [0, 48]),
+    marginTop: interpolate(choicesProgress.value, [0, 1], [0, 16]),
+    opacity: interpolate(choicesProgress.value, [0, 0.55, 1], [0, 0.36, 1]),
+    transform: [
+      { translateY: interpolate(choicesProgress.value, [0, 1], [-5, 0]) },
+      { scale: interpolate(choicesProgress.value, [0, 1], [0.992, 1]) },
+    ],
+  }));
+
+  return (
+    <Reanimated.View
+      key={motionKey}
+      entering={FadeIn.delay(80).duration(860).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 14 }, { scale: 0.985 }],
+      })}
+      style={s.didYouKnowCard}
+    >
+      <View pointerEvents="none" style={s.didYouKnowGlow} />
+      <Reanimated.View
+        entering={FadeIn.delay(170).duration(420).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 5 }],
+        })}
+        style={s.didYouKnowTopRow}
+      >
+        <Text style={s.didYouKnowHeading}>Did you know?</Text>
+        <View style={s.didYouKnowSpark}>
+          <Sparkles s={15} c={GOLD} w={2} />
+        </View>
+      </Reanimated.View>
+      <Reanimated.Text
+        entering={FadeIn.delay(270).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 8 }],
+        })}
+        style={s.didYouKnowQuestion}
+      >
+        {questionSegments
+          ? questionSegments.map((segment, index) => (
+            <Text
+              key={`${segment.text}-${index}`}
+              style={[
+                segment.highlight ? s.didYouKnowQuestionHighlight : undefined,
+                segment.gold ? s.didYouKnowQuestionGold : undefined,
+              ]}
+            >
+              {segment.text}
+            </Text>
+          ))
+          : question}
+      </Reanimated.Text>
+      {value ? (
+        <View style={s.didYouKnowValueWrap}>
+          <Text style={[s.didYouKnowValue, valueTone === 'gold' && s.didYouKnowValueGold]}>{value}</Text>
+          {valueLabel ? <Text style={s.didYouKnowValueLabel}>{valueLabel}</Text> : null}
+        </View>
+      ) : null}
+      <Reanimated.View
+        entering={FadeIn.delay(430).duration(480).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 8 }],
+        })}
+        pointerEvents={selected === null ? 'auto' : 'none'}
+        style={[s.didYouKnowChoicesWrap, choicesStyle]}
+      >
+        <View style={s.didYouKnowChoices}>
+          {(['yes', 'no'] as const).map(answer => {
+            const active = selected === answer;
+            return (
+              <TouchableOpacity
+                key={answer}
+                activeOpacity={0.88}
+                haptic="medium"
+                disabled={selected !== null}
+                onPress={() => onSelect(answer)}
+                style={[s.didYouKnowChoice, active && s.didYouKnowChoiceActive]}
+              >
+                <Text style={[s.didYouKnowChoiceText, active && s.didYouKnowChoiceTextActive]}>
+                  {answer === 'yes' ? 'Yes' : 'No'}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </Reanimated.View>
+    </Reanimated.View>
+  );
+}
+
+function ScreenTimeSlider({ value, onChange }: { value?: number; onChange: (hours: number) => void }) {
+  const initial = clampNumber(value ?? DEFAULT_SCREEN_TIME_HOURS, SCREEN_TIME_MIN_HOURS, SCREEN_TIME_MAX_HOURS);
+  const [localHours, setLocalHours] = useState(initial);
+  const lastHoursRef = useRef(initial);
+  const trackWidth = useSharedValue(1);
+  const progress = useSharedValue((initial - SCREEN_TIME_MIN_HOURS) / (SCREEN_TIME_MAX_HOURS - SCREEN_TIME_MIN_HOURS));
+
+  const commitHours = useCallback((nextHours: number) => {
+    if (Math.abs(lastHoursRef.current - nextHours) < 0.01) return;
+    lastHoursRef.current = nextHours;
+    runSelectionHaptic();
+    setLocalHours(nextHours);
+    onChange(nextHours);
+  }, [onChange]);
+
+  useEffect(() => {
+    const next = clampNumber(value ?? DEFAULT_SCREEN_TIME_HOURS, SCREEN_TIME_MIN_HOURS, SCREEN_TIME_MAX_HOURS);
+    lastHoursRef.current = next;
+    setLocalHours(next);
+    progress.value = withTiming((next - SCREEN_TIME_MIN_HOURS) / (SCREEN_TIME_MAX_HOURS - SCREEN_TIME_MIN_HOURS), {
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [progress, value]);
+
+  const updateFromX = useCallback((x: number, width: number) => {
+    'worklet';
+    const safeWidth = Math.max(1, width);
+    const nextProgress = clampNumber(x / safeWidth, 0, 1);
+    const rawHours = SCREEN_TIME_MIN_HOURS + nextProgress * (SCREEN_TIME_MAX_HOURS - SCREEN_TIME_MIN_HOURS);
+    const snappedHours = clampNumber(roundToHalfHour(rawHours), SCREEN_TIME_MIN_HOURS, SCREEN_TIME_MAX_HOURS);
+    const snappedProgress = (snappedHours - SCREEN_TIME_MIN_HOURS) / (SCREEN_TIME_MAX_HOURS - SCREEN_TIME_MIN_HOURS);
+    progress.value = snappedProgress;
+    runOnJS(commitHours)(snappedHours);
+  }, [commitHours, progress]);
+
+  const panGesture = useMemo(
+    () => Gesture.Pan()
+      .onBegin(event => {
+        updateFromX(event.x, trackWidth.value);
+      })
+      .onUpdate(event => {
+        updateFromX(event.x, trackWidth.value);
+      }),
+    [trackWidth, updateFromX],
+  );
+  const tapGesture = useMemo(
+    () => Gesture.Tap()
+      .onStart(event => {
+        updateFromX(event.x, trackWidth.value);
+      }),
+    [trackWidth, updateFromX],
+  );
+  const sliderGesture = useMemo(() => Gesture.Simultaneous(tapGesture, panGesture), [panGesture, tapGesture]);
+
+  const fillStyle = useAnimatedStyle(() => ({
+    width: `${progress.value * 100}%`,
+  }));
+  const thumbStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: progress.value * Math.max(1, trackWidth.value) - 16 }],
+  }));
+
+  return (
+    <View style={s.screenTimeSliderCard}>
+      <Text style={s.screenTimeSliderQuestion}>How much time do you spend on your phone each day?</Text>
+      <View style={s.screenTimeSliderRule} />
+
+      <GestureDetector gesture={sliderGesture}>
+        <View
+          style={s.screenTimeSliderTouch}
+          onLayout={event => {
+            const width = event.nativeEvent.layout.width;
+            trackWidth.value = width;
+            progress.value = (localHours - SCREEN_TIME_MIN_HOURS) / (SCREEN_TIME_MAX_HOURS - SCREEN_TIME_MIN_HOURS);
+          }}
+        >
+          <View style={s.screenTimeSliderRail}>
+            <Reanimated.View style={[s.screenTimeSliderFill, fillStyle]} />
+          </View>
+          <Reanimated.View style={[s.screenTimeSliderThumb, thumbStyle]}>
+            <View style={s.screenTimeSliderThumbCore} />
+          </Reanimated.View>
+        </View>
+      </GestureDetector>
+
+      <Text style={s.screenTimeSliderValue}>{formatHourValue(localHours)}h</Text>
+
+      <View style={s.screenTimeSliderScale}>
+        <Text style={s.screenTimeSliderScaleText}>4h</Text>
+        <Text style={s.screenTimeSliderScaleText}>Daily phone time</Text>
+        <Text style={s.screenTimeSliderScaleText}>10h+</Text>
+      </View>
+    </View>
+  );
+}
+
+function ProtectScreenTimeSlide({
+  hours,
+  onChange,
+  onNext,
+}: {
+  hours?: number;
+  onChange: (value: number) => void;
+  onNext: () => void;
+}) {
+  const [submitted, setSubmitted] = useState(false);
+  const activeHours = protectStats(hours).hours;
+  const handlePrimary = () => {
+    if (!submitted) {
+      runSelectionHaptic();
+      setSubmitted(true);
+      return;
+    }
+    onNext();
+  };
+
+  return (
+    <GuidedSetupShell onNext={handlePrimary} ctaLabel={submitted ? 'Set guardrails' : 'OK'}>
+      <ProtectSidePrompt
+        motionKey="protect-screen-time"
+        segments={[{ text: 'How much time do you spend on your phone each day?' }]}
+      />
+      {!submitted ? (
+        <Reanimated.View
+          entering={FadeIn.delay(1400).duration(620).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 18 }, { scale: 0.975 }],
+          })}
+        >
+          <ScreenTimeSlider value={hours} onChange={onChange} />
+        </Reanimated.View>
+      ) : (
+        <ScreenTimeConversationResult hours={activeHours} />
+      )}
+    </GuidedSetupShell>
+  );
+}
+
+function ScreenTimeBadNewsConversation({ hours, reveal }: { hours: number; reveal: number }) {
+  const stat = protectStats(hours);
+
+  return (
+    <View style={s.screenTimeConversation}>
+      {reveal >= 1 && <ScreenTimeUserReply hours={stat.hours} />}
+      {reveal >= 2 && (
+        <ProtectSidePrompt
+          motionKey={`protect-screen-time-bad-news-${stat.hours}`}
+          segments={[
+            { text: "That's a " },
+            { text: 'meaningful part', highlight: true },
+            { text: ' of your day' },
+            { text: '.' },
+          ]}
+        />
+      )}
+      {reveal >= 3 && <ScreenTimeWastedIntro lifted={reveal >= 4} />}
+      {reveal >= 4 && <ScreenTimePercentCard stat={stat} index={1} stackSignal={reveal} />}
+      {reveal >= 5 && <ScreenTimeDaysCard stat={stat} index={2} stackSignal={reveal} />}
+      {reveal >= 6 && <ScreenTimeYearsCard stat={stat} index={3} stackSignal={reveal} />}
+    </View>
+  );
+}
+
+function ScreenTimeGoodNewsConversation({ hours, reveal }: { hours: number; reveal: number }) {
+  const stat = protectStats(hours);
+
+  return (
+    <View style={s.screenTimeConversation}>
+      {reveal >= 1 && (
+        <ProtectSidePrompt
+          motionKey={`protect-screen-time-good-news-${stat.hours}`}
+          segments={[
+            { text: 'Now, ' },
+            { text: 'good news', highlight: true },
+            { text: '!' },
+          ]}
+        />
+      )}
+      {reveal >= 2 && (
+        <ProtectSidePrompt
+          motionKey={`protect-screen-time-reduce-${stat.hours}`}
+          segments={[
+            { text: 'If you cut your screen time by only ' },
+            { text: '40%', highlight: true, gold: true },
+            { text: '...' },
+          ]}
+        />
+      )}
+      {reveal >= 3 && <ScreenTimeGetBackIntro lifted={reveal >= 4} />}
+      {reveal >= 4 && <ScreenTimeSavedDaysCard stat={stat} index={1} stackSignal={reveal} />}
+      {reveal >= 5 && <ScreenTimeSavedYearsCard stat={stat} index={2} stackSignal={reveal} />}
+    </View>
+  );
+}
+
+function ScreenTimeConversationResult({ hours }: { hours: number }) {
+  return (
+    <>
+      <ScreenTimeBadNewsConversation hours={hours} reveal={6} />
+      <ScreenTimeGoodNewsConversation hours={hours} reveal={5} />
+    </>
+  );
+}
+
+function ScreenTimeStatIntro() {
+  return (
+    <Reanimated.View entering={FadeIn.duration(420).withInitialValues({ opacity: 0, transform: [{ translateY: 10 }] })} style={s.screenTimeStatIntro}>
+      <Text style={s.screenTimeResultKicker}>Based on that</Text>
+    </Reanimated.View>
+  );
+}
+
+function ScreenTimeWastedIntro({ lifted = false }: { lifted?: boolean }) {
+  const lift = useSharedValue(0);
+
+  useEffect(() => {
+    runStrongHaptic();
+  }, []);
+
+  useEffect(() => {
+    lift.value = withTiming(lifted ? 1 : 0, {
+      duration: 520,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [lift, lifted]);
+
+  const liftStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(lift.value, [0, 1], [0, -5]) },
+      { scale: interpolate(lift.value, [0, 1], [1, 0.955]) },
+    ],
+  }));
+
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(820).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 12 }, { scale: 0.97 }],
+      })}
+      style={[s.screenTimeWastedIntro, liftStyle]}
+    >
+      <View pointerEvents="none" style={[s.screenTimeIntroWash, s.screenTimeIntroWashWaste]} />
+      <View pointerEvents="none" style={[s.screenTimeIntroCorner, s.screenTimeIntroCornerWaste]} />
+      <View style={s.screenTimeIntroOrnamentRow}>
+        <View style={[s.screenTimeIntroOrnamentLine, s.screenTimeIntroOrnamentLineDark]} />
+        <View style={s.screenTimeIntroOrnamentDot} />
+        <View style={[s.screenTimeIntroOrnamentLine, s.screenTimeIntroOrnamentLineDark]} />
+      </View>
+      <Text style={[s.screenTimeIntroToplinePill, s.screenTimeIntroToplinePillWaste]}>
+        You
+      </Text>
+      <Text style={s.screenTimeWastedWord}>
+        WASTE
+      </Text>
+      <View style={s.screenTimeWastedUnderline} />
+    </Reanimated.View>
+  );
+}
+
+function ScreenTimeGetBackIntro({ lifted = false }: { lifted?: boolean }) {
+  const lift = useSharedValue(0);
+
+  useEffect(() => {
+    runStrongHaptic();
+  }, []);
+
+  useEffect(() => {
+    lift.value = withTiming(lifted ? 1 : 0, {
+      duration: 520,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [lift, lifted]);
+
+  const liftStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(lift.value, [0, 1], [0, -5]) },
+      { scale: interpolate(lift.value, [0, 1], [1, 0.955]) },
+    ],
+  }));
+
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(840).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 12 }, { scale: 0.97 }],
+      })}
+      style={[s.screenTimeGetBackIntro, liftStyle]}
+    >
+      <View pointerEvents="none" style={[s.screenTimeIntroWash, s.screenTimeIntroWashGetBack]} />
+      <View pointerEvents="none" style={[s.screenTimeIntroCorner, s.screenTimeIntroCornerGetBack]} />
+      <View style={s.screenTimeIntroOrnamentRow}>
+        <View style={s.screenTimeIntroOrnamentLine} />
+        <View style={s.screenTimeIntroOrnamentDot} />
+        <View style={s.screenTimeIntroOrnamentLine} />
+      </View>
+      <Text style={[s.screenTimeIntroToplinePill, s.screenTimeIntroToplinePillGetBack]}>
+        You can
+      </Text>
+      <Text style={s.screenTimeGetBackWord}>
+        GET BACK
+      </Text>
+      <View style={s.screenTimeGetBackUnderline} />
+    </Reanimated.View>
+  );
+}
+
+function ScreenTimePercentCard({
+  stat,
+  index,
+  stackSignal,
+}: {
+  stat: ReturnType<typeof protectStats>;
+  index?: number;
+  stackSignal?: number;
+}) {
+  const parts = screenTimeDayParts(stat);
+  return (
+    <ScreenTimeStatMessage
+      layout="stacked"
+      haptic="strong"
+      value={`${stat.usablePercent}%`}
+      label="of your 16h productive day!"
+      legendItems={negativeScreenTimeLegend}
+      index={index}
+      stackSignal={stackSignal}
+      visual={(
+        <View style={s.screenTimeDayBar}>
+          {Array.from({ length: parts.sleep }).map((_, index) => (
+            <View key={`sleep-hour-${index}`} style={[s.screenTimeDaySegment, s.screenTimeDaySegmentSleep]} />
+          ))}
+          {Array.from({ length: parts.awake }).map((_, index) => (
+            <View key={`awake-hour-${index}`} style={[s.screenTimeDaySegment, s.screenTimeDaySegmentAwake]} />
+          ))}
+          {Array.from({ length: parts.phone }).map((_, index) => (
+            <View key={`phone-hour-${index}`} style={[s.screenTimeDaySegment, s.screenTimeDaySegmentPhone]} />
+          ))}
+        </View>
+      )}
+    />
+  );
+}
+
+function ScreenTimeDaysCard({
+  stat,
+  index,
+  stackSignal,
+}: {
+  stat: ReturnType<typeof protectStats>;
+  index?: number;
+  stackSignal?: number;
+}) {
+  const parts = screenTimeYearParts(stat);
+  return (
+    <ScreenTimeStatMessage
+      layout="stacked"
+      haptic="strong"
+      value={`${stat.yearlyDays}`}
+      label="days every year!"
+      legendItems={negativeScreenTimeLegend}
+      index={index}
+      stackSignal={stackSignal}
+      visual={<ScreenTimeDotGrid total={365} awake={parts.awake} phone={parts.phone} sleep={parts.sleep} mode="days" />}
+    />
+  );
+}
+
+function ScreenTimeYearsCard({
+  stat,
+  index,
+  stackSignal,
+}: {
+  stat: ReturnType<typeof protectStats>;
+  index?: number;
+  stackSignal?: number;
+}) {
+  const parts = screenTimeLifetimeParts(stat);
+  return (
+    <ScreenTimeStatMessage
+      layout="stacked"
+      haptic="strong"
+      value={`${formatYearValue(stat.lifetimeYears)}`}
+      label="years over 85 years!"
+      legendItems={negativeScreenTimeLegend}
+      index={index}
+      stackSignal={stackSignal}
+      visual={<ScreenTimeDotGrid total={PROTECT_LIFESPAN_YEARS} awake={parts.awake} phone={parts.phone} sleep={parts.sleep} mode="years" />}
+    />
+  );
+}
+
+function ScreenTimeSavedDaysCard({
+  stat,
+  index,
+  stackSignal,
+}: {
+  stat: ReturnType<typeof protectStats>;
+  index?: number;
+  stackSignal?: number;
+}) {
+  const sleepDays = Math.round((SLEEP_HOURS_PER_DAY * 365) / DAY_HOURS);
+  const phoneDays = Math.max(0, stat.yearlyDays - stat.reclaimedDays);
+  const awakeDays = Math.max(0, 365 - sleepDays - phoneDays);
+  return (
+    <ScreenTimeStatMessage
+      tone="dark"
+      layout="stacked"
+      haptic="strong"
+      value={`${stat.reclaimedDays}`}
+      label="days back every year!"
+      legendItems={negativeScreenTimeLegend}
+      index={index}
+      stackSignal={stackSignal}
+      visual={<ScreenTimeDotGrid total={365} awake={awakeDays} phone={phoneDays} sleep={sleepDays} mode="days" dark />}
+    />
+  );
+}
+
+function ScreenTimeSavedYearsCard({
+  stat,
+  index,
+  stackSignal,
+}: {
+  stat: ReturnType<typeof protectStats>;
+  index?: number;
+  stackSignal?: number;
+}) {
+  const sleepYears = Math.round((SLEEP_HOURS_PER_DAY * PROTECT_LIFESPAN_YEARS) / DAY_HOURS);
+  const lostYears = Math.max(0, Math.min(PROTECT_LIFESPAN_YEARS, Math.round(stat.lifetimeYears)));
+  const reclaimedYears = Math.max(0, Math.min(lostYears, Math.round(stat.reclaimedYears)));
+  const phoneYears = Math.max(0, lostYears - reclaimedYears);
+  const awakeYears = Math.max(0, PROTECT_LIFESPAN_YEARS - sleepYears - phoneYears);
+  return (
+    <ScreenTimeStatMessage
+      tone="dark"
+      layout="stacked"
+      haptic="strong"
+      value={`${formatYearValue(stat.reclaimedYears)}`}
+      label="years back over 85 years!"
+      legendItems={negativeScreenTimeLegend}
+      index={index}
+      stackSignal={stackSignal}
+      visual={<ScreenTimeDotGrid total={PROTECT_LIFESPAN_YEARS} awake={awakeYears} phone={phoneYears} sleep={sleepYears} mode="years" dark />}
+    />
+  );
+}
+
+type ScreenTimeLegendKind = 'awake' | 'phone' | 'sleep';
+type ScreenTimeLegendItem = { label: string; kind: ScreenTimeLegendKind };
+
+const negativeScreenTimeLegend: ScreenTimeLegendItem[] = [
+  { label: 'Awake', kind: 'awake' },
+  { label: 'Phone', kind: 'phone' },
+  { label: 'Sleep', kind: 'sleep' },
+];
+
+function ScreenTimeLegend({ items, dark }: { items: ScreenTimeLegendItem[]; dark: boolean }) {
+  return (
+    <View style={s.screenTimeLegend}>
+      {items.map(item => (
+        <View key={`${item.kind}-${item.label}`} style={s.screenTimeLegendItem}>
+          <View
+            style={[
+              s.screenTimeLegendDot,
+              item.kind === 'awake' && (dark ? s.screenTimeLegendAwakeDark : s.screenTimeLegendAwakeLight),
+              item.kind === 'phone' && s.screenTimeLegendPhone,
+              item.kind === 'sleep' && (dark ? s.screenTimeLegendSleepDark : s.screenTimeLegendSleepLight),
+            ]}
+          />
+          <Text style={[s.screenTimeLegendText, dark && s.screenTimeLegendTextDark]}>{item.label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function ScreenTimeStatMessage({
+  value,
+  label,
+  legendItems,
+  visual,
+  tone = 'light',
+  layout = 'row',
+  haptic = 'none',
+  index,
+  stackSignal = 0,
+}: {
+  value: string;
+  label: string;
+  legendItems: ScreenTimeLegendItem[];
+  visual: React.ReactNode;
+  tone?: 'light' | 'dark';
+  layout?: 'row' | 'stacked';
+  haptic?: 'none' | 'strong';
+  index?: number;
+  stackSignal?: number;
+}) {
+  const dark = tone === 'dark';
+  const stacked = layout === 'stacked';
+  const numberOnRight = typeof index === 'number' && index % 2 === 0;
+  const intro = useSharedValue(0);
+  const settle = useSharedValue(1);
+
+  useEffect(() => {
+    intro.value = 0;
+    const startTimer = setTimeout(() => {
+      intro.value = withTiming(1, {
+        duration: 1080,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      });
+    }, 40);
+    const hapticTimer = setTimeout(() => {
+      if (haptic === 'strong') runStrongHaptic();
+    }, 250);
+    return () => {
+      clearTimeout(startTimer);
+      clearTimeout(hapticTimer);
+    };
+  }, [haptic, index, intro, label, value]);
+
+  useEffect(() => {
+    const delay = typeof index === 'number' ? Math.max(0, index - 1) * 62 : 0;
+    const timer = setTimeout(() => {
+      settle.value = 0;
+      settle.value = withTiming(1, {
+        duration: 760,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      });
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [index, settle, stackSignal]);
+
+  const cardMotionStyle = useAnimatedStyle(() => {
+    const side = numberOnRight ? 1 : -1;
+    const introScale = interpolate(intro.value, [0, 0.46, 0.78, 1], [1.065, 1.012, 0.997, 1]);
+    const settleScale = interpolate(settle.value, [0, 0.5, 1], [1, 1.003, 1]);
+    return {
+      opacity: interpolate(intro.value, [0, 0.18, 1], [0, 1, 1]),
+      transform: [
+        { translateX: interpolate(intro.value, [0, 0.52, 0.82, 1], [side * 16, side * -3, side * 0.8, 0]) },
+        {
+          translateY:
+            interpolate(intro.value, [0, 0.5, 0.8, 1], [26, -6, 1.5, 0]) +
+            interpolate(settle.value, [0, 0.5, 1], [0, -2, 0]),
+        },
+        { scale: introScale * settleScale },
+      ],
+    };
+  });
+
+  return (
+    <Reanimated.View
+      style={[s.screenTimeStatMessage, dark && s.screenTimeStatMessageDark, cardMotionStyle]}
+    >
+      {typeof index === 'number' && (
+        <Reanimated.View
+          entering={FadeIn.delay(190).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateX: numberOnRight ? 12 : -12 }, { scale: 0.38 }],
+          })}
+          style={[s.screenTimeStatNumber, numberOnRight && s.screenTimeStatNumberRight, dark && s.screenTimeStatNumberDark]}
+        >
+          <Text style={[s.screenTimeStatNumberText, dark && s.screenTimeStatNumberTextDark]}>{index}.</Text>
+        </Reanimated.View>
+      )}
+      <View style={[s.screenTimeStatHeader, stacked && s.screenTimeStatHeaderStacked]}>
+        <Text style={[s.screenTimeStatValue, stacked && s.screenTimeStatValueStacked, dark && s.screenTimeStatValueDark]}>{value}</Text>
+        <Text style={[s.screenTimeStatLabel, stacked && s.screenTimeStatLabelStacked, dark && s.screenTimeStatLabelDark]}>{label}</Text>
+        {stacked && <View style={s.screenTimeStatLabelUnderline} />}
+      </View>
+      <ScreenTimeLegend items={legendItems} dark={dark} />
+      {visual}
+    </Reanimated.View>
+  );
+}
+
+function ScreenTimeDotGrid({
+  total,
+  awake,
+  phone,
+  sleep,
+  mode,
+  dark = false,
+}: {
+  total: number;
+  awake: number;
+  phone: number;
+  sleep: number;
+  mode: 'days' | 'years';
+  dark?: boolean;
+}) {
+  const safeSleep = Math.max(0, Math.min(total, sleep));
+  const safePhone = Math.max(0, Math.min(total - safeSleep, phone));
+  const safeAwake = Math.max(0, Math.min(total - safeSleep - safePhone, awake));
+  const compact = total > 100;
+
+  return (
+    <View style={[s.screenTimeDotGrid, compact && s.screenTimeDotGridCompact]}>
+      {Array.from({ length: total }).map((_, index) => {
+        const state =
+          index < safeSleep
+            ? 'sleep'
+            : index < safeSleep + safeAwake
+              ? 'awake'
+              : index < safeSleep + safeAwake + safePhone
+                ? 'phone'
+                : 'dim';
+        return (
+          <View
+            key={`${mode}-${index}`}
+            style={[
+              compact ? s.screenTimeDotSmall : s.screenTimeDot,
+              state === 'sleep' && (dark ? s.screenTimeDotSleepOnDark : s.screenTimeDotSleep),
+              state === 'awake' && (dark ? s.screenTimeDotAwakeOnDark : s.screenTimeDotAwake),
+              state === 'phone' && s.screenTimeDotActive,
+              state === 'dim' && (dark ? s.screenTimeDotDimOnDark : s.screenTimeDotDimLight),
+            ]}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+function ScreenTimeRecoveryDotGrid({
+  total,
+  sleep,
+  productive,
+  reclaimed,
+  stillLost,
+  mode,
+}: {
+  total: number;
+  sleep: number;
+  productive: number;
+  reclaimed: number;
+  stillLost: number;
+  mode: 'savedDays' | 'savedYears';
+}) {
+  const safeSleep = Math.max(0, Math.min(total, sleep));
+  const safeProductive = Math.max(0, Math.min(total - safeSleep, productive));
+  const safeReclaimed = Math.max(0, Math.min(total - safeSleep - safeProductive, reclaimed));
+  const safeStillLost = Math.max(0, Math.min(total - safeSleep - safeProductive - safeReclaimed, stillLost));
+  const compact = total > 100;
+
+  return (
+    <View style={[s.screenTimeDotGrid, compact && s.screenTimeDotGridCompact]}>
+      {Array.from({ length: total }).map((_, index) => {
+        const state =
+          index < safeSleep
+            ? 'sleep'
+            : index < safeSleep + safeProductive
+            ? 'productive'
+            : index < safeSleep + safeProductive + safeReclaimed
+              ? 'reclaimed'
+              : index < safeSleep + safeProductive + safeReclaimed + safeStillLost
+                ? 'stillLost'
+                : 'dim';
+        return (
+          <View
+            key={`${mode}-recovery-${index}`}
+            style={[
+              compact ? s.screenTimeDotSmall : s.screenTimeDot,
+              state === 'sleep' && s.screenTimeDotSleepOnDark,
+              state === 'productive' && s.screenTimeDotProductive,
+              state === 'reclaimed' && s.screenTimeDotReclaimed,
+              state === 'stillLost' && s.screenTimeDotStillLost,
+              state === 'dim' && s.screenTimeDotDimOnDark,
+            ]}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+function ScreenTimeResultPanel({ stat }: { stat: ReturnType<typeof protectStats> }) {
+  return (
+    <View style={s.screenTimeResultPanel}>
+      <Text style={s.screenTimeResultKicker}>Based on that</Text>
+
+      <View style={s.screenTimeResultGrid}>
+        <Reanimated.View entering={optionEntrance(0, 140)} style={s.screenTimeMetric}>
+          <Text style={s.screenTimeMetricValue}>{stat.usablePercent}%</Text>
+          <Text style={s.screenTimeMetricLabel}>of your 16h productive day</Text>
+        </Reanimated.View>
+        <Reanimated.View entering={optionEntrance(1, 180)} style={s.screenTimeMetric}>
+          <Text style={s.screenTimeMetricValue}>{stat.yearlyDays}</Text>
+          <Text style={s.screenTimeMetricLabel}>days every year</Text>
+        </Reanimated.View>
+        <Reanimated.View entering={optionEntrance(2, 220)} style={s.screenTimeMetric}>
+          <Text style={s.screenTimeMetricValue}>{formatYearValue(stat.lifetimeYears)}</Text>
+          <Text style={s.screenTimeMetricLabel}>years over 85 years</Text>
+        </Reanimated.View>
+      </View>
+    </View>
+  );
+}
+
+function ScreenTimeReclaimPanel({ stat }: { stat: ReturnType<typeof protectStats> }) {
+  return (
+    <View style={s.screenTimeReclaimCard}>
+      <Text style={s.screenTimeReclaimTitle}>Reduce it by 40%</Text>
+      <Text style={s.screenTimeReclaimBody}>
+        You can reclaim about <Text style={s.screenTimeReclaimStrong}>{stat.reclaimedDays} days a year</Text>,
+        or <Text style={s.screenTimeReclaimStrong}> {formatYearValue(stat.reclaimedYears)} years</Text> over 85 years,
+        for something real instead of your phone.
+      </Text>
+    </View>
+  );
+}
+
+function SetupStartSlide({
+  selected,
+  displayName,
+  onSelect,
+  onNext,
+}: {
+  selected?: OnboardingChapter;
+  displayName?: string;
+  onSelect: (chapter: OnboardingChapter) => void;
+  onNext: () => void;
+}) {
+  const [reveal, setReveal] = useState(0);
+  const [localSelected, setLocalSelected] = useState<OnboardingChapter | undefined>(selected);
+  const [departing, setDeparting] = useState(false);
+  const departMotion = useSharedValue(0);
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const name = nameForDisplay(displayName);
+  const greeting = name ? `Thank you, ${name}.` : 'Thank you.';
+
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    setReveal(0);
+    [120, 1420, 2520, 3040].forEach((delay, index) => {
+      timers.push(setTimeout(() => setReveal(index + 1), delay));
+    });
+    timers.push(setTimeout(runAdvanceHaptic, 2580));
+    timers.push(setTimeout(runAdvanceHaptic, 3100));
+
+    return () => {
+      timers.forEach(timer => clearTimeout(timer));
+      if (transitionTimerRef.current) {
+        clearTimeout(transitionTimerRef.current);
+        transitionTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!departing) setLocalSelected(selected);
+  }, [departing, selected]);
+
+  const handleChapterPress = (chapter: OnboardingChapter) => {
+    if (departing) return;
+    setLocalSelected(chapter);
+    setDeparting(true);
+    onSelect(chapter);
+    departMotion.value = withTiming(1, {
+      duration: 1420,
+      easing: Easing.bezier(0.16, 1, 0.28, 1),
+    });
+    transitionTimerRef.current = setTimeout(() => {
+      onNext();
+    }, 1940);
+  };
+
+  const setupStartExitStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(departMotion.value, [0, 0.64, 1], [1, 0.58, 0]),
+    transform: [
+      { translateY: interpolate(departMotion.value, [0, 0.72, 1], [0, -8, -22]) },
+      { scale: interpolate(departMotion.value, [0, 0.72, 1], [1, 0.996, 0.982]) },
+    ],
+  }));
+
+  return (
+    <GuidedSetupShell
+      onNext={() => {}}
+      ctaVisible={false}
+      scrollSignal={`${reveal}-${localSelected ?? 'none'}-${departing ? 'departing' : 'idle'}`}
+    >
+      <Reanimated.View style={setupStartExitStyle}>
+        {reveal >= 1 && (
+          <ProtectSidePrompt
+            motionKey="setup-start-thanks"
+            compact
+            segments={[{ text: greeting }]}
+          />
+        )}
+        {reveal >= 2 && (
+          <ProtectSidePrompt
+            motionKey="setup-start-choice"
+            compact
+            segments={[{ text: 'Where do you want to start?' }]}
+          />
+        )}
+        {reveal >= 3 && (
+          <Reanimated.View
+            entering={FadeIn.duration(360)}
+            style={s.chapterChoiceStack}
+          >
+            <ChapterChoiceCard
+              chapter="protect"
+              index={0}
+              visible={reveal >= 3}
+              active={localSelected === 'protect'}
+              departing={departing}
+              selectedChapter={localSelected}
+              title="Protect your time"
+              body={'Screen time\nBlockers\nFocus'}
+              icon={<Hourglass s={28} c={localSelected === 'protect' ? INK : GOLD} w={1.75} />}
+              onPress={() => handleChapterPress('protect')}
+            />
+            <ChapterChoiceCard
+              chapter="build"
+              index={1}
+              visible={reveal >= 4}
+              active={localSelected === 'build'}
+              departing={departing}
+              selectedChapter={localSelected}
+              title="Build your rhythm"
+              body={'Big events\nHabits & routines\nDaily tasks'}
+              icon={<ListChecks s={28} c={localSelected === 'build' ? INK : GOLD} w={2.15} />}
+              onPress={() => handleChapterPress('build')}
+            />
+          </Reanimated.View>
+        )}
+      </Reanimated.View>
+    </GuidedSetupShell>
+  );
+}
+
+function ChapterChoiceCard({
+  chapter,
+  index,
+  visible,
+  active,
+  departing = false,
+  selectedChapter,
+  title,
+  body,
+  icon,
+  onPress,
+}: {
+  chapter: OnboardingChapter;
+  index: number;
+  visible: boolean;
+  active: boolean;
+  departing?: boolean;
+  selectedChapter?: OnboardingChapter;
+  title: string;
+  body: string;
+  icon: React.ReactNode;
+  onPress: () => void;
+}) {
+  const revealMotion = useSharedValue(visible ? 1 : 0);
+  const selectedMotion = useSharedValue(active ? 1 : 0);
+  const departCardMotion = useSharedValue(0);
+
+  useEffect(() => {
+    selectedMotion.value = withTiming(active ? 1 : 0, {
+      duration: active ? 320 : 220,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [active, selectedMotion]);
+
+  useEffect(() => {
+    revealMotion.value = withTiming(visible ? 1 : 0, {
+      duration: visible ? 860 : 220,
+      easing: Easing.bezier(0.16, 1, 0.28, 1),
+    });
+  }, [revealMotion, visible]);
+
+  useEffect(() => {
+    departCardMotion.value = withTiming(departing ? 1 : 0, {
+      duration: departing ? 1320 : 220,
+      easing: Easing.bezier(0.16, 1, 0.28, 1),
+    });
+  }, [departCardMotion, departing]);
+
+  const motionStyle = useAnimatedStyle(() => {
+    const side = index === 0 ? -1 : 1;
+    const chosen = selectedChapter === chapter;
+    const depart = departCardMotion.value;
+    const departOpacity = interpolate(
+      depart,
+      [0, 0.54, 1],
+      chosen ? [1, 1, 0.82] : [1, 0.34, 0],
+    );
+    const departTranslateX = interpolate(
+      depart,
+      [0, 1],
+      chosen ? [0, side * -4] : [0, side * 26],
+    );
+    const departTranslateY = interpolate(
+      depart,
+      [0, 1],
+      chosen ? [0, -8] : [0, 18],
+    );
+    const departScale = interpolate(
+      depart,
+      [0, 0.66, 1],
+      chosen ? [1, 1.032, 0.992] : [1, 0.965, 0.92],
+    );
+    return {
+      opacity: revealMotion.value * departOpacity,
+      transform: [
+        {
+          translateX:
+            interpolate(revealMotion.value, [0, 0.72, 1], [side * 46, side * -3, 0]) +
+            departTranslateX,
+        },
+        {
+          translateY:
+            interpolate(revealMotion.value, [0, 0.72, 1], [22, -2, 0]) +
+            interpolate(selectedMotion.value, [0, 1], [0, -5]) +
+            departTranslateY,
+        },
+        { scale: interpolate(revealMotion.value, [0, 0.72, 1], [0.94, 1.018, 1]) * departScale },
+      ],
+    };
+  });
+  const iconStabilizerStyle = useAnimatedStyle(() => {
+    const chosen = selectedChapter === chapter;
+    const depart = departCardMotion.value;
+    const revealScale = interpolate(revealMotion.value, [0, 0.72, 1], [0.94, 1.018, 1]);
+    const departScale = interpolate(
+      depart,
+      [0, 0.66, 1],
+      chosen ? [1, 1.032, 0.992] : [1, 0.965, 0.92],
+    );
+    const scale = chosen ? 1 / Math.max(0.001, revealScale * departScale) : 1;
+    return {
+      transform: [{ scale }],
+    };
+  });
+
+  return (
+    <Reanimated.View
+      pointerEvents={visible && !departing ? 'auto' : 'none'}
+      style={[s.chapterChoiceWrap, active && s.chapterChoiceWrapActive, motionStyle]}
+    >
+      <TouchableOpacity
+        activeOpacity={0.9}
+        haptic="medium"
+        onPress={onPress}
+        style={[s.chapterChoiceCard, active && s.chapterChoiceCardActive]}
+      >
+        <View style={[s.chapterChoiceGlow, active && s.chapterChoiceGlowActive]} />
+        <View style={s.chapterChoiceTopRow}>
+          <View style={[s.chapterChoiceIcon, active && s.chapterChoiceIconActive]}>
+            <Reanimated.View style={[s.chapterChoiceIconGlyph, iconStabilizerStyle]}>
+              {icon}
+            </Reanimated.View>
+          </View>
+        </View>
+        <View style={[s.chapterChoiceRadio, active && s.chapterChoiceRadioActive]}>
+          {active ? <CheckSmall s={14} c="#FFFFFF" w={2.6} /> : null}
+        </View>
+        <View style={s.chapterChoiceCopy}>
+          <Text style={[s.chapterChoiceTitle, active && s.chapterChoiceTitleActive]}>{title}</Text>
+          <View style={s.chapterChoiceDivider}>
+            <View style={[s.chapterChoiceDividerLine, active && s.chapterChoiceDividerLineActive]} />
+          </View>
+          {body.split('\n').map(line => (
+            <View key={line} style={s.chapterChoiceFeatureRow}>
+              <View style={[s.chapterChoiceFeatureDot, active && s.chapterChoiceFeatureDotActive]} />
+              <Text style={[s.chapterChoiceBody, active && s.chapterChoiceBodyActive]}>{line}</Text>
+            </View>
+          ))}
+        </View>
+      </TouchableOpacity>
+    </Reanimated.View>
+  );
+}
+
+function chapterTitle(chapter: OnboardingChapter) {
+  return chapter === 'protect' ? 'Protect your time' : 'Build your rhythm';
+}
+
+type CheckpointChapter = OnboardingChapter | 'rise';
+
+function chapterRailTitle(chapter: CheckpointChapter) {
+  if (chapter === 'protect') return 'Protect time';
+  if (chapter === 'build') return 'Organize';
+  return 'Arise';
+}
+
+function checkpointCtaLabel(first: OnboardingChapter, final: boolean) {
+  if (final) return 'Arise';
+  return first === 'protect' ? 'Build my rhythm' : 'Protect my time';
+}
+
+function checkpointMessage(first: OnboardingChapter, final: boolean): PromptSegment[] {
+  if (final) {
+    return [
+      { text: "Good. You can see the cost of distraction, and your weekly plan is ready.\nNow let's " },
+      { text: 'return to what matters', highlight: true },
+      { text: '.' },
+    ];
+  }
+
+  if (first === 'protect') {
+    return [
+      { text: "Good. The problem is visible.\nNow let's " },
+      { text: 'organize your time', highlight: true },
+      { text: ' and ' },
+      { text: 'build better habits', highlight: true },
+      { text: '.' },
+    ];
+  }
+
+  return [
+    { text: "Good. Your weekly plan is ready.\nNow let's protect your time from " },
+    { text: 'unwanted distractions', highlight: true },
+    { text: '.' },
+  ];
+}
+
+function checkpointTransitionMessage(first: OnboardingChapter, final: boolean): PromptSegment[] {
+  if (final) {
+    return [
+      { text: "Good. You can see the cost of distraction, and your weekly plan is ready.\nNow let's " },
+      { text: 'return to what matters', highlight: true },
+      { text: '.' },
+    ];
+  }
+
+  if (first === 'protect') {
+    return [
+      { text: "Good. The problem is visible.\nNow let's " },
+      { text: 'organize your time', highlight: true },
+      { text: ' and ' },
+      { text: 'build better habits', highlight: true },
+      { text: '.' },
+    ];
+  }
+
+  return [
+    { text: "Good. Your weekly plan is ready.\nNow let's protect your time from " },
+    { text: 'unwanted distractions', highlight: true },
+    { text: '.' },
+  ];
+}
+
+function ChapterCheckpointSlide({
+  firstChapter,
+  final = false,
+  onNext,
+}: {
+  firstChapter?: OnboardingChapter;
+  final?: boolean;
+  onNext: () => void;
+}) {
+  const first = firstChapter ?? 'protect';
+  const [reveal, setReveal] = useState(0);
+  const completedBefore = final ? 1 : 0;
+  const completedAfter = final ? 2 : 1;
+  const railCompleteCount = reveal >= 4 ? completedAfter : completedBefore;
+  const sealFlight = useSharedValue(0);
+
+  useEffect(() => {
+    setReveal(0);
+    sealFlight.value = 0;
+    preloadTaskFeedbackSound();
+    preloadAchievementFeedbackSound();
+    const timers = [
+      setTimeout(() => setReveal(1), 180),
+      setTimeout(() => {
+        setReveal(2);
+        void playAchievementCompleteFeedback();
+      }, 560),
+      setTimeout(() => setReveal(3), 1540),
+      setTimeout(() => {
+        setReveal(4);
+        sealFlight.value = withTiming(1, {
+          duration: 780,
+          easing: Easing.inOut(Easing.cubic),
+        });
+        void playTaskCompleteFeedback();
+      }, 2380),
+      setTimeout(() => setReveal(5), 3260),
+      setTimeout(() => setReveal(6), 4200),
+      setTimeout(() => setReveal(7), 5120),
+    ];
+    return () => {
+      timers.forEach(timer => clearTimeout(timer));
+    };
+  }, [final, first, sealFlight]);
+
+  const sealFlightStyle = useAnimatedStyle(() => {
+    const targetX = final ? 0 : -116;
+    return {
+      opacity: interpolate(sealFlight.value, [0, 0.72, 1], [1, 0.96, 0]),
+      transform: [
+        { translateX: interpolate(sealFlight.value, [0, 0.58, 1], [0, targetX * 0.18, targetX]) },
+        { translateY: interpolate(sealFlight.value, [0, 0.62, 1], [0, -164, -226]) },
+        { scale: interpolate(sealFlight.value, [0, 0.64, 1], [1, 0.44, 0.15]) },
+      ],
+    };
+  });
+  const congratsFlightStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(sealFlight.value, [0, 0.18, 0.46], [1, 0.85, 0]),
+    transform: [
+      { translateY: interpolate(sealFlight.value, [0, 0.46], [0, -9]) },
+      { scale: interpolate(sealFlight.value, [0, 0.46], [1, 0.97]) },
+    ],
+  }));
+
+  useEffect(() => {
+    if (reveal === 7) runBubbleHaptic();
+  }, [reveal]);
+
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel={checkpointCtaLabel(first, final)} ctaVisible={reveal >= 7}>
+      <View style={s.chapterCheckpointStage}>
+        <View style={s.chapterCheckpointSealSlot}>
+          {reveal >= 1 && reveal < 5 && (
+            <Reanimated.View
+              entering={FadeIn.duration(760).withInitialValues({
+                opacity: 0,
+                transform: [{ translateY: 18 }, { scale: 0.74 }],
+              })}
+              exiting={FadeOut.duration(1060)}
+              style={s.chapterCheckpointAchievement}
+            >
+              <Reanimated.View style={[s.chapterCheckpointSealFlight, sealFlightStyle]}>
+                <View style={s.chapterCheckpointSeal}>
+                  <View style={s.chapterCheckpointSealGlow} />
+                  {reveal >= 2 && <CheckpointFlameBurst />}
+                </View>
+              </Reanimated.View>
+              {reveal >= 2 && (
+                <Reanimated.Text
+                  entering={FadeIn.delay(360).duration(640).withInitialValues({
+                    opacity: 0,
+                    transform: [{ translateY: 10 }, { scale: 0.97 }],
+                  })}
+                  style={[s.chapterCheckpointCongrats, congratsFlightStyle]}
+                >
+                  Congratulations!
+                </Reanimated.Text>
+              )}
+            </Reanimated.View>
+          )}
+        </View>
+
+        <View style={s.chapterCheckpointRailSlot}>
+          {reveal >= 3 && (
+            <ChapterCheckpointRail
+              first={first}
+              completedCount={railCompleteCount}
+              previousCompletedCount={completedBefore}
+            />
+          )}
+        </View>
+
+        <View style={s.chapterCheckpointCoachSlot}>
+          {reveal >= 6 && (
+            <Reanimated.View
+              entering={FadeIn.duration(620).withInitialValues({
+                opacity: 0,
+                transform: [{ translateY: 10 }, { scale: 0.98 }],
+              })}
+              style={s.chapterCheckpointCoach}
+            >
+              <Reanimated.View
+                entering={FadeIn.duration(680).withInitialValues({
+                  opacity: 0,
+                  transform: [{ translateY: 10 }, { scale: 0.94 }],
+                })}
+                style={s.chapterCheckpointLogoFrame}
+              >
+                <View style={s.messageLogoHalo} />
+                <View style={s.messageLogoPlate}>
+                  <Image source={APP_LOGO} style={s.messageLogo} resizeMode="cover" />
+                </View>
+              </Reanimated.View>
+              {reveal >= 7 && (
+                <Reanimated.View
+                  entering={FadeIn.duration(620).withInitialValues({
+                    opacity: 0,
+                    transform: [{ translateX: -10 }, { translateY: 8 }, { scale: 0.92 }],
+                  })}
+                  style={s.chapterCheckpointBubble}
+                >
+                  <View style={s.messageBubbleTail} />
+                  <ProtectPromptText segments={checkpointTransitionMessage(first, final)} />
+                </Reanimated.View>
+              )}
+            </Reanimated.View>
+          )}
+        </View>
+      </View>
+    </GuidedSetupShell>
+  );
+}
+
+function CheckpointFlameBurst() {
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(300).withInitialValues({
+        opacity: 0,
+        transform: [{ scale: 0.54 }, { translateY: 8 }],
+      })}
+      style={s.checkpointFlameBurst}
+    >
+      <View style={s.checkpointFlameAura} />
+      <FocusLottie name="flame" loop speed={0.82} style={s.checkpointFlameLottie} />
+    </Reanimated.View>
+  );
+}
+
+function CheckpointRailFlame() {
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(420).withInitialValues({
+        opacity: 0,
+        transform: [{ scale: 0.24 }, { translateY: 8 }],
+      })}
+      style={s.chapterCheckpointRailFlameWrap}
+    >
+      <FocusLottie name="flame" loop speed={0.9} style={s.chapterCheckpointRailFlame} />
+    </Reanimated.View>
+  );
+}
+
+function ChapterCheckpointLineFill({ animate }: { animate: boolean }) {
+  const progress = useSharedValue(animate ? 0 : 1);
+
+  useEffect(() => {
+    progress.value = animate ? 0 : 1;
+    if (animate) {
+      progress.value = withTiming(1, {
+        duration: 760,
+        easing: Easing.out(Easing.cubic),
+      });
+    }
+  }, [animate, progress]);
+
+  const fillStyle = useAnimatedStyle(() => ({
+    width: `${progress.value * 100}%`,
+    opacity: interpolate(progress.value, [0, 0.18, 1], [0, 1, 1]),
+  }));
+
+  return <Reanimated.View style={[s.chapterCheckpointStepLineFill, fillStyle]} />;
+}
+
+function ChapterCheckpointStepDot({ done, animate }: { done: boolean; animate: boolean }) {
+  const pop = useSharedValue(animate ? 0 : 1);
+
+  useEffect(() => {
+    pop.value = animate ? 0 : 1;
+    if (animate) {
+      pop.value = withTiming(1, {
+        duration: 860,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      });
+    }
+  }, [animate, pop]);
+
+  const popStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(pop.value, [0, 0.48, 0.78, 1], [3, -4.5, 0.8, 0]) },
+      { scale: interpolate(pop.value, [0, 0.46, 0.78, 1], [0.86, 1.14, 0.99, 1]) },
+    ],
+  }));
+
+  return (
+    <Reanimated.View style={[s.chapterCheckpointStepDot, done && s.chapterCheckpointStepDotDone, popStyle]}>
+      {done ? <CheckpointRailFlame /> : null}
+    </Reanimated.View>
+  );
+}
+
+function ChapterCheckpointRail({
+  first,
+  completedCount,
+  previousCompletedCount,
+}: {
+  first: OnboardingChapter;
+  completedCount: number;
+  previousCompletedCount: number;
+}) {
+  const second = first === 'protect' ? 'build' : 'protect';
+  const steps: CheckpointChapter[] = [
+    first,
+    second,
+    'rise',
+  ];
+
+  return (
+    <View style={s.chapterCheckpointRail}>
+      {steps.map((step, index) => {
+        const done = index < completedCount;
+        const isNewlyCompleted = done && index >= previousCompletedCount;
+        return (
+          <Reanimated.View
+            key={`${step}-${index}`}
+            entering={FadeIn.delay(index * 105).duration(430).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 8 }, { scale: 0.97 }],
+            })}
+            style={s.chapterCheckpointStep}
+          >
+            <View style={[s.chapterCheckpointStepLine, done && s.chapterCheckpointStepLineDone]}>
+              {done && <ChapterCheckpointLineFill key={`${step}-${index}`} animate={isNewlyCompleted} />}
+            </View>
+            <ChapterCheckpointStepDot done={done} animate={isNewlyCompleted} />
+            <Text style={[s.chapterCheckpointStepText, done && s.chapterCheckpointStepTextDone]}>
+              {chapterRailTitle(step)}
+            </Text>
+          </Reanimated.View>
+        );
+      })}
+    </View>
+  );
+}
+
+function ChapterChecklistItem({ title, done }: { title: string; done: boolean }) {
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(460).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 12 }, { scale: 0.985 }],
+      })}
+      style={[s.chapterChecklistItem, done && s.chapterChecklistItemDone]}
+    >
+      <View style={[s.chapterChecklistCheck, done && s.chapterChecklistCheckDone]}>
+        {done ? <CheckSmall s={15} c="#FFFFFF" w={2.6} /> : null}
+      </View>
+      <Text style={[s.chapterChecklistText, done && s.chapterChecklistTextDone]}>{title}</Text>
+      {done ? <View style={s.chapterChecklistStrike} /> : null}
+    </Reanimated.View>
+  );
+}
+
+function ProtectStatCard({
+  index,
+  value,
+  label,
+  body,
+  accent = GOLD,
+}: {
+  index: number;
+  value: string;
+  label: string;
+  body: string;
+  accent?: string;
+}) {
+  return (
+    <Reanimated.View entering={optionEntrance(index, 150)} style={s.protectStatCard}>
+      <View style={[s.protectStatAccent, { backgroundColor: accent }]} />
+      <View style={s.protectStatValueRow}>
+        <Text style={s.protectStatValue}>{value}</Text>
+        <Text style={s.protectStatLabel}>{label}</Text>
+      </View>
+      <Text style={s.protectStatBody}>{body}</Text>
+    </Reanimated.View>
+  );
+}
+
+function screenTimeComment(hours: number) {
+  if (hours <= 4) return 'Well, that is OK, but it can still be better.';
+  return 'That is a meaningful part of your day.';
+}
+
+function UserMessageBubble({ text, delay = 0 }: { text: string; delay?: number }) {
+  useEffect(() => {
+    const timer = setTimeout(runSelectionHaptic, delay + 80);
+    return () => clearTimeout(timer);
+  }, [delay]);
+
+  return (
+    <Reanimated.View
+      entering={FadeInRight.delay(delay).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateX: 24 }, { translateY: 8 }, { scale: 0.975 }],
+      })}
+      style={s.userReplyWrap}
+    >
+      <View style={s.userReplyBubble}>
+        <Text style={s.userReplyText}>{text}</Text>
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function ScreenTimeUserReply({ hours }: { hours: number }) {
+  return <UserMessageBubble text={`I spend ${formatHourValue(hours)}h per day.`} delay={260} />;
+}
+
+function ProtectCalculationSlide({ screenTimeHours, onNext }: { screenTimeHours?: number; onNext: () => void }) {
+  const stat = protectStats(screenTimeHours);
+  const comment = screenTimeComment(stat.hours);
+
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel="Keep going">
+      <ScreenTimeUserReply hours={stat.hours} />
+      <ProtectSidePrompt
+        motionKey={`protect-calculation-${stat.hours}`}
+        segments={[
+          { text: comment },
+          { text: '\nAt that pace, here is what your phone is asking from your ' },
+          { text: 'time', highlight: true },
+          { text: '.' },
+        ]}
+      />
+
+      <Reanimated.View
+        entering={FadeIn.delay(1500).duration(620).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 18 }, { scale: 0.975 }],
+        })}
+        style={s.protectStatStack}
+      >
+        <ProtectStatCard
+          index={0}
+          value={`${stat.usablePercent}%`}
+          label="of your 16h productive day"
+          body={`Assuming 8h of sleep, ${formatHourValue(stat.hours)}h is ${stat.usablePercent}% of the time you can actually use.`}
+        />
+        <ProtectStatCard
+          index={1}
+          value={`${stat.yearlyDays}`}
+          label="days every year"
+          body="Full days that can disappear into a phone."
+          accent="#8A8177"
+        />
+        <ProtectStatCard
+          index={2}
+          value={`${formatYearValue(stat.lifetimeYears)}`}
+          label="years over 85 years"
+          body="Time that could have gone into prayer, work, study, health, and people."
+          accent="#1C1917"
+        />
+      </Reanimated.View>
+    </GuidedSetupShell>
+  );
+}
+
+function ProtectReframeSlide({ screenTimeHours, onNext }: { screenTimeHours?: number; onNext: () => void }) {
+  const stat = protectStats(screenTimeHours);
+
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel="Set guardrails">
+      <ProtectSidePrompt
+        motionKey="protect-reframe"
+        segments={[
+          { text: 'This is not here to shame you.' },
+          { text: '\nIf you reduce that by only ' },
+          { text: '40%', highlight: true },
+          { text: ', you can get real days back.' },
+        ]}
+      />
+
+      <Reanimated.View
+        entering={FadeIn.delay(1480).duration(620).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 18 }, { scale: 0.975 }],
+        })}
+        style={s.protectGainCard}
+      >
+        <Text style={s.protectGainNumber}>{stat.reclaimedDays}</Text>
+        <Text style={s.protectGainUnit}>days back</Text>
+        <Text style={s.protectGainBody}>for prayer, work, study, health, and the people in front of you.</Text>
+      </Reanimated.View>
+    </GuidedSetupShell>
+  );
+}
+
+const APP_BLOCKER_OPTIONS = [
+  { key: 'adult', label: 'Adult content', tone: 'ink' },
+  { key: 'gambling', label: 'Gambling', tone: 'rose' },
+  { key: 'gaming', label: 'Gaming', tone: 'purple' },
+  { key: 'other', label: 'Other traps', tone: 'gold' },
+] as const;
+
+function ProtectAppBlockersSlide({ onNext }: { onNext: () => void }) {
+  const [selected, setSelected] = useState<string[]>(['adult', 'gaming']);
+  const toggle = (key: string) => {
+    runSelectionHaptic();
+    setSelected(prev => (prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key]));
+  };
+
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel="Continue">
+      <GuidedHero
+        eyebrow="App blockers"
+        title="Move addictive apps out of reach."
+        body="Choose what usually pulls you back. We will turn these choices into guardrails later."
+        icon={<SlidersHorizontal s={42} c={GOLD} w={1.8} />}
+      />
+
+      <View style={s.protectBlockerGrid}>
+        {APP_BLOCKER_OPTIONS.map((item, index) => (
+          <ProtectBlockerOption
+            key={item.key}
+            index={index}
+            label={item.label}
+            active={selected.includes(item.key)}
+            onPress={() => toggle(item.key)}
+          />
+        ))}
+      </View>
+    </GuidedSetupShell>
+  );
+}
+
+const WEBSITE_BLOCKER_OPTIONS = [
+  { title: 'Adult sites', examples: 'explicit sites, hidden tabs' },
+  { title: 'Gambling', examples: 'betting, casino, odds' },
+  { title: 'Gaming', examples: 'games, streams, endless loops' },
+  { title: 'Other traps', examples: 'shorts, gossip, doomscrolling' },
+];
+
+function ProtectWebsiteBlockersSlide({ onNext }: { onNext: () => void }) {
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel="Protect focus">
+      <GuidedHero
+        eyebrow="Website blockers"
+        title="Move addictive websites out of reach."
+        body="Far from the eyes, far from the heart. Start with categories, then fine-tune individual websites later."
+        icon={<Target s={42} c={GOLD} w={1.8} />}
+      />
+
+      <View style={s.websiteStack}>
+        {WEBSITE_BLOCKER_OPTIONS.map((item, index) => (
+          <Reanimated.View key={item.title} entering={optionEntrance(index, 120)} style={s.websiteCard}>
+            <View style={s.websiteIcon}><Text style={s.websiteIconText}>{index + 1}</Text></View>
+            <View style={s.websiteCopy}>
+              <Text style={s.websiteTitle}>{item.title}</Text>
+              <Text style={s.websiteExamples}>{item.examples}</Text>
+            </View>
+            <View style={s.websiteSwitch}><View style={s.websiteSwitchKnob} /></View>
+          </Reanimated.View>
+        ))}
+      </View>
+    </GuidedSetupShell>
+  );
+}
+
+function ProtectBlockerOption({
+  label,
+  active,
+  onPress,
+  index,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  index: number;
+}) {
+  return (
+    <Reanimated.View entering={optionEntrance(index, 130)} style={s.protectBlockerWrap}>
+      <TouchableOpacity activeOpacity={0.88} haptic="none" onPress={onPress} style={[s.protectBlockerOption, active && s.protectBlockerOptionActive]}>
+        <View style={[s.protectBlockerCheck, active && s.protectBlockerCheckActive]}>
+          {active ? <CheckSmall s={15} c="#FFFFFF" w={2.6} /> : null}
+        </View>
+        <Text style={[s.protectBlockerLabel, active && s.protectBlockerLabelActive]}>{label}</Text>
+      </TouchableOpacity>
+    </Reanimated.View>
+  );
+}
+
+function ProtectFocusBlockSlide({ onNext }: { onNext: () => void }) {
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel="Complete chapter">
+      <GuidedHero
+        eyebrow="Interruptions"
+        title="Protect one block from being disturbed."
+        body="A quiet window is easier to keep when your phone knows when to stay silent."
+        icon={<Target s={42} c={GOLD} w={1.8} />}
+      />
+
+      <View style={s.focusPreviewCard}>
+        <View style={s.focusPreviewHeader}>
+          <Text style={s.focusPreviewLabel}>Focus block</Text>
+          <Text style={s.focusPreviewTime}>09:00 - 10:30</Text>
+        </View>
+        <View style={s.focusPreviewTimer}>
+          <Text style={s.focusPreviewTimerText}>90</Text>
+          <Text style={s.focusPreviewTimerUnit}>minutes</Text>
+        </View>
+        <View style={s.focusPreviewRow}>
+          <View style={s.focusPreviewPill}><BellRing s={14} c={GOLD} w={1.8} /><Text style={s.focusPreviewPillText}>Do Not Disturb</Text></View>
+          <View style={s.focusPreviewPill}><Clock s={14} c={GOLD} w={1.8} /><Text style={s.focusPreviewPillText}>Focus Timer</Text></View>
+        </View>
+      </View>
+    </GuidedSetupShell>
+  );
+}
+
+function ProtectCompleteSlide({ onNext }: { onNext: () => void }) {
+  useEffect(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  }, []);
+
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel="Build my rhythm">
+      <ProtectSidePrompt
+        motionKey="protect-complete"
+        segments={[
+          { text: 'Your time now has ' },
+          { text: 'guardrails', highlight: true },
+          { text: '.\nNext, we will give that protected time a rhythm.' },
+        ]}
+      />
+
+      <Reanimated.View
+        entering={FadeIn.delay(1420).duration(560).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 18 }, { scale: 0.975 }],
+        })}
+      >
+        <ProtectGuardrailChecklist animate />
+      </Reanimated.View>
+
+      <Reanimated.View
+        entering={FadeIn.delay(2260).duration(560).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 16 }, { scale: 0.98 }],
+        })}
+        style={s.completeChecklist}
+      >
+        {[
+          { label: 'Protect your time', done: true },
+          { label: 'Build your rhythm', done: false },
+          { label: 'Rise again', done: false },
+        ].map((item, index) => (
+          <Reanimated.View key={item.label} entering={optionEntrance(index, 120)} style={[s.completeItem, item.done && s.completeItemDone]}>
+            <View style={[s.completeCheck, item.done && s.completeCheckDone]}>
+              {item.done ? <CheckSmall s={16} c="#FFFFFF" w={2.6} /> : null}
+            </View>
+            <Text style={[s.completeText, item.done && s.completeTextDone]}>{item.label}</Text>
+            {item.done ? <View style={s.completeStrike} /> : null}
+          </Reanimated.View>
+        ))}
+      </Reanimated.View>
+    </GuidedSetupShell>
+  );
+}
+
+type BuildIntroPhase = 'intro' | 'answer';
+
+function BuildIntroSlide({ onNext }: { onNext: () => void }) {
+  const [phase, setPhase] = useState<BuildIntroPhase>('intro');
+  const [reveal, setReveal] = useState(0);
+  const [introReady, setIntroReady] = useState(false);
+  const ctaLabel = phase === 'intro' ? 'How can this help me?' : "Let's go";
+  const ctaVisible = phase === 'intro' ? introReady : reveal >= 2;
+
+  useEffect(() => {
+    setIntroReady(false);
+    const timer = setTimeout(() => setIntroReady(true), 420);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    if (phase === 'answer') {
+      setReveal(0);
+      [180, 1680].forEach((delay, index) => {
+        timers.push(setTimeout(() => setReveal(index + 1), delay));
+      });
+    }
+
+    if (phase === 'intro') {
+      setReveal(0);
+    }
+
+    return () => {
+      timers.forEach(timer => clearTimeout(timer));
+    };
+  }, [phase]);
+
+  const handleNext = () => {
+    if (phase === 'intro') {
+      runSelectionHaptic();
+      setPhase('answer');
+      return;
+    }
+    if (reveal < 2) {
+      setReveal(2);
+      return;
+    }
+    onNext();
+  };
+
+  return (
+    <GuidedSetupShell
+      onNext={handleNext}
+      ctaLabel={ctaLabel}
+      scrollSignal={`${phase}-${reveal}`}
+      autoScrollOnContentChange
+      ctaVisible={ctaVisible}
+    >
+      {introReady && (
+        <ProtectSidePrompt
+          motionKey="build-rhythm-intro"
+          segments={[
+            { text: "Now let's build your " },
+            { text: 'rhythm', highlight: true },
+            { text: '.' },
+          ]}
+        />
+      )}
+
+      {reveal >= 1 && <BuildProductivityChart />}
+      {reveal >= 2 && (
+        <ProtectSidePrompt
+          motionKey="build-rhythm-productive"
+          segments={[
+            { text: "Let's make you " },
+            { text: 'more productive', highlight: true },
+            { text: '.' },
+          ]}
+        />
+      )}
+    </GuidedSetupShell>
+  );
+}
+
+function BuildProductivityChart() {
+  useEffect(() => {
+    runStrongHaptic();
+  }, []);
+
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(700).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 18 }, { scale: 0.965 }],
+      })}
+      style={s.buildProductivityCard}
+    >
+      <Text style={s.buildProductivityKicker}>Written plans win.</Text>
+      <View style={s.buildChartStage}>
+        <View style={s.buildChartGridLine} />
+        <View style={[s.buildChartGridLine, s.buildChartGridLineMiddle]} />
+        <View style={s.buildChartColumns}>
+          <BuildChartColumn label="No plan" value={43} color="#D45E54" />
+          <BuildChartColumn label="Written plan" value={64} color="#3E9F68" featured />
+        </View>
+        <View style={s.buildChartLiftBadge}>
+          <Text style={s.buildChartLiftNumber}>+51%</Text>
+          <Text style={s.buildChartLiftText}>more follow-through</Text>
+        </View>
+      </View>
+      <Text style={s.buildProductivityBody}>A visible plan gives your day somewhere to return.</Text>
+    </Reanimated.View>
+  );
+}
+
+function BuildChartColumn({
+  label,
+  value,
+  color,
+  featured = false,
+}: {
+  label: string;
+  value: number;
+  color: string;
+  featured?: boolean;
+}) {
+  return (
+    <View style={s.buildChartColumn}>
+      <View style={s.buildChartBarTrack}>
+        <Reanimated.View
+          entering={FadeIn.duration(820).withInitialValues({
+            opacity: 0,
+            transform: [{ scaleY: 0.58 }],
+          })}
+          style={[s.buildChartBar, { height: `${value}%`, backgroundColor: color }]}
+        />
+      </View>
+      <Text style={[s.buildChartValue, featured && s.buildChartValueFeatured]}>{value}</Text>
+      <Text style={[s.buildChartLabel, featured && s.buildChartLabelFeatured]}>{label}</Text>
+    </View>
+  );
+}
+
+function BuildBigEventsSlide({ onNext }: { onNext: () => void }) {
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel="Add event">
+      <GuidedHero
+        eyebrow="Big Events"
+        title="Keep important dates in front of you before they become urgent."
+        body="We start with what is coming, because pressure is easier to handle when you can see it early."
+        icon={<Calendar s={42} c={GOLD} w={1.7} />}
+      />
+
+      <View style={s.buildBigEventCard}>
+        <View style={s.buildBigEventIcon}>
+          <NotoEmoji name={normalizeHabitIcon('birthday-cake')} size={28} />
+        </View>
+        <View style={s.buildBigEventCopy}>
+          <Text style={s.buildBigEventLabel}>Big Event</Text>
+          <Text style={s.buildBigEventTitle}>Birthday</Text>
+          <Text style={s.buildBigEventMeta}>In 7 days</Text>
+        </View>
+      </View>
+    </GuidedSetupShell>
+  );
+}
+
+const BUILD_GOALS = ['Prayer rule', 'Fitness', 'Study', 'Reading', 'Work', 'Family'];
+
+function BuildMonthlyGoalsSlide({ onNext }: { onNext: () => void }) {
+  const [selected, setSelected] = useState(['Prayer rule', 'Fitness']);
+  const toggle = (goal: string) => {
+    runSelectionHaptic();
+    setSelected(prev => (prev.includes(goal) ? prev.filter(item => item !== goal) : [...prev, goal]));
+  };
+
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel="Set direction">
+      <GuidedHero
+        eyebrow="Monthly Goals"
+        title="Give your month a direction."
+        body="Goals do not replace daily discipline. They give it somewhere to go."
+        icon={<Target s={42} c={GOLD} w={1.8} />}
+      />
+
+      <View style={s.buildGoalGrid}>
+        {BUILD_GOALS.map((goal, index) => {
+          const active = selected.includes(goal);
+          return (
+            <Reanimated.View key={goal} entering={optionEntrance(index, 120)} style={s.buildGoalWrap}>
+              <TouchableOpacity activeOpacity={0.88} haptic="none" onPress={() => toggle(goal)} style={[s.buildGoalChip, active && s.buildGoalChipActive]}>
+                <Text style={[s.buildGoalText, active && s.buildGoalTextActive]}>{goal}</Text>
+              </TouchableOpacity>
+            </Reanimated.View>
+          );
+        })}
+      </View>
+    </GuidedSetupShell>
+  );
+}
+
+function BuildWeeklyRhythmSlide({ onNext }: { onNext: () => void }) {
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel="Continue">
+      <GuidedHero
+        eyebrow="Weekly Rhythm"
+        title="Let&apos;s set up your weekly rhythm together."
+        body="A week should not feel like seven separate battles. It should have a shape."
+        icon={<Calendar s={42} c={GOLD} w={1.7} />}
+      />
+
+      <View style={s.weekRhythmCard}>
+        {days.map((day, index) => (
+          <Reanimated.View key={day} entering={optionEntrance(index, 110)} style={s.weekColumn}>
+            <Text style={s.weekDay}>{day}</Text>
+            <View style={[s.weekBar, { height: 44 + ((index * 17) % 58) }]} />
+            <View style={s.weekDot} />
+          </Reanimated.View>
+        ))}
+      </View>
+    </GuidedSetupShell>
+  );
+}
+
+function BuildTaskTypesSlide({ onNext }: { onNext: () => void }) {
+  return <TaskTypesSlide onNext={onNext} />;
+}
+
+function taskTypeByKey(key: string) {
+  return TASK_TYPES.find(item => item.key === key) ?? TASK_TYPES[0];
+}
+
+function BuildTaskSetupSlide({
+  onNext,
+  typeKey,
+  eyebrow,
+  title,
+  body,
+  cta,
+  chips,
+}: {
+  onNext: () => void;
+  typeKey: string;
+  eyebrow: string;
+  title: string;
+  body: string;
+  cta: string;
+  chips: string[];
+}) {
+  const preview = taskTypeByKey(typeKey);
+  const [selected, setSelected] = useState(chips[0]);
+
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel={cta}>
+      <GuidedHero
+        eyebrow={eyebrow}
+        title={title}
+        body={body}
+        icon={<ListChecks s={42} c={GOLD} w={1.8} />}
+      />
+
+      <View style={s.buildTaskPreview}>
+        <AnyTaskCard task={preview.task} streak={preview.streak} />
+      </View>
+
+      <View style={s.buildChoiceGrid}>
+        {chips.map((chip, index) => {
+          const active = selected === chip;
+          return (
+            <Reanimated.View key={chip} entering={optionEntrance(index, 130)} style={s.buildChoiceWrap}>
+              <TouchableOpacity activeOpacity={0.88} haptic="none" onPress={() => {
+                runSelectionHaptic();
+                setSelected(chip);
+              }} style={[s.buildChoice, active && s.buildChoiceActive]}>
+                <Text style={[s.buildChoiceText, active && s.buildChoiceTextActive]}>{chip}</Text>
+              </TouchableOpacity>
+            </Reanimated.View>
+          );
+        })}
+      </View>
+    </GuidedSetupShell>
+  );
+}
+
+function BuildHabitsSlide({ onNext }: { onNext: () => void }) {
+  return (
+    <BuildTaskSetupSlide
+      onNext={onNext}
+      typeKey="habit"
+      eyebrow="Habits"
+      title="Turn repeated actions into a stable rhythm."
+      body="Start with one small action you want to repeat until it becomes part of your day."
+      cta="Add habit"
+      chips={['Morning walk', 'Workout', 'Read 10 pages', 'No phone morning']}
+    />
+  );
+}
+
+function BuildSpiritualTasksSlide({ onNext }: { onNext: () => void }) {
+  return (
+    <BuildTaskSetupSlide
+      onNext={onNext}
+      typeKey="spiritual"
+      eyebrow="Spiritual Tasks"
+      title="Keep prayer, reading, and spiritual discipline visible in your week."
+      body="Your spiritual life should not live only in memory. Give it a clear place."
+      cta="Add spiritual task"
+      chips={['Morning prayer', 'Scripture reading', 'Jesus Prayer', 'Evening examen']}
+    />
+  );
+}
+
+function BuildRoutineTasksSlide({ onNext }: { onNext: () => void }) {
+  return (
+    <BuildTaskSetupSlide
+      onNext={onNext}
+      typeKey="routine"
+      eyebrow="Routine Tasks"
+      title="Give repeated responsibilities a clear place."
+      body="Morning and evening routines make ordinary responsibilities easier to return to."
+      cta="Add routine"
+      chips={['Plan the day', 'Evening reset', 'Clean desk', 'Prepare tomorrow']}
+    />
+  );
+}
+
+function BuildChallengesSlide({ onNext }: { onNext: () => void }) {
+  return (
+    <BuildTaskSetupSlide
+      onNext={onNext}
+      typeKey="challenge"
+      eyebrow="Challenges"
+      title="Choose a short battle and finish it."
+      body="A challenge gives a serious season a beginning, an end, and a visible commitment."
+      cta="Pick challenge"
+      chips={['7-day prayer', 'No social media', 'Reading plan', 'Cold shower']}
+    />
+  );
+}
+
+function BuildQuickTasksSlide({ onNext }: { onNext: () => void }) {
+  return (
+    <BuildTaskSetupSlide
+      onNext={onNext}
+      typeKey="quick"
+      eyebrow="Quick Tasks"
+      title="Capture small things without breaking your flow."
+      body="Not everything needs a system. Some things just need to be caught quickly."
+      cta="Add quick task"
+      chips={['Reply to Mark', 'Buy candles', 'Send file', 'Call back']}
+    />
+  );
+}
+
+function BuildMyRoutineSlide({ onNext }: { onNext: () => void }) {
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel="Preview Home">
+      <GuidedHero
+        eyebrow="My Routine"
+        title="This is where your week lives."
+        body="Use My Routine to adjust habits, tasks, spiritual commitments, and weekly structure in one place."
+        icon={<ListChecks s={42} c={GOLD} w={1.8} />}
+      />
+
+      <View style={s.myRoutineMock}>
+        {['Morning', 'Work block', 'Evening', 'Spiritual'].map((label, index) => (
+          <Reanimated.View key={label} entering={optionEntrance(index, 120)} style={s.myRoutineRow}>
+            <View style={s.myRoutineTime}><Text style={s.myRoutineTimeText}>{index === 0 ? '07:00' : index === 1 ? '10:00' : index === 2 ? '20:30' : '21:00'}</Text></View>
+            <View style={s.myRoutineCopy}>
+              <Text style={s.myRoutineTitle}>{label}</Text>
+              <Text style={s.myRoutineMeta}>{index + 2} planned items</Text>
+            </View>
+            <View style={s.myRoutineHandle} />
+          </Reanimated.View>
+        ))}
+      </View>
+    </GuidedSetupShell>
+  );
+}
+
+function BuildHomePreviewSlide({ onNext }: { onNext: () => void }) {
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel="Complete build">
+      <GuidedHero
+        eyebrow="Home"
+        title="Your first day is no longer empty."
+        body="The pieces you chose now have a place to appear when the app opens."
+        icon={<Home s={42} c={GOLD} w={1.8} />}
+      />
+
+      <View style={s.buildHomePreviewShell}>
+        <ValueOrganizePhone />
+      </View>
+    </GuidedSetupShell>
+  );
+}
+
+function BuildCompleteSlide({ onNext }: { onNext: () => void }) {
+  useEffect(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  }, []);
+
+  return (
+    <GuidedSetupShell onNext={onNext} ctaLabel="Rise again">
+      <GuidedHero
+        eyebrow="Chapter complete"
+        title="Your rhythm is in place."
+        body="You can see the cost of distraction. Your week has structure. Next, we keep what matters close."
+        icon={<CheckSmall s={42} c={GOLD} w={2.2} />}
+      />
+
+      <View style={s.completeChecklist}>
+        {[
+          { label: 'Protect your time', done: true },
+          { label: 'Build your rhythm', done: true },
+          { label: 'Rise again', done: false },
+        ].map((item, index) => (
+          <Reanimated.View key={item.label} entering={optionEntrance(index, 120)} style={[s.completeItem, item.done && s.completeItemDone]}>
+            <View style={[s.completeCheck, item.done && s.completeCheckDone]}>
+              {item.done ? <CheckSmall s={16} c="#FFFFFF" w={2.6} /> : null}
+            </View>
+            <Text style={[s.completeText, item.done && s.completeTextDone]}>{item.label}</Text>
+            {item.done ? <View style={s.completeStrike} /> : null}
+          </Reanimated.View>
+        ))}
+      </View>
+    </GuidedSetupShell>
+  );
+}
+
 const SCREEN_TIME_OPTIONS = [
   { key: 'lt2', label: 'Under 2h', hours: 2, days: 30 },
   { key: '2_4', label: '2-4h', hours: 4, days: 61 },
@@ -1457,7 +5921,7 @@ function FocusCostSlide({ onNext }: { onNext: () => void }) {
 
       <View style={s.screenTimeCard}>
         <Text style={s.screenTimeNumber}>{active.days}</Text>
-        <Text style={s.screenTimeUnit}>full days this year</Text>
+        <Text style={s.screenTimeUnit}>days every year</Text>
         <Text style={s.screenTimeBody}>
           At about {active.hours} hours per day, distraction can quietly become {active.days} full days in a year.
         </Text>
@@ -1712,7 +6176,9 @@ function OptionCard({
         </Reanimated.View>
         <View style={s.optionCopy}>
           <Text style={[s.optionTitle, variant === 'question' && s.questionOptionTitle]}>{option.title}</Text>
-          <Text style={[s.optionBody, variant === 'question' && s.questionOptionBody]}>{option.body}</Text>
+          {option.body ? (
+            <Text style={[s.optionBody, variant === 'question' && s.questionOptionBody]}>{option.body}</Text>
+          ) : null}
         </View>
         <Reanimated.View style={[s.optionBadge, badgeStyle]}>
           <CheckSmall s={14} c="#FFFFFF" w={2.4} />
@@ -1751,6 +6217,7 @@ function QuestionPrompt({
       easing: Easing.out(Easing.cubic),
     });
     const timer = setTimeout(() => {
+      runBubbleHaptic();
       bubbleIntro.value = withTiming(1, {
         duration: 620,
         easing: Easing.out(Easing.cubic),
@@ -1831,10 +6298,6 @@ function QuestionPrompt({
 
   return (
     <Reanimated.View entering={FadeIn.duration(320)} style={s.questionPrompt}>
-      <View style={s.questionPromptMeta}>
-        <Text style={s.questionPromptEyebrow}>{copy.eyebrow}</Text>
-      </View>
-
       <View style={s.promptRow}>
         <Reanimated.View style={mascotMotionStyle}>
           <View style={s.mascotShell}>
@@ -1842,7 +6305,7 @@ function QuestionPrompt({
             <Image source={APP_LOGO} style={s.mascotLogo} resizeMode="cover" />
           </View>
         </Reanimated.View>
-        <Reanimated.View style={[s.speechBubble, speechBubbleIntroStyle]}>
+        <Reanimated.View style={[s.speechBubble, s.questionSpeechBubble, speechBubbleIntroStyle]}>
           <View style={s.speechTail} />
           <Reanimated.Text
             key={message}
@@ -1876,7 +6339,7 @@ function QuestionSlide({
   const selectedResponse = hasSelection
     ? options.find(option => option.value === selectedValues[selectedValues.length - 1])?.response
     : undefined;
-  const isLongList = step === 'tradition' || step === 'reason';
+  const isLongList = step === 'tradition' || step === 'reason' || step === 'valueReflect';
   const shouldScroll = isLongList || height < 720;
 
   const questionContent = (
@@ -1887,7 +6350,7 @@ function QuestionSlide({
         {options.map((option, optionIndex) => {
           const active = selectedValues.includes(option.value);
           return (
-            <Reanimated.View key={option.value} entering={optionEntrance(optionIndex)}>
+            <Reanimated.View key={option.value} entering={optionEntrance(optionIndex, 1140)}>
               <OptionCard
                 option={option}
                 active={active}
@@ -2207,9 +6670,10 @@ export default function OnboardingView() {
   const steps = useMemo(() => stepOrder(answers), [answers]);
   const [index, setIndex] = useState(0);
   const activeStep = steps[Math.min(index, steps.length - 1)];
-  const activeProgress = progressForStep(activeStep);
+  const activeProgress = progressForStep(activeStep, answers);
   const screenMotion = useSharedValue(1);
   const preloadExit = useSharedValue(0);
+  const previousStepRef = useRef(activeStep);
 
   useEffect(() => {
     preloadAchievementFeedbackSound();
@@ -2230,8 +6694,27 @@ export default function OnboardingView() {
   }, [preloadExit]);
 
   useEffect(() => {
+    const previousStep = previousStepRef.current;
+    previousStepRef.current = activeStep;
+
+    if (isValueStep(previousStep) && isValueStep(activeStep)) {
+      screenMotion.value = 1;
+      return;
+    }
+
     screenMotion.value = 0;
-    screenMotion.value = withTiming(1, { duration: 260 });
+    screenMotion.value = withTiming(1, {
+      duration:
+        previousStep === 'setupStart' && (activeStep === 'protectPain' || activeStep === 'buildIntro')
+          ? 760
+          : previousStep === 'valueFocus' && activeStep === 'valueReflect'
+            ? 430
+            : 260,
+      easing:
+        previousStep === 'setupStart' && (activeStep === 'protectPain' || activeStep === 'buildIntro')
+          ? Easing.bezier(0.16, 1, 0.28, 1)
+          : Easing.out(Easing.cubic),
+    });
   }, [activeStep, screenMotion]);
 
   useEffect(() => {
@@ -2242,7 +6725,7 @@ export default function OnboardingView() {
 
   useEffect(() => {
     if (activeStep !== 'processing') return undefined;
-    const delay = 2100;
+    const delay = 1800;
     const timer = setTimeout(() => {
       runAdvanceHaptic();
       setIndex(prev => Math.min(steps.length - 1, prev + 1));
@@ -2281,7 +6764,17 @@ export default function OnboardingView() {
       if (step === 'tradition') return { ...prev, tradition: value as TraditionAnswer };
       if (step === 'age') return { ...prev, age: value as AgeAnswer };
       if (step === 'gender') return { ...prev, gender: value as GenderAnswer };
+      if (step === 'commitment') return { ...prev, commitment: value as CommitmentAnswer };
       if (step === 'pillars') return { ...prev, primaryPillar: value as PillarAnswer };
+      if (step === 'valueReflect') {
+        const nextValue = value as ValueReflectAnswer;
+        const current = prev.valueReflection ?? [];
+        const exists = current.includes(nextValue);
+        return {
+          ...prev,
+          valueReflection: exists ? current.filter(item => item !== nextValue) : [...current, nextValue],
+        };
+      }
       if (step === 'reason') {
         const nextValue = value as ReasonAnswer;
         const current = prev.reasons ?? [];
@@ -2296,6 +6789,16 @@ export default function OnboardingView() {
       return prev;
     });
   };
+  const onNameChange = (name: string) => {
+    setAnswers(prev => ({ ...prev, displayName: name }));
+  };
+  const onScreenTimeHoursChange = useCallback((hours: number) => {
+    setAnswers(prev => ({ ...prev, screenTimeHours: hours }));
+  }, []);
+  const onFirstChapterChange = useCallback((chapter: OnboardingChapter) => {
+    runSelectionHaptic();
+    setAnswers(prev => ({ ...prev, firstChapter: chapter }));
+  }, []);
 
   const stageStyle = useAnimatedStyle(() => ({
     opacity: interpolate(screenMotion.value, [0, 1], [0.82, 1]),
@@ -2307,19 +6810,25 @@ export default function OnboardingView() {
       { scale: interpolate(preloadExit.value, [0, 1], [1, 0.985]) },
     ],
   }));
-  const hideTopChrome = isGuidedWalkthroughStep(activeStep);
+  const valueStepActive = isValueStep(activeStep);
+  const hideTopChrome =
+    activeStep === 'nameIntro' ||
+    activeStep === 'processing' ||
+    activeStep === 'valueReflect' ||
+    activeStep === 'commitment' ||
+    valueStepActive ||
+    isGuidedWalkthroughStep(activeStep);
   const visibleProgress = hideTopChrome ? null : activeProgress;
   const showBack =
     !hideTopChrome &&
     activeStep !== 'welcome' &&
     activeStep !== 'questionIntro' &&
-    activeStep !== 'processing' &&
     activeStep !== 'bridge' &&
     activeStep !== 'organizeIntro';
   const showTopSkip = visibleProgress !== null;
-  const edgeToEdgeMessage = activeStep === 'bridge' || activeStep === 'organizeIntro' || activeStep === 'taskSetup';
+  const edgeToEdgeMessage = activeStep === 'nameIntro' || valueStepActive || activeStep === 'bridge' || activeStep === 'organizeIntro' || activeStep === 'taskSetup';
   const stageBottomPadding = activeStep === 'questionIntro' || edgeToEdgeMessage ? 0 : insets.bottom + 8;
-  const stageTopPadding = hideTopChrome ? insets.top + 12 : 0;
+  const stageTopPadding = edgeToEdgeMessage ? 0 : hideTopChrome ? insets.top + 12 : 0;
   const stageHorizontalPadding = edgeToEdgeMessage ? 0 : 20;
 
   if (preloadPhase === 'only') {
@@ -2328,8 +6837,83 @@ export default function OnboardingView() {
 
   const renderStep = () => {
     if (activeStep === 'welcome') return <WelcomeSlide ready={preloadPhase === 'done'} onNext={goNext} />;
-    if (activeStep === 'questionIntro') return <AutoMessageSlide bottomInset={insets.bottom} onNext={goNext} />;
+    if (activeStep === 'nameIntro') {
+      return (
+        <NameIntroSlide
+          value={answers.displayName}
+          bottomInset={insets.bottom}
+          onNameChange={onNameChange}
+          onNext={goNext}
+        />
+      );
+    }
+    if (isValueStep(activeStep)) {
+      return (
+        <ValuePreviewSlide
+          step={activeStep}
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          onNext={goNext}
+          onBack={goBack}
+        />
+      );
+    }
+    if (activeStep === 'questionIntro') return <AutoMessageSlide bottomInset={insets.bottom} displayName={answers.displayName} onNext={goNext} />;
     if (activeStep === 'processing') return <ProcessingSlide />;
+    if (activeStep === 'setupStart') {
+      return (
+        <SetupStartSlide
+          selected={answers.firstChapter}
+          displayName={answers.displayName}
+          onSelect={onFirstChapterChange}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'protectIntro') return <ProtectIntroSlide onNext={goNext} />;
+    if (activeStep === 'protectPain') {
+      return (
+        <ProtectPainSlide
+          hours={answers.screenTimeHours}
+          onChange={onScreenTimeHoursChange}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'protectScreenTime') {
+      return (
+        <ProtectScreenTimeSlide
+          hours={answers.screenTimeHours}
+          onChange={onScreenTimeHoursChange}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'protectCalculation') return <ProtectCalculationSlide screenTimeHours={answers.screenTimeHours} onNext={goNext} />;
+    if (activeStep === 'protectReframe') return <ProtectReframeSlide screenTimeHours={answers.screenTimeHours} onNext={goNext} />;
+    if (activeStep === 'protectAppBlockers') return <ProtectAppBlockersSlide onNext={goNext} />;
+    if (activeStep === 'protectWebsiteBlockers') return <ProtectWebsiteBlockersSlide onNext={goNext} />;
+    if (activeStep === 'protectFocusBlock') return <ProtectFocusBlockSlide onNext={goNext} />;
+    if (activeStep === 'protectComplete') return <ProtectCompleteSlide onNext={goNext} />;
+    if (activeStep === 'buildIntro') return <BuildIntroSlide onNext={goNext} />;
+    if (activeStep === 'buildBigEvents') return <BuildBigEventsSlide onNext={goNext} />;
+    if (activeStep === 'buildMonthlyGoals') return <BuildMonthlyGoalsSlide onNext={goNext} />;
+    if (activeStep === 'buildWeeklyRhythm') return <BuildWeeklyRhythmSlide onNext={goNext} />;
+    if (activeStep === 'buildTaskTypes') return <BuildTaskTypesSlide onNext={goNext} />;
+    if (activeStep === 'buildHabits') return <BuildHabitsSlide onNext={goNext} />;
+    if (activeStep === 'buildSpiritualTasks') return <BuildSpiritualTasksSlide onNext={goNext} />;
+    if (activeStep === 'buildRoutineTasks') return <BuildRoutineTasksSlide onNext={goNext} />;
+    if (activeStep === 'buildChallenges') return <BuildChallengesSlide onNext={goNext} />;
+    if (activeStep === 'buildQuickTasks') return <BuildQuickTasksSlide onNext={goNext} />;
+    if (activeStep === 'buildMyRoutine') return <BuildMyRoutineSlide onNext={goNext} />;
+    if (activeStep === 'buildHomePreview') return <BuildHomePreviewSlide onNext={goNext} />;
+    if (activeStep === 'buildComplete') return <BuildCompleteSlide onNext={goNext} />;
+    if (activeStep === 'chapterCheckpointFirst') {
+      return <ChapterCheckpointSlide firstChapter={answers.firstChapter} onNext={goNext} />;
+    }
+    if (activeStep === 'chapterCheckpointFinal') {
+      return <ChapterCheckpointSlide firstChapter={answers.firstChapter} final onNext={goNext} />;
+    }
     if (activeStep === 'bridge') return <BridgeSlide bottomInset={insets.bottom} onNext={goNext} />;
     if (activeStep === 'organizeIntro') return <OrganizeIntroSlide bottomInset={insets.bottom} onNext={goNext} />;
     if (activeStep === 'pillars') {
@@ -2481,13 +7065,6 @@ const s = StyleSheet.create({
     height: 112,
     borderRadius: 30,
   },
-  preloadBrand: {
-    marginTop: 15,
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 3.4,
-    color: 'rgba(25,23,20,0.46)',
-  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2558,6 +7135,1034 @@ const s = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
   },
+  valueSlide: {
+    flex: 1,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  valueCarouselViewport: {
+    flex: 1,
+    overflow: 'hidden',
+    zIndex: 2,
+  },
+  valueCarouselTrack: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  valuePage: {
+    flex: 1,
+  },
+  valueBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  valueBackdropBandTop: {
+    position: 'absolute',
+    top: 74,
+    left: 28,
+    right: 28,
+    height: 118,
+    borderRadius: 70,
+    backgroundColor: 'rgba(197,160,89,0.045)',
+    transform: [{ rotate: '-7deg' }],
+  },
+  valueBackdropBandBottom: {
+    position: 'absolute',
+    bottom: -110,
+    left: -88,
+    right: -88,
+    height: 310,
+    borderRadius: 170,
+    backgroundColor: 'rgba(197,160,89,0.18)',
+    transform: [{ rotate: '8deg' }],
+  },
+  valueBackdropLineOne: {
+    position: 'absolute',
+    top: '50%',
+    left: 36,
+    right: 36,
+    height: 1,
+    backgroundColor: 'rgba(197,160,89,0.10)',
+    transform: [{ rotate: '-5deg' }],
+  },
+  valueBackdropLineTwo: {
+    position: 'absolute',
+    top: '54%',
+    left: 54,
+    right: 54,
+    height: 1,
+    backgroundColor: 'rgba(25,23,20,0.035)',
+    transform: [{ rotate: '-5deg' }],
+  },
+  valueCopy: {
+    paddingHorizontal: 25,
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  valueTitleShell: {
+    maxWidth: 344,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 10,
+  },
+  valueTitleNumber: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#17130F',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.35)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  valueTitleNumberText: {
+    fontFamily: F.sansBold,
+    fontSize: 13,
+    color: '#F8E8BE',
+  },
+  valueTitleTextWrap: {
+    alignItems: 'center',
+    flexShrink: 1,
+  },
+  valueTitle: {
+    maxWidth: 286,
+    fontFamily: F.serifSemiBold,
+    fontSize: 29,
+    lineHeight: 33,
+    textAlign: 'center',
+    color: INK,
+  },
+  valueTitleUnderline: {
+    marginTop: 5,
+    width: 92,
+    height: 3,
+    borderRadius: 99,
+    backgroundColor: GOLD,
+    opacity: 0.72,
+  },
+  valueSubtitleFrame: {
+    marginTop: 9,
+    width: '100%',
+    maxWidth: 356,
+    minHeight: 34,
+    paddingHorizontal: 6,
+    paddingVertical: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  valueSubtitleLine: {
+    maxWidth: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'baseline',
+    columnGap: 5,
+    rowGap: 0,
+    transform: [{ translateY: -1 }],
+  },
+  valueSubtitleWord: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 18.6,
+    lineHeight: 24,
+    color: INK,
+  },
+  valueSubtitleWordUnderline: {
+    textDecorationLine: 'underline',
+    textDecorationColor: GOLD,
+    textDecorationStyle: 'solid',
+  },
+  valuePhoneStage: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 12,
+    paddingBottom: 88,
+    zIndex: 2,
+  },
+  valuePhoneOuter: {
+    width: 270,
+    height: 526,
+    borderRadius: 58,
+    backgroundColor: '#0F0E0D',
+    padding: 4.5,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.70)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 24 },
+    shadowOpacity: 0.20,
+    shadowRadius: 38,
+    elevation: 12,
+  },
+  valuePhoneSideButtonLeft: {
+    position: 'absolute',
+    left: -3,
+    top: 104,
+    width: 4,
+    height: 54,
+    borderRadius: 4,
+    backgroundColor: '#2A2622',
+  },
+  valuePhoneSideButtonRightTop: {
+    position: 'absolute',
+    right: -3,
+    top: 122,
+    width: 4,
+    height: 42,
+    borderRadius: 4,
+    backgroundColor: '#2A2622',
+  },
+  valuePhoneSideButtonRightBottom: {
+    position: 'absolute',
+    right: -3,
+    top: 176,
+    width: 4,
+    height: 58,
+    borderRadius: 4,
+    backgroundColor: '#2A2622',
+  },
+  valuePhoneBezel: {
+    flex: 1,
+    borderRadius: 53,
+    padding: 5,
+    backgroundColor: '#1B1815',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  valuePhoneNotch: {
+    position: 'absolute',
+    top: 14,
+    left: '50%',
+    marginLeft: -48,
+    width: 96,
+    height: 27,
+    borderRadius: 999,
+    backgroundColor: '#050505',
+    zIndex: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 8,
+  },
+  valuePhoneSpeaker: {
+    width: 38,
+    height: 3.5,
+    borderRadius: 4,
+    backgroundColor: '#171717',
+  },
+  valuePhoneCamera: {
+    width: 7.5,
+    height: 7.5,
+    borderRadius: 4,
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#2B3442',
+  },
+  valuePhoneScreen: {
+    flex: 1,
+    borderRadius: 48,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    paddingHorizontal: 13,
+    paddingTop: 38,
+    paddingBottom: 13,
+  },
+  valuePhoneStatus: {
+    height: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  valuePhoneTime: {
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    color: INK,
+  },
+  valuePhoneBrand: {
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 1.8,
+    color: 'rgba(25,23,20,0.42)',
+  },
+  valuePhoneContent: {
+    flex: 1,
+    paddingTop: 14,
+  },
+  valueProtectPhone: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingTop: 1,
+    paddingBottom: 1,
+  },
+  valueProtectMetricCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    minHeight: 134,
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    shadowColor: '#C5A059',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.10,
+    shadowRadius: 27,
+    elevation: 2,
+  },
+  valueProtectMetricTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 6,
+  },
+  valueProtectMetricEyebrow: {
+    flex: 1,
+    fontFamily: F.sansBold,
+    fontSize: 8.4,
+    letterSpacing: 1.15,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.58)',
+  },
+  valueProtectMetricRow: {
+    marginTop: 5,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    columnGap: 10,
+  },
+  valueProtectMetric: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 58,
+    lineHeight: 60,
+    color: INK,
+  },
+  valueProtectMetricSuffix: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 31,
+    lineHeight: 36,
+    color: INK,
+  },
+  valueProtectMetricCopy: {
+    flex: 1,
+    paddingBottom: 7,
+  },
+  valueProtectMetricUnit: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: GOLD,
+  },
+  valueProtectMetricSub: {
+    marginTop: 2,
+    fontFamily: F.sansMedium,
+    fontSize: 9.2,
+    lineHeight: 11.5,
+    color: 'rgba(25,23,20,0.50)',
+  },
+  valueProtectTickPanel: {
+    marginTop: 6,
+    borderRadius: 15,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.68)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.045)',
+  },
+  valueProtectHourGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 3,
+  },
+  valueProtectHourTick: {
+    width: 5.5,
+    height: 9,
+    borderRadius: 999,
+    backgroundColor: 'rgba(25,23,20,0.105)',
+  },
+  valueProtectHourTickActive: {
+    backgroundColor: '#BE123C',
+    shadowColor: '#BE123C',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  valueProtectTickLegend: {
+    marginTop: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  valueProtectTickLegendActive: {
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: '#BE123C',
+  },
+  valueProtectTickLegendMuted: {
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.36)',
+  },
+  valueProtectStatGrid: {
+    marginTop: 7,
+    flexDirection: 'row',
+    columnGap: 8,
+  },
+  valueProtectStat: {
+    position: 'relative',
+    overflow: 'hidden',
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 17,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.06)',
+  },
+  valueProtectStatGlow: {
+    position: 'absolute',
+    right: -18,
+    top: -18,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(190,18,60,0.055)',
+  },
+  valueProtectStatValue: {
+    fontFamily: F.sansBold,
+    fontSize: 27,
+    lineHeight: 29,
+    color: INK,
+  },
+  valueProtectStatLabel: {
+    marginTop: 2,
+    fontFamily: F.sansMedium,
+    fontSize: 8.8,
+    lineHeight: 11,
+    color: 'rgba(25,23,20,0.54)',
+  },
+  valueProtectLifetimeCard: {
+    marginTop: 7,
+    minHeight: 102,
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#17130F',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.35)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.16,
+    shadowRadius: 28,
+    elevation: 3,
+  },
+  valueProtectLifetimeLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 8.4,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: 'rgba(248,232,190,0.70)',
+  },
+  valueProtectLifetimeValue: {
+    marginTop: 4,
+    fontFamily: F.serifSemiBold,
+    fontSize: 37,
+    lineHeight: 39,
+    color: '#F8E8BE',
+  },
+  valueProtectLifetimeText: {
+    marginTop: 3,
+    maxWidth: 190,
+    fontFamily: F.sansMedium,
+    fontSize: 8.8,
+    lineHeight: 12,
+    textAlign: 'center',
+    color: 'rgba(255,255,255,0.66)',
+  },
+  valueProtectBlockerCard: {
+    marginTop: 7,
+    borderRadius: 19,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.05,
+    shadowRadius: 18,
+    elevation: 2,
+  },
+  valueProtectBlockerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 7,
+    marginBottom: 7,
+  },
+  valueProtectBlockerTitle: {
+    flex: 1,
+    fontFamily: F.sansBold,
+    fontSize: 8.8,
+    lineHeight: 11,
+    letterSpacing: 0.2,
+    color: INK,
+  },
+  valueProtectBlockerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+  },
+  valueProtectBlockerPill: {
+    minHeight: 22,
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 5,
+    borderWidth: 1,
+  },
+  valueProtectBlockerPillRose: {
+    backgroundColor: '#FFF0F5',
+    borderColor: 'rgba(190,18,60,0.12)',
+  },
+  valueProtectBlockerPillPurple: {
+    backgroundColor: '#F5F3FF',
+    borderColor: 'rgba(109,40,217,0.12)',
+  },
+  valueProtectBlockerPillGold: {
+    backgroundColor: '#FFF7E8',
+    borderColor: 'rgba(197,160,89,0.16)',
+  },
+  valueProtectBlockerPillInk: {
+    backgroundColor: '#F5F4F0',
+    borderColor: 'rgba(25,23,20,0.10)',
+  },
+  valueProtectBlockerDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  valueProtectBlockerDotRose: {
+    backgroundColor: '#BE123C',
+  },
+  valueProtectBlockerDotPurple: {
+    backgroundColor: '#6D28D9',
+  },
+  valueProtectBlockerDotGold: {
+    backgroundColor: GOLD,
+  },
+  valueProtectBlockerDotInk: {
+    backgroundColor: '#17130F',
+  },
+  valueProtectBlockerText: {
+    fontFamily: F.sansBold,
+    fontSize: 7.8,
+    color: 'rgba(25,23,20,0.72)',
+  },
+  valueHomeScreen: {
+    flex: 1,
+    paddingTop: 0,
+  },
+  valueMonthHeader: {
+    height: 34,
+    marginHorizontal: -4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  valueHomeIconButton: {
+    width: 25,
+    height: 25,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5F4F0',
+  },
+  valueMonthCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  valueMonthNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 8,
+  },
+  valueMonthTitle: {
+    fontFamily: F.serifMedium,
+    fontSize: 20,
+    lineHeight: 22,
+    color: '#BE123C',
+  },
+  valueMonthYear: {
+    marginTop: -1,
+    fontFamily: F.sansBold,
+    fontSize: 6.4,
+    letterSpacing: 1.4,
+    color: 'rgba(197,160,89,0.74)',
+  },
+  valueDateRail: {
+    marginTop: 2,
+    marginHorizontal: -8,
+    marginBottom: 6,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  valueDatePill: {
+    position: 'relative',
+    width: 27,
+    height: 38,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  valueDatePillActive: {
+    shadowColor: '#A87E33',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  valueDateSelectedFillWrap: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  valueDateSelectedFill: {
+    flex: 1,
+    borderRadius: 14,
+  },
+  valueDateSelectedSheen: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    height: '42%',
+    borderTopLeftRadius: 13,
+    borderTopRightRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  valueDateSelectedRim: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 14,
+    borderWidth: 0.8,
+    borderColor: 'rgba(150,108,40,0.30)',
+  },
+  valueDateDay: {
+    fontFamily: F.serifMediumItalic,
+    fontSize: 6.8,
+    lineHeight: 8,
+    color: 'rgba(25,23,20,0.42)',
+  },
+  valueDateDayActive: {
+    fontFamily: F.serifMediumItalic,
+    color: 'rgba(255,255,255,0.72)',
+  },
+  valueDateNumber: {
+    marginTop: 2,
+    fontFamily: F.serifSemiBold,
+    fontSize: 12.5,
+    lineHeight: 14,
+    color: INK,
+  },
+  valueDateNumberActive: {
+    color: '#FFFFFF',
+  },
+  valueVerseBlock: {
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  valueVerseText: {
+    maxWidth: 198,
+    fontFamily: F.serifMediumItalic,
+    fontSize: 10.5,
+    lineHeight: 15,
+    textAlign: 'center',
+    color: '#776E64',
+  },
+  valueVerseRef: {
+    marginTop: 4,
+    fontFamily: F.sansBold,
+    fontSize: 6.8,
+    letterSpacing: 1.8,
+    color: GOLD,
+  },
+  valueTasksHeader: {
+    minHeight: 30,
+    marginHorizontal: -8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  valueTasksRule: {
+    width: 68,
+    height: 1.3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(197,160,89,0.22)',
+  },
+  valueBigEventsHead: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    marginHorizontal: -8,
+    marginBottom: 4,
+  },
+  valueBigEventsHeading: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 12.8,
+    lineHeight: 16,
+    color: INK,
+  },
+  valueBigEventsSub: {
+    fontFamily: F.sansBold,
+    fontSize: 6.7,
+    letterSpacing: 1,
+    color: '#A8A29E',
+    textTransform: 'uppercase',
+  },
+  valueBigEventCard: {
+    minHeight: 34,
+    borderRadius: 12,
+    paddingLeft: 5,
+    paddingRight: 10,
+    paddingVertical: 3,
+    marginHorizontal: -8,
+    marginBottom: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EDE9E0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 1,
+  },
+  valueBigEventIconBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#BE123C1F',
+  },
+  valueBigEventCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  valueBigEventTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 12.8,
+    lineHeight: 15,
+    color: INK,
+  },
+  valueBigEventCount: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    columnGap: 3,
+    flexShrink: 0,
+  },
+  valueBigEventCountNum: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 13.5,
+    lineHeight: 15,
+    color: '#BE123C',
+  },
+  valueBigEventCountLabel: {
+    fontFamily: F.sansMedium,
+    fontSize: 7.2,
+    color: '#A8A29E',
+  },
+  valueHomeSectionTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 15,
+    lineHeight: 18,
+    color: INK,
+  },
+  valueHomeSectionMeta: {
+    marginTop: 2,
+    fontFamily: F.sansMedium,
+    fontSize: 7.6,
+    lineHeight: 10,
+    color: 'rgba(25,23,20,0.48)',
+  },
+  valueHomeTaskStack: {
+    marginTop: 1,
+    marginHorizontal: -8,
+    alignItems: 'center',
+  },
+  valueMiniTaskFrame: {
+    width: '100%',
+    height: 32.2,
+    marginBottom: 1.2,
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  valueMiniTaskScale: {
+    width: 405,
+    transformOrigin: 'top center',
+    transform: [{ scale: 0.58 }],
+  },
+  valuePhoneHeading: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 25,
+    lineHeight: 29,
+    color: INK,
+    marginBottom: 14,
+  },
+  valuePhoneRow: {
+    minHeight: 60,
+    borderRadius: 20,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+  },
+  valuePhoneRowIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  valueToneGold: {
+    backgroundColor: 'rgba(197,160,89,0.14)',
+  },
+  valueTonePurple: {
+    backgroundColor: 'rgba(139,92,246,0.13)',
+  },
+  valueToneRose: {
+    backgroundColor: 'rgba(225,29,72,0.11)',
+  },
+  valueToneGreen: {
+    backgroundColor: 'rgba(22,163,74,0.10)',
+  },
+  valueToneInk: {
+    backgroundColor: 'rgba(25,23,20,0.07)',
+  },
+  valuePhoneRowCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  valuePhoneRowTitle: {
+    fontFamily: F.serifMedium,
+    fontSize: 15.5,
+    lineHeight: 18.5,
+    color: INK,
+  },
+  valuePhoneRowMeta: {
+    marginTop: 2,
+    fontFamily: F.sansBold,
+    fontSize: 8.5,
+    letterSpacing: 0.8,
+    color: 'rgba(25,23,20,0.42)',
+    textTransform: 'uppercase',
+  },
+  valuePhoneRowCheck: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: 'rgba(197,160,89,0.34)',
+  },
+  valuePhoneGoalCard: {
+    marginTop: 4,
+    borderRadius: 21,
+    padding: 14,
+    backgroundColor: '#FFF7E8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+  },
+  valuePhoneGoalLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 1.2,
+    color: GOLD,
+    textTransform: 'uppercase',
+  },
+  valuePhoneGoalTitle: {
+    marginTop: 5,
+    fontFamily: F.serifSemiBold,
+    fontSize: 16.5,
+    lineHeight: 20,
+    color: INK,
+  },
+  valueWeekBars: {
+    height: 112,
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    marginBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    columnGap: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+  },
+  valueWeekBarTrack: {
+    flex: 1,
+    height: '100%',
+    borderRadius: 999,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+    backgroundColor: 'rgba(25,23,20,0.045)',
+  },
+  valueWeekBarFill: {
+    borderRadius: 999,
+    backgroundColor: '#8B5CF6',
+  },
+  valueFocusTimer: {
+    height: 154,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    backgroundColor: '#1C1917',
+  },
+  valueFocusTime: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 50,
+    lineHeight: 54,
+    color: '#FFFFFF',
+  },
+  valueFocusLabel: {
+    marginTop: 4,
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 1,
+    color: 'rgba(255,255,255,0.58)',
+    textTransform: 'uppercase',
+  },
+  valueBlockerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
+  valueBlockerPill: {
+    minHeight: 32,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  valueBlockerDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#DC2626',
+  },
+  valueBlockerText: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    color: INK,
+  },
+  valuePhoneFootnote: {
+    marginTop: 10,
+    fontFamily: F.sansMedium,
+    fontSize: 10,
+    lineHeight: 14,
+    color: 'rgba(25,23,20,0.50)',
+    textAlign: 'center',
+  },
+  valueScriptureCard: {
+    borderRadius: 23,
+    padding: 15,
+    marginBottom: 12,
+    backgroundColor: '#FFF7E8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+  },
+  valueScriptureRef: {
+    fontFamily: F.sansBold,
+    fontSize: 8.5,
+    letterSpacing: 1.4,
+    color: GOLD,
+  },
+  valueScriptureText: {
+    marginTop: 8,
+    fontFamily: F.serifMedium,
+    fontSize: 18,
+    lineHeight: 24,
+    color: INK,
+  },
+  valueJournalCard: {
+    borderRadius: 23,
+    padding: 15,
+    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  valueJournalLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 1.3,
+    color: GOLD,
+    textTransform: 'uppercase',
+  },
+  valueJournalText: {
+    marginTop: 8,
+    fontFamily: F.serifMedium,
+    fontSize: 18,
+    lineHeight: 23,
+    color: INK,
+  },
+  valueDots: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 7,
+    zIndex: 4,
+  },
+  valueDot: {
+    width: 22,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(25,23,20,0.13)',
+  },
+  valueDotActive: {
+    width: 34,
+    backgroundColor: GOLD,
+  },
+  valueDotUpcoming: {
+    opacity: 0.72,
+  },
+  valueBottomAction: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingTop: 10,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
   welcome: {
     flex: 1,
     position: 'relative',
@@ -2565,22 +8170,266 @@ const s = StyleSheet.create({
   },
   confettiOverlay: {
     position: 'absolute',
-    top: -30,
-    left: -8,
-    right: -8,
-    bottom: -8,
-    zIndex: 999,
-    elevation: 999,
+    top: -180,
+    left: -110,
+    right: -110,
+    bottom: -180,
+    zIndex: 10000,
+    elevation: 10000,
   },
   confettiLayer: {
-    zIndex: 999,
-    elevation: 999,
+    zIndex: 10000,
+    elevation: 10000,
   },
   confettiLottie: {
-    zIndex: 999,
-    elevation: 999,
-    opacity: 0.92,
-    transform: [{ scale: 0.55 }],
+    zIndex: 10000,
+    elevation: 10000,
+    opacity: 0.9,
+    transform: [{ scale: 0.72 }],
+  },
+  nameIntroSlide: {
+    flex: 1,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  nameIntroBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  nameIntroGlow: {
+    position: 'absolute',
+    left: 34,
+    right: 34,
+    top: 104,
+    height: 154,
+    borderRadius: 90,
+    backgroundColor: 'rgba(197,160,89,0.055)',
+    transform: [{ rotate: '-7deg' }],
+  },
+  nameIntroLine: {
+    position: 'absolute',
+    left: 38,
+    right: 38,
+    top: '48%',
+    height: 1,
+    backgroundColor: 'rgba(197,160,89,0.10)',
+    transform: [{ rotate: '-4deg' }],
+  },
+  nameIntroScroll: {
+    flex: 1,
+    zIndex: 2,
+  },
+  nameIntroContent: {
+    minHeight: '100%',
+    paddingTop: 92,
+    paddingHorizontal: 20,
+    paddingBottom: 188,
+    justifyContent: 'center',
+  },
+  nameConversation: {
+    width: '100%',
+    maxWidth: 360,
+    alignSelf: 'center',
+  },
+  nameIntroEyebrow: {
+    marginBottom: 18,
+    paddingLeft: 4,
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    letterSpacing: 4.6,
+    color: 'rgba(197,160,89,0.78)',
+    textAlign: 'center',
+  },
+  nameBotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 12,
+    marginBottom: 12,
+  },
+  nameBotRowSecond: {
+    marginLeft: 2,
+    marginBottom: 4,
+  },
+  nameAvatarShell: {
+    width: 66,
+    height: 66,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 13 },
+    shadowOpacity: 0.14,
+    shadowRadius: 22,
+    elevation: 3,
+  },
+  nameQuestionAvatarShell: {
+    transform: [{ rotate: '-4deg' }],
+  },
+  nameAvatarHalo: {
+    position: 'absolute',
+    width: 61,
+    height: 61,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.26)',
+    backgroundColor: 'rgba(197,160,89,0.055)',
+    transform: [{ rotate: '-5deg' }],
+  },
+  nameAvatarLogo: {
+    width: 50,
+    height: 50,
+    borderRadius: 16,
+  },
+  nameAvatarShellSmall: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+  },
+  nameAvatarLogoSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+  },
+  nameBubble: {
+    flex: 1,
+    minHeight: 72,
+    borderRadius: 27,
+    overflow: 'visible',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    justifyContent: 'center',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.28)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.06,
+    shadowRadius: 22,
+    elevation: 2,
+  },
+  nameReplyBubble: {
+    minHeight: 126,
+    paddingVertical: 21,
+  },
+  nameQuestionBubble: {
+    minHeight: 68,
+  },
+  nameBubbleTail: {
+    position: 'absolute',
+    left: -9,
+    top: '50%',
+    marginTop: -9,
+    width: 18,
+    height: 18,
+    borderLeftWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(197,160,89,0.28)',
+    backgroundColor: '#FFFDF8',
+    transform: [{ rotate: '45deg' }],
+    zIndex: 0,
+  },
+  nameBubbleTailJoin: {
+    position: 'absolute',
+    left: -1,
+    top: '50%',
+    marginTop: -13,
+    width: 11,
+    height: 26,
+    borderRadius: 6,
+    backgroundColor: '#FFFDF8',
+    zIndex: 1,
+  },
+  nameBubbleText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 22,
+    lineHeight: 27,
+    color: INK,
+    zIndex: 2,
+  },
+  nameTypingCaret: {
+    color: GOLD,
+  },
+  nameInputBlock: {
+    marginTop: 2,
+    marginLeft: 74,
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 14,
+    backgroundColor: 'rgba(255,255,255,0.62)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.16)',
+  },
+  nameInputLabel: {
+    marginBottom: 8,
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    letterSpacing: 1.8,
+    color: GOLD,
+    textTransform: 'uppercase',
+  },
+  nameInput: {
+    minHeight: 50,
+    borderBottomWidth: 1.4,
+    borderBottomColor: 'rgba(197,160,89,0.42)',
+    fontFamily: F.serifMedium,
+    fontSize: 28,
+    lineHeight: 34,
+    color: INK,
+    paddingVertical: 7,
+  },
+  nameUserRow: {
+    alignItems: 'flex-end',
+    marginTop: 14,
+    marginBottom: 18,
+  },
+  nameUserBubble: {
+    maxWidth: '76%',
+    borderRadius: 24,
+    paddingHorizontal: 19,
+    paddingVertical: 13,
+    backgroundColor: INK,
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  nameUserText: {
+    fontFamily: F.serifMedium,
+    fontSize: 23,
+    lineHeight: 27,
+    color: '#FFFFFF',
+  },
+  nameValueHint: {
+    marginLeft: 54,
+    marginTop: -4,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
+  nameValuePill: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.68)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+  },
+  nameValuePillText: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 0.8,
+    color: 'rgba(25,23,20,0.62)',
+    textTransform: 'uppercase',
   },
   heroBlock: {
     flex: 1,
@@ -2733,6 +8582,532 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     paddingBottom: 118,
     zIndex: 1,
+  },
+  messageSlide: {
+    flex: 1,
+    paddingHorizontal: 12,
+    justifyContent: 'space-between',
+    paddingTop: 18,
+    paddingBottom: 0,
+  },
+  messageWarmth: {
+    position: 'absolute',
+    left: -22,
+    right: -22,
+    bottom: 0,
+    height: '56%',
+  },
+  messageContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingBottom: 126,
+    zIndex: 1,
+  },
+  messageLogoFrame: {
+    width: 78,
+    height: 78,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.13,
+    shadowRadius: 24,
+    elevation: 3,
+  },
+  messageLogoHalo: {
+    position: 'absolute',
+    width: 73,
+    height: 73,
+    borderRadius: 25,
+    backgroundColor: 'rgba(197,160,89,0.065)',
+    transform: [{ rotate: '-7deg' }],
+  },
+  messageLogoPlate: {
+    width: 62,
+    height: 62,
+    borderRadius: 20,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  messageLogo: {
+    width: '100%',
+    height: '100%',
+  },
+  messageBubble: {
+    width: '100%',
+    maxWidth: 338,
+    minHeight: 0,
+    borderRadius: 28,
+    overflow: 'visible',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    paddingVertical: 15,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.34)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.09,
+    shadowRadius: 24,
+    elevation: 2,
+  },
+  messageBubbleTail: {
+    position: 'absolute',
+    left: '50%',
+    marginLeft: -8,
+    top: -7,
+    width: 16,
+    height: 16,
+    backgroundColor: '#FFFDF8',
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderColor: 'rgba(197,160,89,0.34)',
+    transform: [{ rotate: '45deg' }],
+  },
+  messageText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 24,
+    lineHeight: 31,
+    textAlign: 'center',
+    color: INK,
+  },
+  protectIntroBubble: {
+    maxWidth: 344,
+    minHeight: 148,
+    paddingHorizontal: 22,
+    paddingVertical: 20,
+  },
+  protectIntroText: {
+    minHeight: 102,
+    fontSize: 20,
+    lineHeight: 27,
+  },
+  protectIntroPromptOnly: {
+    paddingTop: 26,
+  },
+  protectIntroPromptSlot: {
+    minHeight: 136,
+    justifyContent: 'flex-start',
+  },
+  protectPainIntroPromptSlot: {
+    minHeight: 84,
+    justifyContent: 'flex-start',
+  },
+  protectIntroVisual: {
+    width: '100%',
+    maxWidth: 342,
+    height: 334,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 0,
+  },
+  protectIntroContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 124,
+    zIndex: 1,
+  },
+  protectCoachLogoFrame: {
+    width: 78,
+    height: 78,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.13,
+    shadowRadius: 23,
+    elevation: 3,
+  },
+  protectCoachLogoFrameCompact: {
+    width: 64,
+    height: 64,
+    borderRadius: 22,
+    marginBottom: 13,
+  },
+  protectCoachLogoHalo: {
+    position: 'absolute',
+    width: '92%',
+    height: '92%',
+    borderRadius: 25,
+    backgroundColor: 'rgba(197,160,89,0.07)',
+    transform: [{ rotate: '-7deg' }],
+  },
+  protectCoachLogoPlate: {
+    width: 62,
+    height: 62,
+    borderRadius: 20,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  protectCoachLogoPlateCompact: {
+    width: 50,
+    height: 50,
+    borderRadius: 17,
+  },
+  protectCoachLogo: {
+    width: '100%',
+    height: '100%',
+  },
+  protectCoachBubble: {
+    width: '100%',
+    maxWidth: 340,
+    minHeight: 118,
+    borderRadius: 27,
+    overflow: 'visible',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    paddingVertical: 20,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.32)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 23,
+    elevation: 2,
+  },
+  protectCoachBubbleTail: {
+    position: 'absolute',
+    left: '50%',
+    marginLeft: -8,
+    top: -7,
+    width: 16,
+    height: 16,
+    backgroundColor: '#FFFDF8',
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderColor: 'rgba(197,160,89,0.32)',
+    transform: [{ rotate: '45deg' }],
+  },
+  protectCoachText: {
+    minHeight: 78,
+    fontFamily: F.serifSemiBold,
+    fontSize: 20,
+    lineHeight: 27,
+    textAlign: 'center',
+    color: INK,
+  },
+  protectGuardrailList: {
+    width: '100%',
+    maxWidth: 344,
+    marginTop: 16,
+    rowGap: 8,
+  },
+  protectGuardrailItem: {
+    minHeight: 64,
+    borderRadius: 19,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 11,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.045,
+    shadowRadius: 14,
+    elevation: 1,
+  },
+  protectGuardrailItemDone: {
+    backgroundColor: '#FFFDF8',
+    borderColor: 'rgba(197,160,89,0.22)',
+  },
+  protectGuardrailIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF7E8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+    flexShrink: 0,
+  },
+  protectGuardrailIconDone: {
+    backgroundColor: INK,
+    borderColor: INK,
+  },
+  protectGuardrailCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  protectGuardrailTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17,
+    lineHeight: 21,
+    color: INK,
+  },
+  protectGuardrailBody: {
+    marginTop: 2,
+    fontFamily: F.sans,
+    fontSize: 11.5,
+    lineHeight: 16,
+    color: '#756D64',
+  },
+  protectGuardrailBodyDone: {
+    color: '#9B9288',
+  },
+  protectStrikeWrap: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    position: 'relative',
+  },
+  protectStrikeLine: {
+    position: 'absolute',
+    left: 0,
+    top: 10.5,
+    height: 1.4,
+    borderRadius: 1,
+  },
+  protectConversationTop: {
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  protectConversationBubble: {
+    maxWidth: 342,
+    minHeight: 130,
+  },
+  protectQuestionBubble: {
+    maxWidth: 342,
+    minHeight: 116,
+  },
+  protectPainCard: {
+    borderRadius: 30,
+    padding: 15,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.055,
+    shadowRadius: 24,
+    elevation: 2,
+  },
+  protectPainTitle: {
+    marginTop: 2,
+    fontFamily: F.serifSemiBold,
+    fontSize: 27,
+    lineHeight: 31,
+    textAlign: 'center',
+    color: INK,
+  },
+  protectPainBody: {
+    marginTop: 3,
+    marginBottom: 12,
+    fontFamily: F.serifMediumItalic,
+    fontSize: 18,
+    lineHeight: 23,
+    textAlign: 'center',
+    color: '#8B7A66',
+  },
+  distractionStage: {
+    height: 334,
+    width: '100%',
+    maxWidth: 342,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    overflow: 'visible',
+  },
+  distractionGlow: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    top: 34,
+    height: 248,
+    borderRadius: 124,
+    backgroundColor: 'rgba(197,160,89,0.075)',
+  },
+  distractionOuterRing: {
+    position: 'absolute',
+    top: 30,
+    width: 286,
+    height: 286,
+    borderRadius: 143,
+    backgroundColor: 'rgba(25,23,20,0.045)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.09)',
+  },
+  distractionInnerCutout: {
+    position: 'absolute',
+    top: 92,
+    width: 164,
+    height: 164,
+    borderRadius: 82,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.86)',
+  },
+  distractionCore: {
+    position: 'absolute',
+    top: 126,
+    width: 84,
+    height: 84,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.25)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 4,
+    zIndex: 8,
+  },
+  distractionCoreLogoWrap: {
+    width: 62,
+    height: 62,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+  },
+  distractionCoreLogo: {
+    width: '100%',
+    height: '100%',
+  },
+  distractionCoreBadge: {
+    position: 'absolute',
+    right: -6,
+    bottom: -5,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: INK,
+    borderWidth: 2,
+    borderColor: '#FFFDF8',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  distractionCardSlot: {
+    position: 'absolute',
+  },
+  distractionCard: {
+    width: '100%',
+    minHeight: 41,
+    borderRadius: 999,
+    paddingLeft: 10,
+    paddingRight: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.72)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 15 },
+    shadowOpacity: 0.09,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  distractionCardIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.66)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.76)',
+  },
+  distractionCardText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 14,
+    lineHeight: 18,
+    color: 'rgba(25,23,20,0.76)',
+  },
+  distractionCardSocial: {
+    top: 54,
+    left: 8,
+    width: 139,
+    transform: [{ rotate: '-7deg' }],
+    zIndex: 4,
+  },
+  distractionCardNotifications: {
+    top: 28,
+    right: 13,
+    width: 154,
+    transform: [{ rotate: '6deg' }],
+    zIndex: 6,
+  },
+  distractionCardMessaging: {
+    top: 101,
+    right: 4,
+    width: 132,
+    transform: [{ rotate: '-2deg' }],
+    zIndex: 5,
+  },
+  distractionCardStreaming: {
+    top: 144,
+    left: 12,
+    width: 126,
+    transform: [{ rotate: '5deg' }],
+    zIndex: 7,
+  },
+  distractionCardGaming: {
+    left: 18,
+    bottom: 74,
+    width: 111,
+    transform: [{ rotate: '-5deg' }],
+    zIndex: 4,
+  },
+  distractionCardApps: {
+    right: 18,
+    bottom: 77,
+    width: 100,
+    transform: [{ rotate: '6deg' }],
+    zIndex: 4,
+  },
+  distractionCardContent: {
+    left: 76,
+    bottom: 26,
+    width: 116,
+    transform: [{ rotate: '2deg' }],
+    zIndex: 3,
+  },
+  distractionCardNoise: {
+    right: 52,
+    bottom: 28,
+    width: 94,
+    transform: [{ rotate: '-8deg' }],
+    zIndex: 2,
+  },
+  distractionGroundShadow: {
+    position: 'absolute',
+    left: 48,
+    right: 48,
+    bottom: 20,
+    height: 18,
+    borderRadius: 999,
+    backgroundColor: 'rgba(25,23,20,0.055)',
+    transform: [{ scaleX: 1.12 }],
   },
   introLogoFrame: {
     width: 68,
@@ -3320,8 +9695,8 @@ const s = StyleSheet.create({
   },
   speechBubble: {
     flex: 1,
-    height: 116,
     borderRadius: 22,
+    overflow: 'visible',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 19,
@@ -3335,16 +9710,42 @@ const s = StyleSheet.create({
     shadowRadius: 22,
     elevation: 2,
   },
+  questionSpeechBubble: {
+    minHeight: 116,
+  },
   speechTail: {
     position: 'absolute',
-    left: -8,
-    width: 17,
-    height: 17,
+    left: -7,
+    top: '50%',
+    marginTop: -8,
+    width: 16,
+    height: 16,
     backgroundColor: '#FFFDF8',
     borderLeftWidth: 1,
     borderBottomWidth: 1,
     borderColor: 'rgba(197,160,89,0.38)',
     transform: [{ rotate: '45deg' }],
+  },
+  speechTailJoin: {
+    position: 'absolute',
+    left: -1,
+    top: '50%',
+    marginTop: -12,
+    width: 12,
+    height: 24,
+    backgroundColor: '#FFFDF8',
+  },
+  speechTailCompact: {
+    left: -5,
+    marginTop: -6,
+    width: 12,
+    height: 12,
+    borderColor: 'rgba(197,160,89,0.34)',
+  },
+  speechTailJoinCompact: {
+    marginTop: -10,
+    width: 10,
+    height: 20,
   },
   speechQuestion: {
     fontFamily: F.serifSemiBold,
@@ -3358,6 +9759,40 @@ const s = StyleSheet.create({
     fontSize: 16,
     lineHeight: 21,
     color: '#5F574F',
+  },
+  protectPrompt: {
+    marginBottom: 10,
+  },
+  protectSpeechBubble: {
+    minHeight: 0,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  protectSpeechBubbleCompact: {
+    minHeight: 0,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
+  protectSpeechQuestion: {
+    fontSize: 20,
+    lineHeight: 25,
+  },
+  protectSpeechHighlight: {
+    color: INK,
+    textDecorationLine: 'underline',
+    textDecorationColor: GOLD,
+  },
+  protectSpeechGoldHighlight: {
+    fontFamily: F.serifSemiBold,
+    color: GOLD,
+    textDecorationLine: 'underline',
+    textDecorationColor: GOLD,
+  },
+  inlineGoldUnderline: {
+    color: INK,
+    textDecorationLine: 'underline',
+    textDecorationColor: GOLD,
+    textDecorationStyle: 'solid',
   },
   questionHeader: {
     marginBottom: 20,
@@ -3633,6 +10068,7 @@ const s = StyleSheet.create({
     flex: 1,
     minHeight: 118,
     borderRadius: 24,
+    overflow: 'visible',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
@@ -3648,9 +10084,11 @@ const s = StyleSheet.create({
   },
   setupCoachBubbleTail: {
     position: 'absolute',
-    left: -8,
-    width: 18,
-    height: 18,
+    left: -7,
+    top: '50%',
+    marginTop: -8,
+    width: 16,
+    height: 16,
     backgroundColor: '#FFF8E8',
     borderLeftWidth: 1.5,
     borderBottomWidth: 1.5,
@@ -3748,6 +10186,2228 @@ const s = StyleSheet.create({
     lineHeight: 21,
     textAlign: 'center',
     color: MUTED,
+  },
+  protectPathCard: {
+    borderRadius: 24,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.05,
+    shadowRadius: 20,
+    elevation: 2,
+  },
+  protectPathItem: {
+    minHeight: 52,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+  },
+  protectPathItemActive: {
+    backgroundColor: '#FFF7E8',
+  },
+  protectPathNumber: {
+    width: 27,
+    height: 27,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(25,23,20,0.06)',
+  },
+  protectPathNumberActive: {
+    backgroundColor: INK,
+  },
+  protectPathNumberText: {
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    color: 'rgba(25,23,20,0.50)',
+  },
+  protectPathNumberTextActive: {
+    color: '#F8E8BE',
+  },
+  protectPathText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17,
+    color: 'rgba(25,23,20,0.58)',
+  },
+  protectPathTextActive: {
+    color: INK,
+  },
+  painOrbit: {
+    minHeight: 224,
+    borderRadius: 25,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFDF8',
+    overflow: 'hidden',
+  },
+  painOrbitLine: {
+    position: 'absolute',
+    width: 260,
+    height: 1,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.15)',
+    transform: [{ rotate: '-15deg' }],
+  },
+  painOrbitLineTwo: {
+    transform: [{ rotate: '18deg' }],
+    backgroundColor: 'rgba(25,23,20,0.07)',
+  },
+  painOrbitLineThree: {
+    width: 210,
+    transform: [{ rotate: '72deg' }],
+    backgroundColor: 'rgba(197,160,89,0.11)',
+  },
+  painCenter: {
+    width: 82,
+    height: 82,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.24)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.11,
+    shadowRadius: 22,
+    elevation: 3,
+  },
+  painLogo: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+  },
+  painChip: {
+    position: 'absolute',
+    minHeight: 38,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 7,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.055,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  painChipOne: { top: 24, left: 14 },
+  painChipTwo: { top: 58, right: 16 },
+  painChipThree: { bottom: 54, left: 16 },
+  painChipFour: { bottom: 22, right: 18 },
+  painChipText: {
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    color: INK,
+  },
+  protectStatsConversation: {
+    rowGap: 10,
+  },
+  didYouKnowCard: {
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingTop: 15,
+    paddingBottom: 14,
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.24)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.055,
+    shadowRadius: 20,
+    elevation: 2,
+  },
+  didYouKnowGlow: {
+    position: 'absolute',
+    top: -70,
+    right: -58,
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: 'rgba(248,232,190,0.24)',
+  },
+  didYouKnowTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: 12,
+  },
+  didYouKnowHeading: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 18,
+    lineHeight: 22,
+    color: '#8A6427',
+  },
+  didYouKnowSpark: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.20)',
+  },
+  didYouKnowQuestion: {
+    marginTop: 15,
+    fontFamily: F.serifSemiBold,
+    fontSize: 21,
+    lineHeight: 27,
+    letterSpacing: 0,
+    color: INK,
+    textAlign: 'center',
+  },
+  didYouKnowQuestionHighlight: {
+    textDecorationLine: 'underline',
+    textDecorationColor: GOLD,
+    color: INK,
+  },
+  didYouKnowQuestionGold: {
+    fontFamily: F.serifSemiBold,
+    color: GOLD,
+    textDecorationLine: 'underline',
+    textDecorationColor: GOLD,
+  },
+  didYouKnowValueWrap: {
+    marginTop: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  didYouKnowValue: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 39,
+    lineHeight: 43,
+    letterSpacing: 0,
+    color: INK,
+    textAlign: 'center',
+  },
+  didYouKnowValueGold: {
+    color: GOLD,
+  },
+  didYouKnowValueLabel: {
+    marginTop: -2,
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    letterSpacing: 1.6,
+    textTransform: 'uppercase',
+    color: GOLD,
+  },
+  didYouKnowChoicesWrap: {
+    overflow: 'hidden',
+  },
+  didYouKnowChoices: {
+    flexDirection: 'row',
+    columnGap: 10,
+  },
+  didYouKnowChoice: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.09)',
+  },
+  didYouKnowChoiceActive: {
+    backgroundColor: '#17130F',
+    borderColor: '#17130F',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  didYouKnowChoiceText: {
+    fontFamily: F.sansBold,
+    fontSize: 14,
+    lineHeight: 18,
+    color: '#7A7067',
+  },
+  didYouKnowChoiceTextActive: {
+    color: '#F8E8BE',
+  },
+  screenTimeSliderCard: {
+    borderRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 18,
+    backgroundColor: '#FFFDF9',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.10,
+    shadowRadius: 26,
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  screenTimeSliderQuestion: {
+    maxWidth: 304,
+    alignSelf: 'center',
+    fontFamily: F.serifSemiBold,
+    fontSize: 23,
+    lineHeight: 28,
+    textAlign: 'center',
+    color: INK,
+  },
+  screenTimeSliderRule: {
+    width: 72,
+    height: 2,
+    borderRadius: 999,
+    alignSelf: 'center',
+    marginTop: 12,
+    backgroundColor: GOLD,
+    opacity: 0.78,
+  },
+  screenTimeSliderHeader: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  screenTimeSliderHeaderCopy: {
+    alignItems: 'center',
+  },
+  screenTimeSliderKicker: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    letterSpacing: 1.9,
+    textTransform: 'uppercase',
+    color: GOLD,
+  },
+  screenTimeSliderValue: {
+    marginTop: 10,
+    fontFamily: F.serifSemiBold,
+    fontSize: 54,
+    lineHeight: 58,
+    textAlign: 'center',
+    color: INK,
+  },
+  screenTimeSliderBadge: {
+    minWidth: 64,
+    minHeight: 42,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF7E8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.25)',
+  },
+  screenTimeSliderBadgeText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 20,
+    lineHeight: 23,
+    color: '#8A6427',
+  },
+  screenTimeSliderTouch: {
+    marginTop: 24,
+    height: 40,
+    justifyContent: 'center',
+  },
+  screenTimeSliderRail: {
+    height: 11,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: '#F3EEE6',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.16)',
+  },
+  screenTimeSliderFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: GOLD,
+  },
+  screenTimeSliderThumb: {
+    position: 'absolute',
+    left: 0,
+    top: 2,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.52)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.20,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  screenTimeSliderThumbCore: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: GOLD,
+  },
+  screenTimeSliderScale: {
+    marginTop: 4,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  screenTimeSliderScaleText: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    color: '#A8A29E',
+  },
+  userReplyWrap: {
+    alignItems: 'flex-end',
+    marginBottom: 8,
+  },
+  userReplyBubble: {
+    maxWidth: 260,
+    minHeight: 0,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1A1714',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  userReplyText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 16.5,
+    lineHeight: 21,
+    color: '#FFFFFF',
+  },
+  screenTimeConversation: {
+    marginTop: 2,
+    rowGap: 2,
+  },
+  screenTimeStatIntro: {
+    alignSelf: 'center',
+    minHeight: 32,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF7E8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+  },
+  screenTimeWastedIntro: {
+    alignSelf: 'center',
+    minWidth: 184,
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 9,
+    alignItems: 'center',
+    backgroundColor: '#17130F',
+    borderWidth: 1,
+    borderColor: 'rgba(232,195,116,0.46)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.18,
+    shadowRadius: 26,
+    elevation: 3,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  screenTimeIntroWash: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    top: 7,
+    height: 26,
+    borderRadius: 20,
+    opacity: 0.82,
+  },
+  screenTimeIntroWashWaste: {
+    backgroundColor: 'rgba(248,232,190,0.055)',
+  },
+  screenTimeIntroWashGetBack: {
+    backgroundColor: 'rgba(197,160,89,0.075)',
+  },
+  screenTimeIntroCorner: {
+    position: 'absolute',
+    right: -28,
+    bottom: -42,
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    borderWidth: 1,
+  },
+  screenTimeIntroCornerWaste: {
+    borderColor: 'rgba(248,232,190,0.11)',
+    backgroundColor: 'rgba(248,232,190,0.025)',
+  },
+  screenTimeIntroCornerGetBack: {
+    borderColor: 'rgba(197,160,89,0.16)',
+    backgroundColor: 'rgba(197,160,89,0.035)',
+  },
+  screenTimeIntroOrnamentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 6,
+    marginBottom: 4,
+    zIndex: 1,
+  },
+  screenTimeIntroOrnamentLine: {
+    width: 25,
+    height: 1.25,
+    borderRadius: 999,
+    backgroundColor: 'rgba(197,160,89,0.50)',
+  },
+  screenTimeIntroOrnamentLineDark: {
+    backgroundColor: 'rgba(248,232,190,0.36)',
+  },
+  screenTimeIntroOrnamentDot: {
+    width: 4.5,
+    height: 4.5,
+    borderRadius: 2.5,
+    backgroundColor: GOLD,
+  },
+  screenTimeIntroToplinePill: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 3,
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    lineHeight: 13,
+    letterSpacing: 1.6,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    zIndex: 1,
+  },
+  screenTimeIntroToplinePillWaste: {
+    color: '#F8E8BE',
+    backgroundColor: 'rgba(248,232,190,0.075)',
+    borderWidth: 1,
+    borderColor: 'rgba(248,232,190,0.16)',
+  },
+  screenTimeIntroToplinePillGetBack: {
+    color: '#7A5B20',
+    backgroundColor: '#FFF7E8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.20)',
+  },
+  screenTimeWastedWord: {
+    marginTop: 2,
+    fontFamily: F.serifSemiBold,
+    fontSize: 30,
+    lineHeight: 32,
+    letterSpacing: 1.1,
+    color: '#F8E8BE',
+    zIndex: 1,
+    textShadowColor: 'rgba(232,195,116,0.22)',
+    textShadowOffset: { width: 0, height: 4 },
+    textShadowRadius: 14,
+  },
+  screenTimeWastedSubline: {
+    marginTop: 0,
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    lineHeight: 13,
+    letterSpacing: 1.7,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.58)',
+  },
+  screenTimeWastedUnderline: {
+    marginTop: 5,
+    width: 94,
+    height: 2,
+    borderRadius: 999,
+    backgroundColor: GOLD,
+    zIndex: 1,
+  },
+  screenTimeGetBackIntro: {
+    alignSelf: 'center',
+    minWidth: 202,
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 9,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.34)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.13,
+    shadowRadius: 24,
+    elevation: 3,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  screenTimeGetBackWord: {
+    marginTop: 2,
+    fontFamily: F.serifSemiBold,
+    fontSize: 28,
+    lineHeight: 31,
+    letterSpacing: 0.75,
+    color: INK,
+    zIndex: 1,
+  },
+  screenTimeGetBackSubline: {
+    marginTop: 1,
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    lineHeight: 13,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: '#8B7A64',
+  },
+  screenTimeGetBackUnderline: {
+    marginTop: 5,
+    width: 116,
+    height: 2,
+    borderRadius: 999,
+    backgroundColor: GOLD,
+    zIndex: 1,
+  },
+  screenTimeStatMessage: {
+    borderRadius: 27,
+    paddingHorizontal: 15,
+    paddingVertical: 13,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.30)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.075,
+    shadowRadius: 26,
+    elevation: 2,
+    position: 'relative',
+  },
+  screenTimeStatMessageDark: {
+    backgroundColor: '#17130F',
+    borderColor: 'rgba(197,160,89,0.42)',
+    shadowColor: '#000000',
+    shadowOpacity: 0.17,
+  },
+  screenTimeStatHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    columnGap: 10,
+  },
+  screenTimeStatNumber: {
+    position: 'absolute',
+    left: 11,
+    top: 11,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#17130F',
+    borderWidth: 1.2,
+    borderColor: 'rgba(232,195,116,0.42)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  screenTimeStatNumberRight: {
+    left: undefined,
+    right: 11,
+  },
+  screenTimeStatNumberDark: {
+    backgroundColor: '#F8E8BE',
+    borderColor: 'rgba(255,255,255,0.22)',
+    shadowColor: GOLD,
+    shadowOpacity: 0.18,
+  },
+  screenTimeStatNumberText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 16,
+    lineHeight: 19,
+    color: '#F8E8BE',
+  },
+  screenTimeStatNumberTextDark: {
+    color: '#17130F',
+  },
+  screenTimeStatHeaderStacked: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    columnGap: 0,
+  },
+  screenTimeStatValue: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 50,
+    lineHeight: 54,
+    color: INK,
+  },
+  screenTimeStatValueStacked: {
+    fontSize: 66,
+    lineHeight: 61,
+  },
+  screenTimeStatValueDark: {
+    color: '#F8E8BE',
+  },
+  screenTimeStatLabel: {
+    flexShrink: 1,
+    paddingBottom: 8,
+    fontFamily: F.sansBold,
+    fontSize: 12,
+    lineHeight: 15,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    color: GOLD,
+  },
+  screenTimeStatLabelStacked: {
+    maxWidth: 240,
+    paddingBottom: 0,
+    marginTop: -7,
+    fontFamily: F.serifSemiBold,
+    fontSize: 19.5,
+    lineHeight: 22,
+    letterSpacing: 0,
+    textTransform: 'none',
+    textAlign: 'center',
+    color: INK,
+  },
+  screenTimeStatLabelUnderline: {
+    marginTop: 3,
+    width: 138,
+    height: 2,
+    borderRadius: 999,
+    backgroundColor: GOLD,
+  },
+  screenTimeStatLabelDark: {
+    color: '#F8E8BE',
+  },
+  screenTimeStatBody: {
+    marginTop: 6,
+    fontFamily: F.serifMedium,
+    fontSize: 15.5,
+    lineHeight: 21,
+    textAlign: 'center',
+    color: '#6E6257',
+  },
+  screenTimeStatBodyDark: {
+    color: 'rgba(255,255,255,0.78)',
+  },
+  screenTimeLegend: {
+    marginTop: 9,
+    alignSelf: 'center',
+    maxWidth: 260,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  screenTimeLegendItem: {
+    minHeight: 20,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 5,
+    backgroundColor: 'rgba(197,160,89,0.08)',
+  },
+  screenTimeLegendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  screenTimeLegendAwakeLight: {
+    backgroundColor: '#F3EEE6',
+    borderColor: 'rgba(25,23,20,0.28)',
+  },
+  screenTimeLegendAwakeDark: {
+    backgroundColor: '#FFF7E8',
+    borderColor: 'rgba(255,255,255,0.86)',
+  },
+  screenTimeLegendPhone: {
+    backgroundColor: GOLD,
+    borderColor: 'rgba(248,232,190,0.48)',
+  },
+  screenTimeLegendReclaimed: {
+    backgroundColor: GOLD,
+  },
+  screenTimeLegendSleepLight: {
+    backgroundColor: '#17130F',
+    borderColor: '#17130F',
+  },
+  screenTimeLegendSleepDark: {
+    backgroundColor: '#6E6257',
+    borderColor: 'rgba(248,232,190,0.30)',
+  },
+  screenTimeLegendStillLost: {
+    backgroundColor: 'rgba(255,255,255,0.20)',
+  },
+  screenTimeLegendText: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    lineHeight: 12,
+    letterSpacing: 0.65,
+    textTransform: 'uppercase',
+    color: '#7B7064',
+  },
+  screenTimeLegendTextDark: {
+    color: 'rgba(255,255,255,0.78)',
+  },
+  screenTimeDayBar: {
+    marginTop: 13,
+    flexDirection: 'row',
+    columnGap: 2,
+  },
+  screenTimeDaySegment: {
+    flex: 1,
+    height: 17,
+    borderRadius: 5,
+    backgroundColor: 'rgba(25,23,20,0.08)',
+  },
+  screenTimeDaySegmentActive: {
+    backgroundColor: GOLD,
+  },
+  screenTimeDaySegmentSleep: {
+    backgroundColor: '#17130F',
+  },
+  screenTimeDaySegmentAwake: {
+    backgroundColor: '#F3EEE6',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.18)',
+  },
+  screenTimeDaySegmentPhone: {
+    backgroundColor: GOLD,
+  },
+  screenTimeDotGrid: {
+    marginTop: 14,
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 286,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  screenTimeDotGridCompact: {
+    maxWidth: 292,
+    gap: 2,
+  },
+  screenTimeDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: 'rgba(25,23,20,0.10)',
+  },
+  screenTimeDotSmall: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(25,23,20,0.10)',
+  },
+  screenTimeDotActive: {
+    backgroundColor: GOLD,
+  },
+  screenTimeDotAwake: {
+    backgroundColor: '#F3EEE6',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.24)',
+  },
+  screenTimeDotAwakeOnDark: {
+    backgroundColor: '#FFF7E8',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.40)',
+  },
+  screenTimeDotSleep: {
+    backgroundColor: '#17130F',
+  },
+  screenTimeDotSleepOnDark: {
+    backgroundColor: '#6E6257',
+    borderWidth: 1,
+    borderColor: 'rgba(248,232,190,0.18)',
+  },
+  screenTimeDotDimLight: {
+    backgroundColor: 'rgba(25,23,20,0.10)',
+  },
+  screenTimeDotSaved: {
+    backgroundColor: '#F8E8BE',
+  },
+  screenTimeDotProductive: {
+    backgroundColor: '#FFF7E8',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.36)',
+  },
+  screenTimeDotReclaimed: {
+    backgroundColor: GOLD,
+  },
+  screenTimeDotStillLost: {
+    backgroundColor: '#6E6257',
+    borderWidth: 1,
+    borderColor: 'rgba(248,232,190,0.16)',
+  },
+  screenTimeDotDimOnDark: {
+    backgroundColor: 'rgba(255,255,255,0.20)',
+  },
+  screenTimeResultPanel: {
+    borderRadius: 28,
+    padding: 15,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.15)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.06,
+    shadowRadius: 24,
+    elevation: 2,
+  },
+  screenTimeResultKicker: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    letterSpacing: 1.8,
+    textTransform: 'uppercase',
+    color: GOLD,
+    textAlign: 'center',
+  },
+  screenTimeResultGrid: {
+    marginTop: 12,
+    rowGap: 9,
+  },
+  screenTimeMetric: {
+    minHeight: 68,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 13,
+    backgroundColor: '#FFF9EF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+  },
+  screenTimeMetricValue: {
+    minWidth: 74,
+    fontFamily: F.serifSemiBold,
+    fontSize: 35,
+    lineHeight: 39,
+    color: INK,
+    textAlign: 'center',
+  },
+  screenTimeMetricLabel: {
+    flex: 1,
+    fontFamily: F.sansBold,
+    fontSize: 15,
+    lineHeight: 20,
+    color: '#5F574F',
+  },
+  screenTimeReclaimCard: {
+    marginTop: 11,
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    backgroundColor: '#17130F',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.28)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    elevation: 3,
+  },
+  screenTimeReclaimTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 22,
+    lineHeight: 26,
+    color: '#F8E8BE',
+    textAlign: 'center',
+  },
+  screenTimeReclaimBody: {
+    marginTop: 8,
+    fontFamily: F.serifMedium,
+    fontSize: 15.5,
+    lineHeight: 22,
+    color: 'rgba(255,255,255,0.78)',
+    textAlign: 'center',
+  },
+  screenTimeReclaimStrong: {
+    color: '#FFFFFF',
+    fontFamily: F.serifSemiBold,
+  },
+  wakingDayPreview: {
+    marginTop: 17,
+    borderRadius: 20,
+    padding: 12,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.14)',
+  },
+  wakingDayLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: 10,
+  },
+  wakingDayLabel: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 16,
+    color: INK,
+  },
+  wakingDayValue: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    color: '#A8A29E',
+  },
+  wakingDayRail: {
+    marginTop: 10,
+    height: 8,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(25,23,20,0.08)',
+  },
+  wakingDayFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: 'rgba(197,160,89,0.78)',
+  },
+  protectStatStack: {
+    rowGap: 10,
+  },
+  protectStatCard: {
+    minHeight: 96,
+    borderRadius: 24,
+    paddingHorizontal: 15,
+    paddingVertical: 13,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.045,
+    shadowRadius: 16,
+    elevation: 1,
+  },
+  protectStatAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 13,
+    bottom: 13,
+    width: 4,
+    borderTopRightRadius: 3,
+    borderBottomRightRadius: 3,
+  },
+  protectStatValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    columnGap: 10,
+  },
+  protectStatValue: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 42,
+    lineHeight: 46,
+    color: INK,
+  },
+  protectStatLabel: {
+    flex: 1,
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: GOLD,
+  },
+  protectStatBody: {
+    marginTop: 5,
+    fontFamily: F.serifMedium,
+    fontSize: 15.5,
+    lineHeight: 20,
+    color: '#6E6257',
+  },
+  protectTimeMeter: {
+    borderRadius: 28,
+    padding: 18,
+    alignItems: 'center',
+    backgroundColor: '#17130F',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.34)',
+  },
+  protectTimeNumber: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 56,
+    lineHeight: 61,
+    color: '#F8E8BE',
+  },
+  protectTimeLabel: {
+    marginTop: 2,
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.64)',
+  },
+  protectTimeRail: {
+    marginTop: 15,
+    width: '100%',
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    overflow: 'hidden',
+  },
+  protectTimeRailFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: GOLD,
+  },
+  protectOptionGrid: {
+    marginTop: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  protectOptionWrap: {
+    flexGrow: 1,
+    minWidth: '30%',
+  },
+  protectOption: {
+    minHeight: 45,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  protectOptionActive: {
+    backgroundColor: '#FFF7E8',
+    borderColor: 'rgba(197,160,89,0.50)',
+  },
+  protectOptionText: {
+    fontFamily: F.sansBold,
+    fontSize: 12,
+    color: 'rgba(25,23,20,0.58)',
+  },
+  protectOptionTextActive: {
+    color: INK,
+  },
+  protectBigStatCard: {
+    borderRadius: 32,
+    paddingHorizontal: 18,
+    paddingVertical: 22,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.09,
+    shadowRadius: 25,
+    elevation: 2,
+  },
+  protectBigStatNumber: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 72,
+    lineHeight: 76,
+    color: INK,
+  },
+  protectBigStatUnit: {
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: GOLD,
+  },
+  protectDayDots: {
+    marginTop: 18,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  protectDayDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: 'rgba(25,23,20,0.09)',
+  },
+  protectDayDotActive: {
+    backgroundColor: GOLD,
+  },
+  protectGainCard: {
+    borderRadius: 32,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+    alignItems: 'center',
+    backgroundColor: '#FFF7E8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.24)',
+  },
+  protectGainNumber: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 76,
+    lineHeight: 80,
+    color: INK,
+  },
+  protectGainUnit: {
+    fontFamily: F.sansBold,
+    fontSize: 12,
+    letterSpacing: 1.6,
+    textTransform: 'uppercase',
+    color: GOLD,
+  },
+  protectGainBody: {
+    marginTop: 12,
+    maxWidth: 270,
+    fontFamily: F.serifMedium,
+    fontSize: 18,
+    lineHeight: 25,
+    textAlign: 'center',
+    color: '#6E6257',
+  },
+  protectBlockerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  protectBlockerWrap: {
+    width: '48%',
+  },
+  protectBlockerOption: {
+    minHeight: 94,
+    borderRadius: 22,
+    padding: 13,
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  protectBlockerOptionActive: {
+    backgroundColor: '#FFF7E8',
+    borderColor: 'rgba(197,160,89,0.46)',
+  },
+  protectBlockerCheck: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.4,
+    borderColor: 'rgba(25,23,20,0.12)',
+  },
+  protectBlockerCheckActive: {
+    backgroundColor: INK,
+    borderColor: INK,
+  },
+  protectBlockerLabel: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17,
+    lineHeight: 20,
+    color: 'rgba(25,23,20,0.66)',
+  },
+  protectBlockerLabelActive: {
+    color: INK,
+  },
+  websiteStack: {
+    rowGap: 9,
+  },
+  websiteCard: {
+    minHeight: 66,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 11,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.075)',
+  },
+  websiteIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF7E8',
+  },
+  websiteIconText: {
+    fontFamily: F.sansBold,
+    color: GOLD,
+  },
+  websiteCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  websiteTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 16,
+    color: INK,
+  },
+  websiteExamples: {
+    marginTop: 2,
+    fontFamily: F.sans,
+    fontSize: 11.5,
+    lineHeight: 15,
+    color: MUTED,
+  },
+  websiteSwitch: {
+    width: 42,
+    height: 25,
+    borderRadius: 999,
+    padding: 3,
+    alignItems: 'flex-end',
+    backgroundColor: INK,
+  },
+  websiteSwitchKnob: {
+    width: 19,
+    height: 19,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  focusPreviewCard: {
+    borderRadius: 30,
+    padding: 16,
+    backgroundColor: '#17130F',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.34)',
+  },
+  focusPreviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    columnGap: 10,
+  },
+  focusPreviewLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    color: 'rgba(248,232,190,0.68)',
+  },
+  focusPreviewTime: {
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    color: '#F8E8BE',
+  },
+  focusPreviewTimer: {
+    marginTop: 18,
+    alignItems: 'center',
+  },
+  focusPreviewTimerText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 78,
+    lineHeight: 82,
+    color: '#FFFFFF',
+  },
+  focusPreviewTimerUnit: {
+    marginTop: -2,
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.54)',
+  },
+  focusPreviewRow: {
+    marginTop: 20,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  focusPreviewPill: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 6,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  focusPreviewPillText: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    color: '#F8E8BE',
+  },
+  completeChecklist: {
+    borderRadius: 28,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+  },
+  completeItem: {
+    minHeight: 58,
+    borderRadius: 19,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    position: 'relative',
+  },
+  completeItemDone: {
+    backgroundColor: '#FFF7E8',
+  },
+  completeCheck: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1.4,
+    borderColor: 'rgba(25,23,20,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completeCheckDone: {
+    backgroundColor: INK,
+    borderColor: INK,
+  },
+  completeText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 18,
+    color: 'rgba(25,23,20,0.58)',
+  },
+  completeTextDone: {
+    color: INK,
+  },
+  completeStrike: {
+    position: 'absolute',
+    left: 54,
+    right: 18,
+    height: 2,
+    borderRadius: 999,
+    backgroundColor: GOLD,
+    opacity: 0.75,
+  },
+  chapterChoiceStack: {
+    flexDirection: 'row',
+    columnGap: 10,
+    alignItems: 'stretch',
+    marginTop: 2,
+    overflow: 'visible',
+  },
+  chapterChoiceWrap: {
+    flex: 1,
+    zIndex: 1,
+    elevation: 1,
+  },
+  chapterChoiceWrapActive: {
+    zIndex: 20,
+    elevation: 20,
+  },
+  chapterChoiceCard: {
+    minHeight: 206,
+    borderRadius: 26,
+    paddingHorizontal: 14,
+    paddingTop: 17,
+    paddingBottom: 13,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.055,
+    shadowRadius: 22,
+    elevation: 2,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  chapterChoiceCardActive: {
+    backgroundColor: '#17130F',
+    borderColor: 'rgba(197,160,89,0.62)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.20,
+    shadowRadius: 28,
+    elevation: 5,
+  },
+  chapterChoiceGlow: {
+    position: 'absolute',
+    left: -24,
+    right: -24,
+    bottom: -44,
+    height: 112,
+    borderRadius: 76,
+    backgroundColor: 'rgba(197,160,89,0.075)',
+    transform: [{ rotate: '-8deg' }],
+  },
+  chapterChoiceGlowActive: {
+    backgroundColor: 'rgba(197,160,89,0.21)',
+  },
+  chapterChoiceAccent: {
+    position: 'absolute',
+    left: 16,
+    top: 12,
+    width: 42,
+    height: 2.5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(197,160,89,0.36)',
+  },
+  chapterChoiceAccentActive: {
+    width: 58,
+    height: 3,
+    backgroundColor: GOLD,
+  },
+  chapterChoiceTopRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 2,
+  },
+  chapterChoiceIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF7E8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 1,
+  },
+  chapterChoiceIconActive: {
+    backgroundColor: GOLD,
+    borderColor: 'rgba(248,232,190,0.38)',
+    shadowOpacity: 0.22,
+    elevation: 3,
+  },
+  chapterChoiceIconGlyph: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chapterChoiceCopy: {
+    marginTop: 15,
+    minWidth: 0,
+    width: '100%',
+    alignItems: 'center',
+  },
+  chapterChoiceTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 21,
+    lineHeight: 24,
+    textAlign: 'center',
+    color: INK,
+  },
+  chapterChoiceTitleActive: {
+    color: '#F8E8BE',
+  },
+  chapterChoiceDivider: {
+    height: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chapterChoiceDividerLine: {
+    width: 34,
+    height: 1.5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(197,160,89,0.38)',
+  },
+  chapterChoiceDividerLineActive: {
+    width: 43,
+    backgroundColor: GOLD,
+  },
+  chapterChoiceFeatureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    columnGap: 7,
+    marginTop: 5,
+    width: '100%',
+  },
+  chapterChoiceFeatureDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    marginTop: 8,
+    backgroundColor: 'rgba(197,160,89,0.50)',
+  },
+  chapterChoiceFeatureDotActive: {
+    backgroundColor: '#F8E8BE',
+  },
+  chapterChoiceBody: {
+    fontFamily: F.serifMedium,
+    fontSize: 13.5,
+    lineHeight: 18,
+    textAlign: 'left',
+    color: '#6E6257',
+    flex: 1,
+  },
+  chapterChoiceBodyActive: {
+    color: 'rgba(255,255,255,0.76)',
+  },
+  chapterChoiceRadio: {
+    position: 'absolute',
+    top: 13,
+    right: 13,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.4,
+    borderColor: 'rgba(25,23,20,0.14)',
+  },
+  chapterChoiceRadioActive: {
+    backgroundColor: GOLD,
+    borderColor: GOLD,
+  },
+  chapterCheckpointStage: {
+    flex: 1,
+    minHeight: 520,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 8,
+    paddingBottom: 28,
+  },
+  chapterCheckpointSealSlot: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: '50%',
+    marginTop: -82,
+    height: 164,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chapterCheckpointAchievement: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chapterCheckpointSealFlight: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
+  },
+  chapterCheckpointSeal: {
+    width: 102,
+    height: 102,
+    borderRadius: 51,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#17130F',
+    borderWidth: 1.2,
+    borderColor: 'rgba(232,195,116,0.74)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.34,
+    shadowRadius: 34,
+    elevation: 6,
+  },
+  chapterCheckpointSealGlow: {
+    position: 'absolute',
+    width: 134,
+    height: 134,
+    borderRadius: 67,
+    backgroundColor: 'rgba(197,160,89,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.14)',
+  },
+  checkpointFlameBurst: {
+    width: 96,
+    height: 96,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkpointFlameAura: {
+    position: 'absolute',
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    backgroundColor: 'rgba(255,214,122,0.23)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,233,182,0.40)',
+  },
+  checkpointFlameLottie: {
+    width: 86,
+    height: 86,
+  },
+  chapterCheckpointCongrats: {
+    marginTop: 18,
+    fontFamily: F.serifSemiBold,
+    fontSize: 30,
+    lineHeight: 35,
+    letterSpacing: 0,
+    color: INK,
+    textAlign: 'center',
+  },
+  chapterCheckpointRailSlot: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: -8,
+    width: '100%',
+    minHeight: 96,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chapterCheckpointRail: {
+    width: '100%',
+    maxWidth: 338,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    columnGap: 9,
+  },
+  chapterCheckpointStep: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  chapterCheckpointStepDone: {},
+  chapterCheckpointStepLine: {
+    width: '100%',
+    height: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(25,23,20,0.075)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.035)',
+    overflow: 'hidden',
+  },
+  chapterCheckpointStepLineDone: {
+    backgroundColor: 'rgba(197,160,89,0.18)',
+    borderColor: 'rgba(197,160,89,0.44)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  chapterCheckpointStepLineFill: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 999,
+    backgroundColor: '#E7C36D',
+  },
+  chapterCheckpointStepDot: {
+    marginTop: -14,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1.2,
+    borderColor: 'rgba(25,23,20,0.12)',
+  },
+  chapterCheckpointStepDotDone: {
+    backgroundColor: '#17130F',
+    borderColor: 'rgba(232,195,116,0.86)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 9 },
+    shadowOpacity: 0.26,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  chapterCheckpointRailFlameWrap: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -4,
+  },
+  chapterCheckpointRailFlame: {
+    width: 38,
+    height: 38,
+    transform: [{ translateY: 2 }],
+  },
+  chapterCheckpointStepText: {
+    marginTop: 8,
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    lineHeight: 13,
+    letterSpacing: 1.15,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    color: '#A8A29E',
+  },
+  chapterCheckpointStepTextDone: {
+    color: INK,
+  },
+  chapterCheckpointCoach: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  chapterCheckpointCoachSlot: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: '50%',
+    marginTop: -74,
+    width: '100%',
+    minHeight: 218,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  chapterCheckpointLogoFrame: {
+    width: 70,
+    height: 70,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 17,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.12,
+    shadowRadius: 22,
+    elevation: 3,
+  },
+  chapterCheckpointBubble: {
+    width: '100%',
+    maxWidth: 338,
+    minHeight: 0,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    paddingVertical: 15,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.34)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.09,
+    shadowRadius: 24,
+    elevation: 2,
+  },
+  chapterChecklist: {
+    rowGap: 10,
+    borderRadius: 28,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.15)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.055,
+    shadowRadius: 22,
+    elevation: 2,
+  },
+  chapterChecklistItem: {
+    minHeight: 62,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 11,
+    position: 'relative',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.055)',
+  },
+  chapterChecklistItemDone: {
+    backgroundColor: '#FFF7E8',
+    borderColor: 'rgba(197,160,89,0.20)',
+  },
+  chapterChecklistCheck: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.4,
+    borderColor: 'rgba(25,23,20,0.12)',
+  },
+  chapterChecklistCheckDone: {
+    backgroundColor: INK,
+    borderColor: INK,
+  },
+  chapterChecklistText: {
+    flex: 1,
+    fontFamily: F.serifSemiBold,
+    fontSize: 19,
+    color: '#8A8177',
+  },
+  chapterChecklistTextDone: {
+    color: INK,
+  },
+  chapterChecklistStrike: {
+    position: 'absolute',
+    left: 54,
+    right: 18,
+    height: 2,
+    borderRadius: 999,
+    backgroundColor: GOLD,
+    opacity: 0.74,
+  },
+  buildProductivityCard: {
+    borderRadius: 30,
+    paddingHorizontal: 17,
+    paddingVertical: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.06,
+    shadowRadius: 24,
+    elevation: 2,
+  },
+  buildProductivityKicker: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 25,
+    lineHeight: 29,
+    textAlign: 'center',
+    color: INK,
+  },
+  buildChartStage: {
+    marginTop: 18,
+    minHeight: 214,
+    borderRadius: 26,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 13,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.15)',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  buildChartGridLine: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 74,
+    height: 1,
+    backgroundColor: 'rgba(25,23,20,0.08)',
+  },
+  buildChartGridLineMiddle: {
+    bottom: 140,
+  },
+  buildChartColumns: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    columnGap: 34,
+    paddingTop: 36,
+  },
+  buildChartColumn: {
+    width: 88,
+    alignItems: 'center',
+  },
+  buildChartBarTrack: {
+    width: 58,
+    height: 124,
+    borderRadius: 18,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+    backgroundColor: 'rgba(25,23,20,0.055)',
+  },
+  buildChartBar: {
+    width: '100%',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+  },
+  buildChartValue: {
+    marginTop: 8,
+    fontFamily: F.serifSemiBold,
+    fontSize: 21,
+    lineHeight: 24,
+    color: '#8A8177',
+  },
+  buildChartValueFeatured: {
+    color: '#3E9F68',
+  },
+  buildChartLabel: {
+    marginTop: 2,
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    lineHeight: 13,
+    letterSpacing: 0.4,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    color: '#8A8177',
+  },
+  buildChartLabelFeatured: {
+    color: INK,
+  },
+  buildChartLiftBadge: {
+    position: 'absolute',
+    top: 12,
+    alignSelf: 'center',
+    minWidth: 132,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    alignItems: 'center',
+    backgroundColor: '#17130F',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.32)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.10,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  buildChartLiftNumber: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 24,
+    lineHeight: 27,
+    color: '#F8E8BE',
+  },
+  buildChartLiftText: {
+    marginTop: -1,
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.72)',
+  },
+  buildProductivityBody: {
+    marginTop: 12,
+    fontFamily: F.serifMedium,
+    fontSize: 16,
+    lineHeight: 22,
+    textAlign: 'center',
+    color: '#6E6257',
+  },
+  buildBigEventCard: {
+    minHeight: 132,
+    borderRadius: 30,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.20)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.09,
+    shadowRadius: 24,
+    elevation: 2,
+  },
+  buildBigEventIcon: {
+    width: 68,
+    height: 68,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF7E8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+  },
+  buildBigEventCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  buildBigEventLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: GOLD,
+  },
+  buildBigEventTitle: {
+    marginTop: 5,
+    fontFamily: F.serifSemiBold,
+    fontSize: 28,
+    lineHeight: 32,
+    color: INK,
+  },
+  buildBigEventMeta: {
+    marginTop: 3,
+    fontFamily: F.sansBold,
+    fontSize: 13,
+    color: MUTED,
+  },
+  buildGoalGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 9,
+  },
+  buildGoalWrap: {
+    width: '48%',
+  },
+  buildGoalChip: {
+    minHeight: 58,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 11,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  buildGoalChipActive: {
+    backgroundColor: '#FFF7E8',
+    borderColor: 'rgba(197,160,89,0.48)',
+  },
+  buildGoalText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 16,
+    color: 'rgba(25,23,20,0.62)',
+    textAlign: 'center',
+  },
+  buildGoalTextActive: {
+    color: INK,
+  },
+  weekRhythmCard: {
+    minHeight: 210,
+    borderRadius: 30,
+    paddingHorizontal: 14,
+    paddingVertical: 18,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    columnGap: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.16)',
+  },
+  weekColumn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  weekDay: {
+    marginBottom: 10,
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 0.8,
+    color: 'rgba(25,23,20,0.42)',
+    textTransform: 'uppercase',
+  },
+  weekBar: {
+    width: '100%',
+    maxWidth: 27,
+    borderRadius: 999,
+    backgroundColor: GOLD,
+  },
+  weekDot: {
+    marginTop: 10,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: 'rgba(25,23,20,0.16)',
+  },
+  buildTaskPreview: {
+    borderRadius: 24,
+    padding: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.20)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.055,
+    shadowRadius: 18,
+    elevation: 2,
+  },
+  buildChoiceGrid: {
+    marginTop: 13,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  buildChoiceWrap: {
+    flexGrow: 1,
+    minWidth: '46%',
+  },
+  buildChoice: {
+    minHeight: 45,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  buildChoiceActive: {
+    backgroundColor: '#17130F',
+    borderColor: '#17130F',
+  },
+  buildChoiceText: {
+    fontFamily: F.sansBold,
+    fontSize: 12,
+    color: 'rgba(25,23,20,0.62)',
+    textAlign: 'center',
+  },
+  buildChoiceTextActive: {
+    color: '#F8E8BE',
+  },
+  myRoutineMock: {
+    borderRadius: 30,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+  },
+  myRoutineRow: {
+    minHeight: 64,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 11,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.06)',
+  },
+  myRoutineTime: {
+    width: 52,
+    height: 34,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF7E8',
+  },
+  myRoutineTimeText: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    color: GOLD,
+  },
+  myRoutineCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  myRoutineTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17,
+    color: INK,
+  },
+  myRoutineMeta: {
+    marginTop: 2,
+    fontFamily: F.sans,
+    fontSize: 11.5,
+    color: MUTED,
+  },
+  myRoutineHandle: {
+    width: 22,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(25,23,20,0.16)',
+  },
+  buildHomePreviewShell: {
+    alignSelf: 'center',
+    width: 270,
+    height: 470,
+    borderRadius: 34,
+    padding: 16,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 2,
+    borderColor: '#17130F',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.12,
+    shadowRadius: 28,
+    elevation: 4,
   },
   pillarMapCard: {
     marginTop: 14,

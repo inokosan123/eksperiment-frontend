@@ -24,3 +24,10 @@
 - Keep edits narrowly scoped so fixes in one screen do not accidentally affect other app areas.
 - Pay special attention to shared components, task flows, scripture flows, navigation, persistence, and overlays; changes there must not create bugs, layout regressions, broken taps, or degraded behavior in existing elements.
 - After editing, run the lightest relevant verification available and call out any parts that still need phone testing.
+
+## Onboarding Isolation Rule
+
+- Onboarding may reference, preview, or visually reuse existing app concepts such as Habits, tasks, Home, Scripture, Prayer Book, Journal, blockers, or focus tools, but onboarding-specific behavior must stay isolated inside onboarding code.
+- Do not change how existing app features behave at runtime just to support onboarding. Habits, task cards, journal, Home, Scripture, navigation, persistence, and shared performance should remain the same after onboarding work unless the user explicitly asks to change those real app features.
+- If onboarding needs a special mock, animation, data shape, task preview, or guided behavior, create it locally for onboarding or pass explicit preview-only props without changing default shared-component behavior.
+- Be especially careful with shared components and imported helpers. A change made for onboarding must not make the main app slower, more laggy, visually different, or behaviorally different after the user exits onboarding.
