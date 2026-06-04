@@ -20,6 +20,11 @@ import NotificationSettings, { type NotificationMode } from '@/components/shared
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
 import type { TaskDraft } from '@/components/tasks/taskTypes';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+import {
+  useGuidedSetup,
+  useGuideTarget,
+} from '@/components/onboarding/guided/GuidedSetupContext';
+import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
 
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -29,6 +34,7 @@ const NativeDateTimePickerAndroid = DateTimePickerModule?.DateTimePickerAndroid 
 
 type Props = {
   visible: boolean;
+  guided?: boolean;
   defaultDate?: string;
   // Pre-fill the task title — used when this sheet is opened from a list
   // item the user already wrote (e.g. an Ideal Self action). Resets each
@@ -38,6 +44,11 @@ type Props = {
   onClose: () => void;
   onTaskDraft: (draft: TaskDraft) => void | Promise<unknown>;
 };
+
+export const QUICK_TASK_GUIDE_TARGETS = {
+  title: 'quick-task.title',
+  save: 'quick-task.save',
+} as const;
 
 const ACCENT = '#1C1917';
 const SOFT_BG = '#FAFAF9';
@@ -87,6 +98,7 @@ function formatDateSub(dateKey: string) {
 
 export default function QuickTaskSheet({
   visible,
+  guided = false,
   defaultDate,
   defaultTitle,
   onClose,
@@ -102,6 +114,11 @@ export default function QuickTaskSheet({
   const [reminderMinutes, setReminderMinutes] = useState(15);
   const [saving, setSaving] = useState(false);
   const [kbHeight, setKbHeight] = useState(0);
+  const { session, patchSession } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'buildMyRoutine';
+  const guidePhase = isGuided ? session.phase : '';
+  const titleTarget = useGuideTarget(QUICK_TASK_GUIDE_TARGETS.title, isGuided);
+  const saveTarget = useGuideTarget(QUICK_TASK_GUIDE_TARGETS.save, isGuided);
 
   useEffect(() => {
     const show = Keyboard.addListener(
@@ -128,6 +145,15 @@ export default function QuickTaskSheet({
     setReminderMinutes(15);
     setSaving(false);
   }, [defaultDate, defaultTitle, visible]);
+
+  useEffect(() => {
+    if (!isGuided || !visible) return;
+    const timer = setTimeout(() => {
+      titleTarget.measure();
+      saveTarget.measure();
+    }, 360);
+    return () => clearTimeout(timer);
+  }, [guidePhase, isGuided, saveTarget, titleTarget, visible]);
 
   const selectedDateLabel = useMemo(() => formatDateLabel(date), [date]);
   const selectedDateSub = useMemo(() => formatDateSub(date), [date]);
@@ -203,6 +229,7 @@ export default function QuickTaskSheet({
         },
       ]}
       backdropOpacity={0.34}
+      overlayChildren={isGuided ? <GuidedOverlayHost /> : undefined}
     >
       <View style={s.handle} />
       <View style={s.header}>
@@ -214,6 +241,7 @@ export default function QuickTaskSheet({
           <Text style={s.title}>Add a Task</Text>
         </View>
         <TouchableOpacity
+          {...saveTarget}
           onPress={save}
           disabled={!canSave}
           activeOpacity={0.86}
@@ -260,12 +288,16 @@ export default function QuickTaskSheet({
         <View style={s.card}>
           <Text style={s.label}>Name Activity</Text>
           <TextInput
+            {...titleTarget}
             value={title}
             onChangeText={setTitle}
             placeholder="Enter task name..."
             placeholderTextColor="#C9C5BD"
             style={s.titleInput}
             returnKeyType="done"
+            onSubmitEditing={() => {
+              if (isGuided && title.trim()) patchSession({ phase: 'quickSave' });
+            }}
           />
         </View>
 

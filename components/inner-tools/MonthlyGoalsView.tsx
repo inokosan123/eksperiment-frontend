@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Keyboard,
   ScrollView,
@@ -16,11 +16,21 @@ import { useMonthlyGoals } from '@/components/inner-tools/MonthlyGoalsContext';
 import { AnimatedGoalCheck, AnimatedStrikeText, fireGoalToggleHaptic } from '@/components/inner-tools/MonthlyGoalRow';
 import { F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import {
+  notifyGuideEvent,
+  useGuidedSetup,
+  useGuideTarget,
+} from '@/components/onboarding/guided/GuidedSetupContext';
 
 
 const BG = '#FAF7F0';
 const GOLD = '#C5A059';
 const GREEN = '#16A34A';
+const MONTHLY_GOALS_GUIDE_TARGETS = {
+  months: 'monthly-goals.months',
+  input: 'monthly-goals.input',
+  add: 'monthly-goals.add',
+} as const;
 
 function monthKey(year: number, monthIndex: number) {
   return `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
@@ -41,8 +51,20 @@ function formatMonthFull(month: string) {
 
 const MONTH_LABELS_SHORT = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
-export default function MonthlyGoalsView() {
+export default function MonthlyGoalsView({
+  guided = false,
+  onGuidedComplete,
+}: {
+  guided?: boolean;
+  onGuidedComplete?: () => void;
+} = {}) {
   const { goalsByMonth, addGoal, toggleGoal, deleteGoal } = useMonthlyGoals();
+  const {
+    completeStep,
+    patchSession,
+    session,
+    setPresentation,
+  } = useGuidedSetup();
   const todayMonth = currentMonthKey();
   const todayYear = new Date().getFullYear();
   const todayMonthIdx = new Date().getMonth();
@@ -50,6 +72,11 @@ export default function MonthlyGoalsView() {
   const [selectedMonth, setSelectedMonth] = useState(todayMonth);
   const [draftText, setDraftText] = useState('');
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const isGuided = guided && session?.active === true && session.activeStep === 'buildMonthlyGoals';
+  const guidePhase = session?.phase ?? 'intro';
+  const monthsTarget = useGuideTarget(MONTHLY_GOALS_GUIDE_TARGETS.months, isGuided);
+  const inputTarget = useGuideTarget(MONTHLY_GOALS_GUIDE_TARGETS.input, isGuided);
+  const addTarget = useGuideTarget(MONTHLY_GOALS_GUIDE_TARGETS.add, isGuided);
 
   // Year being viewed in the month grid (independent of selectedMonth so the
   // user can browse a year without committing to selecting it).
@@ -105,8 +132,102 @@ export default function MonthlyGoalsView() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setDraftText('');
     Keyboard.dismiss();
-    await addGoal(selectedMonth, text);
+    const saved = await addGoal(selectedMonth, text);
+    if (isGuided && saved) {
+      notifyGuideEvent({
+        type: 'completed',
+        step: 'buildMonthlyGoals',
+        phase: 'complete',
+        entityKey: 'monthlyGoal',
+        entityId: saved.id,
+      });
+    }
   };
+
+  const chooseMonth = (key: string) => {
+    Haptics.selectionAsync().catch(() => {});
+    setSelectedMonth(key);
+    if (isGuided && guidePhase === 'intro') patchSession({ phase: 'goal' });
+  };
+
+  const submitGoalDraft = () => {
+    if (isGuided && guidePhase === 'goal' && draftText.trim()) {
+      Keyboard.dismiss();
+      patchSession({ phase: 'add' });
+      return;
+    }
+    void handleAdd();
+  };
+
+  const finishGuidedStep = useCallback(() => {
+    completeStep('buildMonthlyGoals');
+    patchSession({
+      activeStep: 'buildHabits',
+      phase: 'intro',
+      route: '/onboarding',
+    });
+    setPresentation(null);
+    onGuidedComplete?.();
+  }, [completeStep, onGuidedComplete, patchSession, setPresentation]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+    if (guidePhase === 'intro') {
+      setPresentation({
+        key: 'monthly-goals-month',
+        targetId: MONTHLY_GOALS_GUIDE_TARGETS.months,
+        cutoutPadding: 5,
+        placement: 'below',
+        allowTargetInteraction: true,
+        message: 'Give your month a direction.\n\nChoose the month you want to begin with.',
+      });
+      return;
+    }
+    if (guidePhase === 'goal') {
+      setPresentation({
+        key: 'monthly-goals-input',
+        targetId: MONTHLY_GOALS_GUIDE_TARGETS.input,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Write one goal that would make this month meaningful. Tap Done when it feels clear.',
+      });
+      return;
+    }
+    if (guidePhase === 'add') {
+      setPresentation({
+        key: 'monthly-goals-add',
+        targetId: MONTHLY_GOALS_GUIDE_TARGETS.add,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'A clear direction changes how the small choices feel. Add your first goal.',
+      });
+      return;
+    }
+    if (guidePhase === 'complete') {
+      setPresentation({
+        key: 'monthly-goals-complete',
+        placement: 'center',
+        celebrate: true,
+        message: 'Your first monthly goal is set.',
+        ctaLabel: 'CONTINUE',
+        onCta: finishGuidedStep,
+      });
+    }
+  }, [finishGuidedStep, guidePhase, isGuided, setPresentation]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+    const timer = setTimeout(() => {
+      monthsTarget.measure();
+      inputTarget.measure();
+      addTarget.measure();
+    }, guidePhase === 'add' ? 360 : 120);
+    return () => clearTimeout(timer);
+  }, [addTarget, guidePhase, inputTarget, isGuided, monthsTarget]);
+
+  useEffect(() => () => {
+    if (guided) setPresentation(null);
+  }, [guided, setPresentation]);
 
   const handleToggle = async (id: string, willComplete: boolean) => {
     fireGoalToggleHaptic(willComplete);
@@ -153,7 +274,7 @@ export default function MonthlyGoalsView() {
         </View>
 
         {/* Month grid (Jan → Dec) for the viewed year */}
-        <View style={s.monthsGrid}>
+        <View ref={monthsTarget.ref} onLayout={monthsTarget.onLayout} style={s.monthsGrid}>
           {MONTH_LABELS_SHORT.map((label, idx) => {
             const key = monthKey(viewYear, idx);
             const isSelected = key === selectedMonth;
@@ -174,7 +295,7 @@ export default function MonthlyGoalsView() {
               return (
                 <TouchableOpacity
                   key={key}
-                  onPress={() => { Haptics.selectionAsync().catch(() => {}); setSelectedMonth(key); }}
+                  onPress={() => chooseMonth(key)}
                   activeOpacity={0.84}
                   style={s.monthCellWrap}
                 >
@@ -220,7 +341,7 @@ export default function MonthlyGoalsView() {
             return (
               <TouchableOpacity
                 key={key}
-                onPress={() => { Haptics.selectionAsync().catch(() => {}); setSelectedMonth(key); }}
+                onPress={() => chooseMonth(key)}
                 activeOpacity={0.84}
                 style={s.monthCellWrap}
               >
@@ -321,15 +442,19 @@ export default function MonthlyGoalsView() {
         {/* Add input */}
         <View style={s.addCard}>
           <TextInput
+            ref={inputTarget.ref}
+            onLayout={inputTarget.onLayout}
             value={draftText}
             onChangeText={setDraftText}
-            onSubmitEditing={handleAdd}
+            onSubmitEditing={submitGoalDraft}
             placeholder="Add a goal for this month..."
             placeholderTextColor="#C9C5BD"
             returnKeyType="done"
             style={s.addInput}
           />
           <TouchableOpacity
+            ref={addTarget.ref}
+            onLayout={addTarget.onLayout}
             onPress={handleAdd}
             disabled={!draftText.trim()}
             activeOpacity={0.86}

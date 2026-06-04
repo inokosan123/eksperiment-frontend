@@ -19,6 +19,7 @@ import Reanimated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
@@ -56,6 +57,14 @@ import {
   preloadAchievementFeedbackSound,
   preloadTaskFeedbackSound,
 } from '@/components/shared/taskFeedback';
+import { AnimatedTaskRow, CompletionFlourish } from '@/components/shared/taskAnimations';
+import BigEventsView from '@/components/journal/BigEventsView';
+import MonthlyGoalsView from '@/components/inner-tools/MonthlyGoalsView';
+import HabitsView from '@/components/habits/HabitsView';
+import ChallengesView from '@/components/challenges/ChallengesView';
+import MyRoutineView from '@/components/routine/MyRoutineView';
+import { useGuidedSetup } from '@/components/onboarding/guided/GuidedSetupContext';
+import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
 import { C, F } from '@/constants/tokens';
 
 type ChristianAnswer = 'yes' | 'exploring' | 'no' | 'prefer_not';
@@ -1454,6 +1463,7 @@ function ValuePreviewSlide({
                 number={slideIndex + 1}
                 slide={VALUE_SLIDES[valueStep]}
                 animateIntro={slideIndex === 0}
+                active={slideIndex === index}
               />
             ))}
           </Reanimated.View>
@@ -1482,12 +1492,14 @@ function ValuePreviewPage({
   number,
   slide,
   animateIntro,
+  active,
 }: {
   width: number;
   topInset: number;
   number: number;
   slide: { title: string; body: string; kind: ValuePhoneKind };
   animateIntro?: boolean;
+  active: boolean;
 }) {
   const copyEntering = animateIntro
     ? FadeIn.duration(620).withInitialValues({
@@ -1520,7 +1532,7 @@ function ValuePreviewPage({
       </Reanimated.View>
 
       <Reanimated.View entering={phoneEntering} style={s.valuePhoneStage}>
-        <ValuePhoneMock kind={slide.kind} />
+        <ValuePhoneMock kind={slide.kind} active={active} />
       </Reanimated.View>
     </View>
   );
@@ -1571,24 +1583,96 @@ function ValueSubtitleText({ kind }: { kind: ValuePhoneKind }) {
   );
 }
 
-function ValuePhoneMock({ kind }: { kind: ValuePhoneKind }) {
+function ValuePhoneMock({ kind, active }: { kind: ValuePhoneKind; active: boolean }) {
+  const organizeConfettiRef = useRef<React.ElementRef<typeof LottieView>>(null);
+  const organizeConfettiFadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const organizePhoneIntro = useSharedValue(kind === 'rhythm' && !active ? 0 : 1);
+  const organizeConfettiReveal = useSharedValue(0);
+
+  useEffect(() => {
+    if (organizeConfettiFadeTimer.current) {
+      clearTimeout(organizeConfettiFadeTimer.current);
+      organizeConfettiFadeTimer.current = null;
+    }
+
+    if (kind !== 'rhythm') {
+      organizePhoneIntro.value = 1;
+      organizeConfettiReveal.value = 0;
+      return;
+    }
+
+    organizePhoneIntro.value = 0;
+    organizeConfettiReveal.value = 0;
+    organizeConfettiRef.current?.reset();
+    if (active) {
+      organizePhoneIntro.value = withDelay(
+        110,
+        withTiming(1, {
+          duration: 920,
+          easing: Easing.out(Easing.cubic),
+        }),
+      );
+    }
+
+    return () => {
+      if (organizeConfettiFadeTimer.current) {
+        clearTimeout(organizeConfettiFadeTimer.current);
+        organizeConfettiFadeTimer.current = null;
+      }
+    };
+  }, [active, kind, organizeConfettiReveal, organizePhoneIntro]);
+
+  const playOrganizeConfetti = useCallback(() => {
+    organizeConfettiReveal.value = withTiming(1, { duration: 210 });
+    organizeConfettiRef.current?.play();
+    organizeConfettiFadeTimer.current = setTimeout(() => {
+      organizeConfettiReveal.value = withTiming(0, { duration: 920 });
+      organizeConfettiFadeTimer.current = null;
+    }, 1720);
+  }, [organizeConfettiReveal]);
+
+  const organizePhoneIntroStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(organizePhoneIntro.value, [0, 0.18, 1], [0, 1, 1]),
+    transform: [
+      { translateY: interpolate(organizePhoneIntro.value, [0, 0.86, 1], [90, -3, 0]) },
+    ],
+  }));
+  const organizeConfettiRevealStyle = useAnimatedStyle(() => ({
+    opacity: organizeConfettiReveal.value,
+  }));
+
   return (
-    <View style={s.valuePhoneOuter}>
-      <View style={s.valuePhoneSideButtonLeft} />
-      <View style={s.valuePhoneSideButtonRightTop} />
-      <View style={s.valuePhoneSideButtonRightBottom} />
-      <View style={s.valuePhoneBezel}>
-        <View style={s.valuePhoneNotch}>
-          <View style={s.valuePhoneSpeaker} />
-          <View style={s.valuePhoneCamera} />
-        </View>
-        <View style={s.valuePhoneScreen}>
-          {kind === 'protect' && <ValueProtectPhone />}
-          {kind === 'rhythm' && <ValueOrganizePhone />}
-          {kind === 'rise' && <ValueRisePhone />}
+    <Reanimated.View style={[s.valuePhoneMotionShell, kind === 'rhythm' && organizePhoneIntroStyle]}>
+      {kind === 'rhythm' ? (
+        <Reanimated.View pointerEvents="none" style={[s.valueOrganizeConfettiLayer, organizeConfettiRevealStyle]}>
+          <LottieView
+            ref={organizeConfettiRef}
+            source={CONFETTI_SOURCE}
+            autoPlay={false}
+            loop={false}
+            speed={0.68}
+            resizeMode="cover"
+            style={StyleSheet.absoluteFill}
+          />
+        </Reanimated.View>
+      ) : null}
+      <View style={s.valuePhoneOuter}>
+        <View style={s.valuePhoneSideButtonLeft} />
+        <View style={s.valuePhoneSideButtonRightTop} />
+        <View style={s.valuePhoneSideButtonRightBottom} />
+        <View style={s.valuePhoneBezel}>
+          <View style={s.valuePhoneNotch}>
+            <View style={s.valuePhoneSpeaker} />
+            <View style={s.valuePhoneCamera} />
+          </View>
+          <View style={s.valuePhoneScreen}>
+            {kind === 'protect' && <ValueProtectPhone />}
+            {kind === 'rhythm' && <ValueOrganizePhone active={active} animated onCelebrate={playOrganizeConfetti} />}
+            {kind === 'rise' && <ValueRisePhone />}
+          </View>
         </View>
       </View>
-    </View>
+    </Reanimated.View>
   );
 }
 
@@ -1622,14 +1706,72 @@ function ValuePhoneRow({
   );
 }
 
-function ValuePhoneTaskCard({ item }: { item: TaskTypePreview }) {
+function ValuePhoneTaskCard({
+  item,
+  completed = false,
+}: {
+  item: TaskTypePreview;
+  completed?: boolean;
+}) {
+  const task = completed ? { ...item.task, state: 'done' as const } : item.task;
+
   return (
     <View style={s.valueMiniTaskFrame}>
       <View style={s.valueMiniTaskScale}>
-        <AnyTaskCard task={item.task} />
+        <AnimatedTaskRow done={completed}>
+          <View style={s.valuePhoneTaskInteractiveWrap}>
+            <AnyTaskCard task={task} />
+            <CompletionFlourish
+              done={completed}
+              color={item.task.habitColor ?? GOLD}
+              layerStyle={s.valuePhoneTaskFlourishLayer}
+            />
+          </View>
+        </AnimatedTaskRow>
       </View>
     </View>
   );
+}
+
+function ValueOrganizeReveal({
+  active,
+  animated,
+  delay,
+  children,
+}: {
+  active: boolean;
+  animated: boolean;
+  delay: number;
+  children: React.ReactNode;
+}) {
+  const reveal = useSharedValue(animated && active ? 0 : 1);
+
+  useEffect(() => {
+    if (!animated) {
+      reveal.value = 1;
+      return;
+    }
+
+    reveal.value = 0;
+    if (active) {
+      reveal.value = withDelay(
+        delay,
+        withTiming(1, {
+          duration: 330,
+          easing: Easing.out(Easing.cubic),
+        }),
+      );
+    }
+  }, [active, animated, delay, reveal]);
+
+  const revealStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(reveal.value, [0, 0.20, 1], [0, 1, 1]),
+    transform: [
+      { translateY: interpolate(reveal.value, [0, 0.76, 1], [15, -1.5, 0]) },
+    ],
+  }));
+
+  return <Reanimated.View style={[s.valueOrganizeReveal, revealStyle]}>{children}</Reanimated.View>;
 }
 
 function ValueProtectStat({ value, label }: { value: string; label: string }) {
@@ -1734,7 +1876,41 @@ function ValueProtectPhone() {
   );
 }
 
-function ValueOrganizePhone() {
+function ValueOrganizePhone({
+  active = true,
+  animated = false,
+  onCelebrate,
+}: {
+  active?: boolean;
+  animated?: boolean;
+  onCelebrate?: () => void;
+}) {
+  const [completedHabit, setCompletedHabit] = useState(false);
+
+  useEffect(() => {
+    if (!animated) {
+      setCompletedHabit(false);
+      return undefined;
+    }
+
+    setCompletedHabit(false);
+    if (!active) return undefined;
+
+    preloadTaskFeedbackSound();
+    const checkTimer = setTimeout(() => {
+      setCompletedHabit(true);
+      void playTaskCompleteFeedback();
+    }, 1710);
+    const celebrationTimer = setTimeout(() => {
+      onCelebrate?.();
+    }, 1840);
+
+    return () => {
+      clearTimeout(checkTimer);
+      clearTimeout(celebrationTimer);
+    };
+  }, [active, animated, onCelebrate]);
+
   const days = [
     { day: 'Tue', date: '19' },
     { day: 'Wed', date: '20' },
@@ -1810,18 +1986,20 @@ function ValueOrganizePhone() {
         <Text style={s.valueBigEventsHeading}>Big Upcoming Events</Text>
         <Text style={s.valueBigEventsSub}>1 active</Text>
       </View>
-      <View style={s.valueBigEventCard}>
-        <View style={s.valueBigEventIconBox}>
-          <NotoEmoji name={normalizeHabitIcon('birthday-cake')} size={13} />
+      <ValueOrganizeReveal active={active} animated={animated} delay={460}>
+        <View style={s.valueBigEventCard}>
+          <View style={s.valueBigEventIconBox}>
+            <NotoEmoji name={normalizeHabitIcon('birthday-cake')} size={13} />
+          </View>
+          <View style={s.valueBigEventCopy}>
+            <Text style={s.valueBigEventTitle} numberOfLines={1}>Birthday</Text>
+          </View>
+          <View style={s.valueBigEventCount}>
+            <Text style={s.valueBigEventCountNum}>7</Text>
+            <Text style={s.valueBigEventCountLabel}>days</Text>
+          </View>
         </View>
-        <View style={s.valueBigEventCopy}>
-          <Text style={s.valueBigEventTitle} numberOfLines={1}>Birthday</Text>
-        </View>
-        <View style={s.valueBigEventCount}>
-          <Text style={s.valueBigEventCountNum}>7</Text>
-          <Text style={s.valueBigEventCountLabel}>days</Text>
-        </View>
-      </View>
+      </ValueOrganizeReveal>
 
       <View style={s.valueTasksHeader}>
         <View>
@@ -1832,8 +2010,18 @@ function ValueOrganizePhone() {
       </View>
 
       <View style={s.valueHomeTaskStack}>
-        {taskPreviewItems.map(item => (
-          <ValuePhoneTaskCard key={item.key} item={item} />
+        {taskPreviewItems.map((item, itemIndex) => (
+          <ValueOrganizeReveal
+            key={item.key}
+            active={active}
+            animated={animated}
+            delay={650 + itemIndex * 105}
+          >
+            <ValuePhoneTaskCard
+              item={item}
+              completed={itemIndex === 0 && completedHabit}
+            />
+          </ValueOrganizeReveal>
         ))}
       </View>
     </View>
@@ -4808,12 +4996,13 @@ function chapterTitle(chapter: OnboardingChapter) {
   return chapter === 'protect' ? 'Protect your time' : 'Build your rhythm';
 }
 
-type CheckpointChapter = OnboardingChapter | 'rise';
+type CheckpointChapter = OnboardingChapter | 'rise' | 'tools';
 
 function chapterRailTitle(chapter: CheckpointChapter) {
-  if (chapter === 'protect') return 'Protect time';
+  if (chapter === 'protect') return 'Protect';
   if (chapter === 'build') return 'Organize';
-  return 'Arise';
+  if (chapter === 'rise') return 'Grow';
+  return 'Tools';
 }
 
 function checkpointCtaLabel(first: OnboardingChapter, final: boolean) {
@@ -5471,79 +5660,107 @@ function ProtectCompleteSlide({ onNext }: { onNext: () => void }) {
   );
 }
 
-type BuildIntroPhase = 'intro' | 'answer';
-
 function BuildIntroSlide({ onNext }: { onNext: () => void }) {
-  const [phase, setPhase] = useState<BuildIntroPhase>('intro');
   const [reveal, setReveal] = useState(0);
-  const [introReady, setIntroReady] = useState(false);
-  const ctaLabel = phase === 'intro' ? 'How can this help me?' : "Let's go";
-  const ctaVisible = phase === 'intro' ? introReady : reveal >= 2;
 
   useEffect(() => {
-    setIntroReady(false);
-    const timer = setTimeout(() => setIntroReady(true), 420);
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    const timers: ReturnType<typeof setTimeout>[] = [];
-
-    if (phase === 'answer') {
-      setReveal(0);
-      [180, 1680].forEach((delay, index) => {
-        timers.push(setTimeout(() => setReveal(index + 1), delay));
-      });
-    }
-
-    if (phase === 'intro') {
-      setReveal(0);
-    }
-
+    const timings = [420, 1180, 1960, 3420, 4140, 4860, 5640, 7240, 7980];
+    const timers = timings.map((delay, index) => (
+      setTimeout(() => setReveal(index + 1), delay)
+    ));
     return () => {
       timers.forEach(timer => clearTimeout(timer));
     };
-  }, [phase]);
-
-  const handleNext = () => {
-    if (phase === 'intro') {
-      runSelectionHaptic();
-      setPhase('answer');
-      return;
-    }
-    if (reveal < 2) {
-      setReveal(2);
-      return;
-    }
-    onNext();
-  };
+  }, []);
 
   return (
     <GuidedSetupShell
-      onNext={handleNext}
-      ctaLabel={ctaLabel}
-      scrollSignal={`${phase}-${reveal}`}
+      onNext={onNext}
+      ctaLabel="Let's start"
+      ctaDelay={180}
+      scrollSignal={reveal}
       autoScrollOnContentChange
-      ctaVisible={ctaVisible}
+      ctaVisible={reveal >= 9}
     >
-      {introReady && (
+      {reveal >= 1 && (
         <ProtectSidePrompt
-          motionKey="build-rhythm-intro"
+          motionKey="build-plan-intro"
           segments={[
-            { text: "Now let's build your " },
-            { text: 'rhythm', highlight: true },
+            { text: 'Discipline starts with a ' },
+            { text: 'plan', highlight: true },
             { text: '.' },
           ]}
         />
       )}
-
-      {reveal >= 1 && <BuildProductivityChart />}
       {reveal >= 2 && (
         <ProtectSidePrompt
-          motionKey="build-rhythm-productive"
+          motionKey="build-plan-difference"
           segments={[
-            { text: "Let's make you " },
-            { text: 'more productive', highlight: true },
+            { text: 'And the ' },
+            { text: 'difference', highlight: true },
+            { text: ' is real.' },
+          ]}
+        />
+      )}
+      {reveal >= 3 && (
+        <BuildResearchChart
+          title="Plan vs No plan"
+          subtitle="How likely people are to finish what they set out to do"
+          citation="Gollwitzer & Brandstätter, 1997"
+          rows={[
+            { label: 'Goal only', value: 32 },
+            { label: 'Goal + clear plan', value: 71, featured: true },
+          ]}
+        />
+      )}
+      {reveal >= 4 && (
+        <ProtectSidePrompt
+          motionKey="build-even-motivated"
+          segments={[
+            { text: 'Even if you are highly ' },
+            { text: 'motivated', highlight: true },
+            { text: '.' },
+          ]}
+        />
+      )}
+      {reveal >= 5 && (
+        <ProtectSidePrompt
+          motionKey="build-odds"
+          segments={[
+            { text: 'Odds are ' },
+            { text: 'against you', highlight: true },
+            { text: '.' },
+          ]}
+        />
+      )}
+      {reveal >= 6 && <BuildStructureThesis />}
+      {reveal >= 7 && (
+        <BuildResearchChart
+          title="Motivation vs Structure"
+          subtitle="What actually gets people to show up and do the work"
+          citation="Milne, Orbell & Sheeran, 2002"
+          rows={[
+            { label: 'Motivation only', value: 35 },
+            { label: 'Motivation + clear plan', value: 91, featured: true },
+          ]}
+        />
+      )}
+      {reveal >= 8 && (
+        <ProtectSidePrompt
+          motionKey="build-about-to-build"
+          segments={[
+            { text: "That's what we're about to " },
+            { text: 'build', highlight: true },
+            { text: '.' },
+          ]}
+        />
+      )}
+      {reveal >= 9 && (
+        <ProtectSidePrompt
+          motionKey="build-rhythm-close"
+          segments={[
+            { text: 'Good habits, clear goals, and a rhythm you can keep — ' },
+            { text: "let's build it together", highlight: true },
             { text: '.' },
           ]}
         />
@@ -5552,7 +5769,23 @@ function BuildIntroSlide({ onNext }: { onNext: () => void }) {
   );
 }
 
-function BuildProductivityChart() {
+type BuildResearchRow = {
+  label: string;
+  value: number;
+  featured?: boolean;
+};
+
+function BuildResearchChart({
+  title,
+  subtitle,
+  citation,
+  rows,
+}: {
+  title: string;
+  subtitle: string;
+  citation: string;
+  rows: BuildResearchRow[];
+}) {
   useEffect(() => {
     runStrongHaptic();
   }, []);
@@ -5563,51 +5796,70 @@ function BuildProductivityChart() {
         opacity: 0,
         transform: [{ translateY: 18 }, { scale: 0.965 }],
       })}
-      style={s.buildProductivityCard}
+      style={s.buildResearchCard}
     >
-      <Text style={s.buildProductivityKicker}>Written plans win.</Text>
-      <View style={s.buildChartStage}>
-        <View style={s.buildChartGridLine} />
-        <View style={[s.buildChartGridLine, s.buildChartGridLineMiddle]} />
-        <View style={s.buildChartColumns}>
-          <BuildChartColumn label="No plan" value={43} color="#D45E54" />
-          <BuildChartColumn label="Written plan" value={64} color="#3E9F68" featured />
-        </View>
-        <View style={s.buildChartLiftBadge}>
-          <Text style={s.buildChartLiftNumber}>+51%</Text>
-          <Text style={s.buildChartLiftText}>more follow-through</Text>
-        </View>
+      <View style={s.buildResearchHeading}>
+        <Text style={s.buildResearchTitle}>{title}</Text>
+        <View style={s.buildResearchRule} />
       </View>
-      <Text style={s.buildProductivityBody}>A visible plan gives your day somewhere to return.</Text>
+      <Text style={s.buildResearchSubtitle}>{subtitle}</Text>
+      <View style={s.buildResearchRows}>
+        {rows.map((row, index) => (
+          <BuildResearchBar key={row.label} row={row} index={index} />
+        ))}
+      </View>
+      <Text style={s.buildResearchCitation}>{citation}</Text>
     </Reanimated.View>
   );
 }
 
-function BuildChartColumn({
-  label,
-  value,
-  color,
-  featured = false,
-}: {
-  label: string;
-  value: number;
-  color: string;
-  featured?: boolean;
-}) {
+function BuildResearchBar({ row, index }: { row: BuildResearchRow; index: number }) {
   return (
-    <View style={s.buildChartColumn}>
-      <View style={s.buildChartBarTrack}>
+    <Reanimated.View
+      entering={FadeIn.delay(220 + index * 360).duration(620).withInitialValues({
+        opacity: 0,
+        transform: [{ translateX: -12 }],
+      })}
+      style={s.buildResearchRow}
+    >
+      <View style={s.buildResearchRowTop}>
+        <Text style={[s.buildResearchLabel, row.featured && s.buildResearchLabelFeatured]}>{row.label}</Text>
+        <Text style={[s.buildResearchValue, row.featured && s.buildResearchValueFeatured]}>{row.value}%</Text>
+      </View>
+      <View style={s.buildResearchTrack}>
         <Reanimated.View
-          entering={FadeIn.duration(820).withInitialValues({
+          entering={FadeIn.delay(320 + index * 360).duration(760).withInitialValues({
             opacity: 0,
-            transform: [{ scaleY: 0.58 }],
+            transform: [{ scaleX: 0.36 }],
           })}
-          style={[s.buildChartBar, { height: `${value}%`, backgroundColor: color }]}
+          style={[
+            s.buildResearchFill,
+            row.featured && s.buildResearchFillFeatured,
+            { width: `${row.value}%` },
+          ]}
         />
       </View>
-      <Text style={[s.buildChartValue, featured && s.buildChartValueFeatured]}>{value}</Text>
-      <Text style={[s.buildChartLabel, featured && s.buildChartLabelFeatured]}>{label}</Text>
-    </View>
+    </Reanimated.View>
+  );
+}
+
+function BuildStructureThesis() {
+  useEffect(() => {
+    runStrongHaptic();
+  }, []);
+
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(620).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 14 }, { scale: 0.97 }],
+      })}
+      style={s.buildThesisCard}
+    >
+      <Text style={s.buildThesisText}>Structure</Text>
+      <Text style={s.buildThesisOperator}>&gt;</Text>
+      <Text style={s.buildThesisText}>Motivation</Text>
+    </Reanimated.View>
   );
 }
 
@@ -6665,6 +6917,7 @@ function TrialRow({
 export default function OnboardingView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { beginGuidedSetup } = useGuidedSetup();
   const [answers, setAnswers] = useState<Answers>({});
   const [preloadPhase, setPreloadPhase] = useState<PreloadPhase>('only');
   const steps = useMemo(() => stepOrder(answers), [answers]);
@@ -6799,6 +7052,17 @@ export default function OnboardingView() {
     runSelectionHaptic();
     setAnswers(prev => ({ ...prev, firstChapter: chapter }));
   }, []);
+  const startBuildSetup = () => {
+    const firstChapter = answers.firstChapter ?? 'protect';
+    beginGuidedSetup({
+      currentChapter: 'build',
+      chapterOrder: firstChapter === 'build' ? ['build', 'protect'] : ['protect', 'build'],
+      activeStep: 'buildBigEvents',
+      phase: 'intro',
+      route: '/onboarding',
+    });
+    goNext();
+  };
 
   const stageStyle = useAnimatedStyle(() => ({
     opacity: interpolate(screenMotion.value, [0, 1], [0.82, 1]),
@@ -6833,6 +7097,51 @@ export default function OnboardingView() {
 
   if (preloadPhase === 'only') {
     return <OnboardingPreload bottomInset={insets.bottom} topInset={insets.top} />;
+  }
+
+  if (activeStep === 'buildBigEvents') {
+    return (
+      <View style={s.screen}>
+        <BigEventsView guided onGuidedComplete={goNext} />
+        <GuidedOverlayHost />
+      </View>
+    );
+  }
+
+  if (activeStep === 'buildMonthlyGoals') {
+    return (
+      <View style={s.screen}>
+        <MonthlyGoalsView guided onGuidedComplete={goNext} />
+        <GuidedOverlayHost />
+      </View>
+    );
+  }
+
+  if (activeStep === 'buildHabits') {
+    return (
+      <View style={s.screen}>
+        <HabitsView guided onGuidedComplete={goNext} />
+        <GuidedOverlayHost />
+      </View>
+    );
+  }
+
+  if (activeStep === 'buildChallenges') {
+    return (
+      <View style={s.screen}>
+        <ChallengesView guided onGuidedComplete={goNext} />
+        <GuidedOverlayHost />
+      </View>
+    );
+  }
+
+  if (activeStep === 'buildMyRoutine') {
+    return (
+      <View style={s.screen}>
+        <MyRoutineView guided onGuidedComplete={goNext} />
+        <GuidedOverlayHost />
+      </View>
+    );
   }
 
   const renderStep = () => {
@@ -6895,17 +7204,12 @@ export default function OnboardingView() {
     if (activeStep === 'protectWebsiteBlockers') return <ProtectWebsiteBlockersSlide onNext={goNext} />;
     if (activeStep === 'protectFocusBlock') return <ProtectFocusBlockSlide onNext={goNext} />;
     if (activeStep === 'protectComplete') return <ProtectCompleteSlide onNext={goNext} />;
-    if (activeStep === 'buildIntro') return <BuildIntroSlide onNext={goNext} />;
-    if (activeStep === 'buildBigEvents') return <BuildBigEventsSlide onNext={goNext} />;
-    if (activeStep === 'buildMonthlyGoals') return <BuildMonthlyGoalsSlide onNext={goNext} />;
+    if (activeStep === 'buildIntro') return <BuildIntroSlide onNext={startBuildSetup} />;
     if (activeStep === 'buildWeeklyRhythm') return <BuildWeeklyRhythmSlide onNext={goNext} />;
     if (activeStep === 'buildTaskTypes') return <BuildTaskTypesSlide onNext={goNext} />;
-    if (activeStep === 'buildHabits') return <BuildHabitsSlide onNext={goNext} />;
     if (activeStep === 'buildSpiritualTasks') return <BuildSpiritualTasksSlide onNext={goNext} />;
     if (activeStep === 'buildRoutineTasks') return <BuildRoutineTasksSlide onNext={goNext} />;
-    if (activeStep === 'buildChallenges') return <BuildChallengesSlide onNext={goNext} />;
     if (activeStep === 'buildQuickTasks') return <BuildQuickTasksSlide onNext={goNext} />;
-    if (activeStep === 'buildMyRoutine') return <BuildMyRoutineSlide onNext={goNext} />;
     if (activeStep === 'buildHomePreview') return <BuildHomePreviewSlide onNext={goNext} />;
     if (activeStep === 'buildComplete') return <BuildCompleteSlide onNext={goNext} />;
     if (activeStep === 'chapterCheckpointFirst') {
@@ -7285,9 +7589,13 @@ const s = StyleSheet.create({
     paddingBottom: 88,
     zIndex: 2,
   },
-  valuePhoneOuter: {
+  valuePhoneMotionShell: {
     width: 270,
     height: 526,
+    position: 'relative',
+  },
+  valuePhoneOuter: {
+    ...StyleSheet.absoluteFillObject,
     borderRadius: 58,
     backgroundColor: '#0F0E0D',
     padding: 4.5,
@@ -7298,6 +7606,20 @@ const s = StyleSheet.create({
     shadowOpacity: 0.20,
     shadowRadius: 38,
     elevation: 12,
+    zIndex: 2,
+  },
+  valueOrganizeConfettiLayer: {
+    position: 'absolute',
+    top: -122,
+    left: -108,
+    right: -108,
+    bottom: -122,
+    zIndex: 0,
+    elevation: 0,
+    transform: [{ scale: 0.74 }],
+  },
+  valueOrganizeReveal: {
+    width: '100%',
   },
   valuePhoneSideButtonLeft: {
     position: 'absolute',
@@ -7307,6 +7629,7 @@ const s = StyleSheet.create({
     height: 54,
     borderRadius: 4,
     backgroundColor: '#2A2622',
+    zIndex: 3,
   },
   valuePhoneSideButtonRightTop: {
     position: 'absolute',
@@ -7316,6 +7639,7 @@ const s = StyleSheet.create({
     height: 42,
     borderRadius: 4,
     backgroundColor: '#2A2622',
+    zIndex: 3,
   },
   valuePhoneSideButtonRightBottom: {
     position: 'absolute',
@@ -7325,6 +7649,7 @@ const s = StyleSheet.create({
     height: 58,
     borderRadius: 4,
     backgroundColor: '#2A2622',
+    zIndex: 3,
   },
   valuePhoneBezel: {
     flex: 1,
@@ -7906,6 +8231,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   valueMiniTaskFrame: {
+    position: 'relative',
     width: '100%',
     height: 32.2,
     marginBottom: 1.2,
@@ -7916,6 +8242,18 @@ const s = StyleSheet.create({
     width: 405,
     transformOrigin: 'top center',
     transform: [{ scale: 0.58 }],
+  },
+  valuePhoneTaskInteractiveWrap: {
+    position: 'relative',
+  },
+  valuePhoneTaskFlourishLayer: {
+    position: 'absolute',
+    left: 4,
+    top: 0,
+    bottom: 6,
+    width: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   valuePhoneHeading: {
     fontFamily: F.serifSemiBold,
@@ -13279,5 +13617,126 @@ const s = StyleSheet.create({
     fontFamily: F.sansBold,
     fontSize: 11,
     color: 'rgba(25,23,20,0.44)',
+  },
+  buildResearchCard: {
+    marginTop: 14,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingTop: 15,
+    paddingBottom: 13,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.26)',
+    shadowColor: '#8B6B2F',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 2,
+  },
+  buildResearchHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+  },
+  buildResearchTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 21,
+    lineHeight: 24,
+    color: INK,
+  },
+  buildResearchRule: {
+    flex: 1,
+    height: 1,
+    marginTop: 3,
+    backgroundColor: 'rgba(197,160,89,0.42)',
+  },
+  buildResearchSubtitle: {
+    marginTop: 5,
+    maxWidth: 270,
+    fontFamily: F.sans,
+    fontSize: 11.5,
+    lineHeight: 16,
+    color: 'rgba(25,23,20,0.52)',
+  },
+  buildResearchRows: {
+    marginTop: 15,
+    rowGap: 13,
+  },
+  buildResearchRow: {
+    rowGap: 6,
+  },
+  buildResearchRowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: 12,
+  },
+  buildResearchLabel: {
+    flex: 1,
+    fontFamily: F.sansMedium,
+    fontSize: 11.5,
+    color: 'rgba(25,23,20,0.56)',
+  },
+  buildResearchLabelFeatured: {
+    fontFamily: F.sansBold,
+    color: '#6F5324',
+  },
+  buildResearchValue: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 20,
+    lineHeight: 21,
+    color: 'rgba(25,23,20,0.56)',
+  },
+  buildResearchValueFeatured: {
+    color: GOLD,
+  },
+  buildResearchTrack: {
+    height: 10,
+    overflow: 'hidden',
+    borderRadius: 999,
+    backgroundColor: 'rgba(25,23,20,0.055)',
+  },
+  buildResearchFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: 'rgba(25,23,20,0.26)',
+    transformOrigin: 'left center',
+  },
+  buildResearchFillFeatured: {
+    backgroundColor: GOLD,
+  },
+  buildResearchCitation: {
+    marginTop: 13,
+    fontFamily: F.serifMediumItalic,
+    fontSize: 11.5,
+    color: 'rgba(25,23,20,0.45)',
+  },
+  buildThesisCard: {
+    minHeight: 62,
+    marginTop: 14,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 10,
+    backgroundColor: '#1D1A17',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.13,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  buildThesisText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 22,
+    color: '#FFFFFF',
+  },
+  buildThesisOperator: {
+    paddingBottom: 2,
+    fontFamily: F.sansBold,
+    fontSize: 17,
+    color: GOLD,
   },
 });

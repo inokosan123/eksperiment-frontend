@@ -45,6 +45,12 @@ import { AnyTaskCard, type TaskData, type TaskState } from '@/components/shared/
 import { playTaskCompleteFeedback, playTaskUndoFeedback } from '@/components/shared/taskFeedback';
 import { AnimatedProgressFill, AnimatedTaskRow, CompletionFlourish } from '@/components/shared/taskAnimations';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import {
+  notifyGuideEvent,
+  useGuidedSetup,
+  useGuideTarget,
+} from '@/components/onboarding/guided/GuidedSetupContext';
+import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
 
 
 const HABIT_COLORS = [
@@ -65,6 +71,18 @@ const HABIT_COLORS = [
   '#14B8A6', // aqua
   '#475569', // slate
 ];
+const HABITS_GUIDE_TARGETS = {
+  add: 'habits.add',
+  name: 'habits.name',
+  colors: 'habits.colors',
+  icons: 'habits.icons',
+  addStep: 'habits.add-step',
+  activity: 'habits.activity',
+  frequency: 'habits.frequency',
+  time: 'habits.time',
+  stepSave: 'habits.step-save',
+  habitSave: 'habits.habit-save',
+} as const;
 const HABIT_ICONS: HabitEmojiName[] = [
   // Faith & spiritual rhythm
   'praying-hands', 'open-book', 'scroll', 'candle', 'latin-cross', 'church', 'glowing-star',
@@ -316,9 +334,24 @@ export type HabitsViewProps = {
   activeOnly?: boolean;
   /** Fires whenever habits are loaded or mutated — lets an embedded parent reuse the fresh list. */
   onHabitsChanged?: (habits: HabitItem[]) => void;
+  /** Onboarding-only walkthrough. */
+  guided?: boolean;
+  onGuidedComplete?: () => void;
 };
 
-const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function HabitsView({ compact = false, activeOnly = false, onHabitsChanged }, ref) {
+const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function HabitsView({
+  compact = false,
+  activeOnly = false,
+  onHabitsChanged,
+  guided = false,
+  onGuidedComplete,
+}, ref) {
+  const {
+    completeStep,
+    patchSession,
+    session,
+    setPresentation,
+  } = useGuidedSetup();
   const {
     createOrUpdateTask,
     createOrUpdateTasks,
@@ -338,18 +371,24 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
   const [analyticsTarget, setAnalyticsTarget] = useState<HabitItem | null>(null);
   const [taskDetail, setTaskDetail] = useState<{ habit: HabitItem; step: HabitStep } | null>(null);
   const [stepEditTarget, setStepEditTarget] = useState<{ habit: HabitItem; step: HabitStep | null } | null>(null);
+  const isGuided = guided && session?.active === true && session.activeStep === 'buildHabits';
+  const guidePhase = session?.phase ?? 'intro';
+  const addTarget = useGuideTarget(HABITS_GUIDE_TARGETS.add, isGuided);
 
   const activeHabits = useMemo(() => habits.filter(item => item.active), [habits]);
   const pausedHabits = useMemo(() => habits.filter(item => !item.active), [habits]);
   const visibleHabits = activeOnly ? activeHabits : tab === 'active' ? activeHabits : pausedHabits;
   const showingActiveHabits = activeOnly || tab === 'active';
 
+  const openAddHabit = useCallback(() => {
+    setEditTarget(null);
+    setEditorOpen(true);
+    if (isGuided) patchSession({ phase: 'name' });
+  }, [isGuided, patchSession]);
+
   useImperativeHandle(ref, () => ({
-    openAddHabit: () => {
-      setEditTarget(null);
-      setEditorOpen(true);
-    },
-  }), []);
+    openAddHabit,
+  }), [openAddHabit]);
 
   const loadHabits = useCallback(async () => {
     const today = getLocalDateKey();
@@ -435,7 +474,55 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
       await createOrUpdateTasks(habit.steps.map(step => habitStepToTaskDraft(habit, step)), today);
     }
     await loadHabits();
+    if (isGuided) {
+      notifyGuideEvent({
+        type: 'completed',
+        step: 'buildHabits',
+        phase: 'complete',
+        entityKey: 'habit',
+        entityId: habit.id,
+      });
+    }
   };
+
+  const finishGuidedStep = useCallback(() => {
+    completeStep('buildHabits');
+    patchSession({
+      activeStep: 'buildChallenges',
+      phase: 'intro',
+      route: '/onboarding',
+    });
+    setPresentation(null);
+    onGuidedComplete?.();
+  }, [completeStep, onGuidedComplete, patchSession, setPresentation]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+    if (guidePhase === 'intro') {
+      setPresentation({
+        key: 'habits-intro',
+        targetId: HABITS_GUIDE_TARGETS.add,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Habits turn repeated actions into a rhythm you can keep.\n\nAdd one habit you want to build.',
+      });
+      return;
+    }
+    if (guidePhase === 'complete') {
+      setPresentation({
+        key: 'habits-complete',
+        placement: 'center',
+        celebrate: true,
+        message: 'Your first habit is ready.',
+        ctaLabel: 'CONTINUE',
+        onCta: finishGuidedStep,
+      });
+    }
+  }, [finishGuidedStep, guidePhase, isGuided, setPresentation]);
+
+  useEffect(() => () => {
+    if (guided) setPresentation(null);
+  }, [guided, setPresentation]);
 
   const setHabitActiveState = async (habit: HabitItem, active: boolean) => {
     const today = getLocalDateKey();
@@ -640,7 +727,9 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
         )}
 
         <TouchableOpacity
-          onPress={() => { setEditTarget(null); setEditorOpen(true); }}
+          ref={addTarget.ref}
+          onLayout={addTarget.onLayout}
+          onPress={openAddHabit}
           activeOpacity={0.7}
           style={[s.addHabitCard, { borderColor: hexToRgba(C.gold, 0.45) }]}
         >
@@ -657,6 +746,7 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
         editHabit={editTarget}
         onClose={() => { setEditorOpen(false); setEditTarget(null); }}
         onSave={saveHabit}
+        guided={isGuided}
       />
 
       <ConfirmModal
@@ -746,7 +836,7 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
         title="HABITS"
         showBack
         rightElement={(
-          <TouchableOpacity onPress={() => { setEditTarget(null); setEditorOpen(true); }} activeOpacity={0.76} style={s.headerBtn}>
+          <TouchableOpacity onPress={openAddHabit} activeOpacity={0.76} style={s.headerBtn}>
             <Plus s={24} c={C.gold} w={2.4} />
           </TouchableOpacity>
         )}
@@ -850,12 +940,22 @@ function HabitEditorSheet({
   editHabit,
   onClose,
   onSave,
+  guided = false,
 }: {
   visible: boolean;
   editHabit: HabitItem | null;
   onClose: () => void;
   onSave: (habit: HabitItem) => void | Promise<void>;
+  guided?: boolean;
 }) {
+  const { patchSession, session, setPresentation } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'buildHabits';
+  const guidePhase = session?.phase ?? 'name';
+  const nameTarget = useGuideTarget(HABITS_GUIDE_TARGETS.name, isGuided);
+  const colorsTarget = useGuideTarget(HABITS_GUIDE_TARGETS.colors, isGuided);
+  const iconsTarget = useGuideTarget(HABITS_GUIDE_TARGETS.icons, isGuided);
+  const addStepTarget = useGuideTarget(HABITS_GUIDE_TARGETS.addStep, isGuided);
+  const habitSaveTarget = useGuideTarget(HABITS_GUIDE_TARGETS.habitSave, isGuided);
   const [name, setName] = useState('');
   const [color, setColor] = useState(HABIT_COLORS[0]);
   const [icon, setIcon] = useState<HabitEmojiName>(HABIT_ICONS[0]);
@@ -868,6 +968,7 @@ function HabitEditorSheet({
   const [pendingNoSteps, setPendingNoSteps] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -893,6 +994,97 @@ function HabitEditorSheet({
     setPendingDeleteStep(null);
   }, [editHabit, visible]);
 
+  useEffect(() => {
+    if (!isGuided || !visible) return;
+    if (guidePhase === 'name') {
+      setPresentation({
+        key: 'habits-name',
+        targetId: HABITS_GUIDE_TARGETS.name,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Name the habit you want to practice. Tap Done when it feels clear.',
+      });
+      return;
+    }
+    if (guidePhase === 'color') {
+      setPresentation({
+        key: 'habits-color',
+        targetId: HABITS_GUIDE_TARGETS.colors,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Give it a color. A clear visual language makes your routine easier to scan.',
+      });
+      return;
+    }
+    if (guidePhase === 'icon') {
+      setPresentation({
+        key: 'habits-icon',
+        targetId: HABITS_GUIDE_TARGETS.icons,
+        cutoutPadding: 5,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Choose an icon that feels natural for this habit.',
+      });
+      return;
+    }
+    if (guidePhase === 'step') {
+      setPresentation({
+        key: 'habits-step',
+        targetId: HABITS_GUIDE_TARGETS.addStep,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Now make it practical. Add the first action that will appear in your day.',
+      });
+      return;
+    }
+    if (guidePhase === 'habitSave') {
+      setPresentation({
+        key: 'habits-save',
+        targetId: HABITS_GUIDE_TARGETS.habitSave,
+        placement: 'below',
+        allowTargetInteraction: true,
+        message: 'Your habit has a clear action and schedule. Save it.',
+      });
+    }
+  }, [guidePhase, isGuided, setPresentation, visible]);
+
+  useEffect(() => {
+    if (!isGuided || !visible) return;
+    const positions: Record<string, number> = {
+      name: 0,
+      color: 100,
+      icon: 205,
+      step: 690,
+      habitSave: 0,
+    };
+    const y = positions[guidePhase];
+    if (y === undefined) return;
+    let measureTimer: ReturnType<typeof setTimeout> | undefined;
+    const scrollTimer = setTimeout(() => {
+      scrollRef.current?.scrollTo({ y, animated: true });
+      measureTimer = setTimeout(() => {
+        nameTarget.measure();
+        colorsTarget.measure();
+        iconsTarget.measure();
+        addStepTarget.measure();
+        habitSaveTarget.measure();
+      }, 360);
+    }, 120);
+    return () => {
+      clearTimeout(scrollTimer);
+      if (measureTimer) clearTimeout(measureTimer);
+    };
+  }, [
+    addStepTarget,
+    colorsTarget,
+    guidePhase,
+    habitSaveTarget,
+    iconsTarget,
+    isGuided,
+    nameTarget,
+    visible,
+  ]);
+
   if (!visible) return null;
 
   const habitIconGap = 8;
@@ -911,6 +1103,7 @@ function HabitEditorSheet({
         step={editStep}
         accent={color}
         embedded
+        guided={isGuided}
         onClose={() => { setTaskOpen(false); setEditStep(null); }}
         onSave={step => {
           setSteps(current => {
@@ -919,6 +1112,7 @@ function HabitEditorSheet({
           });
           setTaskOpen(false);
           setEditStep(null);
+          if (isGuided) patchSession({ phase: 'habitSave' });
         }}
         onDelete={step => {
           setSteps(current => current.filter(item => item.id !== step.id));
@@ -926,6 +1120,7 @@ function HabitEditorSheet({
           setEditStep(null);
         }}
       />
+      {isGuided && <GuidedOverlayHost />}
       <ConfirmModal
         embedded
         visible={!!pendingDeleteStep}
@@ -976,6 +1171,8 @@ function HabitEditorSheet({
                 <Text style={s.sheetTitle}>Habit Builder</Text>
               </View>
               <TouchableOpacity
+                ref={habitSaveTarget.ref}
+                onLayout={habitSaveTarget.onLayout}
                 onPress={() => {
                   if (submittingRef.current) return;
                   if (steps.length === 0) {
@@ -1009,7 +1206,7 @@ function HabitEditorSheet({
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={s.sheetContent} showsVerticalScrollIndicator={false}>
+            <ScrollView ref={scrollRef} contentContainerStyle={s.sheetContent} showsVerticalScrollIndicator={false}>
               <View style={[s.previewCard, { backgroundColor: hexToRgba(color, 0.08) }]}>
                 <View style={[s.previewIconWrap, { backgroundColor: hexToRgba(color, 0.16) }]}>
                   <NotoEmoji name={icon} size={28} />
@@ -1025,23 +1222,32 @@ function HabitEditorSheet({
               <View style={s.sheetBlock}>
                 <Text style={s.sheetBlockLabel}>Habit Name</Text>
                 <TextInput
+                  ref={nameTarget.ref}
+                  onLayout={nameTarget.onLayout}
                   value={name}
                   onChangeText={setName}
                   placeholder="Name this habit..."
                   placeholderTextColor="#D1D5DB"
                   style={s.sheetInput}
+                  returnKeyType="done"
+                  onSubmitEditing={() => {
+                    if (isGuided && name.trim()) patchSession({ phase: 'color' });
+                  }}
                 />
               </View>
 
               <View style={s.sheetBlock}>
                 <Text style={s.sheetBlockLabel}>Color</Text>
-                <View style={s.colorRow}>
+                <View ref={colorsTarget.ref} onLayout={colorsTarget.onLayout} style={s.colorRow}>
                   {HABIT_COLORS.map(item => {
                     const active = color === item;
                     return (
                       <TouchableOpacity
                         key={item}
-                        onPress={() => setColor(item)}
+                        onPress={() => {
+                          setColor(item);
+                          if (isGuided && guidePhase === 'color') patchSession({ phase: 'icon' });
+                        }}
                         activeOpacity={0.85}
                         hitSlop={4}
                         style={[s.colorRing, active && { borderColor: item }]}
@@ -1068,13 +1274,23 @@ function HabitEditorSheet({
                   }
                   return (
                     <>
-                      <View style={s.iconGrid} onLayout={event => setHabitIconGridWidth(event.nativeEvent.layout.width)}>
+                      <View
+                        ref={iconsTarget.ref}
+                        style={s.iconGrid}
+                        onLayout={event => {
+                          setHabitIconGridWidth(event.nativeEvent.layout.width);
+                          iconsTarget.onLayout(event);
+                        }}
+                      >
                         {visibleIcons.map(item => {
                           const active = icon === item;
                           return (
                             <TouchableOpacity
                               key={item}
-                              onPress={() => setIcon(item)}
+                              onPress={() => {
+                                setIcon(item);
+                                if (isGuided && guidePhase === 'icon') patchSession({ phase: 'step' });
+                              }}
                               accessibilityRole="button"
                               accessibilityState={{ selected: active }}
                               activeOpacity={0.84}
@@ -1167,7 +1383,13 @@ function HabitEditorSheet({
                     </TouchableOpacity>
                   ))}
                   <TouchableOpacity
-                    onPress={() => { setEditStep(null); setTaskOpen(true); }}
+                    ref={addStepTarget.ref}
+                    onLayout={addStepTarget.onLayout}
+                    onPress={() => {
+                      setEditStep(null);
+                      setTaskOpen(true);
+                      if (isGuided) patchSession({ phase: 'activity' });
+                    }}
                     activeOpacity={0.7}
                     style={[s.stepDraftAddCard, { borderColor: hexToRgba(color, 0.45) }]}
                   >
@@ -1190,6 +1412,7 @@ function HabitTaskEditorSheet({
   onSave,
   onDelete,
   embedded = false,
+  guided = false,
 }: {
   visible: boolean;
   step: HabitStep | null;
@@ -1198,7 +1421,15 @@ function HabitTaskEditorSheet({
   onSave: (step: HabitStep) => void;
   onDelete?: (step: HabitStep) => void | Promise<void>;
   embedded?: boolean;
+  guided?: boolean;
 }) {
+  const { patchSession, session, setPresentation } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'buildHabits';
+  const guidePhase = session?.phase ?? 'activity';
+  const activityTarget = useGuideTarget(HABITS_GUIDE_TARGETS.activity, isGuided);
+  const frequencyTarget = useGuideTarget(HABITS_GUIDE_TARGETS.frequency, isGuided);
+  const timeTarget = useGuideTarget(HABITS_GUIDE_TARGETS.time, isGuided);
+  const stepSaveTarget = useGuideTarget(HABITS_GUIDE_TARGETS.stepSave, isGuided);
   const [title, setTitle] = useState('');
   const [time, setTime] = useState('07:00');
   const [frequency, setFrequency] = useState<HabitFrequency>('daily');
@@ -1209,6 +1440,7 @@ function HabitTaskEditorSheet({
   const [notificationMode, setNotificationMode] = useState<NotificationMode>('none');
   const [reminderMinutes, setReminderMinutes] = useState(15);
   const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -1235,6 +1467,87 @@ function HabitTaskEditorSheet({
     setNotificationMode('none');
     setReminderMinutes(15);
   }, [step, visible]);
+
+  useEffect(() => {
+    if (!isGuided || !visible) return;
+    if (guidePhase === 'activity') {
+      setPresentation({
+        key: 'habits-activity',
+        targetId: HABITS_GUIDE_TARGETS.activity,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'What action will move this habit forward? Name your first step, then tap Done.',
+      });
+      return;
+    }
+    if (guidePhase === 'frequency') {
+      setPresentation({
+        key: 'habits-frequency',
+        targetId: HABITS_GUIDE_TARGETS.frequency,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Choose how often this action belongs in your week.',
+        ctaLabel: 'USE THIS SCHEDULE',
+        onCta: () => patchSession({ phase: 'time' }),
+      });
+      return;
+    }
+    if (guidePhase === 'time') {
+      setPresentation({
+        key: 'habits-time',
+        targetId: HABITS_GUIDE_TARGETS.time,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Give it a time. Your routine becomes easier to follow when it has a place.',
+        ctaLabel: 'USE THIS TIME',
+        onCta: () => patchSession({ phase: 'stepSave' }),
+      });
+      return;
+    }
+    if (guidePhase === 'stepSave') {
+      setPresentation({
+        key: 'habits-step-save',
+        targetId: HABITS_GUIDE_TARGETS.stepSave,
+        placement: 'below',
+        allowTargetInteraction: true,
+        message: 'Save this action and return to your habit.',
+      });
+    }
+  }, [guidePhase, isGuided, patchSession, setPresentation, visible]);
+
+  useEffect(() => {
+    if (!isGuided || !visible) return;
+    const positions: Record<string, number> = {
+      activity: 0,
+      frequency: 80,
+      time: 300,
+      stepSave: 0,
+    };
+    const y = positions[guidePhase];
+    if (y === undefined) return;
+    let measureTimer: ReturnType<typeof setTimeout> | undefined;
+    const scrollTimer = setTimeout(() => {
+      scrollRef.current?.scrollTo({ y, animated: true });
+      measureTimer = setTimeout(() => {
+        activityTarget.measure();
+        frequencyTarget.measure();
+        timeTarget.measure();
+        stepSaveTarget.measure();
+      }, 360);
+    }, 120);
+    return () => {
+      clearTimeout(scrollTimer);
+      if (measureTimer) clearTimeout(measureTimer);
+    };
+  }, [
+    activityTarget,
+    frequencyTarget,
+    guidePhase,
+    isGuided,
+    stepSaveTarget,
+    timeTarget,
+    visible,
+  ]);
 
   const activeDayIndexes = useMemo(
     () => getActiveDayIndexes(frequency, selectedDays),
@@ -1309,6 +1622,8 @@ function HabitTaskEditorSheet({
           <Text style={s.sheetTitle}>Habit Schedule</Text>
         </View>
         <TouchableOpacity
+          ref={stepSaveTarget.ref}
+          onLayout={stepSaveTarget.onLayout}
           onPress={saveStep}
           disabled={!canSave}
           style={[s.sheetHeadBtn, s.sheetSave, { backgroundColor: accent, opacity: canSave ? 1 : 0.38 }]}
@@ -1318,19 +1633,25 @@ function HabitTaskEditorSheet({
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={s.taskContent} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} contentContainerStyle={s.taskContent} showsVerticalScrollIndicator={false}>
         <View style={s.sheetBlock}>
           <Text style={[s.sheetBlockLabel, { color: accent }]}>Activity Name</Text>
           <TextInput
+            ref={activityTarget.ref}
+            onLayout={activityTarget.onLayout}
             value={title}
             onChangeText={setTitle}
             placeholder="Step name..."
             placeholderTextColor="#D1D5DB"
             style={s.sheetInput}
+            returnKeyType="done"
+            onSubmitEditing={() => {
+              if (isGuided && title.trim()) patchSession({ phase: 'frequency' });
+            }}
           />
         </View>
 
-        <View style={s.sheetBlock}>
+        <View ref={frequencyTarget.ref} onLayout={frequencyTarget.onLayout} style={s.sheetBlock}>
           <TaskFrequencyEditor
             frequency={frequency}
             selectedDays={selectedDays}
@@ -1349,7 +1670,7 @@ function HabitTaskEditorSheet({
           />
         </View>
 
-        <View style={s.sheetBlock}>
+        <View ref={timeTarget.ref} onLayout={timeTarget.onLayout} style={s.sheetBlock}>
           <TaskTimeEditor
             time={time}
             sameTimeEveryDay={sameTimeEveryDay}

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Platform,
@@ -38,6 +38,11 @@ import {
 } from './bigEventsLogic';
 import type { BigEvent } from './bigEventsDb';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+import {
+  notifyGuideEvent,
+  useGuidedSetup,
+  useGuideTarget,
+} from '@/components/onboarding/guided/GuidedSetupContext';
 
 
 const DateTimePickerModule = Platform.OS === 'web' ? null : require('@react-native-community/datetimepicker');
@@ -49,6 +54,15 @@ const GOLD = '#C5A059';
 const DEFAULT_EVENT_COLOR = GOLD;
 const EVENT_ICON_CHIP_SIZE = 54;
 const EVENT_ICON_MIN_GAP = 9;
+const BIG_EVENTS_GUIDE_TARGETS = {
+  add: 'big-events.add',
+  title: 'big-events.title',
+  icons: 'big-events.icons',
+  date: 'big-events.date',
+  save: 'big-events.save',
+} as const;
+
+type GuideTargetBinding = ReturnType<typeof useGuideTarget>;
 
 const EVENT_ICON_GROUPS: { label: string; icons: HabitEmojiName[] }[] = [
   {
@@ -117,12 +131,16 @@ function DateRow({
   minDate,
   maxDate,
   onChange,
+  guideTarget,
+  onGuideConfirmed,
 }: {
   label: string;
   value: string;
   minDate?: string;
   maxDate?: string;
   onChange: (v: string) => void;
+  guideTarget?: GuideTargetBinding;
+  onGuideConfirmed?: () => void;
 }) {
   const [iosVisible, setIosVisible] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -144,6 +162,7 @@ function DateRow({
           const m = String(selectedDate.getMonth() + 1).padStart(2, '0');
           const d = String(selectedDate.getDate()).padStart(2, '0');
           onChange(`${y}-${m}-${d}`);
+          onGuideConfirmed?.();
         },
       });
       return;
@@ -156,11 +175,18 @@ function DateRow({
   const apply = () => {
     onChange(draft);
     setIosVisible(false);
+    onGuideConfirmed?.();
   };
 
   return (
     <>
-      <TouchableOpacity onPress={open} activeOpacity={0.85} style={d.row}>
+      <TouchableOpacity
+        ref={guideTarget?.ref}
+        onLayout={guideTarget?.onLayout}
+        onPress={open}
+        activeOpacity={0.85}
+        style={d.row}
+      >
         <View style={d.iconWrap}>
           <CalendarIcon s={18} c={GOLD} w={1.8} />
         </View>
@@ -259,14 +285,23 @@ function EventForm({
   onChange,
   onSave,
   onCancel,
+  guided = false,
 }: {
   form: FormState;
   onChange: (next: FormState) => void;
   onSave: () => void;
   onCancel: () => void;
+  guided?: boolean;
 }) {
+  const { session, patchSession } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'buildBigEvents';
+  const titleTarget = useGuideTarget(BIG_EVENTS_GUIDE_TARGETS.title, isGuided);
+  const iconsTarget = useGuideTarget(BIG_EVENTS_GUIDE_TARGETS.icons, isGuided);
+  const dateTarget = useGuideTarget(BIG_EVENTS_GUIDE_TARGETS.date, isGuided);
+  const saveTarget = useGuideTarget(BIG_EVENTS_GUIDE_TARGETS.save, isGuided);
   const canSave = !!form.title.trim() && !!form.endDate;
   const isEdit = form.id !== null;
+  const guidePhase = session?.phase;
   const [iconGridWidth, setIconGridWidth] = useState(0);
   const iconColumns = iconGridWidth > 0
     ? Math.max(3, Math.floor((iconGridWidth + EVENT_ICON_MIN_GAP) / (EVENT_ICON_CHIP_SIZE + EVENT_ICON_MIN_GAP)))
@@ -276,6 +311,21 @@ function EventForm({
     () => Array.from({ length: trailingSpacerCount }, (_, index) => index),
     [trailingSpacerCount],
   );
+  const advanceAfterTitle = () => {
+    if (isGuided && guidePhase === 'title' && form.title.trim()) {
+      patchSession({ phase: 'icon' });
+    }
+  };
+  const advanceAfterIcon = () => {
+    if (isGuided && guidePhase === 'icon') {
+      patchSession({ phase: 'date' });
+    }
+  };
+  const advanceAfterDate = () => {
+    if (isGuided && guidePhase === 'date') {
+      patchSession({ phase: 'save' });
+    }
+  };
 
   return (
     <Animated.View
@@ -292,32 +342,45 @@ function EventForm({
       </View>
 
       <TextInput
+        ref={titleTarget.ref}
+        onLayout={titleTarget.onLayout}
         value={form.title}
         onChangeText={t => onChange({ ...form, title: t })}
         placeholder="Event name..."
         placeholderTextColor="#C7C0B4"
         style={ef.input}
         returnKeyType="done"
+        onSubmitEditing={advanceAfterTitle}
       />
 
       <DateRow
         label="Event"
         value={form.endDate}
         onChange={v => onChange({ ...form, endDate: v })}
+        guideTarget={dateTarget}
+        onGuideConfirmed={advanceAfterDate}
       />
 
       <View>
         <Text style={ef.sectionLabel}>ICON</Text>
         <View
+          ref={iconsTarget.ref}
           style={ef.iconGrid}
-          onLayout={event => setIconGridWidth(Math.floor(event.nativeEvent.layout.width))}
+          onLayout={event => {
+            setIconGridWidth(Math.floor(event.nativeEvent.layout.width));
+            iconsTarget.onLayout(event);
+          }}
         >
           {EVENT_ICONS.map(ic => {
             const active = form.icon === ic;
             return (
               <Pressable
                 key={ic}
-                onPress={() => { Haptics.selectionAsync(); onChange({ ...form, icon: ic }); }}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  onChange({ ...form, icon: ic });
+                  advanceAfterIcon();
+                }}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
                 style={({ pressed }) => [
@@ -344,6 +407,8 @@ function EventForm({
       </View>
 
       <TouchableOpacity
+        ref={saveTarget.ref}
+        onLayout={saveTarget.onLayout}
         onPress={onSave}
         disabled={!canSave}
         activeOpacity={0.85}
@@ -578,13 +643,28 @@ const es = StyleSheet.create({
 
 // ─── Main view ──────────────────────────────────────────────────────────────
 
-export default function BigEventsView() {
+export default function BigEventsView({
+  guided = false,
+  onGuidedComplete,
+}: {
+  guided?: boolean;
+  onGuidedComplete?: () => void;
+} = {}) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const {
+    completeStep,
+    patchSession,
+    session,
+    setPresentation,
+  } = useGuidedSetup();
   const { bigEvents, addBigEvent, updateBigEvent, softDeleteBigEvent } = useBigEvents();
   const [form, setForm] = useState<FormState | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const today = todayKey();
+  const isGuided = guided && session?.active === true && session.activeStep === 'buildBigEvents';
+  const addTarget = useGuideTarget(BIG_EVENTS_GUIDE_TARGETS.add, isGuided);
+  const guidePhase = session?.phase ?? 'intro';
 
   const { upcoming, past } = useMemo(() => {
     const sorted = sortBigEvents(bigEvents).filter(e => !isBigEventDeletedOnDate(e, today));
@@ -597,6 +677,7 @@ export default function BigEventsView() {
   const openNew = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setForm(emptyForm());
+    if (isGuided) patchSession({ phase: 'title' });
   };
 
   const openEdit = (event: BigEvent) => {
@@ -619,14 +700,24 @@ export default function BigEventsView() {
 
     if (form.id === null) {
       const today = todayKey();
+      const eventId = newId();
       await addBigEvent({
-        id: newId(),
+        id: eventId,
         title: trimmed,
         startDate: today,
         endDate: form.endDate,
         color: DEFAULT_EVENT_COLOR,
         icon: form.icon,
       });
+      if (isGuided) {
+        notifyGuideEvent({
+          type: 'completed',
+          step: 'buildBigEvents',
+          phase: 'complete',
+          entityKey: 'bigEvent',
+          entityId: eventId,
+        });
+      }
     } else {
       const existing = bigEvents.find(e => e.id === form.id);
       if (existing) {
@@ -640,6 +731,92 @@ export default function BigEventsView() {
     }
     setForm(null);
   };
+
+  const finishGuidedStep = useCallback(() => {
+    completeStep('buildBigEvents');
+    patchSession({
+      activeStep: 'buildMonthlyGoals',
+      phase: 'intro',
+      route: '/onboarding',
+    });
+    setPresentation(null);
+    onGuidedComplete?.();
+  }, [completeStep, onGuidedComplete, patchSession, setPresentation]);
+
+  useEffect(() => {
+    if (!isGuided || form || guidePhase === 'intro' || guidePhase === 'complete') return;
+    setForm(emptyForm());
+  }, [form, guidePhase, isGuided]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+
+    if (guidePhase === 'intro') {
+      setPresentation({
+        key: 'big-events-intro',
+        targetId: BIG_EVENTS_GUIDE_TARGETS.add,
+        placement: 'below',
+        allowTargetInteraction: true,
+        message: 'Big Events keep important dates in view before they become urgent.\n\nBirthday  |  Wedding  |  Exam\n\nTap + to add your first one.',
+      });
+      return;
+    }
+    if (guidePhase === 'title') {
+      setPresentation({
+        key: 'big-events-title',
+        targetId: BIG_EVENTS_GUIDE_TARGETS.title,
+        placement: 'below',
+        allowTargetInteraction: true,
+        message: 'Start with its name. When it feels right, tap Done.',
+      });
+      return;
+    }
+    if (guidePhase === 'icon') {
+      setPresentation({
+        key: 'big-events-icon',
+        targetId: BIG_EVENTS_GUIDE_TARGETS.icons,
+        cutoutPadding: 5,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Choose an icon so you can recognize this moment at a glance.',
+      });
+      return;
+    }
+    if (guidePhase === 'date') {
+      setPresentation({
+        key: 'big-events-date',
+        targetId: BIG_EVENTS_GUIDE_TARGETS.date,
+        placement: 'below',
+        allowTargetInteraction: true,
+        message: 'Now set the date. Anasta will keep the countdown close.',
+      });
+      return;
+    }
+    if (guidePhase === 'save') {
+      setPresentation({
+        key: 'big-events-save',
+        targetId: BIG_EVENTS_GUIDE_TARGETS.save,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Everything is ready. Save your first Big Event.',
+      });
+      return;
+    }
+    if (guidePhase === 'complete') {
+      setPresentation({
+        key: 'big-events-complete',
+        placement: 'center',
+        celebrate: true,
+        message: 'Your first Big Event is set.',
+        ctaLabel: 'CONTINUE',
+        onCta: finishGuidedStep,
+      });
+    }
+  }, [finishGuidedStep, guidePhase, isGuided, setPresentation]);
+
+  useEffect(() => () => {
+    if (guided) setPresentation(null);
+  }, [guided, setPresentation]);
 
   const askDelete = (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -663,6 +840,8 @@ export default function BigEventsView() {
         onBackOverride={() => router.back()}
         rightElement={
           <TouchableOpacity
+            ref={addTarget.ref}
+            onLayout={addTarget.onLayout}
             onPress={form ? closeForm : openNew}
             style={s.headRight}
             activeOpacity={0.7}
@@ -686,6 +865,7 @@ export default function BigEventsView() {
             onChange={setForm}
             onSave={saveForm}
             onCancel={closeForm}
+            guided={isGuided}
           />
         )}
 

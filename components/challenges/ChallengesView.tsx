@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
@@ -38,6 +38,11 @@ import { useChallenges } from './ChallengesContext';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { AnimatedProgressFill } from '@/components/shared/taskAnimations';
+import {
+  notifyGuideEvent,
+  useGuidedSetup,
+  useGuideTarget,
+} from '@/components/onboarding/guided/GuidedSetupContext';
 
 import {
   ChallengeCatalogEntry,
@@ -711,7 +716,18 @@ function isPanelChallengeContext(value: ChallengeTab): value is PanelChallengeCo
   return value === 'prayer' || value === 'scripture' || value === 'journal' || value === 'church';
 }
 
-export default function ChallengesView() {
+const CHALLENGES_GUIDE_TARGETS = {
+  catalog: 'challenges.catalog',
+  start: 'challenges.start',
+} as const;
+
+export default function ChallengesView({
+  guided = false,
+  onGuidedComplete,
+}: {
+  guided?: boolean;
+  onGuidedComplete?: () => void;
+} = {}) {
   const {
     activeChallenges,
     pausedChallenges,
@@ -737,6 +753,16 @@ export default function ChallengesView() {
   const [churchSchedule, setChurchSchedule] = useState<ChurchScheduleDraft>(defaultChurchSchedule());
   const [expandedChallengeId, setExpandedChallengeId] = useState<string | null>(null);
   const [recentlyStartedTemplateId, setRecentlyStartedTemplateId] = useState<string | null>(null);
+  const contentScrollRef = useRef<ScrollView>(null);
+  const {
+    session,
+    patchSession,
+    setPresentation,
+  } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'buildChallenges';
+  const guidePhase = isGuided ? session.phase : '';
+  const catalogTarget = useGuideTarget(CHALLENGES_GUIDE_TARGETS.catalog, isGuided);
+  const startTarget = useGuideTarget(CHALLENGES_GUIDE_TARGETS.start, isGuided);
 
   useFocusEffect(
     useCallback(() => {
@@ -764,6 +790,90 @@ export default function ChallengesView() {
   const onlyPausedOnActiveTab = activeTab === 'active'
     && activeChallenges.length === 0
     && pausedChallenges.length > 0;
+  const guidedCatalogEntry = useMemo(
+    () => availableCatalogEntries.find(item => item.category === 'prayer') ?? null,
+    [availableCatalogEntries],
+  );
+
+  const finishGuidedChallenges = useCallback((skipped = false) => {
+    if (skipped) {
+      notifyGuideEvent({
+        type: 'skipped',
+        step: 'buildChallenges',
+        phase: 'complete',
+      });
+    }
+    patchSession({
+      activeStep: 'buildMyRoutine',
+      phase: 'intro',
+      route: '/onboarding',
+    });
+    setPresentation(null);
+    onGuidedComplete?.();
+  }, [onGuidedComplete, patchSession, setPresentation]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+    if (guidePhase === 'intro') {
+      setActiveTab('prayer');
+      patchSession({ phase: 'catalog' });
+      return;
+    }
+    if (guidePhase === 'catalog') {
+      setPresentation({
+        key: 'challenges-catalog',
+        targetId: CHALLENGES_GUIDE_TARGETS.catalog,
+        cutoutPadding: 7,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Challenges give a focused season a beginning and an end.\n\nOpen one to preview its countdown.',
+        ctaLabel: 'SKIP FOR NOW',
+        onCta: () => finishGuidedChallenges(true),
+      });
+      return;
+    }
+    if (guidePhase === 'start') {
+      setPresentation({
+        key: 'challenges-start',
+        targetId: CHALLENGES_GUIDE_TARGETS.start,
+        cutoutPadding: 7,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Choose the duration and begin when you are ready.\n\nYou can adjust it later from My Routine.',
+        ctaLabel: 'SKIP FOR NOW',
+        onCta: () => finishGuidedChallenges(true),
+      });
+      return;
+    }
+    if (guidePhase === 'complete') {
+      setPresentation({
+        key: 'challenges-complete',
+        celebrate: true,
+        placement: 'center',
+        message: 'Your first challenge is ready.',
+        ctaLabel: 'CONTINUE',
+        onCta: () => finishGuidedChallenges(),
+      });
+    }
+  }, [
+    finishGuidedChallenges,
+    guidePhase,
+    isGuided,
+    patchSession,
+    setPresentation,
+  ]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+    if (guidePhase === 'start') {
+      contentScrollRef.current?.scrollToEnd({ animated: true });
+    }
+    const timer = setTimeout(() => {
+      catalogTarget.measure();
+      startTarget.measure();
+    }, guidePhase === 'start' ? 560 : 160);
+    return () => clearTimeout(timer);
+  }, [catalogTarget, guidePhase, isGuided, startTarget]);
 
   const tabs: { key: ChallengeTab; label: string }[] = [
     { key: 'active', label: `ACTIVE (${ongoingChallenges.length})` },
@@ -793,6 +903,7 @@ export default function ChallengesView() {
     if (entry.category === 'church') {
       setChurchSchedule(defaultChurchSchedule(entry.defaultTime ?? '09:00'));
     }
+    if (isGuided) patchSession({ phase: 'start' });
   };
 
   const startUnifiedChallenge = async () => {
@@ -812,6 +923,15 @@ export default function ChallengesView() {
       setSelectedCatalog(null);
       setExpandedChallengeId(null);
       setTimeout(() => setRecentlyStartedTemplateId(null), 700);
+      if (isGuided) {
+        notifyGuideEvent({
+          type: 'completed',
+          step: 'buildChallenges',
+          phase: 'complete',
+          entityKey: 'challenge',
+          entityId: record?.id,
+        });
+      }
       return;
     }
 
@@ -850,6 +970,15 @@ export default function ChallengesView() {
       setSelectedCatalog(null);
       setExpandedChallengeId(null);
       setTimeout(() => setRecentlyStartedTemplateId(null), 700);
+      if (isGuided) {
+        notifyGuideEvent({
+          type: 'completed',
+          step: 'buildChallenges',
+          phase: 'complete',
+          entityKey: 'challenge',
+          entityId: record?.id,
+        });
+      }
       return;
     }
 
@@ -883,6 +1012,15 @@ export default function ChallengesView() {
     setSelectedCatalog(null);
     setExpandedChallengeId(null);
     setTimeout(() => setRecentlyStartedTemplateId(null), 700);
+    if (isGuided) {
+      notifyGuideEvent({
+        type: 'completed',
+        step: 'buildChallenges',
+        phase: 'complete',
+        entityKey: 'challenge',
+        entityId: record?.id,
+      });
+    }
   };
 
   const renderUnifiedPanel = (
@@ -961,6 +1099,11 @@ export default function ChallengesView() {
           await updateChallenge(id, updates);
           await refreshTasks();
         }}
+        guideBindings={isGuided && context === 'prayer' && guidedCatalogEntry ? {
+          catalogEntryId: guidedCatalogEntry.id,
+          catalogEntry: catalogTarget,
+          start: startTarget,
+        } : undefined}
       />
     );
   };
@@ -1043,6 +1186,7 @@ export default function ChallengesView() {
       </ScrollView>
 
       <ScrollView
+        ref={contentScrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={[s.scrollContent, onlyPausedOnActiveTab && s.scrollContentOnlyPaused]}
         showsVerticalScrollIndicator={false}

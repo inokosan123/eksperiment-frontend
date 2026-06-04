@@ -78,6 +78,17 @@ if (Platform.OS === 'android' && typeof UIManager.setLayoutAnimationEnabledExper
 }
 
 type TaskSheetContext = 'prayer' | 'journal' | 'scripture' | 'church';
+
+type GuideTargetBinding = {
+  ref?: React.Ref<any>;
+  onLayout?: (event: any) => void;
+};
+
+export type ChallengeGuideBindings = {
+  catalogEntryId?: string;
+  catalogEntry?: GuideTargetBinding;
+  start?: GuideTargetBinding;
+};
 type TaskTab = 'spiritual' | 'routine' | 'challenge';
 type RuleFrequency = 'daily' | 'weekdays' | 'weekends' | 'specific_days' | 'monthly';
 type PrayerType = 'morning' | 'evening' | 'meal' | 'jesus' | 'custom';
@@ -1786,6 +1797,7 @@ export function ChallengePanel({
   onResumeChallenge,
   onEndChallenge,
   onUpdateChallenge,
+  guideBindings,
 }: {
   context: TaskSheetContext;
   activeItems: ChallengeRecord[];
@@ -1820,6 +1832,7 @@ export function ChallengePanel({
   onResumeChallenge: (id: string) => void | Promise<void>;
   onEndChallenge: (id: string) => void | Promise<void>;
   onUpdateChallenge: (id: string, updates: { time?: string; scheduleLabel?: string; paceLabel?: string; prayerConfig?: ChallengePrayerConfig; scriptureConfig?: ChallengeScriptureConfig; churchConfig?: ChallengeChurchConfig }) => void | Promise<void>;
+  guideBindings?: ChallengeGuideBindings;
 }) {
   const [confirmAction, setConfirmAction] = useState<ChallengeConfirmAction | null>(null);
   const handledExternalSaveRef = useRef(0);
@@ -2355,6 +2368,8 @@ export function ChallengePanel({
                       onScriptureDailyAmountChange={onScriptureDailyAmountChange}
                       onChallengeScheduleChange={onChallengeScheduleChange}
                       onStart={onStartChallenge}
+                      guideEntryBinding={guideBindings?.catalogEntryId === entry.id ? guideBindings.catalogEntry : undefined}
+                      guideStartBinding={guideBindings?.catalogEntryId === entry.id ? guideBindings.start : undefined}
                     />
                   ))}
                 </View>
@@ -2380,6 +2395,8 @@ export function ChallengePanel({
                   onChallengeJesusCountChange={onChallengeJesusCountChange}
                   onChurchScheduleChange={onChurchScheduleChange}
                   onStart={onStartChallenge}
+                  guideEntryBinding={guideBindings?.catalogEntryId === entry.id ? guideBindings.catalogEntry : undefined}
+                  guideStartBinding={guideBindings?.catalogEntryId === entry.id ? guideBindings.start : undefined}
                 />
               ))}
         </View>
@@ -2478,6 +2495,8 @@ function ScriptureCatalogEntryCard({
   onScriptureDailyAmountChange,
   onChallengeScheduleChange,
   onStart,
+  guideEntryBinding,
+  guideStartBinding,
 }: {
   entry: ChallengeCatalogEntry;
   expanded: boolean;
@@ -2487,12 +2506,14 @@ function ScriptureCatalogEntryCard({
   onScriptureDailyAmountChange: (value: number) => void;
   onChallengeScheduleChange: (value: ChallengeScheduleDraft) => void;
   onStart: () => void | Promise<void>;
+  guideEntryBinding?: GuideTargetBinding;
+  guideStartBinding?: GuideTargetBinding;
 }) {
   const displayTitle = entry.id === 'lectionary_daily' ? `${entry.title} — 365 Days` : entry.title;
 
   return (
     <View style={[s.scriptureStartCard, expanded && s.scriptureStartCardExpanded]}>
-      <TouchableOpacity onPress={onToggle} activeOpacity={0.84} style={s.scriptureStartCardTap}>
+      <TouchableOpacity {...guideEntryBinding} onPress={onToggle} activeOpacity={0.84} style={s.scriptureStartCardTap}>
         <View style={s.scriptureStartTopRow}>
           <View style={s.scriptureStartMain}>
             <View style={s.scriptureStartIconWrap}>
@@ -2552,7 +2573,7 @@ function ScriptureCatalogEntryCard({
             onReminderChange={reminderMinutes => onChallengeScheduleChange({ ...challengeSchedule, reminderMinutes })}
           />
 
-          <PrimaryButton label="Start Challenge" onPress={onStart} />
+          <PrimaryButton label="Start Challenge" onPress={onStart} targetBinding={guideStartBinding} />
         </View>
       )}
     </View>
@@ -2578,6 +2599,8 @@ function ChallengeCatalogEntryCard({
   onChallengeJesusCountChange,
   onChurchScheduleChange,
   onStart,
+  guideEntryBinding,
+  guideStartBinding,
 }: {
   entry: ChallengeCatalogEntry;
   expanded: boolean;
@@ -2597,10 +2620,12 @@ function ChallengeCatalogEntryCard({
   onChallengeJesusCountChange: (value: string) => void;
   onChurchScheduleChange?: (value: ChallengeChurchScheduleDraft) => void;
   onStart: () => void | Promise<void>;
+  guideEntryBinding?: GuideTargetBinding;
+  guideStartBinding?: GuideTargetBinding;
 }) {
   return (
     <View style={[s.catalogStartCard, expanded && s.catalogStartCardExpanded]}>
-      <TouchableOpacity onPress={onToggle} activeOpacity={0.84} style={s.catalogStartTap}>
+      <TouchableOpacity {...guideEntryBinding} onPress={onToggle} activeOpacity={0.84} style={s.catalogStartTap}>
         <View style={s.catalogStartTopRow}>
           <View style={s.catalogStartMain}>
             <View style={s.catalogStartIconWrap}>
@@ -2686,7 +2711,7 @@ function ChallengeCatalogEntryCard({
             </>
           )}
 
-          <PrimaryButton label="Start Challenge" onPress={onStart} />
+          <PrimaryButton label="Start Challenge" onPress={onStart} targetBinding={guideStartBinding} />
         </View>
       )}
     </View>
@@ -3318,13 +3343,15 @@ function PrimaryButton({
   label,
   onPress,
   accent = C.gold,
+  targetBinding,
 }: {
   label: string;
   onPress: () => void;
   accent?: string;
+  targetBinding?: GuideTargetBinding;
 }) {
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.84} style={[s.primaryBtn, { backgroundColor: accent, shadowColor: accent }]}>
+    <TouchableOpacity {...targetBinding} onPress={onPress} activeOpacity={0.84} style={[s.primaryBtn, { backgroundColor: accent, shadowColor: accent }]}>
       <Text style={s.primaryBtnText}>{label}</Text>
     </TouchableOpacity>
   );

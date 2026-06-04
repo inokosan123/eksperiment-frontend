@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { forwardRef, useCallback, type ComponentRef } from 'react';
 import {
   Platform,
   Pressable as NativePressable,
@@ -60,14 +60,14 @@ function shouldTriggerHaptic(
   return !hasManualHaptic(handler);
 }
 
-export function HapticTouchableOpacity({
+export const HapticTouchableOpacity = forwardRef<ComponentRef<typeof NativeTouchableOpacity>, HapticTouchableOpacityProps>(function HapticTouchableOpacity({
   haptic = 'light',
   disabled,
   onPress,
   onPressIn,
   onLongPress,
   ...props
-}: HapticTouchableOpacityProps) {
+}, ref) {
   const handlePress = useCallback((event: GestureResponderEvent) => {
     if (shouldTriggerHaptic(disabled, haptic, onPress)) {
       triggerTouchHaptic(haptic);
@@ -86,6 +86,7 @@ export function HapticTouchableOpacity({
 
   return (
     <NativeTouchableOpacity
+      ref={ref}
       {...props}
       disabled={disabled}
       onPress={onPress ? handlePress : undefined}
@@ -93,16 +94,16 @@ export function HapticTouchableOpacity({
       onPressIn={onPressIn}
     />
   );
-}
+});
 
-export function HapticPressable({
+export const HapticPressable = forwardRef<ComponentRef<typeof NativePressable>, HapticPressableProps>(function HapticPressable({
   haptic = 'light',
   disabled,
   onPress,
   onPressIn,
   onLongPress,
   ...props
-}: HapticPressableProps) {
+}, ref) {
   const handlePress = useCallback((event: GestureResponderEvent) => {
     if (shouldTriggerHaptic(disabled, haptic, onPress)) {
       triggerTouchHaptic(haptic);
@@ -121,6 +122,7 @@ export function HapticPressable({
 
   return (
     <NativePressable
+      ref={ref}
       {...props}
       disabled={disabled}
       onPress={onPress ? handlePress : undefined}
@@ -128,4 +130,4 @@ export function HapticPressable({
       onPressIn={onPressIn}
     />
   );
-}
+});

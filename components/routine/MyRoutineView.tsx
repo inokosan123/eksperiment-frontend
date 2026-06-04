@@ -88,6 +88,13 @@ import { getPrayerTaskConfig, getScriptureTaskConfig } from '@/components/tasks/
 import { resolveDisplayIcon, resolveDisplayType, resolveTaskVariant } from '@/components/tasks/taskAdapters';
 import type { PrayerTaskConfig, ScriptureTaskConfig, TaskDefinition, TaskDraft, TaskLevel } from '@/components/tasks/taskTypes';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import {
+  notifyGuideEvent,
+  useGuidedSetup,
+  useGuideTarget,
+} from '@/components/onboarding/guided/GuidedSetupContext';
+import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
+import QuickTaskSheet, { QUICK_TASK_GUIDE_TARGETS } from '@/components/shared/QuickTaskSheet';
 
 
 type RoutineFrequency = TaskFrequency;
@@ -264,6 +271,14 @@ const ROUTINE_ICONS: {
 ];
 
 const VISIBLE_ROUTINE_ICON_COUNT = 20;
+const MY_ROUTINE_GUIDE_TARGETS = {
+  spiritualAdd: 'my-routine.spiritual-add',
+  spiritualType: 'my-routine.spiritual-type',
+  routineAdd: 'my-routine.routine-add',
+  title: 'my-routine.title',
+  save: 'my-routine.save',
+  taskCard: 'my-routine.task-card',
+} as const;
 const ROUTINE_PRAYER_RULES: { key: PrayerChallengeRuleChoice; label: string; desc: string }[] = [
   { key: 'personal', label: 'My Rule', desc: 'For anyone praying from their own prayer book or in their own way — Orthodox, Catholic, Protestant, Evangelical, or any other tradition.' },
   { key: 'standard', label: 'Standard Rule', desc: 'Full morning or evening prayers' },
@@ -753,7 +768,13 @@ function prayerRuleFromChallenge(challenge: ChallengeRecord): PrayerChallengeRul
   return 'personal';
 }
 
-export default function MyRoutineView() {
+export default function MyRoutineView({
+  guided = false,
+  onGuidedComplete,
+}: {
+  guided?: boolean;
+  onGuidedComplete?: () => void;
+} = {}) {
   const router = useRouter();
   const {
     challenges,
@@ -806,6 +827,28 @@ export default function MyRoutineView() {
   });
   const [habits, setHabits] = useState<HabitItem[]>([]);
   const habitsRef = useRef<HabitsViewHandle>(null);
+  const [quickTaskSheetOpen, setQuickTaskSheetOpen] = useState(false);
+  const quickTaskSavedRef = useRef(false);
+  const {
+    session,
+    patchSession,
+    setPresentation,
+  } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'buildMyRoutine';
+  const guidePhase = isGuided ? session.phase : '';
+  const spiritualAddTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.spiritualAdd, isGuided);
+  const routineAddTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.routineAdd, isGuided);
+  const taskCardTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.taskCard, isGuided);
+
+  const finishGuidedRoutine = useCallback(() => {
+    patchSession({
+      activeStep: 'homeClimax',
+      phase: 'intro',
+      route: '/onboarding',
+    });
+    setPresentation(null);
+    onGuidedComplete?.();
+  }, [onGuidedComplete, patchSession, setPresentation]);
 
   useFocusEffect(
     useCallback(() => {
@@ -842,8 +885,199 @@ export default function MyRoutineView() {
     };
   }, [refreshHabits]);
 
+  useEffect(() => {
+    if (!isGuided) return;
+    if (guidePhase === 'intro') {
+      patchSession({ phase: 'spiritualAdd' });
+      return;
+    }
+    if (guidePhase === 'spiritualAdd') {
+      setPresentation({
+        key: 'my-routine-spiritual-add',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.spiritualAdd,
+        cutoutPadding: 7,
+        placement: 'below',
+        allowTargetInteraction: true,
+        message: 'A stable week leaves a visible place for what matters most.\n\nAdd one spiritual task.',
+      });
+      return;
+    }
+    if (guidePhase === 'spiritualType') {
+      setPresentation({
+        key: 'my-routine-spiritual-type',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.spiritualType,
+        cutoutPadding: 7,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Choose Custom for your first spiritual commitment.\n\nYou can explore the guided prayer and Scripture options later.',
+      });
+      return;
+    }
+    if (guidePhase === 'spiritualName') {
+      setPresentation({
+        key: 'my-routine-spiritual-name',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.title,
+        cutoutPadding: 7,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Name a spiritual practice you want to keep visible in your week.\n\nFor example: Morning prayer.',
+      });
+      return;
+    }
+    if (guidePhase === 'spiritualSave') {
+      setPresentation({
+        key: 'my-routine-spiritual-save',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.save,
+        cutoutPadding: 7,
+        placement: 'below',
+        allowTargetInteraction: true,
+        message: 'Save your spiritual task.',
+      });
+      return;
+    }
+    if (guidePhase === 'routineAdd') {
+      setPresentation({
+        key: 'my-routine-routine-add',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.routineAdd,
+        cutoutPadding: 7,
+        placement: 'below',
+        allowTargetInteraction: true,
+        message: 'Now give one repeated responsibility a clear place.\n\nAdd a routine task.',
+      });
+      return;
+    }
+    if (guidePhase === 'routineName') {
+      setPresentation({
+        key: 'my-routine-routine-name',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.title,
+        cutoutPadding: 7,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Name one routine you want to return to consistently.\n\nFor example: Plan tomorrow.',
+      });
+      return;
+    }
+    if (guidePhase === 'routineSave') {
+      setPresentation({
+        key: 'my-routine-routine-save',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.save,
+        cutoutPadding: 7,
+        placement: 'below',
+        allowTargetInteraction: true,
+        message: 'Save your routine task.',
+      });
+      return;
+    }
+    if (guidePhase === 'quickOffer') {
+      setPresentation({
+        key: 'my-routine-quick-offer',
+        placement: 'center',
+        message: 'Some things do not need a routine.\n\nQuick Tasks catch small one-time responsibilities without breaking your flow.',
+        ctaLabel: 'ADD QUICK TASK',
+        onCta: () => {
+          quickTaskSavedRef.current = false;
+          setQuickTaskSheetOpen(true);
+          patchSession({ phase: 'quickName' });
+        },
+        secondaryCtaLabel: 'SKIP FOR NOW',
+        onSecondaryCta: () => patchSession({ phase: 'weekly' }),
+      });
+      return;
+    }
+    if (guidePhase === 'quickName') {
+      setPresentation({
+        key: 'my-routine-quick-name',
+        targetId: QUICK_TASK_GUIDE_TARGETS.title,
+        cutoutPadding: 7,
+        placement: 'above',
+        allowTargetInteraction: true,
+        message: 'Name one small task you want to remember today.',
+      });
+      return;
+    }
+    if (guidePhase === 'quickSave') {
+      setPresentation({
+        key: 'my-routine-quick-save',
+        targetId: QUICK_TASK_GUIDE_TARGETS.save,
+        cutoutPadding: 7,
+        placement: 'below',
+        allowTargetInteraction: true,
+        message: 'Save this one-time task.',
+      });
+      return;
+    }
+    if (guidePhase === 'weekly') {
+      setPresentation({
+        key: 'my-routine-weekly',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.taskCard,
+        cutoutPadding: 7,
+        placement: 'below',
+        allowTargetInteraction: false,
+        message: 'This is your real weekly rhythm.\n\nThe tasks you just created already live here.',
+        ctaLabel: 'SHOW ME EDITING',
+        onCta: () => patchSession({ phase: 'edit' }),
+      });
+      return;
+    }
+    if (guidePhase === 'edit') {
+      setPresentation({
+        key: 'my-routine-edit',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.taskCard,
+        cutoutPadding: 7,
+        placement: 'below',
+        allowTargetInteraction: true,
+        message: 'Tap a task whenever you want to adjust its schedule or details.',
+      });
+      return;
+    }
+    if (guidePhase === 'editSave') {
+      setPresentation({
+        key: 'my-routine-edit-save',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.save,
+        cutoutPadding: 7,
+        placement: 'below',
+        allowTargetInteraction: true,
+        message: 'Everything remains editable.\n\nSave the task to return to your week.',
+      });
+      return;
+    }
+    if (guidePhase === 'complete') {
+      setPresentation({
+        key: 'my-routine-complete',
+        celebrate: true,
+        placement: 'center',
+        message: 'Your weekly rhythm is in place.',
+        ctaLabel: 'CONTINUE',
+        onCta: finishGuidedRoutine,
+      });
+    }
+  }, [
+    finishGuidedRoutine,
+    guidePhase,
+    isGuided,
+    patchSession,
+    setPresentation,
+  ]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+    const timer = setTimeout(() => {
+      spiritualAddTarget.measure();
+      routineAddTarget.measure();
+      taskCardTarget.measure();
+    }, guidePhase === 'weekly' || guidePhase === 'edit' ? 280 : 140);
+    return () => clearTimeout(timer);
+  }, [
+    guidePhase,
+    isGuided,
+    routineAddTarget,
+    spiritualAddTarget,
+    taskCardTarget,
+  ]);
+
   const openAddSpiritual = () => {
     setShowSpiritualTypePicker(true);
+    if (isGuided) patchSession({ phase: 'spiritualType' });
   };
 
   const openAddRoutine = () => {
@@ -851,6 +1085,7 @@ export default function MyRoutineView() {
     setEditorDefaultLevel(2);
     setEditorDefaultType(undefined);
     setEditorVisible(true);
+    if (isGuided) patchSession({ phase: 'routineName' });
   };
 
   const openEditTask = (task: RoutineTask) => {
@@ -977,16 +1212,48 @@ export default function MyRoutineView() {
   };
 
   const handleTaskSave = async (task: RoutineTask) => {
+    let savedTask: TaskDefinition | undefined;
     if (task.source === 'habit') {
       await saveHabitBackedTask(task);
     } else {
-      await createOrUpdateTask(routineTaskToDraft(task));
+      savedTask = await createOrUpdateTask(routineTaskToDraft(task));
     }
     await refreshHabits();
     setEditorVisible(false);
     setEditorTask(null);
     setEditorDefaultLevel(undefined);
     setEditorDefaultType(undefined);
+    if (!isGuided) return;
+
+    if (guidePhase === 'spiritualName' || guidePhase === 'spiritualSave') {
+      notifyGuideEvent({
+        type: 'saved',
+        step: 'buildMyRoutine',
+        phase: 'routineAdd',
+        entityKey: 'spiritualTask',
+        entityId: savedTask?.id,
+      });
+      return;
+    }
+    if (guidePhase === 'routineName' || guidePhase === 'routineSave') {
+      notifyGuideEvent({
+        type: 'saved',
+        step: 'buildMyRoutine',
+        phase: 'quickOffer',
+        entityKey: 'routineTask',
+        entityId: savedTask?.id,
+      });
+      return;
+    }
+    if (guidePhase === 'editSave') {
+      notifyGuideEvent({
+        type: 'completed',
+        step: 'buildMyRoutine',
+        phase: 'complete',
+        entityKey: 'editedRoutineTask',
+        entityId: savedTask?.id,
+      });
+    }
   };
 
   const handleTaskDelete = async (taskId: string) => {
@@ -1073,7 +1340,7 @@ export default function MyRoutineView() {
           </ScrollView>
 
           <View style={s.addRow}>
-            <TouchableOpacity onPress={openAddSpiritual} activeOpacity={0.84} style={s.addBtnPress}>
+            <TouchableOpacity {...spiritualAddTarget} onPress={openAddSpiritual} activeOpacity={0.84} style={s.addBtnPress}>
               <LinearGradient
                 colors={['#FFFBEB', '#FFF4D5']}
                 start={{ x: 0, y: 0 }}
@@ -1086,7 +1353,7 @@ export default function MyRoutineView() {
                 <Text style={s.addSpiritualText}>Spiritual</Text>
               </LinearGradient>
             </TouchableOpacity>
-            <TouchableOpacity onPress={openAddRoutine} activeOpacity={0.84} style={s.addBtnPress}>
+            <TouchableOpacity {...routineAddTarget} onPress={openAddRoutine} activeOpacity={0.84} style={s.addBtnPress}>
               <LinearGradient
                 colors={['#FFFFFF', '#F4F6F8']}
                 start={{ x: 0, y: 0 }}
@@ -1119,7 +1386,15 @@ export default function MyRoutineView() {
                     </View>
                   )}
 
-                  <TouchableOpacity onPress={() => openTask(task)} activeOpacity={0.86} style={s.taskCardWrap}>
+                  <TouchableOpacity
+                    {...(isGuided && task.id === session?.createdIds.routineTask ? taskCardTarget : {})}
+                    onPress={() => {
+                      openTask(task);
+                      if (isGuided && guidePhase === 'edit') patchSession({ phase: 'editSave' });
+                    }}
+                    activeOpacity={0.86}
+                    style={s.taskCardWrap}
+                  >
                     <AnyTaskCard task={toTaskCardData(task, selectedDay.jsDay)} />
                   </TouchableOpacity>
                 </React.Fragment>
@@ -1194,6 +1469,7 @@ export default function MyRoutineView() {
 
       <SpiritualTypePickerSheet
         visible={showSpiritualTypePicker}
+        guided={isGuided}
         onClose={() => setShowSpiritualTypePicker(false)}
         onSelect={type => {
           setShowSpiritualTypePicker(false);
@@ -1205,6 +1481,7 @@ export default function MyRoutineView() {
           setEditorDefaultLevel(1);
           setEditorDefaultType(type);
           setEditorVisible(true);
+          if (isGuided) patchSession({ phase: 'spiritualName' });
         }}
       />
 
@@ -1314,6 +1591,7 @@ export default function MyRoutineView() {
 
       <RoutineTaskEditorSheet
         visible={editorVisible}
+        guided={isGuided}
         task={editorTask}
         defaultLevel={editorDefaultLevel}
         defaultType={editorDefaultType}
@@ -1325,6 +1603,26 @@ export default function MyRoutineView() {
         }}
         onSave={handleTaskSave}
         onDelete={handleTaskDelete}
+      />
+
+      <QuickTaskSheet
+        visible={quickTaskSheetOpen}
+        guided={isGuided}
+        onClose={() => {
+          setQuickTaskSheetOpen(false);
+          if (isGuided && !quickTaskSavedRef.current) patchSession({ phase: 'quickOffer' });
+        }}
+        onTaskDraft={async draft => {
+          const saved = await createOrUpdateTask(draft);
+          quickTaskSavedRef.current = true;
+          notifyGuideEvent({
+            type: 'saved',
+            step: 'buildMyRoutine',
+            phase: 'weekly',
+            entityKey: 'quickTask',
+            entityId: saved.id,
+          });
+        }}
       />
 
     </View>
@@ -1343,17 +1641,35 @@ function SectionDivider({ icon }: { icon: React.ReactNode }) {
 
 function SpiritualTypePickerSheet({
   visible,
+  guided = false,
   onClose,
   onSelect,
 }: {
   visible: boolean;
+  guided?: boolean;
   onClose: () => void;
   onSelect: (type: SpiritualType) => void;
 }) {
+  const { session } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'buildMyRoutine';
+  const spiritualTypeTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.spiritualType, isGuided);
+
+  useEffect(() => {
+    if (!isGuided || !visible) return;
+    const timer = setTimeout(() => spiritualTypeTarget.measure(), 360);
+    return () => clearTimeout(timer);
+  }, [isGuided, spiritualTypeTarget, visible]);
+
   if (!visible) return null;
 
   return (
-    <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheetShell} keyboardAware>
+    <SmoothBottomSheet
+      visible={visible}
+      onClose={onClose}
+      sheetStyle={s.sheetShell}
+      keyboardAware
+      overlayChildren={isGuided ? <GuidedOverlayHost /> : undefined}
+    >
           <View style={s.sheetHandle} />
           <View style={s.sheetHeader}>
             <TouchableOpacity onPress={onClose} activeOpacity={0.84} style={s.sheetHeaderIcon}>
@@ -1364,7 +1680,13 @@ function SpiritualTypePickerSheet({
           </View>
           <ScrollView contentContainerStyle={s.typeSheetContent} showsVerticalScrollIndicator={false}>
             {SPIRITUAL_TYPES.map(item => (
-              <TouchableOpacity key={item.id} onPress={() => onSelect(item.id)} activeOpacity={0.84} style={s.typeOptionCard}>
+              <TouchableOpacity
+                {...(isGuided && item.id === 'custom' ? spiritualTypeTarget : {})}
+                key={item.id}
+                onPress={() => onSelect(item.id)}
+                activeOpacity={0.84}
+                style={s.typeOptionCard}
+              >
                 <View style={[s.typeOptionIcon, { backgroundColor: `${item.accent}14` }]}>
                   <item.Icon s={20} c={item.accent} />
                 </View>
@@ -1636,6 +1958,7 @@ function RoutineScriptureAmountEditor({
 
 function RoutineTaskEditorSheet({
   visible,
+  guided = false,
   task,
   defaultLevel,
   defaultType,
@@ -1644,6 +1967,7 @@ function RoutineTaskEditorSheet({
   onDelete,
 }: {
   visible: boolean;
+  guided?: boolean;
   task: RoutineTask | null;
   defaultLevel?: RoutineLevel;
   defaultType?: SpiritualType;
@@ -1674,6 +1998,31 @@ function RoutineTaskEditorSheet({
   const [showAllRoutineIcons, setShowAllRoutineIcons] = useState(false);
   const [routineIconGridWidth, setRoutineIconGridWidth] = useState(0);
   const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
+  const { session, patchSession } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'buildMyRoutine';
+  const guidePhase = isGuided ? session.phase : '';
+  const titleTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.title, isGuided);
+  const saveTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.save, isGuided);
+
+  const advanceTitleGuide = useCallback(() => {
+    if (!isGuided || !title.trim()) return;
+    if (guidePhase === 'spiritualName') {
+      patchSession({ phase: 'spiritualSave' });
+      return;
+    }
+    if (guidePhase === 'routineName') {
+      patchSession({ phase: 'routineSave' });
+    }
+  }, [guidePhase, isGuided, patchSession, title]);
+
+  useEffect(() => {
+    if (!isGuided || !visible) return;
+    const timer = setTimeout(() => {
+      titleTarget.measure();
+      saveTarget.measure();
+    }, 360);
+    return () => clearTimeout(timer);
+  }, [guidePhase, isGuided, saveTarget, titleTarget, visible]);
 
   useEffect(() => {
     categoryMotion.value = withSpring(level === 2 ? 1 : 0, {
@@ -1869,6 +2218,7 @@ function RoutineTaskEditorSheet({
 
   const deleteConfirmOverlay = (
     <>
+      {isGuided && <GuidedOverlayHost />}
       <ConfirmModal
         embedded
         visible={confirmDeleteVisible}
@@ -1913,7 +2263,7 @@ function RoutineTaskEditorSheet({
               <X s={22} c={editorAccent ?? '#9CA3AF'} />
             </TouchableOpacity>
             <Text style={s.editorHeaderTitle}>{task ? 'Edit Activity' : 'New Activity'}</Text>
-            <TouchableOpacity onPress={save} activeOpacity={0.84} style={[s.saveCircle, { backgroundColor: accent, opacity: title.trim() ? 1 : 0.35 }]}>
+            <TouchableOpacity {...saveTarget} onPress={save} activeOpacity={0.84} style={[s.saveCircle, { backgroundColor: accent, opacity: title.trim() ? 1 : 0.35 }]}>
               <CheckSmall s={18} c="#FFFFFF" />
             </TouchableOpacity>
           </View>
@@ -1922,11 +2272,14 @@ function RoutineTaskEditorSheet({
             <View style={[s.editorBlock, themedBlockStyle]}>
               <Text style={[s.editorBlockLabel, { color: accent }]}>Activity Name</Text>
               <TextInput
+                {...titleTarget}
                 value={title}
                 onChangeText={setTitle}
                 placeholder={isSpiritual ? 'e.g. Morning Prayer' : 'e.g. Evening Walk'}
                 placeholderTextColor="#D1D5DB"
                 style={[s.titleInput, themedTitleInputStyle]}
+                returnKeyType="done"
+                onSubmitEditing={advanceTitleGuide}
               />
             </View>
 
