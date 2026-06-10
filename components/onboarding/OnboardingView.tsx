@@ -8626,6 +8626,36 @@ function V4MomentSlide({
   );
 }
 
+function DeckSwipeHint() {
+  const sweep = useSharedValue(0);
+
+  useEffect(() => {
+    sweep.value = withDelay(
+      1600,
+      withRepeat(
+        withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        false,
+      ),
+    );
+    return () => {
+      sweep.value = 0;
+    };
+  }, [sweep]);
+
+  const hintStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(sweep.value, [0, 0.16, 0.68, 1], [0, 1, 1, 0]),
+    transform: [{ translateX: interpolate(sweep.value, [0, 1], [-30, 30]) }],
+  }));
+
+  return (
+    <Reanimated.View pointerEvents="none" style={[s.v4DeckHintArrow, hintStyle]}>
+      <ChevronRight s={17} c={GOLD} w={2.6} />
+      <ChevronRight s={17} c="rgba(197,160,89,0.45)" w={2.6} />
+    </Reanimated.View>
+  );
+}
+
 function V4StatementsIntroSlide({ displayName, onNext }: { displayName?: string; onNext: () => void }) {
   const name = nameForDisplay(displayName);
   return (
@@ -8654,6 +8684,7 @@ function V4StatementsIntroSlide({ displayName, onNext }: { displayName?: string;
           />
           <Reanimated.View entering={FadeInUp.delay(1120).duration(420)} style={s.v4DeckPreviewCard}>
             <Text style={s.v4DeckPreviewText}>Swipe right if it sounds like you.</Text>
+            <DeckSwipeHint />
           </Reanimated.View>
         </View>
       </ScrollView>
@@ -19021,6 +19052,12 @@ const s = StyleSheet.create({
     fontFamily: F.sansBold,
     fontSize: 14,
     color: 'rgba(25,23,20,0.54)',
+  },
+  v4DeckHintArrow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 14,
+    marginLeft: -4,
   },
   v4DeckSlide: {
     flex: 1,
