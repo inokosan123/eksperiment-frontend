@@ -8374,44 +8374,17 @@ function V4ProgressRail({
   );
 }
 
-type ToolsShowcaseTagSpec = {
-  label: string;
-  x: number;
-  y: number;
-  rotate: number;
-};
-
-const TOOLS_SHOWCASE_TAGS: ToolsShowcaseTagSpec[] = [
-  { label: 'Notification Blocker', x: -16, y: -290, rotate: -2 },
-  { label: 'Daily Journal', x: -104, y: -238, rotate: -5 },
-  { label: 'Scripture', x: 18, y: -246, rotate: 3 },
-  { label: 'Prayer Book', x: 122, y: -234, rotate: 6 },
-  { label: 'Morning Pages', x: -52, y: -194, rotate: 2 },
-  { label: 'Pomodoro', x: 96, y: -188, rotate: -4 },
-  { label: 'Bible Notes', x: -124, y: -148, rotate: 4 },
-  { label: 'Habits', x: 8, y: -152, rotate: -2 },
-  { label: 'Reading List', x: 114, y: -142, rotate: 5 },
-  { label: 'Screen Time', x: -64, y: -104, rotate: -6 },
-  { label: 'Challenges', x: 72, y: -100, rotate: 3 },
-  { label: 'Favorites', x: -124, y: -52, rotate: -3 },
-  { label: 'App Blocker', x: 124, y: -48, rotate: 4 },
-  { label: 'Notes', x: -132, y: 4, rotate: 5 },
-  { label: 'Streaks', x: 132, y: 8, rotate: -5 },
-  { label: 'Free Writing', x: -120, y: 58, rotate: -4 },
-  { label: 'Big Events', x: 122, y: 56, rotate: 6 },
-  { label: 'Morning Prayers', x: -66, y: 106, rotate: 3 },
-  { label: 'Evening Prayers', x: 80, y: 102, rotate: -3 },
-  { label: 'Monthly Goals', x: -116, y: 152, rotate: 5 },
-  { label: 'Jesus Prayer', x: 14, y: 158, rotate: -2 },
-  { label: 'Bucket List', x: 122, y: 148, rotate: -6 },
-  { label: 'Reading Timer', x: -58, y: 200, rotate: -4 },
-  { label: 'Routines', x: 84, y: 196, rotate: 4 },
-  { label: 'Year in Pixels', x: -110, y: 244, rotate: 3 },
-  { label: 'Spiritual Tasks', x: 18, y: 248, rotate: -3 },
-  { label: 'Content Blocker', x: 126, y: 240, rotate: 5 },
+const TOOLS_PILE_LABELS = [
+  'Scripture', 'Prayer Book', 'Daily Journal', 'Habits',
+  'Challenges', 'Morning Prayers', 'Evening Prayers', 'Bible Notes',
+  'Screen Time', 'App Blocker', 'Content Blocker', 'Notification Blocker',
+  'Routines', 'Spiritual Tasks', 'Monthly Goals', 'Big Events',
+  'Reading List', 'Reading Timer', 'Pomodoro', 'Free Writing',
+  'Morning Pages', 'Favorites', 'Jesus Prayer', 'Bucket List',
+  'Year in Pixels', 'Streaks', 'Notes',
 ];
 
-const TOOLS_SHOWCASE_TAG_TONES = [
+const TOOLS_PILE_TONES = [
   { tone: '#F6EFDC', dot: '#C5A059' },
   { tone: '#E7F4F4', dot: '#4D8586' },
   { tone: '#F6E9EE', dot: '#8F5D6C' },
@@ -8419,68 +8392,128 @@ const TOOLS_SHOWCASE_TAG_TONES = [
   { tone: '#F0EFEA', dot: '#57524B' },
 ];
 
-const TOOLS_SHOWCASE_RAIN_BASE_DELAY = 680;
-const TOOLS_SHOWCASE_RAIN_STEP = 52;
+const TOOLS_PILE_BASE_DELAY = 950;
+const TOOLS_PILE_STEP_DELAY = 72;
 
-function toolsShowcaseTagDelay(index: number) {
-  return TOOLS_SHOWCASE_RAIN_BASE_DELAY + ((index * 7) % TOOLS_SHOWCASE_TAGS.length) * TOOLS_SHOWCASE_RAIN_STEP;
+type ToolsPileSpec = {
+  label: string;
+  estWidth: number;
+  x: number;
+  bottom: number;
+  rotate: number;
+  order: number;
+};
+
+// Pack the chips into rows from the bottom up, like tokens dropped onto a
+// table - slight x jitter and rotation so the pile reads as physical, not as
+// a grid.
+function buildToolsPile(screenWidth: number, compact: boolean): ToolsPileSpec[] {
+  const charWidth = compact ? 6.4 : 6.9;
+  const chipPadding = compact ? 36 : 40;
+  const gap = 7;
+  const rowStep = compact ? 28 : 31;
+  const maxRowWidth = Math.min(screenWidth - 24, 400);
+
+  const rows: { label: string; estWidth: number }[][] = [];
+  let current: { label: string; estWidth: number }[] = [];
+  let currentWidth = 0;
+  for (const label of TOOLS_PILE_LABELS) {
+    const estWidth = Math.round(label.length * charWidth) + chipPadding;
+    const nextWidth = currentWidth + estWidth + (current.length > 0 ? gap : 0);
+    if (nextWidth > maxRowWidth && current.length > 0) {
+      rows.push(current);
+      current = [];
+      currentWidth = 0;
+    }
+    current.push({ label, estWidth });
+    currentWidth += estWidth + (current.length > 1 ? gap : 0);
+  }
+  if (current.length > 0) rows.push(current);
+
+  const specs: ToolsPileSpec[] = [];
+  rows.forEach((row, rowIndex) => {
+    const totalWidth = row.reduce((sum, item) => sum + item.estWidth, 0) + gap * (row.length - 1);
+    let cursor = -totalWidth / 2;
+    row.forEach((item, itemIndex) => {
+      const jitterX = ((rowIndex * 7 + itemIndex * 13) % 9) - 4;
+      const center = cursor + item.estWidth / 2 + jitterX;
+      cursor += item.estWidth + gap;
+      const rotate = ((((rowIndex * 5 + itemIndex * 11) % 13) - 6)) * 0.85;
+      specs.push({
+        label: item.label,
+        estWidth: item.estWidth,
+        x: center,
+        bottom: rowIndex * rowStep,
+        rotate,
+        order: specs.length,
+      });
+    });
+  });
+  return specs;
 }
 
-function ToolsShowcaseTag({
+function ToolsPileTag({
   spec,
-  index,
-  yScale,
+  screenHeight,
+  pileBottom,
+  compact,
+  isLastTag,
 }: {
-  spec: ToolsShowcaseTagSpec;
-  index: number;
-  yScale: number;
+  spec: ToolsPileSpec;
+  screenHeight: number;
+  pileBottom: number;
+  compact: boolean;
+  isLastTag: boolean;
 }) {
   const fall = useSharedValue(0);
-  const drift = useSharedValue(0);
-  const motion = DISTRACTION_CARD_MOTION_PATHS[index % DISTRACTION_CARD_MOTION_PATHS.length];
-  const tone = TOOLS_SHOWCASE_TAG_TONES[index % TOOLS_SHOWCASE_TAG_TONES.length];
-  const delay = toolsShowcaseTagDelay(index);
-  const targetY = spec.y * yScale;
+  const bounce = useSharedValue(0);
+  const tone = TOOLS_PILE_TONES[spec.order % TOOLS_PILE_TONES.length];
+  const delay = TOOLS_PILE_BASE_DELAY + spec.order * TOOLS_PILE_STEP_DELAY;
+  // The chip's resting spot measured from the top of the screen - the drop
+  // starts just above the screen so every chip falls through the whole frame.
+  const restingFromTop = screenHeight - pileBottom - spec.bottom;
+  const fallFrom = -(restingFromTop + 70);
+
+  const land = useCallback(() => {
+    if (spec.order % 3 === 0) runTypingHaptic();
+    if (isLastTag) runBubbleHaptic();
+  }, [isLastTag, spec.order]);
 
   useEffect(() => {
     fall.value = 0;
-    fall.value = withDelay(delay, withSpring(1, { damping: 17, stiffness: 118, mass: 0.92 }));
-    const floatTimer = setTimeout(() => {
-      drift.value = 0;
-      drift.value = withRepeat(
-        withTiming(1, { duration: motion.duration, easing: Easing.linear }),
-        -1,
-        false,
-      );
-    }, delay + 640);
-    return () => {
-      clearTimeout(floatTimer);
-      drift.value = 0;
-    };
-  }, [delay, drift, fall, motion.duration]);
+    bounce.value = 0;
+    fall.value = withDelay(
+      delay,
+      withTiming(1, { duration: 540, easing: Easing.in(Easing.quad) }, finished => {
+        if (!finished) return;
+        bounce.value = withSequence(
+          withTiming(-(compact ? 7 : 9), { duration: 100, easing: Easing.out(Easing.quad) }),
+          withTiming(0, { duration: 240, easing: Easing.bezier(0.34, 1.45, 0.64, 1) }),
+        );
+        runOnJS(land)();
+      }),
+    );
+  }, [bounce, compact, delay, fall, land]);
 
-  const tagStyle = useAnimatedStyle(() => {
-    const angle = drift.value * Math.PI * 2 + motion.phase;
-    const secondary = drift.value * Math.PI * 4 + motion.phase * 0.7;
-    const dx = Math.sin(angle) * motion.xA * 0.5 + Math.sin(secondary) * motion.xB * 0.4;
-    const dy = Math.cos(angle) * motion.yA * 0.5 + Math.sin(secondary + 0.8) * motion.yB * 0.4;
-    const dr = Math.sin(angle + 0.6) * motion.rA * 0.5;
-    return {
-      opacity: interpolate(fall.value, [0, 0.07, 1], [0, 1, 1]),
-      transform: [
-        { translateX: spec.x + dx },
-        { translateY: interpolate(fall.value, [0, 1], [-540, targetY]) + dy },
-        { rotate: `${interpolate(fall.value, [0, 1], [spec.rotate * 2.6, spec.rotate]) + dr}deg` },
-        { scale: interpolate(fall.value, [0, 1], [0.92, 1]) },
-      ],
-    };
-  });
+  const tagStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(fall.value, [0, 1], [fallFrom, 0]) + bounce.value },
+      { rotate: `${interpolate(fall.value, [0, 1], [spec.rotate * 3, spec.rotate])}deg` },
+    ],
+  }));
 
   return (
-    <Reanimated.View pointerEvents="none" style={[s.toolsTagSlot, tagStyle]}>
-      <View style={[s.toolsTagChip, { backgroundColor: tone.tone }]}>
+    <Reanimated.View
+      pointerEvents="none"
+      style={[
+        s.toolsPileSlot,
+        { bottom: spec.bottom, marginLeft: spec.x - spec.estWidth / 2 },
+        tagStyle,
+      ]}
+    >
+      <View style={[s.toolsTagChip, compact && s.toolsTagChipCompact, { backgroundColor: tone.tone }]}>
         <View style={[s.toolsTagDot, { backgroundColor: tone.dot }]} />
-        <Text style={s.toolsTagText} numberOfLines={1}>{spec.label}</Text>
+        <Text style={[s.toolsTagText, compact && s.toolsTagTextCompact]} numberOfLines={1}>{spec.label}</Text>
       </View>
     </Reanimated.View>
   );
@@ -8495,80 +8528,128 @@ function ToolsShowcaseSlide({
   bottomInset: number;
   onNext: () => void;
 }) {
-  const { height } = useWindowDimensions();
-  const yScale = height < 760 ? 0.82 : 1;
-  const crestIn = useSharedValue(0);
-  const pulse = useSharedValue(0);
+  const { width, height } = useWindowDimensions();
+  const compact = height < 760;
+  const [titleUnderlineWidth, setTitleUnderlineWidth] = useState(150);
+  const pileBottom = bottomInset + (compact ? 84 : 96);
+  const pile = useMemo(() => buildToolsPile(width, compact), [compact, width]);
+  const ctaDelay = TOOLS_PILE_BASE_DELAY + pile.length * TOOLS_PILE_STEP_DELAY + 420;
+  const sealIn = useSharedValue(0);
+  const sealGlow = useSharedValue(0);
 
   useEffect(() => {
-    crestIn.value = withDelay(180, withTiming(1, { duration: 640, easing: Easing.out(Easing.cubic) }));
-    pulse.value = withDelay(
-      980,
+    sealIn.value = withDelay(
+      240,
+      withSpring(1, { damping: 14, stiffness: 130, mass: 0.9 }),
+    );
+    sealGlow.value = withDelay(
+      900,
       withRepeat(
-        withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.quad) }),
+        withTiming(1, { duration: 3200, easing: Easing.inOut(Easing.quad) }),
         -1,
         true,
       ),
     );
-    const hapticTimer = setTimeout(runBubbleHaptic, 780);
+    const hapticTimer = setTimeout(runBubbleHaptic, 660);
     return () => clearTimeout(hapticTimer);
-  }, [crestIn, pulse]);
+  }, [sealGlow, sealIn]);
 
-  const crestStyle = useAnimatedStyle(() => ({
-    opacity: crestIn.value,
+  const sealStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(1, sealIn.value * 1.4),
     transform: [
-      { translateY: interpolate(crestIn.value, [0, 1], [12, 0]) },
-      { scale: interpolate(crestIn.value, [0, 1], [0.84, 1]) * (1 + pulse.value * 0.022) },
+      { translateY: interpolate(sealIn.value, [0, 1], [22, 0]) },
+      { scale: interpolate(sealIn.value, [0, 1], [0.7, 1]) },
     ],
   }));
-  const glowStyle = useAnimatedStyle(() => ({
-    opacity: crestIn.value * (0.55 + pulse.value * 0.45),
+  const sealGlowStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(1, sealIn.value) * (0.5 + sealGlow.value * 0.5),
     transform: [
-      { scale: interpolate(crestIn.value, [0, 1], [0.72, 1]) * (1 + pulse.value * 0.055) },
-    ],
-  }));
-  const ringStyle = useAnimatedStyle(() => ({
-    opacity: crestIn.value * 0.9,
-    transform: [
-      { scale: interpolate(crestIn.value, [0, 1], [0.8, 1]) * (1 + pulse.value * 0.012) },
+      { scale: interpolate(sealIn.value, [0, 1], [0.7, 1]) * (1 + sealGlow.value * 0.06) },
     ],
   }));
 
   return (
     <LinearGradient
-      colors={['#FFFDF8', '#FFFDF8', '#F8EEDC']}
-      locations={[0, 0.6, 1]}
+      colors={['#FFFDF8', '#FFFDF8', '#F8EEDC', '#D9B98E']}
+      locations={[0, 0.52, 0.82, 1]}
       start={{ x: 0.5, y: 0 }}
       end={{ x: 0.5, y: 1 }}
       style={s.toolsShowcaseRoot}
     >
-      <View style={[s.toolsShowcaseCopy, { paddingTop: topInset + 30 }]}>
-        <Reanimated.View
-          entering={FadeIn.duration(560).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}
-        >
-          <Text style={s.toolsShowcaseTitle}>Anasta has a lot of tools.</Text>
-        </Reanimated.View>
-        <Reanimated.View
-          entering={FadeIn.delay(340).duration(560).withInitialValues({ opacity: 0, transform: [{ translateY: 12 }] })}
-        >
-          <Text style={s.toolsShowcaseBody}>
-            But a tool is only worth what it adds to your life — so we shape every one of them around yours.
-          </Text>
-        </Reanimated.View>
+      <View pointerEvents="none" style={s.valueBackdrop}>
+        <View style={s.valueBackdropBandTop} />
+        <View style={s.valueBackdropBandBottom} />
+        <View style={s.valueBackdropLineOne} />
+        <View style={s.valueBackdropLineTwo} />
       </View>
 
-      <View style={s.toolsShowcaseStage}>
-        <Reanimated.View pointerEvents="none" style={[s.toolsCrestGlow, glowStyle]} />
-        <Reanimated.View pointerEvents="none" style={[s.toolsCrestRing, ringStyle]} />
-        <Reanimated.View style={[s.toolsCrestWrap, crestStyle]}>
-          <Image source={APP_LOGO} style={s.toolsCrestLogo} resizeMode="cover" />
-        </Reanimated.View>
-        {TOOLS_SHOWCASE_TAGS.map((spec, index) => (
-          <ToolsShowcaseTag key={spec.label} spec={spec} index={index} yScale={yScale} />
+      <Reanimated.View
+        entering={FadeIn.duration(620).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 18 }, { scale: 0.985 }],
+        })}
+        style={[s.toolsShowcaseCopy, { paddingTop: topInset + (compact ? 26 : 36) }]}
+      >
+        <View style={s.valueTitleTextWrap}>
+          <Text
+            style={s.valueTitle}
+            onTextLayout={event => {
+              const lines = event.nativeEvent.lines;
+              const lastLine = lines[lines.length - 1];
+              const nextWidth = Math.max(52, Math.min(342, Math.ceil((lastLine?.width ?? 150) * 0.94)));
+              setTitleUnderlineWidth(current => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
+            }}
+          >
+            Anasta has a lot of tools!
+          </Text>
+          <View style={[s.valueTitleUnderline, { width: titleUnderlineWidth }]} />
+        </View>
+        <View style={s.valueSubtitleFrame}>
+          <View style={s.valueSubtitleLine}>
+            <ValueSubtitleWord>But</ValueSubtitleWord>
+            <ValueSubtitleWord>their</ValueSubtitleWord>
+            <ValueSubtitleWord>worth</ValueSubtitleWord>
+            <ValueSubtitleWord>is</ValueSubtitleWord>
+            <ValueSubtitleWord>measured</ValueSubtitleWord>
+            <ValueSubtitleWord>by</ValueSubtitleWord>
+            <ValueSubtitleWord underline>what they add</ValueSubtitleWord>
+            <ValueSubtitleWord>to</ValueSubtitleWord>
+            <ValueSubtitleWord underline>your life</ValueSubtitleWord>
+            <ValueSubtitleWord>—</ValueSubtitleWord>
+            <ValueSubtitleWord>not</ValueSubtitleWord>
+            <ValueSubtitleWord>by</ValueSubtitleWord>
+            <ValueSubtitleWord>how</ValueSubtitleWord>
+            <ValueSubtitleWord>many</ValueSubtitleWord>
+            <ValueSubtitleWord>there</ValueSubtitleWord>
+            <ValueSubtitleWord>are.</ValueSubtitleWord>
+          </View>
+        </View>
+      </Reanimated.View>
+
+      <View style={[s.toolsSealStage, { paddingTop: compact ? 16 : 30 }]}>
+        <View style={s.toolsSealAnchor}>
+          <Reanimated.View pointerEvents="none" style={[s.toolsSealGlow, compact && s.toolsSealGlowCompact, sealGlowStyle]} />
+          <Reanimated.View style={[s.toolsSealOuter, compact && s.toolsSealOuterCompact, sealStyle]}>
+            <View style={s.toolsSealRing} />
+            <Image source={APP_LOGO} style={[s.toolsSealLogo, compact && s.toolsSealLogoCompact]} resizeMode="cover" />
+          </Reanimated.View>
+        </View>
+      </View>
+
+      <View pointerEvents="none" style={[s.toolsPileField, { bottom: pileBottom }]}>
+        {pile.map(spec => (
+          <ToolsPileTag
+            key={spec.label}
+            spec={spec}
+            screenHeight={height}
+            pileBottom={pileBottom}
+            compact={compact}
+            isLastTag={spec.order === pile.length - 1}
+          />
         ))}
       </View>
 
-      <AnimatedCta delay={2000} style={[s.toolsShowcaseAction, { paddingBottom: bottomInset + 8 }]}>
+      <AnimatedCta delay={ctaDelay} style={[s.toolsShowcaseAction, { paddingBottom: bottomInset + 8 }]}>
         <View style={s.ctaIsland}>
           <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
             <Text style={s.primaryButtonText}>Continue</Text>
@@ -14160,92 +14241,86 @@ const s = StyleSheet.create({
   },
   toolsShowcaseRoot: {
     flex: 1,
+    position: 'relative',
   },
   toolsShowcaseCopy: {
-    paddingHorizontal: 28,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  toolsSealStage: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    zIndex: 1,
+  },
+  toolsSealAnchor: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toolsSealGlow: {
+    position: 'absolute',
+    top: -52,
+    left: -52,
+    width: 230,
+    height: 230,
+    borderRadius: 115,
+    backgroundColor: 'rgba(231,195,109,0.17)',
+  },
+  toolsSealGlowCompact: {
+    top: -43,
+    left: -43,
+    width: 194,
+    height: 194,
+    borderRadius: 97,
+  },
+  toolsSealOuter: {
+    width: 126,
+    height: 126,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.38)',
+    shadowColor: '#8A6A2F',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.20,
+    shadowRadius: 30,
+    elevation: 6,
+  },
+  toolsSealOuterCompact: {
+    width: 108,
+    height: 108,
+    borderRadius: 34,
+  },
+  toolsSealRing: {
+    ...StyleSheet.absoluteFillObject,
+    margin: 6,
+    borderRadius: 34,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.30)',
+  },
+  toolsSealLogo: {
+    width: 92,
+    height: 92,
+  },
+  toolsSealLogoCompact: {
+    width: 78,
+    height: 78,
+  },
+  toolsPileField: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 0,
     alignItems: 'center',
     zIndex: 4,
   },
-  toolsShowcaseTitle: {
-    fontFamily: F.serifMedium,
-    fontSize: 30,
-    lineHeight: 36,
-    color: INK,
-    textAlign: 'center',
-  },
-  toolsShowcaseBody: {
-    marginTop: 10,
-    maxWidth: 320,
-    fontFamily: F.serifMediumItalic,
-    fontSize: 15.5,
-    lineHeight: 22,
-    color: '#8C8277',
-    textAlign: 'center',
-  },
-  toolsShowcaseStage: {
-    flex: 1,
-    position: 'relative',
-    overflow: 'visible',
-    zIndex: 1,
-  },
-  toolsCrestGlow: {
+  toolsPileSlot: {
     position: 'absolute',
     left: '50%',
-    top: '50%',
-    width: 250,
-    height: 250,
-    marginLeft: -125,
-    marginTop: -125,
-    borderRadius: 125,
-    backgroundColor: 'rgba(231,195,109,0.16)',
-    zIndex: 1,
-  },
-  toolsCrestRing: {
-    position: 'absolute',
-    left: '50%',
-    top: '50%',
-    width: 178,
-    height: 178,
-    marginLeft: -89,
-    marginTop: -89,
-    borderRadius: 89,
-    borderWidth: 1.2,
-    borderColor: 'rgba(197,160,89,0.34)',
-    backgroundColor: 'rgba(255,253,248,0.55)',
-    zIndex: 2,
-  },
-  toolsCrestWrap: {
-    position: 'absolute',
-    left: '50%',
-    top: '50%',
-    width: 132,
-    height: 132,
-    marginLeft: -66,
-    marginTop: -66,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 6,
-    shadowColor: GOLD,
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.18,
-    shadowRadius: 26,
-    elevation: 4,
-  },
-  toolsCrestLogo: {
-    width: 132,
-    height: 132,
-  },
-  toolsTagSlot: {
-    position: 'absolute',
-    left: '50%',
-    top: '50%',
-    width: 184,
-    height: 38,
-    marginLeft: -92,
-    marginTop: -19,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 3,
   },
   toolsTagChip: {
     flexDirection: 'row',
@@ -14255,12 +14330,17 @@ const s = StyleSheet.create({
     paddingVertical: 7.5,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.74)',
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
+    borderColor: 'rgba(255,255,255,0.78)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.13,
+    shadowRadius: 9,
     elevation: 2,
+  },
+  toolsTagChipCompact: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    columnGap: 6,
   },
   toolsTagDot: {
     width: 7,
@@ -14272,6 +14352,10 @@ const s = StyleSheet.create({
     fontSize: 13,
     lineHeight: 16,
     color: 'rgba(25,23,20,0.78)',
+  },
+  toolsTagTextCompact: {
+    fontSize: 12.2,
+    lineHeight: 15,
   },
   toolsShowcaseAction: {
     paddingHorizontal: 20,
