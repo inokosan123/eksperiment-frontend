@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import FocusLottie from '@/components/focus/FocusLottie';
 import Reanimated, {
+  type SharedValue,
   FadeIn,
   FadeInLeft,
   FadeInRight,
@@ -23,6 +24,7 @@ import Reanimated, {
   useSharedValue,
   withDelay,
   withRepeat,
+  withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
@@ -255,6 +257,7 @@ type StatementDeckCard = {
   icon: React.ReactNode;
   image?: number;
   spiritual?: boolean;
+  bold?: string[];
 };
 
 type StatementCardMetrics = {
@@ -364,17 +367,19 @@ const TUTORIAL_DECK_CARDS: StatementDeckCard[] = [
   {
     id: 'tutorial-yes',
     statement: "I sometimes feel like there's too much to do and not enough time.",
-    icon: <ListChecks s={30} c={GOLD} w={1.9} />,
+    icon: <ListChecks s={30} c="#4D8586" w={1.9} />,
+    bold: ['too much to do', 'not enough time'],
   },
   {
     id: 'tutorial-no',
     statement: 'I always know exactly what to do and never feel overwhelmed.',
-    icon: <Sparkles s={30} c={GOLD} w={1.9} />,
+    icon: <Sparkles s={30} c="#4D8586" w={1.9} />,
+    bold: ['always know exactly', 'never feel overwhelmed'],
   },
   {
     id: 'tutorial-ready',
     statement: 'Do you understand?',
-    icon: <CheckSmall s={30} c={GOLD} w={2.4} />,
+    icon: <CheckSmall s={30} c="#4D8586" w={2.4} />,
   },
 ];
 
@@ -384,30 +389,35 @@ const PROTECT_DECK_CARDS: StatementDeckCard[] = [
     statement: 'I pick up my phone for a second and lose an hour. I feel frustrated and guilty.',
     image: PROTECT_STATEMENT_IMAGES[0],
     icon: <Clock s={30} c="#4D8586" w={1.9} />,
+    bold: ['lose an hour', 'frustrated and guilty'],
   },
   {
     id: 'morning-night',
     statement: "My phone is the first thing I reach for in the morning and the last thing I see at night. I feel restless and it's ruining my sleep.",
     image: PROTECT_STATEMENT_IMAGES[1],
     icon: <BellRing s={30} c="#4D8586" w={1.9} />,
+    bold: ['first thing', 'last thing', 'ruining my sleep'],
   },
   {
     id: 'focus-pulled',
     statement: 'Every time I sit down for something important, notifications and apps pull me away. I feel like I can never truly focus.',
     image: PROTECT_STATEMENT_IMAGES[2],
     icon: <Target s={30} c="#4D8586" w={1.9} />,
+    bold: ['pull me away', 'never truly focus'],
   },
   {
     id: 'procrastination',
     statement: 'When I need to start something hard, I feel anxious and uncomfortable — so I pick up my phone instead. I end up procrastinating for hours. And I feel like I let myself down — again.',
     image: PROTECT_STATEMENT_IMAGES[3],
     icon: <Hourglass s={30} c="#4D8586" w={1.9} />,
+    bold: ['procrastinating for hours', 'let myself down'],
   },
   {
     id: 'ashamed-content',
     statement: "I'm addicted to content that I'm ashamed of — adult content, gambling, gaming, social media. It leaves me feeling empty every time.",
     image: PROTECT_STATEMENT_IMAGES[4],
     icon: <SlidersHorizontal s={30} c="#4D8586" w={1.9} />,
+    bold: ['addicted', 'ashamed of', 'feeling empty'],
   },
   {
     id: 'presence',
@@ -415,6 +425,7 @@ const PROTECT_DECK_CARDS: StatementDeckCard[] = [
     image: PROTECT_STATEMENT_IMAGES[5],
     icon: <Heart s={30} c="#4D8586" w={1.9} />,
     spiritual: true,
+    bold: ['fully present', 'keep pulling me away'],
   },
 ];
 
@@ -424,42 +435,49 @@ const ORGANIZE_DECK_CARDS: StatementDeckCard[] = [
     statement: "I feel anxious when I have a lot to do and don't know where to start.",
     image: ORGANIZE_STATEMENT_IMAGES[0],
     icon: <ListChecks s={30} c={GOLD} w={1.9} />,
+    bold: ['anxious', "don't know where to start"],
   },
   {
     id: 'last-minute',
     statement: 'I always end up doing everything at the last minute. I feel stressed and unprepared when it matters most.',
     image: ORGANIZE_STATEMENT_IMAGES[1],
     icon: <Clock s={30} c={GOLD} w={1.9} />,
+    bold: ['last minute', 'stressed and unprepared'],
   },
   {
     id: 'plan-day',
     statement: 'I get things done — but I know I could do so much more if I just planned my day better.',
     image: ORGANIZE_STATEMENT_IMAGES[2],
     icon: <Calendar s={30} c={GOLD} w={1.9} />,
+    bold: ['so much more', 'planned my day better'],
   },
   {
     id: 'habits-quit',
     statement: "I start new habits full of motivation. A few days later I've quit again. I feel like I have no discipline.",
     image: ORGANIZE_STATEMENT_IMAGES[3],
     icon: <Target s={30} c={GOLD} w={1.9} />,
+    bold: ["I've quit again", 'no discipline'],
   },
   {
     id: 'wasted-day',
     statement: "I end most days feeling like I didn't do what actually mattered. It feels like I wasted another day.",
     image: ORGANIZE_STATEMENT_IMAGES[4],
     icon: <Hourglass s={30} c={GOLD} w={1.9} />,
+    bold: ['what actually mattered', 'wasted another day'],
   },
   {
     id: 'forgot-promise',
     statement: 'Sometimes I forget something I promised to do. Then comes the stress — and the feeling that I let someone down.',
     image: ORGANIZE_STATEMENT_IMAGES[5],
     icon: <BellRing s={30} c={GOLD} w={1.9} />,
+    bold: ['forget something I promised', 'let someone down'],
   },
   {
     id: 'no-rhythm',
     statement: 'My days have no rhythm. I never feel in control — just carried along by whatever happens.',
     image: ORGANIZE_STATEMENT_IMAGES[6],
     icon: <Home s={30} c={GOLD} w={1.9} />,
+    bold: ['no rhythm', 'never feel in control'],
   },
   {
     id: 'pray-daily',
@@ -467,12 +485,14 @@ const ORGANIZE_DECK_CARDS: StatementDeckCard[] = [
     image: ORGANIZE_STATEMENT_IMAGES[7],
     icon: <Cross s={30} c={GOLD} w={1.9} />,
     spiritual: true,
+    bold: ['pray every day', 'distant from God'],
   },
   {
     id: 'goals-give-up',
     statement: 'I set goals with the best intentions. And then, somehow, I always end up giving up.',
     image: ORGANIZE_STATEMENT_IMAGES[8],
     icon: <Sparkles s={30} c={GOLD} w={1.9} />,
+    bold: ['set goals', 'giving up'],
   },
   {
     id: 'scripture-time',
@@ -480,12 +500,14 @@ const ORGANIZE_DECK_CARDS: StatementDeckCard[] = [
     image: ORGANIZE_STATEMENT_IMAGES[9],
     icon: <OpenBook s={30} c={GOLD} w={1.9} />,
     spiritual: true,
+    bold: ['read Scripture', 'never make time'],
   },
   {
     id: 'intentional-time',
     statement: 'I want to be more organized, disciplined, and intentional with my time.',
     image: ORGANIZE_STATEMENT_IMAGES[10],
     icon: <Feather s={30} c={GOLD} w={1.9} />,
+    bold: ['organized', 'disciplined', 'intentional'],
   },
 ];
 
@@ -4269,9 +4291,9 @@ function ManagementCard({
   );
 }
 
-const SCREEN_TIME_MIN_HOURS = 4;
+const SCREEN_TIME_MIN_HOURS = 4.5;
 const SCREEN_TIME_MAX_HOURS = 10;
-const DEFAULT_SCREEN_TIME_HOURS = 4;
+const DEFAULT_SCREEN_TIME_HOURS = 7;
 const USABLE_DAY_HOURS = 16;
 const SLEEP_HOURS_PER_DAY = 8;
 const DAY_HOURS = 24;
@@ -8645,7 +8667,7 @@ function V4StatementDeckSlide({
   const isCompact = height < 760;
   const availableCardWidth = Math.max(width - 52, 280);
   const cardWidth = Math.min(availableCardWidth, isCompact ? 356 : 382);
-  const quoteHeight = isCompact ? 126 : 146;
+  const quoteHeight = isCompact ? 112 : 126;
   const cardMetrics = useMemo<StatementCardMetrics>(() => ({
     width: cardWidth,
     quoteHeight,
@@ -8709,13 +8731,31 @@ function V4StatementDeckSlide({
       <V4DeckAnswerProgress decisions={decisions} activeIndex={index} />
       <View style={[s.v4DeckStack, isCompact && s.v4DeckStackCompact]}>
         {cards[index + 3] ? (
-          <V4StatementStackCard style={s.v4StackCardFar} accent={accent} metrics={cardMetrics} />
+          <V4StatementStackCard
+            card={cards[index + 3]}
+            style={s.v4StackCardFar}
+            accent={accent}
+            metrics={cardMetrics}
+            imageSource={cards[index + 3].image ? statementImageRefs.get(cards[index + 3].image!) ?? cards[index + 3].image : undefined}
+          />
         ) : null}
         {cards[index + 2] ? (
-          <V4StatementStackCard style={s.v4StackCardMiddle} accent={accent} metrics={cardMetrics} />
+          <V4StatementStackCard
+            card={cards[index + 2]}
+            style={s.v4StackCardMiddle}
+            accent={accent}
+            metrics={cardMetrics}
+            imageSource={cards[index + 2].image ? statementImageRefs.get(cards[index + 2].image!) ?? cards[index + 2].image : undefined}
+          />
         ) : null}
         {cards[index + 1] ? (
-          <V4StatementStackCard style={s.v4StackCardNear} accent={accent} metrics={cardMetrics} />
+          <V4StatementStackCard
+            card={cards[index + 1]}
+            style={s.v4StackCardNear}
+            accent={accent}
+            metrics={cardMetrics}
+            imageSource={cards[index + 1].image ? statementImageRefs.get(cards[index + 1].image!) ?? cards[index + 1].image : undefined}
+          />
         ) : null}
         {activeCard ? (
           <V4SwipeStatementCard
@@ -8723,6 +8763,8 @@ function V4StatementDeckSlide({
             card={activeCard}
             accent={accent}
             metrics={cardMetrics}
+            isLast={index >= cards.length - 1}
+            promoted={index > 0}
             imageSource={activeCard.image ? statementImageRefs.get(activeCard.image) ?? activeCard.image : undefined}
             onCommit={commitAnswer}
             onAnswer={answer}
@@ -8781,27 +8823,91 @@ function V4DeckAnswerSegment({
   return <Reanimated.View style={[s.v4DeckAnswerSegment, active && decision === undefined && s.v4DeckAnswerSegmentActive, segmentStyle]} />;
 }
 
+function statementCardAccent(card: StatementDeckCard, accent: string) {
+  return card.spiritual ? GOLD : accent;
+}
+
+function StatementRichText({ card }: { card: StatementDeckCard }) {
+  const segments = useMemo(() => {
+    const initial: { text: string; bold: boolean }[] = [{ text: card.statement, bold: false }];
+    for (const phrase of card.bold ?? []) {
+      for (let i = 0; i < initial.length; i += 1) {
+        const segment = initial[i];
+        if (segment.bold) continue;
+        const at = segment.text.indexOf(phrase);
+        if (at < 0) continue;
+        const replacement = [
+          { text: segment.text.slice(0, at), bold: false },
+          { text: phrase, bold: true },
+          { text: segment.text.slice(at + phrase.length), bold: false },
+        ].filter(part => part.text.length > 0);
+        initial.splice(i, 1, ...replacement);
+        break;
+      }
+    }
+    return initial;
+  }, [card.bold, card.statement]);
+
+  return (
+    <Text
+      style={s.v4StatementText}
+      numberOfLines={5}
+      adjustsFontSizeToFit
+      minimumFontScale={0.68}
+    >
+      {'“'}
+      {segments.map((segment, index) => (
+        segment.bold
+          ? <Text key={`seg-${index}`} style={s.v4StatementTextBold}>{segment.text}</Text>
+          : <Text key={`seg-${index}`}>{segment.text}</Text>
+      ))}
+      {'”'}
+    </Text>
+  );
+}
+
 function V4StatementStackCard({
+  card,
   accent,
   style,
   metrics,
+  imageSource,
 }: {
+  card: StatementDeckCard;
   accent: string;
   style: StyleProp<ViewStyle>;
   metrics: StatementCardMetrics;
+  imageSource?: number | ExpoImageRef;
 }) {
+  const cardAccent = statementCardAccent(card, accent);
   return (
     <View
       pointerEvents="none"
       style={[
         s.v4StatementCard,
         s.v4StackCard,
-        { width: metrics.width, height: metrics.cardHeight, borderColor: `${accent}28` },
+        { width: metrics.width, height: metrics.cardHeight },
         style,
       ]}
     >
-      <View style={[s.v4StackCardTop, { height: metrics.quoteHeight, backgroundColor: `${accent}12` }]} />
-      <View style={[s.v4StackCardBody, { height: metrics.width }]} />
+      <View style={[s.v4StatementQuotePanel, { height: metrics.quoteHeight, backgroundColor: `${cardAccent}1C` }]}>
+        <StatementRichText card={card} />
+      </View>
+      <View style={[s.v4StatementArt, { height: metrics.width }]}>
+        {imageSource ? (
+          <ExpoImage
+            source={imageSource}
+            style={s.v4StatementImage}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            priority="high"
+            transition={0}
+            recyclingKey={card.id}
+          />
+        ) : (
+          <View style={[s.v4StatementIcon, { backgroundColor: `${cardAccent}16` }]}>{card.icon}</View>
+        )}
+      </View>
     </View>
   );
 }
@@ -8811,6 +8917,8 @@ function V4SwipeStatementCard({
   accent,
   metrics,
   imageSource,
+  isLast,
+  promoted,
   onCommit,
   onAnswer,
 }: {
@@ -8818,12 +8926,15 @@ function V4SwipeStatementCard({
   accent: string;
   metrics: StatementCardMetrics;
   imageSource?: number | ExpoImageRef;
+  isLast: boolean;
+  promoted: boolean;
   onCommit: (yes: boolean) => void;
   onAnswer: (yes: boolean) => void;
 }) {
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const locked = useSharedValue(false);
+  const cardAccent = statementCardAccent(card, accent);
 
   const submit = useCallback((yes: boolean) => {
     if (locked.value) return;
@@ -8831,34 +8942,35 @@ function V4SwipeStatementCard({
     runSelectionHaptic();
     onCommit(yes);
     translateY.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
+    if (isLast) {
+      // Advance while the card is still flying out so the stack never sits empty.
+      setTimeout(() => onAnswer(yes), 130);
+      translateX.value = withTiming(yes ? 560 : -560, { duration: 280, easing: Easing.out(Easing.cubic) });
+      return;
+    }
     translateX.value = withTiming(yes ? 560 : -560, { duration: 280, easing: Easing.out(Easing.cubic) }, () => {
       runOnJS(onAnswer)(yes);
     });
-  }, [locked, onAnswer, onCommit, translateX, translateY]);
+  }, [isLast, locked, onAnswer, onCommit, translateX, translateY]);
 
   const gesture = useMemo(() => Gesture.Pan()
     .activeOffsetX([-12, 12])
     .failOffsetY([-18, 18])
     .onUpdate(event => {
+      if (locked.value) return;
       translateX.value = event.translationX;
       translateY.value = event.translationY * 0.18;
     })
     .onEnd(event => {
       if (locked.value) return;
       if (Math.abs(event.translationX) > 88 || Math.abs(event.velocityX) > 520) {
-        locked.value = true;
         const yes = event.translationX > 0 || event.velocityX > 0;
-        runOnJS(runSelectionHaptic)();
-        runOnJS(onCommit)(yes);
-        translateY.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
-        translateX.value = withTiming(yes ? 560 : -560, { duration: 280, easing: Easing.out(Easing.cubic) }, () => {
-          runOnJS(onAnswer)(yes);
-        });
+        runOnJS(submit)(yes);
         return;
       }
       translateX.value = withTiming(0, { duration: 240, easing: Easing.out(Easing.cubic) });
       translateY.value = withTiming(0, { duration: 240, easing: Easing.out(Easing.cubic) });
-    }), [locked, onAnswer, onCommit, translateX, translateY]);
+    }), [locked, submit, translateX, translateY]);
 
   const cardStyle = useAnimatedStyle(() => ({
     transform: [
@@ -8868,10 +8980,10 @@ function V4SwipeStatementCard({
     ],
   }));
   const activeLeftGlowStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(translateX.value, [-190, -1, 0], [0.98, 0.025, 0], 'clamp'),
+    opacity: interpolate(translateX.value, [-220, -88, -1, 0], [1, 0.52, 0.02, 0], 'clamp'),
   }));
   const activeRightGlowStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(translateX.value, [0, 1, 190], [0, 0.025, 0.98], 'clamp'),
+    opacity: interpolate(translateX.value, [0, 1, 88, 220], [0, 0.02, 0.52, 1], 'clamp'),
   }));
 
   return (
@@ -8895,9 +9007,17 @@ function V4SwipeStatementCard({
         />
       </Reanimated.View>
       <GestureDetector gesture={gesture}>
-        <Reanimated.View style={[s.v4StatementCard, { height: metrics.cardHeight }, cardStyle]}>
-          <View style={[s.v4StatementQuotePanel, { height: metrics.quoteHeight, backgroundColor: `${accent}24` }]}>
-            <Text style={s.v4StatementText}>“{card.statement}”</Text>
+        <Reanimated.View
+          entering={promoted
+            ? FadeIn.duration(200).easing(Easing.out(Easing.cubic)).withInitialValues({
+              opacity: 1,
+              transform: [{ translateY: 14 }, { scale: 0.97 }],
+            })
+            : undefined}
+          style={[s.v4StatementCard, { height: metrics.cardHeight }, cardStyle]}
+        >
+          <View style={[s.v4StatementQuotePanel, { height: metrics.quoteHeight, backgroundColor: `${cardAccent}1C` }]}>
+            <StatementRichText card={card} />
           </View>
           <View style={[s.v4StatementArt, { height: metrics.width }]}>
             {imageSource ? (
@@ -8911,21 +9031,181 @@ function V4SwipeStatementCard({
                 recyclingKey={card.id}
               />
             ) : (
-              <View style={[s.v4StatementIcon, { backgroundColor: `${accent}16` }]}>{card.icon}</View>
+              <View style={[s.v4StatementIcon, { backgroundColor: `${cardAccent}16` }]}>{card.icon}</View>
             )}
           </View>
         </Reanimated.View>
       </GestureDetector>
       <View style={s.v4AnswerRow}>
-        <TouchableOpacity activeOpacity={0.88} haptic="none" onPress={() => submit(false)} style={s.v4NoButton}>
-          <X s={18} c="#A8393F" w={2.4} />
-          <Text style={s.v4NoButtonText}>No</Text>
+        <TouchableOpacity activeOpacity={0.86} haptic="none" onPress={() => submit(false)} style={s.v4NoButton}>
+          <View style={s.v4AnswerIconChipNo}>
+            <X s={15} c="#A8393F" w={2.6} />
+          </View>
+          <Text style={s.v4NoButtonText}>Not me</Text>
         </TouchableOpacity>
-        <TouchableOpacity activeOpacity={0.88} haptic="none" onPress={() => submit(true)} style={s.v4YesButton}>
-          <Text style={s.v4YesButtonText}>Yes</Text>
-          <CheckSmall s={19} c="#2F8F57" w={2.5} />
+        <TouchableOpacity activeOpacity={0.86} haptic="none" onPress={() => submit(true)} style={s.v4YesButton}>
+          <Text style={s.v4YesButtonText}>That&apos;s me</Text>
+          <View style={s.v4AnswerIconChipYes}>
+            <CheckSmall s={16} c="#2F8F57" w={2.7} />
+          </View>
         </TouchableOpacity>
       </View>
+    </View>
+  );
+}
+
+const SCREEN_TIME_DIAL_SPACING = 30;
+
+const SCREEN_TIME_DIAL_VALUES = (() => {
+  const values: number[] = [];
+  for (let v = SCREEN_TIME_MIN_HOURS; v <= SCREEN_TIME_MAX_HOURS + 0.001; v += 0.5) {
+    values.push(Number(v.toFixed(1)));
+  }
+  return values;
+})();
+
+function ScreenTimeDialTick({
+  index,
+  offset,
+}: {
+  index: number;
+  offset: SharedValue<number>;
+}) {
+  const hourValue = SCREEN_TIME_DIAL_VALUES[index];
+  const isHour = Number.isInteger(hourValue);
+  const tickStyle = useAnimatedStyle(() => {
+    const distance = Math.abs(index * SCREEN_TIME_DIAL_SPACING + offset.value);
+    const focus = interpolate(distance, [0, SCREEN_TIME_DIAL_SPACING * 1.5], [1, 0], 'clamp');
+    return {
+      opacity: 0.38 + focus * 0.62,
+      transform: [{ scaleY: 1 + focus * 0.22 }],
+    };
+  });
+
+  return (
+    <View style={s.screenTimeDialTickSlot}>
+      <Reanimated.View
+        style={[
+          s.screenTimeDialTickLine,
+          isHour ? s.screenTimeDialTickLineHour : s.screenTimeDialTickLineHalf,
+          tickStyle,
+        ]}
+      />
+      {isHour ? (
+        <Text style={s.screenTimeDialTickLabel}>
+          {hourValue >= SCREEN_TIME_MAX_HOURS ? '10+' : `${hourValue}`}
+        </Text>
+      ) : (
+        <View style={s.screenTimeDialTickLabelSpacer} />
+      )}
+    </View>
+  );
+}
+
+function V4ScreenTimeDial({
+  value,
+  onChange,
+}: {
+  value?: number;
+  onChange: (hours: number) => void;
+}) {
+  const initial = clampNumber(value ?? DEFAULT_SCREEN_TIME_HOURS, SCREEN_TIME_MIN_HOURS, SCREEN_TIME_MAX_HOURS);
+  const initialIndex = Math.round((initial - SCREEN_TIME_MIN_HOURS) / 0.5);
+  const maxOffset = (SCREEN_TIME_DIAL_VALUES.length - 1) * SCREEN_TIME_DIAL_SPACING;
+  const [localHours, setLocalHours] = useState(initial);
+  const [viewportWidth, setViewportWidth] = useState(320);
+  const offset = useSharedValue(-initialIndex * SCREEN_TIME_DIAL_SPACING);
+  const startOffset = useSharedValue(-initialIndex * SCREEN_TIME_DIAL_SPACING);
+  const lastIndex = useSharedValue(initialIndex);
+  const pop = useSharedValue(1);
+  const valueRef = useRef(initial);
+
+  const commitHours = useCallback((nextHours: number) => {
+    if (Math.abs(valueRef.current - nextHours) < 0.01) return;
+    valueRef.current = nextHours;
+    runSelectionHaptic();
+    setLocalHours(nextHours);
+    onChange(nextHours);
+    pop.value = withSequence(
+      withTiming(1.06, { duration: 90, easing: Easing.out(Easing.cubic) }),
+      withTiming(1, { duration: 170, easing: Easing.out(Easing.cubic) }),
+    );
+  }, [onChange, pop]);
+
+  const dialGesture = useMemo(() => Gesture.Pan()
+    .activeOffsetX([-6, 6])
+    .onBegin(() => {
+      startOffset.value = offset.value;
+    })
+    .onUpdate(event => {
+      const next = Math.max(-maxOffset, Math.min(0, startOffset.value + event.translationX));
+      offset.value = next;
+      const idx = Math.round(-next / SCREEN_TIME_DIAL_SPACING);
+      if (idx !== lastIndex.value) {
+        lastIndex.value = idx;
+        runOnJS(commitHours)(SCREEN_TIME_DIAL_VALUES[idx]);
+      }
+    })
+    .onEnd(event => {
+      const projected = Math.max(-maxOffset, Math.min(0, offset.value + event.velocityX * 0.1));
+      const idx = Math.round(-projected / SCREEN_TIME_DIAL_SPACING);
+      offset.value = withSpring(-idx * SCREEN_TIME_DIAL_SPACING, { damping: 19, stiffness: 210, mass: 0.7 });
+      if (idx !== lastIndex.value) {
+        lastIndex.value = idx;
+        runOnJS(commitHours)(SCREEN_TIME_DIAL_VALUES[idx]);
+      }
+    }), [commitHours, lastIndex, maxOffset, offset, startOffset]);
+
+  const rulerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: offset.value }],
+  }));
+  const readoutStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pop.value }],
+  }));
+
+  const sidePadding = Math.max(0, viewportWidth / 2 - SCREEN_TIME_DIAL_SPACING / 2);
+
+  return (
+    <View style={s.screenTimeDialBlock}>
+      <Reanimated.View style={[s.screenTimeReadout, readoutStyle]}>
+        <Text style={s.screenTimeReadoutValue}>
+          {localHours >= SCREEN_TIME_MAX_HOURS ? '10+' : formatHourValue(localHours)}
+        </Text>
+        <Text style={s.screenTimeReadoutUnit}>hours a day</Text>
+      </Reanimated.View>
+
+      <GestureDetector gesture={dialGesture}>
+        <View
+          style={s.screenTimeDialViewport}
+          onLayout={event => setViewportWidth(event.nativeEvent.layout.width)}
+        >
+          <Reanimated.View style={[s.screenTimeDialRuler, { paddingHorizontal: sidePadding }, rulerStyle]}>
+            {SCREEN_TIME_DIAL_VALUES.map((tickValue, index) => (
+              <ScreenTimeDialTick key={`dial-${tickValue}`} index={index} offset={offset} />
+            ))}
+          </Reanimated.View>
+          <LinearGradient
+            pointerEvents="none"
+            colors={['#FFFDF8', 'rgba(255,253,248,0)']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={[s.screenTimeDialFade, s.screenTimeDialFadeLeft]}
+          />
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(255,253,248,0)', '#FFFDF8']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={[s.screenTimeDialFade, s.screenTimeDialFadeRight]}
+          />
+          <View pointerEvents="none" style={s.screenTimeDialNeedleWrap}>
+            <View style={s.screenTimeDialNeedle} />
+            <View style={s.screenTimeDialNeedleDot} />
+          </View>
+        </View>
+      </GestureDetector>
+
+      <Text style={s.screenTimeDialHint}>Drag the dial — be honest with yourself.</Text>
     </View>
   );
 }
@@ -8939,11 +9219,27 @@ function V4ScreenTimeSliderSlide({
   onChange: (hours: number) => void;
   onNext: () => void;
 }) {
+  useEffect(() => {
+    if (hours === undefined) onChange(DEFAULT_SCREEN_TIME_HOURS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
-    <View style={s.v4CenteredSlide}>
-      <Text style={s.v4MomentTitle}>How much time do you spend on your phone each day?</Text>
-      <ScreenTimeSlider value={hours} onChange={onChange} />
-      <AnimatedCta delay={240} style={s.v4MomentAction}>
+    <View style={s.screenTimeSlide}>
+      <Reanimated.View
+        entering={FadeIn.duration(480).withInitialValues({ opacity: 0, transform: [{ translateY: 12 }] })}
+      >
+        <Text style={s.v4DeckTitle}>How much time do you spend on your phone each day?</Text>
+      </Reanimated.View>
+
+      <Reanimated.View
+        entering={FadeIn.delay(220).duration(520).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}
+        style={s.screenTimeDialStage}
+      >
+        <V4ScreenTimeDial value={hours} onChange={onChange} />
+      </Reanimated.View>
+
+      <AnimatedCta delay={420} style={s.screenTimeAction}>
         <View style={s.ctaIsland}>
           <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
             <Text style={s.primaryButtonText}>Continue</Text>
@@ -9872,7 +10168,7 @@ export default function OnboardingView() {
         <V4StatementDeckSlide
           key={`tutorial-deck-${tutorialRun}`}
           cards={TUTORIAL_DECK_CARDS}
-          accent={GOLD}
+          accent="#4D8586"
           onDone={ids => ids.includes('tutorial-ready') ? goNext() : setTutorialRun(prev => prev + 1)}
         />
       );
@@ -9937,7 +10233,7 @@ export default function OnboardingView() {
       return (
         <V4StatementDeckSlide
           cards={organizeCards}
-          accent={GOLD}
+          accent="#4D8586"
           onDone={ids => {
             setAnswers(prev => ({ ...prev, confirmedOrganizeProblems: ids }));
             goNext();
@@ -13226,6 +13522,127 @@ const s = StyleSheet.create({
   toolsShowcaseAction: {
     paddingHorizontal: 20,
     zIndex: 8,
+  },
+  screenTimeSlide: {
+    flex: 1,
+    paddingTop: 22,
+    paddingBottom: 8,
+  },
+  screenTimeDialStage: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  screenTimeDialBlock: {
+    alignItems: 'center',
+    rowGap: 6,
+  },
+  screenTimeReadout: {
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  screenTimeReadoutValue: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 88,
+    lineHeight: 94,
+    color: INK,
+  },
+  screenTimeReadoutUnit: {
+    marginTop: -4,
+    fontFamily: F.serifMediumItalic,
+    fontSize: 17,
+    color: '#8C8277',
+  },
+  screenTimeDialViewport: {
+    width: '100%',
+    height: 86,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  screenTimeDialRuler: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    height: '100%',
+    paddingBottom: 4,
+  },
+  screenTimeDialTickSlot: {
+    width: SCREEN_TIME_DIAL_SPACING,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  screenTimeDialTickLine: {
+    width: 2.4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(25,23,20,0.45)',
+  },
+  screenTimeDialTickLineHour: {
+    height: 34,
+  },
+  screenTimeDialTickLineHalf: {
+    height: 19,
+    backgroundColor: 'rgba(25,23,20,0.26)',
+  },
+  screenTimeDialTickLabel: {
+    marginTop: 7,
+    fontFamily: F.serifMedium,
+    fontSize: 14,
+    lineHeight: 17,
+    color: 'rgba(25,23,20,0.52)',
+  },
+  screenTimeDialTickLabelSpacer: {
+    marginTop: 7,
+    height: 17,
+  },
+  screenTimeDialFade: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 54,
+    zIndex: 2,
+  },
+  screenTimeDialFadeLeft: {
+    left: 0,
+  },
+  screenTimeDialFadeRight: {
+    right: 0,
+  },
+  screenTimeDialNeedleWrap: {
+    position: 'absolute',
+    left: '50%',
+    top: 0,
+    bottom: 24,
+    width: 0,
+    alignItems: 'center',
+    zIndex: 3,
+  },
+  screenTimeDialNeedle: {
+    flex: 1,
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: GOLD,
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+  },
+  screenTimeDialNeedleDot: {
+    position: 'absolute',
+    top: -3,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: GOLD,
+    borderWidth: 1.5,
+    borderColor: '#FFFDF8',
+  },
+  screenTimeDialHint: {
+    marginTop: 10,
+    fontFamily: F.sansMedium,
+    fontSize: 12.5,
+    letterSpacing: 0.2,
+    color: 'rgba(25,23,20,0.45)',
+  },
+  screenTimeAction: {
+    paddingTop: 6,
   },
   introLogoFrame: {
     width: 68,
@@ -17749,36 +18166,29 @@ const s = StyleSheet.create({
   v4StackCard: {
     position: 'absolute',
     borderRadius: 31,
-    backgroundColor: '#FCFAF6',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: 'rgba(25,23,20,0.10)',
+    borderColor: 'rgba(25,23,20,0.09)',
     overflow: 'hidden',
     shadowColor: '#5E5142',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.055,
+    shadowOpacity: 0.06,
     shadowRadius: 14,
     elevation: 1,
   },
   v4StackCardNear: {
     zIndex: 3,
-    transform: [{ translateY: 5 }, { rotate: '-0.6deg' }, { scale: 0.994 }],
+    transform: [{ translateY: 14 }, { rotate: '-0.5deg' }, { scale: 0.97 }],
   },
   v4StackCardMiddle: {
     zIndex: 2,
-    transform: [{ translateY: 7 }, { rotate: '1.1deg' }, { scale: 0.982 }],
+    opacity: 0.92,
+    transform: [{ translateY: 28 }, { rotate: '0.9deg' }, { scale: 0.94 }],
   },
   v4StackCardFar: {
     zIndex: 1,
-    transform: [{ translateY: 9 }, { rotate: '-1.7deg' }, { scale: 0.969 }],
-  },
-  v4StackCardTop: {
-    width: '100%',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(25,23,20,0.035)',
-  },
-  v4StackCardBody: {
-    width: '100%',
-    backgroundColor: '#F8F4ED',
+    opacity: 0.82,
+    transform: [{ translateY: 42 }, { rotate: '-1.4deg' }, { scale: 0.91 }],
   },
   v4SwipeCardWrap: {
     alignSelf: 'center',
@@ -17817,9 +18227,9 @@ const s = StyleSheet.create({
     zIndex: 4,
   },
   v4StatementQuotePanel: {
-    height: 146,
-    paddingHorizontal: 24,
-    paddingVertical: 18,
+    height: 126,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -17844,11 +18254,15 @@ const s = StyleSheet.create({
     backgroundColor: '#F7F0E6',
   },
   v4StatementText: {
-    fontFamily: F.sansMedium,
-    fontSize: 16,
-    lineHeight: 22,
-    color: INK,
+    fontFamily: F.serifMedium,
+    fontSize: 19,
+    lineHeight: 25,
+    color: 'rgba(25,23,20,0.84)',
     textAlign: 'center',
+  },
+  v4StatementTextBold: {
+    fontFamily: F.serifSemiBold,
+    color: INK,
   },
   v4AnswerRow: {
     flexDirection: 'row',
@@ -17856,49 +18270,69 @@ const s = StyleSheet.create({
     marginTop: 18,
     zIndex: 3,
   },
+  v4AnswerIconChipNo: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(168,57,63,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(168,57,63,0.20)',
+  },
+  v4AnswerIconChipYes: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(47,143,87,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(47,143,87,0.22)',
+  },
   v4NoButton: {
     flex: 1,
     minHeight: 58,
-    borderRadius: 22,
+    borderRadius: 999,
     flexDirection: 'row',
-    columnGap: 8,
+    columnGap: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFF9F8',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: 'rgba(168,57,63,0.22)',
+    borderColor: 'rgba(168,57,63,0.26)',
     shadowColor: '#A8393F',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.07,
-    shadowRadius: 14,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.10,
+    shadowRadius: 16,
+    elevation: 2,
   },
   v4NoButtonText: {
-    fontFamily: F.sansBold,
-    fontSize: 18,
-    color: '#6F2D31',
+    fontFamily: F.serifSemiBold,
+    fontSize: 19,
+    color: '#7C3136',
   },
   v4YesButton: {
     flex: 1,
     minHeight: 58,
-    borderRadius: 22,
+    borderRadius: 999,
     flexDirection: 'row',
-    columnGap: 8,
+    columnGap: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F7FCF8',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: 'rgba(47,143,87,0.22)',
+    borderColor: 'rgba(47,143,87,0.28)',
     shadowColor: '#2F8F57',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.07,
-    shadowRadius: 14,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.10,
+    shadowRadius: 16,
+    elevation: 2,
   },
   v4YesButtonText: {
-    fontFamily: F.sansBold,
-    fontSize: 18,
-    color: '#246B43',
+    fontFamily: F.serifSemiBold,
+    fontSize: 19,
+    color: '#23603E',
   },
   v4MetricCard: {
     width: '100%',
