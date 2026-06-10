@@ -303,7 +303,7 @@ const ORGANIZE_STATEMENT_IMAGES = [
   require('@/assets/images/organize-statement-11.jpg'),
 ];
 
-const STATEMENT_IMAGE_DECODE_SIZE = 1024;
+const STATEMENT_IMAGE_DECODE_SIZE = 768;
 const statementImageRefs = new Map<number, ExpoImageRef>();
 const statementImageLoads = new Map<number, Promise<ExpoImageRef | null>>();
 
@@ -8701,13 +8701,23 @@ function V4StatementsIntroSlide({ displayName, onNext }: { displayName?: string;
   );
 }
 
+function statementQuoteHeightFor(card: StatementDeckCard, metrics: StatementCardMetrics) {
+  return metrics.quoteHeight + (card.statement.length > 118 ? 28 : 0);
+}
+
+function statementCardHeightFor(card: StatementDeckCard, metrics: StatementCardMetrics) {
+  return metrics.width + statementQuoteHeightFor(card, metrics);
+}
+
 function V4StatementDeckSlide({
   cards,
   accent,
+  bottomInset,
   onDone,
 }: {
   cards: StatementDeckCard[];
   accent: string;
+  bottomInset: number;
   onDone: (yesIds: string[]) => void;
 }) {
   const { width, height } = useWindowDimensions();
@@ -8721,11 +8731,19 @@ function V4StatementDeckSlide({
   const cardWidth = Math.min(availableCardWidth, isCompact ? 356 : 382);
   const quoteHeight = isCompact ? 104 : 116;
   const dragX = useSharedValue(0);
+  const submitRef = useRef<((yes: boolean) => void) | null>(null);
   const cardMetrics = useMemo<StatementCardMetrics>(() => ({
     width: cardWidth,
     quoteHeight,
     cardHeight: cardWidth + quoteHeight,
   }), [cardWidth, quoteHeight]);
+  const slotHeight = useMemo(
+    () => cards.reduce((tallest, card) => Math.max(tallest, statementCardHeightFor(card, cardMetrics)), 0),
+    [cardMetrics, cards],
+  );
+  const registerSubmit = useCallback((submit: ((yes: boolean) => void) | null) => {
+    submitRef.current = submit;
+  }, []);
   const cardImages = useMemo(
     () => cards
       .map(card => card.image)
@@ -8775,81 +8793,147 @@ function V4StatementDeckSlide({
     setIndex(prev => prev + 1);
   }, [activeCard, cards.length, dragX, index, onDone, yesIds]);
 
-  const leftGlowStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(dragX.value, [-210, -64, 0], [1, 0.42, 0], 'clamp'),
-    transform: [{ translateX: interpolate(dragX.value, [-210, 0], [0, -30], 'clamp') }],
+  // Smoothstep ramp so the light builds gently at first, then surges as the
+  // card approaches the commit threshold.
+  const leftGlowStyle = useAnimatedStyle(() => {
+    const raw = Math.min(1, Math.max(0, -dragX.value) / 190);
+    const eased = raw * raw * (3 - 2 * raw);
+    return {
+      opacity: eased,
+      transform: [{ scaleX: 0.5 + eased * 0.5 }],
+    };
+  });
+  const rightGlowStyle = useAnimatedStyle(() => {
+    const raw = Math.min(1, Math.max(0, dragX.value) / 190);
+    const eased = raw * raw * (3 - 2 * raw);
+    return {
+      opacity: eased,
+      transform: [{ scaleX: 0.5 + eased * 0.5 }],
+    };
+  });
+  const leftGlowCoreStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(-dragX.value, [88, 200], [0, 1], 'clamp'),
   }));
-  const rightGlowStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(dragX.value, [0, 64, 210], [0, 0.42, 1], 'clamp'),
-    transform: [{ translateX: interpolate(dragX.value, [0, 210], [30, 0], 'clamp') }],
+  const rightGlowCoreStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(dragX.value, [88, 200], [0, 1], 'clamp'),
   }));
 
   return (
-    <View style={s.v4DeckSlide}>
-      <Text style={[s.v4DeckTitle, isCompact && s.v4DeckTitleCompact]}>Do you relate to the statement below?</Text>
-      <V4DeckAnswerProgress decisions={decisions} activeIndex={index} />
-      <View style={[s.v4DeckStack, isCompact && s.v4DeckStackCompact]}>
-        <Reanimated.View pointerEvents="none" style={[s.v4EdgeGlow, s.v4EdgeGlowLeft, leftGlowStyle]}>
+    <View style={[s.v4DeckSlideRoot, { paddingBottom: bottomInset + 10 }]}>
+      <Reanimated.View pointerEvents="none" style={[s.v4EdgeGlow, s.v4EdgeGlowLeft, leftGlowStyle]}>
+        <LinearGradient
+          colors={['rgba(210,69,76,0.52)', 'rgba(210,69,76,0.20)', 'rgba(210,69,76,0)']}
+          locations={[0, 0.42, 1]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <Reanimated.View style={[s.v4EdgeGlowCore, leftGlowCoreStyle]}>
           <LinearGradient
-            colors={['rgba(201,62,69,0.50)', 'rgba(201,62,69,0.16)', 'rgba(201,62,69,0)']}
-            locations={[0, 0.45, 1]}
+            colors={['rgba(210,69,76,0.55)', 'rgba(210,69,76,0)']}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
             style={StyleSheet.absoluteFill}
           />
         </Reanimated.View>
-        <Reanimated.View pointerEvents="none" style={[s.v4EdgeGlow, s.v4EdgeGlowRight, rightGlowStyle]}>
+      </Reanimated.View>
+      <Reanimated.View pointerEvents="none" style={[s.v4EdgeGlow, s.v4EdgeGlowRight, rightGlowStyle]}>
+        <LinearGradient
+          colors={['rgba(47,157,88,0)', 'rgba(47,157,88,0.20)', 'rgba(47,157,88,0.52)']}
+          locations={[0, 0.58, 1]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <Reanimated.View style={[s.v4EdgeGlowCore, s.v4EdgeGlowCoreRight, rightGlowCoreStyle]}>
           <LinearGradient
-            colors={['rgba(47,157,88,0)', 'rgba(47,157,88,0.16)', 'rgba(47,157,88,0.50)']}
-            locations={[0, 0.55, 1]}
+            colors={['rgba(47,157,88,0)', 'rgba(47,157,88,0.55)']}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
             style={StyleSheet.absoluteFill}
           />
         </Reanimated.View>
-        {cards[index + 3] ? (
-          <V4StatementStackCard
-            card={cards[index + 3]}
-            depth={3}
-            dragX={dragX}
-            accent={accent}
-            metrics={cardMetrics}
-            imageSource={cards[index + 3].image ? statementImageRefs.get(cards[index + 3].image!) ?? cards[index + 3].image : undefined}
-          />
-        ) : null}
-        {cards[index + 2] ? (
-          <V4StatementStackCard
-            card={cards[index + 2]}
-            depth={2}
-            dragX={dragX}
-            accent={accent}
-            metrics={cardMetrics}
-            imageSource={cards[index + 2].image ? statementImageRefs.get(cards[index + 2].image!) ?? cards[index + 2].image : undefined}
-          />
-        ) : null}
-        {cards[index + 1] ? (
-          <V4StatementStackCard
-            card={cards[index + 1]}
-            depth={1}
-            dragX={dragX}
-            accent={accent}
-            metrics={cardMetrics}
-            imageSource={cards[index + 1].image ? statementImageRefs.get(cards[index + 1].image!) ?? cards[index + 1].image : undefined}
-          />
-        ) : null}
-        {activeCard ? (
-          <V4SwipeStatementCard
-            key={activeCard.id}
-            card={activeCard}
-            accent={accent}
-            metrics={cardMetrics}
-            isLast={index >= cards.length - 1}
-            dragX={dragX}
-            imageSource={activeCard.image ? statementImageRefs.get(activeCard.image) ?? activeCard.image : undefined}
-            onCommit={commitAnswer}
-            onAnswer={answer}
-          />
-        ) : null}
+      </Reanimated.View>
+
+      <View style={s.v4DeckInner}>
+        <Text style={[s.v4DeckTitle, isCompact && s.v4DeckTitleCompact]}>Do you relate to the statement below?</Text>
+        <V4DeckAnswerProgress decisions={decisions} activeIndex={index} />
+        <View style={[s.v4DeckStack, isCompact && s.v4DeckStackCompact]}>
+          <View style={{ width: cardMetrics.width }}>
+            <View style={[s.v4DeckCardSlot, { width: cardMetrics.width, height: slotHeight }]}>
+              {cards[index + 3] ? (
+                <V4StatementStackCard
+                  card={cards[index + 3]}
+                  depth={3}
+                  dragX={dragX}
+                  accent={accent}
+                  metrics={cardMetrics}
+                  imageSource={cards[index + 3].image ? statementImageRefs.get(cards[index + 3].image!) ?? cards[index + 3].image : undefined}
+                />
+              ) : null}
+              {cards[index + 2] ? (
+                <V4StatementStackCard
+                  card={cards[index + 2]}
+                  depth={2}
+                  dragX={dragX}
+                  accent={accent}
+                  metrics={cardMetrics}
+                  imageSource={cards[index + 2].image ? statementImageRefs.get(cards[index + 2].image!) ?? cards[index + 2].image : undefined}
+                />
+              ) : null}
+              {cards[index + 1] ? (
+                <V4StatementStackCard
+                  card={cards[index + 1]}
+                  depth={1}
+                  dragX={dragX}
+                  accent={accent}
+                  metrics={cardMetrics}
+                  imageSource={cards[index + 1].image ? statementImageRefs.get(cards[index + 1].image!) ?? cards[index + 1].image : undefined}
+                />
+              ) : null}
+              {activeCard ? (
+                <V4SwipeStatementCard
+                  key={activeCard.id}
+                  card={activeCard}
+                  accent={accent}
+                  metrics={cardMetrics}
+                  isLast={index >= cards.length - 1}
+                  dragX={dragX}
+                  imageSource={activeCard.image ? statementImageRefs.get(activeCard.image) ?? activeCard.image : undefined}
+                  registerSubmit={registerSubmit}
+                  onCommit={commitAnswer}
+                  onAnswer={answer}
+                />
+              ) : null}
+            </View>
+            <View style={s.v4AnswerRow}>
+              <TouchableOpacity activeOpacity={0.84} haptic="none" onPress={() => submitRef.current?.(false)} style={s.v4NoButton}>
+                <LinearGradient
+                  colors={['#FFFFFF', '#FFF2F1']}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={s.v4AnswerIconChipNo}>
+                  <X s={14} c="#FFFFFF" w={2.8} />
+                </View>
+                <Text style={s.v4NoButtonText}>Not me</Text>
+              </TouchableOpacity>
+              <TouchableOpacity activeOpacity={0.84} haptic="none" onPress={() => submitRef.current?.(true)} style={s.v4YesButton}>
+                <LinearGradient
+                  colors={['#FFFFFF', '#EFF9F2']}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Text style={s.v4YesButtonText}>That&apos;s me</Text>
+                <View style={s.v4AnswerIconChipYes}>
+                  <CheckSmall s={15} c="#FFFFFF" w={2.9} />
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -8931,9 +9015,9 @@ function StatementRichText({ card }: { card: StatementDeckCard }) {
   return (
     <Text
       style={s.v4StatementText}
-      numberOfLines={4}
+      numberOfLines={5}
       adjustsFontSizeToFit
-      minimumFontScale={0.66}
+      minimumFontScale={0.84}
     >
       {segments.map((segment, index) => (
         segment.bold
@@ -8975,18 +9059,63 @@ function StatementQuotePanel({
   );
 }
 
-const V4_STACK_DEPTH_POSE = {
-  0: { y: 0, scale: 1, rotate: 0 },
-  1: { y: 9, scale: 0.962, rotate: -0.4 },
-  2: { y: 18, scale: 0.926, rotate: 0.7 },
-  3: { y: 26, scale: 0.892, rotate: -1.1 },
-} as const;
+const V4_STACK_SCALES = [1, 0.963, 0.93, 0.9] as const;
+const V4_STACK_PEEKS = [0, 7, 13, 18] as const;
+const V4_STACK_ROTATES = [0, -0.4, 0.6, -0.9] as const;
 
-const V4_STACK_DEPTH_OPACITY = {
-  1: 1,
-  2: 0.94,
-  3: 0.8,
-} as const;
+// translateY that leaves exactly `peek` px of the card visible below the card
+// in front of it, compensating for the scale shrinking toward the center.
+function stackPose(depth: 0 | 1 | 2 | 3, cardHeight: number) {
+  const scale = V4_STACK_SCALES[depth];
+  return {
+    y: V4_STACK_PEEKS[depth] + (cardHeight * (1 - scale)) / 2,
+    scale,
+    rotate: V4_STACK_ROTATES[depth],
+  };
+}
+
+function StatementCardFace({
+  card,
+  accent,
+  metrics,
+  imageSource,
+  imageTransition,
+}: {
+  card: StatementDeckCard;
+  accent: string;
+  metrics: StatementCardMetrics;
+  imageSource?: number | ExpoImageRef;
+  imageTransition: number;
+}) {
+  return (
+    <>
+      <StatementQuotePanel card={card} accent={accent} height={statementQuoteHeightFor(card, metrics)} />
+      <View style={[s.v4StatementArt, { height: metrics.width }]}>
+        {imageSource ? (
+          <ExpoImage
+            source={imageSource}
+            style={s.v4StatementImage}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            priority="high"
+            transition={imageTransition}
+            recyclingKey={card.id}
+          />
+        ) : (
+          <View style={[s.v4StatementIcon, { backgroundColor: `${statementCardAccent(card, accent)}16` }]}>{card.icon}</View>
+        )}
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(23,19,15,0.10)', 'rgba(23,19,15,0)']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={s.v4StatementArtShade}
+        />
+      </View>
+      <View pointerEvents="none" style={s.v4StatementInnerFrame} />
+    </>
+  );
+}
 
 function V4StatementStackCard({
   card,
@@ -9003,9 +9132,10 @@ function V4StatementStackCard({
   depth: 1 | 2 | 3;
   dragX: SharedValue<number>;
 }) {
-  const from = V4_STACK_DEPTH_POSE[depth];
-  const to = V4_STACK_DEPTH_POSE[(depth - 1) as 0 | 1 | 2];
-  const baseOpacity = V4_STACK_DEPTH_OPACITY[depth];
+  const cardHeight = statementCardHeightFor(card, metrics);
+  const from = stackPose(depth, cardHeight);
+  const to = stackPose((depth - 1) as 0 | 1 | 2, cardHeight);
+  const baseOpacity = depth === 1 ? 1 : depth === 2 ? 0.95 : 0.84;
 
   // The pile breathes forward in real time while the top card is dragged, so
   // the next card is already in place the moment the swipe commits.
@@ -9028,26 +9158,11 @@ function V4StatementStackCard({
         s.v4StatementCard,
         s.v4StackCard,
         depth === 1 ? s.v4StackDepthNear : depth === 2 ? s.v4StackDepthMiddle : s.v4StackDepthFar,
-        { width: metrics.width, height: metrics.cardHeight },
+        { width: metrics.width, height: cardHeight },
         promotionStyle,
       ]}
     >
-      <StatementQuotePanel card={card} accent={accent} height={metrics.quoteHeight} />
-      <View style={[s.v4StatementArt, { height: metrics.width }]}>
-        {imageSource ? (
-          <ExpoImage
-            source={imageSource}
-            style={s.v4StatementImage}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-            priority="high"
-            transition={120}
-            recyclingKey={card.id}
-          />
-        ) : (
-          <View style={[s.v4StatementIcon, { backgroundColor: `${statementCardAccent(card, accent)}16` }]}>{card.icon}</View>
-        )}
-      </View>
+      <StatementCardFace card={card} accent={accent} metrics={metrics} imageSource={imageSource} imageTransition={120} />
     </Reanimated.View>
   );
 }
@@ -9059,6 +9174,7 @@ function V4SwipeStatementCard({
   imageSource,
   isLast,
   dragX,
+  registerSubmit,
   onCommit,
   onAnswer,
 }: {
@@ -9068,12 +9184,14 @@ function V4SwipeStatementCard({
   imageSource?: number | ExpoImageRef;
   isLast: boolean;
   dragX: SharedValue<number>;
+  registerSubmit: (submit: ((yes: boolean) => void) | null) => void;
   onCommit: (yes: boolean) => void;
   onAnswer: (yes: boolean) => void;
 }) {
   const translateY = useSharedValue(0);
   const locked = useSharedValue(false);
-  const cardAccent = statementCardAccent(card, accent);
+  const quoteHeight = statementQuoteHeightFor(card, metrics);
+  const cardHeight = statementCardHeightFor(card, metrics);
 
   const submit = useCallback((yes: boolean) => {
     if (locked.value) return;
@@ -9091,6 +9209,11 @@ function V4SwipeStatementCard({
       runOnJS(onAnswer)(yes);
     });
   }, [dragX, isLast, locked, onAnswer, onCommit, translateY]);
+
+  useEffect(() => {
+    registerSubmit(submit);
+    return () => registerSubmit(null);
+  }, [registerSubmit, submit]);
 
   const gesture = useMemo(() => Gesture.Pan()
     .activeOffsetX([-12, 12])
@@ -9134,60 +9257,17 @@ function V4SwipeStatementCard({
   }));
 
   return (
-    <View style={[s.v4SwipeCardWrap, { width: metrics.width }]}>
-      <GestureDetector gesture={gesture}>
-        <Reanimated.View style={[s.v4StatementCard, { height: metrics.cardHeight }, cardStyle]}>
-          <StatementQuotePanel card={card} accent={accent} height={metrics.quoteHeight} />
-          <View style={[s.v4StatementArt, { height: metrics.width }]}>
-            {imageSource ? (
-              <ExpoImage
-                source={imageSource}
-                style={s.v4StatementImage}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-                priority="high"
-                transition={0}
-                recyclingKey={card.id}
-              />
-            ) : (
-              <View style={[s.v4StatementIcon, { backgroundColor: `${cardAccent}16` }]}>{card.icon}</View>
-            )}
-          </View>
-          <Reanimated.View pointerEvents="none" style={[s.v4SwipeStamp, s.v4SwipeStampYes, { top: metrics.quoteHeight + 16 }, yesStampStyle]}>
-            <Text style={[s.v4SwipeStampText, s.v4SwipeStampTextYes]}>That&apos;s me</Text>
-          </Reanimated.View>
-          <Reanimated.View pointerEvents="none" style={[s.v4SwipeStamp, s.v4SwipeStampNo, { top: metrics.quoteHeight + 16 }, noStampStyle]}>
-            <Text style={[s.v4SwipeStampText, s.v4SwipeStampTextNo]}>Not me</Text>
-          </Reanimated.View>
+    <GestureDetector gesture={gesture}>
+      <Reanimated.View style={[s.v4StatementCard, s.v4SwipeCardActive, { width: metrics.width, height: cardHeight }, cardStyle]}>
+        <StatementCardFace card={card} accent={accent} metrics={metrics} imageSource={imageSource} imageTransition={0} />
+        <Reanimated.View pointerEvents="none" style={[s.v4SwipeStamp, s.v4SwipeStampYes, { top: quoteHeight + 16 }, yesStampStyle]}>
+          <Text style={[s.v4SwipeStampText, s.v4SwipeStampTextYes]}>That&apos;s me</Text>
         </Reanimated.View>
-      </GestureDetector>
-      <View style={s.v4AnswerRow}>
-        <TouchableOpacity activeOpacity={0.84} haptic="none" onPress={() => submit(false)} style={s.v4NoButton}>
-          <LinearGradient
-            colors={['#FFFFFF', '#FFF2F1']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={s.v4AnswerIconChipNo}>
-            <X s={14} c="#FFFFFF" w={2.8} />
-          </View>
-          <Text style={s.v4NoButtonText}>Not me</Text>
-        </TouchableOpacity>
-        <TouchableOpacity activeOpacity={0.84} haptic="none" onPress={() => submit(true)} style={s.v4YesButton}>
-          <LinearGradient
-            colors={['#FFFFFF', '#EFF9F2']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <Text style={s.v4YesButtonText}>That&apos;s me</Text>
-          <View style={s.v4AnswerIconChipYes}>
-            <CheckSmall s={15} c="#FFFFFF" w={2.9} />
-          </View>
-        </TouchableOpacity>
-      </View>
-    </View>
+        <Reanimated.View pointerEvents="none" style={[s.v4SwipeStamp, s.v4SwipeStampNo, { top: quoteHeight + 16 }, noStampStyle]}>
+          <Text style={[s.v4SwipeStampText, s.v4SwipeStampTextNo]}>Not me</Text>
+        </Reanimated.View>
+      </Reanimated.View>
+    </GestureDetector>
   );
 }
 
@@ -10554,10 +10634,10 @@ export default function OnboardingView() {
       activeStep === 'screenTimeSlider' ||
       activeStep === 'dayVisualization' ||
       activeStep === 'protectRecap' ||
-      activeStep === 'setupProtect' ||
-      activeStep === 'flameProtect'
+      activeStep === 'flameProtect' ||
+      activeStep === 'organizeDeck'
     ) {
-      void warmStatementImages(ORGANIZE_STATEMENT_IMAGES.slice(0, 6));
+      void warmStatementImages(ORGANIZE_STATEMENT_IMAGES);
     }
   }, [activeStep]);
 
@@ -10695,6 +10775,9 @@ export default function OnboardingView() {
     activeStep === 'nameIntro' ||
     activeStep === 'traditionIntro' ||
     activeStep === 'toolsShowcase' ||
+    activeStep === 'tutorialDeck' ||
+    activeStep === 'protectDeck' ||
+    activeStep === 'organizeDeck' ||
     valueStepActive ||
     activeStep === 'bridge' ||
     activeStep === 'organizeIntro' ||
@@ -10804,6 +10887,7 @@ export default function OnboardingView() {
           key={`tutorial-deck-${tutorialRun}`}
           cards={TUTORIAL_DECK_CARDS}
           accent="#4D8586"
+          bottomInset={insets.bottom}
           onDone={ids => ids.includes('tutorial-ready') ? goNext() : setTutorialRun(prev => prev + 1)}
         />
       );
@@ -10818,6 +10902,7 @@ export default function OnboardingView() {
         <V4StatementDeckSlide
           cards={protectCards}
           accent="#4D8586"
+          bottomInset={insets.bottom}
           onDone={ids => {
             setAnswers(prev => ({ ...prev, confirmedProtectProblems: ids }));
             goNext();
@@ -10861,6 +10946,7 @@ export default function OnboardingView() {
         <V4StatementDeckSlide
           cards={organizeCards}
           accent="#4D8586"
+          bottomInset={insets.bottom}
           onDone={ids => {
             setAnswers(prev => ({ ...prev, confirmedOrganizeProblems: ids }));
             goNext();
@@ -19144,12 +19230,16 @@ const s = StyleSheet.create({
     marginTop: 14,
     marginLeft: -4,
   },
-  v4DeckSlide: {
+  v4DeckSlideRoot: {
+    flex: 1,
+    position: 'relative',
+  },
+  v4DeckInner: {
     flex: 1,
     paddingHorizontal: 18,
     paddingTop: 14,
-    paddingBottom: 14,
     rowGap: 9,
+    zIndex: 1,
   },
   v4DeckTitle: {
     fontFamily: F.serifSemiBold,
@@ -19214,28 +19304,57 @@ const s = StyleSheet.create({
     elevation: 1,
   },
   v4StackDepthNear: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
     zIndex: 3,
   },
   v4StackDepthMiddle: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
     zIndex: 2,
   },
   v4StackDepthFar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
     zIndex: 1,
+  },
+  v4DeckCardSlot: {
+    position: 'relative',
+  },
+  v4SwipeCardActive: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    zIndex: 4,
   },
   v4EdgeGlow: {
     position: 'absolute',
-    top: -6,
-    bottom: 60,
-    width: 92,
-    zIndex: 0,
-    borderRadius: 36,
-    overflow: 'hidden',
+    top: 0,
+    bottom: 0,
+    width: 132,
+    zIndex: 5,
   },
   v4EdgeGlowLeft: {
-    left: -18,
+    left: 0,
+    transformOrigin: 'left',
   },
   v4EdgeGlowRight: {
-    right: -18,
+    right: 0,
+    transformOrigin: 'right',
+  },
+  v4EdgeGlowCore: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: 64,
+  },
+  v4EdgeGlowCoreRight: {
+    left: undefined,
+    right: 0,
   },
   v4SwipeCardWrap: {
     alignSelf: 'center',
@@ -19305,6 +19424,21 @@ const s = StyleSheet.create({
   v4StatementImage: {
     width: '100%',
     height: '100%',
+  },
+  v4StatementArtShade: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 24,
+  },
+  v4StatementInnerFrame: {
+    ...StyleSheet.absoluteFillObject,
+    margin: 7,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.45)',
+    zIndex: 5,
   },
   v4StatementIcon: {
     width: '100%',
