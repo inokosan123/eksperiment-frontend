@@ -45,9 +45,11 @@ import {
   Home,
   Hourglass,
   ListChecks,
+  Moon,
   OpenBook,
   Play,
   Plus,
+  Sun,
   SlidersHorizontal,
   Sparkles,
   Settings,
@@ -9251,31 +9253,271 @@ function V4ScreenTimeSliderSlide({
   );
 }
 
+function V4DayPartCard({
+  icon,
+  tint,
+  border,
+  label,
+  note,
+  hours,
+  percent,
+  emphasis,
+}: {
+  icon: React.ReactNode;
+  tint: string;
+  border: string;
+  label: string;
+  note?: string;
+  hours: string;
+  percent: string;
+  emphasis?: boolean;
+}) {
+  const pulse = useSharedValue(0);
+
+  useEffect(() => {
+    if (emphasis) {
+      runStrongHaptic();
+      pulse.value = withDelay(
+        620,
+        withRepeat(
+          withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.quad) }),
+          -1,
+          true,
+        ),
+      );
+    } else {
+      runBubbleHaptic();
+    }
+    return () => {
+      pulse.value = 0;
+    };
+  }, [emphasis, pulse]);
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + pulse.value * 0.012 }],
+  }));
+
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 16 }, { scale: 0.97 }],
+      })}
+      style={[s.v4DayPartCard, emphasis && s.v4DayPartCardPhone, pulseStyle]}
+    >
+      <View style={[s.v4DayPartIcon, { backgroundColor: tint, borderColor: border }]}>{icon}</View>
+      <View style={s.v4DayPartCopy}>
+        <Text style={s.v4DayPartLabel}>{label}</Text>
+        {note ? <Text style={s.v4DayPartNote}>{note}</Text> : null}
+      </View>
+      <View style={s.v4DayPartStat}>
+        <Text style={[s.v4DayPartHours, emphasis && s.v4DayPartHoursPhone]}>{hours}</Text>
+        <Text style={s.v4DayPartPercent}>{percent}</Text>
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function V4DayBreakdownBar({ stat }: { stat: ReturnType<typeof protectStats> }) {
+  const grow = useSharedValue(0);
+  const restHours = Math.max(0, DAY_HOURS - SLEEP_HOURS_PER_DAY - stat.hours);
+  const sleepPct = (SLEEP_HOURS_PER_DAY / DAY_HOURS) * 100;
+  const phonePct = (stat.hours / DAY_HOURS) * 100;
+  const restPct = Math.max(0, 100 - sleepPct - phonePct);
+
+  useEffect(() => {
+    runBubbleHaptic();
+    grow.value = withDelay(180, withTiming(1, { duration: 980, easing: Easing.bezier(0.16, 1, 0.28, 1) }));
+  }, [grow]);
+
+  const sleepStyle = useAnimatedStyle(() => ({
+    width: `${sleepPct * Math.min(1, grow.value * 3)}%`,
+  }));
+  const phoneStyle = useAnimatedStyle(() => ({
+    width: `${phonePct * Math.max(0, Math.min(1, grow.value * 3 - 1))}%`,
+  }));
+  const restStyle = useAnimatedStyle(() => ({
+    width: `${restPct * Math.max(0, Math.min(1, grow.value * 3 - 2))}%`,
+  }));
+
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 14 }],
+      })}
+      style={s.v4DayBarCard}
+    >
+      <View style={s.v4DayBarTrack}>
+        <Reanimated.View style={[s.v4DayBarSegment, s.v4DayBarSegmentSleep, sleepStyle]} />
+        <Reanimated.View style={[s.v4DayBarSegment, s.v4DayBarSegmentPhone, phoneStyle]} />
+        <Reanimated.View style={[s.v4DayBarSegment, s.v4DayBarSegmentRest, restStyle]} />
+      </View>
+      <View style={s.v4DayBarLegend}>
+        <Text style={s.v4DayBarLegendText}>
+          {`${SLEEP_HOURS_PER_DAY}h sleep · `}
+          <Text style={s.v4DayBarLegendPhone}>{`${formatHourValue(stat.hours)}h phone`}</Text>
+          {` · ${formatHourValue(restHours)}h left`}
+        </Text>
+      </View>
+    </Reanimated.View>
+  );
+}
+
+const V4_DAY_NECESSITIES_HOURS = 3;
+
 function V4DayVisualizationSlide({ hours, onNext }: { hours?: number; onNext: () => void }) {
   const stat = protectStats(hours);
   const restHours = Math.max(0, DAY_HOURS - SLEEP_HOURS_PER_DAY - stat.hours);
+  const freeHours = Math.max(0, restHours - V4_DAY_NECESSITIES_HOURS);
   const phonePercent = Math.round((stat.hours / DAY_HOURS) * 100);
   const restPercent = Math.max(0, Math.round((restHours / DAY_HOURS) * 100));
+  const [phase, setPhase] = useState<'day' | 'waste' | 'reclaim'>('day');
+  const [dayReveal, setDayReveal] = useState(0);
+  const [wasteReveal, setWasteReveal] = useState(0);
+  const [reclaimReveal, setReclaimReveal] = useState(0);
+
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    if (phase === 'day') {
+      [260, 1240, 2260, 3300].forEach((delay, index) => {
+        timers.push(setTimeout(() => setDayReveal(index + 1), delay));
+      });
+    }
+    if (phase === 'waste') {
+      [220, 1500, 3360, 5060].forEach((delay, index) => {
+        timers.push(setTimeout(() => setWasteReveal(index + 1), delay));
+      });
+    }
+    if (phase === 'reclaim') {
+      [260, 1500, 3000, 4360, 5760].forEach((delay, index) => {
+        timers.push(setTimeout(() => setReclaimReveal(index + 1), delay));
+      });
+    }
+    return () => timers.forEach(timer => clearTimeout(timer));
+  }, [phase]);
+
+  const handleNext = () => {
+    if (phase === 'day') {
+      if (dayReveal < 4) {
+        setDayReveal(4);
+        return;
+      }
+      runSelectionHaptic();
+      setPhase('waste');
+      return;
+    }
+    if (phase === 'waste') {
+      if (wasteReveal < 4) {
+        setWasteReveal(4);
+        return;
+      }
+      runSelectionHaptic();
+      setPhase('reclaim');
+      return;
+    }
+    if (reclaimReveal < 5) {
+      setReclaimReveal(5);
+      return;
+    }
+    onNext();
+  };
+
+  const ctaLabel = phase === 'day'
+    ? 'Continue'
+    : phase === 'waste'
+      ? (wasteReveal < 4 ? 'Show me' : 'OK')
+      : "Let's start fixing this";
 
   return (
-    <ScrollView contentContainerStyle={s.v4ScrollContent} showsVerticalScrollIndicator={false}>
-      <Text style={s.v4Eyebrow}>Your day</Text>
-      <Text style={s.v4MomentTitle}>This is where your time goes.</Text>
-      <V4MetricCard label="Sleep" value="8 hours" detail="33% of your day" />
-      <V4MetricCard label="On your phone" value={`${formatHourValue(stat.hours)} hours`} detail={`${phonePercent}% of your day`} accent />
-      <V4MetricCard label="The rest of your day" value={`${formatHourValue(restHours)} hours`} detail={`${restPercent}% of your day`} />
-      <Text style={s.v4WasteTitle}>YOU WASTE</Text>
-      <V4MetricCard label="Every year" value={`${stat.yearlyDays} days`} detail="spent on your phone" />
-      <V4MetricCard label="Over a lifetime" value={`${formatYearValue(stat.lifetimeYears)} years`} detail="spent on your phone" />
-      <Text style={s.v4GoodTitle}>YOU CAN GET BACK</Text>
-      <V4MetricCard label="If you cut only 40%" value={`${stat.reclaimedDays} days/year`} detail={`${formatYearValue(stat.reclaimedYears)} years over a lifetime`} accent />
-      <View style={s.ctaIsland}>
-        <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-          <Text style={s.primaryButtonText}>Let&apos;s start fixing this</Text>
-          <ChevronRight s={19} c="#FFFFFF" w={2.5} />
-        </TouchableOpacity>
+    <GuidedSetupShell
+      onNext={handleNext}
+      ctaLabel={ctaLabel}
+      scrollSignal={`${phase}-${dayReveal}-${wasteReveal}-${reclaimReveal}`}
+      autoScrollOnContentChange
+    >
+      <Reanimated.View
+        entering={FadeIn.duration(520).withInitialValues({ opacity: 0, transform: [{ translateY: 12 }] })}
+        style={s.v4DayHeader}
+      >
+        <Text style={s.v4Eyebrow}>Your 24 hours</Text>
+        <Text style={s.v4DayTitle}>Where your day actually goes.</Text>
+      </Reanimated.View>
+
+      <View style={s.v4DayPartList}>
+        {dayReveal >= 1 && (
+          <V4DayPartCard
+            icon={<Moon s={21} c="#5A5244" w={2} />}
+            tint="rgba(25,23,20,0.06)"
+            border="rgba(25,23,20,0.12)"
+            label="Sleep"
+            hours={`${SLEEP_HOURS_PER_DAY}h`}
+            percent="33% of your day"
+          />
+        )}
+        {dayReveal >= 2 && (
+          <V4DayPartCard
+            icon={<Hourglass s={21} c="#A8393F" w={2} />}
+            tint="rgba(168,57,63,0.10)"
+            border="rgba(168,57,63,0.22)"
+            label="On your phone"
+            note="Your number — be honest, it counts."
+            hours={`${formatHourValue(stat.hours)}h`}
+            percent={`${phonePercent}% of your day`}
+            emphasis
+          />
+        )}
+        {dayReveal >= 3 && (
+          <V4DayPartCard
+            icon={<Sun s={21} c={GOLD} w={2} />}
+            tint="rgba(197,160,89,0.12)"
+            border="rgba(197,160,89,0.26)"
+            label="The rest of your day"
+            note={`Eating, chores, and daily necessities take ~${V4_DAY_NECESSITIES_HOURS}h of this. Truly free: ~${formatHourValue(freeHours)}h.`}
+            hours={`${formatHourValue(restHours)}h`}
+            percent={`${restPercent}% of your day`}
+          />
+        )}
+        {dayReveal >= 4 && <V4DayBreakdownBar stat={stat} />}
       </View>
-    </ScrollView>
+
+      {phase !== 'day' && (
+        <View style={s.screenTimeConversation}>
+          {wasteReveal >= 1 && <ScreenTimeWastedIntro lifted={wasteReveal >= 2} />}
+          {wasteReveal >= 2 && <ScreenTimePercentCard stat={stat} index={1} stackSignal={wasteReveal} />}
+          {wasteReveal >= 3 && <ScreenTimeDaysCard stat={stat} index={2} stackSignal={wasteReveal} />}
+          {wasteReveal >= 4 && <ScreenTimeYearsCard stat={stat} index={3} stackSignal={wasteReveal} />}
+        </View>
+      )}
+
+      {phase === 'reclaim' && (
+        <View style={s.screenTimeConversation}>
+          {reclaimReveal >= 1 && (
+            <ProtectSidePrompt
+              motionKey={`v4-reclaim-${stat.hours}`}
+              segments={[
+                { text: 'If you cut your screen time by only ' },
+                { text: '40%', highlight: true, gold: true },
+                { text: '...' },
+              ]}
+            />
+          )}
+          {reclaimReveal >= 2 && <ScreenTimeGetBackIntro lifted={reclaimReveal >= 3} />}
+          {reclaimReveal >= 3 && <ScreenTimeSavedDaysCard stat={stat} index={1} stackSignal={reclaimReveal} />}
+          {reclaimReveal >= 4 && <ScreenTimeSavedYearsCard stat={stat} index={2} stackSignal={reclaimReveal} />}
+          {reclaimReveal >= 5 && (
+            <ProtectSidePrompt
+              motionKey={`v4-reclaim-close-${stat.hours}`}
+              segments={[
+                { text: 'That time is yours to ' },
+                { text: 'take back', highlight: true },
+                { text: '.' },
+              ]}
+            />
+          )}
+        </View>
+      )}
+    </GuidedSetupShell>
   );
 }
 
@@ -9289,46 +9531,179 @@ function V4MetricCard({ label, value, detail, accent }: { label: string; value: 
   );
 }
 
+const STATEMENT_SHORT_LABELS: Record<string, string> = {
+  'lost-hour': 'Hours lost to mindless scrolling',
+  'morning-night': 'Phone first thing in the morning, last at night',
+  'focus-pulled': 'Notifications keep breaking your focus',
+  'procrastination': 'Procrastinating with your phone',
+  'ashamed-content': "Addictive content you're ashamed of",
+  'presence': 'Distractions pull you out of the moment',
+  'anxious-start': "Anxious — you don't know where to start",
+  'last-minute': 'Everything happens at the last minute',
+  'plan-day': 'Your days could be planned better',
+  'habits-quit': 'New habits die after a few days',
+  'wasted-day': 'Days end feeling wasted',
+  'forgot-promise': 'Forgetting what you promised',
+  'no-rhythm': 'Your days have no rhythm',
+  'pray-daily': 'Prayer keeps slipping away',
+  'goals-give-up': 'Goals end in giving up',
+  'scripture-time': 'No time made for Scripture',
+  'intentional-time': 'You want to be more intentional',
+};
+
+function V4RecapStakesCard({ stat }: { stat: ReturnType<typeof protectStats> }) {
+  useEffect(() => {
+    const timer = setTimeout(runStrongHaptic, 420);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <Reanimated.View
+      entering={FadeIn.delay(300).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 16 }, { scale: 0.965 }],
+      })}
+      style={s.v4RecapStakes}
+    >
+      <View style={s.v4RecapStakesRow}>
+        <View style={s.v4RecapStakesIcon}>
+          <Hourglass s={19} c="#E7C36D" w={2} />
+        </View>
+        <Text style={s.v4RecapStakesEyebrow}>Screen time</Text>
+      </View>
+      <Text style={s.v4RecapStakesTitle}>
+        You lose <Text style={s.v4RecapStakesGold}>{stat.yearlyDays} days</Text> every year to your phone.
+      </Text>
+      <Text style={s.v4RecapStakesSub}>
+        Over an 85-year life, that is <Text style={s.v4RecapStakesGold}>{formatYearValue(stat.lifetimeYears)} years</Text>.
+      </Text>
+    </Reanimated.View>
+  );
+}
+
+function V4RecapProblemRow({
+  card,
+  active,
+  accent,
+  delay,
+}: {
+  card: StatementDeckCard;
+  active: boolean;
+  accent: string;
+  delay: number;
+}) {
+  const cardAccent = statementCardAccent(card, accent);
+
+  useEffect(() => {
+    if (!active) return undefined;
+    const timer = setTimeout(runSelectionHaptic, delay + 160);
+    return () => clearTimeout(timer);
+  }, [active, delay]);
+
+  return (
+    <Reanimated.View
+      entering={FadeIn.delay(delay).duration(400).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 14 }, { scale: 0.97 }],
+      })}
+      style={[
+        s.v4RecapRow,
+        active
+          ? { borderColor: `${cardAccent}52`, backgroundColor: `${cardAccent}12` }
+          : s.v4RecapRowInactive,
+      ]}
+    >
+      <View style={[s.v4RecapRowIcon, active ? { backgroundColor: `${cardAccent}1E` } : s.v4RecapRowIconInactive]}>
+        {card.icon}
+      </View>
+      <Text
+        numberOfLines={2}
+        style={[s.v4RecapRowText, !active && s.v4RecapRowTextInactive]}
+      >
+        {STATEMENT_SHORT_LABELS[card.id] ?? card.statement}
+      </Text>
+      {active ? (
+        <View style={[s.v4RecapRowBadge, { backgroundColor: cardAccent }]}>
+          <CheckSmall s={13} c="#FFFFFF" w={2.8} />
+        </View>
+      ) : (
+        <View style={[s.v4RecapRowBadge, s.v4RecapRowBadgeInactive]}>
+          <X s={11} c="rgba(25,23,20,0.32)" w={2.4} />
+        </View>
+      )}
+    </Reanimated.View>
+  );
+}
+
 function V4RecapSlide({
   title,
+  subtitle,
   cards,
   selected,
+  accent,
   hours,
   onNext,
 }: {
   title: string;
+  subtitle: string;
   cards: StatementDeckCard[];
   selected: string[];
+  accent: string;
   hours?: number;
   onNext: () => void;
 }) {
-  const stat = hours ? protectStats(hours) : null;
+  const stat = hours !== undefined ? protectStats(hours) : null;
+  const activeCount = cards.filter(card => selected.includes(card.id)).length;
+  const rowBaseDelay = stat ? 760 : 420;
+  const promptDelay = rowBaseDelay + cards.length * 110 + 260;
+
   return (
-    <ScrollView contentContainerStyle={s.v4ScrollContent} showsVerticalScrollIndicator={false}>
-      <Text style={s.v4MomentTitle}>{title}</Text>
-      {stat ? (
-        <View style={s.v4StakesPanel}>
-          <Text style={s.v4StakesText}>
-            You spend {stat.yearlyDays} days/year on your phone. That&apos;s {formatYearValue(stat.lifetimeYears)} years of your life.
+    <View style={s.v4RecapSlide}>
+      <ScrollView contentContainerStyle={s.v4RecapScrollContent} showsVerticalScrollIndicator={false}>
+        <Reanimated.View
+          entering={FadeIn.duration(480).withInitialValues({ opacity: 0, transform: [{ translateY: 12 }] })}
+          style={s.v4RecapHeader}
+        >
+          <Text style={s.v4DayTitle}>{title}</Text>
+          <Text style={s.v4RecapSubtitle}>
+            {activeCount > 0 ? subtitle.replace('{count}', `${activeCount}`) : 'Nothing weighing on you here — well done.'}
           </Text>
+        </Reanimated.View>
+
+        {stat ? <V4RecapStakesCard stat={stat} /> : null}
+
+        <View style={s.v4RecapList}>
+          {cards.map((card, index) => (
+            <V4RecapProblemRow
+              key={card.id}
+              card={card}
+              active={selected.includes(card.id)}
+              accent={accent}
+              delay={rowBaseDelay + index * 110}
+            />
+          ))}
         </View>
-      ) : null}
-      {cards.map(card => {
-        const active = selected.includes(card.id);
-        return (
-          <View key={card.id} style={[s.v4RecapCard, !active && s.v4RecapCardMuted]}>
-            <Text style={s.v4RecapMark}>{active ? 'Yes' : 'No'}</Text>
-            <Text style={s.v4RecapText}>{card.statement}</Text>
-          </View>
-        );
-      })}
-      <View style={s.ctaIsland}>
-        <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-          <Text style={s.primaryButtonText}>Let&apos;s start</Text>
-          <ChevronRight s={19} c="#FFFFFF" w={2.5} />
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+
+        <ProtectSidePrompt
+          delay={promptDelay}
+          motionKey={`recap-prompt-${title}`}
+          segments={[
+            { text: "Let's start " },
+            { text: 'fixing your problems', highlight: true },
+            { text: '.' },
+          ]}
+        />
+      </ScrollView>
+
+      <AnimatedCta delay={promptDelay + 320} style={s.questionFooter}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>Let&apos;s start</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
   );
 }
 
@@ -10206,8 +10581,10 @@ export default function OnboardingView() {
       return (
         <V4RecapSlide
           title="Here's what we heard."
+          subtitle="You confirmed {count} problems. Let's deal with them."
           cards={PROTECT_DECK_CARDS}
           selected={answers.confirmedProtectProblems ?? []}
+          accent="#4D8586"
           hours={answers.screenTimeHours}
           onNext={goNext}
         />
@@ -10244,9 +10621,11 @@ export default function OnboardingView() {
     if (activeStep === 'organizeRecap') {
       return (
         <V4RecapSlide
-          title="Now let's organize it."
+          title="Now — your life."
+          subtitle="You confirmed {count} problems. One system fixes them."
           cards={ORGANIZE_DECK_CARDS}
           selected={answers.confirmedOrganizeProblems ?? []}
+          accent="#4D8586"
           onNext={goNext}
         />
       );
@@ -13643,6 +14022,268 @@ const s = StyleSheet.create({
   },
   screenTimeAction: {
     paddingTop: 6,
+  },
+  v4DayHeader: {
+    alignItems: 'center',
+    rowGap: 6,
+    marginBottom: 16,
+  },
+  v4DayTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 29,
+    lineHeight: 34,
+    color: INK,
+    textAlign: 'center',
+    maxWidth: 330,
+  },
+  v4DayPartList: {
+    rowGap: 10,
+  },
+  v4DayPartCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 13,
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 1,
+  },
+  v4DayPartCardPhone: {
+    borderColor: 'rgba(168,57,63,0.30)',
+    backgroundColor: '#FFFBFA',
+    shadowColor: '#A8393F',
+    shadowOpacity: 0.10,
+    elevation: 2,
+  },
+  v4DayPartIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  v4DayPartCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  v4DayPartLabel: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17.5,
+    lineHeight: 21,
+    color: INK,
+  },
+  v4DayPartNote: {
+    marginTop: 3,
+    fontFamily: F.sansMedium,
+    fontSize: 11.5,
+    lineHeight: 15,
+    color: 'rgba(25,23,20,0.52)',
+  },
+  v4DayPartStat: {
+    alignItems: 'flex-end',
+    flexShrink: 0,
+  },
+  v4DayPartHours: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 24,
+    lineHeight: 27,
+    color: INK,
+  },
+  v4DayPartHoursPhone: {
+    color: '#A8393F',
+  },
+  v4DayPartPercent: {
+    marginTop: 2,
+    fontFamily: F.sansMedium,
+    fontSize: 10.5,
+    letterSpacing: 0.2,
+    color: 'rgba(25,23,20,0.46)',
+  },
+  v4DayBarCard: {
+    marginTop: 4,
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 1,
+  },
+  v4DayBarTrack: {
+    height: 18,
+    borderRadius: 9,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    backgroundColor: 'rgba(25,23,20,0.05)',
+  },
+  v4DayBarSegment: {
+    height: '100%',
+  },
+  v4DayBarSegmentSleep: {
+    backgroundColor: '#17130F',
+  },
+  v4DayBarSegmentPhone: {
+    backgroundColor: '#C24B51',
+  },
+  v4DayBarSegmentRest: {
+    backgroundColor: GOLD,
+  },
+  v4DayBarLegend: {
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  v4DayBarLegendText: {
+    fontFamily: F.sansMedium,
+    fontSize: 11.5,
+    letterSpacing: 0.2,
+    color: 'rgba(25,23,20,0.55)',
+  },
+  v4DayBarLegendPhone: {
+    fontFamily: F.sansBold,
+    color: '#A8393F',
+  },
+  v4RecapSlide: {
+    flex: 1,
+  },
+  v4RecapScrollContent: {
+    paddingTop: 18,
+    paddingBottom: 130,
+    rowGap: 14,
+  },
+  v4RecapHeader: {
+    alignItems: 'center',
+    rowGap: 7,
+  },
+  v4RecapSubtitle: {
+    fontFamily: F.serifMediumItalic,
+    fontSize: 15.5,
+    lineHeight: 21,
+    color: '#8C8277',
+    textAlign: 'center',
+    maxWidth: 320,
+  },
+  v4RecapStakes: {
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 17,
+    backgroundColor: '#1D1813',
+    borderWidth: 1,
+    borderColor: 'rgba(231,195,109,0.34)',
+    shadowColor: '#17130F',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+    elevation: 4,
+  },
+  v4RecapStakesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 8,
+    marginBottom: 9,
+  },
+  v4RecapStakesIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(231,195,109,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(231,195,109,0.30)',
+  },
+  v4RecapStakesEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: 'rgba(255,250,240,0.55)',
+  },
+  v4RecapStakesTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 21,
+    lineHeight: 27,
+    color: '#FFFAF0',
+  },
+  v4RecapStakesSub: {
+    marginTop: 5,
+    fontFamily: F.serifMedium,
+    fontSize: 15.5,
+    lineHeight: 21,
+    color: 'rgba(255,250,240,0.72)',
+  },
+  v4RecapStakesGold: {
+    color: '#E7C36D',
+    fontFamily: F.serifSemiBold,
+  },
+  v4RecapList: {
+    rowGap: 8,
+  },
+  v4RecapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 11,
+    borderRadius: 17,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 1,
+  },
+  v4RecapRowInactive: {
+    backgroundColor: 'rgba(255,255,255,0.45)',
+    borderColor: 'rgba(25,23,20,0.07)',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  v4RecapRowIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  v4RecapRowIconInactive: {
+    backgroundColor: 'rgba(25,23,20,0.045)',
+    opacity: 0.4,
+  },
+  v4RecapRowText: {
+    flex: 1,
+    fontFamily: F.serifMedium,
+    fontSize: 15.5,
+    lineHeight: 19.5,
+    color: INK,
+  },
+  v4RecapRowTextInactive: {
+    color: 'rgba(25,23,20,0.36)',
+  },
+  v4RecapRowBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  v4RecapRowBadgeInactive: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.2,
+    borderColor: 'rgba(25,23,20,0.16)',
   },
   introLogoFrame: {
     width: 68,
