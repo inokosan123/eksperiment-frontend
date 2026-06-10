@@ -8726,13 +8726,16 @@ function V4StatementDeckSlide({
   const [index, setIndex] = useState(0);
   const [yesIds, setYesIds] = useState<string[]>([]);
   const [decisions, setDecisions] = useState<(boolean | undefined)[]>(() => cards.map(() => undefined));
-  const [, setImageRevision] = useState(0);
   const activeCard = cards[index];
   const isCompact = height < 760;
   const availableCardWidth = Math.max(width - 52, 280);
   const cardWidth = Math.min(availableCardWidth, isCompact ? 356 : 382);
   const quoteHeight = isCompact ? 104 : 116;
   const dragX = useSharedValue(0);
+  // Mirrors `index` on the UI thread. Card poses derive from it inside
+  // worklets, so the depth change and the drag reset land in the SAME UI
+  // frame - a card can never flash in a wrong pose while React commits.
+  const indexSV = useSharedValue(0);
   const submitRef = useRef<((yes: boolean) => void) | null>(null);
   const cardMetrics = useMemo<StatementCardMetrics>(() => ({
     width: cardWidth,
@@ -8753,25 +8756,15 @@ function V4StatementDeckSlide({
     [cards],
   );
 
-  // Decode every card image up front so no card is ever promoted before its
-  // picture is ready. Images are only released when the deck unmounts.
+  // Decode every card image up front. All cards stay mounted for the whole
+  // deck, so no texture upload ever happens mid-swipe.
   useEffect(() => {
-    let active = true;
-    void warmStatementImages(cardImages).then(() => {
-      if (active) setImageRevision(revision => revision + 1);
-    });
-    return () => {
-      active = false;
-    };
+    void warmStatementImages(cardImages);
   }, [cardImages]);
 
   useEffect(() => () => {
     releaseStatementImages(cardImages);
   }, [cardImages]);
-
-  useEffect(() => {
-    dragX.value = 0;
-  }, [dragX, index]);
 
   const commitAnswer = useCallback((yes: boolean) => {
     setDecisions(prev => {
@@ -8789,11 +8782,12 @@ function V4StatementDeckSlide({
       onDone(nextYes);
       return;
     }
-    // Reset before the index swaps so the promoted card renders in place on
-    // its first frame (the pile has already animated forward during the drag).
+    // Both shared values update in one UI-thread batch: the old card hides,
+    // the promoted card takes the top pose and the pile re-bases atomically.
+    indexSV.value = index + 1;
     dragX.value = 0;
     setIndex(prev => prev + 1);
-  }, [activeCard, cards.length, dragX, index, onDone, yesIds]);
+  }, [activeCard, cards.length, dragX, index, indexSV, onDone, yesIds]);
 
   // Smoothstep ramp so the light builds gently at first, then surges as the
   // card approaches the commit threshold.
@@ -8878,14 +8872,17 @@ function V4StatementDeckSlide({
         <V4DeckAnswerProgress decisions={decisions} activeIndex={index} />
         <View style={[s.v4DeckStack, isCompact && s.v4DeckStackCompact]}>
           <View style={[s.v4DeckCardSlot, { width: cardMetrics.width, height: slotHeight }]}>
-            {cards.slice(index, index + 4).map((card, offset) => (
+            {cards.map((card, cardIndex) => (
               <V4DeckCard
                 key={card.id}
                 card={card}
-                depth={offset as 0 | 1 | 2 | 3}
+                cardIndex={cardIndex}
+                activeIndex={index}
+                indexSV={indexSV}
+                zIndex={cards.length - cardIndex}
                 accent={accent}
                 metrics={cardMetrics}
-                isLast={index >= cards.length - 1}
+                isLast={cardIndex >= cards.length - 1}
                 dragX={dragX}
                 imageSource={card.image ? statementImageRefs.get(card.image) ?? card.image : undefined}
                 registerSubmit={registerSubmit}
@@ -9104,15 +9101,20 @@ function StatementCardFace({
   );
 }
 
-// One component lives through a card's whole life in the pile (depth 3 -> 0).
-// Keyed by card id, so the image view never remounts and promotion is
-// perfectly smooth - only the pose interpolates.
+// Every card of the deck stays mounted from first render to deck unmount -
+// nothing mounts or unmounts mid-swipe, so there are no texture uploads and
+// no layout work during gestures. The pose (depth in the pile) is computed
+// entirely on the UI thread from indexSV + dragX, so a card can never render
+// a single frame in the wrong pose while React commits a new index.
 function V4DeckCard({
   card,
   accent,
   metrics,
   imageSource,
-  depth,
+  cardIndex,
+  activeIndex,
+  indexSV,
+  zIndex,
   isLast,
   dragX,
   registerSubmit,
@@ -9123,7 +9125,10 @@ function V4DeckCard({
   accent: string;
   metrics: StatementCardMetrics;
   imageSource?: number | ExpoImageRef;
-  depth: 0 | 1 | 2 | 3;
+  cardIndex: number;
+  activeIndex: number;
+  indexSV: SharedValue<number>;
+  zIndex: number;
   isLast: boolean;
   dragX: SharedValue<number>;
   registerSubmit: (submit: ((yes: boolean) => void) | null) => void;
@@ -9132,16 +9137,15 @@ function V4DeckCard({
 }) {
   const translateY = useSharedValue(0);
   const locked = useSharedValue(false);
-  // Freeze the image source for this card's whole life in the pile. If the
-  // decoded ref arrives after mount we deliberately keep the original source -
-  // swapping sources on a mounted image is what caused the one-frame flash.
+  // Freeze the image source for this card's whole life. Swapping sources on a
+  // mounted image causes a one-frame flash, so the first source wins.
   const stableImageSource = useRef(imageSource).current;
   const quoteHeight = statementQuoteHeightFor(card, metrics);
   const cardHeight = statementCardHeightFor(card, metrics);
-  const active = depth === 0;
-  const from = stackPose(depth, cardHeight);
-  const to = stackPose(Math.max(0, depth - 1) as 0 | 1 | 2, cardHeight);
-  const baseOpacity = depth <= 1 ? 1 : depth === 2 ? 0.95 : 0.84;
+  const active = cardIndex === activeIndex;
+  const initialDepth = Math.max(0, Math.min(3, cardIndex - activeIndex)) as 0 | 1 | 2 | 3;
+  const initialPose = stackPose(initialDepth, cardHeight);
+  const initialHidden = cardIndex - activeIndex < 0 || cardIndex - activeIndex > 3;
 
   const submit = useCallback((yes: boolean) => {
     if (locked.value) return;
@@ -9187,7 +9191,20 @@ function V4DeckCard({
     }), [active, dragX, locked, submit, translateY]);
 
   const poseStyle = useAnimatedStyle(() => {
-    if (active) {
+    const depthNow = cardIndex - indexSV.value;
+    if (depthNow < 0) {
+      // Already answered - stays hidden wherever it flew off to.
+      return {
+        opacity: 0,
+        transform: [
+          { translateX: 0 },
+          { translateY: 0 },
+          { rotate: '0deg' },
+          { scale: 1 },
+        ],
+      };
+    }
+    if (depthNow === 0) {
       return {
         opacity: 1,
         transform: [
@@ -9198,26 +9215,37 @@ function V4DeckCard({
         ],
       };
     }
-    const progress = Math.min(1, Math.abs(dragX.value) / 200);
+    const clamped = Math.min(3, depthNow);
+    const progress = depthNow > 3 ? 0 : Math.min(1, Math.abs(dragX.value) / 200);
+    const poseAt = (k: number) => {
+      const sc = k <= 0 ? 1 : k === 1 ? 0.963 : k === 2 ? 0.93 : 0.9;
+      const peek = k <= 0 ? 0 : k === 1 ? 7 : k === 2 ? 13 : 18;
+      const rt = k <= 0 ? 0 : k === 1 ? -0.4 : k === 2 ? 0.6 : -0.9;
+      return { y: peek + (cardHeight * (1 - sc)) / 2, scale: sc, rotate: rt };
+    };
+    const fromPose = poseAt(clamped);
+    const toPose = poseAt(clamped - 1);
+    const baseOpacity = clamped <= 1 ? 1 : clamped === 2 ? 0.95 : 0.84;
+    const opacity = depthNow > 3 ? 0 : baseOpacity + (1 - baseOpacity) * progress;
     return {
-      opacity: baseOpacity + (1 - baseOpacity) * progress,
+      opacity,
       transform: [
         { translateX: 0 },
-        { translateY: from.y + (to.y - from.y) * progress },
-        { rotate: `${from.rotate + (to.rotate - from.rotate) * progress}deg` },
-        { scale: from.scale + (to.scale - from.scale) * progress },
+        { translateY: fromPose.y + (toPose.y - fromPose.y) * progress },
+        { rotate: `${fromPose.rotate + (toPose.rotate - fromPose.rotate) * progress}deg` },
+        { scale: fromPose.scale + (toPose.scale - fromPose.scale) * progress },
       ],
     };
   });
   const yesStampStyle = useAnimatedStyle(() => ({
-    opacity: active ? interpolate(dragX.value, [14, 105], [0, 1], 'clamp') : 0,
+    opacity: cardIndex === indexSV.value ? interpolate(dragX.value, [14, 105], [0, 1], 'clamp') : 0,
     transform: [
       { rotate: '-11deg' },
       { scale: interpolate(dragX.value, [14, 105], [0.84, 1], 'clamp') },
     ],
   }));
   const noStampStyle = useAnimatedStyle(() => ({
-    opacity: active ? interpolate(dragX.value, [-105, -14], [1, 0], 'clamp') : 0,
+    opacity: cardIndex === indexSV.value ? interpolate(dragX.value, [-105, -14], [1, 0], 'clamp') : 0,
     transform: [
       { rotate: '11deg' },
       { scale: interpolate(dragX.value, [-105, -14], [1, 0.84], 'clamp') },
@@ -9234,14 +9262,14 @@ function V4DeckCard({
           {
             width: metrics.width,
             height: cardHeight,
-            zIndex: 4 - depth,
-            // Static first-frame pose so a newly mounted card can never flash
-            // unscaled before the animated style kicks in.
-            opacity: active ? 1 : baseOpacity,
+            zIndex,
+            // Static first-frame pose so a card can never flash in the wrong
+            // pose before the animated style kicks in.
+            opacity: initialHidden ? 0 : 1,
             transform: [
-              { translateY: from.y },
-              { rotate: `${from.rotate}deg` },
-              { scale: from.scale },
+              { translateY: initialPose.y },
+              { rotate: `${initialPose.rotate}deg` },
+              { scale: initialPose.scale },
             ],
           },
           poseStyle,
