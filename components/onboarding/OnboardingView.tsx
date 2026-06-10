@@ -9132,6 +9132,10 @@ function V4DeckCard({
 }) {
   const translateY = useSharedValue(0);
   const locked = useSharedValue(false);
+  // Freeze the image source for this card's whole life in the pile. If the
+  // decoded ref arrives after mount we deliberately keep the original source -
+  // swapping sources on a mounted image is what caused the one-frame flash.
+  const stableImageSource = useRef(imageSource).current;
   const quoteHeight = statementQuoteHeightFor(card, metrics);
   const cardHeight = statementCardHeightFor(card, metrics);
   const active = depth === 0;
@@ -9227,11 +9231,23 @@ function V4DeckCard({
           s.v4StatementCard,
           !active && s.v4StackCard,
           s.v4DeckCardBase,
-          { width: metrics.width, height: cardHeight, zIndex: 4 - depth },
+          {
+            width: metrics.width,
+            height: cardHeight,
+            zIndex: 4 - depth,
+            // Static first-frame pose so a newly mounted card can never flash
+            // unscaled before the animated style kicks in.
+            opacity: active ? 1 : baseOpacity,
+            transform: [
+              { translateY: from.y },
+              { rotate: `${from.rotate}deg` },
+              { scale: from.scale },
+            ],
+          },
           poseStyle,
         ]}
       >
-        <StatementCardFace card={card} accent={accent} metrics={metrics} imageSource={imageSource} imageTransition={120} />
+        <StatementCardFace card={card} accent={accent} metrics={metrics} imageSource={stableImageSource} imageTransition={120} />
         <Reanimated.View pointerEvents="none" style={[s.v4SwipeStamp, s.v4SwipeStampYes, { top: quoteHeight + 16 }, yesStampStyle]}>
           <Text style={[s.v4SwipeStampText, s.v4SwipeStampTextYes]}>That&apos;s me</Text>
         </Reanimated.View>
