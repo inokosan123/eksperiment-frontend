@@ -70,6 +70,7 @@ import {
 } from '@/components/shared/taskFeedback';
 import { AnimatedTaskRow, CompletionFlourish } from '@/components/shared/taskAnimations';
 import BigEventsView from '@/components/journal/BigEventsView';
+import WeeklyRhythm from '@/components/home/WeeklyRhythm';
 import MonthlyGoalsView from '@/components/inner-tools/MonthlyGoalsView';
 import HabitsView from '@/components/habits/HabitsView';
 import ChallengesView from '@/components/challenges/ChallengesView';
@@ -910,7 +911,25 @@ const PILLAR_OPTIONS: Option<PillarAnswer>[] = [
   },
 ];
 
+const PROTECT_SCREEN_TIME_CARDS = ['lost-hour', 'morning-night', 'procrastination'];
+const PROTECT_FOCUS_CARDS = ['focus-pulled', 'presence'];
+
 function stepOrder(answers: Answers): StepId[] {
+  const protect = answers.confirmedProtectProblems ?? [];
+  const organize = answers.confirmedOrganizeProblems ?? [];
+
+  // Setup groups appear only for the problems the user confirmed (v4 setup loop).
+  const protectSetup: StepId[] = [];
+  if (protect.some(id => PROTECT_SCREEN_TIME_CARDS.includes(id))) protectSetup.push('protectAppBlockers');
+  if (protect.some(id => PROTECT_FOCUS_CARDS.includes(id))) protectSetup.push('protectFocusBlock');
+  if (protect.includes('ashamed-content')) protectSetup.push('protectWebsiteBlockers');
+
+  // The guided chain in the real views is fixed: BigEvents -> MonthlyGoals ->
+  // Habits -> Challenges -> MyRoutine. Any confirmed organize problem runs it.
+  const organizeSetup: StepId[] = organize.length > 0
+    ? ['buildBigEvents', 'buildMonthlyGoals', 'buildHabits', 'buildChallenges', 'buildMyRoutine']
+    : [];
+
   return [
     'welcome',
     'nameIntro',
@@ -926,11 +945,11 @@ function stepOrder(answers: Answers): StepId[] {
     'screenTimeSlider',
     'dayVisualization',
     'protectRecap',
-    'setupProtect',
+    ...protectSetup,
     'flameProtect',
     'organizeDeck',
     'organizeRecap',
-    'setupOrganize',
+    ...organizeSetup,
     'weeklyReveal',
     'flameOrganize',
     'giftMoment',
@@ -9531,6 +9550,15 @@ function V4MetricCard({ label, value, detail, accent }: { label: string; value: 
   );
 }
 
+const PROTECT_RECAP_WINS: Record<string, string> = {
+  'lost-hour': 'Screen time under control',
+  'morning-night': 'Mornings and evenings protected',
+  'focus-pulled': 'Focus interruptions silenced',
+  'procrastination': 'Procrastination addressed',
+  'ashamed-content': 'Addictive content blocked',
+  'presence': 'Present where it matters',
+};
+
 const STATEMENT_SHORT_LABELS: Record<string, string> = {
   'lost-hour': 'Hours lost to mindless scrolling',
   'morning-night': 'Phone first thing in the morning, last at night',
@@ -9756,12 +9784,14 @@ function V4FlameSlide({
   title,
   body,
   surprise,
+  recapItems,
   onNext,
 }: {
   completedCount: number;
   title: string;
   body: string;
   surprise?: boolean;
+  recapItems?: string[];
   onNext: () => void;
 }) {
   const [reveal, setReveal] = useState(0);
@@ -9875,10 +9905,31 @@ function V4FlameSlide({
             </Reanimated.View>
           ) : null}
         </View>
+
+        {reveal >= 6 && recapItems && recapItems.length > 0 ? (
+          <View style={s.v4FlameRecapWrap}>
+            {recapItems.map((item, itemIndex) => (
+              <Reanimated.View
+                key={item}
+                entering={FadeIn.delay(itemIndex * 110).duration(380).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                  opacity: 0,
+                  transform: [{ translateY: 10 }, { scale: 0.96 }],
+                })}
+                style={s.v4FlameRecapChip}
+              >
+                <CheckSmall s={13} c={GOLD} w={2.6} />
+                <Text style={s.v4FlameRecapText}>{item}</Text>
+              </Reanimated.View>
+            ))}
+          </View>
+        ) : null}
       </View>
 
       {reveal >= 6 ? (
-        <AnimatedCta delay={120} style={s.questionFooter}>
+        <AnimatedCta
+          delay={recapItems && recapItems.length > 0 ? recapItems.length * 110 + 320 : 120}
+          style={s.questionFooter}
+        >
           <View style={s.ctaIsland}>
             <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
               <Text style={s.primaryButtonText}>Continue</Text>
@@ -9891,66 +9942,159 @@ function V4FlameSlide({
   );
 }
 
-function V4WeeklyRevealSlide({ onNext }: { onNext: () => void }) {
-  const rows = ['Morning prayer', 'Deep work block', 'Monthly goal review', 'Scripture reading', 'Weekly reset'];
+function V4WeeklyRevealSlide({ displayName, onNext }: { displayName?: string; onNext: () => void }) {
+  const name = nameForDisplay(displayName);
+  const { session, endGuidedSetup } = useGuidedSetup();
+
+  useEffect(() => {
+    // The guided organize chain is finished by now; clear the session so no
+    // orphaned overlay state survives into the rest of the flow.
+    if (session?.active) endGuidedSetup();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(runStrongHaptic, 760);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
-    <ScrollView contentContainerStyle={s.v4ScrollContent} showsVerticalScrollIndicator={false}>
-      <Text style={s.v4Eyebrow}>Your week</Text>
-      <Text style={s.v4MomentTitle}>Your rhythm is taking shape.</Text>
-      {rows.map((row, index) => (
-        <Reanimated.View key={row} entering={FadeInUp.delay(index * 120).duration(340)} style={s.v4WeekRow}>
-          <Text style={s.v4WeekDay}>{['Mon', 'Tue', 'Wed', 'Thu', 'Fri'][index]}</Text>
-          <Text style={s.v4WeekText}>{row}</Text>
+    <View style={s.v4RecapSlide}>
+      <ScrollView contentContainerStyle={s.v4RecapScrollContent} showsVerticalScrollIndicator={false}>
+        <Reanimated.View
+          entering={FadeIn.duration(520).withInitialValues({ opacity: 0, transform: [{ translateY: 12 }] })}
+          style={s.v4DayHeader}
+        >
+          <Text style={s.v4Eyebrow}>Your week</Text>
+          <Text style={s.v4DayTitle}>{name ? `This is your week, ${name}.` : 'This is your week.'}</Text>
         </Reanimated.View>
-      ))}
-      <View style={s.ctaIsland}>
-        <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-          <Text style={s.primaryButtonText}>Continue</Text>
-          <ChevronRight s={19} c="#FFFFFF" w={2.5} />
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+
+        <Reanimated.View
+          entering={FadeIn.delay(560).duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 22 }, { scale: 0.97 }],
+          })}
+          style={s.v4WeeklyRhythmWrap}
+        >
+          <WeeklyRhythm />
+        </Reanimated.View>
+
+        <ProtectSidePrompt
+          delay={1500}
+          motionKey="weekly-reveal-prompt"
+          segments={[
+            { text: 'Your work, your responsibilities, and your prayer belong to ' },
+            { text: 'one life', highlight: true },
+            { text: '.' },
+          ]}
+        />
+      </ScrollView>
+
+      <AnimatedCta delay={1900} style={s.questionFooter}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>Continue</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
   );
 }
 
+const V4_TOOLS_SLIDES = [
+  {
+    title: 'Journal',
+    body: 'Reflection builds self-awareness, clarity, and consistency over time. Three ways to write — pick what fits the moment.',
+    icon: <Feather s={30} c={GOLD} w={1.8} />,
+    chips: ['Daily Journal', 'Morning Pages', 'Free Writing'],
+  },
+  {
+    title: 'Gratitude',
+    body: 'Gratitude during the day has a measurable impact on mood, focus, and your spiritual life.',
+    icon: <Heart s={30} c={GOLD} w={1.8} />,
+    chips: ['Life Gratitude', 'Daily Gratitude'],
+  },
+  {
+    title: 'Other tools',
+    body: 'Ready whenever you need them — no setup required.',
+    icon: <Sparkles s={30} c={GOLD} w={1.8} />,
+    chips: ['Pomodoro', 'Reading List', 'Bucket List', 'Notes'],
+  },
+];
+
 function V4ToolsSlides({ onNext, onGratitude }: { onNext: () => void; onGratitude: (enabled: boolean) => void }) {
   const [slideIndex, setSlideIndex] = useState(0);
-  const slides = [
-    {
-      title: 'Journal',
-      body: 'Daily Journal, Morning Pages, and Free Writing help you reflect with structure and honesty.',
-    },
-    {
-      title: 'Gratitude',
-      body: 'Life Gratitude and Daily Gratitude train your attention toward gifts throughout the day.',
-    },
-    {
-      title: 'Other tools',
-      body: 'Pomodoro, Reading List, Bucket List, and Notes are ready when you need them.',
-    },
-  ];
-  const slide = slides[slideIndex];
+  const [gratitudeSet, setGratitudeSet] = useState(false);
+  const slide = V4_TOOLS_SLIDES[slideIndex];
 
   return (
     <View style={s.v4CenteredSlide}>
       <V4ProgressRail completedCount={3} showTools />
-      <Text style={s.v4Eyebrow}>Bonus tools</Text>
-      <Text style={s.v4MomentTitle}>{slide.title}</Text>
-      <Text style={s.v4MomentBody}>{slide.body}</Text>
-      {slideIndex === 1 ? (
-        <TouchableOpacity activeOpacity={0.88} haptic="medium" onPress={() => onGratitude(true)} style={s.v4SetupCard}>
-          <Text style={s.v4SetupTitle}>Set Daily Gratitude as a task</Text>
-          <Text style={s.v4SetupBody}>Add a quiet gratitude rhythm to your day.</Text>
-        </TouchableOpacity>
-      ) : null}
+      <Reanimated.View
+        key={`tools-slide-${slideIndex}`}
+        entering={FadeIn.duration(420).easing(Easing.out(Easing.cubic)).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 14 }, { scale: 0.98 }],
+        })}
+        style={s.v4ToolsSlideBody}
+      >
+        <View style={s.v4ToolsSlideIcon}>{slide.icon}</View>
+        <Text style={s.v4Eyebrow}>Bonus tools</Text>
+        <Text style={s.v4MomentTitle}>{slide.title}</Text>
+        <Text style={s.v4MomentBody}>{slide.body}</Text>
+        <View style={s.v4ToolsChipRow}>
+          {slide.chips.map((chip, chipIndex) => (
+            <Reanimated.View
+              key={chip}
+              entering={FadeIn.delay(220 + chipIndex * 110).duration(360).withInitialValues({
+                opacity: 0,
+                transform: [{ translateY: 8 }],
+              })}
+              style={s.v4ToolsChip}
+            >
+              <View style={s.v4ToolsChipDot} />
+              <Text style={s.v4ToolsChipText}>{chip}</Text>
+            </Reanimated.View>
+          ))}
+        </View>
+        {slideIndex === 1 ? (
+          <TouchableOpacity
+            activeOpacity={0.88}
+            haptic="medium"
+            onPress={() => {
+              setGratitudeSet(true);
+              onGratitude(true);
+            }}
+            style={[s.v4SetupCard, gratitudeSet && s.v4SetupCardDone]}
+          >
+            <View style={s.v4ToolsGratitudeRow}>
+              <View style={s.v4ToolsGratitudeCopy}>
+                <Text style={s.v4SetupTitle}>
+                  {gratitudeSet ? 'Daily Gratitude is now a task' : 'Set Daily Gratitude as a task'}
+                </Text>
+                <Text style={s.v4SetupBody}>
+                  {gratitudeSet ? 'A quiet rhythm, every day.' : 'Add a quiet gratitude rhythm to your day.'}
+                </Text>
+              </View>
+              {gratitudeSet ? <CheckSmall s={22} c={GOLD} w={2.4} /> : null}
+            </View>
+          </TouchableOpacity>
+        ) : null}
+      </Reanimated.View>
+      <View style={s.v4ToolsDots}>
+        {V4_TOOLS_SLIDES.map((_, dotIndex) => (
+          <View key={`tools-dot-${dotIndex}`} style={[s.v4ToolsDot, dotIndex === slideIndex && s.v4ToolsDotActive]} />
+        ))}
+      </View>
       <View style={s.ctaIsland}>
         <TouchableOpacity
           activeOpacity={0.9}
           haptic="medium"
-          onPress={() => slideIndex >= slides.length - 1 ? onNext() : setSlideIndex(prev => prev + 1)}
+          onPress={() => slideIndex >= V4_TOOLS_SLIDES.length - 1 ? onNext() : setSlideIndex(prev => prev + 1)}
           style={s.primaryButton}
         >
-          <Text style={s.primaryButtonText}>{slideIndex >= slides.length - 1 ? 'Continue' : 'Next'}</Text>
+          <Text style={s.primaryButtonText}>{slideIndex >= V4_TOOLS_SLIDES.length - 1 ? 'Continue' : 'Next'}</Text>
           <ChevronRight s={19} c="#FFFFFF" w={2.5} />
         </TouchableOpacity>
       </View>
@@ -10590,16 +10734,6 @@ export default function OnboardingView() {
         />
       );
     }
-    if (activeStep === 'setupProtect') {
-      return (
-        <V4SetupLoopSlide
-          title="Protect setup"
-          items={['Screen Time guardrails', 'Do Not Disturb focus', 'Website blocker']}
-          progressCount={0}
-          onNext={goNext}
-        />
-      );
-    }
     if (activeStep === 'flameProtect') {
       return <V4FlameSlide completedCount={1} title="Protect is ready." body="Your first slot is lit." onNext={goNext} />;
     }
@@ -10626,21 +10760,22 @@ export default function OnboardingView() {
           cards={ORGANIZE_DECK_CARDS}
           selected={answers.confirmedOrganizeProblems ?? []}
           accent="#4D8586"
-          onNext={goNext}
+          onNext={() => {
+            if ((answers.confirmedOrganizeProblems ?? []).length > 0) {
+              beginGuidedSetup({
+                currentChapter: 'build',
+                chapterOrder: ['build'],
+                activeStep: 'buildBigEvents',
+                phase: 'intro',
+                route: '/onboarding',
+              });
+            }
+            goNext();
+          }}
         />
       );
     }
-    if (activeStep === 'setupOrganize') {
-      return (
-        <V4SetupLoopSlide
-          title="Organize setup"
-          items={['Big Event', 'Monthly Goal', 'Task System']}
-          progressCount={1}
-          onNext={goNext}
-        />
-      );
-    }
-    if (activeStep === 'weeklyReveal') return <V4WeeklyRevealSlide onNext={goNext} />;
+    if (activeStep === 'weeklyReveal') return <V4WeeklyRevealSlide displayName={answers.displayName} onNext={goNext} />;
     if (activeStep === 'flameOrganize') {
       return <V4FlameSlide completedCount={2} title="Organize is ready." body="Your week has a rhythm now." onNext={goNext} />;
     }
@@ -10684,7 +10819,25 @@ export default function OnboardingView() {
       return <V4ToolsSlides onNext={goNext} onGratitude={enabled => setAnswers(prev => ({ ...prev, gratitudeDailyTask: enabled }))} />;
     }
     if (activeStep === 'flameTools') {
-      return <V4FlameSlide completedCount={4} title="You're ready." body="Your system is built. Now keep what you made." surprise onNext={goNext} />;
+      const wins: string[] = (answers.confirmedProtectProblems ?? [])
+        .map(id => PROTECT_RECAP_WINS[id])
+        .filter(Boolean);
+      if ((answers.confirmedOrganizeProblems ?? []).length > 0) {
+        wins.push('Big event on the horizon', 'Monthly goal set', 'First habit started', 'A challenge running', 'Your week organized');
+      }
+      if (answers.gratitudeDailyTask) {
+        wins.push('Daily gratitude in your rhythm');
+      }
+      return (
+        <V4FlameSlide
+          completedCount={4}
+          title={`You're ready${nameForDisplay(answers.displayName) ? `, ${nameForDisplay(answers.displayName)}` : ''}.`}
+          body="Look at everything you just built. Now keep what you made."
+          surprise
+          recapItems={wins}
+          onNext={goNext}
+        />
+      );
     }
     if (activeStep === 'privacy') {
       return (
@@ -14284,6 +14437,126 @@ const s = StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 1.2,
     borderColor: 'rgba(25,23,20,0.16)',
+  },
+  v4WeeklyRhythmWrap: {
+    marginHorizontal: -4,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+    elevation: 2,
+  },
+  v4FlameRecapWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    columnGap: 8,
+    rowGap: 8,
+    paddingHorizontal: 14,
+    marginTop: 14,
+  },
+  v4FlameRecapChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7.5,
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.32)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 1,
+  },
+  v4FlameRecapText: {
+    fontFamily: F.serifMedium,
+    fontSize: 13.5,
+    lineHeight: 17,
+    color: INK,
+  },
+  v4ToolsSlideBody: {
+    alignItems: 'center',
+    rowGap: 10,
+  },
+  v4ToolsSlideIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(197,160,89,0.11)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.24)',
+    marginBottom: 2,
+  },
+  v4ToolsChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    columnGap: 8,
+    rowGap: 8,
+    marginTop: 4,
+    maxWidth: 330,
+  },
+  v4ToolsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 7,
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.28)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 1,
+  },
+  v4ToolsChipDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: GOLD,
+  },
+  v4ToolsChipText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 14,
+    lineHeight: 17,
+    color: 'rgba(25,23,20,0.8)',
+  },
+  v4ToolsGratitudeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+  },
+  v4ToolsGratitudeCopy: {
+    flex: 1,
+  },
+  v4ToolsDots: {
+    flexDirection: 'row',
+    columnGap: 7,
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  v4ToolsDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: 'rgba(25,23,20,0.14)',
+  },
+  v4ToolsDotActive: {
+    width: 20,
+    backgroundColor: GOLD,
   },
   introLogoFrame: {
     width: 68,
