@@ -1,4 +1,18 @@
-export type GuidedChapter = 'protect' | 'build' | 'rise' | 'tools' | 'conclusion';
+export type GuidedChapter =
+  | 'protect'
+  | 'build'
+  | 'organize'
+  | 'grow'
+  | 'rise'
+  | 'tools'
+  | 'homeReveal'
+  | 'firstCheckoff'
+  | 'privacy'
+  | 'paywall'
+  | 'postPaywall'
+  | 'profile'
+  | 'account'
+  | 'conclusion';
 
 export type GuidedStep =
   | 'buildBigEvents'
@@ -15,10 +29,15 @@ export type GuidedStep =
   | 'toolsReadingList'
   | 'toolsBucketList'
   | 'toolsPomodoro'
+  | 'homeReveal'
+  | 'firstCheckoff'
   | 'privacy'
   | 'recap'
   | 'promoCode'
-  | 'paywall';
+  | 'paywall'
+  | 'postPaywallBrand'
+  | 'postPaywallProfile'
+  | 'accountCreation';
 
 export type GuidedPhase = string;
 

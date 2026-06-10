@@ -189,55 +189,49 @@ flame is the key moment — it should feel like a bonus, not a burden.
 FAZA 0 — UVOD
 1. loading
 2. welcome
-3. conversation (name + tradition + secular branch)
-4-8. valueSlider (5 slides; slide 7/"Grow closer to God" carries ✦ Free-for-all tag)
+3. conversation (name + tradition)
+4-8. valueSlider (5 slides; slide 4/"Grow closer to God" carries ✦ Free-for-all tag)
+9. toolsIntroA (full-screen: "Anasta has a lot of tools...")
+10. toolsIntroB (full-screen: "That's why we want to understand you better...")
 
-FAZA 1 — DIJAGNOZA & SETUP (Section 1: Protect Your Time) ← FIRST
-9. statementsIntro (progress bar appears, 3 empty slots)
-10. tutorialDeck (3 tutorial cards — teach swipe mechanic)
-11. deck1 (Protect/Focus, cards, gold+blue interleaved)
-12. personalization1
-13. setupProtect (DND, app blockers, website blockers — pending Apple entitlement)
-14. focusExpansion
-15. flame1
+FAZA 1 — DIJAGNOZA & SETUP (Section 1: Protect Your Time)
+11. statementsIntro (progress bar appears: Protect · Organize · Grow slots)
+12. tutorialDeck (3 tutorial cards — teach swipe mechanic)
+13. deck1 (Protect Your Time — 6 cards)
+14. screenTimeSlider (how much time on phone — AFTER deck)
+15. dayVisualization (24h breakdown + YOU WASTE + YOU CAN GET BACK)
+16. protectRecap (card summary + screen time panel at top — HOME BASE)
+17. setupProtect (3-group setup loop: Screen Time → DND → Website Blocker)
+18. flame1 (🔥 Protect slot lights)
 
-FAZA 2 — DIJAGNOZA & SETUP (Section 2: Organize Your Life) ← SECOND
-16. deck2 (Organize, cards, gold+blue interleaved)
-17. personalization2
-18. setupOrganize (Big Events, Monthly Goals, spiritual tasks, routine tasks, 1 habit)
-18b. organizeEdgeCase (if "Not me" to all)
-19. weeklyReveal ★ WOW
-20. flame2
+FAZA 2 — DIJAGNOZA & SETUP (Section 2: Organize Your Life)
+19. deck2 (Organize Your Life — 11 cards)
+20. organizeRecap (card summary — HOME BASE)
+21. setupOrganize (3-group setup loop: Big Events → Monthly Goals → Task System)
+22. weeklyReveal ★ WOW
+23. flame2 (🔥 Organize slot lights)
 
 FAZA 3 — GROW CLOSER TO GOD (Section 3, FREE)
-21. giftMoment
-22. bibleWalkthrough (highlight → favorites system)
-23. prayerBook
-24. flame3 + SURPRISE 4th slot
+24. giftMoment
+25. bibleWalkthrough (highlight → favorites → comments → Bible Notes → navigation)
+26. prayerBook
+27. flame3 + SURPRISE 4th slot (🔥 Grow slot lights → Tools slot appears)
 
 FAZA 4 — TOOLS (Section 4, bonus)
-25. toolsSelect (multi-tap, not deck)
-26. toolsPreview (Journal hero preview)
-27. flame4 + congrats
+28. toolsSlides (3 slides: Journal → Gratitude → Other tools)
+29. flame4 + congrats + recap + final message (🔥 Tools slot lights)
 
-FAZA 5 — CLIMAX
-28. homeReveal
-29. gestureTutorial
-30. firstCheckoff ★ EMOTIONAL PEAK (+ review modal)
+FAZA 5 — CLIMAX (posle paywalla)
+30. homeReveal
+31. gestureTutorial + firstCheckoff ★ EMOTIONAL PEAK (+ review modal)
 
 FAZA 6 — ZAKLJUČAK
-31. privacy
-32. paywall
-33. postPaywallBrand
-34. postPaywallProfile (age + gender)
-35. accountCreation (Apple/Google/Email)
+32. privacy
+33. paywall
+34. postPaywallBrand (Arise story)
+35. postPaywallProfile (age + gender)
+36. accountCreation (Apple/Google/Email)
 ```
-
-> **Section order rationale:** Protect Your Time goes FIRST because the screen-time wow
-> moments (YOU WASTE / YOU CAN GET BACK) are the strongest emotional hook for cold UGC
-> traffic. Hit them with the shock early while attention is highest. Organize goes second
-> because it's deeper and more personal — the user is already invested by the time they
-> build their weekly system.
 
 ---
 
@@ -379,7 +373,40 @@ App:  "You're in the right place, {Name}. Let's begin."
 ### Screens 4–8 — `valueSlider` (5 slides)
 
 Full-screen swipeable carousel. Dot indicators at bottom. Each slide swipes horizontally.
-Last slide → CTA `I'm ready →` → auto-advance to `statementsIntro`.
+Last slide → CTA `I'm ready →` → auto-advance to Screen 9.
+
+---
+
+### Screen 9 — `toolsIntroA`
+
+**Full-screen animated intro — not a conversation, not a form. A moment.**
+Large title, subtitle, background animation. Same format as chapter intros in any premium
+onboarding. No crest bubble here — this is a standalone statement screen.
+
+**Visual:** full screen, centered text, warm background animation (subtle, not distracting).
+
+**Copy:**
+- Title (large, bold): *"Anasta has a lot of tools."*
+- Subtitle: *"But their worth is measured by what they add to your life — not by how many
+  there are."*
+
+**Motion:** title fades in first, subtitle follows 400ms later. Brief hold, then auto-advance
+to Screen 10 after ~2.5s (or tap anywhere to skip wait).
+
+---
+
+### Screen 10 — `toolsIntroB`
+
+**Same full-screen format as Screen 9. Continues the thought directly.**
+
+**Copy:**
+- Title (large, bold): *"That's why we want to understand you better."*
+- Subtitle: *"In the next screens, we'll show you a few statements. Answer honestly — the
+  more we know about you, the better we can set Anasta up to truly fit your life."*
+
+**Motion:** same as Screen 9. After ~2.5s or tap → auto-advance to Screen 11.
+
+---
 
 **General rule:** every slide has its own distinct animation/visual treatment — not the same
 layout repeated 5 times. Each one should feel like its own moment.
@@ -475,7 +502,7 @@ user subconsciously understands the rest is paid. No separate free/paid screen n
 
 ---
 
-### Screen 9 — `statementsIntro`
+### Screen 11 — `statementsIntro`
 
 **Purpose:** Transition from value slides into the card deck diagnosis. Builds anticipation,
 explains why we're asking, motivates honest answers. Sets up the deck format before the first
@@ -517,7 +544,7 @@ the gesture before the real deck starts.
 bubble animates in (draws from left to right). Grey card mockup slides up smoothly from
 bottom after the 4th bubble.
 
-### Screen 10 — `tutorialDeck` (3 tutorial cards)
+### Screen 12 — `tutorialDeck` (3 tutorial cards)
 
 **Purpose:** Teach the swipe mechanic before the real card deck starts. Short, fast, fun.
 The user learns by doing — not by reading instructions.
@@ -562,114 +589,178 @@ Logo + bubble at the top — appears only on Card 1, hidden on Cards 2 and 3.
 
 ---
 
-### Screen 11 — `screenTimeSlider`
+### Screen 13 — `deck1` (Protect Your Time — 6 cards)
 
-**Purpose:** Collect the user's daily phone usage BEFORE they see the problem cards. This
-number is then used to calculate personalized stats that appear on a special card inside
-deck1. The user answers this once, sees their number reflected back on the card — which
-makes the "that's me" feeling hit much harder than a generic statistic.
+**Card deck on ONE screen.** 2-3 cards visible behind the top card (offset + scale effect).
+Each card: illustration (top ~65%) + statement text. Buttons below: `✕ Not me` / `That's me ✓`
 
-**Visual:** conversation style (crest + bubble), then slider appears.
+**Swipe right = "That's me" ✓** → gold tint + haptic, card flies right
+**Swipe left = "Not me" ✗** → neutral + haptic, card flies left
 
-**Copy:**
-```
-App: "One quick question before we begin."
-App: "How much time do you spend on your
-      phone each day?"
-
-[Slider: 4h → 10h+, default 4h, half-hour snaps]
-
-CTA: "Continue"
-```
-
-**After CTA:** calculate and store:
-- `{usablePercent}` = (guessHours / 16) × 100 (rounded)
-- `{yearlyDays}` = (guessHours × 365) / 24 (rounded to 1 decimal)
-- `{lifetimeYears}` = ({yearlyDays} × 85) / 365 (rounded to 1 decimal)
-- `{savedDays}` = {yearlyDays} × 0.4 (rounded)
-- `{savedYears}` = {lifetimeYears} × 0.4 (rounded to 1 decimal)
-
-These numbers feed directly into the special card in deck1.
-**No stats shown yet** — just collect and store. The reveal happens on the card.
-
-**Persists:** `phoneHoursGuess`, all calculated values above.
-
----
-
-### Screen 12 — `deck1` (Protect Your Time — 6 cards)
-
-**Card deck on ONE screen** — 2-3 cards visible behind the top (offset + scale). Each card:
-illustration (top ~65%) + statement text. Buttons below: `✕ Not me` / `That's me ✓`.
-
-**Swipe right = "That's me" ✓ (gold tint + haptic)**
-**Swipe left = "Not me" ✗ (neutral + haptic)**
+**Colors:** second color (TBD by designer) = all 6 cards in this deck.
 
 **Cards:**
 
-| # | Statement | Special |
-|---|---|---|
-| 1 | *"I pick up my phone for a second and lose an hour. I feel frustrated and guilty."* | ★ HAS BOTTOM BAR |
-| 2 | *"My phone is the first thing I reach for in the morning and the last thing I see at night. I feel restless and it's ruining my sleep."* | — |
-| 3 | *"Every time I sit down for something important, notifications and apps pull me away. I feel like I can never truly focus."* | — |
-| 4 | *"When I need to start something hard, I feel anxious and uncomfortable — so I pick up my phone instead. I end up procrastinating for hours. And I feel like I let myself down — again."* | — |
-| 5 | *"I'm addicted to content that I'm ashamed of — adult content, gambling, gaming, social media. It leaves me feeling empty every time."* | — |
-| 6 | *"I want to be fully present — in prayer, with family, at work. But distractions keep pulling me away."* | — |
-
-**★ Card 1 — Special bottom bar (personalized stats):**
-
-Card 1 has a thin separator line near the bottom, and below it a small stat line:
-
-```
-┌─────────────────────────────────────────┐
-│                                         │
-│  "I pick up my phone for a second and   │
-│   lose an hour. I feel frustrated       │
-│   and guilty."                          │
-│                                         │
-│  [illustration]                         │
-│                                         │
-│  ─────────────────────────────────────  │
-│  📱 You spend {yearlyDays} days/year    │
-│     and {lifetimeYears} years of your   │
-│     life on your phone.                 │
-└─────────────────────────────────────────┘
-```
-
-- Text is small, muted — not screaming, just quietly there
-- Numbers come from the slider they just answered on Screen 11
-- No "YOU WASTE" drama here — just the number, personal and precise
-- The user reads it and feels it because it's THEIR number, not a generic stat
-- This card naturally triggers "that's me" even for people who might have hesitated
+| # | Statement |
+|---|---|
+| 1 | *"I pick up my phone for a second and lose an hour. I feel frustrated and guilty."* |
+| 2 | *"My phone is the first thing I reach for in the morning and the last thing I see at night. I feel restless and it's ruining my sleep."* |
+| 3 | *"Every time I sit down for something important, notifications and apps pull me away. I feel like I can never truly focus."* |
+| 4 | *"When I need to start something hard, I feel anxious and uncomfortable — so I pick up my phone instead. I end up procrastinating for hours. And I feel like I let myself down — again."* |
+| 5 | *"I'm addicted to content that I'm ashamed of — adult content, gambling, gaming, social media. It leaves me feeling empty every time."* |
+| 6 | *"I want to be fully present — in prayer, with family, at work. But distractions keep pulling me away."* |
 
 **Illustration direction (per card):**
 1. Person looking at phone, clock on wall showing time has passed
-2. Person in bed, phone in hand, morning/night atmosphere
+2. Person in bed, phone in hand, morning and night atmosphere
 3. Person trying to focus, notifications flying in from all sides
 4. Person on phone, important task visible but untouched in background
 5. Person in darkness, face lit by screen, expression of discomfort
 6. Person distracted by phone while family/prayer/work is nearby
 
-- **Motion:** card follows finger (Reanimated gesture), gentle rotation max ~6°. Stack
-  behind shifts forward. ~15-20s for whole deck. Reflective momentum, not "fun."
-- **Persists:** `confirmedProtectProblems[]`
-- **Secular filter:** card 6 stays — "in prayer" softened to "in quiet moments" if
-  `secularFilter = true`.
+**Motion:** card follows finger (Reanimated gesture), gentle rotation max ~6°. Stack behind
+shifts forward when top card swiped away. ~15-20s for whole deck. Reflective momentum —
+not gamified. Every swipe should feel like a genuine answer.
 
-### Screen 12 — `protectRecap`
+**Persists:** `confirmedProtectProblems[]`
+**Secular filter:** card 6 → if `secularFilter = true`, soften "in prayer" to "in quiet moments."
 
-> **Visual reference for coder:** https://mobbin.com/screens/a3da3471-9470-46d5-9d67-c5345df3de16
-> Use this as the visual reference for how the recap screen should look and feel. Access via
-> Mobbin MCP to see the exact animation and layout.
+---
 
-**Purpose:** Show the user all 6 cards from deck1 in a summary view — active (confirmed) and
-inactive (not confirmed). This is the moment the app "reflects back" what it heard. It also
-sets up the visual logic for what gets fixed next.
+### Screen 14 — `screenTimeSlider`
 
-**Visual layout:**
-- All 6 cards displayed on screen simultaneously (grid or list)
+**Purpose:** Immediately after the user has answered the Protect problem cards and is in
+the mindset of "yes, my phone is a problem" — we ask the one quantitative question that
+powers the visualization on Screen 15. The emotional timing is deliberate: they've just
+felt the problem, now we quantify it.
+
+**Visual:** full screen, clean, centered. No conversation bubbles — just the question and
+the slider. Simple and direct.
+
+**Copy:**
+- Question (large): *"How much time do you spend on your phone each day?"*
+- Slider: 4h → 10h+, default position 4h, snaps in half-hour increments
+- Under slider: current selection shown dynamically (e.g. *"6 hours"*)
+
+**CTA:** `Continue`
+
+**After CTA — calculate immediately and store (do NOT show yet):**
+```
+phoneHours = slider value
+sleepHours = 8 (fixed — population average)
+usableHoursPerDay = 24 - 8 = 16
+
+phonePercentOfDay = (phoneHours / 24) × 100  → round to 1 decimal
+sleepPercentOfDay = (8 / 24) × 100 = 33.3%
+usablePercentOfDay = ((16 - phoneHours) / 24) × 100  → round to 1 decimal
+
+yearlyDays = (phoneHours × 365) / 24  → round to 1 decimal
+lifetimeYears = (yearlyDays × 85) / 365  → round to 1 decimal
+savedDays = yearlyDays × 0.4  → round to 1 decimal
+savedYears = lifetimeYears × 0.4  → round to 1 decimal
+```
+
+All values stored. Nothing shown yet — the reveal happens on Screen 15.
+
+**Persists:** `phoneHours`, all calculated values above.
+
+---
+
+### Screen 15 — `dayVisualization`
+
+**Purpose:** The WOW screen. Show the user a visual breakdown of their 24-hour day using
+the number they just entered on Screen 14. Every number is THEIR number. The abstract
+problem — "I spend too much time on my phone" — becomes viscerally real when they see it
+as a slice of their own day, then as days and years of their life.
+
+**Visual:** animated full-screen infographic. A 24-hour day split into three parts, each
+with its own illustration, label, percentage, and hours. They animate in one by one.
+
+---
+
+**Animation Part 1 — Sleep (animates in first):**
+- Illustration: person sleeping peacefully
+- Label: *"Sleep"*
+- Hours: *"8 hours"* (fixed — population average, no need to ask)
+- Percentage: *"33% of your day"*
+
+**Animation Part 2 — Phone (animates in second):**
+- Illustration: person scrolling phone, distracted
+- Label: *"On your phone"*
+- Hours: *"{phoneHours} hours"* ← THEIR number from Screen 14
+- Percentage: *"{phonePercentOfDay}% of your day"*
+- **Visual treatment:** this segment must feel heavier and more prominent than the others.
+  Slightly larger, slightly more intense color, maybe a subtle pulse animation. This is the
+  segment that makes the user uncomfortable — lean into that.
+
+**Animation Part 3 — Everything else (animates in last):**
+- Illustration: person doing meaningful things (reading, praying, working, with family)
+- Label: *"The rest of your day"*
+- Hours: *"{16 - phoneHours} hours"*
+- Percentage: *"{usablePercentOfDay}% of your day"*
+- Small note below: *"This includes eating, commuting, and other daily necessities."*
+  (so the user understands this isn't all free time — sets realistic expectations)
+
+**After all three parts visible — brief pause (1 second) — then transition to impact:**
+
+The three-part visual transitions or scrolls down to reveal yearly and lifetime impact.
+
+---
+
+**YOU WASTE** (large, dramatic — same visual treatment as in branding):
+
+Stat cards appear one at a time, each with a **strong haptic**:
+- Card 1: *"{yearlyDays} days every year"*
+- Card 2: *"{lifetimeYears} years over a lifetime"*
+
+Visual: a year-grid or calendar showing all the days colored in — the wasted time made
+visible. This is not abstract. This is their life, drawn out.
+
+---
+
+**Brief pause — then the good news:**
+
+Transition line (large, gold): *"If you cut your screen time by only **40%**..."*
+(40% is bold + underlined + gold highlight)
+
+**YOU CAN GET BACK!** (same large visual treatment, warm gold):
+
+Stat cards appear one at a time, each with a **warm haptic**:
+- Card 1: *"{savedDays} days back every year!"*
+- Card 2: *"{savedYears} years back over a lifetime!"*
+
+---
+
+**CTA:** `Let's start fixing this.`
+
+→ User taps → auto-advance to Screen 16 (protectRecap).
+
+---
+
+### Screen 16 — `protectRecap`
+
+> **Visual reference for coder:**
+> https://mobbin.com/screens/a3da3471-9470-46d5-9d67-c5345df3de16
+> Use this as the visual reference for the card summary layout. Access via Mobbin MCP.
+
+**Purpose:** Show the user all 6 cards from deck1 in a summary view — active (confirmed)
+and inactive (not confirmed). This is the "home base" between every setup group. The user
+returns here after each group completes. A screen time panel at the top keeps the stakes
+visible throughout the entire setup loop.
+
+**Visual layout — two sections:**
+
+**TOP PANEL — Screen Time Stakes (always visible throughout setup loop):**
+A compact, persistent panel at the very top of the screen:
+- *"📱 You spend {yearlyDays} days/year on your phone."*
+- *"That's {lifetimeYears} years of your life."*
+This panel does NOT disappear between groups. It stays visible during every setup step,
+reminding the user WHY they are doing this. Every action they take (setting a limit,
+blocking an app, setting DND) is connected to these numbers.
+
+**BELOW TOP PANEL — Card Summary (all 6 cards):**
 - **Active cards (Yes)** — full color, prominent, visually "alive"
 - **Inactive cards (No)** — grayed out, faded, visually "quiet"
-- Crest + bubble at top
 
 **Copy:**
 ```
@@ -681,7 +772,7 @@ CTA: "Let's start"
 
 ---
 
-### Screen 13 — `setupProtect` (3-group setup loop — DETAILED LOGIC FOR CODER)
+### Screen 17 — `setupProtect` (3-group setup loop — DETAILED LOGIC FOR CODER)
 
 > This is the most complex behavioral screen in the onboarding. Read every detail carefully
 > before implementing. The logic must work exactly as described.
@@ -844,7 +935,7 @@ Until approved and active:
 
 ---
 
-### Screen 14 — `flame1` (Protect Your Time — complete)
+### Screen 18 — `flame1` (Protect Your Time — complete)
 
 **Triggered automatically** when all 6 cards on protectRecap go inactive.
 No CTA on protectRecap needed — the all-inactive visual IS the transition trigger.
@@ -899,17 +990,17 @@ Swipe right = "That's me" ✓ / Swipe left = "Not me" ✗. Buttons below for acc
 
 | # | Color | Statement |
 |---|---|---|
-| 1 | ★ gold | *"I feel anxious when I have a lot to do and don't know where to start."* |
-| 2 | ★ gold | *"I always end up doing everything at the last minute. I feel stressed and unprepared when it matters most."* |
-| 3 | ★ gold | *"I keep delaying tasks I know I need to do. It makes me feel guilty and frustrated with myself."* |
-| 4 | ★ gold | *"I start new habits full of motivation. A few days later I've quit again. I feel like I have no discipline."* |
-| 5 | ★ gold | *"I end most days feeling like I didn't do what actually mattered. I feel like I wasted another day."* |
-| 6 | ★ gold | *"Everything I need to do lives in my head. I feel mentally exhausted just trying to keep track of it all."* |
-| 7 | ★ gold | *"I start strong but always fall off after a few days. I feel like I can never finish what I start."* |
-| 8 | ✝ blue | *"I want to pray every day but I rarely do. I feel distant from God and guilty about it."* |
-| 9 | ★ gold | *"I set deadlines for myself but always end up extending them. I feel like I can never follow through on my own plans."* |
-| 10 | ✝ blue | *"I want to read Scripture regularly but I never make time for it. I feel like my faith is not growing the way it should."* |
-| 11 | ★ gold | *"I want to be organized, disciplined, and intentional with my time."* |
+| 1 | ★ second color | *"I feel anxious when I have a lot to do and don't know where to start."* |
+| 2 | ★ second color | *"I always end up doing everything at the last minute. I feel stressed and unprepared when it matters most."* |
+| 3 | ★ second color | *"I get things done — but I know I could do so much more if I just planned my day better."* |
+| 4 | ★ second color | *"I start new habits full of motivation. A few days later I've quit again. I feel like I have no discipline."* |
+| 5 | ★ second color | *"I end most days feeling like I didn't do what actually mattered. It feels like I wasted another day."* |
+| 6 | ★ second color | *"Sometimes I forget something I promised to do. Then comes the stress — and the feeling that I let someone down."* |
+| 7 | ★ second color | *"My days have no rhythm. I never feel in control — just carried along by whatever happens."* |
+| 8 | ✦ gold | *"I want to pray every day but I rarely do. I feel distant from God and guilty about it."* |
+| 9 | ★ second color | *"I set goals with the best intentions. And then, somehow, I always end up giving up."* |
+| 10 | ✦ gold | *"I want to read Scripture but I never make time for it. My faith is not growing the way it should."* |
+| 11 | ★ second color | *"I want to be more organized, disciplined, and intentional with my time."* |
 
 **Card → Feature mapping (used for setup loop):**
 - Cards 1, 5, 6 → **Weekly view + Routine tasks setup**

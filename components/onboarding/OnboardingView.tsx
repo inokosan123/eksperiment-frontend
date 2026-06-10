@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Image as ExpoImage, type ImageRef as ExpoImageRef } from 'expo-image';
 import LottieView from 'lottie-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
@@ -12,6 +13,7 @@ import Reanimated, {
   FadeIn,
   FadeInLeft,
   FadeInRight,
+  FadeInUp,
   FadeOut,
   Easing,
   interpolate,
@@ -46,6 +48,7 @@ import {
   Settings,
   Target,
   User,
+  X,
 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
@@ -54,6 +57,7 @@ import { normalizeHabitIcon } from '@/components/shared/notoEmoji/legacyMap';
 import {
   playAchievementCompleteFeedback,
   playTaskCompleteFeedback,
+  playTaskCheckSoundOnly,
   preloadAchievementFeedbackSound,
   preloadTaskFeedbackSound,
 } from '@/components/shared/taskFeedback';
@@ -68,7 +72,15 @@ import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayH
 import { C, F } from '@/constants/tokens';
 
 type ChristianAnswer = 'yes' | 'exploring' | 'no' | 'prefer_not';
-type TraditionAnswer = 'catholic' | 'orthodox' | 'protestant' | 'nondenominational' | 'oriental' | 'other' | 'prefer_not';
+type TraditionAnswer =
+  | 'orthodox'
+  | 'catholic'
+  | 'protestant'
+  | 'nondenominational'
+  | 'other'
+  | 'not_christian'
+  | 'oriental'
+  | 'prefer_not';
 type AgeAnswer = 'under_18' | '18_24' | '25_34' | '35_44' | '45_54' | '55_plus';
 type GenderAnswer = 'male' | 'female';
 type ReasonAnswer =
@@ -100,11 +112,40 @@ type PillarAnswer = 'organize' | 'focus' | 'spiritual';
 type StepId =
   | 'welcome'
   | 'nameIntro'
+  | 'traditionIntro'
   | 'valueOrganize'
   | 'valueDiscipline'
   | 'valueFocus'
   | 'valueFaith'
   | 'valueTools'
+  | 'toolsIntroA'
+  | 'toolsIntroB'
+  | 'statementsIntro'
+  | 'tutorialDeck'
+  | 'protectDeck'
+  | 'screenTimeSlider'
+  | 'dayVisualization'
+  | 'protectRecap'
+  | 'setupProtect'
+  | 'flameProtect'
+  | 'organizeDeck'
+  | 'organizeRecap'
+  | 'setupOrganize'
+  | 'weeklyReveal'
+  | 'flameOrganize'
+  | 'giftMoment'
+  | 'bibleWalkthrough'
+  | 'prayerBook'
+  | 'flameGrow'
+  | 'toolsSlides'
+  | 'flameTools'
+  | 'privacy'
+  | 'callingClose'
+  | 'homeReveal'
+  | 'firstCheckoff'
+  | 'postPaywallBrand'
+  | 'postPaywallProfile'
+  | 'accountCreation'
   | 'valueReflect'
   | 'commitment'
   | 'questionIntro'
@@ -169,12 +210,17 @@ type Answers = {
   commitment?: CommitmentAnswer;
   christian?: ChristianAnswer;
   tradition?: TraditionAnswer;
+  isOrthodox?: boolean;
+  secularFilter?: boolean;
   age?: AgeAnswer;
   gender?: GenderAnswer;
   reasons?: ReasonAnswer[];
   primaryPillar?: PillarAnswer;
   firstChapter?: OnboardingChapter;
   screenTimeHours?: number;
+  confirmedProtectProblems?: string[];
+  confirmedOrganizeProblems?: string[];
+  gratitudeDailyTask?: boolean;
   routine?: RoutineAnswer;
   focus?: FocusAnswer;
 };
@@ -199,6 +245,20 @@ type SetupFeature = {
   options: Option<string>[];
 };
 
+type StatementDeckCard = {
+  id: string;
+  statement: string;
+  icon: React.ReactNode;
+  image?: number;
+  spiritual?: boolean;
+};
+
+type StatementCardMetrics = {
+  width: number;
+  quoteHeight: number;
+  cardHeight: number;
+};
+
 const GOLD = C.gold;
 const INK = '#191714';
 const PAPER = '#FFFDF9';
@@ -206,6 +266,224 @@ const MUTED = '#776E64';
 const APP_LOGO = require('@/assets/images/anasta-logo.png');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const CONFETTI_SOURCE = require('@/assets/animations/onboarding-confetti.lottie');
+const PROTECT_TIME_STICKER = require('@/assets/images/onboarding/protect-time-sticker.png');
+const FAITH_BIBLE_STICKER = require('@/assets/images/onboarding/faith-bible-sticker.png');
+const FAITH_BIBLE_NOTES_STICKER = require('@/assets/images/onboarding/faith-bible-notes-sticker.png');
+const FAITH_PRAYER_BOOK_STICKER = require('@/assets/images/onboarding/faith-prayer-book-sticker.png');
+const FAITH_FREE_FOR_EVERYONE_BADGE = require('@/assets/images/onboarding/faith-free-for-everyone-badge.png');
+const PROTECT_STATEMENT_IMAGES = [
+  require('@/assets/images/protect-statement-1.jpg'),
+  require('@/assets/images/protect-statement-2.jpg'),
+  require('@/assets/images/protect-statement-3.jpg'),
+  require('@/assets/images/protect-statement-4.jpg'),
+  require('@/assets/images/protect-statement-5.jpg'),
+  require('@/assets/images/protect-statement-6.jpg'),
+];
+const ORGANIZE_STATEMENT_IMAGES = [
+  require('@/assets/images/organize-statement-1.jpg'),
+  require('@/assets/images/organize-statement-2.jpg'),
+  require('@/assets/images/organize-statement-3.jpg'),
+  require('@/assets/images/organize-statement-4.jpg'),
+  require('@/assets/images/organize-statement-5.jpg'),
+  require('@/assets/images/organize-statement-6.jpg'),
+  require('@/assets/images/organize-statement-7.jpg'),
+  require('@/assets/images/organize-statement-8.jpg'),
+  require('@/assets/images/organize-statement-9.jpg'),
+  require('@/assets/images/organize-statement-10.jpg'),
+  require('@/assets/images/organize-statement-11.jpg'),
+];
+
+const STATEMENT_IMAGE_DECODE_SIZE = 1024;
+const statementImageRefs = new Map<number, ExpoImageRef>();
+const statementImageLoads = new Map<number, Promise<ExpoImageRef | null>>();
+
+function loadStatementImage(source: number) {
+  const cached = statementImageRefs.get(source);
+  if (cached) return Promise.resolve(cached);
+
+  const pending = statementImageLoads.get(source);
+  if (pending) return pending;
+
+  const load = ExpoImage.loadAsync(source, {
+    maxWidth: STATEMENT_IMAGE_DECODE_SIZE,
+    maxHeight: STATEMENT_IMAGE_DECODE_SIZE,
+  })
+    .then(image => {
+      statementImageRefs.set(source, image);
+      statementImageLoads.delete(source);
+      return image;
+    })
+    .catch(() => {
+      statementImageLoads.delete(source);
+      return null;
+    });
+
+  statementImageLoads.set(source, load);
+  return load;
+}
+
+function warmStatementImages(sources: number[]) {
+  return Promise.all(sources.map(loadStatementImage));
+}
+
+function releaseStatementImages(sources: number[]) {
+  for (const source of sources) {
+    const image = statementImageRefs.get(source);
+    if (image) {
+      try {
+        image.release();
+      } catch {
+        // The native ref may already have been released during a fast remount.
+      }
+      statementImageRefs.delete(source);
+    }
+
+    const pending = statementImageLoads.get(source);
+    if (pending) {
+      statementImageLoads.delete(source);
+      void pending.then(loaded => {
+        if (!loaded) return;
+        try {
+          loaded.release();
+        } catch {
+          // The native ref may already have been released.
+        }
+        if (statementImageRefs.get(source) === loaded) {
+          statementImageRefs.delete(source);
+        }
+      });
+    }
+  }
+}
+
+const TUTORIAL_DECK_CARDS: StatementDeckCard[] = [
+  {
+    id: 'tutorial-yes',
+    statement: "I sometimes feel like there's too much to do and not enough time.",
+    icon: <ListChecks s={30} c={GOLD} w={1.9} />,
+  },
+  {
+    id: 'tutorial-no',
+    statement: 'I always know exactly what to do and never feel overwhelmed.',
+    icon: <Sparkles s={30} c={GOLD} w={1.9} />,
+  },
+  {
+    id: 'tutorial-ready',
+    statement: 'Do you understand?',
+    icon: <CheckSmall s={30} c={GOLD} w={2.4} />,
+  },
+];
+
+const PROTECT_DECK_CARDS: StatementDeckCard[] = [
+  {
+    id: 'lost-hour',
+    statement: 'I pick up my phone for a second and lose an hour. I feel frustrated and guilty.',
+    image: PROTECT_STATEMENT_IMAGES[0],
+    icon: <Clock s={30} c="#4D8586" w={1.9} />,
+  },
+  {
+    id: 'morning-night',
+    statement: "My phone is the first thing I reach for in the morning and the last thing I see at night. I feel restless and it's ruining my sleep.",
+    image: PROTECT_STATEMENT_IMAGES[1],
+    icon: <BellRing s={30} c="#4D8586" w={1.9} />,
+  },
+  {
+    id: 'focus-pulled',
+    statement: 'Every time I sit down for something important, notifications and apps pull me away. I feel like I can never truly focus.',
+    image: PROTECT_STATEMENT_IMAGES[2],
+    icon: <Target s={30} c="#4D8586" w={1.9} />,
+  },
+  {
+    id: 'procrastination',
+    statement: 'When I need to start something hard, I feel anxious and uncomfortable — so I pick up my phone instead. I end up procrastinating for hours. And I feel like I let myself down — again.',
+    image: PROTECT_STATEMENT_IMAGES[3],
+    icon: <Hourglass s={30} c="#4D8586" w={1.9} />,
+  },
+  {
+    id: 'ashamed-content',
+    statement: "I'm addicted to content that I'm ashamed of — adult content, gambling, gaming, social media. It leaves me feeling empty every time.",
+    image: PROTECT_STATEMENT_IMAGES[4],
+    icon: <SlidersHorizontal s={30} c="#4D8586" w={1.9} />,
+  },
+  {
+    id: 'presence',
+    statement: 'I want to be fully present — in prayer, with family, at work. But distractions keep pulling me away.',
+    image: PROTECT_STATEMENT_IMAGES[5],
+    icon: <Heart s={30} c="#4D8586" w={1.9} />,
+    spiritual: true,
+  },
+];
+
+const ORGANIZE_DECK_CARDS: StatementDeckCard[] = [
+  {
+    id: 'anxious-start',
+    statement: "I feel anxious when I have a lot to do and don't know where to start.",
+    image: ORGANIZE_STATEMENT_IMAGES[0],
+    icon: <ListChecks s={30} c={GOLD} w={1.9} />,
+  },
+  {
+    id: 'last-minute',
+    statement: 'I always end up doing everything at the last minute. I feel stressed and unprepared when it matters most.',
+    image: ORGANIZE_STATEMENT_IMAGES[1],
+    icon: <Clock s={30} c={GOLD} w={1.9} />,
+  },
+  {
+    id: 'plan-day',
+    statement: 'I get things done — but I know I could do so much more if I just planned my day better.',
+    image: ORGANIZE_STATEMENT_IMAGES[2],
+    icon: <Calendar s={30} c={GOLD} w={1.9} />,
+  },
+  {
+    id: 'habits-quit',
+    statement: "I start new habits full of motivation. A few days later I've quit again. I feel like I have no discipline.",
+    image: ORGANIZE_STATEMENT_IMAGES[3],
+    icon: <Target s={30} c={GOLD} w={1.9} />,
+  },
+  {
+    id: 'wasted-day',
+    statement: "I end most days feeling like I didn't do what actually mattered. It feels like I wasted another day.",
+    image: ORGANIZE_STATEMENT_IMAGES[4],
+    icon: <Hourglass s={30} c={GOLD} w={1.9} />,
+  },
+  {
+    id: 'forgot-promise',
+    statement: 'Sometimes I forget something I promised to do. Then comes the stress — and the feeling that I let someone down.',
+    image: ORGANIZE_STATEMENT_IMAGES[5],
+    icon: <BellRing s={30} c={GOLD} w={1.9} />,
+  },
+  {
+    id: 'no-rhythm',
+    statement: 'My days have no rhythm. I never feel in control — just carried along by whatever happens.',
+    image: ORGANIZE_STATEMENT_IMAGES[6],
+    icon: <Home s={30} c={GOLD} w={1.9} />,
+  },
+  {
+    id: 'pray-daily',
+    statement: 'I want to pray every day but I rarely do. I feel distant from God and guilty about it.',
+    image: ORGANIZE_STATEMENT_IMAGES[7],
+    icon: <Cross s={30} c={GOLD} w={1.9} />,
+    spiritual: true,
+  },
+  {
+    id: 'goals-give-up',
+    statement: 'I set goals with the best intentions. And then, somehow, I always end up giving up.',
+    image: ORGANIZE_STATEMENT_IMAGES[8],
+    icon: <Sparkles s={30} c={GOLD} w={1.9} />,
+  },
+  {
+    id: 'scripture-time',
+    statement: 'I want to read Scripture but I never make time for it. My faith is not growing the way it should.',
+    image: ORGANIZE_STATEMENT_IMAGES[9],
+    icon: <OpenBook s={30} c={GOLD} w={1.9} />,
+    spiritual: true,
+  },
+  {
+    id: 'intentional-time',
+    statement: 'I want to be more organized, disciplined, and intentional with my time.',
+    image: ORGANIZE_STATEMENT_IMAGES[10],
+    icon: <Feather s={30} c={GOLD} w={1.9} />,
+  },
+];
 
 const CHRISTIAN_OPTIONS: Option<ChristianAnswer>[] = [
   {
@@ -242,46 +520,57 @@ const TRADITION_OPTIONS: Option<TraditionAnswer>[] = [
   {
     value: 'catholic',
     title: 'Catholic',
-    body: '',
-    icon: <Cross s={22} c={GOLD} w={1.8} />,
-  },
-  {
-    value: 'orthodox',
-    title: 'Orthodox',
-    body: '',
+    body: 'Roman Catholic',
     icon: <Cross s={22} c={GOLD} w={1.8} />,
   },
   {
     value: 'protestant',
     title: 'Protestant',
-    body: '',
+    body: 'Reformed, evangelical, mainline...',
+    icon: <Cross s={22} c={GOLD} w={1.8} />,
+  },
+  {
+    value: 'orthodox',
+    title: 'Orthodox',
+    body: 'Eastern Orthodox',
     icon: <Cross s={22} c={GOLD} w={1.8} />,
   },
   {
     value: 'nondenominational',
     title: 'Non-denominational',
-    body: '',
-    icon: <Cross s={22} c={GOLD} w={1.8} />,
-  },
-  {
-    value: 'oriental',
-    title: 'Oriental Orthodox',
-    body: '',
+    body: 'Christian, no fixed denomination',
     icon: <Cross s={22} c={GOLD} w={1.8} />,
   },
   {
     value: 'other',
-    title: 'Other Christian',
-    body: '',
+    title: 'Other',
+    body: 'Something else',
     icon: <Cross s={22} c={GOLD} w={1.8} />,
   },
   {
-    value: 'prefer_not',
-    title: 'Prefer not to say',
-    body: '',
-    icon: <Cross s={22} c={GOLD} w={1.8} />,
+    value: 'not_christian',
+    title: "I'm not Christian",
+    body: 'Use a general setup',
+    icon: <X s={20} c={GOLD} w={2.2} />,
   },
 ];
+
+const TRADITION_INTRO_TIMING = {
+  nameReply: 140,
+  welcome: 860,
+  question: 1600,
+  optionsStart: 2240,
+  optionStep: 120,
+};
+
+const TRADITION_CONFIRM_TIMING = {
+  userReply: 160,
+  place: 900,
+  begin: 1640,
+  typingStart: 1840,
+  cta: 2580,
+};
+const TRADITION_APP_TYPING_INTERVAL_MS = 24;
 
 const AGE_OPTIONS: Option<AgeAnswer>[] = [
   {
@@ -594,49 +883,45 @@ const PILLAR_OPTIONS: Option<PillarAnswer>[] = [
 ];
 
 function stepOrder(answers: Answers): StepId[] {
-  const questionSteps: StepId[] =
-    answers.christian === 'yes'
-      ? ['christian', 'tradition', 'age', 'gender']
-      : ['christian', 'age', 'gender'];
-  const protectSteps: StepId[] = ['protectPain'];
-  const buildSteps: StepId[] = [
-    'buildIntro',
-    'buildBigEvents',
-    'buildMonthlyGoals',
-    'buildWeeklyRhythm',
-    'buildTaskTypes',
-    'buildHabits',
-    'buildSpiritualTasks',
-    'buildRoutineTasks',
-    'buildChallenges',
-    'buildQuickTasks',
-    'buildMyRoutine',
-    'buildHomePreview',
-  ];
-  const firstChapter = answers.firstChapter ?? 'protect';
-  const firstChapterSteps = firstChapter === 'protect' ? protectSteps : buildSteps;
-  const secondChapterSteps = firstChapter === 'protect' ? buildSteps : protectSteps;
-
   return [
     'welcome',
     'nameIntro',
+    'traditionIntro',
     'valueOrganize',
     'valueDiscipline',
     'valueFocus',
-    'questionIntro',
-    ...questionSteps,
-    'processing',
-    'setupStart',
-    ...firstChapterSteps,
-    'chapterCheckpointFirst',
-    ...secondChapterSteps,
-    'chapterCheckpointFinal',
-    'bibleFree',
-    'bibleReading',
-    'bibleTools',
-    'valueReflect',
-    'commitment',
+    'valueFaith',
+    'valueTools',
+    'toolsIntroA',
+    'toolsIntroB',
+    'statementsIntro',
+    'tutorialDeck',
+    'protectDeck',
+    'screenTimeSlider',
+    'dayVisualization',
+    'protectRecap',
+    'setupProtect',
+    'flameProtect',
+    'organizeDeck',
+    'organizeRecap',
+    'setupOrganize',
+    'weeklyReveal',
+    'flameOrganize',
+    'giftMoment',
+    'bibleWalkthrough',
+    'prayerBook',
+    'flameGrow',
+    'toolsSlides',
+    'flameTools',
+    'homeReveal',
+    'firstCheckoff',
+    'privacy',
+    'callingClose',
     'paywall',
+    'postPaywallBrand',
+    'age',
+    'gender',
+    'accountCreation',
   ];
 }
 
@@ -668,6 +953,10 @@ function getOptions(step: StepId): Option<string>[] {
   if (step === 'gender') return GENDER_OPTIONS;
   if (step === 'reason') return REASON_OPTIONS;
   return [];
+}
+
+function isSecularTradition(tradition?: TraditionAnswer) {
+  return tradition === 'not_christian' || tradition === 'prefer_not';
 }
 
 function questionCopy(step: StepId) {
@@ -723,6 +1012,11 @@ function questionCopy(step: StepId) {
 function runSelectionHaptic() {
   if (Platform.OS === 'web') return;
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+}
+
+function runPreviewTaskCheckHaptic() {
+  if (Platform.OS === 'web') return;
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 }
 
 function runAdvanceHaptic() {
@@ -891,35 +1185,75 @@ function isGuidedWalkthroughStep(step: StepId) {
     step === 'bibleFree' ||
     step === 'bibleReading' ||
     step === 'bibleTools' ||
-    step === 'paywall'
+    step === 'paywall' ||
+    step === 'toolsIntroA' ||
+    step === 'toolsIntroB' ||
+    step === 'statementsIntro' ||
+    step === 'tutorialDeck' ||
+    step === 'protectDeck' ||
+    step === 'screenTimeSlider' ||
+    step === 'dayVisualization' ||
+    step === 'protectRecap' ||
+    step === 'setupProtect' ||
+    step === 'flameProtect' ||
+    step === 'organizeDeck' ||
+    step === 'organizeRecap' ||
+    step === 'setupOrganize' ||
+    step === 'weeklyReveal' ||
+    step === 'flameOrganize' ||
+    step === 'giftMoment' ||
+    step === 'bibleWalkthrough' ||
+    step === 'prayerBook' ||
+    step === 'flameGrow' ||
+    step === 'toolsSlides' ||
+    step === 'flameTools' ||
+    step === 'privacy' ||
+    step === 'callingClose' ||
+    step === 'homeReveal' ||
+    step === 'firstCheckoff' ||
+    step === 'postPaywallBrand' ||
+    step === 'postPaywallProfile' ||
+    step === 'accountCreation'
   );
 }
 
-type ValueStepId = 'valueOrganize' | 'valueDiscipline' | 'valueFocus';
-type ValuePhoneKind = 'protect' | 'rhythm' | 'rise';
+type ValueStepId = 'valueOrganize' | 'valueDiscipline' | 'valueFocus' | 'valueFaith' | 'valueTools';
+type ValuePhoneKind = 'organize' | 'discipline' | 'focus' | 'faith' | 'tools';
 
 const VALUE_STEP_IDS: ValueStepId[] = [
   'valueOrganize',
   'valueDiscipline',
   'valueFocus',
+  'valueFaith',
+  'valueTools',
 ];
 const VALUE_FLOW_DOT_COUNT = VALUE_STEP_IDS.length;
 
 const VALUE_SLIDES: Record<ValueStepId, { title: string; body: string; kind: ValuePhoneKind }> = {
   valueOrganize: {
-    title: 'Protect your time.',
-    body: 'Block what pulls you away.',
-    kind: 'protect',
+    title: 'Organize your life!',
+    body: 'Your daily responsibilities and your spiritual life - organized together, in one place.',
+    kind: 'organize',
   },
   valueDiscipline: {
-    title: 'Build your rhythm.',
-    body: 'Discipline in daily life and spiritual life.',
-    kind: 'rhythm',
+    title: 'Build discipline!',
+    body: 'Become a more disciplined person and build the habits that shape your character.',
+    kind: 'discipline',
   },
   valueFocus: {
-    title: 'Rise again.',
-    body: 'Return to what matters.',
-    kind: 'rise',
+    title: 'Protect your time!',
+    body: 'Block distractions, addictive content, and everything that pulls you away from what matters.',
+    kind: 'focus',
+  },
+  valueFaith: {
+    title: 'Grow closer to God!',
+    body: 'Learning about God should always be free — and in Anasta, it always will be.',
+    kind: 'faith',
+  },
+  valueTools: {
+    title: "Become who you're called to be!",
+    body: 'Everything you need - to organize your life, build discipline, grow closer to God, and become a better version of yourself.',
+    kind: 'tools',
   },
 };
 
@@ -997,31 +1331,10 @@ function OnboardingPreload({
 }
 
 function WelcomeSlide({ onNext, ready }: { onNext: () => void; ready: boolean }) {
-  const confettiRef = useRef<React.ElementRef<typeof LottieView>>(null);
-  const confettiOpacity = useSharedValue(0);
   const titleStyle = useRevealStyle(ready, 0, 16, 520);
   const logoStyle = useRevealStyle(ready, 140, 22, 640);
   const scriptureStyle = useRevealStyle(ready, 300, 16, 600);
   const promiseStyle = useRevealStyle(ready, 520, 12, 540);
-
-  useEffect(() => {
-    if (!ready) {
-      confettiOpacity.value = 0;
-      return undefined;
-    }
-    preloadAchievementFeedbackSound();
-    const timer = setTimeout(() => {
-      confettiOpacity.value = withTiming(1, { duration: 140 });
-      confettiRef.current?.play();
-      void playAchievementCompleteFeedback();
-    }, 920);
-
-    return () => clearTimeout(timer);
-  }, [confettiOpacity, ready]);
-
-  const confettiStyle = useAnimatedStyle(() => ({
-    opacity: confettiOpacity.value,
-  }));
 
   return (
     <View style={s.welcome}>
@@ -1069,21 +1382,48 @@ function WelcomeSlide({ onNext, ready }: { onNext: () => void; ready: boolean })
           </TouchableOpacity>
         </View>
       </AnimatedCta>
+    </View>
+  );
+}
 
-      <View pointerEvents="none" style={s.confettiOverlay}>
-        <Reanimated.View style={[StyleSheet.absoluteFill, s.confettiLayer, confettiStyle]}>
-          <LottieView
-            ref={confettiRef}
-            source={CONFETTI_SOURCE}
-            autoPlay={false}
-            loop={false}
-            speed={0.92}
-            resizeMode="cover"
-            renderMode="SOFTWARE"
-            style={[StyleSheet.absoluteFill, s.confettiLottie]}
-          />
-        </Reanimated.View>
-      </View>
+function WelcomeConfettiOverlay({ active }: { active: boolean }) {
+  const confettiRef = useRef<React.ElementRef<typeof LottieView>>(null);
+  const confettiOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (!active) {
+      confettiOpacity.value = 0;
+      confettiRef.current?.reset();
+      return undefined;
+    }
+    preloadAchievementFeedbackSound();
+    const timer = setTimeout(() => {
+      confettiOpacity.value = withTiming(1, { duration: 140 });
+      confettiRef.current?.play();
+      void playAchievementCompleteFeedback();
+    }, 920);
+
+    return () => clearTimeout(timer);
+  }, [active, confettiOpacity]);
+
+  const confettiStyle = useAnimatedStyle(() => ({
+    opacity: confettiOpacity.value,
+  }));
+
+  return (
+    <View pointerEvents="none" style={s.confettiOverlay}>
+      <Reanimated.View style={[StyleSheet.absoluteFill, s.confettiLayer, confettiStyle]}>
+        <LottieView
+          ref={confettiRef}
+          source={CONFETTI_SOURCE}
+          autoPlay={false}
+          loop={false}
+          speed={0.92}
+          resizeMode="cover"
+          renderMode="SOFTWARE"
+          style={[StyleSheet.absoluteFill, s.confettiLottie]}
+        />
+      </Reanimated.View>
     </View>
   );
 }
@@ -1144,69 +1484,22 @@ function NameIntroSlide({
   onNameChange: (name: string) => void;
   onNext: () => void;
 }) {
+  const { height } = useWindowDimensions();
   const [draft, setDraft] = useState(value ?? '');
-  const [submitted, setSubmitted] = useState(Boolean(value?.trim()));
-  const [typedCount, setTypedCount] = useState(0);
-  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(false);
   const cleanName = draft.trim();
   const displayName = nameForDisplay(cleanName || value);
   const canSubmit = cleanName.length > 0;
-  const replySegments = useMemo<TypedTextSegment[]>(() => [
-    { text: displayName ? `Nice to meet you, ${displayName}. Here are ` : 'Nice to meet you. Here are ' },
-    { text: '3 things', highlight: true },
-    { text: ' Anasta can help you with.' },
-  ], [displayName]);
-  const replyText = useMemo(() => joinTypedSegments(replySegments), [replySegments]);
+  const nameContentStyle = useMemo(
+    () => [s.nameIntroContent, { paddingTop: Math.max(188, Math.min(268, height * 0.285)) }],
+    [height],
+  );
 
   const handlePrimary = () => {
-    if (!submitted) {
-      if (!canSubmit) return;
-      runSelectionHaptic();
-      onNameChange(displayName);
-      setTypedCount(0);
-      setAutoAdvanceEnabled(true);
-      setSubmitted(true);
-      return;
-    }
-
+    if (!canSubmit) return;
+    runSelectionHaptic();
+    onNameChange(displayName);
     onNext();
   };
-
-  useEffect(() => {
-    if (!submitted) {
-      setTypedCount(0);
-      return undefined;
-    }
-
-    setTypedCount(0);
-    let interval: ReturnType<typeof setInterval> | undefined;
-    let advanceTimer: ReturnType<typeof setTimeout> | undefined;
-    const startTimer = setTimeout(() => {
-      interval = setInterval(() => {
-        setTypedCount(prev => {
-          if (prev >= replyText.length) {
-            if (interval) clearInterval(interval);
-            if (autoAdvanceEnabled) {
-              advanceTimer = setTimeout(() => {
-                runAdvanceHaptic();
-                onNext();
-              }, 1500);
-            }
-            return prev;
-          }
-          const next = prev + 1;
-          if (next % 3 === 0) runTypingHaptic();
-          return next;
-        });
-      }, 34);
-    }, 520);
-
-    return () => {
-      clearTimeout(startTimer);
-      if (interval) clearInterval(interval);
-      if (advanceTimer) clearTimeout(advanceTimer);
-    };
-  }, [autoAdvanceEnabled, onNext, replyText, submitted]);
 
   useEffect(() => {
     const firstBubbleTimer = setTimeout(runBubbleHaptic, 260);
@@ -1232,7 +1525,7 @@ function NameIntroSlide({
 
       <ScrollView
         style={s.nameIntroScroll}
-        contentContainerStyle={s.nameIntroContent}
+        contentContainerStyle={nameContentStyle}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -1260,8 +1553,6 @@ function NameIntroSlide({
               })}
               style={s.nameBubble}
             >
-              <View style={s.nameBubbleTail} />
-              <View style={s.nameBubbleTailJoin} />
               <Text style={s.nameBubbleText}>Hi, Welcome!</Text>
             </Reanimated.View>
           </View>
@@ -1284,58 +1575,30 @@ function NameIntroSlide({
               })}
               style={[s.nameBubble, s.nameQuestionBubble]}
             >
-              <View style={s.nameBubbleTail} />
-              <View style={s.nameBubbleTailJoin} />
               <Text style={s.nameBubbleText}>What is your name?</Text>
             </Reanimated.View>
           </View>
 
-          {!submitted ? (
-            <Reanimated.View
-              entering={FadeIn.delay(1740).duration(560).withInitialValues({
-                opacity: 0,
-                transform: [{ translateY: 18 }, { scale: 0.975 }],
-              })}
-              style={s.nameInputBlock}
-            >
-              <Text style={s.nameInputLabel}>Your name</Text>
-              <TextInput
-                value={draft}
-                onChangeText={setDraft}
-                placeholder="Enter your name"
-                placeholderTextColor="rgba(25,23,20,0.34)"
-                autoCapitalize="words"
-                autoCorrect={false}
-                returnKeyType="done"
-                onSubmitEditing={handlePrimary}
-                style={s.nameInput}
-              />
-            </Reanimated.View>
-          ) : (
-            <>
-              <Reanimated.View entering={FadeIn.delay(120).duration(340)} style={s.nameUserRow}>
-                <View style={s.nameUserBubble}>
-                  <Text style={s.nameUserText}>{displayName}</Text>
-                </View>
-              </Reanimated.View>
-              <Reanimated.View entering={FadeIn.delay(360).duration(420)} style={s.nameBotRow}>
-                <View style={s.nameAvatarShellSmall}>
-                  <Image source={APP_LOGO} style={s.nameAvatarLogoSmall} resizeMode="cover" />
-                </View>
-                <View style={[s.nameBubble, s.nameReplyBubble]}>
-                  <View style={s.nameBubbleTail} />
-                  <View style={s.nameBubbleTailJoin} />
-                  <TypedSegmentText
-                    segments={replySegments}
-                    count={typedCount}
-                    textStyle={s.nameBubbleText}
-                    highlightStyle={s.inlineGoldUnderline}
-                    caretStyle={s.nameTypingCaret}
-                  />
-                </View>
-              </Reanimated.View>
-            </>
-          )}
+          <Reanimated.View
+            entering={FadeIn.delay(1740).duration(560).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 18 }, { scale: 0.975 }],
+            })}
+            style={s.nameInputBlock}
+          >
+            <Text style={s.nameInputLabel}>Your name</Text>
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              placeholder="Enter your name"
+              placeholderTextColor="rgba(25,23,20,0.34)"
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="done"
+              onSubmitEditing={handlePrimary}
+              style={s.nameInput}
+            />
+          </Reanimated.View>
         </Reanimated.View>
       </ScrollView>
 
@@ -1343,18 +1606,416 @@ function NameIntroSlide({
         <View style={s.ctaIsland}>
           <TouchableOpacity
             activeOpacity={0.9}
-            haptic={submitted ? 'medium' : 'light'}
-            disabled={!submitted && !canSubmit}
+            haptic="light"
+            disabled={!canSubmit}
             onPress={handlePrimary}
-            style={[s.primaryButton, !submitted && !canSubmit && s.primaryButtonDisabled]}
+            style={[s.primaryButton, !canSubmit && s.primaryButtonDisabled]}
           >
-            <Text style={[s.primaryButtonText, !submitted && !canSubmit && s.primaryButtonDisabledText]}>
-              {submitted ? 'Show me' : 'Continue'}
-            </Text>
-            <ChevronRight s={19} c={submitted || canSubmit ? '#FFFFFF' : 'rgba(25,23,20,0.34)'} w={2.5} />
+            <Text style={[s.primaryButtonText, !canSubmit && s.primaryButtonDisabledText]}>Continue</Text>
+            <ChevronRight s={19} c={canSubmit ? '#FFFFFF' : 'rgba(25,23,20,0.34)'} w={2.5} />
           </TouchableOpacity>
         </View>
       </AnimatedCta>
+    </LinearGradient>
+  );
+}
+
+function TraditionIntroSlide({
+  name,
+  tradition,
+  bottomInset,
+  onTraditionChange,
+  onNext,
+}: {
+  name?: string;
+  tradition?: TraditionAnswer;
+  bottomInset: number;
+  onTraditionChange: (tradition: TraditionAnswer) => void;
+  onNext: () => void;
+}) {
+  const displayName = nameForDisplay(name) || 'there';
+  const [selectedTradition, setSelectedTradition] = useState<TraditionAnswer | undefined>(tradition);
+  const [confirmed, setConfirmed] = useState(Boolean(tradition));
+  const [welcomeCount, setWelcomeCount] = useState(0);
+  const [placeCount, setPlaceCount] = useState(0);
+  const [beginCount, setBeginCount] = useState(0);
+  const [showQuestion, setShowQuestion] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
+  const [showPlace, setShowPlace] = useState(false);
+  const [showBegin, setShowBegin] = useState(false);
+  const [showContinue, setShowContinue] = useState(false);
+  const selectedTraditionLabel = useMemo(
+    () => TRADITION_OPTIONS.find(option => option.value === selectedTradition)?.title ?? 'My tradition',
+    [selectedTradition],
+  );
+  const selectedTraditionReply = useMemo(() => {
+    if (selectedTradition === 'not_christian') return "I'm not Christian.";
+    if (selectedTradition === 'other') return 'I am from another tradition.';
+    if (selectedTradition === 'nondenominational') return 'I am non-denominational.';
+    return `I am ${selectedTraditionLabel}.`;
+  }, [selectedTradition, selectedTraditionLabel]);
+  const welcomeSegments = useMemo<TypedTextSegment[]>(() => [{ text: `Welcome, ${displayName}!` }], [displayName]);
+  const welcomeText = useMemo(() => joinTypedSegments(welcomeSegments), [welcomeSegments]);
+  const placeSegments = useMemo<TypedTextSegment[]>(
+    () => [{ text: `You are in the right place, ${displayName}.` }],
+    [displayName],
+  );
+  const placeText = useMemo(() => joinTypedSegments(placeSegments), [placeSegments]);
+  const beginSegments = useMemo<TypedTextSegment[]>(() => [{ text: "Let's begin!", highlight: true }], []);
+  const beginText = useMemo(() => joinTypedSegments(beginSegments), [beginSegments]);
+
+  const handleSelect = (option: Option<TraditionAnswer>) => {
+    if (confirmed) return;
+    runSelectionHaptic();
+    setSelectedTradition(option.value);
+  };
+
+  const handlePrimary = () => {
+    if (!confirmed) {
+      if (!selectedTradition) return;
+      runSelectionHaptic();
+      onTraditionChange(selectedTradition);
+      setWelcomeCount(welcomeText.length);
+      setShowQuestion(true);
+      setShowOptions(false);
+      setPlaceCount(0);
+      setBeginCount(0);
+      setShowPlace(false);
+      setShowBegin(false);
+      setShowContinue(false);
+      setConfirmed(true);
+      return;
+    }
+
+    runAdvanceHaptic();
+    onNext();
+  };
+
+  useEffect(() => {
+    if (confirmed) return undefined;
+    const timers = [
+      setTimeout(runBubbleHaptic, TRADITION_INTRO_TIMING.nameReply + 100),
+      setTimeout(runBubbleHaptic, TRADITION_INTRO_TIMING.welcome + 100),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, [confirmed]);
+
+  useEffect(() => {
+    if (confirmed) return undefined;
+
+    setWelcomeCount(0);
+    setShowQuestion(false);
+    setShowOptions(false);
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let questionTimer: ReturnType<typeof setTimeout> | undefined;
+    const startTimer = setTimeout(() => {
+      interval = setInterval(() => {
+        setWelcomeCount(prev => {
+          if (prev >= welcomeText.length) {
+            if (interval) clearInterval(interval);
+            return prev;
+          }
+          const next = prev + 1;
+          if (next % 3 === 0) runTypingHaptic();
+          if (next >= welcomeText.length) {
+            if (interval) clearInterval(interval);
+            questionTimer = setTimeout(() => {
+              runBubbleHaptic();
+              setShowQuestion(true);
+            }, 380);
+          }
+          return next;
+        });
+      }, TRADITION_APP_TYPING_INTERVAL_MS);
+    }, TRADITION_INTRO_TIMING.welcome + 240);
+
+    return () => {
+      clearTimeout(startTimer);
+      if (questionTimer) clearTimeout(questionTimer);
+      if (interval) clearInterval(interval);
+    };
+  }, [confirmed, welcomeText]);
+
+  useEffect(() => {
+    if (!showQuestion || confirmed) return undefined;
+    const timer = setTimeout(() => setShowOptions(true), 620);
+    return () => clearTimeout(timer);
+  }, [confirmed, showQuestion]);
+
+  useEffect(() => {
+    if (!confirmed) {
+      setPlaceCount(0);
+      setBeginCount(0);
+      setShowPlace(false);
+      setShowBegin(false);
+      setShowContinue(false);
+      return undefined;
+    }
+
+    setPlaceCount(0);
+    setBeginCount(0);
+    setShowPlace(false);
+    setShowBegin(false);
+    setShowContinue(false);
+    const timers = [
+      setTimeout(runBubbleHaptic, TRADITION_CONFIRM_TIMING.userReply + 100),
+      setTimeout(() => {
+        runBubbleHaptic();
+        setShowPlace(true);
+      }, TRADITION_CONFIRM_TIMING.place),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, [confirmed]);
+
+  useEffect(() => {
+    if (!confirmed || !showPlace) return undefined;
+
+    setPlaceCount(0);
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let beginTimer: ReturnType<typeof setTimeout> | undefined;
+    const startTimer = setTimeout(() => {
+      interval = setInterval(() => {
+        setPlaceCount(prev => {
+          if (prev >= placeText.length) {
+            if (interval) clearInterval(interval);
+            return prev;
+          }
+          const next = prev + 1;
+          if (next % 3 === 0) runTypingHaptic();
+          if (next >= placeText.length) {
+            if (interval) clearInterval(interval);
+            beginTimer = setTimeout(() => {
+              runBubbleHaptic();
+              setShowBegin(true);
+            }, 420);
+          }
+          return next;
+        });
+      }, TRADITION_APP_TYPING_INTERVAL_MS);
+    }, 260);
+
+    return () => {
+      clearTimeout(startTimer);
+      if (beginTimer) clearTimeout(beginTimer);
+      if (interval) clearInterval(interval);
+    };
+  }, [confirmed, placeText, showPlace]);
+
+  useEffect(() => {
+    if (!confirmed || !showBegin) return undefined;
+
+    setBeginCount(0);
+    setShowContinue(false);
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const continueTriggerCount = Math.max(1, beginText.indexOf('begin') + 1);
+    const startTimer = setTimeout(() => {
+      interval = setInterval(() => {
+        setBeginCount(prev => {
+          if (prev >= beginText.length) {
+            if (interval) clearInterval(interval);
+            return prev;
+          }
+          const next = prev + 1;
+          if (next % 3 === 0) runTypingHaptic();
+          if (next === continueTriggerCount) {
+            setShowContinue(true);
+          }
+          if (next >= beginText.length) {
+            if (interval) clearInterval(interval);
+          }
+          return next;
+        });
+      }, TRADITION_APP_TYPING_INTERVAL_MS);
+    }, 260);
+
+    return () => {
+      clearTimeout(startTimer);
+      if (interval) clearInterval(interval);
+    };
+  }, [beginText, confirmed, showBegin]);
+
+  return (
+    <LinearGradient
+      colors={['#FFFDF8', '#FFFDF8', '#F8EEDC', '#D9B98E']}
+      locations={[0, 0.56, 0.86, 1]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={s.nameIntroSlide}
+    >
+      <View pointerEvents="none" style={s.nameIntroBackdrop}>
+        <View style={s.nameIntroGlow} />
+        <View style={s.nameIntroLine} />
+      </View>
+
+      <ScrollView
+        style={s.nameIntroScroll}
+        contentContainerStyle={s.nameIntroContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Reanimated.View
+          entering={FadeIn.duration(420).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 14 }, { scale: 0.985 }],
+          })}
+          style={s.nameConversation}
+        >
+          <Reanimated.View
+            entering={FadeIn.delay(TRADITION_INTRO_TIMING.nameReply).duration(420)}
+            style={s.nameUserRow}
+          >
+            <View style={[s.nameUserBubble, s.nameUserBubbleCompact]}>
+              <Text style={[s.nameUserText, s.nameUserTextCompact]}>My name is {displayName}.</Text>
+            </View>
+          </Reanimated.View>
+
+          <Reanimated.View
+            entering={FadeIn.delay(TRADITION_INTRO_TIMING.welcome).duration(460)}
+            style={[s.nameBotRow, s.nameBotRowTight]}
+          >
+            <View style={s.nameAvatarShellSmall}>
+              <Image source={APP_LOGO} style={s.nameAvatarLogoSmall} resizeMode="cover" />
+            </View>
+            <View style={[s.nameBubble, s.nameBubbleAuto, s.nameBubbleCompact, s.nameWelcomeBubble]}>
+              <TypedSegmentText
+                segments={welcomeSegments}
+                count={welcomeCount}
+                textStyle={s.nameConversationText}
+                highlightStyle={s.inlineGoldUnderline}
+                caretStyle={s.nameTypingCaret}
+              />
+            </View>
+          </Reanimated.View>
+
+          {showQuestion ? (
+            <Reanimated.View entering={FadeIn.duration(460)} style={[s.nameBotRow, s.nameBotRowTight]}>
+              <View style={s.nameAvatarShellSmall}>
+                <Image source={APP_LOGO} style={s.nameAvatarLogoSmall} resizeMode="cover" />
+              </View>
+              <View style={[s.nameBubble, s.nameBubbleAuto, s.nameBubbleCompact, s.nameTraditionBubble]}>
+                <Text style={s.nameConversationText}>
+                  Which tradition are you part of?{'\n'}
+                  <Text style={s.nameBubbleSubtext}>This helps us set things up for you.</Text>
+                </Text>
+              </View>
+            </Reanimated.View>
+          ) : null}
+
+          {!confirmed && showOptions ? (
+            <View style={s.nameTraditionBlock}>
+              {TRADITION_OPTIONS.map((option, index) => {
+                const active = selectedTradition === option.value;
+                return (
+                  <Reanimated.View
+                    key={option.value}
+                    entering={FadeInUp.delay(index * TRADITION_INTRO_TIMING.optionStep)
+                      .duration(420)
+                      .easing(Easing.bezier(0.16, 1, 0.28, 1))}
+                  >
+                    <TouchableOpacity
+                      activeOpacity={0.88}
+                      haptic="light"
+                      onPress={() => handleSelect(option)}
+                      style={[s.nameTraditionOption, active && s.nameTraditionOptionActive]}
+                    >
+                      <View style={[s.nameTraditionIcon, active && s.nameTraditionIconActive]}>
+                        {active ? <CheckSmall s={18} c={GOLD} w={2.6} /> : option.icon}
+                      </View>
+                      <View style={s.nameTraditionCopy}>
+                        <Text style={[s.nameTraditionText, active && s.nameTraditionTextActive]}>{option.title}</Text>
+                        {option.body ? <Text style={[s.nameTraditionSubtext, active && s.nameTraditionSubtextActive]}>{option.body}</Text> : null}
+                      </View>
+                      <View style={[s.nameTraditionMark, active && s.nameTraditionMarkActive]}>
+                        {active ? <CheckSmall s={14} c="#FFFFFF" w={2.5} /> : null}
+                      </View>
+                    </TouchableOpacity>
+                  </Reanimated.View>
+                );
+              })}
+            </View>
+          ) : null}
+
+          {confirmed ? (
+            <>
+              <Reanimated.View
+                entering={FadeIn.delay(TRADITION_CONFIRM_TIMING.userReply).duration(420)}
+                style={s.nameUserRow}
+              >
+                <View style={[s.nameUserBubble, s.nameUserBubbleCompact]}>
+                  <Text style={[s.nameUserText, s.nameUserTextCompact]}>{selectedTraditionReply}</Text>
+                </View>
+              </Reanimated.View>
+              {showPlace ? (
+                <Reanimated.View entering={FadeIn.duration(460)} style={[s.nameBotRow, s.nameBotRowTight]}>
+                  <View style={s.nameAvatarShellSmall}>
+                    <Image source={APP_LOGO} style={s.nameAvatarLogoSmall} resizeMode="cover" />
+                  </View>
+                  <View style={[s.nameBubble, s.nameBubbleAuto, s.nameBubbleCompact, s.nameFinalBubble]}>
+                    <TypedSegmentText
+                      segments={placeSegments}
+                      count={placeCount}
+                      textStyle={s.nameConversationText}
+                      highlightStyle={s.inlineGoldUnderline}
+                      caretStyle={s.nameTypingCaret}
+                    />
+                  </View>
+                </Reanimated.View>
+              ) : null}
+              {showBegin ? (
+                <Reanimated.View entering={FadeIn.duration(460)} style={[s.nameBotRow, s.nameBotRowTight]}>
+                  <View style={s.nameAvatarShellSmall}>
+                    <Image source={APP_LOGO} style={s.nameAvatarLogoSmall} resizeMode="cover" />
+                  </View>
+                  <View style={[s.nameBubble, s.nameBubbleAuto, s.nameBubbleCompact, s.nameBeginBubble]}>
+                    <TypedSegmentText
+                      segments={beginSegments}
+                      count={beginCount}
+                      textStyle={s.nameConversationText}
+                      highlightStyle={s.inlineGoldUnderline}
+                      caretStyle={s.nameTypingCaret}
+                    />
+                  </View>
+                </Reanimated.View>
+              ) : null}
+            </>
+          ) : null}
+        </Reanimated.View>
+      </ScrollView>
+
+      {!confirmed && selectedTradition ? (
+        <AnimatedCta
+          key="tradition-confirm"
+          delay={120}
+          style={[s.bottomAction, s.introBottomAction, { paddingBottom: bottomInset + 8 }]}
+        >
+          <View style={s.ctaIsland}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              haptic="light"
+              onPress={handlePrimary}
+              style={s.primaryButton}
+            >
+              <Text style={s.primaryButtonText}>Confirm</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      ) : null}
+
+      {confirmed && showContinue ? (
+        <AnimatedCta
+          key="tradition-continue"
+          delay={0}
+          style={[s.bottomAction, s.introBottomAction, { paddingBottom: bottomInset + 8 }]}
+        >
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={handlePrimary} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>Continue</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      ) : null}
     </LinearGradient>
   );
 }
@@ -1375,10 +2036,16 @@ function ValuePreviewSlide({
   const { width } = useWindowDimensions();
   const index = VALUE_STEP_IDS.indexOf(step);
   const isLast = index === VALUE_STEP_IDS.length - 1;
+  const [progressIndex, setProgressIndex] = useState(index);
   const pagePosition = useSharedValue(index);
   const dragX = useSharedValue(0);
 
+  const updateProgressIndex = useCallback((nextIndex: number) => {
+    setProgressIndex(Math.max(0, Math.min(VALUE_FLOW_DOT_COUNT - 1, nextIndex)));
+  }, []);
+
   useEffect(() => {
+    setProgressIndex(index);
     pagePosition.value = index;
     dragX.value = 0;
   }, [dragX, index, pagePosition]);
@@ -1408,12 +2075,12 @@ function ValuePreviewSlide({
 
       if (shouldAdvance) {
         if (isLast) {
-          dragX.value = withTiming(-width, { duration: 460, easing: Easing.inOut(Easing.cubic) }, () => {
-            runOnJS(onNext)();
-          });
+          dragX.value = withTiming(0, { duration: 260, easing: Easing.out(Easing.cubic) });
         } else {
+          runOnJS(updateProgressIndex)(index + 1);
           dragX.value = withTiming(0, { duration: 360, easing: Easing.out(Easing.cubic) });
           pagePosition.value = withTiming(index + 1, { duration: 360, easing: Easing.out(Easing.cubic) }, () => {
+            runOnJS(runStrongHaptic)();
             runOnJS(onNext)();
           });
         }
@@ -1421,15 +2088,17 @@ function ValuePreviewSlide({
       }
 
       if (shouldReturn) {
+        runOnJS(updateProgressIndex)(index - 1);
         dragX.value = withTiming(0, { duration: 360, easing: Easing.out(Easing.cubic) });
         pagePosition.value = withTiming(index - 1, { duration: 360, easing: Easing.out(Easing.cubic) }, () => {
+          runOnJS(runStrongHaptic)();
           runOnJS(onBack)();
         });
         return;
       }
 
       dragX.value = withTiming(0, { duration: 260, easing: Easing.out(Easing.cubic) });
-    }), [dragX, index, isLast, onBack, onNext, pagePosition, width]);
+    }), [dragX, index, isLast, onBack, onNext, pagePosition, updateProgressIndex, width]);
 
   const trackStyle = useAnimatedStyle(() => ({
     transform: [
@@ -1460,8 +2129,8 @@ function ValuePreviewSlide({
                 key={valueStep}
                 width={width}
                 topInset={topInset}
-                number={slideIndex + 1}
                 slide={VALUE_SLIDES[valueStep]}
+                bottomInset={bottomInset}
                 animateIntro={slideIndex === 0}
                 active={slideIndex === index}
               />
@@ -1470,60 +2139,202 @@ function ValuePreviewSlide({
         </GestureDetector>
       </View>
 
-      <View style={[s.valueDots, { bottom: bottomInset + 22 }]}>
-        {Array.from({ length: VALUE_FLOW_DOT_COUNT }).map((_, dotIndex) => (
-          <View
-            key={`value-flow-${dotIndex}`}
-            style={[
-              s.valueDot,
-              dotIndex === index && s.valueDotActive,
-              dotIndex >= VALUE_STEP_IDS.length && s.valueDotUpcoming,
-            ]}
-          />
-        ))}
+      <View style={[s.valueNavigation, { paddingBottom: bottomInset + (isLast ? 94 : 0), transform: [{ translateY: isLast ? 0 : 6 }] }]}>
+        <ValueSlideProgressRail activeIndex={progressIndex} total={VALUE_FLOW_DOT_COUNT} />
+        {!isLast ? (
+          <View style={s.valueSwipeHint}>
+            <Text style={s.valueSwipeHintText}>Swipe To Continue</Text>
+            <ChevronRight s={15} c={GOLD} w={2.4} />
+          </View>
+        ) : null}
       </View>
+
+      {isLast ? (
+        <AnimatedCta delay={320} style={[s.valueBottomAction, { paddingBottom: bottomInset + 8 }]}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>I&apos;m ready</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      ) : null}
     </LinearGradient>
+  );
+}
+
+function ValueToolsClosingSlide({
+  topInset,
+  bottomInset,
+  onNext,
+}: {
+  topInset: number;
+  bottomInset: number;
+  onNext: () => void;
+}) {
+  const { width } = useWindowDimensions();
+
+  return (
+    <LinearGradient
+      colors={['#FFFDF8', '#FFFDF8', '#F8EEDC', '#D9B98E']}
+      locations={[0, 0.52, 0.82, 1]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={s.valueSlide}
+    >
+      <View pointerEvents="none" style={s.valueBackdrop}>
+        <View style={s.valueBackdropBandTop} />
+        <View style={s.valueBackdropBandBottom} />
+        <View style={s.valueBackdropLineOne} />
+        <View style={s.valueBackdropLineTwo} />
+      </View>
+
+      <View style={s.valueClosingViewport}>
+        <ValuePreviewPage
+          width={width}
+          topInset={topInset}
+          bottomInset={bottomInset}
+          slide={VALUE_SLIDES.valueTools}
+          animateIntro
+          active
+        />
+      </View>
+
+      <AnimatedCta delay={360} style={[s.valueBottomAction, { paddingBottom: bottomInset + 8 }]}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>I&apos;m ready</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </LinearGradient>
+  );
+}
+
+function ValueSlideProgressRail({ activeIndex, total }: { activeIndex: number; total: number }) {
+  return (
+    <View style={s.valueProgressRail}>
+      {Array.from({ length: total }).map((_, dotIndex) => {
+        const active = dotIndex === activeIndex;
+        const done = dotIndex <= activeIndex;
+        return <ValueProgressStep key={`value-flow-${dotIndex}`} index={dotIndex} active={active} done={done} />;
+      })}
+    </View>
+  );
+}
+
+function ValueProgressStep({ index, active, done }: { index: number; active: boolean; done: boolean }) {
+  const activeMotion = useSharedValue(active ? 1 : 0);
+  const doneMotion = useSharedValue(done ? 1 : 0);
+
+  useEffect(() => {
+    activeMotion.value = withTiming(active ? 1 : 0, {
+      duration: 380,
+      easing: Easing.bezier(0.16, 1, 0.28, 1),
+    });
+    doneMotion.value = withTiming(done ? 1 : 0, {
+      duration: 320,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [active, activeMotion, done, doneMotion]);
+
+  const stepStyle = useAnimatedStyle(() => ({
+    width: interpolate(activeMotion.value, [0, 1], [34, 82]),
+  }));
+  const trackStyle = useAnimatedStyle(() => ({
+    height: interpolate(activeMotion.value, [0, 1], [4.5, 7]),
+    opacity: interpolate(activeMotion.value, [0, 1], [0.76, 1]),
+    backgroundColor: interpolateColor(
+      doneMotion.value,
+      [0, 1],
+      ['rgba(25,23,20,0.095)', 'rgba(197,160,89,0.20)'],
+    ),
+    borderColor: interpolateColor(
+      activeMotion.value,
+      [0, 1],
+      ['rgba(255,255,255,0.30)', 'rgba(197,160,89,0.58)'],
+    ),
+  }));
+  const fillStyle = useAnimatedStyle(() => ({
+    width: `${doneMotion.value * 100}%`,
+    backgroundColor: interpolateColor(
+      activeMotion.value,
+      [0, 1],
+      ['rgba(197,160,89,0.54)', '#E7C36D'],
+    ),
+  }));
+  const dotStyle = useAnimatedStyle(() => ({
+    opacity: activeMotion.value,
+    transform: [
+      { translateY: interpolate(activeMotion.value, [0, 1], [5, 0]) },
+      { scale: interpolate(activeMotion.value, [0, 1], [0.78, 1]) },
+    ],
+  }));
+
+  return (
+    <Reanimated.View style={[s.valueProgressStep, stepStyle]}>
+      <Reanimated.View style={[s.valueProgressTrack, trackStyle]}>
+        <Reanimated.View style={[s.valueProgressTrackFill, fillStyle]} />
+      </Reanimated.View>
+      <Reanimated.View style={[s.valueProgressDot, dotStyle]}>
+        <Text style={s.valueProgressDotText}>{index + 1}</Text>
+      </Reanimated.View>
+    </Reanimated.View>
   );
 }
 
 function ValuePreviewPage({
   width,
   topInset,
-  number,
+  bottomInset,
   slide,
   animateIntro,
   active,
 }: {
   width: number;
   topInset: number;
-  number: number;
+  bottomInset?: number;
   slide: { title: string; body: string; kind: ValuePhoneKind };
   animateIntro?: boolean;
   active: boolean;
 }) {
+  const [titleUnderlineWidth, setTitleUnderlineWidth] = useState(92);
   const copyEntering = animateIntro
     ? FadeIn.duration(620).withInitialValues({
       opacity: 0,
       transform: [{ translateY: 18 }, { scale: 0.985 }],
     })
     : undefined;
-  const phoneEntering = animateIntro
-    ? FadeIn.delay(180).duration(760).withInitialValues({
+  const visualEntering = animateIntro
+    ? FadeIn.delay(120).duration(560).withInitialValues({
       opacity: 0,
-      transform: [{ translateY: 34 }, { scale: 0.965 }],
+      transform: [{ translateY: 28 }, { scale: 0.97 }],
     })
     : undefined;
 
   return (
     <View style={[s.valuePage, { width }]}>
-      <Reanimated.View entering={copyEntering} style={[s.valueCopy, { paddingTop: topInset + 46 }]}>
+      <Reanimated.View entering={copyEntering} style={[s.valueCopy, { paddingTop: topInset + 36 }]}>
         <View style={s.valueTitleShell}>
-          <View style={s.valueTitleNumber}>
-            <Text style={s.valueTitleNumberText}>{number}</Text>
-          </View>
+          {slide.kind === 'faith' ? (
+            <View pointerEvents="none" style={s.valueFreeCornerTag}>
+              <Text style={s.valueFreeCornerTagText}>FREE</Text>
+            </View>
+          ) : null}
           <View style={s.valueTitleTextWrap}>
-            <Text style={s.valueTitle}>{slide.title}</Text>
-            <View style={s.valueTitleUnderline} />
+            <Text
+              style={s.valueTitle}
+              onTextLayout={event => {
+                const lines = event.nativeEvent.lines;
+                const lastLine = lines[lines.length - 1];
+                const nextWidth = Math.max(52, Math.min(342, Math.ceil((lastLine?.width ?? 92) * 0.94)));
+                setTitleUnderlineWidth(current => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
+              }}
+            >
+              {slide.title}
+            </Text>
+            <View style={[s.valueTitleUnderline, { width: titleUnderlineWidth }]} />
           </View>
         </View>
         <View style={s.valueSubtitleFrame}>
@@ -1531,62 +2342,581 @@ function ValuePreviewPage({
         </View>
       </Reanimated.View>
 
-      <Reanimated.View entering={phoneEntering} style={s.valuePhoneStage}>
-        <ValuePhoneMock kind={slide.kind} active={active} />
+      <Reanimated.View entering={visualEntering} style={[s.valuePhoneStage, slide.kind === 'organize' && s.valuePhoneStageOrganize]}>
+        <ValueSlideVisual kind={slide.kind} active={active} />
       </Reanimated.View>
+
+      {slide.kind === 'faith' ? (
+        <View pointerEvents="none" style={[s.valueFaithFreeImageSlideSlot, { bottom: (bottomInset ?? 0) + 66 }]}>
+          <AnimatedCta active={active} delay={2120} duration={620} distance={18} pointerEvents="none" style={s.valueFaithFreeImageFrame}>
+            <Image source={FAITH_FREE_FOR_EVERYONE_BADGE} style={s.valueFaithFreeImage} resizeMode="contain" resizeMethod="scale" />
+          </AnimatedCta>
+        </View>
+      ) : null}
+
     </View>
   );
 }
 
 function ValueSubtitleWord({ children, underline }: { children: React.ReactNode; underline?: boolean }) {
   return (
-    <Text style={[s.valueSubtitleWord, underline && s.valueSubtitleWordUnderline]}>
+    <Text style={[s.valueSubtitleWord, underline && s.valueSubtitleWordEmphasis, underline && s.valueSubtitleWordUnderline]}>
       {children}
     </Text>
   );
 }
 
 function ValueSubtitleText({ kind }: { kind: ValuePhoneKind }) {
-  if (kind === 'protect') {
+  if (kind === 'organize') {
     return (
       <View style={s.valueSubtitleLine}>
-        <ValueSubtitleWord>Block</ValueSubtitleWord>
-        <ValueSubtitleWord>what</ValueSubtitleWord>
-        <ValueSubtitleWord underline>pulls</ValueSubtitleWord>
-        <ValueSubtitleWord>you</ValueSubtitleWord>
-        <ValueSubtitleWord underline>away.</ValueSubtitleWord>
+        <ValueSubtitleWord>Your</ValueSubtitleWord>
+        <ValueSubtitleWord underline>daily responsibilities</ValueSubtitleWord>
+        <ValueSubtitleWord>and</ValueSubtitleWord>
+        <ValueSubtitleWord>your</ValueSubtitleWord>
+        <ValueSubtitleWord underline>spiritual life</ValueSubtitleWord>
+        <ValueSubtitleWord>-</ValueSubtitleWord>
+        <ValueSubtitleWord>organized</ValueSubtitleWord>
+        <ValueSubtitleWord>together,</ValueSubtitleWord>
+        <ValueSubtitleWord>in</ValueSubtitleWord>
+        <ValueSubtitleWord>one</ValueSubtitleWord>
+        <ValueSubtitleWord>place.</ValueSubtitleWord>
       </View>
     );
   }
 
-  if (kind === 'rhythm') {
+  if (kind === 'discipline') {
     return (
       <View style={s.valueSubtitleLine}>
-        <ValueSubtitleWord>Discipline</ValueSubtitleWord>
-        <ValueSubtitleWord>in</ValueSubtitleWord>
-        <ValueSubtitleWord underline>daily</ValueSubtitleWord>
-        <ValueSubtitleWord>life</ValueSubtitleWord>
+        <ValueSubtitleWord>Become</ValueSubtitleWord>
+        <ValueSubtitleWord>a</ValueSubtitleWord>
+        <ValueSubtitleWord>more</ValueSubtitleWord>
+        <ValueSubtitleWord underline>disciplined</ValueSubtitleWord>
+        <ValueSubtitleWord>person.</ValueSubtitleWord>
         <ValueSubtitleWord>and</ValueSubtitleWord>
-        <ValueSubtitleWord underline>spiritual</ValueSubtitleWord>
-        <ValueSubtitleWord>life.</ValueSubtitleWord>
+        <ValueSubtitleWord>build</ValueSubtitleWord>
+        <ValueSubtitleWord>the</ValueSubtitleWord>
+        <ValueSubtitleWord underline>habits</ValueSubtitleWord>
+        <ValueSubtitleWord>that</ValueSubtitleWord>
+        <ValueSubtitleWord>shape</ValueSubtitleWord>
+        <ValueSubtitleWord>your</ValueSubtitleWord>
+        <ValueSubtitleWord>character.</ValueSubtitleWord>
+      </View>
+    );
+  }
+
+  if (kind === 'focus') {
+    return (
+      <View style={s.valueSubtitleLine}>
+        <ValueSubtitleWord>Block</ValueSubtitleWord>
+        <ValueSubtitleWord underline>distractions,</ValueSubtitleWord>
+        <ValueSubtitleWord underline>addictive content,</ValueSubtitleWord>
+        <ValueSubtitleWord>and</ValueSubtitleWord>
+        <ValueSubtitleWord>everything</ValueSubtitleWord>
+        <ValueSubtitleWord>that</ValueSubtitleWord>
+        <ValueSubtitleWord>pulls</ValueSubtitleWord>
+        <ValueSubtitleWord>you</ValueSubtitleWord>
+        <ValueSubtitleWord>away</ValueSubtitleWord>
+        <ValueSubtitleWord>from</ValueSubtitleWord>
+        <ValueSubtitleWord>what</ValueSubtitleWord>
+        <ValueSubtitleWord underline>matters.</ValueSubtitleWord>
+      </View>
+    );
+  }
+
+  if (kind === 'faith') {
+    return (
+      <View style={s.valueSubtitleLine}>
+        <ValueSubtitleWord>Learning</ValueSubtitleWord>
+        <ValueSubtitleWord>about</ValueSubtitleWord>
+        <ValueSubtitleWord underline>God</ValueSubtitleWord>
+        <ValueSubtitleWord>should</ValueSubtitleWord>
+        <ValueSubtitleWord>always</ValueSubtitleWord>
+        <ValueSubtitleWord>be</ValueSubtitleWord>
+        <ValueSubtitleWord underline>free</ValueSubtitleWord>
+        <ValueSubtitleWord>—</ValueSubtitleWord>
+        <ValueSubtitleWord>and</ValueSubtitleWord>
+        <ValueSubtitleWord>in</ValueSubtitleWord>
+        <ValueSubtitleWord underline>Anasta,</ValueSubtitleWord>
+        <ValueSubtitleWord>it</ValueSubtitleWord>
+        <ValueSubtitleWord>always</ValueSubtitleWord>
+        <ValueSubtitleWord>will</ValueSubtitleWord>
+        <ValueSubtitleWord>be.</ValueSubtitleWord>
       </View>
     );
   }
 
   return (
     <View style={s.valueSubtitleLine}>
-      <ValueSubtitleWord>Return</ValueSubtitleWord>
+      <ValueSubtitleWord>everything</ValueSubtitleWord>
+      <ValueSubtitleWord>you</ValueSubtitleWord>
+      <ValueSubtitleWord>need</ValueSubtitleWord>
+      <ValueSubtitleWord>-</ValueSubtitleWord>
       <ValueSubtitleWord>to</ValueSubtitleWord>
-      <ValueSubtitleWord underline>what</ValueSubtitleWord>
-      <ValueSubtitleWord underline>matters.</ValueSubtitleWord>
+      <ValueSubtitleWord underline>organize your life,</ValueSubtitleWord>
+      <ValueSubtitleWord underline>build discipline,</ValueSubtitleWord>
+      <ValueSubtitleWord>grow</ValueSubtitleWord>
+      <ValueSubtitleWord>closer</ValueSubtitleWord>
+      <ValueSubtitleWord>to</ValueSubtitleWord>
+      <ValueSubtitleWord underline>God,</ValueSubtitleWord>
+      <ValueSubtitleWord>and</ValueSubtitleWord>
+      <ValueSubtitleWord>become</ValueSubtitleWord>
+      <ValueSubtitleWord>a</ValueSubtitleWord>
+      <ValueSubtitleWord>better</ValueSubtitleWord>
+      <ValueSubtitleWord>version</ValueSubtitleWord>
+      <ValueSubtitleWord>of</ValueSubtitleWord>
+      <ValueSubtitleWord>yourself.</ValueSubtitleWord>
     </View>
   );
+}
+
+function ValueSlideVisual({ kind, active }: { kind: ValuePhoneKind; active: boolean }) {
+  if (kind === 'organize') return <ValuePhoneMock kind={kind} active={active} />;
+  if (kind === 'discipline') return <ValueDisciplineIllustration active={active} />;
+  if (kind === 'focus') return <ValueFocusIllustration active={active} />;
+  if (kind === 'faith') return <ValueFaithIllustration active={active} />;
+  return <ValueFeatureListVisual active={active} type="tools" />;
+}
+
+function ValueVisualReveal({
+  active,
+  delay,
+  children,
+}: {
+  active: boolean;
+  delay: number;
+  children: React.ReactNode;
+}) {
+  const reveal = useSharedValue(active ? 1 : 0);
+
+  useEffect(() => {
+    reveal.value = 0;
+    if (active) {
+      reveal.value = withDelay(
+        delay,
+        withTiming(1, {
+          duration: 430,
+          easing: Easing.bezier(0.16, 1, 0.28, 1),
+        }),
+      );
+    }
+  }, [active, delay, reveal]);
+
+  const revealStyle = useAnimatedStyle(() => ({
+    opacity: reveal.value,
+    transform: [
+      { translateY: interpolate(reveal.value, [0, 1], [16, 0]) },
+      { scale: interpolate(reveal.value, [0, 1], [0.97, 1]) },
+    ],
+  }));
+
+  return <Reanimated.View style={[s.valueVisualReveal, revealStyle]}>{children}</Reanimated.View>;
+}
+
+function ValueFocusCardReveal({
+  active,
+  delay,
+  children,
+}: {
+  active: boolean;
+  delay: number;
+  children: React.ReactNode;
+}) {
+  if (!active) return null;
+
+  return (
+    <Reanimated.View
+      entering={FadeInUp.delay(delay)
+        .duration(420)
+        .easing(Easing.bezier(0.16, 1, 0.28, 1))}
+      style={s.valueVisualReveal}
+    >
+      {children}
+    </Reanimated.View>
+  );
+}
+
+function ValueDisciplineIllustration({ active }: { active: boolean }) {
+  const bars = [0.44, 0.62, 0.55, 0.76, 0.84, 0.68, 0.90];
+  return (
+    <View style={s.valueIllustration}>
+      <ValueVisualReveal active={active} delay={80}>
+        <View style={s.valueDisciplineHero}>
+          <View style={s.valueDisciplineHalo} />
+          <Target s={42} c={GOLD} w={1.7} />
+          <Text style={s.valueDisciplineHeroText}>Discipline</Text>
+        </View>
+      </ValueVisualReveal>
+      <View style={s.valueDisciplineBars}>
+        {bars.map((height, index) => (
+          <ValueVisualReveal key={`discipline-bar-${index}`} active={active} delay={260 + index * 80}>
+            <View style={s.valueDisciplineBarTrack}>
+              <View style={[s.valueDisciplineBarFill, { height: `${height * 100}%` }]} />
+            </View>
+          </ValueVisualReveal>
+        ))}
+      </View>
+      <View style={s.valueDisciplineCards}>
+        <ValueVisualReveal active={active} delay={780}>
+          <ValueMiniFeatureCard icon={<Sparkles s={18} c="#8B5CF6" w={1.8} />} label="Habit streak" />
+        </ValueVisualReveal>
+        <ValueVisualReveal active={active} delay={900}>
+          <ValueMiniFeatureCard icon={<Clock s={18} c="#4D8586" w={1.9} />} label="Challenge timer" />
+        </ValueVisualReveal>
+        <ValueVisualReveal active={active} delay={1020}>
+          <ValueMiniFeatureCard icon={<CheckSmall s={18} c={GOLD} w={2.4} />} label="Goals checked" />
+        </ValueVisualReveal>
+      </View>
+    </View>
+  );
+}
+
+function ValueFocusIllustration({ active }: { active: boolean }) {
+  const cards = [
+    { label: 'Control screen time', icon: <Hourglass s={19} c={GOLD} w={1.9} /> },
+    { label: 'Block notifications', icon: <BellRing s={19} c="#4D8586" w={1.9} /> },
+    { label: 'Block addictive content', icon: <SlidersHorizontal s={19} c="#8F5D6C" w={1.9} /> },
+  ];
+
+  return (
+    <View style={s.valueFocusVisual}>
+      <View style={s.valueFocusTagsWrap}>
+        <ProtectDistractionVisual />
+      </View>
+      <View style={s.valueFocusCards}>
+        {cards.map((card, index) => (
+          <ValueFocusCardReveal key={card.label} active={active} delay={340 + index * TRADITION_INTRO_TIMING.optionStep}>
+            <ValueMiniFeatureCard icon={card.icon} label={card.label} compact />
+          </ValueFocusCardReveal>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const FAITH_VALUE_FEATURES = [
+  {
+    title: 'Bible',
+    body: 'The Word of God - always with you. Read, highlight, comment, and stay connected to Scripture every day.',
+    image: FAITH_BIBLE_STICKER,
+    tone: 'bible' as const,
+  },
+  {
+    title: 'Prayer Book',
+    body: 'Morning, evening, mealtime, and Jesus Prayer - always ready. Set reminders and build a personal prayer rule that fits your life.',
+    image: FAITH_PRAYER_BOOK_STICKER,
+    tone: 'prayer' as const,
+  },
+  {
+    title: 'Bible Notes',
+    body: 'Make what you read count - write down your Observations, the Lessons you take, and how you will apply them in your life.',
+    image: FAITH_BIBLE_NOTES_STICKER,
+    tone: 'notes' as const,
+  },
+  {
+    title: 'Favorites',
+    body: 'Give every color a meaning, and keep highlights and comments organized for easier learning.',
+    icon: <BookMarked s={30} c={GOLD} w={1.8} />,
+    tone: 'favorites' as const,
+  },
+] as const;
+
+function ValueFaithFeatureRow({
+  item,
+  index,
+  active,
+  onLayout,
+}: {
+  item: (typeof FAITH_VALUE_FEATURES)[number];
+  index: number;
+  active: boolean;
+  onLayout?: (index: number, y: number, height: number) => void;
+}) {
+  const reveal = useSharedValue(active ? 1 : 0);
+  const [titleRuleWidth, setTitleRuleWidth] = useState(42);
+  const delay = 260 + index * 270;
+
+  useEffect(() => {
+    reveal.value = 0;
+    if (active) {
+      reveal.value = withDelay(
+        delay,
+        withTiming(1, {
+          duration: 760,
+          easing: Easing.bezier(0.16, 1, 0.28, 1),
+        }),
+      );
+    }
+  }, [active, delay, reveal]);
+
+  const rowStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(reveal.value, [0, 0.24, 1], [0, 1, 1]),
+    transform: [
+      { translateX: interpolate(reveal.value, [0, 0.74, 1], [index % 2 === 0 ? -24 : 24, index % 2 === 0 ? 2 : -2, 0]) },
+      { translateY: interpolate(reveal.value, [0, 0.72, 1], [24, -2, 0]) },
+    ],
+  }));
+  const toneStyle =
+    item.tone === 'prayer' ? s.valueFaithArtPrayer :
+    item.tone === 'notes' ? s.valueFaithArtNotes :
+    item.tone === 'favorites' ? s.valueFaithArtFavorites :
+    s.valueFaithArtBible;
+  const accentStyle =
+    item.tone === 'prayer' ? s.valueFaithAccentPrayer :
+    item.tone === 'notes' ? s.valueFaithAccentNotes :
+    item.tone === 'favorites' ? s.valueFaithAccentFavorites :
+    s.valueFaithAccentBible;
+
+  const reverse = index % 2 === 1;
+
+  return (
+    <Reanimated.View
+      onLayout={event => {
+        const { y, height } = event.nativeEvent.layout;
+        onLayout?.(index, y, height);
+      }}
+      style={[s.valueFaithFeatureRow, reverse && s.valueFaithFeatureRowReverse, rowStyle]}
+    >
+      <View style={s.valueFaithArtSlot} />
+      <View style={[s.valueFaithTextCard, reverse ? s.valueFaithTextCardReverse : s.valueFaithTextCardForward, toneStyle]}>
+        <View pointerEvents="none" style={[s.valueFaithCardGlow, accentStyle]} />
+        <View style={s.valueFaithTitleRow}>
+          <View style={[s.valueFaithTitleMark, accentStyle]} />
+          <Text
+            style={s.valueFaithFeatureTitle}
+            onTextLayout={event => {
+              const lines = event.nativeEvent.lines;
+              const titleWidth = Math.ceil((lines[lines.length - 1]?.width ?? 42) + 2);
+              setTitleRuleWidth(current => (Math.abs(current - titleWidth) > 1 ? titleWidth : current));
+            }}
+          >
+            {item.title}
+          </Text>
+        </View>
+        <View style={[s.valueFaithFeatureRule, accentStyle, { width: titleRuleWidth }]} />
+        <Text style={s.valueFaithFeatureBody}>{item.body}</Text>
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function ValueFaithFeatureArt({
+  item,
+  index,
+  active,
+  layout,
+}: {
+  item: (typeof FAITH_VALUE_FEATURES)[number];
+  index: number;
+  active: boolean;
+  layout: { y: number; height: number };
+}) {
+  const reveal = useSharedValue(active ? 1 : 0);
+  const float = useSharedValue(0);
+  const delay = 260 + index * 270;
+  const reverse = index % 2 === 1;
+  const prayerArtStyle = item.tone === 'prayer' ? s.valueFaithArtPrayerFloat : null;
+
+  useEffect(() => {
+    reveal.value = 0;
+    float.value = 0;
+    if (active) {
+      reveal.value = withDelay(
+        delay,
+        withTiming(1, {
+          duration: 760,
+          easing: Easing.bezier(0.16, 1, 0.28, 1),
+        }),
+      );
+      float.value = withDelay(
+        delay + 560,
+        withRepeat(
+          withTiming(1, {
+            duration: 5200 + index * 340,
+            easing: Easing.linear,
+          }),
+          -1,
+          false,
+        ),
+      );
+    }
+  }, [active, delay, float, index, reveal]);
+
+  const slotRevealStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(reveal.value, [0, 0.24, 1], [0, 1, 1]),
+    transform: [
+      { translateX: interpolate(reveal.value, [0, 0.74, 1], [index % 2 === 0 ? -24 : 24, index % 2 === 0 ? 2 : -2, 0]) },
+      { translateY: interpolate(reveal.value, [0, 0.72, 1], [24, -2, 0]) },
+    ],
+  }));
+  const artStyle = useAnimatedStyle(() => {
+    const rawPhase = float.value * Math.PI * 2;
+    const pacedPhase =
+      rawPhase +
+      Math.sin(rawPhase) * 0.34 +
+      Math.sin(rawPhase * 2 + index * 0.9) * 0.08;
+    const phase = pacedPhase + index * 0.72;
+    const secondaryPhase = rawPhase * 2 + index * 0.48;
+    return {
+      transform: [
+        { translateY: Math.sin(phase) * (6 + index * 0.35) + Math.cos(secondaryPhase) * 1.6 },
+        { translateX: Math.cos(phase) * 3.4 + Math.sin(secondaryPhase) * 1.35 },
+        { rotate: `${Math.sin(phase + 0.5) * (2 + index * 0.14) + Math.cos(secondaryPhase) * 0.55}deg` },
+      ],
+    };
+  });
+
+  const layer = 120 + FAITH_VALUE_FEATURES.length - index;
+
+  return (
+    <Reanimated.View
+      style={[
+        s.valueFaithArtSlot,
+        s.valueFaithArtOverlaySlot,
+        {
+          top: layout.y + Math.max(0, (layout.height - 108) / 2),
+          left: reverse ? undefined : 0,
+          right: reverse ? 0 : undefined,
+          zIndex: layer,
+          elevation: layer,
+        },
+        slotRevealStyle,
+      ]}
+    >
+      <Reanimated.View style={[s.valueFaithArtFloat, prayerArtStyle, artStyle]}>
+        {'image' in item ? (
+          <Image source={item.image} style={s.valueFaithSticker} resizeMode="contain" resizeMethod="scale" />
+        ) : (
+          <View style={[s.valueFaithFavoriteOrb, s.valueFaithFavoriteOrbDark]}>
+            <Sparkles s={16} c="#F8E8BE" w={1.9} />
+            {item.icon}
+          </View>
+        )}
+      </Reanimated.View>
+    </Reanimated.View>
+  );
+}
+
+function ValueFaithIllustration({ active }: { active: boolean }) {
+  const [rowLayouts, setRowLayouts] = useState<Record<number, { y: number; height: number }>>({});
+  const storeRowLayout = useCallback((index: number, y: number, height: number) => {
+    setRowLayouts(current => {
+      const existing = current[index];
+      if (existing && Math.abs(existing.y - y) < 1 && Math.abs(existing.height - height) < 1) return current;
+      return { ...current, [index]: { y, height } };
+    });
+  }, []);
+
+  return (
+    <View style={s.valueFaithVisual}>
+      <View style={s.valueFaithFeatureStack}>
+        {FAITH_VALUE_FEATURES.map((item, index) => (
+          <ValueFaithFeatureRow key={item.title} item={item} index={index} active={active} onLayout={storeRowLayout} />
+        ))}
+        <View pointerEvents="none" style={s.valueFaithArtOverlay}>
+          {FAITH_VALUE_FEATURES.map((item, index) => {
+            const layout = rowLayouts[index];
+            return layout ? (
+              <ValueFaithFeatureArt key={`faith-art-${item.title}`} item={item} index={index} active={active} layout={layout} />
+            ) : null;
+          })}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function ValueFeatureListVisual({ active, type }: { active: boolean; type: 'faith' | 'tools' }) {
+  const isFaith = type === 'faith';
+  const items = isFaith
+    ? [
+      { label: 'Bible reading', icon: <OpenBook s={19} c={GOLD} w={1.8} /> },
+      { label: 'My Favorites', icon: <BookMarked s={19} c="#4D8586" w={1.8} /> },
+      { label: 'Bible Notes', icon: <Feather s={19} c="#8F5D6C" w={1.8} /> },
+      { label: 'Prayer Book', icon: <Candle s={19} c={GOLD} w={1.8} /> },
+    ]
+    : [
+      { label: 'Journal', icon: <Feather s={19} c="#1C1917" w={1.8} /> },
+      { label: 'Gratitude', icon: <Heart s={19} c="#E11D48" w={1.8} /> },
+      { label: 'Reading List', icon: <OpenBook s={19} c="#4D8586" w={1.8} /> },
+      { label: 'Pomodoro Timer', icon: <Clock s={19} c={GOLD} w={1.8} /> },
+      { label: 'Notes', icon: <ListChecks s={19} c="#8F5D6C" w={1.8} /> },
+      { label: 'Bucket List', icon: <Crown s={19} c="#1C1917" w={1.8} /> },
+    ];
+
+  return (
+    <View style={s.valueFeatureVisual}>
+      {isFaith ? (
+        <ValueVisualReveal active={active} delay={90}>
+          <View style={s.valueFreeBadge}>
+            <Sparkles s={17} c={GOLD} w={1.9} />
+            <Text style={s.valueFreeBadgeText}>Free for all</Text>
+          </View>
+        </ValueVisualReveal>
+      ) : (
+        <ValueVisualReveal active={active} delay={90}>
+          <View style={s.valueGrowthOrb}>
+            <View style={s.valueGrowthGlow} />
+            <Candle s={44} c={GOLD} w={1.5} />
+          </View>
+        </ValueVisualReveal>
+      )}
+      <View style={s.valueFeatureChipList}>
+        {items.map((item, index) => (
+          <ValueVisualReveal key={item.label} active={active} delay={240 + index * 105}>
+            <ValueFeatureChip icon={item.icon} label={item.label} />
+          </ValueVisualReveal>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function ValueMiniFeatureCard({
+  icon,
+  label,
+  compact,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  compact?: boolean;
+}) {
+  return (
+    <View style={[s.valueMiniFeatureCard, compact && s.valueMiniFeatureCardCompact]}>
+      <View style={s.valueMiniFeatureIcon}>{icon}</View>
+      <Text style={[s.valueMiniFeatureText, compact && s.valueMiniFeatureTextCompact]}>{label}</Text>
+    </View>
+  );
+}
+
+function ValueFeatureChip({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <View style={s.valueFeatureChip}>
+      <View style={s.valueFeatureChipIcon}>{icon}</View>
+      <Text style={s.valueFeatureChipText}>{label}</Text>
+    </View>
+  );
+}
+
+function isOrganizeValueKind(kind: ValuePhoneKind) {
+  return kind === 'organize';
+}
+
+function ValuePhoneContent({ kind, active, onCelebrate }: { kind: ValuePhoneKind; active: boolean; onCelebrate: () => void }) {
+  if (kind === 'organize') {
+    return <ValueOrganizePhone active={active} animated onCelebrate={onCelebrate} />;
+  }
+  if (kind === 'discipline') return <ValueDisciplinePhone />;
+  if (kind === 'focus') return <ValueFocusPhone />;
+  if (kind === 'faith') return <ValueFaithPhone />;
+  return <ValueToolsPhone />;
 }
 
 function ValuePhoneMock({ kind, active }: { kind: ValuePhoneKind; active: boolean }) {
   const organizeConfettiRef = useRef<React.ElementRef<typeof LottieView>>(null);
   const organizeConfettiFadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const organizePhoneIntro = useSharedValue(kind === 'rhythm' && !active ? 0 : 1);
+  const organizePhoneIntroPlayed = useRef(false);
+  const organizePhoneIntro = useSharedValue(isOrganizeValueKind(kind) && !active ? 0 : 1);
   const organizeConfettiReveal = useSharedValue(0);
 
   useEffect(() => {
@@ -1595,20 +2925,26 @@ function ValuePhoneMock({ kind, active }: { kind: ValuePhoneKind; active: boolea
       organizeConfettiFadeTimer.current = null;
     }
 
-    if (kind !== 'rhythm') {
+    if (!isOrganizeValueKind(kind)) {
       organizePhoneIntro.value = 1;
       organizeConfettiReveal.value = 0;
       return;
     }
 
-    organizePhoneIntro.value = 0;
     organizeConfettiReveal.value = 0;
     organizeConfettiRef.current?.reset();
+    if (organizePhoneIntroPlayed.current) {
+      organizePhoneIntro.value = 1;
+      return;
+    }
+
+    organizePhoneIntro.value = 0;
     if (active) {
+      organizePhoneIntroPlayed.current = true;
       organizePhoneIntro.value = withDelay(
-        110,
+        70,
         withTiming(1, {
-          duration: 920,
+          duration: 640,
           easing: Easing.out(Easing.cubic),
         }),
       );
@@ -1623,12 +2959,17 @@ function ValuePhoneMock({ kind, active }: { kind: ValuePhoneKind; active: boolea
   }, [active, kind, organizeConfettiReveal, organizePhoneIntro]);
 
   const playOrganizeConfetti = useCallback(() => {
+    if (organizeConfettiFadeTimer.current) {
+      clearTimeout(organizeConfettiFadeTimer.current);
+      organizeConfettiFadeTimer.current = null;
+    }
     organizeConfettiReveal.value = withTiming(1, { duration: 210 });
+    organizeConfettiRef.current?.reset();
     organizeConfettiRef.current?.play();
     organizeConfettiFadeTimer.current = setTimeout(() => {
-      organizeConfettiReveal.value = withTiming(0, { duration: 920 });
+      organizeConfettiReveal.value = withTiming(0, { duration: VALUE_ORGANIZE_CONFETTI_FADE_DURATION });
       organizeConfettiFadeTimer.current = null;
-    }, 1720);
+    }, VALUE_ORGANIZE_CONFETTI_FADE_DELAY);
   }, [organizeConfettiReveal]);
 
   const organizePhoneIntroStyle = useAnimatedStyle(() => ({
@@ -1642,8 +2983,8 @@ function ValuePhoneMock({ kind, active }: { kind: ValuePhoneKind; active: boolea
   }));
 
   return (
-    <Reanimated.View style={[s.valuePhoneMotionShell, kind === 'rhythm' && organizePhoneIntroStyle]}>
-      {kind === 'rhythm' ? (
+    <Reanimated.View style={[s.valuePhoneMotionShell, isOrganizeValueKind(kind) && organizePhoneIntroStyle]}>
+      {isOrganizeValueKind(kind) ? (
         <Reanimated.View pointerEvents="none" style={[s.valueOrganizeConfettiLayer, organizeConfettiRevealStyle]}>
           <LottieView
             ref={organizeConfettiRef}
@@ -1666,9 +3007,7 @@ function ValuePhoneMock({ kind, active }: { kind: ValuePhoneKind; active: boolea
             <View style={s.valuePhoneCamera} />
           </View>
           <View style={s.valuePhoneScreen}>
-            {kind === 'protect' && <ValueProtectPhone />}
-            {kind === 'rhythm' && <ValueOrganizePhone active={active} animated onCelebrate={playOrganizeConfetti} />}
-            {kind === 'rise' && <ValueRisePhone />}
+            <ValuePhoneContent kind={kind} active={active} onCelebrate={playOrganizeConfetti} />
           </View>
         </View>
       </View>
@@ -1737,11 +3076,13 @@ function ValueOrganizeReveal({
   active,
   animated,
   delay,
+  duration = 330,
   children,
 }: {
   active: boolean;
   animated: boolean;
   delay: number;
+  duration?: number;
   children: React.ReactNode;
 }) {
   const reveal = useSharedValue(animated && active ? 0 : 1);
@@ -1757,12 +3098,12 @@ function ValueOrganizeReveal({
       reveal.value = withDelay(
         delay,
         withTiming(1, {
-          duration: 330,
+          duration,
           easing: Easing.out(Easing.cubic),
         }),
       );
     }
-  }, [active, animated, delay, reveal]);
+  }, [active, animated, delay, duration, reveal]);
 
   const revealStyle = useAnimatedStyle(() => ({
     opacity: interpolate(reveal.value, [0, 0.20, 1], [0, 1, 1]),
@@ -1773,6 +3114,17 @@ function ValueOrganizeReveal({
 
   return <Reanimated.View style={[s.valueOrganizeReveal, revealStyle]}>{children}</Reanimated.View>;
 }
+
+const VALUE_ORGANIZE_TASK_REVEAL_BASE_DELAY = 650;
+const VALUE_ORGANIZE_TASK_REVEAL_STEP_DELAY = 74;
+const VALUE_ORGANIZE_TASK_REVEAL_DURATION = 230;
+const VALUE_ORGANIZE_TASK_COUNT = 7;
+const VALUE_ORGANIZE_CHECK_DELAY =
+  VALUE_ORGANIZE_TASK_REVEAL_BASE_DELAY +
+  (VALUE_ORGANIZE_TASK_COUNT - 1) * VALUE_ORGANIZE_TASK_REVEAL_STEP_DELAY +
+  VALUE_ORGANIZE_TASK_REVEAL_DURATION;
+const VALUE_ORGANIZE_CONFETTI_FADE_DELAY = 2800;
+const VALUE_ORGANIZE_CONFETTI_FADE_DURATION = 920;
 
 function ValueProtectStat({ value, label }: { value: string; label: string }) {
   return (
@@ -1886,6 +3238,9 @@ function ValueOrganizePhone({
   onCelebrate?: () => void;
 }) {
   const [completedHabit, setCompletedHabit] = useState(false);
+  const [hasPlayedIntro, setHasPlayedIntro] = useState(false);
+  const shouldAnimateTasks = animated && !hasPlayedIntro;
+  const taskContentActive = active || hasPlayedIntro;
 
   useEffect(() => {
     if (!animated) {
@@ -1893,23 +3248,26 @@ function ValueOrganizePhone({
       return undefined;
     }
 
-    setCompletedHabit(false);
+    if (hasPlayedIntro) {
+      setCompletedHabit(true);
+      return undefined;
+    }
     if (!active) return undefined;
 
+    setCompletedHabit(false);
     preloadTaskFeedbackSound();
     const checkTimer = setTimeout(() => {
       setCompletedHabit(true);
-      void playTaskCompleteFeedback();
-    }, 1710);
-    const celebrationTimer = setTimeout(() => {
+      setHasPlayedIntro(true);
       onCelebrate?.();
-    }, 1840);
+      playTaskCheckSoundOnly();
+      runPreviewTaskCheckHaptic();
+    }, VALUE_ORGANIZE_CHECK_DELAY);
 
     return () => {
       clearTimeout(checkTimer);
-      clearTimeout(celebrationTimer);
     };
-  }, [active, animated, onCelebrate]);
+  }, [active, animated, hasPlayedIntro, onCelebrate]);
 
   const days = [
     { day: 'Tue', date: '19' },
@@ -1932,6 +3290,7 @@ function ValueOrganizePhone({
 
   return (
     <View style={s.valueHomeScreen}>
+      <View pointerEvents="none" style={s.valueHomeScreenPaper} />
       <View style={s.valueMonthHeader}>
         <View style={s.valueHomeIconButton}>
           <User s={11.5} c={INK} w={2} />
@@ -1976,8 +3335,10 @@ function ValueOrganizePhone({
 
       <View style={s.valueVerseBlock}>
         <Text style={s.valueVerseText}>
-          &quot;Awake thou that sleepest, and arise (anasta) from the dead,
-          and Christ shall give thee light.&quot;
+          {'"Awake thou that sleepest, and '}
+          <Text style={s.valueVerseUnderline}>arise</Text>{' '}
+          <Text style={s.valueVerseGold}>(anasta)</Text>
+          {' from the dead, and Christ shall give thee light."'}
         </Text>
         <Text style={s.valueVerseRef}>EPHESIANS 5:14</Text>
       </View>
@@ -1987,18 +3348,23 @@ function ValueOrganizePhone({
         <Text style={s.valueBigEventsSub}>1 active</Text>
       </View>
       <ValueOrganizeReveal active={active} animated={animated} delay={460}>
-        <View style={s.valueBigEventCard}>
+        <LinearGradient
+          colors={['#FFFFFF', '#FFFDF8']}
+          start={{ x: 0.12, y: 0 }}
+          end={{ x: 0.92, y: 1 }}
+          style={s.valueBigEventCard}
+        >
           <View style={s.valueBigEventIconBox}>
             <NotoEmoji name={normalizeHabitIcon('birthday-cake')} size={13} />
           </View>
           <View style={s.valueBigEventCopy}>
-            <Text style={s.valueBigEventTitle} numberOfLines={1}>Birthday</Text>
+            <Text style={s.valueBigEventTitle} numberOfLines={1}>Family birthday</Text>
           </View>
           <View style={s.valueBigEventCount}>
             <Text style={s.valueBigEventCountNum}>7</Text>
             <Text style={s.valueBigEventCountLabel}>days</Text>
           </View>
-        </View>
+        </LinearGradient>
       </ValueOrganizeReveal>
 
       <View style={s.valueTasksHeader}>
@@ -2006,16 +3372,22 @@ function ValueOrganizePhone({
           <Text style={s.valueHomeSectionTitle}>Today&apos;s Tasks</Text>
           <Text style={s.valueHomeSectionMeta}>7 active today</Text>
         </View>
-        <View style={s.valueTasksRule} />
+        <View style={s.valueTasksProgressWrap}>
+          <View style={s.valueTasksProgressTrack}>
+            <View style={[s.valueTasksProgressFill, { width: completedHabit ? '42%' : '18%' }]} />
+          </View>
+          <Text style={s.valueTasksProgressText}>{completedHabit ? '1/7' : '0/7'}</Text>
+        </View>
       </View>
 
       <View style={s.valueHomeTaskStack}>
         {taskPreviewItems.map((item, itemIndex) => (
           <ValueOrganizeReveal
             key={item.key}
-            active={active}
-            animated={animated}
-            delay={650 + itemIndex * 105}
+            active={taskContentActive}
+            animated={shouldAnimateTasks}
+            delay={VALUE_ORGANIZE_TASK_REVEAL_BASE_DELAY + itemIndex * VALUE_ORGANIZE_TASK_REVEAL_STEP_DELAY}
+            duration={VALUE_ORGANIZE_TASK_REVEAL_DURATION}
           >
             <ValuePhoneTaskCard
               item={item}
@@ -2915,10 +4287,12 @@ function ProtectSidePrompt({
   segments,
   motionKey,
   compact = false,
+  delay = 0,
 }: {
   segments: PromptSegment[];
   motionKey?: string;
   compact?: boolean;
+  delay?: number;
 }) {
   const mascotIntro = useSharedValue(0);
   const bubbleIntro = useSharedValue(0);
@@ -2926,19 +4300,24 @@ function ProtectSidePrompt({
   useEffect(() => {
     mascotIntro.value = 0;
     bubbleIntro.value = 0;
-    mascotIntro.value = withTiming(1, {
-      duration: 860,
-      easing: Easing.out(Easing.cubic),
-    });
-    const timer = setTimeout(() => {
+    const mascotTimer = setTimeout(() => {
+      mascotIntro.value = withTiming(1, {
+        duration: 860,
+        easing: Easing.out(Easing.cubic),
+      });
+    }, delay);
+    const bubbleTimer = setTimeout(() => {
       runBubbleHaptic();
       bubbleIntro.value = withTiming(1, {
         duration: 620,
         easing: Easing.out(Easing.cubic),
       });
-    }, 680);
-    return () => clearTimeout(timer);
-  }, [bubbleIntro, mascotIntro, motionKey]);
+    }, delay + 680);
+    return () => {
+      clearTimeout(mascotTimer);
+      clearTimeout(bubbleTimer);
+    };
+  }, [bubbleIntro, delay, mascotIntro, motionKey]);
 
   const mascotMotionStyle = useAnimatedStyle(() => {
     const intro = mascotIntro.value;
@@ -3156,8 +4535,7 @@ const PROTECT_GUARDRAILS = [
 ] as const;
 
 const PROTECT_INTRO_VISUAL_DELAY_MS = 220;
-const DISTRACTION_CARD_REVEAL_DELAYS = [520, 1040, 1420, 1730, 1990, 2210, 2400, 2570] as const;
-const DISTRACTION_SEQUENCE_COMPLETE_MS = 3300;
+const DISTRACTION_SEQUENCE_COMPLETE_MS = 2850;
 
 function ProtectIntroSlide({ onNext }: { onNext: () => void }) {
   const [reveal, setReveal] = useState(0);
@@ -3316,6 +4694,31 @@ const DISTRACTION_CARDS = [
   },
 ] as const;
 
+const DISTRACTION_CARD_REVEAL_PROFILES: Record<
+  (typeof DISTRACTION_CARDS)[number]['style'],
+  { delay: number; duration: number; x: number; y: number; rotate: string; scale: number }
+> = {
+  gaming: { delay: 300, duration: 520, x: -82, y: 28, rotate: '-18deg', scale: 0.78 },
+  apps: { delay: 430, duration: 520, x: 78, y: 30, rotate: '18deg', scale: 0.78 },
+  content: { delay: 570, duration: 540, x: -12, y: 58, rotate: '9deg', scale: 0.76 },
+  noise: { delay: 710, duration: 540, x: 42, y: 54, rotate: '-14deg', scale: 0.76 },
+  streaming: { delay: 1060, duration: 620, x: -92, y: -8, rotate: '-17deg', scale: 0.74 },
+  messaging: { delay: 1360, duration: 650, x: 88, y: 10, rotate: '16deg', scale: 0.74 },
+  notifications: { delay: 1660, duration: 680, x: 34, y: -86, rotate: '19deg', scale: 0.72 },
+  social: { delay: 1960, duration: 680, x: -78, y: -70, rotate: '-20deg', scale: 0.72 },
+};
+
+const DISTRACTION_CARD_MOTION_PATHS = [
+  { phase: 0.10, xA: 10, yA: 11, xB: 4, yB: 5, xC: 1.7, yC: 1.2, rA: 2.2, rB: 0.9, rC: 0.45, duration: 6100 },
+  { phase: 0.62, xA: 9, yA: 9, xB: 6, yB: 4, xC: 1.5, yC: 1.3, rA: 2.0, rB: 1.1, rC: 0.5, duration: 6420 },
+  { phase: 1.25, xA: 8, yA: 12, xB: 5, yB: 6, xC: 1.8, yC: 1.0, rA: 2.4, rB: 0.8, rC: 0.42, duration: 6260 },
+  { phase: 1.88, xA: 11, yA: 8, xB: 4, yB: 7, xC: 1.3, yC: 1.6, rA: 2.1, rB: 1.3, rC: 0.55, duration: 6740 },
+  { phase: 2.45, xA: 9, yA: 10, xB: 7, yB: 4, xC: 1.9, yC: 1.1, rA: 2.5, rB: 1.0, rC: 0.5, duration: 6350 },
+  { phase: 3.05, xA: 10, yA: 9, xB: 5, yB: 7, xC: 1.4, yC: 1.7, rA: 2.2, rB: 1.0, rC: 0.44, duration: 6620 },
+  { phase: 3.72, xA: 8, yA: 11, xB: 6, yB: 5, xC: 1.7, yC: 1.4, rA: 2.1, rB: 1.2, rC: 0.48, duration: 6180 },
+  { phase: 4.38, xA: 9, yA: 8, xB: 4, yB: 6, xC: 1.5, yC: 1.5, rA: 2.3, rB: 0.9, rC: 0.52, duration: 6530 },
+];
+
 function DistractionCard({
   item,
   index,
@@ -3324,7 +4727,9 @@ function DistractionCard({
   index: number;
 }) {
   const drift = useSharedValue(0);
-  const revealDelay = DISTRACTION_CARD_REVEAL_DELAYS[index] ?? 2600 + index * 120;
+  const revealProfile = DISTRACTION_CARD_REVEAL_PROFILES[item.style];
+  const revealDelay = revealProfile.delay;
+  const motion = DISTRACTION_CARD_MOTION_PATHS[index] ?? DISTRACTION_CARD_MOTION_PATHS[0];
   const styleByKey: Record<(typeof DISTRACTION_CARDS)[number]['style'], StyleProp<ViewStyle>> = {
     social: s.distractionCardSocial,
     notifications: s.distractionCardNotifications,
@@ -3339,31 +4744,49 @@ function DistractionCard({
   useEffect(() => {
     const hapticTimer = setTimeout(runStrongHaptic, revealDelay + 80);
     const floatTimer = setTimeout(() => {
+      drift.value = 0;
       drift.value = withRepeat(
         withTiming(1, {
-          duration: 1850 + index * 95,
-          easing: Easing.inOut(Easing.cubic),
+          duration: motion.duration,
+          easing: Easing.linear,
         }),
         -1,
-        true
+        false
       );
-    }, revealDelay + 560);
+    }, revealDelay + revealProfile.duration - 60);
 
     return () => {
       clearTimeout(hapticTimer);
       clearTimeout(floatTimer);
       drift.value = 0;
     };
-  }, [drift, index, revealDelay]);
+  }, [drift, motion.duration, revealDelay, revealProfile.duration]);
 
   const floatStyle = useAnimatedStyle(() => {
-    const side = index % 2 === 0 ? 1 : -1;
-    const depth = index % 3 === 0 ? 1 : 0.84;
+    const warpedDrift =
+      drift.value +
+      Math.sin(drift.value * Math.PI * 2 + motion.phase) * 0.032 +
+      Math.sin(drift.value * Math.PI * 6 + motion.phase * 1.2) * 0.01;
+    const angle = warpedDrift * Math.PI * 2 + motion.phase;
+    const secondaryAngle = warpedDrift * Math.PI * 4 + motion.phase * 0.7;
+    const tertiaryAngle = warpedDrift * Math.PI * 6 + motion.phase * 1.35;
+    const x =
+      Math.sin(angle) * motion.xA +
+      Math.sin(secondaryAngle) * motion.xB +
+      Math.cos(tertiaryAngle) * motion.xC;
+    const y =
+      Math.cos(angle) * motion.yA +
+      Math.sin(secondaryAngle + 0.8) * motion.yB +
+      Math.cos(tertiaryAngle + 0.35) * motion.yC;
+    const rotate =
+      Math.sin(angle + 0.6) * motion.rA +
+      Math.cos(secondaryAngle) * motion.rB +
+      Math.sin(tertiaryAngle + 0.2) * motion.rC;
     return {
       transform: [
-        { translateX: interpolate(drift.value, [0, 1], [0, side * 13.5 * depth]) },
-        { translateY: interpolate(drift.value, [0, 1], [0, -16 * depth]) },
-        { rotate: `${interpolate(drift.value, [0, 1], [0, side * 3.2])}deg` },
+        { translateX: x },
+        { translateY: y },
+        { rotate: `${rotate}deg` },
       ],
     };
   });
@@ -3372,14 +4795,15 @@ function DistractionCard({
     <Reanimated.View
       entering={FadeIn
         .delay(revealDelay)
-        .duration(560)
+        .duration(revealProfile.duration)
+        .easing(Easing.bezier(0.16, 1, 0.28, 1))
         .withInitialValues({
           opacity: 0,
           transform: [
-            { translateY: 22 },
-            { translateX: item.startX * 0.36 },
-            { rotate: item.startRotate },
-            { scale: 0.72 },
+            { translateY: revealProfile.y },
+            { translateX: revealProfile.x },
+            { rotate: revealProfile.rotate },
+            { scale: revealProfile.scale },
           ],
         })}
       style={[s.distractionCardSlot, styleByKey[item.style]]}
@@ -3427,12 +4851,7 @@ function ProtectDistractionVisual() {
         })}
         style={s.distractionCore}
       >
-        <View style={s.distractionCoreLogoWrap}>
-          <Image source={APP_LOGO} style={s.distractionCoreLogo} resizeMode="cover" />
-        </View>
-        <View style={s.distractionCoreBadge}>
-          <Target s={17} c="#FFFFFF" w={2.1} />
-        </View>
+        <Image source={PROTECT_TIME_STICKER} style={s.distractionStickerImage} resizeMode="contain" />
       </Reanimated.View>
 
       {DISTRACTION_CARDS.map((item, index) => (
@@ -6808,6 +8227,942 @@ function FreeRow({ icon, title, body }: { icon: React.ReactNode; title: string; 
   );
 }
 
+const V4_PROGRESS_SLOTS = ['Protect', 'Organize', 'Grow', 'Tools'] as const;
+
+function V4ProgressRail({
+  completedCount,
+  previousCompletedCount = completedCount,
+  showTools = completedCount >= 4,
+}: {
+  completedCount: number;
+  previousCompletedCount?: number;
+  showTools?: boolean;
+}) {
+  const slots = showTools ? V4_PROGRESS_SLOTS : V4_PROGRESS_SLOTS.slice(0, 3);
+
+  return (
+    <View style={s.chapterCheckpointRail}>
+      {slots.map((label, index) => {
+        const done = index < completedCount;
+        const isNewlyCompleted = done && index >= previousCompletedCount;
+        return (
+          <Reanimated.View
+            key={label}
+            entering={FadeIn.delay(index * 105).duration(430).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 8 }, { scale: 0.97 }],
+            })}
+            style={s.chapterCheckpointStep}
+          >
+            <View style={[s.chapterCheckpointStepLine, done && s.chapterCheckpointStepLineDone]}>
+              {done && <ChapterCheckpointLineFill key={`${label}-${index}`} animate={isNewlyCompleted} />}
+            </View>
+            <ChapterCheckpointStepDot done={done} animate={isNewlyCompleted} />
+            <Text style={[s.chapterCheckpointStepText, done && s.chapterCheckpointStepTextDone]}>{label}</Text>
+          </Reanimated.View>
+        );
+      })}
+    </View>
+  );
+}
+
+function V4MomentSlide({
+  eyebrow,
+  title,
+  body,
+  onNext,
+  autoAdvance,
+  icon,
+}: {
+  eyebrow?: string;
+  title: string;
+  body: string;
+  onNext: () => void;
+  autoAdvance?: boolean;
+  icon?: React.ReactNode;
+}) {
+  useEffect(() => {
+    if (!autoAdvance) return undefined;
+    const timer = setTimeout(onNext, 2500);
+    return () => clearTimeout(timer);
+  }, [autoAdvance, onNext]);
+
+  return (
+    <LinearGradient
+      colors={['#FFFDF8', '#FFFDF8', '#F8EEDC']}
+      style={s.v4MomentSlide}
+    >
+      <Reanimated.View entering={FadeIn.duration(420)} style={s.v4MomentIcon}>
+        {icon ?? <Image source={APP_LOGO} style={s.v4MomentLogo} resizeMode="cover" />}
+      </Reanimated.View>
+      {eyebrow ? <Text style={s.v4Eyebrow}>{eyebrow}</Text> : null}
+      <Text style={s.v4MomentTitle}>{title}</Text>
+      <Text style={s.v4MomentBody}>{body}</Text>
+      {!autoAdvance && (
+        <AnimatedCta delay={260} style={s.v4MomentAction}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>Continue</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      )}
+    </LinearGradient>
+  );
+}
+
+function V4StatementsIntroSlide({ displayName, onNext }: { displayName?: string; onNext: () => void }) {
+  const name = nameForDisplay(displayName);
+  return (
+    <View style={s.messageSlide}>
+      <ScrollView contentContainerStyle={s.v4ConversationContent} showsVerticalScrollIndicator={false}>
+        <View style={s.v4ConversationInner}>
+          <V4ProgressRail completedCount={0} />
+          <ProtectSidePrompt
+            delay={80}
+            segments={[{ text: 'Anasta has a lot of tools.' }]}
+          />
+          <ProtectSidePrompt
+            delay={360}
+            segments={[
+              { text: 'But their worth is measured by ' },
+              { text: 'what they add to your life.', highlight: true },
+            ]}
+          />
+          <ProtectSidePrompt
+            delay={650}
+            segments={[{ text: "We'll show you a few statements - just tell us if they sound like you." }]}
+          />
+          <ProtectSidePrompt
+            delay={940}
+            segments={[{ text: `${name ? `${name}, please` : 'Please'} answer honestly. The more we understand you, the better we can set Anasta up to fit your life.` }]}
+          />
+          <Reanimated.View entering={FadeInUp.delay(1120).duration(420)} style={s.v4DeckPreviewCard}>
+            <Text style={s.v4DeckPreviewText}>Swipe right if it sounds like you.</Text>
+          </Reanimated.View>
+        </View>
+      </ScrollView>
+
+      <AnimatedCta delay={1320} style={s.questionFooter}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>Let&apos;s go</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+function V4StatementDeckSlide({
+  cards,
+  accent,
+  onDone,
+}: {
+  cards: StatementDeckCard[];
+  accent: string;
+  onDone: (yesIds: string[]) => void;
+}) {
+  const { width, height } = useWindowDimensions();
+  const [index, setIndex] = useState(0);
+  const [yesIds, setYesIds] = useState<string[]>([]);
+  const [decisions, setDecisions] = useState<(boolean | undefined)[]>(() => cards.map(() => undefined));
+  const [, setImageRevision] = useState(0);
+  const activeCard = cards[index];
+  const isCompact = height < 760;
+  const availableCardWidth = Math.max(width - 52, 280);
+  const cardWidth = Math.min(availableCardWidth, isCompact ? 356 : 382);
+  const quoteHeight = isCompact ? 126 : 146;
+  const cardMetrics = useMemo<StatementCardMetrics>(() => ({
+    width: cardWidth,
+    quoteHeight,
+    cardHeight: cardWidth + quoteHeight,
+  }), [cardWidth, quoteHeight]);
+  const cardImages = useMemo(
+    () => cards
+      .map(card => card.image)
+      .filter((image): image is number => typeof image === 'number'),
+    [cards],
+  );
+
+  useEffect(() => {
+    let active = true;
+    const imagesToWarm = cards
+      .slice(index, index + 6)
+      .map(card => card.image)
+      .filter((image): image is number => typeof image === 'number');
+    const imagesToRelease = cards
+      .slice(0, Math.max(0, index - 1))
+      .map(card => card.image)
+      .filter((image): image is number => typeof image === 'number');
+
+    releaseStatementImages(imagesToRelease);
+
+    void warmStatementImages(imagesToWarm).then(() => {
+      if (active) setImageRevision(revision => revision + 1);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [cards, index]);
+
+  useEffect(() => () => {
+    releaseStatementImages(cardImages);
+  }, [cardImages]);
+
+  const commitAnswer = useCallback((yes: boolean) => {
+    setDecisions(prev => {
+      const next = [...prev];
+      next[index] = yes;
+      return next;
+    });
+  }, [index]);
+
+  const answer = useCallback((yes: boolean) => {
+    if (!activeCard) return;
+    const nextYes = yes ? [...yesIds, activeCard.id] : yesIds;
+    setYesIds(nextYes);
+    if (index >= cards.length - 1) {
+      onDone(nextYes);
+      return;
+    }
+    setIndex(prev => prev + 1);
+  }, [activeCard, cards.length, index, onDone, yesIds]);
+
+  return (
+    <View style={s.v4DeckSlide}>
+      <Text style={[s.v4DeckTitle, isCompact && s.v4DeckTitleCompact]}>Do you relate to the statement below?</Text>
+      <V4DeckAnswerProgress decisions={decisions} activeIndex={index} />
+      <View style={[s.v4DeckStack, isCompact && s.v4DeckStackCompact]}>
+        {cards[index + 3] ? (
+          <V4StatementStackCard style={s.v4StackCardFar} accent={accent} metrics={cardMetrics} />
+        ) : null}
+        {cards[index + 2] ? (
+          <V4StatementStackCard style={s.v4StackCardMiddle} accent={accent} metrics={cardMetrics} />
+        ) : null}
+        {cards[index + 1] ? (
+          <V4StatementStackCard style={s.v4StackCardNear} accent={accent} metrics={cardMetrics} />
+        ) : null}
+        {activeCard ? (
+          <V4SwipeStatementCard
+            key={activeCard.id}
+            card={activeCard}
+            accent={accent}
+            metrics={cardMetrics}
+            imageSource={activeCard.image ? statementImageRefs.get(activeCard.image) ?? activeCard.image : undefined}
+            onCommit={commitAnswer}
+            onAnswer={answer}
+          />
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function V4DeckAnswerProgress({
+  decisions,
+  activeIndex,
+}: {
+  decisions: (boolean | undefined)[];
+  activeIndex: number;
+}) {
+  return (
+    <View style={s.v4DeckAnswerProgress}>
+      {decisions.map((decision, index) => (
+        <V4DeckAnswerSegment
+          key={`deck-progress-${index}`}
+          decision={decision}
+          active={index === activeIndex}
+        />
+      ))}
+    </View>
+  );
+}
+
+function V4DeckAnswerSegment({
+  decision,
+  active,
+}: {
+  decision?: boolean;
+  active: boolean;
+}) {
+  const state = useSharedValue(decision === true ? 1 : decision === false ? -1 : 0);
+
+  useEffect(() => {
+    state.value = withTiming(decision === true ? 1 : decision === false ? -1 : 0, {
+      duration: 190,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [decision, state]);
+
+  const segmentStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      state.value,
+      [-1, 0, 1],
+      ['#D95858', 'rgba(25,23,20,0.12)', '#43A66B'],
+    ),
+    opacity: state.value === 0 && !active ? 0.72 : 1,
+  }));
+
+  return <Reanimated.View style={[s.v4DeckAnswerSegment, active && decision === undefined && s.v4DeckAnswerSegmentActive, segmentStyle]} />;
+}
+
+function V4StatementStackCard({
+  accent,
+  style,
+  metrics,
+}: {
+  accent: string;
+  style: StyleProp<ViewStyle>;
+  metrics: StatementCardMetrics;
+}) {
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        s.v4StatementCard,
+        s.v4StackCard,
+        { width: metrics.width, height: metrics.cardHeight, borderColor: `${accent}28` },
+        style,
+      ]}
+    >
+      <View style={[s.v4StackCardTop, { height: metrics.quoteHeight, backgroundColor: `${accent}12` }]} />
+      <View style={[s.v4StackCardBody, { height: metrics.width }]} />
+    </View>
+  );
+}
+
+function V4SwipeStatementCard({
+  card,
+  accent,
+  metrics,
+  imageSource,
+  onCommit,
+  onAnswer,
+}: {
+  card: StatementDeckCard;
+  accent: string;
+  metrics: StatementCardMetrics;
+  imageSource?: number | ExpoImageRef;
+  onCommit: (yes: boolean) => void;
+  onAnswer: (yes: boolean) => void;
+}) {
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const locked = useSharedValue(false);
+
+  const submit = useCallback((yes: boolean) => {
+    if (locked.value) return;
+    locked.value = true;
+    runSelectionHaptic();
+    onCommit(yes);
+    translateY.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
+    translateX.value = withTiming(yes ? 560 : -560, { duration: 280, easing: Easing.out(Easing.cubic) }, () => {
+      runOnJS(onAnswer)(yes);
+    });
+  }, [locked, onAnswer, onCommit, translateX, translateY]);
+
+  const gesture = useMemo(() => Gesture.Pan()
+    .activeOffsetX([-12, 12])
+    .failOffsetY([-18, 18])
+    .onUpdate(event => {
+      translateX.value = event.translationX;
+      translateY.value = event.translationY * 0.18;
+    })
+    .onEnd(event => {
+      if (locked.value) return;
+      if (Math.abs(event.translationX) > 88 || Math.abs(event.velocityX) > 520) {
+        locked.value = true;
+        const yes = event.translationX > 0 || event.velocityX > 0;
+        runOnJS(runSelectionHaptic)();
+        runOnJS(onCommit)(yes);
+        translateY.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
+        translateX.value = withTiming(yes ? 560 : -560, { duration: 280, easing: Easing.out(Easing.cubic) }, () => {
+          runOnJS(onAnswer)(yes);
+        });
+        return;
+      }
+      translateX.value = withTiming(0, { duration: 240, easing: Easing.out(Easing.cubic) });
+      translateY.value = withTiming(0, { duration: 240, easing: Easing.out(Easing.cubic) });
+    }), [locked, onAnswer, onCommit, translateX, translateY]);
+
+  const cardStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { rotate: `${interpolate(translateX.value, [-180, 180], [-6, 6])}deg` },
+    ],
+  }));
+  const activeLeftGlowStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(translateX.value, [-190, -1, 0], [0.98, 0.025, 0], 'clamp'),
+  }));
+  const activeRightGlowStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(translateX.value, [0, 1, 190], [0, 0.025, 0.98], 'clamp'),
+  }));
+
+  return (
+    <View style={[s.v4SwipeCardWrap, { width: metrics.width }]}>
+      <Reanimated.View pointerEvents="none" style={[s.v4DeckSideGlow, s.v4DeckSideGlowNo, activeLeftGlowStyle]}>
+        <LinearGradient
+          colors={['rgba(211,53,61,0.72)', 'rgba(222,73,79,0.28)', 'rgba(222,73,79,0)']}
+          locations={[0, 0.46, 1]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Reanimated.View>
+      <Reanimated.View pointerEvents="none" style={[s.v4DeckSideGlow, s.v4DeckSideGlowYes, activeRightGlowStyle]}>
+        <LinearGradient
+          colors={['rgba(62,170,103,0)', 'rgba(62,170,103,0.27)', 'rgba(47,157,88,0.72)']}
+          locations={[0, 0.54, 1]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Reanimated.View>
+      <GestureDetector gesture={gesture}>
+        <Reanimated.View style={[s.v4StatementCard, { height: metrics.cardHeight }, cardStyle]}>
+          <View style={[s.v4StatementQuotePanel, { height: metrics.quoteHeight, backgroundColor: `${accent}24` }]}>
+            <Text style={s.v4StatementText}>“{card.statement}”</Text>
+          </View>
+          <View style={[s.v4StatementArt, { height: metrics.width }]}>
+            {imageSource ? (
+              <ExpoImage
+                source={imageSource}
+                style={s.v4StatementImage}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                priority="high"
+                transition={0}
+                recyclingKey={card.id}
+              />
+            ) : (
+              <View style={[s.v4StatementIcon, { backgroundColor: `${accent}16` }]}>{card.icon}</View>
+            )}
+          </View>
+        </Reanimated.View>
+      </GestureDetector>
+      <View style={s.v4AnswerRow}>
+        <TouchableOpacity activeOpacity={0.88} haptic="none" onPress={() => submit(false)} style={s.v4NoButton}>
+          <X s={18} c="#A8393F" w={2.4} />
+          <Text style={s.v4NoButtonText}>No</Text>
+        </TouchableOpacity>
+        <TouchableOpacity activeOpacity={0.88} haptic="none" onPress={() => submit(true)} style={s.v4YesButton}>
+          <Text style={s.v4YesButtonText}>Yes</Text>
+          <CheckSmall s={19} c="#2F8F57" w={2.5} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function V4ScreenTimeSliderSlide({
+  hours,
+  onChange,
+  onNext,
+}: {
+  hours?: number;
+  onChange: (hours: number) => void;
+  onNext: () => void;
+}) {
+  return (
+    <View style={s.v4CenteredSlide}>
+      <Text style={s.v4MomentTitle}>How much time do you spend on your phone each day?</Text>
+      <ScreenTimeSlider value={hours} onChange={onChange} />
+      <AnimatedCta delay={240} style={s.v4MomentAction}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>Continue</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+function V4DayVisualizationSlide({ hours, onNext }: { hours?: number; onNext: () => void }) {
+  const stat = protectStats(hours);
+  const restHours = Math.max(0, DAY_HOURS - SLEEP_HOURS_PER_DAY - stat.hours);
+  const phonePercent = Math.round((stat.hours / DAY_HOURS) * 100);
+  const restPercent = Math.max(0, Math.round((restHours / DAY_HOURS) * 100));
+
+  return (
+    <ScrollView contentContainerStyle={s.v4ScrollContent} showsVerticalScrollIndicator={false}>
+      <Text style={s.v4Eyebrow}>Your day</Text>
+      <Text style={s.v4MomentTitle}>This is where your time goes.</Text>
+      <V4MetricCard label="Sleep" value="8 hours" detail="33% of your day" />
+      <V4MetricCard label="On your phone" value={`${formatHourValue(stat.hours)} hours`} detail={`${phonePercent}% of your day`} accent />
+      <V4MetricCard label="The rest of your day" value={`${formatHourValue(restHours)} hours`} detail={`${restPercent}% of your day`} />
+      <Text style={s.v4WasteTitle}>YOU WASTE</Text>
+      <V4MetricCard label="Every year" value={`${stat.yearlyDays} days`} detail="spent on your phone" />
+      <V4MetricCard label="Over a lifetime" value={`${formatYearValue(stat.lifetimeYears)} years`} detail="spent on your phone" />
+      <Text style={s.v4GoodTitle}>YOU CAN GET BACK</Text>
+      <V4MetricCard label="If you cut only 40%" value={`${stat.reclaimedDays} days/year`} detail={`${formatYearValue(stat.reclaimedYears)} years over a lifetime`} accent />
+      <View style={s.ctaIsland}>
+        <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+          <Text style={s.primaryButtonText}>Let&apos;s start fixing this</Text>
+          <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+}
+
+function V4MetricCard({ label, value, detail, accent }: { label: string; value: string; detail: string; accent?: boolean }) {
+  return (
+    <Reanimated.View entering={FadeInUp.duration(340)} style={[s.v4MetricCard, accent && s.v4MetricCardAccent]}>
+      <Text style={s.v4MetricLabel}>{label}</Text>
+      <Text style={s.v4MetricValue}>{value}</Text>
+      <Text style={s.v4MetricDetail}>{detail}</Text>
+    </Reanimated.View>
+  );
+}
+
+function V4RecapSlide({
+  title,
+  cards,
+  selected,
+  hours,
+  onNext,
+}: {
+  title: string;
+  cards: StatementDeckCard[];
+  selected: string[];
+  hours?: number;
+  onNext: () => void;
+}) {
+  const stat = hours ? protectStats(hours) : null;
+  return (
+    <ScrollView contentContainerStyle={s.v4ScrollContent} showsVerticalScrollIndicator={false}>
+      <Text style={s.v4MomentTitle}>{title}</Text>
+      {stat ? (
+        <View style={s.v4StakesPanel}>
+          <Text style={s.v4StakesText}>
+            You spend {stat.yearlyDays} days/year on your phone. That&apos;s {formatYearValue(stat.lifetimeYears)} years of your life.
+          </Text>
+        </View>
+      ) : null}
+      {cards.map(card => {
+        const active = selected.includes(card.id);
+        return (
+          <View key={card.id} style={[s.v4RecapCard, !active && s.v4RecapCardMuted]}>
+            <Text style={s.v4RecapMark}>{active ? 'Yes' : 'No'}</Text>
+            <Text style={s.v4RecapText}>{card.statement}</Text>
+          </View>
+        );
+      })}
+      <View style={s.ctaIsland}>
+        <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+          <Text style={s.primaryButtonText}>Let&apos;s start</Text>
+          <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+}
+
+function V4SetupLoopSlide({
+  title,
+  items,
+  progressCount,
+  onNext,
+}: {
+  title: string;
+  items: string[];
+  progressCount: number;
+  onNext: () => void;
+}) {
+  const [completed, setCompleted] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (completed.length !== items.length) return undefined;
+    const timer = setTimeout(onNext, 650);
+    return () => clearTimeout(timer);
+  }, [completed.length, items.length, onNext]);
+
+  return (
+    <ScrollView contentContainerStyle={s.v4ScrollContent} showsVerticalScrollIndicator={false}>
+      <V4ProgressRail completedCount={progressCount} showTools={progressCount >= 3} />
+      <Text style={s.v4MomentTitle}>{title}</Text>
+      <Text style={s.v4MomentBody}>Tap each setup card and watch your system come together.</Text>
+      {items.map(item => {
+        const done = completed.includes(item);
+        return (
+          <TouchableOpacity
+            key={item}
+            activeOpacity={0.88}
+            haptic="medium"
+            onPress={() => setCompleted(prev => prev.includes(item) ? prev : [...prev, item])}
+            style={[s.v4SetupCard, done && s.v4SetupCardDone]}
+          >
+            <Text style={s.v4SetupTitle}>{item}</Text>
+            <Text style={s.v4SetupBody}>Prepared for your Anasta system.</Text>
+            {done ? <CheckSmall s={22} c={GOLD} w={2.4} /> : null}
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+function V4FlameSlide({
+  completedCount,
+  title,
+  body,
+  surprise,
+  onNext,
+}: {
+  completedCount: number;
+  title: string;
+  body: string;
+  surprise?: boolean;
+  onNext: () => void;
+}) {
+  const [reveal, setReveal] = useState(0);
+  const showTools = Boolean(surprise) || completedCount >= 4;
+  const previousCompletedCount = Math.max(0, completedCount - 1);
+  const railCompletedCount = reveal >= 4 ? completedCount : previousCompletedCount;
+  const slotCount = showTools ? 4 : 3;
+  const sealFlight = useSharedValue(0);
+
+  useEffect(() => {
+    setReveal(0);
+    sealFlight.value = 0;
+    preloadTaskFeedbackSound();
+    preloadAchievementFeedbackSound();
+    const timers = [
+      setTimeout(() => setReveal(1), 160),
+      setTimeout(() => {
+        setReveal(2);
+        void playAchievementCompleteFeedback();
+      }, 520),
+      setTimeout(() => setReveal(3), 1340),
+      setTimeout(() => {
+        setReveal(4);
+        sealFlight.value = withTiming(1, {
+          duration: 780,
+          easing: Easing.inOut(Easing.cubic),
+        });
+        void playTaskCompleteFeedback();
+      }, 2120),
+      setTimeout(() => setReveal(5), 3040),
+      setTimeout(() => setReveal(6), 3860),
+    ];
+    return () => timers.forEach(timer => clearTimeout(timer));
+  }, [completedCount, sealFlight, showTools]);
+
+  const sealFlightStyle = useAnimatedStyle(() => {
+    const denominator = Math.max(1, slotCount - 1);
+    const targetX = ((completedCount - 1) / denominator - 0.5) * 300;
+    return {
+      opacity: interpolate(sealFlight.value, [0, 0.72, 1], [1, 0.96, 0]),
+      transform: [
+        { translateX: interpolate(sealFlight.value, [0, 0.58, 1], [0, targetX * 0.18, targetX]) },
+        { translateY: interpolate(sealFlight.value, [0, 0.62, 1], [0, -164, -226]) },
+        { scale: interpolate(sealFlight.value, [0, 0.64, 1], [1, 0.44, 0.15]) },
+      ],
+    };
+  });
+  const congratsFlightStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(sealFlight.value, [0, 0.18, 0.46], [1, 0.85, 0]),
+    transform: [
+      { translateY: interpolate(sealFlight.value, [0, 0.46], [0, -9]) },
+      { scale: interpolate(sealFlight.value, [0, 0.46], [1, 0.97]) },
+    ],
+  }));
+
+  return (
+    <LinearGradient colors={['#FFFDF8', '#FFFDF8', '#F8EEDC']} style={s.v4FlameSlide}>
+      <View style={s.chapterCheckpointStage}>
+        <View style={s.chapterCheckpointSealSlot}>
+          {reveal >= 1 && reveal < 5 ? (
+            <Reanimated.View
+              entering={FadeIn.duration(760).withInitialValues({
+                opacity: 0,
+                transform: [{ translateY: 18 }, { scale: 0.74 }],
+              })}
+              exiting={FadeOut.duration(1060)}
+              style={s.chapterCheckpointAchievement}
+            >
+              <Reanimated.View style={[s.chapterCheckpointSealFlight, sealFlightStyle]}>
+                <View style={s.chapterCheckpointSeal}>
+                  <View style={s.chapterCheckpointSealGlow} />
+                  {reveal >= 2 ? <CheckpointFlameBurst /> : null}
+                </View>
+              </Reanimated.View>
+              {reveal >= 2 ? (
+                <Reanimated.Text
+                  entering={FadeIn.delay(360).duration(640).withInitialValues({
+                    opacity: 0,
+                    transform: [{ translateY: 10 }, { scale: 0.97 }],
+                  })}
+                  style={[s.chapterCheckpointCongrats, congratsFlightStyle]}
+                >
+                  Congratulations!
+                </Reanimated.Text>
+              ) : null}
+            </Reanimated.View>
+          ) : null}
+        </View>
+
+        <View style={s.chapterCheckpointRailSlot}>
+          {reveal >= 3 ? (
+            <V4ProgressRail
+              completedCount={railCompletedCount}
+              previousCompletedCount={previousCompletedCount}
+              showTools={showTools}
+            />
+          ) : null}
+        </View>
+
+        <View style={s.v4CheckpointCopySlot}>
+          {reveal >= 5 ? (
+            <Reanimated.View
+              entering={FadeIn.duration(620).withInitialValues({
+                opacity: 0,
+                transform: [{ translateY: 12 }, { scale: 0.98 }],
+              })}
+              style={s.v4CheckpointCopy}
+            >
+              <Text style={s.v4MomentTitle}>{title}</Text>
+              <Text style={s.v4MomentBody}>{body}</Text>
+            </Reanimated.View>
+          ) : null}
+        </View>
+      </View>
+
+      {reveal >= 6 ? (
+        <AnimatedCta delay={120} style={s.questionFooter}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>Continue</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      ) : null}
+    </LinearGradient>
+  );
+}
+
+function V4WeeklyRevealSlide({ onNext }: { onNext: () => void }) {
+  const rows = ['Morning prayer', 'Deep work block', 'Monthly goal review', 'Scripture reading', 'Weekly reset'];
+  return (
+    <ScrollView contentContainerStyle={s.v4ScrollContent} showsVerticalScrollIndicator={false}>
+      <Text style={s.v4Eyebrow}>Your week</Text>
+      <Text style={s.v4MomentTitle}>Your rhythm is taking shape.</Text>
+      {rows.map((row, index) => (
+        <Reanimated.View key={row} entering={FadeInUp.delay(index * 120).duration(340)} style={s.v4WeekRow}>
+          <Text style={s.v4WeekDay}>{['Mon', 'Tue', 'Wed', 'Thu', 'Fri'][index]}</Text>
+          <Text style={s.v4WeekText}>{row}</Text>
+        </Reanimated.View>
+      ))}
+      <View style={s.ctaIsland}>
+        <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+          <Text style={s.primaryButtonText}>Continue</Text>
+          <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+}
+
+function V4ToolsSlides({ onNext, onGratitude }: { onNext: () => void; onGratitude: (enabled: boolean) => void }) {
+  const [slideIndex, setSlideIndex] = useState(0);
+  const slides = [
+    {
+      title: 'Journal',
+      body: 'Daily Journal, Morning Pages, and Free Writing help you reflect with structure and honesty.',
+    },
+    {
+      title: 'Gratitude',
+      body: 'Life Gratitude and Daily Gratitude train your attention toward gifts throughout the day.',
+    },
+    {
+      title: 'Other tools',
+      body: 'Pomodoro, Reading List, Bucket List, and Notes are ready when you need them.',
+    },
+  ];
+  const slide = slides[slideIndex];
+
+  return (
+    <View style={s.v4CenteredSlide}>
+      <V4ProgressRail completedCount={3} showTools />
+      <Text style={s.v4Eyebrow}>Bonus tools</Text>
+      <Text style={s.v4MomentTitle}>{slide.title}</Text>
+      <Text style={s.v4MomentBody}>{slide.body}</Text>
+      {slideIndex === 1 ? (
+        <TouchableOpacity activeOpacity={0.88} haptic="medium" onPress={() => onGratitude(true)} style={s.v4SetupCard}>
+          <Text style={s.v4SetupTitle}>Set Daily Gratitude as a task</Text>
+          <Text style={s.v4SetupBody}>Add a quiet gratitude rhythm to your day.</Text>
+        </TouchableOpacity>
+      ) : null}
+      <View style={s.ctaIsland}>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          haptic="medium"
+          onPress={() => slideIndex >= slides.length - 1 ? onNext() : setSlideIndex(prev => prev + 1)}
+          style={s.primaryButton}
+        >
+          <Text style={s.primaryButtonText}>{slideIndex >= slides.length - 1 ? 'Continue' : 'Next'}</Text>
+          <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function V4HomeRevealSlide({ onNext }: { onNext: () => void }) {
+  const rows = ['Big Event countdown', 'Morning prayer', 'Deep work', 'Read Scripture', 'Daily gratitude'];
+  return (
+    <ScrollView contentContainerStyle={s.v4ScrollContent} showsVerticalScrollIndicator={false}>
+      <Text style={s.v4Eyebrow}>Home</Text>
+      <Text style={s.v4MomentTitle}>This is your Home.</Text>
+      {rows.map((row, index) => (
+        <Reanimated.View key={row} entering={FadeInUp.delay(index * 140).duration(340)} style={s.v4HomeRow}>
+          <CheckSmall s={18} c={GOLD} w={2.2} />
+          <Text style={s.v4HomeText}>{row}</Text>
+        </Reanimated.View>
+      ))}
+      <ProtectSidePrompt delay={720} segments={[{ text: 'You built all of this. Let us show you how to use it.' }]} compact />
+      <View style={s.ctaIsland}>
+        <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+          <Text style={s.primaryButtonText}>Show me</Text>
+          <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+}
+
+function V4FirstCheckoffSlide({ onNext }: { onNext: () => void }) {
+  const [checked, setChecked] = useState(false);
+  const handleCheck = () => {
+    runStrongHaptic();
+    setChecked(true);
+    setTimeout(onNext, 1200);
+  };
+
+  return (
+    <View style={s.v4CenteredSlide}>
+      <Text style={s.v4MomentTitle}>Now complete your first task.</Text>
+      <TouchableOpacity
+        activeOpacity={0.88}
+        haptic="none"
+        onPress={handleCheck}
+        style={[s.v4FirstTask, checked && s.v4FirstTaskDone]}
+      >
+        <Text style={s.v4FirstTaskText}>{checked ? 'Marked as prayed.' : 'Morning prayer'}</Text>
+        {checked ? <CheckSmall s={28} c="#FFFFFF" w={2.8} /> : null}
+      </TouchableOpacity>
+      <Text style={s.v4MomentBody}>{checked ? 'A small beginning. Keep walking.' : 'One faithful action at a time.'}</Text>
+    </View>
+  );
+}
+
+function V4ProfileSlide({
+  answers,
+  onSelect,
+  onNext,
+}: {
+  answers: Answers;
+  onSelect: (step: StepId, value: string) => void;
+  onNext: () => void;
+}) {
+  const ready = Boolean(answers.age && answers.gender);
+  return (
+    <ScrollView contentContainerStyle={s.v4ScrollContent} showsVerticalScrollIndicator={false}>
+      <Text style={s.v4MomentTitle}>Help us understand who Anasta serves.</Text>
+      <Text style={s.v4Eyebrow}>How old are you?</Text>
+      {AGE_OPTIONS.map(option => (
+        <View key={option.value} style={s.v4OptionWrap}>
+          <OptionCard
+            option={option}
+            active={answers.age === option.value}
+            disabled={false}
+            onPress={() => onSelect('age', option.value)}
+          />
+        </View>
+      ))}
+      <Text style={s.v4Eyebrow}>Are you male or female?</Text>
+      {GENDER_OPTIONS.map(option => (
+        <View key={option.value} style={s.v4OptionWrap}>
+          <OptionCard
+            option={option}
+            active={answers.gender === option.value}
+            disabled={false}
+            onPress={() => onSelect('gender', option.value)}
+          />
+        </View>
+      ))}
+      <View style={s.ctaIsland}>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          haptic="medium"
+          disabled={!ready}
+          onPress={onNext}
+          style={[s.primaryButton, !ready && s.primaryButtonDisabled]}
+        >
+          <Text style={[s.primaryButtonText, !ready && s.primaryButtonDisabledText]}>Continue</Text>
+          <ChevronRight s={19} c={ready ? '#FFFFFF' : 'rgba(25,23,20,0.34)'} w={2.5} />
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+}
+
+function V4AccountCreationSlide({ onNext }: { onNext: () => void }) {
+  const [selected, setSelected] = useState<'apple' | 'google' | 'email' | undefined>();
+  const options: { id: 'apple' | 'google' | 'email'; title: string; body: string; icon: React.ReactNode }[] = [
+    { id: 'apple', title: 'Continue with Apple', body: 'Fast, private sign in.', icon: <User s={22} c={GOLD} w={1.8} /> },
+    { id: 'google', title: 'Continue with Google', body: 'Use your Google account.', icon: <Sparkles s={21} c={GOLD} w={1.9} /> },
+    { id: 'email', title: 'Continue with Email', body: 'Create an account with email.', icon: <Feather s={21} c={GOLD} w={1.8} /> },
+  ];
+
+  return (
+    <View style={s.v4CenteredSlide}>
+      <Text style={s.v4MomentTitle}>Save your progress.</Text>
+      <Text style={s.v4MomentBody}>Create an account so the system you built is ready when you return.</Text>
+      <View style={s.v4AccountOptions}>
+        {options.map(option => {
+          const active = selected === option.id;
+          return (
+            <TouchableOpacity
+              key={option.id}
+              activeOpacity={0.88}
+              haptic="medium"
+              onPress={() => setSelected(option.id)}
+              style={[s.v4AccountOption, active && s.v4AccountOptionSelected]}
+            >
+              <View style={s.v4AccountIcon}>{active ? <CheckSmall s={20} c={GOLD} w={2.5} /> : option.icon}</View>
+              <View style={s.v4AccountCopy}>
+                <Text style={s.v4AccountTitle}>{option.title}</Text>
+                <Text style={s.v4AccountBody}>{option.body}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <View style={s.ctaIsland}>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          haptic="medium"
+          disabled={!selected}
+          onPress={onNext}
+          style={[s.primaryButton, !selected && s.primaryButtonDisabled]}
+        >
+          <Text style={[s.primaryButtonText, !selected && s.primaryButtonDisabledText]}>Continue</Text>
+          <ChevronRight s={19} c={selected ? '#FFFFFF' : 'rgba(25,23,20,0.34)'} w={2.5} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 function PaywallSlide({ onFinish }: { onFinish: () => void }) {
   return (
     <View style={s.paywallSlide}>
@@ -6920,6 +9275,7 @@ export default function OnboardingView() {
   const { beginGuidedSetup } = useGuidedSetup();
   const [answers, setAnswers] = useState<Answers>({});
   const [preloadPhase, setPreloadPhase] = useState<PreloadPhase>('only');
+  const [tutorialRun, setTutorialRun] = useState(0);
   const steps = useMemo(() => stepOrder(answers), [answers]);
   const [index, setIndex] = useState(0);
   const activeStep = steps[Math.min(index, steps.length - 1)];
@@ -6986,8 +9342,27 @@ export default function OnboardingView() {
     return () => clearTimeout(timer);
   }, [activeStep, steps.length]);
 
+  useEffect(() => {
+    if (activeStep === 'statementsIntro' || activeStep === 'tutorialDeck') {
+      void warmStatementImages(PROTECT_STATEMENT_IMAGES);
+      return;
+    }
+
+    if (
+      activeStep === 'screenTimeSlider' ||
+      activeStep === 'dayVisualization' ||
+      activeStep === 'protectRecap' ||
+      activeStep === 'setupProtect' ||
+      activeStep === 'flameProtect'
+    ) {
+      void warmStatementImages(ORGANIZE_STATEMENT_IMAGES.slice(0, 6));
+    }
+  }, [activeStep]);
+
   const goBack = () => {
-    runAdvanceHaptic();
+    if (!isValueStep(activeStep)) {
+      runAdvanceHaptic();
+    }
     if (index <= 0) {
       router.back();
       return;
@@ -6996,7 +9371,9 @@ export default function OnboardingView() {
   };
 
   const goNext = () => {
-    runAdvanceHaptic();
+    if (!isValueStep(activeStep)) {
+      runAdvanceHaptic();
+    }
     if (index >= steps.length - 1) {
       router.back();
       return;
@@ -7014,7 +9391,15 @@ export default function OnboardingView() {
           tradition: value === 'yes' ? prev.tradition : undefined,
         };
       }
-      if (step === 'tradition') return { ...prev, tradition: value as TraditionAnswer };
+      if (step === 'tradition') {
+        const nextTradition = value as TraditionAnswer;
+        return {
+          ...prev,
+          tradition: nextTradition,
+          isOrthodox: nextTradition === 'orthodox',
+          secularFilter: isSecularTradition(nextTradition),
+        };
+      }
       if (step === 'age') return { ...prev, age: value as AgeAnswer };
       if (step === 'gender') return { ...prev, gender: value as GenderAnswer };
       if (step === 'commitment') return { ...prev, commitment: value as CommitmentAnswer };
@@ -7045,6 +9430,14 @@ export default function OnboardingView() {
   const onNameChange = (name: string) => {
     setAnswers(prev => ({ ...prev, displayName: name }));
   };
+  const onTraditionChange = useCallback((tradition: TraditionAnswer) => {
+    setAnswers(prev => ({
+      ...prev,
+      tradition,
+      isOrthodox: tradition === 'orthodox',
+      secularFilter: isSecularTradition(tradition),
+    }));
+  }, []);
   const onScreenTimeHoursChange = useCallback((hours: number) => {
     setAnswers(prev => ({ ...prev, screenTimeHours: hours }));
   }, []);
@@ -7077,9 +9470,12 @@ export default function OnboardingView() {
   const valueStepActive = isValueStep(activeStep);
   const hideTopChrome =
     activeStep === 'nameIntro' ||
+    activeStep === 'traditionIntro' ||
     activeStep === 'processing' ||
     activeStep === 'valueReflect' ||
     activeStep === 'commitment' ||
+    activeStep === 'age' ||
+    activeStep === 'gender' ||
     valueStepActive ||
     isGuidedWalkthroughStep(activeStep);
   const visibleProgress = hideTopChrome ? null : activeProgress;
@@ -7090,7 +9486,13 @@ export default function OnboardingView() {
     activeStep !== 'bridge' &&
     activeStep !== 'organizeIntro';
   const showTopSkip = visibleProgress !== null;
-  const edgeToEdgeMessage = activeStep === 'nameIntro' || valueStepActive || activeStep === 'bridge' || activeStep === 'organizeIntro' || activeStep === 'taskSetup';
+  const edgeToEdgeMessage =
+    activeStep === 'nameIntro' ||
+    activeStep === 'traditionIntro' ||
+    valueStepActive ||
+    activeStep === 'bridge' ||
+    activeStep === 'organizeIntro' ||
+    activeStep === 'taskSetup';
   const stageBottomPadding = activeStep === 'questionIntro' || edgeToEdgeMessage ? 0 : insets.bottom + 8;
   const stageTopPadding = edgeToEdgeMessage ? 0 : hideTopChrome ? insets.top + 12 : 0;
   const stageHorizontalPadding = edgeToEdgeMessage ? 0 : 20;
@@ -7156,6 +9558,17 @@ export default function OnboardingView() {
         />
       );
     }
+    if (activeStep === 'traditionIntro') {
+      return (
+        <TraditionIntroSlide
+          name={answers.displayName}
+          tradition={answers.tradition}
+          bottomInset={insets.bottom}
+          onTraditionChange={onTraditionChange}
+          onNext={goNext}
+        />
+      );
+    }
     if (isValueStep(activeStep)) {
       return (
         <ValuePreviewSlide
@@ -7166,6 +9579,203 @@ export default function OnboardingView() {
           onBack={goBack}
         />
       );
+    }
+    if (activeStep === 'toolsIntroA') {
+      return (
+        <V4MomentSlide
+          title="Anasta has a lot of tools."
+          body="But their worth is measured by what they add to your life - not by how many there are."
+          onNext={goNext}
+          autoAdvance
+        />
+      );
+    }
+    if (activeStep === 'toolsIntroB') {
+      return (
+        <V4MomentSlide
+          title="That's why we want to understand you better."
+          body="Answer honestly, and Anasta can set itself up to truly fit your life."
+          onNext={goNext}
+          autoAdvance
+        />
+      );
+    }
+    if (activeStep === 'statementsIntro') {
+      return <V4StatementsIntroSlide displayName={answers.displayName} onNext={goNext} />;
+    }
+    if (activeStep === 'tutorialDeck') {
+      return (
+        <V4StatementDeckSlide
+          key={`tutorial-deck-${tutorialRun}`}
+          cards={TUTORIAL_DECK_CARDS}
+          accent={GOLD}
+          onDone={ids => ids.includes('tutorial-ready') ? goNext() : setTutorialRun(prev => prev + 1)}
+        />
+      );
+    }
+    if (activeStep === 'protectDeck') {
+      const protectCards = answers.secularFilter || isSecularTradition(answers.tradition)
+        ? PROTECT_DECK_CARDS.map(card => card.id === 'presence'
+          ? { ...card, statement: 'I want to be fully present — in quiet moments, with family, at work. But distractions keep pulling me away.' }
+          : card)
+        : PROTECT_DECK_CARDS;
+      return (
+        <V4StatementDeckSlide
+          cards={protectCards}
+          accent="#4D8586"
+          onDone={ids => {
+            setAnswers(prev => ({ ...prev, confirmedProtectProblems: ids }));
+            goNext();
+          }}
+        />
+      );
+    }
+    if (activeStep === 'screenTimeSlider') {
+      return (
+        <V4ScreenTimeSliderSlide
+          hours={answers.screenTimeHours}
+          onChange={onScreenTimeHoursChange}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'dayVisualization') {
+      return <V4DayVisualizationSlide hours={answers.screenTimeHours} onNext={goNext} />;
+    }
+    if (activeStep === 'protectRecap') {
+      return (
+        <V4RecapSlide
+          title="Here's what we heard."
+          cards={PROTECT_DECK_CARDS}
+          selected={answers.confirmedProtectProblems ?? []}
+          hours={answers.screenTimeHours}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'setupProtect') {
+      return (
+        <V4SetupLoopSlide
+          title="Protect setup"
+          items={['Screen Time guardrails', 'Do Not Disturb focus', 'Website blocker']}
+          progressCount={0}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'flameProtect') {
+      return <V4FlameSlide completedCount={1} title="Protect is ready." body="Your first slot is lit." onNext={goNext} />;
+    }
+    if (activeStep === 'organizeDeck') {
+      const organizeCards = answers.secularFilter || isSecularTradition(answers.tradition)
+        ? ORGANIZE_DECK_CARDS.filter(card => !card.spiritual)
+        : ORGANIZE_DECK_CARDS;
+      return (
+        <V4StatementDeckSlide
+          cards={organizeCards}
+          accent={GOLD}
+          onDone={ids => {
+            setAnswers(prev => ({ ...prev, confirmedOrganizeProblems: ids }));
+            goNext();
+          }}
+        />
+      );
+    }
+    if (activeStep === 'organizeRecap') {
+      return (
+        <V4RecapSlide
+          title="Now let's organize it."
+          cards={ORGANIZE_DECK_CARDS}
+          selected={answers.confirmedOrganizeProblems ?? []}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'setupOrganize') {
+      return (
+        <V4SetupLoopSlide
+          title="Organize setup"
+          items={['Big Event', 'Monthly Goal', 'Task System']}
+          progressCount={1}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'weeklyReveal') return <V4WeeklyRevealSlide onNext={goNext} />;
+    if (activeStep === 'flameOrganize') {
+      return <V4FlameSlide completedCount={2} title="Organize is ready." body="Your week has a rhythm now." onNext={goNext} />;
+    }
+    if (activeStep === 'giftMoment') {
+      return (
+        <V4MomentSlide
+          eyebrow="Free for everyone"
+          title="Grow closer to God."
+          body="Scripture, Favorites, Bible Notes, and Prayer Book stay available to everyone."
+          icon={<OpenBook s={54} c={GOLD} w={1.5} />}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'bibleWalkthrough') {
+      return (
+        <V4MomentSlide
+          title="Bible walkthrough"
+          body="Highlight Ephesians 5:14, save it to Favorites, add notes, and return to the exact verse when you need it."
+          icon={<BookMarked s={54} c={GOLD} w={1.5} />}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'prayerBook') {
+      return (
+        <V4MomentSlide
+          title="Prayer Book"
+          body={answers.isOrthodox || answers.tradition === 'orthodox'
+            ? 'As an Orthodox Christian, morning, evening, and Jesus Prayer rules can be prepared for you.'
+            : 'Morning, evening, and mealtime prayers are organized and always available.'}
+          icon={<Candle s={54} c={GOLD} w={1.5} />}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'flameGrow') {
+      return <V4FlameSlide completedCount={3} title="One more thing." body="Let's show you a few more tools Anasta has for you." surprise onNext={goNext} />;
+    }
+    if (activeStep === 'toolsSlides') {
+      return <V4ToolsSlides onNext={goNext} onGratitude={enabled => setAnswers(prev => ({ ...prev, gratitudeDailyTask: enabled }))} />;
+    }
+    if (activeStep === 'flameTools') {
+      return <V4FlameSlide completedCount={4} title="You're ready." body="Your system is built. Now keep what you made." surprise onNext={goNext} />;
+    }
+    if (activeStep === 'privacy') {
+      return (
+        <V4MomentSlide
+          title="Your inner life deserves privacy."
+          body="Your prayers, notes, journal, and reflections are personal. Anasta is built to protect that trust."
+          icon={<Heart s={54} c={GOLD} w={1.5} />}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'callingClose') {
+      return <ValueToolsClosingSlide topInset={insets.top} bottomInset={insets.bottom} onNext={goNext} />;
+    }
+    if (activeStep === 'homeReveal') return <V4HomeRevealSlide onNext={goNext} />;
+    if (activeStep === 'firstCheckoff') return <V4FirstCheckoffSlide onNext={goNext} />;
+    if (activeStep === 'postPaywallBrand') {
+      return (
+        <V4MomentSlide
+          title="Arise."
+          body="It's human to fall. It's not human to stay down. God still loves you when you stumble. Just arise, and keep walking."
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'postPaywallProfile') {
+      return <V4ProfileSlide answers={answers} onSelect={onSelect} onNext={goNext} />;
+    }
+    if (activeStep === 'accountCreation') {
+      return <V4AccountCreationSlide onNext={goNext} />;
     }
     if (activeStep === 'questionIntro') return <AutoMessageSlide bottomInset={insets.bottom} displayName={answers.displayName} onNext={goNext} />;
     if (activeStep === 'processing') return <ProcessingSlide />;
@@ -7313,6 +9923,10 @@ export default function OnboardingView() {
           <OnboardingPreload animateIn={false} bottomInset={insets.bottom} topInset={insets.top} />
         </Reanimated.View>
       )}
+
+      {activeStep === 'welcome' ? (
+        <WelcomeConfettiOverlay active={preloadPhase === 'done'} />
+      ) : null}
     </LinearGradient>
   );
 }
@@ -7449,12 +10063,18 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     zIndex: 2,
   },
+  valueClosingViewport: {
+    flex: 1,
+    overflow: 'hidden',
+    zIndex: 2,
+  },
   valueCarouselTrack: {
     flex: 1,
     flexDirection: 'row',
   },
   valuePage: {
     flex: 1,
+    position: 'relative',
   },
   valueBackdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -7504,61 +10124,62 @@ const s = StyleSheet.create({
     zIndex: 2,
   },
   valueTitleShell: {
-    maxWidth: 344,
-    flexDirection: 'row',
+    position: 'relative',
+    maxWidth: 360,
     alignItems: 'center',
     justifyContent: 'center',
-    columnGap: 10,
-  },
-  valueTitleNumber: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#17130F',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.35)',
-    shadowColor: GOLD,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
-    elevation: 3,
-  },
-  valueTitleNumberText: {
-    fontFamily: F.sansBold,
-    fontSize: 13,
-    color: '#F8E8BE',
   },
   valueTitleTextWrap: {
     alignItems: 'center',
-    flexShrink: 1,
   },
   valueTitle: {
-    maxWidth: 286,
+    maxWidth: 342,
     fontFamily: F.serifSemiBold,
-    fontSize: 29,
-    lineHeight: 33,
+    fontSize: 40,
+    lineHeight: 42,
     textAlign: 'center',
     color: INK,
   },
+  valueFreeCornerTag: {
+    position: 'absolute',
+    left: -5,
+    top: -14,
+    zIndex: 4,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    backgroundColor: '#17130F',
+    borderWidth: 1,
+    borderColor: 'rgba(232,195,116,0.78)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.20,
+    shadowRadius: 12,
+    elevation: 3,
+    transform: [{ rotate: '-11deg' }],
+  },
+  valueFreeCornerTagText: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 0.8,
+    color: '#F8E8BE',
+  },
   valueTitleUnderline: {
-    marginTop: 5,
-    width: 92,
-    height: 3,
+    marginTop: -3,
+    height: 2.25,
     borderRadius: 99,
     backgroundColor: GOLD,
-    opacity: 0.72,
+    opacity: 0.80,
   },
   valueSubtitleFrame: {
-    marginTop: 9,
+    marginTop: 6,
     width: '100%',
-    maxWidth: 356,
-    minHeight: 34,
+    maxWidth: 348,
+    minHeight: 0,
     paddingHorizontal: 6,
     paddingVertical: 0,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
   },
   valueSubtitleLine: {
     maxWidth: '100%',
@@ -7568,13 +10189,16 @@ const s = StyleSheet.create({
     alignItems: 'baseline',
     columnGap: 5,
     rowGap: 0,
-    transform: [{ translateY: -1 }],
+    transform: [{ translateY: -2 }],
   },
   valueSubtitleWord: {
+    fontFamily: F.serifMedium,
+    fontSize: 17.4,
+    lineHeight: 20.8,
+    color: 'rgba(25,23,20,0.66)',
+  },
+  valueSubtitleWordEmphasis: {
     fontFamily: F.serifSemiBold,
-    fontSize: 18.6,
-    lineHeight: 24,
-    color: INK,
   },
   valueSubtitleWordUnderline: {
     textDecorationLine: 'underline',
@@ -7585,9 +10209,454 @@ const s = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'flex-start',
-    paddingTop: 12,
-    paddingBottom: 88,
-    zIndex: 2,
+    paddingTop: 4,
+    paddingBottom: 116,
+    zIndex: 4,
+  },
+  valuePhoneStageOrganize: {
+    paddingTop: 24,
+  },
+  valueVisualReveal: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  valueIllustration: {
+    width: '100%',
+    maxWidth: 342,
+    alignItems: 'center',
+    paddingTop: 8,
+  },
+  valueDisciplineHero: {
+    width: 128,
+    height: 128,
+    borderRadius: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.28)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.14,
+    shadowRadius: 26,
+    elevation: 3,
+  },
+  valueDisciplineHalo: {
+    position: 'absolute',
+    width: 162,
+    height: 162,
+    borderRadius: 81,
+    backgroundColor: 'rgba(197,160,89,0.09)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.10)',
+  },
+  valueDisciplineHeroText: {
+    marginTop: 8,
+    fontFamily: F.serifSemiBold,
+    fontSize: 17,
+    color: INK,
+  },
+  valueDisciplineBars: {
+    height: 104,
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    columnGap: 8,
+  },
+  valueDisciplineBarTrack: {
+    width: 22,
+    height: 100,
+    borderRadius: 999,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+    backgroundColor: 'rgba(25,23,20,0.055)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.04)',
+  },
+  valueDisciplineBarFill: {
+    width: '100%',
+    borderRadius: 999,
+    backgroundColor: GOLD,
+  },
+  valueDisciplineCards: {
+    width: '100%',
+    marginTop: 14,
+    rowGap: 8,
+  },
+  valueMiniFeatureCard: {
+    minHeight: 54,
+    width: '100%',
+    borderRadius: 18,
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    backgroundColor: 'rgba(255,253,248,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.045,
+    shadowRadius: 14,
+    elevation: 1,
+  },
+  valueMiniFeatureCardCompact: {
+    minHeight: 50,
+    borderRadius: 17,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,253,248,0.94)',
+    borderColor: 'rgba(197,160,89,0.28)',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.075,
+    shadowRadius: 18,
+    elevation: 2,
+  },
+  valueMiniFeatureIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(197,160,89,0.11)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.16)',
+  },
+  valueMiniFeatureText: {
+    flex: 1,
+    fontFamily: F.serifSemiBold,
+    fontSize: 16,
+    lineHeight: 20,
+    color: INK,
+  },
+  valueMiniFeatureTextCompact: {
+    fontSize: 15.8,
+    lineHeight: 19.5,
+  },
+  valueFocusVisual: {
+    width: '100%',
+    maxWidth: 376,
+    alignItems: 'center',
+    paddingTop: 10,
+  },
+  valueFocusTagsWrap: {
+    height: 358,
+    width: '100%',
+    overflow: 'visible',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ scale: 0.99 }, { translateY: 0 }],
+  },
+  valueFocusCards: {
+    width: '100%',
+    marginTop: 2,
+    rowGap: 2,
+  },
+  valueFaithVisual: {
+    width: '91%',
+    maxWidth: 370,
+    alignItems: 'center',
+    paddingTop: 24,
+  },
+  valueFaithFeatureStack: {
+    width: '100%',
+    marginTop: 2,
+    rowGap: 2,
+    position: 'relative',
+    overflow: 'visible',
+  },
+  valueFaithFeatureRow: {
+    width: '100%',
+    minHeight: 108,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 0,
+    overflow: 'visible',
+    zIndex: 1,
+    elevation: 1,
+  },
+  valueFaithFeatureRowReverse: {
+    flexDirection: 'row-reverse',
+  },
+  valueFaithArtSlot: {
+    width: 106,
+    height: 108,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+    zIndex: 40,
+    elevation: 40,
+  },
+  valueFaithArtFloat: {
+    width: 174,
+    height: 148,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+    zIndex: 40,
+    elevation: 40,
+  },
+  valueFaithArtPrayerFloat: {
+    width: 192,
+    height: 164,
+  },
+  valueFaithArtOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'visible',
+    zIndex: 100,
+    elevation: 100,
+  },
+  valueFaithArtOverlaySlot: {
+    position: 'absolute',
+  },
+  valueFaithSticker: {
+    width: '100%',
+    height: '100%',
+  },
+  valueFaithTextCard: {
+    flex: 1,
+    minHeight: 86,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,253,248,0.97)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.085,
+    shadowRadius: 22,
+    elevation: 1,
+    zIndex: 1,
+  },
+  valueFaithTextCardForward: {
+    marginLeft: -24,
+    paddingLeft: 26,
+  },
+  valueFaithTextCardReverse: {
+    marginRight: -24,
+    paddingRight: 26,
+  },
+  valueFaithArtBible: {
+    borderColor: 'rgba(197,160,89,0.28)',
+    backgroundColor: 'rgba(255,250,239,0.96)',
+  },
+  valueFaithArtPrayer: {
+    borderColor: 'rgba(77,133,134,0.22)',
+    backgroundColor: 'rgba(245,250,248,0.96)',
+  },
+  valueFaithArtNotes: {
+    borderColor: 'rgba(143,93,108,0.22)',
+    backgroundColor: 'rgba(255,248,250,0.96)',
+  },
+  valueFaithArtFavorites: {
+    borderColor: 'rgba(197,160,89,0.34)',
+    backgroundColor: 'rgba(255,247,232,0.96)',
+  },
+  valueFaithAccentBible: {
+    backgroundColor: GOLD,
+  },
+  valueFaithAccentPrayer: {
+    backgroundColor: '#4D8586',
+  },
+  valueFaithAccentNotes: {
+    backgroundColor: '#8F5D6C',
+  },
+  valueFaithAccentFavorites: {
+    backgroundColor: '#17130F',
+  },
+  valueFaithCardGlow: {
+    position: 'absolute',
+    top: -28,
+    right: -28,
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    opacity: 0.10,
+  },
+  valueFaithTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 8,
+  },
+  valueFaithTitleMark: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    opacity: 0.92,
+  },
+  valueFaithFeatureTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 19.6,
+    lineHeight: 23,
+    color: INK,
+  },
+  valueFaithFeatureRule: {
+    height: 2,
+    marginTop: 1,
+    marginLeft: 16,
+    borderRadius: 999,
+    opacity: 0.42,
+  },
+  valueFaithFeatureBody: {
+    marginTop: 2,
+    fontFamily: F.serifMedium,
+    fontSize: 14.4,
+    lineHeight: 18.8,
+    color: 'rgba(25,23,20,0.70)',
+  },
+  valueFaithFavoriteOrb: {
+    width: 96,
+    height: 96,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    rowGap: 2,
+    borderWidth: 1,
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  valueFaithFavoriteOrbDark: {
+    backgroundColor: '#17130F',
+    borderColor: 'rgba(232,195,116,0.72)',
+  },
+  valueFaithFreeImageFrame: {
+    width: 176,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: -1,
+    zIndex: 12,
+    elevation: 12,
+  },
+  valueFaithFreeImageSlideSlot: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 16,
+    elevation: 16,
+  },
+  valueFaithFreeImage: {
+    width: '100%',
+    height: '100%',
+  },
+  valueFaithFreeBadge: {
+    minHeight: 44,
+    marginTop: 14,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 8,
+    backgroundColor: '#17130F',
+    borderWidth: 1,
+    borderColor: 'rgba(232,195,116,0.78)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.24,
+    shadowRadius: 22,
+    elevation: 4,
+  },
+  valueFaithFreeBadgeText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17,
+    lineHeight: 21,
+    color: '#F8E8BE',
+  },
+  valueFeatureVisual: {
+    width: '100%',
+    maxWidth: 344,
+    alignItems: 'center',
+    paddingTop: 16,
+  },
+  valueFreeBadge: {
+    minHeight: 42,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 7,
+    backgroundColor: '#17130F',
+    borderWidth: 1,
+    borderColor: 'rgba(232,195,116,0.72)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+    elevation: 3,
+  },
+  valueFreeBadgeText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 16,
+    color: '#F8E8BE',
+  },
+  valueGrowthOrb: {
+    width: 118,
+    height: 118,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.25)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.12,
+    shadowRadius: 26,
+    elevation: 3,
+  },
+  valueGrowthGlow: {
+    position: 'absolute',
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: 'rgba(197,160,89,0.10)',
+  },
+  valueFeatureChipList: {
+    width: '100%',
+    marginTop: 18,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 9,
+  },
+  valueFeatureChip: {
+    minHeight: 46,
+    borderRadius: 999,
+    paddingLeft: 9,
+    paddingRight: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 8,
+    backgroundColor: 'rgba(255,253,248,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.045,
+    shadowRadius: 14,
+    elevation: 1,
+  },
+  valueFeatureChipIcon: {
+    width: 31,
+    height: 31,
+    borderRadius: 15.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(197,160,89,0.11)',
+  },
+  valueFeatureChipText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 15,
+    lineHeight: 18,
+    color: INK,
   },
   valuePhoneMotionShell: {
     width: 270,
@@ -7610,13 +10679,13 @@ const s = StyleSheet.create({
   },
   valueOrganizeConfettiLayer: {
     position: 'absolute',
-    top: -122,
-    left: -108,
-    right: -108,
-    bottom: -122,
+    top: -350,
+    left: -158,
+    right: -158,
+    bottom: -150,
     zIndex: 0,
     elevation: 0,
-    transform: [{ scale: 0.74 }],
+    transform: [{ scale: 0.86 }],
   },
   valueOrganizeReveal: {
     width: '100%',
@@ -7998,22 +11067,36 @@ const s = StyleSheet.create({
   },
   valueHomeScreen: {
     flex: 1,
-    paddingTop: 0,
+    position: 'relative',
+    marginHorizontal: -13,
+    marginTop: -38,
+    marginBottom: -13,
+    paddingHorizontal: 13,
+    paddingTop: 38,
+    paddingBottom: 12,
+    overflow: 'hidden',
+    backgroundColor: C.bg,
+  },
+  valueHomeScreenPaper: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: C.bg,
   },
   valueMonthHeader: {
-    height: 34,
-    marginHorizontal: -4,
+    height: 35,
+    marginHorizontal: -2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   valueHomeIconButton: {
-    width: 25,
-    height: 25,
+    width: 26,
+    height: 26,
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F5F4F0',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.035)',
   },
   valueMonthCenter: {
     alignItems: 'center',
@@ -8027,28 +11110,28 @@ const s = StyleSheet.create({
   },
   valueMonthTitle: {
     fontFamily: F.serifMedium,
-    fontSize: 20,
-    lineHeight: 22,
+    fontSize: 20.8,
+    lineHeight: 23,
     color: '#BE123C',
   },
   valueMonthYear: {
-    marginTop: -1,
+    marginTop: -2,
     fontFamily: F.sansBold,
-    fontSize: 6.4,
+    fontSize: 6.8,
     letterSpacing: 1.4,
-    color: 'rgba(197,160,89,0.74)',
+    color: 'rgba(25,23,20,0.42)',
   },
   valueDateRail: {
     marginTop: 2,
     marginHorizontal: -8,
-    marginBottom: 6,
+    marginBottom: 5,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   valueDatePill: {
     position: 'relative',
     width: 27,
-    height: 38,
+    height: 37,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -8087,7 +11170,7 @@ const s = StyleSheet.create({
   },
   valueDateDay: {
     fontFamily: F.serifMediumItalic,
-    fontSize: 6.8,
+    fontSize: 6.9,
     lineHeight: 8,
     color: 'rgba(25,23,20,0.42)',
   },
@@ -8098,7 +11181,7 @@ const s = StyleSheet.create({
   valueDateNumber: {
     marginTop: 2,
     fontFamily: F.serifSemiBold,
-    fontSize: 12.5,
+    fontSize: 12.8,
     lineHeight: 14,
     color: INK,
   },
@@ -8107,21 +11190,27 @@ const s = StyleSheet.create({
   },
   valueVerseBlock: {
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 5,
   },
   valueVerseText: {
-    maxWidth: 198,
+    maxWidth: 204,
     fontFamily: F.serifMediumItalic,
-    fontSize: 10.5,
-    lineHeight: 15,
+    fontSize: 10.8,
+    lineHeight: 15.6,
     textAlign: 'center',
-    color: '#776E64',
+    color: '#8C8277',
+  },
+  valueVerseUnderline: {
+    textDecorationLine: 'underline',
+  },
+  valueVerseGold: {
+    color: GOLD,
   },
   valueVerseRef: {
-    marginTop: 4,
+    marginTop: 3,
     fontFamily: F.sansBold,
-    fontSize: 6.8,
-    letterSpacing: 1.8,
+    fontSize: 7,
+    letterSpacing: 1.9,
     color: GOLD,
   },
   valueTasksHeader: {
@@ -8131,22 +11220,39 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  valueTasksRule: {
-    width: 68,
-    height: 1.3,
+  valueTasksProgressWrap: {
+    width: 82,
+    alignItems: 'flex-end',
+    rowGap: 4,
+  },
+  valueTasksProgressTrack: {
+    width: '100%',
+    height: 3,
     borderRadius: 999,
-    backgroundColor: 'rgba(197,160,89,0.22)',
+    overflow: 'hidden',
+    backgroundColor: '#ECE9DE',
+  },
+  valueTasksProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: GOLD,
+  },
+  valueTasksProgressText: {
+    fontFamily: F.sansBold,
+    fontSize: 7.6,
+    letterSpacing: 1.05,
+    color: 'rgba(25,23,20,0.45)',
   },
   valueBigEventsHead: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
     marginHorizontal: -8,
-    marginBottom: 4,
+    marginBottom: 5,
   },
   valueBigEventsHeading: {
-    fontFamily: F.serifSemiBold,
-    fontSize: 12.8,
+    fontFamily: F.serifMedium,
+    fontSize: 13.4,
     lineHeight: 16,
     color: INK,
   },
@@ -8158,17 +11264,16 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
   valueBigEventCard: {
-    minHeight: 34,
-    borderRadius: 12,
-    paddingLeft: 5,
+    minHeight: 37,
+    borderRadius: 13,
+    paddingLeft: 5.5,
     paddingRight: 10,
-    paddingVertical: 3,
+    paddingVertical: 4,
     marginHorizontal: -8,
     marginBottom: 5,
     flexDirection: 'row',
     alignItems: 'center',
     columnGap: 8,
-    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#EDE9E0',
     shadowColor: '#000',
@@ -8178,9 +11283,9 @@ const s = StyleSheet.create({
     elevation: 1,
   },
   valueBigEventIconBox: {
-    width: 24,
-    height: 24,
-    borderRadius: 9,
+    width: 26,
+    height: 26,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#BE123C1F',
@@ -8190,9 +11295,9 @@ const s = StyleSheet.create({
     minWidth: 0,
   },
   valueBigEventTitle: {
-    fontFamily: F.serifSemiBold,
-    fontSize: 12.8,
-    lineHeight: 15,
+    fontFamily: F.serifMedium,
+    fontSize: 13.5,
+    lineHeight: 15.5,
     color: INK,
   },
   valueBigEventCount: {
@@ -8203,18 +11308,18 @@ const s = StyleSheet.create({
   },
   valueBigEventCountNum: {
     fontFamily: F.serifSemiBold,
-    fontSize: 13.5,
-    lineHeight: 15,
+    fontSize: 15.5,
+    lineHeight: 17,
     color: '#BE123C',
   },
   valueBigEventCountLabel: {
     fontFamily: F.sansMedium,
-    fontSize: 7.2,
+    fontSize: 8,
     color: '#A8A29E',
   },
   valueHomeSectionTitle: {
-    fontFamily: F.serifSemiBold,
-    fontSize: 15,
+    fontFamily: F.serifMedium,
+    fontSize: 15.7,
     lineHeight: 18,
     color: INK,
   },
@@ -8226,22 +11331,22 @@ const s = StyleSheet.create({
     color: 'rgba(25,23,20,0.48)',
   },
   valueHomeTaskStack: {
-    marginTop: 1,
+    marginTop: 3,
     marginHorizontal: -8,
     alignItems: 'center',
   },
   valueMiniTaskFrame: {
     position: 'relative',
     width: '100%',
-    height: 32.2,
-    marginBottom: 1.2,
+    height: 33,
+    marginBottom: 1.4,
     alignItems: 'center',
     overflow: 'hidden',
   },
   valueMiniTaskScale: {
-    width: 405,
+    width: 392,
     transformOrigin: 'top center',
-    transform: [{ scale: 0.58 }],
+    transform: [{ scale: 0.585 }],
   },
   valuePhoneTaskInteractiveWrap: {
     position: 'relative',
@@ -8469,28 +11574,104 @@ const s = StyleSheet.create({
     lineHeight: 23,
     color: INK,
   },
-  valueDots: {
+  valueNavigation: {
     position: 'absolute',
     left: 0,
     right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    rowGap: 3,
+    paddingHorizontal: 26,
+    paddingTop: 3,
+    zIndex: 18,
+    elevation: 18,
+  },
+  valueProgressRail: {
+    width: '100%',
+    maxWidth: 314,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    columnGap: 6,
+  },
+  valueProgressStep: {
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  valueProgressTrack: {
+    width: '100%',
+    height: 5.5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(25,23,20,0.082)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.48)',
+    overflow: 'hidden',
+  },
+  valueProgressTrackDone: {
+    backgroundColor: 'rgba(197,160,89,0.18)',
+    borderColor: 'rgba(197,160,89,0.30)',
+  },
+  valueProgressTrackActive: {
+    backgroundColor: 'rgba(23,19,15,0.12)',
+    borderColor: 'rgba(232,195,116,0.62)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.19,
+    shadowRadius: 11,
+    elevation: 2,
+  },
+  valueProgressTrackFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: 999,
+    backgroundColor: 'rgba(197,160,89,0.68)',
+  },
+  valueProgressTrackFillActive: {
+    backgroundColor: '#E7C36D',
+  },
+  valueProgressDot: {
+    marginTop: -15,
+    width: 31,
+    height: 31,
+    borderRadius: 15.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#17130F',
+    borderWidth: 1.3,
+    borderColor: 'rgba(232,195,116,0.86)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.32,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  valueProgressDotText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 14,
+    lineHeight: 17,
+    color: '#F8E8BE',
+  },
+  valueSwipeHint: {
+    minHeight: 30,
+    borderRadius: 999,
+    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    columnGap: 7,
-    zIndex: 4,
+    columnGap: 5,
+    backgroundColor: 'rgba(255,253,248,0.54)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
   },
-  valueDot: {
-    width: 22,
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: 'rgba(25,23,20,0.13)',
-  },
-  valueDotActive: {
-    width: 34,
-    backgroundColor: GOLD,
-  },
-  valueDotUpcoming: {
-    opacity: 0.72,
+  valueSwipeHintText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 14,
+    lineHeight: 17,
+    letterSpacing: 0,
+    color: 'rgba(25,23,20,0.62)',
   },
   valueBottomAction: {
     position: 'absolute',
@@ -8500,6 +11681,8 @@ const s = StyleSheet.create({
     paddingTop: 10,
     alignItems: 'center',
     backgroundColor: 'transparent',
+    zIndex: 20,
+    elevation: 20,
   },
   welcome: {
     flex: 1,
@@ -8559,10 +11742,10 @@ const s = StyleSheet.create({
   },
   nameIntroContent: {
     minHeight: '100%',
-    paddingTop: 92,
+    paddingTop: 58,
     paddingHorizontal: 20,
     paddingBottom: 188,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
   },
   nameConversation: {
     width: '100%',
@@ -8581,8 +11764,12 @@ const s = StyleSheet.create({
   nameBotRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 12,
-    marginBottom: 12,
+    columnGap: 5,
+    marginBottom: 11,
+  },
+  nameBotRowTight: {
+    columnGap: 6,
+    marginBottom: 9,
   },
   nameBotRowSecond: {
     marginLeft: 2,
@@ -8638,11 +11825,11 @@ const s = StyleSheet.create({
   },
   nameBubble: {
     flex: 1,
-    minHeight: 72,
+    minHeight: 68,
     borderRadius: 27,
-    overflow: 'visible',
+    overflow: 'hidden',
     paddingHorizontal: 20,
-    paddingVertical: 18,
+    paddingVertical: 16,
     justifyContent: 'center',
     backgroundColor: '#FFFDF8',
     borderWidth: 1,
@@ -8653,37 +11840,36 @@ const s = StyleSheet.create({
     shadowRadius: 22,
     elevation: 2,
   },
+  nameBubbleAuto: {
+    flex: 0,
+    flexShrink: 1,
+    maxWidth: '82%',
+    alignSelf: 'flex-start',
+  },
+  nameBubbleCompact: {
+    minHeight: 56,
+    borderRadius: 23,
+    paddingHorizontal: 17,
+    paddingVertical: 11,
+  },
   nameReplyBubble: {
     minHeight: 126,
     paddingVertical: 21,
   },
+  nameWelcomeBubble: {
+    minHeight: 58,
+  },
   nameQuestionBubble: {
-    minHeight: 68,
+    minHeight: 64,
   },
-  nameBubbleTail: {
-    position: 'absolute',
-    left: -9,
-    top: '50%',
-    marginTop: -9,
-    width: 18,
-    height: 18,
-    borderLeftWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: 'rgba(197,160,89,0.28)',
-    backgroundColor: '#FFFDF8',
-    transform: [{ rotate: '45deg' }],
-    zIndex: 0,
+  nameTraditionBubble: {
+    minHeight: 80,
   },
-  nameBubbleTailJoin: {
-    position: 'absolute',
-    left: -1,
-    top: '50%',
-    marginTop: -13,
-    width: 11,
-    height: 26,
-    borderRadius: 6,
-    backgroundColor: '#FFFDF8',
-    zIndex: 1,
+  nameFinalBubble: {
+    minHeight: 56,
+  },
+  nameBeginBubble: {
+    minHeight: 54,
   },
   nameBubbleText: {
     fontFamily: F.serifSemiBold,
@@ -8691,6 +11877,19 @@ const s = StyleSheet.create({
     lineHeight: 27,
     color: INK,
     zIndex: 2,
+  },
+  nameConversationText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 19,
+    lineHeight: 24,
+    color: INK,
+    zIndex: 2,
+  },
+  nameBubbleSubtext: {
+    fontFamily: F.sansMedium,
+    fontSize: 13.5,
+    lineHeight: 19.5,
+    color: MUTED,
   },
   nameTypingCaret: {
     color: GOLD,
@@ -8741,11 +11940,102 @@ const s = StyleSheet.create({
     shadowRadius: 18,
     elevation: 3,
   },
+  nameUserBubbleCompact: {
+    maxWidth: '82%',
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
   nameUserText: {
     fontFamily: F.serifMedium,
     fontSize: 23,
     lineHeight: 27,
     color: '#FFFFFF',
+  },
+  nameUserTextCompact: {
+    fontSize: 19,
+    lineHeight: 24,
+  },
+  nameTraditionBlock: {
+    marginTop: 7,
+    marginLeft: 48,
+    rowGap: 6,
+  },
+  nameTraditionOption: {
+    minHeight: 58,
+    borderRadius: 19,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 9,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 9 },
+    shadowOpacity: 0.055,
+    shadowRadius: 17,
+    elevation: 2,
+  },
+  nameTraditionOptionActive: {
+    backgroundColor: '#FFF5DF',
+    borderColor: 'rgba(197,160,89,0.72)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+  },
+  nameTraditionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(197,160,89,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.16)',
+  },
+  nameTraditionIconActive: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(197,160,89,0.46)',
+  },
+  nameTraditionCopy: {
+    flex: 1,
+    justifyContent: 'center',
+    rowGap: 1,
+  },
+  nameTraditionText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17,
+    lineHeight: 21,
+    color: INK,
+  },
+  nameTraditionTextActive: {
+    color: '#7A5A18',
+  },
+  nameTraditionSubtext: {
+    fontFamily: F.sansMedium,
+    fontSize: 10.5,
+    lineHeight: 14,
+    color: 'rgba(25,23,20,0.46)',
+  },
+  nameTraditionSubtextActive: {
+    color: 'rgba(122,90,24,0.68)',
+  },
+  nameTraditionMark: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.64)',
+  },
+  nameTraditionMarkActive: {
+    backgroundColor: GOLD,
+    borderColor: GOLD,
   },
   nameValueHint: {
     marginLeft: 54,
@@ -9260,9 +12550,9 @@ const s = StyleSheet.create({
     color: '#8B7A66',
   },
   distractionStage: {
-    height: 334,
+    height: 360,
     width: '100%',
-    maxWidth: 342,
+    maxWidth: 374,
     alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
@@ -9271,79 +12561,56 @@ const s = StyleSheet.create({
   },
   distractionGlow: {
     position: 'absolute',
-    left: 10,
-    right: 10,
-    top: 34,
-    height: 248,
-    borderRadius: 124,
-    backgroundColor: 'rgba(197,160,89,0.075)',
+    left: 16,
+    right: 16,
+    top: 46,
+    height: 246,
+    borderRadius: 123,
+    backgroundColor: 'rgba(197,160,89,0.085)',
   },
   distractionOuterRing: {
     position: 'absolute',
-    top: 30,
-    width: 286,
-    height: 286,
-    borderRadius: 143,
-    backgroundColor: 'rgba(25,23,20,0.045)',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.09)',
+    top: 61,
+    width: 224,
+    height: 224,
+    borderRadius: 112,
+    backgroundColor: 'transparent',
+    borderWidth: 4,
+    borderColor: 'rgba(25,23,20,0.18)',
+    zIndex: 1,
   },
   distractionInnerCutout: {
     position: 'absolute',
-    top: 92,
-    width: 164,
-    height: 164,
-    borderRadius: 82,
-    backgroundColor: '#FFFDF8',
+    top: 69,
+    width: 210,
+    height: 210,
+    borderRadius: 105,
+    backgroundColor: 'rgba(255,253,248,0.72)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.86)',
+    zIndex: 2,
   },
   distractionCore: {
     position: 'absolute',
-    top: 126,
-    width: 84,
-    height: 84,
-    borderRadius: 29,
+    top: 0,
+    width: 344,
+    height: 344,
+    borderRadius: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.25)',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderColor: 'transparent',
     shadowColor: GOLD,
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 4,
-    zIndex: 8,
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.12,
+    shadowRadius: 26,
+    elevation: 3,
+    zIndex: 5,
   },
-  distractionCoreLogoWrap: {
-    width: 62,
-    height: 62,
-    borderRadius: 20,
-    overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
-  },
-  distractionCoreLogo: {
+  distractionStickerImage: {
     width: '100%',
     height: '100%',
-  },
-  distractionCoreBadge: {
-    position: 'absolute',
-    right: -6,
-    bottom: -5,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: INK,
-    borderWidth: 2,
-    borderColor: '#FFFDF8',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    elevation: 4,
   },
   distractionCardSlot: {
     position: 'absolute',
@@ -9382,60 +12649,60 @@ const s = StyleSheet.create({
     color: 'rgba(25,23,20,0.76)',
   },
   distractionCardSocial: {
-    top: 54,
-    left: 8,
+    top: 48,
+    left: -7,
     width: 139,
     transform: [{ rotate: '-7deg' }],
     zIndex: 4,
   },
   distractionCardNotifications: {
-    top: 28,
-    right: 13,
+    top: 22,
+    right: -8,
     width: 154,
     transform: [{ rotate: '6deg' }],
-    zIndex: 6,
+    zIndex: 4,
   },
   distractionCardMessaging: {
-    top: 101,
-    right: 4,
+    top: 94,
+    right: -12,
     width: 132,
     transform: [{ rotate: '-2deg' }],
-    zIndex: 5,
+    zIndex: 4,
   },
   distractionCardStreaming: {
-    top: 144,
-    left: 12,
+    top: 153,
+    left: -10,
     width: 126,
     transform: [{ rotate: '5deg' }],
     zIndex: 7,
   },
   distractionCardGaming: {
-    left: 18,
-    bottom: 74,
+    left: -5,
+    bottom: 78,
     width: 111,
     transform: [{ rotate: '-5deg' }],
-    zIndex: 4,
+    zIndex: 8,
   },
   distractionCardApps: {
-    right: 18,
-    bottom: 77,
+    right: 0,
+    bottom: 86,
     width: 100,
     transform: [{ rotate: '6deg' }],
-    zIndex: 4,
+    zIndex: 8,
   },
   distractionCardContent: {
-    left: 76,
-    bottom: 26,
+    left: 53,
+    bottom: 22,
     width: 116,
     transform: [{ rotate: '2deg' }],
-    zIndex: 3,
+    zIndex: 7,
   },
   distractionCardNoise: {
-    right: 52,
-    bottom: 28,
+    right: 32,
+    bottom: 25,
     width: 94,
     transform: [{ rotate: '-8deg' }],
-    zIndex: 2,
+    zIndex: 7,
   },
   distractionGroundShadow: {
     position: 'absolute',
@@ -9516,6 +12783,7 @@ const s = StyleSheet.create({
   ctaIsland: {
     width: '100%',
     maxWidth: 340,
+    alignSelf: 'center',
     alignItems: 'center',
     padding: 5,
     borderRadius: 23,
@@ -13738,5 +17006,613 @@ const s = StyleSheet.create({
     fontFamily: F.sansBold,
     fontSize: 17,
     color: GOLD,
+  },
+  v4MomentSlide: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    rowGap: 18,
+  },
+  v4MomentIcon: {
+    width: 94,
+    height: 94,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+  },
+  v4MomentLogo: {
+    width: 82,
+    height: 82,
+    borderRadius: 24,
+  },
+  v4Eyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 12,
+    color: GOLD,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  v4MomentTitle: {
+    alignSelf: 'center',
+    maxWidth: 430,
+    fontFamily: F.serifSemiBold,
+    fontSize: 34,
+    lineHeight: 40,
+    color: INK,
+    textAlign: 'center',
+  },
+  v4MomentBody: {
+    alignSelf: 'center',
+    maxWidth: 342,
+    fontFamily: F.sansMedium,
+    fontSize: 16,
+    lineHeight: 24,
+    color: MUTED,
+    textAlign: 'center',
+  },
+  v4MomentAction: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  v4ProgressRail: {
+    width: '100%',
+    maxWidth: 430,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    columnGap: 10,
+    marginBottom: 16,
+    paddingTop: 8,
+  },
+  v4ProgressSlot: {
+    flex: 1,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  v4ProgressTrack: {
+    width: '100%',
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(25,23,20,0.10)',
+  },
+  v4ProgressTrackDone: {
+    backgroundColor: 'rgba(197,160,89,0.82)',
+  },
+  v4ProgressDot: {
+    position: 'absolute',
+    top: -5,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.12)',
+  },
+  v4ProgressDotDone: {
+    backgroundColor: GOLD,
+    borderColor: GOLD,
+  },
+  v4ProgressDotNew: {
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  v4ProgressLabel: {
+    marginTop: 11,
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 1,
+    color: 'rgba(25,23,20,0.42)',
+    textTransform: 'uppercase',
+  },
+  v4ProgressLabelDone: {
+    color: GOLD,
+  },
+  v4FlameSlide: {
+    flex: 1,
+    position: 'relative',
+    paddingHorizontal: 22,
+    paddingTop: 18,
+    paddingBottom: 0,
+  },
+  v4CheckpointCopySlot: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: '50%',
+    marginTop: 64,
+    alignItems: 'center',
+    paddingHorizontal: 18,
+  },
+  v4CheckpointCopy: {
+    width: '100%',
+    alignItems: 'center',
+    rowGap: 10,
+  },
+  v4CenteredSlide: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    rowGap: 18,
+  },
+  v4ScrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 34,
+    alignItems: 'center',
+    rowGap: 14,
+  },
+  v4ConversationContent: {
+    flexGrow: 1,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 120,
+    rowGap: 14,
+  },
+  v4ConversationInner: {
+    width: '100%',
+    maxWidth: 430,
+    alignSelf: 'center',
+    rowGap: 14,
+  },
+  v4DeckPreviewCard: {
+    height: 184,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E9E4DA',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  v4DeckPreviewText: {
+    fontFamily: F.sansBold,
+    fontSize: 14,
+    color: 'rgba(25,23,20,0.54)',
+  },
+  v4DeckSlide: {
+    flex: 1,
+    paddingHorizontal: 18,
+    paddingTop: 22,
+    paddingBottom: 16,
+    rowGap: 12,
+  },
+  v4DeckTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 29,
+    lineHeight: 34,
+    color: INK,
+    textAlign: 'center',
+    maxWidth: 350,
+    alignSelf: 'center',
+  },
+  v4DeckTitleCompact: {
+    fontSize: 27,
+    lineHeight: 32,
+  },
+  v4DeckAnswerProgress: {
+    width: '100%',
+    maxWidth: 360,
+    minHeight: 10,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 5,
+    paddingHorizontal: 4,
+  },
+  v4DeckAnswerSegment: {
+    flex: 1,
+    height: 6,
+    minWidth: 8,
+    borderRadius: 999,
+  },
+  v4DeckAnswerSegmentActive: {
+    height: 8,
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 5,
+  },
+  v4DeckStack: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 430,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  v4DeckStackCompact: {
+    justifyContent: 'flex-start',
+    paddingTop: 4,
+  },
+  v4StackCard: {
+    position: 'absolute',
+    borderRadius: 31,
+    backgroundColor: '#FCFAF6',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.10)',
+    overflow: 'hidden',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.055,
+    shadowRadius: 14,
+    elevation: 1,
+  },
+  v4StackCardNear: {
+    zIndex: 3,
+    transform: [{ translateY: 5 }, { rotate: '-0.6deg' }, { scale: 0.994 }],
+  },
+  v4StackCardMiddle: {
+    zIndex: 2,
+    transform: [{ translateY: 7 }, { rotate: '1.1deg' }, { scale: 0.982 }],
+  },
+  v4StackCardFar: {
+    zIndex: 1,
+    transform: [{ translateY: 9 }, { rotate: '-1.7deg' }, { scale: 0.969 }],
+  },
+  v4StackCardTop: {
+    width: '100%',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(25,23,20,0.035)',
+  },
+  v4StackCardBody: {
+    width: '100%',
+    backgroundColor: '#F8F4ED',
+  },
+  v4SwipeCardWrap: {
+    alignSelf: 'center',
+  },
+  v4DeckSideGlow: {
+    position: 'absolute',
+    top: 4,
+    bottom: 75,
+    width: '64%',
+    overflow: 'hidden',
+    zIndex: 0,
+  },
+  v4DeckSideGlowNo: {
+    left: -78,
+    borderTopRightRadius: 42,
+    borderBottomRightRadius: 42,
+  },
+  v4DeckSideGlowYes: {
+    right: -78,
+    borderTopLeftRadius: 42,
+    borderBottomLeftRadius: 42,
+  },
+  v4StatementCard: {
+    height: 500,
+    borderRadius: 31,
+    padding: 0,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+    overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.11,
+    shadowRadius: 24,
+    elevation: 4,
+    zIndex: 4,
+  },
+  v4StatementQuotePanel: {
+    height: 146,
+    paddingHorizontal: 24,
+    paddingVertical: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  v4StatementArt: {
+    width: '100%',
+    height: 354,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: '#F8F1E7',
+  },
+  v4StatementImage: {
+    width: '100%',
+    height: '100%',
+  },
+  v4StatementIcon: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F7F0E6',
+  },
+  v4StatementText: {
+    fontFamily: F.sansMedium,
+    fontSize: 16,
+    lineHeight: 22,
+    color: INK,
+    textAlign: 'center',
+  },
+  v4AnswerRow: {
+    flexDirection: 'row',
+    columnGap: 12,
+    marginTop: 18,
+    zIndex: 3,
+  },
+  v4NoButton: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 22,
+    flexDirection: 'row',
+    columnGap: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF9F8',
+    borderWidth: 1,
+    borderColor: 'rgba(168,57,63,0.22)',
+    shadowColor: '#A8393F',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    elevation: 1,
+  },
+  v4NoButtonText: {
+    fontFamily: F.sansBold,
+    fontSize: 18,
+    color: '#6F2D31',
+  },
+  v4YesButton: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 22,
+    flexDirection: 'row',
+    columnGap: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F7FCF8',
+    borderWidth: 1,
+    borderColor: 'rgba(47,143,87,0.22)',
+    shadowColor: '#2F8F57',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    elevation: 1,
+  },
+  v4YesButtonText: {
+    fontFamily: F.sansBold,
+    fontSize: 18,
+    color: '#246B43',
+  },
+  v4MetricCard: {
+    width: '100%',
+    maxWidth: 430,
+    borderRadius: 22,
+    padding: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  v4MetricCardAccent: {
+    backgroundColor: 'rgba(77,133,134,0.10)',
+    borderColor: 'rgba(77,133,134,0.28)',
+  },
+  v4MetricLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 12,
+    color: MUTED,
+    textAlign: 'center',
+  },
+  v4MetricValue: {
+    marginTop: 5,
+    fontFamily: F.serifSemiBold,
+    fontSize: 28,
+    color: INK,
+    textAlign: 'center',
+  },
+  v4MetricDetail: {
+    marginTop: 4,
+    fontFamily: F.sansMedium,
+    fontSize: 13,
+    color: MUTED,
+    textAlign: 'center',
+  },
+  v4WasteTitle: {
+    marginTop: 6,
+    fontFamily: F.sansBold,
+    fontSize: 27,
+    color: '#9A342F',
+    textAlign: 'center',
+  },
+  v4GoodTitle: {
+    marginTop: 6,
+    fontFamily: F.sansBold,
+    fontSize: 27,
+    color: GOLD,
+    textAlign: 'center',
+  },
+  v4StakesPanel: {
+    width: '100%',
+    maxWidth: 430,
+    borderRadius: 22,
+    padding: 15,
+    backgroundColor: 'rgba(77,133,134,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(77,133,134,0.22)',
+  },
+  v4StakesText: {
+    fontFamily: F.sansBold,
+    fontSize: 14,
+    lineHeight: 20,
+    color: INK,
+    textAlign: 'center',
+  },
+  v4RecapCard: {
+    width: '100%',
+    maxWidth: 430,
+    flexDirection: 'row',
+    columnGap: 12,
+    borderRadius: 18,
+    padding: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.26)',
+  },
+  v4RecapCardMuted: {
+    opacity: 0.44,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  v4RecapMark: {
+    width: 34,
+    fontFamily: F.sansBold,
+    fontSize: 12,
+    color: GOLD,
+  },
+  v4RecapText: {
+    flex: 1,
+    fontFamily: F.sansMedium,
+    fontSize: 13,
+    lineHeight: 19,
+    color: INK,
+  },
+  v4OptionWrap: {
+    width: '100%',
+    maxWidth: 430,
+  },
+  v4SetupCard: {
+    width: '100%',
+    maxWidth: 430,
+    borderRadius: 22,
+    padding: 18,
+    rowGap: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  v4SetupCardDone: {
+    backgroundColor: 'rgba(197,160,89,0.13)',
+    borderColor: 'rgba(197,160,89,0.34)',
+  },
+  v4SetupTitle: {
+    fontFamily: F.sansBold,
+    fontSize: 17,
+    color: INK,
+  },
+  v4SetupBody: {
+    fontFamily: F.sansMedium,
+    fontSize: 13,
+    lineHeight: 19,
+    color: MUTED,
+  },
+  v4BigFlame: {
+    width: 142,
+    height: 142,
+  },
+  v4WeekRow: {
+    width: '100%',
+    maxWidth: 430,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 13,
+    borderRadius: 18,
+    padding: 15,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  v4WeekDay: {
+    width: 44,
+    fontFamily: F.sansBold,
+    color: GOLD,
+  },
+  v4WeekText: {
+    flex: 1,
+    fontFamily: F.sansBold,
+    color: INK,
+  },
+  v4HomeRow: {
+    width: '100%',
+    maxWidth: 430,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 12,
+    borderRadius: 18,
+    padding: 15,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  v4HomeText: {
+    flex: 1,
+    fontFamily: F.sansBold,
+    color: INK,
+  },
+  v4FirstTask: {
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 430,
+    minHeight: 82,
+    borderRadius: 26,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  v4FirstTaskDone: {
+    backgroundColor: GOLD,
+    borderColor: GOLD,
+  },
+  v4FirstTaskText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 22,
+    color: INK,
+  },
+  v4AccountOptions: {
+    width: '100%',
+    maxWidth: 430,
+    rowGap: 10,
+  },
+  v4AccountOption: {
+    minHeight: 74,
+    borderRadius: 22,
+    paddingHorizontal: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  v4AccountOptionSelected: {
+    backgroundColor: '#FFF7E8',
+    borderColor: 'rgba(197,160,89,0.48)',
+  },
+  v4AccountIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(197,160,89,0.12)',
+  },
+  v4AccountCopy: {
+    flex: 1,
+  },
+  v4AccountTitle: {
+    fontFamily: F.sansBold,
+    fontSize: 15,
+    color: INK,
+  },
+  v4AccountBody: {
+    marginTop: 3,
+    fontFamily: F.sansMedium,
+    fontSize: 12,
+    color: MUTED,
   },
 });

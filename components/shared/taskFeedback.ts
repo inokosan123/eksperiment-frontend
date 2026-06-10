@@ -89,6 +89,10 @@ function playTaskCheckSound() {
   });
 }
 
+export function playTaskCheckSoundOnly() {
+  playTaskCheckSound();
+}
+
 function playAchievementSound() {
   if (Platform.OS === 'web') return;
 

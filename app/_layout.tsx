@@ -114,7 +114,7 @@ export default function RootLayout() {
                                   <Stack.Screen name="statistics"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="settings"        options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="account"         options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                                  <Stack.Screen name="onboarding"      options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'fade' }} />
+                                  <Stack.Screen name="onboarding"      options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'fade', gestureEnabled: false }} />
                                 </Stack>
                               </GuidedSetupProvider>
                             </JournalProvider>

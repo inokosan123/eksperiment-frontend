@@ -265,7 +265,7 @@ const o = StyleSheet.create({
     right: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 10,
+    columnGap: 8,
   },
   logoPlate: {
     width: 60,
@@ -299,6 +299,7 @@ const o = StyleSheet.create({
     minHeight: 54,
     flex: 1,
     justifyContent: 'center',
+    alignItems: 'flex-start',
     borderRadius: 18,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -307,6 +308,7 @@ const o = StyleSheet.create({
     borderColor: 'rgba(197,160,89,0.28)',
   },
   bubbleTail: {
+    display: 'none',
     position: 'absolute',
     left: -7,
     top: '50%',
@@ -320,6 +322,7 @@ const o = StyleSheet.create({
     borderColor: 'rgba(197,160,89,0.28)',
   },
   bubbleTailJoin: {
+    display: 'none',
     position: 'absolute',
     left: -1,
     top: '50%',
@@ -332,6 +335,7 @@ const o = StyleSheet.create({
     fontFamily: F.serifMedium,
     fontSize: 18,
     lineHeight: 23,
+    textAlign: 'left',
     color: C.text,
   },
   ctaWrap: {
