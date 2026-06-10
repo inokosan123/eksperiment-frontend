@@ -23,9 +23,11 @@ import Reanimated, {
   useSharedValue,
   withDelay,
   withRepeat,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import {
+  ArrowUpRight,
   BellRing,
   BookMarked,
   Calendar,
@@ -43,6 +45,7 @@ import {
   ListChecks,
   OpenBook,
   Play,
+  Plus,
   SlidersHorizontal,
   Sparkles,
   Settings,
@@ -120,6 +123,7 @@ type StepId =
   | 'valueTools'
   | 'toolsIntroA'
   | 'toolsIntroB'
+  | 'toolsShowcase'
   | 'statementsIntro'
   | 'tutorialDeck'
   | 'protectDeck'
@@ -891,9 +895,7 @@ function stepOrder(answers: Answers): StepId[] {
     'valueDiscipline',
     'valueFocus',
     'valueFaith',
-    'valueTools',
-    'toolsIntroA',
-    'toolsIntroB',
+    'toolsShowcase',
     'statementsIntro',
     'tutorialDeck',
     'protectDeck',
@@ -1225,7 +1227,6 @@ const VALUE_STEP_IDS: ValueStepId[] = [
   'valueDiscipline',
   'valueFocus',
   'valueFaith',
-  'valueTools',
 ];
 const VALUE_FLOW_DOT_COUNT = VALUE_STEP_IDS.length;
 
@@ -1687,7 +1688,6 @@ function TraditionIntroSlide({
       return;
     }
 
-    runAdvanceHaptic();
     onNext();
   };
 
@@ -2009,7 +2009,7 @@ function TraditionIntroSlide({
           style={[s.bottomAction, s.introBottomAction, { paddingBottom: bottomInset + 8 }]}
         >
           <View style={s.ctaIsland}>
-            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={handlePrimary} style={s.primaryButton}>
+            <TouchableOpacity activeOpacity={0.9} haptic="none" onPress={handlePrimary} style={s.primaryButton}>
               <Text style={s.primaryButtonText}>Continue</Text>
               <ChevronRight s={19} c="#FFFFFF" w={2.5} />
             </TouchableOpacity>
@@ -2076,6 +2076,8 @@ function ValuePreviewSlide({
       if (shouldAdvance) {
         if (isLast) {
           dragX.value = withTiming(0, { duration: 260, easing: Easing.out(Easing.cubic) });
+          runOnJS(runStrongHaptic)();
+          runOnJS(onNext)();
         } else {
           runOnJS(updateProgressIndex)(index + 1);
           dragX.value = withTiming(0, { duration: 360, easing: Easing.out(Easing.cubic) });
@@ -2139,26 +2141,13 @@ function ValuePreviewSlide({
         </GestureDetector>
       </View>
 
-      <View style={[s.valueNavigation, { paddingBottom: bottomInset + (isLast ? 94 : 0), transform: [{ translateY: isLast ? 0 : 6 }] }]}>
+      <View style={[s.valueNavigation, { paddingBottom: bottomInset, transform: [{ translateY: 6 }] }]}>
         <ValueSlideProgressRail activeIndex={progressIndex} total={VALUE_FLOW_DOT_COUNT} />
-        {!isLast ? (
-          <View style={s.valueSwipeHint}>
-            <Text style={s.valueSwipeHintText}>Swipe To Continue</Text>
-            <ChevronRight s={15} c={GOLD} w={2.4} />
-          </View>
-        ) : null}
+        <View style={s.valueSwipeHint}>
+          <Text style={s.valueSwipeHintText}>Swipe To Continue</Text>
+          <ChevronRight s={15} c={GOLD} w={2.4} />
+        </View>
       </View>
-
-      {isLast ? (
-        <AnimatedCta delay={320} style={[s.valueBottomAction, { paddingBottom: bottomInset + 8 }]}>
-          <View style={s.ctaIsland}>
-            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-              <Text style={s.primaryButtonText}>I&apos;m ready</Text>
-              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
-            </TouchableOpacity>
-          </View>
-        </AnimatedCta>
-      ) : null}
     </LinearGradient>
   );
 }
@@ -2571,22 +2560,65 @@ function ValueDisciplineIllustration({ active }: { active: boolean }) {
   );
 }
 
-function ValueFocusIllustration({ active }: { active: boolean }) {
-  const cards = [
-    { label: 'Control screen time', icon: <Hourglass s={19} c={GOLD} w={1.9} /> },
-    { label: 'Block notifications', icon: <BellRing s={19} c="#4D8586" w={1.9} /> },
-    { label: 'Block addictive content', icon: <SlidersHorizontal s={19} c="#8F5D6C" w={1.9} /> },
-  ];
+const VALUE_FOCUS_FEATURE_CARDS = [
+  {
+    label: 'Control your screen time',
+    tint: 'rgba(197,160,89,0.12)',
+    border: 'rgba(197,160,89,0.26)',
+    icon: <Hourglass s={20} c={GOLD} w={2} />,
+  },
+  {
+    label: 'Block notifications',
+    tint: 'rgba(77,133,134,0.12)',
+    border: 'rgba(77,133,134,0.26)',
+    icon: <BellRing s={20} c="#4D8586" w={2} />,
+  },
+  {
+    label: 'Block addictive content',
+    tint: 'rgba(143,93,108,0.12)',
+    border: 'rgba(143,93,108,0.26)',
+    icon: <SlidersHorizontal s={20} c="#8F5D6C" w={2} />,
+  },
+];
 
+function ValueFocusFeatureCard({
+  icon,
+  label,
+  tint,
+  border,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  tint: string;
+  border: string;
+}) {
+  return (
+    <View style={s.valueFocusFeatureCard}>
+      <LinearGradient
+        colors={['#FFFFFF', '#FFFCF4']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={[s.valueFocusFeatureIcon, { backgroundColor: tint, borderColor: border }]}>{icon}</View>
+      <Text style={s.valueFocusFeatureText} numberOfLines={1}>{label}</Text>
+      <View style={s.valueFocusFeatureCheck}>
+        <CheckSmall s={12.5} c={GOLD} w={2.7} />
+      </View>
+    </View>
+  );
+}
+
+function ValueFocusIllustration({ active }: { active: boolean }) {
   return (
     <View style={s.valueFocusVisual}>
       <View style={s.valueFocusTagsWrap}>
-        <ProtectDistractionVisual />
+        <ProtectDistractionVisual enableHaptics={false} />
       </View>
       <View style={s.valueFocusCards}>
-        {cards.map((card, index) => (
+        {VALUE_FOCUS_FEATURE_CARDS.map((card, index) => (
           <ValueFocusCardReveal key={card.label} active={active} delay={340 + index * TRADITION_INTRO_TIMING.optionStep}>
-            <ValueMiniFeatureCard icon={card.icon} label={card.label} compact />
+            <ValueFocusFeatureCard icon={card.icon} label={card.label} tint={card.tint} border={card.border} />
           </ValueFocusCardReveal>
         ))}
       </View>
@@ -3118,7 +3150,7 @@ function ValueOrganizeReveal({
 const VALUE_ORGANIZE_TASK_REVEAL_BASE_DELAY = 650;
 const VALUE_ORGANIZE_TASK_REVEAL_STEP_DELAY = 74;
 const VALUE_ORGANIZE_TASK_REVEAL_DURATION = 230;
-const VALUE_ORGANIZE_TASK_COUNT = 7;
+const VALUE_ORGANIZE_TASK_COUNT = 5;
 const VALUE_ORGANIZE_CHECK_DELAY =
   VALUE_ORGANIZE_TASK_REVEAL_BASE_DELAY +
   (VALUE_ORGANIZE_TASK_COUNT - 1) * VALUE_ORGANIZE_TASK_REVEAL_STEP_DELAY +
@@ -3283,9 +3315,7 @@ function ValueOrganizePhone({
     TASK_TYPES.find(item => item.key === 'spiritual') ?? TASK_TYPES[2],
     TASK_TYPES.find(item => item.key === 'routine') ?? TASK_TYPES[1],
     TASK_TYPES.find(item => item.key === 'challenge') ?? TASK_TYPES[3],
-    TASK_TYPES.find(item => item.key === 'gratitude') ?? TASK_TYPES[4],
     TASK_TYPES.find(item => item.key === 'reading') ?? TASK_TYPES[5],
-    TASK_TYPES.find(item => item.key === 'quick') ?? TASK_TYPES[6],
   ];
 
   return (
@@ -3316,8 +3346,8 @@ function ValueOrganizePhone({
               {active ? (
                 <View pointerEvents="none" style={s.valueDateSelectedFillWrap}>
                   <LinearGradient
-                    colors={['#D4B06A', '#C5A059', '#8B6B2F']}
-                    locations={[0, 0.50, 1]}
+                    colors={['#E2BD75', '#C5A059', '#A87E33']}
+                    locations={[0, 0.55, 1]}
                     start={{ x: 0.15, y: 0 }}
                     end={{ x: 0.85, y: 1 }}
                     style={s.valueDateSelectedFill}
@@ -3348,12 +3378,7 @@ function ValueOrganizePhone({
         <Text style={s.valueBigEventsSub}>1 active</Text>
       </View>
       <ValueOrganizeReveal active={active} animated={animated} delay={460}>
-        <LinearGradient
-          colors={['#FFFFFF', '#FFFDF8']}
-          start={{ x: 0.12, y: 0 }}
-          end={{ x: 0.92, y: 1 }}
-          style={s.valueBigEventCard}
-        >
+        <View style={[s.valueBigEventCard, { backgroundColor: '#FFFFFF' }]}>
           <View style={s.valueBigEventIconBox}>
             <NotoEmoji name={normalizeHabitIcon('birthday-cake')} size={13} />
           </View>
@@ -3364,19 +3389,19 @@ function ValueOrganizePhone({
             <Text style={s.valueBigEventCountNum}>7</Text>
             <Text style={s.valueBigEventCountLabel}>days</Text>
           </View>
-        </LinearGradient>
+        </View>
       </ValueOrganizeReveal>
 
       <View style={s.valueTasksHeader}>
         <View>
           <Text style={s.valueHomeSectionTitle}>Today&apos;s Tasks</Text>
-          <Text style={s.valueHomeSectionMeta}>7 active today</Text>
+          <Text style={s.valueHomeSectionMeta}>5 active today</Text>
         </View>
         <View style={s.valueTasksProgressWrap}>
           <View style={s.valueTasksProgressTrack}>
-            <View style={[s.valueTasksProgressFill, { width: completedHabit ? '42%' : '18%' }]} />
+            <View style={[s.valueTasksProgressFill, { width: completedHabit ? '20%' : '0%' }]} />
           </View>
-          <Text style={s.valueTasksProgressText}>{completedHabit ? '1/7' : '0/7'}</Text>
+          <Text style={s.valueTasksProgressText}>{completedHabit ? '1/5' : '0/5'}</Text>
         </View>
       </View>
 
@@ -3396,6 +3421,44 @@ function ValueOrganizePhone({
           </ValueOrganizeReveal>
         ))}
       </View>
+
+      <ValueOrganizeReveal
+        active={taskContentActive}
+        animated={shouldAnimateTasks}
+        delay={VALUE_ORGANIZE_TASK_REVEAL_BASE_DELAY + taskPreviewItems.length * VALUE_ORGANIZE_TASK_REVEAL_STEP_DELAY}
+        duration={VALUE_ORGANIZE_TASK_REVEAL_DURATION}
+      >
+        <View style={s.valueHomeAddBtn}>
+          <Plus s={10} c="#1C1917" w={2.5} />
+          <Text style={s.valueHomeAddBtnText}>ADD QUICK TASK</Text>
+        </View>
+      </ValueOrganizeReveal>
+
+      <ValueOrganizeReveal
+        active={taskContentActive}
+        animated={shouldAnimateTasks}
+        delay={VALUE_ORGANIZE_TASK_REVEAL_BASE_DELAY + (taskPreviewItems.length + 1) * VALUE_ORGANIZE_TASK_REVEAL_STEP_DELAY}
+        duration={VALUE_ORGANIZE_TASK_REVEAL_DURATION}
+      >
+        <LinearGradient
+          colors={['#FFFFFF', '#FDF3D8']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={s.valueHomeRoutineCard}
+        >
+          <View pointerEvents="none" style={s.valueHomeRoutineWatermark}>
+            <Settings s={64} c="#C5A059" w={1} />
+          </View>
+          <View style={s.valueHomeRoutineCopy}>
+            <Text style={s.valueHomeRoutineLabel}>FOUNDATION</Text>
+            <Text style={s.valueHomeRoutineTitle}>My Routine</Text>
+            <Text style={s.valueHomeRoutineSub}>Establish your rhythm</Text>
+          </View>
+          <View style={s.valueHomeRoutineArrow}>
+            <ArrowUpRight s={11} c="#FFFFFF" w={2.5} />
+          </View>
+        </LinearGradient>
+      </ValueOrganizeReveal>
     </View>
   );
 }
@@ -4722,9 +4785,11 @@ const DISTRACTION_CARD_MOTION_PATHS = [
 function DistractionCard({
   item,
   index,
+  enableHaptics = true,
 }: {
   item: (typeof DISTRACTION_CARDS)[number];
   index: number;
+  enableHaptics?: boolean;
 }) {
   const drift = useSharedValue(0);
   const revealProfile = DISTRACTION_CARD_REVEAL_PROFILES[item.style];
@@ -4742,7 +4807,7 @@ function DistractionCard({
   };
 
   useEffect(() => {
-    const hapticTimer = setTimeout(runStrongHaptic, revealDelay + 80);
+    const hapticTimer = enableHaptics ? setTimeout(runStrongHaptic, revealDelay + 80) : null;
     const floatTimer = setTimeout(() => {
       drift.value = 0;
       drift.value = withRepeat(
@@ -4756,11 +4821,11 @@ function DistractionCard({
     }, revealDelay + revealProfile.duration - 60);
 
     return () => {
-      clearTimeout(hapticTimer);
+      if (hapticTimer) clearTimeout(hapticTimer);
       clearTimeout(floatTimer);
       drift.value = 0;
     };
-  }, [drift, motion.duration, revealDelay, revealProfile.duration]);
+  }, [drift, enableHaptics, motion.duration, revealDelay, revealProfile.duration]);
 
   const floatStyle = useAnimatedStyle(() => {
     const warpedDrift =
@@ -4816,7 +4881,7 @@ function DistractionCard({
   );
 }
 
-function ProtectDistractionVisual() {
+function ProtectDistractionVisual({ enableHaptics = true }: { enableHaptics?: boolean }) {
   return (
     <View style={s.distractionStage}>
       <Reanimated.View
@@ -4855,7 +4920,7 @@ function ProtectDistractionVisual() {
       </Reanimated.View>
 
       {DISTRACTION_CARDS.map((item, index) => (
-        <DistractionCard key={item.label} item={item} index={index} />
+        <DistractionCard key={item.label} item={item} index={index} enableHaptics={enableHaptics} />
       ))}
 
       <Reanimated.View
@@ -8266,6 +8331,212 @@ function V4ProgressRail({
   );
 }
 
+type ToolsShowcaseTagSpec = {
+  label: string;
+  x: number;
+  y: number;
+  rotate: number;
+};
+
+const TOOLS_SHOWCASE_TAGS: ToolsShowcaseTagSpec[] = [
+  { label: 'Notification Blocker', x: -16, y: -290, rotate: -2 },
+  { label: 'Daily Journal', x: -104, y: -238, rotate: -5 },
+  { label: 'Scripture', x: 18, y: -246, rotate: 3 },
+  { label: 'Prayer Book', x: 122, y: -234, rotate: 6 },
+  { label: 'Morning Pages', x: -52, y: -194, rotate: 2 },
+  { label: 'Pomodoro', x: 96, y: -188, rotate: -4 },
+  { label: 'Bible Notes', x: -124, y: -148, rotate: 4 },
+  { label: 'Habits', x: 8, y: -152, rotate: -2 },
+  { label: 'Reading List', x: 114, y: -142, rotate: 5 },
+  { label: 'Screen Time', x: -64, y: -104, rotate: -6 },
+  { label: 'Challenges', x: 72, y: -100, rotate: 3 },
+  { label: 'Favorites', x: -124, y: -52, rotate: -3 },
+  { label: 'App Blocker', x: 124, y: -48, rotate: 4 },
+  { label: 'Notes', x: -132, y: 4, rotate: 5 },
+  { label: 'Streaks', x: 132, y: 8, rotate: -5 },
+  { label: 'Free Writing', x: -120, y: 58, rotate: -4 },
+  { label: 'Big Events', x: 122, y: 56, rotate: 6 },
+  { label: 'Morning Prayers', x: -66, y: 106, rotate: 3 },
+  { label: 'Evening Prayers', x: 80, y: 102, rotate: -3 },
+  { label: 'Monthly Goals', x: -116, y: 152, rotate: 5 },
+  { label: 'Jesus Prayer', x: 14, y: 158, rotate: -2 },
+  { label: 'Bucket List', x: 122, y: 148, rotate: -6 },
+  { label: 'Reading Timer', x: -58, y: 200, rotate: -4 },
+  { label: 'Routines', x: 84, y: 196, rotate: 4 },
+  { label: 'Year in Pixels', x: -110, y: 244, rotate: 3 },
+  { label: 'Spiritual Tasks', x: 18, y: 248, rotate: -3 },
+  { label: 'Content Blocker', x: 126, y: 240, rotate: 5 },
+];
+
+const TOOLS_SHOWCASE_TAG_TONES = [
+  { tone: '#F6EFDC', dot: '#C5A059' },
+  { tone: '#E7F4F4', dot: '#4D8586' },
+  { tone: '#F6E9EE', dot: '#8F5D6C' },
+  { tone: '#F2EEDC', dot: '#85723F' },
+  { tone: '#F0EFEA', dot: '#57524B' },
+];
+
+const TOOLS_SHOWCASE_RAIN_BASE_DELAY = 680;
+const TOOLS_SHOWCASE_RAIN_STEP = 52;
+
+function toolsShowcaseTagDelay(index: number) {
+  return TOOLS_SHOWCASE_RAIN_BASE_DELAY + ((index * 7) % TOOLS_SHOWCASE_TAGS.length) * TOOLS_SHOWCASE_RAIN_STEP;
+}
+
+function ToolsShowcaseTag({
+  spec,
+  index,
+  yScale,
+}: {
+  spec: ToolsShowcaseTagSpec;
+  index: number;
+  yScale: number;
+}) {
+  const fall = useSharedValue(0);
+  const drift = useSharedValue(0);
+  const motion = DISTRACTION_CARD_MOTION_PATHS[index % DISTRACTION_CARD_MOTION_PATHS.length];
+  const tone = TOOLS_SHOWCASE_TAG_TONES[index % TOOLS_SHOWCASE_TAG_TONES.length];
+  const delay = toolsShowcaseTagDelay(index);
+  const targetY = spec.y * yScale;
+
+  useEffect(() => {
+    fall.value = 0;
+    fall.value = withDelay(delay, withSpring(1, { damping: 17, stiffness: 118, mass: 0.92 }));
+    const floatTimer = setTimeout(() => {
+      drift.value = 0;
+      drift.value = withRepeat(
+        withTiming(1, { duration: motion.duration, easing: Easing.linear }),
+        -1,
+        false,
+      );
+    }, delay + 640);
+    return () => {
+      clearTimeout(floatTimer);
+      drift.value = 0;
+    };
+  }, [delay, drift, fall, motion.duration]);
+
+  const tagStyle = useAnimatedStyle(() => {
+    const angle = drift.value * Math.PI * 2 + motion.phase;
+    const secondary = drift.value * Math.PI * 4 + motion.phase * 0.7;
+    const dx = Math.sin(angle) * motion.xA * 0.5 + Math.sin(secondary) * motion.xB * 0.4;
+    const dy = Math.cos(angle) * motion.yA * 0.5 + Math.sin(secondary + 0.8) * motion.yB * 0.4;
+    const dr = Math.sin(angle + 0.6) * motion.rA * 0.5;
+    return {
+      opacity: interpolate(fall.value, [0, 0.07, 1], [0, 1, 1]),
+      transform: [
+        { translateX: spec.x + dx },
+        { translateY: interpolate(fall.value, [0, 1], [-540, targetY]) + dy },
+        { rotate: `${interpolate(fall.value, [0, 1], [spec.rotate * 2.6, spec.rotate]) + dr}deg` },
+        { scale: interpolate(fall.value, [0, 1], [0.92, 1]) },
+      ],
+    };
+  });
+
+  return (
+    <Reanimated.View pointerEvents="none" style={[s.toolsTagSlot, tagStyle]}>
+      <View style={[s.toolsTagChip, { backgroundColor: tone.tone }]}>
+        <View style={[s.toolsTagDot, { backgroundColor: tone.dot }]} />
+        <Text style={s.toolsTagText} numberOfLines={1}>{spec.label}</Text>
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function ToolsShowcaseSlide({
+  topInset,
+  bottomInset,
+  onNext,
+}: {
+  topInset: number;
+  bottomInset: number;
+  onNext: () => void;
+}) {
+  const { height } = useWindowDimensions();
+  const yScale = height < 760 ? 0.82 : 1;
+  const crestIn = useSharedValue(0);
+  const pulse = useSharedValue(0);
+
+  useEffect(() => {
+    crestIn.value = withDelay(180, withTiming(1, { duration: 640, easing: Easing.out(Easing.cubic) }));
+    pulse.value = withDelay(
+      980,
+      withRepeat(
+        withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        true,
+      ),
+    );
+    const hapticTimer = setTimeout(runBubbleHaptic, 780);
+    return () => clearTimeout(hapticTimer);
+  }, [crestIn, pulse]);
+
+  const crestStyle = useAnimatedStyle(() => ({
+    opacity: crestIn.value,
+    transform: [
+      { translateY: interpolate(crestIn.value, [0, 1], [12, 0]) },
+      { scale: interpolate(crestIn.value, [0, 1], [0.84, 1]) * (1 + pulse.value * 0.022) },
+    ],
+  }));
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: crestIn.value * (0.55 + pulse.value * 0.45),
+    transform: [
+      { scale: interpolate(crestIn.value, [0, 1], [0.72, 1]) * (1 + pulse.value * 0.055) },
+    ],
+  }));
+  const ringStyle = useAnimatedStyle(() => ({
+    opacity: crestIn.value * 0.9,
+    transform: [
+      { scale: interpolate(crestIn.value, [0, 1], [0.8, 1]) * (1 + pulse.value * 0.012) },
+    ],
+  }));
+
+  return (
+    <LinearGradient
+      colors={['#FFFDF8', '#FFFDF8', '#F8EEDC']}
+      locations={[0, 0.6, 1]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={s.toolsShowcaseRoot}
+    >
+      <View style={[s.toolsShowcaseCopy, { paddingTop: topInset + 30 }]}>
+        <Reanimated.View
+          entering={FadeIn.duration(560).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}
+        >
+          <Text style={s.toolsShowcaseTitle}>Anasta has a lot of tools.</Text>
+        </Reanimated.View>
+        <Reanimated.View
+          entering={FadeIn.delay(340).duration(560).withInitialValues({ opacity: 0, transform: [{ translateY: 12 }] })}
+        >
+          <Text style={s.toolsShowcaseBody}>
+            But a tool is only worth what it adds to your life — so we shape every one of them around yours.
+          </Text>
+        </Reanimated.View>
+      </View>
+
+      <View style={s.toolsShowcaseStage}>
+        <Reanimated.View pointerEvents="none" style={[s.toolsCrestGlow, glowStyle]} />
+        <Reanimated.View pointerEvents="none" style={[s.toolsCrestRing, ringStyle]} />
+        <Reanimated.View style={[s.toolsCrestWrap, crestStyle]}>
+          <Image source={APP_LOGO} style={s.toolsCrestLogo} resizeMode="cover" />
+        </Reanimated.View>
+        {TOOLS_SHOWCASE_TAGS.map((spec, index) => (
+          <ToolsShowcaseTag key={spec.label} spec={spec} index={index} yScale={yScale} />
+        ))}
+      </View>
+
+      <AnimatedCta delay={2000} style={[s.toolsShowcaseAction, { paddingBottom: bottomInset + 8 }]}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>Continue</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </LinearGradient>
+  );
+}
+
 function V4MomentSlide({
   eyebrow,
   title,
@@ -9360,7 +9631,8 @@ export default function OnboardingView() {
   }, [activeStep]);
 
   const goBack = () => {
-    if (!isValueStep(activeStep)) {
+    const previousStep = steps[Math.max(0, index - 1)];
+    if (!isValueStep(activeStep) && !isValueStep(previousStep)) {
       runAdvanceHaptic();
     }
     if (index <= 0) {
@@ -9371,7 +9643,8 @@ export default function OnboardingView() {
   };
 
   const goNext = () => {
-    if (!isValueStep(activeStep)) {
+    const nextStep = steps[Math.min(steps.length - 1, index + 1)];
+    if (!isValueStep(activeStep) && !isValueStep(nextStep)) {
       runAdvanceHaptic();
     }
     if (index >= steps.length - 1) {
@@ -9471,6 +9744,7 @@ export default function OnboardingView() {
   const hideTopChrome =
     activeStep === 'nameIntro' ||
     activeStep === 'traditionIntro' ||
+    activeStep === 'toolsShowcase' ||
     activeStep === 'processing' ||
     activeStep === 'valueReflect' ||
     activeStep === 'commitment' ||
@@ -9489,6 +9763,7 @@ export default function OnboardingView() {
   const edgeToEdgeMessage =
     activeStep === 'nameIntro' ||
     activeStep === 'traditionIntro' ||
+    activeStep === 'toolsShowcase' ||
     valueStepActive ||
     activeStep === 'bridge' ||
     activeStep === 'organizeIntro' ||
@@ -9580,23 +9855,12 @@ export default function OnboardingView() {
         />
       );
     }
-    if (activeStep === 'toolsIntroA') {
+    if (activeStep === 'toolsShowcase') {
       return (
-        <V4MomentSlide
-          title="Anasta has a lot of tools."
-          body="But their worth is measured by what they add to your life - not by how many there are."
+        <ToolsShowcaseSlide
+          topInset={insets.top}
+          bottomInset={insets.bottom}
           onNext={goNext}
-          autoAdvance
-        />
-      );
-    }
-    if (activeStep === 'toolsIntroB') {
-      return (
-        <V4MomentSlide
-          title="That's why we want to understand you better."
-          body="Answer honestly, and Anasta can set itself up to truly fit your life."
-          onNext={goNext}
-          autoAdvance
         />
       );
     }
@@ -10310,6 +10574,48 @@ const s = StyleSheet.create({
     shadowOpacity: 0.075,
     shadowRadius: 18,
     elevation: 2,
+  },
+  valueFocusFeatureCard: {
+    minHeight: 50,
+    width: '100%',
+    borderRadius: 17,
+    paddingHorizontal: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 11,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.32)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 2,
+  },
+  valueFocusFeatureIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  valueFocusFeatureText: {
+    flex: 1,
+    fontFamily: F.serifMedium,
+    fontSize: 15.5,
+    lineHeight: 19,
+    color: INK,
+  },
+  valueFocusFeatureCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(197,160,89,0.13)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.30)',
   },
   valueMiniFeatureIcon: {
     width: 34,
@@ -11160,7 +11466,7 @@ const s = StyleSheet.create({
     height: '42%',
     borderTopLeftRadius: 13,
     borderTopRightRadius: 13,
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   valueDateSelectedRim: {
     ...StyleSheet.absoluteFillObject,
@@ -11347,6 +11653,94 @@ const s = StyleSheet.create({
     width: 392,
     transformOrigin: 'top center',
     transform: [{ scale: 0.585 }],
+  },
+  valueHomeAddBtn: {
+    marginTop: 4,
+    marginHorizontal: -8,
+    paddingVertical: 6.5,
+    borderRadius: 11,
+    borderWidth: 1.2,
+    borderColor: '#1C1917',
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 5,
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 1.5 },
+    shadowOpacity: 0.07,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  valueHomeAddBtnText: {
+    fontFamily: F.sansBold,
+    fontSize: 7.4,
+    letterSpacing: 1.7,
+    color: '#1C1917',
+    textTransform: 'uppercase',
+  },
+  valueHomeRoutineCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    marginTop: 5,
+    marginHorizontal: -8,
+    borderRadius: 13,
+    borderWidth: 1.2,
+    borderColor: '#C5A059',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#C5A059',
+    shadowOffset: { width: 0, height: 2.5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 7,
+    elevation: 2,
+  },
+  valueHomeRoutineWatermark: {
+    position: 'absolute',
+    right: -11,
+    bottom: -11,
+    opacity: 0.1,
+  },
+  valueHomeRoutineCopy: {
+    flex: 1,
+  },
+  valueHomeRoutineLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 6,
+    letterSpacing: 1.7,
+    textTransform: 'uppercase',
+    color: 'rgba(197,160,89,0.8)',
+    marginBottom: 3,
+  },
+  valueHomeRoutineTitle: {
+    fontFamily: F.serifMedium,
+    fontSize: 15.5,
+    lineHeight: 17,
+    color: '#C5A059',
+    marginBottom: 2,
+  },
+  valueHomeRoutineSub: {
+    fontFamily: F.serifItalic,
+    fontSize: 8.6,
+    lineHeight: 11,
+    color: 'rgba(149,115,52,0.95)',
+  },
+  valueHomeRoutineArrow: {
+    width: 23,
+    height: 23,
+    borderRadius: 12,
+    backgroundColor: '#C5A059',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    shadowColor: '#C5A059',
+    shadowOffset: { width: 0, height: 1.5 },
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    elevation: 3,
   },
   valuePhoneTaskInteractiveWrap: {
     position: 'relative',
@@ -12713,6 +13107,125 @@ const s = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(25,23,20,0.055)',
     transform: [{ scaleX: 1.12 }],
+  },
+  toolsShowcaseRoot: {
+    flex: 1,
+  },
+  toolsShowcaseCopy: {
+    paddingHorizontal: 28,
+    alignItems: 'center',
+    zIndex: 4,
+  },
+  toolsShowcaseTitle: {
+    fontFamily: F.serifMedium,
+    fontSize: 30,
+    lineHeight: 36,
+    color: INK,
+    textAlign: 'center',
+  },
+  toolsShowcaseBody: {
+    marginTop: 10,
+    maxWidth: 320,
+    fontFamily: F.serifMediumItalic,
+    fontSize: 15.5,
+    lineHeight: 22,
+    color: '#8C8277',
+    textAlign: 'center',
+  },
+  toolsShowcaseStage: {
+    flex: 1,
+    position: 'relative',
+    overflow: 'visible',
+    zIndex: 1,
+  },
+  toolsCrestGlow: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: 250,
+    height: 250,
+    marginLeft: -125,
+    marginTop: -125,
+    borderRadius: 125,
+    backgroundColor: 'rgba(231,195,109,0.16)',
+    zIndex: 1,
+  },
+  toolsCrestRing: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: 178,
+    height: 178,
+    marginLeft: -89,
+    marginTop: -89,
+    borderRadius: 89,
+    borderWidth: 1.2,
+    borderColor: 'rgba(197,160,89,0.34)',
+    backgroundColor: 'rgba(255,253,248,0.55)',
+    zIndex: 2,
+  },
+  toolsCrestWrap: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: 132,
+    height: 132,
+    marginLeft: -66,
+    marginTop: -66,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 6,
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.18,
+    shadowRadius: 26,
+    elevation: 4,
+  },
+  toolsCrestLogo: {
+    width: 132,
+    height: 132,
+  },
+  toolsTagSlot: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: 184,
+    height: 38,
+    marginLeft: -92,
+    marginTop: -19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
+  },
+  toolsTagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 7.5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.74)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  toolsTagDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  toolsTagText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 13,
+    lineHeight: 16,
+    color: 'rgba(25,23,20,0.78)',
+  },
+  toolsShowcaseAction: {
+    paddingHorizontal: 20,
+    zIndex: 8,
   },
   introLogoFrame: {
     width: 68,
