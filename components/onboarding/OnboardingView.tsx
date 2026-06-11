@@ -8381,7 +8381,10 @@ const TOOLS_FIELD_LABELS = [
   'Routines', 'Spiritual Tasks', 'Monthly Goals', 'Big Events',
   'Reading List', 'Reading Timer', 'Free Writing', 'Morning Pages',
   'Favorites', 'Jesus Prayer', 'Bucket List', 'Year in Pixels',
-  'Streaks', 'Gratitude', 'Notes',
+  'Streaks', 'Gratitude', 'Notes', 'Bible',
+  'Highlights', 'Verse Comments', 'Prayer Rules', 'Life Gratitude',
+  'Daily Gratitude', 'Analytics', 'Focus Zone', 'Weekly View',
+  'Task Manager', 'Quick Tasks', 'Day Planner', 'Reflections',
 ];
 
 const TOOLS_PILE_TONES = [
@@ -8405,30 +8408,31 @@ type ToolsFieldSlot = {
   rowHaptic: boolean;
 };
 
-// Final resting rotation per chip: most lie roughly flat, some land on a
-// diagonal and a few end up almost upright - like tokens tumbling to rest.
+// Final resting rotation per chip: most lie roughly flat, some diagonal, a
+// few perfectly upright, a couple upside down - nothing falls into a perfect
+// pose when it drops from the sky.
 function toolsChipRotation(index: number) {
   const sign = index % 2 === 0 ? 1 : -1;
-  if (index % 9 === 4) return sign * (86 + (index % 3) * 3);
-  if (index % 9 === 7) return sign * (30 + (index % 4) * 4);
-  if (index % 7 === 3) return sign * (15 + (index % 3) * 4);
-  return (((index * 5) % 9) - 4) * 1.7;
+  const m = index % 20;
+  if (m === 3 || m === 11) return sign * (88 + (index % 3) * 2);
+  if (m === 7) return 180 + sign * (index % 7);
+  if (m === 15) return sign * (58 + (index % 5) * 3);
+  if (m === 5 || m === 13 || m === 17) return sign * (20 + (index % 4) * 5);
+  return (((index * 5) % 11) - 5) * 1.7;
 }
 
 // Organic scatter packing: chips are placed one by one from the bottom of the
-// field upward, each at the first spot where its rotated footprint doesn't
-// collide with already placed chips or the logo tile (a small rim overlap with
-// the tile is allowed, so it ends up buried).
+// screen upward, each at the first spot where its rotated footprint doesn't
+// collide with already placed chips or the central message box. With enough
+// chips the whole screen ends up densely covered.
 function buildToolsField(
   width: number,
   fieldTop: number,
   fieldBottom: number,
-  sealCx: number,
-  sealCy: number,
-  sealRadius: number,
+  box: { left: number; top: number; right: number; bottom: number },
   chipHeight: number,
-): { slots: ToolsFieldSlot[]; sealDelay: number } {
-  const margin = 10;
+): { slots: ToolsFieldSlot[] } {
+  const margin = 6;
   const estimate = (label: string) => Math.round(label.length * 6.9) + 40;
   const placed: { cx: number; cy: number; fw: number; fh: number }[] = [];
   const slots: ToolsFieldSlot[] = [];
@@ -8443,16 +8447,16 @@ function buildToolsField(
     const xMin = margin + fw / 2;
     const xMax = width - margin - fw / 2;
     const xCandidates: number[] = [];
-    for (let x = xMin; x <= xMax; x += 13) xCandidates.push(x);
+    for (let x = xMin; x <= xMax; x += 11) xCandidates.push(x);
     const shift = (index * 5) % Math.max(1, xCandidates.length);
     const xs = [...xCandidates.slice(shift), ...xCandidates.slice(0, shift)];
 
-    let bestX = sealCx;
+    let bestX = width / 2;
     let bestY = fieldTop + fh / 2;
     let found = false;
     for (let pass = 0; pass < 2 && !found; pass += 1) {
-      const squeeze = pass === 0 ? 4 : -6;
-      for (let cy = fieldBottom - fh / 2; cy - fh / 2 >= fieldTop && !found; cy -= 8) {
+      const squeeze = pass === 0 ? 3 : -5;
+      for (let cy = fieldBottom - fh / 2; cy - fh / 2 >= fieldTop && !found; cy -= 7) {
         for (const cx of xs) {
           let collides = false;
           for (const other of placed) {
@@ -8465,10 +8469,14 @@ function buildToolsField(
             }
           }
           if (collides) continue;
-          const nearX = Math.max(cx - fw / 2, Math.min(sealCx, cx + fw / 2));
-          const nearY = Math.max(cy - fh / 2, Math.min(sealCy, cy + fh / 2));
-          const sealDist = Math.hypot(nearX - sealCx, nearY - sealCy);
-          if (sealDist < sealRadius - 12) continue;
+          if (
+            cx + fw / 2 > box.left &&
+            cx - fw / 2 < box.right &&
+            cy + fh / 2 > box.top &&
+            cy - fh / 2 < box.bottom
+          ) {
+            continue;
+          }
           bestX = cx;
           bestY = cy;
           found = true;
@@ -8476,6 +8484,7 @@ function buildToolsField(
         }
       }
     }
+    if (!found) return;
 
     placed.push({ cx: bestX, cy: bestY, fw, fh });
     slots.push({
@@ -8487,24 +8496,20 @@ function buildToolsField(
       tumble: (index % 2 === 0 ? 1 : -1) * (46 + (index % 4) * 22),
       delay: 0,
       toneIndex: index % TOOLS_PILE_TONES.length,
-      inFront: bestY > sealCy,
+      inFront: false,
       rowHaptic: false,
     });
   });
 
-  // Rhythmic drop order: lowest chips first, in overlapping bursts of three.
+  // Rhythmic drop order: lowest chips first, in overlapping bursts.
   const ordered = slots.slice().sort((a, b) => b.cy - a.cy);
   ordered.forEach((slot, index) => {
-    const group = Math.floor(index / 3);
-    slot.delay = 460 + group * 190 + (index % 3) * 75;
-    slot.rowHaptic = index % 3 === 0;
+    const group = Math.floor(index / 4);
+    slot.delay = 520 + group * 170 + (index % 4) * 60;
+    slot.rowHaptic = index % 4 === 0;
   });
 
-  // The logo tile drops with the chips, right as the pile reaches its height.
-  const landedBeforeSeal = ordered.filter(slot => slot.cy > sealCy + sealRadius * 0.5).length;
-  const sealDelay = 460 + Math.floor(landedBeforeSeal / 3) * 190;
-
-  return { slots, sealDelay };
+  return { slots };
 }
 
 function ToolsFieldChip({
@@ -8573,102 +8578,6 @@ function ToolsFieldChip({
   );
 }
 
-function ToolsLogoTile({
-  size,
-  cx,
-  cy,
-  delay,
-}: {
-  size: number;
-  cx: number;
-  cy: number;
-  delay: number;
-}) {
-  const drop = useSharedValue(0);
-  const settle = useSharedValue(0);
-  const glow = useSharedValue(0);
-  const fallFrom = -(cy + size + 80);
-  const radius = size * 0.27;
-
-  const land = useCallback(() => {
-    runStrongHaptic();
-  }, []);
-
-  useEffect(() => {
-    drop.value = 0;
-    settle.value = 0;
-    drop.value = withDelay(
-      delay,
-      withTiming(1, { duration: 560, easing: Easing.in(Easing.quad) }, finished => {
-        if (!finished) return;
-        settle.value = withSequence(
-          withTiming(1, { duration: 110, easing: Easing.out(Easing.quad) }),
-          withSpring(0, { damping: 11, stiffness: 260, mass: 0.85 }),
-        );
-        runOnJS(land)();
-      }),
-    );
-    glow.value = withDelay(
-      delay + 700,
-      withRepeat(withTiming(1, { duration: 3000, easing: Easing.inOut(Easing.quad) }), -1, true),
-    );
-  }, [delay, drop, glow, land, settle]);
-
-  const tileStyle = useAnimatedStyle(() => ({
-    opacity: drop.value > 0.01 ? 1 : 0,
-    transform: [
-      { translateY: interpolate(drop.value, [0, 1], [fallFrom, 0]) - settle.value * 12 },
-      { scaleX: 1 + settle.value * 0.04 },
-      { scaleY: 1 - settle.value * 0.06 },
-      { rotate: `${interpolate(drop.value, [0, 1], [-16, -3])}deg` },
-    ],
-  }));
-  const glowStyle = useAnimatedStyle(() => ({
-    opacity: drop.value * (0.4 + glow.value * 0.6),
-    transform: [{ scale: 1 + glow.value * 0.05 }],
-  }));
-
-  return (
-    <>
-      <Reanimated.View
-        pointerEvents="none"
-        style={[
-          s.toolsSealGlow,
-          {
-            width: size + 110,
-            height: size + 110,
-            borderRadius: (size + 110) / 2,
-            left: cx - (size + 110) / 2,
-            top: cy - (size + 110) / 2,
-          },
-          glowStyle,
-        ]}
-      />
-      <Reanimated.View
-        pointerEvents="none"
-        style={[
-          s.toolsLogoTile,
-          { width: size, height: size, borderRadius: radius, left: cx - size / 2, top: cy - size / 2 },
-          tileStyle,
-        ]}
-      >
-        <Image
-          source={APP_LOGO}
-          style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
-          resizeMode="cover"
-        />
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(255,255,255,0.42)', 'rgba(255,255,255,0)']}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 0.55 }}
-          style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
-        />
-        <View pointerEvents="none" style={[s.toolsLogoTileRim, { borderRadius: radius }]} />
-      </Reanimated.View>
-    </>
-  );
-}
 
 function ToolsShowcaseSlide({
   topInset,
@@ -8683,35 +8592,64 @@ function ToolsShowcaseSlide({
   const compact = height < 760;
   const [titleUnderlineWidth, setTitleUnderlineWidth] = useState(150);
   const chipHeight = compact ? 31 : 34;
-  const sealSize = compact ? 112 : 126;
-  const sealClearRadius = sealSize * 0.58;
-  const headerHeight = (compact ? 24 : 40) + (compact ? 80 : 92) + 10 + (compact ? 52 : 58) + 4;
-  const fieldTop = topInset + headerHeight;
-  const fieldBottom = height - bottomInset - (compact ? 96 : 104);
-  const sealCx = width / 2;
-  const sealCy = (fieldTop + fieldBottom) / 2;
-  const { slots, sealDelay } = useMemo(
-    () => buildToolsField(width, fieldTop, fieldBottom, sealCx, sealCy, sealClearRadius, chipHeight),
-    [chipHeight, fieldBottom, fieldTop, sealClearRadius, sealCx, sealCy, width],
+  const fieldTop = 8;
+  const fieldBottom = height - bottomInset - 80;
+  const boxWidth = Math.min(width - 56, 336);
+  const boxHeight = compact ? 196 : 218;
+  const boxCy = (topInset + fieldBottom) / 2;
+  const box = useMemo(() => ({
+    left: width / 2 - boxWidth / 2 - 8,
+    right: width / 2 + boxWidth / 2 + 8,
+    top: boxCy - boxHeight / 2 - 8,
+    bottom: boxCy + boxHeight / 2 + 8,
+  }), [boxCy, boxHeight, boxWidth, width]);
+  const { slots } = useMemo(
+    () => buildToolsField(width, fieldTop, fieldBottom, box, chipHeight),
+    [box, chipHeight, fieldBottom, width],
   );
   const lastDelay = slots.reduce((max, slot) => Math.max(max, slot.delay), 0);
-  const ctaDelay = Math.max(lastDelay, sealDelay) + 850;
+  const ctaDelay = lastDelay + 800;
 
   return (
     <View style={s.toolsShowcaseRoot}>
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        {slots.map(slot => (
+          <ToolsFieldChip
+            key={slot.label}
+            slot={slot}
+            chipHeight={chipHeight}
+            isLastChip={slot.delay === lastDelay}
+          />
+        ))}
+      </View>
+
       <Reanimated.View
-        entering={FadeIn.duration(620).withInitialValues({
+        entering={FadeIn.delay(160).duration(540).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
           opacity: 0,
-          transform: [{ translateY: 16 }],
+          transform: [{ translateY: 14 }, { scale: 0.94 }],
         })}
-        style={[s.toolsShowcaseCopy, { paddingTop: topInset + (compact ? 24 : 40) }]}
+        style={[
+          s.toolsMessageBox,
+          {
+            width: boxWidth,
+            minHeight: boxHeight,
+            left: width / 2 - boxWidth / 2,
+            top: boxCy - boxHeight / 2,
+          },
+        ]}
       >
+        <View pointerEvents="none" style={s.toolsMessageBoxFrame} />
+        <View style={s.toolsMessageOrnament}>
+          <View style={s.toolsMessageOrnamentLine} />
+          <View style={s.toolsMessageOrnamentDot} />
+          <View style={s.toolsMessageOrnamentLine} />
+        </View>
         <Text
           style={[s.toolsTitle, compact && s.toolsTitleCompact]}
           onTextLayout={event => {
             const lines = event.nativeEvent.lines;
             const lastLine = lines[lines.length - 1];
-            const nextWidth = Math.max(52, Math.min(330, Math.ceil((lastLine?.width ?? 150) * 0.92)));
+            const nextWidth = Math.max(52, Math.min(300, Math.ceil((lastLine?.width ?? 150) * 0.92)));
             setTitleUnderlineWidth(current => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
           }}
         >
@@ -8731,19 +8669,12 @@ function ToolsShowcaseSlide({
             <Text style={[s.toolsSubtitleWord, s.toolsSubtitleWordAccent]}>your life.</Text>
           </View>
         </View>
+        <View style={s.toolsMessageOrnament}>
+          <View style={s.toolsMessageOrnamentLine} />
+          <View style={s.toolsMessageOrnamentDot} />
+          <View style={s.toolsMessageOrnamentLine} />
+        </View>
       </Reanimated.View>
-
-      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <ToolsLogoTile size={sealSize} cx={sealCx} cy={sealCy} delay={sealDelay} />
-        {slots.map(slot => (
-          <ToolsFieldChip
-            key={slot.label}
-            slot={slot}
-            chipHeight={chipHeight}
-            isLastChip={slot.delay === lastDelay}
-          />
-        ))}
-      </View>
 
       <View style={s.toolsShowcaseSpacer} />
 
@@ -14342,11 +14273,6 @@ const s = StyleSheet.create({
     position: 'relative',
     backgroundColor: '#FFFFFF',
   },
-  toolsShowcaseCopy: {
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    zIndex: 2,
-  },
   toolsTitle: {
     maxWidth: 340,
     fontFamily: F.serifSemiBold,
@@ -14379,25 +14305,48 @@ const s = StyleSheet.create({
     textDecorationColor: GOLD,
     textDecorationStyle: 'solid',
   },
-  toolsSealGlow: {
+  toolsMessageBox: {
     position: 'absolute',
-    backgroundColor: 'rgba(231,195,109,0.18)',
-    zIndex: 1,
+    zIndex: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    rowGap: 10,
+    paddingHorizontal: 22,
+    paddingVertical: 24,
+    borderRadius: 30,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1.2,
+    borderColor: 'rgba(197,160,89,0.42)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.22,
+    shadowRadius: 32,
+    elevation: 9,
   },
-  toolsLogoTile: {
-    position: 'absolute',
-    zIndex: 3,
-    backgroundColor: '#F4F4F2',
-    shadowColor: '#3A332A',
-    shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.26,
-    shadowRadius: 26,
-    elevation: 8,
-  },
-  toolsLogoTileRim: {
+  toolsMessageBoxFrame: {
     ...StyleSheet.absoluteFillObject,
+    margin: 7,
+    borderRadius: 23,
     borderWidth: 1,
-    borderColor: 'rgba(25,23,20,0.10)',
+    borderColor: 'rgba(197,160,89,0.20)',
+  },
+  toolsMessageOrnament: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 8,
+  },
+  toolsMessageOrnamentLine: {
+    width: 36,
+    height: 1,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.45)',
+  },
+  toolsMessageOrnamentDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: GOLD,
+    transform: [{ rotate: '45deg' }],
   },
   toolsPhysChipSlot: {
     position: 'absolute',
