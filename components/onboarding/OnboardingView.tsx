@@ -8665,49 +8665,52 @@ type ToolsFieldSlot = {
   cx: number;
   cy: number;
   rotate: number;
-  tumble: number;
-  delay: number;
   toneIndex: number;
   inFront: boolean;
-  fromX: number;
+  entranceDelay: number;
+  fallDuration: number;
   fromY: number;
+  spinFrom: number;
+  wobble: number;
+  impact: number;
+  xIn: number[];
+  xOut: number[];
+  purgeDelay: number;
+  purgeDrift: number;
+  purgeSpin: number;
+  purgeDistance: number;
   floatX: number;
   floatY: number;
   floatRotate: number;
   floatDuration: number;
 };
 
-const TOOLS_FIELD_PATTERN = [
-  { label: 'Scripture', x: 0.18, anchor: 'top', offset: -220, rotate: -6 },
-  { label: 'Jesus Prayer', x: 0.25, anchor: 'bottom', offset: 45, rotate: 5 },
-  { label: 'Habits', x: 0.76, anchor: 'top', offset: -220, rotate: 7 },
-  { label: 'Bible', x: 0.62, anchor: 'bottom', offset: 45, rotate: -4 },
-  { label: 'Prayer Book', x: 0.28, anchor: 'top', offset: -182, rotate: 3 },
-  { label: 'Notes', x: 0.88, anchor: 'bottom', offset: 45, rotate: -5 },
-  { label: 'Screen Time', x: 0.72, anchor: 'top', offset: -182, rotate: -5 },
-  { label: 'Highlights', x: 0.25, anchor: 'bottom', offset: 82, rotate: 4 },
-  { label: 'Daily Journal', x: 0.24, anchor: 'top', offset: -144, rotate: 5 },
-  { label: 'Routines', x: 0.68, anchor: 'bottom', offset: 82, rotate: -5 },
-  { label: 'Bible Notes', x: 0.75, anchor: 'top', offset: -144, rotate: -8 },
-  { label: 'Monthly Goals', x: 0.26, anchor: 'bottom', offset: 119, rotate: -4 },
-  { label: 'App Blocker', x: 0.18, anchor: 'top', offset: -107, rotate: -7 },
-  { label: 'Spiritual Tasks', x: 0.74, anchor: 'bottom', offset: 119, rotate: 5 },
-  { label: 'Gratitude', x: 0.50, anchor: 'top', offset: -107, rotate: 4 },
-  { label: 'Big Events', x: 0.22, anchor: 'bottom', offset: 156, rotate: -6 },
-  { label: 'Pomodoro', x: 0.83, anchor: 'top', offset: -107, rotate: 6 },
-  { label: 'Challenges', x: 0.67, anchor: 'bottom', offset: 156, rotate: 6 },
-  { label: 'Reading List', x: 0.25, anchor: 'top', offset: -69, rotate: -4 },
-  { label: 'Content Blocker', x: 0.27, anchor: 'bottom', offset: 193, rotate: 7 },
-  { label: 'Focus Zone', x: 0.73, anchor: 'top', offset: -69, rotate: 5 },
-  { label: 'Bucket List', x: 0.76, anchor: 'bottom', offset: 193, rotate: 6 },
-  { label: 'Prayer Rules', x: 0.25, anchor: 'top', offset: -31, rotate: -4 },
-  { label: 'Quick Tasks', x: 0.25, anchor: 'bottom', offset: 230, rotate: -5 },
-  { label: 'Favorites', x: 0.72, anchor: 'top', offset: -31, rotate: -8 },
-  { label: 'Task Manager', x: 0.74, anchor: 'bottom', offset: 230, rotate: -6 },
-  { label: 'Year in Pixels', x: 0.50, anchor: 'bottom', offset: 267, rotate: 5 },
+const TOOLS_FIELD_LABELS = [
+  'Scripture', 'Prayer Book', 'Habits', 'Daily Journal', 'Screen Time', 'Pomodoro',
+  'Challenges', 'Bible Notes', 'Gratitude', 'Task Manager', 'App Blocker', 'Reading List',
+  'Big Events', 'Monthly Goals', 'Favorites', 'Routines', 'Focus Zone', 'Highlights',
+  'Bucket List', 'Quick Tasks', 'Year in Pixels', 'Content Blocker', 'Spiritual Tasks',
+  'Prayer Rules', 'Jesus Prayer', 'Bible', 'Notes',
 ] as const;
 
-const TOOLS_TAG_ENTRANCE_DURATION = 1060;
+// The whole scene is one timeline: card flight -> tag rain -> typed truth ->
+// purge (floor opens) -> card morphs into the first conversation bubble.
+const TOOLS_SCENE = {
+  flightStart: 140,
+  flightDuration: 780,
+  rainStart: 1040,
+  burstGap: 135,
+  intraGap: 44,
+  revealAfterLand: 240,
+  typeStartDelay: 260,
+  typeCharMs: 18,
+  holdAfterType: 560,
+  purgeStep: 32,
+  purgeFall: 640,
+  morphLeadIn: 260,
+  morphDuration: 620,
+  bubble2Delay: 340,
+} as const;
 
 const TOOLS_SUBTITLE_SEGMENTS = [
   { text: 'But a tool is only worth ', accent: false },
@@ -8717,49 +8720,202 @@ const TOOLS_SUBTITLE_SEGMENTS = [
 ] as const;
 const TOOLS_SUBTITLE_TEXT = TOOLS_SUBTITLE_SEGMENTS.map(segment => segment.text).join('');
 
+function makeToolsRandom(seed: number) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+
+type ToolsFieldBuild = {
+  slots: ToolsFieldSlot[];
+  lastLandingAt: number;
+  purgeSpan: number;
+  deflectEvents: { at: number; side: number }[];
+  landingTicks: number[];
+};
+
 function buildToolsField(
   width: number,
   fieldTop: number,
   fieldBottom: number,
   box: { left: number; top: number; right: number; bottom: number },
   chipHeight: number,
-): { slots: ToolsFieldSlot[] } {
-  const margin = 8;
+  screenHeight: number,
+): ToolsFieldBuild {
+  const margin = 10;
+  const rand = makeToolsRandom(0x5eeda7);
   const estimate = (label: string) => Math.max(90, Math.round(label.length * 7.2) + 56);
-  const boxMid = (box.top + box.bottom) / 2;
-  const slots = TOOLS_FIELD_PATTERN.map((pattern, index) => {
-    const label = pattern.label;
-    const estWidth = estimate(label);
-    const desiredX = pattern.x * width;
-    const desiredY = pattern.anchor === 'top'
-      ? box.top + pattern.offset
-      : box.bottom + pattern.offset;
-    const cx = Math.max(margin + estWidth / 2, Math.min(width - margin - estWidth / 2, desiredX));
-    const cy = Math.max(fieldTop + chipHeight / 2, Math.min(fieldBottom - chipHeight / 2, desiredY));
-    const fromSide = pattern.x < 0.28 ? -1 : pattern.x > 0.72 ? 1 : 0;
-    const fromX = fromSide * (42 + (index % 3) * 18);
-    const fromY = cy < boxMid ? -(74 + (index % 4) * 18) : (68 + (index % 4) * 17);
+  const boxCyMid = (box.top + box.bottom) / 2;
+
+  // Bands are evenly spread shelves; each chip then gets a zig-zag offset so the
+  // result reads as a scattered pile, never as rows, while staying overlap-free.
+  const collectBands = (top: number, bottom: number) => {
+    const first = top + chipHeight / 2;
+    const last = bottom - chipHeight / 2;
+    if (last - first < 0) return [] as number[];
+    const count = Math.max(1, Math.min(5, Math.floor((last - first) / (chipHeight + 13)) + 1));
+    if (count === 1) return [(first + last) / 2];
+    const step = (last - first) / (count - 1);
+    return Array.from({ length: count }, (_, i) => first + step * i);
+  };
+
+  const bands = [
+    ...collectBands(fieldTop + 2, box.top - 6),
+    ...collectBands(box.bottom + 6, fieldBottom - 2),
+  ]
+    .map(cy => ({ cy }))
+    .sort((a, b) => Math.abs(a.cy - boxCyMid) - Math.abs(b.cy - boxCyMid));
+
+  const queue = TOOLS_FIELD_LABELS.map(label => ({ label, estWidth: estimate(label), used: false }));
+  type CoreSlot = { label: string; estWidth: number; cx: number; cy: number; rotate: number };
+  const placed: CoreSlot[] = [];
+
+  bands.forEach((band, bandIndex) => {
+    let cursor = margin + (-6 + rand() * 20);
+    const bandStart = placed.length;
+    let chipInBand = 0;
+    for (;;) {
+      const item = queue.find(entry => !entry.used && cursor + entry.estWidth <= width - margin);
+      if (!item) break;
+      item.used = true;
+      const cx = cursor + item.estWidth / 2;
+      const zigSign = (bandIndex + chipInBand) % 2 === 0 ? -1 : 1;
+      const cy = Math.max(
+        fieldTop + chipHeight / 2,
+        Math.min(fieldBottom - chipHeight / 2, band.cy + zigSign * (7 + rand() * 5) + (rand() * 4 - 2)),
+      );
+      const accent = rand() < 0.25;
+      const rotate = (rand() < 0.5 ? -1 : 1) * (accent ? 10 + rand() * 5 : 3 + rand() * 6);
+      placed.push({ label: item.label, estWidth: item.estWidth, cx, cy, rotate });
+      cursor = cx + item.estWidth / 2 + 9 + rand() * 16;
+      chipInBand += 1;
+    }
+    const bandChips = placed.slice(bandStart);
+    if (bandChips.length > 0) {
+      const lastChip = bandChips[bandChips.length - 1];
+      const leftover = width - margin - (lastChip.cx + lastChip.estWidth / 2);
+      const shift = Math.max(0, leftover) * (0.2 + rand() * 0.55);
+      bandChips.forEach(chip => {
+        chip.cx = Math.max(margin + chip.estWidth / 2, Math.min(width - margin - chip.estWidth / 2, chip.cx + shift));
+      });
+    }
+  });
+
+  // Two short tags tuck in beside the card edges (behind it) when the screen is
+  // wide enough — they sell the "pile gathered around a solid object" reading.
+  if (box.left >= 32) {
+    const flankItems = queue.filter(entry => !entry.used && entry.label.length <= 6).slice(0, 2);
+    flankItems.forEach((item, flankIndex) => {
+      item.used = true;
+      const side = flankIndex === 0 ? -1 : 1;
+      const peek = Math.min(34, box.left - 10);
+      const cx = side === -1
+        ? box.left - item.estWidth / 2 + peek
+        : box.right + item.estWidth / 2 - peek;
+      const cy = boxCyMid + (rand() * 2 - 1) * 34;
+      placed.push({ label: item.label, estWidth: item.estWidth, cx, cy, rotate: side * (10 + rand() * 5) });
+    });
+  }
+
+  // Spatially shuffled entrance order: the rain fills the screen everywhere at
+  // once in bursts of three, instead of marching row by row.
+  const order = placed.map((_, index) => index);
+  for (let i = order.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rand() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const entranceDelays = new Array<number>(placed.length).fill(TOOLS_SCENE.rainStart);
+  order.forEach((slotIndex, k) => {
+    entranceDelays[slotIndex] = TOOLS_SCENE.rainStart + Math.floor(k / 3) * TOOLS_SCENE.burstGap + (k % 3) * TOOLS_SCENE.intraGap;
+  });
+
+  // Purge cascades bottom-first — the floor "opens" beneath the pile.
+  const byDepth = placed.map((_, index) => index).sort((a, b) => placed[b].cy - placed[a].cy);
+  const purgeRank = new Array<number>(placed.length).fill(0);
+  byDepth.forEach((slotIndex, rank) => {
+    purgeRank[slotIndex] = rank;
+  });
+
+  const deflectEvents: { at: number; side: number }[] = [];
+  let deflectLeft = false;
+  let deflectRight = false;
+  let lastLandingAt = 0;
+
+  const slots: ToolsFieldSlot[] = placed.map((core, index) => {
+    const entranceDelay = entranceDelays[index];
+    const fallDuration = 500 + Math.sqrt(Math.max(40, core.cy)) * 7 + rand() * 90;
+    const fromY = -(core.cy + chipHeight + 50 + rand() * 130);
+    const fromX = (rand() * 2 - 1) * 26;
+    const impact = 5 + rand() * 4;
+    const spinFrom = core.rotate + (rand() < 0.5 ? -1 : 1) * (26 + rand() * 30);
+    const wobble = (rand() < 0.5 ? -1 : 1) * 2.5;
+
+    let xIn: number[] = [0, 1];
+    let xOut: number[] = [fromX, 0];
+    let inFront = false;
+
+    // Two scripted deflections: chips that land just under the card corners
+    // graze the card on the way down and kick outward — the moment that makes
+    // the card read as a rigid object without running a physics engine.
+    const underCard = core.cy > box.bottom && core.cy < box.bottom + chipHeight * 2.4;
+    const nearLeftCorner = underCard && core.cx + core.estWidth / 2 > box.left + 10 && core.cx - core.estWidth / 2 < box.left + 60;
+    const nearRightCorner = underCard && core.cx - core.estWidth / 2 < box.right - 10 && core.cx + core.estWidth / 2 > box.right - 60;
+    const side = nearLeftCorner && !deflectLeft ? -1 : nearRightCorner && !deflectRight ? 1 : 0;
+    if (side !== 0) {
+      const linearCross = (box.top - core.cy - fromY) / (impact - fromY);
+      const pCross = Math.sqrt(Math.max(0.05, Math.min(0.92, linearCross))) * 0.86;
+      if (pCross < 0.7) {
+        if (side === -1) deflectLeft = true;
+        else deflectRight = true;
+        const inward = side === -1 ? 15 : -15;
+        xIn = [0, pCross, Math.min(0.85, pCross + 0.13), 1];
+        xOut = [fromX + inward, inward, -inward * 0.22, 0];
+        inFront = true;
+        deflectEvents.push({ at: entranceDelay + fallDuration * pCross, side });
+      }
+    }
+
+    lastLandingAt = Math.max(lastLandingAt, entranceDelay + fallDuration + 90);
 
     return {
-      label,
-      estWidth,
-      cx,
-      cy,
-      rotate: pattern.rotate,
-      tumble: (index % 2 === 0 ? 1 : -1) * (46 + (index % 4) * 22),
-      delay: 260 + Math.floor(index / 3) * 170 + (index % 3) * 70,
+      label: core.label,
+      estWidth: core.estWidth,
+      cx: core.cx,
+      cy: core.cy,
+      rotate: core.rotate,
       toneIndex: index % TOOLS_PILE_TONES.length,
-      inFront: false,
-      fromX,
+      inFront,
+      entranceDelay,
+      fallDuration,
       fromY,
-      floatX: (((index * 7) % 11) - 5) * 0.9,
-      floatY: (index % 2 === 0 ? -1 : 1) * (4.5 + (index % 4) * 1.6),
-      floatRotate: (index % 2 === 0 ? 1 : -1) * (1.2 + (index % 3) * 0.45),
-      floatDuration: 2100 + (index % 5) * 230,
+      spinFrom,
+      wobble,
+      impact,
+      xIn,
+      xOut,
+      purgeDelay: purgeRank[index] * TOOLS_SCENE.purgeStep + rand() * 26,
+      purgeDrift: (rand() * 2 - 1) * 44,
+      purgeSpin: (rand() < 0.5 ? -1 : 1) * (28 + rand() * 40),
+      purgeDistance: screenHeight - core.cy + chipHeight + 180,
+      floatX: (rand() * 2 - 1) * 4.5,
+      floatY: (rand() < 0.5 ? -1 : 1) * (3.5 + rand() * 3),
+      floatRotate: (rand() < 0.5 ? -1 : 1) * (0.9 + rand() * 0.9),
+      floatDuration: 2400 + rand() * 1200,
     };
   });
 
-  return { slots };
+  const landingTicks: number[] = [];
+  order.forEach((slotIndex, k) => {
+    if (k % 3 === 1 && landingTicks.length < 8) {
+      landingTicks.push(slots[slotIndex].entranceDelay + slots[slotIndex].fallDuration + 40);
+    }
+  });
+
+  const purgeSpan = slots.reduce((max, slot) => Math.max(max, slot.purgeDelay), 0) + TOOLS_SCENE.purgeFall;
+
+  return { slots, lastLandingAt, purgeSpan, deflectEvents, landingTicks };
 }
 
 function toolsTagIcon(label: string, color: string) {
@@ -8784,32 +8940,34 @@ function toolsTagIcon(label: string, color: string) {
 function ToolsFieldChip({
   slot,
   chipHeight,
-  isLastChip,
+  fastForward,
+  purgeT,
+  purgeSpan,
 }: {
   slot: ToolsFieldSlot;
   chipHeight: number;
-  isLastChip: boolean;
+  fastForward: SharedValue<number>;
+  purgeT: SharedValue<number>;
+  purgeSpan: number;
 }) {
   const entrance = useSharedValue(0);
   const float = useSharedValue(0);
   const tone = TOOLS_PILE_TONES[slot.toneIndex];
 
-  const land = useCallback(() => {
-    if (isLastChip) runBubbleHaptic();
-  }, [isLastChip]);
-
   useEffect(() => {
     entrance.value = 0;
     float.value = 0;
+    // Gravity fall: accelerate in, overshoot a few px past the landing spot,
+    // then a snappy spring absorbs the impact.
     entrance.value = withDelay(
-      slot.delay,
-      withTiming(1, { duration: TOOLS_TAG_ENTRANCE_DURATION, easing: Easing.bezier(0.16, 1, 0.28, 1) }, finished => {
-        if (!finished) return;
-        runOnJS(land)();
-      }),
+      slot.entranceDelay,
+      withSequence(
+        withTiming(0.86, { duration: slot.fallDuration, easing: Easing.in(Easing.quad) }),
+        withSpring(1, { damping: 16, stiffness: 300, mass: 0.8 }),
+      ),
     );
     float.value = withDelay(
-      slot.delay + 980,
+      slot.entranceDelay + slot.fallDuration + 600,
       withRepeat(
         withSequence(
           withTiming(1, { duration: slot.floatDuration, easing: Easing.inOut(Easing.sin) }),
@@ -8819,17 +8977,27 @@ function ToolsFieldChip({
         false,
       ),
     );
-  }, [entrance, float, land, slot.delay, slot.floatDuration]);
+  }, [entrance, float, slot]);
 
-  const chipStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(entrance.value, [0, 0.24, 1], [0, 1, 1]),
-    transform: [
-      { translateX: interpolate(entrance.value, [0, 1], [slot.fromX, 0]) + interpolate(float.value, [0, 1], [0, slot.floatX]) },
-      { translateY: interpolate(entrance.value, [0, 1], [slot.fromY, 0]) + interpolate(float.value, [0, 1], [0, slot.floatY]) },
-      { scale: interpolate(entrance.value, [0, 0.72, 1], [0.78, 1.04, 1]) },
-      { rotate: `${interpolate(entrance.value, [0, 1], [slot.rotate + slot.tumble, slot.rotate]) + interpolate(float.value, [0, 1], [0, slot.floatRotate])}deg` },
-    ],
-  }));
+  const chipStyle = useAnimatedStyle(() => {
+    const e = Math.max(entrance.value, fastForward.value);
+    const pLocal = Math.min(1, Math.max(0, (purgeT.value * purgeSpan - slot.purgeDelay) / TOOLS_SCENE.purgeFall));
+    const pEased = pLocal * pLocal * pLocal;
+    const floatK = Math.max(0, 1 - pLocal * 3);
+    const driftX = interpolate(e, slot.xIn, slot.xOut);
+    const fallY = interpolate(e, [0, 0.86, 1], [slot.fromY, slot.impact, 0]);
+    const spin = interpolate(e, [0, 0.86, 1], [slot.spinFrom, slot.rotate - slot.wobble, slot.rotate]);
+
+    return {
+      opacity: interpolate(e, [0, 0.12], [0, 1], 'clamp'),
+      transform: [
+        { translateX: driftX + interpolate(float.value, [0, 1], [0, slot.floatX]) * floatK + pLocal * slot.purgeDrift },
+        { translateY: fallY + interpolate(float.value, [0, 1], [0, slot.floatY]) * floatK + pEased * slot.purgeDistance },
+        { scale: interpolate(e, [0, 0.86, 1], [0.96, 1.015, 1]) },
+        { rotate: `${spin + interpolate(float.value, [0, 1], [0, slot.floatRotate]) * floatK + pEased * slot.purgeSpin}deg` },
+      ],
+    };
+  });
 
   return (
     <Reanimated.View
@@ -8839,7 +9007,7 @@ function ToolsFieldChip({
         {
           left: slot.cx - slot.estWidth / 2,
           top: slot.cy - chipHeight / 2,
-          zIndex: slot.inFront ? 5 : 2,
+          zIndex: slot.inFront ? 9 : 2,
         },
         chipStyle,
       ]}
@@ -8854,10 +9022,14 @@ function ToolsFieldChip({
   );
 }
 
-function ToolsTypedSubtitle({ delay = 520 }: { delay?: number }) {
+function ToolsTypedSubtitle({ delay = 520, forceComplete = false }: { delay?: number; forceComplete?: boolean }) {
   const [typedCount, setTypedCount] = useState(0);
 
   useEffect(() => {
+    if (forceComplete) {
+      setTypedCount(TOOLS_SUBTITLE_TEXT.length);
+      return undefined;
+    }
     setTypedCount(0);
     let interval: ReturnType<typeof setInterval> | null = null;
     const startTimer = setTimeout(() => {
@@ -8870,14 +9042,14 @@ function ToolsTypedSubtitle({ delay = 520 }: { delay?: number }) {
           clearInterval(interval);
           interval = null;
         }
-      }, 18);
+      }, TOOLS_SCENE.typeCharMs);
     }, delay);
 
     return () => {
       clearTimeout(startTimer);
       if (interval) clearInterval(interval);
     };
-  }, [delay]);
+  }, [delay, forceComplete]);
 
   let remaining = typedCount;
 
@@ -8900,59 +9072,288 @@ function ToolsTypedSubtitle({ delay = 520 }: { delay?: number }) {
 }
 
 
+type ToolsScenePhase = 'rain' | 'reveal' | 'purge' | 'morph' | 'convo';
+
 function ToolsShowcaseSlide({
   topInset,
   bottomInset,
+  name,
   onNext,
 }: {
   topInset: number;
   bottomInset: number;
+  name?: string;
   onNext: () => void;
 }) {
   const { width, height } = useWindowDimensions();
   const compact = height < 760;
   const [titleUnderlineWidth, setTitleUnderlineWidth] = useState(150);
-  const [subtitleReady, setSubtitleReady] = useState(false);
+  const [phase, setPhase] = useState<ToolsScenePhase>('rain');
+  const [subtitleForced, setSubtitleForced] = useState(false);
+  const [bubble2Count, setBubble2Count] = useState(0);
+  const [showCta, setShowCta] = useState(false);
+  const [echoed, setEchoed] = useState(false);
+
+  const phaseRef = useRef<ToolsScenePhase>('rain');
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const bubble1Ref = useRef<View>(null);
+  const echoedRef = useRef(false);
+
+  const flight = useSharedValue(0);
   const boxExpand = useSharedValue(0);
+  const fastForward = useSharedValue(0);
+  const purgeT = useSharedValue(0);
+  const morphT = useSharedValue(0);
+  const dip = useSharedValue(0);
+  const cardKickX = useSharedValue(0);
+  const cardTilt = useSharedValue(0);
+  const cardLift = useSharedValue(0);
+
   const chipHeight = compact ? 37 : 41;
   const fieldTop = topInset + 6;
   const fieldBottom = height - bottomInset - 76;
   const boxWidth = Math.min(width - 50, 342);
   const boxHeight = compact ? 214 : 224;
   const titleOnlyBoxHeight = compact ? 138 : 148;
-  const boxCy = (topInset + fieldBottom) / 2 - (compact ? 0 : 4);
+  // The card sits slightly above center: a sparse crown of tags above it, the
+  // dense pile gathered below — the composition gravity would actually leave.
+  const boxCy = fieldTop + (fieldBottom - fieldTop) * (compact ? 0.42 : 0.4);
+  const boxLeft = width / 2 - boxWidth / 2;
+  const expandedTop = boxCy - boxHeight / 2;
+  const titleOnlyTop = boxCy - titleOnlyBoxHeight / 2;
   const box = useMemo(() => ({
-    left: width / 2 - boxWidth / 2 - 8,
-    right: width / 2 + boxWidth / 2 + 8,
+    left: boxLeft - 8,
+    right: boxLeft + boxWidth + 8,
     top: boxCy - boxHeight / 2 - 8,
     bottom: boxCy + boxHeight / 2 + 8,
-  }), [boxCy, boxHeight, boxWidth, width]);
-  const { slots } = useMemo(
-    () => buildToolsField(width, fieldTop, fieldBottom, box, chipHeight),
-    [box, chipHeight, fieldBottom, fieldTop, width],
+  }), [boxCy, boxHeight, boxLeft, boxWidth]);
+  const field = useMemo(
+    () => buildToolsField(width, fieldTop, fieldBottom, box, chipHeight, height),
+    [box, chipHeight, fieldBottom, fieldTop, height, width],
   );
-  const lastDelay = slots.reduce((max, slot) => Math.max(max, slot.delay), 0);
-  const subtitleRevealDelay = lastDelay + TOOLS_TAG_ENTRANCE_DURATION + 260;
-  const subtitleTypingDelay = 260;
-  const ctaDelay = subtitleRevealDelay + subtitleTypingDelay + TOOLS_SUBTITLE_TEXT.length * 18 + 720;
+
+  const convoWidth = Math.min(360, width - 40);
+  const convoLeft = (width - convoWidth) / 2;
+  const convoTop = topInset + 78;
+  const displayName = nameForDisplay(name);
+  const bubble1Text = displayName
+    ? `Now — let's make every tool fit your life, ${displayName}.`
+    : "Now — let's make every tool fit your life.";
+  const bubble2Segments = useMemo<TypedTextSegment[]>(
+    () => [{ text: 'We have a few questions for you. ' }, { text: 'Answer honestly!', highlight: true }],
+    [],
+  );
+  const bubble2Text = useMemo(() => joinTypedSegments(bubble2Segments), [bubble2Segments]);
+  const [morphTarget, setMorphTarget] = useState({
+    x: convoLeft + 47,
+    y: convoTop + 6,
+    w: convoWidth - 47,
+    h: 86,
+  });
+
+  const subtitleTypeMs = TOOLS_SUBTITLE_TEXT.length * TOOLS_SCENE.typeCharMs;
+
+  const schedule = useCallback((fn: () => void, ms: number) => {
+    timersRef.current.push(setTimeout(fn, ms));
+  }, []);
+
+  const clearTimers = useCallback(() => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+  }, []);
+
+  function enterConvo() {
+    if (phaseRef.current !== 'morph') return;
+    phaseRef.current = 'convo';
+    setPhase('convo');
+    runBubbleHaptic();
+  }
+
+  function startMorph() {
+    if (phaseRef.current !== 'purge') return;
+    phaseRef.current = 'morph';
+    setPhase('morph');
+    morphT.value = withTiming(1, { duration: TOOLS_SCENE.morphDuration, easing: Easing.bezier(0.22, 0.9, 0.24, 1) });
+    schedule(enterConvo, TOOLS_SCENE.morphDuration + 40);
+  }
+
+  function startPurge() {
+    if (phaseRef.current !== 'reveal') return;
+    phaseRef.current = 'purge';
+    setPhase('purge');
+    runStrongHaptic();
+    // The whole world takes a small dip as the floor opens; the card lifts a
+    // few px — suddenly weightless — while everything beneath it falls away.
+    dip.value = withSequence(
+      withTiming(3.5, { duration: 110, easing: Easing.out(Easing.quad) }),
+      withSpring(0, { damping: 11, stiffness: 240 }),
+    );
+    cardLift.value = withDelay(170, withSequence(
+      withTiming(-5, { duration: 230, easing: Easing.out(Easing.cubic) }),
+      withSpring(0, { damping: 13, stiffness: 190 }),
+    ));
+    purgeT.value = withTiming(1, { duration: field.purgeSpan, easing: Easing.linear });
+    schedule(startMorph, Math.max(180, field.purgeSpan - TOOLS_SCENE.morphLeadIn));
+  }
+
+  function startReveal(instant: boolean) {
+    if (phaseRef.current !== 'rain') return;
+    phaseRef.current = 'reveal';
+    setPhase('reveal');
+    boxExpand.value = withTiming(1, { duration: instant ? 240 : 620, easing: Easing.bezier(0.16, 1, 0.28, 1) });
+    const typeTotal = instant ? 0 : TOOLS_SCENE.typeStartDelay + subtitleTypeMs;
+    schedule(startPurge, 300 + typeTotal + TOOLS_SCENE.holdAfterType);
+  }
 
   useEffect(() => {
-    setSubtitleReady(false);
+    phaseRef.current = 'rain';
+    setPhase('rain');
+    setSubtitleForced(false);
+    setBubble2Count(0);
+    setShowCta(false);
+    setEchoed(false);
+    echoedRef.current = false;
+    flight.value = 0;
     boxExpand.value = 0;
-    boxExpand.value = withDelay(
-      subtitleRevealDelay,
-      withTiming(1, { duration: 620, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
-    );
-    const readyTimer = setTimeout(() => {
-      setSubtitleReady(true);
-    }, subtitleRevealDelay + 300);
+    fastForward.value = 0;
+    purgeT.value = 0;
+    morphT.value = 0;
 
-    return () => clearTimeout(readyTimer);
-  }, [boxExpand, subtitleRevealDelay]);
+    schedule(() => {
+      flight.value = withTiming(1, { duration: TOOLS_SCENE.flightDuration, easing: Easing.bezier(0.3, 0.92, 0.3, 1) });
+    }, TOOLS_SCENE.flightStart);
+    schedule(runBubbleHaptic, TOOLS_SCENE.flightStart + TOOLS_SCENE.flightDuration - 90);
 
-  const messageBoxStyle = useAnimatedStyle(() => ({
-    height: interpolate(boxExpand.value, [0, 1], [titleOnlyBoxHeight, boxHeight]),
-    top: interpolate(boxExpand.value, [0, 1], [boxCy - titleOnlyBoxHeight / 2, boxCy - boxHeight / 2]),
+    field.deflectEvents.forEach(event => {
+      schedule(() => {
+        cardKickX.value = withSequence(
+          withTiming(event.side * 2.4, { duration: 75, easing: Easing.out(Easing.quad) }),
+          withSpring(0, { damping: 8, stiffness: 320 }),
+        );
+        cardTilt.value = withSequence(
+          withTiming(event.side * 0.8, { duration: 75, easing: Easing.out(Easing.quad) }),
+          withSpring(0, { damping: 9, stiffness: 300 }),
+        );
+        runSelectionHaptic();
+      }, event.at);
+    });
+    field.landingTicks.forEach(at => schedule(runSelectionHaptic, at));
+    schedule(runBubbleHaptic, field.lastLandingAt);
+    schedule(() => startReveal(false), field.lastLandingAt + TOOLS_SCENE.revealAfterLand);
+    schedule(() => {
+      bubble1Ref.current?.measureInWindow((x, y, w, h) => {
+        if (w > 0 && h > 0) setMorphTarget({ x, y, w, h });
+      });
+    }, 650);
+
+    return clearTimers;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [field]);
+
+  useEffect(() => {
+    if (phase !== 'convo') return undefined;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const startTimer = setTimeout(() => {
+      runBubbleHaptic();
+      interval = setInterval(() => {
+        setBubble2Count(prev => {
+          if (prev >= bubble2Text.length) {
+            if (interval) clearInterval(interval);
+            return prev;
+          }
+          const next = prev + 1;
+          if (next % 3 === 0) runTypingHaptic();
+          if (next >= bubble2Text.length) {
+            if (interval) clearInterval(interval);
+            schedule(() => setShowCta(true), 240);
+          }
+          return next;
+        });
+      }, TOOLS_SCENE.typeCharMs);
+    }, TOOLS_SCENE.bubble2Delay);
+    return () => {
+      clearTimeout(startTimer);
+      if (interval) clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bubble2Text, phase]);
+
+  const handleSceneTap = () => {
+    const current = phaseRef.current;
+    if (current === 'rain') {
+      clearTimers();
+      fastForward.value = 1;
+      flight.value = withTiming(1, { duration: 160 });
+      setSubtitleForced(true);
+      startReveal(true);
+      return;
+    }
+    if (current === 'reveal') {
+      clearTimers();
+      setSubtitleForced(true);
+      boxExpand.value = withTiming(1, { duration: 200 });
+      schedule(startPurge, 320);
+      return;
+    }
+    if (current === 'purge' || current === 'morph') {
+      clearTimers();
+      fastForward.value = 1;
+      purgeT.value = withTiming(1, { duration: 160 });
+      if (phaseRef.current === 'purge') {
+        phaseRef.current = 'morph';
+        setPhase('morph');
+      }
+      morphT.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) });
+      schedule(enterConvo, 240);
+      return;
+    }
+    if (current === 'convo' && !showCta) {
+      setBubble2Count(bubble2Text.length);
+      setShowCta(true);
+    }
+  };
+
+  const handleCta = () => {
+    if (echoedRef.current) return;
+    echoedRef.current = true;
+    setEchoed(true);
+    schedule(onNext, 430);
+  };
+
+  const morphCardStyle = useAnimatedStyle(() => {
+    const m = morphT.value;
+    const preHeight = interpolate(boxExpand.value, [0, 1], [titleOnlyBoxHeight, boxHeight]);
+    const preTop = interpolate(boxExpand.value, [0, 1], [titleOnlyTop, expandedTop]);
+    const flightY = interpolate(flight.value, [0, 0.62, 1], [-(boxCy + boxHeight), -26, 0]);
+    const flightX = interpolate(flight.value, [0, 1], [width * 0.2, 0]);
+    const flightRot = interpolate(flight.value, [0, 0.55, 0.85, 1], [7, -2.2, 0.8, 0]);
+    const flightScale = interpolate(flight.value, [0, 1], [1.05, 1]);
+
+    return {
+      opacity: interpolate(flight.value, [0, 0.06], [0, 1], 'clamp'),
+      left: interpolate(m, [0, 1], [boxLeft, morphTarget.x]),
+      top: interpolate(m, [0, 1], [preTop, morphTarget.y]),
+      width: interpolate(m, [0, 1], [boxWidth, morphTarget.w]),
+      height: interpolate(m, [0, 1], [preHeight, morphTarget.h]),
+      borderRadius: interpolate(m, [0, 1], [28, 27]),
+      shadowOpacity: interpolate(m, [0, 1], [0.2, 0.07]),
+      transform: [
+        { translateX: cardKickX.value + flightX },
+        { translateY: flightY + cardLift.value },
+        { rotate: `${flightRot + cardTilt.value}deg` },
+        { scale: flightScale },
+      ],
+    };
+  });
+
+  const showcaseContentStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(morphT.value, [0, 0.22], [1, 0], 'clamp'),
+  }));
+  const bubbleContentStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(morphT.value, [0.55, 0.95], [0, 1], 'clamp'),
+  }));
+  const dipStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: dip.value }],
   }));
 
   return (
@@ -8963,82 +9364,152 @@ function ToolsShowcaseSlide({
       end={{ x: 0.5, y: 1 }}
       style={s.toolsShowcaseRoot}
     >
-      <View pointerEvents="none" style={s.valueBackdrop}>
-        <View style={s.valueBackdropBandTop} />
-        <View style={s.valueBackdropBandBottom} />
-        <View style={s.valueBackdropLineOne} />
-        <View style={s.valueBackdropLineTwo} />
-      </View>
-
-      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        {slots.map(slot => (
-          <ToolsFieldChip
-            key={slot.label}
-            slot={slot}
-            chipHeight={chipHeight}
-            isLastChip={slot.delay === lastDelay}
-          />
-        ))}
-      </View>
-
-      <Reanimated.View
-        entering={FadeIn.delay(160).duration(540).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-          opacity: 0,
-          transform: [{ translateY: 14 }, { scale: 0.94 }],
-        })}
-        style={[
-          s.toolsMessageBox,
-          {
-            width: boxWidth,
-            left: width / 2 - boxWidth / 2,
-          },
-          messageBoxStyle,
-        ]}
-      >
-        <View pointerEvents="none" style={s.toolsMessageBoxFrame} />
-        <View style={s.toolsMessageOrnament}>
-          <View style={s.toolsMessageOrnamentLine} />
-          <View style={s.toolsMessageOrnamentDot} />
-          <View style={s.toolsMessageOrnamentLine} />
+      <Reanimated.View style={[s.toolsSceneWorld, dipStyle]}>
+        <View pointerEvents="none" style={s.valueBackdrop}>
+          <View style={s.valueBackdropBandTop} />
+          <View style={s.valueBackdropBandBottom} />
+          <View style={s.valueBackdropLineOne} />
+          <View style={s.valueBackdropLineTwo} />
         </View>
-        <Text
-          style={[s.toolsTitle, compact && s.toolsTitleCompact]}
-          onTextLayout={event => {
-            const lines = event.nativeEvent.lines;
-            const lastLine = lines[lines.length - 1];
-            const nextWidth = Math.max(52, Math.min(300, Math.ceil((lastLine?.width ?? 150) * 0.92)));
-            setTitleUnderlineWidth(current => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
-          }}
+
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          {field.slots.map(slot => (
+            <ToolsFieldChip
+              key={slot.label}
+              slot={slot}
+              chipHeight={chipHeight}
+              fastForward={fastForward}
+              purgeT={purgeT}
+              purgeSpan={field.purgeSpan}
+            />
+          ))}
+        </View>
+
+        <Reanimated.View
+          pointerEvents="none"
+          style={[s.toolsMorphCard, morphCardStyle, phase === 'convo' && s.toolsHidden]}
         >
-          Anasta has a lot of tools!
-        </Text>
-        <View style={[s.valueTitleUnderline, { width: titleUnderlineWidth, alignSelf: 'center' }]} />
-        {subtitleReady ? (
-          <Reanimated.View
-            entering={FadeIn.delay(40).duration(460).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-              opacity: 0,
-              transform: [{ translateY: 12 }, { scale: 0.96 }],
-            })}
-            style={s.toolsSubtitleReveal}
-          >
-            <View style={s.toolsSubtitleFrame}>
-              <ToolsTypedSubtitle delay={subtitleTypingDelay} />
-            </View>
+          <Reanimated.View style={[s.toolsMorphShowcase, showcaseContentStyle]}>
+            <View pointerEvents="none" style={s.toolsMessageBoxFrame} />
             <View style={s.toolsMessageOrnament}>
               <View style={s.toolsMessageOrnamentLine} />
               <View style={s.toolsMessageOrnamentDot} />
               <View style={s.toolsMessageOrnamentLine} />
             </View>
+            <Text
+              style={[s.toolsTitle, compact && s.toolsTitleCompact]}
+              onTextLayout={event => {
+                const lines = event.nativeEvent.lines;
+                const lastLine = lines[lines.length - 1];
+                const nextWidth = Math.max(52, Math.min(300, Math.ceil((lastLine?.width ?? 150) * 0.92)));
+                setTitleUnderlineWidth(current => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
+              }}
+            >
+              Anasta has a lot of tools!
+            </Text>
+            <View style={[s.valueTitleUnderline, { width: titleUnderlineWidth, alignSelf: 'center' }]} />
+            {phase !== 'rain' ? (
+              <Reanimated.View
+                entering={FadeIn.delay(40).duration(460).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                  opacity: 0,
+                  transform: [{ translateY: 12 }, { scale: 0.96 }],
+                })}
+                style={s.toolsSubtitleReveal}
+              >
+                <View style={s.toolsSubtitleFrame}>
+                  <ToolsTypedSubtitle delay={TOOLS_SCENE.typeStartDelay} forceComplete={subtitleForced} />
+                </View>
+                <View style={s.toolsMessageOrnament}>
+                  <View style={s.toolsMessageOrnamentLine} />
+                  <View style={s.toolsMessageOrnamentDot} />
+                  <View style={s.toolsMessageOrnamentLine} />
+                </View>
+              </Reanimated.View>
+            ) : null}
           </Reanimated.View>
-        ) : null}
+
+          <Reanimated.View style={[s.toolsMorphBubbleContent, bubbleContentStyle]}>
+            <Text style={s.nameConversationText}>{bubble1Text}</Text>
+          </Reanimated.View>
+        </Reanimated.View>
+
+        <View
+          pointerEvents="none"
+          style={[s.toolsConvoBlock, { left: convoLeft, top: convoTop, width: convoWidth }]}
+        >
+          <View style={s.nameBotRow}>
+            <View style={s.toolsConvoAvatarSlot}>
+              {phase === 'convo' ? (
+                <Reanimated.View
+                  entering={FadeInLeft.duration(440).withInitialValues({
+                    opacity: 0,
+                    transform: [{ translateX: -16 }, { scale: 0.9 }],
+                  })}
+                  style={s.nameAvatarShellSmall}
+                >
+                  <Image source={APP_LOGO} style={s.nameAvatarLogoSmall} resizeMode="cover" />
+                </Reanimated.View>
+              ) : null}
+            </View>
+            <View
+              ref={bubble1Ref}
+              collapsable={false}
+              style={[s.nameBubble, s.nameBubbleAuto, phase !== 'convo' && s.toolsHidden]}
+            >
+              <Text style={s.nameConversationText}>{bubble1Text}</Text>
+            </View>
+          </View>
+
+          {phase === 'convo' ? (
+            <Reanimated.View
+              entering={FadeIn.delay(TOOLS_SCENE.bubble2Delay - 60).duration(420).withInitialValues({
+                opacity: 0,
+                transform: [{ translateY: 8 }, { scale: 0.96 }],
+              })}
+              style={[s.nameBotRow, s.nameBotRowTight]}
+            >
+              <View style={s.toolsConvoAvatarSlot} />
+              <View style={[s.nameBubble, s.nameBubbleAuto]}>
+                <TypedSegmentText
+                  segments={bubble2Segments}
+                  count={bubble2Count}
+                  textStyle={s.nameConversationText}
+                  highlightStyle={s.inlineGoldUnderline}
+                  caretStyle={s.nameTypingCaret}
+                />
+              </View>
+            </Reanimated.View>
+          ) : null}
+
+          {echoed ? (
+            <Reanimated.View
+              entering={FadeInRight.duration(380).withInitialValues({
+                opacity: 0,
+                transform: [{ translateX: 18 }, { translateY: 6 }, { scale: 0.95 }],
+              })}
+              style={s.nameUserRow}
+            >
+              <View style={[s.nameUserBubble, s.nameUserBubbleCompact]}>
+                <Text style={[s.nameUserText, s.nameUserTextCompact]}>Let&apos;s do it!</Text>
+              </View>
+            </Reanimated.View>
+          ) : null}
+        </View>
       </Reanimated.View>
 
-      <View style={s.toolsShowcaseSpacer} />
+      <TouchableOpacity activeOpacity={1} onPress={handleSceneTap} style={s.toolsSkipLayer} />
 
-      <AnimatedCta delay={ctaDelay} style={[s.toolsShowcaseAction, { paddingBottom: bottomInset + 8 }]}>
+      <View style={s.toolsShowcaseSpacer} pointerEvents="none" />
+
+      <AnimatedCta
+        active={showCta}
+        delay={80}
+        pointerEvents={showCta ? 'auto' : 'none'}
+        style={[s.toolsShowcaseAction, { paddingBottom: bottomInset + 8 }]}
+      >
         <View style={s.ctaIsland}>
-          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-            <Text style={s.primaryButtonText}>Continue</Text>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={handleCta} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>Let&apos;s do it!</Text>
             <ChevronRight s={19} c="#FFFFFF" w={2.5} />
           </TouchableOpacity>
         </View>
@@ -11558,6 +12029,7 @@ export default function OnboardingView() {
         <ToolsShowcaseSlide
           topInset={insets.top}
           bottomInset={insets.bottom}
+          name={answers.displayName}
           onNext={goNext}
         />
       );
@@ -15241,6 +15713,51 @@ const s = StyleSheet.create({
   toolsShowcaseAction: {
     paddingHorizontal: 20,
     zIndex: 10,
+  },
+  toolsSceneWorld: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  toolsSkipLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 5,
+  },
+  toolsHidden: {
+    opacity: 0,
+  },
+  toolsMorphCard: {
+    position: 'absolute',
+    zIndex: 7,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,253,248,0.97)',
+    borderWidth: 1.2,
+    borderColor: 'rgba(197,160,89,0.36)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 22 },
+    shadowOpacity: 0.2,
+    shadowRadius: 34,
+    elevation: 9,
+  },
+  toolsMorphShowcase: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    rowGap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 22,
+  },
+  toolsMorphBubbleContent: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  toolsConvoBlock: {
+    position: 'absolute',
+    zIndex: 8,
+  },
+  toolsConvoAvatarSlot: {
+    width: 42,
+    height: 42,
   },
   screenTimeSlide: {
     flex: 1,
