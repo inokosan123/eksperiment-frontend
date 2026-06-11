@@ -939,7 +939,6 @@ function stepOrder(answers: Answers): StepId[] {
     'valueFocus',
     'valueFaith',
     'toolsShowcase',
-    'statementsIntro',
     'tutorialDeck',
     'protectDeck',
     'screenTimeSlider',
