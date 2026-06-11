@@ -31,6 +31,7 @@ import Reanimated, {
 import {
   ArrowUpRight,
   BellRing,
+  Book,
   BookMarked,
   Calendar,
   Candle,
@@ -47,6 +48,8 @@ import {
   ListChecks,
   Moon,
   OpenBook,
+  Notebook,
+  Pencil,
   Play,
   Plus,
   Sun,
@@ -277,10 +280,15 @@ const APP_LOGO = require('@/assets/images/anasta-logo.png');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const CONFETTI_SOURCE = require('@/assets/animations/onboarding-confetti.lottie');
 const PROTECT_TIME_STICKER = require('@/assets/images/onboarding/protect-time-sticker.png');
+const DISCIPLINE_SPIRITUAL_STICKER = require('@/assets/images/onboarding/discipline-spiritual-consistency.png');
+const DISCIPLINE_DAILY_ORDER_STICKER = require('@/assets/images/onboarding/discipline-daily-order.png');
+const DISCIPLINE_BETTER_HABITS_STICKER = require('@/assets/images/onboarding/discipline-better-habits.png');
+const DISCIPLINE_FOCUS_SELF_CONTROL_STICKER = require('@/assets/images/onboarding/discipline-focus-self-control.png');
+const DISCIPLINE_LONG_TERM_GROWTH_STICKER = require('@/assets/images/onboarding/discipline-long-term-growth.png');
 const FAITH_BIBLE_STICKER = require('@/assets/images/onboarding/faith-bible-sticker.png');
 const FAITH_BIBLE_NOTES_STICKER = require('@/assets/images/onboarding/faith-bible-notes-sticker.png');
+const FAITH_FAVORITES_STICKER = require('@/assets/images/onboarding/faith-favorites-sticker.png');
 const FAITH_PRAYER_BOOK_STICKER = require('@/assets/images/onboarding/faith-prayer-book-sticker.png');
-const FAITH_FREE_FOR_EVERYONE_BADGE = require('@/assets/images/onboarding/faith-free-for-everyone-badge.png');
 const PROTECT_STATEMENT_IMAGES = [
   require('@/assets/images/protect-statement-1.jpg'),
   require('@/assets/images/protect-statement-2.jpg'),
@@ -1285,7 +1293,7 @@ const VALUE_SLIDES: Record<ValueStepId, { title: string; body: string; kind: Val
   },
   valueFocus: {
     title: 'Protect your time!',
-    body: 'Block distractions, addictive content, and everything that pulls you away from what matters.',
+    body: 'Block distractions, addictive content and stay focused on what matters.',
     kind: 'focus',
   },
   valueFaith: {
@@ -2079,6 +2087,7 @@ function ValuePreviewSlide({
   const index = VALUE_STEP_IDS.indexOf(step);
   const isLast = index === VALUE_STEP_IDS.length - 1;
   const [progressIndex, setProgressIndex] = useState(index);
+  const [visitedValueSteps, setVisitedValueSteps] = useState<Partial<Record<ValueStepId, boolean>>>(() => ({ [step]: true }));
   const pagePosition = useSharedValue(index);
   const dragX = useSharedValue(0);
 
@@ -2092,6 +2101,10 @@ function ValuePreviewSlide({
     dragX.value = 0;
   }, [dragX, index, pagePosition]);
 
+  useEffect(() => {
+    setVisitedValueSteps(current => (current[step] ? current : { ...current, [step]: true }));
+  }, [step]);
+
   const swipeGesture = useMemo(() => Gesture.Pan()
     .activeOffsetX([-14, 14])
     .failOffsetY([-18, 18])
@@ -2100,7 +2113,7 @@ function ValuePreviewSlide({
       const canMoveRight = index > 0;
 
       if (raw < 0) {
-        dragX.value = raw;
+        dragX.value = isLast ? raw * 0.16 : raw;
         return;
       }
       if (raw > 0 && canMoveRight) {
@@ -2118,8 +2131,6 @@ function ValuePreviewSlide({
       if (shouldAdvance) {
         if (isLast) {
           dragX.value = withTiming(0, { duration: 260, easing: Easing.out(Easing.cubic) });
-          runOnJS(runStrongHaptic)();
-          runOnJS(onNext)();
         } else {
           runOnJS(updateProgressIndex)(index + 1);
           dragX.value = withTiming(0, { duration: 360, easing: Easing.out(Easing.cubic) });
@@ -2168,27 +2179,47 @@ function ValuePreviewSlide({
       <View style={s.valueCarouselViewport}>
         <GestureDetector gesture={swipeGesture}>
           <Reanimated.View style={[s.valueCarouselTrack, { width: width * VALUE_STEP_IDS.length }, trackStyle]}>
-            {VALUE_STEP_IDS.map((valueStep, slideIndex) => (
-              <ValuePreviewPage
-                key={valueStep}
-                width={width}
-                topInset={topInset}
-                slide={VALUE_SLIDES[valueStep]}
-                bottomInset={bottomInset}
-                animateIntro={slideIndex === 0}
-                active={slideIndex === index}
-              />
-            ))}
+            {VALUE_STEP_IDS.map((valueStep, slideIndex) => {
+              const keepsVisualAfterVisit = valueStep === 'valueDiscipline' || valueStep === 'valueFaith';
+              const visualActive = slideIndex === index || (keepsVisualAfterVisit && !!visitedValueSteps[valueStep]);
+              return (
+                <ValuePreviewPage
+                  key={valueStep}
+                  width={width}
+                  topInset={topInset}
+                  slide={VALUE_SLIDES[valueStep]}
+                  animateIntro={slideIndex === 0}
+                  active={visualActive}
+                />
+              );
+            })}
           </Reanimated.View>
         </GestureDetector>
       </View>
 
-      <View style={[s.valueNavigation, { paddingBottom: bottomInset, transform: [{ translateY: 6 }] }]}>
+      <View
+        style={[
+          s.valueNavigation,
+          isLast && s.valueNavigationLast,
+          { paddingBottom: bottomInset + (isLast ? 7 : 0), transform: [{ translateY: isLast ? 2 : 6 }] },
+        ]}
+      >
         <ValueSlideProgressRail activeIndex={progressIndex} total={VALUE_FLOW_DOT_COUNT} />
-        <View style={s.valueSwipeHint}>
-          <Text style={s.valueSwipeHintText}>Swipe To Continue</Text>
-          <ChevronRight s={15} c={GOLD} w={2.4} />
-        </View>
+        {isLast ? (
+          <View style={s.valueFinalContinue}>
+            <View style={s.ctaIsland}>
+              <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+                <Text style={s.primaryButtonText}>Continue</Text>
+                <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <View style={s.valueSwipeHint}>
+            <Text style={s.valueSwipeHintText}>Swipe To Continue</Text>
+            <ChevronRight s={15} c={GOLD} w={2.4} />
+          </View>
+        )}
       </View>
     </LinearGradient>
   );
@@ -2224,7 +2255,6 @@ function ValueToolsClosingSlide({
         <ValuePreviewPage
           width={width}
           topInset={topInset}
-          bottomInset={bottomInset}
           slide={VALUE_SLIDES.valueTools}
           animateIntro
           active
@@ -2318,14 +2348,12 @@ function ValueProgressStep({ index, active, done }: { index: number; active: boo
 function ValuePreviewPage({
   width,
   topInset,
-  bottomInset,
   slide,
   animateIntro,
   active,
 }: {
   width: number;
   topInset: number;
-  bottomInset?: number;
   slide: { title: string; body: string; kind: ValuePhoneKind };
   animateIntro?: boolean;
   active: boolean;
@@ -2376,14 +2404,6 @@ function ValuePreviewPage({
       <Reanimated.View entering={visualEntering} style={[s.valuePhoneStage, slide.kind === 'organize' && s.valuePhoneStageOrganize]}>
         <ValueSlideVisual kind={slide.kind} active={active} />
       </Reanimated.View>
-
-      {slide.kind === 'faith' ? (
-        <View pointerEvents="none" style={[s.valueFaithFreeImageSlideSlot, { bottom: (bottomInset ?? 0) + 66 }]}>
-          <AnimatedCta active={active} delay={2120} duration={620} distance={18} pointerEvents="none" style={s.valueFaithFreeImageFrame}>
-            <Image source={FAITH_FREE_FOR_EVERYONE_BADGE} style={s.valueFaithFreeImage} resizeMode="contain" resizeMethod="scale" />
-          </AnimatedCta>
-        </View>
-      ) : null}
 
     </View>
   );
@@ -2441,14 +2461,11 @@ function ValueSubtitleText({ kind }: { kind: ValuePhoneKind }) {
       <View style={s.valueSubtitleLine}>
         <ValueSubtitleWord>Block</ValueSubtitleWord>
         <ValueSubtitleWord underline>distractions,</ValueSubtitleWord>
-        <ValueSubtitleWord underline>addictive content,</ValueSubtitleWord>
+        <ValueSubtitleWord underline>addictive content</ValueSubtitleWord>
         <ValueSubtitleWord>and</ValueSubtitleWord>
-        <ValueSubtitleWord>everything</ValueSubtitleWord>
-        <ValueSubtitleWord>that</ValueSubtitleWord>
-        <ValueSubtitleWord>pulls</ValueSubtitleWord>
-        <ValueSubtitleWord>you</ValueSubtitleWord>
-        <ValueSubtitleWord>away</ValueSubtitleWord>
-        <ValueSubtitleWord>from</ValueSubtitleWord>
+        <ValueSubtitleWord>stay</ValueSubtitleWord>
+        <ValueSubtitleWord>focused</ValueSubtitleWord>
+        <ValueSubtitleWord>on</ValueSubtitleWord>
         <ValueSubtitleWord>what</ValueSubtitleWord>
         <ValueSubtitleWord underline>matters.</ValueSubtitleWord>
       </View>
@@ -2567,56 +2584,250 @@ function ValueFocusCardReveal({
   );
 }
 
-function ValueDisciplineIllustration({ active }: { active: boolean }) {
-  const bars = [0.44, 0.62, 0.55, 0.76, 0.84, 0.68, 0.90];
+const DISCIPLINE_VALUE_FEATURES = [
+  {
+    title: 'Spiritual consistency',
+    body: 'Stay close to God with Scripture, prayer, and an organized spiritual life.',
+    image: DISCIPLINE_SPIRITUAL_STICKER,
+    tone: 'spiritual' as const,
+  },
+  {
+    title: 'Daily order',
+    body: 'Organize your tasks, priorities, routines, and responsibilities in one clear system.',
+    image: DISCIPLINE_DAILY_ORDER_STICKER,
+    tone: 'daily' as const,
+  },
+  {
+    title: 'Better habits',
+    body: 'Build habits and routines that shape your discipline, character, and everyday life.',
+    image: DISCIPLINE_BETTER_HABITS_STICKER,
+    tone: 'habits' as const,
+  },
+  {
+    title: 'Focus and self-control',
+    body: 'Take control of your time, protect your attention, and stay focused on what matters.',
+    image: DISCIPLINE_FOCUS_SELF_CONTROL_STICKER,
+    tone: 'focus' as const,
+  },
+  {
+    title: 'Long-term growth',
+    body: 'Discipline compounds over time - small faithful actions become real transformation.',
+    image: DISCIPLINE_LONG_TERM_GROWTH_STICKER,
+    tone: 'growth' as const,
+  },
+] as const;
+
+function disciplinePaintForTone(tone: (typeof DISCIPLINE_VALUE_FEATURES)[number]['tone']) {
+  if (tone === 'daily') {
+    return {
+      colors: ['#FEFFFC', '#EEF8F4', '#FBF3E7'],
+      wash: 'rgba(77,133,134,0.19)',
+      washAlt: 'rgba(197,160,89,0.10)',
+      bloom: 'rgba(77,133,134,0.26)',
+      leftGlow: 'rgba(77,133,134,0.14)',
+      border: 'rgba(77,133,134,0.26)',
+    } as const;
+  }
+  if (tone === 'habits') {
+    return {
+      colors: ['#FFFDF7', '#F3F8E8', '#FFF3DE'],
+      wash: 'rgba(126,152,90,0.20)',
+      washAlt: 'rgba(197,160,89,0.11)',
+      bloom: 'rgba(126,152,90,0.28)',
+      leftGlow: 'rgba(126,152,90,0.14)',
+      border: 'rgba(126,152,90,0.28)',
+    } as const;
+  }
+  if (tone === 'focus') {
+    return {
+      colors: ['#FFFCFA', '#FFF0F3', '#F8F1E8'],
+      wash: 'rgba(143,93,108,0.19)',
+      washAlt: 'rgba(197,160,89,0.10)',
+      bloom: 'rgba(143,93,108,0.25)',
+      leftGlow: 'rgba(143,93,108,0.13)',
+      border: 'rgba(143,93,108,0.26)',
+    } as const;
+  }
+  if (tone === 'growth') {
+    return {
+      colors: ['#FFFDFB', '#F5F1FF', '#F8F2E8'],
+      wash: 'rgba(126,110,166,0.20)',
+      washAlt: 'rgba(197,160,89,0.10)',
+      bloom: 'rgba(126,110,166,0.26)',
+      leftGlow: 'rgba(126,110,166,0.13)',
+      border: 'rgba(126,110,166,0.26)',
+    } as const;
+  }
+  return {
+    colors: ['#FFFDF8', '#FFF6E4', '#F9EFE1'],
+    wash: 'rgba(197,160,89,0.22)',
+    washAlt: 'rgba(255,255,255,0.34)',
+    bloom: 'rgba(197,160,89,0.30)',
+    leftGlow: 'rgba(197,160,89,0.14)',
+    border: 'rgba(197,160,89,0.30)',
+  } as const;
+}
+
+function ValueDisciplineFeatureArt({
+  item,
+  index,
+}: {
+  item: (typeof DISCIPLINE_VALUE_FEATURES)[number];
+  index: number;
+}) {
+  const float = useSharedValue(0);
+
+  useEffect(() => {
+    float.value = 0;
+    float.value = withDelay(
+      index * 140,
+      withRepeat(
+        withTiming(1, { duration: 5200 + index * 320, easing: Easing.linear }),
+        -1,
+        false,
+      ),
+    );
+  }, [float, index]);
+
+  const artStyle = useAnimatedStyle(() => {
+    const phase = float.value * Math.PI * 2 + index * 0.64;
+    const vertical = Math.sin(phase) * (3.5 + (index % 3) * 0.6);
+    const horizontal = Math.cos(phase + index * 0.35) * 1.35;
+    const rotation = Math.sin(phase + index * 0.48) * (index % 2 === 0 ? 1.05 : -1.05);
+
+    return {
+      transform: [
+        { translateX: horizontal },
+        { translateY: vertical },
+        { rotate: `${rotation}deg` },
+      ],
+    };
+  });
+
+  const toneStyle =
+    item.tone === 'daily' ? s.valueDisciplineArtDaily :
+    item.tone === 'habits' ? s.valueDisciplineArtHabits :
+    item.tone === 'focus' ? s.valueDisciplineArtFocus :
+    item.tone === 'growth' ? s.valueDisciplineArtGrowth :
+    s.valueDisciplineArtSpiritual;
+
   return (
-    <View style={s.valueIllustration}>
-      <ValueVisualReveal active={active} delay={80}>
-        <View style={s.valueDisciplineHero}>
-          <View style={s.valueDisciplineHalo} />
-          <Target s={42} c={GOLD} w={1.7} />
-          <Text style={s.valueDisciplineHeroText}>Discipline</Text>
-        </View>
-      </ValueVisualReveal>
-      <View style={s.valueDisciplineBars}>
-        {bars.map((height, index) => (
-          <ValueVisualReveal key={`discipline-bar-${index}`} active={active} delay={260 + index * 80}>
-            <View style={s.valueDisciplineBarTrack}>
-              <View style={[s.valueDisciplineBarFill, { height: `${height * 100}%` }]} />
+    <View style={s.valueDisciplineArtSlot}>
+      <Reanimated.View style={[s.valueDisciplineArtFloat, toneStyle, artStyle]}>
+        <Image source={item.image} style={s.valueDisciplineSticker} resizeMode="contain" resizeMethod="scale" />
+      </Reanimated.View>
+    </View>
+  );
+}
+
+function ValueDisciplineFeatureRow({
+  item,
+  index,
+  active,
+}: {
+  item: (typeof DISCIPLINE_VALUE_FEATURES)[number];
+  index: number;
+  active: boolean;
+}) {
+  const accentStyle =
+    item.tone === 'daily' ? s.valueDisciplineAccentDaily :
+    item.tone === 'habits' ? s.valueDisciplineAccentHabits :
+    item.tone === 'focus' ? s.valueDisciplineAccentFocus :
+    item.tone === 'growth' ? s.valueDisciplineAccentGrowth :
+    s.valueDisciplineAccentSpiritual;
+  const cardStyle =
+    item.tone === 'daily' ? s.valueDisciplineTextDaily :
+    item.tone === 'habits' ? s.valueDisciplineTextHabits :
+    item.tone === 'focus' ? s.valueDisciplineTextFocus :
+    item.tone === 'growth' ? s.valueDisciplineTextGrowth :
+    s.valueDisciplineTextSpiritual;
+  const reverse = index % 2 === 1;
+  const paint = disciplinePaintForTone(item.tone);
+
+  return (
+    <ValueVisualReveal active={active} delay={180 + index * 135}>
+      <View style={[s.valueDisciplineFeatureRow, reverse && s.valueDisciplineFeatureRowReverse]}>
+        <ValueDisciplineFeatureArt item={item} index={index} />
+        <View
+          style={[
+            s.valueDisciplineTextCard,
+            reverse ? s.valueDisciplineTextCardReverse : s.valueDisciplineTextCardForward,
+            cardStyle,
+            { borderColor: paint.border },
+          ]}
+        >
+          <LinearGradient
+            colors={paint.colors}
+            locations={[0, 0.52, 1]}
+            start={{ x: 0.08, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View pointerEvents="none" style={[s.valueDisciplinePaintWash, { backgroundColor: paint.wash }]} />
+          <View pointerEvents="none" style={[s.valueDisciplinePaintWashAlt, { backgroundColor: paint.washAlt }]} />
+          <View pointerEvents="none" style={[s.valueDisciplinePaintBloom, { backgroundColor: paint.bloom }]} />
+          <View pointerEvents="none" style={[s.valueDisciplinePaintLeftGlow, { backgroundColor: paint.leftGlow }]} />
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(255,255,255,0.42)', 'rgba(255,255,255,0.08)', 'rgba(255,244,220,0.16)']}
+            locations={[0, 0.52, 1]}
+            start={{ x: 0.04, y: 0 }}
+            end={{ x: 0.96, y: 1 }}
+            style={s.valueDisciplinePaintVeil}
+          />
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(255,255,255,0)', 'rgba(197,160,89,0.07)', 'rgba(255,255,255,0)']}
+            locations={[0, 0.58, 1]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={s.valueDisciplinePaintEdgeBlend}
+          />
+          <View pointerEvents="none" style={s.valueDisciplinePaintSheen} />
+          <View pointerEvents="none" style={s.valueDisciplinePaperGrain} />
+          <View pointerEvents="none" style={[s.valueDisciplineCardGlow, accentStyle]} />
+          <View style={s.valueDisciplineTextContent}>
+            <View style={s.valueDisciplineTitleRow}>
+              <View style={[s.valueDisciplineTitleMark, accentStyle]} />
+              <Text style={s.valueDisciplineFeatureTitle} numberOfLines={1}>{item.title}</Text>
             </View>
-          </ValueVisualReveal>
-        ))}
+            <View style={[s.valueDisciplineFeatureRule, accentStyle]} />
+            <Text style={s.valueDisciplineFeatureBody} numberOfLines={2}>{item.body}</Text>
+          </View>
+        </View>
       </View>
-      <View style={s.valueDisciplineCards}>
-        <ValueVisualReveal active={active} delay={780}>
-          <ValueMiniFeatureCard icon={<Sparkles s={18} c="#8B5CF6" w={1.8} />} label="Habit streak" />
-        </ValueVisualReveal>
-        <ValueVisualReveal active={active} delay={900}>
-          <ValueMiniFeatureCard icon={<Clock s={18} c="#4D8586" w={1.9} />} label="Challenge timer" />
-        </ValueVisualReveal>
-        <ValueVisualReveal active={active} delay={1020}>
-          <ValueMiniFeatureCard icon={<CheckSmall s={18} c={GOLD} w={2.4} />} label="Goals checked" />
-        </ValueVisualReveal>
-      </View>
+    </ValueVisualReveal>
+  );
+}
+
+function ValueDisciplineIllustration({ active }: { active: boolean }) {
+  return (
+    <View style={s.valueDisciplineVisual}>
+      {DISCIPLINE_VALUE_FEATURES.map((item, index) => (
+        <ValueDisciplineFeatureRow key={item.title} item={item} index={index} active={active} />
+      ))}
     </View>
   );
 }
 
 const VALUE_FOCUS_FEATURE_CARDS = [
   {
-    label: 'Control your screen time',
+    label: 'Stop wasting your time',
+    body: 'Keep your screen time under control.',
     tint: 'rgba(197,160,89,0.12)',
     border: 'rgba(197,160,89,0.26)',
     icon: <Hourglass s={20} c={GOLD} w={2} />,
   },
   {
-    label: 'Block notifications',
+    label: "Don't get disturbed",
+    body: 'Block notifications before they pull you away.',
     tint: 'rgba(77,133,134,0.12)',
     border: 'rgba(77,133,134,0.26)',
     icon: <BellRing s={20} c="#4D8586" w={2} />,
   },
   {
     label: 'Block addictive content',
+    body: 'Gambling, adult content, social media, gaming...',
     tint: 'rgba(143,93,108,0.12)',
     border: 'rgba(143,93,108,0.26)',
     icon: <SlidersHorizontal s={20} c="#8F5D6C" w={2} />,
@@ -2626,24 +2837,30 @@ const VALUE_FOCUS_FEATURE_CARDS = [
 function ValueFocusFeatureCard({
   icon,
   label,
+  body,
   tint,
   border,
 }: {
   icon: React.ReactNode;
   label: string;
+  body: string;
   tint: string;
   border: string;
 }) {
   return (
-    <View style={s.valueFocusFeatureCard}>
+    <View style={[s.valueFocusFeatureCard, { borderColor: border }]}>
       <LinearGradient
-        colors={['#FFFFFF', '#FFFCF4']}
+        colors={['#FFFFFF', '#FFFDF8', '#F8F2E8']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
+      <View style={[s.valueFocusFeatureRail, { backgroundColor: border }]} />
       <View style={[s.valueFocusFeatureIcon, { backgroundColor: tint, borderColor: border }]}>{icon}</View>
-      <Text style={s.valueFocusFeatureText} numberOfLines={1}>{label}</Text>
+      <View style={s.valueFocusFeatureCopy}>
+        <Text style={s.valueFocusFeatureText} numberOfLines={1}>{label}</Text>
+        <Text style={s.valueFocusFeatureBody} numberOfLines={2}>{body}</Text>
+      </View>
       <View style={s.valueFocusFeatureCheck}>
         <CheckSmall s={12.5} c={GOLD} w={2.7} />
       </View>
@@ -2659,8 +2876,8 @@ function ValueFocusIllustration({ active }: { active: boolean }) {
       </View>
       <View style={s.valueFocusCards}>
         {VALUE_FOCUS_FEATURE_CARDS.map((card, index) => (
-          <ValueFocusCardReveal key={card.label} active={active} delay={340 + index * TRADITION_INTRO_TIMING.optionStep}>
-            <ValueFocusFeatureCard icon={card.icon} label={card.label} tint={card.tint} border={card.border} />
+          <ValueFocusCardReveal key={card.label} active={active} delay={index * 85}>
+            <ValueFocusFeatureCard icon={card.icon} label={card.label} body={card.body} tint={card.tint} border={card.border} />
           </ValueFocusCardReveal>
         ))}
       </View>
@@ -2690,10 +2907,51 @@ const FAITH_VALUE_FEATURES = [
   {
     title: 'Favorites',
     body: 'Give every color a meaning, and keep highlights and comments organized for easier learning.',
-    icon: <BookMarked s={30} c={GOLD} w={1.8} />,
+    image: FAITH_FAVORITES_STICKER,
     tone: 'favorites' as const,
   },
 ] as const;
+
+function faithPaintForTone(tone: (typeof FAITH_VALUE_FEATURES)[number]['tone']) {
+  if (tone === 'prayer') {
+    return {
+      colors: ['#FEFFFC', '#EEF8F4', '#FBF3E7'],
+      wash: 'rgba(77,133,134,0.19)',
+      washAlt: 'rgba(197,160,89,0.10)',
+      bloom: 'rgba(77,133,134,0.25)',
+      leftGlow: 'rgba(77,133,134,0.13)',
+      border: 'rgba(77,133,134,0.25)',
+    } as const;
+  }
+  if (tone === 'notes') {
+    return {
+      colors: ['#FFFCFA', '#FFF0F3', '#F8F1E8'],
+      wash: 'rgba(143,93,108,0.18)',
+      washAlt: 'rgba(197,160,89,0.10)',
+      bloom: 'rgba(143,93,108,0.24)',
+      leftGlow: 'rgba(143,93,108,0.12)',
+      border: 'rgba(143,93,108,0.25)',
+    } as const;
+  }
+  if (tone === 'favorites') {
+    return {
+      colors: ['#FFFDF8', '#FFF4DF', '#F8ECE0'],
+      wash: 'rgba(197,160,89,0.23)',
+      washAlt: 'rgba(255,255,255,0.34)',
+      bloom: 'rgba(28,25,23,0.09)',
+      leftGlow: 'rgba(197,160,89,0.14)',
+      border: 'rgba(197,160,89,0.34)',
+    } as const;
+  }
+  return {
+    colors: ['#FFFDF8', '#FFF6E4', '#F9EFE1'],
+    wash: 'rgba(197,160,89,0.22)',
+    washAlt: 'rgba(255,255,255,0.34)',
+    bloom: 'rgba(197,160,89,0.30)',
+    leftGlow: 'rgba(197,160,89,0.14)',
+    border: 'rgba(197,160,89,0.30)',
+  } as const;
+}
 
 function ValueFaithFeatureRow({
   item,
@@ -2740,6 +2998,7 @@ function ValueFaithFeatureRow({
     item.tone === 'notes' ? s.valueFaithAccentNotes :
     item.tone === 'favorites' ? s.valueFaithAccentFavorites :
     s.valueFaithAccentBible;
+  const paint = faithPaintForTone(item.tone);
 
   const reverse = index % 2 === 1;
 
@@ -2752,23 +3011,61 @@ function ValueFaithFeatureRow({
       style={[s.valueFaithFeatureRow, reverse && s.valueFaithFeatureRowReverse, rowStyle]}
     >
       <View style={s.valueFaithArtSlot} />
-      <View style={[s.valueFaithTextCard, reverse ? s.valueFaithTextCardReverse : s.valueFaithTextCardForward, toneStyle]}>
+      <View
+        style={[
+          s.valueFaithTextCard,
+          reverse ? s.valueFaithTextCardReverse : s.valueFaithTextCardForward,
+          toneStyle,
+          { borderColor: paint.border },
+        ]}
+      >
+        <LinearGradient
+          colors={paint.colors}
+          locations={[0, 0.52, 1]}
+          start={{ x: 0.08, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View pointerEvents="none" style={[s.valueFaithPaintWash, { backgroundColor: paint.wash }]} />
+        <View pointerEvents="none" style={[s.valueFaithPaintWashAlt, { backgroundColor: paint.washAlt }]} />
+        <View pointerEvents="none" style={[s.valueFaithPaintBloom, { backgroundColor: paint.bloom }]} />
+        <View pointerEvents="none" style={[s.valueFaithPaintLeftGlow, { backgroundColor: paint.leftGlow }]} />
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(255,255,255,0.42)', 'rgba(255,255,255,0.08)', 'rgba(255,244,220,0.16)']}
+          locations={[0, 0.52, 1]}
+          start={{ x: 0.04, y: 0 }}
+          end={{ x: 0.96, y: 1 }}
+          style={s.valueFaithPaintVeil}
+        />
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(255,255,255,0)', 'rgba(197,160,89,0.07)', 'rgba(255,255,255,0)']}
+          locations={[0, 0.58, 1]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={s.valueFaithPaintEdgeBlend}
+        />
+        <View pointerEvents="none" style={s.valueFaithPaintSheen} />
+        <View pointerEvents="none" style={s.valueFaithPaperGrain} />
         <View pointerEvents="none" style={[s.valueFaithCardGlow, accentStyle]} />
-        <View style={s.valueFaithTitleRow}>
-          <View style={[s.valueFaithTitleMark, accentStyle]} />
-          <Text
-            style={s.valueFaithFeatureTitle}
-            onTextLayout={event => {
-              const lines = event.nativeEvent.lines;
-              const titleWidth = Math.ceil((lines[lines.length - 1]?.width ?? 42) + 2);
-              setTitleRuleWidth(current => (Math.abs(current - titleWidth) > 1 ? titleWidth : current));
-            }}
-          >
-            {item.title}
-          </Text>
+        <View style={s.valueFaithTextContent}>
+          <View style={s.valueFaithTitleRow}>
+            <View style={[s.valueFaithTitleMark, accentStyle]} />
+            <Text
+              style={s.valueFaithFeatureTitle}
+              onTextLayout={event => {
+                const lines = event.nativeEvent.lines;
+                const titleWidth = Math.ceil((lines[lines.length - 1]?.width ?? 42) + 2);
+                setTitleRuleWidth(current => (Math.abs(current - titleWidth) > 1 ? titleWidth : current));
+              }}
+            >
+              {item.title}
+            </Text>
+          </View>
+          <View style={[s.valueFaithFeatureRule, accentStyle, { width: titleRuleWidth }]} />
+          <Text style={s.valueFaithFeatureBody}>{item.body}</Text>
         </View>
-        <View style={[s.valueFaithFeatureRule, accentStyle, { width: titleRuleWidth }]} />
-        <Text style={s.valueFaithFeatureBody}>{item.body}</Text>
       </View>
     </Reanimated.View>
   );
@@ -2858,14 +3155,7 @@ function ValueFaithFeatureArt({
       ]}
     >
       <Reanimated.View style={[s.valueFaithArtFloat, prayerArtStyle, artStyle]}>
-        {'image' in item ? (
-          <Image source={item.image} style={s.valueFaithSticker} resizeMode="contain" resizeMethod="scale" />
-        ) : (
-          <View style={[s.valueFaithFavoriteOrb, s.valueFaithFavoriteOrbDark]}>
-            <Sparkles s={16} c="#F8E8BE" w={1.9} />
-            {item.icon}
-          </View>
-        )}
+        <Image source={item.image} style={s.valueFaithSticker} resizeMode="contain" resizeMethod="scale" />
       </Reanimated.View>
     </Reanimated.View>
   );
@@ -2946,23 +3236,6 @@ function ValueFeatureListVisual({ active, type }: { active: boolean; type: 'fait
   );
 }
 
-function ValueMiniFeatureCard({
-  icon,
-  label,
-  compact,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  compact?: boolean;
-}) {
-  return (
-    <View style={[s.valueMiniFeatureCard, compact && s.valueMiniFeatureCardCompact]}>
-      <View style={s.valueMiniFeatureIcon}>{icon}</View>
-      <Text style={[s.valueMiniFeatureText, compact && s.valueMiniFeatureTextCompact]}>{label}</Text>
-    </View>
-  );
-}
-
 function ValueFeatureChip({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
     <View style={s.valueFeatureChip}>
@@ -3016,9 +3289,9 @@ function ValuePhoneMock({ kind, active }: { kind: ValuePhoneKind; active: boolea
     if (active) {
       organizePhoneIntroPlayed.current = true;
       organizePhoneIntro.value = withDelay(
-        70,
+        50,
         withTiming(1, {
-          duration: 640,
+          duration: 540,
           easing: Easing.out(Easing.cubic),
         }),
       );
@@ -3065,7 +3338,7 @@ function ValuePhoneMock({ kind, active }: { kind: ValuePhoneKind; active: boolea
             source={CONFETTI_SOURCE}
             autoPlay={false}
             loop={false}
-            speed={0.68}
+            speed={0.82}
             resizeMode="cover"
             style={StyleSheet.absoluteFill}
           />
@@ -3189,9 +3462,9 @@ function ValueOrganizeReveal({
   return <Reanimated.View style={[s.valueOrganizeReveal, revealStyle]}>{children}</Reanimated.View>;
 }
 
-const VALUE_ORGANIZE_TASK_REVEAL_BASE_DELAY = 650;
-const VALUE_ORGANIZE_TASK_REVEAL_STEP_DELAY = 74;
-const VALUE_ORGANIZE_TASK_REVEAL_DURATION = 230;
+const VALUE_ORGANIZE_TASK_REVEAL_BASE_DELAY = 520;
+const VALUE_ORGANIZE_TASK_REVEAL_STEP_DELAY = 55;
+const VALUE_ORGANIZE_TASK_REVEAL_DURATION = 190;
 const VALUE_ORGANIZE_TASK_COUNT = 5;
 const VALUE_ORGANIZE_CHECK_DELAY =
   VALUE_ORGANIZE_TASK_REVEAL_BASE_DELAY +
@@ -3419,7 +3692,7 @@ function ValueOrganizePhone({
         <Text style={s.valueBigEventsHeading}>Big Upcoming Events</Text>
         <Text style={s.valueBigEventsSub}>1 active</Text>
       </View>
-      <ValueOrganizeReveal active={active} animated={animated} delay={460}>
+      <ValueOrganizeReveal active={active} animated={animated} delay={360}>
         <View style={[s.valueBigEventCard, { backgroundColor: '#FFFFFF' }]}>
           <View style={s.valueBigEventIconBox}>
             <NotoEmoji name={normalizeHabitIcon('birthday-cake')} size={13} />
@@ -3470,10 +3743,15 @@ function ValueOrganizePhone({
         delay={VALUE_ORGANIZE_TASK_REVEAL_BASE_DELAY + taskPreviewItems.length * VALUE_ORGANIZE_TASK_REVEAL_STEP_DELAY}
         duration={VALUE_ORGANIZE_TASK_REVEAL_DURATION}
       >
-        <View style={s.valueHomeAddBtn}>
-          <Plus s={10} c="#1C1917" w={2.5} />
+        <LinearGradient
+          colors={['#FFFFFF', '#F0FDF4']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={s.valueHomeAddBtn}
+        >
+          <Plus s={10.5} c="#1C1917" w={2.5} />
           <Text style={s.valueHomeAddBtnText}>ADD QUICK TASK</Text>
-        </View>
+        </LinearGradient>
       </ValueOrganizeReveal>
 
       <ValueOrganizeReveal
@@ -8373,19 +8651,6 @@ function V4ProgressRail({
   );
 }
 
-const TOOLS_FIELD_LABELS = [
-  'Scripture', 'Prayer Book', 'Daily Journal', 'Habits',
-  'Challenges', 'Morning Prayers', 'Evening Prayers', 'Bible Notes',
-  'Screen Time', 'App Blocker', 'Content Blocker', 'Pomodoro',
-  'Routines', 'Spiritual Tasks', 'Monthly Goals', 'Big Events',
-  'Reading List', 'Reading Timer', 'Free Writing', 'Morning Pages',
-  'Favorites', 'Jesus Prayer', 'Bucket List', 'Year in Pixels',
-  'Streaks', 'Gratitude', 'Notes', 'Bible',
-  'Highlights', 'Verse Comments', 'Prayer Rules', 'Life Gratitude',
-  'Daily Gratitude', 'Analytics', 'Focus Zone', 'Weekly View',
-  'Task Manager', 'Quick Tasks', 'Day Planner', 'Reflections',
-];
-
 const TOOLS_PILE_TONES = [
   { tone: '#F6EFDC', dot: '#C5A059' },
   { tone: '#E7F4F4', dot: '#4D8586' },
@@ -8404,26 +8669,54 @@ type ToolsFieldSlot = {
   delay: number;
   toneIndex: number;
   inFront: boolean;
-  rowHaptic: boolean;
+  fromX: number;
+  fromY: number;
+  floatX: number;
+  floatY: number;
+  floatRotate: number;
+  floatDuration: number;
 };
 
-// Final resting rotation per chip: most lie roughly flat, some diagonal, a
-// few perfectly upright, a couple upside down - nothing falls into a perfect
-// pose when it drops from the sky.
-function toolsChipRotation(index: number) {
-  const sign = index % 2 === 0 ? 1 : -1;
-  const m = index % 20;
-  if (m === 3 || m === 11) return sign * (88 + (index % 3) * 2);
-  if (m === 7) return 180 + sign * (index % 7);
-  if (m === 15) return sign * (58 + (index % 5) * 3);
-  if (m === 5 || m === 13 || m === 17) return sign * (20 + (index % 4) * 5);
-  return (((index * 5) % 11) - 5) * 1.7;
-}
+const TOOLS_FIELD_PATTERN = [
+  { label: 'Scripture', x: 0.18, anchor: 'top', offset: -220, rotate: -6 },
+  { label: 'Jesus Prayer', x: 0.25, anchor: 'bottom', offset: 45, rotate: 5 },
+  { label: 'Habits', x: 0.76, anchor: 'top', offset: -220, rotate: 7 },
+  { label: 'Bible', x: 0.62, anchor: 'bottom', offset: 45, rotate: -4 },
+  { label: 'Prayer Book', x: 0.28, anchor: 'top', offset: -182, rotate: 3 },
+  { label: 'Notes', x: 0.88, anchor: 'bottom', offset: 45, rotate: -5 },
+  { label: 'Screen Time', x: 0.72, anchor: 'top', offset: -182, rotate: -5 },
+  { label: 'Highlights', x: 0.25, anchor: 'bottom', offset: 82, rotate: 4 },
+  { label: 'Daily Journal', x: 0.24, anchor: 'top', offset: -144, rotate: 5 },
+  { label: 'Routines', x: 0.68, anchor: 'bottom', offset: 82, rotate: -5 },
+  { label: 'Bible Notes', x: 0.75, anchor: 'top', offset: -144, rotate: -8 },
+  { label: 'Monthly Goals', x: 0.26, anchor: 'bottom', offset: 119, rotate: -4 },
+  { label: 'App Blocker', x: 0.18, anchor: 'top', offset: -107, rotate: -7 },
+  { label: 'Spiritual Tasks', x: 0.74, anchor: 'bottom', offset: 119, rotate: 5 },
+  { label: 'Gratitude', x: 0.50, anchor: 'top', offset: -107, rotate: 4 },
+  { label: 'Big Events', x: 0.22, anchor: 'bottom', offset: 156, rotate: -6 },
+  { label: 'Pomodoro', x: 0.83, anchor: 'top', offset: -107, rotate: 6 },
+  { label: 'Challenges', x: 0.67, anchor: 'bottom', offset: 156, rotate: 6 },
+  { label: 'Reading List', x: 0.25, anchor: 'top', offset: -69, rotate: -4 },
+  { label: 'Content Blocker', x: 0.27, anchor: 'bottom', offset: 193, rotate: 7 },
+  { label: 'Focus Zone', x: 0.73, anchor: 'top', offset: -69, rotate: 5 },
+  { label: 'Bucket List', x: 0.76, anchor: 'bottom', offset: 193, rotate: 6 },
+  { label: 'Prayer Rules', x: 0.25, anchor: 'top', offset: -31, rotate: -4 },
+  { label: 'Quick Tasks', x: 0.25, anchor: 'bottom', offset: 230, rotate: -5 },
+  { label: 'Favorites', x: 0.72, anchor: 'top', offset: -31, rotate: -8 },
+  { label: 'Task Manager', x: 0.74, anchor: 'bottom', offset: 230, rotate: -6 },
+  { label: 'Year in Pixels', x: 0.50, anchor: 'bottom', offset: 267, rotate: 5 },
+] as const;
 
-// Organic scatter packing: chips are placed one by one from the bottom of the
-// screen upward, each at the first spot where its rotated footprint doesn't
-// collide with already placed chips or the central message box. With enough
-// chips the whole screen ends up densely covered.
+const TOOLS_TAG_ENTRANCE_DURATION = 1060;
+
+const TOOLS_SUBTITLE_SEGMENTS = [
+  { text: 'But a tool is only worth ', accent: false },
+  { text: 'what it adds', accent: true },
+  { text: ' to ', accent: false },
+  { text: 'your life!', accent: true },
+] as const;
+const TOOLS_SUBTITLE_TEXT = TOOLS_SUBTITLE_SEGMENTS.map(segment => segment.text).join('');
+
 function buildToolsField(
   width: number,
   fieldTop: number,
@@ -8431,84 +8724,61 @@ function buildToolsField(
   box: { left: number; top: number; right: number; bottom: number },
   chipHeight: number,
 ): { slots: ToolsFieldSlot[] } {
-  const margin = 6;
-  const estimate = (label: string) => Math.round(label.length * 6.9) + 40;
-  const placed: { cx: number; cy: number; fw: number; fh: number }[] = [];
-  const slots: ToolsFieldSlot[] = [];
-
-  TOOLS_FIELD_LABELS.forEach((label, index) => {
+  const margin = 8;
+  const estimate = (label: string) => Math.max(90, Math.round(label.length * 7.2) + 56);
+  const boxMid = (box.top + box.bottom) / 2;
+  const slots = TOOLS_FIELD_PATTERN.map((pattern, index) => {
+    const label = pattern.label;
     const estWidth = estimate(label);
-    const rotate = toolsChipRotation(index);
-    const rad = (Math.abs(rotate) * Math.PI) / 180;
-    const fw = Math.abs(Math.cos(rad)) * estWidth + Math.abs(Math.sin(rad)) * chipHeight;
-    const fh = Math.abs(Math.sin(rad)) * estWidth + Math.abs(Math.cos(rad)) * chipHeight;
+    const desiredX = pattern.x * width;
+    const desiredY = pattern.anchor === 'top'
+      ? box.top + pattern.offset
+      : box.bottom + pattern.offset;
+    const cx = Math.max(margin + estWidth / 2, Math.min(width - margin - estWidth / 2, desiredX));
+    const cy = Math.max(fieldTop + chipHeight / 2, Math.min(fieldBottom - chipHeight / 2, desiredY));
+    const fromSide = pattern.x < 0.28 ? -1 : pattern.x > 0.72 ? 1 : 0;
+    const fromX = fromSide * (42 + (index % 3) * 18);
+    const fromY = cy < boxMid ? -(74 + (index % 4) * 18) : (68 + (index % 4) * 17);
 
-    const xMin = margin + fw / 2;
-    const xMax = width - margin - fw / 2;
-    const xCandidates: number[] = [];
-    for (let x = xMin; x <= xMax; x += 11) xCandidates.push(x);
-    const shift = (index * 5) % Math.max(1, xCandidates.length);
-    const xs = [...xCandidates.slice(shift), ...xCandidates.slice(0, shift)];
-
-    let bestX = width / 2;
-    let bestY = fieldTop + fh / 2;
-    let found = false;
-    for (let pass = 0; pass < 2 && !found; pass += 1) {
-      const squeeze = pass === 0 ? 3 : -5;
-      for (let cy = fieldBottom - fh / 2; cy - fh / 2 >= fieldTop && !found; cy -= 7) {
-        for (const cx of xs) {
-          let collides = false;
-          for (const other of placed) {
-            if (
-              Math.abs(cx - other.cx) < (fw + other.fw) / 2 + squeeze &&
-              Math.abs(cy - other.cy) < (fh + other.fh) / 2 + squeeze
-            ) {
-              collides = true;
-              break;
-            }
-          }
-          if (collides) continue;
-          if (
-            cx + fw / 2 > box.left &&
-            cx - fw / 2 < box.right &&
-            cy + fh / 2 > box.top &&
-            cy - fh / 2 < box.bottom
-          ) {
-            continue;
-          }
-          bestX = cx;
-          bestY = cy;
-          found = true;
-          break;
-        }
-      }
-    }
-    if (!found) return;
-
-    placed.push({ cx: bestX, cy: bestY, fw, fh });
-    slots.push({
+    return {
       label,
       estWidth,
-      cx: bestX,
-      cy: bestY,
-      rotate,
+      cx,
+      cy,
+      rotate: pattern.rotate,
       tumble: (index % 2 === 0 ? 1 : -1) * (46 + (index % 4) * 22),
-      delay: 0,
+      delay: 260 + Math.floor(index / 3) * 170 + (index % 3) * 70,
       toneIndex: index % TOOLS_PILE_TONES.length,
       inFront: false,
-      rowHaptic: false,
-    });
-  });
-
-  // Rhythmic drop order: lowest chips first, in overlapping bursts.
-  const ordered = slots.slice().sort((a, b) => b.cy - a.cy);
-  ordered.forEach((slot, index) => {
-    const group = Math.floor(index / 4);
-    slot.delay = 520 + group * 170 + (index % 4) * 60;
-    slot.rowHaptic = index % 4 === 0;
+      fromX,
+      fromY,
+      floatX: (((index * 7) % 11) - 5) * 0.9,
+      floatY: (index % 2 === 0 ? -1 : 1) * (4.5 + (index % 4) * 1.6),
+      floatRotate: (index % 2 === 0 ? 1 : -1) * (1.2 + (index % 3) * 0.45),
+      floatDuration: 2100 + (index % 5) * 230,
+    };
   });
 
   return { slots };
+}
+
+function toolsTagIcon(label: string, color: string) {
+  const common = { s: 15, c: color, w: 1.9 };
+  if (label.includes('Bible') || label === 'Scripture') return <OpenBook {...common} />;
+  if (label === 'Reading List') return <Book {...common} />;
+  if (label.includes('Prayer') || label === 'Jesus Prayer') return <Candle {...common} />;
+  if (label.includes('Journal')) return <Pencil {...common} />;
+  if (label === 'Notes' || label === 'Bible Notes') return <Feather {...common} />;
+  if (label === 'Bucket List') return <Crown {...common} />;
+  if (label.includes('Task') || label === 'Routines' || label === 'Habits') return <ListChecks {...common} />;
+  if (label.includes('Goals') || label === 'Challenges' || label.includes('Focus')) return <Target {...common} />;
+  if (label.includes('Screen') || label === 'Pomodoro') return <Clock {...common} />;
+  if (label.includes('Blocker')) return <SlidersHorizontal {...common} />;
+  if (label === 'Favorites') return <BookMarked {...common} />;
+  if (label === 'Big Events') return <Calendar {...common} />;
+  if (label === 'Gratitude') return <Heart {...common} />;
+  if (label === 'Year in Pixels') return <Sparkles {...common} />;
+  return <Notebook {...common} />;
 }
 
 function ToolsFieldChip({
@@ -8520,39 +8790,44 @@ function ToolsFieldChip({
   chipHeight: number;
   isLastChip: boolean;
 }) {
-  const drop = useSharedValue(0);
-  const settle = useSharedValue(0);
+  const entrance = useSharedValue(0);
+  const float = useSharedValue(0);
   const tone = TOOLS_PILE_TONES[slot.toneIndex];
-  const fallFrom = -(slot.cy + chipHeight + 60);
 
   const land = useCallback(() => {
-    if (slot.rowHaptic) runTypingHaptic();
     if (isLastChip) runBubbleHaptic();
-  }, [isLastChip, slot.rowHaptic]);
+  }, [isLastChip]);
 
   useEffect(() => {
-    drop.value = 0;
-    settle.value = 0;
-    drop.value = withDelay(
+    entrance.value = 0;
+    float.value = 0;
+    entrance.value = withDelay(
       slot.delay,
-      withTiming(1, { duration: 520, easing: Easing.in(Easing.quad) }, finished => {
+      withTiming(1, { duration: TOOLS_TAG_ENTRANCE_DURATION, easing: Easing.bezier(0.16, 1, 0.28, 1) }, finished => {
         if (!finished) return;
-        settle.value = withSequence(
-          withTiming(1, { duration: 95, easing: Easing.out(Easing.quad) }),
-          withSpring(0, { damping: 12, stiffness: 320, mass: 0.7 }),
-        );
         runOnJS(land)();
       }),
     );
-  }, [drop, land, settle, slot.delay]);
+    float.value = withDelay(
+      slot.delay + 980,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: slot.floatDuration, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0, { duration: slot.floatDuration, easing: Easing.inOut(Easing.sin) }),
+        ),
+        -1,
+        false,
+      ),
+    );
+  }, [entrance, float, land, slot.delay, slot.floatDuration]);
 
   const chipStyle = useAnimatedStyle(() => ({
-    opacity: drop.value > 0.01 ? 1 : 0,
+    opacity: interpolate(entrance.value, [0, 0.24, 1], [0, 1, 1]),
     transform: [
-      { translateY: interpolate(drop.value, [0, 1], [fallFrom, 0]) - settle.value * 9 },
-      { scaleX: 1 + settle.value * 0.05 },
-      { scaleY: 1 - settle.value * 0.07 },
-      { rotate: `${interpolate(drop.value, [0, 1], [slot.rotate + slot.tumble, slot.rotate])}deg` },
+      { translateX: interpolate(entrance.value, [0, 1], [slot.fromX, 0]) + interpolate(float.value, [0, 1], [0, slot.floatX]) },
+      { translateY: interpolate(entrance.value, [0, 1], [slot.fromY, 0]) + interpolate(float.value, [0, 1], [0, slot.floatY]) },
+      { scale: interpolate(entrance.value, [0, 0.72, 1], [0.78, 1.04, 1]) },
+      { rotate: `${interpolate(entrance.value, [0, 1], [slot.rotate + slot.tumble, slot.rotate]) + interpolate(float.value, [0, 1], [0, slot.floatRotate])}deg` },
     ],
   }));
 
@@ -8570,10 +8845,57 @@ function ToolsFieldChip({
       ]}
     >
       <View style={[s.toolsTagChip, { backgroundColor: tone.tone, height: chipHeight, minWidth: slot.estWidth }]}>
-        <View style={[s.toolsTagDot, { backgroundColor: tone.dot }]} />
+        <View style={s.toolsTagIconShell}>
+          {toolsTagIcon(slot.label, tone.dot)}
+        </View>
         <Text style={s.toolsTagText} numberOfLines={1}>{slot.label}</Text>
       </View>
     </Reanimated.View>
+  );
+}
+
+function ToolsTypedSubtitle({ delay = 520 }: { delay?: number }) {
+  const [typedCount, setTypedCount] = useState(0);
+
+  useEffect(() => {
+    setTypedCount(0);
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const startTimer = setTimeout(() => {
+      let next = 0;
+      interval = setInterval(() => {
+        next += 1;
+        setTypedCount(Math.min(next, TOOLS_SUBTITLE_TEXT.length));
+        if (next % 4 === 0) runTypingHaptic();
+        if (next >= TOOLS_SUBTITLE_TEXT.length && interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      }, 18);
+    }, delay);
+
+    return () => {
+      clearTimeout(startTimer);
+      if (interval) clearInterval(interval);
+    };
+  }, [delay]);
+
+  let remaining = typedCount;
+
+  return (
+    <Text style={s.toolsSubtitleWord}>
+      {TOOLS_SUBTITLE_SEGMENTS.map(segment => {
+        const take = Math.max(0, Math.min(segment.text.length, remaining));
+        remaining -= take;
+        if (take <= 0) return null;
+        const text = segment.text.slice(0, take);
+        return (
+          <Text key={segment.text} style={segment.accent ? s.toolsSubtitleWordAccent : undefined}>
+            {text}
+          </Text>
+        );
+      })}
+      {typedCount < TOOLS_SUBTITLE_TEXT.length ? <Text style={s.toolsSubtitleCaret}>|</Text> : null}
+    </Text>
   );
 }
 
@@ -8590,12 +8912,15 @@ function ToolsShowcaseSlide({
   const { width, height } = useWindowDimensions();
   const compact = height < 760;
   const [titleUnderlineWidth, setTitleUnderlineWidth] = useState(150);
-  const chipHeight = compact ? 31 : 34;
-  const fieldTop = 8;
-  const fieldBottom = height - bottomInset - 80;
-  const boxWidth = Math.min(width - 56, 336);
-  const boxHeight = compact ? 196 : 218;
-  const boxCy = (topInset + fieldBottom) / 2;
+  const [subtitleReady, setSubtitleReady] = useState(false);
+  const boxExpand = useSharedValue(0);
+  const chipHeight = compact ? 37 : 41;
+  const fieldTop = topInset + 6;
+  const fieldBottom = height - bottomInset - 76;
+  const boxWidth = Math.min(width - 50, 342);
+  const boxHeight = compact ? 214 : 224;
+  const titleOnlyBoxHeight = compact ? 138 : 148;
+  const boxCy = (topInset + fieldBottom) / 2 - (compact ? 0 : 4);
   const box = useMemo(() => ({
     left: width / 2 - boxWidth / 2 - 8,
     right: width / 2 + boxWidth / 2 + 8,
@@ -8604,13 +8929,47 @@ function ToolsShowcaseSlide({
   }), [boxCy, boxHeight, boxWidth, width]);
   const { slots } = useMemo(
     () => buildToolsField(width, fieldTop, fieldBottom, box, chipHeight),
-    [box, chipHeight, fieldBottom, width],
+    [box, chipHeight, fieldBottom, fieldTop, width],
   );
   const lastDelay = slots.reduce((max, slot) => Math.max(max, slot.delay), 0);
-  const ctaDelay = lastDelay + 800;
+  const subtitleRevealDelay = lastDelay + TOOLS_TAG_ENTRANCE_DURATION + 260;
+  const subtitleTypingDelay = 260;
+  const ctaDelay = subtitleRevealDelay + subtitleTypingDelay + TOOLS_SUBTITLE_TEXT.length * 18 + 720;
+
+  useEffect(() => {
+    setSubtitleReady(false);
+    boxExpand.value = 0;
+    boxExpand.value = withDelay(
+      subtitleRevealDelay,
+      withTiming(1, { duration: 620, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+    );
+    const readyTimer = setTimeout(() => {
+      setSubtitleReady(true);
+    }, subtitleRevealDelay + 300);
+
+    return () => clearTimeout(readyTimer);
+  }, [boxExpand, subtitleRevealDelay]);
+
+  const messageBoxStyle = useAnimatedStyle(() => ({
+    height: interpolate(boxExpand.value, [0, 1], [titleOnlyBoxHeight, boxHeight]),
+    top: interpolate(boxExpand.value, [0, 1], [boxCy - titleOnlyBoxHeight / 2, boxCy - boxHeight / 2]),
+  }));
 
   return (
-    <View style={s.toolsShowcaseRoot}>
+    <LinearGradient
+      colors={['#FFFDF8', '#FFFDF8', '#F6EBD9', '#E3C894']}
+      locations={[0, 0.48, 0.84, 1]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={s.toolsShowcaseRoot}
+    >
+      <View pointerEvents="none" style={s.valueBackdrop}>
+        <View style={s.valueBackdropBandTop} />
+        <View style={s.valueBackdropBandBottom} />
+        <View style={s.valueBackdropLineOne} />
+        <View style={s.valueBackdropLineTwo} />
+      </View>
+
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
         {slots.map(slot => (
           <ToolsFieldChip
@@ -8631,10 +8990,9 @@ function ToolsShowcaseSlide({
           s.toolsMessageBox,
           {
             width: boxWidth,
-            minHeight: boxHeight,
             left: width / 2 - boxWidth / 2,
-            top: boxCy - boxHeight / 2,
           },
+          messageBoxStyle,
         ]}
       >
         <View pointerEvents="none" style={s.toolsMessageBoxFrame} />
@@ -8655,24 +9013,24 @@ function ToolsShowcaseSlide({
           Anasta has a lot of tools!
         </Text>
         <View style={[s.valueTitleUnderline, { width: titleUnderlineWidth, alignSelf: 'center' }]} />
-        <View style={s.toolsSubtitleFrame}>
-          <View style={s.valueSubtitleLine}>
-            <Text style={s.toolsSubtitleWord}>But</Text>
-            <Text style={s.toolsSubtitleWord}>a</Text>
-            <Text style={s.toolsSubtitleWord}>tool</Text>
-            <Text style={s.toolsSubtitleWord}>is</Text>
-            <Text style={s.toolsSubtitleWord}>only</Text>
-            <Text style={s.toolsSubtitleWord}>worth</Text>
-            <Text style={[s.toolsSubtitleWord, s.toolsSubtitleWordAccent]}>what it adds</Text>
-            <Text style={s.toolsSubtitleWord}>to</Text>
-            <Text style={[s.toolsSubtitleWord, s.toolsSubtitleWordAccent]}>your life.</Text>
-          </View>
-        </View>
-        <View style={s.toolsMessageOrnament}>
-          <View style={s.toolsMessageOrnamentLine} />
-          <View style={s.toolsMessageOrnamentDot} />
-          <View style={s.toolsMessageOrnamentLine} />
-        </View>
+        {subtitleReady ? (
+          <Reanimated.View
+            entering={FadeIn.delay(40).duration(460).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 12 }, { scale: 0.96 }],
+            })}
+            style={s.toolsSubtitleReveal}
+          >
+            <View style={s.toolsSubtitleFrame}>
+              <ToolsTypedSubtitle delay={subtitleTypingDelay} />
+            </View>
+            <View style={s.toolsMessageOrnament}>
+              <View style={s.toolsMessageOrnamentLine} />
+              <View style={s.toolsMessageOrnamentDot} />
+              <View style={s.toolsMessageOrnamentLine} />
+            </View>
+          </Reanimated.View>
+        ) : null}
       </Reanimated.View>
 
       <View style={s.toolsShowcaseSpacer} />
@@ -8685,7 +9043,7 @@ function ToolsShowcaseSlide({
           </TouchableOpacity>
         </View>
       </AnimatedCta>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -9881,6 +10239,85 @@ const PROTECT_RECAP_WINS: Record<string, string> = {
   'presence': 'Present where it matters',
 };
 
+type RecapProblemGroup = {
+  id: string;
+  title: string;
+  subtitle: string;
+  cardIds: string[];
+  accent: string;
+  icon: React.ReactNode;
+};
+
+const PROTECT_RECAP_GROUPS: RecapProblemGroup[] = [
+  {
+    id: 'screen-time',
+    title: 'Screen Time Protection',
+    subtitle: 'Limits, morning blocks, evening blocks',
+    cardIds: ['lost-hour', 'morning-night', 'procrastination'],
+    accent: '#4D8586',
+    icon: <Clock s={16} c="#4D8586" w={2} />,
+  },
+  {
+    id: 'focus',
+    title: 'Do Not Disturb',
+    subtitle: 'Quiet windows for focus and presence',
+    cardIds: ['focus-pulled', 'presence'],
+    accent: '#4D8586',
+    icon: <BellRing s={16} c="#4D8586" w={2} />,
+  },
+  {
+    id: 'blockers',
+    title: 'Content Blocker',
+    subtitle: 'Block what pulls you in',
+    cardIds: ['ashamed-content'],
+    accent: '#4D8586',
+    icon: <SlidersHorizontal s={16} c="#4D8586" w={2} />,
+  },
+];
+
+const ORGANIZE_RECAP_GROUPS: RecapProblemGroup[] = [
+  {
+    id: 'routine',
+    title: 'Weekly View + Routine',
+    subtitle: 'A rhythm for your days',
+    cardIds: ['anxious-start', 'wasted-day', 'forgot-promise'],
+    accent: '#4D8586',
+    icon: <Calendar s={16} c="#4D8586" w={2} />,
+  },
+  {
+    id: 'events-goals',
+    title: 'Big Events + Monthly Goals',
+    subtitle: 'Important moments and monthly direction',
+    cardIds: ['last-minute', 'plan-day', 'goals-give-up'],
+    accent: '#4D8586',
+    icon: <Target s={16} c="#4D8586" w={2} />,
+  },
+  {
+    id: 'habits',
+    title: 'Habits + Challenges',
+    subtitle: 'Discipline that does not disappear',
+    cardIds: ['habits-quit', 'no-rhythm'],
+    accent: '#4D8586',
+    icon: <ListChecks s={16} c="#4D8586" w={2} />,
+  },
+  {
+    id: 'spiritual',
+    title: 'Spiritual Tasks',
+    subtitle: 'Prayer and Scripture built into the day',
+    cardIds: ['pray-daily', 'scripture-time'],
+    accent: GOLD,
+    icon: <Cross s={16} c={GOLD} w={2} />,
+  },
+  {
+    id: 'full-system',
+    title: 'Full System',
+    subtitle: 'Everything working together',
+    cardIds: ['intentional-time'],
+    accent: '#4D8586',
+    icon: <Sparkles s={16} c="#4D8586" w={2} />,
+  },
+];
+
 const STATEMENT_SHORT_LABELS: Record<string, string> = {
   'lost-hour': 'Hours lost to mindless scrolling',
   'morning-night': 'Phone first thing in the morning, last at night',
@@ -9931,57 +10368,180 @@ function V4RecapStakesCard({ stat }: { stat: ReturnType<typeof protectStats> }) 
   );
 }
 
-function V4RecapProblemRow({
+function V4RecapProblemCard({
   card,
   active,
   accent,
+  width,
   delay,
+  index,
 }: {
   card: StatementDeckCard;
   active: boolean;
   accent: string;
+  width: number;
   delay: number;
+  index: number;
 }) {
   const cardAccent = statementCardAccent(card, accent);
+  const cardHeight = Math.round(width * 1.34);
+  const inactive = !active;
+  const tilt = index % 3 === 0 ? '-1.5deg' : index % 3 === 1 ? '1.25deg' : '-0.35deg';
 
   useEffect(() => {
     if (!active) return undefined;
-    const timer = setTimeout(runSelectionHaptic, delay + 160);
+    const timer = setTimeout(runSelectionHaptic, delay + 170);
     return () => clearTimeout(timer);
   }, [active, delay]);
 
   return (
     <Reanimated.View
-      entering={FadeIn.delay(delay).duration(400).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+      entering={FadeIn.delay(delay).duration(430).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
         opacity: 0,
-        transform: [{ translateY: 14 }, { scale: 0.97 }],
+        transform: [{ translateY: 18 }, { scale: 0.94 }],
       })}
       style={[
-        s.v4RecapRow,
+        s.v4RecapProblemCard,
+        {
+          width,
+          height: cardHeight,
+          transform: [{ rotate: tilt }],
+        },
         active
-          ? { borderColor: `${cardAccent}52`, backgroundColor: `${cardAccent}12` }
-          : s.v4RecapRowInactive,
+          ? { borderColor: `${cardAccent}66`, shadowColor: cardAccent }
+          : s.v4RecapProblemCardInactive,
       ]}
     >
-      <View style={[s.v4RecapRowIcon, active ? { backgroundColor: `${cardAccent}1E` } : s.v4RecapRowIconInactive]}>
-        {card.icon}
+      <View style={s.v4RecapProblemImageWrap}>
+        {card.image ? (
+          <Image
+            source={card.image}
+            style={[s.v4RecapProblemImage, inactive && s.v4RecapProblemImageInactive]}
+            resizeMode="cover"
+            resizeMethod="scale"
+          />
+        ) : (
+          <View style={[s.v4RecapProblemFallback, { backgroundColor: `${cardAccent}18` }]}>{card.icon}</View>
+        )}
+        {inactive ? <View pointerEvents="none" style={s.v4RecapProblemMutedOverlay} /> : null}
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(13,16,16,0)', 'rgba(13,16,16,0.76)', 'rgba(13,16,16,0.92)']}
+          locations={[0, 0.48, 1]}
+          style={s.v4RecapProblemLabelFade}
+        />
       </View>
-      <Text
-        numberOfLines={2}
-        style={[s.v4RecapRowText, !active && s.v4RecapRowTextInactive]}
-      >
-        {STATEMENT_SHORT_LABELS[card.id] ?? card.statement}
-      </Text>
-      {active ? (
-        <View style={[s.v4RecapRowBadge, { backgroundColor: cardAccent }]}>
-          <CheckSmall s={13} c="#FFFFFF" w={2.8} />
-        </View>
-      ) : (
-        <View style={[s.v4RecapRowBadge, s.v4RecapRowBadgeInactive]}>
-          <X s={11} c="rgba(25,23,20,0.32)" w={2.4} />
-        </View>
-      )}
+
+      <View style={s.v4RecapProblemLabelWrap}>
+        <Text numberOfLines={2} style={[s.v4RecapProblemLabel, inactive && s.v4RecapProblemLabelInactive]}>
+          {STATEMENT_SHORT_LABELS[card.id] ?? card.statement}
+        </Text>
+      </View>
+
+      <View style={[s.v4RecapProblemMark, active ? { borderColor: `${cardAccent}AA`, backgroundColor: '#FDFBF4' } : s.v4RecapProblemMarkInactive]}>
+        {active ? (
+          <CheckSmall s={18} c={cardAccent} w={3} />
+        ) : (
+          <>
+            <View style={s.v4RecapProblemSlashCircle} />
+            <View style={s.v4RecapProblemSlashLine} />
+          </>
+        )}
+      </View>
     </Reanimated.View>
+  );
+}
+
+function V4RecapProblemGroup({
+  group,
+  cards,
+  selected,
+  accent,
+  cardWidth,
+  delay,
+}: {
+  group: RecapProblemGroup;
+  cards: StatementDeckCard[];
+  selected: string[];
+  accent: string;
+  cardWidth: number;
+  delay: number;
+}) {
+  const groupCards = group.cardIds
+    .map(id => cards.find(card => card.id === id))
+    .filter((card): card is StatementDeckCard => Boolean(card));
+  const activeCount = groupCards.filter(card => selected.includes(card.id)).length;
+
+  if (groupCards.length === 0) return null;
+
+  return (
+    <Reanimated.View
+      entering={FadeIn.delay(delay).duration(420).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 14 }],
+      })}
+      style={s.v4RecapProblemGroup}
+    >
+      <View style={s.v4RecapGroupHeader}>
+        <View style={[s.v4RecapGroupIcon, { backgroundColor: `${group.accent}14`, borderColor: `${group.accent}2E` }]}>
+          {group.icon}
+        </View>
+        <View style={s.v4RecapGroupCopy}>
+          <Text style={s.v4RecapGroupTitle}>{group.title}</Text>
+          <Text style={s.v4RecapGroupSubtitle}>{group.subtitle}</Text>
+        </View>
+        <View style={[s.v4RecapGroupCount, activeCount > 0 && { backgroundColor: `${group.accent}18`, borderColor: `${group.accent}44` }]}>
+          <Text style={[s.v4RecapGroupCountText, activeCount > 0 && { color: group.accent }]}>{activeCount}/{groupCards.length}</Text>
+        </View>
+      </View>
+
+      <View style={s.v4RecapProblemCards}>
+        {groupCards.map((card, index) => (
+          <V4RecapProblemCard
+            key={card.id}
+            card={card}
+            active={selected.includes(card.id)}
+            accent={accent}
+            width={cardWidth}
+            delay={delay + 130 + index * 90}
+            index={index}
+          />
+        ))}
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function V4RecapProblemBoard({
+  groups,
+  cards,
+  selected,
+  accent,
+  delay,
+}: {
+  groups: RecapProblemGroup[];
+  cards: StatementDeckCard[];
+  selected: string[];
+  accent: string;
+  delay: number;
+}) {
+  const { width } = useWindowDimensions();
+  const cardWidth = Math.min(126, Math.max(96, (Math.min(width, 430) - 74) / 3));
+
+  return (
+    <View style={s.v4RecapProblemBoard}>
+      {groups.map((group, index) => (
+        <V4RecapProblemGroup
+          key={group.id}
+          group={group}
+          cards={cards}
+          selected={selected}
+          accent={accent}
+          cardWidth={cardWidth}
+          delay={delay + index * 170}
+        />
+      ))}
+    </View>
   );
 }
 
@@ -9991,6 +10551,7 @@ function V4RecapSlide({
   cards,
   selected,
   accent,
+  groups,
   hours,
   onNext,
 }: {
@@ -9999,13 +10560,14 @@ function V4RecapSlide({
   cards: StatementDeckCard[];
   selected: string[];
   accent: string;
+  groups: RecapProblemGroup[];
   hours?: number;
   onNext: () => void;
 }) {
   const stat = hours !== undefined ? protectStats(hours) : null;
   const activeCount = cards.filter(card => selected.includes(card.id)).length;
-  const rowBaseDelay = stat ? 760 : 420;
-  const promptDelay = rowBaseDelay + cards.length * 110 + 260;
+  const boardBaseDelay = stat ? 760 : 420;
+  const promptDelay = boardBaseDelay + groups.length * 260 + 620;
 
   return (
     <View style={s.v4RecapSlide}>
@@ -10022,17 +10584,13 @@ function V4RecapSlide({
 
         {stat ? <V4RecapStakesCard stat={stat} /> : null}
 
-        <View style={s.v4RecapList}>
-          {cards.map((card, index) => (
-            <V4RecapProblemRow
-              key={card.id}
-              card={card}
-              active={selected.includes(card.id)}
-              accent={accent}
-              delay={rowBaseDelay + index * 110}
-            />
-          ))}
-        </View>
+        <V4RecapProblemBoard
+          groups={groups}
+          cards={cards}
+          selected={selected}
+          accent={accent}
+          delay={boardBaseDelay}
+        />
 
         <ProtectSidePrompt
           delay={promptDelay}
@@ -11058,6 +11616,7 @@ export default function OnboardingView() {
           cards={PROTECT_DECK_CARDS}
           selected={answers.confirmedProtectProblems ?? []}
           accent="#4D8586"
+          groups={PROTECT_RECAP_GROUPS}
           hours={answers.screenTimeHours}
           onNext={goNext}
         />
@@ -11091,6 +11650,7 @@ export default function OnboardingView() {
           cards={ORGANIZE_DECK_CARDS}
           selected={answers.confirmedOrganizeProblems ?? []}
           accent="#4D8586"
+          groups={ORGANIZE_RECAP_GROUPS}
           onNext={() => {
             if ((answers.confirmedOrganizeProblems ?? []).length > 0) {
               beginGuidedSetup({
@@ -11706,6 +12266,245 @@ const s = StyleSheet.create({
     marginTop: 14,
     rowGap: 8,
   },
+  valueDisciplineVisual: {
+    width: '93%',
+    maxWidth: 374,
+    alignItems: 'center',
+    paddingTop: 34,
+    rowGap: 1,
+    overflow: 'visible',
+  },
+  valueDisciplineFeatureRow: {
+    width: '100%',
+    minHeight: 84,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'visible',
+  },
+  valueDisciplineFeatureRowReverse: {
+    flexDirection: 'row-reverse',
+  },
+  valueDisciplineArtSlot: {
+    width: 94,
+    height: 86,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+    zIndex: 20,
+    elevation: 20,
+  },
+  valueDisciplineArtFloat: {
+    width: 130,
+    height: 104,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+    zIndex: 20,
+    elevation: 20,
+  },
+  valueDisciplineArtSpiritual: {
+    width: 136,
+    height: 108,
+    transform: [{ translateX: -3 }],
+  },
+  valueDisciplineArtDaily: {
+    width: 118,
+    height: 100,
+    transform: [{ translateX: -4 }, { rotate: '-2deg' }],
+  },
+  valueDisciplineArtHabits: {
+    width: 132,
+    height: 110,
+    transform: [{ translateX: -2 }],
+  },
+  valueDisciplineArtFocus: {
+    width: 118,
+    height: 100,
+    transform: [{ translateX: -3 }],
+  },
+  valueDisciplineArtGrowth: {
+    width: 130,
+    height: 108,
+    transform: [{ translateX: -2 }],
+  },
+  valueDisciplineSticker: {
+    width: '100%',
+    height: '100%',
+  },
+  valueDisciplineTextCard: {
+    flex: 1,
+    minHeight: 74,
+    paddingVertical: 8,
+    borderRadius: 19,
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,253,248,0.97)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+    elevation: 1,
+    zIndex: 1,
+  },
+  valueDisciplineTextCardForward: {
+    marginLeft: -15,
+    paddingLeft: 24,
+    paddingRight: 13,
+  },
+  valueDisciplineTextCardReverse: {
+    marginRight: -15,
+    paddingLeft: 13,
+    paddingRight: 24,
+  },
+  valueDisciplineTextSpiritual: {
+    borderColor: 'rgba(197,160,89,0.26)',
+  },
+  valueDisciplineTextDaily: {
+    borderColor: 'rgba(77,133,134,0.21)',
+  },
+  valueDisciplineTextHabits: {
+    borderColor: 'rgba(133,151,91,0.24)',
+  },
+  valueDisciplineTextFocus: {
+    borderColor: 'rgba(143,93,108,0.22)',
+  },
+  valueDisciplineTextGrowth: {
+    borderColor: 'rgba(126,109,165,0.22)',
+  },
+  valueDisciplinePaintWash: {
+    position: 'absolute',
+    right: -22,
+    top: -18,
+    width: 112,
+    height: 82,
+    borderRadius: 58,
+    opacity: 0.56,
+    transform: [{ rotate: '-10deg' }],
+  },
+  valueDisciplinePaintWashAlt: {
+    position: 'absolute',
+    left: -34,
+    bottom: -32,
+    width: 118,
+    height: 82,
+    borderRadius: 62,
+    opacity: 0.48,
+    transform: [{ rotate: '10deg' }],
+  },
+  valueDisciplinePaintBloom: {
+    position: 'absolute',
+    right: -38,
+    bottom: -36,
+    width: 148,
+    height: 108,
+    borderRadius: 76,
+    opacity: 0.18,
+    transform: [{ rotate: '8deg' }],
+  },
+  valueDisciplinePaintLeftGlow: {
+    position: 'absolute',
+    left: -28,
+    top: -22,
+    width: 92,
+    height: 88,
+    borderRadius: 48,
+    opacity: 0.28,
+  },
+  valueDisciplinePaintVeil: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 19,
+    opacity: 0.86,
+  },
+  valueDisciplinePaintEdgeBlend: {
+    position: 'absolute',
+    top: 0,
+    right: -16,
+    bottom: 0,
+    width: 138,
+    opacity: 0.88,
+    transform: [{ rotate: '-4deg' }],
+  },
+  valueDisciplinePaintSheen: {
+    position: 'absolute',
+    right: 48,
+    top: -24,
+    width: 42,
+    height: 108,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    opacity: 0.46,
+    transform: [{ rotate: '11deg' }],
+  },
+  valueDisciplinePaperGrain: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.48)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
+  },
+  valueDisciplineCardGlow: {
+    position: 'absolute',
+    top: -30,
+    right: -30,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    opacity: 0.10,
+  },
+  valueDisciplineTextContent: {
+    position: 'relative',
+    zIndex: 2,
+  },
+  valueDisciplineTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 7,
+  },
+  valueDisciplineTitleMark: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    opacity: 0.92,
+  },
+  valueDisciplineFeatureTitle: {
+    flex: 1,
+    fontFamily: F.serifSemiBold,
+    fontSize: 18,
+    lineHeight: 22,
+    color: INK,
+  },
+  valueDisciplineFeatureRule: {
+    width: 74,
+    height: 2,
+    marginTop: 1,
+    marginLeft: 14,
+    borderRadius: 999,
+    opacity: 0.42,
+  },
+  valueDisciplineFeatureBody: {
+    marginTop: 2,
+    fontFamily: F.serifMedium,
+    fontSize: 13.2,
+    lineHeight: 17.2,
+    color: 'rgba(28,25,23,0.72)',
+  },
+  valueDisciplineAccentSpiritual: {
+    backgroundColor: GOLD,
+  },
+  valueDisciplineAccentDaily: {
+    backgroundColor: '#4D8586',
+  },
+  valueDisciplineAccentHabits: {
+    backgroundColor: '#7E985A',
+  },
+  valueDisciplineAccentFocus: {
+    backgroundColor: '#8F5D6C',
+  },
+  valueDisciplineAccentGrowth: {
+    backgroundColor: '#7D6EA6',
+  },
   valueMiniFeatureCard: {
     minHeight: 54,
     width: '100%',
@@ -11735,46 +12534,70 @@ const s = StyleSheet.create({
     elevation: 2,
   },
   valueFocusFeatureCard: {
-    minHeight: 50,
+    minHeight: 58,
     width: '100%',
-    borderRadius: 17,
+    borderRadius: 19,
     paddingHorizontal: 11,
+    paddingVertical: 7,
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 11,
+    columnGap: 9,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.32)',
     shadowColor: '#1C1917',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.11,
     shadowRadius: 18,
-    elevation: 2,
+    elevation: 3,
+  },
+  valueFocusFeatureRail: {
+    position: 'absolute',
+    left: 0,
+    top: 9,
+    bottom: 9,
+    width: 3.5,
+    borderTopRightRadius: 999,
+    borderBottomRightRadius: 999,
+    opacity: 0.95,
   },
   valueFocusFeatureIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 13,
+    width: 40,
+    height: 40,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.055,
+    shadowRadius: 10,
+  },
+  valueFocusFeatureCopy: {
+    flex: 1,
+    minWidth: 0,
   },
   valueFocusFeatureText: {
-    flex: 1,
-    fontFamily: F.serifMedium,
-    fontSize: 15.5,
-    lineHeight: 19,
+    fontFamily: F.serifSemiBold,
+    fontSize: 18,
+    lineHeight: 22,
     color: INK,
   },
+  valueFocusFeatureBody: {
+    marginTop: 0,
+    fontFamily: F.serifMedium,
+    fontSize: 13.2,
+    lineHeight: 17.2,
+    color: 'rgba(28,25,23,0.72)',
+  },
   valueFocusFeatureCheck: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 25,
+    height: 25,
+    borderRadius: 12.5,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(197,160,89,0.13)',
+    backgroundColor: '#FFF5DC',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.30)',
+    borderColor: 'rgba(197,160,89,0.44)',
   },
   valueMiniFeatureIcon: {
     width: 34,
@@ -11801,20 +12624,20 @@ const s = StyleSheet.create({
     width: '100%',
     maxWidth: 376,
     alignItems: 'center',
-    paddingTop: 10,
+    paddingTop: 6,
   },
   valueFocusTagsWrap: {
-    height: 358,
+    height: 320,
     width: '100%',
     overflow: 'visible',
     alignItems: 'center',
     justifyContent: 'center',
-    transform: [{ scale: 0.99 }, { translateY: 0 }],
+    transform: [{ scale: 0.87 }, { translateY: -9 }],
   },
   valueFocusCards: {
     width: '100%',
-    marginTop: 2,
-    rowGap: 2,
+    marginTop: 3,
+    rowGap: 4,
   },
   valueFaithVisual: {
     width: '91%',
@@ -11931,6 +12754,77 @@ const s = StyleSheet.create({
   valueFaithAccentFavorites: {
     backgroundColor: '#17130F',
   },
+  valueFaithPaintWash: {
+    position: 'absolute',
+    right: -22,
+    top: -18,
+    width: 114,
+    height: 84,
+    borderRadius: 60,
+    opacity: 0.56,
+    transform: [{ rotate: '-10deg' }],
+  },
+  valueFaithPaintWashAlt: {
+    position: 'absolute',
+    left: -34,
+    bottom: -32,
+    width: 120,
+    height: 84,
+    borderRadius: 64,
+    opacity: 0.48,
+    transform: [{ rotate: '10deg' }],
+  },
+  valueFaithPaintBloom: {
+    position: 'absolute',
+    right: -38,
+    bottom: -36,
+    width: 148,
+    height: 108,
+    borderRadius: 76,
+    opacity: 0.18,
+    transform: [{ rotate: '8deg' }],
+  },
+  valueFaithPaintLeftGlow: {
+    position: 'absolute',
+    left: -28,
+    top: -22,
+    width: 92,
+    height: 88,
+    borderRadius: 48,
+    opacity: 0.28,
+  },
+  valueFaithPaintVeil: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 20,
+    opacity: 0.86,
+  },
+  valueFaithPaintEdgeBlend: {
+    position: 'absolute',
+    top: 0,
+    right: -16,
+    bottom: 0,
+    width: 138,
+    opacity: 0.88,
+    transform: [{ rotate: '-4deg' }],
+  },
+  valueFaithPaintSheen: {
+    position: 'absolute',
+    right: 48,
+    top: -24,
+    width: 42,
+    height: 108,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    opacity: 0.46,
+    transform: [{ rotate: '11deg' }],
+  },
+  valueFaithPaperGrain: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.48)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
+  },
   valueFaithCardGlow: {
     position: 'absolute',
     top: -28,
@@ -11939,6 +12833,10 @@ const s = StyleSheet.create({
     height: 86,
     borderRadius: 43,
     opacity: 0.10,
+  },
+  valueFaithTextContent: {
+    position: 'relative',
+    zIndex: 2,
   },
   valueFaithTitleRow: {
     flexDirection: 'row',
@@ -11953,8 +12851,8 @@ const s = StyleSheet.create({
   },
   valueFaithFeatureTitle: {
     fontFamily: F.serifSemiBold,
-    fontSize: 19.6,
-    lineHeight: 23,
+    fontSize: 18,
+    lineHeight: 22,
     color: INK,
   },
   valueFaithFeatureRule: {
@@ -11967,73 +12865,9 @@ const s = StyleSheet.create({
   valueFaithFeatureBody: {
     marginTop: 2,
     fontFamily: F.serifMedium,
-    fontSize: 14.4,
-    lineHeight: 18.8,
-    color: 'rgba(25,23,20,0.70)',
-  },
-  valueFaithFavoriteOrb: {
-    width: 96,
-    height: 96,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    rowGap: 2,
-    borderWidth: 1,
-    shadowColor: GOLD,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
-    elevation: 3,
-  },
-  valueFaithFavoriteOrbDark: {
-    backgroundColor: '#17130F',
-    borderColor: 'rgba(232,195,116,0.72)',
-  },
-  valueFaithFreeImageFrame: {
-    width: 176,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: -1,
-    zIndex: 12,
-    elevation: 12,
-  },
-  valueFaithFreeImageSlideSlot: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 16,
-    elevation: 16,
-  },
-  valueFaithFreeImage: {
-    width: '100%',
-    height: '100%',
-  },
-  valueFaithFreeBadge: {
-    minHeight: 44,
-    marginTop: 14,
-    borderRadius: 999,
-    paddingHorizontal: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    columnGap: 8,
-    backgroundColor: '#17130F',
-    borderWidth: 1,
-    borderColor: 'rgba(232,195,116,0.78)',
-    shadowColor: GOLD,
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.24,
-    shadowRadius: 22,
-    elevation: 4,
-  },
-  valueFaithFreeBadgeText: {
-    fontFamily: F.serifSemiBold,
-    fontSize: 17,
-    lineHeight: 21,
-    color: '#F8E8BE',
+    fontSize: 13.2,
+    lineHeight: 17.2,
+    color: 'rgba(28,25,23,0.72)',
   },
   valueFeatureVisual: {
     width: '100%',
@@ -12729,16 +13563,16 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
   valueBigEventCard: {
-    minHeight: 37,
-    borderRadius: 13,
-    paddingLeft: 5.5,
-    paddingRight: 10,
-    paddingVertical: 4,
+    minHeight: 31,
+    borderRadius: 12,
+    paddingLeft: 5,
+    paddingRight: 8,
+    paddingVertical: 3,
     marginHorizontal: -8,
-    marginBottom: 5,
+    marginBottom: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 8,
+    columnGap: 6,
     borderWidth: 1,
     borderColor: '#EDE9E0',
     shadowColor: '#000',
@@ -12748,9 +13582,9 @@ const s = StyleSheet.create({
     elevation: 1,
   },
   valueBigEventIconBox: {
-    width: 26,
-    height: 26,
-    borderRadius: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#BE123C1F',
@@ -12761,8 +13595,8 @@ const s = StyleSheet.create({
   },
   valueBigEventTitle: {
     fontFamily: F.serifMedium,
-    fontSize: 13.5,
-    lineHeight: 15.5,
+    fontSize: 12.2,
+    lineHeight: 14,
     color: INK,
   },
   valueBigEventCount: {
@@ -12773,13 +13607,13 @@ const s = StyleSheet.create({
   },
   valueBigEventCountNum: {
     fontFamily: F.serifSemiBold,
-    fontSize: 15.5,
-    lineHeight: 17,
+    fontSize: 13.2,
+    lineHeight: 15,
     color: '#BE123C',
   },
   valueBigEventCountLabel: {
     fontFamily: F.sansMedium,
-    fontSize: 8,
+    fontSize: 7.2,
     color: '#A8A29E',
   },
   valueHomeSectionTitle: {
@@ -12816,25 +13650,24 @@ const s = StyleSheet.create({
   valueHomeAddBtn: {
     marginTop: 4,
     marginHorizontal: -8,
-    paddingVertical: 6.5,
-    borderRadius: 11,
-    borderWidth: 1.2,
+    padding: 8.2,
+    borderRadius: 12,
+    borderWidth: 1.45,
     borderColor: '#1C1917',
-    backgroundColor: '#FFFFFF',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     columnGap: 5,
     shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 1.5 },
-    shadowOpacity: 0.07,
-    shadowRadius: 4,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 1.4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4.2,
+    elevation: 2,
   },
   valueHomeAddBtnText: {
     fontFamily: F.sansBold,
-    fontSize: 7.4,
-    letterSpacing: 1.7,
+    fontSize: 7.1,
+    letterSpacing: 1.55,
     color: '#1C1917',
     textTransform: 'uppercase',
   },
@@ -13140,6 +13973,9 @@ const s = StyleSheet.create({
     zIndex: 18,
     elevation: 18,
   },
+  valueNavigationLast: {
+    rowGap: 8,
+  },
   valueProgressRail: {
     width: '100%',
     maxWidth: 314,
@@ -13225,6 +14061,10 @@ const s = StyleSheet.create({
     lineHeight: 17,
     letterSpacing: 0,
     color: 'rgba(25,23,20,0.62)',
+  },
+  valueFinalContinue: {
+    width: '100%',
+    alignItems: 'center',
   },
   valueBottomAction: {
     position: 'absolute',
@@ -14270,32 +15110,33 @@ const s = StyleSheet.create({
   toolsShowcaseRoot: {
     flex: 1,
     position: 'relative',
-    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
   },
   toolsTitle: {
-    maxWidth: 340,
+    maxWidth: 330,
     fontFamily: F.serifSemiBold,
-    fontSize: 38,
-    lineHeight: 44,
+    fontSize: 32.5,
+    lineHeight: 37,
     textAlign: 'center',
     color: INK,
   },
   toolsTitleCompact: {
-    fontSize: 33,
-    lineHeight: 39,
+    fontSize: 29,
+    lineHeight: 34,
   },
   toolsSubtitleFrame: {
-    marginTop: 9,
+    marginTop: 8,
     width: '100%',
     maxWidth: 344,
-    paddingHorizontal: 6,
+    paddingHorizontal: 3,
     alignItems: 'center',
   },
   toolsSubtitleWord: {
     fontFamily: F.serifMedium,
-    fontSize: 19.5,
-    lineHeight: 25,
-    color: 'rgba(25,23,20,0.64)',
+    fontSize: 22.8,
+    lineHeight: 28.5,
+    color: 'rgba(25,23,20,0.68)',
+    textAlign: 'center',
   },
   toolsSubtitleWordAccent: {
     fontFamily: F.serifSemiBold,
@@ -14304,22 +15145,32 @@ const s = StyleSheet.create({
     textDecorationColor: GOLD,
     textDecorationStyle: 'solid',
   },
+  toolsSubtitleCaret: {
+    fontFamily: F.serifSemiBold,
+    color: GOLD,
+  },
+  toolsSubtitleReveal: {
+    width: '100%',
+    alignItems: 'center',
+    rowGap: 8,
+  },
   toolsMessageBox: {
     position: 'absolute',
-    zIndex: 6,
+    zIndex: 7,
     alignItems: 'center',
     justifyContent: 'center',
-    rowGap: 10,
-    paddingHorizontal: 22,
-    paddingVertical: 24,
-    borderRadius: 30,
-    backgroundColor: '#FFFDF8',
+    rowGap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 22,
+    borderRadius: 28,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,253,248,0.96)',
     borderWidth: 1.2,
-    borderColor: 'rgba(197,160,89,0.42)',
+    borderColor: 'rgba(197,160,89,0.36)',
     shadowColor: '#5E5142',
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.22,
-    shadowRadius: 32,
+    shadowOffset: { width: 0, height: 22 },
+    shadowOpacity: 0.20,
+    shadowRadius: 34,
     elevation: 9,
   },
   toolsMessageBoxFrame: {
@@ -14360,30 +15211,36 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     columnGap: 7,
-    paddingHorizontal: 12,
+    paddingLeft: 9,
+    paddingRight: 14,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
-    shadowColor: '#5E5142',
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.12,
-    shadowRadius: 9,
-    elevation: 2,
+    borderColor: 'rgba(255,255,255,0.78)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.095,
+    shadowRadius: 18,
+    elevation: 3,
   },
-  toolsTagDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
+  toolsTagIconShell: {
+    width: 27,
+    height: 27,
+    borderRadius: 13.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.76)',
+    backgroundColor: 'rgba(255,255,255,0.64)',
   },
   toolsTagText: {
     fontFamily: F.serifSemiBold,
-    fontSize: 13,
-    lineHeight: 16,
-    color: 'rgba(25,23,20,0.78)',
+    fontSize: 14.4,
+    lineHeight: 18,
+    color: 'rgba(25,23,20,0.76)',
   },
   toolsShowcaseAction: {
     paddingHorizontal: 20,
-    zIndex: 8,
+    zIndex: 10,
   },
   screenTimeSlide: {
     flex: 1,
@@ -14712,6 +15569,175 @@ const s = StyleSheet.create({
   },
   v4RecapList: {
     rowGap: 8,
+  },
+  v4RecapProblemBoard: {
+    rowGap: 14,
+  },
+  v4RecapProblemGroup: {
+    borderRadius: 24,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 14,
+    backgroundColor: 'rgba(255,253,248,0.74)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.065)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.055,
+    shadowRadius: 18,
+    elevation: 1,
+  },
+  v4RecapGroupHeader: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 9,
+    marginBottom: 10,
+  },
+  v4RecapGroupIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  v4RecapGroupCopy: {
+    flex: 1,
+  },
+  v4RecapGroupTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 16.2,
+    lineHeight: 19,
+    color: INK,
+  },
+  v4RecapGroupSubtitle: {
+    marginTop: 1,
+    fontFamily: F.sansMedium,
+    fontSize: 11.2,
+    lineHeight: 14,
+    color: 'rgba(25,23,20,0.52)',
+  },
+  v4RecapGroupCount: {
+    minWidth: 40,
+    height: 28,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(25,23,20,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  v4RecapGroupCountText: {
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    color: 'rgba(25,23,20,0.42)',
+  },
+  v4RecapProblemCards: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    columnGap: 8,
+    rowGap: 9,
+    paddingTop: 2,
+    paddingBottom: 1,
+  },
+  v4RecapProblemCard: {
+    borderRadius: 17,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.2,
+    borderColor: 'rgba(25,23,20,0.09)',
+    shadowOffset: { width: 0, height: 11 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  v4RecapProblemCardInactive: {
+    borderColor: 'rgba(25,23,20,0.08)',
+    shadowOpacity: 0.035,
+    elevation: 0,
+    opacity: 0.74,
+  },
+  v4RecapProblemImageWrap: {
+    flex: 1,
+    overflow: 'hidden',
+    backgroundColor: '#EFE9DF',
+  },
+  v4RecapProblemImage: {
+    width: '100%',
+    height: '100%',
+  },
+  v4RecapProblemImageInactive: {
+    opacity: 0.46,
+  },
+  v4RecapProblemFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  v4RecapProblemMutedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.46)',
+  },
+  v4RecapProblemLabelFade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '52%',
+  },
+  v4RecapProblemLabelWrap: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    bottom: 9,
+  },
+  v4RecapProblemLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 10.3,
+    lineHeight: 12.5,
+    color: '#FFFDF8',
+    textAlign: 'center',
+  },
+  v4RecapProblemLabelInactive: {
+    color: 'rgba(255,253,248,0.72)',
+  },
+  v4RecapProblemMark: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 7,
+    elevation: 2,
+  },
+  v4RecapProblemMarkInactive: {
+    backgroundColor: 'rgba(255,247,247,0.94)',
+    borderColor: 'rgba(218,58,68,0.76)',
+  },
+  v4RecapProblemSlashCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2.5,
+    borderColor: '#D83A44',
+  },
+  v4RecapProblemSlashLine: {
+    position: 'absolute',
+    width: 25,
+    height: 3,
+    borderRadius: 999,
+    backgroundColor: '#D83A44',
+    transform: [{ rotate: '-43deg' }],
   },
   v4RecapRow: {
     flexDirection: 'row',
