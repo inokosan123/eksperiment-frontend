@@ -8374,138 +8374,129 @@ function V4ProgressRail({
   );
 }
 
-const TOOLS_COLLAGE_HORIZONTAL = [
+const TOOLS_FIELD_LABELS = [
   'Scripture', 'Prayer Book', 'Daily Journal', 'Habits',
-  'Challenges', 'Screen Time', 'App Blocker', 'Routines',
-  'Monthly Goals', 'Big Events', 'Reading List', 'Streaks',
-];
-
-const TOOLS_COLLAGE_VERTICALS = [
-  { label: 'Pomodoro', side: 'right' as const, rowStart: 0 },
-  { label: 'Notes', side: 'left' as const, rowStart: 2 },
+  'Challenges', 'Morning Prayers', 'Evening Prayers', 'Bible Notes',
+  'Screen Time', 'App Blocker', 'Content Blocker', 'Pomodoro',
+  'Routines', 'Spiritual Tasks', 'Monthly Goals', 'Big Events',
+  'Reading List', 'Reading Timer', 'Free Writing', 'Morning Pages',
+  'Favorites', 'Jesus Prayer', 'Bucket List', 'Year in Pixels',
+  'Streaks', 'Gratitude', 'Notes',
 ];
 
 const TOOLS_PILE_TONES = [
-  { tone: '#F3ECDB', text: '#8A6A2F' },
-  { tone: '#E3F0F0', text: '#3E6E6F' },
-  { tone: '#F4E6EB', text: '#7C4F5D' },
-  { tone: '#ECEBD8', text: '#6A5A30' },
-  { tone: '#EDECE7', text: '#4A453E' },
+  { tone: '#F6EFDC', dot: '#C5A059' },
+  { tone: '#E7F4F4', dot: '#4D8586' },
+  { tone: '#F6E9EE', dot: '#8F5D6C' },
+  { tone: '#F2EEDC', dot: '#85723F' },
+  { tone: '#F0EFEA', dot: '#57524B' },
 ];
 
-type ToolsCollageSlot = {
+type ToolsFieldSlot = {
   label: string;
   estWidth: number;
   cx: number;
   cy: number;
   rotate: number;
-  vertical: boolean;
   delay: number;
   toneIndex: number;
+  inFront: boolean;
   rowHaptic: boolean;
 };
 
-// Pack the chips into a collage that fills the area between the seal and the
-// CTA: rows from the bottom up, with two vertical chips reserved on the sides
-// like in the reference layout. Every chip gets a designated resting slot.
-function buildToolsCollage(
+// Pack all 27 chips into a dense field that fills the space between the
+// subtitle and the CTA. Rows are tight, and rows that cross the central seal
+// split around it so the medallion ends up buried in the chips.
+function buildToolsField(
   width: number,
-  floorY: number,
+  fieldTop: number,
+  fieldBottom: number,
+  sealCx: number,
+  sealCy: number,
+  sealRadius: number,
   chipHeight: number,
-  fontScale: number,
-): { slots: ToolsCollageSlot[]; rowsUsed: number } {
-  const margin = 14;
-  const gap = 9;
-  const rowStep = chipHeight + gap;
-  const estimate = (label: string) => Math.round(label.length * 8.1 * fontScale) + Math.round(34 * fontScale);
+): { slots: ToolsFieldSlot[]; sealDelay: number } {
+  const margin = 10;
+  const gap = 6;
+  const rowStep = chipHeight + 6;
+  const estimate = (label: string) => Math.round(label.length * 6.9) + 40;
 
-  const verticals = TOOLS_COLLAGE_VERTICALS.map(v => ({
-    ...v,
-    estWidth: estimate(v.label),
-    rowEnd: v.rowStart + 1,
-  }));
-
-  const queue = TOOLS_COLLAGE_HORIZONTAL.map(label => ({ label, estWidth: estimate(label) }));
-  const slots: ToolsCollageSlot[] = [];
+  const queue = TOOLS_FIELD_LABELS.map(label => ({ label, estWidth: estimate(label) }));
+  const slots: ToolsFieldSlot[] = [];
   let toneCursor = 0;
   let row = 0;
 
-  while (queue.length > 0 && row < 9) {
-    let segStart = margin;
-    let segEnd = width - margin;
-    for (const v of verticals) {
-      if (row >= v.rowStart && row <= v.rowEnd) {
-        if (v.side === 'right') segEnd = width - margin - chipHeight - gap;
-        else segStart = margin + chipHeight + gap;
-      }
-    }
-    const segWidth = segEnd - segStart;
+  while (queue.length > 0 && row < 14) {
+    const cy = fieldBottom - chipHeight / 2 - row * rowStep;
+    if (cy - chipHeight / 2 < fieldTop && row > 0) break;
 
-    const rowChips: { label: string; estWidth: number }[] = [];
-    let used = 0;
-    while (queue.length > 0) {
-      const next = queue[0];
-      const needed = used + next.estWidth + (rowChips.length > 0 ? gap : 0);
-      if (needed > segWidth && rowChips.length > 0) break;
-      rowChips.push(queue.shift()!);
-      used = needed;
+    const dy = Math.abs(cy - sealCy);
+    const segments: { start: number; end: number }[] = [];
+    if (dy < sealRadius + chipHeight * 0.42) {
+      const halfBand = Math.sqrt(Math.max(0, (sealRadius - 7) ** 2 - dy * dy)) + 4;
+      segments.push({ start: margin, end: sealCx - halfBand });
+      segments.push({ start: sealCx + halfBand, end: width - margin });
+    } else {
+      segments.push({ start: margin, end: width - margin });
     }
-    const slack = Math.max(0, segWidth - used);
-    let cursor = segStart + slack / 2;
-    const cy = floorY - chipHeight / 2 - row * rowStep;
-    rowChips.forEach((chip, chipIndex) => {
-      const cx = cursor + chip.estWidth / 2 + (((row * 7 + chipIndex * 13) % 7) - 3);
-      cursor += chip.estWidth + gap;
-      slots.push({
-        label: chip.label,
-        estWidth: chip.estWidth,
-        cx,
-        cy,
-        rotate: (((row * 5 + chipIndex * 11) % 9) - 4) * 1.1,
-        vertical: false,
-        delay: 0,
-        toneIndex: toneCursor++ % TOOLS_PILE_TONES.length,
-        rowHaptic: chipIndex === 0,
+
+    let firstInRow = true;
+    for (const segment of segments) {
+      const segWidth = segment.end - segment.start;
+      if (segWidth < 60) continue;
+      const rowChips: { label: string; estWidth: number }[] = [];
+      let used = 0;
+      while (queue.length > 0) {
+        const next = queue[0];
+        const needed = used + next.estWidth + (rowChips.length > 0 ? gap : 0);
+        if (needed > segWidth && rowChips.length > 0) break;
+        if (next.estWidth > segWidth && rowChips.length === 0) break;
+        rowChips.push(queue.shift()!);
+        used = needed;
+      }
+      const slack = Math.max(0, segWidth - used);
+      let cursor = segment.start + slack / 2;
+      rowChips.forEach((chip, chipIndex) => {
+        const cx = cursor + chip.estWidth / 2 + (((row * 7 + chipIndex * 13) % 7) - 3);
+        cursor += chip.estWidth + gap;
+        slots.push({
+          label: chip.label,
+          estWidth: chip.estWidth,
+          cx,
+          cy,
+          rotate: (((row * 5 + chipIndex * 11) % 9) - 4) * 1.2,
+          delay: 0,
+          toneIndex: toneCursor++ % TOOLS_PILE_TONES.length,
+          inFront: cy > sealCy,
+          rowHaptic: firstInRow,
+        });
+        firstInRow = false;
       });
-    });
+    }
     row += 1;
   }
 
-  for (const v of verticals) {
-    const cx = v.side === 'right' ? width - margin - chipHeight / 2 : margin + chipHeight / 2;
-    const cy = floorY - ((v.rowStart + v.rowEnd + 1) / 2) * rowStep + gap / 2;
-    slots.push({
-      label: v.label,
-      estWidth: v.estWidth,
-      cx,
-      cy,
-      rotate: v.side === 'right' ? -90 : 90,
-      vertical: true,
-      delay: 0,
-      toneIndex: toneCursor++ % TOOLS_PILE_TONES.length,
-      rowHaptic: false,
-    });
-  }
-
-  // Rhythmic drop order: bottom rows first, in small overlapping bursts.
+  // Rhythmic drop order: bottom rows first, in overlapping bursts of three.
   const ordered = slots.slice().sort((a, b) => b.cy - a.cy);
   ordered.forEach((slot, index) => {
     const group = Math.floor(index / 3);
-    slot.delay = 480 + group * 230 + (index % 3) * 85;
+    slot.delay = 460 + group * 200 + (index % 3) * 80;
   });
 
-  return { slots, rowsUsed: row };
+  // The medallion drops with the chips, right when the rows reach its height.
+  const landedBeforeSeal = ordered.filter(slot => slot.cy > sealCy + sealRadius * 0.4).length;
+  const sealDelay = 460 + Math.floor(landedBeforeSeal / 3) * 200;
+
+  return { slots, sealDelay };
 }
 
-function ToolsCollageChip({
+function ToolsFieldChip({
   slot,
   chipHeight,
-  fontScale,
   isLastChip,
 }: {
-  slot: ToolsCollageSlot;
+  slot: ToolsFieldSlot;
   chipHeight: number;
-  fontScale: number;
   isLastChip: boolean;
 }) {
   const drop = useSharedValue(0);
@@ -8538,7 +8529,7 @@ function ToolsCollageChip({
     opacity: drop.value > 0.01 ? 1 : 0,
     transform: [
       { translateY: interpolate(drop.value, [0, 1], [fallFrom, 0]) - settle.value * 9 },
-      { rotate: `${interpolate(drop.value, [0, 1], [slot.rotate + (slot.vertical ? 14 : 11), slot.rotate])}deg` },
+      { rotate: `${interpolate(drop.value, [0, 1], [slot.rotate + 11, slot.rotate])}deg` },
       { scaleX: 1 + settle.value * 0.05 },
       { scaleY: 1 - settle.value * 0.07 },
     ],
@@ -8552,29 +8543,125 @@ function ToolsCollageChip({
         {
           left: slot.cx - slot.estWidth / 2,
           top: slot.cy - chipHeight / 2,
+          zIndex: slot.inFront ? 5 : 2,
         },
         chipStyle,
       ]}
     >
-      <View
-        style={[
-          s.toolsTagChip,
-          {
-            backgroundColor: tone.tone,
-            height: chipHeight,
-            paddingHorizontal: Math.round(17 * fontScale),
-            minWidth: slot.estWidth,
-          },
-        ]}
-      >
-        <Text
-          style={[s.toolsTagText, { color: tone.text, fontSize: 16.5 * fontScale, lineHeight: 20 * fontScale }]}
-          numberOfLines={1}
-        >
-          {slot.label}
-        </Text>
+      <View style={[s.toolsTagChip, { backgroundColor: tone.tone, height: chipHeight, minWidth: slot.estWidth }]}>
+        <View style={[s.toolsTagDot, { backgroundColor: tone.dot }]} />
+        <Text style={s.toolsTagText} numberOfLines={1}>{slot.label}</Text>
       </View>
     </Reanimated.View>
+  );
+}
+
+function ToolsSealMedallion({
+  size,
+  cx,
+  cy,
+  delay,
+}: {
+  size: number;
+  cx: number;
+  cy: number;
+  delay: number;
+}) {
+  const drop = useSharedValue(0);
+  const settle = useSharedValue(0);
+  const glow = useSharedValue(0);
+  const fallFrom = -(cy + size + 80);
+
+  const land = useCallback(() => {
+    runStrongHaptic();
+  }, []);
+
+  useEffect(() => {
+    drop.value = 0;
+    settle.value = 0;
+    drop.value = withDelay(
+      delay,
+      withTiming(1, { duration: 560, easing: Easing.in(Easing.quad) }, finished => {
+        if (!finished) return;
+        settle.value = withSequence(
+          withTiming(1, { duration: 110, easing: Easing.out(Easing.quad) }),
+          withSpring(0, { damping: 11, stiffness: 260, mass: 0.85 }),
+        );
+        runOnJS(land)();
+      }),
+    );
+    glow.value = withDelay(
+      delay + 700,
+      withRepeat(withTiming(1, { duration: 3000, easing: Easing.inOut(Easing.quad) }), -1, true),
+    );
+  }, [delay, drop, glow, land, settle]);
+
+  const medallionStyle = useAnimatedStyle(() => ({
+    opacity: drop.value > 0.01 ? 1 : 0,
+    transform: [
+      { translateY: interpolate(drop.value, [0, 1], [fallFrom, 0]) - settle.value * 12 },
+      { rotate: `${interpolate(drop.value, [0, 1], [-9, 0])}deg` },
+      { scaleX: 1 + settle.value * 0.04 },
+      { scaleY: 1 - settle.value * 0.06 },
+    ],
+  }));
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: drop.value * (0.4 + glow.value * 0.6),
+    transform: [{ scale: 1 + glow.value * 0.05 }],
+  }));
+
+  return (
+    <>
+      <Reanimated.View
+        pointerEvents="none"
+        style={[
+          s.toolsSealGlow,
+          {
+            width: size + 96,
+            height: size + 96,
+            borderRadius: (size + 96) / 2,
+            left: cx - (size + 96) / 2,
+            top: cy - (size + 96) / 2,
+          },
+          glowStyle,
+        ]}
+      />
+      <Reanimated.View
+        pointerEvents="none"
+        style={[
+          s.toolsMedallion,
+          { width: size, height: size, borderRadius: size / 2, left: cx - size / 2, top: cy - size / 2 },
+          medallionStyle,
+        ]}
+      >
+        <LinearGradient
+          colors={['#EDD9A8', '#C5A059', '#8F6D2C']}
+          start={{ x: 0.2, y: 0 }}
+          end={{ x: 0.8, y: 1 }}
+          style={[StyleSheet.absoluteFill, { borderRadius: size / 2 }]}
+        />
+        <View style={[s.toolsMedallionFace, { borderRadius: (size - 12) / 2 }]}>
+          <LinearGradient
+            colors={['#FFFFFF', '#FAF1DD']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={[StyleSheet.absoluteFill, { borderRadius: (size - 12) / 2 }]}
+          />
+          <Image
+            source={APP_LOGO}
+            style={{ width: (size - 12) * 0.78, height: (size - 12) * 0.78 }}
+            resizeMode="cover"
+          />
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(255,255,255,0.75)', 'rgba(255,255,255,0)']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={[s.toolsMedallionSheen, { borderTopLeftRadius: (size - 12) / 2, borderTopRightRadius: (size - 12) / 2 }]}
+          />
+        </View>
+      </Reanimated.View>
+    </>
   );
 }
 
@@ -8590,45 +8677,19 @@ function ToolsShowcaseSlide({
   const { width, height } = useWindowDimensions();
   const compact = height < 760;
   const [titleUnderlineWidth, setTitleUnderlineWidth] = useState(150);
-  const fontScale = compact ? 0.88 : Math.min(width / 390, 1.04);
-  const chipHeight = Math.round((compact ? 40 : 46) * fontScale);
-  const sealSize = compact ? 104 : 118;
-  const floorY = height - bottomInset - 96;
-  const { slots } = useMemo(
-    () => buildToolsCollage(width, floorY, chipHeight, fontScale),
-    [chipHeight, floorY, fontScale, width],
+  const chipHeight = compact ? 31 : 34;
+  const sealSize = compact ? 118 : 134;
+  const headerHeight = (compact ? 24 : 40) + (compact ? 80 : 92) + 10 + (compact ? 56 : 62) + 14;
+  const fieldTop = topInset + headerHeight;
+  const fieldBottom = height - bottomInset - (compact ? 96 : 104);
+  const sealCx = width / 2;
+  const sealCy = (fieldTop + fieldBottom) / 2;
+  const { slots, sealDelay } = useMemo(
+    () => buildToolsField(width, fieldTop, fieldBottom, sealCx, sealCy, sealSize / 2, chipHeight),
+    [chipHeight, fieldBottom, fieldTop, sealCx, sealCy, sealSize, width],
   );
   const lastDelay = slots.reduce((max, slot) => Math.max(max, slot.delay), 0);
-  const ctaDelay = lastDelay + 900;
-  const sealCY = topInset + (compact ? 150 : 188) + sealSize / 2;
-  const sealIn = useSharedValue(0);
-  const sealGlow = useSharedValue(0);
-
-  useEffect(() => {
-    sealIn.value = withDelay(220, withSpring(1, { damping: 14, stiffness: 130, mass: 0.9 }));
-    sealGlow.value = withDelay(
-      900,
-      withRepeat(withTiming(1, { duration: 3200, easing: Easing.inOut(Easing.quad) }), -1, true),
-    );
-    const hapticTimer = setTimeout(runBubbleHaptic, 620);
-    return () => clearTimeout(hapticTimer);
-  }, [sealGlow, sealIn]);
-
-  const sealStyle = useAnimatedStyle(() => ({
-    opacity: Math.min(1, sealIn.value * 1.4),
-    transform: [
-      { translateY: interpolate(sealIn.value, [0, 1], [20, 0]) },
-      { scale: interpolate(sealIn.value, [0, 1], [0.72, 1]) },
-    ],
-  }));
-  const sealGlowStyle = useAnimatedStyle(() => ({
-    opacity: Math.min(1, sealIn.value) * (0.45 + sealGlow.value * 0.55),
-    transform: [
-      { scale: interpolate(sealIn.value, [0, 1], [0.74, 1]) * (1 + sealGlow.value * 0.05) },
-    ],
-  }));
-
-  const glowSize = sealSize + 104;
+  const ctaDelay = Math.max(lastDelay, sealDelay) + 850;
 
   return (
     <View style={s.toolsShowcaseRoot}>
@@ -8637,14 +8698,14 @@ function ToolsShowcaseSlide({
           opacity: 0,
           transform: [{ translateY: 16 }],
         })}
-        style={[s.toolsShowcaseCopy, { paddingTop: topInset + (compact ? 16 : 24) }]}
+        style={[s.toolsShowcaseCopy, { paddingTop: topInset + (compact ? 24 : 40) }]}
       >
         <Text
-          style={s.toolsTitle}
+          style={[s.toolsTitle, compact && s.toolsTitleCompact]}
           onTextLayout={event => {
             const lines = event.nativeEvent.lines;
             const lastLine = lines[lines.length - 1];
-            const nextWidth = Math.max(52, Math.min(320, Math.ceil((lastLine?.width ?? 150) * 0.92)));
+            const nextWidth = Math.max(52, Math.min(330, Math.ceil((lastLine?.width ?? 150) * 0.92)));
             setTitleUnderlineWidth(current => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
           }}
         >
@@ -8653,67 +8714,26 @@ function ToolsShowcaseSlide({
         <View style={[s.valueTitleUnderline, { width: titleUnderlineWidth, alignSelf: 'center' }]} />
         <View style={s.toolsSubtitleFrame}>
           <View style={s.valueSubtitleLine}>
-            <ValueSubtitleWord>But</ValueSubtitleWord>
-            <ValueSubtitleWord>a</ValueSubtitleWord>
-            <ValueSubtitleWord>tool</ValueSubtitleWord>
-            <ValueSubtitleWord>is</ValueSubtitleWord>
-            <ValueSubtitleWord>only</ValueSubtitleWord>
-            <ValueSubtitleWord>worth</ValueSubtitleWord>
-            <ValueSubtitleWord underline>what it adds</ValueSubtitleWord>
-            <ValueSubtitleWord>to</ValueSubtitleWord>
-            <ValueSubtitleWord underline>your life.</ValueSubtitleWord>
+            <Text style={s.toolsSubtitleWord}>But</Text>
+            <Text style={s.toolsSubtitleWord}>a</Text>
+            <Text style={s.toolsSubtitleWord}>tool</Text>
+            <Text style={s.toolsSubtitleWord}>is</Text>
+            <Text style={s.toolsSubtitleWord}>only</Text>
+            <Text style={s.toolsSubtitleWord}>worth</Text>
+            <Text style={[s.toolsSubtitleWord, s.toolsSubtitleWordAccent]}>what it adds</Text>
+            <Text style={s.toolsSubtitleWord}>to</Text>
+            <Text style={[s.toolsSubtitleWord, s.toolsSubtitleWordAccent]}>your life.</Text>
           </View>
         </View>
       </Reanimated.View>
 
-      <Reanimated.View
-        pointerEvents="none"
-        style={[
-          s.toolsSealGlow,
-          {
-            width: glowSize,
-            height: glowSize,
-            borderRadius: glowSize / 2,
-            left: width / 2 - glowSize / 2,
-            top: sealCY - glowSize / 2,
-          },
-          sealGlowStyle,
-        ]}
-      />
-      <Reanimated.View
-        style={[
-          s.toolsSealOuter,
-          {
-            width: sealSize,
-            height: sealSize,
-            borderRadius: sealSize * 0.32,
-            left: width / 2 - sealSize / 2,
-            top: sealCY - sealSize / 2,
-          },
-          sealStyle,
-        ]}
-      >
-        <LinearGradient
-          colors={['#FFFFFF', '#FFF6E6']}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={[StyleSheet.absoluteFill, { borderRadius: sealSize * 0.32 }]}
-        />
-        <View style={[s.toolsSealRing, { borderRadius: sealSize * 0.32 - 6 }]} />
-        <Image
-          source={APP_LOGO}
-          style={{ width: sealSize * 0.66, height: sealSize * 0.66 }}
-          resizeMode="cover"
-        />
-      </Reanimated.View>
-
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <ToolsSealMedallion size={sealSize} cx={sealCx} cy={sealCy} delay={sealDelay} />
         {slots.map(slot => (
-          <ToolsCollageChip
+          <ToolsFieldChip
             key={slot.label}
             slot={slot}
             chipHeight={chipHeight}
-            fontScale={fontScale}
             isLastChip={slot.delay === lastDelay}
           />
         ))}
@@ -14322,51 +14342,74 @@ const s = StyleSheet.create({
     zIndex: 2,
   },
   toolsTitle: {
-    maxWidth: 330,
+    maxWidth: 340,
     fontFamily: F.serifSemiBold,
-    fontSize: 32,
-    lineHeight: 38,
+    fontSize: 38,
+    lineHeight: 44,
     textAlign: 'center',
     color: INK,
   },
+  toolsTitleCompact: {
+    fontSize: 33,
+    lineHeight: 39,
+  },
   toolsSubtitleFrame: {
-    marginTop: 8,
+    marginTop: 9,
     width: '100%',
-    maxWidth: 320,
+    maxWidth: 344,
     paddingHorizontal: 6,
     alignItems: 'center',
   },
+  toolsSubtitleWord: {
+    fontFamily: F.serifMedium,
+    fontSize: 19.5,
+    lineHeight: 25,
+    color: 'rgba(25,23,20,0.64)',
+  },
+  toolsSubtitleWordAccent: {
+    fontFamily: F.serifSemiBold,
+    color: 'rgba(25,23,20,0.86)',
+    textDecorationLine: 'underline',
+    textDecorationColor: GOLD,
+    textDecorationStyle: 'solid',
+  },
   toolsSealGlow: {
     position: 'absolute',
-    backgroundColor: 'rgba(231,195,109,0.16)',
+    backgroundColor: 'rgba(231,195,109,0.18)',
     zIndex: 1,
   },
-  toolsSealOuter: {
+  toolsMedallion: {
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.40)',
-    shadowColor: '#8A6A2F',
+    zIndex: 3,
+    shadowColor: '#6E5320',
     shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.18,
-    shadowRadius: 28,
-    elevation: 5,
-    zIndex: 2,
+    shadowOpacity: 0.30,
+    shadowRadius: 24,
+    elevation: 7,
   },
-  toolsSealRing: {
-    ...StyleSheet.absoluteFillObject,
-    margin: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.30)',
+  toolsMedallionFace: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    right: 6,
+    bottom: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  toolsMedallionSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '42%',
   },
   toolsPhysChipSlot: {
     position: 'absolute',
     left: 0,
     top: 0,
-    zIndex: 4,
   },
   toolsShowcaseSpacer: {
     flex: 1,
@@ -14375,17 +14418,26 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    columnGap: 7,
+    paddingHorizontal: 12,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.85)',
+    borderColor: 'rgba(255,255,255,0.8)',
     shadowColor: '#5E5142',
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 7 },
     shadowOpacity: 0.12,
-    shadowRadius: 11,
+    shadowRadius: 9,
     elevation: 2,
+  },
+  toolsTagDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
   toolsTagText: {
     fontFamily: F.serifSemiBold,
+    fontSize: 13,
+    lineHeight: 16,
     color: 'rgba(25,23,20,0.78)',
   },
   toolsShowcaseAction: {
