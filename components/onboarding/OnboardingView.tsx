@@ -8398,15 +8398,27 @@ type ToolsFieldSlot = {
   cx: number;
   cy: number;
   rotate: number;
+  tumble: number;
   delay: number;
   toneIndex: number;
   inFront: boolean;
   rowHaptic: boolean;
 };
 
-// Pack all 27 chips into a dense field that fills the space between the
-// subtitle and the CTA. Rows are tight, and rows that cross the central seal
-// split around it so the medallion ends up buried in the chips.
+// Final resting rotation per chip: most lie roughly flat, some land on a
+// diagonal and a few end up almost upright - like tokens tumbling to rest.
+function toolsChipRotation(index: number) {
+  const sign = index % 2 === 0 ? 1 : -1;
+  if (index % 9 === 4) return sign * (86 + (index % 3) * 3);
+  if (index % 9 === 7) return sign * (30 + (index % 4) * 4);
+  if (index % 7 === 3) return sign * (15 + (index % 3) * 4);
+  return (((index * 5) % 9) - 4) * 1.7;
+}
+
+// Organic scatter packing: chips are placed one by one from the bottom of the
+// field upward, each at the first spot where its rotated footprint doesn't
+// collide with already placed chips or the logo tile (a small rim overlap with
+// the tile is allowed, so it ends up buried).
 function buildToolsField(
   width: number,
   fieldTop: number,
@@ -8417,75 +8429,80 @@ function buildToolsField(
   chipHeight: number,
 ): { slots: ToolsFieldSlot[]; sealDelay: number } {
   const margin = 10;
-  const gap = 6;
-  const rowStep = chipHeight + 6;
   const estimate = (label: string) => Math.round(label.length * 6.9) + 40;
-
-  const queue = TOOLS_FIELD_LABELS.map(label => ({ label, estWidth: estimate(label) }));
+  const placed: { cx: number; cy: number; fw: number; fh: number }[] = [];
   const slots: ToolsFieldSlot[] = [];
-  let toneCursor = 0;
-  let row = 0;
 
-  while (queue.length > 0 && row < 14) {
-    const cy = fieldBottom - chipHeight / 2 - row * rowStep;
-    if (cy - chipHeight / 2 < fieldTop && row > 0) break;
+  TOOLS_FIELD_LABELS.forEach((label, index) => {
+    const estWidth = estimate(label);
+    const rotate = toolsChipRotation(index);
+    const rad = (Math.abs(rotate) * Math.PI) / 180;
+    const fw = Math.abs(Math.cos(rad)) * estWidth + Math.abs(Math.sin(rad)) * chipHeight;
+    const fh = Math.abs(Math.sin(rad)) * estWidth + Math.abs(Math.cos(rad)) * chipHeight;
 
-    const dy = Math.abs(cy - sealCy);
-    const segments: { start: number; end: number }[] = [];
-    if (dy < sealRadius + chipHeight * 0.42) {
-      const halfBand = Math.sqrt(Math.max(0, (sealRadius - 7) ** 2 - dy * dy)) + 4;
-      segments.push({ start: margin, end: sealCx - halfBand });
-      segments.push({ start: sealCx + halfBand, end: width - margin });
-    } else {
-      segments.push({ start: margin, end: width - margin });
-    }
+    const xMin = margin + fw / 2;
+    const xMax = width - margin - fw / 2;
+    const xCandidates: number[] = [];
+    for (let x = xMin; x <= xMax; x += 13) xCandidates.push(x);
+    const shift = (index * 5) % Math.max(1, xCandidates.length);
+    const xs = [...xCandidates.slice(shift), ...xCandidates.slice(0, shift)];
 
-    let firstInRow = true;
-    for (const segment of segments) {
-      const segWidth = segment.end - segment.start;
-      if (segWidth < 60) continue;
-      const rowChips: { label: string; estWidth: number }[] = [];
-      let used = 0;
-      while (queue.length > 0) {
-        const next = queue[0];
-        const needed = used + next.estWidth + (rowChips.length > 0 ? gap : 0);
-        if (needed > segWidth && rowChips.length > 0) break;
-        if (next.estWidth > segWidth && rowChips.length === 0) break;
-        rowChips.push(queue.shift()!);
-        used = needed;
+    let bestX = sealCx;
+    let bestY = fieldTop + fh / 2;
+    let found = false;
+    for (let pass = 0; pass < 2 && !found; pass += 1) {
+      const squeeze = pass === 0 ? 4 : -6;
+      for (let cy = fieldBottom - fh / 2; cy - fh / 2 >= fieldTop && !found; cy -= 8) {
+        for (const cx of xs) {
+          let collides = false;
+          for (const other of placed) {
+            if (
+              Math.abs(cx - other.cx) < (fw + other.fw) / 2 + squeeze &&
+              Math.abs(cy - other.cy) < (fh + other.fh) / 2 + squeeze
+            ) {
+              collides = true;
+              break;
+            }
+          }
+          if (collides) continue;
+          const nearX = Math.max(cx - fw / 2, Math.min(sealCx, cx + fw / 2));
+          const nearY = Math.max(cy - fh / 2, Math.min(sealCy, cy + fh / 2));
+          const sealDist = Math.hypot(nearX - sealCx, nearY - sealCy);
+          if (sealDist < sealRadius - 12) continue;
+          bestX = cx;
+          bestY = cy;
+          found = true;
+          break;
+        }
       }
-      const slack = Math.max(0, segWidth - used);
-      let cursor = segment.start + slack / 2;
-      rowChips.forEach((chip, chipIndex) => {
-        const cx = cursor + chip.estWidth / 2 + (((row * 7 + chipIndex * 13) % 7) - 3);
-        cursor += chip.estWidth + gap;
-        slots.push({
-          label: chip.label,
-          estWidth: chip.estWidth,
-          cx,
-          cy,
-          rotate: (((row * 5 + chipIndex * 11) % 9) - 4) * 1.2,
-          delay: 0,
-          toneIndex: toneCursor++ % TOOLS_PILE_TONES.length,
-          inFront: cy > sealCy,
-          rowHaptic: firstInRow,
-        });
-        firstInRow = false;
-      });
     }
-    row += 1;
-  }
 
-  // Rhythmic drop order: bottom rows first, in overlapping bursts of three.
+    placed.push({ cx: bestX, cy: bestY, fw, fh });
+    slots.push({
+      label,
+      estWidth,
+      cx: bestX,
+      cy: bestY,
+      rotate,
+      tumble: (index % 2 === 0 ? 1 : -1) * (46 + (index % 4) * 22),
+      delay: 0,
+      toneIndex: index % TOOLS_PILE_TONES.length,
+      inFront: bestY > sealCy,
+      rowHaptic: false,
+    });
+  });
+
+  // Rhythmic drop order: lowest chips first, in overlapping bursts of three.
   const ordered = slots.slice().sort((a, b) => b.cy - a.cy);
   ordered.forEach((slot, index) => {
     const group = Math.floor(index / 3);
-    slot.delay = 460 + group * 200 + (index % 3) * 80;
+    slot.delay = 460 + group * 190 + (index % 3) * 75;
+    slot.rowHaptic = index % 3 === 0;
   });
 
-  // The medallion drops with the chips, right when the rows reach its height.
-  const landedBeforeSeal = ordered.filter(slot => slot.cy > sealCy + sealRadius * 0.4).length;
-  const sealDelay = 460 + Math.floor(landedBeforeSeal / 3) * 200;
+  // The logo tile drops with the chips, right as the pile reaches its height.
+  const landedBeforeSeal = ordered.filter(slot => slot.cy > sealCy + sealRadius * 0.5).length;
+  const sealDelay = 460 + Math.floor(landedBeforeSeal / 3) * 190;
 
   return { slots, sealDelay };
 }
@@ -8529,9 +8546,9 @@ function ToolsFieldChip({
     opacity: drop.value > 0.01 ? 1 : 0,
     transform: [
       { translateY: interpolate(drop.value, [0, 1], [fallFrom, 0]) - settle.value * 9 },
-      { rotate: `${interpolate(drop.value, [0, 1], [slot.rotate + 11, slot.rotate])}deg` },
       { scaleX: 1 + settle.value * 0.05 },
       { scaleY: 1 - settle.value * 0.07 },
+      { rotate: `${interpolate(drop.value, [0, 1], [slot.rotate + slot.tumble, slot.rotate])}deg` },
     ],
   }));
 
@@ -8556,7 +8573,7 @@ function ToolsFieldChip({
   );
 }
 
-function ToolsSealMedallion({
+function ToolsLogoTile({
   size,
   cx,
   cy,
@@ -8571,6 +8588,7 @@ function ToolsSealMedallion({
   const settle = useSharedValue(0);
   const glow = useSharedValue(0);
   const fallFrom = -(cy + size + 80);
+  const radius = size * 0.27;
 
   const land = useCallback(() => {
     runStrongHaptic();
@@ -8596,13 +8614,13 @@ function ToolsSealMedallion({
     );
   }, [delay, drop, glow, land, settle]);
 
-  const medallionStyle = useAnimatedStyle(() => ({
+  const tileStyle = useAnimatedStyle(() => ({
     opacity: drop.value > 0.01 ? 1 : 0,
     transform: [
       { translateY: interpolate(drop.value, [0, 1], [fallFrom, 0]) - settle.value * 12 },
-      { rotate: `${interpolate(drop.value, [0, 1], [-9, 0])}deg` },
       { scaleX: 1 + settle.value * 0.04 },
       { scaleY: 1 - settle.value * 0.06 },
+      { rotate: `${interpolate(drop.value, [0, 1], [-16, -3])}deg` },
     ],
   }));
   const glowStyle = useAnimatedStyle(() => ({
@@ -8617,11 +8635,11 @@ function ToolsSealMedallion({
         style={[
           s.toolsSealGlow,
           {
-            width: size + 96,
-            height: size + 96,
-            borderRadius: (size + 96) / 2,
-            left: cx - (size + 96) / 2,
-            top: cy - (size + 96) / 2,
+            width: size + 110,
+            height: size + 110,
+            borderRadius: (size + 110) / 2,
+            left: cx - (size + 110) / 2,
+            top: cy - (size + 110) / 2,
           },
           glowStyle,
         ]}
@@ -8629,37 +8647,24 @@ function ToolsSealMedallion({
       <Reanimated.View
         pointerEvents="none"
         style={[
-          s.toolsMedallion,
-          { width: size, height: size, borderRadius: size / 2, left: cx - size / 2, top: cy - size / 2 },
-          medallionStyle,
+          s.toolsLogoTile,
+          { width: size, height: size, borderRadius: radius, left: cx - size / 2, top: cy - size / 2 },
+          tileStyle,
         ]}
       >
-        <LinearGradient
-          colors={['#EDD9A8', '#C5A059', '#8F6D2C']}
-          start={{ x: 0.2, y: 0 }}
-          end={{ x: 0.8, y: 1 }}
-          style={[StyleSheet.absoluteFill, { borderRadius: size / 2 }]}
+        <Image
+          source={APP_LOGO}
+          style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
+          resizeMode="cover"
         />
-        <View style={[s.toolsMedallionFace, { borderRadius: (size - 12) / 2 }]}>
-          <LinearGradient
-            colors={['#FFFFFF', '#FAF1DD']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={[StyleSheet.absoluteFill, { borderRadius: (size - 12) / 2 }]}
-          />
-          <Image
-            source={APP_LOGO}
-            style={{ width: (size - 12) * 0.78, height: (size - 12) * 0.78 }}
-            resizeMode="cover"
-          />
-          <LinearGradient
-            pointerEvents="none"
-            colors={['rgba(255,255,255,0.75)', 'rgba(255,255,255,0)']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={[s.toolsMedallionSheen, { borderTopLeftRadius: (size - 12) / 2, borderTopRightRadius: (size - 12) / 2 }]}
-          />
-        </View>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(255,255,255,0.42)', 'rgba(255,255,255,0)']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 0.55 }}
+          style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
+        />
+        <View pointerEvents="none" style={[s.toolsLogoTileRim, { borderRadius: radius }]} />
       </Reanimated.View>
     </>
   );
@@ -8678,15 +8683,16 @@ function ToolsShowcaseSlide({
   const compact = height < 760;
   const [titleUnderlineWidth, setTitleUnderlineWidth] = useState(150);
   const chipHeight = compact ? 31 : 34;
-  const sealSize = compact ? 118 : 134;
-  const headerHeight = (compact ? 24 : 40) + (compact ? 80 : 92) + 10 + (compact ? 56 : 62) + 14;
+  const sealSize = compact ? 112 : 126;
+  const sealClearRadius = sealSize * 0.58;
+  const headerHeight = (compact ? 24 : 40) + (compact ? 80 : 92) + 10 + (compact ? 52 : 58) + 4;
   const fieldTop = topInset + headerHeight;
   const fieldBottom = height - bottomInset - (compact ? 96 : 104);
   const sealCx = width / 2;
   const sealCy = (fieldTop + fieldBottom) / 2;
   const { slots, sealDelay } = useMemo(
-    () => buildToolsField(width, fieldTop, fieldBottom, sealCx, sealCy, sealSize / 2, chipHeight),
-    [chipHeight, fieldBottom, fieldTop, sealCx, sealCy, sealSize, width],
+    () => buildToolsField(width, fieldTop, fieldBottom, sealCx, sealCy, sealClearRadius, chipHeight),
+    [chipHeight, fieldBottom, fieldTop, sealClearRadius, sealCx, sealCy, width],
   );
   const lastDelay = slots.reduce((max, slot) => Math.max(max, slot.delay), 0);
   const ctaDelay = Math.max(lastDelay, sealDelay) + 850;
@@ -8728,7 +8734,7 @@ function ToolsShowcaseSlide({
       </Reanimated.View>
 
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <ToolsSealMedallion size={sealSize} cx={sealCx} cy={sealCy} delay={sealDelay} />
+        <ToolsLogoTile size={sealSize} cx={sealCx} cy={sealCy} delay={sealDelay} />
         {slots.map(slot => (
           <ToolsFieldChip
             key={slot.label}
@@ -14378,33 +14384,20 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(231,195,109,0.18)',
     zIndex: 1,
   },
-  toolsMedallion: {
+  toolsLogoTile: {
     position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
     zIndex: 3,
-    shadowColor: '#6E5320',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.30,
-    shadowRadius: 24,
-    elevation: 7,
+    backgroundColor: '#F4F4F2',
+    shadowColor: '#3A332A',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.26,
+    shadowRadius: 26,
+    elevation: 8,
   },
-  toolsMedallionFace: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
-    right: 6,
-    bottom: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  toolsMedallionSheen: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '42%',
+  toolsLogoTileRim: {
+    ...StyleSheet.absoluteFillObject,
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.10)',
   },
   toolsPhysChipSlot: {
     position: 'absolute',
