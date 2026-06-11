@@ -21,7 +21,6 @@ import Reanimated, {
   interpolateColor,
   runOnJS,
   useAnimatedStyle,
-  useFrameCallback,
   useSharedValue,
   withDelay,
   withRepeat,
@@ -8375,122 +8374,205 @@ function V4ProgressRail({
   );
 }
 
-const TOOLS_PILE_LABELS = [
+const TOOLS_COLLAGE_HORIZONTAL = [
   'Scripture', 'Prayer Book', 'Daily Journal', 'Habits',
-  'Challenges', 'Morning Prayers', 'Evening Prayers', 'Bible Notes',
-  'Screen Time', 'App Blocker', 'Content Blocker', 'Notification Blocker',
-  'Routines', 'Spiritual Tasks', 'Monthly Goals', 'Big Events',
-  'Reading List', 'Reading Timer', 'Pomodoro', 'Free Writing',
-  'Morning Pages', 'Favorites', 'Jesus Prayer', 'Bucket List',
-  'Year in Pixels', 'Streaks', 'Notes',
+  'Challenges', 'Screen Time', 'App Blocker', 'Routines',
+  'Monthly Goals', 'Big Events', 'Reading List', 'Streaks',
+];
+
+const TOOLS_COLLAGE_VERTICALS = [
+  { label: 'Pomodoro', side: 'right' as const, rowStart: 0 },
+  { label: 'Notes', side: 'left' as const, rowStart: 2 },
 ];
 
 const TOOLS_PILE_TONES = [
-  { tone: '#F6EFDC', dot: '#C5A059' },
-  { tone: '#E7F4F4', dot: '#4D8586' },
-  { tone: '#F6E9EE', dot: '#8F5D6C' },
-  { tone: '#F2EEDC', dot: '#85723F' },
-  { tone: '#F0EFEA', dot: '#57524B' },
+  { tone: '#F3ECDB', text: '#8A6A2F' },
+  { tone: '#E3F0F0', text: '#3E6E6F' },
+  { tone: '#F4E6EB', text: '#7C4F5D' },
+  { tone: '#ECEBD8', text: '#6A5A30' },
+  { tone: '#EDECE7', text: '#4A453E' },
 ];
 
-const TOOLS_PHYS_STRIDE = 8;
-const TOOLS_PHYS_GRAVITY = 2300;
-const TOOLS_PHYS_SPAWN_BASE = 550;
-const TOOLS_PHYS_SPAWN_STEP = 95;
-
-type ToolsPhysicsConfig = {
-  count: number;
-  halfLengths: number[];
-  spawnTimes: number[];
-  chipRadius: number;
-  floorY: number;
-  wallLeft: number;
-  wallRight: number;
-  sealX: number;
-  sealY: number;
-  sealRadius: number;
-};
-
-function buildToolsPhysics(width: number, height: number, bottomInset: number, compact: boolean) {
-  const chipHeight = compact ? 30 : 34;
-  const charWidth = compact ? 6.4 : 6.9;
-  const chipPadding = compact ? 36 : 40;
-  const sealSize = compact ? 122 : 144;
-  const sealX = width / 2;
-  const sealY = height * (compact ? 0.44 : 0.45);
-  const spawnPattern = [-150, 92, -42, 148, -104, 28, 122, -64, 2];
-
-  const chips = TOOLS_PILE_LABELS.map((label, index) => ({
-    label,
-    estWidth: Math.round(label.length * charWidth) + chipPadding,
-    index,
-  }));
-
-  const config: ToolsPhysicsConfig = {
-    count: chips.length,
-    halfLengths: chips.map(chip => Math.max(2, (chip.estWidth - chipHeight) / 2)),
-    spawnTimes: chips.map((_, index) => TOOLS_PHYS_SPAWN_BASE + index * TOOLS_PHYS_SPAWN_STEP),
-    chipRadius: chipHeight / 2 + 1,
-    floorY: height - bottomInset - 90,
-    wallLeft: 8,
-    wallRight: width - 8,
-    sealX,
-    sealY,
-    sealRadius: sealSize / 2 + 5,
-  };
-
-  const initialBodies = new Array(chips.length * TOOLS_PHYS_STRIDE).fill(0);
-  chips.forEach((chip, index) => {
-    const base = index * TOOLS_PHYS_STRIDE;
-    const spread = spawnPattern[index % spawnPattern.length] + ((index % 3) - 1) * 9;
-    initialBodies[base] = Math.min(config.wallRight - chip.estWidth / 2, Math.max(config.wallLeft + chip.estWidth / 2, sealX + spread));
-    initialBodies[base + 1] = -70 - (index % 5) * 26;
-    initialBodies[base + 2] = (((index * 7) % 9) - 4) * 0.07;
-    initialBodies[base + 3] = (((index * 5) % 7) - 3) * 26;
-    initialBodies[base + 4] = 60;
-    initialBodies[base + 5] = (((index * 11) % 5) - 2) * 0.9;
-    initialBodies[base + 6] = 0;
-    initialBodies[base + 7] = 0;
-  });
-
-  return { chips, chipHeight, sealSize, config, initialBodies };
-}
-
-function ToolsPhysicsChip({
-  index,
-  label,
-  estWidth,
-  chipHeight,
-  bodies,
-  compact,
-}: {
-  index: number;
+type ToolsCollageSlot = {
   label: string;
   estWidth: number;
-  chipHeight: number;
-  bodies: SharedValue<number[]>;
-  compact: boolean;
-}) {
-  const tone = TOOLS_PILE_TONES[index % TOOLS_PILE_TONES.length];
+  cx: number;
+  cy: number;
+  rotate: number;
+  vertical: boolean;
+  delay: number;
+  toneIndex: number;
+  rowHaptic: boolean;
+};
 
-  const chipStyle = useAnimatedStyle(() => {
-    const base = index * TOOLS_PHYS_STRIDE;
-    const arr = bodies.value;
-    return {
-      opacity: arr[base + 6] === 0 ? 0 : 1,
-      transform: [
-        { translateX: arr[base] - estWidth / 2 },
-        { translateY: arr[base + 1] - chipHeight / 2 },
-        { rotate: `${arr[base + 2]}rad` },
-      ],
-    };
+// Pack the chips into a collage that fills the area between the seal and the
+// CTA: rows from the bottom up, with two vertical chips reserved on the sides
+// like in the reference layout. Every chip gets a designated resting slot.
+function buildToolsCollage(
+  width: number,
+  floorY: number,
+  chipHeight: number,
+  fontScale: number,
+): { slots: ToolsCollageSlot[]; rowsUsed: number } {
+  const margin = 14;
+  const gap = 9;
+  const rowStep = chipHeight + gap;
+  const estimate = (label: string) => Math.round(label.length * 8.1 * fontScale) + Math.round(34 * fontScale);
+
+  const verticals = TOOLS_COLLAGE_VERTICALS.map(v => ({
+    ...v,
+    estWidth: estimate(v.label),
+    rowEnd: v.rowStart + 1,
+  }));
+
+  const queue = TOOLS_COLLAGE_HORIZONTAL.map(label => ({ label, estWidth: estimate(label) }));
+  const slots: ToolsCollageSlot[] = [];
+  let toneCursor = 0;
+  let row = 0;
+
+  while (queue.length > 0 && row < 9) {
+    let segStart = margin;
+    let segEnd = width - margin;
+    for (const v of verticals) {
+      if (row >= v.rowStart && row <= v.rowEnd) {
+        if (v.side === 'right') segEnd = width - margin - chipHeight - gap;
+        else segStart = margin + chipHeight + gap;
+      }
+    }
+    const segWidth = segEnd - segStart;
+
+    const rowChips: { label: string; estWidth: number }[] = [];
+    let used = 0;
+    while (queue.length > 0) {
+      const next = queue[0];
+      const needed = used + next.estWidth + (rowChips.length > 0 ? gap : 0);
+      if (needed > segWidth && rowChips.length > 0) break;
+      rowChips.push(queue.shift()!);
+      used = needed;
+    }
+    const slack = Math.max(0, segWidth - used);
+    let cursor = segStart + slack / 2;
+    const cy = floorY - chipHeight / 2 - row * rowStep;
+    rowChips.forEach((chip, chipIndex) => {
+      const cx = cursor + chip.estWidth / 2 + (((row * 7 + chipIndex * 13) % 7) - 3);
+      cursor += chip.estWidth + gap;
+      slots.push({
+        label: chip.label,
+        estWidth: chip.estWidth,
+        cx,
+        cy,
+        rotate: (((row * 5 + chipIndex * 11) % 9) - 4) * 1.1,
+        vertical: false,
+        delay: 0,
+        toneIndex: toneCursor++ % TOOLS_PILE_TONES.length,
+        rowHaptic: chipIndex === 0,
+      });
+    });
+    row += 1;
+  }
+
+  for (const v of verticals) {
+    const cx = v.side === 'right' ? width - margin - chipHeight / 2 : margin + chipHeight / 2;
+    const cy = floorY - ((v.rowStart + v.rowEnd + 1) / 2) * rowStep + gap / 2;
+    slots.push({
+      label: v.label,
+      estWidth: v.estWidth,
+      cx,
+      cy,
+      rotate: v.side === 'right' ? -90 : 90,
+      vertical: true,
+      delay: 0,
+      toneIndex: toneCursor++ % TOOLS_PILE_TONES.length,
+      rowHaptic: false,
+    });
+  }
+
+  // Rhythmic drop order: bottom rows first, in small overlapping bursts.
+  const ordered = slots.slice().sort((a, b) => b.cy - a.cy);
+  ordered.forEach((slot, index) => {
+    const group = Math.floor(index / 3);
+    slot.delay = 480 + group * 230 + (index % 3) * 85;
   });
 
+  return { slots, rowsUsed: row };
+}
+
+function ToolsCollageChip({
+  slot,
+  chipHeight,
+  fontScale,
+  isLastChip,
+}: {
+  slot: ToolsCollageSlot;
+  chipHeight: number;
+  fontScale: number;
+  isLastChip: boolean;
+}) {
+  const drop = useSharedValue(0);
+  const settle = useSharedValue(0);
+  const tone = TOOLS_PILE_TONES[slot.toneIndex];
+  const fallFrom = -(slot.cy + chipHeight + 60);
+
+  const land = useCallback(() => {
+    if (slot.rowHaptic) runTypingHaptic();
+    if (isLastChip) runBubbleHaptic();
+  }, [isLastChip, slot.rowHaptic]);
+
+  useEffect(() => {
+    drop.value = 0;
+    settle.value = 0;
+    drop.value = withDelay(
+      slot.delay,
+      withTiming(1, { duration: 520, easing: Easing.in(Easing.quad) }, finished => {
+        if (!finished) return;
+        settle.value = withSequence(
+          withTiming(1, { duration: 95, easing: Easing.out(Easing.quad) }),
+          withSpring(0, { damping: 12, stiffness: 320, mass: 0.7 }),
+        );
+        runOnJS(land)();
+      }),
+    );
+  }, [drop, land, settle, slot.delay]);
+
+  const chipStyle = useAnimatedStyle(() => ({
+    opacity: drop.value > 0.01 ? 1 : 0,
+    transform: [
+      { translateY: interpolate(drop.value, [0, 1], [fallFrom, 0]) - settle.value * 9 },
+      { rotate: `${interpolate(drop.value, [0, 1], [slot.rotate + (slot.vertical ? 14 : 11), slot.rotate])}deg` },
+      { scaleX: 1 + settle.value * 0.05 },
+      { scaleY: 1 - settle.value * 0.07 },
+    ],
+  }));
+
   return (
-    <Reanimated.View pointerEvents="none" style={[s.toolsPhysChipSlot, chipStyle]}>
-      <View style={[s.toolsTagChip, compact && s.toolsTagChipCompact, { backgroundColor: tone.tone }]}>
-        <View style={[s.toolsTagDot, { backgroundColor: tone.dot }]} />
-        <Text style={[s.toolsTagText, compact && s.toolsTagTextCompact]} numberOfLines={1}>{label}</Text>
+    <Reanimated.View
+      pointerEvents="none"
+      style={[
+        s.toolsPhysChipSlot,
+        {
+          left: slot.cx - slot.estWidth / 2,
+          top: slot.cy - chipHeight / 2,
+        },
+        chipStyle,
+      ]}
+    >
+      <View
+        style={[
+          s.toolsTagChip,
+          {
+            backgroundColor: tone.tone,
+            height: chipHeight,
+            paddingHorizontal: Math.round(17 * fontScale),
+            minWidth: slot.estWidth,
+          },
+        ]}
+      >
+        <Text
+          style={[s.toolsTagText, { color: tone.text, fontSize: 16.5 * fontScale, lineHeight: 20 * fontScale }]}
+          numberOfLines={1}
+        >
+          {slot.label}
+        </Text>
       </View>
     </Reanimated.View>
   );
@@ -8508,233 +8590,19 @@ function ToolsShowcaseSlide({
   const { width, height } = useWindowDimensions();
   const compact = height < 760;
   const [titleUnderlineWidth, setTitleUnderlineWidth] = useState(150);
-  const { chips, chipHeight, sealSize, config, initialBodies } = useMemo(
-    () => buildToolsPhysics(width, height, bottomInset, compact),
-    [bottomInset, compact, height, width],
+  const fontScale = compact ? 0.88 : Math.min(width / 390, 1.04);
+  const chipHeight = Math.round((compact ? 40 : 46) * fontScale);
+  const sealSize = compact ? 104 : 118;
+  const floorY = height - bottomInset - 96;
+  const { slots } = useMemo(
+    () => buildToolsCollage(width, floorY, chipHeight, fontScale),
+    [chipHeight, floorY, fontScale, width],
   );
-  const bodies = useSharedValue<number[]>(initialBodies);
-  const elapsed = useSharedValue(0);
-  const simDone = useSharedValue(0);
-  const lastSpawnAt = TOOLS_PHYS_SPAWN_BASE + (config.count - 1) * TOOLS_PHYS_SPAWN_STEP;
-  const ctaDelay = lastSpawnAt + 1300;
+  const lastDelay = slots.reduce((max, slot) => Math.max(max, slot.delay), 0);
+  const ctaDelay = lastDelay + 900;
+  const sealCY = topInset + (compact ? 150 : 188) + sealSize / 2;
   const sealIn = useSharedValue(0);
   const sealGlow = useSharedValue(0);
-  const lastTickRef = useRef(0);
-
-  const landTick = useCallback(() => {
-    const now = Date.now();
-    if (now - lastTickRef.current < 110) return;
-    lastTickRef.current = now;
-    runTypingHaptic();
-  }, []);
-
-  // Lightweight rigid-body sim on the UI thread: every chip is a capsule
-  // approximated by 3 circles, colliding with the floor, the side walls, the
-  // crest seal (static circle) and each other. Chips settle wherever physics
-  // leaves them - flat, tilted or upright.
-  const frameCallback = useFrameCallback(frameInfo => {
-    if (simDone.value === 1) return;
-    const dtMs = Math.min(frameInfo.timeSincePreviousFrame ?? 16, 32);
-    const dt = dtMs / 1000;
-    elapsed.value += dtMs;
-    const now = elapsed.value;
-    const count = config.count;
-    const halfLengths = config.halfLengths;
-    const spawnTimes = config.spawnTimes;
-    const radius = config.chipRadius;
-    const floorY = config.floorY;
-    const wallLeft = config.wallLeft;
-    const wallRight = config.wallRight;
-    const sealX = config.sealX;
-    const sealY = config.sealY;
-    const sealRadius = config.sealRadius;
-    let activeCount = 0;
-    let pendingCount = 0;
-    let hardLanding = false;
-
-    bodies.modify(arr => {
-      'worklet';
-      // 1) Spawn + integrate.
-      for (let i = 0; i < count; i += 1) {
-        const b = i * TOOLS_PHYS_STRIDE;
-        if (arr[b + 6] === 0) {
-          if (now >= spawnTimes[i]) {
-            arr[b + 6] = 1;
-          } else {
-            pendingCount += 1;
-            continue;
-          }
-        }
-        if (arr[b + 6] === 2) continue;
-        activeCount += 1;
-        arr[b + 4] += TOOLS_PHYS_GRAVITY * dt;
-        arr[b] += arr[b + 3] * dt;
-        arr[b + 1] += arr[b + 4] * dt;
-        arr[b + 2] += arr[b + 5] * dt;
-        arr[b + 5] *= 0.992;
-      }
-
-      const cosA: number[] = [];
-      const sinA: number[] = [];
-      for (let i = 0; i < count; i += 1) {
-        cosA[i] = Math.cos(arr[i * TOOLS_PHYS_STRIDE + 2]);
-        sinA[i] = Math.sin(arr[i * TOOLS_PHYS_STRIDE + 2]);
-      }
-
-      // 2) Static colliders: floor, walls, seal - per chip circle.
-      for (let i = 0; i < count; i += 1) {
-        const b = i * TOOLS_PHYS_STRIDE;
-        if (arr[b + 6] !== 1) continue;
-        const inertia = halfLengths[i] * halfLengths[i] * 0.6 + 420;
-        for (let c = 0; c < 3; c += 1) {
-          const off = (c - 1) * halfLengths[i];
-          const px = arr[b] + cosA[i] * off;
-          const py = arr[b + 1] + sinA[i] * off;
-          const ox = px - arr[b];
-          const oy = py - arr[b + 1];
-
-          let nx = 0;
-          let ny = 0;
-          let pen = 0;
-          let bounce = 0;
-          if (py + radius > floorY) {
-            nx = 0; ny = -1; pen = py + radius - floorY; bounce = 0.34;
-          } else if (px - radius < wallLeft) {
-            nx = 1; ny = 0; pen = wallLeft - (px - radius); bounce = 0.3;
-          } else if (px + radius > wallRight) {
-            nx = -1; ny = 0; pen = (px + radius) - wallRight; bounce = 0.3;
-          } else {
-            const dxs = px - sealX;
-            const dys = py - sealY;
-            const ds = Math.sqrt(dxs * dxs + dys * dys);
-            if (ds < radius + sealRadius && ds > 0.001) {
-              nx = dxs / ds; ny = dys / ds; pen = radius + sealRadius - ds; bounce = 0.42;
-            }
-          }
-          if (pen <= 0) continue;
-
-          arr[b] += nx * pen;
-          arr[b + 1] += ny * pen;
-          const vcx = arr[b + 3] - arr[b + 5] * oy;
-          const vcy = arr[b + 4] + arr[b + 5] * ox;
-          const rvn = vcx * nx + vcy * ny;
-          if (rvn < 0) {
-            const cross = ox * ny - oy * nx;
-            const impulse = -(1 + bounce) * rvn / (1 + (cross * cross) / inertia);
-            arr[b + 3] += impulse * nx;
-            arr[b + 4] += impulse * ny;
-            arr[b + 5] += (ox * (impulse * ny) - oy * (impulse * nx)) / inertia;
-            // Tangential friction so chips stop sliding.
-            const tx = -ny;
-            const ty = nx;
-            const rvt = vcx * tx + vcy * ty;
-            arr[b + 3] -= tx * rvt * 0.22;
-            arr[b + 4] -= ty * rvt * 0.22;
-            arr[b + 5] *= 0.94;
-            if (ny === -1 && rvn < -300) hardLanding = true;
-          }
-        }
-      }
-
-      // 3) Chip-chip collisions (3x3 circles per pair).
-      for (let i = 0; i < count; i += 1) {
-        const bi = i * TOOLS_PHYS_STRIDE;
-        if (arr[bi + 6] === 0) continue;
-        for (let j = i + 1; j < count; j += 1) {
-          const bj = j * TOOLS_PHYS_STRIDE;
-          if (arr[bj + 6] === 0) continue;
-          if (arr[bi + 6] === 2 && arr[bj + 6] === 2) continue;
-          const dcx = arr[bj] - arr[bi];
-          const dcy = arr[bj + 1] - arr[bi + 1];
-          const reach = halfLengths[i] + halfLengths[j] + radius * 2 + 4;
-          if (dcx * dcx + dcy * dcy > reach * reach) continue;
-
-          const inertiaI = halfLengths[i] * halfLengths[i] * 0.6 + 420;
-          const inertiaJ = halfLengths[j] * halfLengths[j] * 0.6 + 420;
-          for (let ci = 0; ci < 3; ci += 1) {
-            const offI = (ci - 1) * halfLengths[i];
-            const pix = arr[bi] + cosA[i] * offI;
-            const piy = arr[bi + 1] + sinA[i] * offI;
-            for (let cj = 0; cj < 3; cj += 1) {
-              const offJ = (cj - 1) * halfLengths[j];
-              const pjx = arr[bj] + cosA[j] * offJ;
-              const pjy = arr[bj + 1] + sinA[j] * offJ;
-              const dx = pix - pjx;
-              const dy = piy - pjy;
-              const distSq = dx * dx + dy * dy;
-              const minDist = radius * 2 - 2;
-              if (distSq >= minDist * minDist || distSq < 0.0001) continue;
-              const dist = Math.sqrt(distSq);
-              const nx = dx / dist;
-              const ny = dy / dist;
-              const pen = minDist - dist;
-
-              const iAsleep = arr[bi + 6] === 2;
-              const jAsleep = arr[bj + 6] === 2;
-              const shareI = jAsleep ? 1 : iAsleep ? 0 : 0.5;
-              const shareJ = 1 - shareI;
-              arr[bi] += nx * pen * shareI;
-              arr[bi + 1] += ny * pen * shareI;
-              arr[bj] -= nx * pen * shareJ;
-              arr[bj + 1] -= ny * pen * shareJ;
-              if (iAsleep && pen > 5) { arr[bi + 6] = 1; arr[bi + 7] = 0; }
-              if (jAsleep && pen > 5) { arr[bj + 6] = 1; arr[bj + 7] = 0; }
-
-              const oix = pix - arr[bi];
-              const oiy = piy - arr[bi + 1];
-              const ojx = pjx - arr[bj];
-              const ojy = pjy - arr[bj + 1];
-              const vix = arr[bi + 3] - arr[bi + 5] * oiy;
-              const viy = arr[bi + 4] + arr[bi + 5] * oix;
-              const vjx = arr[bj + 3] - arr[bj + 5] * ojy;
-              const vjy = arr[bj + 4] + arr[bj + 5] * ojx;
-              const rvn = (vix - vjx) * nx + (viy - vjy) * ny;
-              if (rvn < 0) {
-                const impulse = -(1 + 0.24) * rvn / 2;
-                if (!iAsleep) {
-                  arr[bi + 3] += impulse * nx;
-                  arr[bi + 4] += impulse * ny;
-                  arr[bi + 5] += (oix * (impulse * ny) - oiy * (impulse * nx)) / inertiaI;
-                }
-                if (!jAsleep) {
-                  arr[bj + 3] -= impulse * nx;
-                  arr[bj + 4] -= impulse * ny;
-                  arr[bj + 5] -= (ojx * (impulse * ny) - ojy * (impulse * nx)) / inertiaJ;
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // 4) Sleep bookkeeping - settled chips become static colliders.
-      for (let i = 0; i < count; i += 1) {
-        const b = i * TOOLS_PHYS_STRIDE;
-        if (arr[b + 6] !== 1) continue;
-        const speed = Math.abs(arr[b + 3]) + Math.abs(arr[b + 4]);
-        const nearGround = arr[b + 1] > sealY - sealRadius - 40;
-        if (speed < 17 && Math.abs(arr[b + 5]) < 0.5 && nearGround) {
-          arr[b + 7] += 1;
-          if (arr[b + 7] > 14) {
-            arr[b + 6] = 2;
-            arr[b + 3] = 0;
-            arr[b + 4] = 0;
-            arr[b + 5] = 0;
-          }
-        } else {
-          arr[b + 7] = 0;
-        }
-      }
-      return arr;
-    });
-
-    if (hardLanding) {
-      runOnJS(landTick)();
-    }
-    if (pendingCount === 0 && activeCount === 0) {
-      simDone.value = 1;
-    }
-  }, true);
 
   useEffect(() => {
     sealIn.value = withDelay(220, withSpring(1, { damping: 14, stiffness: 130, mass: 0.9 }));
@@ -8743,17 +8611,8 @@ function ToolsShowcaseSlide({
       withRepeat(withTiming(1, { duration: 3200, easing: Easing.inOut(Easing.quad) }), -1, true),
     );
     const hapticTimer = setTimeout(runBubbleHaptic, 620);
-    // Safety stop in case a chip never falls asleep.
-    const simTimer = setTimeout(() => {
-      simDone.value = 1;
-      frameCallback.setActive(false);
-    }, lastSpawnAt + 9000);
-    return () => {
-      clearTimeout(hapticTimer);
-      clearTimeout(simTimer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => clearTimeout(hapticTimer);
+  }, [sealGlow, sealIn]);
 
   const sealStyle = useAnimatedStyle(() => ({
     opacity: Math.min(1, sealIn.value * 1.4),
@@ -8815,8 +8674,8 @@ function ToolsShowcaseSlide({
             width: glowSize,
             height: glowSize,
             borderRadius: glowSize / 2,
-            left: config.sealX - glowSize / 2,
-            top: config.sealY - glowSize / 2,
+            left: width / 2 - glowSize / 2,
+            top: sealCY - glowSize / 2,
           },
           sealGlowStyle,
         ]}
@@ -8828,8 +8687,8 @@ function ToolsShowcaseSlide({
             width: sealSize,
             height: sealSize,
             borderRadius: sealSize * 0.32,
-            left: config.sealX - sealSize / 2,
-            top: config.sealY - sealSize / 2,
+            left: width / 2 - sealSize / 2,
+            top: sealCY - sealSize / 2,
           },
           sealStyle,
         ]}
@@ -8849,15 +8708,13 @@ function ToolsShowcaseSlide({
       </Reanimated.View>
 
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        {chips.map(chip => (
-          <ToolsPhysicsChip
-            key={chip.label}
-            index={chip.index}
-            label={chip.label}
-            estWidth={chip.estWidth}
+        {slots.map(slot => (
+          <ToolsCollageChip
+            key={slot.label}
+            slot={slot}
             chipHeight={chipHeight}
-            bodies={bodies}
-            compact={compact}
+            fontScale={fontScale}
+            isLastChip={slot.delay === lastDelay}
           />
         ))}
       </View>
@@ -14517,37 +14374,19 @@ const s = StyleSheet.create({
   toolsTagChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 7,
-    paddingHorizontal: 12,
-    paddingVertical: 7.5,
+    justifyContent: 'center',
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.78)',
+    borderColor: 'rgba(255,255,255,0.85)',
     shadowColor: '#5E5142',
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.13,
-    shadowRadius: 9,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 11,
     elevation: 2,
-  },
-  toolsTagChipCompact: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    columnGap: 6,
-  },
-  toolsTagDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
   },
   toolsTagText: {
     fontFamily: F.serifSemiBold,
-    fontSize: 13,
-    lineHeight: 16,
     color: 'rgba(25,23,20,0.78)',
-  },
-  toolsTagTextCompact: {
-    fontSize: 12.2,
-    lineHeight: 15,
   },
   toolsShowcaseAction: {
     paddingHorizontal: 20,
