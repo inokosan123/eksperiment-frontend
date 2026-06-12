@@ -9124,7 +9124,10 @@ function toolsTagIcon(label: string, color: string, size = 14) {
   return <Notebook {...common} />;
 }
 
-function ToolsFieldChip({
+// Memoised: phase changes and typing re-renders in the slide must never walk
+// 40 chip components on the JS thread — all chip motion lives on the UI
+// thread via shared values, so props never change after mount.
+const ToolsFieldChip = React.memo(function ToolsFieldChip({
   slot,
   chipHeight,
   chipScale,
@@ -9201,6 +9204,10 @@ function ToolsFieldChip({
   return (
     <Reanimated.View
       pointerEvents="none"
+      // Chip content never changes after mount and all motion is pure
+      // transforms — caching each chip as a GPU texture makes the rain and
+      // the purge cheap on low-end Android devices.
+      renderToHardwareTextureAndroid
       style={[
         s.toolsPhysChipSlot,
         {
@@ -9229,7 +9236,7 @@ function ToolsFieldChip({
       </View>
     </Reanimated.View>
   );
-}
+});
 
 function ToolsBlinkingCaret() {
   const blink = useSharedValue(1);
@@ -9779,21 +9786,25 @@ function ToolsShowcaseSlide({
           <View style={s.valueBackdropLineTwo} />
         </View>
 
-        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          {field.slots.map(slot => (
-            <ToolsFieldChip
-              key={slot.label}
-              slot={slot}
-              chipHeight={chipHeight}
-              chipScale={field.chipScale}
-              fastForward={fastForward}
-              purgeT={purgeT}
-              purgeSpan={field.purgeSpan}
-              cardLandPulse={cardLandPulse}
-              expandT={expandT}
-            />
-          ))}
-        </View>
+        {phase !== 'convo' ? (
+          // Once the conversation starts the purged chips are far off screen;
+          // unmounting them kills 40 idle float loops for the rest of the scene.
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            {field.slots.map(slot => (
+              <ToolsFieldChip
+                key={slot.label}
+                slot={slot}
+                chipHeight={chipHeight}
+                chipScale={field.chipScale}
+                fastForward={fastForward}
+                purgeT={purgeT}
+                purgeSpan={field.purgeSpan}
+                cardLandPulse={cardLandPulse}
+                expandT={expandT}
+              />
+            ))}
+          </View>
+        ) : null}
 
         <Reanimated.View pointerEvents="none" style={[s.toolsCardStack, { backgroundColor: '#EFE4CC' }, stackDeepStyle]} />
         <Reanimated.View pointerEvents="none" style={[s.toolsCardStack, { backgroundColor: '#F9F2E2' }, stackMidStyle]} />
