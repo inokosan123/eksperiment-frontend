@@ -5012,7 +5012,7 @@ function ProtectPathItem({ index, title, active }: { index: number; title: strin
 
 const DISTRACTION_CARDS = [
   {
-    label: 'Social media',
+    label: 'Social Media',
     icon: <Sparkles s={15} c="#5B8A75" w={1.9} />,
     style: 'social',
     tone: '#EAF4ED',
@@ -5028,20 +5028,12 @@ const DISTRACTION_CARDS = [
     startRotate: '16deg',
   },
   {
-    label: 'Messaging',
-    icon: <BellRing s={15} c="#536A9D" w={1.9} />,
+    label: 'Messages',
+    icon: <Feather s={15} c="#536A9D" w={1.9} />,
     style: 'messaging',
     tone: '#EEF0FA',
     startX: 22,
     startRotate: '14deg',
-  },
-  {
-    label: 'Streaming',
-    icon: <Play s={15} c="#7D5D91" w={1.9} />,
-    style: 'streaming',
-    tone: '#F2EAF5',
-    startX: -22,
-    startRotate: '-12deg',
   },
   {
     label: 'Gaming',
@@ -5052,6 +5044,22 @@ const DISTRACTION_CARDS = [
     startRotate: '-17deg',
   },
   {
+    label: 'News',
+    icon: <OpenBook s={15} c="#7D5D91" w={1.9} />,
+    style: 'news',
+    tone: '#F2EAF5',
+    startX: -22,
+    startRotate: '-12deg',
+  },
+  {
+    label: 'Ads',
+    icon: <Sparkles s={15} c="#9B6C2C" w={1.9} />,
+    style: 'ads',
+    tone: '#FFF1D8',
+    startX: 20,
+    startRotate: '12deg',
+  },
+  {
     label: 'Apps',
     icon: <SlidersHorizontal s={15} c="#4D8586" w={1.9} />,
     style: 'apps',
@@ -5060,17 +5068,17 @@ const DISTRACTION_CARDS = [
     startRotate: '17deg',
   },
   {
-    label: 'Content',
-    icon: <OpenBook s={15} c="#8F5D6C" w={1.9} />,
-    style: 'content',
+    label: 'Group Chats',
+    icon: <Heart s={15} c="#8F5D6C" w={1.9} />,
+    style: 'groups',
     tone: '#F6E9EE',
     startX: -18,
     startRotate: '-10deg',
   },
   {
-    label: 'Noise',
-    icon: <Sparkles s={15} c="#85723F" w={1.9} />,
-    style: 'noise',
+    label: 'Addictive Content',
+    icon: <X s={15} c="#85723F" w={2} />,
+    style: 'addictive',
     tone: '#F2EEDC',
     startX: 18,
     startRotate: '10deg',
@@ -5082,10 +5090,11 @@ const DISTRACTION_CARD_REVEAL_PROFILES: Record<
   { delay: number; duration: number; x: number; y: number; rotate: string; scale: number }
 > = {
   gaming: { delay: 300, duration: 520, x: -82, y: 28, rotate: '-18deg', scale: 0.78 },
-  apps: { delay: 430, duration: 520, x: 78, y: 30, rotate: '18deg', scale: 0.78 },
-  content: { delay: 570, duration: 540, x: -12, y: 58, rotate: '9deg', scale: 0.76 },
-  noise: { delay: 710, duration: 540, x: 42, y: 54, rotate: '-14deg', scale: 0.76 },
-  streaming: { delay: 1060, duration: 620, x: -92, y: -8, rotate: '-17deg', scale: 0.74 },
+  news: { delay: 410, duration: 520, x: -28, y: 54, rotate: '8deg', scale: 0.76 },
+  ads: { delay: 520, duration: 520, x: 42, y: 58, rotate: '-12deg', scale: 0.76 },
+  apps: { delay: 630, duration: 540, x: 78, y: 30, rotate: '18deg', scale: 0.78 },
+  addictive: { delay: 780, duration: 560, x: 12, y: 66, rotate: '-4deg', scale: 0.74 },
+  groups: { delay: 1080, duration: 620, x: -90, y: -8, rotate: '-17deg', scale: 0.74 },
   messaging: { delay: 1360, duration: 650, x: 88, y: 10, rotate: '16deg', scale: 0.74 },
   notifications: { delay: 1660, duration: 680, x: 34, y: -86, rotate: '19deg', scale: 0.72 },
   social: { delay: 1960, duration: 680, x: -78, y: -70, rotate: '-20deg', scale: 0.72 },
@@ -5100,6 +5109,7 @@ const DISTRACTION_CARD_MOTION_PATHS = [
   { phase: 3.05, xA: 10, yA: 9, xB: 5, yB: 7, xC: 1.4, yC: 1.7, rA: 2.2, rB: 1.0, rC: 0.44, duration: 6620 },
   { phase: 3.72, xA: 8, yA: 11, xB: 6, yB: 5, xC: 1.7, yC: 1.4, rA: 2.1, rB: 1.2, rC: 0.48, duration: 6180 },
   { phase: 4.38, xA: 9, yA: 8, xB: 4, yB: 6, xC: 1.5, yC: 1.5, rA: 2.3, rB: 0.9, rC: 0.52, duration: 6530 },
+  { phase: 4.92, xA: 8, yA: 10, xB: 7, yB: 5, xC: 1.6, yC: 1.4, rA: 2.2, rB: 1.1, rC: 0.50, duration: 6680 },
 ];
 
 function DistractionCard({
@@ -5119,11 +5129,12 @@ function DistractionCard({
     social: s.distractionCardSocial,
     notifications: s.distractionCardNotifications,
     messaging: s.distractionCardMessaging,
-    streaming: s.distractionCardStreaming,
     gaming: s.distractionCardGaming,
+    news: s.distractionCardNews,
+    ads: s.distractionCardAds,
     apps: s.distractionCardApps,
-    content: s.distractionCardContent,
-    noise: s.distractionCardNoise,
+    groups: s.distractionCardGroups,
+    addictive: s.distractionCardAddictive,
   };
 
   useEffect(() => {
@@ -8680,6 +8691,8 @@ type ToolsFieldSlot = {
   purgeDrift: number;
   purgeSpin: number;
   purgeDistance: number;
+  expandShift: number;
+  expandTilt: number;
   floatX: number;
   floatY: number;
   floatRotate: number;
@@ -8750,7 +8763,8 @@ function buildToolsField(
   width: number,
   fieldTop: number,
   fieldBottom: number,
-  box: { left: number; top: number; right: number; bottom: number },
+  boxRest: { left: number; top: number; right: number; bottom: number },
+  boxFinal: { left: number; top: number; right: number; bottom: number },
   baseChipHeight: number,
   screenHeight: number,
 ): ToolsFieldBuild {
@@ -8762,9 +8776,9 @@ function buildToolsField(
   // Base metrics describe the chip at full size (scale 1); the solver below
   // shrinks everything together a few percent at a time until ALL 40 tags fit.
   const estimate = (label: string) => Math.max(88, Math.round(label.length * 7.1) + 54);
-  const boxCyMid = (box.top + box.bottom) / 2;
+  const boxCyMid = (boxFinal.top + boxFinal.bottom) / 2;
 
-  type CoreSlot = { label: string; estWidth: number; cx: number; cy: number; rotate: number; side?: boolean };
+  type CoreSlot = { label: string; estWidth: number; cx: number; cy: number; cyFinal: number; rotate: number; side?: boolean };
   const placed: CoreSlot[] = [];
 
   // ── Final placement engine ──────────────────────────────────────────────
@@ -8772,13 +8786,23 @@ function buildToolsField(
   // in proportion to their area (the crown above the card stays as alive as
   // the pile below), width-balanced into rows, then laid out with EQUAL gaps
   // plus bounded jitter. Overlap is impossible by construction.
+  //
+  // Every chip carries TWO vertical positions: at rest around the TITLE-ONLY
+  // card (the rain lands snug against it — no unexplained gap), and a final
+  // one around the EXPANDED card. When the subtitle reveals, the growing card
+  // shoves the pile apart: nearest rows fly the full distance, edge rows
+  // barely move. Rows are packed against the expanded regions, so the final
+  // state is guaranteed overlap-free and the rest state is simply roomier.
   const usableW = width - margin * 2;
   const aboveTop = fieldTop + 2;
-  const aboveBottom = box.top - 8;
-  const belowTop = box.bottom + 8;
+  const aboveBottom = boxFinal.top - 8;
+  const belowTop = boxFinal.bottom + 8;
   const belowBottom = fieldBottom - 2;
   const aboveH = Math.max(0, aboveBottom - aboveTop);
   const belowH = Math.max(0, belowBottom - belowTop);
+  const aboveHRest = Math.max(0, (boxRest.top - 8) - aboveTop);
+  const belowTopRest = boxRest.bottom + 8;
+  const belowHRest = Math.max(0, belowBottom - belowTopRest);
 
   type RowChip = { label: string; w: number };
   type Row = { chips: RowChip[]; total: number };
@@ -8809,8 +8833,8 @@ function buildToolsField(
 
     // Four tags stand nearly vertical in the gutters beside the card when the
     // screen leaves room for them — varied lengths so the spines feel organic.
-    const sideMaxLen = (box.bottom - box.top - 24) / 2;
-    const sideAvail = box.left + 16 - margin;
+    const sideMaxLen = (boxFinal.bottom - boxFinal.top - 24) / 2;
+    const sideAvail = boxFinal.left + 16 - margin;
     let sideItems: RowChip[] = [];
     let rowItems = items;
     if (sideAvail >= h + 4) {
@@ -8872,9 +8896,10 @@ function buildToolsField(
     solvedRows = trySolve(chipScale, chipHeight) ?? { rowsA: [], rowsB: [], sideItems: [] };
   }
 
-  const placeRegion = (rows: Row[], top: number, regionH: number) => {
+  const placeRegion = (rows: Row[], restTop: number, restH: number, finalTop: number, finalH: number) => {
     const rowCount = rows.length;
-    const pitch = rowCount > 1 ? (regionH - chipHeight) / (rowCount - 1) : 0;
+    const pitchRest = rowCount > 1 ? (restH - chipHeight) / (rowCount - 1) : 0;
+    const pitchFinal = rowCount > 1 ? (finalH - chipHeight) / (rowCount - 1) : 0;
     rows.forEach((row, rowIndex) => {
       if (row.chips.length === 0) return;
       // Shuffle the visual order so widths mix across each row.
@@ -8882,12 +8907,13 @@ function buildToolsField(
         const j = Math.floor(rand() * (i + 1));
         [row.chips[i], row.chips[j]] = [row.chips[j], row.chips[i]];
       }
-      const rowCy = rowCount > 1 ? top + chipHeight / 2 + pitch * rowIndex : top + regionH / 2;
+      const rowCyRest = rowCount > 1 ? restTop + chipHeight / 2 + pitchRest * rowIndex : restTop + restH / 2;
+      const rowCyFinal = rowCount > 1 ? finalTop + chipHeight / 2 + pitchFinal * rowIndex : finalTop + finalH / 2;
       // Inner gaps are equal but capped, and the row is centred — airy rows
       // (e.g. a 2-chip crown row) stay rhythmic instead of stretching apart.
       const gap = Math.min(26, (usableW - row.total) / (row.chips.length + 1));
       const lead = (usableW - row.total - (row.chips.length - 1) * gap) / 2;
-      const yJitMax = Math.min(5, Math.max(0, (pitch - chipHeight) / 2 - 4));
+      const yJitMax = Math.min(5, Math.max(0, (Math.min(pitchRest, pitchFinal) - chipHeight) / 2 - 4));
       let cursor = margin + lead;
       row.chips.forEach(chip => {
         const xJit = (rand() * 2 - 1) * Math.min(4, Math.max(0, (gap - minGap) * 0.4));
@@ -8900,7 +8926,8 @@ function buildToolsField(
           label: chip.label,
           estWidth: chip.w,
           cx: cursor + chip.w / 2 + xJit,
-          cy: rowCy + yJit,
+          cy: rowCyRest + yJit,
+          cyFinal: rowCyFinal + yJit,
           rotate: sign * rotMag,
         });
         cursor += chip.w + gap;
@@ -8908,26 +8935,29 @@ function buildToolsField(
     });
   };
 
-  placeRegion(solvedRows.rowsA, aboveTop, aboveH);
-  placeRegion(solvedRows.rowsB, belowTop, belowH);
+  placeRegion(solvedRows.rowsA, aboveTop, aboveHRest, aboveTop, aboveH);
+  placeRegion(solvedRows.rowsB, belowTopRest, belowHRest, belowTop, belowH);
 
   // Side spines: nearly vertical, tips tucked a few px under the card edge —
-  // they read as tags that fell and wedged themselves against the card.
+  // they read as tags that fell and wedged themselves against the card. They
+  // sit beside the card, so the vertical expansion does not move them.
   solvedRows.sideItems.forEach((chip, index) => {
     const isLeft = index % 2 === 0;
     const isTop = index < 2;
-    const innerX = isLeft ? box.left + 16 : box.right - 16;
+    const innerX = isLeft ? boxFinal.left + 16 : boxFinal.right - 16;
     const outerX = isLeft ? margin : width - margin;
     const stackGap = 14;
     const rawCy = isTop
       ? boxCyMid - stackGap / 2 - chip.w / 2
       : boxCyMid + stackGap / 2 + chip.w / 2;
     const tilt = 2 + rand() * 2.5;
+    const cy = Math.max(boxFinal.top + chip.w / 2 - 6, Math.min(boxFinal.bottom - chip.w / 2 + 6, rawCy));
     placed.push({
       label: chip.label,
       estWidth: chip.w,
       cx: (innerX + outerX) / 2 + (rand() * 2 - 1) * 1.5,
-      cy: Math.max(box.top + chip.w / 2 - 6, Math.min(box.bottom - chip.w / 2 + 6, rawCy)),
+      cy,
+      cyFinal: cy,
       rotate: (isLeft ? -1 : 1) * (90 - tilt),
       side: true,
     });
@@ -8981,7 +9011,7 @@ function buildToolsField(
   });
 
   let lastLandingAt = 0;
-  const boxCenterX = (box.left + box.right) / 2;
+  const boxCenterX = (boxFinal.left + boxFinal.right) / 2;
 
   const slots: ToolsFieldSlot[] = placed.map((core, index) => {
     const entranceDelay = entranceDelays[index];
@@ -9000,10 +9030,11 @@ function buildToolsField(
     const xOut: number[] = [fromX, fromX * 0.45 + (rand() * 2 - 1) * 8, (rand() * 2 - 1) * 7, 0];
 
     // The postcard lands into the pile last — chips bordering its gap get a
-    // radial shove (strongest for the closest) when it touches down. Side
+    // radial shove (strongest for the closest) when it touches down. The card
+    // is title-only at that moment, so proximity uses the rest rect. Side
     // spines land after the card, already leaning on it, so they skip it.
-    const outsideX = Math.max(box.left - core.cx, 0, core.cx - box.right);
-    const outsideY = Math.max(box.top - core.cy, 0, core.cy - box.bottom);
+    const outsideX = Math.max(boxRest.left - core.cx, 0, core.cx - boxRest.right);
+    const outsideY = Math.max(boxRest.top - core.cy, 0, core.cy - boxRest.bottom);
     const boxDistance = Math.hypot(outsideX, outsideY);
     let pushX = 0;
     let pushY = 0;
@@ -9038,7 +9069,9 @@ function buildToolsField(
       purgeDelay: purgeRank[index] * TOOLS_SCENE.purgeStep + rand() * 26,
       purgeDrift: (rand() * 2 - 1) * 44,
       purgeSpin: (rand() < 0.5 ? -1 : 1) * (28 + rand() * 40),
-      purgeDistance: screenHeight - core.cy + chipHeight + 180,
+      purgeDistance: screenHeight - core.cyFinal + chipHeight + 180,
+      expandShift: core.cyFinal - core.cy,
+      expandTilt: Math.max(-10, Math.min(10, (core.cyFinal - core.cy) * 0.5)),
       floatX: (rand() * 2 - 1) * 4.5,
       floatY: (rand() < 0.5 ? -1 : 1) * (3.5 + rand() * 3),
       floatRotate: (rand() < 0.5 ? -1 : 1) * (0.9 + rand() * 0.9),
@@ -9086,6 +9119,7 @@ function ToolsFieldChip({
   purgeT,
   purgeSpan,
   cardLandPulse,
+  expandT,
 }: {
   slot: ToolsFieldSlot;
   chipHeight: number;
@@ -9094,6 +9128,7 @@ function ToolsFieldChip({
   purgeT: SharedValue<number>;
   purgeSpan: number;
   cardLandPulse: SharedValue<number>;
+  expandT: SharedValue<number>;
 }) {
   const entrance = useSharedValue(0);
   const float = useSharedValue(0);
@@ -9134,14 +9169,18 @@ function ToolsFieldChip({
     const spin = interpolate(e, [0, 0.86, 1], [slot.spinFrom, slot.rotate - slot.wobble, slot.rotate]);
 
     const shove = cardLandPulse.value;
+    // The card's growth launches the pile apart: spring overshoot past the
+    // new resting spot, plus a transient tilt rattle that settles to zero.
+    const ex = expandT.value;
+    const expandRattle = (ex - Math.min(1, ex)) * slot.expandTilt;
 
     return {
       opacity: interpolate(e, [0, 0.12], [0, 1], 'clamp'),
       transform: [
         { translateX: driftX + interpolate(float.value, [0, 1], [0, slot.floatX]) * floatK + shove * slot.pushX + pLocal * slot.purgeDrift },
-        { translateY: fallY + interpolate(float.value, [0, 1], [0, slot.floatY]) * floatK + shove * slot.pushY + pEased * slot.purgeDistance },
+        { translateY: fallY + interpolate(float.value, [0, 1], [0, slot.floatY]) * floatK + shove * slot.pushY + ex * slot.expandShift + pEased * slot.purgeDistance },
         { scale: interpolate(e, [0, 0.86, 1], [0.96, 1.015, 1]) },
-        { rotate: `${spin + interpolate(float.value, [0, 1], [0, slot.floatRotate]) * floatK + pEased * slot.purgeSpin}deg` },
+        { rotate: `${spin + interpolate(float.value, [0, 1], [0, slot.floatRotate]) * floatK + expandRattle + pEased * slot.purgeSpin}deg` },
       ],
     };
   });
@@ -9320,6 +9359,7 @@ function ToolsShowcaseSlide({
   const cardSettle = useSharedValue(0);
   const cardLandPulse = useSharedValue(0);
   const revealSettle = useSharedValue(0);
+  const expandT = useSharedValue(0);
   const boxExpand = useSharedValue(0);
   const fastForward = useSharedValue(0);
   const purgeT = useSharedValue(0);
@@ -9351,9 +9391,17 @@ function ToolsShowcaseSlide({
     top: boxCy - boxHeight / 2 - 8,
     bottom: boxCy + boxHeight / 2 + 8,
   }), [boxCy, boxHeight, boxLeft, boxWidth]);
+  // The title-only card the rain actually lands around; the expanded `box`
+  // only becomes real when the subtitle reveals and shoves the pile apart.
+  const boxRest = useMemo(() => ({
+    left: boxLeft - 8,
+    right: boxLeft + boxWidth + 8,
+    top: boxCy - titleOnlyBoxHeight / 2 - 8,
+    bottom: boxCy + titleOnlyBoxHeight / 2 + 8,
+  }), [boxCy, boxLeft, boxWidth, titleOnlyBoxHeight]);
   const field = useMemo(
-    () => buildToolsField(width, fieldTop, fieldBottom, box, baseChipHeight, height),
-    [box, baseChipHeight, fieldBottom, fieldTop, height, width],
+    () => buildToolsField(width, fieldTop, fieldBottom, boxRest, box, baseChipHeight, height),
+    [box, boxRest, baseChipHeight, fieldBottom, fieldTop, height, width],
   );
   const chipHeight = field.chipHeight;
 
@@ -9425,9 +9473,13 @@ function ToolsShowcaseSlide({
     if (phaseRef.current !== 'rain') return;
     phaseRef.current = 'reveal';
     setPhase('reveal');
-    // The reveal is felt, not just seen: a medium tap as the card opens.
+    // The reveal is felt, not just seen: a medium tap as the card opens, and
+    // the growing card physically launches the surrounding tags apart.
     runBubbleHaptic();
     boxExpand.value = withTiming(1, { duration: instant ? 240 : 620, easing: Easing.bezier(0.16, 1, 0.28, 1) });
+    expandT.value = instant
+      ? withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) })
+      : withDelay(90, withSpring(1, { damping: 11, stiffness: 130, mass: 1 }));
     revealSettle.value = withDelay(instant ? 0 : 220, withTiming(1, { duration: 520, easing: Easing.bezier(0.22, 1, 0.36, 1) }));
     const typeTotal = instant ? 0 : TOOLS_SCENE.typeStartDelay + subtitleTypeMs;
     schedule(startPurge, 300 + typeTotal + TOOLS_SCENE.holdAfterType);
@@ -9445,6 +9497,7 @@ function ToolsShowcaseSlide({
     cardSettle.value = 0;
     cardLandPulse.value = 0;
     revealSettle.value = 0;
+    expandT.value = 0;
     boxExpand.value = 0;
     fastForward.value = 0;
     purgeT.value = 0;
@@ -9544,6 +9597,7 @@ function ToolsShowcaseSlide({
     if (current === 'purge' || current === 'morph') {
       clearTimers();
       fastForward.value = 1;
+      expandT.value = withTiming(1, { duration: 160 });
       purgeT.value = withTiming(1, { duration: 160 });
       if (phaseRef.current === 'purge') {
         phaseRef.current = 'morph';
@@ -9690,6 +9744,7 @@ function ToolsShowcaseSlide({
               purgeT={purgeT}
               purgeSpan={field.purgeSpan}
               cardLandPulse={cardLandPulse}
+              expandT={expandT}
             />
           ))}
         </View>
@@ -15847,17 +15902,17 @@ const s = StyleSheet.create({
     zIndex: 4,
   },
   distractionCardMessaging: {
-    top: 94,
-    right: -12,
-    width: 132,
+    top: 91,
+    right: -10,
+    width: 127,
     transform: [{ rotate: '-2deg' }],
     zIndex: 4,
   },
-  distractionCardStreaming: {
-    top: 153,
-    left: -10,
-    width: 126,
-    transform: [{ rotate: '5deg' }],
+  distractionCardGroups: {
+    top: 149,
+    left: -11,
+    width: 137,
+    transform: [{ rotate: '4deg' }],
     zIndex: 7,
   },
   distractionCardGaming: {
@@ -15867,6 +15922,20 @@ const s = StyleSheet.create({
     transform: [{ rotate: '-5deg' }],
     zIndex: 8,
   },
+  distractionCardNews: {
+    left: 48,
+    bottom: 32,
+    width: 93,
+    transform: [{ rotate: '2deg' }],
+    zIndex: 7,
+  },
+  distractionCardAds: {
+    right: 74,
+    bottom: 25,
+    width: 82,
+    transform: [{ rotate: '-7deg' }],
+    zIndex: 7,
+  },
   distractionCardApps: {
     right: 0,
     bottom: 86,
@@ -15874,19 +15943,12 @@ const s = StyleSheet.create({
     transform: [{ rotate: '6deg' }],
     zIndex: 8,
   },
-  distractionCardContent: {
-    left: 53,
-    bottom: 22,
-    width: 116,
-    transform: [{ rotate: '2deg' }],
-    zIndex: 7,
-  },
-  distractionCardNoise: {
-    right: 32,
-    bottom: 25,
-    width: 94,
-    transform: [{ rotate: '-8deg' }],
-    zIndex: 7,
+  distractionCardAddictive: {
+    left: 104,
+    bottom: 63,
+    width: 172,
+    transform: [{ rotate: '-2deg' }],
+    zIndex: 9,
   },
   distractionGroundShadow: {
     position: 'absolute',
