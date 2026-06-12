@@ -3338,7 +3338,7 @@ function ValuePhoneMock({ kind, active }: { kind: ValuePhoneKind; active: boolea
             source={CONFETTI_SOURCE}
             autoPlay={false}
             loop={false}
-            speed={0.82}
+            speed={0.68}
             resizeMode="cover"
             style={StyleSheet.absoluteFill}
           />
@@ -8702,11 +8702,11 @@ const TOOLS_FIELD_LABELS = [
 // typed truth -> long beat -> purge (floor opens) -> card morphs into chat.
 const TOOLS_SCENE = {
   flightDuration: 820,
-  flightLead: 520,
+  flightLead: 650,
   rainStart: 180,
   burstGap: 190,
   intraGap: 64,
-  cardPause: 200,
+  cardPause: 140,
   revealAfterLand: 850,
   typeStartDelay: 260,
   typeCharMs: 30,
@@ -8764,7 +8764,7 @@ function buildToolsField(
   const estimate = (label: string) => Math.max(88, Math.round(label.length * 7.1) + 54);
   const boxCyMid = (box.top + box.bottom) / 2;
 
-  type CoreSlot = { label: string; estWidth: number; cx: number; cy: number; rotate: number };
+  type CoreSlot = { label: string; estWidth: number; cx: number; cy: number; rotate: number; side?: boolean };
   const placed: CoreSlot[] = [];
 
   // ── Final placement engine ──────────────────────────────────────────────
@@ -8802,21 +8802,44 @@ function buildToolsField(
     return rows;
   };
 
-  const trySolve = (scale: number, h: number): { rowsA: Row[]; rowsB: Row[] } | null => {
+  const trySolve = (scale: number, h: number): { rowsA: Row[]; rowsB: Row[]; sideItems: RowChip[] } | null => {
     const items: RowChip[] = TOOLS_FIELD_LABELS
       .map(label => ({ label, w: Math.max(56, Math.round(estimate(label) * scale)) }))
       .sort((a, b) => b.w - a.w);
-    const baseAbove = Math.round(items.length * (aboveH / Math.max(1, aboveH + belowH)));
+
+    // Four tags stand nearly vertical in the gutters beside the card when the
+    // screen leaves room for them — varied lengths so the spines feel organic.
+    const sideMaxLen = (box.bottom - box.top - 24) / 2;
+    const sideAvail = box.left + 16 - margin;
+    let sideItems: RowChip[] = [];
+    let rowItems = items;
+    if (sideAvail >= h + 4) {
+      const candidates = items.filter(item => item.w >= 72 && item.w <= sideMaxLen);
+      if (candidates.length >= 4) {
+        const pickIndexes = [...new Set([
+          0,
+          Math.floor(candidates.length / 3),
+          Math.floor((candidates.length * 2) / 3),
+          candidates.length - 1,
+        ])];
+        if (pickIndexes.length === 4) {
+          sideItems = pickIndexes.map(i => candidates[i]);
+          rowItems = items.filter(item => !sideItems.includes(item));
+        }
+      }
+    }
+
+    const baseAbove = Math.round(rowItems.length * (aboveH / Math.max(1, aboveH + belowH)));
 
     // If the proportional split does not pack at this scale, shift a few
     // chips between the regions before giving up and shrinking.
     for (const shift of [0, -1, -2, 1, -3, 2, -4]) {
-      const nAbove = Math.max(0, Math.min(items.length, baseAbove + shift));
-      const nBelow = items.length - nAbove;
+      const nAbove = Math.max(0, Math.min(rowItems.length, baseAbove + shift));
+      const nBelow = rowItems.length - nAbove;
       // Deal widest-first, alternating by fill ratio, so both regions get
       // the same mix of long and short labels.
       const split: [RowChip[], RowChip[]] = [[], []];
-      items.forEach(item => {
+      rowItems.forEach(item => {
         const aShare = nAbove === 0 ? 1 : split[0].length / nAbove;
         const bShare = nBelow === 0 ? 1 : split[1].length / nBelow;
         if (aShare <= bShare && split[0].length < nAbove) split[0].push(item);
@@ -8825,14 +8848,14 @@ function buildToolsField(
       });
       const rowsA = packRegion(split[0], aboveH, h);
       const rowsB = packRegion(split[1], belowH, h);
-      if (rowsA && rowsB) return { rowsA, rowsB };
+      if (rowsA && rowsB) return { rowsA, rowsB, sideItems };
     }
     return null;
   };
 
   let chipScale = 1;
   let chipHeight = Math.round(baseChipHeight);
-  let solvedRows: { rowsA: Row[]; rowsB: Row[] } | null = null;
+  let solvedRows: { rowsA: Row[]; rowsB: Row[]; sideItems: RowChip[] } | null = null;
   for (let attempt = 0; attempt < 16 && !solvedRows; attempt += 1) {
     const scale = Math.pow(0.97, attempt);
     const h = Math.max(24, Math.round(baseChipHeight * scale));
@@ -8846,7 +8869,7 @@ function buildToolsField(
   if (!solvedRows) {
     chipScale = Math.pow(0.97, 15);
     chipHeight = Math.max(24, Math.round(baseChipHeight * chipScale));
-    solvedRows = trySolve(chipScale, chipHeight) ?? { rowsA: [], rowsB: [] };
+    solvedRows = trySolve(chipScale, chipHeight) ?? { rowsA: [], rowsB: [], sideItems: [] };
   }
 
   const placeRegion = (rows: Row[], top: number, regionH: number) => {
@@ -8862,7 +8885,7 @@ function buildToolsField(
       const rowCy = rowCount > 1 ? top + chipHeight / 2 + pitch * rowIndex : top + regionH / 2;
       // Inner gaps are equal but capped, and the row is centred — airy rows
       // (e.g. a 2-chip crown row) stay rhythmic instead of stretching apart.
-      const gap = Math.min(30, (usableW - row.total) / (row.chips.length + 1));
+      const gap = Math.min(26, (usableW - row.total) / (row.chips.length + 1));
       const lead = (usableW - row.total - (row.chips.length - 1) * gap) / 2;
       const yJitMax = Math.min(5, Math.max(0, (pitch - chipHeight) / 2 - 4));
       let cursor = margin + lead;
@@ -8888,6 +8911,28 @@ function buildToolsField(
   placeRegion(solvedRows.rowsA, aboveTop, aboveH);
   placeRegion(solvedRows.rowsB, belowTop, belowH);
 
+  // Side spines: nearly vertical, tips tucked a few px under the card edge —
+  // they read as tags that fell and wedged themselves against the card.
+  solvedRows.sideItems.forEach((chip, index) => {
+    const isLeft = index % 2 === 0;
+    const isTop = index < 2;
+    const innerX = isLeft ? box.left + 16 : box.right - 16;
+    const outerX = isLeft ? margin : width - margin;
+    const stackGap = 14;
+    const rawCy = isTop
+      ? boxCyMid - stackGap / 2 - chip.w / 2
+      : boxCyMid + stackGap / 2 + chip.w / 2;
+    const tilt = 2 + rand() * 2.5;
+    placed.push({
+      label: chip.label,
+      estWidth: chip.w,
+      cx: (innerX + outerX) / 2 + (rand() * 2 - 1) * 1.5,
+      cy: Math.max(box.top + chip.w / 2 - 6, Math.min(box.bottom - chip.w / 2 + 6, rawCy)),
+      rotate: (isLeft ? -1 : 1) * (90 - tilt),
+      side: true,
+    });
+  });
+
   // Falls are slow and distance-scaled; precomputed so the timeline below can
   // know exactly when each act of the rain finishes.
   const fallDurations = placed.map(core => 780 + Math.sqrt(Math.max(40, core.cy)) * 10 + rand() * 140);
@@ -8898,12 +8943,20 @@ function buildToolsField(
   const orderJitter = placed.map(() => (rand() * 2 - 1) * (chipHeight + 10) * 1.3);
   const belowOrder = placed
     .map((_, index) => index)
-    .filter(index => placed[index].cy > boxCyMid)
+    .filter(index => !placed[index].side && placed[index].cy > boxCyMid)
     .sort((a, b) => (placed[b].cy + orderJitter[b]) - (placed[a].cy + orderJitter[a]));
-  const aboveOrder = placed
-    .map((_, index) => index)
-    .filter(index => placed[index].cy <= boxCyMid)
-    .sort((a, b) => (placed[b].cy + orderJitter[b]) - (placed[a].cy + orderJitter[a]));
+  // Side spines open Act 2 — they wedge against the freshly landed card
+  // first, then the crown rows fall above it.
+  const aboveOrder = [
+    ...placed
+      .map((_, index) => index)
+      .filter(index => placed[index].side)
+      .sort((a, b) => placed[b].cy - placed[a].cy),
+    ...placed
+      .map((_, index) => index)
+      .filter(index => !placed[index].side && placed[index].cy <= boxCyMid)
+      .sort((a, b) => (placed[b].cy + orderJitter[b]) - (placed[a].cy + orderJitter[a])),
+  ];
 
   const entranceDelays = new Array<number>(placed.length).fill(TOOLS_SCENE.rainStart);
   let lastBelowLandingAt = 0;
@@ -8947,13 +9000,14 @@ function buildToolsField(
     const xOut: number[] = [fromX, fromX * 0.45 + (rand() * 2 - 1) * 8, (rand() * 2 - 1) * 7, 0];
 
     // The postcard lands into the pile last — chips bordering its gap get a
-    // radial shove (strongest for the closest) when it touches down.
+    // radial shove (strongest for the closest) when it touches down. Side
+    // spines land after the card, already leaning on it, so they skip it.
     const outsideX = Math.max(box.left - core.cx, 0, core.cx - box.right);
     const outsideY = Math.max(box.top - core.cy, 0, core.cy - box.bottom);
     const boxDistance = Math.hypot(outsideX, outsideY);
     let pushX = 0;
     let pushY = 0;
-    if (boxDistance < 70) {
+    if (!core.side && boxDistance < 70) {
       const magnitude = 2.5 + 6 * (1 - boxDistance / 70);
       const dirX = core.cx - boxCenterX;
       const dirY = core.cy - boxCyMid;
@@ -9165,25 +9219,45 @@ function ToolsOrnamentDraw({ progress }: { progress: SharedValue<number> }) {
   );
 }
 
-function ToolsTypedSubtitle({ delay = 520, forceComplete = false }: { delay?: number; forceComplete?: boolean }) {
+function ToolsTypedSubtitle({
+  delay = 520,
+  forceComplete = false,
+  onComplete,
+}: {
+  delay?: number;
+  forceComplete?: boolean;
+  onComplete?: () => void;
+}) {
   const [typedCount, setTypedCount] = useState(0);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+  const firedRef = useRef(false);
 
   useEffect(() => {
     if (forceComplete) {
       setTypedCount(TOOLS_SUBTITLE_TEXT.length);
+      if (!firedRef.current) {
+        firedRef.current = true;
+        onCompleteRef.current?.();
+      }
       return undefined;
     }
     setTypedCount(0);
+    firedRef.current = false;
     let interval: ReturnType<typeof setInterval> | null = null;
     const startTimer = setTimeout(() => {
       let next = 0;
       interval = setInterval(() => {
         next += 1;
         setTypedCount(Math.min(next, TOOLS_SUBTITLE_TEXT.length));
-        if (next % 4 === 0) runTypingHaptic();
+        if (next % 3 === 0) runTypingHaptic();
         if (next >= TOOLS_SUBTITLE_TEXT.length && interval) {
           clearInterval(interval);
           interval = null;
+          if (!firedRef.current) {
+            firedRef.current = true;
+            onCompleteRef.current?.();
+          }
         }
       }, TOOLS_SCENE.typeCharMs);
     }, delay);
@@ -9245,6 +9319,7 @@ function ToolsShowcaseSlide({
   const flight = useSharedValue(0);
   const cardSettle = useSharedValue(0);
   const cardLandPulse = useSharedValue(0);
+  const revealSettle = useSharedValue(0);
   const boxExpand = useSharedValue(0);
   const fastForward = useSharedValue(0);
   const purgeT = useSharedValue(0);
@@ -9259,7 +9334,9 @@ function ToolsShowcaseSlide({
   // The CTA only exists after the purge, so during the rain the pile may run
   // almost to the bottom edge — the screen should feel full of tools.
   const fieldBottom = height - bottomInset - 12;
-  const boxWidth = Math.min(width - 50, 342);
+  // Slightly narrower than v7's 342 so the side gutters can hold the
+  // vertical "spine" tags wedged against the card edges.
+  const boxWidth = Math.min(width - 64, 332);
   const boxHeight = compact ? 214 : 224;
   const titleOnlyBoxHeight = compact ? 138 : 148;
   // The card sits slightly above center: a sparse crown of tags above it, the
@@ -9348,7 +9425,10 @@ function ToolsShowcaseSlide({
     if (phaseRef.current !== 'rain') return;
     phaseRef.current = 'reveal';
     setPhase('reveal');
+    // The reveal is felt, not just seen: a medium tap as the card opens.
+    runBubbleHaptic();
     boxExpand.value = withTiming(1, { duration: instant ? 240 : 620, easing: Easing.bezier(0.16, 1, 0.28, 1) });
+    revealSettle.value = withDelay(instant ? 0 : 220, withTiming(1, { duration: 520, easing: Easing.bezier(0.22, 1, 0.36, 1) }));
     const typeTotal = instant ? 0 : TOOLS_SCENE.typeStartDelay + subtitleTypeMs;
     schedule(startPurge, 300 + typeTotal + TOOLS_SCENE.holdAfterType);
   }
@@ -9364,6 +9444,7 @@ function ToolsShowcaseSlide({
     flight.value = 0;
     cardSettle.value = 0;
     cardLandPulse.value = 0;
+    revealSettle.value = 0;
     boxExpand.value = 0;
     fastForward.value = 0;
     purgeT.value = 0;
@@ -9486,6 +9567,16 @@ function ToolsShowcaseSlide({
     schedule(runSelectionHaptic, 150);
     schedule(onNext, TOOLS_SCENE.echoDwell);
   };
+
+  // The typed truth ends on one strong beat: a heavy tap and the card gives a
+  // small nod — the sentence has landed.
+  const handleTypingDone = useCallback(() => {
+    runStrongHaptic();
+    cardLift.value = withSequence(
+      withTiming(-2.4, { duration: 140, easing: Easing.out(Easing.quad) }),
+      withSpring(0, { damping: 12, stiffness: 260 }),
+    );
+  }, [cardLift]);
 
   const morphCardStyle = useAnimatedStyle(() => {
     const m = morphT.value;
@@ -9638,20 +9729,20 @@ function ToolsShowcaseSlide({
             />
             {phase !== 'rain' ? (
               <Reanimated.View
-                entering={FadeIn.delay(40).duration(460).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                entering={FadeIn.delay(40).duration(520).easing(Easing.bezier(0.22, 1, 0.36, 1)).withInitialValues({
                   opacity: 0,
-                  transform: [{ translateY: 12 }, { scale: 0.96 }],
+                  transform: [{ translateY: 16 }, { scale: 0.965 }],
                 })}
                 style={s.toolsSubtitleReveal}
               >
                 <View style={s.toolsSubtitleFrame}>
-                  <ToolsTypedSubtitle delay={TOOLS_SCENE.typeStartDelay} forceComplete={subtitleForced} />
+                  <ToolsTypedSubtitle
+                    delay={TOOLS_SCENE.typeStartDelay}
+                    forceComplete={subtitleForced}
+                    onComplete={handleTypingDone}
+                  />
                 </View>
-                <View style={s.toolsMessageOrnament}>
-                  <View style={s.toolsMessageOrnamentLine} />
-                  <View style={s.toolsMessageOrnamentDot} />
-                  <View style={s.toolsMessageOrnamentLine} />
-                </View>
+                <ToolsOrnamentDraw progress={revealSettle} />
               </Reanimated.View>
             ) : null}
           </Reanimated.View>
