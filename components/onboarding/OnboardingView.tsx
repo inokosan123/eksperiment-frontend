@@ -1365,6 +1365,8 @@ function OnboardingPreload({
 }) {
   const { height } = useWindowDimensions();
   const awaken = useSharedValue(stage === 'farewell' ? 1 : 0);
+  const dim = useSharedValue(stage === 'farewell' ? 1 : 0);
+  const riseT = useSharedValue(stage === 'farewell' ? 1 : 0);
   const breathe = useSharedValue(0);
   const orbit = useSharedValue(0);
   const sheen = useSharedValue(0);
@@ -1374,7 +1376,12 @@ function OnboardingPreload({
 
   useEffect(() => {
     if (stage === 'loading') {
-      awaken.value = withDelay(320, withTiming(1, { duration: 1700, easing: Easing.inOut(Easing.cubic) }));
+      // The crest opens exactly where the native splash left it (screen
+      // centre, fully lit), takes a breath in (light recedes), RISES to its
+      // welcome position — arise, literally — and wakes brighter than before.
+      dim.value = withDelay(200, withTiming(1, { duration: 460, easing: Easing.inOut(Easing.cubic) }));
+      riseT.value = withDelay(540, withTiming(1, { duration: 860, easing: Easing.bezier(0.22, 1, 0.36, 1) }));
+      awaken.value = withDelay(760, withTiming(1, { duration: 1700, easing: Easing.inOut(Easing.cubic) }));
       breathe.value = withRepeat(
         withSequence(
           withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.sin) }),
@@ -1384,13 +1391,15 @@ function OnboardingPreload({
         false,
       );
       orbit.value = withRepeat(withTiming(360, { duration: 1500, easing: Easing.linear }), -1, false);
-      sheen.value = withDelay(840, withTiming(1, { duration: 680, easing: Easing.inOut(Easing.cubic) }));
+      sheen.value = withDelay(1500, withTiming(1, { duration: 680, easing: Easing.inOut(Easing.cubic) }));
       return;
     }
     // Farewell: one fast final lap, the ring disperses into the halo, the
     // crest takes a single dignified settle and GROWS into the exact size it
     // wears on the Welcome screen beneath.
     awaken.value = withTiming(1, { duration: 160 });
+    dim.value = 1;
+    riseT.value = withTiming(1, { duration: 140 });
     orbit.value = withTiming(orbit.value + 460, { duration: 720, easing: Easing.out(Easing.cubic) });
     bloom.value = withTiming(1, { duration: 760, easing: Easing.out(Easing.cubic) });
     grow.value = withTiming(1, { duration: 920, easing: Easing.bezier(0.22, 1, 0.36, 1) });
@@ -1398,7 +1407,10 @@ function OnboardingPreload({
       withTiming(2.5, { duration: 150, easing: Easing.out(Easing.quad) }),
       withSpring(0, { damping: 12, stiffness: 230 }),
     );
-  }, [awaken, bloom, breathe, grow, orbit, settle, sheen, stage]);
+  }, [awaken, bloom, breathe, dim, grow, orbit, riseT, settle, sheen, stage]);
+
+  const crestBlockTopValue = crestTop ?? Math.round(height * 0.21);
+  const riseOffset = Math.max(0, (height - 198) / 2 - crestBlockTopValue);
 
   // Two-layer farewell: the loading background melts away FIRST, revealing
   // the welcome screen beneath, while the crest stays a beat longer — alone —
@@ -1406,7 +1418,7 @@ function OnboardingPreload({
   const crestStyle = useAnimatedStyle(() => ({
     opacity: interpolate(exitProgress.value, [0.38, 0.96], [1, 0], 'clamp'),
     transform: [
-      { translateY: settle.value },
+      { translateY: settle.value + (1 - riseT.value) * riseOffset },
       { scale: (0.84 + grow.value * 0.16) * (1 + breathe.value * 0.015 * (1 - bloom.value)) },
     ],
   }));
@@ -1418,7 +1430,7 @@ function OnboardingPreload({
     transform: [{ scale: 0.92 + awaken.value * 0.12 + breathe.value * 0.03 + bloom.value * 0.3 }],
   }));
   const veilStyle = useAnimatedStyle(() => ({
-    opacity: (1 - awaken.value) * 0.46,
+    opacity: dim.value * (1 - awaken.value) * 0.46,
   }));
   const ringStyle = useAnimatedStyle(() => ({
     opacity: awaken.value * (1 - bloom.value),
@@ -1440,8 +1452,6 @@ function OnboardingPreload({
     opacity: bloom.value,
   }));
 
-  const crestBlockTop = crestTop ?? Math.round(height * 0.21);
-
   return (
     <View style={[s.preloadScreen, { paddingTop: topInset, paddingBottom: bottomInset + 18 }]}>
       <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, bgFadeStyle]}>
@@ -1460,10 +1470,7 @@ function OnboardingPreload({
         </View>
       </Reanimated.View>
 
-      <Reanimated.View
-        entering={FadeIn.duration(420)}
-        style={[s.preloadCrestBlock, { top: crestBlockTop }, crestStyle]}
-      >
+      <Reanimated.View style={[s.preloadCrestBlock, { top: crestBlockTopValue }, crestStyle]}>
         <Reanimated.View pointerEvents="none" style={[s.preloadHaloBloom, haloStyle]} />
         <Reanimated.View pointerEvents="none" style={[s.preloadGlow, glowStyle]}>
           <View style={s.preloadGlowOuter} />
@@ -1587,10 +1594,14 @@ function WelcomeSlide({
 const WELCOME_CONFETTI_COLORS = ['#E8C478', '#F3DFAE', '#F7E7C2', '#F0B45C', '#F2D5C0', '#CDE4E1'];
 
 type WelcomeConfettiPieceSpec = {
-  x: number;
+  originX: number;
+  originY: number;
+  burstDX: number;
+  rise: number;
+  pApex: number;
+  fallDist: number;
   delay: number;
-  fallDuration: number;
-  fall: number;
+  duration: number;
   drift: number;
   swayAmp: number;
   swayFreq: number;
@@ -1609,31 +1620,75 @@ type WelcomeConfettiPieceSpec = {
 
 function buildWelcomeConfetti(width: number, height: number): WelcomeConfettiPieceSpec[] {
   const rand = makeToolsRandom(0xc0ffe7);
-  const columns = 16;
-  const columnWidth = (width - 28) / columns;
-  return Array.from({ length: 64 }, (_, index) => {
-    // Five kinds: ribbon, flake, square, dot, star — like the old Lottie mix.
-    const kind = index % 5;
-    // Four size classes for real depth: dust far away, big petals up close.
-    const sizeRoll = rand();
-    const sizeScale = sizeRoll < 0.25 ? 0.72 : sizeRoll < 0.7 ? 1 : sizeRoll < 0.9 ? 1.5 : 2.05;
+  const pieces: WelcomeConfettiPieceSpec[] = [];
+
+  const chipDims = (kind: number, sizeScale: number) => {
     const baseW = kind === 0 ? 5 + rand() * 3 : kind === 1 ? 11 + rand() * 5 : kind === 2 ? 8 + rand() * 3 : kind === 3 ? 6 + rand() * 2.5 : 11 + rand() * 7;
     const baseH = kind === 0 ? 13 + rand() * 6 : kind === 1 ? 6 + rand() * 2.5 : kind === 2 ? baseW * (0.9 + rand() * 0.2) : baseW;
-    // Stratified emission: every column of the screen gets pieces in both the
-    // opening pop and the straggler wave — no empty stripes, ever.
-    const column = index % columns;
-    const x = 14 + (column + rand()) * columnWidth;
-    const firstWave = index < columns * 2;
-    // Most pieces fall PAST the bottom edge — over the CTA, over everything
-    // (the field sits above all content but lets touches through). The rest
-    // dissolve mid-air so the cloud also "blends in".
-    const fadeLate = rand() < 0.6;
-    return {
-      x,
-      delay: firstWave ? rand() * 320 : 320 + rand() * 900,
-      // Wide speed spread: heavy pieces drop fast, light ones float.
-      fallDuration: 1900 + rand() * 2600,
-      fall: fadeLate ? height + 80 : height * (0.5 + rand() * 0.4),
+    return { w: baseW * sizeScale, h: baseH * sizeScale };
+  };
+
+  // Two cannons fire from the screen edges toward the centre — the left one
+  // first, the right answering 120ms later. Fan angles are stratified so each
+  // volley covers its whole arc with no gaps; pieces cross above the crest.
+  ([-1, 1] as const).forEach(side => {
+    for (let i = 0; i < 24; i += 1) {
+      const u = (i + rand() * 0.8) / 24;
+      const kind = (i + (side === 1 ? 2 : 0)) % 5;
+      const sizeRoll = rand();
+      const sizeScale = sizeRoll < 0.25 ? 0.72 : sizeRoll < 0.7 ? 1 : sizeRoll < 0.9 ? 1.5 : 2.05;
+      const { w, h } = chipDims(kind, sizeScale);
+      const dir = side === -1 ? 1 : -1;
+      const originY = height * (0.5 + rand() * 0.16);
+      const reach = width * (0.24 + u * 0.58) + rand() * 26;
+      const arc = 0.42 + 0.58 * Math.sin(u * Math.PI);
+      const rise = height * (0.12 + 0.3 * arc) + rand() * 18;
+      const fadeLate = rand() < 0.62;
+      const apexY = originY - rise;
+      pieces.push({
+        originX: side === -1 ? -14 : width + 14,
+        originY,
+        burstDX: dir * reach,
+        rise,
+        pApex: 0.26 + rand() * 0.1,
+        fallDist: fadeLate ? height + 80 - apexY : height * (0.26 + rand() * 0.3),
+        delay: (side === 1 ? 120 : 0) + rand() * 140,
+        duration: 2600 + rand() * 1800,
+        drift: (rand() * 2 - 1) * 70,
+        swayAmp: 14 + rand() * 34,
+        swayFreq: 2 + rand() * 1.8,
+        flipFreq: 2 + rand() * 2.6,
+        phase: rand() * Math.PI * 2,
+        rotateFrom: rand() * 360,
+        rotateDrift: (rand() < 0.5 ? -1 : 1) * (120 + rand() * 200),
+        w,
+        h,
+        radius: kind === 3 ? 999 : 2,
+        flipAxis: kind === 0 ? 'x' as const : 'y' as const,
+        tone: WELCOME_CONFETTI_COLORS[(i + (side === 1 ? 3 : 0)) % WELCOME_CONFETTI_COLORS.length],
+        star: kind === 4,
+        fadeLate,
+      });
+    }
+  });
+
+  // Aftermath drizzle: a quieter wave floats down from above a second later,
+  // keeping the air alive while the welcome text reveals.
+  const columns = 8;
+  for (let i = 0; i < 16; i += 1) {
+    const kind = i % 5;
+    const sizeScale = rand() < 0.5 ? 0.72 : 1;
+    const { w, h } = chipDims(kind, sizeScale);
+    const fadeLate = rand() < 0.5;
+    pieces.push({
+      originX: 14 + ((i % columns) + rand()) * ((width - 28) / columns),
+      originY: -26,
+      burstDX: 0,
+      rise: 0,
+      pApex: 0.02,
+      fallDist: fadeLate ? height + 90 : height * (0.5 + rand() * 0.35),
+      delay: 950 + rand() * 800,
+      duration: 2400 + rand() * 2200,
       drift: (rand() * 2 - 1) * 76,
       swayAmp: 14 + rand() * 34,
       swayFreq: 2 + rand() * 1.8,
@@ -1641,15 +1696,17 @@ function buildWelcomeConfetti(width: number, height: number): WelcomeConfettiPie
       phase: rand() * Math.PI * 2,
       rotateFrom: rand() * 360,
       rotateDrift: (rand() < 0.5 ? -1 : 1) * (50 + rand() * 120),
-      w: baseW * sizeScale,
-      h: baseH * sizeScale,
+      w,
+      h,
       radius: kind === 3 ? 999 : 2,
       flipAxis: kind === 0 ? 'x' as const : 'y' as const,
-      tone: WELCOME_CONFETTI_COLORS[index % WELCOME_CONFETTI_COLORS.length],
+      tone: WELCOME_CONFETTI_COLORS[i % WELCOME_CONFETTI_COLORS.length],
       star: kind === 4,
       fadeLate,
-    };
-  });
+    });
+  }
+
+  return pieces;
 }
 
 function WelcomeConfettiPiece({ piece }: { piece: WelcomeConfettiPieceSpec }) {
@@ -1657,21 +1714,28 @@ function WelcomeConfettiPiece({ piece }: { piece: WelcomeConfettiPieceSpec }) {
 
   useEffect(() => {
     t.value = 0;
-    t.value = withDelay(piece.delay, withTiming(1, { duration: piece.fallDuration, easing: Easing.inOut(Easing.sin) }));
+    t.value = withDelay(piece.delay, withTiming(1, { duration: piece.duration, easing: Easing.inOut(Easing.sin) }));
   }, [piece, t]);
 
   const style = useAnimatedStyle(() => {
     const p = t.value;
-    const sway = Math.sin(piece.phase + p * Math.PI * piece.swayFreq) * piece.swayAmp;
-    const swayTilt = Math.cos(piece.phase + p * Math.PI * piece.swayFreq) * 16;
+    // Ballistic launch toward the centre (cubic-out = the satisfying hang at
+    // the apex), then the leaf-flutter takes over for the fall.
+    const ballistic = Math.min(1, p / piece.pApex);
+    const launch = 1 - Math.pow(1 - ballistic, 3);
+    const fp = Math.max(0, (p - piece.pApex) / (1 - piece.pApex));
+    const fallE = fp * fp * (3 - 2 * fp);
+    const swayK = Math.min(1, fp * 3);
+    const sway = Math.sin(piece.phase + fp * Math.PI * piece.swayFreq) * piece.swayAmp * swayK;
+    const swayTilt = Math.cos(piece.phase + fp * Math.PI * piece.swayFreq) * 16 * swayK;
     const flip = 0.22 + 0.78 * Math.abs(Math.cos(piece.phase * 1.7 + p * Math.PI * piece.flipFreq));
-    const fadeIn = interpolate(p, [0, 0.04], [0, 1], 'clamp');
+    const fadeIn = interpolate(p, [0, 0.02], [0, 1], 'clamp');
     const fadeOut = piece.fadeLate
       ? interpolate(p, [0.94, 1], [1, 0], 'clamp')
       : interpolate(p, [0.78, 1], [1, 0], 'clamp');
     const transform = [
-      { translateX: sway + p * piece.drift },
-      { translateY: interpolate(p, [0, 0.16, 1], [0, piece.fall * 0.1, piece.fall]) },
+      { translateX: piece.burstDX * launch + sway + fp * piece.drift },
+      { translateY: -piece.rise * launch + piece.fallDist * fallE },
       { rotate: `${piece.rotateFrom + p * piece.rotateDrift + swayTilt}deg` },
       piece.flipAxis === 'x' ? { scaleX: flip } : { scaleY: flip },
     ];
@@ -1687,7 +1751,7 @@ function WelcomeConfettiPiece({ piece }: { piece: WelcomeConfettiPieceSpec }) {
         pointerEvents="none"
         style={[
           s.welcomeConfettiStar,
-          { left: piece.x, fontSize: piece.w, color: piece.tone },
+          { left: piece.originX, top: piece.originY, fontSize: piece.w, color: piece.tone },
           style,
         ]}
       >
@@ -1702,7 +1766,7 @@ function WelcomeConfettiPiece({ piece }: { piece: WelcomeConfettiPieceSpec }) {
       renderToHardwareTextureAndroid
       style={[
         s.welcomeConfettiPiece,
-        { left: piece.x, width: piece.w, height: piece.h, borderRadius: piece.radius, backgroundColor: piece.tone },
+        { left: piece.originX, top: piece.originY, width: piece.w, height: piece.h, borderRadius: piece.radius, backgroundColor: piece.tone },
         style,
       ]}
     />
@@ -1721,14 +1785,19 @@ function WelcomeConfettiOverlay({ active }: { active: boolean }) {
     }
     preloadAchievementFeedbackSound();
     // The boom lands right as the crest finishes growing into its welcome
-    // position — celebration of arrival, not an afterthought.
+    // position — sound, a heavy tap for the left cannon and a softer one for
+    // the right answering volley: the explosion is HEARD, FELT and SEEN at
+    // the same instant.
     const startTimer = setTimeout(() => {
       setBurst('playing');
+      runStrongHaptic();
       void playAchievementCompleteFeedback();
     }, 140);
-    const endTimer = setTimeout(() => setBurst('done'), 5900);
+    const echoTimer = setTimeout(runBubbleHaptic, 260);
+    const endTimer = setTimeout(() => setBurst('done'), 6800);
     return () => {
       clearTimeout(startTimer);
+      clearTimeout(echoTimer);
       clearTimeout(endTimer);
     };
   }, [active]);
