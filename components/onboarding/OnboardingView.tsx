@@ -8702,15 +8702,15 @@ const TOOLS_FIELD_LABELS = [
 // typed truth -> long beat -> purge (floor opens) -> card morphs into chat.
 const TOOLS_SCENE = {
   flightDuration: 820,
-  flightLead: 260,
+  flightLead: 520,
   rainStart: 180,
   burstGap: 190,
   intraGap: 64,
-  cardPause: 320,
-  revealAfterLand: 420,
+  cardPause: 200,
+  revealAfterLand: 850,
   typeStartDelay: 260,
   typeCharMs: 30,
-  holdAfterType: 900,
+  holdAfterType: 520,
   purgeStep: 40,
   purgeFall: 700,
   morphLeadIn: 260,
@@ -8737,6 +8737,8 @@ function makeToolsRandom(seed: number) {
 
 type ToolsFieldBuild = {
   slots: ToolsFieldSlot[];
+  chipHeight: number;
+  chipScale: number;
   flightStartAt: number;
   cardLandAt: number;
   lastLandingAt: number;
@@ -8749,137 +8751,142 @@ function buildToolsField(
   fieldTop: number,
   fieldBottom: number,
   box: { left: number; top: number; right: number; bottom: number },
-  chipHeight: number,
+  baseChipHeight: number,
   screenHeight: number,
 ): ToolsFieldBuild {
   const margin = 6;
+  const minGap = 6;
+  const minVGap = 4;
+  const maxPerRow = 5;
   const rand = makeToolsRandom(0x5eeda7);
-  const estimate = (label: string) => Math.max(84, Math.round(label.length * 6.8) + 44);
+  // Base metrics describe the chip at full size (scale 1); the solver below
+  // shrinks everything together a few percent at a time until ALL 40 tags fit.
+  const estimate = (label: string) => Math.max(88, Math.round(label.length * 7.1) + 54);
   const boxCyMid = (box.top + box.bottom) / 2;
 
-  type CoreSlot = { label: string; estWidth: number; cx: number; cy: number; rotate: number; fixed: boolean };
-  const queue = TOOLS_FIELD_LABELS.map(label => ({ label, estWidth: estimate(label), used: false }));
+  type CoreSlot = { label: string; estWidth: number; cx: number; cy: number; rotate: number };
   const placed: CoreSlot[] = [];
 
-  // Bands are evenly spread shelves filled edge-first so coverage always
-  // reaches the screen borders; zig-zag offsets break any row reading and a
-  // relaxation pass below guarantees nothing overlaps.
-  const bandStep = chipHeight + 4;
-  const collectBands = (top: number, bottom: number) => {
-    const first = top + chipHeight / 2 + 1;
-    const last = bottom - chipHeight / 2 - 1;
-    if (last - first < 0) return [] as number[];
-    const count = Math.max(1, Math.floor((last - first) / bandStep) + 1);
-    if (count === 1) return [(first + last) / 2];
-    const step = (last - first) / (count - 1);
-    return Array.from({ length: count }, (_, i) => first + step * i);
+  // ── Final placement engine ──────────────────────────────────────────────
+  // The pile is solved as justified rows: chips are dealt to the two regions
+  // in proportion to their area (the crown above the card stays as alive as
+  // the pile below), width-balanced into rows, then laid out with EQUAL gaps
+  // plus bounded jitter. Overlap is impossible by construction.
+  const usableW = width - margin * 2;
+  const aboveTop = fieldTop + 2;
+  const aboveBottom = box.top - 8;
+  const belowTop = box.bottom + 8;
+  const belowBottom = fieldBottom - 2;
+  const aboveH = Math.max(0, aboveBottom - aboveTop);
+  const belowH = Math.max(0, belowBottom - belowTop);
+
+  type RowChip = { label: string; w: number };
+  type Row = { chips: RowChip[]; total: number };
+
+  const packRegion = (chips: RowChip[], regionH: number, h: number): Row[] | null => {
+    if (chips.length === 0) return [];
+    const maxRows = Math.max(1, Math.floor((regionH + minVGap) / (h + minVGap)));
+    const rowCount = Math.min(maxRows, chips.length);
+    const rows: Row[] = Array.from({ length: rowCount }, () => ({ chips: [], total: 0 }));
+    for (const chip of chips) {
+      let target: Row | null = null;
+      for (const row of rows) {
+        if (row.chips.length >= maxPerRow) continue;
+        if (row.total + chip.w + (row.chips.length + 2) * minGap > usableW) continue;
+        if (!target || row.total < target.total) target = row;
+      }
+      if (!target) return null;
+      target.chips.push(chip);
+      target.total += chip.w;
+    }
+    return rows;
   };
 
-  const bands = [
-    ...collectBands(fieldTop + 2, box.top - 8),
-    ...collectBands(box.bottom + 8, fieldBottom - 2),
-  ]
-    .map(cy => ({ cy }))
-    .sort((a, b) => Math.abs(b.cy - boxCyMid) - Math.abs(a.cy - boxCyMid));
+  const trySolve = (scale: number, h: number): { rowsA: Row[]; rowsB: Row[] } | null => {
+    const items: RowChip[] = TOOLS_FIELD_LABELS
+      .map(label => ({ label, w: Math.max(56, Math.round(estimate(label) * scale)) }))
+      .sort((a, b) => b.w - a.w);
+    const baseAbove = Math.round(items.length * (aboveH / Math.max(1, aboveH + belowH)));
 
-  bands.forEach((band, bandIndex) => {
-    let cursor = margin + (-4 + rand() * 18);
-    const bandStart = placed.length;
-    let chipInBand = 0;
-    for (;;) {
-      const item = queue.find(entry => !entry.used && cursor + entry.estWidth <= width - margin);
-      if (!item) break;
-      item.used = true;
-      const cx = cursor + item.estWidth / 2;
-      const zigSign = (bandIndex + chipInBand) % 2 === 0 ? -1 : 1;
-      const cy = Math.max(
-        fieldTop + chipHeight / 2,
-        Math.min(fieldBottom - chipHeight / 2, band.cy + zigSign * (2.5 + rand() * 1.5) + (rand() * 2 - 1)),
-      );
-      // Long chips stay closer to level; only short chips take strong tilts,
-      // so rotation can never eat the vertical breathing room.
-      const isShort = item.estWidth <= 100;
-      const rotate = (rand() < 0.5 ? -1 : 1) * (isShort ? 6 + rand() * 2.5 : 2 + rand() * 2.5);
-      placed.push({ label: item.label, estWidth: item.estWidth, cx, cy, rotate, fixed: false });
-      cursor = cx + item.estWidth / 2 + 7 + rand() * 9;
-      chipInBand += 1;
-    }
-    const bandChips = placed.slice(bandStart);
-    if (bandChips.length > 0) {
-      const lastChip = bandChips[bandChips.length - 1];
-      const leftover = width - margin - (lastChip.cx + lastChip.estWidth / 2);
-      const shift = Math.max(0, leftover) * (0.2 + rand() * 0.55);
-      bandChips.forEach(chip => {
-        chip.cx = Math.max(margin + chip.estWidth / 2, Math.min(width - margin - chip.estWidth / 2, chip.cx + shift));
+    // If the proportional split does not pack at this scale, shift a few
+    // chips between the regions before giving up and shrinking.
+    for (const shift of [0, -1, -2, 1, -3, 2, -4]) {
+      const nAbove = Math.max(0, Math.min(items.length, baseAbove + shift));
+      const nBelow = items.length - nAbove;
+      // Deal widest-first, alternating by fill ratio, so both regions get
+      // the same mix of long and short labels.
+      const split: [RowChip[], RowChip[]] = [[], []];
+      items.forEach(item => {
+        const aShare = nAbove === 0 ? 1 : split[0].length / nAbove;
+        const bShare = nBelow === 0 ? 1 : split[1].length / nBelow;
+        if (aShare <= bShare && split[0].length < nAbove) split[0].push(item);
+        else if (split[1].length < nBelow) split[1].push(item);
+        else split[0].push(item);
       });
+      const rowsA = packRegion(split[0], aboveH, h);
+      const rowsB = packRegion(split[1], belowH, h);
+      if (rowsA && rowsB) return { rowsA, rowsB };
     }
-  });
-
-  // Anything the shelves couldn't fit still belongs on screen — drop it into
-  // a random spot in the pile and let the relaxation pass settle it.
-  queue.forEach(item => {
-    if (item.used) return;
-    item.used = true;
-    const below = rand() < 0.72;
-    const regionTop = below ? box.bottom + 8 : fieldTop + 2;
-    const regionBottom = below ? fieldBottom - 2 : box.top - 8;
-    if (regionBottom - regionTop < chipHeight) return;
-    const cy = regionTop + chipHeight / 2 + rand() * Math.max(1, regionBottom - regionTop - chipHeight);
-    const cx = margin + item.estWidth / 2 + rand() * Math.max(1, width - margin * 2 - item.estWidth);
-    placed.push({
-      label: item.label,
-      estWidth: item.estWidth,
-      cx,
-      cy,
-      rotate: (rand() < 0.5 ? -1 : 1) * (4 + rand() * 6),
-      fixed: false,
-    });
-  });
-
-  // Relaxation pass: measure the true rotated extents of every pair and push
-  // apart anything stacked badly. A small kiss (few px at the corners) is
-  // allowed — a real pile touches; it just must never bury a label.
-  const extents = (chip: CoreSlot) => {
-    const theta = Math.abs(chip.rotate) * (Math.PI / 180);
-    return {
-      halfW: (chip.estWidth * Math.cos(theta) + chipHeight * Math.sin(theta)) / 2,
-      halfH: (chip.estWidth * Math.sin(theta) + chipHeight * Math.cos(theta)) / 2,
-    };
+    return null;
   };
-  for (let iter = 0; iter < 5; iter += 1) {
-    for (let a = 0; a < placed.length; a += 1) {
-      if (placed[a].fixed) continue;
-      for (let b = a + 1; b < placed.length; b += 1) {
-        if (placed[b].fixed) continue;
-        const ea = extents(placed[a]);
-        const eb = extents(placed[b]);
-        const limX = ea.halfW + eb.halfW - 4;
-        const limY = ea.halfH + eb.halfH - 10;
-        const dx = placed[b].cx - placed[a].cx;
-        const dy = placed[b].cy - placed[a].cy;
-        if (Math.abs(dx) >= limX || Math.abs(dy) >= limY) continue;
-        const pushX = (limX - Math.abs(dx)) / 2;
-        const pushY = (limY - Math.abs(dy)) / 2;
-        if (pushY <= pushX) {
-          const dir = dy >= 0 ? 1 : -1;
-          placed[a].cy -= dir * pushY;
-          placed[b].cy += dir * pushY;
-        } else {
-          const dir = dx >= 0 ? 1 : -1;
-          placed[a].cx -= dir * pushX;
-          placed[b].cx += dir * pushX;
-        }
-      }
-      const chip = placed[a];
-      const ec = extents(chip);
-      chip.cx = Math.max(margin + ec.halfW - 6, Math.min(width - margin - ec.halfW + 6, chip.cx));
-      chip.cy = Math.max(fieldTop + ec.halfH - 4, Math.min(fieldBottom - ec.halfH + 4, chip.cy));
-      if (chip.cx + ec.halfW > box.left + 6 && chip.cx - ec.halfW < box.right - 6
-        && chip.cy + ec.halfH > box.top + 4 && chip.cy - ec.halfH < box.bottom - 4) {
-        chip.cy = chip.cy < boxCyMid ? box.top + 4 - ec.halfH : box.bottom - 4 + ec.halfH;
-      }
+
+  let chipScale = 1;
+  let chipHeight = Math.round(baseChipHeight);
+  let solvedRows: { rowsA: Row[]; rowsB: Row[] } | null = null;
+  for (let attempt = 0; attempt < 16 && !solvedRows; attempt += 1) {
+    const scale = Math.pow(0.97, attempt);
+    const h = Math.max(24, Math.round(baseChipHeight * scale));
+    const solved = trySolve(scale, h);
+    if (solved) {
+      chipScale = scale;
+      chipHeight = h;
+      solvedRows = solved;
     }
   }
+  if (!solvedRows) {
+    chipScale = Math.pow(0.97, 15);
+    chipHeight = Math.max(24, Math.round(baseChipHeight * chipScale));
+    solvedRows = trySolve(chipScale, chipHeight) ?? { rowsA: [], rowsB: [] };
+  }
+
+  const placeRegion = (rows: Row[], top: number, regionH: number) => {
+    const rowCount = rows.length;
+    const pitch = rowCount > 1 ? (regionH - chipHeight) / (rowCount - 1) : 0;
+    rows.forEach((row, rowIndex) => {
+      if (row.chips.length === 0) return;
+      // Shuffle the visual order so widths mix across each row.
+      for (let i = row.chips.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(rand() * (i + 1));
+        [row.chips[i], row.chips[j]] = [row.chips[j], row.chips[i]];
+      }
+      const rowCy = rowCount > 1 ? top + chipHeight / 2 + pitch * rowIndex : top + regionH / 2;
+      // Inner gaps are equal but capped, and the row is centred — airy rows
+      // (e.g. a 2-chip crown row) stay rhythmic instead of stretching apart.
+      const gap = Math.min(30, (usableW - row.total) / (row.chips.length + 1));
+      const lead = (usableW - row.total - (row.chips.length - 1) * gap) / 2;
+      const yJitMax = Math.min(5, Math.max(0, (pitch - chipHeight) / 2 - 4));
+      let cursor = margin + lead;
+      row.chips.forEach(chip => {
+        const xJit = (rand() * 2 - 1) * Math.min(4, Math.max(0, (gap - minGap) * 0.4));
+        const yJit = (rand() * 2 - 1) * yJitMax;
+        // Rotation budget is inverse to width so tilted corners can never
+        // reach into the neighbouring row.
+        const rotMag = Math.min(5.5, 460 / chip.w) * (0.75 + rand() * 0.45);
+        const sign = placed.length % 2 === 0 ? -1 : 1;
+        placed.push({
+          label: chip.label,
+          estWidth: chip.w,
+          cx: cursor + chip.w / 2 + xJit,
+          cy: rowCy + yJit,
+          rotate: sign * rotMag,
+        });
+        cursor += chip.w + gap;
+      });
+    });
+  };
+
+  placeRegion(solvedRows.rowsA, aboveTop, aboveH);
+  placeRegion(solvedRows.rowsB, belowTop, belowH);
 
   // Falls are slow and distance-scaled; precomputed so the timeline below can
   // know exactly when each act of the rain finishes.
@@ -8888,7 +8895,7 @@ function buildToolsField(
   // Two acts, both building bottom-up: Act 1 fills everything below the card's
   // gap; the card lands; Act 2 drops the crown above it. Jitter keeps each act
   // from reading as a strict scanline.
-  const orderJitter = placed.map(() => (rand() * 2 - 1) * bandStep * 1.4);
+  const orderJitter = placed.map(() => (rand() * 2 - 1) * (chipHeight + 10) * 1.3);
   const belowOrder = placed
     .map((_, index) => index)
     .filter(index => placed[index].cy > boxCyMid)
@@ -8994,11 +9001,11 @@ function buildToolsField(
 
   const purgeSpan = slots.reduce((max, slot) => Math.max(max, slot.purgeDelay), 0) + TOOLS_SCENE.purgeFall;
 
-  return { slots, flightStartAt, cardLandAt, lastLandingAt, purgeSpan, landingTicks };
+  return { slots, chipHeight, chipScale, flightStartAt, cardLandAt, lastLandingAt, purgeSpan, landingTicks };
 }
 
-function toolsTagIcon(label: string, color: string) {
-  const common = { s: 14, c: color, w: 1.9 };
+function toolsTagIcon(label: string, color: string, size = 14) {
+  const common = { s: size, c: color, w: 1.9 };
   if (label.includes('Bible') || label === 'Scripture' || label === 'Verse Comments') return <OpenBook {...common} />;
   if (label === 'Reading List') return <Book {...common} />;
   if (label.includes('Prayer') || label === 'Jesus Prayer') return <Candle {...common} />;
@@ -9020,6 +9027,7 @@ function toolsTagIcon(label: string, color: string) {
 function ToolsFieldChip({
   slot,
   chipHeight,
+  chipScale,
   fastForward,
   purgeT,
   purgeSpan,
@@ -9027,6 +9035,7 @@ function ToolsFieldChip({
 }: {
   slot: ToolsFieldSlot;
   chipHeight: number;
+  chipScale: number;
   fastForward: SharedValue<number>;
   purgeT: SharedValue<number>;
   purgeSpan: number;
@@ -9097,10 +9106,20 @@ function ToolsFieldChip({
       ]}
     >
       <View style={[s.toolsTagChip, { backgroundColor: tone.tone, height: chipHeight, minWidth: slot.estWidth }]}>
-        <View style={s.toolsTagIconShell}>
-          {toolsTagIcon(slot.label, tone.dot)}
+        <View
+          style={[
+            s.toolsTagIconShell,
+            { width: Math.round(26 * chipScale), height: Math.round(26 * chipScale), borderRadius: Math.round(13 * chipScale) },
+          ]}
+        >
+          {toolsTagIcon(slot.label, tone.dot, 14.5 * chipScale)}
         </View>
-        <Text style={s.toolsTagText} numberOfLines={1}>{slot.label}</Text>
+        <Text
+          style={[s.toolsTagText, { fontSize: 14.2 * chipScale, lineHeight: 18 * chipScale }]}
+          numberOfLines={1}
+        >
+          {slot.label}
+        </Text>
       </View>
     </Reanimated.View>
   );
@@ -9235,11 +9254,11 @@ function ToolsShowcaseSlide({
   const cardTilt = useSharedValue(0);
   const cardLift = useSharedValue(0);
 
-  const chipHeight = compact ? 33 : 36;
+  const baseChipHeight = compact ? 36 : 38;
   const fieldTop = topInset + 6;
   // The CTA only exists after the purge, so during the rain the pile may run
   // almost to the bottom edge — the screen should feel full of tools.
-  const fieldBottom = height - bottomInset - 18;
+  const fieldBottom = height - bottomInset - 12;
   const boxWidth = Math.min(width - 50, 342);
   const boxHeight = compact ? 214 : 224;
   const titleOnlyBoxHeight = compact ? 138 : 148;
@@ -9256,9 +9275,10 @@ function ToolsShowcaseSlide({
     bottom: boxCy + boxHeight / 2 + 8,
   }), [boxCy, boxHeight, boxLeft, boxWidth]);
   const field = useMemo(
-    () => buildToolsField(width, fieldTop, fieldBottom, box, chipHeight, height),
-    [box, chipHeight, fieldBottom, fieldTop, height, width],
+    () => buildToolsField(width, fieldTop, fieldBottom, box, baseChipHeight, height),
+    [box, baseChipHeight, fieldBottom, fieldTop, height, width],
   );
+  const chipHeight = field.chipHeight;
 
   const convoWidth = Math.min(360, width - 40);
   const convoLeft = (width - convoWidth) / 2;
@@ -9574,6 +9594,7 @@ function ToolsShowcaseSlide({
               key={slot.label}
               slot={slot}
               chipHeight={chipHeight}
+              chipScale={field.chipScale}
               fastForward={fastForward}
               purgeT={purgeT}
               purgeSpan={field.purgeSpan}
