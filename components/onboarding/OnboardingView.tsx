@@ -8686,31 +8686,36 @@ type ToolsFieldSlot = {
   floatDuration: number;
 };
 
+// The full original tool list — all 40 belong on screen.
 const TOOLS_FIELD_LABELS = [
   'Scripture', 'Prayer Book', 'Habits', 'Daily Journal', 'Screen Time', 'Pomodoro',
   'Challenges', 'Bible Notes', 'Gratitude', 'Task Manager', 'App Blocker', 'Reading List',
   'Big Events', 'Monthly Goals', 'Favorites', 'Bible', 'Notes', 'Routines', 'Focus Zone',
-  'Highlights', 'Jesus Prayer', 'Prayer Rules', 'Bucket List', 'Spiritual Tasks',
-  'Content Blocker', 'Quick Tasks', 'Year in Pixels', 'Morning Pages', 'Free Writing', 'Streaks',
+  'Highlights', 'Morning Prayers', 'Evening Prayers', 'Jesus Prayer', 'Prayer Rules',
+  'Bucket List', 'Spiritual Tasks', 'Content Blocker', 'Quick Tasks', 'Year in Pixels',
+  'Morning Pages', 'Free Writing', 'Streaks', 'Reading Timer', 'Verse Comments',
+  'Life Gratitude', 'Daily Gratitude', 'Analytics', 'Weekly View', 'Day Planner', 'Reflections',
 ] as const;
 
-// The whole scene is one timeline: the pile rains in bottom-up, the postcard
-// lands last into its reserved gap and shoves the neighbours -> typed truth ->
-// purge (floor opens) -> card morphs into the first conversation bubble.
+// The whole scene is one timeline in two acts: the lower pile rains in first,
+// the postcard lands into its reserved gap, the upper crown falls around it ->
+// typed truth -> long beat -> purge (floor opens) -> card morphs into chat.
 const TOOLS_SCENE = {
   flightDuration: 820,
+  flightLead: 260,
   rainStart: 180,
-  burstGap: 170,
-  intraGap: 58,
-  revealAfterLand: 360,
+  burstGap: 190,
+  intraGap: 64,
+  cardPause: 320,
+  revealAfterLand: 420,
   typeStartDelay: 260,
   typeCharMs: 30,
-  holdAfterType: 640,
-  purgeStep: 36,
-  purgeFall: 640,
+  holdAfterType: 900,
+  purgeStep: 40,
+  purgeFall: 700,
   morphLeadIn: 260,
   morphDuration: 620,
-  bubble2Delay: 340,
+  bubble2Delay: 420,
   echoDwell: 950,
 } as const;
 
@@ -8732,6 +8737,8 @@ function makeToolsRandom(seed: number) {
 
 type ToolsFieldBuild = {
   slots: ToolsFieldSlot[];
+  flightStartAt: number;
+  cardLandAt: number;
   lastLandingAt: number;
   purgeSpan: number;
   landingTicks: number[];
@@ -8747,7 +8754,7 @@ function buildToolsField(
 ): ToolsFieldBuild {
   const margin = 6;
   const rand = makeToolsRandom(0x5eeda7);
-  const estimate = (label: string) => Math.max(90, Math.round(label.length * 7.2) + 56);
+  const estimate = (label: string) => Math.max(84, Math.round(label.length * 6.8) + 44);
   const boxCyMid = (box.top + box.bottom) / 2;
 
   type CoreSlot = { label: string; estWidth: number; cx: number; cy: number; rotate: number; fixed: boolean };
@@ -8757,7 +8764,7 @@ function buildToolsField(
   // Bands are evenly spread shelves filled edge-first so coverage always
   // reaches the screen borders; zig-zag offsets break any row reading and a
   // relaxation pass below guarantees nothing overlaps.
-  const bandStep = chipHeight + 14;
+  const bandStep = chipHeight + 4;
   const collectBands = (top: number, bottom: number) => {
     const first = top + chipHeight / 2 + 1;
     const last = bottom - chipHeight / 2 - 1;
@@ -8808,8 +8815,30 @@ function buildToolsField(
     }
   });
 
+  // Anything the shelves couldn't fit still belongs on screen — drop it into
+  // a random spot in the pile and let the relaxation pass settle it.
+  queue.forEach(item => {
+    if (item.used) return;
+    item.used = true;
+    const below = rand() < 0.72;
+    const regionTop = below ? box.bottom + 8 : fieldTop + 2;
+    const regionBottom = below ? fieldBottom - 2 : box.top - 8;
+    if (regionBottom - regionTop < chipHeight) return;
+    const cy = regionTop + chipHeight / 2 + rand() * Math.max(1, regionBottom - regionTop - chipHeight);
+    const cx = margin + item.estWidth / 2 + rand() * Math.max(1, width - margin * 2 - item.estWidth);
+    placed.push({
+      label: item.label,
+      estWidth: item.estWidth,
+      cx,
+      cy,
+      rotate: (rand() < 0.5 ? -1 : 1) * (4 + rand() * 6),
+      fixed: false,
+    });
+  });
+
   // Relaxation pass: measure the true rotated extents of every pair and push
-  // apart anything that touches — overlap becomes mathematically impossible.
+  // apart anything stacked badly. A small kiss (few px at the corners) is
+  // allowed — a real pile touches; it just must never bury a label.
   const extents = (chip: CoreSlot) => {
     const theta = Math.abs(chip.rotate) * (Math.PI / 180);
     return {
@@ -8817,15 +8846,15 @@ function buildToolsField(
       halfH: (chip.estWidth * Math.sin(theta) + chipHeight * Math.cos(theta)) / 2,
     };
   };
-  for (let iter = 0; iter < 4; iter += 1) {
+  for (let iter = 0; iter < 5; iter += 1) {
     for (let a = 0; a < placed.length; a += 1) {
       if (placed[a].fixed) continue;
       for (let b = a + 1; b < placed.length; b += 1) {
         if (placed[b].fixed) continue;
         const ea = extents(placed[a]);
         const eb = extents(placed[b]);
-        const limX = ea.halfW + eb.halfW + 5;
-        const limY = ea.halfH + eb.halfH + 3;
+        const limX = ea.halfW + eb.halfW - 4;
+        const limY = ea.halfH + eb.halfH - 10;
         const dx = placed[b].cx - placed[a].cx;
         const dy = placed[b].cy - placed[a].cy;
         if (Math.abs(dx) >= limX || Math.abs(dy) >= limY) continue;
@@ -8852,16 +8881,37 @@ function buildToolsField(
     }
   }
 
-  // The pile builds bottom-up: deepest chips arrive first, each burst lands a
-  // little higher. Jitter keeps it from reading as a strict scanline.
-  const orderJitter = placed.map(() => (rand() * 2 - 1) * bandStep * 0.7);
-  const order = placed
+  // Falls are slow and distance-scaled; precomputed so the timeline below can
+  // know exactly when each act of the rain finishes.
+  const fallDurations = placed.map(core => 780 + Math.sqrt(Math.max(40, core.cy)) * 10 + rand() * 140);
+
+  // Two acts, both building bottom-up: Act 1 fills everything below the card's
+  // gap; the card lands; Act 2 drops the crown above it. Jitter keeps each act
+  // from reading as a strict scanline.
+  const orderJitter = placed.map(() => (rand() * 2 - 1) * bandStep * 1.4);
+  const belowOrder = placed
     .map((_, index) => index)
+    .filter(index => placed[index].cy > boxCyMid)
     .sort((a, b) => (placed[b].cy + orderJitter[b]) - (placed[a].cy + orderJitter[a]));
+  const aboveOrder = placed
+    .map((_, index) => index)
+    .filter(index => placed[index].cy <= boxCyMid)
+    .sort((a, b) => (placed[b].cy + orderJitter[b]) - (placed[a].cy + orderJitter[a]));
+
   const entranceDelays = new Array<number>(placed.length).fill(TOOLS_SCENE.rainStart);
-  order.forEach((slotIndex, k) => {
-    entranceDelays[slotIndex] = TOOLS_SCENE.rainStart + Math.floor(k / 3) * TOOLS_SCENE.burstGap + (k % 3) * TOOLS_SCENE.intraGap;
+  let lastBelowLandingAt = 0;
+  belowOrder.forEach((slotIndex, k) => {
+    const delay = TOOLS_SCENE.rainStart + Math.floor(k / 3) * TOOLS_SCENE.burstGap + (k % 3) * TOOLS_SCENE.intraGap;
+    entranceDelays[slotIndex] = delay;
+    lastBelowLandingAt = Math.max(lastBelowLandingAt, delay + fallDurations[slotIndex]);
   });
+  const flightStartAt = Math.max(420, lastBelowLandingAt - TOOLS_SCENE.flightLead);
+  const cardLandAt = flightStartAt + TOOLS_SCENE.flightDuration;
+  const topRainStartAt = cardLandAt + TOOLS_SCENE.cardPause;
+  aboveOrder.forEach((slotIndex, k) => {
+    entranceDelays[slotIndex] = topRainStartAt + Math.floor(k / 3) * TOOLS_SCENE.burstGap + (k % 3) * TOOLS_SCENE.intraGap;
+  });
+  const order = [...belowOrder, ...aboveOrder];
 
   // Purge cascades bottom-first — the floor "opens" beneath the pile.
   const byDepth = placed.map((_, index) => index).sort((a, b) => placed[b].cy - placed[a].cy);
@@ -8875,7 +8925,7 @@ function buildToolsField(
 
   const slots: ToolsFieldSlot[] = placed.map((core, index) => {
     const entranceDelay = entranceDelays[index];
-    const fallDuration = 780 + Math.sqrt(Math.max(40, core.cy)) * 10 + rand() * 140;
+    const fallDuration = fallDurations[index];
     const fromY = -(core.cy + chipHeight + 50 + rand() * 130);
     const fromX = (rand() * 2 - 1) * 30;
     const impact = 6 + rand() * 5;
@@ -8944,25 +8994,25 @@ function buildToolsField(
 
   const purgeSpan = slots.reduce((max, slot) => Math.max(max, slot.purgeDelay), 0) + TOOLS_SCENE.purgeFall;
 
-  return { slots, lastLandingAt, purgeSpan, landingTicks };
+  return { slots, flightStartAt, cardLandAt, lastLandingAt, purgeSpan, landingTicks };
 }
 
 function toolsTagIcon(label: string, color: string) {
-  const common = { s: 15, c: color, w: 1.9 };
-  if (label.includes('Bible') || label === 'Scripture') return <OpenBook {...common} />;
+  const common = { s: 14, c: color, w: 1.9 };
+  if (label.includes('Bible') || label === 'Scripture' || label === 'Verse Comments') return <OpenBook {...common} />;
   if (label === 'Reading List') return <Book {...common} />;
   if (label.includes('Prayer') || label === 'Jesus Prayer') return <Candle {...common} />;
-  if (label.includes('Journal') || label === 'Morning Pages') return <Pencil {...common} />;
-  if (label === 'Notes' || label === 'Bible Notes' || label === 'Free Writing') return <Feather {...common} />;
+  if (label.includes('Journal') || label === 'Morning Pages' || label === 'Reflections') return <Pencil {...common} />;
+  if (label === 'Notes' || label === 'Free Writing') return <Feather {...common} />;
   if (label === 'Streaks') return <Sparkles {...common} />;
   if (label === 'Bucket List') return <Crown {...common} />;
   if (label.includes('Task') || label === 'Routines' || label === 'Habits') return <ListChecks {...common} />;
-  if (label.includes('Goals') || label === 'Challenges' || label.includes('Focus')) return <Target {...common} />;
-  if (label.includes('Screen') || label === 'Pomodoro') return <Clock {...common} />;
+  if (label.includes('Goals') || label === 'Challenges' || label.includes('Focus') || label === 'Analytics') return <Target {...common} />;
+  if (label.includes('Screen') || label === 'Pomodoro' || label === 'Reading Timer') return <Clock {...common} />;
   if (label.includes('Blocker')) return <SlidersHorizontal {...common} />;
   if (label === 'Favorites') return <BookMarked {...common} />;
-  if (label === 'Big Events') return <Calendar {...common} />;
-  if (label === 'Gratitude') return <Heart {...common} />;
+  if (label === 'Big Events' || label === 'Weekly View' || label === 'Day Planner') return <Calendar {...common} />;
+  if (label.includes('Gratitude')) return <Heart {...common} />;
   if (label === 'Year in Pixels') return <Sparkles {...common} />;
   return <Notebook {...common} />;
 }
@@ -9185,7 +9235,7 @@ function ToolsShowcaseSlide({
   const cardTilt = useSharedValue(0);
   const cardLift = useSharedValue(0);
 
-  const chipHeight = compact ? 37 : 41;
+  const chipHeight = compact ? 33 : 36;
   const fieldTop = topInset + 6;
   // The CTA only exists after the purge, so during the rain the pile may run
   // almost to the bottom edge — the screen should feel full of tools.
@@ -9299,10 +9349,10 @@ function ToolsShowcaseSlide({
     purgeT.value = 0;
     morphT.value = 0;
 
-    // The postcard arrives LAST: the pile builds bottom-up first, then the
-    // card descends over it and lands into the gap the layout reserved.
-    const flightStartAt = Math.max(600, field.lastLandingAt - 520);
-    const cardLandAt = flightStartAt + TOOLS_SCENE.flightDuration;
+    // Two-act choreography (timeline computed by the layout): lower pile
+    // rains in, the card lands into its gap, then the upper crown falls.
+    const flightStartAt = field.flightStartAt;
+    const cardLandAt = field.cardLandAt;
 
     schedule(() => {
       flight.value = withTiming(1, { duration: TOOLS_SCENE.flightDuration, easing: Easing.bezier(0.3, 0.92, 0.3, 1) });
@@ -9332,7 +9382,7 @@ function ToolsShowcaseSlide({
       );
     }, cardLandAt - 30);
     field.landingTicks.forEach(at => schedule(runSelectionHaptic, at));
-    schedule(() => startReveal(false), cardLandAt + TOOLS_SCENE.revealAfterLand);
+    schedule(() => startReveal(false), field.lastLandingAt + TOOLS_SCENE.revealAfterLand);
     schedule(() => {
       bubble1Ref.current?.measureInWindow((x, y, w, h) => {
         if (w > 0 && h > 0) setMorphTarget({ x, y, w, h });
@@ -15842,9 +15892,9 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    columnGap: 7,
-    paddingLeft: 9,
-    paddingRight: 14,
+    columnGap: 6,
+    paddingLeft: 8,
+    paddingRight: 12,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.78)',
@@ -15855,9 +15905,9 @@ const s = StyleSheet.create({
     elevation: 3,
   },
   toolsTagIconShell: {
-    width: 27,
-    height: 27,
-    borderRadius: 13.5,
+    width: 25,
+    height: 25,
+    borderRadius: 12.5,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -15866,8 +15916,8 @@ const s = StyleSheet.create({
   },
   toolsTagText: {
     fontFamily: F.serifSemiBold,
-    fontSize: 14.4,
-    lineHeight: 18,
+    fontSize: 13.6,
+    lineHeight: 17.5,
     color: 'rgba(25,23,20,0.78)',
   },
   toolsShowcaseAction: {
