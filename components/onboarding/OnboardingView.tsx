@@ -8690,26 +8690,27 @@ const TOOLS_FIELD_LABELS = [
   'Challenges', 'Bible Notes', 'Gratitude', 'Task Manager', 'App Blocker', 'Reading List',
   'Big Events', 'Monthly Goals', 'Favorites', 'Routines', 'Focus Zone', 'Highlights',
   'Bucket List', 'Quick Tasks', 'Year in Pixels', 'Content Blocker', 'Spiritual Tasks',
-  'Prayer Rules', 'Jesus Prayer', 'Bible', 'Notes',
+  'Prayer Rules', 'Jesus Prayer', 'Bible', 'Notes', 'Morning Pages', 'Free Writing', 'Streaks',
 ] as const;
 
 // The whole scene is one timeline: card flight -> tag rain -> typed truth ->
 // purge (floor opens) -> card morphs into the first conversation bubble.
 const TOOLS_SCENE = {
   flightStart: 140,
-  flightDuration: 780,
+  flightDuration: 820,
   rainStart: 1040,
-  burstGap: 135,
-  intraGap: 44,
-  revealAfterLand: 240,
+  burstGap: 170,
+  intraGap: 58,
+  revealAfterLand: 260,
   typeStartDelay: 260,
-  typeCharMs: 18,
-  holdAfterType: 560,
-  purgeStep: 32,
+  typeCharMs: 30,
+  holdAfterType: 640,
+  purgeStep: 36,
   purgeFall: 640,
   morphLeadIn: 260,
   morphDuration: 620,
   bubble2Delay: 340,
+  echoDwell: 950,
 } as const;
 
 const TOOLS_SUBTITLE_SEGMENTS = [
@@ -8744,36 +8745,77 @@ function buildToolsField(
   chipHeight: number,
   screenHeight: number,
 ): ToolsFieldBuild {
-  const margin = 10;
+  const margin = 8;
   const rand = makeToolsRandom(0x5eeda7);
-  const estimate = (label: string) => Math.max(90, Math.round(label.length * 7.2) + 56);
+  const estimate = (label: string) => Math.max(80, Math.round(label.length * 6.55) + 46);
   const boxCyMid = (box.top + box.bottom) / 2;
 
-  // Bands are evenly spread shelves; each chip then gets a zig-zag offset so the
-  // result reads as a scattered pile, never as rows, while staying overlap-free.
+  type CoreSlot = { label: string; estWidth: number; cx: number; cy: number; rotate: number; fixed: boolean };
+  const queue = TOOLS_FIELD_LABELS.map(label => ({ label, estWidth: estimate(label), used: false }));
+  const placed: CoreSlot[] = [];
+
+  // Two short tags tuck in beside the card edges (behind it) when the screen is
+  // wide enough — reserved up front so the band packing cannot consume them.
+  if (box.left >= 32) {
+    const flankItems = queue.filter(entry => !entry.used && entry.label.length <= 6).slice(0, 2);
+    flankItems.forEach((item, flankIndex) => {
+      item.used = true;
+      const side = flankIndex === 0 ? -1 : 1;
+      const peek = Math.min(34, box.left - 10);
+      const cx = side === -1
+        ? box.left - item.estWidth / 2 + peek
+        : box.right + item.estWidth / 2 - peek;
+      const cy = boxCyMid + (rand() * 2 - 1) * 34;
+      placed.push({ label: item.label, estWidth: item.estWidth, cx, cy, rotate: side * (10 + rand() * 5), fixed: true });
+    });
+  }
+
+  // Two tags slipped under the card edges — only a sliver shows past the card,
+  // selling the "pile gathered around a solid object" reading.
+  const tuckItems = [] as { label: string; estWidth: number; used: boolean }[];
+  for (let i = queue.length - 1; i >= 0 && tuckItems.length < 2; i -= 1) {
+    if (!queue[i].used) {
+      queue[i].used = true;
+      tuckItems.push(queue[i]);
+    }
+  }
+  tuckItems.forEach((item, tuckIndex) => {
+    const above = tuckIndex === 0;
+    const cx = (above ? 0.32 : 0.66) * width + (rand() * 2 - 1) * 0.04 * width;
+    const cy = above ? box.top + 6 : box.bottom - 6;
+    placed.push({
+      label: item.label,
+      estWidth: item.estWidth,
+      cx,
+      cy,
+      rotate: (above ? -1 : 1) * (8 + rand() * 5),
+      fixed: true,
+    });
+  });
+
+  // Bands are evenly spread shelves filled edge-first so coverage always
+  // reaches the screen borders; zig-zag offsets break any row reading and a
+  // relaxation pass below guarantees nothing overlaps.
+  const bandStep = chipHeight + 19;
   const collectBands = (top: number, bottom: number) => {
-    const first = top + chipHeight / 2;
-    const last = bottom - chipHeight / 2;
+    const first = top + chipHeight / 2 + 1;
+    const last = bottom - chipHeight / 2 - 1;
     if (last - first < 0) return [] as number[];
-    const count = Math.max(1, Math.min(5, Math.floor((last - first) / (chipHeight + 13)) + 1));
+    const count = Math.max(1, Math.floor((last - first) / bandStep) + 1);
     if (count === 1) return [(first + last) / 2];
     const step = (last - first) / (count - 1);
     return Array.from({ length: count }, (_, i) => first + step * i);
   };
 
   const bands = [
-    ...collectBands(fieldTop + 2, box.top - 6),
-    ...collectBands(box.bottom + 6, fieldBottom - 2),
+    ...collectBands(fieldTop + 2, box.top - 8),
+    ...collectBands(box.bottom + 8, fieldBottom - 2),
   ]
     .map(cy => ({ cy }))
-    .sort((a, b) => Math.abs(a.cy - boxCyMid) - Math.abs(b.cy - boxCyMid));
-
-  const queue = TOOLS_FIELD_LABELS.map(label => ({ label, estWidth: estimate(label), used: false }));
-  type CoreSlot = { label: string; estWidth: number; cx: number; cy: number; rotate: number };
-  const placed: CoreSlot[] = [];
+    .sort((a, b) => Math.abs(b.cy - boxCyMid) - Math.abs(a.cy - boxCyMid));
 
   bands.forEach((band, bandIndex) => {
-    let cursor = margin + (-6 + rand() * 20);
+    let cursor = margin + (-4 + rand() * 18);
     const bandStart = placed.length;
     let chipInBand = 0;
     for (;;) {
@@ -8784,12 +8826,14 @@ function buildToolsField(
       const zigSign = (bandIndex + chipInBand) % 2 === 0 ? -1 : 1;
       const cy = Math.max(
         fieldTop + chipHeight / 2,
-        Math.min(fieldBottom - chipHeight / 2, band.cy + zigSign * (7 + rand() * 5) + (rand() * 4 - 2)),
+        Math.min(fieldBottom - chipHeight / 2, band.cy + zigSign * (3.5 + rand() * 2) + (rand() * 3 - 1.5)),
       );
-      const accent = rand() < 0.25;
-      const rotate = (rand() < 0.5 ? -1 : 1) * (accent ? 10 + rand() * 5 : 3 + rand() * 6);
-      placed.push({ label: item.label, estWidth: item.estWidth, cx, cy, rotate });
-      cursor = cx + item.estWidth / 2 + 9 + rand() * 16;
+      // Long chips stay closer to level; only short chips take strong tilts,
+      // so rotation can never eat the vertical breathing room.
+      const isShort = item.estWidth <= 96;
+      const rotate = (rand() < 0.5 ? -1 : 1) * (isShort ? 7 + rand() * 4 : 2.5 + rand() * 3);
+      placed.push({ label: item.label, estWidth: item.estWidth, cx, cy, rotate, fixed: false });
+      cursor = cx + item.estWidth / 2 + 8 + rand() * 12;
       chipInBand += 1;
     }
     const bandChips = placed.slice(bandStart);
@@ -8803,20 +8847,48 @@ function buildToolsField(
     }
   });
 
-  // Two short tags tuck in beside the card edges (behind it) when the screen is
-  // wide enough — they sell the "pile gathered around a solid object" reading.
-  if (box.left >= 32) {
-    const flankItems = queue.filter(entry => !entry.used && entry.label.length <= 6).slice(0, 2);
-    flankItems.forEach((item, flankIndex) => {
-      item.used = true;
-      const side = flankIndex === 0 ? -1 : 1;
-      const peek = Math.min(34, box.left - 10);
-      const cx = side === -1
-        ? box.left - item.estWidth / 2 + peek
-        : box.right + item.estWidth / 2 - peek;
-      const cy = boxCyMid + (rand() * 2 - 1) * 34;
-      placed.push({ label: item.label, estWidth: item.estWidth, cx, cy, rotate: side * (10 + rand() * 5) });
-    });
+  // Relaxation pass: measure the true rotated extents of every pair and push
+  // apart anything that touches — overlap becomes mathematically impossible.
+  const extents = (chip: CoreSlot) => {
+    const theta = Math.abs(chip.rotate) * (Math.PI / 180);
+    return {
+      halfW: (chip.estWidth * Math.cos(theta) + chipHeight * Math.sin(theta)) / 2,
+      halfH: (chip.estWidth * Math.sin(theta) + chipHeight * Math.cos(theta)) / 2,
+    };
+  };
+  for (let iter = 0; iter < 3; iter += 1) {
+    for (let a = 0; a < placed.length; a += 1) {
+      if (placed[a].fixed) continue;
+      for (let b = a + 1; b < placed.length; b += 1) {
+        if (placed[b].fixed) continue;
+        const ea = extents(placed[a]);
+        const eb = extents(placed[b]);
+        const limX = ea.halfW + eb.halfW + 5;
+        const limY = ea.halfH + eb.halfH + 3;
+        const dx = placed[b].cx - placed[a].cx;
+        const dy = placed[b].cy - placed[a].cy;
+        if (Math.abs(dx) >= limX || Math.abs(dy) >= limY) continue;
+        const pushX = (limX - Math.abs(dx)) / 2;
+        const pushY = (limY - Math.abs(dy)) / 2;
+        if (pushY <= pushX) {
+          const dir = dy >= 0 ? 1 : -1;
+          placed[a].cy -= dir * pushY;
+          placed[b].cy += dir * pushY;
+        } else {
+          const dir = dx >= 0 ? 1 : -1;
+          placed[a].cx -= dir * pushX;
+          placed[b].cx += dir * pushX;
+        }
+      }
+      const chip = placed[a];
+      const ec = extents(chip);
+      chip.cx = Math.max(margin + ec.halfW - 6, Math.min(width - margin - ec.halfW + 6, chip.cx));
+      chip.cy = Math.max(fieldTop + ec.halfH - 4, Math.min(fieldBottom - ec.halfH + 4, chip.cy));
+      if (chip.cx + ec.halfW > box.left + 6 && chip.cx - ec.halfW < box.right - 6
+        && chip.cy + ec.halfH > box.top + 4 && chip.cy - ec.halfH < box.bottom - 4) {
+        chip.cy = chip.cy < boxCyMid ? box.top + 4 - ec.halfH : box.bottom - 4 + ec.halfH;
+      }
+    }
   }
 
   // Spatially shuffled entrance order: the rain fills the screen everywhere at
@@ -8845,7 +8917,7 @@ function buildToolsField(
 
   const slots: ToolsFieldSlot[] = placed.map((core, index) => {
     const entranceDelay = entranceDelays[index];
-    const fallDuration = 500 + Math.sqrt(Math.max(40, core.cy)) * 7 + rand() * 90;
+    const fallDuration = 620 + Math.sqrt(Math.max(40, core.cy)) * 9 + rand() * 110;
     const fromY = -(core.cy + chipHeight + 50 + rand() * 130);
     const fromX = (rand() * 2 - 1) * 26;
     const impact = 5 + rand() * 4;
@@ -8908,7 +8980,7 @@ function buildToolsField(
 
   const landingTicks: number[] = [];
   order.forEach((slotIndex, k) => {
-    if (k % 3 === 1 && landingTicks.length < 8) {
+    if (k % 2 === 0 && landingTicks.length < 12) {
       landingTicks.push(slots[slotIndex].entranceDelay + slots[slotIndex].fallDuration + 40);
     }
   });
@@ -8919,12 +8991,13 @@ function buildToolsField(
 }
 
 function toolsTagIcon(label: string, color: string) {
-  const common = { s: 15, c: color, w: 1.9 };
+  const common = { s: 13.5, c: color, w: 1.9 };
   if (label.includes('Bible') || label === 'Scripture') return <OpenBook {...common} />;
   if (label === 'Reading List') return <Book {...common} />;
   if (label.includes('Prayer') || label === 'Jesus Prayer') return <Candle {...common} />;
-  if (label.includes('Journal')) return <Pencil {...common} />;
-  if (label === 'Notes' || label === 'Bible Notes') return <Feather {...common} />;
+  if (label.includes('Journal') || label === 'Morning Pages') return <Pencil {...common} />;
+  if (label === 'Notes' || label === 'Bible Notes' || label === 'Free Writing') return <Feather {...common} />;
+  if (label === 'Streaks') return <Sparkles {...common} />;
   if (label === 'Bucket List') return <Crown {...common} />;
   if (label.includes('Task') || label === 'Routines' || label === 'Habits') return <ListChecks {...common} />;
   if (label.includes('Goals') || label === 'Challenges' || label.includes('Focus')) return <Target {...common} />;
@@ -9109,9 +9182,11 @@ function ToolsShowcaseSlide({
   const cardTilt = useSharedValue(0);
   const cardLift = useSharedValue(0);
 
-  const chipHeight = compact ? 37 : 41;
+  const chipHeight = compact ? 33 : 35;
   const fieldTop = topInset + 6;
-  const fieldBottom = height - bottomInset - 76;
+  // The CTA only exists after the purge, so during the rain the pile may run
+  // almost to the bottom edge — the screen should feel full of tools.
+  const fieldBottom = height - bottomInset - 18;
   const boxWidth = Math.min(width - 50, 342);
   const boxHeight = compact ? 214 : 224;
   const titleOnlyBoxHeight = compact ? 138 : 148;
@@ -9317,17 +9392,19 @@ function ToolsShowcaseSlide({
     if (echoedRef.current) return;
     echoedRef.current = true;
     setEchoed(true);
-    schedule(onNext, 430);
+    // Let the echo bubble land and breathe for a beat before moving on.
+    schedule(runSelectionHaptic, 150);
+    schedule(onNext, TOOLS_SCENE.echoDwell);
   };
 
   const morphCardStyle = useAnimatedStyle(() => {
     const m = morphT.value;
     const preHeight = interpolate(boxExpand.value, [0, 1], [titleOnlyBoxHeight, boxHeight]);
     const preTop = interpolate(boxExpand.value, [0, 1], [titleOnlyTop, expandedTop]);
-    const flightY = interpolate(flight.value, [0, 0.62, 1], [-(boxCy + boxHeight), -26, 0]);
+    const flightY = interpolate(flight.value, [0, 0.62, 1], [-(boxCy + boxHeight), -28, 0]);
     const flightX = interpolate(flight.value, [0, 1], [width * 0.2, 0]);
-    const flightRot = interpolate(flight.value, [0, 0.55, 0.85, 1], [7, -2.2, 0.8, 0]);
-    const flightScale = interpolate(flight.value, [0, 1], [1.05, 1]);
+    const flightRot = interpolate(flight.value, [0, 0.55, 0.85, 1], [8, -2.4, 0.9, 0]);
+    const flightScale = interpolate(flight.value, [0, 1], [1.07, 1]);
 
     return {
       opacity: interpolate(flight.value, [0, 0.06], [0, 1], 'clamp'),
@@ -15682,9 +15759,9 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    columnGap: 7,
-    paddingLeft: 9,
-    paddingRight: 14,
+    columnGap: 6,
+    paddingLeft: 8,
+    paddingRight: 12,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.78)',
@@ -15695,9 +15772,9 @@ const s = StyleSheet.create({
     elevation: 3,
   },
   toolsTagIconShell: {
-    width: 27,
-    height: 27,
-    borderRadius: 13.5,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -15706,8 +15783,8 @@ const s = StyleSheet.create({
   },
   toolsTagText: {
     fontFamily: F.serifSemiBold,
-    fontSize: 14.4,
-    lineHeight: 18,
+    fontSize: 13.2,
+    lineHeight: 17,
     color: 'rgba(25,23,20,0.76)',
   },
   toolsShowcaseAction: {
