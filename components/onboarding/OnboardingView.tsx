@@ -1368,10 +1368,11 @@ function OnboardingPreload({
   const sheen = useSharedValue(0);
   const settle = useSharedValue(0);
   const bloom = useSharedValue(0);
+  const grow = useSharedValue(stage === 'farewell' ? 1 : 0);
 
   useEffect(() => {
     if (stage === 'loading') {
-      awaken.value = withDelay(300, withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.cubic) }));
+      awaken.value = withDelay(320, withTiming(1, { duration: 1700, easing: Easing.inOut(Easing.cubic) }));
       breathe.value = withRepeat(
         withSequence(
           withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.sin) }),
@@ -1381,24 +1382,26 @@ function OnboardingPreload({
         false,
       );
       orbit.value = withRepeat(withTiming(360, { duration: 1500, easing: Easing.linear }), -1, false);
-      sheen.value = withDelay(680, withTiming(1, { duration: 660, easing: Easing.inOut(Easing.cubic) }));
+      sheen.value = withDelay(840, withTiming(1, { duration: 680, easing: Easing.inOut(Easing.cubic) }));
       return;
     }
     // Farewell: one fast final lap, the ring disperses into the halo, the
-    // crest takes a single dignified settle.
+    // crest takes a single dignified settle and GROWS into the exact size it
+    // wears on the Welcome screen beneath.
     awaken.value = withTiming(1, { duration: 160 });
     orbit.value = withTiming(orbit.value + 460, { duration: 720, easing: Easing.out(Easing.cubic) });
     bloom.value = withTiming(1, { duration: 760, easing: Easing.out(Easing.cubic) });
+    grow.value = withTiming(1, { duration: 920, easing: Easing.bezier(0.22, 1, 0.36, 1) });
     settle.value = withSequence(
       withTiming(2.5, { duration: 150, easing: Easing.out(Easing.quad) }),
       withSpring(0, { damping: 12, stiffness: 230 }),
     );
-  }, [awaken, bloom, breathe, orbit, settle, sheen, stage]);
+  }, [awaken, bloom, breathe, grow, orbit, settle, sheen, stage]);
 
   const crestStyle = useAnimatedStyle(() => ({
     transform: [
       { translateY: settle.value },
-      { scale: 1 + breathe.value * 0.015 * (1 - bloom.value) },
+      { scale: (0.84 + grow.value * 0.16) * (1 + breathe.value * 0.015 * (1 - bloom.value)) },
     ],
   }));
   const glowStyle = useAnimatedStyle(() => ({
@@ -1588,32 +1591,38 @@ type WelcomeConfettiPieceSpec = {
   radius: number;
   flipAxis: 'x' | 'y';
   tone: string;
+  star: boolean;
 };
 
 function buildWelcomeConfetti(width: number, height: number): WelcomeConfettiPieceSpec[] {
   const rand = makeToolsRandom(0xc0ffe7);
-  return Array.from({ length: 34 }, (_, index) => {
-    const kind = index % 4;
-    const w = kind === 0 ? 5 + rand() * 3 : kind === 1 ? 11 + rand() * 5 : kind === 2 ? 8 + rand() * 3 : 6 + rand() * 2.5;
-    const h = kind === 0 ? 13 + rand() * 6 : kind === 1 ? 6 + rand() * 2.5 : kind === 2 ? w * (0.9 + rand() * 0.2) : w;
+  return Array.from({ length: 50 }, (_, index) => {
+    // Five kinds: ribbon, flake, square, dot, star — like the old Lottie mix.
+    const kind = index % 5;
+    // Three size classes so the cloud has depth: small far, large near.
+    const sizeScale = rand() < 0.3 ? 0.7 : rand() < 0.72 ? 1 : 1.5;
+    const baseW = kind === 0 ? 5 + rand() * 3 : kind === 1 ? 11 + rand() * 5 : kind === 2 ? 8 + rand() * 3 : kind === 3 ? 6 + rand() * 2.5 : 11 + rand() * 7;
+    const baseH = kind === 0 ? 13 + rand() * 6 : kind === 1 ? 6 + rand() * 2.5 : kind === 2 ? baseW * (0.9 + rand() * 0.2) : baseW;
     return {
       x: 14 + rand() * (width - 28),
       // A dense opening pop, then stragglers drifting in.
-      delay: rand() < 0.62 ? rand() * 260 : 260 + rand() * 640,
-      fallDuration: 2100 + rand() * 1200,
-      fall: height * (0.55 + rand() * 0.38),
-      drift: (rand() * 2 - 1) * 70,
-      swayAmp: 16 + rand() * 30,
-      swayFreq: 2 + rand() * 1.6,
-      flipFreq: 2 + rand() * 2.4,
+      delay: rand() < 0.65 ? rand() * 300 : 300 + rand() * 800,
+      // Wide speed spread: heavy pieces drop fast, light ones float.
+      fallDuration: 1800 + rand() * 2400,
+      fall: height * (0.55 + rand() * 0.4),
+      drift: (rand() * 2 - 1) * 76,
+      swayAmp: 14 + rand() * 34,
+      swayFreq: 2 + rand() * 1.8,
+      flipFreq: 2 + rand() * 2.6,
       phase: rand() * Math.PI * 2,
       rotateFrom: rand() * 360,
-      rotateDrift: (rand() < 0.5 ? -1 : 1) * (50 + rand() * 110),
-      w,
-      h,
+      rotateDrift: (rand() < 0.5 ? -1 : 1) * (50 + rand() * 120),
+      w: baseW * sizeScale,
+      h: baseH * sizeScale,
       radius: kind === 3 ? 999 : 2,
       flipAxis: kind === 0 ? 'x' as const : 'y' as const,
       tone: WELCOME_CONFETTI_COLORS[index % WELCOME_CONFETTI_COLORS.length],
+      star: kind === 4,
     };
   });
 }
@@ -1643,6 +1652,21 @@ function WelcomeConfettiPiece({ piece }: { piece: WelcomeConfettiPieceSpec }) {
     };
   });
 
+  if (piece.star) {
+    return (
+      <Reanimated.Text
+        pointerEvents="none"
+        style={[
+          s.welcomeConfettiStar,
+          { left: piece.x, fontSize: piece.w, color: piece.tone },
+          style,
+        ]}
+      >
+        ✦
+      </Reanimated.Text>
+    );
+  }
+
   return (
     <Reanimated.View
       pointerEvents="none"
@@ -1666,11 +1690,13 @@ function WelcomeConfettiOverlay({ active }: { active: boolean }) {
       return undefined;
     }
     preloadAchievementFeedbackSound();
+    // The boom lands right as the crest finishes growing into its welcome
+    // position — celebration of arrival, not an afterthought.
     const startTimer = setTimeout(() => {
       setBurst('playing');
       void playAchievementCompleteFeedback();
-    }, 920);
-    const endTimer = setTimeout(() => setBurst('done'), 5400);
+    }, 140);
+    const endTimer = setTimeout(() => setBurst('done'), 5900);
     return () => {
       clearTimeout(startTimer);
       clearTimeout(endTimer);
@@ -12389,10 +12415,10 @@ export default function OnboardingView() {
     // wait for the JS thread to finish its startup work (capped so the
     // screen can never feel stuck) before the welcome handoff begins.
     const minHold = new Promise<void>(resolve => {
-      setTimeout(resolve, 2200);
+      setTimeout(resolve, 3000);
     });
     const startupSettled = new Promise<void>(resolve => {
-      const cap = setTimeout(resolve, 2600);
+      const cap = setTimeout(resolve, 3400);
       InteractionManager.runAfterInteractions(() => {
         clearTimeout(cap);
         resolve();
@@ -13234,6 +13260,11 @@ const s = StyleSheet.create({
     position: 'absolute',
     top: -26,
     borderRadius: 2,
+  },
+  welcomeConfettiStar: {
+    position: 'absolute',
+    top: -26,
+    includeFontPadding: false,
   },
   topBar: {
     flexDirection: 'row',
