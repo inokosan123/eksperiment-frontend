@@ -8718,15 +8718,15 @@ const TOOLS_SCENE = {
   burstGap: 190,
   intraGap: 64,
   topLead: 80,
-  aboveGapBase: 210,
-  aboveGapGrow: 55,
+  aboveGapBase: 195,
+  aboveGapGrow: 38,
   aboveIntra: 70,
-  aboveFallSlow: 1.18,
+  aboveFallSlow: 1.06,
   pulseDelay: 500,
-  pulseGap: 450,
+  pulseGap: 800,
   typeStartDelay: 260,
   typeCharMs: 30,
-  holdAfterType: 750,
+  holdAfterType: 1700,
   purgeStep: 40,
   purgeFall: 700,
   morphLeadIn: 260,
@@ -8978,18 +8978,16 @@ function buildToolsField(
     .map((_, index) => index)
     .filter(index => !placed[index].side && placed[index].cy > boxCyMid)
     .sort((a, b) => (placed[b].cy + orderJitter[b]) - (placed[a].cy + orderJitter[a]));
-  // Side spines open Act 2 — they wedge against the freshly landed card
-  // first, then the crown rows fall above it.
-  const aboveOrder = [
-    ...placed
-      .map((_, index) => index)
-      .filter(index => placed[index].side)
-      .sort((a, b) => placed[b].cy - placed[a].cy),
-    ...placed
-      .map((_, index) => index)
-      .filter(index => !placed[index].side && placed[index].cy <= boxCyMid)
-      .sort((a, b) => (placed[b].cy + orderJitter[b]) - (placed[a].cy + orderJitter[a])),
-  ];
+  // Side spines fall TOGETHER with the card — same moment, same stream — and
+  // wedge against it right as it lands. The crown then continues above.
+  const sideOrder = placed
+    .map((_, index) => index)
+    .filter(index => placed[index].side)
+    .sort((a, b) => placed[b].cy - placed[a].cy);
+  const aboveOrder = placed
+    .map((_, index) => index)
+    .filter(index => !placed[index].side && placed[index].cy <= boxCyMid)
+    .sort((a, b) => (placed[b].cy + orderJitter[b]) - (placed[a].cy + orderJitter[a]));
 
   const entranceDelays = new Array<number>(placed.length).fill(TOOLS_SCENE.rainStart);
   let lastBelowLandingAt = 0;
@@ -9002,6 +9000,10 @@ function buildToolsField(
   // air while the last low chips land, and the crown keeps falling around it.
   const flightStartAt = Math.max(420, lastBelowLandingAt - TOOLS_SCENE.flightLead);
   const cardLandAt = flightStartAt + TOOLS_SCENE.flightDuration;
+  // Sides are airborne alongside the card and land just after it, leaning in.
+  sideOrder.forEach((slotIndex, k) => {
+    entranceDelays[slotIndex] = flightStartAt + 60 + k * 90;
+  });
   const topRainStartAt = Math.max(TOOLS_SCENE.rainStart, cardLandAt - TOOLS_SCENE.topLead);
   // Toward the top the rain dies down like the end of a snowfall: pairs
   // instead of triples, gaps that keep growing, slightly slower falls.
@@ -9012,7 +9014,7 @@ function buildToolsField(
     entranceDelays[slotIndex] = topRainStartAt + offset + (k % 2) * TOOLS_SCENE.aboveIntra;
     fallDurations[slotIndex] *= TOOLS_SCENE.aboveFallSlow;
   });
-  const order = [...belowOrder, ...aboveOrder];
+  const order = [...belowOrder, ...sideOrder, ...aboveOrder];
 
   // Purge cascades bottom-first — the floor "opens" beneath the pile.
   const byDepth = placed.map((_, index) => index).sort((a, b) => placed[b].cy - placed[a].cy);
@@ -9560,17 +9562,21 @@ function ToolsShowcaseSlide({
     // Only after a dramatic beat does the REAL event (the subtitle) drop out.
     const pulseAt = field.lastLandingAt + TOOLS_SCENE.pulseDelay;
     schedule(() => {
-      runBubbleHaptic();
+      runStrongHaptic();
       cardPulse.value = withSequence(
         withTiming(1, { duration: 150, easing: Easing.out(Easing.quad) }),
         withSpring(0, { damping: 7, stiffness: 170 }),
       );
       cardLandPulse.value = withSequence(
-        withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) }),
+        withTiming(1.25, { duration: 190, easing: Easing.out(Easing.cubic) }),
         withSpring(0.55, { damping: 8, stiffness: 190 }),
       );
+      cardTilt.value = withSequence(
+        withTiming(0.9, { duration: 90, easing: Easing.out(Easing.quad) }),
+        withSpring(0, { damping: 7, stiffness: 280 }),
+      );
       dip.value = withSequence(
-        withTiming(1.6, { duration: 90, easing: Easing.out(Easing.quad) }),
+        withTiming(2.6, { duration: 90, easing: Easing.out(Easing.quad) }),
         withSpring(0, { damping: 11, stiffness: 240 }),
       );
     }, pulseAt);
@@ -9691,7 +9697,7 @@ function ToolsShowcaseSlide({
         { translateX: cardKickX.value + flightX },
         { translateY: flightY + cardLift.value },
         { rotate: `${flightRot + cardTilt.value}deg` },
-        { scale: flightScale * (1 + cardPulse.value * 0.05) },
+        { scale: flightScale * (1 + cardPulse.value * 0.085) },
       ],
     };
   });
@@ -9708,8 +9714,8 @@ function ToolsShowcaseSlide({
   // The gold line under the title is the "voice" of the pulse: it flares and
   // stretches with the card's strain, then settles back.
   const underlineDrawStyle = useAnimatedStyle(() => ({
-    opacity: Math.min(1, cardSettle.value + cardPulse.value * 0.35),
-    transform: [{ scaleX: Math.max(0.0001, cardSettle.value) * (1 + cardPulse.value * 0.3) }],
+    opacity: Math.min(1, cardSettle.value + cardPulse.value * 0.5),
+    transform: [{ scaleX: Math.max(0.0001, cardSettle.value) * (1 + cardPulse.value * 0.5) }],
   }));
 
   // Two sheets of paper peek out beneath the card: the message arrives as a
@@ -9731,7 +9737,7 @@ function ToolsShowcaseSlide({
         { translateX: cardKickX.value * 1.1 + flightX },
         { translateY: flightY + cardLift.value * 1.12 },
         { rotate: `${flightRot + cardTilt.value - 0.8}deg` },
-        { scale: flightScale * (1 + cardPulse.value * 0.05) },
+        { scale: flightScale * (1 + cardPulse.value * 0.085) },
       ],
     };
   });
@@ -9752,7 +9758,7 @@ function ToolsShowcaseSlide({
         { translateX: cardKickX.value * 1.2 + flightX },
         { translateY: flightY + cardLift.value * 1.25 },
         { rotate: `${flightRot + cardTilt.value + 1.3}deg` },
-        { scale: flightScale * (1 + cardPulse.value * 0.05) },
+        { scale: flightScale * (1 + cardPulse.value * 0.085) },
       ],
     };
   });
