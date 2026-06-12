@@ -1593,22 +1593,27 @@ function WelcomeSlide({
 // the UI thread — replaces the software-rendered Lottie that stuttered.
 const WELCOME_CONFETTI_COLORS = ['#E8C478', '#F3DFAE', '#F7E7C2', '#F0B45C', '#F2D5C0', '#CDE4E1'];
 
+// Real projectile physics with air drag: horizontal velocity decays
+// exponentially (never a hard stop), vertical velocity relaxes toward a
+// terminal fall speed. That is the math Lottie animators imitate — fast
+// muzzle exit, a smooth arc with no freeze, a natural rollover into the fall.
 type WelcomeConfettiPieceSpec = {
   originX: number;
   originY: number;
-  burstDX: number;
-  rise: number;
-  pApex: number;
-  fallDist: number;
+  vx0: number;
+  vy0: number;
+  tauX: number;
+  tauY: number;
+  vT: number;
+  durationSec: number;
   delay: number;
-  duration: number;
-  drift: number;
   swayAmp: number;
   swayFreq: number;
   flipFreq: number;
   phase: number;
-  rotateFrom: number;
-  rotateDrift: number;
+  rot0: number;
+  rotBurst: number;
+  rotSlow: number;
   w: number;
   h: number;
   radius: number;
@@ -1628,39 +1633,62 @@ function buildWelcomeConfetti(width: number, height: number): WelcomeConfettiPie
     return { w: baseW * sizeScale, h: baseH * sizeScale };
   };
 
-  // Two cannons fire from the screen edges toward the centre — the left one
-  // first, the right answering 120ms later. Fan angles are stratified so each
-  // volley covers its whole arc with no gaps; pieces cross above the crest.
+  // Two cannons at the screen edges, left first, right answering 120ms later.
+  // Each volley mixes four reach classes so the WHOLE screen gets covered:
+  //   short — own half and the middle
+  //   cross — over the middle deep into the opposite half
+  //   high  — up near the top, then falling as if dropped from the sky
+  //   exit  — so fast they leave the screen on the far side
   ([-1, 1] as const).forEach(side => {
     for (let i = 0; i < 24; i += 1) {
-      const u = (i + rand() * 0.8) / 24;
+      const cls = i < 7 ? 'short' : i < 17 ? 'cross' : i < 22 ? 'high' : 'exit';
+      const clsIndex = cls === 'short' ? i : cls === 'cross' ? i - 7 : cls === 'high' ? i - 17 : i - 22;
+      const clsCount = cls === 'short' ? 7 : cls === 'cross' ? 10 : cls === 'high' ? 5 : 2;
+      const u = (clsIndex + rand() * 0.8) / clsCount;
       const kind = (i + (side === 1 ? 2 : 0)) % 5;
       const sizeRoll = rand();
       const sizeScale = sizeRoll < 0.25 ? 0.72 : sizeRoll < 0.7 ? 1 : sizeRoll < 0.9 ? 1.5 : 2.05;
       const { w, h } = chipDims(kind, sizeScale);
       const dir = side === -1 ? 1 : -1;
-      const originY = height * (0.5 + rand() * 0.16);
-      const reach = width * (0.24 + u * 0.58) + rand() * 26;
-      const arc = 0.42 + 0.58 * Math.sin(u * Math.PI);
-      const rise = height * (0.12 + 0.3 * arc) + rand() * 18;
-      const fadeLate = rand() < 0.62;
-      const apexY = originY - rise;
+      const originY = height * (0.52 + rand() * 0.16);
+      const tauX = 0.55 + rand() * 0.25;
+      const tauY = 0.95 + rand() * 0.45;
+      // Horizontal reach per class (distance ≈ vx0 × tauX).
+      const reach = cls === 'short'
+        ? width * (0.28 + u * 0.26)
+        : cls === 'cross'
+          ? width * (0.58 + u * 0.4)
+          : cls === 'high'
+            ? width * (0.34 + u * 0.3)
+            : width * (1.1 + u * 0.4);
+      const vx0 = (dir * reach) / tauX;
+      // Vertical: how high the arc goes (high class reaches near the top).
+      const rise = cls === 'high'
+        ? Math.max(60, originY - height * (0.05 + rand() * 0.08))
+        : cls === 'exit'
+          ? height * (0.2 + rand() * 0.25)
+          : height * (0.12 + u * 0.16 + rand() * 0.06);
+      const vy0 = -rise / (tauY * 0.55);
+      // Heavier pieces fall faster — terminal velocity by size class.
+      const vT = sizeScale < 1 ? 130 + rand() * 70 : sizeScale < 1.4 ? 200 + rand() * 90 : 270 + rand() * 100;
+      const fadeLate = cls === 'exit' || cls === 'high' ? true : rand() < 0.62;
       pieces.push({
         originX: side === -1 ? -14 : width + 14,
         originY,
-        burstDX: dir * reach,
-        rise,
-        pApex: 0.26 + rand() * 0.1,
-        fallDist: fadeLate ? height + 80 - apexY : height * (0.26 + rand() * 0.3),
+        vx0,
+        vy0,
+        tauX,
+        tauY,
+        vT,
+        durationSec: fadeLate ? 3.2 + rand() * 1.3 : 2.4 + rand() * 1,
         delay: (side === 1 ? 120 : 0) + rand() * 140,
-        duration: 2600 + rand() * 1800,
-        drift: (rand() * 2 - 1) * 70,
-        swayAmp: 14 + rand() * 34,
-        swayFreq: 2 + rand() * 1.8,
-        flipFreq: 2 + rand() * 2.6,
+        swayAmp: 12 + rand() * 26,
+        swayFreq: 2.6 + rand() * 2,
+        flipFreq: 1.2 + rand() * 1.6,
         phase: rand() * Math.PI * 2,
-        rotateFrom: rand() * 360,
-        rotateDrift: (rand() < 0.5 ? -1 : 1) * (120 + rand() * 200),
+        rot0: rand() * 360,
+        rotBurst: dir * (180 + rand() * 260),
+        rotSlow: (rand() < 0.5 ? -1 : 1) * (30 + rand() * 50),
         w,
         h,
         radius: kind === 3 ? 999 : 2,
@@ -1683,19 +1711,20 @@ function buildWelcomeConfetti(width: number, height: number): WelcomeConfettiPie
     pieces.push({
       originX: 14 + ((i % columns) + rand()) * ((width - 28) / columns),
       originY: -26,
-      burstDX: 0,
-      rise: 0,
-      pApex: 0.02,
-      fallDist: fadeLate ? height + 90 : height * (0.5 + rand() * 0.35),
+      vx0: (rand() * 2 - 1) * 30,
+      vy0: 0,
+      tauX: 0.8,
+      tauY: 1.1,
+      vT: 130 + rand() * 90,
+      durationSec: fadeLate ? 3.6 + rand() * 1.4 : 2.6 + rand() * 1.2,
       delay: 950 + rand() * 800,
-      duration: 2400 + rand() * 2200,
-      drift: (rand() * 2 - 1) * 76,
-      swayAmp: 14 + rand() * 34,
-      swayFreq: 2 + rand() * 1.8,
-      flipFreq: 2 + rand() * 2.6,
+      swayAmp: 14 + rand() * 30,
+      swayFreq: 2.6 + rand() * 2,
+      flipFreq: 1.2 + rand() * 1.6,
       phase: rand() * Math.PI * 2,
-      rotateFrom: rand() * 360,
-      rotateDrift: (rand() < 0.5 ? -1 : 1) * (50 + rand() * 120),
+      rot0: rand() * 360,
+      rotBurst: (rand() < 0.5 ? -1 : 1) * (40 + rand() * 60),
+      rotSlow: (rand() < 0.5 ? -1 : 1) * (30 + rand() * 50),
       w,
       h,
       radius: kind === 3 ? 999 : 2,
@@ -1714,29 +1743,32 @@ function WelcomeConfettiPiece({ piece }: { piece: WelcomeConfettiPieceSpec }) {
 
   useEffect(() => {
     t.value = 0;
-    t.value = withDelay(piece.delay, withTiming(1, { duration: piece.duration, easing: Easing.inOut(Easing.sin) }));
+    // Linear clock — the physics below maps time to position, so the driver
+    // must not add its own easing.
+    t.value = withDelay(piece.delay, withTiming(1, { duration: piece.durationSec * 1000, easing: Easing.linear }));
   }, [piece, t]);
 
   const style = useAnimatedStyle(() => {
+    const T = t.value * piece.durationSec;
+    // Drag physics: horizontal velocity decays exponentially (fast muzzle
+    // exit, never a freeze); vertical velocity relaxes from the launch kick
+    // toward terminal fall speed — the arc rolls over on its own.
+    const dx = piece.vx0 * piece.tauX * (1 - Math.exp(-T / piece.tauX));
+    const dy = piece.vT * T + (piece.vy0 - piece.vT) * piece.tauY * (1 - Math.exp(-T / piece.tauY));
+    // Leaf flutter fades in once the ballistic energy is spent.
+    const swayK = Math.min(1, Math.max(0, (T - 0.5) / 0.55));
+    const sway = Math.sin(piece.phase + T * piece.swayFreq) * piece.swayAmp * swayK;
+    const swayTilt = Math.cos(piece.phase + T * piece.swayFreq) * 14 * swayK;
+    const flip = 0.22 + 0.78 * Math.abs(Math.cos(piece.phase * 1.7 + T * piece.flipFreq * Math.PI));
     const p = t.value;
-    // Ballistic launch toward the centre (cubic-out = the satisfying hang at
-    // the apex), then the leaf-flutter takes over for the fall.
-    const ballistic = Math.min(1, p / piece.pApex);
-    const launch = 1 - Math.pow(1 - ballistic, 3);
-    const fp = Math.max(0, (p - piece.pApex) / (1 - piece.pApex));
-    const fallE = fp * fp * (3 - 2 * fp);
-    const swayK = Math.min(1, fp * 3);
-    const sway = Math.sin(piece.phase + fp * Math.PI * piece.swayFreq) * piece.swayAmp * swayK;
-    const swayTilt = Math.cos(piece.phase + fp * Math.PI * piece.swayFreq) * 16 * swayK;
-    const flip = 0.22 + 0.78 * Math.abs(Math.cos(piece.phase * 1.7 + p * Math.PI * piece.flipFreq));
     const fadeIn = interpolate(p, [0, 0.02], [0, 1], 'clamp');
     const fadeOut = piece.fadeLate
       ? interpolate(p, [0.94, 1], [1, 0], 'clamp')
       : interpolate(p, [0.78, 1], [1, 0], 'clamp');
     const transform = [
-      { translateX: piece.burstDX * launch + sway + fp * piece.drift },
-      { translateY: -piece.rise * launch + piece.fallDist * fallE },
-      { rotate: `${piece.rotateFrom + p * piece.rotateDrift + swayTilt}deg` },
+      { translateX: dx + sway },
+      { translateY: dy },
+      { rotate: `${piece.rot0 + piece.rotBurst * (1 - Math.exp(-T / 0.6)) + piece.rotSlow * T + swayTilt}deg` },
       piece.flipAxis === 'x' ? { scaleX: flip } : { scaleY: flip },
     ];
     return {
