@@ -1345,15 +1345,91 @@ function ProgressBar({ progress }: { progress: SectionProgress }) {
   );
 }
 
+// The loading screen enacts the brand verse before the user ever reads it:
+// the crest wakes from dim to full light while a golden comet orbits it.
+// On "farewell" (app ready) the orbit light disperses into the exact halo the
+// Welcome screen wears, the crest settles once — and the world simply
+// crossfades around a crest that never moves.
 function OnboardingPreload({
-  animateIn = true,
+  stage,
+  crestTop,
   bottomInset,
   topInset,
 }: {
-  animateIn?: boolean;
+  stage: 'loading' | 'farewell';
+  crestTop: number | null;
   bottomInset: number;
   topInset: number;
 }) {
+  const { height } = useWindowDimensions();
+  const awaken = useSharedValue(stage === 'farewell' ? 1 : 0);
+  const breathe = useSharedValue(0);
+  const orbit = useSharedValue(0);
+  const sheen = useSharedValue(0);
+  const settle = useSharedValue(0);
+  const bloom = useSharedValue(0);
+
+  useEffect(() => {
+    if (stage === 'loading') {
+      awaken.value = withDelay(240, withTiming(1, { duration: 1300, easing: Easing.inOut(Easing.cubic) }));
+      breathe.value = withRepeat(
+        withSequence(
+          withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0, { duration: 1400, easing: Easing.inOut(Easing.sin) }),
+        ),
+        -1,
+        false,
+      );
+      orbit.value = withRepeat(withTiming(360, { duration: 1500, easing: Easing.linear }), -1, false);
+      sheen.value = withDelay(680, withTiming(1, { duration: 660, easing: Easing.inOut(Easing.cubic) }));
+      return;
+    }
+    // Farewell: one fast final lap, the ring disperses into the halo, the
+    // crest takes a single dignified settle.
+    awaken.value = withTiming(1, { duration: 160 });
+    orbit.value = withTiming(orbit.value + 460, { duration: 720, easing: Easing.out(Easing.cubic) });
+    bloom.value = withTiming(1, { duration: 760, easing: Easing.out(Easing.cubic) });
+    settle.value = withSequence(
+      withTiming(2.5, { duration: 150, easing: Easing.out(Easing.quad) }),
+      withSpring(0, { damping: 12, stiffness: 230 }),
+    );
+  }, [awaken, bloom, breathe, orbit, settle, sheen, stage]);
+
+  const crestStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: settle.value },
+      { scale: 1 + breathe.value * 0.015 * (1 - bloom.value) },
+    ],
+  }));
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: awaken.value * (0.42 + breathe.value * 0.16) + bloom.value * 0.3,
+    transform: [{ scale: 0.92 + awaken.value * 0.12 + breathe.value * 0.03 + bloom.value * 0.3 }],
+  }));
+  const veilStyle = useAnimatedStyle(() => ({
+    opacity: (1 - awaken.value) * 0.46,
+  }));
+  const ringStyle = useAnimatedStyle(() => ({
+    opacity: awaken.value * (1 - bloom.value),
+    transform: [{ scale: 1 + bloom.value * 0.45 }, { rotate: `${orbit.value}deg` }],
+  }));
+  const ringTailAStyle = useAnimatedStyle(() => ({
+    opacity: awaken.value * (1 - bloom.value) * 0.5,
+    transform: [{ scale: 1 + bloom.value * 0.45 }, { rotate: `${orbit.value - 17}deg` }],
+  }));
+  const ringTailBStyle = useAnimatedStyle(() => ({
+    opacity: awaken.value * (1 - bloom.value) * 0.26,
+    transform: [{ scale: 1 + bloom.value * 0.45 }, { rotate: `${orbit.value - 33}deg` }],
+  }));
+  const sheenStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(sheen.value, [0, 0.18, 0.8, 1], [0, 0.55, 0.55, 0], 'clamp'),
+    transform: [{ rotate: '-22deg' }, { translateX: interpolate(sheen.value, [0, 1], [-150, 170]) }],
+  }));
+  const haloStyle = useAnimatedStyle(() => ({
+    opacity: bloom.value,
+  }));
+
+  const crestBlockTop = crestTop ?? Math.round(height * 0.21);
+
   return (
     <LinearGradient
       colors={['#FFFFFF', '#FFFFFF', '#FFFDF8']}
@@ -1369,10 +1445,40 @@ function OnboardingPreload({
         />
       </View>
 
-      <Reanimated.View entering={animateIn ? FadeIn.duration(360) : undefined} style={s.preloadCenter}>
+      <Reanimated.View
+        entering={FadeIn.duration(420)}
+        style={[s.preloadCrestBlock, { top: crestBlockTop }, crestStyle]}
+      >
+        <Reanimated.View pointerEvents="none" style={[s.preloadHaloBloom, haloStyle]} />
+        <Reanimated.View pointerEvents="none" style={[s.preloadGlow, glowStyle]}>
+          <View style={s.preloadGlowOuter} />
+          <View style={s.preloadGlowMid} />
+          <View style={s.preloadGlowCore} />
+        </Reanimated.View>
+        <Reanimated.View pointerEvents="none" style={[s.preloadRingShell, ringStyle]}>
+          <View style={s.preloadComet} />
+        </Reanimated.View>
+        <Reanimated.View pointerEvents="none" style={[s.preloadRingShell, ringTailAStyle]}>
+          <View style={[s.preloadComet, s.preloadCometTail]} />
+        </Reanimated.View>
+        <Reanimated.View pointerEvents="none" style={[s.preloadRingShell, ringTailBStyle]}>
+          <View style={[s.preloadComet, s.preloadCometTailFar]} />
+        </Reanimated.View>
         <View style={s.preloadLogoFrame}>
           <View style={s.preloadLogoPlate}>
-            <Image source={APP_LOGO} style={s.preloadLogo} resizeMode="cover" />
+            <View style={s.preloadLogoMask}>
+              <Image source={APP_LOGO} style={s.preloadLogo} resizeMode="cover" />
+              <Reanimated.View pointerEvents="none" style={[s.preloadVeil, veilStyle]} />
+              <Reanimated.View pointerEvents="none" style={[s.preloadSheenBar, sheenStyle]}>
+                <LinearGradient
+                  colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.9)', 'rgba(255,255,255,0)']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </Reanimated.View>
+            </View>
+            <View pointerEvents="none" style={s.preloadPlateTopSheen} />
           </View>
         </View>
       </Reanimated.View>
@@ -1380,11 +1486,24 @@ function OnboardingPreload({
   );
 }
 
-function WelcomeSlide({ onNext, ready }: { onNext: () => void; ready: boolean }) {
+function WelcomeSlide({
+  onNext,
+  ready,
+  logoReady,
+  onLogoLayout,
+}: {
+  onNext: () => void;
+  ready: boolean;
+  logoReady: boolean;
+  onLogoLayout?: (top: number) => void;
+}) {
   const titleStyle = useRevealStyle(ready, 0, 16, 520);
-  const logoStyle = useRevealStyle(ready, 140, 22, 640);
+  // The crest does not travel between screens: the loading crest fades out
+  // exactly where this one fades in, so the logo enters with zero motion.
+  const logoStyle = useRevealStyle(logoReady, 0, 0, 460);
   const scriptureStyle = useRevealStyle(ready, 300, 16, 600);
   const promiseStyle = useRevealStyle(ready, 520, 12, 540);
+  const logoMeasureRef = useRef<View>(null);
 
   return (
     <View style={s.welcome}>
@@ -1395,6 +1514,16 @@ function WelcomeSlide({ onNext, ready }: { onNext: () => void; ready: boolean })
 
         <View style={s.welcomeCenterGroup}>
           <Reanimated.View style={[s.logoFrame, logoStyle]}>
+            <View
+              ref={logoMeasureRef}
+              collapsable={false}
+              style={s.logoMeasureFill}
+              onLayout={() => {
+                logoMeasureRef.current?.measureInWindow((x, y) => {
+                  if (Number.isFinite(y)) onLogoLayout?.(y);
+                });
+              }}
+            />
             <View style={s.logoFrameHalo} />
             <View style={s.logoPlate}>
               <View style={s.logoImageMask}>
@@ -1436,44 +1565,97 @@ function WelcomeSlide({ onNext, ready }: { onNext: () => void; ready: boolean })
   );
 }
 
-function WelcomeConfettiOverlay({ active }: { active: boolean }) {
-  const confettiRef = useRef<React.ElementRef<typeof LottieView>>(null);
-  const confettiOpacity = useSharedValue(0);
+// Brand confetti: a one-shot burst of gold/cream petals driven purely by
+// UI-thread transforms — replaces the software-rendered Lottie that stuttered.
+const WELCOME_CONFETTI_TONES = ['#C5A059', '#E3C894', '#F6EFDC', '#4D8586', '#9C8A6B'];
+
+type WelcomeConfettiPieceSpec = {
+  x: number;
+  delay: number;
+  fall: number;
+  drift: number;
+  sway: number;
+  rotateFrom: number;
+  spin: number;
+  w: number;
+  h: number;
+  tone: string;
+};
+
+function buildWelcomeConfetti(width: number, height: number): WelcomeConfettiPieceSpec[] {
+  const rand = makeToolsRandom(0xc0ffe7);
+  return Array.from({ length: 26 }, (_, index) => ({
+    x: 14 + rand() * (width - 28),
+    delay: rand() * 420,
+    fall: height * (0.46 + rand() * 0.4),
+    drift: (rand() * 2 - 1) * 56,
+    sway: (rand() * 2 - 1) * 30,
+    rotateFrom: rand() * 360,
+    spin: (rand() < 0.5 ? -1 : 1) * (160 + rand() * 260),
+    w: 7 + rand() * 6,
+    h: 4 + rand() * 2.6,
+    tone: WELCOME_CONFETTI_TONES[index % WELCOME_CONFETTI_TONES.length],
+  }));
+}
+
+function WelcomeConfettiPiece({ piece }: { piece: WelcomeConfettiPieceSpec }) {
+  const t = useSharedValue(0);
 
   useEffect(() => {
-    if (!active) {
-      confettiOpacity.value = 0;
-      confettiRef.current?.reset();
-      return undefined;
-    }
-    preloadAchievementFeedbackSound();
-    const timer = setTimeout(() => {
-      confettiOpacity.value = withTiming(1, { duration: 140 });
-      confettiRef.current?.play();
-      void playAchievementCompleteFeedback();
-    }, 920);
+    t.value = 0;
+    t.value = withDelay(piece.delay, withTiming(1, { duration: 1850, easing: Easing.in(Easing.sin) }));
+  }, [piece, t]);
 
-    return () => clearTimeout(timer);
-  }, [active, confettiOpacity]);
-
-  const confettiStyle = useAnimatedStyle(() => ({
-    opacity: confettiOpacity.value,
+  const style = useAnimatedStyle(() => ({
+    opacity: interpolate(t.value, [0, 0.05, 0.74, 1], [0, 1, 1, 0], 'clamp'),
+    transform: [
+      { translateX: interpolate(t.value, [0, 0.35, 0.7, 1], [0, piece.sway, -piece.sway * 0.55, piece.drift]) },
+      { translateY: t.value * piece.fall },
+      { rotate: `${piece.rotateFrom + t.value * piece.spin}deg` },
+    ],
   }));
 
   return (
-    <View pointerEvents="none" style={s.confettiOverlay}>
-      <Reanimated.View style={[StyleSheet.absoluteFill, s.confettiLayer, confettiStyle]}>
-        <LottieView
-          ref={confettiRef}
-          source={CONFETTI_SOURCE}
-          autoPlay={false}
-          loop={false}
-          speed={0.92}
-          resizeMode="cover"
-          renderMode="SOFTWARE"
-          style={[StyleSheet.absoluteFill, s.confettiLottie]}
-        />
-      </Reanimated.View>
+    <Reanimated.View
+      pointerEvents="none"
+      style={[
+        s.welcomeConfettiPiece,
+        { left: piece.x, width: piece.w, height: piece.h, backgroundColor: piece.tone },
+        style,
+      ]}
+    />
+  );
+}
+
+function WelcomeConfettiOverlay({ active }: { active: boolean }) {
+  const { width, height } = useWindowDimensions();
+  const [burst, setBurst] = useState<'idle' | 'playing' | 'done'>('idle');
+  const pieces = useMemo(() => buildWelcomeConfetti(width, height), [height, width]);
+
+  useEffect(() => {
+    if (!active) {
+      setBurst('idle');
+      return undefined;
+    }
+    preloadAchievementFeedbackSound();
+    const startTimer = setTimeout(() => {
+      setBurst('playing');
+      void playAchievementCompleteFeedback();
+    }, 920);
+    const endTimer = setTimeout(() => setBurst('done'), 3320);
+    return () => {
+      clearTimeout(startTimer);
+      clearTimeout(endTimer);
+    };
+  }, [active]);
+
+  if (burst !== 'playing') return null;
+
+  return (
+    <View pointerEvents="none" style={s.welcomeConfettiField}>
+      {pieces.map((piece, index) => (
+        <WelcomeConfettiPiece key={index} piece={piece} />
+      ))}
     </View>
   );
 }
@@ -12143,6 +12325,7 @@ export default function OnboardingView() {
   const { beginGuidedSetup } = useGuidedSetup();
   const [answers, setAnswers] = useState<Answers>({});
   const [preloadPhase, setPreloadPhase] = useState<PreloadPhase>('only');
+  const [welcomeLogoTop, setWelcomeLogoTop] = useState<number | null>(null);
   const [tutorialRun, setTutorialRun] = useState(0);
   const steps = useMemo(() => stepOrder(answers), [answers]);
   const [index, setIndex] = useState(0);
@@ -12154,8 +12337,12 @@ export default function OnboardingView() {
 
   useEffect(() => {
     preloadAchievementFeedbackSound();
+    let pulseTimer: ReturnType<typeof setTimeout> | undefined;
     const exitTimer = setTimeout(() => {
       setPreloadPhase('exit');
+      // The app's haptic signature: a heartbeat — one firm tap, one soft.
+      runBubbleHaptic();
+      pulseTimer = setTimeout(runSelectionHaptic, 130);
       preloadExit.value = 0;
       preloadExit.value = withTiming(1, {
         duration: 980,
@@ -12167,6 +12354,7 @@ export default function OnboardingView() {
     return () => {
       clearTimeout(exitTimer);
       clearTimeout(doneTimer);
+      if (pulseTimer) clearTimeout(pulseTimer);
     };
   }, [preloadExit]);
 
@@ -12372,9 +12560,9 @@ export default function OnboardingView() {
   const stageTopPadding = edgeToEdgeMessage ? 0 : hideTopChrome ? insets.top + 12 : 0;
   const stageHorizontalPadding = edgeToEdgeMessage ? 0 : 20;
 
-  if (preloadPhase === 'only') {
-    return <OnboardingPreload bottomInset={insets.bottom} topInset={insets.top} />;
-  }
+  // The main tree (Welcome) mounts beneath the loading overlay from the very
+  // first frame: the transition later glides over an already-warm screen, and
+  // the welcome crest position can be measured for the stationary handoff.
 
   if (activeStep === 'buildBigEvents') {
     return (
@@ -12422,7 +12610,16 @@ export default function OnboardingView() {
   }
 
   const renderStep = () => {
-    if (activeStep === 'welcome') return <WelcomeSlide ready={preloadPhase === 'done'} onNext={goNext} />;
+    if (activeStep === 'welcome') {
+      return (
+        <WelcomeSlide
+          ready={preloadPhase === 'done'}
+          logoReady={preloadPhase !== 'only'}
+          onLogoLayout={setWelcomeLogoTop}
+          onNext={goNext}
+        />
+      );
+    }
     if (activeStep === 'nameIntro') {
       return (
         <NameIntroSlide
@@ -12804,9 +13001,17 @@ export default function OnboardingView() {
         {renderStep()}
       </Reanimated.View>
 
-      {preloadPhase === 'exit' && (
-        <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, s.preloadOverlay, preloadOverlayStyle]}>
-          <OnboardingPreload animateIn={false} bottomInset={insets.bottom} topInset={insets.top} />
+      {preloadPhase !== 'done' && (
+        <Reanimated.View
+          pointerEvents={preloadPhase === 'only' ? 'auto' : 'none'}
+          style={[StyleSheet.absoluteFill, s.preloadOverlay, preloadOverlayStyle]}
+        >
+          <OnboardingPreload
+            stage={preloadPhase === 'only' ? 'loading' : 'farewell'}
+            crestTop={welcomeLogoTop}
+            bottomInset={insets.bottom}
+            topInset={insets.top}
+          />
         </Reanimated.View>
       )}
 
@@ -12835,39 +13040,151 @@ const s = StyleSheet.create({
     bottom: 0,
     height: '52%',
   },
-  preloadCenter: {
+  preloadCrestBlock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 198,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingBottom: 18,
+  },
+  preloadHaloBloom: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: 0,
+    width: 198,
+    height: 198,
+    borderRadius: 48,
+    backgroundColor: 'rgba(197,160,89,0.10)',
+    transform: [{ rotate: '7deg' }],
+  },
+  preloadGlow: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: -29,
+    width: 256,
+    height: 256,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  preloadGlowOuter: {
+    position: 'absolute',
+    width: 256,
+    height: 256,
+    borderRadius: 128,
+    backgroundColor: 'rgba(232,196,128,0.10)',
+  },
+  preloadGlowMid: {
+    position: 'absolute',
+    width: 206,
+    height: 206,
+    borderRadius: 103,
+    backgroundColor: 'rgba(232,196,128,0.12)',
+  },
+  preloadGlowCore: {
+    position: 'absolute',
+    width: 162,
+    height: 162,
+    borderRadius: 81,
+    backgroundColor: 'rgba(238,206,144,0.14)',
+  },
+  preloadRingShell: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: -14,
+    width: 226,
+    height: 226,
+    alignItems: 'center',
+  },
+  preloadComet: {
+    position: 'absolute',
+    top: -2,
+    width: 30,
+    height: 4.5,
+    borderRadius: 3,
+    backgroundColor: '#D9B468',
+    shadowColor: '#C5A059',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  preloadCometTail: {
+    width: 22,
+    height: 3.5,
+    backgroundColor: '#E3C894',
+  },
+  preloadCometTailFar: {
+    width: 15,
+    height: 3,
+    backgroundColor: '#EFDCB4',
   },
   preloadLogoFrame: {
-    width: 148,
-    height: 148,
-    borderRadius: 42,
+    width: 198,
+    height: 198,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(197,160,89,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.12)',
   },
   preloadLogoPlate: {
-    width: 122,
-    height: 122,
-    borderRadius: 34,
+    width: 176,
+    height: 176,
+    borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.28)',
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 22 },
+    shadowOpacity: 0.13,
+    shadowRadius: 34,
+    elevation: 6,
+  },
+  preloadLogoMask: {
+    width: 152,
+    height: 152,
+    borderRadius: 34,
     overflow: 'hidden',
     backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.08,
-    shadowRadius: 24,
-    elevation: 3,
   },
   preloadLogo: {
-    width: 112,
-    height: 112,
-    borderRadius: 30,
+    width: 152,
+    height: 152,
+    borderRadius: 34,
+  },
+  preloadVeil: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFFDF8',
+  },
+  preloadSheenBar: {
+    position: 'absolute',
+    top: -34,
+    left: 44,
+    width: 64,
+    height: 220,
+  },
+  preloadPlateTopSheen: {
+    position: 'absolute',
+    top: 3,
+    alignSelf: 'center',
+    width: '62%',
+    height: 1.5,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
+  logoMeasureFill: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  welcomeConfettiField: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10000,
+    elevation: 10000,
+  },
+  welcomeConfettiPiece: {
+    position: 'absolute',
+    top: -26,
+    borderRadius: 2,
   },
   topBar: {
     flexDirection: 'row',
