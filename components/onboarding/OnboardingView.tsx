@@ -1587,228 +1587,13 @@ function WelcomeSlide({
   );
 }
 
-// Brand confetti: mixed shapes (ribbons, flakes, squares, dots) in light
-// festive tones that FLUTTER like leaves — pendulum sway with matching tilt
-// plus a paper-flip (scale collapse/open) that fakes the 3D tumble. All on
-// the UI thread — replaces the software-rendered Lottie that stuttered.
-const WELCOME_CONFETTI_COLORS = ['#E8C478', '#F3DFAE', '#F7E7C2', '#F0B45C', '#F2D5C0', '#CDE4E1'];
-
-// Real projectile physics with air drag: horizontal velocity decays
-// exponentially (never a hard stop), vertical velocity relaxes toward a
-// terminal fall speed. That is the math Lottie animators imitate — fast
-// muzzle exit, a smooth arc with no freeze, a natural rollover into the fall.
-type WelcomeConfettiPieceSpec = {
-  originX: number;
-  originY: number;
-  vx0: number;
-  vy0: number;
-  tauX: number;
-  tauY: number;
-  vT: number;
-  durationSec: number;
-  delay: number;
-  swayAmp: number;
-  swayFreq: number;
-  flipFreq: number;
-  phase: number;
-  rot0: number;
-  rotBurst: number;
-  rotSlow: number;
-  w: number;
-  h: number;
-  radius: number;
-  flipAxis: 'x' | 'y';
-  tone: string;
-  star: boolean;
-  fadeLate: boolean;
-};
-
-function buildWelcomeConfetti(width: number, height: number): WelcomeConfettiPieceSpec[] {
-  const rand = makeToolsRandom(0xc0ffe7);
-  const pieces: WelcomeConfettiPieceSpec[] = [];
-
-  const chipDims = (kind: number, sizeScale: number) => {
-    const baseW = kind === 0 ? 5 + rand() * 3 : kind === 1 ? 11 + rand() * 5 : kind === 2 ? 8 + rand() * 3 : kind === 3 ? 6 + rand() * 2.5 : 11 + rand() * 7;
-    const baseH = kind === 0 ? 13 + rand() * 6 : kind === 1 ? 6 + rand() * 2.5 : kind === 2 ? baseW * (0.9 + rand() * 0.2) : baseW;
-    return { w: baseW * sizeScale, h: baseH * sizeScale };
-  };
-
-  // Two cannons at the screen edges, left first, right answering 120ms later.
-  // Each volley mixes four reach classes so the WHOLE screen gets covered:
-  //   short — own half and the middle
-  //   cross — over the middle deep into the opposite half
-  //   high  — up near the top, then falling as if dropped from the sky
-  //   exit  — so fast they leave the screen on the far side
-  ([-1, 1] as const).forEach(side => {
-    for (let i = 0; i < 24; i += 1) {
-      const cls = i < 7 ? 'short' : i < 17 ? 'cross' : i < 22 ? 'high' : 'exit';
-      const clsIndex = cls === 'short' ? i : cls === 'cross' ? i - 7 : cls === 'high' ? i - 17 : i - 22;
-      const clsCount = cls === 'short' ? 7 : cls === 'cross' ? 10 : cls === 'high' ? 5 : 2;
-      const u = (clsIndex + rand() * 0.8) / clsCount;
-      const kind = (i + (side === 1 ? 2 : 0)) % 5;
-      const sizeRoll = rand();
-      const sizeScale = sizeRoll < 0.25 ? 0.72 : sizeRoll < 0.7 ? 1 : sizeRoll < 0.9 ? 1.5 : 2.05;
-      const { w, h } = chipDims(kind, sizeScale);
-      const dir = side === -1 ? 1 : -1;
-      const originY = height * (0.52 + rand() * 0.16);
-      const tauX = 0.55 + rand() * 0.25;
-      const tauY = 0.95 + rand() * 0.45;
-      // Horizontal reach per class (distance ≈ vx0 × tauX).
-      const reach = cls === 'short'
-        ? width * (0.28 + u * 0.26)
-        : cls === 'cross'
-          ? width * (0.58 + u * 0.4)
-          : cls === 'high'
-            ? width * (0.34 + u * 0.3)
-            : width * (1.1 + u * 0.4);
-      const vx0 = (dir * reach) / tauX;
-      // Vertical: how high the arc goes (high class reaches near the top).
-      const rise = cls === 'high'
-        ? Math.max(60, originY - height * (0.05 + rand() * 0.08))
-        : cls === 'exit'
-          ? height * (0.2 + rand() * 0.25)
-          : height * (0.12 + u * 0.16 + rand() * 0.06);
-      const vy0 = -rise / (tauY * 0.55);
-      // Heavier pieces fall faster — terminal velocity by size class.
-      const vT = sizeScale < 1 ? 130 + rand() * 70 : sizeScale < 1.4 ? 200 + rand() * 90 : 270 + rand() * 100;
-      const fadeLate = cls === 'exit' || cls === 'high' ? true : rand() < 0.62;
-      pieces.push({
-        originX: side === -1 ? -14 : width + 14,
-        originY,
-        vx0,
-        vy0,
-        tauX,
-        tauY,
-        vT,
-        durationSec: fadeLate ? 3.2 + rand() * 1.3 : 2.4 + rand() * 1,
-        delay: (side === 1 ? 120 : 0) + rand() * 140,
-        swayAmp: 12 + rand() * 26,
-        swayFreq: 2.6 + rand() * 2,
-        flipFreq: 1.2 + rand() * 1.6,
-        phase: rand() * Math.PI * 2,
-        rot0: rand() * 360,
-        rotBurst: dir * (180 + rand() * 260),
-        rotSlow: (rand() < 0.5 ? -1 : 1) * (30 + rand() * 50),
-        w,
-        h,
-        radius: kind === 3 ? 999 : 2,
-        flipAxis: kind === 0 ? 'x' as const : 'y' as const,
-        tone: WELCOME_CONFETTI_COLORS[(i + (side === 1 ? 3 : 0)) % WELCOME_CONFETTI_COLORS.length],
-        star: kind === 4,
-        fadeLate,
-      });
-    }
-  });
-
-  // Aftermath drizzle: a quieter wave floats down from above a second later,
-  // keeping the air alive while the welcome text reveals.
-  const columns = 8;
-  for (let i = 0; i < 16; i += 1) {
-    const kind = i % 5;
-    const sizeScale = rand() < 0.5 ? 0.72 : 1;
-    const { w, h } = chipDims(kind, sizeScale);
-    const fadeLate = rand() < 0.5;
-    pieces.push({
-      originX: 14 + ((i % columns) + rand()) * ((width - 28) / columns),
-      originY: -26,
-      vx0: (rand() * 2 - 1) * 30,
-      vy0: 0,
-      tauX: 0.8,
-      tauY: 1.1,
-      vT: 130 + rand() * 90,
-      durationSec: fadeLate ? 3.6 + rand() * 1.4 : 2.6 + rand() * 1.2,
-      delay: 950 + rand() * 800,
-      swayAmp: 14 + rand() * 30,
-      swayFreq: 2.6 + rand() * 2,
-      flipFreq: 1.2 + rand() * 1.6,
-      phase: rand() * Math.PI * 2,
-      rot0: rand() * 360,
-      rotBurst: (rand() < 0.5 ? -1 : 1) * (40 + rand() * 60),
-      rotSlow: (rand() < 0.5 ? -1 : 1) * (30 + rand() * 50),
-      w,
-      h,
-      radius: kind === 3 ? 999 : 2,
-      flipAxis: kind === 0 ? 'x' as const : 'y' as const,
-      tone: WELCOME_CONFETTI_COLORS[i % WELCOME_CONFETTI_COLORS.length],
-      star: kind === 4,
-      fadeLate,
-    });
-  }
-
-  return pieces;
-}
-
-function WelcomeConfettiPiece({ piece }: { piece: WelcomeConfettiPieceSpec }) {
-  const t = useSharedValue(0);
-
-  useEffect(() => {
-    t.value = 0;
-    // Linear clock — the physics below maps time to position, so the driver
-    // must not add its own easing.
-    t.value = withDelay(piece.delay, withTiming(1, { duration: piece.durationSec * 1000, easing: Easing.linear }));
-  }, [piece, t]);
-
-  const style = useAnimatedStyle(() => {
-    const T = t.value * piece.durationSec;
-    // Drag physics: horizontal velocity decays exponentially (fast muzzle
-    // exit, never a freeze); vertical velocity relaxes from the launch kick
-    // toward terminal fall speed — the arc rolls over on its own.
-    const dx = piece.vx0 * piece.tauX * (1 - Math.exp(-T / piece.tauX));
-    const dy = piece.vT * T + (piece.vy0 - piece.vT) * piece.tauY * (1 - Math.exp(-T / piece.tauY));
-    // Leaf flutter fades in once the ballistic energy is spent.
-    const swayK = Math.min(1, Math.max(0, (T - 0.5) / 0.55));
-    const sway = Math.sin(piece.phase + T * piece.swayFreq) * piece.swayAmp * swayK;
-    const swayTilt = Math.cos(piece.phase + T * piece.swayFreq) * 14 * swayK;
-    const flip = 0.22 + 0.78 * Math.abs(Math.cos(piece.phase * 1.7 + T * piece.flipFreq * Math.PI));
-    const p = t.value;
-    const fadeIn = interpolate(p, [0, 0.02], [0, 1], 'clamp');
-    const fadeOut = piece.fadeLate
-      ? interpolate(p, [0.94, 1], [1, 0], 'clamp')
-      : interpolate(p, [0.78, 1], [1, 0], 'clamp');
-    const transform = [
-      { translateX: dx + sway },
-      { translateY: dy },
-      { rotate: `${piece.rot0 + piece.rotBurst * (1 - Math.exp(-T / 0.6)) + piece.rotSlow * T + swayTilt}deg` },
-      piece.flipAxis === 'x' ? { scaleX: flip } : { scaleY: flip },
-    ];
-    return {
-      opacity: Math.min(fadeIn, fadeOut),
-      transform,
-    };
-  });
-
-  if (piece.star) {
-    return (
-      <Reanimated.Text
-        pointerEvents="none"
-        style={[
-          s.welcomeConfettiStar,
-          { left: piece.originX, top: piece.originY, fontSize: piece.w, color: piece.tone },
-          style,
-        ]}
-      >
-        ✦
-      </Reanimated.Text>
-    );
-  }
-
-  return (
-    <Reanimated.View
-      pointerEvents="none"
-      renderToHardwareTextureAndroid
-      style={[
-        s.welcomeConfettiPiece,
-        { left: piece.originX, top: piece.originY, width: piece.w, height: piece.h, borderRadius: piece.radius, backgroundColor: piece.tone },
-        style,
-      ]}
-    />
-  );
-}
-
+// The welcome confetti is the original Lottie composition — design-finished
+// art. Performance comes from HOW it runs: hardware-path rendering instead of
+// the old SOFTWARE mode (which rasterised every frame on the CPU — that was
+// the stutter), and mounting only for the duration of the burst instead of
+// living invisibly behind the welcome screen the whole time.
 function WelcomeConfettiOverlay({ active }: { active: boolean }) {
-  const { width, height } = useWindowDimensions();
   const [burst, setBurst] = useState<'idle' | 'playing' | 'done'>('idle');
-  const pieces = useMemo(() => buildWelcomeConfetti(width, height), [height, width]);
 
   useEffect(() => {
     if (!active) {
@@ -1816,31 +1601,34 @@ function WelcomeConfettiOverlay({ active }: { active: boolean }) {
       return undefined;
     }
     preloadAchievementFeedbackSound();
-    // The boom lands right as the crest finishes growing into its welcome
-    // position — sound, a heavy tap for the left cannon and a softer one for
-    // the right answering volley: the explosion is HEARD, FELT and SEEN at
-    // the same instant.
+    // Sound and a strong tap land together, right as the crest finishes
+    // growing into its welcome position — the burst is heard, felt and seen
+    // in the same instant.
     const startTimer = setTimeout(() => {
       setBurst('playing');
       runStrongHaptic();
       void playAchievementCompleteFeedback();
     }, 140);
-    const echoTimer = setTimeout(runBubbleHaptic, 260);
-    const endTimer = setTimeout(() => setBurst('done'), 6800);
-    return () => {
-      clearTimeout(startTimer);
-      clearTimeout(echoTimer);
-      clearTimeout(endTimer);
-    };
+    return () => clearTimeout(startTimer);
   }, [active]);
 
   if (burst !== 'playing') return null;
 
   return (
-    <View pointerEvents="none" style={s.welcomeConfettiField}>
-      {pieces.map((piece, index) => (
-        <WelcomeConfettiPiece key={index} piece={piece} />
-      ))}
+    <View pointerEvents="none" style={s.confettiOverlay}>
+      <View style={[StyleSheet.absoluteFill, s.confettiLayer]}>
+        <LottieView
+          source={CONFETTI_SOURCE}
+          autoPlay
+          loop={false}
+          speed={0.92}
+          resizeMode="cover"
+          renderMode="AUTOMATIC"
+          cacheComposition
+          onAnimationFinish={() => setBurst('done')}
+          style={[StyleSheet.absoluteFill, s.confettiLottie]}
+        />
+      </View>
     </View>
   );
 }
@@ -13378,21 +13166,6 @@ const s = StyleSheet.create({
   },
   logoMeasureFill: {
     ...StyleSheet.absoluteFillObject,
-  },
-  welcomeConfettiField: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 10000,
-    elevation: 10000,
-  },
-  welcomeConfettiPiece: {
-    position: 'absolute',
-    top: -26,
-    borderRadius: 2,
-  },
-  welcomeConfettiStar: {
-    position: 'absolute',
-    top: -26,
-    includeFontPadding: false,
   },
   topBar: {
     flexDirection: 'row',
