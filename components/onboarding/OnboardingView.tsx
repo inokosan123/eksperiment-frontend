@@ -50,7 +50,6 @@ import {
   OpenBook,
   Notebook,
   Pencil,
-  Play,
   Plus,
   Sun,
   SlidersHorizontal,
@@ -1298,7 +1297,7 @@ const VALUE_SLIDES: Record<ValueStepId, { title: string; body: string; kind: Val
   },
   valueFaith: {
     title: 'Grow closer to God!',
-    body: 'Learning about God should always be free — and in Anasta, it always will be.',
+    body: 'Learning about God should always be free! And in Anasta, it always will be!',
     kind: 'faith',
   },
   valueTools: {
@@ -2474,22 +2473,25 @@ function ValueSubtitleText({ kind }: { kind: ValuePhoneKind }) {
 
   if (kind === 'faith') {
     return (
-      <View style={s.valueSubtitleLine}>
-        <ValueSubtitleWord>Learning</ValueSubtitleWord>
-        <ValueSubtitleWord>about</ValueSubtitleWord>
-        <ValueSubtitleWord underline>God</ValueSubtitleWord>
-        <ValueSubtitleWord>should</ValueSubtitleWord>
-        <ValueSubtitleWord>always</ValueSubtitleWord>
-        <ValueSubtitleWord>be</ValueSubtitleWord>
-        <ValueSubtitleWord underline>free</ValueSubtitleWord>
-        <ValueSubtitleWord>—</ValueSubtitleWord>
-        <ValueSubtitleWord>and</ValueSubtitleWord>
-        <ValueSubtitleWord>in</ValueSubtitleWord>
-        <ValueSubtitleWord underline>Anasta,</ValueSubtitleWord>
-        <ValueSubtitleWord>it</ValueSubtitleWord>
-        <ValueSubtitleWord>always</ValueSubtitleWord>
-        <ValueSubtitleWord>will</ValueSubtitleWord>
-        <ValueSubtitleWord>be.</ValueSubtitleWord>
+      <View style={s.valueSubtitleFaithStack}>
+        <View style={s.valueSubtitleLine}>
+          <ValueSubtitleWord>Learning</ValueSubtitleWord>
+          <ValueSubtitleWord>about</ValueSubtitleWord>
+          <ValueSubtitleWord underline>God</ValueSubtitleWord>
+          <ValueSubtitleWord>should</ValueSubtitleWord>
+          <ValueSubtitleWord>always</ValueSubtitleWord>
+          <ValueSubtitleWord>be</ValueSubtitleWord>
+          <ValueSubtitleWord underline>free!</ValueSubtitleWord>
+        </View>
+        <View style={s.valueSubtitleLine}>
+          <ValueSubtitleWord>And</ValueSubtitleWord>
+          <ValueSubtitleWord>in</ValueSubtitleWord>
+          <ValueSubtitleWord underline>Anasta,</ValueSubtitleWord>
+          <ValueSubtitleWord>it</ValueSubtitleWord>
+          <ValueSubtitleWord>always</ValueSubtitleWord>
+          <ValueSubtitleWord>will</ValueSubtitleWord>
+          <ValueSubtitleWord>be!</ValueSubtitleWord>
+        </View>
       </View>
     );
   }
@@ -2575,7 +2577,7 @@ function ValueFocusCardReveal({
   return (
     <Reanimated.View
       entering={FadeInUp.delay(delay)
-        .duration(420)
+        .duration(540)
         .easing(Easing.bezier(0.16, 1, 0.28, 1))}
       style={s.valueVisualReveal}
     >
@@ -2850,19 +2852,24 @@ function ValueFocusFeatureCard({
   return (
     <View style={[s.valueFocusFeatureCard, { borderColor: border }]}>
       <LinearGradient
-        colors={['#FFFFFF', '#FFFDF8', '#F8F2E8']}
+        colors={['#FFFFFF', '#FFFCF6', '#F4EBDD']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
+      <View pointerEvents="none" style={[s.valueFocusFeatureSoftWash, { backgroundColor: tint }]} />
+      <View pointerEvents="none" style={s.valueFocusFeatureSheen} />
       <View style={[s.valueFocusFeatureRail, { backgroundColor: border }]} />
       <View style={[s.valueFocusFeatureIcon, { backgroundColor: tint, borderColor: border }]}>{icon}</View>
       <View style={s.valueFocusFeatureCopy}>
         <Text style={s.valueFocusFeatureText} numberOfLines={1}>{label}</Text>
         <Text style={s.valueFocusFeatureBody} numberOfLines={2}>{body}</Text>
       </View>
-      <View style={s.valueFocusFeatureCheck}>
-        <CheckSmall s={12.5} c={GOLD} w={2.7} />
+      <View style={[s.valueFocusFeatureCheck, { borderColor: border }]}>
+        <View pointerEvents="none" style={[s.valueFocusFeatureCheckGlow, { backgroundColor: tint }]} />
+        <View style={s.valueFocusFeatureCheckInner}>
+          <CheckSmall s={11.5} c={GOLD} w={2.8} />
+        </View>
       </View>
     </View>
   );
@@ -2876,7 +2883,7 @@ function ValueFocusIllustration({ active }: { active: boolean }) {
       </View>
       <View style={s.valueFocusCards}>
         {VALUE_FOCUS_FEATURE_CARDS.map((card, index) => (
-          <ValueFocusCardReveal key={card.label} active={active} delay={index * 85}>
+          <ValueFocusCardReveal key={card.label} active={active} delay={120 + index * 135}>
             <ValueFocusFeatureCard icon={card.icon} label={card.label} body={card.body} tint={card.tint} border={card.border} />
           </ValueFocusCardReveal>
         ))}
@@ -2888,13 +2895,13 @@ function ValueFocusIllustration({ active }: { active: boolean }) {
 const FAITH_VALUE_FEATURES = [
   {
     title: 'Bible',
-    body: 'The Word of God - always with you. Read, highlight, comment, and stay connected to Scripture every day.',
+    body: 'The Word of God - always with you. Read, highlight, comment and learn from Scripture every day.',
     image: FAITH_BIBLE_STICKER,
     tone: 'bible' as const,
   },
   {
     title: 'Prayer Book',
-    body: 'Morning, evening, mealtime, and Jesus Prayer - always ready. Set reminders and build a personal prayer rule that fits your life.',
+    body: 'Morning, evening, mealtime, Jesus Prayer, and others. Always ready. Build a personal prayer rule that fits your life.',
     image: FAITH_PRAYER_BOOK_STICKER,
     tone: 'prayer' as const,
   },
@@ -5036,20 +5043,20 @@ const DISTRACTION_CARDS = [
     startRotate: '14deg',
   },
   {
-    label: 'Gaming',
-    icon: <Target s={15} c="#6A7F54" w={1.9} />,
-    style: 'gaming',
-    tone: '#EEF5E9',
-    startX: -30,
-    startRotate: '-17deg',
-  },
-  {
     label: 'News',
     icon: <OpenBook s={15} c="#7D5D91" w={1.9} />,
     style: 'news',
     tone: '#F2EAF5',
     startX: -22,
     startRotate: '-12deg',
+  },
+  {
+    label: 'Gaming',
+    icon: <Target s={15} c="#6A7F54" w={1.9} />,
+    style: 'gaming',
+    tone: '#EEF5E9',
+    startX: -30,
+    startRotate: '-17deg',
   },
   {
     label: 'Ads',
@@ -5068,14 +5075,6 @@ const DISTRACTION_CARDS = [
     startRotate: '17deg',
   },
   {
-    label: 'Group Chats',
-    icon: <Heart s={15} c="#8F5D6C" w={1.9} />,
-    style: 'groups',
-    tone: '#F6E9EE',
-    startX: -18,
-    startRotate: '-10deg',
-  },
-  {
     label: 'Addictive Content',
     icon: <X s={15} c="#85723F" w={2} />,
     style: 'addictive',
@@ -5090,11 +5089,10 @@ const DISTRACTION_CARD_REVEAL_PROFILES: Record<
   { delay: number; duration: number; x: number; y: number; rotate: string; scale: number }
 > = {
   gaming: { delay: 300, duration: 520, x: -82, y: 28, rotate: '-18deg', scale: 0.78 },
-  news: { delay: 410, duration: 520, x: -28, y: 54, rotate: '8deg', scale: 0.76 },
-  ads: { delay: 520, duration: 520, x: 42, y: 58, rotate: '-12deg', scale: 0.76 },
-  apps: { delay: 630, duration: 540, x: 78, y: 30, rotate: '18deg', scale: 0.78 },
-  addictive: { delay: 780, duration: 560, x: 12, y: 66, rotate: '-4deg', scale: 0.74 },
-  groups: { delay: 1080, duration: 620, x: -90, y: -8, rotate: '-17deg', scale: 0.74 },
+  apps: { delay: 430, duration: 520, x: 66, y: 44, rotate: '15deg', scale: 0.78 },
+  ads: { delay: 570, duration: 540, x: 34, y: 42, rotate: '-10deg', scale: 0.76 },
+  addictive: { delay: 710, duration: 560, x: 4, y: 62, rotate: '-4deg', scale: 0.74 },
+  news: { delay: 1060, duration: 620, x: -92, y: -8, rotate: '-17deg', scale: 0.74 },
   messaging: { delay: 1360, duration: 650, x: 88, y: 10, rotate: '16deg', scale: 0.74 },
   notifications: { delay: 1660, duration: 680, x: 34, y: -86, rotate: '19deg', scale: 0.72 },
   social: { delay: 1960, duration: 680, x: -78, y: -70, rotate: '-20deg', scale: 0.72 },
@@ -5109,7 +5107,6 @@ const DISTRACTION_CARD_MOTION_PATHS = [
   { phase: 3.05, xA: 10, yA: 9, xB: 5, yB: 7, xC: 1.4, yC: 1.7, rA: 2.2, rB: 1.0, rC: 0.44, duration: 6620 },
   { phase: 3.72, xA: 8, yA: 11, xB: 6, yB: 5, xC: 1.7, yC: 1.4, rA: 2.1, rB: 1.2, rC: 0.48, duration: 6180 },
   { phase: 4.38, xA: 9, yA: 8, xB: 4, yB: 6, xC: 1.5, yC: 1.5, rA: 2.3, rB: 0.9, rC: 0.52, duration: 6530 },
-  { phase: 4.92, xA: 8, yA: 10, xB: 7, yB: 5, xC: 1.6, yC: 1.4, rA: 2.2, rB: 1.1, rC: 0.50, duration: 6680 },
 ];
 
 function DistractionCard({
@@ -5133,7 +5130,6 @@ function DistractionCard({
     news: s.distractionCardNews,
     ads: s.distractionCardAds,
     apps: s.distractionCardApps,
-    groups: s.distractionCardGroups,
     addictive: s.distractionCardAddictive,
   };
 
@@ -8710,20 +8706,27 @@ const TOOLS_FIELD_LABELS = [
   'Life Gratitude', 'Daily Gratitude', 'Analytics', 'Weekly View', 'Day Planner', 'Reflections',
 ] as const;
 
-// The whole scene is one timeline in two acts: the lower pile rains in first,
-// the postcard lands into its reserved gap, the upper crown falls around it ->
-// typed truth -> long beat -> purge (floor opens) -> card morphs into chat.
+// The whole scene is one continuous waterfall: the lower pile rains in, the
+// title card drops WITH the stream (same gravity language as the tags), the
+// crown settles ever slower toward the top — then the card pulses once (the
+// fake-out "struggle"), a dramatic beat, and the REAL event: the subtitle
+// drops out and types -> long tableau -> purge -> card morphs into chat.
 const TOOLS_SCENE = {
-  flightDuration: 820,
-  flightLead: 650,
+  flightDuration: 760,
+  flightLead: 620,
   rainStart: 180,
   burstGap: 190,
   intraGap: 64,
-  cardPause: 140,
-  revealAfterLand: 850,
+  topLead: 80,
+  aboveGapBase: 210,
+  aboveGapGrow: 55,
+  aboveIntra: 70,
+  aboveFallSlow: 1.18,
+  pulseDelay: 500,
+  pulseGap: 450,
   typeStartDelay: 260,
   typeCharMs: 30,
-  holdAfterType: 520,
+  holdAfterType: 750,
   purgeStep: 40,
   purgeFall: 700,
   morphLeadIn: 260,
@@ -8995,11 +8998,19 @@ function buildToolsField(
     entranceDelays[slotIndex] = delay;
     lastBelowLandingAt = Math.max(lastBelowLandingAt, delay + fallDurations[slotIndex]);
   });
+  // The card drops as part of the same stream — no pause: it is still in the
+  // air while the last low chips land, and the crown keeps falling around it.
   const flightStartAt = Math.max(420, lastBelowLandingAt - TOOLS_SCENE.flightLead);
   const cardLandAt = flightStartAt + TOOLS_SCENE.flightDuration;
-  const topRainStartAt = cardLandAt + TOOLS_SCENE.cardPause;
+  const topRainStartAt = Math.max(TOOLS_SCENE.rainStart, cardLandAt - TOOLS_SCENE.topLead);
+  // Toward the top the rain dies down like the end of a snowfall: pairs
+  // instead of triples, gaps that keep growing, slightly slower falls.
   aboveOrder.forEach((slotIndex, k) => {
-    entranceDelays[slotIndex] = topRainStartAt + Math.floor(k / 3) * TOOLS_SCENE.burstGap + (k % 3) * TOOLS_SCENE.intraGap;
+    const burstIndex = Math.floor(k / 2);
+    let offset = 0;
+    for (let i = 0; i < burstIndex; i += 1) offset += TOOLS_SCENE.aboveGapBase + i * TOOLS_SCENE.aboveGapGrow;
+    entranceDelays[slotIndex] = topRainStartAt + offset + (k % 2) * TOOLS_SCENE.aboveIntra;
+    fallDurations[slotIndex] *= TOOLS_SCENE.aboveFallSlow;
   });
   const order = [...belowOrder, ...aboveOrder];
 
@@ -9358,6 +9369,7 @@ function ToolsShowcaseSlide({
   const flight = useSharedValue(0);
   const cardSettle = useSharedValue(0);
   const cardLandPulse = useSharedValue(0);
+  const cardPulse = useSharedValue(0);
   const revealSettle = useSharedValue(0);
   const expandT = useSharedValue(0);
   const boxExpand = useSharedValue(0);
@@ -9496,6 +9508,7 @@ function ToolsShowcaseSlide({
     flight.value = 0;
     cardSettle.value = 0;
     cardLandPulse.value = 0;
+    cardPulse.value = 0;
     revealSettle.value = 0;
     expandT.value = 0;
     boxExpand.value = 0;
@@ -9509,7 +9522,12 @@ function ToolsShowcaseSlide({
     const cardLandAt = field.cardLandAt;
 
     schedule(() => {
-      flight.value = withTiming(1, { duration: TOOLS_SCENE.flightDuration, easing: Easing.bezier(0.3, 0.92, 0.3, 1) });
+      // The card falls by gravity like every tag: accelerate, overshoot a few
+      // px into the pile, spring absorbs the impact.
+      flight.value = withSequence(
+        withTiming(0.86, { duration: TOOLS_SCENE.flightDuration, easing: Easing.in(Easing.quad) }),
+        withSpring(1, { damping: 14, stiffness: 240, mass: 0.9 }),
+      );
     }, flightStartAt);
     schedule(() => {
       cardSettle.value = withTiming(1, { duration: 640, easing: Easing.bezier(0.22, 1, 0.36, 1) });
@@ -9536,7 +9554,27 @@ function ToolsShowcaseSlide({
       );
     }, cardLandAt - 30);
     field.landingTicks.forEach(at => schedule(runSelectionHaptic, at));
-    schedule(() => startReveal(false), field.lastLandingAt + TOOLS_SCENE.revealAfterLand);
+
+    // The fake-out: once the tableau settles, the card pulses hard once —
+    // straining to say more — and the pile flinches around it, then settles.
+    // Only after a dramatic beat does the REAL event (the subtitle) drop out.
+    const pulseAt = field.lastLandingAt + TOOLS_SCENE.pulseDelay;
+    schedule(() => {
+      runBubbleHaptic();
+      cardPulse.value = withSequence(
+        withTiming(1, { duration: 150, easing: Easing.out(Easing.quad) }),
+        withSpring(0, { damping: 7, stiffness: 170 }),
+      );
+      cardLandPulse.value = withSequence(
+        withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) }),
+        withSpring(0.55, { damping: 8, stiffness: 190 }),
+      );
+      dip.value = withSequence(
+        withTiming(1.6, { duration: 90, easing: Easing.out(Easing.quad) }),
+        withSpring(0, { damping: 11, stiffness: 240 }),
+      );
+    }, pulseAt);
+    schedule(() => startReveal(false), pulseAt + TOOLS_SCENE.pulseGap);
     schedule(() => {
       bubble1Ref.current?.measureInWindow((x, y, w, h) => {
         if (w > 0 && h > 0) setMorphTarget({ x, y, w, h });
@@ -9636,10 +9674,10 @@ function ToolsShowcaseSlide({
     const m = morphT.value;
     const preHeight = interpolate(boxExpand.value, [0, 1], [titleOnlyBoxHeight, boxHeight]);
     const preTop = interpolate(boxExpand.value, [0, 1], [titleOnlyTop, expandedTop]);
-    const flightY = interpolate(flight.value, [0, 0.62, 1], [-(boxCy + boxHeight), -28, 0]);
-    const flightX = interpolate(flight.value, [0, 1], [width * 0.2, 0]);
-    const flightRot = interpolate(flight.value, [0, 0.55, 0.85, 1], [8, -2.4, 0.9, 0]);
-    const flightScale = interpolate(flight.value, [0, 1], [1.07, 1]);
+    const flightY = interpolate(flight.value, [0, 0.86, 1], [-(boxCy + boxHeight), 9, 0]);
+    const flightX = interpolate(flight.value, [0, 1], [width * 0.04, 0]);
+    const flightRot = interpolate(flight.value, [0, 0.86, 1], [4.2, -1.1, 0]);
+    const flightScale = interpolate(flight.value, [0, 0.86, 1], [1.04, 0.99, 1]);
 
     return {
       opacity: interpolate(flight.value, [0, 0.06], [0, 1], 'clamp'),
@@ -9653,7 +9691,7 @@ function ToolsShowcaseSlide({
         { translateX: cardKickX.value + flightX },
         { translateY: flightY + cardLift.value },
         { rotate: `${flightRot + cardTilt.value}deg` },
-        { scale: flightScale },
+        { scale: flightScale * (1 + cardPulse.value * 0.05) },
       ],
     };
   });
@@ -9667,9 +9705,11 @@ function ToolsShowcaseSlide({
   const dipStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: dip.value }],
   }));
+  // The gold line under the title is the "voice" of the pulse: it flares and
+  // stretches with the card's strain, then settles back.
   const underlineDrawStyle = useAnimatedStyle(() => ({
-    opacity: cardSettle.value,
-    transform: [{ scaleX: Math.max(0.0001, cardSettle.value) }],
+    opacity: Math.min(1, cardSettle.value + cardPulse.value * 0.35),
+    transform: [{ scaleX: Math.max(0.0001, cardSettle.value) * (1 + cardPulse.value * 0.3) }],
   }));
 
   // Two sheets of paper peek out beneath the card: the message arrives as a
@@ -9677,10 +9717,10 @@ function ToolsShowcaseSlide({
   const stackMidStyle = useAnimatedStyle(() => {
     const preHeight = interpolate(boxExpand.value, [0, 1], [titleOnlyBoxHeight, boxHeight]);
     const preTop = interpolate(boxExpand.value, [0, 1], [titleOnlyTop, expandedTop]);
-    const flightY = interpolate(flight.value, [0, 0.62, 1], [-(boxCy + boxHeight), -28, 0]);
-    const flightX = interpolate(flight.value, [0, 1], [width * 0.2, 0]);
-    const flightRot = interpolate(flight.value, [0, 0.55, 0.85, 1], [8, -2.4, 0.9, 0]);
-    const flightScale = interpolate(flight.value, [0, 1], [1.07, 1]);
+    const flightY = interpolate(flight.value, [0, 0.86, 1], [-(boxCy + boxHeight), 9, 0]);
+    const flightX = interpolate(flight.value, [0, 1], [width * 0.04, 0]);
+    const flightRot = interpolate(flight.value, [0, 0.86, 1], [4.2, -1.1, 0]);
+    const flightScale = interpolate(flight.value, [0, 0.86, 1], [1.04, 0.99, 1]);
     return {
       opacity: interpolate(flight.value, [0, 0.06], [0, 1], 'clamp') * interpolate(morphT.value, [0, 0.18], [1, 0], 'clamp'),
       left: boxLeft + 6,
@@ -9691,17 +9731,17 @@ function ToolsShowcaseSlide({
         { translateX: cardKickX.value * 1.1 + flightX },
         { translateY: flightY + cardLift.value * 1.12 },
         { rotate: `${flightRot + cardTilt.value - 0.8}deg` },
-        { scale: flightScale },
+        { scale: flightScale * (1 + cardPulse.value * 0.05) },
       ],
     };
   });
   const stackDeepStyle = useAnimatedStyle(() => {
     const preHeight = interpolate(boxExpand.value, [0, 1], [titleOnlyBoxHeight, boxHeight]);
     const preTop = interpolate(boxExpand.value, [0, 1], [titleOnlyTop, expandedTop]);
-    const flightY = interpolate(flight.value, [0, 0.62, 1], [-(boxCy + boxHeight), -28, 0]);
-    const flightX = interpolate(flight.value, [0, 1], [width * 0.2, 0]);
-    const flightRot = interpolate(flight.value, [0, 0.55, 0.85, 1], [8, -2.4, 0.9, 0]);
-    const flightScale = interpolate(flight.value, [0, 1], [1.07, 1]);
+    const flightY = interpolate(flight.value, [0, 0.86, 1], [-(boxCy + boxHeight), 9, 0]);
+    const flightX = interpolate(flight.value, [0, 1], [width * 0.04, 0]);
+    const flightRot = interpolate(flight.value, [0, 0.86, 1], [4.2, -1.1, 0]);
+    const flightScale = interpolate(flight.value, [0, 0.86, 1], [1.04, 0.99, 1]);
     return {
       opacity: interpolate(flight.value, [0, 0.06], [0, 1], 'clamp') * interpolate(morphT.value, [0, 0.16], [1, 0], 'clamp'),
       left: boxLeft + 13,
@@ -9712,7 +9752,7 @@ function ToolsShowcaseSlide({
         { translateX: cardKickX.value * 1.2 + flightX },
         { translateY: flightY + cardLift.value * 1.25 },
         { rotate: `${flightRot + cardTilt.value + 1.3}deg` },
-        { scale: flightScale },
+        { scale: flightScale * (1 + cardPulse.value * 0.05) },
       ],
     };
   });
@@ -13020,6 +13060,11 @@ const s = StyleSheet.create({
     rowGap: 0,
     transform: [{ translateY: -2 }],
   },
+  valueSubtitleFaithStack: {
+    width: '100%',
+    alignItems: 'center',
+    rowGap: 0,
+  },
   valueSubtitleWord: {
     fontFamily: F.serifMedium,
     fontSize: 17.4,
@@ -13380,43 +13425,63 @@ const s = StyleSheet.create({
     elevation: 2,
   },
   valueFocusFeatureCard: {
-    minHeight: 58,
+    minHeight: 52,
     width: '100%',
-    borderRadius: 19,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
+    borderRadius: 18,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 9,
+    columnGap: 8,
     overflow: 'hidden',
     borderWidth: 1,
     shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.11,
-    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 9 },
+    shadowOpacity: 0.095,
+    shadowRadius: 16,
     elevation: 3,
+  },
+  valueFocusFeatureSoftWash: {
+    position: 'absolute',
+    width: 116,
+    height: 76,
+    borderRadius: 50,
+    right: -30,
+    top: -18,
+    opacity: 0.58,
+    transform: [{ rotate: '-10deg' }],
+  },
+  valueFocusFeatureSheen: {
+    position: 'absolute',
+    left: 30,
+    right: 28,
+    top: 0,
+    height: 22,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.32)',
+    opacity: 0.75,
   },
   valueFocusFeatureRail: {
     position: 'absolute',
     left: 0,
-    top: 9,
-    bottom: 9,
+    top: 8,
+    bottom: 8,
     width: 3.5,
     borderTopRightRadius: 999,
     borderBottomRightRadius: 999,
-    opacity: 0.95,
+    opacity: 0.86,
   },
   valueFocusFeatureIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 15,
+    width: 35,
+    height: 35,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.055,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.05,
+    shadowRadius: 9,
   },
   valueFocusFeatureCopy: {
     flex: 1,
@@ -13424,26 +13489,43 @@ const s = StyleSheet.create({
   },
   valueFocusFeatureText: {
     fontFamily: F.serifSemiBold,
-    fontSize: 18,
-    lineHeight: 22,
+    fontSize: 16.8,
+    lineHeight: 20.5,
     color: INK,
   },
   valueFocusFeatureBody: {
-    marginTop: 0,
+    marginTop: -1,
     fontFamily: F.serifMedium,
-    fontSize: 13.2,
-    lineHeight: 17.2,
+    fontSize: 12.2,
+    lineHeight: 15.8,
     color: 'rgba(28,25,23,0.72)',
   },
   valueFocusFeatureCheck: {
-    width: 25,
-    height: 25,
-    borderRadius: 12.5,
+    width: 31,
+    height: 36,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFF5DC',
+    backgroundColor: 'rgba(255,253,248,0.70)',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.44)',
+    overflow: 'hidden',
+  },
+  valueFocusFeatureCheckGlow: {
+    position: 'absolute',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    opacity: 0.72,
+  },
+  valueFocusFeatureCheckInner: {
+    width: 21,
+    height: 21,
+    borderRadius: 10.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF7E2',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.46)',
   },
   valueMiniFeatureIcon: {
     width: 34,
@@ -13470,20 +13552,21 @@ const s = StyleSheet.create({
     width: '100%',
     maxWidth: 376,
     alignItems: 'center',
-    paddingTop: 6,
+    paddingTop: 18,
   },
   valueFocusTagsWrap: {
-    height: 320,
+    height: 326,
     width: '100%',
     overflow: 'visible',
     alignItems: 'center',
     justifyContent: 'center',
-    transform: [{ scale: 0.87 }, { translateY: -9 }],
+    transform: [{ scale: 0.92 }, { translateY: 6 }],
   },
   valueFocusCards: {
-    width: '100%',
-    marginTop: 3,
-    rowGap: 4,
+    width: '92%',
+    maxWidth: 344,
+    marginTop: 24,
+    rowGap: 1,
   },
   valueFaithVisual: {
     width: '91%',
@@ -15908,10 +15991,10 @@ const s = StyleSheet.create({
     transform: [{ rotate: '-2deg' }],
     zIndex: 4,
   },
-  distractionCardGroups: {
+  distractionCardNews: {
     top: 149,
     left: -11,
-    width: 137,
+    width: 96,
     transform: [{ rotate: '4deg' }],
     zIndex: 7,
   },
@@ -15922,33 +16005,26 @@ const s = StyleSheet.create({
     transform: [{ rotate: '-5deg' }],
     zIndex: 8,
   },
-  distractionCardNews: {
-    left: 48,
-    bottom: 32,
-    width: 93,
-    transform: [{ rotate: '2deg' }],
-    zIndex: 7,
-  },
   distractionCardAds: {
-    right: 74,
-    bottom: 25,
+    top: 184,
+    right: -26,
     width: 82,
     transform: [{ rotate: '-7deg' }],
-    zIndex: 7,
+    zIndex: 4,
   },
   distractionCardApps: {
-    right: 0,
-    bottom: 86,
+    right: 14,
+    bottom: 58,
     width: 100,
-    transform: [{ rotate: '6deg' }],
+    transform: [{ rotate: '5deg' }],
     zIndex: 8,
   },
   distractionCardAddictive: {
-    left: 104,
-    bottom: 63,
-    width: 172,
-    transform: [{ rotate: '-2deg' }],
-    zIndex: 9,
+    left: 55,
+    bottom: 18,
+    width: 168,
+    transform: [{ rotate: '2deg' }],
+    zIndex: 7,
   },
   distractionGroundShadow: {
     position: 'absolute',
