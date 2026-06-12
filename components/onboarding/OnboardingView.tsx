@@ -1353,11 +1353,13 @@ function ProgressBar({ progress }: { progress: SectionProgress }) {
 function OnboardingPreload({
   stage,
   crestTop,
+  exitProgress,
   bottomInset,
   topInset,
 }: {
   stage: 'loading' | 'farewell';
   crestTop: number | null;
+  exitProgress: SharedValue<number>;
   bottomInset: number;
   topInset: number;
 }) {
@@ -1398,11 +1400,18 @@ function OnboardingPreload({
     );
   }, [awaken, bloom, breathe, grow, orbit, settle, sheen, stage]);
 
+  // Two-layer farewell: the loading background melts away FIRST, revealing
+  // the welcome screen beneath, while the crest stays a beat longer — alone —
+  // growing and dissolving into the identical crest waiting under it.
   const crestStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(exitProgress.value, [0.38, 0.96], [1, 0], 'clamp'),
     transform: [
       { translateY: settle.value },
       { scale: (0.84 + grow.value * 0.16) * (1 + breathe.value * 0.015 * (1 - bloom.value)) },
     ],
+  }));
+  const bgFadeStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(exitProgress.value, [0, 0.55], [1, 0], 'clamp'),
   }));
   const glowStyle = useAnimatedStyle(() => ({
     opacity: awaken.value * (0.42 + breathe.value * 0.16) + bloom.value * 0.3,
@@ -1434,19 +1443,22 @@ function OnboardingPreload({
   const crestBlockTop = crestTop ?? Math.round(height * 0.21);
 
   return (
-    <LinearGradient
-      colors={['#FFFFFF', '#FFFFFF', '#FFFDF8']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={[s.preloadScreen, { paddingTop: topInset, paddingBottom: bottomInset + 18 }]}
-    >
-      <View pointerEvents="none" style={s.preloadWarmth}>
+    <View style={[s.preloadScreen, { paddingTop: topInset, paddingBottom: bottomInset + 18 }]}>
+      <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, bgFadeStyle]}>
         <LinearGradient
-          colors={['rgba(255,255,255,0)', 'rgba(246,225,202,0.46)', 'rgba(255,241,225,0.98)']}
-          locations={[0, 0.52, 1]}
+          colors={['#FFFFFF', '#FFFFFF', '#FFFDF8']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-      </View>
+        <View pointerEvents="none" style={s.preloadWarmth}>
+          <LinearGradient
+            colors={['rgba(255,255,255,0)', 'rgba(246,225,202,0.46)', 'rgba(255,241,225,0.98)']}
+            locations={[0, 0.52, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
+      </Reanimated.View>
 
       <Reanimated.View
         entering={FadeIn.duration(420)}
@@ -1485,7 +1497,7 @@ function OnboardingPreload({
           </View>
         </View>
       </Reanimated.View>
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -1592,24 +1604,36 @@ type WelcomeConfettiPieceSpec = {
   flipAxis: 'x' | 'y';
   tone: string;
   star: boolean;
+  fadeLate: boolean;
 };
 
 function buildWelcomeConfetti(width: number, height: number): WelcomeConfettiPieceSpec[] {
   const rand = makeToolsRandom(0xc0ffe7);
-  return Array.from({ length: 50 }, (_, index) => {
+  const columns = 16;
+  const columnWidth = (width - 28) / columns;
+  return Array.from({ length: 64 }, (_, index) => {
     // Five kinds: ribbon, flake, square, dot, star — like the old Lottie mix.
     const kind = index % 5;
-    // Three size classes so the cloud has depth: small far, large near.
-    const sizeScale = rand() < 0.3 ? 0.7 : rand() < 0.72 ? 1 : 1.5;
+    // Four size classes for real depth: dust far away, big petals up close.
+    const sizeRoll = rand();
+    const sizeScale = sizeRoll < 0.25 ? 0.72 : sizeRoll < 0.7 ? 1 : sizeRoll < 0.9 ? 1.5 : 2.05;
     const baseW = kind === 0 ? 5 + rand() * 3 : kind === 1 ? 11 + rand() * 5 : kind === 2 ? 8 + rand() * 3 : kind === 3 ? 6 + rand() * 2.5 : 11 + rand() * 7;
     const baseH = kind === 0 ? 13 + rand() * 6 : kind === 1 ? 6 + rand() * 2.5 : kind === 2 ? baseW * (0.9 + rand() * 0.2) : baseW;
+    // Stratified emission: every column of the screen gets pieces in both the
+    // opening pop and the straggler wave — no empty stripes, ever.
+    const column = index % columns;
+    const x = 14 + (column + rand()) * columnWidth;
+    const firstWave = index < columns * 2;
+    // Most pieces fall PAST the bottom edge — over the CTA, over everything
+    // (the field sits above all content but lets touches through). The rest
+    // dissolve mid-air so the cloud also "blends in".
+    const fadeLate = rand() < 0.6;
     return {
-      x: 14 + rand() * (width - 28),
-      // A dense opening pop, then stragglers drifting in.
-      delay: rand() < 0.65 ? rand() * 300 : 300 + rand() * 800,
+      x,
+      delay: firstWave ? rand() * 320 : 320 + rand() * 900,
       // Wide speed spread: heavy pieces drop fast, light ones float.
-      fallDuration: 1800 + rand() * 2400,
-      fall: height * (0.55 + rand() * 0.4),
+      fallDuration: 1900 + rand() * 2600,
+      fall: fadeLate ? height + 80 : height * (0.5 + rand() * 0.4),
       drift: (rand() * 2 - 1) * 76,
       swayAmp: 14 + rand() * 34,
       swayFreq: 2 + rand() * 1.8,
@@ -1623,6 +1647,7 @@ function buildWelcomeConfetti(width: number, height: number): WelcomeConfettiPie
       flipAxis: kind === 0 ? 'x' as const : 'y' as const,
       tone: WELCOME_CONFETTI_COLORS[index % WELCOME_CONFETTI_COLORS.length],
       star: kind === 4,
+      fadeLate,
     };
   });
 }
@@ -1640,6 +1665,10 @@ function WelcomeConfettiPiece({ piece }: { piece: WelcomeConfettiPieceSpec }) {
     const sway = Math.sin(piece.phase + p * Math.PI * piece.swayFreq) * piece.swayAmp;
     const swayTilt = Math.cos(piece.phase + p * Math.PI * piece.swayFreq) * 16;
     const flip = 0.22 + 0.78 * Math.abs(Math.cos(piece.phase * 1.7 + p * Math.PI * piece.flipFreq));
+    const fadeIn = interpolate(p, [0, 0.04], [0, 1], 'clamp');
+    const fadeOut = piece.fadeLate
+      ? interpolate(p, [0.94, 1], [1, 0], 'clamp')
+      : interpolate(p, [0.78, 1], [1, 0], 'clamp');
     const transform = [
       { translateX: sway + p * piece.drift },
       { translateY: interpolate(p, [0, 0.16, 1], [0, piece.fall * 0.1, piece.fall]) },
@@ -1647,7 +1676,7 @@ function WelcomeConfettiPiece({ piece }: { piece: WelcomeConfettiPieceSpec }) {
       piece.flipAxis === 'x' ? { scaleX: flip } : { scaleY: flip },
     ];
     return {
-      opacity: interpolate(p, [0, 0.04, 0.82, 1], [0, 1, 1, 0], 'clamp'),
+      opacity: Math.min(fadeIn, fadeOut),
       transform,
     };
   });
@@ -1670,6 +1699,7 @@ function WelcomeConfettiPiece({ piece }: { piece: WelcomeConfettiPieceSpec }) {
   return (
     <Reanimated.View
       pointerEvents="none"
+      renderToHardwareTextureAndroid
       style={[
         s.welcomeConfettiPiece,
         { left: piece.x, width: piece.w, height: piece.h, borderRadius: piece.radius, backgroundColor: piece.tone },
@@ -12594,12 +12624,8 @@ export default function OnboardingView() {
     opacity: interpolate(screenMotion.value, [0, 1], [0.82, 1]),
     transform: [{ scale: interpolate(screenMotion.value, [0, 1], [0.997, 1]) }],
   }));
-  const preloadOverlayStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(preloadExit.value, [0, 1], [1, 0]),
-    transform: [
-      { scale: interpolate(preloadExit.value, [0, 1], [1, 0.985]) },
-    ],
-  }));
+  // The preload overlay no longer fades as one block — the component itself
+  // melts its background first and lets the crest cross over solo.
   const valueStepActive = isValueStep(activeStep);
   const hideTopChrome =
     activeStep === 'nameIntro' ||
@@ -13077,17 +13103,18 @@ export default function OnboardingView() {
       </Reanimated.View>
 
       {preloadPhase !== 'done' && (
-        <Reanimated.View
+        <View
           pointerEvents={preloadPhase === 'only' ? 'auto' : 'none'}
-          style={[StyleSheet.absoluteFill, s.preloadOverlay, preloadOverlayStyle]}
+          style={[StyleSheet.absoluteFill, s.preloadOverlay]}
         >
           <OnboardingPreload
             stage={preloadPhase === 'only' ? 'loading' : 'farewell'}
             crestTop={welcomeLogoTop}
+            exitProgress={preloadExit}
             bottomInset={insets.bottom}
             topInset={insets.top}
           />
-        </Reanimated.View>
+        </View>
       )}
 
       {activeStep === 'welcome' ? (
