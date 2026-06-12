@@ -8745,9 +8745,9 @@ function buildToolsField(
   chipHeight: number,
   screenHeight: number,
 ): ToolsFieldBuild {
-  const margin = 8;
+  const margin = 6;
   const rand = makeToolsRandom(0x5eeda7);
-  const estimate = (label: string) => Math.max(80, Math.round(label.length * 6.55) + 46);
+  const estimate = (label: string) => Math.max(84, Math.round(label.length * 6.8) + 50);
   const boxCyMid = (box.top + box.bottom) / 2;
 
   type CoreSlot = { label: string; estWidth: number; cx: number; cy: number; rotate: number; fixed: boolean };
@@ -8796,7 +8796,7 @@ function buildToolsField(
   // Bands are evenly spread shelves filled edge-first so coverage always
   // reaches the screen borders; zig-zag offsets break any row reading and a
   // relaxation pass below guarantees nothing overlaps.
-  const bandStep = chipHeight + 19;
+  const bandStep = chipHeight + 14;
   const collectBands = (top: number, bottom: number) => {
     const first = top + chipHeight / 2 + 1;
     const last = bottom - chipHeight / 2 - 1;
@@ -8826,14 +8826,14 @@ function buildToolsField(
       const zigSign = (bandIndex + chipInBand) % 2 === 0 ? -1 : 1;
       const cy = Math.max(
         fieldTop + chipHeight / 2,
-        Math.min(fieldBottom - chipHeight / 2, band.cy + zigSign * (3.5 + rand() * 2) + (rand() * 3 - 1.5)),
+        Math.min(fieldBottom - chipHeight / 2, band.cy + zigSign * (2.5 + rand() * 1.5) + (rand() * 2 - 1)),
       );
       // Long chips stay closer to level; only short chips take strong tilts,
       // so rotation can never eat the vertical breathing room.
-      const isShort = item.estWidth <= 96;
-      const rotate = (rand() < 0.5 ? -1 : 1) * (isShort ? 7 + rand() * 4 : 2.5 + rand() * 3);
+      const isShort = item.estWidth <= 100;
+      const rotate = (rand() < 0.5 ? -1 : 1) * (isShort ? 6 + rand() * 2.5 : 2 + rand() * 2.5);
       placed.push({ label: item.label, estWidth: item.estWidth, cx, cy, rotate, fixed: false });
-      cursor = cx + item.estWidth / 2 + 8 + rand() * 12;
+      cursor = cx + item.estWidth / 2 + 7 + rand() * 9;
       chipInBand += 1;
     }
     const bandChips = placed.slice(bandStart);
@@ -8856,7 +8856,7 @@ function buildToolsField(
       halfH: (chip.estWidth * Math.sin(theta) + chipHeight * Math.cos(theta)) / 2,
     };
   };
-  for (let iter = 0; iter < 3; iter += 1) {
+  for (let iter = 0; iter < 4; iter += 1) {
     for (let a = 0; a < placed.length; a += 1) {
       if (placed[a].fixed) continue;
       for (let b = a + 1; b < placed.length; b += 1) {
@@ -8991,7 +8991,7 @@ function buildToolsField(
 }
 
 function toolsTagIcon(label: string, color: string) {
-  const common = { s: 13.5, c: color, w: 1.9 };
+  const common = { s: 14.5, c: color, w: 1.9 };
   if (label.includes('Bible') || label === 'Scripture') return <OpenBook {...common} />;
   if (label === 'Reading List') return <Book {...common} />;
   if (label.includes('Prayer') || label === 'Jesus Prayer') return <Candle {...common} />;
@@ -9095,6 +9095,46 @@ function ToolsFieldChip({
   );
 }
 
+function ToolsBlinkingCaret() {
+  const blink = useSharedValue(1);
+
+  useEffect(() => {
+    blink.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 60 }),
+        withDelay(330, withTiming(0.1, { duration: 150 })),
+        withDelay(180, withTiming(1, { duration: 130 })),
+      ),
+      -1,
+      false,
+    );
+  }, [blink]);
+
+  const style = useAnimatedStyle(() => ({ opacity: blink.value }));
+
+  return <Reanimated.Text style={[s.toolsSubtitleCaret, style]}>|</Reanimated.Text>;
+}
+
+// Ornament lines draw outward from the diamond once the card has landed.
+function ToolsOrnamentDraw({ progress }: { progress: SharedValue<number> }) {
+  const lineStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scaleX: Math.max(0.0001, progress.value) }],
+  }));
+  const dotStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ rotate: '45deg' }, { scale: interpolate(progress.value, [0, 1], [0.3, 1]) }],
+  }));
+
+  return (
+    <View style={s.toolsMessageOrnament}>
+      <Reanimated.View style={[s.toolsMessageOrnamentLine, lineStyle]} />
+      <Reanimated.View style={[s.toolsMessageOrnamentDot, dotStyle]} />
+      <Reanimated.View style={[s.toolsMessageOrnamentLine, lineStyle]} />
+    </View>
+  );
+}
+
 function ToolsTypedSubtitle({ delay = 520, forceComplete = false }: { delay?: number; forceComplete?: boolean }) {
   const [typedCount, setTypedCount] = useState(0);
 
@@ -9139,7 +9179,7 @@ function ToolsTypedSubtitle({ delay = 520, forceComplete = false }: { delay?: nu
           </Text>
         );
       })}
-      {typedCount < TOOLS_SUBTITLE_TEXT.length ? <Text style={s.toolsSubtitleCaret}>|</Text> : null}
+      {typedCount < TOOLS_SUBTITLE_TEXT.length ? <ToolsBlinkingCaret /> : null}
     </Text>
   );
 }
@@ -9173,6 +9213,7 @@ function ToolsShowcaseSlide({
   const echoedRef = useRef(false);
 
   const flight = useSharedValue(0);
+  const cardSettle = useSharedValue(0);
   const boxExpand = useSharedValue(0);
   const fastForward = useSharedValue(0);
   const purgeT = useSharedValue(0);
@@ -9182,7 +9223,7 @@ function ToolsShowcaseSlide({
   const cardTilt = useSharedValue(0);
   const cardLift = useSharedValue(0);
 
-  const chipHeight = compact ? 33 : 35;
+  const chipHeight = compact ? 35 : 38;
   const fieldTop = topInset + 6;
   // The CTA only exists after the purge, so during the rain the pile may run
   // almost to the bottom edge — the screen should feel full of tools.
@@ -9289,6 +9330,7 @@ function ToolsShowcaseSlide({
     setEchoed(false);
     echoedRef.current = false;
     flight.value = 0;
+    cardSettle.value = 0;
     boxExpand.value = 0;
     fastForward.value = 0;
     purgeT.value = 0;
@@ -9298,6 +9340,9 @@ function ToolsShowcaseSlide({
       flight.value = withTiming(1, { duration: TOOLS_SCENE.flightDuration, easing: Easing.bezier(0.3, 0.92, 0.3, 1) });
     }, TOOLS_SCENE.flightStart);
     schedule(runBubbleHaptic, TOOLS_SCENE.flightStart + TOOLS_SCENE.flightDuration - 90);
+    schedule(() => {
+      cardSettle.value = withTiming(1, { duration: 640, easing: Easing.bezier(0.22, 1, 0.36, 1) });
+    }, TOOLS_SCENE.flightStart + TOOLS_SCENE.flightDuration - 60);
 
     field.deflectEvents.forEach(event => {
       schedule(() => {
@@ -9359,6 +9404,7 @@ function ToolsShowcaseSlide({
       clearTimers();
       fastForward.value = 1;
       flight.value = withTiming(1, { duration: 160 });
+      cardSettle.value = withTiming(1, { duration: 200 });
       setSubtitleForced(true);
       startReveal(true);
       return;
@@ -9432,6 +9478,55 @@ function ToolsShowcaseSlide({
   const dipStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: dip.value }],
   }));
+  const underlineDrawStyle = useAnimatedStyle(() => ({
+    opacity: cardSettle.value,
+    transform: [{ scaleX: Math.max(0.0001, cardSettle.value) }],
+  }));
+
+  // Two sheets of paper peek out beneath the card: the message arrives as a
+  // small stack of postcards, flying and reacting as one bundle.
+  const stackMidStyle = useAnimatedStyle(() => {
+    const preHeight = interpolate(boxExpand.value, [0, 1], [titleOnlyBoxHeight, boxHeight]);
+    const preTop = interpolate(boxExpand.value, [0, 1], [titleOnlyTop, expandedTop]);
+    const flightY = interpolate(flight.value, [0, 0.62, 1], [-(boxCy + boxHeight), -28, 0]);
+    const flightX = interpolate(flight.value, [0, 1], [width * 0.2, 0]);
+    const flightRot = interpolate(flight.value, [0, 0.55, 0.85, 1], [8, -2.4, 0.9, 0]);
+    const flightScale = interpolate(flight.value, [0, 1], [1.07, 1]);
+    return {
+      opacity: interpolate(flight.value, [0, 0.06], [0, 1], 'clamp') * interpolate(morphT.value, [0, 0.18], [1, 0], 'clamp'),
+      left: boxLeft + 6,
+      top: preTop + 7,
+      width: boxWidth - 12,
+      height: preHeight - 3,
+      transform: [
+        { translateX: cardKickX.value * 1.1 + flightX },
+        { translateY: flightY + cardLift.value * 1.12 },
+        { rotate: `${flightRot + cardTilt.value - 0.8}deg` },
+        { scale: flightScale },
+      ],
+    };
+  });
+  const stackDeepStyle = useAnimatedStyle(() => {
+    const preHeight = interpolate(boxExpand.value, [0, 1], [titleOnlyBoxHeight, boxHeight]);
+    const preTop = interpolate(boxExpand.value, [0, 1], [titleOnlyTop, expandedTop]);
+    const flightY = interpolate(flight.value, [0, 0.62, 1], [-(boxCy + boxHeight), -28, 0]);
+    const flightX = interpolate(flight.value, [0, 1], [width * 0.2, 0]);
+    const flightRot = interpolate(flight.value, [0, 0.55, 0.85, 1], [8, -2.4, 0.9, 0]);
+    const flightScale = interpolate(flight.value, [0, 1], [1.07, 1]);
+    return {
+      opacity: interpolate(flight.value, [0, 0.06], [0, 1], 'clamp') * interpolate(morphT.value, [0, 0.16], [1, 0], 'clamp'),
+      left: boxLeft + 13,
+      top: preTop + 14,
+      width: boxWidth - 26,
+      height: preHeight - 7,
+      transform: [
+        { translateX: cardKickX.value * 1.2 + flightX },
+        { translateY: flightY + cardLift.value * 1.25 },
+        { rotate: `${flightRot + cardTilt.value + 1.3}deg` },
+        { scale: flightScale },
+      ],
+    };
+  });
 
   return (
     <LinearGradient
@@ -9462,17 +9557,25 @@ function ToolsShowcaseSlide({
           ))}
         </View>
 
+        <Reanimated.View pointerEvents="none" style={[s.toolsCardStack, { backgroundColor: '#EFE4CC' }, stackDeepStyle]} />
+        <Reanimated.View pointerEvents="none" style={[s.toolsCardStack, { backgroundColor: '#F9F2E2' }, stackMidStyle]} />
+
         <Reanimated.View
           pointerEvents="none"
           style={[s.toolsMorphCard, morphCardStyle, phase === 'convo' && s.toolsHidden]}
         >
           <Reanimated.View style={[s.toolsMorphShowcase, showcaseContentStyle]}>
+            <LinearGradient
+              colors={['#FFFEFB', '#FBF4E5']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              pointerEvents="none"
+              style={s.toolsCardFace}
+            />
+            <View pointerEvents="none" style={s.toolsCardTopSheen} />
+            <View pointerEvents="none" style={s.toolsCardBottomEdge} />
             <View pointerEvents="none" style={s.toolsMessageBoxFrame} />
-            <View style={s.toolsMessageOrnament}>
-              <View style={s.toolsMessageOrnamentLine} />
-              <View style={s.toolsMessageOrnamentDot} />
-              <View style={s.toolsMessageOrnamentLine} />
-            </View>
+            <ToolsOrnamentDraw progress={cardSettle} />
             <Text
               style={[s.toolsTitle, compact && s.toolsTitleCompact]}
               onTextLayout={event => {
@@ -9484,7 +9587,9 @@ function ToolsShowcaseSlide({
             >
               Anasta has a lot of tools!
             </Text>
-            <View style={[s.valueTitleUnderline, { width: titleUnderlineWidth, alignSelf: 'center' }]} />
+            <Reanimated.View
+              style={[s.valueTitleUnderline, { width: titleUnderlineWidth, alignSelf: 'center' }, underlineDrawStyle]}
+            />
             {phase !== 'rain' ? (
               <Reanimated.View
                 entering={FadeIn.delay(40).duration(460).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
@@ -15668,6 +15773,9 @@ const s = StyleSheet.create({
     lineHeight: 37,
     textAlign: 'center',
     color: INK,
+    textShadowColor: 'rgba(94,81,66,0.16)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 3,
   },
   toolsTitleCompact: {
     fontSize: 29,
@@ -15759,9 +15867,9 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    columnGap: 6,
-    paddingLeft: 8,
-    paddingRight: 12,
+    columnGap: 7,
+    paddingLeft: 9,
+    paddingRight: 13,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.78)',
@@ -15772,9 +15880,9 @@ const s = StyleSheet.create({
     elevation: 3,
   },
   toolsTagIconShell: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -15783,9 +15891,9 @@ const s = StyleSheet.create({
   },
   toolsTagText: {
     fontFamily: F.serifSemiBold,
-    fontSize: 13.2,
-    lineHeight: 17,
-    color: 'rgba(25,23,20,0.76)',
+    fontSize: 13.8,
+    lineHeight: 17.5,
+    color: 'rgba(25,23,20,0.78)',
   },
   toolsShowcaseAction: {
     paddingHorizontal: 20,
@@ -15835,6 +15943,41 @@ const s = StyleSheet.create({
   toolsConvoAvatarSlot: {
     width: 42,
     height: 42,
+  },
+  toolsCardStack: {
+    position: 'absolute',
+    zIndex: 6,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.24)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 5,
+  },
+  toolsCardFace: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 28,
+  },
+  toolsCardTopSheen: {
+    position: 'absolute',
+    top: 2,
+    left: 16,
+    right: 16,
+    height: 1.5,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+  },
+  toolsCardBottomEdge: {
+    position: 'absolute',
+    bottom: 0,
+    left: 9,
+    right: 9,
+    height: 3,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    backgroundColor: 'rgba(164,128,64,0.18)',
   },
   screenTimeSlide: {
     flex: 1,
