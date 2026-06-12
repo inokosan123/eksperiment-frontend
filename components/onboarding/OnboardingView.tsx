@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, InteractionManager, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as ExpoImage, type ImageRef as ExpoImageRef } from 'expo-image';
@@ -1371,7 +1371,7 @@ function OnboardingPreload({
 
   useEffect(() => {
     if (stage === 'loading') {
-      awaken.value = withDelay(240, withTiming(1, { duration: 1300, easing: Easing.inOut(Easing.cubic) }));
+      awaken.value = withDelay(300, withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.cubic) }));
       breathe.value = withRepeat(
         withSequence(
           withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.sin) }),
@@ -1565,37 +1565,57 @@ function WelcomeSlide({
   );
 }
 
-// Brand confetti: a one-shot burst of gold/cream petals driven purely by
-// UI-thread transforms — replaces the software-rendered Lottie that stuttered.
-const WELCOME_CONFETTI_TONES = ['#C5A059', '#E3C894', '#F6EFDC', '#4D8586', '#9C8A6B'];
+// Brand confetti: mixed shapes (ribbons, flakes, squares, dots) in light
+// festive tones that FLUTTER like leaves — pendulum sway with matching tilt
+// plus a paper-flip (scale collapse/open) that fakes the 3D tumble. All on
+// the UI thread — replaces the software-rendered Lottie that stuttered.
+const WELCOME_CONFETTI_COLORS = ['#E8C478', '#F3DFAE', '#F7E7C2', '#F0B45C', '#F2D5C0', '#CDE4E1'];
 
 type WelcomeConfettiPieceSpec = {
   x: number;
   delay: number;
+  fallDuration: number;
   fall: number;
   drift: number;
-  sway: number;
+  swayAmp: number;
+  swayFreq: number;
+  flipFreq: number;
+  phase: number;
   rotateFrom: number;
-  spin: number;
+  rotateDrift: number;
   w: number;
   h: number;
+  radius: number;
+  flipAxis: 'x' | 'y';
   tone: string;
 };
 
 function buildWelcomeConfetti(width: number, height: number): WelcomeConfettiPieceSpec[] {
   const rand = makeToolsRandom(0xc0ffe7);
-  return Array.from({ length: 26 }, (_, index) => ({
-    x: 14 + rand() * (width - 28),
-    delay: rand() * 420,
-    fall: height * (0.46 + rand() * 0.4),
-    drift: (rand() * 2 - 1) * 56,
-    sway: (rand() * 2 - 1) * 30,
-    rotateFrom: rand() * 360,
-    spin: (rand() < 0.5 ? -1 : 1) * (160 + rand() * 260),
-    w: 7 + rand() * 6,
-    h: 4 + rand() * 2.6,
-    tone: WELCOME_CONFETTI_TONES[index % WELCOME_CONFETTI_TONES.length],
-  }));
+  return Array.from({ length: 34 }, (_, index) => {
+    const kind = index % 4;
+    const w = kind === 0 ? 5 + rand() * 3 : kind === 1 ? 11 + rand() * 5 : kind === 2 ? 8 + rand() * 3 : 6 + rand() * 2.5;
+    const h = kind === 0 ? 13 + rand() * 6 : kind === 1 ? 6 + rand() * 2.5 : kind === 2 ? w * (0.9 + rand() * 0.2) : w;
+    return {
+      x: 14 + rand() * (width - 28),
+      // A dense opening pop, then stragglers drifting in.
+      delay: rand() < 0.62 ? rand() * 260 : 260 + rand() * 640,
+      fallDuration: 2100 + rand() * 1200,
+      fall: height * (0.55 + rand() * 0.38),
+      drift: (rand() * 2 - 1) * 70,
+      swayAmp: 16 + rand() * 30,
+      swayFreq: 2 + rand() * 1.6,
+      flipFreq: 2 + rand() * 2.4,
+      phase: rand() * Math.PI * 2,
+      rotateFrom: rand() * 360,
+      rotateDrift: (rand() < 0.5 ? -1 : 1) * (50 + rand() * 110),
+      w,
+      h,
+      radius: kind === 3 ? 999 : 2,
+      flipAxis: kind === 0 ? 'x' as const : 'y' as const,
+      tone: WELCOME_CONFETTI_COLORS[index % WELCOME_CONFETTI_COLORS.length],
+    };
+  });
 }
 
 function WelcomeConfettiPiece({ piece }: { piece: WelcomeConfettiPieceSpec }) {
@@ -1603,24 +1623,32 @@ function WelcomeConfettiPiece({ piece }: { piece: WelcomeConfettiPieceSpec }) {
 
   useEffect(() => {
     t.value = 0;
-    t.value = withDelay(piece.delay, withTiming(1, { duration: 1850, easing: Easing.in(Easing.sin) }));
+    t.value = withDelay(piece.delay, withTiming(1, { duration: piece.fallDuration, easing: Easing.inOut(Easing.sin) }));
   }, [piece, t]);
 
-  const style = useAnimatedStyle(() => ({
-    opacity: interpolate(t.value, [0, 0.05, 0.74, 1], [0, 1, 1, 0], 'clamp'),
-    transform: [
-      { translateX: interpolate(t.value, [0, 0.35, 0.7, 1], [0, piece.sway, -piece.sway * 0.55, piece.drift]) },
-      { translateY: t.value * piece.fall },
-      { rotate: `${piece.rotateFrom + t.value * piece.spin}deg` },
-    ],
-  }));
+  const style = useAnimatedStyle(() => {
+    const p = t.value;
+    const sway = Math.sin(piece.phase + p * Math.PI * piece.swayFreq) * piece.swayAmp;
+    const swayTilt = Math.cos(piece.phase + p * Math.PI * piece.swayFreq) * 16;
+    const flip = 0.22 + 0.78 * Math.abs(Math.cos(piece.phase * 1.7 + p * Math.PI * piece.flipFreq));
+    const transform = [
+      { translateX: sway + p * piece.drift },
+      { translateY: interpolate(p, [0, 0.16, 1], [0, piece.fall * 0.1, piece.fall]) },
+      { rotate: `${piece.rotateFrom + p * piece.rotateDrift + swayTilt}deg` },
+      piece.flipAxis === 'x' ? { scaleX: flip } : { scaleY: flip },
+    ];
+    return {
+      opacity: interpolate(p, [0, 0.04, 0.82, 1], [0, 1, 1, 0], 'clamp'),
+      transform,
+    };
+  });
 
   return (
     <Reanimated.View
       pointerEvents="none"
       style={[
         s.welcomeConfettiPiece,
-        { left: piece.x, width: piece.w, height: piece.h, backgroundColor: piece.tone },
+        { left: piece.x, width: piece.w, height: piece.h, borderRadius: piece.radius, backgroundColor: piece.tone },
         style,
       ]}
     />
@@ -1642,7 +1670,7 @@ function WelcomeConfettiOverlay({ active }: { active: boolean }) {
       setBurst('playing');
       void playAchievementCompleteFeedback();
     }, 920);
-    const endTimer = setTimeout(() => setBurst('done'), 3320);
+    const endTimer = setTimeout(() => setBurst('done'), 5400);
     return () => {
       clearTimeout(startTimer);
       clearTimeout(endTimer);
@@ -12337,8 +12365,12 @@ export default function OnboardingView() {
 
   useEffect(() => {
     preloadAchievementFeedbackSound();
+    let cancelled = false;
     let pulseTimer: ReturnType<typeof setTimeout> | undefined;
-    const exitTimer = setTimeout(() => {
+    let doneTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const beginExit = () => {
+      if (cancelled) return;
       setPreloadPhase('exit');
       // The app's haptic signature: a heartbeat — one firm tap, one soft.
       runBubbleHaptic();
@@ -12348,13 +12380,30 @@ export default function OnboardingView() {
         duration: 980,
         easing: Easing.inOut(Easing.cubic),
       });
-    }, 1600);
-    const doneTimer = setTimeout(() => setPreloadPhase('done'), 2630);
+      doneTimer = setTimeout(() => {
+        if (!cancelled) setPreloadPhase('done');
+      }, 1030);
+    };
+
+    // First launch needs breathing room: hold the crest at LEAST 2.2s AND
+    // wait for the JS thread to finish its startup work (capped so the
+    // screen can never feel stuck) before the welcome handoff begins.
+    const minHold = new Promise<void>(resolve => {
+      setTimeout(resolve, 2200);
+    });
+    const startupSettled = new Promise<void>(resolve => {
+      const cap = setTimeout(resolve, 2600);
+      InteractionManager.runAfterInteractions(() => {
+        clearTimeout(cap);
+        resolve();
+      });
+    });
+    void Promise.all([minHold, startupSettled]).then(beginExit);
 
     return () => {
-      clearTimeout(exitTimer);
-      clearTimeout(doneTimer);
+      cancelled = true;
       if (pulseTimer) clearTimeout(pulseTimer);
+      if (doneTimer) clearTimeout(doneTimer);
     };
   }, [preloadExit]);
 
