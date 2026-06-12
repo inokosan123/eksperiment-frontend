@@ -8666,7 +8666,6 @@ type ToolsFieldSlot = {
   cy: number;
   rotate: number;
   toneIndex: number;
-  inFront: boolean;
   entranceDelay: number;
   fallDuration: number;
   fromY: number;
@@ -8675,6 +8674,8 @@ type ToolsFieldSlot = {
   impact: number;
   xIn: number[];
   xOut: number[];
+  pushX: number;
+  pushY: number;
   purgeDelay: number;
   purgeDrift: number;
   purgeSpin: number;
@@ -8688,20 +8689,20 @@ type ToolsFieldSlot = {
 const TOOLS_FIELD_LABELS = [
   'Scripture', 'Prayer Book', 'Habits', 'Daily Journal', 'Screen Time', 'Pomodoro',
   'Challenges', 'Bible Notes', 'Gratitude', 'Task Manager', 'App Blocker', 'Reading List',
-  'Big Events', 'Monthly Goals', 'Favorites', 'Routines', 'Focus Zone', 'Highlights',
-  'Bucket List', 'Quick Tasks', 'Year in Pixels', 'Content Blocker', 'Spiritual Tasks',
-  'Prayer Rules', 'Jesus Prayer', 'Bible', 'Notes', 'Morning Pages', 'Free Writing', 'Streaks',
+  'Big Events', 'Monthly Goals', 'Favorites', 'Bible', 'Notes', 'Routines', 'Focus Zone',
+  'Highlights', 'Jesus Prayer', 'Prayer Rules', 'Bucket List', 'Spiritual Tasks',
+  'Content Blocker', 'Quick Tasks', 'Year in Pixels', 'Morning Pages', 'Free Writing', 'Streaks',
 ] as const;
 
-// The whole scene is one timeline: card flight -> tag rain -> typed truth ->
+// The whole scene is one timeline: the pile rains in bottom-up, the postcard
+// lands last into its reserved gap and shoves the neighbours -> typed truth ->
 // purge (floor opens) -> card morphs into the first conversation bubble.
 const TOOLS_SCENE = {
-  flightStart: 140,
   flightDuration: 820,
-  rainStart: 1040,
+  rainStart: 180,
   burstGap: 170,
   intraGap: 58,
-  revealAfterLand: 260,
+  revealAfterLand: 360,
   typeStartDelay: 260,
   typeCharMs: 30,
   holdAfterType: 640,
@@ -8733,7 +8734,6 @@ type ToolsFieldBuild = {
   slots: ToolsFieldSlot[];
   lastLandingAt: number;
   purgeSpan: number;
-  deflectEvents: { at: number; side: number }[];
   landingTicks: number[];
 };
 
@@ -8747,51 +8747,12 @@ function buildToolsField(
 ): ToolsFieldBuild {
   const margin = 6;
   const rand = makeToolsRandom(0x5eeda7);
-  const estimate = (label: string) => Math.max(84, Math.round(label.length * 6.8) + 50);
+  const estimate = (label: string) => Math.max(90, Math.round(label.length * 7.2) + 56);
   const boxCyMid = (box.top + box.bottom) / 2;
 
   type CoreSlot = { label: string; estWidth: number; cx: number; cy: number; rotate: number; fixed: boolean };
   const queue = TOOLS_FIELD_LABELS.map(label => ({ label, estWidth: estimate(label), used: false }));
   const placed: CoreSlot[] = [];
-
-  // Two short tags tuck in beside the card edges (behind it) when the screen is
-  // wide enough — reserved up front so the band packing cannot consume them.
-  if (box.left >= 32) {
-    const flankItems = queue.filter(entry => !entry.used && entry.label.length <= 6).slice(0, 2);
-    flankItems.forEach((item, flankIndex) => {
-      item.used = true;
-      const side = flankIndex === 0 ? -1 : 1;
-      const peek = Math.min(34, box.left - 10);
-      const cx = side === -1
-        ? box.left - item.estWidth / 2 + peek
-        : box.right + item.estWidth / 2 - peek;
-      const cy = boxCyMid + (rand() * 2 - 1) * 34;
-      placed.push({ label: item.label, estWidth: item.estWidth, cx, cy, rotate: side * (10 + rand() * 5), fixed: true });
-    });
-  }
-
-  // Two tags slipped under the card edges — only a sliver shows past the card,
-  // selling the "pile gathered around a solid object" reading.
-  const tuckItems = [] as { label: string; estWidth: number; used: boolean }[];
-  for (let i = queue.length - 1; i >= 0 && tuckItems.length < 2; i -= 1) {
-    if (!queue[i].used) {
-      queue[i].used = true;
-      tuckItems.push(queue[i]);
-    }
-  }
-  tuckItems.forEach((item, tuckIndex) => {
-    const above = tuckIndex === 0;
-    const cx = (above ? 0.32 : 0.66) * width + (rand() * 2 - 1) * 0.04 * width;
-    const cy = above ? box.top + 6 : box.bottom - 6;
-    placed.push({
-      label: item.label,
-      estWidth: item.estWidth,
-      cx,
-      cy,
-      rotate: (above ? -1 : 1) * (8 + rand() * 5),
-      fixed: true,
-    });
-  });
 
   // Bands are evenly spread shelves filled edge-first so coverage always
   // reaches the screen borders; zig-zag offsets break any row reading and a
@@ -8891,13 +8852,12 @@ function buildToolsField(
     }
   }
 
-  // Spatially shuffled entrance order: the rain fills the screen everywhere at
-  // once in bursts of three, instead of marching row by row.
-  const order = placed.map((_, index) => index);
-  for (let i = order.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(rand() * (i + 1));
-    [order[i], order[j]] = [order[j], order[i]];
-  }
+  // The pile builds bottom-up: deepest chips arrive first, each burst lands a
+  // little higher. Jitter keeps it from reading as a strict scanline.
+  const orderJitter = placed.map(() => (rand() * 2 - 1) * bandStep * 0.7);
+  const order = placed
+    .map((_, index) => index)
+    .sort((a, b) => (placed[b].cy + orderJitter[b]) - (placed[a].cy + orderJitter[a]));
   const entranceDelays = new Array<number>(placed.length).fill(TOOLS_SCENE.rainStart);
   order.forEach((slotIndex, k) => {
     entranceDelays[slotIndex] = TOOLS_SCENE.rainStart + Math.floor(k / 3) * TOOLS_SCENE.burstGap + (k % 3) * TOOLS_SCENE.intraGap;
@@ -8910,43 +8870,39 @@ function buildToolsField(
     purgeRank[slotIndex] = rank;
   });
 
-  const deflectEvents: { at: number; side: number }[] = [];
-  let deflectLeft = false;
-  let deflectRight = false;
   let lastLandingAt = 0;
+  const boxCenterX = (box.left + box.right) / 2;
 
   const slots: ToolsFieldSlot[] = placed.map((core, index) => {
     const entranceDelay = entranceDelays[index];
-    const fallDuration = 620 + Math.sqrt(Math.max(40, core.cy)) * 9 + rand() * 110;
+    const fallDuration = 780 + Math.sqrt(Math.max(40, core.cy)) * 10 + rand() * 140;
     const fromY = -(core.cy + chipHeight + 50 + rand() * 130);
-    const fromX = (rand() * 2 - 1) * 26;
-    const impact = 5 + rand() * 4;
+    const fromX = (rand() * 2 - 1) * 30;
+    const impact = 6 + rand() * 5;
     const spinFrom = core.rotate + (rand() < 0.5 ? -1 : 1) * (26 + rand() * 30);
     const wobble = (rand() < 0.5 ? -1 : 1) * 2.5;
 
-    let xIn: number[] = [0, 1];
-    let xOut: number[] = [fromX, 0];
-    let inFront = false;
+    // Air resistance: every chip sways gently left-right on the way down
+    // instead of dropping along a straight rail.
+    const swayMidA = 0.3 + rand() * 0.12;
+    const swayMidB = 0.6 + rand() * 0.12;
+    const xIn: number[] = [0, swayMidA, swayMidB, 1];
+    const xOut: number[] = [fromX, fromX * 0.45 + (rand() * 2 - 1) * 8, (rand() * 2 - 1) * 7, 0];
 
-    // Two scripted deflections: chips that land just under the card corners
-    // graze the card on the way down and kick outward — the moment that makes
-    // the card read as a rigid object without running a physics engine.
-    const underCard = core.cy > box.bottom && core.cy < box.bottom + chipHeight * 2.4;
-    const nearLeftCorner = underCard && core.cx + core.estWidth / 2 > box.left + 10 && core.cx - core.estWidth / 2 < box.left + 60;
-    const nearRightCorner = underCard && core.cx - core.estWidth / 2 < box.right - 10 && core.cx + core.estWidth / 2 > box.right - 60;
-    const side = nearLeftCorner && !deflectLeft ? -1 : nearRightCorner && !deflectRight ? 1 : 0;
-    if (side !== 0) {
-      const linearCross = (box.top - core.cy - fromY) / (impact - fromY);
-      const pCross = Math.sqrt(Math.max(0.05, Math.min(0.92, linearCross))) * 0.86;
-      if (pCross < 0.7) {
-        if (side === -1) deflectLeft = true;
-        else deflectRight = true;
-        const inward = side === -1 ? 15 : -15;
-        xIn = [0, pCross, Math.min(0.85, pCross + 0.13), 1];
-        xOut = [fromX + inward, inward, -inward * 0.22, 0];
-        inFront = true;
-        deflectEvents.push({ at: entranceDelay + fallDuration * pCross, side });
-      }
+    // The postcard lands into the pile last — chips bordering its gap get a
+    // radial shove (strongest for the closest) when it touches down.
+    const outsideX = Math.max(box.left - core.cx, 0, core.cx - box.right);
+    const outsideY = Math.max(box.top - core.cy, 0, core.cy - box.bottom);
+    const boxDistance = Math.hypot(outsideX, outsideY);
+    let pushX = 0;
+    let pushY = 0;
+    if (boxDistance < 70) {
+      const magnitude = 2.5 + 6 * (1 - boxDistance / 70);
+      const dirX = core.cx - boxCenterX;
+      const dirY = core.cy - boxCyMid;
+      const dirLength = Math.max(1, Math.hypot(dirX, dirY));
+      pushX = (dirX / dirLength) * magnitude;
+      pushY = (dirY / dirLength) * magnitude;
     }
 
     lastLandingAt = Math.max(lastLandingAt, entranceDelay + fallDuration + 90);
@@ -8958,7 +8914,6 @@ function buildToolsField(
       cy: core.cy,
       rotate: core.rotate,
       toneIndex: index % TOOLS_PILE_TONES.length,
-      inFront,
       entranceDelay,
       fallDuration,
       fromY,
@@ -8967,6 +8922,8 @@ function buildToolsField(
       impact,
       xIn,
       xOut,
+      pushX,
+      pushY,
       purgeDelay: purgeRank[index] * TOOLS_SCENE.purgeStep + rand() * 26,
       purgeDrift: (rand() * 2 - 1) * 44,
       purgeSpin: (rand() < 0.5 ? -1 : 1) * (28 + rand() * 40),
@@ -8987,11 +8944,11 @@ function buildToolsField(
 
   const purgeSpan = slots.reduce((max, slot) => Math.max(max, slot.purgeDelay), 0) + TOOLS_SCENE.purgeFall;
 
-  return { slots, lastLandingAt, purgeSpan, deflectEvents, landingTicks };
+  return { slots, lastLandingAt, purgeSpan, landingTicks };
 }
 
 function toolsTagIcon(label: string, color: string) {
-  const common = { s: 14.5, c: color, w: 1.9 };
+  const common = { s: 15, c: color, w: 1.9 };
   if (label.includes('Bible') || label === 'Scripture') return <OpenBook {...common} />;
   if (label === 'Reading List') return <Book {...common} />;
   if (label.includes('Prayer') || label === 'Jesus Prayer') return <Candle {...common} />;
@@ -9016,12 +8973,14 @@ function ToolsFieldChip({
   fastForward,
   purgeT,
   purgeSpan,
+  cardLandPulse,
 }: {
   slot: ToolsFieldSlot;
   chipHeight: number;
   fastForward: SharedValue<number>;
   purgeT: SharedValue<number>;
   purgeSpan: number;
+  cardLandPulse: SharedValue<number>;
 }) {
   const entrance = useSharedValue(0);
   const float = useSharedValue(0);
@@ -9061,11 +9020,13 @@ function ToolsFieldChip({
     const fallY = interpolate(e, [0, 0.86, 1], [slot.fromY, slot.impact, 0]);
     const spin = interpolate(e, [0, 0.86, 1], [slot.spinFrom, slot.rotate - slot.wobble, slot.rotate]);
 
+    const shove = cardLandPulse.value;
+
     return {
       opacity: interpolate(e, [0, 0.12], [0, 1], 'clamp'),
       transform: [
-        { translateX: driftX + interpolate(float.value, [0, 1], [0, slot.floatX]) * floatK + pLocal * slot.purgeDrift },
-        { translateY: fallY + interpolate(float.value, [0, 1], [0, slot.floatY]) * floatK + pEased * slot.purgeDistance },
+        { translateX: driftX + interpolate(float.value, [0, 1], [0, slot.floatX]) * floatK + shove * slot.pushX + pLocal * slot.purgeDrift },
+        { translateY: fallY + interpolate(float.value, [0, 1], [0, slot.floatY]) * floatK + shove * slot.pushY + pEased * slot.purgeDistance },
         { scale: interpolate(e, [0, 0.86, 1], [0.96, 1.015, 1]) },
         { rotate: `${spin + interpolate(float.value, [0, 1], [0, slot.floatRotate]) * floatK + pEased * slot.purgeSpin}deg` },
       ],
@@ -9080,7 +9041,7 @@ function ToolsFieldChip({
         {
           left: slot.cx - slot.estWidth / 2,
           top: slot.cy - chipHeight / 2,
-          zIndex: slot.inFront ? 9 : 2,
+          zIndex: 2,
         },
         chipStyle,
       ]}
@@ -9214,6 +9175,7 @@ function ToolsShowcaseSlide({
 
   const flight = useSharedValue(0);
   const cardSettle = useSharedValue(0);
+  const cardLandPulse = useSharedValue(0);
   const boxExpand = useSharedValue(0);
   const fastForward = useSharedValue(0);
   const purgeT = useSharedValue(0);
@@ -9223,7 +9185,7 @@ function ToolsShowcaseSlide({
   const cardTilt = useSharedValue(0);
   const cardLift = useSharedValue(0);
 
-  const chipHeight = compact ? 35 : 38;
+  const chipHeight = compact ? 37 : 41;
   const fieldTop = topInset + 6;
   // The CTA only exists after the purge, so during the rain the pile may run
   // almost to the bottom edge — the screen should feel full of tools.
@@ -9331,35 +9293,46 @@ function ToolsShowcaseSlide({
     echoedRef.current = false;
     flight.value = 0;
     cardSettle.value = 0;
+    cardLandPulse.value = 0;
     boxExpand.value = 0;
     fastForward.value = 0;
     purgeT.value = 0;
     morphT.value = 0;
 
+    // The postcard arrives LAST: the pile builds bottom-up first, then the
+    // card descends over it and lands into the gap the layout reserved.
+    const flightStartAt = Math.max(600, field.lastLandingAt - 520);
+    const cardLandAt = flightStartAt + TOOLS_SCENE.flightDuration;
+
     schedule(() => {
       flight.value = withTiming(1, { duration: TOOLS_SCENE.flightDuration, easing: Easing.bezier(0.3, 0.92, 0.3, 1) });
-    }, TOOLS_SCENE.flightStart);
-    schedule(runBubbleHaptic, TOOLS_SCENE.flightStart + TOOLS_SCENE.flightDuration - 90);
+    }, flightStartAt);
     schedule(() => {
       cardSettle.value = withTiming(1, { duration: 640, easing: Easing.bezier(0.22, 1, 0.36, 1) });
-    }, TOOLS_SCENE.flightStart + TOOLS_SCENE.flightDuration - 60);
-
-    field.deflectEvents.forEach(event => {
-      schedule(() => {
-        cardKickX.value = withSequence(
-          withTiming(event.side * 2.4, { duration: 75, easing: Easing.out(Easing.quad) }),
-          withSpring(0, { damping: 8, stiffness: 320 }),
-        );
-        cardTilt.value = withSequence(
-          withTiming(event.side * 0.8, { duration: 75, easing: Easing.out(Easing.quad) }),
-          withSpring(0, { damping: 9, stiffness: 300 }),
-        );
-        runSelectionHaptic();
-      }, event.at);
-    });
+    }, cardLandAt - 60);
+    schedule(() => {
+      // Touchdown: the pile takes the weight — neighbours shove outward and
+      // partly settle back, the world dips, the card shivers once.
+      runBubbleHaptic();
+      cardLandPulse.value = withSequence(
+        withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) }),
+        withSpring(0.55, { damping: 9, stiffness: 200 }),
+      );
+      dip.value = withSequence(
+        withTiming(2.2, { duration: 100, easing: Easing.out(Easing.quad) }),
+        withSpring(0, { damping: 12, stiffness: 250 }),
+      );
+      cardKickX.value = withSequence(
+        withTiming(1.6, { duration: 70, easing: Easing.out(Easing.quad) }),
+        withSpring(0, { damping: 8, stiffness: 320 }),
+      );
+      cardTilt.value = withSequence(
+        withTiming(-0.6, { duration: 70, easing: Easing.out(Easing.quad) }),
+        withSpring(0, { damping: 9, stiffness: 300 }),
+      );
+    }, cardLandAt - 30);
     field.landingTicks.forEach(at => schedule(runSelectionHaptic, at));
-    schedule(runBubbleHaptic, field.lastLandingAt);
-    schedule(() => startReveal(false), field.lastLandingAt + TOOLS_SCENE.revealAfterLand);
+    schedule(() => startReveal(false), cardLandAt + TOOLS_SCENE.revealAfterLand);
     schedule(() => {
       bubble1Ref.current?.measureInWindow((x, y, w, h) => {
         if (w > 0 && h > 0) setMorphTarget({ x, y, w, h });
@@ -9405,6 +9378,7 @@ function ToolsShowcaseSlide({
       fastForward.value = 1;
       flight.value = withTiming(1, { duration: 160 });
       cardSettle.value = withTiming(1, { duration: 200 });
+      cardLandPulse.value = withTiming(0.55, { duration: 160 });
       setSubtitleForced(true);
       startReveal(true);
       return;
@@ -9553,6 +9527,7 @@ function ToolsShowcaseSlide({
               fastForward={fastForward}
               purgeT={purgeT}
               purgeSpan={field.purgeSpan}
+              cardLandPulse={cardLandPulse}
             />
           ))}
         </View>
@@ -15869,7 +15844,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     columnGap: 7,
     paddingLeft: 9,
-    paddingRight: 13,
+    paddingRight: 14,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.78)',
@@ -15880,9 +15855,9 @@ const s = StyleSheet.create({
     elevation: 3,
   },
   toolsTagIconShell: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 27,
+    height: 27,
+    borderRadius: 13.5,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -15891,8 +15866,8 @@ const s = StyleSheet.create({
   },
   toolsTagText: {
     fontFamily: F.serifSemiBold,
-    fontSize: 13.8,
-    lineHeight: 17.5,
+    fontSize: 14.4,
+    lineHeight: 18,
     color: 'rgba(25,23,20,0.78)',
   },
   toolsShowcaseAction: {
