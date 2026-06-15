@@ -11175,6 +11175,42 @@ function dayPieSlicePath(cx: number, cy: number, radius: number, startAngle: num
   return `M ${cx} ${cy} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y} Z`;
 }
 
+function DayBarDrop({
+  centerX,
+  top,
+  source,
+  hours,
+  intro,
+  size,
+}: {
+  centerX: number;
+  top: number;
+  source: number;
+  hours: string;
+  intro: SharedValue<number>;
+  size: number;
+}) {
+  const groupW = Math.max(size, 74);
+  const style = useAnimatedStyle(() => ({
+    opacity: intro.value,
+    transform: [{ translateY: interpolate(intro.value, [0, 1], [-10, 0]) }],
+  }));
+  return (
+    <Reanimated.View pointerEvents="none" style={[s.dayBarDropGroup, { left: centerX - groupW / 2, top, width: groupW }, style]}>
+      <View style={s.dayBarDropDashes}>
+        <View style={s.dayBarDropDash} />
+        <View style={s.dayBarDropDash} />
+        <View style={s.dayBarDropDash} />
+        <Text style={s.dayBarDropArrow}>▼</Text>
+      </View>
+      <ExpoImage source={source} style={{ width: size, height: size }} contentFit="contain" cachePolicy="memory-disk" />
+      <View style={s.dayBarMiniCard}>
+        <Text style={s.dayBarMiniCardText}>{hours}</Text>
+      </View>
+    </Reanimated.View>
+  );
+}
+
 function DayPieConnector({
   start,
   end,
@@ -11555,6 +11591,24 @@ function V4DayPanoramaHeaderSlide({
     end: { x: phoneX + phoneStickerSize * 0.62, y: phoneY + phoneStickerSize / 2 },
   };
 
+  // Screen-1 breakdown BAR (replaces the pie): purple→gold→black segments, with
+  // a dashed drop + illustration + hours mini-card under each segment.
+  const barMargin = 28;
+  const dayBarWidth = Math.min(frameWidth - barMargin * 2, 360);
+  const dayBarLeftX = (frameWidth - dayBarWidth) / 2;
+  const dayBarH = 30;
+  const dayBarTopY = 16;
+  const dayBarSleepW = dayBarWidth * (SLEEP_HOURS_PER_DAY / DAY_HOURS);
+  const dayBarPhoneW = dayBarWidth * (phoneHours / DAY_HOURS);
+  const dayBarProductiveW = Math.max(0, dayBarWidth - dayBarSleepW - dayBarPhoneW);
+  const dayBarSleepCx = dayBarLeftX + dayBarSleepW / 2;
+  const dayBarProductiveCx = dayBarLeftX + dayBarSleepW + dayBarProductiveW / 2;
+  const dayBarPhoneCx = dayBarLeftX + dayBarSleepW + dayBarProductiveW + dayBarPhoneW / 2;
+  const dayBarDropTop = dayBarTopY + dayBarH + 14;
+  const SLEEP_GRAD = ['#A493D6', '#7B7CC2', '#566FB4'] as const;
+  const PRODUCTIVE_GRAD = ['#F4DD9A', '#E2BC63', '#C9A24E'] as const;
+  const PHONE_GRAD = ['#2E2924', '#17130F'] as const;
+
   return (
     <View
       style={[s.dayHeaderScreen, { paddingTop: Math.max(0, topInset - 14), paddingBottom: Math.max(0, bottomInset - 10) }]}
@@ -11644,100 +11698,24 @@ function V4DayPanoramaHeaderSlide({
       </View>
 
       <View style={[s.dayHeaderFutureSpace, { width: frameWidth, height: pieSceneHeight }]}>
-        <Reanimated.View
-          style={[
-            s.dayHeaderPieChartWrap,
-            { left: pieLeft, top: pieTop, width: pieSize, height: pieSize },
-            pieStyle,
-          ]}
-        >
-          <Svg width={pieSize} height={pieSize} viewBox={`0 0 ${pieSize} ${pieSize}`}>
-            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius + 7} fill="#FFFDF8" />
-            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius + 4} fill="rgba(197,160,89,0.12)" />
-            <G>
-              <SvgPath
-                d={dayPieSlicePath(pieCenter, pieCenter, pieRadius, sleepStart, sleepEnd)}
-                fill="#5B527A"
-                stroke="rgba(35,30,24,0.72)"
-                strokeWidth={3.2}
-                strokeLinejoin="round"
-              />
-              <SvgPath
-                d={dayPieSlicePath(pieCenter, pieCenter, pieRadius, productiveStart, productiveEnd)}
-                fill="#E8C66F"
-                stroke="rgba(35,30,24,0.72)"
-                strokeWidth={3.2}
-                strokeLinejoin="round"
-              />
-              <SvgPath
-                d={dayPieSlicePath(pieCenter, pieCenter, pieRadius, phoneStart, phoneEnd)}
-                fill="#17130F"
-                stroke="rgba(35,30,24,0.72)"
-                strokeWidth={3.2}
-                strokeLinejoin="round"
-              />
-            </G>
-            {/* Depth: a soft inner vignette near the rim so slices read as a curved disc */}
-            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius - pieRadius * 0.09} fill="none" stroke="rgba(20,16,12,0.13)" strokeWidth={pieRadius * 0.18} />
-            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius + 3.5} fill="none" stroke="#FFFDF8" strokeWidth={7} />
-            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius} fill="none" stroke="rgba(35,30,24,0.78)" strokeWidth={3.2} />
-            {/* Gloss: ceramic top highlight */}
-            <SvgPath d={pieGlossPath} fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth={2.6} strokeLinecap="round" />
-            <SvgCircle cx={pieCenter + pieRadius * 0.43} cy={pieCenter - pieRadius * 0.25} r={1.35} fill="rgba(255,255,255,0.76)" />
-            {/* Hub: focal core */}
-            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieHubR + 2.5} fill="#FFFDF8" />
-            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieHubR} fill="#FFFDF8" stroke="rgba(35,30,24,0.5)" strokeWidth={2.2} />
-          </Svg>
-          <View pointerEvents="none" style={s.dayHeaderPieHub}>
-            <Text style={s.dayHeaderPieHubText}>24h</Text>
-          </View>
-          <View pointerEvents="none" style={[s.dayHeaderPieSliceLabel, { left: sleepLabelPoint.x - 33, top: sleepLabelPoint.y - 17 }]}>
-            <Text style={s.dayHeaderPieSliceLabelText}>{sleepHourLabel}</Text>
-          </View>
-          <View pointerEvents="none" style={[s.dayHeaderPieSliceLabel, { left: productiveLabelPoint.x - 33, top: productiveLabelPoint.y - 17 }]}>
-            <Text style={s.dayHeaderPieSliceLabelText}>{productiveHourLabel}</Text>
-          </View>
-          <View pointerEvents="none" style={[s.dayHeaderPieSliceLabel, { left: phoneLabelPoint.x - 33, top: phoneLabelPoint.y - 17 }]}>
-            <Text style={s.dayHeaderPieSliceLabelText}>{phoneHourLabel}</Text>
-          </View>
-        </Reanimated.View>
-
-        <DayPieConnector start={sleepConnector.start} end={sleepConnector.end} intro={connectorIntro} morph={morph} />
-        <DayPieConnector start={productiveConnector.start} end={productiveConnector.end} intro={connectorIntro} morph={morph} />
-        <DayPieConnector start={phoneConnector.start} end={phoneConnector.end} intro={connectorIntro} morph={morph} />
-
-        <Reanimated.View
-          pointerEvents="none"
-          style={[
-            s.dayHeaderPieSticker,
-            { left: phoneX, top: phoneY, width: phoneStickerSize, height: phoneStickerSize },
-            phoneStickerStyle,
-          ]}
-        >
-          <ExpoImage source={DAY_PIE_PHONE} style={s.dayHeaderPieStickerImage} contentFit="contain" cachePolicy="memory-disk" />
-        </Reanimated.View>
-
-        <Reanimated.View
-          pointerEvents="none"
-          style={[
-            s.dayHeaderPieSticker,
-            { left: sleepX, top: sleepY, width: sleepStickerSize, height: sleepStickerSize },
-            sleepStickerStyle,
-          ]}
-        >
-          <ExpoImage source={DAY_PIE_SLEEP} style={s.dayHeaderPieStickerImage} contentFit="contain" cachePolicy="memory-disk" />
-        </Reanimated.View>
-
-        <Reanimated.View
-          pointerEvents="none"
-          style={[
-            s.dayHeaderPieToolbox,
-            { left: toolboxX, top: toolboxY, width: toolboxStickerWidth, height: toolboxStickerHeight },
-            toolboxStickerStyle,
-          ]}
-        >
-          <ExpoImage source={DAY_PIE_TOOLBOX} style={s.dayHeaderPieStickerImage} contentFit="contain" cachePolicy="memory-disk" />
-        </Reanimated.View>
+        {phase === 'pie' && (
+          <>
+            <Reanimated.View
+              style={[
+                s.dayBarSceneBar,
+                { left: dayBarLeftX, top: dayBarTopY, width: dayBarWidth, height: dayBarH },
+                pieStyle,
+              ]}
+            >
+              <LinearGradient colors={SLEEP_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: dayBarSleepW, height: '100%' }} />
+              <LinearGradient colors={PRODUCTIVE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: dayBarProductiveW, height: '100%' }} />
+              <LinearGradient colors={PHONE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: dayBarPhoneW, height: '100%' }} />
+            </Reanimated.View>
+            <DayBarDrop centerX={dayBarSleepCx} top={dayBarDropTop} source={DAY_PIE_SLEEP} hours={sleepHourLabel} intro={sleepIntro} size={56} />
+            <DayBarDrop centerX={dayBarProductiveCx} top={dayBarDropTop} source={DAY_PIE_TOOLBOX} hours={productiveHourLabel} intro={toolboxIntro} size={58} />
+            <DayBarDrop centerX={dayBarPhoneCx} top={dayBarDropTop} source={DAY_PIE_PHONE} hours={phoneHourLabel} intro={phoneIntro} size={56} />
+          </>
+        )}
 
         {phase !== 'pie' && (
           <View pointerEvents="box-none" style={s.dayPhaseLayer}>
@@ -17700,6 +17678,60 @@ const s = StyleSheet.create({
     borderRadius: 1,
     backgroundColor: 'rgba(197,160,89,0.5)',
     zIndex: 4,
+  },
+  dayBarSceneBar: {
+    position: 'absolute',
+    flexDirection: 'row',
+    borderRadius: 15,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.10)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  dayBarDropGroup: {
+    position: 'absolute',
+    alignItems: 'center',
+  },
+  dayBarDropDashes: {
+    alignItems: 'center',
+    rowGap: 3,
+    marginBottom: 3,
+  },
+  dayBarDropDash: {
+    width: 2,
+    height: 4,
+    borderRadius: 1,
+    backgroundColor: 'rgba(25,23,20,0.32)',
+  },
+  dayBarDropArrow: {
+    fontSize: 9,
+    lineHeight: 10,
+    color: 'rgba(25,23,20,0.4)',
+    marginTop: 1,
+  },
+  dayBarMiniCard: {
+    marginTop: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.4)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  dayBarMiniCardText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17,
+    lineHeight: 21,
+    color: INK,
   },
   dayHeaderPieHub: {
     ...StyleSheet.absoluteFillObject,
