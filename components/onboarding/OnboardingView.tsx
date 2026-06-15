@@ -4741,7 +4741,7 @@ function ManagementCard({
   );
 }
 
-const SCREEN_TIME_MIN_HOURS = 4.5;
+const SCREEN_TIME_MIN_HOURS = 4;
 const SCREEN_TIME_MAX_HOURS = 10;
 const DEFAULT_SCREEN_TIME_HOURS = 7;
 const USABLE_DAY_HOURS = 16;
@@ -10842,7 +10842,7 @@ function V4DeckCard({
 }
 
 
-const SCREEN_TIME_DIAL_SPACING = 30;
+const SCREEN_TIME_DIAL_SPACING = 38;
 
 const SCREEN_TIME_DIAL_VALUES = (() => {
   const values: number[] = [];
@@ -11179,10 +11179,12 @@ function dayPieSlicePath(cx: number, cy: number, radius: number, startAngle: num
 function V4DayPanoramaHeaderSlide({
   topInset,
   bottomInset,
+  hours,
   onNext,
 }: {
   topInset: number;
   bottomInset: number;
+  hours?: number;
   onNext: () => void;
 }) {
   const { width } = useWindowDimensions();
@@ -11200,7 +11202,7 @@ function V4DayPanoramaHeaderSlide({
   const pieSize = Math.min(190, Math.max(170, frameWidth * 0.45));
   const pieCenter = pieSize / 2;
   const pieRadius = pieSize / 2 - 7;
-  const phoneHours = DEFAULT_SCREEN_TIME_HOURS;
+  const phoneHours = protectStats(hours).hours;
   const productiveHours = Math.max(0, DAY_HOURS - SLEEP_HOURS_PER_DAY - phoneHours);
   const sleepAngle = (SLEEP_HOURS_PER_DAY / DAY_HOURS) * 360;
   const phoneAngle = (phoneHours / DAY_HOURS) * 360;
@@ -11388,20 +11390,12 @@ function V4DayPanoramaHeaderSlide({
       { scale: interpolate(toolboxIntro.value, [0, 1], [0.92, 1]) },
     ],
   }));
-  const pieCx = pieLeft + pieCenter;
-  const pieCy = pieTop + pieCenter;
   const sleepX = (frameWidth - sleepStickerSize) / 2;
   const sleepY = 0;
   const phoneX = Math.max(10, frameWidth * 0.055);
   const phoneY = pieTop - phoneStickerSize * 0.18;
   const toolboxX = frameWidth - toolboxStickerWidth - Math.max(12, frameWidth * 0.065);
   const toolboxY = pieTop - toolboxStickerHeight * 0.02;
-  const phoneArrowStart = dayPiePoint(pieCx, pieCy, pieRadius * 0.96, (phoneStart + phoneEnd) / 2);
-  const sleepArrowStart = dayPiePoint(pieCx, pieCy, pieRadius * 0.96, (sleepStart + sleepEnd) / 2);
-  const toolboxArrowStart = dayPiePoint(pieCx, pieCy, pieRadius * 0.96, (productiveStart + productiveEnd) / 2);
-  const phoneArrow = `M ${phoneArrowStart.x} ${phoneArrowStart.y} C ${pieCx - pieRadius * 1.10} ${pieCy - pieRadius * 0.18}, ${phoneX + phoneStickerSize * 1.02} ${phoneY + phoneStickerSize * 0.58}, ${phoneX + phoneStickerSize * 0.78} ${phoneY + phoneStickerSize * 0.56}`;
-  const sleepArrow = `M ${sleepArrowStart.x} ${sleepArrowStart.y} C ${pieCx + pieRadius * 0.02} ${pieCy - pieRadius * 1.38}, ${sleepX + sleepStickerSize * 0.42} ${sleepY + sleepStickerSize * 0.92}, ${sleepX + sleepStickerSize * 0.50} ${sleepY + sleepStickerSize * 0.78}`;
-  const toolboxArrow = `M ${toolboxArrowStart.x} ${toolboxArrowStart.y} C ${pieCx + pieRadius * 1.12} ${pieCy - pieRadius * 0.12}, ${toolboxX + toolboxStickerWidth * 0.14} ${toolboxY + toolboxStickerHeight * 0.58}, ${toolboxX + toolboxStickerWidth * 0.30} ${toolboxY + toolboxStickerHeight * 0.44}`;
 
   return (
     <View
@@ -11492,15 +11486,6 @@ function V4DayPanoramaHeaderSlide({
       </View>
 
       <View style={[s.dayHeaderFutureSpace, { width: frameWidth, height: pieSceneHeight }]}>
-        <Svg pointerEvents="none" width={frameWidth} height={pieSceneHeight} style={s.dayHeaderPieArrows}>
-          <SvgPath d={phoneArrow} stroke="rgba(25,23,20,0.52)" strokeWidth={1.8} strokeDasharray="5 7" strokeLinecap="round" fill="none" />
-          <SvgPath d={sleepArrow} stroke="rgba(89,75,128,0.54)" strokeWidth={1.8} strokeDasharray="5 7" strokeLinecap="round" fill="none" />
-          <SvgPath d={toolboxArrow} stroke="rgba(197,160,89,0.56)" strokeWidth={1.8} strokeDasharray="5 7" strokeLinecap="round" fill="none" />
-          <SvgPath d={`M ${phoneX + phoneStickerSize * 0.78} ${phoneY + phoneStickerSize * 0.56} l 8 -5 l -1 9 Z`} fill="rgba(25,23,20,0.52)" />
-          <SvgPath d={`M ${sleepX + sleepStickerSize * 0.50} ${sleepY + sleepStickerSize * 0.78} l -4 9 l 9 -2 Z`} fill="rgba(89,75,128,0.54)" />
-          <SvgPath d={`M ${toolboxX + toolboxStickerWidth * 0.30} ${toolboxY + toolboxStickerHeight * 0.44} l -7 5 l 8 4 Z`} fill="rgba(197,160,89,0.56)" />
-        </Svg>
-
         <Reanimated.View
           style={[
             s.dayHeaderPieChartWrap,
@@ -11517,7 +11502,6 @@ function V4DayPanoramaHeaderSlide({
               <SvgPath d={dayPieSlicePath(pieCenter, pieCenter, pieRadius, phoneStart, phoneEnd)} fill="#17130F" />
             </G>
             <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius} fill="none" stroke="rgba(255,255,255,0.94)" strokeWidth={5.5} />
-            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius * 0.48} fill="#FFFDF8" stroke="rgba(197,160,89,0.30)" strokeWidth={1.2} />
             <SvgCircle cx={pieCenter + pieRadius * 0.22} cy={pieCenter - pieRadius * 0.52} r={2.1} fill="rgba(255,255,255,0.92)" />
             <SvgCircle cx={pieCenter + pieRadius * 0.43} cy={pieCenter - pieRadius * 0.25} r={1.35} fill="rgba(255,255,255,0.76)" />
             <SvgCircle cx={pieCenter + pieRadius * 0.06} cy={pieCenter - pieRadius * 0.34} r={1.55} fill="rgba(255,255,255,0.82)" />
@@ -13261,6 +13245,7 @@ export default function OnboardingView() {
         <V4DayPanoramaHeaderSlide
           topInset={insets.top}
           bottomInset={insets.bottom}
+          hours={answers.screenTimeHours}
           onNext={goNext}
         />
       );
@@ -17137,7 +17122,7 @@ const s = StyleSheet.create({
   },
   screenTimeSlide: {
     flex: 1,
-    paddingTop: 22,
+    paddingTop: 48,
     paddingBottom: 8,
   },
   screenTimeDialStage: {
@@ -17150,23 +17135,23 @@ const s = StyleSheet.create({
   },
   screenTimeReadout: {
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 22,
   },
   screenTimeReadoutValue: {
     fontFamily: F.serifSemiBold,
-    fontSize: 88,
-    lineHeight: 94,
+    fontSize: 106,
+    lineHeight: 112,
     color: INK,
   },
   screenTimeReadoutUnit: {
-    marginTop: -4,
+    marginTop: -2,
     fontFamily: F.serifMediumItalic,
-    fontSize: 17,
+    fontSize: 19,
     color: '#8C8277',
   },
   screenTimeDialViewport: {
     width: '100%',
-    height: 86,
+    height: 104,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -17182,22 +17167,22 @@ const s = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   screenTimeDialTickLine: {
-    width: 2.4,
+    width: 2.8,
     borderRadius: 2,
     backgroundColor: 'rgba(25,23,20,0.45)',
   },
   screenTimeDialTickLineHour: {
-    height: 34,
+    height: 44,
   },
   screenTimeDialTickLineHalf: {
-    height: 19,
+    height: 25,
     backgroundColor: 'rgba(25,23,20,0.26)',
   },
   screenTimeDialTickLabel: {
-    marginTop: 7,
+    marginTop: 9,
     fontFamily: F.serifMedium,
-    fontSize: 14,
-    lineHeight: 17,
+    fontSize: 16,
+    lineHeight: 19,
     color: 'rgba(25,23,20,0.52)',
   },
   screenTimeDialTickLabelSpacer: {
@@ -17247,7 +17232,7 @@ const s = StyleSheet.create({
     borderColor: '#FFFDF8',
   },
   screenTimeDialHint: {
-    marginTop: 10,
+    marginTop: 18,
     fontFamily: F.sansMedium,
     fontSize: 12.5,
     letterSpacing: 0.2,
@@ -17371,10 +17356,6 @@ const s = StyleSheet.create({
     marginTop: 0,
     overflow: 'visible',
   },
-  dayHeaderPieArrows: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 2,
-  },
   dayHeaderPieChartWrap: {
     position: 'absolute',
     alignItems: 'center',
@@ -17395,11 +17376,11 @@ const s = StyleSheet.create({
     fontFamily: F.serifBold,
     fontSize: 25,
     lineHeight: 27,
-    color: '#1C1712',
+    color: '#FFFDF8',
     textAlign: 'center',
-    textShadowColor: 'rgba(255,255,255,0.9)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowColor: 'rgba(25,23,20,0.42)',
+    textShadowOffset: { width: 0, height: 1.5 },
+    textShadowRadius: 4,
   },
   dayHeaderPieSliceLabel: {
     position: 'absolute',
@@ -17418,16 +17399,6 @@ const s = StyleSheet.create({
     textShadowColor: 'rgba(25,23,20,0.36)',
     textShadowOffset: { width: 0, height: 1.5 },
     textShadowRadius: 4,
-  },
-  dayHeaderPieCenterText: {
-    marginTop: -4,
-    fontFamily: F.sansBold,
-    fontSize: 10.5,
-    lineHeight: 12,
-    color: 'rgba(28,23,18,0.56)',
-    textAlign: 'center',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
   },
   dayHeaderPieSticker: {
     position: 'absolute',
@@ -17456,55 +17427,6 @@ const s = StyleSheet.create({
   dayHeaderPieStickerImage: {
     width: '100%',
     height: '100%',
-  },
-  dayHeaderPieLabel: {
-    position: 'absolute',
-    minWidth: 76,
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    backgroundColor: '#FFFEF8',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.42)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: GOLD,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 9,
-    elevation: 2,
-  },
-  dayHeaderPieLabelPhone: {
-    left: 7,
-    bottom: -10,
-    transform: [{ rotate: '-4deg' }],
-  },
-  dayHeaderPieLabelSleep: {
-    right: -2,
-    bottom: -8,
-    transform: [{ rotate: '4deg' }],
-  },
-  dayHeaderPieLabelProductive: {
-    right: -4,
-    bottom: -16,
-    minWidth: 112,
-    transform: [{ rotate: '-2deg' }],
-  },
-  dayHeaderPieLabelTitle: {
-    fontFamily: F.serifSemiBold,
-    fontSize: 13.6,
-    lineHeight: 15,
-    color: '#1C1712',
-    textAlign: 'center',
-  },
-  dayHeaderPieLabelMeta: {
-    marginTop: -1,
-    fontFamily: F.sansBold,
-    fontSize: 10.5,
-    lineHeight: 12,
-    color: GOLD,
-    textAlign: 'center',
-    letterSpacing: 0.2,
   },
   dayHeaderFutureLine: {
     width: 58,
