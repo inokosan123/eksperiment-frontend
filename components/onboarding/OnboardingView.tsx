@@ -11668,6 +11668,44 @@ function V4DayPanoramaHeaderSlide({
   const phoneConnPath = makeConnPath(dayBarLeftX + dayBarWidth * (22 / 24), card3Cx);
   const connectorLayerStyle = useAnimatedStyle(() => ({ opacity: connectorIntro.value }));
 
+  // Screen-2 bead breakdowns + segment centres (for illustrations above the bar).
+  const sleepCxPct = sleepBarPct / 2;
+  const prodCxPct = sleepBarPct + productiveBarPct / 2;
+  const phoneCxPct = sleepBarPct + productiveBarPct + phoneBarPct / 2;
+  const card2SleepN = Math.round((SLEEP_HOURS_PER_DAY / DAY_HOURS) * 365);
+  const card2PhoneN = Math.ceil(stat.yearlyDays);
+  const card2ProdN = Math.max(0, 365 - card2SleepN - card2PhoneN);
+  const card3SleepN = Math.round((SLEEP_HOURS_PER_DAY / DAY_HOURS) * PROTECT_LIFESPAN_YEARS);
+  const card3PhoneN = Math.ceil(stat.lifetimeYears);
+  const card3ProdN = Math.max(0, PROTECT_LIFESPAN_YEARS - card3SleepN - card3PhoneN);
+  const card1Beads = useMemo(() => {
+    const arr: string[] = [];
+    const phoneWhole = Math.floor(phoneHours);
+    const hasFrac = phoneHours - phoneWhole >= 0.25;
+    const prodCount = Math.floor(USABLE_DAY_HOURS - phoneHours);
+    for (let i = 0; i < prodCount; i += 1) arr.push(BEAD_PRODUCTIVE);
+    if (hasFrac) arr.push('split');
+    for (let i = 0; i < phoneWhole; i += 1) arr.push(BEAD_PHONE);
+    while (arr.length < USABLE_DAY_HOURS) arr.push(BEAD_PRODUCTIVE);
+    return arr.slice(0, USABLE_DAY_HOURS);
+  }, [phoneHours]);
+  const card2Beads = useMemo(
+    () => [
+      ...(Array(card2SleepN).fill(BEAD_SLEEP) as string[]),
+      ...(Array(card2ProdN).fill(BEAD_PRODUCTIVE) as string[]),
+      ...(Array(card2PhoneN).fill(BEAD_PHONE) as string[]),
+    ],
+    [card2SleepN, card2ProdN, card2PhoneN],
+  );
+  const card3Beads = useMemo(
+    () => [
+      ...(Array(card3SleepN).fill(BEAD_SLEEP) as string[]),
+      ...(Array(card3ProdN).fill(BEAD_PRODUCTIVE) as string[]),
+      ...(Array(card3PhoneN).fill(BEAD_PHONE) as string[]),
+    ],
+    [card3SleepN, card3ProdN, card3PhoneN],
+  );
+
   return (
     <View
       style={[s.dayHeaderScreen, { paddingTop: Math.max(0, topInset - 14), paddingBottom: Math.max(0, bottomInset - 10) }]}
@@ -11792,17 +11830,21 @@ function V4DayPanoramaHeaderSlide({
 
       {revealTwo && (
         <Reanimated.View pointerEvents="box-none" style={[s.dayScreen2Layer, { top: topInset + 10 }, screen2LayerStyle]}>
-          <View style={s.dayTwoIllos}>
-            <View style={s.dayTwoIllo}><ExpoImage source={DAY_PIE_SLEEP} style={s.dayTwoIlloImg} contentFit="contain" cachePolicy="memory-disk" /></View>
-            <View style={s.dayTwoIllo}><ExpoImage source={DAY_PIE_TOOLBOX} style={s.dayTwoIlloImg} contentFit="contain" cachePolicy="memory-disk" /></View>
-            <View style={s.dayTwoIllo}><ExpoImage source={DAY_PIE_PHONE} style={s.dayTwoIlloImg} contentFit="contain" cachePolicy="memory-disk" /></View>
-          </View>
           <View style={s.dayTwoBarWrap}>
             {phase === 'reclaim' && (
               <Reanimated.View pointerEvents="none" style={[s.dayBarCrest, crestStyle]}>
                 <Image source={APP_LOGO} style={s.dayBarCrestImage} resizeMode="cover" />
               </Reanimated.View>
             )}
+            <View pointerEvents="none" style={[s.dayTwoIlloAbs, { left: `${sleepCxPct}%` }]}>
+              <ExpoImage source={DAY_PIE_SLEEP} style={s.dayTwoIlloImg} contentFit="contain" cachePolicy="memory-disk" />
+            </View>
+            <View pointerEvents="none" style={[s.dayTwoIlloAbs, { left: `${prodCxPct}%` }]}>
+              <ExpoImage source={DAY_PIE_TOOLBOX} style={s.dayTwoIlloImg} contentFit="contain" cachePolicy="memory-disk" />
+            </View>
+            <View pointerEvents="none" style={[s.dayTwoIlloAbs, { left: `${phoneCxPct}%` }]}>
+              <ExpoImage source={DAY_PIE_PHONE} style={s.dayTwoIlloImg} contentFit="contain" cachePolicy="memory-disk" />
+            </View>
             <View style={s.dayTwoBarTrack}>
               <LinearGradient colors={SLEEP_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: `${sleepBarPct}%`, height: '100%' }} />
               <LinearGradient colors={PRODUCTIVE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: `${productiveBarPct}%`, height: '100%' }} />
@@ -11812,13 +11854,13 @@ function V4DayPanoramaHeaderSlide({
           </View>
           <View style={s.dayImpactCards}>
             {((phase === 'waste' && wasteReveal >= 2) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim'} caption="of your waking life" icon={<Sun s={20} c={GOLD} w={2} />} wasteNumeric={wakingPercent} reclaimNumeric={reclaimedWakingPercent} suffix="%" decimals={0} goldFill={goldFill} />
+              <DayImpactCard reclaim={phase === 'reclaim'} goldFill={goldFill} beads={card1Beads} beadSize={15} beadGap={4} wasteNumeric={wakingPercent} reclaimNumeric={reclaimedWakingPercent} decimals={0} unit="%" unitScript />
             )}
             {((phase === 'waste' && wasteReveal >= 3) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim'} caption="days every year" icon={<Calendar s={20} c={GOLD} w={2} />} wasteNumeric={stat.yearlyDays} reclaimNumeric={stat.reclaimedDays} suffix="" decimals={0} goldFill={goldFill} />
+              <DayImpactCard reclaim={phase === 'reclaim'} goldFill={goldFill} beads={card2Beads} beadSize={4.5} beadGap={1} wasteNumeric={stat.yearlyDays} reclaimNumeric={stat.reclaimedDays} decimals={0} unit="days" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card2SleepN}`, prodLabel: 'Productive', prodValue: `${card2ProdN}` }} />
             )}
             {((phase === 'waste' && wasteReveal >= 4) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim'} caption="years of your life" icon={<Hourglass s={20} c={GOLD} w={2} />} wasteNumeric={stat.lifetimeYears} reclaimNumeric={stat.reclaimedYears} suffix="" decimals={1} goldFill={goldFill} />
+              <DayImpactCard reclaim={phase === 'reclaim'} goldFill={goldFill} beads={card3Beads} beadSize={8} beadGap={2} wasteNumeric={stat.lifetimeYears} reclaimNumeric={stat.reclaimedYears} decimals={1} unit="years" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card3SleepN}`, prodLabel: 'Productive', prodValue: `${card3ProdN}` }} />
             )}
           </View>
         </Reanimated.View>
@@ -11855,29 +11897,55 @@ function V4DayPanoramaHeaderSlide({
 
 const AnimatedTextInput = Reanimated.createAnimatedComponent(TextInput);
 
+const BEAD_SLEEP = '#7B7CC2';
+const BEAD_PRODUCTIVE = '#E2BC63';
+const BEAD_PHONE = '#2A2622';
+
+function DayBeadGrid({ beads, size, gap }: { beads: string[]; size: number; gap: number }) {
+  return (
+    <View style={[s.dayBeadGrid, { columnGap: gap, rowGap: gap }]}>
+      {beads.map((c, i) =>
+        c === 'split' ? (
+          <View key={i} style={{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', flexDirection: 'row' }}>
+            <View style={{ width: size / 2, height: size, backgroundColor: BEAD_PRODUCTIVE }} />
+            <View style={{ width: size / 2, height: size, backgroundColor: BEAD_PHONE }} />
+          </View>
+        ) : (
+          <View key={i} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: c }} />
+        ),
+      )}
+    </View>
+  );
+}
+
 function DayImpactCard({
   reclaim,
-  caption,
-  icon,
+  goldFill,
+  beads,
+  beadSize,
+  beadGap,
   wasteNumeric,
   reclaimNumeric,
-  suffix,
   decimals,
-  goldFill,
+  unit,
+  unitScript,
+  bottomStrip,
 }: {
   reclaim: boolean;
-  caption: string;
-  icon: React.ReactNode;
+  goldFill: SharedValue<number>;
+  beads: string[];
+  beadSize: number;
+  beadGap: number;
   wasteNumeric: number;
   reclaimNumeric: number;
-  suffix: string;
   decimals: number;
-  goldFill: SharedValue<number>;
+  unit: string;
+  unitScript?: boolean;
+  bottomStrip?: { sleepLabel: string; sleepValue: string; prodLabel: string; prodValue: string };
 }) {
   const enter = useSharedValue(0);
   const flip = useSharedValue(reclaim ? 1 : 0);
   const fmt = (v: number) => (decimals > 0 ? v.toFixed(1) : `${Math.round(v)}`);
-  const wasteStatic = `${fmt(wasteNumeric)}${suffix}`;
 
   useEffect(() => {
     enter.value = withTiming(1, { duration: 480, easing: Easing.bezier(0.16, 1, 0.28, 1) });
@@ -11891,69 +11959,56 @@ function DayImpactCard({
     opacity: enter.value,
     transform: [
       { translateY: interpolate(enter.value, [0, 1], [16, 0]) },
-      { scale: interpolate(enter.value, [0, 1], [0.95, 1]) },
+      { scale: interpolate(enter.value, [0, 1], [0.97, 1]) },
     ],
   }));
-  const accentStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(flip.value, [0, 1], ['rgba(168,57,63,0.5)', GOLD]),
-  }));
-  const eyebrowWasteStyle = useAnimatedStyle(() => ({ opacity: 1 - flip.value }));
-  const eyebrowGetStyle = useAnimatedStyle(() => ({ opacity: flip.value }));
-  const goldNumStyle = useAnimatedStyle(() => ({
+  const wasteStyle = useAnimatedStyle(() => ({ opacity: 1 - flip.value }));
+  const goldStyle = useAnimatedStyle(() => ({
     opacity: flip.value,
-    transform: [{ scale: interpolate(flip.value, [0, 1], [0.72, 1]) }],
+    transform: [{ scale: interpolate(flip.value, [0, 1], [0.8, 1]) }],
   }));
-  // The waste number glides to the bottom-right corner and shrinks, synced to
-  // the gold filling the bar (car-dashboard easing-off feel).
-  const wasteNumStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: goldFill.value * 104 },
-      { translateY: goldFill.value * 22 },
-      { scale: 1 - goldFill.value * 0.62 },
-    ],
-  }));
-  const strikeStyle = useAnimatedStyle(() => ({ opacity: goldFill.value }));
 
+  const wasteProps = useAnimatedProps(() => ({ text: fmt(wasteNumeric) } as object));
   const goldProps = useAnimatedProps(() => {
     const v = interpolate(goldFill.value, [0, 1], [0, reclaimNumeric]);
-    return { text: `+${decimals > 0 ? v.toFixed(1) : Math.round(v)}${suffix}` } as object;
-  });
-  const wasteProps = useAnimatedProps(() => {
-    const v = interpolate(goldFill.value, [0, 1], [wasteNumeric, wasteNumeric * 0.6]);
-    return { text: `${decimals > 0 ? v.toFixed(1) : Math.round(v)}${suffix}` } as object;
+    return { text: `+${decimals > 0 ? v.toFixed(1) : Math.round(v)}` } as object;
   });
 
   return (
     <Reanimated.View style={[s.dayImpactCard, enterStyle]}>
-      <Reanimated.View style={[s.dayImpactAccent, accentStyle]} />
-      <View style={s.dayImpactIconBadge}>{icon}</View>
-      <View style={s.dayImpactBody}>
-        <View style={s.dayImpactEyebrowWrap}>
-          <Reanimated.Text style={[s.dayImpactEyebrow, eyebrowWasteStyle]}>YOU WASTE</Reanimated.Text>
-          <Reanimated.Text style={[s.dayImpactEyebrow, s.dayImpactEyebrowGold, s.dayImpactEyebrowAbs, eyebrowGetStyle]}>
-            YOU GET BACK
-          </Reanimated.Text>
-        </View>
-        <View style={s.dayImpactValueWrap}>
+      <View style={s.dayImpactBeadCol}>
+        <DayBeadGrid beads={beads} size={beadSize} gap={beadGap} />
+        {bottomStrip ? (
+          <View style={s.dayImpactStrip}>
+            <Text style={s.dayImpactStripText} numberOfLines={1}>
+              {bottomStrip.sleepLabel} <Text style={s.dayImpactStripNum}>{bottomStrip.sleepValue}</Text>
+            </Text>
+            <View style={s.dayImpactStripDivider} />
+            <Text style={s.dayImpactStripText} numberOfLines={1}>
+              {bottomStrip.prodLabel} <Text style={s.dayImpactStripNum}>{bottomStrip.prodValue}</Text>
+            </Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={s.dayImpactDivider} />
+      <View style={s.dayImpactNumCol}>
+        <View style={s.dayImpactNumStack}>
           <AnimatedTextInput
             editable={false}
             pointerEvents="none"
-            defaultValue={`+${wasteStatic}`}
-            animatedProps={goldProps}
-            style={[s.dayImpactValue, s.dayImpactValueGold, s.dayImpactValueInput, s.dayImpactValueAbs, goldNumStyle]}
+            defaultValue={fmt(wasteNumeric)}
+            animatedProps={wasteProps}
+            style={[s.dayImpactBigNum, s.dayImpactNumInput, wasteStyle]}
           />
-          <Reanimated.View style={[s.dayImpactWasteWrap, wasteNumStyle]}>
-            <AnimatedTextInput
-              editable={false}
-              pointerEvents="none"
-              defaultValue={wasteStatic}
-              animatedProps={wasteProps}
-              style={[s.dayImpactValue, s.dayImpactValueInput]}
-            />
-            <Reanimated.View pointerEvents="none" style={[s.dayImpactStrike, strikeStyle]} />
-          </Reanimated.View>
+          <AnimatedTextInput
+            editable={false}
+            pointerEvents="none"
+            defaultValue={`+${fmt(reclaimNumeric)}`}
+            animatedProps={goldProps}
+            style={[s.dayImpactBigNum, s.dayImpactBigNumGold, s.dayImpactNumInput, s.dayImpactNumAbs, goldStyle]}
+          />
         </View>
-        <Text style={s.dayImpactCaption}>{caption}</Text>
+        <Text style={unitScript ? s.dayImpactUnitScript : s.dayImpactUnit}>{unit}</Text>
       </View>
     </Reanimated.View>
   );
@@ -17817,29 +17872,26 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     zIndex: 14,
   },
-  dayTwoIllos: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'flex-end',
-    width: '100%',
-    maxWidth: 320,
-    paddingHorizontal: 16,
-    marginBottom: 8,
-  },
-  dayTwoIllo: {
+  dayTwoIlloAbs: {
+    position: 'absolute',
+    top: 0,
+    width: 38,
+    marginLeft: -19,
     alignItems: 'center',
   },
   dayTwoIlloImg: {
-    width: 50,
-    height: 50,
+    width: 38,
+    height: 38,
   },
   dayTwoBarWrap: {
     alignItems: 'center',
     width: '100%',
     maxWidth: 340,
+    paddingTop: 42,
+    position: 'relative',
   },
   dayTwoBarTrack: {
     flexDirection: 'row',
@@ -17996,15 +18048,17 @@ const s = StyleSheet.create({
     color: 'rgba(25,23,20,0.6)',
   },
   dayImpactCards: {
-    marginTop: 16,
+    width: '100%',
+    marginTop: 18,
     rowGap: 10,
   },
   dayImpactCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 86,
-    borderRadius: 20,
-    overflow: 'visible',
+    alignItems: 'stretch',
+    width: '100%',
+    minHeight: 102,
+    borderRadius: 16,
+    overflow: 'hidden',
     backgroundColor: '#FBF4E0',
     borderWidth: 3,
     borderColor: '#FFFFFF',
@@ -18013,6 +18067,95 @@ const s = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 20,
     elevation: 4,
+  },
+  dayImpactBeadCol: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingLeft: 14,
+    paddingRight: 8,
+    justifyContent: 'center',
+  },
+  dayBeadGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignContent: 'center',
+  },
+  dayImpactStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 9,
+    columnGap: 9,
+  },
+  dayImpactStripText: {
+    fontFamily: F.sansMedium,
+    fontSize: 10.5,
+    color: 'rgba(25,23,20,0.5)',
+  },
+  dayImpactStripNum: {
+    fontFamily: F.sansBold,
+    color: INK,
+  },
+  dayImpactStripDivider: {
+    width: 1,
+    height: 10,
+    backgroundColor: 'rgba(25,23,20,0.16)',
+  },
+  dayImpactDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    marginVertical: 16,
+    backgroundColor: 'rgba(25,23,20,0.12)',
+  },
+  dayImpactNumCol: {
+    width: 108,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  dayImpactNumStack: {
+    minHeight: 56,
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  dayImpactBigNum: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 48,
+    lineHeight: 56,
+    color: INK,
+    textAlign: 'center',
+  },
+  dayImpactBigNumGold: {
+    color: GOLD,
+  },
+  dayImpactNumInput: {
+    padding: 0,
+    margin: 0,
+    height: 56,
+    minWidth: 80,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  dayImpactNumAbs: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+  },
+  dayImpactUnit: {
+    fontFamily: F.serifMedium,
+    fontSize: 15,
+    lineHeight: 18,
+    color: '#8C8277',
+    marginTop: -1,
+  },
+  dayImpactUnitScript: {
+    fontFamily: F.serifMediumItalic,
+    fontSize: 19,
+    lineHeight: 22,
+    color: '#8C8277',
+    marginTop: -2,
   },
   dayImpactAccent: {
     width: 5,
