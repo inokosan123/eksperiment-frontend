@@ -11224,6 +11224,12 @@ function V4DayPanoramaHeaderSlide({
   const sleepLabelPoint = dayPiePoint(pieCenter, pieCenter, pieRadius * 0.68, (sleepStart + sleepEnd) / 2);
   const productiveLabelPoint = dayPiePoint(pieCenter, pieCenter, pieRadius * 0.68, (productiveStart + productiveEnd) / 2);
   const phoneLabelPoint = dayPiePoint(pieCenter, pieCenter, pieRadius * 0.68, (phoneStart + phoneEnd) / 2);
+  // Pie polish: a ceramic top highlight arc + a center hub for focus.
+  const pieGlossR = pieRadius * 0.9;
+  const pieGlossA = dayPiePoint(pieCenter, pieCenter, pieGlossR, -54);
+  const pieGlossB = dayPiePoint(pieCenter, pieCenter, pieGlossR, 36);
+  const pieGlossPath = `M ${pieGlossA.x.toFixed(2)} ${pieGlossA.y.toFixed(2)} A ${pieGlossR.toFixed(2)} ${pieGlossR.toFixed(2)} 0 0 1 ${pieGlossB.x.toFixed(2)} ${pieGlossB.y.toFixed(2)}`;
+  const pieHubR = pieRadius * 0.3;
   const routeDashCount = 19;
   const routeStartX = sunCenter + iconSize * 0.48;
   const routeEndX = moonCenter - moonSize * 0.48;
@@ -11619,12 +11625,20 @@ function V4DayPanoramaHeaderSlide({
                 strokeLinejoin="round"
               />
             </G>
+            {/* Depth: a soft inner vignette near the rim so slices read as a curved disc */}
+            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius - pieRadius * 0.09} fill="none" stroke="rgba(20,16,12,0.13)" strokeWidth={pieRadius * 0.18} />
             <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius + 3.5} fill="none" stroke="#FFFDF8" strokeWidth={7} />
             <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius} fill="none" stroke="rgba(35,30,24,0.78)" strokeWidth={3.2} />
-            <SvgCircle cx={pieCenter + pieRadius * 0.22} cy={pieCenter - pieRadius * 0.52} r={2.1} fill="rgba(255,255,255,0.92)" />
+            {/* Gloss: ceramic top highlight */}
+            <SvgPath d={pieGlossPath} fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth={2.6} strokeLinecap="round" />
             <SvgCircle cx={pieCenter + pieRadius * 0.43} cy={pieCenter - pieRadius * 0.25} r={1.35} fill="rgba(255,255,255,0.76)" />
-            <SvgCircle cx={pieCenter + pieRadius * 0.06} cy={pieCenter - pieRadius * 0.34} r={1.55} fill="rgba(255,255,255,0.82)" />
+            {/* Hub: focal core */}
+            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieHubR + 2.5} fill="#FFFDF8" />
+            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieHubR} fill="#FFFDF8" stroke="rgba(35,30,24,0.5)" strokeWidth={2.2} />
           </Svg>
+          <View pointerEvents="none" style={s.dayHeaderPieHub}>
+            <Text style={s.dayHeaderPieHubText}>24h</Text>
+          </View>
           <View pointerEvents="none" style={[s.dayHeaderPieSliceLabel, { left: sleepLabelPoint.x - 33, top: sleepLabelPoint.y - 17 }]}>
             <Text style={s.dayHeaderPieSliceLabelText}>{sleepHourLabel}</Text>
           </View>
@@ -17623,6 +17637,19 @@ const s = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 18,
     elevation: 4,
+  },
+  dayHeaderPieHub: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 8,
+  },
+  dayHeaderPieHubText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 19,
+    lineHeight: 22,
+    color: GOLD,
+    letterSpacing: 0.5,
   },
   dayHeaderPieSliceLabel: {
     position: 'absolute',
