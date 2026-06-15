@@ -7,6 +7,7 @@ import LottieView from 'lottie-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle as SvgCircle, G, Path as SvgPath } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import FocusLottie from '@/components/focus/FocusLottie';
 import Reanimated, {
@@ -132,9 +133,9 @@ type StepId =
   | 'toolsIntroB'
   | 'toolsShowcase'
   | 'statementsIntro'
-  | 'tutorialDeck'
   | 'protectDeck'
   | 'screenTimeSlider'
+  | 'dayVisualizationHeader'
   | 'dayVisualization'
   | 'protectRecap'
   | 'setupProtect'
@@ -288,6 +289,15 @@ const FAITH_BIBLE_STICKER = require('@/assets/images/onboarding/faith-bible-stic
 const FAITH_BIBLE_NOTES_STICKER = require('@/assets/images/onboarding/faith-bible-notes-sticker.png');
 const FAITH_FAVORITES_STICKER = require('@/assets/images/onboarding/faith-favorites-sticker.png');
 const FAITH_PRAYER_BOOK_STICKER = require('@/assets/images/onboarding/faith-prayer-book-sticker.png');
+const DAY_PANORAMA_DOME = require('@/assets/images/onboarding/day-panorama-dome-cutout.png');
+const DAY_AXIS_SUN = require('@/assets/images/onboarding/day-axis-sun-cutout.png');
+const DAY_AXIS_MOON = require('@/assets/images/onboarding/day-axis-moon-cutout.png');
+const DAY_AXIS_CLOUD = require('@/assets/images/onboarding/day-axis-cloud-cutout.png');
+const DAY_CLOUD_BANK_SOFT = require('@/assets/images/onboarding/day-cloud-bank-soft-cutout.png');
+const DAY_CLOUD_BANK_FULL = require('@/assets/images/onboarding/day-cloud-bank-full-cutout.png');
+const DAY_PIE_PHONE = require('@/assets/images/onboarding/day-pie-phone-cutout.png');
+const DAY_PIE_SLEEP = require('@/assets/images/onboarding/day-pie-sleep-cutout.png');
+const DAY_PIE_TOOLBOX = require('@/assets/images/onboarding/day-pie-toolbox-cutout.png');
 const PROTECT_STATEMENT_IMAGES = [
   require('@/assets/images/protect-statement-1.jpg'),
   require('@/assets/images/protect-statement-2.jpg'),
@@ -372,26 +382,6 @@ function releaseStatementImages(sources: number[]) {
     }
   }
 }
-
-const TUTORIAL_DECK_CARDS: StatementDeckCard[] = [
-  {
-    id: 'tutorial-yes',
-    statement: "I sometimes feel like there's too much to do and not enough time.",
-    icon: <ListChecks s={30} c="#4D8586" w={1.9} />,
-    bold: ['too much to do', 'not enough time'],
-  },
-  {
-    id: 'tutorial-no',
-    statement: 'I always know exactly what to do and never feel overwhelmed.',
-    icon: <Sparkles s={30} c="#4D8586" w={1.9} />,
-    bold: ['always know exactly', 'never feel overwhelmed'],
-  },
-  {
-    id: 'tutorial-ready',
-    statement: 'Do you understand?',
-    icon: <CheckSmall s={30} c="#4D8586" w={2.4} />,
-  },
-];
 
 const PROTECT_DECK_CARDS: StatementDeckCard[] = [
   {
@@ -946,9 +936,9 @@ function stepOrder(answers: Answers): StepId[] {
     'valueFocus',
     'valueFaith',
     'toolsShowcase',
-    'tutorialDeck',
     'protectDeck',
     'screenTimeSlider',
+    'dayVisualizationHeader',
     'dayVisualization',
     'protectRecap',
     ...protectSetup,
@@ -1240,9 +1230,9 @@ function isGuidedWalkthroughStep(step: StepId) {
     step === 'toolsIntroA' ||
     step === 'toolsIntroB' ||
     step === 'statementsIntro' ||
-    step === 'tutorialDeck' ||
     step === 'protectDeck' ||
     step === 'screenTimeSlider' ||
+    step === 'dayVisualizationHeader' ||
     step === 'dayVisualization' ||
     step === 'protectRecap' ||
     step === 'setupProtect' ||
@@ -8867,23 +8857,23 @@ const TOOLS_FIELD_LABELS = [
 // fake-out "struggle"), a dramatic beat, and the REAL event: the subtitle
 // drops out and types -> long tableau -> purge -> card morphs into chat.
 const TOOLS_SCENE = {
-  flightDuration: 760,
-  flightLead: 620,
-  rainStart: 180,
-  burstGap: 190,
-  intraGap: 64,
-  topLead: 80,
-  aboveGapBase: 195,
-  aboveGapGrow: 38,
-  aboveIntra: 70,
-  aboveFallSlow: 1.06,
+  flightDuration: 580,
+  flightLead: 430,
+  rainStart: 160,
+  burstGap: 95,
+  intraGap: 32,
+  topLead: 55,
+  aboveGapBase: 98,
+  aboveGapGrow: 19,
+  aboveIntra: 35,
+  aboveFallSlow: 1.04,
   pulseDelay: 500,
   pulseGap: 800,
   typeStartDelay: 260,
   typeCharMs: 30,
   holdAfterType: 1700,
-  purgeStep: 40,
-  purgeFall: 700,
+  purgeStep: 20,
+  purgeFall: 360,
   morphLeadIn: 260,
   morphDuration: 620,
   bubble2Delay: 420,
@@ -9123,7 +9113,7 @@ function buildToolsField(
 
   // Falls are slow and distance-scaled; precomputed so the timeline below can
   // know exactly when each act of the rain finishes.
-  const fallDurations = placed.map(core => 780 + Math.sqrt(Math.max(40, core.cy)) * 10 + rand() * 140);
+  const fallDurations = placed.map(core => 470 + Math.sqrt(Math.max(40, core.cy)) * 6 + rand() * 95);
 
   // Two acts, both building bottom-up: Act 1 fills everything below the card's
   // gap; the card lands; Act 2 drops the crown above it. Jitter keeps each act
@@ -9781,44 +9771,6 @@ function ToolsShowcaseSlide({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bubble2Text, phase]);
 
-  const handleSceneTap = () => {
-    const current = phaseRef.current;
-    if (current === 'rain') {
-      clearTimers();
-      fastForward.value = 1;
-      flight.value = withTiming(1, { duration: 160 });
-      cardSettle.value = withTiming(1, { duration: 200 });
-      cardLandPulse.value = withTiming(0.55, { duration: 160 });
-      setSubtitleForced(true);
-      startReveal(true);
-      return;
-    }
-    if (current === 'reveal') {
-      clearTimers();
-      setSubtitleForced(true);
-      boxExpand.value = withTiming(1, { duration: 200 });
-      schedule(startPurge, 320);
-      return;
-    }
-    if (current === 'purge' || current === 'morph') {
-      clearTimers();
-      fastForward.value = 1;
-      expandT.value = withTiming(1, { duration: 160 });
-      purgeT.value = withTiming(1, { duration: 160 });
-      if (phaseRef.current === 'purge') {
-        phaseRef.current = 'morph';
-        setPhase('morph');
-      }
-      morphT.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) });
-      schedule(enterConvo, 240);
-      return;
-    }
-    if (current === 'convo' && !showCta) {
-      setBubble2Count(bubble2Text.length);
-      setShowCta(true);
-    }
-  };
-
   const handleCta = () => {
     if (echoedRef.current) return;
     echoedRef.current = true;
@@ -10083,8 +10035,6 @@ function ToolsShowcaseSlide({
         </View>
       </Reanimated.View>
 
-      <TouchableOpacity activeOpacity={1} onPress={handleSceneTap} style={s.toolsSkipLayer} />
-
       <View style={s.toolsShowcaseSpacer} pointerEvents="none" />
 
       <AnimatedCta
@@ -10238,18 +10188,21 @@ function V4StatementDeckSlide({
   accent,
   topInset,
   bottomInset,
+  showTutorial = false,
   onDone,
 }: {
   cards: StatementDeckCard[];
   accent: string;
   topInset: number;
   bottomInset: number;
+  showTutorial?: boolean;
   onDone: (yesIds: string[]) => void;
 }) {
   const { width, height } = useWindowDimensions();
   const [index, setIndex] = useState(0);
   const [yesIds, setYesIds] = useState<string[]>([]);
   const [decisions, setDecisions] = useState<(boolean | undefined)[]>(() => cards.map(() => undefined));
+  const [tutorialDismissed, setTutorialDismissed] = useState(false);
   const activeCard = cards[index];
   const isCompact = height < 760;
   const availableCardWidth = Math.max(width - 52, 280);
@@ -10291,6 +10244,7 @@ function V4StatementDeckSlide({
   }, [cardImages]);
 
   const commitAnswer = useCallback((yes: boolean) => {
+    setTutorialDismissed(true);
     setDecisions(prev => {
       const next = [...prev];
       next[index] = yes;
@@ -10414,6 +10368,11 @@ function V4StatementDeckSlide({
                 onAnswer={answer}
               />
             )).reverse()}
+            <V4DeckTutorialOverlay
+              visible={showTutorial && index === 0 && !tutorialDismissed}
+              width={cardMetrics.width}
+              top={quoteHeight + 18}
+            />
           </View>
         </View>
         <View style={[s.v4AnswerRow, { width: cardMetrics.width, alignSelf: 'center' }]}>
@@ -10444,6 +10403,77 @@ function V4StatementDeckSlide({
         </View>
       </View>
     </View>
+  );
+}
+
+function V4DeckTutorialOverlay({
+  visible,
+  width,
+  top,
+}: {
+  visible: boolean;
+  width: number;
+  top: number;
+}) {
+  const sweep = useSharedValue(0);
+
+  useEffect(() => {
+    if (!visible) {
+      sweep.value = 0;
+      return;
+    }
+    sweep.value = withDelay(
+      360,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 1180, easing: Easing.inOut(Easing.cubic) }),
+          withTiming(0, { duration: 1180, easing: Easing.inOut(Easing.cubic) }),
+        ),
+        -1,
+        false,
+      ),
+    );
+  }, [sweep, visible]);
+
+  const ghostStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(sweep.value, [0, 0.16, 0.5, 0.84, 1], [0.34, 0.86, 1, 0.86, 0.34]),
+    transform: [
+      { translateX: interpolate(sweep.value, [0, 0.5, 1], [-34, 0, 34]) },
+      { rotate: `${interpolate(sweep.value, [0, 0.5, 1], [-4, 0, 4])}deg` },
+    ],
+  }));
+
+  if (!visible) return null;
+
+  return (
+    <Reanimated.View
+      pointerEvents="none"
+      entering={FadeIn.delay(220).duration(420)}
+      exiting={FadeOut.duration(180)}
+      style={[s.v4DeckTutorialOverlay, { width, top }]}
+    >
+      <View style={[s.v4DeckTutorialPill, s.v4DeckTutorialPillNo]}>
+        <View style={s.v4DeckTutorialIconNo}>
+          <X s={12} c="#FFFFFF" w={2.8} />
+        </View>
+        <Text style={s.v4DeckTutorialText}>Not you?</Text>
+        <Text style={s.v4DeckTutorialSubtext}>Swipe left</Text>
+      </View>
+
+      <Reanimated.View style={[s.v4DeckTutorialGhost, ghostStyle]}>
+        <ChevronLeft s={14} c="rgba(25,23,20,0.50)" w={2.5} />
+        <View style={s.v4DeckTutorialGhostCard} />
+        <ChevronRight s={14} c="rgba(25,23,20,0.50)" w={2.5} />
+      </Reanimated.View>
+
+      <View style={[s.v4DeckTutorialPill, s.v4DeckTutorialPillYes]}>
+        <View style={s.v4DeckTutorialIconYes}>
+          <CheckSmall s={13} c="#FFFFFF" w={2.8} />
+        </View>
+        <Text style={s.v4DeckTutorialText}>That&apos;s you?</Text>
+        <Text style={s.v4DeckTutorialSubtext}>Swipe right</Text>
+      </View>
+    </Reanimated.View>
   );
 }
 
@@ -10998,6 +11028,549 @@ function V4ScreenTimeSliderSlide({
       </Reanimated.View>
 
       <AnimatedCta delay={420} style={s.screenTimeAction}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>Continue</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+function DayHeaderArcDash({
+  draw,
+  index,
+  total,
+  x,
+  y,
+  rotate,
+}: {
+  draw: SharedValue<number>;
+  index: number;
+  total: number;
+  x: number;
+  y: number;
+  rotate: number;
+}) {
+  const dashStyle = useAnimatedStyle(() => {
+    const start = index / total;
+    const finish = (index + 0.75) / total;
+    return {
+      opacity: interpolate(draw.value, [start - 0.035, start, finish], [0, 0.18, 1], 'clamp'),
+      transform: [
+        { rotate: `${rotate}deg` },
+        { scale: interpolate(draw.value, [start, finish], [0.58, 1], 'clamp') },
+      ],
+    };
+  });
+
+  return <Reanimated.View style={[s.dayHeaderArcDash, { left: x, top: y }, dashStyle]} />;
+}
+
+function DayHeaderCloudPuff({
+  source,
+  left,
+  top,
+  width,
+  aspectRatio,
+  opacity,
+  zIndex,
+  rotate,
+  driftX,
+  driftY,
+  scale,
+  motionDelay,
+  motionDuration,
+  entranceDelay,
+}: {
+  source: any;
+  left: number;
+  top: number;
+  width: number;
+  aspectRatio: number;
+  opacity: number;
+  zIndex: number;
+  rotate: number;
+  driftX: number;
+  driftY: number;
+  scale: number;
+  motionDelay: number;
+  motionDuration: number;
+  entranceDelay: number;
+}) {
+  const entrance = useSharedValue(0);
+  const motion = useSharedValue(0);
+
+  useEffect(() => {
+    entrance.value = 0;
+    motion.value = 0;
+    entrance.value = withDelay(
+      entranceDelay,
+      withSequence(
+        withTiming(0.88, { duration: 520, easing: Easing.in(Easing.quad) }),
+        withSpring(1, { damping: 15, stiffness: 280, mass: 0.8 }),
+      ),
+    );
+    motion.value = withDelay(
+      entranceDelay + 590 + motionDelay,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: motionDuration, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0, { duration: motionDuration, easing: Easing.inOut(Easing.sin) }),
+        ),
+        -1,
+        false,
+      ),
+    );
+    return () => {
+      entrance.value = 0;
+      motion.value = 0;
+    };
+  }, [entrance, entranceDelay, motion, motionDelay, motionDuration]);
+
+  const puffStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(entrance.value, [0, 0.14, 1], [0, opacity, opacity], 'clamp'),
+    transform: [
+      { translateY: interpolate(entrance.value, [0, 0.88, 1], [-86, 7, 0]) },
+      { translateX: interpolate(motion.value, [0, 1], [-driftX, driftX]) },
+      { translateY: interpolate(motion.value, [0, 1], [driftY, -driftY]) },
+      { rotate: `${interpolate(entrance.value, [0, 0.88, 1], [rotate - 7, rotate + 2, rotate]) + interpolate(motion.value, [0, 1], [-1.5, 1.5])}deg` },
+      { scale: interpolate(entrance.value, [0, 0.88, 1], [scale * 0.94, scale * 1.018, scale]) * interpolate(motion.value, [0, 1], [0.988, 1.012]) },
+    ],
+  }));
+
+  return (
+    <Reanimated.View
+      style={[
+        s.dayHeaderCloudPuff,
+        {
+          left,
+          top,
+          width,
+          aspectRatio,
+          zIndex,
+        },
+      ]}
+    >
+      <Reanimated.View style={[s.dayHeaderCloudPuffMotion, puffStyle]}>
+        <ExpoImage source={source} style={s.dayHeaderCloudPuffImage} contentFit="contain" cachePolicy="memory-disk" />
+      </Reanimated.View>
+    </Reanimated.View>
+  );
+}
+
+function dayPiePoint(cx: number, cy: number, radius: number, angleDeg: number) {
+  const angle = ((angleDeg - 90) * Math.PI) / 180;
+  return {
+    x: cx + radius * Math.cos(angle),
+    y: cy + radius * Math.sin(angle),
+  };
+}
+
+function dayPieSlicePath(cx: number, cy: number, radius: number, startAngle: number, endAngle: number) {
+  const start = dayPiePoint(cx, cy, radius, startAngle);
+  const end = dayPiePoint(cx, cy, radius, endAngle);
+  const largeArc = endAngle - startAngle <= 180 ? 0 : 1;
+  return `M ${cx} ${cy} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y} Z`;
+}
+
+function V4DayPanoramaHeaderSlide({
+  topInset,
+  bottomInset,
+  onNext,
+}: {
+  topInset: number;
+  bottomInset: number;
+  onNext: () => void;
+}) {
+  const { width } = useWindowDimensions();
+  const frameWidth = Math.min(width - 4, 430);
+  const domeHeroHeight = frameWidth * (868 / 1656);
+  const cloudBankHeight = Math.max(108, Math.min(138, frameWidth * 0.33));
+  const axisWidth = Math.min(frameWidth - 38, 366);
+  const sunCenter = axisWidth * 0.16;
+  const moonCenter = axisWidth * 0.84;
+  const iconSize = Math.min(96, axisWidth * 0.265);
+  const moonSize = iconSize;
+  const cloudWidth = Math.min(118, axisWidth * 0.34);
+  const cloudLeft = (sunCenter + moonCenter) / 2 - cloudWidth / 2;
+  const pieSceneHeight = Math.min(312, Math.max(288, frameWidth * 0.72));
+  const pieSize = Math.min(190, Math.max(170, frameWidth * 0.45));
+  const pieCenter = pieSize / 2;
+  const pieRadius = pieSize / 2 - 7;
+  const phoneHours = DEFAULT_SCREEN_TIME_HOURS;
+  const productiveHours = Math.max(0, DAY_HOURS - SLEEP_HOURS_PER_DAY - phoneHours);
+  const sleepAngle = (SLEEP_HOURS_PER_DAY / DAY_HOURS) * 360;
+  const phoneAngle = (phoneHours / DAY_HOURS) * 360;
+  const productiveAngle = 360 - sleepAngle - phoneAngle;
+  const sleepStart = -60;
+  const sleepEnd = sleepStart + sleepAngle;
+  const productiveStart = sleepEnd;
+  const productiveEnd = productiveStart + productiveAngle;
+  const phoneStart = productiveEnd;
+  const phoneEnd = phoneStart + phoneAngle;
+  const sleepHourLabel = `${formatHourValue(SLEEP_HOURS_PER_DAY)}h`;
+  const phoneHourLabel = `${formatHourValue(phoneHours)}h`;
+  const productiveHourLabel = `${formatHourValue(productiveHours)}h`;
+  const pieLeft = (frameWidth - pieSize) / 2;
+  const pieTop = Math.min(104, Math.max(92, frameWidth * 0.24));
+  const phoneStickerSize = Math.min(106, frameWidth * 0.25);
+  const sleepStickerSize = Math.min(112, frameWidth * 0.265);
+  const toolboxStickerWidth = Math.min(126, frameWidth * 0.30);
+  const toolboxStickerHeight = toolboxStickerWidth * (860 / 1128);
+  const sleepLabelPoint = dayPiePoint(pieCenter, pieCenter, pieRadius * 0.68, (sleepStart + sleepEnd) / 2);
+  const productiveLabelPoint = dayPiePoint(pieCenter, pieCenter, pieRadius * 0.68, (productiveStart + productiveEnd) / 2);
+  const phoneLabelPoint = dayPiePoint(pieCenter, pieCenter, pieRadius * 0.68, (phoneStart + phoneEnd) / 2);
+  const routeDashCount = 19;
+  const routeStartX = sunCenter + iconSize * 0.48;
+  const routeEndX = moonCenter - moonSize * 0.48;
+  const routeBaseY = 116;
+  const routeArcHeight = 34;
+  const routeDashes = Array.from({ length: routeDashCount }).map((_, index) => {
+    const t = index / (routeDashCount - 1);
+    const x = routeStartX + (routeEndX - routeStartX) * t - 3.5;
+    const y = routeBaseY - Math.sin(Math.PI * t) * routeArcHeight - 2;
+    const slope = (-routeArcHeight * Math.PI * Math.cos(Math.PI * t)) / Math.max(1, routeEndX - routeStartX);
+    const rotate = Math.atan(slope) * (180 / Math.PI);
+    return { x, y, rotate };
+  });
+  const cloudBankClouds = [
+    { source: DAY_CLOUD_BANK_FULL, left: -64, top: -14, width: frameWidth * 0.54, aspectRatio: 1164 / 737, rotate: -5, opacity: 0.98, zIndex: 4, driftX: 5.2, driftY: 3.5, scale: 1.02, entranceDelay: 20, motionDelay: 520, motionDuration: 3800 },
+    { source: DAY_AXIS_CLOUD, left: 22, top: -11, width: frameWidth * 0.40, aspectRatio: 951 / 609, rotate: 3, opacity: 0.93, zIndex: 6, driftX: 4.5, driftY: 4.2, scale: 0.96, entranceDelay: 130, motionDelay: 640, motionDuration: 4300 },
+    { source: DAY_CLOUD_BANK_SOFT, left: frameWidth * 0.22, top: 21, width: frameWidth * 0.43, aspectRatio: 947 / 605, rotate: -1, opacity: 0.98, zIndex: 8, driftX: 2.2, driftY: 2.2, scale: 0.98, entranceDelay: 260, motionDelay: 760, motionDuration: 5200 },
+    { source: DAY_AXIS_CLOUD, left: frameWidth * 0.38, top: 45, width: frameWidth * 0.30, aspectRatio: 951 / 609, rotate: 2, opacity: 0.88, zIndex: 10, driftX: 1.4, driftY: 1.7, scale: 0.9, entranceDelay: 380, motionDelay: 900, motionDuration: 5700 },
+    { source: DAY_CLOUD_BANK_FULL, left: frameWidth * 0.48, top: -22, width: frameWidth * 0.57, aspectRatio: 1164 / 737, rotate: 4, opacity: 0.97, zIndex: 5, driftX: 5.0, driftY: 3.8, scale: 1, entranceDelay: 190, motionDelay: 700, motionDuration: 4000 },
+    { source: DAY_AXIS_CLOUD, left: frameWidth * 0.68, top: -8, width: frameWidth * 0.43, aspectRatio: 951 / 609, rotate: -8, opacity: 1, zIndex: 9, driftX: 4.2, driftY: 4.5, scale: 0.96, entranceDelay: 310, motionDelay: 820, motionDuration: 4500 },
+  ];
+  const heroDelay = 760;
+  const heroDuration = 1500;
+  const axisIntroDelay = heroDelay + heroDuration - 240;
+  const axisIntroDuration = 520;
+  const lineDelay = axisIntroDelay + axisIntroDuration - 40;
+  const lineDuration = 1600;
+  const cloudBaseDelay = lineDelay + 120;
+  const cloudAliveDelay = lineDelay + lineDuration - 90;
+  const pieDelay = cloudAliveDelay + 300;
+  const phoneDelay = pieDelay + 300;
+  const sleepDelay = pieDelay + 430;
+  const toolboxDelay = pieDelay + 560;
+  const ctaDelay = toolboxDelay + 760;
+  const axisIntro = useSharedValue(0);
+  const lineDraw = useSharedValue(0);
+  const cloudBase = useSharedValue(0);
+  const cloudReveal = useSharedValue(0);
+  const pieIntro = useSharedValue(0);
+  const phoneIntro = useSharedValue(0);
+  const sleepIntro = useSharedValue(0);
+  const toolboxIntro = useSharedValue(0);
+  const ambient = useSharedValue(0);
+
+  useEffect(() => {
+    axisIntro.value = 0;
+    lineDraw.value = 0;
+    cloudBase.value = 0;
+    cloudReveal.value = 0;
+    pieIntro.value = 0;
+    phoneIntro.value = 0;
+    sleepIntro.value = 0;
+    toolboxIntro.value = 0;
+    ambient.value = 0;
+    ambient.value = withDelay(
+      540,
+      withRepeat(
+        withTiming(1, { duration: 4600, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        true,
+      ),
+    );
+    axisIntro.value = withDelay(
+      axisIntroDelay,
+      withTiming(1, { duration: axisIntroDuration, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+    );
+    lineDraw.value = withDelay(
+      lineDelay,
+      withTiming(1, { duration: lineDuration, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+    );
+    cloudBase.value = withDelay(
+      cloudBaseDelay,
+      withTiming(1, { duration: 420, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+    );
+    cloudReveal.value = withDelay(
+      cloudAliveDelay,
+      withTiming(1, { duration: 540, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+    );
+    pieIntro.value = withDelay(
+      pieDelay,
+      withTiming(1, { duration: 700, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+    );
+    phoneIntro.value = withDelay(
+      phoneDelay,
+      withTiming(1, { duration: 640, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+    );
+    sleepIntro.value = withDelay(
+      sleepDelay,
+      withTiming(1, { duration: 640, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+    );
+    toolboxIntro.value = withDelay(
+      toolboxDelay,
+      withTiming(1, { duration: 660, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+    );
+    const hapticTimer = setTimeout(runBubbleHaptic, cloudAliveDelay + 120);
+    return () => {
+      clearTimeout(hapticTimer);
+      axisIntro.value = 0;
+      lineDraw.value = 0;
+      cloudBase.value = 0;
+      cloudReveal.value = 0;
+      pieIntro.value = 0;
+      phoneIntro.value = 0;
+      sleepIntro.value = 0;
+      toolboxIntro.value = 0;
+      ambient.value = 0;
+    };
+  }, [ambient, axisIntro, axisIntroDelay, axisIntroDuration, cloudAliveDelay, cloudBase, cloudBaseDelay, cloudReveal, lineDelay, lineDraw, lineDuration, phoneDelay, phoneIntro, pieDelay, pieIntro, sleepDelay, sleepIntro, toolboxDelay, toolboxIntro]);
+
+  const sunStyle = useAnimatedStyle(() => ({
+    opacity: axisIntro.value,
+    transform: [
+      { translateX: interpolate(axisIntro.value, [0, 1], [-118, 0]) },
+      { translateY: interpolate(ambient.value, [0, 1], [0, -2.5]) },
+      { scale: 1 + ambient.value * 0.025 },
+    ],
+  }));
+  const moonStyle = useAnimatedStyle(() => ({
+    opacity: axisIntro.value,
+    transform: [
+      { translateX: interpolate(axisIntro.value, [0, 1], [118, 0]) },
+      { translateY: interpolate(ambient.value, [0, 1], [-1, 2]) },
+      { rotate: `${interpolate(ambient.value, [0, 1], [-1.4, 1.4])}deg` },
+    ],
+  }));
+  const cloudStyle = useAnimatedStyle(() => ({
+    opacity: cloudBase.value * interpolate(cloudReveal.value, [0, 1], [0.38, 1]),
+    transform: [
+      { translateY: interpolate(cloudBase.value, [0, 1], [9, 0]) + interpolate(cloudReveal.value, [0, 1], [0, -2]) + interpolate(ambient.value, [0, 1], [0, -1.5]) },
+      { scale: interpolate(cloudBase.value, [0, 1], [0.9, 0.96]) * interpolate(cloudReveal.value, [0, 1], [1, 1.045]) },
+    ],
+  }));
+  const pieStyle = useAnimatedStyle(() => ({
+    opacity: pieIntro.value,
+    transform: [
+      { translateY: interpolate(pieIntro.value, [0, 1], [18, 0]) },
+      { scale: interpolate(pieIntro.value, [0, 1], [0.92, 1]) },
+    ],
+  }));
+  const phoneStickerStyle = useAnimatedStyle(() => ({
+    opacity: phoneIntro.value,
+    transform: [
+      { translateX: interpolate(phoneIntro.value, [0, 1], [-44, 0]) + interpolate(ambient.value, [0, 1], [-2, 2]) },
+      { translateY: interpolate(phoneIntro.value, [0, 1], [12, 0]) + interpolate(ambient.value, [0, 1], [0, -2]) },
+      { rotate: `${interpolate(phoneIntro.value, [0, 1], [-5, -2])}deg` },
+      { scale: interpolate(phoneIntro.value, [0, 1], [0.9, 1]) },
+    ],
+  }));
+  const sleepStickerStyle = useAnimatedStyle(() => ({
+    opacity: sleepIntro.value,
+    transform: [
+      { translateX: interpolate(sleepIntro.value, [0, 1], [44, 0]) + interpolate(ambient.value, [0, 1], [2, -2]) },
+      { translateY: interpolate(sleepIntro.value, [0, 1], [12, 0]) + interpolate(ambient.value, [0, 1], [-1, 2]) },
+      { rotate: `${interpolate(sleepIntro.value, [0, 1], [5, 2])}deg` },
+      { scale: interpolate(sleepIntro.value, [0, 1], [0.9, 1]) },
+    ],
+  }));
+  const toolboxStickerStyle = useAnimatedStyle(() => ({
+    opacity: toolboxIntro.value,
+    transform: [
+      { translateY: interpolate(toolboxIntro.value, [0, 1], [30, 0]) + interpolate(ambient.value, [0, 1], [1, -1.5]) },
+      { rotate: `${interpolate(toolboxIntro.value, [0, 1], [2, -1])}deg` },
+      { scale: interpolate(toolboxIntro.value, [0, 1], [0.92, 1]) },
+    ],
+  }));
+  const pieCx = pieLeft + pieCenter;
+  const pieCy = pieTop + pieCenter;
+  const sleepX = (frameWidth - sleepStickerSize) / 2;
+  const sleepY = 0;
+  const phoneX = Math.max(10, frameWidth * 0.055);
+  const phoneY = pieTop - phoneStickerSize * 0.18;
+  const toolboxX = frameWidth - toolboxStickerWidth - Math.max(12, frameWidth * 0.065);
+  const toolboxY = pieTop - toolboxStickerHeight * 0.02;
+  const phoneArrowStart = dayPiePoint(pieCx, pieCy, pieRadius * 0.96, (phoneStart + phoneEnd) / 2);
+  const sleepArrowStart = dayPiePoint(pieCx, pieCy, pieRadius * 0.96, (sleepStart + sleepEnd) / 2);
+  const toolboxArrowStart = dayPiePoint(pieCx, pieCy, pieRadius * 0.96, (productiveStart + productiveEnd) / 2);
+  const phoneArrow = `M ${phoneArrowStart.x} ${phoneArrowStart.y} C ${pieCx - pieRadius * 1.10} ${pieCy - pieRadius * 0.18}, ${phoneX + phoneStickerSize * 1.02} ${phoneY + phoneStickerSize * 0.58}, ${phoneX + phoneStickerSize * 0.78} ${phoneY + phoneStickerSize * 0.56}`;
+  const sleepArrow = `M ${sleepArrowStart.x} ${sleepArrowStart.y} C ${pieCx + pieRadius * 0.02} ${pieCy - pieRadius * 1.38}, ${sleepX + sleepStickerSize * 0.42} ${sleepY + sleepStickerSize * 0.92}, ${sleepX + sleepStickerSize * 0.50} ${sleepY + sleepStickerSize * 0.78}`;
+  const toolboxArrow = `M ${toolboxArrowStart.x} ${toolboxArrowStart.y} C ${pieCx + pieRadius * 1.12} ${pieCy - pieRadius * 0.12}, ${toolboxX + toolboxStickerWidth * 0.14} ${toolboxY + toolboxStickerHeight * 0.58}, ${toolboxX + toolboxStickerWidth * 0.30} ${toolboxY + toolboxStickerHeight * 0.44}`;
+
+  return (
+    <View
+      style={[s.dayHeaderScreen, { paddingTop: Math.max(0, topInset - 14), paddingBottom: Math.max(0, bottomInset - 10) }]}
+    >
+      <View style={s.dayHeaderContent}>
+        <Reanimated.View
+          entering={FadeIn.delay(heroDelay).duration(heroDuration).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 54 }, { scale: 0.965 }],
+          })}
+          style={[s.dayHeaderHeroStack, { width: frameWidth }]}
+        >
+          <ExpoImage
+            source={DAY_PANORAMA_DOME}
+            style={[s.dayHeaderHeroImage, { width: frameWidth, height: domeHeroHeight }]}
+            contentFit="contain"
+            cachePolicy="memory-disk"
+          />
+        </Reanimated.View>
+
+        <View style={[s.dayHeaderCloudBank, { width: frameWidth, height: cloudBankHeight }]}>
+          {cloudBankClouds.map((cloud, index) => (
+            <DayHeaderCloudPuff
+              key={`day-cloud-bank-${index}`}
+              source={cloud.source}
+              left={cloud.left}
+              top={cloud.top}
+              width={cloud.width}
+              aspectRatio={cloud.aspectRatio}
+              opacity={cloud.opacity}
+              zIndex={cloud.zIndex}
+              rotate={cloud.rotate}
+              driftX={cloud.driftX}
+              driftY={cloud.driftY}
+              scale={cloud.scale}
+              motionDelay={cloud.motionDelay}
+              motionDuration={cloud.motionDuration}
+              entranceDelay={cloud.entranceDelay}
+            />
+          ))}
+        </View>
+
+        <View style={[s.dayHeaderAxis, { width: axisWidth }]}>
+          {routeDashes.map((dash, index) => (
+            <DayHeaderArcDash
+              key={`day-route-dash-${index}`}
+              draw={lineDraw}
+              index={index}
+              total={routeDashCount}
+              x={dash.x}
+              y={dash.y}
+              rotate={dash.rotate}
+            />
+          ))}
+
+          <Reanimated.View
+            style={[
+              s.dayHeaderAxisSun,
+              { left: sunCenter - iconSize / 2, width: iconSize, height: iconSize },
+              sunStyle,
+            ]}
+          >
+            <ExpoImage source={DAY_AXIS_SUN} style={s.dayHeaderAxisIconImage} contentFit="contain" cachePolicy="memory-disk" />
+          </Reanimated.View>
+
+          <Reanimated.View
+            style={[
+              s.dayHeaderAxisMoon,
+              { left: moonCenter - moonSize / 2, width: moonSize, height: moonSize },
+              moonStyle,
+            ]}
+          >
+            <ExpoImage source={DAY_AXIS_MOON} style={s.dayHeaderAxisIconImage} contentFit="contain" cachePolicy="memory-disk" />
+          </Reanimated.View>
+
+          <Reanimated.View
+            style={[
+              s.dayHeaderCloudBadge,
+              { left: cloudLeft, width: cloudWidth, height: cloudWidth * 0.64 },
+              cloudStyle,
+            ]}
+          >
+            <ExpoImage source={DAY_AXIS_CLOUD} style={s.dayHeaderCloudImage} contentFit="cover" cachePolicy="memory-disk" />
+            <Text style={s.dayHeaderCloudText}>in 24h</Text>
+          </Reanimated.View>
+        </View>
+      </View>
+
+      <View style={[s.dayHeaderFutureSpace, { width: frameWidth, height: pieSceneHeight }]}>
+        <Svg pointerEvents="none" width={frameWidth} height={pieSceneHeight} style={s.dayHeaderPieArrows}>
+          <SvgPath d={phoneArrow} stroke="rgba(25,23,20,0.52)" strokeWidth={1.8} strokeDasharray="5 7" strokeLinecap="round" fill="none" />
+          <SvgPath d={sleepArrow} stroke="rgba(89,75,128,0.54)" strokeWidth={1.8} strokeDasharray="5 7" strokeLinecap="round" fill="none" />
+          <SvgPath d={toolboxArrow} stroke="rgba(197,160,89,0.56)" strokeWidth={1.8} strokeDasharray="5 7" strokeLinecap="round" fill="none" />
+          <SvgPath d={`M ${phoneX + phoneStickerSize * 0.78} ${phoneY + phoneStickerSize * 0.56} l 8 -5 l -1 9 Z`} fill="rgba(25,23,20,0.52)" />
+          <SvgPath d={`M ${sleepX + sleepStickerSize * 0.50} ${sleepY + sleepStickerSize * 0.78} l -4 9 l 9 -2 Z`} fill="rgba(89,75,128,0.54)" />
+          <SvgPath d={`M ${toolboxX + toolboxStickerWidth * 0.30} ${toolboxY + toolboxStickerHeight * 0.44} l -7 5 l 8 4 Z`} fill="rgba(197,160,89,0.56)" />
+        </Svg>
+
+        <Reanimated.View
+          style={[
+            s.dayHeaderPieChartWrap,
+            { left: pieLeft, top: pieTop, width: pieSize, height: pieSize },
+            pieStyle,
+          ]}
+        >
+          <Svg width={pieSize} height={pieSize} viewBox={`0 0 ${pieSize} ${pieSize}`}>
+            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius + 7} fill="#FFFDF8" />
+            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius + 4} fill="rgba(197,160,89,0.12)" />
+            <G>
+              <SvgPath d={dayPieSlicePath(pieCenter, pieCenter, pieRadius, sleepStart, sleepEnd)} fill="#5B527A" />
+              <SvgPath d={dayPieSlicePath(pieCenter, pieCenter, pieRadius, productiveStart, productiveEnd)} fill="#E8C66F" />
+              <SvgPath d={dayPieSlicePath(pieCenter, pieCenter, pieRadius, phoneStart, phoneEnd)} fill="#17130F" />
+            </G>
+            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius} fill="none" stroke="rgba(255,255,255,0.94)" strokeWidth={5.5} />
+            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius * 0.48} fill="#FFFDF8" stroke="rgba(197,160,89,0.30)" strokeWidth={1.2} />
+            <SvgCircle cx={pieCenter + pieRadius * 0.22} cy={pieCenter - pieRadius * 0.52} r={2.1} fill="rgba(255,255,255,0.92)" />
+            <SvgCircle cx={pieCenter + pieRadius * 0.43} cy={pieCenter - pieRadius * 0.25} r={1.35} fill="rgba(255,255,255,0.76)" />
+            <SvgCircle cx={pieCenter + pieRadius * 0.06} cy={pieCenter - pieRadius * 0.34} r={1.55} fill="rgba(255,255,255,0.82)" />
+          </Svg>
+          <View pointerEvents="none" style={[s.dayHeaderPieSliceLabel, { left: sleepLabelPoint.x - 27, top: sleepLabelPoint.y - 14 }]}>
+            <Text style={s.dayHeaderPieSliceLabelText}>{sleepHourLabel}</Text>
+          </View>
+          <View pointerEvents="none" style={[s.dayHeaderPieSliceLabel, { left: productiveLabelPoint.x - 27, top: productiveLabelPoint.y - 14 }]}>
+            <Text style={s.dayHeaderPieSliceLabelText}>{productiveHourLabel}</Text>
+          </View>
+          <View pointerEvents="none" style={[s.dayHeaderPieSliceLabel, { left: phoneLabelPoint.x - 27, top: phoneLabelPoint.y - 14 }]}>
+            <Text style={s.dayHeaderPieSliceLabelText}>{phoneHourLabel}</Text>
+          </View>
+          <View pointerEvents="none" style={s.dayHeaderPieCenterLabel}>
+            <Text style={s.dayHeaderPieCenterNumber}>24h</Text>
+          </View>
+        </Reanimated.View>
+
+        <Reanimated.View
+          pointerEvents="none"
+          style={[
+            s.dayHeaderPieSticker,
+            { left: phoneX, top: phoneY, width: phoneStickerSize, height: phoneStickerSize },
+            phoneStickerStyle,
+          ]}
+        >
+          <ExpoImage source={DAY_PIE_PHONE} style={s.dayHeaderPieStickerImage} contentFit="contain" cachePolicy="memory-disk" />
+        </Reanimated.View>
+
+        <Reanimated.View
+          pointerEvents="none"
+          style={[
+            s.dayHeaderPieSticker,
+            { left: sleepX, top: sleepY, width: sleepStickerSize, height: sleepStickerSize },
+            sleepStickerStyle,
+          ]}
+        >
+          <ExpoImage source={DAY_PIE_SLEEP} style={s.dayHeaderPieStickerImage} contentFit="contain" cachePolicy="memory-disk" />
+        </Reanimated.View>
+
+        <Reanimated.View
+          pointerEvents="none"
+          style={[
+            s.dayHeaderPieToolbox,
+            { left: toolboxX, top: toolboxY, width: toolboxStickerWidth, height: toolboxStickerHeight },
+            toolboxStickerStyle,
+          ]}
+        >
+          <ExpoImage source={DAY_PIE_TOOLBOX} style={s.dayHeaderPieStickerImage} contentFit="contain" cachePolicy="memory-disk" />
+        </Reanimated.View>
+      </View>
+
+      <AnimatedCta delay={ctaDelay} duration={620} distance={30} style={s.dayHeaderAction}>
         <View style={s.ctaIsland}>
           <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
             <Text style={s.primaryButtonText}>Continue</Text>
@@ -12299,7 +12872,6 @@ export default function OnboardingView() {
   const [answers, setAnswers] = useState<Answers>({});
   const [preloadPhase, setPreloadPhase] = useState<PreloadPhase>('only');
   const [welcomeLogoTop, setWelcomeLogoTop] = useState<number | null>(null);
-  const [tutorialRun, setTutorialRun] = useState(0);
   const steps = useMemo(() => stepOrder(answers), [answers]);
   const [index, setIndex] = useState(0);
   const activeStep = steps[Math.min(index, steps.length - 1)];
@@ -12393,7 +12965,7 @@ export default function OnboardingView() {
   }, [activeStep, steps.length]);
 
   useEffect(() => {
-    if (activeStep === 'statementsIntro' || activeStep === 'tutorialDeck') {
+    if (activeStep === 'statementsIntro' || activeStep === 'protectDeck') {
       void warmStatementImages(PROTECT_STATEMENT_IMAGES);
       return;
     }
@@ -12539,9 +13111,9 @@ export default function OnboardingView() {
     activeStep === 'nameIntro' ||
     activeStep === 'traditionIntro' ||
     activeStep === 'toolsShowcase' ||
-    activeStep === 'tutorialDeck' ||
     activeStep === 'protectDeck' ||
     activeStep === 'organizeDeck' ||
+    activeStep === 'dayVisualizationHeader' ||
     valueStepActive ||
     activeStep === 'bridge' ||
     activeStep === 'organizeIntro' ||
@@ -12655,18 +13227,6 @@ export default function OnboardingView() {
     if (activeStep === 'statementsIntro') {
       return <V4StatementsIntroSlide displayName={answers.displayName} onNext={goNext} />;
     }
-    if (activeStep === 'tutorialDeck') {
-      return (
-        <V4StatementDeckSlide
-          key={`tutorial-deck-${tutorialRun}`}
-          cards={TUTORIAL_DECK_CARDS}
-          accent="#4D8586"
-          topInset={insets.top}
-          bottomInset={insets.bottom}
-          onDone={ids => ids.includes('tutorial-ready') ? goNext() : setTutorialRun(prev => prev + 1)}
-        />
-      );
-    }
     if (activeStep === 'protectDeck') {
       const protectCards = answers.secularFilter || isSecularTradition(answers.tradition)
         ? PROTECT_DECK_CARDS.map(card => card.id === 'presence'
@@ -12679,6 +13239,7 @@ export default function OnboardingView() {
           accent="#4D8586"
           topInset={insets.top}
           bottomInset={insets.bottom}
+          showTutorial
           onDone={ids => {
             setAnswers(prev => ({ ...prev, confirmedProtectProblems: ids }));
             goNext();
@@ -12691,6 +13252,15 @@ export default function OnboardingView() {
         <V4ScreenTimeSliderSlide
           hours={answers.screenTimeHours}
           onChange={onScreenTimeHoursChange}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'dayVisualizationHeader') {
+      return (
+        <V4DayPanoramaHeaderSlide
+          topInset={insets.top}
+          bottomInset={insets.bottom}
           onNext={goNext}
         />
       );
@@ -16492,10 +17062,6 @@ const s = StyleSheet.create({
   toolsSceneWorld: {
     ...StyleSheet.absoluteFillObject,
   },
-  toolsSkipLayer: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 5,
-  },
   toolsHidden: {
     opacity: 0,
   },
@@ -16689,6 +17255,271 @@ const s = StyleSheet.create({
   },
   screenTimeAction: {
     paddingTop: 6,
+  },
+  dayHeaderScreen: {
+    flex: 1,
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: '#FFF8EA',
+    paddingHorizontal: 0,
+    justifyContent: 'space-between',
+  },
+  dayHeaderContent: {
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  dayHeaderHeroStack: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+    rowGap: 0,
+  },
+  dayHeaderHeroImage: {
+    overflow: 'visible',
+  },
+  dayHeaderCloudBank: {
+    position: 'relative',
+    alignSelf: 'center',
+    overflow: 'visible',
+    marginTop: -58,
+    marginBottom: -48,
+    zIndex: 4,
+  },
+  dayHeaderCloudPuff: {
+    position: 'absolute',
+  },
+  dayHeaderCloudPuffMotion: {
+    width: '100%',
+    height: '100%',
+  },
+  dayHeaderCloudPuffImage: {
+    width: '100%',
+    height: '100%',
+  },
+  dayHeaderAxis: {
+    height: 178,
+    marginTop: -4,
+    position: 'relative',
+    alignSelf: 'center',
+  },
+  dayHeaderArcDash: {
+    position: 'absolute',
+    width: 7,
+    height: 3,
+    borderRadius: 3,
+    backgroundColor: 'rgba(25,23,20,0.72)',
+    zIndex: 3,
+  },
+  dayHeaderAxisSun: {
+    position: 'absolute',
+    top: 83,
+    zIndex: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+  },
+  dayHeaderAxisMoon: {
+    position: 'absolute',
+    top: 83,
+    zIndex: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#30527E',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.20,
+    shadowRadius: 14,
+  },
+  dayHeaderAxisIconImage: {
+    width: '100%',
+    height: '100%',
+  },
+  dayHeaderCloudBadge: {
+    position: 'absolute',
+    top: 42,
+    zIndex: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  dayHeaderCloudImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  dayHeaderCloudText: {
+    marginTop: 3,
+    fontFamily: F.serifSemiBold,
+    fontSize: 14.8,
+    lineHeight: 17,
+    color: 'rgba(25,23,20,0.72)',
+    textAlign: 'center',
+    textShadowColor: 'rgba(255,255,255,0.82)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  dayHeaderFutureSpace: {
+    flex: 1,
+    minHeight: 256,
+    position: 'relative',
+    alignSelf: 'center',
+    zIndex: 1,
+    marginTop: 0,
+    overflow: 'visible',
+  },
+  dayHeaderPieArrows: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 2,
+  },
+  dayHeaderPieChartWrap: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
+    shadowColor: '#8B6B2F',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.15,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  dayHeaderPieCenterLabel: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayHeaderPieCenterNumber: {
+    fontFamily: F.serifBold,
+    fontSize: 25,
+    lineHeight: 27,
+    color: '#1C1712',
+    textAlign: 'center',
+    textShadowColor: 'rgba(255,255,255,0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  dayHeaderPieSliceLabel: {
+    position: 'absolute',
+    width: 54,
+    height: 28,
+    zIndex: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayHeaderPieSliceLabelText: {
+    fontFamily: F.serifBold,
+    fontSize: 22,
+    lineHeight: 26,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    textShadowColor: 'rgba(25,23,20,0.36)',
+    textShadowOffset: { width: 0, height: 1.5 },
+    textShadowRadius: 4,
+  },
+  dayHeaderPieCenterText: {
+    marginTop: -4,
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    lineHeight: 12,
+    color: 'rgba(28,23,18,0.56)',
+    textAlign: 'center',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  dayHeaderPieSticker: {
+    position: 'absolute',
+    zIndex: 7,
+    overflow: 'visible',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  dayHeaderPieToolbox: {
+    position: 'absolute',
+    zIndex: 6,
+    overflow: 'visible',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  dayHeaderPieStickerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  dayHeaderPieLabel: {
+    position: 'absolute',
+    minWidth: 76,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    backgroundColor: '#FFFEF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.42)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 9,
+    elevation: 2,
+  },
+  dayHeaderPieLabelPhone: {
+    left: 7,
+    bottom: -10,
+    transform: [{ rotate: '-4deg' }],
+  },
+  dayHeaderPieLabelSleep: {
+    right: -2,
+    bottom: -8,
+    transform: [{ rotate: '4deg' }],
+  },
+  dayHeaderPieLabelProductive: {
+    right: -4,
+    bottom: -16,
+    minWidth: 112,
+    transform: [{ rotate: '-2deg' }],
+  },
+  dayHeaderPieLabelTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 13.6,
+    lineHeight: 15,
+    color: '#1C1712',
+    textAlign: 'center',
+  },
+  dayHeaderPieLabelMeta: {
+    marginTop: -1,
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    lineHeight: 12,
+    color: GOLD,
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
+  dayHeaderFutureLine: {
+    width: 58,
+    height: 1,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.32)',
+  },
+  dayHeaderFutureDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(197,160,89,0.56)',
+  },
+  dayHeaderAction: {
+    paddingTop: 0,
   },
   v4DayHeader: {
     alignItems: 'center',
@@ -21786,6 +22617,98 @@ const s = StyleSheet.create({
   },
   v4DeckCardSlot: {
     position: 'relative',
+  },
+  v4DeckTutorialOverlay: {
+    position: 'absolute',
+    left: 0,
+    zIndex: 80,
+    minHeight: 108,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  v4DeckTutorialPill: {
+    position: 'absolute',
+    top: 6,
+    width: 112,
+    minHeight: 78,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255,253,248,0.92)',
+    borderWidth: 1.3,
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 5,
+  },
+  v4DeckTutorialPillNo: {
+    left: 12,
+    borderColor: 'rgba(192,73,79,0.36)',
+    transform: [{ rotate: '-4deg' }],
+  },
+  v4DeckTutorialPillYes: {
+    right: 12,
+    borderColor: 'rgba(47,143,87,0.36)',
+    transform: [{ rotate: '4deg' }],
+  },
+  v4DeckTutorialIconNo: {
+    width: 25,
+    height: 25,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#C0494F',
+    marginBottom: 4,
+  },
+  v4DeckTutorialIconYes: {
+    width: 25,
+    height: 25,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2F8F57',
+    marginBottom: 4,
+  },
+  v4DeckTutorialText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 14.2,
+    lineHeight: 17,
+    color: INK,
+    textAlign: 'center',
+  },
+  v4DeckTutorialSubtext: {
+    marginTop: 1,
+    fontFamily: F.serifMedium,
+    fontSize: 12.2,
+    lineHeight: 15,
+    color: 'rgba(25,23,20,0.58)',
+    textAlign: 'center',
+  },
+  v4DeckTutorialGhost: {
+    position: 'absolute',
+    top: 33,
+    alignSelf: 'center',
+    height: 42,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    columnGap: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,253,248,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+  },
+  v4DeckTutorialGhostCard: {
+    width: 34,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: 'rgba(197,160,89,0.20)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.32)',
   },
   v4DeckCardBase: {
     position: 'absolute',
