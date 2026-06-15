@@ -11359,12 +11359,15 @@ function V4DayPanoramaHeaderSlide({
   const wakingPercent = Math.round((phoneHours / USABLE_DAY_HOURS) * 100);
   const reclaimedWakingPercent = Math.max(1, Math.round(wakingPercent * 0.4));
   const [phase, setPhase] = useState<'pie' | 'waste' | 'reclaim'>('pie');
+  const [revealTwo, setRevealTwo] = useState(false);
   const [wasteReveal, setWasteReveal] = useState(0);
   const [reclaimReveal, setReclaimReveal] = useState(0);
   const morph = useSharedValue(0);
+  const screen2 = useSharedValue(0);
   const dim = useSharedValue(0);
   const crestIntro = useSharedValue(0);
   const goldFill = useSharedValue(0);
+  const dayTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     axisIntro.value = 0;
@@ -11433,6 +11436,9 @@ function V4DayPanoramaHeaderSlide({
       toolboxIntro.value = 0;
       connectorIntro.value = 0;
       ambient.value = 0;
+      screen2.value = 0;
+      dayTimersRef.current.forEach(clearTimeout);
+      dayTimersRef.current = [];
     };
   }, [ambient, axisIntro, axisIntroDelay, axisIntroDuration, cloudAliveDelay, cloudBase, cloudBaseDelay, cloudReveal, connectorIntro, lineDelay, lineDraw, lineDuration, phoneDelay, phoneIntro, pieDelay, pieIntro, sleepDelay, sleepIntro, toolboxDelay, toolboxIntro]);
 
@@ -11564,8 +11570,12 @@ function V4DayPanoramaHeaderSlide({
 
   const handleDayNext = () => {
     if (phase === 'pie') {
+      // Transition to screen 2: hero clears, screen-1 bar/cards fade, the
+      // screen-2 layer (bar at top + illustrations above + loss cards) rises in.
       runSelectionHaptic();
-      setPhase('waste');
+      setRevealTwo(true);
+      screen2.value = withTiming(1, { duration: 700, easing: Easing.bezier(0.22, 1, 0.36, 1) });
+      dayTimersRef.current.push(setTimeout(() => setPhase('waste'), 700));
       return;
     }
     if (phase === 'waste') {
@@ -11575,8 +11585,20 @@ function V4DayPanoramaHeaderSlide({
     }
     onNext();
   };
-  const dayCtaLabel = phase === 'reclaim' ? "Let's fix this" : 'Continue';
+  const dayCtaLabel = phase === 'pie' ? 'Calculate my productive time' : phase === 'reclaim' ? "Let's fix this" : 'Continue';
   const dayCtaActive = phase !== 'reclaim' || reclaimReveal >= 5;
+
+  const heroFadeStyle = useAnimatedStyle(() => ({
+    opacity: 1 - screen2.value,
+    transform: [{ translateY: -screen2.value * 32 }],
+  }));
+  const screen1FadeStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(screen2.value, [0, 0.55], [1, 0], 'clamp'),
+  }));
+  const screen2LayerStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(screen2.value, [0.35, 1], [0, 1], 'clamp'),
+    transform: [{ translateY: interpolate(screen2.value, [0, 1], [40, 0]) }],
+  }));
 
   const sleepX = (frameWidth - sleepStickerSize) / 2;
   const sleepY = pieTop - sleepStickerSize * 0.45;
@@ -11649,7 +11671,7 @@ function V4DayPanoramaHeaderSlide({
     <View
       style={[s.dayHeaderScreen, { paddingTop: Math.max(0, topInset - 14), paddingBottom: Math.max(0, bottomInset - 10) }]}
     >
-      <View style={s.dayHeaderContent}>
+      <Reanimated.View style={[s.dayHeaderContent, heroFadeStyle]}>
         <Reanimated.View
           entering={FadeIn.delay(heroDelay).duration(heroDuration).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
             opacity: 0,
@@ -11731,11 +11753,11 @@ function V4DayPanoramaHeaderSlide({
             <Text style={s.dayHeaderCloudText}>in 24h</Text>
           </Reanimated.View>
         </View>
-      </View>
+      </Reanimated.View>
 
       <View style={[s.dayHeaderFutureSpace, { width: frameWidth, height: pieSceneHeight }]}>
         {phase === 'pie' && (
-          <>
+          <Reanimated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, screen1FadeStyle]}>
             <Reanimated.View
               style={[
                 s.dayBarSceneBar,
@@ -11762,59 +11784,44 @@ function V4DayPanoramaHeaderSlide({
             <DayBarCard cardLeft={card1Left} cardTop={dayCardTop} cardWidth={dayCardW} cardHeight={dayCardH} source={DAY_PIE_SLEEP} illoSize={dayCardIllo} label="Sleep" hours={sleepHourLabel} intro={sleepIntro} />
             <DayBarCard cardLeft={card2Left} cardTop={dayCardTop} cardWidth={dayCardW} cardHeight={dayCardH} source={DAY_PIE_TOOLBOX} illoSize={dayCardIllo} label="Productive" hours={productiveHourLabel} intro={toolboxIntro} />
             <DayBarCard cardLeft={card3Left} cardTop={dayCardTop} cardWidth={dayCardW} cardHeight={dayCardH} source={DAY_PIE_PHONE} illoSize={dayCardIllo} label="Phone" hours={phoneHourLabel} intro={phoneIntro} />
-          </>
+          </Reanimated.View>
         )}
 
-        {phase !== 'pie' && (
-          <View pointerEvents="box-none" style={s.dayPhaseLayer}>
-            <Reanimated.View style={[s.dayBarWrap, barStyle]}>
-              {phase === 'reclaim' && (
-                <Reanimated.View pointerEvents="none" style={[s.dayBarCrest, crestStyle]}>
-                  <Image source={APP_LOGO} style={s.dayBarCrestImage} resizeMode="cover" />
-                </Reanimated.View>
-              )}
-              <View style={s.dayBarTrack}>
-                <View style={[s.dayBarSeg, { width: `${sleepBarPct}%`, backgroundColor: '#5B527A' }]} />
-                <View style={[s.dayBarSeg, { width: `${productiveBarPct}%`, backgroundColor: '#E8C66F' }]} />
-                <View style={[s.dayBarSeg, { width: `${phoneBarPct}%`, backgroundColor: '#17130F' }]} />
-                <Reanimated.View pointerEvents="none" style={[s.dayBarGold, barGoldStyle]} />
-              </View>
-              <View style={s.dayBarLegend}>
-                <View style={s.dayBarLegendItem}><View style={[s.dayBarDot, { backgroundColor: '#5B527A' }]} /><Text style={s.dayBarLegendText}>Sleep</Text></View>
-                <View style={s.dayBarLegendItem}><View style={[s.dayBarDot, { backgroundColor: '#E8C66F' }]} /><Text style={s.dayBarLegendText}>Productive</Text></View>
-                <View style={s.dayBarLegendItem}><View style={[s.dayBarDot, { backgroundColor: '#17130F' }]} /><Text style={s.dayBarLegendText}>Phone</Text></View>
-              </View>
-            </Reanimated.View>
+      </View>
 
-            <View style={s.dayImpactCards}>
-              {((phase === 'waste' && wasteReveal >= 2) || phase === 'reclaim') && (
-                <DayImpactCard
-                  reclaim={phase === 'reclaim' && reclaimReveal >= 3}
-                  caption="of your waking life"
-                  wasteValue={`${wakingPercent}%`}
-                  reclaimValue={`+${reclaimedWakingPercent}%`}
-                />
-              )}
-              {((phase === 'waste' && wasteReveal >= 3) || phase === 'reclaim') && (
-                <DayImpactCard
-                  reclaim={phase === 'reclaim' && reclaimReveal >= 4}
-                  caption="days every year"
-                  wasteValue={`${stat.yearlyDays}`}
-                  reclaimValue={`+${stat.reclaimedDays}`}
-                />
-              )}
-              {((phase === 'waste' && wasteReveal >= 4) || phase === 'reclaim') && (
-                <DayImpactCard
-                  reclaim={phase === 'reclaim' && reclaimReveal >= 5}
-                  caption="years of your life"
-                  wasteValue={`${formatYearValue(stat.lifetimeYears)}`}
-                  reclaimValue={`+${formatYearValue(stat.reclaimedYears)}`}
-                />
-              )}
+      {revealTwo && (
+        <Reanimated.View pointerEvents="box-none" style={[s.dayScreen2Layer, { top: topInset + 10 }, screen2LayerStyle]}>
+          <View style={s.dayTwoIllos}>
+            <View style={s.dayTwoIllo}><ExpoImage source={DAY_PIE_SLEEP} style={s.dayTwoIlloImg} contentFit="contain" cachePolicy="memory-disk" /></View>
+            <View style={s.dayTwoIllo}><ExpoImage source={DAY_PIE_TOOLBOX} style={s.dayTwoIlloImg} contentFit="contain" cachePolicy="memory-disk" /></View>
+            <View style={s.dayTwoIllo}><ExpoImage source={DAY_PIE_PHONE} style={s.dayTwoIlloImg} contentFit="contain" cachePolicy="memory-disk" /></View>
+          </View>
+          <View style={s.dayTwoBarWrap}>
+            {phase === 'reclaim' && (
+              <Reanimated.View pointerEvents="none" style={[s.dayBarCrest, crestStyle]}>
+                <Image source={APP_LOGO} style={s.dayBarCrestImage} resizeMode="cover" />
+              </Reanimated.View>
+            )}
+            <View style={s.dayTwoBarTrack}>
+              <LinearGradient colors={SLEEP_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: `${sleepBarPct}%`, height: '100%' }} />
+              <LinearGradient colors={PRODUCTIVE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: `${productiveBarPct}%`, height: '100%' }} />
+              <LinearGradient colors={PHONE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: `${phoneBarPct}%`, height: '100%' }} />
+              <Reanimated.View pointerEvents="none" style={[s.dayBarGold, barGoldStyle]} />
             </View>
           </View>
-        )}
-      </View>
+          <View style={s.dayImpactCards}>
+            {((phase === 'waste' && wasteReveal >= 2) || phase === 'reclaim') && (
+              <DayImpactCard reclaim={phase === 'reclaim' && reclaimReveal >= 3} caption="of your waking life" wasteValue={`${wakingPercent}%`} reclaimValue={`+${reclaimedWakingPercent}%`} />
+            )}
+            {((phase === 'waste' && wasteReveal >= 3) || phase === 'reclaim') && (
+              <DayImpactCard reclaim={phase === 'reclaim' && reclaimReveal >= 4} caption="days every year" wasteValue={`${stat.yearlyDays}`} reclaimValue={`+${stat.reclaimedDays}`} />
+            )}
+            {((phase === 'waste' && wasteReveal >= 4) || phase === 'reclaim') && (
+              <DayImpactCard reclaim={phase === 'reclaim' && reclaimReveal >= 5} caption="years of your life" wasteValue={`${formatYearValue(stat.lifetimeYears)}`} reclaimValue={`+${formatYearValue(stat.reclaimedYears)}`} />
+            )}
+          </View>
+        </Reanimated.View>
+      )}
 
       <AnimatedCta
         active={dayCtaActive}
@@ -17771,6 +17778,49 @@ const s = StyleSheet.create({
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  dayScreen2Layer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    zIndex: 14,
+  },
+  dayTwoIllos: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'flex-end',
+    width: '100%',
+    maxWidth: 320,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  dayTwoIllo: {
+    alignItems: 'center',
+  },
+  dayTwoIlloImg: {
+    width: 50,
+    height: 50,
+  },
+  dayTwoBarWrap: {
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 340,
+  },
+  dayTwoBarTrack: {
+    flexDirection: 'row',
+    width: '100%',
+    height: 28,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.10)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 4,
   },
   dayHeaderPieHub: {
     ...StyleSheet.absoluteFillObject,
