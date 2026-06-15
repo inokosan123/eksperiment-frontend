@@ -8857,16 +8857,16 @@ const TOOLS_FIELD_LABELS = [
 // fake-out "struggle"), a dramatic beat, and the REAL event: the subtitle
 // drops out and types -> long tableau -> purge -> card morphs into chat.
 const TOOLS_SCENE = {
-  flightDuration: 580,
-  flightLead: 430,
-  rainStart: 160,
-  burstGap: 95,
-  intraGap: 32,
-  topLead: 55,
-  aboveGapBase: 98,
-  aboveGapGrow: 19,
-  aboveIntra: 35,
-  aboveFallSlow: 1.04,
+  flightDuration: 480,
+  flightLead: 370,
+  rainStart: 140,
+  burstGap: 60,
+  intraGap: 20,
+  topLead: 45,
+  aboveGapBase: 62,
+  aboveGapGrow: 11,
+  aboveIntra: 22,
+  aboveFallSlow: 1.03,
   pulseDelay: 500,
   pulseGap: 800,
   typeStartDelay: 260,
@@ -9113,7 +9113,7 @@ function buildToolsField(
 
   // Falls are slow and distance-scaled; precomputed so the timeline below can
   // know exactly when each act of the rain finishes.
-  const fallDurations = placed.map(core => 470 + Math.sqrt(Math.max(40, core.cy)) * 6 + rand() * 95);
+  const fallDurations = placed.map(core => 350 + Math.sqrt(Math.max(40, core.cy)) * 4.5 + rand() * 70);
 
   // Two acts, both building bottom-up: Act 1 fills everything below the card's
   // gap; the card lands; Act 2 drops the crown above it. Jitter keeps each act
