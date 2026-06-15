@@ -21,7 +21,6 @@ import Reanimated, {
   interpolate,
   interpolateColor,
   runOnJS,
-  useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -11854,13 +11853,13 @@ function V4DayPanoramaHeaderSlide({
           </View>
           <View style={s.dayImpactCards}>
             {((phase === 'waste' && wasteReveal >= 2) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim'} goldFill={goldFill} beads={card1Beads} beadSize={15} beadGap={4} wasteNumeric={wakingPercent} reclaimNumeric={reclaimedWakingPercent} decimals={0} unit="%" unitScript />
+              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card1Beads} beadSize={15} beadGap={4} wasteNumeric={wakingPercent} reclaimNumeric={reclaimedWakingPercent} decimals={0} unit="%" unitScript />
             )}
             {((phase === 'waste' && wasteReveal >= 3) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim'} goldFill={goldFill} beads={card2Beads} beadSize={4.5} beadGap={1} wasteNumeric={stat.yearlyDays} reclaimNumeric={stat.reclaimedDays} decimals={0} unit="days" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card2SleepN}`, prodLabel: 'Productive', prodValue: `${card2ProdN}` }} />
+              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card2Beads} beadSize={4.5} beadGap={1} wasteNumeric={stat.yearlyDays} reclaimNumeric={stat.reclaimedDays} decimals={0} unit="days" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card2SleepN}`, prodLabel: 'Productive', prodValue: `${card2ProdN}` }} />
             )}
             {((phase === 'waste' && wasteReveal >= 4) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim'} goldFill={goldFill} beads={card3Beads} beadSize={8} beadGap={2} wasteNumeric={stat.lifetimeYears} reclaimNumeric={stat.reclaimedYears} decimals={1} unit="years" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card3SleepN}`, prodLabel: 'Productive', prodValue: `${card3ProdN}` }} />
+              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card3Beads} beadSize={8} beadGap={2} wasteNumeric={stat.lifetimeYears} reclaimNumeric={stat.reclaimedYears} decimals={1} unit="years" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card3SleepN}`, prodLabel: 'Productive', prodValue: `${card3ProdN}` }} />
             )}
           </View>
         </Reanimated.View>
@@ -11895,7 +11894,45 @@ function V4DayPanoramaHeaderSlide({
   );
 }
 
-const AnimatedTextInput = Reanimated.createAnimatedComponent(TextInput);
+function RampNumber({
+  target,
+  decimals,
+  prefix,
+  run,
+  duration,
+  style,
+}: {
+  target: number;
+  decimals: number;
+  prefix?: string;
+  run: boolean;
+  duration: number;
+  style: StyleProp<TextStyle>;
+}) {
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    if (!run) {
+      setVal(0);
+      return undefined;
+    }
+    const start = Date.now();
+    let raf = 0;
+    const tick = () => {
+      const t = Math.min(1, (Date.now() - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setVal(target * eased);
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [run, target, duration]);
+  return (
+    <Text style={style}>
+      {prefix ?? ''}
+      {decimals > 0 ? val.toFixed(1) : Math.round(val)}
+    </Text>
+  );
+}
 
 const BEAD_SLEEP = '#7B7CC2';
 const BEAD_PRODUCTIVE = '#E2BC63';
@@ -11920,7 +11957,7 @@ function DayBeadGrid({ beads, size, gap }: { beads: string[]; size: number; gap:
 
 function DayImpactCard({
   reclaim,
-  goldFill,
+  goldRun,
   beads,
   beadSize,
   beadGap,
@@ -11932,7 +11969,7 @@ function DayImpactCard({
   bottomStrip,
 }: {
   reclaim: boolean;
-  goldFill: SharedValue<number>;
+  goldRun: boolean;
   beads: string[];
   beadSize: number;
   beadGap: number;
@@ -11968,12 +12005,6 @@ function DayImpactCard({
     transform: [{ scale: interpolate(flip.value, [0, 1], [0.8, 1]) }],
   }));
 
-  const wasteProps = useAnimatedProps(() => ({ text: fmt(wasteNumeric) } as object));
-  const goldProps = useAnimatedProps(() => {
-    const v = interpolate(goldFill.value, [0, 1], [0, reclaimNumeric]);
-    return { text: `+${decimals > 0 ? v.toFixed(1) : Math.round(v)}` } as object;
-  });
-
   return (
     <Reanimated.View style={[s.dayImpactCard, enterStyle]}>
       <View style={s.dayImpactBeadCol}>
@@ -11993,20 +12024,10 @@ function DayImpactCard({
       <View style={s.dayImpactDivider} />
       <View style={s.dayImpactNumCol}>
         <View style={s.dayImpactNumStack}>
-          <AnimatedTextInput
-            editable={false}
-            pointerEvents="none"
-            defaultValue={fmt(wasteNumeric)}
-            animatedProps={wasteProps}
-            style={[s.dayImpactBigNum, s.dayImpactNumInput, wasteStyle]}
-          />
-          <AnimatedTextInput
-            editable={false}
-            pointerEvents="none"
-            defaultValue={`+${fmt(reclaimNumeric)}`}
-            animatedProps={goldProps}
-            style={[s.dayImpactBigNum, s.dayImpactBigNumGold, s.dayImpactNumInput, s.dayImpactNumAbs, goldStyle]}
-          />
+          <Reanimated.Text style={[s.dayImpactBigNum, s.dayImpactNumAbs, wasteStyle]}>{fmt(wasteNumeric)}</Reanimated.Text>
+          <Reanimated.View pointerEvents="none" style={[s.dayImpactNumAbs, s.dayImpactNumAbsCenter, goldStyle]}>
+            <RampNumber run={goldRun} target={reclaimNumeric} decimals={decimals} prefix="+" duration={1900} style={[s.dayImpactBigNum, s.dayImpactBigNumGold]} />
+          </Reanimated.View>
         </View>
         <Text style={unitScript ? s.dayImpactUnitScript : s.dayImpactUnit}>{unit}</Text>
       </View>
@@ -18142,6 +18163,9 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     top: 0,
+  },
+  dayImpactNumAbsCenter: {
+    alignItems: 'center',
   },
   dayImpactUnit: {
     fontFamily: F.serifMedium,
