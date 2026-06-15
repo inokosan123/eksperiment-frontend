@@ -939,7 +939,6 @@ function stepOrder(answers: Answers): StepId[] {
     'protectDeck',
     'screenTimeSlider',
     'dayVisualizationHeader',
-    'dayVisualization',
     'protectRecap',
     ...protectSetup,
     'flameProtect',
@@ -11269,6 +11268,21 @@ function V4DayPanoramaHeaderSlide({
   const toolboxIntro = useSharedValue(0);
   const ambient = useSharedValue(0);
 
+  // ── Phases: pie -> waste -> reclaim. The hero/axis (dayHeaderContent) never
+  // changes; only the futureSpace below it transforms. The pie persists and
+  // rises into a compact bar; the loss cards then dominate; finally gold fills
+  // the bar back 40% and the same cards flip from "you waste" to "you get back".
+  const stat = protectStats(hours);
+  const wakingPercent = Math.round((phoneHours / USABLE_DAY_HOURS) * 100);
+  const reclaimedWakingPercent = Math.max(1, Math.round(wakingPercent * 0.4));
+  const [phase, setPhase] = useState<'pie' | 'waste' | 'reclaim'>('pie');
+  const [wasteReveal, setWasteReveal] = useState(0);
+  const [reclaimReveal, setReclaimReveal] = useState(0);
+  const morph = useSharedValue(0);
+  const dim = useSharedValue(0);
+  const crestIntro = useSharedValue(0);
+  const goldFill = useSharedValue(0);
+
   useEffect(() => {
     axisIntro.value = 0;
     lineDraw.value = 0;
@@ -11334,6 +11348,50 @@ function V4DayPanoramaHeaderSlide({
     };
   }, [ambient, axisIntro, axisIntroDelay, axisIntroDuration, cloudAliveDelay, cloudBase, cloudBaseDelay, cloudReveal, lineDelay, lineDraw, lineDuration, phoneDelay, phoneIntro, pieDelay, pieIntro, sleepDelay, sleepIntro, toolboxDelay, toolboxIntro]);
 
+  useEffect(() => {
+    if (phase === 'pie') return undefined;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    if (phase === 'waste') {
+      // The pie rises and unrolls into the bar, then the three loss cards
+      // arrive one by one, each a quiet gut-punch.
+      morph.value = withTiming(1, { duration: 760, easing: Easing.bezier(0.22, 1, 0.36, 1) });
+      setWasteReveal(0);
+      [560, 1280, 2160, 3040].forEach((delay, index) => {
+        timers.push(setTimeout(() => {
+          runBubbleHaptic();
+          setWasteReveal(index + 1);
+        }, delay));
+      });
+    }
+    if (phase === 'reclaim') {
+      // Dim + the app's promise, then the gold floods the bar back 40% while
+      // the same three cards flip from loss to gain.
+      setReclaimReveal(0);
+      dim.value = withTiming(1, { duration: 460, easing: Easing.out(Easing.cubic) });
+      timers.push(setTimeout(() => {
+        runBubbleHaptic();
+        setReclaimReveal(1);
+      }, 320));
+      timers.push(setTimeout(() => {
+        dim.value = withTiming(0, { duration: 520, easing: Easing.out(Easing.cubic) });
+        crestIntro.value = withTiming(1, { duration: 620, easing: Easing.bezier(0.16, 1, 0.28, 1) });
+        setReclaimReveal(2);
+      }, 2300));
+      timers.push(setTimeout(() => {
+        runStrongHaptic();
+        goldFill.value = withTiming(1, { duration: 2000, easing: Easing.bezier(0.32, 0, 0.18, 1) });
+      }, 2680));
+      [3160, 3860, 4560].forEach((delay, index) => {
+        timers.push(setTimeout(() => {
+          runBubbleHaptic();
+          setReclaimReveal(3 + index);
+        }, delay));
+      });
+    }
+    return () => timers.forEach(timer => clearTimeout(timer));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
   const sunStyle = useAnimatedStyle(() => ({
     opacity: axisIntro.value,
     transform: [
@@ -11358,38 +11416,80 @@ function V4DayPanoramaHeaderSlide({
     ],
   }));
   const pieStyle = useAnimatedStyle(() => ({
-    opacity: pieIntro.value,
+    opacity: pieIntro.value * interpolate(morph.value, [0, 0.7], [1, 0], 'clamp'),
     transform: [
-      { translateY: interpolate(pieIntro.value, [0, 1], [18, 0]) },
-      { scale: interpolate(pieIntro.value, [0, 1], [0.92, 1]) },
+      { translateY: interpolate(pieIntro.value, [0, 1], [18, 0]) + interpolate(morph.value, [0, 1], [0, -pieTop - 6]) },
+      { scale: interpolate(pieIntro.value, [0, 1], [0.92, 1]) * interpolate(morph.value, [0, 1], [1, 0.3]) },
     ],
   }));
   const phoneStickerStyle = useAnimatedStyle(() => ({
-    opacity: phoneIntro.value,
+    opacity: phoneIntro.value * interpolate(morph.value, [0, 0.4], [1, 0], 'clamp'),
     transform: [
-      { translateX: interpolate(phoneIntro.value, [0, 1], [-44, 0]) + interpolate(ambient.value, [0, 1], [-2, 2]) },
-      { translateY: interpolate(phoneIntro.value, [0, 1], [12, 0]) + interpolate(ambient.value, [0, 1], [0, -2]) },
+      { translateX: interpolate(phoneIntro.value, [0, 1], [-44, 0]) + interpolate(ambient.value, [0, 1], [-2, 2]) + interpolate(morph.value, [0, 1], [0, -30]) },
+      { translateY: interpolate(phoneIntro.value, [0, 1], [12, 0]) + interpolate(ambient.value, [0, 1], [0, -2]) + interpolate(morph.value, [0, 1], [0, 20]) },
       { rotate: `${interpolate(phoneIntro.value, [0, 1], [-5, -2])}deg` },
       { scale: interpolate(phoneIntro.value, [0, 1], [0.9, 1]) },
     ],
   }));
   const sleepStickerStyle = useAnimatedStyle(() => ({
-    opacity: sleepIntro.value,
+    opacity: sleepIntro.value * interpolate(morph.value, [0, 0.4], [1, 0], 'clamp'),
     transform: [
       { translateX: interpolate(sleepIntro.value, [0, 1], [44, 0]) + interpolate(ambient.value, [0, 1], [2, -2]) },
-      { translateY: interpolate(sleepIntro.value, [0, 1], [12, 0]) + interpolate(ambient.value, [0, 1], [-1, 2]) },
+      { translateY: interpolate(sleepIntro.value, [0, 1], [12, 0]) + interpolate(ambient.value, [0, 1], [-1, 2]) + interpolate(morph.value, [0, 1], [0, -20]) },
       { rotate: `${interpolate(sleepIntro.value, [0, 1], [5, 2])}deg` },
       { scale: interpolate(sleepIntro.value, [0, 1], [0.9, 1]) },
     ],
   }));
   const toolboxStickerStyle = useAnimatedStyle(() => ({
-    opacity: toolboxIntro.value,
+    opacity: toolboxIntro.value * interpolate(morph.value, [0, 0.4], [1, 0], 'clamp'),
     transform: [
-      { translateY: interpolate(toolboxIntro.value, [0, 1], [30, 0]) + interpolate(ambient.value, [0, 1], [1, -1.5]) },
+      { translateY: interpolate(toolboxIntro.value, [0, 1], [30, 0]) + interpolate(ambient.value, [0, 1], [1, -1.5]) + interpolate(morph.value, [0, 1], [0, 26]) },
       { rotate: `${interpolate(toolboxIntro.value, [0, 1], [2, -1])}deg` },
       { scale: interpolate(toolboxIntro.value, [0, 1], [0.92, 1]) },
     ],
   }));
+  const sleepBarPct = (SLEEP_HOURS_PER_DAY / DAY_HOURS) * 100;
+  const phoneBarPct = (phoneHours / DAY_HOURS) * 100;
+  const productiveBarPct = Math.max(0, 100 - sleepBarPct - phoneBarPct);
+  const goldMaxPct = phoneBarPct * 0.4;
+  const barStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(morph.value, [0.5, 1], [0, 1], 'clamp'),
+    transform: [{ translateY: interpolate(morph.value, [0, 1], [12, 0]) }],
+  }));
+  const barGoldStyle = useAnimatedStyle(() => ({
+    width: `${goldFill.value * goldMaxPct}%`,
+  }));
+  const crestStyle = useAnimatedStyle(() => ({
+    opacity: crestIntro.value,
+    transform: [
+      { translateY: interpolate(crestIntro.value, [0, 1], [10, 0]) },
+      { scale: interpolate(crestIntro.value, [0, 1], [0.78, 1]) + goldFill.value * 0.04 * (1 - goldFill.value) * 4 },
+    ],
+  }));
+  const dimStyle = useAnimatedStyle(() => ({
+    opacity: dim.value * 0.82,
+  }));
+  const reclaimMessageStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(dim.value, [0, 0.5, 1], [0, 1, 1], 'clamp'),
+    transform: [{ translateY: interpolate(dim.value, [0, 1], [10, 0]) }],
+  }));
+
+  const handleDayNext = () => {
+    if (phase === 'pie') {
+      runSelectionHaptic();
+      setPhase('waste');
+      return;
+    }
+    if (phase === 'waste') {
+      runSelectionHaptic();
+      setPhase('reclaim');
+      return;
+    }
+    onNext();
+  };
+  const dayCtaLabel = phase === 'reclaim' ? "Let's fix this" : 'Continue';
+  const dayCtaActive = phase !== 'reclaim' || reclaimReveal >= 5;
+
   const sleepX = (frameWidth - sleepStickerSize) / 2;
   const sleepY = pieTop - sleepStickerSize * 0.45;
   const phoneX = Math.max(-2, pieLeft - phoneStickerSize * 0.52);
@@ -11568,17 +11668,158 @@ function V4DayPanoramaHeaderSlide({
         >
           <ExpoImage source={DAY_PIE_TOOLBOX} style={s.dayHeaderPieStickerImage} contentFit="contain" cachePolicy="memory-disk" />
         </Reanimated.View>
+
+        {phase !== 'pie' && (
+          <View pointerEvents="box-none" style={s.dayPhaseLayer}>
+            <Reanimated.View style={[s.dayBarWrap, barStyle]}>
+              {phase === 'reclaim' && (
+                <Reanimated.View pointerEvents="none" style={[s.dayBarCrest, crestStyle]}>
+                  <Image source={APP_LOGO} style={s.dayBarCrestImage} resizeMode="cover" />
+                </Reanimated.View>
+              )}
+              <View style={s.dayBarTrack}>
+                <View style={[s.dayBarSeg, { width: `${sleepBarPct}%`, backgroundColor: '#5B527A' }]} />
+                <View style={[s.dayBarSeg, { width: `${productiveBarPct}%`, backgroundColor: '#E8C66F' }]} />
+                <View style={[s.dayBarSeg, { width: `${phoneBarPct}%`, backgroundColor: '#17130F' }]} />
+                <Reanimated.View pointerEvents="none" style={[s.dayBarGold, barGoldStyle]} />
+              </View>
+              <View style={s.dayBarLegend}>
+                <View style={s.dayBarLegendItem}><View style={[s.dayBarDot, { backgroundColor: '#5B527A' }]} /><Text style={s.dayBarLegendText}>Sleep</Text></View>
+                <View style={s.dayBarLegendItem}><View style={[s.dayBarDot, { backgroundColor: '#E8C66F' }]} /><Text style={s.dayBarLegendText}>Productive</Text></View>
+                <View style={s.dayBarLegendItem}><View style={[s.dayBarDot, { backgroundColor: '#17130F' }]} /><Text style={s.dayBarLegendText}>Phone</Text></View>
+              </View>
+            </Reanimated.View>
+
+            <View style={s.dayImpactCards}>
+              {((phase === 'waste' && wasteReveal >= 2) || phase === 'reclaim') && (
+                <DayImpactCard
+                  reclaim={phase === 'reclaim' && reclaimReveal >= 3}
+                  caption="of your waking life"
+                  wasteValue={`${wakingPercent}%`}
+                  reclaimValue={`+${reclaimedWakingPercent}%`}
+                />
+              )}
+              {((phase === 'waste' && wasteReveal >= 3) || phase === 'reclaim') && (
+                <DayImpactCard
+                  reclaim={phase === 'reclaim' && reclaimReveal >= 4}
+                  caption="days every year"
+                  wasteValue={`${stat.yearlyDays}`}
+                  reclaimValue={`+${stat.reclaimedDays}`}
+                />
+              )}
+              {((phase === 'waste' && wasteReveal >= 4) || phase === 'reclaim') && (
+                <DayImpactCard
+                  reclaim={phase === 'reclaim' && reclaimReveal >= 5}
+                  caption="years of your life"
+                  wasteValue={`${formatYearValue(stat.lifetimeYears)}`}
+                  reclaimValue={`+${formatYearValue(stat.reclaimedYears)}`}
+                />
+              )}
+            </View>
+          </View>
+        )}
       </View>
 
-      <AnimatedCta delay={ctaDelay} duration={620} distance={30} style={s.dayHeaderAction}>
+      <AnimatedCta
+        active={dayCtaActive}
+        delay={phase === 'pie' ? ctaDelay : 220}
+        duration={620}
+        distance={30}
+        style={s.dayHeaderAction}
+      >
         <View style={s.ctaIsland}>
-          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-            <Text style={s.primaryButtonText}>Continue</Text>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={handleDayNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>{dayCtaLabel}</Text>
             <ChevronRight s={19} c="#FFFFFF" w={2.5} />
           </TouchableOpacity>
         </View>
       </AnimatedCta>
+
+      {phase === 'reclaim' && reclaimReveal < 3 && (
+        <>
+          <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, s.dayReclaimDim, dimStyle]} />
+          <Reanimated.View pointerEvents="none" style={[s.dayReclaimMessage, reclaimMessageStyle]}>
+            <Text style={s.dayReclaimMessageText}>
+              Anasta can help you cut your screen time by at least <Text style={s.dayReclaimMessageGold}>40%</Text>.
+            </Text>
+          </Reanimated.View>
+        </>
+      )}
     </View>
+  );
+}
+
+function DayImpactCard({
+  reclaim,
+  caption,
+  wasteValue,
+  reclaimValue,
+}: {
+  reclaim: boolean;
+  caption: string;
+  wasteValue: string;
+  reclaimValue: string;
+}) {
+  const enter = useSharedValue(0);
+  const flip = useSharedValue(reclaim ? 1 : 0);
+
+  useEffect(() => {
+    enter.value = withTiming(1, { duration: 480, easing: Easing.bezier(0.16, 1, 0.28, 1) });
+  }, [enter]);
+
+  useEffect(() => {
+    flip.value = withTiming(reclaim ? 1 : 0, { duration: 560, easing: Easing.bezier(0.22, 1, 0.36, 1) });
+  }, [reclaim, flip]);
+
+  const enterStyle = useAnimatedStyle(() => ({
+    opacity: enter.value,
+    transform: [
+      { translateY: interpolate(enter.value, [0, 1], [16, 0]) },
+      { scale: interpolate(enter.value, [0, 1], [0.97, 1]) },
+    ],
+  }));
+  const wasteBigStyle = useAnimatedStyle(() => ({
+    opacity: 1 - flip.value,
+    transform: [{ translateY: flip.value * -6 }],
+  }));
+  const reclaimBigStyle = useAnimatedStyle(() => ({
+    opacity: flip.value,
+    transform: [{ translateY: interpolate(flip.value, [0, 1], [8, 0]) }],
+  }));
+  const eyebrowWasteStyle = useAnimatedStyle(() => ({ opacity: 1 - flip.value }));
+  const eyebrowGetStyle = useAnimatedStyle(() => ({ opacity: flip.value }));
+  const cornerStyle = useAnimatedStyle(() => ({
+    opacity: flip.value,
+    transform: [{ scale: interpolate(flip.value, [0, 1], [0.7, 1]) }],
+  }));
+  const accentStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(flip.value, [0, 1], ['rgba(168,57,63,0.55)', GOLD]),
+  }));
+
+  return (
+    <Reanimated.View style={[s.dayImpactCard, enterStyle]}>
+      <Reanimated.View style={[s.dayImpactAccent, accentStyle]} />
+      <View style={s.dayImpactBody}>
+        <View style={s.dayImpactEyebrowWrap}>
+          <Reanimated.Text style={[s.dayImpactEyebrow, eyebrowWasteStyle]}>YOU WASTE</Reanimated.Text>
+          <Reanimated.Text style={[s.dayImpactEyebrow, s.dayImpactEyebrowGold, s.dayImpactEyebrowAbs, eyebrowGetStyle]}>
+            YOU GET BACK
+          </Reanimated.Text>
+        </View>
+        <View style={s.dayImpactValueWrap}>
+          <Reanimated.Text style={[s.dayImpactValue, wasteBigStyle]}>{wasteValue}</Reanimated.Text>
+          <Reanimated.Text style={[s.dayImpactValue, s.dayImpactValueGold, s.dayImpactValueAbs, reclaimBigStyle]}>
+            {reclaimValue}
+          </Reanimated.Text>
+        </View>
+        <Text style={s.dayImpactCaption}>{caption}</Text>
+      </View>
+      <Reanimated.View pointerEvents="none" style={[s.dayImpactCorner, cornerStyle]}>
+        <Text style={s.dayImpactCornerValue}>{wasteValue}</Text>
+        <View style={s.dayImpactCornerStrike} />
+        <Text style={s.dayImpactCornerArrow}>↓</Text>
+      </Reanimated.View>
+    </Reanimated.View>
   );
 }
 
@@ -17443,6 +17684,194 @@ const s = StyleSheet.create({
   },
   dayHeaderAction: {
     paddingTop: 0,
+  },
+  dayPhaseLayer: {
+    ...StyleSheet.absoluteFillObject,
+    paddingHorizontal: 4,
+    zIndex: 12,
+  },
+  dayBarWrap: {
+    alignItems: 'center',
+    paddingTop: 6,
+  },
+  dayBarCrest: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginBottom: 10,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.3)',
+  },
+  dayBarCrestImage: {
+    width: 46,
+    height: 46,
+  },
+  dayBarTrack: {
+    flexDirection: 'row',
+    width: '100%',
+    height: 26,
+    borderRadius: 13,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(25,23,20,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  dayBarSeg: {
+    height: '100%',
+  },
+  dayBarGold: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: GOLD,
+    borderTopRightRadius: 13,
+    borderBottomRightRadius: 13,
+  },
+  dayBarLegend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    columnGap: 18,
+    marginTop: 10,
+  },
+  dayBarLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 6,
+  },
+  dayBarDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+  },
+  dayBarLegendText: {
+    fontFamily: F.sansMedium,
+    fontSize: 12,
+    color: 'rgba(25,23,20,0.6)',
+  },
+  dayImpactCards: {
+    marginTop: 16,
+    rowGap: 10,
+  },
+  dayImpactCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 78,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.1,
+    shadowRadius: 22,
+    elevation: 3,
+  },
+  dayImpactAccent: {
+    width: 6,
+    alignSelf: 'stretch',
+  },
+  dayImpactBody: {
+    flex: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+  },
+  dayImpactEyebrowWrap: {
+    height: 14,
+    justifyContent: 'center',
+  },
+  dayImpactEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    letterSpacing: 2.2,
+    color: 'rgba(168,57,63,0.85)',
+  },
+  dayImpactEyebrowGold: {
+    color: GOLD,
+  },
+  dayImpactEyebrowAbs: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    textAlignVertical: 'center',
+  },
+  dayImpactValueWrap: {
+    height: 50,
+    justifyContent: 'center',
+  },
+  dayImpactValue: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 44,
+    lineHeight: 50,
+    color: INK,
+  },
+  dayImpactValueGold: {
+    color: GOLD,
+  },
+  dayImpactValueAbs: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+  },
+  dayImpactCaption: {
+    fontFamily: F.serifMediumItalic,
+    fontSize: 14,
+    color: '#8C8277',
+    marginTop: 1,
+  },
+  dayImpactCorner: {
+    position: 'absolute',
+    right: 14,
+    bottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 3,
+  },
+  dayImpactCornerValue: {
+    fontFamily: F.serifMedium,
+    fontSize: 16,
+    color: 'rgba(25,23,20,0.34)',
+  },
+  dayImpactCornerStrike: {
+    position: 'absolute',
+    left: -2,
+    right: 14,
+    height: 1.6,
+    borderRadius: 1,
+    backgroundColor: 'rgba(168,57,63,0.6)',
+    transform: [{ rotate: '-18deg' }],
+  },
+  dayImpactCornerArrow: {
+    fontFamily: F.sansBold,
+    fontSize: 14,
+    color: '#3E9B5F',
+  },
+  dayReclaimDim: {
+    backgroundColor: '#17130F',
+    zIndex: 40,
+  },
+  dayReclaimMessage: {
+    position: 'absolute',
+    left: 28,
+    right: 28,
+    top: '42%',
+    zIndex: 41,
+    alignItems: 'center',
+  },
+  dayReclaimMessageText: {
+    fontFamily: F.serifMedium,
+    fontSize: 24,
+    lineHeight: 32,
+    color: '#FFFDF8',
+    textAlign: 'center',
+  },
+  dayReclaimMessageGold: {
+    fontFamily: F.serifSemiBold,
+    color: '#E8C66F',
   },
   v4DayHeader: {
     alignItems: 'center',
