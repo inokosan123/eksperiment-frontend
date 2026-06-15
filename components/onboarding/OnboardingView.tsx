@@ -11175,37 +11175,48 @@ function dayPieSlicePath(cx: number, cy: number, radius: number, startAngle: num
   return `M ${cx} ${cy} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y} Z`;
 }
 
-function DayBarDrop({
-  centerX,
-  top,
+function DayBarCard({
+  cardLeft,
+  cardTop,
+  cardWidth,
+  cardHeight,
   source,
+  illoSize,
+  label,
   hours,
   intro,
-  size,
 }: {
-  centerX: number;
-  top: number;
+  cardLeft: number;
+  cardTop: number;
+  cardWidth: number;
+  cardHeight: number;
   source: number;
+  illoSize: number;
+  label: string;
   hours: string;
   intro: SharedValue<number>;
-  size: number;
 }) {
-  const groupW = Math.max(size, 74);
   const style = useAnimatedStyle(() => ({
     opacity: intro.value,
-    transform: [{ translateY: interpolate(intro.value, [0, 1], [-10, 0]) }],
+    transform: [
+      { translateY: interpolate(intro.value, [0, 1], [16, 0]) },
+      { scale: interpolate(intro.value, [0, 1], [0.94, 1]) },
+    ],
   }));
   return (
-    <Reanimated.View pointerEvents="none" style={[s.dayBarDropGroup, { left: centerX - groupW / 2, top, width: groupW }, style]}>
-      <View style={s.dayBarDropDashes}>
-        <View style={s.dayBarDropDash} />
-        <View style={s.dayBarDropDash} />
-        <View style={s.dayBarDropDash} />
-        <Text style={s.dayBarDropArrow}>▼</Text>
+    <Reanimated.View
+      pointerEvents="none"
+      style={[{ position: 'absolute', left: cardLeft, top: cardTop, width: cardWidth, height: cardHeight }, style]}
+    >
+      <View style={[s.dayCard, { paddingTop: illoSize * 0.58 }]}>
+        <Text style={s.dayCardLabel} numberOfLines={1}>{label}</Text>
+        <Text style={s.dayCardNumber} numberOfLines={1}>{hours}</Text>
       </View>
-      <ExpoImage source={source} style={{ width: size, height: size }} contentFit="contain" cachePolicy="memory-disk" />
-      <View style={s.dayBarMiniCard}>
-        <Text style={s.dayBarMiniCardText}>{hours}</Text>
+      <View
+        pointerEvents="none"
+        style={[s.dayCardSticker, { width: illoSize, height: illoSize, left: (cardWidth - illoSize) / 2, top: -illoSize * 0.42 }]}
+      >
+        <ExpoImage source={source} style={{ width: illoSize, height: illoSize }} contentFit="contain" cachePolicy="memory-disk" />
       </View>
     </Reanimated.View>
   );
@@ -11604,10 +11615,35 @@ function V4DayPanoramaHeaderSlide({
   const dayBarSleepCx = dayBarLeftX + dayBarSleepW / 2;
   const dayBarProductiveCx = dayBarLeftX + dayBarSleepW + dayBarProductiveW / 2;
   const dayBarPhoneCx = dayBarLeftX + dayBarSleepW + dayBarProductiveW + dayBarPhoneW / 2;
-  const dayBarDropTop = dayBarTopY + dayBarH + 14;
   const SLEEP_GRAD = ['#A493D6', '#7B7CC2', '#566FB4'] as const;
   const PRODUCTIVE_GRAD = ['#F4DD9A', '#E2BC63', '#C9A24E'] as const;
   const PHONE_GRAD = ['#2E2924', '#17130F'] as const;
+  // Three cards in equal thirds (constant positions), each = card + a sticker
+  // that pops above it + label + huge hours number.
+  const cardSideMargin = 14;
+  const cardGap = 10;
+  const dayCardW = (frameWidth - cardSideMargin * 2 - cardGap * 2) / 3;
+  const dayCardIllo = Math.min(88, dayCardW * 0.76);
+  const dayCardTop = Math.round(dayCardIllo * 0.46) + 116;
+  const dayCardH = 116;
+  const card1Left = cardSideMargin;
+  const card2Left = cardSideMargin + dayCardW + cardGap;
+  const card3Left = cardSideMargin + (dayCardW + cardGap) * 2;
+  const card1Cx = card1Left + dayCardW / 2;
+  const card2Cx = card2Left + dayCardW / 2;
+  const card3Cx = card3Left + dayCardW / 2;
+  // Wiggly dashed connectors from fixed marks on the bar to each card's sticker.
+  const barBottomY = dayBarTopY + dayBarH;
+  const stickerTopY = dayCardTop - dayCardIllo * 0.42;
+  const connMidY = (barBottomY + stickerTopY) / 2;
+  const makeConnPath = (ox: number, dx: number) =>
+    `M ${ox.toFixed(1)} ${(barBottomY + 3).toFixed(1)} C ${ox.toFixed(1)} ${connMidY.toFixed(1)} ${dx.toFixed(1)} ${connMidY.toFixed(1)} ${dx.toFixed(1)} ${(stickerTopY - 2).toFixed(1)}`;
+  const makeArrow = (dx: number) =>
+    `M ${(dx - 4).toFixed(1)} ${(stickerTopY - 8).toFixed(1)} L ${(dx + 4).toFixed(1)} ${(stickerTopY - 8).toFixed(1)} L ${dx.toFixed(1)} ${(stickerTopY - 1).toFixed(1)} Z`;
+  const sleepConnPath = makeConnPath(dayBarLeftX + dayBarWidth * (4 / 24), card1Cx);
+  const productiveConnPath = makeConnPath(dayBarLeftX + dayBarWidth * (9.5 / 24), card2Cx);
+  const phoneConnPath = makeConnPath(dayBarLeftX + dayBarWidth * (22 / 24), card3Cx);
+  const connectorLayerStyle = useAnimatedStyle(() => ({ opacity: connectorIntro.value }));
 
   return (
     <View
@@ -11711,9 +11747,21 @@ function V4DayPanoramaHeaderSlide({
               <LinearGradient colors={PRODUCTIVE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: dayBarProductiveW, height: '100%' }} />
               <LinearGradient colors={PHONE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: dayBarPhoneW, height: '100%' }} />
             </Reanimated.View>
-            <DayBarDrop centerX={dayBarSleepCx} top={dayBarDropTop} source={DAY_PIE_SLEEP} hours={sleepHourLabel} intro={sleepIntro} size={56} />
-            <DayBarDrop centerX={dayBarProductiveCx} top={dayBarDropTop} source={DAY_PIE_TOOLBOX} hours={productiveHourLabel} intro={toolboxIntro} size={58} />
-            <DayBarDrop centerX={dayBarPhoneCx} top={dayBarDropTop} source={DAY_PIE_PHONE} hours={phoneHourLabel} intro={phoneIntro} size={56} />
+
+            <Reanimated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, width: frameWidth, height: dayCardTop }, connectorLayerStyle]}>
+              <Svg width={frameWidth} height={dayCardTop}>
+                <SvgPath d={sleepConnPath} stroke="#7B7CC2" strokeWidth={2} fill="none" strokeDasharray="3 4.5" strokeLinecap="round" />
+                <SvgPath d={makeArrow(card1Cx)} fill="#7B7CC2" />
+                <SvgPath d={productiveConnPath} stroke="#C9A24E" strokeWidth={2} fill="none" strokeDasharray="3 4.5" strokeLinecap="round" />
+                <SvgPath d={makeArrow(card2Cx)} fill="#C9A24E" />
+                <SvgPath d={phoneConnPath} stroke="#5A554E" strokeWidth={2} fill="none" strokeDasharray="3 4.5" strokeLinecap="round" />
+                <SvgPath d={makeArrow(card3Cx)} fill="#5A554E" />
+              </Svg>
+            </Reanimated.View>
+
+            <DayBarCard cardLeft={card1Left} cardTop={dayCardTop} cardWidth={dayCardW} cardHeight={dayCardH} source={DAY_PIE_SLEEP} illoSize={dayCardIllo} label="Sleep" hours={sleepHourLabel} intro={sleepIntro} />
+            <DayBarCard cardLeft={card2Left} cardTop={dayCardTop} cardWidth={dayCardW} cardHeight={dayCardH} source={DAY_PIE_TOOLBOX} illoSize={dayCardIllo} label="Productive" hours={productiveHourLabel} intro={toolboxIntro} />
+            <DayBarCard cardLeft={card3Left} cardTop={dayCardTop} cardWidth={dayCardW} cardHeight={dayCardH} source={DAY_PIE_PHONE} illoSize={dayCardIllo} label="Phone" hours={phoneHourLabel} intro={phoneIntro} />
           </>
         )}
 
@@ -17692,46 +17740,37 @@ const s = StyleSheet.create({
     shadowRadius: 18,
     elevation: 4,
   },
-  dayBarDropGroup: {
+  dayCard: {
+    flex: 1,
+    borderRadius: 18,
+    alignItems: 'center',
+    backgroundColor: '#FBF4E0',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  dayCardLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.5)',
+  },
+  dayCardNumber: {
+    marginTop: 1,
+    fontFamily: F.serifSemiBold,
+    fontSize: 27,
+    lineHeight: 32,
+    color: INK,
+  },
+  dayCardSticker: {
     position: 'absolute',
     alignItems: 'center',
-  },
-  dayBarDropDashes: {
-    alignItems: 'center',
-    rowGap: 3,
-    marginBottom: 3,
-  },
-  dayBarDropDash: {
-    width: 2,
-    height: 4,
-    borderRadius: 1,
-    backgroundColor: 'rgba(25,23,20,0.32)',
-  },
-  dayBarDropArrow: {
-    fontSize: 9,
-    lineHeight: 10,
-    color: 'rgba(25,23,20,0.4)',
-    marginTop: 1,
-  },
-  dayBarMiniCard: {
-    marginTop: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 12,
-    backgroundColor: '#FFFDF8',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.4)',
-    shadowColor: '#5E5142',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  dayBarMiniCardText: {
-    fontFamily: F.serifSemiBold,
-    fontSize: 17,
-    lineHeight: 21,
-    color: INK,
+    justifyContent: 'center',
   },
   dayHeaderPieHub: {
     ...StyleSheet.absoluteFillObject,
