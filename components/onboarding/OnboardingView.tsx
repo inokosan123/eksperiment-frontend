@@ -21,6 +21,7 @@ import Reanimated, {
   interpolate,
   interpolateColor,
   runOnJS,
+  useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -11811,13 +11812,13 @@ function V4DayPanoramaHeaderSlide({
           </View>
           <View style={s.dayImpactCards}>
             {((phase === 'waste' && wasteReveal >= 2) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim' && reclaimReveal >= 3} caption="of your waking life" wasteValue={`${wakingPercent}%`} reclaimValue={`+${reclaimedWakingPercent}%`} />
+              <DayImpactCard reclaim={phase === 'reclaim'} caption="of your waking life" icon={<Sun s={20} c={GOLD} w={2} />} wasteNumeric={wakingPercent} reclaimNumeric={reclaimedWakingPercent} suffix="%" decimals={0} goldFill={goldFill} />
             )}
             {((phase === 'waste' && wasteReveal >= 3) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim' && reclaimReveal >= 4} caption="days every year" wasteValue={`${stat.yearlyDays}`} reclaimValue={`+${stat.reclaimedDays}`} />
+              <DayImpactCard reclaim={phase === 'reclaim'} caption="days every year" icon={<Calendar s={20} c={GOLD} w={2} />} wasteNumeric={stat.yearlyDays} reclaimNumeric={stat.reclaimedDays} suffix="" decimals={0} goldFill={goldFill} />
             )}
             {((phase === 'waste' && wasteReveal >= 4) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim' && reclaimReveal >= 5} caption="years of your life" wasteValue={`${formatYearValue(stat.lifetimeYears)}`} reclaimValue={`+${formatYearValue(stat.reclaimedYears)}`} />
+              <DayImpactCard reclaim={phase === 'reclaim'} caption="years of your life" icon={<Hourglass s={20} c={GOLD} w={2} />} wasteNumeric={stat.lifetimeYears} reclaimNumeric={stat.reclaimedYears} suffix="" decimals={1} goldFill={goldFill} />
             )}
           </View>
         </Reanimated.View>
@@ -11852,56 +11853,80 @@ function V4DayPanoramaHeaderSlide({
   );
 }
 
+const AnimatedTextInput = Reanimated.createAnimatedComponent(TextInput);
+
 function DayImpactCard({
   reclaim,
   caption,
-  wasteValue,
-  reclaimValue,
+  icon,
+  wasteNumeric,
+  reclaimNumeric,
+  suffix,
+  decimals,
+  goldFill,
 }: {
   reclaim: boolean;
   caption: string;
-  wasteValue: string;
-  reclaimValue: string;
+  icon: React.ReactNode;
+  wasteNumeric: number;
+  reclaimNumeric: number;
+  suffix: string;
+  decimals: number;
+  goldFill: SharedValue<number>;
 }) {
   const enter = useSharedValue(0);
   const flip = useSharedValue(reclaim ? 1 : 0);
+  const fmt = (v: number) => (decimals > 0 ? v.toFixed(1) : `${Math.round(v)}`);
+  const wasteStatic = `${fmt(wasteNumeric)}${suffix}`;
 
   useEffect(() => {
     enter.value = withTiming(1, { duration: 480, easing: Easing.bezier(0.16, 1, 0.28, 1) });
   }, [enter]);
 
   useEffect(() => {
-    flip.value = withTiming(reclaim ? 1 : 0, { duration: 560, easing: Easing.bezier(0.22, 1, 0.36, 1) });
+    flip.value = withTiming(reclaim ? 1 : 0, { duration: 440, easing: Easing.out(Easing.cubic) });
   }, [reclaim, flip]);
 
   const enterStyle = useAnimatedStyle(() => ({
     opacity: enter.value,
     transform: [
       { translateY: interpolate(enter.value, [0, 1], [16, 0]) },
-      { scale: interpolate(enter.value, [0, 1], [0.97, 1]) },
+      { scale: interpolate(enter.value, [0, 1], [0.95, 1]) },
     ],
   }));
-  const wasteBigStyle = useAnimatedStyle(() => ({
-    opacity: 1 - flip.value,
-    transform: [{ translateY: flip.value * -6 }],
-  }));
-  const reclaimBigStyle = useAnimatedStyle(() => ({
-    opacity: flip.value,
-    transform: [{ translateY: interpolate(flip.value, [0, 1], [8, 0]) }],
+  const accentStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(flip.value, [0, 1], ['rgba(168,57,63,0.5)', GOLD]),
   }));
   const eyebrowWasteStyle = useAnimatedStyle(() => ({ opacity: 1 - flip.value }));
   const eyebrowGetStyle = useAnimatedStyle(() => ({ opacity: flip.value }));
-  const cornerStyle = useAnimatedStyle(() => ({
+  const goldNumStyle = useAnimatedStyle(() => ({
     opacity: flip.value,
-    transform: [{ scale: interpolate(flip.value, [0, 1], [0.7, 1]) }],
+    transform: [{ scale: interpolate(flip.value, [0, 1], [0.72, 1]) }],
   }));
-  const accentStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(flip.value, [0, 1], ['rgba(168,57,63,0.55)', GOLD]),
+  // The waste number glides to the bottom-right corner and shrinks, synced to
+  // the gold filling the bar (car-dashboard easing-off feel).
+  const wasteNumStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: goldFill.value * 104 },
+      { translateY: goldFill.value * 22 },
+      { scale: 1 - goldFill.value * 0.62 },
+    ],
   }));
+  const strikeStyle = useAnimatedStyle(() => ({ opacity: goldFill.value }));
+
+  const goldProps = useAnimatedProps(() => {
+    const v = interpolate(goldFill.value, [0, 1], [0, reclaimNumeric]);
+    return { text: `+${decimals > 0 ? v.toFixed(1) : Math.round(v)}${suffix}` } as object;
+  });
+  const wasteProps = useAnimatedProps(() => {
+    const v = interpolate(goldFill.value, [0, 1], [wasteNumeric, wasteNumeric * 0.6]);
+    return { text: `${decimals > 0 ? v.toFixed(1) : Math.round(v)}${suffix}` } as object;
+  });
 
   return (
     <Reanimated.View style={[s.dayImpactCard, enterStyle]}>
       <Reanimated.View style={[s.dayImpactAccent, accentStyle]} />
+      <View style={s.dayImpactIconBadge}>{icon}</View>
       <View style={s.dayImpactBody}>
         <View style={s.dayImpactEyebrowWrap}>
           <Reanimated.Text style={[s.dayImpactEyebrow, eyebrowWasteStyle]}>YOU WASTE</Reanimated.Text>
@@ -11910,18 +11935,26 @@ function DayImpactCard({
           </Reanimated.Text>
         </View>
         <View style={s.dayImpactValueWrap}>
-          <Reanimated.Text style={[s.dayImpactValue, wasteBigStyle]}>{wasteValue}</Reanimated.Text>
-          <Reanimated.Text style={[s.dayImpactValue, s.dayImpactValueGold, s.dayImpactValueAbs, reclaimBigStyle]}>
-            {reclaimValue}
-          </Reanimated.Text>
+          <AnimatedTextInput
+            editable={false}
+            pointerEvents="none"
+            defaultValue={`+${wasteStatic}`}
+            animatedProps={goldProps}
+            style={[s.dayImpactValue, s.dayImpactValueGold, s.dayImpactValueInput, s.dayImpactValueAbs, goldNumStyle]}
+          />
+          <Reanimated.View style={[s.dayImpactWasteWrap, wasteNumStyle]}>
+            <AnimatedTextInput
+              editable={false}
+              pointerEvents="none"
+              defaultValue={wasteStatic}
+              animatedProps={wasteProps}
+              style={[s.dayImpactValue, s.dayImpactValueInput]}
+            />
+            <Reanimated.View pointerEvents="none" style={[s.dayImpactStrike, strikeStyle]} />
+          </Reanimated.View>
         </View>
         <Text style={s.dayImpactCaption}>{caption}</Text>
       </View>
-      <Reanimated.View pointerEvents="none" style={[s.dayImpactCorner, cornerStyle]}>
-        <Text style={s.dayImpactCornerValue}>{wasteValue}</Text>
-        <View style={s.dayImpactCornerStrike} />
-        <Text style={s.dayImpactCornerArrow}>↓</Text>
-      </Reanimated.View>
     </Reanimated.View>
   );
 }
@@ -17969,21 +18002,34 @@ const s = StyleSheet.create({
   dayImpactCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 78,
-    borderRadius: 22,
-    overflow: 'hidden',
-    backgroundColor: '#FFFDF8',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.22)',
+    minHeight: 86,
+    borderRadius: 20,
+    overflow: 'visible',
+    backgroundColor: '#FBF4E0',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
     shadowColor: '#5E5142',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.1,
-    shadowRadius: 22,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.16,
+    shadowRadius: 20,
+    elevation: 4,
   },
   dayImpactAccent: {
-    width: 6,
+    width: 5,
     alignSelf: 'stretch',
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
+  },
+  dayImpactIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginLeft: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.4)',
   },
   dayImpactBody: {
     flex: 1,
@@ -18011,14 +18057,23 @@ const s = StyleSheet.create({
     textAlignVertical: 'center',
   },
   dayImpactValueWrap: {
-    height: 50,
+    height: 52,
     justifyContent: 'center',
+    position: 'relative',
   },
   dayImpactValue: {
     fontFamily: F.serifSemiBold,
-    fontSize: 44,
-    lineHeight: 50,
+    fontSize: 40,
+    lineHeight: 48,
     color: INK,
+  },
+  dayImpactValueInput: {
+    padding: 0,
+    margin: 0,
+    height: 52,
+    minWidth: 90,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   dayImpactValueGold: {
     color: GOLD,
@@ -18027,6 +18082,23 @@ const s = StyleSheet.create({
     position: 'absolute',
     left: 0,
     top: 0,
+  },
+  dayImpactWasteWrap: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dayImpactStrike: {
+    position: 'absolute',
+    left: -2,
+    right: 16,
+    top: '52%',
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: 'rgba(168,57,63,0.7)',
+    transform: [{ rotate: '-15deg' }],
   },
   dayImpactCaption: {
     fontFamily: F.serifMediumItalic,
