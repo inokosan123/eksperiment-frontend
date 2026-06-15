@@ -11708,11 +11708,11 @@ function V4DayPanoramaHeaderSlide({
   const card1BeadsGold = useMemo(() => goldifyBeads(card1Beads, Math.ceil(phoneHours * 0.4)), [card1Beads, phoneHours]);
   const card2BeadsGold = useMemo(() => goldifyBeads(card2Beads, Math.ceil(card2PhoneN * 0.4)), [card2Beads, card2PhoneN]);
   const card3BeadsGold = useMemo(() => goldifyBeads(card3Beads, Math.ceil(card3PhoneN * 0.4)), [card3Beads, card3PhoneN]);
-  const card1ProdH = Math.max(0, Math.round(USABLE_DAY_HOURS - phoneHours));
-  const card1PhoneH = Math.round(phoneHours);
+  const card1ProdH = Math.max(0, USABLE_DAY_HOURS - phoneHours);
+  const card1PhoneH = phoneHours;
   const card1Legend = [
-    { color: BEAD_PRODUCTIVE, label: 'Productive', value: `${card1ProdH}h` },
-    { color: BEAD_PHONE, label: 'Phone', value: `${card1PhoneH}h` },
+    { color: BEAD_PRODUCTIVE, label: 'Productive', value: `${formatHourValue(card1ProdH)}h` },
+    { color: BEAD_PHONE, label: 'Phone', value: `${formatHourValue(card1PhoneH)}h` },
   ];
   const card2Legend = [
     { color: BEAD_SLEEP, label: 'Sleep', value: `${card2SleepN}` },
@@ -11851,7 +11851,10 @@ function V4DayPanoramaHeaderSlide({
         <Reanimated.View pointerEvents="box-none" style={[s.dayScreen2Layer, { top: topInset + 14 }, screen2LayerStyle]}>
           <View style={s.dayTwoBarWrap}>
             {phase === 'reclaim' && (
-              <Reanimated.View pointerEvents="none" style={[s.dayBarCrest, crestStyle]}>
+              <Reanimated.View
+                pointerEvents="none"
+                style={[s.dayBarCrest, { left: `${sleepBarPct + productiveBarPct + (phoneBarPct * 0.4) / 2}%` }, crestStyle]}
+              >
                 <Image source={APP_LOGO} style={s.dayBarCrestImage} resizeMode="cover" />
               </Reanimated.View>
             )}
@@ -11868,7 +11871,7 @@ function V4DayPanoramaHeaderSlide({
               <LinearGradient colors={SLEEP_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: `${sleepBarPct}%`, height: '100%' }} />
               <LinearGradient colors={PRODUCTIVE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: `${productiveBarPct}%`, height: '100%' }} />
               <LinearGradient colors={PHONE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: `${phoneBarPct}%`, height: '100%' }} />
-              <Reanimated.View pointerEvents="none" style={[s.dayBarGold, barGoldStyle]} />
+              <Reanimated.View pointerEvents="none" style={[s.dayBarGold, { left: `${sleepBarPct + productiveBarPct}%` }, barGoldStyle]} />
             </View>
           </View>
           <View style={s.dayImpactCards}>
@@ -11877,8 +11880,9 @@ function V4DayPanoramaHeaderSlide({
                 reclaim={phase === 'reclaim'}
                 beads={card1Beads}
                 beadsGold={card1BeadsGold}
-                beadSize={18}
-                beadGap={6}
+                beadSize={30}
+                beadGap={8}
+                beadMaxWidth={300}
                 waste={{ pre: 'You waste ', gold: `${Math.ceil(wakingPercent)}%`, post: ' of your waking day on your phone.' }}
                 recovered={{ pre: 'You win back ', gold: `${Math.ceil(reclaimedWakingPercent)}%`, post: ' of your day.' }}
                 legend={card1Legend}
@@ -11931,9 +11935,18 @@ function V4DayPanoramaHeaderSlide({
         <>
           <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, s.dayReclaimDim, dimStyle]} />
           <Reanimated.View pointerEvents="none" style={[s.dayReclaimMessage, reclaimMessageStyle]}>
-            <Text style={s.dayReclaimMessageText}>
-              Anasta can help you cut your screen time by at least <Text style={s.dayReclaimMessageGold}>40%</Text>.
-            </Text>
+            <View style={s.messageLogoFrame}>
+              <View style={s.messageLogoHalo} />
+              <View style={s.messageLogoPlate}>
+                <Image source={APP_LOGO} style={s.messageLogo} resizeMode="cover" />
+              </View>
+            </View>
+            <View style={s.messageBubble}>
+              <View style={s.messageBubbleTail} />
+              <Text style={s.dayReclaimBubbleText}>
+                Anasta can help you cut your screen time by at least <Text style={s.dayReclaimMessageGold}>40%</Text>.
+              </Text>
+            </View>
           </Reanimated.View>
         </>
       )}
@@ -11994,6 +12007,18 @@ function DayBeadGrid({ beads, size, gap }: { beads: string[]; size: number; gap:
             <View style={{ width: size / 2, height: size, backgroundColor: BEAD_PRODUCTIVE }} />
             <View style={{ width: size / 2, height: size, backgroundColor: BEAD_PHONE }} />
           </View>
+        ) : c === 'reclaimed' ? (
+          <View
+            key={i}
+            style={{
+              width: size,
+              height: size,
+              borderRadius: size / 2,
+              backgroundColor: '#FFFFFF',
+              borderWidth: Math.min(2.5, Math.max(1, size * 0.16)),
+              borderColor: GOLD,
+            }}
+          />
         ) : (
           <View key={i} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: c }} />
         ),
@@ -12010,7 +12035,7 @@ function goldifyBeads(arr: string[], reclaimCount: number): string[] {
   let changed = 0;
   for (let i = out.length - 1; i >= 0 && changed < reclaimCount; i -= 1) {
     if (out[i] === BEAD_PHONE) {
-      out[i] = BEAD_PRODUCTIVE;
+      out[i] = 'reclaimed';
       changed += 1;
     }
   }
@@ -12025,6 +12050,7 @@ function DayImpactCard({
   beadsGold,
   beadSize,
   beadGap,
+  beadMaxWidth,
   waste,
   recovered,
   legend,
@@ -12034,6 +12060,7 @@ function DayImpactCard({
   beadsGold: string[];
   beadSize: number;
   beadGap: number;
+  beadMaxWidth?: number;
   waste: DaySentence;
   recovered: DaySentence;
   legend: { color: string; label: string; value?: string }[];
@@ -12074,7 +12101,7 @@ function DayImpactCard({
         </Reanimated.Text>
       </View>
       <View style={s.dayImpactGoldRule} />
-      <View style={s.dayImpactBeadArea}>
+      <View style={[s.dayImpactBeadArea, beadMaxWidth ? { maxWidth: beadMaxWidth, alignSelf: 'center' } : null]}>
         <DayBeadGrid beads={reclaim ? beadsGold : beads} size={beadSize} gap={beadGap} />
       </View>
       <View style={s.dayImpactLegend}>
@@ -18069,18 +18096,21 @@ const s = StyleSheet.create({
     paddingTop: 6,
   },
   dayBarCrest: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
+    position: 'absolute',
+    top: 12,
+    width: 32,
+    height: 32,
+    marginLeft: -16,
+    borderRadius: 10,
     overflow: 'hidden',
-    marginBottom: 10,
     backgroundColor: '#FFFDF8',
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.3)',
+    zIndex: 3,
   },
   dayBarCrestImage: {
-    width: 46,
-    height: 46,
+    width: 32,
+    height: 32,
   },
   dayBarTrack: {
     flexDirection: 'row',
@@ -18097,12 +18127,12 @@ const s = StyleSheet.create({
   },
   dayBarGold: {
     position: 'absolute',
-    right: 0,
     top: 0,
     bottom: 0,
-    backgroundColor: GOLD,
-    borderTopRightRadius: 13,
-    borderBottomRightRadius: 13,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.2,
+    borderColor: GOLD,
+    borderRadius: 3,
   },
   dayBarLegend: {
     flexDirection: 'row',
@@ -18452,20 +18482,20 @@ const s = StyleSheet.create({
     position: 'absolute',
     left: 28,
     right: 28,
-    top: '42%',
+    top: '30%',
     zIndex: 41,
     alignItems: 'center',
   },
-  dayReclaimMessageText: {
-    fontFamily: F.serifMedium,
-    fontSize: 24,
-    lineHeight: 32,
-    color: '#FFFDF8',
+  dayReclaimBubbleText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 21,
+    lineHeight: 29,
+    color: INK,
     textAlign: 'center',
   },
   dayReclaimMessageGold: {
     fontFamily: F.serifSemiBold,
-    color: '#E8C66F',
+    color: '#C9A24E',
   },
   v4DayHeader: {
     alignItems: 'center',
