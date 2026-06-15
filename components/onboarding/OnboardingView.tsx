@@ -11198,8 +11198,8 @@ function V4DayPanoramaHeaderSlide({
   const moonSize = iconSize;
   const cloudWidth = Math.min(118, axisWidth * 0.34);
   const cloudLeft = (sunCenter + moonCenter) / 2 - cloudWidth / 2;
-  const pieSceneHeight = Math.min(312, Math.max(288, frameWidth * 0.72));
-  const pieSize = Math.min(190, Math.max(170, frameWidth * 0.45));
+  const pieSceneHeight = Math.min(340, Math.max(314, frameWidth * 0.80));
+  const pieSize = Math.min(224, Math.max(204, frameWidth * 0.53));
   const pieCenter = pieSize / 2;
   const pieRadius = pieSize / 2 - 7;
   const phoneHours = protectStats(hours).hours;
@@ -11217,10 +11217,10 @@ function V4DayPanoramaHeaderSlide({
   const phoneHourLabel = `${formatHourValue(phoneHours)}h`;
   const productiveHourLabel = `${formatHourValue(productiveHours)}h`;
   const pieLeft = (frameWidth - pieSize) / 2;
-  const pieTop = Math.min(104, Math.max(92, frameWidth * 0.24));
-  const phoneStickerSize = Math.min(106, frameWidth * 0.25);
-  const sleepStickerSize = Math.min(112, frameWidth * 0.265);
-  const toolboxStickerWidth = Math.min(126, frameWidth * 0.30);
+  const pieTop = Math.min(92, Math.max(76, frameWidth * 0.19));
+  const phoneStickerSize = Math.min(108, frameWidth * 0.255);
+  const sleepStickerSize = Math.min(104, frameWidth * 0.245);
+  const toolboxStickerWidth = Math.min(122, frameWidth * 0.29);
   const toolboxStickerHeight = toolboxStickerWidth * (860 / 1128);
   const sleepLabelPoint = dayPiePoint(pieCenter, pieCenter, pieRadius * 0.68, (sleepStart + sleepEnd) / 2);
   const productiveLabelPoint = dayPiePoint(pieCenter, pieCenter, pieRadius * 0.68, (productiveStart + productiveEnd) / 2);
@@ -11391,11 +11391,11 @@ function V4DayPanoramaHeaderSlide({
     ],
   }));
   const sleepX = (frameWidth - sleepStickerSize) / 2;
-  const sleepY = 0;
-  const phoneX = Math.max(10, frameWidth * 0.055);
-  const phoneY = pieTop - phoneStickerSize * 0.18;
-  const toolboxX = frameWidth - toolboxStickerWidth - Math.max(12, frameWidth * 0.065);
-  const toolboxY = pieTop - toolboxStickerHeight * 0.02;
+  const sleepY = pieTop - sleepStickerSize * 0.45;
+  const phoneX = Math.max(-2, pieLeft - phoneStickerSize * 0.52);
+  const phoneY = pieTop + pieSize * 0.34;
+  const toolboxX = Math.min(frameWidth - toolboxStickerWidth + 4, pieLeft + pieSize - toolboxStickerWidth * 0.40);
+  const toolboxY = pieTop + pieSize - toolboxStickerHeight * 0.46;
 
   return (
     <View
@@ -11497,26 +11497,42 @@ function V4DayPanoramaHeaderSlide({
             <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius + 7} fill="#FFFDF8" />
             <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius + 4} fill="rgba(197,160,89,0.12)" />
             <G>
-              <SvgPath d={dayPieSlicePath(pieCenter, pieCenter, pieRadius, sleepStart, sleepEnd)} fill="#5B527A" />
-              <SvgPath d={dayPieSlicePath(pieCenter, pieCenter, pieRadius, productiveStart, productiveEnd)} fill="#E8C66F" />
-              <SvgPath d={dayPieSlicePath(pieCenter, pieCenter, pieRadius, phoneStart, phoneEnd)} fill="#17130F" />
+              <SvgPath
+                d={dayPieSlicePath(pieCenter, pieCenter, pieRadius, sleepStart, sleepEnd)}
+                fill="#5B527A"
+                stroke="rgba(35,30,24,0.72)"
+                strokeWidth={3.2}
+                strokeLinejoin="round"
+              />
+              <SvgPath
+                d={dayPieSlicePath(pieCenter, pieCenter, pieRadius, productiveStart, productiveEnd)}
+                fill="#E8C66F"
+                stroke="rgba(35,30,24,0.72)"
+                strokeWidth={3.2}
+                strokeLinejoin="round"
+              />
+              <SvgPath
+                d={dayPieSlicePath(pieCenter, pieCenter, pieRadius, phoneStart, phoneEnd)}
+                fill="#17130F"
+                stroke="rgba(35,30,24,0.72)"
+                strokeWidth={3.2}
+                strokeLinejoin="round"
+              />
             </G>
-            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius} fill="none" stroke="rgba(255,255,255,0.94)" strokeWidth={5.5} />
+            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius + 3.5} fill="none" stroke="#FFFDF8" strokeWidth={7} />
+            <SvgCircle cx={pieCenter} cy={pieCenter} r={pieRadius} fill="none" stroke="rgba(35,30,24,0.78)" strokeWidth={3.2} />
             <SvgCircle cx={pieCenter + pieRadius * 0.22} cy={pieCenter - pieRadius * 0.52} r={2.1} fill="rgba(255,255,255,0.92)" />
             <SvgCircle cx={pieCenter + pieRadius * 0.43} cy={pieCenter - pieRadius * 0.25} r={1.35} fill="rgba(255,255,255,0.76)" />
             <SvgCircle cx={pieCenter + pieRadius * 0.06} cy={pieCenter - pieRadius * 0.34} r={1.55} fill="rgba(255,255,255,0.82)" />
           </Svg>
-          <View pointerEvents="none" style={[s.dayHeaderPieSliceLabel, { left: sleepLabelPoint.x - 27, top: sleepLabelPoint.y - 14 }]}>
+          <View pointerEvents="none" style={[s.dayHeaderPieSliceLabel, { left: sleepLabelPoint.x - 33, top: sleepLabelPoint.y - 17 }]}>
             <Text style={s.dayHeaderPieSliceLabelText}>{sleepHourLabel}</Text>
           </View>
-          <View pointerEvents="none" style={[s.dayHeaderPieSliceLabel, { left: productiveLabelPoint.x - 27, top: productiveLabelPoint.y - 14 }]}>
+          <View pointerEvents="none" style={[s.dayHeaderPieSliceLabel, { left: productiveLabelPoint.x - 33, top: productiveLabelPoint.y - 17 }]}>
             <Text style={s.dayHeaderPieSliceLabelText}>{productiveHourLabel}</Text>
           </View>
-          <View pointerEvents="none" style={[s.dayHeaderPieSliceLabel, { left: phoneLabelPoint.x - 27, top: phoneLabelPoint.y - 14 }]}>
+          <View pointerEvents="none" style={[s.dayHeaderPieSliceLabel, { left: phoneLabelPoint.x - 33, top: phoneLabelPoint.y - 17 }]}>
             <Text style={s.dayHeaderPieSliceLabelText}>{phoneHourLabel}</Text>
-          </View>
-          <View pointerEvents="none" style={s.dayHeaderPieCenterLabel}>
-            <Text style={s.dayHeaderPieCenterNumber}>24h</Text>
           </View>
         </Reanimated.View>
 
@@ -17367,33 +17383,18 @@ const s = StyleSheet.create({
     shadowRadius: 18,
     elevation: 4,
   },
-  dayHeaderPieCenterLabel: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dayHeaderPieCenterNumber: {
-    fontFamily: F.serifBold,
-    fontSize: 25,
-    lineHeight: 27,
-    color: '#FFFDF8',
-    textAlign: 'center',
-    textShadowColor: 'rgba(25,23,20,0.42)',
-    textShadowOffset: { width: 0, height: 1.5 },
-    textShadowRadius: 4,
-  },
   dayHeaderPieSliceLabel: {
     position: 'absolute',
-    width: 54,
-    height: 28,
+    width: 66,
+    height: 34,
     zIndex: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
   dayHeaderPieSliceLabelText: {
     fontFamily: F.serifBold,
-    fontSize: 22,
-    lineHeight: 26,
+    fontSize: 26,
+    lineHeight: 30,
     color: '#FFFFFF',
     textAlign: 'center',
     textShadowColor: 'rgba(25,23,20,0.36)',
