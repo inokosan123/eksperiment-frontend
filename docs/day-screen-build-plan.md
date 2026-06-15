@@ -34,16 +34,17 @@ Make the pie itself award-tier (it's already good; push it further).
 ## PHASE 2 — Transition pie → bar (hero clears) ⬜
 The signature move. On Continue from `pie`:
 - [ ] `heroClear` SV 0→1 over 620ms (ease bezier .22,1,.36,1): `dayHeaderContent` (collage + cloud bank + axis) fades opacity→0 + drifts up ~24px + scales 0.97. Fully unmounts/hidden at end.
-- [ ] Stickers (phone/sleep/toolbox) fade off the pie first (0→opacity over 240ms, slight outward drift).
+- [ ] Stickers (phone/sleep/toolbox) DO NOT vanish — they SHRINK (scale ~0.6) and TRAVEL up to sit ABOVE the bar, each over its own segment (sleep over sleep segment, etc.). They persist into screen 2.
 - [ ] Pie `morph` SV 0→1 over 760ms: pie travels from its current center up to the very top of the screen (translateY to top band), shrinks (scale ~0.34), and crossfades into the horizontal BAR (pie opacity→0 as bar opacity→1 at the same top position). The bar inherits the exact slice colors (continuity).
-- [ ] Timing: stickers fade (0–240) → hero clear + pie rise begin (200–820) → bar settles (~820) → cards begin.
+- [ ] Timing: hero clear + pie rise begin (200–820) → stickers shrink+travel to above-bar (200–820) → bar settles (~820) → cards begin.
 - [ ] Haptic: medium on Continue tap; soft tick when the bar "lands" at top.
 
-## PHASE 3 — Bar (toolbar at top of screen 2) ⬜
+## PHASE 3 — Bar + above-bar illustrations (top of screen 2) ⬜
 - [ ] Track: full width minus margins, height ~26-30, radius full, soft inset bg. Sits in the TOP ~12-18% of screen.
 - [ ] 3 segments left→right: Sleep (`#5B527A`) · Productive (`#E8C66F`) · Phone (`#17130F`), widths = hours/24.
+- [ ] **Above the bar: the 3 illustrations stay** (moon/toolbox/phone, shrunk ~0.6 from the pie), each centered over its segment — same images, continuity from the pie.
 - [ ] Segment entrance: widths grow from 0 left→right (sleep, then productive, then phone), 300ms each, staggered, as the bar lands.
-- [ ] Legend row under bar: 3 dots + labels (Sleep / Productive / Phone) with hour values.
+- [ ] Legend row under bar (or merge with the above illustrations): labels + hour values.
 - [ ] Above-bar caption (small): "Your 24 hours" or "This is your day." (decide copy).
 
 ## PHASE 4 — Loss cards (waste state) ⬜
@@ -66,20 +67,20 @@ On Continue from `waste`:
 - [ ] Then `dim` 1→0 over 520ms; message fades with it; reveal the bar + cards again, now in reclaim mode.
 - [ ] Haptic: medium when the message lands.
 
-## PHASE 6 — Gold fills the bar + crest (the MASTER reclaim timeline) ⬜
-This is the heart. One master SV `goldFill` 0→1 over ~2000ms (ease .32,0,.18,1) drives EVERYTHING in phases 6 & 7 in sync.
-- [ ] Crest (APP_LOGO) fades/scales in above the bar (crestIntro, 620ms) just before gold starts.
-- [ ] Gold grows from the PHONE end (right) leftward, eating the black phone segment: a gold overlay width 0 → (40% of phone segment), synced to goldFill.
-- [ ] As gold fills: the dark phone segment visibly shrinks; the gold reclaimed slice glows.
-- [ ] Crest: soft gold pulse (scale ~+4%) once gold reaches full; heartbeat haptic (firm+soft) at gold start; strong haptic at gold completion.
+## PHASE 6 — Gold fills the bar + crest as 4th illustration (MASTER reclaim timeline) ⬜
+This is the heart. One master SV `goldFill` 0→1 over ~2200ms (ease .32,0,.18,1) drives EVERYTHING in phases 6 & 7 in sync. Think CAR DIGITAL DASHBOARD on acceleration — the bar fills and the numbers ramp together.
+- [ ] Gold grows from the PHONE end (right) leftward, eating the black phone segment: a deep-gold overlay width 0 → (40% of phone segment), synced to goldFill. Dark phone segment visibly shrinks; reclaimed gold slice glows.
+- [ ] **The 3 above-bar illustrations stay** (moon/toolbox/phone) the whole time.
+- [ ] **When goldFill COMPLETES (~1.0), a 4TH illustration appears = the Anasta crest/badge, FRAMED like the conversation avatar** (rounded square frame, same as name/tradition screens) — pops in above the bar (by the reclaimed gold) with scale .8→1 + soft gold pulse. Strong/heartbeat haptic on its arrival.
+- [ ] heartbeat haptic (firm+soft) at gold start; the ramp emits soft selection ticks periodically (dashboard counting feel); strong haptic at gold completion + crest arrival.
 - [ ] Subtle gold shimmer sweep across the reclaimed segment on completion.
 
-## PHASE 7 — Cards flip waste → get back (SYNCED to goldFill) ⬜
-The detail that gives character — all driven by the SAME `goldFill` master so bar + numbers move together.
+## PHASE 7 — Cards ramp waste → get back, car-dashboard style (SYNCED to goldFill) ⬜
+All driven by the SAME `goldFill` master so bar + numbers move together like a speedometer ramping up.
 - [ ] Eyebrow crossfades "YOU WASTE" (red) → "YOU GET BACK" (gold), synced to goldFill 0→0.4.
-- [ ] The big BLACK waste number: animates from center → bottom-RIGHT corner, SHRINKING (scale ~44px → ~16px), as goldFill grows; a thin DIAGONAL strike line draws across it (-18°); a small GREEN ↓ arrow appears beside it. It also counts DOWN toward the remaining loss (value → value×0.6) as it travels.
-- [ ] The big GOLD "get back" number: grows IN at center (scale .7→1, fade), counting UP 0 → reclaimed value (odometer), perfectly synced to goldFill (number rises exactly as the gold fills the bar).
-- [ ] Per-card stagger: card 1 flips at goldFill onset, card 2 +180ms, card 3 +360ms (cascade), each with a soft tick as its gold number starts.
+- [ ] The big BLACK waste number: animates from center → bottom-RIGHT corner, SHRINKING (~44px → ~16px) as goldFill grows; thin DIAGONAL strike (-18°) draws across it; small GREEN ↓ beside it; it COUNTS DOWN toward the remaining loss (value → value×0.6) — like a dashboard number dropping as you ease off.
+- [ ] The big GOLD "get back" number: grows IN at center (scale .7→1, fade), **ramping UP 0 → reclaimed value like a car odometer on acceleration**, perfectly synced to goldFill (rises exactly as the gold fills the bar — same master clock).
+- [ ] Per-card stagger: card 1 ramps at goldFill onset, card 2 +180ms, card 3 +360ms (cascade), each with a soft tick as its gold number starts; ticks during the ramp (dashboard feel).
 - [ ] Card 1 gold: `+{reclaimedWakingPercent}%` · Card 2: `+{reclaimedDays}` days · Card 3: `+{reclaimedYears}` years.
 - [ ] Card accent bar color crossfades loss-red → gold, synced.
 
@@ -93,7 +94,11 @@ The detail that gives character — all driven by the SAME `goldFill` master so 
 
 ---
 
+## Confirmed by user
+- Screen 2: NO hero collage; bar at top; the 3 illustrations stay (shrunk) above the bar.
+- 4th illustration = Anasta crest framed like conversation avatar, appears when gold fill completes.
+- Numbers ramp like a car digital dashboard on acceleration: saved up, wasted % down, synced to gold fill.
+- Black waste number counts DOWN as it slides to the corner (dashboard easing off).
+
 ## Open confirmations
-1. Architecture: screen 2 has NO hero, only bar at top + cards. (CONFIRM)
-2. Pie polish direction (Phase 1) — confirm what to push, or trust proposed list.
-3. Black waste number on flip: counts down to remaining (×0.6) — yes/keep simple (just relocate+shrink)?
+- Pie polish direction (Phase 1) — trust proposed list, or target specifics?
