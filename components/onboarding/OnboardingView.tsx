@@ -11856,10 +11856,10 @@ function V4DayPanoramaHeaderSlide({
               <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card1Beads} beadSize={18} beadGap={5} wasteNumeric={Math.ceil(wakingPercent)} reclaimNumeric={Math.ceil(reclaimedWakingPercent)} decimals={0} unit="%" unitScript description="of productive time" />
             )}
             {((phase === 'waste' && wasteReveal >= 3) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card2Beads} beadSize={5.5} beadGap={1.4} wasteNumeric={Math.ceil(stat.yearlyDays)} reclaimNumeric={Math.ceil(stat.reclaimedDays)} decimals={0} unit="days" description="in one year" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card2SleepN}`, prodLabel: 'Productive', prodValue: `${card2ProdN}` }} />
+              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card2Beads} beadSize={6.5} beadGap={1.5} wasteNumeric={Math.ceil(stat.yearlyDays)} reclaimNumeric={Math.ceil(stat.reclaimedDays)} decimals={0} unit="days" description="in one year" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card2SleepN}`, prodLabel: 'Productive', prodValue: `${card2ProdN}` }} />
             )}
             {((phase === 'waste' && wasteReveal >= 4) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card3Beads} beadSize={10} beadGap={2.5} wasteNumeric={Math.ceil(stat.lifetimeYears)} reclaimNumeric={Math.ceil(stat.reclaimedYears)} decimals={0} unit="years" description="in a life span (85)" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card3SleepN}`, prodLabel: 'Productive', prodValue: `${card3ProdN}` }} />
+              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card3Beads} beadSize={12} beadGap={3} wasteNumeric={Math.ceil(stat.lifetimeYears)} reclaimNumeric={Math.ceil(stat.reclaimedYears)} decimals={0} unit="years" description="in a life span (85)" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card3SleepN}`, prodLabel: 'Productive', prodValue: `${card3ProdN}` }} />
             )}
           </View>
         </Reanimated.View>
@@ -12011,15 +12011,17 @@ function DayImpactCard({
   return (
     <Reanimated.View style={[s.dayImpactCard, enterStyle]}>
       <View style={s.dayImpactBeadCol}>
-        <DayBeadGrid beads={beads} size={beadSize} gap={beadGap} />
+        <View style={s.dayBeadGridWrap}>
+          <DayBeadGrid beads={beads} size={beadSize} gap={beadGap} />
+        </View>
         {bottomStrip ? (
           <View style={s.dayImpactStrip}>
             <Text style={s.dayImpactStripText} numberOfLines={1}>
-              {bottomStrip.sleepLabel} <Text style={s.dayImpactStripNum}>{bottomStrip.sleepValue}</Text>
+              {bottomStrip.sleepLabel} <Text style={s.dayImpactStripNumSleep}>{bottomStrip.sleepValue}</Text>
             </Text>
             <View style={s.dayImpactStripDivider} />
             <Text style={s.dayImpactStripText} numberOfLines={1}>
-              {bottomStrip.prodLabel} <Text style={s.dayImpactStripNum}>{bottomStrip.prodValue}</Text>
+              {bottomStrip.prodLabel} <Text style={s.dayImpactStripNumProd}>{bottomStrip.prodValue}</Text>
             </Text>
           </View>
         ) : null}
@@ -17906,20 +17908,20 @@ const s = StyleSheet.create({
   },
   dayTwoIlloAbs: {
     position: 'absolute',
-    top: 8,
-    width: 30,
-    marginLeft: -15,
+    top: 10,
+    width: 44,
+    marginLeft: -22,
     alignItems: 'center',
   },
   dayTwoIlloImg: {
-    width: 30,
-    height: 30,
+    width: 44,
+    height: 44,
   },
   dayTwoBarWrap: {
     alignItems: 'center',
     width: '100%',
     maxWidth: 340,
-    paddingTop: 40,
+    paddingTop: 60,
     position: 'relative',
   },
   dayTwoBarTrack: {
@@ -18078,30 +18080,34 @@ const s = StyleSheet.create({
   },
   dayImpactCards: {
     width: '100%',
-    marginTop: 14,
+    marginTop: 24,
     rowGap: 14,
   },
   dayImpactCard: {
     flexDirection: 'row',
     alignItems: 'stretch',
     width: '100%',
-    minHeight: 152,
+    minHeight: 160,
     borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: '#FBF4E0',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
     shadowColor: '#5E5142',
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.16,
-    shadowRadius: 20,
+    shadowOpacity: 0.12,
+    shadowRadius: 22,
     elevation: 4,
   },
   dayImpactBeadCol: {
     flex: 1,
-    paddingVertical: 12,
+    paddingTop: 12,
     paddingLeft: 14,
     paddingRight: 8,
+    paddingBottom: 0,
+  },
+  dayBeadGridWrap: {
+    flex: 1,
     justifyContent: 'center',
   },
   dayBeadGrid: {
@@ -18112,21 +18118,35 @@ const s = StyleSheet.create({
   dayImpactStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 9,
-    columnGap: 9,
+    justifyContent: 'center',
+    alignSelf: 'stretch',
+    marginTop: 8,
+    marginLeft: -14,
+    marginRight: -8,
+    paddingTop: 8,
+    paddingBottom: 10,
+    paddingHorizontal: 14,
+    columnGap: 11,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(25,23,20,0.07)',
+    backgroundColor: 'rgba(197,160,89,0.06)',
   },
   dayImpactStripText: {
     fontFamily: F.sansMedium,
-    fontSize: 10.5,
+    fontSize: 11,
     color: 'rgba(25,23,20,0.5)',
   },
-  dayImpactStripNum: {
+  dayImpactStripNumSleep: {
     fontFamily: F.sansBold,
-    color: INK,
+    color: '#7B7CC2',
+  },
+  dayImpactStripNumProd: {
+    fontFamily: F.sansBold,
+    color: '#C9A24E',
   },
   dayImpactStripDivider: {
     width: 1,
-    height: 10,
+    height: 11,
     backgroundColor: 'rgba(25,23,20,0.16)',
   },
   dayImpactDivider: {
