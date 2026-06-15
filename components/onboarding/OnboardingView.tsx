@@ -11175,6 +11175,35 @@ function dayPieSlicePath(cx: number, cy: number, radius: number, startAngle: num
   return `M ${cx} ${cy} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y} Z`;
 }
 
+function DayPieConnector({
+  start,
+  end,
+  intro,
+  morph,
+}: {
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  intro: SharedValue<number>;
+  morph: SharedValue<number>;
+}) {
+  // Stop short of the sticker so the line meets its edge, not its center.
+  const ex = start.x + (end.x - start.x) * 0.8;
+  const ey = start.y + (end.y - start.y) * 0.8;
+  const len = Math.max(1, Math.hypot(ex - start.x, ey - start.y));
+  const angle = (Math.atan2(ey - start.y, ex - start.x) * 180) / Math.PI;
+  const midX = (start.x + ex) / 2;
+  const midY = (start.y + ey) / 2;
+  const style = useAnimatedStyle(() => ({
+    opacity: intro.value * interpolate(morph.value, [0, 0.3], [1, 0], 'clamp'),
+  }));
+  return (
+    <Reanimated.View
+      pointerEvents="none"
+      style={[s.dayPieConnector, { left: midX - len / 2, top: midY - 1, width: len, transform: [{ rotate: `${angle}deg` }] }, style]}
+    />
+  );
+}
+
 function V4DayPanoramaHeaderSlide({
   topInset,
   bottomInset,
@@ -11272,6 +11301,7 @@ function V4DayPanoramaHeaderSlide({
   const phoneIntro = useSharedValue(0);
   const sleepIntro = useSharedValue(0);
   const toolboxIntro = useSharedValue(0);
+  const connectorIntro = useSharedValue(0);
   const ambient = useSharedValue(0);
 
   // ── Phases: pie -> waste -> reclaim. The hero/axis (dayHeaderContent) never
@@ -11339,6 +11369,10 @@ function V4DayPanoramaHeaderSlide({
       toolboxDelay,
       withTiming(1, { duration: 660, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
     );
+    connectorIntro.value = withDelay(
+      toolboxDelay + 220,
+      withTiming(1, { duration: 460, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+    );
     const hapticTimer = setTimeout(runBubbleHaptic, cloudAliveDelay + 120);
     return () => {
       clearTimeout(hapticTimer);
@@ -11350,9 +11384,10 @@ function V4DayPanoramaHeaderSlide({
       phoneIntro.value = 0;
       sleepIntro.value = 0;
       toolboxIntro.value = 0;
+      connectorIntro.value = 0;
       ambient.value = 0;
     };
-  }, [ambient, axisIntro, axisIntroDelay, axisIntroDuration, cloudAliveDelay, cloudBase, cloudBaseDelay, cloudReveal, lineDelay, lineDraw, lineDuration, phoneDelay, phoneIntro, pieDelay, pieIntro, sleepDelay, sleepIntro, toolboxDelay, toolboxIntro]);
+  }, [ambient, axisIntro, axisIntroDelay, axisIntroDuration, cloudAliveDelay, cloudBase, cloudBaseDelay, cloudReveal, connectorIntro, lineDelay, lineDraw, lineDuration, phoneDelay, phoneIntro, pieDelay, pieIntro, sleepDelay, sleepIntro, toolboxDelay, toolboxIntro]);
 
   useEffect(() => {
     if (phase === 'pie') return undefined;
@@ -11503,6 +11538,23 @@ function V4DayPanoramaHeaderSlide({
   const toolboxX = Math.min(frameWidth - toolboxStickerWidth + 4, pieLeft + pieSize - toolboxStickerWidth * 0.40);
   const toolboxY = pieTop + pieSize - toolboxStickerHeight * 0.46;
 
+  // Pie polish: thin connectors from each sticker to its own slice's rim.
+  const sleepRim = dayPiePoint(pieCenter, pieCenter, pieRadius * 0.99, (sleepStart + sleepEnd) / 2);
+  const productiveRim = dayPiePoint(pieCenter, pieCenter, pieRadius * 0.99, (productiveStart + productiveEnd) / 2);
+  const phoneRim = dayPiePoint(pieCenter, pieCenter, pieRadius * 0.99, (phoneStart + phoneEnd) / 2);
+  const sleepConnector = {
+    start: { x: pieLeft + sleepRim.x, y: pieTop + sleepRim.y },
+    end: { x: sleepX + sleepStickerSize / 2, y: sleepY + sleepStickerSize * 0.66 },
+  };
+  const productiveConnector = {
+    start: { x: pieLeft + productiveRim.x, y: pieTop + productiveRim.y },
+    end: { x: toolboxX + toolboxStickerWidth * 0.42, y: toolboxY + toolboxStickerHeight * 0.4 },
+  };
+  const phoneConnector = {
+    start: { x: pieLeft + phoneRim.x, y: pieTop + phoneRim.y },
+    end: { x: phoneX + phoneStickerSize * 0.62, y: phoneY + phoneStickerSize / 2 },
+  };
+
   return (
     <View
       style={[s.dayHeaderScreen, { paddingTop: Math.max(0, topInset - 14), paddingBottom: Math.max(0, bottomInset - 10) }]}
@@ -11649,6 +11701,10 @@ function V4DayPanoramaHeaderSlide({
             <Text style={s.dayHeaderPieSliceLabelText}>{phoneHourLabel}</Text>
           </View>
         </Reanimated.View>
+
+        <DayPieConnector start={sleepConnector.start} end={sleepConnector.end} intro={connectorIntro} morph={morph} />
+        <DayPieConnector start={productiveConnector.start} end={productiveConnector.end} intro={connectorIntro} morph={morph} />
+        <DayPieConnector start={phoneConnector.start} end={phoneConnector.end} intro={connectorIntro} morph={morph} />
 
         <Reanimated.View
           pointerEvents="none"
@@ -17637,6 +17693,13 @@ const s = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 18,
     elevation: 4,
+  },
+  dayPieConnector: {
+    position: 'absolute',
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.5)',
+    zIndex: 4,
   },
   dayHeaderPieHub: {
     ...StyleSheet.absoluteFillObject,
