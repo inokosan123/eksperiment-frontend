@@ -11828,7 +11828,7 @@ function V4DayPanoramaHeaderSlide({
       </View>
 
       {revealTwo && (
-        <Reanimated.View pointerEvents="box-none" style={[s.dayScreen2Layer, { top: topInset + 10 }, screen2LayerStyle]}>
+        <Reanimated.View pointerEvents="box-none" style={[s.dayScreen2Layer, { top: topInset + 20 }, screen2LayerStyle]}>
           <View style={s.dayTwoBarWrap}>
             {phase === 'reclaim' && (
               <Reanimated.View pointerEvents="none" style={[s.dayBarCrest, crestStyle]}>
@@ -11853,13 +11853,13 @@ function V4DayPanoramaHeaderSlide({
           </View>
           <View style={s.dayImpactCards}>
             {((phase === 'waste' && wasteReveal >= 2) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card1Beads} beadSize={15} beadGap={4} wasteNumeric={wakingPercent} reclaimNumeric={reclaimedWakingPercent} decimals={0} unit="%" unitScript />
+              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card1Beads} beadSize={18} beadGap={5} wasteNumeric={Math.ceil(wakingPercent)} reclaimNumeric={Math.ceil(reclaimedWakingPercent)} decimals={0} unit="%" unitScript description="of productive time" />
             )}
             {((phase === 'waste' && wasteReveal >= 3) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card2Beads} beadSize={4.5} beadGap={1} wasteNumeric={stat.yearlyDays} reclaimNumeric={stat.reclaimedDays} decimals={0} unit="days" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card2SleepN}`, prodLabel: 'Productive', prodValue: `${card2ProdN}` }} />
+              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card2Beads} beadSize={5.5} beadGap={1.4} wasteNumeric={Math.ceil(stat.yearlyDays)} reclaimNumeric={Math.ceil(stat.reclaimedDays)} decimals={0} unit="days" description="in one year" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card2SleepN}`, prodLabel: 'Productive', prodValue: `${card2ProdN}` }} />
             )}
             {((phase === 'waste' && wasteReveal >= 4) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card3Beads} beadSize={8} beadGap={2} wasteNumeric={stat.lifetimeYears} reclaimNumeric={stat.reclaimedYears} decimals={1} unit="years" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card3SleepN}`, prodLabel: 'Productive', prodValue: `${card3ProdN}` }} />
+              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card3Beads} beadSize={10} beadGap={2.5} wasteNumeric={Math.ceil(stat.lifetimeYears)} reclaimNumeric={Math.ceil(stat.reclaimedYears)} decimals={0} unit="years" description="in a life span (85)" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card3SleepN}`, prodLabel: 'Productive', prodValue: `${card3ProdN}` }} />
             )}
           </View>
         </Reanimated.View>
@@ -11966,6 +11966,7 @@ function DayImpactCard({
   decimals,
   unit,
   unitScript,
+  description,
   bottomStrip,
 }: {
   reclaim: boolean;
@@ -11978,6 +11979,7 @@ function DayImpactCard({
   decimals: number;
   unit: string;
   unitScript?: boolean;
+  description: string;
   bottomStrip?: { sleepLabel: string; sleepValue: string; prodLabel: string; prodValue: string };
 }) {
   const enter = useSharedValue(0);
@@ -12004,6 +12006,7 @@ function DayImpactCard({
     opacity: flip.value,
     transform: [{ scale: interpolate(flip.value, [0, 1], [0.8, 1]) }],
   }));
+  const eyebrowGoldStyle = useAnimatedStyle(() => ({ opacity: flip.value }));
 
   return (
     <Reanimated.View style={[s.dayImpactCard, enterStyle]}>
@@ -12023,6 +12026,10 @@ function DayImpactCard({
       </View>
       <View style={s.dayImpactDivider} />
       <View style={s.dayImpactNumCol}>
+        <View style={s.dayImpactEyebrowWrap}>
+          <Reanimated.Text numberOfLines={1} style={[s.dayImpactEyebrow, s.dayImpactEyebrowAbs, wasteStyle]}>You waste</Reanimated.Text>
+          <Reanimated.Text numberOfLines={1} style={[s.dayImpactEyebrow, s.dayImpactEyebrowGold, s.dayImpactEyebrowAbs, eyebrowGoldStyle]}>You get back</Reanimated.Text>
+        </View>
         <View style={s.dayImpactNumStack}>
           <Reanimated.Text style={[s.dayImpactBigNum, s.dayImpactNumAbs, wasteStyle]}>{fmt(wasteNumeric)}</Reanimated.Text>
           <Reanimated.View pointerEvents="none" style={[s.dayImpactNumAbs, s.dayImpactNumAbsCenter, goldStyle]}>
@@ -12030,6 +12037,7 @@ function DayImpactCard({
           </Reanimated.View>
         </View>
         <Text style={unitScript ? s.dayImpactUnitScript : s.dayImpactUnit}>{unit}</Text>
+        <Text numberOfLines={2} style={s.dayImpactDesc}>{description}</Text>
       </View>
     </Reanimated.View>
   );
@@ -17898,20 +17906,20 @@ const s = StyleSheet.create({
   },
   dayTwoIlloAbs: {
     position: 'absolute',
-    top: 0,
-    width: 38,
-    marginLeft: -19,
+    top: 8,
+    width: 30,
+    marginLeft: -15,
     alignItems: 'center',
   },
   dayTwoIlloImg: {
-    width: 38,
-    height: 38,
+    width: 30,
+    height: 30,
   },
   dayTwoBarWrap: {
     alignItems: 'center',
     width: '100%',
     maxWidth: 340,
-    paddingTop: 42,
+    paddingTop: 40,
     position: 'relative',
   },
   dayTwoBarTrack: {
@@ -18070,15 +18078,15 @@ const s = StyleSheet.create({
   },
   dayImpactCards: {
     width: '100%',
-    marginTop: 18,
-    rowGap: 10,
+    marginTop: 14,
+    rowGap: 14,
   },
   dayImpactCard: {
     flexDirection: 'row',
     alignItems: 'stretch',
     width: '100%',
-    minHeight: 102,
-    borderRadius: 16,
+    minHeight: 152,
+    borderRadius: 18,
     overflow: 'hidden',
     backgroundColor: '#FBF4E0',
     borderWidth: 3,
@@ -18128,13 +18136,13 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(25,23,20,0.12)',
   },
   dayImpactNumCol: {
-    width: 108,
+    width: 118,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 6,
   },
   dayImpactNumStack: {
-    minHeight: 56,
+    minHeight: 62,
     minWidth: 80,
     alignItems: 'center',
     justifyContent: 'center',
@@ -18142,10 +18150,18 @@ const s = StyleSheet.create({
   },
   dayImpactBigNum: {
     fontFamily: F.serifSemiBold,
-    fontSize: 48,
-    lineHeight: 56,
+    fontSize: 52,
+    lineHeight: 62,
     color: INK,
     textAlign: 'center',
+  },
+  dayImpactDesc: {
+    fontFamily: F.serifMediumItalic,
+    fontSize: 11.5,
+    lineHeight: 14,
+    color: 'rgba(25,23,20,0.46)',
+    textAlign: 'center',
+    marginTop: 4,
   },
   dayImpactBigNumGold: {
     color: GOLD,
@@ -18204,13 +18220,17 @@ const s = StyleSheet.create({
     paddingHorizontal: 18,
   },
   dayImpactEyebrowWrap: {
-    height: 14,
-    justifyContent: 'center',
+    height: 16,
+    width: '100%',
+    position: 'relative',
+    marginBottom: 4,
   },
   dayImpactEyebrow: {
     fontFamily: F.sansBold,
     fontSize: 10,
-    letterSpacing: 2.2,
+    lineHeight: 16,
+    letterSpacing: 1.8,
+    textAlign: 'center',
     color: 'rgba(168,57,63,0.85)',
   },
   dayImpactEyebrowGold: {
@@ -18219,9 +18239,8 @@ const s = StyleSheet.create({
   dayImpactEyebrowAbs: {
     position: 'absolute',
     left: 0,
+    right: 0,
     top: 0,
-    bottom: 0,
-    textAlignVertical: 'center',
   },
   dayImpactValueWrap: {
     height: 52,
