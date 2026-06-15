@@ -11704,6 +11704,26 @@ function V4DayPanoramaHeaderSlide({
     ],
     [card3SleepN, card3ProdN, card3PhoneN],
   );
+  // Reclaim variants: 40% of phone beads turn productive-gold.
+  const card1BeadsGold = useMemo(() => goldifyBeads(card1Beads, Math.ceil(phoneHours * 0.4)), [card1Beads, phoneHours]);
+  const card2BeadsGold = useMemo(() => goldifyBeads(card2Beads, Math.ceil(card2PhoneN * 0.4)), [card2Beads, card2PhoneN]);
+  const card3BeadsGold = useMemo(() => goldifyBeads(card3Beads, Math.ceil(card3PhoneN * 0.4)), [card3Beads, card3PhoneN]);
+  const card1ProdH = Math.max(0, Math.round(USABLE_DAY_HOURS - phoneHours));
+  const card1PhoneH = Math.round(phoneHours);
+  const card1Legend = [
+    { color: BEAD_PRODUCTIVE, label: 'Productive', value: `${card1ProdH}h` },
+    { color: BEAD_PHONE, label: 'Phone', value: `${card1PhoneH}h` },
+  ];
+  const card2Legend = [
+    { color: BEAD_SLEEP, label: 'Sleep', value: `${card2SleepN}` },
+    { color: BEAD_PRODUCTIVE, label: 'Productive', value: `${card2ProdN}` },
+    { color: BEAD_PHONE, label: 'Phone', value: `${card2PhoneN}` },
+  ];
+  const card3Legend = [
+    { color: BEAD_SLEEP, label: 'Sleep', value: `${card3SleepN}` },
+    { color: BEAD_PRODUCTIVE, label: 'Productive', value: `${card3ProdN}` },
+    { color: BEAD_PHONE, label: 'Phone', value: `${card3PhoneN}` },
+  ];
 
   return (
     <View
@@ -11828,7 +11848,7 @@ function V4DayPanoramaHeaderSlide({
       </View>
 
       {revealTwo && (
-        <Reanimated.View pointerEvents="box-none" style={[s.dayScreen2Layer, { top: topInset + 20 }, screen2LayerStyle]}>
+        <Reanimated.View pointerEvents="box-none" style={[s.dayScreen2Layer, { top: topInset + 14 }, screen2LayerStyle]}>
           <View style={s.dayTwoBarWrap}>
             {phase === 'reclaim' && (
               <Reanimated.View pointerEvents="none" style={[s.dayBarCrest, crestStyle]}>
@@ -11853,13 +11873,40 @@ function V4DayPanoramaHeaderSlide({
           </View>
           <View style={s.dayImpactCards}>
             {((phase === 'waste' && wasteReveal >= 2) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card1Beads} beadSize={18} beadGap={5} wasteNumeric={Math.ceil(wakingPercent)} reclaimNumeric={Math.ceil(reclaimedWakingPercent)} decimals={0} unit="%" unitScript description="of productive time" />
+              <DayImpactCard
+                reclaim={phase === 'reclaim'}
+                beads={card1Beads}
+                beadsGold={card1BeadsGold}
+                beadSize={18}
+                beadGap={6}
+                waste={{ pre: 'You waste ', gold: `${Math.ceil(wakingPercent)}%`, post: ' of your waking day on your phone.' }}
+                recovered={{ pre: 'You win back ', gold: `${Math.ceil(reclaimedWakingPercent)}%`, post: ' of your day.' }}
+                legend={card1Legend}
+              />
             )}
             {((phase === 'waste' && wasteReveal >= 3) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card2Beads} beadSize={6.5} beadGap={1.5} wasteNumeric={Math.ceil(stat.yearlyDays)} reclaimNumeric={Math.ceil(stat.reclaimedDays)} decimals={0} unit="days" description="in one year" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card2SleepN}`, prodLabel: 'Productive', prodValue: `${card2ProdN}` }} />
+              <DayImpactCard
+                reclaim={phase === 'reclaim'}
+                beads={card2Beads}
+                beadsGold={card2BeadsGold}
+                beadSize={6}
+                beadGap={1.5}
+                waste={{ pre: 'That is ', gold: `${Math.ceil(stat.yearlyDays)} days`, post: ' lost every single year.' }}
+                recovered={{ pre: 'That is ', gold: `${Math.ceil(stat.reclaimedDays)} days`, post: ' back every year.' }}
+                legend={card2Legend}
+              />
             )}
             {((phase === 'waste' && wasteReveal >= 4) || phase === 'reclaim') && (
-              <DayImpactCard reclaim={phase === 'reclaim'} goldRun={reclaimReveal >= 2} beads={card3Beads} beadSize={12} beadGap={3} wasteNumeric={Math.ceil(stat.lifetimeYears)} reclaimNumeric={Math.ceil(stat.reclaimedYears)} decimals={0} unit="years" description="in a life span (85)" bottomStrip={{ sleepLabel: 'Sleeping', sleepValue: `${card3SleepN}`, prodLabel: 'Productive', prodValue: `${card3ProdN}` }} />
+              <DayImpactCard
+                reclaim={phase === 'reclaim'}
+                beads={card3Beads}
+                beadsGold={card3BeadsGold}
+                beadSize={10.5}
+                beadGap={3}
+                waste={{ pre: 'Across your life — ', gold: `${Math.ceil(stat.lifetimeYears)} years`, post: ' — gone.' }}
+                recovered={{ pre: 'Across your life — ', gold: `${Math.ceil(stat.reclaimedYears)} years`, post: ' — reclaimed.' }}
+                legend={card3Legend}
+              />
             )}
           </View>
         </Reanimated.View>
@@ -11955,36 +12002,44 @@ function DayBeadGrid({ beads, size, gap }: { beads: string[]; size: number; gap:
   );
 }
 
+// On reclaim, recolor the last `reclaimCount` phone beads to productive gold
+// (the 40% Anasta gives back) — phone beads sit at the tail of each array.
+function goldifyBeads(arr: string[], reclaimCount: number): string[] {
+  if (reclaimCount <= 0) return arr;
+  const out = arr.slice();
+  let changed = 0;
+  for (let i = out.length - 1; i >= 0 && changed < reclaimCount; i -= 1) {
+    if (out[i] === BEAD_PHONE) {
+      out[i] = BEAD_PRODUCTIVE;
+      changed += 1;
+    }
+  }
+  return out;
+}
+
+type DaySentence = { pre: string; gold: string; post: string };
+
 function DayImpactCard({
   reclaim,
-  goldRun,
   beads,
+  beadsGold,
   beadSize,
   beadGap,
-  wasteNumeric,
-  reclaimNumeric,
-  decimals,
-  unit,
-  unitScript,
-  description,
-  bottomStrip,
+  waste,
+  recovered,
+  legend,
 }: {
   reclaim: boolean;
-  goldRun: boolean;
   beads: string[];
+  beadsGold: string[];
   beadSize: number;
   beadGap: number;
-  wasteNumeric: number;
-  reclaimNumeric: number;
-  decimals: number;
-  unit: string;
-  unitScript?: boolean;
-  description: string;
-  bottomStrip?: { sleepLabel: string; sleepValue: string; prodLabel: string; prodValue: string };
+  waste: DaySentence;
+  recovered: DaySentence;
+  legend: { color: string; label: string; value?: string }[];
 }) {
   const enter = useSharedValue(0);
   const flip = useSharedValue(reclaim ? 1 : 0);
-  const fmt = (v: number) => (decimals > 0 ? v.toFixed(1) : `${Math.round(v)}`);
 
   useEffect(() => {
     enter.value = withTiming(1, { duration: 480, easing: Easing.bezier(0.16, 1, 0.28, 1) });
@@ -12002,44 +12057,36 @@ function DayImpactCard({
     ],
   }));
   const wasteStyle = useAnimatedStyle(() => ({ opacity: 1 - flip.value }));
-  const goldStyle = useAnimatedStyle(() => ({
-    opacity: flip.value,
-    transform: [{ scale: interpolate(flip.value, [0, 1], [0.8, 1]) }],
-  }));
-  const eyebrowGoldStyle = useAnimatedStyle(() => ({ opacity: flip.value }));
+  const recoveredStyle = useAnimatedStyle(() => ({ opacity: flip.value }));
 
   return (
     <Reanimated.View style={[s.dayImpactCard, enterStyle]}>
-      <View style={s.dayImpactBeadCol}>
-        <View style={s.dayBeadGridWrap}>
-          <DayBeadGrid beads={beads} size={beadSize} gap={beadGap} />
-        </View>
-        {bottomStrip ? (
-          <View style={s.dayImpactStrip}>
-            <Text style={s.dayImpactStripText} numberOfLines={1}>
-              {bottomStrip.sleepLabel} <Text style={s.dayImpactStripNumSleep}>{bottomStrip.sleepValue}</Text>
-            </Text>
-            <View style={s.dayImpactStripDivider} />
-            <Text style={s.dayImpactStripText} numberOfLines={1}>
-              {bottomStrip.prodLabel} <Text style={s.dayImpactStripNumProd}>{bottomStrip.prodValue}</Text>
+      <View style={s.dayImpactSentenceWrap}>
+        <Reanimated.Text style={[s.dayImpactSentence, wasteStyle]}>
+          {waste.pre}
+          <Text style={s.dayImpactSentenceGold}>{waste.gold}</Text>
+          {waste.post}
+        </Reanimated.Text>
+        <Reanimated.Text style={[s.dayImpactSentence, s.dayImpactSentenceAbs, recoveredStyle]}>
+          {recovered.pre}
+          <Text style={s.dayImpactSentenceGold}>{recovered.gold}</Text>
+          {recovered.post}
+        </Reanimated.Text>
+      </View>
+      <View style={s.dayImpactGoldRule} />
+      <View style={s.dayImpactBeadArea}>
+        <DayBeadGrid beads={reclaim ? beadsGold : beads} size={beadSize} gap={beadGap} />
+      </View>
+      <View style={s.dayImpactLegend}>
+        {legend.map((item, i) => (
+          <View key={`${item.label}-${i}`} style={s.dayImpactLegendItem}>
+            <View style={[s.dayImpactLegendDot, { backgroundColor: item.color }]} />
+            <Text style={s.dayImpactLegendText}>
+              {item.label}
+              {item.value ? <Text style={s.dayImpactLegendNum}> {item.value}</Text> : null}
             </Text>
           </View>
-        ) : null}
-      </View>
-      <View style={s.dayImpactDivider} />
-      <View style={s.dayImpactNumCol}>
-        <View style={s.dayImpactEyebrowWrap}>
-          <Reanimated.Text numberOfLines={1} style={[s.dayImpactEyebrow, s.dayImpactEyebrowAbs, wasteStyle]}>You waste</Reanimated.Text>
-          <Reanimated.Text numberOfLines={1} style={[s.dayImpactEyebrow, s.dayImpactEyebrowGold, s.dayImpactEyebrowAbs, eyebrowGoldStyle]}>You get back</Reanimated.Text>
-        </View>
-        <View style={s.dayImpactNumStack}>
-          <Reanimated.Text style={[s.dayImpactBigNum, s.dayImpactNumAbs, wasteStyle]}>{fmt(wasteNumeric)}</Reanimated.Text>
-          <Reanimated.View pointerEvents="none" style={[s.dayImpactNumAbs, s.dayImpactNumAbsCenter, goldStyle]}>
-            <RampNumber run={goldRun} target={reclaimNumeric} decimals={decimals} prefix="+" duration={1900} style={[s.dayImpactBigNum, s.dayImpactBigNumGold]} />
-          </Reanimated.View>
-        </View>
-        <Text style={unitScript ? s.dayImpactUnitScript : s.dayImpactUnit}>{unit}</Text>
-        <Text numberOfLines={2} style={s.dayImpactDesc}>{description}</Text>
+        ))}
       </View>
     </Reanimated.View>
   );
@@ -17908,20 +17955,20 @@ const s = StyleSheet.create({
   },
   dayTwoIlloAbs: {
     position: 'absolute',
-    top: 10,
-    width: 44,
-    marginLeft: -22,
+    top: 8,
+    width: 40,
+    marginLeft: -20,
     alignItems: 'center',
   },
   dayTwoIlloImg: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
   },
   dayTwoBarWrap: {
     alignItems: 'center',
     width: '100%',
     maxWidth: 340,
-    paddingTop: 60,
+    paddingTop: 50,
     position: 'relative',
   },
   dayTwoBarTrack: {
@@ -18080,24 +18127,81 @@ const s = StyleSheet.create({
   },
   dayImpactCards: {
     width: '100%',
-    marginTop: 24,
-    rowGap: 14,
+    marginTop: 16,
+    rowGap: 12,
   },
   dayImpactCard: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
     width: '100%',
-    minHeight: 160,
     borderRadius: 18,
     overflow: 'hidden',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.22)',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 14,
     shadowColor: '#5E5142',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.12,
     shadowRadius: 22,
     elevation: 4,
+  },
+  dayImpactSentenceWrap: {
+    position: 'relative',
+  },
+  dayImpactSentence: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 18,
+    lineHeight: 25,
+    color: INK,
+  },
+  dayImpactSentenceAbs: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+  },
+  dayImpactSentenceGold: {
+    color: '#C9A24E',
+    fontFamily: F.serifSemiBold,
+  },
+  dayImpactGoldRule: {
+    height: 1,
+    alignSelf: 'stretch',
+    marginTop: 11,
+    marginBottom: 13,
+    backgroundColor: 'rgba(197,160,89,0.5)',
+  },
+  dayImpactBeadArea: {
+    width: '100%',
+  },
+  dayImpactLegend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+    columnGap: 16,
+    rowGap: 6,
+    marginTop: 13,
+  },
+  dayImpactLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 6,
+  },
+  dayImpactLegendDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+  },
+  dayImpactLegendText: {
+    fontFamily: F.sansMedium,
+    fontSize: 11.5,
+    color: 'rgba(25,23,20,0.55)',
+  },
+  dayImpactLegendNum: {
+    fontFamily: F.sansBold,
+    color: INK,
   },
   dayImpactBeadCol: {
     flex: 1,
@@ -18113,6 +18217,7 @@ const s = StyleSheet.create({
   dayBeadGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'center',
     alignContent: 'center',
   },
   dayImpactStrip: {
