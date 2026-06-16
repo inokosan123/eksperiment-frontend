@@ -12778,8 +12778,148 @@ function V4RecapDeckCard({ card, active, accent, metrics }: { card: StatementDec
   );
 }
 
+// Deo 2 — recommended tools with accordion "reason" drawers.
+// Each recommended tool reveals one by one; its drawer auto-opens to show the
+// confirmed problems that triggered it, then collapses as the next tool appears
+// (only one open at a time), leaving a clean collapsed list ready for setup.
+
+// Accordion drawer: measured-height + opacity (no transform:scale → no Android
+// blur). Inner is not height-constrained, so onLayout reports its full natural
+// height; the outer clips to the animated height.
+function V4RecapToolReasonDrawer({ open, labels, accent }: { open: boolean; labels: string[]; accent: string }) {
+  const [h, setH] = useState(0);
+  const p = useSharedValue(0);
+  useEffect(() => {
+    p.value = withTiming(open ? 1 : 0, { duration: 360, easing: Easing.bezier(0.22, 1, 0.36, 1) });
+  }, [open, p]);
+  const animStyle = useAnimatedStyle(() => ({
+    height: h > 0 ? p.value * h : 0,
+    opacity: p.value,
+  }));
+  return (
+    <Reanimated.View style={[s.v4ToolDrawer, animStyle]}>
+      <View
+        style={s.v4ToolDrawerInner}
+        onLayout={e => {
+          const next = Math.round(e.nativeEvent.layout.height);
+          if (next > 0 && next !== h) setH(next);
+        }}
+      >
+        <Text style={s.v4ToolReasonLead}>Recommended because you said:</Text>
+        {labels.map(label => (
+          <View key={label} style={s.v4ToolReasonRow}>
+            <View style={[s.v4ToolReasonCheck, { borderColor: `${accent}55`, backgroundColor: `${accent}14` }]}>
+              <CheckSmall s={12} c={accent} w={2.6} />
+            </View>
+            <Text style={s.v4ToolReasonText}>{label}</Text>
+          </View>
+        ))}
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function V4RecapToolCard({ group, labels, open }: { group: RecapProblemGroup; labels: string[]; open: boolean }) {
+  const chev = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    chev.value = withTiming(open ? 1 : 0, { duration: 300, easing: Easing.bezier(0.22, 1, 0.36, 1) });
+  }, [open, chev]);
+  // ChevronRight rotated: 90deg = points down (closed), 270deg = points up (open).
+  const chevStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${90 + chev.value * 180}deg` }] }));
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(440).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 16 }],
+      })}
+      style={[s.v4ToolCard, open && s.v4ToolCardOpen]}
+    >
+      <View style={s.v4ToolHeader}>
+        <View style={[s.v4RecapGroupIcon, { backgroundColor: `${group.accent}14`, borderColor: `${group.accent}2E` }]}>
+          {group.icon}
+        </View>
+        <View style={s.v4RecapGroupCopy}>
+          <Text style={s.v4RecapGroupTitle}>{group.title}</Text>
+          <Text style={s.v4RecapGroupSubtitle}>{group.subtitle}</Text>
+        </View>
+        <Reanimated.View style={chevStyle}>
+          <ChevronRight s={17} c="rgba(25,23,20,0.38)" w={2.2} />
+        </Reanimated.View>
+      </View>
+      <V4RecapToolReasonDrawer open={open} labels={labels} accent={group.accent} />
+    </Reanimated.View>
+  );
+}
+
+function V4RecapToolsBoard({ groups, selected, onNext }: { groups: RecapProblemGroup[]; selected: string[]; onNext: () => void }) {
+  const recs = useMemo(
+    () =>
+      groups
+        .map(group => ({
+          group,
+          labels: group.cardIds
+            .filter(id => selected.includes(id))
+            .map(id => STATEMENT_SHORT_LABELS[id] ?? id),
+        }))
+        .filter(rec => rec.labels.length > 0),
+    [groups, selected],
+  );
+  const [reveal, setReveal] = useState(0);
+  const [settled, setSettled] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    if (reveal >= recs.length) {
+      const t = setTimeout(() => setSettled(true), 950);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => {
+      setReveal(c => c + 1);
+      runSelectionHaptic();
+    }, reveal === 0 ? 360 : 620);
+    return () => clearTimeout(t);
+  }, [reveal, recs.length]);
+
+  // Cascade: only the latest revealed tool is open; once settled all collapse.
+  const openIndex = settled ? -1 : reveal - 1;
+
+  return (
+    <View style={s.v4RecapSlide}>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={s.v4RecapScrollContent}
+        showsVerticalScrollIndicator={false}
+        onContentSizeChange={() => {
+          if (!settled) scrollRef.current?.scrollToEnd({ animated: true });
+        }}
+      >
+        <Reanimated.View entering={FadeIn.duration(440)} style={s.v4RecapHeader}>
+          <Text style={s.v4DayTitle}>Based on your answers{'\n'}we recommend</Text>
+        </Reanimated.View>
+
+        <View style={s.v4RecapProblemBoard}>
+          {recs.slice(0, reveal).map((rec, i) => (
+            <V4RecapToolCard key={rec.group.id} group={rec.group} labels={rec.labels} open={openIndex === i} />
+          ))}
+        </View>
+      </ScrollView>
+
+      {settled ? (
+        <AnimatedCta delay={120} style={s.questionFooter}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>Let&apos;s start</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      ) : null}
+    </View>
+  );
+}
+
 // Phase A (answers reveal + days card + purge) → Phase B (gold loading) →
-// Phase C (tools — TEMP: existing board+CTA until the drawer recommendation is built).
+// Phase C (tools — recommended tools with accordion reason drawers, Deo 2).
 function V4RecapSequence({
   cards,
   selected,
@@ -12857,25 +12997,7 @@ function V4RecapSequence({
   }
 
   if (phase === 'tools') {
-    // TEMP placeholder — the drawer-based recommendation is the next build step.
-    return (
-      <View style={s.v4RecapSlide}>
-        <ScrollView contentContainerStyle={s.v4RecapScrollContent} showsVerticalScrollIndicator={false}>
-          <Reanimated.View entering={FadeIn.duration(420)} style={s.v4RecapHeader}>
-            <Text style={s.v4DayTitle}>Based on your answers we recommend</Text>
-          </Reanimated.View>
-          <V4RecapProblemBoard groups={groups} cards={cards} selected={selected} accent={accent} delay={200} />
-        </ScrollView>
-        <AnimatedCta delay={420} style={s.questionFooter}>
-          <View style={s.ctaIsland}>
-            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-              <Text style={s.primaryButtonText}>Let&apos;s start</Text>
-              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
-            </TouchableOpacity>
-          </View>
-        </AnimatedCta>
-      </View>
-    );
+    return <V4RecapToolsBoard groups={groups} selected={selected} onNext={onNext} />;
   }
 
   const visibleCards = orderedCards.slice(0, Math.min(revealCount, cardCount));
@@ -18915,6 +19037,68 @@ const s = StyleSheet.create({
   },
   v4RecapProblemBoard: {
     rowGap: 14,
+  },
+  v4ToolCard: {
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    paddingTop: 13,
+    paddingBottom: 13,
+    backgroundColor: 'rgba(255,253,248,0.86)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.06,
+    shadowRadius: 18,
+    elevation: 1,
+  },
+  v4ToolCardOpen: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(77,133,134,0.34)',
+    shadowOpacity: 0.1,
+  },
+  v4ToolHeader: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 9,
+  },
+  v4ToolDrawer: {
+    overflow: 'hidden',
+  },
+  v4ToolDrawerInner: {
+    paddingTop: 12,
+    rowGap: 9,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(25,23,20,0.07)',
+  },
+  v4ToolReasonLead: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.42)',
+    marginBottom: 1,
+  },
+  v4ToolReasonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 9,
+  },
+  v4ToolReasonCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  v4ToolReasonText: {
+    flex: 1,
+    fontFamily: F.serifMedium,
+    fontSize: 14,
+    lineHeight: 18,
+    color: INK,
   },
   v4RecapProblemGroup: {
     borderRadius: 24,
