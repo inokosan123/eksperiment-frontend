@@ -11550,9 +11550,6 @@ function V4DayPanoramaHeaderSlide({
     opacity: interpolate(morph.value, [0.5, 1], [0, 1], 'clamp'),
     transform: [{ translateY: interpolate(morph.value, [0, 1], [12, 0]) }],
   }));
-  const barGoldStyle = useAnimatedStyle(() => ({
-    width: `${goldFill.value * goldMaxPct}%`,
-  }));
   const crestStyle = useAnimatedStyle(() => ({
     opacity: crestIntro.value,
     transform: [
@@ -11724,6 +11721,14 @@ function V4DayPanoramaHeaderSlide({
     { color: BEAD_PRODUCTIVE, label: 'Productive', value: `${card3ProdN}` },
     { color: BEAD_PHONE, label: 'Phone', value: `${card3PhoneN}` },
   ];
+  // Reclaim bar = a REAL white segment grown between productive and phone (not an
+  // overlay); the phone segment shrinks by the same amount and its illustration
+  // slides to the far right end so it never collides with the Anasta crest.
+  const screen2BarW = Math.min(frameWidth - 24, 340);
+  const phoneIlloDx = ((94 - phoneCxPct) / 100) * screen2BarW;
+  const whiteReclaimStyle = useAnimatedStyle(() => ({ width: `${goldFill.value * goldMaxPct}%` }));
+  const phoneReclaimStyle = useAnimatedStyle(() => ({ width: `${Math.max(0, phoneBarPct - goldFill.value * goldMaxPct)}%` }));
+  const phoneIlloStyle = useAnimatedStyle(() => ({ transform: [{ translateX: goldFill.value * phoneIlloDx }] }));
 
   return (
     <View
@@ -11864,14 +11869,16 @@ function V4DayPanoramaHeaderSlide({
             <View pointerEvents="none" style={[s.dayTwoIlloAbs, { left: `${prodCxPct}%` }]}>
               <ExpoImage source={DAY_PIE_TOOLBOX} style={s.dayTwoIlloImg} contentFit="contain" cachePolicy="memory-disk" />
             </View>
-            <View pointerEvents="none" style={[s.dayTwoIlloAbs, { left: `${phoneCxPct}%` }]}>
+            <Reanimated.View pointerEvents="none" style={[s.dayTwoIlloAbs, { left: `${phoneCxPct}%` }, phoneIlloStyle]}>
               <ExpoImage source={DAY_PIE_PHONE} style={s.dayTwoIlloImg} contentFit="contain" cachePolicy="memory-disk" />
-            </View>
+            </Reanimated.View>
             <View style={s.dayTwoBarTrack}>
               <LinearGradient colors={SLEEP_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: `${sleepBarPct}%`, height: '100%' }} />
               <LinearGradient colors={PRODUCTIVE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: `${productiveBarPct}%`, height: '100%' }} />
-              <LinearGradient colors={PHONE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: `${phoneBarPct}%`, height: '100%' }} />
-              <Reanimated.View pointerEvents="none" style={[s.dayBarGold, { left: `${sleepBarPct + productiveBarPct}%` }, barGoldStyle]} />
+              <Reanimated.View style={[s.dayBarReclaimed, whiteReclaimStyle]} />
+              <Reanimated.View style={[s.dayBarPhoneSeg, phoneReclaimStyle]}>
+                <LinearGradient colors={PHONE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: '100%', height: '100%' }} />
+              </Reanimated.View>
             </View>
           </View>
           <View style={s.dayImpactCards}>
@@ -11883,8 +11890,8 @@ function V4DayPanoramaHeaderSlide({
                 beadSize={30}
                 beadGap={8}
                 beadMaxWidth={300}
-                waste={{ pre: 'You waste ', gold: `${Math.ceil(wakingPercent)}%`, post: ' of your waking day on your phone.' }}
-                recovered={{ pre: 'You win back ', gold: `${Math.ceil(reclaimedWakingPercent)}%`, post: ' of your day.' }}
+                waste={{ pre: 'You waste ', gold: `${Math.ceil(wakingPercent)}%`, post: ' of your waking day.' }}
+                recovered={{ pre: 'You can win back ', gold: `${Math.ceil(reclaimedWakingPercent)}%`, post: ' of your day.' }}
                 legend={card1Legend}
               />
             )}
@@ -11895,8 +11902,8 @@ function V4DayPanoramaHeaderSlide({
                 beadsGold={card2BeadsGold}
                 beadSize={6}
                 beadGap={1.5}
-                waste={{ pre: 'That is ', gold: `${Math.ceil(stat.yearlyDays)} days`, post: ' lost every single year.' }}
-                recovered={{ pre: 'That is ', gold: `${Math.ceil(stat.reclaimedDays)} days`, post: ' back every year.' }}
+                waste={{ pre: 'You waste ', gold: `${Math.ceil(stat.yearlyDays)} days`, post: ' a year.' }}
+                recovered={{ pre: 'You can win back ', gold: `${Math.ceil(stat.reclaimedDays)} days`, post: ' a year.' }}
                 legend={card2Legend}
               />
             )}
@@ -11907,8 +11914,8 @@ function V4DayPanoramaHeaderSlide({
                 beadsGold={card3BeadsGold}
                 beadSize={10.5}
                 beadGap={3}
-                waste={{ pre: 'Across your life — ', gold: `${Math.ceil(stat.lifetimeYears)} years`, post: ' — gone.' }}
-                recovered={{ pre: 'Across your life — ', gold: `${Math.ceil(stat.reclaimedYears)} years`, post: ' — reclaimed.' }}
+                waste={{ pre: 'You waste ', gold: `${Math.ceil(stat.lifetimeYears)} years`, post: ' of your life.' }}
+                recovered={{ pre: 'You can win back ', gold: `${Math.ceil(stat.reclaimedYears)} years`, post: ' of life.' }}
                 legend={card3Legend}
               />
             )}
@@ -12014,8 +12021,8 @@ function DayBeadGrid({ beads, size, gap }: { beads: string[]; size: number; gap:
               width: size,
               height: size,
               borderRadius: size / 2,
-              backgroundColor: '#FFFFFF',
-              borderWidth: Math.min(2.5, Math.max(1, size * 0.16)),
+              backgroundColor: '#FBF1D6',
+              borderWidth: Math.min(2, Math.max(1, size * 0.14)),
               borderColor: GOLD,
             }}
           />
@@ -18125,14 +18132,13 @@ const s = StyleSheet.create({
   dayBarSeg: {
     height: '100%',
   },
-  dayBarGold: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
+  dayBarReclaimed: {
+    height: '100%',
     backgroundColor: '#FFFFFF',
-    borderWidth: 1.2,
-    borderColor: GOLD,
-    borderRadius: 3,
+  },
+  dayBarPhoneSeg: {
+    height: '100%',
+    overflow: 'hidden',
   },
   dayBarLegend: {
     flexDirection: 'row',
@@ -18198,8 +18204,8 @@ const s = StyleSheet.create({
   dayImpactGoldRule: {
     height: 1,
     alignSelf: 'stretch',
-    marginTop: 11,
-    marginBottom: 13,
+    marginTop: 8,
+    marginBottom: 12,
     backgroundColor: 'rgba(197,160,89,0.5)',
   },
   dayImpactBeadArea: {
