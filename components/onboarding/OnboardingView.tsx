@@ -12761,45 +12761,16 @@ function RecapFaller({
   );
 }
 
-// Compact answer card — the REAL deck-card look (reuses v4Statement* styles):
-// quote mark + statement text on top, image below, inner frame. Sized down for
-// real (no transform:scale → no Android blur), with a "That's me"/"Not me" tag.
-function V4RecapDeckCard({ card, active, accent, width }: { card: StatementDeckCard; active: boolean; accent: string; width: number }) {
-  const cardAccent = statementCardAccent(card, accent);
-  const quoteH = 76;
-  const imgH = Math.round(width * 0.82);
-  const label = STATEMENT_SHORT_LABELS[card.id] ?? card.statement;
+// Answer card — the REAL deck card at full deck size (reuses StatementCardFace
+// 1:1 so it's identical to the swipe deck: quote mark + full statement + image),
+// plus a stamped "That's me" / "Not me" badge. Inactive (Not me) cards dim.
+function V4RecapDeckCard({ card, active, accent, metrics }: { card: StatementDeckCard; active: boolean; accent: string; metrics: StatementCardMetrics }) {
+  const cardHeight = statementCardHeightFor(card, metrics);
   return (
-    <View style={[s.v4StatementCard, s.v4RecapDeckCard, { width, height: quoteH + imgH }, !active && s.v4RecapDeckInactive]}>
-      <View style={[s.v4StatementQuotePanel, s.v4RecapDeckQuote, { height: quoteH }]}>
-        <LinearGradient colors={[`${cardAccent}2E`, `${cardAccent}10`]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={StyleSheet.absoluteFill} />
-        <Text pointerEvents="none" style={[s.v4StatementQuoteMark, s.v4RecapDeckMark, { color: `${cardAccent}3D` }]}>“</Text>
-        <View style={s.v4StatementQuoteTextWrap}>
-          <Text numberOfLines={3} style={s.v4RecapDeckText}>{label}</Text>
-        </View>
-        <View style={s.v4StatementOrnamentRow}>
-          <View style={[s.v4StatementOrnamentLine, { backgroundColor: `${cardAccent}4D` }]} />
-          <View style={[s.v4StatementOrnamentDot, { backgroundColor: cardAccent }]} />
-          <View style={[s.v4StatementOrnamentLine, { backgroundColor: `${cardAccent}4D` }]} />
-        </View>
-      </View>
-      <View style={[s.v4StatementArt, { height: imgH }]}>
-        {card.image ? (
-          <ExpoImage source={card.image} style={s.v4StatementImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={card.id} />
-        ) : (
-          <View style={[s.v4StatementIcon, { backgroundColor: `${cardAccent}16` }]}>{card.icon}</View>
-        )}
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(23,19,15,0.10)', 'rgba(23,19,15,0)']}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={s.v4StatementArtShade}
-        />
-      </View>
-      <View pointerEvents="none" style={[s.v4StatementInnerFrame, s.v4RecapDeckInner]} />
-      <View style={[s.v4RecapAnswerTag, active ? s.v4RecapAnswerTagYes : s.v4RecapAnswerTagNo]}>
-        <Text style={[s.v4RecapAnswerTagText, active ? s.v4RecapAnswerTagTextYes : s.v4RecapAnswerTagTextNo]}>
+    <View style={[s.v4StatementCard, { width: metrics.width, height: cardHeight }, !active && s.v4RecapDeckInactive]}>
+      <StatementCardFace card={card} accent={accent} metrics={metrics} imageSource={card.image} imageTransition={0} />
+      <View style={[s.v4RecapStamp, active ? s.v4RecapStampYes : s.v4RecapStampNo]}>
+        <Text style={[s.v4RecapStampText, active ? s.v4RecapStampTextYes : s.v4RecapStampTextNo]}>
           {active ? "That's me" : 'Not me'}
         </Text>
       </View>
@@ -12824,7 +12795,7 @@ function V4RecapSequence({
   hours?: number;
   onNext: () => void;
 }) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const stat = hours !== undefined ? protectStats(hours) : null;
   const orderedCards = useMemo(() => {
     const yes = cards.filter(c => selected.includes(c.id));
@@ -12833,9 +12804,14 @@ function V4RecapSequence({
   }, [cards, selected]);
   const cardCount = orderedCards.length;
   const totalItems = cardCount + (stat ? 1 : 0);
-  // 2 per row: content width is (screen - 24 padding); subtract the 12 gap, halve,
-  // and shave 2px so rounding never tips it into a single column.
-  const cardWidth = Math.min(184, Math.floor((Math.min(width, 460) - 36) / 2) - 2);
+  // Full deck-card size (matches the swipe deck exactly), one per row.
+  const isCompact = height < 760;
+  const cardW = Math.min(Math.max(width - 52, 280), isCompact ? 356 : 382);
+  const quoteHeight = isCompact ? 104 : 116;
+  const metrics = useMemo<StatementCardMetrics>(
+    () => ({ width: cardW, quoteHeight, cardHeight: cardW + quoteHeight }),
+    [cardW, quoteHeight],
+  );
 
   const [phase, setPhase] = useState<'answers' | 'loading' | 'tools'>('answers');
   const [revealCount, setRevealCount] = useState(0);
@@ -12846,14 +12822,14 @@ function V4RecapSequence({
   useEffect(() => {
     if (phase !== 'answers') return undefined;
     if (revealCount < totalItems) {
-      const t = setTimeout(() => setRevealCount(c => c + 1), revealCount === 0 ? 360 : 240);
+      const t = setTimeout(() => setRevealCount(c => c + 1), revealCount === 0 ? 420 : 380);
       return () => clearTimeout(t);
     }
     const tHold = setTimeout(() => {
       runStrongHaptic();
       setPurging(true);
-    }, 1900);
-    const tLoad = setTimeout(() => setPhase('loading'), 2750);
+    }, 1500);
+    const tLoad = setTimeout(() => setPhase('loading'), 2400);
     return () => {
       clearTimeout(tHold);
       clearTimeout(tLoad);
@@ -12864,7 +12840,7 @@ function V4RecapSequence({
     if (phase !== 'loading') return undefined;
     setLoadIdx(0);
     const cyc = setInterval(() => setLoadIdx(i => (i + 1) % RECAP_LOADING_TEXTS.length), 700);
-    const done = setTimeout(() => setPhase('tools'), 2000);
+    const done = setTimeout(() => setPhase('tools'), 2800);
     return () => {
       clearInterval(cyc);
       clearTimeout(done);
@@ -12926,7 +12902,7 @@ function V4RecapSequence({
               fallDelay={(cardCount - i) * 55}
               rot={i % 2 === 0 ? -13 : 12}
             >
-              <V4RecapDeckCard card={card} active={selected.includes(card.id)} accent={accent} width={cardWidth} />
+              <V4RecapDeckCard card={card} active={selected.includes(card.id)} accent={accent} metrics={metrics} />
             </RecapFaller>
           ))}
         </View>
@@ -19028,12 +19004,39 @@ const s = StyleSheet.create({
   },
   v4RecapAnswerGrid: {
     width: '100%',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    columnGap: 12,
-    rowGap: 12,
-    marginTop: 10,
+    alignItems: 'center',
+    rowGap: 18,
+    marginTop: 8,
+  },
+  v4RecapStamp: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 11,
+    borderWidth: 2.4,
+    backgroundColor: 'rgba(255,253,248,0.92)',
+    transform: [{ rotate: '6deg' }],
+    zIndex: 6,
+  },
+  v4RecapStampYes: {
+    borderColor: '#2F8F57',
+  },
+  v4RecapStampNo: {
+    borderColor: '#C0494F',
+  },
+  v4RecapStampText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 15,
+    lineHeight: 19,
+    letterSpacing: 0.3,
+  },
+  v4RecapStampTextYes: {
+    color: '#23603E',
+  },
+  v4RecapStampTextNo: {
+    color: '#9B353B',
   },
   v4RecapDeckCard: {
     borderRadius: 18,
