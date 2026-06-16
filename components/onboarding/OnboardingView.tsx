@@ -12833,7 +12833,9 @@ function V4RecapSequence({
   }, [cards, selected]);
   const cardCount = orderedCards.length;
   const totalItems = cardCount + (stat ? 1 : 0);
-  const cardWidth = Math.min(170, (Math.min(width, 460) - 36) / 2);
+  // 2 per row: content width is (screen - 24 padding); subtract the 12 gap, halve,
+  // and shave 2px so rounding never tips it into a single column.
+  const cardWidth = Math.min(184, Math.floor((Math.min(width, 460) - 36) / 2) - 2);
 
   const [phase, setPhase] = useState<'answers' | 'loading' | 'tools'>('answers');
   const [revealCount, setRevealCount] = useState(0);
@@ -12850,8 +12852,8 @@ function V4RecapSequence({
     const tHold = setTimeout(() => {
       runStrongHaptic();
       setPurging(true);
-    }, 1000);
-    const tLoad = setTimeout(() => setPhase('loading'), 1850);
+    }, 1900);
+    const tLoad = setTimeout(() => setPhase('loading'), 2750);
     return () => {
       clearTimeout(tHold);
       clearTimeout(tLoad);
@@ -19025,6 +19027,7 @@ const s = StyleSheet.create({
     paddingBottom: 140,
   },
   v4RecapAnswerGrid: {
+    width: '100%',
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
