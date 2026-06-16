@@ -12723,18 +12723,30 @@ const RECAP_LOADING_TEXTS = [
   'Almost ready…',
 ];
 
-// Generic wrapper: fades/scales in on mount, and on `purge` drops through the
-// screen (like the toolsShowcase tags) with a stagger + spin.
+// Generic wrapper: slides in on mount (from a side / below) and rests at a small
+// tilt + horizontal offset (the "thrown pile" look); on `purge` it drops through
+// the screen (like the toolsShowcase tags) with a stagger + spin. Pass `noEnter`
+// when the child runs its own intro animation (e.g. ScreenTimeStatMessage).
 function RecapFaller({
   purge,
   fallDelay,
   rot,
+  enterX = 0,
+  enterY = 16,
+  tilt = 0,
+  restX = 0,
+  noEnter = false,
   style,
   children,
 }: {
   purge: boolean;
   fallDelay: number;
   rot: number;
+  enterX?: number;
+  enterY?: number;
+  tilt?: number;
+  restX?: number;
+  noEnter?: boolean;
   style?: any;
   children: React.ReactNode;
 }) {
@@ -12746,14 +12758,22 @@ function RecapFaller({
   }, [purge, fallDelay, fall]);
   const fallStyle = useAnimatedStyle(() => ({
     opacity: 1 - fall.value,
-    transform: [{ translateY: fall.value * 780 }, { rotate: `${fall.value * rot}deg` }],
+    transform: [
+      { translateX: restX },
+      { translateY: fall.value * 780 },
+      { rotate: `${tilt + fall.value * rot}deg` },
+    ],
   }));
   return (
     <Reanimated.View
-      entering={FadeIn.duration(360).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-        opacity: 0,
-        transform: [{ translateY: 16 }, { scale: 0.94 }],
-      })}
+      entering={
+        noEnter
+          ? undefined
+          : FadeIn.duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+              opacity: 0,
+              transform: [{ translateX: enterX }, { translateY: enterY }, { scale: 0.96 }],
+            })
+      }
       style={[style, fallStyle]}
     >
       {children}
@@ -12952,6 +12972,10 @@ function V4RecapSequence({
     () => ({ width: cardW, quoteHeight, cardHeight: cardW + quoteHeight }),
     [cardW, quoteHeight],
   );
+  // Overlap each answer card onto the one before it (~24%) for the "thrown
+  // pile" look; cards fly in from alternating sides.
+  const overlap = Math.round(metrics.cardHeight * 0.24);
+  const enterDist = width * 0.92;
 
   const [phase, setPhase] = useState<'answers' | 'loading' | 'tools'>('answers');
   const [revealCount, setRevealCount] = useState(0);
@@ -12962,14 +12986,14 @@ function V4RecapSequence({
   useEffect(() => {
     if (phase !== 'answers') return undefined;
     if (revealCount < totalItems) {
-      const t = setTimeout(() => setRevealCount(c => c + 1), revealCount === 0 ? 420 : 380);
+      const t = setTimeout(() => setRevealCount(c => c + 1), revealCount === 0 ? 520 : 840);
       return () => clearTimeout(t);
     }
     const tHold = setTimeout(() => {
       runStrongHaptic();
       setPurging(true);
-    }, 1500);
-    const tLoad = setTimeout(() => setPhase('loading'), 2400);
+    }, 2000);
+    const tLoad = setTimeout(() => setPhase('loading'), 2900);
     return () => {
       clearTimeout(tHold);
       clearTimeout(tLoad);
@@ -13023,6 +13047,11 @@ function V4RecapSequence({
               purge={purging}
               fallDelay={(cardCount - i) * 55}
               rot={i % 2 === 0 ? -13 : 12}
+              enterX={i % 2 === 0 ? -enterDist : enterDist}
+              enterY={0}
+              tilt={i % 2 === 0 ? -2.5 : 2.5}
+              restX={i % 2 === 0 ? -14 : 14}
+              style={i === 0 ? { zIndex: 1 } : { marginTop: -overlap, zIndex: i + 1 }}
             >
               <V4RecapDeckCard card={card} active={selected.includes(card.id)} accent={accent} metrics={metrics} />
             </RecapFaller>
@@ -13030,8 +13059,8 @@ function V4RecapSequence({
         </View>
 
         {daysVisible && stat ? (
-          <RecapFaller purge={purging} fallDelay={0} rot={-8} style={s.v4RecapDaysWrap}>
-            <V4RecapStakesCard stat={stat} />
+          <RecapFaller purge={purging} fallDelay={0} rot={-8} noEnter style={s.v4RecapDaysWrap}>
+            <ScreenTimeDaysCard stat={stat} />
           </RecapFaller>
         ) : null}
       </ScrollView>
@@ -19189,7 +19218,7 @@ const s = StyleSheet.create({
   v4RecapAnswerGrid: {
     width: '100%',
     alignItems: 'center',
-    rowGap: 18,
+    rowGap: 0,
     marginTop: 8,
   },
   v4RecapStamp: {
@@ -19285,7 +19314,7 @@ const s = StyleSheet.create({
   },
   v4RecapDaysWrap: {
     width: '100%',
-    marginTop: 16,
+    marginTop: 28,
   },
   v4RecapLoading: {
     flex: 1,
