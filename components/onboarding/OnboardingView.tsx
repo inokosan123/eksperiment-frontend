@@ -11890,8 +11890,8 @@ function V4DayPanoramaHeaderSlide({
                 beadSize={30}
                 beadGap={8}
                 beadMaxWidth={300}
-                waste={{ pre: 'You waste ', gold: `${Math.ceil(wakingPercent)}%`, post: ' of your waking day.' }}
-                recovered={{ pre: 'You can win back ', gold: `${Math.ceil(reclaimedWakingPercent)}%`, post: ' of your day.' }}
+                waste={{ pre: '', emphasis: 'You waste', gold: `${Math.ceil(wakingPercent)}%`, post: ' of your waking day.' }}
+                recovered={{ pre: 'You can ', emphasis: 'win back', gold: `${Math.ceil(reclaimedWakingPercent)}%`, post: ' of your day.' }}
                 legend={card1Legend}
               />
             )}
@@ -11902,8 +11902,8 @@ function V4DayPanoramaHeaderSlide({
                 beadsGold={card2BeadsGold}
                 beadSize={6}
                 beadGap={1.5}
-                waste={{ pre: 'You waste ', gold: `${Math.ceil(stat.yearlyDays)} days`, post: ' a year.' }}
-                recovered={{ pre: 'You can win back ', gold: `${Math.ceil(stat.reclaimedDays)} days`, post: ' a year.' }}
+                waste={{ pre: '', emphasis: 'You waste', gold: `${Math.ceil(stat.yearlyDays)} days`, post: ' a year.' }}
+                recovered={{ pre: 'You can ', emphasis: 'win back', gold: `${Math.ceil(stat.reclaimedDays)} days`, post: ' a year.' }}
                 legend={card2Legend}
               />
             )}
@@ -11914,8 +11914,8 @@ function V4DayPanoramaHeaderSlide({
                 beadsGold={card3BeadsGold}
                 beadSize={10.5}
                 beadGap={3}
-                waste={{ pre: 'You waste ', gold: `${Math.ceil(stat.lifetimeYears)} years`, post: ' of your life.' }}
-                recovered={{ pre: 'You can win back ', gold: `${Math.ceil(stat.reclaimedYears)} years`, post: ' of life.' }}
+                waste={{ pre: '', emphasis: 'You waste', gold: `${Math.ceil(stat.lifetimeYears)} years`, post: ' of your life.' }}
+                recovered={{ pre: 'You can ', emphasis: 'win back', gold: `${Math.ceil(stat.reclaimedYears)} years`, post: ' of life.' }}
                 legend={card3Legend}
               />
             )}
@@ -12049,7 +12049,7 @@ function goldifyBeads(arr: string[], reclaimCount: number): string[] {
   return out;
 }
 
-type DaySentence = { pre: string; gold: string; post: string };
+type DaySentence = { pre: string; emphasis: string; gold: string; post: string };
 
 function DayImpactCard({
   reclaim,
@@ -12073,15 +12073,10 @@ function DayImpactCard({
   legend: { color: string; label: string; value?: string }[];
 }) {
   const enter = useSharedValue(0);
-  const flip = useSharedValue(reclaim ? 1 : 0);
 
   useEffect(() => {
     enter.value = withTiming(1, { duration: 480, easing: Easing.bezier(0.16, 1, 0.28, 1) });
   }, [enter]);
-
-  useEffect(() => {
-    flip.value = withTiming(reclaim ? 1 : 0, { duration: 440, easing: Easing.out(Easing.cubic) });
-  }, [reclaim, flip]);
 
   const enterStyle = useAnimatedStyle(() => ({
     opacity: enter.value,
@@ -12090,22 +12085,25 @@ function DayImpactCard({
       { scale: interpolate(enter.value, [0, 1], [0.97, 1]) },
     ],
   }));
-  const wasteStyle = useAnimatedStyle(() => ({ opacity: 1 - flip.value }));
-  const recoveredStyle = useAnimatedStyle(() => ({ opacity: flip.value }));
 
   return (
     <Reanimated.View style={[s.dayImpactCard, enterStyle]}>
       <View style={s.dayImpactSentenceWrap}>
-        <Reanimated.Text style={[s.dayImpactSentence, wasteStyle]}>
-          {waste.pre}
-          <Text style={s.dayImpactSentenceGold}>{waste.gold}</Text>
-          {waste.post}
-        </Reanimated.Text>
-        <Reanimated.Text style={[s.dayImpactSentence, s.dayImpactSentenceAbs, recoveredStyle]}>
-          {recovered.pre}
-          <Text style={s.dayImpactSentenceGold}>{recovered.gold}</Text>
-          {recovered.post}
-        </Reanimated.Text>
+        {reclaim ? (
+          <Reanimated.Text key="reclaim" entering={FadeIn.duration(420)} style={s.dayImpactSentence}>
+            {recovered.pre}
+            <Text style={s.dayImpactWinMark}>{recovered.emphasis}</Text>{' '}
+            <Text style={s.dayImpactSentenceGold}>{recovered.gold}</Text>
+            {recovered.post}
+          </Reanimated.Text>
+        ) : (
+          <Text style={s.dayImpactSentence}>
+            {waste.pre}
+            <Text style={s.dayImpactWasteMark}>{waste.emphasis}</Text>{' '}
+            <Text style={s.dayImpactSentenceGold}>{waste.gold}</Text>
+            {waste.post}
+          </Text>
+        )}
       </View>
       <View style={s.dayImpactGoldRule} />
       <View style={[s.dayImpactBeadArea, beadMaxWidth ? { maxWidth: beadMaxWidth, alignSelf: 'center' } : null]}>
@@ -18187,19 +18185,26 @@ const s = StyleSheet.create({
   },
   dayImpactSentence: {
     fontFamily: F.serifSemiBold,
-    fontSize: 18,
-    lineHeight: 25,
+    fontSize: 20,
+    lineHeight: 28,
     color: INK,
-  },
-  dayImpactSentenceAbs: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
   },
   dayImpactSentenceGold: {
     color: '#C9A24E',
     fontFamily: F.serifSemiBold,
+    fontSize: 26,
+  },
+  dayImpactWasteMark: {
+    fontFamily: F.serifSemiBold,
+    color: INK,
+    textDecorationLine: 'underline',
+    textDecorationColor: '#B0383E',
+  },
+  dayImpactWinMark: {
+    fontFamily: F.serifBold,
+    color: INK,
+    textDecorationLine: 'underline',
+    textDecorationColor: '#3E9B5F',
   },
   dayImpactGoldRule: {
     height: 1,
