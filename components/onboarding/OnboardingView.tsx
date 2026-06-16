@@ -12717,6 +12717,223 @@ function V4RecapProblemBoard({
   );
 }
 
+const RECAP_LOADING_TEXTS = [
+  'Matching tools to your habits…',
+  'Building your personal plan…',
+  'Almost ready…',
+];
+
+// Generic wrapper: fades/scales in on mount, and on `purge` drops through the
+// screen (like the toolsShowcase tags) with a stagger + spin.
+function RecapFaller({
+  purge,
+  fallDelay,
+  rot,
+  style,
+  children,
+}: {
+  purge: boolean;
+  fallDelay: number;
+  rot: number;
+  style?: any;
+  children: React.ReactNode;
+}) {
+  const fall = useSharedValue(0);
+  useEffect(() => {
+    if (purge) {
+      fall.value = withDelay(fallDelay, withTiming(1, { duration: 640, easing: Easing.in(Easing.cubic) }));
+    }
+  }, [purge, fallDelay, fall]);
+  const fallStyle = useAnimatedStyle(() => ({
+    opacity: 1 - fall.value,
+    transform: [{ translateY: fall.value * 780 }, { rotate: `${fall.value * rot}deg` }],
+  }));
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(360).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 16 }, { scale: 0.94 }],
+      })}
+      style={[style, fallStyle]}
+    >
+      {children}
+    </Reanimated.View>
+  );
+}
+
+// One answer card (deck look: image + short label) with a "That's me" / "Not me"
+// tag. Inactive (Not me) cards are dimmed. No hooks here — fall/enter live in RecapFaller.
+function V4RecapAnswerInner({ card, active, accent }: { card: StatementDeckCard; active: boolean; accent: string }) {
+  const cardAccent = statementCardAccent(card, accent);
+  const inactive = !active;
+  return (
+    <>
+      <View style={s.v4RecapProblemImageWrap}>
+        {card.image ? (
+          <Image source={card.image} style={[s.v4RecapProblemImage, inactive && s.v4RecapProblemImageInactive]} resizeMode="cover" />
+        ) : (
+          <View style={[s.v4RecapProblemFallback, { backgroundColor: `${cardAccent}18` }]}>{card.icon}</View>
+        )}
+        {inactive ? <View pointerEvents="none" style={s.v4RecapProblemMutedOverlay} /> : null}
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(13,16,16,0)', 'rgba(13,16,16,0.76)', 'rgba(13,16,16,0.92)']}
+          locations={[0, 0.48, 1]}
+          style={s.v4RecapProblemLabelFade}
+        />
+        <View style={[s.v4RecapAnswerTag, active ? s.v4RecapAnswerTagYes : s.v4RecapAnswerTagNo]}>
+          <Text style={[s.v4RecapAnswerTagText, active ? s.v4RecapAnswerTagTextYes : s.v4RecapAnswerTagTextNo]}>
+            {active ? "That's me" : 'Not me'}
+          </Text>
+        </View>
+      </View>
+      <View style={s.v4RecapProblemLabelWrap}>
+        <Text numberOfLines={2} style={[s.v4RecapProblemLabel, inactive && s.v4RecapProblemLabelInactive]}>
+          {STATEMENT_SHORT_LABELS[card.id] ?? card.statement}
+        </Text>
+      </View>
+    </>
+  );
+}
+
+// Phase A (answers reveal + days card + purge) → Phase B (gold loading) →
+// Phase C (tools — TEMP: existing board+CTA until the drawer recommendation is built).
+function V4RecapSequence({
+  cards,
+  selected,
+  accent,
+  groups,
+  hours,
+  onNext,
+}: {
+  cards: StatementDeckCard[];
+  selected: string[];
+  accent: string;
+  groups: RecapProblemGroup[];
+  hours?: number;
+  onNext: () => void;
+}) {
+  const { width } = useWindowDimensions();
+  const stat = hours !== undefined ? protectStats(hours) : null;
+  const orderedCards = useMemo(() => {
+    const yes = cards.filter(c => selected.includes(c.id));
+    const no = cards.filter(c => !selected.includes(c.id));
+    return [...yes, ...no];
+  }, [cards, selected]);
+  const cardCount = orderedCards.length;
+  const totalItems = cardCount + (stat ? 1 : 0);
+  const cardWidth = Math.min(170, (Math.min(width, 460) - 36) / 2);
+  const cardHeight = Math.round(cardWidth * 0.92);
+
+  const [phase, setPhase] = useState<'answers' | 'loading' | 'tools'>('answers');
+  const [revealCount, setRevealCount] = useState(0);
+  const [purging, setPurging] = useState(false);
+  const [loadIdx, setLoadIdx] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    if (phase !== 'answers') return undefined;
+    if (revealCount < totalItems) {
+      const t = setTimeout(() => setRevealCount(c => c + 1), revealCount === 0 ? 360 : 240);
+      return () => clearTimeout(t);
+    }
+    const tHold = setTimeout(() => {
+      runStrongHaptic();
+      setPurging(true);
+    }, 1000);
+    const tLoad = setTimeout(() => setPhase('loading'), 1850);
+    return () => {
+      clearTimeout(tHold);
+      clearTimeout(tLoad);
+    };
+  }, [phase, revealCount, totalItems]);
+
+  useEffect(() => {
+    if (phase !== 'loading') return undefined;
+    setLoadIdx(0);
+    const cyc = setInterval(() => setLoadIdx(i => (i + 1) % RECAP_LOADING_TEXTS.length), 700);
+    const done = setTimeout(() => setPhase('tools'), 2000);
+    return () => {
+      clearInterval(cyc);
+      clearTimeout(done);
+    };
+  }, [phase]);
+
+  if (phase === 'loading') {
+    return (
+      <View style={s.v4RecapLoading}>
+        <ActivityIndicator size="large" color={GOLD} />
+        <Text style={s.v4RecapLoadingText}>{RECAP_LOADING_TEXTS[loadIdx]}</Text>
+      </View>
+    );
+  }
+
+  if (phase === 'tools') {
+    // TEMP placeholder — the drawer-based recommendation is the next build step.
+    return (
+      <View style={s.v4RecapSlide}>
+        <ScrollView contentContainerStyle={s.v4RecapScrollContent} showsVerticalScrollIndicator={false}>
+          <Reanimated.View entering={FadeIn.duration(420)} style={s.v4RecapHeader}>
+            <Text style={s.v4DayTitle}>Based on your answers we recommend</Text>
+          </Reanimated.View>
+          <V4RecapProblemBoard groups={groups} cards={cards} selected={selected} accent={accent} delay={200} />
+        </ScrollView>
+        <AnimatedCta delay={420} style={s.questionFooter}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>Let&apos;s start</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      </View>
+    );
+  }
+
+  const visibleCards = orderedCards.slice(0, Math.min(revealCount, cardCount));
+  const daysVisible = !!stat && revealCount > cardCount;
+  return (
+    <View style={s.v4RecapSlide}>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={s.v4RecapAnswersContent}
+        showsVerticalScrollIndicator={false}
+        onContentSizeChange={() => {
+          if (!purging) scrollRef.current?.scrollToEnd({ animated: true });
+        }}
+      >
+        <Reanimated.View entering={FadeIn.duration(440)} style={s.v4RecapHeader}>
+          <Text style={s.v4DayTitle}>Based on your answers</Text>
+        </Reanimated.View>
+
+        <View style={s.v4RecapAnswerGrid}>
+          {visibleCards.map((card, i) => (
+            <RecapFaller
+              key={card.id}
+              purge={purging}
+              fallDelay={(cardCount - i) * 55}
+              rot={i % 2 === 0 ? -13 : 12}
+              style={[
+                s.v4RecapAnswerCard,
+                { width: cardWidth, height: cardHeight },
+                selected.includes(card.id) ? null : s.v4RecapProblemCardInactive,
+              ]}
+            >
+              <V4RecapAnswerInner card={card} active={selected.includes(card.id)} accent={accent} />
+            </RecapFaller>
+          ))}
+        </View>
+
+        {daysVisible && stat ? (
+          <RecapFaller purge={purging} fallDelay={0} rot={-8} style={s.v4RecapDaysWrap}>
+            <V4RecapStakesCard stat={stat} />
+          </RecapFaller>
+        ) : null}
+      </ScrollView>
+    </View>
+  );
+}
+
 function V4RecapSlide({
   title,
   subtitle,
@@ -13813,9 +14030,7 @@ export default function OnboardingView() {
     }
     if (activeStep === 'protectRecap') {
       return (
-        <V4RecapSlide
-          title="Here's what we heard."
-          subtitle="You confirmed {count} problems. Let's deal with them."
+        <V4RecapSequence
           cards={PROTECT_DECK_CARDS}
           selected={answers.confirmedProtectProblems ?? []}
           accent="#4D8586"
@@ -18798,6 +19013,76 @@ const s = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 3,
+  },
+  v4RecapAnswersContent: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 140,
+  },
+  v4RecapAnswerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    columnGap: 12,
+    rowGap: 12,
+    marginTop: 10,
+  },
+  v4RecapAnswerCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.2,
+    borderColor: 'rgba(25,23,20,0.10)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  v4RecapAnswerTag: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    backgroundColor: 'rgba(255,253,248,0.94)',
+  },
+  v4RecapAnswerTagYes: {
+    borderColor: '#2F8F57',
+  },
+  v4RecapAnswerTagNo: {
+    borderColor: '#C0494F',
+  },
+  v4RecapAnswerTagText: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 0.3,
+  },
+  v4RecapAnswerTagTextYes: {
+    color: '#23603E',
+  },
+  v4RecapAnswerTagTextNo: {
+    color: '#9B353B',
+  },
+  v4RecapDaysWrap: {
+    width: '100%',
+    marginTop: 16,
+  },
+  v4RecapLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    rowGap: 18,
+    paddingHorizontal: 32,
+  },
+  v4RecapLoadingText: {
+    fontFamily: F.serifMediumItalic,
+    fontSize: 16,
+    lineHeight: 22,
+    color: 'rgba(25,23,20,0.6)',
+    textAlign: 'center',
   },
   v4RecapProblemCardInactive: {
     borderColor: 'rgba(25,23,20,0.08)',
