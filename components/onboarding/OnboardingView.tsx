@@ -12761,38 +12761,49 @@ function RecapFaller({
   );
 }
 
-// One answer card (deck look: image + short label) with a "That's me" / "Not me"
-// tag. Inactive (Not me) cards are dimmed. No hooks here — fall/enter live in RecapFaller.
-function V4RecapAnswerInner({ card, active, accent }: { card: StatementDeckCard; active: boolean; accent: string }) {
+// Compact answer card — the REAL deck-card look (reuses v4Statement* styles):
+// quote mark + statement text on top, image below, inner frame. Sized down for
+// real (no transform:scale → no Android blur), with a "That's me"/"Not me" tag.
+function V4RecapDeckCard({ card, active, accent, width }: { card: StatementDeckCard; active: boolean; accent: string; width: number }) {
   const cardAccent = statementCardAccent(card, accent);
-  const inactive = !active;
+  const quoteH = 76;
+  const imgH = Math.round(width * 0.82);
+  const label = STATEMENT_SHORT_LABELS[card.id] ?? card.statement;
   return (
-    <>
-      <View style={s.v4RecapProblemImageWrap}>
-        {card.image ? (
-          <Image source={card.image} style={[s.v4RecapProblemImage, inactive && s.v4RecapProblemImageInactive]} resizeMode="cover" />
-        ) : (
-          <View style={[s.v4RecapProblemFallback, { backgroundColor: `${cardAccent}18` }]}>{card.icon}</View>
-        )}
-        {inactive ? <View pointerEvents="none" style={s.v4RecapProblemMutedOverlay} /> : null}
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(13,16,16,0)', 'rgba(13,16,16,0.76)', 'rgba(13,16,16,0.92)']}
-          locations={[0, 0.48, 1]}
-          style={s.v4RecapProblemLabelFade}
-        />
-        <View style={[s.v4RecapAnswerTag, active ? s.v4RecapAnswerTagYes : s.v4RecapAnswerTagNo]}>
-          <Text style={[s.v4RecapAnswerTagText, active ? s.v4RecapAnswerTagTextYes : s.v4RecapAnswerTagTextNo]}>
-            {active ? "That's me" : 'Not me'}
-          </Text>
+    <View style={[s.v4StatementCard, s.v4RecapDeckCard, { width, height: quoteH + imgH }, !active && s.v4RecapDeckInactive]}>
+      <View style={[s.v4StatementQuotePanel, s.v4RecapDeckQuote, { height: quoteH }]}>
+        <LinearGradient colors={[`${cardAccent}2E`, `${cardAccent}10`]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={StyleSheet.absoluteFill} />
+        <Text pointerEvents="none" style={[s.v4StatementQuoteMark, s.v4RecapDeckMark, { color: `${cardAccent}3D` }]}>“</Text>
+        <View style={s.v4StatementQuoteTextWrap}>
+          <Text numberOfLines={3} style={s.v4RecapDeckText}>{label}</Text>
+        </View>
+        <View style={s.v4StatementOrnamentRow}>
+          <View style={[s.v4StatementOrnamentLine, { backgroundColor: `${cardAccent}4D` }]} />
+          <View style={[s.v4StatementOrnamentDot, { backgroundColor: cardAccent }]} />
+          <View style={[s.v4StatementOrnamentLine, { backgroundColor: `${cardAccent}4D` }]} />
         </View>
       </View>
-      <View style={s.v4RecapProblemLabelWrap}>
-        <Text numberOfLines={2} style={[s.v4RecapProblemLabel, inactive && s.v4RecapProblemLabelInactive]}>
-          {STATEMENT_SHORT_LABELS[card.id] ?? card.statement}
+      <View style={[s.v4StatementArt, { height: imgH }]}>
+        {card.image ? (
+          <ExpoImage source={card.image} style={s.v4StatementImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={card.id} />
+        ) : (
+          <View style={[s.v4StatementIcon, { backgroundColor: `${cardAccent}16` }]}>{card.icon}</View>
+        )}
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(23,19,15,0.10)', 'rgba(23,19,15,0)']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={s.v4StatementArtShade}
+        />
+      </View>
+      <View pointerEvents="none" style={[s.v4StatementInnerFrame, s.v4RecapDeckInner]} />
+      <View style={[s.v4RecapAnswerTag, active ? s.v4RecapAnswerTagYes : s.v4RecapAnswerTagNo]}>
+        <Text style={[s.v4RecapAnswerTagText, active ? s.v4RecapAnswerTagTextYes : s.v4RecapAnswerTagTextNo]}>
+          {active ? "That's me" : 'Not me'}
         </Text>
       </View>
-    </>
+    </View>
   );
 }
 
@@ -12823,7 +12834,6 @@ function V4RecapSequence({
   const cardCount = orderedCards.length;
   const totalItems = cardCount + (stat ? 1 : 0);
   const cardWidth = Math.min(170, (Math.min(width, 460) - 36) / 2);
-  const cardHeight = Math.round(cardWidth * 0.92);
 
   const [phase, setPhase] = useState<'answers' | 'loading' | 'tools'>('answers');
   const [revealCount, setRevealCount] = useState(0);
@@ -12913,13 +12923,8 @@ function V4RecapSequence({
               purge={purging}
               fallDelay={(cardCount - i) * 55}
               rot={i % 2 === 0 ? -13 : 12}
-              style={[
-                s.v4RecapAnswerCard,
-                { width: cardWidth, height: cardHeight },
-                selected.includes(card.id) ? null : s.v4RecapProblemCardInactive,
-              ]}
             >
-              <V4RecapAnswerInner card={card} active={selected.includes(card.id)} accent={accent} />
+              <V4RecapDeckCard card={card} active={selected.includes(card.id)} accent={accent} width={cardWidth} />
             </RecapFaller>
           ))}
         </View>
@@ -19027,27 +19032,49 @@ const s = StyleSheet.create({
     rowGap: 12,
     marginTop: 10,
   },
-  v4RecapAnswerCard: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.2,
-    borderColor: 'rgba(25,23,20,0.10)',
+  v4RecapDeckCard: {
+    borderRadius: 18,
     shadowColor: '#5E5142',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.14,
     shadowRadius: 16,
     elevation: 3,
   },
+  v4RecapDeckInactive: {
+    opacity: 0.5,
+  },
+  v4RecapDeckQuote: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  v4RecapDeckMark: {
+    fontSize: 34,
+    lineHeight: 40,
+    top: -2,
+    left: 8,
+  },
+  v4RecapDeckText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 12.5,
+    lineHeight: 15.5,
+    color: INK,
+    textAlign: 'center',
+  },
+  v4RecapDeckInner: {
+    margin: 4,
+    borderRadius: 13,
+  },
   v4RecapAnswerTag: {
     position: 'absolute',
     top: 8,
-    left: 8,
+    right: 8,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
     borderWidth: 1.5,
     backgroundColor: 'rgba(255,253,248,0.94)',
+    zIndex: 6,
   },
   v4RecapAnswerTagYes: {
     borderColor: '#2F8F57',
