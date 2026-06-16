@@ -12874,6 +12874,65 @@ function V4RecapToolCard({ group, labels, open }: { group: RecapProblemGroup; la
   );
 }
 
+// Deo 3 — setup loop. The settled clean list becomes a checklist: tap a tool to
+// "set it up" (a brief busy state, like leaving to configure it and returning),
+// then it lands a gold check + haptic. When all are done the board auto-advances
+// to the flame screen. This is an onboarding-only simulated setup — it does NOT
+// drive the real tools.
+type ToolSetupStatus = 'idle' | 'busy' | 'done';
+
+function V4RecapSetupCard({
+  group,
+  status,
+  active,
+  onPress,
+}: {
+  group: RecapProblemGroup;
+  status: ToolSetupStatus;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const done = status === 'done';
+  const busy = status === 'busy';
+  const subtitle = busy ? 'Setting up…' : done ? 'Ready to protect you' : 'Tap to set up';
+  return (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      haptic={status === 'idle' ? 'medium' : undefined}
+      disabled={status !== 'idle'}
+      onPress={onPress}
+      style={[s.v4ToolCard, active && s.v4SetupCardActive, done && s.v4SetupCardDoneState]}
+    >
+      <View style={s.v4ToolHeader}>
+        <View style={[s.v4RecapGroupIcon, { backgroundColor: `${group.accent}14`, borderColor: `${group.accent}2E` }]}>
+          {group.icon}
+        </View>
+        <View style={s.v4RecapGroupCopy}>
+          <Text style={s.v4RecapGroupTitle}>{group.title}</Text>
+          <Text style={[s.v4RecapGroupSubtitle, done && s.v4SetupCardSubtitleDone]}>{subtitle}</Text>
+        </View>
+        <View style={s.v4SetupStatus}>
+          {busy ? (
+            <ActivityIndicator size="small" color={GOLD} />
+          ) : done ? (
+            <Reanimated.View
+              entering={FadeIn.duration(360).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                opacity: 0,
+                transform: [{ scale: 0.4 }],
+              })}
+              style={s.v4SetupCheck}
+            >
+              <CheckSmall s={17} c="#FFFFFF" w={3} />
+            </Reanimated.View>
+          ) : (
+            <View style={[s.v4SetupDot, active && s.v4SetupDotActive]} />
+          )}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 function V4RecapToolsBoard({ groups, selected, onNext }: { groups: RecapProblemGroup[]; selected: string[]; onNext: () => void }) {
   const recs = useMemo(
     () =>
@@ -12889,6 +12948,7 @@ function V4RecapToolsBoard({ groups, selected, onNext }: { groups: RecapProblemG
   );
   const [reveal, setReveal] = useState(0);
   const [settled, setSettled] = useState(false);
+  const [status, setStatus] = useState<Record<string, ToolSetupStatus>>({});
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -12906,6 +12966,27 @@ function V4RecapToolsBoard({ groups, selected, onNext }: { groups: RecapProblemG
   // Cascade: only the latest revealed tool is open; once settled all collapse.
   const openIndex = settled ? -1 : reveal - 1;
 
+  // Deo 3 — once settled, drive the setup checklist.
+  const statusOf = (id: string): ToolSetupStatus => status[id] ?? 'idle';
+  const doneCount = recs.filter(rec => statusOf(rec.group.id) === 'done').length;
+  const allDone = settled && doneCount === recs.length;
+  // The active card is the first not-yet-done tool (guides the eye).
+  const activeId = settled ? recs.find(rec => statusOf(rec.group.id) !== 'done')?.group.id : undefined;
+
+  const handleSetup = (id: string) => {
+    setStatus(prev => ({ ...prev, [id]: 'busy' }));
+    setTimeout(() => {
+      setStatus(prev => ({ ...prev, [id]: 'done' }));
+      runStrongHaptic();
+    }, 1000);
+  };
+
+  useEffect(() => {
+    if (!allDone) return undefined;
+    const t = setTimeout(onNext, 900);
+    return () => clearTimeout(t);
+  }, [allDone, onNext]);
+
   return (
     <View style={s.v4RecapSlide}>
       <ScrollView
@@ -12916,24 +12997,38 @@ function V4RecapToolsBoard({ groups, selected, onNext }: { groups: RecapProblemG
           if (!settled) scrollRef.current?.scrollToEnd({ animated: true });
         }}
       >
-        <Reanimated.View entering={FadeIn.duration(440)} style={s.v4RecapHeader}>
-          <Text style={s.v4DayTitle}>Based on your answers{'\n'}we recommend</Text>
+        <Reanimated.View key={settled ? 'setup' : 'rec'} entering={FadeIn.duration(440)} style={s.v4RecapHeader}>
+          <Text style={s.v4DayTitle}>
+            {settled ? 'Set up your tools' : 'Based on your answers\nwe recommend'}
+          </Text>
+          {settled ? (
+            <Text style={s.v4RecapSubtitle}>Tap each one to add it to your Protect slot.</Text>
+          ) : null}
         </Reanimated.View>
 
         <View style={s.v4RecapProblemBoard}>
-          {recs.slice(0, reveal).map((rec, i) => (
-            <V4RecapToolCard key={rec.group.id} group={rec.group} labels={rec.labels} open={openIndex === i} />
-          ))}
+          {recs.slice(0, reveal).map((rec, i) =>
+            settled ? (
+              <V4RecapSetupCard
+                key={rec.group.id}
+                group={rec.group}
+                status={statusOf(rec.group.id)}
+                active={activeId === rec.group.id}
+                onPress={() => handleSetup(rec.group.id)}
+              />
+            ) : (
+              <V4RecapToolCard key={rec.group.id} group={rec.group} labels={rec.labels} open={openIndex === i} />
+            ),
+          )}
         </View>
       </ScrollView>
 
       {settled ? (
         <AnimatedCta delay={120} style={s.questionFooter}>
-          <View style={s.ctaIsland}>
-            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-              <Text style={s.primaryButtonText}>Let&apos;s start</Text>
-              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
-            </TouchableOpacity>
+          <View style={s.v4SetupProgressBar}>
+            <Text style={s.v4SetupProgressText}>
+              {allDone ? 'All set — lighting your slot…' : `${doneCount} of ${recs.length} set up`}
+            </Text>
           </View>
         </AnimatedCta>
       ) : null}
@@ -19093,6 +19188,54 @@ const s = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderColor: 'rgba(77,133,134,0.34)',
     shadowOpacity: 0.1,
+  },
+  v4SetupCardActive: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(197,160,89,0.55)',
+    shadowColor: '#C5A059',
+    shadowOpacity: 0.16,
+  },
+  v4SetupCardDoneState: {
+    backgroundColor: 'rgba(197,160,89,0.08)',
+    borderColor: 'rgba(197,160,89,0.3)',
+  },
+  v4SetupCardSubtitleDone: {
+    color: '#9A7B33',
+  },
+  v4SetupStatus: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  v4SetupCheck: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: GOLD,
+  },
+  v4SetupDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(25,23,20,0.18)',
+  },
+  v4SetupDotActive: {
+    borderColor: 'rgba(197,160,89,0.7)',
+    backgroundColor: 'rgba(197,160,89,0.14)',
+  },
+  v4SetupProgressBar: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  v4SetupProgressText: {
+    fontFamily: F.sansBold,
+    fontSize: 12,
+    letterSpacing: 0.4,
+    color: 'rgba(25,23,20,0.55)',
   },
   v4ToolHeader: {
     minHeight: 42,
