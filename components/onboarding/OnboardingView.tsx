@@ -12781,14 +12781,17 @@ function RecapFaller({
   );
 }
 
-// Answer card — the REAL deck card at full deck size (reuses StatementCardFace
-// 1:1 so it's identical to the swipe deck: quote mark + full statement + image),
-// plus a stamped "That's me" / "Not me" badge. Inactive (Not me) cards dim.
+// Answer card — the REAL deck card (reuses StatementCardFace 1:1 so it's
+// identical to the swipe deck: quote mark + full statement + image), plus a
+// stamped "That's me" / "Not me" badge. Inactive (Not me) cards are muted with
+// an opaque paper overlay (NOT card opacity — so overlapping cards never show
+// through each other).
 function V4RecapDeckCard({ card, active, accent, metrics }: { card: StatementDeckCard; active: boolean; accent: string; metrics: StatementCardMetrics }) {
   const cardHeight = statementCardHeightFor(card, metrics);
   return (
-    <View style={[s.v4StatementCard, { width: metrics.width, height: cardHeight }, !active && s.v4RecapDeckInactive]}>
+    <View style={[s.v4StatementCard, { width: metrics.width, height: cardHeight }]}>
       <StatementCardFace card={card} accent={accent} metrics={metrics} imageSource={card.image} imageTransition={0} />
+      {!active ? <View pointerEvents="none" style={s.v4RecapDeckMutedOverlay} /> : null}
       <View style={[s.v4RecapStamp, active ? s.v4RecapStampYes : s.v4RecapStampNo]}>
         <Text style={[s.v4RecapStampText, active ? s.v4RecapStampTextYes : s.v4RecapStampTextNo]}>
           {active ? "That's me" : 'Not me'}
@@ -12966,16 +12969,21 @@ function V4RecapSequence({
   const totalItems = cardCount + (stat ? 1 : 0);
   // Full deck-card size (matches the swipe deck exactly), one per row.
   const isCompact = height < 760;
-  const cardW = Math.min(Math.max(width - 52, 280), isCompact ? 356 : 382);
-  const quoteHeight = isCompact ? 104 : 116;
+  // Slightly smaller than the deck, and sized to stay inside the stage's 20px
+  // side padding + the scroll content padding (window - ~80) so cards never
+  // reach the side gutters.
+  const cardW = Math.min(Math.max(width - 80, 252), isCompact ? 308 : 326);
+  // Taller quote panel than the deck so the longer statements auto-shrink less
+  // (more consistent font across cards).
+  const quoteHeight = isCompact ? 118 : 130;
   const metrics = useMemo<StatementCardMetrics>(
     () => ({ width: cardW, quoteHeight, cardHeight: cardW + quoteHeight }),
     [cardW, quoteHeight],
   );
-  // Overlap each answer card onto the one before it (~24%) for the "thrown
+  // Overlap each answer card onto the one before it (~20%) for the "thrown
   // pile" look; cards fly in from alternating sides.
-  const overlap = Math.round(metrics.cardHeight * 0.24);
-  const enterDist = width * 0.92;
+  const overlap = Math.round(metrics.cardHeight * 0.2);
+  const enterDist = width * 0.9;
 
   const [phase, setPhase] = useState<'answers' | 'loading' | 'tools'>('answers');
   const [revealCount, setRevealCount] = useState(0);
@@ -13049,8 +13057,8 @@ function V4RecapSequence({
               rot={i % 2 === 0 ? -13 : 12}
               enterX={i % 2 === 0 ? -enterDist : enterDist}
               enterY={0}
-              tilt={i % 2 === 0 ? -2.5 : 2.5}
-              restX={i % 2 === 0 ? -14 : 14}
+              tilt={i % 2 === 0 ? -2 : 2}
+              restX={i % 2 === 0 ? -10 : 10}
               style={i === 0 ? { zIndex: 1 } : { marginTop: -overlap, zIndex: i + 1 }}
             >
               <V4RecapDeckCard card={card} active={selected.includes(card.id)} accent={accent} metrics={metrics} />
@@ -19259,8 +19267,10 @@ const s = StyleSheet.create({
     shadowRadius: 16,
     elevation: 3,
   },
-  v4RecapDeckInactive: {
-    opacity: 0.5,
+  v4RecapDeckMutedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(249,244,236,0.6)',
+    zIndex: 4,
   },
   v4RecapDeckQuote: {
     paddingHorizontal: 12,
