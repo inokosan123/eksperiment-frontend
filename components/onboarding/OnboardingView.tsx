@@ -295,9 +295,9 @@ const DAY_AXIS_MOON = require('@/assets/images/onboarding/day-axis-moon-cutout.p
 const DAY_AXIS_CLOUD = require('@/assets/images/onboarding/day-axis-cloud-cutout.png');
 const DAY_CLOUD_BANK_SOFT = require('@/assets/images/onboarding/day-cloud-bank-soft-cutout.png');
 const DAY_CLOUD_BANK_FULL = require('@/assets/images/onboarding/day-cloud-bank-full-cutout.png');
-const DAY_PIE_PHONE = require('@/assets/images/onboarding/day-pie-phone-cutout.png');
-const DAY_PIE_SLEEP = require('@/assets/images/onboarding/day-pie-sleep-cutout.png');
-const DAY_PIE_TOOLBOX = require('@/assets/images/onboarding/day-pie-toolbox-cutout.png');
+const DAY_PIE_PHONE = require('@/assets/images/onboarding/day-pie-phone-v2-cutout.png');
+const DAY_PIE_SLEEP = require('@/assets/images/onboarding/day-pie-sleep-v2-cutout.png');
+const DAY_PIE_TOOLBOX = require('@/assets/images/onboarding/day-pie-toolbox-v2-cutout.png');
 const PROTECT_STATEMENT_IMAGES = [
   require('@/assets/images/protect-statement-1.jpg'),
   require('@/assets/images/protect-statement-2.jpg'),
@@ -1276,7 +1276,7 @@ const VALUE_SLIDES: Record<ValueStepId, { title: string; body: string; kind: Val
   },
   valueDiscipline: {
     title: 'Build discipline!',
-    body: 'Become a more disciplined person and build the habits that shape your character.',
+    body: 'Stay consistent with your responsibilities, your habits, and your spiritual life.',
     kind: 'discipline',
   },
   valueFocus: {
@@ -6282,10 +6282,12 @@ function ScreenTimePercentCard({
   stat,
   index,
   stackSignal,
+  entrance = 'default',
 }: {
   stat: ReturnType<typeof protectStats>;
   index?: number;
   stackSignal?: number;
+  entrance?: ScreenTimeStatEntrance;
 }) {
   const parts = screenTimeDayParts(stat);
   return (
@@ -6297,6 +6299,7 @@ function ScreenTimePercentCard({
       legendItems={negativeScreenTimeLegend}
       index={index}
       stackSignal={stackSignal}
+      entrance={entrance}
       visual={(
         <View style={s.screenTimeDayBar}>
           {Array.from({ length: parts.sleep }).map((_, index) => (
@@ -6318,10 +6321,12 @@ function ScreenTimeDaysCard({
   stat,
   index,
   stackSignal,
+  entrance = 'default',
 }: {
   stat: ReturnType<typeof protectStats>;
   index?: number;
   stackSignal?: number;
+  entrance?: ScreenTimeStatEntrance;
 }) {
   const parts = screenTimeYearParts(stat);
   return (
@@ -6333,6 +6338,7 @@ function ScreenTimeDaysCard({
       legendItems={negativeScreenTimeLegend}
       index={index}
       stackSignal={stackSignal}
+      entrance={entrance}
       visual={<ScreenTimeDotGrid total={365} awake={parts.awake} phone={parts.phone} sleep={parts.sleep} mode="days" />}
     />
   );
@@ -6342,10 +6348,12 @@ function ScreenTimeYearsCard({
   stat,
   index,
   stackSignal,
+  entrance = 'default',
 }: {
   stat: ReturnType<typeof protectStats>;
   index?: number;
   stackSignal?: number;
+  entrance?: ScreenTimeStatEntrance;
 }) {
   const parts = screenTimeLifetimeParts(stat);
   return (
@@ -6357,6 +6365,7 @@ function ScreenTimeYearsCard({
       legendItems={negativeScreenTimeLegend}
       index={index}
       stackSignal={stackSignal}
+      entrance={entrance}
       visual={<ScreenTimeDotGrid total={PROTECT_LIFESPAN_YEARS} awake={parts.awake} phone={parts.phone} sleep={parts.sleep} mode="years" />}
     />
   );
@@ -6366,10 +6375,12 @@ function ScreenTimeSavedDaysCard({
   stat,
   index,
   stackSignal,
+  entrance = 'default',
 }: {
   stat: ReturnType<typeof protectStats>;
   index?: number;
   stackSignal?: number;
+  entrance?: ScreenTimeStatEntrance;
 }) {
   const sleepDays = Math.round((SLEEP_HOURS_PER_DAY * 365) / DAY_HOURS);
   const phoneDays = Math.max(0, stat.yearlyDays - stat.reclaimedDays);
@@ -6384,6 +6395,7 @@ function ScreenTimeSavedDaysCard({
       legendItems={negativeScreenTimeLegend}
       index={index}
       stackSignal={stackSignal}
+      entrance={entrance}
       visual={<ScreenTimeDotGrid total={365} awake={awakeDays} phone={phoneDays} sleep={sleepDays} mode="days" dark />}
     />
   );
@@ -6393,10 +6405,12 @@ function ScreenTimeSavedYearsCard({
   stat,
   index,
   stackSignal,
+  entrance = 'default',
 }: {
   stat: ReturnType<typeof protectStats>;
   index?: number;
   stackSignal?: number;
+  entrance?: ScreenTimeStatEntrance;
 }) {
   const sleepYears = Math.round((SLEEP_HOURS_PER_DAY * PROTECT_LIFESPAN_YEARS) / DAY_HOURS);
   const lostYears = Math.max(0, Math.min(PROTECT_LIFESPAN_YEARS, Math.round(stat.lifetimeYears)));
@@ -6413,13 +6427,275 @@ function ScreenTimeSavedYearsCard({
       legendItems={negativeScreenTimeLegend}
       index={index}
       stackSignal={stackSignal}
+      entrance={entrance}
       visual={<ScreenTimeDotGrid total={PROTECT_LIFESPAN_YEARS} awake={awakeYears} phone={phoneYears} sleep={sleepYears} mode="years" dark />}
     />
   );
 }
 
+type DayCompareCardSide = 'left' | 'right';
+type DayCompareLegendKind = 'sleep' | 'productive' | 'phone' | 'anasta';
+type DayCompareLegendItem = { label: string; kind: DayCompareLegendKind };
+
+const dayCompareLegendItems: DayCompareLegendItem[] = [
+  { label: 'Sleep', kind: 'sleep' },
+  { label: 'Productive', kind: 'productive' },
+  { label: 'Phone', kind: 'phone' },
+];
+
+const dayCompareReclaimLegendItems: DayCompareLegendItem[] = [
+  { label: 'Sleep', kind: 'sleep' },
+  { label: 'Productive', kind: 'productive' },
+  { label: 'Phone', kind: 'phone' },
+  { label: 'Anasta', kind: 'anasta' },
+];
+
+function DayCompareLegend({ items, dark }: { items: DayCompareLegendItem[]; dark: boolean }) {
+  const compact = items.some(item => item.kind === 'anasta');
+  return (
+    <View style={[s.screenTimeLegend, compact && s.dayCompareLegendOneLine]}>
+      {items.map(item => (
+        <View key={`day-compare-${item.kind}-${item.label}`} style={[s.screenTimeLegendItem, compact && s.dayCompareLegendItemCompact]}>
+          <View
+            style={[
+              s.screenTimeLegendDot,
+              item.kind === 'sleep' && s.dayCompareLegendSleep,
+              item.kind === 'productive' && s.dayCompareLegendProductive,
+              item.kind === 'phone' && s.dayCompareLegendPhone,
+              item.kind === 'anasta' && s.dayCompareLegendAnasta,
+            ]}
+          />
+          <Text style={[s.screenTimeLegendText, s.dayCompareLegendText, compact && s.dayCompareLegendTextCompact, dark && s.screenTimeLegendTextDark]}>{item.label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function DayCompareDotGrid({
+  total,
+  productive,
+  phone,
+  sleep,
+  anasta = 0,
+  mode,
+  dark = false,
+}: {
+  total: number;
+  productive: number;
+  phone: number;
+  sleep: number;
+  anasta?: number;
+  mode: 'days' | 'years';
+  dark?: boolean;
+}) {
+  const safeSleep = Math.max(0, Math.min(total, sleep));
+  const safeAnasta = Math.max(0, Math.min(total - safeSleep, anasta));
+  const safePhone = Math.max(0, Math.min(total - safeSleep - safeAnasta, phone));
+  const safeProductive = Math.max(0, Math.min(total - safeSleep - safeAnasta - safePhone, productive));
+  const compact = total > 100;
+
+  return (
+    <View style={[s.screenTimeDotGrid, compact && s.screenTimeDotGridCompact]}>
+      {Array.from({ length: total }).map((_, index) => {
+        const state =
+          index < safeSleep
+            ? 'sleep'
+            : index < safeSleep + safeProductive
+              ? 'productive'
+              : index < safeSleep + safeProductive + safeAnasta
+                  ? 'anasta'
+                  : index < safeSleep + safeProductive + safeAnasta + safePhone
+                    ? 'phone'
+                    : 'dim';
+        return (
+          <View
+            key={`day-compare-${mode}-${index}`}
+            style={[
+              compact ? s.screenTimeDotSmall : s.screenTimeDot,
+              state === 'sleep' && s.dayCompareDotSleep,
+              state === 'productive' && s.dayCompareDotProductive,
+              state === 'phone' && s.dayCompareDotPhone,
+              state === 'anasta' && s.dayCompareDotAnasta,
+              state === 'dim' && (dark ? s.screenTimeDotDimOnDark : s.screenTimeDotDimLight),
+            ]}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+function DayCompareStatCard({
+  value,
+  label,
+  legendItems,
+  visual,
+  tone = 'light',
+  side,
+}: {
+  value: string;
+  label: string;
+  legendItems: DayCompareLegendItem[];
+  visual: React.ReactNode;
+  tone?: 'light' | 'dark';
+  side: DayCompareCardSide;
+}) {
+  const dark = tone === 'dark';
+  const entering = side === 'left'
+    ? FadeInLeft.duration(720).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+      opacity: 0,
+      transform: [{ translateX: -38 }, { scale: 0.985 }],
+    })
+    : FadeInRight.duration(720).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+      opacity: 0,
+      transform: [{ translateX: 38 }, { scale: 0.985 }],
+    });
+
+  useEffect(() => {
+    const timer = setTimeout(runBubbleHaptic, 210);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <Reanimated.View
+      entering={entering}
+      style={[s.screenTimeStatMessage, s.dayCompareStaticCard, dark && s.screenTimeStatMessageDark]}
+    >
+      <View style={[s.screenTimeStatHeader, s.screenTimeStatHeaderStacked]}>
+        <Text style={[s.screenTimeStatValue, s.screenTimeStatValueStacked, dark && s.screenTimeStatValueDark]}>{value}</Text>
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.82}
+          style={[s.screenTimeStatLabel, s.screenTimeStatLabelStacked, s.dayCompareStatLabel, dark && s.screenTimeStatLabelDark]}
+        >
+          {label}
+        </Text>
+        <View style={s.screenTimeStatLabelUnderline} />
+      </View>
+      <DayCompareLegend items={legendItems} dark={dark} />
+      {visual}
+    </Reanimated.View>
+  );
+}
+
+function DayComparePercentCard({ stat, side }: { stat: ReturnType<typeof protectStats>; side: DayCompareCardSide }) {
+  const parts = screenTimeDayParts(stat);
+  return (
+    <DayCompareStatCard
+      value={`${stat.usablePercent}%`}
+      label="of your 16h productive day!"
+      legendItems={dayCompareLegendItems}
+      side={side}
+      visual={(
+        <View style={s.screenTimeDayBar}>
+          {Array.from({ length: parts.sleep }).map((_, index) => (
+            <View key={`compare-sleep-hour-${index}`} style={[s.screenTimeDaySegment, s.dayCompareDaySegmentSleep]} />
+          ))}
+          {Array.from({ length: parts.awake }).map((_, index) => (
+            <View key={`compare-awake-hour-${index}`} style={[s.screenTimeDaySegment, s.dayCompareDaySegmentProductive]} />
+          ))}
+          {Array.from({ length: parts.phone }).map((_, index) => (
+            <View key={`compare-phone-hour-${index}`} style={[s.screenTimeDaySegment, s.dayCompareDaySegmentPhone]} />
+          ))}
+        </View>
+      )}
+    />
+  );
+}
+
+function DayCompareDaysCard({ stat, side }: { stat: ReturnType<typeof protectStats>; side: DayCompareCardSide }) {
+  const parts = screenTimeYearParts(stat);
+  return (
+    <DayCompareStatCard
+      value={`${stat.yearlyDays}`}
+      label="days every year!"
+      legendItems={dayCompareLegendItems}
+      side={side}
+      visual={<DayCompareDotGrid total={365} productive={parts.awake} phone={parts.phone} sleep={parts.sleep} mode="days" />}
+    />
+  );
+}
+
+function DayCompareYearsCard({ stat, side }: { stat: ReturnType<typeof protectStats>; side: DayCompareCardSide }) {
+  const parts = screenTimeLifetimeParts(stat);
+  return (
+    <DayCompareStatCard
+      value={`${formatYearValue(stat.lifetimeYears)}`}
+      label="years over 85 years (avg. lifespan)!"
+      legendItems={dayCompareLegendItems}
+      side={side}
+      visual={<DayCompareDotGrid total={PROTECT_LIFESPAN_YEARS} productive={parts.awake} phone={parts.phone} sleep={parts.sleep} mode="years" />}
+    />
+  );
+}
+
+function DayCompareSavedDaysCard({ stat, side }: { stat: ReturnType<typeof protectStats>; side: DayCompareCardSide }) {
+  const sleepDays = Math.round((SLEEP_HOURS_PER_DAY * 365) / DAY_HOURS);
+  const anastaDays = Math.max(0, stat.reclaimedDays);
+  const phoneDays = Math.max(0, stat.yearlyDays - stat.reclaimedDays);
+  const awakeDays = Math.max(0, 365 - sleepDays - phoneDays - anastaDays);
+  return (
+    <DayCompareStatCard
+      tone="dark"
+      value={`${stat.reclaimedDays}`}
+      label="days back every year!"
+      legendItems={dayCompareReclaimLegendItems}
+      side={side}
+      visual={<DayCompareDotGrid total={365} productive={awakeDays} phone={phoneDays} sleep={sleepDays} anasta={anastaDays} mode="days" dark />}
+    />
+  );
+}
+
+function DayCompareSavedYearsCard({ stat, side }: { stat: ReturnType<typeof protectStats>; side: DayCompareCardSide }) {
+  const sleepYears = Math.round((SLEEP_HOURS_PER_DAY * PROTECT_LIFESPAN_YEARS) / DAY_HOURS);
+  const lostYears = Math.max(0, Math.min(PROTECT_LIFESPAN_YEARS, Math.round(stat.lifetimeYears)));
+  const reclaimedYears = Math.max(0, Math.min(lostYears, Math.round(stat.reclaimedYears)));
+  const phoneYears = Math.max(0, lostYears - reclaimedYears);
+  const awakeYears = Math.max(0, PROTECT_LIFESPAN_YEARS - sleepYears - phoneYears - reclaimedYears);
+  return (
+    <DayCompareStatCard
+      tone="dark"
+      value={`${formatYearValue(stat.reclaimedYears)}`}
+      label="years back over 85 years (avg. lifespan)!"
+      legendItems={dayCompareReclaimLegendItems}
+      side={side}
+      visual={<DayCompareDotGrid total={PROTECT_LIFESPAN_YEARS} productive={awakeYears} phone={phoneYears} sleep={sleepYears} anasta={reclaimedYears} mode="years" dark />}
+    />
+  );
+}
+
+function DayCompareReductionCallout() {
+  return (
+    <Reanimated.View
+      entering={FadeInUp.delay(150).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 16 }, { scale: 0.985 }],
+      })}
+      style={s.dayCompareReductionCallout}
+    >
+      <LinearGradient
+        colors={['#FDFFF9', '#ECFFF4', '#FFF8E9']}
+        start={{ x: 0.05, y: 0 }}
+        end={{ x: 0.95, y: 1 }}
+        style={s.dayCompareReductionInner}
+      >
+        <View style={s.dayCompareReductionBadge}>
+          <Text style={s.dayCompareReductionBadgeText}>40%</Text>
+        </View>
+        <View style={s.dayCompareReductionCopy}>
+          <Text style={s.dayCompareReductionTitle}>Less Screen Time with Anasta</Text>
+          <Text style={s.dayCompareReductionText}>This estimate uses a 40% reduction of your current phone time with Anasta.</Text>
+        </View>
+      </LinearGradient>
+    </Reanimated.View>
+  );
+}
+
 type ScreenTimeLegendKind = 'awake' | 'phone' | 'sleep';
 type ScreenTimeLegendItem = { label: string; kind: ScreenTimeLegendKind };
+type ScreenTimeStatEntrance = 'default' | 'topStack';
 
 const negativeScreenTimeLegend: ScreenTimeLegendItem[] = [
   { label: 'Awake', kind: 'awake' },
@@ -6457,6 +6733,7 @@ function ScreenTimeStatMessage({
   haptic = 'none',
   index,
   stackSignal = 0,
+  entrance = 'default',
 }: {
   value: string;
   label: string;
@@ -6467,10 +6744,12 @@ function ScreenTimeStatMessage({
   haptic?: 'none' | 'strong';
   index?: number;
   stackSignal?: number;
+  entrance?: ScreenTimeStatEntrance;
 }) {
   const dark = tone === 'dark';
   const stacked = layout === 'stacked';
   const numberOnRight = typeof index === 'number' && index % 2 === 0;
+  const topStackEntrance = entrance === 'topStack';
   const intro = useSharedValue(0);
   const settle = useSharedValue(1);
 
@@ -6478,7 +6757,7 @@ function ScreenTimeStatMessage({
     intro.value = 0;
     const startTimer = setTimeout(() => {
       intro.value = withTiming(1, {
-        duration: 1080,
+        duration: topStackEntrance ? 1340 : 1080,
         easing: Easing.bezier(0.16, 1, 0.28, 1),
       });
     }, 40);
@@ -6489,9 +6768,10 @@ function ScreenTimeStatMessage({
       clearTimeout(startTimer);
       clearTimeout(hapticTimer);
     };
-  }, [haptic, index, intro, label, value]);
+  }, [haptic, index, intro, label, topStackEntrance, value]);
 
   useEffect(() => {
+    if (topStackEntrance) return undefined;
     const delay = typeof index === 'number' ? Math.max(0, index - 1) * 62 : 0;
     const timer = setTimeout(() => {
       settle.value = 0;
@@ -6501,11 +6781,13 @@ function ScreenTimeStatMessage({
       });
     }, delay);
     return () => clearTimeout(timer);
-  }, [index, settle, stackSignal]);
+  }, [index, settle, stackSignal, topStackEntrance]);
 
   const cardMotionStyle = useAnimatedStyle(() => {
-    const side = numberOnRight ? 1 : -1;
-    const introScale = interpolate(intro.value, [0, 0.46, 0.78, 1], [1.065, 1.012, 0.997, 1]);
+    const side = topStackEntrance ? 0 : numberOnRight ? 1 : -1;
+    const introScale = topStackEntrance
+      ? interpolate(intro.value, [0, 0.55, 0.82, 1], [0.982, 1.01, 0.998, 1])
+      : interpolate(intro.value, [0, 0.46, 0.78, 1], [1.065, 1.012, 0.997, 1]);
     const settleScale = interpolate(settle.value, [0, 0.5, 1], [1, 1.003, 1]);
     return {
       opacity: interpolate(intro.value, [0, 0.18, 1], [0, 1, 1]),
@@ -6513,7 +6795,9 @@ function ScreenTimeStatMessage({
         { translateX: interpolate(intro.value, [0, 0.52, 0.82, 1], [side * 16, side * -3, side * 0.8, 0]) },
         {
           translateY:
-            interpolate(intro.value, [0, 0.5, 0.8, 1], [26, -6, 1.5, 0]) +
+            (topStackEntrance
+              ? interpolate(intro.value, [0, 0.54, 0.82, 1], [32, -3, 1, 0])
+              : interpolate(intro.value, [0, 0.5, 0.8, 1], [26, -6, 1.5, 0])) +
             interpolate(settle.value, [0, 0.5, 1], [0, -2, 0]),
         },
         { scale: introScale * settleScale },
@@ -11184,6 +11468,8 @@ function DayBarCard({
   illoSize,
   label,
   hours,
+  tone,
+  entrance,
   intro,
 }: {
   cardLeft: number;
@@ -11194,13 +11480,44 @@ function DayBarCard({
   illoSize: number;
   label: string;
   hours: string;
+  tone: 'sleep' | 'productive' | 'phone';
+  entrance: 'left' | 'bottom' | 'right';
   intro: SharedValue<number>;
 }) {
+  const cardGradient =
+    tone === 'sleep'
+      ? (['#FFFDF9', '#F4F0FF', '#FFF8E8'] as const)
+      : tone === 'productive'
+        ? (['#FFFDF7', '#FFF2D1', '#F8DF95'] as const)
+        : (['#FFFDF9', '#F0ECE5', '#DDD4C8'] as const);
+  const toneStyle =
+    tone === 'sleep'
+      ? s.dayCardSleep
+      : tone === 'productive'
+        ? s.dayCardProductive
+        : s.dayCardPhone;
+  const labelStyle =
+    tone === 'sleep'
+      ? s.dayCardLabelSleep
+      : tone === 'productive'
+        ? s.dayCardLabelProductive
+        : s.dayCardLabelPhone;
+  const numberStyle =
+    tone === 'sleep'
+      ? s.dayCardNumberSleep
+      : tone === 'productive'
+        ? s.dayCardNumberProductive
+        : s.dayCardNumberPhone;
+  const enterX = entrance === 'left' ? -54 : entrance === 'right' ? 54 : 0;
+  const enterY = entrance === 'bottom' ? 34 : 12;
+  const enterRotate = entrance === 'left' ? -2.5 : entrance === 'right' ? 2.5 : 0;
   const style = useAnimatedStyle(() => ({
     opacity: intro.value,
     transform: [
-      { translateY: interpolate(intro.value, [0, 1], [16, 0]) },
-      { scale: interpolate(intro.value, [0, 1], [0.94, 1]) },
+      { translateX: interpolate(intro.value, [0, 1], [enterX, 0]) },
+      { translateY: interpolate(intro.value, [0, 1], [enterY, 0]) },
+      { rotate: `${interpolate(intro.value, [0, 1], [enterRotate, 0])}deg` },
+      { scale: interpolate(intro.value, [0, 0.72, 1], [0.9, 1.025, 1]) },
     ],
   }));
   return (
@@ -11208,16 +11525,63 @@ function DayBarCard({
       pointerEvents="none"
       style={[{ position: 'absolute', left: cardLeft, top: cardTop, width: cardWidth, height: cardHeight }, style]}
     >
-      <View style={[s.dayCard, { paddingTop: illoSize * 0.58 }]}>
-        <Text style={s.dayCardLabel} numberOfLines={1}>{label}</Text>
-        <Text style={s.dayCardNumber} numberOfLines={1}>{hours}</Text>
-      </View>
+      <LinearGradient
+        colors={cardGradient}
+        start={{ x: 0.08, y: 0 }}
+        end={{ x: 0.92, y: 1 }}
+        style={[s.dayCard, toneStyle, { paddingTop: illoSize * 0.56 }]}
+      >
+        <View pointerEvents="none" style={s.dayCardSoftGlow} />
+        <Text style={[s.dayCardLabel, labelStyle]} numberOfLines={2}>{label}</Text>
+        <Text style={[s.dayCardNumber, numberStyle]} numberOfLines={1}>{hours}</Text>
+      </LinearGradient>
       <View
         pointerEvents="none"
         style={[s.dayCardSticker, { width: illoSize, height: illoSize, left: (cardWidth - illoSize) / 2, top: -illoSize * 0.42 }]}
       >
         <ExpoImage source={source} style={{ width: illoSize, height: illoSize }} contentFit="contain" cachePolicy="memory-disk" />
       </View>
+    </Reanimated.View>
+  );
+}
+
+function DayBarConnector({
+  d,
+  arrowD,
+  color,
+  width,
+  height,
+  order,
+  intro,
+}: {
+  d: string;
+  arrowD: string;
+  color: string;
+  width: number;
+  height: number;
+  order: 0 | 1 | 2;
+  intro: SharedValue<number>;
+}) {
+  const style = useAnimatedStyle(() => {
+    const start = order * 0.18;
+    const end = Math.min(1, start + 0.56);
+    const p = interpolate(intro.value, [start, end], [0, 1], 'clamp');
+    return {
+      opacity: p,
+      transform: [
+        { translateY: interpolate(p, [0, 1], [-8, 0]) },
+        { scaleY: interpolate(p, [0, 0.8, 1], [0.76, 1.04, 1]) },
+      ],
+    };
+  });
+
+  return (
+    <Reanimated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, width, height }, style]}>
+      <Svg width={width} height={height}>
+        <SvgPath d={d} stroke={color} strokeWidth={3.6} fill="none" strokeLinecap="round" opacity={0.16} />
+        <SvgPath d={d} stroke={color} strokeWidth={2} fill="none" strokeDasharray="3 4.5" strokeLinecap="round" />
+        <SvgPath d={arrowD} fill={color} opacity={0.9} />
+      </Svg>
     </Reanimated.View>
   );
 }
@@ -11333,17 +11697,17 @@ function V4DayPanoramaHeaderSlide({
   const axisIntroDuration = 520;
   const lineDelay = axisIntroDelay + axisIntroDuration - 40;
   const lineDuration = 1600;
-  const cloudBaseDelay = lineDelay + 120;
-  const cloudAliveDelay = lineDelay + lineDuration - 90;
-  const pieDelay = cloudAliveDelay + 300;
-  const phoneDelay = pieDelay + 300;
-  const sleepDelay = pieDelay + 430;
-  const toolboxDelay = pieDelay + 560;
-  const ctaDelay = toolboxDelay + 760;
+  const cloudBaseDelay = lineDelay + 70;
+  const cloudAliveDelay = lineDelay + lineDuration * 0.5;
+  const pieDelay = lineDelay + lineDuration + 40;
+  const connectorDelay = pieDelay + 260;
+  const sleepDelay = connectorDelay + 360;
+  const toolboxDelay = connectorDelay + 450;
+  const phoneDelay = connectorDelay + 540;
+  const ctaDelay = phoneDelay + 760;
   const axisIntro = useSharedValue(0);
   const lineDraw = useSharedValue(0);
   const cloudBase = useSharedValue(0);
-  const cloudReveal = useSharedValue(0);
   const pieIntro = useSharedValue(0);
   const phoneIntro = useSharedValue(0);
   const sleepIntro = useSharedValue(0);
@@ -11358,10 +11722,11 @@ function V4DayPanoramaHeaderSlide({
   const stat = protectStats(hours);
   const wakingPercent = Math.round((phoneHours / USABLE_DAY_HOURS) * 100);
   const reclaimedWakingPercent = Math.max(1, Math.round(wakingPercent * 0.4));
-  const [phase, setPhase] = useState<'pie' | 'waste' | 'reclaim'>('pie');
+  const [phase, setPhase] = useState<'pie' | 'waste' | 'reclaim' | 'wasteCompare' | 'reclaimCompare'>('pie');
   const [revealTwo, setRevealTwo] = useState(false);
   const [wasteReveal, setWasteReveal] = useState(0);
   const [reclaimReveal, setReclaimReveal] = useState(0);
+  const [compareReveal, setCompareReveal] = useState(0);
   const morph = useSharedValue(0);
   const screen2 = useSharedValue(0);
   const dim = useSharedValue(0);
@@ -11373,7 +11738,6 @@ function V4DayPanoramaHeaderSlide({
     axisIntro.value = 0;
     lineDraw.value = 0;
     cloudBase.value = 0;
-    cloudReveal.value = 0;
     pieIntro.value = 0;
     phoneIntro.value = 0;
     sleepIntro.value = 0;
@@ -11397,31 +11761,27 @@ function V4DayPanoramaHeaderSlide({
     );
     cloudBase.value = withDelay(
       cloudBaseDelay,
-      withTiming(1, { duration: 420, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
-    );
-    cloudReveal.value = withDelay(
-      cloudAliveDelay,
-      withTiming(1, { duration: 540, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+      withTiming(1, { duration: 220, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
     );
     pieIntro.value = withDelay(
       pieDelay,
-      withTiming(1, { duration: 700, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+      withTiming(1, { duration: 620, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
     );
     phoneIntro.value = withDelay(
       phoneDelay,
-      withTiming(1, { duration: 640, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+      withTiming(1, { duration: 720, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
     );
     sleepIntro.value = withDelay(
       sleepDelay,
-      withTiming(1, { duration: 640, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+      withTiming(1, { duration: 720, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
     );
     toolboxIntro.value = withDelay(
       toolboxDelay,
-      withTiming(1, { duration: 660, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+      withTiming(1, { duration: 740, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
     );
     connectorIntro.value = withDelay(
-      toolboxDelay + 220,
-      withTiming(1, { duration: 460, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+      connectorDelay,
+      withTiming(1, { duration: 760, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
     );
     const hapticTimer = setTimeout(runBubbleHaptic, cloudAliveDelay + 120);
     return () => {
@@ -11429,7 +11789,6 @@ function V4DayPanoramaHeaderSlide({
       axisIntro.value = 0;
       lineDraw.value = 0;
       cloudBase.value = 0;
-      cloudReveal.value = 0;
       pieIntro.value = 0;
       phoneIntro.value = 0;
       sleepIntro.value = 0;
@@ -11440,7 +11799,7 @@ function V4DayPanoramaHeaderSlide({
       dayTimersRef.current.forEach(clearTimeout);
       dayTimersRef.current = [];
     };
-  }, [ambient, axisIntro, axisIntroDelay, axisIntroDuration, cloudAliveDelay, cloudBase, cloudBaseDelay, cloudReveal, connectorIntro, lineDelay, lineDraw, lineDuration, phoneDelay, phoneIntro, pieDelay, pieIntro, sleepDelay, sleepIntro, toolboxDelay, toolboxIntro]);
+  }, [ambient, axisIntro, axisIntroDelay, axisIntroDuration, cloudAliveDelay, cloudBase, cloudBaseDelay, connectorDelay, connectorIntro, lineDelay, lineDraw, lineDuration, phoneDelay, phoneIntro, pieDelay, pieIntro, sleepDelay, sleepIntro, toolboxDelay, toolboxIntro]);
 
   useEffect(() => {
     if (phase === 'pie') return undefined;
@@ -11482,6 +11841,24 @@ function V4DayPanoramaHeaderSlide({
         }, delay));
       });
     }
+    if (phase === 'wasteCompare') {
+      setCompareReveal(0);
+      [620, 1420, 2220].forEach((delay, index) => {
+        timers.push(setTimeout(() => {
+          runBubbleHaptic();
+          setCompareReveal(index + 1);
+        }, delay));
+      });
+    }
+    if (phase === 'reclaimCompare') {
+      setCompareReveal(0);
+      [620, 1480].forEach((delay, index) => {
+        timers.push(setTimeout(() => {
+          runBubbleHaptic();
+          setCompareReveal(index + 1);
+        }, delay));
+      });
+    }
     return () => timers.forEach(timer => clearTimeout(timer));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
@@ -11503,17 +11880,17 @@ function V4DayPanoramaHeaderSlide({
     ],
   }));
   const cloudStyle = useAnimatedStyle(() => ({
-    opacity: cloudBase.value * interpolate(cloudReveal.value, [0, 1], [0.38, 1]),
+    opacity: cloudBase.value * interpolate(lineDraw.value, [0.48, 0.56], [0.38, 1], 'clamp'),
     transform: [
-      { translateY: interpolate(cloudBase.value, [0, 1], [9, 0]) + interpolate(cloudReveal.value, [0, 1], [0, -2]) + interpolate(ambient.value, [0, 1], [0, -1.5]) },
-      { scale: interpolate(cloudBase.value, [0, 1], [0.9, 0.96]) * interpolate(cloudReveal.value, [0, 1], [1, 1.045]) },
+      { translateY: interpolate(cloudBase.value, [0, 1], [9, 0]) + interpolate(lineDraw.value, [0.48, 0.56], [0, -2], 'clamp') + interpolate(ambient.value, [0, 1], [0, -1.5]) },
+      { scale: interpolate(cloudBase.value, [0, 1], [0.9, 0.96]) * interpolate(lineDraw.value, [0.48, 0.56], [1, 1.045], 'clamp') },
     ],
   }));
   const pieStyle = useAnimatedStyle(() => ({
     opacity: pieIntro.value * interpolate(morph.value, [0, 0.7], [1, 0], 'clamp'),
     transform: [
-      { translateY: interpolate(pieIntro.value, [0, 1], [18, 0]) + interpolate(morph.value, [0, 1], [0, -pieTop - 6]) },
-      { scale: interpolate(pieIntro.value, [0, 1], [0.92, 1]) * interpolate(morph.value, [0, 1], [1, 0.3]) },
+      { translateY: interpolate(pieIntro.value, [0, 0.72, 1], [24, -2, 0]) + interpolate(morph.value, [0, 1], [0, -pieTop - 6]) },
+      { scale: interpolate(pieIntro.value, [0, 0.72, 1], [0.88, 1.035, 1]) * interpolate(morph.value, [0, 1], [1, 0.3]) },
     ],
   }));
   const phoneStickerStyle = useAnimatedStyle(() => ({
@@ -11572,7 +11949,7 @@ function V4DayPanoramaHeaderSlide({
       runSelectionHaptic();
       setRevealTwo(true);
       screen2.value = withTiming(1, { duration: 700, easing: Easing.bezier(0.22, 1, 0.36, 1) });
-      dayTimersRef.current.push(setTimeout(() => setPhase('waste'), 700));
+      dayTimersRef.current.push(setTimeout(() => setPhase('wasteCompare'), 700));
       return;
     }
     if (phase === 'waste') {
@@ -11580,10 +11957,27 @@ function V4DayPanoramaHeaderSlide({
       setPhase('reclaim');
       return;
     }
+    if (phase === 'reclaim') {
+      runSelectionHaptic();
+      setPhase('wasteCompare');
+      return;
+    }
+    if (phase === 'wasteCompare') {
+      runSelectionHaptic();
+      setPhase('reclaimCompare');
+      return;
+    }
     onNext();
   };
-  const dayCtaLabel = phase === 'pie' ? 'Calculate my productive time' : phase === 'reclaim' ? "Let's fix this" : 'Continue';
-  const dayCtaActive = phase !== 'reclaim' || reclaimReveal >= 5;
+  const dayCtaLabel = phase === 'pie' ? 'Calculate my productive time' : phase === 'reclaimCompare' ? "Let's fix this" : 'Continue';
+  const dayCtaActive =
+    phase === 'reclaim'
+      ? reclaimReveal >= 5
+      : phase === 'wasteCompare'
+        ? compareReveal >= 3
+        : phase === 'reclaimCompare'
+          ? compareReveal >= 2
+          : true;
 
   const heroFadeStyle = useAnimatedStyle(() => ({
     opacity: 1 - screen2.value,
@@ -11626,14 +12020,14 @@ function V4DayPanoramaHeaderSlide({
   const barMargin = 28;
   const dayBarWidth = Math.min(frameWidth - barMargin * 2, 360);
   const dayBarLeftX = (frameWidth - dayBarWidth) / 2;
-  const dayBarH = 30;
+  const dayBarH = 38;
+  const dayBarPadding = 4;
+  const dayBarInnerWidth = dayBarWidth - dayBarPadding * 2;
+  const dayBarTrackLeftX = dayBarLeftX + dayBarPadding;
   const dayBarTopY = 16;
-  const dayBarSleepW = dayBarWidth * (SLEEP_HOURS_PER_DAY / DAY_HOURS);
-  const dayBarPhoneW = dayBarWidth * (phoneHours / DAY_HOURS);
-  const dayBarProductiveW = Math.max(0, dayBarWidth - dayBarSleepW - dayBarPhoneW);
-  const dayBarSleepCx = dayBarLeftX + dayBarSleepW / 2;
-  const dayBarProductiveCx = dayBarLeftX + dayBarSleepW + dayBarProductiveW / 2;
-  const dayBarPhoneCx = dayBarLeftX + dayBarSleepW + dayBarProductiveW + dayBarPhoneW / 2;
+  const dayBarSleepW = dayBarInnerWidth * (SLEEP_HOURS_PER_DAY / DAY_HOURS);
+  const dayBarPhoneW = dayBarInnerWidth * (phoneHours / DAY_HOURS);
+  const dayBarProductiveW = Math.max(0, dayBarInnerWidth - dayBarSleepW - dayBarPhoneW);
   const SLEEP_GRAD = ['#A493D6', '#7B7CC2', '#566FB4'] as const;
   const PRODUCTIVE_GRAD = ['#F4DD9A', '#E2BC63', '#C9A24E'] as const;
   const PHONE_GRAD = ['#2E2924', '#17130F'] as const;
@@ -11642,9 +12036,9 @@ function V4DayPanoramaHeaderSlide({
   const cardSideMargin = 14;
   const cardGap = 10;
   const dayCardW = (frameWidth - cardSideMargin * 2 - cardGap * 2) / 3;
-  const dayCardIllo = Math.min(88, dayCardW * 0.76);
-  const dayCardTop = Math.round(dayCardIllo * 0.46) + 116;
-  const dayCardH = 116;
+  const dayCardIllo = Math.min(84, dayCardW * 0.74);
+  const dayCardTop = Math.round(dayCardIllo * 0.44) + 122;
+  const dayCardH = 124;
   const card1Left = cardSideMargin;
   const card2Left = cardSideMargin + dayCardW + cardGap;
   const card3Left = cardSideMargin + (dayCardW + cardGap) * 2;
@@ -11659,11 +12053,9 @@ function V4DayPanoramaHeaderSlide({
     `M ${ox.toFixed(1)} ${(barBottomY + 3).toFixed(1)} C ${ox.toFixed(1)} ${connMidY.toFixed(1)} ${dx.toFixed(1)} ${connMidY.toFixed(1)} ${dx.toFixed(1)} ${(stickerTopY - 2).toFixed(1)}`;
   const makeArrow = (dx: number) =>
     `M ${(dx - 4).toFixed(1)} ${(stickerTopY - 8).toFixed(1)} L ${(dx + 4).toFixed(1)} ${(stickerTopY - 8).toFixed(1)} L ${dx.toFixed(1)} ${(stickerTopY - 1).toFixed(1)} Z`;
-  const sleepConnPath = makeConnPath(dayBarLeftX + dayBarWidth * (4 / 24), card1Cx);
-  const productiveConnPath = makeConnPath(dayBarLeftX + dayBarWidth * (9.5 / 24), card2Cx);
-  const phoneConnPath = makeConnPath(dayBarLeftX + dayBarWidth * (22 / 24), card3Cx);
-  const connectorLayerStyle = useAnimatedStyle(() => ({ opacity: connectorIntro.value }));
-
+  const sleepConnPath = makeConnPath(dayBarTrackLeftX + dayBarInnerWidth * (4 / 24), card1Cx);
+  const productiveConnPath = makeConnPath(dayBarTrackLeftX + dayBarInnerWidth * (9.5 / 24), card2Cx);
+  const phoneConnPath = makeConnPath(dayBarTrackLeftX + dayBarInnerWidth * (22 / 24), card3Cx);
   // Screen-2 bead breakdowns + segment centres (for illustrations above the bar).
   const sleepCxPct = sleepBarPct / 2;
   const prodCxPct = sleepBarPct + productiveBarPct / 2;
@@ -11732,7 +12124,11 @@ function V4DayPanoramaHeaderSlide({
 
   return (
     <View
-      style={[s.dayHeaderScreen, { paddingTop: Math.max(0, topInset - 14), paddingBottom: Math.max(0, bottomInset - 10) }]}
+      style={[
+        s.dayHeaderScreen,
+        { paddingTop: Math.max(0, topInset - 14), paddingBottom: Math.max(0, bottomInset - 10) },
+        (phase === 'wasteCompare' || phase === 'reclaimCompare') && s.dayCompareScreenBg,
+      ]}
     >
       <Reanimated.View style={[s.dayHeaderContent, heroFadeStyle]}>
         <Reanimated.View
@@ -11828,31 +12224,35 @@ function V4DayPanoramaHeaderSlide({
                 pieStyle,
               ]}
             >
-              <LinearGradient colors={SLEEP_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: dayBarSleepW, height: '100%' }} />
-              <LinearGradient colors={PRODUCTIVE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: dayBarProductiveW, height: '100%' }} />
-              <LinearGradient colors={PHONE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: dayBarPhoneW, height: '100%' }} />
+              <View style={s.dayBarSceneTrack}>
+                <LinearGradient colors={SLEEP_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: dayBarSleepW, height: '100%' }} />
+                <LinearGradient colors={PRODUCTIVE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: dayBarProductiveW, height: '100%' }} />
+                <LinearGradient colors={PHONE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: dayBarPhoneW, height: '100%' }} />
+              </View>
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(255,255,255,0.42)', 'rgba(255,255,255,0.02)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={s.dayBarSceneShine}
+              />
             </Reanimated.View>
 
-            <Reanimated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, width: frameWidth, height: dayCardTop }, connectorLayerStyle]}>
-              <Svg width={frameWidth} height={dayCardTop}>
-                <SvgPath d={sleepConnPath} stroke="#7B7CC2" strokeWidth={2} fill="none" strokeDasharray="3 4.5" strokeLinecap="round" />
-                <SvgPath d={makeArrow(card1Cx)} fill="#7B7CC2" />
-                <SvgPath d={productiveConnPath} stroke="#C9A24E" strokeWidth={2} fill="none" strokeDasharray="3 4.5" strokeLinecap="round" />
-                <SvgPath d={makeArrow(card2Cx)} fill="#C9A24E" />
-                <SvgPath d={phoneConnPath} stroke="#5A554E" strokeWidth={2} fill="none" strokeDasharray="3 4.5" strokeLinecap="round" />
-                <SvgPath d={makeArrow(card3Cx)} fill="#5A554E" />
-              </Svg>
-            </Reanimated.View>
+            <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: frameWidth, height: dayCardTop }}>
+              <DayBarConnector d={sleepConnPath} arrowD={makeArrow(card1Cx)} color="rgba(98,92,166,0.62)" width={frameWidth} height={dayCardTop} order={0} intro={connectorIntro} />
+              <DayBarConnector d={productiveConnPath} arrowD={makeArrow(card2Cx)} color="rgba(197,160,89,0.68)" width={frameWidth} height={dayCardTop} order={1} intro={connectorIntro} />
+              <DayBarConnector d={phoneConnPath} arrowD={makeArrow(card3Cx)} color="rgba(37,32,27,0.56)" width={frameWidth} height={dayCardTop} order={2} intro={connectorIntro} />
+            </View>
 
-            <DayBarCard cardLeft={card1Left} cardTop={dayCardTop} cardWidth={dayCardW} cardHeight={dayCardH} source={DAY_PIE_SLEEP} illoSize={dayCardIllo} label="Sleep" hours={sleepHourLabel} intro={sleepIntro} />
-            <DayBarCard cardLeft={card2Left} cardTop={dayCardTop} cardWidth={dayCardW} cardHeight={dayCardH} source={DAY_PIE_TOOLBOX} illoSize={dayCardIllo} label="Productive" hours={productiveHourLabel} intro={toolboxIntro} />
-            <DayBarCard cardLeft={card3Left} cardTop={dayCardTop} cardWidth={dayCardW} cardHeight={dayCardH} source={DAY_PIE_PHONE} illoSize={dayCardIllo} label="Phone" hours={phoneHourLabel} intro={phoneIntro} />
+            <DayBarCard cardLeft={card1Left} cardTop={dayCardTop} cardWidth={dayCardW} cardHeight={dayCardH} source={DAY_PIE_SLEEP} illoSize={dayCardIllo} label={'Sleeping\nTime'} hours={sleepHourLabel} tone="sleep" entrance="left" intro={sleepIntro} />
+            <DayBarCard cardLeft={card2Left} cardTop={dayCardTop} cardWidth={dayCardW} cardHeight={dayCardH} source={DAY_PIE_TOOLBOX} illoSize={dayCardIllo} label="Productive" hours={productiveHourLabel} tone="productive" entrance="bottom" intro={toolboxIntro} />
+            <DayBarCard cardLeft={card3Left} cardTop={dayCardTop} cardWidth={dayCardW} cardHeight={dayCardH} source={DAY_PIE_PHONE} illoSize={dayCardIllo} label={'Phone Screen\nTime'} hours={phoneHourLabel} tone="phone" entrance="right" intro={phoneIntro} />
           </Reanimated.View>
         )}
 
       </View>
 
-      {revealTwo && (
+      {revealTwo && phase !== 'wasteCompare' && phase !== 'reclaimCompare' && (
         <Reanimated.View pointerEvents="box-none" style={[s.dayScreen2Layer, { top: topInset + 14 }, screen2LayerStyle]}>
           <View style={s.dayTwoBarWrap}>
             {phase === 'reclaim' && (
@@ -11923,6 +12323,38 @@ function V4DayPanoramaHeaderSlide({
         </Reanimated.View>
       )}
 
+      {(phase === 'wasteCompare' || phase === 'reclaimCompare') && (
+        <Reanimated.View
+          style={[
+            s.dayCompareLayer,
+            {
+              paddingTop: Math.max(24, topInset + 18),
+            },
+          ]}
+        >
+          <DayCompareHeader mode={phase === 'wasteCompare' ? 'waste' : 'reclaim'} />
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            contentContainerStyle={s.dayCompareCards}
+          >
+            {phase === 'wasteCompare' ? (
+              <>
+                {compareReveal >= 1 && <DayComparePercentCard stat={stat} side="left" />}
+                {compareReveal >= 2 && <DayCompareDaysCard stat={stat} side="right" />}
+                {compareReveal >= 3 && <DayCompareYearsCard stat={stat} side="left" />}
+              </>
+            ) : (
+              <>
+                <DayCompareReductionCallout />
+                {compareReveal >= 1 && <DayCompareSavedDaysCard stat={stat} side="left" />}
+                {compareReveal >= 2 && <DayCompareSavedYearsCard stat={stat} side="right" />}
+              </>
+            )}
+          </ScrollView>
+        </Reanimated.View>
+      )}
+
       <AnimatedCta
         active={dayCtaActive}
         delay={phase === 'pie' ? ctaDelay : 220}
@@ -11930,7 +12362,7 @@ function V4DayPanoramaHeaderSlide({
         distance={30}
         style={s.dayHeaderAction}
       >
-        <View style={s.ctaIsland}>
+        <View style={[s.ctaIsland, (phase === 'wasteCompare' || phase === 'reclaimCompare') && s.dayCompareCtaIsland]}>
           <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={handleDayNext} style={s.primaryButton}>
             <Text style={s.primaryButtonText}>{dayCtaLabel}</Text>
             <ChevronRight s={19} c="#FFFFFF" w={2.5} />
@@ -12119,6 +12551,26 @@ function DayImpactCard({
             </Text>
           </View>
         ))}
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function DayCompareHeader({ mode }: { mode: 'waste' | 'reclaim' }) {
+  const isWaste = mode === 'waste';
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(320).easing(Easing.out(Easing.cubic)).withInitialValues({
+        opacity: 0,
+      })}
+      style={s.dayCompareHeader}
+    >
+      <Text style={s.dayCompareSmallLead}>{isWaste ? 'Right now' : 'With Anasta'}</Text>
+      <View style={s.dayCompareTitleWrap}>
+        <Text style={[s.dayCompareTitle, isWaste ? s.dayCompareTitleWaste : s.dayCompareTitleReclaim]}>
+          {isWaste ? 'YOU WASTE' : 'RECLAIM YOUR TIME.'}
+        </Text>
+        <View style={[s.dayCompareUnderline, isWaste ? s.dayCompareUnderlineWaste : s.dayCompareUnderlineReclaim]} />
       </View>
     </Reanimated.View>
   );
@@ -18386,43 +18838,100 @@ const s = StyleSheet.create({
   },
   dayBarSceneBar: {
     position: 'absolute',
-    flexDirection: 'row',
-    borderRadius: 15,
+    padding: 4,
+    borderRadius: 22,
     overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
     borderWidth: 1,
-    borderColor: 'rgba(25,23,20,0.10)',
-    shadowColor: '#5E5142',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
+    borderColor: 'rgba(197,160,89,0.34)',
+    shadowColor: '#8B6B2F',
+    shadowOffset: { width: 0, height: 9 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
     elevation: 4,
+  },
+  dayBarSceneTrack: {
+    flex: 1,
+    flexDirection: 'row',
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(31,27,22,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.76)',
+  },
+  dayBarSceneShine: {
+    position: 'absolute',
+    left: 5,
+    right: 5,
+    top: 5,
+    height: 12,
+    borderRadius: 12,
   },
   dayCard: {
     flex: 1,
-    borderRadius: 18,
+    borderRadius: 20,
     alignItems: 'center',
-    backgroundColor: '#FBF4E0',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    shadowColor: '#5E5142',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.92)',
+    shadowColor: '#7B613A',
+    shadowOffset: { width: 0, height: 11 },
+    shadowOpacity: 0.14,
+    shadowRadius: 17,
     elevation: 4,
   },
+  dayCardSleep: {
+    borderColor: 'rgba(126,112,194,0.32)',
+  },
+  dayCardProductive: {
+    borderColor: 'rgba(197,160,89,0.44)',
+  },
+  dayCardPhone: {
+    borderColor: 'rgba(37,32,27,0.18)',
+  },
+  dayCardSoftGlow: {
+    position: 'absolute',
+    left: -22,
+    right: -22,
+    top: -30,
+    height: 78,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.34)',
+  },
   dayCardLabel: {
-    fontFamily: F.sansBold,
-    fontSize: 9.5,
-    letterSpacing: 1.4,
-    textTransform: 'uppercase',
-    color: 'rgba(25,23,20,0.5)',
+    paddingHorizontal: 7,
+    minHeight: 32,
+    fontFamily: F.serifSemiBold,
+    fontSize: 13,
+    lineHeight: 15.5,
+    letterSpacing: 0,
+    textAlign: 'center',
+    color: INK,
+  },
+  dayCardLabelSleep: {
+    color: '#57518F',
+  },
+  dayCardLabelProductive: {
+    color: '#8C6420',
+  },
+  dayCardLabelPhone: {
+    color: '#2E2924',
   },
   dayCardNumber: {
-    marginTop: 1,
+    marginTop: 2,
     fontFamily: F.serifSemiBold,
-    fontSize: 27,
-    lineHeight: 32,
+    fontSize: 30,
+    lineHeight: 34,
     color: INK,
+  },
+  dayCardNumberSleep: {
+    color: '#4E4B87',
+  },
+  dayCardNumberProductive: {
+    color: '#9A6B18',
+  },
+  dayCardNumberPhone: {
+    color: '#191714',
   },
   dayCardSticker: {
     position: 'absolute',
@@ -18436,6 +18945,210 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12,
     zIndex: 14,
+  },
+  dayCompareLayer: {
+    ...StyleSheet.absoluteFillObject,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFDF8',
+    zIndex: 18,
+  },
+  dayCompareScreenBg: {
+    backgroundColor: '#FFFDF8',
+  },
+  dayCompareHeader: {
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 12,
+  },
+  dayCompareSmallLead: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    lineHeight: 14,
+    letterSpacing: 1.7,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.45)',
+  },
+  dayCompareTitleWrap: {
+    marginTop: 3,
+    alignItems: 'center',
+  },
+  dayCompareTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 34,
+    lineHeight: 39,
+    letterSpacing: 0.2,
+    textAlign: 'center',
+  },
+  dayCompareTitleWaste: {
+    color: '#B0383E',
+  },
+  dayCompareTitleReclaim: {
+    color: '#2F9B61',
+  },
+  dayCompareUnderline: {
+    marginTop: -1,
+    height: 3,
+    borderRadius: 999,
+    width: '92%',
+  },
+  dayCompareUnderlineWaste: {
+    backgroundColor: '#B0383E',
+  },
+  dayCompareUnderlineReclaim: {
+    backgroundColor: '#2F9B61',
+  },
+  dayCompareCards: {
+    width: '100%',
+    maxWidth: 398,
+    alignSelf: 'center',
+    rowGap: 6,
+    paddingHorizontal: 8,
+    paddingTop: 6,
+    paddingBottom: 118,
+  },
+  dayCompareStaticCard: {
+    width: '100%',
+    paddingTop: 19,
+  },
+  dayCompareStatLabel: {
+    maxWidth: 344,
+    width: '100%',
+    fontSize: 17.5,
+    lineHeight: 20.5,
+    marginTop: -5,
+  },
+  dayCompareReductionCallout: {
+    width: '100%',
+  },
+  dayCompareReductionInner: {
+    minHeight: 78,
+    borderRadius: 25,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(109,211,147,0.36)',
+    shadowColor: '#2E7D4F',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 22,
+    elevation: 2,
+  },
+  dayCompareReductionBadge: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2.5,
+    borderColor: '#8DE6B2',
+    shadowColor: '#58B982',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.15,
+    shadowRadius: 13,
+    elevation: 2,
+  },
+  dayCompareReductionBadgeText: {
+    fontFamily: F.serifBold,
+    fontSize: 19,
+    lineHeight: 22,
+    color: '#2F9B61',
+  },
+  dayCompareReductionCopy: {
+    flex: 1,
+  },
+  dayCompareReductionTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 18,
+    lineHeight: 21,
+    color: '#173B28',
+  },
+  dayCompareReductionText: {
+    marginTop: 3,
+    fontFamily: F.serifMedium,
+    fontSize: 13.5,
+    lineHeight: 16.5,
+    color: 'rgba(23,59,40,0.72)',
+  },
+  dayCompareLegendOneLine: {
+    maxWidth: 372,
+    flexWrap: 'nowrap',
+    gap: 4,
+  },
+  dayCompareLegendItemCompact: {
+    paddingHorizontal: 5,
+    columnGap: 3.5,
+  },
+  dayCompareLegendText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 11.3,
+    lineHeight: 14,
+    letterSpacing: 0,
+    textTransform: 'none',
+    color: '#6E6257',
+  },
+  dayCompareLegendTextCompact: {
+    fontSize: 10.3,
+    lineHeight: 12.5,
+  },
+  dayCompareLegendSleep: {
+    backgroundColor: '#7B7CC2',
+    borderColor: 'rgba(123,124,194,0.70)',
+  },
+  dayCompareLegendProductive: {
+    backgroundColor: GOLD,
+    borderColor: 'rgba(154,107,24,0.28)',
+  },
+  dayCompareLegendPhone: {
+    backgroundColor: '#17130F',
+    borderColor: 'rgba(232,195,116,0.65)',
+  },
+  dayCompareLegendAnasta: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#8DE6B2',
+  },
+  dayCompareDaySegmentSleep: {
+    backgroundColor: '#7B7CC2',
+  },
+  dayCompareDaySegmentProductive: {
+    backgroundColor: '#F2CC70',
+    borderWidth: 1,
+    borderColor: 'rgba(154,107,24,0.20)',
+  },
+  dayCompareDaySegmentPhone: {
+    backgroundColor: '#17130F',
+    borderWidth: 1,
+    borderColor: 'rgba(232,195,116,0.30)',
+  },
+  dayCompareDotSleep: {
+    backgroundColor: '#7B7CC2',
+  },
+  dayCompareDotProductive: {
+    backgroundColor: GOLD,
+    borderWidth: 1,
+    borderColor: 'rgba(154,107,24,0.24)',
+  },
+  dayCompareDotPhone: {
+    backgroundColor: '#17130F',
+    borderWidth: 1,
+    borderColor: 'rgba(232,195,116,0.42)',
+  },
+  dayCompareDotAnasta: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.4,
+    borderColor: '#8DE6B2',
+  },
+  dayCompareCtaIsland: {
+    backgroundColor: 'transparent',
+    borderColor: 'transparent',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   dayTwoIlloAbs: {
     position: 'absolute',
@@ -18542,6 +19255,8 @@ const s = StyleSheet.create({
   },
   dayHeaderAction: {
     paddingTop: 0,
+    position: 'relative',
+    zIndex: 30,
   },
   dayPhaseLayer: {
     ...StyleSheet.absoluteFillObject,
