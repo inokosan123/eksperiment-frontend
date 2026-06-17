@@ -11722,10 +11722,7 @@ function V4DayPanoramaHeaderSlide({
   const stat = protectStats(hours);
   const wakingPercent = Math.round((phoneHours / USABLE_DAY_HOURS) * 100);
   const reclaimedWakingPercent = Math.max(1, Math.round(wakingPercent * 0.4));
-  const [phase, setPhase] = useState<'pie' | 'waste' | 'reclaim' | 'wasteCompare' | 'reclaimCompare'>('pie');
-  const [revealTwo, setRevealTwo] = useState(false);
-  const [wasteReveal, setWasteReveal] = useState(0);
-  const [reclaimReveal, setReclaimReveal] = useState(0);
+  const [phase, setPhase] = useState<'pie' | 'wasteCompare' | 'reclaimCompare'>('pie');
   const [compareReveal, setCompareReveal] = useState(0);
   const morph = useSharedValue(0);
   const screen2 = useSharedValue(0);
@@ -11804,43 +11801,6 @@ function V4DayPanoramaHeaderSlide({
   useEffect(() => {
     if (phase === 'pie') return undefined;
     const timers: ReturnType<typeof setTimeout>[] = [];
-    if (phase === 'waste') {
-      // The pie rises and unrolls into the bar, then the three loss cards
-      // arrive one by one, each a quiet gut-punch.
-      morph.value = withTiming(1, { duration: 760, easing: Easing.bezier(0.22, 1, 0.36, 1) });
-      setWasteReveal(0);
-      [560, 1280, 2160, 3040].forEach((delay, index) => {
-        timers.push(setTimeout(() => {
-          runBubbleHaptic();
-          setWasteReveal(index + 1);
-        }, delay));
-      });
-    }
-    if (phase === 'reclaim') {
-      // Dim + the app's promise, then the gold floods the bar back 40% while
-      // the same three cards flip from loss to gain.
-      setReclaimReveal(0);
-      dim.value = withTiming(1, { duration: 460, easing: Easing.out(Easing.cubic) });
-      timers.push(setTimeout(() => {
-        runBubbleHaptic();
-        setReclaimReveal(1);
-      }, 320));
-      timers.push(setTimeout(() => {
-        dim.value = withTiming(0, { duration: 520, easing: Easing.out(Easing.cubic) });
-        crestIntro.value = withTiming(1, { duration: 620, easing: Easing.bezier(0.16, 1, 0.28, 1) });
-        setReclaimReveal(2);
-      }, 2300));
-      timers.push(setTimeout(() => {
-        runStrongHaptic();
-        goldFill.value = withTiming(1, { duration: 2000, easing: Easing.bezier(0.32, 0, 0.18, 1) });
-      }, 2680));
-      [3160, 3860, 4560].forEach((delay, index) => {
-        timers.push(setTimeout(() => {
-          runBubbleHaptic();
-          setReclaimReveal(3 + index);
-        }, delay));
-      });
-    }
     if (phase === 'wasteCompare') {
       setCompareReveal(0);
       [620, 1420, 2220].forEach((delay, index) => {
@@ -11944,22 +11904,10 @@ function V4DayPanoramaHeaderSlide({
 
   const handleDayNext = () => {
     if (phase === 'pie') {
-      // Transition to screen 2: hero clears, screen-1 bar/cards fade, the
-      // screen-2 layer (bar at top + illustrations above + loss cards) rises in.
       runSelectionHaptic();
-      setRevealTwo(true);
-      screen2.value = withTiming(1, { duration: 700, easing: Easing.bezier(0.22, 1, 0.36, 1) });
-      dayTimersRef.current.push(setTimeout(() => setPhase('wasteCompare'), 700));
-      return;
-    }
-    if (phase === 'waste') {
-      runSelectionHaptic();
-      setPhase('reclaim');
-      return;
-    }
-    if (phase === 'reclaim') {
-      runSelectionHaptic();
+      screen2.value = 0;
       setPhase('wasteCompare');
+      screen2.value = withTiming(1, { duration: 640, easing: Easing.bezier(0.22, 1, 0.36, 1) });
       return;
     }
     if (phase === 'wasteCompare') {
@@ -11971,13 +11919,11 @@ function V4DayPanoramaHeaderSlide({
   };
   const dayCtaLabel = phase === 'pie' ? 'Calculate my productive time' : phase === 'reclaimCompare' ? "Let's fix this" : 'Continue';
   const dayCtaActive =
-    phase === 'reclaim'
-      ? reclaimReveal >= 5
-      : phase === 'wasteCompare'
-        ? compareReveal >= 3
-        : phase === 'reclaimCompare'
-          ? compareReveal >= 2
-          : true;
+    phase === 'wasteCompare'
+      ? compareReveal >= 3
+      : phase === 'reclaimCompare'
+        ? compareReveal >= 2
+        : true;
 
   const heroFadeStyle = useAnimatedStyle(() => ({
     opacity: 1 - screen2.value,
@@ -11986,9 +11932,9 @@ function V4DayPanoramaHeaderSlide({
   const screen1FadeStyle = useAnimatedStyle(() => ({
     opacity: interpolate(screen2.value, [0, 0.55], [1, 0], 'clamp'),
   }));
-  const screen2LayerStyle = useAnimatedStyle(() => ({
+  const compareLayerStyle = useAnimatedStyle(() => ({
     opacity: interpolate(screen2.value, [0.35, 1], [0, 1], 'clamp'),
-    transform: [{ translateY: interpolate(screen2.value, [0, 1], [40, 0]) }],
+    transform: [{ translateY: interpolate(screen2.value, [0, 1], [26, 0]) }],
   }));
 
   const sleepX = (frameWidth - sleepStickerSize) / 2;
@@ -12252,77 +12198,6 @@ function V4DayPanoramaHeaderSlide({
 
       </View>
 
-      {revealTwo && phase !== 'wasteCompare' && phase !== 'reclaimCompare' && (
-        <Reanimated.View pointerEvents="box-none" style={[s.dayScreen2Layer, { top: topInset + 14 }, screen2LayerStyle]}>
-          <View style={s.dayTwoBarWrap}>
-            {phase === 'reclaim' && (
-              <Reanimated.View
-                pointerEvents="none"
-                style={[s.dayBarCrest, { left: `${sleepBarPct + productiveBarPct + (phoneBarPct * 0.4) / 2}%` }, crestStyle]}
-              >
-                <Image source={APP_LOGO} style={s.dayBarCrestImage} resizeMode="cover" />
-              </Reanimated.View>
-            )}
-            <View pointerEvents="none" style={[s.dayTwoIlloAbs, { left: `${sleepCxPct}%` }]}>
-              <ExpoImage source={DAY_PIE_SLEEP} style={s.dayTwoIlloImg} contentFit="contain" cachePolicy="memory-disk" />
-            </View>
-            <View pointerEvents="none" style={[s.dayTwoIlloAbs, { left: `${prodCxPct}%` }]}>
-              <ExpoImage source={DAY_PIE_TOOLBOX} style={s.dayTwoIlloImg} contentFit="contain" cachePolicy="memory-disk" />
-            </View>
-            <Reanimated.View pointerEvents="none" style={[s.dayTwoIlloAbs, { left: `${phoneCxPct}%` }, phoneIlloStyle]}>
-              <ExpoImage source={DAY_PIE_PHONE} style={s.dayTwoIlloImg} contentFit="contain" cachePolicy="memory-disk" />
-            </Reanimated.View>
-            <View style={s.dayTwoBarTrack}>
-              <LinearGradient colors={SLEEP_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: `${sleepBarPct}%`, height: '100%' }} />
-              <LinearGradient colors={PRODUCTIVE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: `${productiveBarPct}%`, height: '100%' }} />
-              <Reanimated.View style={[s.dayBarReclaimed, whiteReclaimStyle]} />
-              <Reanimated.View style={[s.dayBarPhoneSeg, phoneReclaimStyle]}>
-                <LinearGradient colors={PHONE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: '100%', height: '100%' }} />
-              </Reanimated.View>
-            </View>
-          </View>
-          <View style={s.dayImpactCards}>
-            {((phase === 'waste' && wasteReveal >= 2) || phase === 'reclaim') && (
-              <DayImpactCard
-                reclaim={phase === 'reclaim'}
-                beads={card1Beads}
-                beadsGold={card1BeadsGold}
-                beadSize={30}
-                beadGap={8}
-                beadMaxWidth={300}
-                waste={{ pre: '', emphasis: 'You waste', gold: `${Math.ceil(wakingPercent)}%`, post: ' of your waking day.' }}
-                recovered={{ pre: 'You can ', emphasis: 'win back', gold: `${Math.ceil(reclaimedWakingPercent)}%`, post: ' of your day.' }}
-                legend={card1Legend}
-              />
-            )}
-            {((phase === 'waste' && wasteReveal >= 3) || phase === 'reclaim') && (
-              <DayImpactCard
-                reclaim={phase === 'reclaim'}
-                beads={card2Beads}
-                beadsGold={card2BeadsGold}
-                beadSize={6}
-                beadGap={1.5}
-                waste={{ pre: '', emphasis: 'You waste', gold: `${Math.ceil(stat.yearlyDays)} days`, post: ' a year.' }}
-                recovered={{ pre: 'You can ', emphasis: 'win back', gold: `${Math.ceil(stat.reclaimedDays)} days`, post: ' a year.' }}
-                legend={card2Legend}
-              />
-            )}
-            {((phase === 'waste' && wasteReveal >= 4) || phase === 'reclaim') && (
-              <DayImpactCard
-                reclaim={phase === 'reclaim'}
-                beads={card3Beads}
-                beadsGold={card3BeadsGold}
-                beadSize={10.5}
-                beadGap={3}
-                waste={{ pre: '', emphasis: 'You waste', gold: `${Math.ceil(stat.lifetimeYears)} years`, post: ' of your life.' }}
-                recovered={{ pre: 'You can ', emphasis: 'win back', gold: `${Math.ceil(stat.reclaimedYears)} years`, post: ' of life.' }}
-                legend={card3Legend}
-              />
-            )}
-          </View>
-        </Reanimated.View>
-      )}
-
       {(phase === 'wasteCompare' || phase === 'reclaimCompare') && (
         <Reanimated.View
           style={[
@@ -12330,6 +12205,7 @@ function V4DayPanoramaHeaderSlide({
             {
               paddingTop: Math.max(24, topInset + 18),
             },
+            compareLayerStyle,
           ]}
         >
           <DayCompareHeader mode={phase === 'wasteCompare' ? 'waste' : 'reclaim'} />
@@ -12370,25 +12246,6 @@ function V4DayPanoramaHeaderSlide({
         </View>
       </AnimatedCta>
 
-      {phase === 'reclaim' && reclaimReveal < 3 && (
-        <>
-          <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, s.dayReclaimDim, dimStyle]} />
-          <Reanimated.View pointerEvents="none" style={[s.dayReclaimMessage, reclaimMessageStyle]}>
-            <View style={s.messageLogoFrame}>
-              <View style={s.messageLogoHalo} />
-              <View style={s.messageLogoPlate}>
-                <Image source={APP_LOGO} style={s.messageLogo} resizeMode="cover" />
-              </View>
-            </View>
-            <View style={s.messageBubble}>
-              <View style={s.messageBubbleTail} />
-              <Text style={s.dayReclaimBubbleText}>
-                Anasta can help you cut your screen time by at least <Text style={s.dayReclaimMessageGold}>40%</Text>.
-              </Text>
-            </View>
-          </Reanimated.View>
-        </>
-      )}
     </View>
   );
 }
@@ -12568,7 +12425,7 @@ function DayCompareHeader({ mode }: { mode: 'waste' | 'reclaim' }) {
       <Text style={s.dayCompareSmallLead}>{isWaste ? 'Right now' : 'With Anasta'}</Text>
       <View style={s.dayCompareTitleWrap}>
         <Text style={[s.dayCompareTitle, isWaste ? s.dayCompareTitleWaste : s.dayCompareTitleReclaim]}>
-          {isWaste ? 'YOU WASTE' : 'RECLAIM YOUR TIME.'}
+          {isWaste ? 'YOU WASTE' : 'RECLAIM YOUR TIME!'}
         </Text>
         <View style={[s.dayCompareUnderline, isWaste ? s.dayCompareUnderlineWaste : s.dayCompareUnderlineReclaim]} />
       </View>
@@ -14715,7 +14572,14 @@ export default function OnboardingView() {
       );
     }
     if (activeStep === 'dayVisualization') {
-      return <V4DayVisualizationSlide hours={answers.screenTimeHours} onNext={goNext} />;
+      return (
+        <V4DayPanoramaHeaderSlide
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          hours={answers.screenTimeHours}
+          onNext={goNext}
+        />
+      );
     }
     if (activeStep === 'protectRecap') {
       return (
