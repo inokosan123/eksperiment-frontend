@@ -6693,6 +6693,190 @@ function DayCompareReductionCallout() {
   );
 }
 
+type DayWasteRevealStep = {
+  key: string;
+  target: number;
+  decimals: number;
+  unit: string;
+  lineOne: string;
+  lineTwo: string;
+  lineThree: string;
+};
+
+function DayWasteCountingNumber({
+  stepKey,
+  target,
+  decimals,
+  duration,
+  emphasized = false,
+  onSettled,
+}: {
+  stepKey: string;
+  target: number;
+  decimals: number;
+  duration: number;
+  emphasized?: boolean;
+  onSettled: () => void;
+}) {
+  const [value, setValue] = useState(0);
+  const settledRef = useRef(false);
+
+  useEffect(() => {
+    let frame = 0;
+    const startedAt = Date.now();
+    settledRef.current = false;
+    setValue(0);
+
+    const tick = () => {
+      const elapsed = Date.now() - startedAt;
+      const t = Math.min(1, elapsed / duration);
+      const eased = 1 - Math.pow(1 - t, 4.2);
+      const next = target * eased;
+      setValue(t >= 1 ? target : next);
+
+      if (t < 1) {
+        frame = requestAnimationFrame(tick);
+        return;
+      }
+
+      if (!settledRef.current) {
+        settledRef.current = true;
+        onSettled();
+      }
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [decimals, duration, onSettled, stepKey, target]);
+
+  return (
+    <Text style={[s.dayWasteRevealNumber, emphasized && s.dayWasteRevealNumberPercent]}>
+      {decimals > 0 ? value.toFixed(decimals) : Math.round(value)}
+    </Text>
+  );
+}
+
+function DayWasteRevealLayer({
+  stat,
+  topInset,
+  bottomInset,
+  onDone,
+}: {
+  stat: ReturnType<typeof protectStats>;
+  topInset: number;
+  bottomInset: number;
+  onDone: () => void;
+}) {
+  const [stepIndex, setStepIndex] = useState(0);
+  const waitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settledForStepRef = useRef(false);
+  const steps = useMemo<DayWasteRevealStep[]>(
+    () => [
+      {
+        key: 'productive-day',
+        target: stat.usablePercent,
+        decimals: 0,
+        unit: '%',
+        lineOne: 'of your',
+        lineTwo: 'productive time',
+        lineThree: 'each day',
+      },
+      {
+        key: 'yearly-days',
+        target: stat.yearlyDays,
+        decimals: 0,
+        unit: 'days',
+        lineOne: 'lost',
+        lineTwo: 'every year',
+        lineThree: 'to screen time',
+      },
+      {
+        key: 'lifetime-years',
+        target: stat.lifetimeYears,
+        decimals: Number.isInteger(stat.lifetimeYears) ? 0 : 1,
+        unit: 'years',
+        lineOne: 'across',
+        lineTwo: 'an average life',
+        lineThree: 'on your phone',
+      },
+    ],
+    [stat.lifetimeYears, stat.usablePercent, stat.yearlyDays],
+  );
+  const step = steps[stepIndex] ?? steps[0];
+
+  useEffect(() => {
+    settledForStepRef.current = false;
+    if (waitTimerRef.current) {
+      clearTimeout(waitTimerRef.current);
+      waitTimerRef.current = null;
+    }
+    return undefined;
+  }, [step.key]);
+
+  useEffect(() => () => {
+    if (waitTimerRef.current) clearTimeout(waitTimerRef.current);
+  }, []);
+
+  const handleSettled = useCallback(() => {
+    if (settledForStepRef.current) return;
+    settledForStepRef.current = true;
+    waitTimerRef.current = setTimeout(() => {
+      runStrongHaptic();
+      if (stepIndex >= steps.length - 1) {
+        onDone();
+        return;
+      }
+      setStepIndex(current => Math.min(current + 1, steps.length - 1));
+    }, 2000);
+  }, [onDone, stepIndex, steps.length]);
+
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(360).easing(Easing.out(Easing.cubic))}
+      style={[
+        s.dayWasteRevealLayer,
+        {
+          paddingTop: Math.max(42, topInset + 30),
+          paddingBottom: Math.max(48, bottomInset + 38),
+        },
+      ]}
+    >
+      <View style={s.dayWasteRevealTitleBlock}>
+        <Text style={s.dayWasteRevealTitle}>You waste</Text>
+        <View style={s.dayWasteRevealUnderline} />
+      </View>
+
+      <Reanimated.View
+        key={step.key}
+        entering={FadeInUp.duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 22 }, { scale: 0.985 }],
+        })}
+        exiting={FadeOut.duration(180)}
+        style={s.dayWasteRevealBody}
+      >
+        <View style={s.dayWasteRevealNumberRow}>
+          <DayWasteCountingNumber
+            stepKey={step.key}
+            target={step.target}
+            decimals={step.decimals}
+            duration={1880}
+            emphasized={step.unit === '%'}
+            onSettled={handleSettled}
+          />
+          <Text style={[s.dayWasteRevealUnit, step.unit === '%' && s.dayWasteRevealPercentUnit]}>{step.unit}</Text>
+        </View>
+
+        <View style={s.dayWasteRevealWords}>
+          <Text style={[s.dayWasteRevealWord, s.dayWasteRevealWordOne]}>{step.lineOne}</Text>
+          <Text style={[s.dayWasteRevealWord, s.dayWasteRevealWordMain]}>{step.lineTwo}</Text>
+          <Text style={[s.dayWasteRevealWord, s.dayWasteRevealWordThree]}>{step.lineThree}</Text>
+        </View>
+      </Reanimated.View>
+    </Reanimated.View>
+  );
+}
+
 type ScreenTimeLegendKind = 'awake' | 'phone' | 'sleep';
 type ScreenTimeLegendItem = { label: string; kind: ScreenTimeLegendKind };
 type ScreenTimeStatEntrance = 'default' | 'topStack';
@@ -9164,10 +9348,9 @@ const TOOLS_SCENE = {
 } as const;
 
 const TOOLS_SUBTITLE_SEGMENTS = [
-  { text: 'But a tool is only worth ', accent: false },
-  { text: 'what it adds', accent: true },
-  { text: ' to ', accent: false },
-  { text: 'your life!', accent: true },
+  { text: "Answer a few questions, and we'll ", accent: false },
+  { text: 'personalize your experience', accent: true },
+  { text: ' from the start.', accent: false },
 ] as const;
 const TOOLS_SUBTITLE_TEXT = TOOLS_SUBTITLE_SEGMENTS.map(segment => segment.text).join('');
 
@@ -9199,14 +9382,14 @@ function buildToolsField(
   baseChipHeight: number,
   screenHeight: number,
 ): ToolsFieldBuild {
-  const margin = 6;
+  const margin = 5;
   const minGap = 6;
   const minVGap = 4;
   const maxPerRow = 5;
   const rand = makeToolsRandom(0x5eeda7);
   // Base metrics describe the chip at full size (scale 1); the solver below
   // shrinks everything together a few percent at a time until ALL 40 tags fit.
-  const estimate = (label: string) => Math.max(88, Math.round(label.length * 7.1) + 54);
+  const estimate = (label: string) => Math.max(90, Math.round(label.length * 7.25) + 56);
   const boxCyMid = (boxFinal.top + boxFinal.bottom) / 2;
 
   type CoreSlot = { label: string; estWidth: number; cx: number; cy: number; cyFinal: number; rotate: number; side?: boolean };
@@ -9225,10 +9408,10 @@ function buildToolsField(
   // barely move. Rows are packed against the expanded regions, so the final
   // state is guaranteed overlap-free and the rest state is simply roomier.
   const usableW = width - margin * 2;
-  const aboveTop = fieldTop + 2;
-  const aboveBottom = boxFinal.top - 8;
-  const belowTop = boxFinal.bottom + 8;
-  const belowBottom = fieldBottom - 2;
+  const aboveTop = fieldTop - 3;
+  const aboveBottom = boxFinal.top - 6;
+  const belowTop = boxFinal.bottom + 6;
+  const belowBottom = fieldBottom + 5;
   const aboveH = Math.max(0, aboveBottom - aboveTop);
   const belowH = Math.max(0, belowBottom - belowTop);
   const aboveHRest = Math.max(0, (boxRest.top - 8) - aboveTop);
@@ -9241,7 +9424,8 @@ function buildToolsField(
   const packRegion = (chips: RowChip[], regionH: number, h: number): Row[] | null => {
     if (chips.length === 0) return [];
     const maxRows = Math.max(1, Math.floor((regionH + minVGap) / (h + minVGap)));
-    const rowCount = Math.min(maxRows, chips.length);
+    const targetPerRow = 4.6;
+    const rowCount = Math.min(maxRows, chips.length, Math.max(1, Math.ceil(chips.length / targetPerRow)));
     const rows: Row[] = Array.from({ length: rowCount }, () => ({ chips: [], total: 0 }));
     for (const chip of chips) {
       let target: Row | null = null;
@@ -9342,16 +9526,17 @@ function buildToolsField(
       const rowCyFinal = rowCount > 1 ? finalTop + chipHeight / 2 + pitchFinal * rowIndex : finalTop + finalH / 2;
       // Inner gaps are equal but capped, and the row is centred — airy rows
       // (e.g. a 2-chip crown row) stay rhythmic instead of stretching apart.
-      const gap = Math.min(26, (usableW - row.total) / (row.chips.length + 1));
+      const gap = Math.min(22, (usableW - row.total) / (row.chips.length + 1));
       const lead = (usableW - row.total - (row.chips.length - 1) * gap) / 2;
-      const yJitMax = Math.min(5, Math.max(0, (Math.min(pitchRest, pitchFinal) - chipHeight) / 2 - 4));
+      const yJitMax = Math.min(3, Math.max(0, (Math.min(pitchRest, pitchFinal) - chipHeight) / 2 - 5));
       let cursor = margin + lead;
       row.chips.forEach(chip => {
-        const xJit = (rand() * 2 - 1) * Math.min(4, Math.max(0, (gap - minGap) * 0.4));
+        const xJitSafeMax = Math.max(0, Math.min(2.2, (gap - minGap) * 0.22));
+        const xJit = (rand() * 2 - 1) * xJitSafeMax;
         const yJit = (rand() * 2 - 1) * yJitMax;
         // Rotation budget is inverse to width so tilted corners can never
         // reach into the neighbouring row.
-        const rotMag = Math.min(5.5, 460 / chip.w) * (0.75 + rand() * 0.45);
+        const rotMag = Math.min(4.2, 360 / chip.w) * (0.75 + rand() * 0.35);
         const sign = placed.length % 2 === 0 ? -1 : 1;
         placed.push({
           label: chip.label,
@@ -9781,7 +9966,6 @@ type ToolsScenePhase = 'rain' | 'reveal' | 'purge' | 'morph' | 'convo';
 function ToolsShowcaseSlide({
   topInset,
   bottomInset,
-  name,
   onNext,
 }: {
   topInset: number;
@@ -9810,7 +9994,6 @@ function ToolsShowcaseSlide({
   const revealSettle = useSharedValue(0);
   const expandT = useSharedValue(0);
   const boxExpand = useSharedValue(0);
-  const fastForward = useSharedValue(0);
   const purgeT = useSharedValue(0);
   const morphT = useSharedValue(0);
   const dip = useSharedValue(0);
@@ -9818,51 +10001,30 @@ function ToolsShowcaseSlide({
   const cardTilt = useSharedValue(0);
   const cardLift = useSharedValue(0);
 
-  const baseChipHeight = compact ? 36 : 38;
   const fieldTop = topInset + 6;
-  // The CTA only exists after the purge, so during the rain the pile may run
-  // almost to the bottom edge — the screen should feel full of tools.
   const fieldBottom = height - bottomInset - 12;
-  // Slightly narrower than v7's 342 so the side gutters can hold the
-  // vertical "spine" tags wedged against the card edges.
   const boxWidth = Math.min(width - 64, 332);
   const boxHeight = compact ? 214 : 224;
   const titleOnlyBoxHeight = compact ? 138 : 148;
-  // The card sits slightly above center: a sparse crown of tags above it, the
-  // dense pile gathered below — the composition gravity would actually leave.
   const boxCy = fieldTop + (fieldBottom - fieldTop) * (compact ? 0.42 : 0.4);
   const boxLeft = width / 2 - boxWidth / 2;
   const expandedTop = boxCy - boxHeight / 2;
   const titleOnlyTop = boxCy - titleOnlyBoxHeight / 2;
-  const box = useMemo(() => ({
-    left: boxLeft - 8,
-    right: boxLeft + boxWidth + 8,
-    top: boxCy - boxHeight / 2 - 8,
-    bottom: boxCy + boxHeight / 2 + 8,
-  }), [boxCy, boxHeight, boxLeft, boxWidth]);
-  // The title-only card the rain actually lands around; the expanded `box`
-  // only becomes real when the subtitle reveals and shoves the pile apart.
-  const boxRest = useMemo(() => ({
-    left: boxLeft - 8,
-    right: boxLeft + boxWidth + 8,
-    top: boxCy - titleOnlyBoxHeight / 2 - 8,
-    bottom: boxCy + titleOnlyBoxHeight / 2 + 8,
-  }), [boxCy, boxLeft, boxWidth, titleOnlyBoxHeight]);
-  const field = useMemo(
-    () => buildToolsField(width, fieldTop, fieldBottom, boxRest, box, baseChipHeight, height),
-    [box, boxRest, baseChipHeight, fieldBottom, fieldTop, height, width],
-  );
-  const chipHeight = field.chipHeight;
+  const cardLandAt = 520 + TOOLS_SCENE.flightDuration;
+  const cardPulseAt = cardLandAt + 620;
+  const cardOnlyPurgeSpan = 520;
 
   const convoWidth = Math.min(360, width - 40);
   const convoLeft = (width - convoWidth) / 2;
   const convoTop = topInset + 78;
-  const displayName = nameForDisplay(name);
-  const bubble1Text = displayName
-    ? `Now — let's make every tool fit your life, ${displayName}.`
-    : "Now — let's make every tool fit your life.";
+  const bubble1Text = TOOLS_SUBTITLE_TEXT;
   const bubble2Segments = useMemo<TypedTextSegment[]>(
-    () => [{ text: 'We have a few questions for you. ' }, { text: 'Answer honestly!', highlight: true }],
+    () => [
+      { text: 'Please be honest,', highlight: true },
+      { text: ' so we can set up Anasta ' },
+      { text: 'around you', highlight: true },
+      { text: '!' },
+    ],
     [],
   );
   const bubble2Text = useMemo(() => joinTypedSegments(bubble2Segments), [bubble2Segments]);
@@ -9914,8 +10076,8 @@ function ToolsShowcaseSlide({
       withTiming(-5, { duration: 230, easing: Easing.out(Easing.cubic) }),
       withSpring(0, { damping: 13, stiffness: 190 }),
     ));
-    purgeT.value = withTiming(1, { duration: field.purgeSpan, easing: Easing.linear });
-    schedule(startMorph, Math.max(180, field.purgeSpan - TOOLS_SCENE.morphLeadIn));
+    purgeT.value = withTiming(1, { duration: cardOnlyPurgeSpan, easing: Easing.linear });
+    schedule(startMorph, Math.max(180, cardOnlyPurgeSpan - TOOLS_SCENE.morphLeadIn));
   }
 
   function startReveal(instant: boolean) {
@@ -9949,23 +10111,17 @@ function ToolsShowcaseSlide({
     revealSettle.value = 0;
     expandT.value = 0;
     boxExpand.value = 0;
-    fastForward.value = 0;
     purgeT.value = 0;
     morphT.value = 0;
 
-    // Two-act choreography (timeline computed by the layout): lower pile
-    // rains in, the card lands into its gap, then the upper crown falls.
-    const flightStartAt = field.flightStartAt;
-    const cardLandAt = field.cardLandAt;
-
     schedule(() => {
-      // The card falls by gravity like every tag: accelerate, overshoot a few
-      // px into the pile, spring absorbs the impact.
+      // The card falls by gravity: accelerate, overshoot a few px, then the
+      // spring absorbs the impact.
       flight.value = withSequence(
         withTiming(0.86, { duration: TOOLS_SCENE.flightDuration, easing: Easing.in(Easing.quad) }),
         withSpring(1, { damping: 14, stiffness: 240, mass: 0.9 }),
       );
-    }, flightStartAt);
+    }, 520);
     schedule(() => {
       cardSettle.value = withTiming(1, { duration: 640, easing: Easing.bezier(0.22, 1, 0.36, 1) });
     }, cardLandAt - 60);
@@ -9990,12 +10146,10 @@ function ToolsShowcaseSlide({
         withSpring(0, { damping: 9, stiffness: 300 }),
       );
     }, cardLandAt - 30);
-    field.landingTicks.forEach(at => schedule(runSelectionHaptic, at));
 
     // The fake-out: once the tableau settles, the card pulses hard once —
-    // straining to say more — and the pile flinches around it, then settles.
+    // straining to say more — then settles.
     // Only after a dramatic beat does the REAL event (the subtitle) drop out.
-    const pulseAt = field.lastLandingAt + TOOLS_SCENE.pulseDelay;
     schedule(() => {
       runStrongHaptic();
       cardPulse.value = withSequence(
@@ -10014,8 +10168,8 @@ function ToolsShowcaseSlide({
         withTiming(2.6, { duration: 90, easing: Easing.out(Easing.quad) }),
         withSpring(0, { damping: 11, stiffness: 240 }),
       );
-    }, pulseAt);
-    schedule(() => startReveal(false), pulseAt + TOOLS_SCENE.pulseGap);
+    }, cardPulseAt);
+    schedule(() => startReveal(false), cardPulseAt + TOOLS_SCENE.pulseGap);
     schedule(() => {
       bubble1Ref.current?.measureInWindow((x, y, w, h) => {
         if (w > 0 && h > 0) setMorphTarget({ x, y, w, h });
@@ -10024,11 +10178,12 @@ function ToolsShowcaseSlide({
 
     return clearTimers;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [field]);
+  }, [cardLandAt, cardPulseAt, cardOnlyPurgeSpan, clearTimers, schedule]);
 
   useEffect(() => {
     if (phase !== 'convo') return undefined;
     let interval: ReturnType<typeof setInterval> | undefined;
+
     const startTimer = setTimeout(() => {
       runBubbleHaptic();
       interval = setInterval(() => {
@@ -10057,9 +10212,9 @@ function ToolsShowcaseSlide({
   const handleCta = () => {
     if (echoedRef.current) return;
     echoedRef.current = true;
+    setShowCta(false);
     setEchoed(true);
     // Let the echo bubble land and breathe for a beat before moving on.
-    schedule(runSelectionHaptic, 150);
     schedule(onNext, TOOLS_SCENE.echoDwell);
   };
 
@@ -10159,7 +10314,6 @@ function ToolsShowcaseSlide({
       ],
     };
   });
-
   return (
     <LinearGradient
       colors={['#FFFDF8', '#FFFDF8', '#F6EBD9', '#E3C894']}
@@ -10175,26 +10329,6 @@ function ToolsShowcaseSlide({
           <View style={s.valueBackdropLineOne} />
           <View style={s.valueBackdropLineTwo} />
         </View>
-
-        {phase !== 'convo' ? (
-          // Once the conversation starts the purged chips are far off screen;
-          // unmounting them kills 40 idle float loops for the rest of the scene.
-          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-            {field.slots.map(slot => (
-              <ToolsFieldChip
-                key={slot.label}
-                slot={slot}
-                chipHeight={chipHeight}
-                chipScale={field.chipScale}
-                fastForward={fastForward}
-                purgeT={purgeT}
-                purgeSpan={field.purgeSpan}
-                cardLandPulse={cardLandPulse}
-                expandT={expandT}
-              />
-            ))}
-          </View>
-        ) : null}
 
         <Reanimated.View pointerEvents="none" style={[s.toolsCardStack, { backgroundColor: '#EFE4CC' }, stackDeepStyle]} />
         <Reanimated.View pointerEvents="none" style={[s.toolsCardStack, { backgroundColor: '#F9F2E2' }, stackMidStyle]} />
@@ -10224,7 +10358,7 @@ function ToolsShowcaseSlide({
                 setTitleUnderlineWidth(current => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
               }}
             >
-              Anasta has a lot of tools!
+              Let&apos;s build Anasta around you.
             </Text>
             <Reanimated.View
               style={[s.valueTitleUnderline, { width: titleUnderlineWidth, alignSelf: 'center' }, underlineDrawStyle]}
@@ -10289,7 +10423,17 @@ function ToolsShowcaseSlide({
               })}
               style={[s.nameBotRow, s.nameBotRowTight]}
             >
-              <View style={s.toolsConvoAvatarSlot} />
+              <View style={s.toolsConvoAvatarSlot}>
+                <Reanimated.View
+                  entering={FadeInLeft.delay(TOOLS_SCENE.bubble2Delay - 80).duration(360).withInitialValues({
+                    opacity: 0,
+                    transform: [{ translateX: -12 }, { scale: 0.9 }],
+                  })}
+                  style={s.nameAvatarShellSmall}
+                >
+                  <Image source={APP_LOGO} style={s.nameAvatarLogoSmall} resizeMode="cover" />
+                </Reanimated.View>
+              </View>
               <View style={[s.nameBubble, s.nameBubbleAuto]}>
                 <TypedSegmentText
                   segments={bubble2Segments}
@@ -10553,79 +10697,71 @@ function V4StatementDeckSlide({
   // Smoothstep ramp so the light builds gently at first, then surges as the
   // card approaches the commit threshold.
   const leftGlowStyle = useAnimatedStyle(() => {
-    const raw = Math.min(1, Math.max(0, -dragX.value) / 190);
+    const raw = Math.min(1, Math.max(0, -dragX.value) / 184);
     const eased = raw * raw * (3 - 2 * raw);
     return {
-      opacity: eased,
-      transform: [{ scaleX: 0.5 + eased * 0.5 }],
+      opacity: interpolate(raw, [0, 0.18, 0.68, 1], [0, 0.12, 0.58, 0.82], 'clamp'),
+      transform: [
+        { translateX: interpolate(eased, [0, 1], [-8, 0]) },
+        { scaleX: 0.72 + eased * 0.28 },
+      ],
     };
   });
   const rightGlowStyle = useAnimatedStyle(() => {
-    const raw = Math.min(1, Math.max(0, dragX.value) / 190);
+    const raw = Math.min(1, Math.max(0, dragX.value) / 184);
     const eased = raw * raw * (3 - 2 * raw);
     return {
-      opacity: eased,
-      transform: [{ scaleX: 0.5 + eased * 0.5 }],
+      opacity: interpolate(raw, [0, 0.18, 0.68, 1], [0, 0.12, 0.58, 0.82], 'clamp'),
+      transform: [
+        { translateX: interpolate(eased, [0, 1], [8, 0]) },
+        { scaleX: 0.72 + eased * 0.28 },
+      ],
     };
   });
   const leftGlowCoreStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(-dragX.value, [88, 200], [0, 1], 'clamp'),
+    opacity: interpolate(-dragX.value, [72, 154, 224], [0, 0.32, 0.58], 'clamp'),
   }));
   const rightGlowCoreStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(dragX.value, [88, 200], [0, 1], 'clamp'),
+    opacity: interpolate(dragX.value, [72, 154, 224], [0, 0.32, 0.58], 'clamp'),
   }));
 
   return (
     <View style={[s.v4DeckSlideRoot, { paddingBottom: bottomInset + 10 }]}>
       <Reanimated.View pointerEvents="none" style={[s.v4EdgeGlow, s.v4EdgeGlowLeft, leftGlowStyle]}>
         <LinearGradient
-          colors={['rgba(210,69,76,0.52)', 'rgba(210,69,76,0.20)', 'rgba(210,69,76,0)']}
-          locations={[0, 0.42, 1]}
+          colors={['rgba(229,91,101,0.48)', 'rgba(229,91,101,0.24)', 'rgba(229,91,101,0.10)', 'rgba(229,91,101,0.03)', 'rgba(229,91,101,0)']}
+          locations={[0, 0.22, 0.5, 0.78, 1]}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={StyleSheet.absoluteFill}
         />
         <Reanimated.View style={[s.v4EdgeGlowCore, leftGlowCoreStyle]}>
           <LinearGradient
-            colors={['rgba(210,69,76,0.62)', 'rgba(210,69,76,0)']}
+            colors={['rgba(204,58,68,0.48)', 'rgba(229,91,101,0.18)', 'rgba(229,91,101,0)']}
+            locations={[0, 0.48, 1]}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
             style={StyleSheet.absoluteFill}
           />
         </Reanimated.View>
-        <LinearGradient
-          pointerEvents="none"
-          colors={['#FFFDF8', 'rgba(255,253,248,0)', 'rgba(255,253,248,0)', '#FFFDF8']}
-          locations={[0, 0.24, 0.76, 1]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
       </Reanimated.View>
       <Reanimated.View pointerEvents="none" style={[s.v4EdgeGlow, s.v4EdgeGlowRight, rightGlowStyle]}>
         <LinearGradient
-          colors={['rgba(47,157,88,0)', 'rgba(47,157,88,0.20)', 'rgba(47,157,88,0.52)']}
-          locations={[0, 0.58, 1]}
+          colors={['rgba(72,190,126,0)', 'rgba(72,190,126,0.03)', 'rgba(72,190,126,0.10)', 'rgba(72,190,126,0.24)', 'rgba(72,190,126,0.48)']}
+          locations={[0, 0.22, 0.5, 0.78, 1]}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={StyleSheet.absoluteFill}
         />
         <Reanimated.View style={[s.v4EdgeGlowCore, s.v4EdgeGlowCoreRight, rightGlowCoreStyle]}>
           <LinearGradient
-            colors={['rgba(47,157,88,0)', 'rgba(47,157,88,0.62)']}
+            colors={['rgba(72,190,126,0)', 'rgba(72,190,126,0.18)', 'rgba(35,145,82,0.48)']}
+            locations={[0, 0.52, 1]}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
             style={StyleSheet.absoluteFill}
           />
         </Reanimated.View>
-        <LinearGradient
-          pointerEvents="none"
-          colors={['#FFFDF8', 'rgba(255,253,248,0)', 'rgba(255,253,248,0)', '#FFFDF8']}
-          locations={[0, 0.24, 0.76, 1]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
       </Reanimated.View>
 
       <View style={[s.v4DeckInner, { paddingTop: topInset + 10 }]}>
@@ -11574,7 +11710,6 @@ function DayBarConnector({
       ],
     };
   });
-
   return (
     <Reanimated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, width, height }, style]}>
       <Svg width={width} height={height}>
@@ -11696,15 +11831,15 @@ function V4DayPanoramaHeaderSlide({
   const axisIntroDelay = heroDelay + heroDuration - 240;
   const axisIntroDuration = 520;
   const lineDelay = axisIntroDelay + axisIntroDuration - 40;
-  const lineDuration = 1600;
+  const lineDuration = 1380;
   const cloudBaseDelay = lineDelay + 70;
   const cloudAliveDelay = lineDelay + lineDuration * 0.5;
-  const pieDelay = lineDelay + lineDuration + 40;
-  const connectorDelay = pieDelay + 260;
-  const sleepDelay = connectorDelay + 360;
-  const toolboxDelay = connectorDelay + 450;
-  const phoneDelay = connectorDelay + 540;
-  const ctaDelay = phoneDelay + 760;
+  const pieDelay = cloudAliveDelay + 110;
+  const sleepDelay = pieDelay + 380;
+  const toolboxDelay = pieDelay + 470;
+  const phoneDelay = pieDelay + 560;
+  const connectorDelay = phoneDelay + 520;
+  const ctaDelay = connectorDelay;
   const axisIntro = useSharedValue(0);
   const lineDraw = useSharedValue(0);
   const cloudBase = useSharedValue(0);
@@ -11722,7 +11857,7 @@ function V4DayPanoramaHeaderSlide({
   const stat = protectStats(hours);
   const wakingPercent = Math.round((phoneHours / USABLE_DAY_HOURS) * 100);
   const reclaimedWakingPercent = Math.max(1, Math.round(wakingPercent * 0.4));
-  const [phase, setPhase] = useState<'pie' | 'wasteCompare' | 'reclaimCompare'>('pie');
+  const [phase, setPhase] = useState<'pie' | 'wasteReveal' | 'wasteCompare' | 'reclaimCompare'>('pie');
   const [compareReveal, setCompareReveal] = useState(0);
   const morph = useSharedValue(0);
   const screen2 = useSharedValue(0);
@@ -11799,7 +11934,7 @@ function V4DayPanoramaHeaderSlide({
   }, [ambient, axisIntro, axisIntroDelay, axisIntroDuration, cloudAliveDelay, cloudBase, cloudBaseDelay, connectorDelay, connectorIntro, lineDelay, lineDraw, lineDuration, phoneDelay, phoneIntro, pieDelay, pieIntro, sleepDelay, sleepIntro, toolboxDelay, toolboxIntro]);
 
   useEffect(() => {
-    if (phase === 'pie') return undefined;
+    if (phase === 'pie' || phase === 'wasteReveal') return undefined;
     const timers: ReturnType<typeof setTimeout>[] = [];
     if (phase === 'wasteCompare') {
       setCompareReveal(0);
@@ -11820,7 +11955,6 @@ function V4DayPanoramaHeaderSlide({
       });
     }
     return () => timers.forEach(timer => clearTimeout(timer));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
   const sunStyle = useAnimatedStyle(() => ({
@@ -11906,7 +12040,7 @@ function V4DayPanoramaHeaderSlide({
     if (phase === 'pie') {
       runSelectionHaptic();
       screen2.value = 0;
-      setPhase('wasteCompare');
+      setPhase('wasteReveal');
       screen2.value = withTiming(1, { duration: 640, easing: Easing.bezier(0.22, 1, 0.36, 1) });
       return;
     }
@@ -11917,9 +12051,15 @@ function V4DayPanoramaHeaderSlide({
     }
     onNext();
   };
+  const handleWasteRevealDone = useCallback(() => {
+    setCompareReveal(0);
+    setPhase('wasteCompare');
+  }, []);
   const dayCtaLabel = phase === 'pie' ? 'Calculate my productive time' : phase === 'reclaimCompare' ? "Let's fix this" : 'Continue';
   const dayCtaActive =
-    phase === 'wasteCompare'
+    phase === 'wasteReveal'
+      ? false
+      : phase === 'wasteCompare'
       ? compareReveal >= 3
       : phase === 'reclaimCompare'
         ? compareReveal >= 2
@@ -12073,7 +12213,7 @@ function V4DayPanoramaHeaderSlide({
       style={[
         s.dayHeaderScreen,
         { paddingTop: Math.max(0, topInset - 14), paddingBottom: Math.max(0, bottomInset - 10) },
-        (phase === 'wasteCompare' || phase === 'reclaimCompare') && s.dayCompareScreenBg,
+        (phase === 'wasteReveal' || phase === 'wasteCompare' || phase === 'reclaimCompare') && s.dayCompareScreenBg,
       ]}
     >
       <Reanimated.View style={[s.dayHeaderContent, heroFadeStyle]}>
@@ -12198,6 +12338,15 @@ function V4DayPanoramaHeaderSlide({
 
       </View>
 
+      {phase === 'wasteReveal' && (
+        <DayWasteRevealLayer
+          stat={stat}
+          topInset={topInset}
+          bottomInset={bottomInset}
+          onDone={handleWasteRevealDone}
+        />
+      )}
+
       {(phase === 'wasteCompare' || phase === 'reclaimCompare') && (
         <Reanimated.View
           style={[
@@ -12237,6 +12386,7 @@ function V4DayPanoramaHeaderSlide({
         duration={620}
         distance={30}
         style={s.dayHeaderAction}
+        pointerEvents={dayCtaActive ? 'auto' : 'none'}
       >
         <View style={[s.ctaIsland, (phase === 'wasteCompare' || phase === 'reclaimCompare') && s.dayCompareCtaIsland]}>
           <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={handleDayNext} style={s.primaryButton}>
@@ -19014,6 +19164,105 @@ const s = StyleSheet.create({
     shadowOpacity: 0,
     elevation: 0,
   },
+  dayWasteRevealLayer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFFDF8',
+    zIndex: 17,
+    alignItems: 'center',
+  },
+  dayWasteRevealTitleBlock: {
+    alignItems: 'center',
+    marginTop: 3,
+  },
+  dayWasteRevealTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 45,
+    lineHeight: 51,
+    letterSpacing: 0.2,
+    color: '#B0383E',
+    textAlign: 'center',
+  },
+  dayWasteRevealUnderline: {
+    marginTop: -1,
+    width: 174,
+    height: 3.5,
+    borderRadius: 999,
+    backgroundColor: '#B0383E',
+  },
+  dayWasteRevealBody: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 390,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    paddingBottom: 18,
+  },
+  dayWasteRevealNumberRow: {
+    minHeight: 178,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  dayWasteRevealNumber: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 138,
+    lineHeight: 152,
+    letterSpacing: 0,
+    color: '#17130F',
+    textAlign: 'center',
+    includeFontPadding: false,
+    textShadowColor: 'rgba(176,56,62,0.10)',
+    textShadowOffset: { width: 0, height: 9 },
+    textShadowRadius: 18,
+  },
+  dayWasteRevealNumberPercent: {
+    fontSize: 154,
+    lineHeight: 168,
+  },
+  dayWasteRevealUnit: {
+    marginLeft: 8,
+    marginBottom: 24,
+    fontFamily: F.serifSemiBold,
+    fontSize: 33,
+    lineHeight: 38,
+    color: '#B0383E',
+  },
+  dayWasteRevealPercentUnit: {
+    fontSize: 66,
+    lineHeight: 73,
+    marginBottom: 22,
+  },
+  dayWasteRevealWords: {
+    marginTop: -7,
+    minHeight: 128,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayWasteRevealWord: {
+    fontFamily: F.serifMediumItalic,
+    color: 'rgba(25,23,20,0.74)',
+    textAlign: 'center',
+  },
+  dayWasteRevealWordOne: {
+    fontSize: 27,
+    lineHeight: 33,
+    transform: [{ rotate: '-5deg' }, { translateX: -44 }],
+  },
+  dayWasteRevealWordMain: {
+    marginTop: -3,
+    fontFamily: F.serifBold,
+    fontSize: 39,
+    lineHeight: 43,
+    color: '#B0383E',
+    transform: [{ rotate: '2deg' }],
+  },
+  dayWasteRevealWordThree: {
+    marginTop: -4,
+    fontSize: 27,
+    lineHeight: 33,
+    transform: [{ rotate: '-3deg' }, { translateX: 42 }],
+  },
   dayTwoIlloAbs: {
     position: 'absolute',
     top: 8,
@@ -24969,8 +25218,9 @@ const s = StyleSheet.create({
     position: 'absolute',
     top: 0,
     bottom: 0,
-    width: 152,
+    width: 226,
     zIndex: 5,
+    overflow: 'hidden',
   },
   v4EdgeGlowLeft: {
     left: 0,
@@ -24985,7 +25235,7 @@ const s = StyleSheet.create({
     top: 0,
     bottom: 0,
     left: 0,
-    width: 64,
+    width: 92,
   },
   v4EdgeGlowCoreRight: {
     left: undefined,
