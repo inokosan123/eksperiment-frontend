@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, InteractionManager, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, InteractionManager, PixelRatio, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as ExpoImage, type ImageRef as ExpoImageRef } from 'expo-image';
@@ -386,42 +386,42 @@ function releaseStatementImages(sources: number[]) {
 const PROTECT_DECK_CARDS: StatementDeckCard[] = [
   {
     id: 'lost-hour',
-    statement: 'I pick up my phone for a second and lose an hour. I feel frustrated and guilty.',
+    statement: 'I pick up my phone for a second and lose an hour. Then I feel frustrated with myself.',
     image: PROTECT_STATEMENT_IMAGES[0],
     icon: <Clock s={30} c="#4D8586" w={1.9} />,
-    bold: ['lose an hour', 'frustrated and guilty'],
+    bold: ['lose an hour', 'frustrated with myself'],
   },
   {
     id: 'morning-night',
-    statement: "My phone is the first thing I reach for in the morning and the last thing I see at night. I feel restless and it's ruining my sleep.",
+    statement: 'My phone is the first thing I reach for in the morning and the last thing I see at night. I feel restless, and my sleep suffers because of it.',
     image: PROTECT_STATEMENT_IMAGES[1],
     icon: <BellRing s={30} c="#4D8586" w={1.9} />,
-    bold: ['first thing', 'last thing', 'ruining my sleep'],
+    bold: ['first thing', 'last thing', 'my sleep suffers'],
   },
   {
     id: 'focus-pulled',
-    statement: 'Every time I sit down for something important, notifications and apps pull me away. I feel like I can never truly focus.',
+    statement: 'When I sit down to do something important, notifications and apps pull me away. I feel like I can never truly focus.',
     image: PROTECT_STATEMENT_IMAGES[2],
     icon: <Target s={30} c="#4D8586" w={1.9} />,
-    bold: ['pull me away', 'never truly focus'],
+    bold: ['something important', 'pull me away', 'never truly focus'],
   },
   {
     id: 'procrastination',
-    statement: 'When I need to start something hard, I feel anxious and uncomfortable — so I pick up my phone instead. I end up procrastinating for hours. And I feel like I let myself down — again.',
+    statement: 'When I need to start something hard, I feel anxious and uncomfortable - so I pick up my phone instead. Hours pass, and I feel like I let myself down again.',
     image: PROTECT_STATEMENT_IMAGES[3],
     icon: <Hourglass s={30} c="#4D8586" w={1.9} />,
-    bold: ['procrastinating for hours', 'let myself down'],
+    bold: ['start something hard', 'Hours pass', 'let myself down'],
   },
   {
     id: 'ashamed-content',
-    statement: "I'm addicted to content that I'm ashamed of — adult content, gambling, gaming, social media. It leaves me feeling empty every time.",
+    statement: "I want to stop consuming addictive content, but I keep getting pulled back when I'm weak, bored, or stressed (adult content, gambling, social media etc.).",
     image: PROTECT_STATEMENT_IMAGES[4],
     icon: <SlidersHorizontal s={30} c="#4D8586" w={1.9} />,
-    bold: ['addicted', 'ashamed of', 'feeling empty'],
+    bold: ['addictive content', 'pulled back', 'weak, bored, or stressed'],
   },
   {
     id: 'presence',
-    statement: 'I want to be fully present — in prayer, with family, at work. But distractions keep pulling me away.',
+    statement: 'I want to be fully present - in prayer, with family, at work - but distractions keep pulling me away.',
     image: PROTECT_STATEMENT_IMAGES[5],
     icon: <Heart s={30} c="#4D8586" w={1.9} />,
     spiritual: true,
@@ -439,24 +439,24 @@ const ORGANIZE_DECK_CARDS: StatementDeckCard[] = [
   },
   {
     id: 'last-minute',
-    statement: 'I always end up doing everything at the last minute. I feel stressed and unprepared when it matters most.',
+    statement: 'I leave important things until the last minute. Then I feel stressed and unprepared when it matters most.',
     image: ORGANIZE_STATEMENT_IMAGES[1],
     icon: <Clock s={30} c={GOLD} w={1.9} />,
     bold: ['last minute', 'stressed and unprepared'],
   },
   {
     id: 'plan-day',
-    statement: 'I get things done — but I know I could do so much more if I just planned my day better.',
+    statement: 'I get things done - but I know I could do so much more if I planned my day better.',
     image: ORGANIZE_STATEMENT_IMAGES[2],
     icon: <Calendar s={30} c={GOLD} w={1.9} />,
     bold: ['so much more', 'planned my day better'],
   },
   {
     id: 'habits-quit',
-    statement: "I start new habits full of motivation. A few days later I've quit again. I feel like I have no discipline.",
+    statement: 'I start new habits full of motivation. A few days later, I quit again and feel like I have no discipline.',
     image: ORGANIZE_STATEMENT_IMAGES[3],
     icon: <Target s={30} c={GOLD} w={1.9} />,
-    bold: ["I've quit again", 'no discipline'],
+    bold: ['I quit again', 'no discipline'],
   },
   {
     id: 'wasted-day',
@@ -467,21 +467,21 @@ const ORGANIZE_DECK_CARDS: StatementDeckCard[] = [
   },
   {
     id: 'forgot-promise',
-    statement: 'Sometimes I forget something I promised to do. Then comes the stress — and the feeling that I let someone down.',
+    statement: 'Sometimes I forget a task I promised to do. Then comes the stress - and the feeling that I let someone down.',
     image: ORGANIZE_STATEMENT_IMAGES[5],
     icon: <BellRing s={30} c={GOLD} w={1.9} />,
-    bold: ['forget something I promised', 'let someone down'],
+    bold: ['forget a task I promised', 'let someone down'],
   },
   {
     id: 'no-rhythm',
-    statement: 'My days have no rhythm. I never feel in control — just carried along by whatever happens.',
+    statement: 'My days have no rhythm. I never feel in control - just carried along by whatever happens.',
     image: ORGANIZE_STATEMENT_IMAGES[6],
     icon: <Home s={30} c={GOLD} w={1.9} />,
     bold: ['no rhythm', 'never feel in control'],
   },
   {
     id: 'pray-daily',
-    statement: 'I want to pray every day but I rarely do. I feel distant from God and guilty about it.',
+    statement: 'I want to pray every day, but I rarely do. I feel distant from God and guilty about it.',
     image: ORGANIZE_STATEMENT_IMAGES[7],
     icon: <Cross s={30} c={GOLD} w={1.9} />,
     spiritual: true,
@@ -496,7 +496,7 @@ const ORGANIZE_DECK_CARDS: StatementDeckCard[] = [
   },
   {
     id: 'scripture-time',
-    statement: 'I want to read Scripture but I never make time for it. My faith is not growing the way it should.',
+    statement: 'I want to read Scripture, but I never make time for it. My faith is not growing the way it should.',
     image: ORGANIZE_STATEMENT_IMAGES[9],
     icon: <OpenBook s={30} c={GOLD} w={1.9} />,
     spiritual: true,
@@ -908,18 +908,8 @@ const PILLAR_OPTIONS: Option<PillarAnswer>[] = [
   },
 ];
 
-const PROTECT_SCREEN_TIME_CARDS = ['lost-hour', 'morning-night', 'procrastination'];
-const PROTECT_FOCUS_CARDS = ['focus-pulled', 'presence'];
-
 function stepOrder(answers: Answers): StepId[] {
-  const protect = answers.confirmedProtectProblems ?? [];
   const organize = answers.confirmedOrganizeProblems ?? [];
-
-  // Setup groups appear only for the problems the user confirmed (v4 setup loop).
-  const protectSetup: StepId[] = [];
-  if (protect.some(id => PROTECT_SCREEN_TIME_CARDS.includes(id))) protectSetup.push('protectAppBlockers');
-  if (protect.some(id => PROTECT_FOCUS_CARDS.includes(id))) protectSetup.push('protectFocusBlock');
-  if (protect.includes('ashamed-content')) protectSetup.push('protectWebsiteBlockers');
 
   // The guided chain in the real views is fixed: BigEvents -> MonthlyGoals ->
   // Habits -> Challenges -> MyRoutine. Any confirmed organize problem runs it.
@@ -940,7 +930,6 @@ function stepOrder(answers: Answers): StepId[] {
     'screenTimeSlider',
     'dayVisualizationHeader',
     'protectRecap',
-    ...protectSetup,
     'flameProtect',
     'organizeDeck',
     'organizeRecap',
@@ -1669,12 +1658,10 @@ function TypedSegmentText({
 
 function NameIntroSlide({
   value,
-  bottomInset,
   onNameChange,
   onNext,
 }: {
   value?: string;
-  bottomInset: number;
   onNameChange: (name: string) => void;
   onNext: () => void;
 }) {
@@ -1796,20 +1783,6 @@ function NameIntroSlide({
         </Reanimated.View>
       </ScrollView>
 
-      <AnimatedCta delay={260} style={[s.bottomAction, s.introBottomAction, { paddingBottom: bottomInset + 8 }]}>
-        <View style={s.ctaIsland}>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            haptic="light"
-            disabled={!canSubmit}
-            onPress={handlePrimary}
-            style={[s.primaryButton, !canSubmit && s.primaryButtonDisabled]}
-          >
-            <Text style={[s.primaryButtonText, !canSubmit && s.primaryButtonDisabledText]}>Continue</Text>
-            <ChevronRight s={19} c={canSubmit ? '#FFFFFF' : 'rgba(25,23,20,0.34)'} w={2.5} />
-          </TouchableOpacity>
-        </View>
-      </AnimatedCta>
     </LinearGradient>
   );
 }
@@ -2422,13 +2395,13 @@ function ValueSlideProgressRail({ activeIndex, total }: { activeIndex: number; t
       {Array.from({ length: total }).map((_, dotIndex) => {
         const active = dotIndex === activeIndex;
         const done = dotIndex <= activeIndex;
-        return <ValueProgressStep key={`value-flow-${dotIndex}`} index={dotIndex} active={active} done={done} />;
+        return <ValueProgressStep key={`value-flow-${dotIndex}`} active={active} done={done} />;
       })}
     </View>
   );
 }
 
-function ValueProgressStep({ index, active, done }: { index: number; active: boolean; done: boolean }) {
+function ValueProgressStep({ active, done }: { active: boolean; done: boolean }) {
   const activeMotion = useSharedValue(active ? 1 : 0);
   const doneMotion = useSharedValue(done ? 1 : 0);
 
@@ -2444,20 +2417,20 @@ function ValueProgressStep({ index, active, done }: { index: number; active: boo
   }, [active, activeMotion, done, doneMotion]);
 
   const stepStyle = useAnimatedStyle(() => ({
-    width: interpolate(activeMotion.value, [0, 1], [34, 82]),
+    width: interpolate(activeMotion.value, [0, 1], [32, 86]),
   }));
   const trackStyle = useAnimatedStyle(() => ({
-    height: interpolate(activeMotion.value, [0, 1], [4.5, 7]),
-    opacity: interpolate(activeMotion.value, [0, 1], [0.76, 1]),
+    height: interpolate(activeMotion.value, [0, 1], [5, 8]),
+    opacity: interpolate(activeMotion.value, [0, 1], [0.7, 1]),
     backgroundColor: interpolateColor(
       doneMotion.value,
       [0, 1],
-      ['rgba(25,23,20,0.095)', 'rgba(197,160,89,0.20)'],
+      ['rgba(25,23,20,0.06)', 'rgba(197,160,89,0.17)'],
     ),
     borderColor: interpolateColor(
       activeMotion.value,
       [0, 1],
-      ['rgba(255,255,255,0.30)', 'rgba(197,160,89,0.58)'],
+      ['rgba(255,255,255,0.46)', 'rgba(232,195,116,0.76)'],
     ),
   }));
   const fillStyle = useAnimatedStyle(() => ({
@@ -2465,24 +2438,16 @@ function ValueProgressStep({ index, active, done }: { index: number; active: boo
     backgroundColor: interpolateColor(
       activeMotion.value,
       [0, 1],
-      ['rgba(197,160,89,0.54)', '#E7C36D'],
+      ['rgba(197,160,89,0.48)', '#E7C36D'],
     ),
-  }));
-  const dotStyle = useAnimatedStyle(() => ({
-    opacity: activeMotion.value,
-    transform: [
-      { translateY: interpolate(activeMotion.value, [0, 1], [5, 0]) },
-      { scale: interpolate(activeMotion.value, [0, 1], [0.78, 1]) },
-    ],
+    opacity: interpolate(doneMotion.value, [0, 1], [0, 1]),
   }));
 
   return (
     <Reanimated.View style={[s.valueProgressStep, stepStyle]}>
       <Reanimated.View style={[s.valueProgressTrack, trackStyle]}>
         <Reanimated.View style={[s.valueProgressTrackFill, fillStyle]} />
-      </Reanimated.View>
-      <Reanimated.View style={[s.valueProgressDot, dotStyle]}>
-        <Text style={s.valueProgressDotText}>{index + 1}</Text>
+        {active ? <View pointerEvents="none" style={s.valueProgressTrackSheen} /> : null}
       </Reanimated.View>
     </Reanimated.View>
   );
@@ -6666,6 +6631,276 @@ function DayCompareSavedYearsCard({ stat, side }: { stat: ReturnType<typeof prot
   );
 }
 
+function DayReductionCountingNumber({
+  onSettled,
+  style,
+}: {
+  onSettled: () => void;
+  style?: StyleProp<TextStyle>;
+}) {
+  const [value, setValue] = useState(0);
+  const settledRef = useRef(false);
+
+  useEffect(() => {
+    let frame = 0;
+    const startedAt = Date.now();
+    settledRef.current = false;
+    setValue(0);
+
+    const tick = () => {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < 0) {
+        frame = requestAnimationFrame(tick);
+        return;
+      }
+      const t = Math.min(1, elapsed / 1550);
+      const eased = 1 - Math.pow(1 - t, 4.2);
+      setValue(t >= 1 ? 40 : 40 * eased);
+
+      if (t < 1) {
+        frame = requestAnimationFrame(tick);
+        return;
+      }
+
+      if (!settledRef.current) {
+        settledRef.current = true;
+        onSettled();
+      }
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [onSettled]);
+
+  return (
+    <Text style={[s.dayReductionBridgeNumber, style]}>
+      {Math.round(value)}
+    </Text>
+  );
+}
+
+function DayReductionBridgeLayer({
+  topInset,
+  bottomInset,
+  exitSignal,
+  onReady,
+  onDone,
+}: {
+  topInset: number;
+  bottomInset: number;
+  exitSignal: number;
+  onReady: () => void;
+  onDone: () => void;
+}) {
+  const { width } = useWindowDimensions();
+  const chartWidth = Math.min(344, Math.max(302, width - 52));
+  const chartHeight = 238;
+  const chartLeft = 24;
+  const chartRight = chartWidth - 24;
+  const chartSpan = chartRight - chartLeft;
+  const x = (pct: number) => chartLeft + chartSpan * pct;
+  const yStart = 100;
+  const yWithout = 84;
+  const yWith = 176;
+  const guideTop = 70;
+  const guideMid = 122;
+  const guideBottom = 174;
+  const withoutPath = `M${x(0)} ${yStart} C${x(0.2)} ${yStart - 2} ${x(0.38)} ${yStart + 1} ${x(0.54)} ${yStart} C${x(0.73)} ${yStart - 4} ${x(0.88)} ${yWithout + 2} ${x(1)} ${yWithout}`;
+  const anastaPath = `M${x(0)} ${yStart} C${x(0.2)} ${yStart + 3} ${x(0.38)} ${yStart + 42} ${x(0.52)} ${yStart + 62} C${x(0.68)} ${yStart + 88} ${x(0.83)} ${yWith + 6} ${x(1)} ${yWith}`;
+  const deltaX = x(0.77);
+  const deltaTop = yWithout + 10;
+  const deltaBottom = yWith - 6;
+  const intro = useSharedValue(0);
+  const statPop = useSharedValue(0);
+  const bridgeExit = useSharedValue(0);
+  const readyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastExitSignalRef = useRef(0);
+
+  useEffect(() => {
+    intro.value = 0;
+    statPop.value = 0;
+    bridgeExit.value = 0;
+    intro.value = withTiming(1, {
+      duration: 980,
+      easing: Easing.bezier(0.16, 1, 0.28, 1),
+    });
+    statPop.value = withDelay(
+      520,
+      withTiming(1, {
+        duration: 1160,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      }),
+    );
+    readyTimerRef.current = setTimeout(() => {
+      onReady();
+    }, 520);
+    const hapticTimer = setTimeout(runBubbleHaptic, 1120);
+    return () => {
+      clearTimeout(hapticTimer);
+      if (readyTimerRef.current) {
+        clearTimeout(readyTimerRef.current);
+        readyTimerRef.current = null;
+      }
+    };
+  }, [bridgeExit, intro, onReady, statPop]);
+
+  const handleNumberSettled = useCallback(() => {
+    runBubbleHaptic();
+  }, []);
+
+  useEffect(() => {
+    if (exitSignal <= 0 || exitSignal === lastExitSignalRef.current) return;
+    lastExitSignalRef.current = exitSignal;
+    bridgeExit.value = withTiming(
+      1,
+      {
+        duration: 760,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      },
+      finished => {
+        if (finished) {
+          runOnJS(onDone)();
+        }
+      },
+    );
+  }, [bridgeExit, exitSignal, onDone]);
+
+  const layerExitStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(bridgeExit.value, [0, 0.18, 1], [1, 0.94, 0], 'clamp'),
+  }));
+
+  const shellStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(intro.value, [0, 0.2, 1], [0, 1, 1], 'clamp') * interpolate(bridgeExit.value, [0, 0.5, 1], [1, 0.34, 0], 'clamp'),
+    transform: [
+      { translateY: interpolate(intro.value, [0, 0.72, 1], [24, -2, 0]) + interpolate(bridgeExit.value, [0, 1], [0, -18]) },
+      { scale: interpolate(intro.value, [0, 0.72, 1], [0.975, 1.006, 1]) * interpolate(bridgeExit.value, [0, 1], [1, 0.992]) },
+    ],
+  }));
+
+  const statStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(statPop.value, [0, 0.18, 1], [0, 1, 1], 'clamp') * interpolate(bridgeExit.value, [0, 0.24, 0.86, 1], [1, 0.92, 0.08, 0], 'clamp'),
+    transform: [
+      { translateY: interpolate(statPop.value, [0, 0.68, 1], [26, -4, 0]) + interpolate(bridgeExit.value, [0, 1], [0, 28]) },
+      { scale: interpolate(statPop.value, [0, 0.68, 1], [0.86, 1.045, 1]) * interpolate(bridgeExit.value, [0, 1], [1, 0.968]) },
+    ],
+  }));
+  const chartRevealStyle = useAnimatedStyle(() => ({
+    width: `${interpolate(statPop.value, [0.22, 0.95], [0, 100], 'clamp')}%`,
+  }));
+  const chartEndpointStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(statPop.value, [0.72, 1], [0, 1], 'clamp'),
+    transform: [
+      { scale: interpolate(statPop.value, [0.72, 0.88, 1], [0.74, 1.18, 1], 'clamp') },
+    ],
+  }));
+
+  return (
+    <Reanimated.View
+      entering={FadeIn.duration(260).easing(Easing.out(Easing.cubic))}
+      exiting={FadeOut.duration(160)}
+      style={[
+        s.dayReductionBridgeLayer,
+        layerExitStyle,
+        {
+          paddingTop: Math.max(42, topInset + 30),
+          paddingBottom: Math.max(48, bottomInset + 38),
+        },
+      ]}
+    >
+      <Reanimated.View style={[s.dayReductionBridgeHeader, shellStyle]}>
+        <Text style={s.dayReductionBridgeTitle}>Take Back Your Time!</Text>
+        <View style={s.dayReductionBridgeUnderline} />
+        <Text style={s.dayReductionBridgeSubtitle}>
+          Anasta helps people build a healthier relationship with their phone.
+        </Text>
+      </Reanimated.View>
+
+      <Reanimated.View style={[s.dayReductionBridgeBody, statStyle]}>
+        <LinearGradient
+          colors={['#FFFFFF', '#FFFFFF', '#FFFDF8']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={s.dayReductionBridgeCard}
+        >
+          <View style={s.dayReductionChartHeader}>
+            <Text style={s.dayReductionBridgeByline}>Your screen time</Text>
+            <View style={s.dayReductionChartPill}>
+              <Text style={s.dayReductionChartPillText}>3 months</Text>
+            </View>
+          </View>
+
+          <View style={[s.dayReductionChartPlot, { width: chartWidth, height: chartHeight }]}>
+            <Svg width={chartWidth} height={chartHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} style={s.dayReductionChartSvg}>
+              <SvgPath d={`M${chartLeft} ${guideTop} H${chartRight}`} stroke="rgba(25,23,20,0.12)" strokeWidth={1.4} strokeDasharray="4 7" strokeLinecap="round" />
+              <SvgPath d={`M${chartLeft} ${guideMid} H${chartRight}`} stroke="rgba(25,23,20,0.08)" strokeWidth={1.2} strokeDasharray="4 8" strokeLinecap="round" />
+              <SvgPath d={`M${chartLeft} ${guideBottom} H${chartRight}`} stroke="rgba(25,23,20,0.12)" strokeWidth={1.4} strokeDasharray="4 7" strokeLinecap="round" />
+              <SvgPath d={`M${chartLeft} ${chartHeight - 31} H${chartRight}`} stroke="rgba(25,23,20,0.34)" strokeWidth={2.1} strokeLinecap="round" />
+              <SvgCircle cx={x(0)} cy={yStart} r={7.5} fill="#FFFDF8" stroke="#17130F" strokeWidth={3} />
+            </Svg>
+
+            <Reanimated.View style={[s.dayReductionChartReveal, chartRevealStyle]}>
+              <Svg width={chartWidth} height={chartHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} style={s.dayReductionChartSvg}>
+                <G>
+                  <SvgPath d={anastaPath} stroke="rgba(47,155,97,0.15)" strokeWidth={16} fill="none" strokeLinecap="round" />
+                  <SvgPath d={withoutPath} stroke="rgba(25,23,20,0.42)" strokeWidth={4.6} fill="none" strokeLinecap="round" />
+                  <SvgPath d={anastaPath} stroke="#2F9B61" strokeWidth={5.4} fill="none" strokeLinecap="round" />
+                  <SvgPath d={`M${deltaX} ${deltaTop} V${deltaBottom}`} stroke="#2F9B61" strokeWidth={2.2} strokeDasharray="4 6" strokeLinecap="round" />
+                  <SvgPath d={`M${deltaX - 5} ${deltaBottom - 6} L${deltaX} ${deltaBottom} L${deltaX + 5} ${deltaBottom - 6}`} stroke="#2F9B61" strokeWidth={2.2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                  <SvgCircle cx={x(1)} cy={yWithout} r={7.2} fill="#FFFDF8" stroke="rgba(25,23,20,0.56)" strokeWidth={3.2} />
+                  <SvgCircle cx={x(1)} cy={yWith} r={9} fill="#FFFDF8" stroke="#2F9B61" strokeWidth={4} />
+                </G>
+              </Svg>
+            </Reanimated.View>
+
+            <Reanimated.View
+              pointerEvents="none"
+              style={[
+                s.dayReductionChartEndpointGlow,
+                {
+                  left: x(1) - 15,
+                  top: yWith - 15,
+                },
+                chartEndpointStyle,
+              ]}
+            />
+
+            <View style={[s.dayReductionChartDeltaTag, { left: deltaX - 27, top: (deltaTop + deltaBottom) / 2 - 16 }]}>
+              <Text style={s.dayReductionChartDeltaText}>-40%</Text>
+            </View>
+
+            <View style={[s.dayReductionChartOldLabel, { right: -1, top: yWithout - 62 }]}>
+              <Text style={s.dayReductionChartOldLabelText}>Without Anasta</Text>
+            </View>
+
+            <View style={[s.dayReductionChartBrand, { right: -1, top: yWith + 14 }]}>
+              <View style={s.dayReductionChartLogoFrame}>
+                <Image source={APP_LOGO} style={s.dayReductionChartLogo} resizeMode="contain" />
+              </View>
+              <Text style={s.dayReductionChartBrandText}>With Anasta</Text>
+            </View>
+          </View>
+
+          <View style={s.dayReductionChartAxisLabels}>
+            <Text style={s.dayReductionChartAxisText}>Today</Text>
+            <Text style={s.dayReductionChartAxisText}>Month 3</Text>
+          </View>
+
+          <Text style={s.dayReductionBridgeText}>
+            Most Anasta users reduce screen time by at least{' '}
+            <Text style={s.dayReductionBridgeNumberInline}>
+              <DayReductionCountingNumber
+                onSettled={handleNumberSettled}
+                style={s.dayReductionBridgeNumberInlineText}
+              />
+              %
+            </Text>
+          </Text>
+        </LinearGradient>
+      </Reanimated.View>
+    </Reanimated.View>
+  );
+}
+
 function DayCompareReductionCallout() {
   return (
     <Reanimated.View
@@ -6709,6 +6944,7 @@ function DayWasteCountingNumber({
   decimals,
   duration,
   emphasized = false,
+  compact = false,
   onSettled,
 }: {
   stepKey: string;
@@ -6716,6 +6952,7 @@ function DayWasteCountingNumber({
   decimals: number;
   duration: number;
   emphasized?: boolean;
+  compact?: boolean;
   onSettled: () => void;
 }) {
   const [value, setValue] = useState(0);
@@ -6750,7 +6987,7 @@ function DayWasteCountingNumber({
   }, [decimals, duration, onSettled, stepKey, target]);
 
   return (
-    <Text style={[s.dayWasteRevealNumber, emphasized && s.dayWasteRevealNumberPercent]}>
+    <Text style={[s.dayWasteRevealNumber, emphasized && s.dayWasteRevealNumberPercent, compact && s.dayWasteRevealNumberCompact]}>
       {decimals > 0 ? value.toFixed(decimals) : Math.round(value)}
     </Text>
   );
@@ -6779,16 +7016,16 @@ function DayWasteRevealLayer({
         unit: '%',
         lineOne: 'of your',
         lineTwo: 'productive time',
-        lineThree: 'each day',
+        lineThree: 'on your phone',
       },
       {
         key: 'yearly-days',
         target: stat.yearlyDays,
         decimals: 0,
         unit: 'days',
-        lineOne: 'lost',
+        lineOne: 'full days',
         lineTwo: 'every year',
-        lineThree: 'to screen time',
+        lineThree: 'on your phone',
       },
       {
         key: 'lifetime-years',
@@ -6827,30 +7064,42 @@ function DayWasteRevealLayer({
         return;
       }
       setStepIndex(current => Math.min(current + 1, steps.length - 1));
-    }, 2000);
+    }, 1250);
   }, [onDone, stepIndex, steps.length]);
 
   return (
     <Reanimated.View
-      entering={FadeIn.duration(360).easing(Easing.out(Easing.cubic))}
+      entering={FadeIn.duration(540).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 18 }, { scale: 0.985 }],
+      })}
       style={[
         s.dayWasteRevealLayer,
         {
-          paddingTop: Math.max(42, topInset + 30),
+          paddingTop: Math.max(28, topInset + 4),
           paddingBottom: Math.max(48, bottomInset + 38),
         },
       ]}
     >
-      <View style={s.dayWasteRevealTitleBlock}>
-        <Text style={s.dayWasteRevealTitle}>You waste</Text>
-        <View style={s.dayWasteRevealUnderline} />
-      </View>
+      <Reanimated.View
+        entering={FadeIn.duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: -12 }, { scale: 0.98 }],
+        })}
+        style={s.dayWasteRevealTitleBlock}
+      >
+        <Text style={s.dayCompareSmallLead}>Right now</Text>
+        <View style={s.dayCompareTitleWrap}>
+          <Text style={[s.dayCompareTitle, s.dayCompareTitleWaste, s.dayWasteRevealHeroTitle]}>YOU WASTE</Text>
+          <View style={[s.dayCompareUnderline, s.dayCompareUnderlineWaste, s.dayWasteRevealHeroUnderline]} />
+        </View>
+      </Reanimated.View>
 
       <Reanimated.View
         key={step.key}
-        entering={FadeInUp.duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        entering={FadeInUp.delay(170).duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
           opacity: 0,
-          transform: [{ translateY: 22 }, { scale: 0.985 }],
+          transform: [{ translateY: 30 }, { scale: 0.972 }],
         })}
         exiting={FadeOut.duration(180)}
         style={s.dayWasteRevealBody}
@@ -6862,9 +7111,10 @@ function DayWasteRevealLayer({
             decimals={step.decimals}
             duration={1880}
             emphasized={step.unit === '%'}
+            compact={step.unit === 'years'}
             onSettled={handleSettled}
           />
-          <Text style={[s.dayWasteRevealUnit, step.unit === '%' && s.dayWasteRevealPercentUnit]}>{step.unit}</Text>
+          <Text style={[s.dayWasteRevealUnit, step.unit === '%' && s.dayWasteRevealPercentUnit, step.unit === 'years' && s.dayWasteRevealUnitCompact]}>{step.unit}</Text>
         </View>
 
         <View style={s.dayWasteRevealWords}>
@@ -10358,7 +10608,7 @@ function ToolsShowcaseSlide({
                 setTitleUnderlineWidth(current => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
               }}
             >
-              Let&apos;s build Anasta around you.
+              Let&apos;s build Anasta around you!
             </Text>
             <Reanimated.View
               style={[s.valueTitleUnderline, { width: titleUnderlineWidth, alignSelf: 'center' }, underlineDrawStyle]}
@@ -10584,7 +10834,7 @@ function V4StatementsIntroSlide({ displayName, onNext }: { displayName?: string;
             segments={[{ text: `${name ? `${name}, please` : 'Please'} answer honestly. The more we understand you, the better we can set Anasta up to fit your life.` }]}
           />
           <Reanimated.View entering={FadeInUp.delay(1120).duration(420)} style={s.v4DeckPreviewCard}>
-            <Text style={s.v4DeckPreviewText}>Swipe right if it sounds like you.</Text>
+            <Text style={s.v4DeckPreviewText}>Swipe right if it sounds like you. Swipe left if it doesn&apos;t.</Text>
             <DeckSwipeHint />
           </Reanimated.View>
         </View>
@@ -10608,6 +10858,10 @@ function statementQuoteHeightFor(card: StatementDeckCard, metrics: StatementCard
 
 function statementCardHeightFor(card: StatementDeckCard, metrics: StatementCardMetrics) {
   return metrics.width + statementQuoteHeightFor(card, metrics);
+}
+
+function roundLayoutPx(value: number) {
+  return PixelRatio.roundToNearestPixel(value);
 }
 
 function V4StatementDeckSlide({
@@ -11037,12 +11291,14 @@ function StatementCardFace({
   metrics,
   imageSource,
   imageTransition,
+  innerFrameStyle,
 }: {
   card: StatementDeckCard;
   accent: string;
   metrics: StatementCardMetrics;
   imageSource?: number | ExpoImageRef;
   imageTransition: number;
+  innerFrameStyle?: StyleProp<ViewStyle>;
 }) {
   return (
     <>
@@ -11069,7 +11325,7 @@ function StatementCardFace({
           style={s.v4StatementArtShade}
         />
       </View>
-      <View pointerEvents="none" style={s.v4StatementInnerFrame} />
+      <View pointerEvents="none" style={[s.v4StatementInnerFrame, innerFrameStyle]} />
     </>
   );
 }
@@ -11857,8 +12113,14 @@ function V4DayPanoramaHeaderSlide({
   const stat = protectStats(hours);
   const wakingPercent = Math.round((phoneHours / USABLE_DAY_HOURS) * 100);
   const reclaimedWakingPercent = Math.max(1, Math.round(wakingPercent * 0.4));
-  const [phase, setPhase] = useState<'pie' | 'wasteReveal' | 'wasteCompare' | 'reclaimCompare'>('pie');
+  const [phase, setPhase] = useState<'pie' | 'pieExit' | 'wasteReveal' | 'wasteCompare' | 'reductionBridge' | 'reclaimCompare'>('pie');
   const [compareReveal, setCompareReveal] = useState(0);
+  const [wasteCompareFromReveal, setWasteCompareFromReveal] = useState(false);
+  const [reclaimCompareFromBridge, setReclaimCompareFromBridge] = useState(false);
+  const [reductionBridgeReady, setReductionBridgeReady] = useState(false);
+  const [reductionBridgeTransitioning, setReductionBridgeTransitioning] = useState(false);
+  const [reductionBridgeExitSignal, setReductionBridgeExitSignal] = useState(0);
+  const wasteCompareFromRevealRef = useRef(false);
   const morph = useSharedValue(0);
   const screen2 = useSharedValue(0);
   const dim = useSharedValue(0);
@@ -11934,11 +12196,12 @@ function V4DayPanoramaHeaderSlide({
   }, [ambient, axisIntro, axisIntroDelay, axisIntroDuration, cloudAliveDelay, cloudBase, cloudBaseDelay, connectorDelay, connectorIntro, lineDelay, lineDraw, lineDuration, phoneDelay, phoneIntro, pieDelay, pieIntro, sleepDelay, sleepIntro, toolboxDelay, toolboxIntro]);
 
   useEffect(() => {
-    if (phase === 'pie' || phase === 'wasteReveal') return undefined;
+    if (phase === 'pie' || phase === 'pieExit' || phase === 'wasteReveal' || phase === 'reductionBridge') return undefined;
     const timers: ReturnType<typeof setTimeout>[] = [];
     if (phase === 'wasteCompare') {
       setCompareReveal(0);
-      [620, 1420, 2220].forEach((delay, index) => {
+      const revealDelays = wasteCompareFromRevealRef.current ? [920, 1680, 2440] : [620, 1420, 2220];
+      revealDelays.forEach((delay, index) => {
         timers.push(setTimeout(() => {
           runBubbleHaptic();
           setCompareReveal(index + 1);
@@ -11956,6 +12219,23 @@ function V4DayPanoramaHeaderSlide({
     }
     return () => timers.forEach(timer => clearTimeout(timer));
   }, [phase]);
+
+  useEffect(() => {
+    if (!wasteCompareFromReveal) return undefined;
+    const timer = setTimeout(() => {
+      wasteCompareFromRevealRef.current = false;
+      setWasteCompareFromReveal(false);
+    }, 980);
+    return () => clearTimeout(timer);
+  }, [wasteCompareFromReveal]);
+
+  useEffect(() => {
+    if (!reclaimCompareFromBridge) return undefined;
+    const timer = setTimeout(() => {
+      setReclaimCompareFromBridge(false);
+    }, 860);
+    return () => clearTimeout(timer);
+  }, [reclaimCompareFromBridge]);
 
   const sunStyle = useAnimatedStyle(() => ({
     opacity: axisIntro.value,
@@ -12040,27 +12320,55 @@ function V4DayPanoramaHeaderSlide({
     if (phase === 'pie') {
       runSelectionHaptic();
       screen2.value = 0;
-      setPhase('wasteReveal');
-      screen2.value = withTiming(1, { duration: 640, easing: Easing.bezier(0.22, 1, 0.36, 1) });
+      setPhase('pieExit');
+      screen2.value = withTiming(1, { duration: 680, easing: Easing.bezier(0.22, 1, 0.36, 1) });
+      const revealTimer = setTimeout(() => {
+        setPhase('wasteReveal');
+      }, 540);
+      dayTimersRef.current.push(revealTimer);
       return;
     }
     if (phase === 'wasteCompare') {
       runSelectionHaptic();
-      setPhase('reclaimCompare');
+      setReductionBridgeReady(false);
+      setReductionBridgeTransitioning(false);
+      setReductionBridgeExitSignal(0);
+      setPhase('reductionBridge');
+      return;
+    }
+    if (phase === 'reductionBridge') {
+      setReductionBridgeReady(false);
+      setReductionBridgeTransitioning(true);
+      setReductionBridgeExitSignal(prev => prev + 1);
       return;
     }
     onNext();
   };
   const handleWasteRevealDone = useCallback(() => {
+    wasteCompareFromRevealRef.current = true;
+    setWasteCompareFromReveal(true);
     setCompareReveal(0);
     setPhase('wasteCompare');
   }, []);
+  const handleReductionBridgeReady = useCallback(() => {
+    setReductionBridgeReady(true);
+  }, []);
+  const handleReductionBridgeDone = useCallback(() => {
+    setCompareReveal(0);
+    setReductionBridgeTransitioning(false);
+    setReclaimCompareFromBridge(true);
+    setPhase('reclaimCompare');
+  }, []);
   const dayCtaLabel = phase === 'pie' ? 'Calculate my productive time' : phase === 'reclaimCompare' ? "Let's fix this" : 'Continue';
   const dayCtaActive =
-    phase === 'wasteReveal'
+    phase === 'pieExit'
+      ? false
+      : phase === 'wasteReveal'
       ? false
       : phase === 'wasteCompare'
       ? compareReveal >= 3
+      : phase === 'reductionBridge'
+      ? reductionBridgeReady && !reductionBridgeTransitioning
       : phase === 'reclaimCompare'
         ? compareReveal >= 2
         : true;
@@ -12213,7 +12521,7 @@ function V4DayPanoramaHeaderSlide({
       style={[
         s.dayHeaderScreen,
         { paddingTop: Math.max(0, topInset - 14), paddingBottom: Math.max(0, bottomInset - 10) },
-        (phase === 'wasteReveal' || phase === 'wasteCompare' || phase === 'reclaimCompare') && s.dayCompareScreenBg,
+        (phase === 'wasteReveal' || phase === 'wasteCompare' || phase === 'reductionBridge' || phase === 'reclaimCompare') && s.dayCompareScreenBg,
       ]}
     >
       <Reanimated.View style={[s.dayHeaderContent, heroFadeStyle]}>
@@ -12301,7 +12609,7 @@ function V4DayPanoramaHeaderSlide({
       </Reanimated.View>
 
       <View style={[s.dayHeaderFutureSpace, { width: frameWidth, height: pieSceneHeight }]}>
-        {phase === 'pie' && (
+        {(phase === 'pie' || phase === 'pieExit') && (
           <Reanimated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, screen1FadeStyle]}>
             <Reanimated.View
               style={[
@@ -12313,7 +12621,30 @@ function V4DayPanoramaHeaderSlide({
               <View style={s.dayBarSceneTrack}>
                 <LinearGradient colors={SLEEP_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: dayBarSleepW, height: '100%' }} />
                 <LinearGradient colors={PRODUCTIVE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: dayBarProductiveW, height: '100%' }} />
-                <LinearGradient colors={PHONE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: dayBarPhoneW, height: '100%' }} />
+                <View style={[s.dayBarPhoneSegment, { width: dayBarPhoneW }]}>
+                  <LinearGradient colors={PHONE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+                  <View pointerEvents="none" style={s.dayBarPhoneStripeLayer}>
+                    {Array.from({ length: Math.max(7, Math.ceil(dayBarPhoneW / 13) + 2) }).map((_, stripeIndex) => (
+                      <View
+                        key={`phone-bar-stripe-${stripeIndex}`}
+                        style={[
+                          s.dayBarPhoneStripe,
+                          {
+                            left: -dayBarH + stripeIndex * 13.5,
+                            height: dayBarH * 2.7,
+                          },
+                        ]}
+                      />
+                    ))}
+                  </View>
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(244,221,154,0.24)', 'rgba(244,221,154,0.04)', 'rgba(244,221,154,0)']}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={s.dayBarPhoneBorrowGlow}
+                  />
+                </View>
               </View>
               <LinearGradient
                 pointerEvents="none"
@@ -12347,6 +12678,32 @@ function V4DayPanoramaHeaderSlide({
         />
       )}
 
+      {phase === 'reductionBridge' && reductionBridgeTransitioning && (
+        <Reanimated.View
+          pointerEvents="none"
+          entering={FadeIn.duration(260).easing(Easing.out(Easing.cubic))}
+          style={[
+            s.dayCompareLayer,
+            s.dayCompareLayerBridgePreview,
+            {
+              paddingTop: Math.max(24, topInset + 18),
+            },
+          ]}
+        >
+          <DayCompareHeader mode="reclaim" fromBridge bridgePreview />
+        </Reanimated.View>
+      )}
+
+      {phase === 'reductionBridge' && (
+        <DayReductionBridgeLayer
+          topInset={topInset}
+          bottomInset={bottomInset}
+          exitSignal={reductionBridgeExitSignal}
+          onReady={handleReductionBridgeReady}
+          onDone={handleReductionBridgeDone}
+        />
+      )}
+
       {(phase === 'wasteCompare' || phase === 'reclaimCompare') && (
         <Reanimated.View
           style={[
@@ -12357,7 +12714,11 @@ function V4DayPanoramaHeaderSlide({
             compareLayerStyle,
           ]}
         >
-          <DayCompareHeader mode={phase === 'wasteCompare' ? 'waste' : 'reclaim'} />
+          <DayCompareHeader
+            mode={phase === 'wasteCompare' ? 'waste' : 'reclaim'}
+            fromReveal={phase === 'wasteCompare' && wasteCompareFromReveal}
+            fromBridge={phase === 'reclaimCompare' && reclaimCompareFromBridge}
+          />
           <ScrollView
             showsVerticalScrollIndicator={false}
             bounces={false}
@@ -12382,13 +12743,13 @@ function V4DayPanoramaHeaderSlide({
 
       <AnimatedCta
         active={dayCtaActive}
-        delay={phase === 'pie' ? ctaDelay : 220}
+        delay={phase === 'pie' ? ctaDelay : phase === 'reductionBridge' ? 0 : 220}
         duration={620}
         distance={30}
         style={s.dayHeaderAction}
         pointerEvents={dayCtaActive ? 'auto' : 'none'}
       >
-        <View style={[s.ctaIsland, (phase === 'wasteCompare' || phase === 'reclaimCompare') && s.dayCompareCtaIsland]}>
+        <View style={[s.ctaIsland, (phase === 'wasteCompare' || phase === 'reductionBridge' || phase === 'reclaimCompare') && s.dayCompareCtaIsland]}>
           <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={handleDayNext} style={s.primaryButton}>
             <Text style={s.primaryButtonText}>{dayCtaLabel}</Text>
             <ChevronRight s={19} c="#FFFFFF" w={2.5} />
@@ -12563,21 +12924,106 @@ function DayImpactCard({
   );
 }
 
-function DayCompareHeader({ mode }: { mode: 'waste' | 'reclaim' }) {
+function DayCompareHeader({
+  mode,
+  fromReveal = false,
+  fromBridge = false,
+  bridgePreview = false,
+}: {
+  mode: 'waste' | 'reclaim';
+  fromReveal?: boolean;
+  fromBridge?: boolean;
+  bridgePreview?: boolean;
+}) {
   const isWaste = mode === 'waste';
+  const shouldMorphFromReveal = isWaste && fromReveal;
+  const shouldMorphFromBridge = !isWaste && fromBridge;
+  const shouldAnimateBridge = shouldMorphFromBridge && bridgePreview;
+  const morph = useSharedValue(shouldMorphFromReveal || shouldAnimateBridge ? 0 : 1);
+
+  useEffect(() => {
+    morph.value = shouldMorphFromReveal || shouldAnimateBridge ? 0 : 1;
+    if (shouldAnimateBridge) {
+      morph.value = withTiming(1, {
+        duration: 680,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      });
+      return;
+    }
+    morph.value = withTiming(1, {
+      duration: shouldMorphFromReveal ? 760 : 320,
+      easing: shouldMorphFromReveal ? Easing.bezier(0.16, 1, 0.28, 1) : Easing.out(Easing.cubic),
+    });
+  }, [morph, shouldAnimateBridge, shouldMorphFromReveal]);
+
+  const headerStyle = useAnimatedStyle(() => ({
+    opacity: shouldAnimateBridge
+      ? interpolate(morph.value, [0, 0.24, 1], [0, 1, 1], 'clamp')
+      : shouldMorphFromReveal || shouldMorphFromBridge
+        ? 1
+        : morph.value,
+    transform: shouldMorphFromReveal
+      ? [
+          { translateY: interpolate(morph.value, [0, 1], [82, 0]) },
+          { scale: interpolate(morph.value, [0, 0.78, 1], [1.38, 1.03, 1]) },
+        ]
+      : shouldAnimateBridge
+        ? [
+            { translateY: interpolate(morph.value, [0, 1], [26, 0]) },
+            { scale: interpolate(morph.value, [0, 0.78, 1], [0.94, 1.025, 1]) },
+          ]
+        : [{ translateY: interpolate(morph.value, [0, 1], [8, 0]) }],
+  }), [shouldAnimateBridge, shouldMorphFromBridge, shouldMorphFromReveal]);
+
+  const leadStyle = useAnimatedStyle(() => ({
+    opacity: shouldMorphFromReveal
+      ? interpolate(morph.value, [0, 0.42, 1], [0, 0, 1], 'clamp')
+      : shouldAnimateBridge
+        ? interpolate(morph.value, [0.16, 0.76, 1], [0, 1, 1], 'clamp')
+        : 1,
+    transform: shouldMorphFromReveal
+      ? [{ translateY: interpolate(morph.value, [0, 1], [-5, 0]) }]
+      : shouldAnimateBridge
+        ? [{ translateY: interpolate(morph.value, [0, 1], [5, 0]) }]
+        : [{ translateY: 0 }],
+  }), [shouldAnimateBridge, shouldMorphFromReveal]);
+
+  const underlineStyle = useAnimatedStyle(() => ({
+    opacity: shouldMorphFromReveal
+      ? interpolate(morph.value, [0.45, 1], [0, 1], 'clamp')
+      : shouldAnimateBridge
+        ? interpolate(morph.value, [0.34, 1], [0, 1], 'clamp')
+        : 1,
+    transform: [
+      {
+        scaleX: shouldMorphFromReveal
+          ? interpolate(morph.value, [0.45, 1], [0.7, 1], 'clamp')
+          : shouldAnimateBridge
+            ? interpolate(morph.value, [0.34, 1], [0.62, 1], 'clamp')
+            : 1,
+      },
+    ],
+  }), [shouldAnimateBridge, shouldMorphFromReveal]);
+
   return (
     <Reanimated.View
-      entering={FadeIn.duration(320).easing(Easing.out(Easing.cubic)).withInitialValues({
-        opacity: 0,
-      })}
-      style={s.dayCompareHeader}
+      entering={
+        shouldMorphFromReveal
+          ? undefined
+          : shouldMorphFromBridge
+            ? undefined
+          : FadeIn.duration(320).easing(Easing.out(Easing.cubic)).withInitialValues({
+              opacity: 0,
+            })
+      }
+      style={[s.dayCompareHeader, headerStyle]}
     >
-      <Text style={s.dayCompareSmallLead}>{isWaste ? 'Right now' : 'With Anasta'}</Text>
+      <Reanimated.Text style={[s.dayCompareSmallLead, leadStyle]}>{isWaste ? 'Right now' : 'With Anasta'}</Reanimated.Text>
       <View style={s.dayCompareTitleWrap}>
         <Text style={[s.dayCompareTitle, isWaste ? s.dayCompareTitleWaste : s.dayCompareTitleReclaim]}>
           {isWaste ? 'YOU WASTE' : 'RECLAIM YOUR TIME!'}
         </Text>
-        <View style={[s.dayCompareUnderline, isWaste ? s.dayCompareUnderlineWaste : s.dayCompareUnderlineReclaim]} />
+        <Reanimated.View style={[s.dayCompareUnderline, isWaste ? s.dayCompareUnderlineWaste : s.dayCompareUnderlineReclaim, underlineStyle]} />
       </View>
     </Reanimated.View>
   );
@@ -12909,16 +13355,16 @@ const PROTECT_RECAP_GROUPS: RecapProblemGroup[] = [
 const ORGANIZE_RECAP_GROUPS: RecapProblemGroup[] = [
   {
     id: 'routine',
-    title: 'Weekly View + Routine',
-    subtitle: 'A rhythm for your days',
+    title: 'Micro Planning',
+    subtitle: 'Your week, routine, and daily tasks',
     cardIds: ['anxious-start', 'wasted-day', 'forgot-promise'],
     accent: '#4D8586',
     icon: <Calendar s={16} c="#4D8586" w={2} />,
   },
   {
     id: 'events-goals',
-    title: 'Big Events + Monthly Goals',
-    subtitle: 'Important moments and monthly direction',
+    title: 'Macro Planning',
+    subtitle: 'Big events and monthly goals',
     cardIds: ['last-minute', 'plan-day', 'goals-give-up'],
     accent: '#4D8586',
     icon: <Target s={16} c="#4D8586" w={2} />,
@@ -12950,22 +13396,22 @@ const ORGANIZE_RECAP_GROUPS: RecapProblemGroup[] = [
 ];
 
 const STATEMENT_SHORT_LABELS: Record<string, string> = {
-  'lost-hour': 'Hours lost to mindless scrolling',
-  'morning-night': 'Phone first thing in the morning, last at night',
-  'focus-pulled': 'Notifications keep breaking your focus',
-  'procrastination': 'Procrastinating with your phone',
-  'ashamed-content': "Addictive content you're ashamed of",
-  'presence': 'Distractions pull you out of the moment',
-  'anxious-start': "Anxious — you don't know where to start",
-  'last-minute': 'Everything happens at the last minute',
-  'plan-day': 'Your days could be planned better',
-  'habits-quit': 'New habits die after a few days',
+  'lost-hour': 'You lose time on your phone',
+  'morning-night': 'Your phone affects mornings, nights, and sleep',
+  'focus-pulled': 'Notifications and apps pull you away',
+  'procrastination': 'Your phone becomes an escape from hard things',
+  'ashamed-content': 'Addictive content keeps pulling you back',
+  'presence': 'Distractions pull you away from presence',
+  'anxious-start': "Anxious when you don't know where to start",
+  'last-minute': 'Important things wait until the last minute',
+  'plan-day': 'Your day could be planned better',
+  'habits-quit': 'Habits fade after a few days',
   'wasted-day': 'Days end feeling wasted',
-  'forgot-promise': 'Forgetting what you promised',
+  'forgot-promise': 'Forgotten tasks create stress',
   'no-rhythm': 'Your days have no rhythm',
-  'pray-daily': 'Prayer keeps slipping away',
+  'pray-daily': 'Prayer rarely becomes daily',
   'goals-give-up': 'Goals end in giving up',
-  'scripture-time': 'No time made for Scripture',
+  'scripture-time': 'Scripture never gets time',
   'intentional-time': 'You want to be more intentional',
 };
 
@@ -13225,6 +13671,9 @@ function RecapFaller({
   }));
   return (
     <Reanimated.View
+      collapsable={false}
+      renderToHardwareTextureAndroid={false}
+      shouldRasterizeIOS={false}
       entering={
         noEnter
           ? undefined
@@ -13246,10 +13695,30 @@ function RecapFaller({
 // an opaque paper overlay (NOT card opacity — so overlapping cards never show
 // through each other).
 function V4RecapDeckCard({ card, active, accent, metrics }: { card: StatementDeckCard; active: boolean; accent: string; metrics: StatementCardMetrics }) {
-  const cardHeight = statementCardHeightFor(card, metrics);
+  const sharpMetrics = useMemo<StatementCardMetrics>(
+    () => ({
+      width: roundLayoutPx(metrics.width),
+      quoteHeight: roundLayoutPx(metrics.quoteHeight),
+      cardHeight: roundLayoutPx(metrics.cardHeight),
+    }),
+    [metrics.cardHeight, metrics.quoteHeight, metrics.width],
+  );
+  const cardHeight = roundLayoutPx(statementCardHeightFor(card, sharpMetrics));
   return (
-    <View style={[s.v4StatementCard, { width: metrics.width, height: cardHeight }]}>
-      <StatementCardFace card={card} accent={accent} metrics={metrics} imageSource={card.image} imageTransition={0} />
+    <View
+      collapsable={false}
+      renderToHardwareTextureAndroid={false}
+      shouldRasterizeIOS={false}
+      style={[s.v4StatementCard, s.v4RecapSharpCard, { width: sharpMetrics.width, height: cardHeight }]}
+    >
+      <StatementCardFace
+        card={card}
+        accent={accent}
+        metrics={sharpMetrics}
+        imageSource={card.image}
+        imageTransition={0}
+        innerFrameStyle={s.v4RecapStatementInnerFrame}
+      />
       {!active ? <View pointerEvents="none" style={s.v4RecapDeckMutedOverlay} /> : null}
       <View style={[s.v4RecapStamp, active ? s.v4RecapStampYes : s.v4RecapStampNo]}>
         <Text style={[s.v4RecapStampText, active ? s.v4RecapStampTextYes : s.v4RecapStampTextNo]}>
@@ -13265,70 +13734,189 @@ function V4RecapDeckCard({ card, active, accent, metrics }: { card: StatementDec
 // confirmed problems that triggered it, then collapses as the next tool appears
 // (only one open at a time), leaving a clean collapsed list ready for setup.
 
-// Accordion drawer: measured-height + opacity (no transform:scale → no Android
-// blur). Inner is not height-constrained, so onLayout reports its full natural
-// height; the outer clips to the animated height.
-function V4RecapToolReasonDrawer({ open, labels, accent }: { open: boolean; labels: string[]; accent: string }) {
-  const [h, setH] = useState(0);
-  const p = useSharedValue(0);
+function V4SetupStatusMark({ active, done, accent }: { active: boolean; done: boolean; accent: string }) {
+  const check = useSharedValue(done ? 1 : 0);
+  const burst = useSharedValue(done ? 1 : 0);
+  const ready = useSharedValue(active ? 1 : 0);
+
   useEffect(() => {
-    p.value = withTiming(open ? 1 : 0, { duration: 360, easing: Easing.bezier(0.22, 1, 0.36, 1) });
-  }, [open, p]);
-  const animStyle = useAnimatedStyle(() => ({
-    height: h > 0 ? p.value * h : 0,
-    opacity: p.value,
+    ready.value = withTiming(active ? 1 : 0, {
+      duration: active ? 260 : 180,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [active, ready]);
+
+  useEffect(() => {
+    if (done) {
+      check.value = 0;
+      burst.value = 0;
+      check.value = withSequence(
+        withTiming(0.42, { duration: 40 }),
+        withSpring(1, { damping: 9, stiffness: 230, mass: 0.74 }),
+      );
+      burst.value = withTiming(1, { duration: 620, easing: Easing.out(Easing.cubic) });
+      return;
+    }
+
+    check.value = withTiming(0, { duration: 160, easing: Easing.out(Easing.cubic) });
+    burst.value = 0;
+  }, [burst, check, done]);
+
+  const readyStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(ready.value, [0, 1], [0.54, 1]),
+    transform: [
+      { scale: interpolate(ready.value, [0, 1], [0.86, 1]) },
+    ],
   }));
+  const checkStyle = useAnimatedStyle(() => ({
+    opacity: check.value,
+    transform: [
+      { scale: interpolate(check.value, [0, 0.62, 1], [0.45, 1.22, 1]) },
+      { rotate: `${interpolate(check.value, [0, 1], [-18, 0])}deg` },
+    ],
+  }));
+  const burstStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(burst.value, [0, 0.34, 1], [0, 0.24, 0]),
+    transform: [
+      { scale: interpolate(burst.value, [0, 1], [0.72, 1.95]) },
+    ],
+  }));
+
+  if (done) {
+    return (
+      <View style={s.v4SetupStatus}>
+        <Reanimated.View pointerEvents="none" style={[s.v4SetupCheckBurst, { borderColor: accent }, burstStyle]} />
+        <Reanimated.View style={[s.v4SetupCheck, checkStyle]}>
+          <LinearGradient
+            colors={['#48B777', '#2F9B61', '#D7B35F']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <CheckSmall s={17} c="#FFFFFF" w={2.9} />
+        </Reanimated.View>
+      </View>
+    );
+  }
+
   return (
-    <Reanimated.View style={[s.v4ToolDrawer, animStyle]}>
-      <View
-        style={s.v4ToolDrawerInner}
-        onLayout={e => {
-          const next = Math.round(e.nativeEvent.layout.height);
-          if (next > 0 && next !== h) setH(next);
-        }}
-      >
-        <Text style={s.v4ToolReasonLead}>Recommended because you said:</Text>
-        {labels.map(label => (
-          <View key={label} style={s.v4ToolReasonRow}>
-            <View style={[s.v4ToolReasonCheck, { borderColor: `${accent}55`, backgroundColor: `${accent}14` }]}>
-              <CheckSmall s={12} c={accent} w={2.6} />
-            </View>
-            <Text style={s.v4ToolReasonText}>{label}</Text>
+    <View style={s.v4SetupStatus}>
+      <Reanimated.View style={[s.v4SetupDot, active && { borderColor: `${accent}B8`, backgroundColor: `${accent}18` }, readyStyle]}>
+        {active ? <View style={[s.v4SetupDotCore, { backgroundColor: accent }]} /> : null}
+      </Reanimated.View>
+    </View>
+  );
+}
+
+function V4RecapToolCard({
+  group,
+  index,
+  active,
+  done,
+}: {
+  group: RecapProblemGroup;
+  index: number;
+  active: boolean;
+  done: boolean;
+}) {
+  const state = useSharedValue(done ? 2 : active ? 1 : 0);
+
+  useEffect(() => {
+    state.value = withSpring(done ? 2 : active ? 1 : 0, {
+      damping: 16,
+      stiffness: 185,
+      mass: 0.82,
+    });
+  }, [active, done, state]);
+
+  const cardMotionStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(state.value, [0, 1, 2], [0.62, 1, 0.98]),
+    transform: [
+      { scale: interpolate(state.value, [0, 1, 2], [0.985, 1.018, 1]) },
+    ],
+  }));
+
+  return (
+    <Reanimated.View
+      entering={FadeInUp.delay(220 + index * 320).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 26 }, { scale: 0.965 }],
+      })}
+      style={[
+        s.v4ToolCard,
+        s.v4ToolPathCard,
+        !active && !done && s.v4SetupQueueCardInactive,
+        active && s.v4SetupCardActive,
+        done && s.v4SetupCardDoneState,
+        cardMotionStyle,
+      ]}
+    >
+      <LinearGradient
+        pointerEvents="none"
+        colors={done
+          ? ['rgba(255,255,255,0.98)', 'rgba(47,155,97,0.13)', 'rgba(255,248,232,0.82)']
+          : active
+            ? ['rgba(255,255,255,1)', `${group.accent}1E`, 'rgba(255,248,232,0.92)']
+            : ['rgba(255,255,255,0.82)', 'rgba(247,243,236,0.70)', 'rgba(255,250,240,0.58)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={[s.v4ToolTopSheen, { backgroundColor: done ? 'rgba(47,155,97,0.16)' : `${group.accent}${active ? '22' : '10'}` }]} />
+      <View style={s.v4ToolHeader}>
+        <View
+          style={[
+            s.v4RecapGroupIcon,
+            s.v4ToolIcon,
+            !active && !done && s.v4SetupQueueIconInactive,
+            { backgroundColor: `${done ? '#2F9B61' : group.accent}14`, borderColor: `${done ? '#2F9B61' : group.accent}36` },
+          ]}
+        >
+          <View
+            style={[
+              s.v4ToolStepMini,
+              {
+                borderColor: done ? 'rgba(47,155,97,0.34)' : active ? `${group.accent}48` : 'rgba(25,23,20,0.11)',
+                backgroundColor: done ? '#F2FBF4' : active ? '#FFFDF8' : '#F4EFE5',
+              },
+            ]}
+          >
+            <Text style={[s.v4ToolStepBadgeText, { color: done ? '#2F9B61' : active ? group.accent : 'rgba(25,23,20,0.34)' }]}>
+              {index + 1}
+            </Text>
           </View>
-        ))}
+          {group.icon}
+        </View>
+        <View style={s.v4RecapGroupCopy}>
+          <Text style={[s.v4RecapGroupTitle, !active && !done && s.v4SetupQueueTitleInactive]}>{group.title}</Text>
+          <Text style={[s.v4RecapGroupSubtitle, !active && !done && s.v4SetupQueueSubtitleInactive]}>{group.subtitle}</Text>
+        </View>
+        <V4SetupStatusMark active={active} done={done} accent={group.accent} />
       </View>
     </Reanimated.View>
   );
 }
 
-function V4RecapToolCard({ group, labels, open }: { group: RecapProblemGroup; labels: string[]; open: boolean }) {
-  const chev = useSharedValue(open ? 1 : 0);
-  useEffect(() => {
-    chev.value = withTiming(open ? 1 : 0, { duration: 300, easing: Easing.bezier(0.22, 1, 0.36, 1) });
-  }, [open, chev]);
-  // ChevronRight rotated: 90deg = points down (closed), 270deg = points up (open).
-  const chevStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${90 + chev.value * 180}deg` }] }));
+function V4RecapPathConnector({ accent, index }: { accent: string; index: number }) {
   return (
     <Reanimated.View
-      entering={FadeIn.duration(440).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-        opacity: 0,
-        transform: [{ translateY: 16 }],
-      })}
-      style={[s.v4ToolCard, open && s.v4ToolCardOpen]}
+      entering={FadeIn.delay(410 + index * 320).duration(420).easing(Easing.out(Easing.cubic))}
+      style={s.v4RecapPathConnector}
     >
-      <View style={s.v4ToolHeader}>
-        <View style={[s.v4RecapGroupIcon, { backgroundColor: `${group.accent}14`, borderColor: `${group.accent}2E` }]}>
-          {group.icon}
-        </View>
-        <View style={s.v4RecapGroupCopy}>
-          <Text style={s.v4RecapGroupTitle}>{group.title}</Text>
-          <Text style={s.v4RecapGroupSubtitle}>{group.subtitle}</Text>
-        </View>
-        <Reanimated.View style={chevStyle}>
-          <ChevronRight s={17} c="rgba(25,23,20,0.38)" w={2.2} />
-        </Reanimated.View>
+      <View style={s.v4RecapPathDots}>
+        {Array.from({ length: 5 }).map((_, dotIndex) => (
+          <View
+            key={`path-dot-${index}-${dotIndex}`}
+            style={[
+              s.v4RecapPathDot,
+              {
+                backgroundColor: accent,
+                opacity: 0.25 + dotIndex * 0.12,
+              },
+            ]}
+          />
+        ))}
       </View>
-      <V4RecapToolReasonDrawer open={open} labels={labels} accent={group.accent} />
     </Reanimated.View>
   );
 }
@@ -13338,159 +13926,118 @@ function V4RecapToolCard({ group, labels, open }: { group: RecapProblemGroup; la
 // then it lands a gold check + haptic. When all are done the board auto-advances
 // to the flame screen. This is an onboarding-only simulated setup — it does NOT
 // drive the real tools.
-type ToolSetupStatus = 'idle' | 'busy' | 'done';
-
-function V4RecapSetupCard({
-  group,
-  status,
-  active,
-  onPress,
-}: {
-  group: RecapProblemGroup;
-  status: ToolSetupStatus;
-  active: boolean;
-  onPress: () => void;
-}) {
-  const done = status === 'done';
-  const busy = status === 'busy';
-  const subtitle = busy ? 'Setting up…' : done ? 'Ready to protect you' : 'Tap to set up';
-  return (
-    <TouchableOpacity
-      activeOpacity={0.9}
-      haptic={status === 'idle' ? 'medium' : undefined}
-      disabled={status !== 'idle'}
-      onPress={onPress}
-      style={[s.v4ToolCard, active && s.v4SetupCardActive, done && s.v4SetupCardDoneState]}
-    >
-      <View style={s.v4ToolHeader}>
-        <View style={[s.v4RecapGroupIcon, { backgroundColor: `${group.accent}14`, borderColor: `${group.accent}2E` }]}>
-          {group.icon}
-        </View>
-        <View style={s.v4RecapGroupCopy}>
-          <Text style={s.v4RecapGroupTitle}>{group.title}</Text>
-          <Text style={[s.v4RecapGroupSubtitle, done && s.v4SetupCardSubtitleDone]}>{subtitle}</Text>
-        </View>
-        <View style={s.v4SetupStatus}>
-          {busy ? (
-            <ActivityIndicator size="small" color={GOLD} />
-          ) : done ? (
-            <Reanimated.View
-              entering={FadeIn.duration(360).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-                opacity: 0,
-                transform: [{ scale: 0.4 }],
-              })}
-              style={s.v4SetupCheck}
-            >
-              <CheckSmall s={17} c="#FFFFFF" w={3} />
-            </Reanimated.View>
-          ) : (
-            <View style={[s.v4SetupDot, active && s.v4SetupDotActive]} />
-          )}
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
 function V4RecapToolsBoard({ groups, selected, onNext }: { groups: RecapProblemGroup[]; selected: string[]; onNext: () => void }) {
   const recs = useMemo(
     () =>
       groups
-        .map(group => ({
-          group,
-          labels: group.cardIds
-            .filter(id => selected.includes(id))
-            .map(id => STATEMENT_SHORT_LABELS[id] ?? id),
-        }))
-        .filter(rec => rec.labels.length > 0),
+        .filter(group => group.cardIds.some(id => selected.includes(id)))
+        .slice(0, 3),
     [groups, selected],
   );
   const [reveal, setReveal] = useState(0);
-  const [settled, setSettled] = useState(false);
-  const [status, setStatus] = useState<Record<string, ToolSetupStatus>>({});
-  const scrollRef = useRef<ScrollView>(null);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const [completedCount, setCompletedCount] = useState(0);
+  const finishingRef = useRef(false);
+  const selectedKey = selected.join('|');
 
   useEffect(() => {
-    if (reveal >= recs.length) {
-      const t = setTimeout(() => setSettled(true), 950);
+    finishingRef.current = false;
+    preloadTaskFeedbackSound();
+    setReveal(0);
+    setActiveIndex(-1);
+    setCompletedCount(0);
+  }, [selectedKey]);
+
+  useEffect(() => {
+    if (reveal < recs.length) {
+      const t = setTimeout(() => {
+        setReveal(c => c + 1);
+        runSelectionHaptic();
+      }, reveal === 0 ? 420 : 680);
       return () => clearTimeout(t);
     }
-    const t = setTimeout(() => {
-      setReveal(c => c + 1);
-      runSelectionHaptic();
-    }, reveal === 0 ? 360 : 620);
-    return () => clearTimeout(t);
-  }, [reveal, recs.length]);
 
-  // Cascade: only the latest revealed tool is open; once settled all collapse.
-  const openIndex = settled ? -1 : reveal - 1;
+    if (recs.length > 0 && activeIndex < 0) {
+      const finalCardEntranceDelay = 220 + Math.max(0, recs.length - 1) * 320;
+      const finalCardSettleDelay = finalCardEntranceDelay + 620 + 360;
+      const t = setTimeout(() => {
+        setActiveIndex(0);
+        runSelectionHaptic();
+      }, finalCardSettleDelay);
+      return () => clearTimeout(t);
+    }
 
-  // Deo 3 — once settled, drive the setup checklist.
-  const statusOf = (id: string): ToolSetupStatus => status[id] ?? 'idle';
-  const doneCount = recs.filter(rec => statusOf(rec.group.id) === 'done').length;
-  const allDone = settled && doneCount === recs.length;
-  // The active card is the first not-yet-done tool (guides the eye).
-  const activeId = settled ? recs.find(rec => statusOf(rec.group.id) !== 'done')?.group.id : undefined;
+    return undefined;
+  }, [activeIndex, recs.length, reveal]);
 
-  const handleSetup = (id: string) => {
-    setStatus(prev => ({ ...prev, [id]: 'busy' }));
+  const handleContinue = useCallback(() => {
+    if (finishingRef.current) return;
+    if (recs.length === 0) {
+      finishingRef.current = true;
+      onNext();
+      return;
+    }
+    if (activeIndex < 0) return;
+
+    void playTaskCompleteFeedback();
+    setCompletedCount(current => Math.max(current, activeIndex + 1));
+
+    if (activeIndex >= recs.length - 1) {
+      finishingRef.current = true;
+      setTimeout(onNext, 720);
+      return;
+    }
+
     setTimeout(() => {
-      setStatus(prev => ({ ...prev, [id]: 'done' }));
-      runStrongHaptic();
-    }, 1000);
-  };
+      setActiveIndex(activeIndex + 1);
+    }, 620);
+  }, [activeIndex, onNext, recs.length]);
 
-  useEffect(() => {
-    if (!allDone) return undefined;
-    const t = setTimeout(onNext, 900);
-    return () => clearTimeout(t);
-  }, [allDone, onNext]);
+  const ctaVisible = reveal >= recs.length && (recs.length === 0 || activeIndex >= 0);
 
   return (
     <View style={s.v4RecapSlide}>
       <ScrollView
-        ref={scrollRef}
-        contentContainerStyle={s.v4RecapScrollContent}
+        contentContainerStyle={s.v4RecapToolsScrollContent}
         showsVerticalScrollIndicator={false}
-        onContentSizeChange={() => {
-          if (!settled) scrollRef.current?.scrollToEnd({ animated: true });
-        }}
       >
-        <Reanimated.View key={settled ? 'setup' : 'rec'} entering={FadeIn.duration(440)} style={s.v4RecapHeader}>
-          <Text style={s.v4DayTitle}>
-            {settled ? 'Set up your tools' : 'Based on your answers\nwe recommend'}
+        <Reanimated.View entering={FadeIn.duration(440)} style={s.v4RecapToolsHeader}>
+          <Text style={s.v4RecapToolsTitle}>
+            Your setup path
           </Text>
-          {settled ? (
-            <Text style={s.v4RecapSubtitle}>Tap each one to add it to your Protect slot.</Text>
-          ) : null}
+          <Text style={s.v4RecapToolsSubtitle}>
+            {recs.length > 0
+              ? 'Based on your answers, we’ll set up the parts that can help you most.'
+              : 'This section does not need extra setup right now.'}
+          </Text>
         </Reanimated.View>
 
-        <View style={s.v4RecapProblemBoard}>
-          {recs.slice(0, reveal).map((rec, i) =>
-            settled ? (
-              <V4RecapSetupCard
-                key={rec.group.id}
-                group={rec.group}
-                status={statusOf(rec.group.id)}
-                active={activeId === rec.group.id}
-                onPress={() => handleSetup(rec.group.id)}
-              />
-            ) : (
-              <V4RecapToolCard key={rec.group.id} group={rec.group} labels={rec.labels} open={openIndex === i} />
-            ),
-          )}
+        <View style={s.v4RecapToolsBoard}>
+          {recs.slice(0, reveal).map((group, i) => {
+            const done = i < completedCount;
+            const active = i === activeIndex && !done;
+            return (
+              <React.Fragment key={group.id}>
+                <V4RecapToolCard group={group} index={i} active={active} done={done} />
+                {i < Math.min(reveal, recs.length) - 1 ? (
+                  <V4RecapPathConnector accent={recs[i + 1]?.accent ?? group.accent} index={i} />
+                ) : null}
+              </React.Fragment>
+            );
+          })}
         </View>
       </ScrollView>
 
-      {settled ? (
-        <AnimatedCta delay={120} style={s.questionFooter}>
-          <View style={s.v4SetupProgressBar}>
-            <Text style={s.v4SetupProgressText}>
-              {allDone ? 'All set — lighting your slot…' : `${doneCount} of ${recs.length} set up`}
+      <AnimatedCta active={ctaVisible} delay={220} style={s.questionFooter} pointerEvents={ctaVisible ? 'auto' : 'none'}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="none" onPress={handleContinue} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>
+              {recs.length > 0 && activeIndex >= recs.length - 1 ? 'Finish setup' : 'Continue'}
             </Text>
-          </View>
-        </AnimatedCta>
-      ) : null}
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
     </View>
   );
 }
@@ -13509,6 +14056,7 @@ function V4RecapSequence({
   selected: string[];
   accent: string;
   groups: RecapProblemGroup[];
+  title?: string;
   hours?: number;
   onNext: () => void;
 }) {
@@ -13526,10 +14074,10 @@ function V4RecapSequence({
   // Slightly smaller than the deck, and sized to stay inside the stage's 20px
   // side padding + the scroll content padding (window - ~80) so cards never
   // reach the side gutters.
-  const cardW = Math.min(Math.max(width - 80, 252), isCompact ? 308 : 326);
+  const cardW = roundLayoutPx(Math.min(Math.max(width - 80, 252), isCompact ? 308 : 326));
   // Taller quote panel than the deck so the longer statements auto-shrink less
   // (more consistent font across cards).
-  const quoteHeight = isCompact ? 118 : 130;
+  const quoteHeight = roundLayoutPx(isCompact ? 118 : 130);
   const metrics = useMemo<StatementCardMetrics>(
     () => ({ width: cardW, quoteHeight, cardHeight: cardW + quoteHeight }),
     [cardW, quoteHeight],
@@ -13649,6 +14197,11 @@ function V4RecapSlide({
   hours?: number;
   onNext: () => void;
 }) {
+  const useSequenceFlow = true;
+  if (useSequenceFlow) {
+    return <V4RecapSequence cards={cards} selected={selected} accent={accent} groups={groups} hours={hours} onNext={onNext} />;
+  }
+
   const stat = hours !== undefined ? protectStats(hours) : null;
   const activeCount = cards.filter(card => selected.includes(card.id)).length;
   const boardBaseDelay = stat ? 760 : 420;
@@ -13748,8 +14301,9 @@ function V4FlameSlide({
   completedCount,
   title,
   body,
-  surprise,
   recapItems,
+  topInset = 0,
+  bottomInset = 0,
   onNext,
 }: {
   completedCount: number;
@@ -13757,10 +14311,16 @@ function V4FlameSlide({
   body: string;
   surprise?: boolean;
   recapItems?: string[];
+  topInset?: number;
+  bottomInset?: number;
   onNext: () => void;
 }) {
+  const { width, height } = useWindowDimensions();
   const [reveal, setReveal] = useState(0);
-  const showTools = Boolean(surprise) || completedCount >= 4;
+  const [soloTypedCount, setSoloTypedCount] = useState(0);
+  const showTools = completedCount >= 4;
+  const isSoloMessage = !title && Boolean(body);
+  const soloMessageSegments = useMemo<TypedTextSegment[]>(() => [{ text: body }], [body]);
   const previousCompletedCount = Math.max(0, completedCount - 1);
   const railCompletedCount = reveal >= 4 ? completedCount : previousCompletedCount;
   const slotCount = showTools ? 4 : 3;
@@ -13768,6 +14328,7 @@ function V4FlameSlide({
 
   useEffect(() => {
     setReveal(0);
+    setSoloTypedCount(0);
     sealFlight.value = 0;
     preloadTaskFeedbackSound();
     preloadAchievementFeedbackSound();
@@ -13790,17 +14351,52 @@ function V4FlameSlide({
       setTimeout(() => setReveal(6), 3860),
     ];
     return () => timers.forEach(timer => clearTimeout(timer));
-  }, [completedCount, sealFlight, showTools]);
+  }, [completedCount, isSoloMessage, sealFlight, showTools]);
+
+  useEffect(() => {
+    if (!isSoloMessage || reveal !== 6) return undefined;
+    setSoloTypedCount(0);
+
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let doneTimer: ReturnType<typeof setTimeout> | undefined;
+
+    interval = setInterval(() => {
+      setSoloTypedCount(prev => {
+        const next = Math.min(body.length, prev + 1);
+        if (next > prev && next % 3 === 0) runTypingHaptic();
+        if (next >= body.length) {
+          if (interval) {
+            clearInterval(interval);
+            interval = undefined;
+          }
+          doneTimer = setTimeout(() => {
+            setReveal(current => Math.max(current, 7));
+          }, 220);
+        }
+        return next;
+      });
+    }, 28);
+
+    return () => {
+      if (interval) clearInterval(interval);
+      if (doneTimer) clearTimeout(doneTimer);
+    };
+  }, [body, isSoloMessage, reveal]);
 
   const sealFlightStyle = useAnimatedStyle(() => {
-    const denominator = Math.max(1, slotCount - 1);
-    const targetX = ((completedCount - 1) / denominator - 0.5) * 300;
+    const railWidth = Math.min(Math.max(width - 44, 260), 338);
+    const railGap = 9;
+    const usableRailWidth = railWidth - railGap * (slotCount - 1);
+    const slotWidth = usableRailWidth / slotCount;
+    const targetIndex = Math.min(Math.max(completedCount - 1, 0), slotCount - 1);
+    const targetX = -railWidth / 2 + slotWidth / 2 + targetIndex * (slotWidth + railGap);
+    const targetY = -(height * 0.36 + 34);
     return {
       opacity: interpolate(sealFlight.value, [0, 0.72, 1], [1, 0.96, 0]),
       transform: [
         { translateX: interpolate(sealFlight.value, [0, 0.58, 1], [0, targetX * 0.18, targetX]) },
-        { translateY: interpolate(sealFlight.value, [0, 0.62, 1], [0, -164, -226]) },
-        { scale: interpolate(sealFlight.value, [0, 0.64, 1], [1, 0.44, 0.15]) },
+        { translateY: interpolate(sealFlight.value, [0, 0.62, 1], [0, targetY * 0.58, targetY]) },
+        { scale: interpolate(sealFlight.value, [0, 0.64, 1], [1, 0.42, 0.13]) },
       ],
     };
   });
@@ -13811,11 +14407,20 @@ function V4FlameSlide({
       { scale: interpolate(sealFlight.value, [0, 0.46], [1, 0.97]) },
     ],
   }));
+  const copyEntering = title
+    ? FadeIn.duration(620).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 12 }, { scale: 0.98 }],
+      })
+    : FadeIn.duration(760).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 24 }, { scale: 0.94 }],
+      });
 
   return (
-    <LinearGradient colors={['#FFFDF8', '#FFFDF8', '#F8EEDC']} style={s.v4FlameSlide}>
+    <View style={[s.v4FlameSlide, { paddingTop: topInset + 14, paddingBottom: bottomInset }]}>
       <View style={s.chapterCheckpointStage}>
-        <View style={s.chapterCheckpointSealSlot}>
+        <View style={[s.chapterCheckpointSealSlot, s.v4FlameSealSlot]}>
           {reveal >= 1 && reveal < 5 ? (
             <Reanimated.View
               entering={FadeIn.duration(760).withInitialValues({
@@ -13856,17 +14461,52 @@ function V4FlameSlide({
           ) : null}
         </View>
 
-        <View style={s.v4CheckpointCopySlot}>
+        <View style={[s.v4CheckpointCopySlot, isSoloMessage && s.v4CheckpointCopySlotSolo]}>
           {reveal >= 5 ? (
             <Reanimated.View
-              entering={FadeIn.duration(620).withInitialValues({
-                opacity: 0,
-                transform: [{ translateY: 12 }, { scale: 0.98 }],
-              })}
-              style={s.v4CheckpointCopy}
+              entering={copyEntering}
+              style={[s.v4CheckpointCopy, isSoloMessage && s.v4CheckpointSoloCoach]}
             >
-              <Text style={s.v4MomentTitle}>{title}</Text>
-              <Text style={s.v4MomentBody}>{body}</Text>
+              {isSoloMessage ? (
+                <>
+                  <Reanimated.View
+                    entering={FadeInUp.duration(760).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                      opacity: 0,
+                      transform: [{ translateY: 20 }, { scale: 0.82 }, { rotate: '-4deg' }],
+                    })}
+                    style={s.v4CheckpointSoloLogoFrame}
+                  >
+                    <View style={s.messageLogoHalo} />
+                    <View style={s.v4CheckpointSoloLogoPlate}>
+                      <Image source={APP_LOGO} style={s.messageLogo} resizeMode="cover" />
+                    </View>
+                  </Reanimated.View>
+
+                  {reveal >= 6 ? (
+                    <Reanimated.View
+                      entering={FadeInUp.delay(120).duration(720).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                        opacity: 0,
+                        transform: [{ translateY: 22 }, { scale: 0.9 }],
+                      })}
+                      style={s.v4CheckpointSoloBubble}
+                    >
+                      <View style={s.messageBubbleTail} />
+                      <TypedSegmentText
+                        segments={soloMessageSegments}
+                        count={soloTypedCount}
+                        textStyle={s.v4CheckpointSoloBody}
+                        highlightStyle={s.v4CheckpointSoloBody}
+                        caretStyle={s.v4CheckpointSoloCaret}
+                      />
+                    </Reanimated.View>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  {title ? <Text style={s.v4MomentTitle}>{title}</Text> : null}
+                  {body ? <Text style={s.v4MomentBody}>{body}</Text> : null}
+                </>
+              )}
             </Reanimated.View>
           ) : null}
         </View>
@@ -13890,10 +14530,10 @@ function V4FlameSlide({
         ) : null}
       </View>
 
-      {reveal >= 6 ? (
+      {reveal >= (isSoloMessage ? 7 : 6) ? (
         <AnimatedCta
           delay={recapItems && recapItems.length > 0 ? recapItems.length * 110 + 320 : 120}
-          style={s.questionFooter}
+          style={[s.questionFooter, s.v4FlameFooter, { bottom: bottomInset + 18 }]}
         >
           <View style={s.ctaIsland}>
             <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
@@ -13903,7 +14543,7 @@ function V4FlameSlide({
           </View>
         </AnimatedCta>
       ) : null}
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -14543,6 +15183,11 @@ export default function OnboardingView() {
   // The preload overlay no longer fades as one block — the component itself
   // melts its background first and lets the crest cross over solo.
   const valueStepActive = isValueStep(activeStep);
+  const flameStepActive =
+    activeStep === 'flameProtect' ||
+    activeStep === 'flameOrganize' ||
+    activeStep === 'flameGrow' ||
+    activeStep === 'flameTools';
   const hideTopChrome =
     activeStep === 'nameIntro' ||
     activeStep === 'traditionIntro' ||
@@ -14570,6 +15215,7 @@ export default function OnboardingView() {
     activeStep === 'organizeDeck' ||
     activeStep === 'dayVisualizationHeader' ||
     valueStepActive ||
+    flameStepActive ||
     activeStep === 'bridge' ||
     activeStep === 'organizeIntro' ||
     activeStep === 'taskSetup';
@@ -14641,7 +15287,6 @@ export default function OnboardingView() {
       return (
         <NameIntroSlide
           value={answers.displayName}
-          bottomInset={insets.bottom}
           onNameChange={onNameChange}
           onNext={goNext}
         />
@@ -14685,7 +15330,7 @@ export default function OnboardingView() {
     if (activeStep === 'protectDeck') {
       const protectCards = answers.secularFilter || isSecularTradition(answers.tradition)
         ? PROTECT_DECK_CARDS.map(card => card.id === 'presence'
-          ? { ...card, statement: 'I want to be fully present — in quiet moments, with family, at work. But distractions keep pulling me away.' }
+          ? { ...card, statement: 'I want to be fully present - in quiet moments, with family, at work - but distractions keep pulling me away.' }
           : card)
         : PROTECT_DECK_CARDS;
       return (
@@ -14744,7 +15389,16 @@ export default function OnboardingView() {
       );
     }
     if (activeStep === 'flameProtect') {
-      return <V4FlameSlide completedCount={1} title="Protect is ready." body="Your first slot is lit." onNext={goNext} />;
+      return (
+        <V4FlameSlide
+          completedCount={1}
+          title=""
+          body="We have a couple more questions for you."
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          onNext={goNext}
+        />
+      );
     }
     if (activeStep === 'organizeDeck') {
       const organizeCards = answers.secularFilter || isSecularTradition(answers.tradition)
@@ -14764,11 +15418,14 @@ export default function OnboardingView() {
       );
     }
     if (activeStep === 'organizeRecap') {
+      const organizeRecapCards = answers.secularFilter || isSecularTradition(answers.tradition)
+        ? ORGANIZE_DECK_CARDS.filter(card => !card.spiritual)
+        : ORGANIZE_DECK_CARDS;
       return (
         <V4RecapSlide
           title="Now — your life."
-          subtitle="You confirmed {count} problems. One system fixes them."
-          cards={ORGANIZE_DECK_CARDS}
+          subtitle=""
+          cards={organizeRecapCards}
           selected={answers.confirmedOrganizeProblems ?? []}
           accent="#4D8586"
           groups={ORGANIZE_RECAP_GROUPS}
@@ -14789,7 +15446,16 @@ export default function OnboardingView() {
     }
     if (activeStep === 'weeklyReveal') return <V4WeeklyRevealSlide displayName={answers.displayName} onNext={goNext} />;
     if (activeStep === 'flameOrganize') {
-      return <V4FlameSlide completedCount={2} title="Organize is ready." body="Your week has a rhythm now." onNext={goNext} />;
+      return (
+        <V4FlameSlide
+          completedCount={2}
+          title="Organize is ready."
+          body="Your week has a rhythm now."
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          onNext={goNext}
+        />
+      );
     }
     if (activeStep === 'giftMoment') {
       return (
@@ -14825,7 +15491,17 @@ export default function OnboardingView() {
       );
     }
     if (activeStep === 'flameGrow') {
-      return <V4FlameSlide completedCount={3} title="One more thing." body="Let's show you a few more tools Anasta has for you." surprise onNext={goNext} />;
+      return (
+        <V4FlameSlide
+          completedCount={3}
+          title="One more thing."
+          body="Let's show you a few more tools Anasta has for you."
+          surprise
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          onNext={goNext}
+        />
+      );
     }
     if (activeStep === 'toolsSlides') {
       return <V4ToolsSlides onNext={goNext} onGratitude={enabled => setAnswers(prev => ({ ...prev, gratitudeDailyTask: enabled }))} />;
@@ -14847,6 +15523,8 @@ export default function OnboardingView() {
           body="Look at everything you just built. Now keep what you made."
           surprise
           recapItems={wins}
+          topInset={insets.top}
+          bottomInset={insets.bottom}
           onNext={goNext}
         />
       );
@@ -17242,48 +17920,42 @@ const s = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    rowGap: 3,
+    rowGap: 6,
     paddingHorizontal: 26,
     paddingTop: 3,
     zIndex: 18,
     elevation: 18,
   },
   valueNavigationLast: {
-    rowGap: 8,
+    rowGap: 9,
   },
   valueProgressRail: {
     width: '100%',
-    maxWidth: 314,
+    maxWidth: 286,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'center',
-    columnGap: 6,
+    columnGap: 7,
+    paddingHorizontal: 3,
+    paddingVertical: 3,
   },
   valueProgressStep: {
-    alignItems: 'center',
-    justifyContent: 'flex-start',
+    alignItems: 'stretch',
+    justifyContent: 'center',
   },
   valueProgressTrack: {
     width: '100%',
-    height: 5.5,
+    height: 6,
     borderRadius: 999,
-    backgroundColor: 'rgba(25,23,20,0.082)',
+    backgroundColor: 'rgba(25,23,20,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.48)',
+    borderColor: 'rgba(255,255,255,0.52)',
     overflow: 'hidden',
-  },
-  valueProgressTrackDone: {
-    backgroundColor: 'rgba(197,160,89,0.18)',
-    borderColor: 'rgba(197,160,89,0.30)',
-  },
-  valueProgressTrackActive: {
-    backgroundColor: 'rgba(23,19,15,0.12)',
-    borderColor: 'rgba(232,195,116,0.62)',
     shadowColor: GOLD,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.19,
-    shadowRadius: 11,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 1,
   },
   valueProgressTrackFill: {
     position: 'absolute',
@@ -17293,30 +17965,14 @@ const s = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(197,160,89,0.68)',
   },
-  valueProgressTrackFillActive: {
-    backgroundColor: '#E7C36D',
-  },
-  valueProgressDot: {
-    marginTop: -15,
-    width: 31,
-    height: 31,
-    borderRadius: 15.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#17130F',
-    borderWidth: 1.3,
-    borderColor: 'rgba(232,195,116,0.86)',
-    shadowColor: GOLD,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.32,
-    shadowRadius: 18,
-    elevation: 4,
-  },
-  valueProgressDotText: {
-    fontFamily: F.serifSemiBold,
-    fontSize: 14,
-    lineHeight: 17,
-    color: '#F8E8BE',
+  valueProgressTrackSheen: {
+    position: 'absolute',
+    left: 6,
+    right: 6,
+    top: 1,
+    height: 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.40)',
   },
   valueSwipeHint: {
     minHeight: 30,
@@ -18873,6 +19529,33 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.76)',
   },
+  dayBarPhoneSegment: {
+    height: '100%',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  dayBarPhoneStripeLayer: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  dayBarPhoneStripe: {
+    position: 'absolute',
+    top: -21,
+    width: 5.5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(226,188,99,0.68)',
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(244,221,154,0.28)',
+    transform: [{ rotate: '28deg' }],
+  },
+  dayBarPhoneBorrowGlow: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 42,
+  },
   dayBarSceneShine: {
     position: 'absolute',
     left: 5,
@@ -18967,6 +19650,9 @@ const s = StyleSheet.create({
     backgroundColor: '#FFFDF8',
     zIndex: 18,
   },
+  dayCompareLayerBridgePreview: {
+    zIndex: 17,
+  },
   dayCompareScreenBg: {
     backgroundColor: '#FFFDF8',
   },
@@ -19021,6 +19707,415 @@ const s = StyleSheet.create({
     paddingHorizontal: 8,
     paddingTop: 6,
     paddingBottom: 118,
+  },
+  dayReductionBridgeLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 18,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 24,
+  },
+  dayReductionBridgeHeader: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 18,
+  },
+  dayReductionBridgeKicker: {
+    minHeight: 30,
+    paddingHorizontal: 13,
+    paddingVertical: 6,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 6,
+    backgroundColor: 'rgba(47,155,97,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.18)',
+    shadowColor: '#2F9B61',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  dayReductionBridgeKickerText: {
+    fontFamily: F.sansBold,
+    fontSize: 10.8,
+    lineHeight: 14,
+    letterSpacing: 1.25,
+    textTransform: 'uppercase',
+    color: '#2F9B61',
+  },
+  dayReductionBridgeTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 39,
+    lineHeight: 43,
+    letterSpacing: 0,
+    textAlign: 'center',
+    color: '#17130F',
+    maxWidth: 350,
+  },
+  dayReductionBridgeSubtitle: {
+    marginTop: 10,
+    maxWidth: 318,
+    fontFamily: F.serifMedium,
+    fontSize: 19,
+    lineHeight: 24,
+    letterSpacing: 0,
+    textAlign: 'center',
+    color: 'rgba(25,23,20,0.62)',
+  },
+  dayReductionBridgeUnderline: {
+    marginTop: 4,
+    height: 3,
+    borderRadius: 999,
+    width: 232,
+    backgroundColor: '#2F9B61',
+  },
+  dayReductionBridgeBody: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 398,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 0,
+    paddingTop: 26,
+    paddingBottom: 10,
+  },
+  dayReductionBridgeCard: {
+    width: '100%',
+    maxWidth: 386,
+    alignItems: 'center',
+    borderRadius: 30,
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 22,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+    shadowColor: '#17130F',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.07,
+    shadowRadius: 26,
+    elevation: 4,
+  },
+  dayReductionBridgeGlowTop: {
+    position: 'absolute',
+    top: -72,
+    right: -58,
+    width: 176,
+    height: 176,
+    borderRadius: 88,
+    backgroundColor: 'rgba(47,155,97,0.11)',
+  },
+  dayReductionBridgeGlowBottom: {
+    position: 'absolute',
+    left: -58,
+    bottom: -74,
+    width: 184,
+    height: 184,
+    borderRadius: 92,
+    backgroundColor: 'rgba(215,168,69,0.15)',
+  },
+  dayReductionBridgeByline: {
+    fontFamily: F.serifBold,
+    fontSize: 27,
+    lineHeight: 31,
+    color: '#17130F',
+    textAlign: 'left',
+    flex: 1,
+  },
+  dayReductionChartHeader: {
+    width: '100%',
+    minHeight: 33,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: 10,
+  },
+  dayReductionChartPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(23,59,40,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.16)',
+  },
+  dayReductionChartPillText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 12.5,
+    lineHeight: 15,
+    color: 'rgba(23,59,40,0.64)',
+  },
+  dayReductionChartPlot: {
+    marginTop: 9,
+    position: 'relative',
+    overflow: 'visible',
+  },
+  dayReductionChartSvg: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+  },
+  dayReductionChartReveal: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    height: '100%',
+    overflow: 'hidden',
+  },
+  dayReductionChartEndpointGlow: {
+    position: 'absolute',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(47,155,97,0.18)',
+    shadowColor: '#2F9B61',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.34,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  dayReductionChartOldLabel: {
+    position: 'absolute',
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.97)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.12)',
+    shadowColor: '#17130F',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  dayReductionChartOldLabelText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 13,
+    lineHeight: 16,
+    color: 'rgba(25,23,20,0.62)',
+  },
+  dayReductionChartBrand: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 7,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(244,255,248,0.98)',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.24)',
+    shadowColor: '#2F9B61',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  dayReductionChartLogoFrame: {
+    width: 25,
+    height: 25,
+    borderRadius: 9,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayReductionChartLogo: {
+    width: 18.5,
+    height: 18.5,
+  },
+  dayReductionChartBrandText: {
+    fontFamily: F.serifBold,
+    fontSize: 16.5,
+    lineHeight: 20,
+    color: '#173B28',
+  },
+  dayReductionChartDeltaTag: {
+    position: 'absolute',
+    minWidth: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#2F9B61',
+    borderWidth: 2,
+    borderColor: 'rgba(255,253,248,0.94)',
+    shadowColor: '#2F9B61',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  dayReductionChartDeltaText: {
+    fontFamily: F.serifBold,
+    fontSize: 17,
+    lineHeight: 20,
+    color: '#FFFFFF',
+  },
+  dayReductionChartBrandPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: '#17130F',
+  },
+  dayReductionChartBrandPillText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 10.5,
+    lineHeight: 13,
+    color: '#F8E8BE',
+  },
+  dayReductionChartAxisLabels: {
+    width: '100%',
+    maxWidth: 326,
+    marginTop: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+  },
+  dayReductionChartAxisText: {
+    fontFamily: F.serifMedium,
+    fontSize: 16,
+    lineHeight: 20,
+    color: 'rgba(25,23,20,0.62)',
+  },
+  dayReductionBridgeNumber: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 158,
+    lineHeight: 168,
+    color: '#2F9B61',
+    textAlign: 'center',
+    includeFontPadding: false,
+    textShadowColor: 'rgba(47,155,97,0.16)',
+    textShadowOffset: { width: 0, height: 8 },
+    textShadowRadius: 20,
+  },
+  dayReductionBridgePercentUnit: {
+    marginLeft: 8,
+    marginBottom: 21,
+    fontFamily: F.serifSemiBold,
+    fontSize: 68,
+    lineHeight: 76,
+    color: '#2F9B61',
+  },
+  dayReductionBridgeAverageTag: {
+    marginTop: -9,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(215,168,69,0.5)',
+    shadowColor: '#B6862F',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 13,
+    elevation: 2,
+  },
+  dayReductionBridgeAverageText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 14,
+    lineHeight: 17,
+    color: '#9B6C2C',
+  },
+  dayReductionBridgeTrack: {
+    width: '100%',
+    height: 18,
+    borderRadius: 999,
+    marginTop: 22,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    backgroundColor: 'rgba(25,23,20,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  dayReductionBridgeTrackPhone: {
+    flex: 6,
+    backgroundColor: 'rgba(25,23,20,0.82)',
+  },
+  dayReductionBridgeTrackReclaimed: {
+    flex: 4,
+    backgroundColor: '#2F9B61',
+  },
+  dayReductionBridgeTrackShine: {
+    position: 'absolute',
+    top: 2,
+    left: '60%',
+    right: 4,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.38)',
+  },
+  dayReductionBridgeTrackLabels: {
+    width: '100%',
+    marginTop: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 3,
+  },
+  dayReductionBridgeTrackLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    lineHeight: 13,
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    color: 'rgba(23,59,40,0.5)',
+  },
+  dayReductionBridgeTrackLabelStrong: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    lineHeight: 13,
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    color: '#2F9B61',
+  },
+  dayReductionBridgeText: {
+    marginTop: 18,
+    maxWidth: 326,
+    fontFamily: F.serifSemiBold,
+    fontSize: 22,
+    lineHeight: 28,
+    textAlign: 'center',
+    color: 'rgba(25,23,20,0.74)',
+  },
+  dayReductionBridgeNumberInline: {
+    color: '#2F9B61',
+    fontFamily: F.serifBold,
+  },
+  dayReductionBridgeNumberInlineText: {
+    fontSize: 21,
+    lineHeight: 27,
+    color: '#2F9B61',
+    textShadowColor: 'transparent',
+    textShadowRadius: 0,
+    textShadowOffset: { width: 0, height: 0 },
+  },
+  dayReductionBridgeChips: {
+    marginTop: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  dayReductionBridgeChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.74)',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.14)',
+  },
+  dayReductionBridgeChipText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 13.5,
+    lineHeight: 16,
+    color: 'rgba(23,59,40,0.7)',
   },
   dayCompareStaticCard: {
     width: '100%',
@@ -19171,23 +20266,26 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   dayWasteRevealTitleBlock: {
+    width: '100%',
     alignItems: 'center',
-    marginTop: 3,
+    marginTop: 72,
   },
   dayWasteRevealTitle: {
     fontFamily: F.serifBold,
-    fontSize: 45,
-    lineHeight: 51,
+    fontSize: 58,
+    lineHeight: 64,
     letterSpacing: 0.2,
     color: '#B0383E',
     textAlign: 'center',
   },
-  dayWasteRevealUnderline: {
-    marginTop: -1,
-    width: 174,
+  dayWasteRevealHeroTitle: {
+    fontSize: 46,
+    lineHeight: 52,
+  },
+  dayWasteRevealHeroUnderline: {
+    width: '102%',
     height: 3.5,
-    borderRadius: 999,
-    backgroundColor: '#B0383E',
+    marginTop: 0,
   },
   dayWasteRevealBody: {
     flex: 1,
@@ -19196,18 +20294,19 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 22,
-    paddingBottom: 18,
+    paddingBottom: 48,
   },
   dayWasteRevealNumberRow: {
-    minHeight: 178,
+    minHeight: 214,
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'center',
+    width: '100%',
   },
   dayWasteRevealNumber: {
     fontFamily: F.serifSemiBold,
-    fontSize: 138,
-    lineHeight: 152,
+    fontSize: 176,
+    lineHeight: 190,
     letterSpacing: 0,
     color: '#17130F',
     textAlign: 'center',
@@ -19217,24 +20316,36 @@ const s = StyleSheet.create({
     textShadowRadius: 18,
   },
   dayWasteRevealNumberPercent: {
+    fontSize: 196,
+    lineHeight: 208,
+  },
+  dayWasteRevealNumberCompact: {
     fontSize: 154,
-    lineHeight: 168,
+    lineHeight: 170,
+    transform: [{ translateY: -12 }],
   },
   dayWasteRevealUnit: {
-    marginLeft: 8,
-    marginBottom: 24,
+    marginLeft: 7,
+    marginBottom: 30,
     fontFamily: F.serifSemiBold,
-    fontSize: 33,
-    lineHeight: 38,
+    fontSize: 36,
+    lineHeight: 41,
     color: '#B0383E',
   },
   dayWasteRevealPercentUnit: {
-    fontSize: 66,
-    lineHeight: 73,
-    marginBottom: 22,
+    fontSize: 76,
+    lineHeight: 82,
+    marginBottom: 27,
+  },
+  dayWasteRevealUnitCompact: {
+    marginLeft: 5,
+    marginBottom: 30,
+    fontSize: 32,
+    lineHeight: 37,
+    transform: [{ translateY: -12 }],
   },
   dayWasteRevealWords: {
-    marginTop: -7,
+    marginTop: -18,
     minHeight: 128,
     alignItems: 'center',
     justifyContent: 'center',
@@ -19927,9 +21038,57 @@ const s = StyleSheet.create({
     paddingBottom: 130,
     rowGap: 14,
   },
+  v4RecapToolsScrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 38,
+    paddingBottom: 96,
+    rowGap: 28,
+  },
   v4RecapHeader: {
     alignItems: 'center',
     rowGap: 7,
+  },
+  v4RecapToolsHeader: {
+    alignItems: 'center',
+    rowGap: 8,
+    paddingHorizontal: 10,
+    paddingTop: 4,
+    paddingBottom: 0,
+  },
+  v4RecapToolsKicker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,253,248,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.26)',
+  },
+  v4RecapToolsKickerText: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    lineHeight: 13,
+    letterSpacing: 1.3,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.56)',
+  },
+  v4RecapToolsTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 39,
+    lineHeight: 43,
+    color: INK,
+    textAlign: 'center',
+    maxWidth: 350,
+  },
+  v4RecapToolsSubtitle: {
+    fontFamily: F.serifMedium,
+    fontSize: 17.2,
+    lineHeight: 22.2,
+    color: 'rgba(25,23,20,0.62)',
+    textAlign: 'center',
+    maxWidth: 336,
   },
   v4RecapSubtitle: {
     fontFamily: F.serifMediumItalic,
@@ -19998,66 +21157,141 @@ const s = StyleSheet.create({
   v4RecapProblemBoard: {
     rowGap: 14,
   },
+  v4RecapToolsBoard: {
+    width: '100%',
+    maxWidth: 372,
+    alignSelf: 'center',
+    alignItems: 'stretch',
+  },
   v4ToolCard: {
-    borderRadius: 22,
+    minHeight: 82,
+    borderRadius: 25,
     paddingHorizontal: 14,
-    paddingTop: 13,
-    paddingBottom: 13,
-    backgroundColor: 'rgba(255,253,248,0.86)',
+    paddingTop: 15,
+    paddingBottom: 15,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
     borderWidth: 1,
-    borderColor: 'rgba(25,23,20,0.07)',
+    borderColor: 'rgba(197,160,89,0.18)',
     shadowColor: '#5E5142',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.09,
     shadowRadius: 18,
-    elevation: 1,
+    elevation: 2,
+  },
+  v4ToolPathCard: {
+    borderColor: 'rgba(197,160,89,0.26)',
+    shadowOpacity: 0.12,
+    shadowRadius: 23,
+  },
+  v4RecapPathConnector: {
+    height: 24,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingLeft: 36,
+    marginVertical: 4,
+  },
+  v4RecapPathDots: {
+    width: 16,
+    alignItems: 'center',
+    rowGap: 3.2,
+  },
+  v4RecapPathDot: {
+    width: 3.8,
+    height: 3.8,
+    borderRadius: 2,
   },
   v4ToolCardOpen: {
-    backgroundColor: '#FFFFFF',
     borderColor: 'rgba(77,133,134,0.34)',
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.13,
   },
   v4SetupCardActive: {
-    backgroundColor: '#FFFFFF',
     borderColor: 'rgba(197,160,89,0.55)',
     shadowColor: '#C5A059',
     shadowOpacity: 0.16,
   },
   v4SetupCardDoneState: {
-    backgroundColor: 'rgba(197,160,89,0.08)',
-    borderColor: 'rgba(197,160,89,0.3)',
+    borderColor: 'rgba(47,155,97,0.32)',
+    shadowColor: '#2F9B61',
+    shadowOpacity: 0.10,
+  },
+  v4SetupQueueCardInactive: {
+    borderColor: 'rgba(25,23,20,0.07)',
+    shadowOpacity: 0.035,
+  },
+  v4SetupQueueIconInactive: {
+    opacity: 0.48,
+  },
+  v4SetupQueueTitleInactive: {
+    color: 'rgba(25,23,20,0.38)',
+  },
+  v4SetupQueueSubtitleInactive: {
+    color: 'rgba(25,23,20,0.30)',
   },
   v4SetupCardSubtitleDone: {
     color: '#9A7B33',
   },
   v4SetupStatus: {
-    width: 28,
-    height: 28,
+    width: 34,
+    height: 34,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
   v4SetupCheck: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 29,
+    height: 29,
+    borderRadius: 14.5,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: GOLD,
+    overflow: 'hidden',
+    shadowColor: '#2F9B61',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.26,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  v4SetupCheckBurst: {
+    position: 'absolute',
+    width: 31,
+    height: 31,
+    borderRadius: 16,
+    borderWidth: 2,
   },
   v4SetupDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     borderWidth: 2,
     borderColor: 'rgba(25,23,20,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  v4SetupDotActive: {
-    borderColor: 'rgba(197,160,89,0.7)',
-    backgroundColor: 'rgba(197,160,89,0.14)',
+  v4SetupDotCore: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
   v4SetupProgressBar: {
     alignItems: 'center',
+    paddingHorizontal: 18,
     paddingVertical: 12,
+    rowGap: 7,
+  },
+  v4SetupProgressTrack: {
+    width: '100%',
+    maxWidth: 292,
+    height: 7,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(25,23,20,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.9)',
+  },
+  v4SetupProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: '#2F9B61',
   },
   v4SetupProgressText: {
     fontFamily: F.sansBold,
@@ -20066,27 +21300,141 @@ const s = StyleSheet.create({
     color: 'rgba(25,23,20,0.55)',
   },
   v4ToolHeader: {
-    minHeight: 42,
+    minHeight: 46,
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 9,
+    columnGap: 11,
+    zIndex: 2,
+  },
+  v4ToolAccentBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 5,
+    opacity: 0.82,
+  },
+  v4ToolTopSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 16,
+    right: 16,
+    height: 2,
+    borderBottomLeftRadius: 999,
+    borderBottomRightRadius: 999,
+  },
+  v4ToolStepBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  v4ToolStepBadgeText: {
+    fontFamily: F.serifBold,
+    fontSize: 12.5,
+    lineHeight: 15,
+  },
+  v4ToolStepMini: {
+    position: 'absolute',
+    top: -7,
+    left: -7,
+    minWidth: 21,
+    height: 21,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+    borderWidth: 1,
+    zIndex: 4,
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.08,
+    shadowRadius: 7,
+    elevation: 2,
+  },
+  v4ToolIcon: {
+    width: 43,
+    height: 43,
+    borderRadius: 16,
+    position: 'relative',
+  },
+  v4ToolChevron: {
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.06)',
   },
   v4ToolDrawer: {
     overflow: 'hidden',
+    zIndex: 2,
+  },
+  v4ToolInlineReasons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 7,
+    columnGap: 7,
+    marginTop: 13,
+    paddingLeft: 38,
+    zIndex: 2,
+  },
+  v4ToolInlineReasonChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 6,
+    maxWidth: '100%',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  v4ToolInlineReasonText: {
+    fontFamily: F.serifMedium,
+    fontSize: 12.6,
+    lineHeight: 15,
+    color: 'rgba(25,23,20,0.72)',
+    flexShrink: 1,
   },
   v4ToolDrawerInner: {
+    marginTop: 12,
     paddingTop: 12,
-    rowGap: 9,
+    rowGap: 10,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(25,23,20,0.07)',
+    borderTopColor: 'rgba(77,133,134,0.15)',
   },
   v4ToolReasonLead: {
     fontFamily: F.sansBold,
     fontSize: 10.5,
     letterSpacing: 1.4,
     textTransform: 'uppercase',
-    color: 'rgba(25,23,20,0.42)',
+    color: 'rgba(25,23,20,0.46)',
     marginBottom: 1,
+  },
+  v4ToolReasonChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 7,
+    columnGap: 7,
+  },
+  v4ToolReasonChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 6,
+    maxWidth: '100%',
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  v4ToolReasonChipDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   v4ToolReasonRow: {
     flexDirection: 'row',
@@ -20102,11 +21450,11 @@ const s = StyleSheet.create({
     borderWidth: 1,
   },
   v4ToolReasonText: {
-    flex: 1,
     fontFamily: F.serifMedium,
-    fontSize: 14,
-    lineHeight: 18,
+    fontSize: 13.6,
+    lineHeight: 17,
     color: INK,
+    flexShrink: 1,
   },
   v4RecapProblemGroup: {
     borderRadius: 24,
@@ -20198,7 +21546,7 @@ const s = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     rowGap: 0,
-    marginTop: 8,
+    marginTop: 22,
   },
   v4RecapStamp: {
     position: 'absolute',
@@ -20229,6 +21577,12 @@ const s = StyleSheet.create({
   },
   v4RecapStampTextNo: {
     color: '#9B353B',
+  },
+  v4RecapSharpCard: {
+    backfaceVisibility: 'hidden',
+  },
+  v4RecapStatementInnerFrame: {
+    borderTopWidth: 0,
   },
   v4RecapDeckCard: {
     borderRadius: 18,
@@ -24978,6 +26332,13 @@ const s = StyleSheet.create({
     paddingHorizontal: 22,
     paddingTop: 18,
     paddingBottom: 0,
+    backgroundColor: '#FFFDF8',
+  },
+  v4FlameSealSlot: {
+    marginTop: -104,
+  },
+  v4FlameFooter: {
+    paddingHorizontal: 22,
   },
   v4CheckpointCopySlot: {
     position: 'absolute',
@@ -24988,10 +26349,76 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 18,
   },
+  v4CheckpointCopySlotSolo: {
+    top: 0,
+    bottom: 0,
+    marginTop: 0,
+    justifyContent: 'center',
+    transform: [{ translateY: -36 }],
+  },
   v4CheckpointCopy: {
     width: '100%',
     alignItems: 'center',
     rowGap: 10,
+  },
+  v4CheckpointSoloCoach: {
+    maxWidth: 360,
+    rowGap: 17,
+  },
+  v4CheckpointSoloLogoFrame: {
+    width: 92,
+    height: 92,
+    borderRadius: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.24)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.15,
+    shadowRadius: 28,
+    elevation: 4,
+  },
+  v4CheckpointSoloLogoPlate: {
+    width: 72,
+    height: 72,
+    borderRadius: 23,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  v4CheckpointSoloBubble: {
+    width: '100%',
+    maxWidth: 352,
+    minHeight: 102,
+    borderRadius: 30,
+    overflow: 'visible',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    paddingVertical: 18,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.36)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 2,
+  },
+  v4CheckpointSoloBody: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 27,
+    lineHeight: 33,
+    textAlign: 'center',
+    color: INK,
+  },
+  v4CheckpointSoloCaret: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 27,
+    lineHeight: 33,
+    color: GOLD,
   },
   v4CenteredSlide: {
     flex: 1,
@@ -25336,7 +26763,7 @@ const s = StyleSheet.create({
   v4StatementText: {
     fontFamily: F.serifMedium,
     fontSize: 17.5,
-    lineHeight: 23,
+    lineHeight: 22,
     color: 'rgba(25,23,20,0.84)',
     textAlign: 'center',
   },
