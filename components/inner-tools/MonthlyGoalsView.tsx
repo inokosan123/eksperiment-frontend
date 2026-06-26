@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Keyboard,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,9 +10,10 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { ChevronLeft, ChevronRight, Plus, Trash2 } from '@/components/icons/Icons';
+import { CheckSmall, ChevronLeft, ChevronRight, Plus, Trash2 } from '@/components/icons/Icons';
 import { useMonthlyGoals } from '@/components/inner-tools/MonthlyGoalsContext';
 import { AnimatedGoalCheck, AnimatedStrikeText, fireGoalToggleHaptic } from '@/components/inner-tools/MonthlyGoalRow';
 import { F } from '@/constants/tokens';
@@ -26,6 +28,9 @@ import {
 const BG = '#FAF7F0';
 const GOLD = '#C5A059';
 const GREEN = '#16A34A';
+const RED = '#DC5B5B';
+const INK = '#1A1714';
+const MUTED = '#A8A29E';
 const MONTHLY_GOALS_GUIDE_TARGETS = {
   months: 'monthly-goals.months',
   input: 'monthly-goals.input',
@@ -65,6 +70,7 @@ export default function MonthlyGoalsView({
     session,
     setPresentation,
   } = useGuidedSetup();
+  const insets = useSafeAreaInsets();
   const todayMonth = currentMonthKey();
   const todayYear = new Date().getFullYear();
   const todayMonthIdx = new Date().getMonth();
@@ -125,8 +131,16 @@ export default function MonthlyGoalsView({
   const allDone = monthGoals.length > 0 && completedCount === monthGoals.length;
   const progress = monthGoals.length > 0 ? completedCount / monthGoals.length : 0;
   const progressColor = allDone ? GREEN : GOLD;
+  const isPastMonth = selectedMonth < todayMonth;
+  const isFutureMonth = selectedMonth > todayMonth;
+  const canEditSelectedMonth = !isPastMonth;
+  const selectedMonthLabel = formatMonthFull(selectedMonth);
 
   const handleAdd = async () => {
+    if (!canEditSelectedMonth) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      return;
+    }
     const text = draftText.trim();
     if (!text) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -145,12 +159,14 @@ export default function MonthlyGoalsView({
   };
 
   const chooseMonth = (key: string) => {
+    if (key < todayMonth && (goalsByMonth[key]?.length ?? 0) === 0) return;
     Haptics.selectionAsync().catch(() => {});
     setSelectedMonth(key);
-    if (isGuided && guidePhase === 'intro') patchSession({ phase: 'goal' });
+    if (isGuided && guidePhase === 'intro' && key >= todayMonth) patchSession({ phase: 'goal' });
   };
 
   const submitGoalDraft = () => {
+    if (!canEditSelectedMonth) return;
     if (isGuided && guidePhase === 'goal' && draftText.trim()) {
       Keyboard.dismiss();
       patchSession({ phase: 'add' });
@@ -161,14 +177,16 @@ export default function MonthlyGoalsView({
 
   const finishGuidedStep = useCallback(() => {
     completeStep('buildMonthlyGoals');
-    patchSession({
-      activeStep: 'buildHabits',
-      phase: 'intro',
-      route: '/onboarding',
-    });
     setPresentation(null);
     onGuidedComplete?.();
-  }, [completeStep, onGuidedComplete, patchSession, setPresentation]);
+  }, [completeStep, onGuidedComplete, setPresentation]);
+
+  const addAnotherGuidedGoal = useCallback(() => {
+    Keyboard.dismiss();
+    setPresentation(null);
+    setDraftText('');
+    patchSession({ phase: 'intro' });
+  }, [patchSession, setPresentation]);
 
   useEffect(() => {
     if (!isGuided) return;
@@ -207,13 +225,14 @@ export default function MonthlyGoalsView({
       setPresentation({
         key: 'monthly-goals-complete',
         placement: 'center',
-        celebrate: true,
-        message: 'Your first monthly goal is set.',
-        ctaLabel: 'CONTINUE',
-        onCta: finishGuidedStep,
+        message: 'Add another monthly goal for a future month?',
+        ctaLabel: 'Yes',
+        onCta: addAnotherGuidedGoal,
+        secondaryCtaLabel: 'No',
+        onSecondaryCta: finishGuidedStep,
       });
     }
-  }, [finishGuidedStep, guidePhase, isGuided, setPresentation]);
+  }, [addAnotherGuidedGoal, finishGuidedStep, guidePhase, isGuided, setPresentation]);
 
   useEffect(() => {
     if (!isGuided) return;
@@ -229,7 +248,15 @@ export default function MonthlyGoalsView({
     if (guided) setPresentation(null);
   }, [guided, setPresentation]);
 
+  useEffect(() => {
+    if (isPastMonth && draftText) setDraftText('');
+  }, [draftText, isPastMonth]);
+
   const handleToggle = async (id: string, willComplete: boolean) => {
+    if (!canEditSelectedMonth) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      return;
+    }
     fireGoalToggleHaptic(willComplete);
     await toggleGoal(id);
   };
@@ -248,9 +275,12 @@ export default function MonthlyGoalsView({
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={s.scrollContent}
+        contentContainerStyle={[s.scrollContent, { paddingBottom: insets.bottom + 58 }]}
         showsVerticalScrollIndicator={false}
+        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+        contentInsetAdjustmentBehavior={Platform.OS === 'ios' ? 'automatic' : undefined}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
       >
         {/* Year switcher */}
         <View style={s.yearRow}>
@@ -278,18 +308,28 @@ export default function MonthlyGoalsView({
           {MONTH_LABELS_SHORT.map((label, idx) => {
             const key = monthKey(viewYear, idx);
             const isSelected = key === selectedMonth;
-            const hasGoals = (goalsByMonth[key]?.length ?? 0) > 0;
-            const allDoneInMonth = hasGoals && goalsByMonth[key]!.every(g => g.isCompleted);
+            const monthItems = goalsByMonth[key] ?? [];
+            const goalCount = monthItems.length;
+            const hasGoals = goalCount > 0;
+            const completedInMonth = monthItems.filter(goal => goal.isCompleted).length;
             const isCurrent = key === todayMonth;
             const isPast = viewYear < todayYear || (viewYear === todayYear && idx < todayMonthIdx);
             const isFuture = viewYear > todayYear || (viewYear === todayYear && idx > todayMonthIdx);
+            const isLocked = isPast && !hasGoals;
+            const monthMeta = hasGoals
+              ? `${completedInMonth}/${goalCount}`
+              : isPast
+                ? 'LOCKED'
+                : isCurrent
+                  ? 'CURRENT'
+                  : 'PLAN';
 
             // Visual state hierarchy:
             //   1. Selected → gold gradient
             //   2. Current month (not selected) → gold ring
             //   3. Past + has goals → solid white + colored dot (gold or green)
             //   4. Past + no goals → muted, faded
-            //   5. Future + has goals → solid white + dashed gold border
+            //   5. Future + has goals → solid white + green goal marker
             //   6. Future + no goals → soft white, low contrast
             if (isSelected) {
               return (
@@ -300,17 +340,16 @@ export default function MonthlyGoalsView({
                   style={s.monthCellWrap}
                 >
                   <LinearGradient
-                    colors={['#E2BD75', '#C5A059', '#A87E33']}
-                    locations={[0, 0.55, 1]}
-                    start={{ x: 0.15, y: 0 }}
-                    end={{ x: 0.85, y: 1 }}
+                    colors={['#F2D58D', '#D2AA5C', '#A87E33']}
+                    locations={[0, 0.52, 1]}
+                    start={{ x: 0.1, y: 0 }}
+                    end={{ x: 0.92, y: 1 }}
                     style={[s.monthCell, s.monthCellSelected]}
                   >
                     <View pointerEvents="none" style={s.monthSheen} />
                     <Text style={[s.monthLabel, s.monthLabelActive]}>{label}</Text>
-                    {hasGoals && (
-                      <View style={[s.monthDot, { backgroundColor: '#FFFFFF', opacity: 0.85 }]} />
-                    )}
+                    <Text style={[s.monthMeta, s.monthMetaActive]}>{monthMeta}</Text>
+                    <View style={s.monthSelectedSpark} />
                   </LinearGradient>
                 </TouchableOpacity>
               );
@@ -318,39 +357,52 @@ export default function MonthlyGoalsView({
 
             const cellStyle: any[] = [s.monthCell];
             const labelStyle: any[] = [s.monthLabel];
+            const metaStyle: any[] = [s.monthMeta];
+            const railStyle: any[] = [s.monthRail];
+            const goalGemStyle: any[] = [s.monthGoalGem];
 
             if (isCurrent) {
               cellStyle.push(s.monthCellCurrent);
               labelStyle.push(s.monthLabelCurrent);
+              metaStyle.push(s.monthMetaCurrent);
+              railStyle.push(s.monthRailCurrent);
             } else if (isPast && hasGoals) {
               cellStyle.push(s.monthCellPastFilled);
               labelStyle.push(s.monthLabelPastFilled);
+              metaStyle.push(s.monthMetaPastFilled);
+              railStyle.push(s.monthRailArchived);
+              goalGemStyle.push(s.monthGoalGemArchived);
             } else if (isPast) {
               cellStyle.push(s.monthCellPastEmpty);
               labelStyle.push(s.monthLabelPastEmpty);
+              metaStyle.push(s.monthMetaPastEmpty);
+              railStyle.push(s.monthRailLocked);
             } else if (isFuture && hasGoals) {
               cellStyle.push(s.monthCellFutureFilled);
               labelStyle.push(s.monthLabelFutureFilled);
+              metaStyle.push(s.monthMetaFutureFilled);
+              railStyle.push(s.monthRailFutureFilled);
             } else {
               cellStyle.push(s.monthCellFutureEmpty);
               labelStyle.push(s.monthLabelFutureEmpty);
+              metaStyle.push(s.monthMetaFutureEmpty);
+              railStyle.push(s.monthRailFutureEmpty);
             }
-
-            const dotColor = allDoneInMonth ? '#16A34A' : hasGoals ? GOLD : null;
 
             return (
               <TouchableOpacity
                 key={key}
                 onPress={() => chooseMonth(key)}
+                disabled={isLocked}
                 activeOpacity={0.84}
                 style={s.monthCellWrap}
               >
                 <View style={cellStyle}>
+                  <View style={railStyle} />
                   <Text style={labelStyle}>{label}</Text>
-                  {isCurrent && <View style={s.monthCurrentUnderline} />}
-                  {dotColor && (
-                    <View style={[s.monthDot, { backgroundColor: dotColor }]} />
-                  )}
+                  <Text style={metaStyle}>{monthMeta}</Text>
+                  {hasGoals && <View style={goalGemStyle} />}
+                  {isLocked && <View style={s.monthLockedLine} />}
                 </View>
               </TouchableOpacity>
             );
@@ -399,23 +451,63 @@ export default function MonthlyGoalsView({
           </LinearGradient>
         )}
 
+        {canEditSelectedMonth ? (
+          <View style={s.addCard}>
+            <View style={s.addCopy}>
+              <Text style={s.addLabel}>{isFutureMonth ? 'PLAN AHEAD' : 'ADD GOAL'}</Text>
+              <TextInput
+                ref={inputTarget.ref}
+                onLayout={inputTarget.onLayout}
+                value={draftText}
+                onChangeText={setDraftText}
+                onSubmitEditing={submitGoalDraft}
+                placeholder={isFutureMonth ? 'Add a goal for this future month...' : 'Add a goal for this month...'}
+                placeholderTextColor="#BEB7AB"
+                returnKeyType="done"
+                style={s.addInput}
+              />
+            </View>
+            <TouchableOpacity
+              ref={addTarget.ref}
+              onLayout={addTarget.onLayout}
+              onPress={handleAdd}
+              disabled={!draftText.trim()}
+              activeOpacity={0.86}
+              style={[s.addBtn, !draftText.trim() && s.addBtnDisabled]}
+            >
+              <Plus s={15} c="#FFFFFF" w={2.6} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={s.archiveNotice}>
+            <Text style={s.archiveNoticeText}>Past months are locked. You can review or delete goals, but not change their completion state.</Text>
+          </View>
+        )}
+
         {/* Goals list */}
-        <View style={{ rowGap: 5 }}>
+        <View style={s.goalsList}>
           {monthGoals.map(goal => (
             <View
               key={goal.id}
-              style={[s.goalCard, goal.isCompleted && s.goalCardDone]}
+              style={[s.goalCard, goal.isCompleted && s.goalCardDone, isPastMonth && s.goalCardArchived]}
             >
-              <AnimatedGoalCheck
-                done={goal.isCompleted}
-                onPress={() => handleToggle(goal.id, !goal.isCompleted)}
-                size={22}
-              />
+              <View pointerEvents="none" style={[s.goalCardHighlight, goal.isCompleted && s.goalCardHighlightDone]} />
+              {canEditSelectedMonth ? (
+                <AnimatedGoalCheck
+                  done={goal.isCompleted}
+                  onPress={() => handleToggle(goal.id, !goal.isCompleted)}
+                  size={22}
+                />
+              ) : (
+                <View style={[s.readOnlyCheck, goal.isCompleted && s.readOnlyCheckDone]}>
+                  {goal.isCompleted && <CheckSmall s={13} c="#FFFFFF" w={3} />}
+                </View>
+              )}
               <AnimatedStrikeText
                 text={goal.text}
                 done={goal.isCompleted}
                 numberOfLines={3}
-                textStyle={s.goalText}
+                textStyle={[s.goalText, isPastMonth && s.goalTextArchived]}
               />
               <TouchableOpacity
                 onPress={() => { Haptics.selectionAsync().catch(() => {}); setDeleteTargetId(goal.id); }}
@@ -423,7 +515,7 @@ export default function MonthlyGoalsView({
                 hitSlop={8}
                 style={s.deleteBtn}
               >
-                <Trash2 s={15} c="#D6D3D1" />
+                <Trash2 s={15} c={RED} w={1.9} />
               </TouchableOpacity>
             </View>
           ))}
@@ -431,38 +523,15 @@ export default function MonthlyGoalsView({
 
         {/* Empty state */}
         {monthGoals.length === 0 && (
-          <View style={s.emptyState}>
-            <Text style={s.emptyTitle}>No goals yet</Text>
+          <View style={[s.emptyState, isPastMonth && s.emptyStateArchived]}>
+            <Text style={s.emptyTitle}>{isPastMonth ? 'No goals were set' : 'No goals yet'}</Text>
             <Text style={s.emptyKicker}>
-              SET YOUR INTENTIONS FOR {formatMonthFull(selectedMonth).toUpperCase()}
+              {isPastMonth
+                ? `${selectedMonthLabel.toUpperCase()} IS ARCHIVED`
+                : `SET YOUR INTENTIONS FOR ${selectedMonthLabel.toUpperCase()}`}
             </Text>
           </View>
         )}
-
-        {/* Add input */}
-        <View style={s.addCard}>
-          <TextInput
-            ref={inputTarget.ref}
-            onLayout={inputTarget.onLayout}
-            value={draftText}
-            onChangeText={setDraftText}
-            onSubmitEditing={submitGoalDraft}
-            placeholder="Add a goal for this month..."
-            placeholderTextColor="#C9C5BD"
-            returnKeyType="done"
-            style={s.addInput}
-          />
-          <TouchableOpacity
-            ref={addTarget.ref}
-            onLayout={addTarget.onLayout}
-            onPress={handleAdd}
-            disabled={!draftText.trim()}
-            activeOpacity={0.86}
-            style={[s.addBtn, !draftText.trim() && s.addBtnDisabled]}
-          >
-            <Plus s={15} c="#FFFFFF" w={2.6} />
-          </TouchableOpacity>
-        </View>
       </ScrollView>
 
       <ConfirmModal
@@ -517,18 +586,30 @@ const s = StyleSheet.create({
   monthsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    columnGap: 8,
+    justifyContent: 'space-between',
     rowGap: 8,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: '#EEE4D4',
+    borderRadius: 24,
+    padding: 10,
+    shadowColor: GOLD,
+    shadowOpacity: 0.075,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 18,
+    elevation: 1,
   },
   monthCellWrap: {
-    width: '23%', // 4 per row → fits nicely with column gap
+    width: '23.2%',
   },
   monthCell: {
-    minHeight: 54,
-    paddingHorizontal: 6,
-    borderRadius: 16,
-    alignItems: 'center',
+    minHeight: 55,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    borderRadius: 17,
+    alignItems: 'flex-start',
     justifyContent: 'center',
+    rowGap: 4,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#EFE9DD',
@@ -538,16 +619,24 @@ const s = StyleSheet.create({
   monthSheen: {
     position: 'absolute',
     top: 1, left: 1, right: 1,
-    height: '46%',
-    borderTopLeftRadius: 15,
-    borderTopRightRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    height: '48%',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.20)',
   },
   monthLabel: {
     fontFamily: F.sansBold,
-    fontSize: 11.5,
-    letterSpacing: 1.5,
+    fontSize: 11.2,
+    letterSpacing: 1.15,
     color: '#78716C',
+    textTransform: 'uppercase',
+  },
+  monthMeta: {
+    fontFamily: F.sansBold,
+    fontSize: 8.8,
+    lineHeight: 10.5,
+    letterSpacing: 0.75,
+    color: '#A8A29E',
     textTransform: 'uppercase',
   },
 
@@ -555,70 +644,124 @@ const s = StyleSheet.create({
   monthCellSelected: {
     borderWidth: 0,
     shadowColor: '#A87E33',
-    shadowOpacity: 0.22,
-    shadowOffset: { width: 0, height: 5 },
-    shadowRadius: 10,
+    shadowOpacity: 0.23,
+    shadowOffset: { width: 0, height: 7 },
+    shadowRadius: 14,
     elevation: 3,
   },
   monthLabelActive: { color: '#FFFFFF', letterSpacing: 1.7 },
+  monthMetaActive: { color: 'rgba(255,255,255,0.84)' },
+  monthSelectedSpark: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.86)',
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.42,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 5,
+  },
 
   // Current month, not selected — clean cell with subtle gold underline
   monthCellCurrent: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#EFE9DD',
+    backgroundColor: '#FFFCF2',
+    borderColor: 'rgba(197,160,89,0.46)',
+    shadowColor: GOLD,
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 9,
+    elevation: 1,
   },
   monthLabelCurrent: { color: '#1A1714' },
-  monthCurrentUnderline: {
-    position: 'absolute',
-    bottom: 8,
-    width: 18,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: GOLD,
-  },
-
+  monthMetaCurrent: { color: GOLD },
   // Past + has goals — solid white, full-strength label, dot indicator
   monthCellPastFilled: {
     backgroundColor: '#FFFFFF',
-    borderColor: '#EDE5D6',
+    borderColor: '#E1D9CE',
   },
-  monthLabelPastFilled: { color: '#44403C' },
+  monthLabelPastFilled: { color: '#3F3A34' },
+  monthMetaPastFilled: { color: '#8B8278' },
 
   // Past + no goals — faded, lower visual weight (nothing was set)
   monthCellPastEmpty: {
-    backgroundColor: '#F8F5EE',
-    borderColor: '#ECE6DA',
-    opacity: 0.48,
+    backgroundColor: '#F2EEE7',
+    borderColor: '#E4DCD0',
+    opacity: 0.68,
   },
-  monthLabelPastEmpty: { color: '#A8A29E' },
+  monthLabelPastEmpty: { color: '#B5AEA4' },
+  monthMetaPastEmpty: { color: '#BDB5AA' },
 
-  // Future + has goals — solid white with subtle dashed gold border (planning intent)
+  // Future + has goals — solid white with the same green goal marker
   monthCellFutureFilled: {
-    backgroundColor: '#FFFCF3',
-    borderColor: 'rgba(197,160,89,0.30)',
-    borderStyle: 'dashed',
+    backgroundColor: '#F8FFF7',
+    borderColor: 'rgba(22,163,74,0.24)',
   },
-  monthLabelFutureFilled: { color: '#A8853C' },
+  monthLabelFutureFilled: { color: '#243A2A' },
+  monthMetaFutureFilled: { color: GREEN },
 
   // Future + no goals — soft white, neutral
   monthCellFutureEmpty: {
     backgroundColor: '#FFFFFF',
-    borderColor: '#F4F0E8',
+    borderColor: '#F0E7D7',
   },
-  monthLabelFutureEmpty: { color: '#A8A29E' },
+  monthLabelFutureEmpty: { color: '#625B52' },
+  monthMetaFutureEmpty: { color: '#B49A64' },
 
-  monthDot: {
+  monthRail: {
     position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    shadowColor: '#1C1917',
-    shadowOpacity: 0.18,
+    left: 0,
+    top: 10,
+    bottom: 10,
+    width: 2.5,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
+    backgroundColor: '#E8DFD2',
+  },
+  monthRailCurrent: {
+    backgroundColor: GOLD,
+  },
+  monthRailArchived: {
+    backgroundColor: '#A79B88',
+  },
+  monthRailLocked: {
+    backgroundColor: '#D4CCC0',
+  },
+  monthRailFutureFilled: {
+    backgroundColor: GREEN,
+  },
+  monthRailFutureEmpty: {
+    backgroundColor: '#E7D7B2',
+  },
+  monthGoalGem: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 6.5,
+    height: 6.5,
+    borderRadius: 3.25,
+    backgroundColor: GREEN,
+    shadowColor: GREEN,
+    shadowOpacity: 0.22,
     shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 2,
+    shadowRadius: 3,
     elevation: 1,
+  },
+  monthGoalGemArchived: {
+    backgroundColor: '#A79B88',
+    shadowColor: '#A79B88',
+  },
+  monthLockedLine: {
+    position: 'absolute',
+    right: 8,
+    top: 11,
+    width: 13,
+    height: 1.5,
+    borderRadius: 1,
+    backgroundColor: '#CFC7BB',
+    transform: [{ rotate: '-18deg' }],
   },
 
   card: {
@@ -662,53 +805,108 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
 
+  goalsList: {
+    rowGap: 7,
+  },
   goalCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#EDE9E0',
+    columnGap: 11,
+    backgroundColor: '#FFFDFC',
+    borderRadius: 20,
+    borderWidth: 1.4,
+    borderColor: 'rgba(197,160,89,0.54)',
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    shadowColor: '#1C1917',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 8,
+    paddingVertical: 11,
+    overflow: 'hidden',
+    position: 'relative',
+    shadowColor: GOLD,
+    shadowOpacity: 0.09,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  goalCardDone: {
+    backgroundColor: '#FFFDF4',
+    borderColor: 'rgba(197,160,89,0.62)',
+  },
+  goalCardArchived: {
+    backgroundColor: '#F8F4ED',
+    borderColor: '#D8CBB8',
+    shadowColor: '#8B8278',
+    shadowOpacity: 0.035,
     elevation: 1,
   },
-  goalCardDone: { opacity: 0.7 },
-  goalText: {
-    fontFamily: F.serifMedium,
-    fontSize: 15,
-    lineHeight: 21,
-    color: '#1A1714',
+  goalCardHighlight: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    top: 0,
+    height: 1.5,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.88)',
   },
-  deleteBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+  goalCardHighlightDone: {
+    backgroundColor: 'rgba(255,255,255,0.74)',
+  },
+  readOnlyCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.7,
+    borderColor: '#CFC7BB',
+    backgroundColor: '#F8F5EF',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
+  readOnlyCheckDone: {
+    borderColor: '#A79B88',
+    backgroundColor: '#A79B88',
+  },
+  goalText: {
+    fontFamily: F.serifMedium,
+    fontSize: 19,
+    lineHeight: 24.4,
+    color: INK,
+  },
+  goalTextArchived: { color: '#7D756B' },
+  deleteBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF0F0',
+    borderWidth: 1,
+    borderColor: '#F7D6D6',
+    flexShrink: 0,
+  },
 
   emptyState: {
-    paddingVertical: 36,
+    paddingVertical: 30,
+    paddingHorizontal: 18,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#F0E9DD',
     alignItems: 'center',
     rowGap: 6,
   },
+  emptyStateArchived: {
+    backgroundColor: '#F5F1EA',
+    borderColor: '#E5DED2',
+  },
   emptyTitle: {
     fontFamily: F.serifMediumItalic,
-    fontSize: 20,
-    color: '#C9C5BD',
+    fontSize: 21,
+    color: '#AFA69A',
   },
   emptyKicker: {
     fontFamily: F.sansBold,
     fontSize: 9.5,
     letterSpacing: 1.8,
-    color: '#C9C5BD',
+    color: MUTED,
     textAlign: 'center',
   },
 
@@ -717,29 +915,41 @@ const s = StyleSheet.create({
     alignItems: 'center',
     columnGap: 10,
     backgroundColor: '#FFFFFF',
-    borderRadius: 22,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#F0EDE6',
+    borderColor: 'rgba(197,160,89,0.20)',
     paddingLeft: 16,
-    paddingRight: 7,
-    paddingVertical: 7,
-    shadowColor: '#1C1917',
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 8,
-    elevation: 1,
+    paddingRight: 8,
+    paddingVertical: 9,
+    shadowColor: GOLD,
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  addCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  addLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 1.8,
+    color: GOLD,
+    textTransform: 'uppercase',
+    marginBottom: 1,
   },
   addInput: {
-    flex: 1,
     fontFamily: F.serifMedium,
-    fontSize: 15,
-    color: '#1A1714',
-    paddingVertical: 6,
+    fontSize: 16,
+    lineHeight: 21,
+    color: INK,
+    paddingVertical: 4,
   },
   addBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: GOLD,
     alignItems: 'center',
     justifyContent: 'center',
@@ -752,5 +962,22 @@ const s = StyleSheet.create({
   addBtnDisabled: {
     backgroundColor: '#D6D3D1',
     shadowOpacity: 0,
+  },
+  archiveNotice: {
+    borderRadius: 18,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    backgroundColor: '#F3EFE7',
+    borderWidth: 1,
+    borderColor: '#E2D9CC',
+  },
+  archiveNoticeText: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    lineHeight: 15,
+    letterSpacing: 1,
+    color: '#92887B',
+    textAlign: 'center',
+    textTransform: 'uppercase',
   },
 });

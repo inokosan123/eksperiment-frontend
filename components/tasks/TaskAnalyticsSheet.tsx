@@ -11,7 +11,7 @@ import Reanimated, {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import { Calendar, Flame, Skip, Target, TrendingUp, X } from '@/components/icons/Icons';
+import { Calendar, ChevronLeft, ChevronRight, Flame, Skip, Target, TrendingUp, X } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { getTaskAnalytics, type ConsistencyBucket, type TaskAnalyticsData } from './taskAnalytics';
 import { getLocalDateKey } from './taskScheduler';
@@ -203,12 +203,29 @@ function ConsistencyBar({ label, data, delay }: { label: string; data: Consisten
 /* ── Mini calendar ───────────────────────────────────────── */
 function MiniCalendar({ analytics }: { analytics: TaskAnalyticsData }) {
   const todayKey = getLocalDateKey();
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth();
-  const monthLabel = today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const currentMonthKey = monthKeyFromDateKey(todayKey);
+  const rawFirstMonthKey = monthKeyFromDateKey(analytics.calendarStartDate ?? analytics.firstTrackedDate ?? todayKey);
+  const firstMonthKey = rawFirstMonthKey > currentMonthKey ? currentMonthKey : rawFirstMonthKey;
+  const [visibleMonthKey, setVisibleMonthKey] = useState(currentMonthKey);
   const [calendarWidth, setCalendarWidth] = useState(0);
+  const monthKey = clampMonthKey(visibleMonthKey, firstMonthKey, currentMonthKey);
+  const { year, month } = parseMonthKey(monthKey);
+  const monthLabel = formatMonthLabel(monthKey);
+  const canGoPrevious = monthKey > firstMonthKey;
+  const canGoNext = monthKey < currentMonthKey;
   const cellWidth = calendarWidth > 0 ? (calendarWidth - 1) / 7 : undefined;
+
+  useEffect(() => {
+    setVisibleMonthKey(currentMonthKey);
+  }, [analytics.calendarStartDate, analytics.firstTrackedDate, currentMonthKey]);
+
+  useEffect(() => {
+    if (visibleMonthKey !== monthKey) setVisibleMonthKey(monthKey);
+  }, [monthKey, visibleMonthKey]);
+
+  const shiftMonth = (direction: -1 | 1) => {
+    setVisibleMonthKey(prev => clampMonthKey(shiftMonthKey(prev, direction), firstMonthKey, currentMonthKey));
+  };
 
   const cells = useMemo(() => {
     const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -225,9 +242,31 @@ function MiniCalendar({ analytics }: { analytics: TaskAnalyticsData }) {
 
   return (
     <View style={s.card}>
-      <View style={s.cardHead}>
-        <Calendar s={13} c={C.gold} w={2.2} />
-        <Text style={s.cardEyebrow}>{monthLabel}</Text>
+      <View style={s.calendarHead}>
+        <View style={s.calendarTitleRow}>
+          <Calendar s={13} c={C.gold} w={2.2} />
+          <Text style={s.cardEyebrow}>{monthLabel}</Text>
+        </View>
+        <View style={s.monthNav}>
+          <TouchableOpacity
+            activeOpacity={0.72}
+            disabled={!canGoPrevious}
+            onPress={() => shiftMonth(-1)}
+            style={[s.monthNavBtn, !canGoPrevious && s.monthNavBtnDisabled]}
+            haptic={canGoPrevious ? 'selection' : 'none'}
+          >
+            <ChevronLeft s={15} c={canGoPrevious ? C.textSecondary : '#D6D3D1'} w={2.4} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.72}
+            disabled={!canGoNext}
+            onPress={() => shiftMonth(1)}
+            style={[s.monthNavBtn, !canGoNext && s.monthNavBtnDisabled]}
+            haptic={canGoNext ? 'selection' : 'none'}
+          >
+            <ChevronRight s={15} c={canGoNext ? C.textSecondary : '#D6D3D1'} w={2.4} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View
@@ -356,6 +395,35 @@ function LegendDot({ color, border, label }: { color: string; border: string; la
 }
 
 /* ── helpers ─────────────────────────────────────────────── */
+function monthKeyFromDateKey(dateStr: string) {
+  return dateStr.slice(0, 7);
+}
+
+function parseMonthKey(monthKey: string) {
+  const [year, month] = monthKey.split('-').map(Number);
+  return { year, month: (month || 1) - 1 };
+}
+
+function shiftMonthKey(monthKey: string, offset: number) {
+  const { year, month } = parseMonthKey(monthKey);
+  const next = new Date(year, month + offset, 1, 12, 0, 0, 0);
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function clampMonthKey(monthKey: string, minMonthKey: string, maxMonthKey: string) {
+  if (monthKey < minMonthKey) return minMonthKey;
+  if (monthKey > maxMonthKey) return maxMonthKey;
+  return monthKey;
+}
+
+function formatMonthLabel(monthKey: string) {
+  const { year, month } = parseMonthKey(monthKey);
+  return new Date(year, month, 1, 12, 0, 0, 0).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
 function formatTrackingDate(dateStr: string) {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(y, m - 1, d, 12).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -497,6 +565,28 @@ const s = StyleSheet.create({
   rowPct: { fontFamily: F.sansBold, fontSize: 11, color: '#C8C5BD', width: 36, textAlign: 'right' },
 
   /* calendar */
+  calendarHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 16,
+  },
+  calendarTitleRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  monthNav: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  monthNavBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8F5EE',
+    borderWidth: 1,
+    borderColor: '#EEE8DC',
+  },
+  monthNavBtnDisabled: {
+    opacity: 0.42,
+  },
   calendarMeasure: { width: '100%' },
   dowRow: { flexDirection: 'row', marginBottom: 8 },
   dowText: {

@@ -119,6 +119,12 @@ function dateFromKey(key: string): Date {
   return new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
 }
 
+function clampDateKey(key: string, minDate?: string, maxDate?: string): string {
+  if (minDate && key < minDate) return minDate;
+  if (maxDate && key > maxDate) return maxDate;
+  return key;
+}
+
 function newId() {
   return `be_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
@@ -144,12 +150,13 @@ function DateRow({
 }) {
   const [iosVisible, setIosVisible] = useState(false);
   const [draft, setDraft] = useState(value);
+  const pickerValue = clampDateKey(value, minDate, maxDate);
 
   const open = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (Platform.OS === 'android' && NativeDateTimePickerAndroid) {
       NativeDateTimePickerAndroid.open({
-        value: dateFromKey(value),
+        value: dateFromKey(pickerValue),
         minimumDate: minDate ? dateFromKey(minDate) : undefined,
         maximumDate: maxDate ? dateFromKey(maxDate) : undefined,
         mode: 'date',
@@ -161,19 +168,19 @@ function DateRow({
           const y = selectedDate.getFullYear();
           const m = String(selectedDate.getMonth() + 1).padStart(2, '0');
           const d = String(selectedDate.getDate()).padStart(2, '0');
-          onChange(`${y}-${m}-${d}`);
+          onChange(clampDateKey(`${y}-${m}-${d}`, minDate, maxDate));
           onGuideConfirmed?.();
         },
       });
       return;
     }
 
-    setDraft(value);
+    setDraft(pickerValue);
     setIosVisible(true);
   };
 
   const apply = () => {
-    onChange(draft);
+    onChange(clampDateKey(draft, minDate, maxDate));
     setIosVisible(false);
     onGuideConfirmed?.();
   };
@@ -212,7 +219,7 @@ function DateRow({
             {Platform.OS === 'ios' && NativeDateTimePicker && (
               <View style={d.iosWrap}>
                 <NativeDateTimePicker
-                  value={dateFromKey(draft)}
+                  value={dateFromKey(clampDateKey(draft, minDate, maxDate))}
                   minimumDate={minDate ? dateFromKey(minDate) : undefined}
                   maximumDate={maxDate ? dateFromKey(maxDate) : undefined}
                   mode="date"
@@ -224,7 +231,7 @@ function DateRow({
                     const y = selectedDate.getFullYear();
                     const m = String(selectedDate.getMonth() + 1).padStart(2, '0');
                     const day = String(selectedDate.getDate()).padStart(2, '0');
-                    setDraft(`${y}-${m}-${day}`);
+                    setDraft(clampDateKey(`${y}-${m}-${day}`, minDate, maxDate));
                   }}
                 />
               </View>
@@ -285,12 +292,14 @@ function EventForm({
   onChange,
   onSave,
   onCancel,
+  minDate,
   guided = false,
 }: {
   form: FormState;
   onChange: (next: FormState) => void;
   onSave: () => void;
   onCancel: () => void;
+  minDate: string;
   guided?: boolean;
 }) {
   const { session, patchSession } = useGuidedSetup();
@@ -299,7 +308,7 @@ function EventForm({
   const iconsTarget = useGuideTarget(BIG_EVENTS_GUIDE_TARGETS.icons, isGuided);
   const dateTarget = useGuideTarget(BIG_EVENTS_GUIDE_TARGETS.date, isGuided);
   const saveTarget = useGuideTarget(BIG_EVENTS_GUIDE_TARGETS.save, isGuided);
-  const canSave = !!form.title.trim() && !!form.endDate;
+  const canSave = !!form.title.trim() && !!form.endDate && form.endDate >= minDate;
   const isEdit = form.id !== null;
   const guidePhase = session?.phase;
   const [iconGridWidth, setIconGridWidth] = useState(0);
@@ -356,6 +365,7 @@ function EventForm({
       <DateRow
         label="Event"
         value={form.endDate}
+        minDate={minDate}
         onChange={v => onChange({ ...form, endDate: v })}
         guideTarget={dateTarget}
         onGuideConfirmed={advanceAfterDate}
@@ -494,7 +504,7 @@ function EventCard({
   event: BigEvent;
   today: string;
   isPast: boolean;
-  onTap: () => void;
+  onTap?: () => void;
   onAskDelete: () => void;
 }) {
   const daysLeft = getBigEventCountdown(event, today);
@@ -507,13 +517,20 @@ function EventCard({
       layout={LinearTransition.springify().damping(15).stiffness(160).mass(1)}
       style={[ec.card, isPast && ec.cardPast]}
     >
-      <Pressable onPress={onTap} style={ec.tap} android_ripple={{ color: 'rgba(0,0,0,0.04)' }}>
-        <View style={[ec.iconBox, { backgroundColor: tintBg }]}>
-          <NotoEmoji name={normalizeHabitIcon(event.icon)} size={26} />
+      <Pressable
+        onPress={onTap}
+        disabled={!onTap}
+        style={ec.tap}
+        android_ripple={onTap ? { color: 'rgba(0,0,0,0.04)' } : undefined}
+      >
+        <View style={[ec.iconBox, { backgroundColor: isPast ? '#ECE8DF' : tintBg }, isPast && ec.iconBoxPast]}>
+          <View style={[ec.eventGlyph, isPast && ec.eventGlyphPast]}>
+            <NotoEmoji name={normalizeHabitIcon(event.icon)} size={26} />
+          </View>
         </View>
         <View style={ec.copy}>
-          <Text style={ec.title} numberOfLines={1}>{event.title}</Text>
-          <Text style={ec.range} numberOfLines={1}>
+          <Text style={[ec.title, isPast && ec.titlePast]} numberOfLines={1}>{event.title}</Text>
+          <Text style={[ec.range, isPast && ec.rangePast]} numberOfLines={1}>
             {formatDateShort(event.startDate)} – {formatDateMedium(event.endDate)}
           </Text>
         </View>
@@ -534,7 +551,7 @@ function EventCard({
       </Pressable>
 
       <TouchableOpacity onPress={onAskDelete} style={ec.del} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
-        <Trash2 s={16} c="#C9C2B5" w={1.8} />
+        <Trash2 s={16} c="#D76A6A" w={1.9} />
       </TouchableOpacity>
     </Animated.View>
   );
@@ -544,18 +561,28 @@ const ec = StyleSheet.create({
   card: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: 1, borderColor: '#EDE9E0',
-    paddingRight: 6, marginBottom: 10,
+    paddingRight: 6, marginBottom: 6,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
   },
-  cardPast: { opacity: 0.55 },
-  tap:     { flex: 1, flexDirection: 'row', alignItems: 'center', columnGap: 12, padding: 14, paddingRight: 6 },
-  iconBox: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  cardPast: {
+    backgroundColor: '#F4F1EB',
+    borderColor: '#E2DDD3',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  tap:     { flex: 1, flexDirection: 'row', alignItems: 'center', columnGap: 12, paddingHorizontal: 14, paddingVertical: 11, paddingRight: 4 },
+  iconBox: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  iconBoxPast: { borderWidth: 1, borderColor: '#DDD7CE' },
+  eventGlyph: { alignItems: 'center', justifyContent: 'center' },
+  eventGlyphPast: { opacity: 0.48 },
   copy:    { flex: 1, minWidth: 0 },
-  title:   { fontFamily: F.serifMedium, fontSize: 16, color: C.text },
+  title:   { fontFamily: F.serifMedium, fontSize: 17, color: C.text },
+  titlePast: { color: '#827C73' },
   range:   { marginTop: 2, fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.4, color: '#A8A29E', textTransform: 'uppercase' },
-  countdown: { alignItems: 'flex-end' },
-  countNum:  { fontFamily: F.serifSemiBold, fontSize: 26, lineHeight: 28 },
-  countLabel:{ marginTop: 2, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5, color: '#A8A29E', textTransform: 'uppercase' },
+  rangePast: { color: '#B6AEA4' },
+  countdown: { width: 52, alignItems: 'center', justifyContent: 'center' },
+  countNum:  { width: '100%', textAlign: 'center', fontFamily: F.serifSemiBold, fontSize: 26, lineHeight: 28 },
+  countLabel:{ width: '100%', marginTop: 2, textAlign: 'center', fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5, color: '#A8A29E', textTransform: 'uppercase' },
   todayPill: {
     flexDirection: 'row', alignItems: 'center', columnGap: 6,
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
@@ -681,6 +708,7 @@ export default function BigEventsView({
   };
 
   const openEdit = (event: BigEvent) => {
+    if (event.endDate < today) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setForm({
       id: event.id,
@@ -696,6 +724,11 @@ export default function BigEventsView({
     if (!form) return;
     const trimmed = form.title.trim();
     if (!trimmed) return;
+    if (form.endDate < today) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setForm({ ...form, endDate: today });
+      return;
+    }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     if (form.id === null) {
@@ -734,14 +767,15 @@ export default function BigEventsView({
 
   const finishGuidedStep = useCallback(() => {
     completeStep('buildBigEvents');
-    patchSession({
-      activeStep: 'buildMonthlyGoals',
-      phase: 'intro',
-      route: '/onboarding',
-    });
     setPresentation(null);
     onGuidedComplete?.();
-  }, [completeStep, onGuidedComplete, patchSession, setPresentation]);
+  }, [completeStep, onGuidedComplete, setPresentation]);
+
+  const addAnotherGuidedEvent = useCallback(() => {
+    setPresentation(null);
+    setForm(emptyForm());
+    patchSession({ phase: 'title' });
+  }, [patchSession, setPresentation]);
 
   useEffect(() => {
     if (!isGuided || form || guidePhase === 'intro' || guidePhase === 'complete') return;
@@ -806,13 +840,14 @@ export default function BigEventsView({
       setPresentation({
         key: 'big-events-complete',
         placement: 'center',
-        celebrate: true,
-        message: 'Your first Big Event is set.',
-        ctaLabel: 'CONTINUE',
-        onCta: finishGuidedStep,
+        message: 'Add another big event?',
+        ctaLabel: 'Yes',
+        onCta: addAnotherGuidedEvent,
+        secondaryCtaLabel: 'No',
+        onSecondaryCta: finishGuidedStep,
       });
     }
-  }, [finishGuidedStep, guidePhase, isGuided, setPresentation]);
+  }, [addAnotherGuidedEvent, finishGuidedStep, guidePhase, isGuided, setPresentation]);
 
   useEffect(() => () => {
     if (guided) setPresentation(null);
@@ -865,12 +900,13 @@ export default function BigEventsView({
             onChange={setForm}
             onSave={saveForm}
             onCancel={closeForm}
+            minDate={today}
             guided={isGuided}
           />
         )}
 
         {upcoming.length > 0 && (
-          <Animated.View layout={LinearTransition.springify().damping(15).stiffness(160).mass(1)} style={{ marginBottom: 20 }}>
+          <Animated.View layout={LinearTransition.springify().damping(15).stiffness(160).mass(1)} style={{ marginBottom: 14 }}>
             <Text style={s.sectionLabel}>UPCOMING</Text>
             {upcoming.map(e => (
               <EventCard
@@ -894,7 +930,7 @@ export default function BigEventsView({
                 event={e}
                 today={today}
                 isPast
-                onTap={() => openEdit(e)}
+                onTap={undefined}
                 onAskDelete={() => askDelete(e.id)}
               />
             ))}
@@ -923,5 +959,5 @@ export default function BigEventsView({
 
 const s = StyleSheet.create({
   headRight: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  sectionLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, color: C.textMuted, marginBottom: 10, marginLeft: 4 },
+  sectionLabel: { fontFamily: F.sansBold, fontSize: 11.5, letterSpacing: 2.25, color: '#9C8A70', marginBottom: 9, marginLeft: 4 },
 });

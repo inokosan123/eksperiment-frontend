@@ -1406,6 +1406,19 @@ export async function listTaskInstancesForTaskBetween(
   return rows.map(rowToInstance);
 }
 
+export async function getTaskDateBounds(taskId: string): Promise<{ createdAt: number; activatedAt: number } | undefined> {
+  const db = await openTaskDb();
+  const row = await db.getFirstAsync<{ created_at: number; activated_at: number }>(
+    'SELECT created_at, activated_at FROM tasks WHERE id = ? LIMIT 1',
+    taskId,
+  );
+  if (!row) return undefined;
+  return {
+    createdAt: row.created_at,
+    activatedAt: row.activated_at,
+  };
+}
+
 // Lightweight title lookup for analytics: { taskId → current title }.
 // Avoids iterating thousands of denormalized inst.title snapshots to find
 // the latest name for each task. Source of truth = tasks definition table.

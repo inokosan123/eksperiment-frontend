@@ -142,7 +142,12 @@ type StepId =
   | 'flameProtect'
   | 'organizeDeck'
   | 'organizeRecap'
-  | 'setupOrganize'
+  | 'organizeSetupPath'
+  | 'organizeMacroIntro'
+  | 'organizeMacroProgressAfterBigEvents'
+  | 'organizeMacroProgressAfterMonthlyGoals'
+  | 'organizeSetupPathAfterAhead'
+  | 'organizeDailyRulePath'
   | 'weeklyReveal'
   | 'flameOrganize'
   | 'giftMoment'
@@ -909,13 +914,19 @@ const PILLAR_OPTIONS: Option<PillarAnswer>[] = [
 ];
 
 function stepOrder(answers: Answers): StepId[] {
-  const organize = answers.confirmedOrganizeProblems ?? [];
-
-  // The guided chain in the real views is fixed: BigEvents -> MonthlyGoals ->
-  // Habits -> Challenges -> MyRoutine. Any confirmed organize problem runs it.
-  const organizeSetup: StepId[] = organize.length > 0
-    ? ['buildBigEvents', 'buildMonthlyGoals', 'buildHabits', 'buildChallenges', 'buildMyRoutine']
-    : [];
+  const includeMonthlyGoals = shouldIncludeMonthlyGoals(answers);
+  const organizeSetup: StepId[] = [
+    'organizeSetupPath',
+    'organizeMacroIntro',
+    'buildBigEvents',
+    'organizeMacroProgressAfterBigEvents',
+    ...(includeMonthlyGoals ? ['buildMonthlyGoals' as StepId, 'organizeMacroProgressAfterMonthlyGoals' as StepId] : []),
+    'organizeSetupPathAfterAhead',
+    'organizeDailyRulePath',
+    'buildMyRoutine',
+    'buildHabits',
+    'buildChallenges',
+  ];
 
   return [
     'welcome',
@@ -1176,6 +1187,16 @@ function progressForStep(step: StepId, answers: Answers): SectionProgress | null
   return null;
 }
 
+function shouldIncludeMonthlyGoals(answers: Answers) {
+  const selected = answers.confirmedOrganizeProblems ?? [];
+  return selected.some(id => (
+    id === 'last-minute' ||
+    id === 'plan-day' ||
+    id === 'goals-give-up' ||
+    id === 'intentional-time'
+  ));
+}
+
 function isGuidedWalkthroughStep(step: StepId) {
   return (
     step === 'setupStart' ||
@@ -1227,7 +1248,12 @@ function isGuidedWalkthroughStep(step: StepId) {
     step === 'flameProtect' ||
     step === 'organizeDeck' ||
     step === 'organizeRecap' ||
-    step === 'setupOrganize' ||
+    step === 'organizeSetupPath' ||
+    step === 'organizeMacroIntro' ||
+    step === 'organizeMacroProgressAfterBigEvents' ||
+    step === 'organizeMacroProgressAfterMonthlyGoals' ||
+    step === 'organizeSetupPathAfterAhead' ||
+    step === 'organizeDailyRulePath' ||
     step === 'weeklyReveal' ||
     step === 'flameOrganize' ||
     step === 'giftMoment' ||
@@ -4712,6 +4738,8 @@ const USABLE_DAY_HOURS = 16;
 const SLEEP_HOURS_PER_DAY = 8;
 const DAY_HOURS = 24;
 const PROTECT_LIFESPAN_YEARS = 85;
+const SCREEN_TIME_REDUCTION_PERCENT = 43;
+const SCREEN_TIME_REDUCTION_RATE = SCREEN_TIME_REDUCTION_PERCENT / 100;
 
 function clampNumber(value: number, min: number, max: number) {
   'worklet';
@@ -4736,8 +4764,8 @@ function protectStats(screenTimeHours?: number) {
   const usablePercent = Math.round((hours / USABLE_DAY_HOURS) * 100);
   const yearlyDays = Math.round((hours * 365) / 24);
   const lifetimeYears = Number(((hours * PROTECT_LIFESPAN_YEARS) / 24).toFixed(1));
-  const reclaimedDays = Math.round(yearlyDays * 0.4);
-  const reclaimedYears = Number((lifetimeYears * 0.4).toFixed(1));
+  const reclaimedDays = Math.round(yearlyDays * SCREEN_TIME_REDUCTION_RATE);
+  const reclaimedYears = Number((lifetimeYears * SCREEN_TIME_REDUCTION_RATE).toFixed(1));
   return { hours, usablePercent, yearlyDays, lifetimeYears, reclaimedDays, reclaimedYears };
 }
 
@@ -6120,7 +6148,7 @@ function ScreenTimeGoodNewsConversation({ hours, reveal }: { hours: number; reve
           motionKey={`protect-screen-time-reduce-${stat.hours}`}
           segments={[
             { text: 'If you cut your screen time by only ' },
-            { text: '40%', highlight: true, gold: true },
+            { text: `${SCREEN_TIME_REDUCTION_PERCENT}%`, highlight: true, gold: true },
             { text: '...' },
           ]}
         />
@@ -6583,6 +6611,28 @@ function DayCompareDaysCard({ stat, side }: { stat: ReturnType<typeof protectSta
   );
 }
 
+function DayCompareRecapDaysCard({ stat }: { stat: ReturnType<typeof protectStats> }) {
+  const parts = screenTimeYearParts(stat);
+  return (
+    <View style={[s.screenTimeStatMessage, s.dayCompareStaticCard, s.dayCompareRecapCard]}>
+      <View style={[s.screenTimeStatHeader, s.screenTimeStatHeaderStacked]}>
+        <Text style={[s.screenTimeStatValue, s.screenTimeStatValueStacked]}>{stat.yearlyDays}</Text>
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.82}
+          style={[s.screenTimeStatLabel, s.screenTimeStatLabelStacked, s.dayCompareStatLabel]}
+        >
+          days every year!
+        </Text>
+        <View style={s.screenTimeStatLabelUnderline} />
+      </View>
+      <DayCompareLegend items={dayCompareLegendItems} dark={false} />
+      <DayCompareDotGrid total={365} productive={parts.awake} phone={parts.phone} sleep={parts.sleep} mode="days" />
+    </View>
+  );
+}
+
 function DayCompareYearsCard({ stat, side }: { stat: ReturnType<typeof protectStats>; side: DayCompareCardSide }) {
   const parts = screenTimeLifetimeParts(stat);
   return (
@@ -6655,7 +6705,7 @@ function DayReductionCountingNumber({
       }
       const t = Math.min(1, elapsed / 1550);
       const eased = 1 - Math.pow(1 - t, 4.2);
-      setValue(t >= 1 ? 40 : 40 * eased);
+      setValue(t >= 1 ? SCREEN_TIME_REDUCTION_PERCENT : SCREEN_TIME_REDUCTION_PERCENT * eased);
 
       if (t < 1) {
         frame = requestAnimationFrame(tick);
@@ -6865,7 +6915,7 @@ function DayReductionBridgeLayer({
             />
 
             <View style={[s.dayReductionChartDeltaTag, { left: deltaX - 27, top: (deltaTop + deltaBottom) / 2 - 16 }]}>
-              <Text style={s.dayReductionChartDeltaText}>-40%</Text>
+              <Text style={s.dayReductionChartDeltaText}>-{SCREEN_TIME_REDUCTION_PERCENT}%</Text>
             </View>
 
             <View style={[s.dayReductionChartOldLabel, { right: -1, top: yWithout - 62 }]}>
@@ -6917,11 +6967,11 @@ function DayCompareReductionCallout() {
         style={s.dayCompareReductionInner}
       >
         <View style={s.dayCompareReductionBadge}>
-          <Text style={s.dayCompareReductionBadgeText}>40%</Text>
+          <Text style={s.dayCompareReductionBadgeText}>{SCREEN_TIME_REDUCTION_PERCENT}%</Text>
         </View>
         <View style={s.dayCompareReductionCopy}>
           <Text style={s.dayCompareReductionTitle}>Less Screen Time with Anasta</Text>
-          <Text style={s.dayCompareReductionText}>This estimate uses a 40% reduction of your current phone time with Anasta.</Text>
+          <Text style={s.dayCompareReductionText}>This estimate uses a {SCREEN_TIME_REDUCTION_PERCENT}% reduction of your current phone time with Anasta.</Text>
         </View>
       </LinearGradient>
     </Reanimated.View>
@@ -7391,7 +7441,7 @@ function ScreenTimeResultPanel({ stat }: { stat: ReturnType<typeof protectStats>
 function ScreenTimeReclaimPanel({ stat }: { stat: ReturnType<typeof protectStats> }) {
   return (
     <View style={s.screenTimeReclaimCard}>
-      <Text style={s.screenTimeReclaimTitle}>Reduce it by 40%</Text>
+      <Text style={s.screenTimeReclaimTitle}>Reduce it by {SCREEN_TIME_REDUCTION_PERCENT}%</Text>
       <Text style={s.screenTimeReclaimBody}>
         You can reclaim about <Text style={s.screenTimeReclaimStrong}>{stat.reclaimedDays} days a year</Text>,
         or <Text style={s.screenTimeReclaimStrong}> {formatYearValue(stat.reclaimedYears)} years</Text> over 85 years,
@@ -8141,7 +8191,7 @@ function ProtectReframeSlide({ screenTimeHours, onNext }: { screenTimeHours?: nu
         segments={[
           { text: 'This is not here to shame you.' },
           { text: '\nIf you reduce that by only ' },
-          { text: '40%', highlight: true },
+          { text: `${SCREEN_TIME_REDUCTION_PERCENT}%`, highlight: true },
           { text: ', you can get real days back.' },
         ]}
       />
@@ -12109,10 +12159,11 @@ function V4DayPanoramaHeaderSlide({
   // ── Phases: pie -> waste -> reclaim. The hero/axis (dayHeaderContent) never
   // changes; only the futureSpace below it transforms. The pie persists and
   // rises into a compact bar; the loss cards then dominate; finally gold fills
-  // the bar back 40% and the same cards flip from "you waste" to "you get back".
+  // the bar back by the reclaim percentage and the same cards flip from
+  // "you waste" to "you get back".
   const stat = protectStats(hours);
   const wakingPercent = Math.round((phoneHours / USABLE_DAY_HOURS) * 100);
-  const reclaimedWakingPercent = Math.max(1, Math.round(wakingPercent * 0.4));
+  const reclaimedWakingPercent = Math.max(1, Math.round(wakingPercent * SCREEN_TIME_REDUCTION_RATE));
   const [phase, setPhase] = useState<'pie' | 'pieExit' | 'wasteReveal' | 'wasteCompare' | 'reductionBridge' | 'reclaimCompare'>('pie');
   const [compareReveal, setCompareReveal] = useState(0);
   const [wasteCompareFromReveal, setWasteCompareFromReveal] = useState(false);
@@ -12296,7 +12347,7 @@ function V4DayPanoramaHeaderSlide({
   const sleepBarPct = (SLEEP_HOURS_PER_DAY / DAY_HOURS) * 100;
   const phoneBarPct = (phoneHours / DAY_HOURS) * 100;
   const productiveBarPct = Math.max(0, 100 - sleepBarPct - phoneBarPct);
-  const goldMaxPct = phoneBarPct * 0.4;
+  const goldMaxPct = phoneBarPct * SCREEN_TIME_REDUCTION_RATE;
   const barStyle = useAnimatedStyle(() => ({
     opacity: interpolate(morph.value, [0.5, 1], [0, 1], 'clamp'),
     transform: [{ translateY: interpolate(morph.value, [0, 1], [12, 0]) }],
@@ -12487,10 +12538,10 @@ function V4DayPanoramaHeaderSlide({
     ],
     [card3SleepN, card3ProdN, card3PhoneN],
   );
-  // Reclaim variants: 40% of phone beads turn productive-gold.
-  const card1BeadsGold = useMemo(() => goldifyBeads(card1Beads, Math.ceil(phoneHours * 0.4)), [card1Beads, phoneHours]);
-  const card2BeadsGold = useMemo(() => goldifyBeads(card2Beads, Math.ceil(card2PhoneN * 0.4)), [card2Beads, card2PhoneN]);
-  const card3BeadsGold = useMemo(() => goldifyBeads(card3Beads, Math.ceil(card3PhoneN * 0.4)), [card3Beads, card3PhoneN]);
+  // Reclaim variants: the reclaim share of phone beads turn productive-gold.
+  const card1BeadsGold = useMemo(() => goldifyBeads(card1Beads, Math.ceil(phoneHours * SCREEN_TIME_REDUCTION_RATE)), [card1Beads, phoneHours]);
+  const card2BeadsGold = useMemo(() => goldifyBeads(card2Beads, Math.ceil(card2PhoneN * SCREEN_TIME_REDUCTION_RATE)), [card2Beads, card2PhoneN]);
+  const card3BeadsGold = useMemo(() => goldifyBeads(card3Beads, Math.ceil(card3PhoneN * SCREEN_TIME_REDUCTION_RATE)), [card3Beads, card3PhoneN]);
   const card1ProdH = Math.max(0, USABLE_DAY_HOURS - phoneHours);
   const card1PhoneH = phoneHours;
   const card1Legend = [
@@ -12835,7 +12886,7 @@ function DayBeadGrid({ beads, size, gap }: { beads: string[]; size: number; gap:
 }
 
 // On reclaim, recolor the last `reclaimCount` phone beads to productive gold
-// (the 40% Anasta gives back) — phone beads sit at the tail of each array.
+// (the reclaim share Anasta gives back) — phone beads sit at the tail of each array.
 function goldifyBeads(arr: string[], reclaimCount: number): string[] {
   if (reclaimCount <= 0) return arr;
   const out = arr.slice();
@@ -13273,7 +13324,7 @@ function V4DayVisualizationSlide({ hours, onNext }: { hours?: number; onNext: ()
               motionKey={`v4-reclaim-${stat.hours}`}
               segments={[
                 { text: 'If you cut your screen time by only ' },
-                { text: '40%', highlight: true, gold: true },
+                { text: `${SCREEN_TIME_REDUCTION_PERCENT}%`, highlight: true, gold: true },
                 { text: '...' },
               ]}
             />
@@ -13738,6 +13789,10 @@ function V4SetupStatusMark({ active, done, accent }: { active: boolean; done: bo
   const check = useSharedValue(done ? 1 : 0);
   const burst = useSharedValue(done ? 1 : 0);
   const ready = useSharedValue(active ? 1 : 0);
+  const doneAccent = accent === GOLD ? GOLD : '#2F9B61';
+  const doneGradient = doneAccent === GOLD
+    ? (['#E7C978', GOLD, '#9A7B33'] as const)
+    : (['#48B777', '#2F9B61', '#D7B35F'] as const);
 
   useEffect(() => {
     ready.value = withTiming(active ? 1 : 0, {
@@ -13785,10 +13840,10 @@ function V4SetupStatusMark({ active, done, accent }: { active: boolean; done: bo
   if (done) {
     return (
       <View style={s.v4SetupStatus}>
-        <Reanimated.View pointerEvents="none" style={[s.v4SetupCheckBurst, { borderColor: accent }, burstStyle]} />
-        <Reanimated.View style={[s.v4SetupCheck, checkStyle]}>
+        <Reanimated.View pointerEvents="none" style={[s.v4SetupCheckBurst, { borderColor: doneAccent }, burstStyle]} />
+        <Reanimated.View style={[s.v4SetupCheck, { shadowColor: doneAccent }, checkStyle]}>
           <LinearGradient
-            colors={['#48B777', '#2F9B61', '#D7B35F']}
+            colors={doneGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
@@ -13820,6 +13875,15 @@ function V4RecapToolCard({
   done: boolean;
 }) {
   const state = useSharedValue(done ? 2 : active ? 1 : 0);
+  const appearedHapticRef = useRef(false);
+  const entranceDelay = 220 + index * 320;
+
+  useEffect(() => {
+    if (appearedHapticRef.current) return undefined;
+    appearedHapticRef.current = true;
+    const timer = setTimeout(runSelectionHaptic, entranceDelay + 80);
+    return () => clearTimeout(timer);
+  }, [entranceDelay]);
 
   useEffect(() => {
     state.value = withSpring(done ? 2 : active ? 1 : 0, {
@@ -13838,7 +13902,7 @@ function V4RecapToolCard({
 
   return (
     <Reanimated.View
-      entering={FadeInUp.delay(220 + index * 320).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+      entering={FadeInUp.delay(entranceDelay).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
         opacity: 0,
         transform: [{ translateY: 26 }, { scale: 0.965 }],
       })}
@@ -13952,7 +14016,6 @@ function V4RecapToolsBoard({ groups, selected, onNext }: { groups: RecapProblemG
     if (reveal < recs.length) {
       const t = setTimeout(() => {
         setReveal(c => c + 1);
-        runSelectionHaptic();
       }, reveal === 0 ? 420 : 680);
       return () => clearTimeout(t);
     }
@@ -14044,12 +14107,699 @@ function V4RecapToolsBoard({ groups, selected, onNext }: { groups: RecapProblemG
 
 // Phase A (answers reveal + days card + purge) → Phase B (gold loading) →
 // Phase C (tools — recommended tools with accordion reason drawers, Deo 2).
+type OrganizeSetupMapVariant = 'start' | 'afterAhead';
+type OrganizeSetupAreaId = 'macro' | 'weekly';
+type OrganizeSetupAfterAheadStage = 0 | 1 | 2;
+
+const ORGANIZE_RULE_AREAS: {
+  id: OrganizeSetupAreaId;
+  title: string;
+  subtitle: string;
+  accent: string;
+  icon: React.ReactNode;
+}[] = [
+  {
+    id: 'macro',
+    title: 'Macro planning',
+    subtitle: 'First, we mark the things you do not want to forget.',
+    accent: '#4D8586',
+    icon: <Calendar s={17} c="#4D8586" w={2} />,
+  },
+  {
+    id: 'weekly',
+    title: 'Weekly routine',
+    subtitle: 'Then we build the rhythm you can actually live each week.',
+    accent: GOLD,
+    icon: <ListChecks s={17} c={GOLD} w={2} />,
+  },
+];
+
+function organizeMapState(variant: OrganizeSetupMapVariant, id: OrganizeSetupAreaId, afterAheadStage: OrganizeSetupAfterAheadStage = 2) {
+  const done = id === 'macro' && variant === 'afterAhead' && afterAheadStage >= 1;
+  const active =
+    (variant === 'start' && id === 'macro') ||
+    (variant === 'afterAhead' && id === 'weekly' && afterAheadStage >= 2);
+  return { active, done };
+}
+
+function SetupPathStepCard({
+  title,
+  body,
+  accent,
+  icon,
+  index,
+  active,
+  done,
+  activeReady = true,
+  enteringDelay,
+}: {
+  title: string;
+  body: string;
+  accent: string;
+  icon: React.ReactNode;
+  index: number;
+  active: boolean;
+  done: boolean;
+  activeReady?: boolean;
+  enteringDelay?: number;
+}) {
+  const isActive = active && activeReady;
+  const state = useSharedValue(done ? 2 : isActive ? 1 : 0);
+  const isGold = accent === GOLD;
+
+  useEffect(() => {
+    state.value = withSpring(done ? 2 : isActive ? 1 : 0, {
+      damping: 16,
+      stiffness: 178,
+      mass: 0.84,
+    });
+  }, [done, isActive, state]);
+
+  const cardStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(state.value, [0, 1, 2], [0.72, 1, 0.98]),
+    transform: [
+      { scale: interpolate(state.value, [0, 1, 2], [0.985, 1.018, 1]) },
+      { translateY: interpolate(state.value, [0, 1, 2], [0, -2, 0]) },
+    ],
+  }));
+  const displayAccent = done ? (isGold ? GOLD : '#2F9B61') : accent;
+  const gradientColors = done
+    ? isGold
+      ? (['rgba(255,252,243,1)', 'rgba(197,160,89,0.30)', 'rgba(255,245,219,0.96)'] as const)
+      : (['rgba(250,255,251,1)', 'rgba(47,155,97,0.24)', 'rgba(245,252,246,0.96)'] as const)
+    : isActive
+      ? (['rgba(255,255,255,1)', `${accent}14`, 'rgba(255,255,255,0.95)'] as const)
+      : (['rgba(255,255,255,0.96)', 'rgba(247,243,236,0.48)', 'rgba(255,255,255,0.82)'] as const);
+
+  return (
+    <Reanimated.View
+      entering={FadeInUp.delay(enteringDelay ?? 0).duration(600).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 24 }, { scale: 0.965 }],
+      })}
+      style={[
+        s.v4ToolCard,
+        s.v4ToolPathCard,
+        s.setupPathUnifiedCard,
+        !isActive && !done && s.v4SetupQueueCardInactive,
+        isActive && s.v4SetupCardActive,
+        done && [
+          s.setupPathCardDone,
+          {
+            borderColor: `${displayAccent}40`,
+            shadowColor: displayAccent,
+          },
+        ],
+        cardStyle,
+      ]}
+    >
+      <LinearGradient
+        pointerEvents="none"
+        colors={gradientColors}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={[s.v4ToolTopSheen, { backgroundColor: `${displayAccent}${isActive || done ? '22' : '10'}` }]} />
+      <View style={s.v4ToolHeader}>
+        <View
+          style={[
+            s.v4RecapGroupIcon,
+            s.v4ToolIcon,
+            !isActive && !done && s.v4SetupQueueIconInactive,
+            { backgroundColor: `${displayAccent}14`, borderColor: `${displayAccent}36` },
+          ]}
+        >
+          <View
+            style={[
+              s.v4ToolStepMini,
+              {
+                borderColor: done ? `${displayAccent}46` : isActive ? `${displayAccent}48` : 'rgba(25,23,20,0.11)',
+                backgroundColor: done ? (isGold ? '#FFF6D9' : '#F2FBF4') : isActive ? '#FFFDF8' : '#F4EFE5',
+              },
+            ]}
+          >
+            <Text style={[s.v4ToolStepBadgeText, { color: done ? displayAccent : isActive ? accent : 'rgba(25,23,20,0.34)' }]}>
+              {index + 1}
+            </Text>
+          </View>
+          {icon}
+        </View>
+        <View style={[s.v4RecapGroupCopy, s.setupPathCardCopy]}>
+          <Text style={[s.v4RecapGroupTitle, !isActive && !done && s.v4SetupQueueTitleInactive]}>{title}</Text>
+          <Text style={[s.v4RecapGroupSubtitle, !isActive && !done && s.v4SetupQueueSubtitleInactive]}>{body}</Text>
+        </View>
+        <V4SetupStatusMark active={isActive && !done} done={done} accent={displayAccent} />
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function OrganizeSetupCard({
+  area,
+  index,
+  active,
+  done,
+  activeReady,
+}: {
+  area: (typeof ORGANIZE_RULE_AREAS)[number];
+  index: number;
+  active: boolean;
+  done: boolean;
+  activeReady: boolean;
+}) {
+  return (
+    <SetupPathStepCard
+      title={area.title}
+      body={area.subtitle}
+      accent={area.accent}
+      icon={area.icon}
+      index={index}
+      active={active}
+      done={done}
+      activeReady={activeReady}
+    />
+  );
+}
+
+function OrganizeRuleConnector({ accent, index }: { accent: string; index: number }) {
+  return (
+    <Reanimated.View
+      entering={FadeIn.delay(180 + index * 80).duration(420).easing(Easing.out(Easing.cubic))}
+      style={s.organizeRuleConnector}
+    >
+      {Array.from({ length: 5 }).map((_, dotIndex) => (
+        <View
+          key={`organize-rule-dot-${index}-${dotIndex}`}
+          style={[s.organizeRuleDot, { backgroundColor: accent, opacity: 0.24 + dotIndex * 0.11 }]}
+        />
+      ))}
+    </Reanimated.View>
+  );
+}
+
+function OrganizeRuleMapSlide({
+  variant,
+  onNext,
+}: {
+  variant: OrganizeSetupMapVariant;
+  onNext: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [reveal, setReveal] = useState(0);
+  const [activeReady, setActiveReady] = useState(false);
+  const [afterAheadStage, setAfterAheadStage] = useState<OrganizeSetupAfterAheadStage>(0);
+  const exitProgress = useSharedValue(0);
+  const variantKey = variant;
+  const contentStyle = [
+    s.organizeRuleContent,
+    {
+      paddingTop: Math.max(insets.top + 34, 64),
+      paddingBottom: insets.bottom + 134,
+    },
+  ];
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+  const autoAdvanceAfterAhead = variant === 'afterAhead';
+  const exitStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(exitProgress.value, [0, 1], [1, 0]),
+    transform: [
+      { translateY: interpolate(exitProgress.value, [0, 1], [0, -18]) },
+      { scale: interpolate(exitProgress.value, [0, 1], [1, 0.986]) },
+    ],
+  }));
+
+  useEffect(() => {
+    setReveal(0);
+    setActiveReady(false);
+    setAfterAheadStage(0);
+    exitProgress.value = 0;
+  }, [exitProgress, variantKey]);
+
+  useEffect(() => {
+    if (reveal < ORGANIZE_RULE_AREAS.length) {
+      const timer = setTimeout(() => {
+        setReveal(current => current + 1);
+        runSelectionHaptic();
+      }, reveal === 0 ? 320 : 620);
+      return () => clearTimeout(timer);
+    }
+
+    return undefined;
+  }, [reveal]);
+
+  useEffect(() => {
+    if (reveal < ORGANIZE_RULE_AREAS.length) return undefined;
+
+    if (variant === 'afterAhead') {
+      if (afterAheadStage === 0) {
+        const timer = setTimeout(() => {
+          setAfterAheadStage(1);
+          runPreviewTaskCheckHaptic();
+          void playTaskCheckSoundOnly();
+        }, 820);
+        return () => clearTimeout(timer);
+      }
+
+      if (afterAheadStage === 1) {
+        const timer = setTimeout(() => {
+          setAfterAheadStage(2);
+          runBubbleHaptic();
+        }, 1000);
+        return () => clearTimeout(timer);
+      }
+
+      return undefined;
+    }
+
+    if (activeReady) return undefined;
+
+    const timer = setTimeout(() => {
+      setActiveReady(true);
+      runBubbleHaptic();
+    }, 720);
+    return () => clearTimeout(timer);
+  }, [activeReady, afterAheadStage, reveal, variant]);
+
+  useEffect(() => {
+    if (!autoAdvanceAfterAhead || reveal < ORGANIZE_RULE_AREAS.length || afterAheadStage < 2) return undefined;
+
+    let nextTimer: ReturnType<typeof setTimeout> | undefined;
+    const exitTimer = setTimeout(() => {
+      exitProgress.value = withTiming(1, {
+        duration: 660,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      });
+      nextTimer = setTimeout(onNext, 700);
+    }, 940);
+
+    return () => {
+      clearTimeout(exitTimer);
+      if (nextTimer) clearTimeout(nextTimer);
+    };
+  }, [afterAheadStage, autoAdvanceAfterAhead, exitProgress, onNext, reveal]);
+
+  const ctaVisible = reveal >= ORGANIZE_RULE_AREAS.length && activeReady && !autoAdvanceAfterAhead;
+  const ctaLabel = variant === 'start' ? 'Start macro planning' : 'Set up weekly routine';
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
+        <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={[s.organizeRuleHeader, exitStyle]}>
+          <Text style={s.organizeRuleOverline}>Based on your answers</Text>
+          <Text style={s.organizeRuleHeading}>Our system has two layers.</Text>
+          <Text style={s.organizeRuleBody}>
+            We&apos;ll set up the big-picture plan first, then the weekly rhythm you live day by day.
+          </Text>
+        </Reanimated.View>
+
+        <Reanimated.View style={[s.setupPathBoard, exitStyle]}>
+          {ORGANIZE_RULE_AREAS.slice(0, reveal).map((area, index) => {
+            const { active, done } = organizeMapState(variant, area.id, afterAheadStage);
+            const cardActiveReady = variant === 'afterAhead' ? true : activeReady;
+            return (
+              <React.Fragment key={area.id}>
+                <OrganizeSetupCard area={area} index={index} active={active} done={done} activeReady={cardActiveReady} />
+                {index < Math.min(reveal, ORGANIZE_RULE_AREAS.length) - 1 ? (
+                  <OrganizeRuleConnector accent={ORGANIZE_RULE_AREAS[index + 1]?.accent ?? area.accent} index={index} />
+                ) : null}
+              </React.Fragment>
+            );
+          })}
+        </Reanimated.View>
+      </ScrollView>
+
+      <AnimatedCta active={ctaVisible} delay={180} style={footerStyle} pointerEvents={ctaVisible ? 'auto' : 'none'}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>{ctaLabel}</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+const MACRO_PLANNING_STEPS = [
+  {
+    title: 'Big events',
+    body: 'Dates, appointments, deadlines, and commitments you do not want to forget.',
+    accent: '#4D8586',
+    icon: <Calendar s={18} c="#4D8586" w={2} />,
+  },
+  {
+    title: 'Monthly goals',
+    body: 'A calmer look at what is coming, before the week starts pulling you around.',
+    accent: GOLD,
+    icon: <Clock s={18} c={GOLD} w={2} />,
+  },
+];
+
+function OrganizeMacroIntroSlide({ onNext }: { onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const [reveal, setReveal] = useState(0);
+  const [activeReady, setActiveReady] = useState(false);
+  const contentStyle = [
+    s.organizeRuleContent,
+    {
+      paddingTop: Math.max(insets.top + 14, 44),
+      paddingBottom: insets.bottom + 134,
+    },
+  ];
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+  const ctaVisible = reveal >= MACRO_PLANNING_STEPS.length && activeReady;
+
+  useEffect(() => {
+    setReveal(0);
+    setActiveReady(false);
+  }, []);
+
+  useEffect(() => {
+    if (reveal < MACRO_PLANNING_STEPS.length) {
+      const timer = setTimeout(() => {
+        setReveal(current => current + 1);
+        runSelectionHaptic();
+      }, reveal === 0 ? 340 : 620);
+      return () => clearTimeout(timer);
+    }
+
+    const timer = setTimeout(() => {
+      setActiveReady(true);
+      runBubbleHaptic();
+    }, 680);
+    return () => clearTimeout(timer);
+  }, [reveal]);
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
+        <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={s.organizeRuleHeader}>
+          <View style={s.v4RecapToolsKicker}>
+            <Text style={s.v4RecapToolsKickerText}>Macro planning</Text>
+          </View>
+          <Text style={s.organizeRuleHeading}>First, mark what matters ahead.</Text>
+          <Text style={s.organizeRuleBody}>
+            We&apos;ll start with the things that shape your month, so important dates and commitments do not disappear.
+          </Text>
+        </Reanimated.View>
+
+        <View style={s.setupPathBoard}>
+          {MACRO_PLANNING_STEPS.slice(0, reveal).map((item, index) => (
+            <React.Fragment key={item.title}>
+              <SetupPathStepCard
+                title={item.title}
+                body={item.body}
+                accent={item.accent}
+                icon={item.icon}
+                index={index}
+                active={index === 0}
+                done={false}
+                activeReady={activeReady}
+              />
+              {index < Math.min(reveal, MACRO_PLANNING_STEPS.length) - 1 ? (
+                <OrganizeRuleConnector accent={MACRO_PLANNING_STEPS[index + 1]?.accent ?? item.accent} index={index} />
+              ) : null}
+            </React.Fragment>
+          ))}
+        </View>
+      </ScrollView>
+
+      <AnimatedCta active={ctaVisible} delay={180} style={footerStyle} pointerEvents={ctaVisible ? 'auto' : 'none'}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>Let&apos;s set this up</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+type OrganizeMacroProgressVariant = 'afterBigEvents' | 'afterMonthlyGoals';
+
+function MacroProgressCard({
+  title,
+  body,
+  accent,
+  icon,
+  done,
+  active,
+  index,
+}: {
+  title: string;
+  body: string;
+  accent: string;
+  icon: React.ReactNode;
+  done: boolean;
+  active: boolean;
+  index: number;
+}) {
+  return (
+    <SetupPathStepCard
+      title={title}
+      body={body}
+      accent={accent}
+      icon={icon}
+      index={index}
+      active={active}
+      done={done}
+      enteringDelay={240 + index * 180}
+    />
+  );
+}
+
+function OrganizeMacroProgressSlide({
+  variant,
+  monthlyGoalsEnabled,
+  onNext,
+}: {
+  variant: OrganizeMacroProgressVariant;
+  monthlyGoalsEnabled: boolean;
+  onNext: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [checked, setChecked] = useState(false);
+  const exitProgress = useSharedValue(0);
+  const contentStyle = [
+    s.organizeRuleContent,
+    {
+      paddingTop: Math.max(insets.top + 34, 64),
+      paddingBottom: insets.bottom + 134,
+    },
+  ];
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+  const bigEventsDone = variant === 'afterMonthlyGoals' || checked;
+  const monthlyDone = variant === 'afterMonthlyGoals' && checked;
+  const monthlyActive = variant === 'afterBigEvents' && checked && monthlyGoalsEnabled;
+  const macroComplete = checked && (!monthlyGoalsEnabled || variant === 'afterMonthlyGoals');
+  const ctaVisible = checked && !macroComplete;
+  const ctaLabel = monthlyActive ? 'Set up monthly goals' : 'Continue';
+  const exitStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(exitProgress.value, [0, 1], [1, 0]),
+    transform: [
+      { translateY: interpolate(exitProgress.value, [0, 1], [0, -22]) },
+      { scale: interpolate(exitProgress.value, [0, 1], [1, 0.985]) },
+    ],
+  }));
+
+  useEffect(() => {
+    setChecked(false);
+    exitProgress.value = 0;
+    const timer = setTimeout(() => {
+      setChecked(true);
+      runPreviewTaskCheckHaptic();
+      void playTaskCheckSoundOnly();
+    }, 720);
+    return () => clearTimeout(timer);
+  }, [exitProgress, variant]);
+
+  useEffect(() => {
+    if (!macroComplete) return undefined;
+
+    let nextTimer: ReturnType<typeof setTimeout> | undefined;
+    const exitTimer = setTimeout(() => {
+      runSelectionHaptic();
+      exitProgress.value = withTiming(1, {
+        duration: 680,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      });
+      nextTimer = setTimeout(onNext, 720);
+    }, 980);
+
+    return () => {
+      clearTimeout(exitTimer);
+      if (nextTimer) clearTimeout(nextTimer);
+    };
+  }, [exitProgress, macroComplete, onNext]);
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
+        <Reanimated.View entering={FadeInUp.duration(520).easing(Easing.out(Easing.cubic))} style={[s.organizeRuleHeader, exitStyle]}>
+          <Text style={s.organizeRuleOverline}>Macro planning</Text>
+          <Text style={s.organizeRuleHeading}>
+            {macroComplete ? 'Your macro plan is ready.' : 'First layer is coming together.'}
+          </Text>
+          <Text style={s.organizeRuleBody}>
+            {macroComplete
+              ? 'Now we can turn this into the weekly rhythm you will actually live.'
+              : variant === 'afterMonthlyGoals'
+                ? 'Monthly goals are almost in place.'
+                : monthlyGoalsEnabled
+                ? 'Big Events is ready. Next, we add monthly direction.'
+                : 'Big Events is ready. Now we can build your weekly routine.'}
+          </Text>
+        </Reanimated.View>
+
+        <Reanimated.View style={[s.setupPathBoard, exitStyle]}>
+          <MacroProgressCard
+            title="Big events"
+            body="Important dates and commitments are now visible."
+            accent="#4D8586"
+            icon={<Calendar s={18} c="#4D8586" w={2} />}
+            done={bigEventsDone}
+            active={!bigEventsDone}
+            index={0}
+          />
+          {monthlyGoalsEnabled ? (
+            <>
+              <OrganizeRuleConnector accent={GOLD} index={0} />
+              <MacroProgressCard
+                title="Monthly goals"
+                body="Add direction for the month before the week begins."
+                accent={GOLD}
+                icon={<Target s={18} c={GOLD} w={2} />}
+                done={monthlyDone}
+                active={monthlyActive || (variant === 'afterMonthlyGoals' && !checked)}
+                index={1}
+              />
+            </>
+          ) : null}
+        </Reanimated.View>
+      </ScrollView>
+
+      <AnimatedCta active={ctaVisible} delay={180} style={footerStyle} pointerEvents={ctaVisible ? 'auto' : 'none'}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>{ctaLabel}</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+const DAILY_RULE_STEPS = [
+  {
+    title: 'Spiritual tasks',
+    body: 'Prayer, Scripture, and the spiritual reminders that keep faith inside your day.',
+    accent: GOLD,
+    icon: <Cross s={18} c={GOLD} w={2} />,
+  },
+  {
+    title: 'Routine tasks',
+    body: 'The ordinary responsibilities you repeat, so your week has structure.',
+    accent: '#4D8586',
+    icon: <ListChecks s={18} c="#4D8586" w={2} />,
+  },
+  {
+    title: 'Habits',
+    body: 'Small repeatable actions that turn discipline into something visible.',
+    accent: '#2F9B61',
+    icon: <Target s={18} c="#2F9B61" w={2} />,
+  },
+  {
+    title: 'Challenges',
+    body: 'Focused commitments for the virtues and goals you want to grow into.',
+    accent: '#8F5B4B',
+    icon: <Sparkles s={18} c="#8F5B4B" w={2} />,
+  },
+];
+
+function OrganizeDailyRuleSlide({ onNext }: { onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const [ready, setReady] = useState(false);
+  const contentStyle = [
+    s.organizeRuleContent,
+    {
+      paddingTop: Math.max(insets.top + 28, 58),
+      paddingBottom: insets.bottom + 134,
+    },
+  ];
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setReady(true);
+      runBubbleHaptic();
+    }, 2050);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
+        <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={s.organizeRuleHeader}>
+          <View style={s.v4RecapToolsKicker}>
+            <Text style={s.v4RecapToolsKickerText}>Weekly routine</Text>
+          </View>
+          <Text style={s.organizeRuleHeading}>Now let&apos;s build your weekly routine.</Text>
+          <Text style={s.organizeRuleBody}>
+            This is where Anasta turns scattered tasks into a rhythm: spiritual tasks, routine tasks, habits, and challenges.
+          </Text>
+        </Reanimated.View>
+
+        <View style={s.dailyRuleBoard}>
+          {DAILY_RULE_STEPS.map((item, index) => (
+            <Reanimated.View
+              key={item.title}
+              entering={FadeInUp.delay(260 + index * 360).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                opacity: 0,
+                transform: [{ translateY: 26 }, { scale: 0.965 }],
+              })}
+              style={s.dailyRuleCard}
+            >
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(255,255,255,0.99)', `${item.accent}16`, 'rgba(255,248,232,0.84)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={[s.dailyRuleStepBadge, { borderColor: `${item.accent}38`, backgroundColor: `${item.accent}10` }]}>
+                <Text style={[s.dailyRuleStepNumber, { color: item.accent }]}>{index + 1}</Text>
+              </View>
+              <View style={[s.dailyRuleIcon, { borderColor: `${item.accent}34`, backgroundColor: `${item.accent}12` }]}>{item.icon}</View>
+              <View style={s.dailyRuleCopy}>
+                <Text style={s.dailyRuleTitle}>{item.title}</Text>
+                <Text style={s.dailyRuleBodyText}>{item.body}</Text>
+              </View>
+            </Reanimated.View>
+          ))}
+        </View>
+      </ScrollView>
+
+      <AnimatedCta active={ready} delay={80} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>Let&apos;s set this up</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
 function V4RecapSequence({
   cards,
   selected,
   accent,
   groups,
   hours,
+  skipToolsBoard = false,
   onNext,
 }: {
   cards: StatementDeckCard[];
@@ -14058,6 +14808,7 @@ function V4RecapSequence({
   groups: RecapProblemGroup[];
   title?: string;
   hours?: number;
+  skipToolsBoard?: boolean;
   onNext: () => void;
 }) {
   const { width, height } = useWindowDimensions();
@@ -14092,6 +14843,11 @@ function V4RecapSequence({
   const [purging, setPurging] = useState(false);
   const [loadIdx, setLoadIdx] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
+  const onNextRef = useRef(onNext);
+
+  useEffect(() => {
+    onNextRef.current = onNext;
+  }, [onNext]);
 
   useEffect(() => {
     if (phase !== 'answers') return undefined;
@@ -14114,12 +14870,18 @@ function V4RecapSequence({
     if (phase !== 'loading') return undefined;
     setLoadIdx(0);
     const cyc = setInterval(() => setLoadIdx(i => (i + 1) % RECAP_LOADING_TEXTS.length), 700);
-    const done = setTimeout(() => setPhase('tools'), 2800);
+    const done = setTimeout(() => {
+      if (skipToolsBoard) {
+        onNextRef.current();
+        return;
+      }
+      setPhase('tools');
+    }, 2800);
     return () => {
       clearInterval(cyc);
       clearTimeout(done);
     };
-  }, [phase]);
+  }, [phase, skipToolsBoard]);
 
   if (phase === 'loading') {
     return (
@@ -14170,7 +14932,7 @@ function V4RecapSequence({
 
         {daysVisible && stat ? (
           <RecapFaller purge={purging} fallDelay={0} rot={-8} noEnter style={s.v4RecapDaysWrap}>
-            <ScreenTimeDaysCard stat={stat} />
+            <DayCompareRecapDaysCard stat={stat} />
           </RecapFaller>
         ) : null}
       </ScrollView>
@@ -14186,6 +14948,7 @@ function V4RecapSlide({
   accent,
   groups,
   hours,
+  skipToolsBoard = false,
   onNext,
 }: {
   title: string;
@@ -14195,11 +14958,22 @@ function V4RecapSlide({
   accent: string;
   groups: RecapProblemGroup[];
   hours?: number;
+  skipToolsBoard?: boolean;
   onNext: () => void;
 }) {
   const useSequenceFlow = true;
   if (useSequenceFlow) {
-    return <V4RecapSequence cards={cards} selected={selected} accent={accent} groups={groups} hours={hours} onNext={onNext} />;
+    return (
+      <V4RecapSequence
+        cards={cards}
+        selected={selected}
+        accent={accent}
+        groups={groups}
+        hours={hours}
+        skipToolsBoard={skipToolsBoard}
+        onNext={onNext}
+      />
+    );
   }
 
   const stat = hours !== undefined ? protectStats(hours) : null;
@@ -14250,50 +15024,6 @@ function V4RecapSlide({
         </View>
       </AnimatedCta>
     </View>
-  );
-}
-
-function V4SetupLoopSlide({
-  title,
-  items,
-  progressCount,
-  onNext,
-}: {
-  title: string;
-  items: string[];
-  progressCount: number;
-  onNext: () => void;
-}) {
-  const [completed, setCompleted] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (completed.length !== items.length) return undefined;
-    const timer = setTimeout(onNext, 650);
-    return () => clearTimeout(timer);
-  }, [completed.length, items.length, onNext]);
-
-  return (
-    <ScrollView contentContainerStyle={s.v4ScrollContent} showsVerticalScrollIndicator={false}>
-      <V4ProgressRail completedCount={progressCount} showTools={progressCount >= 3} />
-      <Text style={s.v4MomentTitle}>{title}</Text>
-      <Text style={s.v4MomentBody}>Tap each setup card and watch your system come together.</Text>
-      {items.map(item => {
-        const done = completed.includes(item);
-        return (
-          <TouchableOpacity
-            key={item}
-            activeOpacity={0.88}
-            haptic="medium"
-            onPress={() => setCompleted(prev => prev.includes(item) ? prev : [...prev, item])}
-            style={[s.v4SetupCard, done && s.v4SetupCardDone]}
-          >
-            <Text style={s.v4SetupTitle}>{item}</Text>
-            <Text style={s.v4SetupBody}>Prepared for your Anasta system.</Text>
-            {done ? <CheckSmall s={22} c={GOLD} w={2.4} /> : null}
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
   );
 }
 
@@ -14357,27 +15087,31 @@ function V4FlameSlide({
     if (!isSoloMessage || reveal !== 6) return undefined;
     setSoloTypedCount(0);
 
+    let startTimer: ReturnType<typeof setTimeout> | undefined;
     let interval: ReturnType<typeof setInterval> | undefined;
     let doneTimer: ReturnType<typeof setTimeout> | undefined;
 
-    interval = setInterval(() => {
-      setSoloTypedCount(prev => {
-        const next = Math.min(body.length, prev + 1);
-        if (next > prev && next % 3 === 0) runTypingHaptic();
-        if (next >= body.length) {
-          if (interval) {
-            clearInterval(interval);
-            interval = undefined;
+    startTimer = setTimeout(() => {
+      interval = setInterval(() => {
+        setSoloTypedCount(prev => {
+          const next = Math.min(body.length, prev + 1);
+          if (next > prev && next % 3 === 0) runTypingHaptic();
+          if (next >= body.length) {
+            if (interval) {
+              clearInterval(interval);
+              interval = undefined;
+            }
+            doneTimer = setTimeout(() => {
+              setReveal(current => Math.max(current, 7));
+            }, 220);
           }
-          doneTimer = setTimeout(() => {
-            setReveal(current => Math.max(current, 7));
-          }, 220);
-        }
-        return next;
-      });
-    }, 28);
+          return next;
+        });
+      }, 28);
+    }, 240);
 
     return () => {
+      if (startTimer) clearTimeout(startTimer);
       if (interval) clearInterval(interval);
       if (doneTimer) clearTimeout(doneTimer);
     };
@@ -14412,9 +15146,8 @@ function V4FlameSlide({
         opacity: 0,
         transform: [{ translateY: 12 }, { scale: 0.98 }],
       })
-    : FadeIn.duration(760).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+    : FadeIn.duration(320).easing(Easing.out(Easing.cubic)).withInitialValues({
         opacity: 0,
-        transform: [{ translateY: 24 }, { scale: 0.94 }],
       });
 
   return (
@@ -14470,9 +15203,9 @@ function V4FlameSlide({
               {isSoloMessage ? (
                 <>
                   <Reanimated.View
-                    entering={FadeInUp.duration(760).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                    entering={FadeInUp.duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
                       opacity: 0,
-                      transform: [{ translateY: 20 }, { scale: 0.82 }, { rotate: '-4deg' }],
+                      transform: [{ translateY: 12 }, { scale: 0.94 }],
                     })}
                     style={s.v4CheckpointSoloLogoFrame}
                   >
@@ -14484,9 +15217,9 @@ function V4FlameSlide({
 
                   {reveal >= 6 ? (
                     <Reanimated.View
-                      entering={FadeInUp.delay(120).duration(720).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                      entering={FadeInUp.duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
                         opacity: 0,
-                        transform: [{ translateY: 22 }, { scale: 0.9 }],
+                        transform: [{ translateY: 14 }, { scale: 0.97 }],
                       })}
                       style={s.v4CheckpointSoloBubble}
                     >
@@ -14963,7 +15696,7 @@ function TrialRow({
 export default function OnboardingView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { beginGuidedSetup } = useGuidedSetup();
+  const { beginGuidedSetup, endGuidedSetup } = useGuidedSetup();
   const [answers, setAnswers] = useState<Answers>({});
   const [preloadPhase, setPreloadPhase] = useState<PreloadPhase>('only');
   const [welcomeLogoTop, setWelcomeLogoTop] = useState<number | null>(null);
@@ -15164,6 +15897,9 @@ export default function OnboardingView() {
     runSelectionHaptic();
     setAnswers(prev => ({ ...prev, firstChapter: chapter }));
   }, []);
+
+  const monthlyGoalsEnabled = shouldIncludeMonthlyGoals(answers);
+
   const startBuildSetup = () => {
     const firstChapter = answers.firstChapter ?? 'protect';
     beginGuidedSetup({
@@ -15173,6 +15909,68 @@ export default function OnboardingView() {
       phase: 'intro',
       route: '/onboarding',
     });
+    goNext();
+  };
+  const startOrganizeAheadSetup = () => {
+    beginGuidedSetup({
+      currentChapter: 'build',
+      chapterOrder: ['build'],
+      activeStep: 'buildBigEvents',
+      phase: 'intro',
+      route: '/onboarding',
+    });
+    goNext();
+  };
+
+  const startOrganizeMonthlyGoalsSetup = () => {
+    beginGuidedSetup({
+      currentChapter: 'build',
+      chapterOrder: ['build'],
+      activeStep: 'buildMonthlyGoals',
+      phase: 'intro',
+      route: '/onboarding',
+    });
+    goNext();
+  };
+
+  const startOrganizeDailyRuleSetup = () => {
+    beginGuidedSetup({
+      currentChapter: 'build',
+      chapterOrder: ['build'],
+      activeStep: 'buildMyRoutine',
+      phase: 'intro',
+      route: '/onboarding',
+    });
+    goNext();
+  };
+
+  const handleBigEventsComplete = () => {
+    endGuidedSetup();
+    goNext();
+  };
+
+  const handleMonthlyGoalsComplete = () => {
+    endGuidedSetup();
+    goNext();
+  };
+
+  const handleMyRoutineComplete = () => {
+    beginGuidedSetup({
+      currentChapter: 'build',
+      chapterOrder: ['build'],
+      activeStep: 'buildHabits',
+      phase: 'intro',
+      route: '/onboarding',
+    });
+    goNext();
+  };
+
+  const handleHabitsComplete = () => {
+    goNext();
+  };
+
+  const handleChallengesComplete = () => {
+    endGuidedSetup();
     goNext();
   };
 
@@ -15213,6 +16011,12 @@ export default function OnboardingView() {
     activeStep === 'toolsShowcase' ||
     activeStep === 'protectDeck' ||
     activeStep === 'organizeDeck' ||
+    activeStep === 'organizeSetupPath' ||
+    activeStep === 'organizeMacroIntro' ||
+    activeStep === 'organizeMacroProgressAfterBigEvents' ||
+    activeStep === 'organizeMacroProgressAfterMonthlyGoals' ||
+    activeStep === 'organizeSetupPathAfterAhead' ||
+    activeStep === 'organizeDailyRulePath' ||
     activeStep === 'dayVisualizationHeader' ||
     valueStepActive ||
     flameStepActive ||
@@ -15230,7 +16034,7 @@ export default function OnboardingView() {
   if (activeStep === 'buildBigEvents') {
     return (
       <View style={s.screen}>
-        <BigEventsView guided onGuidedComplete={goNext} />
+        <BigEventsView guided onGuidedComplete={handleBigEventsComplete} />
         <GuidedOverlayHost />
       </View>
     );
@@ -15239,7 +16043,7 @@ export default function OnboardingView() {
   if (activeStep === 'buildMonthlyGoals') {
     return (
       <View style={s.screen}>
-        <MonthlyGoalsView guided onGuidedComplete={goNext} />
+        <MonthlyGoalsView guided onGuidedComplete={handleMonthlyGoalsComplete} />
         <GuidedOverlayHost />
       </View>
     );
@@ -15248,7 +16052,7 @@ export default function OnboardingView() {
   if (activeStep === 'buildHabits') {
     return (
       <View style={s.screen}>
-        <HabitsView guided onGuidedComplete={goNext} />
+        <HabitsView guided onGuidedComplete={handleHabitsComplete} />
         <GuidedOverlayHost />
       </View>
     );
@@ -15257,7 +16061,7 @@ export default function OnboardingView() {
   if (activeStep === 'buildChallenges') {
     return (
       <View style={s.screen}>
-        <ChallengesView guided onGuidedComplete={goNext} />
+        <ChallengesView guided onGuidedComplete={handleChallengesComplete} />
         <GuidedOverlayHost />
       </View>
     );
@@ -15266,7 +16070,7 @@ export default function OnboardingView() {
   if (activeStep === 'buildMyRoutine') {
     return (
       <View style={s.screen}>
-        <MyRoutineView guided onGuidedComplete={goNext} />
+        <MyRoutineView guided onGuidedComplete={handleMyRoutineComplete} />
         <GuidedOverlayHost />
       </View>
     );
@@ -15429,20 +16233,50 @@ export default function OnboardingView() {
           selected={answers.confirmedOrganizeProblems ?? []}
           accent="#4D8586"
           groups={ORGANIZE_RECAP_GROUPS}
-          onNext={() => {
-            if ((answers.confirmedOrganizeProblems ?? []).length > 0) {
-              beginGuidedSetup({
-                currentChapter: 'build',
-                chapterOrder: ['build'],
-                activeStep: 'buildBigEvents',
-                phase: 'intro',
-                route: '/onboarding',
-              });
-            }
-            goNext();
-          }}
+          skipToolsBoard
+          onNext={goNext}
         />
       );
+    }
+    if (activeStep === 'organizeSetupPath') {
+      return (
+        <OrganizeRuleMapSlide
+          variant="start"
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'organizeMacroIntro') {
+      return <OrganizeMacroIntroSlide onNext={startOrganizeAheadSetup} />;
+    }
+    if (activeStep === 'organizeMacroProgressAfterBigEvents') {
+      return (
+        <OrganizeMacroProgressSlide
+          variant="afterBigEvents"
+          monthlyGoalsEnabled={monthlyGoalsEnabled}
+          onNext={monthlyGoalsEnabled ? startOrganizeMonthlyGoalsSetup : goNext}
+        />
+      );
+    }
+    if (activeStep === 'organizeMacroProgressAfterMonthlyGoals') {
+      return (
+        <OrganizeMacroProgressSlide
+          variant="afterMonthlyGoals"
+          monthlyGoalsEnabled={monthlyGoalsEnabled}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'organizeSetupPathAfterAhead') {
+      return (
+        <OrganizeRuleMapSlide
+          variant="afterAhead"
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'organizeDailyRulePath') {
+      return <OrganizeDailyRuleSlide onNext={startOrganizeDailyRuleSetup} />;
     }
     if (activeStep === 'weeklyReveal') return <V4WeeklyRevealSlide displayName={answers.displayName} onNext={goNext} />;
     if (activeStep === 'flameOrganize') {
@@ -20121,6 +20955,10 @@ const s = StyleSheet.create({
     width: '100%',
     paddingTop: 19,
   },
+  dayCompareRecapCard: {
+    alignSelf: 'center',
+    maxWidth: 386,
+  },
   dayCompareStatLabel: {
     maxWidth: 344,
     width: '100%',
@@ -21090,6 +21928,487 @@ const s = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 336,
   },
+  organizeRuleScreen: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  organizeRuleContent: {
+    paddingHorizontal: 18,
+    paddingTop: 42,
+    paddingBottom: 126,
+    rowGap: 32,
+  },
+  organizePracticeContent: {
+    paddingHorizontal: 18,
+    paddingTop: 44,
+    paddingBottom: 126,
+    rowGap: 26,
+  },
+  organizeRuleHeader: {
+    alignItems: 'center',
+    rowGap: 9,
+    paddingHorizontal: 10,
+  },
+  organizeRuleOverline: {
+    fontFamily: F.serifMediumItalic,
+    fontSize: 17,
+    lineHeight: 22,
+    color: 'rgba(112,82,26,0.68)',
+    textAlign: 'center',
+  },
+  organizeRuleEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    lineHeight: 13,
+    letterSpacing: 1.35,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.46)',
+  },
+  organizeRuleHeading: {
+    fontFamily: F.serifBold,
+    fontSize: 39,
+    lineHeight: 43,
+    color: INK,
+    textAlign: 'center',
+    maxWidth: 350,
+  },
+  organizeRuleBody: {
+    fontFamily: F.serifMedium,
+    fontSize: 17,
+    lineHeight: 22,
+    color: 'rgba(25,23,20,0.58)',
+    textAlign: 'center',
+    maxWidth: 330,
+  },
+  organizeRuleNote: {
+    marginTop: 4,
+    fontFamily: F.serifMediumItalic,
+    fontSize: 14.5,
+    lineHeight: 19,
+    color: 'rgba(112,82,26,0.72)',
+    textAlign: 'center',
+    maxWidth: 322,
+  },
+  organizeRuleBoard: {
+    width: '100%',
+    maxWidth: 360,
+    alignSelf: 'center',
+    alignItems: 'stretch',
+    marginTop: 2,
+  },
+  setupPathBoard: {
+    width: '100%',
+    maxWidth: 374,
+    alignSelf: 'center',
+    alignItems: 'stretch',
+    marginTop: 6,
+  },
+  setupPathUnifiedCard: {
+    minHeight: 72,
+    borderRadius: 23,
+    paddingTop: 12,
+    paddingBottom: 9,
+  },
+  setupPathCardCopy: {
+    justifyContent: 'center',
+    paddingTop: 1,
+  },
+  setupPathCard: {
+    minHeight: 98,
+    borderRadius: 27,
+    paddingLeft: 15,
+    paddingRight: 13,
+    paddingVertical: 14,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.24)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 3,
+    zIndex: 2,
+  },
+  setupPathCardInactive: {
+    borderColor: 'rgba(25,23,20,0.07)',
+    shadowOpacity: 0.035,
+  },
+  setupPathCardActive: {
+    borderColor: 'rgba(197,160,89,0.56)',
+    shadowColor: '#C5A059',
+    shadowOpacity: 0.16,
+  },
+  setupPathCardDone: {
+    shadowOpacity: 0.11,
+  },
+  setupPathCardInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 12,
+  },
+  setupPathIconWrap: {
+    width: 48,
+    minHeight: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  setupPathIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  setupPathNumberBadge: {
+    position: 'absolute',
+    top: 9,
+    right: 11,
+    width: 25,
+    height: 25,
+    borderRadius: 12.5,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
+  },
+  setupPathNumberText: {
+    fontFamily: F.sansBold,
+    fontSize: 11.2,
+    lineHeight: 13,
+  },
+  setupPathCopy: {
+    flex: 1,
+    minWidth: 0,
+    rowGap: 3,
+    paddingRight: 4,
+  },
+  setupPathTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 20.5,
+    lineHeight: 24.5,
+    color: INK,
+  },
+  setupPathSubtitle: {
+    fontFamily: F.serifMedium,
+    fontSize: 14.5,
+    lineHeight: 18.5,
+    color: 'rgba(25,23,20,0.56)',
+  },
+  organizeRuleCard: {
+    minHeight: 86,
+    borderRadius: 24,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  organizeRuleCardInactive: {
+    borderColor: 'rgba(25,23,20,0.07)',
+    shadowOpacity: 0.035,
+  },
+  organizeRuleCardActive: {
+    borderColor: 'rgba(197,160,89,0.56)',
+    shadowColor: '#C5A059',
+    shadowOpacity: 0.16,
+  },
+  organizeRuleCardDone: {
+    borderColor: 'rgba(47,155,97,0.32)',
+    shadowColor: '#2F9B61',
+    shadowOpacity: 0.1,
+  },
+  organizeRuleSheen: {
+    position: 'absolute',
+    left: -24,
+    right: -24,
+    top: -44,
+    height: 82,
+    borderRadius: 60,
+    transform: [{ rotate: '-7deg' }],
+  },
+  organizeRuleCardInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+  },
+  organizeRuleLeftStack: {
+    width: 42,
+    alignItems: 'center',
+    rowGap: 5,
+  },
+  organizeRuleNumber: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  organizeRuleNumberText: {
+    fontFamily: F.sansBold,
+    fontSize: 12,
+    lineHeight: 14,
+  },
+  organizeRuleIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 13,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  organizeRuleCopy: {
+    flex: 1,
+    minWidth: 0,
+    rowGap: 3,
+  },
+  organizeRuleTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 20,
+    lineHeight: 24,
+    color: INK,
+  },
+  organizeRuleSubtitle: {
+    fontFamily: F.serifMedium,
+    fontSize: 14.2,
+    lineHeight: 18,
+    color: 'rgba(25,23,20,0.54)',
+  },
+  organizeRuleTextInactive: {
+    color: 'rgba(25,23,20,0.38)',
+  },
+  organizeRuleSubInactive: {
+    color: 'rgba(25,23,20,0.30)',
+  },
+  organizeRuleConnector: {
+    height: 24,
+    width: '100%',
+    alignSelf: 'stretch',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    rowGap: 3,
+    paddingLeft: 36,
+    marginVertical: 4,
+    zIndex: 0,
+  },
+  organizeRuleDot: {
+    width: 3.8,
+    height: 3.8,
+    borderRadius: 2,
+  },
+  dailyRuleBoard: {
+    width: '100%',
+    maxWidth: 374,
+    alignSelf: 'center',
+    rowGap: 12,
+    marginTop: 8,
+  },
+  macroIntroCard: {
+    minHeight: 108,
+    borderRadius: 27,
+    paddingLeft: 14,
+    paddingRight: 17,
+    paddingVertical: 15,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.24)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 12,
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 2,
+  },
+  macroIntroStepBadge: {
+    position: 'absolute',
+    top: 9,
+    right: 11,
+    width: 25,
+    height: 25,
+    borderRadius: 12.5,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  macroIntroStepNumber: {
+    fontFamily: F.sansBold,
+    fontSize: 11.5,
+    lineHeight: 14,
+  },
+  macroIntroIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  macroIntroCopy: {
+    flex: 1,
+    minWidth: 0,
+    rowGap: 4,
+    paddingRight: 18,
+  },
+  macroIntroTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 21,
+    lineHeight: 25,
+    color: INK,
+  },
+  macroIntroBody: {
+    fontFamily: F.serifMedium,
+    fontSize: 14.8,
+    lineHeight: 18.8,
+    color: 'rgba(25,23,20,0.60)',
+  },
+  dailyRuleCard: {
+    minHeight: 102,
+    borderRadius: 27,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.24)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 12,
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 2,
+  },
+  dailyRuleStepBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dailyRuleStepNumber: {
+    fontFamily: F.sansBold,
+    fontSize: 12.5,
+    lineHeight: 15,
+  },
+  dailyRuleIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 15,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dailyRuleCopy: {
+    flex: 1,
+    minWidth: 0,
+    rowGap: 4,
+  },
+  dailyRuleTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 20.2,
+    lineHeight: 24,
+    color: INK,
+  },
+  dailyRuleBodyText: {
+    fontFamily: F.serifMedium,
+    fontSize: 14.7,
+    lineHeight: 18.6,
+    color: 'rgba(25,23,20,0.60)',
+  },
+  practiceDayMock: {
+    width: '100%',
+    maxWidth: 374,
+    alignSelf: 'center',
+    borderRadius: 32,
+    padding: 16,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.27)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 15 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 3,
+  },
+  practiceDayHeader: {
+    rowGap: 3,
+    marginBottom: 14,
+  },
+  practiceDayDate: {
+    fontFamily: F.serifBold,
+    fontSize: 27,
+    lineHeight: 32,
+    color: INK,
+  },
+  practiceDayHint: {
+    fontFamily: F.serifMedium,
+    fontSize: 14.8,
+    lineHeight: 19,
+    color: 'rgba(25,23,20,0.58)',
+  },
+  practiceDayRows: {
+    rowGap: 9,
+  },
+  practiceDayRow: {
+    minHeight: 68,
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    backgroundColor: 'rgba(255,255,255,0.74)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+  },
+  practiceDayRowIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 13,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  practiceDayRowCopy: {
+    flex: 1,
+    minWidth: 0,
+    rowGap: 2,
+  },
+  practiceDayRowTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17.3,
+    lineHeight: 20.5,
+    color: INK,
+  },
+  practiceDayRowBody: {
+    fontFamily: F.serifMedium,
+    fontSize: 13.4,
+    lineHeight: 17,
+    color: 'rgba(25,23,20,0.56)',
+  },
+  practiceDayStatus: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    lineHeight: 13,
+    textTransform: 'uppercase',
+    letterSpacing: 0.9,
+  },
   v4RecapSubtitle: {
     fontFamily: F.serifMediumItalic,
     fontSize: 15.5,
@@ -21582,7 +22901,7 @@ const s = StyleSheet.create({
     backfaceVisibility: 'hidden',
   },
   v4RecapStatementInnerFrame: {
-    borderTopWidth: 0,
+    display: 'none',
   },
   v4RecapDeckCard: {
     borderRadius: 18,

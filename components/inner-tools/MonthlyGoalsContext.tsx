@@ -34,6 +34,15 @@ function indexByMonth(goals: MonthlyGoal[]) {
   }, {});
 }
 
+function currentMonthKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function isPastMonth(month: string) {
+  return month < currentMonthKey();
+}
+
 export function MonthlyGoalsProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [goals, setGoals] = useState<MonthlyGoal[]>([]);
@@ -73,6 +82,7 @@ export function MonthlyGoalsProvider({ children }: { children: React.ReactNode }
   const goalsByMonth = useMemo(() => indexByMonth(goals), [goals]);
 
   const addGoal = useCallback(async (month: string, text: string) => {
+    if (isPastMonth(month)) return null;
     const trimmed = text.trim();
     if (!trimmed) return null;
     const existingForMonth = goals.filter(g => g.month === month);
@@ -92,6 +102,7 @@ export function MonthlyGoalsProvider({ children }: { children: React.ReactNode }
   }, [goals]);
 
   const updateGoal = useCallback(async (goal: MonthlyGoal) => {
+    if (isPastMonth(goal.month)) return goal;
     setGoals(prev => prev.map(g => g.id === goal.id ? goal : g));
     const saved = await upsertMonthlyGoal(goal);
     setGoals(prev => prev.map(g => g.id === saved.id ? saved : g));

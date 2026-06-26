@@ -40,7 +40,7 @@ const RULE_OPTIONS: { id: PersonalPrayerRuleChoice; label: string }[] = [
 ];
 
 const RULE_DESCRIPTIONS: Record<PersonalPrayerRuleChoice, string> = {
-  personal: 'For anyone praying from their own prayer book or in their own way — Orthodox, Catholic, Protestant, Evangelical, or any other tradition.',
+  personal: 'For Christians of every tradition — Catholic, Protestant, Orthodox, non-denominational, and any other.',
   standard: 'Full prayer rule',
   short: 'Abbreviated prayer rule',
   seraphim: 'Rule of St. Seraphim of Sarov',

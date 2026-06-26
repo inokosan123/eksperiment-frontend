@@ -1632,7 +1632,8 @@ function MonthlyGoalsHomeCard() {
         </Text>
       </View>
       {visible.map(goal => (
-        <View key={goal.id} style={s.mgRow}>
+        <View key={goal.id} style={[s.mgRow, goal.isCompleted && s.mgRowDone]}>
+          <View pointerEvents="none" style={[s.mgRowHighlight, goal.isCompleted && s.mgRowHighlightDone]} />
           <AnimatedGoalCheck
             done={goal.isCompleted}
             onPress={() => onToggle(goal)}
@@ -2398,24 +2399,42 @@ const s = StyleSheet.create({
   mgRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#EDE9E0',
-    paddingHorizontal: 13,
+    columnGap: 11,
+    backgroundColor: '#FFFDFC',
+    borderRadius: 20,
+    borderWidth: 1.4,
+    borderColor: 'rgba(197,160,89,0.54)',
+    paddingHorizontal: 14,
     paddingVertical: 11,
-    marginBottom: 3,
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 7,
-    elevation: 1,
+    marginBottom: 7,
+    overflow: 'hidden',
+    position: 'relative',
+    shadowColor: '#C5A059',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.09,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  mgRowDone: {
+    backgroundColor: '#FFFDF4',
+    borderColor: 'rgba(197,160,89,0.62)',
+  },
+  mgRowHighlight: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    top: 0,
+    height: 1.5,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.88)',
+  },
+  mgRowHighlightDone: {
+    backgroundColor: 'rgba(255,255,255,0.74)',
   },
   mgRowText: {
     fontFamily: F.serifMedium,
-    fontSize: 15,
-    lineHeight: 20,
+    fontSize: 19,
+    lineHeight: 24.4,
     color: '#1A1714',
   },
   mgEmpty: {

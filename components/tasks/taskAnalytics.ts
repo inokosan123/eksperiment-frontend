@@ -3,7 +3,7 @@
 // were intentionally dropped — they only existed to bridge a legacy event-log
 // table that doesn't exist in this RN app.
 
-import { listTaskInstancesForTaskBetween } from './taskDb';
+import { getTaskDateBounds, listTaskInstancesForTaskBetween } from './taskDb';
 import { getLocalDateKey } from './taskScheduler';
 import type { TaskInstance } from './taskTypes';
 
@@ -21,6 +21,7 @@ export type TaskAnalyticsData = {
   sinceStart: ConsistencyBucket;
   totalSkips: number;
   firstTrackedDate?: string;
+  calendarStartDate?: string;
   completedDates: Set<string>;
   skippedDates: Set<string>;
   missedDates: Set<string>;
@@ -64,6 +65,7 @@ function getInstanceState(instance: TaskInstance, referenceDate: Date): Analytic
 function buildAnalyticsFromInstances(
   instances: TaskInstance[],
   referenceDate: Date,
+  calendarStartDate?: string,
 ): TaskAnalyticsData | null {
   if (instances.length === 0) return null;
 
@@ -73,7 +75,6 @@ function buildAnalyticsFromInstances(
   const weekStart = new Date(referenceDate);
   weekStart.setDate(referenceDate.getDate() - weekDay + 1);
   const weekStartStr = getLocalDateKey(weekStart);
-  const displayStart = weekStartStr < monthStartStr ? weekStartStr : monthStartStr;
 
   const sorted = [...instances].sort((a, b) => a.date.localeCompare(b.date));
   const tracked = sorted.filter(inst => inst.date <= todayStr);
@@ -114,7 +115,7 @@ function buildAnalyticsFromInstances(
     running = 0;
   }
 
-  const display = sorted.filter(inst => inst.date >= displayStart && inst.date <= todayStr);
+  const display = sorted.filter(inst => inst.date <= todayStr);
   const completedDates = new Set<string>();
   const skippedDates = new Set<string>();
   const missedDates = new Set<string>();
@@ -141,6 +142,7 @@ function buildAnalyticsFromInstances(
       : { completed: 0, scheduled: 0, pct: 0 },
     totalSkips,
     firstTrackedDate,
+    calendarStartDate: calendarStartDate ?? firstTrackedDate,
     completedDates,
     skippedDates,
     missedDates,
@@ -155,10 +157,12 @@ export async function getTaskAnalytics(taskId: string): Promise<TaskAnalyticsDat
   // so a stale DB doesn't produce incorrect counts here.
   const referenceDate = new Date();
   const todayKey = getLocalDateKey(referenceDate);
-  const fromKey = shiftDateKey(todayKey, -WINDOW_DAYS);
+  const bounds = await getTaskDateBounds(taskId);
+  const createdDate = bounds?.createdAt ? getLocalDateKey(new Date(bounds.createdAt)) : undefined;
+  const fromKey = createdDate ?? shiftDateKey(todayKey, -WINDOW_DAYS);
   const toKey = shiftDateKey(todayKey, FUTURE_DAYS);
   // Task-specific query — only rows for this task instead of pulling the whole
   // window and filtering in memory.
   const taskInstances = await listTaskInstancesForTaskBetween(taskId, fromKey, toKey);
-  return buildAnalyticsFromInstances(taskInstances, referenceDate);
+  return buildAnalyticsFromInstances(taskInstances, referenceDate, createdDate);
 }

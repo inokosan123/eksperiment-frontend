@@ -280,7 +280,7 @@ const MY_ROUTINE_GUIDE_TARGETS = {
   taskCard: 'my-routine.task-card',
 } as const;
 const ROUTINE_PRAYER_RULES: { key: PrayerChallengeRuleChoice; label: string; desc: string }[] = [
-  { key: 'personal', label: 'My Rule', desc: 'For anyone praying from their own prayer book or in their own way — Orthodox, Catholic, Protestant, Evangelical, or any other tradition.' },
+  { key: 'personal', label: 'My Rule', desc: 'For Christians of every tradition — Catholic, Protestant, Orthodox, non-denominational, and any other.' },
   { key: 'standard', label: 'Standard Rule', desc: 'Full morning or evening prayers' },
   { key: 'short', label: 'Shortened Rule', desc: 'Abbreviated prayer rule' },
   { key: 'seraphim', label: 'St. Seraphim Rule', desc: 'Rule of St. Seraphim of Sarov' },

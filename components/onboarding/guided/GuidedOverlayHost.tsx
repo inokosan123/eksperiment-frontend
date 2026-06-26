@@ -343,6 +343,7 @@ const o = StyleSheet.create({
     left: 20,
     right: 20,
     bottom: 22,
+    gap: 8,
   },
   cta: {
     height: 52,
@@ -357,15 +358,18 @@ const o = StyleSheet.create({
     color: '#FFFFFF',
   },
   secondaryCta: {
-    minHeight: 42,
+    height: 52,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
+    borderRadius: 17,
+    backgroundColor: '#FFFCF6',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.34)',
   },
   secondaryCtaText: {
     fontFamily: F.sansBold,
-    fontSize: 11,
-    letterSpacing: 1.2,
-    color: '#6F665C',
+    fontSize: 13,
+    letterSpacing: 0,
+    color: C.text,
   },
 });

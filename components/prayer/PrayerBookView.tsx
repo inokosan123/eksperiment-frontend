@@ -60,7 +60,10 @@ function normalizePrayerLanguage(value: string | undefined): PrayerLanguage {
 }
 
 function defaultOptionId(options: PrayerOption[]) {
-  return options.find(option => option.id === 'standard')?.id ?? options[0]?.id ?? 'standard';
+  return options.find(option => option.id === 'personal')?.id
+    ?? options.find(option => option.id === 'standard')?.id
+    ?? options[0]?.id
+    ?? 'standard';
 }
 
 function isPersonalRuleOption(category: PrayerCategory, optionId?: string) {
@@ -526,8 +529,11 @@ export default function PrayerBookView() {
   const { createOrUpdateTask, refresh: refreshTasks, completeInstance } = useTasks();
   const { settings, updateSettings } = useAppSettings();
   const prayerLanguage = normalizePrayerLanguage(settings.prayerLang);
-  const [category, setCategory] = useState<PrayerCategory>(launchedCategory ?? 'morning');
-  const [optionId, setOptionId] = useState(launchedOptionId ?? 'standard');
+  const initialCategory = launchedCategory ?? 'morning';
+  const [category, setCategory] = useState<PrayerCategory>(initialCategory);
+  const [optionId, setOptionId] = useState(
+    launchedOptionId ?? defaultOptionId(getPrayerOptions(prayerLanguage, initialCategory)),
+  );
   const [isReaderActive, setIsReaderActive] = useState(launchedAutoStart && !!launchedCategory);
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const [showTaskSheet, setShowTaskSheet] = useState(false);

@@ -155,7 +155,7 @@ export type PersonalRulePreviewContent = {
 
 export const PERSONAL_RULE_PREVIEW: Record<PrayerLanguage, PersonalRulePreviewContent> = {
   en: {
-    intro: 'For Christians of every tradition — Catholic, Protestant, Evangelical, Pentecostal, Anglican, Orthodox, non-denominational, and any other.',
+    intro: 'For Christians of every tradition — Catholic, Protestant, Orthodox, non-denominational, and any other.',
     listHeading: 'No preset prayer text. Use this for:',
     listItems: [
       'prayer from a physical prayer book',
@@ -169,7 +169,7 @@ export const PERSONAL_RULE_PREVIEW: Record<PrayerLanguage, PersonalRulePreviewCo
     note: 'The other Morning and Evening rules in the app (Standard, Shortened, St. Seraphim) follow the Orthodox tradition.',
   },
   sr: {
-    intro: 'За хришћане сваке традиције — католике, протестанте, евангелисте, пентикосталце, англиканце, православне, независне хришћане и сваке друге.',
+    intro: 'За хришћане сваке традиције — католике, протестанте, православне, неденоминационе хришћане и сваке друге.',
     listHeading: 'Без унапред задатих молитава. Користите ово за:',
     listItems: [
       'молитву из физичког молитвеника',
