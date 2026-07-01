@@ -8,6 +8,19 @@ export type FocusSessionRecord = {
   completedAt: number;
 };
 
+export type FocusTimerPreferences = {
+  timerMode: 'single' | 'cycle';
+  focusDuration: number;
+  breakDuration: number;
+  shortBreakDuration: number;
+  longBreakDuration: number;
+  sessionsPerCycle: number;
+  cycleCompleted: number;
+  updatedAt: number;
+};
+
+const TIMER_PREFS_KEY = 'timer_preferences';
+
 function rowToFocusSession(row: Record<string, unknown>): FocusSessionRecord {
   return {
     id: String(row.id),
@@ -66,4 +79,32 @@ export async function getAllFocusSessions() {
     'SELECT * FROM focus_sessions ORDER BY completed_at ASC',
   );
   return rows.map(rowToFocusSession);
+}
+
+export async function saveFocusTimerPreferences(preferences: FocusTimerPreferences) {
+  const db = await getReadyDb();
+  await db.runAsync(
+    `INSERT INTO focus_meta (key, value)
+     VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    TIMER_PREFS_KEY,
+    JSON.stringify(preferences),
+  );
+}
+
+export async function getFocusTimerPreferences(): Promise<FocusTimerPreferences | null> {
+  const db = await getReadyDb();
+  const row = await db.getFirstAsync<Record<string, unknown>>(
+    'SELECT value FROM focus_meta WHERE key = ?',
+    TIMER_PREFS_KEY,
+  );
+  if (!row?.value) return null;
+
+  try {
+    const parsed = JSON.parse(String(row.value));
+    if (parsed?.timerMode !== 'single' && parsed?.timerMode !== 'cycle') return null;
+    return parsed as FocusTimerPreferences;
+  } catch {
+    return null;
+  }
 }

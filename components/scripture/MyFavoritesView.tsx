@@ -336,7 +336,6 @@ export default function MyFavoritesView() {
                   params: {
                     bookId: String(annotation.bookId),
                     chapter: String(annotation.chapter),
-                    verse: String(verses[0] ?? annotation.verse),
                     editCommentId: annotation.id,
                   },
                 }) : undefined}
@@ -434,12 +433,26 @@ function AnnotationCard({
         </View>
         <View style={s.cardActions}>
           {onEdit && (
-            <Pressable onPress={onEdit} hitSlop={8} style={s.editBtn}>
-              <Pencil s={14} c="#A8A29E" w={2.1} />
+            <Pressable
+              onPress={event => {
+                event.stopPropagation?.();
+                onEdit();
+              }}
+              hitSlop={8}
+              style={s.editBtn}
+            >
+              <Pencil s={16} c="#8D8278" w={2.2} />
             </Pressable>
           )}
-          <Pressable onPress={onDelete} hitSlop={8} style={s.trashBtn}>
-            <Trash2 s={15} c="#D8A6A6" />
+          <Pressable
+            onPress={event => {
+              event.stopPropagation?.();
+              onDelete();
+            }}
+            hitSlop={8}
+            style={s.trashBtn}
+          >
+            <Trash2 s={16} c={C.red} w={2.15} />
           </Pressable>
         </View>
       </View>
@@ -538,7 +551,7 @@ function DeleteModal({
   return (
     <ConfirmModal
       visible={visible}
-      icon={<Trash2 s={22} c="#EF4444" />}
+      icon={<Trash2 s={22} c={C.red} />}
       iconBg="#FEF2F2"
       title="Delete saved passage?"
       body="This removes it from My Favorites."
@@ -613,9 +626,27 @@ const s = StyleSheet.create({
   cardKindChip: { backgroundColor: '#FFF7EA', borderColor: '#EEDCB6' },
   cardChipText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.8, textTransform: 'uppercase' },
   cardRef: { marginBottom: 12, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.7, color: '#C0B8AE', textTransform: 'uppercase' },
-  cardActions: { flexDirection: 'row', alignItems: 'center', gap: 2, flexShrink: 0 },
-  editBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-  trashBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+  cardActions: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 0, marginTop: -3 },
+  editBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8F7F5',
+    borderWidth: 1,
+    borderColor: '#EEEAE4',
+  },
+  trashBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF1F3',
+    borderWidth: 1,
+    borderColor: 'rgba(190,18,60,0.16)',
+  },
   quoteBlock: { paddingHorizontal: 0 },
   quoteLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   quoteVerseNum: { minWidth: 22, paddingTop: 5, fontFamily: F.sansBold, fontSize: 10, color: 'rgba(190,18,60,0.45)', textAlign: 'right' },

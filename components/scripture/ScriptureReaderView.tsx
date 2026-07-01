@@ -81,7 +81,7 @@ export default function ScriptureReaderView({
   const insets = useSafeAreaInsets();
   const { settings } = useAppSettings();
   const {
-    ready, annotations, categories, getChapter, upsertAnnotation, deleteAnnotation, updateCategory,
+    ready, annotations, categories, getChapter, upsertAnnotation, upsertAnnotations, deleteAnnotation, updateCategory,
   } = useScripture();
 
   const initialBookId = controlledBookId ?? (Number(params.bookId) || 42);
@@ -111,6 +111,7 @@ export default function ScriptureReaderView({
   const [commentSession, setCommentSession] = useState(0);
   const [commentMode, setCommentMode] = useState<'add' | 'edit'>('add');
   const [viewingComment, setViewingComment] = useState<ScriptureAnnotation | null>(null);
+  const [editCommentTarget, setEditCommentTarget] = useState<ScriptureAnnotation | null>(null);
   const [colorEditorOpen, setColorEditorOpen] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const verseLayoutYRef = useRef<Record<number, number>>({});
@@ -227,6 +228,7 @@ export default function ScriptureReaderView({
     setCommentOpen(false);
     setCommentDraft('');
     setCommentMode('add');
+    setEditCommentTarget(null);
   }, []);
 
   useEffect(() => {
@@ -264,24 +266,15 @@ export default function ScriptureReaderView({
   const applyHighlight = async () => {
     if (selectedVerses.length === 0) return;
     const joinedText = selectedVerses.map(verse => verse.text).join('\n\n');
-    for (const verse of selectedVerses) {
+    await upsertAnnotations(selectedVerses.map(verse => ({
       // Only replace same-color highlight — preserve other colors
-      const sameColor = annotations.find(annotation =>
-        annotation.kind === 'highlight'
-        && annotation.bookId === verse.bookId
-        && annotation.chapter === verse.chapter
-        && annotation.verse === verse.verse
-        && annotation.color === selectedColor);
-      if (sameColor) await deleteAnnotation(sameColor.id);
-      await upsertAnnotation({
-        kind: 'highlight',
-        color: selectedColor,
-        bookId: verse.bookId,
-        chapter: verse.chapter,
-        verse: verse.verse,
-        text: joinedText,
-      });
-    }
+      kind: 'highlight',
+      color: selectedColor,
+      bookId: verse.bookId,
+      chapter: verse.chapter,
+      verse: verse.verse,
+      text: joinedText,
+    })));
     clearSelection();
   };
 
@@ -297,7 +290,26 @@ export default function ScriptureReaderView({
 
   const saveComment = async () => {
     const cleanComment = commentDraft.trim();
-    if (selectedVerses.length === 0 || !plainRichText(cleanComment)) return;
+    if (!plainRichText(cleanComment)) return;
+    if (commentMode === 'edit' && editCommentTarget) {
+      const targets = getGroupedCommentAnnotations(editCommentTarget);
+      const editTargets = targets.length > 0 ? targets : [editCommentTarget];
+      for (const old of editTargets) {
+        await deleteAnnotation(old.id);
+        await upsertAnnotation({
+          kind: 'comment',
+          color: selectedColor,
+          bookId: old.bookId,
+          chapter: old.chapter,
+          verse: old.verse,
+          text: old.text,
+          comment: cleanComment,
+        });
+      }
+      clearSelection();
+      return;
+    }
+    if (selectedVerses.length === 0) return;
     const selectionText = selectedQuoteLines.join('\n\n');
     for (const verse of selectedVerses) {
       const existingComments = annotations.filter(annotation =>
@@ -354,12 +366,9 @@ export default function ScriptureReaderView({
   };
 
   const startEditFlow = (target: ScriptureAnnotation) => {
-    const groupedComments = getGroupedCommentAnnotations(target);
-    const verseNumbers = groupedComments
-      .map(annotation => annotation.verse)
-      .sort((a, b) => a - b);
-    setSelectedVerseNumbers(verseNumbers.length > 0 ? verseNumbers : [target.verse]);
+    setSelectedVerseNumbers([]);
     setSelectedColor(target.color);
+    setEditCommentTarget(target);
     setCommentDraft(target.comment ?? '');
     setCommentMode('edit');
     setCommentSession(value => value + 1);
@@ -372,6 +381,57 @@ export default function ScriptureReaderView({
     if (!viewingComment) return;
     startEditFlow(viewingComment);
   };
+
+  const editCommentVerseTexts = useMemo(() => {
+    if (!editCommentTarget) return [];
+    const grouped = annotations
+      .filter(annotation =>
+        annotation.kind === 'comment'
+        && annotation.bookId === editCommentTarget.bookId
+        && annotation.chapter === editCommentTarget.chapter
+        && annotation.color === editCommentTarget.color
+        && annotation.text === editCommentTarget.text
+        && annotation.comment === editCommentTarget.comment)
+      .sort((a, b) => a.verse - b.verse);
+    const targets = grouped.length > 0 ? grouped : [editCommentTarget];
+    const fallbackLines = splitQuoteLines(editCommentTarget.text);
+
+    return targets.map((annotation, index) => {
+      const loadedVerse = verses.find(verse => verse.verse === annotation.verse);
+      return {
+        verse: annotation.verse,
+        text: loadedVerse?.text ?? fallbackLines[index] ?? plainRichText(annotation.text),
+      };
+    });
+  }, [annotations, editCommentTarget, verses]);
+
+  const editCommentVerseRange = useMemo(() => {
+    if (!editCommentTarget) return '';
+    const book = getBibleBook(editCommentTarget.bookId)?.name ?? currentBook.name;
+    const verseNumbers = editCommentVerseTexts.map(item => item.verse).sort((a, b) => a - b);
+    const first = verseNumbers[0] ?? editCommentTarget.verse;
+    const last = verseNumbers[verseNumbers.length - 1] ?? first;
+    return `${book.toUpperCase()} ${editCommentTarget.chapter}:${first}${last !== first ? `-${last}` : ''}`;
+  }, [currentBook.name, editCommentTarget, editCommentVerseTexts]);
+
+  const activeCommentVerseTexts = commentMode === 'edit' && editCommentTarget
+    ? editCommentVerseTexts
+    : selectedVerses.map(verse => ({ verse: verse.verse, text: verse.text }));
+
+  const activeCommentVerseRange = commentMode === 'edit' && editCommentTarget
+    ? editCommentVerseRange
+    : selectedVerses.length > 0
+      ? `${currentBook.name.toUpperCase()} ${chapter}:${selectedVerses[0].verse}${selectedVerses.length > 1 ? `-${selectedVerses[selectedVerses.length - 1].verse}` : ''}`
+      : '';
+
+  const closeCommentModal = useCallback(() => {
+    setCommentOpen(false);
+    setEditCommentTarget(null);
+    if (commentMode === 'edit') {
+      setSelectedVerseNumbers([]);
+      setActionSheetOpen(false);
+    }
+  }, [commentMode]);
 
   const saveViewingCommentEdit = async (target: ScriptureAnnotation, newCommentHtml: string) => {
     const cleanComment = newCommentHtml.trim();
@@ -444,7 +504,7 @@ export default function ScriptureReaderView({
   };
 
   const hasBottomDock = !!bottomDock;
-  const selectionFabBottom = insets.bottom + (hasBottomDock ? 92 : 0);
+  const selectionFabTop = insets.top + 100;
   const selectionSheetBottom = insets.bottom;
 
   if (!ready) {
@@ -525,7 +585,7 @@ export default function ScriptureReaderView({
       <SelectionTools
         visible={selectionActive}
         sheetOpen={actionSheetOpen}
-        fabBottom={selectionFabBottom}
+        fabTop={selectionFabTop}
         sheetBottom={selectionSheetBottom}
         categories={categories}
         selectedColor={selectedColor}
@@ -548,16 +608,14 @@ export default function ScriptureReaderView({
         visible={commentOpen}
         mode={commentMode}
         value={commentDraft}
-        verseTexts={selectedVerses.map(verse => ({ verse: verse.verse, text: verse.text }))}
-        verseRange={selectedVerses.length > 0
-          ? `${currentBook.name.toUpperCase()} ${chapter}:${selectedVerses[0].verse}${selectedVerses.length > 1 ? `-${selectedVerses[selectedVerses.length - 1].verse}` : ''}`
-          : ''}
+        verseTexts={activeCommentVerseTexts}
+        verseRange={activeCommentVerseRange}
         categories={categories}
         selectedColor={selectedColor}
         onSelectColor={setSelectedColor}
         onEditColors={() => setColorEditorOpen(true)}
         onValue={setCommentDraft}
-        onClose={() => setCommentOpen(false)}
+        onClose={closeCommentModal}
         onSave={saveComment}
       />
 
@@ -665,7 +723,10 @@ function VerseRow({
   const decorationAccent = commentAccent ?? underlineAccent;
   const markerAccent = commentAccent ?? favoriteAccent;
   const selectedMotion = useSharedValue(selected ? 1 : 0);
+  const highlightMotion = useSharedValue(highlightAccent ? 1 : 0);
   const pressMotion = useSharedValue(0);
+  const highlightBg = highlightAccent ? hexToRgba(highlightAccent, 0.15) : 'rgba(255,255,255,0)';
+  const highlightLine = highlightAccent ? hexToRgba(highlightAccent, 0.30) : 'rgba(255,255,255,0)';
 
   useEffect(() => {
     selectedMotion.value = withSpring(selected ? 1 : 0, {
@@ -674,6 +735,12 @@ function VerseRow({
       mass: 0.72,
     });
   }, [selected, selectedMotion]);
+
+  useEffect(() => {
+    highlightMotion.value = withTiming(highlightAccent ? 1 : 0, {
+      duration: highlightAccent ? 220 : 120,
+    });
+  }, [highlightAccent, highlightMotion]);
 
   const handlePress = useCallback(() => {
     if (selectionActive) {
@@ -731,6 +798,19 @@ function VerseRow({
     borderColor: interpolateColor(selectedMotion.value, [0, 1], ['rgba(197,160,89,0.36)', GOLD]),
   }));
 
+  const highlightMotionStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      highlightMotion.value,
+      [0, 1],
+      ['rgba(255,255,255,0)', highlightBg],
+    ),
+    borderBottomColor: interpolateColor(
+      highlightMotion.value,
+      [0, 1],
+      ['rgba(255,255,255,0)', highlightLine],
+    ),
+  }));
+
   return (
     <GestureDetector gesture={rowGesture}>
       <Reanimated.View
@@ -756,17 +836,12 @@ function VerseRow({
             <Star s={14} c={markerAccent} />
           </TouchableOpacity>
         )}
-        <View
+        <Reanimated.View
           style={[
             s.verseTextWrap,
             markerAccent && !selectionActive && s.verseTextWrapMarked,
-            highlightAccent && [
-              s.verseHighlightWrap,
-              {
-                backgroundColor: hexToRgba(highlightAccent, 0.15),
-                borderBottomColor: hexToRgba(highlightAccent, 0.30),
-              },
-            ],
+            highlightAccent && s.verseHighlightWrap,
+            highlightAccent && highlightMotionStyle,
           ]}
         >
           <Text
@@ -782,7 +857,7 @@ function VerseRow({
             {verse.text}
           </Text>
 
-        </View>
+        </Reanimated.View>
 
         {/* Extra color tray */}
         {!selectionActive && extraHighlights.length > 0 && (
@@ -809,7 +884,7 @@ function VerseRow({
 function SelectionTools({
   visible,
   sheetOpen,
-  fabBottom,
+  fabTop,
   sheetBottom,
   categories,
   selectedColor,
@@ -828,7 +903,7 @@ function SelectionTools({
 }: {
   visible: boolean;
   sheetOpen: boolean;
-  fabBottom: number;
+  fabTop: number;
   sheetBottom: number;
   categories: ColorCategory[];
   selectedColor: HighlightColor;
@@ -852,16 +927,25 @@ function SelectionTools({
 
   if (!sheetOpen) {
     return (
-      <TouchableOpacity
-        onPress={onOpenSheet}
-        activeOpacity={0.88}
-        style={[s.pencilFabWrap, { bottom: fabBottom + 30 }]}
+      <Reanimated.View
+        entering={FadeInDown.duration(170)}
+        exiting={FadeOut.duration(110)}
+        style={[s.pencilFabWrap, { top: fabTop }]}
       >
-        <View style={s.pencilFab}>
-          <Pencil s={18} c={GOLD} w={2.3} />
-        </View>
-        <Text style={s.pencilFabLabel}>ANNOTATE</Text>
-      </TouchableOpacity>
+        <TouchableOpacity
+          onPress={onOpenSheet}
+          activeOpacity={0.9}
+          style={s.pencilFab}
+        >
+          <View style={s.pencilFabIcon}>
+            <Pencil s={15} c="#2F281D" w={2.45} />
+          </View>
+          <View style={s.pencilFabCopy}>
+            <Text style={s.pencilFabLabel}>ANNOTATE</Text>
+            <Text style={s.pencilFabHint}>Selected text</Text>
+          </View>
+        </TouchableOpacity>
+      </Reanimated.View>
     );
   }
 
@@ -908,22 +992,24 @@ function SelectionTools({
             onPress={onHighlight}
             activeOpacity={0.88}
             style={[
-              s.highlightAction,
+              s.selectionActionCard,
               {
-                borderColor: hexToRgba(accent, 0.22),
-                backgroundColor: hexToRgba(accent, 0.08),
+                borderColor: hexToRgba(accent, 0.30),
+                backgroundColor: hexToRgba(accent, 0.10),
               },
             ]}
           >
-            <View style={s.highlightIconCircle}>
+            <View style={[s.highlightIconCircle, { borderColor: hexToRgba(accent, 0.18) }]}>
               <Pencil s={18} c={accent} w={2.4} />
             </View>
             <View style={s.sheetActionCopy}>
               <Text style={[s.highlightKicker, { color: accent }]}>HIGHLIGHT</Text>
-              <Text style={[s.highlightTitle, { color: accent }]}>Highlight as {categoryLabel}</Text>
+              <Text style={s.highlightTitle}>Highlight as {categoryLabel}</Text>
               {selectedCount > 1 && <Text style={s.selectionCount}>{selectedCount} verses selected</Text>}
             </View>
-            <View style={[s.highlightAccent, { backgroundColor: hexToRgba(accent, 0.52) }]} />
+            <View style={[s.selectionActionArrow, { borderColor: hexToRgba(accent, 0.18), backgroundColor: hexToRgba(accent, 0.10) }]}>
+              <ChevronRight s={15} c={accent} w={2.4} />
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -931,19 +1017,22 @@ function SelectionTools({
             activeOpacity={commentDisabled ? 1 : 0.88}
             disabled={commentDisabled}
             style={[
+              s.selectionActionCard,
               s.commentAction,
               commentDisabled
                 ? { borderColor: '#E5E7EB', backgroundColor: '#F6F6F7', opacity: 0.55 }
                 : {
-                    borderColor: hexToRgba(accent, 0.22),
-                    backgroundColor: '#FFFFFF',
+                    borderColor: hexToRgba(accent, 0.24),
+                    backgroundColor: '#FFFDFC',
                   },
             ]}
           >
             <View
               style={[
                 s.highlightIconCircle,
-                commentDisabled && { backgroundColor: '#ECECEE' },
+                commentDisabled
+                  ? { backgroundColor: '#ECECEE', borderColor: '#E5E7EB' }
+                  : { borderColor: hexToRgba(accent, 0.16) },
               ]}
             >
               <Feather s={18} c={commentDisabled ? '#9CA3AF' : accent} w={2.2} />
@@ -961,6 +1050,17 @@ function SelectionTools({
                   { color: commentDisabled ? '#9CA3AF' : '#2F2B27' },
                 ]}
               >{commentDisabled ? 'Already commented' : 'Add reflection'}</Text>
+            </View>
+            <View
+              style={[
+                s.selectionActionArrow,
+                {
+                  borderColor: commentDisabled ? '#E5E7EB' : hexToRgba(accent, 0.16),
+                  backgroundColor: commentDisabled ? '#F3F4F6' : hexToRgba(accent, 0.07),
+                },
+              ]}
+            >
+              <ChevronRight s={15} c={commentDisabled ? '#C4C7CC' : accent} w={2.4} />
             </View>
           </TouchableOpacity>
     </SmoothBottomSheet>
@@ -989,6 +1089,15 @@ function plainRichText(html?: string) {
     .replace(/&ldquo;/g, '"')
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[ \t]+\n/g, '\n')
+    .trim();
+}
+
+function normalizeCommentForDirtyCheck(html?: string) {
+  const source = (html ?? '').trim();
+  if (!plainRichText(source)) return '';
+  return source
+    .replace(/\s+/g, ' ')
+    .replace(/>\s+</g, '><')
     .trim();
 }
 
@@ -1030,13 +1139,29 @@ function CommentModal({
   const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
   const [versesExpanded, setVersesExpanded] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const initialValueRef = useRef('');
+  const discardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!visible) {
       setVersesExpanded(false);
       setKeyboardOpen(false);
+      setDiscardConfirmOpen(false);
+      if (discardTimerRef.current) {
+        clearTimeout(discardTimerRef.current);
+        discardTimerRef.current = null;
+      }
     }
   }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    initialValueRef.current = value;
+    // The baseline must be captured only when a fresh editor instance opens.
+    // Updating it while the user types would make dirty-checking ineffective.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editorKey, visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -1065,9 +1190,30 @@ function CommentModal({
     : verseTexts;
   const hiddenVerseCount = verseTexts.length - COMMENT_VERSE_PREVIEW_COUNT;
   const showVerseNumbers = verseTexts.length > 1;
+  const hasUnsavedEditChanges = mode === 'edit'
+    && normalizeCommentForDirtyCheck(value) !== normalizeCommentForDirtyCheck(initialValueRef.current);
+
+  const requestClose = () => {
+    if (hasUnsavedEditChanges) {
+      if (discardTimerRef.current) clearTimeout(discardTimerRef.current);
+      editorRef.current?.blur();
+      Keyboard.dismiss();
+      discardTimerRef.current = setTimeout(() => {
+        setDiscardConfirmOpen(true);
+        discardTimerRef.current = null;
+      }, keyboardOpen ? (Platform.OS === 'ios' ? 280 : 170) : 0);
+      return;
+    }
+    onClose();
+  };
+
+  const discardEditChanges = () => {
+    setDiscardConfirmOpen(false);
+    onClose();
+  };
 
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={requestClose} statusBarTranslucent>
       <KeyboardAvoidingView
         style={[
           s.commentOverlay,
@@ -1079,7 +1225,7 @@ function CommentModal({
         <View style={s.commentCard}>
           <View style={s.commentHeader}>
             <Text style={s.commentTitle} numberOfLines={1}>{mode === 'edit' ? 'Edit Comment' : 'Add Comment'}</Text>
-            <TouchableOpacity onPress={onClose} style={s.commentCloseBtn} activeOpacity={0.85} hitSlop={6}>
+            <TouchableOpacity onPress={requestClose} style={s.commentCloseBtn} activeOpacity={0.85} hitSlop={6}>
               <X s={16} c="#9CA3AF" />
             </TouchableOpacity>
           </View>
@@ -1158,10 +1304,25 @@ function CommentModal({
           </ScrollView>
 
           <TouchableOpacity onPress={onSave} style={s.commentSave} activeOpacity={0.85}>
-            <Text style={s.commentSaveText}>SAVE COMMENT</Text>
+            <Text style={s.commentSaveText}>{mode === 'edit' ? 'SAVE CHANGES' : 'SAVE COMMENT'}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <ConfirmModal
+        visible={discardConfirmOpen}
+        embedded
+        icon={<X s={22} c={C.red} w={2.35} />}
+        iconBg="#FEF2F2"
+        title="Delete changes?"
+        body="Your edited comment has not been saved. Delete these changes and keep the original comment?"
+        cancelLabel="CANCEL"
+        confirmLabel="DELETE"
+        confirmColor={C.red}
+        onBackdropPress={() => setDiscardConfirmOpen(false)}
+        onCancel={() => setDiscardConfirmOpen(false)}
+        onConfirm={discardEditChanges}
+      />
     </Modal>
   );
 }
@@ -1252,6 +1413,8 @@ function CommentPreviewModal({
   const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const discardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const annotationId = annotation?.id;
 
@@ -1261,6 +1424,11 @@ function CommentPreviewModal({
     setSavedDraft(null);
     setKeyboardOpen(false);
     setConfirmDeleteOpen(false);
+    setDiscardConfirmOpen(false);
+    if (discardTimerRef.current) {
+      clearTimeout(discardTimerRef.current);
+      discardTimerRef.current = null;
+    }
     setDraft(annotation?.comment ?? '');
     setEditorKey(k => k + 1);
   }, [annotationId]);
@@ -1293,6 +1461,8 @@ function CommentPreviewModal({
 
   // Comment to display in view mode — prefer the in-session saved draft
   const displayedComment = savedDraft ?? annotation.comment ?? '';
+  const hasUnsavedEditChanges = editing
+    && normalizeCommentForDirtyCheck(draft) !== normalizeCommentForDirtyCheck(displayedComment);
 
   const handleStartEdit = () => {
     setDraft(displayedComment);
@@ -1310,8 +1480,31 @@ function CommentPreviewModal({
     Keyboard.dismiss();
   };
 
+  const requestPreviewClose = () => {
+    if (hasUnsavedEditChanges) {
+      if (discardTimerRef.current) clearTimeout(discardTimerRef.current);
+      editorRef.current?.blur();
+      Keyboard.dismiss();
+      discardTimerRef.current = setTimeout(() => {
+        setDiscardConfirmOpen(true);
+        discardTimerRef.current = null;
+      }, keyboardOpen ? (Platform.OS === 'ios' ? 280 : 170) : 0);
+      return;
+    }
+    onClose();
+  };
+
+  const discardPreviewChanges = () => {
+    setDiscardConfirmOpen(false);
+    setDraft(displayedComment);
+    setEditing(false);
+    setKeyboardOpen(false);
+    Keyboard.dismiss();
+    onClose();
+  };
+
   return (
-    <Modal transparent visible animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+    <Modal transparent visible animationType="fade" onRequestClose={requestPreviewClose} statusBarTranslucent>
       <KeyboardAvoidingView
         style={[
           s.previewOverlay,
@@ -1326,7 +1519,7 @@ function CommentPreviewModal({
               <Text style={s.previewChipText}>{categoryLabel}</Text>
             </View>
             <Text numberOfLines={1} style={s.previewRef}>{verseRange}</Text>
-            <TouchableOpacity onPress={onClose} style={s.previewClose} activeOpacity={0.82} hitSlop={6}>
+            <TouchableOpacity onPress={requestPreviewClose} style={s.previewClose} activeOpacity={0.82} hitSlop={6}>
               <X s={16} c="#9CA3AF" />
             </TouchableOpacity>
           </View>
@@ -1372,7 +1565,7 @@ function CommentPreviewModal({
 
           {editing ? (
             <TouchableOpacity onPress={handleSaveEdit} style={s.commentSave} activeOpacity={0.85}>
-              <Text style={s.commentSaveText}>SAVE COMMENT</Text>
+              <Text style={s.commentSaveText}>SAVE CHANGES</Text>
             </TouchableOpacity>
           ) : (
             <View style={s.previewActions}>
@@ -1395,18 +1588,32 @@ function CommentPreviewModal({
       <ConfirmModal
         visible={confirmDeleteOpen}
         embedded
-        icon={<Trash2 s={22} c="#EF4444" w={2.2} />}
+        icon={<Trash2 s={22} c={C.red} w={2.2} />}
         iconBg="#FEF2F2"
         title="Delete this comment?"
         body="This comment will be permanently removed."
         cancelLabel="CANCEL"
         confirmLabel="DELETE"
-        confirmColor="#EF4444"
+        confirmColor={C.red}
         onCancel={() => setConfirmDeleteOpen(false)}
         onConfirm={() => {
           setConfirmDeleteOpen(false);
           onDelete();
         }}
+      />
+      <ConfirmModal
+        visible={discardConfirmOpen}
+        embedded
+        icon={<X s={22} c={C.red} w={2.35} />}
+        iconBg="#FEF2F2"
+        title="Delete changes?"
+        body="Your edited comment has not been saved. Delete these changes and keep the original comment?"
+        cancelLabel="CANCEL"
+        confirmLabel="DELETE"
+        confirmColor={C.red}
+        onBackdropPress={() => setDiscardConfirmOpen(false)}
+        onCancel={() => setDiscardConfirmOpen(false)}
+        onConfirm={discardPreviewChanges}
       />
     </Modal>
   );
@@ -1505,7 +1712,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 3,
     paddingVertical: 1,
   },
-  verseText: { fontFamily: F.serif, fontSize: 21, lineHeight: 32, color: '#1F1F1F', letterSpacing: 0.1 },
+  verseText: { fontFamily: F.serif, fontSize: 21, lineHeight: 28, color: '#1F1F1F', letterSpacing: 0.1 },
   extraColorTray: {
     alignSelf: 'flex-end',
     flexDirection: 'row',
@@ -1559,42 +1766,55 @@ const s = StyleSheet.create({
   },
   pencilFabWrap: {
     position: 'absolute',
-    right: 22,
-    alignItems: 'center',
+    right: 15,
+    zIndex: 30,
+    elevation: 30,
   },
   pencilFab: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    borderWidth: 1.5,
-    borderColor: 'rgba(197,160,89,0.40)',
-    backgroundColor: '#FFFDF7',
+    minHeight: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(216,183,102,0.72)',
+    backgroundColor: '#2F281D',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingLeft: 6,
+    paddingRight: 14,
+    paddingVertical: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.20,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  pencilFabIcon: {
+    width: 35,
+    height: 35,
+    borderRadius: 18,
+    backgroundColor: '#D8B766',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.16,
-    shadowOffset: { width: 0, height: 5 },
-    shadowRadius: 18,
-    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.34)',
+  },
+  pencilFabCopy: {
+    minWidth: 76,
+    justifyContent: 'center',
   },
   pencilFabLabel: {
-    marginTop: 6,
-    fontSize: 9.5,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    color: GOLD,
-    backgroundColor: '#FFFDF7',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.40)',
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-    borderRadius: 10,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.10,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
-    elevation: 3,
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    letterSpacing: 1.65,
+    color: '#FFF8E8',
+    textTransform: 'uppercase',
+  },
+  pencilFabHint: {
+    marginTop: 1,
+    fontFamily: F.serif,
+    fontSize: 12.5,
+    lineHeight: 15,
+    color: 'rgba(255,248,232,0.72)',
   },
   selectionOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.08)', position: 'relative' },
   selectionSheet: {
@@ -1643,23 +1863,29 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sheetDivider: { height: 1, backgroundColor: '#F1F5F9', marginTop: 15, marginBottom: 13 },
-  highlightAction: {
-    minHeight: 78,
+  sheetDivider: { height: 1, backgroundColor: '#F1F5F9', marginTop: 14, marginBottom: 11 },
+  selectionActionCard: {
+    minHeight: 74,
     borderRadius: 22,
     borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 13,
+    gap: 12,
     overflow: 'hidden',
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.07,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 16,
+    elevation: 2,
   },
   highlightIconCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.82)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.88)',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#0F172A',
@@ -1668,22 +1894,21 @@ const s = StyleSheet.create({
     shadowRadius: 8,
     elevation: 1,
   },
-  highlightKicker: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.6 },
-  highlightTitle: { marginTop: 2, fontFamily: F.serif, fontSize: 21, lineHeight: 24 },
-  selectionCount: { marginTop: 3, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.4, color: '#9CA3AF', textTransform: 'uppercase' },
-  highlightAccent: { width: 26, height: 26, borderRadius: 13, marginLeft: 'auto' },
+  highlightKicker: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2.35 },
+  highlightTitle: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 20, lineHeight: 23, color: '#2F2B27' },
+  selectionCount: { marginTop: 4, fontFamily: F.sansBold, fontSize: 8.8, letterSpacing: 1.35, color: '#9CA3AF', textTransform: 'uppercase' },
+  selectionActionArrow: {
+    width: 31,
+    height: 31,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
+  },
   sheetActionCopy: { flex: 1, minWidth: 0 },
   commentAction: {
-    minHeight: 78,
-    borderRadius: 22,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 13,
-    overflow: 'hidden',
-    marginTop: 12,
+    marginTop: 10,
   },
   actionOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.18)' },
   actionSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#fff', padding: 20, paddingBottom: 30 },

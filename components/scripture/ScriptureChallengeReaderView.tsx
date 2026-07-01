@@ -472,7 +472,7 @@ const s = StyleSheet.create({
     flex: 1,
     fontFamily: F.serif,
     fontSize: 21,
-    lineHeight: 32,
+    lineHeight: 28,
     color: '#1F1F1F',
     letterSpacing: 0,
   },

@@ -908,12 +908,12 @@ function ListStep({
 
       <ConfirmModal
         visible={pendingDelete !== null}
-        icon={<Trash2 s={22} c="#EF4444" />}
+        icon={<Trash2 s={22} c={C.red} />}
         iconBg="#FEF2F2"
         title="Remove this?"
         body={pendingDelete !== null && items[pendingDelete] ? `"${items[pendingDelete]}" will be removed.` : ''}
         confirmLabel="DELETE"
-        confirmColor="#EF4444"
+        confirmColor={C.red}
         onCancel={() => setPendingDelete(null)}
         onConfirm={confirmDelete}
       />
@@ -1492,12 +1492,12 @@ function ListEditor({
 
       <ConfirmModal
         visible={pendingDelete !== null}
-        icon={<Trash2 s={22} c="#EF4444" />}
+        icon={<Trash2 s={22} c={C.red} />}
         iconBg="#FEF2F2"
         title="Remove this?"
         body={pendingDelete !== null && items[pendingDelete] ? `"${items[pendingDelete]}" will be removed.` : ''}
         confirmLabel="DELETE"
-        confirmColor="#EF4444"
+        confirmColor={C.red}
         onCancel={() => setPendingDelete(null)}
         onConfirm={confirmDelete}
       />

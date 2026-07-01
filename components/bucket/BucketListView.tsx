@@ -69,13 +69,13 @@ function ConfirmationModal({
   return (
     <SharedConfirmModal
       visible={visible}
-      icon={warm ? <CheckSmall s={22} c={C.gold} w={2.8} /> : <Trash2 s={22} c="#EF4444" />}
+      icon={warm ? <CheckSmall s={22} c={C.gold} w={2.8} /> : <Trash2 s={22} c={C.red} />}
       iconBg={warm ? '#F7EFE0' : '#FEF2F2'}
       title={title}
       body={message}
       cancelLabel={cancelLabel}
       confirmLabel={confirmLabel}
-      confirmColor={warm ? C.gold : '#EF4444'}
+      confirmColor={warm ? C.gold : C.red}
       onCancel={() => { feedback(); onClose(); }}
       onConfirm={() => { feedback(); onConfirm(); onClose(); }}
     />
@@ -102,7 +102,7 @@ function AddDreamCard({ value, onChange, onAdd }: { value: string; onChange: (v:
         activeOpacity={0.82}
         style={[add.btn, !enabled && add.btnDisabled]}
       >
-        <Plus s={22} c="#fff" w={2.6} />
+        <Plus s={18} c="#fff" w={2.6} />
       </TouchableOpacity>
     </View>
   );
@@ -207,12 +207,14 @@ function DreamRow({
             <View style={row.emptyCheckCore} />
           </TouchableOpacity>
           <Text style={row.text} numberOfLines={3}>{item.text}</Text>
-          <TouchableOpacity onPress={() => onStartEdit(item)} activeOpacity={0.75} style={row.iconBtn}>
-            <Pencil s={18} c="#c8c8c8" w={2} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => onAskDelete(item.id)} activeOpacity={0.75} style={row.iconBtn}>
-            <Trash2 s={18} c="#c8c8c8" w={2} />
-          </TouchableOpacity>
+          <View style={row.actions}>
+            <TouchableOpacity onPress={() => onStartEdit(item)} activeOpacity={0.75} style={row.iconBtn}>
+              <Pencil s={18} c="#c8c8c8" w={2} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => onAskDelete(item.id)} activeOpacity={0.75} style={row.iconBtn}>
+              <Trash2 s={18} c="#D64C55" w={2} />
+            </TouchableOpacity>
+          </View>
         </>
       )}
     </Reanimated.View>
@@ -228,6 +230,7 @@ function AchievedRow({
   onCancelEdit,
   onSaveEdit,
   onAskToggle,
+  onAskDelete,
 }: {
   item: BucketListItem;
   editing: boolean;
@@ -237,6 +240,7 @@ function AchievedRow({
   onCancelEdit: () => void;
   onSaveEdit: (item: BucketListItem) => void;
   onAskToggle: (item: BucketListItem, mode: ToggleMode) => void;
+  onAskDelete: (id: string) => void;
 }) {
   return (
     <Reanimated.View
@@ -267,9 +271,14 @@ function AchievedRow({
             <Text style={row.completedText} numberOfLines={2}>{item.text}</Text>
             {!!item.completedAt && <Text style={row.date}>{formatCompletedDate(item.completedAt)}</Text>}
           </View>
-          <TouchableOpacity onPress={() => onStartEdit(item)} activeOpacity={0.75} style={row.iconBtn}>
-            <Pencil s={18} c="#c8c8c8" w={2} />
-          </TouchableOpacity>
+          <View style={row.actions}>
+            <TouchableOpacity onPress={() => onStartEdit(item)} activeOpacity={0.75} style={row.iconBtn}>
+              <Pencil s={18} c="#c8c8c8" w={2} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => onAskDelete(item.id)} activeOpacity={0.75} style={row.iconBtn}>
+              <Trash2 s={18} c="#D64C55" w={2} />
+            </TouchableOpacity>
+          </View>
         </>
       )}
     </Reanimated.View>
@@ -450,6 +459,7 @@ export default function BucketListView() {
                     feedback();
                     setConfirmToggle({ item: nextItem, mode });
                   }}
+                  onAskDelete={id => setDeleteConfirmId(id)}
                 />
               ))}
             </Reanimated.View>
@@ -495,25 +505,31 @@ const add = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
-    padding: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     paddingLeft: 14,
   },
   input: {
     flex: 1,
-    minHeight: 40,
+    minHeight: 36,
     paddingHorizontal: 4,
     fontFamily: F.serif,
-    fontSize: 17,
-    lineHeight: 23,
+    fontSize: 18,
+    lineHeight: 24,
     color: '#1F2937',
   },
   btn: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     backgroundColor: C.gold,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: C.gold,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 2,
   },
   btnDisabled: {
     opacity: 0.3,
@@ -547,11 +563,10 @@ const sh = StyleSheet.create({
     color: C.gold,
   },
   count: {
-    fontFamily: F.sansBold,
-    fontSize: 11,
-    letterSpacing: 1.7,
+    fontFamily: F.serifMedium,
+    fontSize: 17,
+    lineHeight: 22,
     color: '#9CA3AF',
-    textTransform: 'uppercase',
   },
   countAchieved: {
     color: 'rgba(197,160,89,0.62)',
@@ -572,7 +587,7 @@ const row = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 11,
-    paddingVertical: 12,
+    paddingVertical: 9,
     paddingHorizontal: 13,
   },
   completedCard: {
@@ -627,11 +642,17 @@ const row = StyleSheet.create({
     color: 'rgba(197,160,89,0.58)',
   },
   iconBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 11,
+    width: 30,
+    height: 30,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    flexShrink: 0,
   },
   editInput: {
     flex: 1,

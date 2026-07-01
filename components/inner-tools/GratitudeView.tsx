@@ -83,6 +83,7 @@ function newId(prefix: string) {
 }
 
 const GRATITUDE_TASK_ID = 'gratitude_daily_task';
+const LIFE_PREVIEW_COUNT = 6;
 
 function buildGratitudeTaskDraft({
   time,
@@ -159,11 +160,17 @@ export default function GratitudeView() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [confirmDisableTask, setConfirmDisableTask] = useState(false);
   const [dailyPageIndex, setDailyPageIndex] = useState(0);
+  const [showAllLifeEntries, setShowAllLifeEntries] = useState(false);
   const handledTaskOpenRef = useRef(false);
   const { width: windowWidth } = useWindowDimensions();
   const dailyPageWidth = Math.max(0, windowWidth - 40);
 
   const lifeEntries = useMemo(() => gratitudeEntries.filter(entry => entry.kind === 'life').sort((a, b) => b.createdAt - a.createdAt), [gratitudeEntries]);
+  const visibleLifeEntries = useMemo(
+    () => showAllLifeEntries ? lifeEntries : lifeEntries.slice(0, LIFE_PREVIEW_COUNT),
+    [lifeEntries, showAllLifeEntries]
+  );
+  const hasHiddenLifeEntries = lifeEntries.length > LIFE_PREVIEW_COUNT;
   const dailyEntries = useMemo(() => gratitudeEntries.filter(entry => entry.kind === 'daily').sort((a, b) => b.createdAt - a.createdAt), [gratitudeEntries]);
   const dailyPages = useMemo(() => {
     const pages: GratitudeEntry[][] = [];
@@ -180,6 +187,12 @@ export default function GratitudeView() {
       setDailyPageIndex(0);
     }
   }, [dailyPages.length, dailyPageIndex]);
+
+  useEffect(() => {
+    if (showAllLifeEntries && lifeEntries.length <= LIFE_PREVIEW_COUNT) {
+      setShowAllLifeEntries(false);
+    }
+  }, [lifeEntries.length, showAllLifeEntries]);
 
   const taskEntryDate = params.taskDate ?? getLocalDateKey();
 
@@ -269,17 +282,31 @@ export default function GratitudeView() {
           <EmptyHint color="amber" text="What are you always grateful for?" />
         ) : (
           <View style={s.lifeList}>
-            {lifeEntries.map(entry => (
+            {visibleLifeEntries.map(entry => (
               <GratitudeCard
                 key={entry.id}
                 entry={entry}
                 color="amber"
                 showDate={false}
                 collapsible
+                animatePresence
                 onEdit={() => openEdit(entry)}
                 onDelete={() => setDeleteTarget(entry.id)}
               />
             ))}
+            {hasHiddenLifeEntries && (
+              <Reanimated.View
+                entering={FadeIn.duration(160)}
+                exiting={FadeOut.duration(120)}
+                layout={LinearTransition.springify().damping(16).stiffness(170).mass(1)}
+                style={s.lifeMoreWrap}
+              >
+                <LifeMoreButton
+                  expanded={showAllLifeEntries}
+                  onPress={() => setShowAllLifeEntries(value => !value)}
+                />
+              </Reanimated.View>
+            )}
           </View>
         )}
 
@@ -346,9 +373,9 @@ export default function GratitudeView() {
             {dailyPages.length > 1 && (
               <View style={s.pageDots}>
                 {dailyPages.map((_, idx) => (
-                  <View
+                  <DailyPageDot
                     key={idx}
-                    style={[s.pageDot, idx === dailyPageIndex && s.pageDotActive]}
+                    active={idx === dailyPageIndex}
                   />
                 ))}
               </View>
@@ -377,7 +404,7 @@ export default function GratitudeView() {
 
       <ConfirmModal
         visible={!!deleteTarget}
-        icon={<Trash2 s={22} c="#EF4444" />}
+        icon={<Trash2 s={22} c={C.red} />}
         iconBg="#FEF2F2"
         title="Delete entry?"
         body="This gratitude entry will be permanently removed."
@@ -462,6 +489,38 @@ function SectionHeader({
       </TouchableOpacity>
     </View>
   );
+}
+
+function LifeMoreButton({ expanded, onPress }: { expanded: boolean; onPress: () => void }) {
+  const progress = useChoiceMotion(expanded);
+  const iconStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${progress.value * 180}deg` }],
+  }));
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={s.lifeMoreBtn}
+      activeOpacity={0.86}
+      haptic="selection"
+    >
+      <Text style={s.lifeMoreText}>{expanded ? 'Show Less' : 'See All'}</Text>
+      <Reanimated.View style={[s.lifeMoreIcon, iconStyle]}>
+        <ChevronDown s={16} c="#9A7A34" w={2.1} />
+      </Reanimated.View>
+    </TouchableOpacity>
+  );
+}
+
+function DailyPageDot({ active }: { active: boolean }) {
+  const progress = useChoiceMotion(active);
+  const dotStyle = useAnimatedStyle(() => ({
+    width: 6 + progress.value * 12,
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#E7E5E4', ROSE]),
+    opacity: 0.72 + progress.value * 0.28,
+  }));
+
+  return <Reanimated.View style={[s.pageDot, dotStyle]} />;
 }
 
 function GratitudeForm({
@@ -610,12 +669,13 @@ function stripHtml(html: string): string {
 }
 
 function GratitudeCard({
-  entry, color, showDate, collapsible, onEdit, onDelete,
+  entry, color, showDate, collapsible, animatePresence = false, onEdit, onDelete,
 }: {
   entry: GratitudeEntry;
   color: 'amber' | 'rose';
   showDate: boolean;
   collapsible?: boolean;
+  animatePresence?: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -648,11 +708,11 @@ function GratitudeCard({
 
   const actions = (
     <View style={s.gActions}>
-      <TouchableOpacity onPress={onEdit} style={s.gActionBtn} activeOpacity={0.7} hitSlop={6}>
+      <TouchableOpacity onPress={onEdit} style={s.gActionBtn} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
         <Pencil s={15} c="#A8A29E" w={1.8} />
       </TouchableOpacity>
-      <TouchableOpacity onPress={onDelete} style={s.gActionBtn} activeOpacity={0.7} hitSlop={6}>
-        <Trash2 s={15} c="#A8A29E" w={1.8} />
+      <TouchableOpacity onPress={onDelete} style={s.gActionBtn} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+        <Trash2 s={15} c="#D64C55" w={1.8} />
       </TouchableOpacity>
     </View>
   );
@@ -661,6 +721,8 @@ function GratitudeCard({
     <Reanimated.View
       style={[s.gCard, { borderColor: border }]}
       layout={LinearTransition.springify().damping(15).stiffness(160).mass(1)}
+      entering={animatePresence ? FadeIn.duration(160) : undefined}
+      exiting={animatePresence ? FadeOut.duration(120) : undefined}
     >
       <View style={[s.gAccent, { backgroundColor: stripe }]} pointerEvents="none" />
       <View style={s.gInner}>
@@ -918,7 +980,38 @@ const s = StyleSheet.create({
   sectionTitle: { fontFamily: F.serifMedium, fontSize: 23, color: C.text },
   sectionCount: { fontSize: 15, color: C.textMuted },
   sectionAdd: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  lifeList: { gap: 11, marginBottom: 18 },
+  lifeList: { gap: 7, marginBottom: 16 },
+  lifeMoreWrap: { alignItems: 'center', paddingTop: 2, paddingBottom: 2 },
+  lifeMoreBtn: {
+    minHeight: 38,
+    paddingHorizontal: 17,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.28)',
+    backgroundColor: '#FFF9EC',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 7,
+    shadowColor: GOLD,
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  lifeMoreText: {
+    fontFamily: F.serifMedium,
+    fontSize: 15.5,
+    color: '#8D6D2D',
+  },
+  lifeMoreIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(197,160,89,0.10)',
+  },
   formFrame: { borderWidth: 2, borderRadius: 24, padding: 2, marginBottom: 12 },
   formInner: { borderRadius: 22, backgroundColor: '#fff', padding: 15, gap: 11 },
   formKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, textTransform: 'uppercase' },
@@ -1039,7 +1132,7 @@ const s = StyleSheet.create({
     width: 3,
     borderRadius: 2,
   },
-  gInner: { padding: 16, paddingLeft: 22 },
+  gInner: { paddingHorizontal: 16, paddingVertical: 13, paddingLeft: 22 },
   gHead: { flexDirection: 'row', alignItems: 'center', columnGap: 11 },
   gIconCircle: {
     width: 28, height: 28, borderRadius: 14,
@@ -1049,12 +1142,12 @@ const s = StyleSheet.create({
   gTitle: {
     marginTop: 1,
     fontFamily: F.serifMedium,
-    fontSize: 15,
+    fontSize: 16,
     lineHeight: 20,
     color: '#2A2622',
   },
   gBody: { marginTop: 10 },
-  gActions: { flexDirection: 'row', alignItems: 'center', columnGap: 4 },
+  gActions: { flexDirection: 'row', alignItems: 'center', columnGap: 9 },
   gActionBtn: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   gActionsOnlyRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
   gChevron: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
@@ -1072,10 +1165,9 @@ const s = StyleSheet.create({
   switchKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff' },
   switchKnobOn: { transform: [{ translateX: 22 }] },
   dailyPager: { marginHorizontal: -20, marginBottom: 4 },
-  dailyPage: { paddingHorizontal: 20, gap: 11 },
-  pageDots: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, paddingTop: 14, paddingBottom: 6 },
+  dailyPage: { paddingLeft: 20, paddingRight: 0, gap: 7 },
+  pageDots: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, paddingTop: 12, paddingBottom: 6 },
   pageDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#E7E5E4' },
-  pageDotActive: { backgroundColor: ROSE, width: 18 },
   bottomQuotes: { gap: 4, marginTop: 6 },
   sheet: { borderTopLeftRadius: 34, borderTopRightRadius: 34, backgroundColor: '#FAFAFA', paddingBottom: 22, maxHeight: '88%', overflow: 'hidden' },
   sheetHandle: { width: 42, height: 4, borderRadius: 999, backgroundColor: '#D6D3D1', alignSelf: 'center', marginTop: 12, marginBottom: 6 },

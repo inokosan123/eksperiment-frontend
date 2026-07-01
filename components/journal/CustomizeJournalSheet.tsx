@@ -163,13 +163,13 @@ export default function CustomizeJournalSheet({
         <ConfirmModal
           embedded
           visible={!!confirmDeleteId}
-          icon={<Trash2 s={22} c="#EF4444" w={2} />}
+          icon={<Trash2 s={22} c={C.red} w={2} />}
           iconBg="#FEE2E2"
           title="Delete custom scale?"
           body="This scale will be removed from your journal."
           subject={confirmingScale?.customLabel}
           confirmLabel="DELETE"
-          confirmColor="#EF4444"
+          confirmColor={C.red}
           onCancel={() => setConfirmDeleteId(null)}
           onConfirm={confirmDeleteScale}
         />

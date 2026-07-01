@@ -15,7 +15,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
-  BookMarked, CheckSmall, ChevronRight, Notebook, Plus, Trash2, X,
+  ArrowLeft, BookMarked, CheckSmall, ChevronRight, Notebook, Plus, Trash2, X,
 } from '@/components/icons/Icons';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
@@ -74,6 +74,10 @@ function newId(prefix: string) {
 
 function shortDate(value: number) {
   return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function editorDate(value: number) {
+  return new Date(value).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 }
 
 function parseSourceRefParam(value: string | string[] | undefined): NoteSourceRef | undefined {
@@ -193,8 +197,55 @@ function joinQuoteContent(before: string, after: string) {
   return `${before}${QUOTE_MARKER}${after}`;
 }
 
+function decodeHtmlEntities(value: string) {
+  return value
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, (_match, code) => {
+      const parsed = Number(code);
+      return Number.isFinite(parsed) ? String.fromCharCode(parsed) : '';
+    });
+}
+
+function richHtmlToPreviewText(value: string) {
+  return decodeHtmlEntities(value)
+    .replace(/\r\n?/g, '\n')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<\/?(div|p|section|article|header|footer|blockquote|h[1-6])\b[^>]*>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<li\b[^>]*>/gi, ' - ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[ \t\f\v]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+}
+
 function notePreviewContent(content: string) {
-  return content.split(QUOTE_TOKEN).join('\n\n').trim();
+  return content
+    .split(QUOTE_TOKEN)
+    .map(part => richHtmlToPreviewText(part))
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+function stableSourceRefs(refs: NoteSourceRef[]) {
+  return JSON.stringify(refs);
+}
+
+function refsForNote(note: InnerNote) {
+  return note.sourceRefs && note.sourceRefs.length > 0
+    ? note.sourceRefs
+    : note.sourceRef
+      ? [note.sourceRef]
+      : [];
 }
 
 export default function NotesView() {
@@ -213,6 +264,8 @@ export default function NotesView() {
   const [color, setColor] = useState<NoteColor>('white');
   const [sourceRef, setSourceRef] = useState<NoteSourceRef | undefined>(undefined);
   const [sourceRefs, setSourceRefs] = useState<NoteSourceRef[]>([]);
+  const [unsavedConfirmOpen, setUnsavedConfirmOpen] = useState(false);
+  const [editorContentKey, setEditorContentKey] = useState('note-editor-initial');
 
   const quickHelp = useMemo(() => notes.filter(note => note.type === 'yellow').sort((a, b) => b.createdAt - a.createdAt), [notes]);
   const normalNotes = useMemo(() => notes.filter(note => note.type === 'note').sort((a, b) => b.createdAt - a.createdAt), [notes]);
@@ -227,6 +280,8 @@ export default function NotesView() {
     setColor(type === 'note' ? 'white' : 'gold');
     setSourceRef(undefined);
     setSourceRefs([]);
+    setUnsavedConfirmOpen(false);
+    setEditorContentKey(`new-${type}-${Date.now()}`);
     setEditorOpen(true);
   };
 
@@ -239,6 +294,8 @@ export default function NotesView() {
     setColor(note.color ?? (note.type === 'note' ? 'white' : 'gold'));
     setSourceRef(note.sourceRef);
     setSourceRefs(note.sourceRefs && note.sourceRefs.length > 0 ? note.sourceRefs : note.sourceRef ? [note.sourceRef] : []);
+    setUnsavedConfirmOpen(false);
+    setEditorContentKey(note.id);
     setEditorOpen(true);
   };
 
@@ -257,6 +314,8 @@ export default function NotesView() {
     setColor(params.type === 'note' ? 'white' : 'gold');
     setSourceRef(nextSourceRef);
     setSourceRefs([nextSourceRef]);
+    setUnsavedConfirmOpen(false);
+    setEditorContentKey(`source-${Date.now()}`);
     setEditorOpen(true);
   }, [params.sourceRef, params.type]);
 
@@ -272,8 +331,45 @@ export default function NotesView() {
 
   const requestDelete = (note: InnerNote) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setUnsavedConfirmOpen(false);
     setEditorOpen(false);
     setDeleteTarget(note);
+  };
+
+  const editorHasUnsavedChanges = () => {
+    if (editing) {
+      const originalColor = editing.type === 'note' ? (editing.color ?? 'white') : 'gold';
+      return (
+        title !== editing.title ||
+        content !== editing.content ||
+        color !== originalColor ||
+        stableSourceRefs(sourceRefs) !== stableSourceRefs(refsForNote(editing))
+      );
+    }
+
+    const defaultColor = editorType === 'note' ? 'white' : 'gold';
+    return (
+      title.trim().length > 0 ||
+      content.trim().length > 0 ||
+      sourceRefs.length > 0 ||
+      color !== defaultColor
+    );
+  };
+
+  const closeEditor = () => {
+    if (editorHasUnsavedChanges()) {
+      Keyboard.dismiss();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setUnsavedConfirmOpen(true);
+      return;
+    }
+    setEditorOpen(false);
+  };
+
+  const discardEditorChanges = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setUnsavedConfirmOpen(false);
+    setEditorOpen(false);
   };
 
   const confirmDelete = async () => {
@@ -286,9 +382,11 @@ export default function NotesView() {
     }
   };
 
-  const save = async () => {
+  const save = async (contentOverride?: string) => {
+    Keyboard.dismiss();
     const cleanTitle = title.trim();
-    const cleanContent = content.trim();
+    const nextContent = contentOverride ?? content;
+    const cleanContent = nextContent.trim();
     if (!cleanTitle && !cleanContent) {
       setEditorOpen(false);
       return;
@@ -298,13 +396,14 @@ export default function NotesView() {
       id: editing?.id ?? newId(editorType),
       type: editorType,
       title: cleanTitle || (editorType === 'note' ? 'Untitled note' : 'Quick help'),
-      content: cleanContent,
+      content: nextContent,
       createdAt: editing?.createdAt ?? Date.now(),
       color: editorType === 'note' ? color : 'gold',
       sourceRef: sourceRefs[0] ?? sourceRef,
       sourceRefs,
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setUnsavedConfirmOpen(false);
     setEditorOpen(false);
   };
 
@@ -314,7 +413,7 @@ export default function NotesView() {
       <ScrollView contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 120 }]} showsVerticalScrollIndicator={false}>
         <BibleNotesShortcut onPress={() => router.push('/bible-notes')} />
 
-        <Text style={s.addLabel}>ADD NOTES</Text>
+        <NotesSectionHeader title="Add Notes" tone="gold" />
         <View style={s.addRow}>
           <AddPill label="Quick Help" tone="gold" onPress={() => openNew('yellow')} />
           <AddPill label="Note" tone="stone" onPress={() => openNew('note')} />
@@ -325,7 +424,7 @@ export default function NotesView() {
         ) : (
           <>
             <View style={s.section}>
-              <Text style={s.quickSectionLabel}>QUICK HELP</Text>
+              <NotesSectionHeader title="Quick Help" count={quickHelp.length} tone="gold" />
               {quickHelp.length === 0 ? (
                 <Text style={s.emptySectionText}>No quick help cards yet</Text>
               ) : (
@@ -343,7 +442,7 @@ export default function NotesView() {
             </View>
 
             <View style={s.section}>
-              <Text style={s.notesSectionLabel}>NOTES</Text>
+              <NotesSectionHeader title="Notes" count={normalNotes.length} tone="stone" />
               {normalNotes.length === 0 ? (
                 <Text style={s.emptySectionText}>No notes yet</Text>
               ) : (
@@ -368,9 +467,11 @@ export default function NotesView() {
         type={editorType}
         title={title}
         content={content}
+        contentKey={editorContentKey}
         color={color}
+        createdAt={editing?.createdAt ?? Date.now()}
         sourceRefs={sourceRefs}
-        editing={!!editing}
+        unsavedConfirmOpen={unsavedConfirmOpen}
         onTitle={setTitle}
         onContent={setContent}
         onColor={setColor}
@@ -378,8 +479,10 @@ export default function NotesView() {
           setSourceRefs(nextRefs);
           setSourceRef(nextRefs[0]);
         }}
-        onClose={() => setEditorOpen(false)}
+        onClose={closeEditor}
         onSave={save}
+        onDismissUnsavedConfirm={() => setUnsavedConfirmOpen(false)}
+        onDiscardChanges={discardEditorChanges}
         onDelete={editing ? () => requestDelete(editing) : undefined}
       />
 
@@ -389,6 +492,27 @@ export default function NotesView() {
         onCancel={() => setDeleteTarget(null)}
         onConfirm={confirmDelete}
       />
+    </View>
+  );
+}
+
+function NotesSectionHeader({ title, count, tone }: { title: string; count?: number; tone: 'gold' | 'stone' }) {
+  const isGold = tone === 'gold';
+  return (
+    <View style={s.notesSectionHeader}>
+      <View style={s.notesSectionTitleWrap}>
+        <Text style={[s.notesSectionTitle, isGold ? s.notesSectionTitleGold : s.notesSectionTitleStone]}>
+          {title}
+        </Text>
+        <View style={[s.notesSectionLine, isGold ? s.notesSectionLineGold : s.notesSectionLineStone]} />
+      </View>
+      {typeof count === 'number' && (
+        <View style={[s.notesSectionCount, isGold ? s.notesSectionCountGold : s.notesSectionCountStone]}>
+          <Text style={[s.notesSectionCountText, isGold ? s.notesSectionCountTextGold : s.notesSectionCountTextStone]}>
+            {count}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -453,9 +577,8 @@ function QuickHelpCard({ note, onPress, onDelete }: { note: InnerNote; onPress: 
               }}
               style={s.trashPress}
             >
-              <Trash2 s={14} c="#D8A6A6" />
+              <Trash2 s={18} c="#EF4444" />
             </Pressable>
-            <ChevronRight s={16} c="rgba(197,160,89,0.22)" />
           </View>
         </View>
         {!!notePreviewContent(note.content) && (
@@ -486,7 +609,7 @@ function NoteTile({ note, onPress, onDelete }: { note: InnerNote; onPress: () =>
         activeOpacity={0.72}
         hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
       >
-        <Trash2 s={13} c="#D8A6A6" />
+        <Trash2 s={13} c="#EF4444" />
       </TouchableOpacity>
       <TouchableOpacity onPress={onPress} activeOpacity={0.86} style={s.tileBody}>
         <Text style={s.tileTitle} numberOfLines={2}>{note.title}</Text>
@@ -509,7 +632,7 @@ function DeleteConfirmModal({
   return (
     <ConfirmModal
       visible={visible}
-      icon={<Trash2 s={22} c="#EF4444" />}
+      icon={<Trash2 s={22} c={C.red} />}
       iconBg="#FEF2F2"
       title={`Delete this ${type === 'note' ? 'note' : 'quick help'}?`}
       body="This cannot be undone."
@@ -521,27 +644,33 @@ function DeleteConfirmModal({
 }
 
 function EditorModal({
-  visible, type, title, content, color, sourceRefs, editing, onTitle, onContent, onColor, onSourceRefs, onClose, onSave, onDelete,
+  visible, type, title, content, contentKey, color, createdAt, sourceRefs, unsavedConfirmOpen, onTitle, onContent, onColor, onSourceRefs, onClose, onSave, onDismissUnsavedConfirm, onDiscardChanges, onDelete,
 }: {
   visible: boolean;
   type: NoteKind;
   title: string;
   content: string;
+  contentKey: string;
   color: NoteColor;
+  createdAt: number;
   sourceRefs: NoteSourceRef[];
-  editing: boolean;
+  unsavedConfirmOpen: boolean;
   onTitle: (value: string) => void;
   onContent: (value: string) => void;
   onColor: (value: NoteColor) => void;
   onSourceRefs: (value: NoteSourceRef[]) => void;
   onClose: () => void;
-  onSave: () => void;
+  onSave: (contentOverride?: string) => void | Promise<void>;
+  onDismissUnsavedConfirm: () => void;
+  onDiscardChanges: () => void;
   onDelete?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const isNote = type === 'note';
   const palette = isNote ? NOTE_COLORS[color] : NOTE_COLORS.gold;
   const richEditorRef = useRef<RichTextEditorRef>(null);
+  const closeAfterKeyboardRef = useRef(false);
+  const closeFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [formatState, setFormatState] = useState<FormatState>({ bold: false, italic: false, underline: false });
   const [kbHeight, setKbHeight] = useState(0);
   const [dragState, setDragState] = useState<QuoteDragState | null>(null);
@@ -549,18 +678,70 @@ function EditorModal({
   const [paperHeight, setPaperHeight] = useState(0);
   const editorBlocks = useMemo(() => buildEditorBlocks(content, sourceRefs), [content, sourceRefs]);
   const hasQuote = sourceRefs.length > 0;
+  const saveTone = isNote ? palette.accent : '#8A6424';
 
-  useEffect(() => {
-    if (!visible) return;
-    const timeout = setTimeout(() => richEditorRef.current?.focus(), 300);
-    return () => clearTimeout(timeout);
-  }, [visible]);
+  const handleSave = async () => {
+    Keyboard.dismiss();
+    let latestContent: string | undefined;
+    try {
+      latestContent = await richEditorRef.current?.getHTML();
+    } catch {
+      latestContent = undefined;
+    }
+    if (typeof latestContent === 'string') {
+      onContent(latestContent);
+    }
+    await onSave(latestContent);
+  };
+
+  const runCloseAfterKeyboard = () => {
+    if (!closeAfterKeyboardRef.current) return;
+    closeAfterKeyboardRef.current = false;
+    if (closeFallbackTimerRef.current) {
+      clearTimeout(closeFallbackTimerRef.current);
+      closeFallbackTimerRef.current = null;
+    }
+    requestAnimationFrame(onClose);
+  };
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardWillShow', e => setKbHeight(e.endCoordinates.height));
-    const hide = Keyboard.addListener('keyboardWillHide', () => setKbHeight(0));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
+    const didShow = Keyboard.addListener('keyboardDidShow', e => setKbHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardWillHide', () => {
+      setKbHeight(0);
+      runCloseAfterKeyboard();
+    });
+    const didHide = Keyboard.addListener('keyboardDidHide', () => {
+      setKbHeight(0);
+      runCloseAfterKeyboard();
+    });
+    return () => {
+      show.remove();
+      didShow.remove();
+      hide.remove();
+      didHide.remove();
+      if (closeFallbackTimerRef.current) {
+        clearTimeout(closeFallbackTimerRef.current);
+      }
+    };
+  }, [onClose]);
+
+  const handleCloseRequest = () => {
+    richEditorRef.current?.blur();
+    Keyboard.dismiss();
+    setKbHeight(0);
+
+    if (kbHeight > 0) {
+      closeAfterKeyboardRef.current = true;
+      if (closeFallbackTimerRef.current) {
+        clearTimeout(closeFallbackTimerRef.current);
+      }
+      closeFallbackTimerRef.current = setTimeout(runCloseAfterKeyboard, 220);
+      return;
+    }
+
+    requestAnimationFrame(onClose);
+  };
 
   const commitBlocks = (nextBlocks: NoteEditorBlock[]) => {
     const serialized = serializeEditorBlocks(nextBlocks);
@@ -683,39 +864,55 @@ function EditorModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" onRequestClose={handleCloseRequest}>
         <View style={[s.editorScreen, { backgroundColor: palette.editorBg, paddingBottom: kbHeight }]}>
 
-          <ScreenTitleBar
-            title={`${editing ? 'Editing' : 'New'} ${isNote ? 'Note' : 'Quick Help'}`.toUpperCase()}
-            subtitle={new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-            showBack
-            bg={palette.editorBg}
-            onBackOverride={onClose}
-            sideWidth={88}
-            rightElement={(
-              <View style={s.editorActions}>
-              {onDelete && (
-                <TouchableOpacity onPress={onDelete} style={s.editorIconBtn} activeOpacity={0.7}>
-                  <Trash2 s={20} c="#EF4444" />
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity onPress={onSave} style={s.editorIconBtn} activeOpacity={0.7}>
-                <CheckSmall s={21} c={palette.accent} />
-              </TouchableOpacity>
-              </View>
-            )}
-          />
+          <View style={[s.editorHeader, { paddingTop: insets.top > 0 ? insets.top + 3 : 8 }]}>
+            <TouchableOpacity
+              onPress={handleCloseRequest}
+              style={s.editorBackBtn}
+              activeOpacity={0.72}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <ArrowLeft s={26} c={C.textSecondary} />
+            </TouchableOpacity>
+
+            <Text style={s.editorDate}>{editorDate(createdAt)}</Text>
+
+            <TouchableOpacity
+              onPress={handleSave}
+              style={[
+                s.editorSaveTag,
+                { borderColor: `${saveTone}8A`, backgroundColor: isNote ? `${saveTone}24` : 'rgba(255,255,255,0.86)' },
+              ]}
+              activeOpacity={0.76}
+            >
+              <CheckSmall s={15} c={saveTone} />
+              <Text style={[s.editorSaveText, { color: saveTone }]}>Save</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* Top area — title, swatches, toolbar (no scroll needed, always compact) */}
           <View style={[s.editorTop, { paddingHorizontal: 24 }]}>
-            <TextInput
-              value={title}
-              onChangeText={onTitle}
-              placeholder="Title"
-              placeholderTextColor="#D6D3D1"
-              style={s.titleInput}
-            />
+            <View style={s.editorTitleRow}>
+              <TextInput
+                value={title}
+                onChangeText={onTitle}
+                placeholder="Title"
+                placeholderTextColor="#D6D3D1"
+                style={s.titleInput}
+              />
+              {onDelete && (
+                <TouchableOpacity
+                  onPress={onDelete}
+                  style={s.editorTitleTrash}
+                  activeOpacity={0.72}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Trash2 s={20} c="#EF4444" />
+                </TouchableOpacity>
+              )}
+            </View>
             {isNote && (
               <View style={s.swatches}>
                 {COLOR_KEYS.map(key => {
@@ -744,6 +941,7 @@ function EditorModal({
           <RichTextEditor
             ref={richEditorRef}
             initialHTML={content}
+            contentKey={contentKey}
             onChange={onContent}
             onFormatChange={setFormatState}
             placeholder={isNote ? 'Write your note...' : 'Write what will help you return...'}
@@ -770,6 +968,24 @@ function EditorModal({
               ))}
             </ScrollView>
           )}
+
+          <ConfirmModal
+            embedded
+            visible={unsavedConfirmOpen}
+            icon={<X s={22} c={C.red} />}
+            iconBg="#FEF2F2"
+            title="Save changes?"
+            body="If you delete them, your current unsaved changes will be lost."
+            cancelLabel="DELETE"
+            cancelColor="#FEF2F2"
+            cancelTextColor="#DC2626"
+            cancelBorderColor="#FCA5A5"
+            confirmLabel="SAVE"
+            confirmColor={GOLD}
+            onBackdropPress={onDismissUnsavedConfirm}
+            onCancel={onDiscardChanges}
+            onConfirm={handleSave}
+          />
 
         </View>
     </Modal>
@@ -855,7 +1071,63 @@ const s = StyleSheet.create({
   bibleKicker: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.1, color: '#B08A47' },
   bibleText: { marginTop: 2, fontFamily: F.serif, fontSize: 14, lineHeight: 18, color: '#9CA3AF' },
 
-  addLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.2, color: '#D1D5DB', marginBottom: 10, paddingLeft: 4 },
+  notesSectionHeader: {
+    marginBottom: 10,
+    paddingHorizontal: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  notesSectionTitleWrap: {
+    alignItems: 'flex-start',
+  },
+  notesSectionTitle: {
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.65,
+    textTransform: 'uppercase',
+  },
+  notesSectionTitleGold: { color: 'rgba(176,138,71,0.78)' },
+  notesSectionTitleStone: { color: 'rgba(107,114,128,0.78)' },
+  notesSectionLine: {
+    marginTop: 5,
+    height: 2,
+    borderRadius: 2,
+  },
+  notesSectionLineGold: {
+    width: 34,
+    backgroundColor: 'rgba(197,160,89,0.34)',
+  },
+  notesSectionLineStone: {
+    width: 28,
+    backgroundColor: 'rgba(156,163,175,0.28)',
+  },
+  notesSectionCount: {
+    minWidth: 28,
+    height: 21,
+    borderRadius: 11,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  notesSectionCountGold: {
+    borderColor: 'rgba(197,160,89,0.24)',
+    backgroundColor: 'rgba(197,160,89,0.09)',
+  },
+  notesSectionCountStone: {
+    borderColor: 'rgba(156,163,175,0.22)',
+    backgroundColor: 'rgba(255,255,255,0.68)',
+  },
+  notesSectionCountText: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    lineHeight: 11,
+    letterSpacing: 0.9,
+  },
+  notesSectionCountTextGold: { color: GOLD },
+  notesSectionCountTextStone: { color: '#9CA3AF' },
   addRow: { flexDirection: 'row', gap: 12, marginBottom: 26 },
   addPill: {
     flex: 1,
@@ -879,8 +1151,6 @@ const s = StyleSheet.create({
   emptySubtitle: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.7, color: '#D1D5DB' },
 
   section: { marginBottom: 28 },
-  quickSectionLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: 'rgba(197,160,89,0.62)', marginBottom: 13, paddingLeft: 4 },
-  notesSectionLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: '#9CA3AF', marginBottom: 13, paddingLeft: 4 },
   emptySectionText: { fontFamily: F.serifMediumItalic, fontSize: 15, color: '#D1D5DB', textAlign: 'center', paddingVertical: 18 },
 
   quickList: { gap: 14 },
@@ -901,9 +1171,9 @@ const s = StyleSheet.create({
   quickInner: { flex: 1, padding: 20, paddingLeft: 30 },
   quickTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
   quickTitle: { flex: 1, fontFamily: F.serifMedium, fontSize: 22, lineHeight: 27, color: '#3D3229' },
-  quickMeta: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingTop: 4 },
-  quickDate: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5, color: 'rgba(155,142,130,0.65)', textTransform: 'uppercase' },
-  trashPress: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
+  quickMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 3 },
+  quickDate: { fontFamily: F.serifBold, fontSize: 14, lineHeight: 17, letterSpacing: 0.2, color: '#9B8561' },
+  trashPress: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   quickText: { marginTop: 9, fontFamily: F.serifItalic, fontSize: 15, lineHeight: 22, color: '#9B8E82' },
   quickSource: { marginTop: 9, fontFamily: F.serifItalic, fontSize: 14, lineHeight: 20, color: 'rgba(197,160,89,0.80)' },
 
@@ -930,11 +1200,49 @@ const s = StyleSheet.create({
 
 
   editorScreen: { flex: 1 },
-  editorActions: { minWidth: 44, flexDirection: 'row', justifyContent: 'flex-end', gap: 2 },
-  editorIconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  editorHeader: {
+    minHeight: 52,
+    paddingHorizontal: 18,
+    paddingBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editorBackBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  editorDate: {
+    position: 'absolute',
+    left: 96,
+    right: 96,
+    bottom: 16,
+    textAlign: 'center',
+    fontFamily: F.serifBold,
+    fontSize: 17,
+    lineHeight: 22,
+    letterSpacing: 0.2,
+    color: '#8F7D62',
+  },
+  editorSaveTag: {
+    minWidth: 82,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 1,
+  },
+  editorSaveText: { fontFamily: F.serifBold, fontSize: 16, lineHeight: 19 },
   editorContent: { paddingHorizontal: 24, paddingTop: 22 },
-  editorTop: { paddingTop: 22 },
-  titleInput: { fontFamily: F.serifMedium, fontSize: 30, lineHeight: 36, color: '#3D3229', paddingVertical: 0, marginBottom: 18 },
+  editorTop: { paddingTop: 13 },
+  editorTitleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 18 },
+  editorTitleTrash: { width: 48, height: 36, marginRight: -8, alignItems: 'flex-end', justifyContent: 'center' },
+  titleInput: { flex: 1, fontFamily: F.serifMedium, fontSize: 30, lineHeight: 36, color: '#3D3229', paddingVertical: 0 },
   swatches: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 18 },
   swatch: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   richToolbar: {

@@ -33,7 +33,7 @@ import {
 } from '@/components/icons/Icons';
 import DateStrip from './DateStrip';
 import WeeklyRhythm from './WeeklyRhythm';
-import ExploreSection from './ExploreSection';
+import OrganizeSection from './ExploreSection';
 import { C, F } from '@/constants/tokens';
 import { AnyTaskCard, CompletedTaskCheck, TaskData, TaskState } from '@/components/shared/TaskCards';
 import ConfirmModal from '@/components/shared/ConfirmModal';
@@ -139,7 +139,7 @@ function TaskConfirmGlyph({
     return <AlertTriangle s={23} c="#9A3412" w={2.15} />;
   }
 
-  return <X s={23} c="#B85C5C" w={2.45} />;
+  return <X s={23} c={C.red} w={2.45} />;
 }
 
 function isScriptureChallengeReadingTask(card: HomeCard) {
@@ -170,7 +170,7 @@ function getTaskConfirmIconBg(action: TaskConfirmAction) {
 function getTaskConfirmColor(action: TaskConfirmAction) {
   if (action?.mode === 'skip' || action?.mode === 'unskip') return '#1C1917';
   if (action?.warning === 'scriptureChallengeProgress') return '#B45335';
-  return '#B85C5C';
+  return C.red;
 }
 
 function isCompletionFlowTask(card: HomeCard) {
@@ -490,7 +490,7 @@ const h = StyleSheet.create({
     fontFamily: F.serifMediumItalic,
     fontSize: 14,
     color: '#8C8277',
-    lineHeight: 22,
+    lineHeight: 18.5,
     textAlign: 'center',
   },
   ref: { marginTop: 4, fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2.5, color: C.gold },
@@ -1498,7 +1498,7 @@ export default function HomeView() {
       </View>
 
         <WeeklyRhythm />
-        <ExploreSection />
+        <OrganizeSection />
       </ScrollView>
       <QuickTaskSheet
         visible={quickTaskSheetOpen}
@@ -1660,7 +1660,7 @@ function MonthlyGoalsHomeCard() {
         body="Do you want to mark this goal as incomplete?"
         subject={uncheckConfirm?.text}
         confirmLabel="UNCHECK"
-        confirmColor="#B85C5C"
+        confirmColor={C.red}
         onCancel={() => setUncheckConfirm(null)}
         onConfirm={confirmUncheck}
       />
@@ -2399,21 +2399,21 @@ const s = StyleSheet.create({
   mgRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 11,
+    columnGap: 10,
     backgroundColor: '#FFFDFC',
-    borderRadius: 20,
-    borderWidth: 1.4,
+    borderRadius: 16,
+    borderWidth: 1.15,
     borderColor: 'rgba(197,160,89,0.54)',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    marginBottom: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginBottom: 5,
     overflow: 'hidden',
     position: 'relative',
     shadowColor: '#C5A059',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.09,
-    shadowRadius: 12,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.075,
+    shadowRadius: 10,
+    elevation: 1,
   },
   mgRowDone: {
     backgroundColor: '#FFFDF4',
@@ -2421,10 +2421,10 @@ const s = StyleSheet.create({
   },
   mgRowHighlight: {
     position: 'absolute',
-    left: 14,
-    right: 14,
+    left: 12,
+    right: 12,
     top: 0,
-    height: 1.5,
+    height: 1.25,
     borderRadius: 2,
     backgroundColor: 'rgba(255,255,255,0.88)',
   },
@@ -2433,8 +2433,8 @@ const s = StyleSheet.create({
   },
   mgRowText: {
     fontFamily: F.serifMedium,
-    fontSize: 19,
-    lineHeight: 24.4,
+    fontSize: 16.5,
+    lineHeight: 20.5,
     color: '#1A1714',
   },
   mgEmpty: {

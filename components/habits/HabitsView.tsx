@@ -751,7 +751,7 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
 
       <ConfirmModal
         visible={!!deleteTarget}
-        icon={<Trash2 s={22} c="#EF4444" />}
+        icon={<Trash2 s={22} c={C.red} />}
         iconBg="#FEF2F2"
         title="Delete Habit"
         body={deleteTarget ? `"${deleteTarget.name}" and all its steps will be removed.` : ''}
@@ -1124,12 +1124,12 @@ function HabitEditorSheet({
       <ConfirmModal
         embedded
         visible={!!pendingDeleteStep}
-        icon={<Trash2 s={22} c="#EF4444" />}
+        icon={<Trash2 s={22} c={C.red} />}
         iconBg="#FEF2F2"
         title="Delete Step"
         body={pendingDeleteStep ? `"${pendingDeleteStep.title}" will be removed from this habit.` : ''}
         confirmLabel="DELETE"
-        confirmColor="#EF4444"
+        confirmColor={C.red}
         onCancel={() => setPendingDeleteStep(null)}
         onConfirm={() => {
           if (pendingDeleteStep) {
@@ -1586,12 +1586,12 @@ function HabitTaskEditorSheet({
     <ConfirmModal
       embedded
       visible={confirmDeleteVisible}
-      icon={<Trash2 s={22} c="#EF4444" />}
+      icon={<Trash2 s={22} c={C.red} />}
       iconBg="#FEF2F2"
       title="Delete Step?"
       body={step ? `"${step.title}" will be removed from this habit.` : ''}
       confirmLabel="DELETE"
-      confirmColor="#EF4444"
+      confirmColor={C.red}
       onCancel={() => setConfirmDeleteVisible(false)}
       onConfirm={() => {
         if (!step || !onDelete) return;

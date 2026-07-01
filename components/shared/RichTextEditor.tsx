@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle, Text } from 'react-native';
 import Svg, { Line, Path } from 'react-native-svg';
 import WebView from 'react-native-webview';
@@ -13,6 +13,8 @@ export type RichTextEditorRef = {
   bulletList: () => void;
   orderedList: () => void;
   focus: () => void;
+  blur: () => void;
+  getHTML: () => Promise<string>;
 };
 
 export type FormatState = {
@@ -47,17 +49,22 @@ function buildEditorHTML(opts: {
   backgroundColor: string;
   color: string;
   editable: boolean;
+  autoHeight: boolean;
 }) {
   // Built once on mount — never rebuilt during editing
+  const scrollCss = opts.autoHeight
+    ? 'overflow: hidden;'
+    : 'min-height: 100vh; overflow-x: hidden;';
+  const editorMinHeight = opts.autoHeight ? '80px' : '100vh';
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <style>
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body { margin: 0; padding: 0; background: ${opts.backgroundColor}; overflow: hidden; }
+    html, body { margin: 0; padding: 0; background: ${opts.backgroundColor}; ${scrollCss} }
     #editor {
-      min-height: 80px;
+      min-height: ${editorMinHeight};
       padding: 14px 12px 36px 12px;
       outline: none;
       word-wrap: break-word;
@@ -150,6 +157,13 @@ function buildEditorHTML(opts: {
       scheduleHeight();
     }
 
+    function setEditorTheme(background, textColor) {
+      document.documentElement.style.background = background;
+      document.body.style.background = background;
+      editor.style.background = background;
+      editor.style.color = textColor;
+    }
+
     // Initial measurement after layout
     setTimeout(reportHeight, 30);
     setTimeout(reportHeight, 200);
@@ -181,6 +195,8 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
 ) {
   const webViewRef = useRef<WebView>(null);
   const wrapperRef = useRef<View>(null);
+  const htmlRequestIdRef = useRef(0);
+  const htmlResolversRef = useRef<Map<number, { resolve: (html: string) => void; reject: () => void }>>(new Map());
   const [contentHeight, setContentHeight] = useState(110);
 
   // Build source ONCE on mount — never update it.
@@ -190,7 +206,7 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
   const sourceKeyRef = useRef<string | number | null>(null);
   if (!sourceRef.current || sourceKeyRef.current !== sourceKey) {
     sourceRef.current = {
-      html: buildEditorHTML({ initialHTML, placeholder, backgroundColor, color, editable }),
+      html: buildEditorHTML({ initialHTML, placeholder, backgroundColor, color, editable, autoHeight }),
     };
     sourceKeyRef.current = sourceKey;
   }
@@ -199,6 +215,27 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
     webViewRef.current?.injectJavaScript(`execCmd(${JSON.stringify(cmd)}); true;`);
   };
 
+  const syncEditorTheme = () => {
+    webViewRef.current?.injectJavaScript(`
+      if (typeof setEditorTheme === 'function') {
+        setEditorTheme(${JSON.stringify(backgroundColor)}, ${JSON.stringify(color)});
+      } else {
+        document.documentElement.style.background = ${JSON.stringify(backgroundColor)};
+        document.body.style.background = ${JSON.stringify(backgroundColor)};
+        var editorNode = document.getElementById('editor');
+        if (editorNode) {
+          editorNode.style.background = ${JSON.stringify(backgroundColor)};
+          editorNode.style.color = ${JSON.stringify(color)};
+        }
+      }
+      true;
+    `);
+  };
+
+  useEffect(() => {
+    syncEditorTheme();
+  }, [backgroundColor, color]);
+
   useImperativeHandle(ref, () => ({
     bold:        () => inject('bold'),
     italic:      () => inject('italic'),
@@ -206,6 +243,33 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
     bulletList:  () => inject('insertUnorderedList'),
     orderedList: () => inject('insertOrderedList'),
     focus:       () => webViewRef.current?.injectJavaScript('editor.focus(); true;'),
+    blur:        () => webViewRef.current?.injectJavaScript(`
+      if (document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+      }
+      editor.blur();
+      window.getSelection()?.removeAllRanges();
+      true;
+    `),
+    getHTML:     () => new Promise((resolve, reject) => {
+      const requestId = htmlRequestIdRef.current + 1;
+      htmlRequestIdRef.current = requestId;
+      htmlResolversRef.current.set(requestId, { resolve, reject });
+      webViewRef.current?.injectJavaScript(`
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'html',
+          requestId: ${requestId},
+          html: editor.innerHTML,
+        }));
+        true;
+      `);
+      setTimeout(() => {
+        const pending = htmlResolversRef.current.get(requestId);
+        if (!pending) return;
+        htmlResolversRef.current.delete(requestId);
+        pending.reject();
+      }, 250);
+    }),
   }));
 
   return (
@@ -226,10 +290,18 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
         scrollEnabled={!autoHeight}
         keyboardDisplayRequiresUserAction={false}
         showsVerticalScrollIndicator={false}
+        onLoadEnd={syncEditorTheme}
         onMessage={event => {
           try {
             const msg = JSON.parse(event.nativeEvent.data);
             if (msg.type === 'change') onChange(msg.html);
+            if (msg.type === 'html') {
+              const pending = htmlResolversRef.current.get(msg.requestId);
+              if (pending) {
+                htmlResolversRef.current.delete(msg.requestId);
+                pending.resolve(msg.html ?? '');
+              }
+            }
             if (msg.type === 'fmt') {
               onFormatChange?.({ bold: msg.bold, italic: msg.italic, underline: msg.underline });
             }

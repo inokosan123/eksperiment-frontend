@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import LottieView from 'lottie-react-native';
 import Reanimated, {
   Easing,
   useAnimatedStyle,
@@ -10,16 +11,22 @@ import Reanimated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { Sparkles, X } from '@/components/icons/Icons';
-import { C, F } from '@/constants/tokens';
+import { X } from '@/components/icons/Icons';
+import { F } from '@/constants/tokens';
+import { CHALLENGE_TROPHY_SOURCE } from '@/components/challenges/ChallengeTrophy';
 
 const GOLD = '#C5A059';
 const DEEP_GOLD = '#A9782C';
 const CREAM = '#FFF7DF';
 const ROSE = '#EFB3A7';
 const SKY = '#A9CFD3';
-const CARD_VISUAL_HEIGHT = 193;
-const CARD_ICON_CENTER_Y = 57;
+const CARD_VISUAL_HEIGHT = 254;
+const CARD_ICON_CENTER_Y = 68;
+const TROPHY_ARRIVAL_START_FRAME = 0;
+const TROPHY_ARRIVAL_END_FRAME = 99;
+const TROPHY_EXIT_START_FRAME = 100;
+const TROPHY_EXIT_END_FRAME = 119;
+const TROPHY_EXIT_DURATION_MS = 760;
 
 type ParticleShape = 'diamond' | 'leaf' | 'dot' | 'ray' | 'ribbon';
 
@@ -248,6 +255,9 @@ function CenterSpark({ phase }: { phase: SharedValue<number> }) {
 
 export default function CelebrationOverlayBase({ onClose }: { onClose: () => void }) {
   const { width, height } = useWindowDimensions();
+  const lottieRef = useRef<LottieView>(null);
+  const closingRef = useRef(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const veil = useSharedValue(0);
   const cardOpacity = useSharedValue(0);
   const cardLift = useSharedValue(12);
@@ -256,6 +266,7 @@ export default function CelebrationOverlayBase({ onClose }: { onClose: () => voi
   const iconPhase = useSharedValue(0);
 
   useEffect(() => {
+    closingRef.current = false;
     veil.value = withTiming(1, {
       duration: 120,
       easing: Easing.out(Easing.quad),
@@ -282,7 +293,48 @@ export default function CelebrationOverlayBase({ onClose }: { onClose: () => voi
       duration: 1560,
       easing: Easing.out(Easing.cubic),
     }));
+
+    const playTimer = setTimeout(() => {
+      lottieRef.current?.reset();
+      lottieRef.current?.play(TROPHY_ARRIVAL_START_FRAME, TROPHY_ARRIVAL_END_FRAME);
+    }, 45);
+
+    return () => {
+      clearTimeout(playTimer);
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+    };
   }, [burst, cardLift, cardOpacity, cardScale, iconPhase, veil]);
+
+  const handleDismiss = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+
+    lottieRef.current?.play(TROPHY_EXIT_START_FRAME, TROPHY_EXIT_END_FRAME);
+    cardLift.value = withTiming(-4, {
+      duration: 280,
+      easing: Easing.out(Easing.cubic),
+    });
+    cardScale.value = withDelay(180, withTiming(0.96, {
+      duration: 210,
+      easing: Easing.in(Easing.quad),
+    }));
+    cardOpacity.value = withDelay(210, withTiming(0, {
+      duration: 190,
+      easing: Easing.in(Easing.quad),
+    }));
+    veil.value = withDelay(250, withTiming(0, {
+      duration: 210,
+      easing: Easing.in(Easing.quad),
+    }));
+
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      onClose();
+    }, TROPHY_EXIT_DURATION_MS);
+  }, [cardLift, cardOpacity, cardScale, onClose, veil]);
 
   const veilStyle = useAnimatedStyle(() => ({
     opacity: veil.value,
@@ -338,19 +390,33 @@ export default function CelebrationOverlayBase({ onClose }: { onClose: () => voi
           <View style={s.closeHint}>
             <X s={13} c="#A8A29E" w={2.5} />
           </View>
-          <Reanimated.View style={[s.iconRing, iconStyle]}>
-            <Sparkles s={30} c={GOLD} w={1.8} />
+          <Reanimated.View style={[s.trophyStage, iconStyle]}>
+            <View style={s.trophyAura} />
+            <View style={s.trophyCircle}>
+              <LottieView
+                ref={lottieRef}
+                source={CHALLENGE_TROPHY_SOURCE}
+                autoPlay={false}
+                loop={false}
+                speed={1.02}
+                style={s.trophyLottie}
+                resizeMode="contain"
+                renderMode="HARDWARE"
+              />
+            </View>
           </Reanimated.View>
-          <Text style={s.kicker}>CONGRATULATIONS</Text>
-          <Text style={s.title}>Dream achieved</Text>
-          <Text style={s.subtitle}>A promise became real.</Text>
+          <Text style={s.title}>Congratulations!</Text>
+          <View style={s.titleUnderline} />
+          <Text style={s.subtitle}>
+            <Text style={s.subtitleStrong}>Dream achieved!</Text> Keep building your bucket list and chasing your dreams!
+          </Text>
         </Reanimated.View>
       </View>
 
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Close celebration"
-        onPress={onClose}
+        onPress={handleDismiss}
         style={s.dismissHit}
       />
     </View>
@@ -421,21 +487,22 @@ const s = StyleSheet.create({
     height: 56,
   },
   card: {
-    zIndex: 10,
-    elevation: 10,
-    minWidth: 236,
-    borderRadius: 24,
+    zIndex: 24,
+    elevation: 24,
+    width: '82%',
+    maxWidth: 322,
+    borderRadius: 30,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.24)',
-    paddingHorizontal: 27,
-    paddingTop: 23,
-    paddingBottom: 21,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 25,
     alignItems: 'center',
     shadowColor: '#8B7354',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.16,
-    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.18,
+    shadowRadius: 34,
   },
   closeHint: {
     position: 'absolute',
@@ -450,35 +517,59 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  iconRing: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: 'rgba(197,160,89,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.26)',
+  trophyStage: {
+    width: 100,
+    height: 100,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 13,
   },
-  kicker: {
-    fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 2.5,
-    color: GOLD,
+  trophyAura: {
+    position: 'absolute',
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: 'rgba(197,160,89,0.13)',
+  },
+  trophyCircle: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    backgroundColor: '#FFF7DE',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  trophyLottie: {
+    width: 104,
+    height: 104,
   },
   title: {
-    marginTop: 6,
     fontFamily: F.serifMedium,
-    fontSize: 23,
-    lineHeight: 28,
-    color: C.text,
+    fontSize: 28,
+    lineHeight: 34,
+    color: '#17130E',
+    textAlign: 'center',
+  },
+  titleUnderline: {
+    width: 118,
+    height: 3,
+    borderRadius: 999,
+    backgroundColor: GOLD,
+    marginTop: 6,
   },
   subtitle: {
-    marginTop: 5,
-    fontFamily: F.serifItalic,
-    fontSize: 14,
-    lineHeight: 19,
-    color: '#8F8A81',
+    marginTop: 13,
+    fontFamily: F.serif,
+    fontSize: 16,
+    lineHeight: 23,
+    color: '#5F5850',
+    textAlign: 'center',
+  },
+  subtitleStrong: {
+    fontFamily: F.serifMedium,
+    color: '#1C1917',
   },
 });

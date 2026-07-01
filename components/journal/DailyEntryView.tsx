@@ -544,13 +544,13 @@ function GuidedPromptsSection({
       {!readOnly && (
       <ConfirmModal
         visible={!!confirmId}
-        icon={<Trash2 s={22} c="#EF4444" w={2} />}
+        icon={<Trash2 s={22} c={C.red} w={2} />}
         iconBg="#FEE2E2"
         title="Delete question?"
         body="Your answer for this question will be removed too."
         subject={confirmingPrompt?.q}
         confirmLabel="DELETE"
-        confirmColor="#EF4444"
+        confirmColor={C.red}
         onCancel={() => setConfirmId(null)}
         onConfirm={confirmDelete}
       />
@@ -732,13 +732,13 @@ function GratitudeSection({ date, readOnly = false }: { date: string; readOnly?:
       {!readOnly && (
       <ConfirmModal
         visible={!!confirmId}
-        icon={<Trash2 s={22} c="#EF4444" w={2} />}
+        icon={<Trash2 s={22} c={C.red} w={2} />}
         iconBg="#FEE2E2"
         title="Remove gratitude?"
         body="This entry will also disappear from the Gratitude page."
         subject={confirmingItem?.title || confirmingItem?.content}
         confirmLabel="REMOVE"
-        confirmColor="#EF4444"
+        confirmColor={C.red}
         onCancel={() => setConfirmId(null)}
         onConfirm={confirmDelete}
       />

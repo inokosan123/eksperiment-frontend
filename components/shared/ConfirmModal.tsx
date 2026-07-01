@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, StyleSheet, Text, View } from 'react-native';
-import { F } from '@/constants/tokens';
+import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 
 
@@ -12,10 +12,14 @@ type Props = {
   body?: string;
   subject?: string;
   cancelLabel?: string;
+  cancelColor?: string;
+  cancelTextColor?: string;
+  cancelBorderColor?: string;
   confirmLabel: string;
   confirmColor?: string;
   onCancel: () => void;
   onConfirm: () => void;
+  onBackdropPress?: () => void;
   // When true, render inline (no native Modal). Use this when stacking the
   // confirm dialog inside another already-presented Modal — iOS UIKit will
   // not present a second Modal on top of one already shown.
@@ -30,15 +34,19 @@ export default function ConfirmModal({
   body,
   subject,
   cancelLabel = 'CANCEL',
+  cancelColor,
+  cancelTextColor,
+  cancelBorderColor,
   confirmLabel,
-  confirmColor = '#EF4444',
+  confirmColor = C.red,
   onCancel,
   onConfirm,
+  onBackdropPress,
   embedded = false,
 }: Props) {
   const inner = (
     <View style={s.overlay}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
+      <Pressable style={StyleSheet.absoluteFill} onPress={onBackdropPress ?? onCancel} />
       <View style={s.card}>
         <View style={[s.iconCircle, { backgroundColor: iconBg }]}>
           {icon}
@@ -51,8 +59,16 @@ export default function ConfirmModal({
           </View>
         )}
         <View style={s.row}>
-          <TouchableOpacity onPress={onCancel} activeOpacity={0.82} style={s.cancelBtn}>
-            <Text style={s.cancelText}>{cancelLabel}</Text>
+          <TouchableOpacity
+            onPress={onCancel}
+            activeOpacity={0.82}
+            style={[
+              s.cancelBtn,
+              cancelColor ? { backgroundColor: cancelColor } : null,
+              cancelBorderColor ? { borderColor: cancelBorderColor } : null,
+            ]}
+          >
+            <Text style={[s.cancelText, cancelTextColor ? { color: cancelTextColor } : null]}>{cancelLabel}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={onConfirm}
@@ -72,7 +88,7 @@ export default function ConfirmModal({
   }
 
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onBackdropPress ?? onCancel}>
       {inner}
     </Modal>
   );

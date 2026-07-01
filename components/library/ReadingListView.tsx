@@ -675,7 +675,7 @@ export default function ReadingListView() {
 
       <ConfirmModal
         visible={!!deleteTarget}
-        icon={<Trash2 s={22} c="#EF4444" />}
+        icon={<Trash2 s={22} c={C.red} />}
         iconBg="#FEF2F2"
         title="Delete this book?"
         body={deleteTarget?.title}

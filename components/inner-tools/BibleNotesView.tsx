@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import Reanimated, {
+  Easing,
   FadeInDown,
   FadeOutUp,
   LinearTransition,
@@ -37,7 +38,8 @@ const CHAPTER_COLUMNS = 5;
 const CHAPTER_GAP = 7;
 const PAGE_SIDE_PADDING = 16;
 const CHAPTER_GRID_SIDE_PADDING = 4;
-const bibleNotesLayout = LinearTransition.springify().damping(19).stiffness(218).mass(0.82);
+const BIBLE_NOTES_EASE = Easing.bezier(0.22, 1, 0.36, 1);
+const bibleNotesLayout = LinearTransition.duration(178).easing(BIBLE_NOTES_EASE);
 
 type BibleTab = 'nt' | 'psalms' | 'ot';
 type BibleBook = {
@@ -142,9 +144,11 @@ export default function BibleNotesView() {
 
   useEffect(() => {
     const idx = activeTab === 'nt' ? 0 : activeTab === 'psalms' ? 1 : 2;
-    tabProgress.value = withTiming(idx, { duration: 212 });
-    if (activeTab === 'psalms') setExpandedBookId(PSALMS_ID);
-    else setExpandedBookId(null);
+    tabProgress.value = withTiming(idx, {
+      duration: 190,
+      easing: BIBLE_NOTES_EASE,
+    });
+    if (activeTab !== 'psalms') setExpandedBookId(null);
   }, [activeTab, tabProgress]);
 
   const tabPillMotionStyle = useAnimatedStyle(() => ({
@@ -279,7 +283,7 @@ export default function BibleNotesView() {
             const chaptersWithNotes = Array.from({ length: book.chapters }, (_, index) => index + 1)
               .filter(chapter => notesByChapter.has(noteKey(book.id, chapter)));
             const hasAnyNote = chaptersWithNotes.length > 0;
-            const isExpanded = expandedBookId === book.id;
+            const isExpanded = activeTab === 'psalms' || expandedBookId === book.id;
 
             return (
               <Reanimated.View key={book.id} layout={bibleNotesLayout}>
@@ -293,11 +297,18 @@ export default function BibleNotesView() {
                       !hasAnyNote && !isExpanded && s.bookCardMuted,
                     ]}
                   >
-                    <Text style={[s.bookName, !hasAnyNote && s.bookNameMuted]}>{book.name}</Text>
+                    <View
+                      style={[
+                        s.bookAccent,
+                        hasAnyNote && s.bookAccentActive,
+                        isExpanded && s.bookAccentExpanded,
+                      ]}
+                    />
+                    <Text style={[s.bookName, !hasAnyNote && s.bookNameMuted]} numberOfLines={1}>{book.name}</Text>
                     {hasAnyNote && (
                       <Text style={s.bookCount}>{chaptersWithNotes.length}</Text>
                     )}
-                    <View style={isExpanded && s.chevronOpen}>
+                    <View style={[s.chevronWrap, isExpanded && s.chevronWrapOpen, isExpanded && s.chevronOpen]}>
                       <ChevronDown s={15} c={isExpanded ? GOLD : '#D1D5DB'} />
                     </View>
                   </TouchableOpacity>
@@ -305,11 +316,11 @@ export default function BibleNotesView() {
 
                 {isExpanded && (
                   <Reanimated.View
-                    entering={FadeInDown.duration(185).springify().damping(19).stiffness(220).withInitialValues({
+                    entering={FadeInDown.duration(168).easing(BIBLE_NOTES_EASE).withInitialValues({
                       opacity: 0,
-                      transform: [{ translateY: 14 }],
+                      transform: [{ translateY: 8 }],
                     })}
-                    exiting={FadeOutUp.duration(140)}
+                    exiting={FadeOutUp.duration(118).easing(Easing.out(Easing.cubic))}
                     layout={bibleNotesLayout}
                     style={s.chapterGrid}
                   >
@@ -425,12 +436,12 @@ function ChapterEditor({
           rightElement={(
             <View style={s.editorActions}>
             {onDelete && (
-              <TouchableOpacity onPress={onDelete} style={s.editorIconBtn} activeOpacity={0.7}>
-                <Trash2 s={19} c="#EF4444" />
+              <TouchableOpacity onPress={onDelete} style={[s.editorIconBtn, s.editorDeleteBtn]} activeOpacity={0.76}>
+                <Trash2 s={18} c={C.red} />
               </TouchableOpacity>
             )}
-            <TouchableOpacity onPress={onSave} style={s.editorIconBtn} activeOpacity={0.7}>
-              <CheckSmall s={21} c={GOLD} />
+            <TouchableOpacity onPress={onSave} style={[s.editorIconBtn, s.editorSaveBtn]} activeOpacity={0.78}>
+              <CheckSmall s={19} c="#FFFFFF" />
             </TouchableOpacity>
             </View>
           )}
@@ -486,7 +497,7 @@ function DeleteBibleModal({
     <ConfirmModal
       visible={visible}
       embedded={embedded}
-      icon={<Trash2 s={22} c="#EF4444" />}
+      icon={<Trash2 s={22} c={C.red} />}
       iconBg="#FEF2F2"
       title="Delete this Bible note?"
       body="This will permanently delete your note for this chapter."
@@ -529,32 +540,37 @@ function BibleField({
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
-  searchWrap: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 9 },
+  searchWrap: { paddingHorizontal: 16, paddingTop: 11, paddingBottom: 10 },
   searchBox: {
-    height: 46,
-    borderRadius: 18,
+    height: 48,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
-    backgroundColor: 'rgba(255,255,255,0.90)',
+    borderColor: 'rgba(197,160,89,0.16)',
+    backgroundColor: '#FFFDF8',
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.045,
+    shadowRadius: 16,
+    elevation: 1,
   },
-  searchInput: { flex: 1, height: 46, fontFamily: F.serif, fontSize: 15, lineHeight: 21, color: '#44403C' },
-  tabsWrap: { paddingHorizontal: 16, paddingBottom: 12 },
+  searchInput: { flex: 1, height: 46, fontFamily: F.serif, fontSize: 15.5, lineHeight: 21, color: '#3D3229' },
+  tabsWrap: { paddingHorizontal: 16, paddingBottom: 11 },
   tabs: {
     flexDirection: 'row',
     gap: 3,
-    borderRadius: 18,
+    borderRadius: 19,
     borderWidth: 1,
-    borderColor: 'rgba(232,220,196,0.60)',
-    backgroundColor: 'rgba(255,255,255,0.78)',
+    borderColor: 'rgba(232,220,196,0.68)',
+    backgroundColor: 'rgba(255,255,255,0.84)',
     padding: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.055,
+    shadowRadius: 14,
     elevation: 1,
   },
   tabPill: {
@@ -566,15 +582,15 @@ const s = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: GOLD,
     shadowColor: GOLD,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.28,
-    shadowRadius: 9,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.24,
+    shadowRadius: 10,
     elevation: 2,
     zIndex: 0,
   },
   tabButton: { flex: 1, minHeight: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5, zIndex: 1 },
   tabActive: {},
-  tabText: { fontFamily: F.serifMedium, fontSize: 13, color: '#B5ADA0' },
+  tabText: { fontFamily: F.serifMedium, fontSize: 13.5, color: '#B5ADA0' },
   tabTextActive: { color: '#FFFFFF' },
   tabCount: { minWidth: 17, height: 17, borderRadius: 9, backgroundColor: 'rgba(197,160,89,0.15)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   tabCountActive: { backgroundColor: 'rgba(255,255,255,0.25)' },
@@ -583,26 +599,60 @@ const s = StyleSheet.create({
   bookList: { paddingHorizontal: 16, gap: 7 },
   noBooks: { textAlign: 'center', paddingVertical: 60, fontFamily: F.serif, fontSize: 17, color: '#D1D5DB' },
   bookCard: {
-    minHeight: 54,
-    borderRadius: 18,
+    minHeight: 56,
+    borderRadius: 19,
     borderWidth: 1,
     borderColor: 'rgba(232,216,186,0.45)',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 18,
+    backgroundColor: '#FFFDF9',
+    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 5,
+    gap: 11,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.045,
+    shadowRadius: 14,
     elevation: 1,
   },
-  bookCardExpanded: { backgroundColor: '#FFFDF7', borderColor: 'rgba(197,160,89,0.30)' },
-  bookCardMuted: { backgroundColor: 'rgba(255,255,255,0.45)', borderColor: 'transparent', shadowOpacity: 0 },
-  bookName: { flex: 1, fontFamily: F.serifMedium, fontSize: 17, color: '#2D2520' },
+  bookCardExpanded: { backgroundColor: '#FFFCF3', borderColor: 'rgba(197,160,89,0.34)' },
+  bookCardMuted: { backgroundColor: 'rgba(255,255,255,0.50)', borderColor: 'rgba(255,255,255,0.40)', shadowOpacity: 0 },
+  bookAccent: {
+    width: 7,
+    height: 26,
+    borderRadius: 7,
+    backgroundColor: 'rgba(214,207,195,0.55)',
+  },
+  bookAccentActive: { backgroundColor: 'rgba(197,160,89,0.45)' },
+  bookAccentExpanded: { backgroundColor: GOLD },
+  bookName: { flex: 1, fontFamily: F.serifMedium, fontSize: 17.5, lineHeight: 23, color: '#2D2520' },
   bookNameMuted: { fontFamily: F.serif, color: '#C9C3BA' },
-  bookCount: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 0.8, color: GOLD, backgroundColor: 'rgba(197,160,89,0.10)', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 10, overflow: 'hidden' },
+  bookCount: {
+    minWidth: 25,
+    textAlign: 'center',
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 0.9,
+    color: GOLD,
+    backgroundColor: 'rgba(197,160,89,0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 11,
+    overflow: 'hidden',
+  },
+  chevronWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(245,243,238,0.76)',
+    borderWidth: 1,
+    borderColor: 'rgba(232,216,186,0.24)',
+  },
+  chevronWrapOpen: {
+    backgroundColor: 'rgba(197,160,89,0.10)',
+    borderColor: 'rgba(197,160,89,0.22)',
+  },
   chevronOpen: { transform: [{ rotate: '180deg' }] },
   chapterGrid: {
     flexDirection: 'row',
@@ -610,40 +660,65 @@ const s = StyleSheet.create({
     columnGap: CHAPTER_GAP,
     rowGap: 8,
     paddingHorizontal: CHAPTER_GRID_SIDE_PADDING,
-    paddingTop: 10,
-    paddingBottom: 6,
+    paddingTop: 9,
+    paddingBottom: 7,
   },
   chapterCell: {
     minHeight: 44,
-    borderRadius: 14,
+    borderRadius: 15,
     borderWidth: 1,
-    borderColor: 'rgba(232,216,186,0.28)',
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderColor: 'rgba(232,216,186,0.32)',
+    backgroundColor: 'rgba(255,255,255,0.90)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  chapterCellActive: { backgroundColor: '#FFFDF7', borderColor: 'rgba(197,160,89,0.45)' },
-  chapterText: { fontFamily: F.serifMedium, fontSize: 15, color: '#D4CEC6' },
-  chapterTextActive: { color: '#3D3229' },
-  noteDot: { position: 'absolute', top: 7, right: 8, width: 5, height: 5, borderRadius: 3, backgroundColor: GOLD },
-
-  editorScreen: { flex: 1, backgroundColor: '#FDFBF5' },
-  editorActions: { width: 78, flexDirection: 'row', justifyContent: 'flex-end', gap: 2 },
-  editorIconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  editorContent: { padding: 18, gap: 14 },
-  fieldCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E8DCC4',
-    backgroundColor: '#FFFDF8',
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
+  chapterCellActive: {
+    backgroundColor: '#FFF9EA',
+    borderColor: 'rgba(197,160,89,0.52)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
     elevation: 1,
   },
-  fieldLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.9, color: GOLD, marginBottom: 10 },
+  chapterText: { fontFamily: F.serifMedium, fontSize: 15, color: '#D4CEC6' },
+  chapterTextActive: { color: '#3D3229' },
+  noteDot: { position: 'absolute', top: 7, right: 8, width: 6, height: 6, borderRadius: 3, backgroundColor: GOLD },
+
+  editorScreen: { flex: 1, backgroundColor: '#FDFBF5' },
+  editorActions: { width: 86, flexDirection: 'row', justifyContent: 'flex-end', gap: 7 },
+  editorIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  editorDeleteBtn: { backgroundColor: '#FEF2F2', borderColor: 'rgba(190,18,60,0.14)' },
+  editorSaveBtn: {
+    backgroundColor: GOLD,
+    borderColor: 'rgba(255,255,255,0.30)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.24,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  editorContent: { padding: 18, gap: 13 },
+  fieldCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(232,220,196,0.84)',
+    backgroundColor: '#FFFDF8',
+    padding: 15,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.05,
+    shadowRadius: 18,
+    elevation: 1,
+  },
+  fieldLabel: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.05, color: GOLD, marginBottom: 9 },
   fieldToolbar: { marginBottom: 8 },
   fieldEditor: { height: 220 },
 

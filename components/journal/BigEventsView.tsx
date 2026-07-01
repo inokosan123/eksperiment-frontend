@@ -944,12 +944,12 @@ export default function BigEventsView({
 
       <ConfirmModal
         visible={!!confirmId}
-        icon={<Trash2 s={22} c="#EF4444" w={2} />}
+        icon={<Trash2 s={22} c={C.red} w={2} />}
         iconBg="#FEE2E2"
         title="Delete event?"
         body="This event will disappear from today onward."
         confirmLabel="DELETE"
-        confirmColor="#EF4444"
+        confirmColor={C.red}
         onCancel={() => setConfirmId(null)}
         onConfirm={confirmDelete}
       />

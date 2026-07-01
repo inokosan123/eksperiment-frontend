@@ -22,7 +22,7 @@ import ConfirmModal from '@/components/shared/ConfirmModal';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { ArrowLeft, CheckSmall, Clock, Pause, Play, X } from '@/components/icons/Icons';
-import { F } from '@/constants/tokens';
+import { C, F } from '@/constants/tokens';
 import { useReadingList } from '@/components/library/ReadingListContext';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 
@@ -318,7 +318,7 @@ export default function ReadingSessionView({
 
       <ConfirmModal
         visible={showExit}
-        icon={<ArrowLeft s={22} c="#EF4444" />}
+        icon={<ArrowLeft s={22} c={C.red} />}
         iconBg="#FEF2F2"
         title="Exit Reading?"
         body="Your timer progress will be lost."

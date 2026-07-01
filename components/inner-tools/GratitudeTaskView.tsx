@@ -434,13 +434,13 @@ export default function GratitudeTaskView() {
 
       <ConfirmModal
         visible={showExitConfirm}
-        icon={<X s={24} c="#BE123C" />}
+        icon={<X s={24} c={C.red} />}
         iconBg="#FEF2F2"
         title={editingEntry ? 'Leave without saving?' : 'Leave without finishing?'}
         body={editingEntry ? "Your changes won't be saved." : "Your new entries won't be saved."}
         cancelLabel="STAY"
         confirmLabel="LEAVE"
-        confirmColor="#BE123C"
+        confirmColor={C.red}
         onCancel={() => setShowExitConfirm(false)}
         onConfirm={() => {
           setShowExitConfirm(false);

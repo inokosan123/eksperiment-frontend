@@ -67,6 +67,7 @@ type ScriptureContextValue = {
   getChapter: (bookId: number, chapter: number, lang: ScriptureLanguage) => Promise<BibleVerse[]>;
   searchVerses: (query: string, lang: ScriptureLanguage) => Promise<ScriptureSearchResult[]>;
   upsertAnnotation: (input: AnnotationInput) => Promise<void>;
+  upsertAnnotations: (inputs: AnnotationInput[]) => Promise<void>;
   deleteAnnotation: (id: string) => Promise<void>;
   toggleAnnotation: (input: AnnotationInput) => Promise<void>;
   saveBibleNote: (bookId: number, chapter: number, observations: string, lessons: string, application: string) => Promise<void>;
@@ -380,6 +381,35 @@ export function ScriptureProvider({ children }: { children: React.ReactNode }) {
     await refreshScriptureData();
   }, [refreshScriptureData, userDb]);
 
+  const upsertAnnotations = useCallback(async (inputs: AnnotationInput[]) => {
+    if (!userDb || inputs.length === 0) return;
+    const now = Date.now();
+    for (const input of inputs) {
+      const id = annotationId(input);
+      await userDb.runAsync(
+        `INSERT INTO scripture_annotations
+          (id, kind, color, text, book_id, chapter, verse, comment, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+          color = excluded.color,
+          text = excluded.text,
+          comment = excluded.comment,
+          updated_at = excluded.updated_at`,
+        id,
+        input.kind,
+        input.color ?? 'gold',
+        input.text,
+        input.bookId,
+        input.chapter,
+        input.verse,
+        input.comment ?? null,
+        now,
+        now,
+      );
+    }
+    await refreshScriptureData();
+  }, [refreshScriptureData, userDb]);
+
   const deleteAnnotation = useCallback(async (id: string) => {
     if (!userDb) return;
     await userDb.runAsync('DELETE FROM scripture_annotations WHERE id = ?', id);
@@ -464,6 +494,7 @@ export function ScriptureProvider({ children }: { children: React.ReactNode }) {
     getChapter,
     searchVerses,
     upsertAnnotation,
+    upsertAnnotations,
     deleteAnnotation,
     toggleAnnotation,
     saveBibleNote,
@@ -483,6 +514,7 @@ export function ScriptureProvider({ children }: { children: React.ReactNode }) {
     toggleAnnotation,
     updateCategory,
     upsertAnnotation,
+    upsertAnnotations,
   ]);
 
   return (

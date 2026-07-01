@@ -85,7 +85,7 @@ const s = StyleSheet.create({
     position: 'relative',
     borderRadius: 26,
     borderWidth: 1,
-    marginBottom: 10,
+    marginBottom: 6,
     overflow: 'hidden',
     shadowColor: '#1C1917',
     shadowOffset: { width: 0, height: 6 },

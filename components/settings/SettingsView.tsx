@@ -35,6 +35,7 @@ import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { useAppSettings } from '@/components/settings/SettingsContext';
+import { normalizeScriptureLanguage, SCRIPTURE_LANGUAGE_DETAILS } from '@/constants/scripture';
 
 const GOLD = C.gold;
 const BG = '#FAF7F0';
@@ -137,6 +138,77 @@ function PillSelector({
   );
 }
 
+function BibleLanguageSelector({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <View style={s.bibleLanguageSelector}>
+      <Text style={s.pillSelectorLabel}>Bible language</Text>
+      <View style={s.bibleLanguageList}>
+        {LANGS.map(opt => {
+          const details = SCRIPTURE_LANGUAGE_DETAILS[normalizeScriptureLanguage(opt.value)];
+          return (
+            <LanguageOptionCard
+              key={opt.value}
+              active={value === opt.value}
+              label={details.name}
+              code={details.label}
+              version={details.version}
+              onPress={() => onChange(opt.value)}
+            />
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function LanguageOptionCard({
+  active,
+  label,
+  code,
+  version,
+  onPress,
+}: {
+  active: boolean;
+  label: string;
+  code: string;
+  version: string;
+  onPress: () => void;
+}) {
+  const progress = useChoiceMotion(active);
+  const animStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', '#FFFBF2']),
+    borderColor: interpolateColor(progress.value, [0, 1], ['#EDE9E0', GOLD]),
+    transform: [{ scale: 1 + progress.value * 0.01 }],
+  }));
+
+  return (
+    <TouchableOpacity
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }}
+      activeOpacity={0.88}
+    >
+      <Reanimated.View style={[s.languageOptionCard, animStyle]}>
+        <View style={s.languageOptionCopy}>
+          <View style={s.languageOptionTitleRow}>
+            <Text style={[s.languageOptionName, active && s.languageOptionNameActive]}>{label}</Text>
+            <Text style={[s.languageOptionCode, active && s.languageOptionCodeActive]}>{code}</Text>
+          </View>
+          <Text style={s.languageOptionVersion}>{version}</Text>
+        </View>
+        <View style={[s.languageOptionDot, active && s.languageOptionDotActive]} />
+      </Reanimated.View>
+    </TouchableOpacity>
+  );
+}
+
 function PillBtn({
   active,
   label,
@@ -222,8 +294,8 @@ function ActionRow({
 
 const LANGS: PillOption[] = [
   { value: 'en', label: 'English' },
-  { value: 'sr', label: 'Srpski' },
-  { value: 'ru', label: 'Русский' },
+  { value: 'sr', label: 'Serbian' },
+  { value: 'ru', label: 'Russian' },
 ];
 
 // Main view
@@ -233,10 +305,8 @@ export default function SettingsView() {
   const insets = useSafeAreaInsets();
   const { settings, updateSettings } = useAppSettings();
   const {
-    appLang,
     bibleLang,
     prayerLang,
-    calendarType,
     notifSpiritual,
     notifRoutine,
     notifReading,
@@ -247,10 +317,8 @@ export default function SettingsView() {
     quietHours,
     dndEnabled,
   } = settings;
-  const setAppLang = (appLang: string) => updateSettings({ appLang });
   const setBibleLang = (bibleLang: string) => updateSettings({ bibleLang });
   const setPrayerLang = (prayerLang: string) => updateSettings({ prayerLang });
-  const setCalendarType = (calendarType: string) => updateSettings({ calendarType });
   const setNotifSpiritual = (notifSpiritual: boolean) => updateSettings({ notifSpiritual });
   const setNotifRoutine = (notifRoutine: boolean) => updateSettings({ notifRoutine });
   const setNotifReading = (notifReading: boolean) => updateSettings({ notifReading });
@@ -281,21 +349,9 @@ export default function SettingsView() {
         <View>
           <SectionLabel icon={<Globe s={12} c={GOLD} w={2.2} />} title="Preferences" />
           <Card>
-            <PillSelector label="App language" value={appLang} options={LANGS} onChange={setAppLang} />
-            <Divider />
-            <PillSelector label="Bible language" value={bibleLang} options={LANGS} onChange={setBibleLang} />
+            <BibleLanguageSelector value={bibleLang} onChange={setBibleLang} />
             <Divider />
             <PillSelector label="Prayer language" value={prayerLang} options={LANGS} onChange={setPrayerLang} />
-            <Divider />
-            <PillSelector
-              label="Calendar"
-              value={calendarType}
-              options={[
-                { value: 'gregorian', label: 'Gregorian (New)' },
-                { value: 'julian', label: 'Julian (Old)' },
-              ]}
-              onChange={setCalendarType}
-            />
           </Card>
         </View>
 
@@ -474,12 +530,12 @@ export default function SettingsView() {
 
       <ConfirmModal
         visible={showResetModal}
-        icon={<AlertTriangle s={22} c="#DC2626" w={2} />}
+        icon={<AlertTriangle s={22} c={C.red} w={2} />}
         iconBg="#FEE2E2"
         title="Reset all data?"
         body="This will permanently delete all your tasks, journal entries, annotations, and settings. This action cannot be undone."
         confirmLabel="RESET"
-        confirmColor="#DC2626"
+        confirmColor={C.red}
         onCancel={() => setShowResetModal(false)}
         onConfirm={() => {
           setShowResetModal(false);
@@ -527,6 +583,37 @@ const s = StyleSheet.create({
   pillBtnStretch: { minHeight: 38, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
   pillBtnText: { fontFamily: F.sansMedium, fontSize: 13, color: C.textSecondary, textAlign: 'center' },
   pillBtnTextActive: { color: '#FFFFFF', fontFamily: F.sansBold },
+  bibleLanguageSelector: { paddingVertical: 14, paddingHorizontal: 16 },
+  bibleLanguageList: { gap: 8 },
+  languageOptionCard: {
+    minHeight: 58,
+    borderRadius: 17,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 12,
+  },
+  languageOptionCopy: { flex: 1, minWidth: 0 },
+  languageOptionTitleRow: { flexDirection: 'row', alignItems: 'center', columnGap: 8 },
+  languageOptionName: { fontFamily: F.serifMedium, fontSize: 16, lineHeight: 20, color: C.text },
+  languageOptionNameActive: { color: '#8A682C' },
+  languageOptionCode: {
+    overflow: 'hidden',
+    borderRadius: 9,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    backgroundColor: '#F6F4EE',
+    fontFamily: F.sansBold,
+    fontSize: 8.5,
+    letterSpacing: 1.2,
+    color: '#B8B0A3',
+  },
+  languageOptionCodeActive: { backgroundColor: 'rgba(197,160,89,0.16)', color: GOLD },
+  languageOptionVersion: { marginTop: 3, fontFamily: F.sansMedium, fontSize: 11, lineHeight: 15, color: C.textMuted },
+  languageOptionDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#E7E1D2' },
+  languageOptionDotActive: { backgroundColor: GOLD },
 
   // Time pill
   timePill: { flexDirection: 'row', alignItems: 'center', columnGap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: 'rgba(197,160,89,0.10)', borderWidth: 1, borderColor: 'rgba(197,160,89,0.30)' },

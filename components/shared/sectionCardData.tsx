@@ -188,13 +188,13 @@ export const IDEAL_SELF_CARD: SectionCardConfig = {
   label: 'WHO I WANT TO BE',
   title: 'Ideal Self',
   description: 'Define the qualities you are trying to live and check them honestly each day.',
-  bg: '#FBF3DE',
-  border: '#F0E3B8',
-  labelColor: '#A9863F',
-  titleColor: '#451A03',
-  bodyColor: '#A9863F',
-  arrowBg: '#78350F',
-  decor: <Star s={84} c="#B45309" w={1} />,
+  bg: '#E1F1EC',
+  border: '#C8E6DD',
+  labelColor: '#3D8273',
+  titleColor: '#1F4E45',
+  bodyColor: '#3D8273',
+  arrowBg: '#2A6E5F',
+  decor: <Star s={84} c="#3D8273" w={1} />,
   route: '/ideal-self',
 };
 
@@ -203,13 +203,13 @@ export const BUCKET_LIST_CARD: SectionCardConfig = {
   label: 'LIFE DREAMS',
   title: 'Bucket List',
   description: 'Keep track of your life goals and celebrate achievements.',
-  bg: '#FBF3DE',
-  border: '#F0E3B8',
-  labelColor: '#A9863F',
-  titleColor: '#451A03',
-  bodyColor: '#A9863F',
-  arrowBg: '#78350F',
-  decor: <Star s={84} c="#B45309" w={1} />,
+  bg: '#E6EEE7',
+  border: '#CFE0D1',
+  labelColor: '#4B8152',
+  titleColor: '#1E4E27',
+  bodyColor: '#4B8152',
+  arrowBg: '#2C6A36',
+  decor: <Star s={84} c="#4B8152" w={1} />,
   route: '/bucket-list',
 };
 
@@ -283,20 +283,16 @@ export const LIBRARY_SECTION_CARDS = [
 
 export const INNER_SECTION_CARDS = [
   JOURNAL_CARD,
-  HABITS_CARD,
-  NOTES_CARD,
-  GRATITUDE_CARD,
-  IDEAL_SELF_CARD,
-  MONTHLY_GOALS_CARD,
-  BUCKET_LIST_CARD,
-  BIG_EVENTS_CARD,
   FOCUS_ZONE_CARD,
+  GRATITUDE_CARD,
+  BUCKET_LIST_CARD,
+  NOTES_CARD,
+  IDEAL_SELF_CARD,
 ];
 
-export const HOME_EXPLORE_SECTION_CARDS = [
-  PRAYER_BOOK_CARD,
-  NOTES_CARD,
-  HOLY_SCRIPTURE_CARD,
-  JOURNAL_CARD,
+export const HOME_ORGANIZE_SECTION_CARDS = [
   CHALLENGES_CARD,
+  HABITS_CARD,
+  BIG_EVENTS_CARD,
+  MONTHLY_GOALS_CARD,
 ];

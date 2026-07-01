@@ -31,6 +31,7 @@ import {
   BibleBook,
   normalizeScriptureLanguage,
   PSALMS_ID,
+  SCRIPTURE_LANGUAGE_DETAILS,
   SCRIPTURE_LANGUAGES,
   ScriptureLanguage,
 } from '@/constants/scripture';
@@ -60,12 +61,6 @@ const NEW_TESTAMENT = BIBLE_BOOKS.filter(book => book.testament === 'nt');
 const OLD_TESTAMENT = BIBLE_BOOKS.filter(book => book.testament !== 'nt' && book.id !== PSALMS_ID);
 const PSALTER = BIBLE_BOOKS.filter(book => book.id === PSALMS_ID);
 const PSALMS_BOOK = PSALTER[0];
-const SCRIPTURE_LANGUAGE_NAMES: Record<ScriptureLanguage, string> = {
-  en: 'English',
-  sr: 'Serbian',
-  ru: 'Russian',
-};
-
 export default function HolyScriptureView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -248,6 +243,7 @@ export default function HolyScriptureView() {
             <View style={s.languageOptions}>
               {SCRIPTURE_LANGUAGES.map(language => {
                 const active = language.key === scriptureLanguage;
+                const details = SCRIPTURE_LANGUAGE_DETAILS[language.key];
 
                 return (
                   <TouchableOpacity
@@ -263,11 +259,17 @@ export default function HolyScriptureView() {
                   >
                     <View style={s.languageCopy}>
                       <Text style={[s.languageName, { color: active ? GREEN : C.text }]}>
-                        {SCRIPTURE_LANGUAGE_NAMES[language.key]}
+                        {details.name}
                       </Text>
-                      <Text style={s.languageCode}>{language.label}</Text>
+                      <Text style={s.languageCode}>{details.version}</Text>
                     </View>
-                    {active && <CheckSmall s={18} c={GREEN} w={2.4} />}
+                    {active && (
+                      <View style={s.languageCheckShell}>
+                        <View style={s.languageCheckCore}>
+                          <CheckSmall s={14} c="#FFFDF7" w={2.35} />
+                        </View>
+                      </View>
+                    )}
                   </TouchableOpacity>
                 );
               })}
@@ -287,18 +289,18 @@ export default function HolyScriptureView() {
               <View style={[s.quickIcon, { backgroundColor: 'rgba(197,160,89,0.12)' }]}>
                 <Star s={15} c={GOLD} />
               </View>
-              <Text style={[s.quickLabel, { color: GOLD }]}>Favorites</Text>
+              <Text style={s.quickLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.88}>Favorites</Text>
             </View>
-            <Text style={s.quickDesc}>{'  '}Highlights & saved passages</Text>
+            <Text style={s.quickDesc}>Highlights & saved passages</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/bible-notes')} activeOpacity={0.86} style={[s.quickCard, s.quickCardGreen]}>
             <View style={s.quickCardRow}>
               <View style={[s.quickIcon, { backgroundColor: 'rgba(94,123,85,0.12)' }]}>
                 <Notebook s={14} c={GREEN} />
               </View>
-              <Text style={[s.quickLabel, { color: GREEN }]}>Bible Notes</Text>
+              <Text style={s.quickLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.88}>Bible Notes</Text>
             </View>
-            <Text style={s.quickDesc}>{'  '}Chapter notes & reflections</Text>
+            <Text style={s.quickDesc}>Chapter notes & reflections</Text>
           </TouchableOpacity>
         </View>
 
@@ -315,8 +317,8 @@ export default function HolyScriptureView() {
             <Book s={17} c={GOLD} w={2.1} />
           </View>
           <View style={s.checkpointTextWrap}>
-            <Text style={s.checkpointKicker}>CHECKPOINTS</Text>
-            <Text style={s.checkpointTitle}>Continue scripture reading</Text>
+            <Text style={s.checkpointTitle} numberOfLines={1}>Checkpoints</Text>
+            <Text style={s.checkpointKicker}>Continue scripture reading</Text>
           </View>
           <ChevronRight s={18} c="#BBA47A" w={2.4} />
         </TouchableOpacity>
@@ -788,7 +790,7 @@ const s = StyleSheet.create({
   languageMenu: {
     position: 'absolute',
     right: 17,
-    width: 218,
+    width: 252,
     borderRadius: 22,
     padding: 10,
     backgroundColor: '#FFFFFF',
@@ -803,7 +805,7 @@ const s = StyleSheet.create({
   languageMenuTitle: { paddingHorizontal: 4, paddingBottom: 9, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.8, color: '#A8A29E', textTransform: 'uppercase' },
   languageOptions: { gap: 7 },
   languageOption: {
-    minHeight: 48,
+    minHeight: 56,
     borderRadius: 16,
     borderWidth: 1,
     paddingHorizontal: 12,
@@ -815,37 +817,75 @@ const s = StyleSheet.create({
   languageOptionActive: { backgroundColor: '#F4FAF1', borderColor: 'rgba(94,123,85,0.28)' },
   languageOptionInactive: { backgroundColor: '#FFFFFF', borderColor: 'rgba(17,24,39,0.06)' },
   languageCopy: { flex: 1, minWidth: 0 },
-  languageName: { fontFamily: F.serifMedium, fontSize: 16, lineHeight: 20 },
-  languageCode: { marginTop: 1, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.8, color: '#B7B1A7' },
+  languageName: { fontFamily: F.serifMedium, fontSize: 17, lineHeight: 21 },
+  languageCode: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 11, lineHeight: 15, color: '#B7B1A7' },
+  languageCheckShell: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF7E7',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.34)',
+    shadowColor: GOLD,
+    shadowOpacity: 0.16,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  languageCheckCore: {
+    width: 19,
+    height: 19,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: GREEN,
+  },
   content: { width: '100%', maxWidth: 430, alignSelf: 'center', paddingHorizontal: 22, paddingTop: 14, gap: 8 },
 
-  quickGrid: { flexDirection: 'row', gap: 10 },
+  quickGrid: { flexDirection: 'row', gap: 9 },
   quickCard: {
-    flex: 1, borderRadius: 18, borderWidth: 1,
-    paddingHorizontal: 12, paddingVertical: 12, gap: 4,
-    shadowColor: '#000', shadowOpacity: 0.04, shadowOffset: { width: 0, height: 4 }, shadowRadius: 12, elevation: 2,
-  },
-  quickCardGold: { backgroundColor: '#FFFDF8', borderColor: 'rgba(197,160,89,0.28)' },
-  quickCardGreen: { backgroundColor: '#F4FAF1', borderColor: 'rgba(94,123,85,0.22)' },
-  quickCardRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  quickIcon: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  quickLabel: { fontFamily: F.sansSemiBold, fontSize: 13, letterSpacing: 0.2, flex: 1 },
-  quickDesc: { fontFamily: F.serif, fontSize: 12, lineHeight: 17, color: '#A8A29E' },
-  checkpointCard: {
-    minHeight: 58,
-    borderRadius: 20,
+    flex: 1,
+    minHeight: 74,
+    borderRadius: 19,
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.30)',
-    backgroundColor: '#FFFCF5',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    gap: 5,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.045,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 14,
+    elevation: 1,
+  },
+  quickCardGold: { backgroundColor: '#FFFDF8', borderColor: 'rgba(197,160,89,0.26)' },
+  quickCardGreen: { backgroundColor: '#FBFDF8', borderColor: 'rgba(94,123,85,0.20)' },
+  quickCardRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  quickIcon: { width: 32, height: 32, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  quickLabel: { fontFamily: F.serifMedium, fontSize: 16, lineHeight: 19, color: '#2B2723', flex: 1 },
+  quickDesc: { fontFamily: F.serif, fontSize: 12.5, lineHeight: 16, color: '#9F9890' },
+  checkpointCard: {
+    minHeight: 62,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.26)',
+    backgroundColor: '#FFFDF8',
     paddingHorizontal: 14,
+    paddingVertical: 11,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.045,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 14,
+    elevation: 1,
   },
-  checkpointIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: 'rgba(197,160,89,0.12)', alignItems: 'center', justifyContent: 'center' },
+  checkpointIcon: { width: 34, height: 34, borderRadius: 15, backgroundColor: 'rgba(197,160,89,0.12)', alignItems: 'center', justifyContent: 'center' },
   checkpointTextWrap: { flex: 1, minWidth: 0 },
-  checkpointKicker: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.6, color: GOLD, textTransform: 'uppercase' },
-  checkpointTitle: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 16, color: '#2B2723' },
+  checkpointKicker: { marginTop: 2, fontFamily: F.serif, fontSize: 12.5, lineHeight: 16, color: '#9F9890' },
+  checkpointTitle: { fontFamily: F.serifMedium, fontSize: 16, lineHeight: 20, color: '#2B2723' },
   selectorPanel: { gap: 10 },
   segmented: {
     minHeight: 46,

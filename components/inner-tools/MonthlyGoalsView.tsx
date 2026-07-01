@@ -16,7 +16,7 @@ import ConfirmModal from '@/components/shared/ConfirmModal';
 import { CheckSmall, ChevronLeft, ChevronRight, Plus, Trash2 } from '@/components/icons/Icons';
 import { useMonthlyGoals } from '@/components/inner-tools/MonthlyGoalsContext';
 import { AnimatedGoalCheck, AnimatedStrikeText, fireGoalToggleHaptic } from '@/components/inner-tools/MonthlyGoalRow';
-import { F } from '@/constants/tokens';
+import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import {
   notifyGuideEvent,
@@ -28,7 +28,7 @@ import {
 const BG = '#FAF7F0';
 const GOLD = '#C5A059';
 const GREEN = '#16A34A';
-const RED = '#DC5B5B';
+const RED = C.red;
 const INK = '#1A1714';
 const MUTED = '#A8A29E';
 const MONTHLY_GOALS_GUIDE_TARGETS = {
@@ -536,13 +536,13 @@ export default function MonthlyGoalsView({
 
       <ConfirmModal
         visible={!!deleteTargetId}
-        icon={<Trash2 s={20} c="#EF4444" />}
+        icon={<Trash2 s={20} c={C.red} />}
         iconBg="#FEF2F2"
         title="Delete goal?"
         body="This goal will be permanently removed."
         cancelLabel="KEEP"
         confirmLabel="DELETE"
-        confirmColor="#EF4444"
+        confirmColor={C.red}
         onCancel={() => setDeleteTargetId(null)}
         onConfirm={confirmDelete}
       />

@@ -2222,7 +2222,7 @@ function RoutineTaskEditorSheet({
       <ConfirmModal
         embedded
         visible={confirmDeleteVisible}
-        icon={<Trash2 s={22} c="#EF4444" />}
+        icon={<Trash2 s={22} c={C.red} />}
         title={isHabitTask ? 'Delete Step?' : 'Delete Activity?'}
         body={task
           ? isHabitTask
@@ -2230,7 +2230,7 @@ function RoutineTaskEditorSheet({
             : `"${task.title}" will be removed from your routine and Home tasks.`
           : ''}
         confirmLabel="DELETE"
-        confirmColor="#EF4444"
+        confirmColor={C.red}
         onCancel={() => setConfirmDeleteVisible(false)}
         onConfirm={() => {
           if (!task) return;

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Image, InteractionManager, PixelRatio, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
-import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
+import type { ImageSourcePropType, NativeScrollEvent, NativeSyntheticEvent, StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as ExpoImage, type ImageRef as ExpoImageRef } from 'expo-image';
 import LottieView from 'lottie-react-native';
@@ -144,10 +144,26 @@ type StepId =
   | 'organizeRecap'
   | 'organizeSetupPath'
   | 'organizeMacroIntro'
+  | 'organizeBigEventsIntro'
+  | 'organizeMonthlyGoalsIntro'
   | 'organizeMacroProgressAfterBigEvents'
   | 'organizeMacroProgressAfterMonthlyGoals'
   | 'organizeSetupPathAfterAhead'
   | 'organizeDailyRulePath'
+  | 'organizeWeeklyIntro'
+  | 'organizeWeeklyFrequency'
+  | 'organizeWeeklyTaskTypes'
+  | 'organizeSpiritualTasksIntro'
+  | 'organizeSpiritualTasksSetup'
+  | 'organizeRoutineTasksIntro'
+  | 'organizeRoutineTasksSetup'
+  | 'organizeHabitsIntro'
+  | 'organizeHabitsExamples'
+  | 'organizeHabitsSetup'
+  | 'organizeChallengesIntro'
+  | 'organizeHomePreview'
+  | 'organizeMyRhythmPreview'
+  | 'organizeComplete'
   | 'weeklyReveal'
   | 'flameOrganize'
   | 'giftMoment'
@@ -303,6 +319,13 @@ const DAY_CLOUD_BANK_FULL = require('@/assets/images/onboarding/day-cloud-bank-f
 const DAY_PIE_PHONE = require('@/assets/images/onboarding/day-pie-phone-v2-cutout.png');
 const DAY_PIE_SLEEP = require('@/assets/images/onboarding/day-pie-sleep-v2-cutout.png');
 const DAY_PIE_TOOLBOX = require('@/assets/images/onboarding/day-pie-toolbox-v2-cutout.png');
+const BIG_EVENT_WORK_DEADLINE_IMAGE = require('@/assets/images/onboarding/big-event-work-deadline.png');
+const BIG_EVENT_FAMILY_BIRTHDAY_IMAGE = require('@/assets/images/onboarding/big-event-family-birthday.png');
+const BIG_EVENT_EXAM_DAY_IMAGE = require('@/assets/images/onboarding/big-event-exam-day.png');
+const BIG_EVENT_VACATION_IMAGE = require('@/assets/images/onboarding/big-event-vacation.png');
+const MONTHLY_GOAL_GOSPEL_MARK_IMAGE = require('@/assets/images/onboarding/monthly-goal-gospel-mark.png');
+const MONTHLY_GOAL_HOUSE_PROJECT_IMAGE = require('@/assets/images/onboarding/monthly-goal-house-project.png');
+const MONTHLY_GOAL_COURSE_IMAGE = require('@/assets/images/onboarding/monthly-goal-course.png');
 const PROTECT_STATEMENT_IMAGES = [
   require('@/assets/images/protect-statement-1.jpg'),
   require('@/assets/images/protect-statement-2.jpg'),
@@ -918,14 +941,25 @@ function stepOrder(answers: Answers): StepId[] {
   const organizeSetup: StepId[] = [
     'organizeSetupPath',
     'organizeMacroIntro',
+    'organizeBigEventsIntro',
     'buildBigEvents',
     'organizeMacroProgressAfterBigEvents',
-    ...(includeMonthlyGoals ? ['buildMonthlyGoals' as StepId, 'organizeMacroProgressAfterMonthlyGoals' as StepId] : []),
+    ...(includeMonthlyGoals ? ['organizeMonthlyGoalsIntro' as StepId, 'buildMonthlyGoals' as StepId, 'organizeMacroProgressAfterMonthlyGoals' as StepId] : []),
     'organizeSetupPathAfterAhead',
-    'organizeDailyRulePath',
-    'buildMyRoutine',
-    'buildHabits',
-    'buildChallenges',
+    'organizeWeeklyIntro',
+    'organizeWeeklyFrequency',
+    'organizeWeeklyTaskTypes',
+    'organizeSpiritualTasksIntro',
+    'organizeSpiritualTasksSetup',
+    'organizeRoutineTasksIntro',
+    'organizeRoutineTasksSetup',
+    'organizeHabitsIntro',
+    'organizeHabitsExamples',
+    'organizeHabitsSetup',
+    'organizeChallengesIntro',
+    'organizeHomePreview',
+    'organizeMyRhythmPreview',
+    'organizeComplete',
   ];
 
   return [
@@ -945,7 +979,6 @@ function stepOrder(answers: Answers): StepId[] {
     'organizeDeck',
     'organizeRecap',
     ...organizeSetup,
-    'weeklyReveal',
     'flameOrganize',
     'giftMoment',
     'bibleWalkthrough',
@@ -2417,12 +2450,14 @@ function ValueToolsClosingSlide({
 
 function ValueSlideProgressRail({ activeIndex, total }: { activeIndex: number; total: number }) {
   return (
-    <View style={s.valueProgressRail}>
-      {Array.from({ length: total }).map((_, dotIndex) => {
-        const active = dotIndex === activeIndex;
-        const done = dotIndex <= activeIndex;
-        return <ValueProgressStep key={`value-flow-${dotIndex}`} active={active} done={done} />;
-      })}
+    <View style={s.valueProgressRailShell}>
+      <View style={s.valueProgressRail}>
+        {Array.from({ length: total }).map((_, dotIndex) => {
+          const active = dotIndex === activeIndex;
+          const done = dotIndex <= activeIndex;
+          return <ValueProgressStep key={`value-flow-${dotIndex}`} active={active} done={done} />;
+        })}
+      </View>
     </View>
   );
 }
@@ -2443,20 +2478,20 @@ function ValueProgressStep({ active, done }: { active: boolean; done: boolean })
   }, [active, activeMotion, done, doneMotion]);
 
   const stepStyle = useAnimatedStyle(() => ({
-    width: interpolate(activeMotion.value, [0, 1], [32, 86]),
+    flexGrow: interpolate(activeMotion.value, [0, 1], [1, 1.72]),
   }));
   const trackStyle = useAnimatedStyle(() => ({
-    height: interpolate(activeMotion.value, [0, 1], [5, 8]),
-    opacity: interpolate(activeMotion.value, [0, 1], [0.7, 1]),
+    height: interpolate(activeMotion.value, [0, 1], [6, 8]),
+    opacity: interpolate(activeMotion.value, [0, 1], [0.86, 1]),
     backgroundColor: interpolateColor(
       doneMotion.value,
       [0, 1],
-      ['rgba(25,23,20,0.06)', 'rgba(197,160,89,0.17)'],
+      ['rgba(116,86,45,0.14)', 'rgba(228,190,112,0.28)'],
     ),
     borderColor: interpolateColor(
       activeMotion.value,
       [0, 1],
-      ['rgba(255,255,255,0.46)', 'rgba(232,195,116,0.76)'],
+      ['rgba(255,253,248,0.78)', 'rgba(131,86,35,0.34)'],
     ),
   }));
   const fillStyle = useAnimatedStyle(() => ({
@@ -2464,7 +2499,7 @@ function ValueProgressStep({ active, done }: { active: boolean; done: boolean })
     backgroundColor: interpolateColor(
       activeMotion.value,
       [0, 1],
-      ['rgba(197,160,89,0.48)', '#E7C36D'],
+      ['#C99A49', '#8B5A25'],
     ),
     opacity: interpolate(doneMotion.value, [0, 1], [0, 1]),
   }));
@@ -7037,7 +7072,7 @@ function DayWasteCountingNumber({
   }, [decimals, duration, onSettled, stepKey, target]);
 
   return (
-    <Text style={[s.dayWasteRevealNumber, emphasized && s.dayWasteRevealNumberPercent, compact && s.dayWasteRevealNumberCompact]}>
+    <Text style={[s.dayWasteRevealNumber, emphasized && s.dayWasteRevealNumberPercent, compact && s.dayWasteRevealNumberCompact, compact && decimals > 0 && s.dayWasteRevealNumberDecimalCompact]}>
       {decimals > 0 ? value.toFixed(decimals) : Math.round(value)}
     </Text>
   );
@@ -7146,13 +7181,20 @@ function DayWasteRevealLayer({
       </Reanimated.View>
 
       <Reanimated.View
+        entering={FadeIn.delay(120).duration(520).easing(Easing.out(Easing.cubic))}
+        style={s.dayWasteRevealDividerWrap}
+      >
+        <View style={s.dayWasteRevealDivider} />
+      </Reanimated.View>
+
+      <Reanimated.View
         key={step.key}
         entering={FadeInUp.delay(170).duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
           opacity: 0,
           transform: [{ translateY: 30 }, { scale: 0.972 }],
         })}
         exiting={FadeOut.duration(180)}
-        style={s.dayWasteRevealBody}
+        style={[s.dayWasteRevealBody, step.unit === 'years' && s.dayWasteRevealBodyYears]}
       >
         <View style={s.dayWasteRevealNumberRow}>
           <DayWasteCountingNumber
@@ -7161,10 +7203,10 @@ function DayWasteRevealLayer({
             decimals={step.decimals}
             duration={1880}
             emphasized={step.unit === '%'}
-            compact={step.unit === 'years'}
+            compact={false}
             onSettled={handleSettled}
           />
-          <Text style={[s.dayWasteRevealUnit, step.unit === '%' && s.dayWasteRevealPercentUnit, step.unit === 'years' && s.dayWasteRevealUnitCompact]}>{step.unit}</Text>
+          <Text style={[s.dayWasteRevealUnit, step.unit === '%' && s.dayWasteRevealPercentUnit, step.unit === 'years' && s.dayWasteRevealUnitYears]}>{step.unit}</Text>
         </View>
 
         <View style={s.dayWasteRevealWords}>
@@ -13906,57 +13948,61 @@ function V4RecapToolCard({
         opacity: 0,
         transform: [{ translateY: 26 }, { scale: 0.965 }],
       })}
-      style={[
-        s.v4ToolCard,
-        s.v4ToolPathCard,
-        !active && !done && s.v4SetupQueueCardInactive,
-        active && s.v4SetupCardActive,
-        done && s.v4SetupCardDoneState,
-        cardMotionStyle,
-      ]}
+      style={s.v4ToolCardEntranceShell}
     >
-      <LinearGradient
-        pointerEvents="none"
-        colors={done
-          ? ['rgba(255,255,255,0.98)', 'rgba(47,155,97,0.13)', 'rgba(255,248,232,0.82)']
-          : active
-            ? ['rgba(255,255,255,1)', `${group.accent}1E`, 'rgba(255,248,232,0.92)']
-            : ['rgba(255,255,255,0.82)', 'rgba(247,243,236,0.70)', 'rgba(255,250,240,0.58)']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={[s.v4ToolTopSheen, { backgroundColor: done ? 'rgba(47,155,97,0.16)' : `${group.accent}${active ? '22' : '10'}` }]} />
-      <View style={s.v4ToolHeader}>
-        <View
-          style={[
-            s.v4RecapGroupIcon,
-            s.v4ToolIcon,
-            !active && !done && s.v4SetupQueueIconInactive,
-            { backgroundColor: `${done ? '#2F9B61' : group.accent}14`, borderColor: `${done ? '#2F9B61' : group.accent}36` },
-          ]}
-        >
+      <Reanimated.View
+        style={[
+          s.v4ToolCard,
+          s.v4ToolPathCard,
+          !active && !done && s.v4SetupQueueCardInactive,
+          active && s.v4SetupCardActive,
+          done && s.v4SetupCardDoneState,
+          cardMotionStyle,
+        ]}
+      >
+        <LinearGradient
+          pointerEvents="none"
+          colors={done
+            ? ['rgba(255,255,255,0.98)', 'rgba(47,155,97,0.13)', 'rgba(255,248,232,0.82)']
+            : active
+              ? ['rgba(255,255,255,1)', `${group.accent}1E`, 'rgba(255,248,232,0.92)']
+              : ['rgba(255,255,255,0.82)', 'rgba(247,243,236,0.70)', 'rgba(255,250,240,0.58)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={[s.v4ToolTopSheen, { backgroundColor: done ? 'rgba(47,155,97,0.16)' : `${group.accent}${active ? '22' : '10'}` }]} />
+        <View style={s.v4ToolHeader}>
           <View
             style={[
-              s.v4ToolStepMini,
-              {
-                borderColor: done ? 'rgba(47,155,97,0.34)' : active ? `${group.accent}48` : 'rgba(25,23,20,0.11)',
-                backgroundColor: done ? '#F2FBF4' : active ? '#FFFDF8' : '#F4EFE5',
-              },
+              s.v4RecapGroupIcon,
+              s.v4ToolIcon,
+              !active && !done && s.v4SetupQueueIconInactive,
+              { backgroundColor: `${done ? '#2F9B61' : group.accent}14`, borderColor: `${done ? '#2F9B61' : group.accent}36` },
             ]}
           >
-            <Text style={[s.v4ToolStepBadgeText, { color: done ? '#2F9B61' : active ? group.accent : 'rgba(25,23,20,0.34)' }]}>
-              {index + 1}
-            </Text>
+            <View
+              style={[
+                s.v4ToolStepMini,
+                {
+                  borderColor: done ? 'rgba(47,155,97,0.34)' : active ? `${group.accent}48` : 'rgba(25,23,20,0.11)',
+                  backgroundColor: done ? '#F2FBF4' : active ? '#FFFDF8' : '#F4EFE5',
+                },
+              ]}
+            >
+              <Text style={[s.v4ToolStepBadgeText, { color: done ? '#2F9B61' : active ? group.accent : 'rgba(25,23,20,0.34)' }]}>
+                {index + 1}
+              </Text>
+            </View>
+            {group.icon}
           </View>
-          {group.icon}
+          <View style={s.v4RecapGroupCopy}>
+            <Text style={[s.v4RecapGroupTitle, !active && !done && s.v4SetupQueueTitleInactive]}>{group.title}</Text>
+            <Text style={[s.v4RecapGroupSubtitle, !active && !done && s.v4SetupQueueSubtitleInactive]}>{group.subtitle}</Text>
+          </View>
+          <V4SetupStatusMark active={active} done={done} accent={group.accent} />
         </View>
-        <View style={s.v4RecapGroupCopy}>
-          <Text style={[s.v4RecapGroupTitle, !active && !done && s.v4SetupQueueTitleInactive]}>{group.title}</Text>
-          <Text style={[s.v4RecapGroupSubtitle, !active && !done && s.v4SetupQueueSubtitleInactive]}>{group.subtitle}</Text>
-        </View>
-        <V4SetupStatusMark active={active} done={done} accent={group.accent} />
-      </View>
+      </Reanimated.View>
     </Reanimated.View>
   );
 }
@@ -14121,14 +14167,14 @@ const ORGANIZE_RULE_AREAS: {
   {
     id: 'macro',
     title: 'Macro planning',
-    subtitle: 'First, we mark the things you do not want to forget.',
+    subtitle: 'Important dates and monthly direction before the week begins.',
     accent: '#4D8586',
     icon: <Calendar s={17} c="#4D8586" w={2} />,
   },
   {
     id: 'weekly',
     title: 'Weekly routine',
-    subtitle: 'Then we build the rhythm you can actually live each week.',
+    subtitle: 'Prayer, responsibilities, habits, and challenges in one rhythm.',
     accent: GOLD,
     icon: <ListChecks s={17} c={GOLD} w={2} />,
   },
@@ -14313,8 +14359,9 @@ function OrganizeRuleMapSlide({
   const variantKey = variant;
   const contentStyle = [
     s.organizeRuleContent,
+    s.organizeRuleMapContent,
     {
-      paddingTop: Math.max(insets.top + 34, 64),
+      paddingTop: Math.max(insets.top + 46, 76),
       paddingBottom: insets.bottom + 134,
     },
   ];
@@ -14404,15 +14451,14 @@ function OrganizeRuleMapSlide({
   return (
     <View style={s.organizeRuleScreen}>
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
-        <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={[s.organizeRuleHeader, exitStyle]}>
-          <Text style={s.organizeRuleOverline}>Based on your answers</Text>
+        <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={[s.organizeRuleHeader, s.organizeRuleMapHeader, exitStyle]}>
           <Text style={s.organizeRuleHeading}>Our system has two layers.</Text>
           <Text style={s.organizeRuleBody}>
-            We&apos;ll set up the big-picture plan first, then the weekly rhythm you live day by day.
+            First we plan what is ahead. Then we build the weekly rhythm that carries your day.
           </Text>
         </Reanimated.View>
 
-        <Reanimated.View style={[s.setupPathBoard, exitStyle]}>
+        <Reanimated.View style={[s.setupPathBoard, s.organizeRuleMapBoard, exitStyle]}>
           {ORGANIZE_RULE_AREAS.slice(0, reveal).map((area, index) => {
             const { active, done } = organizeMapState(variant, area.id, afterAheadStage);
             const cardActiveReady = variant === 'afterAhead' ? true : activeReady;
@@ -14443,13 +14489,13 @@ function OrganizeRuleMapSlide({
 const MACRO_PLANNING_STEPS = [
   {
     title: 'Big events',
-    body: 'Dates, appointments, deadlines, and commitments you do not want to forget.',
+    body: 'Important days you want your plan to remember before they arrive.',
     accent: '#4D8586',
     icon: <Calendar s={18} c="#4D8586" w={2} />,
   },
   {
     title: 'Monthly goals',
-    body: 'A calmer look at what is coming, before the week starts pulling you around.',
+    body: 'A simple direction for the month, so each week knows what it serves.',
     accent: GOLD,
     icon: <Clock s={18} c={GOLD} w={2} />,
   },
@@ -14499,7 +14545,7 @@ function OrganizeMacroIntroSlide({ onNext }: { onNext: () => void }) {
           </View>
           <Text style={s.organizeRuleHeading}>First, mark what matters ahead.</Text>
           <Text style={s.organizeRuleBody}>
-            We&apos;ll start with the things that shape your month, so important dates and commitments do not disappear.
+            Big dates and monthly direction shape your plan before the week begins.
           </Text>
         </Reanimated.View>
 
@@ -14718,6 +14764,223 @@ const DAILY_RULE_STEPS = [
   },
 ];
 
+type OrganizeExample = {
+  title: string;
+  body: string;
+  accent: string;
+  icon: React.ReactNode;
+  image?: ImageSourcePropType;
+};
+
+type OrganizeScheduleItem = {
+  id: string;
+  title: string;
+  body: string;
+  accent: string;
+  icon: React.ReactNode;
+  defaultTime: string;
+  frequency: string;
+};
+
+const BIG_EVENT_EXAMPLES: OrganizeExample[] = [
+  {
+    title: 'Work deadline',
+    body: 'Know exactly how much time you have left, and keep important work visible before it becomes urgent.',
+    accent: '#8F5B4B',
+    icon: <Calendar s={30} c="#8F5B4B" w={1.9} />,
+    image: BIG_EVENT_WORK_DEADLINE_IMAGE,
+  },
+  {
+    title: 'Family birthday',
+    body: 'Remember it early, plan something thoughtful, and don\'t let the day arrive as a surprise.',
+    accent: '#4D8586',
+    icon: <Heart s={30} c="#4D8586" w={1.8} />,
+    image: BIG_EVENT_FAMILY_BIRTHDAY_IMAGE,
+  },
+  {
+    title: 'Exam day',
+    body: 'Know exactly how much time you have to study, so you can walk in prepared and calm.',
+    accent: GOLD,
+    icon: <Book s={30} c={GOLD} w={1.9} />,
+    image: BIG_EVENT_EXAM_DAY_IMAGE,
+  },
+  {
+    title: 'Vacation',
+    body: 'Prepare travel, packing, documents, and plans before the week gets crowded.',
+    accent: '#705B9B',
+    icon: <ArrowUpRight s={30} c="#705B9B" w={1.9} />,
+    image: BIG_EVENT_VACATION_IMAGE,
+  },
+];
+
+const MONTHLY_GOAL_EXAMPLES: OrganizeExample[] = [
+  {
+    title: 'Read the Gospel of Mark',
+    body: 'Give your Scripture reading a clear goal, then carry it into your weekly plan.',
+    accent: GOLD,
+    icon: <OpenBook s={30} c={GOLD} w={1.8} />,
+    image: MONTHLY_GOAL_GOSPEL_MARK_IMAGE,
+  },
+  {
+    title: 'Finish the house project',
+    body: 'Turn a vague "I should do this" into a clear goal you can move forward week by week.',
+    accent: '#4D8586',
+    icon: <Target s={30} c="#4D8586" w={1.9} />,
+    image: MONTHLY_GOAL_HOUSE_PROJECT_IMAGE,
+  },
+  {
+    title: 'Complete a course',
+    body: 'Choose what you want to finish, then plan the weekly blocks that help you get there.',
+    accent: '#705B9B',
+    icon: <Sparkles s={30} c="#705B9B" w={1.8} />,
+    image: MONTHLY_GOAL_COURSE_IMAGE,
+  },
+];
+
+const SPIRITUAL_TASK_EXAMPLES: OrganizeExample[] = [
+  {
+    title: 'Morning Prayer',
+    body: 'Begin the day by turning toward God before the noise begins.',
+    accent: GOLD,
+    icon: <Sun s={30} c={GOLD} w={1.8} />,
+  },
+  {
+    title: 'Evening Prayer',
+    body: 'Close the day with gratitude, repentance, and peace.',
+    accent: '#705B9B',
+    icon: <Moon s={30} c="#705B9B" w={1.8} />,
+  },
+  {
+    title: 'Scripture reading',
+    body: 'Give the Word of God a fixed place in your week.',
+    accent: '#4D8586',
+    icon: <BookMarked s={30} c="#4D8586" w={1.8} />,
+  },
+];
+
+const ROUTINE_TASK_EXAMPLES: OrganizeExample[] = [
+  {
+    title: 'Cleaning',
+    body: 'Ordinary order, scheduled before it becomes stress.',
+    accent: '#4D8586',
+    icon: <ListChecks s={30} c="#4D8586" w={1.9} />,
+  },
+  {
+    title: 'Study',
+    body: 'A clear block for the work that needs focus.',
+    accent: GOLD,
+    icon: <Book s={30} c={GOLD} w={1.8} />,
+  },
+  {
+    title: 'Family responsibility',
+    body: 'The duties that deserve to be remembered calmly.',
+    accent: '#8F5B4B',
+    icon: <Heart s={30} c="#8F5B4B" w={1.8} />,
+  },
+];
+
+const HABIT_GOAL_EXAMPLES: OrganizeExample[] = [
+  {
+    title: 'Lose weight',
+    body: 'Morning walk, running, and gym become steps toward one goal.',
+    accent: '#2F9B61',
+    icon: <Target s={30} c="#2F9B61" w={1.9} />,
+  },
+  {
+    title: 'Improve social confidence',
+    body: 'Conversations, reading aloud, and voice practice can live together.',
+    accent: '#4D8586',
+    icon: <User s={30} c="#4D8586" w={1.8} />,
+  },
+  {
+    title: 'Grow in discipline',
+    body: 'Wake up on time, make your bed, and keep prayer before the phone.',
+    accent: GOLD,
+    icon: <Crown s={30} c={GOLD} w={1.8} />,
+  },
+];
+
+const CHALLENGE_EXAMPLES: OrganizeExample[] = [
+  {
+    title: 'Read the Gospels',
+    body: 'A clear Scripture challenge with a visible finish line.',
+    accent: GOLD,
+    icon: <OpenBook s={30} c={GOLD} w={1.8} />,
+  },
+  {
+    title: '40-Day Psalter',
+    body: 'A serious reading rhythm for a serious season.',
+    accent: '#705B9B',
+    icon: <BookMarked s={30} c="#705B9B" w={1.8} />,
+  },
+  {
+    title: 'Daily Jesus Prayer',
+    body: 'A simple commitment that trains attention and the heart.',
+    accent: '#4D8586',
+    icon: <Candle s={30} c="#4D8586" w={1.8} />,
+  },
+];
+
+const SPIRITUAL_SCHEDULE_ITEMS: OrganizeScheduleItem[] = [
+  {
+    id: 'morning-prayer',
+    title: 'Morning Prayer',
+    body: 'Set the time and repeat pattern for the prayer that begins your day.',
+    accent: GOLD,
+    icon: <Sun s={18} c={GOLD} w={2} />,
+    defaultTime: '07:00',
+    frequency: 'Every day',
+  },
+  {
+    id: 'evening-prayer',
+    title: 'Evening Prayer',
+    body: 'Give the end of the day a steady place for prayer and reflection.',
+    accent: '#705B9B',
+    icon: <Moon s={18} c="#705B9B" w={2} />,
+    defaultTime: '21:30',
+    frequency: 'Every day',
+  },
+  {
+    id: 'scripture-reading',
+    title: 'Scripture Reading',
+    body: 'Choose a rhythm for reading Scripture without relying on memory.',
+    accent: '#4D8586',
+    icon: <BookMarked s={18} c="#4D8586" w={2} />,
+    defaultTime: '20:30',
+    frequency: 'Mon - Sat',
+  },
+];
+
+const ROUTINE_SCHEDULE_ITEMS: OrganizeScheduleItem[] = [
+  {
+    id: 'cleaning',
+    title: 'Cleaning',
+    body: 'Place ordinary order into the week before it becomes pressure.',
+    accent: '#4D8586',
+    icon: <ListChecks s={18} c="#4D8586" w={2} />,
+    defaultTime: '18:00',
+    frequency: 'Tue / Thu',
+  },
+  {
+    id: 'study',
+    title: 'Study',
+    body: 'Protect a repeatable block for reading, learning, or school work.',
+    accent: GOLD,
+    icon: <Book s={18} c={GOLD} w={2} />,
+    defaultTime: '17:00',
+    frequency: 'Weekdays',
+  },
+  {
+    id: 'family',
+    title: 'Family responsibility',
+    body: 'Keep repeated duties visible so they are carried with peace.',
+    accent: '#8F5B4B',
+    icon: <Heart s={18} c="#8F5B4B" w={2} />,
+    defaultTime: '19:00',
+    frequency: 'Sunday',
+  },
+];
+
 function OrganizeDailyRuleSlide({ onNext }: { onNext: () => void }) {
   const insets = useSafeAreaInsets();
   const [ready, setReady] = useState(false);
@@ -14790,6 +15053,702 @@ function OrganizeDailyRuleSlide({ onNext }: { onNext: () => void }) {
         </View>
       </AnimatedCta>
     </View>
+  );
+}
+
+function OrganizeExampleCarouselSlide({
+  overline,
+  title,
+  body,
+  examples,
+  ctaLabel,
+  onNext,
+}: {
+  overline: string;
+  title: string;
+  body: string;
+  examples: OrganizeExample[];
+  ctaLabel: string;
+  onNext: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const [activeIndex, setActiveIndex] = useState(0);
+  const displayTitle = title || overline;
+  const usePolishedExampleCarousel = true;
+  const needsTallExampleHeader = examples.some(example => example.title.length > 18);
+  const bigEventsCardMax = height < 720 ? 196 : height < 800 ? 228 : 258;
+  const bigEventsFooterHeight = height < 720 ? 84 : 98;
+  const bigEventsHeaderHeight = needsTallExampleHeader ? height < 720 ? 90 : 92 : height < 720 ? 70 : 76;
+  const bigEventsChromeHeight = bigEventsHeaderHeight + bigEventsFooterHeight;
+  const cardWidth = Math.min(width - (usePolishedExampleCarousel ? 112 : 42), usePolishedExampleCarousel ? bigEventsCardMax : 360);
+  const cardHeight = usePolishedExampleCarousel
+    ? cardWidth + bigEventsChromeHeight
+    : Math.min(Math.max(height - insets.top - insets.bottom - 262, 386), 482);
+  const gap = 16;
+  const ready = activeIndex >= examples.length - 1;
+  const activeIndexRef = useRef(0);
+  const contentStyle = [
+    s.organizeCarouselScreenContent,
+    {
+      minHeight: height,
+      paddingTop: 6,
+      paddingBottom: insets.bottom + 10,
+    },
+  ];
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 10 }];
+  const snapOffsets = examples.map((_, index) => index * (cardWidth + gap));
+
+  const handleScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const next = Math.round(event.nativeEvent.contentOffset.x / (cardWidth + gap));
+    const clamped = Math.max(0, Math.min(examples.length - 1, next));
+    if (clamped !== activeIndex) {
+      activeIndexRef.current = clamped;
+      setActiveIndex(clamped);
+      runSelectionHaptic();
+    }
+  };
+  const handleBigEventsScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const next = Math.round(event.nativeEvent.contentOffset.x / (cardWidth + gap));
+    const clamped = Math.max(0, Math.min(examples.length - 1, next));
+    if (clamped === activeIndexRef.current) return;
+    activeIndexRef.current = clamped;
+    setActiveIndex(clamped);
+  };
+
+  if (usePolishedExampleCarousel) {
+    return (
+      <View style={s.organizeRuleScreen}>
+        <View
+          style={[
+            s.organizeBigEventsFixedContent,
+            {
+              paddingTop: Math.max(insets.top + 26, 52),
+              paddingBottom: insets.bottom + 96,
+            },
+          ]}
+        >
+          <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={s.organizeBigEventsHeader}>
+            <View style={s.organizeBigEventsTitleWrap}>
+              <Text style={s.organizeBigEventsTitle}>{displayTitle}</Text>
+              <View style={s.organizeBigEventsTitleUnderline} />
+            </View>
+            <Text style={s.organizeBigEventsBody}>{body}</Text>
+          </Reanimated.View>
+
+          <Reanimated.View
+            entering={FadeInUp.delay(170).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 22 }, { scale: 0.97 }],
+            })}
+            style={s.organizeBigEventsCarouselArea}
+          >
+            <View style={s.organizeCarouselTopControls}>
+              <View style={s.organizeExampleProgress}>
+                {examples.map((example, index) => (
+                  <View
+                    key={`${example.title}-top-segment`}
+                    style={[
+                      s.organizeExampleProgressSegment,
+                      index <= activeIndex && { backgroundColor: example.accent, opacity: 1 },
+                    ]}
+                  />
+                ))}
+              </View>
+              <View style={s.organizeSwipeTag}>
+                <Text style={s.organizeSwipeTagText}>Swipe to continue</Text>
+                <ChevronRight s={14} c="rgba(112,82,26,0.62)" w={2.3} />
+              </View>
+            </View>
+
+            <ScrollView
+              horizontal
+              decelerationRate="fast"
+              disableIntervalMomentum
+              snapToOffsets={snapOffsets}
+              snapToAlignment="start"
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={[
+                s.organizeCarouselContent,
+                {
+                  paddingHorizontal: Math.max(18, (width - cardWidth) / 2),
+                  paddingVertical: 5,
+                  columnGap: gap,
+                },
+              ]}
+              onScroll={handleBigEventsScroll}
+              scrollEventThrottle={16}
+              onMomentumScrollEnd={handleScrollEnd}
+            >
+              {examples.map((example, index) => (
+                <View key={example.title} style={[s.organizeExampleCard, s.organizeBigEventsExampleCard, { width: cardWidth, height: cardHeight }]}>
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(255,255,255,1)', `${example.accent}16`, 'rgba(255,249,235,0.96)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View style={[s.organizeExampleQuotePanel, s.organizeBigEventsExampleHeader, { height: bigEventsHeaderHeight, minHeight: bigEventsHeaderHeight, backgroundColor: `${example.accent}10`, borderColor: `${example.accent}24` }]}>
+                    <Text style={s.organizeBigEventsExampleEyebrow}>Example</Text>
+                    <Text style={s.organizeBigEventsExampleTitle}>{example.title}</Text>
+                    <View style={[s.organizeBigEventsExampleUnderline, { backgroundColor: example.accent }]} />
+                  </View>
+                  <View style={s.organizeBigEventsVisualPanel}>
+                    {example.image ? (
+                      <View style={[s.organizeBigEventsIllustrationBox, { height: cardWidth }]}>
+                        <Image source={example.image} resizeMode="cover" style={s.organizeBigEventsIllustrationImage} />
+                        <LinearGradient
+                          pointerEvents="none"
+                          colors={['rgba(255,253,248,0.02)', 'rgba(255,253,248,0.00)', `${example.accent}12`]}
+                          start={{ x: 0.5, y: 0 }}
+                          end={{ x: 0.5, y: 1 }}
+                          style={StyleSheet.absoluteFill}
+                        />
+                      </View>
+                    ) : (
+                      <LinearGradient
+                        colors={[`${example.accent}0C`, `${example.accent}1C`, 'rgba(255,252,244,0.98)']}
+                        start={{ x: 0.15, y: 0 }}
+                        end={{ x: 0.85, y: 1 }}
+                        style={[s.organizeBigEventsIllustrationBox, { height: cardWidth }]}
+                      >
+                        <View pointerEvents="none" style={[s.organizeBigEventsIllustrationWash, { backgroundColor: `${example.accent}14` }]} />
+                        <View style={[s.organizeBigEventsIllustrationMark, { borderColor: `${example.accent}2E`, backgroundColor: `${example.accent}10` }]}>
+                          {example.icon}
+                        </View>
+                      </LinearGradient>
+                    )}
+                    <View style={[s.organizeBigEventsImageFooter, { height: bigEventsFooterHeight, borderColor: `${example.accent}24`, backgroundColor: 'rgba(255,253,248,0.92)' }]}>
+                      <Text style={s.organizeBigEventsIllustrationText}>"{example.body}"</Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          </Reanimated.View>
+        </View>
+
+        <AnimatedCta active={ready} delay={120} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>{ctaLabel}</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      </View>
+    );
+  }
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
+        <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={s.organizeCarouselHeader}>
+          <Text style={s.organizeRuleOverline}>{overline}</Text>
+          <Text style={s.organizeCarouselHeading}>{title}</Text>
+          <Text style={s.organizeCarouselBody}>{body}</Text>
+        </Reanimated.View>
+
+        <Reanimated.View
+          entering={FadeInUp.delay(170).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 22 }, { scale: 0.97 }],
+          })}
+          style={s.organizeCarouselArea}
+        >
+          <ScrollView
+            horizontal
+            decelerationRate="fast"
+            disableIntervalMomentum
+            snapToOffsets={snapOffsets}
+            snapToAlignment="start"
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[
+              s.organizeCarouselContent,
+              {
+                paddingHorizontal: Math.max(18, (width - cardWidth) / 2),
+                columnGap: gap,
+              },
+            ]}
+            onMomentumScrollEnd={handleScrollEnd}
+          >
+            {examples.map((example, index) => (
+              <View key={example.title} style={[s.organizeExampleCard, { width: cardWidth, height: cardHeight }]}>
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(255,255,255,1)', `${example.accent}16`, 'rgba(255,249,235,0.96)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={[s.organizeExampleQuotePanel, { backgroundColor: `${example.accent}12`, borderColor: `${example.accent}26` }]}>
+                  <View style={[s.organizeExampleNumber, { borderColor: `${example.accent}36`, backgroundColor: '#FFFDF8' }]}>
+                    <Text style={[s.organizeExampleNumberText, { color: example.accent }]}>{index + 1}</Text>
+                  </View>
+                  <Text style={s.organizeExampleEyebrow}>Example</Text>
+                  <Text style={s.organizeExampleTitle}>{example.title}</Text>
+                </View>
+                <View style={s.organizeExampleVisualPanel}>
+                  <View style={[s.organizeExampleIcon, { borderColor: `${example.accent}34`, backgroundColor: `${example.accent}12` }]}>
+                    {example.icon}
+                  </View>
+                  <Text style={s.organizeExampleBody}>{example.body}</Text>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+
+          <View style={s.organizeCarouselFooter}>
+            <View style={s.organizeExampleProgress}>
+              {examples.map((example, index) => (
+                <View
+                  key={`${example.title}-segment`}
+                  style={[
+                    s.organizeExampleProgressSegment,
+                    index <= activeIndex && { backgroundColor: example.accent, opacity: 1 },
+                  ]}
+                />
+              ))}
+            </View>
+            <View style={s.organizeSwipeTag}>
+              <Text style={s.organizeSwipeTagText}>Swipe to continue</Text>
+              <ChevronRight s={14} c="rgba(112,82,26,0.62)" w={2.3} />
+            </View>
+          </View>
+        </Reanimated.View>
+      </ScrollView>
+
+      <AnimatedCta active={ready} delay={120} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>{ctaLabel}</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+function OrganizeLessonSlide({
+  overline,
+  title,
+  body,
+  children,
+  ctaLabel = 'Continue',
+  onNext,
+}: {
+  overline: string;
+  title: string;
+  body: string;
+  children: React.ReactNode;
+  ctaLabel?: string;
+  onNext: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const contentStyle = [
+    s.organizeRuleContent,
+    {
+      paddingTop: Math.max(insets.top + 28, 58),
+      paddingBottom: insets.bottom + 134,
+    },
+  ];
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
+        <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={s.organizeRuleHeader}>
+          <Text style={s.organizeRuleOverline}>{overline}</Text>
+          <Text style={s.organizeRuleHeading}>{title}</Text>
+          <Text style={s.organizeRuleBody}>{body}</Text>
+        </Reanimated.View>
+
+        {children}
+      </ScrollView>
+
+      <AnimatedCta delay={240} style={footerStyle}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>{ctaLabel}</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+function OrganizeFrequencySlide({ onNext }: { onNext: () => void }) {
+  const frequencies = [
+    { label: 'Every day', Icon: Sun, accent: GOLD },
+    { label: 'Weekdays', Icon: Calendar, accent: '#4D8586' },
+    { label: 'Mon / Wed / Fri', Icon: ListChecks, accent: '#2F9B61' },
+    { label: 'Sundays', Icon: Cross, accent: '#705B9B' },
+    { label: 'Custom', Icon: SlidersHorizontal, accent: '#8F5B4B' },
+  ];
+
+  return (
+    <OrganizeLessonSlide
+      overline="Weekly routine"
+      title="Every task needs a rhythm."
+      body="Some things happen daily. Some belong to certain days. Anasta keeps that pattern clear before the week begins."
+      onNext={onNext}
+    >
+      <View style={s.organizeFrequencyGrid}>
+        {frequencies.map((item, index) => {
+          const Icon = item.Icon;
+          return (
+            <Reanimated.View
+              key={item.label}
+              entering={FadeInUp.delay(160 + index * 90).duration(460).easing(Easing.out(Easing.cubic))}
+              style={[s.organizeFrequencyChip, { borderColor: `${item.accent}2F`, backgroundColor: `${item.accent}10` }]}
+            >
+              <Icon s={17} c={item.accent} w={2} />
+              <Text style={[s.organizeFrequencyText, { color: item.accent }]}>{item.label}</Text>
+            </Reanimated.View>
+          );
+        })}
+      </View>
+    </OrganizeLessonSlide>
+  );
+}
+
+function OrganizeTaskTypesSlide({ onNext }: { onNext: () => void }) {
+  return (
+    <OrganizeLessonSlide
+      overline="Weekly routine"
+      title="One setup works for every kind of task."
+      body="Spiritual tasks, routine responsibilities, habits, and challenges all land in the same weekly rhythm."
+      onNext={onNext}
+    >
+      <View style={s.setupPathBoard}>
+        {DAILY_RULE_STEPS.map((item, index) => (
+          <React.Fragment key={item.title}>
+            <SetupPathStepCard
+              title={item.title}
+              body={item.body}
+              accent={item.accent}
+              icon={item.icon}
+              index={index}
+              active={index === 0}
+              done={false}
+              activeReady
+              enteringDelay={180 + index * 120}
+            />
+            {index < DAILY_RULE_STEPS.length - 1 ? (
+              <OrganizeRuleConnector accent={DAILY_RULE_STEPS[index + 1]?.accent ?? item.accent} index={index} />
+            ) : null}
+          </React.Fragment>
+        ))}
+      </View>
+    </OrganizeLessonSlide>
+  );
+}
+
+function OrganizeScheduleSetupSlide({
+  overline,
+  title,
+  body,
+  items,
+  ctaLabel,
+  onNext,
+}: {
+  overline: string;
+  title: string;
+  body: string;
+  items: OrganizeScheduleItem[];
+  ctaLabel: string;
+  onNext: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [selectedId, setSelectedId] = useState(items[0]?.id ?? '');
+  const [completed, setCompleted] = useState<Record<string, boolean>>({});
+  const selectedItem = items.find(item => item.id === selectedId) ?? items[0];
+  const completeCount = items.filter(item => completed[item.id]).length;
+  const allDone = completeCount === items.length;
+  const contentStyle = [
+    s.organizeRuleContent,
+    {
+      paddingTop: Math.max(insets.top + 24, 54),
+      paddingBottom: insets.bottom + 134,
+      rowGap: 24,
+    },
+  ];
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+
+  const saveSelected = () => {
+    if (!selectedItem) return;
+    setCompleted(prev => ({ ...prev, [selectedItem.id]: true }));
+    runPreviewTaskCheckHaptic();
+    void playTaskCheckSoundOnly();
+    const nextIncomplete = items.find(item => item.id !== selectedItem.id && !completed[item.id]);
+    if (nextIncomplete) {
+      setTimeout(() => setSelectedId(nextIncomplete.id), 280);
+    }
+  };
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
+        <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={s.organizeRuleHeader}>
+          <Text style={s.organizeRuleOverline}>{overline}</Text>
+          <Text style={s.organizeRuleHeading}>{title}</Text>
+          <Text style={s.organizeRuleBody}>{body}</Text>
+          <Text style={s.organizeRuleNote}>{completeCount}/{items.length} rhythms set</Text>
+        </Reanimated.View>
+
+        <View style={s.setupPathBoard}>
+          {items.map((item, index) => {
+            const done = !!completed[item.id];
+            const active = selectedId === item.id && !done;
+            return (
+              <React.Fragment key={item.id}>
+                <TouchableOpacity
+                  activeOpacity={0.92}
+                  haptic="light"
+                  onPress={() => setSelectedId(item.id)}
+                  style={s.organizeTouchableCard}
+                >
+                  <SetupPathStepCard
+                    title={item.title}
+                    body={done ? `${item.defaultTime} · ${item.frequency}` : item.body}
+                    accent={item.accent}
+                    icon={item.icon}
+                    index={index}
+                    active={active}
+                    done={done}
+                    activeReady
+                    enteringDelay={180 + index * 130}
+                  />
+                </TouchableOpacity>
+                {index < items.length - 1 ? (
+                  <OrganizeRuleConnector accent={items[index + 1]?.accent ?? item.accent} index={index} />
+                ) : null}
+              </React.Fragment>
+            );
+          })}
+        </View>
+
+        {selectedItem && !completed[selectedItem.id] ? (
+          <Reanimated.View
+            key={selectedItem.id}
+            entering={FadeInUp.duration(430).easing(Easing.out(Easing.cubic))}
+            exiting={FadeOut.duration(180)}
+            style={s.organizeEditorPanel}
+          >
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(255,255,255,1)', `${selectedItem.accent}14`, 'rgba(255,249,235,0.93)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={s.organizeEditorHeader}>
+              <View style={[s.organizeEditorIcon, { borderColor: `${selectedItem.accent}34`, backgroundColor: `${selectedItem.accent}12` }]}>
+                {selectedItem.icon}
+              </View>
+              <View style={s.organizeEditorCopy}>
+                <Text style={s.organizeEditorTitle}>{selectedItem.title}</Text>
+                <Text style={s.organizeEditorBody}>Choose a simple starting rhythm. You can edit this later.</Text>
+              </View>
+            </View>
+
+            <View style={s.organizeEditorChips}>
+              {[selectedItem.defaultTime, 'Morning', 'Evening'].map((chip, index) => (
+                <View key={`${selectedItem.id}-time-${chip}`} style={[s.organizeEditorChip, index === 0 && { borderColor: `${selectedItem.accent}42`, backgroundColor: `${selectedItem.accent}12` }]}>
+                  <Text style={[s.organizeEditorChipText, index === 0 && { color: selectedItem.accent }]}>{chip}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={s.organizeEditorChips}>
+              {[selectedItem.frequency, 'Weekdays', 'Custom'].map((chip, index) => (
+                <View key={`${selectedItem.id}-freq-${chip}`} style={[s.organizeEditorChip, index === 0 && { borderColor: `${selectedItem.accent}42`, backgroundColor: `${selectedItem.accent}12` }]}>
+                  <Text style={[s.organizeEditorChipText, index === 0 && { color: selectedItem.accent }]}>{chip}</Text>
+                </View>
+              ))}
+            </View>
+
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={saveSelected} style={[s.organizeEditorSave, { backgroundColor: selectedItem.accent }]}>
+              <Text style={s.organizeEditorSaveText}>Save rhythm</Text>
+              <CheckSmall s={16} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </Reanimated.View>
+        ) : null}
+      </ScrollView>
+
+      <AnimatedCta active={allDone} delay={120} style={footerStyle} pointerEvents={allDone ? 'auto' : 'none'}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>{ctaLabel}</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+function OrganizeHabitSetupSlide({ onNext }: { onNext: () => void }) {
+  const [selected, setSelected] = useState('discipline');
+  const goals = [
+    { id: 'discipline', title: 'Grow in discipline', body: 'Wake up on time · Make bed · No phone before prayer', accent: GOLD, icon: <Crown s={18} c={GOLD} w={2} /> },
+    { id: 'health', title: 'Lose weight', body: 'Morning walk · Running · Gym', accent: '#2F9B61', icon: <Target s={18} c="#2F9B61" w={2} /> },
+    { id: 'social', title: 'Improve social confidence', body: 'Start one conversation · Read aloud · Voice practice', accent: '#4D8586', icon: <User s={18} c="#4D8586" w={2} /> },
+  ];
+
+  return (
+    <OrganizeLessonSlide
+      overline="Habits"
+      title="Pick one goal to start with."
+      body="A habit goal can hold several small steps. Start with one goal, then add more once the rhythm feels real."
+      ctaLabel="Create habit"
+      onNext={onNext}
+    >
+      <View style={s.setupPathBoard}>
+        {goals.map((goal, index) => (
+          <TouchableOpacity
+            key={goal.id}
+            activeOpacity={0.92}
+            haptic="light"
+            onPress={() => {
+              setSelected(goal.id);
+              runSelectionHaptic();
+            }}
+            style={s.organizeTouchableCard}
+          >
+            <SetupPathStepCard
+              title={goal.title}
+              body={goal.body}
+              accent={goal.accent}
+              icon={goal.icon}
+              index={index}
+              active={selected === goal.id}
+              done={false}
+              activeReady
+              enteringDelay={170 + index * 120}
+            />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </OrganizeLessonSlide>
+  );
+}
+
+function OrganizeHomePreviewSlide({ onNext }: { onNext: () => void }) {
+  const rows = [
+    { title: 'Morning Prayer', meta: '07:00 · Every day', accent: GOLD, icon: <Sun s={17} c={GOLD} w={2} /> },
+    { title: 'Scripture Reading', meta: '20:30 · Mon - Sat', accent: '#4D8586', icon: <BookMarked s={17} c="#4D8586" w={2} /> },
+    { title: 'Cleaning', meta: '18:00 · Tue / Thu', accent: '#8F5B4B', icon: <ListChecks s={17} c="#8F5B4B" w={2} /> },
+  ];
+
+  return (
+    <OrganizeLessonSlide
+      overline="Home"
+      title="This becomes your day."
+      body="Home shows what is planned now. Check a task, uncheck it, skip it, or long-press to see progress."
+      ctaLabel="Show My Rhythm"
+      onNext={onNext}
+    >
+      <Reanimated.View entering={FadeInUp.delay(160).duration(620).easing(Easing.out(Easing.cubic))} style={s.organizePhoneMock}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['#FFFFFF', 'rgba(255,248,232,0.94)', 'rgba(245,250,247,0.96)']}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={s.organizePhoneHeader}>
+          <Text style={s.organizePhoneDate}>Today</Text>
+          <Text style={s.organizePhoneSub}>Your weekly rhythm is ready.</Text>
+        </View>
+        {rows.map((row, index) => (
+          <Reanimated.View key={row.title} entering={FadeInUp.delay(320 + index * 120).duration(420)} style={s.organizePhoneTaskRow}>
+            <View style={[s.organizePhoneTaskIcon, { borderColor: `${row.accent}34`, backgroundColor: `${row.accent}12` }]}>{row.icon}</View>
+            <View style={s.organizePhoneTaskCopy}>
+              <Text style={s.organizePhoneTaskTitle}>{row.title}</Text>
+              <Text style={s.organizePhoneTaskMeta}>{row.meta}</Text>
+            </View>
+            <View style={[s.organizePhoneCheck, index === 0 && { backgroundColor: '#2F9B61', borderColor: '#2F9B61' }]}>
+              {index === 0 ? <CheckSmall s={15} c="#FFFFFF" w={2.6} /> : null}
+            </View>
+          </Reanimated.View>
+        ))}
+        <View style={s.organizeGestureHintRow}>
+          <View style={s.organizeGestureHint}><Text style={s.organizeGestureHintText}>Skip</Text></View>
+          <View style={s.organizeGestureHint}><Text style={s.organizeGestureHintText}>Long press analytics</Text></View>
+        </View>
+      </Reanimated.View>
+    </OrganizeLessonSlide>
+  );
+}
+
+function OrganizeMyRhythmPreviewSlide({ onNext }: { onNext: () => void }) {
+  const sections = [
+    { title: 'Spiritual', body: 'Prayer and Scripture tasks', accent: GOLD, icon: <Cross s={17} c={GOLD} w={2} /> },
+    { title: 'Routine', body: 'Responsibilities by day', accent: '#4D8586', icon: <ListChecks s={17} c="#4D8586" w={2} /> },
+    { title: 'Habits', body: 'Goals with repeatable steps', accent: '#2F9B61', icon: <Target s={17} c="#2F9B61" w={2} /> },
+    { title: 'Challenges', body: 'Focused commitments', accent: '#705B9B', icon: <Sparkles s={17} c="#705B9B" w={2} /> },
+  ];
+
+  return (
+    <OrganizeLessonSlide
+      overline="My Rhythm"
+      title="This is where you edit the system."
+      body="When life changes, My Rhythm is where you adjust times, repeat days, spiritual tasks, habits, and challenges."
+      ctaLabel="Complete organization"
+      onNext={onNext}
+    >
+      <View style={s.organizeRhythmMock}>
+        {sections.map((section, index) => (
+          <Reanimated.View
+            key={section.title}
+            entering={FadeInUp.delay(160 + index * 110).duration(430).easing(Easing.out(Easing.cubic))}
+            style={s.organizeRhythmRow}
+          >
+            <View style={[s.organizeRhythmIcon, { borderColor: `${section.accent}34`, backgroundColor: `${section.accent}12` }]}>
+              {section.icon}
+            </View>
+            <View style={s.organizeRhythmCopy}>
+              <Text style={s.organizeRhythmTitle}>{section.title}</Text>
+              <Text style={s.organizeRhythmBody}>{section.body}</Text>
+            </View>
+            <Pencil s={16} c="rgba(25,23,20,0.42)" w={2} />
+          </Reanimated.View>
+        ))}
+      </View>
+    </OrganizeLessonSlide>
+  );
+}
+
+function OrganizeCompleteSlide({ onNext }: { onNext: () => void }) {
+  useEffect(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  }, []);
+
+  return (
+    <OrganizeLessonSlide
+      overline="Organization complete"
+      title="Your week has direction now."
+      body="You marked what is ahead, built a weekly rhythm, and learned where to adjust it when life changes."
+      ctaLabel="Continue"
+      onNext={onNext}
+    >
+      <Reanimated.View entering={FadeInUp.delay(180).duration(560).easing(Easing.out(Easing.cubic))} style={s.organizeCompleteBadge}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(250,255,251,1)', 'rgba(47,155,97,0.24)', 'rgba(255,248,232,0.96)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={s.organizeCompleteIcon}>
+          <CheckSmall s={34} c="#FFFFFF" w={2.8} />
+        </View>
+        <Text style={s.organizeCompleteTitle}>Macro plan set</Text>
+        <Text style={s.organizeCompleteTitle}>Weekly routine set</Text>
+        <Text style={s.organizeCompleteBody}>Next, we will show the tools that support this rhythm.</Text>
+      </Reanimated.View>
+    </OrganizeLessonSlide>
   );
 }
 
@@ -15995,6 +16954,12 @@ export default function OnboardingView() {
     activeStep === 'commitment' ||
     activeStep === 'age' ||
     activeStep === 'gender' ||
+    activeStep === 'organizeBigEventsIntro' ||
+    activeStep === 'organizeMonthlyGoalsIntro' ||
+    activeStep === 'organizeSpiritualTasksIntro' ||
+    activeStep === 'organizeRoutineTasksIntro' ||
+    activeStep === 'organizeHabitsExamples' ||
+    activeStep === 'organizeChallengesIntro' ||
     valueStepActive ||
     isGuidedWalkthroughStep(activeStep);
   const visibleProgress = hideTopChrome ? null : activeProgress;
@@ -16013,10 +16978,26 @@ export default function OnboardingView() {
     activeStep === 'organizeDeck' ||
     activeStep === 'organizeSetupPath' ||
     activeStep === 'organizeMacroIntro' ||
+    activeStep === 'organizeBigEventsIntro' ||
+    activeStep === 'organizeMonthlyGoalsIntro' ||
     activeStep === 'organizeMacroProgressAfterBigEvents' ||
     activeStep === 'organizeMacroProgressAfterMonthlyGoals' ||
     activeStep === 'organizeSetupPathAfterAhead' ||
     activeStep === 'organizeDailyRulePath' ||
+    activeStep === 'organizeWeeklyIntro' ||
+    activeStep === 'organizeWeeklyFrequency' ||
+    activeStep === 'organizeWeeklyTaskTypes' ||
+    activeStep === 'organizeSpiritualTasksIntro' ||
+    activeStep === 'organizeSpiritualTasksSetup' ||
+    activeStep === 'organizeRoutineTasksIntro' ||
+    activeStep === 'organizeRoutineTasksSetup' ||
+    activeStep === 'organizeHabitsIntro' ||
+    activeStep === 'organizeHabitsExamples' ||
+    activeStep === 'organizeHabitsSetup' ||
+    activeStep === 'organizeChallengesIntro' ||
+    activeStep === 'organizeHomePreview' ||
+    activeStep === 'organizeMyRhythmPreview' ||
+    activeStep === 'organizeComplete' ||
     activeStep === 'dayVisualizationHeader' ||
     valueStepActive ||
     flameStepActive ||
@@ -16247,14 +17228,38 @@ export default function OnboardingView() {
       );
     }
     if (activeStep === 'organizeMacroIntro') {
-      return <OrganizeMacroIntroSlide onNext={startOrganizeAheadSetup} />;
+      return <OrganizeMacroIntroSlide onNext={goNext} />;
+    }
+    if (activeStep === 'organizeBigEventsIntro') {
+      return (
+        <OrganizeExampleCarouselSlide
+          overline="Big events"
+          title="Big Events"
+          body="Keep important days in front of you, see how many days are left, and plan your week before anything important gets forgotten."
+          examples={BIG_EVENT_EXAMPLES}
+          ctaLabel="Add big event"
+          onNext={startOrganizeAheadSetup}
+        />
+      );
     }
     if (activeStep === 'organizeMacroProgressAfterBigEvents') {
       return (
         <OrganizeMacroProgressSlide
           variant="afterBigEvents"
           monthlyGoalsEnabled={monthlyGoalsEnabled}
-          onNext={monthlyGoalsEnabled ? startOrganizeMonthlyGoalsSetup : goNext}
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'organizeMonthlyGoalsIntro') {
+      return (
+        <OrganizeExampleCarouselSlide
+          overline="Monthly goals"
+          title="Monthly Goals"
+          body="Choose what you want to accomplish in the months ahead, so every weekly plan starts with direction."
+          examples={MONTHLY_GOAL_EXAMPLES}
+          ctaLabel="Add monthly goal"
+          onNext={startOrganizeMonthlyGoalsSetup}
         />
       );
     }
@@ -16278,6 +17283,126 @@ export default function OnboardingView() {
     if (activeStep === 'organizeDailyRulePath') {
       return <OrganizeDailyRuleSlide onNext={startOrganizeDailyRuleSetup} />;
     }
+    if (activeStep === 'organizeWeeklyIntro') {
+      return (
+        <OrganizeLessonSlide
+          overline="Weekly routine"
+          title="Now we build the rhythm of your week."
+          body="Prayer, responsibilities, habits, and challenges work best when they have a clear place in ordinary days."
+          onNext={goNext}
+        >
+          <View style={s.organizeWeekPreview}>
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => (
+              <Reanimated.View
+                key={day}
+                entering={FadeInUp.delay(160 + index * 65).duration(360).easing(Easing.out(Easing.cubic))}
+                style={s.organizeWeekColumn}
+              >
+                <Text style={s.organizeWeekDay}>{day}</Text>
+                <View style={[s.organizeWeekBar, { height: 42 + ((index * 13) % 42) }]} />
+                <View style={s.organizeWeekDot} />
+              </Reanimated.View>
+            ))}
+          </View>
+        </OrganizeLessonSlide>
+      );
+    }
+    if (activeStep === 'organizeWeeklyFrequency') return <OrganizeFrequencySlide onNext={goNext} />;
+    if (activeStep === 'organizeWeeklyTaskTypes') return <OrganizeTaskTypesSlide onNext={goNext} />;
+    if (activeStep === 'organizeSpiritualTasksIntro') {
+      return (
+        <OrganizeExampleCarouselSlide
+          overline="Spiritual tasks"
+          title="Spiritual Tasks"
+          body="Prayer and Scripture should not depend on memory alone. Give them a place in your week."
+          examples={SPIRITUAL_TASK_EXAMPLES}
+          ctaLabel="Set spiritual tasks"
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'organizeSpiritualTasksSetup') {
+      return (
+        <OrganizeScheduleSetupSlide
+          overline="Spiritual tasks"
+          title="Set time and frequency."
+          body="Tap each spiritual task and give it a simple rhythm. You can change everything later."
+          items={SPIRITUAL_SCHEDULE_ITEMS}
+          ctaLabel="Spiritual rhythm set"
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'organizeRoutineTasksIntro') {
+      return (
+        <OrganizeExampleCarouselSlide
+          overline="Routine tasks"
+          title="Routine Tasks"
+          body="Daily life matters too. A steady routine makes room for prayer instead of fighting against it."
+          examples={ROUTINE_TASK_EXAMPLES}
+          ctaLabel="Set routine tasks"
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'organizeRoutineTasksSetup') {
+      return (
+        <OrganizeScheduleSetupSlide
+          overline="Routine tasks"
+          title="Give ordinary duties a place."
+          body="Set a starting rhythm for repeated responsibilities. This keeps the week from becoming noise."
+          items={ROUTINE_SCHEDULE_ITEMS}
+          ctaLabel="Routine tasks set"
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'organizeHabitsIntro') {
+      return (
+        <OrganizeLessonSlide
+          overline="Habits"
+          title="Habits are built around a goal."
+          body="In Anasta, a habit is a goal with concrete steps. The steps appear in your routine so the goal becomes practice."
+          onNext={goNext}
+        >
+          <View style={s.organizeHabitFormula}>
+            <View style={s.organizeHabitFormulaPill}><Text style={s.organizeHabitFormulaText}>Goal</Text></View>
+            <Plus s={18} c={GOLD} w={2.2} />
+            <View style={s.organizeHabitFormulaPill}><Text style={s.organizeHabitFormulaText}>Steps</Text></View>
+            <ChevronRight s={18} c="rgba(25,23,20,0.44)" w={2.2} />
+            <View style={[s.organizeHabitFormulaPill, s.organizeHabitFormulaPillDone]}><Text style={s.organizeHabitFormulaTextDone}>Habit</Text></View>
+          </View>
+        </OrganizeLessonSlide>
+      );
+    }
+    if (activeStep === 'organizeHabitsExamples') {
+      return (
+        <OrganizeExampleCarouselSlide
+          overline="Habits"
+          title="Habits"
+          body="This keeps discipline practical. You are not just naming what you want. You are choosing the actions that build it."
+          examples={HABIT_GOAL_EXAMPLES}
+          ctaLabel="Choose a habit goal"
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'organizeHabitsSetup') return <OrganizeHabitSetupSlide onNext={goNext} />;
+    if (activeStep === 'organizeChallengesIntro') {
+      return (
+        <OrganizeExampleCarouselSlide
+          overline="Challenges"
+          title="Challenges"
+          body="Pick one clear commitment and let Anasta track the days until it is complete."
+          examples={CHALLENGE_EXAMPLES}
+          ctaLabel="Pick a challenge"
+          onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'organizeHomePreview') return <OrganizeHomePreviewSlide onNext={goNext} />;
+    if (activeStep === 'organizeMyRhythmPreview') return <OrganizeMyRhythmPreviewSlide onNext={goNext} />;
+    if (activeStep === 'organizeComplete') return <OrganizeCompleteSlide onNext={goNext} />;
     if (activeStep === 'weeklyReveal') return <V4WeeklyRevealSlide displayName={answers.displayName} onNext={goNext} />;
     if (activeStep === 'flameOrganize') {
       return (
@@ -18763,17 +19888,30 @@ const s = StyleSheet.create({
   valueNavigationLast: {
     rowGap: 9,
   },
+  valueProgressRailShell: {
+    width: '100%',
+    maxWidth: 232,
+    minHeight: 16,
+    borderRadius: 999,
+    paddingHorizontal: 2,
+    paddingVertical: 4,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    shadowColor: '#8A632C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 9,
+    elevation: 0,
+  },
   valueProgressRail: {
     width: '100%',
-    maxWidth: 286,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    columnGap: 7,
-    paddingHorizontal: 3,
-    paddingVertical: 3,
+    columnGap: 6,
   },
   valueProgressStep: {
+    minWidth: 30,
     alignItems: 'stretch',
     justifyContent: 'center',
   },
@@ -18781,15 +19919,15 @@ const s = StyleSheet.create({
     width: '100%',
     height: 6,
     borderRadius: 999,
-    backgroundColor: 'rgba(25,23,20,0.06)',
+    backgroundColor: 'rgba(116,86,45,0.14)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.52)',
+    borderColor: 'rgba(255,253,248,0.78)',
     overflow: 'hidden',
-    shadowColor: GOLD,
+    shadowColor: '#8D5B25',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 1,
+    shadowRadius: 7,
+    elevation: 0,
   },
   valueProgressTrackFill: {
     position: 'absolute',
@@ -18806,7 +19944,7 @@ const s = StyleSheet.create({
     top: 1,
     height: 2,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.40)',
+    backgroundColor: 'rgba(255,255,255,0.42)',
   },
   valueSwipeHint: {
     minHeight: 30,
@@ -21106,7 +22244,7 @@ const s = StyleSheet.create({
   dayWasteRevealTitleBlock: {
     width: '100%',
     alignItems: 'center',
-    marginTop: 72,
+    marginTop: 50,
   },
   dayWasteRevealTitle: {
     fontFamily: F.serifBold,
@@ -21117,13 +22255,25 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
   dayWasteRevealHeroTitle: {
-    fontSize: 46,
-    lineHeight: 52,
+    fontSize: 40,
+    lineHeight: 46,
   },
   dayWasteRevealHeroUnderline: {
-    width: '102%',
-    height: 3.5,
-    marginTop: 0,
+    width: '100%',
+    height: 3,
+    marginTop: -1,
+  },
+  dayWasteRevealDividerWrap: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  dayWasteRevealDivider: {
+    width: '56%',
+    maxWidth: 226,
+    height: 1.6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(23,19,15,0.86)',
   },
   dayWasteRevealBody: {
     flex: 1,
@@ -21132,59 +22282,78 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 22,
-    paddingBottom: 48,
+    paddingTop: 18,
+    paddingBottom: 18,
+  },
+  dayWasteRevealBodyYears: {
+    transform: [{ translateY: 0 }],
   },
   dayWasteRevealNumberRow: {
     minHeight: 214,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
+    position: 'relative',
+    overflow: 'visible',
   },
   dayWasteRevealNumber: {
     fontFamily: F.serifSemiBold,
-    fontSize: 176,
-    lineHeight: 190,
+    fontSize: 188,
+    lineHeight: 199,
     letterSpacing: 0,
     color: '#17130F',
     textAlign: 'center',
     includeFontPadding: false,
+    fontVariant: ['tabular-nums'],
     textShadowColor: 'rgba(176,56,62,0.10)',
     textShadowOffset: { width: 0, height: 9 },
     textShadowRadius: 18,
   },
   dayWasteRevealNumberPercent: {
-    fontSize: 196,
-    lineHeight: 208,
+    fontSize: 212,
+    lineHeight: 222,
   },
   dayWasteRevealNumberCompact: {
-    fontSize: 154,
-    lineHeight: 170,
-    transform: [{ translateY: -12 }],
+    fontSize: 150,
+    lineHeight: 165,
+  },
+  dayWasteRevealNumberDecimalCompact: {
+    fontSize: 134,
+    lineHeight: 150,
   },
   dayWasteRevealUnit: {
-    marginLeft: 7,
-    marginBottom: 30,
-    fontFamily: F.serifSemiBold,
-    fontSize: 36,
-    lineHeight: 41,
+    position: 'absolute',
+    right: '11%',
+    bottom: 30,
+    zIndex: 3,
+    fontFamily: F.serifMediumItalic,
+    fontSize: 48,
+    lineHeight: 50,
     color: '#B0383E',
+    textShadowColor: 'rgba(176,56,62,0.13)',
+    textShadowOffset: { width: 0, height: 4 },
+    textShadowRadius: 9,
+    transform: [{ rotate: '-7deg' }, { translateX: -5 }, { translateY: 9 }],
   },
   dayWasteRevealPercentUnit: {
-    fontSize: 76,
-    lineHeight: 82,
-    marginBottom: 27,
+    right: '7%',
+    bottom: 1,
+    fontFamily: F.serifSemiBold,
+    fontSize: 92,
+    lineHeight: 96,
+    transform: [{ rotate: '-4deg' }, { translateX: 4 }, { translateY: 6 }],
   },
-  dayWasteRevealUnitCompact: {
-    marginLeft: 5,
-    marginBottom: 30,
-    fontSize: 32,
-    lineHeight: 37,
-    transform: [{ translateY: -12 }],
+  dayWasteRevealUnitYears: {
+    right: '7%',
+    bottom: 33,
+    fontSize: 47,
+    lineHeight: 50,
+    transform: [{ rotate: '-7deg' }, { translateX: -2 }, { translateY: 9 }],
   },
   dayWasteRevealWords: {
     marginTop: -18,
-    minHeight: 128,
+    minHeight: 112,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -21194,23 +22363,23 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
   dayWasteRevealWordOne: {
-    fontSize: 27,
-    lineHeight: 33,
-    transform: [{ rotate: '-5deg' }, { translateX: -44 }],
+    fontSize: 28,
+    lineHeight: 34,
+    transform: [{ rotate: '-4deg' }, { translateX: -34 }],
   },
   dayWasteRevealWordMain: {
     marginTop: -3,
     fontFamily: F.serifBold,
-    fontSize: 39,
-    lineHeight: 43,
+    fontSize: 42,
+    lineHeight: 46,
     color: '#B0383E',
     transform: [{ rotate: '2deg' }],
   },
   dayWasteRevealWordThree: {
     marginTop: -4,
-    fontSize: 27,
-    lineHeight: 33,
-    transform: [{ rotate: '-3deg' }, { translateX: 42 }],
+    fontSize: 28,
+    lineHeight: 34,
+    transform: [{ rotate: '-3deg' }, { translateX: 34 }],
   },
   dayTwoIlloAbs: {
     position: 'absolute',
@@ -21938,6 +23107,9 @@ const s = StyleSheet.create({
     paddingBottom: 126,
     rowGap: 32,
   },
+  organizeRuleMapContent: {
+    rowGap: 27,
+  },
   organizePracticeContent: {
     paddingHorizontal: 18,
     paddingTop: 44,
@@ -21948,6 +23120,10 @@ const s = StyleSheet.create({
     alignItems: 'center',
     rowGap: 9,
     paddingHorizontal: 10,
+  },
+  organizeRuleMapHeader: {
+    rowGap: 11,
+    paddingHorizontal: 8,
   },
   organizeRuleOverline: {
     fontFamily: F.serifMediumItalic,
@@ -22002,6 +23178,9 @@ const s = StyleSheet.create({
     alignSelf: 'center',
     alignItems: 'stretch',
     marginTop: 6,
+  },
+  organizeRuleMapBoard: {
+    marginTop: 0,
   },
   setupPathUnifiedCard: {
     minHeight: 72,
@@ -22330,6 +23509,724 @@ const s = StyleSheet.create({
     lineHeight: 18.6,
     color: 'rgba(25,23,20,0.60)',
   },
+  organizeCarouselScreenContent: {
+    flexGrow: 1,
+    paddingHorizontal: 0,
+    rowGap: 12,
+  },
+  organizeBigEventsFixedContent: {
+    flex: 1,
+    paddingHorizontal: 0,
+    rowGap: 16,
+  },
+  organizeBigEventsHeader: {
+    alignItems: 'center',
+    rowGap: 10,
+    paddingHorizontal: 27,
+  },
+  organizeBigEventsTitleWrap: {
+    alignItems: 'center',
+  },
+  organizeBigEventsTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 43,
+    lineHeight: 47,
+    color: INK,
+    textAlign: 'center',
+  },
+  organizeBigEventsTitleUnderline: {
+    width: '86%',
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: '#4D8586',
+    marginTop: 0,
+  },
+  organizeBigEventsBody: {
+    fontFamily: F.serifMedium,
+    fontSize: 17.6,
+    lineHeight: 22.7,
+    color: 'rgba(25,23,20,0.60)',
+    textAlign: 'center',
+    maxWidth: 345,
+  },
+  organizeCarouselHeader: {
+    alignItems: 'center',
+    rowGap: 6,
+    paddingHorizontal: 28,
+  },
+  organizeCarouselHeading: {
+    fontFamily: F.serifBold,
+    fontSize: 36,
+    lineHeight: 39,
+    color: INK,
+    textAlign: 'center',
+    maxWidth: 350,
+  },
+  organizeCarouselBody: {
+    fontFamily: F.serifMedium,
+    fontSize: 18.2,
+    lineHeight: 23.2,
+    color: 'rgba(25,23,20,0.60)',
+    textAlign: 'center',
+    maxWidth: 336,
+  },
+  organizeCarouselArea: {
+    width: '100%',
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'space-between',
+    rowGap: 8,
+  },
+  organizeBigEventsCarouselArea: {
+    width: '100%',
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'flex-start',
+    rowGap: 10,
+  },
+  organizeCarouselTopControls: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    rowGap: 12,
+    paddingHorizontal: 26,
+  },
+  organizeCarouselContent: {
+    alignItems: 'center',
+  },
+  organizeExampleCard: {
+    borderRadius: 32,
+    padding: 0,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.27)',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.12,
+    shadowRadius: 26,
+    elevation: 3,
+  },
+  organizeBigEventsExampleCard: {
+    borderRadius: 30,
+    padding: 0,
+    justifyContent: 'flex-start',
+  },
+  organizeExampleQuotePanel: {
+    width: '100%',
+    flex: 0.4,
+    minHeight: 142,
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 16,
+    justifyContent: 'center',
+    borderBottomWidth: 1,
+    overflow: 'hidden',
+  },
+  organizeBigEventsExampleHeader: {
+    flex: 0,
+    minHeight: 76,
+    borderBottomWidth: 1,
+    paddingHorizontal: 16,
+    paddingTop: 9,
+    paddingBottom: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 0,
+  },
+  organizeExampleNumber: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    minWidth: 29,
+    height: 29,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 7,
+    borderWidth: 1,
+  },
+  organizeExampleNumberText: {
+    fontFamily: F.serifBold,
+    fontSize: 13.2,
+    lineHeight: 16,
+  },
+  organizeExampleEyebrow: {
+    marginBottom: 5,
+    fontFamily: F.sansBold,
+    fontSize: 10.4,
+    lineHeight: 13,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.43)',
+    textAlign: 'center',
+  },
+  organizeBigEventsExampleEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 10.6,
+    lineHeight: 13,
+    letterSpacing: 1.25,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.43)',
+    textAlign: 'center',
+  },
+  organizeBigEventsExampleTitle: {
+    marginTop: 2,
+    fontFamily: F.serifBold,
+    fontSize: 23.6,
+    lineHeight: 24.8,
+    color: INK,
+    textAlign: 'center',
+    maxWidth: 288,
+  },
+  organizeBigEventsExampleUnderline: {
+    width: '52%',
+    height: 3,
+    borderRadius: 999,
+    marginTop: 4,
+    opacity: 0.85,
+  },
+  organizeExampleVisualPanel: {
+    width: '100%',
+    flex: 0.6,
+    paddingHorizontal: 24,
+    paddingTop: 18,
+    paddingBottom: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  organizeBigEventsVisualPanel: {
+    width: '100%',
+    flex: 0,
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
+  },
+  organizeBigEventsIllustrationBox: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 0,
+    borderWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    overflow: 'hidden',
+  },
+  organizeBigEventsIllustrationImage: {
+    width: '100%',
+    height: '100%',
+  },
+  organizeBigEventsIllustrationWash: {
+    position: 'absolute',
+    width: '78%',
+    aspectRatio: 1,
+    borderRadius: 999,
+    opacity: 0.72,
+    transform: [{ translateY: -20 }, { scaleX: 1.12 }],
+  },
+  organizeBigEventsIllustrationMark: {
+    width: 94,
+    height: 94,
+    borderRadius: 32,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ translateY: -4 }],
+  },
+  organizeBigEventsImageFooter: {
+    width: '100%',
+    borderTopWidth: 1,
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  organizeBigEventsIllustrationText: {
+    fontFamily: F.serifMediumItalic,
+    fontSize: 14.2,
+    lineHeight: 18.1,
+    color: 'rgba(25,23,20,0.60)',
+    textAlign: 'center',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+    maxWidth: 252,
+  },
+  organizeExampleIcon: {
+    width: 92,
+    height: 92,
+    borderRadius: 32,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  organizeExampleTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 30,
+    lineHeight: 33.5,
+    color: INK,
+    textAlign: 'center',
+    maxWidth: 270,
+  },
+  organizeExampleBody: {
+    marginTop: 9,
+    fontFamily: F.serifMedium,
+    fontSize: 16.2,
+    lineHeight: 21.2,
+    color: 'rgba(25,23,20,0.58)',
+    textAlign: 'center',
+    maxWidth: 260,
+  },
+  organizeCarouselFooter: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    rowGap: 8,
+    paddingBottom: 0,
+  },
+  organizeExampleProgress: {
+    width: '100%',
+    maxWidth: 210,
+    height: 7,
+    flexDirection: 'row',
+    columnGap: 6,
+    alignItems: 'center',
+  },
+  organizeExampleProgressSegment: {
+    flex: 1,
+    height: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(25,23,20,0.10)',
+    opacity: 0.9,
+  },
+  organizeSwipeTag: {
+    minHeight: 30,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 4,
+    backgroundColor: 'rgba(255,253,248,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.25)',
+  },
+  organizeSwipeTagText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 13,
+    lineHeight: 16,
+    color: 'rgba(112,82,26,0.68)',
+  },
+  organizeFrequencyGrid: {
+    width: '100%',
+    maxWidth: 360,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 4,
+  },
+  organizeFrequencyChip: {
+    minHeight: 43,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 7,
+    borderWidth: 1,
+    backgroundColor: '#FFFDF8',
+  },
+  organizeFrequencyText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 14.5,
+    lineHeight: 18,
+  },
+  organizeTouchableCard: {
+    borderRadius: 25,
+  },
+  organizeEditorPanel: {
+    width: '100%',
+    maxWidth: 374,
+    alignSelf: 'center',
+    borderRadius: 30,
+    padding: 16,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.26)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.11,
+    shadowRadius: 23,
+    elevation: 3,
+  },
+  organizeEditorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 11,
+    marginBottom: 13,
+  },
+  organizeEditorIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  organizeEditorCopy: {
+    flex: 1,
+    minWidth: 0,
+    rowGap: 3,
+  },
+  organizeEditorTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 20,
+    lineHeight: 24,
+    color: INK,
+  },
+  organizeEditorBody: {
+    fontFamily: F.serifMedium,
+    fontSize: 13.8,
+    lineHeight: 17.6,
+    color: 'rgba(25,23,20,0.54)',
+  },
+  organizeEditorChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  organizeEditorChip: {
+    minHeight: 34,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.74)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  organizeEditorChipText: {
+    fontFamily: F.sansBold,
+    fontSize: 11.8,
+    lineHeight: 14,
+    color: 'rgba(25,23,20,0.54)',
+  },
+  organizeEditorSave: {
+    alignSelf: 'flex-end',
+    minHeight: 40,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    marginTop: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 7,
+  },
+  organizeEditorSaveText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 14.5,
+    lineHeight: 18,
+    color: '#FFFFFF',
+  },
+  organizeWeekPreview: {
+    width: '100%',
+    maxWidth: 360,
+    alignSelf: 'center',
+    minHeight: 188,
+    borderRadius: 31,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.24)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.11,
+    shadowRadius: 24,
+    elevation: 3,
+  },
+  organizeWeekColumn: {
+    width: 34,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    rowGap: 8,
+  },
+  organizeWeekDay: {
+    fontFamily: F.sansBold,
+    fontSize: 10.6,
+    lineHeight: 13,
+    color: 'rgba(25,23,20,0.50)',
+  },
+  organizeWeekBar: {
+    width: 22,
+    borderRadius: 999,
+    backgroundColor: 'rgba(197,160,89,0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+  },
+  organizeWeekDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4D8586',
+  },
+  organizeHabitFormula: {
+    width: '100%',
+    maxWidth: 360,
+    alignSelf: 'center',
+    minHeight: 118,
+    borderRadius: 30,
+    paddingHorizontal: 16,
+    paddingVertical: 18,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.24)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.1,
+    shadowRadius: 22,
+    elevation: 3,
+  },
+  organizeHabitFormulaPill: {
+    minHeight: 44,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.30)',
+  },
+  organizeHabitFormulaPillDone: {
+    backgroundColor: 'rgba(47,155,97,0.12)',
+    borderColor: 'rgba(47,155,97,0.34)',
+  },
+  organizeHabitFormulaText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 16,
+    lineHeight: 20,
+    color: INK,
+  },
+  organizeHabitFormulaTextDone: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 16,
+    lineHeight: 20,
+    color: '#2F9B61',
+  },
+  organizePhoneMock: {
+    width: '100%',
+    maxWidth: 358,
+    alignSelf: 'center',
+    borderRadius: 34,
+    padding: 17,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.25)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.12,
+    shadowRadius: 27,
+    elevation: 3,
+  },
+  organizePhoneHeader: {
+    rowGap: 3,
+    marginBottom: 14,
+  },
+  organizePhoneDate: {
+    fontFamily: F.serifBold,
+    fontSize: 30,
+    lineHeight: 34,
+    color: INK,
+  },
+  organizePhoneSub: {
+    fontFamily: F.serifMedium,
+    fontSize: 14.5,
+    lineHeight: 18,
+    color: 'rgba(25,23,20,0.55)',
+  },
+  organizePhoneTaskRow: {
+    minHeight: 64,
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    backgroundColor: 'rgba(255,255,255,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+  },
+  organizePhoneTaskIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 13,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  organizePhoneTaskCopy: {
+    flex: 1,
+    minWidth: 0,
+    rowGap: 2,
+  },
+  organizePhoneTaskTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17.5,
+    lineHeight: 21,
+    color: INK,
+  },
+  organizePhoneTaskMeta: {
+    fontFamily: F.sansMedium,
+    fontSize: 11.3,
+    lineHeight: 14,
+    color: 'rgba(25,23,20,0.48)',
+  },
+  organizePhoneCheck: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(25,23,20,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  organizeGestureHintRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 14,
+  },
+  organizeGestureHint: {
+    minHeight: 32,
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(77,133,134,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(77,133,134,0.18)',
+  },
+  organizeGestureHintText: {
+    fontFamily: F.sansBold,
+    fontSize: 10.8,
+    lineHeight: 13,
+    color: '#4D8586',
+  },
+  organizeRhythmMock: {
+    width: '100%',
+    maxWidth: 366,
+    alignSelf: 'center',
+    rowGap: 10,
+  },
+  organizeRhythmRow: {
+    minHeight: 70,
+    borderRadius: 24,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 11,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.075,
+    shadowRadius: 17,
+    elevation: 2,
+  },
+  organizeRhythmIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 15,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  organizeRhythmCopy: {
+    flex: 1,
+    minWidth: 0,
+    rowGap: 2,
+  },
+  organizeRhythmTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 18.4,
+    lineHeight: 22,
+    color: INK,
+  },
+  organizeRhythmBody: {
+    fontFamily: F.serifMedium,
+    fontSize: 13.5,
+    lineHeight: 17,
+    color: 'rgba(25,23,20,0.54)',
+  },
+  organizeCompleteBadge: {
+    width: '100%',
+    maxWidth: 344,
+    alignSelf: 'center',
+    borderRadius: 34,
+    paddingHorizontal: 22,
+    paddingVertical: 26,
+    overflow: 'hidden',
+    alignItems: 'center',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.24)',
+    shadowColor: '#2F9B61',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.13,
+    shadowRadius: 28,
+    elevation: 3,
+  },
+  organizeCompleteIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2F9B61',
+    marginBottom: 17,
+  },
+  organizeCompleteTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 24,
+    lineHeight: 29,
+    color: INK,
+    textAlign: 'center',
+  },
+  organizeCompleteBody: {
+    marginTop: 12,
+    fontFamily: F.serifMedium,
+    fontSize: 15.6,
+    lineHeight: 20.5,
+    color: 'rgba(25,23,20,0.58)',
+    textAlign: 'center',
+    maxWidth: 270,
+  },
   practiceDayMock: {
     width: '100%',
     maxWidth: 374,
@@ -22481,6 +24378,10 @@ const s = StyleSheet.create({
     maxWidth: 372,
     alignSelf: 'center',
     alignItems: 'stretch',
+  },
+  v4ToolCardEntranceShell: {
+    width: '100%',
+    alignSelf: 'stretch',
   },
   v4ToolCard: {
     minHeight: 82,

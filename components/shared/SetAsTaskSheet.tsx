@@ -2461,7 +2461,7 @@ function ChallengeActionConfirmModal({
         <View style={s.challengeConfirmCard}>
           <View style={[s.challengeConfirmIcon, danger && s.challengeConfirmIconDanger, resume && s.challengeConfirmIconResume]}>
             {danger
-              ? <Trash2 s={19} c="#DC2626" />
+              ? <Trash2 s={19} c={C.red} />
               : resume
                 ? <RotateCcw s={18} c="#16A34A" />
                 : <Pause s={18} c={C.gold} />}
@@ -4804,7 +4804,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   challengeConfirmDanger: {
-    backgroundColor: '#DC2626',
+    backgroundColor: C.red,
   },
   challengeConfirmResume: {
     backgroundColor: '#16A34A',

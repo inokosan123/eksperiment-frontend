@@ -35,7 +35,7 @@ export default function SetAsDailyTaskCard({
         style={[s.base, scripture ? s.scriptureBase : s.softBase]}
       >
         <View style={[s.iconBase, scripture ? s.scriptureIconBase : s.softIconBase]}>
-          <CalendarCheck s={scripture ? 13 : 20} c={C.gold} />
+          <CalendarCheck s={scripture ? 15 : 20} c={C.gold} />
         </View>
 
         <View style={s.copy}>
@@ -62,7 +62,7 @@ export default function SetAsDailyTaskCard({
         </View>
 
         <View style={s.chevronSlot}>
-          <ChevronRight s={scripture ? 14 : 15} c={scripture ? '#D1B37E' : 'rgba(197,160,89,0.4)'} />
+          <ChevronRight s={scripture ? 15 : 15} c={scripture ? '#D1B37E' : 'rgba(197,160,89,0.4)'} />
         </View>
       </LinearGradient>
     </TouchableOpacity>
@@ -84,11 +84,11 @@ const s = StyleSheet.create({
     paddingVertical: 12,
   },
   scriptureBase: {
-    minHeight: 58,
-    gap: 10,
+    minHeight: 62,
+    gap: 12,
     borderRadius: 19,
     borderWidth: 1,
-    borderColor: '#E8D8BA',
+    borderColor: 'rgba(197,160,89,0.26)',
     paddingHorizontal: 13,
     paddingVertical: 11,
     shadowColor: '#0F172A',
@@ -109,9 +109,9 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(197,160,89,0.1)',
   },
   scriptureIconBase: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 15,
     borderWidth: 1,
     borderColor: '#E7D2A8',
     backgroundColor: '#FFF8E8',
@@ -138,12 +138,11 @@ const s = StyleSheet.create({
     lineHeight: 18,
   },
   scriptureTitle: {
-    fontFamily: F.sansBold,
-    fontSize: 9.5,
-    lineHeight: 13,
-    letterSpacing: 1.65,
-    textTransform: 'uppercase',
-    color: '#B08A47',
+    fontFamily: F.serifMedium,
+    fontSize: 16,
+    lineHeight: 20,
+    letterSpacing: 0,
+    color: '#2B2723',
   },
   subtitleBase: {
     marginTop: 2,
@@ -156,7 +155,8 @@ const s = StyleSheet.create({
   },
   scriptureSubtitle: {
     fontFamily: F.serif,
-    fontSize: 11.5,
-    lineHeight: 15,
+    fontSize: 12.5,
+    lineHeight: 16,
+    color: '#9F9890',
   },
 });

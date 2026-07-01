@@ -327,7 +327,7 @@ export default function PersonalRuleTaskView({
 
       <ConfirmModal
         visible={showExit}
-        icon={<ArrowLeft s={22} c="#EF4444" />}
+        icon={<ArrowLeft s={22} c={C.red} />}
         iconBg="#FEF2F2"
         title="Exit My Rule?"
         body="Your prayer timer progress will be lost."

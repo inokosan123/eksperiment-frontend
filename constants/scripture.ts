@@ -17,6 +17,12 @@ export const SCRIPTURE_LANGUAGES: { key: ScriptureLanguage; label: string }[] = 
   { key: 'ru', label: 'RU' },
 ];
 
+export const SCRIPTURE_LANGUAGE_DETAILS: Record<ScriptureLanguage, { name: string; label: string; version: string }> = {
+  en: { name: 'English', label: 'EN', version: 'King James Version' },
+  sr: { name: 'Serbian', label: 'SR', version: 'Novi SPC' },
+  ru: { name: 'Russian', label: 'RU', version: 'Synodal Translation' },
+};
+
 export function normalizeScriptureLanguage(value?: string | null): ScriptureLanguage {
   return SCRIPTURE_LANGUAGES.some(language => language.key === value)
     ? value as ScriptureLanguage

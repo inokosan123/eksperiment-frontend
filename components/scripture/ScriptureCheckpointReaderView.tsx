@@ -439,12 +439,12 @@ export default function ScriptureCheckpointReaderView({
         <ConfirmModal
           visible={exitConfirmVisible}
           icon={<ArrowLeft s={24} c="#FFFFFF" w={2.4} />}
-          iconBg="#DC2626"
+          iconBg={C.red}
           title="Leave reading?"
           body="Are you sure you want to exit? Progress from this reading session will not be saved."
           cancelLabel="KEEP READING"
           confirmLabel="EXIT"
-          confirmColor="#DC2626"
+          confirmColor={C.red}
           onCancel={() => setExitConfirmVisible(false)}
           onConfirm={confirmExitReading}
         />
@@ -572,14 +572,14 @@ export default function ScriptureCheckpointReaderView({
       ) : null}
       <ConfirmModal
         visible={!!deleteTarget}
-        icon={<Trash2 s={23} c="#DC2626" w={2.1} />}
+        icon={<Trash2 s={23} c={C.red} w={2.1} />}
         iconBg="#FEF2F2"
         title="Delete checkpoint?"
         body="This will remove this checkpoint and its reading history."
         subject={deleteTarget?.name}
         cancelLabel="CANCEL"
         confirmLabel="DELETE"
-        confirmColor="#DC2626"
+        confirmColor={C.red}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => { void confirmDeleteCheckpoint(); }}
       />
@@ -1169,7 +1169,7 @@ const s = StyleSheet.create({
   verseRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
   verseMarker: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#F8F1E4', alignItems: 'center', justifyContent: 'center', marginTop: 2 },
   verseNum: { fontFamily: F.sansBold, fontSize: 10, color: GOLD },
-  verseText: { flex: 1, fontFamily: F.serif, fontSize: 19, lineHeight: 31, color: '#2B2723' },
+  verseText: { flex: 1, fontFamily: F.serif, fontSize: 19, lineHeight: 26, color: '#2B2723' },
   actionDockWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 18, paddingTop: 16, backgroundColor: 'transparent' },
   actionDock: {
     minHeight: 56,
