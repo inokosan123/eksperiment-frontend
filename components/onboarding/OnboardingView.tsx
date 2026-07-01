@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Image, InteractionManager, PixelRatio, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
-import type { ImageSourcePropType, NativeScrollEvent, NativeSyntheticEvent, StyleProp, TextStyle, ViewStyle } from 'react-native';
+import type { NativeScrollEvent, NativeSyntheticEvent, StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as ExpoImage, type ImageRef as ExpoImageRef } from 'expo-image';
 import LottieView from 'lottie-react-native';
@@ -326,6 +326,15 @@ const BIG_EVENT_VACATION_IMAGE = require('@/assets/images/onboarding/big-event-v
 const MONTHLY_GOAL_GOSPEL_MARK_IMAGE = require('@/assets/images/onboarding/monthly-goal-gospel-mark.png');
 const MONTHLY_GOAL_HOUSE_PROJECT_IMAGE = require('@/assets/images/onboarding/monthly-goal-house-project.png');
 const MONTHLY_GOAL_COURSE_IMAGE = require('@/assets/images/onboarding/monthly-goal-course.png');
+const ORGANIZE_EXAMPLE_IMAGE_SOURCES = [
+  BIG_EVENT_WORK_DEADLINE_IMAGE,
+  BIG_EVENT_FAMILY_BIRTHDAY_IMAGE,
+  BIG_EVENT_EXAM_DAY_IMAGE,
+  BIG_EVENT_VACATION_IMAGE,
+  MONTHLY_GOAL_GOSPEL_MARK_IMAGE,
+  MONTHLY_GOAL_HOUSE_PROJECT_IMAGE,
+  MONTHLY_GOAL_COURSE_IMAGE,
+];
 const PROTECT_STATEMENT_IMAGES = [
   require('@/assets/images/protect-statement-1.jpg'),
   require('@/assets/images/protect-statement-2.jpg'),
@@ -351,6 +360,9 @@ const ORGANIZE_STATEMENT_IMAGES = [
 const STATEMENT_IMAGE_DECODE_SIZE = 768;
 const statementImageRefs = new Map<number, ExpoImageRef>();
 const statementImageLoads = new Map<number, Promise<ExpoImageRef | null>>();
+const ORGANIZE_EXAMPLE_IMAGE_DECODE_SIZE = 768;
+const organizeExampleImageRefs = new Map<number, ExpoImageRef>();
+const organizeExampleImageLoads = new Map<number, Promise<ExpoImageRef | null>>();
 
 function loadStatementImage(source: number) {
   const cached = statementImageRefs.get(source);
@@ -379,6 +391,35 @@ function loadStatementImage(source: number) {
 
 function warmStatementImages(sources: number[]) {
   return Promise.all(sources.map(loadStatementImage));
+}
+
+function loadOrganizeExampleImage(source: number) {
+  const cached = organizeExampleImageRefs.get(source);
+  if (cached) return Promise.resolve(cached);
+
+  const pending = organizeExampleImageLoads.get(source);
+  if (pending) return pending;
+
+  const load = ExpoImage.loadAsync(source, {
+    maxWidth: ORGANIZE_EXAMPLE_IMAGE_DECODE_SIZE,
+    maxHeight: ORGANIZE_EXAMPLE_IMAGE_DECODE_SIZE,
+  })
+    .then(image => {
+      organizeExampleImageRefs.set(source, image);
+      organizeExampleImageLoads.delete(source);
+      return image;
+    })
+    .catch(() => {
+      organizeExampleImageLoads.delete(source);
+      return null;
+    });
+
+  organizeExampleImageLoads.set(source, load);
+  return load;
+}
+
+function warmOrganizeExampleImages(sources: number[]) {
+  return Promise.all(sources.map(loadOrganizeExampleImage));
 }
 
 function releaseStatementImages(sources: number[]) {
@@ -6463,7 +6504,7 @@ function ScreenTimeSavedYearsCard({
 
 type DayCompareCardSide = 'left' | 'right';
 type DayCompareLegendKind = 'sleep' | 'productive' | 'phone' | 'anasta';
-type DayCompareLegendItem = { label: string; kind: DayCompareLegendKind };
+type DayCompareLegendItem = { label: string; kind: DayCompareLegendKind; value?: string };
 
 const dayCompareLegendItems: DayCompareLegendItem[] = [
   { label: 'Sleep', kind: 'sleep' },
@@ -6480,8 +6521,9 @@ const dayCompareReclaimLegendItems: DayCompareLegendItem[] = [
 
 function DayCompareLegend({ items, dark }: { items: DayCompareLegendItem[]; dark: boolean }) {
   const compact = items.some(item => item.kind === 'anasta');
+  const hasValues = items.some(item => item.value);
   return (
-    <View style={[s.screenTimeLegend, compact && s.dayCompareLegendOneLine]}>
+    <View style={[s.screenTimeLegend, hasValues && s.dayCompareLegendWithValues, compact && s.dayCompareLegendOneLine]}>
       {items.map(item => (
         <View key={`day-compare-${item.kind}-${item.label}`} style={[s.screenTimeLegendItem, compact && s.dayCompareLegendItemCompact]}>
           <View
@@ -6494,6 +6536,7 @@ function DayCompareLegend({ items, dark }: { items: DayCompareLegendItem[]; dark
             ]}
           />
           <Text style={[s.screenTimeLegendText, s.dayCompareLegendText, compact && s.dayCompareLegendTextCompact, dark && s.screenTimeLegendTextDark]}>{item.label}</Text>
+          {item.value ? <Text style={[s.dayCompareLegendValue, compact && s.dayCompareLegendValueCompact, dark && s.screenTimeLegendTextDark]}>({item.value})</Text> : null}
         </View>
       ))}
     </View>
@@ -6610,11 +6653,19 @@ function DayCompareStatCard({
 
 function DayComparePercentCard({ stat, side }: { stat: ReturnType<typeof protectStats>; side: DayCompareCardSide }) {
   const parts = screenTimeDayParts(stat);
+  const sleepPercent = Math.round((SLEEP_HOURS_PER_DAY / DAY_HOURS) * 100);
+  const phonePercent = Math.round((stat.hours / DAY_HOURS) * 100);
+  const productivePercent = Math.max(0, 100 - sleepPercent - phonePercent);
+  const legendItems: DayCompareLegendItem[] = [
+    { label: 'Sleep', kind: 'sleep', value: `${sleepPercent}%` },
+    { label: 'Productive', kind: 'productive', value: `${productivePercent}%` },
+    { label: 'Phone', kind: 'phone', value: `${phonePercent}%` },
+  ];
   return (
     <DayCompareStatCard
       value={`${stat.usablePercent}%`}
       label="of your 16h productive day!"
-      legendItems={dayCompareLegendItems}
+      legendItems={legendItems}
       side={side}
       visual={(
         <View style={s.screenTimeDayBar}>
@@ -6635,11 +6686,16 @@ function DayComparePercentCard({ stat, side }: { stat: ReturnType<typeof protect
 
 function DayCompareDaysCard({ stat, side }: { stat: ReturnType<typeof protectStats>; side: DayCompareCardSide }) {
   const parts = screenTimeYearParts(stat);
+  const legendItems: DayCompareLegendItem[] = [
+    { label: 'Sleep', kind: 'sleep', value: `${parts.sleep}` },
+    { label: 'Productive', kind: 'productive', value: `${parts.awake}` },
+    { label: 'Phone', kind: 'phone', value: `${parts.phone}` },
+  ];
   return (
     <DayCompareStatCard
       value={`${stat.yearlyDays}`}
       label="days every year!"
-      legendItems={dayCompareLegendItems}
+      legendItems={legendItems}
       side={side}
       visual={<DayCompareDotGrid total={365} productive={parts.awake} phone={parts.phone} sleep={parts.sleep} mode="days" />}
     />
@@ -6648,6 +6704,11 @@ function DayCompareDaysCard({ stat, side }: { stat: ReturnType<typeof protectSta
 
 function DayCompareRecapDaysCard({ stat }: { stat: ReturnType<typeof protectStats> }) {
   const parts = screenTimeYearParts(stat);
+  const legendItems: DayCompareLegendItem[] = [
+    { label: 'Sleep', kind: 'sleep', value: `${parts.sleep}` },
+    { label: 'Productive', kind: 'productive', value: `${parts.awake}` },
+    { label: 'Phone', kind: 'phone', value: `${parts.phone}` },
+  ];
   return (
     <View style={[s.screenTimeStatMessage, s.dayCompareStaticCard, s.dayCompareRecapCard]}>
       <View style={[s.screenTimeStatHeader, s.screenTimeStatHeaderStacked]}>
@@ -6662,7 +6723,7 @@ function DayCompareRecapDaysCard({ stat }: { stat: ReturnType<typeof protectStat
         </Text>
         <View style={s.screenTimeStatLabelUnderline} />
       </View>
-      <DayCompareLegend items={dayCompareLegendItems} dark={false} />
+      <DayCompareLegend items={legendItems} dark={false} />
       <DayCompareDotGrid total={365} productive={parts.awake} phone={parts.phone} sleep={parts.sleep} mode="days" />
     </View>
   );
@@ -6670,11 +6731,19 @@ function DayCompareRecapDaysCard({ stat }: { stat: ReturnType<typeof protectStat
 
 function DayCompareYearsCard({ stat, side }: { stat: ReturnType<typeof protectStats>; side: DayCompareCardSide }) {
   const parts = screenTimeLifetimeParts(stat);
+  const sleepYears = (SLEEP_HOURS_PER_DAY / DAY_HOURS) * PROTECT_LIFESPAN_YEARS;
+  const phoneYears = stat.lifetimeYears;
+  const productiveYears = Math.max(0, PROTECT_LIFESPAN_YEARS - sleepYears - phoneYears);
+  const legendItems: DayCompareLegendItem[] = [
+    { label: 'Sleep', kind: 'sleep', value: formatYearValue(sleepYears) },
+    { label: 'Productive', kind: 'productive', value: formatYearValue(productiveYears) },
+    { label: 'Phone', kind: 'phone', value: formatYearValue(phoneYears) },
+  ];
   return (
     <DayCompareStatCard
       value={`${formatYearValue(stat.lifetimeYears)}`}
       label="years over 85 years (avg. lifespan)!"
-      legendItems={dayCompareLegendItems}
+      legendItems={legendItems}
       side={side}
       visual={<DayCompareDotGrid total={PROTECT_LIFESPAN_YEARS} productive={parts.awake} phone={parts.phone} sleep={parts.sleep} mode="years" />}
     />
@@ -14769,7 +14838,7 @@ type OrganizeExample = {
   body: string;
   accent: string;
   icon: React.ReactNode;
-  image?: ImageSourcePropType;
+  image?: number;
 };
 
 type OrganizeScheduleItem = {
@@ -15074,6 +15143,7 @@ function OrganizeExampleCarouselSlide({
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const [activeIndex, setActiveIndex] = useState(0);
+  const [, setImageWarmVersion] = useState(0);
   const displayTitle = title || overline;
   const usePolishedExampleCarousel = true;
   const needsTallExampleHeader = examples.some(example => example.title.length > 18);
@@ -15098,15 +15168,31 @@ function OrganizeExampleCarouselSlide({
   ];
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 10 }];
   const snapOffsets = examples.map((_, index) => index * (cardWidth + gap));
+  const userScrolledRef = useRef(false);
+  const exampleImageSources = useMemo(
+    () => examples.map(example => example.image).filter((image): image is number => typeof image === 'number'),
+    [examples],
+  );
+
+  useEffect(() => {
+    if (!exampleImageSources.length) return undefined;
+    let cancelled = false;
+    void warmOrganizeExampleImages(exampleImageSources).then(() => {
+      if (!cancelled) setImageWarmVersion(version => version + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [exampleImageSources]);
 
   const handleScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const next = Math.round(event.nativeEvent.contentOffset.x / (cardWidth + gap));
     const clamped = Math.max(0, Math.min(examples.length - 1, next));
-    if (clamped !== activeIndex) {
+    if (clamped !== activeIndexRef.current) {
       activeIndexRef.current = clamped;
       setActiveIndex(clamped);
-      runSelectionHaptic();
     }
+    userScrolledRef.current = false;
   };
   const handleBigEventsScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const next = Math.round(event.nativeEvent.contentOffset.x / (cardWidth + gap));
@@ -15114,6 +15200,7 @@ function OrganizeExampleCarouselSlide({
     if (clamped === activeIndexRef.current) return;
     activeIndexRef.current = clamped;
     setActiveIndex(clamped);
+    if (userScrolledRef.current) runSelectionHaptic();
   };
 
   if (usePolishedExampleCarousel) {
@@ -15177,54 +15264,66 @@ function OrganizeExampleCarouselSlide({
                 },
               ]}
               onScroll={handleBigEventsScroll}
+              onScrollBeginDrag={() => {
+                userScrolledRef.current = true;
+              }}
               scrollEventThrottle={16}
               onMomentumScrollEnd={handleScrollEnd}
             >
-              {examples.map((example, index) => (
-                <View key={example.title} style={[s.organizeExampleCard, s.organizeBigEventsExampleCard, { width: cardWidth, height: cardHeight }]}>
-                  <LinearGradient
-                    pointerEvents="none"
-                    colors={['rgba(255,255,255,1)', `${example.accent}16`, 'rgba(255,249,235,0.96)']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={StyleSheet.absoluteFill}
-                  />
-                  <View style={[s.organizeExampleQuotePanel, s.organizeBigEventsExampleHeader, { height: bigEventsHeaderHeight, minHeight: bigEventsHeaderHeight, backgroundColor: `${example.accent}10`, borderColor: `${example.accent}24` }]}>
-                    <Text style={s.organizeBigEventsExampleEyebrow}>Example</Text>
-                    <Text style={s.organizeBigEventsExampleTitle}>{example.title}</Text>
-                    <View style={[s.organizeBigEventsExampleUnderline, { backgroundColor: example.accent }]} />
-                  </View>
-                  <View style={s.organizeBigEventsVisualPanel}>
-                    {example.image ? (
-                      <View style={[s.organizeBigEventsIllustrationBox, { height: cardWidth }]}>
-                        <Image source={example.image} resizeMode="cover" style={s.organizeBigEventsIllustrationImage} />
-                        <LinearGradient
-                          pointerEvents="none"
-                          colors={['rgba(255,253,248,0.02)', 'rgba(255,253,248,0.00)', `${example.accent}12`]}
-                          start={{ x: 0.5, y: 0 }}
-                          end={{ x: 0.5, y: 1 }}
-                          style={StyleSheet.absoluteFill}
-                        />
-                      </View>
-                    ) : (
-                      <LinearGradient
-                        colors={[`${example.accent}0C`, `${example.accent}1C`, 'rgba(255,252,244,0.98)']}
-                        start={{ x: 0.15, y: 0 }}
-                        end={{ x: 0.85, y: 1 }}
-                        style={[s.organizeBigEventsIllustrationBox, { height: cardWidth }]}
-                      >
-                        <View pointerEvents="none" style={[s.organizeBigEventsIllustrationWash, { backgroundColor: `${example.accent}14` }]} />
-                        <View style={[s.organizeBigEventsIllustrationMark, { borderColor: `${example.accent}2E`, backgroundColor: `${example.accent}10` }]}>
-                          {example.icon}
+              {examples.map((example, index) => {
+                const imageSource = example.image ? organizeExampleImageRefs.get(example.image) ?? example.image : undefined;
+                return (
+                  <View key={example.title} style={[s.organizeExampleCard, s.organizeBigEventsExampleCard, { width: cardWidth, height: cardHeight }]}>
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(255,255,255,1)', `${example.accent}16`, 'rgba(255,249,235,0.96)']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <View style={[s.organizeExampleQuotePanel, s.organizeBigEventsExampleHeader, { height: bigEventsHeaderHeight, minHeight: bigEventsHeaderHeight, backgroundColor: `${example.accent}10`, borderColor: `${example.accent}24` }]}>
+                      <Text style={s.organizeBigEventsExampleEyebrow}>Example</Text>
+                      <Text style={s.organizeBigEventsExampleTitle}>{example.title}</Text>
+                      <View style={[s.organizeBigEventsExampleUnderline, { backgroundColor: example.accent }]} />
+                    </View>
+                    <View style={s.organizeBigEventsVisualPanel}>
+                      {imageSource ? (
+                        <View style={[s.organizeBigEventsIllustrationBox, { height: cardWidth }]}>
+                          <ExpoImage
+                            source={imageSource}
+                            contentFit="cover"
+                            cachePolicy="memory-disk"
+                            transition={0}
+                            style={s.organizeBigEventsIllustrationImage}
+                          />
+                          <LinearGradient
+                            pointerEvents="none"
+                            colors={['rgba(255,253,248,0.02)', 'rgba(255,253,248,0.00)', `${example.accent}12`]}
+                            start={{ x: 0.5, y: 0 }}
+                            end={{ x: 0.5, y: 1 }}
+                            style={StyleSheet.absoluteFill}
+                          />
                         </View>
-                      </LinearGradient>
-                    )}
-                    <View style={[s.organizeBigEventsImageFooter, { height: bigEventsFooterHeight, borderColor: `${example.accent}24`, backgroundColor: 'rgba(255,253,248,0.92)' }]}>
-                      <Text style={s.organizeBigEventsIllustrationText}>"{example.body}"</Text>
+                      ) : (
+                        <LinearGradient
+                          colors={[`${example.accent}0C`, `${example.accent}1C`, 'rgba(255,252,244,0.98)']}
+                          start={{ x: 0.15, y: 0 }}
+                          end={{ x: 0.85, y: 1 }}
+                          style={[s.organizeBigEventsIllustrationBox, { height: cardWidth }]}
+                        >
+                          <View pointerEvents="none" style={[s.organizeBigEventsIllustrationWash, { backgroundColor: `${example.accent}14` }]} />
+                          <View style={[s.organizeBigEventsIllustrationMark, { borderColor: `${example.accent}2E`, backgroundColor: `${example.accent}10` }]}>
+                            {example.icon}
+                          </View>
+                        </LinearGradient>
+                      )}
+                      <View style={[s.organizeBigEventsImageFooter, { height: bigEventsFooterHeight, borderColor: `${example.accent}24`, backgroundColor: 'rgba(255,253,248,0.92)' }]}>
+                        <Text style={s.organizeBigEventsIllustrationText}>"{example.body}"</Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </ScrollView>
           </Reanimated.View>
         </View>
@@ -16669,6 +16768,7 @@ export default function OnboardingView() {
 
   useEffect(() => {
     preloadAchievementFeedbackSound();
+    void warmOrganizeExampleImages(ORGANIZE_EXAMPLE_IMAGE_SOURCES);
     let cancelled = false;
     let pulseTimer: ReturnType<typeof setTimeout> | undefined;
     let doneTimer: ReturnType<typeof setTimeout> | undefined;
@@ -22165,6 +22265,10 @@ const s = StyleSheet.create({
     flexWrap: 'nowrap',
     gap: 4,
   },
+  dayCompareLegendWithValues: {
+    maxWidth: 326,
+    gap: 6,
+  },
   dayCompareLegendItemCompact: {
     paddingHorizontal: 5,
     columnGap: 3.5,
@@ -22180,6 +22284,18 @@ const s = StyleSheet.create({
   dayCompareLegendTextCompact: {
     fontSize: 10.3,
     lineHeight: 12.5,
+  },
+  dayCompareLegendValue: {
+    marginLeft: -2,
+    fontFamily: F.sansBold,
+    fontSize: 10.6,
+    lineHeight: 13,
+    letterSpacing: 0.15,
+    color: 'rgba(25,23,20,0.78)',
+  },
+  dayCompareLegendValueCompact: {
+    fontSize: 9.8,
+    lineHeight: 12,
   },
   dayCompareLegendSleep: {
     backgroundColor: '#7B7CC2',
