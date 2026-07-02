@@ -7,7 +7,7 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import { OrthodoxCross } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
-import SanctuaryLamp from './SanctuaryLamp';
+import GuardedPhone from './GuardedPhone';
 import { recordReturnedMoment, type PracticeKind } from './focusWatchStore';
 
 const CARD_TRANSITION = LinearTransition.springify().damping(19).stiffness(190);
@@ -77,7 +77,7 @@ export default function InterventionView() {
         <ScreenTitleBar title="PAUSE" showBack />
 
         <Animated.View entering={FadeInDown.duration(420).delay(30)} style={s.lampBlock}>
-          <SanctuaryLamp diameter={170} flameSize={68} />
+          <GuardedPhone diameter={170} sealed />
         </Animated.View>
 
         <Animated.View entering={FadeInDown.duration(420).delay(100)} style={s.verseBlock}>

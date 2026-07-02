@@ -14857,6 +14857,17 @@ type OrganizeScheduleItem = {
   frequency: string;
 };
 
+type SpiritualTaskSuggestion = OrganizeScheduleItem & {
+  taskType: NonNullable<TaskData['type']>;
+  habitIconName: string;
+};
+
+type SpiritualTaskSuggestionGroup = {
+  id: string;
+  title: string;
+  items: SpiritualTaskSuggestion[];
+};
+
 const BIG_EVENT_EXAMPLES: OrganizeExample[] = [
   {
     title: 'Work deadline',
@@ -14999,35 +15010,126 @@ const CHALLENGE_EXAMPLES: OrganizeExample[] = [
   },
 ];
 
-const SPIRITUAL_SCHEDULE_ITEMS: OrganizeScheduleItem[] = [
+const SPIRITUAL_TASK_SUGGESTION_GROUPS: SpiritualTaskSuggestionGroup[] = [
   {
-    id: 'morning-prayer',
-    title: 'Morning Prayer',
-    body: 'Set the time and repeat pattern for the prayer that begins your day.',
-    accent: GOLD,
-    icon: <Sun s={18} c={GOLD} w={2} />,
-    defaultTime: '07:00',
-    frequency: 'Every day',
+    id: 'prayer',
+    title: 'Prayer',
+    items: [
+      {
+        id: 'morning-prayer',
+        title: 'Morning Prayer',
+        body: 'Begin the day with prayer before the noise begins.',
+        accent: GOLD,
+        icon: <Sun s={18} c={GOLD} w={2} />,
+        defaultTime: '07:00',
+        frequency: 'Every day',
+        taskType: 'prayer',
+        habitIconName: 'Sun',
+      },
+      {
+        id: 'evening-prayer',
+        title: 'Evening Prayer',
+        body: 'Close the day with gratitude, repentance, and peace.',
+        accent: '#705B9B',
+        icon: <Moon s={18} c="#705B9B" w={2} />,
+        defaultTime: '21:30',
+        frequency: 'Every day',
+        taskType: 'prayer',
+        habitIconName: 'Moon',
+      },
+      {
+        id: 'jesus-prayer',
+        title: 'Jesus Prayer',
+        body: 'Keep a short prayer close during the day.',
+        accent: '#8F5B4B',
+        icon: <Candle s={18} c="#8F5B4B" w={2} />,
+        defaultTime: '12:00',
+        frequency: 'Every day',
+        taskType: 'prayer',
+        habitIconName: 'Candle',
+      },
+    ],
   },
   {
-    id: 'evening-prayer',
-    title: 'Evening Prayer',
-    body: 'Give the end of the day a steady place for prayer and reflection.',
-    accent: '#705B9B',
-    icon: <Moon s={18} c="#705B9B" w={2} />,
-    defaultTime: '21:30',
-    frequency: 'Every day',
+    id: 'scripture',
+    title: 'Scripture',
+    items: [
+      {
+        id: 'new-testament',
+        title: 'New Testament',
+        body: 'Give the Gospel and Epistles a visible place in your week.',
+        accent: '#4D8586',
+        icon: <BookMarked s={18} c="#4D8586" w={2} />,
+        defaultTime: '20:30',
+        frequency: 'Mon - Sat',
+        taskType: 'reading',
+        habitIconName: 'Book',
+      },
+      {
+        id: 'old-testament',
+        title: 'Old Testament',
+        body: 'Build a steady rhythm for deeper Scripture reading.',
+        accent: '#6F7F58',
+        icon: <OpenBook s={18} c="#6F7F58" w={2} />,
+        defaultTime: '20:30',
+        frequency: 'Mon - Sat',
+        taskType: 'reading',
+        habitIconName: 'Book',
+      },
+      {
+        id: 'psalter',
+        title: 'Psalter',
+        body: 'Return to the Psalms with a rhythm you can keep.',
+        accent: GOLD,
+        icon: <Book s={18} c={GOLD} w={2} />,
+        defaultTime: '18:30',
+        frequency: 'Every day',
+        taskType: 'reading',
+        habitIconName: 'Book',
+      },
+      {
+        id: 'custom-scripture',
+        title: 'Custom Scripture',
+        body: 'Create your own reading task and keep it in your week.',
+        accent: '#4D8586',
+        icon: <Pencil s={18} c="#4D8586" w={2} />,
+        defaultTime: '19:00',
+        frequency: 'Custom',
+        taskType: 'reading',
+        habitIconName: 'Pencil',
+      },
+    ],
   },
   {
-    id: 'scripture-reading',
-    title: 'Scripture Reading',
-    body: 'Choose a rhythm for reading Scripture without relying on memory.',
-    accent: '#4D8586',
-    icon: <BookMarked s={18} c="#4D8586" w={2} />,
-    defaultTime: '20:30',
-    frequency: 'Mon - Sat',
+    id: 'church',
+    title: 'Church',
+    items: [
+      {
+        id: 'go-to-church',
+        title: 'Go to Church',
+        body: 'Keep worship visible before the week fills itself.',
+        accent: '#705B9B',
+        icon: <Cross s={18} c="#705B9B" w={2} />,
+        defaultTime: '09:00',
+        frequency: 'Sunday',
+        taskType: 'church',
+        habitIconName: 'Cross',
+      },
+    ],
   },
 ];
+
+const SPIRITUAL_CUSTOM_TASK: SpiritualTaskSuggestion = {
+  id: 'custom-spiritual-task',
+  title: 'Custom Spiritual Task',
+  body: 'Add a prayer, reading, or practice that belongs to your life.',
+  accent: '#2F9B61',
+  icon: <Sparkles s={18} c="#2F9B61" w={2} />,
+  defaultTime: '18:00',
+  frequency: 'Custom',
+  taskType: 'custom',
+  habitIconName: 'Sparkles',
+};
 
 const ROUTINE_SCHEDULE_ITEMS: OrganizeScheduleItem[] = [
   {
@@ -15691,6 +15793,243 @@ function OrganizeScheduleSetupSlide({
           <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
             <Text style={s.primaryButtonText}>{ctaLabel}</Text>
             <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+function spiritualTaskDataForSuggestion(item: SpiritualTaskSuggestion): TaskData {
+  return {
+    variant: 'spiritual',
+    title: 'Spiritual task',
+    time: item.defaultTime,
+    subtitle: item.title,
+    state: 'pending',
+    type: item.taskType,
+    habitIconName: item.habitIconName,
+  };
+}
+
+function SpiritualTaskPreviewCard({
+  item,
+  muted,
+}: {
+  item: SpiritualTaskSuggestion;
+  muted?: boolean;
+}) {
+  return (
+    <View style={[s.spiritualBuilderTaskFrame, muted && s.spiritualBuilderTaskFrameMuted]}>
+      <AnyTaskCard task={spiritualTaskDataForSuggestion(item)} />
+      {muted ? <View pointerEvents="none" style={s.spiritualBuilderTaskMutedOverlay} /> : null}
+    </View>
+  );
+}
+
+function OrganizeSpiritualTaskBuilderSlide({ onNext }: { onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const [selectedTask, setSelectedTask] = useState<SpiritualTaskSuggestion | null>(null);
+  const [savedTasks, setSavedTasks] = useState<SpiritualTaskSuggestion[]>([]);
+  const savedIds = useMemo(() => new Set(savedTasks.map(task => task.id)), [savedTasks]);
+  const compact = height < 750;
+  const suggestionsHeight = compact
+    ? Math.max(178, Math.min(236, height * 0.27))
+    : Math.max(224, Math.min(326, height * 0.32));
+  const ready = savedTasks.length > 0;
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+  const contentStyle = [
+    s.spiritualBuilderContent,
+    {
+      paddingTop: Math.max(insets.top + 14, compact ? 40 : 48),
+      paddingBottom: insets.bottom + 98,
+      rowGap: compact ? 9 : 13,
+    },
+  ];
+
+  const selectTask = (item: SpiritualTaskSuggestion) => {
+    runSelectionHaptic();
+    setSelectedTask(item);
+  };
+
+  const saveSelectedTask = () => {
+    if (!selectedTask) return;
+    setSavedTasks(prev => {
+      if (prev.some(task => task.id === selectedTask.id)) return prev;
+      return [...prev, selectedTask];
+    });
+    setSelectedTask(null);
+    runPreviewTaskCheckHaptic();
+    void playTaskCheckSoundOnly();
+  };
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <View style={contentStyle}>
+        <Reanimated.View
+          entering={FadeInUp.duration(520).easing(Easing.out(Easing.cubic))}
+          style={s.spiritualBuilderHeader}
+        >
+          <View style={s.v4RecapToolsKicker}>
+            <Text style={s.v4RecapToolsKickerText}>Spiritual tasks</Text>
+          </View>
+          <Text style={s.spiritualBuilderTitle}>Build your spiritual rhythm.</Text>
+          <View style={s.spiritualBuilderTitleUnderline} />
+          <Text style={s.spiritualBuilderSubtitle}>
+            Choose the prayer and Scripture tasks you want Anasta to place into your week.
+          </Text>
+        </Reanimated.View>
+
+        <Reanimated.View
+          entering={FadeInUp.delay(120).duration(520).easing(Easing.out(Easing.cubic))}
+          style={[s.spiritualBuilderMyPanel, compact && s.spiritualBuilderMyPanelCompact]}
+        >
+          <View style={s.spiritualBuilderPanelHeader}>
+            <Text style={s.spiritualBuilderPanelTitle}>My Spiritual Tasks</Text>
+            <Text style={s.spiritualBuilderPanelCount}>{savedTasks.length}</Text>
+          </View>
+          {savedTasks.length ? (
+            <ScrollView
+              nestedScrollEnabled
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={s.spiritualBuilderSavedList}
+            >
+              {savedTasks.map((task, index) => (
+                <Reanimated.View
+                  key={task.id}
+                  entering={FadeInUp.delay(40 + index * 70).duration(360).easing(Easing.out(Easing.cubic))}
+                >
+                  <SpiritualTaskPreviewCard item={task} />
+                </Reanimated.View>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={s.spiritualBuilderEmptyState}>
+              <View style={s.spiritualBuilderEmptyIcon}>
+                <Candle s={18} c={GOLD} w={2} />
+              </View>
+              <Text style={s.spiritualBuilderEmptyTitle}>No spiritual tasks yet</Text>
+              <Text style={s.spiritualBuilderEmptyBody}>Choose one below, set a rhythm, and it will appear here.</Text>
+            </View>
+          )}
+        </Reanimated.View>
+
+        <Reanimated.View
+          entering={FadeInUp.delay(210).duration(520).easing(Easing.out(Easing.cubic))}
+          style={[s.spiritualBuilderSuggestionWindow, { maxHeight: suggestionsHeight }]}
+        >
+          <View style={s.spiritualBuilderSuggestionHeader}>
+            <Text style={s.spiritualBuilderSuggestionTitle}>Spiritual Tasks</Text>
+            <Text style={s.spiritualBuilderSuggestionHint}>Tap to set up</Text>
+          </View>
+          <ScrollView
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={s.spiritualBuilderSuggestionList}
+          >
+            {SPIRITUAL_TASK_SUGGESTION_GROUPS.map(group => {
+              const groupItems = group.items.filter(item => !savedIds.has(item.id));
+              if (!groupItems.length) return null;
+              return (
+                <View key={group.id} style={s.spiritualBuilderGroup}>
+                  <Text style={s.spiritualBuilderGroupTitle}>{group.title}</Text>
+                  {groupItems.map(item => (
+                    <TouchableOpacity
+                      key={item.id}
+                      activeOpacity={0.9}
+                      haptic="none"
+                      onPress={() => selectTask(item)}
+                      style={s.spiritualBuilderSuggestionPress}
+                    >
+                      <SpiritualTaskPreviewCard item={item} muted />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              );
+            })}
+            {!savedIds.has(SPIRITUAL_CUSTOM_TASK.id) ? (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                haptic="none"
+                onPress={() => selectTask(SPIRITUAL_CUSTOM_TASK)}
+                style={s.spiritualBuilderCustomButton}
+              >
+                <View style={s.spiritualBuilderCustomIcon}>
+                  <Plus s={18} c="#2F9B61" w={2.4} />
+                </View>
+                <Text style={s.spiritualBuilderCustomText}>Add custom spiritual task</Text>
+              </TouchableOpacity>
+            ) : null}
+          </ScrollView>
+        </Reanimated.View>
+      </View>
+
+      {selectedTask ? (
+        <Reanimated.View
+          key={selectedTask.id}
+          entering={FadeIn.duration(180).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 18 }, { scale: 0.985 }],
+          })}
+          exiting={FadeOut.duration(160)}
+          style={[s.spiritualBuilderEditorOverlay, { bottom: insets.bottom + 94 }]}
+        >
+          <View style={s.organizeEditorPanel}>
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(255,255,255,1)', `${selectedTask.accent}14`, 'rgba(255,249,235,0.93)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={s.organizeEditorHeader}>
+              <View style={[s.organizeEditorIcon, { borderColor: `${selectedTask.accent}34`, backgroundColor: `${selectedTask.accent}12` }]}>
+                {selectedTask.icon}
+              </View>
+              <View style={s.organizeEditorCopy}>
+                <Text style={s.organizeEditorTitle}>{selectedTask.title}</Text>
+                <Text style={s.organizeEditorBody}>Choose a simple starting rhythm. You can edit this later.</Text>
+              </View>
+              <TouchableOpacity activeOpacity={0.88} haptic="light" onPress={() => setSelectedTask(null)} style={s.spiritualBuilderSheetClose}>
+                <X s={15} c="rgba(25,23,20,0.58)" w={2.3} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={s.organizeEditorChips}>
+              {[selectedTask.defaultTime, 'Morning', 'Evening'].map((chip, index) => (
+                <View key={`${selectedTask.id}-time-${chip}`} style={[s.organizeEditorChip, index === 0 && { borderColor: `${selectedTask.accent}42`, backgroundColor: `${selectedTask.accent}12` }]}>
+                  <Text style={[s.organizeEditorChipText, index === 0 && { color: selectedTask.accent }]}>{chip}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={s.organizeEditorChips}>
+              {[selectedTask.frequency, 'Weekdays', 'Custom'].map((chip, index) => (
+                <View key={`${selectedTask.id}-freq-${chip}`} style={[s.organizeEditorChip, index === 0 && { borderColor: `${selectedTask.accent}42`, backgroundColor: `${selectedTask.accent}12` }]}>
+                  <Text style={[s.organizeEditorChipText, index === 0 && { color: selectedTask.accent }]}>{chip}</Text>
+                </View>
+              ))}
+            </View>
+
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={saveSelectedTask} style={[s.organizeEditorSave, { backgroundColor: selectedTask.accent }]}>
+              <Text style={s.organizeEditorSaveText}>Save rhythm</Text>
+              <CheckSmall s={16} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </Reanimated.View>
+      ) : null}
+
+      <AnimatedCta active delay={220} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            haptic={ready ? 'medium' : 'none'}
+            disabled={!ready}
+            onPress={onNext}
+            style={[s.primaryButton, !ready && s.primaryButtonDisabled]}
+          >
+            <Text style={[s.primaryButtonText, !ready && s.primaryButtonDisabledText]}>Continue</Text>
+            <ChevronRight s={19} c={ready ? '#FFFFFF' : 'rgba(25,23,20,0.32)'} w={2.5} />
           </TouchableOpacity>
         </View>
       </AnimatedCta>
@@ -17431,16 +17770,7 @@ export default function OnboardingView() {
       );
     }
     if (activeStep === 'organizeSpiritualTasksSetup') {
-      return (
-        <OrganizeScheduleSetupSlide
-          overline="Spiritual tasks"
-          title="Set time and frequency."
-          body="Tap each spiritual task and give it a simple rhythm. You can change everything later."
-          items={SPIRITUAL_SCHEDULE_ITEMS}
-          ctaLabel="Spiritual rhythm set"
-          onNext={goNext}
-        />
-      );
+      return <OrganizeSpiritualTaskBuilderSlide onNext={goNext} />;
     }
     if (activeStep === 'organizeRoutineTasksIntro') {
       return (
@@ -24066,6 +24396,237 @@ const s = StyleSheet.create({
     fontSize: 14.5,
     lineHeight: 18,
     color: '#FFFFFF',
+  },
+  spiritualBuilderContent: {
+    flex: 1,
+    paddingHorizontal: 18,
+    rowGap: 13,
+  },
+  spiritualBuilderHeader: {
+    alignItems: 'center',
+    rowGap: 8,
+    paddingHorizontal: 10,
+  },
+  spiritualBuilderTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 38,
+    lineHeight: 41.5,
+    color: INK,
+    textAlign: 'center',
+    maxWidth: 350,
+  },
+  spiritualBuilderTitleUnderline: {
+    width: 224,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: GOLD,
+  },
+  spiritualBuilderSubtitle: {
+    fontFamily: F.serifMedium,
+    fontSize: 16.8,
+    lineHeight: 21.6,
+    color: 'rgba(25,23,20,0.60)',
+    textAlign: 'center',
+    maxWidth: 336,
+  },
+  spiritualBuilderMyPanel: {
+    width: '100%',
+    maxWidth: 374,
+    alignSelf: 'center',
+    minHeight: 130,
+    maxHeight: 176,
+    borderRadius: 28,
+    padding: 12,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.25)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 11 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 2,
+  },
+  spiritualBuilderMyPanelCompact: {
+    minHeight: 112,
+    maxHeight: 148,
+    padding: 10,
+  },
+  spiritualBuilderPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+    marginBottom: 8,
+  },
+  spiritualBuilderPanelTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 20,
+    lineHeight: 24,
+    color: INK,
+  },
+  spiritualBuilderPanelCount: {
+    minWidth: 26,
+    height: 26,
+    borderRadius: 13,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    overflow: 'hidden',
+    fontFamily: F.sansBold,
+    fontSize: 12,
+    lineHeight: 26,
+    color: GOLD,
+    backgroundColor: 'rgba(197,160,89,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+  },
+  spiritualBuilderSavedList: {
+    rowGap: 8,
+    paddingBottom: 2,
+  },
+  spiritualBuilderEmptyState: {
+    flex: 1,
+    minHeight: 86,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    rowGap: 4,
+    backgroundColor: 'rgba(244,241,235,0.58)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.06)',
+    borderStyle: 'dashed',
+  },
+  spiritualBuilderEmptyIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(197,160,89,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.2)',
+    marginBottom: 2,
+  },
+  spiritualBuilderEmptyTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 16,
+    lineHeight: 19,
+    color: 'rgba(25,23,20,0.68)',
+    textAlign: 'center',
+  },
+  spiritualBuilderEmptyBody: {
+    fontFamily: F.serifMedium,
+    fontSize: 13.2,
+    lineHeight: 16.8,
+    color: 'rgba(25,23,20,0.44)',
+    textAlign: 'center',
+  },
+  spiritualBuilderSuggestionWindow: {
+    width: '100%',
+    maxWidth: 374,
+    flex: 1,
+    alignSelf: 'center',
+    borderRadius: 29,
+    padding: 12,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(250,248,244,0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+  },
+  spiritualBuilderSuggestionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+    marginBottom: 8,
+  },
+  spiritualBuilderSuggestionTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 19,
+    lineHeight: 23,
+    color: INK,
+  },
+  spiritualBuilderSuggestionHint: {
+    fontFamily: F.serifMediumItalic,
+    fontSize: 13.2,
+    lineHeight: 17,
+    color: 'rgba(112,82,26,0.62)',
+  },
+  spiritualBuilderSuggestionList: {
+    rowGap: 12,
+    paddingBottom: 8,
+  },
+  spiritualBuilderGroup: {
+    rowGap: 7,
+  },
+  spiritualBuilderGroupTitle: {
+    paddingLeft: 4,
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    lineHeight: 13,
+    letterSpacing: 1.15,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.42)',
+  },
+  spiritualBuilderSuggestionPress: {
+    borderRadius: 17,
+  },
+  spiritualBuilderTaskFrame: {
+    position: 'relative',
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  spiritualBuilderTaskFrameMuted: {
+    opacity: 0.78,
+  },
+  spiritualBuilderTaskMutedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(244,242,238,0.48)',
+  },
+  spiritualBuilderCustomButton: {
+    minHeight: 54,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.22)',
+  },
+  spiritualBuilderCustomIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(47,155,97,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.2)',
+  },
+  spiritualBuilderCustomText: {
+    flex: 1,
+    fontFamily: F.serifSemiBold,
+    fontSize: 16,
+    lineHeight: 20,
+    color: INK,
+  },
+  spiritualBuilderEditorOverlay: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    zIndex: 40,
+  },
+  spiritualBuilderSheetClose: {
+    width: 30,
+    height: 30,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
   },
   organizeWeekPreview: {
     width: '100%',

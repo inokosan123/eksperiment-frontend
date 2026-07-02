@@ -16,20 +16,14 @@ import { Globe, Shield } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
-import SanctuaryLamp from './SanctuaryLamp';
+import GuardedPhone from './GuardedPhone';
+import QuickWatchSheet from './QuickWatchSheet';
 import {
   endActiveSession,
   extendActiveSession,
-  startQuickWatch,
   useFocusWatch,
 } from './focusWatchStore';
 import { WEB_PACK_LAYER_NAMES } from './focusContent';
-
-const QUICK_OPTIONS = [
-  { minutes: 30, label: '30 min' },
-  { minutes: 60, label: '1 hour' },
-  { minutes: 120, label: '2 hours' },
-];
 
 const PANEL_TRANSITION = LinearTransition.springify().damping(19).stiffness(190);
 
@@ -71,34 +65,21 @@ function ActiveDot() {
   return <Animated.View style={[s.activeDot, dotStyle]} />;
 }
 
-function QuietState() {
+function QuietState({ onBegin }: { onBegin: () => void }) {
   return (
     <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(140)}>
       <View style={s.lampWrap}>
-        <SanctuaryLamp diameter={150} />
+        <GuardedPhone diameter={150} />
       </View>
       <Text style={s.quietTitle}>All is quiet.</Text>
       <Text style={s.quietSub}>No watch is active.</Text>
 
       <GoldButton
         label="Begin a watch"
-        onPress={() => startQuickWatch(60)}
+        onPress={onBegin}
         height={50}
         style={{ marginTop: 16 }}
       />
-
-      <View style={s.chipRow}>
-        {QUICK_OPTIONS.map(option => (
-          <TouchableOpacity
-            key={option.minutes}
-            style={s.chip}
-            activeOpacity={0.75}
-            onPress={() => startQuickWatch(option.minutes)}
-          >
-            <Text style={s.chipText}>{option.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
     </Animated.View>
   );
 }
@@ -135,13 +116,17 @@ function ActiveState() {
 
   if (!activeSession) return null;
 
+  const isStrict = activeSession.strength === 'strict';
+  const categoriesCount = activeSession.categoryIds.length;
+  const subLine = `${categoriesCount} ${categoriesCount === 1 ? 'category' : 'categories'} held back · ${isStrict ? 'Strict' : 'Loose'}`;
+
   return (
     <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(140)}>
       <Text style={s.sessionName}>{activeSession.name}</Text>
-      <Text style={s.sessionSub}>Your distractions are held back.</Text>
+      <Text style={s.sessionSub}>{subLine}</Text>
 
       <View style={s.lampWrap}>
-        <SanctuaryLamp diameter={168} progress={progress} />
+        <GuardedPhone diameter={168} sealed progress={progress} />
       </View>
 
       <View style={s.timerBlock}>
@@ -157,13 +142,20 @@ function ActiveState() {
         >
           <Text style={s.chipText}>+15 min</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          activeOpacity={0.7}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          onPress={() => endActiveSession()}
-        >
-          <Text style={s.endEarlyText}>End early</Text>
-        </TouchableOpacity>
+        {isStrict ? (
+          <View style={s.lockNote}>
+            <Shield s={12} c={C.textMuted} w={2.2} />
+            <Text style={s.lockNoteText}>Held until it ends</Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={() => endActiveSession()}
+          >
+            <Text style={s.endEarlyText}>End early</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </Animated.View>
   );
@@ -171,6 +163,7 @@ function ActiveState() {
 
 export default function NowPanel() {
   const { activeSession, webPacks, customDomains, allowlistMode } = useFocusWatch();
+  const [sheetVisible, setSheetVisible] = useState(false);
   const isActive = !!activeSession;
 
   const layers = useMemo(() => {
@@ -202,7 +195,13 @@ export default function NowPanel() {
         )}
       </View>
 
-      {isActive ? <ActiveState key="active" /> : <QuietState key="quiet" />}
+      {isActive ? (
+        <ActiveState key="active" />
+      ) : (
+        <QuietState key="quiet" onBegin={() => setSheetVisible(true)} />
+      )}
+
+      <QuickWatchSheet visible={sheetVisible} onClose={() => setSheetVisible(false)} />
 
       {layers.length > 0 && (
         <View style={s.alsoActiveBlock}>
@@ -290,12 +289,6 @@ const s = StyleSheet.create({
     color: C.textSecondary,
     textAlign: 'center',
   },
-  chipRow: {
-    marginTop: 10,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-  },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 9,
@@ -354,6 +347,16 @@ const s = StyleSheet.create({
     fontFamily: F.sansSemiBold,
     fontSize: 13,
     color: C.red,
+  },
+  lockNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  lockNoteText: {
+    fontFamily: F.sansMedium,
+    fontSize: 12.5,
+    color: C.textMuted,
   },
 
   alsoActiveBlock: {

@@ -10,6 +10,8 @@ export type ActiveWatchSession = {
   startedAt: number;
   endsAt: number;
   totalMs: number;
+  strength: WatchStrength;
+  categoryIds: string[];
 };
 
 export type PracticeKind = 'prayer' | 'jesus-prayer' | 'psalm' | 'chapter' | 'intention';
@@ -146,14 +148,20 @@ export function getFocusWatchState(): FocusWatchState {
 
 // --- Active session -------------------------------------------------------
 
-export function startQuickWatch(minutes: number) {
+export function startQuickWatch(options: {
+  minutes: number;
+  categoryIds: string[];
+  strength: WatchStrength;
+}) {
   const now = Date.now();
   state.activeSession = {
     id: `quick-${now}`,
     name: 'Quick Watch',
     startedAt: now,
-    endsAt: now + minutes * 60_000,
-    totalMs: minutes * 60_000,
+    endsAt: now + options.minutes * 60_000,
+    totalMs: options.minutes * 60_000,
+    strength: options.strength,
+    categoryIds: options.categoryIds,
   };
   emit();
 }

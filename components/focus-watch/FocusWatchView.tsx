@@ -160,9 +160,7 @@ export default function FocusWatchView() {
       >
         <ScreenTitleBar title="FOCUS" />
         <View style={s.quoteWrap}>
-          <Text style={s.quote}>
-            {'"Be sober, be vigilant; because your adversary the devil, as a roaring lion, walketh about, seeking whom he may devour."'}
-          </Text>
+          <Text style={s.quote}>{'"Be sober, be vigilant."'}</Text>
           <Text style={s.ref}>1 PETER 5:8</Text>
         </View>
 
