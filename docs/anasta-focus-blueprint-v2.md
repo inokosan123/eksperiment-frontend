@@ -172,7 +172,17 @@ Practice player per plan config → on completion: choice of "Return" (no unlock
 5. **Phase 5 — Strict Watch**: cooldown engine, deny removal/installation, limited unlocks.
 6. **Phase 6 — Review** + (optional spikes: DNS strong mode, Safari content blocker, accountability contact).
 
-## 7. Decisions Log
+## 7. Build Log
+
+- Phase 1 (mocked UI, production-shaped) **shipped 2026-07-02**, commits `be15cf1` → `761f02f`:
+  4th tab + landing (NOW panel quiet/active, UPCOMING, hero cards, guard rows), Protect Time
+  (plan cards + switches, Allowlist Mode), Watch Plan editor (name/categories/when/strength/practice),
+  Clean Sight (packs + custom domains), Never Allowed, Strict Watch (cooldown + locks),
+  Intervention screen (practice player → Turn back / timed enter). Store: `components/focus-watch/focusWatchStore.ts`
+  (in-memory mock, public shape ready for the Phase 2 Screen Time bridge).
+- Next: user visual pass on device → then Phase 2 native spike (entitlement request, dev build, picker/shield).
+
+## 8. Decisions Log
 
 - [x] Quote: **1 Peter 5:8** (Matthew 26:41 moves to shield/intervention copy)
 - [x] Card naming: **hybrid** — functional label + poetic title (`APP BLOCKING` / Protect Time, `WEBSITE BLOCKING` / Clean Sight)
