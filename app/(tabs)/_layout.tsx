@@ -20,6 +20,7 @@ const TABS = [
   { name: 'index',   label: 'HOME',    Icon: Icons.Home },
   { name: 'library', label: 'LIBRARY', Icon: Icons.Book },
   { name: 'inner',   label: 'INNER',   Icon: Icons.Heart },
+  { name: 'focus',   label: 'FOCUS',   Icon: Icons.Shield },
 ];
 
 function FloatingTabBar({ state, navigation }: TabBarProps) {
@@ -79,12 +80,14 @@ const styles = StyleSheet.create({
   // Now the pill is content-sized again (no fixed width = no widening) and the
   // gap is folded into each tab's own paddingHorizontal, so the whole pill is
   // tap-active without changing its visual size.
+  // paddingHorizontal 18 (was 22): with the 4th FOCUS tab the pill must still
+  // clear the screen edges on smaller iPhones.
   tabBtn: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
     paddingVertical: 10,
-    paddingHorizontal: 22,
+    paddingHorizontal: 18,
   },
   tabLabel: {
     fontSize: 9,
@@ -102,6 +105,7 @@ export default function TabLayout() {
       <Tabs.Screen name="index" />
       <Tabs.Screen name="library" />
       <Tabs.Screen name="inner" />
+      <Tabs.Screen name="focus" />
     </Tabs>
   );
 }

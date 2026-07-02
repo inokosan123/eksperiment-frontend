@@ -501,6 +501,12 @@ export const Flame = ({ s = 11, filled = false, color = '#f97316' }: { s?: numbe
   </Svg>
 );
 
+export const Shield = ({ s = 20, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+  </Svg>
+);
+
 export const Grid3x3 = ({ s = 22, c = d, w = 2 }: P) => (
   <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
     <Rect x="3" y="3" width="18" height="18" rx="2" />
