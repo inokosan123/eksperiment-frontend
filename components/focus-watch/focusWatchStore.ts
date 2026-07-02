@@ -131,9 +131,12 @@ let state: FocusWatchState = {
   ],
   customDomains: [],
   neverAllowed: [],
+  // Never Allowed guards websites only — apps live in Protect Time.
   neverPacks: [
     { id: 'gambling', enabled: false },
     { id: 'adult', enabled: false },
+    { id: 'social', enabled: false },
+    { id: 'news', enabled: false },
   ],
   allowlistMode: false,
   allowlistConfig: {

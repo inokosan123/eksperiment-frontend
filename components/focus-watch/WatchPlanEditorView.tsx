@@ -2,15 +2,16 @@ import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { TimePickerButton } from '@/components/shared/SetAsTaskSheet';
 import { Book, Cross, Feather, Flame, OpenBook, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
 import AppPicker from './AppPicker';
+import TimeWheelSheet from './TimeWheelSheet';
+import { SMOOTH_LAYOUT, SOFT_IN } from './focusMotion';
 import {
   deleteWatchPlan,
   formatTimeOfDay,
@@ -25,7 +26,7 @@ import {
 } from './focusWatchStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
-const SECTION_TRANSITION = LinearTransition.springify().damping(20).stiffness(210);
+const SECTION_TRANSITION = SMOOTH_LAYOUT;
 
 const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const WEEKDAYS = [0, 1, 2, 3, 4];
@@ -57,12 +58,6 @@ function whenToFrequency(when: WatchWhen): { freq: FrequencyKind; days: number[]
   if (key === '0,1,2,3,4') return { freq: 'weekdays', days: when.days };
   if (key === '5,6') return { freq: 'weekends', days: when.days };
   return { freq: 'specific', days: when.days };
-}
-
-function parseTimeToMinutes(value: string, fallback: number) {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
-  if (!match) return fallback;
-  return Math.min(23, Number(match[1])) * 60 + Math.min(59, Number(match[2]));
 }
 
 function FrequencyRow({
@@ -124,6 +119,7 @@ export default function WatchPlanEditorView() {
   const [strength, setStrength] = useState<WatchStrength>(existing?.strength ?? 'loose');
   const [practice, setPractice] = useState<PracticeKind>(existing?.practice ?? 'prayer');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [timeSheet, setTimeSheet] = useState<'start' | 'end' | null>(null);
 
   const canSave =
     selectionCount(selection) > 0 && (freq !== 'specific' || days.length > 0);
@@ -215,7 +211,7 @@ export default function WatchPlanEditorView() {
             </View>
 
             {freq === 'specific' && (
-              <Animated.View entering={FadeIn.duration(220)} style={s.dayRow}>
+              <Animated.View entering={SOFT_IN} style={s.dayRow}>
                 {DAY_LETTERS.map((letter, day) => {
                   const active = days.includes(day);
                   return (
@@ -234,25 +230,25 @@ export default function WatchPlanEditorView() {
             )}
 
             {freq !== 'always' && (
-              <Animated.View entering={FadeIn.duration(220)} style={s.timeRow}>
-                <View style={s.timeCell}>
+              <Animated.View entering={SOFT_IN} style={s.timeRow}>
+                <TouchableOpacity
+                  style={[s.timeCell, timeSheet === 'start' && s.timeCellActive]}
+                  activeOpacity={0.8}
+                  onPress={() => setTimeSheet('start')}
+                >
                   <Text style={s.timeCellLabel}>STARTS</Text>
-                  <TimePickerButton
-                    value={formatTimeOfDay(startMinutes)}
-                    onChangeText={value =>
-                      setStartMinutes(parseTimeToMinutes(value, startMinutes))
-                    }
-                    compact
-                  />
-                </View>
-                <View style={s.timeCell}>
+                  <Text style={s.timeCellValue}>{formatTimeOfDay(startMinutes)}</Text>
+                  <Text style={s.timeCellHint}>CHANGE</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.timeCell, timeSheet === 'end' && s.timeCellActive]}
+                  activeOpacity={0.8}
+                  onPress={() => setTimeSheet('end')}
+                >
                   <Text style={s.timeCellLabel}>ENDS</Text>
-                  <TimePickerButton
-                    value={formatTimeOfDay(endMinutes)}
-                    onChangeText={value => setEndMinutes(parseTimeToMinutes(value, endMinutes))}
-                    compact
-                  />
-                </View>
+                  <Text style={s.timeCellValue}>{formatTimeOfDay(endMinutes)}</Text>
+                  <Text style={s.timeCellHint}>CHANGE</Text>
+                </TouchableOpacity>
               </Animated.View>
             )}
 
@@ -353,6 +349,17 @@ export default function WatchPlanEditorView() {
             deleteWatchPlan(existing.id);
             router.back();
           }
+        }}
+      />
+
+      <TimeWheelSheet
+        visible={timeSheet !== null}
+        title={timeSheet === 'start' ? 'Starts at' : 'Ends at'}
+        minutes={timeSheet === 'start' ? startMinutes : endMinutes}
+        onClose={() => setTimeSheet(null)}
+        onSave={minutes => {
+          if (timeSheet === 'start') setStartMinutes(minutes);
+          else setEndMinutes(minutes);
         }}
       />
     </View>
@@ -503,16 +510,33 @@ const s = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderColor: C.border,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingVertical: 14,
     alignItems: 'center',
-    gap: 8,
+  },
+  timeCellActive: {
+    borderColor: C.gold,
+    backgroundColor: C.goldBg,
   },
   timeCellLabel: {
     fontFamily: F.sansBold,
     fontSize: 9,
     letterSpacing: 2,
     color: C.textMuted,
+  },
+  timeCellValue: {
+    marginTop: 7,
+    fontFamily: F.serifSemiBold,
+    fontSize: 30,
+    letterSpacing: 0.5,
+    color: C.text,
+    fontVariant: ['tabular-nums'],
+  },
+  timeCellHint: {
+    marginTop: 6,
+    fontFamily: F.sansBold,
+    fontSize: 8.5,
+    letterSpacing: 1.8,
+    color: C.gold,
   },
 
   strengthRow: {

@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, FadeOut, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { Globe, Plus, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
-import FocusSwitch from './FocusSwitch';
+import WebPackCard from './WebPackCard';
+import { SMOOTH_LAYOUT, SOFT_IN, SOFT_OUT } from './focusMotion';
 import { WEB_PACKS } from './focusContent';
 import {
   addCustomDomain,
@@ -16,24 +17,7 @@ import {
 } from './focusWatchStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
-const LIST_TRANSITION = LinearTransition.springify().damping(19).stiffness(200);
-
-function PackCard({ packId }: { packId: (typeof WEB_PACKS)[number]['id'] }) {
-  const { webPacks } = useFocusWatch();
-  const content = WEB_PACKS.find(pack => pack.id === packId)!;
-  const enabled = webPacks.find(pack => pack.id === packId)?.enabled ?? false;
-
-  return (
-    <View style={s.packCard}>
-      <View style={[s.packIcon, { backgroundColor: content.iconBg }]}>{content.icon}</View>
-      <View style={{ flex: 1, paddingRight: 8 }}>
-        <Text style={s.packName}>{content.name}</Text>
-        <Text style={s.packDetail}>{content.detail}</Text>
-      </View>
-      <FocusSwitch value={enabled} onToggle={() => toggleWebPack(packId)} />
-    </View>
-  );
-}
+const LIST_TRANSITION = SMOOTH_LAYOUT;
 
 function CustomDomains() {
   const { customDomains } = useFocusWatch();
@@ -51,8 +35,8 @@ function CustomDomains() {
       {customDomains.map((domain, i) => (
         <Animated.View
           key={domain}
-          entering={FadeIn.duration(220)}
-          exiting={FadeOut.duration(160)}
+          entering={SOFT_IN}
+          exiting={SOFT_OUT}
           layout={LIST_TRANSITION}
         >
           {i > 0 && <View style={s.separator} />}
@@ -99,6 +83,8 @@ function CustomDomains() {
 }
 
 export default function CleanSightView() {
+  const { webPacks } = useFocusWatch();
+
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScrollView
@@ -118,7 +104,11 @@ export default function CleanSightView() {
 
           {WEB_PACKS.map((pack, i) => (
             <Animated.View key={pack.id} entering={enter(100 + i * 55)}>
-              <PackCard packId={pack.id} />
+              <WebPackCard
+                packId={pack.id}
+                enabled={webPacks.find(entry => entry.id === pack.id)?.enabled ?? false}
+                onToggle={() => toggleWebPack(pack.id)}
+              />
             </Animated.View>
           ))}
 
@@ -158,42 +148,6 @@ const s = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 2.4,
     color: C.textMuted,
-  },
-
-  packCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: C.surface,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    marginBottom: 8,
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  packIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  packName: {
-    fontFamily: F.serifMedium,
-    fontSize: 17,
-    color: C.text,
-  },
-  packDetail: {
-    marginTop: 2,
-    fontFamily: F.sans,
-    fontSize: 11.5,
-    color: C.textSecondary,
   },
 
   groupCard: {

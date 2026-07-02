@@ -1,4 +1,4 @@
-import { Text, StyleSheet, ViewStyle } from 'react-native';
+import { Text, StyleSheet, View, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
@@ -31,6 +31,7 @@ export default function GoldButton({
         end={{ x: 1, y: 1.4 }}
         style={[s.gradient, { height }]}
       >
+        <View style={s.highlight} pointerEvents="none" />
         <Text style={s.label}>{label}</Text>
       </LinearGradient>
     </TouchableOpacity>
@@ -51,11 +52,22 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 22,
+    overflow: 'hidden',
+  },
+  // A soft light falling on the upper half of the pill — gives the gold depth.
+  highlight: {
+    position: 'absolute',
+    top: 1.5,
+    left: 10,
+    right: 10,
+    height: '46%',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.16)',
   },
   label: {
-    fontFamily: F.sansSemiBold,
-    fontSize: 15,
-    letterSpacing: 0.2,
+    fontFamily: F.serifSemiBold,
+    fontSize: 17.5,
+    letterSpacing: 0.4,
     color: '#fff',
   },
 });

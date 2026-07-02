@@ -58,6 +58,8 @@ export type WebPackContent = {
   layerName: string;
   icon: ReactNode;
   iconBg: string;
+  sites: string[];
+  sitesNote: string;
 };
 
 export const WEB_PACKS: WebPackContent[] = [
@@ -68,6 +70,8 @@ export const WEB_PACKS: WebPackContent[] = [
     layerName: 'Gambling sites',
     icon: <Target s={16} c="#B54155" w={2} />,
     iconBg: '#FBE6E9',
+    sites: ['bet365.com', 'stake.com', '1xbet.com', 'williamhill.com', 'betway.com', 'pokerstars.com'],
+    sitesNote: '…and 400+ more, updated by us',
   },
   {
     id: 'adult',
@@ -76,6 +80,8 @@ export const WEB_PACKS: WebPackContent[] = [
     layerName: 'Adult content',
     icon: <AlertTriangle s={15} c="#B54155" w={2} />,
     iconBg: '#FBE6E9',
+    sites: ['pornhub.com', 'xvideos.com', 'onlyfans.com', 'xnxx.com', 'chaturbate.com'],
+    sitesNote: "…plus Apple's automatic adult filter for the rest",
   },
   {
     id: 'social',
@@ -84,6 +90,8 @@ export const WEB_PACKS: WebPackContent[] = [
     layerName: 'Social web',
     icon: <Waves s={16} c="#3D8273" w={2} />,
     iconBg: '#E1F1EC',
+    sites: ['x.com', 'facebook.com', 'reddit.com', 'instagram.com', 'tiktok.com', 'threads.net'],
+    sitesNote: '…the apps themselves live in Protect Time',
   },
   {
     id: 'news',
@@ -92,6 +100,8 @@ export const WEB_PACKS: WebPackContent[] = [
     layerName: 'News sites',
     icon: <Bell s={15} c="#A9863F" w={2} />,
     iconBg: '#FBF3DE',
+    sites: ['news.google.com', 'cnn.com', 'bbc.com', 'dailymail.co.uk', 'nypost.com'],
+    sitesNote: '…and 100+ more, updated by us',
   },
 ];
 

@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, FadeOut, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import { Globe, Plus, Shield, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
-import FocusSwitch from './FocusSwitch';
+import WebPackCard from './WebPackCard';
+import { SMOOTH_LAYOUT, SOFT_IN, SOFT_OUT } from './focusMotion';
 import { WEB_PACKS } from './focusContent';
 import {
   addNeverAllowedSite,
@@ -19,37 +20,7 @@ import {
 } from './focusWatchStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
-const LIST_TRANSITION = LinearTransition.springify().damping(19).stiffness(200);
-
-const NEVER_PACK_IDS: WebPackId[] = ['gambling', 'adult'];
-
-function NeverPackRow({
-  packId,
-  onAskDisable,
-}: {
-  packId: WebPackId;
-  onAskDisable: (id: WebPackId) => void;
-}) {
-  const { neverPacks } = useFocusWatch();
-  const content = WEB_PACKS.find(pack => pack.id === packId)!;
-  const enabled = neverPacks.find(pack => pack.id === packId)?.enabled ?? false;
-
-  return (
-    <View style={s.packRow}>
-      <View style={[s.packIcon, { backgroundColor: content.iconBg }]}>{content.icon}</View>
-      <View style={{ flex: 1, paddingRight: 8 }}>
-        <Text style={s.packName}>{content.name}</Text>
-        <Text style={s.packDetail}>
-          {enabled ? 'Closed for good — apps and sites' : content.detail}
-        </Text>
-      </View>
-      <FocusSwitch
-        value={enabled}
-        onToggle={() => (enabled ? onAskDisable(packId) : toggleNeverPack(packId))}
-      />
-    </View>
-  );
-}
+const LIST_TRANSITION = SMOOTH_LAYOUT;
 
 function EntryRow({
   entry,
@@ -77,7 +48,7 @@ function EntryRow({
 }
 
 export default function NeverAllowedView() {
-  const { neverAllowed } = useFocusWatch();
+  const { neverAllowed, neverPacks } = useFocusWatch();
   const [draft, setDraft] = useState('');
   const [packToDisable, setPackToDisable] = useState<WebPackId | null>(null);
   const [entryToRemove, setEntryToRemove] = useState<NeverAllowedEntry | null>(null);
@@ -104,14 +75,20 @@ export default function NeverAllowedView() {
         <View style={{ paddingHorizontal: 16 }}>
           <Animated.View entering={enter(60)}>
             <Text style={s.sectionLabel}>ALWAYS-CLOSED PACKS</Text>
-            <View style={s.groupCard}>
-              {NEVER_PACK_IDS.map((packId, i) => (
-                <View key={packId}>
-                  {i > 0 && <View style={s.separator} />}
-                  <NeverPackRow packId={packId} onAskDisable={setPackToDisable} />
-                </View>
-              ))}
-            </View>
+            {WEB_PACKS.map(pack => {
+              const enabled = neverPacks.find(entry => entry.id === pack.id)?.enabled ?? false;
+              return (
+                <WebPackCard
+                  key={pack.id}
+                  packId={pack.id}
+                  enabled={enabled}
+                  enabledDetail="Closed for good — no unlock"
+                  onToggle={() =>
+                    enabled ? setPackToDisable(pack.id) : toggleNeverPack(pack.id)
+                  }
+                />
+              );
+            })}
           </Animated.View>
 
           <Animated.View entering={enter(120)}>
@@ -120,8 +97,8 @@ export default function NeverAllowedView() {
               {neverAllowed.map((entry, i) => (
                 <Animated.View
                   key={entry.id}
-                  entering={FadeIn.duration(220)}
-                  exiting={FadeOut.duration(160)}
+                  entering={SOFT_IN}
+                  exiting={SOFT_OUT}
                   layout={LIST_TRANSITION}
                 >
                   {i > 0 && <View style={s.separator} />}
@@ -159,7 +136,7 @@ export default function NeverAllowedView() {
           <Animated.View entering={enter(180)}>
             <Text style={s.footnote}>
               Everything here runs day and night, with no unlock and no exceptions.
-              Blocked apps join this list once Apple grants the Screen Time permission.
+              Never Allowed guards websites — for apps, use a Strict watch in Protect Time.
             </Text>
           </Animated.View>
         </View>
@@ -234,31 +211,6 @@ const s = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: C.border,
     marginLeft: 16,
-  },
-  packRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-  },
-  packIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  packName: {
-    fontFamily: F.serifMedium,
-    fontSize: 17,
-    color: C.text,
-  },
-  packDetail: {
-    marginTop: 2,
-    fontFamily: F.sans,
-    fontSize: 11.5,
-    color: C.textSecondary,
   },
   entryRow: {
     flexDirection: 'row',

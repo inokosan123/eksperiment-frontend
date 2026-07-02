@@ -5,7 +5,6 @@ import Animated, {
   Easing,
   FadeIn,
   FadeOut,
-  LinearTransition,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -24,8 +23,9 @@ import {
   useFocusWatch,
 } from './focusWatchStore';
 import { WEB_PACK_LAYER_NAMES } from './focusContent';
+import { SMOOTH_LAYOUT } from './focusMotion';
 
-const PANEL_TRANSITION = LinearTransition.springify().damping(19).stiffness(190);
+const PANEL_TRANSITION = SMOOTH_LAYOUT;
 
 function pad(n: number) {
   return n < 10 ? `0${n}` : `${n}`;

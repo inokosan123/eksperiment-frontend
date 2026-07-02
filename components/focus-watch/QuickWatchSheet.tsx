@@ -60,6 +60,7 @@ export default function QuickWatchSheet({
           <X s={17} c={C.textMuted} w={2.2} />
         </TouchableOpacity>
       </View>
+      <Text style={s.subtitle}>Set the watch for this moment.</Text>
 
       <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
         <Text style={s.sectionLabel}>FOR HOW LONG</Text>
@@ -168,6 +169,12 @@ const s = StyleSheet.create({
     backgroundColor: '#F3F2ED',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  subtitle: {
+    marginTop: 2,
+    fontFamily: F.serifItalic,
+    fontSize: 15,
+    color: C.textSecondary,
   },
 
   sectionLabel: {

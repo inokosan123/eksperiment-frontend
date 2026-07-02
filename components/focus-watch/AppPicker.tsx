@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import Animated, { ZoomIn } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import { CheckSmall, ChevronDown, Plus, Trash2, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
+import { SMOOTH_LAYOUT, SOFT_IN, SOFT_OUT } from './focusMotion';
 import { appsInCategory, CATEGORY_TINTS, type MockApp } from './focusContent';
 import {
   APP_CATEGORIES,
@@ -16,7 +17,7 @@ import {
   type WatchSelection,
 } from './focusWatchStore';
 
-const LIST_TRANSITION = LinearTransition.springify().damping(20).stiffness(210);
+const LIST_TRANSITION = SMOOTH_LAYOUT;
 
 type CheckState = 'none' | 'partial' | 'all';
 
@@ -29,8 +30,14 @@ function CheckCircle({ state }: { state: CheckState }) {
         state === 'partial' && s.checkPartial,
       ]}
     >
-      {state === 'all' && <CheckSmall s={13} c="#fff" w={3} />}
-      {state === 'partial' && <View style={s.checkDot} />}
+      {state === 'all' && (
+        <Animated.View entering={ZoomIn.duration(160)}>
+          <CheckSmall s={13} c="#fff" w={3} />
+        </Animated.View>
+      )}
+      {state === 'partial' && (
+        <Animated.View entering={ZoomIn.duration(160)} style={s.checkDot} />
+      )}
     </View>
   );
 }
@@ -87,7 +94,7 @@ function GroupEditorSheet({
           style={s.sheetInput}
           value={name}
           onChangeText={setName}
-          placeholder="Name the group, e.g. My temptations"
+          placeholder="Name the group"
           placeholderTextColor={C.textMuted}
           maxLength={24}
         />
@@ -201,7 +208,7 @@ export default function AppPicker({
           return (
             <Animated.View key={category.id} layout={LIST_TRANSITION}>
               {index > 0 && <View style={s.separator} />}
-              <View style={s.categoryRow}>
+              <View style={[s.categoryRow, state !== 'none' && s.rowSelected]}>
                 <TouchableOpacity
                   activeOpacity={0.7}
                   haptic="selection"
@@ -215,8 +222,16 @@ export default function AppPicker({
                   activeOpacity={0.7}
                   onPress={() => toggleExpanded(category.id)}
                 >
-                  <Text style={s.categoryName}>{category.name}</Text>
-                  <Text style={s.categoryCount}>{apps.length} apps</Text>
+                  <Text style={[s.categoryName, state === 'all' && s.nameSelected]}>
+                    {category.name}
+                  </Text>
+                  <Text style={[s.categoryCount, state !== 'none' && s.countSelected]}>
+                    {state === 'all'
+                      ? 'all held back'
+                      : state === 'partial'
+                        ? `${apps.filter(app => selection.appIds.includes(app.id)).length} of ${apps.length}`
+                        : `${apps.length} apps`}
+                  </Text>
                   <View style={[s.chevron, isExpanded && s.chevronOpen]}>
                     <ChevronDown s={16} c={C.textMuted} />
                   </View>
@@ -224,19 +239,19 @@ export default function AppPicker({
               </View>
 
               {isExpanded && (
-                <Animated.View entering={FadeIn.duration(220)} exiting={FadeOut.duration(120)}>
+                <Animated.View entering={SOFT_IN} exiting={SOFT_OUT}>
                   {apps.map(app => {
                     const appChecked = wholeCategory || selection.appIds.includes(app.id);
                     return (
                       <TouchableOpacity
                         key={app.id}
-                        style={s.appRowIndent}
+                        style={[s.appRowIndent, appChecked && s.rowSelected]}
                         activeOpacity={0.75}
                         haptic="selection"
                         onPress={() => toggleApp(app)}
                       >
                         <AppAvatar app={app} />
-                        <Text style={s.appName}>{app.name}</Text>
+                        <Text style={[s.appName, appChecked && s.nameSelected]}>{app.name}</Text>
                         <CheckCircle state={appChecked ? 'all' : 'none'} />
                       </TouchableOpacity>
                     );
@@ -250,43 +265,48 @@ export default function AppPicker({
 
       <Text style={s.subLabel}>MY GROUPS</Text>
       <Animated.View style={s.groupCard} layout={LIST_TRANSITION}>
-        {customGroups.map((group, index) => (
-          <Animated.View
-            key={group.id}
-            entering={FadeIn.duration(220)}
-            exiting={FadeOut.duration(140)}
-            layout={LIST_TRANSITION}
-          >
-            {index > 0 && <View style={s.separator} />}
-            <View style={s.categoryRow}>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                haptic="selection"
-                onPress={() => toggleGroup(group.id)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <CheckCircle state={selection.groupIds.includes(group.id) ? 'all' : 'none'} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={s.categoryMain}
-                activeOpacity={0.7}
-                onPress={() => toggleGroup(group.id)}
-              >
-                <Text style={s.categoryName}>{group.name}</Text>
-                <Text style={s.categoryCount}>
-                  {group.appIds.length} {group.appIds.length === 1 ? 'app' : 'apps'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                onPress={() => setGroupToDelete(group.id)}
-              >
-                <Trash2 s={15} c={C.textMuted} w={2} />
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        ))}
+        {customGroups.map((group, index) => {
+          const groupSelected = selection.groupIds.includes(group.id);
+          return (
+            <Animated.View
+              key={group.id}
+              entering={SOFT_IN}
+              exiting={SOFT_OUT}
+              layout={LIST_TRANSITION}
+            >
+              {index > 0 && <View style={s.separator} />}
+              <View style={[s.categoryRow, groupSelected && s.rowSelected]}>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  haptic="selection"
+                  onPress={() => toggleGroup(group.id)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <CheckCircle state={groupSelected ? 'all' : 'none'} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={s.categoryMain}
+                  activeOpacity={0.7}
+                  onPress={() => toggleGroup(group.id)}
+                >
+                  <Text style={[s.categoryName, groupSelected && s.nameSelected]}>
+                    {group.name}
+                  </Text>
+                  <Text style={[s.categoryCount, groupSelected && s.countSelected]}>
+                    {group.appIds.length} {group.appIds.length === 1 ? 'app' : 'apps'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={() => setGroupToDelete(group.id)}
+                >
+                  <Trash2 s={15} c={C.textMuted} w={2} />
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+          );
+        })}
 
         {customGroups.length > 0 && <View style={s.separator} />}
         <TouchableOpacity
@@ -360,6 +380,16 @@ const s = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     gap: 12,
+  },
+  // Selected rows carry the soft gold wash so the whole row reads chosen.
+  rowSelected: {
+    backgroundColor: '#FFF9EE',
+  },
+  nameSelected: {
+    color: '#6D4F13',
+  },
+  countSelected: {
+    color: '#B08A47',
   },
   categoryMain: {
     flex: 1,

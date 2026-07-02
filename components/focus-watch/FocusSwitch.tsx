@@ -1,17 +1,16 @@
 import { useEffect } from 'react';
 import Animated, {
+  Easing,
   interpolateColor,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import { HapticPressable } from '@/components/shared/HapticTouch';
 import { C } from '@/constants/tokens';
 
-const SPRING = { damping: 17, stiffness: 260 };
-
 // The app-wide 46x26 switch (see ReadingListView task switch), animated:
-// sprung knob + track color blend instead of an instant jump.
+// a calm ease-out glide of the knob + track color blend, no bounce.
 export default function FocusSwitch({
   value,
   onToggle,
@@ -22,7 +21,10 @@ export default function FocusSwitch({
   const progress = useSharedValue(value ? 1 : 0);
 
   useEffect(() => {
-    progress.value = withSpring(value ? 1 : 0, SPRING);
+    progress.value = withTiming(value ? 1 : 0, {
+      duration: 190,
+      easing: Easing.out(Easing.cubic),
+    });
   }, [value, progress]);
 
   const trackStyle = useAnimatedStyle(() => ({
