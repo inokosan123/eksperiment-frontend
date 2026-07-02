@@ -57,6 +57,11 @@ export type StrictSettings = {
   denyNewApps: boolean;
 };
 
+export type AllowlistConfig = {
+  keep: { categoryIds: string[]; appIds: string[]; groupIds: string[] };
+  strength: WatchStrength;
+};
+
 export type FocusWatchState = {
   activeSession: ActiveWatchSession | null;
   plans: WatchPlan[];
@@ -64,7 +69,9 @@ export type FocusWatchState = {
   webPacks: { id: WebPackId; enabled: boolean }[];
   customDomains: string[];
   neverAllowed: NeverAllowedEntry[];
+  neverPacks: { id: WebPackId; enabled: boolean }[];
   allowlistMode: boolean;
+  allowlistConfig: AllowlistConfig;
   strictSettings: StrictSettings;
   returnedMoments: number;
 };
@@ -124,7 +131,15 @@ let state: FocusWatchState = {
   ],
   customDomains: [],
   neverAllowed: [],
+  neverPacks: [
+    { id: 'gambling', enabled: false },
+    { id: 'adult', enabled: false },
+  ],
   allowlistMode: false,
+  allowlistConfig: {
+    keep: { categoryIds: [], appIds: [], groupIds: [] },
+    strength: 'loose',
+  },
   strictSettings: {
     enabled: false,
     cooldown: '1h',
@@ -272,6 +287,18 @@ export function describeSelection(selection: WatchSelection) {
 
 export function toggleAllowlistMode() {
   state.allowlistMode = !state.allowlistMode;
+  emit();
+}
+
+export function updateAllowlistConfig(partial: Partial<AllowlistConfig>) {
+  state.allowlistConfig = { ...state.allowlistConfig, ...partial };
+  emit();
+}
+
+export function toggleNeverPack(id: WebPackId) {
+  state.neverPacks = state.neverPacks.map(pack =>
+    pack.id === id ? { ...pack, enabled: !pack.enabled } : pack
+  );
   emit();
 }
 

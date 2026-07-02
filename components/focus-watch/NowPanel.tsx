@@ -162,26 +162,40 @@ function ActiveState() {
 }
 
 export default function NowPanel() {
-  const { activeSession, webPacks, customDomains, allowlistMode } = useFocusWatch();
+  const { activeSession, webPacks, customDomains, neverPacks, allowlistMode } = useFocusWatch();
   const [sheetVisible, setSheetVisible] = useState(false);
   const isActive = !!activeSession;
 
   const layers = useMemo(() => {
-    const result: { id: string; name: string; kind: 'web' | 'allowlist' }[] = webPacks
-      .filter(pack => pack.enabled)
-      .map(pack => ({ id: pack.id, name: WEB_PACK_LAYER_NAMES[pack.id], kind: 'web' as const }));
+    const result: { id: string; name: string; kind: 'web' | 'allowlist'; badge: string }[] = [];
+    for (const pack of neverPacks) {
+      if (pack.enabled) {
+        result.push({
+          id: `never-${pack.id}`,
+          name: WEB_PACK_LAYER_NAMES[pack.id],
+          kind: 'web',
+          badge: 'never',
+        });
+      }
+    }
+    for (const pack of webPacks) {
+      if (pack.enabled && !result.some(layer => layer.id === `never-${pack.id}`)) {
+        result.push({ id: pack.id, name: WEB_PACK_LAYER_NAMES[pack.id], kind: 'web', badge: 'always' });
+      }
+    }
     if (customDomains.length > 0) {
       result.push({
         id: 'custom-domains',
         name: customDomains.length === 1 ? '1 custom site' : `${customDomains.length} custom sites`,
         kind: 'web',
+        badge: 'always',
       });
     }
     if (allowlistMode) {
-      result.push({ id: 'allowlist', name: 'Simple phone', kind: 'allowlist' });
+      result.push({ id: 'allowlist', name: 'Simple phone', kind: 'allowlist', badge: 'on' });
     }
     return result;
-  }, [webPacks, customDomains, allowlistMode]);
+  }, [webPacks, customDomains, neverPacks, allowlistMode]);
 
   return (
     <Animated.View style={s.card} layout={PANEL_TRANSITION}>
@@ -214,7 +228,7 @@ export default function NowPanel() {
                 <Globe s={13} c={C.textMuted} w={2} />
               )}
               <Text style={s.alsoActiveText}>{layer.name}</Text>
-              <Text style={s.alsoActiveAlways}>always</Text>
+              <Text style={s.alsoActiveAlways}>{layer.badge}</Text>
             </View>
           ))}
         </View>

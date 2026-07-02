@@ -1,33 +1,63 @@
 import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut, LinearTransition } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { Globe, Plus, X } from '@/components/icons/Icons';
+import ConfirmModal from '@/components/shared/ConfirmModal';
+import { Globe, Plus, Shield, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import FocusSwitch from './FocusSwitch';
+import { WEB_PACKS } from './focusContent';
 import {
   addNeverAllowedSite,
   normalizeDomain,
   removeNeverAllowed,
+  toggleNeverPack,
   useFocusWatch,
   type NeverAllowedEntry,
+  type WebPackId,
 } from './focusWatchStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
 const LIST_TRANSITION = LinearTransition.springify().damping(19).stiffness(200);
 
-function EntryRow({ entry }: { entry: NeverAllowedEntry }) {
-  const confirmRemove = () => {
-    Alert.alert(
-      'Open this door again?',
-      'It was closed for a reason. Once real, removing an entry waits until the next morning.',
-      [
-        { text: 'Keep it closed', style: 'cancel' },
-        { text: 'Remove', style: 'destructive', onPress: () => removeNeverAllowed(entry.id) },
-      ]
-    );
-  };
+const NEVER_PACK_IDS: WebPackId[] = ['gambling', 'adult'];
 
+function NeverPackRow({
+  packId,
+  onAskDisable,
+}: {
+  packId: WebPackId;
+  onAskDisable: (id: WebPackId) => void;
+}) {
+  const { neverPacks } = useFocusWatch();
+  const content = WEB_PACKS.find(pack => pack.id === packId)!;
+  const enabled = neverPacks.find(pack => pack.id === packId)?.enabled ?? false;
+
+  return (
+    <View style={s.packRow}>
+      <View style={[s.packIcon, { backgroundColor: content.iconBg }]}>{content.icon}</View>
+      <View style={{ flex: 1, paddingRight: 8 }}>
+        <Text style={s.packName}>{content.name}</Text>
+        <Text style={s.packDetail}>
+          {enabled ? 'Closed for good — apps and sites' : content.detail}
+        </Text>
+      </View>
+      <FocusSwitch
+        value={enabled}
+        onToggle={() => (enabled ? onAskDisable(packId) : toggleNeverPack(packId))}
+      />
+    </View>
+  );
+}
+
+function EntryRow({
+  entry,
+  onAskRemove,
+}: {
+  entry: NeverAllowedEntry;
+  onAskRemove: (entry: NeverAllowedEntry) => void;
+}) {
   return (
     <View style={s.entryRow}>
       <Globe s={14} c={C.textMuted} w={2} />
@@ -38,7 +68,7 @@ function EntryRow({ entry }: { entry: NeverAllowedEntry }) {
       <TouchableOpacity
         activeOpacity={0.7}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        onPress={confirmRemove}
+        onPress={() => onAskRemove(entry)}
       >
         <X s={15} c={C.textMuted} w={2.2} />
       </TouchableOpacity>
@@ -49,6 +79,8 @@ function EntryRow({ entry }: { entry: NeverAllowedEntry }) {
 export default function NeverAllowedView() {
   const { neverAllowed } = useFocusWatch();
   const [draft, setDraft] = useState('');
+  const [packToDisable, setPackToDisable] = useState<WebPackId | null>(null);
+  const [entryToRemove, setEntryToRemove] = useState<NeverAllowedEntry | null>(null);
   const canAdd = normalizeDomain(draft).includes('.');
 
   const submit = () => {
@@ -70,8 +102,20 @@ export default function NeverAllowedView() {
         </Animated.View>
 
         <View style={{ paddingHorizontal: 16 }}>
-          <Animated.View entering={enter(70)}>
-            <Text style={s.sectionLabel}>THE LIST</Text>
+          <Animated.View entering={enter(60)}>
+            <Text style={s.sectionLabel}>ALWAYS-CLOSED PACKS</Text>
+            <View style={s.groupCard}>
+              {NEVER_PACK_IDS.map((packId, i) => (
+                <View key={packId}>
+                  {i > 0 && <View style={s.separator} />}
+                  <NeverPackRow packId={packId} onAskDisable={setPackToDisable} />
+                </View>
+              ))}
+            </View>
+          </Animated.View>
+
+          <Animated.View entering={enter(120)}>
+            <Text style={s.sectionLabel}>YOUR OWN DOORS</Text>
             <Animated.View style={s.groupCard} layout={LIST_TRANSITION}>
               {neverAllowed.map((entry, i) => (
                 <Animated.View
@@ -81,7 +125,7 @@ export default function NeverAllowedView() {
                   layout={LIST_TRANSITION}
                 >
                   {i > 0 && <View style={s.separator} />}
-                  <EntryRow entry={entry} />
+                  <EntryRow entry={entry} onAskRemove={setEntryToRemove} />
                 </Animated.View>
               ))}
 
@@ -112,14 +156,44 @@ export default function NeverAllowedView() {
             </Animated.View>
           </Animated.View>
 
-          <Animated.View entering={enter(150)}>
+          <Animated.View entering={enter(180)}>
             <Text style={s.footnote}>
-              Entries here run day and night, with no unlock and no exceptions.
+              Everything here runs day and night, with no unlock and no exceptions.
               Blocked apps join this list once Apple grants the Screen Time permission.
             </Text>
           </Animated.View>
         </View>
       </ScrollView>
+
+      <ConfirmModal
+        visible={packToDisable !== null}
+        icon={<Shield s={22} c={C.red} w={2} />}
+        title="Open this door again?"
+        body="It was closed for a reason. Once real, this waits until the next morning — no 2 a.m. exceptions."
+        subject={WEB_PACKS.find(pack => pack.id === packToDisable)?.name}
+        confirmLabel="OPEN TOMORROW"
+        cancelLabel="KEEP IT CLOSED"
+        onCancel={() => setPackToDisable(null)}
+        onConfirm={() => {
+          if (packToDisable) toggleNeverPack(packToDisable);
+          setPackToDisable(null);
+        }}
+      />
+
+      <ConfirmModal
+        visible={entryToRemove !== null}
+        icon={<Shield s={22} c={C.red} w={2} />}
+        title="Open this door again?"
+        body="It was closed for a reason. Once real, removing an entry waits until the next morning."
+        subject={entryToRemove?.label}
+        confirmLabel="REMOVE"
+        cancelLabel="KEEP IT CLOSED"
+        onCancel={() => setEntryToRemove(null)}
+        onConfirm={() => {
+          if (entryToRemove) removeNeverAllowed(entryToRemove.id);
+          setEntryToRemove(null);
+        }}
+      />
     </View>
   );
 }
@@ -160,6 +234,31 @@ const s = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: C.border,
     marginLeft: 16,
+  },
+  packRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  packIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  packName: {
+    fontFamily: F.serifMedium,
+    fontSize: 17,
+    color: C.text,
+  },
+  packDetail: {
+    marginTop: 2,
+    fontFamily: F.sans,
+    fontSize: 11.5,
+    color: C.textSecondary,
   },
   entryRow: {
     flexDirection: 'row',

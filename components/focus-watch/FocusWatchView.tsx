@@ -1,16 +1,20 @@
 import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { ChevronRight, Clock, Globe, ListChecks, Shield, X } from '@/components/icons/Icons';
+import { ChevronRight, Clock, Globe, ListChecks, Shield, Smartphone, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import FocusSwitch from './FocusSwitch';
 import NowPanel from './NowPanel';
 import FocusHeroCardView, { type HeroMetaItem } from './FocusHeroCard';
 import { CLEAN_SIGHT_CARD, PROTECT_TIME_CARD } from './focusContent';
 import {
   formatTimeRange,
   nextScheduleLabel,
+  selectionCount,
+  toggleAllowlistMode,
   useFocusWatch,
   type WatchPlan,
 } from './focusWatchStore';
@@ -61,23 +65,55 @@ function UpcomingList({ plans }: { plans: WatchPlan[] }) {
   );
 }
 
+function SimplePhoneCard() {
+  const router = useRouter();
+  const { allowlistMode, allowlistConfig } = useFocusWatch();
+  const keptCount = selectionCount(allowlistConfig.keep);
+  const sub = allowlistMode
+    ? `On · essentials${keptCount > 0 ? ` + ${keptCount} kept open` : ' only'}`
+    : 'One phone, only what matters.';
+
+  return (
+    <Animated.View entering={enter(300)}>
+      <LinearGradient
+        colors={['#FFFBF2', '#FFF8E7']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={s.simpleCard}
+      >
+        <TouchableOpacity
+          style={s.simpleMain}
+          activeOpacity={0.82}
+          onPress={() => router.push('/simple-phone' as any)}
+        >
+          <View style={s.simpleIcon}>
+            <Smartphone s={16} c={C.gold} w={2} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.simpleTitle}>Simple Phone</Text>
+            <Text style={s.simpleSub}>{sub}</Text>
+          </View>
+        </TouchableOpacity>
+        <FocusSwitch value={allowlistMode} onToggle={toggleAllowlistMode} />
+      </LinearGradient>
+    </Animated.View>
+  );
+}
+
 function GuardRows() {
   const router = useRouter();
-  const { strictSettings, neverAllowed } = useFocusWatch();
+  const { strictSettings, neverAllowed, neverPacks } = useFocusWatch();
 
+  const neverCount = neverAllowed.length + neverPacks.filter(pack => pack.enabled).length;
   const neverValue =
-    neverAllowed.length === 0
-      ? 'Not set'
-      : neverAllowed.length === 1
-        ? '1 entry'
-        : `${neverAllowed.length} entries`;
+    neverCount === 0 ? 'Not set' : neverCount === 1 ? '1 door closed' : `${neverCount} doors closed`;
 
   const rows = [
     {
       id: 'never-allowed',
       title: 'Never Allowed',
       value: neverValue,
-      dotColor: neverAllowed.length > 0 ? '#B54155' : null,
+      dotColor: neverCount > 0 ? '#B54155' : null,
       route: '/never-allowed',
       iconBg: '#FBE6E9',
       icon: <X s={14} c="#B54155" w={2.5} />,
@@ -188,6 +224,8 @@ export default function FocusWatchView() {
             </Animated.View>
           </View>
 
+          <SimplePhoneCard />
+
           <GuardRows />
         </View>
       </ScrollView>
@@ -274,6 +312,46 @@ const s = StyleSheet.create({
   heroBlock: {
     marginTop: 18,
     marginBottom: 12,
+  },
+
+  // Simple Phone toggle card — same grammar as the ReadingList task toggle.
+  simpleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(232,220,196,0.7)',
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    marginBottom: 12,
+  },
+  simpleMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  simpleIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: 'rgba(197,160,89,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  simpleTitle: {
+    fontFamily: F.sansSemiBold,
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 18,
+  },
+  simpleSub: {
+    fontFamily: F.sans,
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 2,
+    lineHeight: 16,
   },
 
   guardRow: {

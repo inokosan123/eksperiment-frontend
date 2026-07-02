@@ -7,11 +7,9 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import { C, F } from '@/constants/tokens';
 import FocusSwitch from './FocusSwitch';
 import {
-  ALLOWLIST_APPS,
   describeSelection,
   formatWhen,
   practiceName,
-  toggleAllowlistMode,
   togglePlanEnabled,
   useFocusWatch,
   type WatchPlan,
@@ -64,31 +62,6 @@ function PlanCard({ plan }: { plan: WatchPlan }) {
   );
 }
 
-function AllowlistCard() {
-  const { allowlistMode } = useFocusWatch();
-
-  return (
-    <View style={s.planCard}>
-      <View style={{ paddingRight: 54 }}>
-        <Text style={s.planName}>Allowlist Mode</Text>
-        <Text style={s.allowlistDesc}>
-          Everything is held back except what matters.
-        </Text>
-        <View style={s.planChipRow}>
-          {ALLOWLIST_APPS.map(app => (
-            <View key={app} style={[s.metaChip, allowlistMode && s.metaChipOn]}>
-              <Text style={[s.metaChipText, allowlistMode && { color: C.goldDark }]}>{app}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-      <View style={s.planSwitch}>
-        <FocusSwitch value={allowlistMode} onToggle={toggleAllowlistMode} />
-      </View>
-    </View>
-  );
-}
-
 export default function ProtectTimeView() {
   const router = useRouter();
   const { plans } = useFocusWatch();
@@ -136,12 +109,7 @@ export default function ProtectTimeView() {
             </TouchableOpacity>
           </Animated.View>
 
-          <Animated.View entering={enter(200 + plans.length * 60)}>
-            <Text style={s.sectionLabel}>SIMPLE PHONE</Text>
-            <AllowlistCard />
-          </Animated.View>
-
-          <Animated.View entering={enter(260 + plans.length * 60)}>
+          <Animated.View entering={enter(220 + plans.length * 60)}>
             <Text style={s.footnote}>
               App blocking becomes real once Apple grants the Screen Time permission.
               Until then, the plans you shape here are how your watches will work.
@@ -239,10 +207,6 @@ const s = StyleSheet.create({
     borderColor: C.border,
     backgroundColor: C.surface,
   },
-  metaChipOn: {
-    borderColor: C.goldLight,
-    backgroundColor: C.goldBg,
-  },
   metaChipText: {
     fontFamily: F.sansMedium,
     fontSize: 10.5,
@@ -290,14 +254,6 @@ const s = StyleSheet.create({
     fontFamily: F.sansMedium,
     fontSize: 12.5,
     color: C.gold,
-  },
-
-  allowlistDesc: {
-    marginTop: 3,
-    fontFamily: F.serif,
-    fontSize: 15,
-    lineHeight: 20,
-    color: C.textSecondary,
   },
 
   footnote: {

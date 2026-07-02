@@ -7,7 +7,7 @@ import { CheckSmall, ChevronDown, Plus, Trash2, X } from '@/components/icons/Ico
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
-import { appsInCategory, CATEGORY_TINTS, MOCK_APPS, type MockApp } from './focusContent';
+import { appsInCategory, CATEGORY_TINTS, type MockApp } from './focusContent';
 import {
   APP_CATEGORIES,
   deleteCustomGroup,
