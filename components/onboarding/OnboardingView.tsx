@@ -326,6 +326,9 @@ const BIG_EVENT_VACATION_IMAGE = require('@/assets/images/onboarding/big-event-v
 const MONTHLY_GOAL_GOSPEL_MARK_IMAGE = require('@/assets/images/onboarding/monthly-goal-gospel-mark.png');
 const MONTHLY_GOAL_HOUSE_PROJECT_IMAGE = require('@/assets/images/onboarding/monthly-goal-house-project.png');
 const MONTHLY_GOAL_COURSE_IMAGE = require('@/assets/images/onboarding/monthly-goal-course.png');
+const SPIRITUAL_TASK_MORNING_PRAYER_IMAGE = require('@/assets/images/onboarding/spiritual-task-morning-prayer.png');
+const SPIRITUAL_TASK_BIBLE_STUDY_IMAGE = require('@/assets/images/onboarding/spiritual-task-bible-study.png');
+const SPIRITUAL_TASK_EVENING_PRAYER_IMAGE = require('@/assets/images/onboarding/spiritual-task-evening-prayer.png');
 const ORGANIZE_EXAMPLE_IMAGE_SOURCES = [
   BIG_EVENT_WORK_DEADLINE_IMAGE,
   BIG_EVENT_FAMILY_BIRTHDAY_IMAGE,
@@ -334,6 +337,9 @@ const ORGANIZE_EXAMPLE_IMAGE_SOURCES = [
   MONTHLY_GOAL_GOSPEL_MARK_IMAGE,
   MONTHLY_GOAL_HOUSE_PROJECT_IMAGE,
   MONTHLY_GOAL_COURSE_IMAGE,
+  SPIRITUAL_TASK_MORNING_PRAYER_IMAGE,
+  SPIRITUAL_TASK_BIBLE_STUDY_IMAGE,
+  SPIRITUAL_TASK_EVENING_PRAYER_IMAGE,
 ];
 const PROTECT_STATEMENT_IMAGES = [
   require('@/assets/images/protect-statement-1.jpg'),
@@ -14912,18 +14918,21 @@ const SPIRITUAL_TASK_EXAMPLES: OrganizeExample[] = [
     body: 'Begin the day by turning toward God before the noise begins.',
     accent: GOLD,
     icon: <Sun s={30} c={GOLD} w={1.8} />,
+    image: SPIRITUAL_TASK_MORNING_PRAYER_IMAGE,
+  },
+  {
+    title: 'Bible Study',
+    body: 'Give Scripture a steady time, not whatever is left after the day.',
+    accent: '#4D8586',
+    icon: <BookMarked s={30} c="#4D8586" w={1.8} />,
+    image: SPIRITUAL_TASK_BIBLE_STUDY_IMAGE,
   },
   {
     title: 'Evening Prayer',
     body: 'Close the day with gratitude, repentance, and peace.',
     accent: '#705B9B',
     icon: <Moon s={30} c="#705B9B" w={1.8} />,
-  },
-  {
-    title: 'Scripture reading',
-    body: 'Give the Word of God a fixed place in your week.',
-    accent: '#4D8586',
-    icon: <BookMarked s={30} c="#4D8586" w={1.8} />,
+    image: SPIRITUAL_TASK_EVENING_PRAYER_IMAGE,
   },
 ];
 
