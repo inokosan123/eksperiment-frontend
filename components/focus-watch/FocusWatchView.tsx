@@ -42,13 +42,20 @@ function UpcomingList({ plans }: { plans: WatchPlan[] }) {
 
 function GuardRows() {
   const router = useRouter();
-  const { strictWatch } = useFocusWatch();
+  const { strictSettings, neverAllowed } = useFocusWatch();
+
+  const neverValue =
+    neverAllowed.length === 0
+      ? 'Not set'
+      : neverAllowed.length === 1
+        ? '1 entry'
+        : `${neverAllowed.length} entries`;
 
   const rows = [
     {
       id: 'never-allowed',
       title: 'Never Allowed',
-      value: 'Not set',
+      value: neverValue,
       route: '/never-allowed',
       iconBg: '#FBE6E9',
       icon: <X s={14} c="#B54155" w={2.5} />,
@@ -56,7 +63,7 @@ function GuardRows() {
     {
       id: 'strict-watch',
       title: 'Strict Watch',
-      value: strictWatch ? 'On' : 'Off',
+      value: strictSettings.enabled ? 'On' : 'Off',
       route: '/strict-watch',
       iconBg: C.goldLight,
       icon: <Shield s={15} c={C.goldDark} w={2.2} />,

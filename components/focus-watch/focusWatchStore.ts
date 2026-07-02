@@ -30,17 +30,32 @@ export type WatchPlan = {
   practice: PracticeKind;
 };
 
-export type AlwaysOnLayer = {
+export type WebPackId = 'gambling' | 'adult' | 'social' | 'news';
+
+export type NeverAllowedEntry = {
   id: string;
-  name: string;
+  label: string;
+  kind: 'site' | 'app';
+};
+
+export type StrictCooldown = '10m' | '1h' | 'morning';
+
+export type StrictSettings = {
+  enabled: boolean;
+  cooldown: StrictCooldown;
+  uninstallProtection: boolean;
+  denyNewApps: boolean;
 };
 
 export type FocusWatchState = {
   activeSession: ActiveWatchSession | null;
   plans: WatchPlan[];
-  alwaysOn: AlwaysOnLayer[];
+  webPacks: { id: WebPackId; enabled: boolean }[];
+  customDomains: string[];
+  neverAllowed: NeverAllowedEntry[];
   allowlistMode: boolean;
-  strictWatch: boolean;
+  strictSettings: StrictSettings;
+  returnedMoments: number;
 };
 
 // Stand-in categories until the Apple FamilyActivityPicker arrives in Phase 2.
@@ -85,9 +100,22 @@ let state: FocusWatchState = {
       practice: 'prayer',
     },
   ],
-  alwaysOn: [],
+  webPacks: [
+    { id: 'gambling', enabled: false },
+    { id: 'adult', enabled: false },
+    { id: 'social', enabled: false },
+    { id: 'news', enabled: false },
+  ],
+  customDomains: [],
+  neverAllowed: [],
   allowlistMode: false,
-  strictWatch: false,
+  strictSettings: {
+    enabled: false,
+    cooldown: '1h',
+    uninstallProtection: true,
+    denyNewApps: false,
+  },
+  returnedMoments: 0,
 };
 
 const listeners = new Set<() => void>();
@@ -174,6 +202,68 @@ export function deleteWatchPlan(id: string) {
 
 export function toggleAllowlistMode() {
   state.allowlistMode = !state.allowlistMode;
+  emit();
+}
+
+// --- Clean Sight -----------------------------------------------------------
+
+export function toggleWebPack(id: WebPackId) {
+  state.webPacks = state.webPacks.map(pack =>
+    pack.id === id ? { ...pack, enabled: !pack.enabled } : pack
+  );
+  emit();
+}
+
+export function normalizeDomain(raw: string) {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/.*$/, '');
+}
+
+export function addCustomDomain(raw: string) {
+  const domain = normalizeDomain(raw);
+  if (!domain || !domain.includes('.') || state.customDomains.includes(domain)) return;
+  state.customDomains = [...state.customDomains, domain];
+  emit();
+}
+
+export function removeCustomDomain(domain: string) {
+  state.customDomains = state.customDomains.filter(entry => entry !== domain);
+  emit();
+}
+
+// --- Never Allowed ---------------------------------------------------------
+
+export function addNeverAllowedSite(raw: string) {
+  const domain = normalizeDomain(raw);
+  if (!domain || !domain.includes('.')) return;
+  if (state.neverAllowed.some(entry => entry.label === domain)) return;
+  state.neverAllowed = [
+    ...state.neverAllowed,
+    { id: `never-${Date.now()}`, label: domain, kind: 'site' },
+  ];
+  emit();
+}
+
+export function removeNeverAllowed(id: string) {
+  state.neverAllowed = state.neverAllowed.filter(entry => entry.id !== id);
+  emit();
+}
+
+// --- Strict Watch ----------------------------------------------------------
+
+export function updateStrictSettings(partial: Partial<StrictSettings>) {
+  state.strictSettings = { ...state.strictSettings, ...partial };
+  emit();
+}
+
+// --- Review ----------------------------------------------------------------
+
+export function recordReturnedMoment() {
+  state.returnedMoments += 1;
   emit();
 }
 

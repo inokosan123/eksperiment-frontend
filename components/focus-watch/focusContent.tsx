@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
-import { Clock, Eye, Shield, X } from '@/components/icons/Icons';
+import { AlertTriangle, Bell, Clock, Eye, Target, Waves } from '@/components/icons/Icons';
+import type { WebPackId } from './focusWatchStore';
 
 export type FocusRoute = '/protect-time' | '/clean-sight' | '/never-allowed' | '/strict-watch';
 
@@ -50,45 +51,50 @@ export const CLEAN_SIGHT_CARD: FocusHeroCard = {
 
 export const FOCUS_HERO_CARDS = [PROTECT_TIME_CARD, CLEAN_SIGHT_CARD];
 
-export type FocusPlaceholderConfig = {
-  barTitle: string;
-  label: string;
-  title: string;
-  description: string;
-  tint: string;
-  tintBg: string;
+export type WebPackContent = {
+  id: WebPackId;
+  name: string;
+  detail: string;
+  layerName: string;
   icon: ReactNode;
+  iconBg: string;
 };
 
-export const CLEAN_SIGHT_PLACEHOLDER: FocusPlaceholderConfig = {
-  barTitle: 'CLEAN SIGHT',
-  label: 'WEBSITE BLOCKING',
-  title: 'Clean Sight',
-  description:
-    'Close the door on gambling, adult and addictive websites — across your browsers, with lists you control.',
-  tint: '#3D8273',
-  tintBg: '#E1F1EC',
-  icon: <Eye s={30} c="#3D8273" w={1.6} />,
-};
+export const WEB_PACKS: WebPackContent[] = [
+  {
+    id: 'gambling',
+    name: 'Gambling & Betting',
+    detail: 'Betting sites, casinos, lotteries',
+    layerName: 'Gambling sites',
+    icon: <Target s={16} c="#B54155" w={2} />,
+    iconBg: '#FBE6E9',
+  },
+  {
+    id: 'adult',
+    name: 'Adult Content',
+    detail: "Apple's system filter plus our curated list",
+    layerName: 'Adult content',
+    icon: <AlertTriangle s={15} c="#B54155" w={2} />,
+    iconBg: '#FBE6E9',
+  },
+  {
+    id: 'social',
+    name: 'Social Web',
+    detail: 'Feeds in the browser — X, Reddit, Facebook',
+    layerName: 'Social web',
+    icon: <Waves s={16} c="#3D8273" w={2} />,
+    iconBg: '#E1F1EC',
+  },
+  {
+    id: 'news',
+    name: 'News & Doomscroll',
+    detail: 'Endless headlines and comment wars',
+    layerName: 'News sites',
+    icon: <Bell s={15} c="#A9863F" w={2} />,
+    iconBg: '#FBF3DE',
+  },
+];
 
-export const NEVER_ALLOWED_PLACEHOLDER: FocusPlaceholderConfig = {
-  barTitle: 'NEVER ALLOWED',
-  label: 'ALWAYS BLOCKED',
-  title: 'Never Allowed',
-  description:
-    'Doors you have chosen to keep closed for good. No sessions, no exceptions, no unlock.',
-  tint: '#B54155',
-  tintBg: '#FBE6E9',
-  icon: <X s={28} c="#B54155" w={2} />,
-};
-
-export const STRICT_WATCH_PLACEHOLDER: FocusPlaceholderConfig = {
-  barTitle: 'STRICT WATCH',
-  label: 'NO EASY WAY OUT',
-  title: 'Strict Watch',
-  description:
-    'Cooldowns, uninstall protection and firm limits — so a moment of weakness cannot undo your resolve.',
-  tint: '#8B6B2F',
-  tintBg: '#F5ECD7',
-  icon: <Shield s={28} c="#8B6B2F" w={1.8} />,
-};
+export const WEB_PACK_LAYER_NAMES: Record<WebPackId, string> = Object.fromEntries(
+  WEB_PACKS.map(pack => [pack.id, pack.layerName])
+) as Record<WebPackId, string>;

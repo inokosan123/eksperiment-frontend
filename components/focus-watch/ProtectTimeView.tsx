@@ -126,6 +126,14 @@ export default function ProtectTimeView() {
               </View>
               <Text style={s.newPlanText}>New watch plan</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={s.previewLink}
+              activeOpacity={0.7}
+              onPress={() => router.push('/focus-intervention?practice=prayer' as any)}
+            >
+              <Text style={s.previewLinkText}>Preview the shield moment →</Text>
+            </TouchableOpacity>
           </Animated.View>
 
           <Animated.View entering={enter(200 + plans.length * 60)}>
@@ -270,6 +278,18 @@ const s = StyleSheet.create({
     fontFamily: F.serifMedium,
     fontSize: 16.5,
     color: C.textSecondary,
+  },
+  previewLink: {
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 2,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  previewLinkText: {
+    fontFamily: F.sansMedium,
+    fontSize: 12.5,
+    color: C.gold,
   },
 
   allowlistDesc: {

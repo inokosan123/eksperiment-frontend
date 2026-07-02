@@ -21,6 +21,7 @@ import {
   startQuickWatch,
   useFocusWatch,
 } from './focusWatchStore';
+import { WEB_PACK_LAYER_NAMES } from './focusContent';
 
 const QUICK_OPTIONS = [
   { minutes: 30, label: '30 min' },
@@ -66,7 +67,7 @@ function useBreath() {
   return breath;
 }
 
-function QuietLamp() {
+export function ChapelLamp() {
   const breath = useBreath();
 
   const haloStyle = useAnimatedStyle(() => ({
@@ -105,7 +106,7 @@ function ActiveDot() {
 function QuietState() {
   return (
     <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(140)}>
-      <QuietLamp />
+      <ChapelLamp />
       <Text style={s.quietTitle}>All is quiet.</Text>
       <Text style={s.quietSub}>No watch is active.</Text>
 
@@ -210,16 +211,25 @@ function ActiveState() {
 }
 
 export default function NowPanel() {
-  const { activeSession, alwaysOn, allowlistMode } = useFocusWatch();
+  const { activeSession, webPacks, customDomains, allowlistMode } = useFocusWatch();
   const isActive = !!activeSession;
 
   const layers = useMemo(() => {
-    const result = alwaysOn.map(layer => ({ ...layer, kind: 'web' as const }));
+    const result: { id: string; name: string; kind: 'web' | 'allowlist' }[] = webPacks
+      .filter(pack => pack.enabled)
+      .map(pack => ({ id: pack.id, name: WEB_PACK_LAYER_NAMES[pack.id], kind: 'web' as const }));
+    if (customDomains.length > 0) {
+      result.push({
+        id: 'custom-domains',
+        name: customDomains.length === 1 ? '1 custom site' : `${customDomains.length} custom sites`,
+        kind: 'web',
+      });
+    }
     if (allowlistMode) {
-      return [...result, { id: 'allowlist', name: 'Simple phone', kind: 'allowlist' as const }];
+      result.push({ id: 'allowlist', name: 'Simple phone', kind: 'allowlist' });
     }
     return result;
-  }, [alwaysOn, allowlistMode]);
+  }, [webPacks, customDomains, allowlistMode]);
 
   return (
     <Animated.View style={s.card} layout={PANEL_TRANSITION}>
