@@ -12,9 +12,11 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { Flame, Globe, Shield } from '@/components/icons/Icons';
+import { Globe, Shield } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import GoldButton from './GoldButton';
+import SanctuaryLamp from './SanctuaryLamp';
 import {
   endActiveSession,
   extendActiveSession,
@@ -49,56 +51,22 @@ function formatEndsAt(endsAt: number) {
     .toUpperCase();
 }
 
-// Slow "chapel lamp" breath shared by the quiet flame and the active dot.
-function useBreath() {
-  const breath = useSharedValue(0);
+function ActiveDot() {
+  const pulse = useSharedValue(0);
 
   useEffect(() => {
-    breath.value = withRepeat(
+    pulse.value = withRepeat(
       withSequence(
         withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.quad) }),
         withTiming(0, { duration: 2000, easing: Easing.inOut(Easing.quad) })
       ),
       -1
     );
-    return () => cancelAnimation(breath);
-  }, [breath]);
+    return () => cancelAnimation(pulse);
+  }, [pulse]);
 
-  return breath;
-}
-
-export function ChapelLamp() {
-  const breath = useBreath();
-
-  const haloStyle = useAnimatedStyle(() => ({
-    opacity: 0.05 + breath.value * 0.07,
-    transform: [{ scale: 0.94 + breath.value * 0.16 }],
-  }));
-  const glowStyle = useAnimatedStyle(() => ({
-    opacity: 0.1 + breath.value * 0.12,
-    transform: [{ scale: 0.92 + breath.value * 0.14 }],
-  }));
-  const flameStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + breath.value * 0.06 }],
-  }));
-
-  return (
-    <View style={s.lampWrap}>
-      <Animated.View style={[s.lampHalo, haloStyle]} />
-      <Animated.View style={[s.lampGlow, glowStyle]} />
-      <View style={s.lampCircle}>
-        <Animated.View style={flameStyle}>
-          <Flame s={26} filled color={C.gold} />
-        </Animated.View>
-      </View>
-    </View>
-  );
-}
-
-function ActiveDot() {
-  const breath = useBreath();
   const dotStyle = useAnimatedStyle(() => ({
-    opacity: 0.45 + breath.value * 0.55,
+    opacity: 0.45 + pulse.value * 0.55,
   }));
   return <Animated.View style={[s.activeDot, dotStyle]} />;
 }
@@ -106,18 +74,18 @@ function ActiveDot() {
 function QuietState() {
   return (
     <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(140)}>
-      <ChapelLamp />
+      <View style={s.lampWrap}>
+        <SanctuaryLamp diameter={150} />
+      </View>
       <Text style={s.quietTitle}>All is quiet.</Text>
       <Text style={s.quietSub}>No watch is active.</Text>
 
-      <TouchableOpacity
-        style={s.primaryBtn}
-        activeOpacity={0.85}
-        haptic="medium"
+      <GoldButton
+        label="Begin a watch"
         onPress={() => startQuickWatch(60)}
-      >
-        <Text style={s.primaryBtnText}>Begin a watch</Text>
-      </TouchableOpacity>
+        height={50}
+        style={{ marginTop: 16 }}
+      />
 
       <View style={s.chipRow}>
         {QUICK_OPTIONS.map(option => (
@@ -138,7 +106,6 @@ function QuietState() {
 function ActiveState() {
   const { activeSession } = useFocusWatch();
   const [now, setNow] = useState(() => Date.now());
-  const [trackWidth, setTrackWidth] = useState(0);
   const progress = useSharedValue(0);
 
   const endsAt = activeSession?.endsAt ?? 0;
@@ -164,11 +131,6 @@ function ActiveState() {
     });
   }, [remaining, totalMs, progress]);
 
-  const fillStyle = useAnimatedStyle(
-    () => ({ width: trackWidth * progress.value }),
-    [trackWidth]
-  );
-
   const endsLabel = useMemo(() => formatEndsAt(endsAt), [endsAt]);
 
   if (!activeSession) return null;
@@ -178,16 +140,13 @@ function ActiveState() {
       <Text style={s.sessionName}>{activeSession.name}</Text>
       <Text style={s.sessionSub}>Your distractions are held back.</Text>
 
+      <View style={s.lampWrap}>
+        <SanctuaryLamp diameter={168} progress={progress} />
+      </View>
+
       <View style={s.timerBlock}>
         <Text style={s.timerText}>{formatRemaining(remaining)}</Text>
         <Text style={s.timerCaption}>REMAINING · ENDS {endsLabel}</Text>
-      </View>
-
-      <View
-        style={s.progressTrack}
-        onLayout={event => setTrackWidth(event.nativeEvent.layout.width)}
-      >
-        <Animated.View style={[s.progressFill, fillStyle]} />
       </View>
 
       <View style={s.controlsRow}>
@@ -310,39 +269,14 @@ const s = StyleSheet.create({
     color: C.gold,
   },
 
-  // Quiet state
   lampWrap: {
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 14,
-    height: 84,
+    marginTop: 6,
   },
-  lampHalo: {
-    position: 'absolute',
-    width: 116,
-    height: 116,
-    borderRadius: 58,
-    backgroundColor: C.gold,
-  },
-  lampGlow: {
-    position: 'absolute',
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: C.gold,
-  },
-  lampCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: C.goldBg,
-    borderWidth: 1,
-    borderColor: C.goldLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+
+  // Quiet state
   quietTitle: {
-    marginTop: 14,
+    marginTop: 6,
     fontFamily: F.serifMedium,
     fontSize: 23,
     letterSpacing: -0.2,
@@ -355,25 +289,6 @@ const s = StyleSheet.create({
     fontSize: 15.5,
     color: C.textSecondary,
     textAlign: 'center',
-  },
-  primaryBtn: {
-    marginTop: 16,
-    height: 50,
-    borderRadius: 999,
-    backgroundColor: C.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: C.gold,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  primaryBtnText: {
-    fontFamily: F.sansSemiBold,
-    fontSize: 15,
-    letterSpacing: 0.2,
-    color: '#fff',
   },
   chipRow: {
     marginTop: 10,
@@ -399,48 +314,38 @@ const s = StyleSheet.create({
   sessionName: {
     marginTop: 10,
     fontFamily: F.serifMedium,
-    fontSize: 23,
+    fontSize: 22,
     letterSpacing: -0.2,
     color: C.text,
+    textAlign: 'center',
   },
   sessionSub: {
     marginTop: 2,
     fontFamily: F.serif,
-    fontSize: 15,
+    fontSize: 14.5,
     color: C.textSecondary,
+    textAlign: 'center',
   },
   timerBlock: {
-    marginTop: 14,
+    marginTop: 8,
     alignItems: 'center',
   },
   timerText: {
     fontFamily: F.sansSemiBold,
-    fontSize: 38,
+    fontSize: 36,
     letterSpacing: 0.5,
     color: C.text,
     fontVariant: ['tabular-nums'],
   },
   timerCaption: {
-    marginTop: 4,
+    marginTop: 3,
     fontFamily: F.sansBold,
     fontSize: 9.5,
     letterSpacing: 2,
     color: C.textMuted,
   },
-  progressTrack: {
-    marginTop: 12,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: C.goldLight,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: C.gold,
-  },
   controlsRow: {
-    marginTop: 14,
+    marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -450,6 +355,7 @@ const s = StyleSheet.create({
     fontSize: 13,
     color: C.red,
   },
+
   alsoActiveBlock: {
     marginTop: 15,
     paddingTop: 11,

@@ -12,6 +12,7 @@ import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { Book, Cross, Feather, Flame, Minus, OpenBook, Plus } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import GoldButton from './GoldButton';
 import {
   APP_CATEGORIES,
   deleteWatchPlan,
@@ -357,15 +358,11 @@ export default function WatchPlanEditorView() {
       </ScrollView>
 
       <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, 10) + 10 }]}>
-        <TouchableOpacity
-          style={[s.saveBtn, !canSave && { opacity: 0.4 }]}
-          activeOpacity={0.85}
-          haptic="medium"
+        <GoldButton
+          label={existing ? 'Save changes' : 'Set the watch'}
           disabled={!canSave}
           onPress={save}
-        >
-          <Text style={s.saveBtnText}>{existing ? 'Save changes' : 'Set the watch'}</Text>
-        </TouchableOpacity>
+        />
         {existing && (
           <TouchableOpacity activeOpacity={0.7} onPress={remove} style={s.removeBtn}>
             <Text style={s.removeText}>Remove this watch</Text>
@@ -650,24 +647,6 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(252,252,252,0.96)',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: C.border,
-  },
-  saveBtn: {
-    height: 52,
-    borderRadius: 999,
-    backgroundColor: C.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: C.gold,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  saveBtnText: {
-    fontFamily: F.sansSemiBold,
-    fontSize: 15,
-    letterSpacing: 0.2,
-    color: '#fff',
   },
   removeBtn: {
     marginTop: 11,

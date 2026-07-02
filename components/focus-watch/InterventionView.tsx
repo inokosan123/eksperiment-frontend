@@ -4,8 +4,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import Animated, { FadeIn, FadeInDown, FadeOut, LinearTransition } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import { OrthodoxCross } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
-import { ChapelLamp } from './NowPanel';
+import GoldButton from './GoldButton';
+import SanctuaryLamp from './SanctuaryLamp';
 import { recordReturnedMoment, type PracticeKind } from './focusWatchStore';
 
 const CARD_TRANSITION = LinearTransition.springify().damping(19).stiffness(190);
@@ -75,10 +77,11 @@ export default function InterventionView() {
         <ScreenTitleBar title="PAUSE" showBack />
 
         <Animated.View entering={FadeInDown.duration(420).delay(30)} style={s.lampBlock}>
-          <ChapelLamp />
+          <SanctuaryLamp diameter={170} flameSize={68} />
         </Animated.View>
 
         <Animated.View entering={FadeInDown.duration(420).delay(100)} style={s.verseBlock}>
+          <OrthodoxCross s={18} c={C.gold} w={1.6} />
           <Text style={s.verse}>
             {'"Watch and pray, that ye enter not into temptation."'}
           </Text>
@@ -110,29 +113,19 @@ export default function InterventionView() {
 
               {!!content.sub && <Text style={s.cardSub}>{content.sub}</Text>}
 
-              <TouchableOpacity
-                style={[s.primaryBtn, !canComplete && { opacity: 0.4 }]}
-                activeOpacity={0.85}
-                haptic="medium"
+              <GoldButton
+                label={content.doneLabel}
                 disabled={!canComplete}
                 onPress={() => setStep('choice')}
-              >
-                <Text style={s.primaryBtnText}>{content.doneLabel}</Text>
-              </TouchableOpacity>
+                style={{ marginTop: 18 }}
+              />
             </Animated.View>
           ) : (
             <Animated.View key="choice" entering={FadeIn.duration(280)} exiting={FadeOut.duration(140)}>
               <Text style={s.choiceTitle}>The door is open.</Text>
               <Text style={s.choiceSub}>What happens next is yours to choose.</Text>
 
-              <TouchableOpacity
-                style={s.primaryBtn}
-                activeOpacity={0.85}
-                haptic="medium"
-                onPress={turnBack}
-              >
-                <Text style={s.primaryBtnText}>Turn back</Text>
-              </TouchableOpacity>
+              <GoldButton label="Turn back" onPress={turnBack} style={{ marginTop: 18 }} />
 
               <TouchableOpacity
                 style={s.ghostBtn}
@@ -155,9 +148,10 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   verseBlock: {
-    marginTop: 16,
+    marginTop: 14,
     paddingHorizontal: 34,
     alignItems: 'center',
+    gap: 10,
   },
   verse: {
     fontFamily: F.serifMediumItalic,
@@ -167,7 +161,6 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
   verseRef: {
-    marginTop: 10,
     fontFamily: F.sansBold,
     fontSize: 10,
     letterSpacing: 2.4,
@@ -234,25 +227,6 @@ const s = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
-  primaryBtn: {
-    marginTop: 18,
-    height: 52,
-    borderRadius: 999,
-    backgroundColor: C.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: C.gold,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  primaryBtnText: {
-    fontFamily: F.sansSemiBold,
-    fontSize: 15,
-    letterSpacing: 0.2,
-    color: '#fff',
-  },
   ghostBtn: {
     marginTop: 10,
     height: 48,

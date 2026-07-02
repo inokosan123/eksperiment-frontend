@@ -2,15 +2,33 @@ import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import SectionCard from '@/components/shared/SectionCard';
-import { ChevronRight, Shield, X } from '@/components/icons/Icons';
+import { ChevronRight, Clock, Globe, ListChecks, Shield, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import NowPanel from './NowPanel';
-import { FOCUS_HERO_CARDS } from './focusContent';
-import { formatWhen, useFocusWatch, type WatchPlan } from './focusWatchStore';
+import FocusHeroCardView, { type HeroMetaItem } from './FocusHeroCard';
+import { CLEAN_SIGHT_CARD, PROTECT_TIME_CARD } from './focusContent';
+import {
+  formatTimeRange,
+  nextScheduleLabel,
+  useFocusWatch,
+  type WatchPlan,
+} from './focusWatchStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
+
+function DayDots({ days }: { days: number[] }) {
+  return (
+    <View style={s.dayDotsRow}>
+      {Array.from({ length: 7 }, (_, day) => (
+        <View
+          key={day}
+          style={[s.dayDot, days.includes(day) ? s.dayDotOn : s.dayDotOff]}
+        />
+      ))}
+    </View>
+  );
+}
 
 function UpcomingList({ plans }: { plans: WatchPlan[] }) {
   const router = useRouter();
@@ -29,7 +47,10 @@ function UpcomingList({ plans }: { plans: WatchPlan[] }) {
             >
               <View style={{ flex: 1 }}>
                 <Text style={s.upcomingName}>{plan.name}</Text>
-                <Text style={s.upcomingMeta}>{formatWhen(plan.when)}</Text>
+                <View style={s.upcomingMetaRow}>
+                  {plan.when.kind === 'schedule' && <DayDots days={plan.when.days} />}
+                  <Text style={s.upcomingMeta}>{formatTimeRange(plan.when)}</Text>
+                </View>
               </View>
               <ChevronRight s={17} c={C.textMuted} />
             </TouchableOpacity>
@@ -56,6 +77,7 @@ function GuardRows() {
       id: 'never-allowed',
       title: 'Never Allowed',
       value: neverValue,
+      dotColor: neverAllowed.length > 0 ? '#B54155' : null,
       route: '/never-allowed',
       iconBg: '#FBE6E9',
       icon: <X s={14} c="#B54155" w={2.5} />,
@@ -64,6 +86,7 @@ function GuardRows() {
       id: 'strict-watch',
       title: 'Strict Watch',
       value: strictSettings.enabled ? 'On' : 'Off',
+      dotColor: strictSettings.enabled ? C.gold : null,
       route: '/strict-watch',
       iconBg: C.goldLight,
       icon: <Shield s={15} c={C.goldDark} w={2.2} />,
@@ -83,6 +106,7 @@ function GuardRows() {
             >
               <View style={[s.guardIcon, { backgroundColor: row.iconBg }]}>{row.icon}</View>
               <Text style={s.guardTitle}>{row.title}</Text>
+              {row.dotColor && <View style={[s.statusDot, { backgroundColor: row.dotColor }]} />}
               <Text style={s.guardValue}>{row.value}</Text>
               <ChevronRight s={17} c={C.textMuted} />
             </TouchableOpacity>
@@ -95,8 +119,38 @@ function GuardRows() {
 
 export default function FocusWatchView() {
   const router = useRouter();
-  const { plans } = useFocusWatch();
+  const { plans, webPacks, customDomains } = useFocusWatch();
   const upcoming = plans.filter(plan => plan.enabled && plan.when.kind === 'schedule');
+
+  const enabledPlans = plans.filter(plan => plan.enabled).length;
+  const nextLabel = nextScheduleLabel(plans);
+  const protectMeta: HeroMetaItem[] = [
+    {
+      icon: <ListChecks s={12} c={PROTECT_TIME_CARD.labelColor} w={2.2} />,
+      text: `${enabledPlans} of ${plans.length} plans on`,
+    },
+    ...(nextLabel
+      ? [
+          {
+            icon: <Clock s={12} c={PROTECT_TIME_CARD.labelColor} w={2.2} />,
+            text: `Next: ${nextLabel}`,
+          },
+        ]
+      : []),
+  ];
+
+  const enabledPacks = webPacks.filter(pack => pack.enabled).length;
+  const cleanMeta: HeroMetaItem[] = [
+    {
+      icon: <Shield s={12} c={CLEAN_SIGHT_CARD.labelColor} w={2.2} />,
+      text:
+        enabledPacks === 0 ? 'No packs on yet' : `${enabledPacks} ${enabledPacks === 1 ? 'pack' : 'packs'} on`,
+    },
+    {
+      icon: <Globe s={12} c={CLEAN_SIGHT_CARD.labelColor} w={2.2} />,
+      text: `${customDomains.length} custom ${customDomains.length === 1 ? 'site' : 'sites'}`,
+    },
+  ];
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -120,23 +174,20 @@ export default function FocusWatchView() {
           {upcoming.length > 0 && <UpcomingList plans={upcoming} />}
 
           <View style={s.heroBlock}>
-            {FOCUS_HERO_CARDS.map((card, i) => (
-              <Animated.View key={card.id} entering={enter(190 + i * 70)}>
-                <SectionCard
-                  label={card.label}
-                  title={card.title}
-                  description={card.description}
-                  bg={card.bg}
-                  border={card.border}
-                  labelColor={card.labelColor}
-                  titleColor={card.titleColor}
-                  bodyColor={card.bodyColor}
-                  arrowBg={card.arrowBg}
-                  decor={card.decor}
-                  onPress={() => router.push(card.route as any)}
-                />
-              </Animated.View>
-            ))}
+            <Animated.View entering={enter(190)}>
+              <FocusHeroCardView
+                card={PROTECT_TIME_CARD}
+                meta={protectMeta}
+                onPress={() => router.push(PROTECT_TIME_CARD.route as any)}
+              />
+            </Animated.View>
+            <Animated.View entering={enter(260)}>
+              <FocusHeroCardView
+                card={CLEAN_SIGHT_CARD}
+                meta={cleanMeta}
+                onPress={() => router.push(CLEAN_SIGHT_CARD.route as any)}
+              />
+            </Animated.View>
           </View>
 
           <GuardRows />
@@ -188,11 +239,38 @@ const s = StyleSheet.create({
     fontSize: 17,
     color: C.text,
   },
+  upcomingMetaRow: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   upcomingMeta: {
-    marginTop: 2,
-    fontFamily: F.sans,
+    fontFamily: F.sansMedium,
     fontSize: 11.5,
     color: C.textSecondary,
+    fontVariant: ['tabular-nums'],
+  },
+  dayDotsRow: {
+    flexDirection: 'row',
+    gap: 3,
+  },
+  dayDot: {
+    width: 4.5,
+    height: 4.5,
+    borderRadius: 2.25,
+  },
+  dayDotOn: {
+    backgroundColor: C.gold,
+  },
+  dayDotOff: {
+    backgroundColor: '#E9E7E1',
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 2,
   },
 
   heroBlock: {

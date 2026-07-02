@@ -297,3 +297,31 @@ export function formatWhen(when: WatchWhen) {
 export function practiceName(practice: PracticeKind) {
   return RETURN_PRACTICES.find(entry => entry.id === practice)?.name ?? '';
 }
+
+export function formatTimeRange(when: WatchWhen) {
+  if (when.kind === 'always') return 'Always on';
+  return `${formatTimeOfDay(when.startMinutes)} – ${formatTimeOfDay(when.endMinutes)}`;
+}
+
+// Next upcoming start among enabled schedule plans, e.g. "Evening Watch · 21:00".
+export function nextScheduleLabel(plans: WatchPlan[], now = new Date()): string | null {
+  const nowDay = (now.getDay() + 6) % 7; // JS Sunday-first → our Monday-first
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  let best: { minutesUntil: number; name: string; start: number } | null = null;
+
+  for (const plan of plans) {
+    if (!plan.enabled || plan.when.kind !== 'schedule') continue;
+    for (let offset = 0; offset < 7; offset++) {
+      const day = (nowDay + offset) % 7;
+      if (!plan.when.days.includes(day)) continue;
+      if (offset === 0 && plan.when.startMinutes <= nowMinutes) continue;
+      const minutesUntil = offset * 1440 + plan.when.startMinutes - nowMinutes;
+      if (!best || minutesUntil < best.minutesUntil) {
+        best = { minutesUntil, name: plan.name, start: plan.when.startMinutes };
+      }
+      break;
+    }
+  }
+
+  return best ? `${best.name} · ${formatTimeOfDay(best.start)}` : null;
+}
