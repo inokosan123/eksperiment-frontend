@@ -98,3 +98,50 @@ export const WEB_PACKS: WebPackContent[] = [
 export const WEB_PACK_LAYER_NAMES: Record<WebPackId, string> = Object.fromEntries(
   WEB_PACKS.map(pack => [pack.id, pack.layerName])
 ) as Record<WebPackId, string>;
+
+// Mock app catalog until Apple's FamilyActivityPicker arrives in Phase 2.
+// Tints come from the section-card palette family.
+export type MockApp = { id: string; name: string; categoryId: string };
+
+export const CATEGORY_TINTS: Record<string, { bg: string; color: string }> = {
+  social: { bg: '#EEEAF5', color: '#6D5AAE' },
+  entertainment: { bg: '#FBE6E9', color: '#B54155' },
+  games: { bg: '#E8EAFB', color: '#4F46E5' },
+  news: { bg: '#EFEEEB', color: '#5B564F' },
+  shopping: { bg: '#FBF3DE', color: '#A9863F' },
+  dating: { bg: '#FBE6E9', color: '#B54155' },
+};
+
+export const MOCK_APPS: MockApp[] = [
+  { id: 'instagram', name: 'Instagram', categoryId: 'social' },
+  { id: 'tiktok', name: 'TikTok', categoryId: 'social' },
+  { id: 'x', name: 'X', categoryId: 'social' },
+  { id: 'facebook', name: 'Facebook', categoryId: 'social' },
+  { id: 'reddit', name: 'Reddit', categoryId: 'social' },
+  { id: 'snapchat', name: 'Snapchat', categoryId: 'social' },
+  { id: 'youtube', name: 'YouTube', categoryId: 'entertainment' },
+  { id: 'netflix', name: 'Netflix', categoryId: 'entertainment' },
+  { id: 'twitch', name: 'Twitch', categoryId: 'entertainment' },
+  { id: 'primevideo', name: 'Prime Video', categoryId: 'entertainment' },
+  { id: 'roblox', name: 'Roblox', categoryId: 'games' },
+  { id: 'clashroyale', name: 'Clash Royale', categoryId: 'games' },
+  { id: 'candycrush', name: 'Candy Crush', categoryId: 'games' },
+  { id: 'brawlstars', name: 'Brawl Stars', categoryId: 'games' },
+  { id: 'googlenews', name: 'Google News', categoryId: 'news' },
+  { id: 'bbc', name: 'BBC News', categoryId: 'news' },
+  { id: 'cnn', name: 'CNN', categoryId: 'news' },
+  { id: 'amazon', name: 'Amazon', categoryId: 'shopping' },
+  { id: 'ebay', name: 'eBay', categoryId: 'shopping' },
+  { id: 'temu', name: 'Temu', categoryId: 'shopping' },
+  { id: 'tinder', name: 'Tinder', categoryId: 'dating' },
+  { id: 'bumble', name: 'Bumble', categoryId: 'dating' },
+  { id: 'hinge', name: 'Hinge', categoryId: 'dating' },
+];
+
+export function appsInCategory(categoryId: string): MockApp[] {
+  return MOCK_APPS.filter(app => app.categoryId === categoryId);
+}
+
+export function appName(appId: string): string {
+  return MOCK_APPS.find(app => app.id === appId)?.name ?? appId;
+}

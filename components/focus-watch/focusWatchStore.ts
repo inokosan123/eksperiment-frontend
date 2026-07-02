@@ -27,9 +27,17 @@ export type WatchPlan = {
   name: string;
   enabled: boolean;
   categoryIds: string[];
+  appIds: string[];
+  groupIds: string[];
   when: WatchWhen;
   strength: WatchStrength;
   practice: PracticeKind;
+};
+
+export type CustomGroup = {
+  id: string;
+  name: string;
+  appIds: string[];
 };
 
 export type WebPackId = 'gambling' | 'adult' | 'social' | 'news';
@@ -52,6 +60,7 @@ export type StrictSettings = {
 export type FocusWatchState = {
   activeSession: ActiveWatchSession | null;
   plans: WatchPlan[];
+  customGroups: CustomGroup[];
   webPacks: { id: WebPackId; enabled: boolean }[];
   customDomains: string[];
   neverAllowed: NeverAllowedEntry[];
@@ -88,6 +97,8 @@ let state: FocusWatchState = {
       name: 'Morning Watch',
       enabled: true,
       categoryIds: ['social', 'news'],
+      appIds: [],
+      groupIds: [],
       when: { kind: 'schedule', startMinutes: 360, endMinutes: 450, days: [0, 1, 2, 3, 4] },
       strength: 'strict',
       practice: 'psalm',
@@ -97,11 +108,14 @@ let state: FocusWatchState = {
       name: 'Evening Watch',
       enabled: true,
       categoryIds: ['social', 'entertainment', 'games'],
+      appIds: [],
+      groupIds: [],
       when: { kind: 'schedule', startMinutes: 1260, endMinutes: 1380, days: [0, 1, 2, 3, 4, 5, 6] },
       strength: 'loose',
       practice: 'prayer',
     },
   ],
+  customGroups: [],
   webPacks: [
     { id: 'gambling', enabled: false },
     { id: 'adult', enabled: false },
@@ -206,6 +220,54 @@ export function saveWatchPlan(plan: Omit<WatchPlan, 'id'> & { id?: string }) {
 export function deleteWatchPlan(id: string) {
   state.plans = state.plans.filter(plan => plan.id !== id);
   emit();
+}
+
+// --- Custom groups ---------------------------------------------------------
+
+export function saveCustomGroup(group: Omit<CustomGroup, 'id'> & { id?: string }) {
+  if (group.id) {
+    const id = group.id;
+    state.customGroups = state.customGroups.map(existing =>
+      existing.id === id ? { ...group, id } : existing
+    );
+  } else {
+    state.customGroups = [...state.customGroups, { ...group, id: `group-${Date.now()}` }];
+  }
+  emit();
+}
+
+export function deleteCustomGroup(id: string) {
+  state.customGroups = state.customGroups.filter(group => group.id !== id);
+  state.plans = state.plans.map(plan =>
+    plan.groupIds.includes(id)
+      ? { ...plan, groupIds: plan.groupIds.filter(entry => entry !== id) }
+      : plan
+  );
+  emit();
+}
+
+export type WatchSelection = Pick<WatchPlan, 'categoryIds' | 'appIds' | 'groupIds'>;
+
+export function selectionCount(selection: WatchSelection) {
+  return selection.categoryIds.length + selection.appIds.length + selection.groupIds.length;
+}
+
+export function describeSelection(selection: WatchSelection) {
+  const parts: string[] = [];
+  if (selection.categoryIds.length > 0) {
+    parts.push(
+      `${selection.categoryIds.length} ${selection.categoryIds.length === 1 ? 'category' : 'categories'}`
+    );
+  }
+  if (selection.appIds.length > 0) {
+    parts.push(`${selection.appIds.length} ${selection.appIds.length === 1 ? 'app' : 'apps'}`);
+  }
+  if (selection.groupIds.length > 0) {
+    parts.push(
+      `${selection.groupIds.length} ${selection.groupIds.length === 1 ? 'group' : 'groups'}`
+    );
+  }
+  return parts.length > 0 ? parts.join(' · ') : 'Nothing selected';
 }
 
 export function toggleAllowlistMode() {

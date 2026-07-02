@@ -1,36 +1,46 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, {
-  FadeInDown,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { Book, Cross, Feather, Flame, Minus, OpenBook, Plus } from '@/components/icons/Icons';
+import ConfirmModal from '@/components/shared/ConfirmModal';
+import { TimePickerButton } from '@/components/shared/SetAsTaskSheet';
+import { Book, Cross, Feather, Flame, OpenBook, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
+import AppPicker from './AppPicker';
 import {
-  APP_CATEGORIES,
   deleteWatchPlan,
   formatTimeOfDay,
   getFocusWatchState,
   RETURN_PRACTICES,
   saveWatchPlan,
+  selectionCount,
   type PracticeKind,
+  type WatchSelection,
   type WatchStrength,
+  type WatchWhen,
 } from './focusWatchStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
-const SPRING = { damping: 18, stiffness: 230 };
+const SECTION_TRANSITION = LinearTransition.springify().damping(20).stiffness(210);
 
 const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const WEEKDAYS = [0, 1, 2, 3, 4];
 const WEEKENDS = [5, 6];
 const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
+
+type FrequencyKind = 'daily' | 'weekdays' | 'weekends' | 'specific' | 'always';
+
+const FREQUENCY_OPTIONS: { value: FrequencyKind; label: string; desc: string }[] = [
+  { value: 'daily', label: 'Daily', desc: 'Every day' },
+  { value: 'weekdays', label: 'Weekdays', desc: 'Mon - Fri' },
+  { value: 'weekends', label: 'Weekends', desc: 'Sat - Sun' },
+  { value: 'specific', label: 'Specific Days', desc: 'Choose days' },
+  { value: 'always', label: 'Always on', desc: 'Day and night' },
+];
 
 const PRACTICE_ICONS: Record<PracticeKind, React.ReactNode> = {
   prayer: <Cross s={14} c={C.goldDark} w={2} />,
@@ -40,83 +50,45 @@ const PRACTICE_ICONS: Record<PracticeKind, React.ReactNode> = {
   intention: <Feather s={15} c={C.goldDark} w={2} />,
 };
 
-function Segmented({
-  options,
-  value,
-  onChange,
-}: {
-  options: { id: string; label: string }[];
-  value: string;
-  onChange: (id: string) => void;
-}) {
-  const [width, setWidth] = useState(0);
-  const index = Math.max(0, options.findIndex(option => option.id === value));
-  const x = useSharedValue(0);
-  const cellWidth = width > 0 ? (width - 6) / options.length : 0;
-
-  useEffect(() => {
-    if (cellWidth > 0) x.value = withSpring(index * cellWidth, SPRING);
-  }, [index, cellWidth, x]);
-
-  const thumbStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: x.value }],
-  }));
-
-  return (
-    <View style={s.segmented} onLayout={e => setWidth(e.nativeEvent.layout.width)}>
-      {cellWidth > 0 && <Animated.View style={[s.segmentedThumb, { width: cellWidth }, thumbStyle]} />}
-      {options.map(option => {
-        const active = option.id === value;
-        return (
-          <TouchableOpacity
-            key={option.id}
-            style={s.segmentedCell}
-            activeOpacity={0.8}
-            haptic="selection"
-            onPress={() => onChange(option.id)}
-          >
-            <Text style={[s.segmentedText, active && s.segmentedTextActive]}>{option.label}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
+function whenToFrequency(when: WatchWhen): { freq: FrequencyKind; days: number[] } {
+  if (when.kind === 'always') return { freq: 'always', days: EVERY_DAY };
+  const key = [...when.days].sort((a, b) => a - b).join(',');
+  if (key === '0,1,2,3,4,5,6') return { freq: 'daily', days: when.days };
+  if (key === '0,1,2,3,4') return { freq: 'weekdays', days: when.days };
+  if (key === '5,6') return { freq: 'weekends', days: when.days };
+  return { freq: 'specific', days: when.days };
 }
 
-function TimeStepper({
-  label,
-  minutes,
-  onChange,
-}: {
-  label: string;
-  minutes: number;
-  onChange: (next: number) => void;
-}) {
-  const step = (delta: number) => onChange((((minutes + delta) % 1440) + 1440) % 1440);
+function parseTimeToMinutes(value: string, fallback: number) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) return fallback;
+  return Math.min(23, Number(match[1])) * 60 + Math.min(59, Number(match[2]));
+}
 
+function FrequencyRow({
+  option,
+  active,
+  onPress,
+}: {
+  option: (typeof FREQUENCY_OPTIONS)[number];
+  active: boolean;
+  onPress: () => void;
+}) {
   return (
-    <View style={s.timeCell}>
-      <Text style={s.timeCellLabel}>{label}</Text>
-      <View style={s.timeCellRow}>
-        <TouchableOpacity
-          style={s.timeStepBtn}
-          activeOpacity={0.7}
-          haptic="selection"
-          onPress={() => step(-30)}
-        >
-          <Minus s={13} c={C.textSecondary} w={2.4} />
-        </TouchableOpacity>
-        <Text style={s.timeCellTime}>{formatTimeOfDay(minutes)}</Text>
-        <TouchableOpacity
-          style={s.timeStepBtn}
-          activeOpacity={0.7}
-          haptic="selection"
-          onPress={() => step(30)}
-        >
-          <Plus s={13} c={C.textSecondary} w={2.4} />
-        </TouchableOpacity>
-      </View>
-    </View>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.9} haptic="selection">
+      <Animated.View
+        style={[s.frequencyChip, active && s.frequencyChipActive]}
+        layout={SECTION_TRANSITION}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={[s.frequencyLabel, active && s.frequencyLabelActive]}>{option.label}</Text>
+          <Text style={[s.frequencyDesc, active && s.frequencyDescActive]}>{option.desc}</Text>
+        </View>
+        <View style={[s.frequencyRing, active && s.frequencyRingActive]}>
+          {active && <View style={s.frequencyDot} />}
+        </View>
+      </Animated.View>
+    </TouchableOpacity>
   );
 }
 
@@ -129,68 +101,71 @@ export default function WatchPlanEditorView() {
     () => (planId ? getFocusWatchState().plans.find(plan => plan.id === planId) : undefined),
     [planId]
   );
+  const initialFrequency = existing
+    ? whenToFrequency(existing.when)
+    : { freq: 'daily' as FrequencyKind, days: EVERY_DAY };
 
   const [name, setName] = useState(existing?.name ?? '');
-  const [categoryIds, setCategoryIds] = useState<string[]>(existing?.categoryIds ?? []);
-  const [whenKind, setWhenKind] = useState<'schedule' | 'always'>(existing?.when.kind ?? 'schedule');
+  const [selection, setSelection] = useState<WatchSelection>({
+    categoryIds: existing?.categoryIds ?? [],
+    appIds: existing?.appIds ?? [],
+    groupIds: existing?.groupIds ?? [],
+  });
+  const [freq, setFreq] = useState<FrequencyKind>(initialFrequency.freq);
+  const [days, setDays] = useState<number[]>(
+    initialFrequency.freq === 'specific' ? initialFrequency.days : [0, 1, 2, 3, 4]
+  );
   const [startMinutes, setStartMinutes] = useState(
     existing?.when.kind === 'schedule' ? existing.when.startMinutes : 1260
   );
   const [endMinutes, setEndMinutes] = useState(
     existing?.when.kind === 'schedule' ? existing.when.endMinutes : 1380
   );
-  const [days, setDays] = useState<number[]>(
-    existing?.when.kind === 'schedule' ? existing.when.days : EVERY_DAY
-  );
   const [strength, setStrength] = useState<WatchStrength>(existing?.strength ?? 'loose');
   const [practice, setPractice] = useState<PracticeKind>(existing?.practice ?? 'prayer');
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const canSave = categoryIds.length > 0 && (whenKind === 'always' || days.length > 0);
-
-  const toggleCategory = (id: string) =>
-    setCategoryIds(current =>
-      current.includes(id) ? current.filter(entry => entry !== id) : [...current, id]
-    );
+  const canSave =
+    selectionCount(selection) > 0 && (freq !== 'specific' || days.length > 0);
 
   const toggleDay = (day: number) =>
-    setDays(current =>
-      current.includes(day) ? current.filter(entry => entry !== day) : [...current, day]
-    );
+    setDays(current => {
+      if (current.includes(day)) {
+        if (current.length === 1) return current;
+        return current.filter(entry => entry !== day);
+      }
+      return [...current, day].sort((a, b) => a - b);
+    });
+
+  const resolveDays = (): number[] => {
+    switch (freq) {
+      case 'daily':
+        return EVERY_DAY;
+      case 'weekdays':
+        return WEEKDAYS;
+      case 'weekends':
+        return WEEKENDS;
+      default:
+        return days;
+    }
+  };
 
   const save = () => {
     saveWatchPlan({
       id: existing?.id,
       name: name.trim() || 'Watch',
       enabled: existing?.enabled ?? true,
-      categoryIds,
+      categoryIds: selection.categoryIds,
+      appIds: selection.appIds,
+      groupIds: selection.groupIds,
       when:
-        whenKind === 'always'
+        freq === 'always'
           ? { kind: 'always' }
-          : {
-              kind: 'schedule',
-              startMinutes,
-              endMinutes,
-              days: [...days].sort((a, b) => a - b),
-            },
+          : { kind: 'schedule', startMinutes, endMinutes, days: resolveDays() },
       strength,
       practice,
     });
     router.back();
-  };
-
-  const remove = () => {
-    if (!existing) return;
-    Alert.alert('Remove this watch?', 'Its schedule and settings will be gone.', [
-      { text: 'Keep it', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => {
-          deleteWatchPlan(existing.id);
-          router.back();
-        },
-      },
-    ]);
   };
 
   return (
@@ -220,85 +195,75 @@ export default function WatchPlanEditorView() {
 
           <Animated.View entering={enter(60)}>
             <Text style={s.sectionLabel}>WHAT TO HOLD BACK</Text>
-            <View style={s.chipWrap}>
-              {APP_CATEGORIES.map(category => {
-                const selected = categoryIds.includes(category.id);
-                return (
-                  <TouchableOpacity
-                    key={category.id}
-                    style={[s.categoryChip, selected && s.categoryChipOn]}
-                    activeOpacity={0.8}
-                    haptic="selection"
-                    onPress={() => toggleCategory(category.id)}
-                  >
-                    <Text style={[s.categoryChipText, selected && s.categoryChipTextOn]}>
-                      {category.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <AppPicker selection={selection} onChange={setSelection} />
             <Text style={s.helperText}>
-              {"Exact apps arrive with Apple's Screen Time permission — categories stand in for now."}
+              {"Exact apps arrive with Apple's Screen Time permission — this catalog stands in for now."}
             </Text>
           </Animated.View>
 
-          <Animated.View entering={enter(120)}>
+          <Animated.View entering={enter(120)} layout={SECTION_TRANSITION}>
             <Text style={s.sectionLabel}>WHEN</Text>
-            <Segmented
-              options={[
-                { id: 'schedule', label: 'Schedule' },
-                { id: 'always', label: 'Always on' },
-              ]}
-              value={whenKind}
-              onChange={id => setWhenKind(id as 'schedule' | 'always')}
-            />
+            <View style={s.frequencyWrap}>
+              {FREQUENCY_OPTIONS.map(option => (
+                <FrequencyRow
+                  key={option.value}
+                  option={option}
+                  active={freq === option.value}
+                  onPress={() => setFreq(option.value)}
+                />
+              ))}
+            </View>
 
-            {whenKind === 'schedule' && (
-              <View>
-                <View style={s.timeRow}>
-                  <TimeStepper label="STARTS" minutes={startMinutes} onChange={setStartMinutes} />
-                  <TimeStepper label="ENDS" minutes={endMinutes} onChange={setEndMinutes} />
-                </View>
-
-                <View style={s.dayRow}>
-                  {DAY_LETTERS.map((letter, day) => {
-                    const selected = days.includes(day);
-                    return (
-                      <TouchableOpacity
-                        key={day}
-                        style={[s.dayChip, selected && s.dayChipOn]}
-                        activeOpacity={0.8}
-                        haptic="selection"
-                        onPress={() => toggleDay(day)}
-                      >
-                        <Text style={[s.dayChipText, selected && s.dayChipTextOn]}>{letter}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                <View style={s.dayPresetRow}>
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => setDays(WEEKDAYS)}>
-                    <Text style={s.dayPresetText}>Weekdays</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => setDays(WEEKENDS)}>
-                    <Text style={s.dayPresetText}>Weekends</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => setDays(EVERY_DAY)}>
-                    <Text style={s.dayPresetText}>Every day</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+            {freq === 'specific' && (
+              <Animated.View entering={FadeIn.duration(220)} style={s.dayRow}>
+                {DAY_LETTERS.map((letter, day) => {
+                  const active = days.includes(day);
+                  return (
+                    <TouchableOpacity
+                      key={day}
+                      style={[s.dayChip, active && s.dayChipActive]}
+                      activeOpacity={0.84}
+                      haptic="selection"
+                      onPress={() => toggleDay(day)}
+                    >
+                      <Text style={[s.dayChipText, active && s.dayChipTextActive]}>{letter}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </Animated.View>
             )}
 
-            {whenKind === 'always' && (
+            {freq !== 'always' && (
+              <Animated.View entering={FadeIn.duration(220)} style={s.timeRow}>
+                <View style={s.timeCell}>
+                  <Text style={s.timeCellLabel}>STARTS</Text>
+                  <TimePickerButton
+                    value={formatTimeOfDay(startMinutes)}
+                    onChangeText={value =>
+                      setStartMinutes(parseTimeToMinutes(value, startMinutes))
+                    }
+                    compact
+                  />
+                </View>
+                <View style={s.timeCell}>
+                  <Text style={s.timeCellLabel}>ENDS</Text>
+                  <TimePickerButton
+                    value={formatTimeOfDay(endMinutes)}
+                    onChangeText={value => setEndMinutes(parseTimeToMinutes(value, endMinutes))}
+                    compact
+                  />
+                </View>
+              </Animated.View>
+            )}
+
+            {freq === 'always' && (
               <Text style={s.helperText}>
                 This watch never sleeps. What it holds back stays held back, day and night.
               </Text>
             )}
           </Animated.View>
 
-          <Animated.View entering={enter(180)}>
+          <Animated.View entering={enter(180)} layout={SECTION_TRANSITION}>
             <Text style={s.sectionLabel}>STRENGTH</Text>
             <View style={s.strengthRow}>
               <TouchableOpacity
@@ -326,7 +291,7 @@ export default function WatchPlanEditorView() {
             </View>
           </Animated.View>
 
-          <Animated.View entering={enter(240)}>
+          <Animated.View entering={enter(240)} layout={SECTION_TRANSITION}>
             <Text style={s.sectionLabel}>RETURN PRACTICE</Text>
             <View style={s.groupCard}>
               {RETURN_PRACTICES.map((entry, i) => {
@@ -364,11 +329,32 @@ export default function WatchPlanEditorView() {
           onPress={save}
         />
         {existing && (
-          <TouchableOpacity activeOpacity={0.7} onPress={remove} style={s.removeBtn}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setConfirmDelete(true)}
+            style={s.removeBtn}
+          >
             <Text style={s.removeText}>Remove this watch</Text>
           </TouchableOpacity>
         )}
       </View>
+
+      <ConfirmModal
+        visible={confirmDelete}
+        icon={<Trash2 s={22} c={C.red} w={2} />}
+        title="Remove this watch?"
+        body="Its schedule and settings will be gone."
+        subject={existing?.name}
+        confirmLabel="REMOVE"
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          if (existing) {
+            deleteWatchPlan(existing.id);
+            router.back();
+          }
+        }}
+      />
     </View>
   );
 }
@@ -417,109 +403,64 @@ const s = StyleSheet.create({
     color: C.text,
   },
 
-  chipWrap: {
+  frequencyWrap: {
+    gap: 7,
+  },
+  frequencyChip: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  categoryChip: {
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.surface,
-  },
-  categoryChipOn: {
-    borderColor: C.gold,
-    backgroundColor: C.goldBg,
-  },
-  categoryChipText: {
-    fontFamily: F.sansMedium,
-    fontSize: 13,
-    color: C.textSecondary,
-  },
-  categoryChipTextOn: {
-    color: C.goldDark,
-  },
-
-  segmented: {
-    flexDirection: 'row',
-    height: 42,
-    borderRadius: 999,
-    backgroundColor: '#F3F2ED',
-    padding: 3,
-  },
-  segmentedThumb: {
-    position: 'absolute',
-    top: 3,
-    left: 3,
-    bottom: 3,
-    borderRadius: 999,
-    backgroundColor: C.surface,
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  segmentedCell: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-  segmentedText: {
-    fontFamily: F.sansMedium,
-    fontSize: 13,
-    color: C.textMuted,
-  },
-  segmentedTextActive: {
-    fontFamily: F.sansSemiBold,
-    color: C.text,
-  },
-
-  timeRow: {
-    marginTop: 10,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  timeCell: {
-    flex: 1,
-    backgroundColor: C.surface,
+    gap: 10,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: C.border,
-    paddingVertical: 12,
-    alignItems: 'center',
+    borderColor: '#F0EDE6',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 15,
+    paddingVertical: 11,
   },
-  timeCellLabel: {
-    fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 2,
+  frequencyChipActive: {
+    borderColor: '#D6B067',
+    backgroundColor: '#FFF9EE',
+    shadowColor: C.gold,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.09,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  frequencyLabel: {
+    fontFamily: F.sansSemiBold,
+    fontSize: 14,
+    color: C.text,
+  },
+  frequencyLabelActive: {
+    color: '#6D4F13',
+  },
+  frequencyDesc: {
+    marginTop: 1,
+    fontFamily: F.sans,
+    fontSize: 11.5,
     color: C.textMuted,
   },
-  timeCellRow: {
-    marginTop: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  frequencyDescActive: {
+    color: '#B08A47',
   },
-  timeCellTime: {
-    fontFamily: F.serifMedium,
-    fontSize: 24,
-    color: C.text,
-    fontVariant: ['tabular-nums'],
-    minWidth: 66,
-    textAlign: 'center',
-  },
-  timeStepBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: C.border,
+  frequencyRing: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: '#E5E1D8',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  frequencyRingActive: {
+    borderColor: '#D6B067',
+    backgroundColor: '#FFF9EE',
+  },
+  frequencyDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: C.gold,
   },
 
   dayRow: {
@@ -532,34 +473,46 @@ const s = StyleSheet.create({
     height: 38,
     borderRadius: 19,
     borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.surface,
+    borderColor: '#F0EDE6',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayChipOn: {
-    borderColor: C.gold,
-    backgroundColor: C.gold,
+  dayChipActive: {
+    borderColor: '#D6B067',
+    backgroundColor: '#FFF9EE',
   },
   dayChipText: {
     fontFamily: F.sansMedium,
-    fontSize: 12,
+    fontSize: 11,
     color: C.textSecondary,
   },
-  dayChipTextOn: {
+  dayChipTextActive: {
     fontFamily: F.sansBold,
-    color: '#fff',
+    color: C.goldDark,
   },
-  dayPresetRow: {
-    marginTop: 10,
+
+  timeRow: {
+    marginTop: 12,
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 22,
+    gap: 8,
   },
-  dayPresetText: {
-    fontFamily: F.sansMedium,
-    fontSize: 12,
-    color: C.gold,
+  timeCell: {
+    flex: 1,
+    backgroundColor: C.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    gap: 8,
+  },
+  timeCellLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 2,
+    color: C.textMuted,
   },
 
   strengthRow: {

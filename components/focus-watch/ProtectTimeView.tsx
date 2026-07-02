@@ -8,6 +8,7 @@ import { C, F } from '@/constants/tokens';
 import FocusSwitch from './FocusSwitch';
 import {
   ALLOWLIST_APPS,
+  describeSelection,
   formatWhen,
   practiceName,
   toggleAllowlistMode,
@@ -20,8 +21,7 @@ const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
 
 function PlanCard({ plan }: { plan: WatchPlan }) {
   const router = useRouter();
-  const categoriesLabel =
-    plan.categoryIds.length === 1 ? '1 category' : `${plan.categoryIds.length} categories`;
+  const selectionLabel = describeSelection(plan);
 
   return (
     <TouchableOpacity
@@ -49,7 +49,7 @@ function PlanCard({ plan }: { plan: WatchPlan }) {
             </Text>
           </View>
           <View style={s.metaChip}>
-            <Text style={s.metaChipText}>{categoriesLabel}</Text>
+            <Text style={s.metaChipText}>{selectionLabel}</Text>
           </View>
           <View style={s.metaChip}>
             <Text style={s.metaChipText}>{practiceName(plan.practice)}</Text>
