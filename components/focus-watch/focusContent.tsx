@@ -60,17 +60,6 @@ export type FocusPlaceholderConfig = {
   icon: ReactNode;
 };
 
-export const PROTECT_TIME_PLACEHOLDER: FocusPlaceholderConfig = {
-  barTitle: 'PROTECT TIME',
-  label: 'APP BLOCKING',
-  title: 'Protect Time',
-  description:
-    'Choose the apps that pull you away, set watches and schedules, and let a prayer stand between you and the habit.',
-  tint: '#A9863F',
-  tintBg: '#FBF3DE',
-  icon: <Clock s={30} c="#A9863F" w={1.6} />,
-};
-
 export const CLEAN_SIGHT_PLACEHOLDER: FocusPlaceholderConfig = {
   barTitle: 'CLEAN SIGHT',
   label: 'WEBSITE BLOCKING',

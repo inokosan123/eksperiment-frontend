@@ -8,30 +8,28 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import { C, F } from '@/constants/tokens';
 import NowPanel from './NowPanel';
 import { FOCUS_HERO_CARDS } from './focusContent';
-import { useFocusWatch, type WatchSchedule } from './focusWatchStore';
+import { formatWhen, useFocusWatch, type WatchPlan } from './focusWatchStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
 
-function UpcomingList({ schedules }: { schedules: WatchSchedule[] }) {
+function UpcomingList({ plans }: { plans: WatchPlan[] }) {
   const router = useRouter();
 
   return (
     <Animated.View entering={enter(120)}>
       <Text style={s.sectionLabel}>UPCOMING</Text>
       <View style={s.groupCard}>
-        {schedules.map((schedule, i) => (
-          <View key={schedule.id}>
+        {plans.map((plan, i) => (
+          <View key={plan.id}>
             {i > 0 && <View style={s.separator} />}
             <TouchableOpacity
               style={s.upcomingRow}
               activeOpacity={0.7}
-              onPress={() => router.push('/protect-time' as any)}
+              onPress={() => router.push(`/watch-plan?planId=${plan.id}` as any)}
             >
               <View style={{ flex: 1 }}>
-                <Text style={s.upcomingName}>{schedule.name}</Text>
-                <Text style={s.upcomingMeta}>
-                  {schedule.timeLabel} · {schedule.daysLabel}
-                </Text>
+                <Text style={s.upcomingName}>{plan.name}</Text>
+                <Text style={s.upcomingMeta}>{formatWhen(plan.when)}</Text>
               </View>
               <ChevronRight s={17} c={C.textMuted} />
             </TouchableOpacity>
@@ -90,7 +88,8 @@ function GuardRows() {
 
 export default function FocusWatchView() {
   const router = useRouter();
-  const { schedules } = useFocusWatch();
+  const { plans } = useFocusWatch();
+  const upcoming = plans.filter(plan => plan.enabled && plan.when.kind === 'schedule');
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -111,7 +110,7 @@ export default function FocusWatchView() {
             <NowPanel />
           </Animated.View>
 
-          {schedules.length > 0 && <UpcomingList schedules={schedules} />}
+          {upcoming.length > 0 && <UpcomingList plans={upcoming} />}
 
           <View style={s.heroBlock}>
             {FOCUS_HERO_CARDS.map((card, i) => (

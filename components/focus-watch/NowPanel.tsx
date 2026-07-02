@@ -12,7 +12,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { Flame, Globe } from '@/components/icons/Icons';
+import { Flame, Globe, Shield } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import {
@@ -135,7 +135,7 @@ function QuietState() {
 }
 
 function ActiveState() {
-  const { activeSession, alwaysOn } = useFocusWatch();
+  const { activeSession } = useFocusWatch();
   const [now, setNow] = useState(() => Date.now());
   const [trackWidth, setTrackWidth] = useState(0);
   const progress = useSharedValue(0);
@@ -205,26 +205,21 @@ function ActiveState() {
           <Text style={s.endEarlyText}>End early</Text>
         </TouchableOpacity>
       </View>
-
-      {alwaysOn.length > 0 && (
-        <View style={s.alsoActiveBlock}>
-          <Text style={s.alsoActiveLabel}>ALSO ACTIVE</Text>
-          {alwaysOn.map(layer => (
-            <View key={layer.id} style={s.alsoActiveRow}>
-              <Globe s={13} c={C.textMuted} w={2} />
-              <Text style={s.alsoActiveText}>{layer.name}</Text>
-              <Text style={s.alsoActiveAlways}>always</Text>
-            </View>
-          ))}
-        </View>
-      )}
     </Animated.View>
   );
 }
 
 export default function NowPanel() {
-  const { activeSession } = useFocusWatch();
+  const { activeSession, alwaysOn, allowlistMode } = useFocusWatch();
   const isActive = !!activeSession;
+
+  const layers = useMemo(() => {
+    const result = alwaysOn.map(layer => ({ ...layer, kind: 'web' as const }));
+    if (allowlistMode) {
+      return [...result, { id: 'allowlist', name: 'Simple phone', kind: 'allowlist' as const }];
+    }
+    return result;
+  }, [alwaysOn, allowlistMode]);
 
   return (
     <Animated.View style={s.card} layout={PANEL_TRANSITION}>
@@ -239,6 +234,23 @@ export default function NowPanel() {
       </View>
 
       {isActive ? <ActiveState key="active" /> : <QuietState key="quiet" />}
+
+      {layers.length > 0 && (
+        <View style={s.alsoActiveBlock}>
+          <Text style={s.alsoActiveLabel}>{isActive ? 'ALSO ACTIVE' : 'ALWAYS ON'}</Text>
+          {layers.map(layer => (
+            <View key={layer.id} style={s.alsoActiveRow}>
+              {layer.kind === 'allowlist' ? (
+                <Shield s={13} c={C.textMuted} w={2.2} />
+              ) : (
+                <Globe s={13} c={C.textMuted} w={2} />
+              )}
+              <Text style={s.alsoActiveText}>{layer.name}</Text>
+              <Text style={s.alsoActiveAlways}>always</Text>
+            </View>
+          ))}
+        </View>
+      )}
     </Animated.View>
   );
 }

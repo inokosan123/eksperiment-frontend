@@ -1,6 +1,5 @@
-import FocusPlaceholderView from '@/components/focus-watch/FocusPlaceholderView';
-import { PROTECT_TIME_PLACEHOLDER } from '@/components/focus-watch/focusContent';
+import ProtectTimeView from '@/components/focus-watch/ProtectTimeView';
 
 export default function ProtectTimeScreen() {
-  return <FocusPlaceholderView config={PROTECT_TIME_PLACEHOLDER} />;
+  return <ProtectTimeView />;
 }
