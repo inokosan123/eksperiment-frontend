@@ -54,6 +54,7 @@ import {
   Pencil,
   Plus,
   Sun,
+  Trophy,
   SlidersHorizontal,
   Sparkles,
   Settings,
@@ -63,7 +64,7 @@ import {
 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
-import { AnyTaskCard, type TaskData } from '@/components/shared/TaskCards';
+import { AnyTaskCard, type TaskData, type TaskState } from '@/components/shared/TaskCards';
 import { normalizeHabitIcon } from '@/components/shared/notoEmoji/legacyMap';
 import {
   playAchievementCompleteFeedback,
@@ -77,17 +78,31 @@ import LottieFlame from '@/components/journal/LottieFlame';
 import BigEventsView from '@/components/journal/BigEventsView';
 import WeeklyRhythm from '@/components/home/WeeklyRhythm';
 import MonthlyGoalsView from '@/components/inner-tools/MonthlyGoalsView';
-import HabitsView from '@/components/habits/HabitsView';
+import HabitsView, { type HabitsViewHandle } from '@/components/habits/HabitsView';
 import ChallengesView from '@/components/challenges/ChallengesView';
+import { useChallenges } from '@/components/challenges/ChallengesContext';
+import type { ChallengeCatalogEntry, ChallengeChurchConfig } from '@/components/challenges/challengeData';
+import type { HabitItem } from '@/components/habits/habitDb';
 import MyRoutineView, {
   RoutineTaskEditorSheet,
   routineTaskToDraft,
   type RoutineTask,
 } from '@/components/routine/MyRoutineView';
 import SetAsTaskSheet, {
+  buildPrayerChallengeConfig,
+  ChallengePanel,
+  defaultChallengeSchedule,
+  prayerChallengeDetail,
+  scriptureApproxDays,
+  scriptureDailyAmountLabel,
+  type ChallengeChurchScheduleDraft,
+  type ChallengeScheduleDraft,
+  type JesusPrayerMode,
+  type PrayerChallengeRuleChoice,
   type PrayerType,
   type ScriptureReadingType,
 } from '@/components/shared/SetAsTaskSheet';
+import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import type { TaskDefinition, TaskDraft } from '@/components/tasks/taskTypes';
 import { useGuidedSetup } from '@/components/onboarding/guided/GuidedSetupContext';
@@ -176,6 +191,17 @@ type StepId =
   | 'organizeHabitsIntro'
   | 'organizeHabitsExamples'
   | 'organizeHubComplete'
+  | 'organizeWeeklyIntroV2'
+  | 'organizeHubStartV2'
+  | 'organizeSpiritualBuilderV2'
+  | 'organizeHubAfterSpiritualV2'
+  | 'organizeRoutineBuilderV2'
+  | 'organizeHubAfterRoutineV2'
+  | 'organizeChallengesBuilderV2'
+  | 'organizeHubAfterChallengesV2'
+  | 'organizeHabitsConceptV2'
+  | 'organizeHabitsBuilderV2'
+  | 'organizeHubCompleteV2'
   | 'organizeHomePreview'
   | 'organizeMyRhythmPreview'
   | 'organizeComplete'
@@ -1020,22 +1046,21 @@ function stepOrder(answers: Answers): StepId[] {
     'organizeMacroProgressAfterBigEvents',
     ...(includeMonthlyGoals ? ['organizeMonthlyGoalsIntro' as StepId, 'buildMonthlyGoals' as StepId, 'organizeMacroProgressAfterMonthlyGoals' as StepId] : []),
     'organizeSetupPathAfterAhead',
-    'organizeWeeklyIntro',
-    'organizeWeeklyFrequency',
-    'organizeWeeklyTaskTypes',
+    'organizeWeeklyIntroV2',
+    'organizeHubStartV2',
     'organizeSpiritualTasksIntro',
-    'organizeSpiritualTasksSetup',
-    'organizeHubAfterSpiritual',
+    'organizeSpiritualBuilderV2',
+    'organizeHubAfterSpiritualV2',
     'organizeRoutineTasksIntro',
-    'organizeRoutineTasksSetup',
-    'organizeHubAfterRoutine',
+    'organizeRoutineBuilderV2',
+    'organizeHubAfterRoutineV2',
     'organizeChallengesIntro',
-    'buildChallenges',
-    'organizeHubAfterChallenges',
-    'organizeHabitsIntro',
+    'organizeChallengesBuilderV2',
+    'organizeHubAfterChallengesV2',
+    'organizeHabitsConceptV2',
     'organizeHabitsExamples',
-    'buildHabits',
-    'organizeHubComplete',
+    'organizeHabitsBuilderV2',
+    'organizeHubCompleteV2',
     'organizeHomePreview',
     'organizeMyRhythmPreview',
     'organizeComplete',
@@ -14293,29 +14318,10 @@ const ORGANIZE_RULE_AREAS: {
   },
 ];
 
-// Shared chrome for every organize stage screen: a soft back circle and the
-// carousel-grade header (big serif title, accent underline, serif body) so
-// the title sits in the same place on every screen of the sequence.
-function OrganizeBackButton({ onPress }: { onPress: () => void }) {
-  const insets = useSafeAreaInsets();
-  return (
-    <Reanimated.View
-      entering={FadeIn.delay(240).duration(420)}
-      style={[s.organizeStageBackWrap, { top: insets.top + 6 }]}
-    >
-      <TouchableOpacity
-        onPress={onPress}
-        activeOpacity={0.82}
-        haptic="light"
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        style={s.organizeStageBack}
-      >
-        <ChevronLeft s={22} c="rgba(25,23,20,0.58)" w={2.4} />
-      </TouchableOpacity>
-    </Reanimated.View>
-  );
-}
-
+// Shared header for every organize stage screen — the carousel-grade title
+// (big serif, accent underline, serif body) so the title sits in the same
+// place on every screen of the sequence. These screens never show a back
+// button: the onboarding moves forward only, like every section before it.
 function OrganizeStageHeader({
   title,
   body,
@@ -14614,11 +14620,9 @@ function organizeSideEntrance(index: number, baseDelay = 200) {
 
 function OrganizeRuleMapSlide({
   variant,
-  onBack,
   onNext,
 }: {
   variant: OrganizeSetupMapVariant;
-  onBack?: () => void;
   onNext: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -14631,7 +14635,7 @@ function OrganizeRuleMapSlide({
     s.organizeRuleMapContent,
     {
       flexGrow: 1,
-      paddingTop: Math.max(insets.top + 48, 74),
+      paddingTop: Math.max(insets.top + 26, 52),
       paddingBottom: insets.bottom + 128,
     },
   ];
@@ -14707,7 +14711,6 @@ function OrganizeRuleMapSlide({
 
   return (
     <View style={s.organizeRuleScreen}>
-      {onBack && !autoAdvanceAfterAhead ? <OrganizeBackButton onPress={onBack} /> : null}
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
         <Reanimated.View style={exitStyle}>
           <OrganizeStageHeader
@@ -14771,14 +14774,14 @@ const MACRO_PLANNING_STEPS = [
   },
 ];
 
-function OrganizeMacroIntroSlide({ onBack, onNext }: { onBack?: () => void; onNext: () => void }) {
+function OrganizeMacroIntroSlide({ onNext }: { onNext: () => void }) {
   const insets = useSafeAreaInsets();
   const [activeReady, setActiveReady] = useState(false);
   const contentStyle = [
     s.organizeRuleContent,
     {
       flexGrow: 1,
-      paddingTop: Math.max(insets.top + 48, 74),
+      paddingTop: Math.max(insets.top + 26, 52),
       paddingBottom: insets.bottom + 134,
     },
   ];
@@ -14794,7 +14797,6 @@ function OrganizeMacroIntroSlide({ onBack, onNext }: { onBack?: () => void; onNe
 
   return (
     <View style={s.organizeRuleScreen}>
-      {onBack ? <OrganizeBackButton onPress={onBack} /> : null}
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
         <OrganizeStageHeader
           title="Macro planning"
@@ -14885,7 +14887,7 @@ function OrganizeMacroProgressSlide({
     s.organizeRuleContent,
     {
       flexGrow: 1,
-      paddingTop: Math.max(insets.top + 48, 74),
+      paddingTop: Math.max(insets.top + 26, 52),
       paddingBottom: insets.bottom + 134,
     },
   ];
@@ -15416,7 +15418,6 @@ function OrganizeExampleCarouselSlide({
   body,
   examples,
   ctaLabel,
-  onBack,
   onNext,
 }: {
   overline: string;
@@ -15424,7 +15425,6 @@ function OrganizeExampleCarouselSlide({
   body: string;
   examples: OrganizeExample[];
   ctaLabel: string;
-  onBack?: () => void;
   onNext: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -15493,7 +15493,6 @@ function OrganizeExampleCarouselSlide({
   if (usePolishedExampleCarousel) {
     return (
       <View style={s.organizeRuleScreen}>
-        {onBack ? <OrganizeBackButton onPress={onBack} /> : null}
         <View
           style={[
             s.organizeBigEventsFixedContent,
@@ -15724,7 +15723,6 @@ function OrganizeLessonSlide({
   accent = GOLD,
   children,
   ctaLabel = 'Continue',
-  onBack,
   onNext,
 }: {
   title: string;
@@ -15732,7 +15730,6 @@ function OrganizeLessonSlide({
   accent?: string;
   children: React.ReactNode;
   ctaLabel?: string;
-  onBack?: () => void;
   onNext: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -15740,7 +15737,7 @@ function OrganizeLessonSlide({
     s.organizeRuleContent,
     {
       flexGrow: 1,
-      paddingTop: Math.max(insets.top + 48, 74),
+      paddingTop: Math.max(insets.top + 26, 52),
       paddingBottom: insets.bottom + 134,
     },
   ];
@@ -15748,7 +15745,6 @@ function OrganizeLessonSlide({
 
   return (
     <View style={s.organizeRuleScreen}>
-      {onBack ? <OrganizeBackButton onPress={onBack} /> : null}
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
         <OrganizeStageHeader title={title} body={body} accent={accent} />
 
@@ -15815,12 +15811,11 @@ function OrganizeFrequencyDayDot({
   );
 }
 
-function OrganizeFrequencySlide({ onBack, onNext }: { onBack?: () => void; onNext: () => void }) {
+function OrganizeFrequencySlide({ onNext }: { onNext: () => void }) {
   return (
     <OrganizeLessonSlide
       title="Every task knows its days."
       body="When you add a task, you choose how it repeats. Anasta carries that pattern week after week — you never plan the same thing twice."
-      onBack={onBack}
       onNext={onNext}
     >
       <View style={s.organizeFrequencyBoard}>
@@ -15933,11 +15928,9 @@ const ORGANIZE_HUB_STAGES: Record<OrganizeHubStage, {
 // return here — the finished card seals with a check, the next one wakes.
 function OrganizeWeeklyHubSlide({
   stage,
-  onBack,
   onNext,
 }: {
   stage: OrganizeHubStage;
-  onBack?: () => void;
   onNext: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -16020,7 +16013,6 @@ function OrganizeWeeklyHubSlide({
 
   return (
     <View style={s.organizeRuleScreen}>
-      {onBack ? <OrganizeBackButton onPress={onBack} /> : null}
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
         <Reanimated.View key={showHeadingDone ? 'hub-heading-done' : 'hub-heading'} style={exitStyle}>
           <OrganizeStageHeader
@@ -16193,7 +16185,7 @@ function routineDraftToTaskData(draft: TaskDraft): TaskData {
   };
 }
 
-function OrganizeSpiritualTaskBuilderSlide({ onBack, onNext }: { onBack?: () => void; onNext: () => void }) {
+function OrganizeSpiritualTaskBuilderSlide({ onNext }: { onNext: () => void }) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const { createOrUpdateTask } = useTasks();
@@ -16240,7 +16232,6 @@ function OrganizeSpiritualTaskBuilderSlide({ onBack, onNext }: { onBack?: () => 
 
   return (
     <View style={s.organizeRuleScreen}>
-      {onBack ? <OrganizeBackButton onPress={onBack} /> : null}
       <View style={contentStyle}>
         <Reanimated.View
           entering={FadeInUp.duration(520).easing(Easing.out(Easing.cubic))}
@@ -16409,7 +16400,7 @@ const HABIT_STORY_STEPS = [
   { id: 'run', title: 'Evening run', time: '20:00' },
 ];
 
-function OrganizeHabitStorySlide({ onBack, onNext }: { onBack?: () => void; onNext: () => void }) {
+function OrganizeHabitStorySlide({ onNext }: { onNext: () => void }) {
   const [phase, setPhase] = useState(0);
   const progress = useSharedValue(0);
 
@@ -16450,7 +16441,6 @@ function OrganizeHabitStorySlide({ onBack, onNext }: { onBack?: () => void; onNe
       body="You name the goal, then choose the small actions that build it. Miss one step and you are still moving — the goal holds you, not the single day."
       accent="#2F9B61"
       ctaLabel="See examples"
-      onBack={onBack}
       onNext={onNext}
     >
       <Reanimated.View
@@ -16536,7 +16526,7 @@ type SavedRoutineEntry = {
 
 // The routine mirror of the spiritual builder: your tasks gather on top,
 // a real editor adds new ones, and examples below prefill that same editor.
-function OrganizeRoutineTaskBuilderSlide({ onBack, onNext }: { onBack?: () => void; onNext: () => void }) {
+function OrganizeRoutineTaskBuilderSlide({ onNext }: { onNext: () => void }) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const { createOrUpdateTask } = useTasks();
@@ -16591,7 +16581,6 @@ function OrganizeRoutineTaskBuilderSlide({ onBack, onNext }: { onBack?: () => vo
 
   return (
     <View style={s.organizeRuleScreen}>
-      {onBack ? <OrganizeBackButton onPress={onBack} /> : null}
       <View style={contentStyle}>
         <Reanimated.View
           entering={FadeInUp.duration(520).easing(Easing.out(Easing.cubic))}
@@ -16732,7 +16721,1237 @@ function OrganizeRoutineTaskBuilderSlide({ onBack, onNext }: { onBack?: () => vo
   );
 }
 
-function OrganizeHomePreviewSlide({ onBack, onNext }: { onBack?: () => void; onNext: () => void }) {
+// ============================================================================
+// ORGANIZE — WEEKLY ROUTINE, V2
+// The weekly section rebuilt as final screens: no back buttons, titles on the
+// carousel line, Home-real task cards, and every save creating a real task.
+// ============================================================================
+
+// The most consistent hour a draft was given: the base time, or — when days
+// carry their own times — the hour chosen most often (earliest wins a tie).
+function draftConsistentTime(draft: TaskDraft): string {
+  const schedule = draft.schedule;
+  if (!schedule) return '23:59';
+  const overrides = Object.values(schedule.dayTimes ?? {});
+  if (schedule.sameTimeEveryDay || overrides.length === 0) return schedule.time;
+  const counts = new Map<string, number>();
+  [schedule.time, ...overrides].forEach(time => counts.set(time, (counts.get(time) ?? 0) + 1));
+  let best = schedule.time;
+  let bestCount = 0;
+  [...counts.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .forEach(([time, count]) => {
+      if (count > bestCount) {
+        best = time;
+        bestCount = count;
+      }
+    });
+  return best;
+}
+
+// --- Weekly intro ------------------------------------------------------------
+
+const WEEKLY_V2_DAYS: { day: string; pills: { color: string; width: number }[] }[] = [
+  { day: 'Mon', pills: [{ color: GOLD, width: 46 }, { color: '#4D8586', width: 34 }] },
+  { day: 'Tue', pills: [{ color: GOLD, width: 46 }, { color: '#2F9B61', width: 28 }, { color: '#4D8586', width: 38 }] },
+  { day: 'Wed', pills: [{ color: GOLD, width: 46 }, { color: '#8F5B4B', width: 30 }] },
+  { day: 'Thu', pills: [{ color: GOLD, width: 46 }, { color: '#4D8586', width: 34 }, { color: '#2F9B61', width: 24 }] },
+  { day: 'Fri', pills: [{ color: GOLD, width: 46 }, { color: '#2F9B61', width: 30 }] },
+  { day: 'Sat', pills: [{ color: '#4D8586', width: 42 }, { color: '#8F5B4B', width: 26 }] },
+  { day: 'Sun', pills: [{ color: '#705B9B', width: 52 }, { color: GOLD, width: 32 }] },
+];
+
+const WEEKLY_V2_LEGEND = [
+  { color: GOLD, label: 'Prayer' },
+  { color: '#4D8586', label: 'Duties' },
+  { color: '#2F9B61', label: 'Habits' },
+  { color: '#705B9B', label: 'Church' },
+];
+
+// "Plan once. Live all week." — the week itself is the picture: seven rows,
+// each already carrying its small plan.
+function OrganizeWeeklyIntroV2Slide({ onNext }: { onNext: () => void }) {
+  return (
+    <OrganizeLessonSlide
+      title="Plan once. Live all week."
+      body="Anasta organizes life on a weekly rhythm. Every task knows its days — Monday knows its plan, and so does Sunday."
+      onNext={onNext}
+    >
+      <Reanimated.View
+        entering={FadeInUp.delay(180).duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 24 }, { scale: 0.97 }],
+        })}
+        style={s.weeklyV2Panel}
+      >
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(255,255,255,1)', 'rgba(197,160,89,0.10)', 'rgba(255,251,240,0.96)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        {WEEKLY_V2_DAYS.map((row, index) => (
+          <Reanimated.View
+            key={row.day}
+            entering={FadeInLeft.delay(340 + index * 85).duration(430).easing(Easing.out(Easing.cubic)).withInitialValues({
+              opacity: 0,
+              transform: [{ translateX: -22 }],
+            })}
+            style={[s.weeklyV2Row, index < WEEKLY_V2_DAYS.length - 1 && s.weeklyV2RowBorder]}
+          >
+            <Text style={[s.weeklyV2Day, row.day === 'Sun' && { color: '#705B9B' }]}>{row.day}</Text>
+            <View style={s.weeklyV2Pills}>
+              {row.pills.map((pill, pillIndex) => (
+                <Reanimated.View
+                  key={`${row.day}-${pillIndex}`}
+                  entering={FadeIn.delay(430 + index * 85 + pillIndex * 70).duration(300).withInitialValues({
+                    opacity: 0,
+                    transform: [{ scale: 0.55 }],
+                  })}
+                  style={[s.weeklyV2Pill, { backgroundColor: `${pill.color}2A`, borderColor: `${pill.color}55`, width: pill.width }]}
+                >
+                  <View style={[s.weeklyV2PillDot, { backgroundColor: pill.color }]} />
+                </Reanimated.View>
+              ))}
+            </View>
+          </Reanimated.View>
+        ))}
+        <View style={s.weeklyV2Legend}>
+          {WEEKLY_V2_LEGEND.map(item => (
+            <View key={item.label} style={s.weeklyV2LegendItem}>
+              <View style={[s.weeklyV2PillDot, { backgroundColor: item.color }]} />
+              <Text style={s.weeklyV2LegendText}>{item.label}</Text>
+            </View>
+          ))}
+        </View>
+      </Reanimated.View>
+    </OrganizeLessonSlide>
+  );
+}
+
+// --- The weekly hub -----------------------------------------------------------
+
+type OrganizeHubV2Stage = 'start' | 'afterSpiritual' | 'afterRoutine' | 'afterChallenges' | 'complete';
+
+const HUB_V2_ITEMS: { id: string; accent: string; card: Omit<TaskData, 'state'> }[] = [
+  {
+    id: 'spiritual',
+    accent: GOLD,
+    card: { variant: 'spiritual', title: 'Spiritual Tasks', subtitle: 'Prayer · Scripture · Church', type: 'prayer', habitIconName: 'Cross' },
+  },
+  {
+    id: 'routine',
+    accent: '#8A8177',
+    card: { variant: 'routine', title: 'Routine Tasks', subtitle: 'The duties you repeat', type: 'custom', habitIconName: 'Home' },
+  },
+  {
+    id: 'challenge',
+    accent: GOLD,
+    card: { variant: 'challenge', title: 'Challenges', subtitle: 'One focused commitment', type: 'prayer', habitIconName: 'Sparkles' },
+  },
+  {
+    id: 'habit',
+    accent: '#2F9B61',
+    card: { variant: 'habit', title: 'Habits', subtitle: 'Steps toward a goal', habitColor: '#2F9B61', habitIconName: 'Target' },
+  },
+];
+
+const HUB_V2_STAGES: Record<OrganizeHubV2Stage, {
+  doneBefore: number;
+  checksNow: boolean;
+  title: string;
+  body: string;
+  accent: string;
+  ctaLabel: string | null;
+}> = {
+  start: {
+    doneBefore: 0,
+    checksNow: false,
+    title: 'Four kinds of tasks.',
+    body: 'Spiritual life, daily duties, focused challenges, growing habits — each takes its own place in your week.',
+    accent: GOLD,
+    ctaLabel: 'Set spiritual tasks',
+  },
+  afterSpiritual: {
+    doneBefore: 0,
+    checksNow: true,
+    title: 'Spiritual tasks are set.',
+    body: 'Now the ordinary duties that keep a week steady.',
+    accent: GOLD,
+    ctaLabel: 'Set routine tasks',
+  },
+  afterRoutine: {
+    doneBefore: 1,
+    checksNow: true,
+    title: 'Your duties have a place.',
+    body: 'Next, one focused challenge with a clear finish line.',
+    accent: '#4D8586',
+    ctaLabel: 'Pick a challenge',
+  },
+  afterChallenges: {
+    doneBefore: 2,
+    checksNow: true,
+    title: 'The challenge is set.',
+    body: 'Last come habits — small steps toward a goal.',
+    accent: GOLD,
+    ctaLabel: 'Build your habits',
+  },
+  complete: {
+    doneBefore: 3,
+    checksNow: true,
+    title: 'Your week is built.',
+    body: 'Four kinds of tasks, one rhythm. This is how Anasta carries your days.',
+    accent: '#2F9B61',
+    ctaLabel: null,
+  },
+};
+
+// One hub row: the real Home task card, sealed with the app's own check
+// moment (strike, dim, flourish) and woken with a soft accent ring.
+function HubV2Row({
+  item,
+  state,
+  awake,
+}: {
+  item: (typeof HUB_V2_ITEMS)[number];
+  state: TaskState;
+  awake: boolean;
+}) {
+  const ring = useSharedValue(0);
+
+  useEffect(() => {
+    ring.value = withTiming(awake && state === 'pending' ? 1 : 0, {
+      duration: 460,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [awake, ring, state]);
+
+  const ringStyle = useAnimatedStyle(() => ({
+    opacity: ring.value,
+    transform: [{ scale: interpolate(ring.value, [0, 1], [0.985, 1]) }],
+  }));
+  const lockedStyle = { opacity: state === 'locked' ? 0.52 : 1 };
+
+  return (
+    <View style={s.hubV2RowWrap}>
+      <Reanimated.View pointerEvents="none" style={[s.hubV2Ring, { borderColor: `${item.accent}66`, shadowColor: item.accent }, ringStyle]} />
+      <AnimatedTaskRow done={state === 'done'}>
+        <View style={lockedStyle}>
+          <AnyTaskCard task={{ ...item.card, state }} />
+        </View>
+      </AnimatedTaskRow>
+      <CompletionFlourish done={state === 'done'} color={item.accent} layerStyle={s.hubV2Flourish} />
+    </View>
+  );
+}
+
+function OrganizeHubV2Slide({ stage, onNext }: { stage: OrganizeHubV2Stage; onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const config = HUB_V2_STAGES[stage];
+  const [checkedNow, setCheckedNow] = useState(!config.checksNow);
+  const [awake, setAwake] = useState(false);
+  const exitProgress = useSharedValue(0);
+  const isComplete = stage === 'complete';
+  const doneCount = config.doneBefore + (checkedNow && config.checksNow ? 1 : 0);
+  const pendingIndex = isComplete ? -1 : doneCount;
+
+  const contentStyle = [
+    s.organizeRuleContent,
+    {
+      flexGrow: 1,
+      paddingTop: Math.max(insets.top + 26, 52),
+      paddingBottom: insets.bottom + 128,
+      rowGap: 22,
+    },
+  ];
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+  const exitStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(exitProgress.value, [0, 1], [1, 0]),
+    transform: [
+      { translateY: interpolate(exitProgress.value, [0, 1], [0, -20]) },
+      { scale: interpolate(exitProgress.value, [0, 1], [1, 0.986]) },
+    ],
+  }));
+
+  // The choreography: seal the finished kind with the real task-check
+  // moment, then wake the next card in line.
+  useEffect(() => {
+    setCheckedNow(!config.checksNow);
+    setAwake(false);
+    exitProgress.value = 0;
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    if (config.checksNow) {
+      timers.push(
+        setTimeout(() => {
+          setCheckedNow(true);
+          runPreviewTaskCheckHaptic();
+          void playTaskCheckSoundOnly();
+        }, 780)
+      );
+      timers.push(
+        setTimeout(() => {
+          setAwake(true);
+          if (!isComplete) runBubbleHaptic();
+        }, 1650)
+      );
+    } else {
+      timers.push(
+        setTimeout(() => {
+          setAwake(true);
+          runBubbleHaptic();
+        }, 1050)
+      );
+    }
+    return () => timers.forEach(clearTimeout);
+  }, [config.checksNow, exitProgress, isComplete, stage]);
+
+  // The finished board holds for a breath, then carries itself forward.
+  useEffect(() => {
+    if (!isComplete || !checkedNow) return undefined;
+    let nextTimer: ReturnType<typeof setTimeout> | undefined;
+    const exitTimer = setTimeout(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      exitProgress.value = withTiming(1, {
+        duration: 640,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      });
+      nextTimer = setTimeout(onNext, 690);
+    }, 2050);
+    return () => {
+      clearTimeout(exitTimer);
+      if (nextTimer) clearTimeout(nextTimer);
+    };
+  }, [checkedNow, exitProgress, isComplete, onNext]);
+
+  const ctaVisible = !!config.ctaLabel && awake;
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
+        <Reanimated.View style={exitStyle}>
+          <OrganizeStageHeader title={config.title} body={config.body} accent={config.accent} />
+        </Reanimated.View>
+
+        <Reanimated.View style={[s.hubV2Board, exitStyle]}>
+          {HUB_V2_ITEMS.map((item, index) => {
+            const state: TaskState = index < doneCount ? 'done' : index === pendingIndex ? 'pending' : 'locked';
+            return (
+              <Reanimated.View
+                key={item.id}
+                entering={
+                  stage === 'start'
+                    ? organizeSideEntrance(index, 340)
+                    : FadeInUp.delay(120 + index * 70).duration(430).easing(Easing.out(Easing.cubic)).withInitialValues({
+                        opacity: 0,
+                        transform: [{ translateY: 14 }],
+                      })
+                }
+              >
+                <HubV2Row item={item} state={state} awake={awake} />
+              </Reanimated.View>
+            );
+          })}
+        </Reanimated.View>
+      </ScrollView>
+
+      {config.ctaLabel ? (
+        <AnimatedCta active={ctaVisible} delay={120} style={footerStyle} pointerEvents={ctaVisible ? 'auto' : 'none'}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>{config.ctaLabel}</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      ) : null}
+    </View>
+  );
+}
+
+// --- Spiritual builder V2 ------------------------------------------------------
+
+// The real spiritual catalog, named exactly as the tasks the app creates.
+const SPIRITUAL_V2_ITEMS: {
+  id: string;
+  title: string;
+  hint: string;
+  time?: string;
+  type: NonNullable<TaskData['type']>;
+  icon: string;
+  setup: SpiritualSetupTarget;
+}[] = [
+  { id: 'morning-prayer', title: 'Morning Prayer', hint: 'Every day', time: '07:00', type: 'prayer', icon: 'Sun', setup: { kind: 'sheet', context: 'prayer', prayerType: 'morning' } },
+  { id: 'evening-prayer', title: 'Evening Prayer', hint: 'Every day', time: '21:30', type: 'prayer', icon: 'Moon', setup: { kind: 'sheet', context: 'prayer', prayerType: 'evening' } },
+  { id: 'jesus-prayer', title: 'Jesus Prayer', hint: 'Every day', time: '12:00', type: 'prayer', icon: 'Candle', setup: { kind: 'sheet', context: 'prayer', prayerType: 'jesus' } },
+  { id: 'psalms-reading', title: 'Psalms Reading', hint: 'Every day', time: '18:30', type: 'reading', icon: 'Book', setup: { kind: 'sheet', context: 'scripture', scriptureType: 'psalter' } },
+  { id: 'new-testament', title: 'New Testament Reading', hint: 'Mon – Sat', time: '20:30', type: 'reading', icon: 'Book', setup: { kind: 'sheet', context: 'scripture', scriptureType: 'new_testament' } },
+  { id: 'old-testament', title: 'Old Testament Reading', hint: 'Mon – Sat', time: '20:30', type: 'reading', icon: 'Book', setup: { kind: 'sheet', context: 'scripture', scriptureType: 'old_testament' } },
+  { id: 'church', title: 'Church', hint: 'Sunday', time: '09:00', type: 'church', icon: 'Cross', setup: { kind: 'editor', type: 'church' } },
+  { id: 'custom-spiritual', title: 'Custom Spiritual Task', hint: 'Your own practice', type: 'custom', icon: 'Sparkles', setup: { kind: 'editor', type: 'custom' } },
+];
+
+type SavedV2Entry = {
+  key: string;
+  catalogId: string | null;
+  time: string;
+  card: TaskData;
+};
+
+function insertSortedByTime(list: SavedV2Entry[], entry: SavedV2Entry): SavedV2Entry[] {
+  return [...list, entry].sort((a, b) => a.time.localeCompare(b.time));
+}
+
+// A catalog card waiting to be set up: the exact Home card, resting in gray.
+function V2MutedTaskCard({ card }: { card: TaskData }) {
+  return (
+    <View style={s.v2MutedFrame}>
+      <AnyTaskCard task={card} />
+      <View pointerEvents="none" style={s.v2MutedVeil} />
+    </View>
+  );
+}
+
+function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const { createOrUpdateTask } = useTasks();
+  const [sheetItem, setSheetItem] = useState<(typeof SPIRITUAL_V2_ITEMS)[number] | null>(null);
+  const [editorItem, setEditorItem] = useState<(typeof SPIRITUAL_V2_ITEMS)[number] | null>(null);
+  const [saved, setSaved] = useState<SavedV2Entry[]>([]);
+  const [freshKey, setFreshKey] = useState<string | null>(null);
+  const savedIds = useMemo(() => new Set(saved.map(entry => entry.catalogId)), [saved]);
+  const compact = height < 760;
+  const ready = saved.length > 0;
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+
+  const openItem = (item: (typeof SPIRITUAL_V2_ITEMS)[number]) => {
+    runSelectionHaptic();
+    if (item.setup.kind === 'editor') setEditorItem(item);
+    else setSheetItem(item);
+  };
+
+  const completeSave = useCallback((catalogId: string | null, draft: TaskDraft) => {
+    const key = `${catalogId ?? 'custom'}-${Date.now()}`;
+    const time = draftConsistentTime(draft);
+    setSaved(current =>
+      insertSortedByTime(current, { key, catalogId, time, card: spiritualDraftToTaskData(draft) })
+    );
+    setFreshKey(key);
+    runPreviewTaskCheckHaptic();
+    void playTaskCheckSoundOnly();
+    setTimeout(() => setFreshKey(current => (current === key ? null : current)), 1050);
+  }, []);
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <View
+        style={[
+          s.v2BuilderContent,
+          { paddingTop: Math.max(insets.top + 26, 52), paddingBottom: insets.bottom + 96 },
+        ]}
+      >
+        <OrganizeStageHeader
+          title="Your spiritual rhythm."
+          body="Choose what belongs to your week. Each one becomes a real task, placed at its hour."
+        />
+
+        <Reanimated.View
+          entering={FadeInUp.delay(150).duration(520).easing(Easing.out(Easing.cubic))}
+          style={[s.v2MyPanel, { borderColor: 'rgba(197,160,89,0.28)' }]}
+        >
+          <View style={s.v2PanelHeader}>
+            <Text style={s.v2PanelTitle}>My Spiritual Tasks</Text>
+            <View style={[s.v2PanelCount, { backgroundColor: 'rgba(197,160,89,0.12)', borderColor: 'rgba(197,160,89,0.26)' }]}>
+              <Text style={[s.v2PanelCountText, { color: '#9A7B33' }]}>{saved.length}</Text>
+            </View>
+          </View>
+          {saved.length ? (
+            <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={s.v2SavedList}>
+              {saved.map(entry => (
+                <Reanimated.View
+                  key={entry.key}
+                  entering={FadeInUp.duration(470).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                    opacity: 0,
+                    transform: [{ translateY: 16 }, { scale: 0.97 }],
+                  })}
+                  layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
+                >
+                  <SpiritualSavedTaskCard card={entry.card} fresh={freshKey === entry.key} />
+                </Reanimated.View>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={s.v2Empty}>
+              <View style={[s.v2EmptyIcon, { backgroundColor: 'rgba(197,160,89,0.12)', borderColor: 'rgba(197,160,89,0.22)' }]}>
+                <Candle s={17} c={GOLD} w={2} />
+              </View>
+              <Text style={s.v2EmptyTitle}>Nothing set yet</Text>
+              <Text style={s.v2EmptyBody}>Tap a task below — it will take its place here, by its hour.</Text>
+            </View>
+          )}
+        </Reanimated.View>
+
+        <Reanimated.View
+          entering={FadeInUp.delay(240).duration(520).easing(Easing.out(Easing.cubic))}
+          style={[s.v2CatalogPanel, { maxHeight: compact ? height * 0.34 : height * 0.38 }]}
+        >
+          <View style={s.v2PanelHeader}>
+            <Text style={s.v2CatalogTitle}>Spiritual Tasks</Text>
+            <Text style={s.v2CatalogHint}>Tap to set up</Text>
+          </View>
+          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={s.v2CatalogList}>
+            {SPIRITUAL_V2_ITEMS.filter(item => !savedIds.has(item.id)).map(item => (
+              <Reanimated.View
+                key={item.id}
+                exiting={FadeOut.duration(200)}
+                layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
+              >
+                <TouchableOpacity activeOpacity={0.88} haptic="none" onPress={() => openItem(item)}>
+                  <V2MutedTaskCard
+                    card={{
+                      variant: 'spiritual',
+                      title: item.title,
+                      time: item.time,
+                      subtitle: item.hint,
+                      state: 'pending',
+                      type: item.type,
+                      habitIconName: item.icon,
+                    }}
+                  />
+                </TouchableOpacity>
+              </Reanimated.View>
+            ))}
+          </ScrollView>
+        </Reanimated.View>
+      </View>
+
+      {sheetItem ? (
+        <SetAsTaskSheet
+          visible={!!sheetItem}
+          context={sheetItem.setup.kind === 'sheet' ? sheetItem.setup.context : 'prayer'}
+          initialPrayerType={sheetItem.setup.kind === 'sheet' ? sheetItem.setup.prayerType : undefined}
+          initialScriptureType={sheetItem.setup.kind === 'sheet' ? sheetItem.setup.scriptureType : undefined}
+          onClose={() => setSheetItem(null)}
+          onTaskDraft={async draft => {
+            const target = sheetItem;
+            await createOrUpdateTask(draft);
+            if (target) completeSave(target.id, draft);
+          }}
+        />
+      ) : null}
+
+      <RoutineTaskEditorSheet
+        visible={!!editorItem}
+        task={null}
+        defaultLevel={1}
+        defaultType={editorItem?.setup.kind === 'editor' ? editorItem.setup.type : 'custom'}
+        onClose={() => setEditorItem(null)}
+        onSave={async task => {
+          const target = editorItem;
+          const draft = routineTaskToDraft(task);
+          await createOrUpdateTask(draft);
+          setEditorItem(null);
+          if (target) completeSave(target.id, draft);
+        }}
+        onDelete={() => {}}
+      />
+
+      <AnimatedCta active delay={220} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            haptic={ready ? 'medium' : 'none'}
+            disabled={!ready}
+            onPress={onNext}
+            style={[s.primaryButton, !ready && s.primaryButtonDisabled]}
+          >
+            <Text style={[s.primaryButtonText, !ready && s.primaryButtonDisabledText]}>Continue</Text>
+            <ChevronRight s={19} c={ready ? '#FFFFFF' : 'rgba(25,23,20,0.32)'} w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+// --- Routine builder V2 --------------------------------------------------------
+
+function OrganizeRoutineBuilderV2Slide({ onNext }: { onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const { createOrUpdateTask } = useTasks();
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [saved, setSaved] = useState<SavedV2Entry[]>([]);
+  const [freshKey, setFreshKey] = useState<string | null>(null);
+  const ready = saved.length > 0;
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+
+  const completeSave = useCallback((draft: TaskDraft) => {
+    const key = `routine-${Date.now()}`;
+    const time = draftConsistentTime(draft);
+    setSaved(current =>
+      insertSortedByTime(current, { key, catalogId: null, time, card: routineDraftToTaskData(draft) })
+    );
+    setFreshKey(key);
+    runPreviewTaskCheckHaptic();
+    void playTaskCheckSoundOnly();
+    setTimeout(() => setFreshKey(current => (current === key ? null : current)), 1050);
+  }, []);
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <View
+        style={[
+          s.v2BuilderContent,
+          { paddingTop: Math.max(insets.top + 26, 52), paddingBottom: insets.bottom + 96 },
+        ]}
+      >
+        <OrganizeStageHeader
+          title="Your ordinary week."
+          body="Cleaning, study, work — add the duties you repeat, and give each its day and hour."
+          accent="#4D8586"
+        />
+
+        <Reanimated.View
+          entering={FadeInUp.delay(150).duration(520).easing(Easing.out(Easing.cubic))}
+          style={[s.v2MyPanel, s.v2MyPanelTall, { borderColor: 'rgba(77,133,134,0.30)' }]}
+        >
+          <View style={s.v2PanelHeader}>
+            <Text style={s.v2PanelTitle}>My Routine Tasks</Text>
+            <View style={[s.v2PanelCount, { backgroundColor: 'rgba(77,133,134,0.12)', borderColor: 'rgba(77,133,134,0.26)' }]}>
+              <Text style={[s.v2PanelCountText, { color: '#3D6B6C' }]}>{saved.length}</Text>
+            </View>
+          </View>
+          {saved.length ? (
+            <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={s.v2SavedList}>
+              {saved.map(entry => (
+                <Reanimated.View
+                  key={entry.key}
+                  entering={FadeInUp.duration(470).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                    opacity: 0,
+                    transform: [{ translateY: 16 }, { scale: 0.97 }],
+                  })}
+                  layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
+                >
+                  <SpiritualSavedTaskCard card={entry.card} fresh={freshKey === entry.key} />
+                </Reanimated.View>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={s.v2Empty}>
+              <View style={[s.v2EmptyIcon, { backgroundColor: 'rgba(77,133,134,0.12)', borderColor: 'rgba(77,133,134,0.24)' }]}>
+                <ListChecks s={17} c="#4D8586" w={2} />
+              </View>
+              <Text style={s.v2EmptyTitle}>No routine tasks yet</Text>
+              <Text style={s.v2EmptyBody}>Add the first one — laundry, study, anything your week repeats.</Text>
+            </View>
+          )}
+        </Reanimated.View>
+
+        <Reanimated.View entering={FadeInUp.delay(240).duration(520).easing(Easing.out(Easing.cubic))}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            haptic="medium"
+            onPress={() => setEditorOpen(true)}
+            style={s.v2AddButton}
+          >
+            <View style={s.v2AddIcon}>
+              <Plus s={15} c="#FFFFFF" w={2.6} />
+            </View>
+            <Text style={s.v2AddText}>Add routine task</Text>
+          </TouchableOpacity>
+        </Reanimated.View>
+      </View>
+
+      <RoutineTaskEditorSheet
+        visible={editorOpen}
+        task={null}
+        defaultLevel={2}
+        defaultType="custom"
+        onClose={() => setEditorOpen(false)}
+        onSave={async task => {
+          const draft = routineTaskToDraft(task);
+          await createOrUpdateTask(draft);
+          setEditorOpen(false);
+          completeSave(draft);
+        }}
+        onDelete={() => {}}
+      />
+
+      <AnimatedCta active delay={220} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            haptic={ready ? 'medium' : 'none'}
+            disabled={!ready}
+            onPress={onNext}
+            style={[s.primaryButton, !ready && s.primaryButtonDisabled]}
+          >
+            <Text style={[s.primaryButtonText, !ready && s.primaryButtonDisabledText]}>Continue</Text>
+            <ChevronRight s={19} c={ready ? '#FFFFFF' : 'rgba(25,23,20,0.32)'} w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+// --- Challenges builder V2 -------------------------------------------------------
+
+const CHALLENGE_V2_TYPE: Record<string, NonNullable<TaskData['type']>> = {
+  prayer: 'prayer',
+  scripture: 'reading',
+  journal: 'journal',
+  church: 'church',
+};
+
+const CHALLENGE_V2_GROUPS: { id: 'prayer' | 'scripture' | 'journal' | 'church'; label: string }[] = [
+  { id: 'prayer', label: 'PRAYER' },
+  { id: 'scripture', label: 'SCRIPTURE' },
+  { id: 'journal', label: 'JOURNAL' },
+  { id: 'church', label: 'CHURCH' },
+];
+
+const CHALLENGE_V2_CHURCH_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+
+// Local copies of the church-schedule mappers ChallengesView keeps privately —
+// onboarding-only, so the app files stay untouched.
+function v2DefaultChurchSchedule(time = '09:00'): ChallengeChurchScheduleDraft {
+  return {
+    frequency: 'specific_days',
+    selectedDays: [6],
+    monthlyDays: [1],
+    time,
+    sameTimeEveryDay: true,
+    dayTimes: {},
+    notificationMode: 'single',
+    reminderMinutes: 15,
+  };
+}
+
+function v2ChurchScheduleLabel(schedule: ChallengeChurchScheduleDraft) {
+  switch (schedule.frequency) {
+    case 'daily':
+      return 'Daily';
+    case 'weekdays':
+      return 'Weekdays';
+    case 'weekends':
+      return 'Weekends';
+    case 'monthly':
+      return `Monthly ${schedule.monthlyDays.join(', ')}`;
+    case 'specific_days': {
+      const days = schedule.selectedDays.length ? schedule.selectedDays : [6];
+      if (days.length === 1 && days[0] === 6) return 'Every Sunday';
+      return days.map(day => CHALLENGE_V2_CHURCH_DAYS[day]).join(' / ');
+    }
+    default:
+      return 'Every Sunday';
+  }
+}
+
+function v2ChurchScheduleToConfig(schedule: ChallengeChurchScheduleDraft): ChallengeChurchConfig {
+  return {
+    frequency: schedule.frequency,
+    selectedDays: schedule.frequency === 'specific_days'
+      ? (schedule.selectedDays.length ? schedule.selectedDays : [6])
+      : [],
+    monthlyDays: schedule.frequency === 'monthly' ? schedule.monthlyDays : [1],
+    time: schedule.time,
+    sameTimeEveryDay: schedule.sameTimeEveryDay,
+    dayTimes: schedule.sameTimeEveryDay ? {} : schedule.dayTimes,
+    notificationMode: schedule.notificationMode,
+    reminderMinutes: schedule.notificationMode === 'double' ? schedule.reminderMinutes : undefined,
+  };
+}
+
+function OrganizeChallengesBuilderV2Slide({ onNext }: { onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const {
+    activeChallenges,
+    availableCatalogEntries,
+    startChallenge,
+    refreshChallenges,
+  } = useChallenges();
+  const { refresh: refreshTasks } = useTasks();
+  const [setupEntry, setSetupEntry] = useState<ChallengeCatalogEntry | null>(null);
+  const [selectedCatalog, setSelectedCatalog] = useState<ChallengeCatalogEntry | null>(null);
+  const [selectedPaceId, setSelectedPaceId] = useState<string | null>(null);
+  const [challengeSchedule, setChallengeSchedule] = useState<ChallengeScheduleDraft>(defaultChallengeSchedule('08:00'));
+  const [scriptureDailyAmount, setScriptureDailyAmount] = useState(1);
+  const [challengePrayerRule, setChallengePrayerRule] = useState<PrayerChallengeRuleChoice>('personal');
+  const [challengeJesusMode, setChallengeJesusMode] = useState<JesusPrayerMode>('duration');
+  const [challengeJesusDuration, setChallengeJesusDuration] = useState('15');
+  const [challengeJesusCount, setChallengeJesusCount] = useState('100');
+  const [churchSchedule, setChurchSchedule] = useState<ChallengeChurchScheduleDraft>(v2DefaultChurchSchedule());
+  const [expandedChallengeId, setExpandedChallengeId] = useState<string | null>(null);
+  const [freshId, setFreshId] = useState<string | null>(null);
+  const ready = activeChallenges.length > 0;
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+
+  const openEntry = (entry: ChallengeCatalogEntry) => {
+    runSelectionHaptic();
+    setSetupEntry(entry);
+    setSelectedCatalog(entry);
+    setSelectedPaceId(entry.paceOptions?.[0]?.id ?? null);
+    setChallengeSchedule(defaultChallengeSchedule(entry.defaultTime ?? '08:00'));
+    setScriptureDailyAmount(1);
+    setChallengePrayerRule('personal');
+    setChallengeJesusMode('duration');
+    setChallengeJesusDuration('15');
+    setChallengeJesusCount('100');
+    setChurchSchedule(v2DefaultChurchSchedule(entry.defaultTime ?? '09:00'));
+  };
+
+  const closeSheet = () => {
+    setSetupEntry(null);
+    setSelectedCatalog(null);
+    setExpandedChallengeId(null);
+  };
+
+  // Mirrors ChallengesView.startUnifiedChallenge so the onboarding start
+  // behaves exactly like starting the same challenge inside the app.
+  const startSelected = async () => {
+    if (!selectedCatalog) return;
+    const selectedPace = selectedCatalog.paceOptions?.find(option => option.id === selectedPaceId)
+      ?? selectedCatalog.paceOptions?.[0]
+      ?? null;
+
+    let record;
+    if (selectedCatalog.category === 'church') {
+      record = await startChallenge(selectedCatalog.id, selectedPace, {
+        time: churchSchedule.time,
+        scheduleLabel: v2ChurchScheduleLabel(churchSchedule),
+        churchConfig: v2ChurchScheduleToConfig(churchSchedule),
+      });
+    } else if (selectedCatalog.category === 'scripture') {
+      const chaptersPerDay = selectedCatalog.id === 'lectionary_daily' ? 0 : Math.max(1, scriptureDailyAmount);
+      const totalDays = selectedCatalog.id === 'lectionary_daily'
+        ? 365
+        : scriptureApproxDays(selectedCatalog, chaptersPerDay) || 1;
+      record = await startChallenge(selectedCatalog.id, null, {
+        title: selectedCatalog.id === 'lectionary_daily' ? `${selectedCatalog.title} - 365 Days` : selectedCatalog.title,
+        time: challengeSchedule.time,
+        scheduleLabel: selectedCatalog.scheduleLabel,
+        paceLabel: selectedCatalog.id === 'lectionary_daily'
+          ? undefined
+          : scriptureDailyAmountLabel(selectedCatalog, chaptersPerDay),
+        durationDays: totalDays,
+        progressTotal: selectedCatalog.id === 'lectionary_daily' ? 0 : totalDays,
+        progressUnit: 'days',
+        headline: selectedCatalog.id === 'lectionary_daily' ? 'Day 1' : `Day 1 of ${totalDays}`,
+        subline: selectedCatalog.id === 'lectionary_daily'
+          ? 'Church-calendar daily readings'
+          : `0/${totalDays} days completed`,
+        showBar: selectedCatalog.id !== 'lectionary_daily',
+        totalUnits: selectedCatalog.totalUnits ?? 0,
+        scriptureConfig: {
+          chaptersPerDay,
+          time: challengeSchedule.time,
+          sameTimeEveryDay: challengeSchedule.sameTimeEveryDay,
+          dayTimes: challengeSchedule.sameTimeEveryDay ? {} : challengeSchedule.dayTimes,
+          notificationMode: challengeSchedule.notificationMode,
+          reminderMinutes: challengeSchedule.notificationMode === 'double' ? challengeSchedule.reminderMinutes : undefined,
+        },
+      });
+    } else {
+      const prayerDetail = prayerChallengeDetail(
+        selectedCatalog,
+        challengePrayerRule,
+        challengeJesusMode,
+        challengeJesusDuration,
+        challengeJesusCount,
+      );
+      const prayerConfig = buildPrayerChallengeConfig(
+        selectedCatalog,
+        challengePrayerRule,
+        challengeJesusMode,
+        challengeJesusDuration,
+        challengeJesusCount,
+        challengeSchedule,
+      );
+      const paceLabel = selectedCatalog.category === 'prayer'
+        ? [selectedPace?.label, prayerDetail].filter(Boolean).join(' · ')
+        : selectedPace?.label;
+
+      record = await startChallenge(selectedCatalog.id, selectedPace, {
+        time: challengeSchedule.time,
+        scheduleLabel: selectedCatalog.scheduleLabel,
+        paceLabel,
+        prayerConfig: selectedCatalog.category === 'prayer' ? prayerConfig : undefined,
+      });
+    }
+
+    await refreshTasks();
+    await refreshChallenges();
+    closeSheet();
+    if (record) {
+      setFreshId(record.id);
+      runPreviewTaskCheckHaptic();
+      void playTaskCheckSoundOnly();
+      setTimeout(() => setFreshId(current => (current === record.id ? null : current)), 1050);
+    }
+  };
+
+  const catalogByGroup = useMemo(
+    () => CHALLENGE_V2_GROUPS.map(group => ({
+      ...group,
+      items: availableCatalogEntries.filter(entry => entry.category === group.id),
+    })).filter(group => group.items.length > 0),
+    [availableCatalogEntries]
+  );
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <View
+        style={[
+          s.v2BuilderContent,
+          { paddingTop: Math.max(insets.top + 26, 52), paddingBottom: insets.bottom + 96 },
+        ]}
+      >
+        <OrganizeStageHeader
+          title="Choose your challenge."
+          body="One clear commitment with a beginning and an end. Anasta counts the days with you."
+        />
+
+        <Reanimated.View
+          entering={FadeInUp.delay(150).duration(520).easing(Easing.out(Easing.cubic))}
+          style={[s.v2MyPanel, { borderColor: 'rgba(197,160,89,0.28)' }]}
+        >
+          <View style={s.v2PanelHeader}>
+            <Text style={s.v2PanelTitle}>My Challenges</Text>
+            <View style={[s.v2PanelCount, { backgroundColor: 'rgba(197,160,89,0.12)', borderColor: 'rgba(197,160,89,0.26)' }]}>
+              <Text style={[s.v2PanelCountText, { color: '#9A7B33' }]}>{activeChallenges.length}</Text>
+            </View>
+          </View>
+          {activeChallenges.length ? (
+            <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={s.v2SavedList}>
+              {activeChallenges.map(challenge => (
+                <Reanimated.View
+                  key={challenge.id}
+                  entering={FadeInUp.duration(470).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                    opacity: 0,
+                    transform: [{ translateY: 16 }, { scale: 0.97 }],
+                  })}
+                  layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
+                >
+                  <SpiritualSavedTaskCard
+                    card={{
+                      variant: 'challenge',
+                      title: challenge.title,
+                      time: challenge.time ?? undefined,
+                      subtitle: challenge.paceLabel ?? challenge.scheduleLabel ?? 'Challenge',
+                      state: 'pending',
+                      type: CHALLENGE_V2_TYPE[challenge.category] ?? 'custom',
+                    }}
+                    fresh={freshKeyForChallenge(freshId, challenge.id)}
+                  />
+                </Reanimated.View>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={s.v2Empty}>
+              <View style={[s.v2EmptyIcon, { backgroundColor: 'rgba(197,160,89,0.12)', borderColor: 'rgba(197,160,89,0.22)' }]}>
+                <Trophy s={17} c={GOLD} />
+              </View>
+              <Text style={s.v2EmptyTitle}>No challenge yet</Text>
+              <Text style={s.v2EmptyBody}>Pick one below — thirty days of prayer, a Gospel, a journal.</Text>
+            </View>
+          )}
+        </Reanimated.View>
+
+        <Reanimated.View
+          entering={FadeInUp.delay(240).duration(520).easing(Easing.out(Easing.cubic))}
+          style={[s.v2CatalogPanel, { maxHeight: height * 0.4 }]}
+        >
+          <View style={s.v2PanelHeader}>
+            <Text style={s.v2CatalogTitle}>Challenges</Text>
+            <Text style={s.v2CatalogHint}>Tap to set up</Text>
+          </View>
+          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={s.v2CatalogList}>
+            {catalogByGroup.map(group => (
+              <View key={group.id}>
+                <Text style={s.v2GroupLabel}>{group.label}</Text>
+                {group.items.map(entry => (
+                  <TouchableOpacity key={entry.id} activeOpacity={0.88} haptic="none" onPress={() => openEntry(entry)}>
+                    <V2MutedTaskCard
+                      card={{
+                        variant: 'challenge',
+                        title: entry.title,
+                        time: entry.defaultTime ?? undefined,
+                        subtitle: entry.scheduleLabel ?? entry.paceOptions?.[0]?.label ?? 'Challenge',
+                        state: 'pending',
+                        type: CHALLENGE_V2_TYPE[entry.category] ?? 'custom',
+                      }}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ))}
+          </ScrollView>
+        </Reanimated.View>
+      </View>
+
+      <SmoothBottomSheet visible={!!setupEntry} onClose={closeSheet} sheetStyle={s.v2ChallengeSheet} keyboardAware>
+        <View style={s.v2SheetHandle} />
+        <View style={s.v2SheetHeader}>
+          <Text style={s.v2SheetTitle} numberOfLines={1}>{setupEntry?.title ?? ''}</Text>
+          <TouchableOpacity onPress={closeSheet} activeOpacity={0.8} style={s.v2SheetClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <X s={17} c="rgba(25,23,20,0.55)" w={2.2} />
+          </TouchableOpacity>
+        </View>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.v2SheetContent}>
+          {setupEntry ? (
+            <ChallengePanel
+              context={setupEntry.category as 'prayer' | 'scripture' | 'journal' | 'church'}
+              activeItems={[]}
+              pausedItems={[]}
+              availableItems={[setupEntry]}
+              selectedCatalog={selectedCatalog}
+              selectedPaceId={selectedPaceId}
+              challengeSchedule={challengeSchedule}
+              scriptureDailyAmount={scriptureDailyAmount}
+              challengePrayerRule={challengePrayerRule}
+              challengeJesusMode={challengeJesusMode}
+              challengeJesusDuration={challengeJesusDuration}
+              challengeJesusCount={challengeJesusCount}
+              churchSchedule={churchSchedule}
+              expandedChallengeId={expandedChallengeId}
+              recentlyStartedTemplateId={null}
+              onOpenSetup={entry => setSelectedCatalog(current => (current?.id === entry.id ? null : entry))}
+              onSelectedPaceIdChange={setSelectedPaceId}
+              onChallengeScheduleChange={setChallengeSchedule}
+              onScriptureDailyAmountChange={setScriptureDailyAmount}
+              onChallengePrayerRuleChange={setChallengePrayerRule}
+              onChallengeJesusModeChange={setChallengeJesusMode}
+              onChallengeJesusDurationChange={setChallengeJesusDuration}
+              onChallengeJesusCountChange={setChallengeJesusCount}
+              onChurchScheduleChange={setChurchSchedule}
+              onStartChallenge={startSelected}
+              onExpandedChallengeChange={setExpandedChallengeId}
+              onPauseChallenge={() => {}}
+              onResumeChallenge={() => {}}
+              onEndChallenge={() => {}}
+              onUpdateChallenge={() => {}}
+            />
+          ) : null}
+        </ScrollView>
+      </SmoothBottomSheet>
+
+      <AnimatedCta active delay={220} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            haptic={ready ? 'medium' : 'none'}
+            disabled={!ready}
+            onPress={onNext}
+            style={[s.primaryButton, !ready && s.primaryButtonDisabled]}
+          >
+            <Text style={[s.primaryButtonText, !ready && s.primaryButtonDisabledText]}>Continue</Text>
+            <ChevronRight s={19} c={ready ? '#FFFFFF' : 'rgba(25,23,20,0.32)'} w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+function freshKeyForChallenge(freshId: string | null, challengeId: string) {
+  return freshId === challengeId;
+}
+
+// --- Habits: concept + builder V2 -----------------------------------------------
+
+function OrganizeHabitsConceptV2Slide({ onNext }: { onNext: () => void }) {
+  const [phase, setPhase] = useState(0);
+  const progress = useSharedValue(0);
+
+  // walk ✓ → gym ✓ → run missed → the lesson lands. Short and direct.
+  useEffect(() => {
+    const timers = [
+      setTimeout(() => {
+        setPhase(1);
+        runPreviewTaskCheckHaptic();
+        void playTaskCheckSoundOnly();
+        progress.value = withTiming(1 / 3, { duration: 460, easing: Easing.out(Easing.cubic) });
+      }, 720),
+      setTimeout(() => {
+        setPhase(2);
+        runPreviewTaskCheckHaptic();
+        void playTaskCheckSoundOnly();
+        progress.value = withTiming(2 / 3, { duration: 460, easing: Easing.out(Easing.cubic) });
+      }, 1440),
+      setTimeout(() => {
+        setPhase(3);
+        runSelectionHaptic();
+      }, 2100),
+      setTimeout(() => {
+        setPhase(4);
+        runBubbleHaptic();
+      }, 2620),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, [progress]);
+
+  const progressStyle = useAnimatedStyle(() => ({
+    width: `${progress.value * 100}%`,
+  }));
+
+  return (
+    <OrganizeLessonSlide
+      title="A goal, carried by steps."
+      body="Name the goal, choose the steps that build it. Even one step a day is movement — the goal keeps you going, not the streak."
+      accent="#2F9B61"
+      ctaLabel="See examples"
+      onNext={onNext}
+    >
+      <Reanimated.View
+        entering={FadeInUp.delay(180).duration(540).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 22 }, { scale: 0.97 }],
+        })}
+        style={s.habitStoryCard}
+      >
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(255,255,255,1)', 'rgba(47,155,97,0.12)', 'rgba(255,255,255,0.94)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={s.habitStoryHeader}>
+          <View style={s.habitStoryGoalIcon}>
+            <Target s={19} c="#2F9B61" w={2.1} />
+          </View>
+          <View style={s.habitStoryGoalCopy}>
+            <Text style={s.habitStoryGoalLabel}>THE GOAL</Text>
+            <Text style={s.habitStoryGoalTitle}>Lose weight</Text>
+          </View>
+        </View>
+
+        <View style={s.habitStoryProgressTrack}>
+          <Reanimated.View style={[s.habitStoryProgressFill, progressStyle]} />
+        </View>
+
+        <View style={s.habitStorySteps}>
+          {HABIT_STORY_STEPS.map((step, index) => {
+            const checked = phase >= index + 1 && index < 2;
+            const missed = phase >= 3 && index === 2;
+            return (
+              <View key={step.id} style={s.habitStoryStepRow}>
+                <View
+                  style={[
+                    s.habitStoryStepCheck,
+                    checked && s.habitStoryStepCheckDone,
+                    missed && s.habitStoryStepCheckMissed,
+                  ]}
+                >
+                  {checked ? (
+                    <Reanimated.View entering={FadeIn.duration(200).withInitialValues({ opacity: 0, transform: [{ scale: 0.4 }] })}>
+                      <CheckSmall s={13} c="#FFFFFF" w={3} />
+                    </Reanimated.View>
+                  ) : null}
+                  {missed ? <View style={s.habitStoryStepMissDash} /> : null}
+                </View>
+                <Text style={[s.habitStoryStepTitle, missed && s.habitStoryStepTitleMissed]}>{step.title}</Text>
+                <Text style={s.habitStoryStepTime}>{step.time}</Text>
+              </View>
+            );
+          })}
+        </View>
+
+        {phase >= 4 ? (
+          <Reanimated.View entering={FadeInUp.duration(400).easing(Easing.out(Easing.cubic))} style={s.habitStoryLesson}>
+            <LottieFlame size={22} />
+            <Text style={s.habitStoryLessonText}>2 of 3 — still moving toward the goal.</Text>
+          </Reanimated.View>
+        ) : null}
+      </Reanimated.View>
+    </OrganizeLessonSlide>
+  );
+}
+
+function OrganizeHabitsBuilderV2Slide({ onNext }: { onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const habitsRef = useRef<HabitsViewHandle>(null);
+  const [habits, setHabits] = useState<HabitItem[]>([]);
+  const ready = habits.length > 0;
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <View
+        style={[
+          s.v2BuilderContent,
+          { paddingTop: Math.max(insets.top + 26, 52), paddingBottom: insets.bottom + 96 },
+        ]}
+      >
+        <OrganizeStageHeader
+          title="Build your first habit."
+          body="Name the goal, add its steps — each step joins your week as a daily task."
+          accent="#2F9B61"
+        />
+
+        <Reanimated.View
+          entering={FadeInUp.delay(150).duration(520).easing(Easing.out(Easing.cubic))}
+          style={[s.v2MyPanel, s.v2HabitsPanel, { maxHeight: height * 0.46, borderColor: 'rgba(47,155,97,0.30)' }]}
+        >
+          <View style={s.v2PanelHeader}>
+            <Text style={s.v2PanelTitle}>My Habits</Text>
+            <View style={[s.v2PanelCount, { backgroundColor: 'rgba(47,155,97,0.12)', borderColor: 'rgba(47,155,97,0.26)' }]}>
+              <Text style={[s.v2PanelCountText, { color: '#22794B' }]}>{habits.length}</Text>
+            </View>
+          </View>
+          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={s.v2HabitsScroll}>
+            <HabitsView compact activeOnly ref={habitsRef} onHabitsChanged={setHabits} />
+            {habits.length === 0 ? (
+              <View style={s.v2Empty}>
+                <View style={[s.v2EmptyIcon, { backgroundColor: 'rgba(47,155,97,0.12)', borderColor: 'rgba(47,155,97,0.24)' }]}>
+                  <Target s={17} c="#2F9B61" w={2} />
+                </View>
+                <Text style={s.v2EmptyTitle}>No habits yet</Text>
+                <Text style={s.v2EmptyBody}>Start with one goal and two or three honest steps.</Text>
+              </View>
+            ) : null}
+          </ScrollView>
+        </Reanimated.View>
+
+        <Reanimated.View entering={FadeInUp.delay(240).duration(520).easing(Easing.out(Easing.cubic))}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            haptic="medium"
+            onPress={() => habitsRef.current?.openAddHabit()}
+            style={[s.v2AddButton, s.v2AddButtonHabit]}
+          >
+            <View style={s.v2AddIcon}>
+              <Plus s={15} c="#FFFFFF" w={2.6} />
+            </View>
+            <Text style={s.v2AddText}>Add habit</Text>
+          </TouchableOpacity>
+        </Reanimated.View>
+      </View>
+
+      <AnimatedCta active delay={220} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            haptic={ready ? 'medium' : 'none'}
+            disabled={!ready}
+            onPress={onNext}
+            style={[s.primaryButton, !ready && s.primaryButtonDisabled]}
+          >
+            <Text style={[s.primaryButtonText, !ready && s.primaryButtonDisabledText]}>Continue</Text>
+            <ChevronRight s={19} c={ready ? '#FFFFFF' : 'rgba(25,23,20,0.32)'} w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+function OrganizeHomePreviewSlide({ onNext }: { onNext: () => void }) {
   const rows = [
     { title: 'Morning Prayer', meta: '07:00 · Every day', accent: GOLD, icon: <Sun s={17} c={GOLD} w={2} /> },
     { title: 'Scripture Reading', meta: '20:30 · Mon - Sat', accent: '#4D8586', icon: <BookMarked s={17} c="#4D8586" w={2} /> },
@@ -16744,7 +17963,6 @@ function OrganizeHomePreviewSlide({ onBack, onNext }: { onBack?: () => void; onN
       title="This becomes your day."
       body="Home shows what is planned now. Check a task, uncheck it, skip it, or long-press to see progress."
       ctaLabel="Show My Rhythm"
-      onBack={onBack}
       onNext={onNext}
     >
       <Reanimated.View entering={FadeInUp.delay(160).duration(620).easing(Easing.out(Easing.cubic))} style={s.organizePhoneMock}>
@@ -16778,7 +17996,7 @@ function OrganizeHomePreviewSlide({ onBack, onNext }: { onBack?: () => void; onN
   );
 }
 
-function OrganizeMyRhythmPreviewSlide({ onBack, onNext }: { onBack?: () => void; onNext: () => void }) {
+function OrganizeMyRhythmPreviewSlide({ onNext }: { onNext: () => void }) {
   const sections = [
     { title: 'Spiritual', body: 'Prayer and Scripture tasks', accent: GOLD, icon: <Cross s={17} c={GOLD} w={2} /> },
     { title: 'Routine', body: 'Responsibilities by day', accent: '#4D8586', icon: <ListChecks s={17} c="#4D8586" w={2} /> },
@@ -16792,7 +18010,6 @@ function OrganizeMyRhythmPreviewSlide({ onBack, onNext }: { onBack?: () => void;
       body="When life changes, My Rhythm is where you adjust times, repeat days, spiritual tasks, habits, and challenges."
       accent="#4D8586"
       ctaLabel="Complete organization"
-      onBack={onBack}
       onNext={onNext}
     >
       <View style={s.organizeRhythmMock}>
@@ -18083,6 +19300,35 @@ export default function OnboardingView() {
     activeStep === 'organizeRoutineTasksSetup' ||
     activeStep === 'organizeHabitsExamples' ||
     activeStep === 'organizeChallengesIntro' ||
+    // The organize sequence never shows top chrome: no shell back arrow, no
+    // progress — the section flows forward only, like the sections before it.
+    activeStep === 'organizeSetupPath' ||
+    activeStep === 'organizeMacroIntro' ||
+    activeStep === 'organizeMacroProgressAfterBigEvents' ||
+    activeStep === 'organizeMacroProgressAfterMonthlyGoals' ||
+    activeStep === 'organizeSetupPathAfterAhead' ||
+    activeStep === 'organizeWeeklyIntro' ||
+    activeStep === 'organizeWeeklyFrequency' ||
+    activeStep === 'organizeWeeklyTaskTypes' ||
+    activeStep === 'organizeHubAfterSpiritual' ||
+    activeStep === 'organizeHubAfterRoutine' ||
+    activeStep === 'organizeHubAfterChallenges' ||
+    activeStep === 'organizeHubComplete' ||
+    activeStep === 'organizeHabitsIntro' ||
+    activeStep === 'organizeHomePreview' ||
+    activeStep === 'organizeMyRhythmPreview' ||
+    activeStep === 'organizeComplete' ||
+    activeStep === 'organizeWeeklyIntroV2' ||
+    activeStep === 'organizeHubStartV2' ||
+    activeStep === 'organizeSpiritualBuilderV2' ||
+    activeStep === 'organizeHubAfterSpiritualV2' ||
+    activeStep === 'organizeRoutineBuilderV2' ||
+    activeStep === 'organizeHubAfterRoutineV2' ||
+    activeStep === 'organizeChallengesBuilderV2' ||
+    activeStep === 'organizeHubAfterChallengesV2' ||
+    activeStep === 'organizeHabitsConceptV2' ||
+    activeStep === 'organizeHabitsBuilderV2' ||
+    activeStep === 'organizeHubCompleteV2' ||
     valueStepActive ||
     isGuidedWalkthroughStep(activeStep);
   const visibleProgress = hideTopChrome ? null : activeProgress;
@@ -18124,6 +19370,17 @@ export default function OnboardingView() {
     activeStep === 'organizeHomePreview' ||
     activeStep === 'organizeMyRhythmPreview' ||
     activeStep === 'organizeComplete' ||
+    activeStep === 'organizeWeeklyIntroV2' ||
+    activeStep === 'organizeHubStartV2' ||
+    activeStep === 'organizeSpiritualBuilderV2' ||
+    activeStep === 'organizeHubAfterSpiritualV2' ||
+    activeStep === 'organizeRoutineBuilderV2' ||
+    activeStep === 'organizeHubAfterRoutineV2' ||
+    activeStep === 'organizeChallengesBuilderV2' ||
+    activeStep === 'organizeHubAfterChallengesV2' ||
+    activeStep === 'organizeHabitsConceptV2' ||
+    activeStep === 'organizeHabitsBuilderV2' ||
+    activeStep === 'organizeHubCompleteV2' ||
     activeStep === 'dayVisualizationHeader' ||
     valueStepActive ||
     flameStepActive ||
@@ -18349,13 +19606,12 @@ export default function OnboardingView() {
       return (
         <OrganizeRuleMapSlide
           variant="start"
-          onBack={goBack}
           onNext={goNext}
         />
       );
     }
     if (activeStep === 'organizeMacroIntro') {
-      return <OrganizeMacroIntroSlide onBack={goBack} onNext={goNext} />;
+      return <OrganizeMacroIntroSlide onNext={goNext} />;
     }
     if (activeStep === 'organizeBigEventsIntro') {
       return (
@@ -18365,7 +19621,6 @@ export default function OnboardingView() {
           body="Keep important days in front of you, see how many days are left, and plan your week before anything important gets forgotten."
           examples={BIG_EVENT_EXAMPLES}
           ctaLabel="Add big event"
-          onBack={goBack}
           onNext={startOrganizeAheadSetup}
         />
       );
@@ -18387,7 +19642,6 @@ export default function OnboardingView() {
           body="Choose what you want to accomplish in the months ahead, so every weekly plan starts with direction."
           examples={MONTHLY_GOAL_EXAMPLES}
           ctaLabel="Add monthly goal"
-          onBack={goBack}
           onNext={startOrganizeMonthlyGoalsSetup}
         />
       );
@@ -18417,7 +19671,6 @@ export default function OnboardingView() {
         <OrganizeLessonSlide
           title="You plan the week once. Then you live it."
           body="Anasta plans on a weekly level. Give each task its place in the week — and every morning simply shows what today asks of you."
-          onBack={goBack}
           onNext={goNext}
         >
           <View style={s.organizeWeekPreview}>
@@ -18436,12 +19689,23 @@ export default function OnboardingView() {
         </OrganizeLessonSlide>
       );
     }
-    if (activeStep === 'organizeWeeklyFrequency') return <OrganizeFrequencySlide onBack={goBack} onNext={goNext} />;
-    if (activeStep === 'organizeWeeklyTaskTypes') return <OrganizeWeeklyHubSlide stage="start" onBack={goBack} onNext={goNext} />;
+    if (activeStep === 'organizeWeeklyFrequency') return <OrganizeFrequencySlide onNext={goNext} />;
+    if (activeStep === 'organizeWeeklyTaskTypes') return <OrganizeWeeklyHubSlide stage="start" onNext={goNext} />;
     if (activeStep === 'organizeHubAfterSpiritual') return <OrganizeWeeklyHubSlide stage="afterSpiritual" onNext={goNext} />;
     if (activeStep === 'organizeHubAfterRoutine') return <OrganizeWeeklyHubSlide stage="afterRoutine" onNext={goNext} />;
     if (activeStep === 'organizeHubAfterChallenges') return <OrganizeWeeklyHubSlide stage="afterChallenges" onNext={goNext} />;
     if (activeStep === 'organizeHubComplete') return <OrganizeWeeklyHubSlide stage="complete" onNext={goNext} />;
+    if (activeStep === 'organizeWeeklyIntroV2') return <OrganizeWeeklyIntroV2Slide onNext={goNext} />;
+    if (activeStep === 'organizeHubStartV2') return <OrganizeHubV2Slide stage="start" onNext={goNext} />;
+    if (activeStep === 'organizeSpiritualBuilderV2') return <OrganizeSpiritualBuilderV2Slide onNext={goNext} />;
+    if (activeStep === 'organizeHubAfterSpiritualV2') return <OrganizeHubV2Slide stage="afterSpiritual" onNext={goNext} />;
+    if (activeStep === 'organizeRoutineBuilderV2') return <OrganizeRoutineBuilderV2Slide onNext={goNext} />;
+    if (activeStep === 'organizeHubAfterRoutineV2') return <OrganizeHubV2Slide stage="afterRoutine" onNext={goNext} />;
+    if (activeStep === 'organizeChallengesBuilderV2') return <OrganizeChallengesBuilderV2Slide onNext={goNext} />;
+    if (activeStep === 'organizeHubAfterChallengesV2') return <OrganizeHubV2Slide stage="afterChallenges" onNext={goNext} />;
+    if (activeStep === 'organizeHabitsConceptV2') return <OrganizeHabitsConceptV2Slide onNext={goNext} />;
+    if (activeStep === 'organizeHabitsBuilderV2') return <OrganizeHabitsBuilderV2Slide onNext={goNext} />;
+    if (activeStep === 'organizeHubCompleteV2') return <OrganizeHubV2Slide stage="complete" onNext={goNext} />;
     if (activeStep === 'organizeSpiritualTasksIntro') {
       return (
         <OrganizeExampleCarouselSlide
@@ -18450,13 +19714,12 @@ export default function OnboardingView() {
           body="Prayer and Scripture should not depend on memory alone. Give them a place in your week."
           examples={SPIRITUAL_TASK_EXAMPLES}
           ctaLabel="Set spiritual tasks"
-          onBack={goBack}
           onNext={goNext}
         />
       );
     }
     if (activeStep === 'organizeSpiritualTasksSetup') {
-      return <OrganizeSpiritualTaskBuilderSlide onBack={goBack} onNext={goNext} />;
+      return <OrganizeSpiritualTaskBuilderSlide onNext={goNext} />;
     }
     if (activeStep === 'organizeRoutineTasksIntro') {
       return (
@@ -18466,16 +19729,15 @@ export default function OnboardingView() {
           body="Daily life matters too. A steady routine makes room for prayer instead of fighting against it."
           examples={ROUTINE_TASK_EXAMPLES}
           ctaLabel="Set routine tasks"
-          onBack={goBack}
           onNext={goNext}
         />
       );
     }
     if (activeStep === 'organizeRoutineTasksSetup') {
-      return <OrganizeRoutineTaskBuilderSlide onBack={goBack} onNext={goNext} />;
+      return <OrganizeRoutineTaskBuilderSlide onNext={goNext} />;
     }
     if (activeStep === 'organizeHabitsIntro') {
-      return <OrganizeHabitStorySlide onBack={goBack} onNext={goNext} />;
+      return <OrganizeHabitStorySlide onNext={goNext} />;
     }
     if (activeStep === 'organizeHabitsExamples') {
       return (
@@ -18485,8 +19747,7 @@ export default function OnboardingView() {
           body="This keeps discipline practical. You are not just naming what you want. You are choosing the actions that build it."
           examples={HABIT_GOAL_EXAMPLES}
           ctaLabel="Build your habit"
-          onBack={goBack}
-          onNext={startOrganizeHabitsGuided}
+          onNext={goNext}
         />
       );
     }
@@ -18498,13 +19759,12 @@ export default function OnboardingView() {
           body="Pick one clear commitment and let Anasta track the days until it is complete."
           examples={CHALLENGE_EXAMPLES}
           ctaLabel="Pick a challenge"
-          onBack={goBack}
-          onNext={startOrganizeChallengesGuided}
+          onNext={goNext}
         />
       );
     }
     if (activeStep === 'organizeHomePreview') return <OrganizeHomePreviewSlide onNext={goNext} />;
-    if (activeStep === 'organizeMyRhythmPreview') return <OrganizeMyRhythmPreviewSlide onBack={goBack} onNext={goNext} />;
+    if (activeStep === 'organizeMyRhythmPreview') return <OrganizeMyRhythmPreviewSlide onNext={goNext} />;
     if (activeStep === 'organizeComplete') return <OrganizeCompleteSlide onNext={goNext} />;
     if (activeStep === 'weeklyReveal') return <V4WeeklyRevealSlide displayName={answers.displayName} onNext={goNext} />;
     if (activeStep === 'flameOrganize') {
@@ -24301,26 +25561,6 @@ const s = StyleSheet.create({
   organizeRuleMapBoard: {
     marginTop: 0,
   },
-  organizeStageBackWrap: {
-    position: 'absolute',
-    left: 14,
-    zIndex: 40,
-  },
-  organizeStageBack: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,253,248,0.92)',
-    borderWidth: 1,
-    borderColor: 'rgba(25,23,20,0.10)',
-    shadowColor: '#5E5142',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 2,
-  },
   organizeStageTitle: {
     fontFamily: F.serifBold,
     fontSize: 38,
@@ -24347,6 +25587,333 @@ const s = StyleSheet.create({
   organizeLessonBody: {
     flexGrow: 1,
     justifyContent: 'center',
+  },
+
+  // --- Organize V2 -----------------------------------------------------------
+  weeklyV2Panel: {
+    width: '100%',
+    maxWidth: 366,
+    alignSelf: 'center',
+    borderRadius: 30,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 13,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1.5,
+    borderColor: 'rgba(197,160,89,0.30)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.1,
+    shadowRadius: 22,
+    elevation: 3,
+  },
+  weeklyV2Row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 14,
+    minHeight: 39,
+  },
+  weeklyV2RowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(25,23,20,0.05)',
+  },
+  weeklyV2Day: {
+    width: 38,
+    fontFamily: F.serifSemiBold,
+    fontSize: 14.5,
+    lineHeight: 18,
+    color: 'rgba(25,23,20,0.66)',
+  },
+  weeklyV2Pills: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 6,
+  },
+  weeklyV2Pill: {
+    height: 15,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingLeft: 4,
+  },
+  weeklyV2PillDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  weeklyV2Legend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    columnGap: 14,
+    paddingTop: 11,
+    marginTop: 3,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(25,23,20,0.06)',
+  },
+  weeklyV2LegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 5,
+  },
+  weeklyV2LegendText: {
+    fontFamily: F.sansMedium,
+    fontSize: 10.5,
+    lineHeight: 13,
+    color: 'rgba(25,23,20,0.52)',
+  },
+
+  hubV2Board: {
+    width: '100%',
+    maxWidth: 374,
+    alignSelf: 'center',
+    flexGrow: 1,
+    justifyContent: 'center',
+    rowGap: 9,
+  },
+  hubV2RowWrap: {
+    position: 'relative',
+  },
+  hubV2Ring: {
+    position: 'absolute',
+    top: -3.5,
+    left: -3.5,
+    right: -3.5,
+    bottom: 0.5,
+    borderRadius: 21,
+    borderWidth: 1.7,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+  },
+  hubV2Flourish: {
+    ...StyleSheet.absoluteFillObject,
+  },
+
+  v2BuilderContent: {
+    flex: 1,
+    paddingHorizontal: 18,
+    rowGap: 13,
+  },
+  v2MyPanel: {
+    width: '100%',
+    maxWidth: 374,
+    alignSelf: 'center',
+    minHeight: 150,
+    maxHeight: 196,
+    borderRadius: 28,
+    padding: 13,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1.5,
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 11 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 2,
+  },
+  v2MyPanelTall: {
+    flexGrow: 1,
+    maxHeight: undefined,
+  },
+  v2HabitsPanel: {
+    flexGrow: 1,
+  },
+  v2HabitsScroll: {
+    paddingBottom: 4,
+  },
+  v2PanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingBottom: 9,
+  },
+  v2PanelTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 20,
+    lineHeight: 24,
+    color: INK,
+  },
+  v2PanelCount: {
+    minWidth: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    borderWidth: 1,
+  },
+  v2PanelCountText: {
+    fontFamily: F.sansBold,
+    fontSize: 12,
+    lineHeight: 15,
+  },
+  v2SavedList: {
+    paddingBottom: 3,
+    rowGap: 2,
+  },
+  v2Empty: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    rowGap: 3,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+  },
+  v2EmptyIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    marginBottom: 3,
+  },
+  v2EmptyTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 16.5,
+    lineHeight: 20,
+    color: INK,
+  },
+  v2EmptyBody: {
+    fontFamily: F.sansMedium,
+    fontSize: 11.5,
+    lineHeight: 15.5,
+    color: 'rgba(25,23,20,0.48)',
+    textAlign: 'center',
+    maxWidth: 260,
+  },
+  v2CatalogPanel: {
+    width: '100%',
+    maxWidth: 374,
+    alignSelf: 'center',
+    flexGrow: 1,
+    borderRadius: 28,
+    padding: 13,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,253,248,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  v2CatalogTitle: {
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.5)',
+  },
+  v2CatalogHint: {
+    fontFamily: F.serifMediumItalic,
+    fontSize: 13.5,
+    lineHeight: 17,
+    color: 'rgba(112,82,26,0.62)',
+  },
+  v2CatalogList: {
+    paddingBottom: 4,
+    rowGap: 2,
+  },
+  v2GroupLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    lineHeight: 13,
+    letterSpacing: 1.4,
+    color: 'rgba(25,23,20,0.38)',
+    marginTop: 7,
+    marginBottom: 4,
+    marginLeft: 4,
+  },
+  v2MutedFrame: {
+    position: 'relative',
+    borderRadius: 18,
+    overflow: 'hidden',
+    opacity: 0.86,
+  },
+  v2MutedVeil: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(246,244,239,0.5)',
+  },
+  v2AddButton: {
+    width: '100%',
+    maxWidth: 374,
+    alignSelf: 'center',
+    minHeight: 54,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 10,
+    backgroundColor: '#4D8586',
+    shadowColor: '#4D8586',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  v2AddButtonHabit: {
+    backgroundColor: '#2F9B61',
+    shadowColor: '#2F9B61',
+  },
+  v2AddIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  v2AddText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17.5,
+    lineHeight: 22,
+    color: '#FFFFFF',
+  },
+  v2ChallengeSheet: {
+    backgroundColor: '#FFFDF8',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+    maxHeight: '88%',
+  },
+  v2SheetHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4.5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(25,23,20,0.14)',
+    marginTop: 10,
+  },
+  v2SheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: 10,
+    marginTop: 13,
+    marginBottom: 4,
+    paddingHorizontal: 4,
+  },
+  v2SheetTitle: {
+    flex: 1,
+    fontFamily: F.serifBold,
+    fontSize: 23,
+    lineHeight: 27,
+    color: INK,
+  },
+  v2SheetClose: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(25,23,20,0.05)',
+  },
+  v2SheetContent: {
+    paddingBottom: 12,
   },
   // The two-layer map fills the screen: cards grow into the free space
   // instead of leaving dead area under two small tags.
