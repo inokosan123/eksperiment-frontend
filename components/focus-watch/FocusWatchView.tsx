@@ -213,8 +213,8 @@ export default function FocusWatchView() {
       >
         <ScreenTitleBar title="FOCUS" />
         <View style={s.quoteWrap}>
-          <Text style={s.quote}>{'"Be sober, be vigilant."'}</Text>
-          <Text style={s.ref}>1 PETER 5:8</Text>
+          <Text style={s.quote}>{'"Watch and pray, that ye enter not into temptation."'}</Text>
+          <Text style={s.ref}>MATTHEW 26:41</Text>
         </View>
 
         <View style={{ paddingHorizontal: 16, paddingTop: 4 }}>

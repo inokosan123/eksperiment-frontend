@@ -14293,6 +14293,61 @@ const ORGANIZE_RULE_AREAS: {
   },
 ];
 
+// Shared chrome for every organize stage screen: a soft back circle and the
+// carousel-grade header (big serif title, accent underline, serif body) so
+// the title sits in the same place on every screen of the sequence.
+function OrganizeBackButton({ onPress }: { onPress: () => void }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <Reanimated.View
+      entering={FadeIn.delay(240).duration(420)}
+      style={[s.organizeStageBackWrap, { top: insets.top + 6 }]}
+    >
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.82}
+        haptic="light"
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        style={s.organizeStageBack}
+      >
+        <ChevronLeft s={22} c="rgba(25,23,20,0.58)" w={2.4} />
+      </TouchableOpacity>
+    </Reanimated.View>
+  );
+}
+
+function OrganizeStageHeader({
+  title,
+  body,
+  accent = GOLD,
+  compact = false,
+}: {
+  title: string;
+  body: string;
+  accent?: string;
+  compact?: boolean;
+}) {
+  return (
+    <Reanimated.View
+      entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))}
+      style={s.organizeBigEventsHeader}
+    >
+      <View style={s.organizeBigEventsTitleWrap}>
+        <Text
+          style={[s.organizeStageTitle, compact && s.organizeStageTitleCompact]}
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.68}
+        >
+          {title}
+        </Text>
+        <View style={[s.organizeStageUnderline, { backgroundColor: accent }]} />
+      </View>
+      <Text style={s.organizeBigEventsBody}>{body}</Text>
+    </Reanimated.View>
+  );
+}
+
 function organizeMapState(variant: OrganizeSetupMapVariant, id: OrganizeSetupAreaId, afterAheadStage: OrganizeSetupAfterAheadStage = 2) {
   const done = id === 'macro' && variant === 'afterAhead' && afterAheadStage >= 1;
   const active =
@@ -14311,6 +14366,7 @@ function SetupPathStepCard({
   done,
   activeReady = true,
   enteringDelay,
+  entering,
 }: {
   title: string;
   body: string;
@@ -14321,6 +14377,7 @@ function SetupPathStepCard({
   done: boolean;
   activeReady?: boolean;
   enteringDelay?: number;
+  entering?: React.ComponentProps<typeof Reanimated.View>['entering'];
 }) {
   const isActive = active && activeReady;
   const state = useSharedValue(done ? 2 : isActive ? 1 : 0);
@@ -14352,7 +14409,7 @@ function SetupPathStepCard({
 
   return (
     <Reanimated.View
-      entering={FadeInUp.delay(enteringDelay ?? 0).duration(600).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+      entering={entering ?? FadeInUp.delay(enteringDelay ?? 0).duration(600).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
         opacity: 0,
         transform: [{ translateY: 24 }, { scale: 0.965 }],
       })}
@@ -14422,12 +14479,14 @@ function OrganizeLayerHeroCard({
   active,
   done,
   activeReady,
+  entering,
 }: {
   area: (typeof ORGANIZE_RULE_AREAS)[number];
   index: number;
   active: boolean;
   done: boolean;
   activeReady: boolean;
+  entering?: React.ComponentProps<typeof Reanimated.View>['entering'];
 }) {
   const isActive = active && activeReady;
   const state = useSharedValue(done ? 2 : isActive ? 1 : 0);
@@ -14459,7 +14518,7 @@ function OrganizeLayerHeroCard({
 
   return (
     <Reanimated.View
-      entering={FadeInUp.duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+      entering={entering ?? FadeInUp.duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
         opacity: 0,
         transform: [{ translateY: 30 }, { scale: 0.96 }],
       })}
@@ -14538,15 +14597,31 @@ function OrganizeRuleConnector({ accent, index }: { accent: string; index: numbe
   );
 }
 
+// Both layer cards mount together in their final positions and glide in from
+// opposite sides — nothing shifts once it has landed.
+function organizeSideEntrance(index: number, baseDelay = 200) {
+  const fromLeft = index % 2 === 0;
+  const builder = fromLeft ? FadeInLeft : FadeInRight;
+  return builder
+    .delay(baseDelay + index * 150)
+    .duration(640)
+    .easing(Easing.bezier(0.16, 1, 0.28, 1))
+    .withInitialValues({
+      opacity: 0,
+      transform: [{ translateX: fromLeft ? -64 : 64 }, { scale: 0.975 }],
+    });
+}
+
 function OrganizeRuleMapSlide({
   variant,
+  onBack,
   onNext,
 }: {
   variant: OrganizeSetupMapVariant;
+  onBack?: () => void;
   onNext: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const [reveal, setReveal] = useState(0);
   const [activeReady, setActiveReady] = useState(false);
   const [afterAheadStage, setAfterAheadStage] = useState<OrganizeSetupAfterAheadStage>(0);
   const exitProgress = useSharedValue(0);
@@ -14556,7 +14631,7 @@ function OrganizeRuleMapSlide({
     s.organizeRuleMapContent,
     {
       flexGrow: 1,
-      paddingTop: Math.max(insets.top + 40, 70),
+      paddingTop: Math.max(insets.top + 48, 74),
       paddingBottom: insets.bottom + 128,
     },
   ];
@@ -14571,34 +14646,21 @@ function OrganizeRuleMapSlide({
   }));
 
   useEffect(() => {
-    setReveal(0);
     setActiveReady(false);
     setAfterAheadStage(0);
     exitProgress.value = 0;
   }, [exitProgress, variantKey]);
 
+  // Once both cards have landed: wake the active layer (start) or run the
+  // check → wake → carry-on narrative (afterAhead).
   useEffect(() => {
-    if (reveal < ORGANIZE_RULE_AREAS.length) {
-      const timer = setTimeout(() => {
-        setReveal(current => current + 1);
-        runSelectionHaptic();
-      }, reveal === 0 ? 320 : 620);
-      return () => clearTimeout(timer);
-    }
-
-    return undefined;
-  }, [reveal]);
-
-  useEffect(() => {
-    if (reveal < ORGANIZE_RULE_AREAS.length) return undefined;
-
     if (variant === 'afterAhead') {
       if (afterAheadStage === 0) {
         const timer = setTimeout(() => {
           setAfterAheadStage(1);
           runPreviewTaskCheckHaptic();
           void playTaskCheckSoundOnly();
-        }, 820);
+        }, 1080);
         return () => clearTimeout(timer);
       }
 
@@ -14618,12 +14680,12 @@ function OrganizeRuleMapSlide({
     const timer = setTimeout(() => {
       setActiveReady(true);
       runBubbleHaptic();
-    }, 720);
+    }, 1020);
     return () => clearTimeout(timer);
-  }, [activeReady, afterAheadStage, reveal, variant]);
+  }, [activeReady, afterAheadStage, variant]);
 
   useEffect(() => {
-    if (!autoAdvanceAfterAhead || reveal < ORGANIZE_RULE_AREAS.length || afterAheadStage < 2) return undefined;
+    if (!autoAdvanceAfterAhead || afterAheadStage < 2) return undefined;
 
     let nextTimer: ReturnType<typeof setTimeout> | undefined;
     const exitTimer = setTimeout(() => {
@@ -14638,29 +14700,42 @@ function OrganizeRuleMapSlide({
       clearTimeout(exitTimer);
       if (nextTimer) clearTimeout(nextTimer);
     };
-  }, [afterAheadStage, autoAdvanceAfterAhead, exitProgress, onNext, reveal]);
+  }, [afterAheadStage, autoAdvanceAfterAhead, exitProgress, onNext]);
 
-  const ctaVisible = reveal >= ORGANIZE_RULE_AREAS.length && activeReady && !autoAdvanceAfterAhead;
+  const ctaVisible = activeReady && !autoAdvanceAfterAhead;
   const ctaLabel = variant === 'start' ? 'Start macro planning' : 'Set up weekly routine';
 
   return (
     <View style={s.organizeRuleScreen}>
+      {onBack && !autoAdvanceAfterAhead ? <OrganizeBackButton onPress={onBack} /> : null}
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
-        <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={[s.organizeRuleHeader, s.organizeRuleMapHeader, exitStyle]}>
-          <Text style={s.organizeRuleHeading}>Our system has two layers.</Text>
-          <Text style={s.organizeRuleBody}>
-            First we plan what is ahead. Then we build the weekly rhythm that carries your day.
-          </Text>
+        <Reanimated.View style={exitStyle}>
+          <OrganizeStageHeader
+            title={variant === 'afterAhead' ? 'The first layer is set.' : 'Our system has two layers.'}
+            body={
+              variant === 'afterAhead'
+                ? 'What is ahead now has a shape. Next comes the rhythm your days will actually live.'
+                : 'First we plan what is ahead. Then we build the weekly rhythm that carries your day.'
+            }
+            accent={variant === 'afterAhead' ? '#2F9B61' : GOLD}
+          />
         </Reanimated.View>
 
         <Reanimated.View style={[s.setupPathBoard, s.organizeLayerHeroBoard, exitStyle]}>
-          {ORGANIZE_RULE_AREAS.slice(0, reveal).map((area, index) => {
+          {ORGANIZE_RULE_AREAS.map((area, index) => {
             const { active, done } = organizeMapState(variant, area.id, afterAheadStage);
             const cardActiveReady = variant === 'afterAhead' ? true : activeReady;
             return (
               <React.Fragment key={area.id}>
-                <OrganizeLayerHeroCard area={area} index={index} active={active} done={done} activeReady={cardActiveReady} />
-                {index < Math.min(reveal, ORGANIZE_RULE_AREAS.length) - 1 ? (
+                <OrganizeLayerHeroCard
+                  area={area}
+                  index={index}
+                  active={active}
+                  done={done}
+                  activeReady={cardActiveReady}
+                  entering={organizeSideEntrance(index)}
+                />
+                {index < ORGANIZE_RULE_AREAS.length - 1 ? (
                   <OrganizeRuleConnector accent={ORGANIZE_RULE_AREAS[index + 1]?.accent ?? area.accent} index={index} />
                 ) : null}
               </React.Fragment>
@@ -14696,56 +14771,39 @@ const MACRO_PLANNING_STEPS = [
   },
 ];
 
-function OrganizeMacroIntroSlide({ onNext }: { onNext: () => void }) {
+function OrganizeMacroIntroSlide({ onBack, onNext }: { onBack?: () => void; onNext: () => void }) {
   const insets = useSafeAreaInsets();
-  const [reveal, setReveal] = useState(0);
   const [activeReady, setActiveReady] = useState(false);
   const contentStyle = [
     s.organizeRuleContent,
     {
-      paddingTop: Math.max(insets.top + 14, 44),
+      flexGrow: 1,
+      paddingTop: Math.max(insets.top + 48, 74),
       paddingBottom: insets.bottom + 134,
     },
   ];
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
-  const ctaVisible = reveal >= MACRO_PLANNING_STEPS.length && activeReady;
 
   useEffect(() => {
-    setReveal(0);
-    setActiveReady(false);
-  }, []);
-
-  useEffect(() => {
-    if (reveal < MACRO_PLANNING_STEPS.length) {
-      const timer = setTimeout(() => {
-        setReveal(current => current + 1);
-        runSelectionHaptic();
-      }, reveal === 0 ? 320 : 560);
-      return () => clearTimeout(timer);
-    }
-
     const timer = setTimeout(() => {
       setActiveReady(true);
       runBubbleHaptic();
-    }, 620);
+    }, 980);
     return () => clearTimeout(timer);
-  }, [reveal]);
+  }, []);
 
   return (
     <View style={s.organizeRuleScreen}>
+      {onBack ? <OrganizeBackButton onPress={onBack} /> : null}
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
-        <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={s.organizeRuleHeader}>
-          <View style={s.v4RecapToolsKicker}>
-            <Text style={s.v4RecapToolsKickerText}>Macro planning</Text>
-          </View>
-          <Text style={s.organizeRuleHeading}>First, mark what matters ahead.</Text>
-          <Text style={s.organizeRuleBody}>
-            Big dates and monthly direction shape your plan before the week begins.
-          </Text>
-        </Reanimated.View>
+        <OrganizeStageHeader
+          title="Macro planning"
+          body="First, mark what matters ahead. Big dates and monthly direction shape your plan before the week begins."
+          accent="#4D8586"
+        />
 
-        <View style={s.setupPathBoard}>
-          {MACRO_PLANNING_STEPS.slice(0, reveal).map((item, index) => (
+        <View style={[s.setupPathBoard, s.organizeMacroIntroBoard]}>
+          {MACRO_PLANNING_STEPS.map((item, index) => (
             <React.Fragment key={item.title}>
               <SetupPathStepCard
                 title={item.title}
@@ -14756,8 +14814,9 @@ function OrganizeMacroIntroSlide({ onNext }: { onNext: () => void }) {
                 active={index === 0}
                 done={false}
                 activeReady={activeReady}
+                entering={organizeSideEntrance(index)}
               />
-              {index < Math.min(reveal, MACRO_PLANNING_STEPS.length) - 1 ? (
+              {index < MACRO_PLANNING_STEPS.length - 1 ? (
                 <OrganizeRuleConnector accent={MACRO_PLANNING_STEPS[index + 1]?.accent ?? item.accent} index={index} />
               ) : null}
             </React.Fragment>
@@ -14765,7 +14824,7 @@ function OrganizeMacroIntroSlide({ onNext }: { onNext: () => void }) {
         </View>
       </ScrollView>
 
-      <AnimatedCta active={ctaVisible} delay={180} style={footerStyle} pointerEvents={ctaVisible ? 'auto' : 'none'}>
+      <AnimatedCta active={activeReady} delay={180} style={footerStyle} pointerEvents={activeReady ? 'auto' : 'none'}>
         <View style={s.ctaIsland}>
           <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
             <Text style={s.primaryButtonText}>Let&apos;s set this up</Text>
@@ -14805,7 +14864,7 @@ function MacroProgressCard({
       index={index}
       active={active}
       done={done}
-      enteringDelay={240 + index * 180}
+      entering={organizeSideEntrance(index, 160)}
     />
   );
 }
@@ -14825,7 +14884,8 @@ function OrganizeMacroProgressSlide({
   const contentStyle = [
     s.organizeRuleContent,
     {
-      paddingTop: Math.max(insets.top + 34, 64),
+      flexGrow: 1,
+      paddingTop: Math.max(insets.top + 48, 74),
       paddingBottom: insets.bottom + 134,
     },
   ];
@@ -14877,23 +14937,23 @@ function OrganizeMacroProgressSlide({
   return (
     <View style={s.organizeRuleScreen}>
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
-        <Reanimated.View entering={FadeInUp.duration(520).easing(Easing.out(Easing.cubic))} style={[s.organizeRuleHeader, exitStyle]}>
-          <Text style={s.organizeRuleOverline}>Macro planning</Text>
-          <Text style={s.organizeRuleHeading}>
-            {macroComplete ? 'Your macro plan is ready.' : 'First layer is coming together.'}
-          </Text>
-          <Text style={s.organizeRuleBody}>
-            {macroComplete
-              ? 'Now we can turn this into the weekly rhythm you will actually live.'
-              : variant === 'afterMonthlyGoals'
-                ? 'Monthly goals are almost in place.'
-                : monthlyGoalsEnabled
-                ? 'Big Events is ready. Next, we add monthly direction.'
-                : 'Big Events is ready. Now we can build your weekly routine.'}
-          </Text>
+        <Reanimated.View style={exitStyle}>
+          <OrganizeStageHeader
+            title={macroComplete ? 'Your macro plan is ready.' : 'The first layer grows.'}
+            body={
+              macroComplete
+                ? 'Now we can turn this into the weekly rhythm you will actually live.'
+                : variant === 'afterMonthlyGoals'
+                  ? 'Monthly goals are almost in place.'
+                  : monthlyGoalsEnabled
+                  ? 'Big Events is ready. Next, we add monthly direction.'
+                  : 'Big Events is ready. Now we can build your weekly routine.'
+            }
+            accent={macroComplete ? '#2F9B61' : '#4D8586'}
+          />
         </Reanimated.View>
 
-        <Reanimated.View style={[s.setupPathBoard, exitStyle]}>
+        <Reanimated.View style={[s.setupPathBoard, s.organizeMacroIntroBoard, exitStyle]}>
           <MacroProgressCard
             title="Big events"
             body="Important dates and commitments are now visible."
@@ -15356,6 +15416,7 @@ function OrganizeExampleCarouselSlide({
   body,
   examples,
   ctaLabel,
+  onBack,
   onNext,
 }: {
   overline: string;
@@ -15363,6 +15424,7 @@ function OrganizeExampleCarouselSlide({
   body: string;
   examples: OrganizeExample[];
   ctaLabel: string;
+  onBack?: () => void;
   onNext: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -15431,6 +15493,7 @@ function OrganizeExampleCarouselSlide({
   if (usePolishedExampleCarousel) {
     return (
       <View style={s.organizeRuleScreen}>
+        {onBack ? <OrganizeBackButton onPress={onBack} /> : null}
         <View
           style={[
             s.organizeBigEventsFixedContent,
@@ -15656,25 +15719,28 @@ function OrganizeExampleCarouselSlide({
 }
 
 function OrganizeLessonSlide({
-  overline,
   title,
   body,
+  accent = GOLD,
   children,
   ctaLabel = 'Continue',
+  onBack,
   onNext,
 }: {
-  overline: string;
   title: string;
   body: string;
+  accent?: string;
   children: React.ReactNode;
   ctaLabel?: string;
+  onBack?: () => void;
   onNext: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const contentStyle = [
     s.organizeRuleContent,
     {
-      paddingTop: Math.max(insets.top + 28, 58),
+      flexGrow: 1,
+      paddingTop: Math.max(insets.top + 48, 74),
       paddingBottom: insets.bottom + 134,
     },
   ];
@@ -15682,14 +15748,11 @@ function OrganizeLessonSlide({
 
   return (
     <View style={s.organizeRuleScreen}>
+      {onBack ? <OrganizeBackButton onPress={onBack} /> : null}
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
-        <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={s.organizeRuleHeader}>
-          <Text style={s.organizeRuleOverline}>{overline}</Text>
-          <Text style={s.organizeRuleHeading}>{title}</Text>
-          <Text style={s.organizeRuleBody}>{body}</Text>
-        </Reanimated.View>
+        <OrganizeStageHeader title={title} body={body} accent={accent} />
 
-        {children}
+        <View style={s.organizeLessonBody}>{children}</View>
       </ScrollView>
 
       <AnimatedCta delay={240} style={footerStyle}>
@@ -15752,12 +15815,12 @@ function OrganizeFrequencyDayDot({
   );
 }
 
-function OrganizeFrequencySlide({ onNext }: { onNext: () => void }) {
+function OrganizeFrequencySlide({ onBack, onNext }: { onBack?: () => void; onNext: () => void }) {
   return (
     <OrganizeLessonSlide
-      overline="Weekly routine"
       title="Every task knows its days."
       body="When you add a task, you choose how it repeats. Anasta carries that pattern week after week — you never plan the same thing twice."
+      onBack={onBack}
       onNext={onNext}
     >
       <View style={s.organizeFrequencyBoard}>
@@ -15868,7 +15931,15 @@ const ORGANIZE_HUB_STAGES: Record<OrganizeHubStage, {
 
 // The recurring heart of the weekly setup: after each tool is configured we
 // return here — the finished card seals with a check, the next one wakes.
-function OrganizeWeeklyHubSlide({ stage, onNext }: { stage: OrganizeHubStage; onNext: () => void }) {
+function OrganizeWeeklyHubSlide({
+  stage,
+  onBack,
+  onNext,
+}: {
+  stage: OrganizeHubStage;
+  onBack?: () => void;
+  onNext: () => void;
+}) {
   const insets = useSafeAreaInsets();
   const config = ORGANIZE_HUB_STAGES[stage];
   const [checked, setChecked] = useState(!config.checksNow);
@@ -15882,7 +15953,8 @@ function OrganizeWeeklyHubSlide({ stage, onNext }: { stage: OrganizeHubStage; on
   const contentStyle = [
     s.organizeRuleContent,
     {
-      paddingTop: Math.max(insets.top + 30, 60),
+      flexGrow: 1,
+      paddingTop: Math.max(insets.top + 48, 74),
       paddingBottom: insets.bottom + 134,
       rowGap: 26,
     },
@@ -15948,24 +16020,17 @@ function OrganizeWeeklyHubSlide({ stage, onNext }: { stage: OrganizeHubStage; on
 
   return (
     <View style={s.organizeRuleScreen}>
+      {onBack ? <OrganizeBackButton onPress={onBack} /> : null}
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
-        <Reanimated.View
-          key={showHeadingDone ? 'hub-heading-done' : 'hub-heading'}
-          entering={FadeInUp.duration(520).easing(Easing.out(Easing.cubic))}
-          style={[s.organizeRuleHeader, exitStyle]}
-        >
-          <View style={s.v4RecapToolsKicker}>
-            <Text style={s.v4RecapToolsKickerText}>Weekly routine</Text>
-          </View>
-          <Text style={s.organizeRuleHeading}>
-            {showHeadingDone ? config.headingDone : config.heading}
-          </Text>
-          <Text style={s.organizeRuleBody}>
-            {showHeadingDone ? config.bodyDone : config.body}
-          </Text>
+        <Reanimated.View key={showHeadingDone ? 'hub-heading-done' : 'hub-heading'} style={exitStyle}>
+          <OrganizeStageHeader
+            title={(showHeadingDone ? config.headingDone : config.heading) ?? ''}
+            body={(showHeadingDone ? config.bodyDone : config.body) ?? ''}
+            accent={showHeadingDone ? '#2F9B61' : GOLD}
+          />
         </Reanimated.View>
 
-        <Reanimated.View style={[s.setupPathBoard, exitStyle]}>
+        <Reanimated.View style={[s.setupPathBoard, s.organizeMacroIntroBoard, exitStyle]}>
           {DAILY_RULE_STEPS.map((item, index) => {
             const done = index < doneCount;
             const active = index === activeIndex && nextAwake;
@@ -16128,7 +16193,7 @@ function routineDraftToTaskData(draft: TaskDraft): TaskData {
   };
 }
 
-function OrganizeSpiritualTaskBuilderSlide({ onNext }: { onNext: () => void }) {
+function OrganizeSpiritualTaskBuilderSlide({ onBack, onNext }: { onBack?: () => void; onNext: () => void }) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const { createOrUpdateTask } = useTasks();
@@ -16146,7 +16211,7 @@ function OrganizeSpiritualTaskBuilderSlide({ onNext }: { onNext: () => void }) {
   const contentStyle = [
     s.spiritualBuilderContent,
     {
-      paddingTop: Math.max(insets.top + 14, compact ? 40 : 48),
+      paddingTop: Math.max(insets.top + 40, compact ? 52 : 58),
       paddingBottom: insets.bottom + 98,
       rowGap: compact ? 9 : 13,
     },
@@ -16175,14 +16240,12 @@ function OrganizeSpiritualTaskBuilderSlide({ onNext }: { onNext: () => void }) {
 
   return (
     <View style={s.organizeRuleScreen}>
+      {onBack ? <OrganizeBackButton onPress={onBack} /> : null}
       <View style={contentStyle}>
         <Reanimated.View
           entering={FadeInUp.duration(520).easing(Easing.out(Easing.cubic))}
           style={s.spiritualBuilderHeader}
         >
-          <View style={s.v4RecapToolsKicker}>
-            <Text style={s.v4RecapToolsKickerText}>Spiritual tasks</Text>
-          </View>
           <Text style={s.spiritualBuilderTitle}>Build your spiritual rhythm.</Text>
           <View style={s.spiritualBuilderTitleUnderline} />
           <Text style={s.spiritualBuilderSubtitle}>
@@ -16346,7 +16409,7 @@ const HABIT_STORY_STEPS = [
   { id: 'run', title: 'Evening run', time: '20:00' },
 ];
 
-function OrganizeHabitStorySlide({ onNext }: { onNext: () => void }) {
+function OrganizeHabitStorySlide({ onBack, onNext }: { onBack?: () => void; onNext: () => void }) {
   const [phase, setPhase] = useState(0);
   const progress = useSharedValue(0);
 
@@ -16383,10 +16446,11 @@ function OrganizeHabitStorySlide({ onNext }: { onNext: () => void }) {
 
   return (
     <OrganizeLessonSlide
-      overline="Habits"
       title="A habit is a goal with steps."
       body="You name the goal, then choose the small actions that build it. Miss one step and you are still moving — the goal holds you, not the single day."
+      accent="#2F9B61"
       ctaLabel="See examples"
+      onBack={onBack}
       onNext={onNext}
     >
       <Reanimated.View
@@ -16472,7 +16536,7 @@ type SavedRoutineEntry = {
 
 // The routine mirror of the spiritual builder: your tasks gather on top,
 // a real editor adds new ones, and examples below prefill that same editor.
-function OrganizeRoutineTaskBuilderSlide({ onNext }: { onNext: () => void }) {
+function OrganizeRoutineTaskBuilderSlide({ onBack, onNext }: { onBack?: () => void; onNext: () => void }) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const { createOrUpdateTask } = useTasks();
@@ -16494,7 +16558,7 @@ function OrganizeRoutineTaskBuilderSlide({ onNext }: { onNext: () => void }) {
   const contentStyle = [
     s.spiritualBuilderContent,
     {
-      paddingTop: Math.max(insets.top + 14, compact ? 40 : 48),
+      paddingTop: Math.max(insets.top + 40, compact ? 52 : 58),
       paddingBottom: insets.bottom + 98,
       rowGap: compact ? 9 : 13,
     },
@@ -16527,14 +16591,12 @@ function OrganizeRoutineTaskBuilderSlide({ onNext }: { onNext: () => void }) {
 
   return (
     <View style={s.organizeRuleScreen}>
+      {onBack ? <OrganizeBackButton onPress={onBack} /> : null}
       <View style={contentStyle}>
         <Reanimated.View
           entering={FadeInUp.duration(520).easing(Easing.out(Easing.cubic))}
           style={s.spiritualBuilderHeader}
         >
-          <View style={s.v4RecapToolsKicker}>
-            <Text style={s.v4RecapToolsKickerText}>Routine tasks</Text>
-          </View>
           <Text style={s.spiritualBuilderTitle}>Give ordinary duties a place.</Text>
           <View style={[s.spiritualBuilderTitleUnderline, s.routineBuilderTitleUnderline]} />
           <Text style={s.spiritualBuilderSubtitle}>
@@ -16670,7 +16732,7 @@ function OrganizeRoutineTaskBuilderSlide({ onNext }: { onNext: () => void }) {
   );
 }
 
-function OrganizeHomePreviewSlide({ onNext }: { onNext: () => void }) {
+function OrganizeHomePreviewSlide({ onBack, onNext }: { onBack?: () => void; onNext: () => void }) {
   const rows = [
     { title: 'Morning Prayer', meta: '07:00 · Every day', accent: GOLD, icon: <Sun s={17} c={GOLD} w={2} /> },
     { title: 'Scripture Reading', meta: '20:30 · Mon - Sat', accent: '#4D8586', icon: <BookMarked s={17} c="#4D8586" w={2} /> },
@@ -16679,10 +16741,10 @@ function OrganizeHomePreviewSlide({ onNext }: { onNext: () => void }) {
 
   return (
     <OrganizeLessonSlide
-      overline="Home"
       title="This becomes your day."
       body="Home shows what is planned now. Check a task, uncheck it, skip it, or long-press to see progress."
       ctaLabel="Show My Rhythm"
+      onBack={onBack}
       onNext={onNext}
     >
       <Reanimated.View entering={FadeInUp.delay(160).duration(620).easing(Easing.out(Easing.cubic))} style={s.organizePhoneMock}>
@@ -16716,7 +16778,7 @@ function OrganizeHomePreviewSlide({ onNext }: { onNext: () => void }) {
   );
 }
 
-function OrganizeMyRhythmPreviewSlide({ onNext }: { onNext: () => void }) {
+function OrganizeMyRhythmPreviewSlide({ onBack, onNext }: { onBack?: () => void; onNext: () => void }) {
   const sections = [
     { title: 'Spiritual', body: 'Prayer and Scripture tasks', accent: GOLD, icon: <Cross s={17} c={GOLD} w={2} /> },
     { title: 'Routine', body: 'Responsibilities by day', accent: '#4D8586', icon: <ListChecks s={17} c="#4D8586" w={2} /> },
@@ -16726,10 +16788,11 @@ function OrganizeMyRhythmPreviewSlide({ onNext }: { onNext: () => void }) {
 
   return (
     <OrganizeLessonSlide
-      overline="My Rhythm"
       title="This is where you edit the system."
       body="When life changes, My Rhythm is where you adjust times, repeat days, spiritual tasks, habits, and challenges."
+      accent="#4D8586"
       ctaLabel="Complete organization"
+      onBack={onBack}
       onNext={onNext}
     >
       <View style={s.organizeRhythmMock}>
@@ -16761,9 +16824,9 @@ function OrganizeCompleteSlide({ onNext }: { onNext: () => void }) {
 
   return (
     <OrganizeLessonSlide
-      overline="Organization complete"
       title="Your week has direction now."
       body="You marked what is ahead, built a weekly rhythm, and learned where to adjust it when life changes."
+      accent="#2F9B61"
       ctaLabel="Continue"
       onNext={onNext}
     >
@@ -18286,12 +18349,13 @@ export default function OnboardingView() {
       return (
         <OrganizeRuleMapSlide
           variant="start"
+          onBack={goBack}
           onNext={goNext}
         />
       );
     }
     if (activeStep === 'organizeMacroIntro') {
-      return <OrganizeMacroIntroSlide onNext={goNext} />;
+      return <OrganizeMacroIntroSlide onBack={goBack} onNext={goNext} />;
     }
     if (activeStep === 'organizeBigEventsIntro') {
       return (
@@ -18301,6 +18365,7 @@ export default function OnboardingView() {
           body="Keep important days in front of you, see how many days are left, and plan your week before anything important gets forgotten."
           examples={BIG_EVENT_EXAMPLES}
           ctaLabel="Add big event"
+          onBack={goBack}
           onNext={startOrganizeAheadSetup}
         />
       );
@@ -18322,6 +18387,7 @@ export default function OnboardingView() {
           body="Choose what you want to accomplish in the months ahead, so every weekly plan starts with direction."
           examples={MONTHLY_GOAL_EXAMPLES}
           ctaLabel="Add monthly goal"
+          onBack={goBack}
           onNext={startOrganizeMonthlyGoalsSetup}
         />
       );
@@ -18349,9 +18415,9 @@ export default function OnboardingView() {
     if (activeStep === 'organizeWeeklyIntro') {
       return (
         <OrganizeLessonSlide
-          overline="Weekly routine"
           title="You plan the week once. Then you live it."
           body="Anasta plans on a weekly level. Give each task its place in the week — and every morning simply shows what today asks of you."
+          onBack={goBack}
           onNext={goNext}
         >
           <View style={s.organizeWeekPreview}>
@@ -18370,8 +18436,8 @@ export default function OnboardingView() {
         </OrganizeLessonSlide>
       );
     }
-    if (activeStep === 'organizeWeeklyFrequency') return <OrganizeFrequencySlide onNext={goNext} />;
-    if (activeStep === 'organizeWeeklyTaskTypes') return <OrganizeWeeklyHubSlide stage="start" onNext={goNext} />;
+    if (activeStep === 'organizeWeeklyFrequency') return <OrganizeFrequencySlide onBack={goBack} onNext={goNext} />;
+    if (activeStep === 'organizeWeeklyTaskTypes') return <OrganizeWeeklyHubSlide stage="start" onBack={goBack} onNext={goNext} />;
     if (activeStep === 'organizeHubAfterSpiritual') return <OrganizeWeeklyHubSlide stage="afterSpiritual" onNext={goNext} />;
     if (activeStep === 'organizeHubAfterRoutine') return <OrganizeWeeklyHubSlide stage="afterRoutine" onNext={goNext} />;
     if (activeStep === 'organizeHubAfterChallenges') return <OrganizeWeeklyHubSlide stage="afterChallenges" onNext={goNext} />;
@@ -18384,12 +18450,13 @@ export default function OnboardingView() {
           body="Prayer and Scripture should not depend on memory alone. Give them a place in your week."
           examples={SPIRITUAL_TASK_EXAMPLES}
           ctaLabel="Set spiritual tasks"
+          onBack={goBack}
           onNext={goNext}
         />
       );
     }
     if (activeStep === 'organizeSpiritualTasksSetup') {
-      return <OrganizeSpiritualTaskBuilderSlide onNext={goNext} />;
+      return <OrganizeSpiritualTaskBuilderSlide onBack={goBack} onNext={goNext} />;
     }
     if (activeStep === 'organizeRoutineTasksIntro') {
       return (
@@ -18399,15 +18466,16 @@ export default function OnboardingView() {
           body="Daily life matters too. A steady routine makes room for prayer instead of fighting against it."
           examples={ROUTINE_TASK_EXAMPLES}
           ctaLabel="Set routine tasks"
+          onBack={goBack}
           onNext={goNext}
         />
       );
     }
     if (activeStep === 'organizeRoutineTasksSetup') {
-      return <OrganizeRoutineTaskBuilderSlide onNext={goNext} />;
+      return <OrganizeRoutineTaskBuilderSlide onBack={goBack} onNext={goNext} />;
     }
     if (activeStep === 'organizeHabitsIntro') {
-      return <OrganizeHabitStorySlide onNext={goNext} />;
+      return <OrganizeHabitStorySlide onBack={goBack} onNext={goNext} />;
     }
     if (activeStep === 'organizeHabitsExamples') {
       return (
@@ -18417,6 +18485,7 @@ export default function OnboardingView() {
           body="This keeps discipline practical. You are not just naming what you want. You are choosing the actions that build it."
           examples={HABIT_GOAL_EXAMPLES}
           ctaLabel="Build your habit"
+          onBack={goBack}
           onNext={startOrganizeHabitsGuided}
         />
       );
@@ -18429,12 +18498,13 @@ export default function OnboardingView() {
           body="Pick one clear commitment and let Anasta track the days until it is complete."
           examples={CHALLENGE_EXAMPLES}
           ctaLabel="Pick a challenge"
+          onBack={goBack}
           onNext={startOrganizeChallengesGuided}
         />
       );
     }
     if (activeStep === 'organizeHomePreview') return <OrganizeHomePreviewSlide onNext={goNext} />;
-    if (activeStep === 'organizeMyRhythmPreview') return <OrganizeMyRhythmPreviewSlide onNext={goNext} />;
+    if (activeStep === 'organizeMyRhythmPreview') return <OrganizeMyRhythmPreviewSlide onBack={goBack} onNext={goNext} />;
     if (activeStep === 'organizeComplete') return <OrganizeCompleteSlide onNext={goNext} />;
     if (activeStep === 'weeklyReveal') return <V4WeeklyRevealSlide displayName={answers.displayName} onNext={goNext} />;
     if (activeStep === 'flameOrganize') {
@@ -24230,6 +24300,53 @@ const s = StyleSheet.create({
   },
   organizeRuleMapBoard: {
     marginTop: 0,
+  },
+  organizeStageBackWrap: {
+    position: 'absolute',
+    left: 14,
+    zIndex: 40,
+  },
+  organizeStageBack: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,253,248,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.10)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  organizeStageTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 38,
+    lineHeight: 43,
+    color: INK,
+    textAlign: 'center',
+    maxWidth: 344,
+  },
+  organizeStageTitleCompact: {
+    fontSize: 32,
+    lineHeight: 37,
+  },
+  organizeStageUnderline: {
+    width: '78%',
+    height: 4,
+    borderRadius: 999,
+    marginTop: 2,
+  },
+  // Macro boards centre themselves in the free space like the layer map.
+  organizeMacroIntroBoard: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  organizeLessonBody: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   // The two-layer map fills the screen: cards grow into the free space
   // instead of leaving dead area under two small tags.
