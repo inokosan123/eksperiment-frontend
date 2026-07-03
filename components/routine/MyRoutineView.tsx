@@ -180,7 +180,8 @@ function hexToRgba(hex: string | undefined, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-type RoutineTask = {
+// Exported for the onboarding builders, which reuse the same editor sheet.
+export type RoutineTask = {
   id: string;
   title: string;
   subtitle?: string;
@@ -499,7 +500,7 @@ function readingBookIdFromTaskId(taskId: string) {
     : null;
 }
 
-function routineTaskToDraft(task: RoutineTask): TaskDraft {
+export function routineTaskToDraft(task: RoutineTask): TaskDraft {
   const dayTimes = overridesToTaskDayTimes(task.dayTimeOverrides ?? []);
   const subtitle = isJesusPrayerRoutineTask(task)
     ? getJesusPrayerRoutineSubtitle(task)
@@ -1956,7 +1957,8 @@ function RoutineScriptureAmountEditor({
   );
 }
 
-function RoutineTaskEditorSheet({
+// Exported for the onboarding builders — the exact editor the app uses.
+export function RoutineTaskEditorSheet({
   visible,
   guided = false,
   task,

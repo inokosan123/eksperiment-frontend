@@ -20,6 +20,7 @@ import Reanimated, {
   Easing,
   interpolate,
   interpolateColor,
+  LinearTransition,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -78,7 +79,17 @@ import WeeklyRhythm from '@/components/home/WeeklyRhythm';
 import MonthlyGoalsView from '@/components/inner-tools/MonthlyGoalsView';
 import HabitsView from '@/components/habits/HabitsView';
 import ChallengesView from '@/components/challenges/ChallengesView';
-import MyRoutineView from '@/components/routine/MyRoutineView';
+import MyRoutineView, {
+  RoutineTaskEditorSheet,
+  routineTaskToDraft,
+  type RoutineTask,
+} from '@/components/routine/MyRoutineView';
+import SetAsTaskSheet, {
+  type PrayerType,
+  type ScriptureReadingType,
+} from '@/components/shared/SetAsTaskSheet';
+import { useTasks } from '@/components/tasks/TaskProvider';
+import type { TaskDefinition, TaskDraft } from '@/components/tasks/taskTypes';
 import { useGuidedSetup } from '@/components/onboarding/guided/GuidedSetupContext';
 import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
 import { C, F } from '@/constants/tokens';
@@ -14967,9 +14978,17 @@ type OrganizeScheduleItem = {
   frequency: string;
 };
 
+// How each suggestion opens the app's real setup: the SetAsTaskSheet
+// (preselected to the right prayer/scripture type) or the routine task
+// editor (level 1 spiritual) — exactly the flows the real app uses.
+type SpiritualSetupTarget =
+  | { kind: 'sheet'; context: 'prayer' | 'scripture'; prayerType?: PrayerType; scriptureType?: ScriptureReadingType }
+  | { kind: 'editor'; type: TaskDefinition['type'] };
+
 type SpiritualTaskSuggestion = OrganizeScheduleItem & {
   taskType: NonNullable<TaskData['type']>;
   habitIconName: string;
+  setup: SpiritualSetupTarget;
 };
 
 type SpiritualTaskSuggestionGroup = {
@@ -15141,6 +15160,7 @@ const SPIRITUAL_TASK_SUGGESTION_GROUPS: SpiritualTaskSuggestionGroup[] = [
         frequency: 'Every day',
         taskType: 'prayer',
         habitIconName: 'Sun',
+        setup: { kind: 'sheet', context: 'prayer', prayerType: 'morning' },
       },
       {
         id: 'evening-prayer',
@@ -15152,6 +15172,7 @@ const SPIRITUAL_TASK_SUGGESTION_GROUPS: SpiritualTaskSuggestionGroup[] = [
         frequency: 'Every day',
         taskType: 'prayer',
         habitIconName: 'Moon',
+        setup: { kind: 'sheet', context: 'prayer', prayerType: 'evening' },
       },
       {
         id: 'jesus-prayer',
@@ -15163,6 +15184,7 @@ const SPIRITUAL_TASK_SUGGESTION_GROUPS: SpiritualTaskSuggestionGroup[] = [
         frequency: 'Every day',
         taskType: 'prayer',
         habitIconName: 'Candle',
+        setup: { kind: 'sheet', context: 'prayer', prayerType: 'jesus' },
       },
     ],
   },
@@ -15180,6 +15202,7 @@ const SPIRITUAL_TASK_SUGGESTION_GROUPS: SpiritualTaskSuggestionGroup[] = [
         frequency: 'Mon - Sat',
         taskType: 'reading',
         habitIconName: 'Book',
+        setup: { kind: 'sheet', context: 'scripture', scriptureType: 'new_testament' },
       },
       {
         id: 'old-testament',
@@ -15191,6 +15214,7 @@ const SPIRITUAL_TASK_SUGGESTION_GROUPS: SpiritualTaskSuggestionGroup[] = [
         frequency: 'Mon - Sat',
         taskType: 'reading',
         habitIconName: 'Book',
+        setup: { kind: 'sheet', context: 'scripture', scriptureType: 'old_testament' },
       },
       {
         id: 'psalter',
@@ -15202,6 +15226,7 @@ const SPIRITUAL_TASK_SUGGESTION_GROUPS: SpiritualTaskSuggestionGroup[] = [
         frequency: 'Every day',
         taskType: 'reading',
         habitIconName: 'Book',
+        setup: { kind: 'sheet', context: 'scripture', scriptureType: 'psalter' },
       },
       {
         id: 'custom-scripture',
@@ -15213,6 +15238,7 @@ const SPIRITUAL_TASK_SUGGESTION_GROUPS: SpiritualTaskSuggestionGroup[] = [
         frequency: 'Custom',
         taskType: 'reading',
         habitIconName: 'Pencil',
+        setup: { kind: 'sheet', context: 'scripture', scriptureType: 'custom' },
       },
     ],
   },
@@ -15230,6 +15256,7 @@ const SPIRITUAL_TASK_SUGGESTION_GROUPS: SpiritualTaskSuggestionGroup[] = [
         frequency: 'Sunday',
         taskType: 'church',
         habitIconName: 'Cross',
+        setup: { kind: 'editor', type: 'church' },
       },
     ],
   },
@@ -15245,37 +15272,8 @@ const SPIRITUAL_CUSTOM_TASK: SpiritualTaskSuggestion = {
   frequency: 'Custom',
   taskType: 'custom',
   habitIconName: 'Sparkles',
+  setup: { kind: 'editor', type: 'custom' },
 };
-
-const ROUTINE_SCHEDULE_ITEMS: OrganizeScheduleItem[] = [
-  {
-    id: 'cleaning',
-    title: 'Cleaning',
-    body: 'Place ordinary order into the week before it becomes pressure.',
-    accent: '#4D8586',
-    icon: <ListChecks s={18} c="#4D8586" w={2} />,
-    defaultTime: '18:00',
-    frequency: 'Tue / Thu',
-  },
-  {
-    id: 'study',
-    title: 'Study',
-    body: 'Protect a repeatable block for reading, learning, or school work.',
-    accent: GOLD,
-    icon: <Book s={18} c={GOLD} w={2} />,
-    defaultTime: '17:00',
-    frequency: 'Weekdays',
-  },
-  {
-    id: 'family',
-    title: 'Family responsibility',
-    body: 'Keep repeated duties visible so they are carried with peace.',
-    accent: '#8F5B4B',
-    icon: <Heart s={18} c="#8F5B4B" w={2} />,
-    defaultTime: '19:00',
-    frequency: 'Sunday',
-  },
-];
 
 function OrganizeDailyRuleSlide({ onNext }: { onNext: () => void }) {
   const insets = useSafeAreaInsets();
@@ -16007,149 +16005,6 @@ function OrganizeWeeklyHubSlide({ stage, onNext }: { stage: OrganizeHubStage; on
   );
 }
 
-function OrganizeScheduleSetupSlide({
-  overline,
-  title,
-  body,
-  items,
-  ctaLabel,
-  onNext,
-}: {
-  overline: string;
-  title: string;
-  body: string;
-  items: OrganizeScheduleItem[];
-  ctaLabel: string;
-  onNext: () => void;
-}) {
-  const insets = useSafeAreaInsets();
-  const [selectedId, setSelectedId] = useState(items[0]?.id ?? '');
-  const [completed, setCompleted] = useState<Record<string, boolean>>({});
-  const selectedItem = items.find(item => item.id === selectedId) ?? items[0];
-  const completeCount = items.filter(item => completed[item.id]).length;
-  const allDone = completeCount === items.length;
-  const contentStyle = [
-    s.organizeRuleContent,
-    {
-      paddingTop: Math.max(insets.top + 24, 54),
-      paddingBottom: insets.bottom + 134,
-      rowGap: 24,
-    },
-  ];
-  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
-
-  const saveSelected = () => {
-    if (!selectedItem) return;
-    setCompleted(prev => ({ ...prev, [selectedItem.id]: true }));
-    runPreviewTaskCheckHaptic();
-    void playTaskCheckSoundOnly();
-    const nextIncomplete = items.find(item => item.id !== selectedItem.id && !completed[item.id]);
-    if (nextIncomplete) {
-      setTimeout(() => setSelectedId(nextIncomplete.id), 280);
-    }
-  };
-
-  return (
-    <View style={s.organizeRuleScreen}>
-      <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
-        <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={s.organizeRuleHeader}>
-          <Text style={s.organizeRuleOverline}>{overline}</Text>
-          <Text style={s.organizeRuleHeading}>{title}</Text>
-          <Text style={s.organizeRuleBody}>{body}</Text>
-          <Text style={s.organizeRuleNote}>{completeCount}/{items.length} rhythms set</Text>
-        </Reanimated.View>
-
-        <View style={s.setupPathBoard}>
-          {items.map((item, index) => {
-            const done = !!completed[item.id];
-            const active = selectedId === item.id && !done;
-            return (
-              <React.Fragment key={item.id}>
-                <TouchableOpacity
-                  activeOpacity={0.92}
-                  haptic="light"
-                  onPress={() => setSelectedId(item.id)}
-                  style={s.organizeTouchableCard}
-                >
-                  <SetupPathStepCard
-                    title={item.title}
-                    body={done ? `${item.defaultTime} · ${item.frequency}` : item.body}
-                    accent={item.accent}
-                    icon={item.icon}
-                    index={index}
-                    active={active}
-                    done={done}
-                    activeReady
-                    enteringDelay={180 + index * 130}
-                  />
-                </TouchableOpacity>
-                {index < items.length - 1 ? (
-                  <OrganizeRuleConnector accent={items[index + 1]?.accent ?? item.accent} index={index} />
-                ) : null}
-              </React.Fragment>
-            );
-          })}
-        </View>
-
-        {selectedItem && !completed[selectedItem.id] ? (
-          <Reanimated.View
-            key={selectedItem.id}
-            entering={FadeInUp.duration(430).easing(Easing.out(Easing.cubic))}
-            exiting={FadeOut.duration(180)}
-            style={s.organizeEditorPanel}
-          >
-            <LinearGradient
-              pointerEvents="none"
-              colors={['rgba(255,255,255,1)', `${selectedItem.accent}14`, 'rgba(255,249,235,0.93)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <View style={s.organizeEditorHeader}>
-              <View style={[s.organizeEditorIcon, { borderColor: `${selectedItem.accent}34`, backgroundColor: `${selectedItem.accent}12` }]}>
-                {selectedItem.icon}
-              </View>
-              <View style={s.organizeEditorCopy}>
-                <Text style={s.organizeEditorTitle}>{selectedItem.title}</Text>
-                <Text style={s.organizeEditorBody}>Choose a simple starting rhythm. You can edit this later.</Text>
-              </View>
-            </View>
-
-            <View style={s.organizeEditorChips}>
-              {[selectedItem.defaultTime, 'Morning', 'Evening'].map((chip, index) => (
-                <View key={`${selectedItem.id}-time-${chip}`} style={[s.organizeEditorChip, index === 0 && { borderColor: `${selectedItem.accent}42`, backgroundColor: `${selectedItem.accent}12` }]}>
-                  <Text style={[s.organizeEditorChipText, index === 0 && { color: selectedItem.accent }]}>{chip}</Text>
-                </View>
-              ))}
-            </View>
-            <View style={s.organizeEditorChips}>
-              {[selectedItem.frequency, 'Weekdays', 'Custom'].map((chip, index) => (
-                <View key={`${selectedItem.id}-freq-${chip}`} style={[s.organizeEditorChip, index === 0 && { borderColor: `${selectedItem.accent}42`, backgroundColor: `${selectedItem.accent}12` }]}>
-                  <Text style={[s.organizeEditorChipText, index === 0 && { color: selectedItem.accent }]}>{chip}</Text>
-                </View>
-              ))}
-            </View>
-
-            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={saveSelected} style={[s.organizeEditorSave, { backgroundColor: selectedItem.accent }]}>
-              <Text style={s.organizeEditorSaveText}>Save rhythm</Text>
-              <CheckSmall s={16} c="#FFFFFF" w={2.5} />
-            </TouchableOpacity>
-          </Reanimated.View>
-        ) : null}
-      </ScrollView>
-
-      <AnimatedCta active={allDone} delay={120} style={footerStyle} pointerEvents={allDone ? 'auto' : 'none'}>
-        <View style={s.ctaIsland}>
-          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-            <Text style={s.primaryButtonText}>{ctaLabel}</Text>
-            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
-          </TouchableOpacity>
-        </View>
-      </AnimatedCta>
-    </View>
-  );
-}
-
 function spiritualTaskDataForSuggestion(item: SpiritualTaskSuggestion): TaskData {
   return {
     variant: 'spiritual',
@@ -16159,6 +16014,19 @@ function spiritualTaskDataForSuggestion(item: SpiritualTaskSuggestion): TaskData
     state: 'pending',
     type: item.taskType,
     habitIconName: item.habitIconName,
+  };
+}
+
+// The saved draft rendered exactly as it will look on Home.
+function spiritualDraftToTaskData(draft: TaskDraft): TaskData {
+  return {
+    variant: 'spiritual',
+    title: draft.title,
+    time: draft.schedule?.time,
+    subtitle: draft.subtitle,
+    state: 'pending',
+    type: (draft.type as TaskData['type']) ?? 'custom',
+    habitIconName: draft.icon,
   };
 }
 
@@ -16177,12 +16045,98 @@ function SpiritualTaskPreviewCard({
   );
 }
 
+// A freshly-activated task: the real Home card landing with a brief gold seal.
+function SpiritualSavedTaskCard({ card, fresh }: { card: TaskData; fresh: boolean }) {
+  return (
+    <View style={s.spiritualBuilderTaskFrame}>
+      <AnyTaskCard task={card} />
+      {fresh ? (
+        <Reanimated.View
+          pointerEvents="none"
+          entering={FadeIn.duration(180)}
+          exiting={FadeOut.duration(460)}
+          style={s.spiritualBuilderSavedGlow}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+type SavedSpiritualEntry = {
+  key: string;
+  suggestionId: string;
+  card: TaskData;
+};
+
+// Routine examples the builder can prefill into the real editor.
+type RoutineTaskExample = {
+  id: string;
+  title: string;
+  frequencyLabel: string;
+  time: string;
+  frequency: RoutineTask['frequency'];
+  selectedDays?: number[];
+  icon: NonNullable<RoutineTask['icon']>;
+};
+
+const ROUTINE_TASK_EXAMPLE_ITEMS: RoutineTaskExample[] = [
+  { id: 'cleaning', title: 'Cleaning', frequencyLabel: 'Tue & Thu', time: '18:00', frequency: 'specific_days', selectedDays: [1, 3], icon: 'Home' },
+  { id: 'study', title: 'Study', frequencyLabel: 'Weekdays', time: '17:00', frequency: 'weekdays', icon: 'Book' },
+  { id: 'exercise', title: 'Exercise', frequencyLabel: 'Mon, Wed & Fri', time: '07:30', frequency: 'specific_days', selectedDays: [0, 2, 4], icon: 'Dumbbell' },
+  { id: 'family', title: 'Family responsibility', frequencyLabel: 'Sunday', time: '19:00', frequency: 'specific_days', selectedDays: [6], icon: 'Heart' },
+  { id: 'plan-tomorrow', title: 'Plan tomorrow', frequencyLabel: 'Every day', time: '21:00', frequency: 'daily', icon: 'Calendar' },
+];
+
+function routineExampleToTaskData(example: RoutineTaskExample): TaskData {
+  return {
+    variant: 'routine',
+    title: example.title,
+    time: example.time,
+    subtitle: example.frequencyLabel,
+    state: 'pending',
+    type: 'custom',
+    habitIconName: example.icon,
+  };
+}
+
+function routineExampleToPrefill(example: RoutineTaskExample): RoutineTask {
+  return {
+    id: `routine_${Date.now()}`,
+    title: example.title,
+    level: 2,
+    source: 'routine',
+    type: 'custom',
+    icon: example.icon,
+    status: 'active',
+    time: example.time,
+    frequency: example.frequency,
+    selectedDays: example.frequency === 'specific_days' ? example.selectedDays : undefined,
+    sameTimeEveryDay: true,
+    notificationMode: 'none',
+  };
+}
+
+function routineDraftToTaskData(draft: TaskDraft): TaskData {
+  return {
+    variant: 'routine',
+    title: draft.title,
+    time: draft.schedule?.time,
+    subtitle: draft.subtitle,
+    state: 'pending',
+    type: (draft.type as TaskData['type']) ?? 'custom',
+    habitIconName: draft.icon,
+  };
+}
+
 function OrganizeSpiritualTaskBuilderSlide({ onNext }: { onNext: () => void }) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
-  const [selectedTask, setSelectedTask] = useState<SpiritualTaskSuggestion | null>(null);
-  const [savedTasks, setSavedTasks] = useState<SpiritualTaskSuggestion[]>([]);
-  const savedIds = useMemo(() => new Set(savedTasks.map(task => task.id)), [savedTasks]);
+  const { createOrUpdateTask } = useTasks();
+  const [sheetTask, setSheetTask] = useState<SpiritualTaskSuggestion | null>(null);
+  const [editorTask, setEditorTask] = useState<SpiritualTaskSuggestion | null>(null);
+  const [savedTasks, setSavedTasks] = useState<SavedSpiritualEntry[]>([]);
+  const [freshKey, setFreshKey] = useState<string | null>(null);
+  const savedIds = useMemo(() => new Set(savedTasks.map(task => task.suggestionId)), [savedTasks]);
   const compact = height < 750;
   const suggestionsHeight = compact
     ? Math.max(178, Math.min(236, height * 0.27))
@@ -16200,19 +16154,24 @@ function OrganizeSpiritualTaskBuilderSlide({ onNext }: { onNext: () => void }) {
 
   const selectTask = (item: SpiritualTaskSuggestion) => {
     runSelectionHaptic();
-    setSelectedTask(item);
+    if (item.setup.kind === 'editor') setEditorTask(item);
+    else setSheetTask(item);
   };
 
-  const saveSelectedTask = () => {
-    if (!selectedTask) return;
+  // A real task was just created — celebrate it into the "My" panel.
+  const completeSave = useCallback((item: SpiritualTaskSuggestion, draft: TaskDraft) => {
+    const key = `${item.id}-${Date.now()}`;
     setSavedTasks(prev => {
-      if (prev.some(task => task.id === selectedTask.id)) return prev;
-      return [...prev, selectedTask];
+      if (prev.some(task => task.suggestionId === item.id)) return prev;
+      return [...prev, { key, suggestionId: item.id, card: spiritualDraftToTaskData(draft) }];
     });
-    setSelectedTask(null);
+    setFreshKey(key);
     runPreviewTaskCheckHaptic();
     void playTaskCheckSoundOnly();
-  };
+    setTimeout(() => {
+      setFreshKey(current => (current === key ? null : current));
+    }, 1050);
+  }, []);
 
   return (
     <View style={s.organizeRuleScreen}>
@@ -16245,12 +16204,16 @@ function OrganizeSpiritualTaskBuilderSlide({ onNext }: { onNext: () => void }) {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={s.spiritualBuilderSavedList}
             >
-              {savedTasks.map((task, index) => (
+              {savedTasks.map(task => (
                 <Reanimated.View
-                  key={task.id}
-                  entering={FadeInUp.delay(40 + index * 70).duration(360).easing(Easing.out(Easing.cubic))}
+                  key={task.key}
+                  entering={FadeInUp.duration(480).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                    opacity: 0,
+                    transform: [{ translateY: 18 }, { scale: 0.965 }],
+                  })}
+                  layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
                 >
-                  <SpiritualTaskPreviewCard item={task} />
+                  <SpiritualSavedTaskCard card={task.card} fresh={freshKey === task.key} />
                 </Reanimated.View>
               ))}
             </ScrollView>
@@ -16282,20 +16245,29 @@ function OrganizeSpiritualTaskBuilderSlide({ onNext }: { onNext: () => void }) {
               const groupItems = group.items.filter(item => !savedIds.has(item.id));
               if (!groupItems.length) return null;
               return (
-                <View key={group.id} style={s.spiritualBuilderGroup}>
+                <Reanimated.View
+                  key={group.id}
+                  style={s.spiritualBuilderGroup}
+                  layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
+                >
                   <Text style={s.spiritualBuilderGroupTitle}>{group.title}</Text>
                   {groupItems.map(item => (
-                    <TouchableOpacity
+                    <Reanimated.View
                       key={item.id}
-                      activeOpacity={0.9}
-                      haptic="none"
-                      onPress={() => selectTask(item)}
-                      style={s.spiritualBuilderSuggestionPress}
+                      exiting={FadeOut.duration(200)}
+                      layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
                     >
-                      <SpiritualTaskPreviewCard item={item} muted />
-                    </TouchableOpacity>
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        haptic="none"
+                        onPress={() => selectTask(item)}
+                        style={s.spiritualBuilderSuggestionPress}
+                      >
+                        <SpiritualTaskPreviewCard item={item} muted />
+                      </TouchableOpacity>
+                    </Reanimated.View>
                   ))}
-                </View>
+                </Reanimated.View>
               );
             })}
             {!savedIds.has(SPIRITUAL_CUSTOM_TASK.id) ? (
@@ -16315,59 +16287,36 @@ function OrganizeSpiritualTaskBuilderSlide({ onNext }: { onNext: () => void }) {
         </Reanimated.View>
       </View>
 
-      {selectedTask ? (
-        <Reanimated.View
-          key={selectedTask.id}
-          entering={FadeIn.duration(180).withInitialValues({
-            opacity: 0,
-            transform: [{ translateY: 18 }, { scale: 0.985 }],
-          })}
-          exiting={FadeOut.duration(160)}
-          style={[s.spiritualBuilderEditorOverlay, { bottom: insets.bottom + 94 }]}
-        >
-          <View style={s.organizeEditorPanel}>
-            <LinearGradient
-              pointerEvents="none"
-              colors={['rgba(255,255,255,1)', `${selectedTask.accent}14`, 'rgba(255,249,235,0.93)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <View style={s.organizeEditorHeader}>
-              <View style={[s.organizeEditorIcon, { borderColor: `${selectedTask.accent}34`, backgroundColor: `${selectedTask.accent}12` }]}>
-                {selectedTask.icon}
-              </View>
-              <View style={s.organizeEditorCopy}>
-                <Text style={s.organizeEditorTitle}>{selectedTask.title}</Text>
-                <Text style={s.organizeEditorBody}>Choose a simple starting rhythm. You can edit this later.</Text>
-              </View>
-              <TouchableOpacity activeOpacity={0.88} haptic="light" onPress={() => setSelectedTask(null)} style={s.spiritualBuilderSheetClose}>
-                <X s={15} c="rgba(25,23,20,0.58)" w={2.3} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={s.organizeEditorChips}>
-              {[selectedTask.defaultTime, 'Morning', 'Evening'].map((chip, index) => (
-                <View key={`${selectedTask.id}-time-${chip}`} style={[s.organizeEditorChip, index === 0 && { borderColor: `${selectedTask.accent}42`, backgroundColor: `${selectedTask.accent}12` }]}>
-                  <Text style={[s.organizeEditorChipText, index === 0 && { color: selectedTask.accent }]}>{chip}</Text>
-                </View>
-              ))}
-            </View>
-            <View style={s.organizeEditorChips}>
-              {[selectedTask.frequency, 'Weekdays', 'Custom'].map((chip, index) => (
-                <View key={`${selectedTask.id}-freq-${chip}`} style={[s.organizeEditorChip, index === 0 && { borderColor: `${selectedTask.accent}42`, backgroundColor: `${selectedTask.accent}12` }]}>
-                  <Text style={[s.organizeEditorChipText, index === 0 && { color: selectedTask.accent }]}>{chip}</Text>
-                </View>
-              ))}
-            </View>
-
-            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={saveSelectedTask} style={[s.organizeEditorSave, { backgroundColor: selectedTask.accent }]}>
-              <Text style={s.organizeEditorSaveText}>Save rhythm</Text>
-              <CheckSmall s={16} c="#FFFFFF" w={2.5} />
-            </TouchableOpacity>
-          </View>
-        </Reanimated.View>
+      {sheetTask ? (
+        <SetAsTaskSheet
+          visible={!!sheetTask}
+          context={sheetTask.setup.kind === 'sheet' ? sheetTask.setup.context : 'prayer'}
+          initialPrayerType={sheetTask.setup.kind === 'sheet' ? sheetTask.setup.prayerType : undefined}
+          initialScriptureType={sheetTask.setup.kind === 'sheet' ? sheetTask.setup.scriptureType : undefined}
+          onClose={() => setSheetTask(null)}
+          onTaskDraft={async draft => {
+            const target = sheetTask;
+            await createOrUpdateTask(draft);
+            if (target) completeSave(target, draft);
+          }}
+        />
       ) : null}
+
+      <RoutineTaskEditorSheet
+        visible={!!editorTask}
+        task={null}
+        defaultLevel={1}
+        defaultType={editorTask?.setup.kind === 'editor' ? editorTask.setup.type : 'custom'}
+        onClose={() => setEditorTask(null)}
+        onSave={async task => {
+          const target = editorTask;
+          const draft = routineTaskToDraft(task);
+          await createOrUpdateTask(draft);
+          setEditorTask(null);
+          if (target) completeSave(target, draft);
+        }}
+        onDelete={() => {}}
+      />
 
       <AnimatedCta active delay={220} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
         <View style={s.ctaIsland}>
@@ -16512,6 +16461,212 @@ function OrganizeHabitStorySlide({ onNext }: { onNext: () => void }) {
         ) : null}
       </Reanimated.View>
     </OrganizeLessonSlide>
+  );
+}
+
+type SavedRoutineEntry = {
+  key: string;
+  exampleId: string | null;
+  card: TaskData;
+};
+
+// The routine mirror of the spiritual builder: your tasks gather on top,
+// a real editor adds new ones, and examples below prefill that same editor.
+function OrganizeRoutineTaskBuilderSlide({ onNext }: { onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const { createOrUpdateTask } = useTasks();
+  const [editorPrefill, setEditorPrefill] = useState<RoutineTask | null>(null);
+  const [editorExampleId, setEditorExampleId] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [savedTasks, setSavedTasks] = useState<SavedRoutineEntry[]>([]);
+  const [freshKey, setFreshKey] = useState<string | null>(null);
+  const savedExampleIds = useMemo(
+    () => new Set(savedTasks.map(task => task.exampleId).filter(Boolean) as string[]),
+    [savedTasks]
+  );
+  const compact = height < 750;
+  const suggestionsHeight = compact
+    ? Math.max(168, Math.min(226, height * 0.26))
+    : Math.max(214, Math.min(312, height * 0.31));
+  const ready = savedTasks.length > 0;
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+  const contentStyle = [
+    s.spiritualBuilderContent,
+    {
+      paddingTop: Math.max(insets.top + 14, compact ? 40 : 48),
+      paddingBottom: insets.bottom + 98,
+      rowGap: compact ? 9 : 13,
+    },
+  ];
+
+  const openBlankEditor = () => {
+    runSelectionHaptic();
+    setEditorExampleId(null);
+    setEditorPrefill(null);
+    setEditorOpen(true);
+  };
+
+  const openExampleEditor = (example: RoutineTaskExample) => {
+    runSelectionHaptic();
+    setEditorExampleId(example.id);
+    setEditorPrefill(routineExampleToPrefill(example));
+    setEditorOpen(true);
+  };
+
+  const completeSave = useCallback((exampleId: string | null, draft: TaskDraft) => {
+    const key = `${exampleId ?? 'custom'}-${Date.now()}`;
+    setSavedTasks(prev => [...prev, { key, exampleId, card: routineDraftToTaskData(draft) }]);
+    setFreshKey(key);
+    runPreviewTaskCheckHaptic();
+    void playTaskCheckSoundOnly();
+    setTimeout(() => {
+      setFreshKey(current => (current === key ? null : current));
+    }, 1050);
+  }, []);
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <View style={contentStyle}>
+        <Reanimated.View
+          entering={FadeInUp.duration(520).easing(Easing.out(Easing.cubic))}
+          style={s.spiritualBuilderHeader}
+        >
+          <View style={s.v4RecapToolsKicker}>
+            <Text style={s.v4RecapToolsKickerText}>Routine tasks</Text>
+          </View>
+          <Text style={s.spiritualBuilderTitle}>Give ordinary duties a place.</Text>
+          <View style={[s.spiritualBuilderTitleUnderline, s.routineBuilderTitleUnderline]} />
+          <Text style={s.spiritualBuilderSubtitle}>
+            Add the responsibilities you repeat, so the week has structure before it begins.
+          </Text>
+        </Reanimated.View>
+
+        <Reanimated.View
+          entering={FadeInUp.delay(120).duration(520).easing(Easing.out(Easing.cubic))}
+          style={[s.spiritualBuilderMyPanel, s.routineBuilderMyPanel, compact && s.spiritualBuilderMyPanelCompact]}
+        >
+          <View style={s.spiritualBuilderPanelHeader}>
+            <Text style={[s.spiritualBuilderPanelTitle, s.routineBuilderPanelTitle]}>My Routine Tasks</Text>
+            <Text style={[s.spiritualBuilderPanelCount, s.routineBuilderPanelCount]}>{savedTasks.length}</Text>
+          </View>
+          {savedTasks.length ? (
+            <ScrollView
+              nestedScrollEnabled
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={s.spiritualBuilderSavedList}
+            >
+              {savedTasks.map(task => (
+                <Reanimated.View
+                  key={task.key}
+                  entering={FadeInUp.duration(480).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                    opacity: 0,
+                    transform: [{ translateY: 18 }, { scale: 0.965 }],
+                  })}
+                  layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
+                >
+                  <SpiritualSavedTaskCard card={task.card} fresh={freshKey === task.key} />
+                </Reanimated.View>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={s.spiritualBuilderEmptyState}>
+              <View style={[s.spiritualBuilderEmptyIcon, s.routineBuilderEmptyIcon]}>
+                <ListChecks s={18} c="#4D8586" w={2} />
+              </View>
+              <Text style={s.spiritualBuilderEmptyTitle}>No routine tasks yet</Text>
+              <Text style={s.spiritualBuilderEmptyBody}>Add your own below, or start from an example.</Text>
+            </View>
+          )}
+        </Reanimated.View>
+
+        <Reanimated.View entering={FadeInUp.delay(180).duration(520).easing(Easing.out(Easing.cubic))}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            haptic="medium"
+            onPress={openBlankEditor}
+            style={s.routineBuilderAddButton}
+          >
+            <View style={s.routineBuilderAddIcon}>
+              <Plus s={16} c="#FFFFFF" w={2.6} />
+            </View>
+            <Text style={s.routineBuilderAddText}>Add routine task</Text>
+          </TouchableOpacity>
+        </Reanimated.View>
+
+        <Reanimated.View
+          entering={FadeInUp.delay(240).duration(520).easing(Easing.out(Easing.cubic))}
+          style={[s.spiritualBuilderSuggestionWindow, { maxHeight: suggestionsHeight }]}
+        >
+          <View style={s.spiritualBuilderSuggestionHeader}>
+            <Text style={[s.spiritualBuilderSuggestionTitle, s.routineBuilderPanelTitle]}>Examples</Text>
+            <Text style={s.spiritualBuilderSuggestionHint}>Tap to set up</Text>
+          </View>
+          <ScrollView
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={s.spiritualBuilderSuggestionList}
+          >
+            {ROUTINE_TASK_EXAMPLE_ITEMS.filter(example => !savedExampleIds.has(example.id)).map(example => (
+              <Reanimated.View
+                key={example.id}
+                exiting={FadeOut.duration(200)}
+                layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
+              >
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  haptic="none"
+                  onPress={() => openExampleEditor(example)}
+                  style={s.spiritualBuilderSuggestionPress}
+                >
+                  <View style={[s.spiritualBuilderTaskFrame, s.spiritualBuilderTaskFrameMuted]}>
+                    <AnyTaskCard task={routineExampleToTaskData(example)} />
+                    <View pointerEvents="none" style={s.spiritualBuilderTaskMutedOverlay} />
+                  </View>
+                </TouchableOpacity>
+              </Reanimated.View>
+            ))}
+          </ScrollView>
+        </Reanimated.View>
+      </View>
+
+      <RoutineTaskEditorSheet
+        visible={editorOpen}
+        task={editorPrefill}
+        defaultLevel={2}
+        defaultType="custom"
+        onClose={() => {
+          setEditorOpen(false);
+          setEditorPrefill(null);
+          setEditorExampleId(null);
+        }}
+        onSave={async task => {
+          const exampleId = editorExampleId;
+          const draft = routineTaskToDraft(task);
+          await createOrUpdateTask(draft);
+          setEditorOpen(false);
+          setEditorPrefill(null);
+          setEditorExampleId(null);
+          completeSave(exampleId, draft);
+        }}
+        onDelete={() => {}}
+      />
+
+      <AnimatedCta active delay={220} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            haptic={ready ? 'medium' : 'none'}
+            disabled={!ready}
+            onPress={onNext}
+            style={[s.primaryButton, !ready && s.primaryButtonDisabled]}
+          >
+            <Text style={[s.primaryButtonText, !ready && s.primaryButtonDisabledText]}>Continue</Text>
+            <ChevronRight s={19} c={ready ? '#FFFFFF' : 'rgba(25,23,20,0.32)'} w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
   );
 }
 
@@ -18249,16 +18404,7 @@ export default function OnboardingView() {
       );
     }
     if (activeStep === 'organizeRoutineTasksSetup') {
-      return (
-        <OrganizeScheduleSetupSlide
-          overline="Routine tasks"
-          title="Give ordinary duties a place."
-          body="Set a starting rhythm for repeated responsibilities. This keeps the week from becoming noise."
-          items={ROUTINE_SCHEDULE_ITEMS}
-          ctaLabel="Routine tasks set"
-          onNext={goNext}
-        />
-      );
+      return <OrganizeRoutineTaskBuilderSlide onNext={goNext} />;
     }
     if (activeStep === 'organizeHabitsIntro') {
       return <OrganizeHabitStorySlide onNext={goNext} />;
@@ -25147,6 +25293,64 @@ const s = StyleSheet.create({
     position: 'relative',
     borderRadius: 18,
     overflow: 'hidden',
+  },
+  spiritualBuilderSavedGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 18,
+    borderWidth: 1.6,
+    borderColor: 'rgba(197,160,89,0.72)',
+    backgroundColor: 'rgba(197,160,89,0.08)',
+  },
+  // Routine builder — the same bones tinted to the routine teal.
+  routineBuilderTitleUnderline: {
+    backgroundColor: '#4D8586',
+  },
+  routineBuilderMyPanel: {
+    borderColor: 'rgba(77,133,134,0.30)',
+  },
+  routineBuilderPanelTitle: {
+    color: INK,
+  },
+  routineBuilderPanelCount: {
+    color: '#4D8586',
+    backgroundColor: 'rgba(77,133,134,0.12)',
+    borderColor: 'rgba(77,133,134,0.24)',
+  },
+  routineBuilderEmptyIcon: {
+    backgroundColor: 'rgba(77,133,134,0.12)',
+    borderColor: 'rgba(77,133,134,0.22)',
+  },
+  routineBuilderAddButton: {
+    width: '100%',
+    maxWidth: 374,
+    alignSelf: 'center',
+    minHeight: 54,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 10,
+    backgroundColor: '#4D8586',
+    shadowColor: '#4D8586',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  routineBuilderAddIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  routineBuilderAddText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17.5,
+    lineHeight: 22,
+    color: '#FFFFFF',
   },
   spiritualBuilderTaskFrameMuted: {
     opacity: 0.78,

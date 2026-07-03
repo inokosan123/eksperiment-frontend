@@ -91,9 +91,9 @@ export type ChallengeGuideBindings = {
 };
 type TaskTab = 'spiritual' | 'routine' | 'challenge';
 type RuleFrequency = 'daily' | 'weekdays' | 'weekends' | 'specific_days' | 'monthly';
-type PrayerType = 'morning' | 'evening' | 'meal' | 'jesus' | 'custom';
+export type PrayerType = 'morning' | 'evening' | 'meal' | 'jesus' | 'custom';
 type JournalTechnique = 'daily' | 'morning_pages' | 'free_writing';
-type ScriptureReadingType = 'new_testament' | 'old_testament' | 'psalter' | 'church_calendar' | 'custom';
+export type ScriptureReadingType = 'new_testament' | 'old_testament' | 'psalter' | 'church_calendar' | 'custom';
 type PrayerRuleChoice = 'standard' | 'short' | 'seraphim' | 'personal' | 'breakfast' | 'lunch' | 'dinner';
 export type PrayerChallengeRuleChoice = Extract<PrayerRuleChoice, 'standard' | 'short' | 'seraphim' | 'personal'>;
 export type JesusPrayerMode = 'duration' | 'count';
@@ -130,6 +130,11 @@ type Props = {
   onSummaryChange?: (subtitle: string) => void;
   onTaskDraft?: (draft: TaskDraft) => void | Promise<unknown>;
   onTaskMutation?: () => void | Promise<void>;
+  // Optional preselects (used by onboarding): when provided, the sheet opens
+  // with this type already chosen — identical to the user tapping it.
+  // Default behavior is unchanged when omitted.
+  initialPrayerType?: PrayerType;
+  initialScriptureType?: ScriptureReadingType;
 };
 
 type ChallengeConfirmAction = {
@@ -648,6 +653,8 @@ export default function SetAsTaskSheet({
   onSummaryChange,
   onTaskDraft,
   onTaskMutation,
+  initialPrayerType,
+  initialScriptureType,
 }: Props) {
   const { height: windowHeight } = useWindowDimensions();
   const {
@@ -725,7 +732,35 @@ export default function SetAsTaskSheet({
     setTaskTab(context === 'journal' ? 'routine' : 'spiritual');
     setSelectedCatalogId(null);
     setExpandedChallengeId(null);
-  }, [context, visible]);
+    // Apply onboarding preselects exactly as a user tap would (see
+    // selectPrayerType / selectScriptureType) — setters only, so this stays
+    // inert while the sheet is open.
+    if (initialPrayerType) {
+      const meta = PRAYER_TYPES.find(item => item.key === initialPrayerType);
+      setPrayerType(initialPrayerType);
+      setPrayerTitle(meta?.defaultTitle ?? 'Prayer');
+      setPrayerSchedule(defaultSchedule(meta?.defaultTime ?? '08:00'));
+      setPrayerRule(
+        initialPrayerType === 'meal' || initialPrayerType === 'morning' || initialPrayerType === 'evening'
+          ? 'personal'
+          : 'standard'
+      );
+      setJesusMode('duration');
+      setJesusDuration('15');
+      setJesusCount('100');
+    }
+    if (initialScriptureType) {
+      const meta = SCRIPTURE_TYPES.find(item => item.key === initialScriptureType);
+      setScriptureType(initialScriptureType);
+      setScriptureTitle(meta?.defaultTitle ?? 'Scripture Reading');
+      setScriptureSchedule(
+        defaultSchedule(
+          initialScriptureType === 'psalter' ? '06:45' : initialScriptureType === 'church_calendar' ? '06:30' : '08:00'
+        )
+      );
+      setScriptureDailyAmount(1);
+    }
+  }, [context, initialPrayerType, initialScriptureType, visible]);
 
   useEffect(() => {
     tabMotion.value = withSpring(taskTab === 'challenge' ? 1 : 0, {
