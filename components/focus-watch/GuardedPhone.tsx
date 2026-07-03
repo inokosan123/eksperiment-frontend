@@ -1,11 +1,10 @@
 import { useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { Platform, View, StyleSheet } from 'react-native';
 import Svg, { Circle, Line, Rect } from 'react-native-svg';
 import Animated, {
   cancelAnimation,
   Easing,
   useAnimatedProps,
-  useAnimatedStyle,
   useSharedValue,
   withDelay,
   withRepeat,
@@ -14,14 +13,14 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { C } from '@/constants/tokens';
+import FocusWatchLottie from './FocusWatchLottie';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const RING_RADIUS = 45;
 const CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
-// Little app tiles on the quiet phone — the section-card palette family,
-// so the "noise" of an unguarded phone still speaks Anasta's colors.
+// Little app tiles for the web fallback phone — the section-card palette.
 const TILE_COLORS = [
   '#F5CDD3', '#F0E3B8', '#C8E6DD',
   '#DDD5ED', '#E9E7E1', '#F5CDD3',
@@ -31,10 +30,39 @@ const TILE_COLORS = [
 const TILE_XS = [40, 47.5, 55];
 const TILE_YS = [30, 38, 46, 54];
 
-// The centerpiece of the Focus tab: a line-drawn phone in the app's own
-// illustration style. Quiet = a mosaic of app tiles (distractions open).
-// Sealed = the tiles fade and a gold cross settles on the screen. With
-// `progress`, a golden ring of time closes around the phone.
+function WebPhoneFallback({ diameter, sealed }: { diameter: number; sealed: boolean }) {
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Svg width={diameter} height={diameter} viewBox="0 0 100 100" style={StyleSheet.absoluteFill}>
+        <Rect x="34" y="21" width="32" height="58" rx="8" fill="#FFFFFF" stroke="#57534E" strokeWidth="2.1" />
+        <Line x1="46" y1="26.5" x2="54" y2="26.5" stroke="#D6D3D1" strokeWidth="1.5" strokeLinecap="round" />
+        <Line x1="45" y1="74" x2="55" y2="74" stroke="#E7E5E0" strokeWidth="1.5" strokeLinecap="round" />
+        {!sealed &&
+          TILE_YS.map((y, row) =>
+            TILE_XS.map((x, col) => (
+              <Rect
+                key={`${row}-${col}`}
+                x={x} y={y} width="5.2" height="5.2" rx="1.7"
+                fill={TILE_COLORS[row * 3 + col]}
+              />
+            ))
+          )}
+        {sealed && (
+          <>
+            <Circle cx="50" cy="47" r="11" fill={C.gold} opacity="0.13" />
+            <Line x1="50" y1="38.5" x2="50" y2="56" stroke={C.gold} strokeWidth="2.5" strokeLinecap="round" />
+            <Line x1="43.5" y1="44.5" x2="56.5" y2="44.5" stroke={C.gold} strokeWidth="2.5" strokeLinecap="round" />
+          </>
+        )}
+      </Svg>
+    </View>
+  );
+}
+
+// The Focus centerpiece: breathing gold halo + slow pulse waves around a
+// Lottie heart — the living iPhone while all is quiet, the check shield
+// while a watch stands guard. With `progress`, a golden ring of time
+// closes around it.
 export default function GuardedPhone({
   diameter = 150,
   sealed = false,
@@ -111,16 +139,7 @@ export default function GuardedPhone({
     strokeDashoffset: CIRCUMFERENCE * (1 - (progress ? progress.value : 0)),
   }));
 
-  const floatStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: breath.value * 2.4 - 1.2 }],
-  }));
-  const tilesStyle = useAnimatedStyle(() => ({
-    opacity: 1 - seal.value,
-  }));
-  const crossStyle = useAnimatedStyle(() => ({
-    opacity: seal.value,
-    transform: [{ scale: 0.78 + seal.value * 0.22 }],
-  }));
+  const lottieSize = Math.round(diameter * (sealed ? 0.56 : 0.72));
 
   return (
     <View style={{ width: diameter, height: diameter }}>
@@ -150,43 +169,35 @@ export default function GuardedPhone({
         )}
       </Svg>
 
-      <Animated.View style={[StyleSheet.absoluteFill, floatStyle]} pointerEvents="none">
-        {/* Phone frame */}
-        <Svg width={diameter} height={diameter} viewBox="0 0 100 100" style={StyleSheet.absoluteFill}>
-          <Rect
-            x="34" y="21" width="32" height="58" rx="8"
-            fill="#FFFFFF"
-            stroke="#57534E"
-            strokeWidth="2.1"
-          />
-          <Line x1="46" y1="26.5" x2="54" y2="26.5" stroke="#D6D3D1" strokeWidth="1.5" strokeLinecap="round" />
-          <Line x1="45" y1="74" x2="55" y2="74" stroke="#E7E5E0" strokeWidth="1.5" strokeLinecap="round" />
-        </Svg>
-
-        {/* Quiet screen: mosaic of app tiles */}
-        <Animated.View style={[StyleSheet.absoluteFill, tilesStyle]}>
-          <Svg width={diameter} height={diameter} viewBox="0 0 100 100" style={StyleSheet.absoluteFill}>
-            {TILE_YS.map((y, row) =>
-              TILE_XS.map((x, col) => (
-                <Rect
-                  key={`${row}-${col}`}
-                  x={x} y={y} width="5.2" height="5.2" rx="1.7"
-                  fill={TILE_COLORS[row * 3 + col]}
-                />
-              ))
-            )}
-          </Svg>
-        </Animated.View>
-
-        {/* Sealed screen: gold cross over a soft glow */}
-        <Animated.View style={[StyleSheet.absoluteFill, crossStyle]}>
-          <Svg width={diameter} height={diameter} viewBox="0 0 100 100" style={StyleSheet.absoluteFill}>
-            <Circle cx="50" cy="47" r="11" fill={C.gold} opacity="0.13" />
-            <Line x1="50" y1="38.5" x2="50" y2="56" stroke={C.gold} strokeWidth="2.5" strokeLinecap="round" />
-            <Line x1="43.5" y1="44.5" x2="56.5" y2="44.5" stroke={C.gold} strokeWidth="2.5" strokeLinecap="round" />
-          </Svg>
-        </Animated.View>
-      </Animated.View>
+      {Platform.OS === 'web' ? (
+        <WebPhoneFallback diameter={diameter} sealed={sealed} />
+      ) : (
+        <View style={s.lottieWrap} pointerEvents="none">
+          {sealed ? (
+            <FocusWatchLottie
+              name="check-shield"
+              mode="loop"
+              speed={0.85}
+              style={{ width: lottieSize, height: lottieSize }}
+            />
+          ) : (
+            <FocusWatchLottie
+              name="iphone"
+              mode="periodic"
+              restMs={4500}
+              style={{ width: lottieSize, height: lottieSize }}
+            />
+          )}
+        </View>
+      )}
     </View>
   );
 }
+
+const s = StyleSheet.create({
+  lottieWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

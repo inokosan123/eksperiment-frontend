@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { ChevronRight, Clock, Globe, ListChecks, Shield, Smartphone, X } from '@/components/icons/Icons';
+import { ChevronRight, Clock, Flame, Globe, ListChecks, Shield, Smartphone, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import FocusSwitch from './FocusSwitch';
@@ -56,6 +56,12 @@ function UpcomingList({ plans }: { plans: WatchPlan[] }) {
                   <Text style={s.upcomingMeta}>{formatTimeRange(plan.when)}</Text>
                 </View>
               </View>
+              {plan.streak > 0 && (
+                <View style={s.upcomingStreak}>
+                  <Flame s={11} filled color="#F97316" />
+                  <Text style={s.upcomingStreakText}>{plan.streak}</Text>
+                </View>
+              )}
               <ChevronRight s={17} c={C.textMuted} />
             </TouchableOpacity>
           </View>
@@ -301,6 +307,17 @@ const s = StyleSheet.create({
   },
   dayDotOff: {
     backgroundColor: '#E9E7E1',
+  },
+  upcomingStreak: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginRight: 8,
+  },
+  upcomingStreakText: {
+    fontFamily: F.sansBold,
+    fontSize: 11.5,
+    color: '#B45309',
   },
   statusDot: {
     width: 6,

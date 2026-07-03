@@ -2,7 +2,7 @@ import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { Plus } from '@/components/icons/Icons';
+import { Flame, Plus } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import FocusSwitch from './FocusSwitch';
@@ -36,6 +36,12 @@ function PlanCard({ plan }: { plan: WatchPlan }) {
         <Text style={s.planMeta}>{formatWhen(plan.when)}</Text>
 
         <View style={s.planChipRow}>
+          {plan.streak > 0 && (
+            <View style={s.streakChip}>
+              <Flame s={10} filled color="#F97316" />
+              <Text style={s.streakChipText}>{plan.streak}</Text>
+            </View>
+          )}
           <View style={[s.strengthChip, plan.strength === 'strict' ? s.strengthStrict : s.strengthLoose]}>
             <Text
               style={[
@@ -182,6 +188,20 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
+  },
+  streakChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3.5,
+    paddingHorizontal: 8,
+    paddingVertical: 4.5,
+    borderRadius: 999,
+    backgroundColor: '#FFF1E3',
+  },
+  streakChipText: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    color: '#B45309',
   },
   strengthChip: {
     paddingHorizontal: 9,

@@ -6,6 +6,7 @@ import { Globe, Plus, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import WebPackCard from './WebPackCard';
+import FocusWatchLottie from './FocusWatchLottie';
 import { SMOOTH_LAYOUT, SOFT_IN, SOFT_OUT } from './focusMotion';
 import { WEB_PACKS } from './focusContent';
 import {
@@ -97,6 +98,10 @@ export default function CleanSightView() {
           <Text style={s.intro}>Close the door on what wounds the eyes.</Text>
         </Animated.View>
 
+        <Animated.View entering={enter(40)} style={s.heroAnim}>
+          <FocusWatchLottie name="website" mode="periodic" restMs={4000} style={s.heroLottie} />
+        </Animated.View>
+
         <View style={{ paddingHorizontal: 16 }}>
           <Animated.View entering={enter(70)}>
             <Text style={s.sectionLabel}>PROTECTION PACKS</Text>
@@ -148,6 +153,15 @@ const s = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 2.4,
     color: C.textMuted,
+  },
+  heroAnim: {
+    alignItems: 'center',
+    marginTop: 2,
+    marginBottom: -6,
+  },
+  heroLottie: {
+    width: 170,
+    height: 120,
   },
 
   groupCard: {

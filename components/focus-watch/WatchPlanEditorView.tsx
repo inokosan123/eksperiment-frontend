@@ -160,6 +160,7 @@ export default function WatchPlanEditorView() {
           : { kind: 'schedule', startMinutes, endMinutes, days: resolveDays() },
       strength,
       practice,
+      streak: existing?.streak ?? 0,
     });
     router.back();
   };

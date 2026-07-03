@@ -329,6 +329,9 @@ const MONTHLY_GOAL_COURSE_IMAGE = require('@/assets/images/onboarding/monthly-go
 const SPIRITUAL_TASK_MORNING_PRAYER_IMAGE = require('@/assets/images/onboarding/spiritual-task-morning-prayer.png');
 const SPIRITUAL_TASK_BIBLE_STUDY_IMAGE = require('@/assets/images/onboarding/spiritual-task-bible-study.png');
 const SPIRITUAL_TASK_EVENING_PRAYER_IMAGE = require('@/assets/images/onboarding/spiritual-task-evening-prayer.png');
+const ROUTINE_TASK_CLEANING_IMAGE = require('@/assets/images/onboarding/routine-task-cleaning.png');
+const ROUTINE_TASK_STUDY_IMAGE = require('@/assets/images/onboarding/routine-task-study.png');
+const ROUTINE_TASK_FAMILY_RESPONSIBILITY_IMAGE = require('@/assets/images/onboarding/routine-task-family-responsibility.png');
 const ORGANIZE_EXAMPLE_IMAGE_SOURCES = [
   BIG_EVENT_WORK_DEADLINE_IMAGE,
   BIG_EVENT_FAMILY_BIRTHDAY_IMAGE,
@@ -340,6 +343,9 @@ const ORGANIZE_EXAMPLE_IMAGE_SOURCES = [
   SPIRITUAL_TASK_MORNING_PRAYER_IMAGE,
   SPIRITUAL_TASK_BIBLE_STUDY_IMAGE,
   SPIRITUAL_TASK_EVENING_PRAYER_IMAGE,
+  ROUTINE_TASK_CLEANING_IMAGE,
+  ROUTINE_TASK_STUDY_IMAGE,
+  ROUTINE_TASK_FAMILY_RESPONSIBILITY_IMAGE,
 ];
 const PROTECT_STATEMENT_IMAGES = [
   require('@/assets/images/protect-statement-1.jpg'),
@@ -14953,18 +14959,21 @@ const ROUTINE_TASK_EXAMPLES: OrganizeExample[] = [
     body: 'Ordinary order, scheduled before it becomes stress.',
     accent: '#4D8586',
     icon: <ListChecks s={30} c="#4D8586" w={1.9} />,
+    image: ROUTINE_TASK_CLEANING_IMAGE,
   },
   {
     title: 'Study',
     body: 'A clear block for the work that needs focus.',
     accent: GOLD,
     icon: <Book s={30} c={GOLD} w={1.8} />,
+    image: ROUTINE_TASK_STUDY_IMAGE,
   },
   {
     title: 'Family responsibility',
     body: 'The duties that deserve to be remembered calmly.',
     accent: '#8F5B4B',
     icon: <Heart s={30} c="#8F5B4B" w={1.8} />,
+    image: ROUTINE_TASK_FAMILY_RESPONSIBILITY_IMAGE,
   },
 ];
 

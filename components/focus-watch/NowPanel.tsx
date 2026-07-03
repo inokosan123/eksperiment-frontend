@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -11,21 +12,35 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { Globe, Shield } from '@/components/icons/Icons';
+import { Clock, Flame, Globe, Shield } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
 import GuardedPhone from './GuardedPhone';
 import QuickWatchSheet from './QuickWatchSheet';
 import {
+  describeSelection,
   endActiveSession,
   extendActiveSession,
+  getActiveScheduledWatches,
   useFocusWatch,
+  type WatchStrength,
 } from './focusWatchStore';
 import { WEB_PACK_LAYER_NAMES } from './focusContent';
 import { SMOOTH_LAYOUT } from './focusMotion';
 
 const PANEL_TRANSITION = SMOOTH_LAYOUT;
+
+type ActiveDescriptor = {
+  kind: 'quick' | 'scheduled';
+  name: string;
+  startedAt: number;
+  endsAt: number;
+  totalMs: number;
+  strength: WatchStrength;
+  subLine: string;
+  streak: number;
+};
 
 function pad(n: number) {
   return n < 10 ? `0${n}` : `${n}`;
@@ -67,7 +82,7 @@ function ActiveDot() {
 
 function QuietState({ onBegin }: { onBegin: () => void }) {
   return (
-    <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(140)}>
+    <Animated.View entering={FadeIn.duration(320)} exiting={FadeOut.duration(140)}>
       <View style={s.lampWrap}>
         <GuardedPhone diameter={150} />
       </View>
@@ -84,46 +99,50 @@ function QuietState({ onBegin }: { onBegin: () => void }) {
   );
 }
 
-function ActiveState() {
-  const { activeSession } = useFocusWatch();
+function ActiveState({
+  session,
+  onExpired,
+}: {
+  session: ActiveDescriptor;
+  onExpired: () => void;
+}) {
   const [now, setNow] = useState(() => Date.now());
   const progress = useSharedValue(0);
 
-  const endsAt = activeSession?.endsAt ?? 0;
-  const totalMs = activeSession?.totalMs ?? 1;
-  const remaining = Math.max(0, endsAt - now);
+  const remaining = Math.max(0, session.endsAt - now);
+  const isStrict = session.strength === 'strict';
 
   useEffect(() => {
     setNow(Date.now());
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
-  }, [endsAt]);
+  }, [session.endsAt]);
 
-  // The mock session completes on its own when time runs out.
+  // The watch completes on its own when time runs out.
   useEffect(() => {
-    if (activeSession && remaining <= 0) endActiveSession();
-  }, [activeSession, remaining]);
+    if (remaining <= 0) {
+      if (session.kind === 'quick') endActiveSession();
+      onExpired();
+    }
+  }, [remaining, session.kind, onExpired]);
 
   useEffect(() => {
-    const elapsedFraction = Math.min(1, Math.max(0, 1 - remaining / totalMs));
+    const elapsedFraction = Math.min(
+      1,
+      Math.max(0, 1 - remaining / Math.max(1, session.totalMs))
+    );
     progress.value = withTiming(elapsedFraction, {
       duration: 980,
       easing: Easing.linear,
     });
-  }, [remaining, totalMs, progress]);
+  }, [remaining, session.totalMs, progress]);
 
-  const endsLabel = useMemo(() => formatEndsAt(endsAt), [endsAt]);
-
-  if (!activeSession) return null;
-
-  const isStrict = activeSession.strength === 'strict';
-  const categoriesCount = activeSession.categoryIds.length;
-  const subLine = `${categoriesCount} ${categoriesCount === 1 ? 'category' : 'categories'} held back · ${isStrict ? 'Strict' : 'Loose'}`;
+  const endsLabel = useMemo(() => formatEndsAt(session.endsAt), [session.endsAt]);
 
   return (
-    <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(140)}>
-      <Text style={s.sessionName}>{activeSession.name}</Text>
-      <Text style={s.sessionSub}>{subLine}</Text>
+    <Animated.View entering={FadeIn.duration(320)} exiting={FadeOut.duration(140)}>
+      <Text style={s.sessionName}>{session.name}</Text>
+      <Text style={s.sessionSub}>{session.subLine}</Text>
 
       <View style={s.lampWrap}>
         <GuardedPhone diameter={168} sealed progress={progress} />
@@ -134,37 +153,110 @@ function ActiveState() {
         <Text style={s.timerCaption}>REMAINING · ENDS {endsLabel}</Text>
       </View>
 
-      <View style={s.controlsRow}>
-        <TouchableOpacity
-          style={s.chip}
-          activeOpacity={0.75}
-          onPress={() => extendActiveSession(15)}
-        >
-          <Text style={s.chipText}>+15 min</Text>
-        </TouchableOpacity>
-        {isStrict ? (
-          <View style={s.lockNote}>
-            <Shield s={12} c={C.textMuted} w={2.2} />
-            <Text style={s.lockNoteText}>Held until it ends</Text>
-          </View>
-        ) : (
+      {session.kind === 'quick' ? (
+        <View style={s.controlsRow}>
           <TouchableOpacity
-            activeOpacity={0.7}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            onPress={() => endActiveSession()}
+            style={s.chip}
+            activeOpacity={0.75}
+            onPress={() => extendActiveSession(15)}
           >
-            <Text style={s.endEarlyText}>End early</Text>
+            <Text style={s.chipText}>+15 min</Text>
           </TouchableOpacity>
-        )}
-      </View>
+          {isStrict ? (
+            <View style={s.lockNote}>
+              <Shield s={12} c={C.textMuted} w={2.2} />
+              <Text style={s.lockNoteText}>Held until it ends</Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              onPress={() => endActiveSession()}
+            >
+              <Text style={s.endEarlyText}>End early</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : (
+        <View style={s.scheduledRow}>
+          <Flame s={12} filled color="#F97316" />
+          <Text style={s.scheduledText}>
+            {session.streak > 0
+              ? `${session.streak} days unbroken — hold the line tonight`
+              : 'Scheduled watch — hold the line'}
+          </Text>
+        </View>
+      )}
     </Animated.View>
   );
 }
 
 export default function NowPanel() {
-  const { activeSession, webPacks, customDomains, neverPacks, allowlistMode } = useFocusWatch();
+  const {
+    activeSession,
+    plans,
+    webPacks,
+    customDomains,
+    neverPacks,
+    allowlistMode,
+  } = useFocusWatch();
   const [sheetVisible, setSheetVisible] = useState(false);
-  const isActive = !!activeSession;
+  const [clock, setClock] = useState(() => Date.now());
+  const wasActive = useRef(false);
+
+  // A slow tick so scheduled watches appear/disappear on their own.
+  useEffect(() => {
+    const interval = setInterval(() => setClock(Date.now()), 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const scheduled = useMemo(
+    () => getActiveScheduledWatches(plans, new Date(clock)),
+    [plans, clock]
+  );
+
+  const primary: ActiveDescriptor | null = useMemo(() => {
+    if (activeSession) {
+      const count = activeSession.categoryIds.length;
+      return {
+        kind: 'quick',
+        name: activeSession.name,
+        startedAt: activeSession.startedAt,
+        endsAt: activeSession.endsAt,
+        totalMs: activeSession.totalMs,
+        strength: activeSession.strength,
+        streak: 0,
+        subLine: `${count} ${count === 1 ? 'category' : 'categories'} held back · ${activeSession.strength === 'strict' ? 'Strict' : 'Loose'}`,
+      };
+    }
+    const first = scheduled[0];
+    if (!first) return null;
+    return {
+      kind: 'scheduled',
+      name: first.plan.name,
+      startedAt: first.startedAt,
+      endsAt: first.endsAt,
+      totalMs: first.endsAt - first.startedAt,
+      strength: first.plan.strength,
+      streak: first.plan.streak,
+      subLine: `${describeSelection(first.plan)} · ${first.plan.strength === 'strict' ? 'Strict' : 'Loose'}`,
+    };
+  }, [activeSession, scheduled]);
+
+  const isActive = !!primary;
+
+  // A gentle success pulse the moment protection rises.
+  useEffect(() => {
+    if (isActive && !wasActive.current) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    }
+    wasActive.current = isActive;
+  }, [isActive]);
+
+  const alsoWatches = useMemo(() => {
+    if (!primary) return [];
+    return primary.kind === 'quick' ? scheduled : scheduled.slice(1);
+  }, [scheduled, primary]);
 
   const layers = useMemo(() => {
     const result: { id: string; name: string; kind: 'web' | 'allowlist'; badge: string }[] = [];
@@ -197,6 +289,8 @@ export default function NowPanel() {
     return result;
   }, [webPacks, customDomains, neverPacks, allowlistMode]);
 
+  const hasAlsoBlock = layers.length > 0 || alsoWatches.length > 0;
+
   return (
     <Animated.View style={s.card} layout={PANEL_TRANSITION}>
       <View style={s.headerRow}>
@@ -209,17 +303,28 @@ export default function NowPanel() {
         )}
       </View>
 
-      {isActive ? (
-        <ActiveState key="active" />
+      {primary ? (
+        <ActiveState
+          key={`${primary.kind}-${primary.name}`}
+          session={primary}
+          onExpired={() => setClock(Date.now())}
+        />
       ) : (
         <QuietState key="quiet" onBegin={() => setSheetVisible(true)} />
       )}
 
       <QuickWatchSheet visible={sheetVisible} onClose={() => setSheetVisible(false)} />
 
-      {layers.length > 0 && (
+      {hasAlsoBlock && (
         <View style={s.alsoActiveBlock}>
           <Text style={s.alsoActiveLabel}>{isActive ? 'ALSO ACTIVE' : 'ALWAYS ON'}</Text>
+          {alsoWatches.map(entry => (
+            <View key={entry.plan.id} style={s.alsoActiveRow}>
+              <Clock s={13} c={C.textMuted} w={2.2} />
+              <Text style={s.alsoActiveText}>{entry.plan.name}</Text>
+              <Text style={s.alsoActiveAlways}>until {formatEndsAt(entry.endsAt)}</Text>
+            </View>
+          ))}
           {layers.map(layer => (
             <View key={layer.id} style={s.alsoActiveRow}>
               {layer.kind === 'allowlist' ? (
@@ -371,6 +476,18 @@ const s = StyleSheet.create({
     fontFamily: F.sansMedium,
     fontSize: 12.5,
     color: C.textMuted,
+  },
+  scheduledRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  scheduledText: {
+    fontFamily: F.sansMedium,
+    fontSize: 12.5,
+    color: C.textSecondary,
   },
 
   alsoActiveBlock: {

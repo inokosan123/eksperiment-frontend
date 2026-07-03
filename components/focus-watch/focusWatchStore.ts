@@ -32,6 +32,9 @@ export type WatchPlan = {
   when: WatchWhen;
   strength: WatchStrength;
   practice: PracticeKind;
+  // Days in a row this watch stood unbroken. Mock numbers until Phase 2
+  // counts them from real sessions.
+  streak: number;
 };
 
 export type CustomGroup = {
@@ -109,6 +112,7 @@ let state: FocusWatchState = {
       when: { kind: 'schedule', startMinutes: 360, endMinutes: 450, days: [0, 1, 2, 3, 4] },
       strength: 'strict',
       practice: 'psalm',
+      streak: 6,
     },
     {
       id: 'evening',
@@ -120,6 +124,7 @@ let state: FocusWatchState = {
       when: { kind: 'schedule', startMinutes: 1260, endMinutes: 1380, days: [0, 1, 2, 3, 4, 5, 6] },
       strength: 'loose',
       practice: 'prayer',
+      streak: 21,
     },
   ],
   customGroups: [],
@@ -401,6 +406,65 @@ export function practiceName(practice: PracticeKind) {
 export function formatTimeRange(when: WatchWhen) {
   if (when.kind === 'always') return 'Always on';
   return `${formatTimeOfDay(when.startMinutes)} – ${formatTimeOfDay(when.endMinutes)}`;
+}
+
+export type ActiveScheduledWatch = {
+  plan: WatchPlan;
+  startedAt: number;
+  endsAt: number;
+};
+
+function dayStartMs(base: Date, dayOffset: number, minutes: number) {
+  const date = new Date(base);
+  date.setDate(date.getDate() + dayOffset);
+  date.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  return date.getTime();
+}
+
+// Scheduled plans whose window covers this very moment (overnight windows
+// like 22:00 – 06:00 included) — these stand guard in the NOW panel.
+export function getActiveScheduledWatches(plans: WatchPlan[], now = new Date()): ActiveScheduledWatch[] {
+  const nowDay = (now.getDay() + 6) % 7;
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const result: ActiveScheduledWatch[] = [];
+
+  for (const plan of plans) {
+    if (!plan.enabled || plan.when.kind !== 'schedule') continue;
+    const { startMinutes, endMinutes, days } = plan.when;
+    const overnight = endMinutes <= startMinutes;
+
+    if (!overnight) {
+      if (days.includes(nowDay) && nowMin >= startMinutes && nowMin < endMinutes) {
+        result.push({
+          plan,
+          startedAt: dayStartMs(now, 0, startMinutes),
+          endsAt: dayStartMs(now, 0, endMinutes),
+        });
+      }
+      continue;
+    }
+
+    // Overnight window that began today…
+    if (days.includes(nowDay) && nowMin >= startMinutes) {
+      result.push({
+        plan,
+        startedAt: dayStartMs(now, 0, startMinutes),
+        endsAt: dayStartMs(now, 1, endMinutes),
+      });
+      continue;
+    }
+    // …or one that began yesterday and is still running.
+    const yesterday = (nowDay + 6) % 7;
+    if (days.includes(yesterday) && nowMin < endMinutes) {
+      result.push({
+        plan,
+        startedAt: dayStartMs(now, -1, startMinutes),
+        endsAt: dayStartMs(now, 0, endMinutes),
+      });
+    }
+  }
+
+  return result.sort((a, b) => a.endsAt - b.endsAt);
 }
 
 // Next upcoming start among enabled schedule plans, e.g. "Evening Watch · 21:00".

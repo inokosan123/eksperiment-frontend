@@ -7,6 +7,7 @@ import { Globe, Plus, Shield, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import WebPackCard from './WebPackCard';
+import FocusWatchLottie from './FocusWatchLottie';
 import { SMOOTH_LAYOUT, SOFT_IN, SOFT_OUT } from './focusMotion';
 import { WEB_PACKS } from './focusContent';
 import {
@@ -70,6 +71,10 @@ export default function NeverAllowedView() {
         <ScreenTitleBar title="NEVER ALLOWED" showBack />
         <Animated.View entering={enter(0)}>
           <Text style={s.intro}>Doors that stay closed. For good.</Text>
+        </Animated.View>
+
+        <Animated.View entering={enter(40)} style={s.heroAnim}>
+          <FocusWatchLottie name="warning-shield" mode="periodic" restMs={5000} style={s.heroLottie} />
         </Animated.View>
 
         <View style={{ paddingHorizontal: 16 }}>
@@ -194,6 +199,15 @@ const s = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 2.4,
     color: C.textMuted,
+  },
+  heroAnim: {
+    alignItems: 'center',
+    marginTop: 2,
+    marginBottom: -4,
+  },
+  heroLottie: {
+    width: 120,
+    height: 100,
   },
   groupCard: {
     backgroundColor: C.surface,
