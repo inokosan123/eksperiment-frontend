@@ -332,6 +332,9 @@ const SPIRITUAL_TASK_EVENING_PRAYER_IMAGE = require('@/assets/images/onboarding/
 const ROUTINE_TASK_CLEANING_IMAGE = require('@/assets/images/onboarding/routine-task-cleaning.png');
 const ROUTINE_TASK_STUDY_IMAGE = require('@/assets/images/onboarding/routine-task-study.png');
 const ROUTINE_TASK_FAMILY_RESPONSIBILITY_IMAGE = require('@/assets/images/onboarding/routine-task-family-responsibility.png');
+const CHALLENGE_JESUS_PRAYER_DAILY_IMAGE = require('@/assets/images/onboarding/challenge-jesus-prayer-daily.png');
+const CHALLENGE_THREE_PSALMS_DAILY_IMAGE = require('@/assets/images/onboarding/challenge-three-psalms-daily.png');
+const CHALLENGE_TWO_CHAPTERS_DAILY_IMAGE = require('@/assets/images/onboarding/challenge-two-chapters-daily.png');
 const ORGANIZE_EXAMPLE_IMAGE_SOURCES = [
   BIG_EVENT_WORK_DEADLINE_IMAGE,
   BIG_EVENT_FAMILY_BIRTHDAY_IMAGE,
@@ -346,6 +349,9 @@ const ORGANIZE_EXAMPLE_IMAGE_SOURCES = [
   ROUTINE_TASK_CLEANING_IMAGE,
   ROUTINE_TASK_STUDY_IMAGE,
   ROUTINE_TASK_FAMILY_RESPONSIBILITY_IMAGE,
+  CHALLENGE_JESUS_PRAYER_DAILY_IMAGE,
+  CHALLENGE_THREE_PSALMS_DAILY_IMAGE,
+  CHALLENGE_TWO_CHAPTERS_DAILY_IMAGE,
 ];
 const PROTECT_STATEMENT_IMAGES = [
   require('@/assets/images/protect-statement-1.jpg'),
@@ -15000,22 +15006,25 @@ const HABIT_GOAL_EXAMPLES: OrganizeExample[] = [
 
 const CHALLENGE_EXAMPLES: OrganizeExample[] = [
   {
-    title: 'Read the Gospels',
-    body: 'A clear Scripture challenge with a visible finish line.',
-    accent: GOLD,
-    icon: <OpenBook s={30} c={GOLD} w={1.8} />,
-  },
-  {
-    title: '40-Day Psalter',
-    body: 'A serious reading rhythm for a serious season.',
-    accent: '#705B9B',
-    icon: <BookMarked s={30} c="#705B9B" w={1.8} />,
-  },
-  {
-    title: 'Daily Jesus Prayer',
-    body: 'A simple commitment that trains attention and the heart.',
+    title: 'Jesus Prayer Daily',
+    body: 'Return to one short prayer each day, with attention and peace.',
     accent: '#4D8586',
     icon: <Candle s={30} c="#4D8586" w={1.8} />,
+    image: CHALLENGE_JESUS_PRAYER_DAILY_IMAGE,
+  },
+  {
+    title: 'Three Psalms Every Day',
+    body: 'Move through the Psalter with a clear daily rhythm.',
+    accent: '#705B9B',
+    icon: <BookMarked s={30} c="#705B9B" w={1.8} />,
+    image: CHALLENGE_THREE_PSALMS_DAILY_IMAGE,
+  },
+  {
+    title: 'Two Chapters Every Day',
+    body: 'Read Scripture by chapter, with a challenge you can finish.',
+    accent: GOLD,
+    icon: <OpenBook s={30} c={GOLD} w={1.8} />,
+    image: CHALLENGE_TWO_CHAPTERS_DAILY_IMAGE,
   },
 ];
 

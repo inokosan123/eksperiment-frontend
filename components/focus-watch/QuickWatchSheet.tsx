@@ -5,7 +5,13 @@ import { X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
-import { APP_CATEGORIES, startQuickWatch, type WatchStrength } from './focusWatchStore';
+import AppPicker from './AppPicker';
+import {
+  selectionCount,
+  startQuickWatch,
+  type WatchSelection,
+  type WatchStrength,
+} from './focusWatchStore';
 
 const DURATION_OPTIONS = [
   { minutes: 15, label: '15 min' },
@@ -27,22 +33,17 @@ export default function QuickWatchSheet({
   onClose: () => void;
 }) {
   const [minutes, setMinutes] = useState(60);
-  const [categoryIds, setCategoryIds] = useState<string[]>([
-    'social',
-    'entertainment',
-    'games',
-  ]);
+  const [selection, setSelection] = useState<WatchSelection>({
+    categoryIds: ['social', 'entertainment', 'games'],
+    appIds: [],
+    groupIds: [],
+  });
   const [strength, setStrength] = useState<WatchStrength>('loose');
 
-  const canBegin = categoryIds.length > 0;
-
-  const toggleCategory = (id: string) =>
-    setCategoryIds(current =>
-      current.includes(id) ? current.filter(entry => entry !== id) : [...current, id]
-    );
+  const canBegin = selectionCount(selection) > 0;
 
   const begin = () => {
-    startQuickWatch({ minutes, categoryIds, strength });
+    startQuickWatch({ minutes, strength, selection });
     onClose();
   };
 
@@ -81,24 +82,6 @@ export default function QuickWatchSheet({
           })}
         </View>
 
-        <Text style={s.sectionLabel}>WHAT IS HELD BACK</Text>
-        <View style={s.chipWrap}>
-          {APP_CATEGORIES.map(category => {
-            const selected = categoryIds.includes(category.id);
-            return (
-              <TouchableOpacity
-                key={category.id}
-                style={[s.chip, selected && s.chipOn]}
-                activeOpacity={0.8}
-                haptic="selection"
-                onPress={() => toggleCategory(category.id)}
-              >
-                <Text style={[s.chipText, selected && s.chipTextOn]}>{category.name}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
         <Text style={s.sectionLabel}>STRENGTH</Text>
         <View style={s.strengthRow}>
           <TouchableOpacity
@@ -120,6 +103,9 @@ export default function QuickWatchSheet({
             <Text style={s.strengthDesc}>Held until the time runs out.</Text>
           </TouchableOpacity>
         </View>
+
+        <Text style={s.sectionLabel}>WHAT IS HELD BACK</Text>
+        <AppPicker selection={selection} onChange={setSelection} manageGroups={false} />
 
         <GoldButton
           label="Begin the watch"

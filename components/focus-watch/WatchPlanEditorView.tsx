@@ -11,6 +11,9 @@ import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
 import AppPicker from './AppPicker';
 import TimeWheelSheet from './TimeWheelSheet';
+import StreakFlame from './StreakFlame';
+import WatchStatsSheet from './WatchStatsSheet';
+import { getWatchHistory, lastScheduledDays } from './watchHistory';
 import { SMOOTH_LAYOUT, SOFT_IN } from './focusMotion';
 import {
   deleteWatchPlan,
@@ -120,6 +123,12 @@ export default function WatchPlanEditorView() {
   const [practice, setPractice] = useState<PracticeKind>(existing?.practice ?? 'prayer');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [timeSheet, setTimeSheet] = useState<'start' | 'end' | null>(null);
+  const [statsVisible, setStatsVisible] = useState(false);
+
+  const recentDays = useMemo(() => {
+    if (!existing) return [];
+    return lastScheduledDays(existing, getWatchHistory(existing));
+  }, [existing]);
 
   const canSave =
     selectionCount(selection) > 0 && (freq !== 'specific' || days.length > 0);
@@ -188,6 +197,32 @@ export default function WatchPlanEditorView() {
                 returnKeyType="done"
               />
             </View>
+
+            {existing && (
+              <TouchableOpacity
+                style={s.streakStrip}
+                activeOpacity={0.8}
+                onPress={() => setStatsVisible(true)}
+              >
+                <StreakFlame count={existing.streak} />
+                <Text style={s.streakStripText}>
+                  {existing.streak === 1 ? 'day unbroken' : 'days unbroken'}
+                </Text>
+                <View style={s.streakDotsRow}>
+                  {recentDays.map((entry, index) => (
+                    <View
+                      key={index}
+                      style={[
+                        s.streakDot,
+                        entry.status === 'completed' && s.streakDotOn,
+                        entry.status === 'missed' && s.streakDotMissed,
+                      ]}
+                    />
+                  ))}
+                </View>
+                <Text style={s.streakStripLink}>History</Text>
+              </TouchableOpacity>
+            )}
           </Animated.View>
 
           <Animated.View entering={enter(60)}>
@@ -363,6 +398,11 @@ export default function WatchPlanEditorView() {
           else setEndMinutes(minutes);
         }}
       />
+
+      <WatchStatsSheet
+        plan={statsVisible ? (existing ?? null) : null}
+        onClose={() => setStatsVisible(false)}
+      />
     </View>
   );
 }
@@ -409,6 +449,46 @@ const s = StyleSheet.create({
     fontFamily: F.serifMedium,
     fontSize: 18,
     color: C.text,
+  },
+  streakStrip: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: C.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  streakStripText: {
+    fontFamily: F.serif,
+    fontSize: 14,
+    color: C.textSecondary,
+  },
+  streakDotsRow: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 4,
+  },
+  streakDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#EDEBE5',
+  },
+  streakDotOn: {
+    backgroundColor: C.gold,
+  },
+  streakDotMissed: {
+    backgroundColor: '#E7A6B2',
+  },
+  streakStripLink: {
+    fontFamily: F.sansSemiBold,
+    fontSize: 11.5,
+    color: C.gold,
   },
 
   frequencyWrap: {

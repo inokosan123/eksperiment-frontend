@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { ChevronRight, Clock, Flame, Globe, ListChecks, Shield, Smartphone, X } from '@/components/icons/Icons';
+import { ChevronRight, Clock, Globe, ListChecks, Shield, Smartphone, X } from '@/components/icons/Icons';
+import StreakFlame from './StreakFlame';
+import WatchStatsSheet from './WatchStatsSheet';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import FocusSwitch from './FocusSwitch';
@@ -34,7 +37,13 @@ function DayDots({ days }: { days: number[] }) {
   );
 }
 
-function UpcomingList({ plans }: { plans: WatchPlan[] }) {
+function UpcomingList({
+  plans,
+  onStats,
+}: {
+  plans: WatchPlan[];
+  onStats: (plan: WatchPlan) => void;
+}) {
   const router = useRouter();
 
   return (
@@ -48,6 +57,8 @@ function UpcomingList({ plans }: { plans: WatchPlan[] }) {
               style={s.upcomingRow}
               activeOpacity={0.7}
               onPress={() => router.push(`/watch-plan?planId=${plan.id}` as any)}
+              onLongPress={() => onStats(plan)}
+              delayLongPress={320}
             >
               <View style={{ flex: 1 }}>
                 <Text style={s.upcomingName}>{plan.name}</Text>
@@ -58,8 +69,7 @@ function UpcomingList({ plans }: { plans: WatchPlan[] }) {
               </View>
               {plan.streak > 0 && (
                 <View style={s.upcomingStreak}>
-                  <Flame s={11} filled color="#F97316" />
-                  <Text style={s.upcomingStreakText}>{plan.streak}</Text>
+                  <StreakFlame count={plan.streak} />
                 </View>
               )}
               <ChevronRight s={17} c={C.textMuted} />
@@ -162,6 +172,7 @@ function GuardRows() {
 export default function FocusWatchView() {
   const router = useRouter();
   const { plans, webPacks, customDomains } = useFocusWatch();
+  const [statsPlan, setStatsPlan] = useState<WatchPlan | null>(null);
   const upcoming = plans.filter(plan => plan.enabled && plan.when.kind === 'schedule');
 
   const enabledPlans = plans.filter(plan => plan.enabled).length;
@@ -211,7 +222,7 @@ export default function FocusWatchView() {
             <NowPanel />
           </Animated.View>
 
-          {upcoming.length > 0 && <UpcomingList plans={upcoming} />}
+          {upcoming.length > 0 && <UpcomingList plans={upcoming} onStats={setStatsPlan} />}
 
           <View style={s.heroBlock}>
             <Animated.View entering={enter(190)}>
@@ -235,6 +246,8 @@ export default function FocusWatchView() {
           <GuardRows />
         </View>
       </ScrollView>
+
+      <WatchStatsSheet plan={statsPlan} onClose={() => setStatsPlan(null)} />
     </View>
   );
 }
@@ -309,15 +322,7 @@ const s = StyleSheet.create({
     backgroundColor: '#E9E7E1',
   },
   upcomingStreak: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
     marginRight: 8,
-  },
-  upcomingStreakText: {
-    fontFamily: F.sansBold,
-    fontSize: 11.5,
-    color: '#B45309',
   },
   statusDot: {
     width: 6,

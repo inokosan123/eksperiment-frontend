@@ -118,17 +118,17 @@ export default function GuardedPhone({
   }, [showRing, ignite]);
 
   const glowProps = useAnimatedProps(() => ({
-    opacity: (0.06 + breath.value * 0.08) * (0.4 + seal.value * 0.6),
+    opacity: (0.07 + breath.value * 0.09) * (0.6 + seal.value * 0.4),
   }));
   const haloProps = useAnimatedProps(() => ({
-    opacity: (0.03 + breath.value * 0.05) * (0.4 + seal.value * 0.6),
+    opacity: (0.04 + breath.value * 0.06) * (0.6 + seal.value * 0.4),
   }));
   const pulse1Props = useAnimatedProps(() => ({
-    opacity: (1 - pulse1.value) * (0.08 + seal.value * 0.13),
+    opacity: (1 - pulse1.value) * (0.2 + seal.value * 0.06),
     r: 38 + pulse1.value * 9,
   }));
   const pulse2Props = useAnimatedProps(() => ({
-    opacity: (1 - pulse2.value) * (0.06 + seal.value * 0.1),
+    opacity: (1 - pulse2.value) * (0.15 + seal.value * 0.05),
     r: 38 + pulse2.value * 10,
   }));
   const igniteProps = useAnimatedProps(() => ({
@@ -139,15 +139,19 @@ export default function GuardedPhone({
     strokeDashoffset: CIRCUMFERENCE * (1 - (progress ? progress.value : 0)),
   }));
 
-  const lottieSize = Math.round(diameter * (sealed ? 0.56 : 0.72));
+  // The check-shield animation carries a faint line below its shield, which
+  // drags its visual center down — a slight upward lift recenters the shield
+  // itself on the ring.
+  const lottieSize = Math.round(diameter * (sealed ? 0.66 : 0.74));
+  const lottieLift = sealed ? -Math.round(diameter * 0.045) : 0;
 
   return (
     <View style={{ width: diameter, height: diameter }}>
       <Svg width={diameter} height={diameter} viewBox="0 0 100 100">
         <AnimatedCircle cx="50" cy="50" r="46" fill={C.gold} animatedProps={haloProps} />
         <AnimatedCircle cx="50" cy="50" r="34" fill={C.gold} animatedProps={glowProps} />
-        <AnimatedCircle cx="50" cy="50" fill="none" stroke={C.gold} strokeWidth="0.8" animatedProps={pulse1Props} />
-        <AnimatedCircle cx="50" cy="50" fill="none" stroke={C.gold} strokeWidth="0.5" animatedProps={pulse2Props} />
+        <AnimatedCircle cx="50" cy="50" fill="none" stroke={C.gold} strokeWidth="1.1" animatedProps={pulse1Props} />
+        <AnimatedCircle cx="50" cy="50" fill="none" stroke={C.gold} strokeWidth="0.8" animatedProps={pulse2Props} />
 
         {showRing && (
           <>
@@ -178,7 +182,11 @@ export default function GuardedPhone({
               name="check-shield"
               mode="loop"
               speed={0.85}
-              style={{ width: lottieSize, height: lottieSize }}
+              style={{
+                width: lottieSize,
+                height: lottieSize,
+                transform: [{ translateY: lottieLift }],
+              }}
             />
           ) : (
             <FocusWatchLottie

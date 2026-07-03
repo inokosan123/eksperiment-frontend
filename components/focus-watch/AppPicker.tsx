@@ -135,9 +135,13 @@ function GroupEditorSheet({
 export default function AppPicker({
   selection,
   onChange,
+  manageGroups = true,
 }: {
   selection: WatchSelection;
   onChange: (next: WatchSelection) => void;
+  // When false (e.g. inside the quick-watch sheet) groups stay selectable
+  // but creating/deleting them is left to the full editor.
+  manageGroups?: boolean;
 }) {
   const { customGroups } = useFocusWatch();
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -263,6 +267,8 @@ export default function AppPicker({
         })}
       </Animated.View>
 
+      {(manageGroups || customGroups.length > 0) && (
+        <>
       <Text style={s.subLabel}>MY GROUPS</Text>
       <Animated.View style={s.groupCard} layout={LIST_TRANSITION}>
         {customGroups.map((group, index) => {
@@ -296,30 +302,38 @@ export default function AppPicker({
                     {group.appIds.length} {group.appIds.length === 1 ? 'app' : 'apps'}
                   </Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  onPress={() => setGroupToDelete(group.id)}
-                >
-                  <Trash2 s={15} c={C.textMuted} w={2} />
-                </TouchableOpacity>
+                {manageGroups && (
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    onPress={() => setGroupToDelete(group.id)}
+                  >
+                    <Trash2 s={15} c={C.textMuted} w={2} />
+                  </TouchableOpacity>
+                )}
               </View>
             </Animated.View>
           );
         })}
 
-        {customGroups.length > 0 && <View style={s.separator} />}
-        <TouchableOpacity
-          style={s.newGroupRow}
-          activeOpacity={0.75}
-          onPress={() => setGroupSheetVisible(true)}
-        >
-          <View style={s.newGroupIcon}>
-            <Plus s={13} c={C.goldDark} w={2.6} />
-          </View>
-          <Text style={s.newGroupText}>New group</Text>
-        </TouchableOpacity>
+        {manageGroups && (
+          <>
+            {customGroups.length > 0 && <View style={s.separator} />}
+            <TouchableOpacity
+              style={s.newGroupRow}
+              activeOpacity={0.75}
+              onPress={() => setGroupSheetVisible(true)}
+            >
+              <View style={s.newGroupIcon}>
+                <Plus s={13} c={C.goldDark} w={2.6} />
+              </View>
+              <Text style={s.newGroupText}>New group</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </Animated.View>
+        </>
+      )}
 
       <GroupEditorSheet visible={groupSheetVisible} onClose={() => setGroupSheetVisible(false)} />
 

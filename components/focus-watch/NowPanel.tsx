@@ -12,7 +12,8 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { Clock, Flame, Globe, Shield } from '@/components/icons/Icons';
+import { Clock, Globe, Shield } from '@/components/icons/Icons';
+import StreakFlame from './StreakFlame';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
@@ -84,7 +85,7 @@ function QuietState({ onBegin }: { onBegin: () => void }) {
   return (
     <Animated.View entering={FadeIn.duration(320)} exiting={FadeOut.duration(140)}>
       <View style={s.lampWrap}>
-        <GuardedPhone diameter={150} />
+        <GuardedPhone diameter={162} />
       </View>
       <Text style={s.quietTitle}>All is quiet.</Text>
       <Text style={s.quietSub}>No watch is active.</Text>
@@ -145,7 +146,7 @@ function ActiveState({
       <Text style={s.sessionSub}>{session.subLine}</Text>
 
       <View style={s.lampWrap}>
-        <GuardedPhone diameter={168} sealed progress={progress} />
+        <GuardedPhone diameter={178} sealed progress={progress} />
       </View>
 
       <View style={s.timerBlock}>
@@ -169,20 +170,20 @@ function ActiveState({
             </View>
           ) : (
             <TouchableOpacity
-              activeOpacity={0.7}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={s.endChip}
+              activeOpacity={0.75}
               onPress={() => endActiveSession()}
             >
-              <Text style={s.endEarlyText}>End early</Text>
+              <Text style={s.endChipText}>End early</Text>
             </TouchableOpacity>
           )}
         </View>
       ) : (
         <View style={s.scheduledRow}>
-          <Flame s={12} filled color="#F97316" />
+          {session.streak > 0 && <StreakFlame count={session.streak} />}
           <Text style={s.scheduledText}>
             {session.streak > 0
-              ? `${session.streak} days unbroken — hold the line tonight`
+              ? 'days unbroken — hold the line'
               : 'Scheduled watch — hold the line'}
           </Text>
         </View>
@@ -217,7 +218,6 @@ export default function NowPanel() {
 
   const primary: ActiveDescriptor | null = useMemo(() => {
     if (activeSession) {
-      const count = activeSession.categoryIds.length;
       return {
         kind: 'quick',
         name: activeSession.name,
@@ -226,7 +226,7 @@ export default function NowPanel() {
         totalMs: activeSession.totalMs,
         strength: activeSession.strength,
         streak: 0,
-        subLine: `${count} ${count === 1 ? 'category' : 'categories'} held back · ${activeSession.strength === 'strict' ? 'Strict' : 'Loose'}`,
+        subLine: `${describeSelection(activeSession)} held back · ${activeSession.strength === 'strict' ? 'Strict' : 'Loose'}`,
       };
     }
     const first = scheduled[0];
@@ -374,17 +374,18 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  // Green like the check shield standing guard.
   activeDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: C.gold,
+    backgroundColor: '#15803D',
   },
   headerActiveText: {
     fontFamily: F.sansBold,
     fontSize: 10,
     letterSpacing: 2.4,
-    color: C.gold,
+    color: '#15803D',
   },
 
   lampWrap: {
@@ -442,10 +443,12 @@ const s = StyleSheet.create({
     marginTop: 8,
     alignItems: 'center',
   },
+  // Same numerals as the app's other timers (Pomodoro): bold serif, tabular.
   timerText: {
-    fontFamily: F.sansSemiBold,
-    fontSize: 36,
-    letterSpacing: 0.5,
+    fontFamily: F.serifBold,
+    fontSize: 42,
+    lineHeight: 46,
+    letterSpacing: -1,
     color: C.text,
     fontVariant: ['tabular-nums'],
   },
@@ -462,9 +465,17 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  endEarlyText: {
+  endChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#F2D4DA',
+    backgroundColor: '#FEF7F8',
+  },
+  endChipText: {
     fontFamily: F.sansSemiBold,
-    fontSize: 13,
+    fontSize: 12.5,
     color: C.red,
   },
   lockNote: {
