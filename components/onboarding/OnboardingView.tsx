@@ -15006,18 +15006,18 @@ const HABIT_GOAL_EXAMPLES: OrganizeExample[] = [
 
 const CHALLENGE_EXAMPLES: OrganizeExample[] = [
   {
-    title: 'Jesus Prayer Daily',
-    body: 'Return to one short prayer each day, with attention and peace.',
-    accent: '#4D8586',
-    icon: <Candle s={30} c="#4D8586" w={1.8} />,
-    image: CHALLENGE_JESUS_PRAYER_DAILY_IMAGE,
-  },
-  {
     title: 'Three Psalms Every Day',
     body: 'Move through the Psalter with a clear daily rhythm.',
     accent: '#705B9B',
     icon: <BookMarked s={30} c="#705B9B" w={1.8} />,
     image: CHALLENGE_THREE_PSALMS_DAILY_IMAGE,
+  },
+  {
+    title: 'Jesus Prayer Daily',
+    body: 'Return to one short prayer each day, with attention and peace.',
+    accent: '#4D8586',
+    icon: <Candle s={30} c="#4D8586" w={1.8} />,
+    image: CHALLENGE_JESUS_PRAYER_DAILY_IMAGE,
   },
   {
     title: 'Two Chapters Every Day',
