@@ -72,6 +72,7 @@ import {
   preloadTaskFeedbackSound,
 } from '@/components/shared/taskFeedback';
 import { AnimatedTaskRow, CompletionFlourish } from '@/components/shared/taskAnimations';
+import LottieFlame from '@/components/journal/LottieFlame';
 import BigEventsView from '@/components/journal/BigEventsView';
 import WeeklyRhythm from '@/components/home/WeeklyRhythm';
 import MonthlyGoalsView from '@/components/inner-tools/MonthlyGoalsView';
@@ -155,12 +156,15 @@ type StepId =
   | 'organizeWeeklyTaskTypes'
   | 'organizeSpiritualTasksIntro'
   | 'organizeSpiritualTasksSetup'
+  | 'organizeHubAfterSpiritual'
   | 'organizeRoutineTasksIntro'
   | 'organizeRoutineTasksSetup'
+  | 'organizeHubAfterRoutine'
+  | 'organizeChallengesIntro'
+  | 'organizeHubAfterChallenges'
   | 'organizeHabitsIntro'
   | 'organizeHabitsExamples'
-  | 'organizeHabitsSetup'
-  | 'organizeChallengesIntro'
+  | 'organizeHubComplete'
   | 'organizeHomePreview'
   | 'organizeMyRhythmPreview'
   | 'organizeComplete'
@@ -1010,12 +1014,17 @@ function stepOrder(answers: Answers): StepId[] {
     'organizeWeeklyTaskTypes',
     'organizeSpiritualTasksIntro',
     'organizeSpiritualTasksSetup',
+    'organizeHubAfterSpiritual',
     'organizeRoutineTasksIntro',
     'organizeRoutineTasksSetup',
+    'organizeHubAfterRoutine',
+    'organizeChallengesIntro',
+    'buildChallenges',
+    'organizeHubAfterChallenges',
     'organizeHabitsIntro',
     'organizeHabitsExamples',
-    'organizeHabitsSetup',
-    'organizeChallengesIntro',
+    'buildHabits',
+    'organizeHubComplete',
     'organizeHomePreview',
     'organizeMyRhythmPreview',
     'organizeComplete',
@@ -14912,6 +14921,7 @@ function OrganizeMacroProgressSlide({
   );
 }
 
+// Setup order in the weekly hub: spiritual → routine → challenges → habits.
 const DAILY_RULE_STEPS = [
   {
     title: 'Spiritual tasks',
@@ -14926,16 +14936,16 @@ const DAILY_RULE_STEPS = [
     icon: <ListChecks s={18} c="#4D8586" w={2} />,
   },
   {
-    title: 'Habits',
-    body: 'Small repeatable actions that turn discipline into something visible.',
-    accent: '#2F9B61',
-    icon: <Target s={18} c="#2F9B61" w={2} />,
-  },
-  {
     title: 'Challenges',
     body: 'Focused commitments for the virtues and goals you want to grow into.',
     accent: '#8F5B4B',
     icon: <Sparkles s={18} c="#8F5B4B" w={2} />,
+  },
+  {
+    title: 'Habits',
+    body: 'Goals built from small repeated steps that make discipline visible.',
+    accent: '#2F9B61',
+    icon: <Target s={18} c="#2F9B61" w={2} />,
   },
 ];
 
@@ -15808,35 +15818,192 @@ function OrganizeFrequencySlide({ onNext }: { onNext: () => void }) {
   );
 }
 
-function OrganizeTaskTypesSlide({ onNext }: { onNext: () => void }) {
+type OrganizeHubStage = 'start' | 'afterSpiritual' | 'afterRoutine' | 'afterChallenges' | 'complete';
+
+const ORGANIZE_HUB_STAGES: Record<OrganizeHubStage, {
+  doneBefore: number;
+  checksNow: boolean;
+  heading: string;
+  headingDone?: string;
+  body: string;
+  bodyDone?: string;
+  ctaLabel: string | null;
+}> = {
+  start: {
+    doneBefore: 0,
+    checksNow: false,
+    heading: 'One rhythm, four kinds of tasks.',
+    body: 'Spiritual tasks, routine duties, challenges, and habits all land in the same weekly plan. We set them up one by one.',
+    ctaLabel: 'Set spiritual tasks',
+  },
+  afterSpiritual: {
+    doneBefore: 0,
+    checksNow: true,
+    heading: 'Spiritual tasks are in place.',
+    body: 'Now the ordinary week — the duties that keep life steady.',
+    ctaLabel: 'Set routine tasks',
+  },
+  afterRoutine: {
+    doneBefore: 1,
+    checksNow: true,
+    heading: 'Your week has its duties.',
+    body: 'Next, a challenge: one focused commitment with a beginning and an end.',
+    ctaLabel: 'Pick a challenge',
+  },
+  afterChallenges: {
+    doneBefore: 2,
+    checksNow: true,
+    heading: 'The challenge is set.',
+    body: 'Last come habits — goals built from small repeated steps.',
+    ctaLabel: 'Build habits',
+  },
+  complete: {
+    doneBefore: 3,
+    checksNow: true,
+    heading: 'One more moment…',
+    headingDone: 'Your weekly rhythm is set.',
+    body: 'Habits are almost in place.',
+    bodyDone: 'Four kinds of tasks, one plan that carries them all.',
+    ctaLabel: null,
+  },
+};
+
+// The recurring heart of the weekly setup: after each tool is configured we
+// return here — the finished card seals with a check, the next one wakes.
+function OrganizeWeeklyHubSlide({ stage, onNext }: { stage: OrganizeHubStage; onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const config = ORGANIZE_HUB_STAGES[stage];
+  const [checked, setChecked] = useState(!config.checksNow);
+  const [nextAwake, setNextAwake] = useState(false);
+  const exitProgress = useSharedValue(0);
+  const isComplete = stage === 'complete';
+  const doneCount = config.doneBefore + (checked && config.checksNow ? 1 : 0);
+  const activeIndex = isComplete ? -1 : doneCount;
+  const showHeadingDone = isComplete && checked;
+
+  const contentStyle = [
+    s.organizeRuleContent,
+    {
+      paddingTop: Math.max(insets.top + 30, 60),
+      paddingBottom: insets.bottom + 134,
+      rowGap: 26,
+    },
+  ];
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+  const exitStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(exitProgress.value, [0, 1], [1, 0]),
+    transform: [
+      { translateY: interpolate(exitProgress.value, [0, 1], [0, -20]) },
+      { scale: interpolate(exitProgress.value, [0, 1], [1, 0.986]) },
+    ],
+  }));
+
+  // Seal the just-finished type with the app's task-check moment.
+  useEffect(() => {
+    setChecked(!config.checksNow);
+    setNextAwake(false);
+    exitProgress.value = 0;
+    if (!config.checksNow) {
+      const timer = setTimeout(() => {
+        setNextAwake(true);
+        runBubbleHaptic();
+      }, 900 + DAILY_RULE_STEPS.length * 130);
+      return () => clearTimeout(timer);
+    }
+    const timer = setTimeout(() => {
+      setChecked(true);
+      runPreviewTaskCheckHaptic();
+      void playTaskCheckSoundOnly();
+    }, 680);
+    return () => clearTimeout(timer);
+  }, [config.checksNow, exitProgress, stage]);
+
+  // …then wake the next card in line.
+  useEffect(() => {
+    if (!checked || !config.checksNow || isComplete) return undefined;
+    const timer = setTimeout(() => {
+      setNextAwake(true);
+      runBubbleHaptic();
+    }, 760);
+    return () => clearTimeout(timer);
+  }, [checked, config.checksNow, isComplete]);
+
+  // The complete stage celebrates briefly, then carries itself forward.
+  useEffect(() => {
+    if (!isComplete || !checked) return undefined;
+    let nextTimer: ReturnType<typeof setTimeout> | undefined;
+    const exitTimer = setTimeout(() => {
+      runSelectionHaptic();
+      exitProgress.value = withTiming(1, {
+        duration: 660,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      });
+      nextTimer = setTimeout(onNext, 700);
+    }, 1750);
+    return () => {
+      clearTimeout(exitTimer);
+      if (nextTimer) clearTimeout(nextTimer);
+    };
+  }, [checked, exitProgress, isComplete, onNext]);
+
+  const ctaVisible = !!config.ctaLabel && (config.checksNow ? checked && nextAwake : nextAwake);
+
   return (
-    <OrganizeLessonSlide
-      overline="Weekly routine"
-      title="One setup works for every kind of task."
-      body="Spiritual tasks, routine responsibilities, habits, and challenges all land in the same weekly rhythm."
-      onNext={onNext}
-    >
-      <View style={s.setupPathBoard}>
-        {DAILY_RULE_STEPS.map((item, index) => (
-          <React.Fragment key={item.title}>
-            <SetupPathStepCard
-              title={item.title}
-              body={item.body}
-              accent={item.accent}
-              icon={item.icon}
-              index={index}
-              active={index === 0}
-              done={false}
-              activeReady
-              enteringDelay={180 + index * 120}
-            />
-            {index < DAILY_RULE_STEPS.length - 1 ? (
-              <OrganizeRuleConnector accent={DAILY_RULE_STEPS[index + 1]?.accent ?? item.accent} index={index} />
-            ) : null}
-          </React.Fragment>
-        ))}
-      </View>
-    </OrganizeLessonSlide>
+    <View style={s.organizeRuleScreen}>
+      <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
+        <Reanimated.View
+          key={showHeadingDone ? 'hub-heading-done' : 'hub-heading'}
+          entering={FadeInUp.duration(520).easing(Easing.out(Easing.cubic))}
+          style={[s.organizeRuleHeader, exitStyle]}
+        >
+          <View style={s.v4RecapToolsKicker}>
+            <Text style={s.v4RecapToolsKickerText}>Weekly routine</Text>
+          </View>
+          <Text style={s.organizeRuleHeading}>
+            {showHeadingDone ? config.headingDone : config.heading}
+          </Text>
+          <Text style={s.organizeRuleBody}>
+            {showHeadingDone ? config.bodyDone : config.body}
+          </Text>
+        </Reanimated.View>
+
+        <Reanimated.View style={[s.setupPathBoard, exitStyle]}>
+          {DAILY_RULE_STEPS.map((item, index) => {
+            const done = index < doneCount;
+            const active = index === activeIndex && nextAwake;
+            return (
+              <React.Fragment key={item.title}>
+                <SetupPathStepCard
+                  title={item.title}
+                  body={item.body}
+                  accent={item.accent}
+                  icon={item.icon}
+                  index={index}
+                  active={active}
+                  done={done}
+                  activeReady
+                  enteringDelay={stage === 'start' ? 220 + index * 130 : 120 + index * 70}
+                />
+                {index < DAILY_RULE_STEPS.length - 1 ? (
+                  <OrganizeRuleConnector accent={DAILY_RULE_STEPS[index + 1]?.accent ?? item.accent} index={index} />
+                ) : null}
+              </React.Fragment>
+            );
+          })}
+        </Reanimated.View>
+      </ScrollView>
+
+      {config.ctaLabel ? (
+        <AnimatedCta active={ctaVisible} delay={140} style={footerStyle} pointerEvents={ctaVisible ? 'auto' : 'none'}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>{config.ctaLabel}</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      ) : null}
+    </View>
   );
 }
 
@@ -16220,48 +16387,130 @@ function OrganizeSpiritualTaskBuilderSlide({ onNext }: { onNext: () => void }) {
   );
 }
 
-function OrganizeHabitSetupSlide({ onNext }: { onNext: () => void }) {
-  const [selected, setSelected] = useState('discipline');
-  const goals = [
-    { id: 'discipline', title: 'Grow in discipline', body: 'Wake up on time · Make bed · No phone before prayer', accent: GOLD, icon: <Crown s={18} c={GOLD} w={2} /> },
-    { id: 'health', title: 'Lose weight', body: 'Morning walk · Running · Gym', accent: '#2F9B61', icon: <Target s={18} c="#2F9B61" w={2} /> },
-    { id: 'social', title: 'Improve social confidence', body: 'Start one conversation · Read aloud · Voice practice', accent: '#4D8586', icon: <User s={18} c="#4D8586" w={2} /> },
-  ];
+// Habits explained through one lived example: a goal holds several steps,
+// and even an imperfect day still moves you forward. The card acts the
+// story out — two steps check themselves, one is missed, and the progress
+// bar still climbs.
+const HABIT_STORY_STEPS = [
+  { id: 'walk', title: 'Morning walk', time: '07:30' },
+  { id: 'gym', title: 'Gym session', time: '17:00' },
+  { id: 'run', title: 'Evening run', time: '20:00' },
+];
+
+function OrganizeHabitStorySlide({ onNext }: { onNext: () => void }) {
+  const [phase, setPhase] = useState(0);
+  const progress = useSharedValue(0);
+
+  // phase 1: walk checks · 2: gym checks · 3: run misses · 4: the lesson lands
+  useEffect(() => {
+    const timers = [
+      setTimeout(() => {
+        setPhase(1);
+        runPreviewTaskCheckHaptic();
+        void playTaskCheckSoundOnly();
+        progress.value = withTiming(1 / 3, { duration: 520, easing: Easing.out(Easing.cubic) });
+      }, 900),
+      setTimeout(() => {
+        setPhase(2);
+        runPreviewTaskCheckHaptic();
+        void playTaskCheckSoundOnly();
+        progress.value = withTiming(2 / 3, { duration: 520, easing: Easing.out(Easing.cubic) });
+      }, 1750),
+      setTimeout(() => {
+        setPhase(3);
+        runSelectionHaptic();
+      }, 2600),
+      setTimeout(() => {
+        setPhase(4);
+        runBubbleHaptic();
+      }, 3250),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, [progress]);
+
+  const progressStyle = useAnimatedStyle(() => ({
+    width: `${progress.value * 100}%`,
+  }));
 
   return (
     <OrganizeLessonSlide
       overline="Habits"
-      title="Pick one goal to start with."
-      body="A habit goal can hold several small steps. Start with one goal, then add more once the rhythm feels real."
-      ctaLabel="Create habit"
+      title="A habit is a goal with steps."
+      body="You name the goal, then choose the small actions that build it. Miss one step and you are still moving — the goal holds you, not the single day."
+      ctaLabel="See examples"
       onNext={onNext}
     >
-      <View style={s.setupPathBoard}>
-        {goals.map((goal, index) => (
-          <TouchableOpacity
-            key={goal.id}
-            activeOpacity={0.92}
-            haptic="light"
-            onPress={() => {
-              setSelected(goal.id);
-              runSelectionHaptic();
-            }}
-            style={s.organizeTouchableCard}
+      <Reanimated.View
+        entering={FadeInUp.delay(200).duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 24 }, { scale: 0.97 }],
+        })}
+        style={s.habitStoryCard}
+      >
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(255,255,255,1)', 'rgba(47,155,97,0.12)', 'rgba(255,255,255,0.94)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={s.habitStoryHeader}>
+          <View style={s.habitStoryGoalIcon}>
+            <Target s={19} c="#2F9B61" w={2.1} />
+          </View>
+          <View style={s.habitStoryGoalCopy}>
+            <Text style={s.habitStoryGoalLabel}>THE GOAL</Text>
+            <Text style={s.habitStoryGoalTitle}>Get in shape</Text>
+          </View>
+        </View>
+
+        <View style={s.habitStoryProgressTrack}>
+          <Reanimated.View style={[s.habitStoryProgressFill, progressStyle]} />
+        </View>
+
+        <View style={s.habitStorySteps}>
+          {HABIT_STORY_STEPS.map((step, index) => {
+            const checked = phase >= index + 1 && index < 2;
+            const missed = phase >= 3 && index === 2;
+            return (
+              <View key={step.id} style={s.habitStoryStepRow}>
+                <View
+                  style={[
+                    s.habitStoryStepCheck,
+                    checked && s.habitStoryStepCheckDone,
+                    missed && s.habitStoryStepCheckMissed,
+                  ]}
+                >
+                  {checked ? (
+                    <Reanimated.View
+                      entering={FadeIn.duration(220).withInitialValues({ opacity: 0, transform: [{ scale: 0.4 }] })}
+                    >
+                      <CheckSmall s={13} c="#FFFFFF" w={3} />
+                    </Reanimated.View>
+                  ) : null}
+                  {missed ? <View style={s.habitStoryStepMissDash} /> : null}
+                </View>
+                <Text style={[s.habitStoryStepTitle, missed && s.habitStoryStepTitleMissed]}>
+                  {step.title}
+                </Text>
+                <Text style={s.habitStoryStepTime}>{step.time}</Text>
+              </View>
+            );
+          })}
+        </View>
+
+        {phase >= 4 ? (
+          <Reanimated.View
+            entering={FadeInUp.duration(430).easing(Easing.out(Easing.cubic))}
+            style={s.habitStoryLesson}
           >
-            <SetupPathStepCard
-              title={goal.title}
-              body={goal.body}
-              accent={goal.accent}
-              icon={goal.icon}
-              index={index}
-              active={selected === goal.id}
-              done={false}
-              activeReady
-              enteringDelay={170 + index * 120}
-            />
-          </TouchableOpacity>
-        ))}
-      </View>
+            <LottieFlame size={22} />
+            <Text style={s.habitStoryLessonText}>
+              2 of 3 today — still moving toward the goal.
+            </Text>
+          </Reanimated.View>
+        ) : null}
+      </Reanimated.View>
     </OrganizeLessonSlide>
   );
 }
@@ -17534,6 +17783,28 @@ export default function OnboardingView() {
     goNext();
   };
 
+  const startOrganizeHabitsGuided = () => {
+    beginGuidedSetup({
+      currentChapter: 'build',
+      chapterOrder: ['build'],
+      activeStep: 'buildHabits',
+      phase: 'intro',
+      route: '/onboarding',
+    });
+    goNext();
+  };
+
+  const startOrganizeChallengesGuided = () => {
+    beginGuidedSetup({
+      currentChapter: 'build',
+      chapterOrder: ['build'],
+      activeStep: 'buildChallenges',
+      phase: 'intro',
+      route: '/onboarding',
+    });
+    goNext();
+  };
+
   const handleBigEventsComplete = () => {
     endGuidedSetup();
     goNext();
@@ -17556,6 +17827,7 @@ export default function OnboardingView() {
   };
 
   const handleHabitsComplete = () => {
+    endGuidedSetup();
     goNext();
   };
 
@@ -17590,6 +17862,7 @@ export default function OnboardingView() {
     activeStep === 'organizeSpiritualTasksIntro' ||
     activeStep === 'organizeSpiritualTasksSetup' ||
     activeStep === 'organizeRoutineTasksIntro' ||
+    activeStep === 'organizeRoutineTasksSetup' ||
     activeStep === 'organizeHabitsExamples' ||
     activeStep === 'organizeChallengesIntro' ||
     valueStepActive ||
@@ -17619,13 +17892,16 @@ export default function OnboardingView() {
     activeStep === 'organizeWeeklyIntro' ||
     activeStep === 'organizeWeeklyFrequency' ||
     activeStep === 'organizeWeeklyTaskTypes' ||
+    activeStep === 'organizeHubAfterSpiritual' ||
+    activeStep === 'organizeHubAfterRoutine' ||
+    activeStep === 'organizeHubAfterChallenges' ||
+    activeStep === 'organizeHubComplete' ||
     activeStep === 'organizeSpiritualTasksIntro' ||
     activeStep === 'organizeSpiritualTasksSetup' ||
     activeStep === 'organizeRoutineTasksIntro' ||
     activeStep === 'organizeRoutineTasksSetup' ||
     activeStep === 'organizeHabitsIntro' ||
     activeStep === 'organizeHabitsExamples' ||
-    activeStep === 'organizeHabitsSetup' ||
     activeStep === 'organizeChallengesIntro' ||
     activeStep === 'organizeHomePreview' ||
     activeStep === 'organizeMyRhythmPreview' ||
@@ -17940,7 +18216,11 @@ export default function OnboardingView() {
       );
     }
     if (activeStep === 'organizeWeeklyFrequency') return <OrganizeFrequencySlide onNext={goNext} />;
-    if (activeStep === 'organizeWeeklyTaskTypes') return <OrganizeTaskTypesSlide onNext={goNext} />;
+    if (activeStep === 'organizeWeeklyTaskTypes') return <OrganizeWeeklyHubSlide stage="start" onNext={goNext} />;
+    if (activeStep === 'organizeHubAfterSpiritual') return <OrganizeWeeklyHubSlide stage="afterSpiritual" onNext={goNext} />;
+    if (activeStep === 'organizeHubAfterRoutine') return <OrganizeWeeklyHubSlide stage="afterRoutine" onNext={goNext} />;
+    if (activeStep === 'organizeHubAfterChallenges') return <OrganizeWeeklyHubSlide stage="afterChallenges" onNext={goNext} />;
+    if (activeStep === 'organizeHubComplete') return <OrganizeWeeklyHubSlide stage="complete" onNext={goNext} />;
     if (activeStep === 'organizeSpiritualTasksIntro') {
       return (
         <OrganizeExampleCarouselSlide
@@ -17981,22 +18261,7 @@ export default function OnboardingView() {
       );
     }
     if (activeStep === 'organizeHabitsIntro') {
-      return (
-        <OrganizeLessonSlide
-          overline="Habits"
-          title="Habits are built around a goal."
-          body="In Anasta, a habit is a goal with concrete steps. The steps appear in your routine so the goal becomes practice."
-          onNext={goNext}
-        >
-          <View style={s.organizeHabitFormula}>
-            <View style={s.organizeHabitFormulaPill}><Text style={s.organizeHabitFormulaText}>Goal</Text></View>
-            <Plus s={18} c={GOLD} w={2.2} />
-            <View style={s.organizeHabitFormulaPill}><Text style={s.organizeHabitFormulaText}>Steps</Text></View>
-            <ChevronRight s={18} c="rgba(25,23,20,0.44)" w={2.2} />
-            <View style={[s.organizeHabitFormulaPill, s.organizeHabitFormulaPillDone]}><Text style={s.organizeHabitFormulaTextDone}>Habit</Text></View>
-          </View>
-        </OrganizeLessonSlide>
-      );
+      return <OrganizeHabitStorySlide onNext={goNext} />;
     }
     if (activeStep === 'organizeHabitsExamples') {
       return (
@@ -18005,12 +18270,11 @@ export default function OnboardingView() {
           title="Habits"
           body="This keeps discipline practical. You are not just naming what you want. You are choosing the actions that build it."
           examples={HABIT_GOAL_EXAMPLES}
-          ctaLabel="Choose a habit goal"
-          onNext={goNext}
+          ctaLabel="Build your habit"
+          onNext={startOrganizeHabitsGuided}
         />
       );
     }
-    if (activeStep === 'organizeHabitsSetup') return <OrganizeHabitSetupSlide onNext={goNext} />;
     if (activeStep === 'organizeChallengesIntro') {
       return (
         <OrganizeExampleCarouselSlide
@@ -18019,7 +18283,7 @@ export default function OnboardingView() {
           body="Pick one clear commitment and let Anasta track the days until it is complete."
           examples={CHALLENGE_EXAMPLES}
           ctaLabel="Pick a challenge"
-          onNext={goNext}
+          onNext={startOrganizeChallengesGuided}
         />
       );
     }
@@ -24979,6 +25243,140 @@ const s = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: '#4D8586',
+  },
+  habitStoryCard: {
+    width: '100%',
+    maxWidth: 366,
+    alignSelf: 'center',
+    borderRadius: 30,
+    paddingHorizontal: 17,
+    paddingTop: 16,
+    paddingBottom: 15,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1.5,
+    borderColor: 'rgba(47,155,97,0.32)',
+    rowGap: 13,
+    shadowColor: '#2F9B61',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.12,
+    shadowRadius: 22,
+    elevation: 3,
+  },
+  habitStoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 12,
+  },
+  habitStoryGoalIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.36)',
+    backgroundColor: 'rgba(47,155,97,0.10)',
+  },
+  habitStoryGoalCopy: {
+    flex: 1,
+    rowGap: 1,
+  },
+  habitStoryGoalLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    lineHeight: 12,
+    letterSpacing: 1.6,
+    color: 'rgba(47,155,97,0.78)',
+  },
+  habitStoryGoalTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 22,
+    lineHeight: 26,
+    color: INK,
+  },
+  habitStoryProgressTrack: {
+    height: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(47,155,97,0.13)',
+    overflow: 'hidden',
+  },
+  habitStoryProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: '#2F9B61',
+  },
+  habitStorySteps: {
+    rowGap: 9,
+  },
+  habitStoryStepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 11,
+    minHeight: 40,
+    borderRadius: 17,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.84)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+  },
+  habitStoryStepCheck: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(25,23,20,0.16)',
+    backgroundColor: '#FFFFFF',
+  },
+  habitStoryStepCheckDone: {
+    borderColor: '#2F9B61',
+    backgroundColor: '#2F9B61',
+  },
+  habitStoryStepCheckMissed: {
+    borderColor: 'rgba(25,23,20,0.14)',
+    backgroundColor: 'rgba(25,23,20,0.04)',
+  },
+  habitStoryStepMissDash: {
+    width: 9,
+    height: 2.4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(25,23,20,0.30)',
+  },
+  habitStoryStepTitle: {
+    flex: 1,
+    fontFamily: F.serifSemiBold,
+    fontSize: 15.5,
+    lineHeight: 19,
+    color: INK,
+  },
+  habitStoryStepTitleMissed: {
+    color: 'rgba(25,23,20,0.38)',
+  },
+  habitStoryStepTime: {
+    fontFamily: F.sansMedium,
+    fontSize: 11,
+    lineHeight: 14,
+    color: 'rgba(25,23,20,0.44)',
+  },
+  habitStoryLesson: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 8,
+    minHeight: 38,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(47,155,97,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.30)',
+  },
+  habitStoryLessonText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 14.5,
+    lineHeight: 18,
+    color: '#22794B',
   },
   organizeHabitFormula: {
     width: '100%',
