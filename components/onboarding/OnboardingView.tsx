@@ -14246,24 +14246,30 @@ type OrganizeSetupAfterAheadStage = 0 | 1 | 2;
 
 const ORGANIZE_RULE_AREAS: {
   id: OrganizeSetupAreaId;
+  layerLabel: string;
   title: string;
   subtitle: string;
   accent: string;
   icon: React.ReactNode;
+  parts: string[];
 }[] = [
   {
     id: 'macro',
+    layerLabel: 'First layer',
     title: 'Macro planning',
-    subtitle: 'Important dates and monthly direction before the week begins.',
+    subtitle: 'First the month gets a shape. Big dates and monthly goals are set before the week begins, so nothing important catches you unprepared.',
     accent: '#4D8586',
-    icon: <Calendar s={17} c="#4D8586" w={2} />,
+    icon: <Calendar s={22} c="#4D8586" w={2} />,
+    parts: ['Big events', 'Monthly goals'],
   },
   {
     id: 'weekly',
+    layerLabel: 'Second layer',
     title: 'Weekly routine',
-    subtitle: 'Prayer, responsibilities, habits, and challenges in one rhythm.',
+    subtitle: 'Then the week itself. Prayer, duties, challenges and habits each receive a fixed place, so ordinary days carry what matters to you.',
     accent: GOLD,
-    icon: <ListChecks s={17} c={GOLD} w={2} />,
+    icon: <ListChecks s={22} c={GOLD} w={2} />,
+    parts: ['Spiritual tasks', 'Routine tasks', 'Challenges', 'Habits'],
   },
 ];
 
@@ -14388,7 +14394,9 @@ function SetupPathStepCard({
   );
 }
 
-function OrganizeSetupCard({
+// The two system layers as full hero cards: big serif title, room to breathe,
+// and a chip row naming exactly what lives inside each layer.
+function OrganizeLayerHeroCard({
   area,
   index,
   active,
@@ -14401,17 +14409,96 @@ function OrganizeSetupCard({
   done: boolean;
   activeReady: boolean;
 }) {
+  const isActive = active && activeReady;
+  const state = useSharedValue(done ? 2 : isActive ? 1 : 0);
+  const isGold = area.accent === GOLD;
+
+  useEffect(() => {
+    state.value = withSpring(done ? 2 : isActive ? 1 : 0, {
+      damping: 17,
+      stiffness: 168,
+      mass: 0.9,
+    });
+  }, [done, isActive, state]);
+
+  const cardStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(state.value, [0, 1, 2], [0.8, 1, 0.99]),
+    transform: [
+      { scale: interpolate(state.value, [0, 1, 2], [0.988, 1.014, 1]) },
+      { translateY: interpolate(state.value, [0, 1, 2], [0, -2, 0]) },
+    ],
+  }));
+  const displayAccent = done ? (isGold ? GOLD : '#2F9B61') : area.accent;
+  const gradientColors = done
+    ? isGold
+      ? (['rgba(255,252,243,1)', 'rgba(197,160,89,0.30)', 'rgba(255,245,219,0.96)'] as const)
+      : (['rgba(250,255,251,1)', 'rgba(47,155,97,0.24)', 'rgba(245,252,246,0.96)'] as const)
+    : isActive
+      ? (['rgba(255,255,255,1)', `${area.accent}1A`, 'rgba(255,255,255,0.94)'] as const)
+      : (['rgba(255,255,255,0.97)', `${area.accent}0E`, 'rgba(255,255,255,0.88)'] as const);
+
   return (
-    <SetupPathStepCard
-      title={area.title}
-      body={area.subtitle}
-      accent={area.accent}
-      icon={area.icon}
-      index={index}
-      active={active}
-      done={done}
-      activeReady={activeReady}
-    />
+    <Reanimated.View
+      entering={FadeInUp.duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 30 }, { scale: 0.96 }],
+      })}
+      style={[
+        s.organizeLayerHeroCard,
+        { borderColor: `${displayAccent}${isActive || done ? '52' : '2E'}` },
+        isActive && { shadowColor: area.accent, shadowOpacity: 0.17 },
+        done && { shadowColor: displayAccent, shadowOpacity: 0.12 },
+        cardStyle,
+      ]}
+    >
+      <LinearGradient
+        pointerEvents="none"
+        colors={gradientColors}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={[s.v4ToolTopSheen, { backgroundColor: `${displayAccent}${isActive || done ? '2A' : '14'}` }]} />
+
+      <View style={s.organizeLayerHeroTop}>
+        <View style={[s.organizeLayerHeroIcon, { borderColor: `${displayAccent}38`, backgroundColor: `${displayAccent}12` }]}>
+          {area.icon}
+        </View>
+        <View style={s.organizeLayerHeroTitleWrap}>
+          <Text style={[s.organizeLayerHeroStep, { color: displayAccent }]}>
+            {area.layerLabel.toUpperCase()}
+          </Text>
+          <Text style={s.organizeLayerHeroTitle}>{area.title}</Text>
+        </View>
+        <V4SetupStatusMark active={isActive && !done} done={done} accent={displayAccent} />
+      </View>
+
+      <Text style={s.organizeLayerHeroBody}>{area.subtitle}</Text>
+
+      <View style={s.organizeLayerHeroChips}>
+        {area.parts.map(part => (
+          <View
+            key={part}
+            style={[
+              s.organizeLayerHeroChip,
+              {
+                borderColor: `${displayAccent}${done ? '44' : '30'}`,
+                backgroundColor: done ? `${displayAccent}14` : 'rgba(255,255,255,0.86)',
+              },
+            ]}
+          >
+            {done ? (
+              <CheckSmall s={11} c={displayAccent} w={2.8} />
+            ) : (
+              <View style={[s.organizeLayerHeroChipDot, { backgroundColor: `${displayAccent}66` }]} />
+            )}
+            <Text style={[s.organizeLayerHeroChipText, { color: done ? displayAccent : 'rgba(25,23,20,0.62)' }]}>
+              {part}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </Reanimated.View>
   );
 }
 
@@ -14448,8 +14535,9 @@ function OrganizeRuleMapSlide({
     s.organizeRuleContent,
     s.organizeRuleMapContent,
     {
-      paddingTop: Math.max(insets.top + 46, 76),
-      paddingBottom: insets.bottom + 134,
+      flexGrow: 1,
+      paddingTop: Math.max(insets.top + 40, 70),
+      paddingBottom: insets.bottom + 128,
     },
   ];
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
@@ -14545,13 +14633,13 @@ function OrganizeRuleMapSlide({
           </Text>
         </Reanimated.View>
 
-        <Reanimated.View style={[s.setupPathBoard, s.organizeRuleMapBoard, exitStyle]}>
+        <Reanimated.View style={[s.setupPathBoard, s.organizeLayerHeroBoard, exitStyle]}>
           {ORGANIZE_RULE_AREAS.slice(0, reveal).map((area, index) => {
             const { active, done } = organizeMapState(variant, area.id, afterAheadStage);
             const cardActiveReady = variant === 'afterAhead' ? true : activeReady;
             return (
               <React.Fragment key={area.id}>
-                <OrganizeSetupCard area={area} index={index} active={active} done={done} activeReady={cardActiveReady} />
+                <OrganizeLayerHeroCard area={area} index={index} active={active} done={done} activeReady={cardActiveReady} />
                 {index < Math.min(reveal, ORGANIZE_RULE_AREAS.length) - 1 ? (
                   <OrganizeRuleConnector accent={ORGANIZE_RULE_AREAS[index + 1]?.accent ?? area.accent} index={index} />
                 ) : null}
@@ -14612,14 +14700,14 @@ function OrganizeMacroIntroSlide({ onNext }: { onNext: () => void }) {
       const timer = setTimeout(() => {
         setReveal(current => current + 1);
         runSelectionHaptic();
-      }, reveal === 0 ? 340 : 620);
+      }, reveal === 0 ? 320 : 560);
       return () => clearTimeout(timer);
     }
 
     const timer = setTimeout(() => {
       setActiveReady(true);
       runBubbleHaptic();
-    }, 680);
+    }, 620);
     return () => clearTimeout(timer);
   }, [reveal]);
 
@@ -15608,36 +15696,113 @@ function OrganizeLessonSlide({
   );
 }
 
-function OrganizeFrequencySlide({ onNext }: { onNext: () => void }) {
-  const frequencies = [
-    { label: 'Every day', Icon: Sun, accent: GOLD },
-    { label: 'Weekdays', Icon: Calendar, accent: '#4D8586' },
-    { label: 'Mon / Wed / Fri', Icon: ListChecks, accent: '#2F9B61' },
-    { label: 'Sundays', Icon: Cross, accent: '#705B9B' },
-    { label: 'Custom', Icon: SlidersHorizontal, accent: '#8F5B4B' },
-  ];
+// The app's real repeat patterns, shown exactly as the task scheduler offers
+// them: name, plain-words meaning, and a week of day dots lighting up.
+const ORGANIZE_FREQUENCIES: {
+  label: string;
+  desc: string;
+  accent: string;
+  days: number[] | 'monthly';
+}[] = [
+  { label: 'Daily', desc: 'Every day', accent: GOLD, days: [0, 1, 2, 3, 4, 5, 6] },
+  { label: 'Weekdays', desc: 'Mon – Fri', accent: '#4D8586', days: [0, 1, 2, 3, 4] },
+  { label: 'Weekends', desc: 'Sat – Sun', accent: '#705B9B', days: [5, 6] },
+  { label: 'Specific days', desc: 'You choose the days', accent: '#2F9B61', days: [0, 2, 4] },
+  { label: 'Monthly', desc: 'Days of the month', accent: '#8F5B4B', days: 'monthly' },
+];
 
+const FREQUENCY_DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+function OrganizeFrequencyDayDot({
+  letter,
+  on,
+  accent,
+  delay,
+}: {
+  letter: string;
+  on: boolean;
+  accent: string;
+  delay: number;
+}) {
+  return (
+    <Reanimated.View
+      entering={FadeIn.delay(delay).duration(300).easing(Easing.out(Easing.cubic)).withInitialValues({
+        opacity: 0,
+        transform: [{ scale: 0.5 }],
+      })}
+      style={[
+        s.organizeFrequencyDay,
+        on
+          ? { backgroundColor: `${accent}1C`, borderColor: `${accent}58` }
+          : { backgroundColor: 'rgba(25,23,20,0.025)', borderColor: 'rgba(25,23,20,0.08)' },
+      ]}
+    >
+      <Text style={[s.organizeFrequencyDayText, { color: on ? accent : 'rgba(25,23,20,0.30)' }]}>
+        {letter}
+      </Text>
+    </Reanimated.View>
+  );
+}
+
+function OrganizeFrequencySlide({ onNext }: { onNext: () => void }) {
   return (
     <OrganizeLessonSlide
       overline="Weekly routine"
-      title="Every task needs a rhythm."
-      body="Some things happen daily. Some belong to certain days. Anasta keeps that pattern clear before the week begins."
+      title="Every task knows its days."
+      body="When you add a task, you choose how it repeats. Anasta carries that pattern week after week — you never plan the same thing twice."
       onNext={onNext}
     >
-      <View style={s.organizeFrequencyGrid}>
-        {frequencies.map((item, index) => {
-          const Icon = item.Icon;
-          return (
-            <Reanimated.View
-              key={item.label}
-              entering={FadeInUp.delay(160 + index * 90).duration(460).easing(Easing.out(Easing.cubic))}
-              style={[s.organizeFrequencyChip, { borderColor: `${item.accent}2F`, backgroundColor: `${item.accent}10` }]}
-            >
-              <Icon s={17} c={item.accent} w={2} />
-              <Text style={[s.organizeFrequencyText, { color: item.accent }]}>{item.label}</Text>
-            </Reanimated.View>
-          );
-        })}
+      <View style={s.organizeFrequencyBoard}>
+        {ORGANIZE_FREQUENCIES.map((item, index) => (
+          <Reanimated.View
+            key={item.label}
+            entering={FadeInUp.delay(180 + index * 110).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 20 }, { scale: 0.975 }],
+            })}
+            style={[s.organizeFrequencyRow, { borderColor: `${item.accent}30` }]}
+          >
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(255,255,255,1)', `${item.accent}10`, 'rgba(255,255,255,0.92)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={s.organizeFrequencyCopy}>
+              <Text style={s.organizeFrequencyLabel}>{item.label}</Text>
+              <Text style={[s.organizeFrequencyDesc, { color: `${item.accent}C8` }]}>{item.desc}</Text>
+            </View>
+            {item.days === 'monthly' ? (
+              <View style={s.organizeFrequencyDaysRow}>
+                {['1st', '15th', '28th'].map((dateLabel, dateIndex) => (
+                  <Reanimated.View
+                    key={dateLabel}
+                    entering={FadeIn.delay(320 + index * 110 + dateIndex * 70).duration(300).easing(Easing.out(Easing.cubic)).withInitialValues({
+                      opacity: 0,
+                      transform: [{ scale: 0.5 }],
+                    })}
+                    style={[s.organizeFrequencyDatePill, { backgroundColor: `${item.accent}1C`, borderColor: `${item.accent}58` }]}
+                  >
+                    <Text style={[s.organizeFrequencyDayText, { color: item.accent }]}>{dateLabel}</Text>
+                  </Reanimated.View>
+                ))}
+              </View>
+            ) : (
+              <View style={s.organizeFrequencyDaysRow}>
+                {FREQUENCY_DAY_LETTERS.map((letter, dayIndex) => (
+                  <OrganizeFrequencyDayDot
+                    key={`${item.label}-${dayIndex}`}
+                    letter={letter}
+                    on={(item.days as number[]).includes(dayIndex)}
+                    accent={item.accent}
+                    delay={300 + index * 110 + dayIndex * 40}
+                  />
+                ))}
+              </View>
+            )}
+          </Reanimated.View>
+        ))}
       </View>
     </OrganizeLessonSlide>
   );
@@ -17754,8 +17919,8 @@ export default function OnboardingView() {
       return (
         <OrganizeLessonSlide
           overline="Weekly routine"
-          title="Now we build the rhythm of your week."
-          body="Prayer, responsibilities, habits, and challenges work best when they have a clear place in ordinary days."
+          title="You plan the week once. Then you live it."
+          body="Anasta plans on a weekly level. Give each task its place in the week — and every morning simply shows what today asks of you."
           onNext={goNext}
         >
           <View style={s.organizeWeekPreview}>
@@ -23656,6 +23821,87 @@ const s = StyleSheet.create({
   organizeRuleMapBoard: {
     marginTop: 0,
   },
+  // The two-layer map fills the screen: cards grow into the free space
+  // instead of leaving dead area under two small tags.
+  organizeLayerHeroBoard: {
+    marginTop: 0,
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  organizeLayerHeroCard: {
+    borderRadius: 30,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 17,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1.5,
+    rowGap: 12,
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.1,
+    shadowRadius: 22,
+    elevation: 3,
+  },
+  organizeLayerHeroTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 13,
+  },
+  organizeLayerHeroIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  organizeLayerHeroTitleWrap: {
+    flex: 1,
+    rowGap: 2,
+  },
+  organizeLayerHeroStep: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    lineHeight: 13,
+    letterSpacing: 1.6,
+  },
+  organizeLayerHeroTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 27,
+    lineHeight: 31,
+    color: INK,
+  },
+  organizeLayerHeroBody: {
+    fontFamily: F.serifMedium,
+    fontSize: 15.5,
+    lineHeight: 21.5,
+    color: 'rgba(25,23,20,0.62)',
+  },
+  organizeLayerHeroChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
+  organizeLayerHeroChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 6,
+    minHeight: 32,
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    borderWidth: 1,
+  },
+  organizeLayerHeroChipDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+  },
+  organizeLayerHeroChipText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 13.5,
+    lineHeight: 17,
+  },
   setupPathUnifiedCard: {
     minHeight: 72,
     borderRadius: 23,
@@ -24302,30 +24548,70 @@ const s = StyleSheet.create({
     lineHeight: 16,
     color: 'rgba(112,82,26,0.68)',
   },
-  organizeFrequencyGrid: {
+  organizeFrequencyBoard: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 366,
     alignSelf: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 10,
-    marginTop: 4,
+    rowGap: 9,
+    marginTop: 2,
   },
-  organizeFrequencyChip: {
-    minHeight: 43,
-    borderRadius: 999,
-    paddingHorizontal: 14,
+  organizeFrequencyRow: {
+    minHeight: 62,
+    borderRadius: 22,
+    paddingHorizontal: 15,
+    paddingVertical: 11,
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 7,
-    borderWidth: 1,
+    columnGap: 10,
+    borderWidth: 1.5,
     backgroundColor: '#FFFDF8',
+    overflow: 'hidden',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    elevation: 2,
   },
-  organizeFrequencyText: {
+  organizeFrequencyCopy: {
+    flex: 1,
+    rowGap: 1,
+  },
+  organizeFrequencyLabel: {
     fontFamily: F.serifSemiBold,
-    fontSize: 14.5,
-    lineHeight: 18,
+    fontSize: 16.5,
+    lineHeight: 20,
+    color: INK,
+  },
+  organizeFrequencyDesc: {
+    fontFamily: F.sansMedium,
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  organizeFrequencyDaysRow: {
+    flexDirection: 'row',
+    columnGap: 3.5,
+  },
+  organizeFrequencyDay: {
+    width: 21,
+    height: 21,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  organizeFrequencyDayText: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    lineHeight: 11,
+  },
+  organizeFrequencyDatePill: {
+    minWidth: 34,
+    height: 21,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderWidth: 1,
   },
   organizeTouchableCard: {
     borderRadius: 25,
