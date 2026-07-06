@@ -7,8 +7,11 @@ import { Calendar, Clock, Globe, Shield } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import NowPanel from './NowPanel';
 import FocusHeroCardView, { type HeroMetaItem } from './FocusHeroCard';
+import TrophyCalendarSheet from './TrophyCalendarSheet';
+import MilestoneCongratsOverlay from './MilestoneCongratsOverlay';
 import { CLEAN_SIGHT_CARD, DAY_PLAN_CARD } from './focusContent';
 import {
+  acknowledgeMilestone,
   formatTimeOfDay,
   getEffectivePlan,
   nextZoneStart,
@@ -22,6 +25,7 @@ export default function FocusWatchView() {
   const router = useRouter();
   const state = useDayPlan();
   const [clock] = useState(() => new Date());
+  const [trophiesOpen, setTrophiesOpen] = useState(false);
 
   const todayPlan = getEffectivePlan(state, clock);
   const nextZone = nextZoneStart(todayPlan, clock);
@@ -78,7 +82,7 @@ export default function FocusWatchView() {
 
         <View style={{ paddingHorizontal: 16, paddingTop: 4 }}>
           <Animated.View entering={enter(40)}>
-            <NowPanel />
+            <NowPanel onOpenTrophies={() => setTrophiesOpen(true)} />
           </Animated.View>
 
           <View style={s.heroBlock}>
@@ -108,6 +112,12 @@ export default function FocusWatchView() {
           )}
         </View>
       </ScrollView>
+
+      <TrophyCalendarSheet visible={trophiesOpen} onClose={() => setTrophiesOpen(false)} />
+      <MilestoneCongratsOverlay
+        milestone={state.pendingMilestone}
+        onClose={acknowledgeMilestone}
+      />
     </View>
   );
 }
