@@ -96,7 +96,8 @@ export default function RootLayout() {
                                   <Stack.Screen name="protect-time"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="watch-plan"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="focus-intervention" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                                  <Stack.Screen name="simple-phone"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                  <Stack.Screen name="day-plans"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                  <Stack.Screen name="day-plan"        options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="clean-sight"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="never-allowed"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="strict-watch"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />

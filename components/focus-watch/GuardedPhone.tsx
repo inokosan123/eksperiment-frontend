@@ -67,10 +67,13 @@ export default function GuardedPhone({
   diameter = 150,
   sealed = false,
   progress,
+  progressColor = C.gold,
 }: {
   diameter?: number;
   sealed?: boolean;
   progress?: SharedValue<number>;
+  // The ring of time is gold while the day is kept; a broken day mutes it.
+  progressColor?: string;
 }) {
   const breath = useSharedValue(0);
   const pulse1 = useSharedValue(0);
@@ -139,11 +142,10 @@ export default function GuardedPhone({
     strokeDashoffset: CIRCUMFERENCE * (1 - (progress ? progress.value : 0)),
   }));
 
-  // The check-shield animation carries a faint line below its shield, which
-  // drags its visual center down — a slight upward lift recenters the shield
-  // itself on the ring.
+  // The shield sits a touch lower inside the halo so it feels grounded in
+  // the protective ring on real phones.
   const lottieSize = Math.round(diameter * (sealed ? 0.66 : 0.74));
-  const lottieLift = sealed ? -Math.round(diameter * 0.045) : 0;
+  const lottieLift = sealed ? Math.round(diameter * 0.035) : 0;
 
   return (
     <View style={{ width: diameter, height: diameter }}>
@@ -162,7 +164,7 @@ export default function GuardedPhone({
               cy="50"
               r={RING_RADIUS}
               fill="none"
-              stroke={C.gold}
+              stroke={progressColor}
               strokeWidth="1.9"
               strokeLinecap="round"
               strokeDasharray={`${CIRCUMFERENCE}`}

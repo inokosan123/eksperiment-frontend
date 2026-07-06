@@ -1,67 +1,52 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   cancelAnimation,
   Easing,
   FadeIn,
   FadeOut,
-  useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withSequence,
   withTiming,
+  useAnimatedStyle,
 } from 'react-native-reanimated';
-import { Clock, Globe, Shield } from '@/components/icons/Icons';
-import StreakFlame from './StreakFlame';
+import { ChevronRight, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
 import GuardedPhone from './GuardedPhone';
-import QuickWatchSheet from './QuickWatchSheet';
-import {
-  describeSelection,
-  endActiveSession,
-  extendActiveSession,
-  getActiveScheduledWatches,
-  useFocusWatch,
-  type WatchStrength,
-} from './focusWatchStore';
-import { WEB_PACK_LAYER_NAMES } from './focusContent';
+import QuietHourSheet from './QuietHourSheet';
+import TrophyMark from './TrophyMark';
 import { SMOOTH_LAYOUT } from './focusMotion';
+import {
+  activeZone,
+  closeDoor,
+  dayFraction,
+  endQuietHour,
+  extendQuietHour,
+  formatClockMs,
+  formatEndsAt,
+  formatMinutesShort,
+  formatTimeOfDay,
+  getEffectivePlan,
+  getLiveDayStatus,
+  groupName,
+  nextZoneStart,
+  tickDayPlanStore,
+  useDayPlan,
+  type DayPlanState,
+} from './dayPlanStore';
 
 const PANEL_TRANSITION = SMOOTH_LAYOUT;
+const PHONE_SIZE = 172;
+const BROKEN_RING = '#E4C3CA';
 
-type ActiveDescriptor = {
-  kind: 'quick' | 'scheduled';
-  name: string;
-  startedAt: number;
-  endsAt: number;
-  totalMs: number;
-  strength: WatchStrength;
-  subLine: string;
-  streak: number;
-};
+// ---------------------------------------------------------------------------
 
-function pad(n: number) {
-  return n < 10 ? `0${n}` : `${n}`;
-}
-
-function formatRemaining(ms: number) {
-  const totalSeconds = Math.max(0, Math.round(ms / 1000));
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
-}
-
-function formatEndsAt(endsAt: number) {
-  return new Date(endsAt)
-    .toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-    .toUpperCase();
-}
-
-function ActiveDot() {
+function StatusDot({ color }: { color: string }) {
   const pulse = useSharedValue(0);
 
   useEffect(() => {
@@ -75,269 +60,253 @@ function ActiveDot() {
     return () => cancelAnimation(pulse);
   }, [pulse]);
 
-  const dotStyle = useAnimatedStyle(() => ({
+  const style = useAnimatedStyle(() => ({
     opacity: 0.45 + pulse.value * 0.55,
   }));
-  return <Animated.View style={[s.activeDot, dotStyle]} />;
+  return <Animated.View style={[s.statusDot, { backgroundColor: color }, style]} />;
 }
 
-function QuietState({ onBegin }: { onBegin: () => void }) {
-  return (
-    <Animated.View entering={FadeIn.duration(320)} exiting={FadeOut.duration(140)}>
-      <View style={s.lampWrap}>
-        <GuardedPhone diameter={162} />
-      </View>
-      <Text style={s.quietTitle}>All is quiet.</Text>
-      <Text style={s.quietSub}>No watch is active.</Text>
-
-      <GoldButton
-        label="Begin a watch"
-        onPress={onBegin}
-        height={50}
-        style={{ marginTop: 16 }}
-      />
-    </Animated.View>
-  );
+function namesList(state: DayPlanState, ids: string[], max = 3) {
+  const names = ids.map(id => groupName(state, id));
+  if (names.length <= max) return names.join(', ');
+  return `${names.slice(0, max - 1).join(', ')} +${names.length - max + 1}`;
 }
 
-function ActiveState({
-  session,
-  onExpired,
-}: {
-  session: ActiveDescriptor;
-  onExpired: () => void;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-  const progress = useSharedValue(0);
+// ---------------------------------------------------------------------------
 
-  const remaining = Math.max(0, session.endsAt - now);
-  const isStrict = session.strength === 'strict';
+export default function NowPanel({ onOpenTrophies }: { onOpenTrophies?: () => void }) {
+  const state = useDayPlan();
+  const router = useRouter();
+  const [sheetMode, setSheetMode] = useState<'create' | 'edit' | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const ringProgress = useSharedValue(0);
+  const wasProtected = useRef(false);
 
+  const quiet = state.quiet;
+
+  // Seconds matter while a Quiet Hour runs; otherwise a slow pulse is enough.
   useEffect(() => {
-    setNow(Date.now());
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, [session.endsAt]);
-
-  // The watch completes on its own when time runs out.
-  useEffect(() => {
-    if (remaining <= 0) {
-      if (session.kind === 'quick') endActiveSession();
-      onExpired();
-    }
-  }, [remaining, session.kind, onExpired]);
-
-  useEffect(() => {
-    const elapsedFraction = Math.min(
-      1,
-      Math.max(0, 1 - remaining / Math.max(1, session.totalMs))
+    const interval = setInterval(
+      () => {
+        const ms = Date.now();
+        tickDayPlanStore(ms);
+        setNowMs(ms);
+      },
+      quiet ? 1000 : 30_000
     );
-    progress.value = withTiming(elapsedFraction, {
-      duration: 980,
-      easing: Easing.linear,
-    });
-  }, [remaining, session.totalMs, progress]);
-
-  const endsLabel = useMemo(() => formatEndsAt(session.endsAt), [session.endsAt]);
-
-  return (
-    <Animated.View entering={FadeIn.duration(320)} exiting={FadeOut.duration(140)}>
-      <Text style={s.sessionName}>{session.name}</Text>
-      <Text style={s.sessionSub}>{session.subLine}</Text>
-
-      <View style={s.lampWrap}>
-        <GuardedPhone diameter={178} sealed progress={progress} />
-      </View>
-
-      <View style={s.timerBlock}>
-        <Text style={s.timerText}>{formatRemaining(remaining)}</Text>
-        <Text style={s.timerCaption}>REMAINING · ENDS {endsLabel}</Text>
-      </View>
-
-      {session.kind === 'quick' ? (
-        <View style={s.controlsRow}>
-          <TouchableOpacity
-            style={s.chip}
-            activeOpacity={0.75}
-            onPress={() => extendActiveSession(15)}
-          >
-            <Text style={s.chipText}>+15 min</Text>
-          </TouchableOpacity>
-          {isStrict ? (
-            <View style={s.lockNote}>
-              <Shield s={12} c={C.textMuted} w={2.2} />
-              <Text style={s.lockNoteText}>Held until it ends</Text>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={s.endChip}
-              activeOpacity={0.75}
-              onPress={() => endActiveSession()}
-            >
-              <Text style={s.endChipText}>End early</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      ) : (
-        <View style={s.scheduledRow}>
-          {session.streak > 0 && <StreakFlame count={session.streak} />}
-          <Text style={s.scheduledText}>
-            {session.streak > 0
-              ? 'days unbroken — hold the line'
-              : 'Scheduled watch — hold the line'}
-          </Text>
-        </View>
-      )}
-    </Animated.View>
-  );
-}
-
-export default function NowPanel() {
-  const {
-    activeSession,
-    plans,
-    webPacks,
-    customDomains,
-    neverPacks,
-    allowlistMode,
-  } = useFocusWatch();
-  const [sheetVisible, setSheetVisible] = useState(false);
-  const [clock, setClock] = useState(() => Date.now());
-  const wasActive = useRef(false);
-
-  // A slow tick so scheduled watches appear/disappear on their own.
-  useEffect(() => {
-    const interval = setInterval(() => setClock(Date.now()), 30_000);
     return () => clearInterval(interval);
-  }, []);
+  }, [quiet]);
 
-  const scheduled = useMemo(
-    () => getActiveScheduledWatches(plans, new Date(clock)),
-    [plans, clock]
+  const now = useMemo(() => new Date(nowMs), [nowMs]);
+  const plan = getEffectivePlan(state, now);
+  const liveStatus = getLiveDayStatus(state, now);
+  const zone = activeZone(plan, now);
+  const nextZone = nextZoneStart(plan, now);
+  const door = state.door;
+
+  const limitedRules = useMemo(
+    () => (plan ? plan.rules.filter(rule => rule.dailyMinutes != null) : []),
+    [plan]
   );
 
-  const primary: ActiveDescriptor | null = useMemo(() => {
-    if (activeSession) {
-      return {
-        kind: 'quick',
-        name: activeSession.name,
-        startedAt: activeSession.startedAt,
-        endsAt: activeSession.endsAt,
-        totalMs: activeSession.totalMs,
-        strength: activeSession.strength,
-        streak: 0,
-        subLine: `${describeSelection(activeSession)} held back · ${activeSession.strength === 'strict' ? 'Strict' : 'Loose'}`,
-      };
-    }
-    const first = scheduled[0];
-    if (!first) return null;
-    return {
-      kind: 'scheduled',
-      name: first.plan.name,
-      startedAt: first.startedAt,
-      endsAt: first.endsAt,
-      totalMs: first.endsAt - first.startedAt,
-      strength: first.plan.strength,
-      streak: first.plan.streak,
-      subLine: `${describeSelection(first.plan)} · ${first.plan.strength === 'strict' ? 'Strict' : 'Loose'}`,
-    };
-  }, [activeSession, scheduled]);
-
-  const isActive = !!primary;
-
-  // A gentle success pulse the moment protection rises.
+  // The ring of time: the quiet countdown when one runs, otherwise the day.
   useEffect(() => {
-    if (isActive && !wasActive.current) {
+    if (quiet) {
+      const elapsed = Math.min(1, Math.max(0, 1 - (quiet.endsAt - nowMs) / quiet.totalMs));
+      ringProgress.value = withTiming(elapsed, { duration: 980, easing: Easing.linear });
+      return;
+    }
+    ringProgress.value = withTiming(dayFraction(now), { duration: 900, easing: Easing.linear });
+  }, [quiet, nowMs, now, ringProgress]);
+
+  const isProtected = liveStatus !== 'off' || !!quiet;
+  useEffect(() => {
+    if (isProtected && !wasProtected.current) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
-    wasActive.current = isActive;
-  }, [isActive]);
+    wasProtected.current = isProtected;
+  }, [isProtected]);
 
-  const alsoWatches = useMemo(() => {
-    if (!primary) return [];
-    return primary.kind === 'quick' ? scheduled : scheduled.slice(1);
-  }, [scheduled, primary]);
+  const headerLabel = plan ? `TODAY · ${plan.name.toUpperCase()}` : 'TODAY';
 
-  const layers = useMemo(() => {
-    const result: { id: string; name: string; kind: 'web' | 'allowlist'; badge: string }[] = [];
-    for (const pack of neverPacks) {
-      if (pack.enabled) {
-        result.push({
-          id: `never-${pack.id}`,
-          name: WEB_PACK_LAYER_NAMES[pack.id],
-          kind: 'web',
-          badge: 'never',
-        });
-      }
-    }
-    for (const pack of webPacks) {
-      if (pack.enabled && !result.some(layer => layer.id === `never-${pack.id}`)) {
-        result.push({ id: pack.id, name: WEB_PACK_LAYER_NAMES[pack.id], kind: 'web', badge: 'always' });
-      }
-    }
-    if (customDomains.length > 0) {
-      result.push({
-        id: 'custom-domains',
-        name: customDomains.length === 1 ? '1 custom site' : `${customDomains.length} custom sites`,
-        kind: 'web',
-        badge: 'always',
-      });
-    }
-    if (allowlistMode) {
-      result.push({ id: 'allowlist', name: 'Simple phone', kind: 'allowlist', badge: 'on' });
-    }
-    return result;
-  }, [webPacks, customDomains, neverPacks, allowlistMode]);
+  const statusTag = quiet
+    ? { color: C.goldDark, text: 'QUIET HOUR', dot: true }
+    : liveStatus === 'kept' && plan
+      ? { color: '#15803D', text: 'KEPT', dot: true }
+      : liveStatus === 'broken'
+        ? { color: '#B54155', text: 'BROKEN', dot: false }
+        : { color: C.textMuted, text: 'REST DAY', dot: false };
 
-  const hasAlsoBlock = layers.length > 0 || alsoWatches.length > 0;
+  const zoneTitle = zone ? zone.name : 'Open hours';
+  const zoneSub = zone
+    ? `${namesList(state, zone.closedGroupIds)} closed until ${formatTimeOfDay(zone.endMinutes)}`
+    : nextZone
+      ? `Daily limits stand · ${nextZone.name} at ${formatTimeOfDay(nextZone.startMinutes)}`
+      : 'Daily limits stand today.';
 
   return (
     <Animated.View style={s.card} layout={PANEL_TRANSITION}>
       <View style={s.headerRow}>
-        <Text style={s.headerLabel}>NOW</Text>
-        {isActive && (
-          <View style={s.headerActive}>
-            <ActiveDot />
-            <Text style={s.headerActiveText}>ACTIVE</Text>
-          </View>
-        )}
+        <Text style={s.headerLabel} numberOfLines={1}>
+          {headerLabel}
+        </Text>
+        <View style={s.headerStatus}>
+          {statusTag.dot ? (
+            <StatusDot color={statusTag.color} />
+          ) : liveStatus === 'broken' && !quiet ? (
+            <X s={11} c={statusTag.color} w={3} />
+          ) : null}
+          <Text style={[s.headerStatusText, { color: statusTag.color }]}>{statusTag.text}</Text>
+        </View>
       </View>
 
-      {primary ? (
-        <ActiveState
-          key={`${primary.kind}-${primary.name}`}
-          session={primary}
-          onExpired={() => setClock(Date.now())}
-        />
+      {quiet ? (
+        <Animated.View key="quiet" entering={FadeIn.duration(320)} exiting={FadeOut.duration(140)}>
+          <View style={s.phoneWrap}>
+            <GuardedPhone diameter={PHONE_SIZE} sealed progress={ringProgress} />
+          </View>
+          <View style={s.timerBlock}>
+            <Text style={s.timerText}>{formatClockMs(quiet.endsAt - nowMs)}</Text>
+            <Text style={s.timerCaption}>REMAINING · ENDS {formatEndsAt(quiet.endsAt)}</Text>
+          </View>
+          <Text style={s.quietSub}>Everything loud is held back.</Text>
+
+          <View style={s.controlsRow}>
+            <TouchableOpacity
+              style={s.chipBtn}
+              activeOpacity={0.75}
+              onPress={() => extendQuietHour(15)}
+            >
+              <Text style={s.chipBtnText}>+15 min</Text>
+            </TouchableOpacity>
+            {quiet.strength === 'strict' ? (
+              <Text style={s.heldNote}>Held until it ends</Text>
+            ) : (
+              <View style={s.looseControls}>
+                <TouchableOpacity
+                  style={s.chipBtn}
+                  activeOpacity={0.75}
+                  onPress={() => setSheetMode('edit')}
+                >
+                  <Text style={s.chipBtnText}>Adjust</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={s.endChip}
+                  activeOpacity={0.75}
+                  onPress={() => endQuietHour()}
+                >
+                  <Text style={s.endChipText}>End early</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </Animated.View>
+      ) : liveStatus === 'off' ? (
+        <Animated.View key="off" entering={FadeIn.duration(320)} exiting={FadeOut.duration(140)}>
+          <View style={s.phoneWrap}>
+            <GuardedPhone diameter={162} />
+          </View>
+          <Text style={s.bigTitle}>A day of rest.</Text>
+          <Text style={s.bigSub}>Nothing is held back today.</Text>
+
+          <GoldButton
+            label="Quiet Hour"
+            onPress={() => setSheetMode('create')}
+            height={50}
+            style={{ marginTop: 16 }}
+          />
+          <TouchableOpacity
+            style={s.planLink}
+            activeOpacity={0.7}
+            onPress={() => router.push('/day-plans' as any)}
+          >
+            <Text style={s.planLinkText}>Plan your week →</Text>
+          </TouchableOpacity>
+        </Animated.View>
       ) : (
-        <QuietState key="quiet" onBegin={() => setSheetVisible(true)} />
+        <Animated.View key="day" entering={FadeIn.duration(320)} exiting={FadeOut.duration(140)}>
+          <View style={s.phoneWrap}>
+            <GuardedPhone
+              diameter={PHONE_SIZE}
+              sealed={liveStatus === 'kept'}
+              progress={ringProgress}
+              progressColor={liveStatus === 'broken' ? BROKEN_RING : C.gold}
+            />
+            {liveStatus === 'broken' && (
+              <Animated.View entering={FadeIn.duration(280)} style={s.brokenBadge}>
+                <X s={13} c="#fff" w={3} />
+              </Animated.View>
+            )}
+          </View>
+
+          {liveStatus === 'kept' ? (
+            <>
+              <Text style={s.bigTitle}>{zoneTitle}</Text>
+              <Text style={s.bigSub}>{zoneSub}</Text>
+            </>
+          ) : (
+            <>
+              <Text style={s.bigTitle}>Today broke.</Text>
+              <Text style={s.bigSub}>Tomorrow is a new page — finish today in peace.</Text>
+            </>
+          )}
+
+          {limitedRules.length > 0 && (
+            <Text style={s.limitsLine} numberOfLines={2}>
+              {'Limits · '}
+              {limitedRules
+                .map(rule => `${groupName(state, rule.groupId)} ${formatMinutesShort(rule.dailyMinutes!)}`)
+                .join(' · ')}
+            </Text>
+          )}
+
+          {door && (
+            <View style={s.doorRow}>
+              <View style={s.doorPulse} />
+              <Text style={s.doorText} numberOfLines={1}>
+                {`Door open — ${groupName(state, door.groupId)} · ${formatClockMs(door.endsAt - nowMs)}`}
+              </Text>
+              <TouchableOpacity activeOpacity={0.75} onPress={() => closeDoor()}>
+                <Text style={s.doorClose}>Close now</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <GoldButton
+            label="Quiet Hour"
+            onPress={() => setSheetMode('create')}
+            height={48}
+            style={{ marginTop: 14 }}
+          />
+        </Animated.View>
       )}
 
-      <QuickWatchSheet visible={sheetVisible} onClose={() => setSheetVisible(false)} />
+      <TouchableOpacity
+        style={s.trophyStrip}
+        activeOpacity={onOpenTrophies ? 0.7 : 1}
+        onPress={onOpenTrophies}
+        disabled={!onOpenTrophies}
+      >
+        <TrophyMark size={17} />
+        <Text style={s.trophyCount}>{state.streak.trophies}</Text>
+        <Text style={s.trophyLabel}>
+          {state.streak.trophies === 1 ? 'trophy' : 'trophies'}
+        </Text>
+        <View style={s.trophyDotSep} />
+        <Text style={s.trophyStreak}>
+          {state.streak.current > 0
+            ? `${state.streak.current}-day streak`
+            : 'the streak starts today'}
+        </Text>
+        <View style={{ flex: 1 }} />
+        {onOpenTrophies && <ChevronRight s={16} c={C.textMuted} />}
+      </TouchableOpacity>
 
-      {hasAlsoBlock && (
-        <View style={s.alsoActiveBlock}>
-          <Text style={s.alsoActiveLabel}>{isActive ? 'ALSO ACTIVE' : 'ALWAYS ON'}</Text>
-          {alsoWatches.map(entry => (
-            <View key={entry.plan.id} style={s.alsoActiveRow}>
-              <Clock s={13} c={C.textMuted} w={2.2} />
-              <Text style={s.alsoActiveText}>{entry.plan.name}</Text>
-              <Text style={s.alsoActiveAlways}>until {formatEndsAt(entry.endsAt)}</Text>
-            </View>
-          ))}
-          {layers.map(layer => (
-            <View key={layer.id} style={s.alsoActiveRow}>
-              {layer.kind === 'allowlist' ? (
-                <Shield s={13} c={C.textMuted} w={2.2} />
-              ) : (
-                <Globe s={13} c={C.textMuted} w={2} />
-              )}
-              <Text style={s.alsoActiveText}>{layer.name}</Text>
-              <Text style={s.alsoActiveAlways}>{layer.badge}</Text>
-            </View>
-          ))}
-        </View>
-      )}
+      <QuietHourSheet
+        visible={sheetMode !== null}
+        editingSession={sheetMode === 'edit' ? quiet : null}
+        onClose={() => setSheetMode(null)}
+      />
     </Animated.View>
   );
 }
@@ -350,7 +319,7 @@ const s = StyleSheet.create({
     borderColor: C.border,
     paddingHorizontal: 18,
     paddingTop: 15,
-    paddingBottom: 18,
+    paddingBottom: 12,
     shadowColor: '#1C1917',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.07,
@@ -362,92 +331,117 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
   },
   headerLabel: {
+    flexShrink: 1,
     fontFamily: F.sansBold,
     fontSize: 10,
     letterSpacing: 2.4,
     color: C.textMuted,
   },
-  headerActive: {
+  headerStatus: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  // Green like the check shield standing guard.
-  activeDot: {
+  statusDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#15803D',
   },
-  headerActiveText: {
+  headerStatusText: {
     fontFamily: F.sansBold,
     fontSize: 10,
     letterSpacing: 2.4,
-    color: '#15803D',
   },
 
-  lampWrap: {
+  phoneWrap: {
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 4,
+    marginBottom: -2,
+  },
+  brokenBadge: {
+    position: 'absolute',
+    top: 14,
+    right: '28%',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#B54155',
+    borderWidth: 2,
+    borderColor: C.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
-  // Quiet state
-  quietTitle: {
-    marginTop: 6,
+  bigTitle: {
     fontFamily: F.serifMedium,
     fontSize: 23,
+    lineHeight: 27,
     letterSpacing: -0.2,
     color: C.text,
     textAlign: 'center',
   },
-  quietSub: {
+  bigSub: {
     marginTop: 3,
-    fontFamily: F.serif,
-    fontSize: 15.5,
-    color: C.textSecondary,
-    textAlign: 'center',
-  },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.surface,
-  },
-  chipText: {
-    fontFamily: F.sansMedium,
-    fontSize: 12.5,
-    color: C.textSecondary,
-  },
-
-  // Active state
-  sessionName: {
-    marginTop: 10,
-    fontFamily: F.serifMedium,
-    fontSize: 22,
-    letterSpacing: -0.2,
-    color: C.text,
-    textAlign: 'center',
-  },
-  sessionSub: {
-    marginTop: 2,
+    paddingHorizontal: 10,
     fontFamily: F.serif,
     fontSize: 14.5,
+    lineHeight: 19,
     color: C.textSecondary,
     textAlign: 'center',
   },
+  limitsLine: {
+    marginTop: 10,
+    paddingHorizontal: 6,
+    fontFamily: F.sansMedium,
+    fontSize: 11.5,
+    lineHeight: 16,
+    color: C.textMuted,
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
+
+  doorRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F0E3B8',
+    backgroundColor: '#FFFBEB',
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+  },
+  doorPulse: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: C.gold,
+  },
+  doorText: {
+    flex: 1,
+    fontFamily: F.sansMedium,
+    fontSize: 12,
+    color: '#6D4F13',
+    fontVariant: ['tabular-nums'],
+  },
+  doorClose: {
+    fontFamily: F.sansSemiBold,
+    fontSize: 12,
+    color: C.goldDark,
+  },
+
   timerBlock: {
-    marginTop: 8,
+    marginTop: 4,
     alignItems: 'center',
   },
-  // Same numerals as the app's other timers (Pomodoro): bold serif, tabular.
   timerText: {
     fontFamily: F.serifBold,
-    fontSize: 42,
-    lineHeight: 46,
+    fontSize: 38,
+    lineHeight: 42,
     letterSpacing: -1,
     color: C.text,
     fontVariant: ['tabular-nums'],
@@ -459,11 +453,36 @@ const s = StyleSheet.create({
     letterSpacing: 2,
     color: C.textMuted,
   },
+  quietSub: {
+    marginTop: 5,
+    fontFamily: F.serif,
+    fontSize: 14.5,
+    color: C.textSecondary,
+    textAlign: 'center',
+  },
   controlsRow: {
     marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  looseControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chipBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+  },
+  chipBtnText: {
+    fontFamily: F.sansMedium,
+    fontSize: 12.5,
+    color: C.textSecondary,
   },
   endChip: {
     paddingHorizontal: 14,
@@ -478,56 +497,61 @@ const s = StyleSheet.create({
     fontSize: 12.5,
     color: C.red,
   },
-  lockNote: {
+  heldNote: {
+    fontFamily: F.sansMedium,
+    fontSize: 12.5,
+    color: C.textMuted,
+  },
+
+  bigSubSpacer: {
+    height: 2,
+  },
+
+  planLink: {
+    alignSelf: 'center',
+    marginTop: 11,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  planLinkText: {
+    fontFamily: F.sansMedium,
+    fontSize: 12.5,
+    color: C.gold,
+  },
+
+  trophyStrip: {
+    marginTop: 13,
+    marginHorizontal: -18,
+    paddingHorizontal: 18,
+    paddingTop: 11,
+    paddingBottom: 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.border,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  lockNoteText: {
-    fontFamily: F.sansMedium,
-    fontSize: 12.5,
-    color: C.textMuted,
+  trophyCount: {
+    fontFamily: F.sansBold,
+    fontSize: 13.5,
+    color: C.text,
+    fontVariant: ['tabular-nums'],
   },
-  scheduledRow: {
-    marginTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-  },
-  scheduledText: {
+  trophyLabel: {
     fontFamily: F.sansMedium,
-    fontSize: 12.5,
+    fontSize: 12,
     color: C.textSecondary,
   },
-
-  alsoActiveBlock: {
-    marginTop: 15,
-    paddingTop: 11,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.border,
+  trophyDotSep: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#D6D3D1',
+    marginHorizontal: 3,
   },
-  alsoActiveLabel: {
-    fontFamily: F.sansBold,
-    fontSize: 9.5,
-    letterSpacing: 2,
-    color: C.textMuted,
-  },
-  alsoActiveRow: {
-    marginTop: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  alsoActiveText: {
-    flex: 1,
-    fontFamily: F.serifMedium,
-    fontSize: 15.5,
-    color: C.text,
-  },
-  alsoActiveAlways: {
+  trophyStreak: {
     fontFamily: F.sansMedium,
-    fontSize: 11.5,
-    color: C.textMuted,
+    fontSize: 12,
+    color: C.textSecondary,
   },
 });

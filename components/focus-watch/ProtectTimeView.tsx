@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -7,10 +8,14 @@ import StreakFlame from './StreakFlame';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import FocusSwitch from './FocusSwitch';
+import ScreenTimePermissionModal from './ScreenTimePermissionModal';
+import { LOOSE_TAG_TONE } from './focusContent';
 import {
-  describeSelection,
   formatWhen,
+  grantScreenTimePermission,
+  hasScreenTimePermission,
   practiceName,
+  selectionTagLabels,
   togglePlanEnabled,
   useFocusWatch,
   type WatchPlan,
@@ -18,9 +23,9 @@ import {
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
 
-function PlanCard({ plan }: { plan: WatchPlan }) {
+function PlanCard({ plan, onToggle }: { plan: WatchPlan; onToggle: () => void }) {
   const router = useRouter();
-  const selectionLabel = describeSelection(plan);
+  const selectionLabels = selectionTagLabels(plan);
 
   return (
     <TouchableOpacity
@@ -37,28 +42,35 @@ function PlanCard({ plan }: { plan: WatchPlan }) {
         <Text style={s.planMeta}>{formatWhen(plan.when)}</Text>
 
         <View style={s.planChipRow}>
+          {plan.when.kind === 'always' && (
+            <View style={[s.planTag, s.alwaysChip]}>
+              <Text style={[s.planTagText, s.alwaysChipText]}>Always On</Text>
+            </View>
+          )}
           {plan.streak > 0 && <StreakFlame count={plan.streak} />}
-          <View style={[s.strengthChip, plan.strength === 'strict' ? s.strengthStrict : s.strengthLoose]}>
+          <View style={[s.planTag, plan.strength === 'strict' ? s.strengthStrict : s.strengthLoose]}>
             <Text
               style={[
-                s.strengthChipText,
-                { color: plan.strength === 'strict' ? C.goldDark : C.textSecondary },
+                s.planTagText,
+                plan.strength === 'strict' ? s.strengthStrictText : s.strengthLooseText,
               ]}
             >
-              {plan.strength === 'strict' ? 'STRICT' : 'LOOSE'}
+              {plan.strength === 'strict' ? 'Strict' : 'Loose'}
             </Text>
           </View>
-          <View style={s.metaChip}>
-            <Text style={s.metaChipText}>{selectionLabel}</Text>
-          </View>
-          <View style={s.metaChip}>
+          {selectionLabels.map(label => (
+            <View key={`${plan.id}-${label}`} style={s.metaChip}>
+              <Text style={s.metaChipText}>{label}</Text>
+            </View>
+          ))}
+          <View style={[s.metaChip, s.practiceChip]}>
             <Text style={s.metaChipText}>{practiceName(plan.practice)}</Text>
           </View>
         </View>
       </View>
 
       <View style={s.planSwitch}>
-        <FocusSwitch value={plan.enabled} onToggle={() => togglePlanEnabled(plan.id)} />
+        <FocusSwitch value={plan.enabled} onToggle={onToggle} />
       </View>
     </TouchableOpacity>
   );
@@ -67,6 +79,22 @@ function PlanCard({ plan }: { plan: WatchPlan }) {
 export default function ProtectTimeView() {
   const router = useRouter();
   const { plans } = useFocusWatch();
+  const [pendingPlanId, setPendingPlanId] = useState<string | null>(null);
+
+  const requestTogglePlan = (plan: WatchPlan) => {
+    if (plan.enabled || hasScreenTimePermission()) {
+      togglePlanEnabled(plan.id);
+      return;
+    }
+    setPendingPlanId(plan.id);
+  };
+
+  const confirmPermission = () => {
+    const id = pendingPlanId;
+    grantScreenTimePermission();
+    setPendingPlanId(null);
+    if (id) togglePlanEnabled(id);
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -86,7 +114,7 @@ export default function ProtectTimeView() {
 
           {plans.map((plan, i) => (
             <Animated.View key={plan.id} entering={enter(110 + i * 60)}>
-              <PlanCard plan={plan} />
+              <PlanCard plan={plan} onToggle={() => requestTogglePlan(plan)} />
             </Animated.View>
           ))}
 
@@ -119,6 +147,11 @@ export default function ProtectTimeView() {
           </Animated.View>
         </View>
       </ScrollView>
+      <ScreenTimePermissionModal
+        visible={pendingPlanId !== null}
+        onCancel={() => setPendingPlanId(null)}
+        onConfirm={confirmPermission}
+      />
     </View>
   );
 }
@@ -185,21 +218,35 @@ const s = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 6,
   },
-  strengthChip: {
+  planTag: {
     paddingHorizontal: 9,
     paddingVertical: 4.5,
     borderRadius: 999,
   },
   strengthStrict: {
-    backgroundColor: C.goldLight,
+    backgroundColor: '#FBE6E9',
   },
   strengthLoose: {
-    backgroundColor: '#F4F3EF',
+    backgroundColor: LOOSE_TAG_TONE.bg,
+    borderWidth: 1,
+    borderColor: LOOSE_TAG_TONE.border,
   },
-  strengthChipText: {
+  alwaysChip: {
+    backgroundColor: '#E8F7ED',
+  },
+  planTagText: {
     fontFamily: F.sansBold,
-    fontSize: 9.5,
-    letterSpacing: 1.2,
+    fontSize: 10,
+    letterSpacing: 0.7,
+  },
+  alwaysChipText: {
+    color: '#15803D',
+  },
+  strengthStrictText: {
+    color: '#B54155',
+  },
+  strengthLooseText: {
+    color: LOOSE_TAG_TONE.text,
   },
   metaChip: {
     paddingHorizontal: 9,
@@ -208,6 +255,9 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
     backgroundColor: C.surface,
+  },
+  practiceChip: {
+    backgroundColor: '#FAF9F5',
   },
   metaChipText: {
     fontFamily: F.sansMedium,

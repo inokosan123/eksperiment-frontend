@@ -1,8 +1,8 @@
 import { ReactNode } from 'react';
-import { AlertTriangle, Bell, Clock, Eye, Target, Waves } from '@/components/icons/Icons';
-import type { WebPackId } from './focusWatchStore';
+import { AlertTriangle, Bell, Calendar, Eye, Target, Waves } from '@/components/icons/Icons';
+import type { WebPackId } from './dayPlanStore';
 
-export type FocusRoute = '/protect-time' | '/clean-sight' | '/never-allowed' | '/strict-watch';
+export type FocusRoute = '/day-plans' | '/clean-sight';
 
 export type FocusHeroCard = {
   id: string;
@@ -19,19 +19,19 @@ export type FocusHeroCard = {
   route: FocusRoute;
 };
 
-export const PROTECT_TIME_CARD: FocusHeroCard = {
-  id: 'protect-time',
+export const DAY_PLAN_CARD: FocusHeroCard = {
+  id: 'day-plan',
   label: 'APP BLOCKING',
-  title: 'Protect Time',
-  description: 'Guard your hours from the apps that pull you away.',
+  title: 'Day Plan',
+  description: 'Plan your phone the way you plan your day.',
   bg: '#FBF3DE',
   border: '#F0E3B8',
   labelColor: '#A9863F',
   titleColor: '#6D4F13',
   bodyColor: '#A9863F',
   arrowBg: '#8A5A1A',
-  decor: <Clock s={84} c="#A9863F" w={1} />,
-  route: '/protect-time',
+  decor: <Calendar s={84} c="#A9863F" w={1} />,
+  route: '/day-plans',
 };
 
 export const CLEAN_SIGHT_CARD: FocusHeroCard = {
@@ -49,7 +49,13 @@ export const CLEAN_SIGHT_CARD: FocusHeroCard = {
   route: '/clean-sight',
 };
 
-export const FOCUS_HERO_CARDS = [PROTECT_TIME_CARD, CLEAN_SIGHT_CARD];
+export const FOCUS_HERO_CARDS = [DAY_PLAN_CARD, CLEAN_SIGHT_CARD];
+
+export const LOOSE_TAG_TONE = {
+  bg: '#FFF8E7',
+  border: '#F0E3B8',
+  text: '#C5A059',
+} as const;
 
 export type WebPackContent = {
   id: WebPackId;
@@ -104,10 +110,6 @@ export const WEB_PACKS: WebPackContent[] = [
     sitesNote: '…and 100+ more, updated by us',
   },
 ];
-
-export const WEB_PACK_LAYER_NAMES: Record<WebPackId, string> = Object.fromEntries(
-  WEB_PACKS.map(pack => [pack.id, pack.layerName])
-) as Record<WebPackId, string>;
 
 // Mock app catalog until Apple's FamilyActivityPicker arrives in Phase 2.
 // Tints come from the section-card palette family.

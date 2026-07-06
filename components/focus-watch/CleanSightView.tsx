@@ -6,15 +6,19 @@ import { Globe, Plus, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import WebPackCard from './WebPackCard';
+import ScreenTimePermissionModal from './ScreenTimePermissionModal';
 import FocusWatchLottie from './FocusWatchLottie';
 import { SMOOTH_LAYOUT, SOFT_IN, SOFT_OUT } from './focusMotion';
 import { WEB_PACKS } from './focusContent';
 import {
   addCustomDomain,
+  grantScreenTimePermission,
+  hasScreenTimePermission,
   normalizeDomain,
   removeCustomDomain,
   toggleWebPack,
   useFocusWatch,
+  type WebPackId,
 } from './focusWatchStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
@@ -23,10 +27,15 @@ const LIST_TRANSITION = SMOOTH_LAYOUT;
 function CustomDomains() {
   const { customDomains } = useFocusWatch();
   const [draft, setDraft] = useState('');
+  const [pendingDraft, setPendingDraft] = useState<string | null>(null);
   const canAdd = normalizeDomain(draft).includes('.');
 
   const submit = () => {
     if (!canAdd) return;
+    if (!hasScreenTimePermission()) {
+      setPendingDraft(draft);
+      return;
+    }
     addCustomDomain(draft);
     setDraft('');
   };
@@ -79,12 +88,41 @@ function CustomDomains() {
           <Plus s={15} c="#fff" w={2.6} />
         </TouchableOpacity>
       </View>
+      <ScreenTimePermissionModal
+        visible={pendingDraft !== null}
+        onCancel={() => setPendingDraft(null)}
+        onConfirm={() => {
+          const raw = pendingDraft;
+          grantScreenTimePermission();
+          setPendingDraft(null);
+          if (raw) {
+            addCustomDomain(raw);
+            setDraft('');
+          }
+        }}
+      />
     </Animated.View>
   );
 }
 
 export default function CleanSightView() {
   const { webPacks } = useFocusWatch();
+  const [pendingPackId, setPendingPackId] = useState<WebPackId | null>(null);
+
+  const requestTogglePack = (packId: WebPackId, enabled: boolean) => {
+    if (enabled || hasScreenTimePermission()) {
+      toggleWebPack(packId);
+      return;
+    }
+    setPendingPackId(packId);
+  };
+
+  const confirmPermission = () => {
+    const id = pendingPackId;
+    grantScreenTimePermission();
+    setPendingPackId(null);
+    if (id) toggleWebPack(id);
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -112,7 +150,12 @@ export default function CleanSightView() {
               <WebPackCard
                 packId={pack.id}
                 enabled={webPacks.find(entry => entry.id === pack.id)?.enabled ?? false}
-                onToggle={() => toggleWebPack(pack.id)}
+                onToggle={() =>
+                  requestTogglePack(
+                    pack.id,
+                    webPacks.find(entry => entry.id === pack.id)?.enabled ?? false
+                  )
+                }
               />
             </Animated.View>
           ))}
@@ -130,6 +173,11 @@ export default function CleanSightView() {
           </Animated.View>
         </View>
       </ScrollView>
+      <ScreenTimePermissionModal
+        visible={pendingPackId !== null}
+        onCancel={() => setPendingPackId(null)}
+        onConfirm={confirmPermission}
+      />
     </View>
   );
 }

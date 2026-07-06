@@ -5,7 +5,7 @@ import { X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
-import { formatTimeOfDay } from './focusWatchStore';
+import { formatTimeOfDay } from './dayPlanStore';
 
 const ITEM_HEIGHT = 44;
 const VISIBLE_ROWS = 5;

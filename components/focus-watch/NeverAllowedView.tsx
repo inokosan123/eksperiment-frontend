@@ -7,11 +7,14 @@ import { Globe, Plus, Shield, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import WebPackCard from './WebPackCard';
+import ScreenTimePermissionModal from './ScreenTimePermissionModal';
 import FocusWatchLottie from './FocusWatchLottie';
 import { SMOOTH_LAYOUT, SOFT_IN, SOFT_OUT } from './focusMotion';
 import { WEB_PACKS } from './focusContent';
 import {
   addNeverAllowedSite,
+  grantScreenTimePermission,
+  hasScreenTimePermission,
   normalizeDomain,
   removeNeverAllowed,
   toggleNeverPack,
@@ -51,14 +54,28 @@ function EntryRow({
 export default function NeverAllowedView() {
   const { neverAllowed, neverPacks } = useFocusWatch();
   const [draft, setDraft] = useState('');
+  const [pendingDraft, setPendingDraft] = useState<string | null>(null);
+  const [packToEnable, setPackToEnable] = useState<WebPackId | null>(null);
   const [packToDisable, setPackToDisable] = useState<WebPackId | null>(null);
   const [entryToRemove, setEntryToRemove] = useState<NeverAllowedEntry | null>(null);
   const canAdd = normalizeDomain(draft).includes('.');
 
   const submit = () => {
     if (!canAdd) return;
+    if (!hasScreenTimePermission()) {
+      setPendingDraft(draft);
+      return;
+    }
     addNeverAllowedSite(draft);
     setDraft('');
+  };
+
+  const requestEnablePack = (packId: WebPackId) => {
+    if (hasScreenTimePermission()) {
+      toggleNeverPack(packId);
+      return;
+    }
+    setPackToEnable(packId);
   };
 
   return (
@@ -89,7 +106,7 @@ export default function NeverAllowedView() {
                   enabled={enabled}
                   enabledDetail="Closed for good — no unlock"
                   onToggle={() =>
-                    enabled ? setPackToDisable(pack.id) : toggleNeverPack(pack.id)
+                    enabled ? setPackToDisable(pack.id) : requestEnablePack(pack.id)
                   }
                 />
               );
@@ -159,6 +176,31 @@ export default function NeverAllowedView() {
         onConfirm={() => {
           if (packToDisable) toggleNeverPack(packToDisable);
           setPackToDisable(null);
+        }}
+      />
+
+      <ScreenTimePermissionModal
+        visible={packToEnable !== null}
+        onCancel={() => setPackToEnable(null)}
+        onConfirm={() => {
+          const id = packToEnable;
+          grantScreenTimePermission();
+          setPackToEnable(null);
+          if (id) toggleNeverPack(id);
+        }}
+      />
+
+      <ScreenTimePermissionModal
+        visible={pendingDraft !== null}
+        onCancel={() => setPendingDraft(null)}
+        onConfirm={() => {
+          const raw = pendingDraft;
+          grantScreenTimePermission();
+          setPendingDraft(null);
+          if (raw) {
+            addNeverAllowedSite(raw);
+            setDraft('');
+          }
         }}
       />
 

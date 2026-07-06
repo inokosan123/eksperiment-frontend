@@ -65,6 +65,7 @@ import {
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
 import { AnyTaskCard, type TaskData, type TaskState } from '@/components/shared/TaskCards';
+import TaskFrequencyEditor, { type TaskFrequency } from '@/components/shared/TaskFrequencyEditor';
 import { normalizeHabitIcon } from '@/components/shared/notoEmoji/legacyMap';
 import {
   playAchievementCompleteFeedback,
@@ -149,6 +150,7 @@ type FocusAnswer = 'pomodoro' | 'blockers' | 'deep_work' | 'screen_time';
 type PillarAnswer = 'organize' | 'focus' | 'spiritual';
 type StepId =
   | 'welcome'
+  | 'onboardingDevJump'
   | 'nameIntro'
   | 'traditionIntro'
   | 'valueOrganize'
@@ -192,6 +194,8 @@ type StepId =
   | 'organizeHabitsExamples'
   | 'organizeHubComplete'
   | 'organizeWeeklyIntroV2'
+  | 'organizeWeeklyRhythmV2'
+  | 'organizeDailySetupV2'
   | 'organizeHubStartV2'
   | 'organizeSpiritualBuilderV2'
   | 'organizeHubAfterSpiritualV2'
@@ -299,6 +303,18 @@ type Answers = {
   focus?: FocusAnswer;
 };
 
+type OnboardingDevJumpTarget = {
+  step: StepId;
+  title: string;
+  body: string;
+  accent: string;
+};
+
+type OnboardingDevJumpGroup = {
+  title: string;
+  targets: OnboardingDevJumpTarget[];
+};
+
 type Option<Value extends string> = {
   value: Value;
   title: string;
@@ -338,6 +354,7 @@ const GOLD = C.gold;
 const INK = '#191714';
 const PAPER = '#FFFDF9';
 const MUTED = '#776E64';
+const ONBOARDING_DEV_JUMP_ENABLED = __DEV__;
 const APP_LOGO = require('@/assets/images/anasta-logo.png');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const CONFETTI_SOURCE = require('@/assets/animations/onboarding-confetti.lottie');
@@ -1036,6 +1053,86 @@ const PILLAR_OPTIONS: Option<PillarAnswer>[] = [
   },
 ];
 
+const ONBOARDING_DEV_SEED_ANSWERS: Answers = {
+  displayName: 'Dev',
+  christian: 'yes',
+  tradition: 'orthodox',
+  isOrthodox: true,
+  secularFilter: false,
+  commitment: 'committed',
+  primaryPillar: 'organize',
+  firstChapter: 'build',
+  screenTimeHours: 7,
+  confirmedProtectProblems: ['lost-hour', 'morning-night', 'focus-pulled', 'presence'],
+  confirmedOrganizeProblems: ['last-minute', 'plan-day', 'goals-give-up', 'intentional-time'],
+  gratitudeDailyTask: true,
+  age: '18_24',
+  gender: 'male',
+};
+
+const ONBOARDING_DEV_JUMP_GROUPS: OnboardingDevJumpGroup[] = [
+  {
+    title: 'Opening',
+    targets: [
+      { step: 'nameIntro', title: 'Name + chat', body: 'Resume the normal first conversation.', accent: GOLD },
+      { step: 'traditionIntro', title: 'Tradition', body: 'Christian tradition selection.', accent: GOLD },
+      { step: 'valueOrganize', title: 'Values start', body: 'First value preview screen.', accent: '#4D8586' },
+      { step: 'toolsShowcase', title: 'Tools showcase', body: 'The moving system/tools presentation.', accent: GOLD },
+    ],
+  },
+  {
+    title: 'Protect time',
+    targets: [
+      { step: 'protectDeck', title: 'Protect questions', body: 'Swipe deck with selected pain points.', accent: '#4D8586' },
+      { step: 'screenTimeSlider', title: 'Screen time slider', body: 'Phone hours input.', accent: '#4D8586' },
+      { step: 'dayVisualizationHeader', title: 'Day visualization', body: 'Daily time breakdown sequence.', accent: '#2F9B61' },
+      { step: 'protectRecap', title: 'Protect recap', body: 'Selected answers and recommendations.', accent: '#4D8586' },
+      { step: 'flameProtect', title: 'Protect flame', body: 'First checkpoint flame.', accent: GOLD },
+    ],
+  },
+  {
+    title: 'Organize',
+    targets: [
+      { step: 'organizeDeck', title: 'Organize questions', body: 'Organize swipe deck.', accent: '#4D8586' },
+      { step: 'organizeRecap', title: 'Organize recap', body: 'System health and recommendations.', accent: '#4D8586' },
+      { step: 'organizeSetupPath', title: 'Two layers', body: 'Macro planning + weekly routine map.', accent: GOLD },
+      { step: 'organizeMacroIntro', title: 'Macro planning', body: 'Big events and monthly goals.', accent: '#2F9B61' },
+      { step: 'organizeBigEventsIntro', title: 'Big events', body: 'Carousel before guided setup.', accent: '#4D8586' },
+      { step: 'organizeMacroProgressAfterBigEvents', title: 'After big events', body: 'Macro progress check state.', accent: '#2F9B61' },
+      { step: 'organizeMonthlyGoalsIntro', title: 'Monthly goals', body: 'Carousel before monthly goals.', accent: GOLD },
+      { step: 'organizeMacroProgressAfterMonthlyGoals', title: 'After monthly goals', body: 'Macro complete state.', accent: '#2F9B61' },
+      { step: 'organizeWeeklyIntroV2', title: 'Weekly intro', body: 'Start of weekly routine setup.', accent: GOLD },
+      { step: 'organizeWeeklyRhythmV2', title: 'Weekly rhythm', body: 'Monday to Sunday planning preview.', accent: '#4D8586' },
+      { step: 'organizeDailySetupV2', title: 'Task rhythm', body: 'Task frequency preview.', accent: '#2F9B61' },
+      { step: 'organizeHubStartV2', title: 'Weekly hub', body: 'Task type hub.', accent: '#4D8586' },
+      { step: 'organizeHabitsConceptV2', title: 'Habits concept', body: 'Habit explanation screen.', accent: '#2F9B61' },
+      { step: 'organizeHomePreview', title: 'Home preview', body: 'Organized home mock.', accent: GOLD },
+      { step: 'organizeComplete', title: 'Organize complete', body: 'End of organize section.', accent: '#2F9B61' },
+      { step: 'flameOrganize', title: 'Organize flame', body: 'Second checkpoint flame.', accent: GOLD },
+    ],
+  },
+  {
+    title: 'Finish',
+    targets: [
+      { step: 'giftMoment', title: 'Free gift', body: 'Scripture/free tools moment.', accent: GOLD },
+      { step: 'bibleWalkthrough', title: 'Bible walkthrough', body: 'Bible preview moment.', accent: GOLD },
+      { step: 'prayerBook', title: 'Prayer Book', body: 'Prayer preview moment.', accent: GOLD },
+      { step: 'flameGrow', title: 'Grow flame', body: 'Third checkpoint flame.', accent: GOLD },
+      { step: 'toolsSlides', title: 'More tools', body: 'Journal/gratitude/tools slides.', accent: '#4D8586' },
+      { step: 'flameTools', title: 'Tools flame', body: 'Final flame recap.', accent: GOLD },
+      { step: 'homeReveal', title: 'Home reveal', body: 'App home reveal.', accent: '#4D8586' },
+      { step: 'firstCheckoff', title: 'First checkoff', body: 'First task feedback.', accent: '#2F9B61' },
+      { step: 'privacy', title: 'Privacy', body: 'Privacy reassurance.', accent: '#4D8586' },
+      { step: 'callingClose', title: 'Calling close', body: 'Closing value statement.', accent: GOLD },
+      { step: 'paywall', title: 'Paywall', body: 'Trial offer screen.', accent: GOLD },
+      { step: 'postPaywallBrand', title: 'Post-paywall brand', body: 'Arise closing screen.', accent: GOLD },
+      { step: 'age', title: 'Age', body: 'Post-paywall profile question.', accent: '#4D8586' },
+      { step: 'gender', title: 'Gender', body: 'Post-paywall profile question.', accent: '#4D8586' },
+      { step: 'accountCreation', title: 'Account creation', body: 'Final account options.', accent: GOLD },
+    ],
+  },
+];
+
 function stepOrder(answers: Answers): StepId[] {
   const includeMonthlyGoals = shouldIncludeMonthlyGoals(answers);
   const organizeSetup: StepId[] = [
@@ -1047,6 +1144,8 @@ function stepOrder(answers: Answers): StepId[] {
     ...(includeMonthlyGoals ? ['organizeMonthlyGoalsIntro' as StepId, 'buildMonthlyGoals' as StepId, 'organizeMacroProgressAfterMonthlyGoals' as StepId] : []),
     'organizeSetupPathAfterAhead',
     'organizeWeeklyIntroV2',
+    'organizeWeeklyRhythmV2',
+    'organizeDailySetupV2',
     'organizeHubStartV2',
     'organizeSpiritualTasksIntro',
     'organizeSpiritualBuilderV2',
@@ -1068,6 +1167,7 @@ function stepOrder(answers: Answers): StepId[] {
 
   return [
     'welcome',
+    ...(ONBOARDING_DEV_JUMP_ENABLED ? ['onboardingDevJump' as StepId] : []),
     'nameIntro',
     'traditionIntro',
     'valueOrganize',
@@ -3852,6 +3952,86 @@ function ValueProtectPhone() {
           <ValueProtectBlockerPill label="Others" tone="gold" />
         </View>
       </View>
+    </View>
+  );
+}
+
+function OnboardingDevJumpSlide({
+  topInset,
+  bottomInset,
+  onContinue,
+  onJump,
+}: {
+  topInset: number;
+  bottomInset: number;
+  onContinue: () => void;
+  onJump: (step: StepId) => void;
+}) {
+  return (
+    <View style={s.devJumpScreen}>
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          s.devJumpContent,
+          {
+            paddingTop: topInset + 28,
+            paddingBottom: bottomInset + 124,
+          },
+        ]}
+      >
+        <Reanimated.View
+          entering={FadeInUp.duration(520).easing(Easing.out(Easing.cubic))}
+          style={s.devJumpHeader}
+        >
+          <View style={s.devJumpBadge}>
+            <Settings s={13} c={GOLD} w={2} />
+            <Text style={s.devJumpBadgeText}>DEV ONLY</Text>
+          </View>
+          <Text style={s.devJumpTitle}>Onboarding jump menu</Text>
+          <Text style={s.devJumpBody}>
+            Jump straight to the screen you are polishing. Production builds skip this and continue normally.
+          </Text>
+        </Reanimated.View>
+
+        <TouchableOpacity activeOpacity={0.88} haptic="light" onPress={onContinue} style={s.devJumpContinueCard}>
+          <View style={s.devJumpContinueIcon}>
+            <ChevronRight s={18} c={GOLD} w={2.4} />
+          </View>
+          <View style={s.devJumpCopy}>
+            <Text style={s.devJumpContinueTitle}>Continue normal onboarding</Text>
+            <Text style={s.devJumpContinueBody}>Go to the name and tradition conversation.</Text>
+          </View>
+        </TouchableOpacity>
+
+        {ONBOARDING_DEV_JUMP_GROUPS.map((group, groupIndex) => (
+          <Reanimated.View
+            key={group.title}
+            entering={FadeInUp.delay(80 + groupIndex * 45).duration(460).easing(Easing.out(Easing.cubic))}
+            style={s.devJumpGroup}
+          >
+            <Text style={s.devJumpGroupTitle}>{group.title}</Text>
+            <View style={s.devJumpTargetList}>
+              {group.targets.map(target => (
+                <TouchableOpacity
+                  key={target.step}
+                  activeOpacity={0.86}
+                  haptic="light"
+                  onPress={() => onJump(target.step)}
+                  style={s.devJumpTarget}
+                >
+                  <View style={[s.devJumpTargetAccent, { backgroundColor: target.accent }]} />
+                  <View style={s.devJumpCopy}>
+                    <Text style={s.devJumpTargetTitle}>{target.title}</Text>
+                    <Text style={s.devJumpTargetBody}>{target.body}</Text>
+                  </View>
+                  <Text selectable style={s.devJumpStepId}>{target.step}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </Reanimated.View>
+        ))}
+      </ScrollView>
     </View>
   );
 }
@@ -14327,31 +14507,78 @@ function OrganizeStageHeader({
   body,
   accent = GOLD,
   compact = false,
+  variant = 'default',
+  bodyHighlights = [],
 }: {
   title: string;
   body: string;
   accent?: string;
   compact?: boolean;
+  variant?: 'default' | 'premium';
+  bodyHighlights?: string[];
 }) {
+  const premium = variant === 'premium';
+
   return (
     <Reanimated.View
       entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))}
-      style={s.organizeBigEventsHeader}
+      style={[s.organizeBigEventsHeader, premium && s.organizePremiumHeader]}
     >
       <View style={s.organizeBigEventsTitleWrap}>
         <Text
-          style={[s.organizeStageTitle, compact && s.organizeStageTitleCompact]}
+          style={[
+            s.organizeStageTitle,
+            premium && s.organizeStageTitlePremium,
+            compact && (premium ? s.organizeStageTitlePremiumCompact : s.organizeStageTitleCompact),
+          ]}
           numberOfLines={2}
           adjustsFontSizeToFit
-          minimumFontScale={0.68}
+          minimumFontScale={premium ? 0.78 : 0.68}
         >
           {title}
         </Text>
-        <View style={[s.organizeStageUnderline, { backgroundColor: accent }]} />
+        <View style={[s.organizeStageUnderline, premium && s.organizeStageUnderlinePremium, { backgroundColor: accent }]} />
       </View>
-      <Text style={s.organizeBigEventsBody}>{body}</Text>
+      <Text style={[s.organizeBigEventsBody, premium && s.organizePremiumBody]}>
+        {renderHighlightedBodyText(body, bodyHighlights, premium ? s.organizePremiumBodyStrong : s.organizeBigEventsBodyStrong)}
+      </Text>
     </Reanimated.View>
   );
+}
+
+function renderHighlightedBodyText(text: string, highlights: string[], highlightStyle: TextStyle) {
+  if (!highlights.length) return text;
+
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    let nextIndex = -1;
+    let nextHighlight = '';
+
+    for (const highlight of highlights) {
+      const index = text.indexOf(highlight, cursor);
+      if (index !== -1 && (nextIndex === -1 || index < nextIndex)) {
+        nextIndex = index;
+        nextHighlight = highlight;
+      }
+    }
+
+    if (nextIndex === -1) {
+      parts.push(text.slice(cursor));
+      break;
+    }
+
+    if (nextIndex > cursor) parts.push(text.slice(cursor, nextIndex));
+    parts.push(
+      <Text key={`${nextHighlight}-${nextIndex}`} style={highlightStyle}>
+        {nextHighlight}
+      </Text>,
+    );
+    cursor = nextIndex + nextHighlight.length;
+  }
+
+  return parts;
 }
 
 function organizeMapState(variant: OrganizeSetupMapVariant, id: OrganizeSetupAreaId, afterAheadStage: OrganizeSetupAfterAheadStage = 2) {
@@ -14779,9 +15006,10 @@ function OrganizeMacroIntroSlide({ onNext }: { onNext: () => void }) {
   const [activeReady, setActiveReady] = useState(false);
   const contentStyle = [
     s.organizeRuleContent,
+    s.organizeMacroIntroContent,
     {
       flexGrow: 1,
-      paddingTop: Math.max(insets.top + 26, 52),
+      paddingTop: Math.max(insets.top + 34, 60),
       paddingBottom: insets.bottom + 134,
     },
   ];
@@ -14801,10 +15029,10 @@ function OrganizeMacroIntroSlide({ onNext }: { onNext: () => void }) {
         <OrganizeStageHeader
           title="Macro planning"
           body="First, mark what matters ahead. Big dates and monthly direction shape your plan before the week begins."
-          accent="#4D8586"
+          accent="#2F9B61"
         />
 
-        <View style={[s.setupPathBoard, s.organizeMacroIntroBoard]}>
+        <View style={[s.setupPathBoard, s.organizeMacroIntroBoard, s.organizeMacroIntroBoardTight]}>
           {MACRO_PLANNING_STEPS.map((item, index) => (
             <React.Fragment key={item.title}>
               <SetupPathStepCard
@@ -15721,6 +15949,8 @@ function OrganizeLessonSlide({
   title,
   body,
   accent = GOLD,
+  headerVariant = 'default',
+  bodyHighlights = [],
   children,
   ctaLabel = 'Continue',
   onNext,
@@ -15728,6 +15958,8 @@ function OrganizeLessonSlide({
   title: string;
   body: string;
   accent?: string;
+  headerVariant?: 'default' | 'premium';
+  bodyHighlights?: string[];
   children: React.ReactNode;
   ctaLabel?: string;
   onNext: () => void;
@@ -15746,7 +15978,13 @@ function OrganizeLessonSlide({
   return (
     <View style={s.organizeRuleScreen}>
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
-        <OrganizeStageHeader title={title} body={body} accent={accent} />
+        <OrganizeStageHeader
+          title={title}
+          body={body}
+          accent={accent}
+          variant={headerVariant}
+          bodyHighlights={bodyHighlights}
+        />
 
         <View style={s.organizeLessonBody}>{children}</View>
       </ScrollView>
@@ -16751,80 +16989,558 @@ function draftConsistentTime(draft: TaskDraft): string {
 
 // --- Weekly intro ------------------------------------------------------------
 
-const WEEKLY_V2_DAYS: { day: string; pills: { color: string; width: number }[] }[] = [
-  { day: 'Mon', pills: [{ color: GOLD, width: 46 }, { color: '#4D8586', width: 34 }] },
-  { day: 'Tue', pills: [{ color: GOLD, width: 46 }, { color: '#2F9B61', width: 28 }, { color: '#4D8586', width: 38 }] },
-  { day: 'Wed', pills: [{ color: GOLD, width: 46 }, { color: '#8F5B4B', width: 30 }] },
-  { day: 'Thu', pills: [{ color: GOLD, width: 46 }, { color: '#4D8586', width: 34 }, { color: '#2F9B61', width: 24 }] },
-  { day: 'Fri', pills: [{ color: GOLD, width: 46 }, { color: '#2F9B61', width: 30 }] },
-  { day: 'Sat', pills: [{ color: '#4D8586', width: 42 }, { color: '#8F5B4B', width: 26 }] },
-  { day: 'Sun', pills: [{ color: '#705B9B', width: 52 }, { color: GOLD, width: 32 }] },
+type WeeklyEvidenceCard = {
+  title: string;
+  baselinePercent: number;
+  resultPercent: number;
+  deltaText: string;
+  direction: 'up' | 'down';
+  accent: string;
+  peopleAccent: string;
+  curve: 'performance' | 'distress' | 'wellbeing';
+};
+
+const WEEKLY_EVIDENCE_CARDS: WeeklyEvidenceCard[] = [
+  {
+    title: 'Performance',
+    baselinePercent: 100,
+    resultPercent: 126,
+    deltaText: '+26%',
+    direction: 'up',
+    accent: '#2F9B61',
+    peopleAccent: GOLD,
+    curve: 'performance',
+  },
+  {
+    title: 'Distress',
+    baselinePercent: 100,
+    resultPercent: 78,
+    deltaText: '-22%',
+    direction: 'down',
+    accent: '#8F5B4B',
+    peopleAccent: '#2F9B61',
+    curve: 'distress',
+  },
+  {
+    title: 'Well-being',
+    baselinePercent: 100,
+    resultPercent: 131,
+    deltaText: '+31%',
+    direction: 'up',
+    accent: GOLD,
+    peopleAccent: '#4D8586',
+    curve: 'wellbeing',
+  },
 ];
 
-const WEEKLY_V2_LEGEND = [
-  { color: GOLD, label: 'Prayer' },
-  { color: '#4D8586', label: 'Duties' },
-  { color: '#2F9B61', label: 'Habits' },
-  { color: '#705B9B', label: 'Church' },
-];
+function WeeklyEvidenceResultChart({
+  card,
+  active,
+  width,
+  height,
+}: {
+  card: WeeklyEvidenceCard;
+  active: boolean;
+  width: number;
+  height: number;
+}) {
+  const reveal = useSharedValue(active ? 1 : 0);
+  const left = 24;
+  const right = width - 24;
+  const span = right - left;
+  const x = (pct: number) => left + span * pct;
+  const chartHeight = Math.max(176, height);
+  const chartTop = 18;
+  const chartBottom = chartHeight - 28;
+  const plotHeight = chartBottom - chartTop;
+  const startY = card.direction === 'down'
+    ? chartTop + plotHeight * 0.24
+    : chartTop + plotHeight * 0.69;
+  const resultY = card.direction === 'down'
+    ? chartTop + plotHeight * 0.66
+    : chartTop + plotHeight * (card.curve === 'wellbeing' ? 0.22 : 0.31);
+  const guideTop = chartTop + plotHeight * 0.2;
+  const guideMid = chartTop + plotHeight * 0.5;
+  const guideBottom = chartTop + plotHeight * 0.8;
+  const baselinePath = `M${left} ${startY} C${x(0.26)} ${startY - 2} ${x(0.52)} ${startY + 2} ${x(0.74)} ${startY} C${x(0.88)} ${startY - 1} ${x(0.94)} ${startY + 1} ${right} ${startY}`;
+  const c1y =
+    card.curve === 'distress'
+      ? startY + 8
+      : card.curve === 'wellbeing'
+        ? startY - 16
+        : startY - 5;
+  const c2y =
+    card.curve === 'distress'
+      ? resultY - 18
+      : card.curve === 'wellbeing'
+        ? resultY + 26
+        : resultY + 10;
+  const resultPath = `M${left} ${startY} C${x(0.2)} ${c1y} ${x(0.38)} ${c1y} ${x(0.52)} ${(startY + resultY) / 2} C${x(0.68)} ${c2y} ${x(0.84)} ${c2y} ${right} ${resultY}`;
+  const areaPath = `${resultPath} L${right} ${chartBottom} L${left} ${chartBottom} Z`;
+  const startLabelTop = Math.max(8, Math.min(chartHeight - 45, startY - 38));
+  const resultLabelTop = Math.max(8, Math.min(chartHeight - 45, resultY - 38));
 
-// "Plan once. Live all week." — the week itself is the picture: seven rows,
-// each already carrying its small plan.
+  useEffect(() => {
+    reveal.value = active
+      ? withTiming(1, { duration: 980, easing: Easing.bezier(0.16, 1, 0.28, 1) })
+      : withTiming(0, { duration: 140, easing: Easing.out(Easing.cubic) });
+  }, [active, reveal]);
+
+  const chartRevealStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(reveal.value, [0, 0.18, 1], [0, 1, 1], 'clamp'),
+    width: `${interpolate(reveal.value, [0.08, 0.92], [0, 100], 'clamp')}%`,
+  }));
+  const endpointStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(reveal.value, [0.72, 1], [0, 1], 'clamp'),
+    transform: [{ scale: interpolate(reveal.value, [0.72, 0.9, 1], [0.72, 1.16, 1], 'clamp') }],
+  }));
+
+  return (
+    <View style={[s.weeklyResultBlock, { width, minHeight: height }]}>
+      <View style={[s.weeklyResultPlot, { width, height: chartHeight }]}>
+        <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg}>
+          <SvgPath d={`M${left} ${guideTop} H${right}`} stroke="rgba(25,23,20,0.10)" strokeWidth={1.2} strokeDasharray="4 8" strokeLinecap="round" />
+          <SvgPath d={`M${left} ${guideMid} H${right}`} stroke="rgba(25,23,20,0.06)" strokeWidth={1.1} strokeDasharray="4 9" strokeLinecap="round" />
+          <SvgPath d={`M${left} ${guideBottom} H${right}`} stroke="rgba(25,23,20,0.10)" strokeWidth={1.2} strokeDasharray="4 8" strokeLinecap="round" />
+          <SvgPath d={baselinePath} stroke="rgba(25,23,20,0.22)" strokeWidth={3.4} fill="none" strokeLinecap="round" />
+          <SvgCircle cx={left} cy={startY} r={6.2} fill="#FFFDF8" stroke="rgba(25,23,20,0.52)" strokeWidth={2.5} />
+        </Svg>
+
+        <Reanimated.View style={[s.weeklyResultRevealFull, chartRevealStyle]}>
+          <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg}>
+            <SvgPath d={areaPath} fill={`${card.accent}16`} />
+            <SvgPath d={resultPath} stroke={`${card.accent}22`} strokeWidth={16} fill="none" strokeLinecap="round" />
+            <SvgPath d={resultPath} stroke={card.accent} strokeWidth={5.2} fill="none" strokeLinecap="round" />
+          </Svg>
+        </Reanimated.View>
+
+        <Reanimated.View
+          pointerEvents="none"
+          style={[
+            s.weeklyResultEndpointGlow,
+            {
+              left: right - 14,
+              top: resultY - 14,
+              borderColor: `${card.accent}55`,
+              backgroundColor: `${card.accent}12`,
+            },
+            endpointStyle,
+          ]}
+        />
+
+        <View style={[s.weeklyChartValuePill, s.weeklyChartValuePillBaseline, { left: left - 2, top: startLabelTop }]}>
+          <Text style={s.weeklyChartValueTextMuted}>{card.baselinePercent}%</Text>
+        </View>
+        <View style={[s.weeklyChartValuePill, { right: 0, top: resultLabelTop, borderColor: `${card.accent}2F`, backgroundColor: '#FFFFFF' }]}>
+          <Text style={[s.weeklyChartValueText, { color: card.accent }]}>{card.resultPercent}%</Text>
+        </View>
+
+        <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg} pointerEvents="none">
+          <G>
+            <SvgCircle cx={right} cy={resultY} r={8.5} fill="#FFFDF8" stroke={card.accent} strokeWidth={3.8} />
+          </G>
+        </Svg>
+      </View>
+    </View>
+  );
+}
+
+function WeeklyEvidenceCardView({
+  card,
+  active,
+  width,
+  height,
+  chartWidth,
+  chartHeight,
+}: {
+  card: WeeklyEvidenceCard;
+  active: boolean;
+  width: number;
+  height: number;
+  chartWidth: number;
+  chartHeight: number;
+}) {
+  const reveal = useSharedValue(active ? 1 : 0);
+
+  useEffect(() => {
+    reveal.value = active
+      ? withTiming(1, { duration: 520, easing: Easing.bezier(0.16, 1, 0.28, 1) })
+      : withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) });
+  }, [active, reveal]);
+
+  const cardStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(reveal.value, [0, 0.2, 1], [0.72, 0.9, 1]),
+    transform: [
+      { translateY: interpolate(reveal.value, [0, 1], [8, 0]) },
+    ],
+  }));
+
+  return (
+    <Reanimated.View style={[s.weeklyEvidenceCard, { width, height }, cardStyle]}>
+      <View style={[s.weeklyEvidenceCardSurface, { borderColor: `${card.accent}30` }]}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(255,253,248,1)', `${card.accent}12`, 'rgba(255,247,232,0.98)']}
+          start={{ x: 0.08, y: 0 }}
+          end={{ x: 0.92, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View pointerEvents="none" style={[s.weeklyEvidenceCardAccentWash, { backgroundColor: `${card.accent}12` }]} />
+        <View pointerEvents="none" style={[s.weeklyEvidenceCornerGlow, { borderColor: `${card.accent}26` }]} />
+
+        <View style={s.weeklyEvidenceCardHeader}>
+          <View style={[s.weeklyEvidenceSourcePill, { borderColor: `${card.accent}28`, backgroundColor: '#FFFFFF' }]}>
+            <Text style={s.weeklyEvidenceSourceText} numberOfLines={1} adjustsFontSizeToFit>
+              <Text style={[s.weeklyEvidenceSourceNumber, { color: card.accent }]}>158</Text>
+              <Text> studies | </Text>
+              <Text style={[s.weeklyEvidenceSourceNumber, { color: card.peopleAccent }]}>53,957</Text>
+              <Text> people</Text>
+            </Text>
+          </View>
+          <Text style={s.weeklyEvidenceTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
+            {card.title.toUpperCase()} <Text style={[s.weeklyEvidenceTitleDelta, { color: card.accent }]}>({card.deltaText})</Text>
+          </Text>
+          <View style={[s.weeklyEvidenceTitleUnderline, { backgroundColor: card.accent }]} />
+        </View>
+
+        <View style={[s.weeklyEvidenceGraphPanel, { borderColor: `${card.accent}20`, backgroundColor: `${card.accent}08` }]}>
+          <View pointerEvents="none" style={s.weeklyEvidenceGraphPaper} />
+          <WeeklyEvidenceResultChart card={card} active={active} width={chartWidth} height={chartHeight} />
+        </View>
+      </View>
+    </Reanimated.View>
+  );
+}
+
+// "Importance of planning" is the value slide before the task-type hub.
 function OrganizeWeeklyIntroV2Slide({ onNext }: { onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const [activeIndex, setActiveIndex] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
+  const activeIndexRef = useRef(0);
+  const userScrolledRef = useRef(false);
+  const compact = height < 720;
+  const cardWidth = Math.min(compact ? 320 : 340, Math.max(248, width - 58));
+  const cardHeight = compact
+    ? Math.min(350, Math.max(326, height - insets.top - insets.bottom - 298))
+    : Math.min(388, Math.max(360, height - insets.top - insets.bottom - 346));
+  const chartWidth = Math.max(204, Math.min(cardWidth - 58, 286));
+  const chartHeight = compact
+    ? Math.min(224, Math.max(196, cardHeight - 124))
+    : Math.min(258, Math.max(226, cardHeight - 132));
+  const gap = 18;
+  const ready = activeIndex >= WEEKLY_EVIDENCE_CARDS.length - 1;
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 10 }];
+  const snapOffsets = WEEKLY_EVIDENCE_CARDS.map((_, index) => index * (cardWidth + gap));
+
+  useEffect(() => {
+    activeIndexRef.current = 0;
+    setActiveIndex(0);
+    const timer = setTimeout(() => {
+      scrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+    }, 80);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const next = Math.round(event.nativeEvent.contentOffset.x / (cardWidth + gap));
+    const clamped = Math.max(0, Math.min(WEEKLY_EVIDENCE_CARDS.length - 1, next));
+    if (clamped !== activeIndexRef.current) {
+      activeIndexRef.current = clamped;
+      setActiveIndex(clamped);
+    }
+    userScrolledRef.current = false;
+  };
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const next = Math.round(event.nativeEvent.contentOffset.x / (cardWidth + gap));
+    const clamped = Math.max(0, Math.min(WEEKLY_EVIDENCE_CARDS.length - 1, next));
+    if (clamped === activeIndexRef.current) return;
+    activeIndexRef.current = clamped;
+    setActiveIndex(clamped);
+    if (userScrolledRef.current) runSelectionHaptic();
+  };
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <View
+        style={[
+          s.weeklyEvidenceFixedContent,
+          {
+            paddingTop: Math.max(insets.top + (compact ? 10 : 24), compact ? 30 : 50),
+            paddingBottom: insets.bottom + (compact ? 88 : 96),
+          },
+        ]}
+      >
+        <OrganizeStageHeader
+          title={'Importance of\nplanning'}
+          body="A clear plan changes the day. Important tasks are easier to complete when they already have a place in your week."
+          accent="#2F9B61"
+          compact={compact}
+          variant="premium"
+          bodyHighlights={['clear plan', 'place in your week']}
+        />
+
+        <Reanimated.View
+          entering={FadeInUp.delay(170).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 22 }, { scale: 0.97 }],
+          })}
+          style={s.weeklyEvidenceArea}
+        >
+          <View style={[s.organizeCarouselTopControls, s.weeklyEvidenceTopControls]}>
+            <View style={s.organizeExampleProgress}>
+              {WEEKLY_EVIDENCE_CARDS.map((card, index) => (
+                <View
+                  key={`${card.title}-weekly-progress`}
+                  style={[
+                    s.organizeExampleProgressSegment,
+                    index <= activeIndex && { backgroundColor: card.accent, opacity: 1 },
+                  ]}
+                />
+              ))}
+            </View>
+            <View style={s.organizeSwipeTag}>
+              <Text style={s.organizeSwipeTagText}>Swipe to continue</Text>
+              <ChevronRight s={14} c="rgba(112,82,26,0.62)" w={2.3} />
+            </View>
+          </View>
+
+          <ScrollView
+            ref={scrollRef}
+            style={s.weeklyEvidenceScroller}
+            horizontal
+            decelerationRate="fast"
+            disableIntervalMomentum
+            snapToOffsets={snapOffsets}
+            snapToAlignment="start"
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[
+              s.weeklyEvidenceCarouselContent,
+              {
+                paddingHorizontal: Math.max(18, (width - cardWidth) / 2),
+                columnGap: gap,
+              },
+            ]}
+            onScroll={handleScroll}
+            onScrollBeginDrag={() => {
+              userScrolledRef.current = true;
+            }}
+            scrollEventThrottle={16}
+            onMomentumScrollEnd={handleScrollEnd}
+          >
+            {WEEKLY_EVIDENCE_CARDS.map((card, index) => (
+              <WeeklyEvidenceCardView
+                key={card.title}
+                card={card}
+                active={index === activeIndex}
+                width={cardWidth}
+                height={cardHeight}
+                chartWidth={chartWidth}
+                chartHeight={chartHeight}
+              />
+            ))}
+          </ScrollView>
+        </Reanimated.View>
+      </View>
+
+      <AnimatedCta active={ready} delay={120} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            haptic={ready ? 'medium' : 'none'}
+            disabled={!ready}
+            onPress={onNext}
+            style={[s.primaryButton, !ready && s.primaryButtonDisabled]}
+          >
+            <Text style={[s.primaryButtonText, !ready && s.primaryButtonDisabledText]}>Continue</Text>
+            <ChevronRight s={19} c={ready ? '#FFFFFF' : 'rgba(25,23,20,0.32)'} w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </View>
+  );
+}
+
+const WEEKLY_RHYTHM_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const WEEKLY_RHYTHM_STRIPS = [
+  { day: 'Mon', source: require('@/assets/images/onboarding/weekly-rhythm-strip-mon.png'), aspect: 2050 / 495, widthRatio: 0.93, rotate: -1.65, x: -8, y: 0, float: -2.4, zIndex: 1, enterRotate: -3.4 },
+  { day: 'Tue', source: require('@/assets/images/onboarding/weekly-rhythm-strip-tue.png'), aspect: 2347 / 471, widthRatio: 1.02, rotate: 0.95, x: 7, y: -1, float: 2.1, zIndex: 2, enterRotate: -2.2 },
+  { day: 'Wed', source: require('@/assets/images/onboarding/weekly-rhythm-strip-wed.png'), aspect: 2052 / 489, widthRatio: 0.98, rotate: -0.45, x: -3, y: -2, float: -1.8, zIndex: 3, enterRotate: -2.8 },
+  { day: 'Thu', source: require('@/assets/images/onboarding/weekly-rhythm-strip-thu.png'), aspect: 2046 / 507, widthRatio: 0.91, rotate: 1.25, x: 10, y: -3, float: 2.5, zIndex: 4, enterRotate: -1.6 },
+  { day: 'Fri', source: require('@/assets/images/onboarding/weekly-rhythm-strip-fri.png'), aspect: 2041 / 416, widthRatio: 0.97, rotate: -1.0, x: -7, y: -4, float: -2.2, zIndex: 5, enterRotate: -2.4 },
+] as const;
+
+type WeeklyRhythmStrip = (typeof WEEKLY_RHYTHM_STRIPS)[number];
+
+function WeeklyRhythmStripCard({
+  strip,
+  index,
+  stageWidth,
+  compact,
+}: {
+  strip: WeeklyRhythmStrip;
+  index: number;
+  stageWidth: number;
+  compact: boolean;
+}) {
+  const intro = useSharedValue(0);
+  const drift = useSharedValue(0);
+  const displayWidth = Math.min(stageWidth + 12, stageWidth * strip.widthRatio);
+  const displayHeight = displayWidth / strip.aspect;
+  const top = index * (compact ? 64 : 72) + strip.y;
+  const left = (stageWidth - displayWidth) / 2 + strip.x;
+  const entryDelay = 150 + index * 150;
+  const entryDistance = -(stageWidth + displayWidth + 56);
+
+  useEffect(() => {
+    intro.value = 0;
+    intro.value = withDelay(
+      entryDelay,
+      withSequence(
+        withTiming(0.86, {
+          duration: 640,
+          easing: Easing.bezier(0.12, 0.86, 0.18, 1),
+        }),
+        withSpring(1, {
+          damping: 18,
+          stiffness: 132,
+          mass: 0.78,
+        }),
+      ),
+    );
+
+    drift.value = withDelay(
+      entryDelay + 980,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 2100 + index * 160, easing: Easing.inOut(Easing.cubic) }),
+          withTiming(0, { duration: 2100 + index * 160, easing: Easing.inOut(Easing.cubic) }),
+        ),
+        -1,
+        false,
+      ),
+    );
+  }, [drift, entryDelay, index, intro]);
+
+  const introStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(intro.value, [0, 0.08, 1], [0, 1, 1]),
+    transform: [
+      { translateX: interpolate(intro.value, [0, 0.86, 1], [entryDistance, 18, 0]) },
+      { translateY: interpolate(intro.value, [0, 0.86, 1], [8, -1, 0]) },
+      { rotate: `${interpolate(intro.value, [0, 0.86, 1], [strip.enterRotate, 0.34, 0])}deg` },
+      { scale: interpolate(intro.value, [0, 0.86, 1], [0.985, 1.012, 1]) },
+    ],
+  }));
+
+  const floatStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(drift.value, [0, 1], [0, strip.float]) },
+      { translateX: interpolate(drift.value, [0, 1], [0, strip.float * 0.42]) },
+      { rotate: `${strip.rotate + interpolate(drift.value, [0, 1], [0, strip.float * 0.045])}deg` },
+      { scale: interpolate(drift.value, [0, 1], [1, 1.006]) },
+    ],
+  }));
+
+  return (
+    <Reanimated.View
+      style={[
+        s.weeklyStripWrap,
+        {
+          width: displayWidth,
+          height: displayHeight,
+          left,
+          top,
+          zIndex: strip.zIndex,
+        },
+        introStyle,
+      ]}
+    >
+      <Reanimated.View style={[s.weeklyStripFloatLayer, floatStyle]}>
+        <Image source={strip.source} style={s.weeklyStripImage} resizeMode="contain" />
+      </Reanimated.View>
+    </Reanimated.View>
+  );
+}
+
+function OrganizeWeeklyRhythmV2Slide({ onNext }: { onNext: () => void }) {
+  const { width, height } = useWindowDimensions();
+  const compact = height < 720;
+  const stageWidth = Math.min(382, Math.max(306, width - 42));
+  const stageHeight = compact ? 354 : 402;
+
   return (
     <OrganizeLessonSlide
-      title="Plan once. Live all week."
-      body="Anasta organizes life on a weekly rhythm. Every task knows its days — Monday knows its plan, and so does Sunday."
+      title={'Set your\nweekly rhythm'}
+      body="Choose what belongs on each day. Anasta turns it into a clear Monday-to-Sunday plan."
+      accent="#4D8586"
+      headerVariant="premium"
+      bodyHighlights={['each day', 'clear Monday-to-Sunday plan']}
+      ctaLabel="Set task rhythm"
+      onNext={onNext}
+    >
+      <View style={[s.weeklyStripStage, { width: stageWidth, height: stageHeight }]}>
+        {WEEKLY_RHYTHM_STRIPS.map((strip, index) => (
+          <WeeklyRhythmStripCard
+            key={strip.day}
+            strip={strip}
+            index={index}
+            stageWidth={stageWidth}
+            compact={compact}
+          />
+        ))}
+      </View>
+    </OrganizeLessonSlide>
+  );
+}
+
+function OrganizeTaskRhythmV2Slide({ onNext }: { onNext: () => void }) {
+  const [frequency, setFrequency] = useState<TaskFrequency>('specific_days');
+  const [selectedDays, setSelectedDays] = useState<number[]>([0, 2, 4]);
+  const [monthlyDays, setMonthlyDays] = useState<number[]>([1, 15, 28]);
+
+  const handleFrequencyChange = (nextFrequency: TaskFrequency) => {
+    setFrequency(nextFrequency);
+    if (nextFrequency === 'daily') setSelectedDays([]);
+    if (nextFrequency === 'weekdays') setSelectedDays([0, 1, 2, 3, 4]);
+    if (nextFrequency === 'weekends') setSelectedDays([5, 6]);
+    if (nextFrequency === 'specific_days') {
+      setSelectedDays(days => (days.length ? days : [0, 2, 4]));
+    }
+    if (nextFrequency === 'monthly') {
+      setMonthlyDays(days => (days.length ? days : [1]));
+    }
+  };
+
+  return (
+    <OrganizeLessonSlide
+      title={'Every task\nhas a rhythm'}
+      body="Some tasks repeat daily. Some belong to weekends, certain days, or monthly dates. The schedule keeps each one in the right place."
+      accent="#2F9B61"
+      headerVariant="premium"
+      bodyHighlights={['daily', 'weekends', 'monthly dates', 'right place']}
+      ctaLabel="See task types"
       onNext={onNext}
     >
       <Reanimated.View
-        entering={FadeInUp.delay(180).duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        entering={FadeInUp.delay(160).duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
           opacity: 0,
-          transform: [{ translateY: 24 }, { scale: 0.97 }],
+          transform: [{ translateY: 20 }, { scale: 0.97 }],
         })}
-        style={s.weeklyV2Panel}
+        style={s.taskRhythmEditorShell}
       >
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(255,255,255,1)', 'rgba(197,160,89,0.10)', 'rgba(255,251,240,0.96)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
+        <TaskFrequencyEditor
+          frequency={frequency}
+          selectedDays={selectedDays}
+          monthlyDays={monthlyDays}
+          onFrequencyChange={handleFrequencyChange}
+          onSelectedDaysChange={setSelectedDays}
+          onMonthlyDaysChange={setMonthlyDays}
+          accent="#2F9B61"
+          label="Schedule"
         />
-        {WEEKLY_V2_DAYS.map((row, index) => (
-          <Reanimated.View
-            key={row.day}
-            entering={FadeInLeft.delay(340 + index * 85).duration(430).easing(Easing.out(Easing.cubic)).withInitialValues({
-              opacity: 0,
-              transform: [{ translateX: -22 }],
-            })}
-            style={[s.weeklyV2Row, index < WEEKLY_V2_DAYS.length - 1 && s.weeklyV2RowBorder]}
-          >
-            <Text style={[s.weeklyV2Day, row.day === 'Sun' && { color: '#705B9B' }]}>{row.day}</Text>
-            <View style={s.weeklyV2Pills}>
-              {row.pills.map((pill, pillIndex) => (
-                <Reanimated.View
-                  key={`${row.day}-${pillIndex}`}
-                  entering={FadeIn.delay(430 + index * 85 + pillIndex * 70).duration(300).withInitialValues({
-                    opacity: 0,
-                    transform: [{ scale: 0.55 }],
-                  })}
-                  style={[s.weeklyV2Pill, { backgroundColor: `${pill.color}2A`, borderColor: `${pill.color}55`, width: pill.width }]}
-                >
-                  <View style={[s.weeklyV2PillDot, { backgroundColor: pill.color }]} />
-                </Reanimated.View>
-              ))}
-            </View>
-          </Reanimated.View>
-        ))}
-        <View style={s.weeklyV2Legend}>
-          {WEEKLY_V2_LEGEND.map(item => (
-            <View key={item.label} style={s.weeklyV2LegendItem}>
-              <View style={[s.weeklyV2PillDot, { backgroundColor: item.color }]} />
-              <Text style={s.weeklyV2LegendText}>{item.label}</Text>
-            </View>
-          ))}
-        </View>
       </Reanimated.View>
     </OrganizeLessonSlide>
   );
@@ -16868,8 +17584,8 @@ const HUB_V2_STAGES: Record<OrganizeHubV2Stage, {
   start: {
     doneBefore: 0,
     checksNow: false,
-    title: 'Four kinds of tasks.',
-    body: 'Spiritual life, daily duties, focused challenges, growing habits — each takes its own place in your week.',
+    title: 'Four kinds\nof tasks',
+    body: 'Spiritual life, daily duties, focused challenges, and growing habits each get their own place in your week.',
     accent: GOLD,
     ctaLabel: 'Set spiritual tasks',
   },
@@ -16953,6 +17669,7 @@ function OrganizeHubV2Slide({ stage, onNext }: { stage: OrganizeHubV2Stage; onNe
   const [awake, setAwake] = useState(false);
   const exitProgress = useSharedValue(0);
   const isComplete = stage === 'complete';
+  const isStart = stage === 'start';
   const doneCount = config.doneBefore + (checkedNow && config.checksNow ? 1 : 0);
   const pendingIndex = isComplete ? -1 : doneCount;
 
@@ -16960,9 +17677,9 @@ function OrganizeHubV2Slide({ stage, onNext }: { stage: OrganizeHubV2Stage; onNe
     s.organizeRuleContent,
     {
       flexGrow: 1,
-      paddingTop: Math.max(insets.top + 26, 52),
+      paddingTop: Math.max(insets.top + (isStart ? 34 : 26), isStart ? 60 : 52),
       paddingBottom: insets.bottom + 128,
-      rowGap: 22,
+      rowGap: isStart ? 14 : 22,
     },
   ];
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
@@ -17031,10 +17748,16 @@ function OrganizeHubV2Slide({ stage, onNext }: { stage: OrganizeHubV2Stage; onNe
     <View style={s.organizeRuleScreen}>
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
         <Reanimated.View style={exitStyle}>
-          <OrganizeStageHeader title={config.title} body={config.body} accent={config.accent} />
+          <OrganizeStageHeader
+            title={config.title}
+            body={config.body}
+            accent={config.accent}
+            variant={isStart ? 'premium' : 'default'}
+            bodyHighlights={isStart ? ['Spiritual life', 'daily duties', 'focused challenges', 'growing habits'] : []}
+          />
         </Reanimated.View>
 
-        <Reanimated.View style={[s.hubV2Board, exitStyle]}>
+        <Reanimated.View style={[s.hubV2Board, isStart && s.hubV2BoardStart, exitStyle]}>
           {HUB_V2_ITEMS.map((item, index) => {
             const state: TaskState = index < doneCount ? 'done' : index === pendingIndex ? 'pending' : 'locked';
             return (
@@ -19107,6 +19830,19 @@ export default function OnboardingView() {
     setIndex(prev => Math.min(steps.length - 1, prev + 1));
   };
 
+  const jumpToDevStep = useCallback((step: StepId) => {
+    const seededAnswers: Answers = {
+      ...answers,
+      ...ONBOARDING_DEV_SEED_ANSWERS,
+    };
+    const seededSteps = stepOrder(seededAnswers);
+    const targetIndex = seededSteps.indexOf(step);
+
+    runAdvanceHaptic();
+    setAnswers(seededAnswers);
+    setIndex(targetIndex >= 0 ? targetIndex : Math.max(0, seededSteps.indexOf('nameIntro')));
+  }, [answers]);
+
   const onSelect = (step: StepId, value: string) => {
     runSelectionHaptic();
     setAnswers(prev => {
@@ -19285,6 +20021,7 @@ export default function OnboardingView() {
     activeStep === 'flameTools';
   const hideTopChrome =
     activeStep === 'nameIntro' ||
+    activeStep === 'onboardingDevJump' ||
     activeStep === 'traditionIntro' ||
     activeStep === 'toolsShowcase' ||
     activeStep === 'processing' ||
@@ -19319,6 +20056,8 @@ export default function OnboardingView() {
     activeStep === 'organizeMyRhythmPreview' ||
     activeStep === 'organizeComplete' ||
     activeStep === 'organizeWeeklyIntroV2' ||
+    activeStep === 'organizeWeeklyRhythmV2' ||
+    activeStep === 'organizeDailySetupV2' ||
     activeStep === 'organizeHubStartV2' ||
     activeStep === 'organizeSpiritualBuilderV2' ||
     activeStep === 'organizeHubAfterSpiritualV2' ||
@@ -19341,6 +20080,7 @@ export default function OnboardingView() {
   const showTopSkip = visibleProgress !== null;
   const edgeToEdgeMessage =
     activeStep === 'nameIntro' ||
+    activeStep === 'onboardingDevJump' ||
     activeStep === 'traditionIntro' ||
     activeStep === 'toolsShowcase' ||
     activeStep === 'protectDeck' ||
@@ -19371,6 +20111,8 @@ export default function OnboardingView() {
     activeStep === 'organizeMyRhythmPreview' ||
     activeStep === 'organizeComplete' ||
     activeStep === 'organizeWeeklyIntroV2' ||
+    activeStep === 'organizeWeeklyRhythmV2' ||
+    activeStep === 'organizeDailySetupV2' ||
     activeStep === 'organizeHubStartV2' ||
     activeStep === 'organizeSpiritualBuilderV2' ||
     activeStep === 'organizeHubAfterSpiritualV2' ||
@@ -19448,6 +20190,16 @@ export default function OnboardingView() {
           logoReady={preloadPhase !== 'only'}
           onLogoLayout={setWelcomeLogoTop}
           onNext={goNext}
+        />
+      );
+    }
+    if (activeStep === 'onboardingDevJump') {
+      return (
+        <OnboardingDevJumpSlide
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          onContinue={goNext}
+          onJump={jumpToDevStep}
         />
       );
     }
@@ -19696,6 +20448,8 @@ export default function OnboardingView() {
     if (activeStep === 'organizeHubAfterChallenges') return <OrganizeWeeklyHubSlide stage="afterChallenges" onNext={goNext} />;
     if (activeStep === 'organizeHubComplete') return <OrganizeWeeklyHubSlide stage="complete" onNext={goNext} />;
     if (activeStep === 'organizeWeeklyIntroV2') return <OrganizeWeeklyIntroV2Slide onNext={goNext} />;
+    if (activeStep === 'organizeWeeklyRhythmV2') return <OrganizeWeeklyRhythmV2Slide onNext={goNext} />;
+    if (activeStep === 'organizeDailySetupV2') return <OrganizeTaskRhythmV2Slide onNext={goNext} />;
     if (activeStep === 'organizeHubStartV2') return <OrganizeHubV2Slide stage="start" onNext={goNext} />;
     if (activeStep === 'organizeSpiritualBuilderV2') return <OrganizeSpiritualBuilderV2Slide onNext={goNext} />;
     if (activeStep === 'organizeHubAfterSpiritualV2') return <OrganizeHubV2Slide stage="afterSpiritual" onNext={goNext} />;
@@ -22366,6 +23120,156 @@ const s = StyleSheet.create({
     elevation: 10000,
     opacity: 0.9,
     transform: [{ scale: 0.72 }],
+  },
+  devJumpScreen: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  devJumpContent: {
+    minHeight: '100%',
+    paddingHorizontal: 18,
+    rowGap: 18,
+  },
+  devJumpHeader: {
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    rowGap: 9,
+  },
+  devJumpBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: '#FFF8E8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.28)',
+  },
+  devJumpBadgeText: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    lineHeight: 12,
+    letterSpacing: 1.6,
+    color: 'rgba(112,82,26,0.74)',
+  },
+  devJumpTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 37,
+    lineHeight: 41,
+    color: INK,
+    textAlign: 'center',
+  },
+  devJumpBody: {
+    maxWidth: 338,
+    fontFamily: F.serifMedium,
+    fontSize: 16.5,
+    lineHeight: 22,
+    color: 'rgba(25,23,20,0.62)',
+    textAlign: 'center',
+  },
+  devJumpContinueCard: {
+    width: '100%',
+    maxWidth: 372,
+    alignSelf: 'center',
+    minHeight: 72,
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 12,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.30)',
+    boxShadow: '0 12px 20px rgba(197, 160, 89, 0.08)',
+  },
+  devJumpContinueIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.24)',
+  },
+  devJumpCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  devJumpContinueTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 18,
+    lineHeight: 22,
+    color: INK,
+  },
+  devJumpContinueBody: {
+    paddingTop: 2,
+    fontFamily: F.sans,
+    fontSize: 12,
+    lineHeight: 16,
+    color: 'rgba(25,23,20,0.58)',
+  },
+  devJumpGroup: {
+    width: '100%',
+    maxWidth: 372,
+    alignSelf: 'center',
+    rowGap: 8,
+  },
+  devJumpGroupTitle: {
+    paddingHorizontal: 4,
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.45,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.43)',
+  },
+  devJumpTargetList: {
+    rowGap: 8,
+  },
+  devJumpTarget: {
+    minHeight: 68,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 11,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.075)',
+  },
+  devJumpTargetAccent: {
+    width: 7,
+    alignSelf: 'stretch',
+    borderRadius: 999,
+  },
+  devJumpTargetTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17,
+    lineHeight: 21,
+    color: INK,
+  },
+  devJumpTargetBody: {
+    paddingTop: 2,
+    fontFamily: F.sans,
+    fontSize: 11.5,
+    lineHeight: 15.5,
+    color: 'rgba(25,23,20,0.56)',
+  },
+  devJumpStepId: {
+    maxWidth: 86,
+    borderRadius: 9,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    overflow: 'hidden',
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    lineHeight: 12,
+    color: 'rgba(25,23,20,0.42)',
+    backgroundColor: 'rgba(25,23,20,0.035)',
   },
   nameIntroSlide: {
     flex: 1,
@@ -25486,6 +26390,9 @@ const s = StyleSheet.create({
     paddingBottom: 126,
     rowGap: 32,
   },
+  organizeMacroIntroContent: {
+    rowGap: 18,
+  },
   organizeRuleMapContent: {
     rowGap: 27,
   },
@@ -25573,96 +26480,516 @@ const s = StyleSheet.create({
     fontSize: 32,
     lineHeight: 37,
   },
+  organizeStageTitlePremium: {
+    fontSize: 37,
+    lineHeight: 39.5,
+    maxWidth: 368,
+    includeFontPadding: false,
+  },
+  organizeStageTitlePremiumCompact: {
+    fontSize: 33,
+    lineHeight: 35.5,
+    maxWidth: 350,
+    includeFontPadding: false,
+  },
   organizeStageUnderline: {
     width: '78%',
     height: 4,
     borderRadius: 999,
     marginTop: 2,
   },
+  organizeStageUnderlinePremium: {
+    width: 74,
+    height: 3.5,
+    marginTop: 8,
+  },
   // Macro boards centre themselves in the free space like the layer map.
   organizeMacroIntroBoard: {
     flexGrow: 1,
     justifyContent: 'center',
   },
+  organizeMacroIntroBoardTight: {
+    flexGrow: 0,
+    justifyContent: 'flex-start',
+    marginTop: 4,
+  },
   organizeLessonBody: {
     flexGrow: 1,
     justifyContent: 'center',
   },
-
-  // --- Organize V2 -----------------------------------------------------------
-  weeklyV2Panel: {
+  weeklyEvidenceFixedContent: {
+    flex: 1,
+    paddingHorizontal: 0,
+    rowGap: 7,
+  },
+  weeklyEvidenceArea: {
     width: '100%',
-    maxWidth: 366,
-    alignSelf: 'center',
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'flex-start',
+    rowGap: 3,
+  },
+  weeklyEvidenceTopControls: {
+    rowGap: 8,
+    paddingHorizontal: 28,
+    marginBottom: -1,
+  },
+  weeklyEvidenceScroller: {
+    width: '100%',
+    alignSelf: 'stretch',
+  },
+  weeklyEvidenceCarouselContent: {
+    alignItems: 'center',
+    paddingTop: 0,
+    paddingBottom: 10,
+  },
+  weeklyEvidenceCard: {
     borderRadius: 30,
-    paddingHorizontal: 18,
-    paddingTop: 12,
-    paddingBottom: 13,
+    overflow: 'visible',
+    backgroundColor: 'transparent',
+    boxShadow: '0 18px 28px rgba(23, 19, 15, 0.11)',
+  },
+  weeklyEvidenceCardSurface: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 30,
+    paddingHorizontal: 14,
+    paddingTop: 13,
+    paddingBottom: 14,
     overflow: 'hidden',
     backgroundColor: '#FFFDF8',
-    borderWidth: 1.5,
-    borderColor: 'rgba(197,160,89,0.30)',
-    shadowColor: '#5E5142',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.1,
-    shadowRadius: 22,
-    elevation: 3,
-  },
-  weeklyV2Row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    columnGap: 14,
-    minHeight: 39,
-  },
-  weeklyV2RowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(25,23,20,0.05)',
-  },
-  weeklyV2Day: {
-    width: 38,
-    fontFamily: F.serifSemiBold,
-    fontSize: 14.5,
-    lineHeight: 18,
-    color: 'rgba(25,23,20,0.66)',
-  },
-  weeklyV2Pills: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    columnGap: 6,
-  },
-  weeklyV2Pill: {
-    height: 15,
-    borderRadius: 999,
     borderWidth: 1,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-    paddingLeft: 4,
+    justifyContent: 'flex-start',
+    rowGap: 11,
   },
-  weeklyV2PillDot: {
+  weeklyEvidenceCardAccentWash: {
+    position: 'absolute',
+    left: -34,
+    right: -34,
+    top: -42,
+    height: 178,
+    borderRadius: 999,
+    opacity: 0.78,
+    transform: [{ scaleX: 1.08 }],
+  },
+  weeklyEvidenceCornerGlow: {
+    position: 'absolute',
+    right: -36,
+    bottom: -42,
+    width: 138,
+    height: 138,
+    borderRadius: 69,
+    borderWidth: 1,
+    opacity: 0.86,
+  },
+  weeklyEvidenceCardHeader: {
+    width: '100%',
+    minHeight: 84,
+    borderRadius: 22,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+    rowGap: 6,
+    paddingHorizontal: 12,
+    paddingTop: 6,
+    paddingBottom: 8,
+  },
+  weeklyEvidenceSourcePill: {
+    alignSelf: 'center',
+    minHeight: 24,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    boxShadow: '0 4px 10px rgba(23, 19, 15, 0.06)',
+  },
+  weeklyEvidenceSourceText: {
+    fontFamily: F.sansBold,
+    fontSize: 9.2,
+    lineHeight: 12,
+    letterSpacing: 0.42,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.44)',
+  },
+  weeklyEvidenceSourceNumber: {
+    fontFamily: F.sansBold,
+  },
+  weeklyEvidenceTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 25.5,
+    lineHeight: 29,
+    color: INK,
+    textAlign: 'center',
+    maxWidth: 296,
+    letterSpacing: 0,
+  },
+  weeklyEvidenceTitleDelta: {
+    fontFamily: F.serifBold,
+  },
+  weeklyEvidenceTitleUnderline: {
+    width: 86,
+    height: 3,
+    borderRadius: 999,
+    opacity: 0.9,
+  },
+  weeklyEvidenceGraphPanel: {
+    width: '100%',
+    flexGrow: 1,
+    minHeight: 190,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    overflow: 'hidden',
+  },
+  weeklyEvidenceGraphPaper: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.56)',
+    borderRadius: 24,
+    opacity: 0.94,
+  },
+  weeklyEvidenceFooter: {
+    width: '100%',
+    flexDirection: 'row',
+    columnGap: 8,
+    minHeight: 65,
+  },
+  weeklyEvidenceFooterCell: {
+    flex: 1,
+    minHeight: 65,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weeklyEvidenceFooterBaselineCell: {
+    backgroundColor: 'rgba(255,255,255,0.86)',
+    borderColor: 'rgba(25,23,20,0.14)',
+  },
+  weeklyEvidenceFooterPlanCell: {
+    boxShadow: '0 10px 18px rgba(23, 19, 15, 0.11)',
+  },
+  weeklyEvidenceFooterLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 5,
+  },
+  weeklyEvidenceFooterDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
   },
-  weeklyV2Legend: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    columnGap: 14,
-    paddingTop: 11,
-    marginTop: 3,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(25,23,20,0.06)',
+  weeklyEvidenceFooterDotStrong: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.92)',
   },
-  weeklyV2LegendItem: {
+  weeklyEvidenceFooterDotMuted: {
+    backgroundColor: 'rgba(25,23,20,0.34)',
+  },
+  weeklyResultBlock: {
+    width: '100%',
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    rowGap: 0,
+  },
+  weeklyResultPlot: {
+    position: 'relative',
+    alignSelf: 'center',
+    overflow: 'visible',
+  },
+  weeklyResultSvg: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+  },
+  weeklyResultRevealFull: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    height: '100%',
+    overflow: 'hidden',
+  },
+  weeklyResultEndpointGlow: {
+    position: 'absolute',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    shadowColor: '#2F9B61',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.28,
+    shadowRadius: 13,
+    elevation: 2,
+  },
+  weeklyChartValuePill: {
+    position: 'absolute',
+    minWidth: 52,
+    minHeight: 30,
+    borderRadius: 15,
+    paddingHorizontal: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    boxShadow: '0 7px 14px rgba(23, 19, 15, 0.08)',
+  },
+  weeklyChartValuePillBaseline: {
+    borderColor: 'rgba(25,23,20,0.10)',
+    backgroundColor: 'rgba(255,253,248,0.94)',
+  },
+  weeklyChartValueText: {
+    fontFamily: F.serifBold,
+    fontSize: 18,
+    lineHeight: 22,
+    includeFontPadding: false,
+  },
+  weeklyChartValueTextMuted: {
+    fontFamily: F.serifBold,
+    fontSize: 17,
+    lineHeight: 21,
+    color: 'rgba(25,23,20,0.72)',
+    includeFontPadding: false,
+  },
+  weeklyResultDeltaTag: {
+    position: 'absolute',
+    minWidth: 62,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: 'rgba(255,253,248,0.94)',
+    shadowColor: '#2F9B61',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  weeklyResultDeltaText: {
+    fontFamily: F.serifBold,
+    fontSize: 21,
+    lineHeight: 24,
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  weeklyResultLabelText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 11.5,
+    lineHeight: 15,
+    color: 'rgba(25,23,20,0.60)',
+  },
+  weeklyResultLabelTextStrong: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 11.5,
+    lineHeight: 15,
+    color: 'rgba(255,255,255,0.88)',
+  },
+  weeklyResultBaselinePercent: {
+    marginTop: 3,
+    fontFamily: F.serifBold,
+    fontSize: 23,
+    lineHeight: 31,
+    color: '#17130F',
+    includeFontPadding: false,
+    textAlign: 'center',
+  },
+  weeklyResultPercentStrong: {
+    marginTop: 3,
+    fontFamily: F.serifBold,
+    fontSize: 24,
+    lineHeight: 32,
+    color: '#FFFFFF',
+    includeFontPadding: false,
+    textAlign: 'center',
+  },
+  weeklyBarsPlot: {
+    width: '100%',
+    minHeight: 166,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 18,
+    paddingBottom: 6,
+  },
+  weeklyBarsGuideLines: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    top: 28,
+    bottom: 30,
+    justifyContent: 'space-between',
+  },
+  weeklyBarsGuideLine: {
+    height: 1,
+    borderRadius: 999,
+    backgroundColor: 'rgba(25,23,20,0.055)',
+  },
+  weeklyBarsColumnsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingTop: 28,
+  },
+  weeklyBarsColumn: {
+    width: 72,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  weeklyBarsPercent: {
+    marginBottom: 6,
+    fontFamily: F.serifBold,
+    fontSize: 23,
+    lineHeight: 26,
+    color: '#17130F',
+  },
+  weeklyBarsTrack: {
+    width: 42,
+    height: 86,
+    borderRadius: 20,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(25,23,20,0.055)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.075)',
+  },
+  weeklyBarsTrackActive: {
+    backgroundColor: 'rgba(255,253,248,0.96)',
+  },
+  weeklyBarsFillMuted: {
+    width: '100%',
+    borderRadius: 20,
+    backgroundColor: 'rgba(25,23,20,0.34)',
+  },
+  weeklyBarsFill: {
+    width: '100%',
+    borderRadius: 20,
+  },
+  weeklyBarsDeltaPill: {
+    position: 'absolute',
+    top: 4,
+    alignSelf: 'center',
+    minWidth: 66,
+    minHeight: 38,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255,253,248,0.94)',
+    zIndex: 2,
+    boxShadow: '0 9px 16px rgba(23, 19, 15, 0.10)',
+  },
+  weeklyBarsDeltaText: {
+    fontFamily: F.serifBold,
+    fontSize: 21,
+    lineHeight: 25,
+    color: '#FFFFFF',
+  },
+  weeklyDropBarsPlot: {
+    width: '100%',
+    minHeight: 162,
+    justifyContent: 'center',
+    rowGap: 13,
+    paddingHorizontal: 4,
+    paddingTop: 8,
+  },
+  weeklyDropRow: {
+    width: '100%',
+    rowGap: 5,
+  },
+  weeklyDropRowTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 5,
+    justifyContent: 'flex-start',
+    paddingHorizontal: 7,
   },
-  weeklyV2LegendText: {
-    fontFamily: F.sansMedium,
-    fontSize: 10.5,
-    lineHeight: 13,
-    color: 'rgba(25,23,20,0.52)',
+  weeklyDropPercent: {
+    fontFamily: F.serifBold,
+    fontSize: 22,
+    lineHeight: 25,
+    color: '#17130F',
+  },
+  weeklyDropTrack: {
+    height: 22,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(25,23,20,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+  },
+  weeklyDropFillMuted: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: 'rgba(25,23,20,0.42)',
+  },
+  weeklyDropFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  weeklyDropDeltaPill: {
+    alignSelf: 'center',
+    minWidth: 74,
+    minHeight: 40,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255,253,248,0.94)',
+  },
+  weeklyDropDeltaText: {
+    fontFamily: F.serifBold,
+    fontSize: 23,
+    lineHeight: 27,
+    color: '#FFFFFF',
+  },
+
+  // --- Organize V2 -----------------------------------------------------------
+  weeklyStripStage: {
+    alignSelf: 'center',
+    position: 'relative',
+    overflow: 'visible',
+    marginTop: -2,
+    marginBottom: -3,
+  },
+  weeklyStripWrap: {
+    position: 'absolute',
+    borderRadius: 22,
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 9 },
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  weeklyStripFloatLayer: {
+    width: '100%',
+    height: '100%',
+  },
+  weeklyStripImage: {
+    width: '100%',
+    height: '100%',
+  },
+  taskRhythmEditorShell: {
+    width: '100%',
+    maxWidth: 374,
+    alignSelf: 'center',
+    borderRadius: 24,
+    padding: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#F2F1EC',
+    boxShadow: '0 14px 28px rgba(47, 155, 97, 0.08)',
   },
 
   hubV2Board: {
@@ -25672,6 +26999,12 @@ const s = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     rowGap: 9,
+  },
+  hubV2BoardStart: {
+    flexGrow: 0,
+    justifyContent: 'flex-start',
+    marginTop: -1,
+    rowGap: 8,
   },
   hubV2RowWrap: {
     position: 'relative',
@@ -26338,6 +27671,10 @@ const s = StyleSheet.create({
     rowGap: 10,
     paddingHorizontal: 27,
   },
+  organizePremiumHeader: {
+    rowGap: 8,
+    paddingHorizontal: 18,
+  },
   organizeBigEventsTitleWrap: {
     alignItems: 'center',
   },
@@ -26362,6 +27699,20 @@ const s = StyleSheet.create({
     color: 'rgba(25,23,20,0.60)',
     textAlign: 'center',
     maxWidth: 345,
+  },
+  organizeBigEventsBodyStrong: {
+    fontFamily: F.serifSemiBold,
+    color: 'rgba(25,23,20,0.82)',
+  },
+  organizePremiumBody: {
+    maxWidth: 362,
+    fontSize: 17.2,
+    lineHeight: 22.2,
+    color: 'rgba(25,23,20,0.62)',
+  },
+  organizePremiumBodyStrong: {
+    fontFamily: F.serifSemiBold,
+    color: 'rgba(25,23,20,0.88)',
   },
   organizeCarouselHeader: {
     alignItems: 'center',

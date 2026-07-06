@@ -13,9 +13,9 @@ import {
   APP_CATEGORIES,
   deleteCustomGroup,
   saveCustomGroup,
-  useFocusWatch,
+  useDayPlan,
   type WatchSelection,
-} from './focusWatchStore';
+} from './dayPlanStore';
 
 const LIST_TRANSITION = SMOOTH_LAYOUT;
 
@@ -143,7 +143,7 @@ export default function AppPicker({
   // but creating/deleting them is left to the full editor.
   manageGroups?: boolean;
 }) {
-  const { customGroups } = useFocusWatch();
+  const { customGroups } = useDayPlan();
   const [expanded, setExpanded] = useState<string[]>([]);
   const [groupSheetVisible, setGroupSheetVisible] = useState(false);
   const [groupToDelete, setGroupToDelete] = useState<string | null>(null);
@@ -341,7 +341,7 @@ export default function AppPicker({
         visible={groupToDelete !== null}
         icon={<Trash2 s={22} c={C.red} w={2} />}
         title="Delete this group?"
-        body="Watches using it will simply stop including it."
+        body="Plans using it will simply stop including it."
         subject={customGroups.find(group => group.id === groupToDelete)?.name}
         confirmLabel="DELETE"
         onCancel={() => setGroupToDelete(null)}

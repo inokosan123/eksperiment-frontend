@@ -1,10 +1,18 @@
+import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import FocusSwitch from './FocusSwitch';
-import { updateStrictSettings, useFocusWatch, type StrictCooldown } from './focusWatchStore';
+import ScreenTimePermissionModal from './ScreenTimePermissionModal';
+import {
+  grantScreenTimePermission,
+  hasScreenTimePermission,
+  updateStrictSettings,
+  useFocusWatch,
+  type StrictCooldown,
+} from './focusWatchStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
 
@@ -17,6 +25,19 @@ const COOLDOWN_OPTIONS: { id: StrictCooldown; label: string }[] = [
 export default function StrictWatchView() {
   const { strictSettings } = useFocusWatch();
   const { enabled } = strictSettings;
+  const [permissionPrompt, setPermissionPrompt] = useState(false);
+
+  const requestToggleStrict = () => {
+    if (enabled) {
+      updateStrictSettings({ enabled: false });
+      return;
+    }
+    if (hasScreenTimePermission()) {
+      updateStrictSettings({ enabled: true });
+      return;
+    }
+    setPermissionPrompt(true);
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -40,7 +61,7 @@ export default function StrictWatchView() {
               </View>
               <FocusSwitch
                 value={enabled}
-                onToggle={() => updateStrictSettings({ enabled: !enabled })}
+                onToggle={requestToggleStrict}
               />
             </View>
           </Animated.View>
@@ -122,6 +143,15 @@ export default function StrictWatchView() {
           </Animated.View>
         </View>
       </ScrollView>
+      <ScreenTimePermissionModal
+        visible={permissionPrompt}
+        onCancel={() => setPermissionPrompt(false)}
+        onConfirm={() => {
+          grantScreenTimePermission();
+          setPermissionPrompt(false);
+          updateStrictSettings({ enabled: true });
+        }}
+      />
     </View>
   );
 }

@@ -10,6 +10,8 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
 import AppPicker from './AppPicker';
+import FocusSwitch from './FocusSwitch';
+import ScreenTimePermissionModal from './ScreenTimePermissionModal';
 import TimeWheelSheet from './TimeWheelSheet';
 import StreakFlame from './StreakFlame';
 import WatchStatsSheet from './WatchStatsSheet';
@@ -19,12 +21,15 @@ import {
   deleteWatchPlan,
   formatTimeOfDay,
   getFocusWatchState,
+  grantScreenTimePermission,
+  hasScreenTimePermission,
   RETURN_PRACTICES,
   saveWatchPlan,
   selectionCount,
   type PracticeKind,
   type WatchSelection,
   type WatchStrength,
+  type WatchPlan,
   type WatchWhen,
 } from './focusWatchStore';
 
@@ -36,14 +41,13 @@ const WEEKDAYS = [0, 1, 2, 3, 4];
 const WEEKENDS = [5, 6];
 const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
 
-type FrequencyKind = 'daily' | 'weekdays' | 'weekends' | 'specific' | 'always';
+type FrequencyKind = 'daily' | 'weekdays' | 'weekends' | 'specific';
 
 const FREQUENCY_OPTIONS: { value: FrequencyKind; label: string; desc: string }[] = [
   { value: 'daily', label: 'Daily', desc: 'Every day' },
   { value: 'weekdays', label: 'Weekdays', desc: 'Mon - Fri' },
   { value: 'weekends', label: 'Weekends', desc: 'Sat - Sun' },
   { value: 'specific', label: 'Specific Days', desc: 'Choose days' },
-  { value: 'always', label: 'Always on', desc: 'Day and night' },
 ];
 
 const PRACTICE_ICONS: Record<PracticeKind, React.ReactNode> = {
@@ -55,7 +59,7 @@ const PRACTICE_ICONS: Record<PracticeKind, React.ReactNode> = {
 };
 
 function whenToFrequency(when: WatchWhen): { freq: FrequencyKind; days: number[] } {
-  if (when.kind === 'always') return { freq: 'always', days: EVERY_DAY };
+  if (when.kind === 'always') return { freq: 'daily', days: EVERY_DAY };
   const key = [...when.days].sort((a, b) => a - b).join(',');
   if (key === '0,1,2,3,4,5,6') return { freq: 'daily', days: when.days };
   if (key === '0,1,2,3,4') return { freq: 'weekdays', days: when.days };
@@ -109,6 +113,7 @@ export default function WatchPlanEditorView() {
     appIds: existing?.appIds ?? [],
     groupIds: existing?.groupIds ?? [],
   });
+  const [alwaysOn, setAlwaysOn] = useState(existing?.when.kind === 'always');
   const [freq, setFreq] = useState<FrequencyKind>(initialFrequency.freq);
   const [days, setDays] = useState<number[]>(
     initialFrequency.freq === 'specific' ? initialFrequency.days : [0, 1, 2, 3, 4]
@@ -122,6 +127,7 @@ export default function WatchPlanEditorView() {
   const [strength, setStrength] = useState<WatchStrength>(existing?.strength ?? 'loose');
   const [practice, setPractice] = useState<PracticeKind>(existing?.practice ?? 'prayer');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [permissionPrompt, setPermissionPrompt] = useState(false);
   const [timeSheet, setTimeSheet] = useState<'start' | 'end' | null>(null);
   const [statsVisible, setStatsVisible] = useState(false);
 
@@ -130,8 +136,10 @@ export default function WatchPlanEditorView() {
     return lastScheduledDays(existing, getWatchHistory(existing));
   }, [existing]);
 
+  const trimmedName = name.trim();
+  const hasName = trimmedName.length > 0;
   const canSave =
-    selectionCount(selection) > 0 && (freq !== 'specific' || days.length > 0);
+    hasName && selectionCount(selection) > 0 && (freq !== 'specific' || days.length > 0);
 
   const toggleDay = (day: number) =>
     setDays(current => {
@@ -155,23 +163,37 @@ export default function WatchPlanEditorView() {
     }
   };
 
-  const save = () => {
-    saveWatchPlan({
+  const buildPlan = (enabled: boolean): Omit<WatchPlan, 'id'> & { id?: string } => {
+    const when: WatchWhen = alwaysOn
+      ? { kind: 'always' }
+      : { kind: 'schedule', startMinutes, endMinutes, days: resolveDays() };
+
+    return {
       id: existing?.id,
-      name: name.trim() || 'Watch',
-      enabled: existing?.enabled ?? true,
+      name: trimmedName,
+      enabled,
       categoryIds: selection.categoryIds,
       appIds: selection.appIds,
       groupIds: selection.groupIds,
-      when:
-        freq === 'always'
-          ? { kind: 'always' }
-          : { kind: 'schedule', startMinutes, endMinutes, days: resolveDays() },
+      when,
       strength,
       practice,
       streak: existing?.streak ?? 0,
-    });
+    };
+  };
+
+  const persist = (enabled: boolean) => {
+    saveWatchPlan(buildPlan(enabled));
     router.back();
+  };
+
+  const save = () => {
+    const wantsEnabled = existing?.enabled ?? true;
+    if (wantsEnabled && !hasScreenTimePermission()) {
+      setPermissionPrompt(true);
+      return;
+    }
+    persist(wantsEnabled);
   };
 
   return (
@@ -197,6 +219,7 @@ export default function WatchPlanEditorView() {
                 returnKeyType="done"
               />
             </View>
+            {!hasName && <Text style={s.requiredText}>Name is required.</Text>}
 
             {existing && (
               <TouchableOpacity
@@ -235,37 +258,52 @@ export default function WatchPlanEditorView() {
 
           <Animated.View entering={enter(120)} layout={SECTION_TRANSITION}>
             <Text style={s.sectionLabel}>WHEN</Text>
-            <View style={s.frequencyWrap}>
-              {FREQUENCY_OPTIONS.map(option => (
-                <FrequencyRow
-                  key={option.value}
-                  option={option}
-                  active={freq === option.value}
-                  onPress={() => setFreq(option.value)}
-                />
-              ))}
+            <View style={s.alwaysToggleCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.alwaysToggleTitle}>Always On</Text>
+                <Text style={s.alwaysToggleSub}>
+                  Keep this watch active until you turn it off.
+                </Text>
+              </View>
+              <FocusSwitch value={alwaysOn} onToggle={() => setAlwaysOn(value => !value)} />
             </View>
 
-            {freq === 'specific' && (
-              <Animated.View entering={SOFT_IN} style={s.dayRow}>
-                {DAY_LETTERS.map((letter, day) => {
-                  const active = days.includes(day);
-                  return (
-                    <TouchableOpacity
-                      key={day}
-                      style={[s.dayChip, active && s.dayChipActive]}
-                      activeOpacity={0.84}
-                      haptic="selection"
-                      onPress={() => toggleDay(day)}
-                    >
-                      <Text style={[s.dayChipText, active && s.dayChipTextActive]}>{letter}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </Animated.View>
-            )}
+            <Animated.View
+              entering={SOFT_IN}
+              layout={SECTION_TRANSITION}
+              pointerEvents={alwaysOn ? 'none' : 'auto'}
+              style={[s.scheduleBlock, alwaysOn && s.scheduleBlockDisabled]}
+            >
+              <View style={s.frequencyWrap}>
+                {FREQUENCY_OPTIONS.map(option => (
+                  <FrequencyRow
+                    key={option.value}
+                    option={option}
+                    active={freq === option.value}
+                    onPress={() => setFreq(option.value)}
+                  />
+                ))}
+              </View>
 
-            {freq !== 'always' && (
+              {freq === 'specific' && (
+                <Animated.View entering={SOFT_IN} style={s.dayRow}>
+                  {DAY_LETTERS.map((letter, day) => {
+                    const active = days.includes(day);
+                    return (
+                      <TouchableOpacity
+                        key={day}
+                        style={[s.dayChip, active && s.dayChipActive]}
+                        activeOpacity={0.84}
+                        haptic="selection"
+                        onPress={() => toggleDay(day)}
+                      >
+                        <Text style={[s.dayChipText, active && s.dayChipTextActive]}>{letter}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </Animated.View>
+              )}
+
               <Animated.View entering={SOFT_IN} style={s.timeRow}>
                 <TouchableOpacity
                   style={[s.timeCell, timeSheet === 'start' && s.timeCellActive]}
@@ -286,11 +324,12 @@ export default function WatchPlanEditorView() {
                   <Text style={s.timeCellHint}>CHANGE</Text>
                 </TouchableOpacity>
               </Animated.View>
-            )}
+            </Animated.View>
 
-            {freq === 'always' && (
+            {alwaysOn && (
               <Text style={s.helperText}>
-                This watch never sleeps. What it holds back stays held back, day and night.
+                Schedule is paused while Always On is active. This watch will appear in NOW with
+                an Always On tag.
               </Text>
             )}
           </Animated.View>
@@ -388,6 +427,19 @@ export default function WatchPlanEditorView() {
         }}
       />
 
+      <ScreenTimePermissionModal
+        visible={permissionPrompt}
+        onCancel={() => {
+          setPermissionPrompt(false);
+          persist(false);
+        }}
+        onConfirm={() => {
+          grantScreenTimePermission();
+          setPermissionPrompt(false);
+          persist(true);
+        }}
+      />
+
       <TimeWheelSheet
         visible={timeSheet !== null}
         title={timeSheet === 'start' ? 'Starts at' : 'Ends at'}
@@ -441,6 +493,44 @@ const s = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
     color: C.textMuted,
+  },
+  requiredText: {
+    marginTop: 7,
+    marginHorizontal: 10,
+    fontFamily: F.sansMedium,
+    fontSize: 11,
+    lineHeight: 16,
+    color: C.red,
+  },
+  alwaysToggleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(21,128,61,0.16)',
+    backgroundColor: '#F8FCF9',
+    paddingHorizontal: 15,
+    paddingVertical: 13,
+    marginBottom: 10,
+  },
+  alwaysToggleTitle: {
+    fontFamily: F.serifMedium,
+    fontSize: 17,
+    color: C.text,
+  },
+  alwaysToggleSub: {
+    marginTop: 2,
+    fontFamily: F.sans,
+    fontSize: 11.5,
+    lineHeight: 16,
+    color: C.textSecondary,
+  },
+  scheduleBlock: {
+    opacity: 1,
+  },
+  scheduleBlockDisabled: {
+    opacity: 0.42,
   },
 
   nameInput: {

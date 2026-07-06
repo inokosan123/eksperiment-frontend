@@ -62,6 +62,8 @@ export type StrictSettings = {
   denyNewApps: boolean;
 };
 
+export type ScreenTimePermissionStatus = 'notDetermined' | 'approved' | 'denied';
+
 export type AllowlistConfig = {
   keep: { categoryIds: string[]; appIds: string[]; groupIds: string[] };
   strength: WatchStrength;
@@ -78,6 +80,7 @@ export type FocusWatchState = {
   allowlistMode: boolean;
   allowlistConfig: AllowlistConfig;
   strictSettings: StrictSettings;
+  screenTimePermission: ScreenTimePermissionStatus;
   returnedMoments: number;
 };
 
@@ -92,9 +95,9 @@ export const APP_CATEGORIES = [
 ] as const;
 
 export const RETURN_PRACTICES: { id: PracticeKind; name: string; detail: string }[] = [
-  { id: 'prayer', name: 'A short prayer', detail: 'One prayer before the door opens' },
+  { id: 'prayer', name: 'Short Prayer', detail: 'One short prayer before the door opens' },
   { id: 'jesus-prayer', name: 'Jesus Prayer', detail: 'Two minutes of the Jesus Prayer' },
-  { id: 'psalm', name: 'A Psalm', detail: 'One Psalm, chosen for the moment' },
+  { id: 'psalm', name: 'Psalm', detail: 'One Psalm, chosen for the moment' },
   { id: 'chapter', name: 'A Bible chapter', detail: 'One chapter before you enter' },
   { id: 'intention', name: 'Written intention', detail: 'Write down why you are opening it' },
 ];
@@ -156,6 +159,7 @@ let state: FocusWatchState = {
     uninstallProtection: true,
     denyNewApps: false,
   },
+  screenTimePermission: 'notDetermined',
   returnedMoments: 0,
 };
 
@@ -183,6 +187,21 @@ export function useFocusWatch(): FocusWatchState {
 
 export function getFocusWatchState(): FocusWatchState {
   return state;
+}
+
+export function hasScreenTimePermission() {
+  return state.screenTimePermission === 'approved';
+}
+
+// Phase 1 mock. Phase 2 replaces this with FamilyControls.AuthorizationCenter.
+export function grantScreenTimePermission() {
+  state.screenTimePermission = 'approved';
+  emit();
+}
+
+export function markScreenTimePermissionDenied() {
+  state.screenTimePermission = 'denied';
+  emit();
 }
 
 // --- Active session -------------------------------------------------------
@@ -295,6 +314,23 @@ export function describeSelection(selection: WatchSelection) {
     );
   }
   return parts.length > 0 ? parts.join(' · ') : 'Nothing selected';
+}
+
+export function selectionTagLabels(selection: WatchSelection, maxVisible = 3) {
+  const categoryNames = selection.categoryIds.map(
+    id => APP_CATEGORIES.find(category => category.id === id)?.name ?? id
+  );
+  const otherLabels = [
+    ...selection.appIds.map(id => id),
+    ...selection.groupIds.map(id => id),
+  ];
+  const labels = [...categoryNames, ...otherLabels];
+
+  if (labels.length === 0) return ['Nothing selected'];
+  if (labels.length <= maxVisible) return labels;
+
+  const visibleCount = Math.max(1, maxVisible - 1);
+  return [...labels.slice(0, visibleCount), `+${labels.length - visibleCount} more`];
 }
 
 export function toggleAllowlistMode() {
@@ -418,11 +454,38 @@ export type ActiveScheduledWatch = {
   endsAt: number;
 };
 
+export type ScheduledWatchOccurrence = {
+  id: string;
+  plan: WatchPlan;
+  startsAt: number;
+  endsAt: number;
+};
+
 function dayStartMs(base: Date, dayOffset: number, minutes: number) {
   const date = new Date(base);
   date.setDate(date.getDate() + dayOffset);
   date.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
   return date.getTime();
+}
+
+function strengthRank(strength: WatchStrength) {
+  return strength === 'strict' ? 0 : 1;
+}
+
+function sortByStrengthThenName(a: WatchPlan, b: WatchPlan) {
+  return strengthRank(a.strength) - strengthRank(b.strength) || a.name.localeCompare(b.name);
+}
+
+function scheduledEndForStart(startMs: number, startMinutes: number, endMinutes: number) {
+  const durationMinutes =
+    endMinutes > startMinutes ? endMinutes - startMinutes : 1440 - startMinutes + endMinutes;
+  return startMs + durationMinutes * 60_000;
+}
+
+export function getAlwaysOnWatchPlans(plans: WatchPlan[]): WatchPlan[] {
+  return plans
+    .filter(plan => plan.enabled && plan.when.kind === 'always')
+    .sort(sortByStrengthThenName);
 }
 
 // Scheduled plans whose window covers this very moment (overnight windows
@@ -468,7 +531,45 @@ export function getActiveScheduledWatches(plans: WatchPlan[], now = new Date()):
     }
   }
 
-  return result.sort((a, b) => a.endsAt - b.endsAt);
+  return result.sort(
+    (a, b) =>
+      a.endsAt - b.endsAt ||
+      strengthRank(a.plan.strength) - strengthRank(b.plan.strength) ||
+      a.plan.name.localeCompare(b.plan.name)
+  );
+}
+
+// Landing UPCOMING is "later today". If an overnight watch ended this
+// morning and starts again tonight, it appears here; if it does not start
+// again today, it belongs only in the detailed history screen.
+export function getUpcomingWatchOccurrences(
+  plans: WatchPlan[],
+  now = new Date()
+): ScheduledWatchOccurrence[] {
+  const nowDay = (now.getDay() + 6) % 7;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const result: ScheduledWatchOccurrence[] = [];
+
+  for (const plan of plans) {
+    if (!plan.enabled || plan.when.kind !== 'schedule') continue;
+    const { startMinutes, endMinutes, days } = plan.when;
+    if (!days.includes(nowDay) || startMinutes <= nowMinutes) continue;
+
+    const startsAt = dayStartMs(now, 0, startMinutes);
+    result.push({
+      id: `${plan.id}-${startsAt}`,
+      plan,
+      startsAt,
+      endsAt: scheduledEndForStart(startsAt, startMinutes, endMinutes),
+    });
+  }
+
+  return result.sort(
+    (a, b) =>
+      a.startsAt - b.startsAt ||
+      strengthRank(a.plan.strength) - strengthRank(b.plan.strength) ||
+      a.plan.name.localeCompare(b.plan.name)
+  );
 }
 
 // Next upcoming start among enabled schedule plans, e.g. "Evening Watch · 21:00".

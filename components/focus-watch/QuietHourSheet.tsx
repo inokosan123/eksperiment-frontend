@@ -1,17 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import { X } from '@/components/icons/Icons';
+import { ChevronDown, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
 import AppPicker from './AppPicker';
+import { usePermissionGate } from './usePermissionGate';
+import { SMOOTH_LAYOUT, SOFT_IN, SOFT_OUT } from './focusMotion';
 import {
+  QUIET_DEFAULT_SELECTION,
   selectionCount,
-  startQuickWatch,
+  startQuietHour,
+  type QuietHourSession,
+  type Strength,
   type WatchSelection,
-  type WatchStrength,
-} from './focusWatchStore';
+} from './dayPlanStore';
 
 const DURATION_OPTIONS = [
   { minutes: 15, label: '15 min' },
@@ -23,35 +28,66 @@ const DURATION_OPTIONS = [
   { minutes: 180, label: '3 hours' },
 ];
 
-// The "Begin a watch" setup: one sheet, three quick decisions —
-// how long, what is held back, and how firm the door is.
-export default function QuickWatchSheet({
+function cloneSelection(selection: WatchSelection): WatchSelection {
+  return {
+    categoryIds: [...selection.categoryIds],
+    appIds: [...selection.appIds],
+    groupIds: [...selection.groupIds],
+  };
+}
+
+function closestDuration(minutes: number) {
+  return DURATION_OPTIONS.reduce((best, option) =>
+    Math.abs(option.minutes - minutes) < Math.abs(best.minutes - minutes) ? option : best
+  ).minutes;
+}
+
+// The panic button's sheet: one decision that matters (how long), everything
+// else already answered — all leisure closed, held strictly. The rare
+// adjustments hide behind a fold.
+export default function QuietHourSheet({
   visible,
   onClose,
+  editingSession,
 }: {
   visible: boolean;
   onClose: () => void;
+  editingSession?: QuietHourSession | null;
 }) {
   const [minutes, setMinutes] = useState(60);
-  const [selection, setSelection] = useState<WatchSelection>({
-    categoryIds: ['social', 'entertainment', 'games'],
-    appIds: [],
-    groupIds: [],
-  });
-  const [strength, setStrength] = useState<WatchStrength>('loose');
+  const [strength, setStrength] = useState<Strength>('strict');
+  const [selection, setSelection] = useState<WatchSelection>(cloneSelection(QUIET_DEFAULT_SELECTION));
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const { request, gate } = usePermissionGate({ embedded: true });
+  const isEditing = !!editingSession;
 
   const canBegin = selectionCount(selection) > 0;
 
-  const begin = () => {
-    startQuickWatch({ minutes, strength, selection });
-    onClose();
-  };
+  useEffect(() => {
+    if (!visible) return;
+    setAdjustOpen(false);
+    if (!editingSession) {
+      setMinutes(60);
+      setStrength('strict');
+      setSelection(cloneSelection(QUIET_DEFAULT_SELECTION));
+      return;
+    }
+    setMinutes(closestDuration(Math.round(editingSession.totalMs / 60_000)));
+    setStrength(editingSession.strength);
+    setSelection(cloneSelection(editingSession.selection));
+  }, [editingSession, visible]);
+
+  const begin = () =>
+    request(() => {
+      startQuietHour({ minutes, strength, selection });
+      onClose();
+    });
 
   return (
     <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheet}>
       <View style={s.handle} />
       <View style={s.headerRow}>
-        <Text style={s.title}>Begin a watch</Text>
+        <Text style={s.title}>{isEditing ? 'Adjust Quiet Hour' : 'Quiet Hour'}</Text>
         <TouchableOpacity
           onPress={onClose}
           activeOpacity={0.8}
@@ -61,7 +97,11 @@ export default function QuickWatchSheet({
           <X s={17} c={C.textMuted} w={2.2} />
         </TouchableOpacity>
       </View>
-      <Text style={s.subtitle}>Set the watch for this moment.</Text>
+      <Text style={s.subtitle}>
+        {isEditing
+          ? 'Reshape the quiet that is standing now.'
+          : 'Close everything loud — right now, for a while.'}
+      </Text>
 
       <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
         <Text style={s.sectionLabel}>FOR HOW LONG</Text>
@@ -82,17 +122,8 @@ export default function QuickWatchSheet({
           })}
         </View>
 
-        <Text style={s.sectionLabel}>STRENGTH</Text>
+        <Text style={s.sectionLabel}>HOW FIRM</Text>
         <View style={s.strengthRow}>
-          <TouchableOpacity
-            style={[s.strengthCard, strength === 'loose' && s.strengthCardOn]}
-            activeOpacity={0.85}
-            haptic="selection"
-            onPress={() => setStrength('loose')}
-          >
-            <Text style={s.strengthTitle}>Loose</Text>
-            <Text style={s.strengthDesc}>You may end the watch early.</Text>
-          </TouchableOpacity>
           <TouchableOpacity
             style={[s.strengthCard, strength === 'strict' && s.strengthCardOn]}
             activeOpacity={0.85}
@@ -102,18 +133,47 @@ export default function QuickWatchSheet({
             <Text style={s.strengthTitle}>Strict</Text>
             <Text style={s.strengthDesc}>Held until the time runs out.</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.strengthCard, strength === 'loose' && s.strengthCardOn]}
+            activeOpacity={0.85}
+            haptic="selection"
+            onPress={() => setStrength('loose')}
+          >
+            <Text style={s.strengthTitle}>Loose</Text>
+            <Text style={s.strengthDesc}>You may end it early.</Text>
+          </TouchableOpacity>
         </View>
 
-        <Text style={s.sectionLabel}>WHAT IS HELD BACK</Text>
-        <AppPicker selection={selection} onChange={setSelection} manageGroups={false} />
+        <Animated.View layout={SMOOTH_LAYOUT}>
+          <TouchableOpacity
+            style={s.adjustRow}
+            activeOpacity={0.7}
+            onPress={() => setAdjustOpen(open => !open)}
+          >
+            <Text style={s.adjustText}>
+              {adjustOpen ? 'What is held back' : 'Everything loud is held back'}
+            </Text>
+            <View style={[s.adjustChevron, adjustOpen && s.adjustChevronOpen]}>
+              <ChevronDown s={15} c={C.textMuted} />
+            </View>
+          </TouchableOpacity>
+
+          {adjustOpen && (
+            <Animated.View entering={SOFT_IN} exiting={SOFT_OUT}>
+              <AppPicker selection={selection} onChange={setSelection} manageGroups={false} />
+            </Animated.View>
+          )}
+        </Animated.View>
 
         <GoldButton
-          label="Begin the watch"
+          label={isEditing ? 'Keep the quiet' : 'Begin the Quiet Hour'}
           disabled={!canBegin}
           onPress={begin}
           style={{ marginTop: 20 }}
         />
       </ScrollView>
+
+      {gate}
     </SmoothBottomSheet>
   );
 }
@@ -226,5 +286,25 @@ const s = StyleSheet.create({
     fontSize: 11,
     lineHeight: 15,
     color: C.textSecondary,
+  },
+
+  adjustRow: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 8,
+  },
+  adjustText: {
+    fontFamily: F.sansMedium,
+    fontSize: 12.5,
+    color: C.textSecondary,
+  },
+  adjustChevron: {
+    transform: [{ rotate: '0deg' }],
+  },
+  adjustChevronOpen: {
+    transform: [{ rotate: '180deg' }],
   },
 });
