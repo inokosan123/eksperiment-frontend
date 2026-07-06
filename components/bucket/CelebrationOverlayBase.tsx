@@ -253,7 +253,19 @@ function CenterSpark({ phase }: { phase: SharedValue<number> }) {
   );
 }
 
-export default function CelebrationOverlayBase({ onClose }: { onClose: () => void }) {
+export default function CelebrationOverlayBase({
+  onClose,
+  title = 'Congratulations!',
+  subtitleStrong = 'Dream achieved!',
+  subtitle = 'Keep building your bucket list and chasing your dreams!',
+}: {
+  onClose: () => void;
+  // Optional copy overrides so other features (e.g. Focus milestones) can
+  // reuse this exact celebration without touching the bucket-list defaults.
+  title?: string;
+  subtitleStrong?: string;
+  subtitle?: string;
+}) {
   const { width, height } = useWindowDimensions();
   const lottieRef = useRef<LottieView>(null);
   const closingRef = useRef(false);
@@ -405,10 +417,11 @@ export default function CelebrationOverlayBase({ onClose }: { onClose: () => voi
               />
             </View>
           </Reanimated.View>
-          <Text style={s.title}>Congratulations!</Text>
+          <Text style={s.title}>{title}</Text>
           <View style={s.titleUnderline} />
           <Text style={s.subtitle}>
-            <Text style={s.subtitleStrong}>Dream achieved!</Text> Keep building your bucket list and chasing your dreams!
+            {subtitleStrong ? <Text style={s.subtitleStrong}>{subtitleStrong} </Text> : null}
+            {subtitle}
           </Text>
         </Reanimated.View>
       </View>

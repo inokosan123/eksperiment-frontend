@@ -29,29 +29,42 @@ export default function ZoneTimeline({
   zones,
   height = 10,
   showTicks = false,
+  nowMinutes,
 }: {
   zones: PlanZone[];
   height?: number;
   showTicks?: boolean;
+  // When given, a small dark tick marks "you are here" on the day.
+  nowMinutes?: number;
 }) {
   return (
     <View>
-      <View style={[s.track, { height, borderRadius: height / 2 }]}>
-        {zones.map((zone, index) =>
-          segments(zone).map(([start, end], segIndex) => (
-            <View
-              key={`${zone.id}-${segIndex}`}
-              style={{
-                position: 'absolute',
-                left: `${(start / 1440) * 100}%`,
-                width: `${Math.max(((end - start) / 1440) * 100, 1)}%`,
-                top: 0,
-                bottom: 0,
-                borderRadius: height / 2,
-                backgroundColor: zoneTint(index).bar,
-              }}
-            />
-          ))
+      <View style={[s.track, { height, borderRadius: height / 2, overflow: 'visible' }]}>
+        <View style={[StyleSheet.absoluteFillObject, { borderRadius: height / 2, overflow: 'hidden' }]}>
+          {zones.map((zone, index) =>
+            segments(zone).map(([start, end], segIndex) => (
+              <View
+                key={`${zone.id}-${segIndex}`}
+                style={{
+                  position: 'absolute',
+                  left: `${(start / 1440) * 100}%`,
+                  width: `${Math.max(((end - start) / 1440) * 100, 1)}%`,
+                  top: 0,
+                  bottom: 0,
+                  borderRadius: height / 2,
+                  backgroundColor: zoneTint(index).bar,
+                }}
+              />
+            ))
+          )}
+        </View>
+        {nowMinutes != null && (
+          <View
+            style={[
+              s.nowTick,
+              { left: `${(Math.max(0, Math.min(1439, nowMinutes)) / 1440) * 100}%` },
+            ]}
+          />
         )}
       </View>
       {showTicks && (
@@ -70,7 +83,15 @@ export default function ZoneTimeline({
 const s = StyleSheet.create({
   track: {
     backgroundColor: '#F0EEE8',
-    overflow: 'hidden',
+  },
+  nowTick: {
+    position: 'absolute',
+    top: -2.5,
+    bottom: -2.5,
+    width: 2.5,
+    marginLeft: -1.25,
+    borderRadius: 1.25,
+    backgroundColor: '#57534E',
   },
   tickRow: {
     marginTop: 5,

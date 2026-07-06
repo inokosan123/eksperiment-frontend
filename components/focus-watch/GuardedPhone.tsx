@@ -4,6 +4,8 @@ import Svg, { Circle, Line, Rect } from 'react-native-svg';
 import Animated, {
   cancelAnimation,
   Easing,
+  FadeIn,
+  FadeOut,
   useAnimatedProps,
   useSharedValue,
   withDelay,
@@ -19,6 +21,7 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const RING_RADIUS = 45;
 const CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+const PULSE_PERIOD = 5400;
 
 // Little app tiles for the web fallback phone — the section-card palette.
 const TILE_COLORS = [
@@ -59,51 +62,64 @@ function WebPhoneFallback({ diameter, sealed }: { diameter: number; sealed: bool
   );
 }
 
-// The Focus centerpiece: breathing gold halo + slow pulse waves around a
-// Lottie heart — the living iPhone while all is quiet, the check shield
-// while a watch stands guard. With `progress`, a golden ring of time
-// closes around it.
+// The Focus centerpiece. A breathing aura, a soft bed of light and three slow
+// waves rise from the emblem's own edge, so the Lottie and the circles read
+// as one living thing. The aura turns green while protection stands guard,
+// and the emblem itself can alternate between the shield and the phone.
 export default function GuardedPhone({
   diameter = 150,
   sealed = false,
   progress,
   progressColor = C.gold,
+  aura = C.gold,
+  face,
 }: {
   diameter?: number;
   sealed?: boolean;
   progress?: SharedValue<number>;
   // The ring of time is gold while the day is kept; a broken day mutes it.
   progressColor?: string;
+  // Aura color: gold at rest, green while protection is active.
+  aura?: string;
+  // Which emblem lives inside; defaults follow `sealed`.
+  face?: 'shield' | 'phone';
 }) {
   const breath = useSharedValue(0);
   const pulse1 = useSharedValue(0);
   const pulse2 = useSharedValue(0);
+  const pulse3 = useSharedValue(0);
   const ignite = useSharedValue(1);
   const seal = useSharedValue(sealed ? 1 : 0);
   const showRing = !!progress;
+  const shownFace: 'shield' | 'phone' = face ?? (sealed ? 'shield' : 'phone');
 
   useEffect(() => {
     breath.value = withRepeat(
       withSequence(
-        withTiming(1, { duration: 2100, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0, { duration: 2100, easing: Easing.inOut(Easing.quad) })
+        withTiming(1, { duration: 2700, easing: Easing.inOut(Easing.quad) }),
+        withTiming(0, { duration: 2700, easing: Easing.inOut(Easing.quad) })
       ),
       -1
     );
     pulse1.value = withRepeat(
-      withTiming(1, { duration: 4200, easing: Easing.out(Easing.quad) }),
+      withTiming(1, { duration: PULSE_PERIOD, easing: Easing.out(Easing.quad) }),
       -1
     );
     pulse2.value = withDelay(
-      2100,
-      withRepeat(withTiming(1, { duration: 4200, easing: Easing.out(Easing.quad) }), -1)
+      PULSE_PERIOD / 3,
+      withRepeat(withTiming(1, { duration: PULSE_PERIOD, easing: Easing.out(Easing.quad) }), -1)
+    );
+    pulse3.value = withDelay(
+      (PULSE_PERIOD / 3) * 2,
+      withRepeat(withTiming(1, { duration: PULSE_PERIOD, easing: Easing.out(Easing.quad) }), -1)
     );
     return () => {
       cancelAnimation(breath);
       cancelAnimation(pulse1);
       cancelAnimation(pulse2);
+      cancelAnimation(pulse3);
     };
-  }, [breath, pulse1, pulse2]);
+  }, [breath, pulse1, pulse2, pulse3]);
 
   useEffect(() => {
     seal.value = withTiming(sealed ? 1 : 0, {
@@ -112,7 +128,7 @@ export default function GuardedPhone({
     });
   }, [sealed, seal]);
 
-  // One-shot flash when the ring of time first appears — the watch ignites.
+  // One-shot flash when the ring of time first appears — the day ignites.
   useEffect(() => {
     if (showRing) {
       ignite.value = 0;
@@ -120,23 +136,30 @@ export default function GuardedPhone({
     }
   }, [showRing, ignite]);
 
-  const glowProps = useAnimatedProps(() => ({
-    opacity: (0.07 + breath.value * 0.09) * (0.6 + seal.value * 0.4),
-  }));
   const haloProps = useAnimatedProps(() => ({
-    opacity: (0.04 + breath.value * 0.06) * (0.6 + seal.value * 0.4),
+    opacity: (0.05 + breath.value * 0.06) * (0.6 + seal.value * 0.4),
+  }));
+  // The bed of light directly under the emblem — breathes with the halo so
+  // the Lottie sits inside the circles instead of floating over them.
+  const bedProps = useAnimatedProps(() => ({
+    opacity: (0.1 + breath.value * 0.08) * (0.65 + seal.value * 0.35),
+    r: 29 + breath.value * 1.6,
   }));
   const pulse1Props = useAnimatedProps(() => ({
-    opacity: (1 - pulse1.value) * (0.2 + seal.value * 0.06),
-    r: 38 + pulse1.value * 9,
+    opacity: (1 - pulse1.value) * 0.22 * (0.75 + seal.value * 0.25),
+    r: 34 + pulse1.value * 13,
   }));
   const pulse2Props = useAnimatedProps(() => ({
-    opacity: (1 - pulse2.value) * (0.15 + seal.value * 0.05),
-    r: 38 + pulse2.value * 10,
+    opacity: (1 - pulse2.value) * 0.17 * (0.75 + seal.value * 0.25),
+    r: 34 + pulse2.value * 13,
+  }));
+  const pulse3Props = useAnimatedProps(() => ({
+    opacity: (1 - pulse3.value) * 0.12 * (0.75 + seal.value * 0.25),
+    r: 34 + pulse3.value * 13,
   }));
   const igniteProps = useAnimatedProps(() => ({
     opacity: (1 - ignite.value) * 0.5,
-    r: 38 + ignite.value * 16,
+    r: 36 + ignite.value * 14,
   }));
   const progressProps = useAnimatedProps(() => ({
     strokeDashoffset: CIRCUMFERENCE * (1 - (progress ? progress.value : 0)),
@@ -144,20 +167,21 @@ export default function GuardedPhone({
 
   // The shield sits a touch lower inside the halo so it feels grounded in
   // the protective ring on real phones.
-  const lottieSize = Math.round(diameter * (sealed ? 0.66 : 0.74));
-  const lottieLift = sealed ? Math.round(diameter * 0.035) : 0;
+  const lottieSize = Math.round(diameter * (shownFace === 'shield' ? 0.66 : 0.74));
+  const lottieLift = shownFace === 'shield' ? Math.round(diameter * 0.035) : 0;
 
   return (
     <View style={{ width: diameter, height: diameter }}>
       <Svg width={diameter} height={diameter} viewBox="0 0 100 100">
-        <AnimatedCircle cx="50" cy="50" r="46" fill={C.gold} animatedProps={haloProps} />
-        <AnimatedCircle cx="50" cy="50" r="34" fill={C.gold} animatedProps={glowProps} />
-        <AnimatedCircle cx="50" cy="50" fill="none" stroke={C.gold} strokeWidth="1.1" animatedProps={pulse1Props} />
-        <AnimatedCircle cx="50" cy="50" fill="none" stroke={C.gold} strokeWidth="0.8" animatedProps={pulse2Props} />
+        <AnimatedCircle cx="50" cy="50" r="46" fill={aura} animatedProps={haloProps} />
+        <AnimatedCircle cx="50" cy="50" fill={aura} animatedProps={bedProps} />
+        <AnimatedCircle cx="50" cy="50" fill="none" stroke={aura} strokeWidth="1.1" animatedProps={pulse1Props} />
+        <AnimatedCircle cx="50" cy="50" fill="none" stroke={aura} strokeWidth="0.9" animatedProps={pulse2Props} />
+        <AnimatedCircle cx="50" cy="50" fill="none" stroke={aura} strokeWidth="0.7" animatedProps={pulse3Props} />
 
         {showRing && (
           <>
-            <AnimatedCircle cx="50" cy="50" fill="none" stroke={C.gold} strokeWidth="1" animatedProps={igniteProps} />
+            <AnimatedCircle cx="50" cy="50" fill="none" stroke={aura} strokeWidth="1" animatedProps={igniteProps} />
             <Circle cx="50" cy="50" r={RING_RADIUS} fill="none" stroke={C.goldLight} strokeWidth="1.7" />
             <AnimatedCircle
               cx="50"
@@ -176,10 +200,16 @@ export default function GuardedPhone({
       </Svg>
 
       {Platform.OS === 'web' ? (
-        <WebPhoneFallback diameter={diameter} sealed={sealed} />
+        <WebPhoneFallback diameter={diameter} sealed={shownFace === 'shield'} />
       ) : (
-        <View style={s.lottieWrap} pointerEvents="none">
-          {sealed ? (
+        <Animated.View
+          key={shownFace}
+          entering={FadeIn.duration(700)}
+          exiting={FadeOut.duration(320)}
+          style={s.lottieWrap}
+          pointerEvents="none"
+        >
+          {shownFace === 'shield' ? (
             <FocusWatchLottie
               name="check-shield"
               mode="loop"
@@ -198,7 +228,7 @@ export default function GuardedPhone({
               style={{ width: lottieSize, height: lottieSize }}
             />
           )}
-        </View>
+        </Animated.View>
       )}
     </View>
   );
