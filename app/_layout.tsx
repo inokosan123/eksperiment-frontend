@@ -97,8 +97,6 @@ export default function RootLayout() {
                                   <Stack.Screen name="day-plans"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="day-plan"        options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="clean-sight"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                                  <Stack.Screen name="never-allowed"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                                  <Stack.Screen name="strict-watch"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="notes"           options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="scripture"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="scripture-reader" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />

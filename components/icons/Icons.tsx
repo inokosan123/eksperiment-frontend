@@ -533,6 +533,14 @@ export const Shield = ({ s = 20, c = d, w = 2 }: P) => (
   </Svg>
 );
 
+export const Lock = ({ s = 20, c = d, w = 2 }: P) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
+    <Rect x="4" y="11" width="16" height="10" rx="2.5" />
+    <Path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    <Circle cx="12" cy="16" r="1.3" />
+  </Svg>
+);
+
 export const Grid3x3 = ({ s = 22, c = d, w = 2 }: P) => (
   <Svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
     <Rect x="3" y="3" width="18" height="18" rx="2" />

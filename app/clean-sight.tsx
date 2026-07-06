@@ -1,5 +1,5 @@
-import CleanSightView from '@/components/focus-watch/CleanSightView';
+import PurityView from '@/components/focus-watch/PurityView';
 
 export default function CleanSightScreen() {
-  return <CleanSightView />;
+  return <PurityView />;
 }
