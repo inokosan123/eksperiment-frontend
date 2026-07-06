@@ -49,19 +49,10 @@ export const CLEAN_SIGHT_CARD: FocusHeroCard = {
   route: '/clean-sight',
 };
 
-export const FOCUS_HERO_CARDS = [DAY_PLAN_CARD, CLEAN_SIGHT_CARD];
-
-export const LOOSE_TAG_TONE = {
-  bg: '#FFF8E7',
-  border: '#F0E3B8',
-  text: '#C5A059',
-} as const;
-
 export type WebPackContent = {
   id: WebPackId;
   name: string;
   detail: string;
-  layerName: string;
   icon: ReactNode;
   iconBg: string;
   sites: string[];
@@ -73,17 +64,15 @@ export const WEB_PACKS: WebPackContent[] = [
     id: 'gambling',
     name: 'Gambling & Betting',
     detail: 'Betting sites, casinos, lotteries',
-    layerName: 'Gambling sites',
     icon: <Target s={16} c="#B54155" w={2} />,
     iconBg: '#FBE6E9',
     sites: ['bet365.com', 'stake.com', '1xbet.com', 'williamhill.com', 'betway.com', 'pokerstars.com'],
-    sitesNote: '…and 400+ more, updated by us',
+    sitesNote: '…and a curated list we keep growing',
   },
   {
     id: 'adult',
     name: 'Adult Content',
     detail: "Apple's system filter plus our curated list",
-    layerName: 'Adult content',
     icon: <AlertTriangle s={15} c="#B54155" w={2} />,
     iconBg: '#FBE6E9',
     sites: ['pornhub.com', 'xvideos.com', 'onlyfans.com', 'xnxx.com', 'chaturbate.com'],
@@ -93,21 +82,19 @@ export const WEB_PACKS: WebPackContent[] = [
     id: 'social',
     name: 'Social Web',
     detail: 'Feeds in the browser — X, Reddit, Facebook',
-    layerName: 'Social web',
     icon: <Waves s={16} c="#3D8273" w={2} />,
     iconBg: '#E1F1EC',
     sites: ['x.com', 'facebook.com', 'reddit.com', 'instagram.com', 'tiktok.com', 'threads.net'],
-    sitesNote: '…the apps themselves live in Protect Time',
+    sitesNote: '…the apps themselves live in your Day Plan',
   },
   {
     id: 'news',
     name: 'News & Doomscroll',
     detail: 'Endless headlines and comment wars',
-    layerName: 'News sites',
     icon: <Bell s={15} c="#A9863F" w={2} />,
     iconBg: '#FBF3DE',
     sites: ['news.google.com', 'cnn.com', 'bbc.com', 'dailymail.co.uk', 'nypost.com'],
-    sitesNote: '…and 100+ more, updated by us',
+    sitesNote: '…and a curated list we keep growing',
   },
 ];
 
@@ -154,6 +141,3 @@ export function appsInCategory(categoryId: string): MockApp[] {
   return MOCK_APPS.filter(app => app.categoryId === categoryId);
 }
 
-export function appName(appId: string): string {
-  return MOCK_APPS.find(app => app.id === appId)?.name ?? appId;
-}

@@ -252,6 +252,16 @@ export default function DayPlanHubView() {
               <Text style={s.newPlanText}>New plan</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity
+              style={s.previewLink}
+              activeOpacity={0.7}
+              onPress={() =>
+                router.push('/focus-intervention?practice=prayer&strength=loose&group=social' as any)
+              }
+            >
+              <Text style={s.previewLinkText}>Preview the shield moment →</Text>
+            </TouchableOpacity>
+
             <Text style={s.footnote}>
               App blocking becomes real once Apple grants the Screen Time permission.
               The plans you shape here are how your days will be kept.
@@ -432,8 +442,19 @@ const s = StyleSheet.create({
     fontSize: 16.5,
     color: C.textSecondary,
   },
+  previewLink: {
+    alignSelf: 'center',
+    marginTop: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  previewLinkText: {
+    fontFamily: F.sansMedium,
+    fontSize: 12.5,
+    color: C.gold,
+  },
   footnote: {
-    marginTop: 16,
+    marginTop: 12,
     paddingHorizontal: 22,
     fontFamily: F.sans,
     fontSize: 11,

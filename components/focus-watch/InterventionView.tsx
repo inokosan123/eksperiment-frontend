@@ -4,13 +4,21 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import Animated, { FadeIn, FadeInDown, FadeOut, LinearTransition } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import { OrthodoxCross } from '@/components/icons/Icons';
+import { OrthodoxCross, Shield } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
 import GuardedPhone from './GuardedPhone';
-import { recordReturnedMoment, type PracticeKind } from './focusWatchStore';
+import {
+  getDayPlanState,
+  groupName,
+  openDoorFor,
+  recordReturnedMoment,
+  type PracticeKind,
+  type Strength,
+} from './dayPlanStore';
 
-const CARD_TRANSITION = LinearTransition.springify().damping(19).stiffness(190);
+const CARD_TRANSITION = LinearTransition.duration(230);
+const DOOR_MINUTES = [5, 10, 15];
 
 type PracticeContent = {
   title: string;
@@ -49,21 +57,31 @@ const PRACTICE_CONTENT: Record<PracticeKind, PracticeContent> = {
   },
 };
 
+// The shield moment. A strict door never opens; a loose door opens only
+// through the practice — and entering costs today's trophy (blueprint §2).
 export default function InterventionView() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ practice?: string }>();
+  const params = useLocalSearchParams<{ practice?: string; strength?: string; group?: string }>();
   const practice: PracticeKind =
     params.practice && params.practice in PRACTICE_CONTENT
       ? (params.practice as PracticeKind)
       : 'prayer';
+  const strength: Strength = params.strength === 'strict' ? 'strict' : 'loose';
+  const groupId = params.group ?? 'social';
   const content = PRACTICE_CONTENT[practice];
+  const displayGroup = groupName(getDayPlanState(), groupId);
 
   const [step, setStep] = useState<'practice' | 'choice'>('practice');
   const [reason, setReason] = useState('');
   const canComplete = practice !== 'intention' || reason.trim().length >= 8;
 
   const turnBack = () => {
-    recordReturnedMoment();
+    recordReturnedMoment(groupId);
+    router.back();
+  };
+
+  const enterFor = (minutes: number) => {
+    openDoorFor(groupId, minutes);
     router.back();
   };
 
@@ -95,7 +113,7 @@ export default function InterventionView() {
         >
           {step === 'practice' ? (
             <Animated.View key="practice" entering={FadeIn.duration(280)} exiting={FadeOut.duration(140)}>
-              <Text style={s.cardLabel}>THE RETURN PRACTICE</Text>
+              <Text style={s.cardLabel}>{`THE RETURN PRACTICE · ${displayGroup.toUpperCase()}`}</Text>
               <Text style={s.cardTitle}>{content.title}</Text>
 
               {practice === 'intention' ? (
@@ -122,18 +140,39 @@ export default function InterventionView() {
             </Animated.View>
           ) : (
             <Animated.View key="choice" entering={FadeIn.duration(280)} exiting={FadeOut.duration(140)}>
-              <Text style={s.choiceTitle}>The door is open.</Text>
-              <Text style={s.choiceSub}>What happens next is yours to choose.</Text>
+              {strength === 'strict' ? (
+                <>
+                  <View style={s.strictShield}>
+                    <Shield s={20} c="#B54155" w={2.2} />
+                  </View>
+                  <Text style={s.choiceTitle}>This door stays closed.</Text>
+                  <Text style={s.choiceSub}>
+                    You set it strict — and prayed anyway. That is strength.
+                  </Text>
+                  <GoldButton label="Turn back" onPress={turnBack} style={{ marginTop: 18 }} />
+                </>
+              ) : (
+                <>
+                  <Text style={s.choiceTitle}>The door is open.</Text>
+                  <Text style={s.choiceSub}>What happens next is yours to choose.</Text>
 
-              <GoldButton label="Turn back" onPress={turnBack} style={{ marginTop: 18 }} />
+                  <GoldButton label="Turn back" onPress={turnBack} style={{ marginTop: 18 }} />
 
-              <TouchableOpacity
-                style={s.ghostBtn}
-                activeOpacity={0.75}
-                onPress={() => router.back()}
-              >
-                <Text style={s.ghostBtnText}>Enter for 5 minutes</Text>
-              </TouchableOpacity>
+                  <View style={s.doorRow}>
+                    {DOOR_MINUTES.map(minutes => (
+                      <TouchableOpacity
+                        key={minutes}
+                        style={s.doorChip}
+                        activeOpacity={0.75}
+                        onPress={() => enterFor(minutes)}
+                      >
+                        <Text style={s.doorChipText}>{`${minutes} min`}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <Text style={s.doorNote}>Entering opens the door — and costs today's trophy.</Text>
+                </>
+              )}
             </Animated.View>
           )}
         </Animated.View>
@@ -227,21 +266,16 @@ const s = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
-  ghostBtn: {
-    marginTop: 10,
-    height: 48,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: C.border,
+  strictShield: {
+    alignSelf: 'center',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FBE6E9',
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 10,
   },
-  ghostBtnText: {
-    fontFamily: F.sansMedium,
-    fontSize: 14,
-    color: C.textSecondary,
-  },
-
   choiceTitle: {
     marginTop: 4,
     fontFamily: F.serifMedium,
@@ -252,9 +286,38 @@ const s = StyleSheet.create({
   },
   choiceSub: {
     marginTop: 5,
+    paddingHorizontal: 6,
     fontFamily: F.serif,
     fontSize: 15.5,
+    lineHeight: 21,
     color: C.textSecondary,
+    textAlign: 'center',
+  },
+  doorRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  doorChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+  },
+  doorChipText: {
+    fontFamily: F.sansMedium,
+    fontSize: 13,
+    color: C.textSecondary,
+    fontVariant: ['tabular-nums'],
+  },
+  doorNote: {
+    marginTop: 9,
+    fontFamily: F.sans,
+    fontSize: 10.5,
+    color: C.textMuted,
     textAlign: 'center',
   },
 });

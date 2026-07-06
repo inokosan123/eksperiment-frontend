@@ -73,6 +73,7 @@ import {
 } from '@/components/icons/Icons';
 import { AnyTaskCard, TaskData } from '@/components/shared/TaskCards';
 import ChallengeSummaryCard from '@/components/shared/ChallengeSummaryCard';
+import RoutinePhonePlanCard from '@/components/focus-watch/RoutinePhonePlanCard';
 import { C, F } from '@/constants/tokens';
 import type { HabitItem, HabitStep } from '@/components/habits/habitDb';
 import { habitStepTaskId, listHabitsWithStats, saveHabitRecord } from '@/components/habits/habitDb';
@@ -1465,6 +1466,8 @@ export default function MyRoutineView({
             </TouchableOpacity>
           </View>
         </View>
+
+        <RoutinePhonePlanCard dayIndex={selectedDayIndex} />
 
       </ScrollView>
 
