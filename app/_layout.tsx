@@ -93,8 +93,6 @@ export default function RootLayout() {
                                   <Stack.Screen name="bucket-list"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="big-events"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="focus-zone"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                                  <Stack.Screen name="protect-time"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
-                                  <Stack.Screen name="watch-plan"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="focus-intervention" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="day-plans"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="day-plan"        options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />

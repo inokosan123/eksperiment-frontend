@@ -51,7 +51,7 @@ function AppAvatar({ app }: { app: MockApp }) {
   );
 }
 
-function GroupEditorSheet({
+export function GroupEditorSheet({
   visible,
   onClose,
 }: {
