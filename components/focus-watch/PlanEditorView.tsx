@@ -55,7 +55,7 @@ const ZONE_CANDIDATES: Omit<PlanZone, 'id'>[] = [
   { name: 'Night', startMinutes: 1380, endMinutes: 360, closedGroupIds: APP_CATEGORIES.map(c => c.id) },
 ];
 
-const BUDGET_STOPS: (number | null)[] = [null, ...Array.from({ length: 15 }, (_, i) => 60 + i * 30)];
+const BUDGET_STOPS: number[] = Array.from({ length: 15 }, (_, i) => 60 + i * 30);
 
 const ZONE_PRESET_ICONS: Record<string, (color: string) => React.ReactNode> = {
   Morning: color => <Sun s={13} c={color} w={2.1} />,
@@ -101,7 +101,7 @@ export default function PlanEditorView() {
   );
   const [expandedZone, setExpandedZone] = useState<string | null>(null);
   const [timeTarget, setTimeTarget] = useState<{ zoneId: string; field: 'start' | 'end' } | null>(null);
-  const [budget, setBudget] = useState<number | null>(existing ? existing.budgetMinutes : 240);
+  const [budget, setBudget] = useState<number>(existing?.budgetMinutes ?? 240);
   const [planStrength, setPlanStrength] = useState<Strength>(existing?.strength ?? 'loose');
   const [sheetGroupId, setSheetGroupId] = useState<string | null>(null);
   const [groupSheet, setGroupSheet] = useState(false);
@@ -213,19 +213,13 @@ export default function PlanEditorView() {
           <Animated.View entering={enter(40)}>
             <Text style={s.sectionLabel}>TIME BUDGET</Text>
             <View style={s.budgetCard}>
-              <Text style={[s.budgetValue, budget == null && s.budgetValueOff]}>
-                {budget != null ? formatMinutesShort(budget) : 'No budget'}
-              </Text>
-              <Text style={s.budgetCaption}>
-                {budget != null
-                  ? 'GIVEN TO THE PHONE · A DAY WITH THIS PLAN'
-                  : 'LIMITS STAND ON THEIR OWN'}
-              </Text>
+              <Text style={s.budgetValue}>{formatMinutesShort(budget)}</Text>
+              <Text style={s.budgetCaption}>GIVEN TO THE PHONE · A DAY WITH THIS PLAN</Text>
               <LimitSlider
                 value={budget}
-                onChange={setBudget}
+                onChange={minutes => setBudget(minutes ?? 60)}
                 stops={BUDGET_STOPS}
-                edgeLabels={{ left: 'None', right: '8h' }}
+                edgeLabels={{ left: '1h', right: '8h' }}
               />
 
               <View style={s.strengthMiniRow}>
@@ -872,10 +866,6 @@ const s = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 10,
     elevation: 2,
-  },
-  budgetValueOff: {
-    fontSize: 27,
-    color: C.textSecondary,
   },
   budgetValue: {
     fontFamily: F.serifSemiBold,

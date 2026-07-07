@@ -49,7 +49,7 @@ const BROKEN_RING = '#E4C3CA';
 const GUARD_GREEN = '#4C9A68';
 const TROPHY_PNG = require('@/assets/animations/challenge-trophy-preview.png');
 
-const TILE_SIZE = 30;
+const TILE_SIZE = 38;
 // Indexed by Date.getDay() — Sun=0 … Sat=6 (same as the Home rhythm strip).
 const STRIP_DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -155,7 +155,7 @@ function TrophyTile({ cell }: { cell: StripCell }) {
   if (cell.state === 'broken' || cell.state === 'today-broken') {
     return (
       <View style={[s.tile, s.tileBroken, isToday && s.tileToday]}>
-        <X s={12} c={C.text} w={2.8} />
+        <X s={14} c={C.text} w={2.8} />
       </View>
     );
   }
@@ -493,15 +493,26 @@ export default function NowPanel({ onOpenTrophies }: { onOpenTrophies?: () => vo
             );
           })}
         </View>
-        <View style={s.stripCaptionRow}>
-          <Text style={s.stripCaption}>
-            {`${state.streak.trophies} ${state.streak.trophies === 1 ? 'trophy' : 'trophies'} · ${
-              state.streak.current > 0
-                ? `${state.streak.current}-day streak`
-                : 'the streak starts today'
-            }`}
-          </Text>
-          {onOpenTrophies && <ChevronRight s={13} c={C.textMuted} />}
+        <View style={s.stripStatsRow}>
+          <View style={s.stripStatCell}>
+            <View style={s.stripStatValueRow}>
+              <Image source={TROPHY_PNG} style={s.stripStatImg} resizeMode="contain" />
+              <Text style={s.stripStatValue}>{state.streak.trophies}</Text>
+            </View>
+            <Text style={s.stripStatLabel}>TROPHIES</Text>
+          </View>
+          <View style={s.stripStatDivider} />
+          <View style={s.stripStatCell}>
+            <View style={s.stripStatValueRow}>
+              <Text style={s.stripStatValue}>{state.streak.current}</Text>
+            </View>
+            <Text style={s.stripStatLabel}>DAY STREAK</Text>
+          </View>
+          {onOpenTrophies && (
+            <View style={s.stripStatChevron}>
+              <ChevronRight s={16} c={C.textMuted} />
+            </View>
+          )}
         </View>
       </TouchableOpacity>
 
@@ -866,20 +877,54 @@ const s = StyleSheet.create({
     borderStyle: 'solid',
   },
   tileTrophy: {
-    width: 20,
-    height: 20,
+    width: 26,
+    height: 26,
   },
-  stripCaptionRow: {
-    marginTop: 8,
+  stripStatsRow: {
+    marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: '#FDFCF9',
+    paddingVertical: 9,
+    paddingHorizontal: 6,
   },
-  stripCaption: {
-    fontFamily: F.sansMedium,
-    fontSize: 12.5,
-    color: C.textSecondary,
+  stripStatCell: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  stripStatValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  stripStatImg: {
+    width: 19,
+    height: 19,
+  },
+  stripStatValue: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 20,
+    lineHeight: 23,
+    color: C.text,
     fontVariant: ['tabular-nums'],
+  },
+  stripStatLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 1.9,
+    color: C.textMuted,
+  },
+  stripStatDivider: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
+    backgroundColor: C.border,
+    marginVertical: 2,
+  },
+  stripStatChevron: {
+    paddingHorizontal: 4,
   },
 });

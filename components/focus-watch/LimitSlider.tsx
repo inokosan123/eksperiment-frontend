@@ -134,6 +134,12 @@ export default function LimitSlider({
 
   return (
     <View style={s.wrap}>
+      <View style={s.edgeRow}>
+        <Text style={[s.edgeText, value === stops[0] && s.edgeTextActive]}>{edgeLabels.left}</Text>
+        <Text style={[s.edgeText, value === stops[stops.length - 1] && s.edgeTextActive]}>
+          {edgeLabels.right}
+        </Text>
+      </View>
       <GestureDetector gesture={pan}>
         <View style={s.touchArea}>
           <View style={s.track} onLayout={onLayout}>
@@ -155,10 +161,6 @@ export default function LimitSlider({
           <Animated.View pointerEvents="none" style={[s.thumb, thumbStyle]} />
         </View>
       </GestureDetector>
-      <View style={s.edgeRow}>
-        <Text style={[s.edgeText, value === null && s.edgeTextActive]}>{edgeLabels.left}</Text>
-        <Text style={s.edgeText}>{edgeLabels.right}</Text>
-      </View>
     </View>
   );
 }
@@ -211,15 +213,15 @@ const s = StyleSheet.create({
   edgeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 2,
+    paddingHorizontal: 1,
+    marginBottom: -2,
   },
   edgeText: {
-    fontFamily: F.sansMedium,
-    fontSize: 10.5,
-    color: C.textMuted,
+    fontFamily: F.sansSemiBold,
+    fontSize: 12.5,
+    color: C.textSecondary,
   },
   edgeTextActive: {
-    fontFamily: F.sansSemiBold,
     color: C.goldDark,
   },
 });
