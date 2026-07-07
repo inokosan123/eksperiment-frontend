@@ -112,16 +112,42 @@ function buildStrip(state: DayPlanState, now: Date): StripCell[] {
   });
 }
 
+// The gold ring that breathes around today's tile while the day is alive.
+function TodayPulseRing() {
+  const pulse = useSharedValue(0);
+
+  useEffect(() => {
+    pulse.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 1700, easing: Easing.inOut(Easing.quad) }),
+        withTiming(0, { duration: 1700, easing: Easing.inOut(Easing.quad) })
+      ),
+      -1
+    );
+    return () => cancelAnimation(pulse);
+  }, [pulse]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: 0.2 + pulse.value * 0.6,
+  }));
+  return <Animated.View pointerEvents="none" style={[s.todayPulseRing, style]} />;
+}
+
 function TrophyTile({ cell }: { cell: StripCell }) {
   const isToday = cell.state.startsWith('today');
   if (cell.state === 'kept' || cell.state === 'today-kept') {
     return (
-      <View style={[s.tile, s.tileKept, cell.state === 'kept' && s.tileGlow, isToday && s.tileToday]}>
-        <Image
-          source={TROPHY_PNG}
-          style={[s.tileTrophy, cell.state === 'today-kept' && { opacity: 0.45 }]}
-          resizeMode="contain"
-        />
+      <View style={s.tileHolder}>
+        <View
+          style={[s.tile, s.tileKept, cell.state === 'kept' && s.tileGlow, isToday && s.tileToday]}
+        >
+          <Image
+            source={TROPHY_PNG}
+            style={[s.tileTrophy, cell.state === 'today-kept' && { opacity: 0.45 }]}
+            resizeMode="contain"
+          />
+        </View>
+        {cell.state === 'today-kept' && <TodayPulseRing />}
       </View>
     );
   }
@@ -338,8 +364,33 @@ export default function NowPanel({ onOpenTrophies }: { onOpenTrophies?: () => vo
                 </View>
 
                 <View style={{ marginTop: 10 }}>
-                  <ZoneTimeline zones={plan.zones} height={8} nowMinutes={nowMinutes} />
+                  <ZoneTimeline zones={plan.zones} height={9} nowMinutes={nowMinutes} />
                 </View>
+
+                {plan.zones.length > 0 && (
+                  <View style={s.zoneLozengeRow}>
+                    {plan.zones.map((entry, index) => {
+                      const tint = zoneTint(index);
+                      const active = zone?.id === entry.id;
+                      return (
+                        <View
+                          key={entry.id}
+                          style={[
+                            s.zoneLozenge,
+                            { backgroundColor: active ? tint.bar : tint.soft },
+                          ]}
+                        >
+                          <Text
+                            style={[s.zoneLozengeText, { color: active ? '#fff' : tint.text }]}
+                            numberOfLines={1}
+                          >
+                            {entry.name}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
 
                 <View style={s.planCardMetaRow}>
                   {zone && zoneIndex >= 0 && (
@@ -428,10 +479,14 @@ export default function NowPanel({ onOpenTrophies }: { onOpenTrophies?: () => vo
           {strip.map((cell, index) => {
             const isToday = cell.state.startsWith('today');
             return (
-              <View key={index} style={s.stripCol}>
+              <Animated.View
+                key={index}
+                entering={FadeIn.duration(320).delay(50 * index)}
+                style={s.stripCol}
+              >
                 <Text style={[s.stripLetter, isToday && { color: C.goldDark }]}>{cell.letter}</Text>
                 <TrophyTile cell={cell} />
-              </View>
+              </Animated.View>
             );
           })}
         </View>
@@ -743,6 +798,37 @@ const s = StyleSheet.create({
     fontSize: 9.5,
     letterSpacing: 0.6,
     color: C.textMuted,
+  },
+  tileHolder: {
+    width: TILE_SIZE,
+    height: TILE_SIZE,
+  },
+  todayPulseRing: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
+    borderRadius: (TILE_SIZE + 8) / 2,
+    borderWidth: 1.5,
+    borderColor: C.gold,
+  },
+  zoneLozengeRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+  },
+  zoneLozenge: {
+    maxWidth: 110,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  zoneLozengeText: {
+    fontFamily: F.sansSemiBold,
+    fontSize: 10,
+    letterSpacing: 0.3,
   },
   tile: {
     width: TILE_SIZE,

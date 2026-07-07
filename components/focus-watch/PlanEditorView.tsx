@@ -7,12 +7,16 @@ import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import {
   Book,
+  Candle,
   ChevronDown,
+  Clock,
   Cross,
   Feather,
   Flame,
+  Moon,
   OpenBook,
   Plus,
+  Sun,
   Trash2,
 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
@@ -20,6 +24,7 @@ import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
 import TimeWheelSheet from './TimeWheelSheet';
 import PlanWizardSheet from './PlanWizardSheet';
+import LimitSlider, { limitStopLabel } from './LimitSlider';
 import ZoneTimeline, { zoneTint } from './ZoneTimeline';
 import { GroupEditorSheet } from './AppPicker';
 import { SMOOTH_LAYOUT, SOFT_IN, SOFT_OUT } from './focusMotion';
@@ -27,7 +32,6 @@ import {
   APP_CATEGORIES,
   deleteCustomGroup,
   deleteDayPlan,
-  formatMinutesShort,
   formatTimeOfDay,
   getDayPlanState,
   groupName,
@@ -45,8 +49,6 @@ import {
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
 const SECTION_TRANSITION = SMOOTH_LAYOUT;
 
-const MINUTE_OPTIONS: (number | null)[] = [null, 15, 30, 45, 60, 90, 120, 180];
-
 const PRACTICE_ICONS: Record<PracticeKind, (color: string) => React.ReactNode> = {
   prayer: color => <Cross s={13} c={color} w={2} />,
   'jesus-prayer': color => <Flame s={14} filled color={color} />,
@@ -55,13 +57,20 @@ const PRACTICE_ICONS: Record<PracticeKind, (color: string) => React.ReactNode> =
   intention: color => <Feather s={14} c={color} w={2} />,
 };
 
-// Fresh-zone defaults, tried in order until one fits the free time.
+// Fresh-zone presets — offered as one-tap chips under the timeline.
 const ZONE_CANDIDATES: Omit<PlanZone, 'id'>[] = [
   { name: 'Morning', startMinutes: 360, endMinutes: 540, closedGroupIds: ['social', 'news'] },
+  { name: 'Day', startMinutes: 720, endMinutes: 840, closedGroupIds: ['games', 'entertainment'] },
   { name: 'Evening', startMinutes: 1260, endMinutes: 1380, closedGroupIds: ['social', 'entertainment', 'games'] },
   { name: 'Night', startMinutes: 1380, endMinutes: 360, closedGroupIds: APP_CATEGORIES.map(c => c.id) },
-  { name: 'Day', startMinutes: 720, endMinutes: 840, closedGroupIds: ['games', 'entertainment'] },
 ];
+
+const ZONE_PRESET_ICONS: Record<string, (color: string) => React.ReactNode> = {
+  Morning: color => <Sun s={13} c={color} w={2.1} />,
+  Day: color => <Clock s={13} c={color} w={2.1} />,
+  Evening: color => <Candle s={13} c={color} w={2.1} />,
+  Night: color => <Moon s={13} c={color} w={2.1} />,
+};
 
 function makeZoneId() {
   return `zone-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -99,7 +108,6 @@ export default function PlanEditorView() {
     ensureRules(existing?.rules ?? [], groupIds)
   );
   const [expandedZone, setExpandedZone] = useState<string | null>(null);
-  const [expandedRule, setExpandedRule] = useState<string | null>(null);
   const [timeTarget, setTimeTarget] = useState<{ zoneId: string; field: 'start' | 'end' } | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [groupSheet, setGroupSheet] = useState(false);
@@ -123,11 +131,12 @@ export default function PlanEditorView() {
   const zeroZone = zones.some(zone => zone.startMinutes === zone.endMinutes);
   const canSave = hasName && !overlap && !zeroZone;
 
-  const addZone = () => {
+  const addZone = (presetName?: string) => {
     if (zones.length >= 4) return;
     const candidate =
+      (presetName ? ZONE_CANDIDATES.find(entry => entry.name === presetName) : undefined) ??
       ZONE_CANDIDATES.find(entry => !zonesOverlap([...zones, entry as PlanZone])) ??
-      ZONE_CANDIDATES[0];
+      ZONE_CANDIDATES[1];
     const zone: PlanZone = { ...candidate, id: makeZoneId(), closedGroupIds: [...candidate.closedGroupIds] };
     setZones(current => [...current, zone]);
     setExpandedZone(zone.id);
@@ -204,7 +213,38 @@ export default function PlanEditorView() {
               )}
             </View>
 
-            <Animated.View style={s.groupCard} layout={SECTION_TRANSITION}>
+            {zones.length < 4 && (
+              <View style={s.presetRow}>
+                {ZONE_CANDIDATES.filter(
+                  candidate => !zones.some(zone => zone.name === candidate.name)
+                ).map(candidate => (
+                  <TouchableOpacity
+                    key={candidate.name}
+                    style={s.presetChip}
+                    activeOpacity={0.8}
+                    haptic="selection"
+                    onPress={() => addZone(candidate.name)}
+                  >
+                    {ZONE_PRESET_ICONS[candidate.name]?.(C.goldDark)}
+                    <Text style={s.presetChipText}>{candidate.name}</Text>
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity
+                  style={[s.presetChip, s.presetChipCustom]}
+                  activeOpacity={0.8}
+                  haptic="selection"
+                  onPress={() => addZone()}
+                >
+                  <Plus s={12} c={C.textSecondary} w={2.4} />
+                  <Text style={[s.presetChipText, { color: C.textSecondary }]}>Custom</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <Animated.View
+              style={[s.groupCard, zones.length === 0 && { display: 'none' }]}
+              layout={SECTION_TRANSITION}
+            >
               {zones.map((zone, index) => {
                 const tint = zoneTint(index);
                 const isOpen = expandedZone === zone.id;
@@ -213,11 +253,16 @@ export default function PlanEditorView() {
                   <Animated.View key={zone.id} layout={SECTION_TRANSITION}>
                     {index > 0 && <View style={s.separator} />}
                     <TouchableOpacity
-                      style={s.zoneRow}
+                      style={[s.zoneRow, isOpen && { backgroundColor: tint.soft }]}
                       activeOpacity={0.75}
                       onPress={() => setExpandedZone(isOpen ? null : zone.id)}
                     >
-                      <View style={[s.zoneDot, { backgroundColor: tint.bar }]} />
+                      <View style={[s.zoneEdge, { backgroundColor: tint.bar }]} />
+                      <View style={s.zoneIconBadge}>
+                        {ZONE_PRESET_ICONS[zone.name]?.(tint.text) ?? (
+                          <Clock s={13} c={tint.text} w={2.1} />
+                        )}
+                      </View>
                       <View style={{ flex: 1 }}>
                         <Text style={s.zoneName} numberOfLines={1}>
                           {zone.name || 'Unnamed zone'}
@@ -335,18 +380,6 @@ export default function PlanEditorView() {
                 );
               })}
 
-              {zones.length < 4 && (
-                <>
-                  {zones.length > 0 && <View style={s.separator} />}
-                  <TouchableOpacity style={s.addZoneRow} activeOpacity={0.75} onPress={addZone}>
-                    <View style={s.addZoneIcon}>
-                      <Plus s={13} c={C.goldDark} w={2.6} />
-                    </View>
-                    <Text style={s.addZoneText}>Add a zone</Text>
-                    <Text style={s.addZoneCount}>{zones.length}/4</Text>
-                  </TouchableOpacity>
-                </>
-              )}
             </Animated.View>
             {overlap && <Text style={s.zoneError}>Two zones overlap — adjust their hours.</Text>}
           </Animated.View>
@@ -362,120 +395,88 @@ export default function PlanEditorView() {
 
             <Animated.View style={s.groupCard} layout={SECTION_TRANSITION}>
               {rules.map((rule, index) => {
-                const isOpen = expandedRule === rule.groupId;
                 const custom = state.customGroups.some(group => group.id === rule.groupId);
                 const limited = rule.dailyMinutes != null;
                 return (
                   <Animated.View key={rule.groupId} layout={SECTION_TRANSITION}>
                     {index > 0 && <View style={s.separator} />}
-                    <TouchableOpacity
-                      style={s.ruleRow}
-                      activeOpacity={0.75}
-                      onPress={() => setExpandedRule(isOpen ? null : rule.groupId)}
-                    >
-                      <View style={{ flex: 1 }}>
+                    <View style={s.ruleBlock}>
+                      <View style={s.ruleHead}>
                         <Text style={s.ruleName} numberOfLines={1}>
                           {groupName(state, rule.groupId)}
                         </Text>
-                        {limited && (
-                          <Text style={s.ruleMeta} numberOfLines={1}>
-                            {`${rule.strength === 'strict' ? 'Strict' : 'Loose'} · ${
-                              RETURN_PRACTICES.find(entry => entry.id === rule.practice)?.name ?? ''
-                            }`}
+                        {custom && (
+                          <TouchableOpacity
+                            activeOpacity={0.7}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={() => setGroupToDelete(rule.groupId)}
+                          >
+                            <Trash2 s={14} c={C.textMuted} w={2} />
+                          </TouchableOpacity>
+                        )}
+                        <View style={[s.limitTag, limited ? s.limitTagOn : s.limitTagOff]}>
+                          <Text
+                            style={[s.limitTagText, limited ? s.limitTagTextOn : s.limitTagTextOff]}
+                          >
+                            {limited ? `${limitStopLabel(rule.dailyMinutes)}/day` : 'Off'}
                           </Text>
-                        )}
-                      </View>
-                      {custom && (
-                        <TouchableOpacity
-                          activeOpacity={0.7}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          onPress={() => setGroupToDelete(rule.groupId)}
-                        >
-                          <Trash2 s={14} c={C.textMuted} w={2} />
-                        </TouchableOpacity>
-                      )}
-                      <View style={[s.limitTag, limited ? s.limitTagOn : s.limitTagOff]}>
-                        <Text style={[s.limitTagText, limited ? s.limitTagTextOn : s.limitTagTextOff]}>
-                          {limited ? formatMinutesShort(rule.dailyMinutes!) : 'No limit'}
-                        </Text>
-                      </View>
-                      <View style={[s.chevron, isOpen && s.chevronOpen]}>
-                        <ChevronDown s={15} c={C.textMuted} />
-                      </View>
-                    </TouchableOpacity>
-
-                    {isOpen && (
-                      <Animated.View entering={SOFT_IN} exiting={SOFT_OUT} style={s.ruleBody}>
-                        <View style={s.minuteWrap}>
-                          {MINUTE_OPTIONS.map(option => {
-                            const selected = rule.dailyMinutes === option;
-                            return (
-                              <TouchableOpacity
-                                key={String(option)}
-                                style={[s.minuteChip, selected && s.minuteChipOn]}
-                                activeOpacity={0.8}
-                                haptic="selection"
-                                onPress={() => updateRule(rule.groupId, { dailyMinutes: option })}
-                              >
-                                <Text style={[s.minuteChipText, selected && s.minuteChipTextOn]}>
-                                  {option === null ? 'No limit' : formatMinutesShort(option)}
-                                </Text>
-                              </TouchableOpacity>
-                            );
-                          })}
                         </View>
+                      </View>
 
-                        {limited && (
-                          <Animated.View entering={SOFT_IN}>
-                            <View style={s.strengthRow}>
-                              {(['loose', 'strict'] as Strength[]).map(option => {
-                                const selected = rule.strength === option;
-                                return (
-                                  <TouchableOpacity
-                                    key={option}
-                                    style={[s.strengthCell, selected && s.strengthCellOn]}
-                                    activeOpacity={0.85}
-                                    haptic="selection"
-                                    onPress={() => updateRule(rule.groupId, { strength: option })}
-                                  >
-                                    <Text style={[s.strengthCellTitle, selected && s.strengthCellTitleOn]}>
-                                      {option === 'loose' ? 'Loose' : 'Strict'}
-                                    </Text>
-                                    <Text style={s.strengthCellDesc}>
-                                      {option === 'loose'
-                                        ? 'Practice opens the door — costs the trophy.'
-                                        : 'Held shut until tomorrow.'}
-                                    </Text>
-                                  </TouchableOpacity>
-                                );
-                              })}
-                            </View>
+                      <LimitSlider
+                        value={rule.dailyMinutes}
+                        onChange={minutes => updateRule(rule.groupId, { dailyMinutes: minutes })}
+                      />
 
-                            <Text style={s.zoneSubLabel}>RETURN PRACTICE</Text>
-                            <View style={s.practiceWrap}>
-                              {RETURN_PRACTICES.map(practice => {
-                                const selected = rule.practice === practice.id;
-                                const color = selected ? C.goldDark : C.textSecondary;
-                                return (
-                                  <TouchableOpacity
-                                    key={practice.id}
-                                    style={[s.practiceChip, selected && s.practiceChipOn]}
-                                    activeOpacity={0.8}
-                                    haptic="selection"
-                                    onPress={() => updateRule(rule.groupId, { practice: practice.id })}
-                                  >
-                                    {PRACTICE_ICONS[practice.id](color)}
-                                    <Text style={[s.practiceChipText, selected && s.practiceChipTextOn]}>
-                                      {practice.name}
-                                    </Text>
-                                  </TouchableOpacity>
-                                );
-                              })}
-                            </View>
-                          </Animated.View>
-                        )}
-                      </Animated.View>
-                    )}
+                      {limited && (
+                        <Animated.View entering={SOFT_IN} exiting={SOFT_OUT}>
+                          <View style={s.strengthMiniRow}>
+                            {(['loose', 'strict'] as Strength[]).map(option => {
+                              const selected = rule.strength === option;
+                              return (
+                                <TouchableOpacity
+                                  key={option}
+                                  style={[s.miniPill, selected && s.miniPillOn]}
+                                  activeOpacity={0.85}
+                                  haptic="selection"
+                                  onPress={() => updateRule(rule.groupId, { strength: option })}
+                                >
+                                  <Text style={[s.miniPillText, selected && s.miniPillTextOn]}>
+                                    {option === 'loose' ? 'Loose' : 'Strict'}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                            <Text style={s.strengthCaption} numberOfLines={2}>
+                              {rule.strength === 'loose'
+                                ? 'Practice opens the door — costs the trophy.'
+                                : 'Held shut until tomorrow.'}
+                            </Text>
+                          </View>
+
+                          <View style={s.practiceWrap}>
+                            {RETURN_PRACTICES.map(practice => {
+                              const selected = rule.practice === practice.id;
+                              const color = selected ? C.goldDark : C.textSecondary;
+                              return (
+                                <TouchableOpacity
+                                  key={practice.id}
+                                  style={[s.practiceChip, selected && s.practiceChipOn]}
+                                  activeOpacity={0.8}
+                                  haptic="selection"
+                                  onPress={() => updateRule(rule.groupId, { practice: practice.id })}
+                                >
+                                  {PRACTICE_ICONS[practice.id](color)}
+                                  <Text style={[s.practiceChipText, selected && s.practiceChipTextOn]}>
+                                    {practice.name}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </Animated.View>
+                      )}
+                    </View>
                   </Animated.View>
                 );
               })}
@@ -653,10 +654,50 @@ const s = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  zoneDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+  zoneEdge: {
+    position: 'absolute',
+    left: 0,
+    top: 7,
+    bottom: 7,
+    width: 4,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
+  },
+  zoneIconBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(28,25,23,0.07)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  presetRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginBottom: 8,
+  },
+  presetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#F0E3B8',
+    backgroundColor: '#FFFBF0',
+  },
+  presetChipCustom: {
+    borderColor: C.border,
+    backgroundColor: C.surface,
+  },
+  presetChipText: {
+    fontFamily: F.sansSemiBold,
+    fontSize: 12,
+    color: C.goldDark,
   },
   zoneName: {
     fontFamily: F.serifMedium,
@@ -844,23 +885,21 @@ const s = StyleSheet.create({
     fontSize: 12,
     color: C.gold,
   },
-  ruleRow: {
+  ruleBlock: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 10,
+  },
+  ruleHead: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
   },
   ruleName: {
+    flex: 1,
     fontFamily: F.serifMedium,
     fontSize: 16.5,
     color: C.text,
-  },
-  ruleMeta: {
-    marginTop: 2,
-    fontFamily: F.sans,
-    fontSize: 11,
-    color: C.textSecondary,
   },
   limitTag: {
     minWidth: 56,
@@ -887,71 +926,42 @@ const s = StyleSheet.create({
   limitTagTextOff: {
     color: C.textMuted,
   },
-  ruleBody: {
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-  },
-  minuteWrap: {
+  strengthMiniRow: {
+    marginTop: 4,
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: 6,
   },
-  minuteChip: {
-    paddingHorizontal: 11,
+  miniPill: {
+    paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 999,
-    borderWidth: 1,
+    borderWidth: 1.2,
     borderColor: C.border,
     backgroundColor: C.surface,
   },
-  minuteChipOn: {
+  miniPillOn: {
     borderColor: C.gold,
     backgroundColor: C.goldBg,
   },
-  minuteChipText: {
-    fontFamily: F.sansMedium,
+  miniPillText: {
+    fontFamily: F.sansSemiBold,
     fontSize: 12,
     color: C.textSecondary,
-    fontVariant: ['tabular-nums'],
   },
-  minuteChipTextOn: {
-    fontFamily: F.sansSemiBold,
+  miniPillTextOn: {
     color: C.goldDark,
   },
-  strengthRow: {
-    marginTop: 12,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  strengthCell: {
+  strengthCaption: {
     flex: 1,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: C.border,
-    backgroundColor: C.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  strengthCellOn: {
-    borderColor: C.gold,
-    backgroundColor: C.goldBg,
-  },
-  strengthCellTitle: {
-    fontFamily: F.serifMedium,
-    fontSize: 15.5,
-    color: C.text,
-  },
-  strengthCellTitleOn: {
-    color: '#6D4F13',
-  },
-  strengthCellDesc: {
-    marginTop: 2,
+    marginLeft: 4,
     fontFamily: F.sans,
-    fontSize: 10.5,
-    lineHeight: 14,
-    color: C.textSecondary,
+    fontSize: 10,
+    lineHeight: 13,
+    color: C.textMuted,
   },
   practiceWrap: {
+    marginTop: 9,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,

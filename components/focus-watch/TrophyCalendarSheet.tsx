@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { ChevronLeft, ChevronRight, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
-import TrophyMark from './TrophyMark';
 import { dateKey, useDayPlan, type DayRecord } from './dayPlanStore';
+
+const TROPHY_PNG = require('@/assets/animations/challenge-trophy-preview.png');
+const enter = (delay: number) => FadeInDown.duration(360).delay(delay);
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -102,7 +105,7 @@ export default function TrophyCalendarSheet({
         </TouchableOpacity>
       </View>
 
-      <View style={s.statRow}>
+      <Animated.View entering={enter(40)} style={s.statRow}>
         <View style={s.statCell}>
           <Text style={s.statLabel}>STREAK</Text>
           <Text style={s.statValue}>{state.streak.current}</Text>
@@ -118,12 +121,12 @@ export default function TrophyCalendarSheet({
         <View style={s.statCell}>
           <Text style={s.statLabel}>TROPHIES</Text>
           <View style={s.statTrophyRow}>
-            <TrophyMark size={17} />
+            <Image source={TROPHY_PNG} style={s.statTrophyImg} resizeMode="contain" />
             <Text style={s.statValue}>{state.streak.trophies}</Text>
           </View>
           <Text style={s.statUnit}>kept days</Text>
         </View>
-      </View>
+      </Animated.View>
 
       <View style={s.monthRow}>
         <TouchableOpacity
@@ -155,13 +158,17 @@ export default function TrophyCalendarSheet({
         ))}
       </View>
 
-      <View style={s.grid}>
+      <Animated.View entering={enter(110)} style={s.grid}>
         {cells.map((entry, index) => (
           <View key={index} style={s.cell}>
             {entry.cell !== 'blank' && (
               <>
                 <View style={s.markWrap}>
-                  {entry.cell === 'kept' && <TrophyMark size={19} />}
+                  {entry.cell === 'kept' && (
+                    <View style={s.keptBadge}>
+                      <Image source={TROPHY_PNG} style={s.keptImg} resizeMode="contain" />
+                    </View>
+                  )}
                   {entry.cell === 'broken' && <X s={14} c={C.text} w={2.8} />}
                   {entry.cell === 'off' && <View style={s.offRing} />}
                   {entry.cell === 'today' && <View style={s.todayRing} />}
@@ -174,11 +181,11 @@ export default function TrophyCalendarSheet({
             )}
           </View>
         ))}
-      </View>
+      </Animated.View>
 
       <View style={s.legendRow}>
         <View style={s.legendItem}>
-          <TrophyMark size={13} />
+          <Image source={TROPHY_PNG} style={{ width: 14, height: 14 }} resizeMode="contain" />
           <Text style={s.legendText}>kept</Text>
         </View>
         <View style={s.legendItem}>
@@ -320,9 +327,32 @@ const s = StyleSheet.create({
     paddingVertical: 4,
   },
   markWrap: {
-    height: 22,
+    height: 26,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  keptBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#FFF3D8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: C.gold,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  keptImg: {
+    width: 18,
+    height: 18,
+  },
+  statTrophyImg: {
+    width: 18,
+    height: 18,
   },
   offRing: {
     width: 14,
