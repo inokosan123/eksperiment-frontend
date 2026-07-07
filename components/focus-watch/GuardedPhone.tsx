@@ -21,7 +21,7 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const RING_RADIUS = 45;
 const CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
-const PULSE_PERIOD = 5400;
+const PULSE_PERIOD = 6600;
 
 // Little app tiles for the web fallback phone — the section-card palette.
 const TILE_COLORS = [
@@ -92,6 +92,10 @@ export default function GuardedPhone({
   const seal = useSharedValue(sealed ? 1 : 0);
   const showRing = !!progress;
   const shownFace: 'shield' | 'phone' = face ?? (sealed ? 'shield' : 'phone');
+  // Under active protection the emblem moves rarely — guarding is a calm
+  // state, not a show. The idle gold state keeps its livelier rhythm.
+  const guarded = aura !== C.gold;
+  const restMs = guarded ? 9000 : 4500;
 
   useEffect(() => {
     breath.value = withRepeat(
@@ -212,8 +216,9 @@ export default function GuardedPhone({
           {shownFace === 'shield' ? (
             <FocusWatchLottie
               name="check-shield"
-              mode="loop"
-              speed={0.85}
+              mode="periodic"
+              restMs={restMs}
+              speed={0.8}
               style={{
                 width: lottieSize,
                 height: lottieSize,
@@ -224,7 +229,8 @@ export default function GuardedPhone({
             <FocusWatchLottie
               name="iphone"
               mode="periodic"
-              restMs={4500}
+              restMs={restMs}
+              speed={guarded ? 0.85 : 1}
               style={{ width: lottieSize, height: lottieSize }}
             />
           )}

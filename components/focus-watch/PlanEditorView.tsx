@@ -21,7 +21,8 @@ import GoldButton from './GoldButton';
 import TimeWheelSheet from './TimeWheelSheet';
 import GroupLimitSheet from './GroupLimitSheet';
 import LimitSlider, { limitStopLabel } from './LimitSlider';
-import ZoneTimeline, { zoneTint } from './ZoneTimeline';
+import ZoneClock from './ZoneClock';
+import { zoneTint } from './ZoneTimeline';
 import { GroupEditorSheet } from './AppPicker';
 import { appsInCategory, CATEGORY_TINTS, MOCK_APPS, type MockApp } from './focusContent';
 import { SMOOTH_LAYOUT, SOFT_IN, SOFT_OUT } from './focusMotion';
@@ -36,7 +37,7 @@ import {
   RETURN_PRACTICES,
   saveDayPlan,
   useDayPlan,
-  ZONE_NAME_SUGGESTIONS,
+  zoneDurationMinutes,
   zonesOverlap,
   type GroupRule,
   type PlanZone,
@@ -54,7 +55,7 @@ const ZONE_CANDIDATES: Omit<PlanZone, 'id'>[] = [
   { name: 'Night', startMinutes: 1380, endMinutes: 360, closedGroupIds: APP_CATEGORIES.map(c => c.id) },
 ];
 
-const BUDGET_STOPS: (number | null)[] = [null, 60, 120, 180, 240, 300, 360, 480];
+const BUDGET_STOPS: (number | null)[] = [null, ...Array.from({ length: 15 }, (_, i) => 60 + i * 30)];
 
 const ZONE_PRESET_ICONS: Record<string, (color: string) => React.ReactNode> = {
   Morning: color => <Sun s={13} c={color} w={2.1} />,
@@ -100,7 +101,7 @@ export default function PlanEditorView() {
   );
   const [expandedZone, setExpandedZone] = useState<string | null>(null);
   const [timeTarget, setTimeTarget] = useState<{ zoneId: string; field: 'start' | 'end' } | null>(null);
-  const [budget, setBudget] = useState<number | null>(existing?.budgetMinutes ?? null);
+  const [budget, setBudget] = useState<number | null>(existing ? existing.budgetMinutes : 240);
   const [planStrength, setPlanStrength] = useState<Strength>(existing?.strength ?? 'loose');
   const [sheetGroupId, setSheetGroupId] = useState<string | null>(null);
   const [groupSheet, setGroupSheet] = useState(false);
@@ -144,10 +145,9 @@ export default function PlanEditorView() {
       .filter(Boolean) as MockApp[];
   }, [sheetGroupId, state.customGroups]);
 
-  const addZone = (presetName?: string) => {
+  const addZone = () => {
     if (zones.length >= 4) return;
     const candidate =
-      (presetName ? ZONE_CANDIDATES.find(entry => entry.name === presetName) : undefined) ??
       ZONE_CANDIDATES.find(entry => !zonesOverlap([...zones, entry as PlanZone])) ??
       ZONE_CANDIDATES[1];
     const zone: PlanZone = { ...candidate, id: makeZoneId(), closedGroupIds: [...candidate.closedGroupIds] };
@@ -213,19 +213,19 @@ export default function PlanEditorView() {
           <Animated.View entering={enter(40)}>
             <Text style={s.sectionLabel}>TIME BUDGET</Text>
             <View style={s.budgetCard}>
-              <Text style={s.budgetValue}>
-                {budget != null ? formatMinutesShort(budget) : 'Free'}
+              <Text style={[s.budgetValue, budget == null && s.budgetValueOff]}>
+                {budget != null ? formatMinutesShort(budget) : 'No budget'}
               </Text>
               <Text style={s.budgetCaption}>
                 {budget != null
                   ? 'GIVEN TO THE PHONE · A DAY WITH THIS PLAN'
-                  : 'NO BUDGET — LIMITS STAND ON THEIR OWN'}
+                  : 'LIMITS STAND ON THEIR OWN'}
               </Text>
               <LimitSlider
                 value={budget}
                 onChange={setBudget}
                 stops={BUDGET_STOPS}
-                edgeLabels={{ left: 'Free', right: '8h' }}
+                edgeLabels={{ left: 'None', right: '8h' }}
               />
 
               <View style={s.strengthMiniRow}>
@@ -285,7 +285,7 @@ export default function PlanEditorView() {
             <Text style={s.sectionLabel}>ZONES OF THE DAY</Text>
 
             <View style={s.timelineCard}>
-              <ZoneTimeline zones={zones} height={12} showTicks />
+              <ZoneClock zones={zones} />
               {zones.length === 0 && (
                 <Text style={s.timelineEmpty}>
                   No zones yet — the whole day stays open, only daily limits stand.
@@ -294,31 +294,13 @@ export default function PlanEditorView() {
             </View>
 
             {zones.length < 4 && (
-              <View style={s.presetRow}>
-                {ZONE_CANDIDATES.filter(
-                  candidate => !zones.some(zone => zone.name === candidate.name)
-                ).map(candidate => (
-                  <TouchableOpacity
-                    key={candidate.name}
-                    style={s.presetChip}
-                    activeOpacity={0.8}
-                    haptic="selection"
-                    onPress={() => addZone(candidate.name)}
-                  >
-                    {ZONE_PRESET_ICONS[candidate.name]?.(C.goldDark)}
-                    <Text style={s.presetChipText}>{candidate.name}</Text>
-                  </TouchableOpacity>
-                ))}
-                <TouchableOpacity
-                  style={[s.presetChip, s.presetChipCustom]}
-                  activeOpacity={0.8}
-                  haptic="selection"
-                  onPress={() => addZone()}
-                >
-                  <Plus s={12} c={C.textSecondary} w={2.4} />
-                  <Text style={[s.presetChipText, { color: C.textSecondary }]}>Custom</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity style={s.addZoneCard} activeOpacity={0.75} onPress={() => addZone()}>
+                <View style={s.addZoneIcon}>
+                  <Plus s={14} c={C.goldDark} w={2.5} />
+                </View>
+                <Text style={s.addZoneText}>Add a zone</Text>
+                <Text style={s.addZoneCount}>{zones.length}/4</Text>
+              </TouchableOpacity>
             )}
 
             <Animated.View
@@ -370,30 +352,6 @@ export default function PlanEditorView() {
                           placeholderTextColor={C.textMuted}
                           maxLength={16}
                         />
-                        <View style={s.suggestionRow}>
-                          {ZONE_NAME_SUGGESTIONS.map(suggestion => (
-                            <TouchableOpacity
-                              key={suggestion}
-                              style={[
-                                s.suggestionChip,
-                                zone.name === suggestion && s.suggestionChipOn,
-                              ]}
-                              activeOpacity={0.8}
-                              haptic="selection"
-                              onPress={() => updateZone(zone.id, { name: suggestion })}
-                            >
-                              <Text
-                                style={[
-                                  s.suggestionText,
-                                  zone.name === suggestion && s.suggestionTextOn,
-                                ]}
-                              >
-                                {suggestion}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-
                         <View style={s.timeRow}>
                           <TouchableOpacity
                             style={s.timeCell}
@@ -412,9 +370,24 @@ export default function PlanEditorView() {
                             <Text style={s.timeCellValue}>{formatTimeOfDay(zone.endMinutes)}</Text>
                           </TouchableOpacity>
                         </View>
-                        {zone.endMinutes <= zone.startMinutes && !zoneInvalid && (
-                          <Text style={s.zoneHint}>Crosses midnight — ends the next morning.</Text>
+                        {!zoneInvalid && (
+                          <Text style={s.zoneHint}>
+                            {`Lasts ${formatMinutesShort(zoneDurationMinutes(zone))}`}
+                            {zone.endMinutes <= zone.startMinutes
+                              ? ' · crosses midnight, ends the next morning'
+                              : ''}
+                          </Text>
                         )}
+                        {(() => {
+                          const clash = zones.find(
+                            other => other.id !== zone.id && zonesOverlap([zone, other])
+                          );
+                          return clash ? (
+                            <Text style={s.zoneError}>
+                              {`Overlaps ${clash.name || 'another zone'} — move the hours apart.`}
+                            </Text>
+                          ) : null;
+                        })()}
                         {zoneInvalid && (
                           <Text style={s.zoneError}>
                             A zone cannot start and end at the same minute.
@@ -661,9 +634,9 @@ const s = StyleSheet.create({
   },
   nameInput: {
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 15,
     fontFamily: F.serifMedium,
-    fontSize: 18,
+    fontSize: 22,
     color: C.text,
   },
   requiredText: {
@@ -726,41 +699,15 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  presetRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
-    marginBottom: 8,
-  },
-  presetChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#F0E3B8',
-    backgroundColor: '#FFFBF0',
-  },
-  presetChipCustom: {
-    borderColor: C.border,
-    backgroundColor: C.surface,
-  },
-  presetChipText: {
-    fontFamily: F.sansSemiBold,
-    fontSize: 12,
-    color: C.goldDark,
-  },
   zoneName: {
     fontFamily: F.serifMedium,
-    fontSize: 17,
+    fontSize: 18,
     color: C.text,
   },
   zoneMeta: {
     marginTop: 2,
     fontFamily: F.sansMedium,
-    fontSize: 11,
+    fontSize: 12,
     color: C.textSecondary,
     fontVariant: ['tabular-nums'],
   },
@@ -775,42 +722,15 @@ const s = StyleSheet.create({
     paddingBottom: 14,
   },
   zoneNameInput: {
-    borderRadius: 14,
+    borderRadius: 15,
     borderWidth: 1,
     borderColor: C.border,
     backgroundColor: '#FDFDFB',
-    paddingHorizontal: 13,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontFamily: F.serifMedium,
-    fontSize: 16,
+    fontSize: 19,
     color: C.text,
-  },
-  suggestionRow: {
-    marginTop: 8,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  suggestionChip: {
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.surface,
-  },
-  suggestionChipOn: {
-    borderColor: C.gold,
-    backgroundColor: C.goldBg,
-  },
-  suggestionText: {
-    fontFamily: F.sansMedium,
-    fontSize: 11.5,
-    color: C.textSecondary,
-  },
-  suggestionTextOn: {
-    fontFamily: F.sansSemiBold,
-    color: C.goldDark,
   },
   timeRow: {
     marginTop: 12,
@@ -828,7 +748,7 @@ const s = StyleSheet.create({
   },
   timeCellLabel: {
     fontFamily: F.sansBold,
-    fontSize: 8.5,
+    fontSize: 9.5,
     letterSpacing: 1.8,
     color: C.textMuted,
   },
@@ -856,7 +776,7 @@ const s = StyleSheet.create({
     marginTop: 13,
     marginBottom: 7,
     fontFamily: F.sansBold,
-    fontSize: 9,
+    fontSize: 10,
     letterSpacing: 1.8,
     color: C.textMuted,
   },
@@ -879,7 +799,7 @@ const s = StyleSheet.create({
   },
   closedChipText: {
     fontFamily: F.sansMedium,
-    fontSize: 11.5,
+    fontSize: 12.5,
     color: C.textSecondary,
   },
   closedChipTextOn: {
@@ -896,6 +816,20 @@ const s = StyleSheet.create({
     fontFamily: F.sansMedium,
     fontSize: 12,
     color: C.red,
+  },
+  addZoneCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+    borderRadius: 20,
+    borderWidth: 1.2,
+    borderStyle: 'dashed',
+    borderColor: '#E6D9B8',
+    backgroundColor: '#FFFDF6',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 8,
   },
   addZoneRow: {
     flexDirection: 'row',
@@ -939,6 +873,10 @@ const s = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2,
   },
+  budgetValueOff: {
+    fontSize: 27,
+    color: C.textSecondary,
+  },
   budgetValue: {
     fontFamily: F.serifSemiBold,
     fontSize: 38,
@@ -951,8 +889,8 @@ const s = StyleSheet.create({
     marginTop: 2,
     marginBottom: 4,
     fontFamily: F.sansBold,
-    fontSize: 8.5,
-    letterSpacing: 1.8,
+    fontSize: 9.5,
+    letterSpacing: 1.9,
     color: C.textMuted,
     textAlign: 'center',
   },
@@ -967,7 +905,7 @@ const s = StyleSheet.create({
   allocCaption: {
     marginTop: 6,
     fontFamily: F.sansMedium,
-    fontSize: 10.5,
+    fontSize: 11.5,
     color: C.textSecondary,
     textAlign: 'center',
     fontVariant: ['tabular-nums'],
@@ -990,13 +928,13 @@ const s = StyleSheet.create({
   limitSub: {
     marginTop: 2,
     fontFamily: F.sans,
-    fontSize: 10.5,
+    fontSize: 11.5,
     color: C.textMuted,
   },
   ruleName: {
     flex: 1,
     fontFamily: F.serifMedium,
-    fontSize: 16.5,
+    fontSize: 17.5,
     color: C.text,
   },
   limitTag: {

@@ -86,7 +86,7 @@ export default function GroupLimitSheet({
       {/* The sheet lives in a native Modal — a separate native tree that is NOT
           under the app root's GestureHandlerRootView. Without this local root,
           the slider's GestureDetector crashes the app on Android. */}
-      <GestureHandlerRootView>
+      <GestureHandlerRootView style={s.gestureRoot}>
       <View style={s.handle} />
       <View style={s.headerRow}>
         <View style={{ flex: 1 }}>
@@ -234,6 +234,13 @@ export default function GroupLimitSheet({
 }
 
 const s = StyleSheet.create({
+  // GestureHandlerRootView defaults to flex:1 — inside a content-sized sheet
+  // that collapses everything to zero height (the "sheet never opens" bug).
+  gestureRoot: {
+    flexGrow: 0,
+    flexShrink: 1,
+    width: '100%',
+  },
   sheet: {
     backgroundColor: C.bg,
     borderTopLeftRadius: 28,
@@ -259,7 +266,7 @@ const s = StyleSheet.create({
   },
   kicker: {
     fontFamily: F.sansBold,
-    fontSize: 9.5,
+    fontSize: 10,
     letterSpacing: 2.2,
     color: C.gold,
   },
@@ -306,7 +313,7 @@ const s = StyleSheet.create({
     marginTop: 2,
     marginBottom: 6,
     fontFamily: F.sansBold,
-    fontSize: 9,
+    fontSize: 10,
     letterSpacing: 2,
     color: C.textMuted,
     textAlign: 'center',
@@ -345,7 +352,7 @@ const s = StyleSheet.create({
   strengthDesc: {
     marginTop: 3,
     fontFamily: F.sans,
-    fontSize: 10.5,
+    fontSize: 11,
     lineHeight: 14,
     color: C.textSecondary,
   },
@@ -412,7 +419,7 @@ const s = StyleSheet.create({
   appName: {
     flex: 1,
     fontFamily: F.sansMedium,
-    fontSize: 14,
+    fontSize: 14.5,
     color: C.text,
   },
   stepper: {
@@ -448,7 +455,7 @@ const s = StyleSheet.create({
     marginTop: 8,
     marginHorizontal: 6,
     fontFamily: F.sans,
-    fontSize: 10.5,
+    fontSize: 11.5,
     lineHeight: 14,
     color: C.textMuted,
   },

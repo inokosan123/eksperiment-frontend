@@ -593,14 +593,14 @@ const s = StyleSheet.create({
   },
   planCardLabel: {
     fontFamily: F.sansBold,
-    fontSize: 8.5,
+    fontSize: 9.5,
     letterSpacing: 2,
     color: '#A9863F',
   },
   planCardName: {
     marginTop: 2,
     fontFamily: F.serifMedium,
-    fontSize: 19,
+    fontSize: 21,
     letterSpacing: -0.2,
     color: '#6D4F13',
   },
@@ -626,7 +626,7 @@ const s = StyleSheet.create({
   planCardMeta: {
     flex: 1,
     fontFamily: F.sansMedium,
-    fontSize: 11,
+    fontSize: 12,
     color: '#8A6A24',
     fontVariant: ['tabular-nums'],
   },
@@ -670,13 +670,13 @@ const s = StyleSheet.create({
   },
   purityTitle: {
     fontFamily: F.sansSemiBold,
-    fontSize: 13,
+    fontSize: 14,
     color: C.text,
   },
   puritySub: {
     marginTop: 1,
     fontFamily: F.sans,
-    fontSize: 11,
+    fontSize: 12,
     color: '#3D8273',
   },
   pulsingDot: {
@@ -798,7 +798,7 @@ const s = StyleSheet.create({
   },
   stripLetter: {
     fontFamily: F.sansBold,
-    fontSize: 9.5,
+    fontSize: 10,
     letterSpacing: 0.6,
     color: C.textMuted,
   },
@@ -878,7 +878,7 @@ const s = StyleSheet.create({
   },
   stripCaption: {
     fontFamily: F.sansMedium,
-    fontSize: 11.5,
+    fontSize: 12.5,
     color: C.textSecondary,
     fontVariant: ['tabular-nums'],
   },
