@@ -70,7 +70,7 @@ function DrawnArc({
 
 export default function ZoneClock({
   zones,
-  size = 196,
+  size = 210,
   nowMinutes,
 }: {
   zones: PlanZone[];
@@ -78,7 +78,9 @@ export default function ZoneClock({
   nowMinutes?: number;
 }) {
   const stroke = 17;
-  const r = (size - stroke) / 2 - 13;
+  // Reserve a full margin band for ticks + hour labels so nothing ever
+  // touches the ring: ring edge → ticks (8) → gap (4) → label box (~15).
+  const r = size / 2 - stroke / 2 - 28;
   const cx = size / 2;
   const circumference = 2 * Math.PI * r;
   const progress = useSharedValue(0);
@@ -202,11 +204,18 @@ export default function ZoneClock({
         </View>
       ))}
 
-      {/* quarter labels */}
-      <Text style={[s.tickLabel, { top: 1, alignSelf: 'center' }]}>0h</Text>
-      <Text style={[s.tickLabel, { right: 0, top: size / 2 - 8 }]}>6h</Text>
-      <Text style={[s.tickLabel, { bottom: 1, alignSelf: 'center' }]}>12h</Text>
-      <Text style={[s.tickLabel, { left: 0, top: size / 2 - 8 }]}>18h</Text>
+      {/* quarter labels — centered on their exact polar points, outside the ticks */}
+      {[0, 6, 12, 18].map(hour => {
+        const angle = (hour / 24) * 2 * Math.PI - Math.PI / 2;
+        const labelR = r + stroke / 2 + 19;
+        const x = cx + Math.cos(angle) * labelR;
+        const y = cx + Math.sin(angle) * labelR;
+        return (
+          <View key={hour} pointerEvents="none" style={[s.tickLabelBox, { left: x - 15, top: y - 8 }]}>
+            <Text style={s.tickLabel}>{`${hour}h`}</Text>
+          </View>
+        );
+      })}
 
       <View style={s.center} pointerEvents="none">
         {guarded > 0 ? (
@@ -243,8 +252,14 @@ const s = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  tickLabel: {
+  tickLabelBox: {
     position: 'absolute',
+    width: 30,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tickLabel: {
     fontFamily: F.sansBold,
     fontSize: 10.5,
     letterSpacing: 0.5,

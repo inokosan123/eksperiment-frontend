@@ -440,57 +440,93 @@ export default function PlanEditorView() {
                 const custom = state.customGroups.some(group => group.id === rule.groupId);
                 const limited = rule.dailyMinutes != null;
                 const sliceCount = Object.keys(rule.appSplits ?? {}).length;
+                const tint = CATEGORY_TINTS[rule.groupId] ?? { bg: C.goldLight, color: C.goldDark };
+                const label = groupName(state, rule.groupId);
+                const firstOff = !limited && (index === 0 || sortedRules[index - 1].dailyMinutes != null);
                 return (
                   <Animated.View key={rule.groupId} layout={SECTION_TRANSITION}>
-                    {index > 0 && <View style={s.separator} />}
+                    {firstOff ? (
+                      <View style={s.offBand}>
+                        <View style={s.offBandLine} />
+                        <Text style={s.offBandText}>NOT LIMITED YET</Text>
+                        <View style={s.offBandLine} />
+                      </View>
+                    ) : (
+                      index > 0 && <View style={s.separator} />
+                    )}
                     <TouchableOpacity
-                      style={s.limitRow}
+                      style={[s.limitRow, !limited && s.limitRowOff]}
                       activeOpacity={0.75}
                       onPress={() => setSheetGroupId(rule.groupId)}
                     >
                       <View
                         style={[
-                          s.limitDot,
-                          { backgroundColor: CATEGORY_TINTS[rule.groupId]?.color ?? C.gold },
-                          !limited && s.limitDotOff,
+                          s.groupAvatar,
+                          { backgroundColor: limited ? tint.bg : '#F4F3EE' },
                         ]}
-                      />
-                      <View style={{ flex: 1 }}>
+                      >
                         <Text
-                          style={[s.ruleName, !limited && { color: C.textSecondary }]}
-                          numberOfLines={1}
+                          style={[s.groupAvatarText, { color: limited ? tint.color : C.textMuted }]}
                         >
-                          {groupName(state, rule.groupId)}
+                          {label[0]}
                         </Text>
-                        {limited && (
-                          <Text style={s.limitSub} numberOfLines={1}>
-                            {`${rule.strength === 'strict' ? 'Strict' : 'Loose'} · ${
-                              RETURN_PRACTICES.find(entry => entry.id === rule.practice)?.name ?? ''
-                            }${
-                              sliceCount > 0
-                                ? ` · ${sliceCount} ${sliceCount === 1 ? 'app sliced' : 'apps sliced'}`
-                                : ''
-                            }`}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <View style={s.limitTitleRow}>
+                          <Text
+                            style={[s.ruleName, !limited && { color: C.textSecondary }]}
+                            numberOfLines={1}
+                          >
+                            {label}
                           </Text>
+                          {custom && (
+                            <TouchableOpacity
+                              activeOpacity={0.7}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              onPress={() => setGroupToDelete(rule.groupId)}
+                            >
+                              <Trash2 s={14} c={C.textMuted} w={2} />
+                            </TouchableOpacity>
+                          )}
+                          <View style={[s.limitTag, limited ? s.limitTagOn : s.limitTagOff]}>
+                            <Text
+                              style={[
+                                s.limitTagText,
+                                limited ? s.limitTagTextOn : s.limitTagTextOff,
+                              ]}
+                            >
+                              {limited ? `${limitStopLabel(rule.dailyMinutes)}/day` : 'Off'}
+                            </Text>
+                          </View>
+                          <ChevronRight s={15} c={C.textMuted} />
+                        </View>
+                        {limited && (
+                          <>
+                            <View style={s.shareTrack}>
+                              <View
+                                style={[
+                                  s.shareFill,
+                                  {
+                                    backgroundColor: tint.color,
+                                    width: `${Math.min(100, ((rule.dailyMinutes ?? 0) / budget) * 100)}%`,
+                                  },
+                                ]}
+                              />
+                            </View>
+                            <Text style={s.limitSub} numberOfLines={1}>
+                              {`${Math.round(((rule.dailyMinutes ?? 0) / budget) * 100)}% of the budget · ${
+                                rule.strength === 'strict' ? 'Strict' : 'Loose'
+                              } · ${
+                                RETURN_PRACTICES.find(entry => entry.id === rule.practice)?.name ?? ''
+                              }${
+                                sliceCount > 0
+                                  ? ` · ${sliceCount} ${sliceCount === 1 ? 'app sliced' : 'apps sliced'}`
+                                  : ''
+                              }`}
+                            </Text>
+                          </>
                         )}
                       </View>
-                      {custom && (
-                        <TouchableOpacity
-                          activeOpacity={0.7}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          onPress={() => setGroupToDelete(rule.groupId)}
-                        >
-                          <Trash2 s={14} c={C.textMuted} w={2} />
-                        </TouchableOpacity>
-                      )}
-                      <View style={[s.limitTag, limited ? s.limitTagOn : s.limitTagOff]}>
-                        <Text
-                          style={[s.limitTagText, limited ? s.limitTagTextOn : s.limitTagTextOff]}
-                        >
-                          {limited ? `${limitStopLabel(rule.dailyMinutes)}/day` : 'Off'}
-                        </Text>
-                      </View>
-                      <ChevronRight s={15} c={C.textMuted} />
                     </TouchableOpacity>
                   </Animated.View>
                 );
@@ -903,22 +939,65 @@ const s = StyleSheet.create({
   limitRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 11,
-    paddingHorizontal: 16,
+    gap: 12,
+    paddingHorizontal: 15,
     paddingVertical: 13,
   },
-  limitDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
+  limitRowOff: {
+    paddingVertical: 10,
   },
-  limitDotOff: {
-    backgroundColor: '#E5E2DA',
+  limitTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  groupAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupAvatarText: {
+    fontFamily: F.sansBold,
+    fontSize: 14.5,
+  },
+  shareTrack: {
+    marginTop: 7,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#F0EEE8',
+    overflow: 'hidden',
+  },
+  shareFill: {
+    height: '100%',
+    borderRadius: 2.5,
+    opacity: 0.8,
   },
   limitSub: {
-    marginTop: 2,
+    marginTop: 5,
     fontFamily: F.sans,
     fontSize: 11.5,
+    color: C.textMuted,
+    fontVariant: ['tabular-nums'],
+  },
+  offBand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    backgroundColor: '#FBFAF7',
+  },
+  offBandLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#E5E2DA',
+  },
+  offBandText: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 1.8,
     color: C.textMuted,
   },
   ruleName: {
