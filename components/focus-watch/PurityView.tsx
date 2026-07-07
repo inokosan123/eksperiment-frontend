@@ -179,7 +179,7 @@ export default function PurityView() {
         </Animated.View>
 
         <Animated.View entering={enter(40)} style={s.heroAnim}>
-          <FocusWatchLottie name="website" mode="periodic" restMs={4000} style={s.heroLottie} />
+          <FocusWatchLottie name="website" mode="once" style={s.heroLottie} />
         </Animated.View>
 
         <View style={{ paddingHorizontal: 16 }}>

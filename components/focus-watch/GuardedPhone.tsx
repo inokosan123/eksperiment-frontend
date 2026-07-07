@@ -92,8 +92,8 @@ export default function GuardedPhone({
   const seal = useSharedValue(sealed ? 1 : 0);
   const showRing = !!progress;
   const shownFace: 'shield' | 'phone' = face ?? (sealed ? 'shield' : 'phone');
-  // Under active protection the emblem moves rarely — guarding is a calm
-  // state, not a show. The idle gold state keeps its livelier rhythm.
+  // The shield turns continuously — pausing it reads as a stutter. Only the
+  // phone rests between plays: long rests under protection, livelier when idle.
   const guarded = aura !== C.gold;
   const restMs = guarded ? 9000 : 4500;
 
@@ -216,9 +216,8 @@ export default function GuardedPhone({
           {shownFace === 'shield' ? (
             <FocusWatchLottie
               name="check-shield"
-              mode="periodic"
-              restMs={restMs}
-              speed={0.8}
+              mode="loop"
+              speed={0.85}
               style={{
                 width: lottieSize,
                 height: lottieSize,

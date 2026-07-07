@@ -7,7 +7,7 @@ export type FocusWatchAnimation = 'iphone' | 'check-shield' | 'website' | 'warni
 export default function FocusWatchLottie(_props: {
   name: FocusWatchAnimation;
   style?: StyleProp<ViewStyle>;
-  mode?: 'loop' | 'periodic';
+  mode?: 'loop' | 'periodic' | 'once';
   restMs?: number;
   speed?: number;
 }) {

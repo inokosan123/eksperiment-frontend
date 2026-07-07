@@ -11,8 +11,8 @@ const sources: Record<FocusWatchAnimation, any> = {
   'warning-shield': require('@/assets/animations/focus-watch/warning-shield.json'),
 };
 
-// mode 'loop' plays forever; 'periodic' plays once, rests, then plays again —
-// alive without spinning nonstop.
+// mode 'loop' plays forever; 'periodic' plays once, rests, then plays again;
+// 'once' plays a single time and freezes until the screen is entered again.
 export default function FocusWatchLottie({
   name,
   style,
@@ -22,7 +22,7 @@ export default function FocusWatchLottie({
 }: {
   name: FocusWatchAnimation;
   style?: StyleProp<ViewStyle>;
-  mode?: 'loop' | 'periodic';
+  mode?: 'loop' | 'periodic' | 'once';
   restMs?: number;
   speed?: number;
 }) {
