@@ -400,9 +400,11 @@ export default function NowPanel({ onOpenTrophies }: { onOpenTrophies?: () => vo
                     {planMeta}
                   </Text>
                   <Text style={s.planCardMetaRight}>
-                    {limitedRules.length > 0
-                      ? `${limitedRules.length} ${limitedRules.length === 1 ? 'limit' : 'limits'}`
-                      : 'no limits'}
+                    {plan.budgetMinutes != null
+                      ? `${formatMinutesShort(plan.budgetMinutes)} budget`
+                      : limitedRules.length > 0
+                        ? `${limitedRules.length} ${limitedRules.length === 1 ? 'limit' : 'limits'}`
+                        : 'no limits'}
                   </Text>
                 </View>
               </LinearGradient>

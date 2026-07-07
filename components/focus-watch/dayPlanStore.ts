@@ -26,6 +26,9 @@ export type GroupRule = {
   dailyMinutes: number | null;     // null = no time limit
   strength: Strength;
   practice: PracticeKind;
+  // Optional slices of this group's minutes given to specific apps
+  // ("2h social → 1h Instagram, 30m TikTok, rest shared").
+  appSplits?: Record<string, number>;
 };
 
 export type PlanZone = {
@@ -39,6 +42,10 @@ export type PlanZone = {
 export type DayPlan = {
   id: string;
   name: string;
+  // The day's whole leisure budget ("4h with this plan"), distributed across
+  // group rules; null = no budget, limits stand on their own.
+  budgetMinutes: number | null;
+  strength: Strength;              // the plan's default firmness for new limits
   zones: PlanZone[];               // 0..4, non-overlapping; gaps = open time
   rules: GroupRule[];              // one per leisure group (categories + custom groups)
   createdAt: number;
@@ -499,6 +506,7 @@ function persistPlan(plan: DayPlan) {
       name: plan.name,
       zones_json: JSON.stringify(plan.zones),
       rules_json: JSON.stringify(plan.rules),
+      meta_json: JSON.stringify({ budgetMinutes: plan.budgetMinutes, strength: plan.strength }),
       created_at: plan.createdAt,
       updated_at: plan.updatedAt,
     })
@@ -518,6 +526,8 @@ function seededPlans(now: number): { plans: DayPlan[]; schedule: WeeklySchedule 
     {
       id: 'plan-weekdays',
       name: 'Weekdays',
+      budgetMinutes: 120,
+      strength: 'loose',
       zones: [
         { id: 'zone-wd-morning', name: 'Morning', startMinutes: 360, endMinutes: 540, closedGroupIds: ['social', 'news'] },
         { id: 'zone-wd-evening', name: 'Evening', startMinutes: 1260, endMinutes: 1380, closedGroupIds: ['social', 'entertainment', 'games'] },
@@ -538,6 +548,8 @@ function seededPlans(now: number): { plans: DayPlan[]; schedule: WeeklySchedule 
     {
       id: 'plan-weekend',
       name: 'Weekend',
+      budgetMinutes: 180,
+      strength: 'loose',
       zones: [
         { id: 'zone-we-night', name: 'Night', startMinutes: 1410, endMinutes: 420, closedGroupIds: [...ALL_CATEGORY_IDS] },
       ],
@@ -640,14 +652,22 @@ export async function hydrateDayPlanStore() {
 
     state.customGroups = parse<CustomGroup[]>(data.meta.custom_groups, []);
 
-    let plans: DayPlan[] = data.plans.map(row => ({
-      id: row.id,
-      name: row.name,
-      zones: parse<PlanZone[]>(row.zones_json, []),
-      rules: parse<GroupRule[]>(row.rules_json, []),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+    let plans: DayPlan[] = data.plans.map(row => {
+      const planMeta = parse<{ budgetMinutes?: number | null; strength?: Strength }>(
+        row.meta_json ?? undefined,
+        {}
+      );
+      return {
+        id: row.id,
+        name: row.name,
+        budgetMinutes: planMeta.budgetMinutes ?? null,
+        strength: planMeta.strength ?? 'loose',
+        zones: parse<PlanZone[]>(row.zones_json, []),
+        rules: parse<GroupRule[]>(row.rules_json, []),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    });
 
     let schedule: WeeklySchedule = [null, null, null, null, null, null, null];
     for (const row of data.schedule) {

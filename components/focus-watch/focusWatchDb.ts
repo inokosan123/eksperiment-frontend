@@ -10,6 +10,7 @@ export type PlanRow = {
   name: string;
   zones_json: string;
   rules_json: string;
+  meta_json?: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -72,6 +73,13 @@ async function initFocusWatchDb(db: SQLite.SQLiteDatabase) {
       value TEXT
     );
   `);
+
+  // v2: plan-level budget/strength live in meta_json (added after first ship).
+  try {
+    await db.execAsync('ALTER TABLE focus_watch_plans ADD COLUMN meta_json TEXT');
+  } catch {
+    // column already exists
+  }
 }
 
 export async function getFocusWatchDb() {
@@ -110,14 +118,15 @@ export async function loadFocusWatchData() {
 export async function upsertPlanRow(row: PlanRow) {
   const db = await getFocusWatchDb();
   await db.runAsync(
-    `INSERT INTO focus_watch_plans (id, name, zones_json, rules_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)
+    `INSERT INTO focus_watch_plans (id, name, zones_json, rules_json, meta_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
        zones_json = excluded.zones_json,
        rules_json = excluded.rules_json,
+       meta_json = excluded.meta_json,
        updated_at = excluded.updated_at`,
-    row.id, row.name, row.zones_json, row.rules_json, row.created_at, row.updated_at
+    row.id, row.name, row.zones_json, row.rules_json, row.meta_json ?? null, row.created_at, row.updated_at
   );
 }
 

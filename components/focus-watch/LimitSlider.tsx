@@ -22,35 +22,42 @@ export function limitStopLabel(value: number | null) {
 
 const TRACK_HEIGHT = 6;
 const THUMB_SIZE = 22;
-const MAX_INDEX = LIMIT_STOPS.length - 1;
 
 export default function LimitSlider({
   value,
   onChange,
+  stops = LIMIT_STOPS,
+  edgeLabels = { left: 'Off', right: '3h' },
 }: {
   value: number | null;
   onChange: (next: number | null) => void;
+  stops?: (number | null)[];
+  edgeLabels?: { left: string; right: string };
 }) {
   const trackWidth = useSharedValue(0);
   const thumbX = useSharedValue(0);
-  const lastIndex = useSharedValue(Math.max(0, LIMIT_STOPS.indexOf(value)));
+  const lastIndex = useSharedValue(Math.max(0, stops.indexOf(value)));
   const [layoutWidth, setLayoutWidth] = useState(0);
+  const maxIndex = stops.length - 1;
 
-  const indexToX = useCallback((index: number, width: number) => {
-    if (width <= 0) return 0;
-    return (Math.max(0, Math.min(MAX_INDEX, index)) / MAX_INDEX) * width;
-  }, []);
+  const indexToX = useCallback(
+    (index: number, width: number) => {
+      if (width <= 0) return 0;
+      return (Math.max(0, Math.min(maxIndex, index)) / maxIndex) * width;
+    },
+    [maxIndex]
+  );
 
   const emitChange = useCallback(
     (index: number) => {
       void Haptics.selectionAsync().catch(() => {});
-      onChange(LIMIT_STOPS[index]);
+      onChange(stops[index]);
     },
-    [onChange]
+    [onChange, stops]
   );
 
   useEffect(() => {
-    const index = Math.max(0, LIMIT_STOPS.indexOf(value));
+    const index = Math.max(0, stops.indexOf(value));
     lastIndex.value = index;
     if (trackWidth.value > 0) {
       thumbX.value = withSpring(indexToX(index, trackWidth.value), {
@@ -59,13 +66,13 @@ export default function LimitSlider({
         mass: 0.6,
       });
     }
-  }, [value, indexToX, thumbX, trackWidth, lastIndex]);
+  }, [value, stops, indexToX, thumbX, trackWidth, lastIndex]);
 
   const onLayout = (e: LayoutChangeEvent) => {
     const width = e.nativeEvent.layout.width;
     trackWidth.value = width;
     setLayoutWidth(width);
-    thumbX.value = indexToX(Math.max(0, LIMIT_STOPS.indexOf(value)), width);
+    thumbX.value = indexToX(Math.max(0, stops.indexOf(value)), width);
   };
 
   const pan = Gesture.Pan()
@@ -75,7 +82,7 @@ export default function LimitSlider({
       if (width <= 0) return;
       const x = Math.max(0, Math.min(width, e.x));
       thumbX.value = x;
-      const index = Math.round((x / width) * MAX_INDEX);
+      const index = Math.round((x / width) * maxIndex);
       if (index !== lastIndex.value) {
         lastIndex.value = index;
         runOnJS(emitChange)(index);
@@ -86,7 +93,7 @@ export default function LimitSlider({
       if (width <= 0) return;
       const x = Math.max(0, Math.min(width, e.x));
       thumbX.value = x;
-      const index = Math.round((x / width) * MAX_INDEX);
+      const index = Math.round((x / width) * maxIndex);
       if (index !== lastIndex.value) {
         lastIndex.value = index;
         runOnJS(emitChange)(index);
@@ -95,7 +102,7 @@ export default function LimitSlider({
     .onEnd(() => {
       const width = trackWidth.value;
       if (width <= 0) return;
-      const index = Math.round((thumbX.value / width) * MAX_INDEX);
+      const index = Math.round((thumbX.value / width) * maxIndex);
       thumbX.value = withSpring(indexToX(index, width), {
         damping: 18,
         stiffness: 220,
@@ -111,7 +118,7 @@ export default function LimitSlider({
     transform: [{ translateX: thumbX.value - THUMB_SIZE / 2 }],
   }));
 
-  const activeIndex = Math.max(0, LIMIT_STOPS.indexOf(value));
+  const activeIndex = Math.max(0, stops.indexOf(value));
 
   return (
     <View style={s.wrap}>
@@ -122,7 +129,7 @@ export default function LimitSlider({
           </View>
           {/* Notches — one quiet dot per stop, brightened once passed. */}
           {layoutWidth > 0 &&
-            LIMIT_STOPS.map((_, index) => (
+            stops.map((_, index) => (
               <View
                 key={index}
                 pointerEvents="none"
@@ -137,8 +144,8 @@ export default function LimitSlider({
         </View>
       </GestureDetector>
       <View style={s.edgeRow}>
-        <Text style={[s.edgeText, value === null && s.edgeTextActive]}>Off</Text>
-        <Text style={s.edgeText}>3h</Text>
+        <Text style={[s.edgeText, value === null && s.edgeTextActive]}>{edgeLabels.left}</Text>
+        <Text style={s.edgeText}>{edgeLabels.right}</Text>
       </View>
     </View>
   );
