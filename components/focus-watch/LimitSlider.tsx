@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -40,6 +40,16 @@ export default function LimitSlider({
   const [layoutWidth, setLayoutWidth] = useState(0);
   const maxIndex = stops.length - 1;
 
+  // The parent recreates `onChange` on every render (it writes state). If the
+  // gesture captured it directly, each emitted change would rebuild the pan
+  // handler mid-drag — a reliable crash. Refs keep the gesture stable.
+  const onChangeRef = useRef(onChange);
+  const stopsRef = useRef(stops);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+    stopsRef.current = stops;
+  }, [onChange, stops]);
+
   const indexToX = useCallback(
     (index: number, width: number) => {
       if (width <= 0) return 0;
@@ -48,13 +58,10 @@ export default function LimitSlider({
     [maxIndex]
   );
 
-  const emitChange = useCallback(
-    (index: number) => {
-      void Haptics.selectionAsync().catch(() => {});
-      onChange(stops[index]);
-    },
-    [onChange, stops]
-  );
+  const emitChange = useCallback((index: number) => {
+    void Haptics.selectionAsync().catch(() => {});
+    onChangeRef.current(stopsRef.current[index]);
+  }, []);
 
   useEffect(() => {
     const index = Math.max(0, stops.indexOf(value));
@@ -75,40 +82,45 @@ export default function LimitSlider({
     thumbX.value = indexToX(Math.max(0, stops.indexOf(value)), width);
   };
 
-  const pan = Gesture.Pan()
-    .minDistance(0)
-    .onBegin(e => {
-      const width = trackWidth.value;
-      if (width <= 0) return;
-      const x = Math.max(0, Math.min(width, e.x));
-      thumbX.value = x;
-      const index = Math.round((x / width) * maxIndex);
-      if (index !== lastIndex.value) {
-        lastIndex.value = index;
-        runOnJS(emitChange)(index);
-      }
-    })
-    .onUpdate(e => {
-      const width = trackWidth.value;
-      if (width <= 0) return;
-      const x = Math.max(0, Math.min(width, e.x));
-      thumbX.value = x;
-      const index = Math.round((x / width) * maxIndex);
-      if (index !== lastIndex.value) {
-        lastIndex.value = index;
-        runOnJS(emitChange)(index);
-      }
-    })
-    .onEnd(() => {
-      const width = trackWidth.value;
-      if (width <= 0) return;
-      const index = Math.round((thumbX.value / width) * maxIndex);
-      thumbX.value = withSpring(indexToX(index, width), {
-        damping: 18,
-        stiffness: 220,
-        mass: 0.6,
-      });
-    });
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .minDistance(0)
+        .onBegin(e => {
+          const width = trackWidth.value;
+          if (width <= 0) return;
+          const x = Math.max(0, Math.min(width, e.x));
+          thumbX.value = x;
+          const index = Math.round((x / width) * maxIndex);
+          if (index !== lastIndex.value) {
+            lastIndex.value = index;
+            runOnJS(emitChange)(index);
+          }
+        })
+        .onUpdate(e => {
+          const width = trackWidth.value;
+          if (width <= 0) return;
+          const x = Math.max(0, Math.min(width, e.x));
+          thumbX.value = x;
+          const index = Math.round((x / width) * maxIndex);
+          if (index !== lastIndex.value) {
+            lastIndex.value = index;
+            runOnJS(emitChange)(index);
+          }
+        })
+        .onEnd(() => {
+          const width = trackWidth.value;
+          if (width <= 0) return;
+          const index = Math.round((thumbX.value / width) * maxIndex);
+          const target = width <= 0 ? 0 : (Math.max(0, Math.min(maxIndex, index)) / maxIndex) * width;
+          thumbX.value = withSpring(target, {
+            damping: 18,
+            stiffness: 220,
+            mass: 0.6,
+          });
+        }),
+    [emitChange, maxIndex, lastIndex, thumbX, trackWidth]
+  );
 
   const fillStyle = useAnimatedStyle(() => ({
     width: thumbX.value + THUMB_SIZE / 2,

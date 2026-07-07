@@ -1,4 +1,5 @@
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { Book, Cross, Feather, Flame, Minus, OpenBook, Plus, X } from '@/components/icons/Icons';
@@ -82,6 +83,10 @@ export default function GroupLimitSheet({
 
   return (
     <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheet}>
+      {/* The sheet lives in a native Modal — a separate native tree that is NOT
+          under the app root's GestureHandlerRootView. Without this local root,
+          the slider's GestureDetector crashes the app on Android. */}
+      <GestureHandlerRootView>
       <View style={s.handle} />
       <View style={s.headerRow}>
         <View style={{ flex: 1 }}>
@@ -223,6 +228,7 @@ export default function GroupLimitSheet({
 
         <View style={{ height: 16 }} />
       </ScrollView>
+      </GestureHandlerRootView>
     </SmoothBottomSheet>
   );
 }
