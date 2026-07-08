@@ -72,15 +72,18 @@ export default function ZoneClock({
   zones,
   size = 210,
   nowMinutes,
+  compact = false,
 }: {
   zones: PlanZone[];
   size?: number;
   nowMinutes?: number;
+  // Compact: just the arcs on a thin track — for plan cards and small spots.
+  compact?: boolean;
 }) {
-  const stroke = 17;
+  const stroke = compact ? 8 : 17;
   // Reserve a full margin band for ticks + hour labels so nothing ever
   // touches the ring: ring edge → ticks (8) → gap (4) → label box (~15).
-  const r = size / 2 - stroke / 2 - 28;
+  const r = compact ? size / 2 - stroke / 2 - 1 : size / 2 - stroke / 2 - 28;
   const cx = size / 2;
   const circumference = 2 * Math.PI * r;
   const progress = useSharedValue(0);
@@ -145,7 +148,7 @@ export default function ZoneClock({
   return (
     <View style={[s.wrap, { width: size, height: size }]}>
       <Svg width={size} height={size}>
-        {ticks.map(tick => (
+        {!compact && ticks.map(tick => (
           <Line
             key={tick.key}
             x1={tick.x1}
@@ -160,7 +163,9 @@ export default function ZoneClock({
 
         {/* the face: a soft double track the arcs live on */}
         <Circle cx={cx} cy={cx} r={r} stroke="#F1EFE8" strokeWidth={stroke} fill="none" />
-        <Circle cx={cx} cy={cx} r={r - stroke / 2 - 2.5} stroke="#F7F5EF" strokeWidth={1} fill="none" />
+        {!compact && (
+          <Circle cx={cx} cy={cx} r={r - stroke / 2 - 2.5} stroke="#F7F5EF" strokeWidth={1} fill="none" />
+        )}
 
         {arcs.map(arc => (
           <DrawnArc
@@ -187,7 +192,7 @@ export default function ZoneClock({
       </Svg>
 
       {/* zone emblems floating on their arcs */}
-      {badges.map(badge => (
+      {!compact && badges.map(badge => (
         <View
           key={badge.key}
           pointerEvents="none"
@@ -205,7 +210,7 @@ export default function ZoneClock({
       ))}
 
       {/* quarter labels — centered on their exact polar points, outside the ticks */}
-      {[0, 6, 12, 18].map(hour => {
+      {!compact && [0, 6, 12, 18].map(hour => {
         const angle = (hour / 24) * 2 * Math.PI - Math.PI / 2;
         const labelR = r + stroke / 2 + 19;
         const x = cx + Math.cos(angle) * labelR;
@@ -217,18 +222,20 @@ export default function ZoneClock({
         );
       })}
 
-      <View style={s.center} pointerEvents="none">
-        {guarded > 0 ? (
-          <>
-            <Text style={s.centerValue}>{formatMinutesShort(guarded)}</Text>
-            <Text style={s.centerCaption}>GUARDED</Text>
-            <View style={s.centerRule} />
-            <Text style={s.centerSub}>{`${formatMinutesShort(1440 - guarded)} open`}</Text>
-          </>
-        ) : (
-          <Text style={s.centerEmpty}>Open{'\n'}all day</Text>
-        )}
-      </View>
+      {!compact && (
+        <View style={s.center} pointerEvents="none">
+          {guarded > 0 ? (
+            <>
+              <Text style={s.centerValue}>{formatMinutesShort(guarded)}</Text>
+              <Text style={s.centerCaption}>GUARDED</Text>
+              <View style={s.centerRule} />
+              <Text style={s.centerSub}>{`${formatMinutesShort(1440 - guarded)} open`}</Text>
+            </>
+          ) : (
+            <Text style={s.centerEmpty}>Open{'\n'}all day</Text>
+          )}
+        </View>
+      )}
     </View>
   );
 }

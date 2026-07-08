@@ -43,6 +43,8 @@ export default function FocusWatchLottie({
       loop={mode === 'loop'}
       speed={speed}
       style={style}
+      renderMode="HARDWARE"
+      cacheComposition
       onAnimationFinish={isCancelled => {
         if (mode !== 'periodic' || isCancelled) return;
         timer.current = setTimeout(() => ref.current?.play(), restMs);

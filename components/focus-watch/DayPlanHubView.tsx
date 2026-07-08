@@ -7,9 +7,10 @@ import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { CheckSmall, Plus, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
-import ZoneTimeline from './ZoneTimeline';
+import ZoneClock from './ZoneClock';
 import {
   assignPlanToWeekday,
+  formatMinutesShort,
   DAY_LETTERS,
   DAY_NAMES,
   dateKey,
@@ -126,27 +127,36 @@ function PlanCard({ plan, assignedDays, onPress }: {
   const state = useDayPlan();
   return (
     <TouchableOpacity style={s.planCard} activeOpacity={0.82} onPress={onPress}>
-      <View style={s.planTopRow}>
-        <Text style={s.planName} numberOfLines={1}>
-          {plan.name}
-        </Text>
-        <View style={s.planDaysRow}>
-          {assignedDays.map((on, index) => (
-            <View key={index} style={[s.planDayDot, on ? s.planDayDotOn : s.planDayDotOff]} />
-          ))}
+      <View style={s.planBodyRow}>
+        <View style={{ flex: 1 }}>
+          <View style={s.planTopRow}>
+            <Text style={s.planName} numberOfLines={1}>
+              {plan.name}
+            </Text>
+            <View style={s.planDaysRow}>
+              {assignedDays.map((on, index) => (
+                <View key={index} style={[s.planDayDot, on ? s.planDayDotOn : s.planDayDotOff]} />
+              ))}
+            </View>
+          </View>
+
+          <Text style={s.planBudget} numberOfLines={1}>
+            {`${formatMinutesShort(plan.budgetMinutes ?? 0)} to the phone · ${
+              plan.strength === 'strict' ? 'Strict' : 'Loose'
+            }`}
+          </Text>
+          <Text style={s.planMeta} numberOfLines={1}>
+            {describeZones(plan)}
+          </Text>
+          <Text style={s.planMetaSecond} numberOfLines={1}>
+            {describeRules(state, plan)}
+          </Text>
+        </View>
+
+        <View style={s.planClockWrap}>
+          <ZoneClock zones={plan.zones} size={64} compact />
         </View>
       </View>
-
-      <View style={{ marginTop: 10 }}>
-        <ZoneTimeline zones={plan.zones} height={9} />
-      </View>
-
-      <Text style={s.planMeta} numberOfLines={1}>
-        {describeZones(plan)}
-      </Text>
-      <Text style={s.planMetaSecond} numberOfLines={1}>
-        {describeRules(state, plan)}
-      </Text>
     </TouchableOpacity>
   );
 }
@@ -376,10 +386,27 @@ const s = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2,
   },
+  planBodyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  planClockWrap: {
+    width: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   planTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  planBudget: {
+    marginTop: 5,
+    fontFamily: F.sansSemiBold,
+    fontSize: 12.5,
+    color: C.goldDark,
+    fontVariant: ['tabular-nums'],
   },
   planName: {
     flex: 1,
@@ -404,7 +431,7 @@ const s = StyleSheet.create({
     backgroundColor: '#E9E7E1',
   },
   planMeta: {
-    marginTop: 9,
+    marginTop: 6,
     fontFamily: F.sansMedium,
     fontSize: 11.5,
     color: C.textSecondary,

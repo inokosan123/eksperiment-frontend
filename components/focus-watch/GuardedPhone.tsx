@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Platform, View, StyleSheet } from 'react-native';
-import Svg, { Circle, Line, Rect } from 'react-native-svg';
+import Svg, { Circle, Defs, Line, RadialGradient, Rect, Stop } from 'react-native-svg';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -21,6 +21,8 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const RING_RADIUS = 45;
 const CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+const BEZEL_RADIUS = 48.6;
+const BEZEL_CIRCUMFERENCE = 2 * Math.PI * BEZEL_RADIUS;
 const PULSE_PERIOD = 6600;
 
 // Little app tiles for the web fallback phone — the section-card palette.
@@ -62,10 +64,13 @@ function WebPhoneFallback({ diameter, sealed }: { diameter: number; sealed: bool
   );
 }
 
-// The Focus centerpiece. A breathing aura, a soft bed of light and three slow
-// waves rise from the emblem's own edge, so the Lottie and the circles read
-// as one living thing. The aura turns green while protection stands guard,
-// and the emblem itself can alternate between the shield and the phone.
+// The Focus centerpiece, third pass. One radial-gradient aura breathes under
+// the emblem (a true glow, not flat discs — and one less animated layer than
+// before); three slow waves rise from the emblem's edge; when guarded, the
+// aura melts from gold to green and a fine watch bezel of dashes turns once
+// every 80 seconds — quiet clockwork. When the day-ring is shown, a luminous
+// head dot rides the ring like a watch hand. All motion is SVG radius /
+// opacity / dash — no view scaling (Android-safe), nothing rasterized.
 export default function GuardedPhone({
   diameter = 150,
   sealed = false,
@@ -90,11 +95,13 @@ export default function GuardedPhone({
   const pulse3 = useSharedValue(0);
   const ignite = useSharedValue(1);
   const seal = useSharedValue(sealed ? 1 : 0);
+  const guard = useSharedValue(aura !== C.gold ? 1 : 0);
+  const bezelTurn = useSharedValue(0);
   const showRing = !!progress;
   const shownFace: 'shield' | 'phone' = face ?? (sealed ? 'shield' : 'phone');
+  const guarded = aura !== C.gold;
   // The shield turns continuously — pausing it reads as a stutter. Only the
   // phone rests between plays: long rests under protection, livelier when idle.
-  const guarded = aura !== C.gold;
   const restMs = guarded ? 9000 : 4500;
 
   useEffect(() => {
@@ -122,8 +129,9 @@ export default function GuardedPhone({
       cancelAnimation(pulse1);
       cancelAnimation(pulse2);
       cancelAnimation(pulse3);
+      cancelAnimation(bezelTurn);
     };
-  }, [breath, pulse1, pulse2, pulse3]);
+  }, [breath, pulse1, pulse2, pulse3, bezelTurn]);
 
   useEffect(() => {
     seal.value = withTiming(sealed ? 1 : 0, {
@@ -131,6 +139,27 @@ export default function GuardedPhone({
       easing: Easing.inOut(Easing.quad),
     });
   }, [sealed, seal]);
+
+  // Protection rising melts the aura gold → green over a slow beat.
+  useEffect(() => {
+    guard.value = withTiming(guarded ? 1 : 0, {
+      duration: 900,
+      easing: Easing.inOut(Easing.quad),
+    });
+  }, [guarded, guard]);
+
+  // The bezel: one full quiet turn every 80 seconds while guarded.
+  useEffect(() => {
+    if (guarded && !showRing) {
+      bezelTurn.value = 0;
+      bezelTurn.value = withRepeat(
+        withTiming(1, { duration: 80_000, easing: Easing.linear }),
+        -1
+      );
+    } else {
+      cancelAnimation(bezelTurn);
+    }
+  }, [guarded, showRing, bezelTurn]);
 
   // One-shot flash when the ring of time first appears — the day ignites.
   useEffect(() => {
@@ -140,14 +169,12 @@ export default function GuardedPhone({
     }
   }, [showRing, ignite]);
 
-  const haloProps = useAnimatedProps(() => ({
-    opacity: (0.05 + breath.value * 0.06) * (0.6 + seal.value * 0.4),
+  // Two gradient auras crossfade as guard rises — each is a single circle.
+  const goldAuraProps = useAnimatedProps(() => ({
+    opacity: (0.5 + breath.value * 0.5) * (0.75 + seal.value * 0.25) * (1 - guard.value),
   }));
-  // The bed of light directly under the emblem — breathes with the halo so
-  // the Lottie sits inside the circles instead of floating over them.
-  const bedProps = useAnimatedProps(() => ({
-    opacity: (0.1 + breath.value * 0.08) * (0.65 + seal.value * 0.35),
-    r: 29 + breath.value * 1.6,
+  const greenAuraProps = useAnimatedProps(() => ({
+    opacity: (0.5 + breath.value * 0.5) * (0.75 + seal.value * 0.25) * guard.value,
   }));
   const pulse1Props = useAnimatedProps(() => ({
     opacity: (1 - pulse1.value) * 0.22 * (0.75 + seal.value * 0.25),
@@ -165,9 +192,21 @@ export default function GuardedPhone({
     opacity: (1 - ignite.value) * 0.5,
     r: 36 + ignite.value * 14,
   }));
+  const bezelProps = useAnimatedProps(() => ({
+    strokeDashoffset: -bezelTurn.value * BEZEL_CIRCUMFERENCE,
+  }));
   const progressProps = useAnimatedProps(() => ({
     strokeDashoffset: CIRCUMFERENCE * (1 - (progress ? progress.value : 0)),
   }));
+  // A luminous head riding the tip of the day-ring, like a watch hand.
+  const headProps = useAnimatedProps(() => {
+    const angle = 2 * Math.PI * (progress ? progress.value : 0) - Math.PI / 2;
+    return {
+      cx: 50 + Math.cos(angle) * RING_RADIUS,
+      cy: 50 + Math.sin(angle) * RING_RADIUS,
+      opacity: progress && progress.value > 0.004 ? 1 : 0,
+    };
+  });
 
   // The shield sits a touch lower inside the halo so it feels grounded in
   // the protective ring on real phones.
@@ -177,11 +216,42 @@ export default function GuardedPhone({
   return (
     <View style={{ width: diameter, height: diameter }}>
       <Svg width={diameter} height={diameter} viewBox="0 0 100 100">
-        <AnimatedCircle cx="50" cy="50" r="46" fill={aura} animatedProps={haloProps} />
-        <AnimatedCircle cx="50" cy="50" fill={aura} animatedProps={bedProps} />
+        <Defs>
+          <RadialGradient id="auraGold" cx="50%" cy="50%" r="50%">
+            <Stop offset="0%" stopColor={C.gold} stopOpacity="0.30" />
+            <Stop offset="46%" stopColor={C.gold} stopOpacity="0.13" />
+            <Stop offset="78%" stopColor={C.gold} stopOpacity="0.04" />
+            <Stop offset="100%" stopColor={C.gold} stopOpacity="0" />
+          </RadialGradient>
+          <RadialGradient id="auraGuard" cx="50%" cy="50%" r="50%">
+            <Stop offset="0%" stopColor={aura} stopOpacity="0.30" />
+            <Stop offset="46%" stopColor={aura} stopOpacity="0.13" />
+            <Stop offset="78%" stopColor={aura} stopOpacity="0.04" />
+            <Stop offset="100%" stopColor={aura} stopOpacity="0" />
+          </RadialGradient>
+        </Defs>
+
+        <AnimatedCircle cx="50" cy="50" r="47" fill="url(#auraGold)" animatedProps={goldAuraProps} />
+        <AnimatedCircle cx="50" cy="50" r="47" fill="url(#auraGuard)" animatedProps={greenAuraProps} />
+
         <AnimatedCircle cx="50" cy="50" fill="none" stroke={aura} strokeWidth="1.1" animatedProps={pulse1Props} />
         <AnimatedCircle cx="50" cy="50" fill="none" stroke={aura} strokeWidth="0.9" animatedProps={pulse2Props} />
         <AnimatedCircle cx="50" cy="50" fill="none" stroke={aura} strokeWidth="0.7" animatedProps={pulse3Props} />
+
+        {guarded && !showRing && (
+          <AnimatedCircle
+            cx="50"
+            cy="50"
+            r={BEZEL_RADIUS}
+            fill="none"
+            stroke={aura}
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeDasharray="0.7 4.4"
+            opacity={0.5}
+            animatedProps={bezelProps}
+          />
+        )}
 
         {showRing && (
           <>
@@ -198,6 +268,13 @@ export default function GuardedPhone({
               strokeDasharray={`${CIRCUMFERENCE}`}
               animatedProps={progressProps}
               transform="rotate(-90 50 50)"
+            />
+            <AnimatedCircle
+              r="3"
+              fill={progressColor}
+              stroke="#FFFFFF"
+              strokeWidth="1.2"
+              animatedProps={headProps}
             />
           </>
         )}
