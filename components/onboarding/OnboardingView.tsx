@@ -19603,7 +19603,8 @@ const SYSTEM_BUILD_STEPS = [
 
 // Plays over the real Home while it does its heavy first render: by the time
 // "Creating your system" finishes ticking, the screen underneath is warm and
-// the reveal lands without a stutter.
+// the reveal lands without a stutter. Styled after the onboarding intro
+// loading screens: logo plate, gold rule, big serif line, warm floor glow.
 function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   const [ticked, setTicked] = useState(0);
   const onDoneRef = useRef(onDone);
@@ -19619,29 +19620,44 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
           runSelectionHaptic();
         }
         setTicked(index + 1);
-      }, 620 + index * 540));
+      }, 780 + index * 620));
     });
     timers.push(setTimeout(() => {
       onDoneRef.current();
-    }, 620 + SYSTEM_BUILD_STEPS.length * 540 + 520));
+    }, 780 + SYSTEM_BUILD_STEPS.length * 620 + 640));
     return () => timers.forEach(clearTimeout);
   }, []);
 
   return (
-    <Reanimated.View entering={FadeIn.duration(240)} exiting={FadeOut.duration(430)} style={s.sysVeil}>
-      <LinearGradient colors={['#FFFEFA', '#FBF6EA', '#F7EFDC']} style={StyleSheet.absoluteFill} />
+    <Reanimated.View exiting={FadeOut.duration(460)} style={s.sysVeil}>
+      <View pointerEvents="none" style={s.introWarmth}>
+        <LinearGradient
+          colors={['rgba(255,255,255,0)', 'rgba(246,225,202,0.46)', 'rgba(255,241,225,0.98)']}
+          locations={[0, 0.52, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
       <View style={s.sysVeilContent}>
         <Reanimated.View
-          entering={ZoomIn.delay(80).springify().damping(13).stiffness(160).mass(0.8)}
-          style={s.sysVeilLogoWrap}
+          entering={FadeInLeft.duration(520).withInitialValues({
+            opacity: 0,
+            transform: [{ translateX: -18 }],
+          })}
+          style={s.introLogoFrame}
         >
-          <View style={s.sysVeilHalo} />
-          <ExpoImage source={APP_LOGO} style={s.sysVeilLogo} contentFit="cover" />
-          <View pointerEvents="none" style={s.sysVeilLogoRing} />
+          <View style={s.introLogoPlate}>
+            <Image source={APP_LOGO} style={s.introLogo} resizeMode="cover" />
+          </View>
         </Reanimated.View>
-        <Reanimated.View entering={FadeInUp.delay(200).duration(480).easing(Easing.out(Easing.cubic))}>
-          <Text style={s.sysVeilEyebrow}>ONE MOMENT</Text>
-          <Text style={s.sysVeilTitle}>Creating your system</Text>
+        <Reanimated.View entering={FadeIn.delay(120).duration(380)} style={s.introRule} />
+        <Reanimated.View
+          entering={FadeInRight.delay(180).duration(560).withInitialValues({
+            opacity: 0,
+            transform: [{ translateX: 18 }],
+          })}
+          style={s.introCopy}
+        >
+          <Text style={s.introTitle}>Creating{'\n'}your system.</Text>
         </Reanimated.View>
         <View style={s.sysVeilRows}>
           {SYSTEM_BUILD_STEPS.map((step, index) => {
@@ -19649,7 +19665,7 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
             return (
               <Reanimated.View
                 key={step}
-                entering={FadeInUp.delay(340 + index * 95).duration(430).easing(Easing.out(Easing.cubic))}
+                entering={FadeInUp.delay(480 + index * 110).duration(430).easing(Easing.out(Easing.cubic))}
                 style={s.sysVeilRow}
               >
                 <View style={[s.sysVeilRowIcon, done && s.sysVeilRowIconDone]}>
@@ -19676,27 +19692,41 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
 }
 
 function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
-  const { beginGuidedSetup, endGuidedSetup } = useGuidedSetup();
+  const { beginGuidedSetup, endGuidedSetup, patchSession, setPresentation } = useGuidedSetup();
   const [stage, setStage] = useState<'loading' | 'home' | 'routine'>('loading');
+  // Home's heavy first render is deferred a beat, so the cut from the habits
+  // builder lands on a calm, already-opaque loading scene — not on a stutter.
+  const [homeWarm, setHomeWarm] = useState(false);
+  const sessionStartedRef = useRef(false);
 
   useEffect(() => {
-    if (stage === 'loading') return undefined;
+    const timer = setTimeout(() => setHomeWarm(true), 640);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (stage !== 'home' || sessionStartedRef.current) return;
+    sessionStartedRef.current = true;
     beginGuidedSetup({
       currentChapter: 'build',
       chapterOrder: ['build'],
-      activeStep: stage === 'home' ? 'homeClimax' : 'buildMyRoutine',
-      phase: stage === 'home' ? 'intro' : 'tourAdd',
+      activeStep: 'homeClimax',
+      phase: 'intro',
       route: '/onboarding',
     });
+  }, [beginGuidedSetup, stage]);
 
-    return () => {
-      endGuidedSetup();
-    };
-  }, [beginGuidedSetup, endGuidedSetup, stage]);
+  // The session ends only when the slide truly leaves the stage.
+  useEffect(() => () => endGuidedSetup(), [endGuidedSetup]);
 
   const handleHomeComplete = useCallback(() => {
+    // One continuous session: hand the baton to the routine tour by patching
+    // the step — an end→begin gap here is exactly where the overlay used to
+    // fall through and strand the user on a half-dimmed screen.
+    setPresentation(null);
+    patchSession({ activeStep: 'buildMyRoutine', phase: 'tourAdd', route: '/onboarding' });
     setStage('routine');
-  }, []);
+  }, [patchSession, setPresentation]);
 
   const handleRoutineComplete = useCallback(() => {
     endGuidedSetup();
@@ -19709,10 +19739,10 @@ function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
         // MyRoutineView mounts its own GuidedOverlayHost — rendering a second
         // one here would stack two scrims over each other.
         <MyRoutineView guided onGuidedComplete={handleRoutineComplete} />
-      ) : (
-        // Home mounts beneath the veil from the first frame — the guided
-        // session only begins once the veil lifts, on an already-warm screen.
+      ) : homeWarm ? (
         <HomeView guided={stage === 'home'} onGuidedComplete={handleHomeComplete} />
+      ) : (
+        <View style={{ flex: 1, backgroundColor: '#FAF7F0' }} />
       )}
       {stage !== 'routine' && <GuidedOverlayHost />}
       {stage === 'loading' && <SystemBuildVeil onDone={() => setStage('home')} />}
@@ -31963,68 +31993,21 @@ const s = StyleSheet.create({
     zIndex: 2000,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#FFFDF8',
   },
   sysVeilContent: {
     width: '100%',
     maxWidth: 360,
     alignItems: 'center',
     paddingHorizontal: 34,
-  },
-  sysVeilLogoWrap: {
-    width: 76,
-    height: 76,
-    marginBottom: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#C5A059',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.24,
-    shadowRadius: 18,
-    elevation: 5,
-  },
-  sysVeilHalo: {
-    position: 'absolute',
-    width: 112,
-    height: 112,
-    borderRadius: 40,
-    backgroundColor: 'rgba(197,160,89,0.13)',
-  },
-  sysVeilLogo: {
-    width: 76,
-    height: 76,
-    borderRadius: 24,
-  },
-  sysVeilLogoRing: {
-    position: 'absolute',
-    left: -4,
-    right: -4,
-    top: -4,
-    bottom: -4,
-    borderRadius: 28,
-    borderWidth: 1.5,
-    borderColor: 'rgba(240,209,143,0.8)',
-  },
-  sysVeilEyebrow: {
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 2.6,
-    color: '#9C7B3C',
-    textAlign: 'center',
-    marginBottom: 9,
-  },
-  sysVeilTitle: {
-    fontFamily: F.serifSemiBold,
-    fontSize: 27,
-    lineHeight: 32,
-    color: '#15120F',
-    textAlign: 'center',
-    marginBottom: 28,
+    zIndex: 1,
   },
   sysVeilRows: {
     width: '100%',
     maxWidth: 300,
     alignSelf: 'center',
     rowGap: 13,
+    marginTop: 34,
     marginBottom: 30,
   },
   sysVeilRow: {

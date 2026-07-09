@@ -879,14 +879,14 @@ export default function MyRoutineView({
     if (position === 'origin') {
       if (guideScrollY.current < 4) {
         binding.measure();
-        guideTimersRef.current.push(setTimeout(present, 70));
+        guideTimersRef.current.push(setTimeout(present, 56));
         return;
       }
       routineScrollRef.current?.scrollTo({ y: 0, animated: true });
       guideTimersRef.current.push(setTimeout(() => {
         binding.measure();
-        guideTimersRef.current.push(setTimeout(present, 60));
-      }, 450));
+        guideTimersRef.current.push(setTimeout(present, 48));
+      }, 330));
       return;
     }
     node.measureInWindow((_mx: number, my: number, _mw: number, mh: number) => {
@@ -896,14 +896,14 @@ export default function MyRoutineView({
       const delta = my - desired;
       if (Math.abs(delta) < 14) {
         binding.measure();
-        guideTimersRef.current.push(setTimeout(present, 70));
+        guideTimersRef.current.push(setTimeout(present, 56));
         return;
       }
       routineScrollRef.current?.scrollTo({ y: Math.max(0, guideScrollY.current + delta), animated: true });
       guideTimersRef.current.push(setTimeout(() => {
         binding.measure();
-        guideTimersRef.current.push(setTimeout(present, 60));
-      }, 470));
+        guideTimersRef.current.push(setTimeout(present, 48));
+      }, 340));
     });
   }, [guideInsets.top, guideScreenHeight]);
 

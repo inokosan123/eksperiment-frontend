@@ -22,13 +22,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { CheckSmall, ChevronLeft, ChevronRight } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
-import { useGuidedSetup } from './GuidedSetupContext';
+import { useGuidedOverlayState, useGuidedSetup } from './GuidedSetupContext';
 import type { GuidedGestureHint } from './types';
 
 const APP_LOGO = require('@/assets/images/anasta-logo.png');
 const DIM = 'rgba(17,13,9,0.74)';
 const DIM_LIGHT = 'rgba(17,13,9,0.30)';
-const MOTION = { duration: 560, easing: Easing.bezier(0.22, 1, 0.3, 1) };
+const MOTION = { duration: 400, easing: Easing.bezier(0.26, 1, 0.32, 1) };
 const SOFT_EASE = Easing.bezier(0.16, 1, 0.28, 1);
 const CUTOUT_RADIUS = 22;
 const RING_GOLD = 'rgba(240,209,143,0.95)';
@@ -381,7 +381,8 @@ function CelebrationBurst({ top }: { top: number }) {
 export function GuidedOverlayHost() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { session, presentation, targetLayouts } = useGuidedSetup();
+  const { session } = useGuidedSetup();
+  const { presentation, targetLayouts } = useGuidedOverlayState();
   const target = presentation?.targetId ? targetLayouts[presentation.targetId] : undefined;
   const padding = presentation?.cutoutPadding ?? 8;
   const x = useSharedValue(0);

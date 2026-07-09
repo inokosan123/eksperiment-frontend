@@ -31,8 +31,6 @@ type StartGuidedSetupInput = {
 type GuidedSetupContextValue = {
   hydrated: boolean;
   session: GuidedSessionState | null;
-  presentation: GuidedOverlayPresentation | null;
-  targetLayouts: Record<GuidedTargetId, GuidedTargetLayout>;
   beginGuidedSetup: (input: StartGuidedSetupInput) => void;
   patchSession: (patch: Partial<GuidedSessionState>) => void;
   completeStep: (step: GuidedStep) => void;
@@ -42,7 +40,16 @@ type GuidedSetupContextValue = {
   unregisterTarget: (id: GuidedTargetId) => void;
 };
 
+// Presentation + measured target rects live in their own context so that the
+// per-frame churn of presenting, scrolling, and re-measuring re-renders ONLY
+// the overlay host — never the heavy screens that merely drive the guide.
+type GuidedOverlayStateValue = {
+  presentation: GuidedOverlayPresentation | null;
+  targetLayouts: Record<GuidedTargetId, GuidedTargetLayout>;
+};
+
 const GuidedSetupContext = createContext<GuidedSetupContextValue | null>(null);
+const GuidedOverlayStateContext = createContext<GuidedOverlayStateValue | null>(null);
 
 type GuidedEventListener = (event: GuidedEvent) => void;
 const guidedEventListeners = new Set<GuidedEventListener>();
@@ -192,8 +199,6 @@ export function GuidedSetupProvider({ children }: { children: React.ReactNode })
   const value = useMemo<GuidedSetupContextValue>(() => ({
     hydrated,
     session,
-    presentation,
-    targetLayouts,
     beginGuidedSetup,
     patchSession,
     completeStep,
@@ -207,20 +212,37 @@ export function GuidedSetupProvider({ children }: { children: React.ReactNode })
     endGuidedSetup,
     hydrated,
     patchSession,
-    presentation,
     registerTarget,
     session,
-    targetLayouts,
     unregisterTarget,
   ]);
 
-  return <GuidedSetupContext.Provider value={value}>{children}</GuidedSetupContext.Provider>;
+  const overlayValue = useMemo<GuidedOverlayStateValue>(() => ({
+    presentation,
+    targetLayouts,
+  }), [presentation, targetLayouts]);
+
+  return (
+    <GuidedSetupContext.Provider value={value}>
+      <GuidedOverlayStateContext.Provider value={overlayValue}>
+        {children}
+      </GuidedOverlayStateContext.Provider>
+    </GuidedSetupContext.Provider>
+  );
 }
 
 export function useGuidedSetup() {
   const context = useContext(GuidedSetupContext);
   if (!context) {
     throw new Error('useGuidedSetup must be used inside <GuidedSetupProvider>');
+  }
+  return context;
+}
+
+export function useGuidedOverlayState() {
+  const context = useContext(GuidedOverlayStateContext);
+  if (!context) {
+    throw new Error('useGuidedOverlayState must be used inside <GuidedSetupProvider>');
   }
   return context;
 }
