@@ -135,6 +135,7 @@ type Props = {
   // Default behavior is unchanged when omitted.
   initialPrayerType?: PrayerType;
   initialScriptureType?: ScriptureReadingType;
+  lockToPrimaryTask?: boolean;
 };
 
 type ChallengeConfirmAction = {
@@ -655,6 +656,7 @@ export default function SetAsTaskSheet({
   onTaskMutation,
   initialPrayerType,
   initialScriptureType,
+  lockToPrimaryTask = false,
 }: Props) {
   const { height: windowHeight } = useWindowDimensions();
   const {
@@ -709,6 +711,7 @@ export default function SetAsTaskSheet({
   const primaryTaskTabAccent = context === 'journal' ? ROUTINE_TASK_ACCENT : C.gold;
   const primaryTaskTabMuted = context === 'journal' ? ROUTINE_TASK_ACCENT_MUTED : C.gold;
   const activeSegmentColor = taskTab === 'challenge' ? C.gold : primaryTaskTabAccent;
+  const showTaskSwitcher = !lockToPrimaryTask;
 
   const activeForContext = useMemo(
     () => activeChallenges.filter(item => item.category === challengeCategoryForContext(context)),
@@ -830,6 +833,7 @@ export default function SetAsTaskSheet({
   };
 
   const openChallengeSetup = (entry: ChallengeCatalogEntry) => {
+    if (lockToPrimaryTask) return;
     animateSoftLayoutChange();
     setExpandedChallengeId(null);
     if (selectedCatalogId === entry.id) {
@@ -848,6 +852,7 @@ export default function SetAsTaskSheet({
   };
 
   const switchTaskTab = (nextTab: TaskTab) => {
+    if (lockToPrimaryTask && nextTab !== primaryTaskTab) return;
     if (taskTab === nextTab) return;
     animateSoftLayoutChange();
     setTaskTab(nextTab);
@@ -1093,45 +1098,47 @@ export default function SetAsTaskSheet({
             <View style={s.headerSpacer} />
           </View>
 
-          <View
-            style={s.segmentWrap}
-            onLayout={event => setSegmentWidth(event.nativeEvent.layout.width)}
-          >
-            {segmentWidth > 0 && (
-              <Reanimated.View
-                pointerEvents="none"
-                style={[
-                  s.segmentPill,
-                  {
-                    width: (segmentWidth - 12) / 2,
-                    backgroundColor: activeSegmentColor,
-                    shadowColor: activeSegmentColor,
-                  },
-                  segmentPillMotionStyle,
-                ]}
-              />
-            )}
-            <TouchableOpacity
-              onPress={() => switchTaskTab(primaryTaskTab)}
-              activeOpacity={0.86}
-              style={s.segmentBtn}
+          {showTaskSwitcher ? (
+            <View
+              style={s.segmentWrap}
+              onLayout={event => setSegmentWidth(event.nativeEvent.layout.width)}
             >
-              {context === 'journal' ? (
-                <Notebook s={16} c={primaryTaskTabActive ? '#FFFFFF' : primaryTaskTabMuted} />
-              ) : (
-                <Flame s={16} color={primaryTaskTabActive ? '#FFFFFF' : primaryTaskTabMuted} filled={primaryTaskTabActive} />
+              {segmentWidth > 0 && (
+                <Reanimated.View
+                  pointerEvents="none"
+                  style={[
+                    s.segmentPill,
+                    {
+                      width: (segmentWidth - 12) / 2,
+                      backgroundColor: activeSegmentColor,
+                      shadowColor: activeSegmentColor,
+                    },
+                    segmentPillMotionStyle,
+                  ]}
+                />
               )}
-              <Text style={[s.segmentText, primaryTaskTabActive && s.segmentTextActive]}>{primaryTaskTabLabel}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => switchTaskTab('challenge')}
-              activeOpacity={0.86}
-              style={s.segmentBtn}
-            >
-              <Trophy s={16} c={taskTab === 'challenge' ? '#FFFFFF' : '#C5A059'} />
-              <Text style={[s.segmentText, taskTab === 'challenge' && s.segmentTextActive]}>CHALLENGE</Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                onPress={() => switchTaskTab(primaryTaskTab)}
+                activeOpacity={0.86}
+                style={s.segmentBtn}
+              >
+                {context === 'journal' ? (
+                  <Notebook s={16} c={primaryTaskTabActive ? '#FFFFFF' : primaryTaskTabMuted} />
+                ) : (
+                  <Flame s={16} color={primaryTaskTabActive ? '#FFFFFF' : primaryTaskTabMuted} filled={primaryTaskTabActive} />
+                )}
+                <Text style={[s.segmentText, primaryTaskTabActive && s.segmentTextActive]}>{primaryTaskTabLabel}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => switchTaskTab('challenge')}
+                activeOpacity={0.86}
+                style={s.segmentBtn}
+              >
+                <Trophy s={16} c={taskTab === 'challenge' ? '#FFFFFF' : '#C5A059'} />
+                <Text style={[s.segmentText, taskTab === 'challenge' && s.segmentTextActive]}>CHALLENGE</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           <ScrollView ref={contentScrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
             <Reanimated.View style={tabContentMotionStyle}>
@@ -1183,7 +1190,7 @@ export default function SetAsTaskSheet({
                 </>
               )}
 
-              {taskTab === 'challenge' && (
+              {showTaskSwitcher && taskTab === 'challenge' && (
                 <ChallengePanel
                   context={context}
                   activeItems={activeForContext}

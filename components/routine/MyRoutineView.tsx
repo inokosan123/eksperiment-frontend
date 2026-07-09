@@ -277,9 +277,13 @@ const MY_ROUTINE_GUIDE_TARGETS = {
   spiritualAdd: 'my-routine.spiritual-add',
   spiritualType: 'my-routine.spiritual-type',
   routineAdd: 'my-routine.routine-add',
+  dayTabs: 'my-routine.day-tabs',
   title: 'my-routine.title',
   save: 'my-routine.save',
   taskCard: 'my-routine.task-card',
+  habits: 'my-routine.habits',
+  challenges: 'my-routine.challenges',
+  blockingPlan: 'my-routine.blocking-plan',
 } as const;
 const ROUTINE_PRAYER_RULES: { key: PrayerChallengeRuleChoice; label: string; desc: string }[] = [
   { key: 'personal', label: 'My Rule', desc: 'For Christians of every tradition — Catholic, Protestant, Orthodox, non-denominational, and any other.' },
@@ -829,6 +833,7 @@ export default function MyRoutineView({
   });
   const [habits, setHabits] = useState<HabitItem[]>([]);
   const habitsRef = useRef<HabitsViewHandle>(null);
+  const routineScrollRef = useRef<React.ElementRef<typeof ScrollView>>(null);
   const [quickTaskSheetOpen, setQuickTaskSheetOpen] = useState(false);
   const quickTaskSavedRef = useRef(false);
   const {
@@ -840,7 +845,11 @@ export default function MyRoutineView({
   const guidePhase = isGuided ? session.phase : '';
   const spiritualAddTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.spiritualAdd, isGuided);
   const routineAddTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.routineAdd, isGuided);
+  const dayTabsTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.dayTabs, isGuided);
   const taskCardTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.taskCard, isGuided);
+  const habitsTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.habits, isGuided);
+  const challengesTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.challenges, isGuided);
+  const blockingPlanTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.blockingPlan, isGuided);
 
   const finishGuidedRoutine = useCallback(() => {
     patchSession({
@@ -889,6 +898,32 @@ export default function MyRoutineView({
 
   useEffect(() => {
     if (!isGuided) return;
+    if (guidePhase === 'tourAdd') {
+      setPresentation({
+        key: 'my-routine-tour-add',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.spiritualAdd,
+        cutoutPadding: 7,
+        placement: 'below',
+        allowTargetInteraction: false,
+        message: 'This is My Routine.\n\nThese first buttons add Spiritual Tasks and Routine Tasks to your weekly plan.',
+        ctaLabel: 'SHOW WEEKLY PLAN',
+        onCta: () => patchSession({ phase: 'tourWeek' }),
+      });
+      return;
+    }
+    if (guidePhase === 'tourWeek') {
+      setPresentation({
+        key: 'my-routine-tour-week',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.dayTabs,
+        cutoutPadding: 7,
+        placement: 'below',
+        allowTargetInteraction: true,
+        message: 'Your plan is weekly. Move through Monday, Tuesday, Wednesday, and the rest of the week.',
+        ctaLabel: 'SHOW EDITING',
+        onCta: () => patchSession({ phase: 'edit' }),
+      });
+      return;
+    }
     if (guidePhase === 'intro') {
       patchSession({ phase: 'spiritualAdd' });
       return;
@@ -1039,7 +1074,52 @@ export default function MyRoutineView({
         cutoutPadding: 7,
         placement: 'below',
         allowTargetInteraction: true,
-        message: 'Everything remains editable.\n\nSave the task to return to your week.',
+        message: 'This is the editor. You can change the name, time, repeat days, and details whenever life changes.',
+        ctaLabel: 'CONTINUE',
+        onCta: () => {
+          setEditorVisible(false);
+          setEditorTask(null);
+          patchSession({ phase: 'tourHabits' });
+        },
+      });
+      return;
+    }
+    if (guidePhase === 'tourHabits') {
+      setPresentation({
+        key: 'my-routine-tour-habits',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.habits,
+        cutoutPadding: 7,
+        placement: 'above',
+        allowTargetInteraction: false,
+        message: 'Habits live here. Add, pause, and adjust the steps that lead toward a goal.',
+        ctaLabel: 'SHOW CHALLENGES',
+        onCta: () => patchSession({ phase: 'tourChallenges' }),
+      });
+      return;
+    }
+    if (guidePhase === 'tourChallenges') {
+      setPresentation({
+        key: 'my-routine-tour-challenges',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.challenges,
+        cutoutPadding: 7,
+        placement: 'above',
+        allowTargetInteraction: false,
+        message: 'Your spiritual challenges are here too: prayer, Scripture, and journal commitments.',
+        ctaLabel: 'SHOW BLOCKING PLAN',
+        onCta: () => patchSession({ phase: 'tourBlocking' }),
+      });
+      return;
+    }
+    if (guidePhase === 'tourBlocking') {
+      setPresentation({
+        key: 'my-routine-tour-blocking',
+        targetId: MY_ROUTINE_GUIDE_TARGETS.blockingPlan,
+        cutoutPadding: 7,
+        placement: 'above',
+        allowTargetInteraction: false,
+        message: 'At the bottom you can see which blocking plan is active on your phone today.',
+        ctaLabel: 'FINISH TOUR',
+        onCta: () => patchSession({ phase: 'complete' }),
       });
       return;
     }
@@ -1066,16 +1146,46 @@ export default function MyRoutineView({
     const timer = setTimeout(() => {
       spiritualAddTarget.measure();
       routineAddTarget.measure();
+      dayTabsTarget.measure();
       taskCardTarget.measure();
+      habitsTarget.measure();
+      challengesTarget.measure();
+      blockingPlanTarget.measure();
     }, guidePhase === 'weekly' || guidePhase === 'edit' ? 280 : 140);
     return () => clearTimeout(timer);
   }, [
+    blockingPlanTarget,
+    challengesTarget,
+    dayTabsTarget,
     guidePhase,
+    habitsTarget,
     isGuided,
     routineAddTarget,
     spiritualAddTarget,
     taskCardTarget,
   ]);
+
+  useEffect(() => {
+    if (!isGuided) return undefined;
+    const timer = setTimeout(() => {
+      if (guidePhase === 'tourAdd' || guidePhase === 'tourWeek' || guidePhase === 'edit' || guidePhase === 'editSave') {
+        routineScrollRef.current?.scrollTo({ y: 0, animated: true });
+        return;
+      }
+      if (guidePhase === 'tourHabits') {
+        routineScrollRef.current?.scrollTo({ y: 520, animated: true });
+        return;
+      }
+      if (guidePhase === 'tourChallenges') {
+        routineScrollRef.current?.scrollTo({ y: 720, animated: true });
+        return;
+      }
+      if (guidePhase === 'tourBlocking') {
+        routineScrollRef.current?.scrollToEnd({ animated: true });
+      }
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [guidePhase, isGuided]);
 
   const openAddSpiritual = () => {
     setShowSpiritualTypePicker(true);
@@ -1251,7 +1361,7 @@ export default function MyRoutineView({
       notifyGuideEvent({
         type: 'completed',
         step: 'buildMyRoutine',
-        phase: 'complete',
+        phase: 'tourHabits',
         entityKey: 'editedRoutineTask',
         entityId: savedTask?.id,
       });
@@ -1301,45 +1411,47 @@ export default function MyRoutineView({
     <View style={s.screen}>
       <ScreenTitleBar title="MY ROUTINE" showBack />
 
-      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+        <ScrollView ref={routineScrollRef} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
         <View>
           <View style={s.sectionHead}>
             <Calendar s={16} c={C.gold} />
             <Text style={s.sectionKicker}>Weekly Template</Text>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.dayTabsRow}>
-            {DAY_TABS.map((day, index) => {
-              const active = index === selectedDayIndex;
-              return (
-                <TouchableOpacity
-                  key={day.label}
-                  onPress={() => setSelectedDayIndex(index)}
-                  activeOpacity={0.84}
-                  style={s.dayTabPress}
-                >
-                  {active ? (
-                    <LinearGradient
-                      colors={['#E2BD75', '#C5A059', '#A87E33']}
-                      locations={[0, 0.55, 1]}
-                      start={{ x: 0.15, y: 0 }}
-                      end={{ x: 0.85, y: 1 }}
-                      style={[s.dayTab, s.dayTabActive]}
-                    >
-                      <View pointerEvents="none" style={s.dayTabSheen} />
-                      <View pointerEvents="none" style={s.dayTabRim} />
-                      <Text style={[s.dayTabLabel, s.dayTabLabelActive]}>{day.label}</Text>
-                      <View style={s.dayTabMarker} />
-                    </LinearGradient>
-                  ) : (
-                    <View style={s.dayTab}>
-                      <Text style={s.dayTabLabel}>{day.label}</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+          <View {...dayTabsTarget}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.dayTabsRow}>
+              {DAY_TABS.map((day, index) => {
+                const active = index === selectedDayIndex;
+                return (
+                  <TouchableOpacity
+                    key={day.label}
+                    onPress={() => setSelectedDayIndex(index)}
+                    activeOpacity={0.84}
+                    style={s.dayTabPress}
+                  >
+                    {active ? (
+                      <LinearGradient
+                        colors={['#E2BD75', '#C5A059', '#A87E33']}
+                        locations={[0, 0.55, 1]}
+                        start={{ x: 0.15, y: 0 }}
+                        end={{ x: 0.85, y: 1 }}
+                        style={[s.dayTab, s.dayTabActive]}
+                      >
+                        <View pointerEvents="none" style={s.dayTabSheen} />
+                        <View pointerEvents="none" style={s.dayTabRim} />
+                        <Text style={[s.dayTabLabel, s.dayTabLabelActive]}>{day.label}</Text>
+                        <View style={s.dayTabMarker} />
+                      </LinearGradient>
+                    ) : (
+                      <View style={s.dayTab}>
+                        <Text style={s.dayTabLabel}>{day.label}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
 
           <View style={s.addRow}>
             <TouchableOpacity {...spiritualAddTarget} onPress={openAddSpiritual} activeOpacity={0.84} style={s.addBtnPress}>
@@ -1389,7 +1501,7 @@ export default function MyRoutineView({
                   )}
 
                   <TouchableOpacity
-                    {...(isGuided && task.id === session?.createdIds.routineTask ? taskCardTarget : {})}
+                    {...(isGuided && (task.id === session?.createdIds.routineTask || (!session?.createdIds.routineTask && index === 0)) ? taskCardTarget : {})}
                     onPress={() => {
                       openTask(task);
                       if (isGuided && guidePhase === 'edit') patchSession({ phase: 'editSave' });
@@ -1413,7 +1525,7 @@ export default function MyRoutineView({
 
         <SectionDivider icon={<ListChecks s={17} c="#D1D5DB" />} />
 
-        <View>
+        <View {...habitsTarget}>
           <View style={s.sectionBetween}>
             <View style={s.sectionHead}>
               <ListChecks s={16} c="#16A34A" />
@@ -1433,7 +1545,7 @@ export default function MyRoutineView({
 
         <SectionDivider icon={<Trophy s={17} c="#D1D5DB" />} />
 
-        <View>
+        <View {...challengesTarget}>
           <View style={s.sectionBetween}>
             <View style={s.sectionHead}>
               <Trophy s={16} c={C.gold} />
@@ -1467,7 +1579,9 @@ export default function MyRoutineView({
           </View>
         </View>
 
-        <RoutinePhonePlanCard dayIndex={selectedDayIndex} />
+        <View {...blockingPlanTarget}>
+          <RoutinePhonePlanCard dayIndex={selectedDayIndex} />
+        </View>
 
       </ScrollView>
 
@@ -1965,6 +2079,8 @@ export function RoutineTaskEditorSheet({
   visible,
   guided = false,
   task,
+  initialTask = null,
+  hideDelete = false,
   defaultLevel,
   defaultType,
   onClose,
@@ -1974,6 +2090,8 @@ export function RoutineTaskEditorSheet({
   visible: boolean;
   guided?: boolean;
   task: RoutineTask | null;
+  initialTask?: RoutineTask | null;
+  hideDelete?: boolean;
   defaultLevel?: RoutineLevel;
   defaultType?: SpiritualType;
   onClose: () => void;
@@ -2008,6 +2126,7 @@ export function RoutineTaskEditorSheet({
   const guidePhase = isGuided ? session.phase : '';
   const titleTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.title, isGuided);
   const saveTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.save, isGuided);
+  const formTask = task ?? initialTask;
 
   const advanceTitleGuide = useCallback(() => {
     if (!isGuided || !title.trim()) return;
@@ -2045,32 +2164,32 @@ export function RoutineTaskEditorSheet({
     if (!visible) return;
     setShowAllRoutineIcons(false);
     setConfirmDeleteVisible(false);
-    if (task) {
-      setTitle(task.title);
-      setLevel(task.level);
-      setType(task.type);
-      setIcon(task.icon ?? 'ListChecks');
-      setTime(task.time);
-      setFrequency(task.frequency);
-      setSelectedDays(task.selectedDays ?? []);
-      setMonthlyDays(task.monthlyDays ?? [1]);
-      setSameTimeEveryDay(task.sameTimeEveryDay);
-      setDayTimeOverrides(task.dayTimeOverrides ?? []);
-      setNotificationMode(task.notificationMode);
-      setReminderMinutes(task.reminderMinutes ?? 15);
-      setPrayerRule(normalizeRoutinePrayerRule(task));
-      if (isJesusPrayerRoutineTask(task)) {
-        setJesusMode(normalizeJesusMode(task.prayerConfig?.jesusPrayerMode));
-        setJesusDuration(String(task.prayerConfig?.jesusPrayerDuration ?? 15));
-        setJesusCount(String(task.prayerConfig?.jesusPrayerCount ?? 100));
+    if (formTask) {
+      setTitle(formTask.title);
+      setLevel(formTask.level);
+      setType(formTask.type);
+      setIcon(formTask.icon ?? 'ListChecks');
+      setTime(formTask.time);
+      setFrequency(formTask.frequency);
+      setSelectedDays(formTask.selectedDays ?? []);
+      setMonthlyDays(formTask.monthlyDays ?? [1]);
+      setSameTimeEveryDay(formTask.sameTimeEveryDay);
+      setDayTimeOverrides(formTask.dayTimeOverrides ?? []);
+      setNotificationMode(formTask.notificationMode);
+      setReminderMinutes(formTask.reminderMinutes ?? 15);
+      setPrayerRule(normalizeRoutinePrayerRule(formTask));
+      if (isJesusPrayerRoutineTask(formTask)) {
+        setJesusMode(normalizeJesusMode(formTask.prayerConfig?.jesusPrayerMode));
+        setJesusDuration(String(formTask.prayerConfig?.jesusPrayerDuration ?? 15));
+        setJesusCount(String(formTask.prayerConfig?.jesusPrayerCount ?? 100));
       } else {
         setJesusMode('duration');
         setJesusDuration('15');
         setJesusCount('100');
       }
-      const nextScriptureType = inferScriptureReadingType(task);
+      const nextScriptureType = inferScriptureReadingType(formTask);
       setScriptureReadingType(nextScriptureType);
-      setScriptureChaptersPerDay(Math.max(1, normalizeScriptureChaptersPerDay(task, nextScriptureType) || 1));
+      setScriptureChaptersPerDay(Math.max(1, normalizeScriptureChaptersPerDay(formTask, nextScriptureType) || 1));
       return;
     }
 
@@ -2092,11 +2211,11 @@ export function RoutineTaskEditorSheet({
     setJesusCount('100');
     setScriptureReadingType('custom');
     setScriptureChaptersPerDay(1);
-  }, [defaultLevel, defaultType, task, visible]);
+  }, [defaultLevel, defaultType, formTask, visible]);
 
   const isSpiritual = level === 1;
-  const habitAccent = task?.source === 'habit' ? task.habitColor : undefined;
-  const gratitudeAccent = task?.source === 'gratitude' || task?.type === 'gratitude' ? GRATITUDE_ACCENT : undefined;
+  const habitAccent = formTask?.source === 'habit' ? formTask.habitColor : undefined;
+  const gratitudeAccent = formTask?.source === 'gratitude' || formTask?.type === 'gratitude' ? GRATITUDE_ACCENT : undefined;
   const editorAccent = habitAccent ?? gratitudeAccent;
   const accent = editorAccent ?? (isSpiritual ? C.gold : '#1F2937');
   const softAccentBg = editorAccent
@@ -2112,17 +2231,17 @@ export function RoutineTaskEditorSheet({
     : undefined;
 
   const draftTask: RoutineTask = {
-    id: task?.id ?? `routine_${Date.now()}`,
+    id: formTask?.id ?? `routine_${Date.now()}`,
     title: title.trim(),
-    subtitle: task?.subtitle,
+    subtitle: formTask?.subtitle,
     level,
-    source: task?.source ?? (isSpiritual ? 'spiritual' : 'routine'),
-    type: task ? task.type : isSpiritual ? type : 'custom',
-    icon: isSpiritual ? task?.icon : icon,
-    habitColor: task?.habitColor,
-    targetView: task?.targetView,
-    targetTab: task?.targetTab,
-    status: task?.status ?? 'active',
+    source: formTask?.source ?? (isSpiritual ? 'spiritual' : 'routine'),
+    type: formTask ? formTask.type : isSpiritual ? type : 'custom',
+    icon: isSpiritual ? formTask?.icon : icon,
+    habitColor: formTask?.habitColor,
+    targetView: formTask?.targetView,
+    targetTab: formTask?.targetTab,
+    status: formTask?.status ?? 'active',
     time,
     frequency,
     selectedDays: frequency === 'specific_days' ? selectedDays : undefined,
@@ -2131,8 +2250,8 @@ export function RoutineTaskEditorSheet({
     dayTimeOverrides: sameTimeEveryDay ? undefined : dayTimeOverrides,
     notificationMode,
     reminderMinutes: notificationMode === 'double' ? reminderMinutes : undefined,
-    prayerConfig: task?.prayerConfig,
-    scriptureConfig: task?.scriptureConfig,
+    prayerConfig: formTask?.prayerConfig,
+    scriptureConfig: formTask?.scriptureConfig,
   };
 
   const activeDays = getActiveDays(draftTask);
@@ -2146,7 +2265,7 @@ export function RoutineTaskEditorSheet({
   const prayerRuleAccent = prayerRuleAccentForTask(draftTask);
   const isScriptureTask = isScriptureRoutineTask(draftTask);
   const isHabitTask = task?.source === 'habit';
-  const canEditRoutineIcon = !isSpiritual && (!task || task.source === 'routine');
+  const canEditRoutineIcon = !isSpiritual && (!formTask || formTask.source === 'routine');
   const compactRoutineIcons = ROUTINE_ICONS.slice(0, VISIBLE_ROUTINE_ICON_COUNT);
   const selectedRoutineIcon = ROUTINE_ICONS.find(item => item.id === icon);
   const visibleRoutineIcons = showAllRoutineIcons
@@ -2485,7 +2604,7 @@ export function RoutineTaskEditorSheet({
               />
             </View>
 
-            {task && (
+            {task && !hideDelete && (
               <TouchableOpacity onPress={() => setConfirmDeleteVisible(true)} activeOpacity={0.84} style={s.deleteBtn}>
                 <Trash2 s={16} c="#EF4444" />
                 <Text style={s.deleteBtnText}>{isHabitTask ? 'Delete Step' : 'Delete Activity'}</Text>

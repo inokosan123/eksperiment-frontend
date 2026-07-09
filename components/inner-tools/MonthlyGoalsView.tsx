@@ -197,7 +197,12 @@ export default function MonthlyGoalsView({
         cutoutPadding: 5,
         placement: 'below',
         allowTargetInteraction: true,
-        message: 'Give your month a direction.\n\nChoose the month you want to begin with.',
+        eyebrow: 'MONTHLY GOALS',
+        progress: { current: 1, total: 3 },
+        message: 'Give your month a direction. Goals do not replace daily discipline — they give it somewhere to go.',
+        highlights: ['direction'],
+        action: 'Tap the month you want to begin with',
+        hint: 'tap',
       });
       return;
     }
@@ -207,7 +212,11 @@ export default function MonthlyGoalsView({
         targetId: MONTHLY_GOALS_GUIDE_TARGETS.input,
         placement: 'above',
         allowTargetInteraction: true,
-        message: 'Write one goal that would make this month meaningful. Tap Done when it feels clear.',
+        eyebrow: 'MONTHLY GOALS',
+        progress: { current: 2, total: 3 },
+        message: 'Write one goal that would make this month feel meaningful.',
+        highlights: ['one goal'],
+        action: 'Type it, then tap Done',
       });
       return;
     }
@@ -217,7 +226,12 @@ export default function MonthlyGoalsView({
         targetId: MONTHLY_GOALS_GUIDE_TARGETS.add,
         placement: 'above',
         allowTargetInteraction: true,
-        message: 'A clear direction changes how the small choices feel. Add your first goal.',
+        eyebrow: 'MONTHLY GOALS',
+        progress: { current: 3, total: 3 },
+        message: 'A clear direction changes how the small daily choices feel.',
+        highlights: ['clear direction'],
+        action: 'Tap to add your goal',
+        hint: 'tap',
       });
       return;
     }
@@ -225,10 +239,13 @@ export default function MonthlyGoalsView({
       setPresentation({
         key: 'monthly-goals-complete',
         placement: 'center',
-        message: 'Add another monthly goal for a future month?',
-        ctaLabel: 'Yes',
+        celebrate: true,
+        eyebrow: 'MONTHLY GOALS',
+        message: 'Your first monthly goal is set. It will be waiting at the top of the month.\n\nPlan another month ahead?',
+        highlights: ['first monthly goal'],
+        ctaLabel: 'Add another goal',
         onCta: addAnotherGuidedGoal,
-        secondaryCtaLabel: 'No',
+        secondaryCtaLabel: 'Continue',
         onSecondaryCta: finishGuidedStep,
       });
     }
@@ -271,7 +288,7 @@ export default function MonthlyGoalsView({
 
   return (
     <View style={s.screen}>
-      <ScreenTitleBar title="MONTHLY GOALS" showBack bg={BG} />
+      <ScreenTitleBar title="MONTHLY GOALS" showBack={!isGuided} bg={BG} />
 
       <ScrollView
         style={{ flex: 1 }}

@@ -320,18 +320,20 @@ function EventForm({
     () => Array.from({ length: trailingSpacerCount }, (_, index) => index),
     [trailingSpacerCount],
   );
+  // Guided phases walk the form top-to-bottom: name → date → icon → save,
+  // so the spotlight never jumps back up the screen.
   const advanceAfterTitle = () => {
     if (isGuided && guidePhase === 'title' && form.title.trim()) {
-      patchSession({ phase: 'icon' });
-    }
-  };
-  const advanceAfterIcon = () => {
-    if (isGuided && guidePhase === 'icon') {
       patchSession({ phase: 'date' });
     }
   };
   const advanceAfterDate = () => {
     if (isGuided && guidePhase === 'date') {
+      patchSession({ phase: 'icon' });
+    }
+  };
+  const advanceAfterIcon = () => {
+    if (isGuided && guidePhase === 'icon') {
       patchSession({ phase: 'save' });
     }
   };
@@ -791,7 +793,12 @@ export default function BigEventsView({
         targetId: BIG_EVENTS_GUIDE_TARGETS.add,
         placement: 'below',
         allowTargetInteraction: true,
-        message: 'Big Events keep important dates in view before they become urgent.\n\nBirthday  |  Wedding  |  Exam\n\nTap + to add your first one.',
+        eyebrow: 'BIG EVENTS',
+        message: 'Important dates should stay in view — long before they become urgent.',
+        highlights: ['stay in view'],
+        chips: ['Birthday', 'Wedding', 'Exam', 'Trip'],
+        action: 'Tap + to add your first event',
+        hint: 'tap',
       });
       return;
     }
@@ -801,7 +808,26 @@ export default function BigEventsView({
         targetId: BIG_EVENTS_GUIDE_TARGETS.title,
         placement: 'below',
         allowTargetInteraction: true,
-        message: 'Start with its name. When it feels right, tap Done.',
+        eyebrow: 'NEW EVENT',
+        progress: { current: 1, total: 4 },
+        message: 'Give it a name — the way you would say it out loud.',
+        highlights: ['name'],
+        action: 'Type the name, then tap Done',
+      });
+      return;
+    }
+    if (guidePhase === 'date') {
+      setPresentation({
+        key: 'big-events-date',
+        targetId: BIG_EVENTS_GUIDE_TARGETS.date,
+        placement: 'below',
+        allowTargetInteraction: true,
+        eyebrow: 'NEW EVENT',
+        progress: { current: 2, total: 4 },
+        message: 'Set the day it happens. Anasta keeps the countdown close from today on.',
+        highlights: ['countdown'],
+        action: 'Tap the date row to pick a day',
+        hint: 'tap',
       });
       return;
     }
@@ -812,17 +838,12 @@ export default function BigEventsView({
         cutoutPadding: 5,
         placement: 'above',
         allowTargetInteraction: true,
-        message: 'Choose an icon so you can recognize this moment at a glance.',
-      });
-      return;
-    }
-    if (guidePhase === 'date') {
-      setPresentation({
-        key: 'big-events-date',
-        targetId: BIG_EVENTS_GUIDE_TARGETS.date,
-        placement: 'below',
-        allowTargetInteraction: true,
-        message: 'Now set the date. Anasta will keep the countdown close.',
+        eyebrow: 'NEW EVENT',
+        progress: { current: 3, total: 4 },
+        message: 'Choose an icon you will recognize at a glance.',
+        highlights: ['at a glance'],
+        action: 'Tap an icon to select it',
+        hint: 'tap',
       });
       return;
     }
@@ -832,7 +853,11 @@ export default function BigEventsView({
         targetId: BIG_EVENTS_GUIDE_TARGETS.save,
         placement: 'above',
         allowTargetInteraction: true,
-        message: 'Everything is ready. Save your first Big Event.',
+        eyebrow: 'NEW EVENT',
+        progress: { current: 4, total: 4 },
+        message: 'Everything is ready.',
+        action: 'Save your first Big Event',
+        hint: 'tap',
       });
       return;
     }
@@ -840,10 +865,13 @@ export default function BigEventsView({
       setPresentation({
         key: 'big-events-complete',
         placement: 'center',
-        message: 'Add another big event?',
-        ctaLabel: 'Yes',
+        celebrate: true,
+        eyebrow: 'BIG EVENTS',
+        message: 'Your first Big Event is saved. It will live on Home, counting down as the day draws near.\n\nWould you like to add another?',
+        highlights: ['counting down'],
+        ctaLabel: 'Add another event',
         onCta: addAnotherGuidedEvent,
-        secondaryCtaLabel: 'No',
+        secondaryCtaLabel: 'Continue',
         onSecondaryCta: finishGuidedStep,
       });
     }
@@ -870,7 +898,7 @@ export default function BigEventsView({
     <View style={{ flex: 1, backgroundColor: BG }}>
       <ScreenTitleBar
         title="BIG EVENTS"
-        showBack
+        showBack={!isGuided}
         bg={BG}
         onBackOverride={() => router.back()}
         rightElement={

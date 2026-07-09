@@ -74,6 +74,14 @@ export type GuidedTargetLayout = {
 
 export type GuidedOverlayPlacement = 'above' | 'below' | 'center';
 
+// Animated gesture demonstration rendered over the spotlight target.
+export type GuidedGestureHint = 'tap' | 'long-press' | 'swipe-left' | 'swipe-right';
+
+export type GuidedOverlayProgress = {
+  current: number;
+  total: number;
+};
+
 export type GuidedOverlayPresentation = {
   key: string;
   message: string;
@@ -86,4 +94,14 @@ export type GuidedOverlayPresentation = {
   onCta?: () => void;
   secondaryCtaLabel?: string;
   onSecondaryCta?: () => void;
+  // Structured coach-bubble content. All optional — presentations that only
+  // pass `message` render exactly as before.
+  eyebrow?: string;
+  highlights?: string[];
+  chips?: string[];
+  action?: string;
+  hint?: GuidedGestureHint;
+  // Where the hint sits inside the cutout — e.g. 'left' over a task's check circle.
+  hintAnchor?: 'center' | 'left' | 'right';
+  progress?: GuidedOverlayProgress;
 };

@@ -1,23 +1,51 @@
 import React, { useEffect, useMemo } from 'react';
 import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Reanimated, {
-  FadeIn,
-  FadeOut,
   Easing,
+  Extrapolation,
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+  FadeOut,
   ZoomIn,
+  cancelAnimation,
+  interpolate,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
+import type { SharedValue } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import { CheckSmall } from '@/components/icons/Icons';
+import { CheckSmall, ChevronLeft, ChevronRight } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { useGuidedSetup } from './GuidedSetupContext';
+import type { GuidedGestureHint } from './types';
 
 const APP_LOGO = require('@/assets/images/anasta-logo.png');
-const DIM = 'rgba(19,17,15,0.70)';
+const DIM = 'rgba(17,13,9,0.74)';
 const MOTION = { duration: 520, easing: Easing.bezier(0.16, 1, 0.28, 1) };
+const SOFT_EASE = Easing.bezier(0.16, 1, 0.28, 1);
 const CUTOUT_RADIUS = 22;
+const RING_GOLD = 'rgba(240,209,143,0.95)';
+
+function escapeRegExp(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Bolds the highlight phrases inside the serif message.
+function renderMessage(message: string, highlights?: string[]) {
+  if (!highlights || highlights.length === 0) return message;
+  const pattern = new RegExp(`(${highlights.map(escapeRegExp).join('|')})`, 'g');
+  return message.split(pattern).map((part, index) =>
+    highlights.includes(part)
+      ? <Text key={`strong-${index}`} style={o.messageStrong}>{part}</Text>
+      : part
+  );
+}
 
 function DimPanel({ style }: { style: object }) {
   return (
@@ -27,8 +55,327 @@ function DimPanel({ style }: { style: object }) {
   );
 }
 
+// ─── Gesture hints ───────────────────────────────────────────────────────────
+// Looping demonstrations rendered in the middle of the spotlight so the user
+// sees the gesture, not just reads about it.
+
+function TapHintGraphic() {
+  const cycle = useSharedValue(0);
+
+  useEffect(() => {
+    cycle.value = 0;
+    cycle.value = withRepeat(withTiming(1, { duration: 1700, easing: Easing.linear }), -1, false);
+    return () => cancelAnimation(cycle);
+  }, [cycle]);
+
+  const dotStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: interpolate(cycle.value, [0, 0.07, 0.18, 1], [1, 0.78, 1, 1], Extrapolation.CLAMP) },
+    ],
+  }));
+  const ringAStyle = useAnimatedStyle(() => {
+    const p = interpolate(cycle.value, [0.07, 0.72], [0, 1], Extrapolation.CLAMP);
+    return {
+      opacity: interpolate(p, [0, 0.12, 1], [0, 0.62, 0], Extrapolation.CLAMP),
+      transform: [{ scale: 0.42 + p * 1.2 }],
+    };
+  });
+  const ringBStyle = useAnimatedStyle(() => {
+    const p = interpolate(cycle.value, [0.24, 0.92], [0, 1], Extrapolation.CLAMP);
+    return {
+      opacity: interpolate(p, [0, 0.12, 1], [0, 0.4, 0], Extrapolation.CLAMP),
+      transform: [{ scale: 0.42 + p * 1.2 }],
+    };
+  });
+
+  return (
+    <View style={o.hintBox}>
+      <Reanimated.View style={[o.hintRing, ringAStyle]} />
+      <Reanimated.View style={[o.hintRing, ringBStyle]} />
+      <Reanimated.View style={[o.hintDot, dotStyle]} />
+    </View>
+  );
+}
+
+function LongPressHintGraphic() {
+  const cycle = useSharedValue(0);
+
+  useEffect(() => {
+    cycle.value = 0;
+    // Press (0→0.55 is the hold), pop (0.55→0.72), rest, repeat.
+    cycle.value = withRepeat(
+      withSequence(
+        withTiming(0.55, { duration: 1050, easing: Easing.linear }),
+        withTiming(0.72, { duration: 260, easing: Easing.out(Easing.cubic) }),
+        withDelay(680, withTiming(0, { duration: 1 })),
+      ),
+      -1,
+      false,
+    );
+    return () => cancelAnimation(cycle);
+  }, [cycle]);
+
+  const dotStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: interpolate(cycle.value, [0, 0.06, 0.55, 0.64, 0.72], [1, 0.8, 0.8, 1.08, 1], Extrapolation.CLAMP) },
+    ],
+  }));
+  const holdRingStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(cycle.value, [0, 0.05, 0.55, 0.72], [0, 0.9, 0.96, 0], Extrapolation.CLAMP),
+    transform: [
+      { scale: interpolate(cycle.value, [0, 0.55, 0.72], [0.5, 1, 1.34], Extrapolation.CLAMP) },
+    ],
+  }));
+
+  return (
+    <View style={o.hintBox}>
+      <View style={o.hintBaseRing} />
+      <Reanimated.View style={[o.hintHoldRing, holdRingStyle]} />
+      <Reanimated.View style={[o.hintDot, dotStyle]} />
+    </View>
+  );
+}
+
+function SwipeHintGraphic({ direction }: { direction: 1 | -1 }) {
+  const cycle = useSharedValue(0);
+
+  useEffect(() => {
+    cycle.value = 0;
+    cycle.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 1250, easing: Easing.inOut(Easing.cubic) }),
+        withDelay(430, withTiming(0, { duration: 1 })),
+      ),
+      -1,
+      false,
+    );
+    return () => cancelAnimation(cycle);
+  }, [cycle]);
+
+  const cometStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(cycle.value, [0, 0.12, 0.8, 1], [0, 1, 1, 0], Extrapolation.CLAMP),
+    transform: [
+      { translateX: interpolate(cycle.value, [0, 1], [-52, 52], Extrapolation.CLAMP) * direction },
+    ],
+  }));
+
+  return (
+    <View style={o.hintBox}>
+      <Reanimated.View
+        style={[
+          o.hintComet,
+          { flexDirection: direction === 1 ? 'row' : 'row-reverse' },
+          cometStyle,
+        ]}
+      >
+        <View style={[o.hintTrailDot, { width: 5, height: 5, opacity: 0.18 }]} />
+        <View style={[o.hintTrailDot, { width: 7, height: 7, opacity: 0.32 }]} />
+        <View style={[o.hintTrailDot, { width: 10, height: 10, opacity: 0.5 }]} />
+        <View style={o.hintCometHead}>
+          {direction === 1
+            ? <ChevronRight s={12} c="#FFFFFF" w={3} />
+            : <ChevronLeft s={12} c="#FFFFFF" w={3} />}
+        </View>
+      </Reanimated.View>
+    </View>
+  );
+}
+
+function GestureHintLayer({
+  hint,
+  anchor = 'center',
+  x,
+  y,
+  width,
+  height,
+}: {
+  hint: GuidedGestureHint;
+  anchor?: 'center' | 'left' | 'right';
+  x: SharedValue<number>;
+  y: SharedValue<number>;
+  width: SharedValue<number>;
+  height: SharedValue<number>;
+}) {
+  const rectStyle = useAnimatedStyle(() => ({
+    left: x.value,
+    top: y.value,
+    width: width.value,
+    height: height.value,
+  }));
+
+  return (
+    <Reanimated.View
+      pointerEvents="none"
+      style={[
+        o.hintLayer,
+        anchor === 'left' && o.hintLayerLeft,
+        anchor === 'right' && o.hintLayerRight,
+        rectStyle,
+      ]}
+    >
+      {hint === 'tap' && <TapHintGraphic />}
+      {hint === 'long-press' && <LongPressHintGraphic />}
+      {hint === 'swipe-right' && <SwipeHintGraphic direction={1} />}
+      {hint === 'swipe-left' && <SwipeHintGraphic direction={-1} />}
+    </Reanimated.View>
+  );
+}
+
+// ─── Coach bubble pieces ─────────────────────────────────────────────────────
+
+function LogoPlate() {
+  const breath = useSharedValue(0);
+
+  useEffect(() => {
+    breath.value = 0;
+    breath.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0, { duration: 1400, easing: Easing.inOut(Easing.sin) }),
+      ),
+      -1,
+      false,
+    );
+    return () => cancelAnimation(breath);
+  }, [breath]);
+
+  const haloStyle = useAnimatedStyle(() => ({
+    opacity: 0.24 + breath.value * 0.3,
+    transform: [{ scale: 1 + breath.value * 0.09 }],
+  }));
+
+  return (
+    <Reanimated.View
+      entering={ZoomIn.delay(40).springify().damping(14).stiffness(190).mass(0.7)}
+      style={o.logoWrap}
+    >
+      <Reanimated.View style={[o.logoHalo, haloStyle]} />
+      <Image source={APP_LOGO} style={o.logo} resizeMode="cover" />
+      <View pointerEvents="none" style={o.logoRing} />
+    </Reanimated.View>
+  );
+}
+
+function ProgressDots({ current, total }: { current: number; total: number }) {
+  return (
+    <View style={o.dotsRow}>
+      {Array.from({ length: total }, (_, index) => {
+        const step = index + 1;
+        return (
+          <View
+            key={`dot-${index}`}
+            style={[
+              o.dot,
+              step < current && o.dotDone,
+              step === current && o.dotActive,
+            ]}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+function ActionPulseDot() {
+  const cycle = useSharedValue(0);
+
+  useEffect(() => {
+    cycle.value = 0;
+    cycle.value = withRepeat(withTiming(1, { duration: 1500, easing: Easing.linear }), -1, false);
+    return () => cancelAnimation(cycle);
+  }, [cycle]);
+
+  const ringStyle = useAnimatedStyle(() => {
+    const p = interpolate(cycle.value, [0.08, 0.8], [0, 1], Extrapolation.CLAMP);
+    return {
+      opacity: interpolate(p, [0, 0.15, 1], [0, 0.55, 0], Extrapolation.CLAMP),
+      transform: [{ scale: 0.5 + p * 0.85 }],
+    };
+  });
+  const dotStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: interpolate(cycle.value, [0, 0.08, 0.2, 1], [1, 0.78, 1, 1], Extrapolation.CLAMP) },
+    ],
+  }));
+
+  return (
+    <View style={o.actionPulseBox}>
+      <Reanimated.View style={[o.actionPulseRing, ringStyle]} />
+      <Reanimated.View style={[o.actionPulseDot, dotStyle]} />
+    </View>
+  );
+}
+
+// ─── Celebration ─────────────────────────────────────────────────────────────
+
+const SPARK_COUNT = 8;
+const SPARKS = Array.from({ length: SPARK_COUNT }, (_, index) => {
+  const angle = (Math.PI * 2 * index) / SPARK_COUNT - Math.PI / 2;
+  return { dx: Math.cos(angle), dy: Math.sin(angle) };
+});
+
+function CelebrationSpark({ dx, dy, burst }: { dx: number; dy: number; burst: SharedValue<number> }) {
+  const sparkStyle = useAnimatedStyle(() => {
+    const radius = interpolate(burst.value, [0, 1], [10, 62], Extrapolation.CLAMP);
+    return {
+      opacity: interpolate(burst.value, [0, 0.12, 1], [0, 1, 0], Extrapolation.CLAMP),
+      transform: [
+        { translateX: dx * radius },
+        { translateY: dy * radius },
+        { scale: interpolate(burst.value, [0, 1], [1, 0.3], Extrapolation.CLAMP) },
+      ],
+    };
+  });
+  return <Reanimated.View style={[o.successSpark, sparkStyle]} />;
+}
+
+function CelebrationBurst({ top }: { top: number }) {
+  const burst = useSharedValue(0);
+
+  useEffect(() => {
+    burst.value = 0;
+    burst.value = withDelay(160, withTiming(1, { duration: 820, easing: Easing.out(Easing.cubic) }));
+    return () => cancelAnimation(burst);
+  }, [burst]);
+
+  const ringAStyle = useAnimatedStyle(() => {
+    const p = interpolate(burst.value, [0, 0.8], [0, 1], Extrapolation.CLAMP);
+    return {
+      opacity: (1 - p) * 0.55,
+      transform: [{ scale: 0.55 + p * 1.5 }],
+    };
+  });
+  const ringBStyle = useAnimatedStyle(() => {
+    const p = interpolate(burst.value, [0.16, 1], [0, 1], Extrapolation.CLAMP);
+    return {
+      opacity: (1 - p) * 0.4,
+      transform: [{ scale: 0.55 + p * 1.5 }],
+    };
+  });
+
+  return (
+    <View pointerEvents="none" style={[o.successWrap, { top }]}>
+      <Reanimated.View style={[o.successRing, ringAStyle]} />
+      <Reanimated.View style={[o.successRing, ringBStyle]} />
+      {SPARKS.map((spark, index) => (
+        <CelebrationSpark key={`spark-${index}`} dx={spark.dx} dy={spark.dy} burst={burst} />
+      ))}
+      <View style={o.successHalo} />
+      <Reanimated.View
+        entering={ZoomIn.delay(60).springify().damping(13).stiffness(150).mass(0.8)}
+        style={o.successMark}
+      >
+        <CheckSmall s={34} c="#FFFFFF" w={3.2} />
+      </Reanimated.View>
+    </View>
+  );
+}
+
+// ─── Host ────────────────────────────────────────────────────────────────────
+
 export function GuidedOverlayHost() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const { session, presentation, targetLayouts } = useGuidedSetup();
   const target = presentation?.targetId ? targetLayouts[presentation.targetId] : undefined;
   const padding = presentation?.cutoutPadding ?? 8;
@@ -36,6 +383,9 @@ export function GuidedOverlayHost() {
   const y = useSharedValue(0);
   const width = useSharedValue(0);
   const height = useSharedValue(0);
+  const breath = useSharedValue(0);
+  const sonar = useSharedValue(0);
+  const presentationKey = presentation?.key ?? null;
 
   useEffect(() => {
     if (!target) return;
@@ -46,6 +396,34 @@ export function GuidedOverlayHost() {
     width.value = withTiming(Math.max(0, Math.min(screenWidth - nextX, target.width + padding * 2)), MOTION);
     height.value = withTiming(Math.max(0, Math.min(screenHeight - nextY, target.height + padding * 2)), MOTION);
   }, [height, padding, screenHeight, screenWidth, target, width, x, y]);
+
+  // The spotlight breathes and sends out a quiet sonar ring — the eye is drawn
+  // to the live part of the screen without a single written word.
+  useEffect(() => {
+    if (!presentationKey) return;
+    breath.value = 0;
+    breath.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 1300, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0, { duration: 1300, easing: Easing.inOut(Easing.sin) }),
+      ),
+      -1,
+      false,
+    );
+    sonar.value = 0;
+    sonar.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 1600, easing: Easing.out(Easing.quad) }),
+        withDelay(650, withTiming(0, { duration: 1 })),
+      ),
+      -1,
+      false,
+    );
+    return () => {
+      cancelAnimation(breath);
+      cancelAnimation(sonar);
+    };
+  }, [breath, presentationKey, sonar]);
 
   const topStyle = useAnimatedStyle(() => ({
     left: 0,
@@ -77,37 +455,96 @@ export function GuidedOverlayHost() {
     width: width.value,
     height: height.value,
   }));
-  const topLeftCornerStyle = useAnimatedStyle(() => ({
+  const ringStyle = useAnimatedStyle(() => ({
     left: x.value,
     top: y.value,
+    width: width.value,
+    height: height.value,
+    borderRadius: Math.min(CUTOUT_RADIUS, width.value / 2, height.value / 2),
+    opacity: 0.55 + breath.value * 0.45,
   }));
-  const topRightCornerStyle = useAnimatedStyle(() => ({
-    left: x.value + width.value - CUTOUT_RADIUS,
-    top: y.value,
-  }));
-  const bottomLeftCornerStyle = useAnimatedStyle(() => ({
+  const sonarStyle = useAnimatedStyle(() => ({
     left: x.value,
-    top: y.value + height.value - CUTOUT_RADIUS,
+    top: y.value,
+    width: width.value,
+    height: height.value,
+    borderRadius: Math.min(CUTOUT_RADIUS, width.value / 2, height.value / 2) + 2,
+    opacity: interpolate(sonar.value, [0, 0.1, 1], [0, 0.5, 0], Extrapolation.CLAMP),
+    transform: [{ scale: 1 + sonar.value * 0.06 }],
   }));
-  const bottomRightCornerStyle = useAnimatedStyle(() => ({
-    left: x.value + width.value - CUTOUT_RADIUS,
-    top: y.value + height.value - CUTOUT_RADIUS,
-  }));
+
+  // Rounded cutout corners. Each corner is a small clipped patch holding a
+  // transparent-core "donut": the ring's inner hole traces the exact corner
+  // arc, so the dim fills only the sliver OUTSIDE the arc — never a dark
+  // quarter-disc poking into the light area.
+  const topLeftCornerStyle = useAnimatedStyle(() => {
+    const r = Math.min(CUTOUT_RADIUS, width.value / 2, height.value / 2);
+    return { left: x.value, top: y.value, width: r, height: r };
+  });
+  const topLeftDonutStyle = useAnimatedStyle(() => {
+    const r = Math.min(CUTOUT_RADIUS, width.value / 2, height.value / 2);
+    const t = r * 0.5 + 2;
+    return { left: -t, top: -t, width: (r + t) * 2, height: (r + t) * 2, borderRadius: r + t, borderWidth: t };
+  });
+  const topRightCornerStyle = useAnimatedStyle(() => {
+    const r = Math.min(CUTOUT_RADIUS, width.value / 2, height.value / 2);
+    return { left: x.value + width.value - r, top: y.value, width: r, height: r };
+  });
+  const topRightDonutStyle = useAnimatedStyle(() => {
+    const r = Math.min(CUTOUT_RADIUS, width.value / 2, height.value / 2);
+    const t = r * 0.5 + 2;
+    return { left: -(r + t), top: -t, width: (r + t) * 2, height: (r + t) * 2, borderRadius: r + t, borderWidth: t };
+  });
+  const bottomLeftCornerStyle = useAnimatedStyle(() => {
+    const r = Math.min(CUTOUT_RADIUS, width.value / 2, height.value / 2);
+    return { left: x.value, top: y.value + height.value - r, width: r, height: r };
+  });
+  const bottomLeftDonutStyle = useAnimatedStyle(() => {
+    const r = Math.min(CUTOUT_RADIUS, width.value / 2, height.value / 2);
+    const t = r * 0.5 + 2;
+    return { left: -t, top: -(r + t), width: (r + t) * 2, height: (r + t) * 2, borderRadius: r + t, borderWidth: t };
+  });
+  const bottomRightCornerStyle = useAnimatedStyle(() => {
+    const r = Math.min(CUTOUT_RADIUS, width.value / 2, height.value / 2);
+    return { left: x.value + width.value - r, top: y.value + height.value - r, width: r, height: r };
+  });
+  const bottomRightDonutStyle = useAnimatedStyle(() => {
+    const r = Math.min(CUTOUT_RADIUS, width.value / 2, height.value / 2);
+    const t = r * 0.5 + 2;
+    return { left: -(r + t), top: -(r + t), width: (r + t) * 2, height: (r + t) * 2, borderRadius: r + t, borderWidth: t };
+  });
+
+  const hasCta = Boolean(presentation?.ctaLabel && presentation?.onCta);
+  const celebrateTop = Math.max(insets.top + 76, screenHeight * 0.22);
 
   const bubbleStyle = useMemo(() => {
     if (presentation?.celebrate) {
-      return { top: Math.max(96, screenHeight * 0.52) };
+      return { top: Math.max(celebrateTop + 168, screenHeight * 0.46) };
     }
     if (!target || presentation?.placement === 'center') {
-      return { top: Math.max(96, screenHeight * 0.28) };
+      return { top: Math.max(insets.top + 72, screenHeight * 0.26) };
     }
     if (presentation?.placement === 'above') {
-      return { bottom: Math.max(24, screenHeight - target.y + 20) };
+      return { bottom: Math.max(insets.bottom + 24, screenHeight - target.y + 24) };
     }
-    return { top: Math.min(screenHeight - 190, target.y + target.height + 22) };
-  }, [presentation?.placement, screenHeight, target]);
+    return {
+      top: Math.min(
+        screenHeight - (hasCta ? 264 : 216),
+        target.y + target.height + padding + 18,
+      ),
+    };
+  }, [celebrateTop, hasCta, insets.bottom, insets.top, padding, presentation?.celebrate, presentation?.placement, screenHeight, target]);
+
+  const coachEntering = useMemo(() => (
+    presentation?.placement === 'above'
+      ? FadeInUp.duration(460).easing(SOFT_EASE)
+      : FadeInDown.duration(460).easing(SOFT_EASE)
+  ), [presentation?.placement]);
 
   if (!session?.active || !presentation) return null;
+
+  const chips = presentation.chips ?? [];
+  const showHeader = Boolean(presentation.eyebrow || presentation.progress);
 
   return (
     <View pointerEvents="box-none" style={o.layer}>
@@ -117,16 +554,36 @@ export function GuidedOverlayHost() {
           <DimPanel style={leftStyle} />
           <DimPanel style={rightStyle} />
           <DimPanel style={bottomStyle} />
-          <DimPanel style={[o.cutoutCorner, o.cutoutCornerTopLeft, topLeftCornerStyle]} />
-          <DimPanel style={[o.cutoutCorner, o.cutoutCornerTopRight, topRightCornerStyle]} />
-          <DimPanel style={[o.cutoutCorner, o.cutoutCornerBottomLeft, bottomLeftCornerStyle]} />
-          <DimPanel style={[o.cutoutCorner, o.cutoutCornerBottomRight, bottomRightCornerStyle]} />
-          <Reanimated.View pointerEvents="none" style={[o.cutout, cutoutStyle]} />
+          <Reanimated.View pointerEvents="none" style={[o.cornerPatch, topLeftCornerStyle]}>
+            <Reanimated.View style={[o.cornerDonut, topLeftDonutStyle]} />
+          </Reanimated.View>
+          <Reanimated.View pointerEvents="none" style={[o.cornerPatch, topRightCornerStyle]}>
+            <Reanimated.View style={[o.cornerDonut, topRightDonutStyle]} />
+          </Reanimated.View>
+          <Reanimated.View pointerEvents="none" style={[o.cornerPatch, bottomLeftCornerStyle]}>
+            <Reanimated.View style={[o.cornerDonut, bottomLeftDonutStyle]} />
+          </Reanimated.View>
+          <Reanimated.View pointerEvents="none" style={[o.cornerPatch, bottomRightCornerStyle]}>
+            <Reanimated.View style={[o.cornerDonut, bottomRightDonutStyle]} />
+          </Reanimated.View>
+          <Reanimated.View pointerEvents="none" style={[o.sonarRing, sonarStyle]} />
+          <Reanimated.View pointerEvents="none" style={[o.cutoutRing, ringStyle]} />
           {presentation.allowTargetInteraction === false && (
             <Reanimated.View style={[o.cutoutBlocker, cutoutStyle]}>
               <Pressable style={StyleSheet.absoluteFill} />
             </Reanimated.View>
           )}
+          {presentation.hint ? (
+            <GestureHintLayer
+              key={`${presentation.key}-hint`}
+              hint={presentation.hint}
+              anchor={presentation.hintAnchor}
+              x={x}
+              y={y}
+              width={width}
+              height={height}
+            />
+          ) : null}
         </>
       ) : (
         <View style={o.fullDim}>
@@ -135,39 +592,62 @@ export function GuidedOverlayHost() {
       )}
 
       {presentation.celebrate && (
-        <Reanimated.View
-          key={`${presentation.key}-success`}
-          entering={ZoomIn.springify().damping(13).stiffness(150).mass(0.8)}
-          style={[o.successWrap, { top: Math.max(92, screenHeight * 0.28) }]}
-        >
-          <View style={o.successHalo} />
-          <View style={o.successMark}>
-            <CheckSmall s={34} c="#FFFFFF" w={3.2} />
-          </View>
-        </Reanimated.View>
+        <CelebrationBurst key={`${presentation.key}-success`} top={celebrateTop} />
       )}
 
       <Reanimated.View
         key={presentation.key}
-        entering={FadeIn.duration(420)}
-        exiting={FadeOut.duration(240)}
+        entering={coachEntering}
+        exiting={FadeOut.duration(220)}
         style={[o.coach, bubbleStyle]}
       >
-        <View style={o.logoPlate}>
-          <View style={o.logoHalo} />
-          <Image source={APP_LOGO} style={o.logo} resizeMode="cover" />
-        </View>
+        <LogoPlate />
         <View style={o.bubble}>
-          <View style={o.bubbleTail} />
-          <View style={o.bubbleTailJoin} />
-          <Text style={o.message}>{presentation.message}</Text>
+          {showHeader && (
+            <Reanimated.View entering={FadeIn.delay(140).duration(320)} style={o.bubbleHeader}>
+              <Text style={o.eyebrow}>{presentation.eyebrow ?? 'ANASTA'}</Text>
+              {presentation.progress ? (
+                <ProgressDots current={presentation.progress.current} total={presentation.progress.total} />
+              ) : null}
+            </Reanimated.View>
+          )}
+          <Reanimated.View entering={FadeIn.delay(200).duration(360)}>
+            <Text style={o.message}>{renderMessage(presentation.message, presentation.highlights)}</Text>
+          </Reanimated.View>
+          {chips.length > 0 && (
+            <View style={o.chipRow}>
+              {chips.map((chip, index) => (
+                <Reanimated.View
+                  key={chip}
+                  entering={FadeInDown.delay(300 + index * 75).duration(320).easing(SOFT_EASE)}
+                  style={o.chip}
+                >
+                  <View style={o.chipDot} />
+                  <Text style={o.chipText}>{chip}</Text>
+                </Reanimated.View>
+              ))}
+            </View>
+          )}
+          {presentation.action ? (
+            <Reanimated.View
+              entering={FadeIn.delay(chips.length > 0 ? 460 : 300).duration(340)}
+              style={o.actionRow}
+            >
+              <ActionPulseDot />
+              <Text style={o.actionText}>{presentation.action}</Text>
+            </Reanimated.View>
+          ) : null}
         </View>
       </Reanimated.View>
 
-      {presentation.ctaLabel && presentation.onCta && (
-        <Reanimated.View entering={FadeIn.delay(220).duration(420)} style={o.ctaWrap}>
+      {hasCta && (
+        <Reanimated.View
+          entering={FadeInUp.delay(340).duration(430).easing(SOFT_EASE)}
+          style={[o.ctaWrap, { bottom: insets.bottom + 20 }]}
+        >
           <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={presentation.onCta} style={o.cta}>
             <Text style={o.ctaText}>{presentation.ctaLabel}</Text>
+            <ChevronRight s={18} c="rgba(255,255,255,0.92)" w={2.5} />
           </TouchableOpacity>
           {presentation.secondaryCtaLabel && presentation.onSecondaryCta && (
             <TouchableOpacity
@@ -198,42 +678,137 @@ const o = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: DIM,
   },
-  cutout: {
+  cutoutRing: {
     position: 'absolute',
     borderRadius: CUTOUT_RADIUS,
-    borderWidth: 1.5,
-    borderColor: 'rgba(240,209,143,0.92)',
+    borderWidth: 1.6,
+    borderColor: RING_GOLD,
     shadowColor: C.gold,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+  },
+  sonarRing: {
+    position: 'absolute',
+    borderRadius: CUTOUT_RADIUS + 2,
+    borderWidth: 1.5,
+    borderColor: 'rgba(240,209,143,0.8)',
   },
   cutoutBlocker: {
     position: 'absolute',
     borderRadius: CUTOUT_RADIUS,
   },
-  cutoutCorner: {
-    width: CUTOUT_RADIUS,
-    height: CUTOUT_RADIUS,
+  cornerPatch: {
+    position: 'absolute',
+    overflow: 'hidden',
   },
-  cutoutCornerTopLeft: {
-    borderTopLeftRadius: CUTOUT_RADIUS,
+  cornerDonut: {
+    position: 'absolute',
+    backgroundColor: 'transparent',
+    borderColor: DIM,
   },
-  cutoutCornerTopRight: {
-    borderTopRightRadius: CUTOUT_RADIUS,
+
+  // Gesture hints
+  hintLayer: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  cutoutCornerBottomLeft: {
-    borderBottomLeftRadius: CUTOUT_RADIUS,
+  hintLayerLeft: {
+    alignItems: 'flex-start',
   },
-  cutoutCornerBottomRight: {
-    borderBottomRightRadius: CUTOUT_RADIUS,
+  hintLayerRight: {
+    alignItems: 'flex-end',
   },
+  hintBox: {
+    width: 76,
+    height: 76,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hintRing: {
+    position: 'absolute',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: 'rgba(240,209,143,0.92)',
+  },
+  hintBaseRing: {
+    position: 'absolute',
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1.5,
+    borderColor: 'rgba(240,209,143,0.3)',
+  },
+  hintHoldRing: {
+    position: 'absolute',
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 2.5,
+    borderColor: 'rgba(240,209,143,0.95)',
+  },
+  hintDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: C.gold,
+    borderWidth: 2.5,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  hintComet: {
+    alignItems: 'center',
+    columnGap: 4,
+  },
+  hintTrailDot: {
+    borderRadius: 6,
+    backgroundColor: '#F0D18F',
+  },
+  hintCometHead: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.gold,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+
+  // Celebration
   successWrap: {
     position: 'absolute',
     left: 0,
     right: 0,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  successRing: {
+    position: 'absolute',
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    borderWidth: 1.5,
+    borderColor: 'rgba(240,209,143,0.9)',
+  },
+  successSpark: {
+    position: 'absolute',
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#E9C87E',
   },
   successHalo: {
     position: 'absolute',
@@ -259,117 +834,219 @@ const o = StyleSheet.create({
     shadowRadius: 20,
     elevation: 8,
   },
+
+  // Coach
   coach: {
     position: 'absolute',
-    left: 20,
-    right: 20,
+    left: 18,
+    right: 18,
     flexDirection: 'row',
-    alignItems: 'center',
-    columnGap: 8,
+    alignItems: 'flex-start',
+    columnGap: 10,
   },
-  logoPlate: {
-    width: 60,
-    height: 60,
-    borderRadius: 19,
+  logoWrap: {
+    width: 56,
+    height: 56,
+    marginTop: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.22)',
     shadowColor: C.gold,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.13,
-    shadowRadius: 20,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    elevation: 4,
   },
   logoHalo: {
     position: 'absolute',
+    width: 74,
+    height: 74,
+    borderRadius: 26,
+    backgroundColor: 'rgba(197,160,89,0.2)',
+  },
+  // The mark is a full-bleed app icon: never pad it inside a plate.
+  logo: {
     width: 56,
     height: 56,
-    borderRadius: 18,
-    backgroundColor: 'rgba(197,160,89,0.07)',
-    transform: [{ rotate: '12deg' }],
+    borderRadius: 19,
   },
-  logo: {
-    width: 47,
-    height: 47,
-    borderRadius: 14,
+  logoRing: {
+    position: 'absolute',
+    left: -3.5,
+    right: -3.5,
+    top: -3.5,
+    bottom: -3.5,
+    borderRadius: 22.5,
+    borderWidth: 1.5,
+    borderColor: 'rgba(240,209,143,0.75)',
   },
   bubble: {
-    minHeight: 54,
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-    borderRadius: 18,
+    borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFCF6',
+    paddingVertical: 13,
+    backgroundColor: '#FFFDF7',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.28)',
+    borderColor: 'rgba(197,160,89,0.32)',
+    shadowColor: '#3E2F14',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
+    elevation: 6,
   },
-  bubbleTail: {
-    display: 'none',
-    position: 'absolute',
-    left: -7,
-    top: '50%',
-    marginTop: -8,
-    width: 16,
-    height: 16,
-    transform: [{ rotate: '45deg' }],
-    backgroundColor: '#FFFCF6',
-    borderLeftWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: 'rgba(197,160,89,0.28)',
+  bubbleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 7,
   },
-  bubbleTailJoin: {
-    display: 'none',
-    position: 'absolute',
-    left: -1,
-    top: '50%',
-    marginTop: -12,
-    width: 12,
-    height: 24,
-    backgroundColor: '#FFFCF6',
+  eyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 2,
+    color: '#9C7B3C',
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 5,
+  },
+  dot: {
+    width: 5.5,
+    height: 5.5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(25,23,20,0.14)',
+  },
+  dotDone: {
+    backgroundColor: 'rgba(197,160,89,0.55)',
+  },
+  dotActive: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: C.gold,
+    shadowColor: C.gold,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 4,
   },
   message: {
     fontFamily: F.serifMedium,
-    fontSize: 18,
-    lineHeight: 23,
+    fontSize: 17.5,
+    lineHeight: 23.5,
     textAlign: 'left',
-    color: C.text,
+    color: '#3E382F',
   },
+  messageStrong: {
+    fontFamily: F.serifSemiBold,
+    color: '#15120F',
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 6,
+    minHeight: 26,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(197,160,89,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.24)',
+  },
+  chipDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: C.gold,
+  },
+  chipText: {
+    fontFamily: F.sansSemiBold,
+    fontSize: 11,
+    color: '#5E5342',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 8,
+    marginTop: 11,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(197,160,89,0.22)',
+  },
+  actionPulseBox: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionPulseRing: {
+    position: 'absolute',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: C.gold,
+  },
+  actionPulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.gold,
+  },
+  actionText: {
+    flex: 1,
+    fontFamily: F.sansSemiBold,
+    fontSize: 12.5,
+    lineHeight: 17,
+    letterSpacing: 0.2,
+    color: '#15120F',
+  },
+
+  // CTAs
   ctaWrap: {
     position: 'absolute',
     left: 20,
     right: 20,
-    bottom: 22,
-    gap: 8,
+    gap: 9,
   },
   cta: {
-    height: 52,
+    minHeight: 53,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    columnGap: 8,
     borderRadius: 17,
-    backgroundColor: '#1B1917',
+    backgroundColor: '#15120F',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.96)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.3,
+    shadowRadius: 22,
+    elevation: 5,
   },
   ctaText: {
-    fontFamily: F.sansBold,
-    fontSize: 13,
+    fontFamily: F.serifSemiBold,
+    fontSize: 16.5,
+    lineHeight: 20,
     color: '#FFFFFF',
   },
   secondaryCta: {
-    height: 52,
+    minHeight: 50,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 17,
-    backgroundColor: '#FFFCF6',
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,252,246,0.97)',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.34)',
+    borderColor: 'rgba(197,160,89,0.4)',
   },
   secondaryCtaText: {
-    fontFamily: F.sansBold,
-    fontSize: 13,
-    letterSpacing: 0,
-    color: C.text,
+    fontFamily: F.serifSemiBold,
+    fontSize: 15.5,
+    color: '#3E382F',
   },
 });

@@ -65,6 +65,7 @@ import {
 import type { PrayerTaskConfig, TaskDefinition, TaskDraft } from '@/components/tasks/taskTypes';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import ChallengeCompletionHomeModal from '@/components/challenges/ChallengeCompletionHomeModal';
+import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 
 
 type HomeCard = {
@@ -77,6 +78,13 @@ type HomeCard = {
   route?: string;
   backend?: boolean;
 };
+
+const HOME_GUIDE_TARGETS = {
+  bigEvents: 'home.big-events',
+  tasks: 'home.tasks',
+  firstTask: 'home.first-task',
+  myRoutine: 'home.my-routine',
+} as const;
 
 function taskStateToInstanceStatus(state: TaskState, fallback?: string) {
   if (state === 'done') return 'completed';
@@ -695,9 +703,21 @@ const beb = StyleSheet.create({
   todayPillText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4, color: '#FFFFFF' },
 });
 
-export default function HomeView() {
+export default function HomeView({
+  guided = false,
+  onGuidedComplete,
+}: {
+  guided?: boolean;
+  onGuidedComplete?: () => void;
+} = {}) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const homeScrollRef = useRef<React.ElementRef<typeof ScrollView>>(null);
+  const {
+    session,
+    patchSession,
+    setPresentation,
+  } = useGuidedSetup();
   const { books, ready: readingListReady } = useReadingList();
   const { gratitudeEntries } = useInnerTools();
   const { bigEvents } = useBigEvents();
@@ -751,6 +771,12 @@ export default function HomeView() {
     title: string;
     completions: QueuedCompletionAnimation[];
   } | null>(null);
+  const isGuided = guided && session?.active === true && session.activeStep === 'homeClimax';
+  const guidePhase = isGuided ? session.phase : '';
+  const bigEventsTarget = useGuideTarget(HOME_GUIDE_TARGETS.bigEvents, isGuided);
+  const tasksTarget = useGuideTarget(HOME_GUIDE_TARGETS.tasks, isGuided);
+  const firstTaskTarget = useGuideTarget(HOME_GUIDE_TARGETS.firstTask, isGuided);
+  const myRoutineTarget = useGuideTarget(HOME_GUIDE_TARGETS.myRoutine, isGuided);
 
   useEffect(() => {
     preloadTaskFeedbackSound();
@@ -1234,7 +1260,10 @@ export default function HomeView() {
       });
       return;
     }
-    if (isCompletionFlowTask(card)) {
+    // During the guided check lesson the completion flow (prayer, scripture…)
+    // stays closed: the point is the check itself, and the flow would carry
+    // the user away mid-tour.
+    if (isCompletionFlowTask(card) && !(isGuided && guidePhase === 'checkTask')) {
       void openCompletionFlowTask(card)
         .then(handled => {
           if (!handled && card.instanceId) completeTaskInstance(card.instanceId, taskContentDate);
@@ -1245,7 +1274,10 @@ export default function HomeView() {
       return;
     }
     completeTaskInstance(card.instanceId, taskContentDate);
-  }, [canMutateSelectedDate, completeTaskInstance, openCompletionFlowTask, taskContentDate]);
+    if (isGuided && guidePhase === 'checkTask') {
+      patchSession({ phase: 'uncheckTask' });
+    }
+  }, [canMutateSelectedDate, completeTaskInstance, guidePhase, isGuided, openCompletionFlowTask, patchSession, taskContentDate]);
 
   const requestSkipTaskInstance = useCallback((card: HomeCard, state: TaskState) => {
     if (
@@ -1271,10 +1303,16 @@ export default function HomeView() {
     setTaskConfirmAction(null);
     if (action.mode === 'skip') {
       skipTaskInstance(action.instanceId, action.date);
+      if (isGuided && guidePhase === 'skipTask') {
+        patchSession({ phase: 'analytics' });
+      }
       return;
     }
     resetTaskInstance(action.instanceId, action.date);
-  }, [resetTaskInstance, skipTaskInstance, taskConfirmAction]);
+    if (isGuided && guidePhase === 'uncheckTask') {
+      patchSession({ phase: 'skipTask' });
+    }
+  }, [guidePhase, isGuided, patchSession, resetTaskInstance, skipTaskInstance, taskConfirmAction]);
 
   const createQuickTask = useCallback(async (draft: TaskDraft) => {
     await createOrUpdateTask(draft, selectedDate);
@@ -1290,9 +1328,185 @@ export default function HomeView() {
     }
   }, [skippableCards, skipInstance, taskContentDate]);
 
+  const guidedFirstCard = homeCards.find(card => card.instanceId && card.task.state !== 'locked') ?? homeCards[0];
+
+  useEffect(() => {
+    if (!isGuided) return undefined;
+    const timer = setTimeout(() => {
+      if (guidePhase === 'myRoutine') {
+        homeScrollRef.current?.scrollToEnd({ animated: true });
+        return;
+      }
+      if (
+        guidePhase === 'bigEvents' ||
+        guidePhase === 'tasks' ||
+        guidePhase === 'checkTask' ||
+        guidePhase === 'uncheckTask' ||
+        guidePhase === 'skipTask' ||
+        guidePhase === 'analytics'
+      ) {
+        homeScrollRef.current?.scrollTo({ y: 0, animated: true });
+      }
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [guidePhase, isGuided]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+
+    const hasBigEventTarget = bigEvents.length > 0;
+    if (guidePhase === 'intro') {
+      patchSession({ phase: hasBigEventTarget ? 'bigEvents' : 'tasks' });
+      return;
+    }
+
+    if (guidePhase === 'bigEvents') {
+      setPresentation({
+        key: 'home-tour-big-events',
+        targetId: HOME_GUIDE_TARGETS.bigEvents,
+        cutoutPadding: 8,
+        placement: 'below',
+        allowTargetInteraction: false,
+        eyebrow: 'HOME TOUR',
+        message: 'Welcome to your real Home screen.\n\nYour Big Events stay here, above the day, so important dates stay visible before they become urgent.',
+        highlights: ['real Home screen'],
+        ctaLabel: 'Continue',
+        onCta: () => patchSession({ phase: 'tasks' }),
+      });
+      return;
+    }
+
+    if (guidePhase === 'tasks') {
+      setPresentation({
+        key: 'home-tour-tasks',
+        targetId: HOME_GUIDE_TARGETS.tasks,
+        cutoutPadding: 8,
+        placement: 'below',
+        allowTargetInteraction: false,
+        eyebrow: 'HOME TOUR',
+        message: 'These are today\'s tasks. Home only shows what belongs to this day.',
+        highlights: ['this day'],
+        ctaLabel: 'Continue',
+        onCta: () => patchSession({ phase: 'checkTask' }),
+      });
+      return;
+    }
+
+    // Gesture lessons carry no Continue button when a task card is available:
+    // the phase only advances once the user performs the real gesture.
+    if (guidePhase === 'checkTask') {
+      setPresentation({
+        key: 'home-tour-check-task',
+        targetId: guidedFirstCard ? HOME_GUIDE_TARGETS.firstTask : HOME_GUIDE_TARGETS.tasks,
+        cutoutPadding: 8,
+        placement: 'below',
+        allowTargetInteraction: true,
+        eyebrow: 'HOME TOUR',
+        message: 'This is how a task is completed. The same tap works on every task in Home.',
+        highlights: ['completed'],
+        action: guidedFirstCard ? 'Tap the check circle on the task' : undefined,
+        hint: guidedFirstCard ? 'tap' : undefined,
+        hintAnchor: 'left',
+        ctaLabel: guidedFirstCard ? undefined : 'Continue',
+        onCta: guidedFirstCard ? undefined : () => patchSession({ phase: 'myRoutine' }),
+      });
+      return;
+    }
+
+    if (guidePhase === 'uncheckTask') {
+      setPresentation({
+        key: 'home-tour-uncheck-task',
+        targetId: guidedFirstCard ? HOME_GUIDE_TARGETS.firstTask : HOME_GUIDE_TARGETS.tasks,
+        cutoutPadding: 8,
+        placement: 'below',
+        allowTargetInteraction: true,
+        eyebrow: 'HOME TOUR',
+        message: 'To undo a completed task, press it again. Anasta asks first, so progress is not removed by accident.',
+        highlights: ['press it again'],
+        action: guidedFirstCard ? 'Tap the check again, then confirm' : undefined,
+        hint: guidedFirstCard ? 'tap' : undefined,
+        hintAnchor: 'left',
+        ctaLabel: guidedFirstCard ? undefined : 'Continue',
+        onCta: guidedFirstCard ? undefined : () => patchSession({ phase: 'skipTask' }),
+      });
+      return;
+    }
+
+    if (guidePhase === 'skipTask') {
+      setPresentation({
+        key: 'home-tour-skip-task',
+        targetId: guidedFirstCard ? HOME_GUIDE_TARGETS.firstTask : HOME_GUIDE_TARGETS.tasks,
+        cutoutPadding: 8,
+        placement: 'below',
+        allowTargetInteraction: true,
+        eyebrow: 'HOME TOUR',
+        message: 'A day does not always go as planned. A skipped task stays in your rhythm — just not for today.',
+        highlights: ['stays in your rhythm'],
+        action: guidedFirstCard ? 'Swipe the task to the right' : undefined,
+        hint: guidedFirstCard ? 'swipe-right' : undefined,
+        ctaLabel: guidedFirstCard ? undefined : 'Continue',
+        onCta: guidedFirstCard ? undefined : () => patchSession({ phase: 'analytics' }),
+      });
+      return;
+    }
+
+    if (guidePhase === 'analytics') {
+      setPresentation({
+        key: 'home-tour-analytics',
+        targetId: guidedFirstCard ? HOME_GUIDE_TARGETS.firstTask : HOME_GUIDE_TARGETS.tasks,
+        cutoutPadding: 8,
+        placement: 'below',
+        allowTargetInteraction: true,
+        eyebrow: 'HOME TOUR',
+        message: 'Every task carries its pattern: progress, skipped days, and consistency.',
+        highlights: ['pattern'],
+        action: guidedFirstCard ? 'Press and hold the task' : undefined,
+        hint: guidedFirstCard ? 'long-press' : undefined,
+        ctaLabel: guidedFirstCard ? undefined : 'Continue',
+        onCta: guidedFirstCard ? undefined : () => patchSession({ phase: 'myRoutine' }),
+      });
+      return;
+    }
+
+    // While analytics is open the overlay steps aside entirely — the sheet
+    // renders inline (not in a native Modal), so any scrim would block it.
+    // Closing the sheet advances the tour to My Routine.
+    if (guidePhase === 'analyticsOpen') {
+      setPresentation(null);
+      return;
+    }
+
+    if (guidePhase === 'myRoutine') {
+      setPresentation({
+        key: 'home-tour-my-routine',
+        targetId: HOME_GUIDE_TARGETS.myRoutine,
+        cutoutPadding: 8,
+        placement: 'above',
+        allowTargetInteraction: true,
+        eyebrow: 'HOME TOUR',
+        message: 'My Routine is the main place where you edit the plan behind your Home screen.',
+        highlights: ['My Routine'],
+        ctaLabel: 'Open My Routine',
+        onCta: onGuidedComplete,
+      });
+      return;
+    }
+
+    setPresentation(null);
+  }, [
+    bigEvents.length,
+    guidePhase,
+    guidedFirstCard,
+    isGuided,
+    onGuidedComplete,
+    patchSession,
+    setPresentation,
+  ]);
+
   return (
     <View style={s.homeRoot}>
       <ScrollView
+        ref={homeScrollRef}
         style={{ flex: 1, backgroundColor: C.bg }}
         contentContainerStyle={{
           paddingTop: topPadding,
@@ -1302,13 +1516,15 @@ export default function HomeView() {
       >
         <HomeHeader selectedDate={selectedDate} todayKey={todayKey} onSelectDate={selectDate} />
 
-      <BigEventBanner
-        events={bigEvents}
-        selectedDate={selectedDate}
-        onPress={() => router.push('/big-events' as any)}
-      />
+      <View {...bigEventsTarget}>
+        <BigEventBanner
+          events={bigEvents}
+          selectedDate={selectedDate}
+          onPress={() => router.push('/big-events' as any)}
+        />
+      </View>
 
-      <View style={s.tasksWrap}>
+      <View {...tasksTarget} style={s.tasksWrap}>
         <View style={s.tasksHead}>
           <View>
             <Text style={s.tasksTitle}>{taskSectionTitle}</Text>
@@ -1348,7 +1564,7 @@ export default function HomeView() {
         {!isTaskContentLoading && (
           <TaskContentAppear key={taskContentDate}>
             <View style={s.cardsList}>
-              {homeCards.map(card => {
+              {homeCards.map((card, index) => {
                 const dateInactive = !!card.backend && taskContentDate !== todayKey && !canMutateSelectedDate;
                 const futureInactive = dateInactive && taskContentDate > todayKey;
                 const baseDisplayTask = card.backend
@@ -1390,8 +1606,9 @@ export default function HomeView() {
                 const canToggle = !!card.instanceId && canMutateSelectedDate && displayTask.state !== 'locked';
                 const canSkip = canToggle && displayTask.state !== 'done' && displayTask.state !== 'skipped';
                 const canShowAnalytics = !!card.backend && !!card.taskId && displayTask.variant !== 'quick';
+                const taskTargetProps = index === 0 ? firstTaskTarget : {};
                 return (
-                  <React.Fragment key={card.id}>
+                  <View key={card.id} {...taskTargetProps}>
                     <SwipeTaskRow
                       disabled={!canSkip}
                       onSkip={() => requestSkipTaskInstance(card, displayTask.state)}
@@ -1403,6 +1620,9 @@ export default function HomeView() {
                             onActivate={() => {
                               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
                               setAnalyticsCard(card);
+                              if (isGuided && guidePhase === 'analytics') {
+                                patchSession({ phase: 'analyticsOpen' });
+                              }
                             }}
                           >
                             {datedContent}
@@ -1427,7 +1647,7 @@ export default function HomeView() {
                     {activeTimeBridge?.afterCardId === card.id && (
                       <ActiveTimeBridge nextLabel={activeTimeBridge.nextLabel} />
                     )}
-                  </React.Fragment>
+                  </View>
                 );
               })}
             </View>
@@ -1473,7 +1693,7 @@ export default function HomeView() {
           </LinearGradient>
         </TouchableOpacity>
 
-        <TouchableOpacity activeOpacity={0.82} style={{ marginTop: 8 }} onPress={() => router.push('/my-routine')}>
+        <TouchableOpacity {...myRoutineTarget} activeOpacity={0.82} style={{ marginTop: 8 }} onPress={() => router.push('/my-routine')}>
           <LinearGradient
             colors={['#FFFFFF', '#FDF3D8']}
             start={{ x: 0, y: 0 }}
@@ -1511,7 +1731,12 @@ export default function HomeView() {
         taskId={analyticsCard?.taskId}
         taskTitle={analyticsCard?.task.title ?? ''}
         taskSubtitle={analyticsCard?.task.subtitle}
-        onClose={() => setAnalyticsCard(null)}
+        onClose={() => {
+          setAnalyticsCard(null);
+          if (isGuided && guidePhase === 'analyticsOpen') {
+            patchSession({ phase: 'myRoutine' });
+          }
+        }}
       />
       <NotificationsSheet
         visible={notificationsOpen}

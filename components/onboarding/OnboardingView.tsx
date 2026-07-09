@@ -12,6 +12,7 @@ import * as Haptics from 'expo-haptics';
 import FocusLottie from '@/components/focus/FocusLottie';
 import Reanimated, {
   type SharedValue,
+  cancelAnimation,
   FadeIn,
   FadeInLeft,
   FadeInRight,
@@ -29,6 +30,7 @@ import Reanimated, {
   withSequence,
   withSpring,
   withTiming,
+  ZoomIn,
 } from 'react-native-reanimated';
 import {
   ArrowUpRight,
@@ -77,6 +79,7 @@ import {
 import { AnimatedTaskRow, CompletionFlourish } from '@/components/shared/taskAnimations';
 import LottieFlame from '@/components/journal/LottieFlame';
 import BigEventsView from '@/components/journal/BigEventsView';
+import HomeView from '@/components/home/HomeView';
 import WeeklyRhythm from '@/components/home/WeeklyRhythm';
 import MonthlyGoalsView from '@/components/inner-tools/MonthlyGoalsView';
 import HabitsView, { type HabitsViewHandle } from '@/components/habits/HabitsView';
@@ -205,7 +208,9 @@ type StepId =
   | 'organizeHubAfterChallengesV2'
   | 'organizeHabitsConceptV2'
   | 'organizeHabitsBuilderV2'
+  | 'organizeHabitsMomentumV2'
   | 'organizeHubCompleteV2'
+  | 'organizeGuidedHomeTour'
   | 'organizeHomePreview'
   | 'organizeMyRhythmPreview'
   | 'organizeComplete'
@@ -299,6 +304,7 @@ type Answers = {
   confirmedProtectProblems?: string[];
   confirmedOrganizeProblems?: string[];
   gratitudeDailyTask?: boolean;
+  organizeBigEventAdded?: boolean;
   routine?: RoutineAnswer;
   focus?: FocusAnswer;
 };
@@ -358,6 +364,13 @@ const ONBOARDING_DEV_JUMP_ENABLED = __DEV__;
 const APP_LOGO = require('@/assets/images/anasta-logo.png');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const CONFETTI_SOURCE = require('@/assets/animations/onboarding-confetti.lottie');
+let onboardingAnimationReplayId = 0;
+
+function nextOnboardingAnimationReplayKey() {
+  onboardingAnimationReplayId += 1;
+  return onboardingAnimationReplayId;
+}
+
 const PROTECT_TIME_STICKER = require('@/assets/images/onboarding/protect-time-sticker.png');
 const DISCIPLINE_SPIRITUAL_STICKER = require('@/assets/images/onboarding/discipline-spiritual-consistency.png');
 const DISCIPLINE_DAILY_ORDER_STICKER = require('@/assets/images/onboarding/discipline-daily-order.png');
@@ -393,6 +406,30 @@ const ROUTINE_TASK_FAMILY_RESPONSIBILITY_IMAGE = require('@/assets/images/onboar
 const CHALLENGE_JESUS_PRAYER_DAILY_IMAGE = require('@/assets/images/onboarding/challenge-jesus-prayer-daily.png');
 const CHALLENGE_THREE_PSALMS_DAILY_IMAGE = require('@/assets/images/onboarding/challenge-three-psalms-daily.png');
 const CHALLENGE_TWO_CHAPTERS_DAILY_IMAGE = require('@/assets/images/onboarding/challenge-two-chapters-daily.png');
+const HABIT_GOAL_LOSE_WEIGHT_IMAGE = require('@/assets/images/onboarding/habit-goal-lose-weight.png');
+const HABIT_GOAL_SOCIAL_SKILLS_IMAGE = require('@/assets/images/onboarding/habit-goal-social-skills.png');
+const HABIT_GOAL_SAVE_MONEY_IMAGE = require('@/assets/images/onboarding/habit-goal-save-money.png');
+const HABIT_STEP_MORNING_RUN_IMAGE = require('@/assets/images/onboarding/habit-step-morning-run.png');
+const HABIT_STEP_GYM_IMAGE = require('@/assets/images/onboarding/habit-step-gym.png');
+const HABIT_STEP_EVENING_WALK_IMAGE = require('@/assets/images/onboarding/habit-step-evening-walk.png');
+const HABIT_MOMENTUM_30_TASKS_IMAGE = require('@/assets/images/onboarding/habit-momentum-30-tasks.png');
+const HABIT_MOMENTUM_60_TASKS_IMAGE = require('@/assets/images/onboarding/habit-momentum-60-tasks.png');
+const HABIT_MOMENTUM_90_TASKS_IMAGE = require('@/assets/images/onboarding/habit-momentum-90-tasks.png');
+const HABIT_GOAL_IMAGE_SOURCES: number[] = [
+  HABIT_GOAL_LOSE_WEIGHT_IMAGE,
+  HABIT_GOAL_SOCIAL_SKILLS_IMAGE,
+  HABIT_GOAL_SAVE_MONEY_IMAGE,
+];
+const HABIT_STEP_IMAGE_SOURCES: number[] = [
+  HABIT_STEP_MORNING_RUN_IMAGE,
+  HABIT_STEP_GYM_IMAGE,
+  HABIT_STEP_EVENING_WALK_IMAGE,
+];
+const HABIT_MOMENTUM_IMAGE_SOURCES: number[] = [
+  HABIT_MOMENTUM_30_TASKS_IMAGE,
+  HABIT_MOMENTUM_60_TASKS_IMAGE,
+  HABIT_MOMENTUM_90_TASKS_IMAGE,
+];
 const ORGANIZE_EXAMPLE_IMAGE_SOURCES = [
   BIG_EVENT_WORK_DEADLINE_IMAGE,
   BIG_EVENT_FAMILY_BIRTHDAY_IMAGE,
@@ -439,6 +476,9 @@ const statementImageLoads = new Map<number, Promise<ExpoImageRef | null>>();
 const ORGANIZE_EXAMPLE_IMAGE_DECODE_SIZE = 768;
 const organizeExampleImageRefs = new Map<number, ExpoImageRef>();
 const organizeExampleImageLoads = new Map<number, Promise<ExpoImageRef | null>>();
+const HABIT_GOAL_IMAGE_DECODE_SIZE = 960;
+const habitGoalImageRefs = new Map<number, ExpoImageRef>();
+const habitGoalImageLoads = new Map<number, Promise<ExpoImageRef | null>>();
 
 function loadStatementImage(source: number) {
   const cached = statementImageRefs.get(source);
@@ -496,6 +536,35 @@ function loadOrganizeExampleImage(source: number) {
 
 function warmOrganizeExampleImages(sources: number[]) {
   return Promise.all(sources.map(loadOrganizeExampleImage));
+}
+
+function loadHabitGoalImage(source: number) {
+  const cached = habitGoalImageRefs.get(source);
+  if (cached) return Promise.resolve(cached);
+
+  const pending = habitGoalImageLoads.get(source);
+  if (pending) return pending;
+
+  const load = ExpoImage.loadAsync(source, {
+    maxWidth: HABIT_GOAL_IMAGE_DECODE_SIZE,
+    maxHeight: HABIT_GOAL_IMAGE_DECODE_SIZE,
+  })
+    .then(image => {
+      habitGoalImageRefs.set(source, image);
+      habitGoalImageLoads.delete(source);
+      return image;
+    })
+    .catch(() => {
+      habitGoalImageLoads.delete(source);
+      return null;
+    });
+
+  habitGoalImageLoads.set(source, load);
+  return load;
+}
+
+function warmHabitGoalImages(sources: number[]) {
+  return Promise.all(sources.map(loadHabitGoalImage));
 }
 
 function releaseStatementImages(sources: number[]) {
@@ -1066,6 +1135,7 @@ const ONBOARDING_DEV_SEED_ANSWERS: Answers = {
   confirmedProtectProblems: ['lost-hour', 'morning-night', 'focus-pulled', 'presence'],
   confirmedOrganizeProblems: ['last-minute', 'plan-day', 'goals-give-up', 'intentional-time'],
   gratitudeDailyTask: true,
+  organizeBigEventAdded: true,
   age: '18_24',
   gender: 'male',
 };
@@ -1104,8 +1174,16 @@ const ONBOARDING_DEV_JUMP_GROUPS: OnboardingDevJumpGroup[] = [
       { step: 'organizeWeeklyIntroV2', title: 'Weekly intro', body: 'Start of weekly routine setup.', accent: GOLD },
       { step: 'organizeWeeklyRhythmV2', title: 'Weekly rhythm', body: 'Monday to Sunday planning preview.', accent: '#4D8586' },
       { step: 'organizeDailySetupV2', title: 'Task rhythm', body: 'Task frequency preview.', accent: '#2F9B61' },
-      { step: 'organizeHubStartV2', title: 'Weekly hub', body: 'Task type hub.', accent: '#4D8586' },
-      { step: 'organizeHabitsConceptV2', title: 'Habits concept', body: 'Habit explanation screen.', accent: '#2F9B61' },
+      { step: 'organizeHubStartV2', title: 'Tasks hub', body: 'Four task types overview.', accent: '#4D8586' },
+      { step: 'organizeSpiritualTasksIntro', title: 'Spiritual tasks', body: 'Start before spiritual setup.', accent: GOLD },
+      { step: 'organizeHubAfterSpiritualV2', title: 'Routine tasks', body: 'Watch spiritual check, then routine setup.', accent: '#4D8586' },
+      { step: 'organizeHubAfterRoutineV2', title: 'Challenges', body: 'Watch routine check, then challenge setup.', accent: '#8F5B4B' },
+      { step: 'organizeHubAfterChallengesV2', title: 'Habits', body: 'Watch challenge check, then habit setup.', accent: '#2F9B61' },
+      { step: 'organizeHabitsConceptV2', title: 'Habit goals', body: 'Clear goal explanation screen.', accent: '#2F9B61' },
+      { step: 'organizeHabitsExamples', title: 'Habit steps', body: 'Goal steps explanation screen.', accent: '#2F9B61' },
+      { step: 'organizeHabitsMomentumV2', title: 'Habit momentum', body: 'Imperfect day / keep moving screen.', accent: '#2F9B61' },
+      { step: 'organizeHabitsBuilderV2', title: 'Habit setup', body: 'Build first habit screen.', accent: '#2F9B61' },
+      { step: 'organizeGuidedHomeTour', title: 'Home guide', body: 'Guided Home and My Rhythm walkthrough.', accent: '#4D8586' },
       { step: 'organizeHomePreview', title: 'Home preview', body: 'Organized home mock.', accent: GOLD },
       { step: 'organizeComplete', title: 'Organize complete', body: 'End of organize section.', accent: '#2F9B61' },
       { step: 'flameOrganize', title: 'Organize flame', body: 'Second checkpoint flame.', accent: GOLD },
@@ -1158,11 +1236,10 @@ function stepOrder(answers: Answers): StepId[] {
     'organizeHubAfterChallengesV2',
     'organizeHabitsConceptV2',
     'organizeHabitsExamples',
+    'organizeHabitsMomentumV2',
     'organizeHabitsBuilderV2',
     'organizeHubCompleteV2',
-    'organizeHomePreview',
-    'organizeMyRhythmPreview',
-    'organizeComplete',
+    'organizeGuidedHomeTour',
   ];
 
   return [
@@ -1834,18 +1911,27 @@ function WelcomeSlide({
 // the stutter), and mounting only for the duration of the burst instead of
 // living invisibly behind the welcome screen the whole time.
 function WelcomeConfettiOverlay({ active }: { active: boolean }) {
-  const [burst, setBurst] = useState<'idle' | 'playing' | 'done'>('idle');
+  const [burst, setBurst] = useState<'idle' | 'arming' | 'playing' | 'done'>('idle');
+  const [isLottieReady, setIsLottieReady] = useState(false);
+  const [playKey, setPlayKey] = useState(0);
+  const lottieRef = useRef<React.ElementRef<typeof LottieView>>(null);
 
   useEffect(() => {
     if (!active) {
+      lottieRef.current?.reset();
+      setIsLottieReady(false);
+      setPlayKey(0);
       setBurst('idle');
       return undefined;
     }
     preloadAchievementFeedbackSound();
+    setIsLottieReady(false);
+    setBurst('arming');
     // Sound and a strong tap land together, right as the crest finishes
     // growing into its welcome position — the burst is heard, felt and seen
     // in the same instant.
     const startTimer = setTimeout(() => {
+      setPlayKey(nextOnboardingAnimationReplayKey());
       setBurst('playing');
       runStrongHaptic();
       void playAchievementCompleteFeedback();
@@ -1853,20 +1939,56 @@ function WelcomeConfettiOverlay({ active }: { active: boolean }) {
     return () => clearTimeout(startTimer);
   }, [active]);
 
-  if (burst !== 'playing') return null;
+  useEffect(() => {
+    if (!active || burst !== 'playing' || playKey === 0) return undefined;
+
+    let cancelled = false;
+    let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
+    let firstFrame: number | undefined;
+    let secondFrame: number | undefined;
+
+    const playOnNativeFrame = () => {
+      firstFrame = requestAnimationFrame(() => {
+        secondFrame = requestAnimationFrame(() => {
+          if (cancelled) return;
+          lottieRef.current?.reset();
+          lottieRef.current?.play();
+        });
+      });
+    };
+
+    if (isLottieReady) {
+      playOnNativeFrame();
+    } else {
+      fallbackTimer = setTimeout(playOnNativeFrame, 120);
+    }
+
+    return () => {
+      cancelled = true;
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      if (firstFrame !== undefined) cancelAnimationFrame(firstFrame);
+      if (secondFrame !== undefined) cancelAnimationFrame(secondFrame);
+    };
+  }, [active, burst, isLottieReady, playKey]);
+
+  if (!active || burst === 'idle' || burst === 'done') return null;
 
   return (
-    <View pointerEvents="none" style={s.confettiOverlay}>
+    <View pointerEvents="none" style={[s.confettiOverlay, burst === 'arming' && s.confettiOverlayArming]}>
       <View style={[StyleSheet.absoluteFill, s.confettiLayer]}>
         <LottieView
+          ref={lottieRef}
           source={CONFETTI_SOURCE}
-          autoPlay
+          autoPlay={false}
           loop={false}
           speed={0.92}
           resizeMode="cover"
           renderMode="AUTOMATIC"
           cacheComposition
-          onAnimationFinish={() => setBurst('done')}
+          onAnimationLoaded={() => setIsLottieReady(true)}
+          onAnimationFinish={(isCancelled) => {
+            if (!isCancelled) setBurst('done');
+          }}
           style={[StyleSheet.absoluteFill, s.confettiLottie]}
         />
       </View>
@@ -14509,6 +14631,8 @@ function OrganizeStageHeader({
   compact = false,
   variant = 'default',
   bodyHighlights = [],
+  titleLines = 2,
+  titleStyle,
 }: {
   title: string;
   body: string;
@@ -14516,6 +14640,8 @@ function OrganizeStageHeader({
   compact?: boolean;
   variant?: 'default' | 'premium';
   bodyHighlights?: string[];
+  titleLines?: number;
+  titleStyle?: StyleProp<TextStyle>;
 }) {
   const premium = variant === 'premium';
 
@@ -14530,8 +14656,9 @@ function OrganizeStageHeader({
             s.organizeStageTitle,
             premium && s.organizeStageTitlePremium,
             compact && (premium ? s.organizeStageTitlePremiumCompact : s.organizeStageTitleCompact),
+            titleStyle,
           ]}
-          numberOfLines={2}
+          numberOfLines={titleLines}
           adjustsFontSizeToFit
           minimumFontScale={premium ? 0.78 : 0.68}
         >
@@ -14546,7 +14673,7 @@ function OrganizeStageHeader({
   );
 }
 
-function renderHighlightedBodyText(text: string, highlights: string[], highlightStyle: TextStyle) {
+function renderHighlightedBodyText(text: string, highlights: string[], highlightStyle: StyleProp<TextStyle>) {
   if (!highlights.length) return text;
 
   const parts: React.ReactNode[] = [];
@@ -15414,21 +15541,21 @@ const HABIT_GOAL_EXAMPLES: OrganizeExample[] = [
 const CHALLENGE_EXAMPLES: OrganizeExample[] = [
   {
     title: 'Three Psalms Every Day',
-    body: 'Move through the Psalter with a clear daily rhythm.',
+    body: 'I wanted to read the Psalter, so I chose three psalms every day.',
     accent: '#705B9B',
     icon: <BookMarked s={30} c="#705B9B" w={1.8} />,
     image: CHALLENGE_THREE_PSALMS_DAILY_IMAGE,
   },
   {
     title: 'Jesus Prayer Daily',
-    body: 'Return to one short prayer each day, with attention and peace.',
+    body: 'I wanted to grow closer to God, so I committed to the Jesus Prayer for 30 days.',
     accent: '#4D8586',
     icon: <Candle s={30} c="#4D8586" w={1.8} />,
     image: CHALLENGE_JESUS_PRAYER_DAILY_IMAGE,
   },
   {
     title: 'Two Chapters Every Day',
-    body: 'Read Scripture by chapter, with a challenge you can finish.',
+    body: 'I wanted to finally read Acts, so I chose two chapters every day.',
     accent: GOLD,
     icon: <OpenBook s={30} c={GOLD} w={1.8} />,
     image: CHALLENGE_TWO_CHAPTERS_DAILY_IMAGE,
@@ -15646,6 +15773,7 @@ function OrganizeExampleCarouselSlide({
   body,
   examples,
   ctaLabel,
+  compactFooter = false,
   onNext,
 }: {
   overline: string;
@@ -15653,6 +15781,7 @@ function OrganizeExampleCarouselSlide({
   body: string;
   examples: OrganizeExample[];
   ctaLabel: string;
+  compactFooter?: boolean;
   onNext: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -15663,8 +15792,10 @@ function OrganizeExampleCarouselSlide({
   const usePolishedExampleCarousel = true;
   const needsTallExampleHeader = examples.some(example => example.title.length > 18);
   const bigEventsCardMax = height < 720 ? 196 : height < 800 ? 228 : 258;
-  const bigEventsFooterHeight = height < 720 ? 84 : 98;
-  const bigEventsHeaderHeight = needsTallExampleHeader ? height < 720 ? 90 : 92 : height < 720 ? 70 : 76;
+  const bigEventsFooterHeight = compactFooter ? height < 720 ? 78 : height < 800 ? 88 : 94 : height < 720 ? 84 : 98;
+  const bigEventsHeaderHeight = compactFooter
+    ? needsTallExampleHeader ? height < 720 ? 88 : 92 : height < 720 ? 70 : 76
+    : needsTallExampleHeader ? height < 720 ? 90 : 92 : height < 720 ? 70 : 76;
   const bigEventsChromeHeight = bigEventsHeaderHeight + bigEventsFooterHeight;
   const cardWidth = Math.min(width - (usePolishedExampleCarousel ? 112 : 42), usePolishedExampleCarousel ? bigEventsCardMax : 360);
   const cardHeight = usePolishedExampleCarousel
@@ -15725,17 +15856,18 @@ function OrganizeExampleCarouselSlide({
           style={[
             s.organizeBigEventsFixedContent,
             {
-              paddingTop: Math.max(insets.top + 26, 52),
-              paddingBottom: insets.bottom + 96,
+              paddingTop: Math.max(insets.top + (compactFooter ? 22 : 26), compactFooter ? 50 : 52),
+              paddingBottom: insets.bottom + (compactFooter ? 92 : 96),
+              rowGap: compactFooter ? 10 : 16,
             },
           ]}
         >
-          <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={s.organizeBigEventsHeader}>
+          <Reanimated.View entering={FadeInUp.duration(560).easing(Easing.out(Easing.cubic))} style={[s.organizeBigEventsHeader, compactFooter && s.organizeBigEventsHeaderCompact]}>
             <View style={s.organizeBigEventsTitleWrap}>
               <Text style={s.organizeBigEventsTitle}>{displayTitle}</Text>
               <View style={s.organizeBigEventsTitleUnderline} />
             </View>
-            <Text style={s.organizeBigEventsBody}>{body}</Text>
+            <Text style={[s.organizeBigEventsBody, compactFooter && s.organizeBigEventsBodyCompact]}>{body}</Text>
           </Reanimated.View>
 
           <Reanimated.View
@@ -15745,7 +15877,7 @@ function OrganizeExampleCarouselSlide({
             })}
             style={s.organizeBigEventsCarouselArea}
           >
-            <View style={s.organizeCarouselTopControls}>
+            <View style={[s.organizeCarouselTopControls, compactFooter && s.organizeCarouselTopControlsCompact]}>
               <View style={s.organizeExampleProgress}>
                 {examples.map((example, index) => (
                   <View
@@ -15796,10 +15928,12 @@ function OrganizeExampleCarouselSlide({
                       end={{ x: 1, y: 1 }}
                       style={StyleSheet.absoluteFill}
                     />
-                    <View style={[s.organizeExampleQuotePanel, s.organizeBigEventsExampleHeader, { height: bigEventsHeaderHeight, minHeight: bigEventsHeaderHeight, backgroundColor: `${example.accent}10`, borderColor: `${example.accent}24` }]}>
-                      <Text style={s.organizeBigEventsExampleEyebrow}>Example</Text>
-                      <Text style={s.organizeBigEventsExampleTitle}>{example.title}</Text>
-                      <View style={[s.organizeBigEventsExampleUnderline, { backgroundColor: example.accent }]} />
+                    <View style={[s.organizeExampleQuotePanel, s.organizeBigEventsExampleHeader, compactFooter && s.organizeBigEventsExampleHeaderCompact, { height: bigEventsHeaderHeight, minHeight: bigEventsHeaderHeight, backgroundColor: `${example.accent}10`, borderColor: `${example.accent}24` }]}>
+                      <Text style={[s.organizeBigEventsExampleEyebrow, compactFooter && s.organizeBigEventsExampleEyebrowPinned]}>Example</Text>
+                      <View style={compactFooter ? s.organizeBigEventsExampleTitleGroupCompact : s.organizeBigEventsExampleTitleGroup}>
+                        <Text style={[s.organizeBigEventsExampleTitle, compactFooter && s.organizeBigEventsExampleTitleCompact]}>{example.title}</Text>
+                        <View style={[s.organizeBigEventsExampleUnderline, { backgroundColor: example.accent }]} />
+                      </View>
                     </View>
                     <View style={s.organizeBigEventsVisualPanel}>
                       {imageSource ? (
@@ -15832,8 +15966,15 @@ function OrganizeExampleCarouselSlide({
                           </View>
                         </LinearGradient>
                       )}
-                      <View style={[s.organizeBigEventsImageFooter, { height: bigEventsFooterHeight, borderColor: `${example.accent}24`, backgroundColor: 'rgba(255,253,248,0.92)' }]}>
-                        <Text style={s.organizeBigEventsIllustrationText}>"{example.body}"</Text>
+                      <View style={[s.organizeBigEventsImageFooter, compactFooter && s.organizeBigEventsImageFooterCompact, { height: bigEventsFooterHeight, borderColor: `${example.accent}24`, backgroundColor: 'rgba(255,253,248,0.92)' }]}>
+                        <Text
+                          numberOfLines={compactFooter ? 3 : undefined}
+                          adjustsFontSizeToFit={compactFooter}
+                          minimumFontScale={0.9}
+                          style={[s.organizeBigEventsIllustrationText, compactFooter && s.organizeBigEventsIllustrationTextCompact]}
+                        >
+                          "{example.body}"
+                        </Text>
                       </View>
                     </View>
                   </View>
@@ -15951,6 +16092,7 @@ function OrganizeLessonSlide({
   accent = GOLD,
   headerVariant = 'default',
   bodyHighlights = [],
+  bodyStyle,
   children,
   ctaLabel = 'Continue',
   onNext,
@@ -15960,6 +16102,7 @@ function OrganizeLessonSlide({
   accent?: string;
   headerVariant?: 'default' | 'premium';
   bodyHighlights?: string[];
+  bodyStyle?: StyleProp<ViewStyle>;
   children: React.ReactNode;
   ctaLabel?: string;
   onNext: () => void;
@@ -15986,7 +16129,7 @@ function OrganizeLessonSlide({
           bodyHighlights={bodyHighlights}
         />
 
-        <View style={s.organizeLessonBody}>{children}</View>
+        <View style={[s.organizeLessonBody, bodyStyle]}>{children}</View>
       </ScrollView>
 
       <AnimatedCta delay={240} style={footerStyle}>
@@ -16371,15 +16514,27 @@ type RoutineTaskExample = {
   time: string;
   frequency: RoutineTask['frequency'];
   selectedDays?: number[];
+  monthlyDays?: number[];
   icon: NonNullable<RoutineTask['icon']>;
 };
 
 const ROUTINE_TASK_EXAMPLE_ITEMS: RoutineTaskExample[] = [
-  { id: 'cleaning', title: 'Cleaning', frequencyLabel: 'Tue & Thu', time: '18:00', frequency: 'specific_days', selectedDays: [1, 3], icon: 'Home' },
-  { id: 'study', title: 'Study', frequencyLabel: 'Weekdays', time: '17:00', frequency: 'weekdays', icon: 'Book' },
-  { id: 'exercise', title: 'Exercise', frequencyLabel: 'Mon, Wed & Fri', time: '07:30', frequency: 'specific_days', selectedDays: [0, 2, 4], icon: 'Dumbbell' },
-  { id: 'family', title: 'Family responsibility', frequencyLabel: 'Sunday', time: '19:00', frequency: 'specific_days', selectedDays: [6], icon: 'Heart' },
-  { id: 'plan-tomorrow', title: 'Plan tomorrow', frequencyLabel: 'Every day', time: '21:00', frequency: 'daily', icon: 'Calendar' },
+  { id: 'cleaning', title: 'Cleaning', frequencyLabel: 'Tue & Thu', time: '18:00', frequency: 'specific_days', selectedDays: [2, 4], icon: 'Home' },
+  { id: 'laundry', title: 'Laundry', frequencyLabel: 'Saturday', time: '11:00', frequency: 'specific_days', selectedDays: [6], icon: 'Home' },
+  { id: 'grocery-shopping', title: 'Grocery shopping', frequencyLabel: 'Saturday', time: '10:00', frequency: 'specific_days', selectedDays: [6], icon: 'Utensils' },
+  { id: 'meal-prep', title: 'Meal prep', frequencyLabel: 'Sunday', time: '16:30', frequency: 'specific_days', selectedDays: [0], icon: 'Utensils' },
+  { id: 'wash-dishes', title: 'Wash dishes', frequencyLabel: 'Every day', time: '20:00', frequency: 'daily', icon: 'Utensils' },
+  { id: 'walk-dog', title: 'Walk the dog', frequencyLabel: 'Every day', time: '07:30', frequency: 'daily', icon: 'Activity' },
+  { id: 'go-to-work', title: 'Go to work', frequencyLabel: 'Mon - Fri', time: '08:00', frequency: 'weekdays', icon: 'Briefcase' },
+  { id: 'school-dropoff', title: 'Take kids to school', frequencyLabel: 'Mon - Fri', time: '07:45', frequency: 'weekdays', icon: 'Heart' },
+  { id: 'school-bags', title: 'Pack school bags', frequencyLabel: 'Sun - Thu', time: '20:15', frequency: 'specific_days', selectedDays: [0, 1, 2, 3, 4], icon: 'Notebook' },
+  { id: 'iron-work-clothes', title: 'Iron work clothes', frequencyLabel: 'Sunday', time: '19:30', frequency: 'specific_days', selectedDays: [0], icon: 'Briefcase' },
+  { id: 'prepare-clothes', title: "Prepare tomorrow's clothes", frequencyLabel: 'Mon - Thu', time: '21:00', frequency: 'specific_days', selectedDays: [1, 2, 3, 4], icon: 'Home' },
+  { id: 'take-out-trash', title: 'Take out trash', frequencyLabel: 'Wed & Sun', time: '20:30', frequency: 'specific_days', selectedDays: [3, 0], icon: 'ListChecks' },
+  { id: 'call-family', title: 'Call family', frequencyLabel: 'Sunday', time: '19:00', frequency: 'specific_days', selectedDays: [0], icon: 'Heart' },
+  { id: 'budget-check', title: 'Budget check', frequencyLabel: 'Monthly 1', time: '20:00', frequency: 'monthly', monthlyDays: [1], icon: 'BarChart3' },
+  { id: 'pay-bills', title: 'Pay bills', frequencyLabel: 'Monthly 5', time: '19:30', frequency: 'monthly', monthlyDays: [5], icon: 'Calendar' },
+  { id: 'water-plants', title: 'Water plants', frequencyLabel: 'Tue & Sat', time: '08:30', frequency: 'specific_days', selectedDays: [2, 6], icon: 'Droplets' },
 ];
 
 function routineExampleToTaskData(example: RoutineTaskExample): TaskData {
@@ -16406,6 +16561,7 @@ function routineExampleToPrefill(example: RoutineTaskExample): RoutineTask {
     time: example.time,
     frequency: example.frequency,
     selectedDays: example.frequency === 'specific_days' ? example.selectedDays : undefined,
+    monthlyDays: example.frequency === 'monthly' ? example.monthlyDays ?? [1] : undefined,
     sameTimeEveryDay: true,
     notificationMode: 'none',
   };
@@ -16610,20 +16766,16 @@ function OrganizeSpiritualTaskBuilderSlide({ onNext }: { onNext: () => void }) {
         onDelete={() => {}}
       />
 
-      <AnimatedCta active delay={220} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
-        <View style={s.ctaIsland}>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            haptic={ready ? 'medium' : 'none'}
-            disabled={!ready}
-            onPress={onNext}
-            style={[s.primaryButton, !ready && s.primaryButtonDisabled]}
-          >
-            <Text style={[s.primaryButtonText, !ready && s.primaryButtonDisabledText]}>Continue</Text>
-            <ChevronRight s={19} c={ready ? '#FFFFFF' : 'rgba(25,23,20,0.32)'} w={2.5} />
-          </TouchableOpacity>
-        </View>
-      </AnimatedCta>
+      {ready ? (
+        <AnimatedCta active delay={120} style={footerStyle} pointerEvents="auto">
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>Continue</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      ) : null}
     </View>
   );
 }
@@ -16941,20 +17093,16 @@ function OrganizeRoutineTaskBuilderSlide({ onNext }: { onNext: () => void }) {
         onDelete={() => {}}
       />
 
-      <AnimatedCta active delay={220} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
-        <View style={s.ctaIsland}>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            haptic={ready ? 'medium' : 'none'}
-            disabled={!ready}
-            onPress={onNext}
-            style={[s.primaryButton, !ready && s.primaryButtonDisabled]}
-          >
-            <Text style={[s.primaryButtonText, !ready && s.primaryButtonDisabledText]}>Continue</Text>
-            <ChevronRight s={19} c={ready ? '#FFFFFF' : 'rgba(25,23,20,0.32)'} w={2.5} />
-          </TouchableOpacity>
-        </View>
-      </AnimatedCta>
+      {ready ? (
+        <AnimatedCta active delay={120} style={footerStyle} pointerEvents="auto">
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>Continue</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      ) : null}
     </View>
   );
 }
@@ -17380,11 +17528,13 @@ function WeeklyRhythmStripCard({
   index,
   stageWidth,
   compact,
+  replayKey,
 }: {
   strip: WeeklyRhythmStrip;
   index: number;
   stageWidth: number;
   compact: boolean;
+  replayKey: number;
 }) {
   const intro = useSharedValue(0);
   const drift = useSharedValue(0);
@@ -17396,7 +17546,10 @@ function WeeklyRhythmStripCard({
   const entryDistance = -(stageWidth + displayWidth + 56);
 
   useEffect(() => {
+    cancelAnimation(intro);
+    cancelAnimation(drift);
     intro.value = 0;
+    drift.value = 0;
     intro.value = withDelay(
       entryDelay,
       withSequence(
@@ -17423,7 +17576,13 @@ function WeeklyRhythmStripCard({
         false,
       ),
     );
-  }, [drift, entryDelay, index, intro]);
+    return () => {
+      cancelAnimation(intro);
+      cancelAnimation(drift);
+      intro.value = 0;
+      drift.value = 0;
+    };
+  }, [drift, entryDelay, entryDistance, index, intro, replayKey, strip.float]);
 
   const introStyle = useAnimatedStyle(() => ({
     opacity: interpolate(intro.value, [0, 0.08, 1], [0, 1, 1]),
@@ -17467,6 +17626,7 @@ function WeeklyRhythmStripCard({
 
 function OrganizeWeeklyRhythmV2Slide({ onNext }: { onNext: () => void }) {
   const { width, height } = useWindowDimensions();
+  const [replayKey] = useState(nextOnboardingAnimationReplayKey);
   const compact = height < 720;
   const stageWidth = Math.min(382, Math.max(306, width - 42));
   const stageHeight = compact ? 354 : 402;
@@ -17484,11 +17644,12 @@ function OrganizeWeeklyRhythmV2Slide({ onNext }: { onNext: () => void }) {
       <View style={[s.weeklyStripStage, { width: stageWidth, height: stageHeight }]}>
         {WEEKLY_RHYTHM_STRIPS.map((strip, index) => (
           <WeeklyRhythmStripCard
-            key={strip.day}
+            key={`${strip.day}-${replayKey}`}
             strip={strip}
             index={index}
             stageWidth={stageWidth}
             compact={compact}
+            replayKey={replayKey}
           />
         ))}
       </View>
@@ -17669,7 +17830,6 @@ function OrganizeHubV2Slide({ stage, onNext }: { stage: OrganizeHubV2Stage; onNe
   const [awake, setAwake] = useState(false);
   const exitProgress = useSharedValue(0);
   const isComplete = stage === 'complete';
-  const isStart = stage === 'start';
   const doneCount = config.doneBefore + (checkedNow && config.checksNow ? 1 : 0);
   const pendingIndex = isComplete ? -1 : doneCount;
 
@@ -17677,9 +17837,9 @@ function OrganizeHubV2Slide({ stage, onNext }: { stage: OrganizeHubV2Stage; onNe
     s.organizeRuleContent,
     {
       flexGrow: 1,
-      paddingTop: Math.max(insets.top + (isStart ? 34 : 26), isStart ? 60 : 52),
+      paddingTop: Math.max(insets.top + 34, 60),
       paddingBottom: insets.bottom + 128,
-      rowGap: isStart ? 14 : 22,
+      rowGap: 18,
     },
   ];
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
@@ -17752,12 +17912,16 @@ function OrganizeHubV2Slide({ stage, onNext }: { stage: OrganizeHubV2Stage; onNe
             title={config.title}
             body={config.body}
             accent={config.accent}
-            variant={isStart ? 'premium' : 'default'}
-            bodyHighlights={isStart ? ['Spiritual life', 'daily duties', 'focused challenges', 'growing habits'] : []}
+            variant="premium"
+            bodyHighlights={
+              stage === 'start'
+                ? ['Spiritual life', 'daily duties', 'focused challenges', 'growing habits']
+                : []
+            }
           />
         </Reanimated.View>
 
-        <Reanimated.View style={[s.hubV2Board, isStart && s.hubV2BoardStart, exitStyle]}>
+        <Reanimated.View style={[s.hubV2Board, s.hubV2BoardStart, exitStyle]}>
           {HUB_V2_ITEMS.map((item, index) => {
             const state: TaskState = index < doneCount ? 'done' : index === pendingIndex ? 'pending' : 'locked';
             return (
@@ -17838,14 +18002,12 @@ function V2MutedTaskCard({ card }: { card: TaskData }) {
 
 function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
   const { createOrUpdateTask } = useTasks();
   const [sheetItem, setSheetItem] = useState<(typeof SPIRITUAL_V2_ITEMS)[number] | null>(null);
   const [editorItem, setEditorItem] = useState<(typeof SPIRITUAL_V2_ITEMS)[number] | null>(null);
   const [saved, setSaved] = useState<SavedV2Entry[]>([]);
   const [freshKey, setFreshKey] = useState<string | null>(null);
   const savedIds = useMemo(() => new Set(saved.map(entry => entry.catalogId)), [saved]);
-  const compact = height < 760;
   const ready = saved.length > 0;
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
 
@@ -17853,6 +18015,11 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
     runSelectionHaptic();
     if (item.setup.kind === 'editor') setEditorItem(item);
     else setSheetItem(item);
+  };
+
+  const openFirstSpiritualTask = () => {
+    const item = SPIRITUAL_V2_ITEMS.find(candidate => !savedIds.has(candidate.id)) ?? SPIRITUAL_V2_ITEMS[0];
+    openItem(item);
   };
 
   const completeSave = useCallback((catalogId: string | null, draft: TaskDraft) => {
@@ -17869,23 +18036,35 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
 
   return (
     <View style={s.organizeRuleScreen}>
-      <View
-        style={[
-          s.v2BuilderContent,
-          { paddingTop: Math.max(insets.top + 26, 52), paddingBottom: insets.bottom + 96 },
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          s.v2SpiritualBuilderScrollContent,
+          { paddingTop: Math.max(insets.top + 26, 52), paddingBottom: insets.bottom + (ready ? 116 : 34) },
         ]}
       >
         <OrganizeStageHeader
-          title="Your spiritual rhythm."
-          body="Choose what belongs to your week. Each one becomes a real task, placed at its hour."
+          title={'Your spiritual\nrhythm'}
+          body="Add prayer, Scripture, church or any practice you want to repeat. Set the rhythm once, and Anasta places it in your weekly plan."
+          accent={GOLD}
+          variant="premium"
+          bodyHighlights={['prayer, Scripture, church', 'time and rhythm', 'weekly plan']}
         />
 
         <Reanimated.View
           entering={FadeInUp.delay(150).duration(520).easing(Easing.out(Easing.cubic))}
-          style={[s.v2MyPanel, { borderColor: 'rgba(197,160,89,0.28)' }]}
+          style={[s.v2MyPanel, !saved.length && s.v2SpiritualMyPanelEmpty, { borderColor: 'rgba(197,160,89,0.28)' }]}
         >
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(255,255,255,0.98)', 'rgba(197,160,89,0.13)', 'rgba(255,253,248,0.96)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View pointerEvents="none" style={s.v2SpiritualPanelHalo} />
           <View style={s.v2PanelHeader}>
-            <Text style={s.v2PanelTitle}>My Spiritual Tasks</Text>
+            <Text style={s.v2PanelTitle}>Add Your Tasks</Text>
             <View style={[s.v2PanelCount, { backgroundColor: 'rgba(197,160,89,0.12)', borderColor: 'rgba(197,160,89,0.26)' }]}>
               <Text style={[s.v2PanelCountText, { color: '#9A7B33' }]}>{saved.length}</Text>
             </View>
@@ -17906,25 +18085,30 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
               ))}
             </ScrollView>
           ) : (
-            <View style={s.v2Empty}>
-              <View style={[s.v2EmptyIcon, { backgroundColor: 'rgba(197,160,89,0.12)', borderColor: 'rgba(197,160,89,0.22)' }]}>
-                <Candle s={17} c={GOLD} w={2} />
+            <View style={[s.v2Empty, s.v2SpiritualEmpty]}>
+              <View style={s.v2SpiritualTodoRow}>
+                <View style={s.v2SpiritualTodoMark}>
+                  <View style={s.v2SpiritualTodoMarkInner} />
+                </View>
+                <Text style={s.v2SpiritualTodoTitle}>Build your spiritual routine</Text>
               </View>
-              <Text style={s.v2EmptyTitle}>Nothing set yet</Text>
-              <Text style={s.v2EmptyBody}>Tap a task below — it will take its place here, by its hour.</Text>
+              <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={openFirstSpiritualTask} style={s.v2EmptyAction}>
+                <Plus s={14} c="#FFFFFF" w={2.5} />
+                <Text style={s.v2EmptyActionText}>Add Spiritual Task</Text>
+              </TouchableOpacity>
             </View>
           )}
         </Reanimated.View>
 
         <Reanimated.View
           entering={FadeInUp.delay(240).duration(520).easing(Easing.out(Easing.cubic))}
-          style={[s.v2CatalogPanel, { maxHeight: compact ? height * 0.34 : height * 0.38 }]}
+          style={[s.v2CatalogPanel, s.v2SpiritualCatalogPanel]}
         >
           <View style={s.v2PanelHeader}>
-            <Text style={s.v2CatalogTitle}>Spiritual Tasks</Text>
-            <Text style={s.v2CatalogHint}>Tap to set up</Text>
+            <Text style={[s.v2CatalogTitle, s.v2CatalogTitleLong]}>Examples of Spiritual Tasks</Text>
+            <Text style={[s.v2CatalogHint, s.v2CatalogHintLight]}>Tap to set them up</Text>
           </View>
-          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={s.v2CatalogList}>
+          <View style={s.v2CatalogList}>
             {SPIRITUAL_V2_ITEMS.filter(item => !savedIds.has(item.id)).map(item => (
               <Reanimated.View
                 key={item.id}
@@ -17946,9 +18130,9 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
                 </TouchableOpacity>
               </Reanimated.View>
             ))}
-          </ScrollView>
+          </View>
         </Reanimated.View>
-      </View>
+      </ScrollView>
 
       {sheetItem ? (
         <SetAsTaskSheet
@@ -17956,6 +18140,7 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
           context={sheetItem.setup.kind === 'sheet' ? sheetItem.setup.context : 'prayer'}
           initialPrayerType={sheetItem.setup.kind === 'sheet' ? sheetItem.setup.prayerType : undefined}
           initialScriptureType={sheetItem.setup.kind === 'sheet' ? sheetItem.setup.scriptureType : undefined}
+          lockToPrimaryTask
           onClose={() => setSheetItem(null)}
           onTaskDraft={async draft => {
             const target = sheetItem;
@@ -17981,20 +18166,16 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
         onDelete={() => {}}
       />
 
-      <AnimatedCta active delay={220} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
-        <View style={s.ctaIsland}>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            haptic={ready ? 'medium' : 'none'}
-            disabled={!ready}
-            onPress={onNext}
-            style={[s.primaryButton, !ready && s.primaryButtonDisabled]}
-          >
-            <Text style={[s.primaryButtonText, !ready && s.primaryButtonDisabledText]}>Continue</Text>
-            <ChevronRight s={19} c={ready ? '#FFFFFF' : 'rgba(25,23,20,0.32)'} w={2.5} />
-          </TouchableOpacity>
-        </View>
-      </AnimatedCta>
+      {ready ? (
+        <AnimatedCta active delay={120} style={footerStyle} pointerEvents="auto">
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>Continue</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      ) : null}
     </View>
   );
 }
@@ -18062,7 +18243,7 @@ function OrganizeRoutineBuilderV2Slide({ onNext }: { onNext: () => void }) {
               ))}
             </ScrollView>
           ) : (
-            <View style={s.v2Empty}>
+            <View style={[s.v2Empty, s.v2ChallengeEmpty]}>
               <View style={[s.v2EmptyIcon, { backgroundColor: 'rgba(77,133,134,0.12)', borderColor: 'rgba(77,133,134,0.24)' }]}>
                 <ListChecks s={17} c="#4D8586" w={2} />
               </View>
@@ -18116,6 +18297,160 @@ function OrganizeRoutineBuilderV2Slide({ onNext }: { onNext: () => void }) {
           </TouchableOpacity>
         </View>
       </AnimatedCta>
+    </View>
+  );
+}
+
+function OrganizeRoutineBuilderPremiumV2Slide({ onNext }: { onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const { createOrUpdateTask } = useTasks();
+  const [editorSession, setEditorSession] = useState<{ item: RoutineTaskExample | null; task: RoutineTask | null } | null>(null);
+  const [saved, setSaved] = useState<SavedV2Entry[]>([]);
+  const [freshKey, setFreshKey] = useState<string | null>(null);
+  const savedIds = useMemo(() => new Set(saved.map(entry => entry.catalogId)), [saved]);
+  const ready = saved.length > 0;
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+
+  const openExample = (item: RoutineTaskExample) => {
+    runSelectionHaptic();
+    setEditorSession({ item, task: routineExampleToPrefill(item) });
+  };
+
+  const openCustomRoutineTask = () => {
+    runSelectionHaptic();
+    setEditorSession({ item: null, task: null });
+  };
+
+  const completeSave = useCallback((catalogId: string | null, draft: TaskDraft) => {
+    const key = `${catalogId ?? 'routine'}-${Date.now()}`;
+    const time = draftConsistentTime(draft);
+    setSaved(current =>
+      insertSortedByTime(current, { key, catalogId, time, card: routineDraftToTaskData(draft) })
+    );
+    setFreshKey(key);
+    runPreviewTaskCheckHaptic();
+    void playTaskCheckSoundOnly();
+    setTimeout(() => setFreshKey(current => (current === key ? null : current)), 1050);
+  }, []);
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          s.v2SpiritualBuilderScrollContent,
+          { paddingTop: Math.max(insets.top + 26, 52), paddingBottom: insets.bottom + (ready ? 116 : 34) },
+        ]}
+      >
+        <OrganizeStageHeader
+          title={'Build your\nroutine'}
+          body="Cleaning, study, work - add the duties you repeat, then give each one its day and hour."
+          accent="#5F5A54"
+          variant="premium"
+          bodyHighlights={['duties you repeat', 'day and hour']}
+        />
+
+        <Reanimated.View
+          entering={FadeInUp.delay(150).duration(520).easing(Easing.out(Easing.cubic))}
+          style={[s.v2MyPanel, !saved.length && s.v2RoutineMyPanelEmpty, { borderColor: 'rgba(95,90,84,0.26)' }]}
+        >
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(255,255,255,0.98)', 'rgba(95,90,84,0.13)', 'rgba(248,247,244,0.96)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View pointerEvents="none" style={s.v2RoutinePanelHalo} />
+          <View style={s.v2PanelHeader}>
+            <Text style={s.v2PanelTitle}>Add Your Tasks</Text>
+            <View style={[s.v2PanelCount, { backgroundColor: 'rgba(95,90,84,0.10)', borderColor: 'rgba(95,90,84,0.24)' }]}>
+              <Text style={[s.v2PanelCountText, { color: '#56514B' }]}>{saved.length}</Text>
+            </View>
+          </View>
+          {saved.length ? (
+            <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={s.v2SavedList}>
+              {saved.map(entry => (
+                <Reanimated.View
+                  key={entry.key}
+                  entering={FadeInUp.duration(470).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                    opacity: 0,
+                    transform: [{ translateY: 16 }, { scale: 0.97 }],
+                  })}
+                  layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
+                >
+                  <SpiritualSavedTaskCard card={entry.card} fresh={freshKey === entry.key} />
+                </Reanimated.View>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={[s.v2Empty, s.v2RoutineEmpty]}>
+              <View style={s.v2RoutineTodoRow}>
+                <View style={s.v2RoutineTodoMark}>
+                  <View style={s.v2RoutineTodoMarkInner} />
+                </View>
+                <Text style={s.v2RoutineTodoTitle}>Build your ordinary routine</Text>
+              </View>
+              <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={openCustomRoutineTask} style={s.v2EmptyAction}>
+                <Plus s={14} c="#FFFFFF" w={2.5} />
+                <Text style={s.v2EmptyActionText}>Add Routine Task</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </Reanimated.View>
+
+        <Reanimated.View
+          entering={FadeInUp.delay(240).duration(520).easing(Easing.out(Easing.cubic))}
+          style={[s.v2CatalogPanel, s.v2SpiritualCatalogPanel, s.v2RoutineCatalogPanel]}
+        >
+          <View style={s.v2PanelHeader}>
+            <Text style={[s.v2CatalogTitle, s.v2CatalogTitleLong]}>Examples of Routine Tasks</Text>
+            <Text style={[s.v2CatalogHint, s.v2CatalogHintRoutine]}>Tap to set them up</Text>
+          </View>
+          <View style={s.v2CatalogList}>
+            {ROUTINE_TASK_EXAMPLE_ITEMS.filter(item => !savedIds.has(item.id)).map(item => (
+              <Reanimated.View
+                key={item.id}
+                exiting={FadeOut.duration(200)}
+                layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
+              >
+                <TouchableOpacity activeOpacity={0.88} haptic="none" onPress={() => openExample(item)}>
+                  <V2MutedTaskCard card={routineExampleToTaskData(item)} />
+                </TouchableOpacity>
+              </Reanimated.View>
+            ))}
+          </View>
+        </Reanimated.View>
+      </ScrollView>
+
+      <RoutineTaskEditorSheet
+        visible={!!editorSession}
+        task={null}
+        initialTask={editorSession?.task ?? null}
+        hideDelete
+        defaultLevel={2}
+        defaultType="custom"
+        onClose={() => setEditorSession(null)}
+        onSave={async task => {
+          const target = editorSession?.item ?? null;
+          const draft = routineTaskToDraft(task);
+          await createOrUpdateTask(draft);
+          setEditorSession(null);
+          completeSave(target?.id ?? null, draft);
+        }}
+        onDelete={() => {}}
+      />
+
+      {ready ? (
+        <AnimatedCta active delay={120} style={footerStyle} pointerEvents="auto">
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>Continue</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      ) : null}
     </View>
   );
 }
@@ -18190,7 +18525,6 @@ function v2ChurchScheduleToConfig(schedule: ChallengeChurchScheduleDraft): Chall
 
 function OrganizeChallengesBuilderV2Slide({ onNext }: { onNext: () => void }) {
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
   const {
     activeChallenges,
     availableCatalogEntries,
@@ -18324,26 +18658,47 @@ function OrganizeChallengesBuilderV2Slide({ onNext }: { onNext: () => void }) {
     })).filter(group => group.items.length > 0),
     [availableCatalogEntries]
   );
+  const firstAvailableEntry = useMemo(
+    () => catalogByGroup.flatMap(group => group.items)[0] ?? null,
+    [catalogByGroup],
+  );
+
+  const openFirstChallenge = () => {
+    if (!firstAvailableEntry) return;
+    openEntry(firstAvailableEntry);
+  };
 
   return (
     <View style={s.organizeRuleScreen}>
-      <View
-        style={[
-          s.v2BuilderContent,
-          { paddingTop: Math.max(insets.top + 26, 52), paddingBottom: insets.bottom + 96 },
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          s.v2SpiritualBuilderScrollContent,
+          { paddingTop: Math.max(insets.top + 26, 52), paddingBottom: insets.bottom + (ready ? 116 : 34) },
         ]}
       >
         <OrganizeStageHeader
-          title="Choose your challenge."
-          body="One clear commitment with a beginning and an end. Anasta counts the days with you."
+          title={'Challenge\nyourself'}
+          body="Choose one clear commitment. Set the rhythm and stay with it until the goal is complete."
+          accent={GOLD}
+          variant="premium"
+          bodyHighlights={['clear commitment', 'goal is complete']}
         />
 
         <Reanimated.View
           entering={FadeInUp.delay(150).duration(520).easing(Easing.out(Easing.cubic))}
-          style={[s.v2MyPanel, { borderColor: 'rgba(197,160,89,0.28)' }]}
+          style={[s.v2MyPanel, !activeChallenges.length && s.v2ChallengeMyPanelEmpty, { borderColor: 'rgba(197,160,89,0.28)' }]}
         >
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(255,255,255,0.98)', 'rgba(197,160,89,0.13)', 'rgba(255,253,248,0.96)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View pointerEvents="none" style={s.v2SpiritualPanelHalo} />
           <View style={s.v2PanelHeader}>
-            <Text style={s.v2PanelTitle}>My Challenges</Text>
+            <Text style={s.v2PanelTitle}>{activeChallenges.length ? 'Your Challenges' : 'Start Challenge'}</Text>
             <View style={[s.v2PanelCount, { backgroundColor: 'rgba(197,160,89,0.12)', borderColor: 'rgba(197,160,89,0.26)' }]}>
               <Text style={[s.v2PanelCountText, { color: '#9A7B33' }]}>{activeChallenges.length}</Text>
             </View>
@@ -18374,47 +18729,64 @@ function OrganizeChallengesBuilderV2Slide({ onNext }: { onNext: () => void }) {
               ))}
             </ScrollView>
           ) : (
-            <View style={s.v2Empty}>
-              <View style={[s.v2EmptyIcon, { backgroundColor: 'rgba(197,160,89,0.12)', borderColor: 'rgba(197,160,89,0.22)' }]}>
-                <Trophy s={17} c={GOLD} />
+            <View style={[s.v2Empty, s.v2ChallengeEmpty]}>
+              <View style={s.v2SpiritualTodoRow}>
+                <View style={s.v2SpiritualTodoMark}>
+                  <View style={s.v2SpiritualTodoMarkInner} />
+                </View>
+                <Text style={s.v2SpiritualTodoTitle}>Choose a clear commitment</Text>
               </View>
-              <Text style={s.v2EmptyTitle}>No challenge yet</Text>
-              <Text style={s.v2EmptyBody}>Pick one below — thirty days of prayer, a Gospel, a journal.</Text>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                haptic="medium"
+                disabled={!firstAvailableEntry}
+                onPress={openFirstChallenge}
+                style={[s.v2EmptyAction, !firstAvailableEntry && s.v2EmptyActionDisabled]}
+              >
+                <Trophy s={14} c="#FFFFFF" w={2.3} />
+                <Text style={s.v2EmptyActionText}>{firstAvailableEntry ? 'Start Challenge' : 'No Challenge Available'}</Text>
+              </TouchableOpacity>
             </View>
           )}
         </Reanimated.View>
 
         <Reanimated.View
           entering={FadeInUp.delay(240).duration(520).easing(Easing.out(Easing.cubic))}
-          style={[s.v2CatalogPanel, { maxHeight: height * 0.4 }]}
+          style={[s.v2CatalogPanel, s.v2SpiritualCatalogPanel, s.v2ChallengeCatalogPanel]}
         >
           <View style={s.v2PanelHeader}>
-            <Text style={s.v2CatalogTitle}>Challenges</Text>
-            <Text style={s.v2CatalogHint}>Tap to set up</Text>
+            <Text style={[s.v2CatalogTitle, s.v2CatalogTitleLong, s.v2ChallengeCatalogTitle]}>Available Challenges</Text>
+            <Text style={[s.v2CatalogHint, s.v2CatalogHintLight]}>Tap to start</Text>
           </View>
-          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={s.v2CatalogList}>
+          <View style={s.v2CatalogList}>
             {catalogByGroup.map(group => (
-              <View key={group.id}>
-                <Text style={s.v2GroupLabel}>{group.label}</Text>
+              <View key={group.id} style={s.v2ChallengeGroup}>
+                <Text style={[s.v2GroupLabel, s.v2ChallengeGroupLabel]}>{group.label}</Text>
                 {group.items.map(entry => (
-                  <TouchableOpacity key={entry.id} activeOpacity={0.88} haptic="none" onPress={() => openEntry(entry)}>
-                    <V2MutedTaskCard
-                      card={{
-                        variant: 'challenge',
-                        title: entry.title,
-                        time: entry.defaultTime ?? undefined,
-                        subtitle: entry.scheduleLabel ?? entry.paceOptions?.[0]?.label ?? 'Challenge',
-                        state: 'pending',
-                        type: CHALLENGE_V2_TYPE[entry.category] ?? 'custom',
-                      }}
-                    />
-                  </TouchableOpacity>
+                  <Reanimated.View
+                    key={entry.id}
+                    exiting={FadeOut.duration(200)}
+                    layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
+                  >
+                    <TouchableOpacity activeOpacity={0.88} haptic="none" onPress={() => openEntry(entry)}>
+                      <V2MutedTaskCard
+                        card={{
+                          variant: 'challenge',
+                          title: entry.title,
+                          time: entry.defaultTime ?? undefined,
+                          subtitle: entry.descriptor || entry.scheduleLabel || entry.paceOptions?.[0]?.label || 'Challenge',
+                          state: 'pending',
+                          type: CHALLENGE_V2_TYPE[entry.category] ?? 'custom',
+                        }}
+                      />
+                    </TouchableOpacity>
+                  </Reanimated.View>
                 ))}
               </View>
             ))}
-          </ScrollView>
+          </View>
         </Reanimated.View>
-      </View>
+      </ScrollView>
 
       <SmoothBottomSheet visible={!!setupEntry} onClose={closeSheet} sheetStyle={s.v2ChallengeSheet} keyboardAware>
         <View style={s.v2SheetHandle} />
@@ -18486,112 +18858,642 @@ function freshKeyForChallenge(freshId: string | null, challengeId: string) {
 
 // --- Habits: concept + builder V2 -----------------------------------------------
 
-function OrganizeHabitsConceptV2Slide({ onNext }: { onNext: () => void }) {
-  const [phase, setPhase] = useState(0);
-  const progress = useSharedValue(0);
+const HABIT_GOAL_IDEAS = [
+  { id: 'lose-weight', title: 'Lose weight', label: 'Health goal', accent: '#2F9B61', image: HABIT_GOAL_LOSE_WEIGHT_IMAGE, icon: <Target s={18} c="#2F9B61" w={2.2} /> },
+  { id: 'social-skills', title: 'Improve social skills', label: 'Social goal', accent: '#705B9B', image: HABIT_GOAL_SOCIAL_SKILLS_IMAGE, icon: <User s={18} c="#705B9B" w={2} /> },
+  { id: 'save-money', title: 'Save more money', label: 'Money goal', accent: GOLD, image: HABIT_GOAL_SAVE_MONEY_IMAGE, icon: <Crown s={18} c={GOLD} w={2} /> },
+];
 
-  // walk ✓ → gym ✓ → run missed → the lesson lands. Short and direct.
+const HABIT_STEP_EXAMPLE = [
+  {
+    title: 'Morning run',
+    task: {
+      variant: 'habit',
+      title: 'Morning run',
+      time: '07:00',
+      subtitle: 'Weekdays',
+      state: 'pending',
+      habitColor: '#2F9B61',
+      habitIconName: 'Sun',
+      hideTypeBadge: true,
+      reservedRightSpace: 64,
+    } satisfies TaskData,
+    image: HABIT_STEP_MORNING_RUN_IMAGE,
+  },
+  {
+    title: 'Gym',
+    task: {
+      variant: 'habit',
+      title: 'Gym',
+      time: '17:00',
+      subtitle: 'Mon, Wed, Fri',
+      state: 'pending',
+      habitColor: '#2F9B61',
+      habitIconName: 'Activity',
+      hideTypeBadge: true,
+      reservedRightSpace: 64,
+    } satisfies TaskData,
+    image: HABIT_STEP_GYM_IMAGE,
+  },
+  {
+    title: 'Evening walk',
+    task: {
+      variant: 'habit',
+      title: 'Evening walk',
+      time: '19:00',
+      subtitle: 'Every day',
+      state: 'pending',
+      habitColor: '#2F9B61',
+      habitIconName: 'Moon',
+      hideTypeBadge: true,
+      reservedRightSpace: 64,
+    } satisfies TaskData,
+    image: HABIT_STEP_EVENING_WALK_IMAGE,
+  },
+];
+
+const HABIT_MOMENTUM_SCENARIOS = [
+  {
+    id: 'one-third',
+    label: 'One third',
+    completed: 30,
+    percent: '33%',
+    result: '-2 kg',
+    title: '30/90 tasks done',
+    headerTitle: 'Still moving forward',
+    headerBody: 'You completed 30 of 90 planned steps this month.',
+    note: 'Not perfect. Still progress.',
+    message: 'Slower than planned, but closer than when you started. More time may be needed, but the goal is still reachable. Stay consistent.',
+    highlights: ['Slower than planned', 'closer', 'goal is still reachable', 'Stay consistent'],
+    accent: GOLD,
+    image: HABIT_MOMENTUM_30_TASKS_IMAGE,
+  },
+  {
+    id: 'two-thirds',
+    label: 'Two thirds',
+    completed: 60,
+    percent: '67%',
+    result: '-4 kg',
+    title: '60/90 tasks done',
+    headerTitle: 'Momentum is building',
+    headerBody: 'You completed 60 of 90 steps and stayed close to the plan.',
+    note: 'Momentum grows when you get back up.',
+    message: 'You are doing really well. It is not perfect, but you are far better than when you started. Keep going, your goal is close.',
+    highlights: ['doing really well', 'not perfect', 'far better', 'goal is close'],
+    accent: '#705B9B',
+    image: HABIT_MOMENTUM_60_TASKS_IMAGE,
+  },
+  {
+    id: 'full-month',
+    label: 'Full month',
+    completed: 90,
+    percent: '100%',
+    result: '-6 kg',
+    title: '90/90 tasks done',
+    headerTitle: 'Goal reached',
+    headerBody: 'You completed every planned step and finished the month strong.',
+    note: 'Strong month. Strong habit.',
+    message: 'Perfect month. You are where you wanted to be. Congratulations, you reached your goal.',
+    highlights: ['Perfect month', 'where you wanted to be', 'reached your goal'],
+    accent: '#2F9B61',
+    image: HABIT_MOMENTUM_90_TASKS_IMAGE,
+  },
+] as const;
+
+const HABIT_MOMENTUM_INSIGHTS = [
+  {
+    kicker: 'Every step counts',
+    title: 'Small progress still counts',
+    body: 'Even 10/90 tasks done move you closer. Keep working toward your goal.',
+    accent: GOLD,
+  },
+  {
+    kicker: 'Do not quit',
+    title: 'Habit is built by getting back up',
+    body: 'Consistency is built by returning, not by never missing a step.',
+    accent: '#705B9B',
+  },
+  {
+    kicker: 'Stay persistent',
+    title: 'The first month is the hardest',
+    body: 'The beginning feels heavy. Repetition makes the next step easier.',
+    accent: '#2F9B61',
+  },
+] as const;
+
+function OrganizeHabitsConceptV2Slide({ onNext }: { onNext: () => void }) {
+  const [openGoalId, setOpenGoalId] = useState<string | null>('save-money');
+
   useEffect(() => {
-    const timers = [
-      setTimeout(() => {
-        setPhase(1);
-        runPreviewTaskCheckHaptic();
-        void playTaskCheckSoundOnly();
-        progress.value = withTiming(1 / 3, { duration: 460, easing: Easing.out(Easing.cubic) });
-      }, 720),
-      setTimeout(() => {
-        setPhase(2);
-        runPreviewTaskCheckHaptic();
-        void playTaskCheckSoundOnly();
-        progress.value = withTiming(2 / 3, { duration: 460, easing: Easing.out(Easing.cubic) });
-      }, 1440),
-      setTimeout(() => {
-        setPhase(3);
-        runSelectionHaptic();
-      }, 2100),
-      setTimeout(() => {
-        setPhase(4);
-        runBubbleHaptic();
-      }, 2620),
-    ];
-    return () => timers.forEach(clearTimeout);
-  }, [progress]);
+    void warmHabitGoalImages(HABIT_GOAL_IMAGE_SOURCES);
+  }, []);
+
+  const toggleGoal = useCallback((goalId: string, image: number) => {
+    void loadHabitGoalImage(image);
+    setOpenGoalId(current => (current === goalId ? null : goalId));
+    runSelectionHaptic();
+  }, []);
+
+  return (
+    <OrganizeLessonSlide
+      title={'Every habit starts\nwith a clear goal'}
+      body="Anasta helps you define what you want to achieve, so every habit has a clear direction."
+      accent="#2F9B61"
+      headerVariant="premium"
+      bodyHighlights={['define what you want to achieve', 'clear direction']}
+      bodyStyle={s.habitGoalLessonBody}
+      onNext={onNext}
+    >
+      <View style={s.habitGoalCardStack}>
+        {HABIT_GOAL_IDEAS.map((goal, index) => {
+          const isOpen = openGoalId === goal.id;
+
+          return (
+          <Reanimated.View
+            key={goal.id}
+            entering={FadeInUp.delay(160 + index * 85).duration(470).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 18 }, { scale: 0.97 }],
+            })}
+            layout={LinearTransition.duration(310).easing(Easing.bezier(0.16, 1, 0.28, 1))}
+            style={s.habitGoalSingleCard}
+          >
+            <TouchableOpacity
+              activeOpacity={0.9}
+              haptic="none"
+              onPress={() => toggleGoal(goal.id, goal.image)}
+              style={[s.habitGoalCardHeader, isOpen && s.habitGoalCardHeaderOpen, { borderColor: isOpen ? `${goal.accent}38` : `${goal.accent}20` }]}
+            >
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(255,255,255,0.99)', `${goal.accent}${isOpen ? '11' : '08'}`, 'rgba(255,253,248,0.97)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View pointerEvents="none" style={[s.habitGoalAccentRail, { backgroundColor: goal.accent }]} />
+              <View pointerEvents="none" style={[s.habitGoalGlow, { backgroundColor: `${goal.accent}10` }]} />
+              <View style={[s.habitGoalSingleIcon, { borderColor: `${goal.accent}34`, backgroundColor: `${goal.accent}12` }]}>
+                {goal.icon}
+              </View>
+              <View style={s.habitGoalSingleCopy}>
+                <View style={s.habitGoalTitleRow}>
+                  <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82} style={s.habitGoalSingleTitle}>
+                    {goal.title}
+                  </Text>
+                  <View style={[s.habitGoalNumber, { borderColor: `${goal.accent}30`, backgroundColor: '#FFFFFF' }]}>
+                    <Text style={[s.habitGoalNumberText, { color: goal.accent }]}>{String(index + 1).padStart(2, '0')}</Text>
+                  </View>
+                </View>
+                <View style={s.habitGoalMetaRow}>
+                  <View style={[s.habitGoalTypePill, { borderColor: `${goal.accent}24`, backgroundColor: `${goal.accent}0E` }]}>
+                    <Text style={[s.habitGoalSingleLabel, { color: goal.accent }]}>{goal.label}</Text>
+                  </View>
+                  <View style={[s.habitGoalMetaLine, { backgroundColor: `${goal.accent}24` }]} />
+                </View>
+              </View>
+              <View style={[s.habitGoalChevronButton, { borderColor: `${goal.accent}24`, backgroundColor: isOpen ? `${goal.accent}13` : 'rgba(255,255,255,0.82)' }]}>
+                <Reanimated.View style={{ transform: [{ rotate: isOpen ? '-90deg' : '90deg' }] }}>
+                  <ChevronRight s={17} c={goal.accent} w={2.45} />
+                </Reanimated.View>
+              </View>
+            </TouchableOpacity>
+            {isOpen ? (
+              <Reanimated.View
+                entering={FadeInUp.duration(330).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                  opacity: 0,
+                  transform: [{ translateY: -8 }, { scale: 0.985 }],
+                })}
+                exiting={FadeOut.duration(170)}
+                layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
+                style={s.habitGoalImagePanel}
+              >
+                <ExpoImage source={goal.image} style={s.habitGoalImage} contentFit="cover" cachePolicy="memory-disk" transition={120} />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(255,255,255,0)', 'rgba(20,17,13,0.08)']}
+                  start={{ x: 0.5, y: 0.35 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={[s.habitGoalImageBottomEdge, { backgroundColor: goal.accent }]} />
+              </Reanimated.View>
+            ) : null}
+          </Reanimated.View>
+          );
+        })}
+      </View>
+    </OrganizeLessonSlide>
+  );
+}
+
+function OrganizeHabitsStepsV2Slide({ onNext }: { onNext: () => void }) {
+  useEffect(() => {
+    void warmHabitGoalImages(HABIT_STEP_IMAGE_SOURCES);
+  }, []);
+
+  return (
+    <OrganizeLessonSlide
+      title={'Define steps\ntoward your goal'}
+      body="To achieve a goal, you need a clear plan and strong habits. Anasta helps with both: build the habits, shape a strong plan around them and keep moving toward your bigger goal."
+      accent="#2F9B61"
+      headerVariant="premium"
+      bodyHighlights={['clear plan', 'strong habits', 'build the habits', 'strong plan', 'bigger goal']}
+      bodyStyle={s.habitStepsLessonBody}
+      onNext={onNext}
+    >
+      <View style={s.habitStepsFlow}>
+        <Reanimated.View
+          entering={FadeIn.delay(90).duration(380).easing(Easing.out(Easing.cubic)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: -5 }, { scale: 0.992 }],
+          })}
+          layout={LinearTransition.duration(320).easing(Easing.bezier(0.16, 1, 0.28, 1))}
+          style={s.habitStepsStickyGoal}
+        >
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(255,255,255,0.99)', 'rgba(47,155,97,0.10)', 'rgba(255,253,248,0.98)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View pointerEvents="none" style={s.habitStepsStickyGoalRail} />
+          <View pointerEvents="none" style={s.habitStepsStickyGoalBloom} />
+          <View style={s.habitStepsStickyGoalIcon}>
+            <Target s={20} c="#2F9B61" w={2.2} />
+          </View>
+          <View style={s.habitStepsStickyGoalCopy}>
+            <Text style={s.habitStepsStickyGoalLabel}>CLEAR GOAL</Text>
+            <Text style={s.habitStepsStickyGoalTitle}>Lose weight</Text>
+          </View>
+          <View style={s.habitStepsStickyGoalBadge}>
+            <Text style={s.habitStepsStickyGoalBadgeText}>01</Text>
+          </View>
+        </Reanimated.View>
+
+        <View style={s.habitStepsConnectorWrap}>
+          <View style={s.habitStepsConnectorLine} />
+          <Text style={s.habitStepsConnectorText}>Steps / habits toward your goal</Text>
+          <View style={s.habitStepsConnectorLine} />
+        </View>
+
+        <View style={s.habitStepsList}>
+          <View pointerEvents="none" style={s.habitStepsTimelineRail} />
+          {HABIT_STEP_EXAMPLE.map((step, index) => (
+            <Reanimated.View
+              key={step.title}
+              entering={FadeInUp.delay(250 + index * 105).duration(450).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                opacity: 0,
+                transform: [{ translateY: 18 }, { scale: 0.985 }],
+              })}
+              style={s.habitStepCardWrap}
+            >
+              <AnyTaskCard task={step.task} />
+              <Reanimated.View
+                pointerEvents="none"
+                entering={FadeIn.delay(360 + index * 105).duration(300).easing(Easing.out(Easing.cubic)).withInitialValues({
+                  opacity: 0,
+                  transform: [{ translateX: 10 }, { scale: 0.92 }],
+                })}
+                style={[s.habitStepIllustrationWrap, index === 1 && s.habitStepIllustrationGymWrap]}
+              >
+                <ExpoImage
+                  source={step.image}
+                  style={[s.habitStepIllustration, index === 0 && s.habitStepIllustrationRun, index === 2 && s.habitStepIllustrationWalk]}
+                  contentFit="contain"
+                  cachePolicy="memory-disk"
+                  transition={80}
+                />
+              </Reanimated.View>
+            </Reanimated.View>
+          ))}
+        </View>
+      </View>
+    </OrganizeLessonSlide>
+  );
+}
+
+type HabitMomentumScenario = (typeof HABIT_MOMENTUM_SCENARIOS)[number];
+
+function HabitMomentumScenarioCard({
+  scenario,
+  active,
+  width,
+  height,
+  headerHeight,
+  footerHeight,
+  index,
+}: {
+  scenario: HabitMomentumScenario;
+  active: boolean;
+  width: number;
+  height: number;
+  headerHeight: number;
+  footerHeight: number;
+  index: number;
+}) {
+  const ratio = scenario.completed / 90;
+  const progress = useSharedValue(active ? 0 : ratio);
+
+  useEffect(() => {
+    cancelAnimation(progress);
+    progress.value = active ? 0 : ratio;
+    if (active) {
+      progress.value = withTiming(ratio, { duration: 720, easing: Easing.out(Easing.cubic) });
+    }
+  }, [active, progress, ratio]);
 
   const progressStyle = useAnimatedStyle(() => ({
     width: `${progress.value * 100}%`,
   }));
 
   return (
-    <OrganizeLessonSlide
-      title="A goal, carried by steps."
-      body="Name the goal, choose the steps that build it. Even one step a day is movement — the goal keeps you going, not the streak."
-      accent="#2F9B61"
-      ctaLabel="See examples"
-      onNext={onNext}
+    <Reanimated.View
+      entering={FadeInUp.delay(150 + index * 70).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 20 }, { scale: 0.97 }],
+      })}
+      style={[s.organizeExampleCard, s.organizeBigEventsExampleCard, s.habitMomentumScenarioCard, { width, height }]}
     >
-      <Reanimated.View
-        entering={FadeInUp.delay(180).duration(540).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-          opacity: 0,
-          transform: [{ translateY: 22 }, { scale: 0.97 }],
-        })}
-        style={s.habitStoryCard}
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(255,255,255,1)', `${scenario.accent}16`, 'rgba(255,249,235,0.96)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+
+      <View
+        style={[
+          s.organizeExampleQuotePanel,
+          s.organizeBigEventsExampleHeader,
+          s.habitMomentumScenarioHeader,
+          {
+            height: headerHeight,
+            minHeight: headerHeight,
+            borderColor: `${scenario.accent}24`,
+            backgroundColor: `${scenario.accent}10`,
+          },
+        ]}
       >
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(255,255,255,1)', 'rgba(47,155,97,0.12)', 'rgba(255,255,255,0.94)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
+        <Text style={[s.habitMomentumScenarioTitle, { color: scenario.accent }]}>{scenario.headerTitle}</Text>
+        <Text style={s.habitMomentumScenarioHeaderText}>
+          {scenario.headerBody}
+        </Text>
+        <View style={[s.habitMomentumHeaderProgressRow, { borderColor: `${scenario.accent}2A`, backgroundColor: `${scenario.accent}0D` }]}>
+          <View style={s.habitMomentumHeaderProgressTrack}>
+            <Reanimated.View style={[s.habitMomentumHeaderProgressFill, { backgroundColor: scenario.accent }, progressStyle]} />
+          </View>
+          <View style={[s.habitMomentumHeaderProgressPercent, { backgroundColor: scenario.accent }]}>
+            <Text style={s.habitMomentumHeaderProgressPercentText}>{scenario.percent}</Text>
+          </View>
+          <Text style={[s.habitMomentumHeaderProgressText, { color: scenario.accent }]}>{scenario.completed}/90 tasks</Text>
+        </View>
+      </View>
+
+      <View style={s.organizeBigEventsVisualPanel}>
+        <View style={[s.organizeBigEventsIllustrationBox, s.habitMomentumIllustrationBox, { height: width }]}>
+          <ExpoImage
+            source={scenario.image}
+            style={s.organizeBigEventsIllustrationImage}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={0}
+          />
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(255,253,248,0.02)', 'rgba(255,253,248,0.00)', 'rgba(20,16,12,0.24)']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={[s.habitMomentumResultBadge, { borderColor: `${scenario.accent}36` }]}>
+            <Text style={[s.habitMomentumResultValue, { color: scenario.accent }]}>{scenario.result}</Text>
+            <Text style={s.habitMomentumResultLabel}>in one month</Text>
+          </View>
+          <View style={[s.habitMomentumDoneBadge, { backgroundColor: scenario.accent }]}>
+            <Text style={s.habitMomentumDoneBadgeText}>{scenario.title}</Text>
+          </View>
+        </View>
+
+        <View
+          style={[
+            s.organizeBigEventsImageFooter,
+            s.habitMomentumQuoteFooter,
+            {
+              height: footerHeight,
+              borderColor: `${scenario.accent}24`,
+              backgroundColor: 'rgba(255,253,248,0.92)',
+            },
+          ]}
+        >
+          <Text
+            numberOfLines={4}
+            adjustsFontSizeToFit
+            minimumFontScale={0.86}
+            style={[s.organizeBigEventsIllustrationText, s.habitMomentumQuoteText]}
+          >
+            "{renderHighlightedBodyText(scenario.message, [...scenario.highlights], [s.habitMomentumQuoteStrong, { color: scenario.accent }])}"
+          </Text>
+        </View>
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function OrganizeHabitsMomentumV2Slide({ onNext }: { onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const [activeIndex, setActiveIndex] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
+  const activeIndexRef = useRef(0);
+  const userScrolledRef = useRef(false);
+  const compact = height < 720;
+  const cardMax = height < 720 ? 304 : height < 800 ? 326 : 344;
+  const cardWidth = Math.min(width - 48, cardMax);
+  const momentumHeaderHeight = compact ? 130 : height < 800 ? 136 : 140;
+  const momentumFooterHeight = compact ? 112 : height < 800 ? 120 : 126;
+  const cardHeight = cardWidth + momentumHeaderHeight + momentumFooterHeight;
+  const gap = 16;
+  const snapOffsets = HABIT_MOMENTUM_SCENARIOS.map((_, index) => index * (cardWidth + gap));
+
+  useEffect(() => {
+    void warmHabitGoalImages(HABIT_MOMENTUM_IMAGE_SOURCES);
+    activeIndexRef.current = 0;
+    setActiveIndex(0);
+    const timer = setTimeout(() => {
+      scrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+    }, 80);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const next = Math.round(event.nativeEvent.contentOffset.x / (cardWidth + gap));
+    const clamped = Math.max(0, Math.min(HABIT_MOMENTUM_SCENARIOS.length - 1, next));
+    if (clamped !== activeIndexRef.current) {
+      activeIndexRef.current = clamped;
+      setActiveIndex(clamped);
+    }
+    userScrolledRef.current = false;
+  };
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const next = Math.round(event.nativeEvent.contentOffset.x / (cardWidth + gap));
+    const clamped = Math.max(0, Math.min(HABIT_MOMENTUM_SCENARIOS.length - 1, next));
+    if (clamped === activeIndexRef.current) return;
+    activeIndexRef.current = clamped;
+    setActiveIndex(clamped);
+    if (userScrolledRef.current) runSelectionHaptic();
+  };
+
+  return (
+    <View style={s.organizeRuleScreen}>
+      <ScrollView
+        style={s.habitMomentumScroll}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          s.habitMomentumScrollContent,
+          {
+            paddingTop: Math.max(insets.top + (compact ? 16 : 26), compact ? 38 : 52),
+            paddingBottom: insets.bottom + 28,
+          },
+        ]}
+      >
+        <OrganizeStageHeader
+          title={'Keep moving\ntoward your goal'}
+          body="A perfect month is not the point. Complete what you can, keep returning and every step still moves you in the right direction."
+          accent="#2F9B61"
+          compact={compact}
+          variant="premium"
+          bodyHighlights={['perfect month', 'Complete what you can', 'right direction']}
         />
-        <View style={s.habitStoryHeader}>
-          <View style={s.habitStoryGoalIcon}>
-            <Target s={19} c="#2F9B61" w={2.1} />
-          </View>
-          <View style={s.habitStoryGoalCopy}>
-            <Text style={s.habitStoryGoalLabel}>THE GOAL</Text>
-            <Text style={s.habitStoryGoalTitle}>Lose weight</Text>
-          </View>
-        </View>
 
-        <View style={s.habitStoryProgressTrack}>
-          <Reanimated.View style={[s.habitStoryProgressFill, progressStyle]} />
-        </View>
-
-        <View style={s.habitStorySteps}>
-          {HABIT_STORY_STEPS.map((step, index) => {
-            const checked = phase >= index + 1 && index < 2;
-            const missed = phase >= 3 && index === 2;
-            return (
-              <View key={step.id} style={s.habitStoryStepRow}>
-                <View
-                  style={[
-                    s.habitStoryStepCheck,
-                    checked && s.habitStoryStepCheckDone,
-                    missed && s.habitStoryStepCheckMissed,
-                  ]}
-                >
-                  {checked ? (
-                    <Reanimated.View entering={FadeIn.duration(200).withInitialValues({ opacity: 0, transform: [{ scale: 0.4 }] })}>
-                      <CheckSmall s={13} c="#FFFFFF" w={3} />
-                    </Reanimated.View>
-                  ) : null}
-                  {missed ? <View style={s.habitStoryStepMissDash} /> : null}
-                </View>
-                <Text style={[s.habitStoryStepTitle, missed && s.habitStoryStepTitleMissed]}>{step.title}</Text>
-                <Text style={s.habitStoryStepTime}>{step.time}</Text>
-              </View>
-            );
+        <Reanimated.View
+          entering={FadeInUp.delay(170).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 22 }, { scale: 0.97 }],
           })}
-        </View>
+          style={s.habitMomentumCarouselArea}
+        >
+          <View style={[s.organizeCarouselTopControls, s.habitMomentumTopControls]}>
+            <View style={s.organizeExampleProgress}>
+              {HABIT_MOMENTUM_SCENARIOS.map((scenario, index) => (
+                <View
+                  key={`${scenario.id}-segment`}
+                  style={[
+                    s.organizeExampleProgressSegment,
+                    index <= activeIndex && { backgroundColor: scenario.accent, opacity: 1 },
+                  ]}
+                />
+              ))}
+            </View>
+            <View style={s.organizeSwipeTag}>
+              <Text style={s.organizeSwipeTagText}>Swipe results</Text>
+              <ChevronRight s={14} c="rgba(112,82,26,0.62)" w={2.3} />
+            </View>
+          </View>
 
-        {phase >= 4 ? (
-          <Reanimated.View entering={FadeInUp.duration(400).easing(Easing.out(Easing.cubic))} style={s.habitStoryLesson}>
-            <LottieFlame size={22} />
-            <Text style={s.habitStoryLessonText}>2 of 3 — still moving toward the goal.</Text>
-          </Reanimated.View>
-        ) : null}
-      </Reanimated.View>
-    </OrganizeLessonSlide>
+          <ScrollView
+            ref={scrollRef}
+            style={s.habitMomentumScroller}
+            horizontal
+            decelerationRate="fast"
+            disableIntervalMomentum
+            snapToOffsets={snapOffsets}
+            snapToAlignment="start"
+            showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled
+            contentContainerStyle={[
+              s.habitMomentumCarouselContent,
+              {
+                paddingHorizontal: Math.max(18, (width - cardWidth) / 2),
+                columnGap: gap,
+              },
+            ]}
+            onScroll={handleScroll}
+            onScrollBeginDrag={() => {
+              userScrolledRef.current = true;
+            }}
+            scrollEventThrottle={16}
+            onMomentumScrollEnd={handleScrollEnd}
+          >
+            {HABIT_MOMENTUM_SCENARIOS.map((scenario, index) => (
+              <HabitMomentumScenarioCard
+                key={scenario.id}
+                scenario={scenario}
+                active={index === activeIndex}
+                width={cardWidth}
+                height={cardHeight}
+                headerHeight={momentumHeaderHeight}
+                footerHeight={momentumFooterHeight}
+                index={index}
+              />
+            ))}
+          </ScrollView>
+        </Reanimated.View>
+
+        <Reanimated.View
+          entering={FadeInUp.delay(260).duration(540).easing(Easing.out(Easing.cubic))}
+          style={s.habitMomentumInsightStack}
+        >
+          <View style={s.habitMomentumPointCard}>
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(255,255,255,0.98)', 'rgba(47,155,97,0.10)', 'rgba(255,253,248,0.96)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View pointerEvents="none" style={s.habitMomentumPointAccent} />
+            <View style={s.habitMomentumPointCopy}>
+              <Text style={s.habitMomentumPointKicker}>THE POINT</Text>
+              <Text style={s.habitMomentumPointTitle}>Direction over perfection</Text>
+              <Text style={s.habitMomentumPointBody}>
+                You do not need a perfect month to make progress. Keep returning and keep moving toward the goal.
+              </Text>
+            </View>
+          </View>
+
+          {HABIT_MOMENTUM_INSIGHTS.map((insight, index) => (
+            <Reanimated.View
+              key={insight.title}
+              entering={FadeInUp.delay(340 + index * 80).duration(460).easing(Easing.out(Easing.cubic))}
+              style={[
+                s.habitMomentumInsightCard,
+                {
+                  borderColor: `${insight.accent}24`,
+                  backgroundColor: `${insight.accent}09`,
+                },
+              ]}
+            >
+              <View style={[s.habitMomentumInsightNumber, { borderColor: `${insight.accent}32`, backgroundColor: `${insight.accent}12` }]}>
+                <Text style={[s.habitMomentumInsightNumberText, { color: insight.accent }]}>{index + 1}</Text>
+              </View>
+              <View style={s.habitMomentumInsightCopy}>
+                <Text style={[s.habitMomentumInsightKicker, { color: insight.accent }]}>{insight.kicker}</Text>
+                <Text style={s.habitMomentumInsightTitle}>{insight.title}</Text>
+                <Text style={s.habitMomentumInsightBody}>{insight.body}</Text>
+              </View>
+            </Reanimated.View>
+          ))}
+        </Reanimated.View>
+
+        <AnimatedCta active delay={180} style={s.habitMomentumInlineCta} pointerEvents="auto">
+        <View style={s.ctaIsland}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            haptic="medium"
+            onPress={onNext}
+            style={s.primaryButton}
+          >
+            <Text style={s.primaryButtonText}>Continue</Text>
+            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -18608,34 +19510,44 @@ function OrganizeHabitsBuilderV2Slide({ onNext }: { onNext: () => void }) {
       <View
         style={[
           s.v2BuilderContent,
+          s.v2HabitBuilderContent,
           { paddingTop: Math.max(insets.top + 26, 52), paddingBottom: insets.bottom + 96 },
         ]}
       >
         <OrganizeStageHeader
-          title="Build your first habit."
-          body="Name the goal, add its steps — each step joins your week as a daily task."
+          title="Build your first habit"
+          body="Name the goal, choose a color, then add the steps / habits to your weekly plan so they can lead you toward achieving it."
           accent="#2F9B61"
+          variant="premium"
+          compact
+          titleLines={1}
+          titleStyle={s.v2HabitBuilderTitle}
+          bodyHighlights={['goal', 'color', 'steps / habits', 'weekly plan', 'achieving it']}
         />
 
         <Reanimated.View
           entering={FadeInUp.delay(150).duration(520).easing(Easing.out(Easing.cubic))}
-          style={[s.v2MyPanel, s.v2HabitsPanel, { maxHeight: height * 0.46, borderColor: 'rgba(47,155,97,0.30)' }]}
+          style={[s.v2MyPanel, s.v2HabitsPanel, s.v2HabitBuilderPanel, { maxHeight: height * 0.46, borderColor: 'rgba(47,155,97,0.30)' }]}
         >
-          <View style={s.v2PanelHeader}>
-            <Text style={s.v2PanelTitle}>My Habits</Text>
-            <View style={[s.v2PanelCount, { backgroundColor: 'rgba(47,155,97,0.12)', borderColor: 'rgba(47,155,97,0.26)' }]}>
+          <View pointerEvents="none" style={s.v2HabitPanelHalo} />
+          <View style={[s.v2PanelHeader, s.v2HabitPanelHeader]}>
+            <View style={s.v2HabitPanelTitleGroup}>
+              <Text style={[s.v2PanelTitle, s.v2HabitPanelTitle]}>My Habits</Text>
+              <View style={s.v2HabitPanelUnderline} />
+            </View>
+            <View style={[s.v2PanelCount, s.v2HabitPanelCount, { backgroundColor: 'rgba(47,155,97,0.12)', borderColor: 'rgba(47,155,97,0.26)' }]}>
               <Text style={[s.v2PanelCountText, { color: '#22794B' }]}>{habits.length}</Text>
             </View>
           </View>
           <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={s.v2HabitsScroll}>
             <HabitsView compact activeOnly ref={habitsRef} onHabitsChanged={setHabits} />
             {habits.length === 0 ? (
-              <View style={s.v2Empty}>
-                <View style={[s.v2EmptyIcon, { backgroundColor: 'rgba(47,155,97,0.12)', borderColor: 'rgba(47,155,97,0.24)' }]}>
+              <View style={[s.v2Empty, s.v2HabitEmpty]}>
+                <View style={[s.v2EmptyIcon, s.v2HabitEmptyIcon, { backgroundColor: 'rgba(47,155,97,0.12)', borderColor: 'rgba(47,155,97,0.24)' }]}>
                   <Target s={17} c="#2F9B61" w={2} />
                 </View>
-                <Text style={s.v2EmptyTitle}>No habits yet</Text>
-                <Text style={s.v2EmptyBody}>Start with one goal and two or three honest steps.</Text>
+                <Text style={[s.v2EmptyTitle, s.v2HabitEmptyTitle]}>No habits yet</Text>
+                <Text style={[s.v2EmptyBody, s.v2HabitEmptyBody]}>Connect one goal with the steps that will repeat through your week.</Text>
               </View>
             ) : null}
           </ScrollView>
@@ -18646,12 +19558,20 @@ function OrganizeHabitsBuilderV2Slide({ onNext }: { onNext: () => void }) {
             activeOpacity={0.9}
             haptic="medium"
             onPress={() => habitsRef.current?.openAddHabit()}
-            style={[s.v2AddButton, s.v2AddButtonHabit]}
+            style={[s.v2AddButton, s.v2AddButtonHabit, s.v2HabitAddButton]}
           >
-            <View style={s.v2AddIcon}>
+            <LinearGradient
+              pointerEvents="none"
+              colors={['#3FAF73', '#2F9B61', '#247848']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View pointerEvents="none" style={s.v2HabitAddGlow} />
+            <View style={[s.v2AddIcon, s.v2HabitAddIcon]}>
               <Plus s={15} c="#FFFFFF" w={2.6} />
             </View>
-            <Text style={s.v2AddText}>Add habit</Text>
+            <Text style={[s.v2AddText, s.v2HabitAddText]}>Add habit</Text>
           </TouchableOpacity>
         </Reanimated.View>
       </View>
@@ -18670,6 +19590,130 @@ function OrganizeHabitsBuilderV2Slide({ onNext }: { onNext: () => void }) {
           </TouchableOpacity>
         </View>
       </AnimatedCta>
+    </View>
+  );
+}
+
+const SYSTEM_BUILD_STEPS = [
+  'Weekly rhythm in place',
+  'Big events in view',
+  'Habits tied to goals',
+  'Preparing your Home',
+];
+
+// Plays over the real Home while it does its heavy first render: by the time
+// "Creating your system" finishes ticking, the screen underneath is warm and
+// the reveal lands without a stutter.
+function SystemBuildVeil({ onDone }: { onDone: () => void }) {
+  const [ticked, setTicked] = useState(0);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    SYSTEM_BUILD_STEPS.forEach((_, index) => {
+      timers.push(setTimeout(() => {
+        if (index === SYSTEM_BUILD_STEPS.length - 1) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        } else {
+          runSelectionHaptic();
+        }
+        setTicked(index + 1);
+      }, 620 + index * 540));
+    });
+    timers.push(setTimeout(() => {
+      onDoneRef.current();
+    }, 620 + SYSTEM_BUILD_STEPS.length * 540 + 520));
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  return (
+    <Reanimated.View entering={FadeIn.duration(240)} exiting={FadeOut.duration(430)} style={s.sysVeil}>
+      <LinearGradient colors={['#FFFEFA', '#FBF6EA', '#F7EFDC']} style={StyleSheet.absoluteFill} />
+      <View style={s.sysVeilContent}>
+        <Reanimated.View
+          entering={ZoomIn.delay(80).springify().damping(13).stiffness(160).mass(0.8)}
+          style={s.sysVeilLogoWrap}
+        >
+          <View style={s.sysVeilHalo} />
+          <ExpoImage source={APP_LOGO} style={s.sysVeilLogo} contentFit="cover" />
+          <View pointerEvents="none" style={s.sysVeilLogoRing} />
+        </Reanimated.View>
+        <Reanimated.View entering={FadeInUp.delay(200).duration(480).easing(Easing.out(Easing.cubic))}>
+          <Text style={s.sysVeilEyebrow}>ONE MOMENT</Text>
+          <Text style={s.sysVeilTitle}>Creating your system</Text>
+        </Reanimated.View>
+        <View style={s.sysVeilRows}>
+          {SYSTEM_BUILD_STEPS.map((step, index) => {
+            const done = index < ticked;
+            return (
+              <Reanimated.View
+                key={step}
+                entering={FadeInUp.delay(340 + index * 95).duration(430).easing(Easing.out(Easing.cubic))}
+                style={s.sysVeilRow}
+              >
+                <View style={[s.sysVeilRowIcon, done && s.sysVeilRowIconDone]}>
+                  {done ? (
+                    <Reanimated.View entering={ZoomIn.springify().damping(12).stiffness(260).mass(0.6)}>
+                      <CheckSmall s={12} c="#FFFFFF" w={3} />
+                    </Reanimated.View>
+                  ) : null}
+                </View>
+                <Text style={[s.sysVeilRowText, done && s.sysVeilRowTextDone]}>{step}</Text>
+              </Reanimated.View>
+            );
+          })}
+        </View>
+        <View style={s.sysVeilBar}>
+          <Reanimated.View
+            layout={LinearTransition.duration(430).easing(Easing.out(Easing.cubic))}
+            style={[s.sysVeilBarFill, { width: `${(ticked / SYSTEM_BUILD_STEPS.length) * 100}%` }]}
+          />
+        </View>
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
+  const { beginGuidedSetup, endGuidedSetup } = useGuidedSetup();
+  const [stage, setStage] = useState<'loading' | 'home' | 'routine'>('loading');
+
+  useEffect(() => {
+    if (stage === 'loading') return undefined;
+    beginGuidedSetup({
+      currentChapter: 'build',
+      chapterOrder: ['build'],
+      activeStep: stage === 'home' ? 'homeClimax' : 'buildMyRoutine',
+      phase: stage === 'home' ? 'intro' : 'tourAdd',
+      route: '/onboarding',
+    });
+
+    return () => {
+      endGuidedSetup();
+    };
+  }, [beginGuidedSetup, endGuidedSetup, stage]);
+
+  const handleHomeComplete = useCallback(() => {
+    setStage('routine');
+  }, []);
+
+  const handleRoutineComplete = useCallback(() => {
+    endGuidedSetup();
+    onNext();
+  }, [endGuidedSetup, onNext]);
+
+  return (
+    <View style={s.screen}>
+      {stage === 'routine' ? (
+        <MyRoutineView guided onGuidedComplete={handleRoutineComplete} />
+      ) : (
+        // Home mounts beneath the veil from the first frame — the guided
+        // session only begins once the veil lifts, on an already-warm screen.
+        <HomeView guided={stage === 'home'} onGuidedComplete={handleHomeComplete} />
+      )}
+      <GuidedOverlayHost />
+      {stage === 'loading' && <SystemBuildVeil onDone={() => setStage('home')} />}
     </View>
   );
 }
@@ -19977,6 +21021,7 @@ export default function OnboardingView() {
   };
 
   const handleBigEventsComplete = () => {
+    setAnswers(prev => ({ ...prev, organizeBigEventAdded: true }));
     endGuidedSetup();
     goNext();
   };
@@ -20066,8 +21111,10 @@ export default function OnboardingView() {
     activeStep === 'organizeChallengesBuilderV2' ||
     activeStep === 'organizeHubAfterChallengesV2' ||
     activeStep === 'organizeHabitsConceptV2' ||
+    activeStep === 'organizeHabitsMomentumV2' ||
     activeStep === 'organizeHabitsBuilderV2' ||
     activeStep === 'organizeHubCompleteV2' ||
+    activeStep === 'organizeGuidedHomeTour' ||
     valueStepActive ||
     isGuidedWalkthroughStep(activeStep);
   const visibleProgress = hideTopChrome ? null : activeProgress;
@@ -20121,8 +21168,10 @@ export default function OnboardingView() {
     activeStep === 'organizeChallengesBuilderV2' ||
     activeStep === 'organizeHubAfterChallengesV2' ||
     activeStep === 'organizeHabitsConceptV2' ||
+    activeStep === 'organizeHabitsMomentumV2' ||
     activeStep === 'organizeHabitsBuilderV2' ||
     activeStep === 'organizeHubCompleteV2' ||
+    activeStep === 'organizeGuidedHomeTour' ||
     activeStep === 'dayVisualizationHeader' ||
     valueStepActive ||
     flameStepActive ||
@@ -20450,16 +21499,20 @@ export default function OnboardingView() {
     if (activeStep === 'organizeWeeklyIntroV2') return <OrganizeWeeklyIntroV2Slide onNext={goNext} />;
     if (activeStep === 'organizeWeeklyRhythmV2') return <OrganizeWeeklyRhythmV2Slide onNext={goNext} />;
     if (activeStep === 'organizeDailySetupV2') return <OrganizeTaskRhythmV2Slide onNext={goNext} />;
-    if (activeStep === 'organizeHubStartV2') return <OrganizeHubV2Slide stage="start" onNext={goNext} />;
+    if (activeStep === 'organizeHubStartV2') return <OrganizeHubV2Slide key="organizeHubStartV2" stage="start" onNext={goNext} />;
     if (activeStep === 'organizeSpiritualBuilderV2') return <OrganizeSpiritualBuilderV2Slide onNext={goNext} />;
-    if (activeStep === 'organizeHubAfterSpiritualV2') return <OrganizeHubV2Slide stage="afterSpiritual" onNext={goNext} />;
-    if (activeStep === 'organizeRoutineBuilderV2') return <OrganizeRoutineBuilderV2Slide onNext={goNext} />;
-    if (activeStep === 'organizeHubAfterRoutineV2') return <OrganizeHubV2Slide stage="afterRoutine" onNext={goNext} />;
+    if (activeStep === 'organizeHubAfterSpiritualV2') return <OrganizeHubV2Slide key="organizeHubAfterSpiritualV2" stage="afterSpiritual" onNext={goNext} />;
+    if (activeStep === 'organizeRoutineBuilderV2') return <OrganizeRoutineBuilderPremiumV2Slide onNext={goNext} />;
+    if (activeStep === 'organizeHubAfterRoutineV2') return <OrganizeHubV2Slide key="organizeHubAfterRoutineV2" stage="afterRoutine" onNext={goNext} />;
     if (activeStep === 'organizeChallengesBuilderV2') return <OrganizeChallengesBuilderV2Slide onNext={goNext} />;
-    if (activeStep === 'organizeHubAfterChallengesV2') return <OrganizeHubV2Slide stage="afterChallenges" onNext={goNext} />;
+    if (activeStep === 'organizeHubAfterChallengesV2') return <OrganizeHubV2Slide key="organizeHubAfterChallengesV2" stage="afterChallenges" onNext={goNext} />;
     if (activeStep === 'organizeHabitsConceptV2') return <OrganizeHabitsConceptV2Slide onNext={goNext} />;
+    if (activeStep === 'organizeHabitsMomentumV2') return <OrganizeHabitsMomentumV2Slide onNext={goNext} />;
     if (activeStep === 'organizeHabitsBuilderV2') return <OrganizeHabitsBuilderV2Slide onNext={goNext} />;
-    if (activeStep === 'organizeHubCompleteV2') return <OrganizeHubV2Slide stage="complete" onNext={goNext} />;
+    if (activeStep === 'organizeHubCompleteV2') return <OrganizeHubV2Slide key="organizeHubCompleteV2" stage="complete" onNext={goNext} />;
+    if (activeStep === 'organizeGuidedHomeTour') {
+      return <OrganizeRealHomeGuideSlide onNext={goNext} />;
+    }
     if (activeStep === 'organizeSpiritualTasksIntro') {
       return (
         <OrganizeExampleCarouselSlide
@@ -20494,25 +21547,17 @@ export default function OnboardingView() {
       return <OrganizeHabitStorySlide onNext={goNext} />;
     }
     if (activeStep === 'organizeHabitsExamples') {
-      return (
-        <OrganizeExampleCarouselSlide
-          overline="Habits"
-          title="Habits"
-          body="This keeps discipline practical. You are not just naming what you want. You are choosing the actions that build it."
-          examples={HABIT_GOAL_EXAMPLES}
-          ctaLabel="Build your habit"
-          onNext={goNext}
-        />
-      );
+      return <OrganizeHabitsStepsV2Slide onNext={goNext} />;
     }
     if (activeStep === 'organizeChallengesIntro') {
       return (
         <OrganizeExampleCarouselSlide
           overline="Challenges"
           title="Challenges"
-          body="Pick one clear commitment and let Anasta track the days until it is complete."
+          body="Build a custom spiritual challenge: choose what to read, how much, stay consistent and finish the goal."
           examples={CHALLENGE_EXAMPLES}
           ctaLabel="Pick a challenge"
+          compactFooter
           onNext={goNext}
         />
       );
@@ -23110,6 +24155,9 @@ const s = StyleSheet.create({
     bottom: -180,
     zIndex: 10000,
     elevation: 10000,
+  },
+  confettiOverlayArming: {
+    opacity: 0,
   },
   confettiLayer: {
     zIndex: 10000,
@@ -26517,6 +27565,10 @@ const s = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
   },
+  habitGoalLessonBody: {
+    flexGrow: 0,
+    justifyContent: 'flex-start',
+  },
   weeklyEvidenceFixedContent: {
     flex: 1,
     paddingHorizontal: 0,
@@ -27003,7 +28055,7 @@ const s = StyleSheet.create({
   hubV2BoardStart: {
     flexGrow: 0,
     justifyContent: 'flex-start',
-    marginTop: -1,
+    marginTop: 14,
     rowGap: 8,
   },
   hubV2RowWrap: {
@@ -27030,6 +28082,19 @@ const s = StyleSheet.create({
     paddingHorizontal: 18,
     rowGap: 13,
   },
+  v2HabitBuilderContent: {
+    rowGap: 12,
+  },
+  v2HabitBuilderTitle: {
+    fontSize: 31.5,
+    lineHeight: 35,
+    maxWidth: 368,
+  },
+  v2SpiritualBuilderScrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 18,
+    rowGap: 13,
+  },
   v2MyPanel: {
     width: '100%',
     maxWidth: 374,
@@ -27047,6 +28112,42 @@ const s = StyleSheet.create({
     shadowRadius: 20,
     elevation: 2,
   },
+  v2SpiritualMyPanelEmpty: {
+    minHeight: 148,
+    maxHeight: 176,
+    padding: 12,
+    boxShadow: '0 16px 30px rgba(197, 160, 89, 0.12)',
+  },
+  v2ChallengeMyPanelEmpty: {
+    minHeight: 148,
+    maxHeight: 176,
+    padding: 12,
+    boxShadow: '0 16px 30px rgba(197, 160, 89, 0.12)',
+  },
+  v2RoutineMyPanelEmpty: {
+    minHeight: 148,
+    maxHeight: 176,
+    padding: 12,
+    boxShadow: '0 16px 30px rgba(95, 90, 84, 0.12)',
+  },
+  v2SpiritualPanelHalo: {
+    position: 'absolute',
+    right: -42,
+    top: -52,
+    width: 156,
+    height: 156,
+    borderRadius: 78,
+    backgroundColor: 'rgba(197,160,89,0.16)',
+  },
+  v2RoutinePanelHalo: {
+    position: 'absolute',
+    right: -42,
+    top: -52,
+    width: 156,
+    height: 156,
+    borderRadius: 78,
+    backgroundColor: 'rgba(95,90,84,0.13)',
+  },
   v2MyPanelTall: {
     flexGrow: 1,
     maxHeight: undefined,
@@ -27054,8 +28155,23 @@ const s = StyleSheet.create({
   v2HabitsPanel: {
     flexGrow: 1,
   },
+  v2HabitBuilderPanel: {
+    minHeight: 184,
+    padding: 14,
+    backgroundColor: '#FFFDF8',
+    boxShadow: '0 18px 34px rgba(47, 155, 97, 0.12)',
+  },
+  v2HabitPanelHalo: {
+    position: 'absolute',
+    right: -52,
+    top: -58,
+    width: 178,
+    height: 178,
+    borderRadius: 89,
+    backgroundColor: 'rgba(47,155,97,0.13)',
+  },
   v2HabitsScroll: {
-    paddingBottom: 4,
+    paddingBottom: 6,
   },
   v2PanelHeader: {
     flexDirection: 'row',
@@ -27069,6 +28185,25 @@ const s = StyleSheet.create({
     fontSize: 20,
     lineHeight: 24,
     color: INK,
+  },
+  v2HabitPanelHeader: {
+    paddingHorizontal: 5,
+    paddingBottom: 11,
+  },
+  v2HabitPanelTitleGroup: {
+    rowGap: 3,
+  },
+  v2HabitPanelTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 21.5,
+    lineHeight: 25.5,
+  },
+  v2HabitPanelUnderline: {
+    width: 48,
+    height: 3,
+    borderRadius: 999,
+    backgroundColor: '#2F9B61',
+    opacity: 0.82,
   },
   v2PanelCount: {
     minWidth: 26,
@@ -27084,6 +28219,11 @@ const s = StyleSheet.create({
     fontSize: 12,
     lineHeight: 15,
   },
+  v2HabitPanelCount: {
+    minWidth: 31,
+    height: 28,
+    borderRadius: 14,
+  },
   v2SavedList: {
     paddingBottom: 3,
     rowGap: 2,
@@ -27096,6 +28236,124 @@ const s = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 18,
   },
+  v2HabitEmpty: {
+    alignSelf: 'stretch',
+    minHeight: 118,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.70)',
+    rowGap: 6,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+  },
+  v2SpiritualEmpty: {
+    alignSelf: 'stretch',
+    flexGrow: 1,
+    minHeight: 88,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.66)',
+    rowGap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 13,
+  },
+  v2RoutineEmpty: {
+    alignSelf: 'stretch',
+    flexGrow: 1,
+    minHeight: 88,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(95,90,84,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.70)',
+    rowGap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 13,
+  },
+  v2ChallengeEmpty: {
+    alignSelf: 'stretch',
+    flexGrow: 1,
+    minHeight: 88,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.66)',
+    rowGap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 13,
+    overflow: 'hidden',
+  },
+  v2SpiritualTodoRow: {
+    width: '100%',
+    minHeight: 34,
+    borderRadius: 17,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,253,248,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.16)',
+  },
+  v2RoutineTodoRow: {
+    width: '100%',
+    minHeight: 34,
+    borderRadius: 17,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(250,250,249,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(95,90,84,0.15)',
+  },
+  v2SpiritualTodoMark: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.4,
+    borderColor: 'rgba(197,160,89,0.58)',
+    backgroundColor: 'rgba(197,160,89,0.10)',
+  },
+  v2RoutineTodoMark: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.4,
+    borderColor: 'rgba(95,90,84,0.56)',
+    backgroundColor: 'rgba(95,90,84,0.09)',
+  },
+  v2SpiritualTodoMarkInner: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: GOLD,
+  },
+  v2RoutineTodoMarkInner: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#5F5A54',
+  },
+  v2SpiritualTodoTitle: {
+    flex: 1,
+    fontFamily: F.serifSemiBold,
+    fontSize: 16.2,
+    lineHeight: 20,
+    color: INK,
+  },
+  v2RoutineTodoTitle: {
+    flex: 1,
+    fontFamily: F.serifSemiBold,
+    fontSize: 16.2,
+    lineHeight: 20,
+    color: '#24211D',
+  },
   v2EmptyIcon: {
     width: 40,
     height: 40,
@@ -27105,11 +28363,28 @@ const s = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 3,
   },
+  v2HabitEmptyIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 17,
+    marginBottom: 2,
+  },
+  v2SpiritualEmptyIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 13,
+    marginBottom: 0,
+  },
   v2EmptyTitle: {
     fontFamily: F.serifSemiBold,
     fontSize: 16.5,
     lineHeight: 20,
     color: INK,
+  },
+  v2HabitEmptyTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 18.4,
+    lineHeight: 22,
   },
   v2EmptyBody: {
     fontFamily: F.sansMedium,
@@ -27118,6 +28393,38 @@ const s = StyleSheet.create({
     color: 'rgba(25,23,20,0.48)',
     textAlign: 'center',
     maxWidth: 260,
+  },
+  v2HabitEmptyBody: {
+    fontFamily: F.serifMedium,
+    fontSize: 14.8,
+    lineHeight: 19.4,
+    color: 'rgba(25,23,20,0.57)',
+    maxWidth: 292,
+  },
+  v2SpiritualEmptyBody: {
+    maxWidth: 286,
+    fontSize: 11.8,
+    lineHeight: 16,
+  },
+  v2EmptyAction: {
+    minHeight: 40,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 7,
+    backgroundColor: '#17130F',
+    boxShadow: '0 10px 18px rgba(23, 19, 15, 0.18)',
+  },
+  v2EmptyActionDisabled: {
+    opacity: 0.48,
+  },
+  v2EmptyActionText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 14.5,
+    lineHeight: 18,
+    color: '#FFFFFF',
   },
   v2CatalogPanel: {
     width: '100%',
@@ -27131,6 +28438,19 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(25,23,20,0.08)',
   },
+  v2SpiritualCatalogPanel: {
+    flexGrow: 0,
+    overflow: 'visible',
+    paddingBottom: 14,
+  },
+  v2RoutineCatalogPanel: {
+    borderColor: 'rgba(95,90,84,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.88)',
+  },
+  v2ChallengeCatalogPanel: {
+    borderColor: 'rgba(197,160,89,0.14)',
+    backgroundColor: 'rgba(255,253,248,0.88)',
+  },
   v2CatalogTitle: {
     fontFamily: F.sansBold,
     fontSize: 11,
@@ -27139,11 +28459,27 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
     color: 'rgba(25,23,20,0.5)',
   },
+  v2CatalogTitleLong: {
+    flex: 1,
+    paddingRight: 8,
+    fontSize: 10.2,
+    lineHeight: 13,
+    letterSpacing: 1,
+  },
+  v2ChallengeCatalogTitle: {
+    color: '#C24B51',
+  },
   v2CatalogHint: {
     fontFamily: F.serifMediumItalic,
     fontSize: 13.5,
     lineHeight: 17,
     color: 'rgba(112,82,26,0.62)',
+  },
+  v2CatalogHintLight: {
+    color: '#C24B51',
+  },
+  v2CatalogHintRoutine: {
+    color: '#C24B51',
   },
   v2CatalogList: {
     paddingBottom: 4,
@@ -27158,6 +28494,14 @@ const s = StyleSheet.create({
     marginTop: 7,
     marginBottom: 4,
     marginLeft: 4,
+  },
+  v2ChallengeGroup: {
+    rowGap: 2,
+    paddingBottom: 4,
+  },
+  v2ChallengeGroupLabel: {
+    color: '#C24B51',
+    opacity: 0.82,
   },
   v2MutedFrame: {
     position: 'relative',
@@ -27191,6 +28535,22 @@ const s = StyleSheet.create({
     backgroundColor: '#2F9B61',
     shadowColor: '#2F9B61',
   },
+  v2HabitAddButton: {
+    minHeight: 56,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+    overflow: 'hidden',
+    boxShadow: '0 16px 28px rgba(47, 155, 97, 0.28)',
+  },
+  v2HabitAddGlow: {
+    position: 'absolute',
+    right: -42,
+    top: -50,
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
   v2AddIcon: {
     width: 26,
     height: 26,
@@ -27199,11 +28559,24 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.22)',
   },
+  v2HabitAddIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
   v2AddText: {
     fontFamily: F.serifSemiBold,
     fontSize: 17.5,
     lineHeight: 22,
     color: '#FFFFFF',
+  },
+  v2HabitAddText: {
+    fontFamily: F.serifBold,
+    fontSize: 18,
+    lineHeight: 22,
   },
   v2ChallengeSheet: {
     backgroundColor: '#FFFDF8',
@@ -27671,6 +29044,10 @@ const s = StyleSheet.create({
     rowGap: 10,
     paddingHorizontal: 27,
   },
+  organizeBigEventsHeaderCompact: {
+    rowGap: 8,
+    paddingHorizontal: 24,
+  },
   organizePremiumHeader: {
     rowGap: 8,
     paddingHorizontal: 18,
@@ -27699,6 +29076,11 @@ const s = StyleSheet.create({
     color: 'rgba(25,23,20,0.60)',
     textAlign: 'center',
     maxWidth: 345,
+  },
+  organizeBigEventsBodyCompact: {
+    fontSize: 16.8,
+    lineHeight: 21.4,
+    maxWidth: 338,
   },
   organizeBigEventsBodyStrong: {
     fontFamily: F.serifSemiBold,
@@ -27758,6 +29140,9 @@ const s = StyleSheet.create({
     rowGap: 12,
     paddingHorizontal: 26,
   },
+  organizeCarouselTopControlsCompact: {
+    rowGap: 9,
+  },
   organizeCarouselContent: {
     alignItems: 'center',
   },
@@ -27803,6 +29188,22 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 0,
   },
+  organizeBigEventsExampleHeaderCompact: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 7,
+    justifyContent: 'flex-start',
+  },
+  organizeBigEventsExampleTitleGroup: {
+    alignItems: 'center',
+  },
+  organizeBigEventsExampleTitleGroupCompact: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 13,
+  },
   organizeExampleNumber: {
     position: 'absolute',
     top: 14,
@@ -27839,6 +29240,12 @@ const s = StyleSheet.create({
     color: 'rgba(25,23,20,0.43)',
     textAlign: 'center',
   },
+  organizeBigEventsExampleEyebrowPinned: {
+    position: 'absolute',
+    top: 10,
+    left: 0,
+    right: 0,
+  },
   organizeBigEventsExampleTitle: {
     marginTop: 2,
     fontFamily: F.serifBold,
@@ -27847,6 +29254,11 @@ const s = StyleSheet.create({
     color: INK,
     textAlign: 'center',
     maxWidth: 288,
+  },
+  organizeBigEventsExampleTitleCompact: {
+    fontSize: 22.3,
+    lineHeight: 23.4,
+    maxWidth: 260,
   },
   organizeBigEventsExampleUnderline: {
     width: '52%',
@@ -27917,6 +29329,11 @@ const s = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 8,
   },
+  organizeBigEventsImageFooterCompact: {
+    paddingHorizontal: 14,
+    paddingTop: 6,
+    paddingBottom: 6,
+  },
   organizeBigEventsIllustrationText: {
     fontFamily: F.serifMediumItalic,
     fontSize: 14.2,
@@ -27926,6 +29343,11 @@ const s = StyleSheet.create({
     includeFontPadding: false,
     textAlignVertical: 'center',
     maxWidth: 252,
+  },
+  organizeBigEventsIllustrationTextCompact: {
+    fontSize: 13.5,
+    lineHeight: 17.1,
+    maxWidth: 246,
   },
   organizeExampleIcon: {
     width: 92,
@@ -28482,6 +29904,885 @@ const s = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: '#4D8586',
+  },
+  habitGoalCardStack: {
+    width: '100%',
+    maxWidth: 364,
+    alignSelf: 'center',
+    rowGap: 10,
+  },
+  habitGoalSingleCard: {
+    overflow: 'visible',
+  },
+  habitGoalCardHeader: {
+    minHeight: 74,
+    borderRadius: 23,
+    paddingLeft: 15,
+    paddingRight: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    boxShadow: '0 12px 22px rgba(23, 19, 15, 0.075)',
+  },
+  habitGoalCardHeaderOpen: {
+    boxShadow: '0 15px 27px rgba(23, 19, 15, 0.09)',
+  },
+  habitGoalAccentRail: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 3,
+    opacity: 0.82,
+  },
+  habitGoalGlow: {
+    position: 'absolute',
+    right: -34,
+    top: -42,
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+  },
+  habitGoalNumber: {
+    minWidth: 30,
+    height: 22,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+  },
+  habitGoalNumberText: {
+    fontFamily: F.sansBold,
+    fontSize: 9.4,
+    lineHeight: 12,
+    letterSpacing: 0.3,
+    fontVariant: ['tabular-nums'],
+  },
+  habitGoalSingleIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    boxShadow: '0 8px 16px rgba(23, 19, 15, 0.06)',
+  },
+  habitGoalSingleCopy: {
+    flex: 1,
+    rowGap: 4,
+    minWidth: 0,
+  },
+  habitGoalTitleRow: {
+    minHeight: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 7,
+  },
+  habitGoalMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 7,
+  },
+  habitGoalMetaLine: {
+    flex: 1,
+    height: 1,
+    borderRadius: 999,
+  },
+  habitGoalTypePill: {
+    alignSelf: 'flex-start',
+    minHeight: 20,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  habitGoalSingleLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 8.5,
+    lineHeight: 11,
+    letterSpacing: 1.05,
+    textTransform: 'uppercase',
+  },
+  habitGoalSingleTitle: {
+    flex: 1,
+    fontFamily: F.serifBold,
+    fontSize: 19.4,
+    lineHeight: 23.2,
+    color: INK,
+  },
+  habitGoalChevronButton: {
+    width: 29,
+    height: 29,
+    borderRadius: 14.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    boxShadow: '0 7px 13px rgba(23, 19, 15, 0.05)',
+  },
+  habitGoalImagePanel: {
+    marginTop: 7,
+    marginHorizontal: 8,
+    borderBottomLeftRadius: 21,
+    borderBottomRightRadius: 21,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    boxShadow: '0 10px 18px rgba(23, 19, 15, 0.07)',
+  },
+  habitGoalImage: {
+    width: '100%',
+    aspectRatio: 1.94,
+  },
+  habitGoalImageBottomEdge: {
+    height: 3,
+    opacity: 0.58,
+  },
+  habitStepsLessonBody: {
+    flexGrow: 0,
+    justifyContent: 'flex-start',
+  },
+  habitStepsFlow: {
+    width: '100%',
+    maxWidth: 368,
+    alignSelf: 'center',
+    rowGap: 11,
+  },
+  habitStepsStickyGoal: {
+    minHeight: 74,
+    borderRadius: 23,
+    paddingLeft: 15,
+    paddingRight: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.32)',
+    boxShadow: '0 13px 25px rgba(23, 19, 15, 0.075)',
+  },
+  habitStepsStickyGoalRail: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 3,
+    backgroundColor: '#2F9B61',
+    opacity: 0.84,
+  },
+  habitStepsStickyGoalBloom: {
+    position: 'absolute',
+    right: -34,
+    top: -42,
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    backgroundColor: 'rgba(47,155,97,0.10)',
+  },
+  habitStepsStickyGoalIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.34)',
+    backgroundColor: 'rgba(47,155,97,0.10)',
+    boxShadow: '0 8px 16px rgba(23, 19, 15, 0.06)',
+  },
+  habitStepsStickyGoalCopy: {
+    flex: 1,
+    rowGap: 2,
+    minWidth: 0,
+  },
+  habitStepsStickyGoalLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 8.8,
+    lineHeight: 11,
+    letterSpacing: 1.35,
+    textTransform: 'uppercase',
+    color: 'rgba(47,155,97,0.76)',
+  },
+  habitStepsStickyGoalTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 21,
+    lineHeight: 25,
+    color: INK,
+  },
+  habitStepsStickyGoalBadge: {
+    minWidth: 30,
+    height: 22,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.30)',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 6,
+  },
+  habitStepsStickyGoalBadgeText: {
+    fontFamily: F.sansBold,
+    fontSize: 9.4,
+    lineHeight: 12,
+    letterSpacing: 0.3,
+    color: '#2F9B61',
+    fontVariant: ['tabular-nums'],
+  },
+  habitStepsConnectorWrap: {
+    minHeight: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 9,
+    paddingHorizontal: 20,
+  },
+  habitStepsConnectorLine: {
+    flex: 1,
+    height: 1.3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(47,155,97,0.24)',
+  },
+  habitStepsConnectorText: {
+    fontFamily: F.sansBold,
+    fontSize: 9.8,
+    lineHeight: 12,
+    letterSpacing: 1.05,
+    textTransform: 'uppercase',
+    color: '#2F9B61',
+    textAlign: 'center',
+  },
+  habitStepsList: {
+    position: 'relative',
+    rowGap: 17,
+    paddingVertical: 4,
+    overflow: 'visible',
+  },
+  habitStepsTimelineRail: {
+    position: 'absolute',
+    left: 29,
+    top: 18,
+    bottom: 18,
+    width: 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(47,155,97,0.16)',
+  },
+  habitStepCardWrap: {
+    position: 'relative',
+    zIndex: 1,
+    overflow: 'visible',
+  },
+  habitStepIllustrationWrap: {
+    position: 'absolute',
+    right: -8,
+    top: -11,
+    width: 78,
+    height: 78,
+    zIndex: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.13,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  habitStepIllustrationGymWrap: {
+    right: -11,
+    top: -12,
+    width: 82,
+    height: 80,
+  },
+  habitStepIllustration: {
+    width: '100%',
+    height: '100%',
+    transform: [{ rotate: '1.5deg' }, { scale: 1.01 }],
+  },
+  habitStepIllustrationRun: {
+    transform: [{ rotate: '-3deg' }, { scale: 1.03 }],
+  },
+  habitStepIllustrationWalk: {
+    transform: [{ rotate: '2.5deg' }, { scale: 1.04 }],
+  },
+  habitMomentumScroll: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  habitMomentumScrollContent: {
+    paddingHorizontal: 0,
+    rowGap: 16,
+  },
+  habitMomentumCarouselArea: {
+    width: '100%',
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    rowGap: 10,
+  },
+  habitMomentumTopControls: {
+    paddingHorizontal: 26,
+    rowGap: 9,
+  },
+  habitMomentumScroller: {
+    width: '100%',
+    flexGrow: 0,
+    overflow: 'visible',
+  },
+  habitMomentumCarouselContent: {
+    alignItems: 'center',
+  },
+  habitMomentumScenarioCard: {
+    borderColor: 'rgba(197,160,89,0.27)',
+    shadowColor: '#5E5142',
+  },
+  habitMomentumScenarioCardInactive: {
+    opacity: 0.64,
+  },
+  habitMomentumScenarioGlow: {
+    position: 'absolute',
+    right: -64,
+    top: -58,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+  },
+  habitMomentumScenarioTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: 8,
+  },
+  habitMomentumScenarioHeader: {
+    rowGap: 7,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 11,
+    borderRadius: 0,
+  },
+  habitMomentumScenarioTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 23,
+    lineHeight: 26,
+    textAlign: 'center',
+    maxWidth: 310,
+  },
+  habitMomentumScenarioHeaderText: {
+    fontFamily: F.serifMedium,
+    fontSize: 13.8,
+    lineHeight: 17.2,
+    color: 'rgba(25,23,20,0.58)',
+    textAlign: 'center',
+    maxWidth: 302,
+  },
+  habitMomentumScenarioHeaderStrong: {
+    fontFamily: F.serifBold,
+  },
+  habitMomentumHeaderProgressRow: {
+    width: '100%',
+    minHeight: 35,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingLeft: 8,
+    paddingRight: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 7,
+  },
+  habitMomentumHeaderProgressTrack: {
+    flex: 1,
+    height: 12,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.06)',
+  },
+  habitMomentumHeaderProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  habitMomentumHeaderProgressPercent: {
+    minWidth: 38,
+    height: 24,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 7,
+  },
+  habitMomentumHeaderProgressPercentText: {
+    fontFamily: F.sansBold,
+    fontSize: 10.4,
+    lineHeight: 12.5,
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
+    fontVariant: ['tabular-nums'],
+  },
+  habitMomentumHeaderProgressText: {
+    minWidth: 75,
+    fontFamily: F.sansBold,
+    fontSize: 10.1,
+    lineHeight: 12.5,
+    letterSpacing: 0.55,
+    textTransform: 'uppercase',
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
+  },
+  habitMomentumGoalPill: {
+    minHeight: 25,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 5,
+    borderWidth: 1,
+  },
+  habitMomentumGoalPillText: {
+    fontFamily: F.sansBold,
+    fontSize: 9.4,
+    lineHeight: 12,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  habitMomentumMonthPill: {
+    minHeight: 23,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  habitMomentumMonthPillText: {
+    fontFamily: F.sansBold,
+    fontSize: 8.8,
+    lineHeight: 11,
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+  },
+  habitMomentumVisualPanel: {
+    position: 'relative',
+    height: 202,
+    borderRadius: 26,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  habitMomentumGoalImage: {
+    width: '100%',
+    height: '100%',
+  },
+  habitMomentumIllustrationBox: {
+    backgroundColor: '#FFFFFF',
+  },
+  habitMomentumResultBadge: {
+    position: 'absolute',
+    left: 13,
+    bottom: 13,
+    minWidth: 112,
+    minHeight: 52,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,253,248,0.94)',
+    borderWidth: 1,
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  habitMomentumDoneBadge: {
+    position: 'absolute',
+    right: 13,
+    bottom: 13,
+    minHeight: 31,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  habitMomentumDoneBadgeText: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    lineHeight: 12.5,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: '#FFFFFF',
+  },
+  habitMomentumQuoteFooter: {
+    paddingHorizontal: 16,
+    paddingTop: 5,
+    paddingBottom: 5,
+  },
+  habitMomentumQuoteText: {
+    fontFamily: F.serifMediumItalic,
+    fontSize: 15.3,
+    lineHeight: 19.2,
+    color: 'rgba(25,23,20,0.64)',
+    textAlign: 'center',
+    includeFontPadding: false,
+    maxWidth: 316,
+  },
+  habitMomentumQuoteStrong: {
+    fontFamily: F.serifBold,
+  },
+  habitMomentumResultRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    columnGap: 10,
+  },
+  habitMomentumResultBlock: {
+    flex: 1.03,
+    minHeight: 82,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    rowGap: 2,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  habitMomentumResultValue: {
+    fontFamily: F.serifBold,
+    fontSize: 31,
+    lineHeight: 32,
+    letterSpacing: 0,
+    fontVariant: ['tabular-nums'],
+  },
+  habitMomentumResultLabel: {
+    fontFamily: F.serifMediumItalic,
+    fontSize: 10.6,
+    lineHeight: 12.4,
+    color: 'rgba(25,23,20,0.48)',
+  },
+  habitMomentumCompletedBlock: {
+    flex: 0.97,
+    minHeight: 82,
+    borderRadius: 24,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    rowGap: 3,
+    backgroundColor: 'rgba(255,255,255,0.70)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+  },
+  habitMomentumCompletedLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 8.8,
+    lineHeight: 11,
+    letterSpacing: 1.15,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.42)',
+  },
+  habitMomentumCompletedLine: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  habitMomentumCompletedValue: {
+    fontFamily: F.serifBold,
+    fontSize: 29,
+    lineHeight: 32,
+    fontVariant: ['tabular-nums'],
+  },
+  habitMomentumCompletedTotal: {
+    paddingBottom: 4,
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    lineHeight: 13,
+    color: 'rgba(25,23,20,0.50)',
+  },
+  habitMomentumCompletedPercent: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 13,
+    lineHeight: 16,
+  },
+  habitMomentumBaseStats: {
+    flexDirection: 'row',
+    columnGap: 8,
+  },
+  habitMomentumBaseStat: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    rowGap: 1,
+    backgroundColor: 'rgba(255,255,255,0.76)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+  },
+  habitMomentumBaseStatValue: {
+    fontFamily: F.serifBold,
+    fontSize: 18,
+    lineHeight: 21,
+    color: INK,
+    fontVariant: ['tabular-nums'],
+  },
+  habitMomentumBaseStatLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 8.4,
+    lineHeight: 10.5,
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.40)',
+  },
+  habitMomentumGridPanel: {
+    borderRadius: 24,
+    paddingHorizontal: 13,
+    paddingTop: 9,
+    paddingBottom: 10,
+    rowGap: 7,
+    backgroundColor: 'rgba(255,255,255,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  habitMomentumGridHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: 8,
+  },
+  habitMomentumGridTitle: {
+    fontFamily: F.sansBold,
+    fontSize: 9.2,
+    lineHeight: 12,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.42)',
+  },
+  habitMomentumGridCount: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 13.5,
+    lineHeight: 16.5,
+  },
+  habitMomentumDotGrid: {
+    alignSelf: 'center',
+    maxWidth: 268,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 3,
+  },
+  habitMomentumDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+    backgroundColor: 'rgba(25,23,20,0.07)',
+    opacity: 0.62,
+  },
+  habitMomentumProgressTrack: {
+    height: 7,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(25,23,20,0.07)',
+  },
+  habitMomentumProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  habitMomentumSimpleFooter: {
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    rowGap: 8,
+    backgroundColor: 'rgba(255,255,255,0.76)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.07)',
+  },
+  habitMomentumCalculationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: 10,
+  },
+  habitMomentumCalculationText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 14.2,
+    lineHeight: 18,
+    color: 'rgba(25,23,20,0.64)',
+  },
+  habitMomentumCalculationTotal: {
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  habitMomentumFooterBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: 10,
+  },
+  habitMomentumLessonPill: {
+    minHeight: 36,
+    borderRadius: 999,
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 7,
+    borderWidth: 1,
+  },
+  habitMomentumLessonText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 14.6,
+    lineHeight: 18,
+    textAlign: 'right',
+    flexShrink: 1,
+    color: 'rgba(25,23,20,0.58)',
+  },
+  habitMomentumInsightStack: {
+    width: '100%',
+    maxWidth: 368,
+    alignSelf: 'center',
+    rowGap: 10,
+    paddingHorizontal: 18,
+  },
+  habitMomentumPointCard: {
+    position: 'relative',
+    minHeight: 124,
+    borderRadius: 26,
+    paddingHorizontal: 22,
+    paddingTop: 18,
+    paddingBottom: 17,
+    rowGap: 10,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1.3,
+    borderColor: 'rgba(47,155,97,0.22)',
+    shadowColor: '#2F9B61',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.07,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  habitMomentumPointAccent: {
+    alignSelf: 'center',
+    width: 74,
+    height: 3,
+    borderRadius: 999,
+    backgroundColor: '#2F9B61',
+    opacity: 0.72,
+  },
+  habitMomentumPointHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 12,
+  },
+  habitMomentumPointIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.32)',
+    backgroundColor: 'rgba(47,155,97,0.10)',
+  },
+  habitMomentumPointCopy: {
+    width: '100%',
+    alignItems: 'center',
+    rowGap: 4,
+  },
+  habitMomentumPointKicker: {
+    fontFamily: F.sansBold,
+    fontSize: 9.8,
+    lineHeight: 12,
+    letterSpacing: 1.45,
+    textTransform: 'uppercase',
+    color: 'rgba(47,155,97,0.70)',
+    textAlign: 'center',
+  },
+  habitMomentumPointTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 24,
+    lineHeight: 28,
+    color: INK,
+    textAlign: 'center',
+  },
+  habitMomentumPointBodyPanel: {
+    width: '100%',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255,255,255,0.68)',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.12)',
+  },
+  habitMomentumPointBody: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 16.4,
+    lineHeight: 21.4,
+    color: 'rgba(25,23,20,0.62)',
+    textAlign: 'center',
+    maxWidth: 300,
+  },
+  habitMomentumInsightCard: {
+    minHeight: 116,
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    columnGap: 11,
+    backgroundColor: 'rgba(255,253,248,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(25,23,20,0.08)',
+  },
+  habitMomentumInsightNumber: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(47,155,97,0.24)',
+    backgroundColor: 'rgba(47,155,97,0.09)',
+  },
+  habitMomentumInsightNumberText: {
+    fontFamily: F.sansBold,
+    fontSize: 13,
+    lineHeight: 16,
+    color: '#2F9B61',
+    fontVariant: ['tabular-nums'],
+  },
+  habitMomentumInsightCopy: {
+    flex: 1,
+    minWidth: 0,
+    rowGap: 4,
+  },
+  habitMomentumInsightKicker: {
+    fontFamily: F.sansBold,
+    fontSize: 10.3,
+    lineHeight: 13,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    color: 'rgba(47,155,97,0.68)',
+  },
+  habitMomentumInsightTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 20,
+    lineHeight: 24,
+    color: INK,
+  },
+  habitMomentumInsightBody: {
+    fontFamily: F.serif,
+    fontSize: 15.2,
+    lineHeight: 20.5,
+    color: 'rgba(25,23,20,0.56)',
+  },
+  habitMomentumInlineCta: {
+    width: '100%',
+    paddingHorizontal: 18,
+    paddingTop: 4,
   },
   habitStoryCard: {
     width: '100%',
@@ -29654,6 +31955,115 @@ const s = StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 1.2,
     borderColor: 'rgba(25,23,20,0.16)',
+  },
+  sysVeil: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 2000,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sysVeilContent: {
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    paddingHorizontal: 34,
+  },
+  sysVeilLogoWrap: {
+    width: 76,
+    height: 76,
+    marginBottom: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#C5A059',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+    elevation: 5,
+  },
+  sysVeilHalo: {
+    position: 'absolute',
+    width: 112,
+    height: 112,
+    borderRadius: 40,
+    backgroundColor: 'rgba(197,160,89,0.13)',
+  },
+  sysVeilLogo: {
+    width: 76,
+    height: 76,
+    borderRadius: 24,
+  },
+  sysVeilLogoRing: {
+    position: 'absolute',
+    left: -4,
+    right: -4,
+    top: -4,
+    bottom: -4,
+    borderRadius: 28,
+    borderWidth: 1.5,
+    borderColor: 'rgba(240,209,143,0.8)',
+  },
+  sysVeilEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    letterSpacing: 2.6,
+    color: '#9C7B3C',
+    textAlign: 'center',
+    marginBottom: 9,
+  },
+  sysVeilTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 27,
+    lineHeight: 32,
+    color: '#15120F',
+    textAlign: 'center',
+    marginBottom: 28,
+  },
+  sysVeilRows: {
+    width: '100%',
+    maxWidth: 300,
+    alignSelf: 'center',
+    rowGap: 13,
+    marginBottom: 30,
+  },
+  sysVeilRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 12,
+  },
+  sysVeilRowIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(197,160,89,0.4)',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sysVeilRowIconDone: {
+    backgroundColor: '#C5A059',
+    borderColor: '#C5A059',
+  },
+  sysVeilRowText: {
+    flex: 1,
+    fontFamily: F.serifMedium,
+    fontSize: 15.5,
+    color: 'rgba(25,23,20,0.42)',
+  },
+  sysVeilRowTextDone: {
+    color: '#15120F',
+  },
+  sysVeilBar: {
+    width: 148,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(197,160,89,0.18)',
+    overflow: 'hidden',
+  },
+  sysVeilBarFill: {
+    height: '100%',
+    borderRadius: 2,
+    backgroundColor: '#C5A059',
   },
   v4WeeklyRhythmWrap: {
     marginHorizontal: -4,
