@@ -19600,6 +19600,42 @@ const SYSTEM_BUILD_STEPS = [
   'Habits tied to goals',
   'Preparing your Home',
 ];
+// Irregular on purpose — real work never ticks like a metronome.
+const SYSTEM_BUILD_TICKS = [620, 1560, 2120, 3040];
+const SYSTEM_BUILD_DONE_AT = 4100;
+// Home mounts beneath the veil only AFTER the last row has ticked: its heavy
+// first render blocks the JS thread, and any pending tick timers would all
+// fire at once the moment it finished.
+const SYSTEM_BUILD_HOME_MOUNT_AT = 3140;
+
+// The pulsing "being worked on" marker of the current loading row.
+function SysVeilWorkingDot() {
+  const cycle = useSharedValue(0);
+
+  useEffect(() => {
+    cycle.value = 0;
+    cycle.value = withRepeat(withTiming(1, { duration: 1300, easing: Easing.linear }), -1, false);
+    return () => cancelAnimation(cycle);
+  }, [cycle]);
+
+  const ringStyle = useAnimatedStyle(() => {
+    const p = interpolate(cycle.value, [0.06, 0.85], [0, 1], 'clamp');
+    return {
+      opacity: interpolate(p, [0, 0.15, 1], [0, 0.6, 0], 'clamp'),
+      transform: [{ scale: 0.45 + p * 1.05 }],
+    };
+  });
+  const dotStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: interpolate(cycle.value, [0, 0.1, 0.24, 1], [1, 0.78, 1, 1], 'clamp') }],
+  }));
+
+  return (
+    <View style={s.sysVeilWorkBox}>
+      <Reanimated.View style={[s.sysVeilWorkRing, ringStyle]} />
+      <Reanimated.View style={[s.sysVeilWorkDot, dotStyle]} />
+    </View>
+  );
+}
 
 // Plays over the real Home while it does its heavy first render: by the time
 // "Creating your system" finishes ticking, the screen underneath is warm and
@@ -19612,19 +19648,19 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
-    SYSTEM_BUILD_STEPS.forEach((_, index) => {
+    SYSTEM_BUILD_TICKS.forEach((at, index) => {
       timers.push(setTimeout(() => {
-        if (index === SYSTEM_BUILD_STEPS.length - 1) {
+        if (index === SYSTEM_BUILD_TICKS.length - 1) {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         } else {
           runSelectionHaptic();
         }
         setTicked(index + 1);
-      }, 780 + index * 620));
+      }, at));
     });
     timers.push(setTimeout(() => {
       onDoneRef.current();
-    }, 780 + SYSTEM_BUILD_STEPS.length * 620 + 640));
+    }, SYSTEM_BUILD_DONE_AT));
     return () => timers.forEach(clearTimeout);
   }, []);
 
@@ -19639,9 +19675,9 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       </View>
       <View style={s.sysVeilContent}>
         <Reanimated.View
-          entering={FadeInLeft.duration(520).withInitialValues({
+          entering={FadeInLeft.duration(420).withInitialValues({
             opacity: 0,
-            transform: [{ translateX: -18 }],
+            transform: [{ translateX: -16 }],
           })}
           style={s.introLogoFrame}
         >
@@ -19649,43 +19685,61 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
             <Image source={APP_LOGO} style={s.introLogo} resizeMode="cover" />
           </View>
         </Reanimated.View>
-        <Reanimated.View entering={FadeIn.delay(120).duration(380)} style={s.introRule} />
+        <Reanimated.View entering={FadeIn.delay(90).duration(320)} style={s.introRule} />
         <Reanimated.View
-          entering={FadeInRight.delay(180).duration(560).withInitialValues({
+          entering={FadeInRight.delay(140).duration(460).withInitialValues({
             opacity: 0,
-            transform: [{ translateX: 18 }],
+            transform: [{ translateX: 16 }],
           })}
           style={s.introCopy}
         >
+          <Text style={s.sysVeilEyebrow}>ONE MOMENT</Text>
           <Text style={s.introTitle}>Creating{'\n'}your system.</Text>
         </Reanimated.View>
         <View style={s.sysVeilRows}>
           {SYSTEM_BUILD_STEPS.map((step, index) => {
             const done = index < ticked;
+            const current = index === ticked;
             return (
               <Reanimated.View
                 key={step}
-                entering={FadeInUp.delay(480 + index * 110).duration(430).easing(Easing.out(Easing.cubic))}
+                entering={FadeInUp.delay(360 + index * 90).duration(400).easing(Easing.out(Easing.cubic))}
                 style={s.sysVeilRow}
               >
-                <View style={[s.sysVeilRowIcon, done && s.sysVeilRowIconDone]}>
+                <View
+                  style={[
+                    s.sysVeilRowIcon,
+                    done && s.sysVeilRowIconDone,
+                    !done && !current && s.sysVeilRowIconIdle,
+                  ]}
+                >
                   {done ? (
                     <Reanimated.View entering={ZoomIn.springify().damping(12).stiffness(260).mass(0.6)}>
                       <CheckSmall s={12} c="#FFFFFF" w={3} />
                     </Reanimated.View>
+                  ) : current ? (
+                    <SysVeilWorkingDot />
                   ) : null}
                 </View>
-                <Text style={[s.sysVeilRowText, done && s.sysVeilRowTextDone]}>{step}</Text>
+                <Text
+                  style={[
+                    s.sysVeilRowText,
+                    done && s.sysVeilRowTextDone,
+                    current && s.sysVeilRowTextCurrent,
+                  ]}
+                >
+                  {step}
+                </Text>
               </Reanimated.View>
             );
           })}
         </View>
-        <View style={s.sysVeilBar}>
+        <Reanimated.View entering={FadeIn.delay(680).duration(420)} style={s.sysVeilBar}>
           <Reanimated.View
             layout={LinearTransition.duration(430).easing(Easing.out(Easing.cubic))}
             style={[s.sysVeilBarFill, { width: `${(ticked / SYSTEM_BUILD_STEPS.length) * 100}%` }]}
           />
-        </View>
+        </Reanimated.View>
       </View>
     </Reanimated.View>
   );
@@ -19700,7 +19754,7 @@ function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
   const sessionStartedRef = useRef(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => setHomeWarm(true), 640);
+    const timer = setTimeout(() => setHomeWarm(true), SYSTEM_BUILD_HOME_MOUNT_AT);
     return () => clearTimeout(timer);
   }, []);
 
@@ -19734,19 +19788,25 @@ function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
   }, [endGuidedSetup, onNext]);
 
   return (
-    <View style={s.screen}>
-      {stage === 'routine' ? (
-        <MyRoutineView guided onGuidedComplete={handleRoutineComplete} />
-      ) : homeWarm ? (
-        <HomeView guided={stage === 'home'} onGuidedComplete={handleHomeComplete} />
-      ) : (
-        <View style={{ flex: 1, backgroundColor: '#FAF7F0' }} />
-      )}
+    <Reanimated.View entering={FadeIn.duration(240)} style={s.screen}>
+      <Reanimated.View
+        key={stage === 'routine' ? 'stage-routine' : 'stage-home'}
+        entering={FadeIn.duration(340)}
+        style={{ flex: 1, backgroundColor: '#FAF7F0' }}
+      >
+        {stage === 'routine' ? (
+          <MyRoutineView guided onGuidedComplete={handleRoutineComplete} />
+        ) : homeWarm ? (
+          <HomeView guided={stage === 'home'} onGuidedComplete={handleHomeComplete} />
+        ) : (
+          <View style={{ flex: 1, backgroundColor: '#FAF7F0' }} />
+        )}
+      </Reanimated.View>
       {/* Root host carries the tour over BOTH screens — MyRoutineView itself
           only mounts hosts inside its bottom sheets (for in-modal phases). */}
       <GuidedOverlayHost />
       {stage === 'loading' && <SystemBuildVeil onDone={() => setStage('home')} />}
-    </View>
+    </Reanimated.View>
   );
 }
 
@@ -32002,6 +32062,14 @@ const s = StyleSheet.create({
     paddingHorizontal: 34,
     zIndex: 1,
   },
+  sysVeilEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    letterSpacing: 2.6,
+    color: '#A98544',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
   sysVeilRows: {
     width: '100%',
     maxWidth: 300,
@@ -32009,6 +32077,32 @@ const s = StyleSheet.create({
     rowGap: 13,
     marginTop: 34,
     marginBottom: 30,
+  },
+  sysVeilRowIconIdle: {
+    opacity: 0.5,
+  },
+  sysVeilRowTextCurrent: {
+    color: '#3E382F',
+  },
+  sysVeilWorkBox: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sysVeilWorkRing: {
+    position: 'absolute',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: '#C5A059',
+  },
+  sysVeilWorkDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#C5A059',
   },
   sysVeilRow: {
     flexDirection: 'row',

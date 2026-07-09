@@ -276,6 +276,7 @@ const ROUTINE_ICONS: {
 
 const VISIBLE_ROUTINE_ICON_COUNT = 20;
 const MY_ROUTINE_GUIDE_TARGETS = {
+  addRow: 'my-routine.add-row',
   spiritualAdd: 'my-routine.spiritual-add',
   spiritualType: 'my-routine.spiritual-type',
   routineAdd: 'my-routine.routine-add',
@@ -845,6 +846,7 @@ export default function MyRoutineView({
   } = useGuidedSetup();
   const isGuided = guided && session?.active === true && session.activeStep === 'buildMyRoutine';
   const guidePhase = isGuided ? session.phase : '';
+  const addRowTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.addRow, isGuided);
   const spiritualAddTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.spiritualAdd, isGuided);
   const routineAddTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.routineAdd, isGuided);
   const dayTabsTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.dayTabs, isGuided);
@@ -970,6 +972,7 @@ export default function MyRoutineView({
           highlights: ['every day'],
           action: 'Try tapping a day',
           hint: 'tap',
+          hintAnchor: 'left',
           ctaLabel: 'Continue',
           onCta: () => patchSession({ phase: 'tourAdd' }),
         });
@@ -977,10 +980,10 @@ export default function MyRoutineView({
       return;
     }
     if (guidePhase === 'tourAdd') {
-      stageGuidePhase(spiritualAddTarget, 'origin', () => {
+      stageGuidePhase(addRowTarget, 'origin', () => {
         setPresentation({
           key: 'my-routine-tour-add',
-          targetId: MY_ROUTINE_GUIDE_TARGETS.spiritualAdd,
+          targetId: MY_ROUTINE_GUIDE_TARGETS.addRow,
           cutoutPadding: 7,
           placement: 'below',
           allowTargetInteraction: false,
@@ -1227,6 +1230,7 @@ export default function MyRoutineView({
       });
     }
   }, [
+    addRowTarget,
     blockingPlanTarget,
     challengesTarget,
     dayTabsTarget,
@@ -1236,7 +1240,6 @@ export default function MyRoutineView({
     isGuided,
     patchSession,
     setPresentation,
-    spiritualAddTarget,
     stageGuidePhase,
     taskCardTarget,
   ]);
@@ -1548,7 +1551,7 @@ export default function MyRoutineView({
             </ScrollView>
           </View>
 
-          <View style={s.addRow}>
+          <View {...addRowTarget} style={s.addRow}>
             <TouchableOpacity {...spiritualAddTarget} onPress={openAddSpiritual} activeOpacity={0.84} style={s.addBtnPress}>
               <LinearGradient
                 colors={['#FFFBEB', '#FFF4D5']}
