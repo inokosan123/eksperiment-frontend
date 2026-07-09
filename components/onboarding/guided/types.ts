@@ -72,7 +72,7 @@ export type GuidedTargetLayout = {
   height: number;
 };
 
-export type GuidedOverlayPlacement = 'above' | 'below' | 'center';
+export type GuidedOverlayPlacement = 'above' | 'below' | 'center' | 'bottom';
 
 // Animated gesture demonstration rendered over the spotlight target.
 export type GuidedGestureHint = 'tap' | 'long-press' | 'swipe-left' | 'swipe-right';
@@ -94,6 +94,9 @@ export type GuidedOverlayPresentation = {
   onCta?: () => void;
   secondaryCtaLabel?: string;
   onSecondaryCta?: () => void;
+  // A whisper scrim instead of the full dim — used for "look at the whole
+  // screen" reveal moments where nothing is spotlit.
+  lightScrim?: boolean;
   // Structured coach-bubble content. All optional — presentations that only
   // pass `message` render exactly as before.
   eyebrow?: string;

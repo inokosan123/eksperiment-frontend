@@ -8,7 +8,9 @@ import {
   TextInput,
   UIManager,
   View,
+  useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Reanimated, {
   useAnimatedStyle,
   useSharedValue,
@@ -851,6 +853,60 @@ export default function MyRoutineView({
   const challengesTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.challenges, isGuided);
   const blockingPlanTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.blockingPlan, isGuided);
 
+  // ─── Guided tour choreography ────────────────────────────────────────────
+  // Mirrors the Home tour: glide the section into position, wait for the
+  // scroll to settle, re-measure, then present on fresh coordinates.
+  const guideInsets = useSafeAreaInsets();
+  const { height: guideScreenHeight } = useWindowDimensions();
+  const guideScrollY = useRef(0);
+  const guideTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearGuideTimers = useCallback(() => {
+    guideTimersRef.current.forEach(clearTimeout);
+    guideTimersRef.current = [];
+  }, []);
+
+  const stageGuidePhase = useCallback((
+    binding: ReturnType<typeof useGuideTarget> | null,
+    position: 'origin' | 'lesson' | 'middle',
+    present: () => void,
+  ) => {
+    const node = binding?.ref.current;
+    if (!binding || !node?.measureInWindow) {
+      guideTimersRef.current.push(setTimeout(present, 40));
+      return;
+    }
+    if (position === 'origin') {
+      if (guideScrollY.current < 4) {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 70));
+        return;
+      }
+      routineScrollRef.current?.scrollTo({ y: 0, animated: true });
+      guideTimersRef.current.push(setTimeout(() => {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 60));
+      }, 450));
+      return;
+    }
+    node.measureInWindow((_mx: number, my: number, _mw: number, mh: number) => {
+      const desired = position === 'lesson'
+        ? guideInsets.top + 124
+        : Math.max(guideInsets.top + 90, guideScreenHeight * 0.5 - mh / 2);
+      const delta = my - desired;
+      if (Math.abs(delta) < 14) {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 70));
+        return;
+      }
+      routineScrollRef.current?.scrollTo({ y: Math.max(0, guideScrollY.current + delta), animated: true });
+      guideTimersRef.current.push(setTimeout(() => {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 60));
+      }, 470));
+    });
+  }, [guideInsets.top, guideScreenHeight]);
+
   const finishGuidedRoutine = useCallback(() => {
     patchSession({
       activeStep: 'homeClimax',
@@ -899,28 +955,40 @@ export default function MyRoutineView({
   useEffect(() => {
     if (!isGuided) return;
     if (guidePhase === 'tourAdd') {
-      setPresentation({
-        key: 'my-routine-tour-add',
-        targetId: MY_ROUTINE_GUIDE_TARGETS.spiritualAdd,
-        cutoutPadding: 7,
-        placement: 'below',
-        allowTargetInteraction: false,
-        message: 'This is My Routine.\n\nThese first buttons add Spiritual Tasks and Routine Tasks to your weekly plan.',
-        ctaLabel: 'SHOW WEEKLY PLAN',
-        onCta: () => patchSession({ phase: 'tourWeek' }),
+      stageGuidePhase(spiritualAddTarget, 'origin', () => {
+        setPresentation({
+          key: 'my-routine-tour-add',
+          targetId: MY_ROUTINE_GUIDE_TARGETS.spiritualAdd,
+          cutoutPadding: 7,
+          placement: 'below',
+          allowTargetInteraction: false,
+          eyebrow: 'MY ROUTINE',
+          progress: { current: 1, total: 7 },
+          message: 'This is My Routine — the workshop behind your Home.\n\nThese two buttons add spiritual and routine tasks to your week.',
+          highlights: ['workshop behind your Home'],
+          ctaLabel: 'Continue',
+          onCta: () => patchSession({ phase: 'tourWeek' }),
+        });
       });
       return;
     }
     if (guidePhase === 'tourWeek') {
-      setPresentation({
-        key: 'my-routine-tour-week',
-        targetId: MY_ROUTINE_GUIDE_TARGETS.dayTabs,
-        cutoutPadding: 7,
-        placement: 'below',
-        allowTargetInteraction: true,
-        message: 'Your plan is weekly. Move through Monday, Tuesday, Wednesday, and the rest of the week.',
-        ctaLabel: 'SHOW EDITING',
-        onCta: () => patchSession({ phase: 'edit' }),
+      stageGuidePhase(dayTabsTarget, 'origin', () => {
+        setPresentation({
+          key: 'my-routine-tour-week',
+          targetId: MY_ROUTINE_GUIDE_TARGETS.dayTabs,
+          cutoutPadding: 7,
+          placement: 'below',
+          allowTargetInteraction: true,
+          eyebrow: 'MY ROUTINE',
+          progress: { current: 2, total: 7 },
+          message: 'Your plan is weekly. Each day carries its own rhythm.',
+          highlights: ['weekly'],
+          action: 'Try tapping a day',
+          hint: 'tap',
+          ctaLabel: 'Continue',
+          onCta: () => patchSession({ phase: 'edit' }),
+        });
       });
       return;
     }
@@ -1010,13 +1078,13 @@ export default function MyRoutineView({
         key: 'my-routine-quick-offer',
         placement: 'center',
         message: 'Some things do not need a routine.\n\nQuick Tasks catch small one-time responsibilities without breaking your flow.',
-        ctaLabel: 'ADD QUICK TASK',
+        ctaLabel: 'Add a quick task',
         onCta: () => {
           quickTaskSavedRef.current = false;
           setQuickTaskSheetOpen(true);
           patchSession({ phase: 'quickName' });
         },
-        secondaryCtaLabel: 'SKIP FOR NOW',
+        secondaryCtaLabel: 'Skip for now',
         onSecondaryCta: () => patchSession({ phase: 'weekly' }),
       });
       return;
@@ -1051,19 +1119,26 @@ export default function MyRoutineView({
         placement: 'below',
         allowTargetInteraction: false,
         message: 'This is your real weekly rhythm.\n\nThe tasks you just created already live here.',
-        ctaLabel: 'SHOW ME EDITING',
+        ctaLabel: 'Continue',
         onCta: () => patchSession({ phase: 'edit' }),
       });
       return;
     }
     if (guidePhase === 'edit') {
-      setPresentation({
-        key: 'my-routine-edit',
-        targetId: MY_ROUTINE_GUIDE_TARGETS.taskCard,
-        cutoutPadding: 7,
-        placement: 'below',
-        allowTargetInteraction: true,
-        message: 'Tap a task whenever you want to adjust its schedule or details.',
+      stageGuidePhase(taskCardTarget, 'lesson', () => {
+        setPresentation({
+          key: 'my-routine-edit',
+          targetId: MY_ROUTINE_GUIDE_TARGETS.taskCard,
+          cutoutPadding: 7,
+          placement: 'below',
+          allowTargetInteraction: true,
+          eyebrow: 'MY ROUTINE',
+          progress: { current: 3, total: 7 },
+          message: 'When life changes, the plan bends with it.',
+          highlights: ['bends with it'],
+          action: 'Tap the task to open its editor',
+          hint: 'tap',
+        });
       });
       return;
     }
@@ -1074,8 +1149,11 @@ export default function MyRoutineView({
         cutoutPadding: 7,
         placement: 'below',
         allowTargetInteraction: true,
-        message: 'This is the editor. You can change the name, time, repeat days, and details whenever life changes.',
-        ctaLabel: 'CONTINUE',
+        eyebrow: 'MY ROUTINE',
+        progress: { current: 4, total: 7 },
+        message: 'Name, time, repeat days — everything about the task lives here, ready to change when your week does.',
+        highlights: ['ready to change'],
+        ctaLabel: 'Continue',
         onCta: () => {
           setEditorVisible(false);
           setEditorTask(null);
@@ -1085,41 +1163,56 @@ export default function MyRoutineView({
       return;
     }
     if (guidePhase === 'tourHabits') {
-      setPresentation({
-        key: 'my-routine-tour-habits',
-        targetId: MY_ROUTINE_GUIDE_TARGETS.habits,
-        cutoutPadding: 7,
-        placement: 'above',
-        allowTargetInteraction: false,
-        message: 'Habits live here. Add, pause, and adjust the steps that lead toward a goal.',
-        ctaLabel: 'SHOW CHALLENGES',
-        onCta: () => patchSession({ phase: 'tourChallenges' }),
+      stageGuidePhase(habitsTarget, 'middle', () => {
+        setPresentation({
+          key: 'my-routine-tour-habits',
+          targetId: MY_ROUTINE_GUIDE_TARGETS.habits,
+          cutoutPadding: 7,
+          placement: 'above',
+          allowTargetInteraction: false,
+          eyebrow: 'MY ROUTINE',
+          progress: { current: 5, total: 7 },
+          message: 'Habits live here — the steps that keep walking toward a goal.',
+          highlights: ['Habits'],
+          ctaLabel: 'Continue',
+          onCta: () => patchSession({ phase: 'tourChallenges' }),
+        });
       });
       return;
     }
     if (guidePhase === 'tourChallenges') {
-      setPresentation({
-        key: 'my-routine-tour-challenges',
-        targetId: MY_ROUTINE_GUIDE_TARGETS.challenges,
-        cutoutPadding: 7,
-        placement: 'above',
-        allowTargetInteraction: false,
-        message: 'Your spiritual challenges are here too: prayer, Scripture, and journal commitments.',
-        ctaLabel: 'SHOW BLOCKING PLAN',
-        onCta: () => patchSession({ phase: 'tourBlocking' }),
+      stageGuidePhase(challengesTarget, 'middle', () => {
+        setPresentation({
+          key: 'my-routine-tour-challenges',
+          targetId: MY_ROUTINE_GUIDE_TARGETS.challenges,
+          cutoutPadding: 7,
+          placement: 'above',
+          allowTargetInteraction: false,
+          eyebrow: 'MY ROUTINE',
+          progress: { current: 6, total: 7 },
+          message: 'Your prayer, Scripture, and journal challenges gather here.',
+          highlights: ['challenges'],
+          ctaLabel: 'Continue',
+          onCta: () => patchSession({ phase: 'tourBlocking' }),
+        });
       });
       return;
     }
     if (guidePhase === 'tourBlocking') {
-      setPresentation({
-        key: 'my-routine-tour-blocking',
-        targetId: MY_ROUTINE_GUIDE_TARGETS.blockingPlan,
-        cutoutPadding: 7,
-        placement: 'above',
-        allowTargetInteraction: false,
-        message: 'At the bottom you can see which blocking plan is active on your phone today.',
-        ctaLabel: 'FINISH TOUR',
-        onCta: () => patchSession({ phase: 'complete' }),
+      stageGuidePhase(blockingPlanTarget, 'middle', () => {
+        setPresentation({
+          key: 'my-routine-tour-blocking',
+          targetId: MY_ROUTINE_GUIDE_TARGETS.blockingPlan,
+          cutoutPadding: 7,
+          placement: 'above',
+          allowTargetInteraction: false,
+          eyebrow: 'MY ROUTINE',
+          progress: { current: 7, total: 7 },
+          message: 'And at the bottom — the blocking plan guarding your attention today.',
+          highlights: ['blocking plan'],
+          ctaLabel: 'Finish tour',
+          onCta: () => patchSession({ phase: 'complete' }),
+        });
       });
       return;
     }
@@ -1128,17 +1221,26 @@ export default function MyRoutineView({
         key: 'my-routine-complete',
         celebrate: true,
         placement: 'center',
-        message: 'Your weekly rhythm is in place.',
-        ctaLabel: 'CONTINUE',
+        eyebrow: 'MY ROUTINE',
+        message: 'Your weekly rhythm is in place.\n\nHome carries the day. My Routine carries the week.',
+        highlights: ['weekly rhythm'],
+        ctaLabel: 'Continue',
         onCta: finishGuidedRoutine,
       });
     }
   }, [
+    blockingPlanTarget,
+    challengesTarget,
+    dayTabsTarget,
     finishGuidedRoutine,
     guidePhase,
+    habitsTarget,
     isGuided,
     patchSession,
     setPresentation,
+    spiritualAddTarget,
+    stageGuidePhase,
+    taskCardTarget,
   ]);
 
   useEffect(() => {
@@ -1165,27 +1267,9 @@ export default function MyRoutineView({
     taskCardTarget,
   ]);
 
-  useEffect(() => {
-    if (!isGuided) return undefined;
-    const timer = setTimeout(() => {
-      if (guidePhase === 'tourAdd' || guidePhase === 'tourWeek' || guidePhase === 'edit' || guidePhase === 'editSave') {
-        routineScrollRef.current?.scrollTo({ y: 0, animated: true });
-        return;
-      }
-      if (guidePhase === 'tourHabits') {
-        routineScrollRef.current?.scrollTo({ y: 520, animated: true });
-        return;
-      }
-      if (guidePhase === 'tourChallenges') {
-        routineScrollRef.current?.scrollTo({ y: 720, animated: true });
-        return;
-      }
-      if (guidePhase === 'tourBlocking') {
-        routineScrollRef.current?.scrollToEnd({ animated: true });
-      }
-    }, 80);
-    return () => clearTimeout(timer);
-  }, [guidePhase, isGuided]);
+  // Clears any pending stage timers whenever the phase moves on (or the tour
+  // unmounts) so a stale presentation can never fire over a newer phase.
+  useEffect(() => clearGuideTimers, [clearGuideTimers, guidePhase]);
 
   const openAddSpiritual = () => {
     setShowSpiritualTypePicker(true);
@@ -1411,7 +1495,13 @@ export default function MyRoutineView({
     <View style={s.screen}>
       <ScreenTitleBar title="MY ROUTINE" showBack />
 
-        <ScrollView ref={routineScrollRef} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          ref={routineScrollRef}
+          contentContainerStyle={s.content}
+          showsVerticalScrollIndicator={false}
+          onScroll={isGuided ? event => { guideScrollY.current = event.nativeEvent.contentOffset.y; } : undefined}
+          scrollEventThrottle={isGuided ? 16 : undefined}
+        >
         <View>
           <View style={s.sectionHead}>
             <Calendar s={16} c={C.gold} />

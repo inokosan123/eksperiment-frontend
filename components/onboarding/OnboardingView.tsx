@@ -19706,13 +19706,15 @@ function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
   return (
     <View style={s.screen}>
       {stage === 'routine' ? (
+        // MyRoutineView mounts its own GuidedOverlayHost — rendering a second
+        // one here would stack two scrims over each other.
         <MyRoutineView guided onGuidedComplete={handleRoutineComplete} />
       ) : (
         // Home mounts beneath the veil from the first frame — the guided
         // session only begins once the veil lifts, on an already-warm screen.
         <HomeView guided={stage === 'home'} onGuidedComplete={handleHomeComplete} />
       )}
-      <GuidedOverlayHost />
+      {stage !== 'routine' && <GuidedOverlayHost />}
       {stage === 'loading' && <SystemBuildVeil onDone={() => setStage('home')} />}
     </View>
   );

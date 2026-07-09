@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, InteractionManager, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, InteractionManager, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -83,6 +83,7 @@ const HOME_GUIDE_TARGETS = {
   bigEvents: 'home.big-events',
   tasks: 'home.tasks',
   firstTask: 'home.first-task',
+  monthlyGoals: 'home.monthly-goals',
   myRoutine: 'home.my-routine',
 } as const;
 
@@ -711,6 +712,7 @@ export default function HomeView({
   onGuidedComplete?: () => void;
 } = {}) {
   const insets = useSafeAreaInsets();
+  const { height: guideScreenHeight } = useWindowDimensions();
   const router = useRouter();
   const homeScrollRef = useRef<React.ElementRef<typeof ScrollView>>(null);
   const {
@@ -776,6 +778,7 @@ export default function HomeView({
   const bigEventsTarget = useGuideTarget(HOME_GUIDE_TARGETS.bigEvents, isGuided);
   const tasksTarget = useGuideTarget(HOME_GUIDE_TARGETS.tasks, isGuided);
   const firstTaskTarget = useGuideTarget(HOME_GUIDE_TARGETS.firstTask, isGuided);
+  const monthlyGoalsTarget = useGuideTarget(HOME_GUIDE_TARGETS.monthlyGoals, isGuided);
   const myRoutineTarget = useGuideTarget(HOME_GUIDE_TARGETS.myRoutine, isGuided);
 
   useEffect(() => {
@@ -1330,64 +1333,136 @@ export default function HomeView({
 
   const guidedFirstCard = homeCards.find(card => card.instanceId && card.task.state !== 'locked') ?? homeCards[0];
 
-  useEffect(() => {
-    if (!isGuided) return undefined;
-    const timer = setTimeout(() => {
-      if (guidePhase === 'myRoutine') {
-        homeScrollRef.current?.scrollToEnd({ animated: true });
+  // ─── Guided tour choreography ──────────────────────────────────────────────
+  // Every phase first glides its section into a deliberate position (origin
+  // for the opening, top edge for the task lessons, center for the closing
+  // sections), waits for the scroll to settle, re-measures the target, and
+  // only then presents — so the spotlight always lands on fresh coordinates.
+  const guideScrollY = useRef(0);
+  const guideTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearGuideTimers = useCallback(() => {
+    guideTimersRef.current.forEach(clearTimeout);
+    guideTimersRef.current = [];
+  }, []);
+
+  const stageGuidePhase = useCallback((
+    binding: ReturnType<typeof useGuideTarget> | null,
+    position: 'origin' | 'topEdge' | 'lesson' | 'middle',
+    present: () => void,
+  ) => {
+    const node = binding?.ref.current;
+    if (!binding || !node?.measureInWindow) {
+      guideTimersRef.current.push(setTimeout(present, 40));
+      return;
+    }
+    if (position === 'origin') {
+      if (guideScrollY.current < 4) {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 70));
         return;
       }
-      if (
-        guidePhase === 'bigEvents' ||
-        guidePhase === 'tasks' ||
-        guidePhase === 'checkTask' ||
-        guidePhase === 'uncheckTask' ||
-        guidePhase === 'skipTask' ||
-        guidePhase === 'analytics'
-      ) {
-        homeScrollRef.current?.scrollTo({ y: 0, animated: true });
+      homeScrollRef.current?.scrollTo({ y: 0, animated: true });
+      guideTimersRef.current.push(setTimeout(() => {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 60));
+      }, 450));
+      return;
+    }
+    node.measureInWindow((_mx: number, my: number, _mw: number, mh: number) => {
+      const desired = position === 'topEdge'
+        ? insets.top + 62
+        : position === 'lesson'
+          ? insets.top + 124
+          : Math.max(insets.top + 90, guideScreenHeight * 0.5 - mh / 2);
+      const delta = my - desired;
+      if (Math.abs(delta) < 14) {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 70));
+        return;
       }
-    }, 80);
-    return () => clearTimeout(timer);
-  }, [guidePhase, isGuided]);
+      homeScrollRef.current?.scrollTo({ y: Math.max(0, guideScrollY.current + delta), animated: true });
+      guideTimersRef.current.push(setTimeout(() => {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 60));
+      }, 470));
+    });
+  }, [guideScreenHeight, insets.top]);
 
   useEffect(() => {
     if (!isGuided) return;
 
     const hasBigEventTarget = bigEvents.length > 0;
+    const tourSteps = hasBigEventTarget
+      ? ['welcome', 'bigEvents', 'tasks', 'checkTask', 'uncheckTask', 'skipTask', 'analytics', 'monthlyGoals', 'myRoutine']
+      : ['welcome', 'tasks', 'checkTask', 'uncheckTask', 'skipTask', 'analytics', 'monthlyGoals', 'myRoutine'];
+    const progressFor = (phase: string) => {
+      const index = tourSteps.indexOf(phase);
+      return index >= 0 ? { current: index + 1, total: tourSteps.length } : undefined;
+    };
+
+    clearGuideTimers();
+
     if (guidePhase === 'intro') {
-      patchSession({ phase: hasBigEventTarget ? 'bigEvents' : 'tasks' });
+      patchSession({ phase: 'welcome' });
+      return;
+    }
+
+    // A breath before anything is spotlit: the whole Home, barely veiled.
+    if (guidePhase === 'welcome') {
+      if (guideScrollY.current > 4) {
+        homeScrollRef.current?.scrollTo({ y: 0, animated: true });
+      }
+      guideTimersRef.current.push(setTimeout(() => {
+        setPresentation({
+          key: 'home-tour-welcome',
+          placement: 'bottom',
+          lightScrim: true,
+          eyebrow: 'HOME TOUR',
+          progress: progressFor('welcome'),
+          message: 'This is your Home. Everything you just built lives on this one screen.',
+          highlights: ['your Home'],
+          ctaLabel: 'Look around',
+          onCta: () => patchSession({ phase: hasBigEventTarget ? 'bigEvents' : 'tasks' }),
+        });
+      }, 380));
       return;
     }
 
     if (guidePhase === 'bigEvents') {
-      setPresentation({
-        key: 'home-tour-big-events',
-        targetId: HOME_GUIDE_TARGETS.bigEvents,
-        cutoutPadding: 8,
-        placement: 'below',
-        allowTargetInteraction: false,
-        eyebrow: 'HOME TOUR',
-        message: 'Welcome to your real Home screen.\n\nYour Big Events stay here, above the day, so important dates stay visible before they become urgent.',
-        highlights: ['real Home screen'],
-        ctaLabel: 'Continue',
-        onCta: () => patchSession({ phase: 'tasks' }),
+      stageGuidePhase(bigEventsTarget, 'origin', () => {
+        setPresentation({
+          key: 'home-tour-big-events',
+          targetId: HOME_GUIDE_TARGETS.bigEvents,
+          cutoutPadding: 8,
+          placement: 'below',
+          allowTargetInteraction: false,
+          eyebrow: 'HOME TOUR',
+          progress: progressFor('bigEvents'),
+          message: 'Big Events stand above the day, so what matters next stays in sight long before it arrives.',
+          highlights: ['above the day'],
+          ctaLabel: 'Continue',
+          onCta: () => patchSession({ phase: 'tasks' }),
+        });
       });
       return;
     }
 
     if (guidePhase === 'tasks') {
-      setPresentation({
-        key: 'home-tour-tasks',
-        targetId: HOME_GUIDE_TARGETS.tasks,
-        cutoutPadding: 8,
-        placement: 'below',
-        allowTargetInteraction: false,
-        eyebrow: 'HOME TOUR',
-        message: 'These are today\'s tasks. Home only shows what belongs to this day.',
-        highlights: ['this day'],
-        ctaLabel: 'Continue',
-        onCta: () => patchSession({ phase: 'checkTask' }),
+      stageGuidePhase(tasksTarget, 'topEdge', () => {
+        setPresentation({
+          key: 'home-tour-tasks',
+          targetId: HOME_GUIDE_TARGETS.tasks,
+          cutoutPadding: 8,
+          placement: 'below',
+          allowTargetInteraction: false,
+          eyebrow: 'HOME TOUR',
+          progress: progressFor('tasks'),
+          message: 'These are today\'s tasks. Home carries only what belongs to this day.',
+          highlights: ['this day'],
+          ctaLabel: 'Continue',
+          onCta: () => patchSession({ phase: 'checkTask' }),
+        });
       });
       return;
     }
@@ -1395,99 +1470,133 @@ export default function HomeView({
     // Gesture lessons carry no Continue button when a task card is available:
     // the phase only advances once the user performs the real gesture.
     if (guidePhase === 'checkTask') {
-      setPresentation({
-        key: 'home-tour-check-task',
-        targetId: guidedFirstCard ? HOME_GUIDE_TARGETS.firstTask : HOME_GUIDE_TARGETS.tasks,
-        cutoutPadding: 8,
-        placement: 'below',
-        allowTargetInteraction: true,
-        eyebrow: 'HOME TOUR',
-        message: 'This is how a task is completed. The same tap works on every task in Home.',
-        highlights: ['completed'],
-        action: guidedFirstCard ? 'Tap the check circle on the task' : undefined,
-        hint: guidedFirstCard ? 'tap' : undefined,
-        hintAnchor: 'left',
-        ctaLabel: guidedFirstCard ? undefined : 'Continue',
-        onCta: guidedFirstCard ? undefined : () => patchSession({ phase: 'myRoutine' }),
+      stageGuidePhase(guidedFirstCard ? firstTaskTarget : tasksTarget, 'lesson', () => {
+        setPresentation({
+          key: 'home-tour-check-task',
+          targetId: guidedFirstCard ? HOME_GUIDE_TARGETS.firstTask : HOME_GUIDE_TARGETS.tasks,
+          cutoutPadding: 8,
+          placement: 'below',
+          allowTargetInteraction: true,
+          eyebrow: 'HOME TOUR',
+          progress: progressFor('checkTask'),
+          message: 'Completing a task is one quiet tap.',
+          highlights: ['one quiet tap'],
+          action: guidedFirstCard ? 'Tap the check circle on the task' : undefined,
+          hint: guidedFirstCard ? 'tap' : undefined,
+          hintAnchor: 'left',
+          ctaLabel: guidedFirstCard ? undefined : 'Continue',
+          onCta: guidedFirstCard ? undefined : () => patchSession({ phase: 'monthlyGoals' }),
+        });
       });
       return;
     }
 
     if (guidePhase === 'uncheckTask') {
-      setPresentation({
-        key: 'home-tour-uncheck-task',
-        targetId: guidedFirstCard ? HOME_GUIDE_TARGETS.firstTask : HOME_GUIDE_TARGETS.tasks,
-        cutoutPadding: 8,
-        placement: 'below',
-        allowTargetInteraction: true,
-        eyebrow: 'HOME TOUR',
-        message: 'To undo a completed task, press it again. Anasta asks first, so progress is not removed by accident.',
-        highlights: ['press it again'],
-        action: guidedFirstCard ? 'Tap the check again, then confirm' : undefined,
-        hint: guidedFirstCard ? 'tap' : undefined,
-        hintAnchor: 'left',
-        ctaLabel: guidedFirstCard ? undefined : 'Continue',
-        onCta: guidedFirstCard ? undefined : () => patchSession({ phase: 'skipTask' }),
+      stageGuidePhase(guidedFirstCard ? firstTaskTarget : tasksTarget, 'lesson', () => {
+        setPresentation({
+          key: 'home-tour-uncheck-task',
+          targetId: guidedFirstCard ? HOME_GUIDE_TARGETS.firstTask : HOME_GUIDE_TARGETS.tasks,
+          cutoutPadding: 8,
+          placement: 'below',
+          allowTargetInteraction: true,
+          eyebrow: 'HOME TOUR',
+          progress: progressFor('uncheckTask'),
+          message: 'Checked by mistake? Press it again — Anasta asks first, so progress is never lost by accident.',
+          highlights: ['asks first'],
+          action: guidedFirstCard ? 'Tap the check again, then confirm' : undefined,
+          hint: guidedFirstCard ? 'tap' : undefined,
+          hintAnchor: 'left',
+          ctaLabel: guidedFirstCard ? undefined : 'Continue',
+          onCta: guidedFirstCard ? undefined : () => patchSession({ phase: 'skipTask' }),
+        });
       });
       return;
     }
 
     if (guidePhase === 'skipTask') {
-      setPresentation({
-        key: 'home-tour-skip-task',
-        targetId: guidedFirstCard ? HOME_GUIDE_TARGETS.firstTask : HOME_GUIDE_TARGETS.tasks,
-        cutoutPadding: 8,
-        placement: 'below',
-        allowTargetInteraction: true,
-        eyebrow: 'HOME TOUR',
-        message: 'A day does not always go as planned. A skipped task stays in your rhythm — just not for today.',
-        highlights: ['stays in your rhythm'],
-        action: guidedFirstCard ? 'Swipe the task to the right' : undefined,
-        hint: guidedFirstCard ? 'swipe-right' : undefined,
-        ctaLabel: guidedFirstCard ? undefined : 'Continue',
-        onCta: guidedFirstCard ? undefined : () => patchSession({ phase: 'analytics' }),
+      stageGuidePhase(guidedFirstCard ? firstTaskTarget : tasksTarget, 'lesson', () => {
+        setPresentation({
+          key: 'home-tour-skip-task',
+          targetId: guidedFirstCard ? HOME_GUIDE_TARGETS.firstTask : HOME_GUIDE_TARGETS.tasks,
+          cutoutPadding: 8,
+          placement: 'below',
+          allowTargetInteraction: true,
+          eyebrow: 'HOME TOUR',
+          progress: progressFor('skipTask'),
+          message: 'A day does not always go as planned. A skipped task stays in your rhythm — just not for today.',
+          highlights: ['stays in your rhythm'],
+          action: guidedFirstCard ? 'Swipe the task to the left' : undefined,
+          hint: guidedFirstCard ? 'swipe-left' : undefined,
+          ctaLabel: guidedFirstCard ? undefined : 'Continue',
+          onCta: guidedFirstCard ? undefined : () => patchSession({ phase: 'analytics' }),
+        });
       });
       return;
     }
 
     if (guidePhase === 'analytics') {
-      setPresentation({
-        key: 'home-tour-analytics',
-        targetId: guidedFirstCard ? HOME_GUIDE_TARGETS.firstTask : HOME_GUIDE_TARGETS.tasks,
-        cutoutPadding: 8,
-        placement: 'below',
-        allowTargetInteraction: true,
-        eyebrow: 'HOME TOUR',
-        message: 'Every task carries its pattern: progress, skipped days, and consistency.',
-        highlights: ['pattern'],
-        action: guidedFirstCard ? 'Press and hold the task' : undefined,
-        hint: guidedFirstCard ? 'long-press' : undefined,
-        ctaLabel: guidedFirstCard ? undefined : 'Continue',
-        onCta: guidedFirstCard ? undefined : () => patchSession({ phase: 'myRoutine' }),
+      stageGuidePhase(guidedFirstCard ? firstTaskTarget : tasksTarget, 'lesson', () => {
+        setPresentation({
+          key: 'home-tour-analytics',
+          targetId: guidedFirstCard ? HOME_GUIDE_TARGETS.firstTask : HOME_GUIDE_TARGETS.tasks,
+          cutoutPadding: 8,
+          placement: 'below',
+          allowTargetInteraction: true,
+          eyebrow: 'HOME TOUR',
+          progress: progressFor('analytics'),
+          message: 'Every task carries its pattern — progress, skipped days, consistency.',
+          highlights: ['pattern'],
+          action: guidedFirstCard ? 'Press and hold the task' : undefined,
+          hint: guidedFirstCard ? 'long-press' : undefined,
+          ctaLabel: guidedFirstCard ? undefined : 'Continue',
+          onCta: guidedFirstCard ? undefined : () => patchSession({ phase: 'monthlyGoals' }),
+        });
       });
       return;
     }
 
     // While analytics is open the overlay steps aside entirely — the sheet
     // renders inline (not in a native Modal), so any scrim would block it.
-    // Closing the sheet advances the tour to My Routine.
+    // Closing the sheet advances the tour to Monthly Goals.
     if (guidePhase === 'analyticsOpen') {
       setPresentation(null);
       return;
     }
 
+    if (guidePhase === 'monthlyGoals') {
+      stageGuidePhase(monthlyGoalsTarget, 'middle', () => {
+        setPresentation({
+          key: 'home-tour-monthly-goals',
+          targetId: HOME_GUIDE_TARGETS.monthlyGoals,
+          cutoutPadding: 8,
+          placement: 'above',
+          allowTargetInteraction: false,
+          eyebrow: 'HOME TOUR',
+          progress: progressFor('monthlyGoals'),
+          message: 'Your goals for the month rest here, keeping the bigger direction in view while the days pass.',
+          highlights: ['bigger direction'],
+          ctaLabel: 'Continue',
+          onCta: () => patchSession({ phase: 'myRoutine' }),
+        });
+      });
+      return;
+    }
+
     if (guidePhase === 'myRoutine') {
-      setPresentation({
-        key: 'home-tour-my-routine',
-        targetId: HOME_GUIDE_TARGETS.myRoutine,
-        cutoutPadding: 8,
-        placement: 'above',
-        allowTargetInteraction: true,
-        eyebrow: 'HOME TOUR',
-        message: 'My Routine is the main place where you edit the plan behind your Home screen.',
-        highlights: ['My Routine'],
-        ctaLabel: 'Open My Routine',
-        onCta: onGuidedComplete,
+      stageGuidePhase(myRoutineTarget, 'middle', () => {
+        setPresentation({
+          key: 'home-tour-my-routine',
+          targetId: HOME_GUIDE_TARGETS.myRoutine,
+          cutoutPadding: 8,
+          placement: 'above',
+          allowTargetInteraction: true,
+          eyebrow: 'HOME TOUR',
+          progress: progressFor('myRoutine'),
+          message: 'And this is My Routine — the room where your whole weekly plan is shaped.',
+          highlights: ['My Routine'],
+          action: 'Tap My Routine to open it',
+          hint: 'tap',
+        });
       });
       return;
     }
@@ -1495,13 +1604,23 @@ export default function HomeView({
     setPresentation(null);
   }, [
     bigEvents.length,
+    bigEventsTarget,
+    clearGuideTimers,
+    firstTaskTarget,
     guidePhase,
     guidedFirstCard,
     isGuided,
-    onGuidedComplete,
+    monthlyGoalsTarget,
+    myRoutineTarget,
     patchSession,
     setPresentation,
+    stageGuidePhase,
+    tasksTarget,
   ]);
+
+  // Clears any pending stage timers whenever the phase moves on (or the tour
+  // unmounts) so a stale presentation can never fire over a newer phase.
+  useEffect(() => clearGuideTimers, [clearGuideTimers, guidePhase]);
 
   return (
     <View style={s.homeRoot}>
@@ -1513,6 +1632,8 @@ export default function HomeView({
           paddingBottom: 120,
         }}
         showsVerticalScrollIndicator={false}
+        onScroll={isGuided ? event => { guideScrollY.current = event.nativeEvent.contentOffset.y; } : undefined}
+        scrollEventThrottle={isGuided ? 16 : undefined}
       >
         <HomeHeader selectedDate={selectedDate} todayKey={todayKey} onSelectDate={selectDate} />
 
@@ -1693,7 +1814,20 @@ export default function HomeView({
           </LinearGradient>
         </TouchableOpacity>
 
-        <TouchableOpacity {...myRoutineTarget} activeOpacity={0.82} style={{ marginTop: 8 }} onPress={() => router.push('/my-routine')}>
+        <TouchableOpacity
+          {...myRoutineTarget}
+          activeOpacity={0.82}
+          style={{ marginTop: 8 }}
+          onPress={() => {
+            // During the tour, opening My Routine IS the lesson — the tap
+            // hands over to the guided routine stage instead of navigating.
+            if (isGuided && guidePhase === 'myRoutine') {
+              onGuidedComplete?.();
+              return;
+            }
+            router.push('/my-routine');
+          }}
+        >
           <LinearGradient
             colors={['#FFFFFF', '#FDF3D8']}
             start={{ x: 0, y: 0 }}
@@ -1714,7 +1848,9 @@ export default function HomeView({
           </LinearGradient>
         </TouchableOpacity>
 
-        <MonthlyGoalsHomeCard />
+        <View {...monthlyGoalsTarget}>
+          <MonthlyGoalsHomeCard />
+        </View>
       </View>
 
         <WeeklyRhythm />
@@ -1734,7 +1870,7 @@ export default function HomeView({
         onClose={() => {
           setAnalyticsCard(null);
           if (isGuided && guidePhase === 'analyticsOpen') {
-            patchSession({ phase: 'myRoutine' });
+            patchSession({ phase: 'monthlyGoals' });
           }
         }}
       />

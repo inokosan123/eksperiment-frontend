@@ -27,7 +27,8 @@ import type { GuidedGestureHint } from './types';
 
 const APP_LOGO = require('@/assets/images/anasta-logo.png');
 const DIM = 'rgba(17,13,9,0.74)';
-const MOTION = { duration: 520, easing: Easing.bezier(0.16, 1, 0.28, 1) };
+const DIM_LIGHT = 'rgba(17,13,9,0.30)';
+const MOTION = { duration: 560, easing: Easing.bezier(0.22, 1, 0.3, 1) };
 const SOFT_EASE = Easing.bezier(0.16, 1, 0.28, 1);
 const CUTOUT_RADIUS = 22;
 const RING_GOLD = 'rgba(240,209,143,0.95)';
@@ -49,7 +50,11 @@ function renderMessage(message: string, highlights?: string[]) {
 
 function DimPanel({ style }: { style: object }) {
   return (
-    <Reanimated.View style={[o.dimPanel, style]}>
+    <Reanimated.View
+      entering={FadeIn.duration(280)}
+      exiting={FadeOut.duration(220)}
+      style={[o.dimPanel, style]}
+    >
       <Pressable style={StyleSheet.absoluteFill} />
     </Reanimated.View>
   );
@@ -521,6 +526,9 @@ export function GuidedOverlayHost() {
     if (presentation?.celebrate) {
       return { top: Math.max(celebrateTop + 168, screenHeight * 0.46) };
     }
+    if (presentation?.placement === 'bottom') {
+      return { bottom: insets.bottom + (hasCta ? 118 : 44) };
+    }
     if (!target || presentation?.placement === 'center') {
       return { top: Math.max(insets.top + 72, screenHeight * 0.26) };
     }
@@ -536,9 +544,9 @@ export function GuidedOverlayHost() {
   }, [celebrateTop, hasCta, insets.bottom, insets.top, padding, presentation?.celebrate, presentation?.placement, screenHeight, target]);
 
   const coachEntering = useMemo(() => (
-    presentation?.placement === 'above'
-      ? FadeInUp.duration(460).easing(SOFT_EASE)
-      : FadeInDown.duration(460).easing(SOFT_EASE)
+    presentation?.placement === 'above' || presentation?.placement === 'bottom'
+      ? FadeInUp.springify().damping(17).stiffness(210).mass(0.8)
+      : FadeInDown.springify().damping(17).stiffness(210).mass(0.8)
   ), [presentation?.placement]);
 
   if (!session?.active || !presentation) return null;
@@ -554,20 +562,30 @@ export function GuidedOverlayHost() {
           <DimPanel style={leftStyle} />
           <DimPanel style={rightStyle} />
           <DimPanel style={bottomStyle} />
-          <Reanimated.View pointerEvents="none" style={[o.cornerPatch, topLeftCornerStyle]}>
+          <Reanimated.View pointerEvents="none" entering={FadeIn.duration(280)} exiting={FadeOut.duration(220)} style={[o.cornerPatch, topLeftCornerStyle]}>
             <Reanimated.View style={[o.cornerDonut, topLeftDonutStyle]} />
           </Reanimated.View>
-          <Reanimated.View pointerEvents="none" style={[o.cornerPatch, topRightCornerStyle]}>
+          <Reanimated.View pointerEvents="none" entering={FadeIn.duration(280)} exiting={FadeOut.duration(220)} style={[o.cornerPatch, topRightCornerStyle]}>
             <Reanimated.View style={[o.cornerDonut, topRightDonutStyle]} />
           </Reanimated.View>
-          <Reanimated.View pointerEvents="none" style={[o.cornerPatch, bottomLeftCornerStyle]}>
+          <Reanimated.View pointerEvents="none" entering={FadeIn.duration(280)} exiting={FadeOut.duration(220)} style={[o.cornerPatch, bottomLeftCornerStyle]}>
             <Reanimated.View style={[o.cornerDonut, bottomLeftDonutStyle]} />
           </Reanimated.View>
-          <Reanimated.View pointerEvents="none" style={[o.cornerPatch, bottomRightCornerStyle]}>
+          <Reanimated.View pointerEvents="none" entering={FadeIn.duration(280)} exiting={FadeOut.duration(220)} style={[o.cornerPatch, bottomRightCornerStyle]}>
             <Reanimated.View style={[o.cornerDonut, bottomRightDonutStyle]} />
           </Reanimated.View>
-          <Reanimated.View pointerEvents="none" style={[o.sonarRing, sonarStyle]} />
-          <Reanimated.View pointerEvents="none" style={[o.cutoutRing, ringStyle]} />
+          <Reanimated.View
+            pointerEvents="none"
+            entering={FadeIn.duration(320)}
+            exiting={FadeOut.duration(200)}
+            style={[o.sonarRing, sonarStyle]}
+          />
+          <Reanimated.View
+            pointerEvents="none"
+            entering={FadeIn.duration(320)}
+            exiting={FadeOut.duration(200)}
+            style={[o.cutoutRing, ringStyle]}
+          />
           {presentation.allowTargetInteraction === false && (
             <Reanimated.View style={[o.cutoutBlocker, cutoutStyle]}>
               <Pressable style={StyleSheet.absoluteFill} />
@@ -586,9 +604,13 @@ export function GuidedOverlayHost() {
           ) : null}
         </>
       ) : (
-        <View style={o.fullDim}>
+        <Reanimated.View
+          entering={FadeIn.duration(300)}
+          exiting={FadeOut.duration(220)}
+          style={[o.fullDim, presentation.lightScrim && o.fullDimLight]}
+        >
           <Pressable style={StyleSheet.absoluteFill} />
-        </View>
+        </Reanimated.View>
       )}
 
       {presentation.celebrate && (
@@ -677,6 +699,9 @@ const o = StyleSheet.create({
   fullDim: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: DIM,
+  },
+  fullDimLight: {
+    backgroundColor: DIM_LIGHT,
   },
   cutoutRing: {
     position: 'absolute',
