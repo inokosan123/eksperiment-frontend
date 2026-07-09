@@ -954,24 +954,8 @@ export default function MyRoutineView({
 
   useEffect(() => {
     if (!isGuided) return;
-    if (guidePhase === 'tourAdd') {
-      stageGuidePhase(spiritualAddTarget, 'origin', () => {
-        setPresentation({
-          key: 'my-routine-tour-add',
-          targetId: MY_ROUTINE_GUIDE_TARGETS.spiritualAdd,
-          cutoutPadding: 7,
-          placement: 'below',
-          allowTargetInteraction: false,
-          eyebrow: 'MY ROUTINE',
-          progress: { current: 1, total: 7 },
-          message: 'This is My Routine — the workshop behind your Home.\n\nThese two buttons add spiritual and routine tasks to your week.',
-          highlights: ['workshop behind your Home'],
-          ctaLabel: 'Continue',
-          onCta: () => patchSession({ phase: 'tourWeek' }),
-        });
-      });
-      return;
-    }
+    // The tour follows the screen top-to-bottom: week tabs → add buttons →
+    // the day's task list → the editor → habits → challenges → focus plan.
     if (guidePhase === 'tourWeek') {
       stageGuidePhase(dayTabsTarget, 'origin', () => {
         setPresentation({
@@ -981,11 +965,29 @@ export default function MyRoutineView({
           placement: 'below',
           allowTargetInteraction: true,
           eyebrow: 'MY ROUTINE',
-          progress: { current: 2, total: 7 },
-          message: 'Your plan is weekly. Each day carries its own rhythm.',
-          highlights: ['weekly'],
+          progress: { current: 1, total: 7 },
+          message: 'This is My Routine — the workshop behind your Home. Here you see the plan for every day of your week.',
+          highlights: ['every day'],
           action: 'Try tapping a day',
           hint: 'tap',
+          ctaLabel: 'Continue',
+          onCta: () => patchSession({ phase: 'tourAdd' }),
+        });
+      });
+      return;
+    }
+    if (guidePhase === 'tourAdd') {
+      stageGuidePhase(spiritualAddTarget, 'origin', () => {
+        setPresentation({
+          key: 'my-routine-tour-add',
+          targetId: MY_ROUTINE_GUIDE_TARGETS.spiritualAdd,
+          cutoutPadding: 7,
+          placement: 'below',
+          allowTargetInteraction: false,
+          eyebrow: 'MY ROUTINE',
+          progress: { current: 2, total: 7 },
+          message: 'New spiritual and routine tasks are added here — each lands on the days you choose.',
+          highlights: ['spiritual', 'routine'],
           ctaLabel: 'Continue',
           onCta: () => patchSession({ phase: 'edit' }),
         });
@@ -1134,8 +1136,8 @@ export default function MyRoutineView({
           allowTargetInteraction: true,
           eyebrow: 'MY ROUTINE',
           progress: { current: 3, total: 7 },
-          message: 'When life changes, the plan bends with it.',
-          highlights: ['bends with it'],
+          message: 'These are the tasks of the day you selected. When life changes, the plan bends with it.',
+          highlights: ['tasks of the day'],
           action: 'Tap the task to open its editor',
           hint: 'tap',
         });
@@ -1151,14 +1153,10 @@ export default function MyRoutineView({
         allowTargetInteraction: true,
         eyebrow: 'MY ROUTINE',
         progress: { current: 4, total: 7 },
-        message: 'Name, time, repeat days — everything about the task lives here, ready to change when your week does.',
-        highlights: ['ready to change'],
-        ctaLabel: 'Continue',
-        onCta: () => {
-          setEditorVisible(false);
-          setEditorTask(null);
-          patchSession({ phase: 'tourHabits' });
-        },
+        message: 'This is the editor — name, time, repeat days, every detail of the task lives here.',
+        highlights: ['editor'],
+        action: 'When you are done, tap the check at the top right',
+        hint: 'tap',
       });
       return;
     }
@@ -1172,7 +1170,7 @@ export default function MyRoutineView({
           allowTargetInteraction: false,
           eyebrow: 'MY ROUTINE',
           progress: { current: 5, total: 7 },
-          message: 'Habits live here — the steps that keep walking toward a goal.',
+          message: 'Habits live here, with every control they need — edit, start, or pause them as seasons change.',
           highlights: ['Habits'],
           ctaLabel: 'Continue',
           onCta: () => patchSession({ phase: 'tourChallenges' }),
@@ -1208,8 +1206,8 @@ export default function MyRoutineView({
           allowTargetInteraction: false,
           eyebrow: 'MY ROUTINE',
           progress: { current: 7, total: 7 },
-          message: 'And at the bottom — the blocking plan guarding your attention today.',
-          highlights: ['blocking plan'],
+          message: 'And at the bottom — which focus plan guards your attention on each day of the week.',
+          highlights: ['focus plan'],
           ctaLabel: 'Finish tour',
           onCta: () => patchSession({ phase: 'complete' }),
         });
@@ -1420,6 +1418,13 @@ export default function MyRoutineView({
     setEditorDefaultLevel(undefined);
     setEditorDefaultType(undefined);
     if (!isGuided) return;
+
+    // Tour lesson: the user closed the editor with the top-right check —
+    // the walkthrough moves on to the sections below.
+    if (guidePhase === 'editSave') {
+      patchSession({ phase: 'tourHabits' });
+      return;
+    }
 
     if (guidePhase === 'spiritualName' || guidePhase === 'spiritualSave') {
       notifyGuideEvent({
@@ -1808,6 +1813,11 @@ export default function MyRoutineView({
           setEditorTask(null);
           setEditorDefaultLevel(undefined);
           setEditorDefaultType(undefined);
+          // If the user leaves the editor with the X during the tour lesson,
+          // the walkthrough still moves on instead of stranding them.
+          if (isGuided && guidePhase === 'editSave') {
+            patchSession({ phase: 'tourHabits' });
+          }
         }}
         onSave={handleTaskSave}
         onDelete={handleTaskDelete}

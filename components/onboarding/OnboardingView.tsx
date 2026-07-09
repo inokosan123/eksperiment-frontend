@@ -19724,7 +19724,7 @@ function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
     // the step — an end→begin gap here is exactly where the overlay used to
     // fall through and strand the user on a half-dimmed screen.
     setPresentation(null);
-    patchSession({ activeStep: 'buildMyRoutine', phase: 'tourAdd', route: '/onboarding' });
+    patchSession({ activeStep: 'buildMyRoutine', phase: 'tourWeek', route: '/onboarding' });
     setStage('routine');
   }, [patchSession, setPresentation]);
 
@@ -19736,15 +19736,15 @@ function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
   return (
     <View style={s.screen}>
       {stage === 'routine' ? (
-        // MyRoutineView mounts its own GuidedOverlayHost — rendering a second
-        // one here would stack two scrims over each other.
         <MyRoutineView guided onGuidedComplete={handleRoutineComplete} />
       ) : homeWarm ? (
         <HomeView guided={stage === 'home'} onGuidedComplete={handleHomeComplete} />
       ) : (
         <View style={{ flex: 1, backgroundColor: '#FAF7F0' }} />
       )}
-      {stage !== 'routine' && <GuidedOverlayHost />}
+      {/* Root host carries the tour over BOTH screens — MyRoutineView itself
+          only mounts hosts inside its bottom sheets (for in-modal phases). */}
+      <GuidedOverlayHost />
       {stage === 'loading' && <SystemBuildVeil onDone={() => setStage('home')} />}
     </View>
   );
