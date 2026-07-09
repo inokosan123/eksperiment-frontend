@@ -79,6 +79,12 @@ import {
 import { AnimatedTaskRow, CompletionFlourish } from '@/components/shared/taskAnimations';
 import LottieFlame from '@/components/journal/LottieFlame';
 import BigEventsView from '@/components/journal/BigEventsView';
+import ScriptureReaderView from '@/components/scripture/ScriptureReaderView';
+import MyFavoritesView from '@/components/scripture/MyFavoritesView';
+import BibleNotesView from '@/components/inner-tools/BibleNotesView';
+import { useScripture } from '@/components/scripture/ScriptureContext';
+import { normalizeScriptureLanguage } from '@/constants/scripture';
+import { useAppSettings } from '@/components/settings/SettingsContext';
 import HomeView from '@/components/home/HomeView';
 import WeeklyRhythm from '@/components/home/WeeklyRhythm';
 import MonthlyGoalsView from '@/components/inner-tools/MonthlyGoalsView';
@@ -19836,6 +19842,166 @@ function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
   );
 }
 
+// ─── Bible walkthrough ────────────────────────────────────────────────────────
+// Four real scripture screens carried by one continuous guided session:
+// the reader on the slogan chapter (Ephesians 5, pre-seeded with our comment
+// and a highlight), My Favorites with the color shelves, a deep-link back
+// into John 16, and the Bible Notes shelf.
+const BIBLE_GUIDE_SLOGAN = { bookId: 49, chapter: 5, verse: 14 };
+const BIBLE_GUIDE_SEED_VERSE = 16;
+const BIBLE_GUIDE_RETURN = { bookId: 43, chapter: 16, verse: 33 };
+
+function BibleGuideSlide({ onNext }: { onNext: () => void }) {
+  const { beginGuidedSetup, endGuidedSetup, patchSession, setPresentation } = useGuidedSetup();
+  const { ready, categories, getChapter, upsertAnnotations, updateCategory } = useScripture();
+  const { settings } = useAppSettings();
+  const [scene, setScene] = useState<'reader1' | 'favorites' | 'reader2' | 'notes'>('reader1');
+  const seedStartedRef = useRef(false);
+  const sessionStartedRef = useRef(false);
+
+  // Seed the page the tour opens on: our comment on the slogan verse, a gold
+  // highlight two verses below, and the Encouragement verse waiting in
+  // Favorites. Real annotations — they stay with the user after onboarding.
+  useEffect(() => {
+    if (!ready || seedStartedRef.current) return;
+    seedStartedRef.current = true;
+    let alive = true;
+    (async () => {
+      try {
+        const lang = normalizeScriptureLanguage(settings.bibleLang);
+        const [ephesians, john] = await Promise.all([
+          getChapter(BIBLE_GUIDE_SLOGAN.bookId, BIBLE_GUIDE_SLOGAN.chapter, lang),
+          getChapter(BIBLE_GUIDE_RETURN.bookId, BIBLE_GUIDE_RETURN.chapter, lang),
+        ]);
+        const sloganVerse = ephesians.find(verse => verse.verse === BIBLE_GUIDE_SLOGAN.verse);
+        const seedVerse = ephesians.find(verse => verse.verse === BIBLE_GUIDE_SEED_VERSE);
+        const courageVerse = john.find(verse => verse.verse === BIBLE_GUIDE_RETURN.verse);
+        const inputs = [];
+        if (sloganVerse) {
+          inputs.push({
+            kind: 'comment' as const,
+            color: 'gold' as const,
+            bookId: BIBLE_GUIDE_SLOGAN.bookId,
+            chapter: BIBLE_GUIDE_SLOGAN.chapter,
+            verse: BIBLE_GUIDE_SLOGAN.verse,
+            text: sloganVerse.text,
+            comment: 'Anasta begins here — the call to wake, and to walk as a child of light.',
+          });
+        }
+        if (seedVerse) {
+          inputs.push({
+            kind: 'highlight' as const,
+            color: 'gold' as const,
+            bookId: BIBLE_GUIDE_SLOGAN.bookId,
+            chapter: BIBLE_GUIDE_SLOGAN.chapter,
+            verse: BIBLE_GUIDE_SEED_VERSE,
+            text: seedVerse.text,
+          });
+        }
+        if (courageVerse) {
+          inputs.push({
+            kind: 'highlight' as const,
+            color: 'orange' as const,
+            bookId: BIBLE_GUIDE_RETURN.bookId,
+            chapter: BIBLE_GUIDE_RETURN.chapter,
+            verse: BIBLE_GUIDE_RETURN.verse,
+            text: courageVerse.text,
+          });
+        }
+        if (inputs.length > 0) await upsertAnnotations(inputs);
+        // Rename the seventh color only while it still wears its default name.
+        const orange = categories.find(category => category.color === 'orange');
+        if (!orange || orange.label === 'Zeal') await updateCategory('orange', 'Encouragement');
+      } catch (error) {
+        console.warn('[BibleGuide] seeding failed', error);
+      }
+      if (!alive || sessionStartedRef.current) return;
+      sessionStartedRef.current = true;
+      beginGuidedSetup({
+        currentChapter: 'grow',
+        chapterOrder: ['grow'],
+        activeStep: 'riseBibleHighlight',
+        phase: 'readerIntro',
+        route: '/onboarding',
+      });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [beginGuidedSetup, categories, getChapter, ready, settings.bibleLang, updateCategory, upsertAnnotations]);
+
+  useEffect(() => () => endGuidedSetup(), [endGuidedSetup]);
+
+  const handleReaderAdvance = useCallback((event: 'sceneDone' | 'openNotes') => {
+    setPresentation(null);
+    if (event === 'sceneDone') {
+      patchSession({ phase: 'favIntro' });
+      setScene('favorites');
+      return;
+    }
+    patchSession({ phase: 'noteEntry' });
+    setScene('notes');
+  }, [patchSession, setPresentation]);
+
+  const handleFavoritesAdvance = useCallback(() => {
+    setPresentation(null);
+    patchSession({ phase: 'returnIntro' });
+    setScene('reader2');
+  }, [patchSession, setPresentation]);
+
+  const handleNotesComplete = useCallback(() => {
+    endGuidedSetup();
+    onNext();
+  }, [endGuidedSetup, onNext]);
+
+  return (
+    <View style={s.screen}>
+      <Reanimated.View
+        key={`bible-scene-${scene}`}
+        entering={FadeIn.duration(340)}
+        style={{ flex: 1, backgroundColor: '#FCFCFC' }}
+      >
+        {scene === 'reader1' && (
+          <ScriptureReaderView
+            guided
+            bookId={BIBLE_GUIDE_SLOGAN.bookId}
+            chapter={BIBLE_GUIDE_SLOGAN.chapter}
+            initialVerse={BIBLE_GUIDE_SLOGAN.verse}
+            onBack={() => {}}
+            canGoPrevChapter={false}
+            canGoNextChapter={false}
+            onGuidedAdvance={handleReaderAdvance}
+          />
+        )}
+        {scene === 'favorites' && (
+          <MyFavoritesView guided onGuidedAdvance={handleFavoritesAdvance} />
+        )}
+        {scene === 'reader2' && (
+          <ScriptureReaderView
+            guided
+            bookId={BIBLE_GUIDE_RETURN.bookId}
+            chapter={BIBLE_GUIDE_RETURN.chapter}
+            initialVerse={BIBLE_GUIDE_RETURN.verse}
+            onBack={() => {}}
+            canGoPrevChapter={false}
+            canGoNextChapter={false}
+            onGuidedAdvance={handleReaderAdvance}
+          />
+        )}
+        {scene === 'notes' && (
+          <BibleNotesView
+            guided
+            initialBookId={BIBLE_GUIDE_RETURN.bookId}
+            initialChapter={BIBLE_GUIDE_RETURN.chapter}
+            onGuidedComplete={handleNotesComplete}
+          />
+        )}
+      </Reanimated.View>
+      <GuidedOverlayHost />
+    </View>
+  );
+}
+
 function OrganizeHomePreviewSlide({ onNext }: { onNext: () => void }) {
   const rows = [
     { title: 'Morning Prayer', meta: '07:00 · Every day', accent: GOLD, icon: <Sun s={17} c={GOLD} w={2} /> },
@@ -21304,6 +21470,10 @@ export default function OnboardingView() {
   // first frame: the transition later glides over an already-warm screen, and
   // the welcome crest position can be measured for the stationary handoff.
 
+  if (activeStep === 'bibleWalkthrough') {
+    return <BibleGuideSlide onNext={goNext} />;
+  }
+
   if (activeStep === 'buildBigEvents') {
     return (
       <View style={s.screen}>
@@ -21703,16 +21873,6 @@ export default function OnboardingView() {
           title="Grow closer to God."
           body="Scripture, Favorites, Bible Notes, and Prayer Book stay available to everyone."
           icon={<OpenBook s={54} c={GOLD} w={1.5} />}
-          onNext={goNext}
-        />
-      );
-    }
-    if (activeStep === 'bibleWalkthrough') {
-      return (
-        <V4MomentSlide
-          title="Bible walkthrough"
-          body="Highlight Ephesians 5:14, save it to Favorites, add notes, and return to the exact verse when you need it."
-          icon={<BookMarked s={54} c={GOLD} w={1.5} />}
           onNext={goNext}
         />
       );

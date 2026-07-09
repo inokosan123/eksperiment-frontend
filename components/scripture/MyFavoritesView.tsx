@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   Platform,
@@ -7,9 +7,11 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 import {
   Pencil, Search, SlidersHorizontal, Star, Trash2, X,
 } from '@/components/icons/Icons';
@@ -31,6 +33,16 @@ import {
 
 const BG = '#FFFFFF';
 const GOLD = '#C5A059';
+
+const FAVORITES_GUIDE_TARGETS = {
+  categories: 'favorites.categories',
+  verseCard: 'favorites.verse-card',
+} as const;
+
+// The seeded "Encouragement" favorite the tour taps back into Scripture from.
+const GUIDE_FAVORITE_BOOK = 43;
+const GUIDE_FAVORITE_CHAPTER = 16;
+const GUIDE_FAVORITE_VERSE = 33;
 
 type TypeFilter = 'all' | ScriptureAnnotation['kind'];
 type SourceFilter = 'all' | 'nt' | 'ot' | 'psalms';
@@ -76,9 +88,16 @@ function plainRichText(html?: string) {
     .trim();
 }
 
-export default function MyFavoritesView() {
+export default function MyFavoritesView({
+  guided = false,
+  onGuidedAdvance,
+}: {
+  guided?: boolean;
+  onGuidedAdvance?: () => void;
+} = {}) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
   const {
     annotations, categories, deleteAnnotation, updateCategory,
   } = useScripture();
@@ -90,6 +109,20 @@ export default function MyFavoritesView() {
   const [deleteTarget, setDeleteTarget] = useState<ScriptureAnnotation | null>(null);
   const [colorDeleteGroup, setColorDeleteGroup] = useState<{ annotation: ScriptureAnnotation; colors: string[] } | null>(null);
   const [colorEditorOpen, setColorEditorOpen] = useState(false);
+
+  const { session, patchSession, setPresentation } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'riseBibleHighlight';
+  const guidePhase = isGuided ? session.phase : '';
+  const categoriesTarget = useGuideTarget(FAVORITES_GUIDE_TARGETS.categories, isGuided);
+  const verseCardTarget = useGuideTarget(FAVORITES_GUIDE_TARGETS.verseCard, isGuided);
+  const favScrollRef = useRef<ScrollView>(null);
+  const guideScrollY = useRef(0);
+  const guideTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearGuideTimers = useCallback(() => {
+    guideTimersRef.current.forEach(clearTimeout);
+    guideTimersRef.current = [];
+  }, []);
 
   const filtered = useMemo(() => annotations
     .filter(annotation => annotation.kind === 'highlight' || annotation.kind === 'comment')
@@ -201,10 +234,97 @@ export default function MyFavoritesView() {
     setDeleteTarget(null);
   };
 
+  // ─── Guided Bible tour presentations ───────────────────────────────────────
+  const stageVerseCard = useCallback((present: () => void) => {
+    const node = verseCardTarget.ref.current;
+    if (!node?.measureInWindow) {
+      guideTimersRef.current.push(setTimeout(present, 40));
+      return;
+    }
+    node.measureInWindow((_mx: number, my: number, _mw: number, mh: number) => {
+      const desired = Math.max(140, screenHeight * 0.5 - mh / 2);
+      const delta = my - desired;
+      if (Math.abs(delta) < 14) {
+        verseCardTarget.measure();
+        guideTimersRef.current.push(setTimeout(present, 56));
+        return;
+      }
+      favScrollRef.current?.scrollTo({ y: Math.max(0, guideScrollY.current + delta), animated: true });
+      guideTimersRef.current.push(setTimeout(() => {
+        verseCardTarget.measure();
+        guideTimersRef.current.push(setTimeout(present, 48));
+      }, 340));
+    });
+  }, [screenHeight, verseCardTarget]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+    clearGuideTimers();
+
+    if (guidePhase === 'favIntro') {
+      setPresentation({
+        key: 'favorites-intro',
+        placement: 'bottom',
+        lightScrim: true,
+        eyebrow: 'MY FAVORITES',
+        message: 'Everything you mark and write gathers here — and it quietly orders itself around your study.',
+        highlights: ['orders itself'],
+        ctaLabel: 'Continue',
+        onCta: () => patchSession({ phase: 'favColors' }),
+      });
+      return;
+    }
+    if (guidePhase === 'favColors') {
+      setPresentation({
+        key: 'favorites-colors',
+        targetId: FAVORITES_GUIDE_TARGETS.categories,
+        cutoutPadding: 8,
+        placement: 'below',
+        allowTargetInteraction: true,
+        eyebrow: 'MY FAVORITES',
+        message: 'Every color is a shelf with a name. We named one for the heavy days — Encouragement — and its verse is already waiting below.',
+        highlights: ['Encouragement'],
+        action: 'Tap the pencil to name your colors',
+      });
+      return;
+    }
+    if (guidePhase === 'favEditor') {
+      // The category editor is a native modal — the overlay steps aside and
+      // closing the editor advances the tour.
+      setPresentation(null);
+      return;
+    }
+    if (guidePhase === 'favVerse') {
+      stageVerseCard(() => {
+        setPresentation({
+          key: 'favorites-verse',
+          targetId: FAVORITES_GUIDE_TARGETS.verseCard,
+          cutoutPadding: 8,
+          placement: 'above',
+          allowTargetInteraction: true,
+          eyebrow: 'MY FAVORITES',
+          message: 'A word for the days that bend you — filed under Encouragement.',
+          highlights: ['Encouragement'],
+          action: 'Tap the verse to stand where it lives',
+          hint: 'tap',
+        });
+      });
+      return;
+    }
+  }, [clearGuideTimers, guidePhase, isGuided, patchSession, setPresentation, stageVerseCard]);
+
+  useEffect(() => clearGuideTimers, [clearGuideTimers, guidePhase]);
+
   return (
     <View style={s.screen}>
-      <ScreenTitleBar title="MY FAVORITES" showBack bg={BG} />
-      <ScrollView contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 110 }]} showsVerticalScrollIndicator={false}>
+      <ScreenTitleBar title="MY FAVORITES" showBack={!isGuided} bg={BG} />
+      <ScrollView
+        ref={favScrollRef}
+        contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 110 }]}
+        showsVerticalScrollIndicator={false}
+        onScroll={isGuided ? event => { guideScrollY.current = event.nativeEvent.contentOffset.y; } : undefined}
+        scrollEventThrottle={isGuided ? 16 : undefined}
+      >
         <View style={s.filterCard}>
           <View style={s.searchBox}>
             <Search s={15} c="#D1D5DB" />
@@ -223,7 +343,7 @@ export default function MyFavoritesView() {
           </View>
         </View>
 
-        <View style={s.colorWrap}>
+        <View {...categoriesTarget} style={s.colorWrap}>
           <FilterTitle label="CATEGORY" />
           <CategoryChipPicker
             categories={categories}
@@ -231,7 +351,12 @@ export default function MyFavoritesView() {
             includeAll
             onSelectAll={() => setColor('all')}
             onSelectColor={setColor}
-            onEdit={() => setColorEditorOpen(true)}
+            onEdit={() => {
+              setColorEditorOpen(true);
+              if (isGuided && guidePhase === 'favColors') {
+                patchSession({ phase: 'favEditor' });
+              }
+            }}
             layout="wrap"
             contentStyle={s.colorRow}
           />
@@ -315,22 +440,38 @@ export default function MyFavoritesView() {
           </View>
         ) : (
           <View style={s.list}>
-            {displayItems.map(({ annotation, verseRange, verses, colors }) => (
+            {displayItems.map(({ annotation, verseRange, verses, colors }) => {
+              const isGuideVerseCard = isGuided
+                && annotation.bookId === GUIDE_FAVORITE_BOOK
+                && annotation.chapter === GUIDE_FAVORITE_CHAPTER
+                && (verses.includes(GUIDE_FAVORITE_VERSE) || annotation.verse === GUIDE_FAVORITE_VERSE);
+              const cardTargetProps = isGuideVerseCard
+                ? { ref: verseCardTarget.ref, onLayout: verseCardTarget.onLayout }
+                : {};
+              return (
+              <View key={annotation.id} {...cardTargetProps}>
               <AnnotationCard
-                key={annotation.id}
                 annotation={annotation}
                 verseRange={verseRange}
                 verses={verses}
                 colors={colors}
                 categories={categories}
-                onOpen={() => router.push({
+                onOpen={() => {
+                  // During the tour, tapping the seeded verse hands over to
+                  // the return-to-Scripture scene instead of navigating.
+                  if (isGuided && guidePhase === 'favVerse' && isGuideVerseCard) {
+                    onGuidedAdvance?.();
+                    return;
+                  }
+                  router.push({
                   pathname: '/scripture-reader',
                   params: {
                     bookId: String(annotation.bookId),
                     chapter: String(annotation.chapter),
                     verse: String(verses[0] ?? annotation.verse),
                   },
-                })}
+                  });
+                }}
                 onEdit={annotation.kind === 'comment' ? () => router.push({
                   pathname: '/scripture-reader',
                   params: {
@@ -341,7 +482,9 @@ export default function MyFavoritesView() {
                 }) : undefined}
                 onDelete={() => handleDeletePress(annotation, colors)}
               />
-            ))}
+              </View>
+              );
+            })}
           </View>
         )}
       </ScrollView>
@@ -359,7 +502,12 @@ export default function MyFavoritesView() {
       <CategoryEditorModal
         visible={colorEditorOpen}
         categories={categories}
-        onClose={() => setColorEditorOpen(false)}
+        onClose={() => {
+          setColorEditorOpen(false);
+          if (isGuided && guidePhase === 'favEditor') {
+            patchSession({ phase: 'favVerse' });
+          }
+        }}
         onSaveCategory={updateCategory}
       />
     </View>

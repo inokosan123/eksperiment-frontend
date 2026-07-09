@@ -29,6 +29,7 @@ import { C, F } from '@/constants/tokens';
 import { RichTextEditor, RichToolbar, RichTextEditorRef, FormatState } from '@/components/shared/RichTextEditor';
 import { ScriptureBibleNote, useScripture } from '@/components/scripture/ScriptureContext';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 
 
 const BG = '#F5F3EE';
@@ -128,12 +129,34 @@ function tabMatches(book: BibleBook, tab: BibleTab) {
   return book.section === 'ot' && book.id !== PSALMS_ID;
 }
 
-export default function BibleNotesView() {
+const BIBLE_NOTES_GUIDE_TARGETS = {
+  tabs: 'bible-notes.tabs',
+  search: 'bible-notes.search',
+} as const;
+
+export default function BibleNotesView({
+  guided = false,
+  initialBookId,
+  initialChapter,
+  onGuidedComplete,
+}: {
+  guided?: boolean;
+  initialBookId?: number;
+  initialChapter?: number;
+  onGuidedComplete?: () => void;
+} = {}) {
   const router = useRouter();
   const params = useLocalSearchParams<{ bookId?: string; chapter?: string; open?: string }>();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { bibleNotes, saveBibleNote, deleteBibleNote } = useScripture();
+
+  const { session, patchSession, setPresentation } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'riseBibleHighlight';
+  const guidePhase = isGuided ? session.phase : '';
+  const tabsTarget = useGuideTarget(BIBLE_NOTES_GUIDE_TARGETS.tabs, isGuided);
+  const searchTarget = useGuideTarget(BIBLE_NOTES_GUIDE_TARGETS.search, isGuided);
+  const guideEntryOpenedRef = useRef(false);
 
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<BibleTab>('nt');
@@ -217,6 +240,80 @@ export default function BibleNotesView() {
     setApplication(existing?.application ?? '');
   };
 
+  // ─── Guided Bible tour ─────────────────────────────────────────────────────
+  // The tour arrives here straight from the reader's notebook icon: open the
+  // chapter's note once (a full-screen modal — the overlay steps aside), and
+  // when the user leaves it, walk the shelf: tabs, then search, then close.
+  useEffect(() => {
+    if (!isGuided || !initialBookId || guideEntryOpenedRef.current) return;
+    if (guidePhase !== 'noteEntry') return;
+    guideEntryOpenedRef.current = true;
+    const book = BOOKS.find(item => item.id === initialBookId);
+    if (!book) return;
+    setActiveTab(book.id === PSALMS_ID ? 'psalms' : book.section === 'nt' ? 'nt' : 'ot');
+    setExpandedBookId(book.id);
+    openChapter(book, initialChapter ?? 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guidePhase, initialBookId, initialChapter, isGuided]);
+
+  const handleGuidedEditorClosed = () => {
+    if (isGuided && guidePhase === 'noteEntry') {
+      patchSession({ phase: 'notesTabs' });
+    }
+  };
+
+  useEffect(() => {
+    if (!isGuided) return;
+
+    if (guidePhase === 'noteEntry') {
+      // Full-screen editor modal owns the stage.
+      setPresentation(null);
+      return;
+    }
+    if (guidePhase === 'notesTabs') {
+      setPresentation({
+        key: 'bible-notes-tabs',
+        targetId: BIBLE_NOTES_GUIDE_TARGETS.tabs,
+        cutoutPadding: 7,
+        placement: 'below',
+        allowTargetInteraction: false,
+        eyebrow: 'BIBLE NOTES',
+        message: 'Every note is filed where it belongs — the New Testament, the Psalter, the Old.',
+        highlights: ['filed where it belongs'],
+        ctaLabel: 'Continue',
+        onCta: () => patchSession({ phase: 'notesSearch' }),
+      });
+      return;
+    }
+    if (guidePhase === 'notesSearch') {
+      setPresentation({
+        key: 'bible-notes-search',
+        targetId: BIBLE_NOTES_GUIDE_TARGETS.search,
+        cutoutPadding: 7,
+        placement: 'below',
+        allowTargetInteraction: false,
+        eyebrow: 'BIBLE NOTES',
+        message: 'And when you need a thought back — search carries you straight to it.',
+        highlights: ['search'],
+        ctaLabel: 'Continue',
+        onCta: () => patchSession({ phase: 'notesDone' }),
+      });
+      return;
+    }
+    if (guidePhase === 'notesDone') {
+      setPresentation({
+        key: 'bible-notes-done',
+        placement: 'center',
+        celebrate: true,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'The Scripture is yours to mark now.\n\nEvery highlight, thought, and lesson will be waiting for you.',
+        highlights: ['yours to mark'],
+        ctaLabel: 'Continue',
+        onCta: onGuidedComplete,
+      });
+    }
+  }, [guidePhase, isGuided, onGuidedComplete, patchSession, setPresentation]);
+
   const saveChapter = async () => {
     if (!activeChapter) return;
     const cleanObservations = observations.trim();
@@ -224,12 +321,14 @@ export default function BibleNotesView() {
     const cleanApplication = application.trim();
     if (!cleanObservations && !cleanLessons && !cleanApplication) {
       setActiveChapter(null);
+      handleGuidedEditorClosed();
       return;
     }
 
     await saveBibleNote(activeChapter.book.id, activeChapter.chapter, cleanObservations, cleanLessons, cleanApplication);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setActiveChapter(null);
+    handleGuidedEditorClosed();
   };
 
   const confirmDelete = async () => {
@@ -242,9 +341,9 @@ export default function BibleNotesView() {
 
   return (
     <View style={s.screen}>
-      <ScreenTitleBar title="BIBLE NOTES" showBack bg={BG} />
+      <ScreenTitleBar title="BIBLE NOTES" showBack={!isGuided} bg={BG} />
 
-      <View style={s.searchWrap}>
+      <View {...searchTarget} style={s.searchWrap}>
         <View style={s.searchBox}>
           <Search s={15} c="#D1D5DB" />
           <TextInput
@@ -262,7 +361,7 @@ export default function BibleNotesView() {
         </View>
       </View>
 
-      <View style={s.tabsWrap}>
+      <View ref={tabsTarget.ref} onLayout={tabsTarget.onLayout} style={s.tabsWrap}>
         <View style={s.tabs} onLayout={event => setTabsWidth(event.nativeEvent.layout.width)}>
           {/* Animated sliding pill */}
           <Reanimated.View
@@ -356,6 +455,10 @@ export default function BibleNotesView() {
         onApplication={setApplication}
         onClose={() => {
           setActiveChapter(null);
+          if (isGuided) {
+            handleGuidedEditorClosed();
+            return;
+          }
           if (openedFromDeepLinkRef.current) {
             openedFromDeepLinkRef.current = false;
             router.back();

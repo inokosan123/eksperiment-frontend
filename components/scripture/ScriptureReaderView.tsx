@@ -43,11 +43,33 @@ import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { CategoryChipPicker, CategoryEditorModal, CategoryEditorPanel } from './CategoryColorTools';
 import { BibleVerse, ScriptureAnnotation, useScripture } from './ScriptureContext';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
+import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
 
 
 const BG = '#FCFCFC';
 const GOLD = '#C5A059';
 const ROSE = '#BE123C';
+
+const SCRIPTURE_GUIDE_TARGETS = {
+  verseSlogan: 'scripture.verse-slogan',
+  verseSeed: 'scripture.verse-seed',
+  versePractice: 'scripture.verse-practice',
+  annotateFab: 'scripture.annotate-fab',
+  sheetColors: 'scripture.sheet-colors',
+  sheetHighlight: 'scripture.sheet-highlight',
+  noteIcon: 'scripture.note-icon',
+} as const;
+
+// The onboarding Bible tour is anchored to fixed passages: the slogan verse
+// (Ephesians 5:14, pre-commented), the seeded highlight two verses below,
+// and the verse the user marks themselves.
+const GUIDE_VERSE_SLOGAN = 14;
+const GUIDE_VERSE_SEED = 16;
+const GUIDE_VERSE_PRACTICE = 17;
+const GUIDE_SELECTION_PHASES = new Set(['openTools', 'pickColor', 'doHighlight']);
+
+type ScriptureGuideEvent = 'sceneDone' | 'openNotes';
 
 type ScriptureReaderViewProps = {
   bookId?: number;
@@ -61,6 +83,8 @@ type ScriptureReaderViewProps = {
   onNextChapter?: () => void;
   bottomDock?: React.ReactNode;
   bottomDockHeight?: number;
+  guided?: boolean;
+  onGuidedAdvance?: (event: ScriptureGuideEvent) => void;
 };
 
 export default function ScriptureReaderView({
@@ -75,6 +99,8 @@ export default function ScriptureReaderView({
   onNextChapter,
   bottomDock,
   bottomDockHeight = 155,
+  guided = false,
+  onGuidedAdvance,
 }: ScriptureReaderViewProps = {}) {
   const router = useRouter();
   const params = useLocalSearchParams<{ bookId?: string; chapter?: string; verse?: string; lang?: ScriptureLanguage; editCommentId?: string }>();
@@ -116,6 +142,17 @@ export default function ScriptureReaderView({
   const scrollRef = useRef<ScrollView>(null);
   const verseLayoutYRef = useRef<Record<number, number>>({});
   const handledInitialScrollKeyRef = useRef<string | null>(null);
+
+  const { session, patchSession, setPresentation } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'riseBibleHighlight';
+  const guidePhase = isGuided ? session.phase : '';
+  const sloganVerseTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.verseSlogan, isGuided);
+  const seedVerseTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.verseSeed, isGuided);
+  const practiceVerseTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.versePractice, isGuided);
+  const annotateFabTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.annotateFab, isGuided);
+  const sheetColorsTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.sheetColors, isGuided);
+  const sheetHighlightTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.sheetHighlight, isGuided);
+  const noteIconTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.noteIcon, isGuided);
 
   const currentBook = getBibleBook(bookId) ?? BIBLE_BOOKS[41];
   const currentAnnotations = useMemo(
@@ -229,7 +266,12 @@ export default function ScriptureReaderView({
     setCommentDraft('');
     setCommentMode('add');
     setEditCommentTarget(null);
-  }, []);
+    // If the tour is mid-lesson and the selection is abandoned, fall back to
+    // the long-press step so the guide always points at something real.
+    if (isGuided && GUIDE_SELECTION_PHASES.has(guidePhase)) {
+      patchSession({ phase: 'versePractice' });
+    }
+  }, [guidePhase, isGuided, patchSession]);
 
   useEffect(() => {
     if (typeof controlledBookId !== 'number' && typeof controlledChapter !== 'number') return;
@@ -248,6 +290,9 @@ export default function ScriptureReaderView({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedVerseNumbers([verse.verse]);
     setActionSheetOpen(false);
+    if (isGuided && guidePhase === 'versePractice') {
+      patchSession({ phase: 'openTools' });
+    }
   };
 
   const toggleSelection = (verse: BibleVerse) => {
@@ -275,6 +320,11 @@ export default function ScriptureReaderView({
       verse: verse.verse,
       text: joinedText,
     })));
+    // Advance before clearSelection so the abandoned-selection fallback in
+    // clearSelection sees a phase outside the lesson set.
+    if (isGuided && guidePhase === 'doHighlight') {
+      patchSession({ phase: 'markMade' });
+    }
     clearSelection();
   };
 
@@ -458,6 +508,12 @@ export default function ScriptureReaderView({
   };
 
   const openBibleNote = () => {
+    // During the tour, opening the chapter note IS the lesson — hand over to
+    // the notes scene instead of navigating away from onboarding.
+    if (isGuided && guidePhase === 'openNote') {
+      onGuidedAdvance?.('openNotes');
+      return;
+    }
     router.push({
       pathname: '/bible-notes',
       params: { bookId: String(bookId), chapter: String(chapter), open: '1' },
@@ -471,6 +527,169 @@ export default function ScriptureReaderView({
     }
     router.back();
   };
+
+  // ─── Guided Bible tour presentations ───────────────────────────────────────
+  useEffect(() => {
+    if (!isGuided) return;
+
+    if (guidePhase === 'readerIntro') {
+      setPresentation({
+        key: 'bible-reader-intro',
+        placement: 'bottom',
+        lightScrim: true,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'This is the Holy Scripture. The page you are standing on already carries two marks.',
+        highlights: ['two marks'],
+        ctaLabel: 'Show me',
+        onCta: () => patchSession({ phase: 'verseComment' }),
+      });
+      return;
+    }
+    if (guidePhase === 'verseComment') {
+      setPresentation({
+        key: 'bible-verse-comment',
+        targetId: SCRIPTURE_GUIDE_TARGETS.verseSlogan,
+        cutoutPadding: 6,
+        placement: 'below',
+        allowTargetInteraction: false,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'A commented verse. The star keeps a thought beside the words — this one is our welcome to you.',
+        highlights: ['star'],
+        ctaLabel: 'Continue',
+        onCta: () => patchSession({ phase: 'verseHighlight' }),
+      });
+      return;
+    }
+    if (guidePhase === 'verseHighlight') {
+      setPresentation({
+        key: 'bible-verse-highlight',
+        targetId: SCRIPTURE_GUIDE_TARGETS.verseSeed,
+        cutoutPadding: 6,
+        placement: 'below',
+        allowTargetInteraction: false,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'A highlighted verse — underlined in a color. And every color carries a meaning.',
+        highlights: ['color'],
+        ctaLabel: 'Continue',
+        onCta: () => patchSession({ phase: 'versePractice' }),
+      });
+      return;
+    }
+    if (guidePhase === 'versePractice') {
+      setPresentation({
+        key: 'bible-verse-practice',
+        targetId: SCRIPTURE_GUIDE_TARGETS.versePractice,
+        cutoutPadding: 6,
+        placement: 'below',
+        allowTargetInteraction: true,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'Now it is your turn.',
+        action: 'Press and hold the verse',
+        hint: 'long-press',
+      });
+      return;
+    }
+    if (guidePhase === 'openTools') {
+      setPresentation({
+        key: 'bible-open-tools',
+        targetId: SCRIPTURE_GUIDE_TARGETS.annotateFab,
+        cutoutPadding: 8,
+        placement: 'below',
+        allowTargetInteraction: true,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'The verse is selected and waiting.',
+        action: 'Open your annotation tools',
+        hint: 'tap',
+        hintAnchor: 'left',
+      });
+      return;
+    }
+    if (guidePhase === 'pickColor') {
+      setPresentation({
+        key: 'bible-pick-color',
+        targetId: SCRIPTURE_GUIDE_TARGETS.sheetColors,
+        cutoutPadding: 7,
+        placement: 'above',
+        allowTargetInteraction: true,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'Colors are the heart of this study. Each carries a name and a meaning — and soon you will make them your own.',
+        highlights: ['name and a meaning'],
+        action: 'Choose the first color',
+        hint: 'tap',
+        hintAnchor: 'left',
+      });
+      return;
+    }
+    if (guidePhase === 'doHighlight') {
+      setPresentation({
+        key: 'bible-do-highlight',
+        targetId: SCRIPTURE_GUIDE_TARGETS.sheetHighlight,
+        cutoutPadding: 7,
+        placement: 'above',
+        allowTargetInteraction: true,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'This underlines the verse in your chosen color.',
+        action: 'Press Highlight',
+        hint: 'tap',
+        hintAnchor: 'left',
+      });
+      return;
+    }
+    if (guidePhase === 'markMade') {
+      setPresentation({
+        key: 'bible-mark-made',
+        placement: 'bottom',
+        lightScrim: true,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'There it is — your first mark, alive on the page.',
+        highlights: ['first mark'],
+        ctaLabel: 'See where it lives',
+        onCta: () => onGuidedAdvance?.('sceneDone'),
+      });
+      return;
+    }
+    if (guidePhase === 'returnIntro') {
+      setPresentation({
+        key: 'bible-return-intro',
+        placement: 'bottom',
+        lightScrim: true,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'One tap on a saved verse — and Scripture opens exactly where it lives.',
+        highlights: ['exactly where it lives'],
+        ctaLabel: 'Continue',
+        onCta: () => patchSession({ phase: 'openNote' }),
+      });
+      return;
+    }
+    if (guidePhase === 'openNote') {
+      setPresentation({
+        key: 'bible-open-note',
+        targetId: SCRIPTURE_GUIDE_TARGETS.noteIcon,
+        cutoutPadding: 8,
+        placement: 'below',
+        allowTargetInteraction: true,
+        eyebrow: 'BIBLE NOTES',
+        message: 'Every chapter can hold a study note — what you observed, what it taught you, how you will live it. Write freely; nothing is lost.',
+        highlights: ['study note'],
+        action: 'Open this chapter’s note — top right',
+        hint: 'tap',
+      });
+    }
+  }, [guidePhase, isGuided, onGuidedAdvance, patchSession, setPresentation]);
+
+  // Re-measure the in-sheet targets once the bottom sheet has settled.
+  useEffect(() => {
+    if (!isGuided) return undefined;
+    const timer = setTimeout(() => {
+      if (guidePhase === 'pickColor' || guidePhase === 'doHighlight') {
+        sheetColorsTarget.measure();
+        sheetHighlightTarget.measure();
+        return;
+      }
+      if (guidePhase === 'openTools') annotateFabTarget.measure();
+    }, guidePhase === 'pickColor' ? 380 : 220);
+    return () => clearTimeout(timer);
+  }, [annotateFabTarget, guidePhase, isGuided, sheetColorsTarget, sheetHighlightTarget]);
 
   const canNavigatePrevChapter = canGoPrevChapter ?? chapter > 1;
   const canNavigateNextChapter = canGoNextChapter ?? chapter < currentBook.chapters;
@@ -523,6 +742,8 @@ export default function ScriptureReaderView({
         onBack={handleBack}
         onBibleNote={openBibleNote}
         onFavorites={() => router.push('/favorites')}
+        showBack={!isGuided}
+        noteTargetProps={isGuided ? { ref: noteIconTarget.ref, onLayout: noteIconTarget.onLayout } : undefined}
       />
 
       <ChapterBar
@@ -557,24 +778,39 @@ export default function ScriptureReaderView({
             </View>
           ) : (
             <View style={s.verseList}>
-              {verses.map(verse => (
-                <View
-                  key={verse.verse}
-                  onLayout={event => handleVerseLayout(verse.verse, event.nativeEvent.layout.y)}
-                >
-                  <VerseRow
-                    verse={verse}
-                    selected={selectedVerseSet.has(verse.verse)}
-                    selectionActive={selectionActive}
-                    annotations={currentAnnotations.filter(annotation => annotation.verse === verse.verse)}
-                    categories={categories}
-                    autoFocus={showFocus && initialVerse === verse.verse && chapter === initialChapter}
-                    onPress={() => toggleSelection(verse)}
-                    onLongPress={() => startSelection(verse)}
-                    onOpenComment={openCommentPreview}
-                  />
-                </View>
-              ))}
+              {verses.map(verse => {
+                const verseGuideTarget = !isGuided
+                  ? null
+                  : verse.verse === GUIDE_VERSE_SLOGAN
+                    ? sloganVerseTarget
+                    : verse.verse === GUIDE_VERSE_SEED
+                      ? seedVerseTarget
+                      : verse.verse === GUIDE_VERSE_PRACTICE
+                        ? practiceVerseTarget
+                        : null;
+                return (
+                  <View
+                    key={verse.verse}
+                    ref={verseGuideTarget?.ref}
+                    onLayout={event => {
+                      handleVerseLayout(verse.verse, event.nativeEvent.layout.y);
+                      verseGuideTarget?.onLayout(event);
+                    }}
+                  >
+                    <VerseRow
+                      verse={verse}
+                      selected={selectedVerseSet.has(verse.verse)}
+                      selectionActive={selectionActive}
+                      annotations={currentAnnotations.filter(annotation => annotation.verse === verse.verse)}
+                      categories={categories}
+                      autoFocus={showFocus && initialVerse === verse.verse && chapter === initialChapter}
+                      onPress={() => toggleSelection(verse)}
+                      onLongPress={() => startSelection(verse)}
+                      onOpenComment={openCommentPreview}
+                    />
+                  </View>
+                );
+              })}
             </View>
           )}
         </Reanimated.View>
@@ -591,16 +827,36 @@ export default function ScriptureReaderView({
         selectedColor={selectedColor}
         selectedCount={selectedVerses.length}
         commentDisabled={hasCommentOverlap}
-        onOpenSheet={() => setActionSheetOpen(true)}
+        onOpenSheet={() => {
+          setActionSheetOpen(true);
+          if (isGuided && guidePhase === 'openTools') {
+            patchSession({ phase: 'pickColor' });
+          }
+        }}
         onClose={clearSelection}
-        onCloseSheet={() => setActionSheetOpen(false)}
-        onSelectColor={setSelectedColor}
+        onCloseSheet={() => {
+          setActionSheetOpen(false);
+          // Dismissing the sheet mid-lesson returns the guide to the tools step.
+          if (isGuided && (guidePhase === 'pickColor' || guidePhase === 'doHighlight')) {
+            patchSession({ phase: 'openTools' });
+          }
+        }}
+        onSelectColor={color => {
+          setSelectedColor(color);
+          if (isGuided && guidePhase === 'pickColor') {
+            patchSession({ phase: 'doHighlight' });
+          }
+        }}
         onHighlight={applyHighlight}
         onComment={openComment}
         onEditColors={() => setColorEditorOpen(true)}
         colorEditorOpen={colorEditorOpen}
         onCloseColorEditor={() => setColorEditorOpen(false)}
         onSaveCategory={updateCategory}
+        fabTargetProps={isGuided ? { ref: annotateFabTarget.ref, onLayout: annotateFabTarget.onLayout } : undefined}
+        colorsTargetProps={isGuided ? { ref: sheetColorsTarget.ref, onLayout: sheetColorsTarget.onLayout } : undefined}
+        highlightTargetProps={isGuided ? { ref: sheetHighlightTarget.ref, onLayout: sheetHighlightTarget.onLayout } : undefined}
+        guidedOverlay={isGuided ? <GuidedOverlayHost /> : undefined}
       />
 
       <CommentModal
@@ -640,23 +896,25 @@ export default function ScriptureReaderView({
 }
 
 function Header({
-  title, onBack, onBibleNote, onFavorites,
+  title, onBack, onBibleNote, onFavorites, showBack = true, noteTargetProps,
 }: {
   title: string;
   onBack: () => void;
   onBibleNote: () => void;
   onFavorites: () => void;
+  showBack?: boolean;
+  noteTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
 }) {
   return (
     <ScreenTitleBar
       title={title.toUpperCase()}
-      showBack
+      showBack={showBack}
       bg={BG}
       onBackOverride={onBack}
       sideWidth={88}
       rightElement={(
         <View style={s.headerActions}>
-          <TouchableOpacity onPress={onBibleNote} style={s.headerIconBtn} activeOpacity={0.7}>
+          <TouchableOpacity {...noteTargetProps} onPress={onBibleNote} style={s.headerIconBtn} activeOpacity={0.7}>
             <Notebook s={20} c="#9CA3AF" />
           </TouchableOpacity>
           <TouchableOpacity onPress={onFavorites} style={s.headerIconBtn} activeOpacity={0.7}>
@@ -900,6 +1158,10 @@ function SelectionTools({
   colorEditorOpen,
   onCloseColorEditor,
   onSaveCategory,
+  fabTargetProps,
+  colorsTargetProps,
+  highlightTargetProps,
+  guidedOverlay,
 }: {
   visible: boolean;
   sheetOpen: boolean;
@@ -919,6 +1181,10 @@ function SelectionTools({
   colorEditorOpen: boolean;
   onCloseColorEditor: () => void;
   onSaveCategory: (color: HighlightColor, label: string) => Promise<void> | void;
+  fabTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
+  colorsTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
+  highlightTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
+  guidedOverlay?: React.ReactNode;
 }) {
   if (!visible) return null;
 
@@ -933,6 +1199,7 @@ function SelectionTools({
         style={[s.pencilFabWrap, { top: fabTop }]}
       >
         <TouchableOpacity
+          {...fabTargetProps}
           onPress={onOpenSheet}
           activeOpacity={0.9}
           style={s.pencilFab}
@@ -956,22 +1223,27 @@ function SelectionTools({
       overlayStyle={s.selectionOverlay}
       backdropOpacity={0.08}
       sheetStyle={[s.selectionSheet, { paddingBottom: Math.max(sheetBottom, 16) + 12 }]}
-      overlayChildren={colorEditorOpen ? (
-        <View style={s.selectionEditorLayer}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={onCloseColorEditor} />
-          <CategoryEditorPanel
-            categories={categories}
-            onClose={onCloseColorEditor}
-            onSaveCategory={onSaveCategory}
-            style={s.selectionEditorCard}
-          />
-        </View>
-      ) : null}
+      overlayChildren={(
+        <>
+          {colorEditorOpen ? (
+            <View style={s.selectionEditorLayer}>
+              <Pressable style={StyleSheet.absoluteFill} onPress={onCloseColorEditor} />
+              <CategoryEditorPanel
+                categories={categories}
+                onClose={onCloseColorEditor}
+                onSaveCategory={onSaveCategory}
+                style={s.selectionEditorCard}
+              />
+            </View>
+          ) : null}
+          {guidedOverlay}
+        </>
+      )}
     >
           <View style={s.actionHandle} />
 
           <View style={s.selectionTop}>
-            <View style={s.selectionChipWrap}>
+            <View {...colorsTargetProps} style={s.selectionChipWrap}>
               <CategoryChipPicker
                 categories={categories}
                 selectedColor={selectedColor}
@@ -989,6 +1261,7 @@ function SelectionTools({
           <View style={s.sheetDivider} />
 
           <TouchableOpacity
+            {...highlightTargetProps}
             onPress={onHighlight}
             activeOpacity={0.88}
             style={[
