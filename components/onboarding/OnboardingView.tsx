@@ -11166,6 +11166,20 @@ function ToolsShowcaseSlide({
                     onComplete={handleTypingDone}
                   />
                 </View>
+              </Reanimated.View>
+            ) : null}
+            {phase !== 'rain' ? (
+              // Pinned to the card's bottom edge: the closing ornament holds
+              // its place while the typed subtitle grows above it, instead of
+              // being pushed around by every wrapped line.
+              <Reanimated.View
+                pointerEvents="none"
+                entering={FadeIn.delay(80).duration(520).easing(Easing.bezier(0.22, 1, 0.36, 1)).withInitialValues({
+                  opacity: 0,
+                  transform: [{ translateY: 8 }],
+                })}
+                style={s.toolsBottomOrnamentPin}
+              >
                 <ToolsOrnamentDraw progress={revealSettle} />
               </Reanimated.View>
             ) : null}
@@ -25555,6 +25569,13 @@ const s = StyleSheet.create({
     borderBottomWidth: 1.4,
     borderRightWidth: 1.4,
     borderBottomRightRadius: 8,
+  },
+  toolsBottomOrnamentPin: {
+    position: 'absolute',
+    bottom: 18,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
   },
   toolsMessageOrnament: {
     flexDirection: 'row',
