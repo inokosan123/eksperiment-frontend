@@ -11121,9 +11121,21 @@ function ToolsShowcaseSlide({
               pointerEvents="none"
               style={s.toolsCardFace}
             />
+            <LinearGradient
+              colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.07)']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              pointerEvents="none"
+              style={s.toolsCardFloorWash}
+            />
             <View pointerEvents="none" style={s.toolsCardTopSheen} />
             <View pointerEvents="none" style={s.toolsCardBottomEdge} />
             <View pointerEvents="none" style={s.toolsMessageBoxFrame} />
+            <View pointerEvents="none" style={s.toolsCardFrameInner} />
+            <View pointerEvents="none" style={[s.toolsCardCorner, s.toolsCardCornerTL]} />
+            <View pointerEvents="none" style={[s.toolsCardCorner, s.toolsCardCornerTR]} />
+            <View pointerEvents="none" style={[s.toolsCardCorner, s.toolsCardCornerBL]} />
+            <View pointerEvents="none" style={[s.toolsCardCorner, s.toolsCardCornerBR]} />
             <ToolsOrnamentDraw progress={cardSettle} />
             <Text
               style={[s.toolsTitle, compact && s.toolsTitleCompact]}
@@ -25492,6 +25504,57 @@ const s = StyleSheet.create({
     borderRadius: 23,
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.20)',
+  },
+  // The engraved-plate details of the showcase square: a whisper of a second
+  // frame, gold corner flourishes, and a warm floor glow. Decoration only —
+  // the morph into the chat bubble is untouched.
+  toolsCardFrameInner: {
+    ...StyleSheet.absoluteFillObject,
+    margin: 11,
+    borderRadius: 19,
+    borderWidth: 0.8,
+    borderColor: 'rgba(197,160,89,0.12)',
+  },
+  toolsCardFloorWash: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '46%',
+  },
+  toolsCardCorner: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    borderColor: 'rgba(197,160,89,0.55)',
+  },
+  toolsCardCornerTL: {
+    top: 13,
+    left: 13,
+    borderTopWidth: 1.4,
+    borderLeftWidth: 1.4,
+    borderTopLeftRadius: 8,
+  },
+  toolsCardCornerTR: {
+    top: 13,
+    right: 13,
+    borderTopWidth: 1.4,
+    borderRightWidth: 1.4,
+    borderTopRightRadius: 8,
+  },
+  toolsCardCornerBL: {
+    bottom: 13,
+    left: 13,
+    borderBottomWidth: 1.4,
+    borderLeftWidth: 1.4,
+    borderBottomLeftRadius: 8,
+  },
+  toolsCardCornerBR: {
+    bottom: 13,
+    right: 13,
+    borderBottomWidth: 1.4,
+    borderRightWidth: 1.4,
+    borderBottomRightRadius: 8,
   },
   toolsMessageOrnament: {
     flexDirection: 'row',
