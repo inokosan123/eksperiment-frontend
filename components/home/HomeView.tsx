@@ -1548,6 +1548,7 @@ export default function HomeView({
           highlights: ['pattern'],
           action: guidedFirstCard ? 'Press and hold the task' : undefined,
           hint: guidedFirstCard ? 'long-press' : undefined,
+          hintAnchor: 'right',
           ctaLabel: guidedFirstCard ? undefined : 'Continue',
           onCta: guidedFirstCard ? undefined : () => patchSession({ phase: 'monthlyGoals' }),
         });

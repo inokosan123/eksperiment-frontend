@@ -828,6 +828,7 @@ export default function BigEventsView({
         highlights: ['countdown'],
         action: 'Tap the date row to pick a day',
         hint: 'tap',
+        hintAnchor: 'left',
       });
       return;
     }
@@ -843,7 +844,6 @@ export default function BigEventsView({
         message: 'Choose an icon you will recognize at a glance.',
         highlights: ['at a glance'],
         action: 'Tap an icon to select it',
-        hint: 'tap',
       });
       return;
     }
@@ -858,6 +858,7 @@ export default function BigEventsView({
         message: 'Everything is ready.',
         action: 'Save your first Big Event',
         hint: 'tap',
+        hintAnchor: 'left',
       });
       return;
     }

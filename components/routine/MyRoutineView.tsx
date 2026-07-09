@@ -1143,6 +1143,7 @@ export default function MyRoutineView({
           highlights: ['tasks of the day'],
           action: 'Tap the task to open its editor',
           hint: 'tap',
+          hintAnchor: 'right',
         });
       });
       return;

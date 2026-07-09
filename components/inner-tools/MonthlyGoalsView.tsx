@@ -202,7 +202,6 @@ export default function MonthlyGoalsView({
         message: 'Give your month a direction. Goals do not replace daily discipline — they give it somewhere to go.',
         highlights: ['direction'],
         action: 'Tap the month you want to begin with',
-        hint: 'tap',
       });
       return;
     }

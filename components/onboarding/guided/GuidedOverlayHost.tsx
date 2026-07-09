@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
   Easing,
   Extrapolation,
@@ -10,6 +11,7 @@ import Reanimated, {
   ZoomIn,
   cancelAnimation,
   interpolate,
+  useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -19,8 +21,9 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import { CheckSmall, ChevronLeft, ChevronRight } from '@/components/icons/Icons';
+import { ChevronLeft, ChevronRight } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { useGuidedOverlayState, useGuidedSetup } from './GuidedSetupContext';
 import type { GuidedGestureHint } from './types';
@@ -195,7 +198,7 @@ function GestureHintLayer({
   height,
 }: {
   hint: GuidedGestureHint;
-  anchor?: 'center' | 'left' | 'right';
+  anchor?: 'center' | 'left' | 'right' | 'corner';
   x: SharedValue<number>;
   y: SharedValue<number>;
   width: SharedValue<number>;
@@ -208,6 +211,15 @@ function GestureHintLayer({
     height: height.value,
   }));
 
+  const graphic = (
+    <>
+      {hint === 'tap' && <TapHintGraphic />}
+      {hint === 'long-press' && <LongPressHintGraphic />}
+      {hint === 'swipe-right' && <SwipeHintGraphic direction={1} />}
+      {hint === 'swipe-left' && <SwipeHintGraphic direction={-1} />}
+    </>
+  );
+
   return (
     <Reanimated.View
       pointerEvents="none"
@@ -218,10 +230,14 @@ function GestureHintLayer({
         rectStyle,
       ]}
     >
-      {hint === 'tap' && <TapHintGraphic />}
-      {hint === 'long-press' && <LongPressHintGraphic />}
-      {hint === 'swipe-right' && <SwipeHintGraphic direction={1} />}
-      {hint === 'swipe-left' && <SwipeHintGraphic direction={-1} />}
+      {anchor === 'corner' ? (
+        // Small targets (a plus, a check circle): the pulse kisses the
+        // bottom-left corner instead of sitting on top of the glyph, so the
+        // button itself stays fully readable.
+        <View style={o.hintCornerBox}>{graphic}</View>
+      ) : (
+        graphic
+      )}
     </Reanimated.View>
   );
 }
@@ -312,65 +328,128 @@ function ActionPulseDot() {
 }
 
 // ─── Celebration ─────────────────────────────────────────────────────────────
+// A struck gold medal: expanding waves, a hand-drawn check stroke, and a
+// scatter of gold diamonds — the ornament language of the rest of the app.
 
-const SPARK_COUNT = 8;
-const SPARKS = Array.from({ length: SPARK_COUNT }, (_, index) => {
-  const angle = (Math.PI * 2 * index) / SPARK_COUNT - Math.PI / 2;
-  return { dx: Math.cos(angle), dy: Math.sin(angle) };
+const AnimatedPath = Reanimated.createAnimatedComponent(Path);
+const CHECK_PATH = 'M9 22 L18 31 L34 12';
+const CHECK_PATH_LENGTH = 37;
+
+const SPARK_JITTER = [4, -7, 3, -3, 6, -5, 2, -6, 5, -2];
+const SPARKS = Array.from({ length: 10 }, (_, index) => {
+  const angle = (Math.PI * 2 * index) / 10 - Math.PI / 2 + (SPARK_JITTER[index] * Math.PI) / 180;
+  return {
+    dx: Math.cos(angle),
+    dy: Math.sin(angle),
+    far: index % 2 === 0 ? 68 : 52,
+    size: index % 2 === 0 ? 7 : 5,
+  };
 });
 
-function CelebrationSpark({ dx, dy, burst }: { dx: number; dy: number; burst: SharedValue<number> }) {
+function CelebrationSpark({
+  dx,
+  dy,
+  far,
+  size,
+  burst,
+}: {
+  dx: number;
+  dy: number;
+  far: number;
+  size: number;
+  burst: SharedValue<number>;
+}) {
   const sparkStyle = useAnimatedStyle(() => {
-    const radius = interpolate(burst.value, [0, 1], [10, 62], Extrapolation.CLAMP);
+    const radius = interpolate(burst.value, [0, 1], [12, far], Extrapolation.CLAMP);
     return {
-      opacity: interpolate(burst.value, [0, 0.12, 1], [0, 1, 0], Extrapolation.CLAMP),
+      opacity: interpolate(burst.value, [0, 0.14, 0.78, 1], [0, 1, 0.85, 0], Extrapolation.CLAMP),
       transform: [
         { translateX: dx * radius },
         { translateY: dy * radius },
-        { scale: interpolate(burst.value, [0, 1], [1, 0.3], Extrapolation.CLAMP) },
+        { rotate: '45deg' },
+        { scale: interpolate(burst.value, [0, 1], [1, 0.25], Extrapolation.CLAMP) },
       ],
     };
   });
-  return <Reanimated.View style={[o.successSpark, sparkStyle]} />;
+  return <Reanimated.View style={[o.successSpark, { width: size, height: size }, sparkStyle]} />;
 }
 
 function CelebrationBurst({ top }: { top: number }) {
   const burst = useSharedValue(0);
+  const draw = useSharedValue(0);
 
   useEffect(() => {
     burst.value = 0;
-    burst.value = withDelay(160, withTiming(1, { duration: 820, easing: Easing.out(Easing.cubic) }));
-    return () => cancelAnimation(burst);
-  }, [burst]);
+    draw.value = 0;
+    burst.value = withDelay(140, withTiming(1, { duration: 920, easing: Easing.out(Easing.cubic) }));
+    draw.value = withDelay(300, withTiming(1, { duration: 440, easing: Easing.bezier(0.3, 0, 0.2, 1) }));
+    return () => {
+      cancelAnimation(burst);
+      cancelAnimation(draw);
+    };
+  }, [burst, draw]);
 
-  const ringAStyle = useAnimatedStyle(() => {
-    const p = interpolate(burst.value, [0, 0.8], [0, 1], Extrapolation.CLAMP);
+  const checkProps = useAnimatedProps(() => ({
+    strokeDashoffset: CHECK_PATH_LENGTH * (1 - draw.value),
+  }));
+
+  const waveAStyle = useAnimatedStyle(() => {
+    const p = interpolate(burst.value, [0, 0.75], [0, 1], Extrapolation.CLAMP);
     return {
-      opacity: (1 - p) * 0.55,
-      transform: [{ scale: 0.55 + p * 1.5 }],
+      opacity: (1 - p) * 0.5,
+      transform: [{ scale: 0.6 + p * 1.55 }],
     };
   });
-  const ringBStyle = useAnimatedStyle(() => {
-    const p = interpolate(burst.value, [0.16, 1], [0, 1], Extrapolation.CLAMP);
+  const waveBStyle = useAnimatedStyle(() => {
+    const p = interpolate(burst.value, [0.18, 1], [0, 1], Extrapolation.CLAMP);
     return {
-      opacity: (1 - p) * 0.4,
-      transform: [{ scale: 0.55 + p * 1.5 }],
+      opacity: (1 - p) * 0.36,
+      transform: [{ scale: 0.6 + p * 1.55 }],
     };
   });
 
   return (
     <View pointerEvents="none" style={[o.successWrap, { top }]}>
-      <Reanimated.View style={[o.successRing, ringAStyle]} />
-      <Reanimated.View style={[o.successRing, ringBStyle]} />
+      <Reanimated.View style={[o.successWave, waveAStyle]} />
+      <Reanimated.View style={[o.successWave, waveBStyle]} />
       {SPARKS.map((spark, index) => (
-        <CelebrationSpark key={`spark-${index}`} dx={spark.dx} dy={spark.dy} burst={burst} />
+        <CelebrationSpark
+          key={`spark-${index}`}
+          dx={spark.dx}
+          dy={spark.dy}
+          far={spark.far}
+          size={spark.size}
+          burst={burst}
+        />
       ))}
-      <View style={o.successHalo} />
+      <Reanimated.View entering={FadeIn.delay(60).duration(420)} style={o.successHalo} />
       <Reanimated.View
-        entering={ZoomIn.delay(60).springify().damping(13).stiffness(150).mass(0.8)}
-        style={o.successMark}
+        entering={ZoomIn.delay(120).springify().damping(15).stiffness(170).mass(0.9)}
+        style={o.successOuterRing}
+      />
+      <Reanimated.View
+        entering={ZoomIn.delay(80).springify().damping(12).stiffness(185).mass(0.75)}
+        style={o.successMedal}
       >
-        <CheckSmall s={34} c="#FFFFFF" w={3.2} />
+        <LinearGradient
+          colors={['#EBCA82', '#C5A059', '#9E7A38']}
+          start={{ x: 0.2, y: 0 }}
+          end={{ x: 0.85, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={o.successMedalSheen} />
+        <Svg width={44} height={44} viewBox="0 0 44 44">
+          <AnimatedPath
+            d={CHECK_PATH}
+            stroke="#FFFFFF"
+            strokeWidth={5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+            strokeDasharray={`${CHECK_PATH_LENGTH}`}
+            animatedProps={checkProps}
+          />
+        </Svg>
       </Reanimated.View>
     </View>
   );
@@ -523,6 +602,22 @@ export function GuidedOverlayHost() {
   const hasCta = Boolean(presentation?.ctaLabel && presentation?.onCta);
   const celebrateTop = Math.max(insets.top + 76, screenHeight * 0.22);
 
+  // Small square-ish targets (a plus, a check circle) get the tap pulse on
+  // their bottom-left corner so the glyph itself stays fully visible; an
+  // explicit hintAnchor always wins.
+  const hintAnchor: 'center' | 'left' | 'right' | 'corner' = useMemo(() => {
+    if (presentation?.hintAnchor) return presentation.hintAnchor;
+    if (
+      presentation?.hint === 'tap' &&
+      target &&
+      target.width + padding * 2 < 100 &&
+      target.height + padding * 2 < 100
+    ) {
+      return 'corner';
+    }
+    return 'center';
+  }, [padding, presentation?.hint, presentation?.hintAnchor, target]);
+
   const bubbleStyle = useMemo(() => {
     if (presentation?.celebrate) {
       return { top: Math.max(celebrateTop + 168, screenHeight * 0.46) };
@@ -596,7 +691,7 @@ export function GuidedOverlayHost() {
             <GestureHintLayer
               key={`${presentation.key}-hint`}
               hint={presentation.hint}
-              anchor={presentation.hintAnchor}
+              anchor={hintAnchor}
               x={x}
               y={y}
               width={width}
@@ -668,20 +763,23 @@ export function GuidedOverlayHost() {
           entering={FadeInUp.delay(340).duration(430).easing(SOFT_EASE)}
           style={[o.ctaWrap, { bottom: insets.bottom + 20 }]}
         >
-          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={presentation.onCta} style={o.cta}>
-            <Text style={o.ctaText}>{presentation.ctaLabel}</Text>
-            <ChevronRight s={18} c="rgba(255,255,255,0.92)" w={2.5} />
-          </TouchableOpacity>
-          {presentation.secondaryCtaLabel && presentation.onSecondaryCta && (
-            <TouchableOpacity
-              activeOpacity={0.84}
-              haptic="light"
-              onPress={presentation.onSecondaryCta}
-              style={o.secondaryCta}
-            >
-              <Text style={o.secondaryCtaText}>{presentation.secondaryCtaLabel}</Text>
+          {/* Same frosted island the rest of onboarding wraps its buttons in. */}
+          <View style={o.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={presentation.onCta} style={o.cta}>
+              <Text style={o.ctaText}>{presentation.ctaLabel}</Text>
+              <ChevronRight s={19} c="rgba(255,255,255,0.92)" w={2.5} />
             </TouchableOpacity>
-          )}
+            {presentation.secondaryCtaLabel && presentation.onSecondaryCta && (
+              <TouchableOpacity
+                activeOpacity={0.84}
+                haptic="light"
+                onPress={presentation.onSecondaryCta}
+                style={o.secondaryCta}
+              >
+                <Text style={o.secondaryCtaText}>{presentation.secondaryCtaLabel}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </Reanimated.View>
       )}
     </View>
@@ -745,6 +843,11 @@ const o = StyleSheet.create({
   },
   hintLayerRight: {
     alignItems: 'flex-end',
+  },
+  hintCornerBox: {
+    position: 'absolute',
+    left: -36,
+    bottom: -36,
   },
   hintBox: {
     width: 76,
@@ -821,44 +924,57 @@ const o = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  successRing: {
+  successWave: {
     position: 'absolute',
-    width: 108,
-    height: 108,
-    borderRadius: 54,
+    width: 112,
+    height: 112,
+    borderRadius: 56,
     borderWidth: 1.5,
     borderColor: 'rgba(240,209,143,0.9)',
   },
   successSpark: {
     position: 'absolute',
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
+    borderRadius: 1.5,
     backgroundColor: '#E9C87E',
   },
   successHalo: {
     position: 'absolute',
-    width: 112,
-    height: 112,
-    borderRadius: 56,
-    backgroundColor: 'rgba(197,160,89,0.16)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,209,143,0.46)',
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    backgroundColor: 'rgba(197,160,89,0.13)',
   },
-  successMark: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
+  successOuterRing: {
+    position: 'absolute',
+    width: 106,
+    height: 106,
+    borderRadius: 53,
+    borderWidth: 1.2,
+    borderColor: 'rgba(240,209,143,0.6)',
+  },
+  successMedal: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: C.gold,
-    borderWidth: 5,
+    overflow: 'hidden',
+    borderWidth: 4,
     borderColor: '#FFF6DE',
     shadowColor: C.gold,
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.34,
-    shadowRadius: 20,
+    shadowOpacity: 0.38,
+    shadowRadius: 22,
     elevation: 8,
+  },
+  successMedalSheen: {
+    position: 'absolute',
+    top: 7,
+    left: 18,
+    right: 18,
+    height: 15,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.26)',
   },
 
   // Coach
@@ -1037,7 +1153,23 @@ const o = StyleSheet.create({
     position: 'absolute',
     left: 20,
     right: 20,
-    gap: 9,
+  },
+  ctaIsland: {
+    width: '100%',
+    maxWidth: 340,
+    alignSelf: 'center',
+    alignItems: 'stretch',
+    padding: 5,
+    gap: 5,
+    borderRadius: 23,
+    backgroundColor: 'rgba(255,255,255,0.76)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.54)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 4,
   },
   cta: {
     minHeight: 53,
@@ -1045,13 +1177,13 @@ const o = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     columnGap: 8,
-    borderRadius: 17,
+    borderRadius: 18,
     backgroundColor: '#15120F',
     borderWidth: 1,
     borderColor: 'rgba(25,23,20,0.96)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.16,
     shadowRadius: 22,
     elevation: 5,
   },
@@ -1062,17 +1194,17 @@ const o = StyleSheet.create({
     color: '#FFFFFF',
   },
   secondaryCta: {
-    minHeight: 50,
+    minHeight: 51,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
+    borderRadius: 18,
     backgroundColor: 'rgba(255,252,246,0.97)',
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.4)',
   },
   secondaryCtaText: {
     fontFamily: F.serifSemiBold,
-    fontSize: 15.5,
+    fontSize: 16,
     color: '#3E382F',
   },
 });
