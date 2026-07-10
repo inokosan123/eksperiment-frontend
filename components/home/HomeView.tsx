@@ -66,6 +66,7 @@ import type { PrayerTaskConfig, TaskDefinition, TaskDraft } from '@/components/t
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import ChallengeCompletionHomeModal from '@/components/challenges/ChallengeCompletionHomeModal';
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
+import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
 
 
 type HomeCard = {
@@ -83,6 +84,7 @@ const HOME_GUIDE_TARGETS = {
   bigEvents: 'home.big-events',
   tasks: 'home.tasks',
   firstTask: 'home.first-task',
+  analyticsClose: 'home.analytics-close',
   monthlyGoals: 'home.monthly-goals',
   myRoutine: 'home.my-routine',
 } as const;
@@ -778,6 +780,7 @@ export default function HomeView({
   const bigEventsTarget = useGuideTarget(HOME_GUIDE_TARGETS.bigEvents, isGuided);
   const tasksTarget = useGuideTarget(HOME_GUIDE_TARGETS.tasks, isGuided);
   const firstTaskTarget = useGuideTarget(HOME_GUIDE_TARGETS.firstTask, isGuided);
+  const analyticsCloseTarget = useGuideTarget(HOME_GUIDE_TARGETS.analyticsClose, isGuided);
   const monthlyGoalsTarget = useGuideTarget(HOME_GUIDE_TARGETS.monthlyGoals, isGuided);
   const myRoutineTarget = useGuideTarget(HOME_GUIDE_TARGETS.myRoutine, isGuided);
 
@@ -1556,11 +1559,28 @@ export default function HomeView({
       return;
     }
 
-    // While analytics is open the overlay steps aside entirely — the sheet
-    // renders inline (not in a native Modal), so any scrim would block it.
-    // Closing the sheet advances the tour to Monthly Goals.
+    // Analytics opens in a native modal sheet; the in-modal host shows the
+    // way out once the sheet has settled and the user has had a breath to
+    // take the pattern in. Closing advances the tour to Monthly Goals.
     if (guidePhase === 'analyticsOpen') {
       setPresentation(null);
+      guideTimersRef.current.push(setTimeout(() => {
+        analyticsCloseTarget.measure();
+        guideTimersRef.current.push(setTimeout(() => {
+          setPresentation({
+            key: 'home-tour-analytics-close',
+            targetId: HOME_GUIDE_TARGETS.analyticsClose,
+            cutoutPadding: 8,
+            placement: 'below',
+            allowTargetInteraction: true,
+            eyebrow: 'HOME TOUR',
+            message: 'This is the pattern behind the task — take it in.',
+            highlights: ['pattern'],
+            action: 'Tap X when you are done',
+            hint: 'tap',
+          });
+        }, 50));
+      }, 1300));
       return;
     }
 
@@ -1604,6 +1624,7 @@ export default function HomeView({
 
     setPresentation(null);
   }, [
+    analyticsCloseTarget,
     bigEvents.length,
     bigEventsTarget,
     clearGuideTimers,
@@ -1871,9 +1892,14 @@ export default function HomeView({
         onClose={() => {
           setAnalyticsCard(null);
           if (isGuided && guidePhase === 'analyticsOpen') {
+            // Clear before the modal target unmounts so the overlay never
+            // falls back to a full dim, then glide on to Monthly Goals.
+            setPresentation(null);
             patchSession({ phase: 'monthlyGoals' });
           }
         }}
+        closeTargetProps={isGuided ? { ref: analyticsCloseTarget.ref, onLayout: analyticsCloseTarget.onLayout } : undefined}
+        overlayChildren={isGuided ? <GuidedOverlayHost /> : undefined}
       />
       <NotificationsSheet
         visible={notificationsOpen}

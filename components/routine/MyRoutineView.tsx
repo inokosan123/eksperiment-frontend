@@ -970,9 +970,12 @@ export default function MyRoutineView({
           progress: { current: 1, total: 7 },
           message: 'This is My Routine — the workshop behind your Home. Here you see the plan for every day of your week.',
           highlights: ['every day'],
-          action: 'Try tapping a day',
+          action: 'Tap a day to see its plan change below',
           hint: 'tap',
           hintAnchor: 'left',
+          // Monday is already selected — pulse on the SECOND tab so a tap
+          // visibly changes the list underneath.
+          hintOffset: { x: 62 },
           ctaLabel: 'Continue',
           onCta: () => patchSession({ phase: 'tourAdd' }),
         });
@@ -2245,11 +2248,14 @@ export function RoutineTaskEditorSheet({
 
   useEffect(() => {
     if (!isGuided || !visible) return;
-    const timer = setTimeout(() => {
+    // Three passes: the sheet is still sliding at ~200ms, settled by ~520ms,
+    // and the late pass catches keyboard-driven reflows. Without the settled
+    // passes the editSave spotlight can miss the top-right check entirely.
+    const timers = [200, 520, 900].map(delay => setTimeout(() => {
       titleTarget.measure();
       saveTarget.measure();
-    }, 360);
-    return () => clearTimeout(timer);
+    }, delay));
+    return () => timers.forEach(clearTimeout);
   }, [guidePhase, isGuided, saveTarget, titleTarget, visible]);
 
   useEffect(() => {

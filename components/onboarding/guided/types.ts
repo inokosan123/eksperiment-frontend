@@ -106,5 +106,7 @@ export type GuidedOverlayPresentation = {
   hint?: GuidedGestureHint;
   // Where the hint sits inside the cutout — e.g. 'left' over a task's check circle.
   hintAnchor?: 'center' | 'left' | 'right';
+  // Fine offset from the anchored position, e.g. to sit on the SECOND day tab.
+  hintOffset?: { x?: number; y?: number };
   progress?: GuidedOverlayProgress;
 };

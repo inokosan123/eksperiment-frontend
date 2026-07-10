@@ -192,6 +192,7 @@ function SwipeHintGraphic({ direction }: { direction: 1 | -1 }) {
 function GestureHintLayer({
   hint,
   anchor = 'center',
+  offset,
   x,
   y,
   width,
@@ -199,6 +200,7 @@ function GestureHintLayer({
 }: {
   hint: GuidedGestureHint;
   anchor?: 'center' | 'left' | 'right' | 'corner';
+  offset?: { x?: number; y?: number };
   x: SharedValue<number>;
   y: SharedValue<number>;
   width: SharedValue<number>;
@@ -211,13 +213,17 @@ function GestureHintLayer({
     height: height.value,
   }));
 
+  const offsetStyle = offset
+    ? { transform: [{ translateX: offset.x ?? 0 }, { translateY: offset.y ?? 0 }] }
+    : null;
+
   const graphic = (
-    <>
+    <View style={offsetStyle}>
       {hint === 'tap' && <TapHintGraphic />}
       {hint === 'long-press' && <LongPressHintGraphic />}
       {hint === 'swipe-right' && <SwipeHintGraphic direction={1} />}
       {hint === 'swipe-left' && <SwipeHintGraphic direction={-1} />}
-    </>
+    </View>
   );
 
   return (
@@ -692,6 +698,7 @@ export function GuidedOverlayHost() {
               key={`${presentation.key}-hint`}
               hint={presentation.hint}
               anchor={hintAnchor}
+              offset={presentation.hintOffset}
               x={x}
               y={y}
               width={width}

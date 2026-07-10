@@ -26,9 +26,13 @@ type Props = {
   taskTitle: string;
   taskSubtitle?: string;
   onClose: () => void;
+  // Onboarding-only extras: a guide target on the close button and an overlay
+  // rendered inside the sheet's native modal. Default behavior is unchanged.
+  closeTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
+  overlayChildren?: React.ReactNode;
 };
 
-export default function TaskAnalyticsSheet({ visible, taskId, taskTitle, taskSubtitle, onClose }: Props) {
+export default function TaskAnalyticsSheet({ visible, taskId, taskTitle, taskSubtitle, onClose, closeTargetProps, overlayChildren }: Props) {
   const insets = useSafeAreaInsets();
   const [analytics, setAnalytics] = useState<TaskAnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,6 +64,7 @@ export default function TaskAnalyticsSheet({ visible, taskId, taskTitle, taskSub
       visible={visible}
       onClose={onClose}
       sheetStyle={[s.sheet, { paddingBottom: Math.max(insets.bottom, 12) + 12 }]}
+      overlayChildren={overlayChildren}
     >
       <View style={s.handleWrap}>
         <View style={s.handle} />
@@ -72,7 +77,7 @@ export default function TaskAnalyticsSheet({ visible, taskId, taskTitle, taskSub
             <Text style={s.subtitle} numberOfLines={1}>{taskSubtitle}</Text>
           )}
         </View>
-        <TouchableOpacity activeOpacity={0.7} onPress={onClose} style={s.closeBtn}>
+        <TouchableOpacity {...closeTargetProps} activeOpacity={0.7} onPress={onClose} style={s.closeBtn}>
           <X s={18} c={C.textMuted} w={2.4} />
         </TouchableOpacity>
       </View>

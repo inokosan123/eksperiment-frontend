@@ -19823,7 +19823,7 @@ function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
     <Reanimated.View entering={FadeIn.duration(240)} style={s.screen}>
       <Reanimated.View
         key={stage === 'routine' ? 'stage-routine' : 'stage-home'}
-        entering={FadeIn.duration(340)}
+        entering={FadeIn.duration(260)}
         style={{ flex: 1, backgroundColor: '#FAF7F0' }}
       >
         {stage === 'routine' ? (
