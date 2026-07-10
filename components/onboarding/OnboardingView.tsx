@@ -116,6 +116,7 @@ import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import type { TaskDefinition, TaskDraft } from '@/components/tasks/taskTypes';
 import { useGuidedSetup } from '@/components/onboarding/guided/GuidedSetupContext';
+import { GuideCrashBoundary } from '@/components/onboarding/guided/GuideCrashBoundary';
 import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
 import { C, F } from '@/constants/tokens';
 
@@ -21471,7 +21472,11 @@ export default function OnboardingView() {
   // the welcome crest position can be measured for the stationary handoff.
 
   if (activeStep === 'bibleWalkthrough') {
-    return <BibleGuideSlide onNext={goNext} />;
+    return (
+      <GuideCrashBoundary label="Bible walkthrough" onSkip={goNext}>
+        <BibleGuideSlide onNext={goNext} />
+      </GuideCrashBoundary>
+    );
   }
 
   if (activeStep === 'buildBigEvents') {
@@ -21799,7 +21804,11 @@ export default function OnboardingView() {
     if (activeStep === 'organizeHabitsBuilderV2') return <OrganizeHabitsBuilderV2Slide onNext={goNext} />;
     if (activeStep === 'organizeHubCompleteV2') return <OrganizeHubV2Slide key="organizeHubCompleteV2" stage="complete" onNext={goNext} />;
     if (activeStep === 'organizeGuidedHomeTour') {
-      return <OrganizeRealHomeGuideSlide onNext={goNext} />;
+      return (
+        <GuideCrashBoundary label="Home tour" onSkip={goNext}>
+          <OrganizeRealHomeGuideSlide onNext={goNext} />
+        </GuideCrashBoundary>
+      );
     }
     if (activeStep === 'organizeSpiritualTasksIntro') {
       return (
