@@ -146,6 +146,12 @@ export default function ScriptureReaderView({
   const { session, patchSession, setPresentation } = useGuidedSetup();
   const isGuided = guided && session?.active === true && session.activeStep === 'riseBibleHighlight';
   const guidePhase = isGuided ? session.phase : '';
+  // Refs keep clearSelection's identity stable — several long-standing
+  // effects depend on it, and they must not re-fire on every phase change.
+  const guidePhaseRef = useRef(guidePhase);
+  guidePhaseRef.current = guidePhase;
+  const isGuidedRef = useRef(isGuided);
+  isGuidedRef.current = isGuided;
   const sloganVerseTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.verseSlogan, isGuided);
   const seedVerseTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.verseSeed, isGuided);
   const practiceVerseTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.versePractice, isGuided);
@@ -268,10 +274,10 @@ export default function ScriptureReaderView({
     setEditCommentTarget(null);
     // If the tour is mid-lesson and the selection is abandoned, fall back to
     // the long-press step so the guide always points at something real.
-    if (isGuided && GUIDE_SELECTION_PHASES.has(guidePhase)) {
+    if (isGuidedRef.current && GUIDE_SELECTION_PHASES.has(guidePhaseRef.current)) {
       patchSession({ phase: 'versePractice' });
     }
-  }, [guidePhase, isGuided, patchSession]);
+  }, [patchSession]);
 
   useEffect(() => {
     if (typeof controlledBookId !== 'number' && typeof controlledChapter !== 'number') return;

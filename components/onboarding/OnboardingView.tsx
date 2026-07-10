@@ -19787,8 +19787,11 @@ function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
   const sessionStartedRef = useRef(false);
 
   useEffect(() => {
+    // Kill any stale restored session before the fresh tour begins.
+    endGuidedSetup();
     const timer = setTimeout(() => setHomeWarm(true), SYSTEM_BUILD_HOME_MOUNT_AT);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -19857,6 +19860,10 @@ function BibleGuideSlide({ onNext }: { onNext: () => void }) {
   const { ready, categories, getChapter, upsertAnnotations, updateCategory } = useScripture();
   const { settings } = useAppSettings();
   const [scene, setScene] = useState<'reader1' | 'favorites' | 'reader2' | 'notes'>('reader1');
+  // The reader mounts only after seeding is done: every seed write refreshes
+  // the whole scripture context, and mounting the reader inside that render
+  // storm is exactly where the tour used to go down.
+  const [seeded, setSeeded] = useState(false);
   const seedStartedRef = useRef(false);
   const sessionStartedRef = useRef(false);
 
@@ -19866,6 +19873,9 @@ function BibleGuideSlide({ onNext }: { onNext: () => void }) {
   useEffect(() => {
     if (!ready || seedStartedRef.current) return;
     seedStartedRef.current = true;
+    // A stale session restored from storage (a killed earlier run) must not
+    // drive the screens while we are still seeding.
+    endGuidedSetup();
     let alive = true;
     (async () => {
       try {
@@ -19925,11 +19935,12 @@ function BibleGuideSlide({ onNext }: { onNext: () => void }) {
         phase: 'readerIntro',
         route: '/onboarding',
       });
+      setSeeded(true);
     })();
     return () => {
       alive = false;
     };
-  }, [beginGuidedSetup, categories, getChapter, ready, settings.bibleLang, updateCategory, upsertAnnotations]);
+  }, [beginGuidedSetup, categories, endGuidedSetup, getChapter, ready, settings.bibleLang, updateCategory, upsertAnnotations]);
 
   useEffect(() => () => endGuidedSetup(), [endGuidedSetup]);
 
@@ -19957,47 +19968,51 @@ function BibleGuideSlide({ onNext }: { onNext: () => void }) {
 
   return (
     <View style={s.screen}>
-      <Reanimated.View
-        key={`bible-scene-${scene}`}
-        entering={FadeIn.duration(340)}
-        style={{ flex: 1, backgroundColor: '#FCFCFC' }}
-      >
-        {scene === 'reader1' && (
-          <ScriptureReaderView
-            guided
-            bookId={BIBLE_GUIDE_SLOGAN.bookId}
-            chapter={BIBLE_GUIDE_SLOGAN.chapter}
-            initialVerse={BIBLE_GUIDE_SLOGAN.verse}
-            onBack={() => {}}
-            canGoPrevChapter={false}
-            canGoNextChapter={false}
-            onGuidedAdvance={handleReaderAdvance}
-          />
+      <View style={{ flex: 1, backgroundColor: '#FCFCFC' }}>
+        {!seeded ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator color={GOLD} />
+          </View>
+        ) : (
+          <>
+            {scene === 'reader1' && (
+              <ScriptureReaderView
+                guided
+                bookId={BIBLE_GUIDE_SLOGAN.bookId}
+                chapter={BIBLE_GUIDE_SLOGAN.chapter}
+                initialVerse={BIBLE_GUIDE_SLOGAN.verse}
+                onBack={() => {}}
+                canGoPrevChapter={false}
+                canGoNextChapter={false}
+                onGuidedAdvance={handleReaderAdvance}
+              />
+            )}
+            {scene === 'favorites' && (
+              <MyFavoritesView guided onGuidedAdvance={handleFavoritesAdvance} />
+            )}
+            {scene === 'reader2' && (
+              <ScriptureReaderView
+                guided
+                bookId={BIBLE_GUIDE_RETURN.bookId}
+                chapter={BIBLE_GUIDE_RETURN.chapter}
+                initialVerse={BIBLE_GUIDE_RETURN.verse}
+                onBack={() => {}}
+                canGoPrevChapter={false}
+                canGoNextChapter={false}
+                onGuidedAdvance={handleReaderAdvance}
+              />
+            )}
+            {scene === 'notes' && (
+              <BibleNotesView
+                guided
+                initialBookId={BIBLE_GUIDE_RETURN.bookId}
+                initialChapter={BIBLE_GUIDE_RETURN.chapter}
+                onGuidedComplete={handleNotesComplete}
+              />
+            )}
+          </>
         )}
-        {scene === 'favorites' && (
-          <MyFavoritesView guided onGuidedAdvance={handleFavoritesAdvance} />
-        )}
-        {scene === 'reader2' && (
-          <ScriptureReaderView
-            guided
-            bookId={BIBLE_GUIDE_RETURN.bookId}
-            chapter={BIBLE_GUIDE_RETURN.chapter}
-            initialVerse={BIBLE_GUIDE_RETURN.verse}
-            onBack={() => {}}
-            canGoPrevChapter={false}
-            canGoNextChapter={false}
-            onGuidedAdvance={handleReaderAdvance}
-          />
-        )}
-        {scene === 'notes' && (
-          <BibleNotesView
-            guided
-            initialBookId={BIBLE_GUIDE_RETURN.bookId}
-            initialChapter={BIBLE_GUIDE_RETURN.chapter}
-            onGuidedComplete={handleNotesComplete}
-          />
-        )}
-      </Reanimated.View>
+      </View>
       <GuidedOverlayHost />
     </View>
   );
