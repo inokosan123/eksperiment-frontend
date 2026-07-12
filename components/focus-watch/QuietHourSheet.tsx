@@ -368,7 +368,7 @@ const s = StyleSheet.create({
   },
   durationValue: {
     fontFamily: F.serifMedium,
-    fontSize: 18,
+    fontSize: 22,
     color: C.goldDark,
     fontVariant: ['tabular-nums'],
   },
@@ -408,8 +408,8 @@ const s = StyleSheet.create({
   stepperValue: {
     minWidth: 36,
     textAlign: 'center',
-    fontFamily: F.sansSemiBold,
-    fontSize: 16,
+    fontFamily: F.serifMedium,
+    fontSize: 18,
     color: C.text,
     fontVariant: ['tabular-nums'],
   },
@@ -512,8 +512,8 @@ const s = StyleSheet.create({
   },
   appName: {
     flex: 1,
-    fontFamily: F.sansMedium,
-    fontSize: 13.5,
+    fontFamily: F.serifMedium,
+    fontSize: 15.5,
     color: C.text,
   },
   checkbox: {

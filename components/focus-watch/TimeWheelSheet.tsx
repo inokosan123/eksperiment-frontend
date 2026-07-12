@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { NativeScrollEvent, NativeSyntheticEvent, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
@@ -23,9 +25,11 @@ function Wheel({
   onChange: (next: number) => void;
 }) {
   const scrollRef = useRef<ScrollView>(null);
+  const lastIndexRef = useRef(Math.max(0, options.indexOf(value)));
 
   useEffect(() => {
     const index = Math.max(0, options.indexOf(value));
+    lastIndexRef.current = index;
     const timer = setTimeout(() => {
       scrollRef.current?.scrollTo({ y: index * ITEM_HEIGHT, animated: false });
     }, 0);
@@ -34,8 +38,23 @@ function Wheel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const indexAt = (offsetY: number) =>
+    Math.max(0, Math.min(options.length - 1, Math.round(offsetY / ITEM_HEIGHT)));
+
+  // Live preview: every notch that slides under the selection band updates the
+  // value immediately with a soft haptic tick — the time above reads along.
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const index = indexAt(event.nativeEvent.contentOffset.y);
+    if (index !== lastIndexRef.current) {
+      lastIndexRef.current = index;
+      void Haptics.selectionAsync().catch(() => {});
+      onChange(options[index]);
+    }
+  };
+
   const settle = (offsetY: number) => {
-    const index = Math.max(0, Math.min(options.length - 1, Math.round(offsetY / ITEM_HEIGHT)));
+    const index = indexAt(offsetY);
+    lastIndexRef.current = index;
     onChange(options[index]);
     scrollRef.current?.scrollTo({ y: index * ITEM_HEIGHT, animated: true });
   };
@@ -48,6 +67,8 @@ function Wheel({
         snapToInterval={ITEM_HEIGHT}
         decelerationRate="fast"
         bounces={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         onMomentumScrollEnd={event => settle(event.nativeEvent.contentOffset.y)}
         contentContainerStyle={{ paddingVertical: WHEEL_PADDING }}
       >
@@ -67,7 +88,8 @@ function Wheel({
 }
 
 // The Focus tab time picker: a calm wheel sheet in the app's language —
-// serif preview, gold selection band, Save on a gold pill.
+// serif preview that reads along with the wheel, gold selection band,
+// Save on a gold pill.
 export default function TimeWheelSheet({
   visible,
   title,
@@ -108,6 +130,12 @@ export default function TimeWheelSheet({
 
       <Text style={s.preview}>{formatTimeOfDay(hour * 60 + minute)}</Text>
 
+      <View style={s.columnLabels}>
+        <Text style={s.columnLabel}>HOUR</Text>
+        <View style={s.columnLabelSpacer} />
+        <Text style={s.columnLabel}>MINUTES</Text>
+      </View>
+
       <View style={s.wheelCard}>
         <View style={s.selectionBand} pointerEvents="none" />
         <View style={s.wheelRow}>
@@ -115,8 +143,16 @@ export default function TimeWheelSheet({
           <Text style={s.colon}>:</Text>
           <Wheel options={MINUTES} value={minute} onChange={setMinute} />
         </View>
-        <View style={s.fadeTop} pointerEvents="none" />
-        <View style={s.fadeBottom} pointerEvents="none" />
+        <LinearGradient
+          colors={['#FFFFFF', 'rgba(255,255,255,0)']}
+          style={s.fadeTop}
+          pointerEvents="none"
+        />
+        <LinearGradient
+          colors={['rgba(255,255,255,0)', '#FFFFFF']}
+          style={s.fadeBottom}
+          pointerEvents="none"
+        />
       </View>
 
       <GoldButton
@@ -170,17 +206,34 @@ const s = StyleSheet.create({
   preview: {
     marginTop: 8,
     fontFamily: F.serifSemiBold,
-    fontSize: 40,
+    fontSize: 42,
     letterSpacing: 1,
     color: C.goldDark,
     textAlign: 'center',
     fontVariant: ['tabular-nums'],
   },
-
-  wheelCard: {
+  columnLabels: {
     marginTop: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  columnLabel: {
+    width: 76,
+    textAlign: 'center',
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 1.6,
+    color: C.textMuted,
+  },
+  columnLabelSpacer: {
+    width: 18,
+  },
+  wheelCard: {
+    marginTop: 6,
     height: ITEM_HEIGHT * VISIBLE_ROWS,
     borderRadius: 22,
+    borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: C.border,
     backgroundColor: C.surface,
@@ -193,6 +246,7 @@ const s = StyleSheet.create({
     top: WHEEL_PADDING,
     height: ITEM_HEIGHT,
     borderRadius: 14,
+    borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: '#EAD9B7',
     backgroundColor: '#FFFBEB',
@@ -220,8 +274,8 @@ const s = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   wheelItemTextActive: {
-    fontFamily: F.sansSemiBold,
-    fontSize: 21,
+    fontFamily: F.serifSemiBold,
+    fontSize: 23,
     color: C.goldDark,
   },
   colon: {
@@ -235,15 +289,13 @@ const s = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: ITEM_HEIGHT,
-    backgroundColor: 'rgba(255,255,255,0.72)',
+    height: ITEM_HEIGHT * 1.4,
   },
   fadeBottom: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: ITEM_HEIGHT,
-    backgroundColor: 'rgba(255,255,255,0.72)',
+    height: ITEM_HEIGHT * 1.4,
   },
 });

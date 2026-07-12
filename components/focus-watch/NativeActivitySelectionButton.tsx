@@ -100,8 +100,8 @@ const s = StyleSheet.create({
     paddingVertical: 8,
   },
   buttonPreview: { borderColor: C.border, backgroundColor: '#F2F1ED' },
-  icon: { width: 34, height: 34, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.76)', alignItems: 'center', justifyContent: 'center' },
-  label: { fontFamily: F.sansSemiBold, fontSize: 11.5, color: C.text },
-  meta: { marginTop: 2, fontFamily: F.sans, fontSize: 9, color: C.textMuted },
-  notice: { marginTop: 6, paddingHorizontal: 4, fontFamily: F.sansMedium, fontSize: 9.5, lineHeight: 14, color: '#91404C' },
+  icon: { width: 34, height: 34, borderRadius: 11, borderCurve: 'continuous', backgroundColor: 'rgba(255,255,255,0.76)', alignItems: 'center', justifyContent: 'center' },
+  label: { fontFamily: F.serifMedium, fontSize: 15.5, color: C.text },
+  meta: { marginTop: 2, fontFamily: F.sans, fontSize: 10, color: C.textMuted },
+  notice: { marginTop: 6, paddingHorizontal: 4, fontFamily: F.sansMedium, fontSize: 10, lineHeight: 14.5, color: '#91404C' },
 });
