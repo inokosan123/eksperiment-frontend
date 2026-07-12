@@ -2,12 +2,15 @@
 
 # dependencies
 node_modules/
+.npm-cache/
 
 # Expo
 .expo/
 .expo-temp/
 dist/
 web-build/
+.focus-export-check/
+.focus-ios-export-check/
 expo-env.d.ts
 
 # Native
@@ -28,10 +31,12 @@ yarn-debug.*
 yarn-error.*
 expo-*.log
 expo-*.err.log
+.expo-focus-web.log
 
 # tool snapshots / logs
 .codex/
 .playwright-mcp/
+.playwright-runtime/
 
 # macOS
 .DS_Store

@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import { openUserContentDb } from '@/data/userContentDb';
 
-// SQLite layer for the Focus (Day Plan) tab. Blueprint: docs/anasta-focus-blueprint-v3.md §3.
+// SQLite layer for the Focus v4 day-plan system.
 // The store (dayPlanStore.ts) is the only caller; every write goes through a
 // serialized queue there, so these helpers can stay simple one-shot functions.
 
@@ -20,6 +20,7 @@ export type DayRow = {
   plan_id: string | null;
   status: string;
   violations: number;
+  target_lost?: number;
 };
 
 export type EventRow = {
@@ -53,7 +54,8 @@ async function initFocusWatchDb(db: SQLite.SQLiteDatabase) {
       date TEXT PRIMARY KEY,
       plan_id TEXT,
       status TEXT NOT NULL,
-      violations INTEGER NOT NULL DEFAULT 0
+      violations INTEGER NOT NULL DEFAULT 0,
+      target_lost INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS focus_watch_events (
@@ -77,6 +79,11 @@ async function initFocusWatchDb(db: SQLite.SQLiteDatabase) {
   // v2: plan-level budget/strength live in meta_json (added after first ship).
   try {
     await db.execAsync('ALTER TABLE focus_watch_plans ADD COLUMN meta_json TEXT');
+  } catch {
+    // column already exists
+  }
+  try {
+    await db.execAsync('ALTER TABLE focus_watch_days ADD COLUMN target_lost INTEGER NOT NULL DEFAULT 0');
   } catch {
     // column already exists
   }
@@ -151,13 +158,14 @@ export async function setScheduleDayRow(day: number, planId: string | null) {
 export async function upsertDayRow(row: DayRow) {
   const db = await getFocusWatchDb();
   await db.runAsync(
-    `INSERT INTO focus_watch_days (date, plan_id, status, violations)
-     VALUES (?, ?, ?, ?)
+    `INSERT INTO focus_watch_days (date, plan_id, status, violations, target_lost)
+     VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(date) DO UPDATE SET
        plan_id = excluded.plan_id,
        status = excluded.status,
-       violations = excluded.violations`,
-    row.date, row.plan_id, row.status, row.violations
+       violations = excluded.violations,
+       target_lost = excluded.target_lost`,
+    row.date, row.plan_id, row.status, row.violations, row.target_lost ?? 0
   );
 }
 

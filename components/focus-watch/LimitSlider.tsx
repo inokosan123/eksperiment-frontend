@@ -145,9 +145,10 @@ export default function LimitSlider({
           <View style={s.track} onLayout={onLayout}>
             <Animated.View style={[s.fill, fillStyle]} />
           </View>
-          {/* Notches — one quiet dot per stop, brightened once passed. */}
+          {/* Dense 15-minute scales show hourly landmarks; snapping remains 15 minutes. */}
           {layoutWidth > 0 &&
             stops.map((_, index) => (
+              (stops.length <= 20 || index === 0 || index === stops.length - 1 || index % 4 === 0) ? (
               <View
                 key={index}
                 pointerEvents="none"
@@ -157,6 +158,7 @@ export default function LimitSlider({
                   index <= activeIndex && index > 0 && s.notchPassed,
                 ]}
               />
+              ) : null
             ))}
           <Animated.View pointerEvents="none" style={[s.thumb, thumbStyle]} />
         </View>

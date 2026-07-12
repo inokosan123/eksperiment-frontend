@@ -1,34 +1,163 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import { Book, Cross, Feather, Flame, Minus, OpenBook, Plus, X } from '@/components/icons/Icons';
+import ConfirmModal from '@/components/shared/ConfirmModal';
+import { CheckSmall, ChevronRight, Lock, Minus, Plus, Trash2, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import FocusSwitch from './FocusSwitch';
 import LimitSlider from './LimitSlider';
-import { CATEGORY_TINTS, type MockApp } from './focusContent';
+import NativeActivitySelectionButton from './NativeActivitySelectionButton';
+import { CATEGORY_TINTS, type PreviewApp } from './focusContent';
+import { isNativeFocusAvailable } from './focusNativeBridge';
 import {
+  allCoreEssentialIds,
   formatMinutesShort,
+  removeAlwaysBlockedApp,
   RETURN_PRACTICES,
+  saveAlwaysBlockedApp,
+  useDayPlan,
+  type AppRule,
   type GroupRule,
   type PracticeKind,
+  type RuleMode,
   type Strength,
 } from './dayPlanStore';
 
-const STEP = 15;
-const enter = (delay: number) => FadeInDown.duration(340).delay(delay);
+const LIMIT_STOPS: (number | null)[] = [
+  ...Array.from({ length: 48 }, (_, index) => 15 + index * 15),
+  null,
+];
 
-const PRACTICE_ICONS: Record<PracticeKind, (color: string) => React.ReactNode> = {
-  prayer: color => <Cross s={13} c={color} w={2} />,
-  'jesus-prayer': color => <Flame s={14} filled color={color} />,
-  psalm: color => <OpenBook s={14} c={color} w={2} />,
-  chapter: color => <Book s={14} c={color} w={2} />,
-  intention: color => <Feather s={14} c={color} w={2} />,
-};
+function createAppRuleId() {
+  return `app-rule-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
-// The spacious room where one group's rule is shaped: how much a day, how
-// firm the door, which practice opens it — and, inside the group, how the
-// time is shared between its apps.
+function modeFor(rule: GroupRule | null): RuleMode {
+  if (!rule) return 'noLimit';
+  return rule.mode ?? (rule.dailyMinutes == null ? 'noLimit' : 'limit');
+}
+
+function modeLabel(mode: RuleMode) {
+  if (mode === 'blocked') return 'Blocked';
+  if (mode === 'limit') return 'Limit';
+  return 'No limit';
+}
+
+function StrengthControl({
+  value,
+  onChange,
+  sessionScoped,
+}: {
+  value: Strength;
+  onChange: (value: Strength) => void;
+  sessionScoped: boolean;
+}) {
+  return (
+    <View style={s.strengthRow}>
+      <TouchableOpacity
+        style={[s.strengthOption, value === 'loose' && s.looseOptionOn]}
+        onPress={() => onChange('loose')}
+        haptic="selection"
+      >
+        <Text style={[s.strengthName, value === 'loose' && s.looseText]}>Loose</Text>
+        <Text style={s.strengthDetail}>A deliberate 15-minute continuation remains available.</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[s.strengthOption, value === 'strict' && s.strictOptionOn]}
+        onPress={() => onChange('strict')}
+        haptic="selection"
+      >
+        <Text style={[s.strengthName, value === 'strict' && s.strictText]}>Strict</Text>
+        <Text style={s.strengthDetail}>{sessionScoped ? 'Closed until the next Session begins.' : 'Closed for the rest of the day.'}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function AppRuleEditor({
+  app,
+  rule,
+  inheritedStrength,
+  sessionScoped,
+  onChange,
+  onRemove,
+  nativeSelectionId,
+}: {
+  app: PreviewApp;
+  rule: AppRule | null;
+  inheritedStrength: Strength;
+  sessionScoped: boolean;
+  onChange: (rule: AppRule) => void;
+  onRemove: () => void;
+  nativeSelectionId: string;
+}) {
+  const current: AppRule = rule ?? {
+    appId: app.id,
+    mode: 'limit',
+    minutes: 30,
+    strength: inheritedStrength,
+    practice: 'prayer',
+    checkInMinutes: 15,
+  };
+  const setMode = (mode: 'limit' | 'blocked') => onChange({
+    ...current,
+    mode,
+    minutes: mode === 'blocked' ? null : (current.minutes ?? 30),
+  });
+
+  return (
+    <Animated.View entering={FadeIn.duration(180)} style={s.appEditor}>
+      <View style={s.appModeRow}>
+        <TouchableOpacity style={[s.appMode, current.mode === 'limit' && s.appModeOn]} onPress={() => setMode('limit')} haptic="selection">
+          <Text style={[s.appModeText, current.mode === 'limit' && s.appModeTextOn]}>Limit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[s.appMode, current.mode === 'blocked' && s.appModeBlocked]} onPress={() => setMode('blocked')} haptic="selection">
+          <Text style={[s.appModeText, current.mode === 'blocked' && s.appModeBlockedText]}>Blocked</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.removeAppRule} onPress={onRemove} hitSlop={8}>
+          <Trash2 s={13} c={C.textMuted} w={2} />
+        </TouchableOpacity>
+      </View>
+
+      <NativeActivitySelectionButton
+        selectionId={nativeSelectionId}
+        title={`Choose ${app.name}`}
+        label="Choose this app on iPhone"
+      />
+
+      {current.mode === 'limit' && (
+        <View style={s.appMinutesRow}>
+          <Text style={s.appEditorLabel}>ALLOWANCE</Text>
+          <View style={s.minuteStepper}>
+            <TouchableOpacity style={s.minuteButton} onPress={() => onChange({ ...current, minutes: Math.max(15, (current.minutes ?? 30) - 15) })} haptic="selection">
+              <Minus s={12} c={C.textSecondary} w={2.3} />
+            </TouchableOpacity>
+            <Text style={s.minuteValue}>{formatMinutesShort(current.minutes ?? 30)}</Text>
+            <TouchableOpacity style={s.minuteButton} onPress={() => onChange({ ...current, minutes: (current.minutes ?? 30) + 15 })} haptic="selection">
+              <Plus s={12} c={C.textSecondary} w={2.3} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      <StrengthControl value={current.strength} onChange={strength => onChange({ ...current, strength })} sessionScoped={sessionScoped} />
+
+      {current.mode === 'limit' && (
+        <View style={s.checkInRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.checkInTitle}>15-minute check-ins</Text>
+            <Text style={s.checkInBody}>A soft pause that restores awareness before the final limit.</Text>
+          </View>
+          <FocusSwitch value={current.checkInMinutes === 15} onToggle={() => onChange({ ...current, checkInMinutes: current.checkInMinutes === 15 ? null : 15 })} />
+        </View>
+      )}
+    </Animated.View>
+  );
+}
+
 export default function GroupLimitSheet({
   rule,
   groupLabel,
@@ -36,427 +165,422 @@ export default function GroupLimitSheet({
   planStrength,
   onChange,
   onClose,
+  sessionName,
+  nativeSelectionBaseId,
 }: {
   rule: GroupRule | null;
   groupLabel: string;
-  apps: MockApp[];
+  apps: PreviewApp[];
   planStrength: Strength;
   onChange: (partial: Partial<GroupRule>) => void;
   onClose: () => void;
+  sessionName?: string;
+  nativeSelectionBaseId: string;
 }) {
-  const visible = rule !== null;
-  const limited = rule?.dailyMinutes != null;
-  const splits = rule?.appSplits ?? {};
-  const assigned = Object.values(splits).reduce((sum, minutes) => sum + minutes, 0);
-  const free = Math.max(0, (rule?.dailyMinutes ?? 0) - assigned);
+  const state = useDayPlan();
+  const nativeAvailable = isNativeFocusAvailable();
+  const [expandedAppId, setExpandedAppId] = useState<string | null>(null);
+  const [pendingAlwaysBlock, setPendingAlwaysBlock] = useState<string | null>(null);
+  const [newAppLabel, setNewAppLabel] = useState('');
+  const mode = modeFor(rule);
+  const alwaysBlockedIds = useMemo(() => new Set(state.alwaysBlockedApps.map(entry => entry.appId)), [state.alwaysBlockedApps]);
+  const essentialIds = useMemo(() => new Set([...allCoreEssentialIds(state), ...state.optionalEssentialAppIds]), [state]);
+  const appRules = rule?.appRules ?? [];
 
-  const setMinutes = (minutes: number | null) => {
+  const setMode = (next: RuleMode) => {
     if (!rule) return;
-    const partial: Partial<GroupRule> = { dailyMinutes: minutes };
-    // A fresh limit inherits the plan's firmness; clearing the limit clears slices.
-    if (rule.dailyMinutes == null && minutes != null) partial.strength = planStrength;
-    if (minutes == null) partial.appSplits = undefined;
-    else if (assigned > minutes) {
-      // Shrunk below what is sliced out — trim slices proportionally from the end.
-      const next: Record<string, number> = {};
-      let left = minutes;
-      for (const [appId, slice] of Object.entries(splits)) {
-        const take = Math.min(slice, left);
-        if (take > 0) next[appId] = take;
-        left -= take;
-      }
-      partial.appSplits = Object.keys(next).length > 0 ? next : undefined;
-    }
-    onChange(partial);
+    onChange({
+      mode: next,
+      dailyMinutes: next === 'limit' ? (rule.dailyMinutes ?? 45) : null,
+      strength: rule.strength ?? planStrength,
+    });
   };
 
-  const nudgeApp = (appId: string, delta: number) => {
-    if (!rule || rule.dailyMinutes == null) return;
-    const current = splits[appId] ?? 0;
-    const headroom = rule.dailyMinutes - assigned + current;
-    const next = Math.max(0, Math.min(headroom, current + delta));
-    const nextSplits = { ...splits };
-    if (next <= 0) delete nextSplits[appId];
-    else nextSplits[appId] = next;
-    onChange({ appSplits: Object.keys(nextSplits).length > 0 ? nextSplits : undefined });
+  const updateAppRule = (next: AppRule) => {
+    onChange({ appRules: [...appRules.filter(entry => entry.appId !== next.appId), next] });
+  };
+
+  const addNativeAppRule = () => {
+    const label = newAppLabel.trim();
+    if (!label) return;
+    const appId = createAppRuleId();
+    updateAppRule({
+      appId,
+      label,
+      mode: 'limit',
+      minutes: 30,
+      strength: rule?.strength ?? planStrength,
+      practice: 'prayer',
+      checkInMinutes: 15,
+    });
+    setNewAppLabel('');
+    setExpandedAppId(appId);
   };
 
   return (
-    <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheet}>
-      {/* The sheet lives in a native Modal — a separate native tree that is NOT
-          under the app root's GestureHandlerRootView. Without this local root,
-          the slider's GestureDetector crashes the app on Android. */}
-      <GestureHandlerRootView style={s.gestureRoot}>
-      <View style={s.handle} />
-      <View style={s.headerRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={s.kicker}>DAILY LIMIT</Text>
-          <Text style={s.title} numberOfLines={1}>
-            {groupLabel}
-          </Text>
-        </View>
-        <TouchableOpacity
-          onPress={onClose}
-          activeOpacity={0.8}
-          style={s.closeBtn}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <X s={17} c={C.textMuted} w={2.2} />
-        </TouchableOpacity>
-      </View>
+    <>
+      <SmoothBottomSheet visible={rule !== null} onClose={onClose} sheetStyle={s.sheet}>
+        <GestureHandlerRootView style={s.gestureRoot}>
+          <View style={s.handle} />
+          <View style={s.headerRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.kicker}>{sessionName ? `${sessionName.toUpperCase()} SESSION` : 'DAILY RULE'}</Text>
+              <Text style={s.title}>{groupLabel}</Text>
+            </View>
+            <TouchableOpacity style={s.closeBtn} onPress={onClose} hitSlop={10}>
+              <X s={17} c={C.textMuted} w={2.2} />
+            </TouchableOpacity>
+          </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-        <Animated.View entering={enter(30)} style={s.valueBlock}>
-          <Text style={s.valueText}>
-            {rule?.dailyMinutes != null ? formatMinutesShort(rule.dailyMinutes) : 'Off'}
-          </Text>
-          <Text style={s.valueCaption}>
-            {rule?.dailyMinutes != null ? 'A DAY WITH THIS PLAN' : 'NO LIMIT ON THIS GROUP'}
-          </Text>
-          <LimitSlider value={rule?.dailyMinutes ?? null} onChange={setMinutes} />
-        </Animated.View>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
+            <NativeActivitySelectionButton
+              selectionId={`${nativeSelectionBaseId}.group.${rule?.groupId ?? 'group'}`}
+              title={`Choose apps for ${groupLabel}`}
+              label="Choose this group on iPhone"
+            />
 
-        {limited && rule && (
-          <Animated.View entering={FadeIn.duration(260)}>
-            <Animated.View entering={enter(80)}>
-              <Text style={s.sectionLabel}>HOW FIRM</Text>
-              <View style={s.strengthRow}>
-                {(['loose', 'strict'] as Strength[]).map(option => {
-                  const selected = rule.strength === option;
-                  return (
-                    <TouchableOpacity
-                      key={option}
-                      style={[s.strengthCard, selected && s.strengthCardOn]}
-                      activeOpacity={0.85}
-                      haptic="selection"
-                      onPress={() => onChange({ strength: option })}
-                    >
-                      <Text style={[s.strengthTitle, selected && { color: '#6D4F13' }]}>
-                        {option === 'loose' ? 'Loose' : 'Strict'}
-                      </Text>
-                      <Text style={s.strengthDesc}>
-                        {option === 'loose'
-                          ? 'Practice opens the door — costs the trophy.'
-                          : 'Held shut until tomorrow.'}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+            <View style={s.modeRow}>
+              {(['noLimit', 'limit', 'blocked'] as RuleMode[]).map(option => (
+                <TouchableOpacity
+                  key={option}
+                  style={[
+                    s.modeOption,
+                    mode === option && s.modeOptionOn,
+                    mode === option && option === 'blocked' && s.modeOptionBlocked,
+                  ]}
+                  onPress={() => setMode(option)}
+                  haptic="selection"
+                >
+                  <Text style={[s.modeText, mode === option && s.modeTextOn, mode === option && option === 'blocked' && s.modeTextBlocked]}>
+                    {modeLabel(option)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {mode === 'noLimit' && (
+              <View style={s.noLimitNote}>
+                <Text style={s.noLimitTitle}>No local boundary</Text>
+                <Text style={s.noLimitBody}>Usage still counts toward the Daily Target, and higher protection layers still apply.</Text>
               </View>
-            </Animated.View>
+            )}
 
-            <Animated.View entering={enter(130)}>
-              <Text style={s.sectionLabel}>RETURN PRACTICE</Text>
-              <View style={s.practiceWrap}>
-                {RETURN_PRACTICES.map(practice => {
-                  const selected = rule.practice === practice.id;
-                  const color = selected ? C.goldDark : C.textSecondary;
-                  return (
-                    <TouchableOpacity
-                      key={practice.id}
-                      style={[s.practiceChip, selected && s.practiceChipOn]}
-                      activeOpacity={0.8}
-                      haptic="selection"
-                      onPress={() => onChange({ practice: practice.id })}
-                    >
-                      {PRACTICE_ICONS[practice.id](color)}
-                      <Text style={[s.practiceChipText, selected && s.practiceChipTextOn]}>
-                        {practice.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </Animated.View>
+            {mode === 'limit' && rule && (
+              <>
+                <View style={s.limitValueRow}>
+                  <View>
+                    <Text style={s.limitLabel}>GROUP ALLOWANCE</Text>
+                    <Text style={s.limitValue}>{formatMinutesShort(rule.dailyMinutes ?? 45)}</Text>
+                  </View>
+                  <Text style={s.limitScope}>{sessionName ? 'THIS SESSION' : 'THIS DAY'}</Text>
+                </View>
+                <LimitSlider
+                  value={rule.dailyMinutes}
+                  onChange={value => value == null ? setMode('noLimit') : onChange({ mode: 'limit', dailyMinutes: value })}
+                  stops={LIMIT_STOPS}
+                  edgeLabels={{ left: '15m', right: 'No limit' }}
+                />
+                <View style={s.checkInRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.checkInTitle}>15-minute check-ins</Text>
+                    <Text style={s.checkInBody}>A calm reminder during accumulated use, not per opening.</Text>
+                  </View>
+                  <FocusSwitch value={rule.checkInMinutes === 15} onToggle={() => onChange({ checkInMinutes: rule.checkInMinutes === 15 ? null : 15 })} />
+                </View>
+              </>
+            )}
 
-            {apps.length > 0 && (
-              <Animated.View entering={enter(180)}>
-                <Text style={s.sectionLabel}>SHARE IT BETWEEN APPS</Text>
-                <View style={s.appsCard}>
+            {mode !== 'noLimit' && rule && (
+              <>
+                <Text style={s.sectionLabel}>FINAL PROTECTION</Text>
+                <StrengthControl value={rule.strength} onChange={strength => onChange({ strength })} sessionScoped={!!sessionName} />
+
+                {rule.strength === 'loose' && (
+                  <>
+                    <Text style={s.sectionLabel}>RETURN PRACTICE</Text>
+                    <View style={s.practiceWrap}>
+                      {RETURN_PRACTICES.map(practice => {
+                        const selected = rule.practice === practice.id;
+                        return (
+                          <TouchableOpacity
+                            key={practice.id}
+                            style={[s.practiceChip, selected && s.practiceChipOn]}
+                            onPress={() => onChange({ practice: practice.id as PracticeKind })}
+                            haptic="selection"
+                          >
+                            {selected && <CheckSmall s={10} c={C.goldDark} w={2.8} />}
+                            <Text style={[s.practiceText, selected && s.practiceTextOn]}>{practice.name}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </>
+                )}
+              </>
+            )}
+
+            {nativeAvailable && (
+              <>
+                <View style={s.appSectionHeader}>
+                  <View>
+                    <Text style={s.sectionLabelNoMargin}>INDIVIDUAL APP RULES</Text>
+                    <Text style={s.appSectionNote}>Name the rule, then choose exactly one app that already belongs to this group.</Text>
+                  </View>
+                </View>
+
+                {appRules.length === 0 ? (
+                  <View style={s.nativeRuleEmpty}>
+                    <Text style={s.nativeRuleEmptyTitle}>No individual exceptions yet.</Text>
+                    <Text style={s.nativeRuleEmptyBody}>The group rule applies evenly until you add a more specific app boundary.</Text>
+                  </View>
+                ) : (
+                  <View style={s.appsList}>
+                    {appRules.map((appRule, index) => {
+                      const label = appRule.label?.trim()
+                        || apps.find(app => app.id === appRule.appId)?.name
+                        || 'Individual app';
+                      const app: PreviewApp = {
+                        id: appRule.appId,
+                        name: label,
+                        categoryId: rule?.groupId ?? 'custom',
+                      };
+                      const tint = CATEGORY_TINTS[app.categoryId] ?? { bg: C.goldLight, color: C.goldDark };
+                      const expanded = expandedAppId === appRule.appId;
+                      return (
+                        <Animated.View key={appRule.appId} layout={LinearTransition.duration(180)}>
+                          {index > 0 && <View style={s.separator} />}
+                          <TouchableOpacity
+                            style={s.appRow}
+                            onPress={() => setExpandedAppId(expanded ? null : appRule.appId)}
+                            activeOpacity={0.72}
+                          >
+                            <View style={[s.appAvatar, { backgroundColor: tint.bg }]}>
+                              <Text style={[s.appAvatarText, { color: tint.color }]}>{label[0]?.toUpperCase()}</Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={s.appName}>{label}</Text>
+                              <Text style={s.appMeta}>
+                                {`${modeLabel(appRule.mode)}${appRule.minutes ? ` · ${formatMinutesShort(appRule.minutes)}` : ''}`}
+                              </Text>
+                            </View>
+                            <ChevronRight s={15} c={C.textMuted} w={2} />
+                          </TouchableOpacity>
+
+                          {expanded && (
+                            <View style={s.expandedWrap}>
+                              <AppRuleEditor
+                                app={app}
+                                rule={appRule}
+                                inheritedStrength={rule?.strength ?? planStrength}
+                                sessionScoped={!!sessionName}
+                                nativeSelectionId={`${nativeSelectionBaseId}.group.${rule?.groupId ?? 'group'}.app.${appRule.appId}`}
+                                onChange={updateAppRule}
+                                onRemove={() => {
+                                  onChange({ appRules: appRules.filter(entry => entry.appId !== appRule.appId) });
+                                  setExpandedAppId(null);
+                                }}
+                              />
+                            </View>
+                          )}
+                        </Animated.View>
+                      );
+                    })}
+                  </View>
+                )}
+
+                <View style={s.newNativeRuleRow}>
+                  <TextInput
+                    value={newAppLabel}
+                    onChangeText={setNewAppLabel}
+                    onSubmitEditing={addNativeAppRule}
+                    placeholder="Rule name, e.g. Instagram"
+                    placeholderTextColor={C.textMuted}
+                    maxLength={28}
+                    style={s.newNativeRuleInput}
+                  />
+                  <TouchableOpacity
+                    style={[s.newNativeRuleButton, !newAppLabel.trim() && s.newNativeRuleButtonDisabled]}
+                    disabled={!newAppLabel.trim()}
+                    onPress={addNativeAppRule}
+                    haptic="selection"
+                  >
+                    <Plus s={15} c={newAppLabel.trim() ? C.goldDark : C.textMuted} w={2.5} />
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
+            {!nativeAvailable && apps.length > 0 && (
+              <>
+                <View style={s.appSectionHeader}>
+                  <View>
+                    <Text style={s.sectionLabelNoMargin}>INDIVIDUAL APPS</Text>
+                    <Text style={s.appSectionNote}>An app rule and its group rule never add together. The stricter boundary wins.</Text>
+                  </View>
+                </View>
+                <View style={s.appsList}>
                   {apps.map((app, index) => {
-                    const tint = CATEGORY_TINTS[app.categoryId] ?? { bg: '#EFEEEB', color: '#5B564F' };
-                    const slice = splits[app.id] ?? 0;
+                    const tint = CATEGORY_TINTS[app.categoryId] ?? { bg: C.goldLight, color: C.goldDark };
+                    const appRule = appRules.find(entry => entry.appId === app.id) ?? null;
+                    const expanded = expandedAppId === app.id;
+                    const alwaysBlocked = alwaysBlockedIds.has(app.id);
+                    const essential = essentialIds.has(app.id);
                     return (
-                      <View key={app.id}>
+                      <Animated.View key={app.id} layout={LinearTransition.duration(180)}>
                         {index > 0 && <View style={s.separator} />}
-                        <View style={s.appRow}>
+                        <TouchableOpacity
+                          style={s.appRow}
+                          onPress={() => setExpandedAppId(expanded ? null : app.id)}
+                          activeOpacity={0.72}
+                        >
                           <View style={[s.appAvatar, { backgroundColor: tint.bg }]}>
-                            <Text style={[s.appAvatarText, { color: tint.color }]}>
-                              {app.name[0]}
+                            <Text style={[s.appAvatarText, { color: tint.color }]}>{app.name[0]}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={s.appName}>{app.name}</Text>
+                            <Text style={s.appMeta}>
+                              {alwaysBlocked ? 'Always Blocked' : appRule ? `${modeLabel(appRule.mode)}${appRule.minutes ? ` · ${formatMinutesShort(appRule.minutes)}` : ''}` : 'Uses the group rule'}
                             </Text>
                           </View>
-                          <Text style={s.appName} numberOfLines={1}>
-                            {app.name}
-                          </Text>
-                          <View style={s.stepper}>
+                          {alwaysBlocked ? (
+                            <View style={s.alwaysTag}><Lock s={9} c="#A24351" w={2.2} /><Text style={s.alwaysTagText}>ALWAYS</Text></View>
+                          ) : (
+                            <ChevronRight s={15} c={C.textMuted} w={2} />
+                          )}
+                        </TouchableOpacity>
+
+                        {expanded && (
+                          <View style={s.expandedWrap}>
+                            {!alwaysBlocked && (
+                              <AppRuleEditor
+                                app={app}
+                                rule={appRule}
+                                inheritedStrength={rule?.strength ?? planStrength}
+                                sessionScoped={!!sessionName}
+                                nativeSelectionId={`${nativeSelectionBaseId}.group.${rule?.groupId ?? 'group'}.app.${app.id}`}
+                                onChange={updateAppRule}
+                                onRemove={() => {
+                                  onChange({ appRules: appRules.filter(entry => entry.appId !== app.id) });
+                                  setExpandedAppId(null);
+                                }}
+                              />
+                            )}
                             <TouchableOpacity
-                              style={[s.stepBtn, slice <= 0 && s.stepBtnDim]}
-                              activeOpacity={0.75}
-                              haptic="selection"
-                              disabled={slice <= 0}
-                              onPress={() => nudgeApp(app.id, -STEP)}
+                              style={[s.alwaysAction, essential && s.alwaysActionDisabled]}
+                              disabled={essential}
+                              onPress={() => alwaysBlocked ? removeAlwaysBlockedApp(app.id) : setPendingAlwaysBlock(app.id)}
                             >
-                              <Minus s={12} c={C.textSecondary} w={2.4} />
-                            </TouchableOpacity>
-                            <Text style={[s.stepValue, slice <= 0 && s.stepValueDim]}>
-                              {slice > 0 ? formatMinutesShort(slice) : '—'}
-                            </Text>
-                            <TouchableOpacity
-                              style={[s.stepBtn, free <= 0 && slice >= 0 && free === 0 && s.stepBtnDim]}
-                              activeOpacity={0.75}
-                              haptic="selection"
-                              disabled={free <= 0}
-                              onPress={() => nudgeApp(app.id, STEP)}
-                            >
-                              <Plus s={12} c={C.textSecondary} w={2.4} />
+                              <Lock s={12} c={essential ? C.textMuted : '#A24351'} w={2.2} />
+                              <Text style={[s.alwaysActionText, essential && { color: C.textMuted }]}>
+                                {essential ? 'Remove from Essentials before Always Blocked' : alwaysBlocked ? 'Remove Always Blocked' : 'Make Always Blocked'}
+                              </Text>
                             </TouchableOpacity>
                           </View>
-                        </View>
-                      </View>
+                        )}
+                      </Animated.View>
                     );
                   })}
                 </View>
-                <Text style={s.appsFootnote}>
-                  {assigned > 0
-                    ? `${formatMinutesShort(assigned)} given to apps · ${formatMinutesShort(free)} shared freely`
-                    : 'Nothing sliced out — the whole limit is shared freely.'}
-                </Text>
-              </Animated.View>
+              </>
             )}
-          </Animated.View>
-        )}
+          </ScrollView>
+        </GestureHandlerRootView>
+      </SmoothBottomSheet>
 
-        <View style={{ height: 16 }} />
-      </ScrollView>
-      </GestureHandlerRootView>
-    </SmoothBottomSheet>
+      <ConfirmModal
+        visible={pendingAlwaysBlock !== null}
+        icon={<Lock s={21} c="#A24351" w={2.2} />}
+        iconBg="#F8E7EA"
+        title="Always block this app?"
+        body="It will stay outside Quiet Hour Essentials and ordinary plan allowances. Loose offers a deliberate 15-minute gateway; Strict keeps it closed."
+        subject={apps.find(app => app.id === pendingAlwaysBlock)?.name}
+        confirmLabel="ALWAYS BLOCK"
+        confirmColor="#A24351"
+        onCancel={() => setPendingAlwaysBlock(null)}
+        onConfirm={() => {
+          if (pendingAlwaysBlock) saveAlwaysBlockedApp({ appId: pendingAlwaysBlock, strength: 'strict', practice: 'prayer' });
+          setPendingAlwaysBlock(null);
+        }}
+      />
+    </>
   );
 }
 
 const s = StyleSheet.create({
-  // GestureHandlerRootView defaults to flex:1 — inside a content-sized sheet
-  // that collapses everything to zero height (the "sheet never opens" bug).
-  gestureRoot: {
-    flexGrow: 0,
-    flexShrink: 1,
-    width: '100%',
-  },
-  sheet: {
-    backgroundColor: C.bg,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 20,
-    paddingBottom: 26,
-    maxHeight: '88%',
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4.5,
-    borderRadius: 3,
-    backgroundColor: '#E7E5E0',
-    marginTop: 10,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 14,
-    marginBottom: 4,
-    gap: 10,
-  },
-  kicker: {
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 2.2,
-    color: C.gold,
-  },
-  title: {
-    marginTop: 2,
-    fontFamily: F.serifMedium,
-    fontSize: 25,
-    letterSpacing: -0.2,
-    color: C.text,
-  },
-  closeBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#F3F2ED',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  valueBlock: {
-    marginTop: 8,
-    backgroundColor: C.surface,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 10,
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  valueText: {
-    fontFamily: F.serifSemiBold,
-    fontSize: 40,
-    lineHeight: 44,
-    color: C.goldDark,
-    textAlign: 'center',
-    fontVariant: ['tabular-nums'],
-  },
-  valueCaption: {
-    marginTop: 2,
-    marginBottom: 6,
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 2,
-    color: C.textMuted,
-    textAlign: 'center',
-  },
-
-  sectionLabel: {
-    marginTop: 16,
-    marginBottom: 8,
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 2.4,
-    color: C.textMuted,
-  },
-  strengthRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  strengthCard: {
-    flex: 1,
-    borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: C.border,
-    backgroundColor: C.surface,
-    paddingHorizontal: 13,
-    paddingVertical: 11,
-  },
-  strengthCardOn: {
-    borderColor: C.gold,
-    backgroundColor: C.goldBg,
-  },
-  strengthTitle: {
-    fontFamily: F.serifMedium,
-    fontSize: 16.5,
-    color: C.text,
-  },
-  strengthDesc: {
-    marginTop: 3,
-    fontFamily: F.sans,
-    fontSize: 11,
-    lineHeight: 14,
-    color: C.textSecondary,
-  },
-  practiceWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  practiceChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 11,
-    paddingVertical: 7.5,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.surface,
-  },
-  practiceChipOn: {
-    borderColor: C.gold,
-    backgroundColor: C.goldBg,
-  },
-  practiceChipText: {
-    fontFamily: F.sansMedium,
-    fontSize: 11.5,
-    color: C.textSecondary,
-  },
-  practiceChipTextOn: {
-    fontFamily: F.sansSemiBold,
-    color: C.goldDark,
-  },
-
-  appsCard: {
-    backgroundColor: C.surface,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: C.border,
-    overflow: 'hidden',
-  },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: C.border,
-    marginLeft: 54,
-  },
-  appRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 11,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  appAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  appAvatarText: {
-    fontFamily: F.sansBold,
-    fontSize: 13,
-  },
-  appName: {
-    flex: 1,
-    fontFamily: F.sansMedium,
-    fontSize: 14.5,
-    color: C.text,
-  },
-  stepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepBtnDim: {
-    opacity: 0.35,
-  },
-  stepValue: {
-    minWidth: 42,
-    textAlign: 'center',
-    fontFamily: F.sansSemiBold,
-    fontSize: 12.5,
-    color: C.goldDark,
-    fontVariant: ['tabular-nums'],
-  },
-  stepValueDim: {
-    color: C.textMuted,
-  },
-  appsFootnote: {
-    marginTop: 8,
-    marginHorizontal: 6,
-    fontFamily: F.sans,
-    fontSize: 11.5,
-    lineHeight: 14,
-    color: C.textMuted,
-  },
+  gestureRoot: { flexGrow: 0, flexShrink: 1, width: '100%' },
+  sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: 24, maxHeight: '93%' },
+  handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#E2E0DA', marginTop: 10 },
+  headerRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  kicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.gold },
+  title: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 27, color: C.text },
+  closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F0EFEA', alignItems: 'center', justifyContent: 'center' },
+  scrollContent: { paddingTop: 17, paddingBottom: 30, gap: 12 },
+  modeRow: { flexDirection: 'row', gap: 7 },
+  modeOption: { flex: 1, height: 39, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' },
+  modeOptionOn: { borderColor: C.gold, backgroundColor: '#FFF8E8' },
+  modeOptionBlocked: { borderColor: '#D99AA6', backgroundColor: '#F8E7EA' },
+  modeText: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.textSecondary },
+  modeTextOn: { color: C.goldDark },
+  modeTextBlocked: { color: '#A24351' },
+  noLimitNote: { borderRadius: 14, backgroundColor: '#F1F0EC', padding: 12 },
+  noLimitTitle: { fontFamily: F.sansSemiBold, fontSize: 11.5, color: C.text },
+  noLimitBody: { marginTop: 3, fontFamily: F.sans, fontSize: 9.5, lineHeight: 14, color: C.textSecondary },
+  limitValueRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  limitLabel: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.5, color: C.textMuted },
+  limitValue: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 29, color: C.text },
+  limitScope: { marginBottom: 5, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.2, color: C.goldDark },
+  sectionLabel: { marginTop: 4, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, color: C.textMuted },
+  sectionLabelNoMargin: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, color: C.textMuted },
+  strengthRow: { flexDirection: 'row', gap: 8 },
+  strengthOption: { flex: 1, minHeight: 82, borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, padding: 11 },
+  looseOptionOn: { borderColor: '#D9BA70', backgroundColor: '#FFF4D8' },
+  strictOptionOn: { borderColor: '#D99AA6', backgroundColor: '#F8E7EA' },
+  strengthName: { fontFamily: F.serifMedium, fontSize: 17, color: C.text },
+  looseText: { color: '#93651E' },
+  strictText: { color: '#A24351' },
+  strengthDetail: { marginTop: 3, fontFamily: F.sans, fontSize: 8.7, lineHeight: 12.5, color: C.textSecondary },
+  checkInRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border, paddingHorizontal: 2 },
+  checkInTitle: { fontFamily: F.sansSemiBold, fontSize: 11, color: C.text },
+  checkInBody: { marginTop: 2, fontFamily: F.sans, fontSize: 8.8, lineHeight: 12.5, color: C.textSecondary },
+  practiceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  practiceChip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 9, paddingVertical: 6 },
+  practiceChipOn: { borderColor: C.gold, backgroundColor: C.goldLight },
+  practiceText: { fontFamily: F.sansMedium, fontSize: 9.5, color: C.textSecondary },
+  practiceTextOn: { fontFamily: F.sansSemiBold, color: C.goldDark },
+  appSectionHeader: { marginTop: 5 },
+  appSectionNote: { marginTop: 3, maxWidth: 300, fontFamily: F.sans, fontSize: 8.8, lineHeight: 13, color: C.textMuted },
+  nativeRuleEmpty: { borderRadius: 14, backgroundColor: '#F1F0EC', padding: 12 },
+  nativeRuleEmptyTitle: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.text },
+  nativeRuleEmptyBody: { marginTop: 3, fontFamily: F.sans, fontSize: 8.8, lineHeight: 13, color: C.textSecondary },
+  newNativeRuleRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingLeft: 12, paddingRight: 6 },
+  newNativeRuleInput: { flex: 1, minHeight: 44, fontFamily: F.sansMedium, fontSize: 11.5, color: C.text },
+  newNativeRuleButton: { width: 35, height: 35, borderRadius: 11, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
+  newNativeRuleButtonDisabled: { backgroundColor: '#F0EFEB' },
+  appsList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
+  separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 42 },
+  appRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 2 },
+  appAvatar: { width: 31, height: 31, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  appAvatarText: { fontFamily: F.sansBold, fontSize: 12 },
+  appName: { fontFamily: F.sansSemiBold, fontSize: 11.5, color: C.text },
+  appMeta: { marginTop: 2, fontFamily: F.sans, fontSize: 8.5, color: C.textMuted },
+  alwaysTag: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, backgroundColor: '#F8E7EA', paddingHorizontal: 7, paddingVertical: 5 },
+  alwaysTagText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 0.8, color: '#A24351' },
+  expandedWrap: { marginLeft: 41, marginBottom: 12, gap: 8 },
+  appEditor: { borderLeftWidth: 2, borderLeftColor: '#E5D9BD', paddingLeft: 10, gap: 9 },
+  appModeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  appMode: { borderRadius: 999, borderWidth: 1, borderColor: C.border, paddingHorizontal: 10, paddingVertical: 6 },
+  appModeOn: { borderColor: C.gold, backgroundColor: C.goldLight },
+  appModeBlocked: { borderColor: '#D99AA6', backgroundColor: '#F8E7EA' },
+  appModeText: { fontFamily: F.sansSemiBold, fontSize: 9, color: C.textSecondary },
+  appModeTextOn: { color: C.goldDark },
+  appModeBlockedText: { color: '#A24351' },
+  removeAppRule: { marginLeft: 'auto', width: 27, height: 27, borderRadius: 14, backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
+  appMinutesRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  appEditorLabel: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.3, color: C.textMuted },
+  minuteStepper: { height: 34, flexDirection: 'row', alignItems: 'center', borderRadius: 11, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, overflow: 'hidden' },
+  minuteButton: { width: 31, height: 34, alignItems: 'center', justifyContent: 'center' },
+  minuteValue: { minWidth: 45, textAlign: 'center', fontFamily: F.sansSemiBold, fontSize: 10, color: C.text },
+  alwaysAction: { minHeight: 37, flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 11, backgroundColor: '#F8E7EA', paddingHorizontal: 10 },
+  alwaysActionDisabled: { backgroundColor: '#F1F0EC' },
+  alwaysActionText: { fontFamily: F.sansSemiBold, fontSize: 8.8, color: '#A24351' },
 });

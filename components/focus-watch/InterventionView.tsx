@@ -3,22 +3,23 @@ import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Animated, { FadeIn, FadeInDown, FadeOut, LinearTransition } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { OrthodoxCross, Shield } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
+import FocusPhoneStatus from './FocusPhoneStatus';
 import GoldButton from './GoldButton';
-import GuardedPhone from './GuardedPhone';
+import { grantNativeTemporaryAccess } from './focusNativeBridge';
 import {
+  continueIntentionalUse,
   getDayPlanState,
   groupName,
   openDoorFor,
+  recordNativeBoundaryEvent,
   recordReturnedMoment,
   type PracticeKind,
   type Strength,
 } from './dayPlanStore';
 
 const CARD_TRANSITION = LinearTransition.duration(230);
-const DOOR_MINUTES = [5, 10, 15];
 
 type PracticeContent = {
   title: string;
@@ -29,7 +30,7 @@ type PracticeContent = {
 
 const PRACTICE_CONTENT: Record<PracticeKind, PracticeContent> = {
   prayer: {
-    title: 'A short prayer',
+    title: 'Short Prayer',
     body: 'O Lord my God, guard my heart this hour. Keep me from what I do not truly want, and turn me toward what is mine to do.',
     doneLabel: 'I have prayed',
   },
@@ -40,14 +41,14 @@ const PRACTICE_CONTENT: Record<PracticeKind, PracticeContent> = {
     doneLabel: 'I have prayed',
   },
   psalm: {
-    title: 'A Psalm',
+    title: 'Psalm',
     body: 'I will lift up mine eyes unto the hills, from whence cometh my help. My help cometh from the Lord, which made heaven and earth.',
     sub: 'PSALM 121',
     doneLabel: 'I have read it',
   },
   chapter: {
     title: 'A Bible chapter',
-    body: 'Open the Gospel and read one chapter, slowly, before this door opens.',
+    body: 'Open the Gospel and read one chapter slowly before you decide again.',
     doneLabel: 'I have read it',
   },
   intention: {
@@ -57,65 +58,122 @@ const PRACTICE_CONTENT: Record<PracticeKind, PracticeContent> = {
   },
 };
 
-// The shield moment. A strict door never opens; a loose door opens only
-// through the practice — and entering costs today's trophy (blueprint §2).
 export default function InterventionView() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ practice?: string; strength?: string; group?: string }>();
-  const practice: PracticeKind =
-    params.practice && params.practice in PRACTICE_CONTENT
-      ? (params.practice as PracticeKind)
-      : 'prayer';
+  const params = useLocalSearchParams<{
+    practice?: string;
+    strength?: string;
+    group?: string;
+    moment?: string;
+    spent?: string;
+    app?: string;
+    native?: string;
+    nativeSelection?: string;
+    sourceSelection?: string;
+    nativeKind?: string;
+    session?: string;
+    day?: string;
+    plan?: string;
+  }>();
+  const practice: PracticeKind = params.practice && params.practice in PRACTICE_CONTENT
+    ? params.practice as PracticeKind
+    : 'prayer';
   const strength: Strength = params.strength === 'strict' ? 'strict' : 'loose';
-  const groupId = params.group ?? 'social';
+  const moment = params.moment === 'checkin' ? 'checkin' : params.moment === 'always' ? 'always' : 'limit';
+  const groupId = params.group ?? '';
+  const sourceMinutes = Math.max(0, Number(params.spent) || 0);
+  const spent = Math.max(1, sourceMinutes || 15);
   const content = PRACTICE_CONTENT[practice];
-  const displayGroup = groupName(getDayPlanState(), groupId);
-
-  const [step, setStep] = useState<'practice' | 'choice'>('practice');
+  const displayGroup = groupId ? groupName(getDayPlanState(), groupId) : 'this app';
+  const subject = params.app ?? displayGroup;
+  const startsWithChoice = strength === 'strict' || moment === 'checkin';
+  const [step, setStep] = useState<'practice' | 'choice'>(startsWithChoice ? 'choice' : 'practice');
   const [reason, setReason] = useState('');
+  const [grantingAccess, setGrantingAccess] = useState(false);
+  const [grantError, setGrantError] = useState<string | null>(null);
   const canComplete = practice !== 'intention' || reason.trim().length >= 8;
+  const nativeSelection = params.native === '1' ? params.nativeSelection : undefined;
 
   const turnBack = () => {
-    recordReturnedMoment(groupId);
+    recordReturnedMoment(groupId || undefined);
     router.back();
   };
 
-  const enterFor = (minutes: number) => {
-    openDoorFor(groupId, minutes);
-    router.back();
+  const continueFor15 = async () => {
+    if (grantingAccess) return;
+    setGrantingAccess(true);
+    setGrantError(null);
+    try {
+      if (nativeSelection) {
+        await grantNativeTemporaryAccess(
+          nativeSelection,
+          params.sourceSelection ?? '',
+          params.nativeKind ?? moment,
+          sourceMinutes,
+          15
+        );
+        if (moment !== 'checkin' && params.sourceSelection) {
+          recordNativeBoundaryEvent('limit', params.sourceSelection, params.session, params.day, params.plan);
+        }
+      } else if (moment === 'checkin') {
+        continueIntentionalUse(groupId || 'intentional-use', 15);
+      } else {
+        openDoorFor(groupId || 'intentional-use', 15);
+      }
+      router.back();
+    } catch (error) {
+      setGrantError(error instanceof Error
+        ? error.message
+        : 'The active protection changed. Return to the blocked app and try again.');
+    } finally {
+      setGrantingAccess(false);
+    }
   };
+
+  const headline = strength === 'strict'
+    ? 'The boundary is holding.'
+    : moment === 'checkin'
+      ? `${spent} minutes have passed.`
+      : moment === 'always'
+        ? 'This app begins behind a gate.'
+        : 'The limit has been used.';
+  const body = strength === 'strict'
+    ? `${subject} remains protected until this rule ends.`
+    : moment === 'checkin'
+      ? 'Notice the time before scrolling becomes automatic.'
+      : 'A deliberate 15-minute continuation is available after your return practice.';
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: 80 }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
+      <ScrollView contentContainerStyle={s.page} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <ScreenTitleBar title="PAUSE" showBack />
 
-        <Animated.View entering={FadeInDown.duration(420).delay(30)} style={s.lampBlock}>
-          <GuardedPhone diameter={170} sealed />
+        <Animated.View entering={FadeInDown.duration(420).delay(30)} style={s.phoneBlock}>
+          <FocusPhoneStatus active critical={strength === 'strict'} size={150} />
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.duration(420).delay(100)} style={s.verseBlock}>
-          <OrthodoxCross s={18} c={C.gold} w={1.6} />
-          <Text style={s.verse}>
-            {'"Watch and pray, that ye enter not into temptation."'}
-          </Text>
-          <Text style={s.verseRef}>MATTHEW 26:41</Text>
+        <Animated.View entering={FadeInDown.duration(420).delay(90)} style={s.verseBlock}>
+          <OrthodoxCross s={17} c={C.gold} w={1.6} />
+          <Text style={s.verse}>“I will not be brought under the power of any.”</Text>
+          <Text style={s.verseRef}>1 CORINTHIANS 6:12</Text>
         </Animated.View>
 
-        <Animated.View
-          entering={FadeInDown.duration(420).delay(170)}
-          layout={CARD_TRANSITION}
-          style={s.card}
-        >
+        <Animated.View entering={FadeInDown.duration(420).delay(150)} layout={CARD_TRANSITION} style={s.boundaryBand}>
+          <View style={[s.boundaryIcon, strength === 'strict' && s.boundaryIconStrict]}>
+            <Shield s={19} c={strength === 'strict' ? '#A24351' : C.goldDark} w={2.1} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.boundaryKicker}>{moment === 'checkin' ? 'INTENTIONAL USE CHECK-IN' : strength === 'strict' ? 'STRICT PROTECTION' : 'LOOSE PROTECTION'}</Text>
+            <Text style={s.boundaryTitle}>{headline}</Text>
+            <Text style={s.boundaryBody}>{body}</Text>
+          </View>
+        </Animated.View>
+
+        <Animated.View layout={CARD_TRANSITION} style={s.actionSurface}>
           {step === 'practice' ? (
-            <Animated.View key="practice" entering={FadeIn.duration(280)} exiting={FadeOut.duration(140)}>
-              <Text style={s.cardLabel}>{`THE RETURN PRACTICE · ${displayGroup.toUpperCase()}`}</Text>
-              <Text style={s.cardTitle}>{content.title}</Text>
-
+            <Animated.View key="practice" entering={FadeIn.duration(240)} exiting={FadeOut.duration(120)}>
+              <Text style={s.actionKicker}>RETURN PRACTICE · {displayGroup.toUpperCase()}</Text>
+              <Text style={s.actionTitle}>{content.title}</Text>
               {practice === 'intention' ? (
                 <TextInput
                   style={s.reasonInput}
@@ -126,51 +184,37 @@ export default function InterventionView() {
                   multiline
                 />
               ) : (
-                <Text style={s.cardBody}>{content.body}</Text>
+                <Text style={s.practiceBody}>{content.body}</Text>
               )}
-
-              {!!content.sub && <Text style={s.cardSub}>{content.sub}</Text>}
-
-              <GoldButton
-                label={content.doneLabel}
-                disabled={!canComplete}
-                onPress={() => setStep('choice')}
-                style={{ marginTop: 18 }}
-              />
+              {!!content.sub && <Text style={s.practiceSub}>{content.sub}</Text>}
+              <GoldButton label={content.doneLabel} disabled={!canComplete} onPress={() => setStep('choice')} style={{ marginTop: 17 }} />
+              <GoldButton label="Turn back instead" variant="outline" onPress={turnBack} style={{ marginTop: 8 }} />
             </Animated.View>
           ) : (
-            <Animated.View key="choice" entering={FadeIn.duration(280)} exiting={FadeOut.duration(140)}>
+            <Animated.View key="choice" entering={FadeIn.duration(240)} exiting={FadeOut.duration(120)}>
               {strength === 'strict' ? (
                 <>
-                  <View style={s.strictShield}>
-                    <Shield s={20} c="#B54155" w={2.2} />
-                  </View>
-                  <Text style={s.choiceTitle}>This door stays closed.</Text>
-                  <Text style={s.choiceSub}>
-                    You set it strict — and prayed anyway. That is strength.
-                  </Text>
-                  <GoldButton label="Turn back" onPress={turnBack} style={{ marginTop: 18 }} />
+                  <Text style={s.choiceTitle}>No override is offered.</Text>
+                  <Text style={s.choiceBody}>You chose this boundary before the moment became difficult. Focus will keep that decision.</Text>
+                  <GoldButton label="Leave the app" onPress={turnBack} style={{ marginTop: 17 }} />
                 </>
               ) : (
                 <>
-                  <Text style={s.choiceTitle}>The door is open.</Text>
-                  <Text style={s.choiceSub}>What happens next is yours to choose.</Text>
-
-                  <GoldButton label="Turn back" onPress={turnBack} style={{ marginTop: 18 }} />
-
-                  <View style={s.doorRow}>
-                    {DOOR_MINUTES.map(minutes => (
-                      <TouchableOpacity
-                        key={minutes}
-                        style={s.doorChip}
-                        activeOpacity={0.75}
-                        onPress={() => enterFor(minutes)}
-                      >
-                        <Text style={s.doorChipText}>{`${minutes} min`}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  <Text style={s.doorNote}>Entering opens the door — and costs today's trophy.</Text>
+                  <Text style={s.choiceTitle}>{moment === 'checkin' ? 'Choose with awareness.' : 'The deliberate door is ready.'}</Text>
+                  <Text style={s.choiceBody}>
+                    {moment === 'checkin'
+                      ? 'Continuing opens the next 15 minutes. This check-in alone does not lose the final limit.'
+                      : 'Continuing opens one 15-minute window and records the lower-level boundary as lost for today.'}
+                  </Text>
+                  {!!grantError && <Text style={s.grantError}>{grantError}</Text>}
+                  <GoldButton label="Leave the app" onPress={turnBack} style={{ marginTop: 17 }} />
+                  <GoldButton
+                    label={grantingAccess ? 'Opening 15 minutes...' : 'Continue for 15 minutes'}
+                    variant="outline"
+                    disabled={grantingAccess}
+                    onPress={() => { void continueFor15(); }}
+                    style={{ marginTop: 8 }}
+                  />
                 </>
               )}
             </Animated.View>
@@ -182,142 +226,24 @@ export default function InterventionView() {
 }
 
 const s = StyleSheet.create({
-  lampBlock: {
-    marginTop: 12,
-    alignItems: 'center',
-  },
-  verseBlock: {
-    marginTop: 14,
-    paddingHorizontal: 34,
-    alignItems: 'center',
-    gap: 10,
-  },
-  verse: {
-    fontFamily: F.serifMediumItalic,
-    fontSize: 20,
-    lineHeight: 27,
-    color: C.text,
-    textAlign: 'center',
-  },
-  verseRef: {
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 2.4,
-    color: C.gold,
-  },
-
-  card: {
-    marginTop: 24,
-    marginHorizontal: 16,
-    backgroundColor: C.surface,
-    borderRadius: 26,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 20,
-    paddingTop: 17,
-    paddingBottom: 18,
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.07,
-    shadowRadius: 14,
-    elevation: 4,
-    overflow: 'hidden',
-  },
-  cardLabel: {
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 2.4,
-    color: C.textMuted,
-  },
-  cardTitle: {
-    marginTop: 8,
-    fontFamily: F.serifMedium,
-    fontSize: 22,
-    letterSpacing: -0.2,
-    color: C.text,
-  },
-  cardBody: {
-    marginTop: 10,
-    fontFamily: F.serif,
-    fontSize: 17.5,
-    lineHeight: 27,
-    color: C.textSecondary,
-  },
-  cardSub: {
-    marginTop: 12,
-    fontFamily: F.sansBold,
-    fontSize: 9.5,
-    letterSpacing: 2,
-    color: C.gold,
-  },
-  reasonInput: {
-    marginTop: 12,
-    minHeight: 88,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 14,
-    paddingTop: 11,
-    paddingBottom: 11,
-    fontFamily: F.serif,
-    fontSize: 16.5,
-    lineHeight: 24,
-    color: C.text,
-    textAlignVertical: 'top',
-  },
-
-  strictShield: {
-    alignSelf: 'center',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#FBE6E9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  choiceTitle: {
-    marginTop: 4,
-    fontFamily: F.serifMedium,
-    fontSize: 24,
-    letterSpacing: -0.2,
-    color: C.text,
-    textAlign: 'center',
-  },
-  choiceSub: {
-    marginTop: 5,
-    paddingHorizontal: 6,
-    fontFamily: F.serif,
-    fontSize: 15.5,
-    lineHeight: 21,
-    color: C.textSecondary,
-    textAlign: 'center',
-  },
-  doorRow: {
-    marginTop: 12,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  doorChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.surface,
-  },
-  doorChipText: {
-    fontFamily: F.sansMedium,
-    fontSize: 13,
-    color: C.textSecondary,
-    fontVariant: ['tabular-nums'],
-  },
-  doorNote: {
-    marginTop: 9,
-    fontFamily: F.sans,
-    fontSize: 10.5,
-    color: C.textMuted,
-    textAlign: 'center',
-  },
+  page: { paddingHorizontal: 16, paddingBottom: 80, gap: 15 },
+  phoneBlock: { height: 145, alignItems: 'center', justifyContent: 'center' },
+  verseBlock: { paddingHorizontal: 28, alignItems: 'center', gap: 8 },
+  verse: { fontFamily: F.serifMediumItalic, fontSize: 18, lineHeight: 24, color: C.text, textAlign: 'center' },
+  verseRef: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.1, color: C.gold },
+  boundaryBand: { minHeight: 104, flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border, paddingVertical: 14, paddingHorizontal: 4 },
+  boundaryIcon: { width: 39, height: 39, borderRadius: 13, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
+  boundaryIconStrict: { backgroundColor: '#F8E7EA' },
+  boundaryKicker: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.6, color: C.textMuted },
+  boundaryTitle: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 21, color: C.text },
+  boundaryBody: { marginTop: 3, fontFamily: F.sans, fontSize: 10, lineHeight: 15, color: C.textSecondary },
+  actionSurface: { borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E6DCC6', backgroundColor: '#FFFDF8', padding: 16 },
+  actionKicker: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.7, color: C.gold },
+  actionTitle: { marginTop: 6, fontFamily: F.serifMedium, fontSize: 22, color: C.text },
+  practiceBody: { marginTop: 9, fontFamily: F.serif, fontSize: 16.5, lineHeight: 24, color: C.textSecondary },
+  practiceSub: { marginTop: 10, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.6, color: C.gold },
+  reasonInput: { marginTop: 10, minHeight: 82, borderRadius: 14, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, padding: 12, fontFamily: F.serif, fontSize: 15, lineHeight: 22, color: C.text, textAlignVertical: 'top' },
+  choiceTitle: { fontFamily: F.serifMedium, fontSize: 21, color: C.text },
+  choiceBody: { marginTop: 5, fontFamily: F.sans, fontSize: 10.5, lineHeight: 16, color: C.textSecondary },
+  grantError: { marginTop: 10, fontFamily: F.sansSemiBold, fontSize: 9.5, lineHeight: 14, color: '#A24351' },
 });

@@ -20,6 +20,7 @@ import { TaskProvider } from '@/components/tasks/TaskProvider';
 import { SettingsProvider } from '@/components/settings/SettingsContext';
 import NotificationBridge from '@/components/notifications/NotificationBridge';
 import { GuidedSetupProvider } from '@/components/onboarding/guided/GuidedSetupContext';
+import FocusNativeCoordinator from '@/components/focus-watch/FocusNativeCoordinator';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -76,6 +77,7 @@ export default function RootLayout() {
                   <BucketListProvider>
                     <SettingsProvider>
                       <NotificationBridge />
+                      <FocusNativeCoordinator />
                       <InnerToolsProvider>
                         <BigEventsProvider>
                           <MonthlyGoalsProvider>
@@ -97,6 +99,7 @@ export default function RootLayout() {
                                   <Stack.Screen name="day-plans"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="day-plan"        options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="clean-sight"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                  <Stack.Screen name="focus-analytics" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="notes"           options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="scripture"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="scripture-reader" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />

@@ -50,7 +50,7 @@ export default function WebPackCard({
               {never
                 ? 'Closed for good — no unlock'
                 : enabled
-                  ? 'Blocked across your browsers'
+                  ? 'Blocked in supported browsers'
                   : content.detail}
             </Text>
           </View>

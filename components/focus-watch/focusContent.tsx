@@ -1,53 +1,7 @@
 import { ReactNode } from 'react';
-import { AlertTriangle, Bell, Calendar, Eye, Target, Waves } from '@/components/icons/Icons';
+import { AlertTriangle, Bell, Target, Waves } from '@/components/icons/Icons';
 import type { WebPackId } from './dayPlanStore';
-
-export type FocusRoute = '/day-plans' | '/clean-sight';
-
-export type FocusHeroCard = {
-  id: string;
-  label: string;
-  title: string;
-  description: string;
-  bg: string;
-  border: string;
-  labelColor: string;
-  titleColor: string;
-  bodyColor: string;
-  arrowBg: string;
-  decor: ReactNode;
-  route: FocusRoute;
-};
-
-export const DAY_PLAN_CARD: FocusHeroCard = {
-  id: 'day-plan',
-  label: 'APP BLOCKING',
-  title: 'Day Plan',
-  description: 'Plan your phone the way you plan your day.',
-  bg: '#FBF3DE',
-  border: '#F0E3B8',
-  labelColor: '#A9863F',
-  titleColor: '#6D4F13',
-  bodyColor: '#A9863F',
-  arrowBg: '#8A5A1A',
-  decor: <Calendar s={84} c="#A9863F" w={1} />,
-  route: '/day-plans',
-};
-
-export const CLEAN_SIGHT_CARD: FocusHeroCard = {
-  id: 'clean-sight',
-  label: 'WEBSITE BLOCKING',
-  title: 'Clean Sight',
-  description: 'Close the door on gambling, adult and addictive sites.',
-  bg: '#E1F1EC',
-  border: '#C8E6DD',
-  labelColor: '#3D8273',
-  titleColor: '#1F4E45',
-  bodyColor: '#3D8273',
-  arrowBg: '#2A6E5F',
-  decor: <Eye s={84} c="#3D8273" w={1} />,
-  route: '/clean-sight',
-};
+import { WEB_PACK_DOMAINS } from './webProtectionCatalog';
 
 export type WebPackContent = {
   id: WebPackId;
@@ -66,7 +20,7 @@ export const WEB_PACKS: WebPackContent[] = [
     detail: 'Betting sites, casinos, lotteries',
     icon: <Target s={16} c="#B54155" w={2} />,
     iconBg: '#FBE6E9',
-    sites: ['bet365.com', 'stake.com', '1xbet.com', 'williamhill.com', 'betway.com', 'pokerstars.com'],
+    sites: [...WEB_PACK_DOMAINS.gambling],
     sitesNote: '…and a curated list we keep growing',
   },
   {
@@ -75,7 +29,7 @@ export const WEB_PACKS: WebPackContent[] = [
     detail: "Apple's system filter plus our curated list",
     icon: <AlertTriangle s={15} c="#B54155" w={2} />,
     iconBg: '#FBE6E9',
-    sites: ['pornhub.com', 'xvideos.com', 'onlyfans.com', 'xnxx.com', 'chaturbate.com'],
+    sites: [...WEB_PACK_DOMAINS.adult],
     sitesNote: "…plus Apple's automatic adult filter for the rest",
   },
   {
@@ -84,8 +38,8 @@ export const WEB_PACKS: WebPackContent[] = [
     detail: 'Feeds in the browser — X, Reddit, Facebook',
     icon: <Waves s={16} c="#3D8273" w={2} />,
     iconBg: '#E1F1EC',
-    sites: ['x.com', 'facebook.com', 'reddit.com', 'instagram.com', 'tiktok.com', 'threads.net'],
-    sitesNote: '…the apps themselves live in your Day Plan',
+    sites: [...WEB_PACK_DOMAINS.social],
+    sitesNote: '…the apps themselves live in Screen Time',
   },
   {
     id: 'news',
@@ -93,14 +47,14 @@ export const WEB_PACKS: WebPackContent[] = [
     detail: 'Endless headlines and comment wars',
     icon: <Bell s={15} c="#A9863F" w={2} />,
     iconBg: '#FBF3DE',
-    sites: ['news.google.com', 'cnn.com', 'bbc.com', 'dailymail.co.uk', 'nypost.com'],
+    sites: [...WEB_PACK_DOMAINS.news],
     sitesNote: '…and a curated list we keep growing',
   },
 ];
 
-// Mock app catalog until Apple's FamilyActivityPicker arrives in Phase 2.
-// Tints come from the section-card palette family.
-export type MockApp = { id: string; name: string; categoryId: string };
+// Readable preview catalog for web/Expo Go. A native build never treats these
+// labels as Apple selections; Family Controls app tokens remain private.
+export type PreviewApp = { id: string; name: string; categoryId: string };
 
 export const CATEGORY_TINTS: Record<string, { bg: string; color: string }> = {
   social: { bg: '#EEEAF5', color: '#6D5AAE' },
@@ -111,7 +65,9 @@ export const CATEGORY_TINTS: Record<string, { bg: string; color: string }> = {
   dating: { bg: '#FBE6E9', color: '#B54155' },
 };
 
-export const MOCK_APPS: MockApp[] = [
+export const PREVIEW_APPS: PreviewApp[] = [
+  { id: 'whatsapp', name: 'WhatsApp', categoryId: 'social' },
+  { id: 'viber', name: 'Viber', categoryId: 'social' },
   { id: 'instagram', name: 'Instagram', categoryId: 'social' },
   { id: 'tiktok', name: 'TikTok', categoryId: 'social' },
   { id: 'x', name: 'X', categoryId: 'social' },
@@ -123,6 +79,7 @@ export const MOCK_APPS: MockApp[] = [
   { id: 'twitch', name: 'Twitch', categoryId: 'entertainment' },
   { id: 'primevideo', name: 'Prime Video', categoryId: 'entertainment' },
   { id: 'roblox', name: 'Roblox', categoryId: 'games' },
+  { id: 'pubg', name: 'PUBG Mobile', categoryId: 'games' },
   { id: 'clashroyale', name: 'Clash Royale', categoryId: 'games' },
   { id: 'candycrush', name: 'Candy Crush', categoryId: 'games' },
   { id: 'brawlstars', name: 'Brawl Stars', categoryId: 'games' },
@@ -137,7 +94,39 @@ export const MOCK_APPS: MockApp[] = [
   { id: 'hinge', name: 'Hinge', categoryId: 'dating' },
 ];
 
-export function appsInCategory(categoryId: string): MockApp[] {
-  return MOCK_APPS.filter(app => app.categoryId === categoryId);
+export type EssentialAppOption = {
+  id: string;
+  name: string;
+  group: 'Communication' | 'Planning' | 'Navigation' | 'Health & Safety' | 'System' | 'Other apps';
+  core?: boolean;
+};
+
+export const ESSENTIAL_APP_OPTIONS: EssentialAppOption[] = [
+  { id: 'phone', name: 'Phone', group: 'Communication', core: true },
+  { id: 'messages', name: 'Messages', group: 'Communication', core: true },
+  { id: 'facetime', name: 'FaceTime', group: 'Communication', core: true },
+  { id: 'maps', name: 'Maps', group: 'Navigation', core: true },
+  { id: 'camera', name: 'Camera', group: 'System' },
+  { id: 'wallet', name: 'Wallet', group: 'Health & Safety' },
+  { id: 'mail', name: 'Mail', group: 'Communication' },
+  { id: 'gmail', name: 'Gmail', group: 'Communication' },
+  { id: 'calendar', name: 'Calendar', group: 'Planning' },
+  { id: 'reminders', name: 'Reminders', group: 'Planning' },
+  { id: 'clock', name: 'Clock', group: 'Planning' },
+  { id: 'googlemaps', name: 'Google Maps', group: 'Navigation' },
+  { id: 'health', name: 'Health', group: 'Health & Safety' },
+  { id: 'findmy', name: 'Find My', group: 'Health & Safety' },
+  { id: 'settings', name: 'Settings', group: 'System' },
+  { id: 'safari', name: 'Safari', group: 'System' },
+  { id: 'chrome', name: 'Chrome', group: 'System' },
+  ...PREVIEW_APPS.map(app => ({
+    id: app.id,
+    name: app.name,
+    group: 'Other apps' as const,
+  })),
+];
+
+export function appsInCategory(categoryId: string): PreviewApp[] {
+  return PREVIEW_APPS.filter(app => app.categoryId === categoryId);
 }
 

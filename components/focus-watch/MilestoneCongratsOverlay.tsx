@@ -23,7 +23,7 @@ export default function MilestoneCongratsOverlay({
       <CelebrationOverlayBase
         onClose={onClose}
         title={MILESTONE_TITLES[milestone] ?? `${milestone} days kept!`}
-        subtitleStrong={`A ${milestone}-day watch over your attention.`}
+        subtitleStrong={`${milestone} days of keeping your Daily Target.`}
         subtitle={'"Well done, thou good and faithful servant." — Matthew 25:21'}
       />
     </Modal>

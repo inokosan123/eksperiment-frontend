@@ -28,6 +28,10 @@
       [
         "expo-router",
         {
+          "headers": {
+            "Cross-Origin-Embedder-Policy": "credentialless",
+            "Cross-Origin-Opener-Policy": "same-origin"
+          },
           "asyncRoutes": {
             "web": false
           }
@@ -60,6 +64,73 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "anastaFocus": {
+        "bundleIdentifier": "com.anasta.app",
+        "appGroup": "group.com.anasta.app.focus"
+      },
+      "router": {
+        "headers": {
+          "Cross-Origin-Embedder-Policy": "credentialless",
+          "Cross-Origin-Opener-Policy": "same-origin"
+        },
+        "asyncRoutes": {
+          "web": false
+        }
+      },
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "AnastaDeviceActivityMonitor",
+                  "bundleIdentifier": "com.anasta.app.focus-monitor",
+                  "entitlements": {
+                    "com.apple.developer.family-controls": true,
+                    "com.apple.security.application-groups": [
+                      "group.com.anasta.app.focus"
+                    ]
+                  }
+                },
+                {
+                  "targetName": "AnastaShieldConfiguration",
+                  "bundleIdentifier": "com.anasta.app.focus-shield-configuration",
+                  "entitlements": {
+                    "com.apple.developer.family-controls": true,
+                    "com.apple.security.application-groups": [
+                      "group.com.anasta.app.focus"
+                    ]
+                  }
+                },
+                {
+                  "targetName": "AnastaShieldAction",
+                  "bundleIdentifier": "com.anasta.app.focus-shield-action",
+                  "entitlements": {
+                    "com.apple.developer.family-controls": true,
+                    "com.apple.security.application-groups": [
+                      "group.com.anasta.app.focus"
+                    ]
+                  }
+                },
+                {
+                  "targetName": "AnastaActivityReport",
+                  "bundleIdentifier": "com.anasta.app.focus-activity-report",
+                  "entitlements": {
+                    "com.apple.developer.family-controls": true,
+                    "com.apple.security.application-groups": [
+                      "group.com.anasta.app.focus"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "0d7cabc8-20b3-49cb-84f0-1036c47910d3"
+      }
+    },
+    "owner": "p1b2"
   }
 }

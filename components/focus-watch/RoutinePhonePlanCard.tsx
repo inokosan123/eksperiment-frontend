@@ -13,8 +13,8 @@ import {
   weekdayMondayFirst,
 } from './dayPlanStore';
 
-// The light bridge into My Routine (blueprint §4.8): read-only information
-// about which Day Plan guards the viewed weekday. One tap leads to Focus.
+// The light bridge into My Routine: read-only information about the Screen
+// Time template assigned to this weekday. One tap leads to Focus.
 // No routine state is touched from here.
 export default function RoutinePhonePlanCard({ dayIndex }: { dayIndex: number }) {
   const state = useDayPlan();
@@ -36,15 +36,17 @@ export default function RoutinePhonePlanCard({ dayIndex }: { dayIndex: number })
         <Smartphone s={16} c={C.goldDark} w={2} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={s.kicker}>PHONE</Text>
+        <Text style={s.kicker}>SCREEN TIME</Text>
         <Text style={s.title} numberOfLines={1}>
           {`${DAY_NAMES[dayIndex]} — ${plan ? plan.name : 'Rest day'}`}
         </Text>
         {plan ? (
           <>
-            <View style={{ marginTop: 7 }}>
-              <ZoneTimeline zones={plan.zones} height={6} />
-            </View>
+            {plan.kind === 'session' && (
+              <View style={{ marginTop: 7 }}>
+                <ZoneTimeline zones={plan.zones} height={6} />
+              </View>
+            )}
             <Text style={s.meta} numberOfLines={1}>
               {describeZones(plan)}
             </Text>

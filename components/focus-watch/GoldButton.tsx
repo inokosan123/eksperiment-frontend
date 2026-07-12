@@ -10,13 +10,28 @@ export default function GoldButton({
   disabled,
   height = 52,
   style,
+  variant = 'solid',
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   height?: number;
   style?: ViewStyle;
+  variant?: 'solid' | 'outline';
 }) {
+  if (variant === 'outline') {
+    return (
+      <TouchableOpacity
+        activeOpacity={0.78}
+        haptic="medium"
+        disabled={disabled}
+        onPress={onPress}
+        style={[s.outline, { height, opacity: disabled ? 0.4 : 1 }, style]}
+      >
+        <Text style={s.outlineLabel}>{label}</Text>
+      </TouchableOpacity>
+    );
+  }
   return (
     <TouchableOpacity
       activeOpacity={0.85}
@@ -69,5 +84,19 @@ const s = StyleSheet.create({
     fontSize: 17.5,
     letterSpacing: 0.4,
     color: '#fff',
+  },
+  outline: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#D9C394',
+    backgroundColor: '#FFFDF8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+  },
+  outlineLabel: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 16.5,
+    color: C.goldDark,
   },
 });

@@ -1,579 +1,495 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import { CheckSmall, Plus, X } from '@/components/icons/Icons';
+import ConfirmModal from '@/components/shared/ConfirmModal';
+import { Calendar, CheckSmall, ChevronRight, Clock, Lock, Plus, Shield, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import AlwaysBlockedSheet from './AlwaysBlockedSheet';
+import EssentialAppsSheet from './EssentialAppsSheet';
 import ZoneClock from './ZoneClock';
+import { getNativeActivitySelectionSummary, isNativeFocusAvailable } from './focusNativeBridge';
+import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
+import { usePermissionGate } from './usePermissionGate';
 import {
+  activeZone,
   assignPlanToWeekday,
-  formatMinutesShort,
+  dateKey,
   DAY_LETTERS,
   DAY_NAMES,
-  dateKey,
   describeRules,
-  describeZones,
+  formatMinutesShort,
+  getEffectivePlan,
   getPlanById,
+  groupName,
+  planHasProtectionNow,
   swapTodayPlan,
   useDayPlan,
   weekdayMondayFirst,
+  wouldPlanLoseTodayTarget,
   type DayPlan,
+  type DayPlanState,
 } from './dayPlanStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
 
-// ---------------------------------------------------------------------------
-// Plan picker — assigns a plan to a weekday (template) or swaps today.
-// ---------------------------------------------------------------------------
+type PickerState =
+  | { mode: 'template'; day: number }
+  | { mode: 'today'; day: number }
+  | null;
+
+type PlanChangeConfirmation = {
+  planId: string | null;
+  kind: 'known-loss' | 'native-reconcile';
+} | null;
 
 function PlanPickerSheet({
-  day,
+  picker,
   onClose,
+  requestActivation,
 }: {
-  day: number | null;
+  picker: PickerState;
   onClose: () => void;
+  requestActivation: (action: () => void) => void;
 }) {
   const state = useDayPlan();
-  const isToday = day !== null && weekdayMondayFirst(new Date()) === day;
-  const todayRecord = state.days[dateKey(new Date())];
-  const currentPlanId =
-    day === null ? null : isToday && todayRecord ? todayRecord.planId : state.schedule[day];
+  const nativeAvailable = isNativeFocusAvailable();
+  const [pendingChange, setPendingChange] = useState<PlanChangeConfirmation>(null);
+  const [checkingPlanId, setCheckingPlanId] = useState<string | null>(null);
+  const [activationError, setActivationError] = useState<string | null>(null);
+  const day = picker?.day ?? 0;
+  const today = new Date();
+  const todayRecord = state.days[dateKey(today)];
+  const currentPlanId = picker?.mode === 'today'
+    ? todayRecord ? todayRecord.planId : state.schedule[weekdayMondayFirst(today)]
+    : state.schedule[day];
+  const currentPlan = getPlanById(state, currentPlanId);
 
-  const choose = (planId: string | null) => {
-    if (day === null) return;
-    if (isToday) {
-      // Today changes immediately; the weekly template keeps its own value.
-      swapTodayPlan(planId);
-    } else {
-      assignPlanToWeekday(day, planId);
-    }
+  useEffect(() => {
+    setCheckingPlanId(null);
+    setActivationError(null);
+  }, [picker?.day, picker?.mode]);
+
+  const apply = (planId: string | null) => {
+    if (!picker) return;
+    if (picker.mode === 'today') swapTodayPlan(planId);
+    else assignPlanToWeekday(day, planId);
     onClose();
   };
 
+  const missingNativeSelections = async (nextPlan: DayPlan) => {
+    const required = new Map<string, string>();
+    const ruleSets = nextPlan.kind === 'session'
+      ? nextPlan.zones.flatMap(session => session.rules ?? [])
+      : nextPlan.rules;
+    for (const rule of ruleSets) {
+      const groupMode = rule.mode ?? (rule.dailyMinutes == null ? 'noLimit' : 'limit');
+      const activeAppRules = (rule.appRules ?? []).filter(appRule => {
+        const appMode = appRule.mode ?? (appRule.minutes == null ? 'noLimit' : 'limit');
+        return appMode === 'blocked' || (appMode === 'limit' && appRule.minutes != null);
+      });
+      if (
+        groupMode === 'blocked'
+        || (groupMode === 'limit' && rule.dailyMinutes != null)
+        || activeAppRules.length > 0
+      ) {
+        required.set(
+          `plan.${nextPlan.id}.group.${rule.groupId}`,
+          `${groupName(state, rule.groupId)} group`
+        );
+      }
+      for (const appRule of activeAppRules) {
+        required.set(
+          `plan.${nextPlan.id}.group.${rule.groupId}.app.${appRule.appId}`,
+          appRule.label?.trim() || 'an individual app rule'
+        );
+      }
+    }
+    const missing: string[] = [];
+    for (const [selectionId, label] of required) {
+      const summary = await getNativeActivitySelectionSummary(selectionId);
+      const isIndividual = selectionId.includes('.app.');
+      if (!summary || (isIndividual ? summary.applicationCount !== 1 : summary.applicationCount === 0)) {
+        missing.push(label);
+      }
+    }
+    return missing;
+  };
+
+  const applyWithPermission = async (planId: string | null) => {
+    const nextPlan = getPlanById(state, planId);
+    const activatesToday = picker?.mode === 'today'
+      && !!nextPlan
+      && (nextPlan.budgetMinutes != null || planHasProtectionNow(nextPlan, new Date()));
+    setActivationError(null);
+    if (activatesToday && nativeAvailable && nextPlan) {
+      setCheckingPlanId(nextPlan.id);
+      try {
+        const missing = await missingNativeSelections(nextPlan);
+        if (missing.length > 0) {
+          const visible = missing.slice(0, 2).join(' and ');
+          const rest = missing.length > 2 ? ` and ${missing.length - 2} more` : '';
+          setActivationError(`Open ${nextPlan.name} and choose real iPhone apps for ${visible}${rest} before activating it.`);
+          return;
+        }
+      } finally {
+        setCheckingPlanId(null);
+      }
+    }
+    if (activatesToday) requestActivation(() => apply(planId));
+    else apply(planId);
+  };
+
+  const choose = (planId: string | null) => {
+    if (planId === currentPlanId) {
+      onClose();
+      return;
+    }
+    if (picker?.mode === 'today' && wouldPlanLoseTodayTarget(planId)) {
+      setPendingChange({ planId, kind: 'known-loss' });
+      return;
+    }
+    const nextTarget = getPlanById(state, planId)?.budgetMinutes ?? null;
+    const currentTarget = currentPlan?.budgetMinutes ?? null;
+    const tightensUnknownToday = picker?.mode === 'today'
+      && !todayRecord?.targetLost
+      && nextTarget != null
+      && (currentTarget == null || nextTarget < currentTarget);
+    if (tightensUnknownToday) {
+      setPendingChange({ planId, kind: 'native-reconcile' });
+      return;
+    }
+    void applyWithPermission(planId);
+  };
+
   return (
-    <SmoothBottomSheet visible={day !== null} onClose={onClose} sheetStyle={s.sheet}>
-      <View style={s.sheetHandle} />
-      <View style={s.sheetHeaderRow}>
-        <Text style={s.sheetTitle}>{day !== null ? DAY_NAMES[day] : ''}</Text>
-        <TouchableOpacity
-          onPress={onClose}
-          activeOpacity={0.8}
-          style={s.sheetClose}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <X s={17} c={C.textMuted} w={2.2} />
-        </TouchableOpacity>
-      </View>
-      {isToday && (
-        <Text style={s.sheetNote}>Switching today never costs the trophy.</Text>
-      )}
-
-      <View style={s.pickerCard}>
-        {state.plans.map((plan, index) => {
-          const selected = currentPlanId === plan.id;
-          return (
-            <View key={plan.id}>
-              {index > 0 && <View style={s.separator} />}
-              <TouchableOpacity
-                style={s.pickerRow}
-                activeOpacity={0.75}
-                haptic="selection"
-                onPress={() => choose(plan.id)}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={s.pickerName}>{plan.name}</Text>
-                  <Text style={s.pickerMeta} numberOfLines={1}>
-                    {describeZones(plan)}
-                  </Text>
-                </View>
-                <View style={[s.radio, selected && s.radioOn]}>
-                  {selected && <CheckSmall s={12} c="#fff" w={3} />}
-                </View>
-              </TouchableOpacity>
-            </View>
-          );
-        })}
-
-        {state.plans.length > 0 && <View style={s.separator} />}
-        <TouchableOpacity
-          style={s.pickerRow}
-          activeOpacity={0.75}
-          haptic="selection"
-          onPress={() => choose(null)}
-        >
+    <>
+      <SmoothBottomSheet visible={picker !== null} onClose={onClose} sheetStyle={s.sheet}>
+        <View style={s.sheetHandle} />
+        <View style={s.sheetHeader}>
           <View style={{ flex: 1 }}>
-            <Text style={s.pickerName}>No plan</Text>
-            <Text style={s.pickerMeta}>A day of rest — nothing held back.</Text>
+            <Text style={s.sheetKicker}>{picker?.mode === 'today' ? 'ACTIVE DAY' : 'WEEKLY TEMPLATE'}</Text>
+            <Text style={s.sheetTitle}>{picker?.mode === 'today' ? "Today's Screen Time" : DAY_NAMES[day]}</Text>
           </View>
-          <View style={[s.radio, currentPlanId === null && s.radioOn]}>
-            {currentPlanId === null && <CheckSmall s={12} c="#fff" w={3} />}
+          <TouchableOpacity style={s.closeBtn} onPress={onClose} hitSlop={10}><X s={17} c={C.textMuted} w={2.2} /></TouchableOpacity>
+        </View>
+        <Text style={s.sheetNote}>
+          {picker?.mode === 'today'
+            ? 'This changes only today. Usage already recorded remains part of today.'
+            : `This shapes future ${DAY_NAMES[day]}s. Today's resolved plan is not rewritten.`}
+        </Text>
+
+        {activationError && (
+          <View style={s.activationError}>
+            <Shield s={14} c="#A24351" w={2.1} />
+            <Text style={s.activationErrorText}>{activationError}</Text>
           </View>
-        </TouchableOpacity>
-      </View>
-    </SmoothBottomSheet>
+        )}
+
+        <View style={s.pickerList}>
+          {state.plans.map((plan, index) => {
+            const selected = currentPlanId === plan.id;
+            return (
+              <View key={plan.id}>
+                {index > 0 && <View style={s.separator} />}
+                <TouchableOpacity
+                  style={[s.pickerRow, checkingPlanId !== null && checkingPlanId !== plan.id && s.pickerRowMuted]}
+                  onPress={() => checkingPlanId === null && choose(plan.id)}
+                  disabled={checkingPlanId !== null}
+                  haptic="selection"
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.pickerName}>{plan.name}</Text>
+                    <Text style={s.pickerMeta}>{checkingPlanId === plan.id ? 'Checking private iPhone selections...' : `${plan.kind === 'session' ? `${plan.zones.length} Sessions` : 'Daily Plan'} - ${plan.budgetMinutes == null ? 'No target' : `${formatMinutesShort(plan.budgetMinutes)} target`}`}</Text>
+                  </View>
+                  <View style={[s.radio, selected && s.radioOn]}>{selected && <CheckSmall s={12} c="#fff" w={3} />}</View>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+          {state.plans.length > 0 && <View style={s.separator} />}
+          <TouchableOpacity style={s.pickerRow} onPress={() => choose(null)} haptic="selection">
+            <View style={{ flex: 1 }}><Text style={s.pickerName}>No plan</Text><Text style={s.pickerMeta}>A rest day without Screen Time rules.</Text></View>
+            <View style={[s.radio, currentPlanId == null && s.radioOn]}>{currentPlanId == null && <CheckSmall s={12} c="#fff" w={3} />}</View>
+          </TouchableOpacity>
+        </View>
+      </SmoothBottomSheet>
+
+      <ConfirmModal
+        visible={pendingChange !== null}
+        icon={<Lock s={21} c="#A24351" w={2.2} />}
+        iconBg="#F8E7EA"
+        title={pendingChange?.kind === 'known-loss' ? 'Today would lose its trophy' : "Tighten today's target?"}
+        body={pendingChange?.kind === 'known-loss'
+          ? "This plan's Daily Target is already below the phone time used today. The change is allowed, but today's target cannot become eligible again."
+          : "Apple keeps exact live usage inside Screen Time. The new plan applies immediately and iPhone will reconcile today's activity with its tighter target. If that target has already been passed, today's trophy becomes ineligible and raising it later will not restore it."}
+        subject={pendingChange?.planId ? getPlanById(state, pendingChange.planId)?.name : 'No plan'}
+        confirmLabel="APPLY PLAN"
+        confirmColor="#A24351"
+        onCancel={() => setPendingChange(null)}
+        onConfirm={() => {
+          const planId = pendingChange?.planId ?? null;
+          setPendingChange(null);
+          void applyWithPermission(planId);
+        }}
+      />
+    </>
   );
 }
 
-// ---------------------------------------------------------------------------
-
-function PlanCard({ plan, assignedDays, onPress }: {
-  plan: DayPlan;
-  assignedDays: boolean[];
-  onPress: () => void;
-}) {
-  const state = useDayPlan();
+function PlanCard({ plan, days, state, onPress }: { plan: DayPlan; days: number[]; state: DayPlanState; onPress: () => void }) {
   return (
-    <TouchableOpacity style={s.planCard} activeOpacity={0.82} onPress={onPress}>
-      <View style={s.planBodyRow}>
-        <View style={{ flex: 1 }}>
-          <View style={s.planTopRow}>
-            <Text style={s.planName} numberOfLines={1}>
-              {plan.name}
-            </Text>
-            <View style={s.planDaysRow}>
-              {assignedDays.map((on, index) => (
-                <View key={index} style={[s.planDayDot, on ? s.planDayDotOn : s.planDayDotOff]} />
-              ))}
-            </View>
-          </View>
-
-          <Text style={s.planBudget} numberOfLines={1}>
-            {`${formatMinutesShort(plan.budgetMinutes ?? 0)} to the phone · ${
-              plan.strength === 'strict' ? 'Strict' : 'Loose'
-            }`}
-          </Text>
-          <Text style={s.planMeta} numberOfLines={1}>
-            {describeZones(plan)}
-          </Text>
-          <Text style={s.planMetaSecond} numberOfLines={1}>
-            {describeRules(state, plan)}
-          </Text>
+    <TouchableOpacity style={s.planRow} onPress={onPress} activeOpacity={0.76}>
+      <View style={s.planVisual}>
+        {plan.kind === 'session' ? <ZoneClock zones={plan.zones} size={58} compact /> : <Calendar s={22} c={C.goldDark} w={1.9} />}
+      </View>
+      <View style={{ flex: 1 }}>
+        <View style={s.planTitleRow}>
+          <Text style={s.planName} numberOfLines={1}>{plan.name}</Text>
+          <View style={s.kindTag}><Text style={s.kindTagText}>{plan.kind === 'session' ? 'SESSION' : 'DAILY'}</Text></View>
         </View>
-
-        <View style={s.planClockWrap}>
-          <ZoneClock zones={plan.zones} size={64} compact />
+        <Text style={s.planTarget}>{plan.budgetMinutes == null ? 'No Daily Target' : `${formatMinutesShort(plan.budgetMinutes)} Daily Target`} · {plan.essentialOnlyMinutes == null ? 'No hard wall' : `${formatMinutesShort(plan.essentialOnlyMinutes)} Essentials + system`}</Text>
+        <Text style={s.planRules} numberOfLines={1}>{describeRules(state, plan)}</Text>
+        <View style={s.assignedDays}>
+          {DAY_LETTERS.map((letter, index) => (
+            <Text key={`${letter}-${index}`} style={[s.assignedDay, days.includes(index) && s.assignedDayOn]}>{letter}</Text>
+          ))}
         </View>
       </View>
+      <ChevronRight s={17} c={C.textMuted} w={2} />
     </TouchableOpacity>
   );
 }
 
-// ---------------------------------------------------------------------------
-
 export default function DayPlanHubView() {
   const router = useRouter();
   const state = useDayPlan();
-  const [pickerDay, setPickerDay] = useState<number | null>(null);
-
+  const { request, gate } = usePermissionGate();
+  const [picker, setPicker] = useState<PickerState>(null);
+  const [essentialsOpen, setEssentialsOpen] = useState(false);
+  const [alwaysBlockedOpen, setAlwaysBlockedOpen] = useState(false);
   const today = weekdayMondayFirst(new Date());
-  const todayRecord = state.days[dateKey(new Date())];
+  const todayPlan = getEffectivePlan(state, new Date());
+  const currentSession = activeZone(todayPlan, new Date());
+  const todayPlanProtects = planHasProtectionNow(todayPlan, new Date());
+  const nativeAvailable = isNativeFocusAvailable();
+  const optionalSummary = useNativeActivitySelectionSummary('global.essentials');
+  const strictAlwaysSummary = useNativeActivitySelectionSummary('always.strict');
+  const looseAlwaysSummary = useNativeActivitySelectionSummary('always.loose');
+  const optionalCount = nativeAvailable
+    ? optionalSummary?.applicationCount ?? null
+    : state.optionalEssentialAppIds.length;
+  const alwaysBlockedCount = nativeAvailable
+    ? strictAlwaysSummary && looseAlwaysSummary
+      ? strictAlwaysSummary.applicationCount + looseAlwaysSummary.applicationCount
+      : null
+    : state.alwaysBlockedApps.length;
 
-  // What each weekday resolves to right now (today honours a swap).
-  const effectiveByDay = useMemo(
-    () =>
-      state.schedule.map((planId, day) =>
-        day === today && todayRecord ? todayRecord.planId : planId
-      ),
-    [state.schedule, today, todayRecord]
-  );
+  const daysByPlan = useMemo(() => {
+    const result: Record<string, number[]> = {};
+    state.schedule.forEach((planId, day) => {
+      if (!planId) return;
+      result[planId] = [...(result[planId] ?? []), day];
+    });
+    return result;
+  }, [state.schedule]);
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: 60 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <ScreenTitleBar title="DAY PLAN" showBack />
-        <Animated.View entering={enter(0)}>
+      <ScrollView contentContainerStyle={s.page} showsVerticalScrollIndicator={false}>
+        <ScreenTitleBar title="SCREEN TIME" showBack />
+        <Animated.View entering={enter(0)} style={s.introWrap}>
           <Text style={s.intro}>Plan your phone the way you plan your day.</Text>
         </Animated.View>
 
-        <View style={{ paddingHorizontal: 16 }}>
-          <Animated.View entering={enter(60)}>
-            <Text style={s.sectionLabel}>THIS WEEK</Text>
-            <View style={s.weekCard}>
-              <View style={s.weekRow}>
-                {DAY_LETTERS.map((letter, day) => {
-                  const planId = effectiveByDay[day];
-                  const isToday = day === today;
-                  return (
-                    <TouchableOpacity
-                      key={day}
-                      style={s.weekCell}
-                      activeOpacity={0.75}
-                      haptic="selection"
-                      onPress={() => setPickerDay(day)}
-                    >
-                      <View
-                        style={[
-                          s.weekCircle,
-                          planId ? s.weekCircleOn : s.weekCircleOff,
-                          isToday && s.weekCircleToday,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            s.weekLetter,
-                            planId ? s.weekLetterOn : s.weekLetterOff,
-                          ]}
-                        >
-                          {letter}
-                        </Text>
-                      </View>
-                      <Text style={s.weekPlanName} numberOfLines={1}>
-                        {getPlanById(state, planId)?.name ?? '—'}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+        <Animated.View entering={enter(50)}>
+          <Text style={s.sectionLabel}>TODAY</Text>
+          <View style={s.todayBand}>
+            <View style={s.todayHeader}>
+              <View style={s.todayIcon}>{todayPlan?.kind === 'session' ? <Clock s={19} c={C.goldDark} w={2} /> : <Calendar s={19} c={C.goldDark} w={2} />}</View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.todayName}>{todayPlan?.name ?? 'No plan today'}</Text>
+                <Text style={s.todayMeta}>
+                  {todayPlan
+                    ? currentSession
+                      ? `${currentSession.name} · until ${formatTimeOfDaySafe(currentSession.endMinutes)}`
+                      : todayPlan.kind === 'daily' ? 'Daily rules · all day' : 'Session plan'
+                    : 'Choose a plan for this day only.'}
+                </Text>
               </View>
-              <Text style={s.weekHint}>
-                Tap a day to choose its plan. Today changes at once — the week keeps its shape.
-              </Text>
+              <TouchableOpacity style={s.changeTodayButton} onPress={() => setPicker({ mode: 'today', day: today })}>
+                <Text style={s.changeTodayText}>Change</Text>
+              </TouchableOpacity>
             </View>
-          </Animated.View>
 
-          <Animated.View entering={enter(140)}>
-            <Text style={s.sectionLabel}>PLANS</Text>
-          </Animated.View>
-
-          {state.plans.map((plan, index) => (
-            <Animated.View key={plan.id} entering={enter(180 + index * 60)}>
-              <PlanCard
-                plan={plan}
-                assignedDays={state.schedule.map(planId => planId === plan.id)}
-                onPress={() => router.push(`/day-plan?planId=${plan.id}` as any)}
-              />
-            </Animated.View>
-          ))}
-
-          <Animated.View entering={enter(180 + state.plans.length * 60)}>
-            <TouchableOpacity
-              style={s.newPlanCard}
-              activeOpacity={0.75}
-              onPress={() => router.push('/day-plan' as any)}
-            >
-              <View style={s.newPlanIcon}>
-                <Plus s={15} c={C.goldDark} w={2.4} />
+            {todayPlan && (
+              <View style={s.todayStats}>
+                <View><Text style={s.statLabel}>TARGET</Text><Text style={s.statValue}>{todayPlan.budgetMinutes == null ? 'No limit' : formatMinutesShort(todayPlan.budgetMinutes)}</Text></View>
+                <View style={s.statDivider} />
+                <View><Text style={s.statLabel}>ESSENTIALS ONLY</Text><Text style={s.statValue}>{todayPlan.essentialOnlyMinutes == null ? 'Off' : formatMinutesShort(todayPlan.essentialOnlyMinutes)}</Text></View>
+                <View style={s.statDivider} />
+                <View><Text style={s.statLabel}>STYLE</Text><Text style={s.statValue}>{todayPlan.kind === 'session' ? `${todayPlan.zones.length} Sessions` : 'Daily'}</Text></View>
               </View>
-              <Text style={s.newPlanText}>New plan</Text>
-            </TouchableOpacity>
+            )}
 
-            <TouchableOpacity
-              style={s.previewLink}
-              activeOpacity={0.7}
-              onPress={() =>
-                router.push('/focus-intervention?practice=prayer&strength=loose&group=social' as any)
-              }
-            >
-              <Text style={s.previewLinkText}>Preview the shield moment →</Text>
-            </TouchableOpacity>
+            {todayPlanProtects && state.permission !== 'approved' && (
+              <View style={s.permissionRow}>
+                <Shield s={15} c="#A36F2B" w={2.1} />
+                <Text style={s.permissionText}>
+                  {state.permission === 'preview'
+                    ? 'Preview mode is active. Real shields require the Anasta development build.'
+                    : 'This plan is saved, but Screen Time access is still needed.'}
+                </Text>
+                {state.permission !== 'preview' && <TouchableOpacity onPress={() => request(() => {})}><Text style={s.permissionAction}>Enable</Text></TouchableOpacity>}
+              </View>
+            )}
+          </View>
+        </Animated.View>
 
-            <Text style={s.footnote}>
-              App blocking becomes real once Apple grants the Screen Time permission.
-              The plans you shape here are how your days will be kept.
-            </Text>
-          </Animated.View>
-        </View>
+        <Animated.View entering={enter(100)}>
+          <Text style={s.sectionLabel}>WEEKLY RHYTHM</Text>
+          <View style={s.weekBand}>
+            <View style={s.weekRow}>
+              {DAY_LETTERS.map((letter, day) => {
+                const plan = getPlanById(state, state.schedule[day]);
+                return (
+                  <TouchableOpacity key={day} style={s.weekCell} onPress={() => setPicker({ mode: 'template', day })} haptic="selection">
+                    <View style={[s.weekCircle, plan && s.weekCircleOn, day === today && s.weekCircleToday]}>
+                      <Text style={[s.weekLetter, plan && s.weekLetterOn]}>{letter}</Text>
+                    </View>
+                    <Text style={s.weekPlan} numberOfLines={1}>{plan?.name ?? 'Rest'}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={s.weekNote}>Tap a day to shape future weeks. Today stays historically honest.</Text>
+          </View>
+        </Animated.View>
+
+        <Animated.View entering={enter(150)}>
+          <Text style={s.sectionLabel}>PROTECTION DEFAULTS</Text>
+          <View style={s.defaultsList}>
+            <TouchableOpacity style={s.defaultsRow} onPress={() => setEssentialsOpen(true)}>
+              <View style={s.defaultsIcon}><Lock s={15} c={C.goldDark} w={2.2} /></View>
+              <View style={{ flex: 1 }}><Text style={s.defaultsTitle}>Essential Apps</Text><Text style={s.defaultsMeta}>{optionalCount == null ? 'Loading iPhone selection' : `${optionalCount} optional`} / Core safety access</Text></View>
+              <ChevronRight s={16} c={C.textMuted} w={2} />
+            </TouchableOpacity>
+            <View style={s.separator} />
+            <TouchableOpacity style={s.defaultsRow} onPress={() => setAlwaysBlockedOpen(true)}>
+              <View style={[s.defaultsIcon, s.blockedDefaultsIcon]}><Shield s={15} c="#A24351" w={2.2} /></View>
+              <View style={{ flex: 1 }}><Text style={s.defaultsTitle}>Always Blocked</Text><Text style={s.defaultsMeta}>{alwaysBlockedCount == null ? 'Loading iPhone selection' : `${alwaysBlockedCount} permanent-intent apps`}</Text></View>
+              <ChevronRight s={16} c={C.textMuted} w={2} />
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+
+        <Animated.View entering={enter(200)}>
+          <View style={s.plansHeader}><Text style={s.sectionLabelNoMargin}>PLANS</Text><Text style={s.plansCount}>{state.plans.length} saved</Text></View>
+          <View style={s.planList}>
+            {state.plans.map((plan, index) => (
+              <View key={plan.id}>
+                {index > 0 && <View style={s.separator} />}
+                <PlanCard plan={plan} days={daysByPlan[plan.id] ?? []} state={state} onPress={() => router.push(`/day-plan?planId=${plan.id}` as never)} />
+              </View>
+            ))}
+          </View>
+          <TouchableOpacity style={s.newPlanButton} onPress={() => router.push('/day-plan' as never)}>
+            <View style={s.newPlanIcon}><Plus s={14} c={C.goldDark} w={2.5} /></View>
+            <Text style={s.newPlanText}>Create a new plan</Text>
+          </TouchableOpacity>
+        </Animated.View>
       </ScrollView>
 
-      <PlanPickerSheet day={pickerDay} onClose={() => setPickerDay(null)} />
+      <PlanPickerSheet
+        picker={picker}
+        onClose={() => setPicker(null)}
+        requestActivation={request}
+      />
+      <EssentialAppsSheet visible={essentialsOpen} onClose={() => setEssentialsOpen(false)} />
+      <AlwaysBlockedSheet visible={alwaysBlockedOpen} onClose={() => setAlwaysBlockedOpen(false)} />
+      {gate}
     </View>
   );
 }
 
+function formatTimeOfDaySafe(minutes: number) {
+  const normalized = ((minutes % 1440) + 1440) % 1440;
+  const hours = Math.floor(normalized / 60);
+  const mins = normalized % 60;
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
 const s = StyleSheet.create({
-  intro: {
-    paddingHorizontal: 32,
-    paddingTop: 2,
-    paddingBottom: 8,
-    fontFamily: F.serifMediumItalic,
-    fontSize: 16,
-    lineHeight: 21,
-    color: C.textSecondary,
-    textAlign: 'center',
-  },
-  sectionLabel: {
-    marginTop: 16,
-    marginBottom: 8,
-    marginLeft: 10,
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 2.4,
-    color: C.textMuted,
-  },
-
-  weekCard: {
-    backgroundColor: C.surface,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 12,
-    paddingTop: 14,
-    paddingBottom: 11,
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  weekRow: {
-    flexDirection: 'row',
-  },
-  weekCell: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 5,
-  },
-  weekCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  weekCircleOn: {
-    backgroundColor: C.goldLight,
-  },
-  weekCircleOff: {
-    backgroundColor: '#F4F3EE',
-  },
-  weekCircleToday: {
-    borderWidth: 1.6,
-    borderColor: C.gold,
-  },
-  weekLetter: {
-    fontFamily: F.sansBold,
-    fontSize: 12,
-  },
-  weekLetterOn: {
-    color: C.goldDark,
-  },
-  weekLetterOff: {
-    color: C.textMuted,
-  },
-  weekPlanName: {
-    maxWidth: 44,
-    fontFamily: F.sansMedium,
-    fontSize: 8.5,
-    color: C.textSecondary,
-    textAlign: 'center',
-  },
-  weekHint: {
-    marginTop: 11,
-    paddingHorizontal: 6,
-    fontFamily: F.sans,
-    fontSize: 10.5,
-    lineHeight: 15,
-    color: C.textMuted,
-    textAlign: 'center',
-  },
-
-  planCard: {
-    backgroundColor: C.surface,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 8,
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  planBodyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  planClockWrap: {
-    width: 64,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  planTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  planBudget: {
-    marginTop: 5,
-    fontFamily: F.sansSemiBold,
-    fontSize: 12.5,
-    color: C.goldDark,
-    fontVariant: ['tabular-nums'],
-  },
-  planName: {
-    flex: 1,
-    fontFamily: F.serifMedium,
-    fontSize: 19,
-    letterSpacing: -0.2,
-    color: C.text,
-  },
-  planDaysRow: {
-    flexDirection: 'row',
-    gap: 3.5,
-  },
-  planDayDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-  },
-  planDayDotOn: {
-    backgroundColor: C.gold,
-  },
-  planDayDotOff: {
-    backgroundColor: '#E9E7E1',
-  },
-  planMeta: {
-    marginTop: 6,
-    fontFamily: F.sansMedium,
-    fontSize: 11.5,
-    color: C.textSecondary,
-  },
-  planMetaSecond: {
-    marginTop: 2,
-    fontFamily: F.sans,
-    fontSize: 11,
-    color: C.textMuted,
-    fontVariant: ['tabular-nums'],
-  },
-
-  newPlanCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 9,
-    borderRadius: 22,
-    borderWidth: 1.2,
-    borderStyle: 'dashed',
-    borderColor: '#E3E0D8',
-    paddingVertical: 16,
-    marginBottom: 4,
-  },
-  newPlanIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: C.goldLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  newPlanText: {
-    fontFamily: F.serifMedium,
-    fontSize: 16.5,
-    color: C.textSecondary,
-  },
-  previewLink: {
-    alignSelf: 'center',
-    marginTop: 12,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-  },
-  previewLinkText: {
-    fontFamily: F.sansMedium,
-    fontSize: 12.5,
-    color: C.gold,
-  },
-  footnote: {
-    marginTop: 12,
-    paddingHorizontal: 22,
-    fontFamily: F.sans,
-    fontSize: 11,
-    lineHeight: 16,
-    color: C.textMuted,
-    textAlign: 'center',
-  },
-
-  sheet: {
-    backgroundColor: C.bg,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 20,
-    paddingBottom: 30,
-    maxHeight: '80%',
-  },
-  sheetHandle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4.5,
-    borderRadius: 3,
-    backgroundColor: '#E7E5E0',
-    marginTop: 10,
-  },
-  sheetHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 14,
-  },
-  sheetTitle: {
-    fontFamily: F.serifMedium,
-    fontSize: 24,
-    letterSpacing: -0.2,
-    color: C.text,
-  },
-  sheetClose: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#F3F2ED',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetNote: {
-    marginTop: 3,
-    fontFamily: F.serifItalic,
-    fontSize: 14,
-    color: C.textSecondary,
-  },
-  pickerCard: {
-    marginTop: 14,
-    backgroundColor: C.surface,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: C.border,
-    overflow: 'hidden',
-  },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: C.border,
-    marginLeft: 16,
-  },
-  pickerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-  },
-  pickerName: {
-    fontFamily: F.serifMedium,
-    fontSize: 17,
-    color: C.text,
-  },
-  pickerMeta: {
-    marginTop: 2,
-    fontFamily: F.sans,
-    fontSize: 11.5,
-    color: C.textSecondary,
-  },
-  radio: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.5,
-    borderColor: '#D6D3D1',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radioOn: {
-    borderColor: C.gold,
-    backgroundColor: C.gold,
-  },
+  page: { paddingHorizontal: 16, paddingBottom: 90, gap: 18 },
+  introWrap: { paddingHorizontal: 30, alignItems: 'center' },
+  intro: { fontFamily: F.serifMediumItalic, fontSize: 16, lineHeight: 21, color: C.textSecondary, textAlign: 'center' },
+  sectionLabel: { marginBottom: 8, marginLeft: 4, fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2.2, color: C.textMuted },
+  sectionLabelNoMargin: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2.2, color: C.textMuted },
+  todayBand: { borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E5D9BD', backgroundColor: '#FFFDF7', padding: 14 },
+  todayHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  todayIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
+  todayName: { fontFamily: F.serifMedium, fontSize: 20, color: C.text },
+  todayMeta: { marginTop: 2, fontFamily: F.sans, fontSize: 9.5, color: C.textSecondary },
+  changeTodayButton: { borderRadius: 999, borderWidth: 1, borderColor: '#E1D2B1', backgroundColor: '#FFF8E8', paddingHorizontal: 10, paddingVertical: 7 },
+  changeTodayText: { fontFamily: F.sansSemiBold, fontSize: 9, color: C.goldDark },
+  todayStats: { marginTop: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#EEE5D3', paddingTop: 11 },
+  statLabel: { fontFamily: F.sansBold, fontSize: 7, letterSpacing: 1.2, color: C.textMuted },
+  statValue: { marginTop: 2, fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.text },
+  statDivider: { width: StyleSheet.hairlineWidth, height: 28, backgroundColor: '#E8E0D1' },
+  permissionRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, backgroundColor: '#FFF1D5', paddingHorizontal: 10, paddingVertical: 8 },
+  permissionText: { flex: 1, fontFamily: F.sansMedium, fontSize: 8.7, lineHeight: 12.5, color: '#8D5C1E' },
+  permissionAction: { fontFamily: F.sansBold, fontSize: 8.5, color: '#8D5C1E' },
+  weekBand: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border, paddingTop: 12, paddingBottom: 10 },
+  weekRow: { flexDirection: 'row' },
+  weekCell: { flex: 1, alignItems: 'center', gap: 5 },
+  weekCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
+  weekCircleOn: { backgroundColor: C.goldLight },
+  weekCircleToday: { borderWidth: 1.5, borderColor: C.gold },
+  weekLetter: { fontFamily: F.sansBold, fontSize: 11, color: C.textMuted },
+  weekLetterOn: { color: C.goldDark },
+  weekPlan: { maxWidth: 42, fontFamily: F.sansMedium, fontSize: 7.5, color: C.textMuted },
+  weekNote: { marginTop: 9, textAlign: 'center', fontFamily: F.sans, fontSize: 8.5, color: C.textMuted },
+  defaultsList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
+  defaultsRow: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 3 },
+  defaultsIcon: { width: 33, height: 33, borderRadius: 11, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
+  blockedDefaultsIcon: { backgroundColor: '#F8E7EA' },
+  defaultsTitle: { fontFamily: F.sansSemiBold, fontSize: 12, color: C.text },
+  defaultsMeta: { marginTop: 2, fontFamily: F.sans, fontSize: 8.7, color: C.textMuted },
+  plansHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, marginBottom: 8 },
+  plansCount: { fontFamily: F.sansMedium, fontSize: 9, color: C.textMuted },
+  planList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
+  planRow: { minHeight: 91, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10, paddingHorizontal: 3 },
+  planVisual: { width: 60, height: 60, borderRadius: 17, borderCurve: 'continuous', backgroundColor: '#FFF8E8', alignItems: 'center', justifyContent: 'center' },
+  planTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  planName: { flexShrink: 1, fontFamily: F.serifMedium, fontSize: 18, color: C.text },
+  kindTag: { borderRadius: 999, backgroundColor: '#F0EFEB', paddingHorizontal: 6, paddingVertical: 4 },
+  kindTagText: { fontFamily: F.sansBold, fontSize: 6.5, letterSpacing: 0.8, color: C.textMuted },
+  planTarget: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 8.5, color: C.textSecondary },
+  planRules: { marginTop: 2, fontFamily: F.sans, fontSize: 8.2, color: C.textMuted },
+  assignedDays: { marginTop: 5, flexDirection: 'row', gap: 4 },
+  assignedDay: { width: 14, height: 14, borderRadius: 7, textAlign: 'center', textAlignVertical: 'center', fontFamily: F.sansBold, fontSize: 6, color: C.textMuted, backgroundColor: '#F0EFEB' },
+  assignedDayOn: { color: C.goldDark, backgroundColor: C.goldLight },
+  separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 42 },
+  newPlanButton: { marginTop: 10, height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', borderColor: '#DDCEAD', backgroundColor: '#FFFDF7' },
+  newPlanIcon: { width: 25, height: 25, borderRadius: 9, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
+  newPlanText: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.goldDark },
+  sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: 28, maxHeight: '88%' },
+  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#E2E0DA', marginTop: 10 },
+  sheetHeader: { marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  sheetKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.gold },
+  sheetTitle: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 25, color: C.text },
+  closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F0EFEA', alignItems: 'center', justifyContent: 'center' },
+  sheetNote: { marginTop: 5, fontFamily: F.sans, fontSize: 9.5, lineHeight: 14, color: C.textSecondary },
+  pickerList: { marginTop: 14, borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
+  pickerRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 3 },
+  pickerRowMuted: { opacity: 0.52 },
+  pickerName: { fontFamily: F.sansSemiBold, fontSize: 12, color: C.text },
+  pickerMeta: { marginTop: 2, fontFamily: F.sans, fontSize: 8.7, color: C.textMuted },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: '#D6D3D1', backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' },
+  radioOn: { borderColor: C.gold, backgroundColor: C.gold },
+  activationError: { marginTop: 10, flexDirection: 'row', alignItems: 'flex-start', gap: 7, borderRadius: 12, backgroundColor: '#F8E7EA', paddingHorizontal: 10, paddingVertical: 8 },
+  activationErrorText: { flex: 1, fontFamily: F.sansMedium, fontSize: 9, lineHeight: 13, color: '#8F3443' },
 });
