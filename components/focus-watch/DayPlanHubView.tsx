@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { Calendar, CheckSmall, ChevronRight, Clock, Lock, Plus, Shield, X } from '@/components/icons/Icons';
+import { Calendar, CheckSmall, ChevronRight, Clock, Lock, Plus, Shield } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
 import EssentialAppsSheet from './EssentialAppsSheet';
+import FocusSheetHeader from './FocusSheetHeader';
 import ZoneClock from './ZoneClock';
 import { getNativeActivitySelectionSummary, isNativeFocusAvailable } from './focusNativeBridge';
 import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
@@ -168,19 +170,14 @@ function PlanPickerSheet({
   return (
     <>
       <SmoothBottomSheet visible={picker !== null} onClose={onClose} sheetStyle={s.sheet}>
-        <View style={s.sheetHandle} />
-        <View style={s.sheetHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.sheetKicker}>{picker?.mode === 'today' ? 'ACTIVE DAY' : 'WEEKLY TEMPLATE'}</Text>
-            <Text style={s.sheetTitle}>{picker?.mode === 'today' ? "Today's Screen Time" : DAY_NAMES[day]}</Text>
-          </View>
-          <TouchableOpacity style={s.closeBtn} onPress={onClose} hitSlop={10}><X s={17} c={C.textMuted} w={2.2} /></TouchableOpacity>
-        </View>
-        <Text style={s.sheetNote}>
-          {picker?.mode === 'today'
+        <FocusSheetHeader
+          kicker={picker?.mode === 'today' ? 'ACTIVE DAY' : 'WEEKLY TEMPLATE'}
+          title={picker?.mode === 'today' ? "Today's Screen Time" : DAY_NAMES[day]}
+          subtitle={picker?.mode === 'today'
             ? 'This changes only today. Usage already recorded remains part of today.'
             : `This shapes future ${DAY_NAMES[day]}s. Today's resolved plan is not rewritten.`}
-        </Text>
+          onClose={onClose}
+        />
 
         {activationError && (
           <View style={s.activationError}>
@@ -251,7 +248,7 @@ function PlanCard({ plan, days, state, onPress }: { plan: DayPlan; days: number[
           <Text style={s.planName} numberOfLines={1}>{plan.name}</Text>
           <View style={s.kindTag}><Text style={s.kindTagText}>{plan.kind === 'session' ? 'SESSION' : 'DAILY'}</Text></View>
         </View>
-        <Text style={s.planTarget}>{plan.budgetMinutes == null ? 'No Daily Target' : `${formatMinutesShort(plan.budgetMinutes)} Daily Target`} · {plan.essentialOnlyMinutes == null ? 'No hard wall' : `${formatMinutesShort(plan.essentialOnlyMinutes)} Essentials + system`}</Text>
+        <Text style={s.planTarget} numberOfLines={2}>{plan.budgetMinutes == null ? 'No Daily Target' : `${formatMinutesShort(plan.budgetMinutes)} Daily Target`} · {plan.essentialOnlyMinutes == null ? 'No hard wall' : `${formatMinutesShort(plan.essentialOnlyMinutes)} Essentials + system`}</Text>
         <Text style={s.planRules} numberOfLines={1}>{describeRules(state, plan)}</Text>
         <View style={s.assignedDays}>
           {DAY_LETTERS.map((letter, index) => (
@@ -308,11 +305,18 @@ export default function DayPlanHubView() {
         <Animated.View entering={enter(50)}>
           <Text style={s.sectionLabel}>TODAY</Text>
           <View style={s.todayBand}>
+            <LinearGradient
+              colors={['rgba(255,248,232,0.92)', 'rgba(255,253,247,0.7)', 'rgba(244,250,247,0.42)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+            />
             <View style={s.todayHeader}>
               <View style={s.todayIcon}>{todayPlan?.kind === 'session' ? <Clock s={19} c={C.goldDark} w={2} /> : <Calendar s={19} c={C.goldDark} w={2} />}</View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.todayName}>{todayPlan?.name ?? 'No plan today'}</Text>
-                <Text style={s.todayMeta}>
+              <View style={s.todayCopy}>
+                <Text style={s.todayName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>{todayPlan?.name ?? 'No plan today'}</Text>
+                <Text style={s.todayMeta} numberOfLines={2}>
                   {todayPlan
                     ? currentSession
                       ? `${currentSession.name} · until ${formatTimeOfDaySafe(currentSession.endMinutes)}`
@@ -327,11 +331,11 @@ export default function DayPlanHubView() {
 
             {todayPlan && (
               <View style={s.todayStats}>
-                <View><Text style={s.statLabel}>TARGET</Text><Text style={s.statValue}>{todayPlan.budgetMinutes == null ? 'No limit' : formatMinutesShort(todayPlan.budgetMinutes)}</Text></View>
+                <View style={s.statCell}><Text style={s.statLabel}>TARGET</Text><Text style={s.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>{todayPlan.budgetMinutes == null ? 'No limit' : formatMinutesShort(todayPlan.budgetMinutes)}</Text></View>
                 <View style={s.statDivider} />
-                <View><Text style={s.statLabel}>ESSENTIALS ONLY</Text><Text style={s.statValue}>{todayPlan.essentialOnlyMinutes == null ? 'Off' : formatMinutesShort(todayPlan.essentialOnlyMinutes)}</Text></View>
+                <View style={s.statCell}><Text style={s.statLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>ESSENTIALS ONLY</Text><Text style={s.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>{todayPlan.essentialOnlyMinutes == null ? 'Off' : formatMinutesShort(todayPlan.essentialOnlyMinutes)}</Text></View>
                 <View style={s.statDivider} />
-                <View><Text style={s.statLabel}>STYLE</Text><Text style={s.statValue}>{todayPlan.kind === 'session' ? `${todayPlan.zones.length} Sessions` : 'Daily'}</Text></View>
+                <View style={s.statCell}><Text style={s.statLabel}>STYLE</Text><Text style={s.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{todayPlan.kind === 'session' ? `${todayPlan.zones.length} Sessions` : 'Daily'}</Text></View>
               </View>
             )}
 
@@ -435,6 +439,7 @@ const s = StyleSheet.create({
     borderColor: '#E5D9BD',
     backgroundColor: '#FFFDF7',
     padding: 15,
+    overflow: 'hidden',
     shadowColor: '#1C1917',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
@@ -442,12 +447,14 @@ const s = StyleSheet.create({
     elevation: 2,
   },
   todayHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  todayCopy: { flex: 1, minWidth: 0 },
   todayIcon: { width: 40, height: 40, borderRadius: 13, borderCurve: 'continuous', backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
   todayName: { fontFamily: F.serifMedium, fontSize: 21, letterSpacing: -0.2, color: C.text },
   todayMeta: { marginTop: 2, fontFamily: F.sans, fontSize: 10.5, color: C.textSecondary },
   changeTodayButton: { borderRadius: 999, borderWidth: 1, borderColor: '#E1D2B1', backgroundColor: '#FFF8E8', paddingHorizontal: 12, paddingVertical: 8 },
   changeTodayText: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.goldDark },
-  todayStats: { marginTop: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#EEE5D3', paddingTop: 11 },
+  todayStats: { marginTop: 13, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#EEE5D3', paddingTop: 11 },
+  statCell: { flex: 1, minWidth: 0 },
   statLabel: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.4, color: C.textMuted },
   statValue: { marginTop: 2.5, fontFamily: F.serifMedium, fontSize: 16.5, color: C.text, fontVariant: ['tabular-nums'] },
   statDivider: { width: StyleSheet.hairlineWidth, height: 30, backgroundColor: '#E8E0D1' },

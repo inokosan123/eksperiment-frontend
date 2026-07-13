@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
+import FocusSheetHeader from './FocusSheetHeader';
 import { ChevronLeft, ChevronRight, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
@@ -92,18 +93,12 @@ export default function TrophyCalendarSheet({
 
   return (
     <SmoothBottomSheet visible={visible} onClose={close} sheetStyle={s.sheet}>
-      <View style={s.handle} />
-      <View style={s.headerRow}>
-        <Text style={s.title}>Your days</Text>
-        <TouchableOpacity
-          onPress={close}
-          activeOpacity={0.8}
-          style={s.closeBtn}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <X s={17} c={C.textMuted} w={2.2} />
-        </TouchableOpacity>
-      </View>
+      <FocusSheetHeader
+        kicker="TODAY'S PROGRESS"
+        title="Your Days"
+        subtitle="A quiet record of kept targets, rest days, and the days you returned."
+        onClose={close}
+      />
 
       <Animated.View entering={enter(40)} style={s.statRow}>
         <View style={s.statCell}>

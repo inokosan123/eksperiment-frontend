@@ -4,11 +4,11 @@ import { useIsFocused } from '@react-navigation/native';
 import Animated, {
   cancelAnimation,
   Easing,
+  interpolate,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withRepeat,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import { Smartphone } from '@/components/icons/Icons';
@@ -27,8 +27,7 @@ export default function FocusPhoneStatus({
   const isFocused = useIsFocused();
   const reduceMotion = useReducedMotion();
   const [isForeground, setIsForeground] = useState(AppState.currentState === 'active');
-  const breath = useSharedValue(0);
-  const ripple = useSharedValue(0);
+  const motion = useSharedValue(0);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', next => setIsForeground(next === 'active'));
@@ -37,41 +36,36 @@ export default function FocusPhoneStatus({
 
   useEffect(() => {
     if (!isFocused || !isForeground || reduceMotion) {
-      cancelAnimation(breath);
-      cancelAnimation(ripple);
-      breath.value = 0;
-      ripple.value = 0;
+      cancelAnimation(motion);
+      motion.value = 0;
       return;
     }
-    breath.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0, { duration: 2200, easing: Easing.inOut(Easing.quad) })
-      ),
-      -1
+    motion.value = 0;
+    motion.value = withRepeat(
+      withTiming(1, { duration: 8400, easing: Easing.linear }),
+      -1,
+      false
     );
-    if (active) {
-      ripple.value = withRepeat(
-        withTiming(1, { duration: 3600, easing: Easing.out(Easing.cubic) }),
-        -1
-      );
-    } else {
-      cancelAnimation(ripple);
-      ripple.value = 0;
-    }
     return () => {
-      cancelAnimation(breath);
-      cancelAnimation(ripple);
+      cancelAnimation(motion);
     };
-  }, [active, breath, isFocused, isForeground, reduceMotion, ripple]);
+  }, [isFocused, isForeground, motion, reduceMotion]);
 
   const auraStyle = useAnimatedStyle(() => ({
-    opacity: active ? 0.46 + breath.value * 0.28 : 0.18 + breath.value * 0.1,
-    transform: [{ scale: 0.96 + breath.value * 0.05 }],
+    opacity: active
+      ? interpolate(motion.value, [0, 0.5, 1], [0.48, 0.72, 0.48])
+      : interpolate(motion.value, [0, 0.5, 1], [0.18, 0.3, 0.18]),
+    transform: [{ scale: interpolate(motion.value, [0, 0.5, 1], [0.96, 1.025, 0.96]) }],
   }));
-  const rippleStyle = useAnimatedStyle(() => ({
-    opacity: active ? (1 - ripple.value) * 0.22 : 0,
-    transform: [{ scale: 0.72 + ripple.value * 0.38 }],
+  const orbitStyle = useAnimatedStyle(() => ({
+    opacity: active ? 0.82 : 0.38,
+    transform: [{ rotate: `${motion.value * 360}deg` }],
+  }));
+  const boundaryStyle = useAnimatedStyle(() => ({
+    opacity: active
+      ? interpolate(motion.value, [0, 0.5, 1], [0.22, 0.08, 0.22])
+      : interpolate(motion.value, [0, 0.5, 1], [0.12, 0.06, 0.12]),
+    transform: [{ scale: interpolate(motion.value, [0, 0.5, 1], [0.94, 1.04, 0.94]) }],
   }));
 
   const accent = critical ? '#B74B5D' : active ? '#4E9A72' : C.gold;
@@ -81,9 +75,9 @@ export default function FocusPhoneStatus({
       <Animated.View
         pointerEvents="none"
         style={[
-          s.ripple,
-          { width: size * 0.94, height: size * 0.94, borderRadius: size * 0.47, borderColor: accent },
-          rippleStyle,
+          s.boundary,
+          { width: size * 0.96, height: size * 0.96, borderRadius: size * 0.48, borderColor: accent },
+          boundaryStyle,
         ]}
       />
       <Animated.View
@@ -99,17 +93,41 @@ export default function FocusPhoneStatus({
           auraStyle,
         ]}
       />
+      <View
+        pointerEvents="none"
+        style={[
+          s.signalRing,
+          {
+            width: size * 0.86,
+            height: size * 0.86,
+            borderRadius: size * 0.43,
+            borderColor: active ? 'rgba(78,154,114,0.28)' : 'rgba(197,160,89,0.22)',
+          },
+        ]}
+      />
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          s.orbit,
+          { width: size * 0.86, height: size * 0.86, borderRadius: size * 0.43 },
+          orbitStyle,
+        ]}
+      >
+        <View style={[s.orbitNode, { backgroundColor: accent }]} />
+        <View style={[s.orbitNode, s.orbitNodeOpposite, { backgroundColor: accent }]} />
+      </Animated.View>
       <View style={s.center} pointerEvents="none">
         {process.env.EXPO_OS === 'web' || !isFocused || !isForeground || reduceMotion ? (
-          <View style={[s.fallback, { borderColor: accent }]}>
-            <Smartphone s={40} c={accent} w={1.7} />
+          <View style={[s.fallback, { borderColor: accent, width: size * 0.38, height: size * 0.54 }]}>
+            <Smartphone s={size * 0.26} c={accent} w={1.7} />
           </View>
         ) : (
           <FocusWatchLottie
             name="iphone"
-            mode="loop"
-            speed={active ? 0.82 : 0.68}
-            style={{ width: size * 0.74, height: size * 0.74 }}
+            mode="periodic"
+            restMs={active ? 1450 : 1900}
+            speed={active ? 0.74 : 0.64}
+            style={{ width: size * 0.84, height: size * 0.84 }}
           />
         )}
       </View>
@@ -118,12 +136,33 @@ export default function FocusPhoneStatus({
 }
 
 const s = StyleSheet.create({
-  ripple: {
+  boundary: {
     position: 'absolute',
     borderWidth: 1,
   },
   aura: {
     position: 'absolute',
+  },
+  signalRing: {
+    position: 'absolute',
+    borderWidth: 1,
+  },
+  orbit: {
+    position: 'absolute',
+  },
+  orbitNode: {
+    position: 'absolute',
+    top: -2.5,
+    left: '50%',
+    width: 5,
+    height: 5,
+    marginLeft: -2.5,
+    borderRadius: 3,
+  },
+  orbitNodeOpposite: {
+    top: undefined,
+    bottom: -2,
+    opacity: 0.48,
   },
   center: {
     ...StyleSheet.absoluteFillObject,
@@ -131,8 +170,6 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   fallback: {
-    width: 62,
-    height: 82,
     borderRadius: 17,
     borderCurve: 'continuous',
     borderWidth: 1,

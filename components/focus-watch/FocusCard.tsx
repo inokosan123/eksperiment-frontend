@@ -63,7 +63,7 @@ export function FocusStatusChip({
       ) : (
         <View style={[chip.dot, { backgroundColor: color }]} />
       )}
-      <Text style={[chip.text, { color }]}>{text}</Text>
+      <Text style={[chip.text, { color }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{text}</Text>
     </View>
   );
 }
@@ -122,11 +122,11 @@ export default function FocusCard({
 
       <View style={s.inner}>
         <View style={s.labelRow}>
-          <Text style={[s.label, { color: tint.label }]}>{label}</Text>
+          <Text style={[s.label, { color: tint.label }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>{label}</Text>
           {chip}
         </View>
-        <Text style={[s.title, { color: tint.title }]}>{title}</Text>
-        {!!description && <Text style={[s.desc, { color: tint.body }]}>{description}</Text>}
+        <Text style={[s.title, { color: tint.title }]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.86}>{title}</Text>
+        {!!description && <Text style={[s.desc, { color: tint.body }]} numberOfLines={3}>{description}</Text>}
         {children != null && <View style={s.content}>{children}</View>}
       </View>
     </TouchableOpacity>
@@ -160,11 +160,13 @@ const s = StyleSheet.create({
     transform: [{ rotate: '0deg' }],
   },
   inner: {
+    minWidth: 0,
     paddingHorizontal: 18,
     paddingTop: 16,
     paddingBottom: 18,
   },
   labelRow: {
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -172,12 +174,14 @@ const s = StyleSheet.create({
     paddingRight: 44,
   },
   label: {
+    flexShrink: 1,
     fontSize: 10,
     fontFamily: F.sansBold,
     letterSpacing: 2.4,
     textTransform: 'uppercase',
   },
   title: {
+    flexShrink: 1,
     fontFamily: F.serifMedium,
     fontSize: 26,
     lineHeight: 30,
@@ -219,6 +223,7 @@ const s = StyleSheet.create({
 
 const chip = StyleSheet.create({
   wrap: {
+    maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -233,6 +238,7 @@ const chip = StyleSheet.create({
     borderRadius: 3,
   },
   text: {
+    flexShrink: 1,
     fontFamily: F.sansBold,
     fontSize: 8.5,
     letterSpacing: 1.2,

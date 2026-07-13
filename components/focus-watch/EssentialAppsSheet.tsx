@@ -8,6 +8,7 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import { C, F } from '@/constants/tokens';
 import { ESSENTIAL_APP_OPTIONS, type EssentialAppOption } from './focusContent';
 import NativeActivitySelectionButton from './NativeActivitySelectionButton';
+import FocusSheetHeader from './FocusSheetHeader';
 import { isNativeFocusAvailable } from './focusNativeBridge';
 import {
   allCoreEssentialIds,
@@ -78,19 +79,12 @@ export default function EssentialAppsSheet({
   return (
     <>
       <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheet} keyboardAware>
-        <View style={s.handle} />
-        <View style={s.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.eyebrow}>GLOBAL SAFETY ALLOWLIST</Text>
-            <Text style={s.title}>Essential Apps</Text>
-          </View>
-          <TouchableOpacity style={s.closeBtn} onPress={onClose} hitSlop={10}>
-            <X s={17} c={C.textMuted} w={2.2} />
-          </TouchableOpacity>
-        </View>
-        <Text style={s.subtitle}>
-          Essentials stay available through ordinary plan limits. Their use still counts toward your Daily Target.
-        </Text>
+        <FocusSheetHeader
+          kicker="GLOBAL SAFETY ALLOWLIST"
+          title="Essential Apps"
+          subtitle="Essentials stay available through ordinary plan limits. Their use still counts toward your Daily Target."
+          onClose={onClose}
+        />
 
         <ScrollView
           showsVerticalScrollIndicator={false}

@@ -7,15 +7,24 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "ANASTA_NATIVE_BUILD": "1"
+      },
       "ios": {
         "simulator": false
       }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "ANASTA_NATIVE_BUILD": "1"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "ANASTA_NATIVE_BUILD": "1"
+      }
     }
   },
   "submit": {

@@ -9,6 +9,7 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import { C, F } from '@/constants/tokens';
 import FocusSwitch from './FocusSwitch';
 import GoldButton from './GoldButton';
+import FocusSheetHeader from './FocusSheetHeader';
 import { WEB_PACKS } from './focusContent';
 import { resolveWebProtectionDomains, WEB_DOMAIN_LIMIT } from './webProtectionCatalog';
 import { usePermissionGate } from './usePermissionGate';
@@ -163,11 +164,12 @@ function NewPackSheet({ visible, onClose }: { visible: boolean; onClose: () => v
 
   return (
     <SmoothBottomSheet visible={visible} onClose={close} sheetStyle={s.newPackSheet} keyboardAware>
-      <View style={s.handle} />
-      <View style={s.sheetHeader}>
-        <View style={{ flex: 1 }}><Text style={s.sheetKicker}>YOUR OWN BOUNDARY</Text><Text style={s.sheetTitle}>New Protection Pack</Text></View>
-        <TouchableOpacity style={s.closeBtn} onPress={close}><X s={17} c={C.textMuted} w={2.2} /></TouchableOpacity>
-      </View>
+      <FocusSheetHeader
+        kicker="YOUR OWN BOUNDARY"
+        title="New Protection Pack"
+        subtitle="Group domains that belong behind the same boundary."
+        onClose={close}
+      />
       <View style={s.packNameInput}><TextInput value={name} onChangeText={setName} placeholder="Name the pack" placeholderTextColor={C.textMuted} style={s.nameInput} maxLength={30} /></View>
       <View style={s.domainEntry}>
         <TextInput value={domainDraft} onChangeText={setDomainDraft} onSubmitEditing={add} placeholder="example.com" placeholderTextColor={C.textMuted} autoCapitalize="none" autoCorrect={false} keyboardType="url" style={s.domainEntryInput} />
@@ -228,16 +230,24 @@ export default function PurityView() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScrollView contentContainerStyle={s.page} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <ScreenTitleBar title="CLEAN SIGHT" showBack />
+        <ScreenTitleBar title="WEB PROTECTION" showBack />
         <Animated.View entering={enter(0)} style={s.introWrap}>
-          <Text style={s.intro}>Keep the web useful without leaving every door open.</Text>
+          <Text style={s.intro}>Clean Sight keeps the web useful without leaving every door open.</Text>
         </Animated.View>
 
         <Animated.View entering={enter(40)} style={[s.statusBand, (enforced || previewReady) && s.statusBandOn]}>
           <View style={[s.statusIcon, (enforced || previewReady) && s.statusIconOn]}><Shield s={24} c={enforced || previewReady ? '#2D7967' : C.textMuted} w={1.8} /></View>
-          <View style={{ flex: 1 }}>
-            <Text style={s.statusKicker}>WEB PROTECTION</Text>
-            <Text style={s.statusTitle}>
+          <View style={s.statusCopy}>
+            <View style={s.statusKickerRow}>
+              <Text style={s.statusKicker}>CLEAN SIGHT</Text>
+              <View style={[s.liveBadge, (enforced || previewReady) && s.liveBadgeOn]}>
+                <View style={[s.liveDot, (enforced || previewReady) && s.liveDotOn]} />
+                <Text style={[s.liveText, (enforced || previewReady) && s.liveTextOn]}>
+                  {enforced ? 'ON' : previewReady ? 'PREVIEW' : configured ? 'SAVED' : 'OFF'}
+                </Text>
+              </View>
+            </View>
+            <Text style={s.statusTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.86}>
               {enforced
                 ? 'Clean Sight is active.'
                 : previewReady
@@ -246,16 +256,10 @@ export default function PurityView() {
                     ? 'Protection is saved, not active.'
                     : 'No web protection is active.'}
             </Text>
-            <Text style={s.statusMeta}>
+            <Text style={s.statusMeta} numberOfLines={2}>
               {configured
                 ? `${activePacks} active packs / ${purity.customDomains.length} individual domains`
                 : 'Turn on a pack or add a domain below.'}
-            </Text>
-          </View>
-          <View style={[s.liveBadge, (enforced || previewReady) && s.liveBadgeOn]}>
-            <View style={[s.liveDot, (enforced || previewReady) && s.liveDotOn]} />
-            <Text style={[s.liveText, (enforced || previewReady) && s.liveTextOn]}>
-              {enforced ? 'ON' : previewReady ? 'PREVIEW' : configured ? 'SAVED' : 'OFF'}
             </Text>
           </View>
         </Animated.View>
@@ -385,16 +389,11 @@ export default function PurityView() {
         onClose={() => setPendingOpen(false)}
         sheetStyle={s.pendingSheet}
       >
-        <View style={s.handle} />
-        <View style={s.sheetHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.sheetKicker}>STRICT WATCH</Text>
-            <Text style={s.sheetTitle}>Pending Changes</Text>
-          </View>
-          <TouchableOpacity style={s.closeBtn} onPress={() => setPendingOpen(false)}>
-            <X s={17} c={C.textMuted} w={2.2} />
-          </TouchableOpacity>
-        </View>
+        <FocusSheetHeader
+          kicker="STRICT WATCH"
+          title="Pending Changes"
+          onClose={() => setPendingOpen(false)}
+        />
         <Text style={s.pendingSheetIntro}>
           Your stronger protection stays in place through the cooldown. Due changes apply while Anasta is active or on the next open. Canceling keeps the stronger rule.
         </Text>
@@ -472,6 +471,8 @@ const s = StyleSheet.create({
   statusBandOn: { borderColor: '#CDE4DB', backgroundColor: '#F4FAF7' },
   statusIcon: { width: 48, height: 48, borderRadius: 16, borderCurve: 'continuous', backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
   statusIconOn: { backgroundColor: '#DDEFE8' },
+  statusCopy: { flex: 1, minWidth: 0 },
+  statusKickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, minWidth: 0 },
   statusKicker: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.6, color: '#2D7967' },
   statusTitle: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 20, letterSpacing: -0.2, color: C.text },
   statusMeta: { marginTop: 2.5, fontFamily: F.sans, fontSize: 10.5, color: C.textSecondary },

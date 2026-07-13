@@ -29,7 +29,7 @@ export default function ScreenTimePermissionModal({
           : 'Anasta needs Screen Time access to apply selected app and website protection on this device.'
         : 'Expo Go cannot load the Family Controls native module. You can test the complete interface now; real shields require the Anasta development build.'}
       cancelLabel="NOT NOW"
-      confirmLabel={nativeAvailable ? denied ? 'OPEN SETTINGS' : 'CONTINUE' : 'CONTINUE IN PREVIEW'}
+      confirmLabel={nativeAvailable ? denied ? 'OPEN SETTINGS' : 'CONTINUE' : 'USE PREVIEW'}
       confirmColor={C.gold}
       onCancel={onCancel}
       onConfirm={onConfirm}

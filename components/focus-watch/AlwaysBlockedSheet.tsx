@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { Lock, Plus, Trash2, X } from '@/components/icons/Icons';
+import { Lock, Plus, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import { ESSENTIAL_APP_OPTIONS, PREVIEW_APPS } from './focusContent';
 import NativeActivitySelectionButton from './NativeActivitySelectionButton';
+import FocusSheetHeader from './FocusSheetHeader';
 import { isNativeFocusAvailable } from './focusNativeBridge';
 import { refreshNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
 import {
@@ -47,15 +48,12 @@ export default function AlwaysBlockedSheet({ visible, onClose }: { visible: bool
   return (
     <>
       <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheet}>
-        <View style={s.handle} />
-        <View style={s.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.eyebrow}>PERMANENT INTENT</Text>
-            <Text style={s.title}>Always Blocked</Text>
-          </View>
-          <TouchableOpacity style={s.closeBtn} onPress={onClose} hitSlop={10}><X s={17} c={C.textMuted} w={2.2} /></TouchableOpacity>
-        </View>
-        <Text style={s.subtitle}>These apps stay outside ordinary plans and Quiet Hour Essentials.</Text>
+        <FocusSheetHeader
+          kicker="PERMANENT INTENT"
+          title="Always Blocked"
+          subtitle="These apps stay outside ordinary plans and Quiet Hour Essentials."
+          onClose={onClose}
+        />
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
           {nativeAvailable ? (

@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import { CheckSmall, ChevronRight, Clock, X } from '@/components/icons/Icons';
+import { CheckSmall, ChevronRight, Clock } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
+import FocusSheetHeader from './FocusSheetHeader';
 import {
   copyNativeActivitySelection,
   isNativeFocusAvailable,
@@ -140,15 +141,12 @@ export default function SessionCopySheet({
 
   return (
     <SmoothBottomSheet visible={visible} onClose={close} sheetStyle={s.sheet}>
-      <View style={s.handle} />
-      <View style={s.headerRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={s.eyebrow}>REUSE PROTECTION RULES</Text>
-          <Text style={s.title}>Copy existing Session</Text>
-        </View>
-        <TouchableOpacity style={s.closeBtn} onPress={close} hitSlop={10}><X s={17} c={C.textMuted} w={2.2} /></TouchableOpacity>
-      </View>
-      <Text style={s.subtitle}>Only rules are copied. This Session keeps its time and place in the day.</Text>
+      <FocusSheetHeader
+        kicker="REUSE PROTECTION RULES"
+        title="Copy Existing Session"
+        subtitle="Only rules are copied. This Session keeps its time and place in the day."
+        onClose={close}
+      />
 
       <ScrollView style={s.list} showsVerticalScrollIndicator={false}>
         {plans.length === 0 ? (

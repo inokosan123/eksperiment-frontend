@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -140,8 +141,8 @@ function ProtectionRow({
   return (
     <TouchableOpacity style={s.protectionRow} activeOpacity={0.72} onPress={onPress}>
       <View style={[s.protectionRowIcon, { backgroundColor: iconBg }]}>{icon}</View>
-      <View style={{ flex: 1 }}>
-        <Text style={s.protectionRowTitle}>{title}</Text>
+      <View style={s.protectionRowCopy}>
+        <Text style={s.protectionRowTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.84}>{title}</Text>
         <Text style={s.protectionRowDetail} numberOfLines={1}>{detail}</Text>
       </View>
       <ChevronRight s={16} c={C.textMuted} w={2.1} />
@@ -320,6 +321,15 @@ export default function FocusWatchView() {
         </Animated.View>
 
         <Animated.View entering={enter(60)} style={s.protectionSurface}>
+          <LinearGradient
+            colors={displayProtected
+              ? ['rgba(228,242,234,0.72)', 'rgba(255,255,255,0)', 'rgba(247,238,217,0.32)']
+              : ['rgba(247,238,217,0.58)', 'rgba(255,255,255,0)', 'rgba(241,240,236,0.24)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={s.protectionLight}
+            pointerEvents="none"
+          />
           <View style={s.surfaceHeaderRow}>
             <Text style={s.surfaceLabel}>PROTECTION</Text>
             <View style={[s.liveBadge, isProtected && s.liveBadgeOn, (needsPermission || nativeApplying) && s.liveBadgeNeedsAccess, nativeError && s.liveBadgeError, previewMode && s.liveBadgePreview]}>
@@ -338,9 +348,9 @@ export default function FocusWatchView() {
           </View>
 
           <View style={s.phoneStage}>
-            <FocusPhoneStatus active={displayProtected} size={136} />
+            <FocusPhoneStatus active={displayProtected} critical={hardWallActive} size={164} />
           </View>
-          <Text style={s.protectionTitle}>{protectionTitle}</Text>
+          <Text style={s.protectionTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.86}>{protectionTitle}</Text>
           <Text style={s.protectionDetail}>{protectionDetail}</Text>
 
           <View style={s.protectionRows}>
@@ -400,7 +410,7 @@ export default function FocusWatchView() {
           )}
         </Animated.View>
 
-        <Animated.View entering={enter(140)}>
+        <Animated.View entering={enter(140)} style={s.contentSection}>
           <View style={s.sectionTitleRow}>
             <Text style={s.sectionTitle}>TODAY’S PROGRESS</Text>
             <TouchableOpacity
@@ -414,8 +424,17 @@ export default function FocusWatchView() {
           </View>
           <TouchableOpacity style={s.progressSurface} activeOpacity={0.86} onPress={() => setTrophiesOpen(true)}>
             <View style={s.progressCopyRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.progressHeadline}>
+              <View style={s.progressTrophySeal}>
+                <View style={s.progressTrophyGlow} />
+                <Image source={TROPHY_PNG} style={s.progressTrophy} resizeMode="contain" />
+              </View>
+              <View style={s.progressCopy}>
+                <Text style={s.progressKicker}>TROPHY STREAK</Text>
+                <View style={s.progressValueRow}>
+                  <Text style={s.progressValue}>{state.streak.current}</Text>
+                  <Text style={s.progressUnit}>{state.streak.current === 1 ? 'day' : 'days'}</Text>
+                </View>
+                <Text style={s.progressHeadline} numberOfLines={2}>
                   {liveStatus === 'broken'
                     ? 'Today’s trophy is resting.'
                     : targetMinutes != null
@@ -424,11 +443,14 @@ export default function FocusWatchView() {
                         ? 'No trophy target today.'
                         : 'Today is a rest day.'}
                 </Text>
-                <Text style={s.progressCaption}>
-                  {targetMinutes != null ? `${formatMinutesShort(targetMinutes)} Daily Target` : 'No Daily Target today'}
-                </Text>
               </View>
-              <Image source={TROPHY_PNG} style={s.progressTrophy} resizeMode="contain" />
+              <ChevronRight s={17} c={C.goldDark} w={2} />
+            </View>
+            <View style={s.progressTargetRow}>
+              <Text style={s.progressCaption}>
+                {targetMinutes != null ? `${formatMinutesShort(targetMinutes)} Daily Target` : 'No Daily Target today'}
+              </Text>
+              <Text style={s.progressBest}>Best {state.streak.best}d</Text>
             </View>
             <View style={s.weekRow}>
               {week.map(cell => (
@@ -451,7 +473,7 @@ export default function FocusWatchView() {
           </TouchableOpacity>
         </Animated.View>
 
-        <Animated.View entering={enter(210)}>
+        <Animated.View entering={enter(210)} style={s.contentSection}>
           <FocusCard
             label="APP BLOCKING"
             title="Screen Time"
@@ -464,14 +486,18 @@ export default function FocusWatchView() {
             {plan && (
               <>
                 <View style={s.stPlanHeader}>
-                  <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={s.stPlanCopy}>
                     <Text style={s.stPlanKicker}>TODAY’S PLAN</Text>
-                    <Text style={s.stPlanName} numberOfLines={1}>{plan.name}</Text>
+                    <View style={s.stPlanTitleRow}>
+                      <Text style={s.stPlanName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>{plan.name}</Text>
+                      <View style={s.stKindTag}>
+                        <Text style={s.stKindTagText}>{plan.kind === 'session' ? 'SESSION' : 'DAILY'}</Text>
+                      </View>
+                    </View>
+                    <Text style={s.stPlanMeta} numberOfLines={1}>
+                      {session ? `${session.name} is active now` : plan.kind === 'session' ? `${plan.zones.length} Sessions across today` : 'One set of rules across today'}
+                    </Text>
                   </View>
-                  <Text style={s.stPlanMeta}>
-                    {plan.kind === 'session' ? 'Session Plan' : 'Daily Plan'}
-                    {session ? ` · ${session.name} now` : ''}
-                  </Text>
                 </View>
                 {plan.kind === 'session' && <SessionRail plan={plan} now={now} />}
                 <View style={s.stTargetBlock}>
@@ -522,16 +548,27 @@ export default function FocusWatchView() {
           </FocusCard>
         </Animated.View>
 
-        <Animated.View entering={enter(280)}>
+        <Animated.View entering={enter(280)} style={s.contentSection}>
           <FocusCard
-            label="WEBSITE BLOCKING"
+            label="CLEAN SIGHT"
             title="Web Protection"
             tint={FOCUS_TINTS.green}
             watermark={<Globe s={84} c="#3D8273" w={1.1} />}
             chip={webChip}
-            description="Clean Sight guards Safari and supported browsers."
+            description="Block selected harmful content across supported browsers."
             onPress={() => router.push('/clean-sight' as never)}
           >
+            <View style={s.webStatsRow}>
+              <View style={s.webStat}>
+                <Text style={s.webStatValue}>{packsOn}</Text>
+                <Text style={s.webStatLabel}>{packsOn === 1 ? 'active pack' : 'active packs'}</Text>
+              </View>
+              <View style={s.webStatDivider} />
+              <View style={s.webStat}>
+                <Text style={s.webStatValue}>{customSites}</Text>
+                <Text style={s.webStatLabel}>{customSites === 1 ? 'custom site' : 'custom sites'}</Text>
+              </View>
+            </View>
             <View style={s.packChips}>
               {WEB_PACKS.map(pack => {
                 const on = (state.purity.packs.find(entry => entry.id === pack.id)?.mode ?? 'off') !== 'off';
@@ -568,28 +605,30 @@ export default function FocusWatchView() {
 const s = StyleSheet.create({
   page: {
     paddingBottom: 128,
-    paddingHorizontal: 16,
-    gap: 18,
   },
   quoteWrap: {
-    paddingHorizontal: 28,
+    paddingHorizontal: 26,
+    paddingTop: 8,
+    paddingBottom: 6,
     alignItems: 'center',
   },
   quote: {
     fontFamily: F.serifMediumItalic,
-    fontSize: 16.5,
-    lineHeight: 21,
+    fontSize: 17,
+    lineHeight: 21.5,
     color: C.textSecondary,
     textAlign: 'center',
   },
   ref: {
-    marginTop: 8,
+    marginTop: 10,
     fontFamily: F.sansBold,
-    fontSize: 9.5,
-    letterSpacing: 2.2,
+    fontSize: 10,
+    letterSpacing: 2.4,
     color: C.gold,
   },
   protectionSurface: {
+    marginHorizontal: 16,
+    marginTop: 12,
     borderRadius: 26,
     borderCurve: 'continuous',
     borderWidth: 1,
@@ -602,6 +641,13 @@ const s = StyleSheet.create({
     shadowOpacity: 0.07,
     shadowRadius: 14,
     elevation: 4,
+  },
+  protectionLight: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  contentSection: {
+    marginHorizontal: 16,
+    marginTop: 18,
   },
   surfaceHeaderRow: {
     flexDirection: 'row',
@@ -636,7 +682,7 @@ const s = StyleSheet.create({
   liveBadgeTextNeedsAccess: { color: '#946518' },
   liveBadgeTextError: { color: '#8F3544' },
   liveBadgeTextPreview: { color: '#65548E' },
-  phoneStage: { height: 132, alignItems: 'center', justifyContent: 'center' },
+  phoneStage: { height: 164, alignItems: 'center', justifyContent: 'center' },
   protectionTitle: {
     fontFamily: F.serifMedium,
     fontSize: 24,
@@ -675,6 +721,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  protectionRowCopy: { flex: 1, minWidth: 0 },
   protectionRowTitle: { fontFamily: F.serifMedium, fontSize: 16, color: C.text },
   protectionRowDetail: { marginTop: 1.5, fontFamily: F.sans, fontSize: 10.5, color: C.textSecondary },
   quietButton: { marginTop: 16 },
@@ -704,9 +751,9 @@ const s = StyleSheet.create({
     borderRadius: 22,
     borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.surface,
-    padding: 15,
+    borderColor: '#E8D8B5',
+    backgroundColor: '#FFFDF7',
+    padding: 16,
     shadowColor: '#1C1917',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
@@ -714,9 +761,34 @@ const s = StyleSheet.create({
     elevation: 2,
   },
   progressCopyRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  progressHeadline: { fontFamily: F.serifMedium, fontSize: 19, letterSpacing: -0.2, color: C.text },
-  progressCaption: { marginTop: 2.5, fontFamily: F.sans, fontSize: 11, color: C.textSecondary },
-  progressTrophy: { width: 40, height: 40 },
+  progressTrophySeal: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.38)',
+    backgroundColor: '#FFF7E3',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  progressTrophyGlow: {
+    position: 'absolute',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(216,182,114,0.25)',
+  },
+  progressTrophy: { width: 39, height: 39 },
+  progressCopy: { flex: 1, minWidth: 0 },
+  progressKicker: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.7, color: C.goldDark },
+  progressValueRow: { marginTop: 1, flexDirection: 'row', alignItems: 'baseline', gap: 5 },
+  progressValue: { fontFamily: F.serifSemiBold, fontSize: 29, lineHeight: 31, color: C.text, fontVariant: ['tabular-nums'] },
+  progressUnit: { fontFamily: F.serifMedium, fontSize: 15, color: C.textSecondary },
+  progressHeadline: { marginTop: 1, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17, color: C.textSecondary },
+  progressTargetRow: { marginTop: 12, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EADFC8', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  progressCaption: { flexShrink: 1, fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.textSecondary },
+  progressBest: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 0.4, color: C.goldDark },
   weekRow: { marginTop: 13, flexDirection: 'row', justifyContent: 'space-between' },
   weekCell: { alignItems: 'center', gap: 5, minWidth: 32 },
   weekLetter: { fontFamily: F.sansBold, fontSize: 8.5, color: C.textMuted },
@@ -751,12 +823,16 @@ const s = StyleSheet.create({
   calendarHint: { marginTop: 10, textAlign: 'center', fontFamily: F.serifItalic, fontSize: 12, color: C.textMuted },
   stPlanHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     gap: 10,
   },
+  stPlanCopy: { flex: 1, minWidth: 0 },
+  stPlanTitleRow: { marginTop: 2, flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
   stPlanKicker: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.6, color: '#A9863F' },
-  stPlanName: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 19, letterSpacing: -0.2, color: '#4A3A16' },
-  stPlanMeta: { fontFamily: F.sansSemiBold, fontSize: 10, color: '#A9863F', paddingBottom: 3 },
+  stPlanName: { flexShrink: 1, fontFamily: F.serifMedium, fontSize: 20, letterSpacing: -0.2, color: '#4A3A16' },
+  stKindTag: { flexShrink: 0, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(169,134,63,0.22)', backgroundColor: 'rgba(255,255,255,0.62)', paddingHorizontal: 7, paddingVertical: 3.5 },
+  stKindTagText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1, color: '#8A5A1A' },
+  stPlanMeta: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 9.5, color: '#A9863F' },
   sessionRail: { marginTop: 12 },
   sessionTrack: { position: 'relative', height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.6)', overflow: 'hidden' },
   sessionSegment: { position: 'absolute', top: 0, bottom: 0, borderRadius: 3 },
@@ -766,13 +842,9 @@ const s = StyleSheet.create({
   tickText: { fontFamily: F.sansMedium, fontSize: 7.5, color: 'rgba(138,90,26,0.6)', fontVariant: ['tabular-nums'] },
   stTargetBlock: {
     marginTop: 12,
-    borderRadius: 16,
-    borderCurve: 'continuous',
-    backgroundColor: 'rgba(255,255,255,0.55)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,227,184,0.9)',
-    paddingHorizontal: 12,
-    paddingVertical: 11,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(169,134,63,0.32)',
+    paddingTop: 12,
   },
   stTargetRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   stTargetLabel: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.4, color: '#A9863F' },
@@ -786,7 +858,12 @@ const s = StyleSheet.create({
   groupTagDot: { width: 5, height: 5, borderRadius: 3 },
   groupTagText: { fontFamily: F.sansSemiBold, fontSize: 9.5, color: C.textSecondary },
   moreText: { fontFamily: F.sansMedium, fontSize: 9.5, color: '#A9863F' },
-  packChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  webStatsRow: { flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(61,130,115,0.24)', paddingVertical: 10 },
+  webStat: { flex: 1, flexDirection: 'row', alignItems: 'baseline', gap: 5 },
+  webStatValue: { fontFamily: F.serifSemiBold, fontSize: 22, color: '#1F4E45', fontVariant: ['tabular-nums'] },
+  webStatLabel: { flexShrink: 1, fontFamily: F.sansMedium, fontSize: 9.5, color: '#3D8273' },
+  webStatDivider: { width: StyleSheet.hairlineWidth, height: 27, marginHorizontal: 12, backgroundColor: 'rgba(61,130,115,0.28)' },
+  packChips: { marginTop: 11, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   packChip: {
     flexDirection: 'row',
     alignItems: 'center',

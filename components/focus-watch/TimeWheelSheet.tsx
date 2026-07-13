@@ -3,10 +3,9 @@ import { NativeScrollEvent, NativeSyntheticEvent, ScrollView, StyleSheet, Text, 
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import { X } from '@/components/icons/Icons';
-import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
+import FocusSheetHeader from './FocusSheetHeader';
 import { formatTimeOfDay } from './dayPlanStore';
 
 const ITEM_HEIGHT = 44;
@@ -115,18 +114,7 @@ export default function TimeWheelSheet({
 
   return (
     <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheet}>
-      <View style={s.handle} />
-      <View style={s.headerRow}>
-        <Text style={s.title}>{title}</Text>
-        <TouchableOpacity
-          onPress={onClose}
-          activeOpacity={0.8}
-          style={s.closeBtn}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <X s={17} c={C.textMuted} w={2.2} />
-        </TouchableOpacity>
-      </View>
+      <FocusSheetHeader kicker="SESSION TIME" title={title} onClose={onClose} />
 
       <Text style={s.preview}>{formatTimeOfDay(hour * 60 + minute)}</Text>
 

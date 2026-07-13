@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import { CheckSmall, Lock, Minus, Plus, X } from '@/components/icons/Icons';
+import { CheckSmall, Lock, Minus, Plus } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
+import FocusSheetHeader from './FocusSheetHeader';
 import NativeActivitySelectionButton from './NativeActivitySelectionButton';
 import { ESSENTIAL_APP_OPTIONS } from './focusContent';
 import { copyNativeActivitySelection, isNativeFocusAvailable } from './focusNativeBridge';
@@ -165,19 +166,14 @@ export default function QuietHourSheet({
 
   return (
     <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheet}>
-      <View style={s.handle} />
-      <View style={s.headerRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={s.eyebrow}>STRICT PROTECTION</Text>
-          <Text style={s.title}>{editingSession ? 'Extend Quiet Hour' : 'Quiet Hour'}</Text>
-        </View>
-        <TouchableOpacity onPress={onClose} style={s.closeBtn} hitSlop={10}>
-          <X s={17} c={C.textMuted} w={2.2} />
-        </TouchableOpacity>
-      </View>
-      <Text style={s.subtitle}>{editingSession
-        ? 'The strict app snapshot is locked. You may only add more protected time.'
-        : 'Choose the phone you need, then leave the rest outside.'}</Text>
+      <FocusSheetHeader
+        kicker="STRICT PROTECTION"
+        title={editingSession ? 'Extend Quiet Hour' : 'Quiet Hour'}
+        subtitle={editingSession
+          ? 'The strict app snapshot is locked. You may only add more protected time.'
+          : 'Choose the phone you need, then leave the rest outside.'}
+        onClose={onClose}
+      />
 
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"

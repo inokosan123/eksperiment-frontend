@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { CheckSmall, ChevronRight, Lock, Plus, Trash2, X } from '@/components/icons/Icons';
+import { CheckSmall, ChevronRight, Lock, Plus, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import GoldButton from './GoldButton';
 import NativeActivitySelectionButton from './NativeActivitySelectionButton';
+import FocusSheetHeader from './FocusSheetHeader';
 import { appsInCategory, CATEGORY_TINTS, PREVIEW_APPS } from './focusContent';
 import {
   clearNativeActivitySelection,
@@ -182,16 +183,7 @@ export default function PlanGroupSheet({
 
   return (
     <SmoothBottomSheet visible={visible} onClose={close} sheetStyle={s.sheet} keyboardAware>
-      <View style={s.handle} />
-      <View style={s.headerRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={s.eyebrow}>APP GROUP CATALOG</Text>
-          <Text style={s.title}>Add a group</Text>
-        </View>
-        <TouchableOpacity style={s.closeBtn} onPress={close} hitSlop={10}>
-          <X s={17} c={C.textMuted} w={2.2} />
-        </TouchableOpacity>
-      </View>
+      <FocusSheetHeader kicker="APP GROUP CATALOG" title="Add a Group" onClose={close} />
 
       <View style={s.segmented}>
         <TouchableOpacity style={[s.segment, mode === 'new' && s.segmentOn]} onPress={() => setMode('new')} haptic="selection">

@@ -4,12 +4,13 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { CheckSmall, ChevronRight, Lock, Minus, Plus, Trash2, X } from '@/components/icons/Icons';
+import { CheckSmall, ChevronRight, Lock, Minus, Plus, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import FocusSwitch from './FocusSwitch';
 import LimitSlider from './LimitSlider';
 import NativeActivitySelectionButton from './NativeActivitySelectionButton';
+import FocusSheetHeader from './FocusSheetHeader';
 import { CATEGORY_TINTS, type PreviewApp } from './focusContent';
 import { isNativeFocusAvailable } from './focusNativeBridge';
 import {
@@ -221,16 +222,11 @@ export default function GroupLimitSheet({
     <>
       <SmoothBottomSheet visible={rule !== null} onClose={onClose} sheetStyle={s.sheet}>
         <GestureHandlerRootView style={s.gestureRoot}>
-          <View style={s.handle} />
-          <View style={s.headerRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.kicker}>{sessionName ? `${sessionName.toUpperCase()} SESSION` : 'DAILY RULE'}</Text>
-              <Text style={s.title}>{groupLabel}</Text>
-            </View>
-            <TouchableOpacity style={s.closeBtn} onPress={onClose} hitSlop={10}>
-              <X s={17} c={C.textMuted} w={2.2} />
-            </TouchableOpacity>
-          </View>
+          <FocusSheetHeader
+            kicker={sessionName ? `${sessionName.toUpperCase()} SESSION` : 'DAILY RULE'}
+            title={groupLabel}
+            onClose={onClose}
+          />
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
             <NativeActivitySelectionButton

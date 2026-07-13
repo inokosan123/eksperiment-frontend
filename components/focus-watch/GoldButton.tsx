@@ -28,7 +28,7 @@ export default function GoldButton({
         onPress={onPress}
         style={[s.outline, { height, opacity: disabled ? 0.4 : 1 }, style]}
       >
-        <Text style={s.outlineLabel}>{label}</Text>
+        <Text style={s.outlineLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{label}</Text>
       </TouchableOpacity>
     );
   }
@@ -47,7 +47,7 @@ export default function GoldButton({
         style={[s.gradient, { height }]}
       >
         <View style={s.highlight} pointerEvents="none" />
-        <Text style={s.label}>{label}</Text>
+        <Text style={s.label} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{label}</Text>
       </LinearGradient>
     </TouchableOpacity>
   );
@@ -80,6 +80,7 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.16)',
   },
   label: {
+    maxWidth: '100%',
     fontFamily: F.serifSemiBold,
     fontSize: 17.5,
     letterSpacing: 0.4,
@@ -95,6 +96,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 22,
   },
   outlineLabel: {
+    maxWidth: '100%',
     fontFamily: F.serifSemiBold,
     fontSize: 16.5,
     color: C.goldDark,
