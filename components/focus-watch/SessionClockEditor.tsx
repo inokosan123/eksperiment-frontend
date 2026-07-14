@@ -8,9 +8,10 @@ import Animated, {
   useSharedValue,
   type SharedValue,
 } from 'react-native-reanimated';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { C, F } from '@/constants/tokens';
 import {
+  formatMinutesShort,
   formatTimeOfDay,
   moveSessionBoundary,
   zoneContains,
@@ -50,6 +51,22 @@ function arcPath(startMinutes: number, endMinutes: number) {
   const large = duration > 720 ? 1 : 0;
   return `M ${start.x} ${start.y} A ${RADIUS} ${RADIUS} 0 ${large} 1 ${end.x} ${end.y}`;
 }
+
+// The instrument face: one tick per hour, a firmer tick every six hours.
+const HOUR_TICKS = Array.from({ length: 24 }, (_, hour) => {
+  const angle = (hour / 24) * Math.PI * 2 - Math.PI / 2;
+  const major = hour % 6 === 0;
+  const inner = major ? 121 : 122.5;
+  const outer = major ? 129 : 127;
+  return {
+    key: hour,
+    major,
+    x1: CENTER + Math.cos(angle) * inner,
+    y1: CENTER + Math.sin(angle) * inner,
+    x2: CENTER + Math.cos(angle) * outer,
+    y2: CENTER + Math.sin(angle) * outer,
+  };
+});
 
 function circularDistance(a: number, b: number) {
   'worklet';
@@ -230,6 +247,18 @@ export default function SessionClockEditor({
       <GestureDetector gesture={gesture}>
         <Animated.View style={s.clock} onLayout={onLayout}>
           <Svg width="100%" height="100%" viewBox={`0 0 ${CLOCK_SIZE} ${CLOCK_SIZE}`}>
+            {HOUR_TICKS.map(tick => (
+              <Line
+                key={tick.key}
+                x1={tick.x1}
+                y1={tick.y1}
+                x2={tick.x2}
+                y2={tick.y2}
+                stroke={tick.major ? '#B9AE97' : '#DDD8CC'}
+                strokeWidth={tick.major ? 2 : 1.2}
+                strokeLinecap="round"
+              />
+            ))}
             <Circle cx={CENTER} cy={CENTER} r={RADIUS} fill="none" stroke="#EEEAE1" strokeWidth={25} />
             {sessions.map((session, index) => {
               const color = SESSION_COLORS[index % SESSION_COLORS.length];
@@ -278,26 +307,36 @@ export default function SessionClockEditor({
 
           {selected && (
             <View style={s.centerCopy} pointerEvents="none">
-              <Text style={s.centerKicker}>SELECTED SESSION</Text>
-              <Text style={s.centerTitle} numberOfLines={1}>{selected.name}</Text>
+              <Text style={s.centerKicker}>SESSION</Text>
+              <Text style={s.centerTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{selected.name}</Text>
               <Text style={s.centerTime}>
                 {sessions.length === 1
                   ? 'All day'
-                  : `${formatTimeOfDay(selected.startMinutes)} - ${formatTimeOfDay(selected.endMinutes)}`}
+                  : `${formatTimeOfDay(selected.startMinutes)}–${formatTimeOfDay(selected.endMinutes)}`}
+              </Text>
+              <Text style={s.centerDuration}>
+                {formatMinutesShort(sessions.length === 1 ? 1440 : zoneDurationMinutes(selected))}
               </Text>
             </View>
           )}
         </Animated.View>
       </GestureDetector>
       <View style={s.legend}>
-        {sessions.map((session, index) => (
-          <View key={session.id} style={s.legendItem}>
-            <View style={[s.legendDot, { backgroundColor: SESSION_COLORS[index % SESSION_COLORS.length] }]} />
-            <Text style={[s.legendText, session.id === selected?.id && s.legendTextSelected]} numberOfLines={1}>
-              {session.name}
-            </Text>
-          </View>
-        ))}
+        {sessions.map((session, index) => {
+          const color = SESSION_COLORS[index % SESSION_COLORS.length];
+          const isSelected = session.id === selected?.id;
+          return (
+            <View
+              key={session.id}
+              style={[s.legendChip, isSelected && { borderColor: color, backgroundColor: `${color}1F` }]}
+            >
+              <View style={[s.legendDot, { backgroundColor: color }]} />
+              <Text style={[s.legendText, isSelected && s.legendTextSelected]} numberOfLines={1}>
+                {session.name}
+              </Text>
+            </View>
+          );
+        })}
       </View>
     </View>
   );
@@ -308,18 +347,30 @@ const s = StyleSheet.create({
   clock: { width: '100%', maxWidth: CLOCK_SIZE, aspectRatio: 1, alignSelf: 'center' },
   handle: { position: 'absolute', left: 0, top: 0, width: 18, height: 18, borderRadius: 9, borderWidth: 4, backgroundColor: '#fff', shadowColor: '#1C1917', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.16, shadowRadius: 4, elevation: 3 },
   handleSelected: { width: 22, height: 22, borderRadius: 11 },
-  clockLabel: { position: 'absolute', fontFamily: F.sansBold, fontSize: 8, color: C.textMuted, fontVariant: ['tabular-nums'] },
-  label00: { top: 3, left: '50%', transform: [{ translateX: -7 }] },
-  label06: { right: 3, top: '50%', transform: [{ translateY: -5 }] },
-  label12: { bottom: 3, left: '50%', transform: [{ translateX: -7 }] },
-  label18: { left: 3, top: '50%', transform: [{ translateY: -5 }] },
-  centerCopy: { position: 'absolute', left: '25%', right: '25%', top: '35%', bottom: '35%', alignItems: 'center', justifyContent: 'center' },
-  centerKicker: { fontFamily: F.sansBold, fontSize: 6.5, letterSpacing: 1.1, color: C.textMuted },
-  centerTitle: { marginTop: 3, maxWidth: 120, fontFamily: F.serifMedium, fontSize: 18, color: C.text, textAlign: 'center' },
-  centerTime: { marginTop: 2, fontFamily: F.sansSemiBold, fontSize: 8.5, color: C.goldDark, fontVariant: ['tabular-nums'] },
-  legend: { marginTop: 9, width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 },
-  legendItem: { maxWidth: '46%', flexDirection: 'row', alignItems: 'center', gap: 5 },
+  clockLabel: { position: 'absolute', fontFamily: F.sansBold, fontSize: 9, letterSpacing: 0.4, color: C.textMuted, fontVariant: ['tabular-nums'] },
+  label00: { top: 2, left: '50%', transform: [{ translateX: -8 }] },
+  label06: { right: 2, top: '50%', transform: [{ translateY: -6 }] },
+  label12: { bottom: 2, left: '50%', transform: [{ translateX: -8 }] },
+  label18: { left: 2, top: '50%', transform: [{ translateY: -6 }] },
+  centerCopy: { position: 'absolute', left: '24%', right: '24%', top: '32%', bottom: '32%', alignItems: 'center', justifyContent: 'center' },
+  centerKicker: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.6, color: C.textMuted },
+  centerTitle: { marginTop: 2.5, maxWidth: 126, fontFamily: F.serifMedium, fontSize: 19, letterSpacing: -0.2, color: C.text, textAlign: 'center' },
+  centerTime: { marginTop: 2.5, fontFamily: F.serifMedium, fontSize: 12.5, color: C.goldDark, fontVariant: ['tabular-nums'] },
+  centerDuration: { marginTop: 1.5, fontFamily: F.sansSemiBold, fontSize: 8.5, letterSpacing: 0.6, color: C.textMuted, fontVariant: ['tabular-nums'] },
+  legend: { marginTop: 11, width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6 },
+  legendChip: {
+    maxWidth: '46%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    backgroundColor: '#F4F2EC',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
   legendDot: { width: 7, height: 7, borderRadius: 4 },
-  legendText: { fontFamily: F.sansMedium, fontSize: 9, color: C.textMuted },
+  legendText: { fontFamily: F.sansMedium, fontSize: 10, color: C.textSecondary },
   legendTextSelected: { fontFamily: F.sansSemiBold, color: C.text },
 });

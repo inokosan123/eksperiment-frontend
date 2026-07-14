@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import FocusSheetHeader from './FocusSheetHeader';
 import { ChevronLeft, ChevronRight, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import { StaticChallengeTrophy } from '@/components/challenges/ChallengeTrophy';
 import { C, F } from '@/constants/tokens';
 import { dateKey, useDayPlan, type DayRecord } from './dayPlanStore';
 
-const TROPHY_PNG = require('@/assets/animations/challenge-trophy-preview.png');
 const enter = (delay: number) => FadeInDown.duration(360).delay(delay);
 
 const MONTH_NAMES = [
@@ -116,7 +116,7 @@ export default function TrophyCalendarSheet({
         <View style={s.statCell}>
           <Text style={s.statLabel}>TROPHIES</Text>
           <View style={s.statTrophyRow}>
-            <Image source={TROPHY_PNG} style={s.statTrophyImg} resizeMode="contain" />
+            <StaticChallengeTrophy size={19} />
             <Text style={s.statValue}>{state.streak.trophies}</Text>
           </View>
           <Text style={s.statUnit}>kept days</Text>
@@ -161,10 +161,10 @@ export default function TrophyCalendarSheet({
                 <View style={s.markWrap}>
                   {entry.cell === 'kept' && (
                     <View style={s.keptBadge}>
-                      <Image source={TROPHY_PNG} style={s.keptImg} resizeMode="contain" />
+                      <StaticChallengeTrophy size={18} />
                     </View>
                   )}
-                  {entry.cell === 'broken' && <X s={14} c={C.text} w={2.8} />}
+                  {entry.cell === 'broken' && <X s={14} c="#B45360" w={2.8} />}
                   {entry.cell === 'off' && <View style={s.offRing} />}
                   {entry.cell === 'today' && <View style={s.todayRing} />}
                   {entry.cell === 'future' && <View style={s.futureDot} />}
@@ -180,11 +180,11 @@ export default function TrophyCalendarSheet({
 
       <View style={s.legendRow}>
         <View style={s.legendItem}>
-          <Image source={TROPHY_PNG} style={{ width: 14, height: 14 }} resizeMode="contain" />
+          <StaticChallengeTrophy size={14} />
           <Text style={s.legendText}>kept</Text>
         </View>
         <View style={s.legendItem}>
-          <X s={11} c={C.text} w={2.6} />
+          <X s={11} c="#B45360" w={2.6} />
           <Text style={s.legendText}>broken</Text>
         </View>
         <View style={s.legendItem}>
@@ -354,7 +354,8 @@ const s = StyleSheet.create({
     height: 14,
     borderRadius: 7,
     borderWidth: 1.5,
-    borderColor: '#E2E0DA',
+    borderStyle: 'dashed',
+    borderColor: '#DDD8CC',
   },
   todayRing: {
     width: 16,

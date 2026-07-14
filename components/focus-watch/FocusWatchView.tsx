@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -16,7 +16,6 @@ import Animated, {
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import {
   BarChart3,
-  CheckSmall,
   ChevronRight,
   Clock,
   Globe,
@@ -24,17 +23,19 @@ import {
   Shield,
   X,
 } from '@/components/icons/Icons';
+import { StaticChallengeTrophy } from '@/components/challenges/ChallengeTrophy';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import FocusPhoneStatus from './FocusPhoneStatus';
 import FocusCard, { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
-import { FocusMeter, PulseDot } from './FocusMeter';
+import { PulseDot } from './FocusMeter';
+import DayGauge, { gaugeStanding } from './DayGauge';
 import GoldButton from './GoldButton';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
 import QuietHourSheet from './QuietHourSheet';
 import TrophyCalendarSheet from './TrophyCalendarSheet';
 import MilestoneCongratsOverlay from './MilestoneCongratsOverlay';
-import { CATEGORY_TINTS, WEB_PACKS } from './focusContent';
+import { WEB_PACKS } from './focusContent';
 import { isNativeFocusAvailable } from './focusNativeBridge';
 import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
 import {
@@ -42,24 +43,24 @@ import {
   activeZone,
   allCoreEssentialIds,
   dateKey,
+  DAY_LETTERS,
   formatClockMs,
   formatEndsAt,
   formatMinutesShort,
   formatTimeOfDay,
   getEffectivePlan,
   getLiveDayStatus,
-  groupName,
+  getLiveUsageSnapshot,
   planHasProtectionNow,
-  plannedMinutesByGroup,
   purityActiveCount,
   tickDayPlanStore,
   useDayPlan,
+  weekdayMondayFirst,
   type DayPlan,
   type DayPlanState,
   type DayRecord,
 } from './dayPlanStore';
 
-const TROPHY_PNG = require('@/assets/animations/challenge-trophy-preview.png');
 const WEEK_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const SESSION_COLORS = ['#C8A24D', '#658F78', '#7C78A5', '#B46D6D'];
 const PACK_SHORT_NAMES: Record<string, string> = {
@@ -249,10 +250,12 @@ export default function FocusWatchView() {
   const needsPermission = !permissionGranted && !previewMode && protectionConfigured;
   const liveStatus = getLiveDayStatus(state, now);
   const week = useMemo(() => buildWeek(state, now), [state, now]);
-  const plannedGroups = plan ? Object.entries(plannedMinutesByGroup(plan)) : [];
-  const plannedMinutes = plannedGroups.reduce((sum, [, minutes]) => sum + minutes, 0);
   const targetMinutes = plan?.budgetMinutes ?? null;
-  const planningCapacity = targetMinutes == null ? null : Math.round(targetMinutes * 0.8);
+  const toleranceEndMinutes = plan ? plan.essentialOnlyMinutes ?? plan.tolerableMinutes : null;
+  const usedToday = getLiveUsageSnapshot(dateKey(now))?.totalMinutes ?? null;
+  const todayStanding = targetMinutes != null
+    ? gaugeStanding(targetMinutes, toleranceEndMinutes, usedToday)
+    : 'unknown';
 
   const protectionTitle = previewMode && protectionConfigured
     ? 'Protection preview is ready.'
@@ -310,7 +313,6 @@ export default function FocusWatchView() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={s.page}
         showsVerticalScrollIndicator={false}
       >
@@ -376,7 +378,7 @@ export default function FocusWatchView() {
                   ? 'Daily limit reached · Essentials + system access'
                   : session
                     ? `${session.name} · ${formatTimeOfDay(session.startMinutes)}–${formatTimeOfDay(session.endMinutes)}`
-                    : `${plan.name} · all day`}
+                    : `${plan.name}${plan.budgetMinutes != null ? ` · ${formatMinutesShort(plan.budgetMinutes)} goal` : ' · group limits'}`}
                 onPress={() => router.push('/day-plans' as never)}
               />
             )}
@@ -423,13 +425,19 @@ export default function FocusWatchView() {
             </TouchableOpacity>
           </View>
           <TouchableOpacity style={s.progressSurface} activeOpacity={0.86} onPress={() => setTrophiesOpen(true)}>
-            <View style={s.progressCopyRow}>
+            <View style={s.progressHeaderRow}>
+              <Text style={s.progressKicker}>TROPHY STREAK</Text>
+              <View style={s.bestPill}>
+                <Text style={s.bestPillText}>Best {state.streak.best}d</Text>
+              </View>
+            </View>
+
+            <View style={s.progressHeroRow}>
               <View style={s.progressTrophySeal}>
                 <View style={s.progressTrophyGlow} />
-                <Image source={TROPHY_PNG} style={s.progressTrophy} resizeMode="contain" />
+                <StaticChallengeTrophy size={46} />
               </View>
               <View style={s.progressCopy}>
-                <Text style={s.progressKicker}>TROPHY STREAK</Text>
                 <View style={s.progressValueRow}>
                   <Text style={s.progressValue}>{state.streak.current}</Text>
                   <Text style={s.progressUnit}>{state.streak.current === 1 ? 'day' : 'days'}</Text>
@@ -444,32 +452,42 @@ export default function FocusWatchView() {
                         : 'Today is a rest day.'}
                 </Text>
               </View>
-              <ChevronRight s={17} c={C.goldDark} w={2} />
             </View>
-            <View style={s.progressTargetRow}>
-              <Text style={s.progressCaption}>
-                {targetMinutes != null ? `${formatMinutesShort(targetMinutes)} Daily Target` : 'No Daily Target today'}
-              </Text>
-              <Text style={s.progressBest}>Best {state.streak.best}d</Text>
-            </View>
-            <View style={s.weekRow}>
+
+            <View style={s.weekBand}>
               {week.map(cell => (
                 <View key={cell.key} style={s.weekCell}>
-                  <Text style={s.weekLetter}>{cell.letter}</Text>
+                  <Text style={[s.weekLetter, cell.status === 'today' && s.weekLetterToday]}>{cell.letter}</Text>
                   <View style={[
                     s.weekDot,
                     cell.status === 'kept' && s.weekDotKept,
                     cell.status === 'broken' && s.weekDotBroken,
                     cell.status === 'today' && s.weekDotToday,
+                    cell.status === 'rest' && s.weekDotRest,
                   ]}>
                     {cell.status === 'today' && <TodayRing />}
-                    {cell.status === 'kept' && <CheckSmall s={11} c="#fff" w={2.8} />}
-                    {cell.status === 'broken' && <X s={10} c="#A24351" w={2.8} />}
+                    {cell.status === 'kept' && <StaticChallengeTrophy size={22} />}
+                    {cell.status === 'today' && (
+                      <View style={s.todayTrophyFaint}>
+                        <StaticChallengeTrophy size={20} />
+                      </View>
+                    )}
+                    {cell.status === 'broken' && <X s={11} c="#B45360" w={2.5} />}
+                    {cell.status === 'rest' && <View style={s.restDot} />}
                   </View>
                 </View>
               ))}
             </View>
-            <Text style={s.calendarHint}>Tap to view the monthly trophy calendar</Text>
+
+            <View style={s.progressFooterRow}>
+              <Text style={s.progressCaption}>
+                {targetMinutes != null ? `${formatMinutesShort(targetMinutes)} Daily Target` : 'No Daily Target today'}
+              </Text>
+              <View style={s.calendarLink}>
+                <Text style={s.calendarLinkText}>Monthly calendar</Text>
+                <ChevronRight s={13} c={C.goldDark} w={2.2} />
+              </View>
+            </View>
           </TouchableOpacity>
         </Animated.View>
 
@@ -483,65 +501,69 @@ export default function FocusWatchView() {
             description={plan ? undefined : 'Create a simple Daily Plan or shape the day with Sessions.'}
             onPress={() => router.push('/day-plans' as never)}
           >
+            {!plan && (
+              <>
+                <View style={s.stStatsRow}>
+                  <View style={s.stStat}>
+                    <Text style={s.stStatValue}>{state.plans.length}</Text>
+                    <Text style={s.stStatLabel}>{state.plans.length === 1 ? 'saved plan' : 'saved plans'}</Text>
+                  </View>
+                  <View style={s.stStatDivider} />
+                  <View style={s.stStat}>
+                    <Text style={s.stStatValue}>{state.schedule.filter(Boolean).length}</Text>
+                    <Text style={s.stStatLabel}>planned {state.schedule.filter(Boolean).length === 1 ? 'weekday' : 'weekdays'}</Text>
+                  </View>
+                </View>
+                <View style={s.stWeekStrip}>
+                  {DAY_LETTERS.map((letter, day) => {
+                    const assigned = !!state.schedule[day];
+                    const isToday = day === weekdayMondayFirst(now);
+                    return (
+                      <View
+                        key={`${letter}-${day}`}
+                        style={[s.stWeekDay, assigned && s.stWeekDayOn, isToday && s.stWeekDayToday]}
+                      >
+                        <Text style={[s.stWeekDayText, assigned && s.stWeekDayTextOn]}>{letter}</Text>
+                      </View>
+                    );
+                  })}
+                  <Text style={s.stWeekHint}>Today is a rest day</Text>
+                </View>
+              </>
+            )}
             {plan && (
               <>
                 <View style={s.stPlanHeader}>
                   <View style={s.stPlanCopy}>
                     <Text style={s.stPlanKicker}>TODAY’S PLAN</Text>
-                    <View style={s.stPlanTitleRow}>
-                      <Text style={s.stPlanName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>{plan.name}</Text>
-                      <View style={s.stKindTag}>
-                        <Text style={s.stKindTagText}>{plan.kind === 'session' ? 'SESSION' : 'DAILY'}</Text>
-                      </View>
-                    </View>
-                    <Text style={s.stPlanMeta} numberOfLines={1}>
-                      {session ? `${session.name} is active now` : plan.kind === 'session' ? `${plan.zones.length} Sessions across today` : 'One set of rules across today'}
-                    </Text>
+                    <Text style={s.stPlanName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>{plan.name}</Text>
+                    {session && <Text style={s.stPlanMeta} numberOfLines={1}>{session.name} is active now</Text>}
                   </View>
                 </View>
                 {plan.kind === 'session' && <SessionRail plan={plan} now={now} />}
-                <View style={s.stTargetBlock}>
-                  <View style={s.stTargetRow}>
-                    <View>
-                      <Text style={s.stTargetLabel}>DAILY TARGET</Text>
-                      <Text style={s.stTargetValue}>{targetMinutes == null ? 'No limit' : formatMinutesShort(targetMinutes)}</Text>
-                    </View>
-                    <View style={s.stTargetDivider} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.stTargetLabel}>PLANNED</Text>
-                      <Text style={s.stTargetValue}>{formatMinutesShort(plannedMinutes)}</Text>
-                    </View>
-                    {planningCapacity != null && (
-                      <View style={s.capacityPill}>
-                        <Text style={s.capacityText}>{formatMinutesShort(planningCapacity)} at 80%</Text>
-                      </View>
-                    )}
-                  </View>
-                  {targetMinutes != null && (
-                    <FocusMeter
-                      fraction={plannedMinutes / targetMinutes}
-                      height={10}
-                      fill={C.gold}
-                      track="rgba(138,90,26,0.14)"
-                      live={!!session && planProtects}
-                      markers={[
-                        { at: 0.8, color: '#8A5A1A' },
-                        { at: 1, color: '#4A3A16', strong: true },
-                      ]}
-                      style={s.stMeter}
+                {targetMinutes != null ? (
+                  <View style={s.stGaugeBlock}>
+                    <DayGauge
+                      goalMinutes={targetMinutes}
+                      toleranceEndMinutes={toleranceEndMinutes}
+                      usedMinutes={usedToday}
+                      accent="#8A5A1A"
+                      labelColor="#A9863F"
+                      height={9}
+                      markers="none"
                     />
-                  )}
-                </View>
-                {plannedGroups.length > 0 && (
-                  <View style={s.groupTags}>
-                    {plannedGroups.slice(0, 3).map(([groupId, minutes]) => (
-                      <View key={groupId} style={[s.groupTag, { backgroundColor: CATEGORY_TINTS[groupId]?.bg ?? '#F0EEE8' }]}>
-                        <View style={[s.groupTagDot, { backgroundColor: CATEGORY_TINTS[groupId]?.color ?? C.gold }]} />
-                        <Text style={s.groupTagText}>{groupName(state, groupId)} {formatMinutesShort(minutes)}</Text>
-                      </View>
-                    ))}
-                    {plannedGroups.length > 3 && <Text style={s.moreText}>+{plannedGroups.length - 3} more</Text>}
+                    <Text style={s.stGaugeCaption} numberOfLines={1}>
+                      {usedToday == null
+                        ? `${formatMinutesShort(targetMinutes)} goal · usage syncs from iPhone`
+                        : todayStanding === 'under'
+                          ? `${formatMinutesShort(usedToday)} used · ${formatMinutesShort(Math.max(0, targetMinutes - usedToday))} left before the goal`
+                          : todayStanding === 'tolerance'
+                            ? `${formatMinutesShort(usedToday)} used · ${formatMinutesShort(Math.max(0, (toleranceEndMinutes ?? targetMinutes) - usedToday))} of tolerance left`
+                            : `${formatMinutesShort(usedToday)} used · essentials only now`}
+                    </Text>
                   </View>
+                ) : (
+                  <Text style={s.stNoTarget}>No daily target · group limits shape today</Text>
                 )}
               </>
             )}
@@ -760,78 +782,122 @@ const s = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2,
   },
-  progressCopyRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  progressTrophySeal: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+  progressHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  progressKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.goldDark },
+  bestPill: {
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.38)',
+    borderColor: 'rgba(197,160,89,0.4)',
+    backgroundColor: 'rgba(255,255,255,0.75)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  bestPillText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 0.4, color: C.goldDark, fontVariant: ['tabular-nums'] },
+  progressHeroRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 14 },
+  progressTrophySeal: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.42)',
     backgroundColor: '#FFF7E3',
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
+    shadowColor: C.gold,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 7,
+    elevation: 3,
   },
   progressTrophyGlow: {
     position: 'absolute',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(216,182,114,0.28)',
+  },
+  progressCopy: { flex: 1, minWidth: 0 },
+  progressValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+  progressValue: { fontFamily: F.serifSemiBold, fontSize: 42, lineHeight: 46, letterSpacing: -0.5, color: C.text, fontVariant: ['tabular-nums'] },
+  progressUnit: { fontFamily: F.serifMedium, fontSize: 17, color: C.textSecondary },
+  progressHeadline: { marginTop: 2, fontFamily: F.serif, fontSize: 14.5, lineHeight: 19, color: C.textSecondary },
+  weekBand: {
+    marginTop: 14,
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: '#EADFC8',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  weekCell: { alignItems: 'center', gap: 6, minWidth: 34 },
+  weekLetter: { fontFamily: F.sansBold, fontSize: 9.5, color: C.textMuted },
+  weekLetterToday: { color: C.goldDark },
+  weekDot: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: 'rgba(216,182,114,0.25)',
-  },
-  progressTrophy: { width: 39, height: 39 },
-  progressCopy: { flex: 1, minWidth: 0 },
-  progressKicker: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.7, color: C.goldDark },
-  progressValueRow: { marginTop: 1, flexDirection: 'row', alignItems: 'baseline', gap: 5 },
-  progressValue: { fontFamily: F.serifSemiBold, fontSize: 29, lineHeight: 31, color: C.text, fontVariant: ['tabular-nums'] },
-  progressUnit: { fontFamily: F.serifMedium, fontSize: 15, color: C.textSecondary },
-  progressHeadline: { marginTop: 1, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17, color: C.textSecondary },
-  progressTargetRow: { marginTop: 12, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EADFC8', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  progressCaption: { flexShrink: 1, fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.textSecondary },
-  progressBest: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 0.4, color: C.goldDark },
-  weekRow: { marginTop: 13, flexDirection: 'row', justifyContent: 'space-between' },
-  weekCell: { alignItems: 'center', gap: 5, minWidth: 32 },
-  weekLetter: { fontFamily: F.sansBold, fontSize: 8.5, color: C.textMuted },
-  weekDot: {
-    width: 29,
-    height: 29,
-    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F0EFEB',
   },
   weekDotKept: {
-    backgroundColor: C.gold,
+    backgroundColor: '#FFF3D8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.55)',
     shadowColor: C.gold,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 2,
   },
-  weekDotBroken: { backgroundColor: '#F8E7EA', borderWidth: 1, borderColor: '#E8BFC6' },
+  weekDotBroken: { backgroundColor: '#FBEDEF', borderWidth: 1, borderColor: '#EBC7CD' },
   weekDotToday: { borderWidth: 1.5, borderColor: C.gold, backgroundColor: '#FFFBEF' },
+  weekDotRest: { borderWidth: 1.5, borderColor: '#DDD8CC', borderStyle: 'dashed', backgroundColor: 'transparent' },
+  todayTrophyFaint: { position: 'absolute', opacity: 0.34 },
+  restDot: { width: 4.5, height: 4.5, borderRadius: 3, backgroundColor: '#D3CEC1' },
   todayRing: {
     position: 'absolute',
     top: -5,
     left: -5,
     right: -5,
     bottom: -5,
-    borderRadius: 19.5,
+    borderRadius: 22,
     borderWidth: 1.5,
     borderColor: C.gold,
   },
-  calendarHint: { marginTop: 10, textAlign: 'center', fontFamily: F.serifItalic, fontSize: 12, color: C.textMuted },
+  progressFooterRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  progressCaption: { flexShrink: 1, fontFamily: F.sansSemiBold, fontSize: 11.5, color: C.textSecondary },
+  calendarLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  calendarLinkText: { fontFamily: F.serifSemiBold, fontSize: 13.5, color: C.goldDark },
+  stStatsRow: { flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(169,134,63,0.28)', paddingVertical: 10 },
+  stStat: { flex: 1, flexDirection: 'row', alignItems: 'baseline', gap: 5 },
+  stStatValue: { fontFamily: F.serifSemiBold, fontSize: 22, color: '#4A3A16', fontVariant: ['tabular-nums'] },
+  stStatLabel: { flexShrink: 1, fontFamily: F.sansMedium, fontSize: 9.5, color: '#A9863F' },
+  stStatDivider: { width: StyleSheet.hairlineWidth, height: 27, marginHorizontal: 12, backgroundColor: 'rgba(169,134,63,0.32)' },
+  stWeekStrip: { marginTop: 11, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  stWeekDay: {
+    width: 25,
+    height: 25,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: 'rgba(169,134,63,0.24)',
+    backgroundColor: 'rgba(255,255,255,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stWeekDayOn: { backgroundColor: 'rgba(255,255,255,0.85)', borderColor: 'rgba(169,134,63,0.5)' },
+  stWeekDayToday: { borderWidth: 1.5, borderColor: '#8A5A1A' },
+  stWeekDayText: { fontFamily: F.sansBold, fontSize: 9, color: 'rgba(138,90,26,0.45)' },
+  stWeekDayTextOn: { color: '#8A5A1A' },
+  stWeekHint: { flex: 1, textAlign: 'right', fontFamily: F.sansMedium, fontSize: 9, color: '#A9863F' },
   stPlanHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
   stPlanCopy: { flex: 1, minWidth: 0 },
-  stPlanTitleRow: { marginTop: 2, flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
   stPlanKicker: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.6, color: '#A9863F' },
-  stPlanName: { flexShrink: 1, fontFamily: F.serifMedium, fontSize: 20, letterSpacing: -0.2, color: '#4A3A16' },
-  stKindTag: { flexShrink: 0, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(169,134,63,0.22)', backgroundColor: 'rgba(255,255,255,0.62)', paddingHorizontal: 7, paddingVertical: 3.5 },
-  stKindTagText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1, color: '#8A5A1A' },
+  stPlanName: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 20, letterSpacing: -0.2, color: '#4A3A16' },
   stPlanMeta: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 9.5, color: '#A9863F' },
   sessionRail: { marginTop: 12 },
   sessionTrack: { position: 'relative', height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.6)', overflow: 'hidden' },
@@ -840,24 +906,22 @@ const s = StyleSheet.create({
   nowMarkerCap: { position: 'absolute', top: -7, marginLeft: -1.5 },
   sessionTicks: { marginTop: 5, flexDirection: 'row', justifyContent: 'space-between' },
   tickText: { fontFamily: F.sansMedium, fontSize: 7.5, color: 'rgba(138,90,26,0.6)', fontVariant: ['tabular-nums'] },
-  stTargetBlock: {
+  stGaugeBlock: {
+    marginTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(169,134,63,0.32)',
+    paddingTop: 13,
+  },
+  stGaugeCaption: { marginTop: 8, fontFamily: F.sansMedium, fontSize: 9.5, color: '#8A5A1A', fontVariant: ['tabular-nums'] },
+  stNoTarget: {
     marginTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(169,134,63,0.32)',
     paddingTop: 12,
+    fontFamily: F.sansMedium,
+    fontSize: 9.5,
+    color: '#8A5A1A',
   },
-  stTargetRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  stTargetLabel: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.4, color: '#A9863F' },
-  stTargetValue: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 18, color: '#4A3A16', fontVariant: ['tabular-nums'] },
-  stTargetDivider: { width: StyleSheet.hairlineWidth, height: 31, backgroundColor: 'rgba(169,134,63,0.35)' },
-  capacityPill: { borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.85)', borderWidth: 1, borderColor: 'rgba(240,227,184,0.9)', paddingHorizontal: 9, paddingVertical: 6 },
-  capacityText: { fontFamily: F.sansSemiBold, fontSize: 9, color: '#8A5A1A' },
-  stMeter: { marginTop: 10 },
-  groupTags: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
-  groupTag: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 },
-  groupTagDot: { width: 5, height: 5, borderRadius: 3 },
-  groupTagText: { fontFamily: F.sansSemiBold, fontSize: 9.5, color: C.textSecondary },
-  moreText: { fontFamily: F.sansMedium, fontSize: 9.5, color: '#A9863F' },
   webStatsRow: { flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(61,130,115,0.24)', paddingVertical: 10 },
   webStat: { flex: 1, flexDirection: 'row', alignItems: 'baseline', gap: 5 },
   webStatValue: { fontFamily: F.serifSemiBold, fontSize: 22, color: '#1F4E45', fontVariant: ['tabular-nums'] },

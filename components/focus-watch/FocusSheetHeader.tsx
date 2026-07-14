@@ -8,25 +8,27 @@ export default function FocusSheetHeader({
   kicker,
   subtitle,
   onClose,
+  large = false,
 }: {
   title: string;
   kicker?: string;
   subtitle?: string;
   onClose: () => void;
+  large?: boolean;
 }) {
   return (
     <>
       <View style={s.handle} />
-      <View style={s.headerRow}>
+      <View style={[s.headerRow, large && s.headerRowLarge]}>
         <View style={s.copy}>
-          {!!kicker && <Text style={s.kicker} numberOfLines={1}>{kicker}</Text>}
-          <Text style={s.title} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.82}>{title}</Text>
+          {!!kicker && <Text style={[s.kicker, large && s.kickerLarge]} numberOfLines={1}>{kicker}</Text>}
+          <Text style={[s.title, large && s.titleLarge]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.82}>{title}</Text>
         </View>
-        <TouchableOpacity style={s.closeButton} onPress={onClose} hitSlop={10} activeOpacity={0.76}>
-          <X s={17} c={C.textMuted} w={2.2} />
+        <TouchableOpacity style={[s.closeButton, large && s.closeButtonLarge]} onPress={onClose} hitSlop={10} activeOpacity={0.76}>
+          <X s={large ? 19 : 17} c={C.textMuted} w={2.2} />
         </TouchableOpacity>
       </View>
-      {!!subtitle && <Text style={s.subtitle}>{subtitle}</Text>}
+      {!!subtitle && <Text style={[s.subtitle, large && s.subtitleLarge]}>{subtitle}</Text>}
     </>
   );
 }
@@ -46,6 +48,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  headerRowLarge: { marginTop: 17 },
   copy: { flex: 1, minWidth: 0 },
   kicker: {
     fontFamily: F.sansBold,
@@ -53,6 +56,7 @@ const s = StyleSheet.create({
     letterSpacing: 2,
     color: C.gold,
   },
+  kickerLarge: { fontSize: 10, letterSpacing: 2.3 },
   title: {
     marginTop: 3,
     fontFamily: F.serifMedium,
@@ -60,6 +64,7 @@ const s = StyleSheet.create({
     lineHeight: 29,
     color: C.text,
   },
+  titleLarge: { marginTop: 4, fontSize: 28, lineHeight: 32, letterSpacing: -0.2 },
   subtitle: {
     marginTop: 7,
     paddingRight: 8,
@@ -68,6 +73,7 @@ const s = StyleSheet.create({
     lineHeight: 18,
     color: C.textSecondary,
   },
+  subtitleLarge: { marginTop: 8, fontSize: 14, lineHeight: 19, paddingRight: 14 },
   closeButton: {
     flexShrink: 0,
     width: 32,
@@ -77,4 +83,5 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  closeButtonLarge: { width: 38, height: 38, borderRadius: 19 },
 });

@@ -3,7 +3,8 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "start": "expo start --go",
+    "start": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-expo.ps1",
+    "start:clear": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-expo.ps1 -Clear",
     "test:focus": "node scripts/run-focus-tests.cjs",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",

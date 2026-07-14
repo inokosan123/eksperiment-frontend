@@ -4,9 +4,10 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { CheckSmall, ChevronRight, Lock, Minus, Plus, Trash2 } from '@/components/icons/Icons';
+import { CheckSmall, ChevronRight, Lock, Plus, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import FocusSegments from './FocusSegments';
 import FocusSwitch from './FocusSwitch';
 import LimitSlider from './LimitSlider';
 import NativeActivitySelectionButton from './NativeActivitySelectionButton';
@@ -31,6 +32,8 @@ const LIMIT_STOPS: (number | null)[] = [
   ...Array.from({ length: 48 }, (_, index) => 15 + index * 15),
   null,
 ];
+// Individual app allowances stay on a ruler too — no plus/minus steppers.
+const APP_LIMIT_STOPS: (number | null)[] = Array.from({ length: 48 }, (_, index) => 15 + index * 15);
 
 function createAppRuleId() {
   return `app-rule-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -130,17 +133,20 @@ function AppRuleEditor({
       />
 
       {current.mode === 'limit' && (
-        <View style={s.appMinutesRow}>
-          <Text style={s.appEditorLabel}>ALLOWANCE</Text>
-          <View style={s.minuteStepper}>
-            <TouchableOpacity style={s.minuteButton} onPress={() => onChange({ ...current, minutes: Math.max(15, (current.minutes ?? 30) - 15) })} haptic="selection">
-              <Minus s={12} c={C.textSecondary} w={2.3} />
-            </TouchableOpacity>
-            <Text style={s.minuteValue}>{formatMinutesShort(current.minutes ?? 30)}</Text>
-            <TouchableOpacity style={s.minuteButton} onPress={() => onChange({ ...current, minutes: (current.minutes ?? 30) + 15 })} haptic="selection">
-              <Plus s={12} c={C.textSecondary} w={2.3} />
-            </TouchableOpacity>
+        <View>
+          <View style={s.appMinutesRow}>
+            <Text style={s.appEditorLabel}>ALLOWANCE</Text>
+            <Text style={s.appMinutesValue}>{formatMinutesShort(current.minutes ?? 30)}</Text>
           </View>
+          <LimitSlider
+            value={current.minutes ?? 30}
+            onChange={value => {
+              if (value == null) return;
+              onChange({ ...current, minutes: value });
+            }}
+            stops={APP_LIMIT_STOPS}
+            edgeLabels={{ left: '15m', right: '12h' }}
+          />
         </View>
       )}
 
@@ -235,24 +241,15 @@ export default function GroupLimitSheet({
               label="Choose this group on iPhone"
             />
 
-            <View style={s.modeRow}>
-              {(['noLimit', 'limit', 'blocked'] as RuleMode[]).map(option => (
-                <TouchableOpacity
-                  key={option}
-                  style={[
-                    s.modeOption,
-                    mode === option && s.modeOptionOn,
-                    mode === option && option === 'blocked' && s.modeOptionBlocked,
-                  ]}
-                  onPress={() => setMode(option)}
-                  haptic="selection"
-                >
-                  <Text style={[s.modeText, mode === option && s.modeTextOn, mode === option && option === 'blocked' && s.modeTextBlocked]}>
-                    {modeLabel(option)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <FocusSegments
+              options={(['noLimit', 'limit', 'blocked'] as RuleMode[]).map(option => ({
+                key: option,
+                label: modeLabel(option),
+                tone: option === 'blocked' ? ('danger' as const) : ('default' as const),
+              }))}
+              value={mode}
+              onChange={key => setMode(key as RuleMode)}
+            />
 
             {mode === 'noLimit' && (
               <View style={s.noLimitNote}>
@@ -571,11 +568,9 @@ const s = StyleSheet.create({
   appModeTextOn: { color: C.goldDark },
   appModeBlockedText: { color: '#A24351' },
   removeAppRule: { marginLeft: 'auto', width: 28, height: 28, borderRadius: 14, backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
-  appMinutesRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  appMinutesRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 },
   appEditorLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.4, color: C.textMuted },
-  minuteStepper: { height: 36, flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, overflow: 'hidden' },
-  minuteButton: { width: 32, height: 36, alignItems: 'center', justifyContent: 'center' },
-  minuteValue: { minWidth: 47, textAlign: 'center', fontFamily: F.sansSemiBold, fontSize: 11, color: C.text, fontVariant: ['tabular-nums'] },
+  appMinutesValue: { fontFamily: F.serifMedium, fontSize: 16, color: C.text, fontVariant: ['tabular-nums'] },
   alwaysAction: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 12, borderCurve: 'continuous', backgroundColor: '#F8E7EA', paddingHorizontal: 11 },
   alwaysActionDisabled: { backgroundColor: '#F1F0EC' },
   alwaysActionText: { fontFamily: F.sansSemiBold, fontSize: 9.5, color: '#A24351' },

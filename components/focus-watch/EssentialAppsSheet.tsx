@@ -7,6 +7,7 @@ import { CheckSmall, Lock, Plus, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import { ESSENTIAL_APP_OPTIONS, type EssentialAppOption } from './focusContent';
+import FocusCheck from './FocusCheck';
 import NativeActivitySelectionButton from './NativeActivitySelectionButton';
 import FocusSheetHeader from './FocusSheetHeader';
 import { isNativeFocusAvailable } from './focusNativeBridge';
@@ -224,9 +225,7 @@ export default function EssentialAppsSheet({
                         <Text style={s.blockedText}>Always Blocked</Text>
                       </View>
                     ) : (
-                      <View style={[s.checkbox, selected && s.checkboxOn]}>
-                        {selected && <CheckSmall s={12} c="#fff" w={3} />}
-                      </View>
+                      <FocusCheck checked={selected} />
                     )}
                   </TouchableOpacity>
                 </Animated.View>

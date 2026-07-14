@@ -5,15 +5,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { Calendar, CheckSmall, ChevronRight, Clock, Lock, Plus, Trash2 } from '@/components/icons/Icons';
+import { Calendar, CheckSmall, ChevronRight, Clock, Lock, Plus, Shield, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
-import DailyTargetEditor, { type TargetValues } from './DailyTargetEditor';
+import DailyTargetEditor, { PlanningRail, type TargetValues } from './DailyTargetEditor';
 import EssentialAppsSheet from './EssentialAppsSheet';
+import FocusCheck from './FocusCheck';
+import FocusSwitch from './FocusSwitch';
 import GoldButton from './GoldButton';
 import GroupLimitSheet from './GroupLimitSheet';
 import PlanGroupSheet from './PlanGroupSheet';
-import SessionClockEditor from './SessionClockEditor';
+import SessionClockEditor, { SESSION_COLORS } from './SessionClockEditor';
 import SessionCopySheet from './SessionCopySheet';
 import TimeWheelSheet from './TimeWheelSheet';
 import {
@@ -24,11 +26,13 @@ import {
 import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
 import { CATEGORY_TINTS, PREVIEW_APPS, type PreviewApp } from './focusContent';
 import { usePermissionGate } from './usePermissionGate';
+import { PLAN_VISUALS, planVisualForTheme } from './planVisuals';
 import {
   APP_CATEGORIES,
   DEFAULT_GROUP_APP_IDS,
   connectedSessionsAreValid,
   dateKey,
+  defaultPlanThemeId,
   deleteDayPlan,
   formatMinutesShort,
   formatTimeOfDay,
@@ -44,6 +48,7 @@ import {
   zoneContains,
   type GroupRule,
   type PlanKind,
+  type PlanThemeId,
   type PlanZone,
   type Strength,
 } from './dayPlanStore';
@@ -167,11 +172,13 @@ export default function PlanEditorView() {
   );
 
   const [name, setName] = useState(existing?.name ?? '');
+  const [themeId, setThemeId] = useState<PlanThemeId>(existing?.themeId ?? defaultPlanThemeId(draftPlanId));
   const [kind, setKind] = useState<PlanKind>(existing?.kind ?? 'daily');
+  const existingToleranceEnd = existing?.essentialOnlyMinutes ?? existing?.tolerableMinutes ?? null;
   const [target, setTarget] = useState<TargetValues>({
     target: existing ? existing.budgetMinutes : null,
-    tolerable: existing ? existing.tolerableMinutes : null,
-    essentialOnly: existing ? existing.essentialOnlyMinutes : null,
+    tolerable: existing ? existingToleranceEnd : null,
+    essentialOnly: existing ? existingToleranceEnd : null,
   });
   const [planStrength] = useState<Strength>(existing?.strength ?? 'loose');
   const [customGroupIds, setCustomGroupIds] = useState(existing?.customGroupIds ?? []);
@@ -204,6 +211,7 @@ export default function PlanEditorView() {
   const activeRules = kind === 'session' ? (selectedSession?.rules ?? []) : rules;
   const activeRule = activeRules.find(rule => rule.groupId === ruleGroupId) ?? null;
   const plannedByGroup = useMemo(() => draftPlannedByGroup(kind, rules, sessions), [kind, rules, sessions]);
+  const draftToleranceEnd = target.essentialOnly ?? target.tolerable;
   const draftRequiresNative = useMemo(() => {
     const ruleSets = kind === 'session'
       ? sessions.flatMap(session => session.rules ?? [])
@@ -222,6 +230,24 @@ export default function PlanEditorView() {
   const isActivePlan = !!existing && currentPlan?.id === existing.id;
   const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
   const canSave = name.trim().length > 0 && (kind === 'daily' || connectedSessionsAreValid(sessions));
+
+  // Essentials-only day: the whole day closes to distractions from minute one.
+  // Represented through the existing target model (goal 0, tolerance 0), so
+  // nothing below the switch matters — those sections rest while it is on.
+  const [essentialsOnlyDay, setEssentialsOnlyDay] = useState(
+    () => !!existing && existing.budgetMinutes === 0 && existing.essentialOnlyMinutes === 0
+  );
+  const savedTargetRef = useRef<TargetValues | null>(null);
+  const toggleEssentialsOnlyDay = () => {
+    if (essentialsOnlyDay) {
+      setEssentialsOnlyDay(false);
+      setTarget(savedTargetRef.current ?? { target: null, tolerable: null, essentialOnly: null });
+      return;
+    }
+    savedTargetRef.current = target;
+    setEssentialsOnlyDay(true);
+    setTarget({ target: 0, tolerable: 0, essentialOnly: 0 });
+  };
 
   useEffect(() => () => {
     if (!retainNativeSelections.current) {
@@ -331,13 +357,19 @@ export default function PlanEditorView() {
 
   const doSave = () => {
     retainNativeSelections.current = true;
+    const toleranceEnd = target.target == null
+      ? null
+      : Math.max(target.target, target.essentialOnly ?? target.tolerable ?? target.target);
     const saved = saveDayPlan({
       id: draftPlanId,
       name: name.trim(),
       kind,
+      themeId,
       budgetMinutes: target.target,
-      tolerableMinutes: target.tolerable,
-      essentialOnlyMinutes: target.essentialOnly,
+      // v4 has one post-Goal Tolerance period. Its endpoint is also the
+      // existing native Essentials-only threshold; these must never diverge.
+      tolerableMinutes: toleranceEnd,
+      essentialOnlyMinutes: toleranceEnd,
       strength: planStrength,
       customGroupIds,
       groupCatalog,
@@ -436,7 +468,7 @@ export default function PlanEditorView() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[s.page, { paddingBottom: 130 + insets.bottom }]}
       >
-        <ScreenTitleBar title={existing ? 'EDIT PLAN' : 'NEW PLAN'} showBack />
+        <ScreenTitleBar title={existing ? 'EDIT PLAN' : 'NEW PLAN'} showBack horizontalBleed={16} />
 
         <Animated.View entering={enter(0)}>
           <Text style={s.sectionLabel}>PLAN NAME</Text>
@@ -452,42 +484,113 @@ export default function PlanEditorView() {
             {name.trim().length > 0 && <CheckSmall s={15} c="#4E8C69" w={2.6} />}
           </View>
           {name.length === 0 && <Text style={s.requiredText}>A name is required before this plan can be saved.</Text>}
+
+          <View style={s.colorPickerHeader}>
+            <View>
+              <Text style={s.colorPickerLabel}>PLAN COLOR</Text>
+              <Text style={s.colorPickerHint}>Give this plan its own identity across Screen Time.</Text>
+            </View>
+            <Text style={[s.colorPickerValue, { color: planVisualForTheme(themeId).accent }]}>
+              {planVisualForTheme(themeId).label}
+            </Text>
+          </View>
+          <View style={s.colorPickerSurface}>
+            {PLAN_VISUALS.map(visual => {
+              const selected = visual.id === themeId;
+              return (
+                <TouchableOpacity
+                  key={visual.id}
+                  style={[
+                    s.colorSwatchButton,
+                    { backgroundColor: visual.gradient[1], borderColor: selected ? visual.accent : visual.border },
+                    selected && s.colorSwatchButtonOn,
+                  ]}
+                  onPress={() => setThemeId(visual.id)}
+                  haptic="selection"
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${visual.label} plan color`}
+                >
+                  <View style={[s.colorSwatch, { backgroundColor: visual.accent }]}>
+                    <FocusCheck checked={selected} size={22} accent={visual.accent} />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </Animated.View>
 
+        <Animated.View entering={enter(30)}>
+          <TouchableOpacity
+            style={[s.essOnlyCard, essentialsOnlyDay && s.essOnlyCardOn]}
+            activeOpacity={0.86}
+            haptic="medium"
+            onPress={toggleEssentialsOnlyDay}
+          >
+            <View style={[s.essOnlyIcon, essentialsOnlyDay && s.essOnlyIconOn]}>
+              <Shield s={19} c={essentialsOnlyDay ? '#FFFFFF' : '#A63A4B'} w={2.2} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.essOnlyLabel, essentialsOnlyDay && s.essOnlyLabelOn]}>ESSENTIALS-ONLY DAY</Text>
+              <Text style={[s.essOnlyTitle, essentialsOnlyDay && s.essOnlyTitleOn]}>Close the whole day to distractions</Text>
+              <Text style={[s.essOnlyBody, essentialsOnlyDay && s.essOnlyBodyOn]}>
+                Only Essentials and iOS system access stay reachable, from the first minute. Name it, give it a color — done.
+              </Text>
+            </View>
+            <FocusSwitch value={essentialsOnlyDay} onToggle={toggleEssentialsOnlyDay} />
+          </TouchableOpacity>
+          {essentialsOnlyDay && (
+            <Text style={s.dormantNote}>Everything below rests while this day is Essentials-only.</Text>
+          )}
+        </Animated.View>
+
+        <View
+          style={[s.sectionsGroup, essentialsOnlyDay && s.dormant]}
+          pointerEvents={essentialsOnlyDay ? 'none' : 'auto'}
+        >
         <Animated.View entering={enter(50)}>
           <Text style={s.sectionLabel}>PLANNING STYLE</Text>
           <View style={s.kindControl}>
             <TouchableOpacity style={[s.kindOption, kind === 'daily' && s.kindOptionOn]} onPress={() => kind !== 'daily' && setPendingKind('daily')} haptic="selection">
-              <Calendar s={16} c={kind === 'daily' ? C.goldDark : C.textMuted} w={2} />
-              <View style={{ flex: 1 }}><Text style={[s.kindTitle, kind === 'daily' && s.kindTitleOn]}>Daily Plan</Text><Text style={s.kindBody}>One set of rules for all 24 hours.</Text></View>
+              <View style={[s.kindIconSeal, kind === 'daily' && s.kindIconSealOn]}>
+                <Calendar s={18} c={kind === 'daily' ? C.goldDark : C.textMuted} w={2} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[s.kindTitle, kind === 'daily' && s.kindTitleOn]}>Daily Plan</Text>
+                <Text style={s.kindBody}>One set of rules holds the whole day.</Text>
+                <View style={s.kindStrip}>
+                  <View style={[s.kindStripSegment, { flex: 1, backgroundColor: kind === 'daily' ? C.gold : '#DDD8CC' }]} />
+                </View>
+              </View>
+              <FocusCheck checked={kind === 'daily'} size={20} />
             </TouchableOpacity>
             <TouchableOpacity style={[s.kindOption, kind === 'session' && s.kindOptionOn]} onPress={() => kind !== 'session' && setPendingKind('session')} haptic="selection">
-              <Clock s={16} c={kind === 'session' ? C.goldDark : C.textMuted} w={2} />
-              <View style={{ flex: 1 }}><Text style={[s.kindTitle, kind === 'session' && s.kindTitleOn]}>Session Plan</Text><Text style={s.kindBody}>A connected day with changing rules.</Text></View>
+              <View style={[s.kindIconSeal, kind === 'session' && s.kindIconSealOn]}>
+                <Clock s={18} c={kind === 'session' ? C.goldDark : C.textMuted} w={2} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[s.kindTitle, kind === 'session' && s.kindTitleOn]}>Session Plan</Text>
+                <Text style={s.kindBody}>Morning, work, and evening each keep their own rules.</Text>
+                <View style={s.kindStrip}>
+                  {SESSION_COLORS.slice(0, 3).map((color, index) => (
+                    <View
+                      key={color}
+                      style={[
+                        s.kindStripSegment,
+                        { flex: index === 1 ? 1.6 : 1, backgroundColor: kind === 'session' ? color : '#DDD8CC' },
+                        index > 0 && { marginLeft: 3 },
+                      ]}
+                    />
+                  ))}
+                </View>
+              </View>
+              <FocusCheck checked={kind === 'session'} size={20} />
             </TouchableOpacity>
           </View>
         </Animated.View>
 
         <Animated.View entering={enter(100)}>
-          <DailyTargetEditor values={target} plannedByGroup={plannedByGroup} onChange={setTarget} />
-        </Animated.View>
-
-        <Animated.View entering={enter(140)}>
-          <Text style={s.sectionLabel}>SAFETY ALLOWLIST</Text>
-          <TouchableOpacity style={s.essentialsRow} onPress={() => setEssentialsOpen(true)} activeOpacity={0.76}>
-            <View style={s.essentialsIcon}><Lock s={16} c={C.goldDark} w={2.2} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.essentialsTitle}>Essential Apps</Text>
-              <Text style={s.essentialsBody}>
-                {nativeAvailable
-                  ? optionalEssentialsSummary
-                    ? `${optionalEssentialsSummary.applicationCount} optional apps / Core safety access`
-                    : 'Loading private iPhone selection'
-                  : `${state.optionalEssentialAppIds.length} optional apps / Core safety apps always available`}
-              </Text>
-            </View>
-            <ChevronRight s={17} c={C.textMuted} w={2} />
-          </TouchableOpacity>
+          <DailyTargetEditor values={target} onChange={setTarget} />
         </Animated.View>
 
         {kind === 'session' && (
@@ -556,14 +659,57 @@ export default function PlanEditorView() {
           </Animated.View>
         )}
 
-        <Animated.View entering={enter(210)} layout={LinearTransition.duration(220)}>
+        <Animated.View entering={enter(200)}>
+          <View style={s.sectionTitleRow}>
+            <View>
+              <Text style={s.sectionLabelNoMargin}>ESSENTIALS AFTER TOLERANCE</Text>
+              <Text style={s.sectionSub}>Choose the few apps that should remain reachable after protection begins.</Text>
+            </View>
+          </View>
+
+          <View style={s.essentialsSurface}>
+            <View style={s.essentialsAccent} />
+            <View style={s.essentialsOutcomeRow}>
+              <View style={s.essentialsOutcomeIcon}><Shield s={21} c="#FFFFFF" w={2.2} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.essentialsOutcomeLabel}>WHEN TOLERANCE ENDS</Text>
+                <Text style={s.essentialsOutcomeTitle}>
+                  {draftToleranceEnd == null
+                    ? 'Set a Goal to activate Essentials-only protection.'
+                    : `At ${formatMinutesShort(draftToleranceEnd)}, the rest of your day is protected.`}
+                </Text>
+                <Text style={s.essentialsOutcomeBody}>Non-essential apps close for the rest of the day. Essentials and iOS system access remain reachable.</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity style={s.essentialsPicker} onPress={() => setEssentialsOpen(true)} activeOpacity={0.76}>
+              <View style={s.essentialsPickerIcon}><Lock s={17} c="#A63A4B" w={2.2} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.essentialsPickerLabel}>CHOOSE YOUR ESSENTIAL APPS</Text>
+                <Text style={s.essentialsPickerTitle}>Decide what stays reachable</Text>
+                <Text style={s.essentialsPickerMeta}>
+                  {nativeAvailable
+                    ? optionalEssentialsSummary
+                      ? `${optionalEssentialsSummary.applicationCount} optional apps · Core safety access always remains`
+                      : 'Loading private iPhone selection'
+                    : `${state.optionalEssentialAppIds.length} optional apps · Core safety access always remains`}
+                </Text>
+              </View>
+              <View style={s.essentialsPickerArrow}><ChevronRight s={17} c="#7A303D" w={2.2} /></View>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+
+        <Animated.View entering={enter(240)} layout={LinearTransition.duration(220)}>
           <View style={s.sectionTitleRow}>
             <View>
               <Text style={s.sectionLabelNoMargin}>{kind === 'session' ? `${selectedSession?.name?.toUpperCase() ?? 'SESSION'} RULES` : 'DAILY APP RULES'}</Text>
-              <Text style={s.sectionSub}>{kind === 'session' ? 'These rules reset when the next Session begins.' : 'Group and app limits apply across the whole day.'}</Text>
+              <Text style={s.sectionSub}>{kind === 'session' ? 'Divide this Session’s capacity. Its rules reset when the next Session begins.' : 'Divide your daily capacity across groups and individual apps.'}</Text>
             </View>
           </View>
           <View style={s.ruleList}>
+            <PlanningRail values={target} plannedByGroup={plannedByGroup} embedded />
+            <View style={s.railRulesDivider} />
             {groupIds.map((groupId, index) => {
               const rule = activeRules.find(entry => entry.groupId === groupId) ?? defaultRule(groupId);
               const tint = CATEGORY_TINTS[groupId] ?? { bg: C.goldLight, color: C.goldDark };
@@ -607,6 +753,7 @@ export default function PlanEditorView() {
             <Text style={s.addGroupText}>Add or reuse a group</Text>
           </TouchableOpacity>
         </Animated.View>
+        </View>
 
         {existing && (
           <TouchableOpacity style={s.deletePlanButton} onPress={() => setConfirmDelete(true)}>
@@ -766,22 +913,102 @@ const s = StyleSheet.create({
   page: { paddingHorizontal: 16, gap: 18 },
   sectionLabel: { marginBottom: 8, marginLeft: 4, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted },
   sectionLabelNoMargin: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted },
-  sectionSub: { marginTop: 3, maxWidth: 275, fontFamily: F.sans, fontSize: 10.5, lineHeight: 15, color: C.textMuted },
+  sectionSub: { marginTop: 4, maxWidth: 320, fontFamily: F.sans, fontSize: 11.5, lineHeight: 16.5, color: C.textSecondary },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, marginBottom: 8 },
+  sectionsGroup: { gap: 18 },
+  dormant: { opacity: 0.38 },
+  dormantNote: { marginTop: 9, textAlign: 'center', fontFamily: F.serifItalic, fontSize: 13, color: C.textMuted },
+  essOnlyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 22,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#E8CDD2',
+    backgroundColor: '#FFF8F8',
+    padding: 14,
+    boxShadow: '0 6px 18px rgba(120, 52, 63, 0.07)',
+  },
+  essOnlyCardOn: {
+    borderColor: '#33282B',
+    backgroundColor: '#202123',
+    boxShadow: '0 12px 28px rgba(24, 24, 25, 0.2)',
+  },
+  essOnlyIcon: {
+    flexShrink: 0,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    backgroundColor: '#F8E3E7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  essOnlyIconOn: { backgroundColor: '#E14B5A', boxShadow: '0 5px 14px rgba(225,75,90,0.3)' },
+  essOnlyLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.5, color: '#A63A4B' },
+  essOnlyLabelOn: { color: '#D4B7BC' },
+  essOnlyTitle: { marginTop: 2, fontFamily: F.serifSemiBold, fontSize: 17, lineHeight: 21, color: '#3A252A' },
+  essOnlyTitleOn: { color: '#FFFFFF' },
+  essOnlyBody: { marginTop: 3, fontFamily: F.sans, fontSize: 10.5, lineHeight: 14.5, color: '#7A6468' },
+  essOnlyBodyOn: { color: '#C8C9CC' },
+  railRulesDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E3DFD6', marginHorizontal: -10 },
   nameSurface: { height: 52, flexDirection: 'row', alignItems: 'center', borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DFD7C8', backgroundColor: C.surface, paddingHorizontal: 14 },
   nameSurfaceEmpty: { borderColor: '#E1C5A1' },
   nameInput: { flex: 1, fontFamily: F.serifMedium, fontSize: 17.5, color: C.text },
   requiredText: { marginTop: 5, marginLeft: 4, fontFamily: F.sansMedium, fontSize: 10, color: '#A36F2B' },
-  kindControl: { flexDirection: 'row', gap: 8 },
-  kindOption: { flex: 1, minHeight: 86, flexDirection: 'row', alignItems: 'flex-start', gap: 9, borderRadius: 17, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, padding: 12 },
-  kindOptionOn: { borderColor: '#D9BA70', backgroundColor: '#FFF9EA' },
-  kindTitle: { fontFamily: F.serifMedium, fontSize: 16, color: C.textSecondary },
+  colorPickerHeader: { marginTop: 15, marginHorizontal: 4, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 },
+  colorPickerLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.9, color: C.textMuted },
+  colorPickerHint: { marginTop: 3, fontFamily: F.sans, fontSize: 10.5, lineHeight: 14, color: C.textSecondary },
+  colorPickerValue: { paddingBottom: 1, fontFamily: F.serifSemiBold, fontSize: 14 },
+  colorPickerSurface: { marginTop: 9, height: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E7E0D4', backgroundColor: '#FFFDF9', paddingHorizontal: 10, boxShadow: '0 4px 12px rgba(69, 58, 39, 0.04)' },
+  colorSwatchButton: { width: 43, height: 43, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  colorSwatchButtonOn: { borderWidth: 2, transform: [{ scale: 1.07 }] },
+  colorSwatch: { width: 29, height: 29, borderRadius: 15, alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(47, 39, 28, 0.13)' },
+  kindControl: { gap: 8 },
+  kindOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 20,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#E1DDD4',
+    backgroundColor: '#FFFDF9',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    boxShadow: '0 6px 18px rgba(45, 40, 33, 0.045)',
+  },
+  kindOptionOn: { borderColor: '#D9BA70', backgroundColor: '#FFF9EA', boxShadow: '0 8px 22px rgba(150, 110, 35, 0.1)' },
+  kindIconSeal: {
+    flexShrink: 0,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    backgroundColor: '#F4F2EC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kindIconSealOn: { backgroundColor: C.goldLight },
+  kindTitle: { fontFamily: F.serifMedium, fontSize: 17.5, color: C.text },
   kindTitleOn: { color: C.goldDark },
-  kindBody: { marginTop: 3, fontFamily: F.sans, fontSize: 9.5, lineHeight: 13.5, color: C.textMuted },
-  essentialsRow: { minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 11, borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border, paddingHorizontal: 4 },
-  essentialsIcon: { width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
-  essentialsTitle: { fontFamily: F.serifMedium, fontSize: 16.5, color: C.text },
-  essentialsBody: { marginTop: 2, fontFamily: F.sans, fontSize: 10, color: C.textSecondary },
+  kindBody: { marginTop: 2, fontFamily: F.sans, fontSize: 11.5, lineHeight: 15.5, color: C.textSecondary },
+  kindStrip: { marginTop: 8, height: 6, flexDirection: 'row', borderRadius: 3, overflow: 'hidden' },
+  kindStripSegment: { height: '100%', borderRadius: 3 },
+  essentialsSurface: { position: 'relative', overflow: 'hidden', borderRadius: 25, borderCurve: 'continuous', backgroundColor: '#202123', padding: 16, gap: 15, boxShadow: '0 12px 28px rgba(24, 24, 25, 0.16)' },
+  essentialsAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: '#E14B5A' },
+  essentialsOutcomeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingLeft: 3 },
+  essentialsOutcomeIcon: { flexShrink: 0, width: 42, height: 42, borderRadius: 14, borderCurve: 'continuous', backgroundColor: '#E14B5A', alignItems: 'center', justifyContent: 'center', boxShadow: '0 5px 14px rgba(225,75,90,0.28)' },
+  essentialsOutcomeLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.55, color: '#D4B7BC' },
+  essentialsOutcomeTitle: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 20, lineHeight: 24, color: '#FFFFFF' },
+  essentialsOutcomeBody: { marginTop: 6, fontFamily: F.sans, fontSize: 12, lineHeight: 17.5, color: '#C8C9CC' },
+  essentialsPicker: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E8CDD2', backgroundColor: '#FFF8F8', paddingHorizontal: 12, paddingVertical: 11 },
+  essentialsPickerIcon: { flexShrink: 0, width: 38, height: 38, borderRadius: 12, borderCurve: 'continuous', backgroundColor: '#F8E3E7', alignItems: 'center', justifyContent: 'center' },
+  essentialsPickerLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.35, color: '#A63A4B' },
+  essentialsPickerTitle: { marginTop: 2, fontFamily: F.serifSemiBold, fontSize: 17, lineHeight: 20, color: '#3A252A' },
+  essentialsPickerMeta: { marginTop: 3, fontFamily: F.sans, fontSize: 9.5, lineHeight: 13.5, color: '#7A6468' },
+  essentialsPickerArrow: { flexShrink: 0, width: 30, height: 30, borderRadius: 15, backgroundColor: '#F4D9DE', alignItems: 'center', justifyContent: 'center' },
   sessionCount: { borderRadius: 999, backgroundColor: C.goldLight, paddingHorizontal: 10, paddingVertical: 6 },
   sessionCountText: { fontFamily: F.sansBold, fontSize: 9.5, color: C.goldDark },
   clockSurface: { borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E5DDCF', backgroundColor: '#FFFDF8', padding: 14 },
@@ -796,26 +1023,26 @@ const s = StyleSheet.create({
   structuralButtonText: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.goldDark },
   buttonDisabled: { opacity: 0.35 },
   structuralError: { marginTop: 8, textAlign: 'center', fontFamily: F.sansMedium, fontSize: 10, color: '#A24351' },
-  ruleList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
-  separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 44 },
-  ruleRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 3 },
-  ruleAvatar: { width: 35, height: 35, borderRadius: 12, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
-  ruleAvatarText: { fontFamily: F.serifSemiBold, fontSize: 15 },
-  ruleName: { fontFamily: F.serifMedium, fontSize: 16, color: C.text },
-  ruleMeta: { marginTop: 2, fontFamily: F.sans, fontSize: 9.5, color: C.textMuted },
-  ruleTag: { borderRadius: 999, backgroundColor: '#F0EFEB', paddingHorizontal: 8, paddingVertical: 5 },
+  ruleList: { overflow: 'hidden', borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E1DDD4', backgroundColor: '#FFFDF9', paddingHorizontal: 10, boxShadow: '0 8px 24px rgba(45, 40, 33, 0.05)' },
+  separator: { height: StyleSheet.hairlineWidth, backgroundColor: '#E9E5DE', marginLeft: 50 },
+  ruleRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 3, paddingVertical: 8 },
+  ruleAvatar: { width: 40, height: 40, borderRadius: 14, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
+  ruleAvatarText: { fontFamily: F.serifSemiBold, fontSize: 17 },
+  ruleName: { fontFamily: F.serifMedium, fontSize: 17, color: C.text },
+  ruleMeta: { marginTop: 3, fontFamily: F.sans, fontSize: 10, lineHeight: 13.5, color: C.textMuted },
+  ruleTag: { borderRadius: 999, backgroundColor: '#F0EFEB', paddingHorizontal: 9, paddingVertical: 6 },
   ruleTagBlocked: { backgroundColor: '#F8E7EA' },
-  ruleTagText: { fontFamily: F.sansSemiBold, fontSize: 9, color: C.textSecondary, fontVariant: ['tabular-nums'] },
+  ruleTagText: { fontFamily: F.sansSemiBold, fontSize: 9.5, color: C.textSecondary, fontVariant: ['tabular-nums'] },
   ruleTagTextBlocked: { color: '#A24351' },
-  strengthTag: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 5 },
+  strengthTag: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 6 },
   looseTag: { backgroundColor: '#FFF0C5' },
   strictTag: { backgroundColor: '#F8E7EA' },
   strengthTagText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 0.8 },
   looseTagText: { color: '#95681F' },
   strictTagText: { color: '#A24351' },
-  addGroupRow: { marginTop: 8, minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: '#DDCEAD', backgroundColor: '#FFFDF7' },
-  addGroupIcon: { width: 26, height: 26, borderRadius: 9, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
-  addGroupText: { fontFamily: F.serifSemiBold, fontSize: 15, color: C.goldDark },
+  addGroupRow: { marginTop: 10, minHeight: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: '#D7C398', backgroundColor: '#FFF9EC' },
+  addGroupIcon: { width: 30, height: 30, borderRadius: 10, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
+  addGroupText: { fontFamily: F.serifSemiBold, fontSize: 16, color: C.goldDark },
   deletePlanButton: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 9 },
   deletePlanText: { fontFamily: F.sansSemiBold, fontSize: 11, color: '#A24351' },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border, backgroundColor: 'rgba(252,252,252,0.96)', paddingHorizontal: 16, paddingTop: 11 },

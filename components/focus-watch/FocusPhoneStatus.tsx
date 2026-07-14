@@ -125,8 +125,8 @@ export default function FocusPhoneStatus({
           <FocusWatchLottie
             name="iphone"
             mode="periodic"
-            restMs={active ? 1450 : 1900}
-            speed={active ? 0.74 : 0.64}
+            restMs={4200}
+            speed={1}
             style={{ width: size * 0.84, height: size * 0.84 }}
           />
         )}

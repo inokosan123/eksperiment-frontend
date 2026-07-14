@@ -6,6 +6,7 @@ import { BarChart3, Calendar, CheckSmall, ChevronRight, Target, X } from '@/comp
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import FocusNativeActivityReport from './FocusNativeActivityReport';
+import FocusSegments from './FocusSegments';
 import { SESSION_COLORS } from './SessionClockEditor';
 import {
   dateKey,
@@ -142,7 +143,7 @@ export default function FocusAnalyticsView() {
   return (
     <View style={s.screen}>
       <ScrollView contentContainerStyle={s.page} showsVerticalScrollIndicator={false}>
-        <ScreenTitleBar title="FOCUS ANALYTICS" showBack />
+        <ScreenTitleBar title="FOCUS ANALYTICS" showBack horizontalBleed={16} />
 
         <Animated.View entering={enter(0)} style={s.summaryBand}>
           <View style={s.summaryMetric}>
@@ -158,21 +159,15 @@ export default function FocusAnalyticsView() {
           </View>
         </Animated.View>
 
-        <Animated.View entering={enter(50)} style={s.segmentedControl}>
-          <TouchableOpacity
-            style={[s.segment, viewMode === 'trend' && s.segmentActive]}
-            onPress={() => setViewMode('trend')}
-            haptic="selection"
-          >
-            <Text style={[s.segmentText, viewMode === 'trend' && s.segmentTextActive]}>30-DAY TREND</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.segment, viewMode === 'day' && s.segmentActive]}
-            onPress={() => setViewMode('day')}
-            haptic="selection"
-          >
-            <Text style={[s.segmentText, viewMode === 'day' && s.segmentTextActive]}>DAILY REVIEW</Text>
-          </TouchableOpacity>
+        <Animated.View entering={enter(50)} style={{ marginBottom: 10 }}>
+          <FocusSegments
+            options={[
+              { key: 'trend', label: '30-day trend' },
+              { key: 'day', label: 'Daily review' },
+            ]}
+            value={viewMode}
+            onChange={key => setViewMode(key as AnalyticsViewMode)}
+          />
         </Animated.View>
 
         {viewMode === 'trend' && <Animated.View entering={enter(70)}>

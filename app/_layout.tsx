@@ -1,4 +1,3 @@
-import '../global.css';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SQLiteProvider } from 'expo-sqlite';
@@ -98,6 +97,7 @@ export default function RootLayout() {
                                   <Stack.Screen name="focus-intervention" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="day-plans"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="day-plan"        options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                  <Stack.Screen name="day-plan-today"  options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="clean-sight"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="focus-analytics" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="notes"           options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />

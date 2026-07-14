@@ -5,6 +5,8 @@ import ConfirmModal from '@/components/shared/ConfirmModal';
 import { CheckSmall, ChevronRight, Lock, Plus, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import FocusCheck from './FocusCheck';
+import FocusSegments from './FocusSegments';
 import GoldButton from './GoldButton';
 import NativeActivitySelectionButton from './NativeActivitySelectionButton';
 import FocusSheetHeader from './FocusSheetHeader';
@@ -185,13 +187,16 @@ export default function PlanGroupSheet({
     <SmoothBottomSheet visible={visible} onClose={close} sheetStyle={s.sheet} keyboardAware>
       <FocusSheetHeader kicker="APP GROUP CATALOG" title="Add a Group" onClose={close} />
 
-      <View style={s.segmented}>
-        <TouchableOpacity style={[s.segment, mode === 'new' && s.segmentOn]} onPress={() => setMode('new')} haptic="selection">
-          <Text style={[s.segmentText, mode === 'new' && s.segmentTextOn]}>Add new</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[s.segment, mode === 'existing' && s.segmentOn]} onPress={() => setMode('existing')} haptic="selection">
-          <Text style={[s.segmentText, mode === 'existing' && s.segmentTextOn]}>Use existing</Text>
-        </TouchableOpacity>
+      <View style={{ marginTop: 14 }}>
+        <FocusSegments
+          options={[
+            { key: 'new', label: 'Add new' },
+            { key: 'existing', label: 'Use existing' },
+          ]}
+          value={mode}
+          onChange={key => setMode(key as Mode)}
+          height={42}
+        />
       </View>
 
       {mode === 'new' ? (
@@ -236,7 +241,7 @@ export default function PlanGroupSheet({
                     >
                       <View style={[s.avatar, { backgroundColor: tint.bg }]}><Text style={[s.avatarText, { color: tint.color }]}>{app.name[0]}</Text></View>
                       <Text style={s.appName}>{app.name}</Text>
-                      <View style={[s.checkbox, selected && s.checkboxOn]}>{selected && <CheckSmall s={12} c="#fff" w={3} />}</View>
+                      <FocusCheck checked={selected} />
                     </TouchableOpacity>
                   );
                 })}

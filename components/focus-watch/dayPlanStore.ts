@@ -21,7 +21,21 @@ import { normalizeWebDomain } from './webProtectionCatalog';
 export type Strength = 'loose' | 'strict';
 export type PracticeKind = 'prayer' | 'jesus-prayer' | 'psalm' | 'chapter' | 'intention';
 export type PlanKind = 'daily' | 'session';
+export const PLAN_THEME_IDS = ['gold', 'teal', 'plum', 'blue', 'rose', 'clay'] as const;
+export type PlanThemeId = typeof PLAN_THEME_IDS[number];
 export type RuleMode = 'noLimit' | 'limit' | 'blocked';
+
+export function defaultPlanThemeId(planId: string): PlanThemeId {
+  let hash = 0;
+  for (let index = 0; index < planId.length; index += 1) {
+    hash = ((hash * 31) + planId.charCodeAt(index)) >>> 0;
+  }
+  return PLAN_THEME_IDS[hash % PLAN_THEME_IDS.length];
+}
+
+function isPlanThemeId(value: unknown): value is PlanThemeId {
+  return typeof value === 'string' && (PLAN_THEME_IDS as readonly string[]).includes(value);
+}
 
 export type AppRule = {
   appId: string;
@@ -59,6 +73,7 @@ export type DayPlan = {
   id: string;
   name: string;
   kind: PlanKind;
+  themeId?: PlanThemeId;
   // The day's whole leisure budget ("4h with this plan"), distributed across
   // group rules; null = no budget, limits stand on their own.
   budgetMinutes: number | null;
@@ -857,6 +872,7 @@ function persistPlan(plan: DayPlan) {
       meta_json: JSON.stringify({
         schemaVersion: 4,
         kind: plan.kind,
+        themeId: plan.themeId ?? defaultPlanThemeId(plan.id),
         budgetMinutes: plan.budgetMinutes,
         tolerableMinutes: plan.tolerableMinutes,
         essentialOnlyMinutes: plan.essentialOnlyMinutes,
@@ -1042,6 +1058,7 @@ export async function hydrateDayPlanStore() {
       const planMeta = parse<{
         schemaVersion?: number;
         kind?: PlanKind;
+        themeId?: PlanThemeId;
         budgetMinutes?: number | null;
         tolerableMinutes?: number | null;
         essentialOnlyMinutes?: number | null;
@@ -1058,6 +1075,7 @@ export async function hydrateDayPlanStore() {
         id: row.id,
         name: row.name,
         kind,
+        themeId: isPlanThemeId(planMeta.themeId) ? planMeta.themeId : defaultPlanThemeId(row.id),
         budgetMinutes: planMeta.budgetMinutes ?? null,
         tolerableMinutes: planMeta.tolerableMinutes ?? null,
         essentialOnlyMinutes: planMeta.essentialOnlyMinutes ?? null,
@@ -1254,6 +1272,7 @@ export type SaveDayPlanInput = Omit<
   | 'createdAt'
   | 'updatedAt'
   | 'kind'
+  | 'themeId'
   | 'tolerableMinutes'
   | 'essentialOnlyMinutes'
   | 'customGroupIds'
@@ -1261,18 +1280,20 @@ export type SaveDayPlanInput = Omit<
 > &
   Partial<Pick<
     DayPlan,
-    'kind' | 'tolerableMinutes' | 'essentialOnlyMinutes' | 'customGroupIds' | 'groupCatalog'
+    'kind' | 'themeId' | 'tolerableMinutes' | 'essentialOnlyMinutes' | 'customGroupIds' | 'groupCatalog'
   >> &
   { id?: string };
 
 export function saveDayPlan(input: SaveDayPlanInput): DayPlan {
   const now = Date.now();
   const existing = input.id ? state.plans.find(plan => plan.id === input.id) : undefined;
+  const savedId = input.id ?? makeId('plan');
   const saved = withCompleteRules(
     {
       ...input,
-      id: input.id ?? makeId('plan'),
+      id: savedId,
       kind: input.kind ?? existing?.kind ?? 'daily',
+      themeId: input.themeId ?? existing?.themeId ?? defaultPlanThemeId(savedId),
       tolerableMinutes: input.tolerableMinutes ?? existing?.tolerableMinutes ?? null,
       essentialOnlyMinutes: input.essentialOnlyMinutes ?? existing?.essentialOnlyMinutes ?? null,
       customGroupIds: input.customGroupIds ?? existing?.customGroupIds ?? [],

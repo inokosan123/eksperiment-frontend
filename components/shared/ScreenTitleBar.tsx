@@ -20,6 +20,7 @@ type Props = {
   onBackOverride?: () => void;
   compactBottom?: boolean;
   sideWidth?: number;
+  horizontalBleed?: number;
 };
 
 export default function ScreenTitleBar({
@@ -34,6 +35,7 @@ export default function ScreenTitleBar({
   onBackOverride,
   compactBottom,
   sideWidth,
+  horizontalBleed = 0,
 }: Props) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -54,7 +56,7 @@ export default function ScreenTitleBar({
   const wideSides = resolvedSideWidth > defaultSideWidth;
 
   return (
-    <View style={[styles.wrap, { paddingTop: topPad, paddingBottom: bottomPad, backgroundColor: bg ?? C.bg }]}>
+    <View style={[styles.wrap, { paddingTop: topPad, paddingBottom: bottomPad, backgroundColor: bg ?? C.bg, marginHorizontal: -horizontalBleed }]}>
       <View style={[styles.side, wideSides && styles.sideLeftWide, { width: resolvedSideWidth }]}>
         {showBack && (
           <TouchableOpacity

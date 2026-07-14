@@ -146,7 +146,7 @@ export default function InterventionView() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScrollView contentContainerStyle={s.page} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <ScreenTitleBar title="PAUSE" showBack />
+        <ScreenTitleBar title="PAUSE" showBack horizontalBleed={16} />
 
         <Animated.View entering={FadeInDown.duration(420).delay(30)} style={s.phoneBlock}>
           <FocusPhoneStatus active critical={strength === 'strict'} size={150} />

@@ -230,7 +230,7 @@ export default function PurityView() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScrollView contentContainerStyle={s.page} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <ScreenTitleBar title="WEB PROTECTION" showBack />
+        <ScreenTitleBar title="WEB PROTECTION" showBack horizontalBleed={16} />
         <Animated.View entering={enter(0)} style={s.introWrap}>
           <Text style={s.intro}>Clean Sight keeps the web useful without leaving every door open.</Text>
         </Animated.View>

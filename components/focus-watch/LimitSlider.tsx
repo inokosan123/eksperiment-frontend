@@ -20,19 +20,27 @@ export function limitStopLabel(value: number | null) {
   return value === null ? 'Off' : formatMinutesShort(value);
 }
 
-const TRACK_HEIGHT = 6;
-const THUMB_SIZE = 22;
+const TRACK_HEIGHT = 8;
+const THUMB_SIZE = 26;
 
 export default function LimitSlider({
   value,
   onChange,
   stops = LIMIT_STOPS,
   edgeLabels = { left: 'Off', right: '3h' },
+  accent = C.gold,
+  trackColor = '#EFECE4',
+  bubbleText,
 }: {
   value: number | null;
   onChange: (next: number | null) => void;
   stops?: (number | null)[];
   edgeLabels?: { left: string; right: string };
+  accent?: string;
+  trackColor?: string;
+  // When set, a small value chip rides above the thumb — the selection itself
+  // announces the value, so headers don't need a second big number.
+  bubbleText?: string;
 }) {
   const trackWidth = useSharedValue(0);
   const thumbX = useSharedValue(0);
@@ -130,10 +138,24 @@ export default function LimitSlider({
     transform: [{ translateX: thumbX.value - THUMB_SIZE / 2 }],
   }));
 
+  const bubbleStyle = useAnimatedStyle(() => {
+    const width = trackWidth.value;
+    const clamped = width <= 0 ? 0 : Math.max(34, Math.min(width - 34, thumbX.value));
+    return { transform: [{ translateX: clamped - 34 }] };
+  });
+
   const activeIndex = Math.max(0, stops.indexOf(value));
 
   return (
     <View style={s.wrap}>
+      {bubbleText != null && (
+        <View style={s.bubbleRow} pointerEvents="none">
+          <Animated.View style={[s.bubble, { backgroundColor: accent }, bubbleStyle]}>
+            <Text style={s.bubbleText} numberOfLines={1}>{bubbleText}</Text>
+            <View style={[s.bubbleCaret, { borderTopColor: accent }]} />
+          </Animated.View>
+        </View>
+      )}
       <View style={s.edgeRow}>
         <Text style={[s.edgeText, value === stops[0] && s.edgeTextActive]}>{edgeLabels.left}</Text>
         <Text style={[s.edgeText, value === stops[stops.length - 1] && s.edgeTextActive]}>
@@ -142,8 +164,8 @@ export default function LimitSlider({
       </View>
       <GestureDetector gesture={pan}>
         <View style={s.touchArea}>
-          <View style={s.track} onLayout={onLayout}>
-            <Animated.View style={[s.fill, fillStyle]} />
+          <View style={[s.track, { backgroundColor: trackColor }]} onLayout={onLayout}>
+            <Animated.View style={[s.fill, { backgroundColor: accent }, fillStyle]} />
           </View>
           {/* Dense 15-minute scales show hourly landmarks; snapping remains 15 minutes. */}
           {layoutWidth > 0 &&
@@ -155,12 +177,19 @@ export default function LimitSlider({
                 style={[
                   s.notch,
                   { left: indexToX(index, layoutWidth) - 2 },
-                  index <= activeIndex && index > 0 && s.notchPassed,
+                  index <= activeIndex && index > 0 && { backgroundColor: accent },
                 ]}
               />
               ) : null
             ))}
-          <Animated.View pointerEvents="none" style={[s.thumb, thumbStyle]} />
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              s.thumb,
+              { backgroundColor: accent, boxShadow: `0 3px 9px ${accent}55` },
+              thumbStyle,
+            ]}
+          />
         </View>
       </GestureDetector>
     </View>
@@ -184,7 +213,6 @@ const s = StyleSheet.create({
   fill: {
     height: '100%',
     borderRadius: TRACK_HEIGHT / 2,
-    backgroundColor: C.gold,
   },
   notch: {
     position: 'absolute',
@@ -194,23 +222,14 @@ const s = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: '#DDD8CC',
   },
-  notchPassed: {
-    backgroundColor: '#B8933F',
-  },
   thumb: {
     position: 'absolute',
     top: (THUMB_SIZE + 12) / 2 - THUMB_SIZE / 2,
     width: THUMB_SIZE,
     height: THUMB_SIZE,
     borderRadius: THUMB_SIZE / 2,
-    backgroundColor: C.gold,
     borderWidth: 3,
     borderColor: '#FFFFFF',
-    shadowColor: C.gold,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
-    elevation: 4,
   },
   edgeRow: {
     flexDirection: 'row',
@@ -225,5 +244,37 @@ const s = StyleSheet.create({
   },
   edgeTextActive: {
     color: C.goldDark,
+  },
+  bubbleRow: {
+    height: 34,
+    marginBottom: 2,
+  },
+  bubble: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 68,
+    alignItems: 'center',
+    borderRadius: 999,
+    paddingVertical: 6,
+    boxShadow: '0 3px 9px rgba(35, 30, 20, 0.18)',
+  },
+  bubbleText: {
+    fontFamily: F.sansBold,
+    fontSize: 11.5,
+    letterSpacing: 0.2,
+    color: '#FFFFFF',
+    fontVariant: ['tabular-nums'],
+  },
+  bubbleCaret: {
+    position: 'absolute',
+    bottom: -5,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 5,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
   },
 });

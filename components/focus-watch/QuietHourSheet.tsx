@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import { CheckSmall, Lock, Minus, Plus } from '@/components/icons/Icons';
+import { Lock } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import DurationWheel from './DurationWheel';
+import FocusCheck from './FocusCheck';
 import GoldButton from './GoldButton';
 import FocusSheetHeader from './FocusSheetHeader';
 import NativeActivitySelectionButton from './NativeActivitySelectionButton';
@@ -42,33 +44,6 @@ function durationLabel(minutes: number) {
   if (hours === 0) return `${rest} min`;
   if (rest === 0) return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
   return `${hours}h ${rest}m`;
-}
-
-function Stepper({
-  label,
-  value,
-  onMinus,
-  onPlus,
-}: {
-  label: string;
-  value: string;
-  onMinus: () => void;
-  onPlus: () => void;
-}) {
-  return (
-    <View style={s.stepper}>
-      <Text style={s.stepperLabel}>{label}</Text>
-      <View style={s.stepperControls}>
-        <TouchableOpacity style={s.stepperButton} onPress={onMinus} haptic="selection">
-          <Minus s={16} c={C.textSecondary} w={2.2} />
-        </TouchableOpacity>
-        <Text style={s.stepperValue}>{value}</Text>
-        <TouchableOpacity style={s.stepperButton} onPress={onPlus} haptic="selection">
-          <Plus s={16} c={C.textSecondary} w={2.2} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
 }
 
 export default function QuietHourSheet({
@@ -142,13 +117,33 @@ export default function QuietHourSheet({
     }));
   };
 
-  const changeDuration = (delta: number) => {
-    const max = editingSession
-      ? Math.max(0, Math.floor((editingSession.startedAt + MAX_DURATION * 60_000 - editingSession.endsAt) / 60_000))
-      : MAX_DURATION;
-    const min = editingSession ? Math.min(MIN_EXTENSION, max) : MIN_DURATION;
-    setMinutes(current => Math.min(max, Math.max(min, current + delta)));
-  };
+  // The whole duration range lives on one wheel: 15-minute steps for a new
+  // Quiet Hour, 5-minute steps (up to the 12-hour ceiling) when extending.
+  const durationOptions = useMemo(() => {
+    if (!editingSession) {
+      return Array.from(
+        { length: (MAX_DURATION - MIN_DURATION) / 15 + 1 },
+        (_, index) => MIN_DURATION + index * 15
+      );
+    }
+    const max = Math.max(0, Math.floor((editingSession.startedAt + MAX_DURATION * 60_000 - editingSession.endsAt) / 60_000));
+    if (max <= 0) return [];
+    const options: number[] = [];
+    for (let value = Math.min(MIN_EXTENSION, max); value <= max; value += MINUTES_STEP) options.push(value);
+    if (options[options.length - 1] !== max) options.push(max);
+    return options;
+  }, [editingSession]);
+
+  useEffect(() => {
+    if (!visible || durationOptions.length === 0) return;
+    if (!durationOptions.includes(minutes)) {
+      const nearest = durationOptions.reduce(
+        (best, option) => (Math.abs(option - minutes) < Math.abs(best - minutes) ? option : best),
+        durationOptions[0]
+      );
+      setMinutes(nearest);
+    }
+  }, [visible, durationOptions, minutes]);
 
   const begin = () => {
     if (editingSession) {
@@ -186,20 +181,14 @@ export default function QuietHourSheet({
             <Text style={s.sectionLabel}>{editingSession ? 'ADD TIME' : 'DURATION'}</Text>
             <Text style={s.durationValue}>{durationLabel(minutes)}</Text>
           </View>
-          <View style={s.stepperRow}>
-            <Stepper
-              label="HOURS"
-              value={String(Math.floor(minutes / 60)).padStart(2, '0')}
-              onMinus={() => changeDuration(-60)}
-              onPlus={() => changeDuration(60)}
+          {durationOptions.length > 0 && (
+            <DurationWheel
+              options={durationOptions}
+              value={minutes}
+              onChange={setMinutes}
+              surface="#FFF9EB"
             />
-            <Stepper
-              label="MINUTES"
-              value={String(minutes % 60).padStart(2, '0')}
-              onMinus={() => changeDuration(-MINUTES_STEP)}
-              onPlus={() => changeDuration(MINUTES_STEP)}
-            />
-          </View>
+          )}
           <View style={s.strictNote}>
             <Lock s={13} c="#A24351" w={2.2} />
             <Text style={s.strictNoteText}>{editingSession
@@ -262,9 +251,7 @@ export default function QuietHourSheet({
                       <Text style={s.blockedTagText}>Always Blocked</Text>
                     </View>
                   ) : (
-                    <View style={[s.checkbox, selected && s.checkboxOn]}>
-                      {selected && <CheckSmall s={12} c="#fff" w={3} />}
-                    </View>
+                    <FocusCheck checked={selected} />
                   )}
                 </TouchableOpacity>
               </Animated.View>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -6,16 +6,20 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { Calendar, CheckSmall, ChevronRight, Clock, Lock, Plus, Shield } from '@/components/icons/Icons';
+import { ArrowUpRight, ChevronRight, Clock, Lock, Plus, Shield } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
 import EssentialAppsSheet from './EssentialAppsSheet';
+import FocusCheck from './FocusCheck';
 import FocusSheetHeader from './FocusSheetHeader';
 import ZoneClock from './ZoneClock';
+import DayGauge, { gaugeStanding, gaugeStateColor } from './DayGauge';
+import PlanCardBackdrop from './PlanCardBackdrop';
 import { getNativeActivitySelectionSummary, isNativeFocusAvailable } from './focusNativeBridge';
 import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
 import { usePermissionGate } from './usePermissionGate';
+import { PLAN_VISUALS, planVisualFor } from './planVisuals';
 import {
   activeZone,
   assignPlanToWeekday,
@@ -25,6 +29,7 @@ import {
   describeRules,
   formatMinutesShort,
   getEffectivePlan,
+  getLiveUsageSnapshot,
   getPlanById,
   groupName,
   planHasProtectionNow,
@@ -34,9 +39,22 @@ import {
   wouldPlanLoseTodayTarget,
   type DayPlan,
   type DayPlanState,
+  type PlanZone,
 } from './dayPlanStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
+
+const NO_PLAN_VISUAL = {
+  gradient: ['#F6DDD7', '#FFF2EE', '#FFFCFA'] as const,
+  border: '#EABEB3',
+  accent: '#B6533F',
+  accentSoft: 'rgba(182,83,63,0.13)',
+  ink: '#6D2E25',
+  body: '#8D5A50',
+  bloom: 'rgba(182,83,63,0.18)',
+} as const;
+
+const EMPTY_PLAN_VISUAL = PLAN_VISUALS[1];
 
 type PickerState =
   | { mode: 'template'; day: number }
@@ -171,12 +189,13 @@ function PlanPickerSheet({
     <>
       <SmoothBottomSheet visible={picker !== null} onClose={onClose} sheetStyle={s.sheet}>
         <FocusSheetHeader
-          kicker={picker?.mode === 'today' ? 'ACTIVE DAY' : 'WEEKLY TEMPLATE'}
+          kicker={picker?.mode === 'today' ? "TODAY'S PLAN" : 'CHOOSE A RHYTHM'}
           title={picker?.mode === 'today' ? "Today's Screen Time" : DAY_NAMES[day]}
           subtitle={picker?.mode === 'today'
-            ? 'This changes only today. Usage already recorded remains part of today.'
-            : `This shapes future ${DAY_NAMES[day]}s. Today's resolved plan is not rewritten.`}
+            ? 'Choose how you want to use and protect your phone today.'
+            : `Choose how you want to use and protect your time on ${DAY_NAMES[day]}.`}
           onClose={onClose}
+          large
         />
 
         {activationError && (
@@ -186,33 +205,78 @@ function PlanPickerSheet({
           </View>
         )}
 
-        <View style={s.pickerList}>
-          {state.plans.map((plan, index) => {
+        <ScrollView
+          style={s.pickerScroll}
+          contentContainerStyle={s.pickerList}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {state.plans.map(plan => {
             const selected = currentPlanId === plan.id;
+            const isSession = plan.kind === 'session';
+            const visual = planVisualFor(plan);
             return (
-              <View key={plan.id}>
-                {index > 0 && <View style={s.separator} />}
-                <TouchableOpacity
-                  style={[s.pickerRow, checkingPlanId !== null && checkingPlanId !== plan.id && s.pickerRowMuted]}
-                  onPress={() => checkingPlanId === null && choose(plan.id)}
-                  disabled={checkingPlanId !== null}
-                  haptic="selection"
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.pickerName}>{plan.name}</Text>
-                    <Text style={s.pickerMeta}>{checkingPlanId === plan.id ? 'Checking private iPhone selections...' : `${plan.kind === 'session' ? `${plan.zones.length} Sessions` : 'Daily Plan'} - ${plan.budgetMinutes == null ? 'No target' : `${formatMinutesShort(plan.budgetMinutes)} target`}`}</Text>
-                  </View>
-                  <View style={[s.radio, selected && s.radioOn]}>{selected && <CheckSmall s={12} c="#fff" w={3} />}</View>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                key={plan.id}
+                style={[
+                  s.pickerRow,
+                  { borderColor: selected ? visual.accent : visual.border, borderWidth: selected ? 1.5 : 1 },
+                  checkingPlanId !== null && checkingPlanId !== plan.id && s.pickerRowMuted,
+                ]}
+                onPress={() => checkingPlanId === null && choose(plan.id)}
+                disabled={checkingPlanId !== null}
+                haptic="selection"
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                accessibilityLabel={plan.name}
+              >
+                <LinearGradient colors={visual.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+                <View pointerEvents="none" style={[s.pickerBloom, { backgroundColor: visual.bloom }]} />
+                <View style={[s.pickerVisual, { backgroundColor: visual.accentSoft, borderColor: visual.border }]}>
+                  {isSession
+                    ? <Clock s={22} c={visual.accent} w={2} />
+                    : <Shield s={22} c={visual.accent} w={2} />}
+                </View>
+                <View style={s.pickerCopy}>
+                  <Text style={[s.pickerName, { color: visual.ink }]} numberOfLines={1}>{plan.name}</Text>
+                  <Text style={[s.pickerMeta, { color: visual.body }]} numberOfLines={2}>
+                    {checkingPlanId === plan.id
+                      ? 'Checking your private iPhone selections...'
+                      : [
+                          plan.budgetMinutes == null ? 'No daily target' : `${formatMinutesShort(plan.budgetMinutes)} target`,
+                          isSession ? `${plan.zones.length} Sessions` : null,
+                        ].filter(Boolean).join(' · ')}
+                  </Text>
+                </View>
+                <FocusCheck checked={selected} size={24} accent={visual.accent} />
+              </TouchableOpacity>
             );
           })}
-          {state.plans.length > 0 && <View style={s.separator} />}
-          <TouchableOpacity style={s.pickerRow} onPress={() => choose(null)} haptic="selection">
-            <View style={{ flex: 1 }}><Text style={s.pickerName}>No plan</Text><Text style={s.pickerMeta}>A rest day without Screen Time rules.</Text></View>
-            <View style={[s.radio, currentPlanId == null && s.radioOn]}>{currentPlanId == null && <CheckSmall s={12} c="#fff" w={3} />}</View>
+          <TouchableOpacity
+            style={[
+              s.pickerRow,
+              s.pickerRestRow,
+              { borderColor: currentPlanId == null ? NO_PLAN_VISUAL.accent : NO_PLAN_VISUAL.border, borderWidth: currentPlanId == null ? 1.5 : 1 },
+            ]}
+            onPress={() => choose(null)}
+            haptic="selection"
+            accessibilityRole="button"
+            accessibilityState={{ selected: currentPlanId == null }}
+            accessibilityLabel="No plan, no Screen Time boundaries"
+          >
+            <LinearGradient colors={NO_PLAN_VISUAL.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+            <View pointerEvents="none" style={[s.pickerBloom, { backgroundColor: NO_PLAN_VISUAL.bloom }]} />
+            <View style={[s.pickerVisual, { backgroundColor: NO_PLAN_VISUAL.accentSoft, borderColor: NO_PLAN_VISUAL.border }]}>
+              <Shield s={22} c={NO_PLAN_VISUAL.accent} w={1.9} />
+              <View pointerEvents="none" style={[s.noPlanSlash, { backgroundColor: NO_PLAN_VISUAL.accent }]} />
+            </View>
+            <View style={s.pickerCopy}>
+              <Text style={[s.pickerName, { color: NO_PLAN_VISUAL.ink }]}>No plan</Text>
+              <Text style={[s.pickerMeta, { color: NO_PLAN_VISUAL.body }]}>Leaves this day without Screen Time boundaries.</Text>
+            </View>
+            <FocusCheck checked={currentPlanId == null} size={24} accent={NO_PLAN_VISUAL.accent} />
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </SmoothBottomSheet>
 
       <ConfirmModal
@@ -237,26 +301,237 @@ function PlanPickerSheet({
   );
 }
 
-function PlanCard({ plan, days, state, onPress }: { plan: DayPlan; days: number[]; state: DayPlanState; onPress: () => void }) {
+function TodayPlanHero({
+  plan,
+  currentSession,
+  usedMinutes,
+  onChoose,
+  onOpenDetail,
+  notice,
+}: {
+  plan: DayPlan | null;
+  currentSession?: PlanZone | null;
+  usedMinutes: number | null;
+  onChoose: () => void;
+  onOpenDetail: () => void;
+  notice?: ReactNode;
+}) {
+  if (!plan) {
+    const visual = NO_PLAN_VISUAL;
+    return (
+      <TouchableOpacity
+        style={[s.todayRestCard, { borderColor: visual.border }]}
+        onPress={onChoose}
+        activeOpacity={0.9}
+        haptic="selection"
+        accessibilityRole="button"
+        accessibilityLabel="Today is unprotected. Choose a Screen Time plan."
+      >
+        <LinearGradient colors={visual.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+        <View pointerEvents="none" style={[s.todayBloom, { backgroundColor: visual.bloom }]} />
+        <View pointerEvents="none" style={s.todayRestOrbitOuter} />
+        <View pointerEvents="none" style={s.todayRestOrbitInner} />
+        <View pointerEvents="none" style={[s.todayRestGlyph, { backgroundColor: visual.accentSoft, borderColor: visual.border }]}>
+          <Shield s={29} c={visual.accent} w={1.8} />
+          <View style={[s.todayNoPlanSlash, { backgroundColor: visual.accent }]} />
+        </View>
+        <View style={s.todayRestCopy}>
+          <Text style={[s.todayHeroKicker, { color: visual.accent }]}>TIME UNPROTECTED</Text>
+          <Text style={[s.todayRestTitle, { color: visual.ink }]}>No plan is protecting today</Text>
+          <Text style={[s.todayRestBody, { color: visual.body }]}>Without a boundary, scrolling gets the whole day. Protect your time for the life you actually want to live.</Text>
+          <View style={[s.todayRestCta, { backgroundColor: visual.ink }]} pointerEvents="none">
+            <Text style={s.todayRestCtaText}>Protect today</Text>
+            <ChevronRight s={14} c="#FFFFFF" w={2.4} />
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  }
+
+  const visual = planVisualFor(plan);
+  const goal = plan.budgetMinutes;
+  const toleranceEnd = plan.essentialOnlyMinutes ?? plan.tolerableMinutes;
+  const standing = goal != null ? gaugeStanding(goal, toleranceEnd, usedMinutes) : 'unknown';
+  const stateColor = gaugeStateColor(standing, visual.ink);
+
+  let sideValue: string | null = null;
+  let sideCaption: string | null = null;
+  if (goal != null && usedMinutes != null) {
+    if (standing === 'under') {
+      sideValue = `${formatMinutesShort(Math.max(0, goal - usedMinutes))} left`;
+      sideCaption = 'before your goal';
+    } else if (standing === 'tolerance') {
+      sideValue = `${formatMinutesShort(Math.max(0, (toleranceEnd ?? goal) - usedMinutes))} left`;
+      sideCaption = 'of tolerance';
+    } else {
+      sideValue = 'Essentials only';
+      sideCaption = 'the limit is behind you';
+    }
+  }
+
   return (
-    <TouchableOpacity style={s.planRow} onPress={onPress} activeOpacity={0.76}>
-      <View style={s.planVisual}>
-        {plan.kind === 'session' ? <ZoneClock zones={plan.zones} size={58} compact /> : <Calendar s={22} c={C.goldDark} w={1.9} />}
-      </View>
-      <View style={{ flex: 1 }}>
-        <View style={s.planTitleRow}>
-          <Text style={s.planName} numberOfLines={1}>{plan.name}</Text>
-          <View style={s.kindTag}><Text style={s.kindTagText}>{plan.kind === 'session' ? 'SESSION' : 'DAILY'}</Text></View>
+    <TouchableOpacity
+      style={[s.todayPlanCard, { borderColor: visual.border }]}
+      onPress={onOpenDetail}
+      activeOpacity={0.9}
+      haptic="selection"
+      accessibilityRole="button"
+      accessibilityLabel={`${plan.name} is protecting today. Open today's detail.`}
+    >
+      <LinearGradient colors={visual.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      <PlanCardBackdrop visual={visual} />
+
+      <View style={s.todayPlanTopRow}>
+        <View style={s.todayPlanHeading}>
+          <Text style={[s.todayHeroKicker, { color: visual.accent }]}>TODAY’S PLAN</Text>
+          <Text style={[s.todayPlanName, { color: visual.ink }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{plan.name}</Text>
+          {currentSession && (
+            <Text style={[s.todayPlanStatus, { color: visual.body }]} numberOfLines={1}>
+              {currentSession.name} · active until {formatTimeOfDaySafe(currentSession.endMinutes)}
+            </Text>
+          )}
         </View>
-        <Text style={s.planTarget} numberOfLines={2}>{plan.budgetMinutes == null ? 'No Daily Target' : `${formatMinutesShort(plan.budgetMinutes)} Daily Target`} · {plan.essentialOnlyMinutes == null ? 'No hard wall' : `${formatMinutesShort(plan.essentialOnlyMinutes)} Essentials + system`}</Text>
-        <Text style={s.planRules} numberOfLines={1}>{describeRules(state, plan)}</Text>
-        <View style={s.assignedDays}>
-          {DAY_LETTERS.map((letter, index) => (
-            <Text key={`${letter}-${index}`} style={[s.assignedDay, days.includes(index) && s.assignedDayOn]}>{letter}</Text>
-          ))}
+        <TouchableOpacity style={[s.todayPlanChange, { borderColor: visual.border }]} onPress={onChoose} haptic="selection">
+          <Text style={[s.todayPlanChangeText, { color: visual.accent }]}>Change</Text>
+          <ChevronRight s={13} c={visual.accent} w={2.3} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={s.todayValueRow}>
+        <View style={s.todayValueMain}>
+          {goal == null ? (
+            <Text style={[s.todayValueBig, { color: visual.ink }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Group limits</Text>
+          ) : (
+            <View style={s.todayValueLine}>
+              <Text style={[s.todayValueBig, { color: stateColor }]} numberOfLines={1}>
+                {usedMinutes == null ? '– –' : formatMinutesShort(usedMinutes)}
+              </Text>
+              <Text style={[s.todayValueGoal, { color: visual.body }]} numberOfLines={1}>
+                {' '}/ {formatMinutesShort(goal)}
+              </Text>
+            </View>
+          )}
+          <Text style={[s.todayValueCaption, { color: visual.body }]}>
+            {goal == null ? 'shape this day' : 'screen time today'}
+          </Text>
+        </View>
+        {sideValue != null && (
+          <View style={s.todayValueSide}>
+            <Text style={[s.todayValueSideText, { color: stateColor }]} numberOfLines={1}>{sideValue}</Text>
+            <Text style={[s.todayValueCaption, { color: visual.body }]} numberOfLines={1}>{sideCaption}</Text>
+          </View>
+        )}
+      </View>
+
+      {goal != null && (
+        <DayGauge
+          goalMinutes={goal}
+          toleranceEndMinutes={toleranceEnd}
+          usedMinutes={usedMinutes}
+          accent={visual.accent}
+          labelColor={visual.body}
+          style={s.todayGauge}
+        />
+      )}
+
+      <View style={[s.todayFooterRow, { borderTopColor: visual.border }]}>
+        <Text style={[s.todayFooterNote, { color: visual.body }]} numberOfLines={1}>
+          {usedMinutes == null ? 'Usage syncs privately from your iPhone' : 'Live from your iPhone · approximate'}
+        </Text>
+        <View style={s.todayDetailLink}>
+          <Text style={[s.todayDetailLinkText, { color: visual.accent }]}>Today in detail</Text>
+          <ChevronRight s={13} c={visual.accent} w={2.3} />
         </View>
       </View>
-      <ChevronRight s={17} c={C.textMuted} w={2} />
+      {notice}
+    </TouchableOpacity>
+  );
+}
+
+function PlanCard({
+  plan,
+  days,
+  state,
+  isToday,
+  onPress,
+}: {
+  plan: DayPlan;
+  days: number[];
+  state: DayPlanState;
+  isToday: boolean;
+  onPress: () => void;
+}) {
+  const visual = planVisualFor(plan);
+  const isSession = plan.kind === 'session';
+  const today = weekdayMondayFirst(new Date());
+  const goal = plan.budgetMinutes;
+  const toleranceEnd = plan.essentialOnlyMinutes ?? plan.tolerableMinutes;
+  const toleranceDuration = goal != null && toleranceEnd != null
+    ? Math.max(0, toleranceEnd - goal)
+    : null;
+  const rules = describeRules(state, plan);
+  const meta = [
+    goal == null ? 'No daily target' : `${formatMinutesShort(goal)} goal`,
+    toleranceDuration != null && toleranceDuration > 0 ? `+${formatMinutesShort(toleranceDuration)}` : null,
+    rules === 'No daily limits' ? null : rules,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <TouchableOpacity
+      style={[s.planCard, { borderColor: visual.border }]}
+      onPress={onPress}
+      activeOpacity={0.88}
+      accessibilityRole="button"
+      accessibilityLabel={`Open and edit ${plan.name}`}
+    >
+      <LinearGradient colors={visual.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      <PlanCardBackdrop visual={visual} compact />
+
+      <View style={s.planCardRow}>
+        <View style={[s.planCardSeal, { backgroundColor: visual.accentSoft, borderColor: visual.border }]}>
+          {isSession ? <ZoneClock zones={plan.zones} size={44} compact /> : <Shield s={22} c={visual.accent} w={1.9} />}
+        </View>
+        <View style={s.planCardCopy}>
+          <View style={s.planCardNameRow}>
+            <Text style={[s.planCardName, { color: visual.ink }]} numberOfLines={1}>{plan.name}</Text>
+            {isToday && (
+              <View style={[s.planTodayChip, { backgroundColor: visual.accent }]}>
+                <Text style={s.planTodayChipText}>TODAY</Text>
+              </View>
+            )}
+          </View>
+          <Text style={[s.planCardMeta, { color: visual.body }]} numberOfLines={1}>{meta}</Text>
+        </View>
+        <ChevronRight s={17} c={visual.accent} w={2.1} />
+      </View>
+
+      <View style={[s.planCardWeek, { borderTopColor: visual.border }]}>
+        <Text style={[s.planScheduleLabel, { color: visual.accent }]}>
+          {days.length > 0 ? 'ACTIVE THIS WEEK' : 'NOT ON YOUR WEEK YET'}
+        </Text>
+        <View style={s.planDayRow}>
+          {DAY_LETTERS.map((letter, index) => {
+            const active = days.includes(index);
+            return (
+              <View
+                key={`${letter}-${index}`}
+                style={[
+                  s.planDayCircle,
+                  { borderColor: visual.border, backgroundColor: 'rgba(255,255,255,0.55)' },
+                  active && { backgroundColor: visual.accent, borderColor: visual.accent },
+                  index === today && !active && { borderWidth: 1.5, borderColor: visual.accent },
+                ]}
+              >
+                <Text style={[
+                  s.planDayLetter,
+                  { color: visual.body },
+                  active && s.planDayLetterOn,
+                ]}>{letter}</Text>
+              </View>
+            );
+          })}
+        </View>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -272,6 +547,7 @@ export default function DayPlanHubView() {
   const todayPlan = getEffectivePlan(state, new Date());
   const currentSession = activeZone(todayPlan, new Date());
   const todayPlanProtects = planHasProtectionNow(todayPlan, new Date());
+  const todayUsage = getLiveUsageSnapshot(dateKey(new Date()));
   const nativeAvailable = isNativeFocusAvailable();
   const optionalSummary = useNativeActivitySelectionSummary('global.essentials');
   const strictAlwaysSummary = useNativeActivitySelectionSummary('always.strict');
@@ -296,50 +572,21 @@ export default function DayPlanHubView() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <ScreenTitleBar title="SCREEN TIME" showBack />
       <ScrollView contentContainerStyle={s.page} showsVerticalScrollIndicator={false}>
-        <ScreenTitleBar title="SCREEN TIME" showBack />
         <Animated.View entering={enter(0)} style={s.introWrap}>
           <Text style={s.intro}>Plan your phone the way you plan your day.</Text>
         </Animated.View>
 
         <Animated.View entering={enter(50)}>
           <Text style={s.sectionLabel}>TODAY</Text>
-          <View style={s.todayBand}>
-            <LinearGradient
-              colors={['rgba(255,248,232,0.92)', 'rgba(255,253,247,0.7)', 'rgba(244,250,247,0.42)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-              pointerEvents="none"
-            />
-            <View style={s.todayHeader}>
-              <View style={s.todayIcon}>{todayPlan?.kind === 'session' ? <Clock s={19} c={C.goldDark} w={2} /> : <Calendar s={19} c={C.goldDark} w={2} />}</View>
-              <View style={s.todayCopy}>
-                <Text style={s.todayName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>{todayPlan?.name ?? 'No plan today'}</Text>
-                <Text style={s.todayMeta} numberOfLines={2}>
-                  {todayPlan
-                    ? currentSession
-                      ? `${currentSession.name} · until ${formatTimeOfDaySafe(currentSession.endMinutes)}`
-                      : todayPlan.kind === 'daily' ? 'Daily rules · all day' : 'Session plan'
-                    : 'Choose a plan for this day only.'}
-                </Text>
-              </View>
-              <TouchableOpacity style={s.changeTodayButton} onPress={() => setPicker({ mode: 'today', day: today })}>
-                <Text style={s.changeTodayText}>Change</Text>
-              </TouchableOpacity>
-            </View>
-
-            {todayPlan && (
-              <View style={s.todayStats}>
-                <View style={s.statCell}><Text style={s.statLabel}>TARGET</Text><Text style={s.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>{todayPlan.budgetMinutes == null ? 'No limit' : formatMinutesShort(todayPlan.budgetMinutes)}</Text></View>
-                <View style={s.statDivider} />
-                <View style={s.statCell}><Text style={s.statLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>ESSENTIALS ONLY</Text><Text style={s.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>{todayPlan.essentialOnlyMinutes == null ? 'Off' : formatMinutesShort(todayPlan.essentialOnlyMinutes)}</Text></View>
-                <View style={s.statDivider} />
-                <View style={s.statCell}><Text style={s.statLabel}>STYLE</Text><Text style={s.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{todayPlan.kind === 'session' ? `${todayPlan.zones.length} Sessions` : 'Daily'}</Text></View>
-              </View>
-            )}
-
-            {todayPlanProtects && state.permission !== 'approved' && (
+          <TodayPlanHero
+            plan={todayPlan}
+            currentSession={currentSession}
+            usedMinutes={todayUsage?.totalMinutes ?? null}
+            onChoose={() => setPicker({ mode: 'today', day: today })}
+            onOpenDetail={() => router.push('/day-plan-today' as never)}
+            notice={todayPlanProtects && state.permission !== 'approved' ? (
               <View style={s.permissionRow}>
                 <Shield s={15} c="#A36F2B" w={2.1} />
                 <Text style={s.permissionText}>
@@ -349,8 +596,8 @@ export default function DayPlanHubView() {
                 </Text>
                 {state.permission !== 'preview' && <TouchableOpacity onPress={() => request(() => {})}><Text style={s.permissionAction}>Enable</Text></TouchableOpacity>}
               </View>
-            )}
-          </View>
+            ) : undefined}
+          />
         </Animated.View>
 
         <Animated.View entering={enter(100)}>
@@ -359,17 +606,41 @@ export default function DayPlanHubView() {
             <View style={s.weekRow}>
               {DAY_LETTERS.map((letter, day) => {
                 const plan = getPlanById(state, state.schedule[day]);
+                const isSession = plan?.kind === 'session';
+                const visual = plan ? planVisualFor(plan) : NO_PLAN_VISUAL;
                 return (
-                  <TouchableOpacity key={day} style={s.weekCell} onPress={() => setPicker({ mode: 'template', day })} haptic="selection">
-                    <View style={[s.weekCircle, plan && s.weekCircleOn, day === today && s.weekCircleToday]}>
-                      <Text style={[s.weekLetter, plan && s.weekLetterOn]}>{letter}</Text>
+                  <TouchableOpacity
+                    key={day}
+                    style={s.weekCell}
+                    onPress={() => setPicker({ mode: 'template', day })}
+                    haptic="selection"
+                    accessibilityRole="button"
+                    accessibilityLabel={`${DAY_NAMES[day]}, ${plan ? plan.name : 'No plan'}`}
+                  >
+                    <View style={[
+                      s.weekCircle,
+                      { borderColor: visual.border, backgroundColor: visual.accentSoft },
+                      day === today && s.weekCircleToday,
+                    ]}>
+                      <Text style={[s.weekLetter, { color: plan ? visual.ink : visual.accent }]}>{letter}</Text>
+                      {!!plan && (
+                        <View style={s.weekSignal}>
+                          {isSession ? (
+                            <>
+                              <View style={[s.weekSignalPart, { backgroundColor: visual.accent }]} />
+                              <View style={[s.weekSignalPart, { backgroundColor: visual.accent }]} />
+                              <View style={[s.weekSignalPart, { backgroundColor: visual.accent }]} />
+                            </>
+                          ) : <View style={[s.weekSignalDaily, { backgroundColor: visual.accent }]} />}
+                        </View>
+                      )}
                     </View>
-                    <Text style={s.weekPlan} numberOfLines={1}>{plan?.name ?? 'Rest'}</Text>
+                    <Text style={[s.weekPlan, { color: visual.body }, !plan && s.weekPlanRest]} numberOfLines={1}>{plan?.name ?? 'No plan'}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
-            <Text style={s.weekNote}>Tap a day to shape future weeks. Today stays historically honest.</Text>
+            <Text style={s.weekNote}>Set a boundary for each day before scrolling decides where your time goes.</Text>
           </View>
         </Animated.View>
 
@@ -393,17 +664,43 @@ export default function DayPlanHubView() {
         <Animated.View entering={enter(200)}>
           <View style={s.plansHeader}><Text style={s.sectionLabelNoMargin}>PLANS</Text><Text style={s.plansCount}>{state.plans.length} saved</Text></View>
           <View style={s.planList}>
-            {state.plans.map((plan, index) => (
-              <View key={plan.id}>
-                {index > 0 && <View style={s.separator} />}
-                <PlanCard plan={plan} days={daysByPlan[plan.id] ?? []} state={state} onPress={() => router.push(`/day-plan?planId=${plan.id}` as never)} />
-              </View>
+            {state.plans.length === 0 ? (
+              <TouchableOpacity
+                style={[s.planEmptyCard, { borderColor: EMPTY_PLAN_VISUAL.border }]}
+                onPress={() => router.push('/day-plan' as never)}
+                activeOpacity={0.9}
+              >
+                <LinearGradient colors={EMPTY_PLAN_VISUAL.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+                <View pointerEvents="none" style={[s.planEmptyBloom, { backgroundColor: EMPTY_PLAN_VISUAL.bloom }]} />
+                <View style={[s.planEmptyIcon, { backgroundColor: EMPTY_PLAN_VISUAL.accentSoft, borderColor: EMPTY_PLAN_VISUAL.border }]}>
+                  <Plus s={20} c={EMPTY_PLAN_VISUAL.accent} w={2.2} />
+                </View>
+                <View style={s.planEmptyCopy}>
+                  <Text style={[s.planEmptyKicker, { color: EMPTY_PLAN_VISUAL.accent }]}>START PROTECTING YOUR TIME</Text>
+                  <Text style={[s.planEmptyTitle, { color: EMPTY_PLAN_VISUAL.ink }]}>Create your first plan</Text>
+                  <Text style={[s.planEmptyBody, { color: EMPTY_PLAN_VISUAL.body }]}>Decide how much phone time is enough—and keep the rest of the day for your real life.</Text>
+                </View>
+                <View style={[s.planEmptyArrow, { backgroundColor: EMPTY_PLAN_VISUAL.accent }]}>
+                  <ArrowUpRight s={16} c="#FFFFFF" w={2.4} />
+                </View>
+              </TouchableOpacity>
+            ) : state.plans.map(plan => (
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                days={daysByPlan[plan.id] ?? []}
+                state={state}
+                isToday={todayPlan?.id === plan.id}
+                onPress={() => router.push(`/day-plan?planId=${plan.id}` as never)}
+              />
             ))}
           </View>
-          <TouchableOpacity style={s.newPlanButton} onPress={() => router.push('/day-plan' as never)}>
-            <View style={s.newPlanIcon}><Plus s={14} c={C.goldDark} w={2.5} /></View>
-            <Text style={s.newPlanText}>Create a new plan</Text>
-          </TouchableOpacity>
+          {state.plans.length > 0 && (
+            <TouchableOpacity style={s.newPlanButton} onPress={() => router.push('/day-plan' as never)}>
+              <View style={s.newPlanIcon}><Plus s={14} c={C.goldDark} w={2.5} /></View>
+              <Text style={s.newPlanText}>Create a new plan</Text>
+            </TouchableOpacity>
+          )}
         </Animated.View>
       </ScrollView>
 
@@ -427,50 +724,58 @@ function formatTimeOfDaySafe(minutes: number) {
 }
 
 const s = StyleSheet.create({
-  page: { paddingHorizontal: 16, paddingBottom: 90, gap: 18 },
-  introWrap: { paddingHorizontal: 30, alignItems: 'center' },
+  page: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 90, gap: 20 },
+  introWrap: { paddingHorizontal: 28, alignItems: 'center' },
   intro: { fontFamily: F.serifMediumItalic, fontSize: 16, lineHeight: 21, color: C.textSecondary, textAlign: 'center' },
   sectionLabel: { marginBottom: 8, marginLeft: 4, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted },
   sectionLabelNoMargin: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted },
-  todayBand: {
-    borderRadius: 22,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: '#E5D9BD',
-    backgroundColor: '#FFFDF7',
-    padding: 15,
-    overflow: 'hidden',
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  todayHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  todayCopy: { flex: 1, minWidth: 0 },
-  todayIcon: { width: 40, height: 40, borderRadius: 13, borderCurve: 'continuous', backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
-  todayName: { fontFamily: F.serifMedium, fontSize: 21, letterSpacing: -0.2, color: C.text },
-  todayMeta: { marginTop: 2, fontFamily: F.sans, fontSize: 10.5, color: C.textSecondary },
-  changeTodayButton: { borderRadius: 999, borderWidth: 1, borderColor: '#E1D2B1', backgroundColor: '#FFF8E8', paddingHorizontal: 12, paddingVertical: 8 },
-  changeTodayText: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.goldDark },
-  todayStats: { marginTop: 13, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#EEE5D3', paddingTop: 11 },
-  statCell: { flex: 1, minWidth: 0 },
-  statLabel: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.4, color: C.textMuted },
-  statValue: { marginTop: 2.5, fontFamily: F.serifMedium, fontSize: 16.5, color: C.text, fontVariant: ['tabular-nums'] },
-  statDivider: { width: StyleSheet.hairlineWidth, height: 30, backgroundColor: '#E8E0D1' },
+  todayRestCard: { position: 'relative', minHeight: 190, borderRadius: 28, borderCurve: 'continuous', borderWidth: 1, overflow: 'hidden', padding: 20, boxShadow: '0 10px 28px rgba(71, 60, 44, 0.09)' },
+  todayBloom: { position: 'absolute', right: -36, top: -42, width: 190, height: 190, borderRadius: 95, opacity: 0.72 },
+  todayRestOrbitOuter: { position: 'absolute', right: -18, top: -14, width: 142, height: 142, borderRadius: 71, borderWidth: 1, borderColor: 'rgba(182,83,63,0.13)' },
+  todayRestOrbitInner: { position: 'absolute', right: 12, top: 16, width: 82, height: 82, borderRadius: 41, borderWidth: 1, borderColor: 'rgba(182,83,63,0.18)' },
+  todayRestGlyph: { position: 'absolute', right: 29, top: 33, width: 54, height: 54, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-4deg' }] },
+  todayNoPlanSlash: { position: 'absolute', width: 38, height: 2.5, borderRadius: 2, transform: [{ rotate: '-42deg' }] },
+  todayRestCopy: { maxWidth: '72%', minWidth: 0 },
+  todayHeroKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.2 },
+  todayRestTitle: { marginTop: 7, fontFamily: F.serifSemiBold, fontSize: 29, lineHeight: 32, letterSpacing: -0.45 },
+  todayRestBody: { marginTop: 7, fontFamily: F.serif, fontSize: 15, lineHeight: 20 },
+  todayRestCta: { alignSelf: 'flex-start', marginTop: 15, minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
+  todayRestCtaText: { fontFamily: F.sansSemiBold, fontSize: 10.5, letterSpacing: 0.2, color: '#FFFFFF' },
+  todayPlanCard: { position: 'relative', borderRadius: 28, borderCurve: 'continuous', borderWidth: 1, overflow: 'hidden', padding: 18, boxShadow: '0 10px 30px rgba(69, 58, 39, 0.10)' },
+  todayPlanTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  todayPlanHeading: { flex: 1, minWidth: 0 },
+  todayPlanChange: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 999, borderWidth: 1, backgroundColor: 'rgba(255,255,255,0.68)', paddingHorizontal: 11, paddingVertical: 6 },
+  todayPlanChangeText: { fontFamily: F.sansSemiBold, fontSize: 10.5 },
+  todayPlanName: { marginTop: 6, fontFamily: F.serifSemiBold, fontSize: 25, lineHeight: 28, letterSpacing: -0.35 },
+  todayPlanStatus: { marginTop: 3, fontFamily: F.sansMedium, fontSize: 10.5, lineHeight: 15 },
+  todayValueRow: { marginTop: 15, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14 },
+  todayValueMain: { flexShrink: 1, minWidth: 0 },
+  todayValueLine: { flexDirection: 'row', alignItems: 'baseline', minWidth: 0 },
+  todayValueBig: { fontFamily: F.serifSemiBold, fontSize: 38, lineHeight: 41, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
+  todayValueGoal: { fontFamily: F.serifMedium, fontSize: 19, lineHeight: 24, fontVariant: ['tabular-nums'] },
+  todayValueCaption: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 10, lineHeight: 13.5 },
+  todayValueSide: { alignItems: 'flex-end', paddingBottom: 2 },
+  todayValueSideText: { fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 21, fontVariant: ['tabular-nums'] },
+  todayGauge: { marginTop: 13 },
+  todayFooterRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 11 },
+  todayFooterNote: { flexShrink: 1, fontFamily: F.sansMedium, fontSize: 9 },
+  todayDetailLink: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  todayDetailLinkText: { fontFamily: F.sansSemiBold, fontSize: 11 },
   permissionRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, backgroundColor: '#FFF1D5', paddingHorizontal: 11, paddingVertical: 9 },
   permissionText: { flex: 1, fontFamily: F.sansMedium, fontSize: 10, lineHeight: 14, color: '#8D5C1E' },
   permissionAction: { fontFamily: F.sansBold, fontSize: 10, color: '#8D5C1E' },
-  weekBand: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border, paddingTop: 12, paddingBottom: 10 },
+  weekBand: { borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: '#ECE7DC', backgroundColor: '#FEFDF9', paddingHorizontal: 5, paddingTop: 14, paddingBottom: 13 },
   weekRow: { flexDirection: 'row' },
-  weekCell: { flex: 1, alignItems: 'center', gap: 5 },
-  weekCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
-  weekCircleOn: { backgroundColor: C.goldLight },
-  weekCircleToday: { borderWidth: 1.5, borderColor: C.gold },
-  weekLetter: { fontFamily: F.sansBold, fontSize: 11, color: C.textMuted },
-  weekLetterOn: { color: C.goldDark },
-  weekPlan: { maxWidth: 44, fontFamily: F.sansMedium, fontSize: 8.5, color: C.textMuted },
-  weekNote: { marginTop: 10, textAlign: 'center', fontFamily: F.serifItalic, fontSize: 12, color: C.textMuted },
+  weekCell: { flex: 1, minWidth: 0, alignItems: 'center', gap: 1 },
+  weekCircle: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: '#E7E2D8', backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center' },
+  weekCircleToday: { borderWidth: 2, borderColor: C.gold },
+  weekLetter: { transform: [{ translateY: -1.5 }], fontFamily: F.sansBold, fontSize: 12, color: C.textMuted },
+  weekSignal: { position: 'absolute', bottom: 6, height: 3, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
+  weekSignalPart: { width: 4, height: 3, borderRadius: 2, backgroundColor: '#618273' },
+  weekSignalDaily: { width: 14, height: 3, borderRadius: 2, backgroundColor: C.gold },
+  weekPlan: { maxWidth: 47, marginTop: 4, fontFamily: F.serifMedium, fontSize: 10.5, lineHeight: 13, color: C.textSecondary, textAlign: 'center' },
+  weekPlanRest: { fontFamily: F.serifSemiBold, fontSize: 11, color: C.textSecondary },
+  weekNote: { marginTop: 13, paddingHorizontal: 22, textAlign: 'center', fontFamily: F.serifItalic, fontSize: 13.5, lineHeight: 18, color: C.textSecondary },
   defaultsList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
   defaultsRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 3 },
   defaultsIcon: { width: 34, height: 34, borderRadius: 11, borderCurve: 'continuous', backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
@@ -479,36 +784,52 @@ const s = StyleSheet.create({
   defaultsMeta: { marginTop: 2, fontFamily: F.sans, fontSize: 10, color: C.textSecondary },
   plansHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, marginBottom: 8 },
   plansCount: { fontFamily: F.sansMedium, fontSize: 10, color: C.textMuted },
-  planList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
-  planRow: { minHeight: 92, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 3 },
-  planVisual: { width: 60, height: 60, borderRadius: 17, borderCurve: 'continuous', backgroundColor: '#FFF8E8', borderWidth: 1, borderColor: '#F2E7CB', alignItems: 'center', justifyContent: 'center' },
-  planTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  planName: { flexShrink: 1, fontFamily: F.serifMedium, fontSize: 19, letterSpacing: -0.2, color: C.text },
-  kindTag: { borderRadius: 999, backgroundColor: '#F5EFE1', paddingHorizontal: 7, paddingVertical: 4 },
-  kindTagText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1, color: C.goldDark },
-  planTarget: { marginTop: 2.5, fontFamily: F.sansMedium, fontSize: 10, color: C.textSecondary },
-  planRules: { marginTop: 2, fontFamily: F.sans, fontSize: 9.5, color: C.textMuted },
-  assignedDays: { marginTop: 6, flexDirection: 'row', gap: 4 },
-  assignedDay: { width: 15, height: 15, borderRadius: 8, textAlign: 'center', textAlignVertical: 'center', fontFamily: F.sansBold, fontSize: 7, color: C.textMuted, backgroundColor: '#F0EFEB', overflow: 'hidden' },
-  assignedDayOn: { color: C.goldDark, backgroundColor: C.goldLight },
+  planList: { gap: 12 },
+  planCard: { position: 'relative', borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, overflow: 'hidden', paddingHorizontal: 15, paddingTop: 14, paddingBottom: 13, boxShadow: '0 7px 20px rgba(57, 48, 34, 0.08)' },
+  planCardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  planCardSeal: { flexShrink: 0, width: 50, height: 50, borderRadius: 17, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  planCardCopy: { flex: 1, minWidth: 0 },
+  planCardNameRow: { flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
+  planCardName: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 20, lineHeight: 23, letterSpacing: -0.25 },
+  planTodayChip: { flexShrink: 0, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 },
+  planTodayChipText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1, color: '#FFFFFF' },
+  planCardMeta: { marginTop: 3, fontFamily: F.sansMedium, fontSize: 10.5, lineHeight: 14, fontVariant: ['tabular-nums'] },
+  planCardWeek: { marginTop: 12, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10 },
+  planScheduleLabel: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.3 },
+  planDayRow: { marginTop: 7, flexDirection: 'row', justifyContent: 'space-between' },
+  planDayCircle: { width: 30, height: 30, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  planDayLetter: { fontFamily: F.sansBold, fontSize: 10.5 },
+  planDayLetterOn: { color: '#FFFFFF' },
+  planEmptyCard: { position: 'relative', minHeight: 146, flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 25, borderCurve: 'continuous', borderWidth: 1, overflow: 'hidden', paddingHorizontal: 17, paddingVertical: 18, boxShadow: '0 7px 20px rgba(71, 60, 44, 0.07)' },
+  planEmptyBloom: { position: 'absolute', right: -34, top: -50, width: 170, height: 170, borderRadius: 85, opacity: 0.74 },
+  planEmptyIcon: { flexShrink: 0, width: 52, height: 52, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  planEmptyCopy: { flex: 1, minWidth: 0, paddingRight: 30 },
+  planEmptyKicker: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.7 },
+  planEmptyTitle: { marginTop: 5, fontFamily: F.serifSemiBold, fontSize: 22, lineHeight: 25, letterSpacing: -0.3 },
+  planEmptyBody: { marginTop: 4, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17 },
+  planEmptyArrow: { position: 'absolute', right: 14, top: 14, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 42 },
   newPlanButton: { marginTop: 10, height: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: '#DDCEAD', backgroundColor: '#FFFDF7' },
   newPlanIcon: { width: 26, height: 26, borderRadius: 9, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
   newPlanText: { fontFamily: F.serifSemiBold, fontSize: 15, color: C.goldDark },
-  sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: 28, maxHeight: '88%' },
+  sheet: { height: '62%', backgroundColor: '#FCFBF7', borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 18, paddingBottom: 20, maxHeight: '90%' },
   sheetHandle: { alignSelf: 'center', width: 40, height: 4.5, borderRadius: 3, backgroundColor: '#E7E5E0', marginTop: 10 },
   sheetHeader: { marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
   sheetKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.gold },
   sheetTitle: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 25, letterSpacing: -0.2, color: C.text },
   closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F0EFEA', alignItems: 'center', justifyContent: 'center' },
   sheetNote: { marginTop: 6, fontFamily: F.serif, fontSize: 12.5, lineHeight: 17, color: C.textSecondary },
-  pickerList: { marginTop: 14, borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
-  pickerRow: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 3 },
+  pickerScroll: { flex: 1, marginTop: 18 },
+  pickerList: { gap: 8, paddingBottom: 18 },
+  pickerRow: { position: 'relative', minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#EAE6DE', backgroundColor: '#FFF', overflow: 'hidden', paddingHorizontal: 11, paddingVertical: 9 },
+  pickerBloom: { position: 'absolute', right: -28, top: -42, width: 126, height: 126, borderRadius: 63, opacity: 0.56 },
+  noPlanSlash: { position: 'absolute', width: 28, height: 2, borderRadius: 1, transform: [{ rotate: '-42deg' }] },
   pickerRowMuted: { opacity: 0.52 },
-  pickerName: { fontFamily: F.serifMedium, fontSize: 16.5, color: C.text },
-  pickerMeta: { marginTop: 2, fontFamily: F.sans, fontSize: 10, color: C.textMuted },
-  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: '#D6D3D1', backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' },
-  radioOn: { borderColor: C.gold, backgroundColor: C.gold },
+  pickerRestRow: { marginTop: 2 },
+  pickerVisual: { flexShrink: 0, width: 44, height: 44, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E9DDBF', backgroundColor: '#F8F0DC', alignItems: 'center', justifyContent: 'center' },
+  pickerCopy: { flex: 1, minWidth: 0 },
+  pickerName: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 18.5, lineHeight: 21, color: C.text },
+  pickerMeta: { marginTop: 3, fontFamily: F.sans, fontSize: 11, lineHeight: 15, color: C.textSecondary },
   activationError: { marginTop: 10, flexDirection: 'row', alignItems: 'flex-start', gap: 7, borderRadius: 12, backgroundColor: '#F8E7EA', paddingHorizontal: 11, paddingVertical: 9 },
   activationErrorText: { flex: 1, fontFamily: F.sansMedium, fontSize: 10, lineHeight: 14, color: '#8F3443' },
 });
