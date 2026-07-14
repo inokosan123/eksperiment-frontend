@@ -390,7 +390,7 @@ function TodayPlanHero({
       accessibilityLabel={`${plan.name} is protecting today. Open today's detail.`}
     >
       <LinearGradient colors={visual.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-      <PlanCardBackdrop visual={visual} />
+      <PlanCardBackdrop visual={visual} ringSize={172} live />
 
       <View style={s.todayPlanTopRow}>
         <View style={s.todayPlanHeading}>
@@ -528,7 +528,7 @@ function PlanCard({
                 key={`${letter}-${index}`}
                 style={[
                   s.planDayCircle,
-                  { borderColor: visual.border, backgroundColor: 'rgba(255,255,255,0.55)' },
+                  { borderColor: visual.border, backgroundColor: '#FFFFFF' },
                   active && { backgroundColor: visual.accent, borderColor: visual.accent },
                   index === today && !active && { borderWidth: 1.5, borderColor: visual.accent },
                 ]}
@@ -754,7 +754,7 @@ const s = StyleSheet.create({
   todayPlanHeading: { flex: 1, minWidth: 0 },
   todayPlanChange: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 999, borderWidth: 1, backgroundColor: 'rgba(255,255,255,0.68)', paddingHorizontal: 11, paddingVertical: 6 },
   todayPlanChangeText: { fontFamily: F.sansSemiBold, fontSize: 10.5 },
-  todayPlanName: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 24, lineHeight: 27, letterSpacing: -0.35 },
+  todayPlanName: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 27, lineHeight: 30, letterSpacing: -0.4 },
   todayPlanStatus: { marginTop: 3, fontFamily: F.sansMedium, fontSize: 10.5, lineHeight: 15 },
   todayValueRow: { marginTop: 10, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14 },
   todayValueMain: { flexShrink: 1, minWidth: 0 },
@@ -764,11 +764,11 @@ const s = StyleSheet.create({
   todayValueCaption: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 10, lineHeight: 13.5 },
   todayValueSide: { alignItems: 'flex-end', paddingBottom: 2 },
   todayValueSideText: { fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 21, fontVariant: ['tabular-nums'] },
-  todayGauge: { marginTop: 10 },
+  todayGauge: { marginTop: 6 },
   todayFooterRow: { marginTop: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 9 },
   todayFooterNote: { flexShrink: 1, fontFamily: F.sansMedium, fontSize: 9 },
   todayDetailLink: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  todayDetailLinkText: { fontFamily: F.sansSemiBold, fontSize: 11 },
+  todayDetailLinkText: { fontFamily: F.sansSemiBold, fontSize: 12.5 },
   permissionRow: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, backgroundColor: '#FFF1D5', paddingHorizontal: 11, paddingVertical: 8 },
   permissionText: { flex: 1, fontFamily: F.sansMedium, fontSize: 10, lineHeight: 14, color: '#8D5C1E' },
   permissionAction: { fontFamily: F.sansBold, fontSize: 10, color: '#8D5C1E' },

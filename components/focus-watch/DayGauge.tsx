@@ -213,6 +213,7 @@ const s = StyleSheet.create({
     borderRadius: 7,
     borderWidth: 1.6,
     borderColor: GAUGE_ESSENTIALS_COLOR,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },

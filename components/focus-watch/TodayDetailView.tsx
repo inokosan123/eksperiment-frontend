@@ -123,7 +123,7 @@ export default function TodayDetailView() {
         <Animated.View entering={enter(0)}>
           <View style={[s.macroCard, { borderColor: visual.border }]}>
             <LinearGradient colors={visual.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-            <PlanCardBackdrop visual={visual} />
+            <PlanCardBackdrop visual={visual} ringSize={190} live />
             <Text style={[s.macroKicker, { color: visual.accent }]}>{dateLine.toUpperCase()}</Text>
             <Text style={[s.macroName, { color: visual.ink }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{plan.name}</Text>
             <Text style={[s.macroHeadline, { color: visual.body }]}>{headline}</Text>

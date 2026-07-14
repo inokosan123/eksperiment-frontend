@@ -1,26 +1,111 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedProps,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 
 // The quiet "instrument face" behind Screen Time cards: a laid-paper weave of
 // diagonal hairlines across the whole surface, and an orbit system in the top
-// right — dashed and solid rings with one satellite dot — echoing the day
-// clock. Everything draws in the plan's own colors, barely above the gradient.
+// right — dashed and solid rings around a 24-tick bezel (the day-clock echo),
+// with satellite nodes on the rings. Everything draws in the plan's own
+// colors, barely above the gradient. On a live card (today's active plan) the
+// ringed satellite slowly travels its orbit — one calm revolution per minute,
+// all SVG-prop motion, no view transforms.
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 type BackdropVisual = {
   accent: string;
   bloom: string;
 };
 
+const SATELLITE_START_ANGLE = -2.1;
+
+function OrbitingSatellite({
+  cx,
+  radius,
+  accent,
+  live,
+}: {
+  cx: number;
+  radius: number;
+  accent: string;
+  live: boolean;
+}) {
+  const reduceMotion = useReducedMotion();
+  const t = useSharedValue(0);
+  const animate = live && !reduceMotion;
+
+  useEffect(() => {
+    if (animate) {
+      t.value = 0;
+      t.value = withRepeat(
+        withTiming(1, { duration: 60000, easing: Easing.linear }),
+        -1,
+        false
+      );
+    } else {
+      cancelAnimation(t);
+      t.value = 0;
+    }
+    return () => cancelAnimation(t);
+  }, [animate, t]);
+
+  const ringProps = useAnimatedProps(() => {
+    const angle = SATELLITE_START_ANGLE + t.value * Math.PI * 2;
+    return {
+      cx: cx + radius * Math.cos(angle),
+      cy: cx + radius * Math.sin(angle),
+    };
+  });
+  const dotProps = useAnimatedProps(() => {
+    const angle = SATELLITE_START_ANGLE + t.value * Math.PI * 2;
+    return {
+      cx: cx + radius * Math.cos(angle),
+      cy: cx + radius * Math.sin(angle),
+    };
+  });
+
+  return (
+    <>
+      <AnimatedCircle
+        animatedProps={ringProps}
+        r={4.6}
+        stroke={accent}
+        strokeOpacity={0.3}
+        strokeWidth={1}
+        fill="none"
+      />
+      <AnimatedCircle
+        animatedProps={dotProps}
+        r={2.2}
+        fill={accent}
+        fillOpacity={0.36}
+      />
+    </>
+  );
+}
+
 export default function PlanCardBackdrop({
   visual,
   compact = false,
+  ringSize,
+  live = false,
 }: {
   visual: BackdropVisual;
   compact?: boolean;
+  ringSize?: number;   // override the orbit system's footprint
+  live?: boolean;      // today's active plan: the satellite travels its orbit
 }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
-  const ring = compact ? 150 : 230;
+  const ring = ringSize ?? (compact ? 150 : 230);
   const cx = ring / 2;
 
   // Diagonal hairlines: one line every `step` px along the top edge, drawn at
@@ -59,8 +144,8 @@ export default function PlanCardBackdrop({
       <View
         style={{
           position: 'absolute',
-          right: -ring * 0.24,
-          top: -ring * 0.28,
+          right: -ring * 0.26,
+          top: -ring * 0.32,
           width: ring,
           height: ring,
           borderRadius: ring / 2,
@@ -71,7 +156,7 @@ export default function PlanCardBackdrop({
       <Svg
         width={ring}
         height={ring}
-        style={{ position: 'absolute', right: -ring * 0.24, top: -ring * 0.28 }}
+        style={{ position: 'absolute', right: -ring * 0.26, top: -ring * 0.32 }}
       >
         {/* Outer orbit — fine dotted */}
         <Circle cx={cx} cy={cx} r={ring * 0.47} stroke={visual.accent} strokeOpacity={0.13} strokeWidth={1} fill="none" strokeDasharray="1 6" />
@@ -102,22 +187,7 @@ export default function PlanCardBackdrop({
         {/* Center */}
         <Circle cx={cx} cy={cx} r={2.2} fill={visual.accent} fillOpacity={0.24} />
         {/* Orbit nodes: a ringed satellite on the main orbit, plain dots elsewhere */}
-        <Circle
-          cx={cx + ring * 0.385 * Math.cos(-2.1)}
-          cy={cx + ring * 0.385 * Math.sin(-2.1)}
-          r={4.6}
-          stroke={visual.accent}
-          strokeOpacity={0.3}
-          strokeWidth={1}
-          fill="none"
-        />
-        <Circle
-          cx={cx + ring * 0.385 * Math.cos(-2.1)}
-          cy={cx + ring * 0.385 * Math.sin(-2.1)}
-          r={2.2}
-          fill={visual.accent}
-          fillOpacity={0.36}
-        />
+        <OrbitingSatellite cx={cx} radius={ring * 0.385} accent={visual.accent} live={live} />
         <Circle
           cx={cx + ring * 0.47 * Math.cos(-0.7)}
           cy={cx + ring * 0.47 * Math.sin(-0.7)}
