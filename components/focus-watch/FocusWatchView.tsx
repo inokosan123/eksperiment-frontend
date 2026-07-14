@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -30,7 +30,7 @@ import FocusPhoneStatus from './FocusPhoneStatus';
 import FocusCard, { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
 import { PulseDot } from './FocusMeter';
 import DayGauge, { gaugeStanding } from './DayGauge';
-import PlanCardBackdrop from './PlanCardBackdrop';
+import { RadiantTrophy, TrophyShineBackdrop } from './TrophyRadiance';
 import GoldButton from './GoldButton';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
 import QuietHourSheet from './QuietHourSheet';
@@ -63,8 +63,6 @@ import {
 } from './dayPlanStore';
 
 const WEEK_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-const TROPHY_EMBLEM = require('@/assets/animations/challenge-trophy-preview.png');
-const TROPHY_BACKDROP_VISUAL = { accent: '#A9863F', bloom: 'rgba(197,160,89,0.20)' };
 const SESSION_COLORS = ['#C8A24D', '#658F78', '#7C78A5', '#B46D6D'];
 const PACK_SHORT_NAMES: Record<string, string> = {
   gambling: 'Gambling',
@@ -429,12 +427,12 @@ export default function FocusWatchView() {
           </View>
           <TouchableOpacity style={s.progressSurface} activeOpacity={0.86} onPress={() => setTrophiesOpen(true)}>
             <LinearGradient
-              colors={['#FAECC9', '#FFFAEE', '#FFFEFA']}
+              colors={['#F8E7BE', '#FFF8E9', '#FFFEFA']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
-            <PlanCardBackdrop visual={TROPHY_BACKDROP_VISUAL} ringSize={150} />
+            <TrophyShineBackdrop />
             <View style={s.progressHeaderRow}>
               <Text style={s.progressKicker}>TROPHY STREAK</Text>
               <View style={s.calendarLink}>
@@ -445,10 +443,8 @@ export default function FocusWatchView() {
 
             <View style={s.progressHeroRow}>
               <View style={s.progressCopy}>
-                <View style={s.progressValueRow}>
-                  <Text style={s.progressValue}>{state.streak.current}</Text>
-                  <Text style={s.progressUnit}>{state.streak.current === 1 ? 'day' : 'days'}</Text>
-                </View>
+                <Text style={s.progressValue}>{state.streak.current}</Text>
+                <Text style={s.progressUnitCaps}>DAY STREAK</Text>
                 <Text style={s.progressHeadline} numberOfLines={2}>
                   {liveStatus === 'broken'
                     ? 'Today’s trophy is resting.'
@@ -459,7 +455,7 @@ export default function FocusWatchView() {
                         : 'Today is a rest day.'}
                 </Text>
               </View>
-              <Image source={TROPHY_EMBLEM} style={s.progressTrophy} resizeMode="contain" />
+              <RadiantTrophy size={62} />
             </View>
 
             <View style={s.weekBand}>
@@ -800,13 +796,11 @@ const s = StyleSheet.create({
   },
   progressHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   progressKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.goldDark },
-  progressHeroRow: { marginTop: 11, flexDirection: 'row', alignItems: 'center', gap: 14 },
-  progressTrophy: { width: 46, height: 46, marginRight: 2 },
+  progressHeroRow: { marginTop: 13, flexDirection: 'row', alignItems: 'center', gap: 16, paddingRight: 12 },
   progressCopy: { flex: 1, minWidth: 0 },
-  progressValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
-  progressValue: { fontFamily: F.serifSemiBold, fontSize: 42, lineHeight: 46, letterSpacing: -0.5, color: C.text, fontVariant: ['tabular-nums'] },
-  progressUnit: { fontFamily: F.serifMedium, fontSize: 17, color: C.textSecondary },
-  progressHeadline: { marginTop: 2, fontFamily: F.serif, fontSize: 14.5, lineHeight: 19, color: C.textSecondary },
+  progressValue: { fontFamily: F.serifSemiBold, fontSize: 48, lineHeight: 52, letterSpacing: -0.6, color: '#3D3322', fontVariant: ['tabular-nums'] },
+  progressUnitCaps: { marginTop: -2, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.2, color: C.goldDark },
+  progressHeadline: { marginTop: 6, fontFamily: F.serif, fontSize: 14.5, lineHeight: 19, color: C.textSecondary },
   weekBand: {
     marginTop: 14,
     paddingVertical: 12,
