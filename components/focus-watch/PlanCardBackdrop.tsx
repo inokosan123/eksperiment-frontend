@@ -192,7 +192,7 @@ function LiveGlint({ boxW, boxH }: { boxW: number; boxH: number }) {
       style={[{ position: 'absolute', top: -boxH * 0.25, height: boxH * 1.5, width: 68 }, style]}
     >
       <LinearGradient
-        colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.36)', 'rgba(255,255,255,0)']}
+        colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.46)', 'rgba(255,255,255,0)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={{ flex: 1 }}
