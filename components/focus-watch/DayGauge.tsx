@@ -95,8 +95,9 @@ export default function DayGauge({
     ? goalPx + gap + ((flexWidth - goalPx) / 2)
     : goalPx;
 
-  // Anchor points for the floating labels, kept inside the card.
-  const goalAnchor = clamp(goalPx, 30, Math.max(30, trackWidth - 56));
+  // Anchor points for the floating labels, kept inside the card. The goal
+  // anchor carries the trophy's center axis, so it sits exactly on the tick.
+  const goalAnchor = clamp(goalPx, 12, Math.max(12, trackWidth - 64));
   const toleranceAnchor = clamp(
     Math.max(toleranceCenterPx, goalAnchor + 58),
     30,
@@ -120,10 +121,8 @@ export default function DayGauge({
         <View style={s.markerLayer}>
           <View style={[s.goalTick, { left: goalPx - 0.75, backgroundColor: accent }]} />
           <View style={[s.markerAnchor, { left: goalAnchor }]}>
-            <View style={s.goalLabelRow}>
-              <Image source={TROPHY_EMBLEM} style={s.goalTrophy} resizeMode="contain" />
-              <Text style={[s.goalLabelText, { color: labelColor }]}>GOAL</Text>
-            </View>
+            <Image source={TROPHY_EMBLEM} style={s.goalTrophy} resizeMode="contain" />
+            <Text style={[s.goalLabelText, { color: labelColor }]}>GOAL</Text>
           </View>
           {toleranceSpan > 0 && (
             <View style={[s.markerAnchor, { left: toleranceAnchor }]}>
@@ -188,17 +187,16 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  goalLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
+  // The trophy is the anchor's centered child — its axis lands on the tick;
+  // GOAL floats to its right without pulling the group off-center.
   goalTrophy: {
     width: 15,
     height: 15,
-    marginTop: -1,
   },
   goalLabelText: {
+    position: 'absolute',
+    left: 10.5,
+    top: 4,
     fontFamily: F.sansBold,
     fontSize: 8,
     letterSpacing: 1.1,
