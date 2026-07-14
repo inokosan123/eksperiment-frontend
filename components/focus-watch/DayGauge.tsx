@@ -141,16 +141,19 @@ export default function DayGauge({
         style={[s.track, { height, gap }]}
         onLayout={event => setTrackWidth(event.nativeEvent.layout.width)}
       >
-        <View style={[s.zone, { flex: goalMinutes, borderRadius: height / 2, backgroundColor: goalTrackColor }]} />
+        {/* Translucent while the day is untouched; firm once real usage fills it. */}
+        <View style={[s.zone, { flex: goalMinutes, borderRadius: height / 2, backgroundColor: usedMinutes != null ? '#FFFFFF' : goalTrackColor }]} />
         {toleranceSpan > 0 && (
-          <View style={[s.zone, { flex: toleranceSpan, borderRadius: height / 2, backgroundColor: 'rgba(176,126,35,0.18)' }]} />
+          <View style={[s.zone, { flex: toleranceSpan, borderRadius: height / 2, backgroundColor: usedMinutes != null ? '#F1E8D7' : 'rgba(176,126,35,0.18)' }]} />
         )}
         <View style={[
           s.zone,
           {
             width: capWidth,
             borderRadius: height / 2,
-            backgroundColor: standing === 'essentials' ? GAUGE_ESSENTIALS_COLOR : 'rgba(162,67,81,0.30)',
+            backgroundColor: standing === 'essentials'
+              ? GAUGE_ESSENTIALS_COLOR
+              : usedMinutes != null ? '#E3C7CB' : 'rgba(162,67,81,0.30)',
           },
         ]} />
         <Animated.View

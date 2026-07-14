@@ -752,7 +752,7 @@ const s = StyleSheet.create({
   todayPlanCard: { position: 'relative', borderRadius: 28, borderCurve: 'continuous', borderWidth: 1, overflow: 'hidden', paddingHorizontal: 16, paddingTop: 15, paddingBottom: 13, boxShadow: '0 10px 30px rgba(69, 58, 39, 0.10)' },
   todayPlanTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   todayPlanHeading: { flex: 1, minWidth: 0 },
-  todayPlanChange: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 999, borderWidth: 1, backgroundColor: 'rgba(255,255,255,0.68)', paddingHorizontal: 11, paddingVertical: 6 },
+  todayPlanChange: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 999, borderWidth: 1, backgroundColor: '#FFFFFF', paddingHorizontal: 11, paddingVertical: 6 },
   todayPlanChangeText: { fontFamily: F.sansSemiBold, fontSize: 10.5 },
   todayPlanName: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 27, lineHeight: 30, letterSpacing: -0.4 },
   todayPlanStatus: { marginTop: 3, fontFamily: F.sansMedium, fontSize: 10.5, lineHeight: 15 },

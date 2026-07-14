@@ -47,7 +47,7 @@ function OrbitingSatellite({
     if (animate) {
       t.value = 0;
       t.value = withRepeat(
-        withTiming(1, { duration: 60000, easing: Easing.linear }),
+        withTiming(1, { duration: 26000, easing: Easing.linear }),
         -1,
         false
       );
@@ -72,6 +72,15 @@ function OrbitingSatellite({
       cy: cx + radius * Math.sin(angle),
     };
   });
+  // A small counter-node half a revolution behind: while the satellite is off
+  // the card's edge, this one is inside it — the orbit never looks frozen.
+  const counterProps = useAnimatedProps(() => {
+    const angle = SATELLITE_START_ANGLE + Math.PI + t.value * Math.PI * 2;
+    return {
+      cx: cx + radius * Math.cos(angle),
+      cy: cx + radius * Math.sin(angle),
+    };
+  });
 
   return (
     <>
@@ -88,6 +97,12 @@ function OrbitingSatellite({
         r={2.2}
         fill={accent}
         fillOpacity={0.36}
+      />
+      <AnimatedCircle
+        animatedProps={counterProps}
+        r={1.8}
+        fill={accent}
+        fillOpacity={0.28}
       />
     </>
   );
@@ -145,7 +160,7 @@ export default function PlanCardBackdrop({
         style={{
           position: 'absolute',
           right: -ring * 0.26,
-          top: -ring * 0.32,
+          top: -ring * 0.30,
           width: ring,
           height: ring,
           borderRadius: ring / 2,
@@ -156,7 +171,7 @@ export default function PlanCardBackdrop({
       <Svg
         width={ring}
         height={ring}
-        style={{ position: 'absolute', right: -ring * 0.26, top: -ring * 0.32 }}
+        style={{ position: 'absolute', right: -ring * 0.26, top: -ring * 0.30 }}
       >
         {/* Outer orbit — fine dotted */}
         <Circle cx={cx} cy={cx} r={ring * 0.47} stroke={visual.accent} strokeOpacity={0.13} strokeWidth={1} fill="none" strokeDasharray="1 6" />
