@@ -29,7 +29,7 @@ import { C, F } from '@/constants/tokens';
 import FocusPhoneStatus from './FocusPhoneStatus';
 import FocusCard, { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
 import { PulseDot } from './FocusMeter';
-import DayGauge, { gaugeStanding } from './DayGauge';
+import DayGauge, { gaugeStanding, gaugeStateColor } from './DayGauge';
 import { RadiantTrophy, TrophyShineBackdrop } from './TrophyRadiance';
 import GoldButton from './GoldButton';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
@@ -442,25 +442,30 @@ export default function FocusWatchView() {
             </View>
 
             <View style={s.progressHeroRow}>
-              <View style={s.progressCopy}>
-                <Text style={s.progressValue}>{state.streak.current}</Text>
+              <View style={s.progressMedallion}>
+                <View style={s.medallionCircle}>
+                  <View pointerEvents="none" style={s.medallionInnerRing} />
+                  <Text style={s.progressValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+                    {state.streak.current}
+                  </Text>
+                </View>
                 <View style={s.progressUnitRow}>
                   <View style={s.progressUnitRule} />
                   <Text style={s.progressUnitCaps}>DAY STREAK</Text>
                   <View style={s.progressUnitRule} />
                 </View>
-                <Text style={s.progressHeadline} numberOfLines={2}>
-                  {liveStatus === 'broken'
-                    ? 'Today’s trophy is resting.'
-                    : targetMinutes != null
-                      ? 'Today’s trophy is within reach.'
-                      : plan
-                        ? 'No trophy target today.'
-                        : 'Today is a rest day.'}
-                </Text>
               </View>
               <RadiantTrophy size={62} />
             </View>
+            <Text style={s.progressHeadline} numberOfLines={2}>
+              {liveStatus === 'broken'
+                ? 'Today’s trophy is resting.'
+                : targetMinutes != null
+                  ? 'Today’s trophy is within reach.'
+                  : plan
+                    ? 'No trophy target today.'
+                    : 'Today is a rest day.'}
+            </Text>
 
             <View style={s.weekBand}>
               {week.map(cell => (
@@ -494,8 +499,17 @@ export default function FocusWatchView() {
               </View>
               <View style={s.progressStatDivider} />
               <View style={s.progressStat}>
-                <Text style={s.progressStatLabel}>TODAY’S TARGET</Text>
-                <Text style={s.progressStatValue}>{targetMinutes != null ? formatMinutesShort(targetMinutes) : 'None today'}</Text>
+                <Text style={s.progressStatLabel}>TODAY’S LIMIT</Text>
+                {targetMinutes != null ? (
+                  <View style={s.progressStatCounter}>
+                    <Text style={[s.progressStatValue, { color: gaugeStateColor(todayStanding, '#3D3322') }]} numberOfLines={1}>
+                      {usedToday == null ? '– –' : formatMinutesShort(usedToday)}
+                    </Text>
+                    <Text style={s.progressStatOf} numberOfLines={1}> / {formatMinutesShort(targetMinutes)}</Text>
+                  </View>
+                ) : (
+                  <Text style={s.progressStatValue}>None today</Text>
+                )}
               </View>
             </View>
           </TouchableOpacity>
@@ -795,13 +809,34 @@ const s = StyleSheet.create({
   },
   progressHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   progressKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.goldDark },
-  progressHeroRow: { marginTop: 13, flexDirection: 'row', alignItems: 'center', gap: 16, paddingRight: 12 },
-  progressCopy: { flex: 1, minWidth: 0 },
-  progressValue: { fontFamily: F.serifSemiBold, fontSize: 52, lineHeight: 55, letterSpacing: -0.7, color: '#3D3322', fontVariant: ['tabular-nums'] },
-  progressUnitRow: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7 },
+  progressHeroRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 10, paddingRight: 20 },
+  progressMedallion: { alignItems: 'center' },
+  medallionCircle: {
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    borderWidth: 1,
+    borderColor: 'rgba(169,134,63,0.5)',
+    backgroundColor: '#FFFDF6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    boxShadow: '0 5px 14px rgba(122, 94, 36, 0.13)',
+  },
+  medallionInnerRing: {
+    position: 'absolute',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(169,134,63,0.30)',
+  },
+  progressValue: { fontFamily: F.serifSemiBold, fontSize: 40, lineHeight: 44, letterSpacing: -0.5, color: '#3D3322', fontVariant: ['tabular-nums'] },
+  progressUnitRow: { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 7 },
   progressUnitRule: { width: 14, height: 1, borderRadius: 1, backgroundColor: 'rgba(169,134,63,0.45)' },
   progressUnitCaps: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.2, color: C.goldDark },
-  progressHeadline: { marginTop: 7, fontFamily: F.serif, fontSize: 14.5, lineHeight: 19, color: C.textSecondary },
+  progressHeadline: { marginTop: 11, fontFamily: F.serif, fontSize: 14.5, lineHeight: 19, color: C.textSecondary, textAlign: 'center' },
   weekBand: {
     marginTop: 14,
     paddingVertical: 12,
@@ -850,6 +885,8 @@ const s = StyleSheet.create({
   progressStat: { flex: 1, minWidth: 0, paddingHorizontal: 6 },
   progressStatLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.7, color: '#A9863F' },
   progressStatValue: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 18, color: '#3D3322', fontVariant: ['tabular-nums'] },
+  progressStatCounter: { flexDirection: 'row', alignItems: 'baseline', minWidth: 0 },
+  progressStatOf: { marginTop: 4, fontFamily: F.serifMedium, fontSize: 14, color: '#8A7448', fontVariant: ['tabular-nums'] },
   progressStatDivider: { width: StyleSheet.hairlineWidth, height: 32, backgroundColor: 'rgba(169,134,63,0.32)' },
   calendarLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   calendarLinkText: { fontFamily: F.serifSemiBold, fontSize: 13.5, color: C.goldDark },
