@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Line } from 'react-native-svg';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
@@ -69,13 +70,12 @@ type PlanChangeConfirmation = {
 function PlanPickerSheet({
   picker,
   onClose,
-  requestActivation,
 }: {
   picker: PickerState;
   onClose: () => void;
-  requestActivation: (action: () => void) => void;
 }) {
   const state = useDayPlan();
+  const { request: requestActivation, gate: activationGate } = usePermissionGate({ embedded: true });
   const nativeAvailable = isNativeFocusAvailable();
   const [pendingChange, setPendingChange] = useState<PlanChangeConfirmation>(null);
   const [checkingPlanId, setCheckingPlanId] = useState<string | null>(null);
@@ -89,6 +89,7 @@ function PlanPickerSheet({
   const currentPlan = getPlanById(state, currentPlanId);
 
   useEffect(() => {
+    setPendingChange(null);
     setCheckingPlanId(null);
     setActivationError(null);
   }, [picker?.day, picker?.mode]);
@@ -155,6 +156,9 @@ function PlanPickerSheet({
           setActivationError(`Open ${nextPlan.name} and choose real iPhone apps for ${visible}${rest} before activating it.`);
           return;
         }
+      } catch {
+        setActivationError(`Anasta couldn't verify ${nextPlan.name}'s iPhone selections. Try selecting the plan again.`);
+        return;
       } finally {
         setCheckingPlanId(null);
       }
@@ -186,13 +190,40 @@ function PlanPickerSheet({
   };
 
   return (
-    <>
-      <SmoothBottomSheet visible={picker !== null} onClose={onClose} sheetStyle={s.sheet}>
+    <SmoothBottomSheet
+      visible={picker !== null}
+      onClose={onClose}
+      sheetStyle={s.sheet}
+      overlayChildren={(
+        <>
+          <ConfirmModal
+            visible={pendingChange !== null}
+            icon={<Lock s={21} c="#A24351" w={2.2} />}
+            iconBg="#F8E7EA"
+            title={pendingChange?.kind === 'known-loss' ? 'Today would lose its trophy' : "Tighten today's target?"}
+            body={pendingChange?.kind === 'known-loss'
+              ? "This plan's Daily Target is already below the phone time used today. The change is allowed, but today's target cannot become eligible again."
+              : "Apple keeps exact live usage inside Screen Time. The new plan applies immediately and iPhone will reconcile today's activity with its tighter target. If that target has already been passed, today's trophy becomes ineligible and raising it later will not restore it."}
+            subject={pendingChange?.planId ? getPlanById(state, pendingChange.planId)?.name : 'No plan'}
+            confirmLabel="APPLY PLAN"
+            confirmColor="#A24351"
+            onCancel={() => setPendingChange(null)}
+            onConfirm={() => {
+              const planId = pendingChange?.planId ?? null;
+              setPendingChange(null);
+              void applyWithPermission(planId);
+            }}
+            embedded
+          />
+          {activationGate}
+        </>
+      )}
+    >
         <FocusSheetHeader
-          kicker={picker?.mode === 'today' ? "TODAY'S PLAN" : 'CHOOSE A RHYTHM'}
-          title={picker?.mode === 'today' ? "Today's Screen Time" : DAY_NAMES[day]}
+          kicker={picker?.mode === 'today' ? 'PROTECT TODAY' : 'CHOOSE A RHYTHM'}
+          title={picker?.mode === 'today' ? "Choose today's protection plan" : DAY_NAMES[day]}
           subtitle={picker?.mode === 'today'
-            ? 'Choose how you want to use and protect your phone today.'
+            ? 'One Phone Plan will guide and protect your time for the rest of today.'
             : `Choose how you want to use and protect your time on ${DAY_NAMES[day]}.`}
           onClose={onClose}
           large
@@ -277,27 +308,7 @@ function PlanPickerSheet({
             <FocusCheck checked={currentPlanId == null} size={24} accent={NO_PLAN_VISUAL.accent} />
           </TouchableOpacity>
         </ScrollView>
-      </SmoothBottomSheet>
-
-      <ConfirmModal
-        visible={pendingChange !== null}
-        icon={<Lock s={21} c="#A24351" w={2.2} />}
-        iconBg="#F8E7EA"
-        title={pendingChange?.kind === 'known-loss' ? 'Today would lose its trophy' : "Tighten today's target?"}
-        body={pendingChange?.kind === 'known-loss'
-          ? "This plan's Daily Target is already below the phone time used today. The change is allowed, but today's target cannot become eligible again."
-          : "Apple keeps exact live usage inside Screen Time. The new plan applies immediately and iPhone will reconcile today's activity with its tighter target. If that target has already been passed, today's trophy becomes ineligible and raising it later will not restore it."}
-        subject={pendingChange?.planId ? getPlanById(state, pendingChange.planId)?.name : 'No plan'}
-        confirmLabel="APPLY PLAN"
-        confirmColor="#A24351"
-        onCancel={() => setPendingChange(null)}
-        onConfirm={() => {
-          const planId = pendingChange?.planId ?? null;
-          setPendingChange(null);
-          void applyWithPermission(planId);
-        }}
-      />
-    </>
+    </SmoothBottomSheet>
   );
 }
 
@@ -574,12 +585,7 @@ export default function DayPlanHubView() {
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScreenTitleBar title="SCREEN TIME" showBack />
       <ScrollView contentContainerStyle={s.page} showsVerticalScrollIndicator={false}>
-        <Animated.View entering={enter(0)} style={s.introWrap}>
-          <Text style={s.intro}>Plan your phone the way you plan your day.</Text>
-        </Animated.View>
-
-        <Animated.View entering={enter(50)}>
-          <Text style={s.sectionLabel}>TODAY</Text>
+        <Animated.View entering={enter(0)}>
           <TodayPlanHero
             plan={todayPlan}
             currentSession={currentSession}
@@ -606,7 +612,6 @@ export default function DayPlanHubView() {
             <View style={s.weekRow}>
               {DAY_LETTERS.map((letter, day) => {
                 const plan = getPlanById(state, state.schedule[day]);
-                const isSession = plan?.kind === 'session';
                 const visual = plan ? planVisualFor(plan) : NO_PLAN_VISUAL;
                 return (
                   <TouchableOpacity
@@ -619,28 +624,34 @@ export default function DayPlanHubView() {
                   >
                     <View style={[
                       s.weekCircle,
-                      { borderColor: visual.border, backgroundColor: visual.accentSoft },
+                      plan
+                        ? { borderColor: visual.border, backgroundColor: visual.accentSoft }
+                        : { borderColor: '#E4DFD4', backgroundColor: '#FFFFFF' },
                       day === today && s.weekCircleToday,
                     ]}>
-                      <Text style={[s.weekLetter, { color: plan ? visual.ink : visual.accent }]}>{letter}</Text>
                       {!!plan && (
-                        <View style={s.weekSignal}>
-                          {isSession ? (
-                            <>
-                              <View style={[s.weekSignalPart, { backgroundColor: visual.accent }]} />
-                              <View style={[s.weekSignalPart, { backgroundColor: visual.accent }]} />
-                              <View style={[s.weekSignalPart, { backgroundColor: visual.accent }]} />
-                            </>
-                          ) : <View style={[s.weekSignalDaily, { backgroundColor: visual.accent }]} />}
-                        </View>
+                        <Svg width={44} height={44} style={StyleSheet.absoluteFill} pointerEvents="none">
+                          {[7, 18, 29, 40, 51].map(offset => (
+                            <Line
+                              key={offset}
+                              x1={offset}
+                              y1={-3}
+                              x2={offset - 50}
+                              y2={47}
+                              stroke={visual.accent}
+                              strokeOpacity={0.16}
+                              strokeWidth={1}
+                            />
+                          ))}
+                        </Svg>
                       )}
+                      <Text style={[s.weekLetter, { color: plan ? visual.ink : C.textMuted }]}>{letter}</Text>
                     </View>
-                    <Text style={[s.weekPlan, { color: visual.body }, !plan && s.weekPlanRest]} numberOfLines={1}>{plan?.name ?? 'No plan'}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
-            <Text style={s.weekNote}>Set a boundary for each day before scrolling decides where your time goes.</Text>
+            <Text style={s.weekNote}>Select a plan for each day of your week.</Text>
           </View>
         </Animated.View>
 
@@ -707,7 +718,6 @@ export default function DayPlanHubView() {
       <PlanPickerSheet
         picker={picker}
         onClose={() => setPicker(null)}
-        requestActivation={request}
       />
       <EssentialAppsSheet visible={essentialsOpen} onClose={() => setEssentialsOpen(false)} />
       <AlwaysBlockedSheet visible={alwaysBlockedOpen} onClose={() => setAlwaysBlockedOpen(false)} />
@@ -725,8 +735,6 @@ function formatTimeOfDaySafe(minutes: number) {
 
 const s = StyleSheet.create({
   page: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 90, gap: 20 },
-  introWrap: { paddingHorizontal: 28, alignItems: 'center' },
-  intro: { fontFamily: F.serifMediumItalic, fontSize: 16, lineHeight: 21, color: C.textSecondary, textAlign: 'center' },
   sectionLabel: { marginBottom: 8, marginLeft: 4, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted },
   sectionLabelNoMargin: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted },
   todayRestCard: { position: 'relative', minHeight: 190, borderRadius: 28, borderCurve: 'continuous', borderWidth: 1, overflow: 'hidden', padding: 20, boxShadow: '0 10px 28px rgba(71, 60, 44, 0.09)' },
@@ -741,14 +749,14 @@ const s = StyleSheet.create({
   todayRestBody: { marginTop: 7, fontFamily: F.serif, fontSize: 15, lineHeight: 20 },
   todayRestCta: { alignSelf: 'flex-start', marginTop: 15, minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
   todayRestCtaText: { fontFamily: F.sansSemiBold, fontSize: 10.5, letterSpacing: 0.2, color: '#FFFFFF' },
-  todayPlanCard: { position: 'relative', borderRadius: 28, borderCurve: 'continuous', borderWidth: 1, overflow: 'hidden', padding: 18, boxShadow: '0 10px 30px rgba(69, 58, 39, 0.10)' },
+  todayPlanCard: { position: 'relative', borderRadius: 28, borderCurve: 'continuous', borderWidth: 1, overflow: 'hidden', paddingHorizontal: 16, paddingTop: 15, paddingBottom: 13, boxShadow: '0 10px 30px rgba(69, 58, 39, 0.10)' },
   todayPlanTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   todayPlanHeading: { flex: 1, minWidth: 0 },
   todayPlanChange: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 999, borderWidth: 1, backgroundColor: 'rgba(255,255,255,0.68)', paddingHorizontal: 11, paddingVertical: 6 },
   todayPlanChangeText: { fontFamily: F.sansSemiBold, fontSize: 10.5 },
-  todayPlanName: { marginTop: 6, fontFamily: F.serifSemiBold, fontSize: 25, lineHeight: 28, letterSpacing: -0.35 },
+  todayPlanName: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 24, lineHeight: 27, letterSpacing: -0.35 },
   todayPlanStatus: { marginTop: 3, fontFamily: F.sansMedium, fontSize: 10.5, lineHeight: 15 },
-  todayValueRow: { marginTop: 15, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14 },
+  todayValueRow: { marginTop: 10, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14 },
   todayValueMain: { flexShrink: 1, minWidth: 0 },
   todayValueLine: { flexDirection: 'row', alignItems: 'baseline', minWidth: 0 },
   todayValueBig: { fontFamily: F.serifSemiBold, fontSize: 38, lineHeight: 41, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
@@ -756,26 +764,21 @@ const s = StyleSheet.create({
   todayValueCaption: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 10, lineHeight: 13.5 },
   todayValueSide: { alignItems: 'flex-end', paddingBottom: 2 },
   todayValueSideText: { fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 21, fontVariant: ['tabular-nums'] },
-  todayGauge: { marginTop: 13 },
-  todayFooterRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 11 },
+  todayGauge: { marginTop: 10 },
+  todayFooterRow: { marginTop: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 9 },
   todayFooterNote: { flexShrink: 1, fontFamily: F.sansMedium, fontSize: 9 },
   todayDetailLink: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   todayDetailLinkText: { fontFamily: F.sansSemiBold, fontSize: 11 },
-  permissionRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, backgroundColor: '#FFF1D5', paddingHorizontal: 11, paddingVertical: 9 },
+  permissionRow: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, backgroundColor: '#FFF1D5', paddingHorizontal: 11, paddingVertical: 8 },
   permissionText: { flex: 1, fontFamily: F.sansMedium, fontSize: 10, lineHeight: 14, color: '#8D5C1E' },
   permissionAction: { fontFamily: F.sansBold, fontSize: 10, color: '#8D5C1E' },
   weekBand: { borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: '#ECE7DC', backgroundColor: '#FEFDF9', paddingHorizontal: 5, paddingTop: 14, paddingBottom: 13 },
   weekRow: { flexDirection: 'row' },
-  weekCell: { flex: 1, minWidth: 0, alignItems: 'center', gap: 1 },
-  weekCircle: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: '#E7E2D8', backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center' },
+  weekCell: { flex: 1, minWidth: 0, alignItems: 'center' },
+  weekCircle: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   weekCircleToday: { borderWidth: 2, borderColor: C.gold },
-  weekLetter: { transform: [{ translateY: -1.5 }], fontFamily: F.sansBold, fontSize: 12, color: C.textMuted },
-  weekSignal: { position: 'absolute', bottom: 6, height: 3, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
-  weekSignalPart: { width: 4, height: 3, borderRadius: 2, backgroundColor: '#618273' },
-  weekSignalDaily: { width: 14, height: 3, borderRadius: 2, backgroundColor: C.gold },
-  weekPlan: { maxWidth: 47, marginTop: 4, fontFamily: F.serifMedium, fontSize: 10.5, lineHeight: 13, color: C.textSecondary, textAlign: 'center' },
-  weekPlanRest: { fontFamily: F.serifSemiBold, fontSize: 11, color: C.textSecondary },
-  weekNote: { marginTop: 13, paddingHorizontal: 22, textAlign: 'center', fontFamily: F.serifItalic, fontSize: 13.5, lineHeight: 18, color: C.textSecondary },
+  weekLetter: { fontFamily: F.sansBold, fontSize: 13 },
+  weekNote: { marginTop: 12, paddingHorizontal: 22, textAlign: 'center', fontFamily: F.sansMedium, fontSize: 10.5, lineHeight: 14.5, color: C.textMuted },
   defaultsList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
   defaultsRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 3 },
   defaultsIcon: { width: 34, height: 34, borderRadius: 11, borderCurve: 'continuous', backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },

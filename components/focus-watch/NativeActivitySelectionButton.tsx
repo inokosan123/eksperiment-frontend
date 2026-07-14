@@ -33,11 +33,13 @@ export default function NativeActivitySelectionButton({
   title,
   label = 'Choose iPhone apps',
   onSelected,
+  prominent = false,
 }: {
   selectionId: string;
   title: string;
   label?: string;
   onSelected?: (summary: ActivitySelectionSummary) => void;
+  prominent?: boolean;
 }) {
   const nativeAvailable = isNativeFocusAvailable();
   const summary = useNativeActivitySelectionSummary(selectionId);
@@ -63,23 +65,23 @@ export default function NativeActivitySelectionButton({
   return (
     <>
       <TouchableOpacity
-        style={[s.button, !nativeAvailable && s.buttonPreview]}
+        style={[s.button, prominent && s.buttonProminent, !nativeAvailable && s.buttonPreview]}
         onPress={open}
         disabled={!nativeAvailable || busy}
         activeOpacity={0.76}
       >
-        <View style={s.icon}>
-          <Smartphone s={17} c={nativeAvailable ? C.goldDark : C.textMuted} w={1.9} />
+        <View style={[s.icon, prominent && s.iconProminent]}>
+          <Smartphone s={prominent ? 20 : 17} c={nativeAvailable ? C.goldDark : C.textMuted} w={1.9} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={s.label}>{busy ? 'Opening Apple picker...' : label}</Text>
-          <Text style={s.meta} numberOfLines={1}>
+          <Text style={[s.label, prominent && s.labelProminent]}>{busy ? 'Opening Apple picker...' : label}</Text>
+          <Text style={[s.meta, prominent && s.metaProminent]} numberOfLines={1}>
             {nativeAvailable ? summaryText(summary) : 'Available in the Anasta development build'}
           </Text>
         </View>
-        {nativeAvailable && <ChevronRight s={16} c={C.textMuted} w={2} />}
+        {nativeAvailable && <ChevronRight s={prominent ? 18 : 16} c={prominent ? C.goldDark : C.textMuted} w={2} />}
       </TouchableOpacity>
-      {!!summary?.notice && <Text style={s.notice}>{summary.notice}</Text>}
+      {!!summary?.notice && <Text style={[s.notice, prominent && s.noticeProminent]}>{summary.notice}</Text>}
       {gate}
     </>
   );
@@ -99,9 +101,21 @@ const s = StyleSheet.create({
     paddingHorizontal: 11,
     paddingVertical: 8,
   },
+  buttonProminent: {
+    minHeight: 72,
+    gap: 12,
+    borderRadius: 20,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    boxShadow: '0 7px 18px rgba(84, 65, 26, 0.08)',
+  },
   buttonPreview: { borderColor: C.border, backgroundColor: '#F2F1ED' },
   icon: { width: 34, height: 34, borderRadius: 11, borderCurve: 'continuous', backgroundColor: 'rgba(255,255,255,0.76)', alignItems: 'center', justifyContent: 'center' },
+  iconProminent: { width: 42, height: 42, borderRadius: 14 },
   label: { fontFamily: F.serifMedium, fontSize: 15.5, color: C.text },
+  labelProminent: { fontFamily: F.serifSemiBold, fontSize: 17.5, lineHeight: 21 },
   meta: { marginTop: 2, fontFamily: F.sans, fontSize: 10, color: C.textMuted },
+  metaProminent: { marginTop: 3, fontSize: 12, lineHeight: 16, color: C.textSecondary },
   notice: { marginTop: 6, paddingHorizontal: 4, fontFamily: F.sansMedium, fontSize: 10, lineHeight: 14.5, color: '#91404C' },
+  noticeProminent: { marginTop: 8, fontSize: 12, lineHeight: 17 },
 });

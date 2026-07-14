@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { CheckSmall, Lock, Plus, X } from '@/components/icons/Icons';
+import { Lock, Plus, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import { ESSENTIAL_APP_OPTIONS, type EssentialAppOption } from './focusContent';
@@ -75,225 +76,297 @@ export default function EssentialAppsSheet({
     );
   };
 
-  const coreCandidates = optionalApps.filter(app => !selectedIds.has(app.id));
+  const coreCandidates = useMemo(
+    () => ESSENTIAL_APP_OPTIONS
+      .filter(app => !coreIds.has(app.id) && !selectedIds.has(app.id))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [coreIds, selectedIds]
+  );
+
+  const closeSheet = () => {
+    setQuery('');
+    setCorePickerOpen(false);
+    setPendingCoreId(null);
+    onClose();
+  };
 
   return (
-    <>
-      <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheet} keyboardAware>
-        <FocusSheetHeader
-          kicker="GLOBAL SAFETY ALLOWLIST"
-          title="Essential Apps"
-          subtitle="Essentials stay available through ordinary plan limits. Their use still counts toward your Daily Target."
-          onClose={onClose}
+    <SmoothBottomSheet
+      visible={visible}
+      onClose={closeSheet}
+      sheetStyle={s.sheet}
+      keyboardAware
+      overlayChildren={(
+        <ConfirmModal
+          visible={pendingCoreId !== null}
+          icon={<Lock s={21} c={C.goldDark} w={2.2} />}
+          iconBg={C.goldLight}
+          title="Make this app permanent?"
+          body="Permanent Essentials cannot be switched off through ordinary settings. Use this only for banking, authentication, or account access."
+          subject={pendingCoreId ? appLabel(pendingCoreId) : undefined}
+          confirmLabel="MAKE PERMANENT"
+          onCancel={() => setPendingCoreId(null)}
+          onConfirm={() => {
+            if (pendingCoreId) designateCoreEssentialApp(pendingCoreId);
+            setPendingCoreId(null);
+          }}
+          embedded
         />
+      )}
+    >
+      <FocusSheetHeader
+        kicker="ALWAYS AVAILABLE"
+        title="Essential Apps"
+        subtitle="Choose the apps you must always be able to reach. They stay available after your tolerance ends, while their use still counts toward your Daily Target."
+        onClose={closeSheet}
+        large
+      />
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={s.scrollContent}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={s.scrollContent}
+      >
+        <LinearGradient
+          colors={['#FFF5D9', '#FFFDF6']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={s.coreCard}
         >
-          <View style={s.sectionHeader}>
-            <View>
-              <Text style={s.sectionLabel}>CORE ESSENTIALS</Text>
-              <Text style={s.sectionNote}>Critical iPhone access stays available and locked.</Text>
+          <View pointerEvents="none" style={s.coreGlow} />
+          <View style={s.coreCardHeader}>
+            <View style={s.coreIcon}><Lock s={20} c={C.goldDark} w={2.2} /></View>
+            <View style={s.coreCardCopy}>
+              <Text style={s.coreEyebrow}>CORE ACCESS</Text>
+              <Text style={s.coreTitle}>Always within reach</Text>
             </View>
-            <Lock s={15} c={C.goldDark} w={2.2} />
+            <View style={s.alwaysOnPill}><Text style={s.alwaysOnText}>ALWAYS ON</Text></View>
           </View>
+          <Text style={s.coreBody}>
+            Phone, Messages, FaceTime and Maps stay available for safety. iOS may also keep critical system tools reachable.
+          </Text>
           <View style={s.coreGrid}>
             {coreApps.map(app => (
               <View key={app.id} style={s.coreChip}>
-                <Lock s={10} c={C.goldDark} w={2.2} />
                 <Text style={s.coreChipText}>{app.name}</Text>
               </View>
             ))}
           </View>
-          <Text style={s.systemAccessNote}>
-            iOS also keeps certain system tools available by design. They may remain reachable even when they are not selected in Anasta.
-          </Text>
+        </LinearGradient>
 
+        <View style={s.permanentSection}>
+          <Text style={s.permanentTitle}>Need another app always available?</Text>
+          <Text style={s.permanentBody}>
+            Reserve permanent access for banking, authentication, payments, or account recovery.
+          </Text>
           {nativeAvailable ? (
             <NativeActivitySelectionButton
               selectionId="core.designated"
-              title="Add Permanent Core Apps"
-              label="Add Camera, Wallet, financial, or access apps"
+              title="Choose Permanent Essentials"
+              label="Add a permanent essential"
+              prominent
             />
-          ) : <TouchableOpacity
-            style={s.financialRow}
-            activeOpacity={0.76}
-            onPress={() => setCorePickerOpen(current => !current)}
-          >
-            <View style={s.plusIcon}><Plus s={13} c={C.goldDark} w={2.5} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.financialTitle}>Add a financial or access app</Text>
-              <Text style={s.financialBody}>Banking, payments, authenticators, or password managers.</Text>
-            </View>
-          </TouchableOpacity>}
-
-          {!nativeAvailable && corePickerOpen && (
-            <Animated.View entering={FadeIn.duration(200)} style={s.corePicker}>
-              <Text style={s.coreWarning}>Core status is permanent in ordinary settings. Choose only an app you need for money or account access.</Text>
-              {coreCandidates.slice(0, 12).map(app => {
-                const blocked = blockedIds.has(app.id);
-                return (
-                  <TouchableOpacity
-                    key={app.id}
-                    style={[s.coreCandidateRow, blocked && s.rowDisabled]}
-                    disabled={blocked}
-                    onPress={() => setPendingCoreId(app.id)}
-                    activeOpacity={0.72}
-                  >
-                    <Text style={s.coreCandidateName}>{app.name}</Text>
-                    <Text style={s.coreCandidateAction}>{blocked ? 'Always Blocked' : 'Make Core'}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </Animated.View>
-          )}
-
-          <View style={s.sectionHeader}>
-            <View>
-              <Text style={s.sectionLabel}>OPTIONAL ESSENTIALS</Text>
-              <Text style={s.sectionNote}>
-                {nativeAvailable ? 'Choose your starter set privately in Apple\'s picker.' : `${selectedIds.size} currently available.`}
+          ) : (
+            <TouchableOpacity
+              style={s.permanentButton}
+              activeOpacity={0.76}
+              onPress={() => setCorePickerOpen(current => !current)}
+            >
+              <View style={s.plusIcon}><Plus s={15} c={C.goldDark} w={2.5} /></View>
+              <Text style={s.permanentButtonText}>
+                {corePickerOpen ? 'Hide permanent app choices' : 'Choose a permanent essential'}
               </Text>
-            </View>
-          </View>
-
-          <NativeActivitySelectionButton
-            selectionId="global.essentials"
-            title="Choose Optional Essentials"
-            label="Choose Optional Essentials on iPhone"
-          />
-
-          {!nativeAvailable && selectedIds.size > 0 && (
-            <View style={s.selectedWrap}>
-              {state.optionalEssentialAppIds.map(appId => (
-                <TouchableOpacity
-                  key={appId}
-                  style={s.selectedChip}
-                  onPress={() => toggleOptional(appId)}
-                  haptic="selection"
-                >
-                  <CheckSmall s={11} c="#fff" w={2.8} />
-                  <Text style={s.selectedChipText}>{appLabel(appId)}</Text>
-                  <X s={10} c="rgba(255,255,255,0.8)" w={2.2} />
-                </TouchableOpacity>
-              ))}
-            </View>
+            </TouchableOpacity>
           )}
+        </View>
 
-          {!nativeAvailable && <View style={s.searchSurface}>
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Find an app"
-              placeholderTextColor={C.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={s.searchInput}
-            />
-            {query.length > 0 && (
-              <TouchableOpacity onPress={() => setQuery('')} hitSlop={10}>
-                <X s={14} c={C.textMuted} w={2.2} />
-              </TouchableOpacity>
-            )}
-          </View>}
-
-          {!nativeAvailable && <View style={s.appList}>
-            {optionalApps.map((app, index) => {
-              const previous = optionalApps[index - 1];
-              const showGroup = index === 0 || previous.group !== app.group;
-              const selected = selectedIds.has(app.id);
+        {!nativeAvailable && corePickerOpen && (
+          <Animated.View entering={FadeIn.duration(200)} style={s.corePicker}>
+            {coreCandidates.slice(0, 12).map(app => {
               const blocked = blockedIds.has(app.id);
               return (
-                <Animated.View key={app.id} layout={LinearTransition.duration(180)}>
-                  {showGroup && <Text style={s.groupLabel}>{app.group.toUpperCase()}</Text>}
-                  <TouchableOpacity
-                    style={[s.appRow, blocked && s.rowDisabled]}
-                    onPress={() => toggleOptional(app.id)}
-                    disabled={blocked}
-                    haptic="selection"
-                    activeOpacity={0.72}
-                  >
-                    <View style={[s.monogram, selected && s.monogramOn]}>
-                      <Text style={[s.monogramText, selected && s.monogramTextOn]}>{app.name[0]}</Text>
-                    </View>
-                    <Text style={s.appName}>{app.name}</Text>
-                    {blocked ? (
-                      <View style={s.blockedTag}>
-                        <Lock s={9} c="#A24351" w={2.2} />
-                        <Text style={s.blockedText}>Always Blocked</Text>
-                      </View>
-                    ) : (
-                      <FocusCheck checked={selected} />
-                    )}
-                  </TouchableOpacity>
-                </Animated.View>
+                <TouchableOpacity
+                  key={app.id}
+                  style={[s.coreCandidateRow, blocked && s.rowDisabled]}
+                  disabled={blocked}
+                  onPress={() => setPendingCoreId(app.id)}
+                  activeOpacity={0.72}
+                >
+                  <Text style={s.coreCandidateName}>{app.name}</Text>
+                  <Text style={[s.coreCandidateAction, blocked && s.coreCandidateBlocked]}>
+                    {blocked ? 'Always Blocked' : 'Make permanent'}
+                  </Text>
+                </TouchableOpacity>
               );
             })}
-          </View>}
-        </ScrollView>
-      </SmoothBottomSheet>
+          </Animated.View>
+        )}
 
-      <ConfirmModal
-        visible={pendingCoreId !== null}
-        icon={<Lock s={21} c={C.goldDark} w={2.2} />}
-        iconBg={C.goldLight}
-        title="Make this app Core?"
-        body="Core Essentials cannot be switched off through ordinary settings. Use this only for money, authentication, or account access."
-        subject={pendingCoreId ? appLabel(pendingCoreId) : undefined}
-        confirmLabel="MAKE CORE"
-        onCancel={() => setPendingCoreId(null)}
-        onConfirm={() => {
-          if (pendingCoreId) designateCoreEssentialApp(pendingCoreId);
-          setPendingCoreId(null);
-        }}
-      />
-    </>
+        <View style={s.sectionDivider} />
+
+        <View style={s.optionalIntro}>
+          <Text style={s.sectionLabel}>YOUR ESSENTIALS</Text>
+          <Text style={s.sectionTitle}>Choose what stays reachable</Text>
+          <Text style={s.sectionBody}>
+            Keep this list short: only apps you may genuinely need after the rest of the phone closes.
+          </Text>
+        </View>
+
+        {nativeAvailable ? (
+          <NativeActivitySelectionButton
+            selectionId="global.essentials"
+            title="Choose Essential Apps"
+            label="Choose essential apps"
+            prominent
+          />
+        ) : (
+          <>
+            <View style={s.searchSurface}>
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search apps"
+                placeholderTextColor={C.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={s.searchInput}
+              />
+              {query.length > 0 && (
+                <TouchableOpacity onPress={() => setQuery('')} hitSlop={10}>
+                  <X s={16} c={C.textMuted} w={2.2} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <View style={s.appList}>
+              {optionalApps.map((app, index) => {
+                const previous = optionalApps[index - 1];
+                const showGroup = index === 0 || previous.group !== app.group;
+                const selected = selectedIds.has(app.id);
+                const blocked = blockedIds.has(app.id);
+                return (
+                  <Animated.View key={app.id} layout={LinearTransition.duration(180)}>
+                    {showGroup && <Text style={s.groupLabel}>{app.group.toUpperCase()}</Text>}
+                    <TouchableOpacity
+                      style={[s.appRow, selected && s.appRowSelected, blocked && s.rowDisabled]}
+                      onPress={() => toggleOptional(app.id)}
+                      disabled={blocked}
+                      haptic="selection"
+                      activeOpacity={0.72}
+                    >
+                      <View style={[s.monogram, selected && s.monogramOn]}>
+                        <Text style={[s.monogramText, selected && s.monogramTextOn]}>{app.name[0]}</Text>
+                      </View>
+                      <Text style={s.appName}>{app.name}</Text>
+                      {blocked ? (
+                        <View style={s.blockedTag}>
+                          <Lock s={10} c="#A24351" w={2.2} />
+                          <Text style={s.blockedText}>Always Blocked</Text>
+                        </View>
+                      ) : (
+                        <FocusCheck checked={selected} size={24} />
+                      )}
+                    </TouchableOpacity>
+                  </Animated.View>
+                );
+              })}
+            </View>
+          </>
+        )}
+      </ScrollView>
+    </SmoothBottomSheet>
   );
 }
 
 const s = StyleSheet.create({
-  sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: 24, maxHeight: '94%' },
-  handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#E2E0DA', marginTop: 10 },
-  headerRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  eyebrow: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.gold },
-  title: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 27, color: C.text },
-  closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F0EFEA', alignItems: 'center', justifyContent: 'center' },
-  subtitle: { marginTop: 5, fontFamily: F.serifItalic, fontSize: 14.5, lineHeight: 20, color: C.textSecondary },
-  scrollContent: { paddingTop: 18, paddingBottom: 28, gap: 14 },
-  sectionHeader: { marginTop: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 3 },
-  sectionLabel: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2, color: C.textMuted },
-  sectionNote: { marginTop: 2, fontFamily: F.sans, fontSize: 10, color: C.textMuted },
-  coreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  coreChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, borderWidth: 1, borderColor: '#E6D7B5', backgroundColor: '#FFF9EB', paddingHorizontal: 9, paddingVertical: 6 },
-  coreChipText: { fontFamily: F.sansSemiBold, fontSize: 9.5, color: C.goldDark },
-  systemAccessNote: { fontFamily: F.sans, fontSize: 9.5, lineHeight: 14, color: C.textMuted, paddingHorizontal: 3 },
-  financialRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 11, borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border, paddingHorizontal: 3 },
-  plusIcon: { width: 31, height: 31, borderRadius: 11, borderCurve: 'continuous', backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
-  financialTitle: { fontFamily: F.serifMedium, fontSize: 15.5, color: C.text },
-  financialBody: { marginTop: 2, fontFamily: F.sans, fontSize: 10, color: C.textSecondary },
-  corePicker: { borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E5D9BD', backgroundColor: '#FFFDF7', padding: 11 },
-  coreWarning: { marginBottom: 7, fontFamily: F.sans, fontSize: 9.5, lineHeight: 14, color: C.textSecondary },
-  coreCandidateRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border },
-  coreCandidateName: { flex: 1, fontFamily: F.sansMedium, fontSize: 11, color: C.text },
-  coreCandidateAction: { fontFamily: F.sansSemiBold, fontSize: 9, color: C.goldDark },
-  selectedWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  selectedChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, backgroundColor: C.gold, paddingHorizontal: 9, paddingVertical: 6 },
-  selectedChipText: { fontFamily: F.sansSemiBold, fontSize: 9.5, color: '#fff' },
-  searchSurface: { height: 44, flexDirection: 'row', alignItems: 'center', borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 13 },
-  searchInput: { flex: 1, fontFamily: F.sansMedium, fontSize: 12.5, color: C.text },
-  appList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
-  groupLabel: { marginTop: 13, marginBottom: 3, paddingHorizontal: 3, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.7, color: C.textMuted },
-  appRow: { minHeight: 49, flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border, paddingHorizontal: 3 },
-  rowDisabled: { opacity: 0.52 },
-  monogram: { width: 30, height: 30, borderRadius: 10, backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
-  monogramOn: { backgroundColor: C.goldLight },
-  monogramText: { fontFamily: F.sansBold, fontSize: 12, color: C.textMuted },
+  sheet: {
+    backgroundColor: C.bg,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingHorizontal: 18,
+    paddingBottom: 24,
+    maxHeight: '94%',
+  },
+  scrollContent: { paddingTop: 20, paddingBottom: 32, gap: 20 },
+  coreCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 24,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#E7D4A7',
+    padding: 16,
+    boxShadow: '0 9px 24px rgba(77, 61, 27, 0.09)',
+  },
+  coreGlow: {
+    position: 'absolute',
+    right: -44,
+    top: -58,
+    width: 172,
+    height: 172,
+    borderRadius: 86,
+    backgroundColor: 'rgba(218, 174, 78, 0.15)',
+  },
+  coreCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  coreIcon: {
+    flexShrink: 0,
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  coreCardCopy: { flex: 1, minWidth: 0 },
+  coreEyebrow: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, color: C.goldDark },
+  coreTitle: { marginTop: 2, fontFamily: F.serifSemiBold, fontSize: 20.5, lineHeight: 24, color: '#3D3322' },
+  alwaysOnPill: { flexShrink: 0, borderRadius: 999, backgroundColor: C.gold, paddingHorizontal: 8, paddingVertical: 5 },
+  alwaysOnText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1, color: '#FFFFFF' },
+  coreBody: { marginTop: 13, fontFamily: F.sans, fontSize: 14, lineHeight: 20, color: '#675B45' },
+  coreGrid: { marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  coreChip: { borderRadius: 999, borderWidth: 1, borderColor: 'rgba(180,142,60,0.24)', backgroundColor: 'rgba(255,255,255,0.68)', paddingHorizontal: 11, paddingVertical: 7 },
+  coreChipText: { fontFamily: F.sansSemiBold, fontSize: 12, color: C.goldDark },
+  permanentSection: { gap: 7, paddingHorizontal: 2 },
+  permanentTitle: { fontFamily: F.serifSemiBold, fontSize: 18.5, lineHeight: 22, color: C.text },
+  permanentBody: { fontFamily: F.sans, fontSize: 13.5, lineHeight: 19, color: C.textSecondary },
+  permanentButton: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#E5D7B7',
+    backgroundColor: '#FFF9EB',
+    paddingHorizontal: 12,
+    marginTop: 4,
+  },
+  plusIcon: { width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  permanentButtonText: { flex: 1, fontFamily: F.serifSemiBold, fontSize: 16.5, color: C.text },
+  corePicker: { overflow: 'hidden', borderRadius: 19, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E5D9BD', backgroundColor: '#FFFDF7', paddingHorizontal: 13 },
+  coreCandidateRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border },
+  coreCandidateName: { flex: 1, fontFamily: F.serifMedium, fontSize: 15.5, color: C.text },
+  coreCandidateAction: { fontFamily: F.sansSemiBold, fontSize: 11, color: C.goldDark },
+  coreCandidateBlocked: { color: '#A24351' },
+  sectionDivider: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginVertical: 2 },
+  optionalIntro: { gap: 4, paddingHorizontal: 2 },
+  sectionLabel: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.9, color: C.goldDark },
+  sectionTitle: { fontFamily: F.serifSemiBold, fontSize: 22, lineHeight: 26, color: C.text },
+  sectionBody: { fontFamily: F.sans, fontSize: 14, lineHeight: 20, color: C.textSecondary },
+  searchSurface: { height: 50, flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 14 },
+  searchInput: { flex: 1, fontFamily: F.sansMedium, fontSize: 14, color: C.text },
+  appList: { paddingBottom: 4 },
+  groupLabel: { marginTop: 14, marginBottom: 7, paddingHorizontal: 4, fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.7, color: C.textMuted },
+  appRow: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 17, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 11, marginBottom: 7 },
+  appRowSelected: { borderColor: '#D9BE7C', backgroundColor: '#FFF9EB' },
+  rowDisabled: { opacity: 0.56 },
+  monogram: { width: 38, height: 38, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
+  monogramOn: { backgroundColor: '#F1E3BF' },
+  monogramText: { fontFamily: F.sansBold, fontSize: 14, color: C.textMuted },
   monogramTextOn: { color: C.goldDark },
-  appName: { flex: 1, fontFamily: F.serifMedium, fontSize: 15, color: C.text },
-  checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: '#D6D3D1', alignItems: 'center', justifyContent: 'center', backgroundColor: C.surface },
-  checkboxOn: { borderColor: C.gold, backgroundColor: C.gold },
-  blockedTag: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, backgroundColor: '#F8E7EA', paddingHorizontal: 7, paddingVertical: 5 },
-  blockedText: { fontFamily: F.sansSemiBold, fontSize: 8, color: '#A24351' },
+  appName: { flex: 1, fontFamily: F.serifMedium, fontSize: 16.5, color: C.text },
+  blockedTag: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, backgroundColor: '#F8E7EA', paddingHorizontal: 8, paddingVertical: 6 },
+  blockedText: { fontFamily: F.sansSemiBold, fontSize: 9.5, color: '#A24351' },
 });

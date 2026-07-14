@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
@@ -41,22 +42,13 @@ const COOLDOWNS: { id: LockCooldown; label: string }[] = [
   { id: 'morning', label: 'Until morning' },
 ];
 
-function ModeTag({ mode }: { mode: PackMode }) {
-  return (
-    <View style={[s.modeTag, mode === 'on' && s.modeTagOn, mode === 'never' && s.modeTagNever]}>
-      {mode === 'never' && <Lock s={9} c="#A24351" w={2.2} />}
-      <Text style={[s.modeTagText, mode === 'on' && s.modeTagTextOn, mode === 'never' && s.modeTagTextNever]}>
-        {mode === 'off' ? 'OFF' : mode === 'on' ? 'ON' : 'NEVER'}
-      </Text>
-    </View>
-  );
-}
-
 function PackRow({
   name,
   detail,
   domains,
   mode,
+  icon,
+  iconBg,
   onToggle,
   onNever,
   onAddDomain,
@@ -67,6 +59,8 @@ function PackRow({
   detail: string;
   domains: string[];
   mode: PackMode;
+  icon?: ReactNode;
+  iconBg?: string;
   onToggle: () => void;
   onNever: () => void;
   onAddDomain?: (domain: string) => void;
@@ -83,23 +77,41 @@ function PackRow({
   };
 
   return (
-    <Animated.View layout={LinearTransition.duration(200)}>
+    <Animated.View
+      layout={LinearTransition.duration(200)}
+      style={[s.packCard, enabled && s.packCardOn, mode === 'never' && s.packCardNever]}
+    >
       <View style={s.packRow}>
         <TouchableOpacity style={s.packMain} onPress={() => setExpanded(current => !current)} activeOpacity={0.72}>
-          <View style={[s.packIcon, enabled && s.packIconOn, mode === 'never' && s.packIconNever]}>
-            {mode === 'never' ? <Lock s={15} c="#A24351" w={2.2} /> : <Globe s={16} c={enabled ? '#2D7967' : C.textMuted} w={2} />}
+          <View style={[s.packIcon, iconBg ? { backgroundColor: iconBg } : null, mode === 'never' && s.packIconNever]}>
+            {mode === 'never' ? <Lock s={18} c="#A24351" w={2.2} /> : icon ?? <Globe s={18} c={enabled ? '#2D7967' : C.textMuted} w={2} />}
           </View>
           <View style={{ flex: 1 }}>
-            <View style={s.packTitleRow}><Text style={s.packName}>{name}</Text><ModeTag mode={mode} /></View>
-            <Text style={s.packDetail}>{enabled ? `${domains.length} domains in this pack` : detail}</Text>
+            <View style={s.packTitleRow}>
+              <Text style={s.packName}>{name}</Text>
+              {mode === 'never' && (
+                <View style={s.neverTag}>
+                  <Lock s={9} c="#A24351" w={2.2} />
+                  <Text style={s.neverTagText}>NEVER ALLOWED</Text>
+                </View>
+              )}
+            </View>
+            <Text style={[s.packDetail, enabled && s.packDetailOn, mode === 'never' && s.packDetailNever]}>
+              {mode === 'never'
+                ? `${domains.length} domains stay locked`
+                : enabled
+                  ? `${domains.length} domains blocked`
+                  : detail}
+            </Text>
           </View>
-          <View style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}><ChevronRight s={15} c={C.textMuted} w={2} /></View>
+          <View style={[s.packChevron, expanded && s.packChevronOpen]}><ChevronRight s={17} c={C.textMuted} w={2} /></View>
         </TouchableOpacity>
         <FocusSwitch value={enabled} onToggle={mode === 'never' ? onNever : onToggle} />
       </View>
 
       {expanded && (
         <Animated.View entering={FadeIn.duration(180)} style={s.packBody}>
+          <Text style={s.domainListLabel}>BLOCKED DOMAINS</Text>
           <View style={s.domainChips}>
             {domains.slice(0, 10).map(domain => onRemoveDomain && domains.length > 1 ? (
               <TouchableOpacity
@@ -114,7 +126,7 @@ function PackRow({
             ) : (
               <View key={domain} style={s.domainChip}><Text style={s.domainChipText}>{domain}</Text></View>
             ))}
-            {domains.length > 10 && <Text style={s.moreDomains}>+{domains.length - 10} more</Text>}
+            {domains.length > 10 && <Text style={s.moreDomains}>+{domains.length - 10} more domains</Text>}
           </View>
           {onAddDomain && (
             <View style={s.inlineInputRow}>
@@ -136,8 +148,8 @@ function PackRow({
           )}
           <View style={s.packActions}>
             <TouchableOpacity style={[s.neverButton, mode === 'never' && s.neverButtonOn]} onPress={onNever}>
-              <Lock s={11} c="#A24351" w={2.2} />
-              <Text style={s.neverButtonText}>{mode === 'never' ? 'Request unlock' : 'Make Never Allowed'}</Text>
+              <Lock s={13} c="#A24351" w={2.2} />
+              <Text style={s.neverButtonText}>{mode === 'never' ? 'Request unlock' : 'Never allow'}</Text>
             </TouchableOpacity>
             {onRemove && (
               <TouchableOpacity style={s.removeButton} onPress={onRemove}><Trash2 s={12} c={C.textMuted} w={2} /><Text style={s.removeButtonText}>Remove pack</Text></TouchableOpacity>

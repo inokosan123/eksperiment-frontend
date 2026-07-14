@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { Image, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -7,9 +7,10 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { Trophy } from '@/components/icons/Icons';
 import { F } from '@/constants/tokens';
 import { formatMinutesShort } from './dayPlanStore';
+
+const TROPHY_EMBLEM = require('@/assets/animations/challenge-trophy-preview.png');
 
 // The Screen Time macro instrument: one bar that holds the whole day — the
 // goal span, the tolerance span after it, and the essentials-only cap at the
@@ -120,15 +121,13 @@ export default function DayGauge({
           <View style={[s.goalTick, { left: goalPx - 0.75, backgroundColor: accent }]} />
           <View style={[s.markerAnchor, { left: goalAnchor }]}>
             <View style={s.goalLabelRow}>
-              <Trophy s={11} c={accent} w={2.2} />
+              <Image source={TROPHY_EMBLEM} style={s.goalTrophy} resizeMode="contain" />
               <Text style={[s.goalLabelText, { color: labelColor }]}>GOAL</Text>
             </View>
           </View>
           {toleranceSpan > 0 && (
             <View style={[s.markerAnchor, { left: toleranceAnchor }]}>
-              <View style={[s.toleranceTag, { borderColor: `${GAUGE_TOLERANCE_COLOR}55` }]}>
-                <Text style={s.toleranceTagText}>+{formatMinutesShort(toleranceSpan)}</Text>
-              </View>
+              <Text style={s.toleranceText}>+{formatMinutesShort(toleranceSpan)}</Text>
             </View>
           )}
           <View style={[s.markerAnchor, { left: trackWidth - capWidth / 2 }]}>
@@ -189,24 +188,22 @@ const s = StyleSheet.create({
   goalLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3.5,
+    gap: 3,
+  },
+  goalTrophy: {
+    width: 15,
+    height: 15,
+    marginTop: -1,
   },
   goalLabelText: {
     fontFamily: F.sansBold,
     fontSize: 8,
     letterSpacing: 1.1,
   },
-  toleranceTag: {
-    borderRadius: 999,
-    borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.72)',
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-  },
-  toleranceTagText: {
+  toleranceText: {
     fontFamily: F.sansBold,
-    fontSize: 8,
-    letterSpacing: 0.3,
+    fontSize: 8.5,
+    letterSpacing: 0.4,
     color: GAUGE_TOLERANCE_COLOR,
     fontVariant: ['tabular-nums'],
   },
