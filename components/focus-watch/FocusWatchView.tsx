@@ -444,7 +444,11 @@ export default function FocusWatchView() {
             <View style={s.progressHeroRow}>
               <View style={s.progressCopy}>
                 <Text style={s.progressValue}>{state.streak.current}</Text>
-                <Text style={s.progressUnitCaps}>DAY STREAK</Text>
+                <View style={s.progressUnitRow}>
+                  <View style={s.progressUnitRule} />
+                  <Text style={s.progressUnitCaps}>DAY STREAK</Text>
+                  <View style={s.progressUnitRule} />
+                </View>
                 <Text style={s.progressHeadline} numberOfLines={2}>
                   {liveStatus === 'broken'
                     ? 'Today’s trophy is resting.'
@@ -490,12 +494,7 @@ export default function FocusWatchView() {
               </View>
               <View style={s.progressStatDivider} />
               <View style={s.progressStat}>
-                <Text style={s.progressStatLabel}>TROPHIES</Text>
-                <Text style={s.progressStatValue}>{state.streak.trophies}</Text>
-              </View>
-              <View style={s.progressStatDivider} />
-              <View style={s.progressStat}>
-                <Text style={s.progressStatLabel}>DAILY TARGET</Text>
+                <Text style={s.progressStatLabel}>TODAY’S TARGET</Text>
                 <Text style={s.progressStatValue}>{targetMinutes != null ? formatMinutesShort(targetMinutes) : 'None today'}</Text>
               </View>
             </View>
@@ -798,9 +797,11 @@ const s = StyleSheet.create({
   progressKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.goldDark },
   progressHeroRow: { marginTop: 13, flexDirection: 'row', alignItems: 'center', gap: 16, paddingRight: 12 },
   progressCopy: { flex: 1, minWidth: 0 },
-  progressValue: { fontFamily: F.serifSemiBold, fontSize: 48, lineHeight: 52, letterSpacing: -0.6, color: '#3D3322', fontVariant: ['tabular-nums'] },
-  progressUnitCaps: { marginTop: -2, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.2, color: C.goldDark },
-  progressHeadline: { marginTop: 6, fontFamily: F.serif, fontSize: 14.5, lineHeight: 19, color: C.textSecondary },
+  progressValue: { fontFamily: F.serifSemiBold, fontSize: 52, lineHeight: 55, letterSpacing: -0.7, color: '#3D3322', fontVariant: ['tabular-nums'] },
+  progressUnitRow: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7 },
+  progressUnitRule: { width: 14, height: 1, borderRadius: 1, backgroundColor: 'rgba(169,134,63,0.45)' },
+  progressUnitCaps: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.2, color: C.goldDark },
+  progressHeadline: { marginTop: 7, fontFamily: F.serif, fontSize: 14.5, lineHeight: 19, color: C.textSecondary },
   weekBand: {
     marginTop: 14,
     paddingVertical: 12,
@@ -845,11 +846,11 @@ const s = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: C.gold,
   },
-  progressStatsRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center' },
-  progressStat: { flex: 1, minWidth: 0, paddingHorizontal: 4 },
-  progressStatLabel: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.2, color: '#A9863F' },
-  progressStatValue: { marginTop: 3, fontFamily: F.serifSemiBold, fontSize: 15.5, color: '#4A3A16', fontVariant: ['tabular-nums'] },
-  progressStatDivider: { width: StyleSheet.hairlineWidth, height: 27, backgroundColor: 'rgba(169,134,63,0.32)' },
+  progressStatsRow: { marginTop: 13, flexDirection: 'row', alignItems: 'center' },
+  progressStat: { flex: 1, minWidth: 0, paddingHorizontal: 6 },
+  progressStatLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.7, color: '#A9863F' },
+  progressStatValue: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 18, color: '#3D3322', fontVariant: ['tabular-nums'] },
+  progressStatDivider: { width: StyleSheet.hairlineWidth, height: 32, backgroundColor: 'rgba(169,134,63,0.32)' },
   calendarLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   calendarLinkText: { fontFamily: F.serifSemiBold, fontSize: 13.5, color: C.goldDark },
   stStatsRow: { flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(169,134,63,0.28)', paddingVertical: 10 },
