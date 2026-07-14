@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -30,6 +30,7 @@ import FocusPhoneStatus from './FocusPhoneStatus';
 import FocusCard, { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
 import { PulseDot } from './FocusMeter';
 import DayGauge, { gaugeStanding } from './DayGauge';
+import PlanCardBackdrop from './PlanCardBackdrop';
 import GoldButton from './GoldButton';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
 import QuietHourSheet from './QuietHourSheet';
@@ -62,6 +63,8 @@ import {
 } from './dayPlanStore';
 
 const WEEK_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const TROPHY_EMBLEM = require('@/assets/animations/challenge-trophy-preview.png');
+const TROPHY_BACKDROP_VISUAL = { accent: '#A9863F', bloom: 'rgba(197,160,89,0.20)' };
 const SESSION_COLORS = ['#C8A24D', '#658F78', '#7C78A5', '#B46D6D'];
 const PACK_SHORT_NAMES: Record<string, string> = {
   gambling: 'Gambling',
@@ -425,18 +428,22 @@ export default function FocusWatchView() {
             </TouchableOpacity>
           </View>
           <TouchableOpacity style={s.progressSurface} activeOpacity={0.86} onPress={() => setTrophiesOpen(true)}>
+            <LinearGradient
+              colors={['#FAECC9', '#FFFAEE', '#FFFEFA']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <PlanCardBackdrop visual={TROPHY_BACKDROP_VISUAL} ringSize={150} />
             <View style={s.progressHeaderRow}>
               <Text style={s.progressKicker}>TROPHY STREAK</Text>
-              <View style={s.bestPill}>
-                <Text style={s.bestPillText}>Best {state.streak.best}d</Text>
+              <View style={s.calendarLink}>
+                <Text style={s.calendarLinkText}>Monthly calendar</Text>
+                <ChevronRight s={13} c={C.goldDark} w={2.2} />
               </View>
             </View>
 
             <View style={s.progressHeroRow}>
-              <View style={s.progressTrophySeal}>
-                <View style={s.progressTrophyGlow} />
-                <StaticChallengeTrophy size={46} />
-              </View>
               <View style={s.progressCopy}>
                 <View style={s.progressValueRow}>
                   <Text style={s.progressValue}>{state.streak.current}</Text>
@@ -452,6 +459,7 @@ export default function FocusWatchView() {
                         : 'Today is a rest day.'}
                 </Text>
               </View>
+              <Image source={TROPHY_EMBLEM} style={s.progressTrophy} resizeMode="contain" />
             </View>
 
             <View style={s.weekBand}>
@@ -479,13 +487,20 @@ export default function FocusWatchView() {
               ))}
             </View>
 
-            <View style={s.progressFooterRow}>
-              <Text style={s.progressCaption}>
-                {targetMinutes != null ? `${formatMinutesShort(targetMinutes)} Daily Target` : 'No Daily Target today'}
-              </Text>
-              <View style={s.calendarLink}>
-                <Text style={s.calendarLinkText}>Monthly calendar</Text>
-                <ChevronRight s={13} c={C.goldDark} w={2.2} />
+            <View style={s.progressStatsRow}>
+              <View style={s.progressStat}>
+                <Text style={s.progressStatLabel}>BEST STREAK</Text>
+                <Text style={s.progressStatValue}>{state.streak.best} {state.streak.best === 1 ? 'day' : 'days'}</Text>
+              </View>
+              <View style={s.progressStatDivider} />
+              <View style={s.progressStat}>
+                <Text style={s.progressStatLabel}>TROPHIES</Text>
+                <Text style={s.progressStatValue}>{state.streak.trophies}</Text>
+              </View>
+              <View style={s.progressStatDivider} />
+              <View style={s.progressStat}>
+                <Text style={s.progressStatLabel}>DAILY TARGET</Text>
+                <Text style={s.progressStatValue}>{targetMinutes != null ? formatMinutesShort(targetMinutes) : 'None today'}</Text>
               </View>
             </View>
           </TouchableOpacity>
@@ -770,11 +785,12 @@ const s = StyleSheet.create({
   },
   analyticsButtonText: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.goldDark },
   progressSurface: {
-    borderRadius: 22,
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 24,
     borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: '#E8D8B5',
-    backgroundColor: '#FFFDF7',
     padding: 16,
     shadowColor: '#1C1917',
     shadowOffset: { width: 0, height: 4 },
@@ -782,40 +798,10 @@ const s = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2,
   },
-  progressHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  progressHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   progressKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.goldDark },
-  bestPill: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.4)',
-    backgroundColor: 'rgba(255,255,255,0.75)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  bestPillText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 0.4, color: C.goldDark, fontVariant: ['tabular-nums'] },
-  progressHeroRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 14 },
-  progressTrophySeal: {
-    width: 66,
-    height: 66,
-    borderRadius: 33,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.42)',
-    backgroundColor: '#FFF7E3',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: C.gold,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.22,
-    shadowRadius: 7,
-    elevation: 3,
-  },
-  progressTrophyGlow: {
-    position: 'absolute',
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(216,182,114,0.28)',
-  },
+  progressHeroRow: { marginTop: 11, flexDirection: 'row', alignItems: 'center', gap: 14 },
+  progressTrophy: { width: 46, height: 46, marginRight: 2 },
   progressCopy: { flex: 1, minWidth: 0 },
   progressValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
   progressValue: { fontFamily: F.serifSemiBold, fontSize: 42, lineHeight: 46, letterSpacing: -0.5, color: C.text, fontVariant: ['tabular-nums'] },
@@ -865,8 +851,11 @@ const s = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: C.gold,
   },
-  progressFooterRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  progressCaption: { flexShrink: 1, fontFamily: F.sansSemiBold, fontSize: 11.5, color: C.textSecondary },
+  progressStatsRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center' },
+  progressStat: { flex: 1, minWidth: 0, paddingHorizontal: 4 },
+  progressStatLabel: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.2, color: '#A9863F' },
+  progressStatValue: { marginTop: 3, fontFamily: F.serifSemiBold, fontSize: 15.5, color: '#4A3A16', fontVariant: ['tabular-nums'] },
+  progressStatDivider: { width: StyleSheet.hairlineWidth, height: 27, backgroundColor: 'rgba(169,134,63,0.32)' },
   calendarLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   calendarLinkText: { fontFamily: F.serifSemiBold, fontSize: 13.5, color: C.goldDark },
   stStatsRow: { flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(169,134,63,0.28)', paddingVertical: 10 },
