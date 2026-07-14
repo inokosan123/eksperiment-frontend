@@ -778,7 +778,7 @@ const s = StyleSheet.create({
   weekCircle: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   weekCircleToday: { borderWidth: 2, borderColor: C.gold },
   weekLetter: { fontFamily: F.sansBold, fontSize: 13 },
-  weekNote: { marginTop: 12, paddingHorizontal: 22, textAlign: 'center', fontFamily: F.sansMedium, fontSize: 10.5, lineHeight: 14.5, color: C.textMuted },
+  weekNote: { marginTop: 8, paddingHorizontal: 22, textAlign: 'center', fontFamily: F.sansMedium, fontSize: 12, lineHeight: 16, color: C.textMuted },
   defaultsList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
   defaultsRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 3 },
   defaultsIcon: { width: 34, height: 34, borderRadius: 11, borderCurve: 'continuous', backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
