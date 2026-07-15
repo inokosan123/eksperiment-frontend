@@ -150,8 +150,10 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
 const medallionStyles = StyleSheet.create({
   // Letterpress: a hair of white light under each stroke, as if the number
   // were struck into the metal.
+  // Wide enough that even a 3-digit streak keeps its full size — the discs
+  // are a glow behind the number, not a frame it must fit inside.
   value: {
-    maxWidth: '72%',
+    maxWidth: '94%',
     fontFamily: F.serifSemiBold,
     fontSize: 34,
     letterSpacing: -0.4,
