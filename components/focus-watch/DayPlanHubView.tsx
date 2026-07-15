@@ -690,30 +690,38 @@ export default function DayPlanHubView() {
           <Text style={s.sectionLabel}>PROTECTION DEFAULTS</Text>
           <View style={s.defaultsGrid}>
             <TouchableOpacity
-              style={s.defaultCard}
+              style={[s.defaultCard, { borderColor: '#EDDFC0' }]}
               onPress={() => setEssentialsOpen(true)}
               activeOpacity={0.82}
               accessibilityRole="button"
               accessibilityLabel="Essential Apps"
             >
-              <View style={s.defaultCardSeal}><Lock s={17} c={C.goldDark} w={2.1} /></View>
-              <Text style={s.defaultCardTitle}>Essential Apps</Text>
-              <Text style={s.defaultCardMeta} numberOfLines={2}>
+              <LinearGradient colors={['#FFF7E4', '#FFFCF5', '#FFFEFB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+              <View style={s.defaultCardTop}>
+                <View style={[s.defaultCardSeal, { borderColor: '#EDDFC0' }]}><Lock s={17} c={C.goldDark} w={2.1} /></View>
+                <ChevronRight s={15} c="#B49254" w={2.2} />
+              </View>
+              <Text style={[s.defaultCardTitle, { color: '#59400F' }]}>Essential Apps</Text>
+              <Text style={[s.defaultCardMeta, { color: '#796333' }]} numberOfLines={2}>
                 {optionalCount == null
                   ? 'Syncing with iPhone'
                   : `${optionalCount} ${optionalCount === 1 ? 'app stays' : 'apps stay'} open after the limit`}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={s.defaultCard}
+              style={[s.defaultCard, { borderColor: '#F0D3D9' }]}
               onPress={() => setAlwaysBlockedOpen(true)}
               activeOpacity={0.82}
               accessibilityRole="button"
               accessibilityLabel="Always Blocked"
             >
-              <View style={[s.defaultCardSeal, s.defaultCardSealRose]}><Shield s={17} c="#A24351" w={2.1} /></View>
-              <Text style={s.defaultCardTitle}>Always Blocked</Text>
-              <Text style={s.defaultCardMeta} numberOfLines={2}>
+              <LinearGradient colors={['#FBEDF0', '#FEF8F9', '#FFFDFD']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+              <View style={s.defaultCardTop}>
+                <View style={[s.defaultCardSeal, { borderColor: '#F0D3D9' }]}><Shield s={17} c="#A24351" w={2.1} /></View>
+                <ChevronRight s={15} c="#C08894" w={2.2} />
+              </View>
+              <Text style={[s.defaultCardTitle, { color: '#6A2637' }]}>Always Blocked</Text>
+              <Text style={[s.defaultCardMeta, { color: '#885663' }]} numberOfLines={2}>
                 {alwaysBlockedCount == null
                   ? 'Syncing with iPhone'
                   : alwaysBlockedCount === 0
@@ -835,18 +843,20 @@ const s = StyleSheet.create({
   defaultCard: {
     flex: 1,
     minWidth: 0,
-    borderRadius: 18,
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 20,
     borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.surface,
-    padding: 13,
-    boxShadow: '0 5px 14px rgba(57, 48, 34, 0.05)',
+    paddingHorizontal: 14,
+    paddingTop: 13,
+    paddingBottom: 14,
+    boxShadow: '0 6px 16px rgba(57, 48, 34, 0.06)',
   },
-  defaultCardSeal: { width: 38, height: 38, borderRadius: 13, borderCurve: 'continuous', backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
-  defaultCardSealRose: { backgroundColor: '#F8E7EA' },
-  defaultCardTitle: { marginTop: 10, fontFamily: F.serifSemiBold, fontSize: 16.5, color: C.text },
-  defaultCardMeta: { marginTop: 3, fontFamily: F.serif, fontSize: 12.5, lineHeight: 16.5, color: C.textSecondary },
+  defaultCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  defaultCardSeal: { width: 40, height: 40, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  defaultCardTitle: { marginTop: 11, fontFamily: F.serifSemiBold, fontSize: 17, lineHeight: 21 },
+  defaultCardMeta: { marginTop: 3.5, fontFamily: F.serif, fontSize: 13, lineHeight: 17 },
   plansHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, marginBottom: 8 },
   plansCount: { fontFamily: F.sansMedium, fontSize: 10, color: C.textMuted },
   planList: { gap: 12 },

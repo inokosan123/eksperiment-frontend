@@ -104,10 +104,9 @@ export default function EssentialAppsSheet({
       keyboardAware
     >
       <FocusSheetHeader
-        kicker={planMode ? 'AVAILABLE IN THIS PLAN' : 'ALWAYS AVAILABLE'}
         title={planMode ? 'Plan Apps' : 'Essential Apps'}
         onClose={closeSheet}
-        large
+        centered
       />
 
       <ScrollView
@@ -250,11 +249,11 @@ export default function EssentialAppsSheet({
 const s = StyleSheet.create({
   sheet: {
     backgroundColor: C.bg,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
+    borderTopLeftRadius: 34,
+    borderTopRightRadius: 34,
     paddingHorizontal: 18,
     paddingBottom: 24,
-    maxHeight: '94%',
+    maxHeight: '92%',
   },
   description: {
     paddingRight: 10,

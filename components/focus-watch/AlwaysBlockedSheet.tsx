@@ -49,10 +49,9 @@ export default function AlwaysBlockedSheet({ visible, onClose }: { visible: bool
     <>
       <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheet}>
         <FocusSheetHeader
-          kicker="PERMANENT INTENT"
           title="Always Blocked"
           onClose={onClose}
-          large
+          centered
         />
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
@@ -171,7 +170,7 @@ export default function AlwaysBlockedSheet({ visible, onClose }: { visible: bool
 }
 
 const s = StyleSheet.create({
-  sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: 24, maxHeight: '92%' },
+  sheet: { backgroundColor: C.bg, borderTopLeftRadius: 34, borderTopRightRadius: 34, paddingHorizontal: 18, paddingBottom: 24, maxHeight: '92%' },
   handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#E2E0DA', marginTop: 10 },
   headerRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
   eyebrow: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: '#A24351' },
