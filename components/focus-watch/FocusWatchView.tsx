@@ -29,7 +29,7 @@ import { C, F } from '@/constants/tokens';
 import FocusPhoneStatus from './FocusPhoneStatus';
 import FocusCard, { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
 import { PulseDot } from './FocusMeter';
-import DayGauge from './DayGauge';
+import DayGauge, { gaugeStanding, gaugeStateColor, GAUGE_ESSENTIALS_COLOR } from './DayGauge';
 import { RadiantTrophy, StreakMedallion, TrophyShineBackdrop } from './TrophyRadiance';
 import GoldButton from './GoldButton';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
@@ -121,12 +121,18 @@ function ProtectionRow({
   iconBg,
   title,
   detail,
+  value,
+  valueCaption,
+  valueColor = C.text,
   onPress,
 }: {
   icon: React.ReactNode;
   iconBg: string;
   title: string;
   detail: string;
+  value?: string;
+  valueCaption?: string;
+  valueColor?: string;
   onPress: () => void;
 }) {
   return (
@@ -136,6 +142,12 @@ function ProtectionRow({
         <Text style={s.protectionRowTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.84}>{title}</Text>
         <Text style={s.protectionRowDetail} numberOfLines={1}>{detail}</Text>
       </View>
+      {value != null && (
+        <View style={s.protectionRowValueBlock}>
+          <Text style={[s.protectionRowValue, { color: valueColor }]} numberOfLines={1}>{value}</Text>
+          {!!valueCaption && <Text style={s.protectionRowValueCaption} numberOfLines={1}>{valueCaption}</Text>}
+        </View>
+      )}
       <ChevronRight s={16} c={C.textMuted} w={2.1} />
     </TouchableOpacity>
   );
@@ -195,6 +207,36 @@ export default function FocusWatchView() {
   const targetMinutes = plan?.budgetMinutes ?? null;
   const toleranceEndMinutes = plan ? plan.essentialOnlyMinutes ?? plan.tolerableMinutes : null;
   const usedToday = getLiveUsageSnapshot(dateKey(now))?.totalMinutes ?? null;
+  const todayStanding = targetMinutes != null
+    ? gaugeStanding(targetMinutes, toleranceEndMinutes, usedToday)
+    : 'unknown';
+
+  // The Screen Time track carries the one number this screen doesn't show
+  // anywhere else: how much of today's allowance is still ahead.
+  let screenTimeValue: string | undefined;
+  let screenTimeCaption: string | undefined;
+  let screenTimeValueColor = C.text;
+  if (plan) {
+    if (hardWallActive || todayStanding === 'essentials') {
+      screenTimeValue = 'Essentials';
+      screenTimeCaption = 'ONLY NOW';
+      screenTimeValueColor = GAUGE_ESSENTIALS_COLOR;
+    } else if (targetMinutes == null) {
+      screenTimeValue = 'On';
+      screenTimeCaption = 'GROUP LIMITS';
+    } else if (usedToday == null) {
+      screenTimeValue = formatMinutesShort(targetMinutes);
+      screenTimeCaption = 'TODAY’S GOAL';
+    } else if (todayStanding === 'tolerance') {
+      screenTimeValue = formatMinutesShort(Math.max(0, (toleranceEndMinutes ?? targetMinutes) - usedToday));
+      screenTimeCaption = 'TOLERANCE LEFT';
+      screenTimeValueColor = gaugeStateColor('tolerance', C.text);
+    } else {
+      screenTimeValue = formatMinutesShort(Math.max(0, targetMinutes - usedToday));
+      screenTimeCaption = 'LEFT TODAY';
+      screenTimeValueColor = gaugeStateColor('under', C.text);
+    }
+  }
 
   const protectionTitle = previewMode && protectionConfigured
     ? 'Protection preview is ready.'
@@ -230,7 +272,9 @@ export default function FocusWatchView() {
     : session
       ? `${session.name} · until ${formatTimeOfDay(session.endMinutes)}`
       : planProtects
-        ? `${plan?.name} is shaping today.`
+        ? webActive
+          ? `${plan?.name} and Web Protection are standing guard.`
+          : `${plan?.name} is shaping today.`
         : alwaysConfigured
           ? `${alwaysBlockedCount} ${alwaysBlockedCount === 1 ? 'app stays' : 'apps stay'} behind a permanent boundary.`
         : webActive
@@ -320,11 +364,14 @@ export default function FocusWatchView() {
                 detail={plan.essentialsOnly
                   ? `${plan.name} · Essentials only from minute one`
                   : hardWallActive
-                  ? 'Daily limit reached · Essentials + system access'
+                  ? 'Daily limit reached · essentials remain'
                   : session
-                    ? `${session.name} · ${formatTimeOfDay(session.startMinutes)}–${formatTimeOfDay(session.endMinutes)}`
-                    : `${plan.name}${plan.budgetMinutes != null ? ` · ${formatMinutesShort(plan.budgetMinutes)} goal` : ' · group limits'}`}
-                onPress={() => router.push('/day-plans' as never)}
+                    ? `${plan.name} · ${session.name} until ${formatTimeOfDay(session.endMinutes)}`
+                    : plan.name}
+                value={plan.essentialsOnly ? 'Essentials' : screenTimeValue}
+                valueCaption={plan.essentialsOnly ? 'ALL DAY' : screenTimeCaption}
+                valueColor={plan.essentialsOnly ? GAUGE_ESSENTIALS_COLOR : screenTimeValueColor}
+                onPress={() => router.push('/day-plan-today' as never)}
               />
             )}
             {alwaysConfigured && (
@@ -342,6 +389,9 @@ export default function FocusWatchView() {
                 iconBg="#DFF0EA"
                 title="Web Protection"
                 detail={`${packsOn} ${packsOn === 1 ? 'pack' : 'packs'} · ${customSites} custom ${customSites === 1 ? 'site' : 'sites'}`}
+                value={webActive ? 'On' : 'Preview'}
+                valueCaption={state.purity.locks.enabled ? 'STRICT WATCH' : 'ALWAYS ON'}
+                valueColor={webActive ? '#2C7565' : '#65548E'}
                 onPress={() => router.push('/clean-sight' as never)}
               />
             )}
@@ -612,6 +662,9 @@ const s = StyleSheet.create({
   protectionRowCopy: { flex: 1, minWidth: 0 },
   protectionRowTitle: { fontFamily: F.serifMedium, fontSize: 16, color: C.text },
   protectionRowDetail: { marginTop: 1.5, fontFamily: F.sans, fontSize: 10.5, color: C.textSecondary },
+  protectionRowValueBlock: { maxWidth: 96, alignItems: 'flex-end' },
+  protectionRowValue: { fontFamily: F.serifSemiBold, fontSize: 15.5, fontVariant: ['tabular-nums'] },
+  protectionRowValueCaption: { marginTop: 1, fontFamily: F.sansBold, fontSize: 6.5, letterSpacing: 0.9, color: C.textMuted },
   quietButton: { marginTop: 16 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
   sectionTitle: {
