@@ -446,7 +446,7 @@ export default function FocusWatchView() {
                 <StreakMedallion value={state.streak.current} />
                 <View style={s.progressUnitRow}>
                   <View style={s.progressUnitRule} />
-                  <Text style={s.progressUnitCaps}>DAY STREAK</Text>
+                  <Text style={s.progressUnitCaps}>{state.streak.current === 0 ? 'BEGINS TODAY' : 'DAY STREAK'}</Text>
                   <View style={s.progressUnitRule} />
                 </View>
               </View>
@@ -456,7 +456,9 @@ export default function FocusWatchView() {
               {liveStatus === 'broken'
                 ? 'Today’s trophy is resting.'
                 : targetMinutes != null
-                  ? 'Today’s trophy is within reach.'
+                  ? state.streak.current === 0
+                    ? 'Hold today’s limit and day one is yours.'
+                    : 'Today’s trophy is within reach.'
                   : plan
                     ? 'No trophy target today.'
                     : 'Today is a rest day.'}

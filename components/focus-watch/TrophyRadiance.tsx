@@ -113,6 +113,9 @@ export function TrophyShineBackdrop() {
 // a hairline inner ring framing the serif number.
 export function StreakMedallion({ value, size = 74 }: { value: number; size?: number }) {
   const c = size / 2;
+  const dormant = value === 0;
+  const glintRadius = c - 12;
+  const glintCircumference = 2 * Math.PI * glintRadius;
   return (
     <View
       style={{
@@ -151,8 +154,25 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
           );
         })}
         <Circle cx={c} cy={c} r={c - 9} stroke={GOLD} strokeOpacity={0.24} strokeWidth={1} fill="none" />
+        {/* Specular glint: a short bright arc top-left, like light on a coin. */}
+        <Circle
+          cx={c}
+          cy={c}
+          r={glintRadius}
+          stroke="rgba(255,255,255,0.75)"
+          strokeWidth={2.2}
+          strokeLinecap="round"
+          strokeDasharray={`${glintCircumference * 0.15} ${glintCircumference}`}
+          transform={`rotate(-150 ${c} ${c})`}
+          fill="none"
+        />
       </Svg>
-      <Text style={medallionStyles.value} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>
+      <Text
+        style={[medallionStyles.value, dormant && medallionStyles.valueDormant]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.55}
+      >
         {value}
       </Text>
     </View>
@@ -160,6 +180,8 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
 }
 
 const medallionStyles = StyleSheet.create({
+  // Letterpress: a hair of white light under each stroke, as if the number
+  // were struck into the coin face.
   value: {
     maxWidth: '68%',
     fontFamily: F.serifSemiBold,
@@ -168,6 +190,13 @@ const medallionStyles = StyleSheet.create({
     color: '#3D3322',
     textAlign: 'center',
     fontVariant: ['tabular-nums'],
+    textShadowColor: 'rgba(255,255,255,0.85)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 0.5,
+  },
+  // Before the first kept day the coin waits: the zero is softer, not heavy.
+  valueDormant: {
+    color: '#B39C68',
   },
 });
 
