@@ -14,9 +14,11 @@ import { C } from '@/constants/tokens';
 export default function FocusSwitch({
   value,
   onToggle,
+  activeColor = C.gold,
 }: {
   value: boolean;
   onToggle: () => void;
+  activeColor?: string;
 }) {
   const progress = useSharedValue(value ? 1 : 0);
 
@@ -28,7 +30,7 @@ export default function FocusSwitch({
   }, [value, progress]);
 
   const trackStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(progress.value, [0, 1], ['#E5E7EB', C.gold]),
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#E5E7EB', activeColor]),
   }));
   const knobStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: progress.value * 20 }],

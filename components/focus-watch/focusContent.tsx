@@ -1,4 +1,4 @@
-import type { WebPackId } from './dayPlanStore';
+﻿import type { WebPackId } from './dayPlanStore';
 import { WEB_PACK_DOMAINS } from './webProtectionCatalog';
 
 // Custom packs all share one emblem so the built-in packs keep their identity.
@@ -10,7 +10,6 @@ export type WebPackContent = {
   detail: string;
   emoji: string;          // Noto emoji name from the shared catalog
   slashed?: boolean;      // draw a red "not allowed" line across the emoji
-  iconBg: string;
   sites: string[];
   sitesNote: string;
 };
@@ -21,7 +20,6 @@ export const WEB_PACKS: WebPackContent[] = [
     name: 'Gambling & Betting',
     detail: 'Betting sites, casinos, lotteries',
     emoji: 'joker',
-    iconBg: '#FBE6E9',
     sites: [...WEB_PACK_DOMAINS.gambling],
     sitesNote: '…and a curated list we keep growing',
   },
@@ -31,7 +29,6 @@ export const WEB_PACKS: WebPackContent[] = [
     detail: "Apple's system filter plus our curated list",
     emoji: 'eye',
     slashed: true,
-    iconBg: '#FBE6E9',
     sites: [...WEB_PACK_DOMAINS.adult],
     sitesNote: "…plus Apple's automatic adult filter for the rest",
   },
@@ -40,7 +37,6 @@ export const WEB_PACKS: WebPackContent[] = [
     name: 'Social Web',
     detail: 'Feeds in the browser — X, Reddit, Facebook',
     emoji: 'mobile-phone',
-    iconBg: '#E1F1EC',
     sites: [...WEB_PACK_DOMAINS.social],
     sitesNote: '…the apps themselves live in Screen Time',
   },
@@ -49,7 +45,6 @@ export const WEB_PACKS: WebPackContent[] = [
     name: 'News & Doomscroll',
     detail: 'Endless headlines and comment wars',
     emoji: 'newspaper',
-    iconBg: '#FBF3DE',
     sites: [...WEB_PACK_DOMAINS.news],
     sitesNote: '…and a curated list we keep growing',
   },

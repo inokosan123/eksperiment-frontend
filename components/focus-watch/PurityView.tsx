@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Line } from 'react-native-svg';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
@@ -44,6 +45,44 @@ const COOLDOWNS: { id: LockCooldown; label: string }[] = [
   { id: 'morning', label: 'Until morning' },
 ];
 
+// The tab-wide hairline weave, in the card's state color — the texture that
+// marks a surface as alive in this app.
+function CardWeave({ color }: { color: string }) {
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const step = 30;
+  const lineCount = box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
+  return (
+    <View
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      onLayout={event => {
+        const { width, height } = event.nativeEvent.layout;
+        setBox({ w: width, h: height });
+      }}
+    >
+      {lineCount > 0 && (
+        <Svg width={box.w} height={box.h} style={StyleSheet.absoluteFill}>
+          {Array.from({ length: lineCount }).map((_, index) => {
+            const offset = index * step;
+            return (
+              <Line
+                key={index}
+                x1={offset}
+                y1={-4}
+                x2={offset - box.h - 8}
+                y2={box.h + 4}
+                stroke={color}
+                strokeOpacity={0.05}
+                strokeWidth={1}
+              />
+            );
+          })}
+        </Svg>
+      )}
+    </View>
+  );
+}
+
 // A pack's face: its Noto emoji in a soft tinted chip. `slashed` draws the
 // red "not allowed" line across (sensitive content), with a white underlay so
 // the line stays readable over the artwork.
@@ -68,7 +107,6 @@ function PackRow({
   mode,
   emoji,
   slashed,
-  iconBg,
   appleFilter,
   onToggle,
   onNever,
@@ -81,7 +119,6 @@ function PackRow({
   mode: PackMode;
   emoji: string;
   slashed?: boolean;
-  iconBg?: string;
   appleFilter?: boolean;
   onToggle: () => void;
   onNever: () => void;
@@ -90,21 +127,31 @@ function PackRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const enabled = mode !== 'off';
+  const never = mode === 'never';
 
   return (
     <Animated.View
       layout={LinearTransition.duration(200)}
-      style={[s.packCard, enabled && s.packCardOn, mode === 'never' && s.packCardNever]}
+      style={[s.packCard, enabled && s.packCardOn, never && s.packCardNever]}
     >
+      {enabled && (
+        <LinearGradient
+          colors={never ? ['#FBECEF', '#FFFAFB', '#FFFDFD'] : ['#E6F3EC', '#F9FCFA', '#FEFFFE']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
+      {enabled && <CardWeave color={never ? '#A24351' : '#2D7967'} />}
       <View style={s.packRow}>
         <TouchableOpacity style={s.packMain} onPress={() => setExpanded(current => !current)} activeOpacity={0.72}>
-          <View style={[s.packIcon, iconBg ? { backgroundColor: iconBg } : null, mode === 'never' && s.packIconNever]}>
-            <PackEmoji emoji={emoji} slashed={slashed} />
+          <View style={s.packIcon}>
+            <PackEmoji emoji={emoji} slashed={slashed} size={27} />
           </View>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
             <View style={s.packTitleRow}>
-              <Text style={s.packName}>{name}</Text>
-              {appleFilter && enabled && (
+              <Text style={s.packName} numberOfLines={1}>{name}</Text>
+              {appleFilter && enabled && !never && (
                 <Animated.View entering={FadeIn.duration(180)} layout={LinearTransition.duration(180)} style={s.appleFilterTag}>
                   <View style={s.appleFilterTagIcon}>
                     <Shield s={9} c="#566276" w={2.1} />
@@ -112,24 +159,39 @@ function PackRow({
                   <Text style={s.appleFilterTagText}>APPLE FILTER</Text>
                 </Animated.View>
               )}
-              {mode === 'never' && (
-                <View style={s.neverTag}>
-                  <Lock s={9} c="#A24351" w={2.2} />
-                  <Text style={s.neverTagText}>NEVER ALLOWED</Text>
-                </View>
-              )}
             </View>
-            <Text style={[s.packDetail, enabled && s.packDetailOn, mode === 'never' && s.packDetailNever]}>
-              {mode === 'never'
-                ? `${domains.length} domains stay locked`
-                : enabled
-                  ? `${domains.length} domains blocked`
-                  : detail}
-            </Text>
+            <View style={s.packStatusRow}>
+              <View style={[
+                s.packStatusDot,
+                { backgroundColor: never ? '#A24351' : enabled ? '#2D7967' : '#CFC9BB' },
+              ]} />
+              <Text
+                style={[s.packDetail, enabled && s.packDetailOn, never && s.packDetailNever]}
+                numberOfLines={1}
+              >
+                {never
+                  ? `Never allowed · ${domains.length} domains stay locked`
+                  : enabled
+                    ? `${domains.length} domains blocked`
+                    : detail}
+              </Text>
+            </View>
           </View>
-          <View style={[s.packChevron, expanded && s.packChevronOpen]}><ChevronRight s={17} c={C.textMuted} w={2} /></View>
+          <View style={[s.packChevron, expanded && s.packChevronOpen]}><ChevronRight s={16} c={C.textMuted} w={2} /></View>
         </TouchableOpacity>
-        <FocusSwitch value={enabled} onToggle={mode === 'never' ? onNever : onToggle} />
+        {never ? (
+          <TouchableOpacity
+            style={s.neverSeal}
+            onPress={onNever}
+            haptic="selection"
+            accessibilityRole="button"
+            accessibilityLabel="Never allowed. Request unlock."
+          >
+            <Lock s={15} c="#FFFFFF" w={2.3} />
+          </TouchableOpacity>
+        ) : (
+          <FocusSwitch value={enabled} onToggle={onToggle} activeColor="#2D7967" />
+        )}
       </View>
 
       {expanded && (
@@ -447,7 +509,6 @@ export default function PurityView() {
                   mode={mode}
                   emoji={pack.emoji}
                   slashed={pack.slashed}
-                  iconBg={pack.iconBg}
                   appleFilter={pack.id === 'adult'}
                   onToggle={() => request(() => setPackMode(pack.id, mode === 'off' ? 'on' : 'off'))}
                   onNever={() => mode === 'never' ? setPackMode(pack.id, 'off') : setConfirmNeverPack(pack.id)}
@@ -463,7 +524,6 @@ export default function PurityView() {
                 domains={pack.domains}
                 mode={pack.mode}
                 emoji={CUSTOM_PACK_EMOJI}
-                iconBg="#FDF3DC"
                 onToggle={() => request(() => setCustomWebPackMode(pack.id, pack.mode === 'off' ? 'on' : 'off'))}
                 onNever={() => setCustomWebPackMode(pack.id, pack.mode === 'never' ? 'off' : 'never')}
                 onSeeAll={() => setDomainsFor({ kind: 'custom', id: pack.id })}
@@ -678,24 +738,24 @@ const s = StyleSheet.create({
   sectionBody: { marginTop: 3, fontFamily: F.sans, fontSize: 13.5, lineHeight: 19, color: C.textSecondary },
   sectionCount: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E7F3EE', alignItems: 'center', justifyContent: 'center' },
   sectionCountText: { fontFamily: F.sansBold, fontSize: 13, color: '#2D7967', fontVariant: ['tabular-nums'] },
-  packList: { gap: 10 },
-  packCard: { overflow: 'hidden', borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 14, paddingVertical: 12, boxShadow: '0 6px 18px rgba(35, 40, 37, 0.06)' },
-  packCardOn: { borderColor: '#BEDBCF', backgroundColor: '#F8FCFA' },
-  packCardNever: { borderColor: '#EBC9CF', backgroundColor: '#FFFAFB' },
-  packRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  packList: { gap: 8 },
+  packCard: { position: 'relative', overflow: 'hidden', borderRadius: 21, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 12, paddingVertical: 10, boxShadow: '0 6px 16px rgba(35, 40, 37, 0.06)' },
+  packCardOn: { borderColor: '#B7D8CA' },
+  packCardNever: { borderColor: '#EAC6CD' },
+  packRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 11 },
   packMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  packIcon: { flexShrink: 0, width: 46, height: 46, borderRadius: 15, borderCurve: 'continuous', backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
-  packIconNever: { backgroundColor: '#F8E7EA' },
+  packIcon: { flexShrink: 0, width: 48, height: 48, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(169,134,63,0.22)', backgroundColor: '#FBF3DE', alignItems: 'center', justifyContent: 'center' },
   packTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   packName: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22, color: C.text },
+  packStatusRow: { marginTop: 3.5, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  packStatusDot: { width: 5, height: 5, borderRadius: 3 },
+  neverSeal: { width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', backgroundColor: '#A24351', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 9px rgba(162, 67, 81, 0.3)' },
   appleFilterTag: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, borderWidth: 1, borderColor: '#D8DDE6', backgroundColor: '#F6F8FB', paddingLeft: 3, paddingRight: 7, paddingVertical: 3, boxShadow: '0 2px 7px rgba(62,72,88,0.08)' },
   appleFilterTagIcon: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#E5E9F0', alignItems: 'center', justifyContent: 'center' },
   appleFilterTagText: { fontFamily: F.sansBold, fontSize: 7.2, lineHeight: 9, letterSpacing: 0.65, color: '#566276' },
-  packDetail: { marginTop: 3, fontFamily: F.sans, fontSize: 12.5, lineHeight: 17, color: C.textSecondary },
+  packDetail: { flexShrink: 1, fontFamily: F.sans, fontSize: 12, lineHeight: 16, color: C.textSecondary },
   packDetailOn: { fontFamily: F.sansMedium, color: '#2D7967' },
-  packDetailNever: { color: '#A24351' },
-  neverTag: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 999, backgroundColor: '#F8E7EA', paddingHorizontal: 7, paddingVertical: 5 },
-  neverTagText: { fontFamily: F.sansBold, fontSize: 7, letterSpacing: 0.7, color: '#A24351' },
+  packDetailNever: { fontFamily: F.sansMedium, color: '#A24351' },
   packChevron: { transform: [{ rotate: '0deg' }] },
   packChevronOpen: { transform: [{ rotate: '90deg' }] },
   packBody: { marginTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border, paddingTop: 13, gap: 11 },
