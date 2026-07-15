@@ -215,7 +215,7 @@ export default function FocusWatchView() {
   // anywhere else: how much of today's allowance is still ahead.
   let screenTimeValue: string | undefined;
   let screenTimeCaption: string | undefined;
-  let screenTimeValueColor = C.text;
+  let screenTimeValueColor: string = C.text;
   if (plan) {
     if (hardWallActive || todayStanding === 'essentials') {
       screenTimeValue = 'Essentials';
