@@ -30,7 +30,7 @@ import FocusPhoneStatus from './FocusPhoneStatus';
 import FocusCard, { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
 import { PulseDot } from './FocusMeter';
 import DayGauge, { gaugeStanding, gaugeStateColor } from './DayGauge';
-import { RadiantTrophy, TrophyShineBackdrop } from './TrophyRadiance';
+import { RadiantTrophy, StreakMedallion, TrophyShineBackdrop } from './TrophyRadiance';
 import GoldButton from './GoldButton';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
 import QuietHourSheet from './QuietHourSheet';
@@ -443,19 +443,14 @@ export default function FocusWatchView() {
 
             <View style={s.progressHeroRow}>
               <View style={s.progressMedallion}>
-                <View style={s.medallionCircle}>
-                  <View pointerEvents="none" style={s.medallionInnerRing} />
-                  <Text style={s.progressValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
-                    {state.streak.current}
-                  </Text>
-                </View>
+                <StreakMedallion value={state.streak.current} />
                 <View style={s.progressUnitRow}>
                   <View style={s.progressUnitRule} />
                   <Text style={s.progressUnitCaps}>DAY STREAK</Text>
                   <View style={s.progressUnitRule} />
                 </View>
               </View>
-              <RadiantTrophy size={62} />
+              <RadiantTrophy size={76} />
             </View>
             <Text style={s.progressHeadline} numberOfLines={2}>
               {liveStatus === 'broken'
@@ -809,30 +804,8 @@ const s = StyleSheet.create({
   },
   progressHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   progressKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.goldDark },
-  progressHeroRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 10, paddingRight: 20 },
+  progressHeroRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 14, paddingRight: 22 },
   progressMedallion: { alignItems: 'center' },
-  medallionCircle: {
-    width: 92,
-    height: 92,
-    borderRadius: 46,
-    borderWidth: 1,
-    borderColor: 'rgba(169,134,63,0.5)',
-    backgroundColor: '#FFFDF6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 10,
-    boxShadow: '0 5px 14px rgba(122, 94, 36, 0.13)',
-  },
-  medallionInnerRing: {
-    position: 'absolute',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: 'rgba(169,134,63,0.30)',
-  },
-  progressValue: { fontFamily: F.serifSemiBold, fontSize: 40, lineHeight: 44, letterSpacing: -0.5, color: '#3D3322', fontVariant: ['tabular-nums'] },
   progressUnitRow: { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 7 },
   progressUnitRule: { width: 14, height: 1, borderRadius: 1, backgroundColor: 'rgba(169,134,63,0.45)' },
   progressUnitCaps: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.2, color: C.goldDark },

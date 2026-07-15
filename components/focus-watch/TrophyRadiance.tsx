@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
-import Svg, { Line, Path } from 'react-native-svg';
+import { Image, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle, Defs, Line, LinearGradient as SvgLinearGradient, Path, Stop } from 'react-native-svg';
+import { F } from '@/constants/tokens';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -106,6 +107,69 @@ export function TrophyShineBackdrop() {
     </View>
   );
 }
+
+// The streak count struck as a coin: a warm ivory face with a fine gold rim,
+// a 24-tick bezel just inside it (the day-clock echo used across the tab) and
+// a hairline inner ring framing the serif number.
+export function StreakMedallion({ value, size = 74 }: { value: number; size?: number }) {
+  const c = size / 2;
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: c,
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: '0 5px 14px rgba(122, 94, 36, 0.14)',
+      }}
+    >
+      <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+        <Defs>
+          <SvgLinearGradient id="streakMedalFace" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#FFFEF9" />
+            <Stop offset="1" stopColor="#F9EFD5" />
+          </SvgLinearGradient>
+        </Defs>
+        <Circle cx={c} cy={c} r={c - 0.8} fill="url(#streakMedalFace)" stroke="rgba(169,134,63,0.55)" strokeWidth={1} />
+        {Array.from({ length: 24 }).map((_, index) => {
+          const angle = (index / 24) * Math.PI * 2;
+          const strong = index % 6 === 0;
+          const r1 = c - (strong ? 6.4 : 5.4);
+          const r2 = c - 2.6;
+          return (
+            <Line
+              key={index}
+              x1={c + r1 * Math.cos(angle)}
+              y1={c + r1 * Math.sin(angle)}
+              x2={c + r2 * Math.cos(angle)}
+              y2={c + r2 * Math.sin(angle)}
+              stroke={GOLD}
+              strokeOpacity={strong ? 0.5 : 0.28}
+              strokeWidth={strong ? 1.2 : 1}
+            />
+          );
+        })}
+        <Circle cx={c} cy={c} r={c - 9} stroke={GOLD} strokeOpacity={0.24} strokeWidth={1} fill="none" />
+      </Svg>
+      <Text style={medallionStyles.value} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+const medallionStyles = StyleSheet.create({
+  value: {
+    maxWidth: '68%',
+    fontFamily: F.serifSemiBold,
+    fontSize: 31,
+    letterSpacing: -0.4,
+    color: '#3D3322',
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
+});
 
 // The emblem itself: a soft glow disc and a golden ray burst behind the real
 // trophy PNG. Rays alternate long/short like a struck medal.
