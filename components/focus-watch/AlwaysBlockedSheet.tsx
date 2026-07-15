@@ -51,11 +51,15 @@ export default function AlwaysBlockedSheet({ visible, onClose }: { visible: bool
         <FocusSheetHeader
           kicker="PERMANENT INTENT"
           title="Always Blocked"
-          subtitle="These apps stay outside ordinary plans and Quiet Hour Essentials."
           onClose={onClose}
+          large
         />
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
+          <Text style={s.description}>
+            These apps stay outside ordinary plans and Quiet Hour Essentials —
+            closed by a decision you made once, for good.
+          </Text>
           {nativeAvailable ? (
             <View style={s.nativeBuckets}>
               <View style={s.nativeBucketCopy}>
@@ -174,20 +178,21 @@ const s = StyleSheet.create({
   title: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 27, color: C.text },
   closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F0EFEA', alignItems: 'center', justifyContent: 'center' },
   subtitle: { marginTop: 5, fontFamily: F.serifItalic, fontSize: 14.5, lineHeight: 20, color: C.textSecondary },
-  content: { paddingTop: 17, paddingBottom: 28, gap: 13 },
+  content: { paddingTop: 15, paddingBottom: 28, gap: 15 },
+  description: { paddingRight: 10, fontFamily: F.serif, fontSize: 16, lineHeight: 22.5, color: C.textSecondary },
   empty: { minHeight: 160, alignItems: 'center', justifyContent: 'center', borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border, paddingHorizontal: 24 },
   emptyIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { marginTop: 10, fontFamily: F.serifMedium, fontSize: 18, color: C.text },
   emptyBody: { marginTop: 4, fontFamily: F.serif, fontSize: 12.5, lineHeight: 17, color: C.textSecondary, textAlign: 'center' },
   blockedList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 42 },
-  blockedRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  appMark: { width: 34, height: 34, borderRadius: 11, borderCurve: 'continuous', backgroundColor: '#F8E7EA', alignItems: 'center', justifyContent: 'center' },
-  appMarkText: { fontFamily: F.serifSemiBold, fontSize: 14, color: '#A24351' },
-  appName: { fontFamily: F.serifMedium, fontSize: 15.5, color: C.text },
-  appMeta: { marginTop: 2, fontFamily: F.sans, fontSize: 9.5, color: C.textMuted },
-  strengthControl: { flexDirection: 'row', gap: 3, borderRadius: 999, backgroundColor: '#EEECE7', padding: 2 },
-  strengthOption: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  blockedRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  appMark: { width: 39, height: 39, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F8E7EA', alignItems: 'center', justifyContent: 'center' },
+  appMarkText: { fontFamily: F.serifSemiBold, fontSize: 16, color: '#A24351' },
+  appName: { fontFamily: F.serifMedium, fontSize: 17, color: C.text },
+  appMeta: { marginTop: 2, fontFamily: F.serif, fontSize: 12.5, color: C.textSecondary },
+  strengthControl: { flexDirection: 'row', gap: 3, borderRadius: 999, backgroundColor: '#EEECE7', padding: 2.5 },
+  strengthOption: { width: 29, height: 29, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   looseOn: { backgroundColor: '#FFF0C5' },
   strictOn: { backgroundColor: '#F3CBD2' },
   strengthText: { fontFamily: F.sansBold, fontSize: 8.5, color: C.textMuted },
@@ -197,14 +202,14 @@ const s = StyleSheet.create({
   plusIcon: { width: 26, height: 26, borderRadius: 9, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
   addText: { fontFamily: F.serifSemiBold, fontSize: 15, color: C.goldDark },
   availableList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
-  listLabel: { marginTop: 10, marginBottom: 4, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.6, color: C.textMuted },
-  availableRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border },
+  listLabel: { marginTop: 10, marginBottom: 4, fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.8, color: C.textMuted },
+  availableRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border },
   disabled: { opacity: 0.5 },
-  availableName: { flex: 1, fontFamily: F.serifMedium, fontSize: 15, color: C.text },
-  essentialTag: { fontFamily: F.sansSemiBold, fontSize: 9, color: C.textMuted },
+  availableName: { flex: 1, fontFamily: F.serifMedium, fontSize: 16, color: C.text },
+  essentialTag: { fontFamily: F.sansSemiBold, fontSize: 9.5, color: C.textMuted },
   nativeBuckets: { gap: 11 },
   nativeBucketCopy: { paddingHorizontal: 3 },
-  nativeBucketTitle: { fontFamily: F.serifMedium, fontSize: 18, color: C.text },
-  nativeBucketBody: { marginTop: 2, fontFamily: F.sans, fontSize: 10.5, lineHeight: 15, color: C.textSecondary },
+  nativeBucketTitle: { fontFamily: F.serifMedium, fontSize: 18.5, color: C.text },
+  nativeBucketBody: { marginTop: 3, fontFamily: F.serif, fontSize: 13, lineHeight: 17.5, color: C.textSecondary },
   nativeBucketDivider: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginVertical: 4 },
 });

@@ -26,24 +26,30 @@ export default function FocusCheck({
   size = 22,
   disabled = false,
   accent = C.gold,
+  animateOnMount = false,
 }: {
   checked: boolean;
   size?: number;
   disabled?: boolean;
   accent?: string;
+  // For rows that re-mount in a new list when toggled (Essential Apps moves
+  // an app between sections): let the arriving check play its pop + draw.
+  animateOnMount?: boolean;
 }) {
   const reduceMotion = useReducedMotion();
-  const fill = useSharedValue(checked ? 1 : 0);
-  const stroke = useSharedValue(checked ? 1 : 0);
+  const startsSettled = checked && !animateOnMount;
+  const fill = useSharedValue(startsSettled ? 1 : 0);
+  const stroke = useSharedValue(startsSettled ? 1 : 0);
   const pop = useSharedValue(1);
-  const ring = useSharedValue(checked ? 1 : 0);
+  const ring = useSharedValue(startsSettled ? 1 : 0);
   const mounted = useRef(false);
 
   useEffect(() => {
-    // First render just reflects state; animation belongs to real toggles.
+    // First render just reflects state; animation belongs to real toggles —
+    // unless the mount itself IS the toggle (animateOnMount).
     if (!mounted.current) {
       mounted.current = true;
-      return;
+      if (!(animateOnMount && checked)) return;
     }
     if (reduceMotion) {
       fill.value = checked ? 1 : 0;
@@ -68,7 +74,7 @@ export default function FocusCheck({
         withSpring(1, { damping: 14, stiffness: 300, mass: 0.7 })
       );
     }
-  }, [checked, fill, stroke, pop, ring, reduceMotion]);
+  }, [checked, fill, stroke, pop, ring, reduceMotion, animateOnMount]);
 
   const boxStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pop.value }],

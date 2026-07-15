@@ -24,6 +24,7 @@ import { PLAN_VISUALS, planVisualFor } from './planVisuals';
 import {
   activeZone,
   assignPlanToWeekday,
+  assignPlanToWeekdayAndToday,
   dateKey,
   DAY_LETTERS,
   DAY_NAMES,
@@ -60,6 +61,7 @@ const EMPTY_PLAN_VISUAL = PLAN_VISUALS[1];
 type PickerState =
   | { mode: 'template'; day: number }
   | { mode: 'today'; day: number }
+  | { mode: 'today-and-template'; day: number }
   | null;
 
 type PlanChangeConfirmation = {
@@ -83,10 +85,12 @@ function PlanPickerSheet({
   const day = picker?.day ?? 0;
   const today = new Date();
   const todayRecord = state.days[dateKey(today)];
-  const currentPlanId = picker?.mode === 'today'
+  const affectsToday = picker?.mode === 'today' || picker?.mode === 'today-and-template';
+  const currentPlanId = affectsToday
     ? todayRecord ? todayRecord.planId : state.schedule[weekdayMondayFirst(today)]
     : state.schedule[day];
   const currentPlan = getPlanById(state, currentPlanId);
+  const currentTemplatePlanId = state.schedule[day];
 
   useEffect(() => {
     setPendingChange(null);
@@ -97,11 +101,15 @@ function PlanPickerSheet({
   const apply = (planId: string | null) => {
     if (!picker) return;
     if (picker.mode === 'today') swapTodayPlan(planId);
+    else if (picker.mode === 'today-and-template') assignPlanToWeekdayAndToday(day, planId);
     else assignPlanToWeekday(day, planId);
     onClose();
   };
 
   const missingNativeSelections = async (nextPlan: DayPlan) => {
+    // Stored Daily/Session rules are only a reversible draft in this mode.
+    // Activation must not demand selections for invisible rules.
+    if (nextPlan.essentialsOnly) return [];
     const required = new Map<string, string>();
     const ruleSets = nextPlan.kind === 'session'
       ? nextPlan.zones.flatMap(session => session.rules ?? [])
@@ -142,7 +150,8 @@ function PlanPickerSheet({
 
   const applyWithPermission = async (planId: string | null) => {
     const nextPlan = getPlanById(state, planId);
-    const activatesToday = picker?.mode === 'today'
+    const changesToday = affectsToday && planId !== currentPlanId;
+    const activatesToday = changesToday
       && !!nextPlan
       && (nextPlan.budgetMinutes != null || planHasProtectionNow(nextPlan, new Date()));
     setActivationError(null);
@@ -168,17 +177,21 @@ function PlanPickerSheet({
   };
 
   const choose = (planId: string | null) => {
-    if (planId === currentPlanId) {
+    const alreadySelected = picker?.mode === 'today-and-template'
+      ? planId === currentPlanId && planId === currentTemplatePlanId
+      : planId === currentPlanId;
+    if (alreadySelected) {
       onClose();
       return;
     }
-    if (picker?.mode === 'today' && wouldPlanLoseTodayTarget(planId)) {
+    const changesToday = affectsToday && planId !== currentPlanId;
+    if (changesToday && wouldPlanLoseTodayTarget(planId)) {
       setPendingChange({ planId, kind: 'known-loss' });
       return;
     }
     const nextTarget = getPlanById(state, planId)?.budgetMinutes ?? null;
     const currentTarget = currentPlan?.budgetMinutes ?? null;
-    const tightensUnknownToday = picker?.mode === 'today'
+    const tightensUnknownToday = changesToday
       && !todayRecord?.targetLost
       && nextTarget != null
       && (currentTarget == null || nextTarget < currentTarget);
@@ -220,11 +233,21 @@ function PlanPickerSheet({
       )}
     >
         <FocusSheetHeader
-          kicker={picker?.mode === 'today' ? 'PROTECT TODAY' : 'CHOOSE A RHYTHM'}
-          title={picker?.mode === 'today' ? "Choose today's protection plan" : DAY_NAMES[day]}
+          kicker={picker?.mode === 'today'
+            ? 'PROTECT TODAY'
+            : picker?.mode === 'today-and-template'
+              ? 'TODAY & WEEKLY RHYTHM'
+              : 'CHOOSE A RHYTHM'}
+          title={picker?.mode === 'today'
+            ? "Choose today's protection plan"
+            : picker?.mode === 'today-and-template'
+              ? `Today and future ${DAY_NAMES[day]}s`
+              : DAY_NAMES[day]}
           subtitle={picker?.mode === 'today'
             ? 'One Phone Plan will guide and protect your time for the rest of today.'
-            : `Choose how you want to use and protect your time on ${DAY_NAMES[day]}.`}
+            : picker?.mode === 'today-and-template'
+              ? `This changes protection now and becomes the default for future ${DAY_NAMES[day]}s.`
+              : `This sets the default for future ${DAY_NAMES[day]}s without rewriting today.`}
           onClose={onClose}
           large
         />
@@ -244,7 +267,7 @@ function PlanPickerSheet({
         >
           {state.plans.map(plan => {
             const selected = currentPlanId === plan.id;
-            const isSession = plan.kind === 'session';
+            const isSession = !plan.essentialsOnly && plan.kind === 'session';
             const visual = planVisualFor(plan);
             return (
               <TouchableOpacity
@@ -275,6 +298,7 @@ function PlanPickerSheet({
                       ? 'Checking your private iPhone selections...'
                       : [
                           plan.budgetMinutes == null ? 'No daily target' : `${formatMinutesShort(plan.budgetMinutes)} target`,
+                          plan.essentialsOnly ? 'Essentials only' : null,
                           isSession ? `${plan.zones.length} Sessions` : null,
                         ].filter(Boolean).join(' · ')}
                   </Text>
@@ -396,7 +420,11 @@ function TodayPlanHero({
         <View style={s.todayPlanHeading}>
           <Text style={[s.todayHeroKicker, { color: visual.accent }]}>TODAY’S PLAN</Text>
           <Text style={[s.todayPlanName, { color: visual.ink }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{plan.name}</Text>
-          {currentSession && (
+          {plan.essentialsOnly ? (
+            <Text style={[s.todayPlanStatus, { color: visual.body }]} numberOfLines={1}>
+              Essentials only · protected from minute one
+            </Text>
+          ) : currentSession && (
             <Text style={[s.todayPlanStatus, { color: visual.body }]} numberOfLines={1}>
               {currentSession.name} · active until {formatTimeOfDaySafe(currentSession.endMinutes)}
             </Text>
@@ -473,14 +501,14 @@ function PlanCard({
   onPress: () => void;
 }) {
   const visual = planVisualFor(plan);
-  const isSession = plan.kind === 'session';
+  const isSession = !plan.essentialsOnly && plan.kind === 'session';
   const today = weekdayMondayFirst(new Date());
   const goal = plan.budgetMinutes;
   const toleranceEnd = plan.essentialOnlyMinutes ?? plan.tolerableMinutes;
   const toleranceDuration = goal != null && toleranceEnd != null
     ? Math.max(0, toleranceEnd - goal)
     : null;
-  const rules = describeRules(state, plan);
+  const rules = plan.essentialsOnly ? 'Protected from minute one' : describeRules(state, plan);
   const meta = [
     goal == null ? 'No daily target' : `${formatMinutesShort(goal)} goal`,
     toleranceDuration != null && toleranceDuration > 0 ? `+${formatMinutesShort(toleranceDuration)}` : null,
@@ -556,7 +584,7 @@ export default function DayPlanHubView() {
   const [alwaysBlockedOpen, setAlwaysBlockedOpen] = useState(false);
   const today = weekdayMondayFirst(new Date());
   const todayPlan = getEffectivePlan(state, new Date());
-  const currentSession = activeZone(todayPlan, new Date());
+  const currentSession = todayPlan?.essentialsOnly ? null : activeZone(todayPlan, new Date());
   const todayPlanProtects = planHasProtectionNow(todayPlan, new Date());
   const todayUsage = getLiveUsageSnapshot(dateKey(new Date()));
   const nativeAvailable = isNativeFocusAvailable();
@@ -617,7 +645,10 @@ export default function DayPlanHubView() {
                   <TouchableOpacity
                     key={day}
                     style={s.weekCell}
-                    onPress={() => setPicker({ mode: 'template', day })}
+                    onPress={() => setPicker({
+                      mode: day === today ? 'today-and-template' : 'template',
+                      day,
+                    })}
                     haptic="selection"
                     accessibilityRole="button"
                     accessibilityLabel={`${DAY_NAMES[day]}, ${plan ? plan.name : 'No plan'}`}
@@ -651,23 +682,44 @@ export default function DayPlanHubView() {
                 );
               })}
             </View>
-            <Text style={s.weekNote}>Select a plan for each day of your week.</Text>
+            <Text style={s.weekNote}>Today updates now. Other days shape future weeks.</Text>
           </View>
         </Animated.View>
 
         <Animated.View entering={enter(150)}>
           <Text style={s.sectionLabel}>PROTECTION DEFAULTS</Text>
-          <View style={s.defaultsList}>
-            <TouchableOpacity style={s.defaultsRow} onPress={() => setEssentialsOpen(true)}>
-              <View style={s.defaultsIcon}><Lock s={15} c={C.goldDark} w={2.2} /></View>
-              <View style={{ flex: 1 }}><Text style={s.defaultsTitle}>Essential Apps</Text><Text style={s.defaultsMeta}>{optionalCount == null ? 'Loading iPhone selection' : `${optionalCount} optional`} / Core safety access</Text></View>
-              <ChevronRight s={16} c={C.textMuted} w={2} />
+          <View style={s.defaultsGrid}>
+            <TouchableOpacity
+              style={s.defaultCard}
+              onPress={() => setEssentialsOpen(true)}
+              activeOpacity={0.82}
+              accessibilityRole="button"
+              accessibilityLabel="Essential Apps"
+            >
+              <View style={s.defaultCardSeal}><Lock s={17} c={C.goldDark} w={2.1} /></View>
+              <Text style={s.defaultCardTitle}>Essential Apps</Text>
+              <Text style={s.defaultCardMeta} numberOfLines={2}>
+                {optionalCount == null
+                  ? 'Syncing with iPhone'
+                  : `${optionalCount} ${optionalCount === 1 ? 'app stays' : 'apps stay'} open after the limit`}
+              </Text>
             </TouchableOpacity>
-            <View style={s.separator} />
-            <TouchableOpacity style={s.defaultsRow} onPress={() => setAlwaysBlockedOpen(true)}>
-              <View style={[s.defaultsIcon, s.blockedDefaultsIcon]}><Shield s={15} c="#A24351" w={2.2} /></View>
-              <View style={{ flex: 1 }}><Text style={s.defaultsTitle}>Always Blocked</Text><Text style={s.defaultsMeta}>{alwaysBlockedCount == null ? 'Loading iPhone selection' : `${alwaysBlockedCount} permanent-intent apps`}</Text></View>
-              <ChevronRight s={16} c={C.textMuted} w={2} />
+            <TouchableOpacity
+              style={s.defaultCard}
+              onPress={() => setAlwaysBlockedOpen(true)}
+              activeOpacity={0.82}
+              accessibilityRole="button"
+              accessibilityLabel="Always Blocked"
+            >
+              <View style={[s.defaultCardSeal, s.defaultCardSealRose]}><Shield s={17} c="#A24351" w={2.1} /></View>
+              <Text style={s.defaultCardTitle}>Always Blocked</Text>
+              <Text style={s.defaultCardMeta} numberOfLines={2}>
+                {alwaysBlockedCount == null
+                  ? 'Syncing with iPhone'
+                  : alwaysBlockedCount === 0
+                    ? 'Nothing is sealed away yet'
+                    : `${alwaysBlockedCount} ${alwaysBlockedCount === 1 ? 'app is' : 'apps are'} sealed away for good`}
+              </Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -779,12 +831,22 @@ const s = StyleSheet.create({
   weekCircleToday: { borderWidth: 2, borderColor: C.gold },
   weekLetter: { fontFamily: F.sansBold, fontSize: 13 },
   weekNote: { marginTop: 8, paddingHorizontal: 22, textAlign: 'center', fontFamily: F.sansMedium, fontSize: 12, lineHeight: 16, color: C.textMuted },
-  defaultsList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
-  defaultsRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 3 },
-  defaultsIcon: { width: 34, height: 34, borderRadius: 11, borderCurve: 'continuous', backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
-  blockedDefaultsIcon: { backgroundColor: '#F8E7EA' },
-  defaultsTitle: { fontFamily: F.serifMedium, fontSize: 16.5, color: C.text },
-  defaultsMeta: { marginTop: 2, fontFamily: F.sans, fontSize: 10, color: C.textSecondary },
+  defaultsGrid: { flexDirection: 'row', gap: 10 },
+  defaultCard: {
+    flex: 1,
+    minWidth: 0,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+    padding: 13,
+    boxShadow: '0 5px 14px rgba(57, 48, 34, 0.05)',
+  },
+  defaultCardSeal: { width: 38, height: 38, borderRadius: 13, borderCurve: 'continuous', backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
+  defaultCardSealRose: { backgroundColor: '#F8E7EA' },
+  defaultCardTitle: { marginTop: 10, fontFamily: F.serifSemiBold, fontSize: 16.5, color: C.text },
+  defaultCardMeta: { marginTop: 3, fontFamily: F.serif, fontSize: 12.5, lineHeight: 16.5, color: C.textSecondary },
   plansHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, marginBottom: 8 },
   plansCount: { fontFamily: F.sansMedium, fontSize: 10, color: C.textMuted },
   planList: { gap: 12 },
@@ -811,7 +873,6 @@ const s = StyleSheet.create({
   planEmptyTitle: { marginTop: 5, fontFamily: F.serifSemiBold, fontSize: 22, lineHeight: 25, letterSpacing: -0.3 },
   planEmptyBody: { marginTop: 4, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17 },
   planEmptyArrow: { position: 'absolute', right: 14, top: 14, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 42 },
   newPlanButton: { marginTop: 10, height: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: '#DDCEAD', backgroundColor: '#FFFDF7' },
   newPlanIcon: { width: 26, height: 26, borderRadius: 9, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
   newPlanText: { fontFamily: F.serifSemiBold, fontSize: 15, color: C.goldDark },

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { Lock, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
@@ -35,15 +36,26 @@ function SectionHeading({ label, note }: { label: string; note: string }) {
 export default function EssentialAppsSheet({
   visible,
   onClose,
+  planId,
+  planAppIds = [],
+  onChangePlanApps,
 }: {
   visible: boolean;
   onClose: () => void;
+  planId?: string;
+  planAppIds?: string[];
+  onChangePlanApps?: (appIds: string[]) => void;
 }) {
   const state = useDayPlan();
   const nativeAvailable = isNativeFocusAvailable();
+  const planMode = !!planId;
   const [query, setQuery] = useState('');
-  const coreIds = useMemo(() => new Set(allCoreEssentialIds(state)), [state]);
-  const selectedIds = useMemo(() => new Set(state.optionalEssentialAppIds), [state.optionalEssentialAppIds]);
+  const coreIds = useMemo(() => new Set([
+    ...allCoreEssentialIds(state),
+    ...(planMode ? state.optionalEssentialAppIds : []),
+  ]), [planMode, state]);
+  const selectedSource = planMode ? planAppIds : state.optionalEssentialAppIds;
+  const selectedIds = useMemo(() => new Set(selectedSource), [selectedSource]);
   const blockedIds = useMemo(
     () => new Set(state.alwaysBlockedApps.map(entry => entry.appId)),
     [state.alwaysBlockedApps]
@@ -72,11 +84,11 @@ export default function EssentialAppsSheet({
 
   const toggleOptional = (appId: string) => {
     if (coreIds.has(appId) || blockedIds.has(appId)) return;
-    saveOptionalEssentialApps(
-      selectedIds.has(appId)
-        ? state.optionalEssentialAppIds.filter(id => id !== appId)
-        : [...state.optionalEssentialAppIds, appId]
-    );
+    const next = selectedIds.has(appId)
+      ? selectedSource.filter(id => id !== appId)
+      : [...selectedSource, appId];
+    if (planMode) onChangePlanApps?.(next);
+    else saveOptionalEssentialApps(next);
   };
 
   const closeSheet = () => {
@@ -92,25 +104,28 @@ export default function EssentialAppsSheet({
       keyboardAware
     >
       <FocusSheetHeader
-        kicker="ALWAYS AVAILABLE"
-        title="Essential Apps"
+        kicker={planMode ? 'AVAILABLE IN THIS PLAN' : 'ALWAYS AVAILABLE'}
+        title={planMode ? 'Plan Apps' : 'Essential Apps'}
         onClose={closeSheet}
         large
       />
-      <Text style={s.description}>
-        When your daily limit is spent, the phone closes down to Essentials only.
-        Everything on this list stays reachable — its use still counts toward your day.
-      </Text>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={s.scrollContent}
       >
+        <Text style={s.description}>
+          {planMode
+            ? 'This plan protects the phone from minute one. Global Essentials stay included; add only the extra apps this plan truly needs. Their use still counts toward the Goal.'
+            : 'When your daily limit is spent, the phone closes down to Essentials only. Everything on this list stays reachable — its use still counts toward your day.'}
+        </Text>
         <View>
           <SectionHeading
-            label="LOCKED ESSENTIALS"
-            note="Kept reachable for safety. These are not a choice — they are always open."
+            label={planMode ? 'ALREADY INCLUDED' : 'LOCKED ESSENTIALS'}
+            note={planMode
+              ? 'Core access and your global Essentials stay available automatically.'
+              : 'Kept reachable for safety. These are not a choice — they are always open.'}
           />
           <View style={s.list}>
             {lockedApps.map((app, index) => (
@@ -130,14 +145,16 @@ export default function EssentialAppsSheet({
 
         <View>
           <SectionHeading
-            label="YOUR ESSENTIALS"
-            note="Apps you chose to keep open after everything else closes. Tap one to remove it."
+            label={planMode ? 'EXTRA APPS FOR THIS PLAN' : 'YOUR ESSENTIALS'}
+            note={planMode
+              ? 'These exceptions belong only to this plan. They do not become global Essentials.'
+              : 'Apps you chose to keep open after everything else closes. Tap one to remove it.'}
           />
           {nativeAvailable ? (
             <NativeActivitySelectionButton
-              selectionId="global.essentials"
-              title="Choose Essential Apps"
-              label="Choose essential apps"
+              selectionId={planMode ? `plan.${planId}.essentials` : 'global.essentials'}
+              title={planMode ? 'Choose Apps for This Plan' : 'Choose Essential Apps'}
+              label={planMode ? 'Choose plan-only apps' : 'Choose essential apps'}
               prominent
             />
           ) : chosenApps.length === 0 ? (
@@ -145,7 +162,11 @@ export default function EssentialAppsSheet({
           ) : (
             <View style={s.list}>
               {chosenApps.map((app, index) => (
-                <View key={app.id}>
+                <Animated.View
+                  key={app.id}
+                  entering={FadeInDown.duration(240)}
+                  layout={LinearTransition.duration(220)}
+                >
                   {index > 0 && <View style={s.separator} />}
                   <TouchableOpacity
                     style={s.row}
@@ -157,9 +178,9 @@ export default function EssentialAppsSheet({
                       <Text style={s.monogramOnText}>{app.name[0]}</Text>
                     </View>
                     <Text style={s.appName}>{app.name}</Text>
-                    <FocusCheck checked size={24} />
+                    <FocusCheck checked size={25} animateOnMount />
                   </TouchableOpacity>
-                </View>
+                </Animated.View>
               ))}
             </View>
           )}
@@ -169,7 +190,9 @@ export default function EssentialAppsSheet({
           <View>
             <SectionHeading
               label="OTHER APPS"
-              note="These close when your limit is spent. Tap one to make it an Essential."
+              note={planMode
+                ? 'These stay closed throughout this plan unless you allow them here.'
+                : 'These close when your limit is spent. Tap one to make it an Essential.'}
             />
             <View style={s.searchSurface}>
               <TextInput
@@ -191,7 +214,7 @@ export default function EssentialAppsSheet({
               {otherApps.map((app, index) => {
                 const blocked = blockedIds.has(app.id);
                 return (
-                  <View key={app.id}>
+                  <Animated.View key={app.id} layout={LinearTransition.duration(220)}>
                     {index > 0 && <View style={s.separator} />}
                     <TouchableOpacity
                       style={[s.row, blocked && s.rowDisabled]}
@@ -210,10 +233,10 @@ export default function EssentialAppsSheet({
                           <Text style={s.blockedText}>Always Blocked</Text>
                         </View>
                       ) : (
-                        <FocusCheck checked={false} size={24} />
+                        <FocusCheck checked={false} size={25} />
                       )}
                     </TouchableOpacity>
-                  </View>
+                  </Animated.View>
                 );
               })}
             </View>
@@ -234,32 +257,31 @@ const s = StyleSheet.create({
     maxHeight: '94%',
   },
   description: {
-    marginTop: 9,
-    paddingRight: 12,
+    paddingRight: 10,
     fontFamily: F.serif,
     fontSize: 16,
-    lineHeight: 22,
+    lineHeight: 22.5,
     color: C.textSecondary,
   },
-  scrollContent: { paddingTop: 22, paddingBottom: 32, gap: 26 },
+  scrollContent: { paddingTop: 16, paddingBottom: 32, gap: 24 },
   sectionHeading: { gap: 4, paddingHorizontal: 2, marginBottom: 10 },
-  sectionLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, color: C.goldDark },
-  sectionNote: { fontFamily: F.sans, fontSize: 12.5, lineHeight: 17, color: C.textSecondary },
+  sectionLabel: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.1, color: C.goldDark },
+  sectionNote: { fontFamily: F.serif, fontSize: 14, lineHeight: 19, color: C.textSecondary },
   list: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
-  separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 46 },
-  row: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 3 },
+  separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 52 },
+  row: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 3 },
   rowDisabled: { opacity: 0.55 },
-  monogram: { width: 34, height: 34, borderRadius: 12, borderCurve: 'continuous', backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
-  monogramText: { fontFamily: F.sansBold, fontSize: 13, color: C.textSecondary },
-  monogramOn: { width: 34, height: 34, borderRadius: 12, borderCurve: 'continuous', backgroundColor: '#F1E3BF', alignItems: 'center', justifyContent: 'center' },
-  monogramOnText: { fontFamily: F.sansBold, fontSize: 13, color: C.goldDark },
-  monogramLocked: { width: 34, height: 34, borderRadius: 12, borderCurve: 'continuous', backgroundColor: '#F2F1ED', alignItems: 'center', justifyContent: 'center' },
-  monogramLockedText: { fontFamily: F.sansBold, fontSize: 13, color: C.textMuted },
-  appName: { flex: 1, minWidth: 0, fontFamily: F.serifMedium, fontSize: 16.5, color: C.text },
-  appNameLocked: { flex: 1, minWidth: 0, fontFamily: F.serifMedium, fontSize: 16.5, color: C.textMuted },
-  emptyNote: { paddingHorizontal: 2, fontFamily: F.serifItalic, fontSize: 14, color: C.textMuted },
-  searchSurface: { height: 48, flexDirection: 'row', alignItems: 'center', borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 14, marginBottom: 12 },
-  searchInput: { flex: 1, fontFamily: F.sansMedium, fontSize: 14, color: C.text },
+  monogram: { width: 39, height: 39, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
+  monogramText: { fontFamily: F.serifSemiBold, fontSize: 16, color: C.textSecondary },
+  monogramOn: { width: 39, height: 39, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F1E3BF', alignItems: 'center', justifyContent: 'center' },
+  monogramOnText: { fontFamily: F.serifSemiBold, fontSize: 16, color: C.goldDark },
+  monogramLocked: { width: 39, height: 39, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F2F1ED', alignItems: 'center', justifyContent: 'center' },
+  monogramLockedText: { fontFamily: F.serifSemiBold, fontSize: 16, color: C.textMuted },
+  appName: { flex: 1, minWidth: 0, fontFamily: F.serifMedium, fontSize: 17, color: C.text },
+  appNameLocked: { flex: 1, minWidth: 0, fontFamily: F.serifMedium, fontSize: 17, color: C.textMuted },
+  emptyNote: { paddingHorizontal: 2, fontFamily: F.serifItalic, fontSize: 14.5, color: C.textMuted },
+  searchSurface: { height: 50, flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 14, marginBottom: 12 },
+  searchInput: { flex: 1, fontFamily: F.sansMedium, fontSize: 15, color: C.text },
   blockedTag: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, backgroundColor: '#F8E7EA', paddingHorizontal: 8, paddingVertical: 6 },
   blockedText: { fontFamily: F.sansSemiBold, fontSize: 9.5, color: '#A24351' },
 });
