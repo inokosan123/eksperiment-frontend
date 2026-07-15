@@ -217,9 +217,6 @@ export default function FocusWatchView() {
   // The Screen Time card divides its job cleanly: the status line says WHICH
   // rules hold right now, the right block says WHERE today stands, and the
   // numbers row says HOW MUCH — used / goal in the big-card slash grammar.
-  const toleranceDuration = targetMinutes != null && toleranceEndMinutes != null
-    ? Math.max(0, toleranceEndMinutes - targetMinutes)
-    : null;
   const essentialsNow = !!plan && !plan.essentialsOnly
     && (hardWallActive || todayStanding === 'essentials');
 
@@ -250,13 +247,8 @@ export default function FocusWatchView() {
       screenTimeCaption = 'ONLY FOR NOW';
       screenTimeValueColor = GAUGE_ESSENTIALS_COLOR;
     } else if (usedToday == null) {
-      if (toleranceDuration != null && toleranceDuration > 0) {
-        screenTimeValue = `+${formatMinutesShort(toleranceDuration)}`;
-        screenTimeCaption = 'TOLERANCE';
-      } else {
-        screenTimeValue = formatMinutesShort(targetMinutes);
-        screenTimeCaption = 'TODAY’S GOAL';
-      }
+      // No standing yet — the numbers row already says "– – / goal"; the
+      // corner stays quiet instead of parroting plan settings.
     } else if (todayStanding === 'tolerance') {
       screenTimeValue = formatMinutesShort(Math.max(0, (toleranceEndMinutes ?? targetMinutes) - usedToday));
       screenTimeCaption = 'TOLERANCE LEFT';
@@ -419,24 +411,24 @@ export default function FocusWatchView() {
                   <View style={s.miniTopRow}>
                     <View style={s.miniCopy}>
                       <Text style={[s.miniName, { color: visual.ink }]} numberOfLines={1}>{plan.name}</Text>
-                      <Text style={[s.miniStatus, { color: visual.body }]} numberOfLines={1}>
-                        {essentialsOnly
-                          ? 'Only Essentials are open today'
-                          : essentialsNow
-                            ? 'Limit spent · Essentials remain open'
-                            : session
-                              ? nextSession
-                                ? `${session.name} is running · ${nextSession.name} follows`
-                                : `${session.name} is running`
-                              : plan.kind === 'session'
-                                ? 'Sessions shape today'
-                                : 'Active all day'}
-                      </Text>
+                      {(essentialsOnly || essentialsNow || session) && (
+                        <Text style={[s.miniStatus, { color: visual.body }]} numberOfLines={1}>
+                          {essentialsOnly
+                            ? 'Only Essentials are open today'
+                            : essentialsNow
+                              ? 'Limit spent · Essentials remain open'
+                              : nextSession
+                                ? `${session!.name} is running · ${nextSession.name} follows`
+                                : `${session!.name} is running`}
+                        </Text>
+                      )}
                     </View>
-                    <View style={s.miniValueBlock}>
-                      <Text style={[s.miniValue, { color: screenTimeValueColor }]} numberOfLines={1}>{screenTimeValue}</Text>
-                      <Text style={[s.miniValueCaption, { color: visual.body }]} numberOfLines={1}>{screenTimeCaption}</Text>
-                    </View>
+                    {screenTimeValue != null && (
+                      <View style={s.miniValueBlock}>
+                        <Text style={[s.miniValue, { color: screenTimeValueColor }]} numberOfLines={1}>{screenTimeValue}</Text>
+                        <Text style={[s.miniValueCaption, { color: visual.body }]} numberOfLines={1}>{screenTimeCaption}</Text>
+                      </View>
+                    )}
                   </View>
                   {plan.kind === 'session' && session && !essentialsOnly && sessionMinutesLeft != null ? (
                     <View style={[s.miniStatsRow, { borderTopColor: visual.border }]}>
