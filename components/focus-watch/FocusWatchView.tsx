@@ -204,7 +204,7 @@ export default function FocusWatchView() {
     ? 'Protection could not start.'
     : nativeApplying && protectionConfigured
     ? 'Protection is starting.'
-    : hardWallActive && isProtected
+    : (plan?.essentialsOnly || hardWallActive) && isProtected
     ? 'Essentials-only is active.'
     : state.quiet && isProtected
     ? 'Quiet Hour is holding.'
@@ -219,10 +219,12 @@ export default function FocusWatchView() {
     ? state.nativeProtection.error ?? 'Open Screen Time settings, then try applying protection again.'
     : nativeApplying && protectionConfigured
     ? 'Your plan is saved while Anasta confirms the native iPhone shields.'
-    : hardWallActive && isProtected
+    : (plan?.essentialsOnly || hardWallActive) && isProtected
     ? state.quiet
-      ? 'Daily Essentials must also be allowed by Quiet Hour. iOS system access remains available by design.'
-      : 'Daily Essentials and iOS system access remain available until the local day ends.'
+      ? 'Plan apps must also be allowed by Quiet Hour. iOS system access remains available by design.'
+      : plan?.essentialsOnly
+        ? 'Only global Essentials and this plan’s chosen apps are reachable today.'
+        : 'Daily Essentials and iOS system access remain available until the local day ends.'
     : state.quiet && isProtected
     ? `${formatClockMs(state.quiet.endsAt - nowMs)} remaining · ends ${formatEndsAt(state.quiet.endsAt)}`
     : session
@@ -236,7 +238,9 @@ export default function FocusWatchView() {
           : 'Choose a plan or begin a Quiet Hour.';
 
   const badgePulse = isProtected || (nativeApplying && protectionConfigured);
-  const screenTimeChip = hardWallActive && isProtected
+  const screenTimeChip = plan?.essentialsOnly && isProtected
+    ? <FocusStatusChip text="Essentials only" color="#8F3544" pulse={false} />
+    : hardWallActive && isProtected
     ? <FocusStatusChip text="Limit reached" color="#8F3544" pulse={false} />
     : session && planProtects
       ? <FocusStatusChip text="Live now" color="#327153" pulse />
@@ -289,7 +293,7 @@ export default function FocusWatchView() {
           </View>
 
           <View style={s.phoneStage}>
-            <FocusPhoneStatus active={displayProtected} critical={hardWallActive} size={164} />
+            <FocusPhoneStatus active={displayProtected} critical={!!plan?.essentialsOnly || hardWallActive} size={164} />
           </View>
           <Text style={s.protectionTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.86}>{protectionTitle}</Text>
           <Text style={s.protectionDetail}>{protectionDetail}</Text>
@@ -313,7 +317,9 @@ export default function FocusWatchView() {
                 icon={<Clock s={16} c={C.goldDark} w={2.1} />}
                 iconBg="#F8EBCB"
                 title="Screen Time"
-                detail={hardWallActive
+                detail={plan.essentialsOnly
+                  ? `${plan.name} · Essentials only from minute one`
+                  : hardWallActive
                   ? 'Daily limit reached · Essentials + system access'
                   : session
                     ? `${session.name} · ${formatTimeOfDay(session.startMinutes)}–${formatTimeOfDay(session.endMinutes)}`
@@ -449,20 +455,22 @@ export default function FocusWatchView() {
             tint={FOCUS_TINTS.gold}
             watermark={<Clock s={84} c="#A9863F" w={1.1} />}
             chip={screenTimeChip}
-            description="Plan how much of the day the phone may have — a daily goal, group limits, and app rules."
+            description="Plan how much of the day the phone may have — goals, limits, and app rules."
             onPress={() => router.push('/day-plans' as never)}
+            style={s.navCard}
           />
         </Animated.View>
 
-        <Animated.View entering={enter(280)} style={s.contentSection}>
+        <Animated.View entering={enter(280)} style={s.contentSectionTight}>
           <FocusCard
             label="CLEAN SIGHT"
             title="Web Protection"
             tint={FOCUS_TINTS.green}
             watermark={<Globe s={84} c="#3D8273" w={1.1} />}
             chip={webChip}
-            description="Block selected harmful content across supported browsers."
+            description="Block gambling, adult content, and other harmful sites in browsers."
             onPress={() => router.push('/clean-sight' as never)}
+            style={s.navCard}
           />
         </Animated.View>
       </ScrollView>
@@ -521,6 +529,13 @@ const s = StyleSheet.create({
   contentSection: {
     marginHorizontal: 16,
     marginTop: 18,
+  },
+  contentSectionTight: {
+    marginHorizontal: 16,
+    marginTop: 10,
+  },
+  navCard: {
+    minHeight: 128,
   },
   surfaceHeaderRow: {
     flexDirection: 'row',

@@ -4,7 +4,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowUpRight } from '@/components/icons/Icons';
 import { F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import HairlineWeave from './HairlineWeave';
 import { PulseDot } from './FocusMeter';
 
 // The Focus hero card speaks the exact SectionCard language of the other tabs
@@ -106,7 +105,6 @@ export default function FocusCard({
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
-      <HairlineWeave color={tint.label} />
 
       {watermark && (
         <View style={[s.watermark, watermarkUpright && s.watermarkUpright]} pointerEvents="none">
