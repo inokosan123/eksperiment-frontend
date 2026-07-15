@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Defs, Line, LinearGradient as SvgLinearGradient, Path, Stop } from 'react-native-svg';
+import Svg, { Line, Path } from 'react-native-svg';
 import { F } from '@/constants/tokens';
 import Animated, {
   cancelAnimation,
@@ -108,65 +108,33 @@ export function TrophyShineBackdrop() {
   );
 }
 
-// The streak count struck as a coin: a warm ivory face with a fine gold rim,
-// a 24-tick bezel just inside it (the day-clock echo used across the tab) and
-// a hairline inner ring framing the serif number.
+// The streak count in the trophy's own language: no enclosing rim — just two
+// soft amber glow discs sitting BEHIND the serif number, deeper in tone than
+// the trophy's halo so the pair reads as one family, number left, cup right.
 export function StreakMedallion({ value, size = 74 }: { value: number; size?: number }) {
-  const c = size / 2;
   const dormant = value === 0;
-  const glintRadius = c - 12;
-  const glintCircumference = 2 * Math.PI * glintRadius;
   return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: c,
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxShadow: '0 5px 14px rgba(122, 94, 36, 0.14)',
-      }}
-    >
-      <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
-        <Defs>
-          <SvgLinearGradient id="streakMedalFace" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="#FFFEF9" />
-            <Stop offset="1" stopColor="#F9EFD5" />
-          </SvgLinearGradient>
-        </Defs>
-        <Circle cx={c} cy={c} r={c - 0.8} fill="url(#streakMedalFace)" stroke="rgba(169,134,63,0.55)" strokeWidth={1} />
-        {Array.from({ length: 24 }).map((_, index) => {
-          const angle = (index / 24) * Math.PI * 2;
-          const strong = index % 6 === 0;
-          const r1 = c - (strong ? 6.4 : 5.4);
-          const r2 = c - 2.6;
-          return (
-            <Line
-              key={index}
-              x1={c + r1 * Math.cos(angle)}
-              y1={c + r1 * Math.sin(angle)}
-              x2={c + r2 * Math.cos(angle)}
-              y2={c + r2 * Math.sin(angle)}
-              stroke={GOLD}
-              strokeOpacity={strong ? 0.5 : 0.28}
-              strokeWidth={strong ? 1.2 : 1}
-            />
-          );
-        })}
-        <Circle cx={c} cy={c} r={c - 9} stroke={GOLD} strokeOpacity={0.24} strokeWidth={1} fill="none" />
-        {/* Specular glint: a short bright arc top-left, like light on a coin. */}
-        <Circle
-          cx={c}
-          cy={c}
-          r={glintRadius}
-          stroke="rgba(255,255,255,0.75)"
-          strokeWidth={2.2}
-          strokeLinecap="round"
-          strokeDasharray={`${glintCircumference * 0.15} ${glintCircumference}`}
-          transform={`rotate(-150 ${c} ${c})`}
-          fill="none"
-        />
-      </Svg>
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: 'rgba(197,160,89,0.16)',
+        }}
+      />
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          width: size * 0.72,
+          height: size * 0.72,
+          borderRadius: (size * 0.72) / 2,
+          backgroundColor: 'rgba(183,146,64,0.26)',
+        }}
+      />
       <Text
         style={[medallionStyles.value, dormant && medallionStyles.valueDormant]}
         numberOfLines={1}
@@ -181,11 +149,11 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
 
 const medallionStyles = StyleSheet.create({
   // Letterpress: a hair of white light under each stroke, as if the number
-  // were struck into the coin face.
+  // were struck into the metal.
   value: {
-    maxWidth: '68%',
+    maxWidth: '72%',
     fontFamily: F.serifSemiBold,
-    fontSize: 31,
+    fontSize: 34,
     letterSpacing: -0.4,
     color: '#3D3322',
     textAlign: 'center',
@@ -194,9 +162,9 @@ const medallionStyles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 0.5,
   },
-  // Before the first kept day the coin waits: the zero is softer, not heavy.
+  // Before the first kept day the number waits: softer, not heavy.
   valueDormant: {
-    color: '#B39C68',
+    color: '#A08B58',
   },
 });
 

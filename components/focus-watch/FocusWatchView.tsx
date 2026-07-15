@@ -29,7 +29,7 @@ import { C, F } from '@/constants/tokens';
 import FocusPhoneStatus from './FocusPhoneStatus';
 import FocusCard, { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
 import { PulseDot } from './FocusMeter';
-import DayGauge, { gaugeStanding, gaugeStateColor } from './DayGauge';
+import DayGauge, { gaugeStanding } from './DayGauge';
 import { RadiantTrophy, StreakMedallion, TrophyShineBackdrop } from './TrophyRadiance';
 import GoldButton from './GoldButton';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
@@ -489,26 +489,18 @@ export default function FocusWatchView() {
               ))}
             </View>
 
-            <View style={s.progressStatsRow}>
-              <View style={s.progressStat}>
-                <Text style={s.progressStatLabel}>BEST STREAK</Text>
-                <Text style={s.progressStatValue}>{state.streak.best} {state.streak.best === 1 ? 'day' : 'days'}</Text>
-              </View>
-              <View style={s.progressStatDivider} />
-              <View style={s.progressStat}>
-                <Text style={s.progressStatLabel}>TODAY’S LIMIT</Text>
-                {targetMinutes != null ? (
-                  <View style={s.progressStatCounter}>
-                    <Text style={[s.progressStatValue, { color: gaugeStateColor(todayStanding, '#3D3322') }]} numberOfLines={1}>
-                      {usedToday == null ? '– –' : formatMinutesShort(usedToday)}
-                    </Text>
-                    <Text style={s.progressStatOf} numberOfLines={1}> / {formatMinutesShort(targetMinutes)}</Text>
-                  </View>
-                ) : (
-                  <Text style={s.progressStatValue}>None today</Text>
-                )}
-              </View>
-            </View>
+            {targetMinutes != null ? (
+              <DayGauge
+                goalMinutes={targetMinutes}
+                toleranceEndMinutes={toleranceEndMinutes}
+                usedMinutes={usedToday}
+                accent="#8A5A1A"
+                labelColor="#A9863F"
+                style={s.progressGauge}
+              />
+            ) : (
+              <Text style={s.progressNoLimit}>No daily limit today</Text>
+            )}
           </TouchableOpacity>
         </Animated.View>
 
@@ -856,13 +848,8 @@ const s = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: C.gold,
   },
-  progressStatsRow: { marginTop: 13, flexDirection: 'row', alignItems: 'center' },
-  progressStat: { flex: 1, minWidth: 0, paddingHorizontal: 6 },
-  progressStatLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.7, color: '#A9863F' },
-  progressStatValue: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 18, color: '#3D3322', fontVariant: ['tabular-nums'] },
-  progressStatCounter: { flexDirection: 'row', alignItems: 'baseline', minWidth: 0 },
-  progressStatOf: { marginTop: 4, fontFamily: F.serifMedium, fontSize: 14, color: '#8A7448', fontVariant: ['tabular-nums'] },
-  progressStatDivider: { width: StyleSheet.hairlineWidth, height: 32, backgroundColor: 'rgba(169,134,63,0.32)' },
+  progressGauge: { marginTop: 14, paddingHorizontal: 2 },
+  progressNoLimit: { marginTop: 14, textAlign: 'center', fontFamily: F.sansMedium, fontSize: 10.5, color: '#A9863F' },
   calendarLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   calendarLinkText: { fontFamily: F.serifSemiBold, fontSize: 13.5, color: C.goldDark },
   stStatsRow: { flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(169,134,63,0.28)', paddingVertical: 10 },
