@@ -17,8 +17,8 @@ import FocusSheetHeader from './FocusSheetHeader';
 import ZoneClock from './ZoneClock';
 import DayGauge, { gaugeStanding, gaugeStateColor } from './DayGauge';
 import PlanCardBackdrop from './PlanCardBackdrop';
+import { NotoEmoji } from '@/components/shared/NotoEmoji';
 import { getNativeActivitySelectionSummary, isNativeFocusAvailable } from './focusNativeBridge';
-import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
 import { usePermissionGate } from './usePermissionGate';
 import { PLAN_VISUALS, planVisualFor } from './planVisuals';
 import {
@@ -587,18 +587,6 @@ export default function DayPlanHubView() {
   const currentSession = todayPlan?.essentialsOnly ? null : activeZone(todayPlan, new Date());
   const todayPlanProtects = planHasProtectionNow(todayPlan, new Date());
   const todayUsage = getLiveUsageSnapshot(dateKey(new Date()));
-  const nativeAvailable = isNativeFocusAvailable();
-  const optionalSummary = useNativeActivitySelectionSummary('global.essentials');
-  const strictAlwaysSummary = useNativeActivitySelectionSummary('always.strict');
-  const looseAlwaysSummary = useNativeActivitySelectionSummary('always.loose');
-  const optionalCount = nativeAvailable
-    ? optionalSummary?.applicationCount ?? null
-    : state.optionalEssentialAppIds.length;
-  const alwaysBlockedCount = nativeAvailable
-    ? strictAlwaysSummary && looseAlwaysSummary
-      ? strictAlwaysSummary.applicationCount + looseAlwaysSummary.applicationCount
-      : null
-    : state.alwaysBlockedApps.length;
 
   const daysByPlan = useMemo(() => {
     const result: Record<string, number[]> = {};
@@ -697,16 +685,13 @@ export default function DayPlanHubView() {
               accessibilityLabel="Essential Apps"
             >
               <LinearGradient colors={['#FFF7E4', '#FFFCF5', '#FFFEFB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-              <View style={s.defaultCardTop}>
-                <View style={[s.defaultCardSeal, { borderColor: '#EDDFC0' }]}><Lock s={17} c={C.goldDark} w={2.1} /></View>
+              <View style={s.defaultCardRow}>
+                <View style={[s.defaultCardSeal, { borderColor: '#EDDFC0' }]}>
+                  <NotoEmoji name="lock" size={24} />
+                </View>
+                <Text style={[s.defaultCardTitle, { color: '#59400F' }]} numberOfLines={2}>Essential Apps</Text>
                 <ChevronRight s={15} c="#B49254" w={2.2} />
               </View>
-              <Text style={[s.defaultCardTitle, { color: '#59400F' }]}>Essential Apps</Text>
-              <Text style={[s.defaultCardMeta, { color: '#796333' }]} numberOfLines={2}>
-                {optionalCount == null
-                  ? 'Syncing with iPhone'
-                  : `${optionalCount} ${optionalCount === 1 ? 'app stays' : 'apps stay'} open after the limit`}
-              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[s.defaultCard, { borderColor: '#F0D3D9' }]}
@@ -716,18 +701,13 @@ export default function DayPlanHubView() {
               accessibilityLabel="Always Blocked"
             >
               <LinearGradient colors={['#FBEDF0', '#FEF8F9', '#FFFDFD']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-              <View style={s.defaultCardTop}>
-                <View style={[s.defaultCardSeal, { borderColor: '#F0D3D9' }]}><Shield s={17} c="#A24351" w={2.1} /></View>
+              <View style={s.defaultCardRow}>
+                <View style={[s.defaultCardSeal, { borderColor: '#F0D3D9' }]}>
+                  <NotoEmoji name="shield" size={24} />
+                </View>
+                <Text style={[s.defaultCardTitle, { color: '#6A2637' }]} numberOfLines={2}>Always Blocked</Text>
                 <ChevronRight s={15} c="#C08894" w={2.2} />
               </View>
-              <Text style={[s.defaultCardTitle, { color: '#6A2637' }]}>Always Blocked</Text>
-              <Text style={[s.defaultCardMeta, { color: '#885663' }]} numberOfLines={2}>
-                {alwaysBlockedCount == null
-                  ? 'Syncing with iPhone'
-                  : alwaysBlockedCount === 0
-                    ? 'Nothing is sealed away yet'
-                    : `${alwaysBlockedCount} ${alwaysBlockedCount === 1 ? 'app is' : 'apps are'} sealed away for good`}
-              </Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -853,10 +833,9 @@ const s = StyleSheet.create({
     paddingBottom: 14,
     boxShadow: '0 6px 16px rgba(57, 48, 34, 0.06)',
   },
-  defaultCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  defaultCardSeal: { width: 40, height: 40, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  defaultCardTitle: { marginTop: 11, fontFamily: F.serifSemiBold, fontSize: 17, lineHeight: 21 },
-  defaultCardMeta: { marginTop: 3.5, fontFamily: F.serif, fontSize: 13, lineHeight: 17 },
+  defaultCardRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  defaultCardSeal: { width: 42, height: 42, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  defaultCardTitle: { flex: 1, minWidth: 0, fontFamily: F.serifSemiBold, fontSize: 16.5, lineHeight: 20 },
   plansHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, marginBottom: 8 },
   plansCount: { fontFamily: F.sansMedium, fontSize: 10, color: C.textMuted },
   planList: { gap: 12 },
