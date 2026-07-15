@@ -30,6 +30,9 @@ import FocusPhoneStatus from './FocusPhoneStatus';
 import FocusCard, { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
 import { PulseDot } from './FocusMeter';
 import DayGauge, { gaugeStanding, gaugeStateColor, GAUGE_ESSENTIALS_COLOR } from './DayGauge';
+import HairlineWeave from './HairlineWeave';
+import PlanCardBackdrop from './PlanCardBackdrop';
+import { planVisualFor } from './planVisuals';
 import { RadiantTrophy, StreakMedallion, TrophyShineBackdrop } from './TrophyRadiance';
 import GoldButton from './GoldButton';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
@@ -342,7 +345,7 @@ export default function FocusWatchView() {
           <Text style={s.protectionTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.86}>{protectionTitle}</Text>
           <Text style={s.protectionDetail}>{protectionDetail}</Text>
 
-          <View style={s.protectionRows}>
+          <View style={(state.quiet || alwaysConfigured) ? s.protectionRows : undefined}>
             {state.quiet && (
               <ProtectionRow
                 icon={<Lock s={16} c="#A24351" w={2.2} />}
@@ -356,24 +359,6 @@ export default function FocusWatchView() {
                 onPress={() => setQuietOpen(true)}
               />
             )}
-            {plan && (
-              <ProtectionRow
-                icon={<Clock s={16} c={C.goldDark} w={2.1} />}
-                iconBg="#F8EBCB"
-                title="Screen Time"
-                detail={plan.essentialsOnly
-                  ? `${plan.name} · Essentials only from minute one`
-                  : hardWallActive
-                  ? 'Daily limit reached · essentials remain'
-                  : session
-                    ? `${plan.name} · ${session.name} until ${formatTimeOfDay(session.endMinutes)}`
-                    : plan.name}
-                value={plan.essentialsOnly ? 'Essentials' : screenTimeValue}
-                valueCaption={plan.essentialsOnly ? 'ALL DAY' : screenTimeCaption}
-                valueColor={plan.essentialsOnly ? GAUGE_ESSENTIALS_COLOR : screenTimeValueColor}
-                onPress={() => router.push('/day-plan-today' as never)}
-              />
-            )}
             {alwaysConfigured && (
               <ProtectionRow
                 icon={<Shield s={16} c="#A24351" w={2.1} />}
@@ -383,19 +368,90 @@ export default function FocusWatchView() {
                 onPress={() => setAlwaysBlockedOpen(true)}
               />
             )}
-            {webShown && (
-              <ProtectionRow
-                icon={<Globe s={16} c="#2C7565" w={2.1} />}
-                iconBg="#DFF0EA"
-                title="Web Protection"
-                detail={`${packsOn} ${packsOn === 1 ? 'pack' : 'packs'} · ${customSites} custom ${customSites === 1 ? 'site' : 'sites'}`}
-                value={webActive ? 'On' : 'Preview'}
-                valueCaption={state.purity.locks.enabled ? 'STRICT WATCH' : 'ALWAYS ON'}
-                valueColor={webActive ? '#2C7565' : '#65548E'}
-                onPress={() => router.push('/clean-sight' as never)}
-              />
-            )}
           </View>
+
+          {plan && (() => {
+            const visual = planVisualFor(plan);
+            const essentialsOnly = !!plan.essentialsOnly;
+            return (
+              <View style={s.pillarBlock}>
+                <Text style={s.pillarLabel}>SCREEN TIME</Text>
+                <TouchableOpacity
+                  style={[s.miniCard, { borderColor: visual.border }]}
+                  activeOpacity={0.86}
+                  onPress={() => router.push('/day-plan-today' as never)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${plan.name} is active today. Open today's detail.`}
+                >
+                  <LinearGradient colors={visual.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+                  <PlanCardBackdrop visual={visual} ringSize={116} />
+                  <View style={s.miniTopRow}>
+                    <View style={s.miniCopy}>
+                      <Text style={[s.miniName, { color: visual.ink }]} numberOfLines={1}>{plan.name}</Text>
+                      <Text style={[s.miniStatus, { color: visual.body }]} numberOfLines={1}>
+                        {essentialsOnly
+                          ? 'Essentials only from minute one'
+                          : hardWallActive
+                            ? 'Daily limit reached · essentials remain'
+                            : session
+                              ? `${session.name} until ${formatTimeOfDay(session.endMinutes)}`
+                              : 'Active across the whole day'}
+                      </Text>
+                    </View>
+                    <View style={s.miniValueBlock}>
+                      <Text style={[s.miniValue, { color: essentialsOnly ? GAUGE_ESSENTIALS_COLOR : screenTimeValueColor }]} numberOfLines={1}>
+                        {essentialsOnly ? 'Essentials' : screenTimeValue}
+                      </Text>
+                      <Text style={[s.miniValueCaption, { color: visual.body }]} numberOfLines={1}>
+                        {essentialsOnly ? 'ALL DAY' : screenTimeCaption}
+                      </Text>
+                    </View>
+                  </View>
+                  {!essentialsOnly && targetMinutes != null && (
+                    <View style={s.miniNumbersRow}>
+                      <Text style={[s.miniUsed, { color: screenTimeValueColor }]} numberOfLines={1}>
+                        {usedToday == null ? '– –' : formatMinutesShort(usedToday)}
+                      </Text>
+                      <Text style={[s.miniGoal, { color: visual.body }]} numberOfLines={1}> / {formatMinutesShort(targetMinutes)}</Text>
+                      <Text style={[s.miniNumbersCaption, { color: visual.body }]} numberOfLines={1}>  SCREEN TIME TODAY</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </View>
+            );
+          })()}
+
+          {webShown && (
+            <View style={s.pillarBlock}>
+              <Text style={s.pillarLabel}>WEB PROTECTION</Text>
+              <TouchableOpacity
+                style={[s.miniCard, { borderColor: '#B7D8CA' }]}
+                activeOpacity={0.86}
+                onPress={() => router.push('/clean-sight' as never)}
+                accessibilityRole="button"
+                accessibilityLabel="Web Protection is standing guard. Open Clean Sight."
+              >
+                <LinearGradient colors={['#E6F3EC', '#F9FCFA', '#FEFFFE']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+                <HairlineWeave color="#2D7967" />
+                <View style={s.miniTopRow}>
+                  <View style={s.miniCopy}>
+                    <Text style={[s.miniName, { color: '#1F4E45' }]} numberOfLines={1}>Standing guard</Text>
+                    <Text style={[s.miniStatus, { color: '#3D8273' }]} numberOfLines={1}>
+                      {packsOn} {packsOn === 1 ? 'pack' : 'packs'} · {customSites} custom {customSites === 1 ? 'site' : 'sites'} blocked
+                    </Text>
+                  </View>
+                  <View style={s.miniValueBlock}>
+                    <Text style={[s.miniValue, { color: webActive ? '#2C7565' : '#65548E' }]} numberOfLines={1}>
+                      {webActive ? 'On' : 'Preview'}
+                    </Text>
+                    <Text style={[s.miniValueCaption, { color: '#3D8273' }]} numberOfLines={1}>
+                      {state.purity.locks.enabled ? 'STRICT WATCH' : 'ALWAYS ON'}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {!state.quiet && (
             <GoldButton
@@ -665,6 +721,29 @@ const s = StyleSheet.create({
   protectionRowValueBlock: { maxWidth: 96, alignItems: 'flex-end' },
   protectionRowValue: { fontFamily: F.serifSemiBold, fontSize: 15.5, fontVariant: ['tabular-nums'] },
   protectionRowValueCaption: { marginTop: 1, fontFamily: F.sansBold, fontSize: 6.5, letterSpacing: 0.9, color: C.textMuted },
+  pillarBlock: { marginTop: 13 },
+  pillarLabel: { marginBottom: 6, marginLeft: 2, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.8, color: C.textMuted },
+  miniCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 19,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    boxShadow: '0 5px 14px rgba(57, 48, 34, 0.06)',
+  },
+  miniTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  miniCopy: { flex: 1, minWidth: 0 },
+  miniName: { fontFamily: F.serifSemiBold, fontSize: 18.5, lineHeight: 22, letterSpacing: -0.2 },
+  miniStatus: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 10.5, lineHeight: 14 },
+  miniValueBlock: { maxWidth: 104, alignItems: 'flex-end' },
+  miniValue: { fontFamily: F.serifSemiBold, fontSize: 17, fontVariant: ['tabular-nums'] },
+  miniValueCaption: { marginTop: 1, fontFamily: F.sansBold, fontSize: 6.5, letterSpacing: 1 },
+  miniNumbersRow: { marginTop: 9, flexDirection: 'row', alignItems: 'baseline', minWidth: 0 },
+  miniUsed: { fontFamily: F.serifSemiBold, fontSize: 23, lineHeight: 26, fontVariant: ['tabular-nums'] },
+  miniGoal: { fontFamily: F.serifMedium, fontSize: 14.5, fontVariant: ['tabular-nums'] },
+  miniNumbersCaption: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 6.5, letterSpacing: 1 },
   quietButton: { marginTop: 16 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
   sectionTitle: {
