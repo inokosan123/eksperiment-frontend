@@ -45,7 +45,6 @@ import {
   acknowledgeMilestone,
   activeZone,
   allCoreEssentialIds,
-  APP_CATEGORIES,
   dateKey,
   formatClockMs,
   formatEndsAt,
@@ -60,27 +59,9 @@ import {
   useDayPlan,
   type DayPlanState,
   type DayRecord,
-  type PlanZone,
 } from './dayPlanStore';
 
 const WEEK_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-
-// Everything a Session holds over its hours: fully closed groups, group
-// limits or blocks, and single-app rules — the card can't list them, but it
-// can honestly count them.
-function sessionBoundaryCount(zone: PlanZone) {
-  const closed = zone.closedGroupIds?.length ?? 0;
-  const rules = zone.rules ?? [];
-  const groupRules = rules.filter(rule => {
-    const mode = rule.mode ?? (rule.dailyMinutes == null ? 'noLimit' : 'limit');
-    return mode === 'blocked' || (mode === 'limit' && rule.dailyMinutes != null);
-  }).length;
-  const appRules = rules.reduce((count, rule) => count + (rule.appRules ?? []).filter(appRule => {
-    const mode = appRule.mode ?? (appRule.minutes == null ? 'noLimit' : 'limit');
-    return mode === 'blocked' || (mode === 'limit' && appRule.minutes != null);
-  }).length, 0);
-  return closed + groupRules + appRules;
-}
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
 
@@ -242,9 +223,9 @@ export default function FocusWatchView() {
   const essentialsNow = !!plan && !plan.essentialsOnly
     && (hardWallActive || todayStanding === 'essentials');
 
-  // Session-plan facts: how long this Session still runs, what follows it,
-  // how many boundaries it holds, and whether it closes every leisure group
-  // (a Session-sized Essentials-only).
+  // Session-plan facts: how long this Session still runs and what follows it.
+  // Sessions carry no boundaries of their own on this card — the global
+  // Screen Time border is the only one that counts here.
   const nowMinutesOfDay = now.getHours() * 60 + now.getMinutes();
   const sessionMinutesLeft = session
     ? Math.max(1, (((session.endMinutes - nowMinutesOfDay) % 1440) + 1440) % 1440)
@@ -253,13 +234,6 @@ export default function FocusWatchView() {
   const nextSession = session && sessionZones.length > 1
     ? sessionZones[(sessionZones.findIndex(zone => zone.id === session.id) + 1) % sessionZones.length]
     : null;
-  const leisureGroupIds = plan
-    ? [...APP_CATEGORIES.map(category => category.id), ...plan.customGroupIds]
-    : [];
-  const sessionClosesAll = !!session
-    && leisureGroupIds.length > 0
-    && leisureGroupIds.every(id => session.closedGroupIds?.includes(id));
-  const sessionBoundaries = session ? sessionBoundaryCount(session) : 0;
   let screenTimeValue: string | undefined;
   let screenTimeCaption: string | undefined;
   let screenTimeValueColor: string = C.text;
@@ -268,13 +242,9 @@ export default function FocusWatchView() {
       screenTimeValue = 'Essentials';
       screenTimeCaption = 'ALL DAY';
       screenTimeValueColor = GAUGE_ESSENTIALS_COLOR;
-    } else if (sessionClosesAll && !essentialsNow) {
-      screenTimeValue = 'Essentials';
-      screenTimeCaption = 'THIS SESSION';
-      screenTimeValueColor = GAUGE_ESSENTIALS_COLOR;
     } else if (targetMinutes == null) {
       screenTimeValue = 'On';
-      screenTimeCaption = plan.kind === 'session' ? 'SESSION RULES' : 'GROUP LIMITS';
+      screenTimeCaption = 'GROUP LIMITS';
     } else if (essentialsNow) {
       screenTimeValue = 'Essentials';
       screenTimeCaption = 'ONLY FOR NOW';
@@ -454,8 +424,10 @@ export default function FocusWatchView() {
                           ? 'Only Essentials are open today'
                           : essentialsNow
                             ? 'Limit spent · Essentials remain open'
-                            : session && sessionMinutesLeft != null
-                              ? `${session.name} · ends in ${formatMinutesShort(sessionMinutesLeft)}`
+                            : session
+                              ? nextSession
+                                ? `${session.name} is running · ${nextSession.name} follows`
+                                : `${session.name} is running`
                               : plan.kind === 'session'
                                 ? 'Sessions shape today'
                                 : 'Active all day'}
@@ -466,26 +438,45 @@ export default function FocusWatchView() {
                       <Text style={[s.miniValueCaption, { color: visual.body }]} numberOfLines={1}>{screenTimeCaption}</Text>
                     </View>
                   </View>
-                  <View style={s.miniNumbersRow}>
-                    <Text style={[s.miniUsed, { color: screenTimeNumbersColor }]} numberOfLines={1}>
-                      {usedToday == null ? '– –' : formatMinutesShort(usedToday)}
-                    </Text>
-                    {!essentialsOnly && targetMinutes != null && (
-                      <Text style={[s.miniGoal, { color: visual.body }]} numberOfLines={1}> / {formatMinutesShort(targetMinutes)}</Text>
-                    )}
-                    <Text style={[s.miniNumbersCaption, { color: visual.body }]} numberOfLines={1}>
-                      {essentialsOnly || targetMinutes == null ? '  PHONE TIME TODAY' : '  SCREEN TIME TODAY'}
-                    </Text>
-                  </View>
-                  {plan.kind === 'session' && session && !essentialsOnly && (
-                    <Text style={[s.miniSessionMeta, { color: visual.body }]} numberOfLines={1}>
-                      {sessionClosesAll
-                        ? `Everything rests in ${session.name}`
-                        : sessionBoundaries === 0
-                          ? `No limits in ${session.name}`
-                          : `${sessionBoundaries} ${sessionBoundaries === 1 ? 'boundary holds' : 'boundaries hold'} in ${session.name}`}
-                      {nextSession ? ` · ${nextSession.name} follows` : ''}
-                    </Text>
+                  {plan.kind === 'session' && session && !essentialsOnly && sessionMinutesLeft != null ? (
+                    <View style={[s.miniStatsRow, { borderTopColor: visual.border }]}>
+                      <View style={s.miniStat}>
+                        <View style={s.miniStatValueRow}>
+                          <Text style={[s.miniUsed, { color: screenTimeNumbersColor }]} numberOfLines={1}>
+                            {usedToday == null ? '– –' : formatMinutesShort(usedToday)}
+                          </Text>
+                          {targetMinutes != null && (
+                            <Text style={[s.miniGoal, { color: visual.body }]} numberOfLines={1}> / {formatMinutesShort(targetMinutes)}</Text>
+                          )}
+                        </View>
+                        <Text style={[s.miniStatCaption, { color: visual.body }]} numberOfLines={1}>
+                          {targetMinutes == null ? 'PHONE TIME TODAY' : 'SCREEN TIME TODAY'}
+                        </Text>
+                      </View>
+                      <View style={[s.miniStatDivider, { backgroundColor: visual.border }]} />
+                      <View style={s.miniStat}>
+                        <View style={s.miniStatValueRow}>
+                          <Text style={[s.miniUsed, { color: visual.ink }]} numberOfLines={1}>
+                            {formatMinutesShort(sessionMinutesLeft)}
+                          </Text>
+                        </View>
+                        <Text style={[s.miniStatCaption, { color: visual.body }]} numberOfLines={1}>
+                          LEFT IN {session.name.toUpperCase()}
+                        </Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={[s.miniNumbersRow, { borderTopColor: visual.border }]}>
+                      <Text style={[s.miniUsed, { color: screenTimeNumbersColor }]} numberOfLines={1}>
+                        {usedToday == null ? '– –' : formatMinutesShort(usedToday)}
+                      </Text>
+                      {!essentialsOnly && targetMinutes != null && (
+                        <Text style={[s.miniGoal, { color: visual.body }]} numberOfLines={1}> / {formatMinutesShort(targetMinutes)}</Text>
+                      )}
+                      <Text style={[s.miniNumbersCaption, { color: visual.body }]} numberOfLines={1}>
+                        {essentialsOnly || targetMinutes == null ? '  PHONE TIME TODAY' : '  SCREEN TIME TODAY'}
+                      </Text>
+                    </View>
                   )}
                 </TouchableOpacity>
               </View>
@@ -811,11 +802,15 @@ const s = StyleSheet.create({
   miniValueBlock: { maxWidth: 110, alignItems: 'flex-end' },
   miniValue: { fontFamily: F.serifSemiBold, fontSize: 19, fontVariant: ['tabular-nums'] },
   miniValueCaption: { marginTop: 1.5, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
-  miniNumbersRow: { marginTop: 10, flexDirection: 'row', alignItems: 'baseline', minWidth: 0 },
+  miniNumbersRow: { marginTop: 11, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, flexDirection: 'row', alignItems: 'baseline', minWidth: 0 },
   miniUsed: { fontFamily: F.serifSemiBold, fontSize: 26, lineHeight: 29, fontVariant: ['tabular-nums'] },
   miniGoal: { fontFamily: F.serifMedium, fontSize: 16, fontVariant: ['tabular-nums'] },
   miniNumbersCaption: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
-  miniSessionMeta: { marginTop: 7, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17 },
+  miniStatsRow: { marginTop: 11, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, flexDirection: 'row', alignItems: 'center' },
+  miniStat: { flex: 1, minWidth: 0, paddingRight: 8 },
+  miniStatValueRow: { flexDirection: 'row', alignItems: 'baseline', minWidth: 0 },
+  miniStatCaption: { marginTop: 2.5, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
+  miniStatDivider: { width: StyleSheet.hairlineWidth, height: 34, marginRight: 12, opacity: 0.9 },
   quietButton: { marginTop: 16 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
   sectionTitle: {
