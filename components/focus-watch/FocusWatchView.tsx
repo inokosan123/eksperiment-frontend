@@ -29,14 +29,13 @@ import { C, F } from '@/constants/tokens';
 import FocusPhoneStatus from './FocusPhoneStatus';
 import FocusCard, { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
 import { PulseDot } from './FocusMeter';
-import DayGauge, { gaugeStanding } from './DayGauge';
+import DayGauge from './DayGauge';
 import { RadiantTrophy, StreakMedallion, TrophyShineBackdrop } from './TrophyRadiance';
 import GoldButton from './GoldButton';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
 import QuietHourSheet from './QuietHourSheet';
 import TrophyCalendarSheet from './TrophyCalendarSheet';
 import MilestoneCongratsOverlay from './MilestoneCongratsOverlay';
-import { WEB_PACKS } from './focusContent';
 import { isNativeFocusAvailable } from './focusNativeBridge';
 import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
 import {
@@ -44,7 +43,6 @@ import {
   activeZone,
   allCoreEssentialIds,
   dateKey,
-  DAY_LETTERS,
   formatClockMs,
   formatEndsAt,
   formatMinutesShort,
@@ -56,20 +54,11 @@ import {
   purityActiveCount,
   tickDayPlanStore,
   useDayPlan,
-  weekdayMondayFirst,
-  type DayPlan,
   type DayPlanState,
   type DayRecord,
 } from './dayPlanStore';
 
 const WEEK_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-const SESSION_COLORS = ['#C8A24D', '#658F78', '#7C78A5', '#B46D6D'];
-const PACK_SHORT_NAMES: Record<string, string> = {
-  gambling: 'Gambling',
-  adult: 'Adult',
-  social: 'Social',
-  news: 'News',
-};
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
 
@@ -152,54 +141,6 @@ function ProtectionRow({
   );
 }
 
-function SessionRail({ plan, now }: { plan: DayPlan; now: Date }) {
-  const current = activeZone(plan, now);
-  const nowPct = ((now.getHours() * 60 + now.getMinutes()) / 1440) * 100;
-  return (
-    <View style={s.sessionRail}>
-      <View style={s.sessionTrack}>
-        {plan.zones.map((session, index) => {
-          const start = session.startMinutes / 1440;
-          const end = session.endMinutes / 1440;
-          if (end > start) {
-            return (
-              <View
-                key={session.id}
-                style={[
-                  s.sessionSegment,
-                  {
-                    left: `${start * 100}%`,
-                    width: `${(end - start) * 100}%`,
-                    backgroundColor: SESSION_COLORS[index % SESSION_COLORS.length],
-                    opacity: current?.id === session.id ? 1 : 0.45,
-                  },
-                ]}
-              />
-            );
-          }
-          return (
-            <View key={session.id} style={StyleSheet.absoluteFill} pointerEvents="none">
-              <View style={[s.sessionSegment, { left: `${start * 100}%`, right: 0, backgroundColor: SESSION_COLORS[index % SESSION_COLORS.length], opacity: current?.id === session.id ? 1 : 0.45 }]} />
-              <View style={[s.sessionSegment, { left: 0, width: `${end * 100}%`, backgroundColor: SESSION_COLORS[index % SESSION_COLORS.length], opacity: current?.id === session.id ? 1 : 0.45 }]} />
-            </View>
-          );
-        })}
-        <View style={[s.nowMarker, { left: `${nowPct}%` }]} />
-      </View>
-      <View style={[s.nowMarkerCap, { left: `${nowPct}%` }]} pointerEvents="none">
-        <PulseDot color="#4A3A16" size={5} pulse={!!current} />
-      </View>
-      <View style={s.sessionTicks}>
-        <Text style={s.tickText}>00</Text>
-        <Text style={s.tickText}>06</Text>
-        <Text style={s.tickText}>12</Text>
-        <Text style={s.tickText}>18</Text>
-        <Text style={s.tickText}>24</Text>
-      </View>
-    </View>
-  );
-}
-
 export default function FocusWatchView() {
   const router = useRouter();
   const state = useDayPlan();
@@ -254,9 +195,6 @@ export default function FocusWatchView() {
   const targetMinutes = plan?.budgetMinutes ?? null;
   const toleranceEndMinutes = plan ? plan.essentialOnlyMinutes ?? plan.tolerableMinutes : null;
   const usedToday = getLiveUsageSnapshot(dateKey(now))?.totalMinutes ?? null;
-  const todayStanding = targetMinutes != null
-    ? gaugeStanding(targetMinutes, toleranceEndMinutes, usedToday)
-    : 'unknown';
 
   const protectionTitle = previewMode && protectionConfigured
     ? 'Protection preview is ready.'
@@ -511,76 +449,9 @@ export default function FocusWatchView() {
             tint={FOCUS_TINTS.gold}
             watermark={<Clock s={84} c="#A9863F" w={1.1} />}
             chip={screenTimeChip}
-            description={plan ? undefined : 'Create a simple Daily Plan or shape the day with Sessions.'}
+            description="Plan how much of the day the phone may have — a daily goal, group limits, and app rules."
             onPress={() => router.push('/day-plans' as never)}
-          >
-            {!plan && (
-              <>
-                <View style={s.stStatsRow}>
-                  <View style={s.stStat}>
-                    <Text style={s.stStatValue}>{state.plans.length}</Text>
-                    <Text style={s.stStatLabel}>{state.plans.length === 1 ? 'saved plan' : 'saved plans'}</Text>
-                  </View>
-                  <View style={s.stStatDivider} />
-                  <View style={s.stStat}>
-                    <Text style={s.stStatValue}>{state.schedule.filter(Boolean).length}</Text>
-                    <Text style={s.stStatLabel}>planned {state.schedule.filter(Boolean).length === 1 ? 'weekday' : 'weekdays'}</Text>
-                  </View>
-                </View>
-                <View style={s.stWeekStrip}>
-                  {DAY_LETTERS.map((letter, day) => {
-                    const assigned = !!state.schedule[day];
-                    const isToday = day === weekdayMondayFirst(now);
-                    return (
-                      <View
-                        key={`${letter}-${day}`}
-                        style={[s.stWeekDay, assigned && s.stWeekDayOn, isToday && s.stWeekDayToday]}
-                      >
-                        <Text style={[s.stWeekDayText, assigned && s.stWeekDayTextOn]}>{letter}</Text>
-                      </View>
-                    );
-                  })}
-                  <Text style={s.stWeekHint}>Today is a rest day</Text>
-                </View>
-              </>
-            )}
-            {plan && (
-              <>
-                <View style={s.stPlanHeader}>
-                  <View style={s.stPlanCopy}>
-                    <Text style={s.stPlanKicker}>TODAY’S PLAN</Text>
-                    <Text style={s.stPlanName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>{plan.name}</Text>
-                    {session && <Text style={s.stPlanMeta} numberOfLines={1}>{session.name} is active now</Text>}
-                  </View>
-                </View>
-                {plan.kind === 'session' && <SessionRail plan={plan} now={now} />}
-                {targetMinutes != null ? (
-                  <View style={s.stGaugeBlock}>
-                    <DayGauge
-                      goalMinutes={targetMinutes}
-                      toleranceEndMinutes={toleranceEndMinutes}
-                      usedMinutes={usedToday}
-                      accent="#8A5A1A"
-                      labelColor="#A9863F"
-                      height={9}
-                      markers="none"
-                    />
-                    <Text style={s.stGaugeCaption} numberOfLines={1}>
-                      {usedToday == null
-                        ? `${formatMinutesShort(targetMinutes)} goal · usage syncs from iPhone`
-                        : todayStanding === 'under'
-                          ? `${formatMinutesShort(usedToday)} used · ${formatMinutesShort(Math.max(0, targetMinutes - usedToday))} left before the goal`
-                          : todayStanding === 'tolerance'
-                            ? `${formatMinutesShort(usedToday)} used · ${formatMinutesShort(Math.max(0, (toleranceEndMinutes ?? targetMinutes) - usedToday))} of tolerance left`
-                            : `${formatMinutesShort(usedToday)} used · essentials only now`}
-                    </Text>
-                  </View>
-                ) : (
-                  <Text style={s.stNoTarget}>No daily target · group limits shape today</Text>
-                )}
-              </>
-            )}
-          </FocusCard>
+          />
         </Animated.View>
 
         <Animated.View entering={enter(280)} style={s.contentSection}>
@@ -592,40 +463,7 @@ export default function FocusWatchView() {
             chip={webChip}
             description="Block selected harmful content across supported browsers."
             onPress={() => router.push('/clean-sight' as never)}
-          >
-            <View style={s.webStatsRow}>
-              <View style={s.webStat}>
-                <Text style={s.webStatValue}>{packsOn}</Text>
-                <Text style={s.webStatLabel}>{packsOn === 1 ? 'active pack' : 'active packs'}</Text>
-              </View>
-              <View style={s.webStatDivider} />
-              <View style={s.webStat}>
-                <Text style={s.webStatValue}>{customSites}</Text>
-                <Text style={s.webStatLabel}>{customSites === 1 ? 'custom site' : 'custom sites'}</Text>
-              </View>
-            </View>
-            <View style={s.packChips}>
-              {WEB_PACKS.map(pack => {
-                const on = (state.purity.packs.find(entry => entry.id === pack.id)?.mode ?? 'off') !== 'off';
-                return (
-                  <View key={pack.id} style={[s.packChip, on ? s.packChipOn : s.packChipOff]}>
-                    <View style={[s.packChipDot, on ? s.packChipDotOn : s.packChipDotOff]} />
-                    <Text style={[s.packChipText, on ? s.packChipTextOn : s.packChipTextOff]}>
-                      {PACK_SHORT_NAMES[pack.id] ?? pack.name}
-                    </Text>
-                  </View>
-                );
-              })}
-              {customSites > 0 && (
-                <View style={[s.packChip, s.packChipOn]}>
-                  <View style={[s.packChipDot, s.packChipDotOn]} />
-                  <Text style={[s.packChipText, s.packChipTextOn]}>
-                    +{customSites} custom {customSites === 1 ? 'site' : 'sites'}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </FocusCard>
+          />
         </Animated.View>
       </ScrollView>
 
@@ -852,80 +690,4 @@ const s = StyleSheet.create({
   progressNoLimit: { marginTop: 14, textAlign: 'center', fontFamily: F.sansMedium, fontSize: 10.5, color: '#A9863F' },
   calendarLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   calendarLinkText: { fontFamily: F.serifSemiBold, fontSize: 13.5, color: C.goldDark },
-  stStatsRow: { flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(169,134,63,0.28)', paddingVertical: 10 },
-  stStat: { flex: 1, flexDirection: 'row', alignItems: 'baseline', gap: 5 },
-  stStatValue: { fontFamily: F.serifSemiBold, fontSize: 22, color: '#4A3A16', fontVariant: ['tabular-nums'] },
-  stStatLabel: { flexShrink: 1, fontFamily: F.sansMedium, fontSize: 9.5, color: '#A9863F' },
-  stStatDivider: { width: StyleSheet.hairlineWidth, height: 27, marginHorizontal: 12, backgroundColor: 'rgba(169,134,63,0.32)' },
-  stWeekStrip: { marginTop: 11, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  stWeekDay: {
-    width: 25,
-    height: 25,
-    borderRadius: 13,
-    borderWidth: 1,
-    borderColor: 'rgba(169,134,63,0.24)',
-    backgroundColor: 'rgba(255,255,255,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stWeekDayOn: { backgroundColor: 'rgba(255,255,255,0.85)', borderColor: 'rgba(169,134,63,0.5)' },
-  stWeekDayToday: { borderWidth: 1.5, borderColor: '#8A5A1A' },
-  stWeekDayText: { fontFamily: F.sansBold, fontSize: 9, color: 'rgba(138,90,26,0.45)' },
-  stWeekDayTextOn: { color: '#8A5A1A' },
-  stWeekHint: { flex: 1, textAlign: 'right', fontFamily: F.sansMedium, fontSize: 9, color: '#A9863F' },
-  stPlanHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  stPlanCopy: { flex: 1, minWidth: 0 },
-  stPlanKicker: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.6, color: '#A9863F' },
-  stPlanName: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 20, letterSpacing: -0.2, color: '#4A3A16' },
-  stPlanMeta: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 9.5, color: '#A9863F' },
-  sessionRail: { marginTop: 12 },
-  sessionTrack: { position: 'relative', height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.6)', overflow: 'hidden' },
-  sessionSegment: { position: 'absolute', top: 0, bottom: 0, borderRadius: 3 },
-  nowMarker: { position: 'absolute', top: -2, width: 2, height: 14, borderRadius: 1, backgroundColor: '#4A3A16' },
-  nowMarkerCap: { position: 'absolute', top: -7, marginLeft: -1.5 },
-  sessionTicks: { marginTop: 5, flexDirection: 'row', justifyContent: 'space-between' },
-  tickText: { fontFamily: F.sansMedium, fontSize: 7.5, color: 'rgba(138,90,26,0.6)', fontVariant: ['tabular-nums'] },
-  stGaugeBlock: {
-    marginTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(169,134,63,0.32)',
-    paddingTop: 13,
-  },
-  stGaugeCaption: { marginTop: 8, fontFamily: F.sansMedium, fontSize: 9.5, color: '#8A5A1A', fontVariant: ['tabular-nums'] },
-  stNoTarget: {
-    marginTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(169,134,63,0.32)',
-    paddingTop: 12,
-    fontFamily: F.sansMedium,
-    fontSize: 9.5,
-    color: '#8A5A1A',
-  },
-  webStatsRow: { flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(61,130,115,0.24)', paddingVertical: 10 },
-  webStat: { flex: 1, flexDirection: 'row', alignItems: 'baseline', gap: 5 },
-  webStatValue: { fontFamily: F.serifSemiBold, fontSize: 22, color: '#1F4E45', fontVariant: ['tabular-nums'] },
-  webStatLabel: { flexShrink: 1, fontFamily: F.sansMedium, fontSize: 9.5, color: '#3D8273' },
-  webStatDivider: { width: StyleSheet.hairlineWidth, height: 27, marginHorizontal: 12, backgroundColor: 'rgba(61,130,115,0.28)' },
-  packChips: { marginTop: 11, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  packChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 9,
-    paddingVertical: 5.5,
-  },
-  packChipOn: { backgroundColor: 'rgba(255,255,255,0.8)', borderColor: '#BFDDD2' },
-  packChipOff: { backgroundColor: 'rgba(255,255,255,0.38)', borderColor: 'rgba(191,221,210,0.5)' },
-  packChipDot: { width: 5, height: 5, borderRadius: 3 },
-  packChipDotOn: { backgroundColor: '#2C7565' },
-  packChipDotOff: { backgroundColor: 'rgba(44,117,101,0.3)' },
-  packChipText: { fontFamily: F.sansSemiBold, fontSize: 10 },
-  packChipTextOn: { color: '#2A6E5F' },
-  packChipTextOff: { color: 'rgba(42,110,95,0.5)' },
 });
