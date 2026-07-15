@@ -152,14 +152,20 @@ const medallionStyles = StyleSheet.create({
   // were struck into the metal.
   // Wide enough that even a 3-digit streak keeps its full size — the discs
   // are a glow behind the number, not a frame it must fit inside.
+  // lining-nums matters here: EB Garamond's default old-style figures
+  // (3, 4, 7, 9) hang below the baseline and read off-center inside the
+  // disc; lining figures share one height and sit true.
   value: {
     maxWidth: '94%',
     fontFamily: F.serifSemiBold,
     fontSize: 34,
+    lineHeight: 36,
     letterSpacing: -0.4,
     color: '#3D3322',
     textAlign: 'center',
-    fontVariant: ['tabular-nums'],
+    textAlignVertical: 'center',
+    includeFontPadding: false,
+    fontVariant: ['lining-nums', 'tabular-nums'],
     textShadowColor: 'rgba(255,255,255,0.85)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 0.5,
