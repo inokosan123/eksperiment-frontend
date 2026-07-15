@@ -214,22 +214,37 @@ export default function FocusWatchView() {
     ? gaugeStanding(targetMinutes, toleranceEndMinutes, usedToday)
     : 'unknown';
 
-  // The Screen Time track carries the one number this screen doesn't show
-  // anywhere else: how much of today's allowance is still ahead.
+  // The Screen Time card divides its job cleanly: the status line says WHICH
+  // rules hold right now, the right block says WHERE today stands, and the
+  // numbers row says HOW MUCH — used / goal in the big-card slash grammar.
+  const toleranceDuration = targetMinutes != null && toleranceEndMinutes != null
+    ? Math.max(0, toleranceEndMinutes - targetMinutes)
+    : null;
+  const essentialsNow = !!plan && !plan.essentialsOnly
+    && (hardWallActive || todayStanding === 'essentials');
   let screenTimeValue: string | undefined;
   let screenTimeCaption: string | undefined;
   let screenTimeValueColor: string = C.text;
   if (plan) {
-    if (hardWallActive || todayStanding === 'essentials') {
+    if (plan.essentialsOnly) {
       screenTimeValue = 'Essentials';
-      screenTimeCaption = 'ONLY NOW';
+      screenTimeCaption = 'ALL DAY';
       screenTimeValueColor = GAUGE_ESSENTIALS_COLOR;
     } else if (targetMinutes == null) {
       screenTimeValue = 'On';
       screenTimeCaption = 'GROUP LIMITS';
+    } else if (essentialsNow) {
+      screenTimeValue = 'Essentials';
+      screenTimeCaption = 'ONLY FOR NOW';
+      screenTimeValueColor = GAUGE_ESSENTIALS_COLOR;
     } else if (usedToday == null) {
-      screenTimeValue = formatMinutesShort(targetMinutes);
-      screenTimeCaption = 'TODAY’S GOAL';
+      if (toleranceDuration != null && toleranceDuration > 0) {
+        screenTimeValue = `+${formatMinutesShort(toleranceDuration)}`;
+        screenTimeCaption = 'TOLERANCE';
+      } else {
+        screenTimeValue = formatMinutesShort(targetMinutes);
+        screenTimeCaption = 'TODAY’S GOAL';
+      }
     } else if (todayStanding === 'tolerance') {
       screenTimeValue = formatMinutesShort(Math.max(0, (toleranceEndMinutes ?? targetMinutes) - usedToday));
       screenTimeCaption = 'TOLERANCE LEFT';
@@ -240,6 +255,10 @@ export default function FocusWatchView() {
       screenTimeValueColor = gaugeStateColor('under', C.text);
     }
   }
+  // The color the used-minutes number wears in the numbers row.
+  const screenTimeNumbersColor = plan?.essentialsOnly || targetMinutes == null || usedToday == null
+    ? C.text
+    : gaugeStateColor(todayStanding, C.text);
 
   const protectionTitle = previewMode && protectionConfigured
     ? 'Protection preview is ready.'
@@ -390,32 +409,30 @@ export default function FocusWatchView() {
                       <Text style={[s.miniName, { color: visual.ink }]} numberOfLines={1}>{plan.name}</Text>
                       <Text style={[s.miniStatus, { color: visual.body }]} numberOfLines={1}>
                         {essentialsOnly
-                          ? 'Essentials only from minute one'
-                          : hardWallActive
-                            ? 'Daily limit reached · essentials remain'
+                          ? 'Only Essentials are open today'
+                          : essentialsNow
+                            ? 'Limit spent · Essentials remain open'
                             : session
-                              ? `${session.name} until ${formatTimeOfDay(session.endMinutes)}`
-                              : 'Active across the whole day'}
+                              ? `${session.name} · until ${formatTimeOfDay(session.endMinutes)}`
+                              : 'Active all day'}
                       </Text>
                     </View>
                     <View style={s.miniValueBlock}>
-                      <Text style={[s.miniValue, { color: essentialsOnly ? GAUGE_ESSENTIALS_COLOR : screenTimeValueColor }]} numberOfLines={1}>
-                        {essentialsOnly ? 'Essentials' : screenTimeValue}
-                      </Text>
-                      <Text style={[s.miniValueCaption, { color: visual.body }]} numberOfLines={1}>
-                        {essentialsOnly ? 'ALL DAY' : screenTimeCaption}
-                      </Text>
+                      <Text style={[s.miniValue, { color: screenTimeValueColor }]} numberOfLines={1}>{screenTimeValue}</Text>
+                      <Text style={[s.miniValueCaption, { color: visual.body }]} numberOfLines={1}>{screenTimeCaption}</Text>
                     </View>
                   </View>
-                  {!essentialsOnly && targetMinutes != null && (
-                    <View style={s.miniNumbersRow}>
-                      <Text style={[s.miniUsed, { color: screenTimeValueColor }]} numberOfLines={1}>
-                        {usedToday == null ? '– –' : formatMinutesShort(usedToday)}
-                      </Text>
+                  <View style={s.miniNumbersRow}>
+                    <Text style={[s.miniUsed, { color: screenTimeNumbersColor }]} numberOfLines={1}>
+                      {usedToday == null ? '– –' : formatMinutesShort(usedToday)}
+                    </Text>
+                    {!essentialsOnly && targetMinutes != null && (
                       <Text style={[s.miniGoal, { color: visual.body }]} numberOfLines={1}> / {formatMinutesShort(targetMinutes)}</Text>
-                      <Text style={[s.miniNumbersCaption, { color: visual.body }]} numberOfLines={1}>  SCREEN TIME TODAY</Text>
-                    </View>
-                  )}
+                    )}
+                    <Text style={[s.miniNumbersCaption, { color: visual.body }]} numberOfLines={1}>
+                      {essentialsOnly || targetMinutes == null ? '  PHONE TIME TODAY' : '  SCREEN TIME TODAY'}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               </View>
             );
