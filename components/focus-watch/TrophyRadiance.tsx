@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
-import Svg, { Line, Path } from 'react-native-svg';
+import Svg, { Ellipse, Line, Path } from 'react-native-svg';
 import { F } from '@/constants/tokens';
 import Animated, {
   cancelAnimation,
@@ -131,10 +131,34 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
   return (
     <View style={{ width, height }}>
       <Svg pointerEvents="none" width={width} height={height} style={StyleSheet.absoluteFill}>
-        <Path
-          d={`M ${size * 0.02} ${height * 0.56} C ${size * 0.1} ${height * 0.17}, ${width * 0.48} ${height * 0.03}, ${width * 0.78} ${height * 0.2} C ${width * 0.98} ${height * 0.31}, ${width * 1.01} ${height * 0.65}, ${width * 0.83} ${height * 0.82} C ${width * 0.62} ${height * 1.01}, ${width * 0.2} ${height * 0.94}, ${width * 0.04} ${height * 0.76} C ${-size * 0.02} ${height * 0.7}, ${-size * 0.03} ${height * 0.63}, ${size * 0.02} ${height * 0.56} Z`}
-          fill="#FFF4D8"
-          fillOpacity={0.72}
+        {/* Layered ellipses, darker rim to lightest heart — the inverse of the
+            Year in Pixels medallion, so the number sits in the brightest pool. */}
+        <Ellipse
+          cx={width * 0.48}
+          cy={height * 0.5}
+          rx={width * 0.48}
+          ry={height * 0.48}
+          fill="#EBD5A0"
+          opacity={0.8}
+          transform={`rotate(-5 ${width * 0.48} ${height * 0.5})`}
+        />
+        <Ellipse
+          cx={width * 0.5}
+          cy={height * 0.47}
+          rx={width * 0.395}
+          ry={height * 0.4}
+          fill="#F5E5BE"
+          opacity={0.85}
+          transform={`rotate(4 ${width * 0.5} ${height * 0.47})`}
+        />
+        <Ellipse
+          cx={width * 0.47}
+          cy={height * 0.52}
+          rx={width * 0.315}
+          ry={height * 0.32}
+          fill="#FFF8E4"
+          opacity={0.95}
+          transform={`rotate(-3 ${width * 0.47} ${height * 0.52})`}
         />
         <Path
           d={`M ${size * 0.13} ${height * 0.76} C ${width * 0.36} ${height * 0.95}, ${width * 0.69} ${height * 0.91}, ${width * 0.93} ${height * 0.58}`}
