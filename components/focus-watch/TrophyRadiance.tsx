@@ -159,12 +159,12 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
         />
         <Ellipse
           cx={width * 0.54}
-          cy={height * 0.58}
-          rx={width * 0.37}
-          ry={height * 0.35}
+          cy={height * 0.57}
+          rx={width * 0.42}
+          ry={height * 0.39}
           fill="#FFF8E4"
           opacity={0.95}
-          transform={`rotate(-3 ${width * 0.54} ${height * 0.58})`}
+          transform={`rotate(-3 ${width * 0.54} ${height * 0.57})`}
         />
         <Path
           d={`M ${size * 0.13 + width * 0.07} ${height * 0.82} C ${width * 0.43} ${height * 1.01}, ${width * 0.76} ${height * 0.97}, ${width * 1.0} ${height * 0.64}`}
