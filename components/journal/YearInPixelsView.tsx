@@ -132,13 +132,23 @@ function MarqueeText({ text, textStyle }: { text: string; textStyle: object }) {
         if (w > 0 && Math.abs(w - boxW) > 1) setBoxW(w);
       }}
     >
-      <Reanimated.Text
+      {/* Ghost measurer: an invisible, unconstrained copy — the visible text
+          would report its clipped width, never its true one. */}
+      <Text
+        pointerEvents="none"
         numberOfLines={1}
-        style={[textStyle, s.marqueeText, glide]}
+        style={[textStyle, s.marqueeGhost]}
         onTextLayout={event => {
           const w = event.nativeEvent.lines?.[0]?.width ?? 0;
           if (w > 0 && Math.abs(w - textW) > 1) setTextW(Math.ceil(w));
         }}
+      >
+        {text}
+      </Text>
+      <Reanimated.Text
+        numberOfLines={1}
+        ellipsizeMode="clip"
+        style={[textStyle, textW > 0 ? { width: Math.max(textW + 2, boxW) } : null, glide]}
       >
         {text}
       </Reanimated.Text>
@@ -839,7 +849,7 @@ const s = StyleSheet.create({
   },
   tabInner: { flexDirection: 'row', alignItems: 'center', columnGap: 7 },
   marqueeBox: { flex: 1, minWidth: 0, flexDirection: 'row', overflow: 'hidden' },
-  marqueeText: { flexShrink: 0 },
+  marqueeGhost: { position: 'absolute', left: 0, top: 0, width: 2000, opacity: 0 },
   tabDots: { flexDirection: 'row', alignItems: 'center', columnGap: 2.5 },
   tabDot: { width: 4.5, height: 4.5, borderRadius: 2.5 },
   tabDotActive: {
@@ -868,7 +878,6 @@ const s = StyleSheet.create({
     letterSpacing: 1.6,
     color: '#9C948C',
     textTransform: 'uppercase',
-    maxWidth: 118,
   },
   tabLabelActive: { color: '#FFFFFF', letterSpacing: 1.8 },
 
