@@ -878,6 +878,9 @@ export default function FocusZoneView() {
         visible={showCompletion}
         collectToRail={timerMode === 'cycle'}
         flightTarget={flightTarget}
+        eyebrow={timerMode === 'cycle'
+          ? `Focus ${currentFocusNumber} of ${sessionsPerCycle} · ${focusDuration} min`
+          : `Focus Session · ${focusDuration} min`}
         nextStepLabel={timerMode === 'cycle' ? 'COLLECT' : 'START BREAK'}
         onCollect={collectFocusReward}
       />
@@ -1236,12 +1239,14 @@ function CompletionModal({
   visible,
   collectToRail,
   flightTarget,
+  eyebrow,
   nextStepLabel,
   onCollect,
 }: {
   visible: boolean;
   collectToRail: boolean;
   flightTarget: { x: number; y: number } | null;
+  eyebrow: string;
   nextStepLabel: string;
   onCollect: () => void;
 }) {
@@ -1375,11 +1380,15 @@ function CompletionModal({
       <View style={completion.root}>
         <Animated.View pointerEvents="none" style={[completion.backdrop, backdropStyle]} />
         <Animated.View style={[completion.card, cardEnterStyle]}>
-          <Animated.View pointerEvents="none" style={[completion.cardBg, cardBgStyle]} />
+          <Animated.View pointerEvents="none" style={[completion.cardBg, cardBgStyle]}>
+            <View style={completion.cardFrame} />
+          </Animated.View>
           <Animated.View style={[completion.sealFlight, sealFlightStyle]}>
             <Animated.View style={sealDiscStyle}>
+              <View pointerEvents="none" style={[completion.bloom, completion.bloomOuter]} />
+              <View pointerEvents="none" style={[completion.bloom, completion.bloomMid]} />
+              <View pointerEvents="none" style={[completion.bloom, completion.bloomInner]} />
               <View style={completion.seal} ref={sealRef}>
-                <View style={completion.sealGlow} />
                 <View style={completion.targetAura} />
                 {heroReady && (
                   <FocusLottie name="target" loop={false} speed={1} style={completion.target} />
@@ -1391,10 +1400,15 @@ function CompletionModal({
             </Animated.View>
           </Animated.View>
           <Animated.View style={[completion.copy, copyStyle]}>
+            <Text style={completion.eyebrow}>{eyebrow}</Text>
             <Text style={completion.title}>Congratulations!</Text>
-            <View style={completion.titleUnderline} />
+            <View style={completion.ornamentRow}>
+              <View style={completion.ornamentLine} />
+              <View style={completion.ornamentDiamond} />
+              <View style={completion.ornamentLine} />
+            </View>
             <Text style={completion.body}>
-              <Text style={completion.bodyStrong}>Focus session complete.</Text> You hit the <Text style={completion.bodyStrong}>target.</Text>
+              <Text style={completion.bodyStrong}>You hit the target.</Text> Now take a well-earned break.
             </Text>
             <TouchableOpacity onPress={handleCollect} disabled={collecting} style={completion.collectBtn} activeOpacity={0.9}>
               <Text style={completion.collectText}>{nextStepLabel}</Text>
@@ -1938,20 +1952,27 @@ const modal = StyleSheet.create({
 
 const completion = StyleSheet.create({
   root: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.38)' },
-  card: { width: '100%', maxWidth: 360, minHeight: 376, borderRadius: 34, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 30, overflow: 'visible' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(23,18,12,0.42)' },
+  card: { width: '100%', maxWidth: 360, minHeight: 386, borderRadius: 34, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 32, overflow: 'visible' },
   cardBg: { ...StyleSheet.absoluteFillObject, borderRadius: 34, backgroundColor: '#FFFEFB', borderWidth: 1, borderColor: 'rgba(197,160,89,0.20)', shadowColor: '#000', shadowOffset: { width: 0, height: 24 }, shadowOpacity: 0.18, shadowRadius: 40, elevation: 16 },
+  cardFrame: { position: 'absolute', top: 10, left: 10, right: 10, bottom: 10, borderRadius: 26, borderWidth: 1, borderColor: 'rgba(197,160,89,0.16)' },
   sealFlight: { alignItems: 'center', justifyContent: 'center', zIndex: 4 },
   seal: { width: 112, height: 112, borderRadius: 56, alignItems: 'center', justifyContent: 'center', backgroundColor: '#17130F', borderWidth: 1.2, borderColor: 'rgba(232,195,116,0.74)', shadowColor: GOLD, shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.34, shadowRadius: 34, elevation: 6 },
-  sealGlow: { position: 'absolute', width: 148, height: 148, borderRadius: 74, backgroundColor: 'rgba(197,160,89,0.14)', borderWidth: 1, borderColor: 'rgba(197,160,89,0.14)' },
+  bloom: { position: 'absolute', alignSelf: 'center' },
+  bloomOuter: { top: -28, width: 168, height: 168, borderRadius: 84, backgroundColor: 'rgba(197,160,89,0.05)' },
+  bloomMid: { top: -15, width: 142, height: 142, borderRadius: 71, backgroundColor: 'rgba(197,160,89,0.08)', borderWidth: 1, borderColor: 'rgba(197,160,89,0.10)' },
+  bloomInner: { top: -4, width: 120, height: 120, borderRadius: 60, backgroundColor: 'rgba(255,214,122,0.13)' },
   targetAura: { position: 'absolute', width: 92, height: 92, borderRadius: 46, backgroundColor: 'rgba(255,214,122,0.20)', borderWidth: 1, borderColor: 'rgba(255,233,182,0.36)' },
   target: { width: 82, height: 82 },
   flyToken: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   flyTokenImg: { width: 82, height: 82 },
-  copy: { width: '100%', alignItems: 'center', marginTop: 18 },
-  title: { fontFamily: F.serifSemiBold, fontSize: 38, lineHeight: 43, color: INK, textAlign: 'center', marginBottom: 7 },
-  titleUnderline: { width: 112, height: 3, borderRadius: 999, backgroundColor: GOLD, marginBottom: 14 },
-  body: { fontFamily: F.serif, fontSize: 17, lineHeight: 24, color: '#8A8177', textAlign: 'center', marginBottom: 24 },
+  copy: { width: '100%', alignItems: 'center', marginTop: 20 },
+  eyebrow: { fontFamily: F.sansBold, fontSize: 9.5, lineHeight: 13, letterSpacing: 2, color: '#B89A5A', textTransform: 'uppercase', marginBottom: 7 },
+  title: { fontFamily: F.serifSemiBold, fontSize: 36, lineHeight: 41, color: INK, textAlign: 'center', marginBottom: 10 },
+  ornamentRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  ornamentLine: { width: 34, height: 1, backgroundColor: 'rgba(197,160,89,0.45)' },
+  ornamentDiamond: { width: 6, height: 6, marginHorizontal: 8, borderRadius: 1, backgroundColor: GOLD, transform: [{ rotate: '45deg' }] },
+  body: { fontFamily: F.serif, fontSize: 16.5, lineHeight: 24, color: '#8A8177', textAlign: 'center', marginBottom: 24 },
   bodyStrong: { fontFamily: F.serifSemiBold, color: INK },
   collectBtn: { width: '100%', minHeight: 56, borderRadius: 18, backgroundColor: INK, alignItems: 'center', justifyContent: 'center', shadowColor: INK, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.18, shadowRadius: 18, elevation: 8 },
   collectText: { fontFamily: F.sansBold, fontSize: 12, lineHeight: 15, letterSpacing: 2.2, color: '#fff', textTransform: 'uppercase' },
