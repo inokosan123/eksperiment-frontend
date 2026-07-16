@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import Animated, {
   useSharedValue, useAnimatedStyle, useAnimatedProps, withRepeat, withTiming, withDelay,
-  withSequence, withSpring, Easing as REasing, interpolate,
+  withSequence, withSpring, Easing as REasing, interpolate, interpolateColor,
 } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -140,6 +140,7 @@ export default function FocusZoneView() {
   const r1 = useSharedValue(0);
   const r2 = useSharedValue(0);
   const phaseSwap = useSharedValue(0);
+  const phaseAnim = useSharedValue(0);
   const phaseSwapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [timerMode, setTimerMode] = useState<TimerMode>('single');
@@ -188,8 +189,6 @@ export default function FocusZoneView() {
   const totalTimeForMode = phaseDuration * 60;
   const isFocusPhase = phase === 'focus';
   const activeColor = isFocusPhase ? GOLD : GREEN;
-  const ringColor = isActive ? activeColor : INK;
-  const trackColor = isActive ? '#E7E5E4' : INK;
   const timerProgress = Math.max(0, Math.min(1, timeLeft / Math.max(1, totalTimeForMode)));
   const diameter = Math.min(width - 24, 380);
   const timeFont = Math.round(diameter * 0.282);
@@ -360,7 +359,7 @@ export default function FocusZoneView() {
 
     phaseSwap.value = 0;
     phaseSwap.value = withTiming(1, {
-      duration: 150,
+      duration: 180,
       easing: REasing.out(REasing.quad),
     });
 
@@ -376,10 +375,10 @@ export default function FocusZoneView() {
       setCycleAwaitingFocus(timerMode === 'cycle');
       triggerSuccess();
       phaseSwap.value = withTiming(0, {
-        duration: 280,
+        duration: 320,
         easing: REasing.out(REasing.cubic),
       });
-    }, 150);
+    }, 180);
   }, [focusDuration, persistTimerPreferences, phase, phaseSwap, timerMode, triggerSuccess]);
 
   useEffect(() => {
@@ -514,11 +513,16 @@ export default function FocusZoneView() {
       r2.value = 0;
       r2.value = withDelay(750, withRepeat(withTiming(1, { duration: 1800, easing: REasing.out(REasing.quad) }), -1, false));
     } else {
-      breathe.value = withTiming(0, { duration: 500 });
-      r1.value = withTiming(0, { duration: 400 });
-      r2.value = withTiming(0, { duration: 400 });
+      // Fast enough that no colored remnants survive the phase-swap fade-in.
+      breathe.value = withTiming(0, { duration: 220 });
+      r1.value = withTiming(0, { duration: 220 });
+      r2.value = withTiming(0, { duration: 220 });
     }
   }, [isActive]);
+
+  useEffect(() => {
+    phaseAnim.value = withTiming(isFocusPhase ? 0 : 1, { duration: 360, easing: REasing.inOut(REasing.quad) });
+  }, [isFocusPhase, phaseAnim]);
 
   const handleBack = useCallback(() => {
     if (showSettings) {
@@ -682,29 +686,50 @@ export default function FocusZoneView() {
     transform: [{ scale: interpolate(phaseSwap.value, [0, 1], [1, 0.985]) }],
   }));
 
+  // Colors ride the animation drivers instead of flipping with React state,
+  // so active<->idle and focus<->break transitions blend instead of snapping.
+  const trackProps = useAnimatedProps(() => ({
+    stroke: interpolateColor(activeAnim.value, [0, 1], [INK, '#E7E5E4']),
+  }));
+
+  const progressProps = useAnimatedProps(() => {
+    const phaseColor = interpolateColor(phaseAnim.value, [0, 1], [GOLD, GREEN]);
+    return { stroke: interpolateColor(activeAnim.value, [0, 1], [INK, phaseColor]) };
+  });
+
   const glowProps = useAnimatedProps(() => ({
     opacity: breathe.value * 0.12,
+    fill: interpolateColor(phaseAnim.value, [0, 1], [GOLD, GREEN]),
   }));
 
   const pulse1Props = useAnimatedProps(() => ({
     opacity: (1 - r1.value) * 0.35,
     r: TARGET_RADIUS + r1.value * 4,
+    stroke: interpolateColor(phaseAnim.value, [0, 1], [GOLD, GREEN]),
   }));
 
   const pulse2Props = useAnimatedProps(() => ({
     opacity: (1 - r2.value) * 0.25,
     r: TARGET_RADIUS + r2.value * 4.5,
+    stroke: interpolateColor(phaseAnim.value, [0, 1], [GOLD, GREEN]),
   }));
 
   const sandyRing1Props = useAnimatedProps(() => ({
     r: 42 + r1.value * 24,
     opacity: (1 - r1.value) * 0.3,
+    stroke: interpolateColor(phaseAnim.value, [0, 1], [GOLD, GREEN]),
   }));
 
   const sandyRing2Props = useAnimatedProps(() => ({
     r: 42 + r2.value * 27,
     opacity: (1 - r2.value) * 0.2,
+    stroke: interpolateColor(phaseAnim.value, [0, 1], [GOLD, GREEN]),
   }));
+
+  const digitStyle = useAnimatedStyle(() => {
+    const phaseColor = interpolateColor(phaseAnim.value, [0, 1], [GOLD, GREEN]);
+    return { color: interpolateColor(activeAnim.value, [0, 1], [INK, phaseColor]) };
+  });
 
   const sandyBreathStyle = useAnimatedStyle(() => ({
     transform: [{ scale: 0.94 + breathe.value * 0.07 }],
@@ -750,25 +775,25 @@ export default function FocusZoneView() {
           <Animated.View style={[s.timerVisualLayer, phaseSwapStyle]}>
           <Svg width={diameter} height={diameter} viewBox="0 0 100 100" style={s.ring}>
             {/* Inner glow — breathes while active */}
-            <AnimatedCircle cx="50" cy="50" r={TARGET_RADIUS - 0.5} fill={activeColor} animatedProps={glowProps} />
+            <AnimatedCircle cx="50" cy="50" r={TARGET_RADIUS - 0.5} animatedProps={glowProps} />
             {/* Pulse ring 1 — expands outward and fades */}
-            <AnimatedCircle cx="50" cy="50" fill="none" stroke={activeColor} strokeWidth="0.8" animatedProps={pulse1Props} />
+            <AnimatedCircle cx="50" cy="50" fill="none" strokeWidth="0.8" animatedProps={pulse1Props} />
             {/* Pulse ring 2 — offset 750ms */}
-            <AnimatedCircle cx="50" cy="50" fill="none" stroke={activeColor} strokeWidth="0.5" animatedProps={pulse2Props} />
+            <AnimatedCircle cx="50" cy="50" fill="none" strokeWidth="0.5" animatedProps={pulse2Props} />
             {/* Track (fill none — white bg shows through from parent) */}
-            <Circle cx="50" cy="50" r={TARGET_RADIUS} strokeWidth="1.6" fill="none" stroke={trackColor} strokeLinecap="round" />
+            <AnimatedCircle cx="50" cy="50" r={TARGET_RADIUS} strokeWidth="1.6" fill="none" strokeLinecap="round" animatedProps={trackProps} />
             {/* Progress */}
-            <Circle
+            <AnimatedCircle
               cx="50"
               cy="50"
               r={TARGET_RADIUS}
               strokeWidth="1.7"
               fill="none"
               strokeLinecap="round"
-              stroke={ringColor}
               strokeDasharray={`${CIRCUMFERENCE}`}
               strokeDashoffset={CIRCUMFERENCE * (1 - timerProgress)}
               transform="rotate(-90 50 50)"
+              animatedProps={progressProps}
             />
           </Svg>
 
@@ -779,9 +804,9 @@ export default function FocusZoneView() {
               </Text>
             ) : (
               <>
-                <Text style={[s.timeText, { color: ringColor, fontSize: timeFont, lineHeight: timeFont + 4 }]}>{timeObj.m}</Text>
-                <Text style={[s.colon, { color: ringColor, fontSize: colonFont }]}>:</Text>
-                <Text style={[s.timeText, { color: ringColor, fontSize: timeFont, lineHeight: timeFont + 4 }]}>{timeObj.s}</Text>
+                <Animated.Text style={[s.timeText, { fontSize: timeFont, lineHeight: timeFont + 4 }, digitStyle]}>{timeObj.m}</Animated.Text>
+                <Animated.Text style={[s.colon, { fontSize: colonFont }, digitStyle]}>:</Animated.Text>
+                <Animated.Text style={[s.timeText, { fontSize: timeFont, lineHeight: timeFont + 4 }, digitStyle]}>{timeObj.s}</Animated.Text>
               </>
             )}
           </Animated.View>
@@ -790,8 +815,8 @@ export default function FocusZoneView() {
           <Animated.View style={[s.sandyWrap, sandyStyle]} pointerEvents="none">
             <View style={s.sandyStage}>
               <Svg width={150} height={150} viewBox="0 0 150 150" style={s.sandyRings}>
-                <AnimatedCircle cx="75" cy="75" fill="none" stroke={activeColor} strokeWidth="1" animatedProps={sandyRing1Props} />
-                <AnimatedCircle cx="75" cy="75" fill="none" stroke={activeColor} strokeWidth="0.7" animatedProps={sandyRing2Props} />
+                <AnimatedCircle cx="75" cy="75" fill="none" strokeWidth="1" animatedProps={sandyRing1Props} />
+                <AnimatedCircle cx="75" cy="75" fill="none" strokeWidth="0.7" animatedProps={sandyRing2Props} />
               </Svg>
               <Animated.View style={sandyBreathStyle}>
                 {phase === 'focus' ? (
