@@ -2,6 +2,7 @@ import React, {
   useEffect, useMemo, useState,
 } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -13,7 +14,7 @@ import {
 import Reanimated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Plus, X, CheckSmall, Trash2, Pencil } from '@/components/icons/Icons';
 import SharedConfirmModal from '@/components/shared/ConfirmModal';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
@@ -26,6 +27,10 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 
 type ToggleMode = 'check' | 'uncheck';
 type ConfirmTone = 'warm' | 'danger';
+
+// The same trophy the rest of the app awards — kept days, streaks — now
+// crowning achieved dreams.
+const TROPHY_EMBLEM = require('@/assets/animations/challenge-trophy-preview.png');
 
 const ROW_LAYOUT = LinearTransition.duration(210);
 const ROW_ENTER = FadeIn.duration(150);
@@ -111,7 +116,7 @@ function AddDreamCard({ value, onChange, onAdd }: { value: string; onChange: (v:
 function SectionHeading({ achieved, label, count }: { achieved?: boolean; label: string; count: number }) {
   return (
     <View style={sh.row}>
-      {achieved && <Ionicons name="trophy" size={20} color={C.gold} />}
+      {achieved && <Image source={TROPHY_EMBLEM} style={sh.trophy} resizeMode="contain" />}
       <Text style={[sh.text, achieved && sh.textAchieved]}>{label}</Text>
       <Text style={[sh.count, achieved && sh.countAchieved]}>({count})</Text>
     </View>
@@ -124,14 +129,12 @@ function EditableRow({
   onChange,
   onSave,
   onCancel,
-  completed,
 }: {
   item: BucketListItem;
   value: string;
   onChange: (v: string) => void;
   onSave: (item: BucketListItem) => void;
   onCancel: () => void;
-  completed?: boolean;
 }) {
   const enabled = value.trim().length > 0;
 
@@ -144,7 +147,7 @@ function EditableRow({
         placeholderTextColor="#d1d5db"
         autoFocus
         returnKeyType="done"
-        style={[row.editInput, completed && row.editInputCompleted]}
+        style={row.editInput}
       />
       <TouchableOpacity
         onPress={() => onSave(item)}
@@ -209,10 +212,10 @@ function DreamRow({
           <Text style={row.text} numberOfLines={3}>{item.text}</Text>
           <View style={row.actions}>
             <TouchableOpacity onPress={() => onStartEdit(item)} activeOpacity={0.75} style={row.iconBtn}>
-              <Pencil s={18} c="#c8c8c8" w={2} />
+              <Pencil s={18} c="#BDB3A3" w={2} />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => onAskDelete(item.id)} activeOpacity={0.75} style={row.iconBtn}>
-              <Trash2 s={18} c="#D64C55" w={2} />
+              <Trash2 s={18} c="#C77883" w={2} />
             </TouchableOpacity>
           </View>
         </>
@@ -221,24 +224,15 @@ function DreamRow({
   );
 }
 
+// An achieved dream is a sealed golden memory: the trophy medallion where the
+// checkbox was, sepia ink with no strikethrough, and the date it was won.
+// There is no editing here — move it back to Dreams to change its words.
 function AchievedRow({
   item,
-  editing,
-  editingText,
-  setEditingText,
-  onStartEdit,
-  onCancelEdit,
-  onSaveEdit,
   onAskToggle,
   onAskDelete,
 }: {
   item: BucketListItem;
-  editing: boolean;
-  editingText: string;
-  setEditingText: (v: string) => void;
-  onStartEdit: (item: BucketListItem) => void;
-  onCancelEdit: () => void;
-  onSaveEdit: (item: BucketListItem) => void;
   onAskToggle: (item: BucketListItem, mode: ToggleMode) => void;
   onAskDelete: (id: string) => void;
 }) {
@@ -249,38 +243,33 @@ function AchievedRow({
       exiting={ROW_EXIT}
       style={[row.card, row.completedCard]}
     >
-      {editing ? (
-        <EditableRow
-          item={item}
-          value={editingText}
-          onChange={setEditingText}
-          onSave={onSaveEdit}
-          onCancel={onCancelEdit}
-          completed
-        />
-      ) : (
-        <>
-          <TouchableOpacity
-            onPress={() => onAskToggle(item, 'uncheck')}
-            activeOpacity={0.78}
-            style={row.completedCheck}
-          >
-            <CheckSmall s={15} c="#fff" w={3} />
-          </TouchableOpacity>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={row.completedText} numberOfLines={2}>{item.text}</Text>
-            {!!item.completedAt && <Text style={row.date}>{formatCompletedDate(item.completedAt)}</Text>}
-          </View>
-          <View style={row.actions}>
-            <TouchableOpacity onPress={() => onStartEdit(item)} activeOpacity={0.75} style={row.iconBtn}>
-              <Pencil s={18} c="#c8c8c8" w={2} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => onAskDelete(item.id)} activeOpacity={0.75} style={row.iconBtn}>
-              <Trash2 s={18} c="#D64C55" w={2} />
-            </TouchableOpacity>
-          </View>
-        </>
-      )}
+      <LinearGradient
+        colors={['#FFF6E3', '#FFFCF4', '#FFFFFF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      <View pointerEvents="none" style={row.completedBloom} />
+      <View pointerEvents="none" style={row.completedGlint} />
+      <TouchableOpacity
+        onPress={() => onAskToggle(item, 'uncheck')}
+        activeOpacity={0.78}
+        style={row.trophyMedallion}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.text} is achieved. Move it back to dreams.`}
+      >
+        <Image source={TROPHY_EMBLEM} style={row.trophyImg} resizeMode="contain" />
+      </TouchableOpacity>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={row.completedText} numberOfLines={2}>{item.text}</Text>
+        {!!item.completedAt && (
+          <Text style={row.date}>ACHIEVED · {formatCompletedDate(item.completedAt).toUpperCase()}</Text>
+        )}
+      </View>
+      <TouchableOpacity onPress={() => onAskDelete(item.id)} activeOpacity={0.75} style={row.iconBtn}>
+        <Trash2 s={17} c="#C77883" w={2} />
+      </TouchableOpacity>
     </Reanimated.View>
   );
 }
@@ -449,12 +438,6 @@ export default function BucketListView() {
                 <AchievedRow
                   key={item.id}
                   item={item}
-                  editing={editingItemId === item.id}
-                  editingText={editingText}
-                  setEditingText={setEditingText}
-                  onStartEdit={startEdit}
-                  onCancelEdit={cancelEdit}
-                  onSaveEdit={saveEdit}
                   onAskToggle={(nextItem, mode) => {
                     feedback();
                     setConfirmToggle({ item: nextItem, mode });
@@ -553,6 +536,10 @@ const sh = StyleSheet.create({
     paddingHorizontal: 4,
     marginBottom: 1,
   },
+  trophy: {
+    width: 22,
+    height: 22,
+  },
   text: {
     fontFamily: F.serifMedium,
     fontSize: 19,
@@ -576,9 +563,10 @@ const sh = StyleSheet.create({
 const row = StyleSheet.create({
   card: {
     backgroundColor: '#fff',
-    borderRadius: 15,
+    borderRadius: 16,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: '#F0ECE4',
+    borderColor: '#EFEAE0',
     shadowColor: '#8B7354',
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.055,
@@ -590,35 +578,75 @@ const row = StyleSheet.create({
     paddingVertical: 9,
     paddingHorizontal: 13,
   },
+  // The golden memory: gradient wash, gold hairline, a soft bloom in the
+  // corner and one struck glint — the card itself feels awarded.
   completedCard: {
-    backgroundColor: '#FFFDF8',
-    borderColor: 'rgba(197,160,89,0.22)',
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: '#FFFCF4',
+    borderColor: 'rgba(197,160,89,0.36)',
+    shadowColor: C.gold,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.14,
+    shadowRadius: 11,
+    elevation: 2,
+    paddingVertical: 11,
+  },
+  completedBloom: {
+    position: 'absolute',
+    right: -26,
+    top: -32,
+    width: 98,
+    height: 98,
+    borderRadius: 49,
+    backgroundColor: 'rgba(197,160,89,0.10)',
+  },
+  completedGlint: {
+    position: 'absolute',
+    right: 44,
+    top: 8,
+    width: 5,
+    height: 5,
+    borderRadius: 1.5,
+    backgroundColor: 'rgba(197,160,89,0.55)',
+    transform: [{ rotate: '45deg' }],
   },
   emptyCheck: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    borderWidth: 2,
-    borderColor: '#DDD6C9',
+    borderWidth: 1.5,
+    borderColor: '#D9CBA8',
     backgroundColor: '#FFFEFB',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
   emptyCheckCore: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: 'rgba(197,160,89,0.12)',
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: 'rgba(197,160,89,0.16)',
   },
-  completedCheck: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: C.gold,
+  trophyMedallion: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#FFF3D8',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
+    shadowColor: C.gold,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  trophyImg: {
+    width: 22,
+    height: 22,
   },
   text: {
     flex: 1,
@@ -631,15 +659,14 @@ const row = StyleSheet.create({
     fontFamily: F.serif,
     fontSize: 17,
     lineHeight: 23,
-    color: '#8F8A81',
-    textDecorationLine: 'line-through',
+    color: '#75634A',
   },
   date: {
-    marginTop: 2,
-    fontFamily: F.sans,
-    fontSize: 9,
-    letterSpacing: 0.8,
-    color: 'rgba(197,160,89,0.58)',
+    marginTop: 3,
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 1.3,
+    color: 'rgba(151,117,49,0.72)',
   },
   iconBtn: {
     width: 30,
@@ -663,9 +690,6 @@ const row = StyleSheet.create({
     fontFamily: F.serif,
     fontSize: 17,
     color: '#1F2937',
-  },
-  editInputCompleted: {
-    backgroundColor: '#fff',
   },
   smallGoldBtn: {
     width: 38,
