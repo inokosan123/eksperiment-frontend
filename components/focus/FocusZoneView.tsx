@@ -141,6 +141,7 @@ export default function FocusZoneView() {
   const r2 = useSharedValue(0);
   const phaseSwap = useSharedValue(0);
   const phaseAnim = useSharedValue(0);
+  const readyIntro = useSharedValue(0);
   const phaseSwapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [timerMode, setTimerMode] = useState<TimerMode>('single');
@@ -524,6 +525,13 @@ export default function FocusZoneView() {
     phaseAnim.value = withTiming(isFocusPhase ? 0 : 1, { duration: 360, easing: REasing.inOut(REasing.quad) });
   }, [isFocusPhase, phaseAnim]);
 
+  useEffect(() => {
+    if (cycleAwaitingFocus) {
+      readyIntro.value = 0;
+      readyIntro.value = withDelay(100, withTiming(1, { duration: 460, easing: REasing.out(REasing.cubic) }));
+    }
+  }, [cycleAwaitingFocus, readyIntro]);
+
   const handleBack = useCallback(() => {
     if (showSettings) {
       setShowSettings(false);
@@ -731,6 +739,11 @@ export default function FocusZoneView() {
     return { color: interpolateColor(activeAnim.value, [0, 1], [INK, phaseColor]) };
   });
 
+  const readyStyle = useAnimatedStyle(() => ({
+    opacity: readyIntro.value,
+    transform: [{ translateY: (1 - readyIntro.value) * 10 }],
+  }));
+
   const sandyBreathStyle = useAnimatedStyle(() => ({
     transform: [{ scale: 0.94 + breathe.value * 0.07 }],
   }));
@@ -799,9 +812,9 @@ export default function FocusZoneView() {
 
           <Animated.View style={[s.timerTextWrap, timerTextStyle]}>
             {cycleAwaitingFocus ? (
-              <Text style={s.readyText}>
+              <Animated.Text style={[s.readyText, readyStyle]}>
                 {freshCycle ? 'Cycle complete! Ready for a new one?' : 'Ready for the next session?'}
-              </Text>
+              </Animated.Text>
             ) : (
               <>
                 <Animated.Text style={[s.timeText, { fontSize: timeFont, lineHeight: timeFont + 4 }, digitStyle]}>{timeObj.m}</Animated.Text>
@@ -966,19 +979,32 @@ export default function FocusZoneView() {
   );
 }
 
+// Waits for the dial to settle (phase-swap fade-in ends ~500ms after the
+// turnover), then pulls each arrow: the colored token lifts slightly and
+// dissolves, revealing the silhouette beneath.
+const RETRIEVAL_LEAD = 520;
+const RETRIEVAL_STAGGER = 110;
+const RETRIEVAL_DURATION = 340;
+
 function RetrievedToken({ index }: { index: number }) {
-  const fade = useSharedValue(1);
+  const pull = useSharedValue(0);
 
   useEffect(() => {
-    fade.value = withDelay(index * 90, withTiming(0, { duration: 280, easing: REasing.out(REasing.quad) }));
-  }, [fade, index]);
+    pull.value = withDelay(
+      RETRIEVAL_LEAD + index * RETRIEVAL_STAGGER,
+      withTiming(1, { duration: RETRIEVAL_DURATION, easing: REasing.inOut(REasing.quad) }),
+    );
+  }, [index, pull]);
 
-  const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
+  const pullStyle = useAnimatedStyle(() => ({
+    opacity: 1 - pull.value,
+    transform: [{ translateY: pull.value * -6 }],
+  }));
 
   return (
     <>
       <Image source={TARGET_ICON} style={s.cycleTargetEmpty} resizeMode="contain" />
-      <Animated.View pointerEvents="none" style={[s.retrievedOverlay, fadeStyle]}>
+      <Animated.View pointerEvents="none" style={[s.retrievedOverlay, pullStyle]}>
         <Image source={TARGET_ICON} style={s.cycleTargetFilled} resizeMode="contain" />
       </Animated.View>
     </>
@@ -1003,6 +1029,24 @@ function PomodoroCycleRail({
   const slotRefs = useRef<(React.ElementRef<typeof View> | null)[]>([]);
   const prevCompletedRef = useRef(completed);
   const [resetFrom, setResetFrom] = useState(0);
+  const [shownLabel, setShownLabel] = useState(phaseLabel);
+  const labelFade = useSharedValue(1);
+
+  // The label never snaps: dip out, swap the text, breathe back in.
+  useEffect(() => {
+    if (phaseLabel === shownLabel) return;
+    labelFade.value = withTiming(0, { duration: 150, easing: REasing.out(REasing.quad) });
+    const timer = setTimeout(() => {
+      setShownLabel(phaseLabel);
+      labelFade.value = withTiming(1, { duration: 260, easing: REasing.out(REasing.cubic) });
+    }, 160);
+    return () => clearTimeout(timer);
+  }, [labelFade, phaseLabel, shownLabel]);
+
+  const labelStyle = useAnimatedStyle(() => ({
+    opacity: labelFade.value,
+    transform: [{ translateY: (1 - labelFade.value) * 3 }],
+  }));
 
   // When the cycle empties, the arrows are pulled one by one, left to
   // right - each token fades from full color back to its silhouette.
@@ -1011,7 +1055,10 @@ function PomodoroCycleRail({
     prevCompletedRef.current = completed;
     if (prev > 0 && completed === 0) {
       setResetFrom(prev);
-      const timer = setTimeout(() => setResetFrom(0), prev * 90 + 420);
+      const timer = setTimeout(
+        () => setResetFrom(0),
+        RETRIEVAL_LEAD + prev * RETRIEVAL_STAGGER + RETRIEVAL_DURATION + 160,
+      );
       return () => clearTimeout(timer);
     }
   }, [completed]);
@@ -1064,7 +1111,7 @@ function PomodoroCycleRail({
           );
         })}
       </View>
-      <Text style={s.phaseLabel}>{phaseLabel}</Text>
+      <Animated.Text style={[s.phaseLabel, labelStyle]}>{shownLabel}</Animated.Text>
     </View>
   );
 }
@@ -1446,7 +1493,8 @@ function CompletionModal({
   }));
   const sealFlightStyle = useAnimatedStyle(() => {
     const p = collectProgress.value;
-    const endScale = collectToRail ? 0.32 : 0.8;
+    // 82px flyer lands as the 30px rail token
+    const endScale = collectToRail ? 0.37 : 0.8;
     return {
       opacity: interpolate(p, [0, 0.92, 1], [1, 1, 0]),
       transform: [
@@ -1795,8 +1843,8 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cycleTargetFilled: { width: 26, height: 26 },
-  cycleTargetEmpty: { width: 24, height: 24, tintColor: '#C9C4B7', opacity: 0.4 },
+  cycleTargetFilled: { width: 30, height: 30 },
+  cycleTargetEmpty: { width: 28, height: 28, tintColor: '#C9C4B7', opacity: 0.4 },
   retrievedOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   timerWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
   timerWrapSingle: { transform: [{ translateY: -14 }] },
