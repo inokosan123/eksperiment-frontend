@@ -438,28 +438,22 @@ function CalendarStreakCard({
   const cells = useMemo(() => monthCells(year, month), [year, month]);
   const completedSet = useMemo(() => new Set(completedDates), [completedDates]);
   const streakDays = useMemo(() => lastSevenDays(todayKey), [todayKey]);
-  // How many days of the shown month carry at least one entry — the month's
-  // quiet score, computed from data the calendar already holds.
-  const writtenThisMonth = useMemo(() => {
-    const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`;
-    return Object.keys(dotsByDate).filter(key =>
-      key.startsWith(prefix) && (dotsByDate[key]?.length ?? 0) > 0
-    ).length;
-  }, [dotsByDate, year, month]);
 
   return (
     <View style={s.card}>
       <View style={s.monthHead}>
         <TouchableOpacity style={s.monthBtn} activeOpacity={0.75} onPress={onPrev} hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}>
-          <ChevronLeft s={20} c={GOLD} />
+          <ChevronLeft s={19} c="#9A6B1E" w={2.3} />
         </TouchableOpacity>
         <View style={s.monthCenter}>
           <AppText style={s.monthName}>{MONTH_NAMES[month]}</AppText>
-          <AppText style={s.monthYear}>
-            {writtenThisMonth > 0
-              ? `${year} · ${writtenThisMonth} ${writtenThisMonth === 1 ? 'DAY' : 'DAYS'} WRITTEN`
-              : `${year}`}
-          </AppText>
+          {/* The year set like an engraving line: italic gold between two
+              hairline rules. */}
+          <View style={s.yearRow}>
+            <View style={s.yearRule} />
+            <AppText style={s.yearText}>{year}</AppText>
+            <View style={s.yearRule} />
+          </View>
         </View>
         <TouchableOpacity
           style={[s.monthBtn, !canNext && s.disabled]}
@@ -468,14 +462,14 @@ function CalendarStreakCard({
           disabled={!canNext}
           hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
         >
-          <ChevronRight s={20} c={GOLD} />
+          <ChevronRight s={19} c="#9A6B1E" w={2.3} />
         </TouchableOpacity>
       </View>
 
       <View style={s.weekRow}>
         {WEEKDAYS.map((w, i) => (
           <View key={`${w}-${i}`} style={s.weekCell}>
-            <AppText style={s.weekText}>{w}</AppText>
+            <AppText style={[s.weekText, i >= 5 && s.weekTextWeekend]}>{w}</AppText>
           </View>
         ))}
       </View>
@@ -980,19 +974,27 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
   },
   monthBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#FFFBF2',
+    width: 36,
+    height: 36,
+    borderRadius: 13,
+    borderCurve: 'continuous',
+    backgroundColor: '#FFFAEF',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.26)',
+    borderColor: 'rgba(197,160,89,0.38)',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.16,
+    shadowRadius: 4,
+    elevation: 1,
   },
   disabled: { opacity: 0.32 },
   monthCenter: { alignItems: 'center', justifyContent: 'center' },
   monthName: { fontFamily: F.serifSemiBold, fontSize: 23, lineHeight: 27, color: INK },
-  monthYear: { marginTop: 2, fontFamily: F.sansBold, fontSize: 9.5, lineHeight: 12, letterSpacing: 1.9, color: GOLD },
+  yearRow: { marginTop: 1, flexDirection: 'row', alignItems: 'center', columnGap: 7 },
+  yearRule: { width: 15, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(154,107,30,0.5)' },
+  yearText: { fontFamily: F.serifMediumItalic, fontSize: 14, lineHeight: 18, color: '#A9863F', letterSpacing: 0.8 },
   weekRow: {
     width: '100%',
     alignSelf: 'stretch',
@@ -1004,6 +1006,7 @@ const s = StyleSheet.create({
   },
   weekCell: { flex: 1, height: 18, alignItems: 'center', justifyContent: 'center' },
   weekText: { fontFamily: F.sansBold, fontSize: 10, lineHeight: 12, letterSpacing: 1.2, color: '#A5A09A' },
+  weekTextWeekend: { color: '#C2A377' },
   calendarGrid: {
     width: '100%',
     alignSelf: 'stretch',
