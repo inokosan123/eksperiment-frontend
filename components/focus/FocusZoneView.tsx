@@ -25,6 +25,7 @@ import { C, F } from '@/constants/tokens';
 import { getTitleBarTopPadding, TITLE_BAR_BOTTOM_PADDING } from '@/components/shared/titleBar';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import FocusLottie from '@/components/focus/FocusLottie';
+import { playArrowStrikeFeedback, preloadArrowStrikeSound } from '@/components/focus/focusFeedback';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import {
   getAllFocusSessions,
@@ -486,6 +487,7 @@ export default function FocusZoneView() {
 
   useEffect(() => {
     entryAnim.value = withTiming(1, { duration: 360, easing: REasing.out(REasing.cubic) });
+    preloadArrowStrikeSound();
   }, []);
 
   useEffect(() => () => {
@@ -1287,11 +1289,17 @@ function CompletionModal({
     // autoplay on simultaneous mount is unreliable on Android.
     const heroTimer = setTimeout(() => setHeroReady(true), 120);
     const hapticTimer = setTimeout(() => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }, 80);
+    // Thunk + heavy haptic timed to the arrow hitting the bullseye:
+    // hero mounts at 120ms, impact is frame 19 of 30fps (~633ms in).
+    const strikeTimer = setTimeout(() => {
+      void playArrowStrikeFeedback();
+    }, 730);
     return () => {
       clearTimeout(heroTimer);
       clearTimeout(hapticTimer);
+      clearTimeout(strikeTimer);
       if (collectTimerRef.current) {
         clearTimeout(collectTimerRef.current);
         collectTimerRef.current = null;
@@ -1408,10 +1416,12 @@ function CompletionModal({
               <View style={completion.ornamentLine} />
             </View>
             <Text style={completion.body}>
-              <Text style={completion.bodyStrong}>You hit the target.</Text> Now take a well-earned break.
+              <Text style={completion.bodyStrong}>You hit the target!</Text> Now take a well-earned break!
             </Text>
             <TouchableOpacity onPress={handleCollect} disabled={collecting} style={completion.collectBtn} activeOpacity={0.9}>
+              <View style={completion.collectDiamond} />
               <Text style={completion.collectText}>{nextStepLabel}</Text>
+              <View style={completion.collectDiamond} />
             </TouchableOpacity>
           </Animated.View>
         </Animated.View>
@@ -1974,8 +1984,9 @@ const completion = StyleSheet.create({
   ornamentDiamond: { width: 6, height: 6, marginHorizontal: 8, borderRadius: 1, backgroundColor: GOLD, transform: [{ rotate: '45deg' }] },
   body: { fontFamily: F.serif, fontSize: 16.5, lineHeight: 24, color: '#8A8177', textAlign: 'center', marginBottom: 24 },
   bodyStrong: { fontFamily: F.serifSemiBold, color: INK },
-  collectBtn: { width: '100%', minHeight: 56, borderRadius: 18, backgroundColor: INK, alignItems: 'center', justifyContent: 'center', shadowColor: INK, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.18, shadowRadius: 18, elevation: 8 },
-  collectText: { fontFamily: F.sansBold, fontSize: 12, lineHeight: 15, letterSpacing: 2.2, color: '#fff', textTransform: 'uppercase' },
+  collectBtn: { width: '100%', minHeight: 56, borderRadius: 18, backgroundColor: '#17130F', borderWidth: 1, borderColor: 'rgba(232,195,116,0.55)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', shadowColor: GOLD, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.26, shadowRadius: 18, elevation: 8 },
+  collectText: { fontFamily: F.sansBold, fontSize: 12, lineHeight: 15, letterSpacing: 2.2, color: '#E8C374', textTransform: 'uppercase', marginHorizontal: 10 },
+  collectDiamond: { width: 4, height: 4, borderRadius: 0.5, backgroundColor: 'rgba(232,195,116,0.55)', transform: [{ rotate: '45deg' }] },
 });
 
 const stats = StyleSheet.create({
