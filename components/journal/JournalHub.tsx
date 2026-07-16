@@ -136,6 +136,15 @@ const DOT_COLORS: Record<JournalDotKind, string> = {
   free: TEAL,
 };
 
+// The legend wears each technique's own card tints — the same families as
+// the write cards below, so color meaning is learned once.
+const LEGEND_ITEMS = [
+  { label: 'Daily', dot: GOLD, bg: '#FBF3DE', border: '#F0E3B8', ink: '#A9863F' },
+  { label: 'Morning', dot: PURPLE, bg: '#EEEAF5', border: '#DDD5ED', ink: '#6D5AAE' },
+  { label: 'Draft', dot: MORNING_DRAFT_PURPLE, bg: '#F4F1FA', border: '#E5DFF3', ink: '#8C7EC0' },
+  { label: 'Free', dot: TEAL, bg: '#E1F1EC', border: '#C8E6DD', ink: '#3D8273' },
+] as const;
+
 function hasTechniqueDot(kinds: JournalDotKind[], technique: JournalTechniqueKind) {
   if (technique === 'morning') {
     return kinds.includes('morning') || kinds.includes('morningDraft');
@@ -429,6 +438,14 @@ function CalendarStreakCard({
   const cells = useMemo(() => monthCells(year, month), [year, month]);
   const completedSet = useMemo(() => new Set(completedDates), [completedDates]);
   const streakDays = useMemo(() => lastSevenDays(todayKey), [todayKey]);
+  // How many days of the shown month carry at least one entry — the month's
+  // quiet score, computed from data the calendar already holds.
+  const writtenThisMonth = useMemo(() => {
+    const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`;
+    return Object.keys(dotsByDate).filter(key =>
+      key.startsWith(prefix) && (dotsByDate[key]?.length ?? 0) > 0
+    ).length;
+  }, [dotsByDate, year, month]);
 
   return (
     <View style={s.card}>
@@ -438,7 +455,11 @@ function CalendarStreakCard({
         </TouchableOpacity>
         <View style={s.monthCenter}>
           <AppText style={s.monthName}>{MONTH_NAMES[month]}</AppText>
-          <AppText style={s.monthYear}>{year}</AppText>
+          <AppText style={s.monthYear}>
+            {writtenThisMonth > 0
+              ? `${year} · ${writtenThisMonth} ${writtenThisMonth === 1 ? 'DAY' : 'DAYS'} WRITTEN`
+              : `${year}`}
+          </AppText>
         </View>
         <TouchableOpacity
           style={[s.monthBtn, !canNext && s.disabled]}
@@ -490,10 +511,15 @@ function CalendarStreakCard({
                   ]}
                   pointerEvents="none"
                 >
+                  {/* A second hairline inside today's disc — the seal ring.
+                      Anchored to the fixed 36px disc, so it can never drift
+                      with font metrics. */}
+                  {isToday && <View style={s.todaySealRing} />}
                   <AppText
                     numberOfLines={1}
                     style={[
                       s.dateText,
+                      dots.length === 0 && s.dateTextEmpty,
                       isToday && s.todayText,
                       isSelected && s.selectedDateText,
                       isFuture && s.futureText,
@@ -514,22 +540,12 @@ function CalendarStreakCard({
       </View>
 
       <View style={s.legend}>
-        <View style={s.legendItem}>
-          <View style={[s.legendDot, { backgroundColor: GOLD }]} />
-          <AppText style={s.legendText}>Daily</AppText>
-        </View>
-        <View style={s.legendItem}>
-          <View style={[s.legendDot, { backgroundColor: PURPLE }]} />
-          <AppText style={s.legendText}>Morning</AppText>
-        </View>
-        <View style={s.legendItem}>
-          <View style={[s.legendDot, { backgroundColor: MORNING_DRAFT_PURPLE }]} />
-          <AppText style={s.legendText}>Draft</AppText>
-        </View>
-        <View style={s.legendItem}>
-          <View style={[s.legendDot, { backgroundColor: TEAL }]} />
-          <AppText style={s.legendText}>Free</AppText>
-        </View>
+        {LEGEND_ITEMS.map(item => (
+          <View key={item.label} style={[s.legendChip, { backgroundColor: item.bg, borderColor: item.border }]}>
+            <View style={[s.legendDot, { backgroundColor: item.dot }]} />
+            <AppText style={[s.legendText, { color: item.ink }]}>{item.label}</AppText>
+          </View>
+        ))}
       </View>
 
       {/* The hearth: one dark velvet panel inside the pale card — the book
@@ -969,21 +985,29 @@ const s = StyleSheet.create({
     borderRadius: 19,
     backgroundColor: '#FFFBF2',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.2)',
+    borderColor: 'rgba(197,160,89,0.26)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   disabled: { opacity: 0.32 },
   monthCenter: { alignItems: 'center', justifyContent: 'center' },
   monthName: { fontFamily: F.serifSemiBold, fontSize: 23, lineHeight: 27, color: INK },
-  monthYear: { marginTop: 1, fontFamily: F.sansBold, fontSize: 10, lineHeight: 12, letterSpacing: 2.4, color: GOLD },
-  weekRow: { width: '100%', alignSelf: 'stretch', marginTop: 14, flexDirection: 'row' },
-  weekCell: { flex: 1, height: 20, alignItems: 'center', justifyContent: 'center' },
+  monthYear: { marginTop: 2, fontFamily: F.sansBold, fontSize: 9.5, lineHeight: 12, letterSpacing: 1.9, color: GOLD },
+  weekRow: {
+    width: '100%',
+    alignSelf: 'stretch',
+    marginTop: 13,
+    paddingBottom: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F2EDE4',
+    flexDirection: 'row',
+  },
+  weekCell: { flex: 1, height: 18, alignItems: 'center', justifyContent: 'center' },
   weekText: { fontFamily: F.sansBold, fontSize: 10, lineHeight: 12, letterSpacing: 1.2, color: '#A5A09A' },
   calendarGrid: {
     width: '100%',
     alignSelf: 'stretch',
-    marginTop: 6,
+    marginTop: 7,
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
@@ -1008,6 +1032,16 @@ const s = StyleSheet.create({
   },
   dateDiscToday: { backgroundColor: '#FFF6E1', borderWidth: 1.2, borderColor: GOLD },
   dateDiscSelected: { backgroundColor: '#F8E8C6', borderWidth: 1.4, borderColor: '#B08A3E' },
+  todaySealRing: {
+    position: 'absolute',
+    left: 2.5,
+    top: 2.5,
+    right: 2.5,
+    bottom: 2.5,
+    borderRadius: 15.5,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(154,107,30,0.45)',
+  },
   dateText: {
     fontFamily: F.serifMedium,
     fontSize: 17,
@@ -1017,6 +1051,9 @@ const s = StyleSheet.create({
     textAlignVertical: 'center',
     includeFontPadding: false,
   },
+  // Days that carry entries keep full ink; empty past days recede — the month
+  // becomes scannable at a glance.
+  dateTextEmpty: { color: '#97918A' },
   todayText: { fontFamily: F.serifSemiBold, color: '#9A6B1E' },
   selectedDateText: { fontFamily: F.serifSemiBold, color: '#7A5310' },
   futureText: { color: '#D7D1C8' },
@@ -1031,18 +1068,23 @@ const s = StyleSheet.create({
   dot: { width: 4.6, height: 4.6, borderRadius: 3, marginHorizontal: 1.2 },
 
   legend: {
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#F2EDE4',
+    marginTop: 11,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    columnGap: 16,
+    columnGap: 7,
   },
-  legendItem: { flexDirection: 'row', alignItems: 'center', columnGap: 6 },
-  legendDot: { width: 7, height: 7, borderRadius: 4 },
-  legendText: { fontFamily: F.sansMedium, fontSize: 11, lineHeight: 13, color: '#918A80' },
+  legendChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 4.5,
+  },
+  legendDot: { width: 6.5, height: 6.5, borderRadius: 4 },
+  legendText: { fontFamily: F.sansMedium, fontSize: 10.5, lineHeight: 13 },
 
   // The hearth: a dark velvet track running the full width of the card —
   // edge to edge, hairline gold rails top and bottom, the white footer of the
