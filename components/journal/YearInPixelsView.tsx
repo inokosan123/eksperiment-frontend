@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, Ellipse, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import Reanimated, {
@@ -500,20 +500,38 @@ export default function YearInPixelsView() {
           </View>
 
           <View style={s.plateStatsRow}>
-            <View style={s.plateLeft}>
-              <View style={s.plateNumRow}>
-                <Text style={s.plateBigNum}>{coloredCount}</Text>
-                <Text style={s.plateNumOf}> / {daysAvailable}</Text>
+            {/* Left half: the count seated on layered light ellipses — the
+                trophy medallion's soft bloom, stacked rather than side-on. */}
+            <View style={s.plateHalf}>
+              <View style={s.medallion}>
+                <Svg pointerEvents="none" width={150} height={92} style={s.medallionBlobs}>
+                  <Ellipse cx={75} cy={46} rx={69} ry={38} fill="#FFFAEC" opacity={0.9} transform="rotate(-6 75 46)" />
+                  <Ellipse cx={79} cy={44} rx={56} ry={31} fill="#FFF3D6" opacity={0.85} transform="rotate(4 79 44)" />
+                  <Ellipse cx={72} cy={47} rx={44} ry={25} fill="#F9E8C2" opacity={0.8} transform="rotate(-3 72 47)" />
+                </Svg>
+                <View style={s.plateNumRow}>
+                  <Text style={s.plateBigNum}>{coloredCount}</Text>
+                  <Text style={s.plateNumOf}> / {daysAvailable}</Text>
+                </View>
+                <Text style={s.plateMeta}>days tracked</Text>
               </View>
-              <Text style={s.plateMeta}>days tracked</Text>
             </View>
-            <View style={s.heroRing}>
-              <ProgressRing percent={fillPercent} redrawKey={redrawKey} />
-              <View style={s.heroRingCenter} pointerEvents="none">
-                <Text style={s.heroRingPct}>
-                  {fillPercent}
-                  <Text style={s.heroRingPctSmall}>%</Text>
-                </Text>
+            {/* The divide: a hairline with a diamond at its waist. */}
+            <View style={s.plateDividerCol}>
+              <View style={s.plateDividerRule} />
+              <View style={s.plateDividerDiamond} />
+              <View style={s.plateDividerRule} />
+            </View>
+            {/* Right half: the ring, centered in its own field. */}
+            <View style={s.plateHalf}>
+              <View style={s.heroRing}>
+                <ProgressRing percent={fillPercent} redrawKey={redrawKey} />
+                <View style={s.heroRingCenter} pointerEvents="none">
+                  <Text style={s.heroRingPct}>
+                    {fillPercent}
+                    <Text style={s.heroRingPctSmall}>%</Text>
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
@@ -771,28 +789,33 @@ const s = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 0.6,
   },
-  plateStatsRow: { marginTop: 6, flexDirection: 'row', alignItems: 'center', columnGap: 18 },
-  plateLeft: { flex: 1, minWidth: 0 },
+  plateStatsRow: { marginTop: 6, flexDirection: 'row', alignItems: 'stretch' },
+  plateHalf: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 2 },
+  medallion: { width: 150, height: 92, alignItems: 'center', justifyContent: 'center' },
+  medallionBlobs: { position: 'absolute', left: 0, top: 0 },
+  plateDividerCol: { width: 18, alignItems: 'center', justifyContent: 'center', rowGap: 6, marginVertical: 8 },
+  plateDividerRule: { flex: 1, width: StyleSheet.hairlineWidth, backgroundColor: 'rgba(122,83,16,0.35)' },
+  plateDividerDiamond: { width: 4.5, height: 4.5, borderRadius: 1, backgroundColor: '#98691B', opacity: 0.7, transform: [{ rotate: '45deg' }] },
   plateNumRow: { flexDirection: 'row', alignItems: 'baseline' },
   plateBigNum: {
     fontFamily: F.serifSemiBold,
-    fontSize: 39,
-    lineHeight: 43,
+    fontSize: 32,
+    lineHeight: 36,
     color: '#59400F',
     letterSpacing: 0.2,
     fontVariant: ['tabular-nums'],
   },
   plateNumOf: {
     fontFamily: F.serifMedium,
-    fontSize: 19,
+    fontSize: 16,
     color: '#9C8455',
     fontVariant: ['tabular-nums'],
   },
   plateMeta: {
-    marginTop: 2,
+    marginTop: 1,
     fontFamily: F.serifMedium,
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: 14.5,
+    lineHeight: 18,
     color: '#796333',
   },
 
@@ -929,9 +952,9 @@ const s = StyleSheet.create({
   },
   plaqueTitle: {
     fontFamily: F.serifSemiBold,
-    fontSize: 22,
-    lineHeight: 26,
-    letterSpacing: -0.2,
+    fontSize: 17,
+    lineHeight: 21,
+    letterSpacing: -0.1,
     color: INK,
   },
   plaqueCount: {
