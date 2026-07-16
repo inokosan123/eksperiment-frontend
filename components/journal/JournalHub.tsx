@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Modal,
@@ -10,6 +10,16 @@ import {
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
+import Reanimated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedProps,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
+import Svg, { Circle } from 'react-native-svg';
 import {
   ArrowUpRight,
   ChevronLeft,
@@ -184,6 +194,39 @@ function AppText(props: React.ComponentProps<typeof Text>) {
   return <Text {...props} allowFontScaling={false} maxFontSizeMultiplier={1} />;
 }
 
+const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
+
+// Today's cell in the streak chain breathes a soft gold ring outward — the
+// same quiet pulse the rest of the app gives to "now". Vector radius only,
+// so the small circle stays crisp on Android.
+function StreakTodayPulse() {
+  const reduceMotion = useReducedMotion();
+  const t = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      t.value = 0.2;
+      return;
+    }
+    t.value = 0;
+    t.value = withRepeat(withTiming(1, { duration: 2400, easing: Easing.out(Easing.quad) }), -1, false);
+    return () => cancelAnimation(t);
+  }, [reduceMotion, t]);
+
+  const ringProps = useAnimatedProps(() => ({
+    opacity: (1 - t.value) * 0.45,
+    r: 16 + t.value * 7,
+  }));
+
+  return (
+    <View pointerEvents="none" style={s.streakPulse}>
+      <Svg width={56} height={56}>
+        <AnimatedCircle cx={28} cy={28} fill="none" stroke={GOLD} strokeWidth={1.4} animatedProps={ringProps} />
+      </Svg>
+    </View>
+  );
+}
+
 function CalendarStreakCard({
   year,
   month,
@@ -258,13 +301,21 @@ function CalendarStreakCard({
                 hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                 style={({ pressed }) => [
                   s.dateShell,
-                  isToday && s.dateCellToday,
-                  isSelected && s.dateCellSelected,
                   pressed && !isFuture && s.pressed,
                 ]}
                 onPress={() => onSelect(key)}
               >
-                <View style={s.dateNumberLayer} pointerEvents="none">
+                {/* One fixed disc, centered by flexbox; the dots live in normal
+                    flow below it. No absolute offsets — the layout cannot
+                    drift, whatever the font metrics do. */}
+                <View
+                  style={[
+                    s.dateDisc,
+                    isToday && s.dateDiscToday,
+                    isSelected && s.dateDiscSelected,
+                  ]}
+                  pointerEvents="none"
+                >
                   <AppText
                     numberOfLines={1}
                     style={[
@@ -277,12 +328,10 @@ function CalendarStreakCard({
                     {day}
                   </AppText>
                 </View>
-                <View style={s.dateDotsLayer} pointerEvents="none">
-                  <View style={s.dots}>
-                    {dots.slice(0, 3).map((kind, dotIndex) => (
-                      <View key={`${kind}-${dotIndex}`} style={[s.dot, { backgroundColor: DOT_COLORS[kind] }]} />
-                    ))}
-                  </View>
+                <View style={s.dots} pointerEvents="none">
+                  {dots.slice(0, 3).map((kind, dotIndex) => (
+                    <View key={`${kind}-${dotIndex}`} style={[s.dot, { backgroundColor: DOT_COLORS[kind] }]} />
+                  ))}
                 </View>
               </Pressable>
             </View>
@@ -320,26 +369,36 @@ function CalendarStreakCard({
       </View>
 
       <View style={s.streakRow}>
+        <View pointerEvents="none" style={s.streakRail} />
         {streakDays.map((item) => {
           const active = completedSet.has(item.key);
+          const isTodayCell = item.key === todayKey;
           return (
           <View key={item.key} style={s.streakDay}>
-            <View
-              style={[
-                s.streakCircle,
-                active && s.streakCircleActive,
-              ]}
-            >
-              <Image
-                source={FLAME_PNG}
+            <View style={s.streakCircleWrap}>
+              {isTodayCell && <StreakTodayPulse />}
+              <View
                 style={[
-                  s.streakFlame,
-                  !active && { tintColor: '#C9C4B7' },
+                  s.streakCircle,
+                  active && s.streakCircleActive,
+                  isTodayCell && !active && s.streakCircleToday,
                 ]}
-                resizeMode="contain"
-              />
+              >
+                <Image
+                  source={FLAME_PNG}
+                  style={[
+                    s.streakFlame,
+                    !active && s.streakFlameResting,
+                  ]}
+                  resizeMode="contain"
+                />
+              </View>
             </View>
-            <AppText style={[s.streakDayText, active && s.streakDayTextActive]}>{item.label}</AppText>
+            <AppText style={[
+              s.streakDayText,
+              active && s.streakDayTextActive,
+              isTodayCell && s.streakDayTextToday,
+            ]}>{item.label}</AppText>
           </View>
           );
         })}
@@ -460,6 +519,25 @@ function WriteSectionCard({ card, onPress }: { card: WriteCard; onPress: () => v
   );
 }
 
+// A quiet echo of the real grid: the five mood tones the Year in Pixels page
+// itself paints with, resting cells between them.
+const MOSAIC_TONES = [
+  '#EAB308', '#22C55E', '#EDEAE3', '#84CC16',
+  '#EDEAE3', '#F97316', '#22C55E', '#EDEAE3',
+  '#84CC16', '#EDEAE3', '#EAB308', '#22C55E',
+  '#EF4444', '#84CC16', '#EDEAE3', '#EAB308',
+];
+
+function PixelMosaic() {
+  return (
+    <View style={s.pixelMosaic} pointerEvents="none">
+      {MOSAIC_TONES.map((tone, index) => (
+        <View key={index} style={[s.pixelCell, { backgroundColor: tone }]} />
+      ))}
+    </View>
+  );
+}
+
 function YearInPixelsSection({
   onPress,
   entryCount,
@@ -473,17 +551,32 @@ function YearInPixelsSection({
         <AppText style={s.sectionTitle}>YEAR IN PIXELS</AppText>
         <AppText style={s.sectionHint}>Reflect gently</AppText>
       </View>
-      <TouchableOpacity activeOpacity={0.84} onPress={onPress} style={s.yearPixelCard}>
-        <View style={s.yearPixelIcon}>
-          <Grid3x3 s={23} c={PURPLE} />
+      <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={s.yearPixelCard}>
+        <LinearGradient
+          colors={['#EEEAF5', '#FBFAFE', '#FFFFFF']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+        <View style={s.yearPixelWatermark} pointerEvents="none">
+          <Grid3x3 s={104} c={PURPLE} w={1} />
+        </View>
+        <View style={s.yearPixelBadge}>
+          <PixelMosaic />
         </View>
         <View style={s.yearPixelCopy}>
+          <AppText style={s.yearPixelLabel}>ONE SQUARE PER DAY</AppText>
           <AppText style={s.yearPixelTitle}>Year in Pixels</AppText>
           <AppText style={s.yearPixelSub}>
             {entryCount === 0 ? 'No entries yet' : `${entryCount} ${entryCount === 1 ? 'entry' : 'entries'}`}
           </AppText>
         </View>
-        <ChevronRight s={20} c="#A8A29E" />
+        <View style={s.yearPixelArrow} pointerEvents="none">
+          <View style={s.writeArrowRotated}>
+            <ArrowUpRight s={15} c="#fff" w={2.5} />
+          </View>
+        </View>
       </TouchableOpacity>
     </View>
   );
@@ -679,40 +772,25 @@ const s = StyleSheet.create({
   },
   dateSlot: {
     width: `${100 / 7}%`,
-    height: 58,
+    height: 54,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // The cell is a plain flex column: disc, then dots, nothing absolute.
   dateShell: {
-    width: 48,
-    height: 52,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#ECE2D1',
-    backgroundColor: '#FFFDF8',
-    position: 'relative',
     alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
   },
-  dateCellToday: { backgroundColor: '#FFF8E7', borderColor: GOLD, borderWidth: 1.4 },
-  dateCellSelected: { backgroundColor: '#FFF2D8', borderColor: GOLD, borderWidth: 1.6 },
-  dateNumberLayer: {
-    width: '100%',
-    height: 25,
-    marginTop: 7,
+  dateDisc: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dateDotsLayer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 34,
-    height: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2,
-    elevation: 2,
-  },
+  dateDiscToday: { backgroundColor: '#FFF6E1', borderWidth: 1.2, borderColor: GOLD },
+  dateDiscSelected: { backgroundColor: '#F8E8C6', borderWidth: 1.4, borderColor: '#B08A3E' },
   dateText: {
     fontFamily: F.serifMedium,
     fontSize: 17,
@@ -722,13 +800,13 @@ const s = StyleSheet.create({
     textAlignVertical: 'center',
     includeFontPadding: false,
   },
-  todayText: { fontFamily: F.serifSemiBold, color: GOLD },
-  selectedDateText: { fontFamily: F.serifSemiBold, color: '#9A6B1E' },
+  todayText: { fontFamily: F.serifSemiBold, color: '#9A6B1E' },
+  selectedDateText: { fontFamily: F.serifSemiBold, color: '#7A5310' },
   futureText: { color: '#D7D1C8' },
-  pressed: { opacity: 0.76, transform: [{ scale: 0.985 }] },
+  pressed: { opacity: 0.76 },
   dots: {
-    width: '100%',
     height: 8,
+    marginTop: 1.5,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -752,12 +830,37 @@ const s = StyleSheet.create({
   divider: { height: 1, marginTop: 14, marginBottom: 14, backgroundColor: '#F2EDE4' },
 
   streakHead: { flexDirection: 'row', alignItems: 'center' },
-  flameBox: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFF3D3', alignItems: 'center', justifyContent: 'center' },
-  flame: { width: 20, height: 20 },
+  flameBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#FFF3D3',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  flame: { width: 21, height: 21 },
   streakNumber: { marginLeft: 11, fontFamily: F.serifSemiBold, fontSize: 28, lineHeight: 31, color: GOLD },
   streakLabel: { marginLeft: 7, fontFamily: F.serifMediumItalic, fontSize: 16, lineHeight: 20, color: '#B29A67' },
-  streakRow: { marginTop: 12, flexDirection: 'row' },
+  // The last seven days hang on one thin rail — a chain of days; the circles
+  // sit on top of it and today breathes its gold ring.
+  streakRow: { position: 'relative', marginTop: 12, flexDirection: 'row' },
+  streakRail: {
+    position: 'absolute',
+    left: `${100 / 14}%`,
+    right: `${100 / 14}%`,
+    top: 15.5,
+    height: 1.5,
+    borderRadius: 1,
+    backgroundColor: '#EFE9DC',
+  },
   streakDay: { flex: 1, alignItems: 'center' },
+  streakCircleWrap: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  streakPulse: { position: 'absolute', left: -12, top: -12, width: 56, height: 56 },
   streakCircle: {
     width: 32,
     height: 32,
@@ -768,10 +871,21 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  streakCircleActive: { borderColor: GOLD, backgroundColor: '#FFF3D8' },
+  streakCircleActive: {
+    borderColor: GOLD,
+    backgroundColor: '#FFF3D8',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  streakCircleToday: { borderColor: GOLD, backgroundColor: '#FFFBF0' },
   streakFlame: { width: 20, height: 20 },
+  streakFlameResting: { tintColor: '#C9C4B7', opacity: 0.55 },
   streakDayText: { marginTop: 5, fontFamily: F.sansBold, fontSize: 10, lineHeight: 12, color: '#C4BAA8' },
   streakDayTextActive: { color: GOLD },
+  streakDayTextToday: { color: '#9A6B1E' },
 
   choiceOverlay: {
     flex: 1,
@@ -925,33 +1039,85 @@ const s = StyleSheet.create({
   sectionTitle: { fontFamily: F.sansBold, fontSize: 10, lineHeight: 13, letterSpacing: 2.3, color: GOLD },
   sectionHint: { fontFamily: F.serifMediumItalic, fontSize: 14, lineHeight: 18, color: '#A7A098' },
   yearPixelCard: {
+    position: 'relative',
     width: '100%',
-    minHeight: 92,
-    borderRadius: 20,
+    minHeight: 96,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#E9DEC9',
-    backgroundColor: '#FFFDF8',
+    borderColor: '#DDD5ED',
+    backgroundColor: '#EEEAF5',
     paddingHorizontal: 15,
-    paddingVertical: 14,
+    paddingVertical: 15,
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 14,
+    columnGap: 13,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 7,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
   },
-  yearPixelIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 16,
-    backgroundColor: '#EEEAF5',
+  yearPixelWatermark: {
+    position: 'absolute',
+    right: 8,
+    bottom: -20,
+    width: 104,
+    height: 104,
     alignItems: 'center',
     justifyContent: 'center',
+    opacity: 0.1,
   },
-  yearPixelCopy: { flex: 1, minWidth: 0 },
-  yearPixelTitle: { fontFamily: F.serifMedium, fontSize: 18, lineHeight: 22, color: INK },
-  yearPixelSub: { marginTop: 4, fontFamily: F.sans, fontSize: 12, lineHeight: 15, color: '#999287' },
+  yearPixelArrow: {
+    position: 'absolute',
+    top: 13,
+    right: 13,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#2E2478',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  yearPixelBadge: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#DDD5ED',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#3B2F76',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  pixelMosaic: {
+    width: 48,
+    height: 48,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignContent: 'center',
+    justifyContent: 'center',
+    gap: 2.5,
+  },
+  pixelCell: { width: 10, height: 10, borderRadius: 3 },
+  yearPixelCopy: { flex: 1, minWidth: 0, paddingRight: 26 },
+  yearPixelLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    lineHeight: 12,
+    letterSpacing: 2,
+    color: '#6D5AAE',
+    marginBottom: 4,
+  },
+  yearPixelTitle: { fontFamily: F.serifMedium, fontSize: 21, lineHeight: 25, color: '#3B2F76' },
+  yearPixelSub: { marginTop: 3, fontFamily: F.sans, fontSize: 12, lineHeight: 15, color: '#8A82A8' },
 });
