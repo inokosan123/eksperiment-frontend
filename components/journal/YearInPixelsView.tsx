@@ -147,8 +147,18 @@ function ProgressRing({ percent, redrawKey }: { percent: number; redrawKey: stri
     strokeDashoffset: RING_CIRC * (1 - progress.value / 100),
   }));
 
+  // A small gem rides the tip of the progress — the instrument's jewel.
+  const tipProps = useAnimatedProps(() => {
+    const angle = ((-90 + (progress.value / 100) * 360) * Math.PI) / 180;
+    return {
+      cx: 50 + RING_R * Math.cos(angle),
+      cy: 50 + RING_R * Math.sin(angle),
+      opacity: progress.value > 0.5 ? 1 : 0,
+    };
+  });
+
   return (
-    <Svg width={84} height={84} viewBox="0 0 100 100">
+    <Svg width={96} height={96} viewBox="0 0 100 100">
       <Defs>
         <SvgLinearGradient id="ringGold" x1="0" y1="0" x2="1" y2="1">
           <Stop offset="0" stopColor="#E2BD75" />
@@ -159,8 +169,8 @@ function ProgressRing({ percent, redrawKey }: { percent: number; redrawKey: stri
         cx="50"
         cy="50"
         r={RING_R}
-        stroke="rgba(197,160,89,0.14)"
-        strokeWidth={7.5}
+        stroke="rgba(152,105,27,0.16)"
+        strokeWidth={8}
         fill="none"
       />
       <AnimatedCircle
@@ -168,12 +178,19 @@ function ProgressRing({ percent, redrawKey }: { percent: number; redrawKey: stri
         cy="50"
         r={RING_R}
         stroke="url(#ringGold)"
-        strokeWidth={7.5}
+        strokeWidth={8}
         fill="none"
         strokeLinecap="round"
         strokeDasharray={`${RING_CIRC}`}
         animatedProps={ringProps}
         transform="rotate(-90 50 50)"
+      />
+      <AnimatedCircle
+        animatedProps={tipProps}
+        r={5.5}
+        fill="#A87E33"
+        stroke="#FFFDF6"
+        strokeWidth={2.2}
       />
     </Svg>
   );
@@ -555,7 +572,7 @@ export default function YearInPixelsView() {
               <Reanimated.View
                 key={`${redrawKey}-${month.name}`}
                 entering={reduceMotion ? undefined : FadeInDown.delay(monthIndex * 26).duration(300)}
-                style={s.monthRow}
+                style={[s.monthRow, (monthIndex === 2 || monthIndex === 5 || monthIndex === 8) && s.monthRowSeasonEnd]}
               >
                 <Text style={s.monthLabel}>{month.name}</Text>
                 <View style={s.monthDays}>
@@ -565,24 +582,23 @@ export default function YearInPixelsView() {
                         <TodayPixelPulse />
                         <View
                           style={[
-                            s.pixel,
+                            s.pixelFill,
                             day.color ? { backgroundColor: day.color } : s.pixelToday,
                             s.pixelTodayRing,
                           ]}
                         />
                       </View>
                     ) : (
-                      <View
-                        key={day.dateStr}
-                        style={[
-                          s.pixel,
-                          day.color
-                            ? { backgroundColor: day.color }
-                            : day.isFuture
-                              ? s.pixelFuture
-                              : s.pixelEmpty,
-                        ]}
-                      />
+                      // Painted days are full gems; unpainted days recede to
+                      // pinpricks — the year's shape stays visible, the story
+                      // is what you painted.
+                      <View key={day.dateStr} style={s.pixelCell}>
+                        {day.color ? (
+                          <View style={[s.pixelFill, { backgroundColor: day.color }]} />
+                        ) : (
+                          <View style={[s.pixelDot, day.isFuture && s.pixelDotFuture]} />
+                        )}
+                      </View>
                     )
                   ))}
                 </View>
@@ -718,30 +734,30 @@ const s = StyleSheet.create({
   plateNumRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 6 },
   plateBigNum: {
     fontFamily: F.serifSemiBold,
-    fontSize: 35,
-    lineHeight: 39,
+    fontSize: 39,
+    lineHeight: 43,
     color: '#59400F',
     letterSpacing: 0.2,
     fontVariant: ['tabular-nums'],
   },
   plateNumOf: {
     fontFamily: F.serifMedium,
-    fontSize: 17,
+    fontSize: 19,
     color: '#9C8455',
     fontVariant: ['tabular-nums'],
   },
   plateMeta: {
     marginTop: 3,
     fontFamily: F.serif,
-    fontSize: 12.5,
-    lineHeight: 17,
+    fontSize: 13.5,
+    lineHeight: 18,
     color: '#796333',
   },
   plateSubMeta: {
-    marginTop: 1,
+    marginTop: 1.5,
     fontFamily: F.serifItalic,
-    fontSize: 11.5,
-    lineHeight: 15,
+    fontSize: 12.5,
+    lineHeight: 16,
     color: '#9C8455',
   },
 
@@ -810,8 +826,8 @@ const s = StyleSheet.create({
   },
 
   heroRing: {
-    width: 84,
-    height: 84,
+    width: 96,
+    height: 96,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -823,15 +839,15 @@ const s = StyleSheet.create({
   },
   heroRingPct: {
     fontFamily: F.serifSemiBold,
-    fontSize: 20,
-    lineHeight: 24,
-    color: '#9A6B1E',
+    fontSize: 24,
+    lineHeight: 28,
+    color: '#7A5310',
     fontVariant: ['tabular-nums'],
   },
   heroRingPctSmall: {
     fontFamily: F.serifSemiBold,
-    fontSize: 12,
-    color: '#9A6B1E',
+    fontSize: 14,
+    color: '#7A5310',
   },
   spectrumWrap: { marginTop: 13 },
   spectrumBar: {
@@ -897,13 +913,14 @@ const s = StyleSheet.create({
   },
 
   monthRow: { flexDirection: 'row', alignItems: 'flex-start', columnGap: 10 },
+  monthRowSeasonEnd: { marginBottom: 4 },
   monthLabel: {
     width: 32,
     paddingTop: 2,
     fontFamily: F.serifMedium,
-    fontSize: 11.5,
+    fontSize: 12,
     letterSpacing: 0.6,
-    color: '#8A8378',
+    color: '#7E7768',
   },
   monthDays: {
     flex: 1,
@@ -912,13 +929,28 @@ const s = StyleSheet.create({
     columnGap: PIXEL_GAP,
     rowGap: PIXEL_GAP,
   },
-  pixel: {
+  pixelCell: {
     width: PIXEL_SIZE,
     height: PIXEL_SIZE,
-    borderRadius: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  pixelEmpty: { backgroundColor: '#F1EDE4' },
-  pixelFuture: { backgroundColor: 'rgba(197,160,89,0.06)' },
+  pixelFill: {
+    width: PIXEL_SIZE,
+    height: PIXEL_SIZE,
+    borderRadius: 3.5,
+  },
+  pixelDot: {
+    width: 4.5,
+    height: 4.5,
+    borderRadius: 2.25,
+    backgroundColor: '#E3DCCC',
+  },
+  pixelDotFuture: {
+    width: 3.5,
+    height: 3.5,
+    backgroundColor: '#EEE9DD',
+  },
   pixelToday: { backgroundColor: 'rgba(197,160,89,0.2)' },
   pixelTodayRing: { borderWidth: 1.2, borderColor: GOLD },
   todayWrap: {
