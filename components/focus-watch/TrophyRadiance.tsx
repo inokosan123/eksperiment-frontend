@@ -130,38 +130,44 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
 
   return (
     <View style={{ width, height }}>
-      <Svg pointerEvents="none" width={width} height={height} style={StyleSheet.absoluteFill}>
+      <Svg
+        pointerEvents="none"
+        width={width * 1.14}
+        height={height * 1.12}
+        style={{ position: 'absolute', left: -width * 0.07, top: -height * 0.06 }}
+      >
         {/* Layered ellipses, darker rim to lightest heart — the inverse of the
-            Year in Pixels medallion, so the number sits in the brightest pool. */}
+            Year in Pixels medallion, so the number sits in the brightest pool.
+            The canvas runs wider than the medallion so the bloom can spread. */}
         <Ellipse
-          cx={width * 0.48}
-          cy={height * 0.5}
-          rx={width * 0.48}
-          ry={height * 0.48}
+          cx={width * 0.55}
+          cy={height * 0.56}
+          rx={width * 0.55}
+          ry={height * 0.52}
           fill="#EBD5A0"
           opacity={0.8}
-          transform={`rotate(-5 ${width * 0.48} ${height * 0.5})`}
+          transform={`rotate(-5 ${width * 0.55} ${height * 0.56})`}
         />
         <Ellipse
-          cx={width * 0.5}
-          cy={height * 0.47}
-          rx={width * 0.395}
-          ry={height * 0.4}
+          cx={width * 0.57}
+          cy={height * 0.53}
+          rx={width * 0.46}
+          ry={height * 0.44}
           fill="#F5E5BE"
           opacity={0.85}
-          transform={`rotate(4 ${width * 0.5} ${height * 0.47})`}
+          transform={`rotate(4 ${width * 0.57} ${height * 0.53})`}
         />
         <Ellipse
-          cx={width * 0.47}
-          cy={height * 0.52}
-          rx={width * 0.315}
-          ry={height * 0.32}
+          cx={width * 0.54}
+          cy={height * 0.58}
+          rx={width * 0.37}
+          ry={height * 0.35}
           fill="#FFF8E4"
           opacity={0.95}
-          transform={`rotate(-3 ${width * 0.47} ${height * 0.52})`}
+          transform={`rotate(-3 ${width * 0.54} ${height * 0.58})`}
         />
         <Path
-          d={`M ${size * 0.13} ${height * 0.76} C ${width * 0.36} ${height * 0.95}, ${width * 0.69} ${height * 0.91}, ${width * 0.93} ${height * 0.58}`}
+          d={`M ${size * 0.13 + width * 0.07} ${height * 0.82} C ${width * 0.43} ${height * 1.01}, ${width * 0.76} ${height * 0.97}, ${width * 1.0} ${height * 0.64}`}
           fill="none"
           stroke={GOLD}
           strokeOpacity={0.3}
@@ -169,10 +175,10 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
           strokeLinecap="round"
         />
         <Line
-          x1={size * 0.73 + digitExpansion}
-          y1={height * 0.26}
-          x2={size * 0.73 + digitExpansion}
-          y2={height * 0.72}
+          x1={size * 0.73 + digitExpansion + width * 0.07}
+          y1={height * 0.32}
+          x2={size * 0.73 + digitExpansion + width * 0.07}
+          y2={height * 0.78}
           stroke={GOLD}
           strokeOpacity={0.38}
           strokeWidth={1}
