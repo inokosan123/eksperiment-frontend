@@ -2,8 +2,18 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Line } from 'react-native-svg';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Svg, { Circle, Line } from 'react-native-svg';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  FadeInDown,
+  useAnimatedProps,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
@@ -45,6 +55,48 @@ import {
 } from './dayPlanStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+// The "today" marker in the Weekly Rhythm: a calm gold ring that breathes
+// outward — the same radar-pulse grammar as the focus timer, tuned softer and
+// slower. Vector rings (animated radius, never transform:scale) so the small
+// day circle stays crisp on Android.
+function TodayAura({ color = C.gold }: { color?: string }) {
+  const reduceMotion = useReducedMotion();
+  const r1 = useSharedValue(0);
+  const r2 = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      r1.value = 0.18;
+      r2.value = 0.18;
+      return;
+    }
+    r1.value = 0;
+    r1.value = withRepeat(withTiming(1, { duration: 2200, easing: Easing.out(Easing.quad) }), -1, false);
+    r2.value = 0;
+    r2.value = withDelay(1100, withRepeat(withTiming(1, { duration: 2200, easing: Easing.out(Easing.quad) }), -1, false));
+    return () => {
+      cancelAnimation(r1);
+      cancelAnimation(r2);
+    };
+  }, [reduceMotion, r1, r2]);
+
+  // Rings are born at the ring's edge (r=22) and expand outward, so they never
+  // touch the letter and stacking above the circle is harmless.
+  const props1 = useAnimatedProps(() => ({ opacity: (1 - r1.value) * 0.5, r: 22 + r1.value * 8 }));
+  const props2 = useAnimatedProps(() => ({ opacity: (1 - r2.value) * 0.32, r: 22 + r2.value * 9.5 }));
+
+  return (
+    <View pointerEvents="none" style={s.weekTodayAura}>
+      <Svg width={64} height={64}>
+        <AnimatedCircle cx={32} cy={32} fill="none" stroke={color} strokeWidth={1.4} animatedProps={props1} />
+        <AnimatedCircle cx={32} cy={32} fill="none" stroke={color} strokeWidth={1} animatedProps={props2} />
+      </Svg>
+    </View>
+  );
+}
 
 const NO_PLAN_VISUAL = {
   gradient: ['#F6DDD7', '#FFF2EE', '#FFFCFA'] as const,
@@ -639,32 +691,36 @@ export default function DayPlanHubView() {
                     })}
                     haptic="selection"
                     accessibilityRole="button"
-                    accessibilityLabel={`${DAY_NAMES[day]}, ${plan ? plan.name : 'No plan'}`}
+                    accessibilityState={{ selected: day === today }}
+                    accessibilityLabel={`${DAY_NAMES[day]}${day === today ? ', today' : ''}, ${plan ? plan.name : 'No plan'}`}
                   >
-                    <View style={[
-                      s.weekCircle,
-                      plan
-                        ? { borderColor: visual.border, backgroundColor: visual.accentSoft }
-                        : { borderColor: '#E4DFD4', backgroundColor: '#FFFFFF' },
-                      day === today && s.weekCircleToday,
-                    ]}>
-                      {!!plan && (
-                        <Svg width={44} height={44} style={StyleSheet.absoluteFill} pointerEvents="none">
-                          {[7, 18, 29, 40, 51].map(offset => (
-                            <Line
-                              key={offset}
-                              x1={offset}
-                              y1={-3}
-                              x2={offset - 50}
-                              y2={47}
-                              stroke={visual.accent}
-                              strokeOpacity={0.16}
-                              strokeWidth={1}
-                            />
-                          ))}
-                        </Svg>
-                      )}
-                      <Text style={[s.weekLetter, { color: plan ? visual.ink : C.textMuted }]}>{letter}</Text>
+                    <View style={s.weekCircleWrap}>
+                      {day === today && <TodayAura />}
+                      <View style={[
+                        s.weekCircle,
+                        plan
+                          ? { borderColor: visual.border, backgroundColor: visual.accentSoft }
+                          : { borderColor: '#E4DFD4', backgroundColor: '#FFFFFF' },
+                        day === today && s.weekCircleToday,
+                      ]}>
+                        {!!plan && (
+                          <Svg width={44} height={44} style={StyleSheet.absoluteFill} pointerEvents="none">
+                            {[7, 18, 29, 40, 51].map(offset => (
+                              <Line
+                                key={offset}
+                                x1={offset}
+                                y1={-3}
+                                x2={offset - 50}
+                                y2={47}
+                                stroke={visual.accent}
+                                strokeOpacity={0.16}
+                                strokeWidth={1}
+                              />
+                            ))}
+                          </Svg>
+                        )}
+                        <Text style={[s.weekLetter, { color: plan ? visual.ink : C.textMuted }]}>{letter}</Text>
+                      </View>
                     </View>
                   </TouchableOpacity>
                 );
@@ -815,8 +871,10 @@ const s = StyleSheet.create({
   weekBand: { borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: '#ECE7DC', backgroundColor: '#FEFDF9', paddingHorizontal: 5, paddingTop: 14, paddingBottom: 13 },
   weekRow: { flexDirection: 'row' },
   weekCell: { flex: 1, minWidth: 0, alignItems: 'center' },
+  weekCircleWrap: { alignItems: 'center', justifyContent: 'center' },
+  weekTodayAura: { position: 'absolute', top: -10, left: -10, width: 64, height: 64 },
   weekCircle: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  weekCircleToday: { borderWidth: 2, borderColor: C.gold },
+  weekCircleToday: { borderWidth: 1.75, borderColor: C.gold },
   weekLetter: { fontFamily: F.sansBold, fontSize: 13 },
   weekNote: { marginTop: 8, paddingHorizontal: 22, textAlign: 'center', fontFamily: F.sansMedium, fontSize: 12, lineHeight: 16, color: C.textMuted },
   defaultsGrid: { flexDirection: 'row', gap: 10 },
