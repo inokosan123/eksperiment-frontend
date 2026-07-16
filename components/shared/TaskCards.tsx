@@ -522,11 +522,14 @@ export function HabitTaskCard({ task, streak }: { task: TaskData; streak?: numbe
   const isDone = task.state === 'done';
   const isIOS = Platform.OS === 'ios';
   const habitColors = useMemo(() => {
-    const accentColor = isSkipped ? '#D1D5DB' : habitColor;
-    const surfaceStart = isSkipped ? '#FFFFFF' : mixHex(habitColor, '#FFFFFF', isDone ? 0.94 : 0.88);
-    const surfaceEnd = isSkipped ? '#FAFAFA' : mixHex(habitColor, '#FFFFFF', isDone ? 0.98 : 0.95);
-    const bloomColor = isSkipped ? '#F3F4F6' : mixHex(habitColor, '#FFFFFF', isDone ? 0.90 : 0.82);
-    const leftGlowColor = isSkipped ? '#F9FAFB' : mixHex(habitColor, '#FFFFFF', isDone ? 0.88 : 0.74);
+    // Skipped keeps a faint whisper of the habit's own color — the same way
+    // a skipped spiritual card never loses its gold — heavily diluted toward
+    // gray-white instead of replaced by pure neutral.
+    const accentColor = isSkipped ? mixHex(habitColor, '#D1D5DB', 0.78) : habitColor;
+    const surfaceStart = isSkipped ? mixHex(habitColor, '#F6F6F5', 0.88) : mixHex(habitColor, '#FFFFFF', isDone ? 0.94 : 0.88);
+    const surfaceEnd = isSkipped ? mixHex(habitColor, '#FAFAFA', 0.94) : mixHex(habitColor, '#FFFFFF', isDone ? 0.98 : 0.95);
+    const bloomColor = isSkipped ? mixHex(habitColor, '#F3F4F6', 0.84) : mixHex(habitColor, '#FFFFFF', isDone ? 0.90 : 0.82);
+    const leftGlowColor = isSkipped ? mixHex(habitColor, '#F9FAFB', 0.86) : mixHex(habitColor, '#FFFFFF', isDone ? 0.88 : 0.74);
 
     return {
       accentColor,
