@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
   cancelAnimation,
   Easing,
+  interpolate,
   useAnimatedProps,
   useAnimatedStyle,
   useReducedMotion,
@@ -257,10 +258,10 @@ function RadiantBook() {
     return () => cancelAnimation(breathe);
   }, [reduceMotion, breathe]);
 
-  const glowStyle = useAnimatedStyle(() => ({ opacity: 0.4 + breathe.value * 0.6 }));
-  const field = 72;
+  const glowStyle = useAnimatedStyle(() => ({ opacity: 0.45 + breathe.value * 0.55 }));
+  const field = 96;
   const cx = field / 2;
-  const inner = 21;
+  const inner = 26;
 
   return (
     <View style={s.bookStage}>
@@ -269,7 +270,7 @@ function RadiantBook() {
         {Array.from({ length: 12 }).map((_, index) => {
           const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
           const long = index % 2 === 0;
-          const r2 = inner + (long ? 11 : 6);
+          const r2 = inner + (long ? 13 : 7);
           return (
             <Line
               key={index}
@@ -277,8 +278,8 @@ function RadiantBook() {
               y1={cx + inner * Math.sin(angle)}
               x2={cx + r2 * Math.cos(angle)}
               y2={cx + r2 * Math.sin(angle)}
-              stroke={GOLD}
-              strokeOpacity={long ? 0.4 : 0.22}
+              stroke="#E8C87E"
+              strokeOpacity={long ? 0.5 : 0.28}
               strokeWidth={long ? 1.6 : 1.2}
               strokeLinecap="round"
             />
@@ -319,6 +320,83 @@ function TwinklePixel({ delay, style, color }: { delay: number; style: object; c
   return (
     <Reanimated.View pointerEvents="none" style={[s.fieldPixelWrap, style, twinkle]}>
       <View style={[s.fieldPixel, { backgroundColor: color }]} />
+    </Reanimated.View>
+  );
+}
+
+// A band of warm light that sweeps across the dark hearth every few seconds —
+// the same glint grammar the Focus cards use, slowed to candlelight.
+function HearthGlint() {
+  const reduceMotion = useReducedMotion();
+  const [w, setW] = useState(0);
+  const t = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion || w === 0) return;
+    t.value = 0;
+    t.value = withRepeat(
+      withTiming(1, { duration: 7200, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      false
+    );
+    return () => cancelAnimation(t);
+  }, [reduceMotion, w, t]);
+
+  const sweep = useAnimatedStyle(() => ({
+    opacity: interpolate(t.value, [0, 0.08, 0.3, 0.42, 1], [0, 0.9, 0.9, 0, 0]),
+    transform: [
+      { translateX: interpolate(t.value, [0, 0.42, 1], [-90, w + 50, w + 50]) },
+      { rotate: '14deg' },
+    ],
+  }));
+
+  return (
+    <View
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      onLayout={event => setW(event.nativeEvent.layout.width)}
+    >
+      {!reduceMotion && w > 0 && (
+        <Reanimated.View style={[s.hearthGlint, sweep]}>
+          <LinearGradient
+            colors={['rgba(255,241,205,0)', 'rgba(255,241,205,0.14)', 'rgba(255,241,205,0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ flex: 1 }}
+          />
+        </Reanimated.View>
+      )}
+    </View>
+  );
+}
+
+// A mote of gold dust hanging in the hearth's light, twinkling at its own pace.
+function GoldDust({ delay, style }: { delay: number; style: object }) {
+  const reduceMotion = useReducedMotion();
+  const t = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      t.value = 0.5;
+      return;
+    }
+    t.value = 0;
+    t.value = withDelay(
+      delay,
+      withRepeat(
+        withTiming(1, { duration: 2800, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        true
+      )
+    );
+    return () => cancelAnimation(t);
+  }, [delay, reduceMotion, t]);
+
+  const twinkle = useAnimatedStyle(() => ({ opacity: 0.15 + t.value * 0.5 }));
+
+  return (
+    <Reanimated.View pointerEvents="none" style={[s.dustWrap, style, twinkle]}>
+      <View style={s.dust} />
     </Reanimated.View>
   );
 }
@@ -454,20 +532,35 @@ function CalendarStreakCard({
         </View>
       </View>
 
-      <View style={s.divider} />
+      {/* The hearth: one dark velvet panel inside the pale card — the book
+          glows against it, light sweeps across, gold dust hangs in the air.
+          The most precious corner of the screen. */}
+      <View style={s.hearth}>
+        <LinearGradient
+          colors={['#2C2517', '#211C12', '#1A160E']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+        <View pointerEvents="none" style={s.hearthSheen} />
+        <HearthGlint />
+        <GoldDust delay={0} style={{ right: 24, top: 13 }} />
+        <GoldDust delay={1500} style={{ right: 64, top: 34 }} />
+        <GoldDust delay={2700} style={{ left: 74, bottom: 64 }} />
 
-      <View style={s.streakHead}>
-        <RadiantBook />
-        <View style={s.streakHeadCopy}>
-          <AppText style={s.streakEyebrow}>JOURNAL STREAK</AppText>
-          <View style={s.streakNumberRow}>
-            <AppText style={s.streakNumber}>{currentStreak}</AppText>
-            <AppText style={s.streakLabel}>day streak</AppText>
+        <View style={s.streakHead}>
+          <RadiantBook />
+          <View style={s.streakHeadCopy}>
+            <AppText style={s.streakEyebrow}>JOURNAL STREAK</AppText>
+            <View style={s.streakNumberRow}>
+              <AppText style={s.streakNumber}>{currentStreak}</AppText>
+              <AppText style={s.streakLabel}>day streak</AppText>
+            </View>
           </View>
         </View>
-      </View>
 
-      <View style={s.streakRow}>
+        <View style={s.streakRow}>
         {/* The chain: each link between two written days turns gold — the
             streak literally lights up through the week. */}
         {Array.from({ length: 6 }).map((_, index) => {
@@ -517,6 +610,7 @@ function CalendarStreakCard({
           </View>
           );
         })}
+        </View>
       </View>
     </View>
   );
@@ -950,41 +1044,70 @@ const s = StyleSheet.create({
   legendDot: { width: 7, height: 7, borderRadius: 4 },
   legendText: { fontFamily: F.sansMedium, fontSize: 11, lineHeight: 13, color: '#918A80' },
 
-  divider: { height: 1, marginTop: 14, marginBottom: 14, backgroundColor: '#F2EDE4' },
+  // The hearth: dark velvet panel, hairline gold border, a whisper of light
+  // along its top edge.
+  hearth: {
+    position: 'relative',
+    overflow: 'hidden',
+    marginTop: 14,
+    borderRadius: 20,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.32)',
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 13,
+    shadowColor: '#14100A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  hearthSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 14,
+    right: 14,
+    height: 1,
+    backgroundColor: 'rgba(255,244,214,0.14)',
+  },
+  hearthGlint: { position: 'absolute', top: -24, bottom: -24, width: 76 },
+  dustWrap: { position: 'absolute' },
+  dust: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#E8C87E' },
 
   streakHead: { flexDirection: 'row', alignItems: 'center' },
-  bookStage: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
+  bookStage: { width: 76, height: 76, alignItems: 'center', justifyContent: 'center' },
   bookGlow: {
     position: 'absolute',
-    left: 5,
-    top: 5,
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: 'rgba(240,196,107,0.4)',
+    left: 7,
+    top: 7,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: 'rgba(240,196,107,0.22)',
   },
-  bookRays: { position: 'absolute', left: -8, top: -8 },
-  // The Lottie's 400px canvas holds the book around its lower-right quadrant
-  // center (~0.64, 0.64); an 84px box shifted by -26 seats the book itself on
-  // the 56px stage center, and its page-flip sparkles rise into open air.
-  bookLottie: { position: 'absolute', left: -26, top: -26, width: 84, height: 84 },
-  streakHeadCopy: { flex: 1, minWidth: 0, marginLeft: 8 },
-  streakEyebrow: { fontFamily: F.sansBold, fontSize: 9, lineHeight: 12, letterSpacing: 2, color: GOLD },
-  streakNumberRow: { flexDirection: 'row', alignItems: 'baseline', columnGap: 7, marginTop: 1 },
-  streakNumber: { fontFamily: F.serifSemiBold, fontSize: 33, lineHeight: 37, color: '#9A6B1E' },
-  streakLabel: { fontFamily: F.serifMediumItalic, fontSize: 16, lineHeight: 20, color: '#B29A67' },
-  // The last seven days are a chain: each link between two written days turns
-  // gold, the circles sit on the links, and today breathes its ring.
-  streakRow: { position: 'relative', marginTop: 12, flexDirection: 'row' },
+  bookRays: { position: 'absolute', left: -10, top: -10 },
+  // The Lottie book sits exactly on its 400px canvas center; a 112px box
+  // centered on the 76px stage (offset -18) seats it in the glow, book ~41px
+  // wide, page-flip sparkles rising into the dark above.
+  bookLottie: { position: 'absolute', left: -18, top: -18, width: 112, height: 112 },
+  streakHeadCopy: { flex: 1, minWidth: 0, marginLeft: 6 },
+  streakEyebrow: { fontFamily: F.sansBold, fontSize: 9, lineHeight: 12, letterSpacing: 2.2, color: '#D9B978' },
+  streakNumberRow: { flexDirection: 'row', alignItems: 'baseline', columnGap: 7, marginTop: 2 },
+  streakNumber: { fontFamily: F.serifSemiBold, fontSize: 34, lineHeight: 38, color: '#F3E2BC' },
+  streakLabel: { fontFamily: F.serifMediumItalic, fontSize: 16, lineHeight: 20, color: 'rgba(243,226,188,0.6)' },
+  // The last seven days are a chain across the dark: each link between two
+  // written days turns gold, and today breathes its ring.
+  streakRow: { position: 'relative', marginTop: 11, flexDirection: 'row' },
   streakSegment: {
     position: 'absolute',
     width: `${100 / 7}%`,
     top: 15.5,
     height: 1.5,
     borderRadius: 1,
-    backgroundColor: '#EFE9DC',
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
-  streakSegmentLit: { backgroundColor: 'rgba(197,160,89,0.55)', height: 2, top: 15.25 },
+  streakSegmentLit: { backgroundColor: 'rgba(212,176,106,0.65)', height: 2, top: 15.25 },
   streakDay: { flex: 1, alignItems: 'center' },
   streakCircleWrap: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   streakPulse: { position: 'absolute', left: -12, top: -12, width: 56, height: 56 },
@@ -993,31 +1116,31 @@ const s = StyleSheet.create({
     height: 32,
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: '#E5E1D6',
-    backgroundColor: '#F6F4EE',
+    borderColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   streakCircleResting: {
     borderStyle: 'dashed',
-    borderColor: '#DED7C6',
-    backgroundColor: '#FCFBF7',
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
   },
   streakCircleActive: {
-    borderColor: GOLD,
-    backgroundColor: '#FFF3D8',
+    borderColor: '#D9B064',
+    backgroundColor: 'rgba(197,160,89,0.2)',
     shadowColor: GOLD,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.55,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  streakCircleToday: { borderStyle: 'solid', borderColor: GOLD, backgroundColor: '#FFFBF0' },
+  streakCircleToday: { borderStyle: 'solid', borderColor: '#D9B064', backgroundColor: 'rgba(255,244,214,0.08)' },
   streakBook: { width: 22, height: 22 },
-  streakBookResting: { tintColor: '#C9C4B7', opacity: 0.38 },
-  streakDayText: { marginTop: 5, fontFamily: F.sansBold, fontSize: 10, lineHeight: 12, color: '#C4BAA8' },
-  streakDayTextActive: { color: GOLD },
-  streakDayTextToday: { color: '#9A6B1E' },
+  streakBookResting: { tintColor: '#6E6553', opacity: 0.55 },
+  streakDayText: { marginTop: 5, fontFamily: F.sansBold, fontSize: 10, lineHeight: 12, color: 'rgba(255,255,255,0.34)' },
+  streakDayTextActive: { color: '#D9B978' },
+  streakDayTextToday: { color: '#F3E2BC' },
 
   choiceOverlay: {
     flex: 1,
