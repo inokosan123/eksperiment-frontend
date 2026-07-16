@@ -8,9 +8,12 @@ import Reanimated, {
   Easing,
   FadeInDown,
   useAnimatedProps,
+  useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withDelay,
   withRepeat,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import { ChevronLeft, ChevronRight } from '@/components/icons/Icons';
@@ -87,6 +90,53 @@ function tabDots(type: TabType): string[] {
   if (type === 'free_writing') return [TEAL];
   if (type === 'daily_journal') return [GOLD];
   return MOOD_COLORS.slice(1);
+}
+
+const TAB_LABEL_BOX = 112;
+
+// Long scale names get a fixed window; anything wider glides gently back and
+// forth inside it instead of colliding with its neighbours.
+function TabMarqueeLabel({ text, color, active }: { text: string; color: string; active?: boolean }) {
+  const reduceMotion = useReducedMotion();
+  const [textW, setTextW] = useState(0);
+  const overflow = textW > TAB_LABEL_BOX + 1;
+  const shift = useSharedValue(0);
+
+  useEffect(() => {
+    if (!overflow || reduceMotion) {
+      cancelAnimation(shift);
+      shift.value = 0;
+      return;
+    }
+    const distance = textW - TAB_LABEL_BOX;
+    const travel = Math.max(1200, distance * 30);
+    shift.value = 0;
+    shift.value = withRepeat(
+      withSequence(
+        withDelay(1100, withTiming(-distance, { duration: travel, easing: Easing.inOut(Easing.quad) })),
+        withDelay(1100, withTiming(0, { duration: travel, easing: Easing.inOut(Easing.quad) }))
+      ),
+      -1
+    );
+    return () => cancelAnimation(shift);
+  }, [overflow, textW, reduceMotion, shift]);
+
+  const glide = useAnimatedStyle(() => ({ transform: [{ translateX: shift.value }] }));
+
+  return (
+    <View style={[s.tabLabelBox, overflow && { width: TAB_LABEL_BOX }]}>
+      <Reanimated.Text
+        numberOfLines={1}
+        style={[s.tabLabel, active && s.tabLabelActive, { color }, glide]}
+        onTextLayout={event => {
+          const w = event.nativeEvent.lines?.[0]?.width ?? 0;
+          if (w > 0 && Math.abs(w - textW) > 1) setTextW(w);
+        }}
+      >
+        {text}
+      </Reanimated.Text>
+    </View>
+  );
 }
 
 const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
@@ -524,7 +574,7 @@ export default function YearInPixelsView() {
                             <View key={i} style={[s.tabDot, s.tabDotActive, { backgroundColor: dot }]} />
                           ))}
                         </View>
-                        <Text style={[s.tabLabel, s.tabLabelActive]} numberOfLines={1}>{tab.label}</Text>
+                        <TabMarqueeLabel text={tab.label} color="#FFFFFF" active />
                       </View>
                     </LinearGradient>
                   </TouchableOpacity>
@@ -545,7 +595,7 @@ export default function YearInPixelsView() {
                           <View key={i} style={[s.tabDot, { backgroundColor: dot }]} />
                         ))}
                       </View>
-                      <Text style={[s.tabLabel, { color: tint.ink }]} numberOfLines={1}>{tab.label}</Text>
+                      <TabMarqueeLabel text={tab.label} color={tint.ink} />
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -780,6 +830,7 @@ const s = StyleSheet.create({
     position: 'relative',
   },
   tabInner: { flexDirection: 'row', alignItems: 'center', columnGap: 7 },
+  tabLabelBox: { flexDirection: 'row', overflow: 'hidden' },
   tabDots: { flexDirection: 'row', alignItems: 'center', columnGap: 2.5 },
   tabDot: { width: 4.5, height: 4.5, borderRadius: 2.5 },
   tabDotActive: {
@@ -876,31 +927,33 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 10,
     paddingHorizontal: 2,
   },
   gridKicker: {
     fontFamily: F.sansBold,
-    fontSize: 9.5,
+    fontSize: 11,
     letterSpacing: 2,
     color: GOLD,
     textTransform: 'uppercase',
   },
   plaqueCount: {
     fontFamily: F.serifItalic,
-    fontSize: 12,
-    color: '#B5A990',
+    fontSize: 13.5,
+    color: '#A6997D',
   },
   // The gold fillet: a fine inner frame the year hangs inside, with nail
-  // heads in the corners.
+  // heads in the corners. It reaches almost to the card's edge so the
+  // pixels get the full breadth.
   frame: {
     position: 'relative',
+    marginHorizontal: -8,
     borderRadius: 16,
     borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(197,160,89,0.5)',
     backgroundColor: '#FFFEFB',
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     paddingVertical: 11,
     rowGap: 8,
   },
@@ -912,15 +965,18 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(154,107,30,0.5)',
   },
 
-  monthRow: { flexDirection: 'row', alignItems: 'flex-start', columnGap: 10 },
+  monthRow: { flexDirection: 'row', alignItems: 'flex-start', columnGap: 7 },
   monthRowSeasonEnd: { marginBottom: 4 },
+  // Month names in italic garamond, right-aligned so they sit against their
+  // own row of pixels like manuscript marginalia.
   monthLabel: {
-    width: 32,
-    paddingTop: 2,
-    fontFamily: F.serifMedium,
-    fontSize: 12,
-    letterSpacing: 0.6,
-    color: '#7E7768',
+    width: 28,
+    paddingTop: 1.5,
+    fontFamily: F.serifMediumItalic,
+    fontSize: 12.5,
+    letterSpacing: 0.4,
+    color: '#8A7F6A',
+    textAlign: 'right',
   },
   monthDays: {
     flex: 1,
@@ -941,15 +997,13 @@ const s = StyleSheet.create({
     borderRadius: 3.5,
   },
   pixelDot: {
-    width: 4.5,
-    height: 4.5,
-    borderRadius: 2.25,
-    backgroundColor: '#E3DCCC',
+    width: PIXEL_SIZE,
+    height: PIXEL_SIZE,
+    borderRadius: 3.5,
+    backgroundColor: '#F1EDE4',
   },
   pixelDotFuture: {
-    width: 3.5,
-    height: 3.5,
-    backgroundColor: '#EEE9DD',
+    backgroundColor: 'rgba(197,160,89,0.07)',
   },
   pixelToday: { backgroundColor: 'rgba(197,160,89,0.2)' },
   pixelTodayRing: { borderWidth: 1.2, borderColor: GOLD },
