@@ -73,7 +73,7 @@ const CIRCUMFERENCE = 2 * Math.PI * TARGET_RADIUS;
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-const FLAME_ICON = require('@/assets/images/streak-flame-512.png');
+const TARGET_ICON = require('@/assets/images/streak-target-512.png');
 
 const SINGLE_PRESETS = [
   { label: '15 / 3', focus: 15, break: 3 },
@@ -695,8 +695,8 @@ export default function FocusZoneView() {
         </TouchableOpacity>
 
         <View style={s.sessionPill}>
-          <View style={s.sessionFlameHalo}>
-            <FocusLottie name="flame" loop speed={0.9} style={s.flameLottie} />
+          <View style={s.sessionTargetHalo}>
+            <Image source={TARGET_ICON} style={s.sessionTargetStill} resizeMode="contain" />
           </View>
           <Text style={s.sessionCount}>{dailySessions}</Text>
           <Text style={s.sessionLabel}>today</Text>
@@ -755,8 +755,10 @@ export default function FocusZoneView() {
           </Animated.View>
 
           {/* Sandy hourglass — new animation for focus, green sandy for break */}
-          <Animated.View style={[s.sandyWrap, sandyStyle]}>
+          <Animated.View style={[s.sandyWrap, sandyStyle]} pointerEvents="none">
             <Animated.View style={sandyBreathStyle}>
+              <View style={[s.sandyAuraOuter, !isFocusPhase && s.sandyAuraOuterBreak]} />
+              <View style={[s.sandyAuraInner, !isFocusPhase && s.sandyAuraInnerBreak]} />
               {phase === 'focus' ? (
                 <FocusLottie name="sandy-work" loop speed={0.4} style={s.sandyLottie} />
               ) : (
@@ -769,7 +771,7 @@ export default function FocusZoneView() {
 
         <View style={[s.controlsDeck, timerMode === 'cycle' && s.controlsDeckCycle]}>
           <TouchableOpacity onPress={resetTimer} style={s.smallControl} activeOpacity={0.72}>
-            <RotateCcw s={20} c="rgba(28,25,23,0.42)" />
+            <RotateCcw s={20} c="#8A8177" />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -792,7 +794,7 @@ export default function FocusZoneView() {
             activeOpacity={0.72}
             disabled={isActive}
           >
-            <Settings s={20} c="rgba(28,25,23,0.42)" />
+            <Settings s={20} c="#8A8177" />
           </TouchableOpacity>
         </View>
 
@@ -858,7 +860,7 @@ export default function FocusZoneView() {
         icon={<RotateCcw s={22} c={C.red} />}
         iconBg="#FFF1F2"
         title="Restart Cycle?"
-        body="This will clear your completed focus flames and start the cycle from the first session."
+        body="This will clear your completed targets and start the cycle from the first session."
         cancelLabel="NO"
         confirmLabel="YES"
         confirmColor={C.red}
@@ -913,11 +915,11 @@ function PomodoroCycleRail({
           const filled = index < completed;
           return (
             <View key={index} style={[s.cycleSlot, filled && s.cycleSlotFilled]}>
-              {filled ? (
-                <FocusLottie name="flame" loop speed={0.9} style={s.cycleFlameLottie} />
-              ) : (
-                <Image source={FLAME_ICON} style={s.cycleFlameEmpty} resizeMode="contain" />
-              )}
+              <Image
+                source={TARGET_ICON}
+                style={filled ? s.cycleTargetFilled : s.cycleTargetEmpty}
+                resizeMode="contain"
+              />
             </View>
           );
         })}
@@ -1278,15 +1280,15 @@ function CompletionModal({
           <Animated.View style={[completion.sealFlight, sealStyle]}>
             <View style={completion.seal}>
               <View style={completion.sealGlow} />
-              <View style={completion.flameAura} />
-              <FocusLottie name="flame" loop speed={0.86} style={completion.flame} />
+              <View style={completion.targetAura} />
+              <FocusLottie name="target" loop={false} speed={1} style={completion.target} />
             </View>
           </Animated.View>
           <Animated.View style={[completion.copy, copyStyle]}>
             <Text style={completion.title}>Congratulations!</Text>
             <View style={completion.titleUnderline} />
             <Text style={completion.body}>
-              <Text style={completion.bodyStrong}>Focus session complete.</Text> You earned a <Text style={completion.bodyStrong}>focus flame.</Text>
+              <Text style={completion.bodyStrong}>Focus session complete.</Text> You hit the <Text style={completion.bodyStrong}>target.</Text>
             </Text>
             <TouchableOpacity onPress={handleCollect} disabled={collecting} style={completion.collectBtn} activeOpacity={0.9}>
               <Text style={completion.collectText}>{nextStepLabel}</Text>
@@ -1392,7 +1394,7 @@ function StatsModal({
               <Animated.View style={[stats.togglePill, { width: (toggleWidth - 8) / 2 }, pillStyle]} />
             )}
             <Pressable onPress={() => handleSetMode('streak')} style={stats.toggleBtn}>
-              <Image source={FLAME_ICON} style={[stats.toggleFlame, statsMode !== 'streak' && { opacity: 0.35 }]} />
+              <Image source={TARGET_ICON} style={[stats.toggleTarget, statsMode !== 'streak' && { opacity: 0.35 }]} />
               <Text style={[stats.toggleText, statsMode === 'streak' && stats.toggleTextActive]}>Streak</Text>
             </Pressable>
             <Pressable onPress={() => handleSetMode('time')} style={stats.toggleBtn}>
@@ -1409,7 +1411,7 @@ function StatsModal({
                     {statsMode === 'streak' ? (
                       <View style={stats.cellValueRow}>
                         <Text style={[stats.cellValue, cell.accent && stats.accentValue]}>{cell.sessions}</Text>
-                        <Image source={FLAME_ICON} style={stats.cellFlame} />
+                        <Image source={TARGET_ICON} style={stats.cellTarget} />
                       </View>
                     ) : (
                       <Text style={[stats.cellValue, cell.accent && stats.accentValue]}>{formatMinutes(cell.mins)}</Text>
@@ -1433,7 +1435,7 @@ function StatsModal({
                       {value > 0 && (
                         statsMode === 'streak' ? (
                           <View style={stats.barValueStack}>
-                            <Image source={FLAME_ICON} style={stats.barFlame} />
+                            <Image source={TARGET_ICON} style={stats.barTarget} />
                             <Text style={[stats.barValue, isToday && stats.todayGold]}>{value}</Text>
                           </View>
                         ) : (
@@ -1485,7 +1487,7 @@ function StatsModal({
                           <Text style={stats.calendarCount} numberOfLines={1}>
                             {cell.count > 99 ? '99+' : cell.count}
                           </Text>
-                          <Image source={FLAME_ICON} style={stats.calendarFlame} />
+                          <Image source={TARGET_ICON} style={stats.calendarTarget} />
                         </View>
                       )}
                       {statsMode === 'time' && cell.minutes > 0 && (
@@ -1545,18 +1547,17 @@ const s = StyleSheet.create({
     elevation: 3,
     overflow: 'hidden',
   },
-  sessionFlameHalo: {
+  sessionTargetHalo: {
     width: 34,
     height: 34,
     borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFF4D6',
+    backgroundColor: '#FDEFEA',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.18)',
+    borderColor: 'rgba(234,83,84,0.16)',
   },
-  flameLottie: { width: 38, height: 38 },
-  flameWeb: { width: 48, height: 48 },
+  sessionTargetStill: { width: 23, height: 23 },
   sessionCount: { fontFamily: F.serifBold, fontSize: 21, lineHeight: 24, color: INK, fontVariant: ['tabular-nums'] },
   sessionLabel: { marginLeft: -2, fontFamily: F.sansBold, fontSize: 8, lineHeight: 10, letterSpacing: 1.5, color: '#A8A29E', textTransform: 'uppercase' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, paddingBottom: 24 },
@@ -1585,12 +1586,12 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   cycleSlotFilled: {
-    backgroundColor: '#FFF4D6',
+    backgroundColor: '#FDEFEA',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.22)',
+    borderColor: 'rgba(234,83,84,0.20)',
   },
-  cycleFlameEmpty: { width: 21, height: 21, tintColor: '#C9C4B7', opacity: 0.72 },
-  cycleFlameLottie: { width: 42, height: 42 },
+  cycleTargetFilled: { width: 22, height: 22 },
+  cycleTargetEmpty: { width: 21, height: 21, tintColor: '#C9C4B7', opacity: 0.45 },
   timerWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
   timerWrapSingle: { transform: [{ translateY: -14 }] },
   timerWrapCycle: { transform: [{ translateY: 18 }] },
@@ -1602,7 +1603,34 @@ const s = StyleSheet.create({
   colon: { fontFamily: F.serifBold, opacity: 0.4, marginHorizontal: 4 },
   sandyWrap: { position: 'absolute', top: '64%', left: 0, right: 0, alignItems: 'center' },
   sandyLottie: { width: 80, height: 80 },
-  controlsDeck: { flexDirection: 'row', alignItems: 'center', gap: 24, backgroundColor: '#fff', padding: 12, paddingRight: 16, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(28,25,23,0.05)', shadowColor: '#000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.08, shadowRadius: 30, elevation: 9, transform: [{ translateY: 14 }] },
+  sandyAuraOuter: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: -14,
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    backgroundColor: 'rgba(197,160,89,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.10)',
+  },
+  sandyAuraInner: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: -2,
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: 'rgba(197,160,89,0.10)',
+  },
+  sandyAuraOuterBreak: {
+    backgroundColor: 'rgba(21,128,61,0.06)',
+    borderColor: 'rgba(21,128,61,0.09)',
+  },
+  sandyAuraInnerBreak: {
+    backgroundColor: 'rgba(21,128,61,0.08)',
+  },
+  controlsDeck: { flexDirection: 'row', alignItems: 'center', gap: 18, backgroundColor: '#FFFEFB', padding: 10, borderRadius: 999, borderWidth: 1, borderColor: '#F1ECE2', shadowColor: '#000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.08, shadowRadius: 30, elevation: 9, transform: [{ translateY: 14 }] },
   controlsDeckCycle: { transform: [{ translateY: 22 }] },
   restartCycleTag: {
     marginTop: 34,
@@ -1627,9 +1655,9 @@ const s = StyleSheet.create({
     lineHeight: 20,
     color: '#BE123C',
   },
-  smallControl: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
-  disabledControl: { opacity: 0.2 },
-  mainControl: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.28, shadowRadius: 18, elevation: 10 },
+  smallControl: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FAF7F1', borderWidth: 1, borderColor: '#F1ECE2' },
+  disabledControl: { opacity: 0.24 },
+  mainControl: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.28, shadowRadius: 18, elevation: 10 },
 });
 
 const modal = StyleSheet.create({
@@ -1842,8 +1870,8 @@ const completion = StyleSheet.create({
   sealFlight: { alignItems: 'center', justifyContent: 'center', zIndex: 4 },
   seal: { width: 112, height: 112, borderRadius: 56, alignItems: 'center', justifyContent: 'center', backgroundColor: '#17130F', borderWidth: 1.2, borderColor: 'rgba(232,195,116,0.74)', shadowColor: GOLD, shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.34, shadowRadius: 34, elevation: 6 },
   sealGlow: { position: 'absolute', width: 148, height: 148, borderRadius: 74, backgroundColor: 'rgba(197,160,89,0.14)', borderWidth: 1, borderColor: 'rgba(197,160,89,0.14)' },
-  flameAura: { position: 'absolute', width: 88, height: 88, borderRadius: 44, backgroundColor: 'rgba(255,214,122,0.23)', borderWidth: 1, borderColor: 'rgba(255,233,182,0.40)' },
-  flame: { width: 92, height: 92 },
+  targetAura: { position: 'absolute', width: 92, height: 92, borderRadius: 46, backgroundColor: 'rgba(255,214,122,0.20)', borderWidth: 1, borderColor: 'rgba(255,233,182,0.36)' },
+  target: { width: 82, height: 82 },
   copy: { width: '100%', alignItems: 'center', marginTop: 18 },
   title: { fontFamily: F.serifSemiBold, fontSize: 38, lineHeight: 43, color: INK, textAlign: 'center', marginBottom: 7 },
   titleUnderline: { width: 112, height: 3, borderRadius: 999, backgroundColor: GOLD, marginBottom: 14 },
@@ -1862,7 +1890,7 @@ const stats = StyleSheet.create({
   togglePill: { position: 'absolute', top: 0, left: 4, bottom: 0, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 5, elevation: 3 },
   toggleText: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 1.4, textTransform: 'uppercase', color: '#A8A29E' },
   toggleTextActive: { color: '#1C1917' },
-  toggleFlame: { width: 22, height: 22, resizeMode: 'contain' },
+  toggleTarget: { width: 20, height: 20, resizeMode: 'contain' },
   gridCard: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#F5F5F4', borderRadius: 24, overflow: 'hidden', marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
   gridRow: { flexDirection: 'row' },
   rowBorder: { borderTopWidth: 1, borderTopColor: '#FAFAF9' },
@@ -1874,14 +1902,14 @@ const stats = StyleSheet.create({
   cellValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   cellValue: { fontFamily: F.serifMedium, fontSize: 27, color: '#292524' },
   accentValue: { color: GOLD },
-  cellFlame: { width: 24, height: 24, resizeMode: 'contain' },
+  cellTarget: { width: 22, height: 22, resizeMode: 'contain' },
   card: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#F5F5F4', borderRadius: 24, padding: 22, marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
   cardHeading: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.2, color: '#A8A29E', textTransform: 'uppercase', marginBottom: 16 },
   weekBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   weekCol: { flex: 1, alignItems: 'center', gap: 6 },
   barValueSlot: { height: 40, alignItems: 'center', justifyContent: 'flex-end' },
   barValueStack: { alignItems: 'center', gap: 2 },
-  barFlame: { width: 15, height: 15, resizeMode: 'contain' },
+  barTarget: { width: 14, height: 14, resizeMode: 'contain' },
   barValue: { fontFamily: F.serifBold, fontSize: 13, color: '#57534E' },
   bar: { width: '100%', borderRadius: 8 },
   barToday: { backgroundColor: GOLD },
@@ -1904,7 +1932,7 @@ const stats = StyleSheet.create({
   calendarDay: { fontFamily: F.serifMedium, fontSize: 13, color: '#A8A29E', lineHeight: 15 },
   todayDay: { fontFamily: F.serifBold, color: '#1C1917' },
   calendarActivity: { flexDirection: 'row', alignItems: 'center', gap: 1, marginTop: 1 },
-  calendarFlame: { width: 13, height: 13, resizeMode: 'contain' },
-  calendarCount: { fontFamily: F.serifBold, fontSize: 12, color: '#F97316', lineHeight: 13 },
+  calendarTarget: { width: 12, height: 12, resizeMode: 'contain' },
+  calendarCount: { fontFamily: F.serifBold, fontSize: 12, color: '#C93B3C', lineHeight: 13 },
   calendarMinutes: { fontFamily: F.serifBold, fontSize: 12, color: GOLD, marginTop: 1, lineHeight: 13 },
 });
