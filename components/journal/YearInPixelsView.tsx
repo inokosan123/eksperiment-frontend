@@ -1,8 +1,18 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import Reanimated, {
+  cancelAnimation,
+  Easing,
+  FadeInDown,
+  useAnimatedProps,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import { ChevronLeft, ChevronRight } from '@/components/icons/Icons';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { useJournal } from '@/components/journal/JournalContext';
@@ -21,8 +31,8 @@ const PURPLE = '#7C6EAF';
 const TEAL = '#4A9E8F';
 const INK = '#1C1917';
 
-const PIXEL_SIZE = 12;
-const PIXEL_GAP = 3;
+const PIXEL_SIZE = 11.5;
+const PIXEL_GAP = 2.5;
 const RING_R = 42;
 const RING_CIRC = 2 * Math.PI * RING_R;
 
@@ -48,9 +58,108 @@ type TabDef = {
   scaleId?: string;
 };
 
+// Each picker family wears its own gradient when chosen — gold for the
+// scales, the technique colors for the techniques, matching the hub.
+const TAB_GRADIENTS: Record<'gold' | 'purple' | 'teal', readonly [string, string, string]> = {
+  gold: ['#E2BD75', '#C5A059', '#A87E33'],
+  purple: ['#9C8CC9', '#7C6EAF', '#5D5090'],
+  teal: ['#6FBCAC', '#4A9E8F', '#357B6E'],
+};
+
+function tabFamily(type: TabType): 'gold' | 'purple' | 'teal' {
+  if (type === 'morning_pages') return 'purple';
+  if (type === 'free_writing') return 'teal';
+  return 'gold';
+}
+
+const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
+
+const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
+
 function todayKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Today's pixel breathes a soft gold ring — the same "now" pulse the rest of
+// the app carries, anchored to the fixed pixel so layout can never drift.
+function TodayPixelPulse() {
+  const reduceMotion = useReducedMotion();
+  const t = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      t.value = 0.25;
+      return;
+    }
+    t.value = 0;
+    t.value = withRepeat(withTiming(1, { duration: 2300, easing: Easing.out(Easing.quad) }), -1, false);
+    return () => cancelAnimation(t);
+  }, [reduceMotion, t]);
+
+  const ringProps = useAnimatedProps(() => ({
+    opacity: (1 - t.value) * 0.55,
+    r: 6.5 + t.value * 6.5,
+  }));
+
+  return (
+    <View pointerEvents="none" style={s.todayPulse}>
+      <Svg width={30} height={30}>
+        <AnimatedCircle cx={15} cy={15} fill="none" stroke={GOLD} strokeWidth={1.3} animatedProps={ringProps} />
+      </Svg>
+    </View>
+  );
+}
+
+// The tracked-days ring draws itself in whenever the metric or year changes.
+function ProgressRing({ percent, redrawKey }: { percent: number; redrawKey: string }) {
+  const reduceMotion = useReducedMotion();
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      progress.value = percent;
+      return;
+    }
+    progress.value = 0;
+    progress.value = withTiming(percent, { duration: 950, easing: Easing.out(Easing.cubic) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [percent, redrawKey, reduceMotion]);
+
+  const ringProps = useAnimatedProps(() => ({
+    strokeDashoffset: RING_CIRC * (1 - progress.value / 100),
+  }));
+
+  return (
+    <Svg width={84} height={84} viewBox="0 0 100 100">
+      <Defs>
+        <SvgLinearGradient id="ringGold" x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0" stopColor="#E2BD75" />
+          <Stop offset="1" stopColor="#A87E33" />
+        </SvgLinearGradient>
+      </Defs>
+      <Circle
+        cx="50"
+        cy="50"
+        r={RING_R}
+        stroke="rgba(197,160,89,0.14)"
+        strokeWidth={7.5}
+        fill="none"
+      />
+      <AnimatedCircle
+        cx="50"
+        cy="50"
+        r={RING_R}
+        stroke="url(#ringGold)"
+        strokeWidth={7.5}
+        fill="none"
+        strokeLinecap="round"
+        strokeDasharray={`${RING_CIRC}`}
+        animatedProps={ringProps}
+        transform="rotate(-90 50 50)"
+      />
+    </Svg>
+  );
 }
 
 export default function YearInPixelsView() {
@@ -223,6 +332,36 @@ export default function YearInPixelsView() {
     activeTab.type === 'morning_pages' ||
     activeTab.type === 'free_writing';
 
+  // The year's spectrum: how the tracked days distribute across the five
+  // tones — proportions only, drawn as one woven band.
+  const distribution = useMemo(() => {
+    if (isPresenceTab) return null;
+    const buckets = [0, 0, 0, 0, 0];
+    for (const entry of yearEntries) {
+      let idx = -1;
+      switch (activeTab.type) {
+        case 'mood': if (entry.mood) idx = entry.mood - 1; break;
+        case 'energy': if (entry.energy) idx = entry.energy - 1; break;
+        case 'satisfaction':
+          if (entry.satisfaction !== undefined) {
+            idx = Math.min(4, Math.floor(Math.max(0, entry.satisfaction - 1) / 2));
+          }
+          break;
+        case 'custom': {
+          const value = activeTab.scaleId ? entry.scaleValues?.[activeTab.scaleId] : undefined;
+          if (value !== undefined) idx = Math.min(4, Math.floor(Math.max(0, value - 1) / 2));
+          break;
+        }
+      }
+      if (idx >= 0 && idx <= 4) buckets[idx] += 1;
+    }
+    return buckets;
+  }, [yearEntries, activeTab, isPresenceTab]);
+
+  const family = tabFamily(activeTab.type);
+  const redrawKey = `${activeTabId}-${year}`;
+  const reduceMotion = useReducedMotion();
+
   return (
     <View style={s.screen}>
       <ScreenTitleBar title="YEAR IN PIXELS" showBack bg={BG} />
@@ -231,151 +370,179 @@ export default function YearInPixelsView() {
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Year selector */}
-        <View style={s.yearRow}>
+        {/* Year masthead — the engraved line the calendar wears, with the
+            same soft-square arrows. */}
+        <Reanimated.View entering={enter(0)} style={s.yearRow}>
           <TouchableOpacity
             onPress={goPrevYear}
             disabled={!canPrevYear}
             activeOpacity={0.7}
             style={[s.yearBtn, !canPrevYear && s.yearBtnDisabled]}
+            hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
           >
-            <ChevronLeft s={18} c={canPrevYear ? GOLD : '#D6D3D1'} />
+            <ChevronLeft s={19} c={canPrevYear ? '#9A6B1E' : '#D6D3D1'} w={2.3} />
           </TouchableOpacity>
-          <Text style={s.yearText}>{year}</Text>
+          <View style={s.yearCenter}>
+            <View style={s.yearRule} />
+            <Text style={s.yearText}>{year}</Text>
+            <View style={s.yearRule} />
+          </View>
           <TouchableOpacity
             onPress={goNextYear}
             disabled={!canNextYear}
             activeOpacity={0.7}
             style={[s.yearBtn, !canNextYear && s.yearBtnDisabled]}
+            hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
           >
-            <ChevronRight s={18} c={canNextYear ? GOLD : '#D6D3D1'} />
+            <ChevronRight s={19} c={canNextYear ? '#9A6B1E' : '#D6D3D1'} w={2.3} />
           </TouchableOpacity>
-        </View>
+        </Reanimated.View>
 
-        {/* Tab chips */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={s.tabsRow}
-        >
-          {tabs.map(tab => {
-            const active = tab.id === activeTabId;
-            if (active) {
+        {/* Scale picker */}
+        <Reanimated.View entering={enter(50)}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.tabsRow}
+          >
+            {tabs.map(tab => {
+              const active = tab.id === activeTabId;
+              if (active) {
+                return (
+                  <TouchableOpacity
+                    key={tab.id}
+                    onPress={() => setActiveTabId(tab.id)}
+                    activeOpacity={0.84}
+                    style={s.tabPress}
+                    haptic="selection"
+                  >
+                    <LinearGradient
+                      colors={TAB_GRADIENTS[tabFamily(tab.type)]}
+                      locations={[0, 0.55, 1]}
+                      start={{ x: 0.15, y: 0 }}
+                      end={{ x: 0.85, y: 1 }}
+                      style={[s.tabPill, s.tabPillActive]}
+                    >
+                      <View pointerEvents="none" style={s.tabSheen} />
+                      <Text style={[s.tabLabel, s.tabLabelActive]} numberOfLines={1}>{tab.label}</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                );
+              }
               return (
                 <TouchableOpacity
                   key={tab.id}
                   onPress={() => setActiveTabId(tab.id)}
                   activeOpacity={0.84}
                   style={s.tabPress}
+                  haptic="selection"
                 >
-                  <LinearGradient
-                    colors={['#E2BD75', '#C5A059', '#A87E33']}
-                    locations={[0, 0.55, 1]}
-                    start={{ x: 0.15, y: 0 }}
-                    end={{ x: 0.85, y: 1 }}
-                    style={[s.tabPill, s.tabPillActive]}
-                  >
-                    <View pointerEvents="none" style={s.tabSheen} />
-                    <Text style={[s.tabLabel, s.tabLabelActive]} numberOfLines={1}>{tab.label}</Text>
-                  </LinearGradient>
+                  <View style={s.tabPill}>
+                    <Text style={s.tabLabel} numberOfLines={1}>{tab.label}</Text>
+                  </View>
                 </TouchableOpacity>
               );
-            }
-            return (
-              <TouchableOpacity
-                key={tab.id}
-                onPress={() => setActiveTabId(tab.id)}
-                activeOpacity={0.84}
-                style={s.tabPress}
-              >
-                <View style={s.tabPill}>
-                  <Text style={s.tabLabel} numberOfLines={1}>{tab.label}</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+            })}
+          </ScrollView>
+        </Reanimated.View>
 
-        {/* Hero stats card with circular progress ring */}
-        <View style={s.heroCard}>
-          <View style={s.heroLeft}>
-            <Text style={s.heroEyebrow}>DAYS TRACKED</Text>
-            <Text style={s.heroBigNum}>{coloredCount}</Text>
-            <Text style={s.heroMeta}>
-              of {daysAvailable} {daysAvailable === 1 ? 'day' : 'days'} this year
-            </Text>
-            <Text style={s.heroSubMeta}>
-              {filledDays} {filledDays === 1 ? 'journal entry' : 'journal entries'}
-            </Text>
-          </View>
-          <View style={s.heroRing}>
-            <Svg width={76} height={76} viewBox="0 0 100 100">
-              <Circle
-                cx="50"
-                cy="50"
-                r={RING_R}
-                stroke="rgba(197,160,89,0.14)"
-                strokeWidth={7}
-                fill="none"
-              />
-              <Circle
-                cx="50"
-                cy="50"
-                r={RING_R}
-                stroke={GOLD}
-                strokeWidth={7}
-                fill="none"
-                strokeLinecap="round"
-                strokeDasharray={`${RING_CIRC}`}
-                strokeDashoffset={RING_CIRC * (1 - fillPercent / 100)}
-                transform="rotate(-90 50 50)"
-              />
-            </Svg>
-            <View style={s.heroRingCenter} pointerEvents="none">
-              <Text style={s.heroRingPct}>
-                {fillPercent}
-                <Text style={s.heroRingPctSmall}>%</Text>
+        {/* The instrument: tracked days, the drawing ring, the spectrum band */}
+        <Reanimated.View entering={enter(100)} style={s.heroCard}>
+          <View style={s.heroTopRow}>
+            <View style={s.heroLeft}>
+              <Text style={s.heroEyebrow}>DAYS TRACKED</Text>
+              <View style={s.heroNumRow}>
+                <Text style={s.heroBigNum}>{coloredCount}</Text>
+                <Text style={s.heroNumOf}> / {daysAvailable}</Text>
+              </View>
+              <Text style={s.heroMeta}>
+                {activeTab.label.toLowerCase()} days this year so far
+              </Text>
+              <Text style={s.heroSubMeta}>
+                {filledDays} {filledDays === 1 ? 'journal entry' : 'journal entries'} in {year}
               </Text>
             </View>
+            <View style={s.heroRing}>
+              <ProgressRing percent={fillPercent} redrawKey={redrawKey} />
+              <View style={s.heroRingCenter} pointerEvents="none">
+                <Text style={s.heroRingPct}>
+                  {fillPercent}
+                  <Text style={s.heroRingPctSmall}>%</Text>
+                </Text>
+              </View>
+            </View>
           </View>
-        </View>
+          {distribution != null && coloredCount > 0 && (
+            <View style={s.spectrumWrap}>
+              <View style={s.spectrumBar}>
+                {distribution.map((count, index) => (
+                  count > 0
+                    ? <View key={index} style={[s.spectrumSegment, { flex: count, backgroundColor: MOOD_COLORS[index + 1] }]} />
+                    : null
+                ))}
+              </View>
+              <Text style={s.spectrumCaption}>THE YEAR’S SPECTRUM</Text>
+            </View>
+          )}
+        </Reanimated.View>
 
-        {/* Pixel grid */}
-        <View style={s.card}>
-          <Text style={s.gridKicker}>{activeTab.label.toUpperCase()} · {year}</Text>
-          <View style={{ rowGap: 8 }}>
-            {months.map(month => (
-              <View key={month.name} style={s.monthRow}>
-                <Text style={s.monthLabel}>{month.name.toUpperCase()}</Text>
+        {/* The painting: the year in its gold fillet frame, legend as the
+            gallery placard beneath it. */}
+        <Reanimated.View entering={enter(150)} style={s.card}>
+          <View style={s.plaqueRow}>
+            <Text style={s.gridKicker}>{activeTab.label.toUpperCase()} · {year}</Text>
+            <Text style={s.plaqueCount}>
+              {coloredCount} {coloredCount === 1 ? 'day' : 'days'} painted
+            </Text>
+          </View>
+          <View style={s.frame}>
+            {months.map((month, monthIndex) => (
+              <Reanimated.View
+                key={`${redrawKey}-${month.name}`}
+                entering={reduceMotion ? undefined : FadeInDown.delay(monthIndex * 26).duration(300)}
+                style={s.monthRow}
+              >
+                <Text style={s.monthLabel}>{month.name}</Text>
                 <View style={s.monthDays}>
                   {month.days.map(day => (
-                    <View
-                      key={day.dateStr}
-                      style={[
-                        s.pixel,
-                        day.color
-                          ? { backgroundColor: day.color }
-                          : day.isFuture
-                            ? s.pixelFuture
-                            : day.isToday
-                              ? s.pixelToday
+                    day.isToday ? (
+                      <View key={day.dateStr} style={s.todayWrap}>
+                        <TodayPixelPulse />
+                        <View
+                          style={[
+                            s.pixel,
+                            day.color ? { backgroundColor: day.color } : s.pixelToday,
+                            s.pixelTodayRing,
+                          ]}
+                        />
+                      </View>
+                    ) : (
+                      <View
+                        key={day.dateStr}
+                        style={[
+                          s.pixel,
+                          day.color
+                            ? { backgroundColor: day.color }
+                            : day.isFuture
+                              ? s.pixelFuture
                               : s.pixelEmpty,
-                      ]}
-                    />
+                        ]}
+                      />
+                    )
                   ))}
                 </View>
-              </View>
+              </Reanimated.View>
             ))}
           </View>
-        </View>
 
-        {/* Legend */}
-        <View style={s.card}>
-          <Text style={s.legendKicker}>LEGEND</Text>
+          <View style={s.placardDivider} />
+
           {isPresenceTab ? (
             <View style={s.legendRow}>
               <View style={s.legendItem}>
-                <View style={[s.legendSwatchLg, s.legendSwatchShadow, { backgroundColor: activeTab.type === 'daily_journal' ? TECHNIQUE_COLOR : activeTab.type === 'morning_pages' ? MP_COLOR : FW_COLOR }]} />
+                <View style={[s.legendSwatchLg, s.legendSwatchShadow, { backgroundColor: activeTab.type === 'daily_journal' ? TECHNIQUE_COLOR : activeTab.type === 'morning_pages' ? MP_COLOR : FW_COLOR }]}>
+                  <View style={s.gemSheen} />
+                </View>
                 <Text style={s.legendText}>Has entry</Text>
               </View>
               <View style={s.legendItem}>
@@ -390,7 +557,9 @@ export default function YearInPixelsView() {
                 : ['🪫', '😴', '⚡', '🔥', '💪']
               ).map((emoji, i) => (
                 <View key={i} style={s.legendItemCol}>
-                  <View style={[s.legendSwatchLg, s.legendSwatchShadow, { backgroundColor: (activeTab.type === 'mood' ? MOOD_COLORS : ENERGY_COLORS)[i + 1] }]} />
+                  <View style={[s.legendSwatchLg, s.legendSwatchShadow, { backgroundColor: (activeTab.type === 'mood' ? MOOD_COLORS : ENERGY_COLORS)[i + 1] }]}>
+                    <View style={s.gemSheen} />
+                  </View>
                   <Text style={s.legendEmoji}>{emoji}</Text>
                 </View>
               ))}
@@ -405,13 +574,15 @@ export default function YearInPixelsView() {
                 { label: '9-10', color: '#22C55E' },
               ].map(item => (
                 <View key={item.label} style={s.legendItemCol}>
-                  <View style={[s.legendSwatchLg, s.legendSwatchShadow, { backgroundColor: item.color }]} />
+                  <View style={[s.legendSwatchLg, s.legendSwatchShadow, { backgroundColor: item.color }]}>
+                    <View style={s.gemSheen} />
+                  </View>
                   <Text style={s.legendNumLabel}>{item.label}</Text>
                 </View>
               ))}
             </View>
           )}
-        </View>
+        </Reanimated.View>
       </ScrollView>
     </View>
   );
@@ -425,25 +596,36 @@ const s = StyleSheet.create({
   yearRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    columnGap: 14,
+    justifyContent: 'space-between',
     paddingVertical: 2,
+    paddingHorizontal: 2,
   },
   yearBtn: {
-    width: 34, height: 34, borderRadius: 17,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(197,160,89,0.08)',
-    borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)',
+    width: 36,
+    height: 36,
+    borderRadius: 13,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFAEF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.38)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.16,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  yearBtnDisabled: { opacity: 0.38, backgroundColor: '#FFFFFF', borderColor: '#F0EDE6' },
+  yearBtnDisabled: { opacity: 0.38, backgroundColor: '#FFFFFF', borderColor: '#F0EDE6', shadowOpacity: 0, elevation: 0 },
+  yearCenter: { flexDirection: 'row', alignItems: 'center', columnGap: 10 },
+  yearRule: { width: 22, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(154,107,30,0.5)' },
   yearText: {
     fontFamily: F.serifSemiBold,
-    fontSize: 22,
-    lineHeight: 26,
+    fontSize: 25,
+    lineHeight: 30,
     color: INK,
-    minWidth: 90,
     textAlign: 'center',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
 
   tabsRow: {
@@ -466,8 +648,8 @@ const s = StyleSheet.create({
   },
   tabPillActive: {
     borderWidth: 0,
-    shadowColor: '#A87E33',
-    shadowOpacity: 0.28,
+    shadowColor: '#5A4A28',
+    shadowOpacity: 0.26,
     shadowOffset: { width: 0, height: 6 },
     shadowRadius: 14,
     elevation: 3,
@@ -490,33 +672,33 @@ const s = StyleSheet.create({
   tabLabelActive: { color: '#FFFFFF', letterSpacing: 1.8 },
 
   card: {
-    borderRadius: 22,
+    borderRadius: 24,
+    borderCurve: 'continuous',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#F0EDE6',
+    borderColor: '#EFE9DD',
     padding: 16,
     shadowColor: '#1C1917',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 8,
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
     elevation: 1,
   },
 
   heroCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 22,
+    borderRadius: 24,
+    borderCurve: 'continuous',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#EFE9DD',
-    padding: 20,
-    columnGap: 18,
+    padding: 18,
     shadowColor: '#1C1917',
     shadowOpacity: 0.05,
     shadowOffset: { width: 0, height: 4 },
     shadowRadius: 12,
     elevation: 1,
   },
+  heroTopRow: { flexDirection: 'row', alignItems: 'center', columnGap: 18 },
   heroLeft: { flex: 1, minWidth: 0 },
   heroEyebrow: {
     fontFamily: F.sansBold,
@@ -525,16 +707,23 @@ const s = StyleSheet.create({
     color: GOLD,
     textTransform: 'uppercase',
   },
+  heroNumRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 7 },
   heroBigNum: {
-    marginTop: 8,
     fontFamily: F.serifSemiBold,
-    fontSize: 30,
-    lineHeight: 34,
+    fontSize: 34,
+    lineHeight: 38,
     color: INK,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
+    fontVariant: ['tabular-nums'],
+  },
+  heroNumOf: {
+    fontFamily: F.serifMedium,
+    fontSize: 17,
+    color: '#B5A990',
+    fontVariant: ['tabular-nums'],
   },
   heroMeta: {
-    marginTop: 4,
+    marginTop: 3,
     fontFamily: F.serif,
     fontSize: 12.5,
     lineHeight: 17,
@@ -548,8 +737,8 @@ const s = StyleSheet.create({
     color: '#B5A990',
   },
   heroRing: {
-    width: 76,
-    height: 76,
+    width: 84,
+    height: 84,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -561,34 +750,70 @@ const s = StyleSheet.create({
   },
   heroRingPct: {
     fontFamily: F.serifSemiBold,
-    fontSize: 19,
-    lineHeight: 22,
-    color: GOLD,
+    fontSize: 20,
+    lineHeight: 24,
+    color: '#9A6B1E',
+    fontVariant: ['tabular-nums'],
   },
   heroRingPctSmall: {
     fontFamily: F.serifSemiBold,
-    fontSize: 11.5,
-    color: GOLD,
+    fontSize: 12,
+    color: '#9A6B1E',
+  },
+  spectrumWrap: { marginTop: 14 },
+  spectrumBar: {
+    height: 10,
+    flexDirection: 'row',
+    columnGap: 2,
+  },
+  spectrumSegment: { borderRadius: 3 },
+  spectrumCaption: {
+    marginTop: 6,
+    fontFamily: F.sansBold,
+    fontSize: 7.5,
+    letterSpacing: 1.6,
+    color: '#B9AE97',
   },
 
+  plaqueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingHorizontal: 2,
+  },
   gridKicker: {
     fontFamily: F.sansBold,
     fontSize: 9.5,
     letterSpacing: 2,
     color: GOLD,
     textTransform: 'uppercase',
-    marginBottom: 14,
-    paddingHorizontal: 2,
+  },
+  plaqueCount: {
+    fontFamily: F.serifItalic,
+    fontSize: 12,
+    color: '#B5A990',
+  },
+  // The gold fillet: a fine inner frame the year hangs inside.
+  frame: {
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(197,160,89,0.45)',
+    backgroundColor: '#FFFEFB',
+    paddingHorizontal: 10,
+    paddingVertical: 11,
+    rowGap: 8,
   },
 
-  monthRow: { flexDirection: 'row', alignItems: 'flex-start', columnGap: 12 },
+  monthRow: { flexDirection: 'row', alignItems: 'flex-start', columnGap: 10 },
   monthLabel: {
-    width: 34,
-    paddingTop: 3,
-    fontFamily: F.sansBold,
-    fontSize: 9.5,
-    letterSpacing: 1.6,
-    color: '#A8A29E',
+    width: 32,
+    paddingTop: 2,
+    fontFamily: F.serifMedium,
+    fontSize: 11.5,
+    letterSpacing: 0.6,
+    color: '#8A8378',
   },
   monthDays: {
     flex: 1,
@@ -602,31 +827,47 @@ const s = StyleSheet.create({
     height: PIXEL_SIZE,
     borderRadius: 3,
   },
-  pixelEmpty: { backgroundColor: '#F0EDE6' },
-  pixelFuture: { backgroundColor: 'rgba(197,160,89,0.05)' },
-  pixelToday: {
-    backgroundColor: 'rgba(197,160,89,0.18)',
-    borderWidth: 1.5,
-    borderColor: GOLD,
+  pixelEmpty: { backgroundColor: '#F1EDE4' },
+  pixelFuture: { backgroundColor: 'rgba(197,160,89,0.06)' },
+  pixelToday: { backgroundColor: 'rgba(197,160,89,0.2)' },
+  pixelTodayRing: { borderWidth: 1.2, borderColor: GOLD },
+  todayWrap: {
+    width: PIXEL_SIZE,
+    height: PIXEL_SIZE,
+    position: 'relative',
   },
+  todayPulse: { position: 'absolute', left: -9.25, top: -9.25, width: 30, height: 30 },
 
-  legendKicker: {
-    fontFamily: F.sansBold,
-    fontSize: 9.5,
-    letterSpacing: 2.2,
-    color: GOLD,
-    textTransform: 'uppercase',
-    marginBottom: 16,
-    paddingHorizontal: 2,
+  placardDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#EDE7DA',
+    marginTop: 14,
+    marginBottom: 13,
   },
   legendRow: { flexDirection: 'row', justifyContent: 'center', columnGap: 30 },
   legendRowSpread: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 6 },
   legendItem: { flexDirection: 'row', alignItems: 'center', columnGap: 11 },
-  legendItemCol: { alignItems: 'center', rowGap: 7 },
-  legendSwatchLg: { width: 24, height: 24, borderRadius: 7 },
+  legendItemCol: { alignItems: 'center', rowGap: 6 },
+  legendSwatchLg: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  gemSheen: {
+    position: 'absolute',
+    top: 1.5,
+    left: 3,
+    right: 3,
+    height: '42%',
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.32)',
+  },
   legendSwatchShadow: {
     shadowColor: '#1C1917',
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.12,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 4,
     elevation: 2,
