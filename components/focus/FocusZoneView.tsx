@@ -973,7 +973,11 @@ function PomodoroCycleRail({
               ref={el => { slotRefs.current[index] = el; }}
               style={s.cycleSlot}
             >
+              {/* key remount: once an Image has had tintColor, dropping it leaves
+                  template rendering behind (iOS paints it system blue, Android
+                  keeps the stale ColorFilter) - a fresh instance renders true */}
               <Image
+                key={filled ? 'filled' : 'empty'}
                 source={TARGET_ICON}
                 style={filled ? s.cycleTargetFilled : s.cycleTargetEmpty}
                 resizeMode="contain"
