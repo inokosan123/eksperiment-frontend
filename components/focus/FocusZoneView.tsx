@@ -170,6 +170,11 @@ export default function FocusZoneView() {
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth());
   const [calYear, setCalYear] = useState(() => new Date().getFullYear());
   const [statsMode, setStatsMode] = useState<StatsMode>('streak');
+  const [flightTarget, setFlightTarget] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!showCompletion) setFlightTarget(null);
+  }, [showCompletion]);
 
   const phaseDuration = phase === 'focus'
     ? focusDuration
@@ -683,6 +688,16 @@ export default function FocusZoneView() {
     r: TARGET_RADIUS + r2.value * 4.5,
   }));
 
+  const sandyRing1Props = useAnimatedProps(() => ({
+    r: 42 + r1.value * 24,
+    opacity: (1 - r1.value) * 0.3,
+  }));
+
+  const sandyRing2Props = useAnimatedProps(() => ({
+    r: 42 + r2.value * 27,
+    opacity: (1 - r2.value) * 0.2,
+  }));
+
   const sandyBreathStyle = useAnimatedStyle(() => ({
     transform: [{ scale: 0.94 + breathe.value * 0.07 }],
   }));
@@ -714,7 +729,14 @@ export default function FocusZoneView() {
       <View style={s.center}>
         <View style={[s.timerWrap, timerMode === 'cycle' ? s.timerWrapCycle : s.timerWrapSingle, { width: diameter, height: diameter }]}>
           {timerMode === 'cycle' && (
-            <PomodoroCycleRail completed={cycleCompleted} total={sessionsPerCycle} phaseLabel={phaseLabel} />
+            <PomodoroCycleRail
+              completed={cycleCompleted}
+              total={sessionsPerCycle}
+              phaseLabel={phaseLabel}
+              measureSignal={showCompletion}
+              nextIndex={Math.min(cycleCompleted, sessionsPerCycle - 1)}
+              onSlotPoint={setFlightTarget}
+            />
           )}
 
           <Animated.View style={[s.timerVisualLayer, phaseSwapStyle]}>
@@ -754,17 +776,21 @@ export default function FocusZoneView() {
             )}
           </Animated.View>
 
-          {/* Sandy hourglass — new animation for focus, green sandy for break */}
+          {/* Sandy hourglass — the ground behind it stays white; soft rings ripple outward around it */}
           <Animated.View style={[s.sandyWrap, sandyStyle]} pointerEvents="none">
-            <Animated.View style={sandyBreathStyle}>
-              <View style={[s.sandyAuraOuter, !isFocusPhase && s.sandyAuraOuterBreak]} />
-              <View style={[s.sandyAuraInner, !isFocusPhase && s.sandyAuraInnerBreak]} />
-              {phase === 'focus' ? (
-                <FocusLottie name="sandy-work" loop speed={0.4} style={s.sandyLottie} />
-              ) : (
-                <FocusLottie name="sandy" loop speed={0.4} style={s.sandyLottie} />
-              )}
-            </Animated.View>
+            <View style={s.sandyStage}>
+              <Svg width={150} height={150} viewBox="0 0 150 150" style={s.sandyRings}>
+                <AnimatedCircle cx="75" cy="75" fill="none" stroke={activeColor} strokeWidth="1" animatedProps={sandyRing1Props} />
+                <AnimatedCircle cx="75" cy="75" fill="none" stroke={activeColor} strokeWidth="0.7" animatedProps={sandyRing2Props} />
+              </Svg>
+              <Animated.View style={sandyBreathStyle}>
+                {phase === 'focus' ? (
+                  <FocusLottie name="sandy-work" loop speed={0.4} style={s.sandyLottie} />
+                ) : (
+                  <FocusLottie name="sandy" loop speed={0.4} style={s.sandyLottie} />
+                )}
+              </Animated.View>
+            </View>
           </Animated.View>
           </Animated.View>
         </View>
@@ -851,6 +877,7 @@ export default function FocusZoneView() {
       <CompletionModal
         visible={showCompletion}
         collectToRail={timerMode === 'cycle'}
+        flightTarget={flightTarget}
         nextStepLabel={timerMode === 'cycle' ? 'COLLECT' : 'START BREAK'}
         onCollect={collectFocusReward}
       />
@@ -902,11 +929,38 @@ function PomodoroCycleRail({
   completed,
   total,
   phaseLabel,
+  measureSignal,
+  nextIndex,
+  onSlotPoint,
 }: {
   completed: number;
   total: number;
   phaseLabel: string;
+  measureSignal: boolean;
+  nextIndex: number;
+  onSlotPoint: (point: { x: number; y: number } | null) => void;
 }) {
+  const slotRefs = useRef<(React.ElementRef<typeof View> | null)[]>([]);
+
+  useEffect(() => {
+    if (!measureSignal) return;
+    const timer = setTimeout(() => {
+      const slot = slotRefs.current[nextIndex];
+      if (!slot) {
+        onSlotPoint(null);
+        return;
+      }
+      slot.measureInWindow((x, y, w, h) => {
+        if ([x, y, w, h].some(v => !Number.isFinite(v)) || w === 0) {
+          onSlotPoint(null);
+          return;
+        }
+        onSlotPoint({ x: x + w / 2, y: y + h / 2 });
+      });
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [measureSignal, nextIndex, onSlotPoint]);
+
   const slots = Array.from({ length: total }, (_, index) => index);
   return (
     <View style={s.cycleHeader}>
@@ -914,7 +968,11 @@ function PomodoroCycleRail({
         {slots.map(index => {
           const filled = index < completed;
           return (
-            <View key={index} style={[s.cycleSlot, filled && s.cycleSlotFilled]}>
+            <View
+              key={index}
+              ref={el => { slotRefs.current[index] = el; }}
+              style={s.cycleSlot}
+            >
               <Image
                 source={TARGET_ICON}
                 style={filled ? s.cycleTargetFilled : s.cycleTargetEmpty}
@@ -1173,20 +1231,26 @@ function CycleCountEditor({
 function CompletionModal({
   visible,
   collectToRail,
+  flightTarget,
   nextStepLabel,
   onCollect,
 }: {
   visible: boolean;
   collectToRail: boolean;
+  flightTarget: { x: number; y: number } | null;
   nextStepLabel: string;
   onCollect: () => void;
 }) {
   const { height } = useWindowDimensions();
   const [collecting, setCollecting] = useState(false);
+  const [heroReady, setHeroReady] = useState(false);
   const collectingRef = useRef(false);
   const collectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sealRef = useRef<React.ElementRef<typeof View>>(null);
   const appearProgress = useSharedValue(0);
   const collectProgress = useSharedValue(0);
+  const flyX = useSharedValue(0);
+  const flyY = useSharedValue(-18);
 
   useEffect(() => {
     if (!visible) {
@@ -1195,6 +1259,7 @@ function CompletionModal({
         clearTimeout(collectTimerRef.current);
         collectTimerRef.current = null;
       }
+      setHeroReady(false);
       appearProgress.value = 0;
       collectProgress.value = 0;
       return;
@@ -1203,54 +1268,75 @@ function CompletionModal({
     collectingRef.current = false;
     appearProgress.value = 0;
     collectProgress.value = 0;
+    flyX.value = 0;
+    flyY.value = collectToRail ? -Math.min(172, Math.max(132, height * 0.18)) : -18;
     appearProgress.value = withTiming(1, {
       duration: 180,
       easing: REasing.out(REasing.cubic),
     });
+    // Mount the hero Lottie a beat after the Modal window exists —
+    // autoplay on simultaneous mount is unreliable on Android.
+    const heroTimer = setTimeout(() => setHeroReady(true), 120);
     const hapticTimer = setTimeout(() => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }, 80);
     return () => {
+      clearTimeout(heroTimer);
       clearTimeout(hapticTimer);
       if (collectTimerRef.current) {
         clearTimeout(collectTimerRef.current);
         collectTimerRef.current = null;
       }
     };
-  }, [appearProgress, collectProgress, visible]);
+  }, [appearProgress, collectProgress, collectToRail, flyX, flyY, height, visible]);
+
+  useEffect(() => {
+    if (!visible || !flightTarget) return;
+    const timer = setTimeout(() => {
+      sealRef.current?.measureInWindow((x, y, w, h) => {
+        if ([x, y, w, h].some(v => !Number.isFinite(v)) || w === 0) return;
+        flyX.value = flightTarget.x - (x + w / 2);
+        flyY.value = flightTarget.y - (y + h / 2);
+      });
+    }, 260);
+    return () => clearTimeout(timer);
+  }, [flightTarget, flyX, flyY, visible]);
 
   const handleCollect = () => {
     if (collectingRef.current) return;
     collectingRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setCollecting(true);
-    const duration = collectToRail ? 780 : 430;
+    const duration = collectToRail ? 700 : 430;
     collectProgress.value = withTiming(1, {
       duration,
-      easing: collectToRail ? REasing.in(REasing.cubic) : REasing.inOut(REasing.cubic),
+      easing: REasing.inOut(REasing.cubic),
     });
     collectTimerRef.current = setTimeout(() => {
       collectTimerRef.current = null;
+      if (collectToRail) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
       onCollect();
     }, duration);
   };
 
-  const targetY = -Math.min(172, Math.max(132, height * 0.18));
-  const overlayStyle = useAnimatedStyle(() => ({
-    opacity: appearProgress.value,
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: appearProgress.value * interpolate(collectProgress.value, [0, 0.75, 1], [1, 0, 0]),
   }));
   const cardEnterStyle = useAnimatedStyle(() => ({
+    opacity: appearProgress.value,
     transform: [
       { translateY: interpolate(appearProgress.value, [0, 1], [8, 0]) },
       { scale: interpolate(appearProgress.value, [0, 1], [0.988, 1]) },
     ],
   }));
   const cardBgStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(collectProgress.value, [0, 0.62, 1], [1, 0.92, 0]),
+    opacity: interpolate(collectProgress.value, [0, 0.55, 1], [1, 0.9, 0]),
     transform: [{ scale: interpolate(collectProgress.value, [0, 1], [1, 0.97]) }],
   }));
   const copyStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(collectProgress.value, [0, 0.18, 0.42], [1, 0.78, 0]),
+    opacity: interpolate(collectProgress.value, [0, 0.18, 0.42, 1], [1, 0.78, 0, 0]),
     transform: [
       {
         translateY: interpolate(collectProgress.value, [0, 1], [0, -8]),
@@ -1258,31 +1344,47 @@ function CompletionModal({
       { scale: interpolate(collectProgress.value, [0, 1], [1, 0.98]) },
     ],
   }));
-  const sealStyle = useAnimatedStyle(() => {
-    const flyY = collectToRail ? targetY : -18;
-    const collectOpacity = interpolate(collectProgress.value, [0, 0.82, 1], [1, 0.98, 0]);
-    const collectY = interpolate(collectProgress.value, [0, 0.68, 1], [0, flyY * 0.34, flyY]);
-    const collectScale = interpolate(collectProgress.value, [0, 0.7, 1], [1, collectToRail ? 0.58 : 0.9, collectToRail ? 0.15 : 0.78]);
+  // The dark seal disc dissolves the instant collect starts; the bare
+  // target token remains and makes the flight alone.
+  const sealDiscStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(collectProgress.value, [0, 0.2, 1], [1, 0, 0]),
+  }));
+  const flyTokenStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(collectProgress.value, [0, 0.05, 1], [0, 1, 1]),
+  }));
+  const sealFlightStyle = useAnimatedStyle(() => {
+    const p = collectProgress.value;
+    const endScale = collectToRail ? 0.32 : 0.8;
     return {
-      opacity: collectOpacity,
+      opacity: interpolate(p, [0, 0.92, 1], [1, 1, 0]),
       transform: [
-        { translateY: collectY },
-        { scale: collectScale },
+        // Y leads and X trails slightly — the token rises, then curves home.
+        { translateY: interpolate(p, [0, 0.55, 1], [0, flyY.value * 0.62, flyY.value]) },
+        { translateX: interpolate(p, [0, 0.35, 1], [0, flyX.value * 0.14, flyX.value]) },
+        { scale: interpolate(p, [0, 1], [1, endScale]) },
       ],
     };
   });
 
   return (
     <Modal transparent visible={visible} animationType="none" onRequestClose={handleCollect}>
-      <Animated.View style={[completion.overlay, overlayStyle]}>
+      <View style={completion.root}>
+        <Animated.View pointerEvents="none" style={[completion.backdrop, backdropStyle]} />
         <Animated.View style={[completion.card, cardEnterStyle]}>
           <Animated.View pointerEvents="none" style={[completion.cardBg, cardBgStyle]} />
-          <Animated.View style={[completion.sealFlight, sealStyle]}>
-            <View style={completion.seal}>
-              <View style={completion.sealGlow} />
-              <View style={completion.targetAura} />
-              <FocusLottie name="target" loop={false} speed={1} style={completion.target} />
-            </View>
+          <Animated.View style={[completion.sealFlight, sealFlightStyle]}>
+            <Animated.View style={sealDiscStyle}>
+              <View style={completion.seal} ref={sealRef}>
+                <View style={completion.sealGlow} />
+                <View style={completion.targetAura} />
+                {heroReady && (
+                  <FocusLottie name="target" loop={false} speed={1} style={completion.target} />
+                )}
+              </View>
+            </Animated.View>
+            <Animated.View pointerEvents="none" style={[completion.flyToken, flyTokenStyle]}>
+              <Image source={TARGET_ICON} style={completion.flyTokenImg} resizeMode="contain" />
+            </Animated.View>
           </Animated.View>
           <Animated.View style={[completion.copy, copyStyle]}>
             <Text style={completion.title}>Congratulations!</Text>
@@ -1295,7 +1397,7 @@ function CompletionModal({
             </TouchableOpacity>
           </Animated.View>
         </Animated.View>
-      </Animated.View>
+      </View>
     </Modal>
   );
 }
@@ -1579,19 +1681,11 @@ const s = StyleSheet.create({
   cycleSlot: {
     width: 34,
     height: 34,
-    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F6F3EE',
-    overflow: 'hidden',
   },
-  cycleSlotFilled: {
-    backgroundColor: '#FDEFEA',
-    borderWidth: 1,
-    borderColor: 'rgba(234,83,84,0.20)',
-  },
-  cycleTargetFilled: { width: 22, height: 22 },
-  cycleTargetEmpty: { width: 21, height: 21, tintColor: '#C9C4B7', opacity: 0.45 },
+  cycleTargetFilled: { width: 26, height: 26 },
+  cycleTargetEmpty: { width: 24, height: 24, tintColor: '#C9C4B7', opacity: 0.4 },
   timerWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
   timerWrapSingle: { transform: [{ translateY: -14 }] },
   timerWrapCycle: { transform: [{ translateY: 18 }] },
@@ -1602,34 +1696,9 @@ const s = StyleSheet.create({
   timeText: { fontFamily: F.serifBold, letterSpacing: -1 },
   colon: { fontFamily: F.serifBold, opacity: 0.4, marginHorizontal: 4 },
   sandyWrap: { position: 'absolute', top: '64%', left: 0, right: 0, alignItems: 'center' },
+  sandyStage: { width: 80, height: 80, alignItems: 'center', justifyContent: 'center' },
+  sandyRings: { position: 'absolute', top: -35, left: -35 },
   sandyLottie: { width: 80, height: 80 },
-  sandyAuraOuter: {
-    position: 'absolute',
-    alignSelf: 'center',
-    top: -14,
-    width: 108,
-    height: 108,
-    borderRadius: 54,
-    backgroundColor: 'rgba(197,160,89,0.07)',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.10)',
-  },
-  sandyAuraInner: {
-    position: 'absolute',
-    alignSelf: 'center',
-    top: -2,
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: 'rgba(197,160,89,0.10)',
-  },
-  sandyAuraOuterBreak: {
-    backgroundColor: 'rgba(21,128,61,0.06)',
-    borderColor: 'rgba(21,128,61,0.09)',
-  },
-  sandyAuraInnerBreak: {
-    backgroundColor: 'rgba(21,128,61,0.08)',
-  },
   controlsDeck: { flexDirection: 'row', alignItems: 'center', gap: 18, backgroundColor: '#FFFEFB', padding: 10, borderRadius: 999, borderWidth: 1, borderColor: '#F1ECE2', shadowColor: '#000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.08, shadowRadius: 30, elevation: 9, transform: [{ translateY: 14 }] },
   controlsDeckCycle: { transform: [{ translateY: 22 }] },
   restartCycleTag: {
@@ -1864,7 +1933,8 @@ const modal = StyleSheet.create({
 });
 
 const completion = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.38)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  root: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.38)' },
   card: { width: '100%', maxWidth: 360, minHeight: 376, borderRadius: 34, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 30, overflow: 'visible' },
   cardBg: { ...StyleSheet.absoluteFillObject, borderRadius: 34, backgroundColor: '#FFFEFB', borderWidth: 1, borderColor: 'rgba(197,160,89,0.20)', shadowColor: '#000', shadowOffset: { width: 0, height: 24 }, shadowOpacity: 0.18, shadowRadius: 40, elevation: 16 },
   sealFlight: { alignItems: 'center', justifyContent: 'center', zIndex: 4 },
@@ -1872,6 +1942,8 @@ const completion = StyleSheet.create({
   sealGlow: { position: 'absolute', width: 148, height: 148, borderRadius: 74, backgroundColor: 'rgba(197,160,89,0.14)', borderWidth: 1, borderColor: 'rgba(197,160,89,0.14)' },
   targetAura: { position: 'absolute', width: 92, height: 92, borderRadius: 46, backgroundColor: 'rgba(255,214,122,0.20)', borderWidth: 1, borderColor: 'rgba(255,233,182,0.36)' },
   target: { width: 82, height: 82 },
+  flyToken: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  flyTokenImg: { width: 82, height: 82 },
   copy: { width: '100%', alignItems: 'center', marginTop: 18 },
   title: { fontFamily: F.serifSemiBold, fontSize: 38, lineHeight: 43, color: INK, textAlign: 'center', marginBottom: 7 },
   titleUnderline: { width: 112, height: 3, borderRadius: 999, backgroundColor: GOLD, marginBottom: 14 },
