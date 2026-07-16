@@ -172,6 +172,7 @@ export default function FocusZoneView() {
   const [calYear, setCalYear] = useState(() => new Date().getFullYear());
   const [statsMode, setStatsMode] = useState<StatsMode>('streak');
   const [flightTarget, setFlightTarget] = useState<{ x: number; y: number } | null>(null);
+  const [freshCycle, setFreshCycle] = useState(false);
 
   useEffect(() => {
     if (!showCompletion) setFlightTarget(null);
@@ -194,6 +195,7 @@ export default function FocusZoneView() {
   const timeFont = Math.round(diameter * 0.282);
   const colonFont = Math.round(diameter * 0.105);
   const currentFocusNumber = Math.min(cycleCompleted + 1, sessionsPerCycle);
+  const cycleFinale = timerMode === 'cycle' && pendingAutoPhase === 'longBreak';
   const phaseLabel = timerMode === 'cycle'
     ? phase === 'focus'
       ? `Focus ${currentFocusNumber} of ${sessionsPerCycle}`
@@ -366,6 +368,7 @@ export default function FocusZoneView() {
       phaseSwapTimerRef.current = null;
       if (shouldResetCycle) {
         setCycleCompleted(0);
+        setFreshCycle(true);
         persistTimerPreferences({ cycleCompleted: 0 });
       }
       setPhase('focus');
@@ -548,6 +551,7 @@ export default function FocusZoneView() {
     }
     if (cycleAwaitingFocus) {
       setCycleAwaitingFocus(false);
+      setFreshCycle(false);
       setIsActive(true);
       return;
     }
@@ -568,6 +572,7 @@ export default function FocusZoneView() {
     setPhase('focus');
     setCycleCompleted(0);
     setCycleAwaitingFocus(false);
+    setFreshCycle(false);
     setPendingAutoPhase(null);
     setPendingCycleCompleted(null);
     setTimeLeft(focusDuration * 60);
@@ -600,6 +605,7 @@ export default function FocusZoneView() {
     setPhase('focus');
     setCycleCompleted(0);
     setCycleAwaitingFocus(false);
+    setFreshCycle(false);
     setPendingAutoPhase(null);
     setPendingCycleCompleted(null);
     setTimeLeft(nextFocus * 60);
@@ -768,7 +774,9 @@ export default function FocusZoneView() {
 
           <Animated.View style={[s.timerTextWrap, timerTextStyle]}>
             {cycleAwaitingFocus ? (
-              <Text style={s.readyText}>Ready for the next session?</Text>
+              <Text style={s.readyText}>
+                {freshCycle ? 'Cycle complete! Ready for a new one?' : 'Ready for the next session?'}
+              </Text>
             ) : (
               <>
                 <Text style={[s.timeText, { color: ringColor, fontSize: timeFont, lineHeight: timeFont + 4 }]}>{timeObj.m}</Text>
@@ -880,9 +888,12 @@ export default function FocusZoneView() {
         visible={showCompletion}
         collectToRail={timerMode === 'cycle'}
         flightTarget={flightTarget}
-        eyebrow={timerMode === 'cycle'
-          ? `Focus ${currentFocusNumber} of ${sessionsPerCycle} · ${focusDuration} min`
-          : `Focus Session · ${focusDuration} min`}
+        finale={cycleFinale}
+        eyebrow={cycleFinale
+          ? `Cycle complete · ${sessionsPerCycle} targets`
+          : timerMode === 'cycle'
+            ? `Focus ${currentFocusNumber} of ${sessionsPerCycle} · ${focusDuration} min`
+            : `Focus Session · ${focusDuration} min`}
         nextStepLabel={timerMode === 'cycle' ? 'COLLECT' : 'START BREAK'}
         onCollect={collectFocusReward}
       />
@@ -930,6 +941,25 @@ export default function FocusZoneView() {
   );
 }
 
+function RetrievedToken({ index }: { index: number }) {
+  const fade = useSharedValue(1);
+
+  useEffect(() => {
+    fade.value = withDelay(index * 90, withTiming(0, { duration: 280, easing: REasing.out(REasing.quad) }));
+  }, [fade, index]);
+
+  const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
+
+  return (
+    <>
+      <Image source={TARGET_ICON} style={s.cycleTargetEmpty} resizeMode="contain" />
+      <Animated.View pointerEvents="none" style={[s.retrievedOverlay, fadeStyle]}>
+        <Image source={TARGET_ICON} style={s.cycleTargetFilled} resizeMode="contain" />
+      </Animated.View>
+    </>
+  );
+}
+
 function PomodoroCycleRail({
   completed,
   total,
@@ -946,6 +976,20 @@ function PomodoroCycleRail({
   onSlotPoint: (point: { x: number; y: number } | null) => void;
 }) {
   const slotRefs = useRef<(React.ElementRef<typeof View> | null)[]>([]);
+  const prevCompletedRef = useRef(completed);
+  const [resetFrom, setResetFrom] = useState(0);
+
+  // When the cycle empties, the arrows are pulled one by one, left to
+  // right - each token fades from full color back to its silhouette.
+  useEffect(() => {
+    const prev = prevCompletedRef.current;
+    prevCompletedRef.current = completed;
+    if (prev > 0 && completed === 0) {
+      setResetFrom(prev);
+      const timer = setTimeout(() => setResetFrom(0), prev * 90 + 420);
+      return () => clearTimeout(timer);
+    }
+  }, [completed]);
 
   useEffect(() => {
     if (!measureSignal) return;
@@ -978,15 +1022,19 @@ function PomodoroCycleRail({
               ref={el => { slotRefs.current[index] = el; }}
               style={s.cycleSlot}
             >
-              {/* key remount: once an Image has had tintColor, dropping it leaves
-                  template rendering behind (iOS paints it system blue, Android
-                  keeps the stale ColorFilter) - a fresh instance renders true */}
-              <Image
-                key={filled ? 'filled' : 'empty'}
-                source={TARGET_ICON}
-                style={filled ? s.cycleTargetFilled : s.cycleTargetEmpty}
-                resizeMode="contain"
-              />
+              {resetFrom > index ? (
+                <RetrievedToken index={index} />
+              ) : (
+                /* key remount: once an Image has had tintColor, dropping it leaves
+                   template rendering behind (iOS paints it system blue, Android
+                   keeps the stale ColorFilter) - a fresh instance renders true */
+                <Image
+                  key={filled ? 'filled' : 'empty'}
+                  source={TARGET_ICON}
+                  style={filled ? s.cycleTargetFilled : s.cycleTargetEmpty}
+                  resizeMode="contain"
+                />
+              )}
             </View>
           );
         })}
@@ -1241,6 +1289,7 @@ function CompletionModal({
   visible,
   collectToRail,
   flightTarget,
+  finale,
   eyebrow,
   nextStepLabel,
   onCollect,
@@ -1248,6 +1297,7 @@ function CompletionModal({
   visible: boolean;
   collectToRail: boolean;
   flightTarget: { x: number; y: number } | null;
+  finale: boolean;
   eyebrow: string;
   nextStepLabel: string;
   onCollect: () => void;
@@ -1416,7 +1466,15 @@ function CompletionModal({
               <View style={completion.ornamentLine} />
             </View>
             <Text style={completion.body}>
-              <Text style={completion.bodyStrong}>You hit the target!</Text> Now take a well-earned break!
+              {finale ? (
+                <>
+                  <Text style={completion.bodyStrong}>You hit every target in this cycle!</Text> Now enjoy a long break!
+                </>
+              ) : (
+                <>
+                  <Text style={completion.bodyStrong}>You hit the target!</Text> Now take a well-earned break!
+                </>
+              )}
             </Text>
             <TouchableOpacity onPress={handleCollect} disabled={collecting} style={completion.collectBtn} activeOpacity={0.9}>
               <View style={completion.collectDiamond} />
@@ -1714,6 +1772,7 @@ const s = StyleSheet.create({
   },
   cycleTargetFilled: { width: 26, height: 26 },
   cycleTargetEmpty: { width: 24, height: 24, tintColor: '#C9C4B7', opacity: 0.4 },
+  retrievedOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   timerWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
   timerWrapSingle: { transform: [{ translateY: -14 }] },
   timerWrapCycle: { transform: [{ translateY: 18 }] },
