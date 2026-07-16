@@ -35,6 +35,7 @@ import {
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
 import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
+import FocusLottie from '@/components/focus/FocusLottie';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { useJournal, type JournalDotKind } from '@/components/journal/JournalContext';
 import { F } from '@/constants/tokens';
@@ -48,7 +49,9 @@ const TEAL = '#4A9E8F';
 const INK = '#1C1917';
 const BORDER = '#EDE5D6';
 
-const FLAME_PNG = require('@/assets/images/streak-flame-512.png');
+// The journal's own streak emblem: the book of your days. The living Lottie
+// turns its pages in the hero; this still frame carries the chain medallions.
+const BOOK_PNG = require('@/assets/images/streak-book-512.png');
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -230,9 +233,11 @@ function StreakTodayPulse() {
   );
 }
 
-// The streak's hero: the flame raised on a breathing glow with a golden ray
-// burst — the same radiance the app reserves for what is alive and earned.
-function RadiantFlame() {
+// The streak's hero: the book of days, alive — its pages turn on a breathing
+// glow with a golden ray burst, the same radiance the app reserves for what
+// is alive and earned. The Lottie canvas carries wide margins, so the box is
+// oversized and nudged to seat the book itself on the stage's center.
+function RadiantBook() {
   const reduceMotion = useReducedMotion();
   const breathe = useSharedValue(0);
 
@@ -258,9 +263,9 @@ function RadiantFlame() {
   const inner = 21;
 
   return (
-    <View style={s.flameStage}>
-      <Reanimated.View pointerEvents="none" style={[s.flameGlow, glowStyle]} />
-      <Svg pointerEvents="none" width={field} height={field} style={s.flameRays}>
+    <View style={s.bookStage}>
+      <Reanimated.View pointerEvents="none" style={[s.bookGlow, glowStyle]} />
+      <Svg pointerEvents="none" width={field} height={field} style={s.bookRays}>
         {Array.from({ length: 12 }).map((_, index) => {
           const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
           const long = index % 2 === 0;
@@ -280,7 +285,9 @@ function RadiantFlame() {
           );
         })}
       </Svg>
-      <Image source={FLAME_PNG} style={s.flameHero} resizeMode="contain" />
+      <View style={s.bookLottie} pointerEvents="none">
+        <FocusLottie name="meru-book" loop autoplay speed={0.85} style={{ width: '100%', height: '100%' }} />
+      </View>
     </View>
   );
 }
@@ -450,7 +457,7 @@ function CalendarStreakCard({
       <View style={s.divider} />
 
       <View style={s.streakHead}>
-        <RadiantFlame />
+        <RadiantBook />
         <View style={s.streakHeadCopy}>
           <AppText style={s.streakEyebrow}>JOURNAL STREAK</AppText>
           <View style={s.streakNumberRow}>
@@ -493,10 +500,10 @@ function CalendarStreakCard({
                 ]}
               >
                 <Image
-                  source={FLAME_PNG}
+                  source={BOOK_PNG}
                   style={[
-                    s.streakFlame,
-                    !active && s.streakFlameResting,
+                    s.streakBook,
+                    !active && s.streakBookResting,
                   ]}
                   resizeMode="contain"
                 />
@@ -946,8 +953,8 @@ const s = StyleSheet.create({
   divider: { height: 1, marginTop: 14, marginBottom: 14, backgroundColor: '#F2EDE4' },
 
   streakHead: { flexDirection: 'row', alignItems: 'center' },
-  flameStage: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
-  flameGlow: {
+  bookStage: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
+  bookGlow: {
     position: 'absolute',
     left: 5,
     top: 5,
@@ -956,8 +963,11 @@ const s = StyleSheet.create({
     borderRadius: 23,
     backgroundColor: 'rgba(240,196,107,0.4)',
   },
-  flameRays: { position: 'absolute', left: -8, top: -8 },
-  flameHero: { width: 30, height: 30 },
+  bookRays: { position: 'absolute', left: -8, top: -8 },
+  // The Lottie's 400px canvas holds the book around its lower-right quadrant
+  // center (~0.64, 0.64); an 84px box shifted by -26 seats the book itself on
+  // the 56px stage center, and its page-flip sparkles rise into open air.
+  bookLottie: { position: 'absolute', left: -26, top: -26, width: 84, height: 84 },
   streakHeadCopy: { flex: 1, minWidth: 0, marginLeft: 8 },
   streakEyebrow: { fontFamily: F.sansBold, fontSize: 9, lineHeight: 12, letterSpacing: 2, color: GOLD },
   streakNumberRow: { flexDirection: 'row', alignItems: 'baseline', columnGap: 7, marginTop: 1 },
@@ -1003,8 +1013,8 @@ const s = StyleSheet.create({
     elevation: 2,
   },
   streakCircleToday: { borderStyle: 'solid', borderColor: GOLD, backgroundColor: '#FFFBF0' },
-  streakFlame: { width: 20, height: 20 },
-  streakFlameResting: { tintColor: '#C9C4B7', opacity: 0.38 },
+  streakBook: { width: 22, height: 22 },
+  streakBookResting: { tintColor: '#C9C4B7', opacity: 0.38 },
   streakDayText: { marginTop: 5, fontFamily: F.sansBold, fontSize: 10, lineHeight: 12, color: '#C4BAA8' },
   streakDayTextActive: { color: GOLD },
   streakDayTextToday: { color: '#9A6B1E' },
