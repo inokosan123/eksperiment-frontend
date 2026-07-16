@@ -13,6 +13,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
+import Svg, { Line } from 'react-native-svg';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import {
   BarChart3,
@@ -32,7 +33,8 @@ import { PulseDot } from './FocusMeter';
 import DayGauge, { gaugeStanding, gaugeStateColor, GAUGE_ESSENTIALS_COLOR } from './DayGauge';
 import HairlineWeave from './HairlineWeave';
 import PlanCardBackdrop from './PlanCardBackdrop';
-import { planVisualFor } from './planVisuals';
+import ZoneClock from './ZoneClock';
+import { planVisualFor, type PlanVisual } from './planVisuals';
 import { RadiantTrophy, StreakMedallion, TrophyShineBackdrop } from './TrophyRadiance';
 import GoldButton from './GoldButton';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
@@ -57,6 +59,7 @@ import {
   purityActiveCount,
   tickDayPlanStore,
   useDayPlan,
+  type DayPlan,
   type DayPlanState,
   type DayRecord,
 } from './dayPlanStore';
@@ -117,6 +120,76 @@ function TodayRing() {
   }));
 
   return <Animated.View pointerEvents="none" style={[s.todayRing, style]} />;
+}
+
+// Today's plan wears the streak trophy's radiance in its own colors: a ray
+// burst and a slow-breathing glow behind the plan's seal. Session plans carry
+// their real day-clock on the seal; daily plans carry the shield. Radiance is
+// reserved for what is alive right now — list and editor views stay still.
+function RadiantPlanSeal({ visual, plan }: { visual: PlanVisual; plan: DayPlan }) {
+  const reduceMotion = useReducedMotion();
+  const breathe = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      breathe.value = 0.6;
+      return;
+    }
+    breathe.value = 0;
+    breathe.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0, { duration: 2600, easing: Easing.inOut(Easing.sin) })
+      ),
+      -1
+    );
+    return () => cancelAnimation(breathe);
+  }, [reduceMotion, breathe]);
+
+  const glowStyle = useAnimatedStyle(() => ({ opacity: 0.4 + breathe.value * 0.6 }));
+
+  const isSession = !plan.essentialsOnly && plan.kind === 'session';
+  const field = 92;
+  const cx = field / 2;
+  const inner = 29;
+
+  return (
+    <View style={s.sealStage}>
+      <Animated.View pointerEvents="none" style={[s.sealGlow, { backgroundColor: visual.bloom }, glowStyle]} />
+      <Svg pointerEvents="none" width={field} height={field} style={s.sealRays}>
+        {Array.from({ length: 12 }).map((_, index) => {
+          const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
+          const long = index % 2 === 0;
+          const r2 = inner + (long ? 14 : 8);
+          return (
+            <Line
+              key={index}
+              x1={cx + inner * Math.cos(angle)}
+              y1={cx + inner * Math.sin(angle)}
+              x2={cx + r2 * Math.cos(angle)}
+              y2={cx + r2 * Math.sin(angle)}
+              stroke={visual.accent}
+              strokeOpacity={long ? 0.4 : 0.22}
+              strokeWidth={long ? 1.7 : 1.3}
+              strokeLinecap="round"
+            />
+          );
+        })}
+      </Svg>
+      <View style={[s.sealDisc, { borderColor: visual.border }]}>
+        {isSession ? (
+          <ZoneClock zones={plan.zones} size={40} compact />
+        ) : (
+          <>
+            <View style={[s.sealDiscRing, { borderColor: visual.accent }]} />
+            <Shield s={21} c={visual.accent} w={1.9} />
+          </>
+        )}
+      </View>
+      <View pointerEvents="none" style={[s.sealGlint, { backgroundColor: visual.accent }]} />
+      <View pointerEvents="none" style={[s.sealGlintSmall, { backgroundColor: visual.accent }]} />
+    </View>
+  );
 }
 
 function ProtectionRow({
@@ -400,19 +473,21 @@ export default function FocusWatchView() {
               <View style={s.pillarBlock}>
                 <Text style={s.pillarLabel}>SCREEN TIME</Text>
                 <TouchableOpacity
-                  style={[s.miniCard, { borderColor: visual.border }]}
+                  style={[s.todayCard, { borderColor: visual.border }]}
                   activeOpacity={0.86}
                   onPress={() => router.push('/day-plan-today' as never)}
                   accessibilityRole="button"
                   accessibilityLabel={`${plan.name} is active today. Open today's detail.`}
                 >
                   <LinearGradient colors={visual.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-                  <PlanCardBackdrop visual={visual} ringSize={116} />
-                  <View style={s.miniTopRow}>
-                    <View style={s.miniCopy}>
-                      <Text style={[s.miniName, { color: visual.ink }]} numberOfLines={1}>{plan.name}</Text>
+                  <PlanCardBackdrop visual={visual} ringSize={128} live />
+                  <View style={s.todayHeroRow}>
+                    <RadiantPlanSeal visual={visual} plan={plan} />
+                    <View style={s.todayCopy}>
+                      <Text style={[s.todayKicker, { color: visual.accent }]}>TODAY’S PLAN</Text>
+                      <Text style={[s.todayName, { color: visual.ink }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{plan.name}</Text>
                       {(essentialsOnly || essentialsNow || session) && (
-                        <Text style={[s.miniStatus, { color: visual.body }]} numberOfLines={1}>
+                        <Text style={[s.todayStatus, { color: visual.body }]} numberOfLines={1}>
                           {essentialsOnly
                             ? 'Only Essentials are open today'
                             : essentialsNow
@@ -424,48 +499,53 @@ export default function FocusWatchView() {
                       )}
                     </View>
                     {screenTimeValue != null && (
-                      <View style={s.miniValueBlock}>
-                        <Text style={[s.miniValue, { color: screenTimeValueColor }]} numberOfLines={1}>{screenTimeValue}</Text>
-                        <Text style={[s.miniValueCaption, { color: visual.body }]} numberOfLines={1}>{screenTimeCaption}</Text>
+                      <View style={s.todayValueBlock}>
+                        <Text style={[s.todayValue, { color: screenTimeValueColor }]} numberOfLines={1}>{screenTimeValue}</Text>
+                        <Text style={[s.todayValueCaption, { color: visual.body }]} numberOfLines={1}>{screenTimeCaption}</Text>
                       </View>
                     )}
                   </View>
+                  <View style={s.todayRule}>
+                    <View style={[s.todayRuleLine, { backgroundColor: visual.border }]} />
+                    <View style={[s.todayRuleDiamond, { backgroundColor: visual.accent }]} />
+                    <View style={[s.todayRuleLine, { backgroundColor: visual.border }]} />
+                  </View>
                   {plan.kind === 'session' && session && !essentialsOnly && sessionMinutesLeft != null ? (
-                    <View style={[s.miniStatsRow, { borderTopColor: visual.border }]}>
-                      <View style={s.miniStat}>
-                        <View style={s.miniStatValueRow}>
-                          <Text style={[s.miniUsed, { color: screenTimeNumbersColor }]} numberOfLines={1}>
+                    <View style={s.todayStatsRow}>
+                      <View style={s.todayStat}>
+                        <View style={s.todayStatValueRow}>
+                          <Text style={[s.todayUsed, { color: screenTimeNumbersColor }]} numberOfLines={1}>
                             {usedToday == null ? '– –' : formatMinutesShort(usedToday)}
                           </Text>
                           {targetMinutes != null && (
-                            <Text style={[s.miniGoal, { color: visual.body }]} numberOfLines={1}> / {formatMinutesShort(targetMinutes)}</Text>
+                            <Text style={[s.todayGoal, { color: visual.body }]} numberOfLines={1}> / {formatMinutesShort(targetMinutes)}</Text>
                           )}
                         </View>
-                        <Text style={[s.miniStatCaption, { color: visual.body }]} numberOfLines={1}>
+                        <Text style={[s.todayStatCaption, { color: visual.body }]} numberOfLines={1}>
                           {targetMinutes == null ? 'PHONE TIME TODAY' : 'SCREEN TIME TODAY'}
                         </Text>
                       </View>
-                      <View style={[s.miniStatDivider, { backgroundColor: visual.border }]} />
-                      <View style={s.miniStat}>
-                        <View style={s.miniStatValueRow}>
-                          <Text style={[s.miniUsed, { color: visual.ink }]} numberOfLines={1}>
+                      <View style={[s.todayStatDivider, { backgroundColor: visual.accent }]} />
+                      <View style={s.todayStat}>
+                        <View style={s.todayStatValueRow}>
+                          <Text style={[s.todayUsed, { color: visual.ink }]} numberOfLines={1}>
                             {formatMinutesShort(sessionMinutesLeft)}
                           </Text>
                         </View>
-                        <Text style={[s.miniStatCaption, { color: visual.body }]} numberOfLines={1}>
+                        <Text style={[s.todayStatCaption, { color: visual.body }]} numberOfLines={1}>
                           LEFT IN {session.name.toUpperCase()}
                         </Text>
                       </View>
                     </View>
                   ) : (
-                    <View style={[s.miniNumbersRow, { borderTopColor: visual.border }]}>
-                      <Text style={[s.miniUsed, { color: screenTimeNumbersColor }]} numberOfLines={1}>
+                    <View style={s.todayNumbersRow}>
+                      <Text style={[s.todayUsed, { color: screenTimeNumbersColor }]} numberOfLines={1}>
                         {usedToday == null ? '– –' : formatMinutesShort(usedToday)}
                       </Text>
                       {!essentialsOnly && targetMinutes != null && (
-                        <Text style={[s.miniGoal, { color: visual.body }]} numberOfLines={1}> / {formatMinutesShort(targetMinutes)}</Text>
+                        <Text style={[s.todayGoal, { color: visual.body }]} numberOfLines={1}> / {formatMinutesShort(targetMinutes)}</Text>
                       )}
-                      <Text style={[s.miniNumbersCaption, { color: visual.body }]} numberOfLines={1}>
+                      <Text style={[s.todayNumbersCaption, { color: visual.body }]} numberOfLines={1}>
                         {essentialsOnly || targetMinutes == null ? '  PHONE TIME TODAY' : '  SCREEN TIME TODAY'}
                       </Text>
                     </View>
@@ -551,7 +631,7 @@ export default function FocusWatchView() {
 
             <View style={s.progressHeroRow}>
               <View style={s.progressMedallion}>
-                <StreakMedallion value={100} />
+                <StreakMedallion value={state.streak.current} />
               </View>
               <RadiantTrophy size={76} />
             </View>
@@ -793,15 +873,59 @@ const s = StyleSheet.create({
   miniValueBlock: { maxWidth: 110, alignItems: 'flex-end' },
   miniValue: { fontFamily: F.serifSemiBold, fontSize: 19, fontVariant: ['tabular-nums'] },
   miniValueCaption: { marginTop: 1.5, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
-  miniNumbersRow: { marginTop: 11, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, flexDirection: 'row', alignItems: 'baseline', minWidth: 0 },
-  miniUsed: { fontFamily: F.serifSemiBold, fontSize: 26, lineHeight: 29, fontVariant: ['tabular-nums'] },
-  miniGoal: { fontFamily: F.serifMedium, fontSize: 16, fontVariant: ['tabular-nums'] },
-  miniNumbersCaption: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
-  miniStatsRow: { marginTop: 11, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, flexDirection: 'row', alignItems: 'center' },
-  miniStat: { flex: 1, minWidth: 0, paddingRight: 8 },
-  miniStatValueRow: { flexDirection: 'row', alignItems: 'baseline', minWidth: 0 },
-  miniStatCaption: { marginTop: 2.5, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
-  miniStatDivider: { width: StyleSheet.hairlineWidth, height: 34, marginRight: 12, opacity: 0.9 },
+  // Today's plan card — the radiant-seal view of the plan (view two of the
+  // set: hero dashboard / radiant today / bound library card).
+  todayCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 22,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    paddingHorizontal: 15,
+    paddingTop: 13,
+    paddingBottom: 13,
+    boxShadow: '0 6px 16px rgba(57, 48, 34, 0.07)',
+  },
+  todayHeroRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 66 },
+  sealStage: { width: 66, height: 66, alignItems: 'center', justifyContent: 'center' },
+  sealGlow: { position: 'absolute', left: 4, top: 4, width: 58, height: 58, borderRadius: 29 },
+  sealRays: { position: 'absolute', left: -13, top: -13 },
+  sealDisc: {
+    width: 47,
+    height: 47,
+    borderRadius: 23.5,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.88)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  sealDiscRing: { position: 'absolute', left: 3.5, top: 3.5, right: 3.5, bottom: 3.5, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, opacity: 0.45 },
+  sealGlint: { position: 'absolute', right: 6, top: 7, width: 5.5, height: 5.5, borderRadius: 1.5, opacity: 0.72, transform: [{ rotate: '45deg' }] },
+  sealGlintSmall: { position: 'absolute', left: 7, bottom: 9, width: 3.2, height: 3.2, borderRadius: 1, opacity: 0.5, transform: [{ rotate: '45deg' }] },
+  todayCopy: { flex: 1, minWidth: 0 },
+  todayKicker: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.8 },
+  todayName: { marginTop: 2.5, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 25, letterSpacing: -0.25 },
+  todayStatus: { marginTop: 2.5, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17 },
+  todayValueBlock: { maxWidth: 104, alignItems: 'flex-end' },
+  todayValue: { fontFamily: F.serifSemiBold, fontSize: 19, fontVariant: ['tabular-nums'] },
+  todayValueCaption: { marginTop: 1.5, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
+  todayRule: { marginTop: 10, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  todayRuleLine: { flex: 1, height: StyleSheet.hairlineWidth },
+  todayRuleDiamond: { width: 4.5, height: 4.5, borderRadius: 1, opacity: 0.8, transform: [{ rotate: '45deg' }] },
+  todayNumbersRow: { flexDirection: 'row', alignItems: 'baseline', minWidth: 0 },
+  todayUsed: { fontFamily: F.serifSemiBold, fontSize: 27, lineHeight: 30, fontVariant: ['tabular-nums'] },
+  todayGoal: { fontFamily: F.serifMedium, fontSize: 16, fontVariant: ['tabular-nums'] },
+  todayNumbersCaption: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
+  todayStatsRow: { flexDirection: 'row', alignItems: 'center' },
+  todayStat: { flex: 1, minWidth: 0, paddingRight: 8 },
+  todayStatValueRow: { flexDirection: 'row', alignItems: 'baseline', minWidth: 0 },
+  todayStatCaption: { marginTop: 2.5, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
+  todayStatDivider: { width: 1, height: 34, marginRight: 12, borderRadius: 1, opacity: 0.4 },
   quietButton: { marginTop: 16 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
   sectionTitle: {
