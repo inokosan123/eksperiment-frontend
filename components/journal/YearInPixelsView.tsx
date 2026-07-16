@@ -92,14 +92,15 @@ function tabDots(type: TabType): string[] {
   return MOOD_COLORS.slice(1);
 }
 
-const TAB_LABEL_BOX = 112;
-
-// Long scale names get a fixed window; anything wider glides gently back and
-// forth inside it instead of colliding with its neighbours.
-function TabMarqueeLabel({ text, color, active }: { text: string; color: string; active?: boolean }) {
+// A title that glides: if the text is wider than its box, it drifts gently
+// back and forth inside it. The box is measured once from layout and the
+// text from its own line metrics — both guarded against sub-pixel churn so
+// nothing ever flickers.
+function MarqueeText({ text, textStyle }: { text: string; textStyle: object }) {
   const reduceMotion = useReducedMotion();
+  const [boxW, setBoxW] = useState(0);
   const [textW, setTextW] = useState(0);
-  const overflow = textW > TAB_LABEL_BOX + 1;
+  const overflow = boxW > 0 && textW > boxW + 1;
   const shift = useSharedValue(0);
 
   useEffect(() => {
@@ -108,29 +109,35 @@ function TabMarqueeLabel({ text, color, active }: { text: string; color: string;
       shift.value = 0;
       return;
     }
-    const distance = textW - TAB_LABEL_BOX;
-    const travel = Math.max(1200, distance * 30);
+    const distance = textW - boxW;
+    const travel = Math.max(1400, distance * 32);
     shift.value = 0;
     shift.value = withRepeat(
       withSequence(
-        withDelay(1100, withTiming(-distance, { duration: travel, easing: Easing.inOut(Easing.quad) })),
-        withDelay(1100, withTiming(0, { duration: travel, easing: Easing.inOut(Easing.quad) }))
+        withDelay(1200, withTiming(-distance, { duration: travel, easing: Easing.inOut(Easing.quad) })),
+        withDelay(1200, withTiming(0, { duration: travel, easing: Easing.inOut(Easing.quad) }))
       ),
       -1
     );
     return () => cancelAnimation(shift);
-  }, [overflow, textW, reduceMotion, shift]);
+  }, [overflow, textW, boxW, reduceMotion, shift]);
 
   const glide = useAnimatedStyle(() => ({ transform: [{ translateX: shift.value }] }));
 
   return (
-    <View style={[s.tabLabelBox, overflow && { width: TAB_LABEL_BOX }]}>
+    <View
+      style={s.marqueeBox}
+      onLayout={event => {
+        const w = Math.round(event.nativeEvent.layout.width);
+        if (w > 0 && Math.abs(w - boxW) > 1) setBoxW(w);
+      }}
+    >
       <Reanimated.Text
         numberOfLines={1}
-        style={[s.tabLabel, active && s.tabLabelActive, { color }, glide]}
+        style={[textStyle, s.marqueeText, glide]}
         onTextLayout={event => {
           const w = event.nativeEvent.lines?.[0]?.width ?? 0;
-          if (w > 0 && Math.abs(w - textW) > 1) setTextW(w);
+          if (w > 0 && Math.abs(w - textW) > 1) setTextW(Math.ceil(w));
         }}
       >
         {text}
@@ -368,8 +375,6 @@ export default function YearInPixelsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [year, activeTabId, entries, sections]);
 
-  const filledDays = yearEntries.length;
-
   // "Days available" = days in the year up to (and including) today, capped
   // at 365/366 for past years. This is the denominator for the % display.
   const daysAvailable = useMemo(() => {
@@ -496,17 +501,11 @@ export default function YearInPixelsView() {
 
           <View style={s.plateStatsRow}>
             <View style={s.plateLeft}>
-              <Text style={s.plateEyebrow}>DAYS TRACKED</Text>
               <View style={s.plateNumRow}>
                 <Text style={s.plateBigNum}>{coloredCount}</Text>
                 <Text style={s.plateNumOf}> / {daysAvailable}</Text>
               </View>
-              <Text style={s.plateMeta}>
-                {activeTab.label.toLowerCase()} days this year so far
-              </Text>
-              <Text style={s.plateSubMeta}>
-                {filledDays} {filledDays === 1 ? 'journal entry' : 'journal entries'} in {year}
-              </Text>
+              <Text style={s.plateMeta}>days tracked</Text>
             </View>
             <View style={s.heroRing}>
               <ProgressRing percent={fillPercent} redrawKey={redrawKey} />
@@ -574,7 +573,7 @@ export default function YearInPixelsView() {
                             <View key={i} style={[s.tabDot, s.tabDotActive, { backgroundColor: dot }]} />
                           ))}
                         </View>
-                        <TabMarqueeLabel text={tab.label} color="#FFFFFF" active />
+                        <Text style={[s.tabLabel, s.tabLabelActive]} numberOfLines={1}>{tab.label}</Text>
                       </View>
                     </LinearGradient>
                   </TouchableOpacity>
@@ -595,7 +594,7 @@ export default function YearInPixelsView() {
                           <View key={i} style={[s.tabDot, { backgroundColor: dot }]} />
                         ))}
                       </View>
-                      <TabMarqueeLabel text={tab.label} color={tint.ink} />
+                      <Text style={[s.tabLabel, { color: tint.ink }]} numberOfLines={1}>{tab.label}</Text>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -608,7 +607,7 @@ export default function YearInPixelsView() {
             gallery placard beneath it. */}
         <Reanimated.View entering={enter(150)} style={s.card}>
           <View style={s.plaqueRow}>
-            <Text style={s.gridKicker}>{activeTab.label.toUpperCase()} · {year}</Text>
+            <MarqueeText text={activeTab.label} textStyle={s.plaqueTitle} />
             <Text style={s.plaqueCount}>
               {coloredCount} {coloredCount === 1 ? 'day' : 'days'} painted
             </Text>
@@ -723,8 +722,8 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#DFC177',
     paddingHorizontal: 16,
-    paddingTop: 13,
-    paddingBottom: 15,
+    paddingTop: 11,
+    paddingBottom: 13,
     shadowColor: '#8C7A4F',
     shadowOffset: { width: 0, height: 7 },
     shadowOpacity: 0.14,
@@ -772,16 +771,9 @@ const s = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 0.6,
   },
-  plateStatsRow: { marginTop: 10, flexDirection: 'row', alignItems: 'center', columnGap: 18 },
+  plateStatsRow: { marginTop: 6, flexDirection: 'row', alignItems: 'center', columnGap: 18 },
   plateLeft: { flex: 1, minWidth: 0 },
-  plateEyebrow: {
-    fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 2,
-    color: '#98691B',
-    textTransform: 'uppercase',
-  },
-  plateNumRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 6 },
+  plateNumRow: { flexDirection: 'row', alignItems: 'baseline' },
   plateBigNum: {
     fontFamily: F.serifSemiBold,
     fontSize: 39,
@@ -797,18 +789,11 @@ const s = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   plateMeta: {
-    marginTop: 3,
-    fontFamily: F.serif,
-    fontSize: 13.5,
-    lineHeight: 18,
+    marginTop: 2,
+    fontFamily: F.serifMedium,
+    fontSize: 16,
+    lineHeight: 20,
     color: '#796333',
-  },
-  plateSubMeta: {
-    marginTop: 1.5,
-    fontFamily: F.serifItalic,
-    fontSize: 12.5,
-    lineHeight: 16,
-    color: '#9C8455',
   },
 
   tabsRow: {
@@ -830,7 +815,8 @@ const s = StyleSheet.create({
     position: 'relative',
   },
   tabInner: { flexDirection: 'row', alignItems: 'center', columnGap: 7 },
-  tabLabelBox: { flexDirection: 'row', overflow: 'hidden' },
+  marqueeBox: { flex: 1, minWidth: 0, flexDirection: 'row', overflow: 'hidden' },
+  marqueeText: { flexShrink: 0 },
   tabDots: { flexDirection: 'row', alignItems: 'center', columnGap: 2.5 },
   tabDot: { width: 4.5, height: 4.5, borderRadius: 2.5 },
   tabDotActive: {
@@ -859,6 +845,7 @@ const s = StyleSheet.create({
     letterSpacing: 1.6,
     color: '#9C948C',
     textTransform: 'uppercase',
+    maxWidth: 118,
   },
   tabLabelActive: { color: '#FFFFFF', letterSpacing: 1.8 },
 
@@ -908,18 +895,28 @@ const s = StyleSheet.create({
   },
   spectrumSegment: { borderRadius: 3.5 },
   spectrumCounts: {
-    marginTop: 7,
+    marginTop: 8,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 2,
+    justifyContent: 'center',
+    columnGap: 13,
   },
-  countChip: { flexDirection: 'row', alignItems: 'center', columnGap: 4 },
+  countChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 4.5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(152,105,27,0.25)',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+  },
   countChipZero: { opacity: 0.35 },
-  countGem: { width: 8, height: 8, borderRadius: 2.5 },
+  countGem: { width: 7.5, height: 7.5, borderRadius: 2.5 },
   countNum: {
     fontFamily: F.sansBold,
-    fontSize: 10,
-    color: '#796333',
+    fontSize: 10.5,
+    color: '#6D4F13',
     fontVariant: ['tabular-nums'],
   },
 
@@ -930,14 +927,16 @@ const s = StyleSheet.create({
     marginBottom: 10,
     paddingHorizontal: 2,
   },
-  gridKicker: {
-    fontFamily: F.sansBold,
-    fontSize: 11,
-    letterSpacing: 2,
-    color: GOLD,
-    textTransform: 'uppercase',
+  plaqueTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 22,
+    lineHeight: 26,
+    letterSpacing: -0.2,
+    color: INK,
   },
   plaqueCount: {
+    flexShrink: 0,
+    marginLeft: 12,
     fontFamily: F.serifItalic,
     fontSize: 13.5,
     color: '#A6997D',
@@ -967,16 +966,16 @@ const s = StyleSheet.create({
 
   monthRow: { flexDirection: 'row', alignItems: 'flex-start', columnGap: 7 },
   monthRowSeasonEnd: { marginBottom: 4 },
-  // Month names in italic garamond, right-aligned so they sit against their
-  // own row of pixels like manuscript marginalia.
+  // Month names: three letters each, set flush left in upright garamond —
+  // one tidy column down the frame's edge.
   monthLabel: {
-    width: 28,
+    width: 30,
     paddingTop: 1.5,
-    fontFamily: F.serifMediumItalic,
+    fontFamily: F.serifMedium,
     fontSize: 12.5,
-    letterSpacing: 0.4,
-    color: '#8A7F6A',
-    textAlign: 'right',
+    letterSpacing: 0.5,
+    color: '#7E7768',
+    textAlign: 'left',
   },
   monthDays: {
     flex: 1,
