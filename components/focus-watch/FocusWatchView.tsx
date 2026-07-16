@@ -6,6 +6,7 @@ import Animated, {
   cancelAnimation,
   Easing,
   FadeInDown,
+  useAnimatedProps,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -13,12 +14,13 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { Line } from 'react-native-svg';
+import Svg, { Circle, Line } from 'react-native-svg';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import {
   BarChart3,
   ChevronRight,
   Clock,
+  Eye,
   Globe,
   Lock,
   Shield,
@@ -31,7 +33,6 @@ import FocusPhoneStatus from './FocusPhoneStatus';
 import FocusCard, { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
 import { PulseDot } from './FocusMeter';
 import DayGauge, { gaugeStanding, gaugeStateColor, GAUGE_ESSENTIALS_COLOR } from './DayGauge';
-import HairlineWeave from './HairlineWeave';
 import PlanCardBackdrop from './PlanCardBackdrop';
 import ZoneClock from './ZoneClock';
 import { planVisualFor, type PlanVisual } from './planVisuals';
@@ -192,6 +193,145 @@ function RadiantPlanSeal({ visual, plan }: { visual: PlanVisual; plan: DayPlan }
   );
 }
 
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+// The web card's surface: the shared weave crossed with its own mirror — a
+// fine diamond lattice, the filter everything from the web must pass through.
+function LatticeWeave({ color }: { color: string }) {
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const step = 30;
+  const lineCount = box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
+
+  return (
+    <View
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      onLayout={event => {
+        const { width, height } = event.nativeEvent.layout;
+        setBox({ w: width, h: height });
+      }}
+    >
+      {lineCount > 0 && (
+        <Svg width={box.w} height={box.h} style={StyleSheet.absoluteFill}>
+          {Array.from({ length: lineCount }).map((_, index) => {
+            const offset = index * step;
+            return (
+              <Line
+                key={`a${index}`}
+                x1={offset}
+                y1={-4}
+                x2={offset - box.h - 8}
+                y2={box.h + 4}
+                stroke={color}
+                strokeOpacity={0.035}
+                strokeWidth={1}
+              />
+            );
+          })}
+          {Array.from({ length: lineCount }).map((_, index) => {
+            const offset = index * step;
+            return (
+              <Line
+                key={`b${index}`}
+                x1={box.w - offset}
+                y1={-4}
+                x2={box.w - offset + box.h + 8}
+                y2={box.h + 4}
+                stroke={color}
+                strokeOpacity={0.035}
+                strokeWidth={1}
+              />
+            );
+          })}
+        </Svg>
+      )}
+    </View>
+  );
+}
+
+// Web Protection's emblem: Clean Sight's eye behind a half-drawn veil, held
+// inside a watch ring. While the guard stands, the veil is drawn solid and a
+// sentinel node patrols the ring — the same quiet life as the phone's orbits;
+// when the guard rests, the watch stands still and the veil hangs open.
+function GuardedSightEmblem({ active }: { active: boolean }) {
+  const reduceMotion = useReducedMotion();
+  const patrol = useSharedValue(0);
+  const animate = active && !reduceMotion;
+
+  useEffect(() => {
+    if (animate) {
+      patrol.value = 0;
+      patrol.value = withRepeat(
+        withTiming(1, { duration: 11000, easing: Easing.linear }),
+        -1,
+        false
+      );
+    } else {
+      cancelAnimation(patrol);
+      patrol.value = 0;
+    }
+    return () => cancelAnimation(patrol);
+  }, [animate, patrol]);
+
+  const sentinelProps = useAnimatedProps(() => {
+    const angle = -Math.PI / 2 + patrol.value * Math.PI * 2;
+    return { cx: 32 + 29 * Math.cos(angle), cy: 32 + 29 * Math.sin(angle) };
+  });
+  // Half a revolution behind, so the watch never looks empty.
+  const counterProps = useAnimatedProps(() => {
+    const angle = Math.PI / 2 + patrol.value * Math.PI * 2;
+    return { cx: 32 + 29 * Math.cos(angle), cy: 32 + 29 * Math.sin(angle) };
+  });
+
+  return (
+    <View style={s.webEmblemStage}>
+      <View pointerEvents="none" style={[s.webEmblemGlow, active && s.webEmblemGlowOn]} />
+      <Svg pointerEvents="none" width={64} height={64} style={StyleSheet.absoluteFill}>
+        <Circle
+          cx={32}
+          cy={32}
+          r={29}
+          stroke="#2D7967"
+          strokeOpacity={active ? 0.32 : 0.15}
+          strokeWidth={1}
+          fill="none"
+          strokeDasharray={active ? undefined : '1 5'}
+        />
+        <Circle cx={32} cy={32} r={24.5} stroke="#2D7967" strokeOpacity={active ? 0.15 : 0.09} strokeWidth={1} fill="none" strokeDasharray="1 4" />
+        {active && (
+          <>
+            <AnimatedCircle animatedProps={sentinelProps} r={2.1} fill="#2D7967" fillOpacity={0.55} />
+            <AnimatedCircle animatedProps={counterProps} r={1.5} fill="#2D7967" fillOpacity={0.32} />
+          </>
+        )}
+      </Svg>
+      <View style={[s.webEmblemDisc, !active && s.webEmblemDiscOff]}>
+        <Eye s={21} c={active ? '#2D7967' : 'rgba(45,121,103,0.6)'} w={1.9} />
+        <Svg pointerEvents="none" width={42} height={42} style={StyleSheet.absoluteFill}>
+          {[
+            { y: 9, x1: 6.3, x2: 35.7 },
+            { y: 13.5, x1: 3.9, x2: 38.1 },
+            { y: 18, x1: 2.7, x2: 39.3 },
+          ].map(line => (
+            <Line
+              key={line.y}
+              x1={line.x1}
+              y1={line.y}
+              x2={line.x2}
+              y2={line.y}
+              stroke="#2D7967"
+              strokeOpacity={active ? 0.38 : 0.2}
+              strokeWidth={1.3}
+              strokeLinecap="round"
+              strokeDasharray={active ? undefined : '2 4'}
+            />
+          ))}
+        </Svg>
+      </View>
+    </View>
+  );
+}
+
 function ProtectionRow({
   icon,
   iconBg,
@@ -271,7 +411,9 @@ export default function FocusWatchView() {
     : state.alwaysBlockedApps.length;
   const alwaysConfigured = alwaysBlockedCount > 0;
   const webActive = permissionGranted && nativeApplied && webConfigured;
-  const webShown = webActive || (previewMode && webConfigured);
+  // The web pillar shows whenever rules exist: standing guard, previewing,
+  // or resting — the resting card is designed too, not hidden.
+  const webState: 'on' | 'preview' | 'off' = webActive ? 'on' : previewMode && webConfigured ? 'preview' : 'off';
   const planConfigured = planHasProtectionNow(plan, now);
   const planProtects = permissionGranted && nativeApplied && planConfigured;
   const protectionConfigured = !!state.quiet || webConfigured || planConfigured || alwaysConfigured;
@@ -555,37 +697,68 @@ export default function FocusWatchView() {
             );
           })()}
 
-          {webShown && (
+          {webConfigured && (
             <View style={s.pillarBlock}>
               <Text style={s.pillarLabel}>WEB PROTECTION</Text>
               <TouchableOpacity
-                style={[s.miniCard, { borderColor: '#B7D8CA' }]}
+                style={[s.webCard, webState === 'off' && s.webCardOff]}
                 activeOpacity={0.86}
                 onPress={() => router.push('/clean-sight' as never)}
                 accessibilityRole="button"
-                accessibilityLabel="Web Protection is standing guard. Open Clean Sight."
+                accessibilityLabel={webState === 'off'
+                  ? 'Web Protection is resting. Open Clean Sight.'
+                  : 'Web Protection is standing guard. Open Clean Sight.'}
               >
-                <LinearGradient colors={['#E6F3EC', '#F9FCFA', '#FEFFFE']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-                <HairlineWeave color="#2D7967" />
-                <View style={s.miniTopRow}>
-                  <View style={s.miniCopy}>
-                    <Text style={[s.miniName, { color: '#1F4E45' }]} numberOfLines={1}>Standing guard</Text>
-                    <Text style={[s.miniStatus, { color: '#3D8273' }]} numberOfLines={1}>
+                <LinearGradient
+                  colors={webState === 'off'
+                    ? ['#EDF3F0', '#FBFDFC', '#FFFFFF']
+                    : ['#E6F3EC', '#F9FCFA', '#FEFFFE']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <LatticeWeave color="#2D7967" />
+                <View pointerEvents="none" style={[s.webBloom, webState !== 'off' && s.webBloomOn]} />
+                <View style={s.webHeroRow}>
+                  <View style={s.webCopy}>
+                    <Text style={s.webKicker}>CLEAN SIGHT</Text>
+                    <Text style={[s.webName, webState === 'off' && s.webNameOff]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                      {webState === 'off' ? 'The guard is resting' : 'Standing guard'}
+                    </Text>
+                    <Text style={s.webStatusLine} numberOfLines={1}>
                       {packsOn} {packsOn === 1 ? 'pack' : 'packs'} · {customSites} custom {customSites === 1 ? 'site' : 'sites'} blocked
                     </Text>
                   </View>
-                  <View style={s.miniValueBlock}>
-                    <Text style={[s.miniValue, { color: webActive ? '#2C7565' : '#65548E' }]} numberOfLines={1}>
-                      {webActive ? 'On' : 'Preview'}
-                    </Text>
-                    <Text style={[s.miniValueCaption, { color: '#3D8273' }]} numberOfLines={1}>
-                      {state.purity.locks.locked
-                        ? 'HARD LOCKED'
-                        : state.purity.locks.enabled
-                          ? 'HARD LOCK'
-                          : 'SYSTEM-WIDE'}
-                    </Text>
+                  <GuardedSightEmblem active={webState !== 'off'} />
+                </View>
+                <View style={s.webRule}>
+                  <View style={s.webRuleLine} />
+                  <View style={s.webRuleCross}>
+                    <View style={s.webRuleCrossH} />
+                    <View style={s.webRuleCrossV} />
                   </View>
+                  <View style={s.webRuleLine} />
+                </View>
+                <View style={s.webStateRow}>
+                  {webState === 'on' ? (
+                    <PulseDot size={5} color="#2C7565" />
+                  ) : (
+                    <View style={[s.webStateDot, webState === 'preview' && s.webStateDotPreview]} />
+                  )}
+                  <Text style={[
+                    s.webStateText,
+                    webState === 'preview' && s.webStateTextPreview,
+                    webState === 'off' && s.webStateTextOff,
+                  ]}>
+                    {webState === 'on' ? 'ON' : webState === 'preview' ? 'PREVIEW' : 'OFF'}
+                  </Text>
+                  <Text style={s.webStateCaption} numberOfLines={1}>
+                    {state.purity.locks.locked
+                      ? 'HARD LOCKED'
+                      : state.purity.locks.enabled
+                        ? 'HARD LOCK'
+                        : 'SYSTEM-WIDE'}
+                  </Text>
                 </View>
               </TouchableOpacity>
             </View>
@@ -631,7 +804,7 @@ export default function FocusWatchView() {
 
             <View style={s.progressHeroRow}>
               <View style={s.progressMedallion}>
-                <StreakMedallion value={state.streak.current} />
+                <StreakMedallion value={100} />
               </View>
               <RadiantTrophy size={76} />
             </View>
@@ -856,23 +1029,64 @@ const s = StyleSheet.create({
   protectionRowValueCaption: { marginTop: 1, fontFamily: F.sansBold, fontSize: 6.5, letterSpacing: 0.9, color: C.textMuted },
   pillarBlock: { marginTop: 14 },
   pillarLabel: { marginBottom: 7, marginLeft: 2, fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2, color: C.textMuted },
-  miniCard: {
+  // Web Protection card — the veiled watch. Unique to the web pillar: lattice
+  // surface, the eye behind a half-drawn veil, a sentinel patrolling the ring
+  // while the guard stands; everything still and open when it rests.
+  webCard: {
     position: 'relative',
     overflow: 'hidden',
-    borderRadius: 20,
+    borderRadius: 22,
     borderCurve: 'continuous',
     borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    boxShadow: '0 5px 14px rgba(57, 48, 34, 0.06)',
+    borderColor: '#B7D8CA',
+    paddingHorizontal: 15,
+    paddingTop: 13,
+    paddingBottom: 13,
+    boxShadow: '0 6px 16px rgba(34, 61, 51, 0.07)',
   },
-  miniTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  miniCopy: { flex: 1, minWidth: 0 },
-  miniName: { fontFamily: F.serifSemiBold, fontSize: 20, lineHeight: 24, letterSpacing: -0.25 },
-  miniStatus: { marginTop: 3, fontFamily: F.serif, fontSize: 14, lineHeight: 18 },
-  miniValueBlock: { maxWidth: 110, alignItems: 'flex-end' },
-  miniValue: { fontFamily: F.serifSemiBold, fontSize: 19, fontVariant: ['tabular-nums'] },
-  miniValueCaption: { marginTop: 1.5, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
+  webCardOff: {
+    borderColor: '#CFDCD5',
+    boxShadow: '0 4px 12px rgba(34, 61, 51, 0.05)',
+  },
+  webBloom: { position: 'absolute', right: -30, top: -38, width: 118, height: 118, borderRadius: 59, backgroundColor: 'rgba(61,130,115,0.07)' },
+  webBloomOn: { backgroundColor: 'rgba(61,130,115,0.15)' },
+  webHeroRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 64 },
+  webCopy: { flex: 1, minWidth: 0 },
+  webKicker: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.8, color: '#2D7967' },
+  webName: { marginTop: 2.5, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 25, letterSpacing: -0.25, color: '#1F4E45' },
+  webNameOff: { color: 'rgba(31,78,69,0.72)' },
+  webStatusLine: { marginTop: 2.5, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17, color: '#3D8273' },
+  webEmblemStage: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center' },
+  webEmblemGlow: { position: 'absolute', left: 5, top: 5, width: 54, height: 54, borderRadius: 27, backgroundColor: 'rgba(61,130,115,0.06)' },
+  webEmblemGlowOn: { backgroundColor: 'rgba(61,130,115,0.16)' },
+  webEmblemDisc: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: '#B7D8CA',
+    backgroundColor: 'rgba(255,255,255,0.88)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#12271F',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  webEmblemDiscOff: { backgroundColor: 'rgba(255,255,255,0.62)', borderColor: 'rgba(183,216,202,0.72)', shadowOpacity: 0.05, elevation: 1 },
+  webRule: { marginTop: 10, marginBottom: 9, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  webRuleLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: '#CBE0D5' },
+  webRuleCross: { width: 7, height: 7, alignItems: 'center', justifyContent: 'center' },
+  webRuleCrossH: { position: 'absolute', width: 7, height: 1, borderRadius: 0.5, backgroundColor: '#2D7967', opacity: 0.65 },
+  webRuleCrossV: { position: 'absolute', width: 1, height: 7, borderRadius: 0.5, backgroundColor: '#2D7967', opacity: 0.65 },
+  webStateRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  webStateDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: 'rgba(42,110,95,0.4)' },
+  webStateDotPreview: { backgroundColor: '#7866A4' },
+  webStateText: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.2, color: '#2C7565' },
+  webStateTextPreview: { color: '#65548E' },
+  webStateTextOff: { color: 'rgba(31,78,69,0.55)' },
+  webStateCaption: { flex: 1, textAlign: 'right', fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1, color: '#3D8273' },
   // Today's plan card — the radiant-seal view of the plan (view two of the
   // set: hero dashboard / radiant today / bound library card).
   todayCard: {
