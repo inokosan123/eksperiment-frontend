@@ -1044,34 +1044,30 @@ const s = StyleSheet.create({
   legendDot: { width: 7, height: 7, borderRadius: 4 },
   legendText: { fontFamily: F.sansMedium, fontSize: 11, lineHeight: 13, color: '#918A80' },
 
-  // The hearth: dark velvet panel, hairline gold border, a whisper of light
-  // along its top edge.
+  // The hearth: a dark velvet track running the full width of the card —
+  // edge to edge, hairline gold rails top and bottom, the white footer of the
+  // card left untouched beneath it.
   hearth: {
     position: 'relative',
     overflow: 'hidden',
     marginTop: 14,
-    borderRadius: 20,
-    borderCurve: 'continuous',
-    borderWidth: 1,
+    marginHorizontal: -16,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
     borderColor: 'rgba(197,160,89,0.32)',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 13,
-    shadowColor: '#14100A',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.22,
-    shadowRadius: 12,
-    elevation: 4,
   },
   hearthSheen: {
     position: 'absolute',
     top: 0,
-    left: 14,
-    right: 14,
+    left: 16,
+    right: 16,
     height: 1,
     backgroundColor: 'rgba(255,244,214,0.14)',
   },
-  hearthGlint: { position: 'absolute', top: -24, bottom: -24, width: 76 },
+  hearthGlint: { position: 'absolute', top: -24, bottom: -24, width: 88 },
   dustWrap: { position: 'absolute' },
   dust: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#E8C87E' },
 
