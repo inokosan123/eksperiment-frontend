@@ -140,31 +140,31 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
             Year in Pixels medallion, so the number sits in the brightest pool.
             The canvas runs wider than the medallion so the bloom can spread. */}
         <Ellipse
-          cx={width * 0.55}
+          cx={width * 0.5}
           cy={height * 0.56}
           rx={width * 0.55}
           ry={height * 0.52}
           fill="#EBD5A0"
           opacity={0.8}
-          transform={`rotate(-5 ${width * 0.55} ${height * 0.56})`}
+          transform={`rotate(-5 ${width * 0.5} ${height * 0.56})`}
         />
         <Ellipse
-          cx={width * 0.57}
+          cx={width * 0.52}
           cy={height * 0.53}
           rx={width * 0.46}
           ry={height * 0.44}
           fill="#F5E5BE"
           opacity={0.85}
-          transform={`rotate(4 ${width * 0.57} ${height * 0.53})`}
+          transform={`rotate(4 ${width * 0.52} ${height * 0.53})`}
         />
         <Ellipse
-          cx={width * 0.54}
+          cx={width * 0.49}
           cy={height * 0.57}
           rx={width * 0.42}
           ry={height * 0.39}
           fill="#FFF8E4"
           opacity={0.95}
-          transform={`rotate(-3 ${width * 0.54} ${height * 0.57})`}
+          transform={`rotate(-3 ${width * 0.49} ${height * 0.57})`}
         />
         <Path
           d={`M ${size * 0.13 + width * 0.07} ${height * 0.82} C ${width * 0.43} ${height * 1.01}, ${width * 0.76} ${height * 0.97}, ${width * 1.0} ${height * 0.64}`}
