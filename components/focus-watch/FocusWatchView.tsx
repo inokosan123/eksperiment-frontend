@@ -499,7 +499,11 @@ export default function FocusWatchView() {
                       {webActive ? 'On' : 'Preview'}
                     </Text>
                     <Text style={[s.miniValueCaption, { color: '#3D8273' }]} numberOfLines={1}>
-                      {state.purity.locks.enabled ? 'STRICT WATCH' : 'ALWAYS ON'}
+                      {state.purity.locks.locked
+                        ? 'HARD LOCKED'
+                        : state.purity.locks.enabled
+                          ? 'HARD LOCK'
+                          : 'SYSTEM-WIDE'}
                     </Text>
                   </View>
                 </View>
@@ -547,12 +551,7 @@ export default function FocusWatchView() {
 
             <View style={s.progressHeroRow}>
               <View style={s.progressMedallion}>
-                <StreakMedallion value={state.streak.current} />
-                <View style={s.progressUnitRow}>
-                  <View style={s.progressUnitRule} />
-                  <Text style={s.progressUnitCaps}>{state.streak.current === 0 ? 'BEGINS TODAY' : 'DAY STREAK'}</Text>
-                  <View style={s.progressUnitRule} />
-                </View>
+                <StreakMedallion value={100} />
               </View>
               <RadiantTrophy size={76} />
             </View>
@@ -844,9 +843,6 @@ const s = StyleSheet.create({
   progressKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.goldDark },
   progressHeroRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 14, paddingRight: 22 },
   progressMedallion: { alignItems: 'center' },
-  progressUnitRow: { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  progressUnitRule: { width: 14, height: 1, borderRadius: 1, backgroundColor: 'rgba(169,134,63,0.45)' },
-  progressUnitCaps: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.2, color: C.goldDark },
   progressHeadline: { marginTop: 11, fontFamily: F.serif, fontSize: 14.5, lineHeight: 19, color: C.textSecondary, textAlign: 'center' },
   weekBand: {
     marginTop: 14,

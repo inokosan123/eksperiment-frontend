@@ -108,71 +108,178 @@ export function TrophyShineBackdrop() {
   );
 }
 
-// The streak count in the trophy's own language: no enclosing rim — just two
-// soft amber glow discs sitting BEHIND the serif number, deeper in tone than
-// the trophy's halo so the pair reads as one family, number left, cup right.
+// An open illustrated streak signature: the value and label stay readable,
+// while a small tilted trophy turns the metric into a quiet award moment.
+// There is deliberately no enclosing badge competing with the parent card.
 export function StreakMedallion({ value, size = 74 }: { value: number; size?: number }) {
-  const dormant = value === 0;
+  const normalizedValue = Math.max(0, Math.trunc(value));
+  const displayValue = normalizedValue >= 1_000_000
+    ? `${Math.floor(normalizedValue / 1_000_000)}M`
+    : normalizedValue >= 1_000
+      ? `${Math.floor(normalizedValue / 1_000)}K`
+      : String(normalizedValue);
+  const extraCharacters = Math.max(0, displayValue.length - 1);
+  const digitExpansion = extraCharacters * size * 0.28;
+  const dormant = normalizedValue === 0;
+  const width = size * 2.05 + digitExpansion;
+  const height = size * 0.92;
+
   return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width, height }}>
+      <Svg pointerEvents="none" width={width} height={height} style={StyleSheet.absoluteFill}>
+        <Path
+          d={`M ${size * 0.02} ${height * 0.56} C ${size * 0.1} ${height * 0.17}, ${width * 0.48} ${height * 0.03}, ${width * 0.78} ${height * 0.2} C ${width * 0.98} ${height * 0.31}, ${width * 1.01} ${height * 0.65}, ${width * 0.83} ${height * 0.82} C ${width * 0.62} ${height * 1.01}, ${width * 0.2} ${height * 0.94}, ${width * 0.04} ${height * 0.76} C ${-size * 0.02} ${height * 0.7}, ${-size * 0.03} ${height * 0.63}, ${size * 0.02} ${height * 0.56} Z`}
+          fill="#FFF4D8"
+          fillOpacity={0.72}
+        />
+        <Path
+          d={`M ${size * 0.13} ${height * 0.76} C ${width * 0.36} ${height * 0.95}, ${width * 0.69} ${height * 0.91}, ${width * 0.93} ${height * 0.58}`}
+          fill="none"
+          stroke={GOLD}
+          strokeOpacity={0.3}
+          strokeWidth={1.15}
+          strokeLinecap="round"
+        />
+        <Line
+          x1={size * 0.73 + digitExpansion}
+          y1={height * 0.26}
+          x2={size * 0.73 + digitExpansion}
+          y2={height * 0.72}
+          stroke={GOLD}
+          strokeOpacity={0.38}
+          strokeWidth={1}
+          strokeLinecap="round"
+        />
+      </Svg>
+
       <View
-        pointerEvents="none"
-        style={{
-          position: 'absolute',
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: 'rgba(197,160,89,0.16)',
-        }}
-      />
-      <View
-        pointerEvents="none"
-        style={{
-          position: 'absolute',
-          width: size * 0.72,
-          height: size * 0.72,
-          borderRadius: (size * 0.72) / 2,
-          backgroundColor: 'rgba(183,146,64,0.26)',
-        }}
-      />
-      <Text
-        style={[medallionStyles.value, dormant && medallionStyles.valueDormant]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.55}
+        style={[
+          medallionStyles.valueWell,
+          { left: size * 0.06, width: size * 0.62 + digitExpansion, height },
+        ]}
       >
-        {value}
-      </Text>
+        <Text
+          style={[
+            medallionStyles.value,
+            { fontSize: size * 0.63, lineHeight: size * 0.67 },
+            dormant && medallionStyles.valueDormant,
+          ]}
+          numberOfLines={1}
+        >
+          {displayValue}
+        </Text>
+      </View>
+
+      <View
+        style={[
+          medallionStyles.copy,
+          { left: size * 0.82 + digitExpansion, top: height * 0.27 },
+        ]}
+      >
+        <Text style={medallionStyles.eyebrow} numberOfLines={1}>
+          CURRENT
+        </Text>
+        <Text style={medallionStyles.label} numberOfLines={1}>
+          STREAK
+        </Text>
+        <View style={medallionStyles.copyRule} />
+      </View>
+
+      <View
+        pointerEvents="none"
+        style={[
+          medallionStyles.miniTrophy,
+          { right: size * 0.01, top: height * 0.17, width: size * 0.58, height: size * 0.58 },
+        ]}
+      >
+        <View
+          style={[
+            medallionStyles.miniTrophyGlow,
+            { width: size * 0.52, height: size * 0.52, borderRadius: size * 0.26 },
+          ]}
+        />
+        <Image
+          source={TROPHY_EMBLEM}
+          resizeMode="contain"
+          style={{ width: size * 0.45, height: size * 0.45, transform: [{ rotate: '-11deg' }] }}
+        />
+      </View>
+
+      <View pointerEvents="none" style={[medallionStyles.glint, { right: size * 0.03, top: height * 0.06 }]} />
+      <View pointerEvents="none" style={[medallionStyles.glintSmall, { right: size * 0.53, top: height * 0.12 }]} />
     </View>
   );
 }
 
 const medallionStyles = StyleSheet.create({
-  // Letterpress: a hair of white light under each stroke, as if the number
-  // were struck into the metal.
-  // Wide enough that even a 3-digit streak keeps its full size — the discs
-  // are a glow behind the number, not a frame it must fit inside.
-  // lining-nums matters here: EB Garamond's default old-style figures
-  // (3, 4, 7, 9) hang below the baseline and read off-center inside the
-  // disc; lining figures share one height and sit true.
+  valueWell: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   value: {
-    maxWidth: '94%',
+    width: '100%',
     fontFamily: F.serifSemiBold,
-    fontSize: 34,
-    lineHeight: 36,
-    letterSpacing: -0.4,
-    color: '#3D3322',
+    letterSpacing: -1,
+    color: '#4A3820',
     textAlign: 'center',
     textAlignVertical: 'center',
     includeFontPadding: false,
     fontVariant: ['lining-nums', 'tabular-nums'],
-    textShadowColor: 'rgba(255,255,255,0.85)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 0.5,
   },
-  // Before the first kept day the number waits: softer, not heavy.
   valueDormant: {
-    color: '#A08B58',
+    color: '#9A7F4D',
+  },
+  copy: {
+    position: 'absolute',
+    width: 56,
+    gap: 1,
+  },
+  eyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 8.2,
+    lineHeight: 10,
+    letterSpacing: 1.15,
+    color: 'rgba(121,89,30,0.72)',
+  },
+  label: {
+    fontFamily: F.sansBold,
+    fontSize: 12,
+    lineHeight: 14,
+    letterSpacing: 1.3,
+    color: '#6F5016',
+  },
+  copyRule: {
+    width: 27,
+    height: 1,
+    marginTop: 4,
+    borderRadius: 1,
+    backgroundColor: 'rgba(169,134,63,0.45)',
+  },
+  miniTrophy: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniTrophyGlow: {
+    position: 'absolute',
+    backgroundColor: 'rgba(224,190,116,0.3)',
+  },
+  glint: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 1.5,
+    backgroundColor: 'rgba(197,160,89,0.68)',
+    transform: [{ rotate: '45deg' }],
+  },
+  glintSmall: {
+    position: 'absolute',
+    width: 3,
+    height: 3,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.48)',
+    transform: [{ rotate: '45deg' }],
   },
 });
 
