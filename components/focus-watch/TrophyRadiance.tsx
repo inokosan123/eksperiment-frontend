@@ -119,9 +119,13 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
       ? `${Math.floor(normalizedValue / 1_000)}K`
       : String(normalizedValue);
   const extraCharacters = Math.max(0, displayValue.length - 1);
-  const digitExpansion = extraCharacters * size * 0.28;
+  const digitExpansion = extraCharacters === 0
+    ? 0
+    : size * 0.28 + Math.max(0, extraCharacters - 1) * size * 0.18;
+  const valueFontScale = displayValue.length >= 3 ? 0.59 : 0.63;
+  const ornamentSpacing = size * 0.16;
   const dormant = normalizedValue === 0;
-  const width = size * 2.05 + digitExpansion;
+  const width = size * 2.05 + digitExpansion + ornamentSpacing;
   const height = size * 0.92;
 
   return (
@@ -161,7 +165,7 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
         <Text
           style={[
             medallionStyles.value,
-            { fontSize: size * 0.63, lineHeight: size * 0.67 },
+            { fontSize: size * valueFontScale, lineHeight: size * 0.67 },
             dormant && medallionStyles.valueDormant,
           ]}
           numberOfLines={1}
@@ -189,7 +193,7 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
         pointerEvents="none"
         style={[
           medallionStyles.miniTrophy,
-          { right: size * 0.01, top: height * 0.17, width: size * 0.58, height: size * 0.58 },
+          { right: size * 0.05, top: height * 0.17, width: size * 0.58, height: size * 0.58 },
         ]}
       >
         <View
@@ -232,8 +236,9 @@ const medallionStyles = StyleSheet.create({
   },
   copy: {
     position: 'absolute',
-    width: 56,
+    width: 64,
     gap: 1,
+    zIndex: 1,
   },
   eyebrow: {
     fontFamily: F.sansBold,
