@@ -14,6 +14,7 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import { ChevronLeft, ChevronRight } from '@/components/icons/Icons';
+import HairlineWeave from '@/components/focus-watch/HairlineWeave';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { useJournal } from '@/components/journal/JournalContext';
 import {
@@ -70,6 +71,22 @@ function tabFamily(type: TabType): 'gold' | 'purple' | 'teal' {
   if (type === 'morning_pages') return 'purple';
   if (type === 'free_writing') return 'teal';
   return 'gold';
+}
+
+// Resting chips wear their family's card tints; every chip carries its own
+// micro-spectrum — five tones for the scales, one gem for the techniques —
+// so the picker reads at a glance.
+const TAB_TINTS: Record<'gold' | 'purple' | 'teal', { bg: string; border: string; ink: string }> = {
+  gold: { bg: '#FBF3DE', border: '#F0E3B8', ink: '#A9863F' },
+  purple: { bg: '#EEEAF5', border: '#DDD5ED', ink: '#6D5AAE' },
+  teal: { bg: '#E1F1EC', border: '#C8E6DD', ink: '#3D8273' },
+};
+
+function tabDots(type: TabType): string[] {
+  if (type === 'morning_pages') return [PURPLE];
+  if (type === 'free_writing') return [TEAL];
+  if (type === 'daily_journal') return [GOLD];
+  return MOOD_COLORS.slice(1);
 }
 
 const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
@@ -370,36 +387,94 @@ export default function YearInPixelsView() {
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Year masthead — the engraved line the calendar wears, with the
-            same soft-square arrows. */}
-        <Reanimated.View entering={enter(0)} style={s.yearRow}>
-          <TouchableOpacity
-            onPress={goPrevYear}
-            disabled={!canPrevYear}
-            activeOpacity={0.7}
-            style={[s.yearBtn, !canPrevYear && s.yearBtnDisabled]}
-            hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
-          >
-            <ChevronLeft s={19} c={canPrevYear ? '#9A6B1E' : '#D6D3D1'} w={2.3} />
-          </TouchableOpacity>
-          <View style={s.yearCenter}>
-            <View style={s.yearRule} />
-            <Text style={s.yearText}>{year}</Text>
-            <View style={s.yearRule} />
+        {/* The year plate: one rich gold card carrying the year, its
+            navigation, the tracked-days instrument, and the spectrum — the
+            plan-card grammar (gradient, weave, bloom) brought to the journal. */}
+        <Reanimated.View entering={enter(0)} style={s.plate}>
+          <LinearGradient
+            colors={['#F2DEAA', '#FFF6DF', '#FFFDF8']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+          <HairlineWeave color="#98691B" />
+          <View pointerEvents="none" style={s.plateBloom} />
+
+          <View style={s.plateNav}>
+            <TouchableOpacity
+              onPress={goPrevYear}
+              disabled={!canPrevYear}
+              activeOpacity={0.7}
+              style={[s.plateBtn, !canPrevYear && s.plateBtnDisabled]}
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+            >
+              <ChevronLeft s={19} c={canPrevYear ? '#98691B' : '#D5C7A4'} w={2.3} />
+            </TouchableOpacity>
+            <View style={s.plateYearCenter}>
+              <View style={s.plateRule} />
+              <Text style={s.plateYear}>{year}</Text>
+              <View style={s.plateRule} />
+            </View>
+            <TouchableOpacity
+              onPress={goNextYear}
+              disabled={!canNextYear}
+              activeOpacity={0.7}
+              style={[s.plateBtn, !canNextYear && s.plateBtnDisabled]}
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+            >
+              <ChevronRight s={19} c={canNextYear ? '#98691B' : '#D5C7A4'} w={2.3} />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            onPress={goNextYear}
-            disabled={!canNextYear}
-            activeOpacity={0.7}
-            style={[s.yearBtn, !canNextYear && s.yearBtnDisabled]}
-            hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
-          >
-            <ChevronRight s={19} c={canNextYear ? '#9A6B1E' : '#D6D3D1'} w={2.3} />
-          </TouchableOpacity>
+
+          <View style={s.plateStatsRow}>
+            <View style={s.plateLeft}>
+              <Text style={s.plateEyebrow}>DAYS TRACKED</Text>
+              <View style={s.plateNumRow}>
+                <Text style={s.plateBigNum}>{coloredCount}</Text>
+                <Text style={s.plateNumOf}> / {daysAvailable}</Text>
+              </View>
+              <Text style={s.plateMeta}>
+                {activeTab.label.toLowerCase()} days this year so far
+              </Text>
+              <Text style={s.plateSubMeta}>
+                {filledDays} {filledDays === 1 ? 'journal entry' : 'journal entries'} in {year}
+              </Text>
+            </View>
+            <View style={s.heroRing}>
+              <ProgressRing percent={fillPercent} redrawKey={redrawKey} />
+              <View style={s.heroRingCenter} pointerEvents="none">
+                <Text style={s.heroRingPct}>
+                  {fillPercent}
+                  <Text style={s.heroRingPctSmall}>%</Text>
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {distribution != null && coloredCount > 0 && (
+            <View style={s.spectrumWrap}>
+              <View style={s.spectrumBar}>
+                {distribution.map((count, index) => (
+                  count > 0
+                    ? <View key={index} style={[s.spectrumSegment, { flex: count, backgroundColor: MOOD_COLORS[index + 1] }]} />
+                    : null
+                ))}
+              </View>
+              <View style={s.spectrumCounts}>
+                {distribution.map((count, index) => (
+                  <View key={index} style={[s.countChip, count === 0 && s.countChipZero]}>
+                    <View style={[s.countGem, { backgroundColor: MOOD_COLORS[index + 1] }]} />
+                    <Text style={s.countNum}>{count}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
         </Reanimated.View>
 
-        {/* Scale picker */}
-        <Reanimated.View entering={enter(50)}>
+        {/* Scale picker — the gem rail: every chip carries its spectrum */}
+        <Reanimated.View entering={enter(60)}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -407,6 +482,8 @@ export default function YearInPixelsView() {
           >
             {tabs.map(tab => {
               const active = tab.id === activeTabId;
+              const tint = TAB_TINTS[tabFamily(tab.type)];
+              const dots = tabDots(tab.type);
               if (active) {
                 return (
                   <TouchableOpacity
@@ -424,7 +501,14 @@ export default function YearInPixelsView() {
                       style={[s.tabPill, s.tabPillActive]}
                     >
                       <View pointerEvents="none" style={s.tabSheen} />
-                      <Text style={[s.tabLabel, s.tabLabelActive]} numberOfLines={1}>{tab.label}</Text>
+                      <View style={s.tabInner}>
+                        <View style={s.tabDots}>
+                          {dots.map((dot, i) => (
+                            <View key={i} style={[s.tabDot, s.tabDotActive, { backgroundColor: dot }]} />
+                          ))}
+                        </View>
+                        <Text style={[s.tabLabel, s.tabLabelActive]} numberOfLines={1}>{tab.label}</Text>
+                      </View>
                     </LinearGradient>
                   </TouchableOpacity>
                 );
@@ -437,53 +521,20 @@ export default function YearInPixelsView() {
                   style={s.tabPress}
                   haptic="selection"
                 >
-                  <View style={s.tabPill}>
-                    <Text style={s.tabLabel} numberOfLines={1}>{tab.label}</Text>
+                  <View style={[s.tabPill, { backgroundColor: tint.bg, borderColor: tint.border }]}>
+                    <View style={s.tabInner}>
+                      <View style={s.tabDots}>
+                        {dots.map((dot, i) => (
+                          <View key={i} style={[s.tabDot, { backgroundColor: dot }]} />
+                        ))}
+                      </View>
+                      <Text style={[s.tabLabel, { color: tint.ink }]} numberOfLines={1}>{tab.label}</Text>
+                    </View>
                   </View>
                 </TouchableOpacity>
               );
             })}
           </ScrollView>
-        </Reanimated.View>
-
-        {/* The instrument: tracked days, the drawing ring, the spectrum band */}
-        <Reanimated.View entering={enter(100)} style={s.heroCard}>
-          <View style={s.heroTopRow}>
-            <View style={s.heroLeft}>
-              <Text style={s.heroEyebrow}>DAYS TRACKED</Text>
-              <View style={s.heroNumRow}>
-                <Text style={s.heroBigNum}>{coloredCount}</Text>
-                <Text style={s.heroNumOf}> / {daysAvailable}</Text>
-              </View>
-              <Text style={s.heroMeta}>
-                {activeTab.label.toLowerCase()} days this year so far
-              </Text>
-              <Text style={s.heroSubMeta}>
-                {filledDays} {filledDays === 1 ? 'journal entry' : 'journal entries'} in {year}
-              </Text>
-            </View>
-            <View style={s.heroRing}>
-              <ProgressRing percent={fillPercent} redrawKey={redrawKey} />
-              <View style={s.heroRingCenter} pointerEvents="none">
-                <Text style={s.heroRingPct}>
-                  {fillPercent}
-                  <Text style={s.heroRingPctSmall}>%</Text>
-                </Text>
-              </View>
-            </View>
-          </View>
-          {distribution != null && coloredCount > 0 && (
-            <View style={s.spectrumWrap}>
-              <View style={s.spectrumBar}>
-                {distribution.map((count, index) => (
-                  count > 0
-                    ? <View key={index} style={[s.spectrumSegment, { flex: count, backgroundColor: MOOD_COLORS[index + 1] }]} />
-                    : null
-                ))}
-              </View>
-              <Text style={s.spectrumCaption}>THE YEAR’S SPECTRUM</Text>
-            </View>
-          )}
         </Reanimated.View>
 
         {/* The painting: the year in its gold fillet frame, legend as the
@@ -496,6 +547,10 @@ export default function YearInPixelsView() {
             </Text>
           </View>
           <View style={s.frame}>
+            <View pointerEvents="none" style={[s.frameNail, { top: 5, left: 5 }]} />
+            <View pointerEvents="none" style={[s.frameNail, { top: 5, right: 5 }]} />
+            <View pointerEvents="none" style={[s.frameNail, { bottom: 5, left: 5 }]} />
+            <View pointerEvents="none" style={[s.frameNail, { bottom: 5, right: 5 }]} />
             {months.map((month, monthIndex) => (
               <Reanimated.View
                 key={`${redrawKey}-${month.name}`}
@@ -593,39 +648,101 @@ const s = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 80, paddingTop: 2, rowGap: 12 },
 
-  yearRow: {
+  // The year plate — plan-card grammar on the journal page.
+  plate: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 26,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#DFC177',
+    paddingHorizontal: 16,
+    paddingTop: 13,
+    paddingBottom: 15,
+    shadowColor: '#8C7A4F',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  plateBloom: {
+    position: 'absolute',
+    right: -38,
+    top: -46,
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    backgroundColor: 'rgba(197,160,89,0.16)',
+  },
+  plateNav: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 2,
-    paddingHorizontal: 2,
   },
-  yearBtn: {
-    width: 36,
-    height: 36,
+  plateBtn: {
+    width: 37,
+    height: 37,
     borderRadius: 13,
     borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFAEF',
+    backgroundColor: 'rgba(255,255,255,0.85)',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.38)',
-    shadowColor: GOLD,
+    borderColor: 'rgba(152,105,27,0.32)',
+    shadowColor: '#8C7A4F',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.16,
+    shadowOpacity: 0.14,
     shadowRadius: 4,
     elevation: 1,
   },
-  yearBtnDisabled: { opacity: 0.38, backgroundColor: '#FFFFFF', borderColor: '#F0EDE6', shadowOpacity: 0, elevation: 0 },
-  yearCenter: { flexDirection: 'row', alignItems: 'center', columnGap: 10 },
-  yearRule: { width: 22, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(154,107,30,0.5)' },
-  yearText: {
+  plateBtnDisabled: { opacity: 0.4, shadowOpacity: 0, elevation: 0 },
+  plateYearCenter: { flexDirection: 'row', alignItems: 'center', columnGap: 11 },
+  plateRule: { width: 24, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(122,83,16,0.55)' },
+  plateYear: {
     fontFamily: F.serifSemiBold,
-    fontSize: 25,
-    lineHeight: 30,
-    color: INK,
+    fontSize: 31,
+    lineHeight: 36,
+    color: '#59400F',
     textAlign: 'center',
     letterSpacing: 0.6,
+  },
+  plateStatsRow: { marginTop: 10, flexDirection: 'row', alignItems: 'center', columnGap: 18 },
+  plateLeft: { flex: 1, minWidth: 0 },
+  plateEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 2,
+    color: '#98691B',
+    textTransform: 'uppercase',
+  },
+  plateNumRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 6 },
+  plateBigNum: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 35,
+    lineHeight: 39,
+    color: '#59400F',
+    letterSpacing: 0.2,
+    fontVariant: ['tabular-nums'],
+  },
+  plateNumOf: {
+    fontFamily: F.serifMedium,
+    fontSize: 17,
+    color: '#9C8455',
+    fontVariant: ['tabular-nums'],
+  },
+  plateMeta: {
+    marginTop: 3,
+    fontFamily: F.serif,
+    fontSize: 12.5,
+    lineHeight: 17,
+    color: '#796333',
+  },
+  plateSubMeta: {
+    marginTop: 1,
+    fontFamily: F.serifItalic,
+    fontSize: 11.5,
+    lineHeight: 15,
+    color: '#9C8455',
   },
 
   tabsRow: {
@@ -635,8 +752,8 @@ const s = StyleSheet.create({
   },
   tabPress: { borderRadius: 18 },
   tabPill: {
-    minHeight: 36,
-    paddingHorizontal: 16,
+    minHeight: 37,
+    paddingHorizontal: 14,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
@@ -645,6 +762,13 @@ const s = StyleSheet.create({
     borderColor: '#EEE9E0',
     overflow: 'hidden',
     position: 'relative',
+  },
+  tabInner: { flexDirection: 'row', alignItems: 'center', columnGap: 7 },
+  tabDots: { flexDirection: 'row', alignItems: 'center', columnGap: 2.5 },
+  tabDot: { width: 4.5, height: 4.5, borderRadius: 2.5 },
+  tabDotActive: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.75)',
   },
   tabPillActive: {
     borderWidth: 0,
@@ -685,57 +809,6 @@ const s = StyleSheet.create({
     elevation: 1,
   },
 
-  heroCard: {
-    borderRadius: 24,
-    borderCurve: 'continuous',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#EFE9DD',
-    padding: 18,
-    shadowColor: '#1C1917',
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-    elevation: 1,
-  },
-  heroTopRow: { flexDirection: 'row', alignItems: 'center', columnGap: 18 },
-  heroLeft: { flex: 1, minWidth: 0 },
-  heroEyebrow: {
-    fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 2,
-    color: GOLD,
-    textTransform: 'uppercase',
-  },
-  heroNumRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 7 },
-  heroBigNum: {
-    fontFamily: F.serifSemiBold,
-    fontSize: 34,
-    lineHeight: 38,
-    color: INK,
-    letterSpacing: 0.2,
-    fontVariant: ['tabular-nums'],
-  },
-  heroNumOf: {
-    fontFamily: F.serifMedium,
-    fontSize: 17,
-    color: '#B5A990',
-    fontVariant: ['tabular-nums'],
-  },
-  heroMeta: {
-    marginTop: 3,
-    fontFamily: F.serif,
-    fontSize: 12.5,
-    lineHeight: 17,
-    color: '#9C948C',
-  },
-  heroSubMeta: {
-    marginTop: 1,
-    fontFamily: F.serifItalic,
-    fontSize: 11.5,
-    lineHeight: 15,
-    color: '#B5A990',
-  },
   heroRing: {
     width: 84,
     height: 84,
@@ -760,19 +833,27 @@ const s = StyleSheet.create({
     fontSize: 12,
     color: '#9A6B1E',
   },
-  spectrumWrap: { marginTop: 14 },
+  spectrumWrap: { marginTop: 13 },
   spectrumBar: {
-    height: 10,
+    height: 11,
     flexDirection: 'row',
     columnGap: 2,
   },
-  spectrumSegment: { borderRadius: 3 },
-  spectrumCaption: {
-    marginTop: 6,
+  spectrumSegment: { borderRadius: 3.5 },
+  spectrumCounts: {
+    marginTop: 7,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+  },
+  countChip: { flexDirection: 'row', alignItems: 'center', columnGap: 4 },
+  countChipZero: { opacity: 0.35 },
+  countGem: { width: 8, height: 8, borderRadius: 2.5 },
+  countNum: {
     fontFamily: F.sansBold,
-    fontSize: 7.5,
-    letterSpacing: 1.6,
-    color: '#B9AE97',
+    fontSize: 10,
+    color: '#796333',
+    fontVariant: ['tabular-nums'],
   },
 
   plaqueRow: {
@@ -794,16 +875,25 @@ const s = StyleSheet.create({
     fontSize: 12,
     color: '#B5A990',
   },
-  // The gold fillet: a fine inner frame the year hangs inside.
+  // The gold fillet: a fine inner frame the year hangs inside, with nail
+  // heads in the corners.
   frame: {
+    position: 'relative',
     borderRadius: 16,
     borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(197,160,89,0.45)',
+    borderColor: 'rgba(197,160,89,0.5)',
     backgroundColor: '#FFFEFB',
     paddingHorizontal: 10,
     paddingVertical: 11,
     rowGap: 8,
+  },
+  frameNail: {
+    position: 'absolute',
+    width: 3.5,
+    height: 3.5,
+    borderRadius: 2,
+    backgroundColor: 'rgba(154,107,30,0.5)',
   },
 
   monthRow: { flexDirection: 'row', alignItems: 'flex-start', columnGap: 10 },
