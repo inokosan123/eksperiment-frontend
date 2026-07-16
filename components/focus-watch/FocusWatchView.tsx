@@ -435,13 +435,9 @@ export default function FocusWatchView() {
   const essentialsNow = !!plan && !plan.essentialsOnly
     && (hardWallActive || todayStanding === 'essentials');
 
-  // Session-plan facts: how long this Session still runs and what follows it.
-  // Sessions carry no boundaries of their own on this card — the global
-  // Screen Time border is the only one that counts here.
-  const nowMinutesOfDay = now.getHours() * 60 + now.getMinutes();
-  const sessionMinutesLeft = session
-    ? Math.max(1, (((session.endMinutes - nowMinutesOfDay) % 1440) + 1440) % 1440)
-    : null;
+  // Session-plan facts: which Session runs and what follows it. Sessions
+  // carry no boundaries of their own on this card — the global Screen Time
+  // border is the only one that counts here.
   const sessionZones = plan?.kind === 'session' ? plan.zones : [];
   const nextSession = session && sessionZones.length > 1
     ? sessionZones[(sessionZones.findIndex(zone => zone.id === session.id) + 1) % sessionZones.length]
@@ -639,6 +635,35 @@ export default function FocusWatchView() {
                                 : `${session!.name} is running`}
                         </Text>
                       )}
+                      {(usedToday != null || (!essentialsOnly && targetMinutes != null)) && (
+                        <View style={s.todaySpentRow}>
+                          {!essentialsOnly && targetMinutes != null && (
+                            <View style={[s.todaySpentRail, { backgroundColor: visual.track }]}>
+                              <View
+                                style={[
+                                  s.todaySpentFill,
+                                  {
+                                    backgroundColor: screenTimeNumbersColor,
+                                    width: usedToday
+                                      ? Math.max(4, Math.min(1, usedToday / targetMinutes) * 46)
+                                      : 0,
+                                  },
+                                ]}
+                              />
+                            </View>
+                          )}
+                          <Text numberOfLines={1}>
+                            <Text style={[s.todaySpentValue, { color: screenTimeNumbersColor }]}>
+                              {usedToday == null ? '– –' : formatMinutesShort(usedToday)}
+                            </Text>
+                            <Text style={[s.todaySpentMeta, { color: visual.body }]}>
+                              {!essentialsOnly && targetMinutes != null
+                                ? ` of ${formatMinutesShort(targetMinutes)}`
+                                : ' today'}
+                            </Text>
+                          </Text>
+                        </View>
+                      )}
                     </View>
                     {screenTimeValue != null && (
                       <View style={s.todayValueBlock}>
@@ -647,51 +672,6 @@ export default function FocusWatchView() {
                       </View>
                     )}
                   </View>
-                  <View style={s.todayRule}>
-                    <View style={[s.todayRuleLine, { backgroundColor: visual.border }]} />
-                    <View style={[s.todayRuleDiamond, { backgroundColor: visual.accent }]} />
-                    <View style={[s.todayRuleLine, { backgroundColor: visual.border }]} />
-                  </View>
-                  {plan.kind === 'session' && session && !essentialsOnly && sessionMinutesLeft != null ? (
-                    <View style={s.todayStatsRow}>
-                      <View style={s.todayStat}>
-                        <View style={s.todayStatValueRow}>
-                          <Text style={[s.todayUsed, { color: screenTimeNumbersColor }]} numberOfLines={1}>
-                            {usedToday == null ? '– –' : formatMinutesShort(usedToday)}
-                          </Text>
-                          {targetMinutes != null && (
-                            <Text style={[s.todayGoal, { color: visual.body }]} numberOfLines={1}> / {formatMinutesShort(targetMinutes)}</Text>
-                          )}
-                        </View>
-                        <Text style={[s.todayStatCaption, { color: visual.body }]} numberOfLines={1}>
-                          {targetMinutes == null ? 'PHONE TIME TODAY' : 'SCREEN TIME TODAY'}
-                        </Text>
-                      </View>
-                      <View style={[s.todayStatDivider, { backgroundColor: visual.accent }]} />
-                      <View style={s.todayStat}>
-                        <View style={s.todayStatValueRow}>
-                          <Text style={[s.todayUsed, { color: visual.ink }]} numberOfLines={1}>
-                            {formatMinutesShort(sessionMinutesLeft)}
-                          </Text>
-                        </View>
-                        <Text style={[s.todayStatCaption, { color: visual.body }]} numberOfLines={1}>
-                          LEFT IN {session.name.toUpperCase()}
-                        </Text>
-                      </View>
-                    </View>
-                  ) : (
-                    <View style={s.todayNumbersRow}>
-                      <Text style={[s.todayUsed, { color: screenTimeNumbersColor }]} numberOfLines={1}>
-                        {usedToday == null ? '– –' : formatMinutesShort(usedToday)}
-                      </Text>
-                      {!essentialsOnly && targetMinutes != null && (
-                        <Text style={[s.todayGoal, { color: visual.body }]} numberOfLines={1}> / {formatMinutesShort(targetMinutes)}</Text>
-                      )}
-                      <Text style={[s.todayNumbersCaption, { color: visual.body }]} numberOfLines={1}>
-                        {essentialsOnly || targetMinutes == null ? '  PHONE TIME TODAY' : '  SCREEN TIME TODAY'}
-                      </Text>
-                    </View>
-                  )}
                 </TouchableOpacity>
               </View>
             );
@@ -804,7 +784,7 @@ export default function FocusWatchView() {
 
             <View style={s.progressHeroRow}>
               <View style={s.progressMedallion}>
-                <StreakMedallion value={100} />
+                <StreakMedallion value={state.streak.current} />
               </View>
               <RadiantTrophy size={76} />
             </View>
@@ -1128,18 +1108,14 @@ const s = StyleSheet.create({
   todayValueBlock: { maxWidth: 104, alignItems: 'flex-end' },
   todayValue: { fontFamily: F.serifSemiBold, fontSize: 19, fontVariant: ['tabular-nums'] },
   todayValueCaption: { marginTop: 1.5, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
-  todayRule: { marginTop: 10, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  todayRuleLine: { flex: 1, height: StyleSheet.hairlineWidth },
-  todayRuleDiamond: { width: 4.5, height: 4.5, borderRadius: 1, opacity: 0.8, transform: [{ rotate: '45deg' }] },
-  todayNumbersRow: { flexDirection: 'row', alignItems: 'baseline', minWidth: 0 },
-  todayUsed: { fontFamily: F.serifSemiBold, fontSize: 27, lineHeight: 30, fontVariant: ['tabular-nums'] },
-  todayGoal: { fontFamily: F.serifMedium, fontSize: 16, fontVariant: ['tabular-nums'] },
-  todayNumbersCaption: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
-  todayStatsRow: { flexDirection: 'row', alignItems: 'center' },
-  todayStat: { flex: 1, minWidth: 0, paddingRight: 8 },
-  todayStatValueRow: { flexDirection: 'row', alignItems: 'baseline', minWidth: 0 },
-  todayStatCaption: { marginTop: 2.5, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
-  todayStatDivider: { width: 1, height: 34, marginRight: 12, borderRadius: 1, opacity: 0.4 },
+  // The spent line: the hero gauge in miniature — a tiny rail in the plan's
+  // own track color, filled in the live state color, then the numbers in
+  // words. No caption needed; "of 3h" carries it.
+  todaySpentRow: { marginTop: 5, flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
+  todaySpentRail: { width: 46, height: 3, borderRadius: 1.5, overflow: 'hidden' },
+  todaySpentFill: { height: 3, borderRadius: 1.5 },
+  todaySpentValue: { fontFamily: F.serifSemiBold, fontSize: 14.5, fontVariant: ['tabular-nums'] },
+  todaySpentMeta: { fontFamily: F.serif, fontSize: 12.5 },
   quietButton: { marginTop: 16 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
   sectionTitle: {
