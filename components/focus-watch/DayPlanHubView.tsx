@@ -24,6 +24,7 @@ import AlwaysBlockedSheet from './AlwaysBlockedSheet';
 import EssentialAppsSheet from './EssentialAppsSheet';
 import FocusCheck from './FocusCheck';
 import FocusSheetHeader from './FocusSheetHeader';
+import HairlineWeave from './HairlineWeave';
 import ZoneClock from './ZoneClock';
 import DayGauge, { gaugeStanding, gaugeStateColor } from './DayGauge';
 import PlanCardBackdrop from './PlanCardBackdrop';
@@ -576,11 +577,24 @@ function PlanCard({
       accessibilityLabel={`Open and edit ${plan.name}`}
     >
       <LinearGradient colors={visual.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-      <PlanCardBackdrop visual={visual} compact />
+      <HairlineWeave color={visual.accent} />
+      <View pointerEvents="none" style={[s.planCardBloom, { backgroundColor: visual.bloom }]} />
+      {/* The bound edge: each saved plan sits on the shelf like a labeled
+          volume — the spine is the plan's own accent. */}
+      <View pointerEvents="none" style={[s.planSpine, { backgroundColor: visual.accent }]}>
+        <View style={s.planSpineEdge} />
+      </View>
 
       <View style={s.planCardRow}>
-        <View style={[s.planCardSeal, { backgroundColor: visual.accentSoft, borderColor: visual.border }]}>
-          {isSession ? <ZoneClock zones={plan.zones} size={44} compact /> : <Shield s={22} c={visual.accent} w={1.9} />}
+        <View style={[s.planCardSeal, { borderColor: visual.border }]}>
+          {isSession ? (
+            <ZoneClock zones={plan.zones} size={40} compact />
+          ) : (
+            <>
+              <View style={[s.planCardSealRing, { borderColor: visual.accent }]} />
+              <Shield s={20} c={visual.accent} w={1.9} />
+            </>
+          )}
         </View>
         <View style={s.planCardCopy}>
           <View style={s.planCardNameRow}>
@@ -601,6 +615,7 @@ function PlanCard({
           {days.length > 0 ? 'ACTIVE THIS WEEK' : 'NOT ON YOUR WEEK YET'}
         </Text>
         <View style={s.planDayRow}>
+          <View pointerEvents="none" style={[s.planDayRail, { backgroundColor: visual.accent }]} />
           {DAY_LETTERS.map((letter, index) => {
             const active = days.includes(index);
             return (
@@ -897,9 +912,22 @@ const s = StyleSheet.create({
   plansHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, marginBottom: 8 },
   plansCount: { fontFamily: F.sansMedium, fontSize: 10, color: C.textMuted },
   planList: { gap: 12 },
-  planCard: { position: 'relative', borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, overflow: 'hidden', paddingHorizontal: 15, paddingTop: 14, paddingBottom: 13, boxShadow: '0 7px 20px rgba(57, 48, 34, 0.08)' },
+  planCard: { position: 'relative', borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, overflow: 'hidden', paddingLeft: 21, paddingRight: 15, paddingTop: 14, paddingBottom: 13, boxShadow: '0 7px 20px rgba(57, 48, 34, 0.08)' },
+  planCardBloom: { position: 'absolute', right: -34, top: -44, width: 132, height: 132, borderRadius: 66, opacity: 0.5 },
+  planSpine: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 7 },
+  planSpineEdge: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 1.2, backgroundColor: 'rgba(255,255,255,0.45)' },
   planCardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  planCardSeal: { flexShrink: 0, width: 50, height: 50, borderRadius: 17, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  planCardSeal: {
+    flexShrink: 0,
+    width: 47,
+    height: 47,
+    borderRadius: 23.5,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.86)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  planCardSealRing: { position: 'absolute', left: 3.5, top: 3.5, right: 3.5, bottom: 3.5, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, opacity: 0.45 },
   planCardCopy: { flex: 1, minWidth: 0 },
   planCardNameRow: { flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
   planCardName: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 20, lineHeight: 23, letterSpacing: -0.25 },
@@ -908,7 +936,8 @@ const s = StyleSheet.create({
   planCardMeta: { marginTop: 3, fontFamily: F.sansMedium, fontSize: 10.5, lineHeight: 14, fontVariant: ['tabular-nums'] },
   planCardWeek: { marginTop: 12, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10 },
   planScheduleLabel: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.3 },
-  planDayRow: { marginTop: 7, flexDirection: 'row', justifyContent: 'space-between' },
+  planDayRow: { position: 'relative', marginTop: 7, flexDirection: 'row', justifyContent: 'space-between' },
+  planDayRail: { position: 'absolute', left: 12, right: 12, top: 14.5, height: 1, opacity: 0.22 },
   planDayCircle: { width: 30, height: 30, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   planDayLetter: { fontFamily: F.sansBold, fontSize: 10.5 },
   planDayLetterOn: { color: '#FFFFFF' },
