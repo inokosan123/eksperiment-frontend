@@ -7554,10 +7554,10 @@ function DayWasteRevealLayer({
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settledForStepRef = useRef(false);
-  // The room darkens a step with every beat (dusk), the number's landing
-  // blooms an ember behind it and dips the whole stage (weight), and the
-  // final beat recedes into depth (closeT) while the summary header rises.
-  const dusk = useSharedValue(0);
+  // The number's landing blooms an ember behind it and dips the whole
+  // stage (weight); the final beat recedes into depth (closeT) while the
+  // summary header rises. The ground stays the same light parchment as
+  // the summary and reclaim screens - one bright stage throughout.
   const dip = useSharedValue(0);
   const ember = useSharedValue(0);
   const closeT = useSharedValue(0);
@@ -7617,11 +7617,6 @@ function DayWasteRevealLayer({
     return undefined;
   }, [ember, step.key]);
 
-  // Dusk crescendo: each beat darkens the room another step.
-  useEffect(() => {
-    dusk.value = withTiming(stepIndex / 2, { duration: 820, easing: Easing.inOut(Easing.quad) });
-  }, [dusk, stepIndex]);
-
   // First beat rises after the layer settles on stage — a calmer arrival,
   // since this one carries the learning of the whole format.
   useEffect(() => {
@@ -7676,9 +7671,6 @@ function DayWasteRevealLayer({
     }, steps[stepIndex]?.holdMs ?? 1700);
   }, [closeT, dip, ember, onDone, stepIndex, steps, swapDir, swapT]);
 
-  const duskStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(dusk.value, [0, 0.5, 1], [0, 0.05, 0.115]),
-  }));
   const stageDipStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: dip.value }],
   }));
@@ -7742,9 +7734,6 @@ function DayWasteRevealLayer({
         },
       ]}
     >
-      {/* The room darkens a step with each beat */}
-      <Reanimated.View pointerEvents="none" style={[s.dayWasteRevealDusk, duskStyle]} />
-
       <Reanimated.View style={[s.dayWasteRevealStage, stageDipStyle]}>
         <Reanimated.View
           entering={FadeIn.duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
@@ -27206,10 +27195,6 @@ const s = StyleSheet.create({
     backgroundColor: '#FFFDF8',
     zIndex: 17,
     alignItems: 'center',
-  },
-  dayWasteRevealDusk: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#17130F',
   },
   dayWasteRevealStage: {
     flex: 1,
