@@ -1,7 +1,7 @@
 import { StyleProp, ViewStyle } from 'react-native';
 import LottieView from 'lottie-react-native';
 
-export type FocusAnimation = 'flame' | 'fire' | 'sandy' | 'sandy-work' | 'meru-book' | 'target' | 'confetti';
+export type FocusAnimation = 'flame' | 'fire' | 'sandy' | 'sandy-work' | 'meru-book' | 'target';
 type ColorFilter = { keypath: string; color: string };
 
 const sources: Record<FocusAnimation, any> = {
@@ -11,7 +11,6 @@ const sources: Record<FocusAnimation, any> = {
   'sandy-work': require('@/assets/animations/sandy-work.json'),
   'meru-book': require('@/assets/animations/meru-book.json'),
   target: require('@/assets/animations/target.json'),
-  confetti: require('@/assets/animations/onboarding-confetti.json'),
 };
 
 export default function FocusLottie({

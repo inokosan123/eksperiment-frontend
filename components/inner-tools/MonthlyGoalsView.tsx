@@ -9,24 +9,30 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 import Reanimated, {
+  cancelAnimation,
   Easing,
   useAnimatedProps,
+  useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
+  withDelay,
+  withRepeat,
   withTiming,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { CheckSmall, ChevronLeft, ChevronRight, Plus, Trash2 } from '@/components/icons/Icons';
+import { ChevronLeft, ChevronRight, Plus, Trash2 } from '@/components/icons/Icons';
 import { useMonthlyGoals } from '@/components/inner-tools/MonthlyGoalsContext';
 import {
-  AnimatedGoalCheck,
+  AnimatedSealCheck,
   AnimatedStrikeText,
   fireGoalToggleHaptic,
   GoalCompletionConfetti,
+  StaticSealCheck,
 } from '@/components/inner-tools/MonthlyGoalRow';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
@@ -79,17 +85,107 @@ function formatMonthFull(month: string) {
 
 const MONTH_LABELS_SHORT = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
-/* ── The month's seal ─────────────────────────────────────── */
-// A ring seal carrying the month's count: the track is a quiet gold
-// hairline, the fill sweeps as intentions are kept, and a finished
-// month closes the ring in green.
-function RingSeal({ completed, total }: { completed: number; total: number }) {
-  const SIZE = 64;
-  const CENTER = SIZE / 2;
-  const R = 27;
-  const CIRC = 2 * Math.PI * R;
+/* ── Dawn backdrop ────────────────────────────────────────── */
+// The trophy card's shine grammar for the hero: a diagonal hairline
+// weave and a few four-point sparkles twinkling at their own rhythms.
+
+const SPARKLE_PATH = 'M12 0 C13.2 7.4 16.6 10.8 24 12 C16.6 13.2 13.2 16.6 12 24 C10.8 16.6 7.4 13.2 0 12 C7.4 10.8 10.8 7.4 12 0 Z';
+
+function Sparkle({
+  size,
+  delay,
+  style,
+}: {
+  size: number;
+  delay: number;
+  style: object;
+}) {
+  const reduceMotion = useReducedMotion();
+  const t = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      t.value = 0.5;
+      return;
+    }
+    t.value = 0;
+    t.value = withDelay(
+      delay,
+      withRepeat(
+        withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        true,
+      ),
+    );
+    return () => cancelAnimation(t);
+  }, [reduceMotion, delay, t]);
+
+  const twinkle = useAnimatedStyle(() => ({
+    opacity: 0.14 + t.value * 0.42,
+  }));
+
+  return (
+    <Reanimated.View pointerEvents="none" style={[{ position: 'absolute' }, style, twinkle]}>
+      <Svg width={size} height={size} viewBox="0 0 24 24">
+        <Path d={SPARKLE_PATH} fill={GOLD} />
+      </Svg>
+    </Reanimated.View>
+  );
+}
+
+function HeroBackdrop() {
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const step = 30;
+  const lineCount = box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
+
+  return (
+    <View
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      onLayout={event => {
+        const { width, height } = event.nativeEvent.layout;
+        setBox({ w: width, h: height });
+      }}
+    >
+      {lineCount > 0 && (
+        <Svg width={box.w} height={box.h} style={StyleSheet.absoluteFill}>
+          {Array.from({ length: lineCount }).map((_, index) => {
+            const offset = index * step;
+            return (
+              <Line
+                key={index}
+                x1={offset}
+                y1={-4}
+                x2={offset - box.h - 8}
+                y2={box.h + 4}
+                stroke={GOLD}
+                strokeOpacity={0.05}
+                strokeWidth={1}
+              />
+            );
+          })}
+        </Svg>
+      )}
+      <Sparkle size={12} delay={0} style={{ right: 96, top: 14 }} />
+      <Sparkle size={8} delay={900} style={{ right: 14, top: 40 }} />
+      <Sparkle size={9} delay={1900} style={{ left: 130, bottom: 12 }} />
+    </View>
+  );
+}
+
+/* ── The month's coin seal ────────────────────────────────── */
+// A struck gold coin carrying the month's count, ringed by a progress
+// track that sweeps as intentions are kept. A finished month closes the
+// ring in green and the coin stands in a struck-medal ray burst.
+function CoinSeal({ completed, total }: { completed: number; total: number }) {
   const allDone = total > 0 && completed === total;
   const frac = total > 0 ? completed / total : 0;
+  const S = 88;
+  const CENTER = S / 2;
+  const R = 37;
+  const CIRC = 2 * Math.PI * R;
+  const RAY_FIELD = 118;
+  const rayCx = RAY_FIELD / 2;
   const progress = useSharedValue(frac);
 
   useEffect(() => {
@@ -101,8 +197,31 @@ function RingSeal({ completed, total }: { completed: number; total: number }) {
   }));
 
   return (
-    <View style={rs.stage}>
-      <Svg width={SIZE} height={SIZE}>
+    <View style={cs.stage}>
+      {allDone && (
+        <Svg pointerEvents="none" width={RAY_FIELD} height={RAY_FIELD} style={cs.rays}>
+          {Array.from({ length: 12 }).map((_, index) => {
+            const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
+            const long = index % 2 === 0;
+            const r1 = 45;
+            const r2 = r1 + (long ? 12 : 7);
+            return (
+              <Line
+                key={index}
+                x1={rayCx + r1 * Math.cos(angle)}
+                y1={rayCx + r1 * Math.sin(angle)}
+                x2={rayCx + r2 * Math.cos(angle)}
+                y2={rayCx + r2 * Math.sin(angle)}
+                stroke={GOLD}
+                strokeOpacity={long ? 0.5 : 0.28}
+                strokeWidth={long ? 1.7 : 1.2}
+                strokeLinecap="round"
+              />
+            );
+          })}
+        </Svg>
+      )}
+      <Svg width={S} height={S} style={{ position: 'absolute' }}>
         <Circle
           cx={CENTER}
           cy={CENTER}
@@ -126,30 +245,76 @@ function RingSeal({ completed, total }: { completed: number; total: number }) {
           />
         )}
       </Svg>
-      <View style={rs.center} pointerEvents="none">
+      <View style={cs.coin}>
+        <LinearGradient
+          colors={[...COIN_COLORS]}
+          locations={[...COIN_LOCATIONS]}
+          start={{ x: 0.15, y: 0 }}
+          end={{ x: 0.85, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View pointerEvents="none" style={cs.coinSheen} />
+        <View pointerEvents="none" style={cs.coinRim} />
         {total > 0 ? (
-          <Text style={[rs.count, allDone && { color: GREEN }]}>
+          <Text style={cs.coinCount}>
             {completed}
-            <Text style={rs.countMuted}>/{total}</Text>
+            <Text style={cs.coinCountMuted}>/{total}</Text>
           </Text>
         ) : (
-          <View style={rs.emptyDiamond} />
+          <View style={cs.coinDiamond} />
         )}
       </View>
     </View>
   );
 }
 
-const rs = StyleSheet.create({
-  stage: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center' },
-  center: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-  count: { fontFamily: F.serifSemiBold, fontSize: 19, color: INK, letterSpacing: 0.2 },
-  countMuted: { fontSize: 12.5, color: '#B9B0A0' },
-  emptyDiamond: {
-    width: 7,
-    height: 7,
-    borderRadius: 1,
-    backgroundColor: 'rgba(197,160,89,0.55)',
+const cs = StyleSheet.create({
+  stage: { width: 88, height: 88, alignItems: 'center', justifyContent: 'center' },
+  rays: { position: 'absolute' },
+  coin: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#A87E33',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  coinSheen: {
+    position: 'absolute',
+    top: 1,
+    left: 3,
+    right: 3,
+    height: '44%',
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  coinRim: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 29,
+    borderWidth: 1,
+    borderColor: 'rgba(150,108,40,0.34)',
+  },
+  coinCount: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 19,
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  coinCountMuted: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.78)',
+  },
+  coinDiamond: {
+    width: 8,
+    height: 8,
+    borderRadius: 1.5,
+    backgroundColor: 'rgba(255,255,255,0.85)',
     transform: [{ rotate: '45deg' }],
   },
 });
@@ -247,6 +412,7 @@ export default function MonthlyGoalsView({
   const isFutureMonth = selectedMonth > todayMonth;
   const canEditSelectedMonth = !isPastMonth;
   const selectedMonthLabel = formatMonthFull(selectedMonth);
+  const selectedMonthName = selectedMonthLabel.split(' ')[0];
 
   const handleAdd = async () => {
     if (!canEditSelectedMonth) {
@@ -568,25 +734,30 @@ export default function MonthlyGoalsView({
           })}
         </View>
 
-        {/* The month's seal: title, state, ring — always present */}
+        {/* The month's seal: the dawn hero of the page */}
         <View style={s.heroCard}>
-          <View pointerEvents="none" style={s.heroFrame} />
+          <LinearGradient
+            colors={['#F8E7BE', '#FFF8E9', '#FFFEFA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <HeroBackdrop />
           <View style={s.heroRow}>
             <View style={s.heroCopy}>
               <Text style={s.heroEyebrow}>{heroEyebrow}</Text>
               <Text style={s.heroTitle} numberOfLines={1}>{selectedMonthLabel}</Text>
+              <View style={s.heroOrnament}>
+                <View style={s.heroOrnamentLine} />
+                <View style={s.heroOrnamentDiamond} />
+                <View style={s.heroOrnamentLine} />
+              </View>
               <Text style={[s.heroState, allDone && s.heroStateDone]} numberOfLines={2}>
                 {heroState}
               </Text>
             </View>
-            <RingSeal completed={completedCount} total={monthGoals.length} />
+            <CoinSeal completed={completedCount} total={monthGoals.length} />
           </View>
-          {allDone && (
-            <>
-              <View pointerEvents="none" style={[s.heroGlint, { right: 14, top: 12 }]} />
-              <View pointerEvents="none" style={[s.heroGlintSmall, { right: 30, top: 26 }]} />
-            </>
-          )}
           {isPastMonth && monthGoals.length > 0 && (
             <Text style={s.heroArchiveNote}>
               Past months are archived — review or remove, the record stands.
@@ -635,7 +806,15 @@ export default function MonthlyGoalsView({
           </View>
         )}
 
-        {/* The intentions, numbered like an almanac's entries */}
+        {/* The intentions, sealed and numbered */}
+        {monthGoals.length > 0 && (
+          <View style={s.listMarker}>
+            <View style={s.markerRule} />
+            <Text style={s.markerText}>THE INTENTIONS</Text>
+            <View style={s.markerRule} />
+          </View>
+        )}
+
         <View style={s.goalsList}>
           {monthGoals.map((goal, index) => (
             <View
@@ -643,25 +822,15 @@ export default function MonthlyGoalsView({
               style={[s.goalCard, goal.isCompleted && s.goalCardDone, isPastMonth && s.goalCardArchived]}
             >
               {canEditSelectedMonth ? (
-                <AnimatedGoalCheck
+                <AnimatedSealCheck
                   done={goal.isCompleted}
+                  numeral={toRoman(index)}
                   onPress={() => handleToggle(goal.id, !goal.isCompleted)}
-                  size={22}
+                  size={36}
                 />
               ) : (
-                <View style={[s.readOnlyCheck, goal.isCompleted && s.readOnlyCheckDone]}>
-                  {goal.isCompleted && <CheckSmall s={13} c="#FFFFFF" w={3} />}
-                </View>
+                <StaticSealCheck done={goal.isCompleted} numeral={toRoman(index)} size={36} />
               )}
-              <Text
-                style={[
-                  s.goalNumeral,
-                  goal.isCompleted && s.goalNumeralDone,
-                  isPastMonth && s.goalNumeralArchived,
-                ]}
-              >
-                {toRoman(index)}
-              </Text>
               <AnimatedStrikeText
                 text={goal.text}
                 done={goal.isCompleted}
@@ -680,6 +849,22 @@ export default function MonthlyGoalsView({
             </View>
           ))}
         </View>
+
+        {/* An open page where no intentions are written yet */}
+        {monthGoals.length === 0 && (
+          <View style={s.emptyCharter}>
+            <View style={s.listMarker}>
+              <View style={s.markerRule} />
+              <View style={s.markerDiamond} />
+              <View style={s.markerRule} />
+            </View>
+            <Text style={s.charterLine}>
+              {isPastMonth
+                ? 'No intentions were written for this month.'
+                : `Write the first intention of ${selectedMonthName}.`}
+            </Text>
+          </View>
+        )}
       </ScrollView>
 
       <ConfirmModal
@@ -913,35 +1098,25 @@ const s = StyleSheet.create({
   /* The month's seal (hero) */
   heroCard: {
     position: 'relative',
-    borderRadius: 22,
+    overflow: 'hidden',
+    borderRadius: 24,
     borderCurve: 'continuous',
-    backgroundColor: '#FFFEFB',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.26)',
+    borderColor: '#E8D8B5',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    shadowColor: GOLD,
-    shadowOpacity: 0.07,
-    shadowOffset: { width: 0, height: 5 },
-    shadowRadius: 12,
-    elevation: 1,
-  },
-  heroFrame: {
-    position: 'absolute',
-    top: 7,
-    left: 7,
-    right: 7,
-    bottom: 7,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.13)',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
   heroRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 14,
+    columnGap: 12,
   },
-  heroCopy: { flex: 1, minWidth: 0, rowGap: 2 },
+  heroCopy: { flex: 1, minWidth: 0, rowGap: 3 },
   heroEyebrow: {
     fontFamily: F.sansBold,
     fontSize: 8.5,
@@ -951,9 +1126,28 @@ const s = StyleSheet.create({
   },
   heroTitle: {
     fontFamily: F.serifSemiBold,
-    fontSize: 23,
-    lineHeight: 28,
+    fontSize: 24,
+    lineHeight: 29,
     color: INK,
+  },
+  heroOrnament: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 2,
+    maxWidth: 150,
+  },
+  heroOrnamentLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(197,160,89,0.35)',
+  },
+  heroOrnamentDiamond: {
+    width: 4,
+    height: 4,
+    marginHorizontal: 6,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.7)',
+    transform: [{ rotate: '45deg' }],
   },
   heroState: {
     fontFamily: F.serifMediumItalic,
@@ -962,27 +1156,11 @@ const s = StyleSheet.create({
     color: '#8A8177',
   },
   heroStateDone: { color: GREEN },
-  heroGlint: {
-    position: 'absolute',
-    width: 6,
-    height: 6,
-    borderRadius: 1.5,
-    backgroundColor: 'rgba(197,160,89,0.68)',
-    transform: [{ rotate: '45deg' }],
-  },
-  heroGlintSmall: {
-    position: 'absolute',
-    width: 3.5,
-    height: 3.5,
-    borderRadius: 1,
-    backgroundColor: 'rgba(197,160,89,0.5)',
-    transform: [{ rotate: '45deg' }],
-  },
   heroArchiveNote: {
     marginTop: 10,
     paddingTop: 9,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(197,160,89,0.14)',
+    borderTopColor: 'rgba(197,160,89,0.18)',
     fontFamily: F.serifItalic,
     fontSize: 12,
     lineHeight: 16,
@@ -1056,6 +1234,46 @@ const s = StyleSheet.create({
     shadowOpacity: 0,
   },
 
+  /* Section marker + empty charter */
+  listMarker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    paddingHorizontal: 6,
+  },
+  markerRule: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(197,160,89,0.22)',
+  },
+  markerText: {
+    fontFamily: F.sansBold,
+    fontSize: 8.5,
+    lineHeight: 11,
+    letterSpacing: 2,
+    color: '#B89A5A',
+  },
+  markerDiamond: {
+    width: 5,
+    height: 5,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.55)',
+    transform: [{ rotate: '45deg' }],
+  },
+  emptyCharter: {
+    alignItems: 'center',
+    rowGap: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+  },
+  charterLine: {
+    fontFamily: F.serifItalic,
+    fontSize: 14.5,
+    lineHeight: 20,
+    color: '#A29A8C',
+    textAlign: 'center',
+  },
+
   /* The intentions */
   goalsList: {
     rowGap: 8,
@@ -1069,8 +1287,8 @@ const s = StyleSheet.create({
     borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.30)',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
     overflow: 'hidden',
     position: 'relative',
     shadowColor: GOLD,
@@ -1080,39 +1298,13 @@ const s = StyleSheet.create({
     elevation: 1,
   },
   goalCardDone: {
-    backgroundColor: '#FDFBF3',
-    borderColor: 'rgba(197,160,89,0.42)',
+    backgroundColor: '#FDF8EA',
+    borderColor: 'rgba(197,160,89,0.44)',
   },
   goalCardArchived: {
     backgroundColor: '#F9F6F0',
     borderColor: '#E2DACB',
     shadowOpacity: 0.03,
-  },
-  goalNumeral: {
-    fontFamily: F.serifMediumItalic,
-    fontSize: 12.5,
-    lineHeight: 16,
-    color: 'rgba(139,107,47,0.85)',
-    minWidth: 18,
-    textAlign: 'center',
-    flexShrink: 0,
-  },
-  goalNumeralDone: { color: '#C0B49B' },
-  goalNumeralArchived: { color: '#B3A996' },
-  readOnlyCheck: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.7,
-    borderColor: '#CFC7BB',
-    backgroundColor: '#F8F5EF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  readOnlyCheckDone: {
-    borderColor: '#A79B88',
-    backgroundColor: '#A79B88',
   },
   goalText: {
     fontFamily: F.serifMedium,

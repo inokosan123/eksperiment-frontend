@@ -93,7 +93,7 @@ export function playTaskCheckSoundOnly() {
   playTaskCheckSound();
 }
 
-function playAchievementSound() {
+function playAchievementSound(volume = 0.78) {
   if (Platform.OS === 'web') return;
 
   void ensureAchievementPlayer().then(async () => {
@@ -104,7 +104,7 @@ function playAchievementSound() {
       if (player.playing) {
         player.pause();
       }
-      player.volume = 0.78;
+      player.volume = volume;
       await player.seekTo(0);
       player.play();
     } catch {}
@@ -129,9 +129,9 @@ export async function playTaskCompleteFeedback() {
   } catch {}
 }
 
-export async function playAchievementCompleteFeedback() {
+export async function playAchievementCompleteFeedback(options?: { volume?: number }) {
   if (Platform.OS === 'web') return;
-  playAchievementSound();
+  playAchievementSound(options?.volume ?? 0.78);
 
   // Achievement feedback is related to task completion, but softer and more
   // ceremonial: a firm click, then success confirmation, then a light tail.
