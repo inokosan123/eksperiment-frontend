@@ -12,11 +12,12 @@ import {
   View,
 } from 'react-native';
 import Reanimated, {
-  interpolate,
+  Easing,
   interpolateColor,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Line } from 'react-native-svg';
@@ -617,10 +618,10 @@ function TestamentMotif({ tone }: { tone: 'green' | 'stone' }) {
 }
 
 // Selecting a book turns its card into the sheet's heading: the meta
-// line folds away, the chevron dissolves, and the title glides to the
-// center — landing above the engraved CHAPTERS rule of the opened panel.
-const TITLE_SPRING = { damping: 15, stiffness: 160, mass: 1 };
-
+// line and chevron fade, and the title glides — one flat horizontal
+// move, no bounce — to the center, landing above the engraved
+// CHAPTERS rule of the opened panel. Opacity and translateX only, so
+// nothing relayouts mid-flight.
 function PremiumBookCard({
   book, tone, expanded, onPress,
 }: {
@@ -637,7 +638,10 @@ function PremiumBookCard({
   const [titleWidth, setTitleWidth] = useState(0);
 
   useEffect(() => {
-    progress.value = withSpring(expanded ? 1 : 0, TITLE_SPRING);
+    progress.value = withTiming(expanded ? 1 : 0, {
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+    });
   }, [expanded, progress]);
 
   useEffect(() => {
@@ -652,14 +656,12 @@ function PremiumBookCard({
     transform: [{ translateX: progress.value * centerShift.value }],
   }));
 
-  const metaStyle = useAnimatedStyle(() => ({
+  const fadeAwayStyle = useAnimatedStyle(() => ({
     opacity: 1 - progress.value,
-    height: interpolate(progress.value, [0, 1], [17, 0]),
-    marginTop: interpolate(progress.value, [0, 1], [4, 0]),
   }));
 
-  const chevronStyle = useAnimatedStyle(() => ({
-    opacity: 1 - progress.value,
+  const washStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
   }));
 
   return (
@@ -670,7 +672,6 @@ function PremiumBookCard({
       style={[
         s.premiumBook,
         {
-          backgroundColor: isGreen ? '#FDFEFB' : '#FFFEFA',
           borderColor: isGreen ? '#D9E4D5' : '#E8E0D4',
           borderBottomColor: expanded ? 'transparent' : (isGreen ? '#D9E4D5' : '#E8E0D4'),
           borderBottomLeftRadius: expanded ? 0 : 18,
@@ -679,7 +680,36 @@ function PremiumBookCard({
         expanded && s.premiumBookExpanded,
       ]}
     >
+      {/* Parchment ground, warmed toward the testament's tone */}
+      <LinearGradient
+        colors={isGreen ? ['#FEFFFC', '#F6FAF1'] : ['#FFFEFB', '#FAF5EA']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      {/* A quiet wash of the tone settles over the open card */}
+      <Reanimated.View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFillObject,
+          { backgroundColor: isGreen ? 'rgba(94,123,85,0.05)' : 'rgba(180,155,103,0.06)' },
+          washStyle,
+        ]}
+      />
       <TestamentMotif tone={tone} />
+      {/* The book's spine at the left edge — brighter while open */}
+      <View
+        pointerEvents="none"
+        style={[
+          s.bookSpine,
+          {
+            backgroundColor: expanded
+              ? (isGreen ? 'rgba(94,123,85,0.8)' : 'rgba(180,155,103,0.85)')
+              : (isGreen ? 'rgba(94,123,85,0.4)' : 'rgba(180,155,103,0.45)'),
+          },
+        ]}
+      />
       <View style={s.bookCopy}>
         <Reanimated.Text
           numberOfLines={1}
@@ -688,7 +718,7 @@ function PremiumBookCard({
         >
           {book.name}
         </Reanimated.Text>
-        <Reanimated.View style={[s.bookMetaRow, metaStyle]}>
+        <Reanimated.View style={[s.bookMetaRow, fadeAwayStyle]}>
           <View style={[s.metaDiamond, { backgroundColor: isGreen ? 'rgba(94,123,85,0.55)' : 'rgba(180,155,103,0.6)' }]} />
           <Text style={[s.bookMeta, { color: isGreen ? '#7E9270' : '#A48F6C' }]}>
             {book.chapters} {book.chapters === 1 ? 'CHAPTER' : 'CHAPTERS'}{isDeutero ? ' · DEUTEROCANON' : ''}
@@ -696,7 +726,7 @@ function PremiumBookCard({
         </Reanimated.View>
       </View>
       <Reanimated.View
-        style={[s.chevronSeat, { borderColor: isGreen ? 'rgba(94,123,85,0.24)' : 'rgba(180,155,103,0.28)' }, chevronStyle]}
+        style={[s.chevronSeat, { borderColor: isGreen ? 'rgba(94,123,85,0.24)' : 'rgba(180,155,103,0.28)' }, fadeAwayStyle]}
         pointerEvents="none"
       >
         <ChevronRight s={15} c={isGreen ? '#8FA986' : '#BCA476'} />
@@ -1182,9 +1212,18 @@ const s = StyleSheet.create({
     bottom: 0,
     overflow: 'hidden',
   },
+  bookSpine: {
+    position: 'absolute',
+    left: 0,
+    top: 11,
+    bottom: 11,
+    width: 3,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
+  },
   bookCopy: { flex: 1, minWidth: 0, justifyContent: 'center' },
-  bookName: { alignSelf: 'flex-start', fontFamily: F.serif, fontSize: 20, lineHeight: 24, color: '#2F2B27' },
-  bookMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, overflow: 'hidden' },
+  bookName: { alignSelf: 'flex-start', fontFamily: F.serif, fontSize: 20, lineHeight: 24, letterSpacing: 0.2, color: '#2F2B27' },
+  bookMetaRow: { marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 6 },
   metaDiamond: {
     width: 4,
     height: 4,
