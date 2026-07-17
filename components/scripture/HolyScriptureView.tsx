@@ -20,7 +20,7 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Line } from 'react-native-svg';
+import Svg, { Line, Path } from 'react-native-svg';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -285,10 +285,20 @@ export default function HolyScriptureView() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 110 }]}
       >
-        {/* Quick access — the reader's doors: haloed icons on parchment */}
+        {/* Quick access — the reader's doors: haloed icons on parchment,
+            each under its own fall of light */}
         <View style={s.quickGrid}>
           <TouchableOpacity onPress={() => router.push('/favorites')} activeOpacity={0.86} style={[s.quickCard, s.quickCardGold]}>
-            <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(197,160,89,0.16)' }]} />
+            <LinearGradient
+              colors={['#FFFEF9', '#FBF3E1']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={s.cardGround}
+              pointerEvents="none"
+            />
+            <DoorMotif variant="rays" stroke="#B49B67" />
+            <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(197,160,89,0.18)' }]} />
+            <View pointerEvents="none" style={[s.doorGlint, { backgroundColor: 'rgba(197,160,89,0.55)' }]} />
             <View style={s.quickCardRow}>
               <View style={[s.haloRing, { borderColor: 'rgba(197,160,89,0.38)' }]}>
                 <View style={[s.haloCore, { backgroundColor: 'rgba(197,160,89,0.10)' }]}>
@@ -300,7 +310,16 @@ export default function HolyScriptureView() {
             <Text style={s.quickDesc}>Highlights & saved passages</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/bible-notes')} activeOpacity={0.86} style={[s.quickCard, s.quickCardGreen]}>
-            <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(94,123,85,0.15)' }]} />
+            <LinearGradient
+              colors={['#FDFEFB', '#F2F7EC']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={s.cardGround}
+              pointerEvents="none"
+            />
+            <DoorMotif variant="ruling" stroke="#5E7B55" />
+            <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(94,123,85,0.17)' }]} />
+            <View pointerEvents="none" style={[s.doorGlint, { backgroundColor: 'rgba(94,123,85,0.5)' }]} />
             <View style={s.quickCardRow}>
               <View style={[s.haloRing, { borderColor: 'rgba(94,123,85,0.36)' }]}>
                 <View style={[s.haloCore, { backgroundColor: 'rgba(94,123,85,0.10)' }]}>
@@ -313,7 +332,7 @@ export default function HolyScriptureView() {
           </TouchableOpacity>
         </View>
 
-        {/* Checkpoints — the reading's bookmark */}
+        {/* Checkpoints — the reader's bookmark hangs from its edge */}
         <TouchableOpacity
           onPress={() => router.push({
             pathname: '/scripture-checkpoint',
@@ -322,7 +341,16 @@ export default function HolyScriptureView() {
           activeOpacity={0.86}
           style={s.checkpointCard}
         >
-          <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(197,160,89,0.16)' }]} />
+          <LinearGradient
+            colors={['#FFFEF9', '#FBF3E1']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={s.cardGround}
+            pointerEvents="none"
+          />
+          <DoorMotif variant="ruling" stroke="#B49B67" />
+          <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(197,160,89,0.18)' }]} />
+          <BookmarkRibbon />
           <View style={[s.haloRing, { borderColor: 'rgba(197,160,89,0.38)' }]}>
             <View style={[s.haloCore, { backgroundColor: 'rgba(197,160,89,0.10)' }]}>
               <Book s={15} c={GOLD} w={2.1} />
@@ -332,7 +360,9 @@ export default function HolyScriptureView() {
             <Text style={s.checkpointTitle} numberOfLines={1}>Checkpoints</Text>
             <Text style={s.checkpointKicker}>Continue scripture reading</Text>
           </View>
-          <ChevronRight s={18} c="#BBA47A" w={2.4} />
+          <View style={[s.chevronSeat, { borderColor: 'rgba(180,155,103,0.28)' }]}>
+            <ChevronRight s={15} c="#BCA476" />
+          </View>
         </TouchableOpacity>
 
         <SetAsDailyTaskCard variant="scripture" onPress={() => setShowTaskSheet(true)} subtitle={taskSummary} />
@@ -572,6 +602,73 @@ function BookSection({
           ))}
         </LinearGradient>
       )}
+    </View>
+  );
+}
+
+// The doors carry their own faint light: rays for what is treasured,
+// ruling lines for what is written and read.
+function DoorMotif({ variant, stroke }: { variant: 'rays' | 'ruling'; stroke: string }) {
+  const W = 150;
+  const H = 96;
+
+  return (
+    <View pointerEvents="none" style={s.motifAnchor}>
+      <Svg width={W} height={H}>
+        {variant === 'rays'
+          ? Array.from({ length: 5 }).map((_, index) => {
+            const offset = index * 24;
+            return (
+              <Line
+                key={index}
+                x1={W - offset}
+                y1={-6}
+                x2={W - offset - 54}
+                y2={H + 6}
+                stroke={stroke}
+                strokeOpacity={0.08}
+                strokeWidth={1}
+              />
+            );
+          })
+          : Array.from({ length: 4 }).map((_, index) => {
+            const y = 14 + index * 16;
+            return (
+              <Line
+                key={index}
+                x1={18}
+                y1={y}
+                x2={W}
+                y2={y}
+                stroke={stroke}
+                strokeOpacity={0.09}
+                strokeWidth={1}
+              />
+            );
+          })}
+      </Svg>
+    </View>
+  );
+}
+
+// A gold ribbon hanging from the card's top edge — the reader's bookmark.
+function BookmarkRibbon() {
+  return (
+    <View pointerEvents="none" style={s.ribbonWrap}>
+      <Svg width={13} height={24} viewBox="0 0 13 24">
+        <Path
+          d="M0.5 0 H12.5 V22.5 L6.5 17.2 L0.5 22.5 Z"
+          fill="#D5AC5C"
+          stroke="rgba(150,108,40,0.4)"
+          strokeWidth={0.8}
+        />
+        <Path
+          d="M2.8 1.8 V19.2"
+          stroke="rgba(255,248,225,0.55)"
+          strokeWidth={1}
+          strokeLinecap="round"
+        />
+      </Svg>
     </View>
   );
 }
@@ -1012,17 +1109,41 @@ const s = StyleSheet.create({
   quickGrid: { flexDirection: 'row', gap: 9 },
   quickCard: {
     flex: 1,
-    minHeight: 74,
+    minHeight: 78,
     borderRadius: 19,
     borderWidth: 1,
     paddingHorizontal: 12,
-    paddingVertical: 11,
-    gap: 5,
+    paddingVertical: 12,
+    gap: 6,
+    overflow: 'hidden',
+    position: 'relative',
     shadowColor: '#0F172A',
     shadowOpacity: 0.045,
     shadowOffset: { width: 0, height: 5 },
     shadowRadius: 14,
     elevation: 1,
+  },
+  cardGround: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    bottom: 1,
+    borderRadius: 18,
+  },
+  doorGlint: {
+    position: 'absolute',
+    top: 9,
+    right: 9,
+    width: 4,
+    height: 4,
+    borderRadius: 0.8,
+    transform: [{ rotate: '45deg' }],
+  },
+  ribbonWrap: {
+    position: 'absolute',
+    top: 0,
+    right: 54,
   },
   quickCardGold: { backgroundColor: '#FFFDF8', borderColor: 'rgba(197,160,89,0.26)' },
   quickCardGreen: { backgroundColor: '#FBFDF8', borderColor: 'rgba(94,123,85,0.20)' },
@@ -1065,6 +1186,8 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    overflow: 'hidden',
+    position: 'relative',
     shadowColor: '#0F172A',
     shadowOpacity: 0.045,
     shadowOffset: { width: 0, height: 5 },
