@@ -464,6 +464,13 @@ function BookList({
       end={{ x: 0, y: 1 }}
       style={[s.bookListPanel, { borderColor: isGreen ? '#DCE5D7' : '#ECE4D7' }]}
     >
+      <View
+        pointerEvents="none"
+        style={[
+          s.shelfFrame,
+          { borderColor: isGreen ? 'rgba(94,123,85,0.13)' : 'rgba(180,155,103,0.15)' },
+        ]}
+      />
       {books.map(book => (
         <View key={book.id} style={s.bookListItem}>
           <PremiumBookCard
@@ -678,6 +685,7 @@ function PremiumBookCard({
           borderBottomRightRadius: expanded ? 0 : 18,
         },
         expanded && s.premiumBookExpanded,
+        expanded && s.premiumBookCompact,
       ]}
     >
       {/* Parchment ground, warmed toward the testament's tone */}
@@ -698,11 +706,13 @@ function PremiumBookCard({
         ]}
       />
       <TestamentMotif tone={tone} />
-      {/* The book's spine at the left edge — brighter while open */}
+      {/* The book's spine at the left edge — brighter while open, and it
+          runs off the card's bottom edge into the panel's spine below */}
       <View
         pointerEvents="none"
         style={[
           s.bookSpine,
+          expanded && s.bookSpineOpen,
           {
             backgroundColor: expanded
               ? (isGreen ? 'rgba(94,123,85,0.8)' : 'rgba(180,155,103,0.85)')
@@ -718,7 +728,7 @@ function PremiumBookCard({
         >
           {book.name}
         </Reanimated.Text>
-        <Reanimated.View style={[s.bookMetaRow, fadeAwayStyle]}>
+        <Reanimated.View style={[s.bookMetaRow, expanded && { display: 'none' }, fadeAwayStyle]}>
           <View style={[s.metaDiamond, { backgroundColor: isGreen ? 'rgba(94,123,85,0.55)' : 'rgba(180,155,103,0.6)' }]} />
           <Text style={[s.bookMeta, { color: isGreen ? '#7E9270' : '#A48F6C' }]}>
             {book.chapters} {book.chapters === 1 ? 'CHAPTER' : 'CHAPTERS'}{isDeutero ? ' · DEUTEROCANON' : ''}
@@ -756,6 +766,14 @@ function ChapterPanel({
       ]}
     >
       <TestamentMotif tone={tone} />
+      {/* The spine continues from the open card above, closing at the foot */}
+      <View
+        pointerEvents="none"
+        style={[
+          s.panelSpine,
+          { backgroundColor: isGreen ? 'rgba(94,123,85,0.8)' : 'rgba(180,155,103,0.85)' },
+        ]}
+      />
       {/* Engraved head: rule — ◆ CHAPTERS · N ◆ — rule */}
       <View style={s.chapterHeadRow}>
         <View style={[s.chapterHeadRule, { backgroundColor: isGreen ? 'rgba(94,123,85,0.24)' : 'rgba(180,155,103,0.28)' }]} />
@@ -1205,6 +1223,11 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowRadius: 20,
   },
+  // The open card folds to a heading band: title only, centered.
+  premiumBookCompact: {
+    minHeight: 50,
+    paddingVertical: 9,
+  },
   motifAnchor: {
     position: 'absolute',
     top: 0,
@@ -1220,6 +1243,28 @@ const s = StyleSheet.create({
     width: 3,
     borderTopRightRadius: 2,
     borderBottomRightRadius: 2,
+  },
+  bookSpineOpen: {
+    top: 9,
+    bottom: 0,
+    borderBottomRightRadius: 0,
+  },
+  panelSpine: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 11,
+    width: 3,
+    borderBottomRightRadius: 2,
+  },
+  shelfFrame: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    right: 6,
+    bottom: 6,
+    borderRadius: 16,
+    borderWidth: 1,
   },
   bookCopy: { flex: 1, minWidth: 0, justifyContent: 'center' },
   bookName: { alignSelf: 'flex-start', fontFamily: F.serif, fontSize: 20, lineHeight: 24, letterSpacing: 0.2, color: '#2F2B27' },
