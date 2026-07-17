@@ -12,7 +12,6 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import Reanimated, {
   cancelAnimation,
   Easing,
-  interpolate,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -72,80 +71,53 @@ function buildWeek(): { dateKey: string; letter: string; isToday: boolean; isFut
   });
 }
 
-/* ── Hearth atmosphere ────────────────────────────────────── */
-// A band of warm light that sweeps across the dark hearth every few
-// seconds — the same glint grammar the journal hearth uses.
-function HearthGlint() {
+/* ── Candlelight on the floor ─────────────────────────────── */
+// Each lit candle above pours a pool of warm light down onto the bronze
+// floor — a full day breathes slowly like real candlelight, a partial
+// day glows steadily in proportion to its progress. The floor literally
+// brightens with the week: light here comes from the data, not from
+// decoration.
+function CandleGlowPool({ index, pct, mode }: { index: number; pct: number | null; mode: DayMode }) {
   const reduceMotion = useReducedMotion();
-  const [w, setW] = useState(0);
-  const t = useSharedValue(0);
+  const isLit = pct !== null && mode === 'normal' && pct >= 100;
+  const partial = pct !== null && mode === 'normal' && pct > 0 && pct < 100;
+  const breathe = useSharedValue(1);
 
   useEffect(() => {
-    if (reduceMotion || w === 0) return;
-    t.value = 0;
-    t.value = withRepeat(
-      withTiming(1, { duration: 7200, easing: Easing.inOut(Easing.quad) }),
-      -1,
-      false,
-    );
-    return () => cancelAnimation(t);
-  }, [reduceMotion, w, t]);
-
-  const sweep = useAnimatedStyle(() => ({
-    opacity: interpolate(t.value, [0, 0.08, 0.3, 0.42, 1], [0, 0.9, 0.9, 0, 0]),
-    transform: [
-      { translateX: interpolate(t.value, [0, 0.42, 1], [-90, w + 50, w + 50]) },
-      { rotate: '14deg' },
-    ],
-  }));
-
-  return (
-    <View
-      pointerEvents="none"
-      style={StyleSheet.absoluteFill}
-      onLayout={event => setW(event.nativeEvent.layout.width)}
-    >
-      {!reduceMotion && w > 0 && (
-        <Reanimated.View style={[s.hearthGlint, sweep]}>
-          <LinearGradient
-            colors={['rgba(255,241,205,0)', 'rgba(255,241,205,0.14)', 'rgba(255,241,205,0)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={{ flex: 1 }}
-          />
-        </Reanimated.View>
-      )}
-    </View>
-  );
-}
-
-// A mote of gold dust hanging in the hearth's light.
-function GoldDust({ delay, style }: { delay: number; style: object }) {
-  const reduceMotion = useReducedMotion();
-  const t = useSharedValue(0);
-
-  useEffect(() => {
-    if (reduceMotion) {
-      t.value = 0.5;
+    if (!isLit || reduceMotion) {
+      breathe.value = 1;
       return;
     }
-    t.value = 0;
-    t.value = withDelay(
-      delay,
+    breathe.value = 0.62;
+    breathe.value = withDelay(
+      index * 420,
       withRepeat(
-        withTiming(1, { duration: 2800, easing: Easing.inOut(Easing.quad) }),
+        withTiming(1, { duration: 2600 + (index % 3) * 380, easing: Easing.inOut(Easing.sin) }),
         -1,
         true,
       ),
     );
-    return () => cancelAnimation(t);
-  }, [delay, reduceMotion, t]);
+    return () => cancelAnimation(breathe);
+  }, [breathe, index, isLit, reduceMotion]);
 
-  const twinkle = useAnimatedStyle(() => ({ opacity: 0.15 + t.value * 0.5 }));
+  const breatheStyle = useAnimatedStyle(() => ({ opacity: breathe.value }));
+
+  if (!isLit && !partial) return null;
+
+  const centerLeft = `${(100 / 7) * (index + 0.5)}%` as const;
+  const partialOpacity = partial ? 0.2 + (pct! / 100) * 0.5 : 1;
 
   return (
-    <Reanimated.View pointerEvents="none" style={[s.dustWrap, style, twinkle]}>
-      <View style={s.dust} />
+    <Reanimated.View
+      pointerEvents="none"
+      style={[
+        s.poolWrap,
+        { left: centerLeft, opacity: partialOpacity },
+        isLit && breatheStyle,
+      ]}
+    >
+      <View style={s.poolOuter} />
+      <View style={s.poolInner} />
     </Reanimated.View>
   );
 }
@@ -368,7 +340,7 @@ function FlameTile({ pct, mode }: { pct: number | null; mode: DayMode }) {
   return (
     <View style={s.flameWrap}>
       <View style={[s.flameTile, s.flameGray]}>
-        <Image source={FLAME_PNG} style={[s.flameImg, { tintColor: '#6E6553', opacity: 0.6 }]} />
+        <Image source={FLAME_PNG} style={[s.flameImg, { tintColor: '#8A7A5C', opacity: 0.55 }]} />
       </View>
       {filled > 0 && (
         <View style={[s.flameClip, { height: `${filled}%` }]} pointerEvents="none">
@@ -514,8 +486,7 @@ export default function WeeklyRhythm() {
 
         <Text style={s.cardLabel}>LAST 7 DAYS</Text>
 
-        {/* Candles stand on the mantel — the light zone of the card,
-            their bases resting on the hearth's top rail below. */}
+        {/* Candles stand in the light, their bases on the brass rail. */}
         <View style={s.candlesRow}>
           {display.map((d, i) => (
             <View key={i} style={s.weekCol}>
@@ -524,21 +495,37 @@ export default function WeeklyRhythm() {
           ))}
         </View>
 
-        {/* The hearth: a dark velvet panel running edge to edge under the
-            candles — the week's flames glow inside it. */}
-        <View style={s.hearth}>
+        {/* The brass rail — the machined lip of the candle stand. */}
+        <View style={s.brassRail}>
           <LinearGradient
-            colors={['#2C2517', '#211C12', '#1A160E']}
+            colors={['#EFDCAC', '#C89F58', '#8A6B2E']}
             start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+            end={{ x: 0, y: 1 }}
+            style={{ flex: 1 }}
+          />
+        </View>
+
+        {/* The bronze floor beneath the stand: warmest at the top where the
+            candlelight lands, deepening downward. Each lit candle pours its
+            own breathing pool of light onto its medallion below. */}
+        <View style={s.floor}>
+          <LinearGradient
+            colors={['#4A3921', '#332716', '#251D0F']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
           />
-          <View pointerEvents="none" style={s.hearthSheen} />
-          <HearthGlint />
-          <GoldDust delay={0} style={{ right: 22, top: 10 }} />
-          <GoldDust delay={1500} style={{ left: 30, top: 26 }} />
-          <GoldDust delay={2700} style={{ right: 74, bottom: 12 }} />
+          <LinearGradient
+            colors={['rgba(255,205,110,0.17)', 'rgba(255,205,110,0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={s.floorBleed}
+            pointerEvents="none"
+          />
+          {display.map((d, i) => (
+            <CandleGlowPool key={`pool-${i}`} index={i} pct={d.pct} mode={d.mode} />
+          ))}
 
           {/* Day labels */}
           <View style={s.daysLabelRow}>
@@ -560,11 +547,20 @@ export default function WeeklyRhythm() {
         </View>
       </View>
 
-      <TouchableOpacity activeOpacity={0.86} onPress={openAnalytics} style={s.analyticsBtn}>
-        <View style={s.analyticsDiamond} />
-        <Text style={s.analyticsBtnTxt}>VIEW ANALYTICS</Text>
-        <ArrowUpRight s={12} c="#E8C374" w={2.6} />
-        <View style={s.analyticsDiamond} />
+      {/* The gold-coin button — DateStrip's selected-day grammar. */}
+      <TouchableOpacity activeOpacity={0.86} onPress={openAnalytics} style={s.analyticsPress}>
+        <LinearGradient
+          colors={['#E2BD75', '#C5A059', '#A87E33']}
+          locations={[0, 0.55, 1]}
+          start={{ x: 0.15, y: 0 }}
+          end={{ x: 0.85, y: 1 }}
+          style={s.analyticsBtn}
+        >
+          <View style={s.analyticsSheen} pointerEvents="none" />
+          <View style={s.analyticsRim} pointerEvents="none" />
+          <Text style={s.analyticsBtnTxt}>VIEW ANALYTICS</Text>
+          <ArrowUpRight s={12} c="#FFF8E8" w={2.6} />
+        </LinearGradient>
       </TouchableOpacity>
     </View>
   );
@@ -614,33 +610,57 @@ const s = StyleSheet.create({
   daysRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   daysLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 },
   weekCol: { flex: 1, alignItems: 'center' },
-  dayLetter: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1, color: 'rgba(255,255,255,0.38)' },
-  dayLetterToday: { color: '#F3E2BC' },
+  dayLetter: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1, color: 'rgba(243,226,188,0.42)' },
+  dayLetterToday: { color: '#F6E7C4' },
 
-  /* Hearth */
-  hearth: {
+  /* The candle stand */
+  brassRail: {
+    height: 3.5,
+    marginHorizontal: -16,
+    overflow: 'hidden',
+  },
+  floor: {
     position: 'relative',
     overflow: 'hidden',
-    marginTop: 0,
     marginHorizontal: -16,
     marginBottom: -14,
-    borderTopWidth: 1,
-    borderColor: 'rgba(197,160,89,0.32)',
     paddingHorizontal: 16,
-    paddingTop: 11,
+    paddingTop: 12,
     paddingBottom: 16,
   },
-  hearthSheen: {
+  floorBleed: {
     position: 'absolute',
     top: 0,
-    left: 16,
-    right: 16,
-    height: 1,
-    backgroundColor: 'rgba(255,244,214,0.14)',
+    left: 0,
+    right: 0,
+    height: 16,
   },
-  hearthGlint: { position: 'absolute', top: -24, bottom: -24, width: 88 },
-  dustWrap: { position: 'absolute' },
-  dust: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#E8C87E' },
+  poolWrap: {
+    position: 'absolute',
+    top: -8,
+    width: 0,
+    alignItems: 'center',
+  },
+  poolOuter: {
+    position: 'absolute',
+    top: 0,
+    width: 64,
+    height: 42,
+    marginLeft: -32,
+    left: 0,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255,199,94,0.07)',
+  },
+  poolInner: {
+    position: 'absolute',
+    top: 5,
+    width: 44,
+    height: 28,
+    marginLeft: -22,
+    left: 0,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,205,110,0.11)',
+  },
 
   /* Bottom flame badge */
   flameWrap: {
@@ -657,17 +677,16 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   flameGray: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,244,214,0.05)',
+    borderColor: 'rgba(235,211,160,0.24)',
   },
   flameColored: {
-    backgroundColor: 'rgba(197,160,89,0.22)',
-    borderColor: '#D9B064',
+    backgroundColor: 'rgba(255,205,110,0.17)',
+    borderColor: '#E2BD75',
   },
   flameEmpty: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderColor: 'rgba(255,255,255,0.18)',
-    borderStyle: 'dashed',
+    backgroundColor: 'rgba(255,244,214,0.03)',
+    borderColor: 'rgba(235,211,160,0.14)',
   },
   flameColoredAbs: {
     position: 'absolute',
@@ -789,23 +808,39 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(160,145,117,0.08)',
     shadowOpacity: 0.04,
   },
-  analyticsBtn: {
+  analyticsPress: {
     marginTop: 12,
-    minHeight: 50,
     borderRadius: 16,
-    backgroundColor: '#17130F',
-    borderWidth: 1,
-    borderColor: 'rgba(232,195,116,0.55)',
+    shadowColor: '#A87E33',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  analyticsBtn: {
+    minHeight: 48,
+    borderRadius: 16,
+    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    shadowColor: C.gold,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.22,
-    shadowRadius: 14,
-    elevation: 6,
+    gap: 8,
   },
-  analyticsBtnTxt: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.2, color: '#E8C374' },
-  analyticsDiamond: { width: 4, height: 4, borderRadius: 0.5, backgroundColor: 'rgba(232,195,116,0.55)', transform: [{ rotate: '45deg' }] },
+  analyticsSheen: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    height: '44%',
+    borderTopLeftRadius: 15,
+    borderTopRightRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.13)',
+  },
+  analyticsRim: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(150,108,40,0.34)',
+  },
+  analyticsBtnTxt: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.2, color: '#FFFCF2' },
 });
