@@ -25,6 +25,13 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 
 const GOLD = '#C5A059';
 
+// Roman numerals for the intentions — shared by the goals screen and Home.
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII', 'XIX', 'XX'];
+
+export function toRoman(index: number) {
+  return ROMAN[index] ?? String(index + 1);
+}
+
 type AnimatedGoalCheckProps = {
   done: boolean;
   onPress: () => void;
@@ -236,9 +243,8 @@ export function AnimatedStrikeText({
 // while undo keeps the shared light tap.
 export function fireGoalToggleHaptic(willComplete: boolean) {
   if (willComplete) {
-    // Goals share the achievement chime but at a gentler level — the full
-    // 0.78 volume read as loud against the quiet page.
-    void playAchievementCompleteFeedback({ volume: 0.42 });
+    // Goals share the achievement chime, a touch under the default level.
+    void playAchievementCompleteFeedback({ volume: 0.35 });
   } else {
     playTaskUndoFeedback();
   }

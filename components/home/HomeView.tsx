@@ -45,7 +45,7 @@ import NotificationsSheet from '@/components/tasks/NotificationsSheet';
 import { useReadingList } from '@/components/library/ReadingListContext';
 import { useInnerTools } from '@/components/inner-tools/InnerToolsContext';
 import { useMonthlyGoals } from '@/components/inner-tools/MonthlyGoalsContext';
-import { AnimatedGoalCheck, AnimatedStrikeText, fireGoalToggleHaptic } from '@/components/inner-tools/MonthlyGoalRow';
+import { AnimatedSealCheck, AnimatedStrikeText, fireGoalToggleHaptic, GoalCompletionConfetti, toRoman } from '@/components/inner-tools/MonthlyGoalRow';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { useBigEvents } from '@/components/journal/BigEventsContext';
 import { getBigEventCountdown, getBigEventsForDate } from '@/components/journal/bigEventsLogic';
@@ -1997,19 +1997,22 @@ function MonthlyGoalsHomeCard() {
           {allDone ? 'ALL DONE' : `${active} active`}
         </Text>
       </View>
-      {visible.map(goal => (
+      {visible.map((goal, index) => (
         <View key={goal.id} style={[s.mgRow, goal.isCompleted && s.mgRowDone]}>
           <View pointerEvents="none" style={[s.mgRowHighlight, goal.isCompleted && s.mgRowHighlightDone]} />
-          <AnimatedGoalCheck
+          {goal.isCompleted && <View pointerEvents="none" style={s.mgDoneSpine} />}
+          <AnimatedSealCheck
             done={goal.isCompleted}
+            numeral={toRoman(index)}
             onPress={() => onToggle(goal)}
-            size={22}
+            size={30}
           />
           <AnimatedStrikeText
             text={goal.text}
             done={goal.isCompleted}
             textStyle={s.mgRowText}
           />
+          <GoalCompletionConfetti done={goal.isCompleted} />
         </View>
       ))}
       <TouchableOpacity onPress={openManage} activeOpacity={0.84} style={s.mgFooter}>
@@ -2766,10 +2769,10 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     columnGap: 10,
-    backgroundColor: '#FFFDFC',
+    backgroundColor: '#FFFEFB',
     borderRadius: 16,
-    borderWidth: 1.15,
-    borderColor: 'rgba(197,160,89,0.54)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.30)',
     paddingHorizontal: 12,
     paddingVertical: 7,
     marginBottom: 5,
@@ -2782,8 +2785,18 @@ const s = StyleSheet.create({
     elevation: 1,
   },
   mgRowDone: {
-    backgroundColor: '#FFFDF4',
-    borderColor: 'rgba(197,160,89,0.62)',
+    backgroundColor: '#FDF8EA',
+    borderColor: 'rgba(197,160,89,0.44)',
+  },
+  mgDoneSpine: {
+    position: 'absolute',
+    left: 0,
+    top: 8,
+    bottom: 8,
+    width: 3,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
+    backgroundColor: 'rgba(197,160,89,0.55)',
   },
   mgRowHighlight: {
     position: 'absolute',

@@ -33,6 +33,7 @@ import {
   fireGoalToggleHaptic,
   GoalCompletionConfetti,
   StaticSealCheck,
+  toRoman,
 } from '@/components/inner-tools/MonthlyGoalRow';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
@@ -59,12 +60,6 @@ const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
 // The coin: the DateStrip selected-day gradient, the app's struck gold.
 const COIN_COLORS = ['#E2BD75', '#C5A059', '#A87E33'] as const;
 const COIN_LOCATIONS = [0, 0.55, 1] as const;
-
-const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII', 'XIX', 'XX'];
-
-function toRoman(index: number) {
-  return ROMAN[index] ?? String(index + 1);
-}
 
 function monthKey(year: number, monthIndex: number) {
   return `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
@@ -821,15 +816,17 @@ export default function MonthlyGoalsView({
               key={goal.id}
               style={[s.goalCard, goal.isCompleted && s.goalCardDone, isPastMonth && s.goalCardArchived]}
             >
+              <View pointerEvents="none" style={[s.goalHighlight, goal.isCompleted && s.goalHighlightDone]} />
+              {goal.isCompleted && <View pointerEvents="none" style={s.goalDoneSpine} />}
               {canEditSelectedMonth ? (
                 <AnimatedSealCheck
                   done={goal.isCompleted}
                   numeral={toRoman(index)}
                   onPress={() => handleToggle(goal.id, !goal.isCompleted)}
-                  size={36}
+                  size={33}
                 />
               ) : (
-                <StaticSealCheck done={goal.isCompleted} numeral={toRoman(index)} size={36} />
+                <StaticSealCheck done={goal.isCompleted} numeral={toRoman(index)} size={33} />
               )}
               <AnimatedStrikeText
                 text={goal.text}
@@ -1283,12 +1280,12 @@ const s = StyleSheet.create({
     alignItems: 'center',
     columnGap: 10,
     backgroundColor: '#FFFEFB',
-    borderRadius: 18,
+    borderRadius: 16,
     borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.30)',
     paddingHorizontal: 12,
-    paddingVertical: 11,
+    paddingVertical: 9,
     overflow: 'hidden',
     position: 'relative',
     shadowColor: GOLD,
@@ -1306,10 +1303,32 @@ const s = StyleSheet.create({
     borderColor: '#E2DACB',
     shadowOpacity: 0.03,
   },
+  goalHighlight: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    top: 0,
+    height: 1.25,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.88)',
+  },
+  goalHighlightDone: {
+    backgroundColor: 'rgba(255,255,255,0.7)',
+  },
+  goalDoneSpine: {
+    position: 'absolute',
+    left: 0,
+    top: 9,
+    bottom: 9,
+    width: 3,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
+    backgroundColor: 'rgba(197,160,89,0.55)',
+  },
   goalText: {
     fontFamily: F.serifMedium,
-    fontSize: 18,
-    lineHeight: 23.5,
+    fontSize: 16.5,
+    lineHeight: 20.5,
     color: INK,
   },
   goalTextArchived: { color: '#7D756B' },
