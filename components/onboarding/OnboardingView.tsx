@@ -10787,11 +10787,15 @@ function ToolsShowcaseSlide({
   const fieldTop = topInset + 6;
   const fieldBottom = height - bottomInset - 12;
   const boxWidth = Math.min(width - 64, 332);
-  const boxHeight = compact ? 214 : 224;
+  // The expanded card grew 26px so the typed subtitle clears the pinned
+  // bottom ornament; all of the growth goes DOWNWARD (top offset +13
+  // cancels the taller box's higher centre), so the title and the whole
+  // flight/expand choreography keep their exact positions.
+  const boxHeight = compact ? 240 : 250;
   const titleOnlyBoxHeight = compact ? 138 : 148;
   const boxCy = fieldTop + (fieldBottom - fieldTop) * (compact ? 0.42 : 0.4);
   const boxLeft = width / 2 - boxWidth / 2;
-  const expandedTop = boxCy - boxHeight / 2;
+  const expandedTop = boxCy - boxHeight / 2 + 13;
   const titleOnlyTop = boxCy - titleOnlyBoxHeight / 2;
   const cardLandAt = 520 + TOOLS_SCENE.flightDuration;
   const cardPulseAt = cardLandAt + 620;
