@@ -9,7 +9,17 @@ import { Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Path } from 'react-native-svg';
-import Reanimated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Reanimated, {
+  cancelAnimation,
+  Easing,
+  interpolate,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Activity, ArrowUpRight } from '@/components/icons/Icons';
@@ -60,6 +70,84 @@ function buildWeek(): { dateKey: string; letter: string; isToday: boolean; isFut
       isFuture: false,
     };
   });
+}
+
+/* ── Hearth atmosphere ────────────────────────────────────── */
+// A band of warm light that sweeps across the dark hearth every few
+// seconds — the same glint grammar the journal hearth uses.
+function HearthGlint() {
+  const reduceMotion = useReducedMotion();
+  const [w, setW] = useState(0);
+  const t = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion || w === 0) return;
+    t.value = 0;
+    t.value = withRepeat(
+      withTiming(1, { duration: 7200, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      false,
+    );
+    return () => cancelAnimation(t);
+  }, [reduceMotion, w, t]);
+
+  const sweep = useAnimatedStyle(() => ({
+    opacity: interpolate(t.value, [0, 0.08, 0.3, 0.42, 1], [0, 0.9, 0.9, 0, 0]),
+    transform: [
+      { translateX: interpolate(t.value, [0, 0.42, 1], [-90, w + 50, w + 50]) },
+      { rotate: '14deg' },
+    ],
+  }));
+
+  return (
+    <View
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      onLayout={event => setW(event.nativeEvent.layout.width)}
+    >
+      {!reduceMotion && w > 0 && (
+        <Reanimated.View style={[s.hearthGlint, sweep]}>
+          <LinearGradient
+            colors={['rgba(255,241,205,0)', 'rgba(255,241,205,0.14)', 'rgba(255,241,205,0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ flex: 1 }}
+          />
+        </Reanimated.View>
+      )}
+    </View>
+  );
+}
+
+// A mote of gold dust hanging in the hearth's light.
+function GoldDust({ delay, style }: { delay: number; style: object }) {
+  const reduceMotion = useReducedMotion();
+  const t = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      t.value = 0.5;
+      return;
+    }
+    t.value = 0;
+    t.value = withDelay(
+      delay,
+      withRepeat(
+        withTiming(1, { duration: 2800, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        true,
+      ),
+    );
+    return () => cancelAnimation(t);
+  }, [delay, reduceMotion, t]);
+
+  const twinkle = useAnimatedStyle(() => ({ opacity: 0.15 + t.value * 0.5 }));
+
+  return (
+    <Reanimated.View pointerEvents="none" style={[s.dustWrap, style, twinkle]}>
+      <View style={s.dust} />
+    </Reanimated.View>
+  );
 }
 
 /* ── Candle ───────────────────────────────────────────────── */
@@ -280,7 +368,7 @@ function FlameTile({ pct, mode }: { pct: number | null; mode: DayMode }) {
   return (
     <View style={s.flameWrap}>
       <View style={[s.flameTile, s.flameGray]}>
-        <Image source={FLAME_PNG} style={[s.flameImg, { tintColor: '#C9C4B7' }]} />
+        <Image source={FLAME_PNG} style={[s.flameImg, { tintColor: '#6E6553', opacity: 0.6 }]} />
       </View>
       {filled > 0 && (
         <View style={[s.flameClip, { height: `${filled}%` }]} pointerEvents="none">
@@ -417,11 +505,17 @@ export default function WeeklyRhythm() {
         <Text style={s.cardLabel}>TODAY</Text>
         <DailyProgressBar pct={todayPct} mode={todayMode} />
 
-        <View style={s.divider} />
+        {/* Engraved divider: line — diamond — line */}
+        <View style={s.ornamentRow}>
+          <View style={s.ornamentLine} />
+          <View style={s.ornamentDiamond} />
+          <View style={s.ornamentLine} />
+        </View>
 
         <Text style={s.cardLabel}>LAST 7 DAYS</Text>
 
-        {/* Candles row */}
+        {/* Candles stand on the mantel — the light zone of the card,
+            their bases resting on the hearth's top rail below. */}
         <View style={s.candlesRow}>
           {display.map((d, i) => (
             <View key={i} style={s.weekCol}>
@@ -430,35 +524,47 @@ export default function WeeklyRhythm() {
           ))}
         </View>
 
-        {/* Day labels */}
-        <View style={s.daysLabelRow}>
-          {display.map((d, i) => (
-            <View key={i} style={s.weekCol}>
-              <Text style={[s.dayLetter, { color: d.isToday ? C.gold : C.textMuted }]}>{d.letter}</Text>
-            </View>
-          ))}
-        </View>
+        {/* The hearth: a dark velvet panel running edge to edge under the
+            candles — the week's flames glow inside it. */}
+        <View style={s.hearth}>
+          <LinearGradient
+            colors={['#2C2517', '#211C12', '#1A160E']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+          <View pointerEvents="none" style={s.hearthSheen} />
+          <HearthGlint />
+          <GoldDust delay={0} style={{ right: 22, top: 10 }} />
+          <GoldDust delay={1500} style={{ left: 30, top: 26 }} />
+          <GoldDust delay={2700} style={{ right: 74, bottom: 12 }} />
 
-        {/* Flames row */}
-        <View style={s.daysRow}>
-          {display.map((d, i) => (
-            <View key={i} style={s.weekCol}>
-              <FlameTile pct={d.pct} mode={d.mode} />
-            </View>
-          ))}
+          {/* Day labels */}
+          <View style={s.daysLabelRow}>
+            {display.map((d, i) => (
+              <View key={i} style={s.weekCol}>
+                <Text style={[s.dayLetter, d.isToday ? s.dayLetterToday : null]}>{d.letter}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Flames row */}
+          <View style={s.daysRow}>
+            {display.map((d, i) => (
+              <View key={i} style={s.weekCol}>
+                <FlameTile pct={d.pct} mode={d.mode} />
+              </View>
+            ))}
+          </View>
         </View>
       </View>
 
-      <TouchableOpacity activeOpacity={0.86} onPress={openAnalytics}>
-        <LinearGradient
-          colors={[C.gold, C.goldSoft]}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={s.analyticsBtn}
-        >
-          <Text style={s.analyticsBtnTxt}>VIEW ANALYTICS</Text>
-          <ArrowUpRight s={12} c="#fff" w={2.6} />
-        </LinearGradient>
+      <TouchableOpacity activeOpacity={0.86} onPress={openAnalytics} style={s.analyticsBtn}>
+        <View style={s.analyticsDiamond} />
+        <Text style={s.analyticsBtnTxt}>VIEW ANALYTICS</Text>
+        <ArrowUpRight s={12} c="#E8C374" w={2.6} />
+        <View style={s.analyticsDiamond} />
       </TouchableOpacity>
     </View>
   );
@@ -469,41 +575,72 @@ const s = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   heading: { fontFamily: F.serifMedium, fontSize: 18, color: C.text },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFEFB',
     borderWidth: 1,
-    borderColor: '#f0efeb',
-    borderRadius: 22,
+    borderColor: 'rgba(197,160,89,0.22)',
+    borderRadius: 24,
     padding: 16,
     paddingBottom: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+    overflow: 'hidden',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 2,
   },
-  cardLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: C.textMuted, marginBottom: 4 },
+  cardLabel: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2.2, color: '#B89A5A', marginBottom: 7 },
   barRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
   barTrack: {
     flex: 1,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#F5F4EE',
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#F6F1E4',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.16)',
     overflow: 'hidden',
   },
   barFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: 5,
   },
   barFillBlack: {
     backgroundColor: '#1c1917',
   },
-  barPct: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 0.4, color: C.gold, minWidth: 36, textAlign: 'right' },
+  barPct: { fontFamily: F.serifSemiBold, fontSize: 15, color: C.gold, minWidth: 40, textAlign: 'right' },
   barPctBlack: { color: '#1c1917' },
-  divider: { height: 1, backgroundColor: '#F0EFEB', marginTop: 12, marginBottom: 10 },
+  ornamentRow: { flexDirection: 'row', alignItems: 'center', marginTop: 13, marginBottom: 11 },
+  ornamentLine: { flex: 1, height: 1, backgroundColor: 'rgba(197,160,89,0.26)' },
+  ornamentDiamond: { width: 5, height: 5, marginHorizontal: 8, borderRadius: 1, backgroundColor: C.gold, transform: [{ rotate: '45deg' }] },
   daysRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  daysLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, marginBottom: 6 },
+  daysLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 },
   weekCol: { flex: 1, alignItems: 'center' },
-  dayLetter: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 0.6 },
+  dayLetter: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1, color: 'rgba(255,255,255,0.38)' },
+  dayLetterToday: { color: '#F3E2BC' },
+
+  /* Hearth */
+  hearth: {
+    position: 'relative',
+    overflow: 'hidden',
+    marginTop: 0,
+    marginHorizontal: -16,
+    marginBottom: -14,
+    borderTopWidth: 1,
+    borderColor: 'rgba(197,160,89,0.32)',
+    paddingHorizontal: 16,
+    paddingTop: 11,
+    paddingBottom: 16,
+  },
+  hearthSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 16,
+    right: 16,
+    height: 1,
+    backgroundColor: 'rgba(255,244,214,0.14)',
+  },
+  hearthGlint: { position: 'absolute', top: -24, bottom: -24, width: 88 },
+  dustWrap: { position: 'absolute' },
+  dust: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#E8C87E' },
 
   /* Bottom flame badge */
   flameWrap: {
@@ -520,16 +657,16 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   flameGray: {
-    backgroundColor: '#F6F4EE',
-    borderColor: '#E5E1D6',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderColor: 'rgba(255,255,255,0.16)',
   },
   flameColored: {
-    backgroundColor: '#FFF3D8',
-    borderColor: C.gold,
+    backgroundColor: 'rgba(197,160,89,0.22)',
+    borderColor: '#D9B064',
   },
   flameEmpty: {
-    backgroundColor: '#FAFAF7',
-    borderColor: '#EDEAE0',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderColor: 'rgba(255,255,255,0.18)',
     borderStyle: 'dashed',
   },
   flameColoredAbs: {
@@ -556,8 +693,8 @@ const s = StyleSheet.create({
   flameGlow: {
     shadowColor: C.gold,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
+    shadowOpacity: 0.55,
+    shadowRadius: 7,
     elevation: 3,
   },
 
@@ -653,13 +790,22 @@ const s = StyleSheet.create({
     shadowOpacity: 0.04,
   },
   analyticsBtn: {
-    marginTop: 10,
-    padding: 11,
-    borderRadius: 14,
+    marginTop: 12,
+    minHeight: 50,
+    borderRadius: 16,
+    backgroundColor: '#17130F',
+    borderWidth: 1,
+    borderColor: 'rgba(232,195,116,0.55)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 10,
+    shadowColor: C.gold,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    elevation: 6,
   },
-  analyticsBtnTxt: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2, color: '#fff' },
+  analyticsBtnTxt: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.2, color: '#E8C374' },
+  analyticsDiamond: { width: 4, height: 4, borderRadius: 0.5, backgroundColor: 'rgba(232,195,116,0.55)', transform: [{ rotate: '45deg' }] },
 });
