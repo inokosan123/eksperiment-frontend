@@ -18,7 +18,6 @@ import Reanimated, {
   FadeInRight,
   FadeInUp,
   FadeOut,
-  FadeOutUp,
   Easing,
   interpolate,
   interpolateColor,
@@ -7547,9 +7546,9 @@ function DayWasteRevealLayer({
   onDone: () => void;
 }) {
   const [stepIndex, setStepIndex] = useState(0);
-  const [closing, setClosing] = useState(false);
   const waitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const swapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settledForStepRef = useRef(false);
   // The room darkens a step with every beat (dusk), the number's landing
   // blooms an ember behind it and dips the whole stage (weight), and the
@@ -7558,6 +7557,12 @@ function DayWasteRevealLayer({
   const dip = useSharedValue(0);
   const ember = useSharedValue(0);
   const closeT = useSharedValue(0);
+  // Beat swaps are hand-driven on ONE timeline so two numbers can never
+  // share the stage: the old figure fully recedes (swapT -> 0), the content
+  // switches while invisible, then the new figure rises (swapT -> 1).
+  // swapDir picks the path: 0 = rising from below, 1 = receding upward.
+  const swapT = useSharedValue(0);
+  const swapDir = useSharedValue(0);
   const steps = useMemo<DayWasteRevealStep[]>(
     () => [
       {
@@ -7607,9 +7612,18 @@ function DayWasteRevealLayer({
     dusk.value = withTiming(stepIndex / 2, { duration: 820, easing: Easing.inOut(Easing.quad) });
   }, [dusk, stepIndex]);
 
+  // First beat rises after the layer settles on stage.
+  useEffect(() => {
+    swapDir.value = 0;
+    swapT.value = 0;
+    swapT.value = withDelay(200, withTiming(1, { duration: 660, easing: Easing.bezier(0.16, 1, 0.28, 1) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => () => {
     if (waitTimerRef.current) clearTimeout(waitTimerRef.current);
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    if (swapTimerRef.current) clearTimeout(swapTimerRef.current);
   }, []);
 
   const handleSettled = useCallback(() => {
@@ -7633,15 +7647,22 @@ function DayWasteRevealLayer({
       if (stepIndex >= steps.length - 1) {
         // The verdict recedes into depth; the summary header rises to meet
         // the title while this layer is still on screen.
-        setClosing(true);
         closeT.value = withTiming(1, { duration: 400, easing: Easing.in(Easing.cubic) });
         closeTimerRef.current = setTimeout(onDone, 360);
         return;
       }
-      runSelectionHaptic();
-      setStepIndex(current => Math.min(current + 1, steps.length - 1));
+      // Strictly sequential swap: recede fully, switch content while the
+      // stage is empty, then rise. The two figures can never overlap.
+      swapDir.value = 1;
+      swapT.value = withTiming(0, { duration: 260, easing: Easing.in(Easing.cubic) });
+      swapTimerRef.current = setTimeout(() => {
+        runSelectionHaptic();
+        setStepIndex(current => Math.min(current + 1, steps.length - 1));
+        swapDir.value = 0;
+        swapT.value = withTiming(1, { duration: 660, easing: Easing.bezier(0.16, 1, 0.28, 1) });
+      }, 300);
     }, 1450);
-  }, [closeT, dip, ember, onDone, stepIndex, steps.length]);
+  }, [closeT, dip, ember, onDone, stepIndex, steps.length, swapDir, swapT]);
 
   const duskStyle = useAnimatedStyle(() => ({
     opacity: interpolate(dusk.value, [0, 0.5, 1], [0, 0.05, 0.115]),
@@ -7660,6 +7681,39 @@ function DayWasteRevealLayer({
       { scale: 1 - closeT.value * 0.055 },
     ],
   }));
+  // One worklet carries the beat body through rise, recede AND the final
+  // close — a single opacity/transform owner, so nothing can double-drive it.
+  const beatBodyStyle = useAnimatedStyle(() => {
+    const t = swapT.value;
+    const rising = swapDir.value === 0;
+    const y = rising
+      ? (1 - t) * 56
+      : (1 - t) * -34;
+    const sc = rising
+      ? 0.955 + t * 0.045
+      : 1 - (1 - t) * 0.05;
+    return {
+      opacity: t * (1 - closeT.value),
+      transform: [
+        { translateY: y + closeT.value * -34 },
+        { scale: sc * (1 - closeT.value * 0.055) },
+      ],
+    };
+  });
+  // The sentence assembles on the rise: each line owns a late window of the
+  // same swap timeline, so the cascade replays on every beat by construction.
+  const wordOneStyle = useAnimatedStyle(() => {
+    const w = swapDir.value === 0 ? interpolate(swapT.value, [0.45, 0.78], [0, 1], 'clamp') : 1;
+    return { opacity: w, transform: [{ translateY: (1 - w) * 14 }] };
+  });
+  const wordTwoStyle = useAnimatedStyle(() => {
+    const w = swapDir.value === 0 ? interpolate(swapT.value, [0.58, 0.9], [0, 1], 'clamp') : 1;
+    return { opacity: w, transform: [{ translateY: (1 - w) * 14 }] };
+  });
+  const wordThreeStyle = useAnimatedStyle(() => {
+    const w = swapDir.value === 0 ? interpolate(swapT.value, [0.71, 1], [0, 1], 'clamp') : 1;
+    return { opacity: w, transform: [{ translateY: (1 - w) * 14 }] };
+  });
 
   return (
     <Reanimated.View
@@ -7715,13 +7769,7 @@ function DayWasteRevealLayer({
         </Reanimated.View>
 
         <Reanimated.View
-          key={step.key}
-          entering={FadeInUp.delay(110).duration(700).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-            opacity: 0,
-            transform: [{ translateY: 56 }, { scale: 0.955 }],
-          })}
-          exiting={FadeOutUp.duration(300).easing(Easing.in(Easing.cubic))}
-          style={[s.dayWasteRevealBody, step.unit === 'years' && s.dayWasteRevealBodyYears, closeStyle]}
+          style={[s.dayWasteRevealBody, step.unit === 'years' && s.dayWasteRevealBodyYears, beatBodyStyle]}
         >
           <View style={s.dayWasteRevealNumberRow}>
             {/* The ember: a deep red bloom that flares when the number lands */}
@@ -7739,13 +7787,13 @@ function DayWasteRevealLayer({
           </View>
 
           <View style={s.dayWasteRevealWords}>
-            <Reanimated.View entering={FadeInUp.delay(430).duration(540).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}>
+            <Reanimated.View style={wordOneStyle}>
               <Text style={[s.dayWasteRevealWord, s.dayWasteRevealWordOne]}>{step.lineOne}</Text>
             </Reanimated.View>
-            <Reanimated.View entering={FadeInUp.delay(560).duration(540).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}>
+            <Reanimated.View style={wordTwoStyle}>
               <Text style={[s.dayWasteRevealWord, s.dayWasteRevealWordMain]}>{step.lineTwo}</Text>
             </Reanimated.View>
-            <Reanimated.View entering={FadeInUp.delay(690).duration(540).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}>
+            <Reanimated.View style={wordThreeStyle}>
               <Text style={[s.dayWasteRevealWord, s.dayWasteRevealWordThree]}>{step.lineThree}</Text>
             </Reanimated.View>
           </View>
