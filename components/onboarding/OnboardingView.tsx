@@ -14529,8 +14529,8 @@ function RecapFaller({
   const dir = enterX < 0 ? -1 : 1;
   useEffect(() => {
     if (noEnter) return undefined;
-    enter.value = withTiming(1, { duration: 720, easing: Easing.bezier(0.16, 0.84, 0.26, 1) });
-    const timer = setTimeout(runBubbleHaptic, 480);
+    enter.value = withTiming(1, { duration: 780, easing: Easing.bezier(0.16, 0.84, 0.26, 1) });
+    const timer = setTimeout(runBubbleHaptic, 520);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -14542,19 +14542,19 @@ function RecapFaller({
   const motionStyle = useAnimatedStyle(() => {
     const e = enter.value;
     return {
-      opacity: interpolate(e, [0, 0.12], [0, 1], 'clamp') * (1 - fall.value),
+      opacity: interpolate(e, [0, 0.1], [0, 1], 'clamp') * (1 - fall.value),
       transform: [
         { translateX: restX + interpolate(e, [0, 1], [enterX, 0]) },
         {
-          translateY: interpolate(e, [0, 0.55, 0.85, 1], [enterY - 30, enterY * 0.3 - 6, 2, 0])
+          translateY: interpolate(e, [0, 0.55, 0.85, 1], [enterY - 46, enterY * 0.3 - 9, 3.5, 0])
             + fall.value * 780,
         },
         {
           rotate: `${tilt
-            + interpolate(e, [0, 0.62, 0.86, 1], [dir * -9, dir * 2.1, dir * -0.6, 0])
+            + interpolate(e, [0, 0.6, 0.85, 1], [dir * -14, dir * 3.4, dir * -1.1, 0])
             + fall.value * rot}deg`,
         },
-        { scale: interpolate(e, [0, 0.62, 0.86, 1], [1.09, 0.992, 1.004, 1]) },
+        { scale: interpolate(e, [0, 0.6, 0.85, 1], [1.16, 0.985, 1.006, 1]) },
       ],
     };
   });
@@ -28116,6 +28116,11 @@ const s = StyleSheet.create({
   },
   v4RecapSlide: {
     flex: 1,
+    // Escape the stage's 20px side padding: the ScrollView must span the
+    // full screen so its (always-on) clipping edge sits at the true screen
+    // edge — otherwise tossed cards get sheared by a white side rail 20px
+    // in from the border. The content padding below restores the layout.
+    marginHorizontal: -20,
   },
   v4RecapScrollContent: {
     paddingTop: 18,
@@ -32435,7 +32440,7 @@ const s = StyleSheet.create({
     elevation: 3,
   },
   v4RecapAnswersContent: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 32,
     paddingTop: 8,
     paddingBottom: 140,
   },
