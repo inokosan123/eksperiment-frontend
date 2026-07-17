@@ -15615,11 +15615,13 @@ function OrganizeRuleMapSlide({
   useEffect(() => {
     if (variant === 'afterAhead') {
       if (afterAheadStage === 0) {
+        // The macro card is already standing (continuation of the fusion) —
+        // its seal confirms done quickly, then the story flows onward.
         const timer = setTimeout(() => {
           setAfterAheadStage(1);
           runPreviewTaskCheckHaptic();
           void playTaskCheckSoundOnly();
-        }, 1080);
+        }, 640);
         return () => clearTimeout(timer);
       }
 
@@ -15706,14 +15708,21 @@ function OrganizeRuleMapSlide({
             const { active, done } = organizeMapState(variant, area.id, afterAheadStage);
             const cardActiveReady = variant === 'afterAhead' ? true : activeReady;
             const sealMode: 'quiet' | 'active' | 'done' = done ? 'done' : active && cardActiveReady ? 'active' : 'quiet';
+            // On the return from the fusion the macro card is already
+            // standing — it fades in place instantly, continuing the merged
+            // card the previous screen left behind; only the weekly card
+            // makes an entrance.
+            const continuing = variant === 'afterAhead' && index === 0;
             const rowDelay = 340 + index * 240;
             return (
               <Reanimated.View
                 key={area.id}
-                entering={FadeInUp.delay(rowDelay).duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-                  opacity: 0,
-                  transform: [{ translateY: 42 }, { scale: 0.965 }],
-                })}
+                entering={continuing
+                  ? FadeIn.duration(260).easing(Easing.out(Easing.quad))
+                  : FadeInUp.delay(rowDelay).duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                    opacity: 0,
+                    transform: [{ translateY: 42 }, { scale: 0.965 }],
+                  })}
                 style={[s.organizeLayerRow, index > 0 && s.organizeLayerRowGap]}
                 onLayout={event => {
                   const { y, height: h } = event.nativeEvent.layout;
@@ -15735,7 +15744,7 @@ function OrganizeRuleMapSlide({
                     half over the paper, like a wax seal on the sheet's edge */}
                 <Reanimated.View
                   pointerEvents="none"
-                  entering={ZoomIn.delay(rowDelay + 380).duration(400).easing(Easing.bezier(0.16, 1, 0.28, 1))}
+                  entering={ZoomIn.delay(continuing ? 140 : rowDelay + 380).duration(continuing ? 260 : 400).easing(Easing.bezier(0.16, 1, 0.28, 1))}
                   style={s.organizeLayerSealAnchor}
                 >
                   <OrganizeLayerSeal mode={sealMode} accent={area.accent} numeral={LAYER_NUMERALS[index] ?? String(index + 1)} />
@@ -15862,23 +15871,76 @@ function OrganizeMacroBoard({
   steps,
   pour,
   rowsReady,
+  mergeT,
+  mergedSealDone = false,
 }: {
   steps: { title: string; body: string; accent: string; icon: React.ReactNode; active: boolean; done: boolean }[];
   pour: SharedValue<number>;
   rowsReady?: boolean;
+  // The fusion: when provided, driving 0→1 glides the two step cards into
+  // each other and a single Macro planning card — layer I's teal, roman
+  // seal — condenses where they met.
+  mergeT?: SharedValue<number>;
+  mergedSealDone?: boolean;
 }) {
   const [rowLayouts, setRowLayouts] = useState<{ y: number; h: number }[]>([]);
+  // UI-thread mirror of the merge geometry (how far each row travels).
+  const mergeShift = useSharedValue({ r0: 0, r1: 0, ready: false });
+  const zero = useSharedValue(0);
+  const drive = mergeT ?? zero;
+
+  useEffect(() => {
+    if (rowLayouts.length >= 2 && rowLayouts[0] && rowLayouts[1]) {
+      const mid = (rowLayouts[0].y + rowLayouts[1].y + rowLayouts[1].h) / 2;
+      mergeShift.value = {
+        r0: mid - (rowLayouts[0].y + rowLayouts[0].h / 2),
+        r1: mid - (rowLayouts[1].y + rowLayouts[1].h / 2),
+        ready: true,
+      };
+    }
+  }, [mergeShift, rowLayouts]);
+
+  const row0MergeStyle = useAnimatedStyle(() => ({
+    opacity: 1 - interpolate(drive.value, [0.5, 0.86], [0, 1], 'clamp'),
+    transform: [
+      { translateY: drive.value * (mergeShift.value.ready ? mergeShift.value.r0 : 0) },
+      { scale: 1 - drive.value * 0.06 },
+    ],
+  }));
+  const row1MergeStyle = useAnimatedStyle(() => ({
+    opacity: 1 - interpolate(drive.value, [0.5, 0.86], [0, 1], 'clamp'),
+    transform: [
+      { translateY: drive.value * (mergeShift.value.ready ? mergeShift.value.r1 : 0) },
+      { scale: 1 - drive.value * 0.06 },
+    ],
+  }));
+  const threadMergeStyle = useAnimatedStyle(() => ({
+    opacity: 1 - interpolate(drive.value, [0.1, 0.5], [0, 1], 'clamp'),
+  }));
+  const mergedCardStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(drive.value, [0.52, 0.88], [0, 1], 'clamp'),
+    transform: [
+      { scale: interpolate(drive.value, [0.52, 0.9, 1], [0.94, 1.015, 1], 'clamp') },
+    ],
+  }));
+
+  const rowStyles = [row0MergeStyle, row1MergeStyle];
+  const mergedTop = rowLayouts.length >= 2 && rowLayouts[0] && rowLayouts[1]
+    ? (rowLayouts[0].y + rowLayouts[1].y + rowLayouts[1].h) / 2 - 56
+    : 0;
 
   return (
     <View style={s.organizeMacroBoard}>
       {rowLayouts.length >= 2 && !!rowLayouts[0] && !!rowLayouts[1] && steps.length >= 2 && (
-        <OrganizeLayerThread
-          pour={pour}
-          accent={GOLD}
-          top={rowLayouts[0].y + MACRO_SEAL_TOP + MACRO_SEAL_SIZE + 4}
-          height={Math.max(20, rowLayouts[1].y + MACRO_SEAL_TOP - (rowLayouts[0].y + MACRO_SEAL_TOP + MACRO_SEAL_SIZE) - 8)}
-          left={MACRO_SEAL_OVERHANG * -1 + MACRO_SEAL_SIZE / 2 - 1.25}
-        />
+        <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, threadMergeStyle]}>
+          <OrganizeLayerThread
+            pour={pour}
+            accent={GOLD}
+            top={rowLayouts[0].y + MACRO_SEAL_TOP + MACRO_SEAL_SIZE + 4}
+            height={Math.max(20, rowLayouts[1].y + MACRO_SEAL_TOP - (rowLayouts[0].y + MACRO_SEAL_TOP + MACRO_SEAL_SIZE) - 8)}
+            left={MACRO_SEAL_OVERHANG * -1 + MACRO_SEAL_SIZE / 2 - 1.25}
+          />
+        </Reanimated.View>
       )}
       {steps.map((step, index) => {
         const rowDelay = 320 + index * 220;
@@ -15890,7 +15952,7 @@ function OrganizeMacroBoard({
               opacity: 0,
               transform: [{ translateY: 38 }, { scale: 0.968 }],
             })}
-            style={[s.organizeLayerRow, index > 0 && s.organizeMacroRowGap]}
+            style={[s.organizeLayerRow, index > 0 && s.organizeMacroRowGap, rowStyles[index] ?? undefined]}
             onLayout={event => {
               const { y, height: h } = event.nativeEvent.layout;
               setRowLayouts(current => {
@@ -15923,6 +15985,30 @@ function OrganizeMacroBoard({
           </Reanimated.View>
         );
       })}
+      {/* The condensed layer: purple and brown fuse into layer I's teal */}
+      {mergeT !== undefined && mergedTop > 0 && (
+        <Reanimated.View
+          pointerEvents="none"
+          style={[s.organizeMacroMergedWrap, { top: mergedTop }, mergedCardStyle]}
+        >
+          <OrganizeMacroPlaqueCard
+            title="Macro planning"
+            body="Big events and monthly goals — the first layer, in place."
+            accent="#4D8586"
+            icon={<Calendar s={18} c="#4D8586" w={2} />}
+            active={false}
+            done
+          />
+          <View style={s.organizeMacroSealAnchor}>
+            <OrganizeLayerSeal
+              mode={mergedSealDone ? 'done' : 'active'}
+              accent="#4D8586"
+              numeral="I"
+              size={LAYER_SEAL_SIZE}
+            />
+          </View>
+        </Reanimated.View>
+      )}
     </View>
   );
 }
@@ -16059,8 +16145,12 @@ function OrganizeMacroProgressSlide({
 }) {
   const insets = useSafeAreaInsets();
   const [checked, setChecked] = useState(false);
+  // The fusion scene (afterMonthlyGoals): 0 = both steps standing,
+  // 1 = cards gliding together, 2 = the merged layer card has formed.
+  const [mergeStage, setMergeStage] = useState<0 | 1 | 2>(0);
   const exitProgress = useSharedValue(0);
   const progressPour = useSharedValue(0);
+  const mergeT = useSharedValue(0);
   const ctaLockRef = useRef(false);
   const contentStyle = [
     s.organizeRuleContent,
@@ -16074,8 +16164,12 @@ function OrganizeMacroProgressSlide({
   const bigEventsDone = variant === 'afterMonthlyGoals' || checked;
   const monthlyDone = variant === 'afterMonthlyGoals' && checked;
   const monthlyActive = variant === 'afterBigEvents' && checked && monthlyGoalsEnabled;
-  const macroComplete = checked && (!monthlyGoalsEnabled || variant === 'afterMonthlyGoals');
-  const ctaVisible = checked && !macroComplete;
+  // On the fusion path the layer is only complete once the merged card
+  // has formed — the header's final cascade lands WITH the fusion.
+  const macroComplete = variant === 'afterMonthlyGoals'
+    ? mergeStage >= 2
+    : checked && !monthlyGoalsEnabled;
+  const ctaVisible = checked && !macroComplete && variant !== 'afterMonthlyGoals';
   const ctaLabel = monthlyActive ? 'Set up monthly goals' : 'Continue';
   const exitStyle = useAnimatedStyle(() => ({
     opacity: interpolate(exitProgress.value, [0, 1], [1, 0]),
@@ -16087,8 +16181,12 @@ function OrganizeMacroProgressSlide({
 
   useEffect(() => {
     setChecked(false);
+    setMergeStage(0);
     exitProgress.value = 0;
-    progressPour.value = 0;
+    // On the return the thread already stands full gold — step 1 was won
+    // on the previous visit.
+    progressPour.value = variant === 'afterMonthlyGoals' ? 1 : 0;
+    mergeT.value = 0;
     ctaLockRef.current = false;
     const timer = setTimeout(() => {
       setChecked(true);
@@ -16096,7 +16194,7 @@ function OrganizeMacroProgressSlide({
       void playTaskCheckSoundOnly();
     }, 720);
     return () => clearTimeout(timer);
-  }, [exitProgress, progressPour, variant]);
+  }, [exitProgress, mergeT, progressPour, variant]);
 
   // The strike pours the gold onward to the next step.
   useEffect(() => {
@@ -16107,10 +16205,30 @@ function OrganizeMacroProgressSlide({
     return () => clearTimeout(timer);
   }, [checked, monthlyGoalsEnabled, progressPour, variant]);
 
+  // The fusion: a beat to read the second win, then the two steps glide
+  // into one — a strong pulse as they meet — and the layer card condenses,
+  // its roman seal striking done a breath later.
+  useEffect(() => {
+    if (variant !== 'afterMonthlyGoals' || !checked) return undefined;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    timers.push(setTimeout(() => {
+      setMergeStage(1);
+      runStrongHaptic();
+      mergeT.value = withTiming(1, { duration: 820, easing: Easing.bezier(0.3, 0, 0.3, 1) });
+    }, 1250));
+    timers.push(setTimeout(() => {
+      setMergeStage(2);
+      runSelectionHaptic();
+    }, 1250 + 880));
+    return () => timers.forEach(clearTimeout);
+  }, [checked, mergeT, variant]);
+
   useEffect(() => {
     if (!macroComplete) return undefined;
 
     let nextTimer: ReturnType<typeof setTimeout> | undefined;
+    // The full tableau — merged layer card, LAYER I COMPLETE header —
+    // holds long enough to be read before the page turns.
     const exitTimer = setTimeout(() => {
       runSelectionHaptic();
       exitProgress.value = withTiming(1, {
@@ -16118,13 +16236,13 @@ function OrganizeMacroProgressSlide({
         easing: Easing.bezier(0.16, 1, 0.28, 1),
       });
       nextTimer = setTimeout(onNext, 720);
-    }, 980);
+    }, variant === 'afterMonthlyGoals' ? 1650 : 980);
 
     return () => {
       clearTimeout(exitTimer);
       if (nextTimer) clearTimeout(nextTimer);
     };
-  }, [exitProgress, macroComplete, onNext]);
+  }, [exitProgress, macroComplete, onNext, variant]);
 
   return (
     <View style={s.organizeRuleScreen}>
@@ -16158,6 +16276,8 @@ function OrganizeMacroProgressSlide({
         <Reanimated.View style={[s.setupPathBoard, s.organizeMacroBoardSeat, exitStyle]}>
           <OrganizeMacroBoard
             pour={progressPour}
+            mergeT={variant === 'afterMonthlyGoals' ? mergeT : undefined}
+            mergedSealDone={mergeStage >= 2}
             steps={[
               {
                 title: 'Big events',
@@ -29934,6 +30054,11 @@ const s = StyleSheet.create({
   // with only two cards it opened a dead gulf between title and board).
   organizeMacroBoardSeat: {
     marginTop: 2,
+  },
+  organizeMacroMergedWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
   },
   organizeMacroSealAnchor: {
     position: 'absolute',
