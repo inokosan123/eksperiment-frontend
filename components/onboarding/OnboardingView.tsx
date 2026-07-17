@@ -14521,33 +14521,49 @@ function RecapFaller({
   children: React.ReactNode;
 }) {
   const fall = useSharedValue(0);
+  // The film toss onto the pile: released in the air from its side —
+  // large, over-tilted past its resting pose — the card sails in on a
+  // decelerating arc, lands with a soft overshoot and settles into its
+  // thrown tilt. One worklet owns entrance and purge together.
+  const enter = useSharedValue(noEnter ? 1 : 0);
+  const dir = enterX < 0 ? -1 : 1;
+  useEffect(() => {
+    if (noEnter) return undefined;
+    enter.value = withTiming(1, { duration: 720, easing: Easing.bezier(0.16, 0.84, 0.26, 1) });
+    const timer = setTimeout(runBubbleHaptic, 480);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (purge) {
       fall.value = withDelay(fallDelay, withTiming(1, { duration: 640, easing: Easing.in(Easing.cubic) }));
     }
   }, [purge, fallDelay, fall]);
-  const fallStyle = useAnimatedStyle(() => ({
-    opacity: 1 - fall.value,
-    transform: [
-      { translateX: restX },
-      { translateY: fall.value * 780 },
-      { rotate: `${tilt + fall.value * rot}deg` },
-    ],
-  }));
+  const motionStyle = useAnimatedStyle(() => {
+    const e = enter.value;
+    return {
+      opacity: interpolate(e, [0, 0.12], [0, 1], 'clamp') * (1 - fall.value),
+      transform: [
+        { translateX: restX + interpolate(e, [0, 1], [enterX, 0]) },
+        {
+          translateY: interpolate(e, [0, 0.55, 0.85, 1], [enterY - 30, enterY * 0.3 - 6, 2, 0])
+            + fall.value * 780,
+        },
+        {
+          rotate: `${tilt
+            + interpolate(e, [0, 0.62, 0.86, 1], [dir * -9, dir * 2.1, dir * -0.6, 0])
+            + fall.value * rot}deg`,
+        },
+        { scale: interpolate(e, [0, 0.62, 0.86, 1], [1.09, 0.992, 1.004, 1]) },
+      ],
+    };
+  });
   return (
     <Reanimated.View
       collapsable={false}
-      renderToHardwareTextureAndroid={false}
+      renderToHardwareTextureAndroid
       shouldRasterizeIOS={false}
-      entering={
-        noEnter
-          ? undefined
-          : FadeIn.duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-              opacity: 0,
-              transform: [{ translateX: enterX }, { translateY: enterY }, { scale: 0.96 }],
-            })
-      }
-      style={[style, fallStyle]}
+      style={[style, motionStyle]}
     >
       {children}
     </Reanimated.View>
