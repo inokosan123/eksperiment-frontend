@@ -15759,18 +15759,20 @@ function OrganizeRuleMapSlide({
   );
 }
 
+// The macro steps wear the colours their example cards taught: Big
+// Events purple, Monthly Goals brown.
 const MACRO_PLANNING_STEPS = [
   {
     title: 'Big events',
     body: 'Important days you want your plan to remember before they arrive.',
-    accent: '#4D8586',
-    icon: <Calendar s={18} c="#4D8586" w={2} />,
+    accent: '#705B9B',
+    icon: <Calendar s={18} c="#705B9B" w={2} />,
   },
   {
     title: 'Monthly goals',
     body: 'A simple direction for the month, so each week knows what it serves.',
-    accent: GOLD,
-    icon: <Clock s={18} c={GOLD} w={2} />,
+    accent: '#8F5B4B',
+    icon: <Clock s={18} c="#8F5B4B" w={2} />,
   },
 ];
 
@@ -16135,10 +16137,10 @@ function OrganizeMacroProgressSlide({
             eyebrow={macroComplete ? 'LAYER I COMPLETE' : variant === 'afterMonthlyGoals' ? 'STEP 2 COMPLETE' : 'STEP 1 COMPLETE'}
             title={
               macroComplete
-                ? 'Your macro plan is ready.'
+                ? 'Your macro plan is ready!'
                 : variant === 'afterMonthlyGoals'
-                  ? 'Monthly goals are set.'
-                  : 'Big Events is set.'
+                  ? 'Monthly goals are set!'
+                  : 'Big Events is set!'
             }
             body={
               macroComplete
@@ -16146,10 +16148,10 @@ function OrganizeMacroProgressSlide({
                 : variant === 'afterMonthlyGoals'
                   ? 'The month has its direction.'
                   : monthlyGoalsEnabled
-                  ? 'Your important dates now stand ahead of you. Next — give the month its direction.'
+                  ? 'Your important dates now stand ahead of you. Next — set the goals that will guide your month.'
                   : 'Your important dates now stand ahead of you.'
             }
-            accent={macroComplete ? '#2F9B61' : '#4D8586'}
+            accent={macroComplete ? '#2F9B61' : variant === 'afterMonthlyGoals' ? '#8F5B4B' : '#705B9B'}
           />
         </Reanimated.View>
 
@@ -16160,8 +16162,8 @@ function OrganizeMacroProgressSlide({
               {
                 title: 'Big events',
                 body: 'Important dates and commitments are now visible.',
-                accent: '#4D8586',
-                icon: <Calendar s={18} c="#4D8586" w={2} />,
+                accent: '#705B9B',
+                icon: <Calendar s={18} c="#705B9B" w={2} />,
                 active: !bigEventsDone,
                 done: bigEventsDone,
               },
@@ -16169,8 +16171,8 @@ function OrganizeMacroProgressSlide({
                 ? [{
                     title: 'Monthly goals',
                     body: 'Add direction for the month before the week begins.',
-                    accent: GOLD,
-                    icon: <Target s={18} c={GOLD} w={2} />,
+                    accent: '#8F5B4B',
+                    icon: <Target s={18} c="#8F5B4B" w={2} />,
                     active: monthlyActive || (variant === 'afterMonthlyGoals' && !checked),
                     done: monthlyDone,
                   }]
