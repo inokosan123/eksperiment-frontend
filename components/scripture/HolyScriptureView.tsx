@@ -18,6 +18,7 @@ import Reanimated, {
   withSpring,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Line } from 'react-native-svg';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -465,7 +466,6 @@ function BookList({
         <View key={book.id} style={s.bookListItem}>
           <PremiumBookCard
             book={book}
-            title={isGreen ? 'New Testament' : 'Old Testament'}
             tone={tone}
             expanded={expandedBookId === book.id}
             onPress={() => onBook(book)}
@@ -548,7 +548,6 @@ function BookSection({
             <React.Fragment key={book.id}>
               <PremiumBookCard
                 book={book}
-                title={title}
                 tone={tone}
                 expanded={expandedBookId === book.id}
                 onPress={() => onBook(book)}
@@ -568,19 +567,66 @@ function BookSection({
   );
 }
 
+// The testaments share one design; only the light falling across the
+// parchment differs. The New Testament carries diagonal rays, the Old
+// the horizontal ruling of a scroll — faint, anchored to the right edge.
+function TestamentMotif({ tone }: { tone: 'green' | 'stone' }) {
+  const isGreen = tone === 'green';
+  const stroke = isGreen ? '#5E7B55' : '#B49B67';
+  const W = 200;
+  const H = 100;
+
+  return (
+    <View pointerEvents="none" style={s.motifAnchor}>
+      <Svg width={W} height={H}>
+        {isGreen
+          ? Array.from({ length: 6 }).map((_, index) => {
+            const offset = index * 26;
+            return (
+              <Line
+                key={index}
+                x1={W - offset}
+                y1={-6}
+                x2={W - offset - 62}
+                y2={H + 6}
+                stroke={stroke}
+                strokeOpacity={0.075}
+                strokeWidth={1}
+              />
+            );
+          })
+          : Array.from({ length: 5 }).map((_, index) => {
+            const y = 10 + index * 18;
+            return (
+              <Line
+                key={index}
+                x1={24}
+                y1={y}
+                x2={W}
+                y2={y}
+                stroke={stroke}
+                strokeOpacity={0.085}
+                strokeWidth={1}
+              />
+            );
+          })}
+      </Svg>
+    </View>
+  );
+}
+
 function PremiumBookCard({
-  book, title, tone, expanded, onPress,
+  book, tone, expanded, onPress,
 }: {
   book: BibleBook;
-  title: string;
   tone: 'green' | 'stone';
   expanded: boolean;
   onPress: () => void;
 }) {
   const isGreen = tone === 'green';
-  const subtitle = book.testament === 'dc' ? 'DEUTEROCANON' : title.toUpperCase();
   // The illuminated initial: the book's opening glyph set as a drop cap.
   const initial = book.name.charAt(0);
+  const isDeutero = book.testament === 'dc';
 
   return (
     <TouchableOpacity
@@ -589,6 +635,7 @@ function PremiumBookCard({
       style={[
         s.premiumBook,
         {
+          backgroundColor: isGreen ? '#FDFEFB' : '#FFFEFA',
           borderColor: isGreen ? '#D9E4D5' : '#E8E0D4',
           borderBottomColor: expanded ? 'transparent' : (isGreen ? '#D9E4D5' : '#E8E0D4'),
           borderBottomLeftRadius: expanded ? 0 : 18,
@@ -597,26 +644,32 @@ function PremiumBookCard({
         expanded && s.premiumBookExpanded,
       ]}
     >
-      <View
-        style={[
-          s.initialSeat,
-          isGreen
-            ? { backgroundColor: '#F5FAF1', borderColor: '#D6E3CF' }
-            : { backgroundColor: '#FBF6EC', borderColor: '#E6DCC6' },
-        ]}
-      >
-        <Text style={[s.initialGlyph, { color: isGreen ? '#41603A' : '#7A5F2E' }]}>{initial}</Text>
+      <TestamentMotif tone={tone} />
+      <View style={[s.initialSeat, { borderColor: isGreen ? 'rgba(94,123,85,0.32)' : 'rgba(180,155,103,0.36)' }]}>
+        <View
+          style={[
+            s.initialCore,
+            isGreen
+              ? { backgroundColor: '#F3F8EE' }
+              : { backgroundColor: '#FAF4E7' },
+          ]}
+        >
+          <Text style={[s.initialGlyph, { color: isGreen ? '#41603A' : '#7A5F2E' }]}>{initial}</Text>
+        </View>
       </View>
       <View style={s.bookCopy}>
         <Text style={s.bookName}>{book.name}</Text>
         <View style={s.bookMetaRow}>
-          <Text style={[s.bookMeta, { color: isGreen ? '#7E9270' : '#A48F6C' }]}>{subtitle}</Text>
-          <Text style={s.bookMetaDot}>-</Text>
-          <Text style={s.bookMetaMuted}>{book.chapters} CH.</Text>
+          <View style={[s.metaDiamond, { backgroundColor: isGreen ? 'rgba(94,123,85,0.55)' : 'rgba(180,155,103,0.6)' }]} />
+          <Text style={[s.bookMeta, { color: isGreen ? '#7E9270' : '#A48F6C' }]}>
+            {book.chapters} {book.chapters === 1 ? 'CHAPTER' : 'CHAPTERS'}{isDeutero ? ' · DEUTEROCANON' : ''}
+          </Text>
         </View>
       </View>
-      <View style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}>
-        <ChevronRight s={16} c={isGreen ? '#C2D4BC' : '#D0C4B4'} />
+      <View style={[s.chevronSeat, { borderColor: isGreen ? 'rgba(94,123,85,0.24)' : 'rgba(180,155,103,0.28)' }]}>
+        <View style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}>
+          <ChevronRight s={15} c={isGreen ? '#8FA986' : '#BCA476'} />
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -642,12 +695,15 @@ function ChapterPanel({
         { borderColor: isGreen ? '#DCE5D7' : '#E8E1D5' },
       ]}
     >
-      {/* Engraved head: rule — CHAPTERS · N — rule */}
+      <TestamentMotif tone={tone} />
+      {/* Engraved head: rule — ◆ CHAPTERS · N ◆ — rule */}
       <View style={s.chapterHeadRow}>
         <View style={[s.chapterHeadRule, { backgroundColor: isGreen ? 'rgba(94,123,85,0.24)' : 'rgba(180,155,103,0.28)' }]} />
+        <View style={[s.chapterHeadDiamond, { backgroundColor: isGreen ? 'rgba(94,123,85,0.5)' : 'rgba(180,155,103,0.55)' }]} />
         <Text style={[s.chapterHeadText, { color: isGreen ? '#72876A' : '#A89069' }]}>
           CHAPTERS · {book.chapters}
         </Text>
+        <View style={[s.chapterHeadDiamond, { backgroundColor: isGreen ? 'rgba(94,123,85,0.5)' : 'rgba(180,155,103,0.55)' }]} />
         <View style={[s.chapterHeadRule, { backgroundColor: isGreen ? 'rgba(94,123,85,0.24)' : 'rgba(180,155,103,0.28)' }]} />
       </View>
 
@@ -668,8 +724,8 @@ function ChapterPanel({
                   style={[
                     s.chapterCell,
                     {
-                      borderColor: isGreen ? '#D8E6D2' : '#E4DDD4',
-                      backgroundColor: '#FFFEFB',
+                      borderColor: isGreen ? 'rgba(94,123,85,0.26)' : 'rgba(180,155,103,0.3)',
+                      backgroundColor: isGreen ? '#FCFEFA' : '#FFFDF7',
                     },
                   ]}
                 >
@@ -1067,16 +1123,17 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   premiumBook: {
-    minHeight: 70,
+    minHeight: 72,
     borderRadius: 18,
     borderWidth: 1,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 13,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 12,
+    overflow: 'hidden',
+    position: 'relative',
     shadowColor: '#0F172A',
     shadowOpacity: 0.035,
     shadowOffset: { width: 0, height: 2 },
@@ -1088,27 +1145,58 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowRadius: 20,
   },
+  motifAnchor: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    overflow: 'hidden',
+  },
+  // The illuminated initial sits in a double frame: an outer hairline
+  // ring on white, an inner toned core — the halo grammar, squared.
   initialSeat: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     borderWidth: 1,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
+  initialCore: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   initialGlyph: {
     fontFamily: F.serifSemiBold,
-    fontSize: 20,
-    lineHeight: 24,
+    fontSize: 18,
+    lineHeight: 22,
     includeFontPadding: false,
   },
   bookCopy: { flex: 1, minWidth: 0 },
   bookName: { fontFamily: F.serif, fontSize: 20, lineHeight: 24, color: '#2F2B27' },
-  bookMetaRow: { marginTop: 3, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  bookMeta: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.5 },
-  bookMetaDot: { fontFamily: F.sansBold, fontSize: 11, color: '#D5D0C9' },
-  bookMetaMuted: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.2, color: '#D0D5DD' },
+  bookMetaRow: { marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  metaDiamond: {
+    width: 4,
+    height: 4,
+    borderRadius: 0.8,
+    transform: [{ rotate: '45deg' }],
+  },
+  bookMeta: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.6 },
+  chevronSeat: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
   chapterPanel: {
     marginTop: 0,
     marginBottom: 8,
@@ -1119,8 +1207,10 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderTopWidth: 0,
     paddingHorizontal: 14,
-    paddingTop: 16,
+    paddingTop: 15,
     paddingBottom: 14,
+    overflow: 'hidden',
+    position: 'relative',
     shadowColor: '#0F172A',
     shadowOpacity: 0.04,
     shadowOffset: { width: 0, height: 10 },
@@ -1132,11 +1222,17 @@ const s = StyleSheet.create({
     paddingHorizontal: 2,
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 10,
+    columnGap: 8,
   },
   chapterHeadRule: {
     flex: 1,
     height: 1,
+  },
+  chapterHeadDiamond: {
+    width: 4,
+    height: 4,
+    borderRadius: 0.8,
+    transform: [{ rotate: '45deg' }],
   },
   chapterHeadText: {
     fontFamily: F.sansBold,
