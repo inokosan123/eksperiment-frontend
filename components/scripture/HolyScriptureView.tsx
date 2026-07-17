@@ -290,7 +290,7 @@ export default function HolyScriptureView() {
         <View style={s.quickGrid}>
           <TouchableOpacity onPress={() => router.push('/favorites')} activeOpacity={0.86} style={[s.quickCard, s.quickCardGold]}>
             <LinearGradient
-              colors={['#FFFEF9', '#FBF3E1']}
+              colors={['#FFFEF9', '#FAF1DC']}
               start={{ x: 0, y: 0 }}
               end={{ x: 0, y: 1 }}
               style={s.cardGround}
@@ -299,19 +299,22 @@ export default function HolyScriptureView() {
             <DoorMotif variant="rays" stroke="#B49B67" />
             <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(197,160,89,0.18)' }]} />
             <View pointerEvents="none" style={[s.doorGlint, { backgroundColor: 'rgba(197,160,89,0.55)' }]} />
+            <View pointerEvents="none" style={[s.doorGlintSmall, { backgroundColor: 'rgba(197,160,89,0.4)' }]} />
             <View style={s.quickCardRow}>
-              <View style={[s.haloRing, { borderColor: 'rgba(197,160,89,0.38)' }]}>
-                <View style={[s.haloCore, { backgroundColor: 'rgba(197,160,89,0.10)' }]}>
-                  <Star s={14} c={GOLD} />
+              <View style={s.haloWrap}>
+                <View style={[s.haloAura, { backgroundColor: 'rgba(197,160,89,0.09)' }]} />
+                <View style={[s.haloRing, { borderColor: 'rgba(197,160,89,0.38)' }]}>
+                  <View style={[s.haloCore, { backgroundColor: 'rgba(197,160,89,0.10)' }]}>
+                    <Star s={14} c={GOLD} />
+                  </View>
                 </View>
               </View>
               <Text style={s.quickLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.88}>Favorites</Text>
             </View>
-            <Text style={s.quickDesc}>Highlights & saved passages</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/bible-notes')} activeOpacity={0.86} style={[s.quickCard, s.quickCardGreen]}>
             <LinearGradient
-              colors={['#FDFEFB', '#F2F7EC']}
+              colors={['#FDFEFB', '#F0F6E9']}
               start={{ x: 0, y: 0 }}
               end={{ x: 0, y: 1 }}
               style={s.cardGround}
@@ -320,15 +323,18 @@ export default function HolyScriptureView() {
             <DoorMotif variant="ruling" stroke="#5E7B55" />
             <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(94,123,85,0.17)' }]} />
             <View pointerEvents="none" style={[s.doorGlint, { backgroundColor: 'rgba(94,123,85,0.5)' }]} />
+            <View pointerEvents="none" style={[s.doorGlintSmall, { backgroundColor: 'rgba(94,123,85,0.36)' }]} />
             <View style={s.quickCardRow}>
-              <View style={[s.haloRing, { borderColor: 'rgba(94,123,85,0.36)' }]}>
-                <View style={[s.haloCore, { backgroundColor: 'rgba(94,123,85,0.10)' }]}>
-                  <Notebook s={13} c={GREEN} />
+              <View style={s.haloWrap}>
+                <View style={[s.haloAura, { backgroundColor: 'rgba(94,123,85,0.08)' }]} />
+                <View style={[s.haloRing, { borderColor: 'rgba(94,123,85,0.36)' }]}>
+                  <View style={[s.haloCore, { backgroundColor: 'rgba(94,123,85,0.10)' }]}>
+                    <Notebook s={13} c={GREEN} />
+                  </View>
                 </View>
               </View>
               <Text style={s.quickLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.88}>Bible Notes</Text>
             </View>
-            <Text style={s.quickDesc}>Chapter notes & reflections</Text>
           </TouchableOpacity>
         </View>
 
@@ -1098,12 +1104,12 @@ const s = StyleSheet.create({
   quickGrid: { flexDirection: 'row', gap: 9 },
   quickCard: {
     flex: 1,
-    minHeight: 78,
+    minHeight: 64,
     borderRadius: 19,
     borderWidth: 1,
     paddingHorizontal: 12,
-    paddingVertical: 12,
-    gap: 6,
+    paddingVertical: 11,
+    justifyContent: 'center',
     overflow: 'hidden',
     position: 'relative',
     shadowColor: '#0F172A',
@@ -1145,7 +1151,28 @@ const s = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
   },
-  quickCardRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  quickCardRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  haloWrap: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  haloAura: {
+    position: 'absolute',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  doorGlintSmall: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    width: 3,
+    height: 3,
+    borderRadius: 0.8,
+    transform: [{ rotate: '45deg' }],
+  },
   haloRing: {
     width: 34,
     height: 34,
@@ -1162,8 +1189,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  quickLabel: { fontFamily: F.serifMedium, fontSize: 16, lineHeight: 19, color: '#2B2723', flex: 1 },
-  quickDesc: { fontFamily: F.serifItalic, fontSize: 12.5, lineHeight: 16, color: '#A29A8C' },
+  quickLabel: { fontFamily: F.serifMedium, fontSize: 16.5, lineHeight: 20, letterSpacing: 0.2, color: '#2B2723', flex: 1 },
   checkpointCard: {
     minHeight: 62,
     borderRadius: 19,
