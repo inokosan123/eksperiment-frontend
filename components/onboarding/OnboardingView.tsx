@@ -1236,8 +1236,12 @@ function stepOrder(answers: Answers): StepId[] {
     'organizeBigEventsIntro',
     'buildBigEvents',
     'organizeMacroProgressAfterBigEvents',
-    ...(includeMonthlyGoals ? ['organizeMonthlyGoalsIntro' as StepId, 'buildMonthlyGoals' as StepId, 'organizeMacroProgressAfterMonthlyGoals' as StepId] : []),
-    'organizeSetupPathAfterAhead',
+    // On the monthly-goals path the fusion scene plays the whole
+    // first-layer-is-set narrative itself — the separate afterAhead layers
+    // screen would repeat it, so it only remains on the shorter path.
+    ...(includeMonthlyGoals
+      ? ['organizeMonthlyGoalsIntro' as StepId, 'buildMonthlyGoals' as StepId, 'organizeMacroProgressAfterMonthlyGoals' as StepId]
+      : ['organizeSetupPathAfterAhead' as StepId]),
     'organizeWeeklyIntroV2',
     'organizeWeeklyRhythmV2',
     'organizeDailySetupV2',
@@ -15871,76 +15875,23 @@ function OrganizeMacroBoard({
   steps,
   pour,
   rowsReady,
-  mergeT,
-  mergedSealDone = false,
 }: {
   steps: { title: string; body: string; accent: string; icon: React.ReactNode; active: boolean; done: boolean }[];
   pour: SharedValue<number>;
   rowsReady?: boolean;
-  // The fusion: when provided, driving 0→1 glides the two step cards into
-  // each other and a single Macro planning card — layer I's teal, roman
-  // seal — condenses where they met.
-  mergeT?: SharedValue<number>;
-  mergedSealDone?: boolean;
 }) {
   const [rowLayouts, setRowLayouts] = useState<{ y: number; h: number }[]>([]);
-  // UI-thread mirror of the merge geometry (how far each row travels).
-  const mergeShift = useSharedValue({ r0: 0, r1: 0, ready: false });
-  const zero = useSharedValue(0);
-  const drive = mergeT ?? zero;
-
-  useEffect(() => {
-    if (rowLayouts.length >= 2 && rowLayouts[0] && rowLayouts[1]) {
-      const mid = (rowLayouts[0].y + rowLayouts[1].y + rowLayouts[1].h) / 2;
-      mergeShift.value = {
-        r0: mid - (rowLayouts[0].y + rowLayouts[0].h / 2),
-        r1: mid - (rowLayouts[1].y + rowLayouts[1].h / 2),
-        ready: true,
-      };
-    }
-  }, [mergeShift, rowLayouts]);
-
-  const row0MergeStyle = useAnimatedStyle(() => ({
-    opacity: 1 - interpolate(drive.value, [0.5, 0.86], [0, 1], 'clamp'),
-    transform: [
-      { translateY: drive.value * (mergeShift.value.ready ? mergeShift.value.r0 : 0) },
-      { scale: 1 - drive.value * 0.06 },
-    ],
-  }));
-  const row1MergeStyle = useAnimatedStyle(() => ({
-    opacity: 1 - interpolate(drive.value, [0.5, 0.86], [0, 1], 'clamp'),
-    transform: [
-      { translateY: drive.value * (mergeShift.value.ready ? mergeShift.value.r1 : 0) },
-      { scale: 1 - drive.value * 0.06 },
-    ],
-  }));
-  const threadMergeStyle = useAnimatedStyle(() => ({
-    opacity: 1 - interpolate(drive.value, [0.1, 0.5], [0, 1], 'clamp'),
-  }));
-  const mergedCardStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(drive.value, [0.52, 0.88], [0, 1], 'clamp'),
-    transform: [
-      { scale: interpolate(drive.value, [0.52, 0.9, 1], [0.94, 1.015, 1], 'clamp') },
-    ],
-  }));
-
-  const rowStyles = [row0MergeStyle, row1MergeStyle];
-  const mergedTop = rowLayouts.length >= 2 && rowLayouts[0] && rowLayouts[1]
-    ? (rowLayouts[0].y + rowLayouts[1].y + rowLayouts[1].h) / 2 - 56
-    : 0;
 
   return (
     <View style={s.organizeMacroBoard}>
       {rowLayouts.length >= 2 && !!rowLayouts[0] && !!rowLayouts[1] && steps.length >= 2 && (
-        <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, threadMergeStyle]}>
-          <OrganizeLayerThread
-            pour={pour}
-            accent={GOLD}
-            top={rowLayouts[0].y + MACRO_SEAL_TOP + MACRO_SEAL_SIZE + 4}
-            height={Math.max(20, rowLayouts[1].y + MACRO_SEAL_TOP - (rowLayouts[0].y + MACRO_SEAL_TOP + MACRO_SEAL_SIZE) - 8)}
-            left={MACRO_SEAL_OVERHANG * -1 + MACRO_SEAL_SIZE / 2 - 1.25}
-          />
-        </Reanimated.View>
+        <OrganizeLayerThread
+          pour={pour}
+          accent={GOLD}
+          top={rowLayouts[0].y + MACRO_SEAL_TOP + MACRO_SEAL_SIZE + 4}
+          height={Math.max(20, rowLayouts[1].y + MACRO_SEAL_TOP - (rowLayouts[0].y + MACRO_SEAL_TOP + MACRO_SEAL_SIZE) - 8)}
+          left={MACRO_SEAL_OVERHANG * -1 + MACRO_SEAL_SIZE / 2 - 1.25}
+        />
       )}
       {steps.map((step, index) => {
         const rowDelay = 320 + index * 220;
@@ -15952,7 +15903,7 @@ function OrganizeMacroBoard({
               opacity: 0,
               transform: [{ translateY: 38 }, { scale: 0.968 }],
             })}
-            style={[s.organizeLayerRow, index > 0 && s.organizeMacroRowGap, rowStyles[index] ?? undefined]}
+            style={[s.organizeLayerRow, index > 0 && s.organizeMacroRowGap]}
             onLayout={event => {
               const { y, height: h } = event.nativeEvent.layout;
               setRowLayouts(current => {
@@ -15985,29 +15936,215 @@ function OrganizeMacroBoard({
           </Reanimated.View>
         );
       })}
-      {/* The condensed layer: purple and brown fuse into layer I's teal */}
-      {mergeT !== undefined && mergedTop > 0 && (
+    </View>
+  );
+}
+
+// ── The fusion scene ───────────────────────────────────────
+// One continuous shot that IS the screen transition: the two macro step
+// cards glide into each other, and out of the meeting point condenses
+// the REAL first-layer hero card of the two-layers screen. The layers
+// screen then assembles around it — the hero glides up to its seat, the
+// gold thread pours, the weekly hero rises and its seal wakes — all
+// without a cut. Stages: 0 standing · 1 fusing · 2 formed · 3 seated ·
+// 4 assembled.
+function OrganizeMacroFusionScene({
+  checked,
+  stage,
+  mergeT,
+  seatT,
+  weeklyPour,
+}: {
+  checked: boolean;
+  stage: 0 | 1 | 2 | 3 | 4;
+  mergeT: SharedValue<number>;
+  seatT: SharedValue<number>;
+  weeklyPour: SharedValue<number>;
+}) {
+  const [rowLayouts, setRowLayouts] = useState<{ y: number; h: number }[]>([]);
+  const [heroHeight, setHeroHeight] = useState(0);
+  const [weeklyTop, setWeeklyTop] = useState(0);
+  const mergeShift = useSharedValue({ r0: 0, r1: 0, ready: false });
+  const heroDrop = useSharedValue(0);
+  const fullPour = useSharedValue(1);
+  const act1Height = rowLayouts.length >= 2 && rowLayouts[1]
+    ? rowLayouts[1].y + rowLayouts[1].h
+    : 0;
+
+  useEffect(() => {
+    if (rowLayouts.length >= 2 && rowLayouts[0] && rowLayouts[1]) {
+      const mid = (rowLayouts[0].y + rowLayouts[1].y + rowLayouts[1].h) / 2;
+      mergeShift.value = {
+        r0: mid - (rowLayouts[0].y + rowLayouts[0].h / 2),
+        r1: mid - (rowLayouts[1].y + rowLayouts[1].h / 2),
+        ready: true,
+      };
+      if (heroHeight > 0) {
+        heroDrop.value = Math.max(0, mid - heroHeight / 2);
+      }
+    }
+  }, [heroDrop, heroHeight, mergeShift, rowLayouts]);
+
+  const row0Style = useAnimatedStyle(() => ({
+    opacity: 1 - interpolate(mergeT.value, [0.5, 0.86], [0, 1], 'clamp'),
+    transform: [
+      { translateY: mergeT.value * (mergeShift.value.ready ? mergeShift.value.r0 : 0) },
+      { scale: 1 - mergeT.value * 0.06 },
+    ],
+  }));
+  const row1Style = useAnimatedStyle(() => ({
+    opacity: 1 - interpolate(mergeT.value, [0.5, 0.86], [0, 1], 'clamp'),
+    transform: [
+      { translateY: mergeT.value * (mergeShift.value.ready ? mergeShift.value.r1 : 0) },
+      { scale: 1 - mergeT.value * 0.06 },
+    ],
+  }));
+  const stepThreadStyle = useAnimatedStyle(() => ({
+    opacity: 1 - interpolate(mergeT.value, [0.1, 0.5], [0, 1], 'clamp'),
+  }));
+  // The hero waits at the fusion midpoint, then glides up into its seat.
+  const heroStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(mergeT.value, [0.52, 0.88], [0, 1], 'clamp'),
+    transform: [
+      { translateY: heroDrop.value * (1 - seatT.value) },
+      { scale: interpolate(mergeT.value, [0.52, 0.9, 1], [0.94, 1.012, 1], 'clamp') },
+    ],
+  }));
+  const rowStyles = [row0Style, row1Style];
+  const steps = [
+    {
+      title: 'Big events',
+      body: 'Important dates and commitments are now visible.',
+      accent: '#705B9B',
+      icon: <Calendar s={18} c="#705B9B" w={2} />,
+      done: true,
+      active: false,
+    },
+    {
+      title: 'Monthly goals',
+      body: 'Add direction for the month before the week begins.',
+      accent: '#8F5B4B',
+      icon: <Target s={18} c="#8F5B4B" w={2} />,
+      done: checked,
+      active: !checked,
+    },
+  ];
+
+  return (
+    <View style={[s.organizeMacroBoard, act1Height > 0 && { minHeight: act1Height }]}>
+      {/* The layers screen, assembling in normal flow beneath the overlay */}
+      <View style={[s.organizeMacroFusionFinal, rowLayouts.length < 2 && s.toolsHidden]} pointerEvents="none">
         <Reanimated.View
-          pointerEvents="none"
-          style={[s.organizeMacroMergedWrap, { top: mergedTop }, mergedCardStyle]}
+          style={[s.organizeLayerRow, heroStyle]}
+          onLayout={event => setHeroHeight(event.nativeEvent.layout.height)}
         >
-          <OrganizeMacroPlaqueCard
-            title="Macro planning"
-            body="Big events and monthly goals — the first layer, in place."
-            accent="#4D8586"
-            icon={<Calendar s={18} c="#4D8586" w={2} />}
+          <OrganizeLayerHeroCard
+            area={ORGANIZE_RULE_AREAS[0]}
+            index={0}
             active={false}
             done
+            activeReady
           />
-          <View style={s.organizeMacroSealAnchor}>
+          <View style={s.organizeLayerSealAnchor}>
             <OrganizeLayerSeal
-              mode={mergedSealDone ? 'done' : 'active'}
-              accent="#4D8586"
+              mode={stage >= 2 ? 'done' : 'active'}
+              accent={ORGANIZE_RULE_AREAS[0].accent}
               numeral="I"
-              size={LAYER_SEAL_SIZE}
             />
           </View>
         </Reanimated.View>
+
+        {stage >= 4 && heroHeight > 0 && weeklyTop > heroHeight && (
+          <OrganizeLayerThread
+            pour={weeklyPour}
+            accent={GOLD}
+            top={LAYER_SEAL_TOP + LAYER_SEAL_SIZE + 4}
+            height={Math.max(24, weeklyTop + LAYER_SEAL_TOP - (LAYER_SEAL_TOP + LAYER_SEAL_SIZE) - 8)}
+            left={LAYER_SEAL_OVERHANG * -1 + LAYER_SEAL_SIZE / 2 - 1.25}
+          />
+        )}
+
+        {stage >= 4 && (
+          <Reanimated.View
+            entering={FadeInUp.delay(240).duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 42 }, { scale: 0.965 }],
+            })}
+            style={[s.organizeLayerRow, s.organizeLayerRowGap]}
+            onLayout={event => setWeeklyTop(event.nativeEvent.layout.y)}
+          >
+            <OrganizeLayerHeroCard
+              area={ORGANIZE_RULE_AREAS[1]}
+              index={1}
+              active
+              done={false}
+              activeReady
+            />
+            <Reanimated.View
+              pointerEvents="none"
+              entering={ZoomIn.delay(620).duration(400).easing(Easing.bezier(0.16, 1, 0.28, 1))}
+              style={s.organizeLayerSealAnchor}
+            >
+              <OrganizeLayerSeal mode="active" accent={ORGANIZE_RULE_AREAS[1].accent} numeral="II" />
+            </Reanimated.View>
+          </Reanimated.View>
+        )}
+      </View>
+
+      {/* Act 1 overlay: the two step plaques and their thread */}
+      {stage < 3 && (
+        <View pointerEvents="none" style={s.organizeMacroFusionOverlay}>
+          {rowLayouts.length >= 2 && !!rowLayouts[0] && !!rowLayouts[1] && (
+            <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, stepThreadStyle]}>
+              <OrganizeLayerThread
+                pour={fullPour}
+                accent={GOLD}
+                top={rowLayouts[0].y + MACRO_SEAL_TOP + MACRO_SEAL_SIZE + 4}
+                height={Math.max(20, rowLayouts[1].y + MACRO_SEAL_TOP - (rowLayouts[0].y + MACRO_SEAL_TOP + MACRO_SEAL_SIZE) - 8)}
+                left={MACRO_SEAL_OVERHANG * -1 + MACRO_SEAL_SIZE / 2 - 1.25}
+              />
+            </Reanimated.View>
+          )}
+          {steps.map((step, index) => (
+            <Reanimated.View
+              key={step.title}
+              entering={FadeInUp.delay(320 + index * 220).duration(660).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                opacity: 0,
+                transform: [{ translateY: 38 }, { scale: 0.968 }],
+              })}
+              style={[s.organizeLayerRow, index > 0 && s.organizeMacroRowGap, rowStyles[index]]}
+              onLayout={event => {
+                const { y, height: h } = event.nativeEvent.layout;
+                setRowLayouts(current => {
+                  const next = [...current];
+                  next[index] = { y, h };
+                  return next;
+                });
+              }}
+            >
+              <OrganizeMacroPlaqueCard
+                title={step.title}
+                body={step.body}
+                accent={step.accent}
+                icon={step.icon}
+                active={step.active}
+                done={step.done}
+              />
+              <Reanimated.View
+                pointerEvents="none"
+                entering={ZoomIn.delay(680 + index * 220).duration(380).easing(Easing.bezier(0.16, 1, 0.28, 1))}
+                style={s.organizeMacroSealAnchor}
+              >
+                <OrganizeLayerSeal
+                  mode={step.done ? 'done' : 'active'}
+                  accent={step.accent}
+                  numeral={String(index + 1)}
+                  size={MACRO_SEAL_SIZE}
+                />
+              </Reanimated.View>
+            </Reanimated.View>
+          ))}
+        </View>
       )}
     </View>
   );
@@ -16145,12 +16282,14 @@ function OrganizeMacroProgressSlide({
 }) {
   const insets = useSafeAreaInsets();
   const [checked, setChecked] = useState(false);
-  // The fusion scene (afterMonthlyGoals): 0 = both steps standing,
-  // 1 = cards gliding together, 2 = the merged layer card has formed.
-  const [mergeStage, setMergeStage] = useState<0 | 1 | 2>(0);
+  // The fusion scene (afterMonthlyGoals): 0 standing · 1 fusing ·
+  // 2 layer card formed · 3 seated at the top · 4 weekly assembled.
+  const [fusionStage, setFusionStage] = useState<0 | 1 | 2 | 3 | 4>(0);
   const exitProgress = useSharedValue(0);
   const progressPour = useSharedValue(0);
   const mergeT = useSharedValue(0);
+  const seatT = useSharedValue(0);
+  const weeklyPour = useSharedValue(0);
   const ctaLockRef = useRef(false);
   const contentStyle = [
     s.organizeRuleContent,
@@ -16164,13 +16303,17 @@ function OrganizeMacroProgressSlide({
   const bigEventsDone = variant === 'afterMonthlyGoals' || checked;
   const monthlyDone = variant === 'afterMonthlyGoals' && checked;
   const monthlyActive = variant === 'afterBigEvents' && checked && monthlyGoalsEnabled;
-  // On the fusion path the layer is only complete once the merged card
-  // has formed — the header's final cascade lands WITH the fusion.
-  const macroComplete = variant === 'afterMonthlyGoals'
-    ? mergeStage >= 2
-    : checked && !monthlyGoalsEnabled;
-  const ctaVisible = checked && !macroComplete && variant !== 'afterMonthlyGoals';
-  const ctaLabel = monthlyActive ? 'Set up monthly goals' : 'Continue';
+  // macroComplete only drives the short (no-monthly-goals) path; the
+  // fusion path narrates itself through fusionStage.
+  const macroComplete = variant !== 'afterMonthlyGoals' && checked && !monthlyGoalsEnabled;
+  const ctaVisible = variant === 'afterMonthlyGoals'
+    ? fusionStage >= 4
+    : checked && !macroComplete;
+  const ctaLabel = variant === 'afterMonthlyGoals'
+    ? 'Set up weekly routine'
+    : monthlyActive
+      ? 'Set up monthly goals'
+      : 'Continue';
   const exitStyle = useAnimatedStyle(() => ({
     opacity: interpolate(exitProgress.value, [0, 1], [1, 0]),
     transform: [
@@ -16181,12 +16324,12 @@ function OrganizeMacroProgressSlide({
 
   useEffect(() => {
     setChecked(false);
-    setMergeStage(0);
+    setFusionStage(0);
     exitProgress.value = 0;
-    // On the return the thread already stands full gold — step 1 was won
-    // on the previous visit.
-    progressPour.value = variant === 'afterMonthlyGoals' ? 1 : 0;
+    progressPour.value = 0;
     mergeT.value = 0;
+    seatT.value = 0;
+    weeklyPour.value = 0;
     ctaLockRef.current = false;
     const timer = setTimeout(() => {
       setChecked(true);
@@ -16194,7 +16337,7 @@ function OrganizeMacroProgressSlide({
       void playTaskCheckSoundOnly();
     }, 720);
     return () => clearTimeout(timer);
-  }, [exitProgress, mergeT, progressPour, variant]);
+  }, [exitProgress, mergeT, progressPour, seatT, variant, weeklyPour]);
 
   // The strike pours the gold onward to the next step.
   useEffect(() => {
@@ -16205,30 +16348,39 @@ function OrganizeMacroProgressSlide({
     return () => clearTimeout(timer);
   }, [checked, monthlyGoalsEnabled, progressPour, variant]);
 
-  // The fusion: a beat to read the second win, then the two steps glide
-  // into one — a strong pulse as they meet — and the layer card condenses,
-  // its roman seal striking done a breath later.
+  // The fusion timeline: read the win → the steps glide into one (strong
+  // pulse) → the layer card forms and its roman seal strikes → a breath —
+  // then the card glides up to its seat while the header turns the page —
+  // and the weekly layer assembles beneath as the gold pours toward it.
   useEffect(() => {
     if (variant !== 'afterMonthlyGoals' || !checked) return undefined;
     const timers: ReturnType<typeof setTimeout>[] = [];
     timers.push(setTimeout(() => {
-      setMergeStage(1);
+      setFusionStage(1);
       runStrongHaptic();
       mergeT.value = withTiming(1, { duration: 820, easing: Easing.bezier(0.3, 0, 0.3, 1) });
     }, 1250));
     timers.push(setTimeout(() => {
-      setMergeStage(2);
+      setFusionStage(2);
       runSelectionHaptic();
-    }, 1250 + 880));
+      void playTaskCheckSoundOnly();
+    }, 2130));
+    timers.push(setTimeout(() => {
+      setFusionStage(3);
+      runBubbleHaptic();
+      seatT.value = withTiming(1, { duration: 640, easing: Easing.bezier(0.16, 1, 0.28, 1) });
+    }, 2900));
+    timers.push(setTimeout(() => {
+      setFusionStage(4);
+      weeklyPour.value = withTiming(1, { duration: 760, easing: Easing.bezier(0.3, 0, 0.4, 1) });
+    }, 3620));
     return () => timers.forEach(clearTimeout);
-  }, [checked, mergeT, variant]);
+  }, [checked, mergeT, seatT, variant, weeklyPour]);
 
   useEffect(() => {
     if (!macroComplete) return undefined;
 
     let nextTimer: ReturnType<typeof setTimeout> | undefined;
-    // The full tableau — merged layer card, LAYER I COMPLETE header —
-    // holds long enough to be read before the page turns.
     const exitTimer = setTimeout(() => {
       runSelectionHaptic();
       exitProgress.value = withTiming(1, {
@@ -16236,13 +16388,13 @@ function OrganizeMacroProgressSlide({
         easing: Easing.bezier(0.16, 1, 0.28, 1),
       });
       nextTimer = setTimeout(onNext, 720);
-    }, variant === 'afterMonthlyGoals' ? 1650 : 980);
+    }, 980);
 
     return () => {
       clearTimeout(exitTimer);
       if (nextTimer) clearTimeout(nextTimer);
     };
-  }, [exitProgress, macroComplete, onNext, variant]);
+  }, [exitProgress, macroComplete, onNext]);
 
   return (
     <View style={s.organizeRuleScreen}>
@@ -16250,59 +16402,83 @@ function OrganizeMacroProgressSlide({
         {/* Keyed on the narrative state: when the story advances, the charter
             cascade (title rise, ornament draw, body) replays for the new
             chapter — the old header unmounts in the same frame, no overlap. */}
-        <Reanimated.View key={macroComplete ? 'complete' : variant} style={exitStyle}>
+        <Reanimated.View
+          key={variant === 'afterMonthlyGoals' ? (fusionStage >= 3 ? 'layer' : 'step2') : macroComplete ? 'complete' : variant}
+          style={exitStyle}
+        >
           <OrganizeLayersCharterHeader
-            eyebrow={macroComplete ? 'LAYER I COMPLETE' : variant === 'afterMonthlyGoals' ? 'STEP 2 COMPLETE' : 'STEP 1 COMPLETE'}
+            eyebrow={
+              variant === 'afterMonthlyGoals'
+                ? fusionStage >= 3 ? 'LAYER I COMPLETE' : 'STEP 2 COMPLETE'
+                : macroComplete ? 'LAYER I COMPLETE' : 'STEP 1 COMPLETE'
+            }
             title={
-              macroComplete
-                ? 'Your macro plan is ready!'
-                : variant === 'afterMonthlyGoals'
-                  ? 'Monthly goals are set!'
-                  : 'Big Events is set!'
+              variant === 'afterMonthlyGoals'
+                ? fusionStage >= 3 ? 'The first layer is set!' : 'Monthly goals are set!'
+                : macroComplete ? 'Your macro plan is ready!' : 'Big Events is set!'
             }
             body={
-              macroComplete
-                ? 'Now we can turn this into the weekly rhythm you will actually live.'
-                : variant === 'afterMonthlyGoals'
-                  ? 'The month has its direction.'
+              variant === 'afterMonthlyGoals'
+                ? fusionStage >= 3
+                  ? 'What is ahead now has a shape. Next comes the rhythm your days will actually live.'
+                  : 'The month has its direction.'
+                : macroComplete
+                  ? 'Now we can turn this into the weekly rhythm you will actually live.'
                   : monthlyGoalsEnabled
                   ? 'Your important dates now stand ahead of you. Next — set the goals that will guide your month.'
                   : 'Your important dates now stand ahead of you.'
             }
-            accent={macroComplete ? '#2F9B61' : variant === 'afterMonthlyGoals' ? '#8F5B4B' : '#705B9B'}
+            accent={
+              variant === 'afterMonthlyGoals'
+                ? fusionStage >= 3 ? '#2F9B61' : '#8F5B4B'
+                : macroComplete ? '#2F9B61' : '#705B9B'
+            }
           />
         </Reanimated.View>
 
         <Reanimated.View style={[s.setupPathBoard, s.organizeMacroBoardSeat, exitStyle]}>
-          <OrganizeMacroBoard
-            pour={progressPour}
-            mergeT={variant === 'afterMonthlyGoals' ? mergeT : undefined}
-            mergedSealDone={mergeStage >= 2}
-            steps={[
-              {
-                title: 'Big events',
-                body: 'Important dates and commitments are now visible.',
-                accent: '#705B9B',
-                icon: <Calendar s={18} c="#705B9B" w={2} />,
-                active: !bigEventsDone,
-                done: bigEventsDone,
-              },
-              ...(monthlyGoalsEnabled
-                ? [{
-                    title: 'Monthly goals',
-                    body: 'Add direction for the month before the week begins.',
-                    accent: '#8F5B4B',
-                    icon: <Target s={18} c="#8F5B4B" w={2} />,
-                    active: monthlyActive || (variant === 'afterMonthlyGoals' && !checked),
-                    done: monthlyDone,
-                  }]
-                : []),
-            ]}
-          />
+          {variant === 'afterMonthlyGoals' ? (
+            <OrganizeMacroFusionScene
+              checked={checked}
+              stage={fusionStage}
+              mergeT={mergeT}
+              seatT={seatT}
+              weeklyPour={weeklyPour}
+            />
+          ) : (
+            <OrganizeMacroBoard
+              pour={progressPour}
+              steps={[
+                {
+                  title: 'Big events',
+                  body: 'Important dates and commitments are now visible.',
+                  accent: '#705B9B',
+                  icon: <Calendar s={18} c="#705B9B" w={2} />,
+                  active: !bigEventsDone,
+                  done: bigEventsDone,
+                },
+                ...(monthlyGoalsEnabled
+                  ? [{
+                      title: 'Monthly goals',
+                      body: 'Add direction for the month before the week begins.',
+                      accent: '#8F5B4B',
+                      icon: <Target s={18} c="#8F5B4B" w={2} />,
+                      active: monthlyActive,
+                      done: monthlyDone,
+                    }]
+                  : []),
+              ]}
+            />
+          )}
         </Reanimated.View>
       </ScrollView>
 
-      <AnimatedCta active={ctaVisible} delay={180} style={footerStyle} pointerEvents={ctaVisible ? 'auto' : 'none'}>
+      <AnimatedCta
+        active={ctaVisible}
+        delay={variant === 'afterMonthlyGoals' ? 980 : 180}
+        style={footerStyle}
+        pointerEvents={ctaVisible ? 'auto' : 'none'}
+      >
         <Reanimated.View style={exitStyle}>
           <View style={s.ctaIsland}>
             <TouchableOpacity
@@ -30055,8 +30231,13 @@ const s = StyleSheet.create({
   organizeMacroBoardSeat: {
     marginTop: 2,
   },
-  organizeMacroMergedWrap: {
+  organizeMacroFusionFinal: {
+    position: 'relative',
+    width: '100%',
+  },
+  organizeMacroFusionOverlay: {
     position: 'absolute',
+    top: 0,
     left: 0,
     right: 0,
   },
