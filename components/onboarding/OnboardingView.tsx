@@ -15193,14 +15193,12 @@ function OrganizeLayerHeroCard({
   active,
   done,
   activeReady,
-  entering,
 }: {
   area: (typeof ORGANIZE_RULE_AREAS)[number];
   index: number;
   active: boolean;
   done: boolean;
   activeReady: boolean;
-  entering?: React.ComponentProps<typeof Reanimated.View>['entering'];
 }) {
   const isActive = active && activeReady;
   const state = useSharedValue(done ? 2 : isActive ? 1 : 0);
@@ -15232,12 +15230,9 @@ function OrganizeLayerHeroCard({
 
   return (
     <Reanimated.View
-      entering={entering ?? FadeInUp.duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-        opacity: 0,
-        transform: [{ translateY: 30 }, { scale: 0.96 }],
-      })}
       style={[
         s.organizeLayerHeroCard,
+        s.organizeLayerHeroCardInRow,
         { borderColor: `${displayAccent}${isActive || done ? '52' : '2E'}` },
         isActive && { shadowColor: area.accent, shadowOpacity: 0.17 },
         done && { shadowColor: displayAccent, shadowOpacity: 0.12 },
@@ -15311,6 +15306,123 @@ function OrganizeRuleConnector({ accent, index }: { accent: string; index: numbe
   );
 }
 
+// ── The rite of layers ─────────────────────────────────────
+// The two-layer map redesigned as a golden rite: roman-numeral seals
+// (the app's own seal grammar) stand on a left rail, and a thread of
+// gold pours from the finished layer down to the next — the system
+// literally flows from "what's ahead" into "the week that carries it".
+
+const LAYER_SEAL_SIZE = 40;
+const LAYER_SEAL_TOP = 24;
+const LAYER_NUMERALS = ['I', 'II'];
+
+function OrganizeLayerSeal({
+  mode,
+  accent,
+  numeral,
+}: {
+  mode: 'quiet' | 'active' | 'done';
+  accent: string;
+  numeral: string;
+}) {
+  const m = useSharedValue(mode === 'done' ? 2 : mode === 'active' ? 1 : 0);
+  const ripple = useSharedValue(0);
+  const prevMode = useRef(mode);
+
+  useEffect(() => {
+    m.value = withSpring(mode === 'done' ? 2 : mode === 'active' ? 1 : 0, {
+      damping: 15,
+      stiffness: 190,
+      mass: 0.85,
+    });
+    // The strike: any promotion out of quiet fires a ring of light.
+    if (prevMode.current === 'quiet' && mode !== 'quiet') {
+      ripple.value = 0;
+      ripple.value = withTiming(1, { duration: 620, easing: Easing.out(Easing.cubic) });
+    }
+    prevMode.current = mode;
+  }, [m, mode, ripple]);
+
+  const diamondStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(m.value, [0, 1, 2], ['#FFFEFB', accent, accent]),
+    borderColor: interpolateColor(m.value, [0, 1, 2], [`${accent}4D`, `${accent}`, `${accent}`]),
+    transform: [
+      { rotate: '45deg' },
+      { scale: interpolate(m.value, [0, 1, 2], [1, 1.08, 1]) },
+    ],
+  }));
+  const numeralStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(m.value, [0, 0.6, 1], [`${accent}B0`, '#FFFFFF', '#FFFFFF']),
+    opacity: interpolate(m.value, [1, 1.6], [1, 0], 'clamp'),
+  }));
+  const checkStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(m.value, [1.4, 2], [0, 1], 'clamp'),
+    transform: [{ scale: interpolate(m.value, [1.4, 2], [0.6, 1], 'clamp') }],
+  }));
+  const haloStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(m.value, [0, 1, 2], [0, 0.5, 0.34]),
+    transform: [{ scale: interpolate(m.value, [0, 1], [0.7, 1], 'clamp') }],
+  }));
+  const rippleStyle = useAnimatedStyle(() => ({
+    opacity: (1 - ripple.value) * 0.6 * (ripple.value > 0.01 ? 1 : 0),
+    transform: [
+      { rotate: '45deg' },
+      { scale: 0.7 + ripple.value * 0.85 },
+    ],
+  }));
+
+  return (
+    <View style={s.organizeLayerSealStage}>
+      <Reanimated.View pointerEvents="none" style={[s.organizeLayerSealHalo, { backgroundColor: `${accent}2E` }, haloStyle]} />
+      <Reanimated.View pointerEvents="none" style={[s.organizeLayerSealRipple, { borderColor: accent }, rippleStyle]} />
+      <Reanimated.View style={[s.organizeLayerSealDiamond, diamondStyle]} />
+      <View pointerEvents="none" style={s.organizeLayerSealContent}>
+        <Reanimated.Text style={[s.organizeLayerSealNumeral, numeralStyle]}>{numeral}</Reanimated.Text>
+        <Reanimated.View style={[s.organizeLayerSealCheck, checkStyle]}>
+          <CheckSmall s={15} c="#FFFFFF" w={3.1} />
+        </Reanimated.View>
+      </View>
+    </View>
+  );
+}
+
+// The gold pour between two seals: a quiet track always present, a gold
+// fill that slides down it, and a bright bead riding the leading edge.
+function OrganizeLayerThread({
+  pour,
+  accent,
+  top,
+  height,
+  left,
+}: {
+  pour: SharedValue<number>;
+  accent: string;
+  top: number;
+  height: number;
+  left: number;
+}) {
+  const fillStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(pour.value, [0, 1], [-height, 0]) }],
+  }));
+  const beadStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(pour.value, [0, 0.04, 0.92, 1], [0, 1, 1, 0]),
+    transform: [
+      { translateY: interpolate(pour.value, [0, 1], [0, height]) },
+      { rotate: '45deg' },
+    ],
+  }));
+
+  return (
+    <View pointerEvents="none" style={[s.organizeLayerThreadWrap, { top, height, left }]}>
+      <View style={[s.organizeLayerThreadTrack, { backgroundColor: `${accent}24` }]} />
+      <View style={s.organizeLayerThreadClip}>
+        <Reanimated.View style={[s.organizeLayerThreadFill, { height, backgroundColor: accent }, fillStyle]} />
+      </View>
+      <Reanimated.View style={[s.organizeLayerThreadBead, { backgroundColor: accent, shadowColor: accent }, beadStyle]} />
+    </View>
+  );
+}
+
 // Both layer cards mount together in their final positions and glide in from
 // opposite sides — nothing shifts once it has landed.
 function organizeSideEntrance(index: number, baseDelay = 200) {
@@ -15336,7 +15448,9 @@ function OrganizeRuleMapSlide({
   const insets = useSafeAreaInsets();
   const [activeReady, setActiveReady] = useState(false);
   const [afterAheadStage, setAfterAheadStage] = useState<OrganizeSetupAfterAheadStage>(0);
+  const [rowLayouts, setRowLayouts] = useState<{ y: number; h: number }[]>([]);
   const exitProgress = useSharedValue(0);
+  const pour = useSharedValue(0);
   const variantKey = variant;
   const contentStyle = [
     s.organizeRuleContent,
@@ -15361,7 +15475,20 @@ function OrganizeRuleMapSlide({
     setActiveReady(false);
     setAfterAheadStage(0);
     exitProgress.value = 0;
-  }, [exitProgress, variantKey]);
+    pour.value = 0;
+  }, [exitProgress, pour, variantKey]);
+
+  // The pour: once the first layer's seal has spoken (woken on start,
+  // struck done on afterAhead), the gold thread flows down toward the
+  // second seal.
+  useEffect(() => {
+    const shouldPour = variant === 'afterAhead' ? afterAheadStage >= 1 : activeReady;
+    if (!shouldPour) return undefined;
+    const timer = setTimeout(() => {
+      pour.value = withTiming(1, { duration: 760, easing: Easing.bezier(0.3, 0, 0.4, 1) });
+    }, 260);
+    return () => clearTimeout(timer);
+  }, [activeReady, afterAheadStage, pour, variant]);
 
   // Once both cards have landed: wake the active layer (start) or run the
   // check → wake → carry-on narrative (afterAhead).
@@ -15433,23 +15560,45 @@ function OrganizeRuleMapSlide({
         </Reanimated.View>
 
         <Reanimated.View style={[s.setupPathBoard, s.organizeLayerHeroBoard, exitStyle]}>
+          {/* The gold thread pours from seal I down to seal II */}
+          {rowLayouts.length === 2 && (
+            <OrganizeLayerThread
+              pour={pour}
+              accent={GOLD}
+              top={rowLayouts[0].y + LAYER_SEAL_TOP + LAYER_SEAL_SIZE + 5}
+              height={Math.max(24, rowLayouts[1].y + LAYER_SEAL_TOP - (rowLayouts[0].y + LAYER_SEAL_TOP + LAYER_SEAL_SIZE) - 10)}
+              left={LAYER_SEAL_SIZE / 2 - 1.25}
+            />
+          )}
           {ORGANIZE_RULE_AREAS.map((area, index) => {
             const { active, done } = organizeMapState(variant, area.id, afterAheadStage);
             const cardActiveReady = variant === 'afterAhead' ? true : activeReady;
+            const sealMode: 'quiet' | 'active' | 'done' = done ? 'done' : active && cardActiveReady ? 'active' : 'quiet';
             return (
-              <React.Fragment key={area.id}>
+              <Reanimated.View
+                key={area.id}
+                entering={organizeSideEntrance(index)}
+                style={[s.organizeLayerRow, index > 0 && s.organizeLayerRowGap]}
+                onLayout={event => {
+                  const { y, height: h } = event.nativeEvent.layout;
+                  setRowLayouts(current => {
+                    const next = [...current];
+                    next[index] = { y, h };
+                    return next.length >= 2 && next[0] && next[1] ? next : next;
+                  });
+                }}
+              >
+                <View style={s.organizeLayerSealColumn}>
+                  <OrganizeLayerSeal mode={sealMode} accent={area.accent} numeral={LAYER_NUMERALS[index] ?? String(index + 1)} />
+                </View>
                 <OrganizeLayerHeroCard
                   area={area}
                   index={index}
                   active={active}
                   done={done}
                   activeReady={cardActiveReady}
-                  entering={organizeSideEntrance(index)}
                 />
-                {index < ORGANIZE_RULE_AREAS.length - 1 ? (
-                  <OrganizeRuleConnector accent={ORGANIZE_RULE_AREAS[index + 1]?.accent ?? area.accent} index={index} />
-                ) : null}
-              </React.Fragment>
+              </Reanimated.View>
             );
           })}
         </Reanimated.View>
@@ -29378,6 +29527,92 @@ const s = StyleSheet.create({
     marginTop: 0,
     flexGrow: 1,
     justifyContent: 'center',
+    position: 'relative',
+  },
+  organizeLayerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    columnGap: 12,
+  },
+  organizeLayerRowGap: {
+    marginTop: 26,
+  },
+  organizeLayerSealColumn: {
+    width: LAYER_SEAL_SIZE,
+    paddingTop: LAYER_SEAL_TOP,
+    alignItems: 'center',
+  },
+  organizeLayerHeroCardInRow: {
+    flex: 1,
+    minWidth: 0,
+  },
+  organizeLayerSealStage: {
+    width: LAYER_SEAL_SIZE,
+    height: LAYER_SEAL_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  organizeLayerSealHalo: {
+    position: 'absolute',
+    width: LAYER_SEAL_SIZE + 16,
+    height: LAYER_SEAL_SIZE + 16,
+    borderRadius: (LAYER_SEAL_SIZE + 16) / 2,
+  },
+  organizeLayerSealRipple: {
+    position: 'absolute',
+    width: LAYER_SEAL_SIZE - 6,
+    height: LAYER_SEAL_SIZE - 6,
+    borderRadius: 10,
+    borderWidth: 1.5,
+  },
+  organizeLayerSealDiamond: {
+    width: LAYER_SEAL_SIZE - 11,
+    height: LAYER_SEAL_SIZE - 11,
+    borderRadius: 9,
+    borderWidth: 1.3,
+  },
+  organizeLayerSealContent: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  organizeLayerSealNumeral: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 15,
+    includeFontPadding: false,
+  },
+  organizeLayerSealCheck: {
+    position: 'absolute',
+  },
+  organizeLayerThreadWrap: {
+    position: 'absolute',
+    width: 2.5,
+    alignItems: 'center',
+    zIndex: 0,
+  },
+  organizeLayerThreadTrack: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 2,
+  },
+  organizeLayerThreadClip: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  organizeLayerThreadFill: {
+    width: '100%',
+    borderRadius: 2,
+  },
+  organizeLayerThreadBead: {
+    position: 'absolute',
+    top: -3,
+    width: 7,
+    height: 7,
+    borderRadius: 2,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 5,
+    elevation: 3,
   },
   organizeLayerHeroCard: {
     borderRadius: 30,
