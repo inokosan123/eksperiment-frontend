@@ -16129,18 +16129,27 @@ function OrganizeMacroProgressSlide({
   return (
     <View style={s.organizeRuleScreen}>
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
-        <Reanimated.View style={exitStyle}>
+        {/* Keyed on the narrative state: when the story advances, the charter
+            cascade (title rise, ornament draw, body) replays for the new
+            chapter — the old header unmounts in the same frame, no overlap. */}
+        <Reanimated.View key={macroComplete ? 'complete' : variant} style={exitStyle}>
           <OrganizeLayersCharterHeader
-            eyebrow={macroComplete ? 'LAYER I COMPLETE' : 'THE FIRST LAYER'}
-            title={macroComplete ? 'Your macro plan is ready.' : 'The first layer grows.'}
+            eyebrow={macroComplete ? 'LAYER I COMPLETE' : variant === 'afterMonthlyGoals' ? 'STEP 2 COMPLETE' : 'STEP 1 COMPLETE'}
+            title={
+              macroComplete
+                ? 'Your macro plan is ready.'
+                : variant === 'afterMonthlyGoals'
+                  ? 'Monthly goals are set.'
+                  : 'Big Events is set.'
+            }
             body={
               macroComplete
                 ? 'Now we can turn this into the weekly rhythm you will actually live.'
                 : variant === 'afterMonthlyGoals'
-                  ? 'Monthly goals are almost in place.'
+                  ? 'The month has its direction.'
                   : monthlyGoalsEnabled
-                  ? 'Big Events is ready. Next, we add monthly direction.'
-                  : 'Big Events is ready. Now we can build your weekly routine.'
+                  ? 'Your important dates now stand ahead of you. Next — give the month its direction.'
+                  : 'Your important dates now stand ahead of you.'
             }
             accent={macroComplete ? '#2F9B61' : '#4D8586'}
           />
