@@ -16403,11 +16403,15 @@ function OrganizeMacroProgressSlide({
       void playTaskCheckSoundOnly();
     }, 2130));
     timers.push(setTimeout(() => {
-      headerOut.value = 0;
       setFusionStage(3);
       runBubbleHaptic();
       seatT.value = withTiming(1, { duration: 640, easing: Easing.bezier(0.16, 1, 0.28, 1) });
     }, 2900));
+    // The wrapper lifts only after the new header has taken the old one's
+    // place — the spent title can never flash back.
+    timers.push(setTimeout(() => {
+      headerOut.value = withTiming(0, { duration: 150, easing: Easing.out(Easing.quad) });
+    }, 2950));
     timers.push(setTimeout(() => {
       setFusionStage(4);
       weeklyPour.value = withTiming(1, { duration: 760, easing: Easing.bezier(0.3, 0, 0.4, 1) });
@@ -16438,41 +16442,52 @@ function OrganizeMacroProgressSlide({
     <View style={s.organizeRuleScreen}>
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
         {/* Keyed on the narrative state: when the story advances, the charter
-            cascade (title rise, ornament draw, body) replays for the new
-            chapter — the old header unmounts in the same frame, no overlap. */}
-        <Reanimated.View
-          key={variant === 'afterMonthlyGoals' ? (fusionStage >= 3 ? 'layer' : 'step2') : macroComplete ? 'complete' : variant}
-          style={headerStageStyle}
-        >
-          <OrganizeLayersCharterHeader
-            eyebrow={
-              variant === 'afterMonthlyGoals'
-                ? fusionStage >= 3 ? 'LAYER I COMPLETE' : 'STEP 2 COMPLETE'
-                : macroComplete ? 'LAYER I COMPLETE' : 'STEP 1 COMPLETE'
-            }
-            title={
-              variant === 'afterMonthlyGoals'
-                ? fusionStage >= 3 ? 'The first layer is set!' : 'Monthly goals are set!'
-                : macroComplete ? 'Your macro plan is ready!' : 'Big Events is set!'
-            }
-            body={
-              variant === 'afterMonthlyGoals'
-                ? fusionStage >= 3
-                  ? 'What is ahead now has a shape. Next comes the rhythm your days will actually live.'
-                  : 'The month has its direction.'
-                : macroComplete
+            cascade replays for the new chapter. On the fusion path a silent
+            ghost of the FINAL header reserves the slot's height, and the live
+            header floats above it — the board beneath never shifts when the
+            title changes mid-glide. */}
+        {variant === 'afterMonthlyGoals' ? (
+          <View style={s.fusionHeaderSlot}>
+            <View style={s.fusionHeaderGhost} pointerEvents="none">
+              <OrganizeLayersCharterHeader
+                eyebrow="LAYER I COMPLETE"
+                title="The first layer is set!"
+                body="What is ahead now has a shape. Next comes the rhythm your days will actually live."
+                accent="#2F9B61"
+              />
+            </View>
+            <Reanimated.View
+              key={fusionStage >= 3 ? 'layer' : 'step2'}
+              style={[s.fusionHeaderActive, headerStageStyle]}
+            >
+              <OrganizeLayersCharterHeader
+                eyebrow={fusionStage >= 3 ? 'LAYER I COMPLETE' : 'STEP 2 COMPLETE'}
+                title={fusionStage >= 3 ? 'The first layer is set!' : 'Monthly goals are set!'}
+                body={
+                  fusionStage >= 3
+                    ? 'What is ahead now has a shape. Next comes the rhythm your days will actually live.'
+                    : 'The month has its direction.'
+                }
+                accent={fusionStage >= 3 ? '#2F9B61' : '#8F5B4B'}
+              />
+            </Reanimated.View>
+          </View>
+        ) : (
+          <Reanimated.View key={macroComplete ? 'complete' : variant} style={exitStyle}>
+            <OrganizeLayersCharterHeader
+              eyebrow={macroComplete ? 'LAYER I COMPLETE' : 'STEP 1 COMPLETE'}
+              title={macroComplete ? 'Your macro plan is ready!' : 'Big Events is set!'}
+              body={
+                macroComplete
                   ? 'Now we can turn this into the weekly rhythm you will actually live.'
                   : monthlyGoalsEnabled
                   ? 'Your important dates now stand ahead of you. Next — set the goals that will guide your month.'
                   : 'Your important dates now stand ahead of you.'
-            }
-            accent={
-              variant === 'afterMonthlyGoals'
-                ? fusionStage >= 3 ? '#2F9B61' : '#8F5B4B'
-                : macroComplete ? '#2F9B61' : '#705B9B'
-            }
-          />
-        </Reanimated.View>
+              }
+              accent={macroComplete ? '#2F9B61' : '#705B9B'}
+            />
+          </Reanimated.View>
+        )}
 
         <Reanimated.View style={[s.setupPathBoard, s.organizeMacroBoardSeat, exitStyle]}>
           {variant === 'afterMonthlyGoals' ? (
@@ -30322,6 +30337,18 @@ const s = StyleSheet.create({
     height: 96,
     borderRadius: 48,
     backgroundColor: 'rgba(255,248,228,0.9)',
+  },
+  fusionHeaderSlot: {
+    position: 'relative',
+  },
+  fusionHeaderGhost: {
+    opacity: 0,
+  },
+  fusionHeaderActive: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   organizeMacroSealAnchor: {
     position: 'absolute',
