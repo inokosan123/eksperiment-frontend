@@ -372,17 +372,18 @@ const ms = StyleSheet.create({
 });
 
 /* ── Radiant flame ────────────────────────────────────────── */
-// The one living animation on the card: today's fire inside the
-// struck-medal ray burst. The glow behind it breathes slowly, and the
-// flame itself burns brighter as the day's progress grows.
+// The one living animation on the card: today's fire in a true sun — a
+// layered radiance built like the medallion's bloom (dark rim to bright
+// heart), a hairline halo ring, a struck-medal ray burst, and diamond
+// glints at the corners. The flame always burns in full color; on quiet
+// days the sun around it simply softens.
 function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
   const reduceMotion = useReducedMotion();
   const quiet = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
-  const frac = quiet ? 0 : Math.max(0, Math.min(100, pct)) / 100;
-  const flameOpacity = 0.38 + frac * 0.62;
-  const field = 118;
+  const field = 140;
   const cx = field / 2;
-  const inner = 40;
+  const ringR = 40;
+  const rayInner = 45;
   const breathe = useSharedValue(0);
 
   useEffect(() => {
@@ -399,24 +400,31 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
     return () => cancelAnimation(breathe);
   }, [breathe, reduceMotion]);
 
-  const glowStyle = useAnimatedStyle(() => ({
-    opacity: (quiet ? 0.35 : 0.55) + breathe.value * (quiet ? 0.15 : 0.45),
+  const outerGlowStyle = useAnimatedStyle(() => ({
+    opacity: (quiet ? 0.3 : 0.5) + breathe.value * (quiet ? 0.15 : 0.4),
   }));
 
   return (
     <View style={rf.stage}>
-      <Reanimated.View pointerEvents="none" style={[rf.glow, glowStyle]} />
+      {/* Layered radiance — the bloom grammar, radial */}
+      <Reanimated.View pointerEvents="none" style={[rf.glowOuter, outerGlowStyle]} />
+      <View pointerEvents="none" style={[rf.glowMid, quiet && rf.glowQuiet]} />
+      <View pointerEvents="none" style={[rf.glowHeart, quiet && rf.glowHeartQuiet]} />
+
       <Svg
         pointerEvents="none"
         width={field}
         height={field}
         style={[rf.rays, quiet && rf.raysQuiet]}
       >
+        {/* Hairline halo ring */}
+        <Circle cx={cx} cy={cx} r={ringR} fill="none" stroke={GOLD} strokeOpacity={0.32} strokeWidth={1} />
+        {/* Ray burst — long/short alternating, like a struck medal */}
         {Array.from({ length: 12 }).map((_, index) => {
           const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
           const long = index % 2 === 0;
-          const r1 = inner;
-          const r2 = inner + (long ? 17 : 10);
+          const r1 = rayInner;
+          const r2 = rayInner + (long ? 18 : 11);
           return (
             <Line
               key={index}
@@ -425,41 +433,80 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
               x2={cx + r2 * Math.cos(angle)}
               y2={cx + r2 * Math.sin(angle)}
               stroke={GOLD}
-              strokeOpacity={long ? 0.42 : 0.24}
-              strokeWidth={long ? 1.7 : 1.3}
+              strokeOpacity={long ? 0.52 : 0.3}
+              strokeWidth={long ? 1.8 : 1.3}
               strokeLinecap="round"
             />
           );
         })}
       </Svg>
-      <View style={{ opacity: flameOpacity }}>
-        <FocusLottie name="flame" loop speed={0.9} style={rf.flame} />
-      </View>
+
+      {/* Diamond glints in the sun's corners */}
+      <View pointerEvents="none" style={[rf.glint, { right: 13, top: 15 }]} />
+      <View pointerEvents="none" style={[rf.glintSmall, { left: 17, bottom: 20 }]} />
+
+      <FocusLottie name="flame" loop speed={0.9} style={rf.flame} />
     </View>
   );
 }
 
 const rf = StyleSheet.create({
   stage: {
-    width: 100,
-    height: 96,
+    width: 104,
+    height: 100,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  glow: {
+  glowOuter: {
     position: 'absolute',
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(216,182,114,0.24)',
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: 'rgba(235,213,160,0.4)',
+  },
+  glowMid: {
+    position: 'absolute',
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: 'rgba(245,229,190,0.6)',
+  },
+  glowHeart: {
+    position: 'absolute',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255,248,228,0.95)',
+  },
+  glowQuiet: {
+    backgroundColor: 'rgba(245,229,190,0.35)',
+  },
+  glowHeartQuiet: {
+    backgroundColor: 'rgba(255,248,228,0.6)',
   },
   rays: {
     position: 'absolute',
   },
   raysQuiet: {
-    opacity: 0.45,
+    opacity: 0.55,
   },
-  flame: { width: 64, height: 64 },
+  glint: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 1.5,
+    backgroundColor: 'rgba(197,160,89,0.68)',
+    transform: [{ rotate: '45deg' }],
+  },
+  glintSmall: {
+    position: 'absolute',
+    width: 3.5,
+    height: 3.5,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.5)',
+    transform: [{ rotate: '45deg' }],
+  },
+  flame: { width: 62, height: 62 },
 });
 
 /* ── Candle ───────────────────────────────────────────────── */
@@ -682,16 +729,20 @@ function TodayPulseRing() {
 }
 
 // Static PNG flames only — the hero carries the one living Lottie, so a
-// full week never stacks seven looping animations on the phone.
+// full week never stacks seven looping animations on the phone. Each
+// tile is struck like a small coin: a gradient face, a warm rim, and a
+// sheen once the day is won.
 function FlameTile({ pct, mode, isToday }: { pct: number | null; mode: DayMode; isToday: boolean }) {
   const ring = isToday ? <TodayPulseRing /> : null;
 
-  // No tasks OR all-skipped → empty circle (no flame icon inside)
+  // No tasks OR all-skipped → an empty socket with a resting stud
   if (pct === null || mode === 'no-tasks' || mode === 'all-skipped') {
     return (
       <View style={s.flameWrap}>
         {ring}
-        <View style={[s.flameTile, s.flameEmpty]} />
+        <View style={[s.flameTile, s.flameEmpty]}>
+          <View style={s.emptyStud} />
+        </View>
       </View>
     );
   }
@@ -704,7 +755,14 @@ function FlameTile({ pct, mode, isToday }: { pct: number | null; mode: DayMode; 
       <View style={s.flameWrap}>
         {ring}
         <View style={[s.flameTile, s.flameColored, s.flameGlow]}>
+          <LinearGradient
+            colors={['#FFF7DE', '#F7E0A8']}
+            start={{ x: 0.2, y: 0 }}
+            end={{ x: 0.8, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
           <Image source={FLAME_PNG} style={s.flameImgFull} />
+          <View style={s.tileSheen} pointerEvents="none" />
         </View>
       </View>
     );
@@ -714,11 +772,23 @@ function FlameTile({ pct, mode, isToday }: { pct: number | null; mode: DayMode; 
     <View style={s.flameWrap}>
       {ring}
       <View style={[s.flameTile, s.flameGray]}>
-        <Image source={FLAME_PNG} style={[s.flameImg, { tintColor: '#C9C4B7' }]} />
+        <LinearGradient
+          colors={['#FBF9F2', '#F1EBDC']}
+          start={{ x: 0.2, y: 0 }}
+          end={{ x: 0.8, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <Image source={FLAME_PNG} style={[s.flameImg, { tintColor: '#CDC2A8' }]} />
       </View>
       {filled > 0 && (
         <View style={[s.flameClip, { height: `${filled}%` }]} pointerEvents="none">
           <View style={[s.flameTile, s.flameColored, s.flameColoredAbs]}>
+            <LinearGradient
+              colors={['#FFF7DE', '#F7E0A8']}
+              start={{ x: 0.2, y: 0 }}
+              end={{ x: 0.8, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
             <Image source={FLAME_PNG} style={s.flameImg} />
           </View>
         </View>
@@ -952,19 +1022,36 @@ const s = StyleSheet.create({
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   flameGray: {
-    backgroundColor: '#F9F6EE',
-    borderColor: '#E7E0CE',
+    backgroundColor: '#F7F4EA',
+    borderColor: '#E3DCC8',
   },
   flameColored: {
     backgroundColor: '#FFF3D8',
-    borderColor: C.gold,
+    borderColor: '#D2A755',
   },
   flameEmpty: {
-    backgroundColor: 'rgba(255,255,255,0.55)',
-    borderColor: '#E4DCC6',
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderColor: '#E0D6BE',
     borderStyle: 'dashed',
+  },
+  emptyStud: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#D8CDB6',
+  },
+  tileSheen: {
+    position: 'absolute',
+    top: 4,
+    left: 6,
+    width: 9,
+    height: 3.5,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,253,246,0.85)',
+    transform: [{ rotate: '-18deg' }],
   },
   flameColoredAbs: {
     position: 'absolute',
