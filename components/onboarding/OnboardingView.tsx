@@ -6995,40 +6995,52 @@ function DayCompareStatCard({
   side: DayCompareCardSide;
 }) {
   const dark = tone === 'dark';
-  const entering = side === 'left'
-    ? FadeInLeft.duration(720).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-      opacity: 0,
-      transform: [{ translateX: -38 }, { scale: 0.985 }],
-    })
-    : FadeInRight.duration(720).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-      opacity: 0,
-      transform: [{ translateX: 38 }, { scale: 0.985 }],
-    });
+  const dir = side === 'left' ? -1 : 1;
+  // The film toss: the card enters from its side as if dealt onto a table —
+  // released in the air (large, tilted, above its seat), it sails in on a
+  // decelerating arc, lands with a soft overshoot and squares itself up.
+  // One shared value owns the whole flight; landing haptic fires at
+  // touchdown, not at launch.
+  const toss = useSharedValue(0);
 
   useEffect(() => {
-    const timer = setTimeout(runBubbleHaptic, 210);
+    toss.value = withTiming(1, { duration: 680, easing: Easing.bezier(0.16, 0.84, 0.26, 1) });
+    const timer = setTimeout(runBubbleHaptic, 470);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const tossStyle = useAnimatedStyle(() => {
+    const t = toss.value;
+    return {
+      opacity: interpolate(t, [0, 0.14], [0, 1], 'clamp'),
+      transform: [
+        { translateX: interpolate(t, [0, 1], [dir * 138, 0]) },
+        { translateY: interpolate(t, [0, 0.55, 0.85, 1], [-36, -7, 2.5, 0]) },
+        { rotate: `${interpolate(t, [0, 0.62, 0.86, 1], [dir * -7.5, dir * 1.9, dir * -0.65, 0])}deg` },
+        { scale: interpolate(t, [0, 0.62, 0.86, 1], [1.1, 0.992, 1.004, 1]) },
+      ],
+    };
+  });
+
   return (
-    <Reanimated.View
-      entering={entering}
-      style={[s.screenTimeStatMessage, s.dayCompareStaticCard, dark && s.screenTimeStatMessageDark]}
-    >
-      <View style={[s.screenTimeStatHeader, s.screenTimeStatHeaderStacked]}>
-        <Text style={[s.screenTimeStatValue, s.screenTimeStatValueStacked, dark && s.screenTimeStatValueDark]}>{value}</Text>
-        <Text
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.82}
-          style={[s.screenTimeStatLabel, s.screenTimeStatLabelStacked, s.dayCompareStatLabel, dark && s.screenTimeStatLabelDark]}
-        >
-          {label}
-        </Text>
-        <View style={s.screenTimeStatLabelUnderline} />
+    <Reanimated.View style={[s.dayCompareCardShell, dark && s.dayCompareCardShellDark, tossStyle]}>
+      <View style={[s.dayCompareCardFace, dark && s.dayCompareCardFaceDark]}>
+        <View style={[s.screenTimeStatHeader, s.screenTimeStatHeaderStacked]}>
+          <Text style={[s.screenTimeStatValue, s.screenTimeStatValueStacked, dark && s.screenTimeStatValueDark]}>{value}</Text>
+          <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.82}
+            style={[s.screenTimeStatLabel, s.screenTimeStatLabelStacked, s.dayCompareStatLabel, dark && s.screenTimeStatLabelDark]}
+          >
+            {label}
+          </Text>
+          <View style={s.screenTimeStatLabelUnderline} />
+        </View>
+        <DayCompareLegend items={legendItems} dark={dark} />
+        {visual}
       </View>
-      <DayCompareLegend items={legendItems} dark={dark} />
-      {visual}
     </Reanimated.View>
   );
 }
@@ -27060,6 +27072,40 @@ const s = StyleSheet.create({
   dayCompareStaticCard: {
     width: '100%',
     paddingTop: 19,
+  },
+  // Shell/face split: the shell owns the shadow and every transform, the
+  // face owns the background and the hairline border inside a clipped
+  // layer — the rounded border renders crisp instead of stair-stepping
+  // against the elevation outline.
+  dayCompareCardShell: {
+    width: '100%',
+    borderRadius: 27,
+    backgroundColor: '#FFFDF8',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.075,
+    shadowRadius: 26,
+    elevation: 2,
+    position: 'relative',
+  },
+  dayCompareCardShellDark: {
+    backgroundColor: '#17130F',
+    shadowColor: '#000000',
+    shadowOpacity: 0.17,
+  },
+  dayCompareCardFace: {
+    borderRadius: 27,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.30)',
+    backgroundColor: '#FFFDF8',
+    overflow: 'hidden',
+    paddingHorizontal: 15,
+    paddingTop: 19,
+    paddingBottom: 13,
+  },
+  dayCompareCardFaceDark: {
+    backgroundColor: '#17130F',
+    borderColor: 'rgba(197,160,89,0.42)',
   },
   dayCompareRecapCard: {
     alignSelf: 'center',
