@@ -15303,36 +15303,12 @@ function OrganizeLayerHeroCard({
           </View>
           <Text style={s.organizeLayerHeroTitle}>{area.title}</Text>
         </View>
-        <View style={[s.organizeLayerHeroEmblem, { borderColor: `${displayAccent}30`, backgroundColor: `${displayAccent}0E` }]}>
+        <View style={[s.organizeLayerHeroEmblem, { borderColor: `${displayAccent}38`, backgroundColor: `${displayAccent}12` }]}>
           {area.icon}
         </View>
       </View>
 
       <Text style={s.organizeLayerHeroBody}>{area.subtitle}</Text>
-
-      <View style={s.organizeLayerHeroChips}>
-        {area.parts.map(part => (
-          <View
-            key={part}
-            style={[
-              s.organizeLayerHeroChip,
-              {
-                borderColor: `${displayAccent}${done ? '44' : '30'}`,
-                backgroundColor: done ? `${displayAccent}14` : 'rgba(255,255,255,0.86)',
-              },
-            ]}
-          >
-            {done ? (
-              <CheckSmall s={11} c={displayAccent} w={2.8} />
-            ) : (
-              <View style={[s.organizeLayerHeroChipDiamond, { backgroundColor: `${displayAccent}7A` }]} />
-            )}
-            <Text style={[s.organizeLayerHeroChipText, { color: done ? displayAccent : 'rgba(25,23,20,0.62)' }]}>
-              {part}
-            </Text>
-          </View>
-        ))}
-      </View>
     </Reanimated.View>
   );
 }
@@ -15443,6 +15419,7 @@ function OrganizeLayerSeal({
 }) {
   const m = useSharedValue(mode === 'done' ? 2 : mode === 'active' ? 1 : 0);
   const ripple = useSharedValue(0);
+  const pulse = useSharedValue(0);
   const prevMode = useRef(mode);
 
   useEffect(() => {
@@ -15457,7 +15434,20 @@ function OrganizeLayerSeal({
       ripple.value = withTiming(1, { duration: 620, easing: Easing.out(Easing.cubic) });
     }
     prevMode.current = mode;
-  }, [m, mode, ripple]);
+    // The living layer breathes: while active, the halo pulses gently.
+    if (mode === 'active') {
+      pulse.value = 0;
+      pulse.value = withRepeat(
+        withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.sin) }),
+        -1,
+        true,
+      );
+    } else {
+      cancelAnimation(pulse);
+      pulse.value = withTiming(0, { duration: 320 });
+    }
+    return () => cancelAnimation(pulse);
+  }, [m, mode, pulse, ripple]);
 
   const diamondStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(m.value, [0, 1, 2], ['#FFFEFB', accent, accent]),
@@ -15476,8 +15466,8 @@ function OrganizeLayerSeal({
     transform: [{ scale: interpolate(m.value, [1.4, 2], [0.6, 1], 'clamp') }],
   }));
   const haloStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(m.value, [0, 1, 2], [0, 0.5, 0.34]),
-    transform: [{ scale: interpolate(m.value, [0, 1], [0.7, 1], 'clamp') }],
+    opacity: interpolate(m.value, [0, 1, 2], [0, 0.4, 0.34]) + pulse.value * 0.24,
+    transform: [{ scale: interpolate(m.value, [0, 1], [0.7, 1], 'clamp') + pulse.value * 0.16 }],
   }));
   const rippleStyle = useAnimatedStyle(() => ({
     opacity: (1 - ripple.value) * 0.6 * (ripple.value > 0.01 ? 1 : 0),
@@ -29773,10 +29763,12 @@ const s = StyleSheet.create({
     alignItems: 'center',
     columnGap: 12,
   },
+  // The standardized organize icon seat — same metrics as every other
+  // setup-path card across the section.
   organizeLayerHeroEmblem: {
-    width: 44,
-    height: 44,
-    borderRadius: 15,
+    width: 52,
+    height: 52,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
