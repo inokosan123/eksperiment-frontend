@@ -15412,10 +15412,14 @@ function OrganizeLayerSeal({
   mode,
   accent,
   numeral,
+  size = LAYER_SEAL_SIZE,
 }: {
   mode: 'quiet' | 'active' | 'done';
   accent: string;
   numeral: string;
+  // Roman seals mark layers at 40; arabic sub-seals mark steps within a
+  // layer at a smaller size — same anatomy, scaled.
+  size?: number;
 }) {
   const m = useSharedValue(mode === 'done' ? 2 : mode === 'active' ? 1 : 0);
   const ripple = useSharedValue(0);
@@ -15477,15 +15481,25 @@ function OrganizeLayerSeal({
     ],
   }));
 
+  const haloSize = size + 16;
+  const diamondSize = size - 11;
   return (
-    <View style={s.organizeLayerSealStage}>
-      <Reanimated.View pointerEvents="none" style={[s.organizeLayerSealHalo, { backgroundColor: `${accent}2E` }, haloStyle]} />
-      <Reanimated.View pointerEvents="none" style={[s.organizeLayerSealRipple, { borderColor: accent }, rippleStyle]} />
-      <Reanimated.View style={[s.organizeLayerSealDiamond, diamondStyle]} />
+    <View style={[s.organizeLayerSealStage, { width: size, height: size }]}>
+      <Reanimated.View
+        pointerEvents="none"
+        style={[s.organizeLayerSealHalo, { width: haloSize, height: haloSize, borderRadius: haloSize / 2, backgroundColor: `${accent}2E` }, haloStyle]}
+      />
+      <Reanimated.View
+        pointerEvents="none"
+        style={[s.organizeLayerSealRipple, { width: size - 6, height: size - 6, borderRadius: Math.round(size * 0.25), borderColor: accent }, rippleStyle]}
+      />
+      <Reanimated.View
+        style={[s.organizeLayerSealDiamond, { width: diamondSize, height: diamondSize, borderRadius: Math.round(size * 0.225) }, diamondStyle]}
+      />
       <View pointerEvents="none" style={s.organizeLayerSealContent}>
-        <Reanimated.Text style={[s.organizeLayerSealNumeral, numeralStyle]}>{numeral}</Reanimated.Text>
+        <Reanimated.Text style={[s.organizeLayerSealNumeral, { fontSize: Math.round(size * 0.375) }, numeralStyle]}>{numeral}</Reanimated.Text>
         <Reanimated.View style={[s.organizeLayerSealCheck, checkStyle]}>
-          <CheckSmall s={15} c="#FFFFFF" w={3.1} />
+          <CheckSmall s={Math.round(size * 0.375)} c="#FFFFFF" w={3.1} />
         </Reanimated.View>
       </View>
     </View>
@@ -15760,9 +15774,164 @@ const MACRO_PLANNING_STEPS = [
   },
 ];
 
+// ── The macro board — shared by the intro and the progress returns ──
+// The charter grammar carried forward one level down: arabic sub-seals
+// (steps within layer I) on the cards' left borders, the gold thread
+// pouring between them, plaque cards with the standardized icon seat.
+
+const MACRO_SEAL_SIZE = 34;
+const MACRO_SEAL_TOP = 18;
+const MACRO_SEAL_OVERHANG = 13;
+
+function OrganizeMacroPlaqueCard({
+  title,
+  body,
+  accent,
+  icon,
+  active,
+  done,
+}: {
+  title: string;
+  body: string;
+  accent: string;
+  icon: React.ReactNode;
+  active: boolean;
+  done: boolean;
+}) {
+  const state = useSharedValue(done ? 2 : active ? 1 : 0);
+  const isGold = accent === GOLD;
+
+  useEffect(() => {
+    state.value = withSpring(done ? 2 : active ? 1 : 0, {
+      damping: 16,
+      stiffness: 178,
+      mass: 0.84,
+    });
+  }, [active, done, state]);
+
+  const cardStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(state.value, [0, 1, 2], [0.78, 1, 0.99]),
+    transform: [
+      { scale: interpolate(state.value, [0, 1, 2], [0.988, 1.012, 1]) },
+      { translateY: interpolate(state.value, [0, 1, 2], [0, -2, 0]) },
+    ],
+  }));
+  const displayAccent = done ? (isGold ? GOLD : '#2F9B61') : accent;
+  const gradientColors = done
+    ? isGold
+      ? (['rgba(255,252,243,1)', 'rgba(197,160,89,0.30)', 'rgba(255,245,219,0.96)'] as const)
+      : (['rgba(250,255,251,1)', 'rgba(47,155,97,0.24)', 'rgba(245,252,246,0.96)'] as const)
+    : active
+      ? (['rgba(255,255,255,1)', `${accent}16`, 'rgba(255,255,255,0.94)'] as const)
+      : (['rgba(255,255,255,0.97)', `${accent}0C`, 'rgba(255,255,255,0.88)'] as const);
+
+  return (
+    <Reanimated.View
+      style={[
+        s.organizeMacroPlaque,
+        { borderColor: `${displayAccent}${active || done ? '52' : '2E'}` },
+        active && { shadowColor: accent, shadowOpacity: 0.16 },
+        done && { shadowColor: displayAccent, shadowOpacity: 0.12 },
+        cardStyle,
+      ]}
+    >
+      <LinearGradient
+        pointerEvents="none"
+        colors={gradientColors}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={[s.v4ToolTopSheen, { backgroundColor: `${displayAccent}${active || done ? '26' : '12'}` }]} />
+      <View pointerEvents="none" style={[s.organizeLayerHeroFrame, { borderColor: `${displayAccent}1C`, borderRadius: 17 }]} />
+      <View pointerEvents="none" style={[s.organizeLayerHeroGlint, { backgroundColor: `${displayAccent}66` }]} />
+
+      <View style={s.organizeMacroPlaqueCopy}>
+        <Text style={s.organizeMacroPlaqueTitle}>{title}</Text>
+        <Text style={s.organizeMacroPlaqueBody}>{body}</Text>
+      </View>
+      <View style={[s.organizeLayerHeroEmblem, { borderColor: `${displayAccent}38`, backgroundColor: `${displayAccent}12` }]}>
+        {icon}
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function OrganizeMacroBoard({
+  steps,
+  pour,
+  rowsReady,
+}: {
+  steps: { title: string; body: string; accent: string; icon: React.ReactNode; active: boolean; done: boolean }[];
+  pour: SharedValue<number>;
+  rowsReady?: boolean;
+}) {
+  const [rowLayouts, setRowLayouts] = useState<{ y: number; h: number }[]>([]);
+
+  return (
+    <View style={s.organizeMacroBoard}>
+      {rowLayouts.length >= 2 && !!rowLayouts[0] && !!rowLayouts[1] && steps.length >= 2 && (
+        <OrganizeLayerThread
+          pour={pour}
+          accent={GOLD}
+          top={rowLayouts[0].y + MACRO_SEAL_TOP + MACRO_SEAL_SIZE + 4}
+          height={Math.max(20, rowLayouts[1].y + MACRO_SEAL_TOP - (rowLayouts[0].y + MACRO_SEAL_TOP + MACRO_SEAL_SIZE) - 8)}
+          left={MACRO_SEAL_OVERHANG * -1 + MACRO_SEAL_SIZE / 2 - 1.25}
+        />
+      )}
+      {steps.map((step, index) => {
+        const rowDelay = 320 + index * 220;
+        const sealMode: 'quiet' | 'active' | 'done' = step.done ? 'done' : step.active && rowsReady !== false ? 'active' : 'quiet';
+        return (
+          <Reanimated.View
+            key={step.title}
+            entering={FadeInUp.delay(rowDelay).duration(660).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 38 }, { scale: 0.968 }],
+            })}
+            style={[s.organizeLayerRow, index > 0 && s.organizeMacroRowGap]}
+            onLayout={event => {
+              const { y, height: h } = event.nativeEvent.layout;
+              setRowLayouts(current => {
+                const next = [...current];
+                next[index] = { y, h };
+                return next;
+              });
+            }}
+          >
+            <OrganizeMacroPlaqueCard
+              title={step.title}
+              body={step.body}
+              accent={step.accent}
+              icon={step.icon}
+              active={step.active && rowsReady !== false}
+              done={step.done}
+            />
+            <Reanimated.View
+              pointerEvents="none"
+              entering={ZoomIn.delay(rowDelay + 360).duration(380).easing(Easing.bezier(0.16, 1, 0.28, 1))}
+              style={s.organizeMacroSealAnchor}
+            >
+              <OrganizeLayerSeal
+                mode={sealMode}
+                accent={step.accent}
+                numeral={String(index + 1)}
+                size={MACRO_SEAL_SIZE}
+              />
+            </Reanimated.View>
+          </Reanimated.View>
+        );
+      })}
+    </View>
+  );
+}
+
 function OrganizeMacroIntroSlide({ onNext }: { onNext: () => void }) {
   const insets = useSafeAreaInsets();
   const [activeReady, setActiveReady] = useState(false);
+  const exitProgress = useSharedValue(0);
+  const pour = useSharedValue(0);
+  const ctaLockRef = useRef(false);
   const contentStyle = [
     s.organizeRuleContent,
     s.organizeMacroIntroContent,
@@ -15773,53 +15942,74 @@ function OrganizeMacroIntroSlide({ onNext }: { onNext: () => void }) {
     },
   ];
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+  const exitStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(exitProgress.value, [0, 1], [1, 0]),
+    transform: [
+      { translateY: interpolate(exitProgress.value, [0, 1], [0, -18]) },
+      { scale: interpolate(exitProgress.value, [0, 1], [1, 0.986]) },
+    ],
+  }));
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const wake = setTimeout(() => {
       setActiveReady(true);
       runBubbleHaptic();
     }, 980);
-    return () => clearTimeout(timer);
+    return () => clearTimeout(wake);
   }, []);
+
+  // The thread anticipates the path: once step 1 wakes, gold flows toward 2.
+  useEffect(() => {
+    if (!activeReady) return undefined;
+    const timer = setTimeout(() => {
+      pour.value = withTiming(1, { duration: 720, easing: Easing.bezier(0.3, 0, 0.4, 1) });
+    }, 260);
+    return () => clearTimeout(timer);
+  }, [activeReady, pour]);
+
+  const handleCtaPress = () => {
+    if (ctaLockRef.current) return;
+    ctaLockRef.current = true;
+    exitProgress.value = withTiming(1, { duration: 360, easing: Easing.in(Easing.cubic) });
+    setTimeout(onNext, 340);
+  };
 
   return (
     <View style={s.organizeRuleScreen}>
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
-        <OrganizeStageHeader
-          title="Macro planning"
-          body="First, mark what matters ahead. Big dates and monthly direction shape your plan before the week begins."
-          accent="#2F9B61"
-        />
+        <Reanimated.View style={exitStyle}>
+          <OrganizeLayersCharterHeader
+            eyebrow="THE FIRST LAYER"
+            title="Macro planning"
+            body="First, mark what matters ahead. Big dates and monthly direction shape your plan before the week begins."
+            accent="#4D8586"
+          />
+        </Reanimated.View>
 
-        <View style={[s.setupPathBoard, s.organizeMacroIntroBoard, s.organizeMacroIntroBoardTight]}>
-          {MACRO_PLANNING_STEPS.map((item, index) => (
-            <React.Fragment key={item.title}>
-              <SetupPathStepCard
-                title={item.title}
-                body={item.body}
-                accent={item.accent}
-                icon={item.icon}
-                index={index}
-                active={index === 0}
-                done={false}
-                activeReady={activeReady}
-                entering={organizeSideEntrance(index)}
-              />
-              {index < MACRO_PLANNING_STEPS.length - 1 ? (
-                <OrganizeRuleConnector accent={MACRO_PLANNING_STEPS[index + 1]?.accent ?? item.accent} index={index} />
-              ) : null}
-            </React.Fragment>
-          ))}
-        </View>
+        <Reanimated.View style={[s.setupPathBoard, s.organizeMacroIntroBoard, s.organizeMacroIntroBoardTight, exitStyle]}>
+          <OrganizeMacroBoard
+            pour={pour}
+            rowsReady={activeReady}
+            steps={MACRO_PLANNING_STEPS.map((item, index) => ({
+              title: item.title,
+              body: item.body,
+              accent: item.accent,
+              icon: item.icon,
+              active: index === 0,
+              done: false,
+            }))}
+          />
+        </Reanimated.View>
       </ScrollView>
 
       <AnimatedCta active={activeReady} delay={180} style={footerStyle} pointerEvents={activeReady ? 'auto' : 'none'}>
-        <View style={s.ctaIsland}>
-          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-            <Text style={s.primaryButtonText}>Let&apos;s set this up</Text>
-            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
-          </TouchableOpacity>
-        </View>
+        <Reanimated.View style={exitStyle}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={handleCtaPress} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>Let&apos;s set this up</Text>
+            </TouchableOpacity>
+          </View>
+        </Reanimated.View>
       </AnimatedCta>
     </View>
   );
@@ -15870,6 +16060,8 @@ function OrganizeMacroProgressSlide({
   const insets = useSafeAreaInsets();
   const [checked, setChecked] = useState(false);
   const exitProgress = useSharedValue(0);
+  const progressPour = useSharedValue(0);
+  const ctaLockRef = useRef(false);
   const contentStyle = [
     s.organizeRuleContent,
     {
@@ -15896,13 +16088,24 @@ function OrganizeMacroProgressSlide({
   useEffect(() => {
     setChecked(false);
     exitProgress.value = 0;
+    progressPour.value = 0;
+    ctaLockRef.current = false;
     const timer = setTimeout(() => {
       setChecked(true);
       runPreviewTaskCheckHaptic();
       void playTaskCheckSoundOnly();
     }, 720);
     return () => clearTimeout(timer);
-  }, [exitProgress, variant]);
+  }, [exitProgress, progressPour, variant]);
+
+  // The strike pours the gold onward to the next step.
+  useEffect(() => {
+    if (!checked || !monthlyGoalsEnabled || variant !== 'afterBigEvents') return undefined;
+    const timer = setTimeout(() => {
+      progressPour.value = withTiming(1, { duration: 720, easing: Easing.bezier(0.3, 0, 0.4, 1) });
+    }, 240);
+    return () => clearTimeout(timer);
+  }, [checked, monthlyGoalsEnabled, progressPour, variant]);
 
   useEffect(() => {
     if (!macroComplete) return undefined;
@@ -15927,7 +16130,8 @@ function OrganizeMacroProgressSlide({
     <View style={s.organizeRuleScreen}>
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
         <Reanimated.View style={exitStyle}>
-          <OrganizeStageHeader
+          <OrganizeLayersCharterHeader
+            eyebrow={macroComplete ? 'LAYER I COMPLETE' : 'THE FIRST LAYER'}
             title={macroComplete ? 'Your macro plan is ready.' : 'The first layer grows.'}
             body={
               macroComplete
@@ -15943,39 +16147,50 @@ function OrganizeMacroProgressSlide({
         </Reanimated.View>
 
         <Reanimated.View style={[s.setupPathBoard, s.organizeMacroIntroBoard, exitStyle]}>
-          <MacroProgressCard
-            title="Big events"
-            body="Important dates and commitments are now visible."
-            accent="#4D8586"
-            icon={<Calendar s={18} c="#4D8586" w={2} />}
-            done={bigEventsDone}
-            active={!bigEventsDone}
-            index={0}
+          <OrganizeMacroBoard
+            pour={progressPour}
+            steps={[
+              {
+                title: 'Big events',
+                body: 'Important dates and commitments are now visible.',
+                accent: '#4D8586',
+                icon: <Calendar s={18} c="#4D8586" w={2} />,
+                active: !bigEventsDone,
+                done: bigEventsDone,
+              },
+              ...(monthlyGoalsEnabled
+                ? [{
+                    title: 'Monthly goals',
+                    body: 'Add direction for the month before the week begins.',
+                    accent: GOLD,
+                    icon: <Target s={18} c={GOLD} w={2} />,
+                    active: monthlyActive || (variant === 'afterMonthlyGoals' && !checked),
+                    done: monthlyDone,
+                  }]
+                : []),
+            ]}
           />
-          {monthlyGoalsEnabled ? (
-            <>
-              <OrganizeRuleConnector accent={GOLD} index={0} />
-              <MacroProgressCard
-                title="Monthly goals"
-                body="Add direction for the month before the week begins."
-                accent={GOLD}
-                icon={<Target s={18} c={GOLD} w={2} />}
-                done={monthlyDone}
-                active={monthlyActive || (variant === 'afterMonthlyGoals' && !checked)}
-                index={1}
-              />
-            </>
-          ) : null}
         </Reanimated.View>
       </ScrollView>
 
       <AnimatedCta active={ctaVisible} delay={180} style={footerStyle} pointerEvents={ctaVisible ? 'auto' : 'none'}>
-        <View style={s.ctaIsland}>
-          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-            <Text style={s.primaryButtonText}>{ctaLabel}</Text>
-            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
-          </TouchableOpacity>
-        </View>
+        <Reanimated.View style={exitStyle}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              haptic="medium"
+              onPress={() => {
+                if (ctaLockRef.current) return;
+                ctaLockRef.current = true;
+                exitProgress.value = withTiming(1, { duration: 360, easing: Easing.in(Easing.cubic) });
+                setTimeout(onNext, 340);
+              }}
+              style={s.primaryButton}
+            >
+              <Text style={s.primaryButtonText}>{ctaLabel}</Text>
+            </TouchableOpacity>
+          </View>
+        </Reanimated.View>
       </AnimatedCta>
     </View>
   );
@@ -29674,28 +29889,17 @@ const s = StyleSheet.create({
     width: '100%',
   },
   organizeLayerSealStage: {
-    width: LAYER_SEAL_SIZE,
-    height: LAYER_SEAL_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
   },
   organizeLayerSealHalo: {
     position: 'absolute',
-    width: LAYER_SEAL_SIZE + 16,
-    height: LAYER_SEAL_SIZE + 16,
-    borderRadius: (LAYER_SEAL_SIZE + 16) / 2,
   },
   organizeLayerSealRipple: {
     position: 'absolute',
-    width: LAYER_SEAL_SIZE - 6,
-    height: LAYER_SEAL_SIZE - 6,
-    borderRadius: 10,
     borderWidth: 1.5,
   },
   organizeLayerSealDiamond: {
-    width: LAYER_SEAL_SIZE - 11,
-    height: LAYER_SEAL_SIZE - 11,
-    borderRadius: 9,
     borderWidth: 1.3,
   },
   organizeLayerSealContent: {
@@ -29705,11 +29909,57 @@ const s = StyleSheet.create({
   },
   organizeLayerSealNumeral: {
     fontFamily: F.serifSemiBold,
-    fontSize: 15,
     includeFontPadding: false,
   },
   organizeLayerSealCheck: {
     position: 'absolute',
+  },
+  organizeMacroBoard: {
+    position: 'relative',
+    width: '100%',
+  },
+  organizeMacroRowGap: {
+    marginTop: 24,
+  },
+  organizeMacroSealAnchor: {
+    position: 'absolute',
+    left: -MACRO_SEAL_OVERHANG,
+    top: MACRO_SEAL_TOP,
+  },
+  organizeMacroPlaque: {
+    width: '100%',
+    borderRadius: 23,
+    paddingLeft: 33,
+    paddingRight: 15,
+    paddingVertical: 15,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 12,
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.09,
+    shadowRadius: 18,
+    elevation: 2,
+  },
+  organizeMacroPlaqueCopy: {
+    flex: 1,
+    minWidth: 0,
+    rowGap: 4,
+  },
+  organizeMacroPlaqueTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 21,
+    lineHeight: 25,
+    color: INK,
+  },
+  organizeMacroPlaqueBody: {
+    fontFamily: F.serifMedium,
+    fontSize: 14.5,
+    lineHeight: 19.5,
+    color: 'rgba(25,23,20,0.6)',
   },
   organizeLayerThreadWrap: {
     position: 'absolute',
