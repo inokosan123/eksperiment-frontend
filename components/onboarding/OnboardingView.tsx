@@ -26558,14 +26558,14 @@ const s = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     left: 0,
     right: 0,
-    backgroundColor: '#FFFDF8',
+    backgroundColor: '#FFFFFF',
     zIndex: 18,
   },
   dayCompareLayerBridgePreview: {
     zIndex: 17,
   },
   dayCompareScreenBg: {
-    backgroundColor: '#FFFDF8',
+    backgroundColor: '#FFFFFF',
   },
   dayCompareHeader: {
     alignItems: 'center',
@@ -27192,7 +27192,7 @@ const s = StyleSheet.create({
   },
   dayWasteRevealLayer: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#FFFDF8',
+    backgroundColor: '#FFFFFF',
     zIndex: 17,
     alignItems: 'center',
   },
