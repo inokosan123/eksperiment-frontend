@@ -16034,6 +16034,17 @@ function OrganizeMacroFusionScene({
     <View style={[s.organizeMacroBoard, act1Height > 0 && { minHeight: act1Height }]}>
       {/* The layers screen, assembling in normal flow beneath the overlay */}
       <View style={[s.organizeMacroFusionFinal, rowLayouts.length < 2 && s.toolsHidden]} pointerEvents="none">
+        {/* The thread lies beneath the cards — first child, like every board */}
+        {stage >= 4 && heroHeight > 0 && weeklyTop > heroHeight && (
+          <OrganizeLayerThread
+            pour={weeklyPour}
+            accent={GOLD}
+            top={LAYER_SEAL_TOP + LAYER_SEAL_SIZE + 4}
+            height={Math.max(24, weeklyTop + LAYER_SEAL_TOP - (LAYER_SEAL_TOP + LAYER_SEAL_SIZE) - 8)}
+            left={LAYER_SEAL_OVERHANG * -1 + LAYER_SEAL_SIZE / 2 - 1.25}
+          />
+        )}
+
         <Reanimated.View
           style={[s.organizeLayerRow, heroStyle]}
           onLayout={event => setHeroHeight(event.nativeEvent.layout.height)}
@@ -16053,16 +16064,6 @@ function OrganizeMacroFusionScene({
             />
           </View>
         </Reanimated.View>
-
-        {stage >= 4 && heroHeight > 0 && weeklyTop > heroHeight && (
-          <OrganizeLayerThread
-            pour={weeklyPour}
-            accent={GOLD}
-            top={LAYER_SEAL_TOP + LAYER_SEAL_SIZE + 4}
-            height={Math.max(24, weeklyTop + LAYER_SEAL_TOP - (LAYER_SEAL_TOP + LAYER_SEAL_SIZE) - 8)}
-            left={LAYER_SEAL_OVERHANG * -1 + LAYER_SEAL_SIZE / 2 - 1.25}
-          />
-        )}
 
         {stage >= 4 && (
           <Reanimated.View
