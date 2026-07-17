@@ -803,20 +803,17 @@ function PremiumBookCard({
         ]}
       />
       <TestamentMotif tone={tone} />
-      {/* The book's spine at the left edge — brighter while open, and it
-          runs off the card's bottom edge into the panel's spine below */}
-      <View
-        pointerEvents="none"
-        style={[
-          s.bookSpine,
-          expanded && s.bookSpineOpen,
-          {
-            backgroundColor: expanded
-              ? (isGreen ? 'rgba(94,123,85,0.8)' : 'rgba(180,155,103,0.85)')
-              : (isGreen ? 'rgba(94,123,85,0.4)' : 'rgba(180,155,103,0.45)'),
-          },
-        ]}
-      />
+      {/* The book's spine at the left edge — only while shelved; the open
+          volume stands clean, type and rule alone. */}
+      {!expanded && (
+        <View
+          pointerEvents="none"
+          style={[
+            s.bookSpine,
+            { backgroundColor: isGreen ? 'rgba(94,123,85,0.4)' : 'rgba(180,155,103,0.45)' },
+          ]}
+        />
+      )}
       <View style={s.bookCopy}>
         <Reanimated.Text
           numberOfLines={1}
@@ -871,14 +868,6 @@ function ChapterPanel({
       ]}
     >
       <TestamentMotif tone={tone} />
-      {/* The spine continues from the open card above, closing at the foot */}
-      <View
-        pointerEvents="none"
-        style={[
-          s.panelSpine,
-          { backgroundColor: isGreen ? 'rgba(94,123,85,0.8)' : 'rgba(180,155,103,0.85)' },
-        ]}
-      />
       {/* Engraved head: rule — ◆ CHAPTERS · N ◆ — rule */}
       <View style={s.chapterHeadRow}>
         <View style={[s.chapterHeadRule, { backgroundColor: isGreen ? 'rgba(94,123,85,0.24)' : 'rgba(180,155,103,0.28)' }]} />
@@ -1380,19 +1369,6 @@ const s = StyleSheet.create({
     bottom: 11,
     width: 3,
     borderTopRightRadius: 2,
-    borderBottomRightRadius: 2,
-  },
-  bookSpineOpen: {
-    top: 9,
-    bottom: 0,
-    borderBottomRightRadius: 0,
-  },
-  panelSpine: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 11,
-    width: 3,
     borderBottomRightRadius: 2,
   },
   shelfFrame: {
