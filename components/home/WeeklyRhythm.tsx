@@ -183,8 +183,9 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
   const width = size * 2.08 + digitExpansion + ornamentSpacing;
   const height = size * 0.92;
 
-  // Progress arc: dash length approximates the bezier's arc length.
-  const arcLen = width * 0.92;
+  // Progress arc: dash length approximates the bezier's arc length —
+  // slightly generous so 100% closes the track completely.
+  const arcLen = width * 0.98;
   const frac = quiet ? 0 : clamped / 100;
   const arcProgress = useSharedValue(0);
 
@@ -380,6 +381,7 @@ const ms = StyleSheet.create({
 function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
   const reduceMotion = useReducedMotion();
   const quiet = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
+  const full = !quiet && pct >= 100;
   const field = 140;
   const cx = field / 2;
   const ringR = 40;
@@ -409,7 +411,7 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
       {/* Layered radiance — the bloom grammar, radial */}
       <Reanimated.View pointerEvents="none" style={[rf.glowOuter, outerGlowStyle]} />
       <View pointerEvents="none" style={[rf.glowMid, quiet && rf.glowQuiet]} />
-      <View pointerEvents="none" style={[rf.glowHeart, quiet && rf.glowHeartQuiet]} />
+      <View pointerEvents="none" style={[rf.glowHeart, quiet && rf.glowHeartQuiet, full && rf.glowHeartFull]} />
 
       <Svg
         pointerEvents="none"
@@ -418,13 +420,14 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
         style={[rf.rays, quiet && rf.raysQuiet]}
       >
         {/* Hairline halo ring */}
-        <Circle cx={cx} cy={cx} r={ringR} fill="none" stroke={GOLD} strokeOpacity={0.32} strokeWidth={1} />
-        {/* Ray burst — long/short alternating, like a struck medal */}
+        <Circle cx={cx} cy={cx} r={ringR} fill="none" stroke={GOLD} strokeOpacity={full ? 0.44 : 0.32} strokeWidth={1} />
+        {/* Ray burst — long/short alternating, like a struck medal.
+            On a finished day the sun stands at full strength. */}
         {Array.from({ length: 12 }).map((_, index) => {
           const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
           const long = index % 2 === 0;
           const r1 = rayInner;
-          const r2 = rayInner + (long ? 18 : 11);
+          const r2 = rayInner + (long ? (full ? 21 : 18) : (full ? 13 : 11));
           return (
             <Line
               key={index}
@@ -433,7 +436,7 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
               x2={cx + r2 * Math.cos(angle)}
               y2={cx + r2 * Math.sin(angle)}
               stroke={GOLD}
-              strokeOpacity={long ? 0.52 : 0.3}
+              strokeOpacity={long ? (full ? 0.64 : 0.52) : (full ? 0.4 : 0.3)}
               strokeWidth={long ? 1.8 : 1.3}
               strokeLinecap="round"
             />
@@ -441,9 +444,10 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
         })}
       </Svg>
 
-      {/* Diamond glints in the sun's corners */}
+      {/* Diamond glints in the sun's corners — a third joins on a full day */}
       <View pointerEvents="none" style={[rf.glint, { right: 13, top: 15 }]} />
       <View pointerEvents="none" style={[rf.glintSmall, { left: 17, bottom: 20 }]} />
+      {full && <View pointerEvents="none" style={[rf.glintSmall, { left: 13, top: 24 }]} />}
 
       <FocusLottie name="flame" loop speed={0.9} style={rf.flame} />
     </View>
@@ -483,6 +487,12 @@ const rf = StyleSheet.create({
   },
   glowHeartQuiet: {
     backgroundColor: 'rgba(255,248,228,0.6)',
+  },
+  glowHeartFull: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(255,250,232,1)',
   },
   rays: {
     position: 'absolute',
@@ -878,12 +888,12 @@ export default function WeeklyRhythm() {
   const headline = todayMode === 'no-tasks'
     ? 'A quiet day — nothing scheduled.'
     : todayMode === 'all-skipped'
-      ? 'Today’s tasks were laid aside.'
+      ? 'Today was laid aside to rest.'
       : todayPct >= 100
-        ? 'Every candle is lit — the day is kept.'
+        ? 'The candle is full — today’s flame is lit.'
         : todayPct > 0
-          ? 'Today’s candle is burning. Keep going.'
-          : 'Light the first candle of the day.';
+          ? 'Today’s candle is filling. Keep going.'
+          : 'The day’s candle awaits its first task.';
 
   return (
     <View style={s.wrap}>
