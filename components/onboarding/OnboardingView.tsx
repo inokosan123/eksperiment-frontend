@@ -18,6 +18,7 @@ import Reanimated, {
   FadeInRight,
   FadeInUp,
   FadeOut,
+  FadeOutUp,
   Easing,
   interpolate,
   interpolateColor,
@@ -368,6 +369,10 @@ const INK = '#191714';
 const PAPER = '#FFFDF9';
 const MUTED = '#776E64';
 const ONBOARDING_DEV_JUMP_ENABLED = __DEV__;
+// A/B switch: the day-panorama intro (dome hero, sun/moon axis, breakdown
+// bar). OFF for the main flow — the sequence opens directly on the YOU
+// WASTE beats; flip ON to restore the full panorama first screen.
+const DAY_PANORAMA_INTRO_ENABLED = false;
 const APP_LOGO = require('@/assets/images/anasta-logo.png');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const CONFETTI_SOURCE = require('@/assets/animations/onboarding-confetti.lottie');
@@ -7531,8 +7536,17 @@ function DayWasteRevealLayer({
   onDone: () => void;
 }) {
   const [stepIndex, setStepIndex] = useState(0);
+  const [closing, setClosing] = useState(false);
   const waitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settledForStepRef = useRef(false);
+  // The room darkens a step with every beat (dusk), the number's landing
+  // blooms an ember behind it and dips the whole stage (weight), and the
+  // final beat recedes into depth (closeT) while the summary header rises.
+  const dusk = useSharedValue(0);
+  const dip = useSharedValue(0);
+  const ember = useSharedValue(0);
+  const closeT = useSharedValue(0);
   const steps = useMemo<DayWasteRevealStep[]>(
     () => [
       {
@@ -7569,29 +7583,68 @@ function DayWasteRevealLayer({
 
   useEffect(() => {
     settledForStepRef.current = false;
+    ember.value = 0;
     if (waitTimerRef.current) {
       clearTimeout(waitTimerRef.current);
       waitTimerRef.current = null;
     }
     return undefined;
-  }, [step.key]);
+  }, [ember, step.key]);
+
+  // Dusk crescendo: each beat darkens the room another step.
+  useEffect(() => {
+    dusk.value = withTiming(stepIndex / 2, { duration: 820, easing: Easing.inOut(Easing.quad) });
+  }, [dusk, stepIndex]);
 
   useEffect(() => () => {
     if (waitTimerRef.current) clearTimeout(waitTimerRef.current);
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
   }, []);
 
   const handleSettled = useCallback(() => {
     if (settledForStepRef.current) return;
     settledForStepRef.current = true;
+    // The number lands NOW: the hit is at the settle, not on the way out.
+    runStrongHaptic();
+    dip.value = withSequence(
+      withTiming(3, { duration: 130, easing: Easing.out(Easing.quad) }),
+      withSpring(0, { damping: 14, stiffness: 280 }),
+    );
+    ember.value = withSequence(
+      withTiming(1, { duration: 340, easing: Easing.out(Easing.cubic) }),
+      withTiming(0.4, { duration: 980, easing: Easing.inOut(Easing.quad) }),
+    );
     waitTimerRef.current = setTimeout(() => {
-      runStrongHaptic();
       if (stepIndex >= steps.length - 1) {
-        onDone();
+        // The verdict recedes into depth; the summary header rises to meet
+        // the title while this layer is still on screen.
+        setClosing(true);
+        closeT.value = withTiming(1, { duration: 400, easing: Easing.in(Easing.cubic) });
+        closeTimerRef.current = setTimeout(onDone, 360);
         return;
       }
+      runSelectionHaptic();
       setStepIndex(current => Math.min(current + 1, steps.length - 1));
-    }, 1250);
-  }, [onDone, stepIndex, steps.length]);
+    }, 1450);
+  }, [closeT, dip, ember, onDone, stepIndex, steps.length]);
+
+  const duskStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(dusk.value, [0, 0.5, 1], [0, 0.05, 0.115]),
+  }));
+  const stageDipStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: dip.value }],
+  }));
+  const emberStyle = useAnimatedStyle(() => ({
+    opacity: ember.value * 0.095,
+    transform: [{ scale: 0.88 + ember.value * 0.18 }],
+  }));
+  const closeStyle = useAnimatedStyle(() => ({
+    opacity: 1 - closeT.value,
+    transform: [
+      { translateY: closeT.value * -34 },
+      { scale: 1 - closeT.value * 0.055 },
+    ],
+  }));
 
   return (
     <Reanimated.View
@@ -7599,6 +7652,7 @@ function DayWasteRevealLayer({
         opacity: 0,
         transform: [{ translateY: 18 }, { scale: 0.985 }],
       })}
+      exiting={FadeOut.duration(460).easing(Easing.out(Easing.quad))}
       style={[
         s.dayWasteRevealLayer,
         {
@@ -7607,54 +7661,80 @@ function DayWasteRevealLayer({
         },
       ]}
     >
-      <Reanimated.View
-        entering={FadeIn.duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-          opacity: 0,
-          transform: [{ translateY: -12 }, { scale: 0.98 }],
-        })}
-        style={s.dayWasteRevealTitleBlock}
-      >
-        <Text style={s.dayCompareSmallLead}>Right now</Text>
-        <View style={s.dayCompareTitleWrap}>
-          <Text style={[s.dayCompareTitle, s.dayCompareTitleWaste, s.dayWasteRevealHeroTitle]}>YOU WASTE</Text>
-          <View style={[s.dayCompareUnderline, s.dayCompareUnderlineWaste, s.dayWasteRevealHeroUnderline]} />
-        </View>
-      </Reanimated.View>
+      {/* The room darkens a step with each beat */}
+      <Reanimated.View pointerEvents="none" style={[s.dayWasteRevealDusk, duskStyle]} />
 
-      <Reanimated.View
-        entering={FadeIn.delay(120).duration(520).easing(Easing.out(Easing.cubic))}
-        style={s.dayWasteRevealDividerWrap}
-      >
-        <View style={s.dayWasteRevealDivider} />
-      </Reanimated.View>
+      <Reanimated.View style={[s.dayWasteRevealStage, stageDipStyle]}>
+        <Reanimated.View
+          entering={FadeIn.duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: -12 }, { scale: 0.98 }],
+          })}
+          style={s.dayWasteRevealTitleBlock}
+        >
+          <Text style={s.dayCompareSmallLead}>Right now</Text>
+          <View style={s.dayCompareTitleWrap}>
+            <Text style={[s.dayCompareTitle, s.dayCompareTitleWaste, s.dayWasteRevealHeroTitle]}>YOU WASTE</Text>
+            <View style={[s.dayCompareUnderline, s.dayCompareUnderlineWaste, s.dayWasteRevealHeroUnderline]} />
+          </View>
+        </Reanimated.View>
 
-      <Reanimated.View
-        key={step.key}
-        entering={FadeInUp.delay(170).duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-          opacity: 0,
-          transform: [{ translateY: 30 }, { scale: 0.972 }],
-        })}
-        exiting={FadeOut.duration(180)}
-        style={[s.dayWasteRevealBody, step.unit === 'years' && s.dayWasteRevealBodyYears]}
-      >
-        <View style={s.dayWasteRevealNumberRow}>
-          <DayWasteCountingNumber
-            stepKey={step.key}
-            target={step.target}
-            decimals={step.decimals}
-            duration={1880}
-            emphasized={step.unit === '%'}
-            compact={false}
-            onSettled={handleSettled}
-          />
-          <Text style={[s.dayWasteRevealUnit, step.unit === '%' && s.dayWasteRevealPercentUnit, step.unit === 'years' && s.dayWasteRevealUnitYears]}>{step.unit}</Text>
-        </View>
+        <Reanimated.View
+          entering={FadeIn.delay(120).duration(520).easing(Easing.out(Easing.cubic))}
+          style={[s.dayWasteRevealDividerWrap, closeStyle]}
+        >
+          <View style={s.dayWasteRevealDivider} />
+          {/* Three embers: the beats already taken stay lit */}
+          <View style={s.dayWasteRevealEmberRow}>
+            {steps.map((item, index) => (
+              <View
+                key={item.key}
+                style={[
+                  s.dayWasteRevealEmberDot,
+                  index < stepIndex && s.dayWasteRevealEmberDotDone,
+                  index === stepIndex && s.dayWasteRevealEmberDotActive,
+                ]}
+              />
+            ))}
+          </View>
+        </Reanimated.View>
 
-        <View style={s.dayWasteRevealWords}>
-          <Text style={[s.dayWasteRevealWord, s.dayWasteRevealWordOne]}>{step.lineOne}</Text>
-          <Text style={[s.dayWasteRevealWord, s.dayWasteRevealWordMain]}>{step.lineTwo}</Text>
-          <Text style={[s.dayWasteRevealWord, s.dayWasteRevealWordThree]}>{step.lineThree}</Text>
-        </View>
+        <Reanimated.View
+          key={step.key}
+          entering={FadeInUp.delay(150).duration(720).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 56 }, { scale: 0.955 }],
+          })}
+          exiting={FadeOutUp.duration(340).easing(Easing.in(Easing.cubic))}
+          style={[s.dayWasteRevealBody, step.unit === 'years' && s.dayWasteRevealBodyYears, closeStyle]}
+        >
+          <View style={s.dayWasteRevealNumberRow}>
+            {/* The ember: a deep red bloom that flares when the number lands */}
+            <Reanimated.View pointerEvents="none" style={[s.dayWasteRevealEmberGlow, emberStyle]} />
+            <DayWasteCountingNumber
+              stepKey={step.key}
+              target={step.target}
+              decimals={step.decimals}
+              duration={1880}
+              emphasized={step.unit === '%'}
+              compact={false}
+              onSettled={handleSettled}
+            />
+            <Text style={[s.dayWasteRevealUnit, step.unit === '%' && s.dayWasteRevealPercentUnit, step.unit === 'years' && s.dayWasteRevealUnitYears]}>{step.unit}</Text>
+          </View>
+
+          <View style={s.dayWasteRevealWords}>
+            <Reanimated.View entering={FadeInUp.delay(430).duration(540).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}>
+              <Text style={[s.dayWasteRevealWord, s.dayWasteRevealWordOne]}>{step.lineOne}</Text>
+            </Reanimated.View>
+            <Reanimated.View entering={FadeInUp.delay(560).duration(540).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}>
+              <Text style={[s.dayWasteRevealWord, s.dayWasteRevealWordMain]}>{step.lineTwo}</Text>
+            </Reanimated.View>
+            <Reanimated.View entering={FadeInUp.delay(690).duration(540).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}>
+              <Text style={[s.dayWasteRevealWord, s.dayWasteRevealWordThree]}>{step.lineThree}</Text>
+            </Reanimated.View>
+          </View>
+        </Reanimated.View>
       </Reanimated.View>
     </Reanimated.View>
   );
@@ -12781,7 +12861,9 @@ function V4DayPanoramaHeaderSlide({
   const stat = protectStats(hours);
   const wakingPercent = Math.round((phoneHours / USABLE_DAY_HOURS) * 100);
   const reclaimedWakingPercent = Math.max(1, Math.round(wakingPercent * SCREEN_TIME_REDUCTION_RATE));
-  const [phase, setPhase] = useState<'pie' | 'pieExit' | 'wasteReveal' | 'wasteCompare' | 'reductionBridge' | 'reclaimCompare'>('pie');
+  const [phase, setPhase] = useState<'pie' | 'pieExit' | 'wasteReveal' | 'wasteCompare' | 'reductionBridge' | 'reclaimCompare'>(
+    DAY_PANORAMA_INTRO_ENABLED ? 'pie' : 'wasteReveal',
+  );
   const [compareReveal, setCompareReveal] = useState(0);
   const [wasteCompareFromReveal, setWasteCompareFromReveal] = useState(false);
   const [reclaimCompareFromBridge, setReclaimCompareFromBridge] = useState(false);
@@ -12790,13 +12872,14 @@ function V4DayPanoramaHeaderSlide({
   const [reductionBridgeExitSignal, setReductionBridgeExitSignal] = useState(0);
   const wasteCompareFromRevealRef = useRef(false);
   const morph = useSharedValue(0);
-  const screen2 = useSharedValue(0);
+  const screen2 = useSharedValue(DAY_PANORAMA_INTRO_ENABLED ? 0 : 1);
   const dim = useSharedValue(0);
   const crestIntro = useSharedValue(0);
   const goldFill = useSharedValue(0);
   const dayTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
+    if (!DAY_PANORAMA_INTRO_ENABLED) return undefined;
     axisIntro.value = 0;
     lineDraw.value = 0;
     cloudBase.value = 0;
@@ -13192,6 +13275,7 @@ function V4DayPanoramaHeaderSlide({
         (phase === 'wasteReveal' || phase === 'wasteCompare' || phase === 'reductionBridge' || phase === 'reclaimCompare') && s.dayCompareScreenBg,
       ]}
     >
+      {DAY_PANORAMA_INTRO_ENABLED && (
       <Reanimated.View style={[s.dayHeaderContent, heroFadeStyle]}>
         <Reanimated.View
           entering={FadeIn.delay(heroDelay).duration(heroDuration).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
@@ -13275,7 +13359,9 @@ function V4DayPanoramaHeaderSlide({
           </Reanimated.View>
         </View>
       </Reanimated.View>
+      )}
 
+      {DAY_PANORAMA_INTRO_ENABLED && (
       <View style={[s.dayHeaderFutureSpace, { width: frameWidth, height: pieSceneHeight }]}>
         {(phase === 'pie' || phase === 'pieExit') && (
           <Reanimated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, screen1FadeStyle]}>
@@ -13336,6 +13422,7 @@ function V4DayPanoramaHeaderSlide({
         )}
 
       </View>
+      )}
 
       {phase === 'wasteReveal' && (
         <DayWasteRevealLayer
@@ -27039,6 +27126,41 @@ const s = StyleSheet.create({
     backgroundColor: '#FFFDF8',
     zIndex: 17,
     alignItems: 'center',
+  },
+  dayWasteRevealDusk: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#17130F',
+  },
+  dayWasteRevealStage: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+  },
+  dayWasteRevealEmberRow: {
+    flexDirection: 'row',
+    columnGap: 9,
+    marginTop: 12,
+  },
+  dayWasteRevealEmberDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 1.4,
+    backgroundColor: 'rgba(23,19,15,0.15)',
+    transform: [{ rotate: '45deg' }],
+  },
+  dayWasteRevealEmberDotDone: {
+    backgroundColor: 'rgba(176,56,62,0.55)',
+  },
+  dayWasteRevealEmberDotActive: {
+    backgroundColor: '#B0383E',
+  },
+  dayWasteRevealEmberGlow: {
+    position: 'absolute',
+    alignSelf: 'center',
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: '#B0383E',
   },
   dayWasteRevealTitleBlock: {
     width: '100%',
