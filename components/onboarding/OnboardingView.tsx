@@ -7466,6 +7466,10 @@ type DayWasteRevealStep = {
   lineOne: string;
   lineTwo: string;
   lineThree: string;
+  // Each beat owns its pace: the first carries the learning of the format,
+  // so it counts slower and holds longest; the later beats read faster.
+  countMs: number;
+  holdMs: number;
 };
 
 function DayWasteCountingNumber({
@@ -7573,6 +7577,8 @@ function DayWasteRevealLayer({
         lineOne: 'of your',
         lineTwo: 'productive time',
         lineThree: 'on your phone',
+        countMs: 2250,
+        holdMs: 2250,
       },
       {
         key: 'yearly-days',
@@ -7582,6 +7588,8 @@ function DayWasteRevealLayer({
         lineOne: 'full days',
         lineTwo: 'every year',
         lineThree: 'on your phone',
+        countMs: 1950,
+        holdMs: 1700,
       },
       {
         key: 'lifetime-years',
@@ -7591,6 +7599,8 @@ function DayWasteRevealLayer({
         lineOne: 'across',
         lineTwo: 'an average life',
         lineThree: 'on your phone',
+        countMs: 1950,
+        holdMs: 1850,
       },
     ],
     [stat.lifetimeYears, stat.usablePercent, stat.yearlyDays],
@@ -7612,11 +7622,12 @@ function DayWasteRevealLayer({
     dusk.value = withTiming(stepIndex / 2, { duration: 820, easing: Easing.inOut(Easing.quad) });
   }, [dusk, stepIndex]);
 
-  // First beat rises after the layer settles on stage.
+  // First beat rises after the layer settles on stage — a calmer arrival,
+  // since this one carries the learning of the whole format.
   useEffect(() => {
     swapDir.value = 0;
     swapT.value = 0;
-    swapT.value = withDelay(200, withTiming(1, { duration: 660, easing: Easing.bezier(0.16, 1, 0.28, 1) }));
+    swapT.value = withDelay(280, withTiming(1, { duration: 760, easing: Easing.bezier(0.16, 1, 0.28, 1) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -7652,17 +7663,18 @@ function DayWasteRevealLayer({
         return;
       }
       // Strictly sequential swap: recede fully, switch content while the
-      // stage is empty, then rise. The two figures can never overlap.
+      // stage is empty, then rise. The empty stage holds a breath — the
+      // beat of silence is part of the drama.
       swapDir.value = 1;
-      swapT.value = withTiming(0, { duration: 260, easing: Easing.in(Easing.cubic) });
+      swapT.value = withTiming(0, { duration: 300, easing: Easing.in(Easing.cubic) });
       swapTimerRef.current = setTimeout(() => {
         runSelectionHaptic();
         setStepIndex(current => Math.min(current + 1, steps.length - 1));
         swapDir.value = 0;
-        swapT.value = withTiming(1, { duration: 660, easing: Easing.bezier(0.16, 1, 0.28, 1) });
-      }, 300);
-    }, 1450);
-  }, [closeT, dip, ember, onDone, stepIndex, steps.length, swapDir, swapT]);
+        swapT.value = withTiming(1, { duration: 700, easing: Easing.bezier(0.16, 1, 0.28, 1) });
+      }, 440);
+    }, steps[stepIndex]?.holdMs ?? 1700);
+  }, [closeT, dip, ember, onDone, stepIndex, steps, swapDir, swapT]);
 
   const duskStyle = useAnimatedStyle(() => ({
     opacity: interpolate(dusk.value, [0, 0.5, 1], [0, 0.05, 0.115]),
@@ -7778,7 +7790,7 @@ function DayWasteRevealLayer({
               stepKey={step.key}
               target={step.target}
               decimals={step.decimals}
-              duration={1880}
+              duration={step.countMs}
               emphasized={step.unit === '%'}
               compact={false}
               onSettled={handleSettled}
