@@ -15289,6 +15289,9 @@ function OrganizeLayerHeroCard({
         style={StyleSheet.absoluteFill}
       />
       <View style={[s.v4ToolTopSheen, { backgroundColor: `${displayAccent}${isActive || done ? '2A' : '14'}` }]} />
+      {/* The plaque's inner whisper frame + a corner glint */}
+      <View pointerEvents="none" style={[s.organizeLayerHeroFrame, { borderColor: `${displayAccent}1C` }]} />
+      <View pointerEvents="none" style={[s.organizeLayerHeroGlint, { backgroundColor: `${displayAccent}66` }]} />
 
       <View style={s.organizeLayerHeroTop}>
         <View style={s.organizeLayerHeroTitleWrap}>
@@ -15322,7 +15325,7 @@ function OrganizeLayerHeroCard({
             {done ? (
               <CheckSmall s={11} c={displayAccent} w={2.8} />
             ) : (
-              <View style={[s.organizeLayerHeroChipDot, { backgroundColor: `${displayAccent}66` }]} />
+              <View style={[s.organizeLayerHeroChipDiamond, { backgroundColor: `${displayAccent}7A` }]} />
             )}
             <Text style={[s.organizeLayerHeroChipText, { color: done ? displayAccent : 'rgba(25,23,20,0.62)' }]}>
               {part}
@@ -15347,6 +15350,74 @@ function OrganizeRuleConnector({ accent, index }: { accent: string; index: numbe
         />
       ))}
     </Reanimated.View>
+  );
+}
+
+// The charter header: this screen's own voice in the house engraving —
+// a small gold eyebrow, the serif title, a rule—diamond—rule ornament
+// that draws itself, and the body following. Each element takes the
+// stage in order.
+function OrganizeLayersCharterHeader({
+  eyebrow,
+  title,
+  body,
+  accent,
+}: {
+  eyebrow: string;
+  title: string;
+  body: string;
+  accent: string;
+}) {
+  return (
+    <View style={s.charterHeader}>
+      <Reanimated.Text
+        entering={FadeIn.duration(420).easing(Easing.out(Easing.cubic))}
+        style={[s.charterEyebrow, { color: accent }]}
+      >
+        {eyebrow}
+      </Reanimated.Text>
+      <Reanimated.Text
+        entering={FadeInUp.delay(90).duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 18 }],
+        })}
+        style={s.charterTitle}
+        numberOfLines={2}
+        adjustsFontSizeToFit
+        minimumFontScale={0.72}
+      >
+        {title}
+      </Reanimated.Text>
+      <View style={s.charterOrnamentRow}>
+        <Reanimated.View
+          entering={FadeIn.delay(300).duration(430).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ scaleX: 0 }],
+          })}
+          style={[s.charterOrnamentLine, { backgroundColor: `${accent}5C` }]}
+        />
+        <Reanimated.View
+          entering={ZoomIn.delay(390).duration(320).easing(Easing.bezier(0.16, 1, 0.28, 1))}
+          style={[s.charterOrnamentDiamond, { backgroundColor: accent }]}
+        />
+        <Reanimated.View
+          entering={FadeIn.delay(300).duration(430).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ scaleX: 0 }],
+          })}
+          style={[s.charterOrnamentLine, { backgroundColor: `${accent}5C` }]}
+        />
+      </View>
+      <Reanimated.Text
+        entering={FadeInUp.delay(430).duration(540).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: 12 }],
+        })}
+        style={s.charterBody}
+      >
+        {body}
+      </Reanimated.Text>
+    </View>
   );
 }
 
@@ -15588,12 +15659,23 @@ function OrganizeRuleMapSlide({
 
   const ctaVisible = activeReady && !autoAdvanceAfterAhead;
   const ctaLabel = variant === 'start' ? 'Start macro planning' : 'Set up weekly routine';
+  const ctaLockRef = useRef(false);
+
+  // Leaving is choreographed too: the page lifts and dims, then the next
+  // step takes the stage — no hard cut on the way out.
+  const handleCtaPress = () => {
+    if (ctaLockRef.current) return;
+    ctaLockRef.current = true;
+    exitProgress.value = withTiming(1, { duration: 360, easing: Easing.in(Easing.cubic) });
+    setTimeout(onNext, 340);
+  };
 
   return (
     <View style={s.organizeRuleScreen}>
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
         <Reanimated.View style={exitStyle}>
-          <OrganizeStageHeader
+          <OrganizeLayersCharterHeader
+            eyebrow={variant === 'afterAhead' ? 'LAYER I COMPLETE' : 'THE ANASTA METHOD'}
             title={variant === 'afterAhead' ? 'The first layer is set.' : 'Our system has two layers.'}
             body={
               variant === 'afterAhead'
@@ -15601,7 +15683,6 @@ function OrganizeRuleMapSlide({
                 : 'First we plan what is ahead. Then we build the weekly rhythm that carries your day.'
             }
             accent={variant === 'afterAhead' ? '#2F9B61' : GOLD}
-            staged
           />
         </Reanimated.View>
 
@@ -15662,12 +15743,14 @@ function OrganizeRuleMapSlide({
       </ScrollView>
 
       <AnimatedCta active={ctaVisible} delay={180} style={footerStyle} pointerEvents={ctaVisible ? 'auto' : 'none'}>
-        <View style={s.ctaIsland}>
-          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-            <Text style={s.primaryButtonText}>{ctaLabel}</Text>
-            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
-          </TouchableOpacity>
-        </View>
+        <Reanimated.View style={exitStyle}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={handleCtaPress} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>{ctaLabel}</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </Reanimated.View>
       </AnimatedCta>
     </View>
   );
@@ -29745,10 +29828,75 @@ const s = StyleSheet.create({
     paddingHorizontal: 11,
     borderWidth: 1,
   },
-  organizeLayerHeroChipDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
+  organizeLayerHeroChipDiamond: {
+    width: 5.5,
+    height: 5.5,
+    borderRadius: 1,
+    transform: [{ rotate: '45deg' }],
+  },
+  organizeLayerHeroFrame: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    right: 6,
+    bottom: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  organizeLayerHeroGlint: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    width: 4,
+    height: 4,
+    borderRadius: 0.8,
+    transform: [{ rotate: '45deg' }],
+  },
+  charterHeader: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    rowGap: 0,
+  },
+  charterEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    lineHeight: 14,
+    letterSpacing: 2.6,
+    marginBottom: 9,
+  },
+  charterTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 37,
+    lineHeight: 42,
+    color: INK,
+    textAlign: 'center',
+    maxWidth: 340,
+  },
+  charterOrnamentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 9,
+    marginTop: 12,
+    marginBottom: 13,
+  },
+  charterOrnamentLine: {
+    width: 52,
+    height: 1.4,
+    borderRadius: 1,
+  },
+  charterOrnamentDiamond: {
+    width: 6,
+    height: 6,
+    borderRadius: 1.2,
+    transform: [{ rotate: '45deg' }],
+  },
+  charterBody: {
+    fontFamily: F.serifMediumItalic,
+    fontSize: 17,
+    lineHeight: 23.5,
+    color: 'rgba(25,23,20,0.58)',
+    textAlign: 'center',
+    maxWidth: 330,
   },
   organizeLayerHeroChipText: {
     fontFamily: F.serifSemiBold,
