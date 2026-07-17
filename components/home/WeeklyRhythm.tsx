@@ -87,10 +87,12 @@ function Sparkle({
   size,
   delay,
   style,
+  color = GOLD,
 }: {
   size: number;
   delay: number;
   style: object;
+  color?: string;
 }) {
   const reduceMotion = useReducedMotion();
   const t = useSharedValue(0);
@@ -119,7 +121,7 @@ function Sparkle({
   return (
     <Reanimated.View pointerEvents="none" style={[{ position: 'absolute' }, style, twinkle]}>
       <Svg width={size} height={size} viewBox="0 0 24 24">
-        <Path d={SPARKLE_PATH} fill={GOLD} />
+        <Path d={SPARKLE_PATH} fill={color} />
       </Svg>
     </Reanimated.View>
   );
@@ -175,10 +177,12 @@ const cg = StyleSheet.create({
   band: { position: 'absolute', top: -30, bottom: -30, width: 96 },
 });
 
-function DawnBackdrop() {
+function DawnBackdrop({ muted = false }: { muted?: boolean }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   const step = 30;
   const lineCount = box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
+  const weaveColor = muted ? '#A8A093' : GOLD;
+  const sparkleColor = muted ? '#B0A995' : GOLD;
 
   return (
     <View
@@ -200,7 +204,7 @@ function DawnBackdrop() {
                 y1={-4}
                 x2={offset - box.h - 8}
                 y2={box.h + 4}
-                stroke={GOLD}
+                stroke={weaveColor}
                 strokeOpacity={0.05}
                 strokeWidth={1}
               />
@@ -208,10 +212,10 @@ function DawnBackdrop() {
           })}
         </Svg>
       )}
-      <Sparkle size={13} delay={0} style={{ right: 86, top: 30 }} />
-      <Sparkle size={9} delay={900} style={{ right: 16, top: 18 }} />
-      <Sparkle size={8} delay={1700} style={{ left: 148, top: 24 }} />
-      <Sparkle size={11} delay={2600} style={{ left: 20, top: 118 }} />
+      <Sparkle size={13} delay={0} style={{ right: 86, top: 30 }} color={sparkleColor} />
+      <Sparkle size={9} delay={900} style={{ right: 16, top: 18 }} color={sparkleColor} />
+      <Sparkle size={8} delay={1700} style={{ left: 148, top: 24 }} color={sparkleColor} />
+      <Sparkle size={11} delay={2600} style={{ left: 20, top: 118 }} color={sparkleColor} />
     </View>
   );
 }
@@ -224,6 +228,7 @@ function DawnBackdrop() {
 function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
   const size = 74;
   const quiet = mode === 'no-tasks' || mode === 'all-skipped';
+  const skipped = mode === 'all-skipped';
   const clamped = Math.round(Math.max(0, Math.min(100, pct)));
   const display = quiet ? '—' : String(clamped);
   const extraCharacters = Math.max(0, display.length - 1);
@@ -266,7 +271,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           cy={height * 0.56}
           rx={width * 0.52}
           ry={height * 0.52}
-          fill="#EBD5A0"
+          fill={skipped ? '#DBD7CA' : '#EBD5A0'}
           opacity={0.8}
           transform={`rotate(-5 ${width * 0.52} ${height * 0.56})`}
         />
@@ -275,7 +280,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           cy={height * 0.53}
           rx={width * 0.46}
           ry={height * 0.44}
-          fill="#F5E5BE"
+          fill={skipped ? '#E8E5DA' : '#F5E5BE'}
           opacity={0.85}
           transform={`rotate(4 ${width * 0.52} ${height * 0.53})`}
         />
@@ -284,15 +289,15 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           cy={height * 0.57}
           rx={width * 0.42}
           ry={height * 0.39}
-          fill="#FFF8E4"
+          fill={skipped ? '#F5F3EC' : '#FFF8E4'}
           opacity={0.95}
           transform={`rotate(-3 ${width * 0.49} ${height * 0.57})`}
         />
         <Path
           d={`M ${size * 0.13 + width * 0.07} ${height * 0.82} C ${width * 0.43} ${height * 1.01}, ${width * 0.76} ${height * 0.97}, ${width * 1.0} ${height * 0.64}`}
           fill="none"
-          stroke={GOLD}
-          strokeOpacity={0.18}
+          stroke={skipped ? '#9B9484' : GOLD}
+          strokeOpacity={skipped ? 0.24 : 0.18}
           strokeWidth={1.5}
           strokeLinecap="round"
         />
@@ -311,7 +316,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           y1={height * 0.32}
           x2={size * 0.92 + digitExpansion + width * 0.07}
           y2={height * 0.78}
-          stroke={GOLD}
+          stroke={skipped ? '#9B9484' : GOLD}
           strokeOpacity={0.38}
           strokeWidth={1}
           strokeLinecap="round"
@@ -329,6 +334,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
             ms.value,
             { fontSize: size * 0.58, lineHeight: size * 0.66 },
             quiet && ms.valueDormant,
+            skipped && ms.valueSkipped,
           ]}
           numberOfLines={1}
         >
@@ -343,13 +349,22 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           { left: size * 1.04 + digitExpansion, top: height * 0.27 },
         ]}
       >
-        <Text style={ms.eyebrow} numberOfLines={1}>TODAY</Text>
-        <Text style={ms.label} numberOfLines={1}>PROGRESS</Text>
-        <View style={ms.copyRule} />
+        <Text style={[ms.eyebrow, skipped && ms.eyebrowSkipped]} numberOfLines={1}>TODAY</Text>
+        <Text style={[ms.label, skipped && ms.labelSkipped]} numberOfLines={1}>PROGRESS</Text>
+        <View style={[ms.copyRule, skipped && ms.copyRuleSkipped]} />
       </View>
 
-      <View pointerEvents="none" style={[ms.glint, { right: size * 0.05, top: height * 0.08 }]} />
-      <View pointerEvents="none" style={[ms.glintSmall, { right: size * 0.42, top: height * 0.86 }]} />
+      <View pointerEvents="none" style={[ms.glint, { right: size * 0.05, top: height * 0.08 }, skipped && ms.glintSkipped]} />
+      <View pointerEvents="none" style={[ms.glintSmall, { right: size * 0.42, top: height * 0.86 }, skipped && ms.glintSkipped]} />
+
+      {/* A rest-day stamp struck at a slight angle across the arc line */}
+      {skipped && (
+        <View pointerEvents="none" style={[ms.stampWrap, { top: height * 0.74 }]}>
+          <View style={ms.stampLine} />
+          <Text style={ms.stampText}>SKIPPED</Text>
+          <View style={ms.stampLine} />
+        </View>
+      )}
     </View>
   );
 }
@@ -377,6 +392,43 @@ const ms = StyleSheet.create({
   },
   valueDormant: {
     color: '#9A7F4D',
+  },
+  valueSkipped: {
+    color: '#8F887A',
+  },
+  eyebrowSkipped: {
+    color: 'rgba(122,116,102,0.75)',
+  },
+  labelSkipped: {
+    color: '#6E685B',
+  },
+  copyRuleSkipped: {
+    backgroundColor: 'rgba(155,148,132,0.45)',
+  },
+  glintSkipped: {
+    backgroundColor: 'rgba(155,148,132,0.5)',
+  },
+  stampWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    transform: [{ rotate: '-6deg' }],
+  },
+  stampText: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    lineHeight: 13,
+    letterSpacing: 3,
+    color: '#9B9484',
+  },
+  stampLine: {
+    width: 22,
+    height: 1,
+    backgroundColor: 'rgba(155,148,132,0.5)',
   },
   copy: {
     position: 'absolute',
@@ -432,7 +484,9 @@ const ms = StyleSheet.create({
 function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
   const reduceMotion = useReducedMotion();
   const quiet = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
+  const skipped = mode === 'all-skipped';
   const full = !quiet && pct >= 100;
+  const sunColor = skipped ? '#A8A093' : GOLD;
   const field = 150;
   const cx = field / 2;
   const ringR = 44;
@@ -452,17 +506,20 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
       true,
     );
     // The sun turns, imperceptibly slow — one revolution per minute.
+    // On a rest day it stands still.
     spin.value = 0;
-    spin.value = withRepeat(
-      withTiming(1, { duration: 60000, easing: Easing.linear }),
-      -1,
-      false,
-    );
+    if (!skipped) {
+      spin.value = withRepeat(
+        withTiming(1, { duration: 60000, easing: Easing.linear }),
+        -1,
+        false,
+      );
+    }
     return () => {
       cancelAnimation(breathe);
       cancelAnimation(spin);
     };
-  }, [breathe, reduceMotion, spin]);
+  }, [breathe, reduceMotion, skipped, spin]);
 
   const outerGlowStyle = useAnimatedStyle(() => ({
     opacity: (quiet ? 0.3 : 0.5) + breathe.value * (quiet ? 0.15 : 0.4),
@@ -475,13 +532,13 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
   return (
     <View style={rf.stage}>
       {/* Layered radiance — the bloom grammar, radial */}
-      <Reanimated.View pointerEvents="none" style={[rf.glowOuter, outerGlowStyle]} />
-      <View pointerEvents="none" style={[rf.glowMid, quiet && rf.glowQuiet]} />
-      <View pointerEvents="none" style={[rf.glowHeart, quiet && rf.glowHeartQuiet, full && rf.glowHeartFull]} />
+      <Reanimated.View pointerEvents="none" style={[rf.glowOuter, outerGlowStyle, skipped && rf.glowOuterSkipped]} />
+      <View pointerEvents="none" style={[rf.glowMid, quiet && rf.glowQuiet, skipped && rf.glowMidSkipped]} />
+      <View pointerEvents="none" style={[rf.glowHeart, quiet && rf.glowHeartQuiet, full && rf.glowHeartFull, skipped && rf.glowHeartSkipped]} />
 
       {/* Hairline halo ring — steady while the rays turn */}
       <Svg pointerEvents="none" width={field} height={field} style={[rf.rays, quiet && rf.raysQuiet]}>
-        <Circle cx={cx} cy={cx} r={ringR} fill="none" stroke={GOLD} strokeOpacity={full ? 0.44 : 0.32} strokeWidth={1} />
+        <Circle cx={cx} cy={cx} r={ringR} fill="none" stroke={sunColor} strokeOpacity={full ? 0.44 : 0.32} strokeWidth={1} />
       </Svg>
 
       <Reanimated.View pointerEvents="none" style={[rf.rays, spinStyle, quiet && rf.raysQuiet]}>
@@ -500,7 +557,7 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
                 y1={cx + r1 * Math.sin(angle)}
                 x2={cx + r2 * Math.cos(angle)}
                 y2={cx + r2 * Math.sin(angle)}
-                stroke={GOLD}
+                stroke={sunColor}
                 strokeOpacity={long ? (full ? 0.64 : 0.52) : (full ? 0.4 : 0.3)}
                 strokeWidth={long ? 1.9 : 1.35}
                 strokeLinecap="round"
@@ -511,11 +568,16 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
       </Reanimated.View>
 
       {/* Diamond glints in the sun's corners — a third joins on a full day */}
-      <View pointerEvents="none" style={[rf.glint, { right: 6, top: 10 }]} />
-      <View pointerEvents="none" style={[rf.glintSmall, { left: 10, bottom: 14 }]} />
+      <View pointerEvents="none" style={[rf.glint, { right: 6, top: 10 }, skipped && rf.glintSkipped]} />
+      <View pointerEvents="none" style={[rf.glintSmall, { left: 10, bottom: 14 }, skipped && rf.glintSkipped]} />
       {full && <View pointerEvents="none" style={[rf.glintSmall, { left: 6, top: 20 }]} />}
 
-      <FocusLottie name="flame" loop speed={0.9} style={rf.flame} />
+      {/* On a rest day the fire itself rests: a still, ashen silhouette. */}
+      {skipped ? (
+        <Image source={FLAME_PNG} style={[rf.flameStill, { tintColor: '#AFA795' }]} />
+      ) : (
+        <FocusLottie name="flame" loop speed={0.9} style={rf.flame} />
+      )}
     </View>
   );
 }
@@ -559,6 +621,24 @@ const rf = StyleSheet.create({
     height: 58,
     borderRadius: 29,
     backgroundColor: 'rgba(255,250,232,1)',
+  },
+  glowOuterSkipped: {
+    backgroundColor: 'rgba(198,192,178,0.4)',
+  },
+  glowMidSkipped: {
+    backgroundColor: 'rgba(213,208,196,0.55)',
+  },
+  glowHeartSkipped: {
+    backgroundColor: 'rgba(246,244,238,0.92)',
+  },
+  glintSkipped: {
+    backgroundColor: 'rgba(155,148,132,0.5)',
+  },
+  flameStill: {
+    width: 60,
+    height: 60,
+    resizeMode: 'contain',
+    opacity: 0.62,
   },
   rays: {
     position: 'absolute',
@@ -783,7 +863,7 @@ function Candle({ pct, mode }: { pct: number | null; mode: DayMode }) {
 /* ── Bottom badge ─────────────────────────────────────────── */
 // A soft ring that breathes around today's tile — the only motion in the
 // week band, marking the day being written.
-function TodayPulseRing() {
+function TodayPulseRing({ muted = false }: { muted?: boolean }) {
   const reduceMotion = useReducedMotion();
   const t = useSharedValue(0);
 
@@ -805,7 +885,7 @@ function TodayPulseRing() {
     opacity: 0.2 + t.value * 0.5,
   }));
 
-  return <Reanimated.View pointerEvents="none" style={[s.todayRing, pulse]} />;
+  return <Reanimated.View pointerEvents="none" style={[s.todayRing, muted && s.todayRingMuted, pulse]} />;
 }
 
 // Static PNG flames only — the hero carries the one living Lottie, so a
@@ -813,7 +893,7 @@ function TodayPulseRing() {
 // tile is struck like a small coin: a gradient face, a warm rim, and a
 // sheen once the day is won.
 function FlameTile({ pct, mode, isToday }: { pct: number | null; mode: DayMode; isToday: boolean }) {
-  const ring = isToday ? <TodayPulseRing /> : null;
+  const ring = isToday ? <TodayPulseRing muted={mode === 'all-skipped'} /> : null;
 
   // No tasks OR all-skipped → an empty socket with a resting stud
   if (pct === null || mode === 'no-tasks' || mode === 'all-skipped') {
@@ -940,6 +1020,7 @@ export default function WeeklyRhythm() {
   const todayStat = weekStats.find(d => d.isToday);
   const todayPct = todayStat?.pct ?? 0;
   const todayMode: DayMode = todayStat?.mode ?? 'no-tasks';
+  const skippedToday = todayMode === 'all-skipped';
 
   const openAnalytics = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -974,25 +1055,21 @@ export default function WeeklyRhythm() {
   return (
     <View style={s.wrap}>
       <View style={s.header}>
-        <View style={s.headerLeft}>
-          <Activity s={15} c={C.gold} />
-          <Text style={s.heading}>Your Progress</Text>
-        </View>
-        <TouchableOpacity style={s.analyticsChip} activeOpacity={0.74} onPress={openAnalytics}>
-          <BarChart3 s={13} c={C.goldDark} w={2.1} />
-          <Text style={s.analyticsChipText}>Analytics</Text>
-        </TouchableOpacity>
+        <Activity s={15} c={C.gold} />
+        <Text style={s.heading}>Your Progress</Text>
       </View>
 
-      <TouchableOpacity style={s.card} activeOpacity={0.88} onPress={openAnalytics}>
+      <TouchableOpacity style={[s.card, skippedToday && s.cardSkipped]} activeOpacity={0.88} onPress={openAnalytics}>
         <LinearGradient
-          colors={['#F8E7BE', '#FFF8E9', '#FFFEFA']}
+          colors={skippedToday
+            ? ['#E9E7DF', '#F4F3EE', '#FBFAF8']
+            : ['#F8E7BE', '#FFF8E9', '#FFFEFA']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <DawnBackdrop />
-        <CardGlint />
+        <DawnBackdrop muted={skippedToday} />
+        {!skippedToday && <CardGlint />}
 
         {/* Hero: today's percentage in the bloom, today's fire radiant */}
         <View style={s.heroRow}>
@@ -1000,10 +1077,10 @@ export default function WeeklyRhythm() {
           <RadiantFlame pct={todayStat?.pct ?? null} mode={todayMode} />
         </View>
 
-        <Text style={s.headline} numberOfLines={2}>{headline}</Text>
+        <Text style={[s.headline, skippedToday && s.headlineSkipped]} numberOfLines={2}>{headline}</Text>
 
         {/* The week band: candles, letters, flames between hairline rails */}
-        <View style={s.weekBand}>
+        <View style={[s.weekBand, skippedToday && s.weekBandSkipped]}>
           <View style={s.candlesRow}>
             {display.map((d, i) => (
               <View key={i} style={s.weekCol}>
@@ -1015,7 +1092,7 @@ export default function WeeklyRhythm() {
           <View style={s.daysLabelRow}>
             {display.map((d, i) => (
               <View key={i} style={s.weekCol}>
-                <Text style={[s.dayLetter, d.isToday && s.dayLetterToday]}>{d.letter}</Text>
+                <Text style={[s.dayLetter, d.isToday && (skippedToday ? s.dayLetterTodaySkipped : s.dayLetterToday)]}>{d.letter}</Text>
               </View>
             ))}
           </View>
@@ -1029,27 +1106,62 @@ export default function WeeklyRhythm() {
           </View>
         </View>
       </TouchableOpacity>
+
+      {/* The card's sibling: same dawn surface, quieted to a single line */}
+      <TouchableOpacity
+        activeOpacity={0.86}
+        onPress={openAnalytics}
+        style={[s.analyticsBtn, skippedToday && s.analyticsBtnSkipped]}
+      >
+        <LinearGradient
+          colors={skippedToday ? ['#F0EEE7', '#FAF9F5'] : ['#FBEED0', '#FFFDF7']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={[s.analyticsDiamond, skippedToday && s.analyticsDiamondSkipped]} />
+        <BarChart3 s={13} c={skippedToday ? '#8F887A' : C.goldDark} w={2.1} />
+        <Text style={[s.analyticsTxt, skippedToday && s.analyticsTxtSkipped]}>VIEW ANALYTICS</Text>
+        <View style={[s.analyticsDiamond, skippedToday && s.analyticsDiamondSkipped]} />
+      </TouchableOpacity>
     </View>
   );
 }
 
 const s = StyleSheet.create({
   wrap: { paddingTop: 18, paddingHorizontal: 20 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   heading: { fontFamily: F.serifMedium, fontSize: 18, color: C.text },
-  analyticsChip: {
+  analyticsBtn: {
+    position: 'relative',
+    overflow: 'hidden',
+    marginTop: 12,
+    minHeight: 46,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#E8D8B5',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#E5D9BD',
-    backgroundColor: '#FFF9EB',
-    paddingHorizontal: 11,
-    paddingVertical: 7,
+    justifyContent: 'center',
+    gap: 8,
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  analyticsChipText: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.goldDark },
+  analyticsBtnSkipped: { borderColor: '#DED9CB' },
+  analyticsTxt: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.2, color: C.goldDark },
+  analyticsTxtSkipped: { color: '#8F887A' },
+  analyticsDiamond: {
+    width: 4,
+    height: 4,
+    borderRadius: 0.5,
+    backgroundColor: 'rgba(197,160,89,0.5)',
+    transform: [{ rotate: '45deg' }],
+  },
+  analyticsDiamondSkipped: { backgroundColor: 'rgba(155,148,132,0.5)' },
   card: {
     position: 'relative',
     overflow: 'hidden',
@@ -1073,6 +1185,7 @@ const s = StyleSheet.create({
     paddingLeft: 8,
     paddingRight: 10,
   },
+  cardSkipped: { borderColor: '#D9D4C6' },
   headline: {
     marginTop: 12,
     fontFamily: F.serif,
@@ -1080,6 +1193,10 @@ const s = StyleSheet.create({
     lineHeight: 19,
     color: C.textSecondary,
     textAlign: 'center',
+  },
+  headlineSkipped: {
+    fontFamily: F.serifItalic,
+    color: '#8F887A',
   },
   weekBand: {
     marginTop: 12,
@@ -1089,12 +1206,14 @@ const s = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: '#EADFC8',
   },
+  weekBandSkipped: { borderColor: '#DFDACD' },
   candlesRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   daysLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 5, marginBottom: 6 },
   daysRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   weekCol: { flex: 1, alignItems: 'center' },
   dayLetter: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 0.6, color: C.textMuted },
   dayLetterToday: { color: C.goldDark },
+  dayLetterTodaySkipped: { color: '#8F887A' },
 
   /* Bottom flame badge */
   flameWrap: {
@@ -1171,6 +1290,9 @@ const s = StyleSheet.create({
     borderRadius: (TILE_SIZE + 8) / 2,
     borderWidth: 1.5,
     borderColor: C.gold,
+  },
+  todayRingMuted: {
+    borderColor: '#B7B0A0',
   },
   flameGlow: {
     shadowColor: C.gold,
