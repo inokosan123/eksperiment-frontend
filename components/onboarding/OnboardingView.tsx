@@ -11447,6 +11447,7 @@ function V4StatementDeckSlide({
   const [yesIds, setYesIds] = useState<string[]>([]);
   const [decisions, setDecisions] = useState<(boolean | undefined)[]>(() => cards.map(() => undefined));
   const [tutorialDismissed, setTutorialDismissed] = useState(false);
+  const [entranceSettled, setEntranceSettled] = useState(false);
   const activeCard = cards[index];
   const isCompact = height < 760;
   const availableCardWidth = Math.max(width - 52, 280);
@@ -11476,6 +11477,53 @@ function V4StatementDeckSlide({
       .filter((image): image is number => typeof image === 'number'),
     [cards],
   );
+
+  // ── The deal ──────────────────────────────────────────────
+  // One linear master clock drives the whole entrance; every element
+  // reads its own window from it (same technique as the physics scenes),
+  // so the choreography can never drift apart. The pile is dealt from
+  // the bottom up: deepest card first, the asking card last, then the
+  // answer buttons rise. Pure transform/opacity — the frozen pose and
+  // gesture system underneath is untouched.
+  const enterT = useSharedValue(0);
+
+  useEffect(() => {
+    enterT.value = 0;
+    enterT.value = withDelay(90, withTiming(1, { duration: 1150, easing: Easing.linear }));
+    const seats = Math.min(cards.length, 4);
+    const landAt = [0.92, 0.76, 0.64, 0.52];
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    // A quiet tick as each card of the pile lands, a fuller tap when the
+    // asking card takes its place.
+    for (let seat = seats - 1; seat >= 1; seat -= 1) {
+      timers.push(setTimeout(runSelectionHaptic, 90 + landAt[seat] * 1150));
+    }
+    timers.push(setTimeout(runBubbleHaptic, 90 + landAt[0] * 1150));
+    timers.push(setTimeout(() => setEntranceSettled(true), 90 + 1150 + 60));
+    return () => timers.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const entranceTitleStyle = useAnimatedStyle(() => {
+    const t = interpolate(enterT.value, [0, 0.24], [0, 1], 'clamp');
+    const e = 1 - Math.pow(1 - t, 3);
+    return { opacity: t, transform: [{ translateY: (1 - e) * -12 }] };
+  });
+  const entranceProgressStyle = useAnimatedStyle(() => {
+    const t = interpolate(enterT.value, [0.08, 0.3], [0, 1], 'clamp');
+    const e = 1 - Math.pow(1 - t, 3);
+    return { opacity: t, transform: [{ translateY: (1 - e) * -8 }] };
+  });
+  const entranceButtonsStyle = useAnimatedStyle(() => {
+    const t = interpolate(enterT.value, [0.66, 0.98], [0, 1], 'clamp');
+    const e = 1 - Math.pow(1 - t, 3);
+    return { opacity: t, transform: [{ translateY: (1 - e) * 26 }] };
+  });
+  // A warm veil carries the background handoff from the previous slide,
+  // then lifts as the table is set.
+  const entranceVeilStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(enterT.value, [0, 0.32], [0.85, 0], 'clamp'),
+  }));
 
   // Decode every card image up front. All cards stay mounted for the whole
   // deck, so no texture upload ever happens mid-swipe.
@@ -11582,8 +11630,12 @@ function V4StatementDeckSlide({
       </Reanimated.View>
 
       <View style={[s.v4DeckInner, { paddingTop: topInset + 10 }]}>
-        <Text style={[s.v4DeckTitle, isCompact && s.v4DeckTitleCompact]}>Do you relate to the statement below?</Text>
-        <V4DeckAnswerProgress decisions={decisions} activeIndex={index} />
+        <Reanimated.View style={entranceTitleStyle}>
+          <Text style={[s.v4DeckTitle, isCompact && s.v4DeckTitleCompact]}>Do you relate to the statement below?</Text>
+        </Reanimated.View>
+        <Reanimated.View style={entranceProgressStyle}>
+          <V4DeckAnswerProgress decisions={decisions} activeIndex={index} />
+        </Reanimated.View>
         <View style={[s.v4DeckStack, isCompact && s.v4DeckStackCompact]}>
           <View style={[s.v4DeckCardSlot, { width: cardMetrics.width, height: slotHeight }]}>
             {cards.map((card, cardIndex) => (
@@ -11602,16 +11654,17 @@ function V4StatementDeckSlide({
                 registerSubmit={registerSubmit}
                 onCommit={commitAnswer}
                 onAnswer={answer}
+                enterT={enterT}
               />
             )).reverse()}
             <V4DeckTutorialOverlay
-              visible={showTutorial && index === 0 && !tutorialDismissed}
+              visible={showTutorial && index === 0 && !tutorialDismissed && entranceSettled}
               width={cardMetrics.width}
               top={quoteHeight + 18}
             />
           </View>
         </View>
-        <View style={[s.v4AnswerRow, { width: cardMetrics.width, alignSelf: 'center' }]}>
+        <Reanimated.View style={[s.v4AnswerRow, { width: cardMetrics.width, alignSelf: 'center' }, entranceButtonsStyle]}>
           <TouchableOpacity activeOpacity={0.84} haptic="none" onPress={() => submitRef.current?.(false)} style={s.v4NoButton}>
             <LinearGradient
               colors={['#FFFFFF', '#FFF2F1']}
@@ -11636,8 +11689,11 @@ function V4StatementDeckSlide({
               <CheckSmall s={15} c="#FFFFFF" w={2.9} />
             </View>
           </TouchableOpacity>
-        </View>
+        </Reanimated.View>
       </View>
+      {!entranceSettled && (
+        <Reanimated.View pointerEvents="none" style={[s.v4DeckEntranceVeil, entranceVeilStyle]} />
+      )}
     </View>
   );
 }
@@ -11912,6 +11968,7 @@ function V4DeckCard({
   registerSubmit,
   onCommit,
   onAnswer,
+  enterT,
 }: {
   card: StatementDeckCard;
   accent: string;
@@ -11926,6 +11983,7 @@ function V4DeckCard({
   registerSubmit: (submit: ((yes: boolean) => void) | null) => void;
   onCommit: (yes: boolean) => void;
   onAnswer: (yes: boolean) => void;
+  enterT?: SharedValue<number>;
 }) {
   const translateY = useSharedValue(0);
   const locked = useSharedValue(false);
@@ -11938,6 +11996,39 @@ function V4DeckCard({
   const initialDepth = Math.max(0, Math.min(3, cardIndex - activeIndex)) as 0 | 1 | 2 | 3;
   const initialPose = stackPose(initialDepth, cardHeight);
   const initialHidden = cardIndex - activeIndex < 0 || cardIndex - activeIndex > 3;
+
+  // The deal: this card's window on the shared entrance clock. Seats are the
+  // four visible pile depths; deeper cards (hidden by pose anyway) enter
+  // instantly. The wrapper composes OVER the frozen pose system — it only
+  // rises, tilts and fades, never touching drag or depth transforms.
+  const dealSeat = Math.min(cardIndex, 3);
+  const dealAnimated = enterT !== undefined && cardIndex <= 3;
+  const dealWindow = dealSeat === 0
+    ? [0.52, 0.92]
+    : dealSeat === 1
+      ? [0.4, 0.76]
+      : dealSeat === 2
+        ? [0.28, 0.64]
+        : [0.16, 0.52];
+  const dealRise = dealSeat === 0 ? 118 : dealSeat === 1 ? 100 : dealSeat === 2 ? 88 : 78;
+  const dealDrift = dealSeat % 2 === 0 ? 14 : -12;
+  const dealTilt = dealSeat === 0 ? 2.8 : dealSeat === 1 ? -2.3 : dealSeat === 2 ? 1.9 : -1.6;
+
+  const entranceStyle = useAnimatedStyle(() => {
+    if (!dealAnimated || enterT === undefined) {
+      return { opacity: 1, transform: [{ translateY: 0 }, { translateX: 0 }, { rotate: '0deg' }] };
+    }
+    const t = interpolate(enterT.value, dealWindow, [0, 1], 'clamp');
+    const e = 1 - Math.pow(1 - t, 3);
+    return {
+      opacity: Math.min(1, t * 1.7),
+      transform: [
+        { translateY: (1 - e) * dealRise },
+        { translateX: (1 - e) * dealDrift },
+        { rotate: `${(1 - e) * dealTilt}deg` },
+      ],
+    };
+  });
 
   const submit = useCallback((yes: boolean) => {
     if (locked.value) return;
@@ -12045,37 +12136,50 @@ function V4DeckCard({
   }));
 
   return (
-    <GestureDetector gesture={gesture}>
-      <Reanimated.View
-        style={[
-          s.v4StatementCard,
-          !active && s.v4StackCard,
-          s.v4DeckCardBase,
-          {
-            width: metrics.width,
-            height: cardHeight,
-            zIndex,
-            // Static first-frame pose so a card can never flash in the wrong
-            // pose before the animated style kicks in.
-            opacity: initialHidden ? 0 : 1,
-            transform: [
-              { translateY: initialPose.y },
-              { rotate: `${initialPose.rotate}deg` },
-              { scale: initialPose.scale },
-            ],
-          },
-          poseStyle,
-        ]}
-      >
-        <StatementCardFace card={card} accent={accent} metrics={metrics} imageSource={stableImageSource} imageTransition={120} />
-        <Reanimated.View pointerEvents="none" style={[s.v4SwipeStamp, s.v4SwipeStampYes, { top: quoteHeight + 16 }, yesStampStyle]}>
-          <Text style={[s.v4SwipeStampText, s.v4SwipeStampTextYes]}>That&apos;s me</Text>
+    <Reanimated.View
+      pointerEvents="box-none"
+      style={[
+        s.v4DeckCardBase,
+        {
+          width: metrics.width,
+          height: cardHeight,
+          zIndex,
+          opacity: dealAnimated ? 0 : 1,
+        },
+        entranceStyle,
+      ]}
+    >
+      <GestureDetector gesture={gesture}>
+        <Reanimated.View
+          style={[
+            s.v4StatementCard,
+            !active && s.v4StackCard,
+            s.v4DeckCardBase,
+            {
+              width: metrics.width,
+              height: cardHeight,
+              // Static first-frame pose so a card can never flash in the wrong
+              // pose before the animated style kicks in.
+              opacity: initialHidden ? 0 : 1,
+              transform: [
+                { translateY: initialPose.y },
+                { rotate: `${initialPose.rotate}deg` },
+                { scale: initialPose.scale },
+              ],
+            },
+            poseStyle,
+          ]}
+        >
+          <StatementCardFace card={card} accent={accent} metrics={metrics} imageSource={stableImageSource} imageTransition={120} />
+          <Reanimated.View pointerEvents="none" style={[s.v4SwipeStamp, s.v4SwipeStampYes, { top: quoteHeight + 16 }, yesStampStyle]}>
+            <Text style={[s.v4SwipeStampText, s.v4SwipeStampTextYes]}>That&apos;s me</Text>
+          </Reanimated.View>
+          <Reanimated.View pointerEvents="none" style={[s.v4SwipeStamp, s.v4SwipeStampNo, { top: quoteHeight + 16 }, noStampStyle]}>
+            <Text style={[s.v4SwipeStampText, s.v4SwipeStampTextNo]}>Not me</Text>
+          </Reanimated.View>
         </Reanimated.View>
-        <Reanimated.View pointerEvents="none" style={[s.v4SwipeStamp, s.v4SwipeStampNo, { top: quoteHeight + 16 }, noStampStyle]}>
-          <Text style={[s.v4SwipeStampText, s.v4SwipeStampTextNo]}>Not me</Text>
-        </Reanimated.View>
-      </Reanimated.View>
-    </GestureDetector>
+      </GestureDetector>
+    </Reanimated.View>
   );
 }
 
@@ -37082,6 +37186,11 @@ const s = StyleSheet.create({
   v4DeckSlideRoot: {
     flex: 1,
     position: 'relative',
+  },
+  v4DeckEntranceVeil: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 60,
+    backgroundColor: '#F8EFDD',
   },
   v4DeckInner: {
     flex: 1,
