@@ -15986,14 +15986,14 @@ function OrganizeMacroFusionScene({
   }, [heroDrop, heroHeight, mergeShift, rowLayouts]);
 
   const row0Style = useAnimatedStyle(() => ({
-    opacity: 1 - interpolate(mergeT.value, [0.5, 0.86], [0, 1], 'clamp'),
+    opacity: 1 - interpolate(mergeT.value, [0.55, 0.78], [0, 1], 'clamp'),
     transform: [
       { translateY: mergeT.value * (mergeShift.value.ready ? mergeShift.value.r0 : 0) },
       { scale: 1 - mergeT.value * 0.06 },
     ],
   }));
   const row1Style = useAnimatedStyle(() => ({
-    opacity: 1 - interpolate(mergeT.value, [0.5, 0.86], [0, 1], 'clamp'),
+    opacity: 1 - interpolate(mergeT.value, [0.55, 0.78], [0, 1], 'clamp'),
     transform: [
       { translateY: mergeT.value * (mergeShift.value.ready ? mergeShift.value.r1 : 0) },
       { scale: 1 - mergeT.value * 0.06 },
@@ -16002,13 +16002,24 @@ function OrganizeMacroFusionScene({
   const stepThreadStyle = useAnimatedStyle(() => ({
     opacity: 1 - interpolate(mergeT.value, [0.1, 0.5], [0, 1], 'clamp'),
   }));
-  // The hero waits at the fusion midpoint, then glides up into its seat.
+  // The hero condenses only after the steps have given way — the tight
+  // handoff hides inside the fusion bloom, so no double exposure reads.
   const heroStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(mergeT.value, [0.52, 0.88], [0, 1], 'clamp'),
+    opacity: interpolate(mergeT.value, [0.72, 0.94], [0, 1], 'clamp'),
     transform: [
       { translateY: heroDrop.value * (1 - seatT.value) },
-      { scale: interpolate(mergeT.value, [0.52, 0.9, 1], [0.94, 1.012, 1], 'clamp') },
+      { scale: interpolate(mergeT.value, [0.72, 0.94, 1], [0.9, 1.014, 1], 'clamp') },
     ],
+  }));
+  // The bloom: a burst of light at the meeting point that carries the eye
+  // across the swap — peaking exactly while the steps hand over to the hero.
+  const bloomOuterStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(mergeT.value, [0.45, 0.68, 0.98], [0, 0.5, 0], 'clamp'),
+    transform: [{ scale: interpolate(mergeT.value, [0.45, 1], [0.55, 1.4], 'clamp') }],
+  }));
+  const bloomCoreStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(mergeT.value, [0.5, 0.7, 0.94], [0, 0.85, 0], 'clamp'),
+    transform: [{ scale: interpolate(mergeT.value, [0.5, 1], [0.5, 1.2], 'clamp') }],
   }));
   const rowStyles = [row0Style, row1Style];
   const steps = [
@@ -16145,6 +16156,19 @@ function OrganizeMacroFusionScene({
               </Reanimated.View>
             </Reanimated.View>
           ))}
+          {/* The fusion bloom rides above the joining steps */}
+          {rowLayouts.length >= 2 && !!rowLayouts[0] && !!rowLayouts[1] && (
+            <View
+              pointerEvents="none"
+              style={[
+                s.organizeMacroFusionBloomSeat,
+                { top: (rowLayouts[0].y + rowLayouts[1].y + rowLayouts[1].h) / 2 - 90 },
+              ]}
+            >
+              <Reanimated.View style={[s.organizeMacroFusionBloomOuter, bloomOuterStyle]} />
+              <Reanimated.View style={[s.organizeMacroFusionBloomCore, bloomCoreStyle]} />
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -30276,6 +30300,28 @@ const s = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
+  },
+  organizeMacroFusionBloomSeat: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  organizeMacroFusionBloomOuter: {
+    position: 'absolute',
+    width: 240,
+    height: 152,
+    borderRadius: 76,
+    backgroundColor: 'rgba(77,133,134,0.20)',
+  },
+  organizeMacroFusionBloomCore: {
+    position: 'absolute',
+    width: 150,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: 'rgba(255,248,228,0.9)',
   },
   organizeMacroSealAnchor: {
     position: 'absolute',
