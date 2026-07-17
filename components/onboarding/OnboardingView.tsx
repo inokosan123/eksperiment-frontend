@@ -15648,7 +15648,7 @@ function OrganizeRuleMapSlide({
   }, [afterAheadStage, autoAdvanceAfterAhead, exitProgress, onNext]);
 
   const ctaVisible = activeReady && !autoAdvanceAfterAhead;
-  const ctaLabel = variant === 'start' ? 'Start macro planning' : 'Set up weekly routine';
+  const ctaLabel = variant === 'start' ? 'Start planning' : 'Set up weekly routine';
   const ctaLockRef = useRef(false);
 
   // Leaving is choreographed too: the page lifts and dims, then the next
@@ -15737,7 +15737,6 @@ function OrganizeRuleMapSlide({
           <View style={s.ctaIsland}>
             <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={handleCtaPress} style={s.primaryButton}>
               <Text style={s.primaryButtonText}>{ctaLabel}</Text>
-              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
             </TouchableOpacity>
           </View>
         </Reanimated.View>
