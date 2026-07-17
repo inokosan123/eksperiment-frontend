@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import Reanimated, {
+  interpolate,
   interpolateColor,
   useAnimatedStyle,
   useSharedValue,
@@ -615,6 +616,11 @@ function TestamentMotif({ tone }: { tone: 'green' | 'stone' }) {
   );
 }
 
+// Selecting a book turns its card into the sheet's heading: the meta
+// line folds away, the chevron dissolves, and the title glides to the
+// center — landing above the engraved CHAPTERS rule of the opened panel.
+const TITLE_SPRING = { damping: 15, stiffness: 160, mass: 1 };
+
 function PremiumBookCard({
   book, tone, expanded, onPress,
 }: {
@@ -624,14 +630,43 @@ function PremiumBookCard({
   onPress: () => void;
 }) {
   const isGreen = tone === 'green';
-  // The illuminated initial: the book's opening glyph set as a drop cap.
-  const initial = book.name.charAt(0);
   const isDeutero = book.testament === 'dc';
+  const progress = useSharedValue(expanded ? 1 : 0);
+  const centerShift = useSharedValue(0);
+  const [cardWidth, setCardWidth] = useState(0);
+  const [titleWidth, setTitleWidth] = useState(0);
+
+  useEffect(() => {
+    progress.value = withSpring(expanded ? 1 : 0, TITLE_SPRING);
+  }, [expanded, progress]);
+
+  useEffect(() => {
+    // Title's left edge sits at the card's 14px padding; gliding it to
+    // (cardWidth - titleWidth) / 2 sets it optically center-card.
+    centerShift.value = cardWidth > 0 && titleWidth > 0
+      ? Math.max(0, (cardWidth - titleWidth) / 2 - 14)
+      : 0;
+  }, [cardWidth, centerShift, titleWidth]);
+
+  const titleStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: progress.value * centerShift.value }],
+  }));
+
+  const metaStyle = useAnimatedStyle(() => ({
+    opacity: 1 - progress.value,
+    height: interpolate(progress.value, [0, 1], [17, 0]),
+    marginTop: interpolate(progress.value, [0, 1], [4, 0]),
+  }));
+
+  const chevronStyle = useAnimatedStyle(() => ({
+    opacity: 1 - progress.value,
+  }));
 
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.86}
+      onLayout={event => setCardWidth(event.nativeEvent.layout.width)}
       style={[
         s.premiumBook,
         {
@@ -645,32 +680,27 @@ function PremiumBookCard({
       ]}
     >
       <TestamentMotif tone={tone} />
-      <View style={[s.initialSeat, { borderColor: isGreen ? 'rgba(94,123,85,0.32)' : 'rgba(180,155,103,0.36)' }]}>
-        <View
-          style={[
-            s.initialCore,
-            isGreen
-              ? { backgroundColor: '#F3F8EE' }
-              : { backgroundColor: '#FAF4E7' },
-          ]}
-        >
-          <Text style={[s.initialGlyph, { color: isGreen ? '#41603A' : '#7A5F2E' }]}>{initial}</Text>
-        </View>
-      </View>
       <View style={s.bookCopy}>
-        <Text style={s.bookName}>{book.name}</Text>
-        <View style={s.bookMetaRow}>
+        <Reanimated.Text
+          numberOfLines={1}
+          onLayout={event => setTitleWidth(event.nativeEvent.layout.width)}
+          style={[s.bookName, titleStyle]}
+        >
+          {book.name}
+        </Reanimated.Text>
+        <Reanimated.View style={[s.bookMetaRow, metaStyle]}>
           <View style={[s.metaDiamond, { backgroundColor: isGreen ? 'rgba(94,123,85,0.55)' : 'rgba(180,155,103,0.6)' }]} />
           <Text style={[s.bookMeta, { color: isGreen ? '#7E9270' : '#A48F6C' }]}>
             {book.chapters} {book.chapters === 1 ? 'CHAPTER' : 'CHAPTERS'}{isDeutero ? ' · DEUTEROCANON' : ''}
           </Text>
-        </View>
+        </Reanimated.View>
       </View>
-      <View style={[s.chevronSeat, { borderColor: isGreen ? 'rgba(94,123,85,0.24)' : 'rgba(180,155,103,0.28)' }]}>
-        <View style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}>
-          <ChevronRight s={15} c={isGreen ? '#8FA986' : '#BCA476'} />
-        </View>
-      </View>
+      <Reanimated.View
+        style={[s.chevronSeat, { borderColor: isGreen ? 'rgba(94,123,85,0.24)' : 'rgba(180,155,103,0.28)' }, chevronStyle]}
+        pointerEvents="none"
+      >
+        <ChevronRight s={15} c={isGreen ? '#8FA986' : '#BCA476'} />
+      </Reanimated.View>
     </TouchableOpacity>
   );
 }
@@ -1152,34 +1182,9 @@ const s = StyleSheet.create({
     bottom: 0,
     overflow: 'hidden',
   },
-  // The illuminated initial sits in a double frame: an outer hairline
-  // ring on white, an inner toned core — the halo grammar, squared.
-  initialSeat: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    borderWidth: 1,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  initialCore: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  initialGlyph: {
-    fontFamily: F.serifSemiBold,
-    fontSize: 18,
-    lineHeight: 22,
-    includeFontPadding: false,
-  },
-  bookCopy: { flex: 1, minWidth: 0 },
-  bookName: { fontFamily: F.serif, fontSize: 20, lineHeight: 24, color: '#2F2B27' },
-  bookMetaRow: { marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  bookCopy: { flex: 1, minWidth: 0, justifyContent: 'center' },
+  bookName: { alignSelf: 'flex-start', fontFamily: F.serif, fontSize: 20, lineHeight: 24, color: '#2F2B27' },
+  bookMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, overflow: 'hidden' },
   metaDiamond: {
     width: 4,
     height: 4,
