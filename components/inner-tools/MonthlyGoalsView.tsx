@@ -9,13 +9,25 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle } from 'react-native-svg';
+import Reanimated, {
+  Easing,
+  useAnimatedProps,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import { CheckSmall, ChevronLeft, ChevronRight, Plus, Trash2 } from '@/components/icons/Icons';
 import { useMonthlyGoals } from '@/components/inner-tools/MonthlyGoalsContext';
-import { AnimatedGoalCheck, AnimatedStrikeText, fireGoalToggleHaptic } from '@/components/inner-tools/MonthlyGoalRow';
+import {
+  AnimatedGoalCheck,
+  AnimatedStrikeText,
+  fireGoalToggleHaptic,
+  GoalCompletionConfetti,
+} from '@/components/inner-tools/MonthlyGoalRow';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import {
@@ -30,12 +42,23 @@ const GOLD = '#C5A059';
 const GREEN = '#16A34A';
 const RED = C.red;
 const INK = '#1A1714';
-const MUTED = '#A8A29E';
 const MONTHLY_GOALS_GUIDE_TARGETS = {
   months: 'monthly-goals.months',
   input: 'monthly-goals.input',
   add: 'monthly-goals.add',
 } as const;
+
+const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
+
+// The coin: the DateStrip selected-day gradient, the app's struck gold.
+const COIN_COLORS = ['#E2BD75', '#C5A059', '#A87E33'] as const;
+const COIN_LOCATIONS = [0, 0.55, 1] as const;
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII', 'XIX', 'XX'];
+
+function toRoman(index: number) {
+  return ROMAN[index] ?? String(index + 1);
+}
 
 function monthKey(year: number, monthIndex: number) {
   return `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
@@ -55,6 +78,81 @@ function formatMonthFull(month: string) {
 }
 
 const MONTH_LABELS_SHORT = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+/* ── The month's seal ─────────────────────────────────────── */
+// A ring seal carrying the month's count: the track is a quiet gold
+// hairline, the fill sweeps as intentions are kept, and a finished
+// month closes the ring in green.
+function RingSeal({ completed, total }: { completed: number; total: number }) {
+  const SIZE = 64;
+  const CENTER = SIZE / 2;
+  const R = 27;
+  const CIRC = 2 * Math.PI * R;
+  const allDone = total > 0 && completed === total;
+  const frac = total > 0 ? completed / total : 0;
+  const progress = useSharedValue(frac);
+
+  useEffect(() => {
+    progress.value = withTiming(frac, { duration: 620, easing: Easing.out(Easing.cubic) });
+  }, [frac, progress]);
+
+  const fillProps = useAnimatedProps(() => ({
+    strokeDashoffset: CIRC * (1 - progress.value),
+  }));
+
+  return (
+    <View style={rs.stage}>
+      <Svg width={SIZE} height={SIZE}>
+        <Circle
+          cx={CENTER}
+          cy={CENTER}
+          r={R}
+          fill="none"
+          stroke="rgba(197,160,89,0.22)"
+          strokeWidth={3}
+        />
+        {total > 0 && (
+          <AnimatedCircle
+            cx={CENTER}
+            cy={CENTER}
+            r={R}
+            fill="none"
+            stroke={allDone ? GREEN : GOLD}
+            strokeWidth={3.5}
+            strokeLinecap="round"
+            strokeDasharray={`${CIRC}`}
+            animatedProps={fillProps}
+            transform={`rotate(-90 ${CENTER} ${CENTER})`}
+          />
+        )}
+      </Svg>
+      <View style={rs.center} pointerEvents="none">
+        {total > 0 ? (
+          <Text style={[rs.count, allDone && { color: GREEN }]}>
+            {completed}
+            <Text style={rs.countMuted}>/{total}</Text>
+          </Text>
+        ) : (
+          <View style={rs.emptyDiamond} />
+        )}
+      </View>
+    </View>
+  );
+}
+
+const rs = StyleSheet.create({
+  stage: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center' },
+  center: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  count: { fontFamily: F.serifSemiBold, fontSize: 19, color: INK, letterSpacing: 0.2 },
+  countMuted: { fontSize: 12.5, color: '#B9B0A0' },
+  emptyDiamond: {
+    width: 7,
+    height: 7,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.55)',
+    transform: [{ rotate: '45deg' }],
+  },
+});
 
 export default function MonthlyGoalsView({
   guided = false,
@@ -121,6 +219,22 @@ export default function MonthlyGoalsView({
     setViewYear(y => y + 1);
   };
 
+  // The viewed year at a glance — months planned and intentions kept.
+  const yearStats = useMemo(() => {
+    let goals = 0;
+    let months = 0;
+    let kept = 0;
+    for (let i = 0; i < 12; i += 1) {
+      const arr = goalsByMonth[monthKey(viewYear, i)] ?? [];
+      if (arr.length > 0) {
+        months += 1;
+        goals += arr.length;
+        kept += arr.filter(goal => goal.isCompleted).length;
+      }
+    }
+    return { goals, months, kept };
+  }, [goalsByMonth, viewYear]);
+
   const monthGoals = useMemo(() => {
     return [...(goalsByMonth[selectedMonth] ?? [])].sort(
       (a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt,
@@ -129,8 +243,6 @@ export default function MonthlyGoalsView({
 
   const completedCount = monthGoals.filter(g => g.isCompleted).length;
   const allDone = monthGoals.length > 0 && completedCount === monthGoals.length;
-  const progress = monthGoals.length > 0 ? completedCount / monthGoals.length : 0;
-  const progressColor = allDone ? GREEN : GOLD;
   const isPastMonth = selectedMonth < todayMonth;
   const isFutureMonth = selectedMonth > todayMonth;
   const canEditSelectedMonth = !isPastMonth;
@@ -285,6 +397,23 @@ export default function MonthlyGoalsView({
     await deleteGoal(id);
   };
 
+  // The month's state, read aloud in one italic line.
+  const heroState = monthGoals.length === 0
+    ? isPastMonth
+      ? 'This month passed without intentions.'
+      : 'No intentions written yet.'
+    : allDone
+      ? 'Every intention kept.'
+      : completedCount === 0
+        ? `${monthGoals.length} ${monthGoals.length === 1 ? 'intention' : 'intentions'} awaiting.`
+        : `${monthGoals.length - completedCount} still open · ${completedCount} kept.`;
+
+  const heroEyebrow = isPastMonth
+    ? 'FROM THE ARCHIVE'
+    : isFutureMonth
+      ? 'PLANNED AHEAD'
+      : 'THIS MONTH';
+
   return (
     <View style={s.screen}>
       <ScreenTitleBar title="MONTHLY GOALS" showBack={!isGuided} bg={BG} />
@@ -298,25 +427,40 @@ export default function MonthlyGoalsView({
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
       >
-        {/* Year switcher */}
-        <View style={s.yearRow}>
-          <TouchableOpacity
-            onPress={goPrevYear}
-            disabled={!canPrevYear}
-            activeOpacity={0.7}
-            style={[s.yearBtn, !canPrevYear && s.yearBtnDisabled]}
-          >
-            <ChevronLeft s={18} c={canPrevYear ? GOLD : '#D6D3D1'} />
-          </TouchableOpacity>
-          <Text style={s.yearText}>{viewYear}</Text>
-          <TouchableOpacity
-            onPress={goNextYear}
-            disabled={!canNextYear}
-            activeOpacity={0.7}
-            style={[s.yearBtn, !canNextYear && s.yearBtnDisabled]}
-          >
-            <ChevronRight s={18} c={canNextYear ? GOLD : '#D6D3D1'} />
-          </TouchableOpacity>
+        {/* The almanac head: the year between engraved rules */}
+        <View style={s.yearHead}>
+          <View style={s.yearRow}>
+            <TouchableOpacity
+              onPress={goPrevYear}
+              disabled={!canPrevYear}
+              activeOpacity={0.7}
+              style={[s.yearBtn, !canPrevYear && s.yearBtnDisabled]}
+            >
+              <ChevronLeft s={17} c={canPrevYear ? GOLD : '#D9D3C6'} />
+            </TouchableOpacity>
+            <View style={s.yearOrnament}>
+              <View style={s.yearRule} />
+              <View style={s.yearDiamond} />
+            </View>
+            <Text style={s.yearText}>{viewYear}</Text>
+            <View style={s.yearOrnament}>
+              <View style={s.yearDiamond} />
+              <View style={s.yearRule} />
+            </View>
+            <TouchableOpacity
+              onPress={goNextYear}
+              disabled={!canNextYear}
+              activeOpacity={0.7}
+              style={[s.yearBtn, !canNextYear && s.yearBtnDisabled]}
+            >
+              <ChevronRight s={17} c={canNextYear ? GOLD : '#D9D3C6'} />
+            </TouchableOpacity>
+          </View>
+          <Text style={s.yearMeta}>
+            {yearStats.months > 0
+              ? `${yearStats.months} ${yearStats.months === 1 ? 'MONTH' : 'MONTHS'} PLANNED · ${yearStats.kept}/${yearStats.goals} KEPT`
+              : 'AN OPEN YEAR'}
+          </Text>
         </View>
 
         {/* Month grid (Jan → Dec) for the viewed year */}
@@ -328,6 +472,7 @@ export default function MonthlyGoalsView({
             const goalCount = monthItems.length;
             const hasGoals = goalCount > 0;
             const completedInMonth = monthItems.filter(goal => goal.isCompleted).length;
+            const monthAllDone = hasGoals && completedInMonth === goalCount;
             const isCurrent = key === todayMonth;
             const isPast = viewYear < todayYear || (viewYear === todayYear && idx < todayMonthIdx);
             const isFuture = viewYear > todayYear || (viewYear === todayYear && idx > todayMonthIdx);
@@ -335,18 +480,13 @@ export default function MonthlyGoalsView({
             const monthMeta = hasGoals
               ? `${completedInMonth}/${goalCount}`
               : isPast
-                ? 'LOCKED'
+                ? '—'
                 : isCurrent
-                  ? 'CURRENT'
+                  ? 'NOW'
                   : 'PLAN';
+            const railFrac = hasGoals ? completedInMonth / goalCount : 0;
 
-            // Visual state hierarchy:
-            //   1. Selected → gold gradient
-            //   2. Current month (not selected) → gold ring
-            //   3. Past + has goals → solid white + colored dot (gold or green)
-            //   4. Past + no goals → muted, faded
-            //   5. Future + has goals → solid white + green goal marker
-            //   6. Future + no goals → soft white, low contrast
+            // The selected month is the struck coin.
             if (isSelected) {
               return (
                 <TouchableOpacity
@@ -355,18 +495,24 @@ export default function MonthlyGoalsView({
                   activeOpacity={0.84}
                   style={s.monthCellWrap}
                 >
-                  <LinearGradient
-                    colors={['#F2D58D', '#D2AA5C', '#A87E33']}
-                    locations={[0, 0.52, 1]}
-                    start={{ x: 0.1, y: 0 }}
-                    end={{ x: 0.92, y: 1 }}
-                    style={[s.monthCell, s.monthCellSelected]}
-                  >
-                    <View pointerEvents="none" style={s.monthSheen} />
-                    <Text style={[s.monthLabel, s.monthLabelActive]}>{label}</Text>
-                    <Text style={[s.monthMeta, s.monthMetaActive]}>{monthMeta}</Text>
-                    <View style={s.monthSelectedSpark} />
-                  </LinearGradient>
+                  <View style={[s.monthCell, s.monthCellSelectedWrap]}>
+                    <LinearGradient
+                      colors={[...COIN_COLORS]}
+                      locations={[...COIN_LOCATIONS]}
+                      start={{ x: 0.15, y: 0 }}
+                      end={{ x: 0.85, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <View pointerEvents="none" style={s.monthCoinSheen} />
+                    <View pointerEvents="none" style={s.monthCoinRim} />
+                    <Text style={[s.monthLabel, s.monthLabelSelected]}>{label}</Text>
+                    <Text style={[s.monthMeta, s.monthMetaSelected]}>{monthMeta}</Text>
+                    {hasGoals && (
+                      <View style={[s.monthRail, s.monthRailOnCoin]}>
+                        <View style={[s.monthRailFill, s.monthRailFillOnCoin, { width: `${railFrac * 100}%` }]} />
+                      </View>
+                    )}
+                  </View>
                 </TouchableOpacity>
               );
             }
@@ -374,36 +520,31 @@ export default function MonthlyGoalsView({
             const cellStyle: any[] = [s.monthCell];
             const labelStyle: any[] = [s.monthLabel];
             const metaStyle: any[] = [s.monthMeta];
-            const railStyle: any[] = [s.monthRail];
-            const goalGemStyle: any[] = [s.monthGoalGem];
+            let railFillColor = GOLD;
 
             if (isCurrent) {
               cellStyle.push(s.monthCellCurrent);
               labelStyle.push(s.monthLabelCurrent);
               metaStyle.push(s.monthMetaCurrent);
-              railStyle.push(s.monthRailCurrent);
             } else if (isPast && hasGoals) {
               cellStyle.push(s.monthCellPastFilled);
               labelStyle.push(s.monthLabelPastFilled);
               metaStyle.push(s.monthMetaPastFilled);
-              railStyle.push(s.monthRailArchived);
-              goalGemStyle.push(s.monthGoalGemArchived);
+              railFillColor = monthAllDone ? 'rgba(22,163,74,0.55)' : '#B3A78F';
             } else if (isPast) {
               cellStyle.push(s.monthCellPastEmpty);
               labelStyle.push(s.monthLabelPastEmpty);
               metaStyle.push(s.monthMetaPastEmpty);
-              railStyle.push(s.monthRailLocked);
             } else if (isFuture && hasGoals) {
               cellStyle.push(s.monthCellFutureFilled);
               labelStyle.push(s.monthLabelFutureFilled);
               metaStyle.push(s.monthMetaFutureFilled);
-              railStyle.push(s.monthRailFutureFilled);
             } else {
               cellStyle.push(s.monthCellFutureEmpty);
               labelStyle.push(s.monthLabelFutureEmpty);
               metaStyle.push(s.monthMetaFutureEmpty);
-              railStyle.push(s.monthRailFutureEmpty);
             }
+            if (monthAllDone) railFillColor = isPast ? 'rgba(22,163,74,0.55)' : GREEN;
 
             return (
               <TouchableOpacity
@@ -414,60 +555,46 @@ export default function MonthlyGoalsView({
                 style={s.monthCellWrap}
               >
                 <View style={cellStyle}>
-                  <View style={railStyle} />
                   <Text style={labelStyle}>{label}</Text>
                   <Text style={metaStyle}>{monthMeta}</Text>
-                  {hasGoals && <View style={goalGemStyle} />}
-                  {isLocked && <View style={s.monthLockedLine} />}
+                  {hasGoals && (
+                    <View style={s.monthRail}>
+                      <View style={[s.monthRailFill, { width: `${railFrac * 100}%`, backgroundColor: railFillColor }]} />
+                    </View>
+                  )}
                 </View>
               </TouchableOpacity>
             );
           })}
         </View>
 
-        {/* Progress card (only when goals exist) */}
-        {monthGoals.length > 0 && (
-          <LinearGradient
-            colors={['#FFFFFF', '#FDF6E5']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={s.card}
-          >
-            <View style={s.progressHead}>
-              <Text style={s.progressKicker}>PROGRESS</Text>
-              <Text style={[s.progressCount, { color: progressColor }]}>
-                {completedCount}<Text style={s.progressCountMuted}>/{monthGoals.length}</Text>
+        {/* The month's seal: title, state, ring — always present */}
+        <View style={s.heroCard}>
+          <View pointerEvents="none" style={s.heroFrame} />
+          <View style={s.heroRow}>
+            <View style={s.heroCopy}>
+              <Text style={s.heroEyebrow}>{heroEyebrow}</Text>
+              <Text style={s.heroTitle} numberOfLines={1}>{selectedMonthLabel}</Text>
+              <Text style={[s.heroState, allDone && s.heroStateDone]} numberOfLines={2}>
+                {heroState}
               </Text>
             </View>
-            <View style={s.progressTrack}>
-              {progress > 0 && (
-                allDone ? (
-                  <View
-                    style={[
-                      s.progressFillSolid,
-                      { width: `${progress * 100}%`, backgroundColor: GREEN },
-                    ]}
-                  />
-                ) : (
-                  <LinearGradient
-                    colors={['#E2BD75', '#C5A059', '#A87E33']}
-                    locations={[0, 0.55, 1]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={[s.progressFillSolid, { width: `${progress * 100}%` }]}
-                  />
-                )
-              )}
-            </View>
-            {allDone && (
-              <Text style={[s.progressDone, { color: GREEN }]}>
-                All goals complete for {formatMonthFull(selectedMonth)} 🎉
-              </Text>
-            )}
-          </LinearGradient>
-        )}
+            <RingSeal completed={completedCount} total={monthGoals.length} />
+          </View>
+          {allDone && (
+            <>
+              <View pointerEvents="none" style={[s.heroGlint, { right: 14, top: 12 }]} />
+              <View pointerEvents="none" style={[s.heroGlintSmall, { right: 30, top: 26 }]} />
+            </>
+          )}
+          {isPastMonth && monthGoals.length > 0 && (
+            <Text style={s.heroArchiveNote}>
+              Past months are archived — review or remove, the record stands.
+            </Text>
+          )}
+        </View>
 
-        {canEditSelectedMonth ? (
+        {canEditSelectedMonth && (
           <View style={s.addCard}>
             <View style={s.addCopy}>
               <Text style={s.addLabel}>{isFutureMonth ? 'PLAN AHEAD' : 'ADD GOAL'}</Text>
@@ -491,23 +618,30 @@ export default function MonthlyGoalsView({
               activeOpacity={0.86}
               style={[s.addBtn, !draftText.trim() && s.addBtnDisabled]}
             >
+              {draftText.trim() ? (
+                <>
+                  <LinearGradient
+                    colors={[...COIN_COLORS]}
+                    locations={[...COIN_LOCATIONS]}
+                    start={{ x: 0.15, y: 0 }}
+                    end={{ x: 0.85, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View pointerEvents="none" style={s.addBtnSheen} />
+                </>
+              ) : null}
               <Plus s={15} c="#FFFFFF" w={2.6} />
             </TouchableOpacity>
           </View>
-        ) : (
-          <View style={s.archiveNotice}>
-            <Text style={s.archiveNoticeText}>Past months are locked. You can review or delete goals, but not change their completion state.</Text>
-          </View>
         )}
 
-        {/* Goals list */}
+        {/* The intentions, numbered like an almanac's entries */}
         <View style={s.goalsList}>
-          {monthGoals.map(goal => (
+          {monthGoals.map((goal, index) => (
             <View
               key={goal.id}
               style={[s.goalCard, goal.isCompleted && s.goalCardDone, isPastMonth && s.goalCardArchived]}
             >
-              <View pointerEvents="none" style={[s.goalCardHighlight, goal.isCompleted && s.goalCardHighlightDone]} />
               {canEditSelectedMonth ? (
                 <AnimatedGoalCheck
                   done={goal.isCompleted}
@@ -519,6 +653,15 @@ export default function MonthlyGoalsView({
                   {goal.isCompleted && <CheckSmall s={13} c="#FFFFFF" w={3} />}
                 </View>
               )}
+              <Text
+                style={[
+                  s.goalNumeral,
+                  goal.isCompleted && s.goalNumeralDone,
+                  isPastMonth && s.goalNumeralArchived,
+                ]}
+              >
+                {toRoman(index)}
+              </Text>
               <AnimatedStrikeText
                 text={goal.text}
                 done={goal.isCompleted}
@@ -531,23 +674,12 @@ export default function MonthlyGoalsView({
                 hitSlop={8}
                 style={s.deleteBtn}
               >
-                <Trash2 s={15} c={RED} w={1.9} />
+                <Trash2 s={15} c="#B9AFA2" w={1.9} />
               </TouchableOpacity>
+              <GoalCompletionConfetti done={goal.isCompleted} />
             </View>
           ))}
         </View>
-
-        {/* Empty state */}
-        {monthGoals.length === 0 && (
-          <View style={[s.emptyState, isPastMonth && s.emptyStateArchived]}>
-            <Text style={s.emptyTitle}>{isPastMonth ? 'No goals were set' : 'No goals yet'}</Text>
-            <Text style={s.emptyKicker}>
-              {isPastMonth
-                ? `${selectedMonthLabel.toUpperCase()} IS ARCHIVED`
-                : `SET YOUR INTENTIONS FOR ${selectedMonthLabel.toUpperCase()}`}
-            </Text>
-          </View>
-        )}
       </ScrollView>
 
       <ConfirmModal
@@ -558,7 +690,7 @@ export default function MonthlyGoalsView({
         body="This goal will be permanently removed."
         cancelLabel="KEEP"
         confirmLabel="DELETE"
-        confirmColor={C.red}
+        confirmColor={RED}
         onCancel={() => setDeleteTargetId(null)}
         onConfirm={confirmDelete}
       />
@@ -575,30 +707,65 @@ const s = StyleSheet.create({
     rowGap: 12,
   },
 
-  yearRow: {
-    flexDirection: 'row',
+  /* Almanac head */
+  yearHead: {
     alignItems: 'center',
-    justifyContent: 'center',
-    columnGap: 14,
+    rowGap: 3,
     paddingVertical: 2,
   },
-  yearBtn: {
-    width: 34, height: 34, borderRadius: 17,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(197,160,89,0.08)',
-    borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)',
+  yearRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    paddingHorizontal: 4,
   },
-  yearBtnDisabled: { opacity: 0.38, backgroundColor: '#FFFFFF', borderColor: '#F0EDE6' },
+  yearOrnament: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 7,
+  },
+  yearRule: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(197,160,89,0.30)',
+  },
+  yearDiamond: {
+    width: 5,
+    height: 5,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.7)',
+    transform: [{ rotate: '45deg' }],
+  },
+  yearBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFEFB',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.28)',
+  },
+  yearBtnDisabled: { opacity: 0.42, borderColor: '#EFEAE0' },
   yearText: {
     fontFamily: F.serifSemiBold,
-    fontSize: 22,
-    lineHeight: 26,
-    color: '#1A1714',
-    minWidth: 90,
+    fontSize: 24,
+    lineHeight: 28,
+    color: INK,
     textAlign: 'center',
     letterSpacing: 0.5,
   },
+  yearMeta: {
+    fontFamily: F.sansBold,
+    fontSize: 8.5,
+    lineHeight: 11,
+    letterSpacing: 1.8,
+    color: '#B89A5A',
+  },
 
+  /* Month grid */
   monthsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -606,11 +773,12 @@ const s = StyleSheet.create({
     rowGap: 8,
     backgroundColor: '#FFFDF8',
     borderWidth: 1,
-    borderColor: '#EEE4D4',
+    borderColor: 'rgba(197,160,89,0.24)',
     borderRadius: 24,
+    borderCurve: 'continuous',
     padding: 10,
     shadowColor: GOLD,
-    shadowOpacity: 0.075,
+    shadowOpacity: 0.07,
     shadowOffset: { width: 0, height: 8 },
     shadowRadius: 18,
     elevation: 1,
@@ -619,27 +787,21 @@ const s = StyleSheet.create({
     width: '23.2%',
   },
   monthCell: {
-    minHeight: 55,
+    minHeight: 56,
     paddingHorizontal: 9,
-    paddingVertical: 8,
-    borderRadius: 17,
+    paddingTop: 8,
+    paddingBottom: 11,
+    borderRadius: 16,
     alignItems: 'flex-start',
     justifyContent: 'center',
-    rowGap: 4,
+    rowGap: 3,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#EFE9DD',
+    borderColor: '#F0E9DC',
     overflow: 'hidden',
     position: 'relative',
   },
-  monthSheen: {
-    position: 'absolute',
-    top: 1, left: 1, right: 1,
-    height: '48%',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.20)',
-  },
+
   monthLabel: {
     fontFamily: F.sansBold,
     fontSize: 11.2,
@@ -656,284 +818,188 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
-  // Selected (gold gradient)
-  monthCellSelected: {
-    borderWidth: 0,
-    shadowColor: '#A87E33',
-    shadowOpacity: 0.23,
-    shadowOffset: { width: 0, height: 7 },
-    shadowRadius: 14,
-    elevation: 3,
-  },
-  monthLabelActive: { color: '#FFFFFF', letterSpacing: 1.7 },
-  monthMetaActive: { color: 'rgba(255,255,255,0.84)' },
-  monthSelectedSpark: {
+  // The mini rail: each planned month carries its progress at its foot.
+  monthRail: {
     position: 'absolute',
-    right: 8,
-    top: 8,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.86)',
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.42,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 5,
+    left: 9,
+    right: 9,
+    bottom: 6,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.16)',
+    overflow: 'hidden',
+  },
+  monthRailFill: {
+    height: '100%',
+    borderRadius: 1,
+    backgroundColor: GOLD,
+  },
+  monthRailOnCoin: {
+    backgroundColor: 'rgba(255,255,255,0.30)',
+  },
+  monthRailFillOnCoin: {
+    backgroundColor: 'rgba(255,255,255,0.92)',
   },
 
-  // Current month, not selected — clean cell with subtle gold underline
+  // Selected — the struck coin
+  monthCellSelectedWrap: {
+    borderWidth: 0,
+    shadowColor: '#A87E33',
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  monthCoinSheen: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    height: '46%',
+    borderTopLeftRadius: 15,
+    borderTopRightRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.13)',
+  },
+  monthCoinRim: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(150,108,40,0.34)',
+  },
+  monthLabelSelected: { color: '#FFFFFF', letterSpacing: 1.7 },
+  monthMetaSelected: { color: 'rgba(255,255,255,0.85)' },
+
+  // Current month, not selected — warm plaque with gold hairline
   monthCellCurrent: {
     backgroundColor: '#FFFCF2',
     borderColor: 'rgba(197,160,89,0.46)',
-    shadowColor: GOLD,
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 9,
-    elevation: 1,
   },
-  monthLabelCurrent: { color: '#1A1714' },
+  monthLabelCurrent: { color: INK },
   monthMetaCurrent: { color: GOLD },
-  // Past + has goals — solid white, full-strength label, dot indicator
+
+  // Past + goals — the archive's parchment
   monthCellPastFilled: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E1D9CE',
+    backgroundColor: '#FCFAF5',
+    borderColor: '#E4DCCE',
   },
-  monthLabelPastFilled: { color: '#3F3A34' },
+  monthLabelPastFilled: { color: '#57534E' },
   monthMetaPastFilled: { color: '#8B8278' },
 
-  // Past + no goals — faded, lower visual weight (nothing was set)
+  // Past + nothing — a quiet stone
   monthCellPastEmpty: {
-    backgroundColor: '#F2EEE7',
-    borderColor: '#E4DCD0',
-    opacity: 0.68,
+    backgroundColor: '#F3F0E9',
+    borderColor: '#E7E0D3',
+    opacity: 0.62,
   },
   monthLabelPastEmpty: { color: '#B5AEA4' },
   monthMetaPastEmpty: { color: '#BDB5AA' },
 
-  // Future + has goals — solid white with the same green goal marker
+  // Future + goals — planned ahead, gold-touched
   monthCellFutureFilled: {
-    backgroundColor: '#F8FFF7',
-    borderColor: 'rgba(22,163,74,0.24)',
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(197,160,89,0.34)',
   },
-  monthLabelFutureFilled: { color: '#243A2A' },
-  monthMetaFutureFilled: { color: GREEN },
+  monthLabelFutureFilled: { color: '#44403C' },
+  monthMetaFutureFilled: { color: '#8B6B2F' },
 
-  // Future + no goals — soft white, neutral
+  // Future + nothing — an open page
   monthCellFutureEmpty: {
     backgroundColor: '#FFFFFF',
-    borderColor: '#F0E7D7',
+    borderColor: '#F0E8D8',
   },
-  monthLabelFutureEmpty: { color: '#625B52' },
-  monthMetaFutureEmpty: { color: '#B49A64' },
+  monthLabelFutureEmpty: { color: '#6B6459' },
+  monthMetaFutureEmpty: { color: '#C2A868' },
 
-  monthRail: {
-    position: 'absolute',
-    left: 0,
-    top: 10,
-    bottom: 10,
-    width: 2.5,
-    borderTopRightRadius: 2,
-    borderBottomRightRadius: 2,
-    backgroundColor: '#E8DFD2',
-  },
-  monthRailCurrent: {
-    backgroundColor: GOLD,
-  },
-  monthRailArchived: {
-    backgroundColor: '#A79B88',
-  },
-  monthRailLocked: {
-    backgroundColor: '#D4CCC0',
-  },
-  monthRailFutureFilled: {
-    backgroundColor: GREEN,
-  },
-  monthRailFutureEmpty: {
-    backgroundColor: '#E7D7B2',
-  },
-  monthGoalGem: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 6.5,
-    height: 6.5,
-    borderRadius: 3.25,
-    backgroundColor: GREEN,
-    shadowColor: GREEN,
-    shadowOpacity: 0.22,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  monthGoalGemArchived: {
-    backgroundColor: '#A79B88',
-    shadowColor: '#A79B88',
-  },
-  monthLockedLine: {
-    position: 'absolute',
-    right: 8,
-    top: 11,
-    width: 13,
-    height: 1.5,
-    borderRadius: 1,
-    backgroundColor: '#CFC7BB',
-    transform: [{ rotate: '-18deg' }],
-  },
-
-  card: {
-    borderRadius: 22,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#EFE9DD',
-    padding: 16,
-    shadowColor: GOLD,
-    shadowOpacity: 0.06,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 10,
-    elevation: 1,
-  },
-  progressHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  progressKicker: {
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 2,
-    color: GOLD,
-    textTransform: 'uppercase',
-  },
-  progressCount: { fontFamily: F.serifSemiBold, fontSize: 22, letterSpacing: 0.3 },
-  progressCountMuted: { color: '#C9C5BD', fontSize: 17 },
-  progressTrack: {
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#F4EEDD',
-    overflow: 'hidden',
-  },
-  progressFillSolid: { height: '100%', borderRadius: 4 },
-  progressDone: {
-    marginTop: 10,
-    fontFamily: F.serifMediumItalic,
-    fontSize: 13,
-    textAlign: 'center',
-  },
-
-  goalsList: {
-    rowGap: 7,
-  },
-  goalCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    columnGap: 11,
-    backgroundColor: '#FFFDFC',
-    borderRadius: 20,
-    borderWidth: 1.4,
-    borderColor: 'rgba(197,160,89,0.54)',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    overflow: 'hidden',
+  /* The month's seal (hero) */
+  heroCard: {
     position: 'relative',
+    borderRadius: 22,
+    borderCurve: 'continuous',
+    backgroundColor: '#FFFEFB',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.26)',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     shadowColor: GOLD,
-    shadowOpacity: 0.09,
+    shadowOpacity: 0.07,
     shadowOffset: { width: 0, height: 5 },
     shadowRadius: 12,
-    elevation: 2,
-  },
-  goalCardDone: {
-    backgroundColor: '#FFFDF4',
-    borderColor: 'rgba(197,160,89,0.62)',
-  },
-  goalCardArchived: {
-    backgroundColor: '#F8F4ED',
-    borderColor: '#D8CBB8',
-    shadowColor: '#8B8278',
-    shadowOpacity: 0.035,
     elevation: 1,
   },
-  goalCardHighlight: {
+  heroFrame: {
     position: 'absolute',
-    left: 14,
-    right: 14,
-    top: 0,
-    height: 1.5,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.88)',
+    top: 7,
+    left: 7,
+    right: 7,
+    bottom: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.13)',
   },
-  goalCardHighlightDone: {
-    backgroundColor: 'rgba(255,255,255,0.74)',
-  },
-  readOnlyCheck: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.7,
-    borderColor: '#CFC7BB',
-    backgroundColor: '#F8F5EF',
+  heroRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
+    columnGap: 14,
   },
-  readOnlyCheckDone: {
-    borderColor: '#A79B88',
-    backgroundColor: '#A79B88',
+  heroCopy: { flex: 1, minWidth: 0, rowGap: 2 },
+  heroEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 8.5,
+    lineHeight: 11,
+    letterSpacing: 2,
+    color: '#B89A5A',
   },
-  goalText: {
-    fontFamily: F.serifMedium,
-    fontSize: 19,
-    lineHeight: 24.4,
+  heroTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 23,
+    lineHeight: 28,
     color: INK,
   },
-  goalTextArchived: { color: '#7D756B' },
-  deleteBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFF0F0',
-    borderWidth: 1,
-    borderColor: '#F7D6D6',
-    flexShrink: 0,
-  },
-
-  emptyState: {
-    paddingVertical: 30,
-    paddingHorizontal: 18,
-    borderRadius: 22,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#F0E9DD',
-    alignItems: 'center',
-    rowGap: 6,
-  },
-  emptyStateArchived: {
-    backgroundColor: '#F5F1EA',
-    borderColor: '#E5DED2',
-  },
-  emptyTitle: {
+  heroState: {
     fontFamily: F.serifMediumItalic,
-    fontSize: 21,
-    color: '#AFA69A',
+    fontSize: 13.5,
+    lineHeight: 18,
+    color: '#8A8177',
   },
-  emptyKicker: {
-    fontFamily: F.sansBold,
-    fontSize: 9.5,
-    letterSpacing: 1.8,
-    color: MUTED,
+  heroStateDone: { color: GREEN },
+  heroGlint: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 1.5,
+    backgroundColor: 'rgba(197,160,89,0.68)',
+    transform: [{ rotate: '45deg' }],
+  },
+  heroGlintSmall: {
+    position: 'absolute',
+    width: 3.5,
+    height: 3.5,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.5)',
+    transform: [{ rotate: '45deg' }],
+  },
+  heroArchiveNote: {
+    marginTop: 10,
+    paddingTop: 9,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(197,160,89,0.14)',
+    fontFamily: F.serifItalic,
+    fontSize: 12,
+    lineHeight: 16,
+    color: '#A29A8C',
     textAlign: 'center',
   },
 
+  /* Add goal */
   addCard: {
     flexDirection: 'row',
     alignItems: 'center',
     columnGap: 10,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
+    backgroundColor: '#FFFEFB',
+    borderRadius: 22,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.20)',
+    borderColor: 'rgba(197,160,89,0.24)',
     paddingLeft: 16,
     paddingRight: 8,
     paddingVertical: 9,
@@ -951,7 +1017,7 @@ const s = StyleSheet.create({
     fontFamily: F.sansBold,
     fontSize: 9.5,
     letterSpacing: 1.8,
-    color: GOLD,
+    color: '#B89A5A',
     textTransform: 'uppercase',
     marginBottom: 1,
   },
@@ -966,34 +1032,101 @@ const s = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: GOLD,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: GOLD,
+    shadowColor: '#A87E33',
     shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.32,
-    shadowRadius: 10,
+    shadowOpacity: 0.3,
+    shadowRadius: 9,
     elevation: 4,
   },
+  addBtnSheen: {
+    position: 'absolute',
+    top: 1,
+    left: 3,
+    right: 3,
+    height: '44%',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
   addBtnDisabled: {
-    backgroundColor: '#D6D3D1',
+    backgroundColor: '#D9D4CA',
     shadowOpacity: 0,
   },
-  archiveNotice: {
-    borderRadius: 18,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    backgroundColor: '#F3EFE7',
-    borderWidth: 1,
-    borderColor: '#E2D9CC',
+
+  /* The intentions */
+  goalsList: {
+    rowGap: 8,
   },
-  archiveNoticeText: {
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    lineHeight: 15,
-    letterSpacing: 1,
-    color: '#92887B',
+  goalCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    backgroundColor: '#FFFEFB',
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.30)',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    overflow: 'hidden',
+    position: 'relative',
+    shadowColor: GOLD,
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 1,
+  },
+  goalCardDone: {
+    backgroundColor: '#FDFBF3',
+    borderColor: 'rgba(197,160,89,0.42)',
+  },
+  goalCardArchived: {
+    backgroundColor: '#F9F6F0',
+    borderColor: '#E2DACB',
+    shadowOpacity: 0.03,
+  },
+  goalNumeral: {
+    fontFamily: F.serifMediumItalic,
+    fontSize: 12.5,
+    lineHeight: 16,
+    color: 'rgba(139,107,47,0.85)',
+    minWidth: 18,
     textAlign: 'center',
-    textTransform: 'uppercase',
+    flexShrink: 0,
+  },
+  goalNumeralDone: { color: '#C0B49B' },
+  goalNumeralArchived: { color: '#B3A996' },
+  readOnlyCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.7,
+    borderColor: '#CFC7BB',
+    backgroundColor: '#F8F5EF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  readOnlyCheckDone: {
+    borderColor: '#A79B88',
+    backgroundColor: '#A79B88',
+  },
+  goalText: {
+    fontFamily: F.serifMedium,
+    fontSize: 18,
+    lineHeight: 23.5,
+    color: INK,
+  },
+  goalTextArchived: { color: '#7D756B' },
+  deleteBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
 });

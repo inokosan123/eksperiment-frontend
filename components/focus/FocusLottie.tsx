@@ -1,7 +1,7 @@
 import { StyleProp, View, ViewStyle } from 'react-native';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 
-export type FocusAnimation = 'flame' | 'fire' | 'sandy' | 'sandy-work' | 'meru-book' | 'target';
+export type FocusAnimation = 'flame' | 'fire' | 'sandy' | 'sandy-work' | 'meru-book' | 'target' | 'confetti';
 
 const sources: Record<FocusAnimation, any> = {
   flame: require('@/assets/animations/flame.json'),
@@ -10,6 +10,7 @@ const sources: Record<FocusAnimation, any> = {
   'sandy-work': require('@/assets/animations/sandy-work.json'),
   'meru-book': require('@/assets/animations/meru-book.json'),
   target: require('@/assets/animations/target.json'),
+  confetti: require('@/assets/animations/onboarding-confetti.json'),
 };
 
 type ColorFilter = { keypath: string; color: string };

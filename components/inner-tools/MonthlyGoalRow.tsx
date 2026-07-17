@@ -15,6 +15,7 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import { CheckSmall } from '@/components/icons/Icons';
+import FocusLottie from '@/components/focus/FocusLottie';
 import { CompletionFlourish } from '@/components/shared/taskAnimations';
 import { playAchievementCompleteFeedback, playTaskUndoFeedback, preloadAchievementFeedbackSound } from '@/components/shared/taskFeedback';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
@@ -237,6 +238,37 @@ export function fireGoalToggleHaptic(willComplete: boolean) {
   } else {
     playTaskUndoFeedback();
   }
+}
+
+// A one-shot confetti burst over the goal card the moment it flips to done.
+// Mounts only for the burst (~1.6s) and unmounts — zero idle cost; goals are
+// checked a handful of times a month, so the decorative Lottie is fine here.
+export function GoalCompletionConfetti({ done }: { done: boolean }) {
+  const previousDone = useRef(done);
+  const [playKey, setPlayKey] = useState(0);
+
+  useEffect(() => {
+    const becameDone = !previousDone.current && done;
+    previousDone.current = done;
+    if (!becameDone) return;
+    setPlayKey(key => key + 1);
+    const timer = setTimeout(() => setPlayKey(0), 1600);
+    return () => clearTimeout(timer);
+  }, [done]);
+
+  if (playKey === 0) return null;
+
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <FocusLottie
+        key={playKey}
+        name="confetti"
+        loop={false}
+        speed={1.15}
+        style={StyleSheet.absoluteFill}
+      />
+    </View>
+  );
 }
 
 const s = StyleSheet.create({
