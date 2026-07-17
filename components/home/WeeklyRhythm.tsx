@@ -12,6 +12,7 @@ import Svg, { Circle, Ellipse, Line, Path } from 'react-native-svg';
 import Reanimated, {
   cancelAnimation,
   Easing,
+  interpolate,
   useAnimatedProps,
   useAnimatedStyle,
   useReducedMotion,
@@ -123,6 +124,56 @@ function Sparkle({
     </Reanimated.View>
   );
 }
+
+// A band of warm light that sweeps across the whole card every few
+// seconds — the glint grammar of the focus cards, in daylight.
+function CardGlint() {
+  const reduceMotion = useReducedMotion();
+  const [w, setW] = useState(0);
+  const t = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion || w === 0) return;
+    t.value = 0;
+    t.value = withRepeat(
+      withTiming(1, { duration: 7600, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      false,
+    );
+    return () => cancelAnimation(t);
+  }, [reduceMotion, w, t]);
+
+  const sweep = useAnimatedStyle(() => ({
+    opacity: interpolate(t.value, [0, 0.08, 0.3, 0.42, 1], [0, 0.85, 0.85, 0, 0]),
+    transform: [
+      { translateX: interpolate(t.value, [0, 0.42, 1], [-110, w + 60, w + 60]) },
+      { rotate: '14deg' },
+    ],
+  }));
+
+  return (
+    <View
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      onLayout={event => setW(event.nativeEvent.layout.width)}
+    >
+      {!reduceMotion && w > 0 && (
+        <Reanimated.View style={[cg.band, sweep]}>
+          <LinearGradient
+            colors={['rgba(255,251,235,0)', 'rgba(255,247,219,0.55)', 'rgba(255,251,235,0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ flex: 1 }}
+          />
+        </Reanimated.View>
+      )}
+    </View>
+  );
+}
+
+const cg = StyleSheet.create({
+  band: { position: 'absolute', top: -30, bottom: -30, width: 96 },
+});
 
 function DawnBackdrop() {
   const [box, setBox] = useState({ w: 0, h: 0 });
@@ -382,11 +433,12 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
   const reduceMotion = useReducedMotion();
   const quiet = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
   const full = !quiet && pct >= 100;
-  const field = 140;
+  const field = 150;
   const cx = field / 2;
-  const ringR = 40;
-  const rayInner = 45;
+  const ringR = 44;
+  const rayInner = 48;
   const breathe = useSharedValue(0);
+  const spin = useSharedValue(0);
 
   useEffect(() => {
     if (reduceMotion) {
@@ -399,11 +451,25 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
       -1,
       true,
     );
-    return () => cancelAnimation(breathe);
-  }, [breathe, reduceMotion]);
+    // The sun turns, imperceptibly slow — one revolution per minute.
+    spin.value = 0;
+    spin.value = withRepeat(
+      withTiming(1, { duration: 60000, easing: Easing.linear }),
+      -1,
+      false,
+    );
+    return () => {
+      cancelAnimation(breathe);
+      cancelAnimation(spin);
+    };
+  }, [breathe, reduceMotion, spin]);
 
   const outerGlowStyle = useAnimatedStyle(() => ({
     opacity: (quiet ? 0.3 : 0.5) + breathe.value * (quiet ? 0.15 : 0.4),
+  }));
+
+  const spinStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${spin.value * 360}deg` }],
   }));
 
   return (
@@ -413,41 +479,41 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
       <View pointerEvents="none" style={[rf.glowMid, quiet && rf.glowQuiet]} />
       <View pointerEvents="none" style={[rf.glowHeart, quiet && rf.glowHeartQuiet, full && rf.glowHeartFull]} />
 
-      <Svg
-        pointerEvents="none"
-        width={field}
-        height={field}
-        style={[rf.rays, quiet && rf.raysQuiet]}
-      >
-        {/* Hairline halo ring */}
+      {/* Hairline halo ring — steady while the rays turn */}
+      <Svg pointerEvents="none" width={field} height={field} style={[rf.rays, quiet && rf.raysQuiet]}>
         <Circle cx={cx} cy={cx} r={ringR} fill="none" stroke={GOLD} strokeOpacity={full ? 0.44 : 0.32} strokeWidth={1} />
-        {/* Ray burst — long/short alternating, like a struck medal.
-            On a finished day the sun stands at full strength. */}
-        {Array.from({ length: 12 }).map((_, index) => {
-          const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
-          const long = index % 2 === 0;
-          const r1 = rayInner;
-          const r2 = rayInner + (long ? (full ? 21 : 18) : (full ? 13 : 11));
-          return (
-            <Line
-              key={index}
-              x1={cx + r1 * Math.cos(angle)}
-              y1={cx + r1 * Math.sin(angle)}
-              x2={cx + r2 * Math.cos(angle)}
-              y2={cx + r2 * Math.sin(angle)}
-              stroke={GOLD}
-              strokeOpacity={long ? (full ? 0.64 : 0.52) : (full ? 0.4 : 0.3)}
-              strokeWidth={long ? 1.8 : 1.3}
-              strokeLinecap="round"
-            />
-          );
-        })}
       </Svg>
 
+      <Reanimated.View pointerEvents="none" style={[rf.rays, spinStyle, quiet && rf.raysQuiet]}>
+        <Svg width={field} height={field}>
+          {/* Ray burst — long/short alternating, like a struck medal.
+              On a finished day the sun stands at full strength. */}
+          {Array.from({ length: 12 }).map((_, index) => {
+            const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
+            const long = index % 2 === 0;
+            const r1 = rayInner;
+            const r2 = rayInner + (long ? (full ? 24 : 20) : (full ? 15 : 12));
+            return (
+              <Line
+                key={index}
+                x1={cx + r1 * Math.cos(angle)}
+                y1={cx + r1 * Math.sin(angle)}
+                x2={cx + r2 * Math.cos(angle)}
+                y2={cx + r2 * Math.sin(angle)}
+                stroke={GOLD}
+                strokeOpacity={long ? (full ? 0.64 : 0.52) : (full ? 0.4 : 0.3)}
+                strokeWidth={long ? 1.9 : 1.35}
+                strokeLinecap="round"
+              />
+            );
+          })}
+        </Svg>
+      </Reanimated.View>
+
       {/* Diamond glints in the sun's corners — a third joins on a full day */}
-      <View pointerEvents="none" style={[rf.glint, { right: 13, top: 15 }]} />
-      <View pointerEvents="none" style={[rf.glintSmall, { left: 17, bottom: 20 }]} />
-      {full && <View pointerEvents="none" style={[rf.glintSmall, { left: 13, top: 24 }]} />}
+      <View pointerEvents="none" style={[rf.glint, { right: 6, top: 10 }]} />
+      <View pointerEvents="none" style={[rf.glintSmall, { left: 10, bottom: 14 }]} />
+      {full && <View pointerEvents="none" style={[rf.glintSmall, { left: 6, top: 20 }]} />}
 
       <FocusLottie name="flame" loop speed={0.9} style={rf.flame} />
     </View>
@@ -457,29 +523,29 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
 const rf = StyleSheet.create({
   stage: {
     width: 104,
-    height: 100,
+    height: 108,
     alignItems: 'center',
     justifyContent: 'center',
   },
   glowOuter: {
     position: 'absolute',
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     backgroundColor: 'rgba(235,213,160,0.4)',
   },
   glowMid: {
     position: 'absolute',
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 74,
+    height: 74,
+    borderRadius: 37,
     backgroundColor: 'rgba(245,229,190,0.6)',
   },
   glowHeart: {
     position: 'absolute',
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     backgroundColor: 'rgba(255,248,228,0.95)',
   },
   glowQuiet: {
@@ -489,13 +555,17 @@ const rf = StyleSheet.create({
     backgroundColor: 'rgba(255,248,228,0.6)',
   },
   glowHeartFull: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     backgroundColor: 'rgba(255,250,232,1)',
   },
   rays: {
     position: 'absolute',
+    width: 150,
+    height: 150,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   raysQuiet: {
     opacity: 0.55,
@@ -516,7 +586,7 @@ const rf = StyleSheet.create({
     backgroundColor: 'rgba(197,160,89,0.5)',
     transform: [{ rotate: '45deg' }],
   },
-  flame: { width: 62, height: 62 },
+  flame: { width: 74, height: 74 },
 });
 
 /* ── Candle ───────────────────────────────────────────────── */
@@ -885,15 +955,21 @@ export default function WeeklyRhythm() {
     mode: 'no-tasks',
   }));
 
+  // The voice keeps pace with the day: reserved while little is done,
+  // warm in the middle, expectant near the top.
   const headline = todayMode === 'no-tasks'
     ? 'A quiet day — nothing scheduled.'
     : todayMode === 'all-skipped'
       ? 'Today was laid aside to rest.'
       : todayPct >= 100
         ? 'The candle is full — today’s flame is lit.'
-        : todayPct > 0
-          ? 'Today’s candle is filling. Keep going.'
-          : 'The day’s candle awaits its first task.';
+        : todayPct >= 70
+          ? 'Almost there — the flame is within reach.'
+          : todayPct >= 40
+            ? 'Good pace — the wax is rising steadily.'
+            : todayPct > 0
+              ? `Only ${todayPct}% so far — keep filling the candle.`
+              : 'The day’s candle awaits its first task.';
 
   return (
     <View style={s.wrap}>
@@ -916,6 +992,7 @@ export default function WeeklyRhythm() {
           style={StyleSheet.absoluteFill}
         />
         <DawnBackdrop />
+        <CardGlint />
 
         {/* Hero: today's percentage in the bloom, today's fire radiant */}
         <View style={s.heroRow}>
