@@ -15799,7 +15799,6 @@ function OrganizeMacroPlaqueCard({
   done: boolean;
 }) {
   const state = useSharedValue(done ? 2 : active ? 1 : 0);
-  const isGold = accent === GOLD;
 
   useEffect(() => {
     state.value = withSpring(done ? 2 : active ? 1 : 0, {
@@ -15816,11 +15815,11 @@ function OrganizeMacroPlaqueCard({
       { translateY: interpolate(state.value, [0, 1, 2], [0, -2, 0]) },
     ],
   }));
-  const displayAccent = done ? (isGold ? GOLD : '#2F9B61') : accent;
+  // Each step keeps its own colour for life — done deepens the wash, it
+  // never repaints the card (Big Events stays teal, goals stay gold).
+  const displayAccent = accent;
   const gradientColors = done
-    ? isGold
-      ? (['rgba(255,252,243,1)', 'rgba(197,160,89,0.30)', 'rgba(255,245,219,0.96)'] as const)
-      : (['rgba(250,255,251,1)', 'rgba(47,155,97,0.24)', 'rgba(245,252,246,0.96)'] as const)
+    ? ([`rgba(255,253,246,1)`, `${accent}30`, 'rgba(255,255,255,0.95)'] as const)
     : active
       ? (['rgba(255,255,255,1)', `${accent}16`, 'rgba(255,255,255,0.94)'] as const)
       : (['rgba(255,255,255,0.97)', `${accent}0C`, 'rgba(255,255,255,0.88)'] as const);
@@ -16066,7 +16065,7 @@ function OrganizeMacroProgressSlide({
     s.organizeRuleContent,
     {
       flexGrow: 1,
-      paddingTop: Math.max(insets.top + 26, 52),
+      paddingTop: Math.max(insets.top + 34, 60),
       paddingBottom: insets.bottom + 134,
     },
   ];
@@ -29928,7 +29927,7 @@ const s = StyleSheet.create({
     width: '100%',
   },
   organizeMacroRowGap: {
-    marginTop: 24,
+    marginTop: 32,
   },
   organizeMacroSealAnchor: {
     position: 'absolute',
@@ -29937,16 +29936,16 @@ const s = StyleSheet.create({
   },
   organizeMacroPlaque: {
     width: '100%',
-    borderRadius: 23,
-    paddingLeft: 33,
-    paddingRight: 15,
-    paddingVertical: 15,
+    borderRadius: 24,
+    paddingLeft: 34,
+    paddingRight: 16,
+    paddingVertical: 19,
     overflow: 'hidden',
     backgroundColor: '#FFFDF8',
     borderWidth: 1.5,
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 12,
+    columnGap: 14,
     shadowColor: '#5E5142',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.09,
@@ -29956,18 +29955,18 @@ const s = StyleSheet.create({
   organizeMacroPlaqueCopy: {
     flex: 1,
     minWidth: 0,
-    rowGap: 4,
+    rowGap: 5,
   },
   organizeMacroPlaqueTitle: {
     fontFamily: F.serifBold,
-    fontSize: 21,
-    lineHeight: 25,
+    fontSize: 21.5,
+    lineHeight: 26,
     color: INK,
   },
   organizeMacroPlaqueBody: {
     fontFamily: F.serifMedium,
     fontSize: 14.5,
-    lineHeight: 19.5,
+    lineHeight: 20,
     color: 'rgba(25,23,20,0.6)',
   },
   organizeLayerThreadWrap: {
