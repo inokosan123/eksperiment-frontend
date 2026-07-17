@@ -16291,6 +16291,9 @@ function OrganizeMacroProgressSlide({
   const mergeT = useSharedValue(0);
   const seatT = useSharedValue(0);
   const weeklyPour = useSharedValue(0);
+  // During the fusion the stage clears: the header steps off while the
+  // cards join, and the new chapter's header returns with the page turn.
+  const headerOut = useSharedValue(0);
   const ctaLockRef = useRef(false);
   const contentStyle = [
     s.organizeRuleContent,
@@ -16322,6 +16325,13 @@ function OrganizeMacroProgressSlide({
       { scale: interpolate(exitProgress.value, [0, 1], [1, 0.985]) },
     ],
   }));
+  const headerStageStyle = useAnimatedStyle(() => ({
+    opacity: (1 - headerOut.value) * interpolate(exitProgress.value, [0, 1], [1, 0]),
+    transform: [
+      { translateY: headerOut.value * -16 + interpolate(exitProgress.value, [0, 1], [0, -22]) },
+      { scale: interpolate(exitProgress.value, [0, 1], [1, 0.985]) },
+    ],
+  }));
 
   useEffect(() => {
     setChecked(false);
@@ -16331,6 +16341,7 @@ function OrganizeMacroProgressSlide({
     mergeT.value = 0;
     seatT.value = 0;
     weeklyPour.value = 0;
+    headerOut.value = 0;
     ctaLockRef.current = false;
     const timer = setTimeout(() => {
       setChecked(true);
@@ -16338,7 +16349,7 @@ function OrganizeMacroProgressSlide({
       void playTaskCheckSoundOnly();
     }, 720);
     return () => clearTimeout(timer);
-  }, [exitProgress, mergeT, progressPour, seatT, variant, weeklyPour]);
+  }, [exitProgress, headerOut, mergeT, progressPour, seatT, variant, weeklyPour]);
 
   // The strike pours the gold onward to the next step.
   useEffect(() => {
@@ -16360,6 +16371,7 @@ function OrganizeMacroProgressSlide({
       setFusionStage(1);
       runStrongHaptic();
       mergeT.value = withTiming(1, { duration: 820, easing: Easing.bezier(0.3, 0, 0.3, 1) });
+      headerOut.value = withTiming(1, { duration: 380, easing: Easing.in(Easing.cubic) });
     }, 1250));
     timers.push(setTimeout(() => {
       setFusionStage(2);
@@ -16367,6 +16379,7 @@ function OrganizeMacroProgressSlide({
       void playTaskCheckSoundOnly();
     }, 2130));
     timers.push(setTimeout(() => {
+      headerOut.value = 0;
       setFusionStage(3);
       runBubbleHaptic();
       seatT.value = withTiming(1, { duration: 640, easing: Easing.bezier(0.16, 1, 0.28, 1) });
@@ -16376,7 +16389,7 @@ function OrganizeMacroProgressSlide({
       weeklyPour.value = withTiming(1, { duration: 760, easing: Easing.bezier(0.3, 0, 0.4, 1) });
     }, 3620));
     return () => timers.forEach(clearTimeout);
-  }, [checked, mergeT, seatT, variant, weeklyPour]);
+  }, [checked, headerOut, mergeT, seatT, variant, weeklyPour]);
 
   useEffect(() => {
     if (!macroComplete) return undefined;
@@ -16405,7 +16418,7 @@ function OrganizeMacroProgressSlide({
             chapter — the old header unmounts in the same frame, no overlap. */}
         <Reanimated.View
           key={variant === 'afterMonthlyGoals' ? (fusionStage >= 3 ? 'layer' : 'step2') : macroComplete ? 'complete' : variant}
-          style={exitStyle}
+          style={headerStageStyle}
         >
           <OrganizeLayersCharterHeader
             eyebrow={
