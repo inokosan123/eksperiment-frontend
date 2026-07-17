@@ -372,6 +372,12 @@ const ONBOARDING_DEV_JUMP_ENABLED = __DEV__;
 // bar). OFF for the main flow — the sequence opens directly on the YOU
 // WASTE beats; flip ON to restore the full panorama first screen.
 const DAY_PANORAMA_INTRO_ENABLED = false;
+// A/B switch: the "you get back" tail (take-back-time chart + gold reclaim
+// cards). OFF for the main flow — we make the YOU WASTE point, then the
+// summary closes with "Let's fix this" straight into the setup. We have no
+// real reclaim data; claiming specific returns would be a lie, and rivals
+// (Opal etc.) already burned that trick.
+const DAY_RECLAIM_SCREENS_ENABLED = false;
 const APP_LOGO = require('@/assets/images/anasta-logo.png');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const CONFETTI_SOURCE = require('@/assets/animations/onboarding-confetti.lottie');
@@ -7569,17 +7575,8 @@ function DayWasteRevealLayer({
   const swapDir = useSharedValue(0);
   const steps = useMemo<DayWasteRevealStep[]>(
     () => [
-      {
-        key: 'productive-day',
-        target: stat.usablePercent,
-        decimals: 0,
-        unit: '%',
-        lineOne: 'of your',
-        lineTwo: 'productive time',
-        lineThree: 'on your phone',
-        countMs: 2250,
-        holdMs: 2250,
-      },
+      // Days first, then years — the visceral, instantly readable losses —
+      // and the abstract percent closes as the verdict.
       {
         key: 'yearly-days',
         target: stat.yearlyDays,
@@ -7588,8 +7585,8 @@ function DayWasteRevealLayer({
         lineOne: 'full days',
         lineTwo: 'every year',
         lineThree: 'on your phone',
-        countMs: 1950,
-        holdMs: 1700,
+        countMs: 2250,
+        holdMs: 2250,
       },
       {
         key: 'lifetime-years',
@@ -7598,6 +7595,17 @@ function DayWasteRevealLayer({
         unit: 'years',
         lineOne: 'across',
         lineTwo: 'an average life',
+        lineThree: 'on your phone',
+        countMs: 1950,
+        holdMs: 1700,
+      },
+      {
+        key: 'productive-day',
+        target: stat.usablePercent,
+        decimals: 0,
+        unit: '%',
+        lineOne: 'of your',
+        lineTwo: 'productive time',
         lineThree: 'on your phone',
         countMs: 1950,
         holdMs: 1850,
@@ -13156,6 +13164,11 @@ function V4DayPanoramaHeaderSlide({
       return;
     }
     if (phase === 'wasteCompare') {
+      if (!DAY_RECLAIM_SCREENS_ENABLED) {
+        // The point is made — straight from the summary into the setup.
+        onNext();
+        return;
+      }
       runSelectionHaptic();
       setReductionBridgeReady(false);
       setReductionBridgeTransitioning(false);
@@ -13186,7 +13199,11 @@ function V4DayPanoramaHeaderSlide({
     setReclaimCompareFromBridge(true);
     setPhase('reclaimCompare');
   }, []);
-  const dayCtaLabel = phase === 'pie' ? 'Calculate my productive time' : phase === 'reclaimCompare' ? "Let's fix this" : 'Continue';
+  const dayCtaLabel = phase === 'pie'
+    ? 'Calculate my productive time'
+    : phase === 'reclaimCompare' || (phase === 'wasteCompare' && !DAY_RECLAIM_SCREENS_ENABLED)
+      ? "Let's fix this"
+      : 'Continue';
   const dayCtaActive =
     phase === 'pieExit'
       ? false
@@ -13562,9 +13579,9 @@ function V4DayPanoramaHeaderSlide({
           >
             {phase === 'wasteCompare' ? (
               <>
-                {compareReveal >= 1 && <DayComparePercentCard stat={stat} side="left" />}
-                {compareReveal >= 2 && <DayCompareDaysCard stat={stat} side="right" />}
-                {compareReveal >= 3 && <DayCompareYearsCard stat={stat} side="left" />}
+                {compareReveal >= 1 && <DayCompareDaysCard stat={stat} side="left" />}
+                {compareReveal >= 2 && <DayCompareYearsCard stat={stat} side="right" />}
+                {compareReveal >= 3 && <DayComparePercentCard stat={stat} side="left" />}
               </>
             ) : (
               <>
