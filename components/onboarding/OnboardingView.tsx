@@ -7488,12 +7488,14 @@ function DayWasteCountingNumber({
 }) {
   const [value, setValue] = useState(0);
   const settledRef = useRef(false);
+  const pop = useSharedValue(1);
 
   useEffect(() => {
     let frame = 0;
     const startedAt = Date.now();
     settledRef.current = false;
     setValue(0);
+    pop.value = 1;
 
     const tick = () => {
       const elapsed = Date.now() - startedAt;
@@ -7509,18 +7511,27 @@ function DayWasteCountingNumber({
 
       if (!settledRef.current) {
         settledRef.current = true;
+        // The digits themselves take the hit: a short swell and settle.
+        pop.value = withSequence(
+          withTiming(1.05, { duration: 120, easing: Easing.out(Easing.quad) }),
+          withSpring(1, { damping: 13, stiffness: 260 }),
+        );
         onSettled();
       }
     };
 
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [decimals, duration, onSettled, stepKey, target]);
+  }, [decimals, duration, onSettled, pop, stepKey, target]);
+
+  const popStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pop.value }],
+  }));
 
   return (
-    <Text style={[s.dayWasteRevealNumber, emphasized && s.dayWasteRevealNumberPercent, compact && s.dayWasteRevealNumberCompact, compact && decimals > 0 && s.dayWasteRevealNumberDecimalCompact]}>
+    <Reanimated.Text style={[s.dayWasteRevealNumber, emphasized && s.dayWasteRevealNumberPercent, compact && s.dayWasteRevealNumberCompact, compact && decimals > 0 && s.dayWasteRevealNumberDecimalCompact, popStyle]}>
       {decimals > 0 ? value.toFixed(decimals) : Math.round(value)}
-    </Text>
+    </Reanimated.Text>
   );
 }
 
@@ -7610,9 +7621,13 @@ function DayWasteRevealLayer({
       withTiming(3, { duration: 130, easing: Easing.out(Easing.quad) }),
       withSpring(0, { damping: 14, stiffness: 280 }),
     );
+    // A heartbeat: flare — dip — second beat — die out completely, so the
+    // stage is clean before the next figure arrives.
     ember.value = withSequence(
-      withTiming(1, { duration: 340, easing: Easing.out(Easing.cubic) }),
-      withTiming(0.4, { duration: 980, easing: Easing.inOut(Easing.quad) }),
+      withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) }),
+      withTiming(0.58, { duration: 240, easing: Easing.inOut(Easing.quad) }),
+      withTiming(0.92, { duration: 240, easing: Easing.inOut(Easing.quad) }),
+      withTiming(0, { duration: 480, easing: Easing.in(Easing.quad) }),
     );
     waitTimerRef.current = setTimeout(() => {
       if (stepIndex >= steps.length - 1) {
@@ -7701,11 +7716,11 @@ function DayWasteRevealLayer({
 
         <Reanimated.View
           key={step.key}
-          entering={FadeInUp.delay(150).duration(720).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+          entering={FadeInUp.delay(110).duration(700).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
             opacity: 0,
             transform: [{ translateY: 56 }, { scale: 0.955 }],
           })}
-          exiting={FadeOutUp.duration(340).easing(Easing.in(Easing.cubic))}
+          exiting={FadeOutUp.duration(300).easing(Easing.in(Easing.cubic))}
           style={[s.dayWasteRevealBody, step.unit === 'years' && s.dayWasteRevealBodyYears, closeStyle]}
         >
           <View style={s.dayWasteRevealNumberRow}>
@@ -13423,6 +13438,11 @@ function V4DayPanoramaHeaderSlide({
 
       </View>
       )}
+
+      {/* With the panorama off there is no flow content above the CTA; this
+          spacer keeps space-between honest so the button stays at the foot
+          of the screen while the phase layers float above it. */}
+      {!DAY_PANORAMA_INTRO_ENABLED && <View pointerEvents="none" style={{ flex: 1 }} />}
 
       {phase === 'wasteReveal' && (
         <DayWasteRevealLayer
@@ -27203,8 +27223,8 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 22,
-    paddingTop: 18,
-    paddingBottom: 18,
+    paddingTop: 6,
+    paddingBottom: 34,
   },
   dayWasteRevealBodyYears: {
     transform: [{ translateY: 0 }],
@@ -27273,7 +27293,7 @@ const s = StyleSheet.create({
     transform: [{ rotate: '-7deg' }, { translateX: -2 }, { translateY: 9 }],
   },
   dayWasteRevealWords: {
-    marginTop: -18,
+    marginTop: -6,
     minHeight: 112,
     alignItems: 'center',
     justifyContent: 'center',
