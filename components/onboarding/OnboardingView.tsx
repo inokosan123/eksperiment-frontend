@@ -15933,10 +15933,9 @@ function OrganizeMacroIntroSlide({ onNext }: { onNext: () => void }) {
   const ctaLockRef = useRef(false);
   const contentStyle = [
     s.organizeRuleContent,
-    s.organizeMacroIntroContent,
     {
       flexGrow: 1,
-      paddingTop: Math.max(insets.top + 34, 60),
+      paddingTop: Math.max(insets.top + 54, 80),
       paddingBottom: insets.bottom + 134,
     },
   ];
@@ -15985,7 +15984,7 @@ function OrganizeMacroIntroSlide({ onNext }: { onNext: () => void }) {
           />
         </Reanimated.View>
 
-        <Reanimated.View style={[s.setupPathBoard, s.organizeMacroIntroBoard, s.organizeMacroIntroBoardTight, exitStyle]}>
+        <Reanimated.View style={[s.setupPathBoard, s.organizeMacroBoardSeat, exitStyle]}>
           <OrganizeMacroBoard
             pour={pour}
             rowsReady={activeReady}
@@ -16065,7 +16064,7 @@ function OrganizeMacroProgressSlide({
     s.organizeRuleContent,
     {
       flexGrow: 1,
-      paddingTop: Math.max(insets.top + 34, 60),
+      paddingTop: Math.max(insets.top + 54, 80),
       paddingBottom: insets.bottom + 134,
     },
   ];
@@ -16154,7 +16153,7 @@ function OrganizeMacroProgressSlide({
           />
         </Reanimated.View>
 
-        <Reanimated.View style={[s.setupPathBoard, s.organizeMacroIntroBoard, exitStyle]}>
+        <Reanimated.View style={[s.setupPathBoard, s.organizeMacroBoardSeat, exitStyle]}>
           <OrganizeMacroBoard
             pour={progressPour}
             steps={[
@@ -29927,7 +29926,12 @@ const s = StyleSheet.create({
     width: '100%',
   },
   organizeMacroRowGap: {
-    marginTop: 32,
+    marginTop: 46,
+  },
+  // The macro boards sit right under the header (no free-space centring —
+  // with only two cards it opened a dead gulf between title and board).
+  organizeMacroBoardSeat: {
+    marginTop: 2,
   },
   organizeMacroSealAnchor: {
     position: 'absolute',
