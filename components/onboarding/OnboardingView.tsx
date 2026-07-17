@@ -12935,6 +12935,7 @@ function V4DayPanoramaHeaderSlide({
   const [reductionBridgeTransitioning, setReductionBridgeTransitioning] = useState(false);
   const [reductionBridgeExitSignal, setReductionBridgeExitSignal] = useState(0);
   const wasteCompareFromRevealRef = useRef(false);
+  const compareScrollRef = useRef<ScrollView>(null);
   const morph = useSharedValue(0);
   const screen2 = useSharedValue(DAY_PANORAMA_INTRO_ENABLED ? 0 : 1);
   const dim = useSharedValue(0);
@@ -13013,6 +13014,14 @@ function V4DayPanoramaHeaderSlide({
   useEffect(() => {
     if (phase === 'pie' || phase === 'pieExit' || phase === 'wasteReveal' || phase === 'reductionBridge') return undefined;
     const timers: ReturnType<typeof setTimeout>[] = [];
+    // The page follows the story: as each card lands below the fold, the
+    // list glides down to present it, so the reader never has to chase.
+    const followCard = (index: number, delay: number) => {
+      if (index === 0) return;
+      timers.push(setTimeout(() => {
+        compareScrollRef.current?.scrollToEnd({ animated: true });
+      }, delay + 430));
+    };
     if (phase === 'wasteCompare') {
       setCompareReveal(0);
       const revealDelays = wasteCompareFromRevealRef.current ? [920, 1680, 2440] : [620, 1420, 2220];
@@ -13021,6 +13030,7 @@ function V4DayPanoramaHeaderSlide({
           runBubbleHaptic();
           setCompareReveal(index + 1);
         }, delay));
+        followCard(index, delay);
       });
     }
     if (phase === 'reclaimCompare') {
@@ -13030,9 +13040,11 @@ function V4DayPanoramaHeaderSlide({
           runBubbleHaptic();
           setCompareReveal(index + 1);
         }, delay));
+        followCard(index, delay);
       });
     }
     return () => timers.forEach(timer => clearTimeout(timer));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
   useEffect(() => {
@@ -13544,8 +13556,8 @@ function V4DayPanoramaHeaderSlide({
             fromBridge={phase === 'reclaimCompare' && reclaimCompareFromBridge}
           />
           <ScrollView
+            ref={compareScrollRef}
             showsVerticalScrollIndicator={false}
-            bounces={false}
             contentContainerStyle={s.dayCompareCards}
           >
             {phase === 'wasteCompare' ? (
@@ -26614,10 +26626,10 @@ const s = StyleSheet.create({
     width: '100%',
     maxWidth: 398,
     alignSelf: 'center',
-    rowGap: 6,
+    rowGap: 10,
     paddingHorizontal: 8,
-    paddingTop: 6,
-    paddingBottom: 118,
+    paddingTop: 10,
+    paddingBottom: 128,
   },
   dayReductionBridgeLayer: {
     ...StyleSheet.absoluteFillObject,
