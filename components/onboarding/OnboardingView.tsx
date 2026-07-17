@@ -18385,15 +18385,33 @@ function WeeklyEvidenceResultChart({
     reveal.value = active
       ? withTiming(1, { duration: 980, easing: Easing.bezier(0.16, 1, 0.28, 1) })
       : withTiming(0, { duration: 140, easing: Easing.out(Easing.cubic) });
+    if (!active) return undefined;
+    // A quiet tap the moment the line lands on its result.
+    const landTimer = setTimeout(runBubbleHaptic, 900);
+    return () => clearTimeout(landTimer);
   }, [active, reveal]);
 
   const chartRevealStyle = useAnimatedStyle(() => ({
     opacity: interpolate(reveal.value, [0, 0.18, 1], [0, 1, 1], 'clamp'),
     width: `${interpolate(reveal.value, [0.08, 0.92], [0, 100], 'clamp')}%`,
   }));
+  // The wash blooms a step behind the line — the stroke leads, the area
+  // fills in its wake.
+  const areaBloomStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(reveal.value, [0.3, 0.88], [0, 1], 'clamp'),
+  }));
   const endpointStyle = useAnimatedStyle(() => ({
     opacity: interpolate(reveal.value, [0.72, 1], [0, 1], 'clamp'),
     transform: [{ scale: interpolate(reveal.value, [0.72, 0.9, 1], [0.72, 1.16, 1], 'clamp') }],
+  }));
+  // The result pill arrives WITH the line: it rises and settles as the
+  // stroke reaches its endpoint.
+  const resultPillStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(reveal.value, [0.7, 0.94], [0, 1], 'clamp'),
+    transform: [
+      { translateY: interpolate(reveal.value, [0.7, 1], [9, 0], 'clamp') },
+      { scale: interpolate(reveal.value, [0.7, 0.92, 1], [0.9, 1.05, 1], 'clamp') },
+    ],
   }));
 
   return (
@@ -18408,8 +18426,12 @@ function WeeklyEvidenceResultChart({
         </Svg>
 
         <Reanimated.View style={[s.weeklyResultRevealFull, chartRevealStyle]}>
+          <Reanimated.View style={[StyleSheet.absoluteFillObject, areaBloomStyle]}>
+            <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg}>
+              <SvgPath d={areaPath} fill={`${card.accent}16`} />
+            </Svg>
+          </Reanimated.View>
           <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg}>
-            <SvgPath d={areaPath} fill={`${card.accent}16`} />
             <SvgPath d={resultPath} stroke={`${card.accent}22`} strokeWidth={16} fill="none" strokeLinecap="round" />
             <SvgPath d={resultPath} stroke={card.accent} strokeWidth={5.2} fill="none" strokeLinecap="round" />
           </Svg>
@@ -18432,9 +18454,9 @@ function WeeklyEvidenceResultChart({
         <View style={[s.weeklyChartValuePill, s.weeklyChartValuePillBaseline, { left: left - 2, top: startLabelTop }]}>
           <Text style={s.weeklyChartValueTextMuted}>{card.baselinePercent}%</Text>
         </View>
-        <View style={[s.weeklyChartValuePill, { right: 0, top: resultLabelTop, borderColor: `${card.accent}2F`, backgroundColor: '#FFFFFF' }]}>
+        <Reanimated.View style={[s.weeklyChartValuePill, { right: 0, top: resultLabelTop, borderColor: `${card.accent}2F`, backgroundColor: '#FFFFFF' }, resultPillStyle]}>
           <Text style={[s.weeklyChartValueText, { color: card.accent }]}>{card.resultPercent}%</Text>
-        </View>
+        </Reanimated.View>
 
         <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg} pointerEvents="none">
           <G>
