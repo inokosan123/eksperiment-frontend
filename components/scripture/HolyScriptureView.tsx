@@ -282,21 +282,27 @@ export default function HolyScriptureView() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 110 }]}
       >
-        {/* Quick access — 2-col grid */}
+        {/* Quick access — the reader's doors: haloed icons on parchment */}
         <View style={s.quickGrid}>
           <TouchableOpacity onPress={() => router.push('/favorites')} activeOpacity={0.86} style={[s.quickCard, s.quickCardGold]}>
+            <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(197,160,89,0.16)' }]} />
             <View style={s.quickCardRow}>
-              <View style={[s.quickIcon, { backgroundColor: 'rgba(197,160,89,0.12)' }]}>
-                <Star s={15} c={GOLD} />
+              <View style={[s.haloRing, { borderColor: 'rgba(197,160,89,0.38)' }]}>
+                <View style={[s.haloCore, { backgroundColor: 'rgba(197,160,89,0.10)' }]}>
+                  <Star s={14} c={GOLD} />
+                </View>
               </View>
               <Text style={s.quickLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.88}>Favorites</Text>
             </View>
             <Text style={s.quickDesc}>Highlights & saved passages</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/bible-notes')} activeOpacity={0.86} style={[s.quickCard, s.quickCardGreen]}>
+            <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(94,123,85,0.15)' }]} />
             <View style={s.quickCardRow}>
-              <View style={[s.quickIcon, { backgroundColor: 'rgba(94,123,85,0.12)' }]}>
-                <Notebook s={14} c={GREEN} />
+              <View style={[s.haloRing, { borderColor: 'rgba(94,123,85,0.36)' }]}>
+                <View style={[s.haloCore, { backgroundColor: 'rgba(94,123,85,0.10)' }]}>
+                  <Notebook s={13} c={GREEN} />
+                </View>
               </View>
               <Text style={s.quickLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.88}>Bible Notes</Text>
             </View>
@@ -304,7 +310,7 @@ export default function HolyScriptureView() {
           </TouchableOpacity>
         </View>
 
-        {/* Set as Daily Task — compact row */}
+        {/* Checkpoints — the reading's bookmark */}
         <TouchableOpacity
           onPress={() => router.push({
             pathname: '/scripture-checkpoint',
@@ -313,8 +319,11 @@ export default function HolyScriptureView() {
           activeOpacity={0.86}
           style={s.checkpointCard}
         >
-          <View style={s.checkpointIcon}>
-            <Book s={17} c={GOLD} w={2.1} />
+          <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(197,160,89,0.16)' }]} />
+          <View style={[s.haloRing, { borderColor: 'rgba(197,160,89,0.38)' }]}>
+            <View style={[s.haloCore, { backgroundColor: 'rgba(197,160,89,0.10)' }]}>
+              <Book s={15} c={GOLD} w={2.1} />
+            </View>
           </View>
           <View style={s.checkpointTextWrap}>
             <Text style={s.checkpointTitle} numberOfLines={1}>Checkpoints</Text>
@@ -570,6 +579,8 @@ function PremiumBookCard({
 }) {
   const isGreen = tone === 'green';
   const subtitle = book.testament === 'dc' ? 'DEUTEROCANON' : title.toUpperCase();
+  // The illuminated initial: the book's opening glyph set as a drop cap.
+  const initial = book.name.charAt(0);
 
   return (
     <TouchableOpacity
@@ -586,6 +597,16 @@ function PremiumBookCard({
         expanded && s.premiumBookExpanded,
       ]}
     >
+      <View
+        style={[
+          s.initialSeat,
+          isGreen
+            ? { backgroundColor: '#F5FAF1', borderColor: '#D6E3CF' }
+            : { backgroundColor: '#FBF6EC', borderColor: '#E6DCC6' },
+        ]}
+      >
+        <Text style={[s.initialGlyph, { color: isGreen ? '#41603A' : '#7A5F2E' }]}>{initial}</Text>
+      </View>
       <View style={s.bookCopy}>
         <Text style={s.bookName}>{book.name}</Text>
         <View style={s.bookMetaRow}>
@@ -621,11 +642,13 @@ function ChapterPanel({
         { borderColor: isGreen ? '#DCE5D7' : '#E8E1D5' },
       ]}
     >
-      <View style={s.chapterPanelHead}>
-        <Text style={s.chapterPanelLabel}>SELECT CHAPTER</Text>
-        <View style={[s.chapterCountChip, { borderColor: isGreen ? '#D7E1D2' : '#E8E0D3' }]}>
-          <Text style={[s.chapterCountText, { color: isGreen ? '#728569' : '#A89069' }]}>{book.chapters}</Text>
-        </View>
+      {/* Engraved head: rule — CHAPTERS · N — rule */}
+      <View style={s.chapterHeadRow}>
+        <View style={[s.chapterHeadRule, { backgroundColor: isGreen ? 'rgba(94,123,85,0.24)' : 'rgba(180,155,103,0.28)' }]} />
+        <Text style={[s.chapterHeadText, { color: isGreen ? '#72876A' : '#A89069' }]}>
+          CHAPTERS · {book.chapters}
+        </Text>
+        <View style={[s.chapterHeadRule, { backgroundColor: isGreen ? 'rgba(94,123,85,0.24)' : 'rgba(180,155,103,0.28)' }]} />
       </View>
 
       <View style={s.chapterGrid}>
@@ -646,7 +669,7 @@ function ChapterPanel({
                     s.chapterCell,
                     {
                       borderColor: isGreen ? '#D8E6D2' : '#E4DDD4',
-                      backgroundColor: '#FFFFFF',
+                      backgroundColor: '#FFFEFB',
                     },
                   ]}
                 >
@@ -693,7 +716,7 @@ function PsalterBrowse({
                       key={psalm}
                       onPress={() => onPsalm(psalm)}
                       activeOpacity={0.78}
-                      style={[s.chapterCell, { borderColor: '#E8DECD', backgroundColor: '#FFFFFF' }]}
+                      style={[s.chapterCell, { borderColor: '#E8DECD', backgroundColor: '#FFFEFB' }]}
                     >
                       <Text style={[s.chapterCellText, { color: '#6F5E41' }]}>{psalm}</Text>
                     </TouchableOpacity>
@@ -861,10 +884,34 @@ const s = StyleSheet.create({
   },
   quickCardGold: { backgroundColor: '#FFFDF8', borderColor: 'rgba(197,160,89,0.26)' },
   quickCardGreen: { backgroundColor: '#FBFDF8', borderColor: 'rgba(94,123,85,0.20)' },
-  quickCardRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  quickIcon: { width: 32, height: 32, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  quickFrame: {
+    position: 'absolute',
+    top: 5,
+    left: 5,
+    right: 5,
+    bottom: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  quickCardRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  haloRing: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  haloCore: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   quickLabel: { fontFamily: F.serifMedium, fontSize: 16, lineHeight: 19, color: '#2B2723', flex: 1 },
-  quickDesc: { fontFamily: F.serif, fontSize: 12.5, lineHeight: 16, color: '#9F9890' },
+  quickDesc: { fontFamily: F.serifItalic, fontSize: 12.5, lineHeight: 16, color: '#A29A8C' },
   checkpointCard: {
     minHeight: 62,
     borderRadius: 19,
@@ -882,9 +929,8 @@ const s = StyleSheet.create({
     shadowRadius: 14,
     elevation: 1,
   },
-  checkpointIcon: { width: 34, height: 34, borderRadius: 15, backgroundColor: 'rgba(197,160,89,0.12)', alignItems: 'center', justifyContent: 'center' },
   checkpointTextWrap: { flex: 1, minWidth: 0 },
-  checkpointKicker: { marginTop: 2, fontFamily: F.serif, fontSize: 12.5, lineHeight: 16, color: '#9F9890' },
+  checkpointKicker: { marginTop: 2, fontFamily: F.serifItalic, fontSize: 12.5, lineHeight: 16, color: '#A29A8C' },
   checkpointTitle: { fontFamily: F.serifMedium, fontSize: 16, lineHeight: 20, color: '#2B2723' },
   selectorPanel: { gap: 10 },
   segmented: {
@@ -1042,8 +1088,23 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowRadius: 20,
   },
+  initialSeat: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  initialGlyph: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 20,
+    lineHeight: 24,
+    includeFontPadding: false,
+  },
   bookCopy: { flex: 1, minWidth: 0 },
-  bookName: { fontFamily: F.serif, fontSize: 21, lineHeight: 25, color: '#2F2B27' },
+  bookName: { fontFamily: F.serif, fontSize: 20, lineHeight: 24, color: '#2F2B27' },
   bookMetaRow: { marginTop: 3, flexDirection: 'row', alignItems: 'center', gap: 7 },
   bookMeta: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.5 },
   bookMetaDot: { fontFamily: F.sansBold, fontSize: 11, color: '#D5D0C9' },
@@ -1066,24 +1127,23 @@ const s = StyleSheet.create({
     shadowRadius: 24,
     elevation: 1,
   },
-  chapterPanelHead: {
-    marginBottom: 12,
+  chapterHeadRow: {
+    marginBottom: 13,
     paddingHorizontal: 2,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    columnGap: 10,
   },
-  chapterPanelLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.1, color: '#D1D5DB' },
-  chapterCountChip: {
-    minWidth: 34,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.90)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  chapterHeadRule: {
+    flex: 1,
+    height: 1,
   },
-  chapterCountText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4 },
+  chapterHeadText: {
+    fontFamily: F.sansBold,
+    fontSize: 8.5,
+    lineHeight: 11,
+    letterSpacing: 2,
+  },
   chapterGrid: {
     gap: 9,
   },
@@ -1094,7 +1154,7 @@ const s = StyleSheet.create({
   chapterCell: {
     flex: 1,
     minHeight: 44,
-    borderRadius: 13,
+    borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
