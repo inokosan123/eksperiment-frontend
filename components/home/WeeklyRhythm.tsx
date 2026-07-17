@@ -12,6 +12,7 @@ import Svg, { Circle, Ellipse, Line, Path } from 'react-native-svg';
 import Reanimated, {
   cancelAnimation,
   Easing,
+  useAnimatedProps,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -31,6 +32,8 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 
 
 const FLAME_PNG = require('@/assets/images/streak-flame-512.png');
+
+const AnimatedPath = Reanimated.createAnimatedComponent(Path);
 
 const TILE_SIZE = 32;
 const ICON_SIZE = 20;
@@ -163,8 +166,10 @@ function DawnBackdrop() {
 }
 
 /* ── Today medallion ──────────────────────────────────────── */
-// The trophy streak's layered-ellipse bloom, carrying today's percentage:
-// the number sits in the brightest pool of a hand-set wash of golds.
+// The layered-ellipse bloom carrying today's percentage in its brightest
+// pool — but unlike the trophy's purely ornamental engraving, the curve
+// beneath the number here is alive: a hairline track that fills with
+// gold to today's progress, sweeping when the day moves.
 function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
   const size = 74;
   const quiet = mode === 'no-tasks' || mode === 'all-skipped';
@@ -177,6 +182,22 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
   const ornamentSpacing = size * 0.16;
   const width = size * 2.08 + digitExpansion + ornamentSpacing;
   const height = size * 0.92;
+
+  // Progress arc: dash length approximates the bezier's arc length.
+  const arcLen = width * 0.92;
+  const frac = quiet ? 0 : clamped / 100;
+  const arcProgress = useSharedValue(0);
+
+  useEffect(() => {
+    arcProgress.value = withDelay(250, withTiming(frac, {
+      duration: 700,
+      easing: Easing.out(Easing.cubic),
+    }));
+  }, [arcProgress, frac]);
+
+  const arcProps = useAnimatedProps(() => ({
+    strokeDashoffset: arcLen * (1 - arcProgress.value),
+  }));
 
   return (
     <View style={{ width, height }}>
@@ -219,9 +240,19 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           d={`M ${size * 0.13 + width * 0.07} ${height * 0.82} C ${width * 0.43} ${height * 1.01}, ${width * 0.76} ${height * 0.97}, ${width * 1.0} ${height * 0.64}`}
           fill="none"
           stroke={GOLD}
-          strokeOpacity={0.3}
-          strokeWidth={1.15}
+          strokeOpacity={0.18}
+          strokeWidth={1.5}
           strokeLinecap="round"
+        />
+        <AnimatedPath
+          d={`M ${size * 0.13 + width * 0.07} ${height * 0.82} C ${width * 0.43} ${height * 1.01}, ${width * 0.76} ${height * 0.97}, ${width * 1.0} ${height * 0.64}`}
+          fill="none"
+          stroke={GOLD}
+          strokeOpacity={0.9}
+          strokeWidth={1.6}
+          strokeLinecap="round"
+          strokeDasharray={`${arcLen} ${arcLen}`}
+          animatedProps={arcProps}
         />
         <Line
           x1={size * 0.92 + digitExpansion + width * 0.07}
@@ -340,25 +371,46 @@ const ms = StyleSheet.create({
   },
 });
 
-/* ── Radiant candle ───────────────────────────────────────── */
-// Today's candle as the hero emblem: the golden ray burst of the trophy
-// card, with the real candle artwork standing in front — its wax filled
-// to today's progress. Rays alternate long/short like a struck medal.
-function RadiantCandle({ pct, mode }: { pct: number | null; mode: DayMode }) {
+/* ── Radiant flame ────────────────────────────────────────── */
+// The one living animation on the card: today's fire inside the
+// struck-medal ray burst. The glow behind it breathes slowly, and the
+// flame itself burns brighter as the day's progress grows.
+function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
+  const reduceMotion = useReducedMotion();
   const quiet = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
-  const heroPct = quiet ? 0 : pct;
+  const frac = quiet ? 0 : Math.max(0, Math.min(100, pct)) / 100;
+  const flameOpacity = 0.38 + frac * 0.62;
   const field = 118;
   const cx = field / 2;
   const inner = 40;
+  const breathe = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      breathe.value = 0.5;
+      return;
+    }
+    breathe.value = 0;
+    breathe.value = withRepeat(
+      withTiming(1, { duration: 2800, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true,
+    );
+    return () => cancelAnimation(breathe);
+  }, [breathe, reduceMotion]);
+
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: (quiet ? 0.35 : 0.55) + breathe.value * (quiet ? 0.15 : 0.45),
+  }));
 
   return (
-    <View style={rc.stage}>
-      <View pointerEvents="none" style={[rc.glow, quiet && rc.glowQuiet]} />
+    <View style={rf.stage}>
+      <Reanimated.View pointerEvents="none" style={[rf.glow, glowStyle]} />
       <Svg
         pointerEvents="none"
         width={field}
         height={field}
-        style={[rc.rays, quiet && rc.raysQuiet]}
+        style={[rf.rays, quiet && rf.raysQuiet]}
       >
         {Array.from({ length: 12 }).map((_, index) => {
           const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
@@ -380,35 +432,34 @@ function RadiantCandle({ pct, mode }: { pct: number | null; mode: DayMode }) {
           );
         })}
       </Svg>
-      <Candle pct={heroPct} mode="normal" />
+      <View style={{ opacity: flameOpacity }}>
+        <FocusLottie name="flame" loop speed={0.9} style={rf.flame} />
+      </View>
     </View>
   );
 }
 
-const rc = StyleSheet.create({
+const rf = StyleSheet.create({
   stage: {
     width: 100,
+    height: 96,
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
   },
   glow: {
     position: 'absolute',
-    bottom: 2,
-    width: 74,
-    height: 74,
-    borderRadius: 37,
-    backgroundColor: 'rgba(216,182,114,0.20)',
-  },
-  glowQuiet: {
-    backgroundColor: 'rgba(216,182,114,0.10)',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: 'rgba(216,182,114,0.24)',
   },
   rays: {
     position: 'absolute',
-    bottom: -12,
   },
   raysQuiet: {
     opacity: 0.45,
   },
+  flame: { width: 64, height: 64 },
 });
 
 /* ── Candle ───────────────────────────────────────────────── */
@@ -603,11 +654,43 @@ function Candle({ pct, mode }: { pct: number | null; mode: DayMode }) {
 }
 
 /* ── Bottom badge ─────────────────────────────────────────── */
-function FlameTile({ pct, mode }: { pct: number | null; mode: DayMode }) {
+// A soft ring that breathes around today's tile — the only motion in the
+// week band, marking the day being written.
+function TodayPulseRing() {
+  const reduceMotion = useReducedMotion();
+  const t = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      t.value = 0.5;
+      return;
+    }
+    t.value = 0;
+    t.value = withRepeat(
+      withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true,
+    );
+    return () => cancelAnimation(t);
+  }, [reduceMotion, t]);
+
+  const pulse = useAnimatedStyle(() => ({
+    opacity: 0.2 + t.value * 0.5,
+  }));
+
+  return <Reanimated.View pointerEvents="none" style={[s.todayRing, pulse]} />;
+}
+
+// Static PNG flames only — the hero carries the one living Lottie, so a
+// full week never stacks seven looping animations on the phone.
+function FlameTile({ pct, mode, isToday }: { pct: number | null; mode: DayMode; isToday: boolean }) {
+  const ring = isToday ? <TodayPulseRing /> : null;
+
   // No tasks OR all-skipped → empty circle (no flame icon inside)
   if (pct === null || mode === 'no-tasks' || mode === 'all-skipped') {
     return (
       <View style={s.flameWrap}>
+        {ring}
         <View style={[s.flameTile, s.flameEmpty]} />
       </View>
     );
@@ -619,8 +702,9 @@ function FlameTile({ pct, mode }: { pct: number | null; mode: DayMode }) {
   if (isFull) {
     return (
       <View style={s.flameWrap}>
+        {ring}
         <View style={[s.flameTile, s.flameColored, s.flameGlow]}>
-          <FocusLottie name="flame" loop speed={1} style={s.flameLottie} />
+          <Image source={FLAME_PNG} style={s.flameImgFull} />
         </View>
       </View>
     );
@@ -628,6 +712,7 @@ function FlameTile({ pct, mode }: { pct: number | null; mode: DayMode }) {
 
   return (
     <View style={s.flameWrap}>
+      {ring}
       <View style={[s.flameTile, s.flameGray]}>
         <Image source={FLAME_PNG} style={[s.flameImg, { tintColor: '#C9C4B7' }]} />
       </View>
@@ -752,10 +837,10 @@ export default function WeeklyRhythm() {
         />
         <DawnBackdrop />
 
-        {/* Hero: today's percentage in the bloom, today's candle radiant */}
+        {/* Hero: today's percentage in the bloom, today's fire radiant */}
         <View style={s.heroRow}>
           <TodayMedallion pct={todayPct} mode={todayMode} />
-          <RadiantCandle pct={todayStat?.pct ?? null} mode={todayMode} />
+          <RadiantFlame pct={todayStat?.pct ?? null} mode={todayMode} />
         </View>
 
         <Text style={s.headline} numberOfLines={2}>{headline}</Text>
@@ -781,7 +866,7 @@ export default function WeeklyRhythm() {
           <View style={s.daysRow}>
             {display.map((d, i) => (
               <View key={i} style={s.weekCol}>
-                <FlameTile pct={d.pct} mode={d.mode} />
+                <FlameTile pct={d.pct} mode={d.mode} isToday={d.isToday} />
               </View>
             ))}
           </View>
@@ -898,9 +983,20 @@ const s = StyleSheet.create({
     height: ICON_SIZE,
     resizeMode: 'contain',
   },
-  flameLottie: {
+  flameImgFull: {
+    width: ICON_SIZE + 2,
+    height: ICON_SIZE + 2,
+    resizeMode: 'contain',
+  },
+  todayRing: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
     width: TILE_SIZE + 8,
     height: TILE_SIZE + 8,
+    borderRadius: (TILE_SIZE + 8) / 2,
+    borderWidth: 1.5,
+    borderColor: C.gold,
   },
   flameGlow: {
     shadowColor: C.gold,
