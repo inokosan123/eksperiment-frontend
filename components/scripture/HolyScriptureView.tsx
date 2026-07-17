@@ -741,6 +741,14 @@ function PremiumBookCard({
       >
         <ChevronRight s={15} c={isGreen ? '#8FA986' : '#BCA476'} />
       </Reanimated.View>
+      {/* The gradient ground swallows the native border at the rounded top
+          corners of the open card — redraw the boundary line above it. */}
+      {expanded && (
+        <View
+          pointerEvents="none"
+          style={[s.openTopFrame, { borderColor: isGreen ? '#D9E4D5' : '#E8E0D4' }]}
+        />
+      )}
     </TouchableOpacity>
   );
 }
@@ -1227,6 +1235,13 @@ const s = StyleSheet.create({
   premiumBookCompact: {
     minHeight: 50,
     paddingVertical: 9,
+  },
+  openTopFrame: {
+    ...StyleSheet.absoluteFillObject,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderWidth: 1,
+    borderBottomWidth: 0,
   },
   motifAnchor: {
     position: 'absolute',
