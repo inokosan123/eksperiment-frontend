@@ -921,7 +921,9 @@ function FlameTile({ pct, mode, isToday }: { pct: number | null; mode: DayMode; 
             end={{ x: 0.8, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
-          <Image source={FLAME_PNG} style={s.flameImgFull} />
+          {/* key remount: a tinted Image must never be reused untinted —
+              template rendering sticks and iOS paints it system blue */}
+          <Image key="flame-full" source={FLAME_PNG} style={s.flameImgFull} />
           <View style={s.tileSheen} pointerEvents="none" />
         </View>
       </View>
@@ -938,7 +940,7 @@ function FlameTile({ pct, mode, isToday }: { pct: number | null; mode: DayMode; 
           end={{ x: 0.8, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <Image source={FLAME_PNG} style={[s.flameImg, { tintColor: '#CDC2A8' }]} />
+        <Image key="flame-tinted" source={FLAME_PNG} style={[s.flameImg, { tintColor: '#CDC2A8' }]} />
       </View>
       {filled > 0 && (
         <View style={[s.flameClip, { height: `${filled}%` }]} pointerEvents="none">
@@ -949,7 +951,7 @@ function FlameTile({ pct, mode, isToday }: { pct: number | null; mode: DayMode; 
               end={{ x: 0.8, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
-            <Image source={FLAME_PNG} style={s.flameImg} />
+            <Image key="flame-fill" source={FLAME_PNG} style={s.flameImg} />
           </View>
         </View>
       )}

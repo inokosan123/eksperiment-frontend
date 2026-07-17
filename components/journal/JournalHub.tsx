@@ -602,7 +602,10 @@ function CalendarStreakCard({
                   isTodayCell && !active && s.streakCircleToday,
                 ]}
               >
+                {/* key remount: a tinted Image must never be reused untinted —
+                    template rendering sticks and iOS paints it system blue */}
                 <Image
+                  key={active ? 'book-lit' : 'book-resting'}
                   source={BOOK_PNG}
                   style={[
                     s.streakBook,
