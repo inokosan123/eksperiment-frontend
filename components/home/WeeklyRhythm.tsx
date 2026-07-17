@@ -8,7 +8,7 @@ import { Image,
   StyleSheet,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Circle, Ellipse, Line, Path } from 'react-native-svg';
 import Reanimated, {
   cancelAnimation,
   Easing,
@@ -21,7 +21,7 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { Activity, ArrowUpRight } from '@/components/icons/Icons';
+import { Activity, BarChart3 } from '@/components/icons/Icons';
 import FocusLottie from '@/components/focus/FocusLottie';
 import { C, F } from '@/constants/tokens';
 import { useTasks } from '@/components/tasks/TaskProvider';
@@ -36,6 +36,7 @@ const TILE_SIZE = 32;
 const ICON_SIZE = 20;
 const CANDLE_W = 32;
 const CANDLE_H = 60;
+const GOLD = '#C5A059';
 // Indexed by Date.getDay() — Sun=0, Mon=1, ..., Sat=6
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -71,56 +72,344 @@ function buildWeek(): { dateKey: string; letter: string; isToday: boolean; isFut
   });
 }
 
-/* ── Candlelight on the floor ─────────────────────────────── */
-// Each lit candle above pours a pool of warm light down onto the bronze
-// floor — a full day breathes slowly like real candlelight, a partial
-// day glows steadily in proportion to its progress. The floor literally
-// brightens with the week: light here comes from the data, not from
-// decoration.
-function CandleGlowPool({ index, pct, mode }: { index: number; pct: number | null; mode: DayMode }) {
+/* ── Dawn backdrop ────────────────────────────────────────── */
+// The trophy card's shine grammar, tuned for Home: a diagonal hairline
+// weave across the warm gradient, and a few four-point sparkles
+// twinkling at their own quiet rhythms.
+
+const SPARKLE_PATH = 'M12 0 C13.2 7.4 16.6 10.8 24 12 C16.6 13.2 13.2 16.6 12 24 C10.8 16.6 7.4 13.2 0 12 C7.4 10.8 10.8 7.4 12 0 Z';
+
+function Sparkle({
+  size,
+  delay,
+  style,
+}: {
+  size: number;
+  delay: number;
+  style: object;
+}) {
   const reduceMotion = useReducedMotion();
-  const isLit = pct !== null && mode === 'normal' && pct >= 100;
-  const partial = pct !== null && mode === 'normal' && pct > 0 && pct < 100;
-  const breathe = useSharedValue(1);
+  const t = useSharedValue(0);
 
   useEffect(() => {
-    if (!isLit || reduceMotion) {
-      breathe.value = 1;
+    if (reduceMotion) {
+      t.value = 0.5;
       return;
     }
-    breathe.value = 0.62;
-    breathe.value = withDelay(
-      index * 420,
+    t.value = 0;
+    t.value = withDelay(
+      delay,
       withRepeat(
-        withTiming(1, { duration: 2600 + (index % 3) * 380, easing: Easing.inOut(Easing.sin) }),
+        withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.quad) }),
         -1,
         true,
       ),
     );
-    return () => cancelAnimation(breathe);
-  }, [breathe, index, isLit, reduceMotion]);
+    return () => cancelAnimation(t);
+  }, [reduceMotion, delay, t]);
 
-  const breatheStyle = useAnimatedStyle(() => ({ opacity: breathe.value }));
-
-  if (!isLit && !partial) return null;
-
-  const centerLeft = `${(100 / 7) * (index + 0.5)}%` as const;
-  const partialOpacity = partial ? 0.2 + (pct! / 100) * 0.5 : 1;
+  const twinkle = useAnimatedStyle(() => ({
+    opacity: 0.14 + t.value * 0.42,
+  }));
 
   return (
-    <Reanimated.View
-      pointerEvents="none"
-      style={[
-        s.poolWrap,
-        { left: centerLeft, opacity: partialOpacity },
-        isLit && breatheStyle,
-      ]}
-    >
-      <View style={s.poolOuter} />
-      <View style={s.poolInner} />
+    <Reanimated.View pointerEvents="none" style={[{ position: 'absolute' }, style, twinkle]}>
+      <Svg width={size} height={size} viewBox="0 0 24 24">
+        <Path d={SPARKLE_PATH} fill={GOLD} />
+      </Svg>
     </Reanimated.View>
   );
 }
+
+function DawnBackdrop() {
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const step = 30;
+  const lineCount = box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
+
+  return (
+    <View
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      onLayout={event => {
+        const { width, height } = event.nativeEvent.layout;
+        setBox({ w: width, h: height });
+      }}
+    >
+      {lineCount > 0 && (
+        <Svg width={box.w} height={box.h} style={StyleSheet.absoluteFill}>
+          {Array.from({ length: lineCount }).map((_, index) => {
+            const offset = index * step;
+            return (
+              <Line
+                key={index}
+                x1={offset}
+                y1={-4}
+                x2={offset - box.h - 8}
+                y2={box.h + 4}
+                stroke={GOLD}
+                strokeOpacity={0.05}
+                strokeWidth={1}
+              />
+            );
+          })}
+        </Svg>
+      )}
+      <Sparkle size={13} delay={0} style={{ right: 86, top: 30 }} />
+      <Sparkle size={9} delay={900} style={{ right: 16, top: 18 }} />
+      <Sparkle size={8} delay={1700} style={{ left: 148, top: 24 }} />
+      <Sparkle size={11} delay={2600} style={{ left: 20, top: 118 }} />
+    </View>
+  );
+}
+
+/* ── Today medallion ──────────────────────────────────────── */
+// The trophy streak's layered-ellipse bloom, carrying today's percentage:
+// the number sits in the brightest pool of a hand-set wash of golds.
+function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
+  const size = 74;
+  const quiet = mode === 'no-tasks' || mode === 'all-skipped';
+  const clamped = Math.round(Math.max(0, Math.min(100, pct)));
+  const display = quiet ? '—' : String(clamped);
+  const extraCharacters = Math.max(0, display.length - 1);
+  const digitExpansion = extraCharacters === 0
+    ? 0
+    : size * 0.24 + Math.max(0, extraCharacters - 1) * size * 0.15;
+  const ornamentSpacing = size * 0.16;
+  const width = size * 2.08 + digitExpansion + ornamentSpacing;
+  const height = size * 0.92;
+
+  return (
+    <View style={{ width, height }}>
+      <Svg
+        pointerEvents="none"
+        width={width * 1.14}
+        height={height * 1.12}
+        style={{ position: 'absolute', left: -width * 0.07, top: -height * 0.06 }}
+      >
+        {/* Layered ellipses, darker rim to lightest heart — the number sits
+            in the brightest pool. */}
+        <Ellipse
+          cx={width * 0.52}
+          cy={height * 0.56}
+          rx={width * 0.52}
+          ry={height * 0.52}
+          fill="#EBD5A0"
+          opacity={0.8}
+          transform={`rotate(-5 ${width * 0.52} ${height * 0.56})`}
+        />
+        <Ellipse
+          cx={width * 0.52}
+          cy={height * 0.53}
+          rx={width * 0.46}
+          ry={height * 0.44}
+          fill="#F5E5BE"
+          opacity={0.85}
+          transform={`rotate(4 ${width * 0.52} ${height * 0.53})`}
+        />
+        <Ellipse
+          cx={width * 0.49}
+          cy={height * 0.57}
+          rx={width * 0.42}
+          ry={height * 0.39}
+          fill="#FFF8E4"
+          opacity={0.95}
+          transform={`rotate(-3 ${width * 0.49} ${height * 0.57})`}
+        />
+        <Path
+          d={`M ${size * 0.13 + width * 0.07} ${height * 0.82} C ${width * 0.43} ${height * 1.01}, ${width * 0.76} ${height * 0.97}, ${width * 1.0} ${height * 0.64}`}
+          fill="none"
+          stroke={GOLD}
+          strokeOpacity={0.3}
+          strokeWidth={1.15}
+          strokeLinecap="round"
+        />
+        <Line
+          x1={size * 0.92 + digitExpansion + width * 0.07}
+          y1={height * 0.32}
+          x2={size * 0.92 + digitExpansion + width * 0.07}
+          y2={height * 0.78}
+          stroke={GOLD}
+          strokeOpacity={0.38}
+          strokeWidth={1}
+          strokeLinecap="round"
+        />
+      </Svg>
+
+      <View
+        style={[
+          ms.valueWell,
+          { left: size * 0.04, width: size * 0.86 + digitExpansion, height },
+        ]}
+      >
+        <Text
+          style={[
+            ms.value,
+            { fontSize: size * 0.58, lineHeight: size * 0.66 },
+            quiet && ms.valueDormant,
+          ]}
+          numberOfLines={1}
+        >
+          {display}
+          {!quiet && <Text style={ms.valuePct}>%</Text>}
+        </Text>
+      </View>
+
+      <View
+        style={[
+          ms.copy,
+          { left: size * 1.04 + digitExpansion, top: height * 0.27 },
+        ]}
+      >
+        <Text style={ms.eyebrow} numberOfLines={1}>TODAY</Text>
+        <Text style={ms.label} numberOfLines={1}>PROGRESS</Text>
+        <View style={ms.copyRule} />
+      </View>
+
+      <View pointerEvents="none" style={[ms.glint, { right: size * 0.05, top: height * 0.08 }]} />
+      <View pointerEvents="none" style={[ms.glintSmall, { right: size * 0.42, top: height * 0.86 }]} />
+    </View>
+  );
+}
+
+const ms = StyleSheet.create({
+  valueWell: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  value: {
+    width: '100%',
+    fontFamily: F.serifSemiBold,
+    letterSpacing: -1,
+    color: '#4A3820',
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
+    fontVariant: ['lining-nums', 'tabular-nums'],
+  },
+  valuePct: {
+    fontSize: 21,
+    letterSpacing: 0,
+    color: '#8B6B2F',
+  },
+  valueDormant: {
+    color: '#9A7F4D',
+  },
+  copy: {
+    position: 'absolute',
+    width: 72,
+    gap: 1,
+    zIndex: 1,
+  },
+  eyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 8.2,
+    lineHeight: 10,
+    letterSpacing: 1.15,
+    color: 'rgba(121,89,30,0.72)',
+  },
+  label: {
+    fontFamily: F.sansBold,
+    fontSize: 11.5,
+    lineHeight: 14,
+    letterSpacing: 1.2,
+    color: '#6F5016',
+  },
+  copyRule: {
+    width: 27,
+    height: 1,
+    marginTop: 4,
+    borderRadius: 1,
+    backgroundColor: 'rgba(169,134,63,0.45)',
+  },
+  glint: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 1.5,
+    backgroundColor: 'rgba(197,160,89,0.68)',
+    transform: [{ rotate: '45deg' }],
+  },
+  glintSmall: {
+    position: 'absolute',
+    width: 3,
+    height: 3,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.48)',
+    transform: [{ rotate: '45deg' }],
+  },
+});
+
+/* ── Radiant candle ───────────────────────────────────────── */
+// Today's candle as the hero emblem: the golden ray burst of the trophy
+// card, with the real candle artwork standing in front — its wax filled
+// to today's progress. Rays alternate long/short like a struck medal.
+function RadiantCandle({ pct, mode }: { pct: number | null; mode: DayMode }) {
+  const quiet = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
+  const heroPct = quiet ? 0 : pct;
+  const field = 118;
+  const cx = field / 2;
+  const inner = 40;
+
+  return (
+    <View style={rc.stage}>
+      <View pointerEvents="none" style={[rc.glow, quiet && rc.glowQuiet]} />
+      <Svg
+        pointerEvents="none"
+        width={field}
+        height={field}
+        style={[rc.rays, quiet && rc.raysQuiet]}
+      >
+        {Array.from({ length: 12 }).map((_, index) => {
+          const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
+          const long = index % 2 === 0;
+          const r1 = inner;
+          const r2 = inner + (long ? 17 : 10);
+          return (
+            <Line
+              key={index}
+              x1={cx + r1 * Math.cos(angle)}
+              y1={cx + r1 * Math.sin(angle)}
+              x2={cx + r2 * Math.cos(angle)}
+              y2={cx + r2 * Math.sin(angle)}
+              stroke={GOLD}
+              strokeOpacity={long ? 0.42 : 0.24}
+              strokeWidth={long ? 1.7 : 1.3}
+              strokeLinecap="round"
+            />
+          );
+        })}
+      </Svg>
+      <Candle pct={heroPct} mode="normal" />
+    </View>
+  );
+}
+
+const rc = StyleSheet.create({
+  stage: {
+    width: 100,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  glow: {
+    position: 'absolute',
+    bottom: 2,
+    width: 74,
+    height: 74,
+    borderRadius: 37,
+    backgroundColor: 'rgba(216,182,114,0.20)',
+  },
+  glowQuiet: {
+    backgroundColor: 'rgba(216,182,114,0.10)',
+  },
+  rays: {
+    position: 'absolute',
+    bottom: -12,
+  },
+  raysQuiet: {
+    opacity: 0.45,
+  },
+});
 
 /* ── Candle ───────────────────────────────────────────────── */
 function Candle({ pct, mode }: { pct: number | null; mode: DayMode }) {
@@ -340,7 +629,7 @@ function FlameTile({ pct, mode }: { pct: number | null; mode: DayMode }) {
   return (
     <View style={s.flameWrap}>
       <View style={[s.flameTile, s.flameGray]}>
-        <Image source={FLAME_PNG} style={[s.flameImg, { tintColor: '#8A7A5C', opacity: 0.55 }]} />
+        <Image source={FLAME_PNG} style={[s.flameImg, { tintColor: '#C9C4B7' }]} />
       </View>
       {filled > 0 && (
         <View style={[s.flameClip, { height: `${filled}%` }]} pointerEvents="none">
@@ -348,41 +637,6 @@ function FlameTile({ pct, mode }: { pct: number | null; mode: DayMode }) {
             <Image source={FLAME_PNG} style={s.flameImg} />
           </View>
         </View>
-      )}
-    </View>
-  );
-}
-
-/* ── Today bar ────────────────────────────────────────────── */
-function DailyProgressBar({ pct, mode }: { pct: number; mode: DayMode }) {
-  // Black-fill states: "all-skipped" or "no-tasks" — bar is fully black, no % text.
-  const isBlackFull = mode === 'all-skipped' || mode === 'no-tasks';
-  const target = isBlackFull ? 100 : Math.max(0, Math.min(100, pct));
-  const anim = useSharedValue(target);
-  useEffect(() => {
-    anim.value = withTiming(target, { duration: 600 });
-  }, [anim, target]);
-  const fillStyle = useAnimatedStyle(() => ({
-    width: `${Math.max(0, Math.min(100, anim.value))}%`,
-  }));
-  return (
-    <View style={s.barRow}>
-      <View style={s.barTrack}>
-        {isBlackFull ? (
-          <Reanimated.View style={[s.barFill, s.barFillBlack, fillStyle]} />
-        ) : (
-          <Reanimated.View style={[s.barFill, fillStyle]}>
-            <LinearGradient
-              colors={['#E0B770', C.gold]}
-              start={{ x: 0, y: 0.5 }}
-              end={{ x: 1, y: 0.5 }}
-              style={StyleSheet.absoluteFill}
-            />
-          </Reanimated.View>
-        )}
-      </View>
-      {!isBlackFull && (
-        <Text style={s.barPct}>{Math.round(target)}%</Text>
       )}
     </View>
   );
@@ -424,7 +678,7 @@ export default function WeeklyRhythm() {
         const completed = dayInstances.filter(inst => inst.status === 'completed').length;
         const skipped = dayInstances.filter(inst => inst.status === 'skipped').length;
 
-        // ALL skipped (no completed, no missed, no pending) → black-bar / no-candle state
+        // ALL skipped (no completed, no missed, no pending) → quiet state
         if (completed === 0 && skipped > 0 && skipped === scheduled) {
           return {
             letter: day.letter, dateKey: day.dateKey,
@@ -466,77 +720,64 @@ export default function WeeklyRhythm() {
     mode: 'no-tasks',
   }));
 
+  const headline = todayMode === 'no-tasks'
+    ? 'A quiet day — nothing scheduled.'
+    : todayMode === 'all-skipped'
+      ? 'Today’s tasks were laid aside.'
+      : todayPct >= 100
+        ? 'Every candle is lit — the day is kept.'
+        : todayPct > 0
+          ? 'Today’s candle is burning. Keep going.'
+          : 'Light the first candle of the day.';
+
   return (
     <View style={s.wrap}>
       <View style={s.header}>
-        <Activity s={15} c={C.gold} />
-        <Text style={s.heading}>Your Progress</Text>
+        <View style={s.headerLeft}>
+          <Activity s={15} c={C.gold} />
+          <Text style={s.heading}>Your Progress</Text>
+        </View>
+        <TouchableOpacity style={s.analyticsChip} activeOpacity={0.74} onPress={openAnalytics}>
+          <BarChart3 s={13} c={C.goldDark} w={2.1} />
+          <Text style={s.analyticsChipText}>Analytics</Text>
+        </TouchableOpacity>
       </View>
 
-      <View style={s.card}>
-        <Text style={s.cardLabel}>TODAY</Text>
-        <DailyProgressBar pct={todayPct} mode={todayMode} />
+      <TouchableOpacity style={s.card} activeOpacity={0.88} onPress={openAnalytics}>
+        <LinearGradient
+          colors={['#F8E7BE', '#FFF8E9', '#FFFEFA']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <DawnBackdrop />
 
-        {/* Engraved divider: line — diamond — line */}
-        <View style={s.ornamentRow}>
-          <View style={s.ornamentLine} />
-          <View style={s.ornamentDiamond} />
-          <View style={s.ornamentLine} />
+        {/* Hero: today's percentage in the bloom, today's candle radiant */}
+        <View style={s.heroRow}>
+          <TodayMedallion pct={todayPct} mode={todayMode} />
+          <RadiantCandle pct={todayStat?.pct ?? null} mode={todayMode} />
         </View>
 
-        <Text style={s.cardLabel}>LAST 7 DAYS</Text>
+        <Text style={s.headline} numberOfLines={2}>{headline}</Text>
 
-        {/* Candles stand in the light, their bases on the brass rail. */}
-        <View style={s.candlesRow}>
-          {display.map((d, i) => (
-            <View key={i} style={s.weekCol}>
-              <Candle pct={d.pct} mode={d.mode} />
-            </View>
-          ))}
-        </View>
-
-        {/* The brass rail — the machined lip of the candle stand. */}
-        <View style={s.brassRail}>
-          <LinearGradient
-            colors={['#EFDCAC', '#C89F58', '#8A6B2E']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={{ flex: 1 }}
-          />
-        </View>
-
-        {/* The bronze floor beneath the stand: warmest at the top where the
-            candlelight lands, deepening downward. Each lit candle pours its
-            own breathing pool of light onto its medallion below. */}
-        <View style={s.floor}>
-          <LinearGradient
-            colors={['#4A3921', '#332716', '#251D0F']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-          <LinearGradient
-            colors={['rgba(255,205,110,0.17)', 'rgba(255,205,110,0)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={s.floorBleed}
-            pointerEvents="none"
-          />
-          {display.map((d, i) => (
-            <CandleGlowPool key={`pool-${i}`} index={i} pct={d.pct} mode={d.mode} />
-          ))}
-
-          {/* Day labels */}
-          <View style={s.daysLabelRow}>
+        {/* The week band: candles, letters, flames between hairline rails */}
+        <View style={s.weekBand}>
+          <View style={s.candlesRow}>
             {display.map((d, i) => (
               <View key={i} style={s.weekCol}>
-                <Text style={[s.dayLetter, d.isToday ? s.dayLetterToday : null]}>{d.letter}</Text>
+                <Candle pct={d.pct} mode={d.mode} />
               </View>
             ))}
           </View>
 
-          {/* Flames row */}
+          <View style={s.daysLabelRow}>
+            {display.map((d, i) => (
+              <View key={i} style={s.weekCol}>
+                <Text style={[s.dayLetter, d.isToday && s.dayLetterToday]}>{d.letter}</Text>
+              </View>
+            ))}
+          </View>
+
           <View style={s.daysRow}>
             {display.map((d, i) => (
               <View key={i} style={s.weekCol}>
@@ -545,22 +786,6 @@ export default function WeeklyRhythm() {
             ))}
           </View>
         </View>
-      </View>
-
-      {/* The gold-coin button — DateStrip's selected-day grammar. */}
-      <TouchableOpacity activeOpacity={0.86} onPress={openAnalytics} style={s.analyticsPress}>
-        <LinearGradient
-          colors={['#E2BD75', '#C5A059', '#A87E33']}
-          locations={[0, 0.55, 1]}
-          start={{ x: 0.15, y: 0 }}
-          end={{ x: 0.85, y: 1 }}
-          style={s.analyticsBtn}
-        >
-          <View style={s.analyticsSheen} pointerEvents="none" />
-          <View style={s.analyticsRim} pointerEvents="none" />
-          <Text style={s.analyticsBtnTxt}>VIEW ANALYTICS</Text>
-          <ArrowUpRight s={12} c="#FFF8E8" w={2.6} />
-        </LinearGradient>
       </TouchableOpacity>
     </View>
   );
@@ -568,99 +793,66 @@ export default function WeeklyRhythm() {
 
 const s = StyleSheet.create({
   wrap: { paddingTop: 18, paddingHorizontal: 20 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   heading: { fontFamily: F.serifMedium, fontSize: 18, color: C.text },
+  analyticsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E5D9BD',
+    backgroundColor: '#FFF9EB',
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+  },
+  analyticsChipText: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.goldDark },
   card: {
-    backgroundColor: '#FFFEFB',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.22)',
-    borderRadius: 24,
-    padding: 16,
-    paddingBottom: 14,
-    overflow: 'hidden',
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    elevation: 2,
-  },
-  cardLabel: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2.2, color: '#B89A5A', marginBottom: 7 },
-  barRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
-  barTrack: {
-    flex: 1,
-    height: 9,
-    borderRadius: 5,
-    backgroundColor: '#F6F1E4',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.16)',
-    overflow: 'hidden',
-  },
-  barFill: {
-    height: '100%',
-    borderRadius: 5,
-  },
-  barFillBlack: {
-    backgroundColor: '#1c1917',
-  },
-  barPct: { fontFamily: F.serifSemiBold, fontSize: 15, color: C.gold, minWidth: 40, textAlign: 'right' },
-  barPctBlack: { color: '#1c1917' },
-  ornamentRow: { flexDirection: 'row', alignItems: 'center', marginTop: 13, marginBottom: 11 },
-  ornamentLine: { flex: 1, height: 1, backgroundColor: 'rgba(197,160,89,0.26)' },
-  ornamentDiamond: { width: 5, height: 5, marginHorizontal: 8, borderRadius: 1, backgroundColor: C.gold, transform: [{ rotate: '45deg' }] },
-  daysRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  daysLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 },
-  weekCol: { flex: 1, alignItems: 'center' },
-  dayLetter: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1, color: 'rgba(243,226,188,0.42)' },
-  dayLetterToday: { color: '#F6E7C4' },
-
-  /* The candle stand */
-  brassRail: {
-    height: 3.5,
-    marginHorizontal: -16,
-    overflow: 'hidden',
-  },
-  floor: {
     position: 'relative',
     overflow: 'hidden',
-    marginHorizontal: -16,
-    marginBottom: -14,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 16,
+    borderRadius: 24,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#E8D8B5',
+    padding: 16,
+    paddingBottom: 14,
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
-  floorBleed: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 16,
-  },
-  poolWrap: {
-    position: 'absolute',
-    top: -8,
-    width: 0,
+  heroRow: {
+    marginTop: 4,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: 8,
+    paddingRight: 10,
   },
-  poolOuter: {
-    position: 'absolute',
-    top: 0,
-    width: 64,
-    height: 42,
-    marginLeft: -32,
-    left: 0,
-    borderRadius: 32,
-    backgroundColor: 'rgba(255,199,94,0.07)',
+  headline: {
+    marginTop: 12,
+    fontFamily: F.serif,
+    fontSize: 14.5,
+    lineHeight: 19,
+    color: C.textSecondary,
+    textAlign: 'center',
   },
-  poolInner: {
-    position: 'absolute',
-    top: 5,
-    width: 44,
-    height: 28,
-    marginLeft: -22,
-    left: 0,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,205,110,0.11)',
+  weekBand: {
+    marginTop: 12,
+    paddingTop: 10,
+    paddingBottom: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: '#EADFC8',
   },
+  candlesRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  daysLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 5, marginBottom: 6 },
+  daysRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  weekCol: { flex: 1, alignItems: 'center' },
+  dayLetter: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 0.6, color: C.textMuted },
+  dayLetterToday: { color: C.goldDark },
 
   /* Bottom flame badge */
   flameWrap: {
@@ -677,16 +869,17 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   flameGray: {
-    backgroundColor: 'rgba(255,244,214,0.05)',
-    borderColor: 'rgba(235,211,160,0.24)',
+    backgroundColor: '#F9F6EE',
+    borderColor: '#E7E0CE',
   },
   flameColored: {
-    backgroundColor: 'rgba(255,205,110,0.17)',
-    borderColor: '#E2BD75',
+    backgroundColor: '#FFF3D8',
+    borderColor: C.gold,
   },
   flameEmpty: {
-    backgroundColor: 'rgba(255,244,214,0.03)',
-    borderColor: 'rgba(235,211,160,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderColor: '#E4DCC6',
+    borderStyle: 'dashed',
   },
   flameColoredAbs: {
     position: 'absolute',
@@ -711,14 +904,13 @@ const s = StyleSheet.create({
   },
   flameGlow: {
     shadowColor: C.gold,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.55,
-    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
     elevation: 3,
   },
 
   /* Candle */
-  candlesRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: 4 },
   candleCol: { alignItems: 'center' },
   candleFlameSlot: {
     width: 30,
@@ -808,39 +1000,4 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(160,145,117,0.08)',
     shadowOpacity: 0.04,
   },
-  analyticsPress: {
-    marginTop: 12,
-    borderRadius: 16,
-    shadowColor: '#A87E33',
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  analyticsBtn: {
-    minHeight: 48,
-    borderRadius: 16,
-    overflow: 'hidden',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  analyticsSheen: {
-    position: 'absolute',
-    top: 1,
-    left: 1,
-    right: 1,
-    height: '44%',
-    borderTopLeftRadius: 15,
-    borderTopRightRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.13)',
-  },
-  analyticsRim: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(150,108,40,0.34)',
-  },
-  analyticsBtnTxt: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.2, color: '#FFFCF2' },
 });
