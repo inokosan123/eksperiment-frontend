@@ -14987,6 +14987,7 @@ function OrganizeStageHeader({
   bodyHighlights = [],
   titleLines = 2,
   titleStyle,
+  staged = false,
 }: {
   title: string;
   body: string;
@@ -14996,8 +14997,63 @@ function OrganizeStageHeader({
   bodyHighlights?: string[];
   titleLines?: number;
   titleStyle?: StyleProp<TextStyle>;
+  // Staged: the header speaks in order — title rises, the underline draws
+  // from its centre, the body follows. Default keeps the single-block fade
+  // used across the other organize screens.
+  staged?: boolean;
 }) {
   const premium = variant === 'premium';
+  const titleNode = (
+    <Text
+      style={[
+        s.organizeStageTitle,
+        premium && s.organizeStageTitlePremium,
+        compact && (premium ? s.organizeStageTitlePremiumCompact : s.organizeStageTitleCompact),
+        titleStyle,
+      ]}
+      numberOfLines={titleLines}
+      adjustsFontSizeToFit
+      minimumFontScale={premium ? 0.78 : 0.68}
+    >
+      {title}
+    </Text>
+  );
+  const underlineStyle = [s.organizeStageUnderline, premium && s.organizeStageUnderlinePremium, { backgroundColor: accent }] as StyleProp<ViewStyle>;
+  const bodyNode = renderHighlightedBodyText(body, bodyHighlights, premium ? s.organizePremiumBodyStrong : s.organizeBigEventsBodyStrong);
+  const bodyTextStyle = [s.organizeBigEventsBody, premium && s.organizePremiumBody] as StyleProp<TextStyle>;
+
+  if (staged) {
+    return (
+      <View style={[s.organizeBigEventsHeader, premium && s.organizePremiumHeader]}>
+        <View style={s.organizeBigEventsTitleWrap}>
+          <Reanimated.View
+            entering={FadeInUp.duration(540).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 16 }],
+            })}
+          >
+            {titleNode}
+          </Reanimated.View>
+          <Reanimated.View
+            entering={FadeIn.delay(200).duration(460).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+              opacity: 0,
+              transform: [{ scaleX: 0.22 }],
+            })}
+            style={underlineStyle}
+          />
+        </View>
+        <Reanimated.Text
+          entering={FadeInUp.delay(280).duration(540).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 12 }],
+          })}
+          style={bodyTextStyle}
+        >
+          {bodyNode}
+        </Reanimated.Text>
+      </View>
+    );
+  }
 
   return (
     <Reanimated.View
@@ -15005,24 +15061,10 @@ function OrganizeStageHeader({
       style={[s.organizeBigEventsHeader, premium && s.organizePremiumHeader]}
     >
       <View style={s.organizeBigEventsTitleWrap}>
-        <Text
-          style={[
-            s.organizeStageTitle,
-            premium && s.organizeStageTitlePremium,
-            compact && (premium ? s.organizeStageTitlePremiumCompact : s.organizeStageTitleCompact),
-            titleStyle,
-          ]}
-          numberOfLines={titleLines}
-          adjustsFontSizeToFit
-          minimumFontScale={premium ? 0.78 : 0.68}
-        >
-          {title}
-        </Text>
-        <View style={[s.organizeStageUnderline, premium && s.organizeStageUnderlinePremium, { backgroundColor: accent }]} />
+        {titleNode}
+        <View style={underlineStyle} />
       </View>
-      <Text style={[s.organizeBigEventsBody, premium && s.organizePremiumBody]}>
-        {renderHighlightedBodyText(body, bodyHighlights, premium ? s.organizePremiumBodyStrong : s.organizeBigEventsBodyStrong)}
-      </Text>
+      <Text style={bodyTextStyle}>{bodyNode}</Text>
     </Reanimated.View>
   );
 }
@@ -15249,16 +15291,18 @@ function OrganizeLayerHeroCard({
       <View style={[s.v4ToolTopSheen, { backgroundColor: `${displayAccent}${isActive || done ? '2A' : '14'}` }]} />
 
       <View style={s.organizeLayerHeroTop}>
-        <View style={[s.organizeLayerHeroIcon, { borderColor: `${displayAccent}38`, backgroundColor: `${displayAccent}12` }]}>
-          {area.icon}
-        </View>
         <View style={s.organizeLayerHeroTitleWrap}>
-          <Text style={[s.organizeLayerHeroStep, { color: displayAccent }]}>
-            {area.layerLabel.toUpperCase()}
-          </Text>
+          <View style={s.organizeLayerHeroStepRow}>
+            <Text style={[s.organizeLayerHeroStep, { color: displayAccent }]}>
+              {area.layerLabel.toUpperCase()}
+            </Text>
+            <View style={[s.organizeLayerHeroStepRule, { backgroundColor: `${displayAccent}3D` }]} />
+          </View>
           <Text style={s.organizeLayerHeroTitle}>{area.title}</Text>
         </View>
-        <V4SetupStatusMark active={isActive && !done} done={done} accent={displayAccent} />
+        <View style={[s.organizeLayerHeroEmblem, { borderColor: `${displayAccent}30`, backgroundColor: `${displayAccent}0E` }]}>
+          {area.icon}
+        </View>
       </View>
 
       <Text style={s.organizeLayerHeroBody}>{area.subtitle}</Text>
@@ -15313,7 +15357,8 @@ function OrganizeRuleConnector({ accent, index }: { accent: string; index: numbe
 // literally flows from "what's ahead" into "the week that carries it".
 
 const LAYER_SEAL_SIZE = 40;
-const LAYER_SEAL_TOP = 24;
+const LAYER_SEAL_TOP = 20;
+const LAYER_SEAL_OVERHANG = 15;
 const LAYER_NUMERALS = ['I', 'II'];
 
 function OrganizeLayerSeal({
@@ -15556,41 +15601,44 @@ function OrganizeRuleMapSlide({
                 : 'First we plan what is ahead. Then we build the weekly rhythm that carries your day.'
             }
             accent={variant === 'afterAhead' ? '#2F9B61' : GOLD}
+            staged
           />
         </Reanimated.View>
 
         <Reanimated.View style={[s.setupPathBoard, s.organizeLayerHeroBoard, exitStyle]}>
-          {/* The gold thread pours from seal I down to seal II */}
-          {rowLayouts.length === 2 && (
+          {/* The gold thread pours from seal I down to seal II, stitched
+              along the cards' shared left seam */}
+          {rowLayouts.length === 2 && !!rowLayouts[0] && !!rowLayouts[1] && (
             <OrganizeLayerThread
               pour={pour}
               accent={GOLD}
-              top={rowLayouts[0].y + LAYER_SEAL_TOP + LAYER_SEAL_SIZE + 5}
-              height={Math.max(24, rowLayouts[1].y + LAYER_SEAL_TOP - (rowLayouts[0].y + LAYER_SEAL_TOP + LAYER_SEAL_SIZE) - 10)}
-              left={LAYER_SEAL_SIZE / 2 - 1.25}
+              top={rowLayouts[0].y + LAYER_SEAL_TOP + LAYER_SEAL_SIZE + 4}
+              height={Math.max(24, rowLayouts[1].y + LAYER_SEAL_TOP - (rowLayouts[0].y + LAYER_SEAL_TOP + LAYER_SEAL_SIZE) - 8)}
+              left={LAYER_SEAL_OVERHANG * -1 + LAYER_SEAL_SIZE / 2 - 1.25}
             />
           )}
           {ORGANIZE_RULE_AREAS.map((area, index) => {
             const { active, done } = organizeMapState(variant, area.id, afterAheadStage);
             const cardActiveReady = variant === 'afterAhead' ? true : activeReady;
             const sealMode: 'quiet' | 'active' | 'done' = done ? 'done' : active && cardActiveReady ? 'active' : 'quiet';
+            const rowDelay = 340 + index * 240;
             return (
               <Reanimated.View
                 key={area.id}
-                entering={organizeSideEntrance(index)}
+                entering={FadeInUp.delay(rowDelay).duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                  opacity: 0,
+                  transform: [{ translateY: 42 }, { scale: 0.965 }],
+                })}
                 style={[s.organizeLayerRow, index > 0 && s.organizeLayerRowGap]}
                 onLayout={event => {
                   const { y, height: h } = event.nativeEvent.layout;
                   setRowLayouts(current => {
                     const next = [...current];
                     next[index] = { y, h };
-                    return next.length >= 2 && next[0] && next[1] ? next : next;
+                    return next;
                   });
                 }}
               >
-                <View style={s.organizeLayerSealColumn}>
-                  <OrganizeLayerSeal mode={sealMode} accent={area.accent} numeral={LAYER_NUMERALS[index] ?? String(index + 1)} />
-                </View>
                 <OrganizeLayerHeroCard
                   area={area}
                   index={index}
@@ -15598,6 +15646,15 @@ function OrganizeRuleMapSlide({
                   done={done}
                   activeReady={cardActiveReady}
                 />
+                {/* The seal rides the card's left border — half outside,
+                    half over the paper, like a wax seal on the sheet's edge */}
+                <Reanimated.View
+                  pointerEvents="none"
+                  entering={ZoomIn.delay(rowDelay + 380).duration(400).easing(Easing.bezier(0.16, 1, 0.28, 1))}
+                  style={s.organizeLayerSealAnchor}
+                >
+                  <OrganizeLayerSeal mode={sealMode} accent={area.accent} numeral={LAYER_NUMERALS[index] ?? String(index + 1)} />
+                </Reanimated.View>
               </Reanimated.View>
             );
           })}
@@ -29530,21 +29587,19 @@ const s = StyleSheet.create({
     position: 'relative',
   },
   organizeLayerRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    columnGap: 12,
+    position: 'relative',
+    width: '100%',
   },
   organizeLayerRowGap: {
-    marginTop: 26,
+    marginTop: 30,
   },
-  organizeLayerSealColumn: {
-    width: LAYER_SEAL_SIZE,
-    paddingTop: LAYER_SEAL_TOP,
-    alignItems: 'center',
+  organizeLayerSealAnchor: {
+    position: 'absolute',
+    left: -LAYER_SEAL_OVERHANG,
+    top: LAYER_SEAL_TOP,
   },
   organizeLayerHeroCardInRow: {
-    flex: 1,
-    minWidth: 0,
+    width: '100%',
   },
   organizeLayerSealStage: {
     width: LAYER_SEAL_SIZE,
@@ -29615,14 +29670,15 @@ const s = StyleSheet.create({
     elevation: 3,
   },
   organizeLayerHeroCard: {
-    borderRadius: 30,
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    paddingBottom: 17,
+    borderRadius: 26,
+    paddingLeft: 38,
+    paddingRight: 17,
+    paddingTop: 17,
+    paddingBottom: 16,
     overflow: 'hidden',
     backgroundColor: '#FFFDF8',
     borderWidth: 1.5,
-    rowGap: 12,
+    rowGap: 11,
     shadowColor: '#5E5142',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.1,
@@ -29632,19 +29688,30 @@ const s = StyleSheet.create({
   organizeLayerHeroTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 13,
+    columnGap: 12,
   },
-  organizeLayerHeroIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
+  organizeLayerHeroEmblem: {
+    width: 44,
+    height: 44,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
   },
   organizeLayerHeroTitleWrap: {
     flex: 1,
-    rowGap: 2,
+    minWidth: 0,
+    rowGap: 3,
+  },
+  organizeLayerHeroStepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 9,
+  },
+  organizeLayerHeroStepRule: {
+    flex: 1,
+    maxWidth: 52,
+    height: 1,
   },
   organizeLayerHeroStep: {
     fontFamily: F.sansBold,
