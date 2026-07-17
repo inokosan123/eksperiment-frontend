@@ -18555,32 +18555,47 @@ function WeeklyEvidenceCardView({
       <View style={[s.weeklyEvidenceCardSurface, { borderColor: `${card.accent}30` }]}>
         <LinearGradient
           pointerEvents="none"
-          colors={['rgba(255,253,248,1)', `${card.accent}12`, 'rgba(255,247,232,0.98)']}
+          colors={['rgba(255,254,251,1)', `${card.accent}0E`, 'rgba(255,249,238,0.98)']}
           start={{ x: 0.08, y: 0 }}
           end={{ x: 0.92, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <View pointerEvents="none" style={[s.weeklyEvidenceCardAccentWash, { backgroundColor: `${card.accent}12` }]} />
-        <View pointerEvents="none" style={[s.weeklyEvidenceCornerGlow, { borderColor: `${card.accent}26` }]} />
+        <View pointerEvents="none" style={[s.v4ToolTopSheen, { backgroundColor: `${card.accent}22` }]} />
+        <View pointerEvents="none" style={[s.weeklyEvidenceWhisperFrame, { borderColor: `${card.accent}1A` }]} />
+        <View pointerEvents="none" style={[s.weeklyEvidenceGlint, { right: 13, top: 14, backgroundColor: `${card.accent}5C` }]} />
+        <View pointerEvents="none" style={[s.weeklyEvidenceGlintSmall, { left: 15, bottom: 40, backgroundColor: `${card.accent}44` }]} />
 
         <View style={s.weeklyEvidenceCardHeader}>
-          <View style={[s.weeklyEvidenceSourcePill, { borderColor: `${card.accent}28`, backgroundColor: '#FFFFFF' }]}>
-            <Text style={s.weeklyEvidenceSourceText} numberOfLines={1} adjustsFontSizeToFit>
-              <Text style={[s.weeklyEvidenceSourceNumber, { color: card.accent }]}>158</Text>
-              <Text> studies | </Text>
-              <Text style={[s.weeklyEvidenceSourceNumber, { color: card.peopleAccent }]}>53,957</Text>
-              <Text> people</Text>
+          <Text style={[s.weeklyEvidenceEyebrow, { color: card.accent }]}>CLINICAL EVIDENCE</Text>
+          <View style={s.weeklyEvidenceTitleRow}>
+            <Text style={s.weeklyEvidenceTitleSerif} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
+              {card.title}
             </Text>
+            <View style={[s.weeklyEvidenceDeltaChip, { backgroundColor: card.accent }]}>
+              <Text style={s.weeklyEvidenceDeltaChipText}>{card.deltaText}</Text>
+            </View>
           </View>
-          <Text style={s.weeklyEvidenceTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
-            {card.title.toUpperCase()} <Text style={[s.weeklyEvidenceTitleDelta, { color: card.accent }]}>({card.deltaText})</Text>
-          </Text>
-          <View style={[s.weeklyEvidenceTitleUnderline, { backgroundColor: card.accent }]} />
+          <View style={s.weeklyEvidenceOrnamentRow}>
+            <View style={[s.weeklyEvidenceOrnamentLine, { backgroundColor: `${card.accent}52` }]} />
+            <View style={[s.weeklyEvidenceOrnamentDiamond, { backgroundColor: card.accent }]} />
+            <View style={[s.weeklyEvidenceOrnamentLine, { backgroundColor: `${card.accent}52` }]} />
+          </View>
         </View>
 
-        <View style={[s.weeklyEvidenceGraphPanel, { borderColor: `${card.accent}20`, backgroundColor: `${card.accent}08` }]}>
+        <View style={[s.weeklyEvidenceGraphPanel, { borderColor: `${card.accent}1C`, backgroundColor: `${card.accent}06` }]}>
           <View pointerEvents="none" style={s.weeklyEvidenceGraphPaper} />
           <WeeklyEvidenceResultChart card={card} active={active} width={chartWidth} height={chartHeight} />
+        </View>
+
+        <View style={s.weeklyEvidenceFooterRow}>
+          <View style={s.weeklyEvidenceFooterRule} />
+          <Text style={s.weeklyEvidenceFooterText} numberOfLines={1} adjustsFontSizeToFit>
+            <Text style={[s.weeklyEvidenceFooterNumber, { color: card.accent }]}>158</Text>
+            <Text> STUDIES · </Text>
+            <Text style={[s.weeklyEvidenceFooterNumber, { color: card.peopleAccent }]}>53,957</Text>
+            <Text> PEOPLE</Text>
+          </Text>
+          <View style={s.weeklyEvidenceFooterRule} />
         </View>
       </View>
     </Reanimated.View>
@@ -18602,8 +18617,8 @@ function OrganizeWeeklyIntroV2Slide({ onNext }: { onNext: () => void }) {
     : Math.min(388, Math.max(360, height - insets.top - insets.bottom - 346));
   const chartWidth = Math.max(204, Math.min(cardWidth - 58, 286));
   const chartHeight = compact
-    ? Math.min(224, Math.max(196, cardHeight - 124))
-    : Math.min(258, Math.max(226, cardHeight - 132));
+    ? Math.min(210, Math.max(184, cardHeight - 138))
+    : Math.min(244, Math.max(214, cardHeight - 146));
   const gap = 18;
   const ready = activeIndex >= WEEKLY_EVIDENCE_CARDS.length - 1;
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 10 }];
@@ -29261,15 +29276,112 @@ const s = StyleSheet.create({
   },
   weeklyEvidenceCardHeader: {
     width: '100%',
-    minHeight: 84,
-    borderRadius: 22,
-    backgroundColor: 'transparent',
+    minHeight: 78,
     alignItems: 'center',
     justifyContent: 'center',
-    rowGap: 6,
+    rowGap: 5,
     paddingHorizontal: 12,
-    paddingTop: 6,
-    paddingBottom: 8,
+    paddingTop: 8,
+    paddingBottom: 2,
+  },
+  weeklyEvidenceWhisperFrame: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    right: 6,
+    bottom: 6,
+    borderRadius: 24,
+    borderWidth: 1,
+  },
+  weeklyEvidenceGlint: {
+    position: 'absolute',
+    width: 5,
+    height: 5,
+    borderRadius: 1,
+    transform: [{ rotate: '45deg' }],
+  },
+  weeklyEvidenceGlintSmall: {
+    position: 'absolute',
+    width: 3.5,
+    height: 3.5,
+    borderRadius: 0.8,
+    transform: [{ rotate: '45deg' }],
+  },
+  weeklyEvidenceEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    lineHeight: 12,
+    letterSpacing: 2.4,
+  },
+  weeklyEvidenceTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    maxWidth: '100%',
+  },
+  weeklyEvidenceTitleSerif: {
+    fontFamily: F.serifBold,
+    fontSize: 26,
+    lineHeight: 31,
+    color: INK,
+    flexShrink: 1,
+  },
+  weeklyEvidenceDeltaChip: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3.5,
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  weeklyEvidenceDeltaChipText: {
+    fontFamily: F.sansBold,
+    fontSize: 13,
+    lineHeight: 17,
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
+  },
+  weeklyEvidenceOrnamentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 8,
+    marginTop: 2,
+  },
+  weeklyEvidenceOrnamentLine: {
+    width: 44,
+    height: 1.2,
+    borderRadius: 1,
+  },
+  weeklyEvidenceOrnamentDiamond: {
+    width: 5,
+    height: 5,
+    borderRadius: 1,
+    transform: [{ rotate: '45deg' }],
+  },
+  weeklyEvidenceFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 10,
+    paddingHorizontal: 8,
+    paddingTop: 1,
+  },
+  weeklyEvidenceFooterRule: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(25,23,20,0.10)',
+  },
+  weeklyEvidenceFooterText: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    lineHeight: 12,
+    letterSpacing: 1.4,
+    color: 'rgba(25,23,20,0.44)',
+  },
+  weeklyEvidenceFooterNumber: {
+    fontSize: 10,
   },
   weeklyEvidenceSourcePill: {
     alignSelf: 'center',
