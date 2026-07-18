@@ -7,7 +7,7 @@ import LottieView from 'lottie-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle as SvgCircle, Defs, G, LinearGradient as SvgLinearGradient, Path as SvgPath, RadialGradient as SvgRadialGradient, Stop } from 'react-native-svg';
+import Svg, { Circle as SvgCircle, Defs, G, Line as SvgLine, LinearGradient as SvgLinearGradient, Path as SvgPath, RadialGradient as SvgRadialGradient, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import FocusLottie from '@/components/focus/FocusLottie';
 import Reanimated, {
@@ -20149,6 +20149,47 @@ function V2MutedTaskCard({
   );
 }
 
+// The laid-paper weave from the app's Screen Time / Web Protection hero cards
+// (PlanCardBackdrop), re-drawn locally for onboarding: fine 45° gold
+// hairlines, one every 30px, sitting barely above the panel gradient — the
+// same instrument-face texture the user later meets on Home.
+function SpiritualPanelWeave() {
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const step = 30;
+  const lineCount = box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
+
+  return (
+    <View
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      onLayout={event => {
+        const { width, height } = event.nativeEvent.layout;
+        setBox({ w: width, h: height });
+      }}
+    >
+      {lineCount > 0 ? (
+        <Svg width={box.w} height={box.h} style={StyleSheet.absoluteFill}>
+          {Array.from({ length: lineCount }).map((_, index) => {
+            const offset = index * step;
+            return (
+              <SvgLine
+                key={index}
+                x1={offset}
+                y1={-4}
+                x2={offset - box.h - 8}
+                y2={box.h + 4}
+                stroke="#C5A059"
+                strokeOpacity={0.06}
+                strokeWidth={1}
+              />
+            );
+          })}
+        </Svg>
+      ) : null}
+    </View>
+  );
+}
+
 // Gentle standing invitation on the builder's first action: the wrapped
 // element breathes until the user takes it.
 function V2InviteBreath({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
@@ -20306,7 +20347,7 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
             opacity: 0,
             transform: [{ translateY: 18 }, { scale: 0.985 }],
           })}
-          style={[s.v2MyPanel, !saved.length && s.v2SpiritualMyPanelEmpty, { borderColor: 'rgba(197,160,89,0.3)' }, myPanelLeaveStyle]}
+          style={[s.v2MyPanel, !saved.length && s.v2SpiritualMyPanelEmpty, { borderColor: 'rgba(197,160,89,0.34)', borderWidth: 1 }, myPanelLeaveStyle]}
         >
           <LinearGradient
             pointerEvents="none"
@@ -20315,7 +20356,7 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
-          <View pointerEvents="none" style={s.v2SpiritualPanelHalo} />
+          <SpiritualPanelWeave />
           <View style={s.v2PanelHeader}>
             <Text style={s.v2PanelTitle}>My Spiritual Tasks</Text>
             <View style={[s.v2PanelCount, { backgroundColor: 'rgba(197,160,89,0.12)', borderColor: 'rgba(197,160,89,0.26)' }]}>
