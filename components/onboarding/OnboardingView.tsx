@@ -7,7 +7,7 @@ import LottieView from 'lottie-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle as SvgCircle, Defs, G, LinearGradient as SvgLinearGradient, Path as SvgPath, Stop } from 'react-native-svg';
+import Svg, { Circle as SvgCircle, Defs, G, LinearGradient as SvgLinearGradient, Path as SvgPath, RadialGradient as SvgRadialGradient, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import FocusLottie from '@/components/focus/FocusLottie';
 import Reanimated, {
@@ -207,6 +207,7 @@ type StepId =
   | 'organizeWeeklyRhythmV2'
   | 'organizeDailySetupV2'
   | 'organizeHubStartV2'
+  | 'organizeChristCenterV2'
   | 'organizeSpiritualBuilderV2'
   | 'organizeHubAfterSpiritualV2'
   | 'organizeRoutineBuilderV2'
@@ -1192,6 +1193,7 @@ const ONBOARDING_DEV_JUMP_GROUPS: OnboardingDevJumpGroup[] = [
       { step: 'organizeWeeklyRhythmV2', title: 'Weekly rhythm', body: 'Monday to Sunday planning preview.', accent: '#4D8586' },
       { step: 'organizeDailySetupV2', title: 'Task rhythm', body: 'Task frequency preview.', accent: '#2F9B61' },
       { step: 'organizeHubStartV2', title: 'Tasks hub', body: 'Four task types overview.', accent: '#4D8586' },
+      { step: 'organizeChristCenterV2', title: 'Around Christ', body: 'Build life around Christ manifesto.', accent: GOLD },
       { step: 'organizeSpiritualTasksIntro', title: 'Spiritual tasks', body: 'Start before spiritual setup.', accent: GOLD },
       { step: 'organizeHubAfterSpiritualV2', title: 'Routine tasks', body: 'Watch spiritual check, then routine setup.', accent: '#4D8586' },
       { step: 'organizeHubAfterRoutineV2', title: 'Challenges', body: 'Watch routine check, then challenge setup.', accent: '#8F5B4B' },
@@ -1246,6 +1248,7 @@ function stepOrder(answers: Answers): StepId[] {
     'organizeWeeklyRhythmV2',
     'organizeDailySetupV2',
     'organizeHubStartV2',
+    'organizeChristCenterV2',
     'organizeSpiritualTasksIntro',
     'organizeSpiritualBuilderV2',
     'organizeHubAfterSpiritualV2',
@@ -19377,6 +19380,388 @@ function OrganizeTaskRhythmV2Slide({ onNext }: { onNext: () => void }) {
   );
 }
 
+// --- Build your life around Christ --------------------------------------------
+// The manifesto slide of the organize chapter: before any spiritual task is
+// placed, the week's ordering principle is stated once, quietly. Light dawns,
+// the icon rises into it, the sentence lands, Matthew 6:33 seals it.
+
+const CHRIST_ICON = require('@/assets/images/onboarding/organize-christ-center.png');
+const CHRIST_ICON_ASPECT = 1080 / 1302;
+
+// Dust drifting in cathedral light: positions are fractions of the icon box.
+const CHRIST_MOTE_SEEDS = [
+  { x: 0.06, y: 0.34, size: 4, delay: 1500, dur: 5200, rise: 20, sway: 3, o: 0.5 },
+  { x: 0.15, y: 0.66, size: 3, delay: 2300, dur: 6100, rise: 24, sway: -2.5, o: 0.42 },
+  { x: 0.3, y: 0.11, size: 3.5, delay: 2900, dur: 5600, rise: 18, sway: 2, o: 0.5 },
+  { x: 0.54, y: 0.03, size: 3, delay: 1900, dur: 6600, rise: 16, sway: -2, o: 0.45 },
+  { x: 0.75, y: 0.08, size: 4, delay: 3300, dur: 5400, rise: 20, sway: 2.5, o: 0.5 },
+  { x: 0.92, y: 0.36, size: 3.5, delay: 1300, dur: 5900, rise: 24, sway: -3, o: 0.48 },
+  { x: 0.86, y: 0.68, size: 3, delay: 2700, dur: 6400, rise: 22, sway: 2, o: 0.4 },
+  { x: 0.1, y: 0.14, size: 2.5, delay: 3600, dur: 7000, rise: 18, sway: 2.5, o: 0.38 },
+  { x: 0.68, y: 0.56, size: 2.5, delay: 4100, dur: 6800, rise: 20, sway: -2, o: 0.34 },
+] as const;
+
+function ChristMote({
+  seed,
+  boxWidth,
+  boxHeight,
+  leave,
+}: {
+  seed: (typeof CHRIST_MOTE_SEEDS)[number];
+  boxWidth: number;
+  boxHeight: number;
+  leave: SharedValue<number>;
+}) {
+  const drift = useSharedValue(0);
+
+  useEffect(() => {
+    drift.value = withDelay(
+      seed.delay,
+      withRepeat(withTiming(1, { duration: seed.dur, easing: Easing.linear }), -1, false),
+    );
+    return () => {
+      cancelAnimation(drift);
+    };
+  }, [drift, seed.delay, seed.dur]);
+
+  const moteStyle = useAnimatedStyle(() => {
+    const p = drift.value;
+    return {
+      opacity:
+        Math.sin(Math.PI * p) * seed.o * interpolate(leave.value, [0, 0.2, 1], [1, 0, 0]),
+      transform: [
+        { translateY: -seed.rise * p },
+        { translateX: Math.sin(Math.PI * 2 * p) * seed.sway },
+      ],
+    };
+  });
+
+  return (
+    <Reanimated.View
+      pointerEvents="none"
+      style={[
+        s.christMote,
+        {
+          left: seed.x * boxWidth - seed.size / 2,
+          top: seed.y * boxHeight,
+          width: seed.size,
+          height: seed.size,
+          borderRadius: seed.size / 2,
+        },
+        moteStyle,
+      ]}
+    />
+  );
+}
+
+function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const compact = height < 720;
+  const [leaving, setLeaving] = useState(false);
+  const leavingRef = useRef(false);
+  const leave = useSharedValue(0);
+  const dawn = useSharedValue(0);
+  const breath = useSharedValue(0);
+  const float = useSharedValue(0);
+  const orn = useSharedValue(0);
+
+  // The icon takes the widest size that still leaves the title, verse and CTA
+  // room to breathe on this screen's height.
+  const titleLine = compact ? 38 : 45;
+  const verseLine = compact ? 22 : 25;
+  const fixedAbove = insets.top + (compact ? 26 : 42) + 13 + (compact ? 16 : 22);
+  const fixedBelow =
+    (compact ? 18 : 26) + titleLine * 2 + (compact ? 14 : 18) + 5 + (compact ? 13 : 17) + verseLine * 3 + 9 + 13;
+  const ctaReserve = insets.bottom + 18 + 58 + 16;
+  const availableIconHeight = Math.max(230, height - fixedAbove - fixedBelow - ctaReserve);
+  const iconHeightByWidth = Math.min(width * (compact ? 0.72 : 0.8), 336) / CHRIST_ICON_ASPECT;
+  const iconHeight = Math.min(iconHeightByWidth, availableIconHeight);
+  const iconWidth = iconHeight * CHRIST_ICON_ASPECT;
+  const glowSize = Math.min(width * 1.35, 520);
+
+  useEffect(() => {
+    dawn.value = withDelay(
+      140,
+      withTiming(1, { duration: 1150, easing: Easing.bezier(0.22, 1, 0.3, 1) }),
+    );
+    breath.value = withDelay(
+      1500,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
+        ),
+        -1,
+        false,
+      ),
+    );
+    float.value = withDelay(
+      1600,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
+        ),
+        -1,
+        false,
+      ),
+    );
+    orn.value = withDelay(
+      1780,
+      withTiming(1, { duration: 540, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+    );
+    const timers = [
+      setTimeout(() => runSelectionHaptic(), 1250),
+      setTimeout(() => runBubbleHaptic(), 1580),
+    ];
+    return () => {
+      timers.forEach(timer => clearTimeout(timer));
+      cancelAnimation(dawn);
+      cancelAnimation(breath);
+      cancelAnimation(float);
+      cancelAnimation(orn);
+      cancelAnimation(leave);
+    };
+  }, [breath, dawn, float, leave, orn]);
+
+  const handleContinue = () => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    setLeaving(true);
+    leave.value = withTiming(1, { duration: 620, easing: Easing.in(Easing.cubic) });
+    setTimeout(onNext, 660);
+  };
+
+  const radianceStyle = useAnimatedStyle(() => ({
+    opacity:
+      dawn.value *
+      (0.86 + 0.14 * breath.value) *
+      interpolate(leave.value, [0, 0.3, 0.82, 1], [1, 1, 0, 0]),
+    transform: [
+      { translateY: interpolate(float.value, [0, 1], [0, 1.4]) },
+      {
+        scale:
+          (0.7 + 0.3 * dawn.value) *
+          (1 + 0.045 * breath.value) *
+          interpolate(leave.value, [0, 0.3, 1], [1, 1.08, 1.16]),
+      },
+    ],
+  }));
+
+  const iconStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(leave.value, [0, 0.22, 0.62, 1], [1, 1, 0, 0]),
+    transform: [
+      {
+        translateY:
+          interpolate(float.value, [0, 1], [0, -3.5]) +
+          interpolate(leave.value, [0, 0.12, 1], [0, 0, -26]),
+      },
+      { scale: 1 + 0.035 * interpolate(leave.value, [0, 0.12, 1], [0, 0, 1]) },
+    ],
+  }));
+
+  const eyebrowLeaveStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(leave.value, [0, 0.26, 1], [1, 0, 0]),
+  }));
+  const titleLeaveStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(leave.value, [0, 0.06, 0.42, 1], [1, 1, 0, 0]),
+    transform: [{ translateY: interpolate(leave.value, [0, 0.06, 1], [0, 0, 10]) }],
+  }));
+  const verseLeaveStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(leave.value, [0, 0.28, 1], [1, 0, 0]),
+    transform: [{ translateY: interpolate(leave.value, [0, 1], [0, 8]) }],
+  }));
+  const ctaLeaveStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(leave.value, [0, 0.18, 1], [1, 0, 0]),
+    transform: [{ translateY: interpolate(leave.value, [0, 1], [0, 8]) }],
+  }));
+
+  const ornLineLeftStyle = useAnimatedStyle(() => ({
+    opacity: orn.value * interpolate(leave.value, [0, 0.28, 1], [1, 0, 0]),
+    transform: [
+      { translateX: 28 * (1 - orn.value) },
+      { scaleX: Math.max(orn.value, 0.0001) },
+    ],
+  }));
+  const ornLineRightStyle = useAnimatedStyle(() => ({
+    opacity: orn.value * interpolate(leave.value, [0, 0.28, 1], [1, 0, 0]),
+    transform: [
+      { translateX: -28 * (1 - orn.value) },
+      { scaleX: Math.max(orn.value, 0.0001) },
+    ],
+  }));
+  const ornDotStyle = useAnimatedStyle(() => ({
+    opacity:
+      interpolate(orn.value, [0, 0.55, 0.75, 1], [0, 0, 1, 1]) *
+      interpolate(leave.value, [0, 0.28, 1], [1, 0, 0]),
+    transform: [{ scale: interpolate(orn.value, [0, 0.55, 0.86, 1], [0.2, 0.2, 1.25, 1]) }],
+  }));
+
+  const glowCenterY = iconHeight * 0.185;
+
+  return (
+    <View style={s.christSlide}>
+      <Reanimated.View
+        pointerEvents="none"
+        entering={FadeIn.delay(2400).duration(900)}
+        style={s.christFloorWash}
+      >
+        <LinearGradient
+          colors={['rgba(212,175,110,0)', 'rgba(212,175,110,0.07)']}
+          style={StyleSheet.absoluteFill}
+        />
+      </Reanimated.View>
+
+      <View style={[s.christContent, { paddingTop: insets.top + (compact ? 26 : 42) }]}>
+        <Reanimated.View
+          entering={FadeIn.delay(1120).duration(520).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 6 }],
+          })}
+          style={eyebrowLeaveStyle}
+        >
+          <Text style={s.christEyebrow}>First things first</Text>
+        </Reanimated.View>
+
+        <View
+          style={{
+            width: iconWidth,
+            height: iconHeight,
+            marginTop: compact ? 16 : 22,
+          }}
+        >
+          <Reanimated.View
+            pointerEvents="none"
+            style={[
+              s.christRadiance,
+              {
+                width: glowSize,
+                height: glowSize,
+                left: (iconWidth - glowSize) / 2,
+                top: glowCenterY - glowSize / 2,
+              },
+              radianceStyle,
+            ]}
+          >
+            <Svg width={glowSize} height={glowSize}>
+              <Defs>
+                <SvgRadialGradient id="christGlowOuter" cx="50%" cy="50%" r="50%">
+                  <Stop offset="0" stopColor="#F2CE84" stopOpacity="0.3" />
+                  <Stop offset="0.55" stopColor="#EFCB80" stopOpacity="0.11" />
+                  <Stop offset="1" stopColor="#EFCB80" stopOpacity="0" />
+                </SvgRadialGradient>
+                <SvgRadialGradient id="christGlowCore" cx="50%" cy="50%" r="50%">
+                  <Stop offset="0" stopColor="#F6D88F" stopOpacity="0.5" />
+                  <Stop offset="0.5" stopColor="#F2CE84" stopOpacity="0.17" />
+                  <Stop offset="1" stopColor="#F2CE84" stopOpacity="0" />
+                </SvgRadialGradient>
+              </Defs>
+              <SvgCircle
+                cx={glowSize / 2}
+                cy={glowSize / 2 + glowSize * 0.12}
+                r={glowSize / 2}
+                fill="url(#christGlowOuter)"
+              />
+              <SvgCircle
+                cx={glowSize / 2}
+                cy={glowSize / 2}
+                r={glowSize * 0.24}
+                fill="url(#christGlowCore)"
+              />
+            </Svg>
+          </Reanimated.View>
+
+          <Reanimated.View
+            entering={FadeIn.delay(400).duration(950).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 18 }, { scale: 1.05 }],
+            })}
+            style={[s.christIconWrap, iconStyle]}
+          >
+            <Image source={CHRIST_ICON} style={s.christIcon} resizeMode="contain" />
+          </Reanimated.View>
+
+          {CHRIST_MOTE_SEEDS.map(seed => (
+            <ChristMote
+              key={`${seed.x}-${seed.y}`}
+              seed={seed}
+              boxWidth={iconWidth}
+              boxHeight={iconHeight}
+              leave={leave}
+            />
+          ))}
+        </View>
+
+        <Reanimated.View style={[s.christTitleBlock, { marginTop: compact ? 18 : 26 }, titleLeaveStyle]}>
+          <Reanimated.Text
+            entering={FadeIn.delay(1240).duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 14 }, { scale: 0.985 }],
+            })}
+            style={[s.christTitle, compact && s.christTitleCompact]}
+          >
+            Build your life
+          </Reanimated.Text>
+          <Reanimated.Text
+            entering={FadeIn.delay(1400).duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 14 }, { scale: 0.985 }],
+            })}
+            style={[s.christTitle, compact && s.christTitleCompact]}
+          >
+            around Christ.
+          </Reanimated.Text>
+        </Reanimated.View>
+
+        <View style={[s.christOrnamentRow, { marginTop: compact ? 14 : 18 }]}>
+          <Reanimated.View style={[s.christOrnamentLine, ornLineLeftStyle]} />
+          <Reanimated.View style={[s.christOrnamentDot, ornDotStyle]} />
+          <Reanimated.View style={[s.christOrnamentLine, ornLineRightStyle]} />
+        </View>
+
+        <Reanimated.View
+          entering={FadeIn.delay(2100).duration(760).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 10 }],
+          })}
+          style={[s.christVerseBlock, { marginTop: compact ? 13 : 17 }, verseLeaveStyle]}
+        >
+          <Text style={[s.christVerse, compact && s.christVerseCompact]}>
+            Seek first the kingdom of God, and all these things will be added to you.
+          </Text>
+          <Reanimated.Text
+            entering={FadeIn.delay(2280).duration(600).withInitialValues({ opacity: 0 })}
+            style={s.christVerseRef}
+          >
+            Matthew 6:33
+          </Reanimated.Text>
+        </Reanimated.View>
+      </View>
+
+      <Reanimated.View
+        pointerEvents={leaving ? 'none' : 'auto'}
+        style={[s.christFooter, { bottom: insets.bottom + 18 }, ctaLeaveStyle]}
+      >
+        <AnimatedCta delay={2520}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              haptic="medium"
+              disabled={leaving}
+              onPress={handleContinue}
+              style={s.primaryButton}
+            >
+              <Text style={s.primaryButtonText}>Begin with Him</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      </Reanimated.View>
+    </View>
+  );
+}
+
 // --- The weekly hub -----------------------------------------------------------
 
 type OrganizeHubV2Stage = 'start' | 'afterSpiritual' | 'afterRoutine' | 'afterChallenges' | 'complete';
@@ -23172,6 +23557,7 @@ export default function OnboardingView() {
     activeStep === 'organizeWeeklyRhythmV2' ||
     activeStep === 'organizeDailySetupV2' ||
     activeStep === 'organizeHubStartV2' ||
+    activeStep === 'organizeChristCenterV2' ||
     activeStep === 'organizeSpiritualBuilderV2' ||
     activeStep === 'organizeHubAfterSpiritualV2' ||
     activeStep === 'organizeRoutineBuilderV2' ||
@@ -23229,6 +23615,7 @@ export default function OnboardingView() {
     activeStep === 'organizeWeeklyRhythmV2' ||
     activeStep === 'organizeDailySetupV2' ||
     activeStep === 'organizeHubStartV2' ||
+    activeStep === 'organizeChristCenterV2' ||
     activeStep === 'organizeSpiritualBuilderV2' ||
     activeStep === 'organizeHubAfterSpiritualV2' ||
     activeStep === 'organizeRoutineBuilderV2' ||
@@ -23576,6 +23963,7 @@ export default function OnboardingView() {
     if (activeStep === 'organizeWeeklyRhythmV2') return <OrganizeWeeklyRhythmV2Slide onNext={goNext} />;
     if (activeStep === 'organizeDailySetupV2') return <OrganizeTaskRhythmV2Slide onNext={goNext} />;
     if (activeStep === 'organizeHubStartV2') return <OrganizeHubV2Slide key="organizeHubStartV2" stage="start" onNext={goNext} />;
+    if (activeStep === 'organizeChristCenterV2') return <OrganizeChristCenterV2Slide onNext={goNext} />;
     if (activeStep === 'organizeSpiritualBuilderV2') return <OrganizeSpiritualBuilderV2Slide onNext={goNext} />;
     if (activeStep === 'organizeHubAfterSpiritualV2') return <OrganizeHubV2Slide key="organizeHubAfterSpiritualV2" stage="afterSpiritual" onNext={goNext} />;
     if (activeStep === 'organizeRoutineBuilderV2') return <OrganizeRoutineBuilderPremiumV2Slide onNext={goNext} />;
@@ -30354,6 +30742,105 @@ const s = StyleSheet.create({
     top: -24,
     bottom: -24,
     width: 120,
+  },
+  christSlide: {
+    flex: 1,
+    backgroundColor: '#FFFDF8',
+  },
+  christFloorWash: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '32%',
+  },
+  christContent: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  christEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    letterSpacing: 2.6,
+    textTransform: 'uppercase',
+    color: 'rgba(149,115,52,0.9)',
+    textAlign: 'center',
+  },
+  christRadiance: {
+    position: 'absolute',
+  },
+  christIconWrap: {
+    width: '100%',
+    height: '100%',
+  },
+  christIcon: {
+    width: '100%',
+    height: '100%',
+  },
+  christMote: {
+    position: 'absolute',
+    backgroundColor: '#E3BC72',
+  },
+  christTitleBlock: {
+    alignItems: 'center',
+  },
+  christTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 39,
+    lineHeight: 45,
+    color: INK,
+    textAlign: 'center',
+  },
+  christTitleCompact: {
+    fontSize: 33,
+    lineHeight: 38,
+  },
+  christOrnamentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+  },
+  christOrnamentLine: {
+    width: 56,
+    height: 1.2,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.55)',
+  },
+  christOrnamentDot: {
+    width: 4.5,
+    height: 4.5,
+    borderRadius: 2.25,
+    backgroundColor: '#C5A059',
+  },
+  christVerseBlock: {
+    alignItems: 'center',
+    paddingHorizontal: 34,
+  },
+  christVerse: {
+    fontFamily: F.serifItalic,
+    fontSize: 17,
+    lineHeight: 25,
+    color: 'rgba(25,23,20,0.66)',
+    textAlign: 'center',
+    maxWidth: 320,
+  },
+  christVerseCompact: {
+    fontSize: 15.5,
+    lineHeight: 22,
+  },
+  christVerseRef: {
+    marginTop: 9,
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 2.2,
+    textTransform: 'uppercase',
+    color: 'rgba(25,23,20,0.38)',
+  },
+  christFooter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    paddingHorizontal: 22,
   },
   taskRhythmEditorShell: {
     width: '100%',
