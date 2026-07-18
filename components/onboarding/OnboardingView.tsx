@@ -17347,13 +17347,18 @@ function OrganizeExampleCarouselSlide({
   const displayTitle = title || overline;
   const usePolishedExampleCarousel = true;
   const needsTallExampleHeader = examples.some(example => example.title.length > 18);
-  const bigEventsCardMax = height < 720 ? 196 : height < 800 ? 228 : 258;
+  // The header lost its dead air and the freed height went to the
+  // illustration: the card is a square image of cardWidth, so a wider card
+  // IS a bigger picture. Each height bucket grows by what its header gave
+  // up (plus the slack we measured), so the top rail and the CTA never
+  // overlap the card.
+  const bigEventsCardMax = height < 720 ? 206 : height < 800 ? 246 : 278;
   const bigEventsFooterHeight = compactFooter ? height < 720 ? 78 : height < 800 ? 88 : 94 : height < 720 ? 84 : 98;
   const bigEventsHeaderHeight = compactFooter
-    ? needsTallExampleHeader ? height < 720 ? 88 : 92 : height < 720 ? 70 : 76
-    : needsTallExampleHeader ? height < 720 ? 90 : 92 : height < 720 ? 70 : 76;
+    ? needsTallExampleHeader ? height < 720 ? 74 : 78 : height < 720 ? 60 : 64
+    : needsTallExampleHeader ? height < 720 ? 76 : 80 : height < 720 ? 60 : 64;
   const bigEventsChromeHeight = bigEventsHeaderHeight + bigEventsFooterHeight;
-  const cardWidth = Math.min(width - (usePolishedExampleCarousel ? 112 : 42), usePolishedExampleCarousel ? bigEventsCardMax : 360);
+  const cardWidth = Math.min(width - (usePolishedExampleCarousel ? 88 : 42), usePolishedExampleCarousel ? bigEventsCardMax : 360);
   const cardHeight = usePolishedExampleCarousel
     ? cardWidth + bigEventsChromeHeight
     : Math.min(Math.max(height - insets.top - insets.bottom - 262, 386), 482);
@@ -33002,11 +33007,11 @@ const s = StyleSheet.create({
   },
   organizeBigEventsExampleHeader: {
     flex: 0,
-    minHeight: 76,
+    minHeight: 58,
     borderBottomWidth: 1,
     paddingHorizontal: 16,
-    paddingTop: 9,
-    paddingBottom: 8,
+    paddingTop: 8,
+    paddingBottom: 6,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 0,
@@ -33025,7 +33030,7 @@ const s = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 13,
+    paddingTop: 11,
   },
   organizeExampleNumber: {
     position: 'absolute',
@@ -33081,7 +33086,7 @@ const s = StyleSheet.create({
   },
   organizeBigEventsExampleEyebrowPinned: {
     position: 'absolute',
-    top: 11,
+    top: 9,
     left: 0,
     right: 0,
   },
@@ -33103,7 +33108,7 @@ const s = StyleSheet.create({
     width: '46%',
     height: 2,
     borderRadius: 1,
-    marginTop: 6,
+    marginTop: 5,
     opacity: 0.9,
   },
   organizeExampleVisualPanel: {
