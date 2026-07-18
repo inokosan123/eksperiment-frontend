@@ -8589,32 +8589,100 @@ function ChapterCheckpointSlide({
   );
 }
 
-function CheckpointFlameBurst() {
+// `lit={false}` pre-mounts the Lottie at full layout size, invisible, so the
+// layer rasterizes sharp and the composition is already playing when the pop
+// happens — mounting mid-scale-transform is what made the first seconds blurry.
+// The Lottie renders at 2x and is statically scaled to 0.5 so every displayed
+// frame is a downsample.
+function CheckpointFlameBurst({ lit = true }: { lit?: boolean }) {
   const pop = useSharedValue(0);
 
   useEffect(() => {
+    if (!lit) {
+      cancelAnimation(pop);
+      pop.value = 0;
+      return undefined;
+    }
     pop.value = withSequence(
-      withTiming(0.72, { duration: 260, easing: Easing.out(Easing.cubic) }),
+      withTiming(0.06, { duration: 30, easing: Easing.linear }),
+      withTiming(0.78, { duration: 260, easing: Easing.out(Easing.cubic) }),
       withSpring(1, { damping: 12, stiffness: 150, mass: 0.9 }),
     );
     return () => {
       cancelAnimation(pop);
     };
-  }, [pop]);
+  }, [lit, pop]);
 
   const popStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(pop.value, [0, 0.18, 1], [0, 1, 1]),
+    opacity: interpolate(pop.value, [0, 0.06, 0.22, 1], [0, 0, 1, 1]),
     transform: [
-      { translateY: interpolate(pop.value, [0, 0.72, 1], [12, -2, 0]) },
-      { scale: interpolate(pop.value, [0, 0.72, 1], [0.3, 1.16, 1]) },
+      { translateY: interpolate(pop.value, [0, 0.06, 0.78, 1], [0, 12, -2, 0]) },
+      { scale: interpolate(pop.value, [0, 0.06, 0.78, 1], [1, 0.3, 1.16, 1]) },
     ],
   }));
 
   return (
     <Reanimated.View style={[s.checkpointFlameBurst, popStyle]}>
       <View style={s.checkpointFlameAura} />
-      <FocusLottie name="flame" loop speed={0.82} style={s.checkpointFlameLottie} />
+      <View style={s.checkpointFlameLottieBox}>
+        <FocusLottie name="flame" loop speed={0.82} style={s.checkpointFlameLottieHiRes} />
+      </View>
     </Reanimated.View>
+  );
+}
+
+// While the seal waits for its flame: a faint ember glows awake at the center
+// and a gold glint orbits the rim, accelerating into the strike.
+function SealChargeOrbit({ charge }: { charge: SharedValue<number> }) {
+  const spin = useSharedValue(0);
+
+  useEffect(() => {
+    spin.value = withDelay(
+      120,
+      withTiming(1, { duration: 900, easing: Easing.in(Easing.quad) }),
+    );
+    return () => {
+      cancelAnimation(spin);
+    };
+  }, [spin]);
+
+  const spinStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(spin.value, [0, 0.08, 1], [0, 1, 1]),
+    transform: [{ rotate: `${interpolate(spin.value, [0, 1], [0, 720])}deg` }],
+  }));
+  const emberStyle = useAnimatedStyle(() => ({
+    opacity: 0.25 + 0.75 * charge.value,
+    transform: [{ scale: 0.6 + 0.5 * charge.value }],
+  }));
+
+  return (
+    <View pointerEvents="none" style={s.sealOrbitLayer}>
+      <Reanimated.View exiting={FadeOut.duration(160)} style={[s.sealOrbitSpinner, spinStyle]}>
+        <Svg width={110} height={110} viewBox="0 0 110 110">
+          <Defs>
+            <SvgLinearGradient id="sealOrbitTrail" x1="0" y1="0" x2="1" y2="0">
+              <Stop offset="0" stopColor="#E7C36D" stopOpacity="0" />
+              <Stop offset="1" stopColor="#FFE9B6" stopOpacity="0.9" />
+            </SvgLinearGradient>
+          </Defs>
+          <G rotation={-90} origin="55, 55">
+            <SvgCircle
+              cx={55}
+              cy={55}
+              r={52}
+              fill="none"
+              stroke="url(#sealOrbitTrail)"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeDasharray="68 258.7"
+              strokeDashoffset={68}
+            />
+          </G>
+        </Svg>
+        <View style={s.sealOrbitHead} />
+      </Reanimated.View>
+      <Reanimated.View exiting={FadeOut.duration(120)} style={[s.sealEmber, emberStyle]} />
+    </View>
   );
 }
 
@@ -22107,7 +22175,7 @@ function V4FlameSlide({
   }, [breathe, charge, completedCount, isSoloMessage, kick, sealFlight, showTools]);
 
   const sealKickStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + 0.07 * kick.value }],
+    transform: [{ scale: (1 + 0.02 * charge.value) * (1 + 0.07 * kick.value) }],
   }));
   const sealGlowStyle = useAnimatedStyle(() => ({
     opacity: 0.35 + 0.65 * charge.value,
@@ -22197,8 +22265,16 @@ function V4FlameSlide({
               <Reanimated.View style={[s.chapterCheckpointSealFlight, sealFlightStyle]}>
                 <Reanimated.View style={[s.chapterCheckpointSeal, sealKickStyle]}>
                   <Reanimated.View style={[s.chapterCheckpointSealGlow, sealGlowStyle]} />
-                  {reveal >= 2 ? <CheckpointFlameBurst /> : null}
+                  <LinearGradient
+                    colors={['#261E14', '#17130F', '#0F0B07']}
+                    start={{ x: 0.2, y: 0 }}
+                    end={{ x: 0.8, y: 1 }}
+                    style={s.sealFace}
+                  />
+                  <View style={s.sealInnerRing} />
+                  <CheckpointFlameBurst lit={reveal >= 2} />
                 </Reanimated.View>
+                {reveal < 2 ? <SealChargeOrbit charge={charge} /> : null}
                 {reveal >= 2 ? <CheckpointIgniteBurst /> : null}
               </Reanimated.View>
               {reveal >= 2 ? (
@@ -37572,9 +37648,76 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,233,182,0.40)',
   },
-  checkpointFlameLottie: {
+  checkpointFlameLottieBox: {
     width: 86,
     height: 86,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkpointFlameLottieHiRes: {
+    width: 172,
+    height: 172,
+    transform: [{ scale: 0.5 }],
+  },
+  sealFace: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 50,
+  },
+  sealInnerRing: {
+    position: 'absolute',
+    top: 5,
+    left: 5,
+    right: 5,
+    bottom: 5,
+    borderRadius: 45,
+    borderWidth: 1,
+    borderColor: 'rgba(232,195,116,0.22)',
+  },
+  sealOrbitLayer: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sealOrbitSpinner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 110,
+    height: 110,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sealOrbitHead: {
+    position: 'absolute',
+    top: 0,
+    alignSelf: 'center',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FFE9B6',
+    shadowColor: '#FFD67A',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 6,
+  },
+  sealEmber: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#F4CE82',
+    shadowColor: '#FFD67A',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.85,
+    shadowRadius: 8,
   },
   igniteBurstLayer: {
     position: 'absolute',
