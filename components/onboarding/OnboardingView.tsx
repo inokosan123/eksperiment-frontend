@@ -21618,10 +21618,12 @@ function freshKeyForChallenge(freshId: string | null, challengeId: string) {
 
 // --- Habits: concept + builder V2 -----------------------------------------------
 
+// Emoji stickers, the same icon language as the Web Protection packs. The
+// steps screen upgrades the biceps to its animated Noto twin.
 const HABIT_GOAL_IDEAS = [
-  { id: 'lose-weight', title: 'Lose weight', label: 'Health goal', accent: '#2F9B61', image: HABIT_GOAL_LOSE_WEIGHT_IMAGE, icon: <Target s={18} c="#2F9B61" w={2.2} /> },
-  { id: 'social-skills', title: 'Improve social skills', label: 'Social goal', accent: '#705B9B', image: HABIT_GOAL_SOCIAL_SKILLS_IMAGE, icon: <User s={18} c="#705B9B" w={2} /> },
-  { id: 'save-money', title: 'Save more money', label: 'Money goal', accent: GOLD, image: HABIT_GOAL_SAVE_MONEY_IMAGE, icon: <Crown s={18} c={GOLD} w={2} /> },
+  { id: 'lose-weight', title: 'Lose weight', label: 'Health goal', accent: '#2F9B61', image: HABIT_GOAL_LOSE_WEIGHT_IMAGE, emoji: '💪' },
+  { id: 'social-skills', title: 'Improve social skills', label: 'Social goal', accent: '#705B9B', image: HABIT_GOAL_SOCIAL_SKILLS_IMAGE, emoji: '🙋‍♂️' },
+  { id: 'save-money', title: 'Save more money', label: 'Money goal', accent: GOLD, image: HABIT_GOAL_SAVE_MONEY_IMAGE, emoji: '💵' },
 ];
 
 const HABIT_STEP_EXAMPLE = [
@@ -21819,8 +21821,8 @@ function OrganizeHabitsConceptV2Slide({ onNext }: { onNext: () => void }) {
               />
               <View pointerEvents="none" style={[s.habitGoalAccentRail, { backgroundColor: goal.accent }]} />
               <View pointerEvents="none" style={[s.habitGoalGlow, { backgroundColor: `${goal.accent}10` }]} />
-              <View style={[s.habitGoalSingleIcon, { borderColor: `${goal.accent}42` }]}>
-                {goal.icon}
+              <View style={[s.habitGoalSingleIcon, { borderColor: `${goal.accent}3D`, backgroundColor: `${goal.accent}0F` }]}>
+                <Text style={s.habitGoalEmoji}>{goal.emoji}</Text>
               </View>
               <View style={s.habitGoalSingleCopy}>
                 <View style={s.habitGoalTitleRow}>
@@ -21931,7 +21933,12 @@ function OrganizeHabitsStepsV2Slide({ onNext }: { onNext: () => void }) {
           <View pointerEvents="none" style={s.habitStepsStickyGoalRail} />
           <View pointerEvents="none" style={s.habitStepsStickyGoalBloom} />
           <View style={s.habitStepsStickyGoalIcon}>
-            <Target s={20} c="#2F9B61" w={2.2} />
+            <LottieView
+              source={require('@/assets/noto/energy/flexed-biceps.json')}
+              autoPlay
+              loop
+              style={s.habitStepsStickyGoalLottie}
+            />
           </View>
           <View style={s.habitStepsStickyGoalCopy}>
             <Text style={s.habitStepsStickyGoalLabel}>CLEAR GOAL</Text>
@@ -33902,14 +33909,19 @@ const s = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   habitGoalSingleIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 16.5,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     backgroundColor: '#FFFFFF',
     boxShadow: '0 8px 16px rgba(23, 19, 15, 0.07)',
+  },
+  habitGoalEmoji: {
+    fontSize: 22,
+    lineHeight: 28,
+    textAlign: 'center',
   },
   habitGoalSingleCopy: {
     flex: 1,
@@ -34024,15 +34036,20 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(47,155,97,0.10)',
   },
   habitStepsStickyGoalIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 15,
+    width: 46,
+    height: 46,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(47,155,97,0.34)',
     backgroundColor: 'rgba(47,155,97,0.10)',
     boxShadow: '0 8px 16px rgba(23, 19, 15, 0.06)',
+    overflow: 'hidden',
+  },
+  habitStepsStickyGoalLottie: {
+    width: 37,
+    height: 37,
   },
   habitStepsStickyGoalCopy: {
     flex: 1,
@@ -34060,8 +34077,8 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(47,155,97,0.30)',
-    backgroundColor: '#FFFFFF',
+    borderColor: '#2F9B61',
+    backgroundColor: '#2F9B61',
     paddingHorizontal: 6,
   },
   habitStepsStickyGoalBadgeText: {
@@ -34069,7 +34086,7 @@ const s = StyleSheet.create({
     fontSize: 9.4,
     lineHeight: 12,
     letterSpacing: 0.3,
-    color: '#2F9B61',
+    color: '#FFFFFF',
     fontVariant: ['tabular-nums'],
   },
   habitStepsConnectorWrap: {
