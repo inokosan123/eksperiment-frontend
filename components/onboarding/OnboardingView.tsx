@@ -14497,6 +14497,113 @@ const RECAP_LOADING_TEXTS = [
   'Almost ready…',
 ];
 
+// ── The forge ──────────────────────────────────────────────
+// The loading between "Based on your answers" and the plan: the crest
+// from the opening returns — breathing halo, a gold comet orbiting the
+// plate — while the build steps read out in printed serif. It closes
+// with a bloom of light that carries the cut to the next screen.
+function V4RecapForgeLoading({ onDone }: { onDone: () => void }) {
+  const [textIdx, setTextIdx] = useState(0);
+  const settle = useSharedValue(0);
+  const breathe = useSharedValue(0);
+  const spin = useSharedValue(0);
+  const bloom = useSharedValue(0);
+
+  useEffect(() => {
+    settle.value = withTiming(1, { duration: 620, easing: Easing.bezier(0.16, 1, 0.28, 1) });
+    breathe.value = withRepeat(withTiming(1, { duration: 1900, easing: Easing.inOut(Easing.sin) }), -1, true);
+    spin.value = withRepeat(withTiming(1, { duration: 1700, easing: Easing.linear }), -1, false);
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    [1, 2].forEach(step => {
+      timers.push(setTimeout(() => {
+        runSelectionHaptic();
+        setTextIdx(step);
+      }, 400 + step * 1250));
+    });
+    timers.push(setTimeout(() => {
+      runBubbleHaptic();
+      bloom.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.cubic) });
+    }, 4150));
+    timers.push(setTimeout(onDone, 4620));
+    return () => {
+      timers.forEach(clearTimeout);
+      cancelAnimation(breathe);
+      cancelAnimation(spin);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(settle.value, [0, 1], [0, 1]) * interpolate(bloom.value, [0.3, 1], [1, 0], 'clamp'),
+    transform: [
+      { translateY: (1 - settle.value) * 14 },
+      { scale: 1 + bloom.value * 0.04 },
+    ],
+  }));
+  const haloStyle = useAnimatedStyle(() => ({
+    opacity: 0.34 + breathe.value * 0.3,
+    transform: [{ scale: 0.92 + breathe.value * 0.1 }],
+  }));
+  const orbitStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${spin.value * 360}deg` }],
+  }));
+  const bloomStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(bloom.value, [0, 0.3, 1], [0, 0.92, 0], 'clamp'),
+    transform: [{ scale: interpolate(bloom.value, [0, 1], [0.4, 3.6], 'clamp') }],
+  }));
+
+  return (
+    <Reanimated.View exiting={FadeOut.duration(240)} style={s.recapForgeRoot}>
+      <Reanimated.View style={contentStyle}>
+        <View style={s.recapForgeStage}>
+          <Reanimated.View pointerEvents="none" style={[s.recapForgeHalo, haloStyle]} />
+          <Reanimated.View pointerEvents="none" style={[s.recapForgeOrbit, orbitStyle]}>
+            <View style={s.recapForgeComet} />
+            <View style={[StyleSheet.absoluteFillObject, { transform: [{ rotate: '-16deg' }] }]}>
+              <View style={[s.recapForgeCometTail, { width: 5, height: 5, opacity: 0.5 }]} />
+            </View>
+            <View style={[StyleSheet.absoluteFillObject, { transform: [{ rotate: '-32deg' }] }]}>
+              <View style={[s.recapForgeCometTail, { width: 4, height: 4, opacity: 0.28 }]} />
+            </View>
+            <View style={[StyleSheet.absoluteFillObject, { transform: [{ rotate: '-47deg' }] }]}>
+              <View style={[s.recapForgeCometTail, { width: 3, height: 3, opacity: 0.14 }]} />
+            </View>
+          </Reanimated.View>
+          <View style={s.recapForgePlate}>
+            <Image source={APP_LOGO} style={s.recapForgeLogo} resizeMode="cover" />
+          </View>
+        </View>
+
+        <View style={s.recapForgeCopy}>
+          <Text style={s.recapForgeEyebrow}>BUILDING YOUR SYSTEM</Text>
+          <View style={s.recapForgeTextSlot}>
+            <Reanimated.Text
+              key={textIdx}
+              entering={FadeInUp.duration(360).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                opacity: 0,
+                transform: [{ translateY: 10 }],
+              })}
+              exiting={FadeOut.duration(200)}
+              style={s.recapForgeText}
+            >
+              {RECAP_LOADING_TEXTS[textIdx]}
+            </Reanimated.Text>
+          </View>
+          <View style={s.recapForgeDots}>
+            {RECAP_LOADING_TEXTS.map((text, index) => (
+              <View
+                key={text}
+                style={[s.recapForgeDot, index <= textIdx && s.recapForgeDotActive]}
+              />
+            ))}
+          </View>
+        </View>
+      </Reanimated.View>
+      <Reanimated.View pointerEvents="none" style={[s.recapForgeBloom, bloomStyle]} />
+    </Reanimated.View>
+  );
+}
+
 // Generic wrapper: slides in on mount (from a side / below) and rests at a small
 // tilt + horizontal offset (the "thrown pile" look); on `purge` it drops through
 // the screen (like the toolsShowcase tags) with a stagger + spin. Pass `noEnter`
@@ -21421,7 +21528,6 @@ function V4RecapSequence({
   const [phase, setPhase] = useState<'answers' | 'loading' | 'tools'>('answers');
   const [revealCount, setRevealCount] = useState(0);
   const [purging, setPurging] = useState(false);
-  const [loadIdx, setLoadIdx] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
   const onNextRef = useRef(onNext);
 
@@ -21446,29 +21552,17 @@ function V4RecapSequence({
     };
   }, [phase, revealCount, totalItems]);
 
-  useEffect(() => {
-    if (phase !== 'loading') return undefined;
-    setLoadIdx(0);
-    const cyc = setInterval(() => setLoadIdx(i => (i + 1) % RECAP_LOADING_TEXTS.length), 700);
-    const done = setTimeout(() => {
-      if (skipToolsBoard) {
-        onNextRef.current();
-        return;
-      }
-      setPhase('tools');
-    }, 2800);
-    return () => {
-      clearInterval(cyc);
-      clearTimeout(done);
-    };
-  }, [phase, skipToolsBoard]);
-
   if (phase === 'loading') {
     return (
-      <View style={s.v4RecapLoading}>
-        <ActivityIndicator size="large" color={GOLD} />
-        <Text style={s.v4RecapLoadingText}>{RECAP_LOADING_TEXTS[loadIdx]}</Text>
-      </View>
+      <V4RecapForgeLoading
+        onDone={() => {
+          if (skipToolsBoard) {
+            onNextRef.current();
+            return;
+          }
+          setPhase('tools');
+        }}
+      />
     );
   }
 
@@ -33831,19 +33925,116 @@ const s = StyleSheet.create({
     width: '100%',
     marginTop: 28,
   },
-  v4RecapLoading: {
+  recapForgeRoot: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    rowGap: 18,
     paddingHorizontal: 32,
   },
-  v4RecapLoadingText: {
-    fontFamily: F.serifMediumItalic,
-    fontSize: 16,
-    lineHeight: 22,
-    color: 'rgba(25,23,20,0.6)',
+  recapForgeStage: {
+    width: 196,
+    height: 196,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+  },
+  recapForgeHalo: {
+    position: 'absolute',
+    width: 182,
+    height: 182,
+    borderRadius: 91,
+    backgroundColor: 'rgba(232,196,128,0.22)',
+  },
+  recapForgeOrbit: {
+    position: 'absolute',
+    width: 178,
+    height: 178,
+    alignItems: 'center',
+  },
+  recapForgeComet: {
+    position: 'absolute',
+    top: -3,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#E2B457',
+    shadowColor: '#E2B457',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  recapForgeCometTail: {
+    position: 'absolute',
+    top: -2,
+    alignSelf: 'center',
+    borderRadius: 3,
+    backgroundColor: '#E2B457',
+  },
+  recapForgePlate: {
+    width: 128,
+    height: 128,
+    borderRadius: 30,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.4)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.16,
+    shadowRadius: 26,
+    elevation: 5,
+  },
+  recapForgeLogo: {
+    width: '100%',
+    height: '100%',
+  },
+  recapForgeCopy: {
+    marginTop: 26,
+    alignItems: 'center',
+    rowGap: 9,
+  },
+  recapForgeEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    lineHeight: 13,
+    letterSpacing: 2.6,
+    color: '#B08A3E',
+  },
+  recapForgeTextSlot: {
+    minHeight: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recapForgeText: {
+    fontFamily: F.serifMedium,
+    fontSize: 19,
+    lineHeight: 26,
+    color: 'rgba(25,23,20,0.78)',
     textAlign: 'center',
+    maxWidth: 300,
+  },
+  recapForgeDots: {
+    flexDirection: 'row',
+    columnGap: 9,
+    marginTop: 3,
+  },
+  recapForgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 1.2,
+    backgroundColor: 'rgba(25,23,20,0.14)',
+    transform: [{ rotate: '45deg' }],
+  },
+  recapForgeDotActive: {
+    backgroundColor: '#C5A059',
+  },
+  recapForgeBloom: {
+    position: 'absolute',
+    alignSelf: 'center',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: '#FFF4DC',
   },
   v4RecapProblemCardInactive: {
     borderColor: 'rgba(25,23,20,0.08)',
