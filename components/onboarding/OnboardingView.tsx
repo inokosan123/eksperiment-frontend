@@ -20150,10 +20150,10 @@ function V2MutedTaskCard({
 }
 
 // The laid-paper weave from the app's Screen Time / Web Protection hero cards
-// (PlanCardBackdrop), re-drawn locally for onboarding: fine 45° gold
-// hairlines, one every 30px, sitting barely above the panel gradient — the
-// same instrument-face texture the user later meets on Home.
-function SpiritualPanelWeave() {
+// (PlanCardBackdrop), re-drawn locally for onboarding: fine 45° hairlines in
+// the chapter's own color, one every 30px, sitting barely above the panel
+// gradient — the same instrument-face texture the user later meets on Home.
+function V2PanelWeave({ color = '#C5A059' }: { color?: string }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   const step = 30;
   const lineCount = box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
@@ -20178,7 +20178,7 @@ function SpiritualPanelWeave() {
                 y1={-4}
                 x2={offset - box.h - 8}
                 y2={box.h + 4}
-                stroke="#C5A059"
+                stroke={color}
                 strokeOpacity={0.06}
                 strokeWidth={1}
               />
@@ -20190,53 +20190,13 @@ function SpiritualPanelWeave() {
   );
 }
 
-// Gentle standing invitation on the builder's first action: the wrapped
-// element breathes until the user takes it.
-function V2InviteBreath({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
-  const breathe = useSharedValue(0);
-
-  useEffect(() => {
-    breathe.value = withDelay(
-      1700,
-      withRepeat(
-        withSequence(
-          withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.sin) }),
-          withTiming(0, { duration: 1500, easing: Easing.inOut(Easing.sin) }),
-        ),
-        -1,
-        false,
-      ),
-    );
-    return () => {
-      cancelAnimation(breathe);
-    };
-  }, [breathe]);
-
-  const breatheStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + 0.016 * breathe.value }],
-  }));
-
-  return <Reanimated.View style={[style, breatheStyle]}>{children}</Reanimated.View>;
-}
-
-function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
-  const insets = useSafeAreaInsets();
-  const { createOrUpdateTask } = useTasks();
-  const [sheetItem, setSheetItem] = useState<(typeof SPIRITUAL_V2_ITEMS)[number] | null>(null);
-  const [editorItem, setEditorItem] = useState<(typeof SPIRITUAL_V2_ITEMS)[number] | null>(null);
-  const [saved, setSaved] = useState<SavedV2Entry[]>([]);
-  const [freshKey, setFreshKey] = useState<string | null>(null);
+// Shared life of every V2 builder screen: the two ~14s idle clocks (saved
+// cards breathe at 2.6s into the cycle, the sleeping catalog cascades five
+// seconds later), the staged exit choreography, and the leaving guard.
+function useV2BuilderLife(onNext: () => void) {
   const [leaving, setLeaving] = useState(false);
   const leavingRef = useRef(false);
   const leave = useSharedValue(0);
-  const savedIds = useMemo(() => new Set(saved.map(entry => entry.catalogId)), [saved]);
-  const ready = saved.length > 0;
-  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
-  // Ambient idle life. People stay on this screen for minutes, so the room
-  // may not go still — but the motion must stay rare enough to never become
-  // wallpaper: once every ~14s the saved cards rise a breath one after
-  // another and settle; the sleeping examples do the same on the same
-  // period, offset five seconds, so the two moments never collide.
   const idleActive = useSharedValue(0);
   const idleMuted = useSharedValue(0);
 
@@ -20299,6 +20259,116 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
     opacity: interpolate(leave.value, [0, 0.18, 1], [1, 0, 0]),
   }));
 
+  return {
+    leaving,
+    handleContinue,
+    idleActive,
+    idleMuted,
+    headerLeaveStyle,
+    myPanelLeaveStyle,
+    catalogLeaveStyle,
+    ctaLeaveStyle,
+  };
+}
+
+// One dashed invitation shared by the V2 builders — the app's own add-button
+// anatomy (warm gradient inside a dashed frame, white orb, soft shadow),
+// tinted per chapter. Defaults are the spiritual gold.
+function V2BuilderInvite({
+  icon,
+  title,
+  caption,
+  onPress,
+  disabled = false,
+  gradient = ['#FFFBEB', '#FFF4D5'],
+  border = 'rgba(197,160,89,0.45)',
+  orbBorder = 'rgba(197,160,89,0.32)',
+  shadow = '#C5A059',
+}: {
+  icon: React.ReactNode;
+  title: string;
+  caption: string;
+  onPress: () => void;
+  disabled?: boolean;
+  gradient?: readonly [string, string];
+  border?: string;
+  orbBorder?: string;
+  shadow?: string;
+}) {
+  return (
+    <V2InviteBreath style={s.spiritualEmptyBreath}>
+      <TouchableOpacity
+        activeOpacity={0.88}
+        haptic="medium"
+        disabled={disabled}
+        onPress={onPress}
+        style={[s.spiritualEmptyPress, { shadowColor: shadow }, disabled && s.v2EmptyActionDisabled]}
+      >
+        <LinearGradient
+          colors={gradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[s.v2Empty, s.v2SpiritualEmpty, { borderColor: border }]}
+        >
+          <View style={[s.spiritualEmptyOrb, { borderColor: orbBorder }]}>{icon}</View>
+          <Text style={s.spiritualEmptyTitle}>{title}</Text>
+          <Text style={s.spiritualEmptyCaption}>{caption}</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+    </V2InviteBreath>
+  );
+}
+
+// Gentle standing invitation on the builder's first action: the wrapped
+// element breathes until the user takes it.
+function V2InviteBreath({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
+  const breathe = useSharedValue(0);
+
+  useEffect(() => {
+    breathe.value = withDelay(
+      1700,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0, { duration: 1500, easing: Easing.inOut(Easing.sin) }),
+        ),
+        -1,
+        false,
+      ),
+    );
+    return () => {
+      cancelAnimation(breathe);
+    };
+  }, [breathe]);
+
+  const breatheStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + 0.016 * breathe.value }],
+  }));
+
+  return <Reanimated.View style={[style, breatheStyle]}>{children}</Reanimated.View>;
+}
+
+function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
+  const insets = useSafeAreaInsets();
+  const { createOrUpdateTask } = useTasks();
+  const [sheetItem, setSheetItem] = useState<(typeof SPIRITUAL_V2_ITEMS)[number] | null>(null);
+  const [editorItem, setEditorItem] = useState<(typeof SPIRITUAL_V2_ITEMS)[number] | null>(null);
+  const [saved, setSaved] = useState<SavedV2Entry[]>([]);
+  const [freshKey, setFreshKey] = useState<string | null>(null);
+  const savedIds = useMemo(() => new Set(saved.map(entry => entry.catalogId)), [saved]);
+  const ready = saved.length > 0;
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+  const {
+    leaving,
+    handleContinue,
+    idleActive,
+    idleMuted,
+    headerLeaveStyle,
+    myPanelLeaveStyle,
+    catalogLeaveStyle,
+    ctaLeaveStyle,
+  } = useV2BuilderLife(onNext);
+
   const openItem = (item: (typeof SPIRITUAL_V2_ITEMS)[number]) => {
     runSelectionHaptic();
     if (item.setup.kind === 'editor') setEditorItem(item);
@@ -20356,7 +20426,7 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
-          <SpiritualPanelWeave />
+          <V2PanelWeave />
           <View style={s.v2PanelHeader}>
             <Text style={s.v2PanelTitle}>My Spiritual Tasks</Text>
             <View style={[s.v2PanelCount, { backgroundColor: 'rgba(197,160,89,0.12)', borderColor: 'rgba(197,160,89,0.26)' }]}>
@@ -20384,27 +20454,12 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
               ))}
             </ScrollView>
           ) : (
-            <V2InviteBreath style={s.spiritualEmptyBreath}>
-              <TouchableOpacity
-                activeOpacity={0.88}
-                haptic="medium"
-                onPress={openFirstSpiritualTask}
-                style={s.spiritualEmptyPress}
-              >
-                <LinearGradient
-                  colors={['#FFFBEB', '#FFF4D5']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[s.v2Empty, s.v2SpiritualEmpty]}
-                >
-                  <View style={s.spiritualEmptyOrb}>
-                    <Plus s={15} c={GOLD} w={2.6} />
-                  </View>
-                  <Text style={s.spiritualEmptyTitle}>Add Spiritual Task</Text>
-                  <Text style={s.spiritualEmptyCaption}>Prayer, Scripture, church — begin with one</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </V2InviteBreath>
+            <V2BuilderInvite
+              icon={<Plus s={15} c={GOLD} w={2.6} />}
+              title="Add Spiritual Task"
+              caption="Prayer, Scripture, Church — begin with one"
+              onPress={openFirstSpiritualTask}
+            />
           )}
         </Reanimated.View>
 
@@ -20635,6 +20690,16 @@ function OrganizeRoutineBuilderPremiumV2Slide({ onNext }: { onNext: () => void }
   const savedIds = useMemo(() => new Set(saved.map(entry => entry.catalogId)), [saved]);
   const ready = saved.length > 0;
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+  const {
+    leaving,
+    handleContinue,
+    idleActive,
+    idleMuted,
+    headerLeaveStyle,
+    myPanelLeaveStyle,
+    catalogLeaveStyle,
+    ctaLeaveStyle,
+  } = useV2BuilderLife(onNext);
 
   const openExample = (item: RoutineTaskExample) => {
     runSelectionHaptic();
@@ -20667,17 +20732,23 @@ function OrganizeRoutineBuilderPremiumV2Slide({ onNext }: { onNext: () => void }
           { paddingTop: Math.max(insets.top + 26, 52), paddingBottom: insets.bottom + (ready ? 116 : 34) },
         ]}
       >
-        <OrganizeStageHeader
-          title={'Build your\nroutine'}
-          body="Cleaning, study, work - add the duties you repeat, then give each one its day and hour."
-          accent="#5F5A54"
-          variant="premium"
-          bodyHighlights={['duties you repeat', 'day and hour']}
-        />
+        <Reanimated.View style={headerLeaveStyle}>
+          <OrganizeStageHeader
+            title={'Build your\nroutine'}
+            body="Cleaning, study, work - add the duties you repeat, then give each one its day and hour."
+            accent="#5F5A54"
+            variant="premium"
+            bodyHighlights={['duties you repeat', 'day and hour']}
+            staged
+          />
+        </Reanimated.View>
 
         <Reanimated.View
-          entering={FadeInUp.delay(150).duration(520).easing(Easing.out(Easing.cubic))}
-          style={[s.v2MyPanel, !saved.length && s.v2RoutineMyPanelEmpty, { borderColor: 'rgba(95,90,84,0.26)' }]}
+          entering={FadeInUp.delay(300).duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 18 }, { scale: 0.985 }],
+          })}
+          style={[s.v2MyPanel, !saved.length && s.v2RoutineMyPanelEmpty, { borderColor: 'rgba(95,90,84,0.34)', borderWidth: 1 }, myPanelLeaveStyle]}
         >
           <LinearGradient
             pointerEvents="none"
@@ -20686,16 +20757,16 @@ function OrganizeRoutineBuilderPremiumV2Slide({ onNext }: { onNext: () => void }
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
-          <View pointerEvents="none" style={s.v2RoutinePanelHalo} />
+          <V2PanelWeave color="#5F5A54" />
           <View style={s.v2PanelHeader}>
-            <Text style={s.v2PanelTitle}>Add Your Tasks</Text>
+            <Text style={s.v2PanelTitle}>My Routine Tasks</Text>
             <View style={[s.v2PanelCount, { backgroundColor: 'rgba(95,90,84,0.10)', borderColor: 'rgba(95,90,84,0.24)' }]}>
               <Text style={[s.v2PanelCountText, { color: '#56514B' }]}>{saved.length}</Text>
             </View>
           </View>
           {saved.length ? (
             <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={s.v2SavedList}>
-              {saved.map(entry => (
+              {saved.map((entry, entryIndex) => (
                 <Reanimated.View
                   key={entry.key}
                   entering={FadeInUp.duration(470).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
@@ -20704,43 +20775,57 @@ function OrganizeRoutineBuilderPremiumV2Slide({ onNext }: { onNext: () => void }
                   })}
                   layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
                 >
-                  <SpiritualSavedTaskCard card={entry.card} fresh={freshKey === entry.key} />
+                  <SpiritualSavedTaskCard
+                    card={entry.card}
+                    fresh={freshKey === entry.key}
+                    idle={idleActive}
+                    idleIndex={entryIndex}
+                  />
                 </Reanimated.View>
               ))}
             </ScrollView>
           ) : (
-            <View style={[s.v2Empty, s.v2RoutineEmpty]}>
-              <View style={s.v2RoutineTodoRow}>
-                <View style={s.v2RoutineTodoMark}>
-                  <View style={s.v2RoutineTodoMarkInner} />
-                </View>
-                <Text style={s.v2RoutineTodoTitle}>Build your ordinary routine</Text>
-              </View>
-              <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={openCustomRoutineTask} style={s.v2EmptyAction}>
-                <Plus s={14} c="#FFFFFF" w={2.5} />
-                <Text style={s.v2EmptyActionText}>Add Routine Task</Text>
-              </TouchableOpacity>
-            </View>
+            <V2BuilderInvite
+              icon={<Plus s={15} c="#5F5A54" w={2.6} />}
+              title="Add Routine Task"
+              caption="Cleaning, study, work — begin with one"
+              onPress={openCustomRoutineTask}
+              gradient={['#FAFAF8', '#F0EFE9']}
+              border="rgba(95,90,84,0.42)"
+              orbBorder="rgba(95,90,84,0.3)"
+              shadow="#5F5A54"
+            />
           )}
         </Reanimated.View>
 
         <Reanimated.View
-          entering={FadeInUp.delay(240).duration(520).easing(Easing.out(Easing.cubic))}
-          style={[s.v2CatalogPanel, s.v2SpiritualCatalogPanel, s.v2RoutineCatalogPanel]}
+          entering={FadeInUp.delay(420).duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 18 }, { scale: 0.985 }],
+          })}
+          style={[s.v2CatalogPanel, s.v2SpiritualCatalogPanel, s.v2RoutineCatalogPanel, catalogLeaveStyle]}
         >
           <View style={s.v2PanelHeader}>
             <Text style={[s.v2CatalogTitle, s.v2CatalogTitleLong]}>Examples of Routine Tasks</Text>
             <Text style={[s.v2CatalogHint, s.v2CatalogHintRoutine]}>Tap to set them up</Text>
           </View>
           <View style={s.v2CatalogList}>
-            {ROUTINE_TASK_EXAMPLE_ITEMS.filter(item => !savedIds.has(item.id)).map(item => (
+            {ROUTINE_TASK_EXAMPLE_ITEMS.filter(item => !savedIds.has(item.id)).map((item, itemIndex) => (
               <Reanimated.View
                 key={item.id}
+                entering={FadeInUp.delay(520 + Math.min(itemIndex, 8) * 70).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                  opacity: 0,
+                  transform: [{ translateY: 14 }, { scale: 0.98 }],
+                })}
                 exiting={FadeOut.duration(200)}
                 layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
               >
                 <TouchableOpacity activeOpacity={0.88} haptic="none" onPress={() => openExample(item)}>
-                  <V2MutedTaskCard card={routineExampleToTaskData(item)} />
+                  <V2MutedTaskCard
+                    card={routineExampleToTaskData(item)}
+                    idle={idleMuted}
+                    idleIndex={itemIndex}
+                  />
                 </TouchableOpacity>
               </Reanimated.View>
             ))}
@@ -20767,14 +20852,22 @@ function OrganizeRoutineBuilderPremiumV2Slide({ onNext }: { onNext: () => void }
       />
 
       {ready ? (
-        <AnimatedCta active delay={120} style={footerStyle} pointerEvents="auto">
-          <View style={s.ctaIsland}>
-            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-              <Text style={s.primaryButtonText}>Continue</Text>
-              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
-            </TouchableOpacity>
-          </View>
-        </AnimatedCta>
+        <Reanimated.View style={[...footerStyle, ctaLeaveStyle]} pointerEvents={leaving ? 'none' : 'auto'}>
+          <AnimatedCta active delay={120}>
+            <View style={s.ctaIsland}>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                haptic="medium"
+                disabled={leaving}
+                onPress={handleContinue}
+                style={s.primaryButton}
+              >
+                <Text style={s.primaryButtonText}>Continue</Text>
+                <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+              </TouchableOpacity>
+            </View>
+          </AnimatedCta>
+        </Reanimated.View>
       ) : null}
     </View>
   );
@@ -20871,6 +20964,16 @@ function OrganizeChallengesBuilderV2Slide({ onNext }: { onNext: () => void }) {
   const [freshId, setFreshId] = useState<string | null>(null);
   const ready = activeChallenges.length > 0;
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+  const {
+    leaving,
+    handleContinue,
+    idleActive,
+    idleMuted,
+    headerLeaveStyle,
+    myPanelLeaveStyle,
+    catalogLeaveStyle,
+    ctaLeaveStyle,
+  } = useV2BuilderLife(onNext);
 
   const openEntry = (entry: ChallengeCatalogEntry) => {
     runSelectionHaptic();
@@ -20976,13 +21079,19 @@ function OrganizeChallengesBuilderV2Slide({ onNext }: { onNext: () => void }) {
     }
   };
 
-  const catalogByGroup = useMemo(
-    () => CHALLENGE_V2_GROUPS.map(group => ({
+  const catalogByGroup = useMemo(() => {
+    let runningIndex = 0;
+    return CHALLENGE_V2_GROUPS.map(group => ({
       ...group,
       items: availableCatalogEntries.filter(entry => entry.category === group.id),
-    })).filter(group => group.items.length > 0),
-    [availableCatalogEntries]
-  );
+    }))
+      .filter(group => group.items.length > 0)
+      .map(group => {
+        const withStart = { ...group, startIndex: runningIndex };
+        runningIndex += group.items.length;
+        return withStart;
+      });
+  }, [availableCatalogEntries]);
   const firstAvailableEntry = useMemo(
     () => catalogByGroup.flatMap(group => group.items)[0] ?? null,
     [catalogByGroup],
@@ -21002,17 +21111,23 @@ function OrganizeChallengesBuilderV2Slide({ onNext }: { onNext: () => void }) {
           { paddingTop: Math.max(insets.top + 26, 52), paddingBottom: insets.bottom + (ready ? 116 : 34) },
         ]}
       >
-        <OrganizeStageHeader
-          title={'Challenge\nyourself'}
-          body="Choose one clear commitment. Set the rhythm and stay with it until the goal is complete."
-          accent={GOLD}
-          variant="premium"
-          bodyHighlights={['clear commitment', 'goal is complete']}
-        />
+        <Reanimated.View style={headerLeaveStyle}>
+          <OrganizeStageHeader
+            title={'Challenge\nyourself'}
+            body="Choose one clear commitment. Set the rhythm and stay with it until the goal is complete."
+            accent={GOLD}
+            variant="premium"
+            bodyHighlights={['clear commitment', 'goal is complete']}
+            staged
+          />
+        </Reanimated.View>
 
         <Reanimated.View
-          entering={FadeInUp.delay(150).duration(520).easing(Easing.out(Easing.cubic))}
-          style={[s.v2MyPanel, !activeChallenges.length && s.v2ChallengeMyPanelEmpty, { borderColor: 'rgba(197,160,89,0.28)' }]}
+          entering={FadeInUp.delay(300).duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 18 }, { scale: 0.985 }],
+          })}
+          style={[s.v2MyPanel, !activeChallenges.length && s.v2ChallengeMyPanelEmpty, { borderColor: 'rgba(197,160,89,0.34)', borderWidth: 1 }, myPanelLeaveStyle]}
         >
           <LinearGradient
             pointerEvents="none"
@@ -21021,7 +21136,7 @@ function OrganizeChallengesBuilderV2Slide({ onNext }: { onNext: () => void }) {
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
-          <View pointerEvents="none" style={s.v2SpiritualPanelHalo} />
+          <V2PanelWeave />
           <View style={s.v2PanelHeader}>
             <Text style={s.v2PanelTitle}>{activeChallenges.length ? 'Your Challenges' : 'Start Challenge'}</Text>
             <View style={[s.v2PanelCount, { backgroundColor: 'rgba(197,160,89,0.12)', borderColor: 'rgba(197,160,89,0.26)' }]}>
@@ -21030,7 +21145,7 @@ function OrganizeChallengesBuilderV2Slide({ onNext }: { onNext: () => void }) {
           </View>
           {activeChallenges.length ? (
             <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={s.v2SavedList}>
-              {activeChallenges.map(challenge => (
+              {activeChallenges.map((challenge, challengeIndex) => (
                 <Reanimated.View
                   key={challenge.id}
                   entering={FadeInUp.duration(470).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
@@ -21049,35 +21164,29 @@ function OrganizeChallengesBuilderV2Slide({ onNext }: { onNext: () => void }) {
                       type: CHALLENGE_V2_TYPE[challenge.category] ?? 'custom',
                     }}
                     fresh={freshKeyForChallenge(freshId, challenge.id)}
+                    idle={idleActive}
+                    idleIndex={challengeIndex}
                   />
                 </Reanimated.View>
               ))}
             </ScrollView>
           ) : (
-            <View style={[s.v2Empty, s.v2ChallengeEmpty]}>
-              <View style={s.v2SpiritualTodoRow}>
-                <View style={s.v2SpiritualTodoMark}>
-                  <View style={s.v2SpiritualTodoMarkInner} />
-                </View>
-                <Text style={s.v2SpiritualTodoTitle}>Choose a clear commitment</Text>
-              </View>
-              <TouchableOpacity
-                activeOpacity={0.9}
-                haptic="medium"
-                disabled={!firstAvailableEntry}
-                onPress={openFirstChallenge}
-                style={[s.v2EmptyAction, !firstAvailableEntry && s.v2EmptyActionDisabled]}
-              >
-                <Trophy s={14} c="#FFFFFF" w={2.3} />
-                <Text style={s.v2EmptyActionText}>{firstAvailableEntry ? 'Start Challenge' : 'No Challenge Available'}</Text>
-              </TouchableOpacity>
-            </View>
+            <V2BuilderInvite
+              icon={<Trophy s={15} c={GOLD} w={2.3} />}
+              title={firstAvailableEntry ? 'Start a Challenge' : 'No Challenge Available'}
+              caption="One clear commitment, kept to the end"
+              onPress={openFirstChallenge}
+              disabled={!firstAvailableEntry}
+            />
           )}
         </Reanimated.View>
 
         <Reanimated.View
-          entering={FadeInUp.delay(240).duration(520).easing(Easing.out(Easing.cubic))}
-          style={[s.v2CatalogPanel, s.v2SpiritualCatalogPanel, s.v2ChallengeCatalogPanel]}
+          entering={FadeInUp.delay(420).duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 18 }, { scale: 0.985 }],
+          })}
+          style={[s.v2CatalogPanel, s.v2SpiritualCatalogPanel, s.v2ChallengeCatalogPanel, catalogLeaveStyle]}
         >
           <View style={s.v2PanelHeader}>
             <Text style={[s.v2CatalogTitle, s.v2CatalogTitleLong, s.v2ChallengeCatalogTitle]}>Available Challenges</Text>
@@ -21087,9 +21196,13 @@ function OrganizeChallengesBuilderV2Slide({ onNext }: { onNext: () => void }) {
             {catalogByGroup.map(group => (
               <View key={group.id} style={s.v2ChallengeGroup}>
                 <Text style={[s.v2GroupLabel, s.v2ChallengeGroupLabel]}>{group.label}</Text>
-                {group.items.map(entry => (
+                {group.items.map((entry, entryIndex) => (
                   <Reanimated.View
                     key={entry.id}
+                    entering={FadeInUp.delay(520 + Math.min(group.startIndex + entryIndex, 8) * 70).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                      opacity: 0,
+                      transform: [{ translateY: 14 }, { scale: 0.98 }],
+                    })}
                     exiting={FadeOut.duration(200)}
                     layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
                   >
@@ -21103,6 +21216,8 @@ function OrganizeChallengesBuilderV2Slide({ onNext }: { onNext: () => void }) {
                           state: 'pending',
                           type: CHALLENGE_V2_TYPE[entry.category] ?? 'custom',
                         }}
+                        idle={idleMuted}
+                        idleIndex={group.startIndex + entryIndex}
                       />
                     </TouchableOpacity>
                   </Reanimated.View>
@@ -21159,20 +21274,25 @@ function OrganizeChallengesBuilderV2Slide({ onNext }: { onNext: () => void }) {
         </ScrollView>
       </SmoothBottomSheet>
 
-      <AnimatedCta active delay={220} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
-        <View style={s.ctaIsland}>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            haptic={ready ? 'medium' : 'none'}
-            disabled={!ready}
-            onPress={onNext}
-            style={[s.primaryButton, !ready && s.primaryButtonDisabled]}
-          >
-            <Text style={[s.primaryButtonText, !ready && s.primaryButtonDisabledText]}>Continue</Text>
-            <ChevronRight s={19} c={ready ? '#FFFFFF' : 'rgba(25,23,20,0.32)'} w={2.5} />
-          </TouchableOpacity>
-        </View>
-      </AnimatedCta>
+      <Reanimated.View
+        style={[...footerStyle, ctaLeaveStyle]}
+        pointerEvents={!ready || leaving ? 'none' : 'auto'}
+      >
+        <AnimatedCta active delay={220}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              haptic={ready ? 'medium' : 'none'}
+              disabled={!ready || leaving}
+              onPress={handleContinue}
+              style={[s.primaryButton, !ready && s.primaryButtonDisabled]}
+            >
+              <Text style={[s.primaryButtonText, !ready && s.primaryButtonDisabledText]}>Continue</Text>
+              <ChevronRight s={19} c={ready ? '#FFFFFF' : 'rgba(25,23,20,0.32)'} w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      </Reanimated.View>
     </View>
   );
 }
@@ -31384,12 +31504,12 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
   spiritualEmptyCaption: {
-    fontFamily: F.sans,
-    fontSize: 11.5,
-    lineHeight: 15,
+    fontFamily: F.serifItalic,
+    fontSize: 13.5,
+    lineHeight: 17,
     color: MUTED,
     textAlign: 'center',
-    maxWidth: 260,
+    maxWidth: 270,
   },
   v2RoutineEmpty: {
     alignSelf: 'stretch',
