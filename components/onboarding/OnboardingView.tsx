@@ -24012,7 +24012,7 @@ export default function OnboardingView() {
         <OrganizeExampleCarouselSlide
           overline="Beginning with Him"
           title="Spiritual Tasks"
-          body="Easy to put off, easy to forget — yet prayer, Scripture and church are the center of a life with God. They enter your week first."
+          body="We never forget them — we postpone them, while the world feels more urgent. Prayer, Scripture, church and every spiritual task: the week is built around them."
           examples={SPIRITUAL_TASK_EXAMPLES}
           ctaLabel="Set spiritual tasks"
           onNext={goNext}
