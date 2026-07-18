@@ -19388,17 +19388,21 @@ function OrganizeTaskRhythmV2Slide({ onNext }: { onNext: () => void }) {
 const CHRIST_ICON = require('@/assets/images/onboarding/organize-christ-center.png');
 const CHRIST_ICON_ASPECT = 1080 / 1302;
 
-// Dust drifting in cathedral light: positions are fractions of the icon box.
+// Orbs of light drifting around the icon: positions are fractions of the icon
+// box, placed clear of the two faces.
 const CHRIST_MOTE_SEEDS = [
-  { x: 0.06, y: 0.34, size: 4, delay: 1500, dur: 5200, rise: 20, sway: 3, o: 0.5 },
-  { x: 0.15, y: 0.66, size: 3, delay: 2300, dur: 6100, rise: 24, sway: -2.5, o: 0.42 },
-  { x: 0.3, y: 0.11, size: 3.5, delay: 2900, dur: 5600, rise: 18, sway: 2, o: 0.5 },
-  { x: 0.54, y: 0.03, size: 3, delay: 1900, dur: 6600, rise: 16, sway: -2, o: 0.45 },
-  { x: 0.75, y: 0.08, size: 4, delay: 3300, dur: 5400, rise: 20, sway: 2.5, o: 0.5 },
-  { x: 0.92, y: 0.36, size: 3.5, delay: 1300, dur: 5900, rise: 24, sway: -3, o: 0.48 },
-  { x: 0.86, y: 0.68, size: 3, delay: 2700, dur: 6400, rise: 22, sway: 2, o: 0.4 },
-  { x: 0.1, y: 0.14, size: 2.5, delay: 3600, dur: 7000, rise: 18, sway: 2.5, o: 0.38 },
-  { x: 0.68, y: 0.56, size: 2.5, delay: 4100, dur: 6800, rise: 20, sway: -2, o: 0.34 },
+  { x: 0.06, y: 0.34, size: 5, delay: 1050, dur: 5200, rise: 20, sway: 3, o: 0.75 },
+  { x: 0.15, y: 0.66, size: 4, delay: 1500, dur: 6100, rise: 24, sway: -2.5, o: 0.62 },
+  { x: 0.3, y: 0.11, size: 4.5, delay: 1950, dur: 5600, rise: 18, sway: 2, o: 0.72 },
+  { x: 0.54, y: 0.03, size: 3.5, delay: 1250, dur: 6600, rise: 16, sway: -2, o: 0.66 },
+  { x: 0.75, y: 0.08, size: 5, delay: 2300, dur: 5400, rise: 20, sway: 2.5, o: 0.75 },
+  { x: 0.92, y: 0.36, size: 4.5, delay: 900, dur: 5900, rise: 24, sway: -3, o: 0.7 },
+  { x: 0.86, y: 0.68, size: 4, delay: 1750, dur: 6400, rise: 22, sway: 2, o: 0.6 },
+  { x: 0.1, y: 0.14, size: 3.5, delay: 2650, dur: 7000, rise: 18, sway: 2.5, o: 0.56 },
+  { x: 0.68, y: 0.56, size: 3, delay: 3050, dur: 6800, rise: 20, sway: -2, o: 0.52 },
+  { x: 0.4, y: 0.55, size: 3, delay: 2050, dur: 7200, rise: 18, sway: 2, o: 0.5 },
+  { x: 0.6, y: 0.62, size: 3.5, delay: 1350, dur: 6900, rise: 22, sway: -2.5, o: 0.55 },
+  { x: 0.33, y: 0.02, size: 3, delay: 2500, dur: 6200, rise: 14, sway: 2, o: 0.55 },
 ] as const;
 
 function ChristMote({
@@ -19413,6 +19417,7 @@ function ChristMote({
   leave: SharedValue<number>;
 }) {
   const drift = useSharedValue(0);
+  const haloSize = seed.size * 2.8;
 
   useEffect(() => {
     drift.value = withDelay(
@@ -19442,15 +19447,22 @@ function ChristMote({
       style={[
         s.christMote,
         {
-          left: seed.x * boxWidth - seed.size / 2,
-          top: seed.y * boxHeight,
-          width: seed.size,
-          height: seed.size,
-          borderRadius: seed.size / 2,
+          left: seed.x * boxWidth - haloSize / 2,
+          top: seed.y * boxHeight - haloSize / 2,
+          width: haloSize,
+          height: haloSize,
         },
         moteStyle,
       ]}
-    />
+    >
+      <View style={[s.christMoteHalo, { borderRadius: haloSize / 2 }]} />
+      <View
+        style={[
+          s.christMoteCore,
+          { width: seed.size, height: seed.size, borderRadius: seed.size / 2 },
+        ]}
+      />
+    </Reanimated.View>
   );
 }
 
@@ -19465,6 +19477,7 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
   const breath = useSharedValue(0);
   const float = useSharedValue(0);
   const orn = useSharedValue(0);
+  const eyebrowIn = useSharedValue(0);
 
   // The icon takes the widest size that still leaves the title, verse and CTA
   // room to breathe on this screen's height.
@@ -19478,15 +19491,15 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
   const iconHeightByWidth = Math.min(width * (compact ? 0.72 : 0.8), 336) / CHRIST_ICON_ASPECT;
   const iconHeight = Math.min(iconHeightByWidth, availableIconHeight);
   const iconWidth = iconHeight * CHRIST_ICON_ASPECT;
-  const glowSize = Math.min(width * 1.35, 520);
+  const glowSize = Math.min(width * 1.45, 560);
 
   useEffect(() => {
     dawn.value = withDelay(
       140,
-      withTiming(1, { duration: 1150, easing: Easing.bezier(0.22, 1, 0.3, 1) }),
+      withTiming(1, { duration: 1350, easing: Easing.bezier(0.22, 1, 0.3, 1) }),
     );
     breath.value = withDelay(
-      1500,
+      1600,
       withRepeat(
         withSequence(
           withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
@@ -19507,13 +19520,17 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
         false,
       ),
     );
+    eyebrowIn.value = withDelay(
+      1080,
+      withTiming(1, { duration: 780, easing: Easing.bezier(0.19, 1, 0.22, 1) }),
+    );
     orn.value = withDelay(
-      1780,
-      withTiming(1, { duration: 540, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+      1860,
+      withTiming(1, { duration: 620, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
     );
     const timers = [
-      setTimeout(() => runSelectionHaptic(), 1250),
-      setTimeout(() => runBubbleHaptic(), 1580),
+      setTimeout(() => runSelectionHaptic(), 1300),
+      setTimeout(() => runBubbleHaptic(), 1640),
     ];
     return () => {
       timers.forEach(timer => clearTimeout(timer));
@@ -19521,9 +19538,10 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
       cancelAnimation(breath);
       cancelAnimation(float);
       cancelAnimation(orn);
+      cancelAnimation(eyebrowIn);
       cancelAnimation(leave);
     };
-  }, [breath, dawn, float, leave, orn]);
+  }, [breath, dawn, eyebrowIn, float, leave, orn]);
 
   const handleContinue = () => {
     if (leavingRef.current) return;
@@ -19536,17 +19554,25 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
   const radianceStyle = useAnimatedStyle(() => ({
     opacity:
       dawn.value *
-      (0.86 + 0.14 * breath.value) *
+      (0.82 + 0.18 * breath.value) *
       interpolate(leave.value, [0, 0.3, 0.82, 1], [1, 1, 0, 0]),
     transform: [
       { translateY: interpolate(float.value, [0, 1], [0, 1.4]) },
       {
         scale:
           (0.7 + 0.3 * dawn.value) *
-          (1 + 0.045 * breath.value) *
+          (1 + 0.06 * breath.value) *
           interpolate(leave.value, [0, 0.3, 1], [1, 1.08, 1.16]),
       },
     ],
+  }));
+
+  const eyebrowStyle = useAnimatedStyle(() => ({
+    opacity:
+      interpolate(eyebrowIn.value, [0, 0.25, 1], [0, 0.55, 1]) *
+      interpolate(leave.value, [0, 0.26, 1], [1, 0, 0]),
+    letterSpacing: interpolate(eyebrowIn.value, [0, 1], [6.4, 2.6]),
+    transform: [{ translateY: interpolate(eyebrowIn.value, [0, 1], [6, 0]) }],
   }));
 
   const iconStyle = useAnimatedStyle(() => ({
@@ -19561,9 +19587,6 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
     ],
   }));
 
-  const eyebrowLeaveStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(leave.value, [0, 0.26, 1], [1, 0, 0]),
-  }));
   const titleLeaveStyle = useAnimatedStyle(() => ({
     opacity: interpolate(leave.value, [0, 0.06, 0.42, 1], [1, 1, 0, 0]),
     transform: [{ translateY: interpolate(leave.value, [0, 0.06, 1], [0, 0, 10]) }],
@@ -19604,7 +19627,7 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
     <View style={s.christSlide}>
       <Reanimated.View
         pointerEvents="none"
-        entering={FadeIn.delay(2400).duration(900)}
+        entering={FadeIn.delay(2500).duration(900)}
         style={s.christFloorWash}
       >
         <LinearGradient
@@ -19614,15 +19637,9 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
       </Reanimated.View>
 
       <View style={[s.christContent, { paddingTop: insets.top + (compact ? 26 : 42) }]}>
-        <Reanimated.View
-          entering={FadeIn.delay(1120).duration(520).withInitialValues({
-            opacity: 0,
-            transform: [{ translateY: 6 }],
-          })}
-          style={eyebrowLeaveStyle}
-        >
-          <Text style={s.christEyebrow}>First things first</Text>
-        </Reanimated.View>
+        <Reanimated.Text style={[s.christEyebrow, eyebrowStyle]}>
+          First things first
+        </Reanimated.Text>
 
         <View
           style={{
@@ -19647,13 +19664,13 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
             <Svg width={glowSize} height={glowSize}>
               <Defs>
                 <SvgRadialGradient id="christGlowOuter" cx="50%" cy="50%" r="50%">
-                  <Stop offset="0" stopColor="#F2CE84" stopOpacity="0.3" />
-                  <Stop offset="0.55" stopColor="#EFCB80" stopOpacity="0.11" />
+                  <Stop offset="0" stopColor="#F2CE84" stopOpacity="0.42" />
+                  <Stop offset="0.55" stopColor="#EFCB80" stopOpacity="0.16" />
                   <Stop offset="1" stopColor="#EFCB80" stopOpacity="0" />
                 </SvgRadialGradient>
                 <SvgRadialGradient id="christGlowCore" cx="50%" cy="50%" r="50%">
-                  <Stop offset="0" stopColor="#F6D88F" stopOpacity="0.5" />
-                  <Stop offset="0.5" stopColor="#F2CE84" stopOpacity="0.17" />
+                  <Stop offset="0" stopColor="#F7DB96" stopOpacity="0.62" />
+                  <Stop offset="0.5" stopColor="#F2CE84" stopOpacity="0.24" />
                   <Stop offset="1" stopColor="#F2CE84" stopOpacity="0" />
                 </SvgRadialGradient>
               </Defs>
@@ -19669,13 +19686,22 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
                 r={glowSize * 0.24}
                 fill="url(#christGlowCore)"
               />
+              <SvgCircle
+                cx={glowSize / 2}
+                cy={glowSize / 2}
+                r={glowSize * 0.265}
+                fill="none"
+                stroke="#E7C36D"
+                strokeOpacity="0.2"
+                strokeWidth="1.1"
+              />
             </Svg>
           </Reanimated.View>
 
           <Reanimated.View
-            entering={FadeIn.delay(400).duration(950).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            entering={FadeIn.delay(430).duration(1050).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
               opacity: 0,
-              transform: [{ translateY: 18 }, { scale: 1.05 }],
+              transform: [{ translateY: 20 }, { scale: 1.06 }],
             })}
             style={[s.christIconWrap, iconStyle]}
           >
@@ -19695,18 +19721,18 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
 
         <Reanimated.View style={[s.christTitleBlock, { marginTop: compact ? 18 : 26 }, titleLeaveStyle]}>
           <Reanimated.Text
-            entering={FadeIn.delay(1240).duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            entering={FadeIn.delay(1220).duration(860).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
               opacity: 0,
-              transform: [{ translateY: 14 }, { scale: 0.985 }],
+              transform: [{ translateY: 18 }, { scale: 0.972 }],
             })}
             style={[s.christTitle, compact && s.christTitleCompact]}
           >
             Build your life
           </Reanimated.Text>
           <Reanimated.Text
-            entering={FadeIn.delay(1400).duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            entering={FadeIn.delay(1420).duration(860).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
               opacity: 0,
-              transform: [{ translateY: 14 }, { scale: 0.985 }],
+              transform: [{ translateY: 18 }, { scale: 0.972 }],
             })}
             style={[s.christTitle, compact && s.christTitleCompact]}
           >
@@ -19721,9 +19747,9 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
         </View>
 
         <Reanimated.View
-          entering={FadeIn.delay(2100).duration(760).withInitialValues({
+          entering={FadeIn.delay(2150).duration(860).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
             opacity: 0,
-            transform: [{ translateY: 10 }],
+            transform: [{ translateY: 12 }],
           })}
           style={[s.christVerseBlock, { marginTop: compact ? 13 : 17 }, verseLeaveStyle]}
         >
@@ -19731,7 +19757,7 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
             Seek first the kingdom of God, and all these things will be added to you.
           </Text>
           <Reanimated.Text
-            entering={FadeIn.delay(2280).duration(600).withInitialValues({ opacity: 0 })}
+            entering={FadeIn.delay(2380).duration(640).withInitialValues({ opacity: 0 })}
             style={s.christVerseRef}
           >
             Matthew 6:33
@@ -19743,7 +19769,7 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
         pointerEvents={leaving ? 'none' : 'auto'}
         style={[s.christFooter, { bottom: insets.bottom + 18 }, ctaLeaveStyle]}
       >
-        <AnimatedCta delay={2520}>
+        <AnimatedCta delay={2650}>
           <View style={s.ctaIsland}>
             <TouchableOpacity
               activeOpacity={0.9}
@@ -23984,9 +24010,9 @@ export default function OnboardingView() {
     if (activeStep === 'organizeSpiritualTasksIntro') {
       return (
         <OrganizeExampleCarouselSlide
-          overline="Spiritual tasks"
+          overline="Beginning with Him"
           title="Spiritual Tasks"
-          body="Prayer and Scripture should not depend on memory alone. Give them a place in your week."
+          body="Easy to put off, easy to forget — yet prayer, Scripture and church are the center of a life with God. They enter your week first."
           examples={SPIRITUAL_TASK_EXAMPLES}
           ctaLabel="Set spiritual tasks"
           onNext={goNext}
@@ -30779,7 +30805,19 @@ const s = StyleSheet.create({
   },
   christMote: {
     position: 'absolute',
-    backgroundColor: '#E3BC72',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  christMoteHalo: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(240,205,130,0.3)',
+  },
+  christMoteCore: {
+    backgroundColor: '#F6D389',
+    shadowColor: '#F2CE84',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 5,
   },
   christTitleBlock: {
     alignItems: 'center',
