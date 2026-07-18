@@ -20686,6 +20686,11 @@ function OrganizeHabitsMomentumV2Slide({ onNext }: { onNext: () => void }) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const [activeIndex, setActiveIndex] = useState(0);
+  // The pile becomes two acts: A — the three-month story in the carousel;
+  // B — the creed, three plaques that name what the story taught.
+  const [act, setAct] = useState<0 | 1>(0);
+  const actExit = useSharedValue(0);
+  const actLockRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const activeIndexRef = useRef(0);
   const userScrolledRef = useRef(false);
@@ -20727,34 +20732,140 @@ function OrganizeHabitsMomentumV2Slide({ onNext }: { onNext: () => void }) {
     if (userScrolledRef.current) runSelectionHaptic();
   };
 
+  const actExitStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(actExit.value, [0, 1], [1, 0]),
+    transform: [
+      { translateY: interpolate(actExit.value, [0, 1], [0, -18]) },
+      { scale: interpolate(actExit.value, [0, 1], [1, 0.986]) },
+    ],
+  }));
+
+  const carouselReady = activeIndex >= HABIT_MOMENTUM_SCENARIOS.length - 1;
+  const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+
+  const advanceAct = () => {
+    if (actLockRef.current) return;
+    actLockRef.current = true;
+    actExit.value = withTiming(1, { duration: 360, easing: Easing.in(Easing.cubic) });
+    setTimeout(() => {
+      setAct(1);
+      actExit.value = 0;
+      actLockRef.current = false;
+    }, 340);
+  };
+
+  const finishSlide = () => {
+    if (actLockRef.current) return;
+    actLockRef.current = true;
+    actExit.value = withTiming(1, { duration: 360, easing: Easing.in(Easing.cubic) });
+    setTimeout(onNext, 340);
+  };
+
+  if (act === 1) {
+    return (
+      <View style={s.organizeRuleScreen}>
+        <View
+          style={[
+            s.organizeRuleContent,
+            { flexGrow: 1, paddingTop: Math.max(insets.top + 54, 80), paddingBottom: insets.bottom + 134 },
+          ]}
+        >
+          <Reanimated.View style={actExitStyle}>
+            <OrganizeLayersCharterHeader
+              eyebrow="REMEMBER THIS"
+              title="Direction over perfection."
+              body="You do not need a perfect month to make progress. Keep returning and keep moving toward the goal."
+              accent="#2F9B61"
+            />
+          </Reanimated.View>
+
+          <Reanimated.View style={[s.setupPathBoard, s.organizeMacroBoardSeat, actExitStyle]}>
+            {HABIT_MOMENTUM_INSIGHTS.map((insight, index) => (
+              <Reanimated.View
+                key={insight.title}
+                entering={FadeInUp.delay(320 + index * 200).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                  opacity: 0,
+                  transform: [{ translateY: 36 }, { scale: 0.97 }],
+                })}
+                style={[s.organizeLayerRow, index > 0 && s.habitCreedRowGap]}
+              >
+                <View
+                  style={[
+                    s.habitCreedPlaque,
+                    { borderColor: `${insight.accent}42` },
+                  ]}
+                >
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(255,255,255,0.98)', `${insight.accent}0E`, 'rgba(255,253,248,0.94)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View pointerEvents="none" style={[s.v4ToolTopSheen, { backgroundColor: `${insight.accent}1C` }]} />
+                  <View pointerEvents="none" style={[s.organizeLayerHeroFrame, { borderColor: `${insight.accent}1A`, borderRadius: 17 }]} />
+                  <View pointerEvents="none" style={[s.organizeLayerHeroGlint, { backgroundColor: `${insight.accent}5C` }]} />
+                  <View style={s.habitCreedCopy}>
+                    <Text style={[s.habitCreedKicker, { color: insight.accent }]}>{insight.kicker.toUpperCase()}</Text>
+                    <Text style={s.habitCreedTitle}>{insight.title}</Text>
+                    <Text style={s.habitCreedBody}>{insight.body}</Text>
+                  </View>
+                </View>
+                <Reanimated.View
+                  pointerEvents="none"
+                  entering={ZoomIn.delay(640 + index * 200).duration(360).easing(Easing.bezier(0.16, 1, 0.28, 1))}
+                  style={s.organizeMacroSealAnchor}
+                >
+                  <View style={[s.habitCreedSeal, { backgroundColor: insight.accent }]}>
+                    <Text style={s.habitCreedSealText}>{index + 1}</Text>
+                  </View>
+                </Reanimated.View>
+              </Reanimated.View>
+            ))}
+          </Reanimated.View>
+        </View>
+
+        <AnimatedCta active delay={1150} style={footerStyle} pointerEvents="auto">
+          <Reanimated.View style={actExitStyle}>
+            <View style={s.ctaIsland}>
+              <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={finishSlide} style={s.primaryButton}>
+                <Text style={s.primaryButtonText}>Continue</Text>
+              </TouchableOpacity>
+            </View>
+          </Reanimated.View>
+        </AnimatedCta>
+      </View>
+    );
+  }
+
   return (
     <View style={s.organizeRuleScreen}>
-      <ScrollView
-        style={s.habitMomentumScroll}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          s.habitMomentumScrollContent,
+      <View
+        style={[
+          s.weeklyEvidenceFixedContent,
           {
             paddingTop: Math.max(insets.top + (compact ? 16 : 26), compact ? 38 : 52),
-            paddingBottom: insets.bottom + 28,
+            paddingBottom: insets.bottom + (compact ? 88 : 96),
           },
         ]}
       >
-        <OrganizeStageHeader
-          title={'Keep moving\ntoward your goal'}
-          body="A perfect month is not the point. Complete what you can, keep returning and every step still moves you in the right direction."
-          accent="#2F9B61"
-          compact={compact}
-          variant="premium"
-          bodyHighlights={['perfect month', 'Complete what you can', 'right direction']}
-        />
+        <Reanimated.View style={actExitStyle}>
+          <OrganizeStageHeader
+            title={'Keep moving\ntoward your goal'}
+            body="A perfect month is not the point. Complete what you can, keep returning and every step still moves you in the right direction."
+            accent="#2F9B61"
+            compact={compact}
+            variant="premium"
+            bodyHighlights={['perfect month', 'Complete what you can', 'right direction']}
+          />
+        </Reanimated.View>
 
         <Reanimated.View
           entering={FadeInUp.delay(170).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
             opacity: 0,
             transform: [{ translateY: 22 }, { scale: 0.97 }],
           })}
-          style={s.habitMomentumCarouselArea}
+          style={[s.habitMomentumCarouselArea, actExitStyle]}
         >
           <View style={[s.organizeCarouselTopControls, s.habitMomentumTopControls]}>
             <View style={s.organizeExampleProgress}>
@@ -20812,67 +20923,23 @@ function OrganizeHabitsMomentumV2Slide({ onNext }: { onNext: () => void }) {
             ))}
           </ScrollView>
         </Reanimated.View>
+      </View>
 
-        <Reanimated.View
-          entering={FadeInUp.delay(260).duration(540).easing(Easing.out(Easing.cubic))}
-          style={s.habitMomentumInsightStack}
-        >
-          <View style={s.habitMomentumPointCard}>
-            <LinearGradient
-              pointerEvents="none"
-              colors={['rgba(255,255,255,0.98)', 'rgba(47,155,97,0.10)', 'rgba(255,253,248,0.96)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <View pointerEvents="none" style={s.habitMomentumPointAccent} />
-            <View style={s.habitMomentumPointCopy}>
-              <Text style={s.habitMomentumPointKicker}>THE POINT</Text>
-              <Text style={s.habitMomentumPointTitle}>Direction over perfection</Text>
-              <Text style={s.habitMomentumPointBody}>
-                You do not need a perfect month to make progress. Keep returning and keep moving toward the goal.
-              </Text>
-            </View>
-          </View>
-
-          {HABIT_MOMENTUM_INSIGHTS.map((insight, index) => (
-            <Reanimated.View
-              key={insight.title}
-              entering={FadeInUp.delay(340 + index * 80).duration(460).easing(Easing.out(Easing.cubic))}
-              style={[
-                s.habitMomentumInsightCard,
-                {
-                  borderColor: `${insight.accent}24`,
-                  backgroundColor: `${insight.accent}09`,
-                },
-              ]}
+      <AnimatedCta active={carouselReady} delay={120} style={footerStyle} pointerEvents={carouselReady ? 'auto' : 'none'}>
+        <Reanimated.View style={actExitStyle}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              haptic={carouselReady ? 'medium' : 'none'}
+              disabled={!carouselReady}
+              onPress={advanceAct}
+              style={[s.primaryButton, !carouselReady && s.primaryButtonDisabled]}
             >
-              <View style={[s.habitMomentumInsightNumber, { borderColor: `${insight.accent}32`, backgroundColor: `${insight.accent}12` }]}>
-                <Text style={[s.habitMomentumInsightNumberText, { color: insight.accent }]}>{index + 1}</Text>
-              </View>
-              <View style={s.habitMomentumInsightCopy}>
-                <Text style={[s.habitMomentumInsightKicker, { color: insight.accent }]}>{insight.kicker}</Text>
-                <Text style={s.habitMomentumInsightTitle}>{insight.title}</Text>
-                <Text style={s.habitMomentumInsightBody}>{insight.body}</Text>
-              </View>
-            </Reanimated.View>
-          ))}
+              <Text style={[s.primaryButtonText, !carouselReady && s.primaryButtonDisabledText]}>Continue</Text>
+            </TouchableOpacity>
+          </View>
         </Reanimated.View>
-
-        <AnimatedCta active delay={180} style={s.habitMomentumInlineCta} pointerEvents="auto">
-        <View style={s.ctaIsland}>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            haptic="medium"
-            onPress={onNext}
-            style={s.primaryButton}
-          >
-            <Text style={s.primaryButtonText}>Continue</Text>
-            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
-          </TouchableOpacity>
-        </View>
       </AnimatedCta>
-      </ScrollView>
     </View>
   );
 }
@@ -34035,6 +34102,65 @@ const s = StyleSheet.create({
     height: 220,
     borderRadius: 110,
     backgroundColor: '#FFF4DC',
+  },
+  habitCreedRowGap: {
+    marginTop: 26,
+  },
+  habitCreedPlaque: {
+    width: '100%',
+    borderRadius: 23,
+    paddingLeft: 32,
+    paddingRight: 16,
+    paddingVertical: 16,
+    overflow: 'hidden',
+    backgroundColor: '#FFFDF8',
+    borderWidth: 1.5,
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.09,
+    shadowRadius: 18,
+    elevation: 2,
+  },
+  habitCreedCopy: {
+    rowGap: 4,
+  },
+  habitCreedKicker: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    lineHeight: 12,
+    letterSpacing: 1.9,
+  },
+  habitCreedTitle: {
+    fontFamily: F.serifBold,
+    fontSize: 20,
+    lineHeight: 25,
+    color: INK,
+  },
+  habitCreedBody: {
+    fontFamily: F.serifMedium,
+    fontSize: 14.5,
+    lineHeight: 20,
+    color: 'rgba(25,23,20,0.6)',
+  },
+  habitCreedSeal: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '45deg' }],
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  habitCreedSealText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 13,
+    color: '#FFFFFF',
+    transform: [{ rotate: '-45deg' }],
+    includeFontPadding: false,
   },
   v4RecapProblemCardInactive: {
     borderColor: 'rgba(25,23,20,0.08)',
