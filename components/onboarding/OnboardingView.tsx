@@ -17681,6 +17681,9 @@ function OrganizeLessonSlide({
   onNext: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const [leaving, setLeaving] = useState(false);
+  const leavingRef = useRef(false);
+  const leave = useSharedValue(0);
   const contentStyle = [
     s.organizeRuleContent,
     {
@@ -17691,28 +17694,70 @@ function OrganizeLessonSlide({
   ];
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
 
+  useEffect(() => {
+    return () => {
+      cancelAnimation(leave);
+    };
+  }, [leave]);
+
+  const handleContinue = () => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    setLeaving(true);
+    leave.value = withTiming(1, { duration: 460, easing: Easing.in(Easing.cubic) });
+    setTimeout(onNext, 480);
+  };
+
+  // Staged exit shared by every lesson screen: the button bows out first,
+  // the content sinks, the header lifts away last.
+  const headerLeaveStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(leave.value, [0, 0.12, 0.55, 1], [1, 1, 0, 0]),
+    transform: [{ translateY: interpolate(leave.value, [0, 1], [0, -10]) }],
+  }));
+  const bodyLeaveStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(leave.value, [0, 0.5, 1], [1, 0, 0]),
+    transform: [
+      { translateY: interpolate(leave.value, [0, 1], [0, 14]) },
+      { scale: interpolate(leave.value, [0, 1], [1, 0.985]) },
+    ],
+  }));
+  const ctaLeaveStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(leave.value, [0, 0.28, 1], [1, 0, 0]),
+  }));
+
   return (
     <View style={s.organizeRuleScreen}>
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
-        <OrganizeStageHeader
-          title={title}
-          body={body}
-          accent={accent}
-          variant={headerVariant}
-          bodyHighlights={bodyHighlights}
-        />
+        <Reanimated.View style={headerLeaveStyle}>
+          <OrganizeStageHeader
+            title={title}
+            body={body}
+            accent={accent}
+            variant={headerVariant}
+            bodyHighlights={bodyHighlights}
+            staged
+          />
+        </Reanimated.View>
 
-        <View style={[s.organizeLessonBody, bodyStyle]}>{children}</View>
+        <Reanimated.View style={[s.organizeLessonBody, bodyStyle, bodyLeaveStyle]}>{children}</Reanimated.View>
       </ScrollView>
 
-      <AnimatedCta delay={240} style={footerStyle}>
-        <View style={s.ctaIsland}>
-          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-            <Text style={s.primaryButtonText}>{ctaLabel}</Text>
-            <ChevronRight s={19} c="#FFFFFF" w={2.5} />
-          </TouchableOpacity>
-        </View>
-      </AnimatedCta>
+      <Reanimated.View style={[...footerStyle, ctaLeaveStyle]} pointerEvents={leaving ? 'none' : 'auto'}>
+        <AnimatedCta delay={240}>
+          <View style={s.ctaIsland}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              haptic="medium"
+              disabled={leaving}
+              onPress={handleContinue}
+              style={s.primaryButton}
+            >
+              <Text style={s.primaryButtonText}>{ctaLabel}</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      </Reanimated.View>
     </View>
   );
 }
@@ -21696,6 +21741,25 @@ const HABIT_MOMENTUM_INSIGHTS = [
   },
 ] as const;
 
+// The goal card's disclosure arrow turns smoothly instead of snapping.
+function HabitGoalChevron({ open, accent }: { open: boolean; accent: string }) {
+  const spin = useSharedValue(open ? 1 : 0);
+
+  useEffect(() => {
+    spin.value = withTiming(open ? 1 : 0, { duration: 340, easing: Easing.bezier(0.16, 1, 0.28, 1) });
+  }, [open, spin]);
+
+  const spinStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${interpolate(spin.value, [0, 1], [90, -90])}deg` }],
+  }));
+
+  return (
+    <Reanimated.View style={spinStyle}>
+      <ChevronRight s={17} c={accent} w={2.45} />
+    </Reanimated.View>
+  );
+}
+
 function OrganizeHabitsConceptV2Slide({ onNext }: { onNext: () => void }) {
   const [openGoalId, setOpenGoalId] = useState<string | null>('save-money');
 
@@ -21726,9 +21790,9 @@ function OrganizeHabitsConceptV2Slide({ onNext }: { onNext: () => void }) {
           return (
           <Reanimated.View
             key={goal.id}
-            entering={FadeInUp.delay(160 + index * 85).duration(470).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            entering={FadeInUp.delay(280 + index * 130).duration(660).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
               opacity: 0,
-              transform: [{ translateY: 18 }, { scale: 0.97 }],
+              transform: [{ translateY: 24 }, { scale: 0.962 }],
             })}
             layout={LinearTransition.duration(310).easing(Easing.bezier(0.16, 1, 0.28, 1))}
             style={s.habitGoalSingleCard}
@@ -21737,7 +21801,14 @@ function OrganizeHabitsConceptV2Slide({ onNext }: { onNext: () => void }) {
               activeOpacity={0.9}
               haptic="none"
               onPress={() => toggleGoal(goal.id, goal.image)}
-              style={[s.habitGoalCardHeader, isOpen && s.habitGoalCardHeaderOpen, { borderColor: isOpen ? `${goal.accent}38` : `${goal.accent}20` }]}
+              style={[
+                s.habitGoalCardHeader,
+                isOpen && s.habitGoalCardHeaderOpen,
+                {
+                  borderColor: isOpen ? `${goal.accent}4D` : `${goal.accent}20`,
+                  boxShadow: isOpen ? `0 15px 27px ${goal.accent}2E` : '0 12px 22px rgba(23, 19, 15, 0.075)',
+                },
+              ]}
             >
               <LinearGradient
                 pointerEvents="none"
@@ -21748,7 +21819,7 @@ function OrganizeHabitsConceptV2Slide({ onNext }: { onNext: () => void }) {
               />
               <View pointerEvents="none" style={[s.habitGoalAccentRail, { backgroundColor: goal.accent }]} />
               <View pointerEvents="none" style={[s.habitGoalGlow, { backgroundColor: `${goal.accent}10` }]} />
-              <View style={[s.habitGoalSingleIcon, { borderColor: `${goal.accent}34`, backgroundColor: `${goal.accent}12` }]}>
+              <View style={[s.habitGoalSingleIcon, { borderColor: `${goal.accent}42` }]}>
                 {goal.icon}
               </View>
               <View style={s.habitGoalSingleCopy}>
@@ -21756,34 +21827,52 @@ function OrganizeHabitsConceptV2Slide({ onNext }: { onNext: () => void }) {
                   <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82} style={s.habitGoalSingleTitle}>
                     {goal.title}
                   </Text>
-                  <View style={[s.habitGoalNumber, { borderColor: `${goal.accent}30`, backgroundColor: '#FFFFFF' }]}>
-                    <Text style={[s.habitGoalNumberText, { color: goal.accent }]}>{String(index + 1).padStart(2, '0')}</Text>
+                  <View
+                    style={[
+                      s.habitGoalNumber,
+                      isOpen
+                        ? { borderColor: goal.accent, backgroundColor: goal.accent }
+                        : { borderColor: `${goal.accent}30`, backgroundColor: '#FFFFFF' },
+                    ]}
+                  >
+                    <Text style={[s.habitGoalNumberText, { color: isOpen ? '#FFFFFF' : goal.accent }]}>{String(index + 1).padStart(2, '0')}</Text>
                   </View>
                 </View>
                 <View style={s.habitGoalMetaRow}>
                   <View style={[s.habitGoalTypePill, { borderColor: `${goal.accent}24`, backgroundColor: `${goal.accent}0E` }]}>
                     <Text style={[s.habitGoalSingleLabel, { color: goal.accent }]}>{goal.label}</Text>
                   </View>
-                  <View style={[s.habitGoalMetaLine, { backgroundColor: `${goal.accent}24` }]} />
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={[`${goal.accent}38`, `${goal.accent}00`]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={s.habitGoalMetaLine}
+                  />
                 </View>
               </View>
               <View style={[s.habitGoalChevronButton, { borderColor: `${goal.accent}24`, backgroundColor: isOpen ? `${goal.accent}13` : 'rgba(255,255,255,0.82)' }]}>
-                <Reanimated.View style={{ transform: [{ rotate: isOpen ? '-90deg' : '90deg' }] }}>
-                  <ChevronRight s={17} c={goal.accent} w={2.45} />
-                </Reanimated.View>
+                <HabitGoalChevron open={isOpen} accent={goal.accent} />
               </View>
             </TouchableOpacity>
             {isOpen ? (
               <Reanimated.View
-                entering={FadeInUp.duration(330).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                entering={FadeInUp.duration(430).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
                   opacity: 0,
-                  transform: [{ translateY: -8 }, { scale: 0.985 }],
+                  transform: [{ translateY: -10 }, { scale: 0.982 }],
                 })}
                 exiting={FadeOut.duration(170)}
                 layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
-                style={s.habitGoalImagePanel}
+                style={[s.habitGoalImagePanel, { borderWidth: 1, borderTopWidth: 0, borderColor: `${goal.accent}26` }]}
               >
-                <ExpoImage source={goal.image} style={s.habitGoalImage} contentFit="cover" cachePolicy="memory-disk" transition={120} />
+                <Reanimated.View
+                  entering={FadeIn.duration(760).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                    opacity: 0.6,
+                    transform: [{ scale: 1.09 }],
+                  })}
+                >
+                  <ExpoImage source={goal.image} style={s.habitGoalImage} contentFit="cover" cachePolicy="memory-disk" transition={120} />
+                </Reanimated.View>
                 <LinearGradient
                   pointerEvents="none"
                   colors={['rgba(255,255,255,0)', 'rgba(20,17,13,0.08)']}
@@ -21791,7 +21880,13 @@ function OrganizeHabitsConceptV2Slide({ onNext }: { onNext: () => void }) {
                   end={{ x: 0.5, y: 1 }}
                   style={StyleSheet.absoluteFill}
                 />
-                <View style={[s.habitGoalImageBottomEdge, { backgroundColor: goal.accent }]} />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={[`${goal.accent}00`, `${goal.accent}CC`, `${goal.accent}00`]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={s.habitGoalImageBottomEdge}
+                />
               </Reanimated.View>
             ) : null}
           </Reanimated.View>
@@ -33807,13 +33902,14 @@ const s = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   habitGoalSingleIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 15,
+    width: 42,
+    height: 42,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    boxShadow: '0 8px 16px rgba(23, 19, 15, 0.06)',
+    backgroundColor: '#FFFFFF',
+    boxShadow: '0 8px 16px rgba(23, 19, 15, 0.07)',
   },
   habitGoalSingleCopy: {
     flex: 1,
@@ -33882,8 +33978,8 @@ const s = StyleSheet.create({
     aspectRatio: 1.94,
   },
   habitGoalImageBottomEdge: {
-    height: 3,
-    opacity: 0.58,
+    height: 2.5,
+    opacity: 0.9,
   },
   habitStepsLessonBody: {
     flexGrow: 0,
