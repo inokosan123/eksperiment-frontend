@@ -17485,10 +17485,22 @@ function OrganizeExampleCarouselSlide({
                       style={StyleSheet.absoluteFill}
                     />
                     <View style={[s.organizeExampleQuotePanel, s.organizeBigEventsExampleHeader, compactFooter && s.organizeBigEventsExampleHeaderCompact, { height: bigEventsHeaderHeight, minHeight: bigEventsHeaderHeight, backgroundColor: `${example.accent}10`, borderColor: `${example.accent}24` }]}>
-                      <Text style={[s.organizeBigEventsExampleEyebrow, compactFooter && s.organizeBigEventsExampleEyebrowPinned]}>Example</Text>
+                      <View style={[s.organizeBigEventsExampleEyebrowRow, compactFooter && s.organizeBigEventsExampleEyebrowPinned]}>
+                        <View style={[s.organizeExampleEyebrowRule, { backgroundColor: `${example.accent}45` }]} />
+                        <View style={[s.organizeExampleEyebrowDiamond, { backgroundColor: example.accent }]} />
+                        <Text style={[s.organizeBigEventsExampleEyebrow, { color: example.accent }]}>Example</Text>
+                        <View style={[s.organizeExampleEyebrowDiamond, { backgroundColor: example.accent }]} />
+                        <View style={[s.organizeExampleEyebrowRule, { backgroundColor: `${example.accent}45` }]} />
+                      </View>
                       <View style={compactFooter ? s.organizeBigEventsExampleTitleGroupCompact : s.organizeBigEventsExampleTitleGroup}>
                         <Text style={[s.organizeBigEventsExampleTitle, compactFooter && s.organizeBigEventsExampleTitleCompact]}>{example.title}</Text>
-                        <View style={[s.organizeBigEventsExampleUnderline, { backgroundColor: example.accent }]} />
+                        <LinearGradient
+                          pointerEvents="none"
+                          colors={[`${example.accent}00`, `${example.accent}CC`, `${example.accent}00`]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={s.organizeBigEventsExampleUnderline}
+                        />
                       </View>
                     </View>
                     <View style={s.organizeBigEventsVisualPanel}>
@@ -33032,18 +33044,34 @@ const s = StyleSheet.create({
     color: 'rgba(25,23,20,0.43)',
     textAlign: 'center',
   },
+  organizeBigEventsExampleEyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 8,
+  },
+  organizeExampleEyebrowRule: {
+    width: 24,
+    height: 1,
+    borderRadius: 1,
+  },
+  organizeExampleEyebrowDiamond: {
+    width: 4,
+    height: 4,
+    borderRadius: 1,
+    transform: [{ rotate: '45deg' }],
+  },
   organizeBigEventsExampleEyebrow: {
     fontFamily: F.sansBold,
-    fontSize: 10.6,
+    fontSize: 9.5,
     lineHeight: 13,
-    letterSpacing: 1.25,
+    letterSpacing: 2.6,
     textTransform: 'uppercase',
-    color: 'rgba(25,23,20,0.43)',
     textAlign: 'center',
   },
   organizeBigEventsExampleEyebrowPinned: {
     position: 'absolute',
-    top: 10,
+    top: 11,
     left: 0,
     right: 0,
   },
@@ -33062,11 +33090,11 @@ const s = StyleSheet.create({
     maxWidth: 260,
   },
   organizeBigEventsExampleUnderline: {
-    width: '52%',
-    height: 3,
-    borderRadius: 999,
-    marginTop: 4,
-    opacity: 0.85,
+    width: '46%',
+    height: 2,
+    borderRadius: 1,
+    marginTop: 6,
+    opacity: 0.9,
   },
   organizeExampleVisualPanel: {
     width: '100%',
