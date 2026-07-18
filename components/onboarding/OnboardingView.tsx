@@ -18993,37 +18993,41 @@ function WeeklyRhythmStripCard({
   compact: boolean;
   replayKey: number;
 }) {
-  const intro = useSharedValue(0);
+  const reveal = useSharedValue(0);
+  const settle = useSharedValue(0);
   const drift = useSharedValue(0);
+  const wave = useSharedValue(0);
   const displayWidth = Math.min(stageWidth + 12, stageWidth * strip.widthRatio);
   const displayHeight = displayWidth / strip.aspect;
   const top = index * (compact ? 64 : 72) + strip.y;
   const left = (stageWidth - displayWidth) / 2 + strip.x;
-  const entryDelay = 150 + index * 150;
-  const entryDistance = -(stageWidth + displayWidth + 56);
+  const revealDelay = 240 + index * 210;
+  const waveDelay = 240 + WEEKLY_RHYTHM_STRIPS.length * 210 + 720 + index * 85;
 
   useEffect(() => {
-    cancelAnimation(intro);
+    cancelAnimation(reveal);
+    cancelAnimation(settle);
     cancelAnimation(drift);
-    intro.value = 0;
+    cancelAnimation(wave);
+    reveal.value = 0;
+    settle.value = 0;
     drift.value = 0;
-    intro.value = withDelay(
-      entryDelay,
-      withSequence(
-        withTiming(0.86, {
-          duration: 640,
-          easing: Easing.bezier(0.12, 0.86, 0.18, 1),
-        }),
-        withSpring(1, {
-          damping: 18,
-          stiffness: 132,
-          mass: 0.78,
-        }),
-      ),
-    );
+    wave.value = 0;
 
+    reveal.value = withDelay(
+      revealDelay,
+      withTiming(1, { duration: 660, easing: Easing.bezier(0.42, 0.05, 0.16, 1) }),
+    );
+    settle.value = withDelay(
+      revealDelay + 590,
+      withSpring(1, { damping: 15, stiffness: 210, mass: 0.62 }),
+    );
+    wave.value = withDelay(
+      waveDelay,
+      withTiming(1, { duration: 640, easing: Easing.bezier(0.3, 0.2, 0.2, 1) }),
+    );
     drift.value = withDelay(
-      entryDelay + 980,
+      revealDelay + 1250,
       withRepeat(
         withSequence(
           withTiming(1, { duration: 2100 + index * 160, easing: Easing.inOut(Easing.cubic) }),
@@ -19034,29 +19038,54 @@ function WeeklyRhythmStripCard({
       ),
     );
     return () => {
-      cancelAnimation(intro);
+      cancelAnimation(reveal);
+      cancelAnimation(settle);
       cancelAnimation(drift);
-      intro.value = 0;
+      cancelAnimation(wave);
+      reveal.value = 0;
+      settle.value = 0;
       drift.value = 0;
+      wave.value = 0;
     };
-  }, [drift, entryDelay, entryDistance, index, intro, replayKey, strip.float]);
+  }, [drift, index, replayKey, reveal, revealDelay, settle, strip.float, wave, waveDelay]);
 
-  const introStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(intro.value, [0, 0.08, 1], [0, 1, 1]),
+  const wrapStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: interpolate(intro.value, [0, 0.86, 1], [entryDistance, 18, 0]) },
-      { translateY: interpolate(intro.value, [0, 0.86, 1], [8, -1, 0]) },
-      { rotate: `${interpolate(intro.value, [0, 0.86, 1], [strip.enterRotate, 0.34, 0])}deg` },
-      { scale: interpolate(intro.value, [0, 0.86, 1], [0.985, 1.012, 1]) },
+      {
+        translateY:
+          interpolate(settle.value, [0, 1], [4, 0]) +
+          interpolate(drift.value, [0, 1], [0, strip.float]),
+      },
+      { translateX: interpolate(drift.value, [0, 1], [0, strip.float * 0.42]) },
+      { rotate: `${strip.rotate + interpolate(drift.value, [0, 1], [0, strip.float * 0.045])}deg` },
+      {
+        scale:
+          interpolate(settle.value, [0, 1], [0.992, 1]) *
+          interpolate(drift.value, [0, 1], [1, 1.006]),
+      },
     ],
   }));
 
-  const floatStyle = useAnimatedStyle(() => ({
+  // The clip window slides right while the image counter-translates to stay
+  // screen-fixed (minus a small parallax pull), so the strip prints itself
+  // left-to-right instead of flying in.
+  const maskStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(reveal.value, [0, 1], [-displayWidth, 0]) }],
+  }));
+
+  const innerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(reveal.value, [0, 1], [displayWidth - 14, 0]) }],
+  }));
+
+  const scanEdgeStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(reveal.value, [0, 0.05, 0.8, 0.97], [0, 1, 1, 0]),
+  }));
+
+  const waveStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(wave.value, [0, 0.12, 0.85, 1], [0, 1, 1, 0]),
     transform: [
-      { translateY: interpolate(drift.value, [0, 1], [0, strip.float]) },
-      { translateX: interpolate(drift.value, [0, 1], [0, strip.float * 0.42]) },
-      { rotate: `${strip.rotate + interpolate(drift.value, [0, 1], [0, strip.float * 0.045])}deg` },
-      { scale: interpolate(drift.value, [0, 1], [1, 1.006]) },
+      { translateX: interpolate(wave.value, [0, 1], [-150, displayWidth + 70]) },
+      { rotate: '12deg' },
     ],
   }));
 
@@ -19071,11 +19100,31 @@ function WeeklyRhythmStripCard({
           top,
           zIndex: strip.zIndex,
         },
-        introStyle,
+        wrapStyle,
       ]}
     >
-      <Reanimated.View style={[s.weeklyStripFloatLayer, floatStyle]}>
-        <Image source={strip.source} style={s.weeklyStripImage} resizeMode="contain" />
+      <Reanimated.View style={[s.weeklyStripMask, maskStyle]}>
+        <Reanimated.View style={[s.weeklyStripImage, innerStyle]}>
+          <Image source={strip.source} style={s.weeklyStripImage} resizeMode="contain" />
+        </Reanimated.View>
+        <Reanimated.View style={[s.weeklyStripWave, waveStyle]}>
+          <LinearGradient
+            colors={['rgba(255,252,242,0)', 'rgba(255,249,232,0.3)', 'rgba(255,252,242,0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Reanimated.View>
+        <Reanimated.View
+          style={[s.weeklyStripScanEdge, { left: displayWidth - 34 }, scanEdgeStyle]}
+        >
+          <LinearGradient
+            colors={['rgba(232,195,116,0)', 'rgba(236,204,134,0.45)', 'rgba(255,247,222,0.95)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Reanimated.View>
       </Reanimated.View>
     </Reanimated.View>
   );
@@ -30056,13 +30105,26 @@ const s = StyleSheet.create({
     shadowRadius: 14,
     elevation: 2,
   },
-  weeklyStripFloatLayer: {
+  weeklyStripMask: {
     width: '100%',
     height: '100%',
+    overflow: 'hidden',
   },
   weeklyStripImage: {
     width: '100%',
     height: '100%',
+  },
+  weeklyStripScanEdge: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 34,
+  },
+  weeklyStripWave: {
+    position: 'absolute',
+    top: -24,
+    bottom: -24,
+    width: 120,
   },
   taskRhythmEditorShell: {
     width: '100%',
