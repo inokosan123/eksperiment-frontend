@@ -8590,17 +8590,113 @@ function ChapterCheckpointSlide({
 }
 
 function CheckpointFlameBurst() {
+  const pop = useSharedValue(0);
+
+  useEffect(() => {
+    pop.value = withSequence(
+      withTiming(0.72, { duration: 260, easing: Easing.out(Easing.cubic) }),
+      withSpring(1, { damping: 12, stiffness: 150, mass: 0.9 }),
+    );
+    return () => {
+      cancelAnimation(pop);
+    };
+  }, [pop]);
+
+  const popStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(pop.value, [0, 0.18, 1], [0, 1, 1]),
+    transform: [
+      { translateY: interpolate(pop.value, [0, 0.72, 1], [12, -2, 0]) },
+      { scale: interpolate(pop.value, [0, 0.72, 1], [0.3, 1.16, 1]) },
+    ],
+  }));
+
   return (
-    <Reanimated.View
-      entering={FadeIn.duration(300).withInitialValues({
-        opacity: 0,
-        transform: [{ scale: 0.54 }, { translateY: 8 }],
-      })}
-      style={s.checkpointFlameBurst}
-    >
+    <Reanimated.View style={[s.checkpointFlameBurst, popStyle]}>
       <View style={s.checkpointFlameAura} />
       <FocusLottie name="flame" loop speed={0.82} style={s.checkpointFlameLottie} />
     </Reanimated.View>
+  );
+}
+
+// Irregular angles so the burst reads as struck sparks, not a clock face.
+const IGNITE_SPARK_SEEDS = [
+  { a: -90, r: 66, size: 7 },
+  { a: -49, r: 50, size: 5.5 },
+  { a: -16, r: 64, size: 6.5 },
+  { a: 27, r: 49, size: 5 },
+  { a: 55, r: 67, size: 7 },
+  { a: 101, r: 51, size: 5.5 },
+  { a: 131, r: 63, size: 6.5 },
+  { a: 171, r: 48, size: 5 },
+  { a: 209, r: 65, size: 7 },
+  { a: 243, r: 52, size: 5.5 },
+] as const;
+
+function IgniteSpark({
+  burst,
+  seed,
+}: {
+  burst: SharedValue<number>;
+  seed: (typeof IGNITE_SPARK_SEEDS)[number];
+}) {
+  const rad = (seed.a * Math.PI) / 180;
+  const sparkStyle = useAnimatedStyle(() => {
+    const p = burst.value;
+    const reach = interpolate(p, [0, 1], [0.24, 1]);
+    return {
+      opacity: interpolate(p, [0, 0.08, 0.62, 1], [0, 1, 1, 0]),
+      transform: [
+        { translateX: Math.cos(rad) * seed.r * reach },
+        { translateY: Math.sin(rad) * seed.r * reach },
+        { rotate: '45deg' },
+        { scale: interpolate(p, [0, 0.14, 1], [0.4, 1, 0.16]) },
+      ],
+    };
+  });
+  return <Reanimated.View style={[s.igniteSpark, { width: seed.size, height: seed.size }, sparkStyle]} />;
+}
+
+// One-shot flash fired the moment the flame lights: a soft bloom, two sonar
+// rings and a crown of gold sparks. Rendered as a sibling of the seal so
+// nothing can clip it.
+function CheckpointIgniteBurst() {
+  const burst = useSharedValue(0);
+  const bloom = useSharedValue(0);
+
+  useEffect(() => {
+    bloom.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.cubic) });
+    burst.value = withDelay(
+      40,
+      withTiming(1, { duration: 680, easing: Easing.bezier(0.16, 0.8, 0.24, 1) }),
+    );
+    return () => {
+      cancelAnimation(burst);
+      cancelAnimation(bloom);
+    };
+  }, [bloom, burst]);
+
+  const bloomStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(bloom.value, [0, 0.12, 1], [0, 0.5, 0]),
+    transform: [{ scale: interpolate(bloom.value, [0, 1], [0.5, 1.6]) }],
+  }));
+  const ringOneStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(burst.value, [0, 0.1, 0.8, 1], [0, 0.55, 0, 0]),
+    transform: [{ scale: interpolate(burst.value, [0, 0.8], [0.62, 1.7]) }],
+  }));
+  const ringTwoStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(burst.value, [0.16, 0.3, 1], [0, 0.4, 0]),
+    transform: [{ scale: interpolate(burst.value, [0.16, 1], [0.58, 2.05]) }],
+  }));
+
+  return (
+    <View pointerEvents="none" style={s.igniteBurstLayer}>
+      <Reanimated.View style={[s.igniteBloom, bloomStyle]} />
+      <Reanimated.View style={[s.igniteRing, ringOneStyle]} />
+      <Reanimated.View style={[s.igniteRing, s.igniteRingThin, ringTwoStyle]} />
+      {IGNITE_SPARK_SEEDS.map(seed => (
+        <IgniteSpark key={seed.a} burst={burst} seed={seed} />
+      ))}
+    </View>
   );
 }
 
@@ -21926,41 +22022,97 @@ function V4FlameSlide({
 }) {
   const { width, height } = useWindowDimensions();
   const [reveal, setReveal] = useState(0);
+  const [railLit, setRailLit] = useState(false);
   const [soloTypedCount, setSoloTypedCount] = useState(0);
   const showTools = completedCount >= 4;
   const isSoloMessage = !title && Boolean(body);
   const soloMessageSegments = useMemo<TypedTextSegment[]>(() => [{ text: body }], [body]);
   const previousCompletedCount = Math.max(0, completedCount - 1);
-  const railCompletedCount = reveal >= 4 ? completedCount : previousCompletedCount;
+  const railCompletedCount = railLit ? completedCount : previousCompletedCount;
   const slotCount = showTools ? 4 : 3;
   const sealFlight = useSharedValue(0);
+  const charge = useSharedValue(0);
+  const kick = useSharedValue(0);
+  const breathe = useSharedValue(0);
 
   useEffect(() => {
     setReveal(0);
+    setRailLit(false);
     setSoloTypedCount(0);
+    cancelAnimation(sealFlight);
+    cancelAnimation(charge);
+    cancelAnimation(kick);
+    cancelAnimation(breathe);
     sealFlight.value = 0;
+    charge.value = 0;
+    kick.value = 0;
+    breathe.value = 0;
     preloadTaskFeedbackSound();
     preloadAchievementFeedbackSound();
+
+    // The empty seal arrives first and its glow slowly brightens — a breath of
+    // anticipation — so the ignition lands as a struck moment, not a fade.
+    charge.value = withDelay(760, withTiming(1, { duration: 480, easing: Easing.inOut(Easing.quad) }));
+    breathe.value = withDelay(
+      2000,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
+        ),
+        -1,
+        false,
+      ),
+    );
+
     const timers = [
-      setTimeout(() => setReveal(1), 160),
+      setTimeout(() => setReveal(1), 220),
+      setTimeout(() => runSelectionHaptic(), 780),
       setTimeout(() => {
+        // Ignition: flame, bloom, sparks, seal kick, sound and haptic on the
+        // exact same frame.
         setReveal(2);
+        kick.value = withSequence(
+          withTiming(1, { duration: 150, easing: Easing.out(Easing.cubic) }),
+          withSpring(0, { damping: 11, stiffness: 190, mass: 0.8 }),
+        );
+        runStrongHaptic();
         void playAchievementCompleteFeedback();
-      }, 520),
-      setTimeout(() => setReveal(3), 1340),
+      }, 1240),
+      setTimeout(() => runSelectionHaptic(), 1400),
+      setTimeout(() => setReveal(3), 2460),
       setTimeout(() => {
         setReveal(4);
         sealFlight.value = withTiming(1, {
-          duration: 780,
-          easing: Easing.inOut(Easing.cubic),
+          duration: 860,
+          easing: Easing.bezier(0.5, 0.04, 0.16, 1),
         });
+      }, 3260),
+      setTimeout(() => {
+        // The reward arrives only when the seal lands in its slot.
+        setRailLit(true);
+        runBubbleHaptic();
         void playTaskCompleteFeedback();
-      }, 2120),
-      setTimeout(() => setReveal(5), 3040),
-      setTimeout(() => setReveal(6), 3860),
+      }, 3920),
+      setTimeout(() => setReveal(5), 4340),
+      setTimeout(() => setReveal(6), 5140),
     ];
-    return () => timers.forEach(timer => clearTimeout(timer));
-  }, [completedCount, isSoloMessage, sealFlight, showTools]);
+    return () => {
+      timers.forEach(timer => clearTimeout(timer));
+      cancelAnimation(sealFlight);
+      cancelAnimation(charge);
+      cancelAnimation(kick);
+      cancelAnimation(breathe);
+    };
+  }, [breathe, charge, completedCount, isSoloMessage, kick, sealFlight, showTools]);
+
+  const sealKickStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + 0.07 * kick.value }],
+  }));
+  const sealGlowStyle = useAnimatedStyle(() => ({
+    opacity: 0.35 + 0.65 * charge.value,
+    transform: [{ scale: (0.88 + 0.16 * charge.value) * (1 + 0.05 * breathe.value) }],
+  }));
 
   useEffect(() => {
     if (!isSoloMessage || reveal !== 6) return undefined;
@@ -22020,14 +22172,14 @@ function V4FlameSlide({
       { scale: interpolate(sealFlight.value, [0, 0.46], [1, 0.97]) },
     ],
   }));
+  // Solo path: the wrapper stays inert so the logo owns one clean entrance
+  // instead of two stacked fades.
   const copyEntering = title
     ? FadeIn.duration(620).withInitialValues({
         opacity: 0,
         transform: [{ translateY: 12 }, { scale: 0.98 }],
       })
-    : FadeIn.duration(320).easing(Easing.out(Easing.cubic)).withInitialValues({
-        opacity: 0,
-      });
+    : undefined;
 
   return (
     <View style={[s.v4FlameSlide, { paddingTop: topInset + 14, paddingBottom: bottomInset }]}>
@@ -22035,24 +22187,25 @@ function V4FlameSlide({
         <View style={[s.chapterCheckpointSealSlot, s.v4FlameSealSlot]}>
           {reveal >= 1 && reveal < 5 ? (
             <Reanimated.View
-              entering={FadeIn.duration(760).withInitialValues({
+              entering={FadeIn.duration(880).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
                 opacity: 0,
-                transform: [{ translateY: 18 }, { scale: 0.74 }],
+                transform: [{ translateY: 30 }, { scale: 0.7 }],
               })}
               exiting={FadeOut.duration(1060)}
               style={s.chapterCheckpointAchievement}
             >
               <Reanimated.View style={[s.chapterCheckpointSealFlight, sealFlightStyle]}>
-                <View style={s.chapterCheckpointSeal}>
-                  <View style={s.chapterCheckpointSealGlow} />
+                <Reanimated.View style={[s.chapterCheckpointSeal, sealKickStyle]}>
+                  <Reanimated.View style={[s.chapterCheckpointSealGlow, sealGlowStyle]} />
                   {reveal >= 2 ? <CheckpointFlameBurst /> : null}
-                </View>
+                </Reanimated.View>
+                {reveal >= 2 ? <CheckpointIgniteBurst /> : null}
               </Reanimated.View>
               {reveal >= 2 ? (
                 <Reanimated.Text
-                  entering={FadeIn.delay(360).duration(640).withInitialValues({
+                  entering={FadeIn.delay(400).duration(760).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
                     opacity: 0,
-                    transform: [{ translateY: 10 }, { scale: 0.97 }],
+                    transform: [{ translateY: 16 }, { scale: 0.95 }],
                   })}
                   style={[s.chapterCheckpointCongrats, congratsFlightStyle]}
                 >
@@ -22082,9 +22235,9 @@ function V4FlameSlide({
               {isSoloMessage ? (
                 <>
                   <Reanimated.View
-                    entering={FadeInUp.duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                    entering={FadeInUp.duration(940).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
                       opacity: 0,
-                      transform: [{ translateY: 12 }, { scale: 0.94 }],
+                      transform: [{ translateY: 22 }, { scale: 0.88 }],
                     })}
                     style={s.v4CheckpointSoloLogoFrame}
                   >
@@ -22096,9 +22249,9 @@ function V4FlameSlide({
 
                   {reveal >= 6 ? (
                     <Reanimated.View
-                      entering={FadeInUp.duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                      entering={FadeInUp.duration(720).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
                         opacity: 0,
-                        transform: [{ translateY: 14 }, { scale: 0.97 }],
+                        transform: [{ translateY: 16 }, { scale: 0.96 }],
                       })}
                       style={s.v4CheckpointSoloBubble}
                     >
@@ -22128,9 +22281,9 @@ function V4FlameSlide({
             {recapItems.map((item, itemIndex) => (
               <Reanimated.View
                 key={item}
-                entering={FadeIn.delay(itemIndex * 110).duration(380).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                entering={FadeIn.delay(itemIndex * 120).duration(480).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
                   opacity: 0,
-                  transform: [{ translateY: 10 }, { scale: 0.96 }],
+                  transform: [{ translateY: 12 }, { scale: 0.95 }],
                 })}
                 style={s.v4FlameRecapChip}
               >
@@ -37422,6 +37575,39 @@ const s = StyleSheet.create({
   checkpointFlameLottie: {
     width: 86,
     height: 86,
+  },
+  igniteBurstLayer: {
+    position: 'absolute',
+    top: -49,
+    left: -49,
+    right: -49,
+    bottom: -49,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  igniteBloom: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255,214,122,0.34)',
+  },
+  igniteRing: {
+    position: 'absolute',
+    width: 118,
+    height: 118,
+    borderRadius: 59,
+    borderWidth: 1.5,
+    borderColor: 'rgba(232,195,116,0.7)',
+  },
+  igniteRingThin: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,233,182,0.6)',
+  },
+  igniteSpark: {
+    position: 'absolute',
+    borderRadius: 1.5,
+    backgroundColor: '#E7C36D',
   },
   chapterCheckpointCongrats: {
     marginTop: 18,
