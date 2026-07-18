@@ -18040,9 +18040,11 @@ function SpiritualTaskPreviewCard({
 }
 
 // A freshly-activated task: the real Home card landing with a brief gold seal.
-// `idle` + `idleIndex` opt into the ambient sheen: every idle cycle a soft
-// band of light crosses the saved cards one after another. Callers that do
-// not pass them render exactly as before.
+// `idle` + `idleIndex` opt into the ambient wave: once per idle cycle each
+// card rises a breath and settles, one after another down the list — quiet
+// physical life, no light effects. The card stays fully tappable (transform
+// moves the hit area with it). Callers that do not pass `idle` render
+// exactly as before.
 function SpiritualSavedTaskCard({
   card,
   fresh,
@@ -18054,28 +18056,20 @@ function SpiritualSavedTaskCard({
   idle?: SharedValue<number>;
   idleIndex?: number;
 }) {
-  const sheenStyle = useAnimatedStyle(() => {
-    if (!idle) return { opacity: 0, transform: [{ translateX: -140 }, { rotate: '14deg' }] };
-    const elapsed = idle.value * 1500;
-    const raw = (elapsed - idleIndex * 110) / 640;
+  const liftStyle = useAnimatedStyle(() => {
+    if (!idle) return {};
+    const elapsed = idle.value * 1800;
+    const raw = (elapsed - idleIndex * 150) / 560;
     const local = raw < 0 ? 0 : raw > 1 ? 1 : raw;
+    const wave = Math.sin(Math.PI * local);
     return {
-      opacity: Math.sin(Math.PI * local) * 0.5,
-      transform: [{ translateX: -140 + local * 560 }, { rotate: '14deg' }],
+      transform: [{ translateY: -3 * wave }, { scale: 1 + 0.008 * wave }],
     };
   });
 
   return (
-    <View style={s.spiritualBuilderTaskFrame}>
+    <Reanimated.View style={[s.spiritualBuilderTaskFrame, liftStyle]}>
       <AnyTaskCard task={card} />
-      <Reanimated.View pointerEvents="none" style={[s.spiritualIdleSheen, sheenStyle]}>
-        <LinearGradient
-          colors={['rgba(255,249,232,0)', 'rgba(255,247,224,0.55)', 'rgba(255,249,232,0)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </Reanimated.View>
       {fresh ? (
         <Reanimated.View
           pointerEvents="none"
@@ -18084,7 +18078,7 @@ function SpiritualSavedTaskCard({
           style={s.spiritualBuilderSavedGlow}
         />
       ) : null}
-    </View>
+    </Reanimated.View>
   );
 }
 
@@ -20104,9 +20098,9 @@ function insertSortedByTime(list: SavedV2Entry[], entry: SavedV2Entry): SavedV2E
 }
 
 // A catalog card waiting to be set up: the exact Home card, resting in gray.
-// With `idle`, a sleeping catalog card briefly stirs as light passes over it:
-// the muting veil thins for a moment, then settles back. Without `idle` the
-// card renders exactly as before (all other builders).
+// With `idle`, a sleeping catalog card stirs once per cycle — a smaller lift
+// than the saved cards, one after another, then stillness. Without `idle`
+// the card renders exactly as before (all other builders).
 function V2MutedTaskCard({
   card,
   idle,
@@ -20116,51 +20110,28 @@ function V2MutedTaskCard({
   idle?: SharedValue<number>;
   idleIndex?: number;
 }) {
-  const localAt = (value: number) => {
-    'worklet';
-    const elapsed = value * 2000;
-    const raw = (elapsed - idleIndex * 130) / 700;
-    return raw < 0 ? 0 : raw > 1 ? 1 : raw;
-  };
-
-  const sheenStyle = useAnimatedStyle(() => {
-    if (!idle) return { opacity: 0, transform: [{ translateX: -140 }, { rotate: '14deg' }] };
-    const local = localAt(idle.value);
+  const stirStyle = useAnimatedStyle(() => {
+    if (!idle) return {};
+    const elapsed = idle.value * 2000;
+    const raw = (elapsed - idleIndex * 150) / 620;
+    const local = raw < 0 ? 0 : raw > 1 ? 1 : raw;
+    const wave = Math.sin(Math.PI * local);
     return {
-      opacity: Math.sin(Math.PI * local) * 0.34,
-      transform: [{ translateX: -140 + local * 560 }, { rotate: '14deg' }],
+      transform: [{ translateY: -2.2 * wave }, { scale: 1 + 0.005 * wave }],
     };
-  });
-  const veilStyle = useAnimatedStyle(() => {
-    if (!idle) return { opacity: 1 };
-    return { opacity: 1 - 0.5 * Math.sin(Math.PI * localAt(idle.value)) };
   });
 
   return (
-    <View style={s.v2MutedFrame}>
+    <Reanimated.View style={[s.v2MutedFrame, stirStyle]}>
       <AnyTaskCard task={card} />
-      {idle ? (
-        <>
-          <Reanimated.View pointerEvents="none" style={[s.v2MutedVeil, veilStyle]} />
-          <Reanimated.View pointerEvents="none" style={[s.spiritualIdleSheen, sheenStyle]}>
-            <LinearGradient
-              colors={['rgba(255,249,232,0)', 'rgba(255,247,224,0.5)', 'rgba(255,249,232,0)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={StyleSheet.absoluteFill}
-            />
-          </Reanimated.View>
-        </>
-      ) : (
-        <View pointerEvents="none" style={s.v2MutedVeil} />
-      )}
-    </View>
+      <View pointerEvents="none" style={s.v2MutedVeil} />
+    </Reanimated.View>
   );
 }
 
-// Gentle standing invitation on the builder's first action: the button
-// breathes until the user takes it.
-function V2InviteBreath({ children }: { children: React.ReactNode }) {
+// Gentle standing invitation on the builder's first action: the wrapped
+// element breathes until the user takes it.
+function V2InviteBreath({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
   const breathe = useSharedValue(0);
 
   useEffect(() => {
@@ -20184,7 +20155,7 @@ function V2InviteBreath({ children }: { children: React.ReactNode }) {
     transform: [{ scale: 1 + 0.016 * breathe.value }],
   }));
 
-  return <Reanimated.View style={breatheStyle}>{children}</Reanimated.View>;
+  return <Reanimated.View style={[style, breatheStyle]}>{children}</Reanimated.View>;
 }
 
 function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
@@ -20202,9 +20173,9 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
   // Ambient idle life. People stay on this screen for minutes, so the room
   // may not go still — but the motion must stay rare enough to never become
-  // wallpaper: one pass of light over the saved rhythm every ~14s, and the
-  // sleeping examples stir on the same period, offset five seconds so the
-  // two moments never collide.
+  // wallpaper: once every ~14s the saved cards rise a breath one after
+  // another and settle; the sleeping examples do the same on the same
+  // period, offset five seconds, so the two moments never collide.
   const idleActive = useSharedValue(0);
   const idleMuted = useSharedValue(0);
 
@@ -20213,9 +20184,9 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
       2600,
       withRepeat(
         withSequence(
-          withTiming(1, { duration: 1500, easing: Easing.linear }),
+          withTiming(1, { duration: 1800, easing: Easing.linear }),
           withTiming(0, { duration: 30 }),
-          withDelay(12470, withTiming(0, { duration: 30 })),
+          withDelay(12170, withTiming(0, { duration: 30 })),
         ),
         -1,
         false,
@@ -20292,19 +20263,6 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
 
   return (
     <View style={s.organizeRuleScreen}>
-      <Reanimated.View pointerEvents="none" entering={FadeIn.delay(260).duration(980)} style={s.spiritualAmbientTop}>
-        <LinearGradient
-          colors={['rgba(246,222,169,0.34)', 'rgba(246,222,169,0.1)', 'rgba(246,222,169,0)']}
-          style={StyleSheet.absoluteFill}
-        />
-      </Reanimated.View>
-      <Reanimated.View pointerEvents="none" entering={FadeIn.delay(420).duration(1100)} style={s.spiritualAmbientAura} />
-      <Reanimated.View pointerEvents="none" entering={FadeIn.delay(600).duration(1100)} style={s.spiritualAmbientFloor}>
-        <LinearGradient
-          colors={['rgba(212,175,110,0)', 'rgba(212,175,110,0.1)']}
-          style={StyleSheet.absoluteFill}
-        />
-      </Reanimated.View>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
@@ -20328,23 +20286,19 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
             opacity: 0,
             transform: [{ translateY: 18 }, { scale: 0.985 }],
           })}
-          style={[s.v2MyPanel, !saved.length && s.v2SpiritualMyPanelEmpty, s.v2SpiritualMyPanelRich, myPanelLeaveStyle]}
+          style={[s.v2MyPanel, !saved.length && s.v2SpiritualMyPanelEmpty, { borderColor: 'rgba(197,160,89,0.3)' }, myPanelLeaveStyle]}
         >
           <LinearGradient
             pointerEvents="none"
-            colors={['rgba(255,255,255,0.98)', 'rgba(197,160,89,0.19)', 'rgba(255,253,248,0.96)']}
+            colors={['rgba(255,255,255,0.98)', 'rgba(197,160,89,0.13)', 'rgba(255,253,248,0.96)']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
           <View pointerEvents="none" style={s.v2SpiritualPanelHalo} />
-          <View pointerEvents="none" style={s.spiritualPanelTickTL} />
-          <View pointerEvents="none" style={s.spiritualPanelTickTR} />
-          <View pointerEvents="none" style={s.spiritualPanelTickBL} />
-          <View pointerEvents="none" style={s.spiritualPanelTickBR} />
           <View style={s.v2PanelHeader}>
-            <Text style={s.v2PanelTitle}>Add Your Tasks</Text>
-            <View style={[s.v2PanelCount, { backgroundColor: 'rgba(197,160,89,0.17)', borderColor: 'rgba(197,160,89,0.4)' }]}>
+            <Text style={s.v2PanelTitle}>My Spiritual Tasks</Text>
+            <View style={[s.v2PanelCount, { backgroundColor: 'rgba(197,160,89,0.12)', borderColor: 'rgba(197,160,89,0.26)' }]}>
               <Text style={[s.v2PanelCountText, { color: '#9A7B33' }]}>{saved.length}</Text>
             </View>
           </View>
@@ -20369,20 +20323,20 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
               ))}
             </ScrollView>
           ) : (
-            <View style={[s.v2Empty, s.v2SpiritualEmpty]}>
-              <View style={s.v2SpiritualTodoRow}>
-                <View style={s.v2SpiritualTodoMark}>
-                  <View style={s.v2SpiritualTodoMarkInner} />
+            <V2InviteBreath style={s.spiritualEmptyBreath}>
+              <TouchableOpacity
+                activeOpacity={0.88}
+                haptic="medium"
+                onPress={openFirstSpiritualTask}
+                style={[s.v2Empty, s.v2SpiritualEmpty]}
+              >
+                <View style={s.spiritualEmptyOrb}>
+                  <Plus s={15} c={GOLD} w={2.6} />
                 </View>
-                <Text style={s.v2SpiritualTodoTitle}>Build your spiritual routine</Text>
-              </View>
-              <V2InviteBreath>
-                <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={openFirstSpiritualTask} style={s.v2EmptyAction}>
-                  <Plus s={14} c="#FFFFFF" w={2.5} />
-                  <Text style={s.v2EmptyActionText}>Add Spiritual Task</Text>
-                </TouchableOpacity>
-              </V2InviteBreath>
-            </View>
+                <Text style={s.spiritualEmptyTitle}>Add Spiritual Task</Text>
+                <Text style={s.spiritualEmptyCaption}>Prayer, Scripture, church — begin with one</Text>
+              </TouchableOpacity>
+            </V2InviteBreath>
           )}
         </Reanimated.View>
 
@@ -31202,94 +31156,12 @@ const s = StyleSheet.create({
   },
   v2SpiritualPanelHalo: {
     position: 'absolute',
-    right: -46,
-    top: -58,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(197,160,89,0.24)',
-  },
-  v2SpiritualMyPanelRich: {
-    borderColor: 'rgba(197,160,89,0.45)',
-    shadowColor: '#C5A059',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.17,
-    shadowRadius: 24,
-    elevation: 4,
-  },
-  spiritualPanelTickTL: {
-    position: 'absolute',
-    top: 9,
-    left: 9,
-    width: 13,
-    height: 13,
-    borderColor: 'rgba(197,160,89,0.5)',
-    borderTopWidth: 1.4,
-    borderLeftWidth: 1.4,
-    borderTopLeftRadius: 6,
-  },
-  spiritualPanelTickTR: {
-    position: 'absolute',
-    top: 9,
-    right: 9,
-    width: 13,
-    height: 13,
-    borderColor: 'rgba(197,160,89,0.5)',
-    borderTopWidth: 1.4,
-    borderRightWidth: 1.4,
-    borderTopRightRadius: 6,
-  },
-  spiritualPanelTickBL: {
-    position: 'absolute',
-    bottom: 9,
-    left: 9,
-    width: 13,
-    height: 13,
-    borderColor: 'rgba(197,160,89,0.5)',
-    borderBottomWidth: 1.4,
-    borderLeftWidth: 1.4,
-    borderBottomLeftRadius: 6,
-  },
-  spiritualPanelTickBR: {
-    position: 'absolute',
-    bottom: 9,
-    right: 9,
-    width: 13,
-    height: 13,
-    borderColor: 'rgba(197,160,89,0.5)',
-    borderBottomWidth: 1.4,
-    borderRightWidth: 1.4,
-    borderBottomRightRadius: 6,
-  },
-  spiritualIdleSheen: {
-    position: 'absolute',
-    top: -26,
-    bottom: -26,
-    left: 0,
-    width: 110,
-  },
-  spiritualAmbientTop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '26%',
-  },
-  spiritualAmbientAura: {
-    position: 'absolute',
-    top: -70,
-    right: -64,
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: 'rgba(232,195,116,0.13)',
-  },
-  spiritualAmbientFloor: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '24%',
+    right: -42,
+    top: -52,
+    width: 156,
+    height: 156,
+    borderRadius: 78,
+    backgroundColor: 'rgba(197,160,89,0.16)',
   },
   v2RoutinePanelHalo: {
     position: 'absolute',
@@ -31403,13 +31275,44 @@ const s = StyleSheet.create({
     alignSelf: 'stretch',
     flexGrow: 1,
     minHeight: 88,
-    borderRadius: 22,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(197,160,89,0.5)',
+    backgroundColor: 'rgba(255,253,248,0.72)',
+    rowGap: 6,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  spiritualEmptyBreath: {
+    flexGrow: 1,
+    alignSelf: 'stretch',
+  },
+  spiritualEmptyOrb: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(197,160,89,0.13)',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.18)',
-    backgroundColor: 'rgba(255,255,255,0.66)',
-    rowGap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 13,
+    borderColor: 'rgba(197,160,89,0.45)',
+    marginBottom: 2,
+  },
+  spiritualEmptyTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17.5,
+    lineHeight: 22,
+    color: INK,
+    textAlign: 'center',
+  },
+  spiritualEmptyCaption: {
+    fontFamily: F.sans,
+    fontSize: 11.5,
+    lineHeight: 15,
+    color: MUTED,
+    textAlign: 'center',
+    maxWidth: 260,
   },
   v2RoutineEmpty: {
     alignSelf: 'stretch',
