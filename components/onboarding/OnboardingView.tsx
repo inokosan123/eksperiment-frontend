@@ -18774,7 +18774,8 @@ function WeeklyEvidenceResultChart({
   width: number;
   height: number;
 }) {
-  const reveal = useSharedValue(active ? 1 : 0);
+  const reveal = useSharedValue(0);
+  const breathe = useSharedValue(0);
   const left = 24;
   const right = width - 24;
   const span = right - left;
@@ -18805,42 +18806,140 @@ function WeeklyEvidenceResultChart({
       : card.curve === 'wellbeing'
         ? resultY + 26
         : resultY + 10;
-  const resultPath = `M${left} ${startY} C${x(0.2)} ${c1y} ${x(0.38)} ${c1y} ${x(0.52)} ${(startY + resultY) / 2} C${x(0.68)} ${c2y} ${x(0.84)} ${c2y} ${right} ${resultY}`;
+  const midY = (startY + resultY) / 2;
+  const resultPath = `M${left} ${startY} C${x(0.2)} ${c1y} ${x(0.38)} ${c1y} ${x(0.52)} ${midY} C${x(0.68)} ${c2y} ${x(0.84)} ${c2y} ${right} ${resultY}`;
   const areaPath = `${resultPath} L${right} ${chartBottom} L${left} ${chartBottom} Z`;
   const startLabelTop = Math.max(8, Math.min(chartHeight - 45, startY - 38));
   const resultLabelTop = Math.max(8, Math.min(chartHeight - 45, resultY - 38));
 
-  useEffect(() => {
-    reveal.value = active
-      ? withTiming(1, { duration: 980, easing: Easing.bezier(0.16, 1, 0.28, 1) })
-      : withTiming(0, { duration: 140, easing: Easing.out(Easing.cubic) });
-    if (!active) return undefined;
-    // A quiet tap the moment the line lands on its result.
-    const landTimer = setTimeout(runBubbleHaptic, 900);
-    return () => clearTimeout(landTimer);
-  }, [active, reveal]);
+  // The curve resampled at 25 even x-stops, so the pen tip can ride the
+  // exact line on the UI thread with two array reads and a lerp.
+  const penTable = useMemo(() => {
+    const points: { px: number; py: number }[] = [];
+    const sampleSegment = (
+      x0: number, y0: number,
+      cx1: number, cy1: number,
+      cx2: number, cy2: number,
+      x3: number, y3: number,
+    ) => {
+      for (let i = 0; i <= 30; i++) {
+        const t = i / 30;
+        const mt = 1 - t;
+        points.push({
+          px: mt * mt * mt * x0 + 3 * mt * mt * t * cx1 + 3 * mt * t * t * cx2 + t * t * t * x3,
+          py: mt * mt * mt * y0 + 3 * mt * mt * t * cy1 + 3 * mt * t * t * cy2 + t * t * t * y3,
+        });
+      }
+    };
+    sampleSegment(left, startY, left + span * 0.2, c1y, left + span * 0.38, c1y, left + span * 0.52, midY);
+    sampleSegment(left + span * 0.52, midY, left + span * 0.68, c2y, left + span * 0.84, c2y, right, resultY);
+    const table: number[] = [];
+    for (let k = 0; k <= 24; k++) {
+      const targetX = left + (span * k) / 24;
+      let sampledY = points[points.length - 1].py;
+      for (let i = 1; i < points.length; i++) {
+        if (points[i].px >= targetX) {
+          const a = points[i - 1];
+          const b = points[i];
+          const f = b.px === a.px ? 0 : (targetX - a.px) / (b.px - a.px);
+          sampledY = a.py + (b.py - a.py) * f;
+          break;
+        }
+      }
+      table.push(sampledY);
+    }
+    return table;
+  }, [c1y, c2y, left, midY, resultY, right, span, startY]);
 
-  const chartRevealStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(reveal.value, [0, 0.18, 1], [0, 1, 1], 'clamp'),
-    width: `${interpolate(reveal.value, [0.08, 0.92], [0, 100], 'clamp')}%`,
+  useEffect(() => {
+    if (active) {
+      // One breath after the card settles, the chart narrates itself:
+      // baseline first, then the result line drawn by a moving pen, the wash
+      // blooming in its wake, and the verdict landing with the endpoint.
+      reveal.value = 0;
+      reveal.value = withDelay(200, withTiming(1, { duration: 1350, easing: Easing.bezier(0.3, 0.08, 0.16, 1) }));
+      breathe.value = 0;
+      breathe.value = withDelay(
+        1780,
+        withRepeat(
+          withSequence(
+            withTiming(1, { duration: 1700, easing: Easing.inOut(Easing.sin) }),
+            withTiming(0, { duration: 1700, easing: Easing.inOut(Easing.sin) }),
+          ),
+          -1,
+          false,
+        ),
+      );
+      const landTimer = setTimeout(runBubbleHaptic, 1430);
+      return () => clearTimeout(landTimer);
+    }
+    cancelAnimation(reveal);
+    cancelAnimation(breathe);
+    reveal.value = withTiming(0, { duration: 140, easing: Easing.out(Easing.cubic) });
+    breathe.value = 0;
+    return undefined;
+  }, [active, breathe, reveal]);
+
+  useEffect(() => {
+    return () => {
+      cancelAnimation(reveal);
+      cancelAnimation(breathe);
+    };
+  }, [breathe, reveal]);
+
+  // Baseline draws first — a quick quiet stroke — then the result line takes
+  // over. Both are transform-driven clip wipes (no layout animation).
+  const baselineMaskStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(reveal.value, [0.02, 0.2], [-width, 0], 'clamp') }],
+  }));
+  const baselineCounterStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(reveal.value, [0.02, 0.2], [width, 0], 'clamp') }],
+  }));
+  const resultMaskStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(reveal.value, [0.24, 0.9], [-width, 0], 'clamp') }],
+  }));
+  const resultCounterStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(reveal.value, [0.24, 0.9], [width, 0], 'clamp') }],
   }));
   // The wash blooms a step behind the line — the stroke leads, the area
   // fills in its wake.
   const areaBloomStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(reveal.value, [0.3, 0.88], [0, 1], 'clamp'),
+    opacity: interpolate(reveal.value, [0.34, 0.88], [0, 1], 'clamp'),
   }));
+  const penStyle = useAnimatedStyle(() => {
+    const p = interpolate(reveal.value, [0.24, 0.9], [0, 1], 'clamp');
+    const scaled = p * 24;
+    const i = Math.min(23, Math.floor(scaled));
+    const frac = scaled - i;
+    const penY = penTable[i] + (penTable[i + 1] - penTable[i]) * frac;
+    return {
+      opacity: interpolate(reveal.value, [0.21, 0.27, 0.87, 0.94], [0, 1, 1, 0], 'clamp'),
+      transform: [{ translateX: left + span * p - 7 }, { translateY: penY - 7 }],
+    };
+  });
   const endpointStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(reveal.value, [0.72, 1], [0, 1], 'clamp'),
-    transform: [{ scale: interpolate(reveal.value, [0.72, 0.9, 1], [0.72, 1.16, 1], 'clamp') }],
+    opacity:
+      interpolate(reveal.value, [0.84, 1], [0, 1], 'clamp') *
+      (0.82 + 0.18 * breathe.value),
+    transform: [
+      {
+        scale:
+          interpolate(reveal.value, [0.84, 0.94, 1], [0.6, 1.18, 1], 'clamp') *
+          (1 + 0.09 * breathe.value),
+      },
+    ],
   }));
   // The result pill arrives WITH the line: it rises and settles as the
   // stroke reaches its endpoint.
   const resultPillStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(reveal.value, [0.7, 0.94], [0, 1], 'clamp'),
+    opacity: interpolate(reveal.value, [0.74, 0.95], [0, 1], 'clamp'),
     transform: [
-      { translateY: interpolate(reveal.value, [0.7, 1], [9, 0], 'clamp') },
-      { scale: interpolate(reveal.value, [0.7, 0.92, 1], [0.9, 1.05, 1], 'clamp') },
+      { translateY: interpolate(reveal.value, [0.74, 1], [9, 0], 'clamp') },
+      { scale: interpolate(reveal.value, [0.74, 0.93, 1], [0.9, 1.05, 1], 'clamp') },
     ],
+  }));
+  const endpointDotStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(reveal.value, [0.85, 0.93], [0, 1], 'clamp'),
   }));
 
   return (
@@ -18850,33 +18949,42 @@ function WeeklyEvidenceResultChart({
           <SvgPath d={`M${left} ${guideTop} H${right}`} stroke="rgba(25,23,20,0.10)" strokeWidth={1.2} strokeDasharray="4 8" strokeLinecap="round" />
           <SvgPath d={`M${left} ${guideMid} H${right}`} stroke="rgba(25,23,20,0.06)" strokeWidth={1.1} strokeDasharray="4 9" strokeLinecap="round" />
           <SvgPath d={`M${left} ${guideBottom} H${right}`} stroke="rgba(25,23,20,0.10)" strokeWidth={1.2} strokeDasharray="4 8" strokeLinecap="round" />
-          <SvgPath d={baselinePath} stroke="rgba(25,23,20,0.22)" strokeWidth={3.4} fill="none" strokeLinecap="round" />
           <SvgCircle cx={left} cy={startY} r={6.2} fill="#FFFDF8" stroke="rgba(25,23,20,0.52)" strokeWidth={2.5} />
         </Svg>
 
-        <Reanimated.View style={[s.weeklyResultRevealFull, chartRevealStyle]}>
-          <Reanimated.View style={[StyleSheet.absoluteFillObject, areaBloomStyle]}>
+        <Reanimated.View style={[s.weeklyResultRevealFull, baselineMaskStyle]}>
+          <Reanimated.View style={[StyleSheet.absoluteFillObject, baselineCounterStyle]}>
             <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg}>
-              <Defs>
-                <SvgLinearGradient id={`evArea-${card.curve}`} x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0" stopColor={card.accent} stopOpacity={0.3} />
-                  <Stop offset="0.7" stopColor={card.accent} stopOpacity={0.08} />
-                  <Stop offset="1" stopColor={card.accent} stopOpacity={0} />
-                </SvgLinearGradient>
-              </Defs>
-              <SvgPath d={areaPath} fill={`url(#evArea-${card.curve})`} />
+              <SvgPath d={baselinePath} stroke="rgba(25,23,20,0.22)" strokeWidth={3.4} fill="none" strokeLinecap="round" />
             </Svg>
           </Reanimated.View>
-          <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg}>
-            <Defs>
-              <SvgLinearGradient id={`evLine-${card.curve}`} x1="0" y1="0" x2="1" y2="0">
-                <Stop offset="0" stopColor={card.accent} stopOpacity={0.55} />
-                <Stop offset="1" stopColor={card.accent} stopOpacity={1} />
-              </SvgLinearGradient>
-            </Defs>
-            <SvgPath d={resultPath} stroke={`${card.accent}22`} strokeWidth={16} fill="none" strokeLinecap="round" />
-            <SvgPath d={resultPath} stroke={`url(#evLine-${card.curve})`} strokeWidth={5.2} fill="none" strokeLinecap="round" />
-          </Svg>
+        </Reanimated.View>
+
+        <Reanimated.View style={[s.weeklyResultRevealFull, resultMaskStyle]}>
+          <Reanimated.View style={[StyleSheet.absoluteFillObject, resultCounterStyle]}>
+            <Reanimated.View style={[StyleSheet.absoluteFillObject, areaBloomStyle]}>
+              <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg}>
+                <Defs>
+                  <SvgLinearGradient id={`evArea-${card.curve}`} x1="0" y1="0" x2="0" y2="1">
+                    <Stop offset="0" stopColor={card.accent} stopOpacity={0.3} />
+                    <Stop offset="0.7" stopColor={card.accent} stopOpacity={0.08} />
+                    <Stop offset="1" stopColor={card.accent} stopOpacity={0} />
+                  </SvgLinearGradient>
+                </Defs>
+                <SvgPath d={areaPath} fill={`url(#evArea-${card.curve})`} />
+              </Svg>
+            </Reanimated.View>
+            <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg}>
+              <Defs>
+                <SvgLinearGradient id={`evLine-${card.curve}`} x1="0" y1="0" x2="1" y2="0">
+                  <Stop offset="0" stopColor={card.accent} stopOpacity={0.55} />
+                  <Stop offset="1" stopColor={card.accent} stopOpacity={1} />
+                </SvgLinearGradient>
+              </Defs>
+              <SvgPath d={resultPath} stroke={`${card.accent}22`} strokeWidth={16} fill="none" strokeLinecap="round" />
+              <SvgPath d={resultPath} stroke={`url(#evLine-${card.curve})`} strokeWidth={5.2} fill="none" strokeLinecap="round" />
+            </Svg>
+          </Reanimated.View>
         </Reanimated.View>
 
         <Reanimated.View
@@ -18902,11 +19010,18 @@ function WeeklyEvidenceResultChart({
           <Text style={[s.weeklyChartPillLabel, { color: card.accent }]}>WITH A PLAN</Text>
         </Reanimated.View>
 
-        <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg} pointerEvents="none">
-          <G>
-            <SvgCircle cx={right} cy={resultY} r={8.5} fill="#FFFDF8" stroke={card.accent} strokeWidth={3.8} />
-          </G>
-        </Svg>
+        <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, endpointDotStyle]}>
+          <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg}>
+            <G>
+              <SvgCircle cx={right} cy={resultY} r={8.5} fill="#FFFDF8" stroke={card.accent} strokeWidth={3.8} />
+            </G>
+          </Svg>
+        </Reanimated.View>
+
+        <Reanimated.View pointerEvents="none" style={[s.weeklyResultPen, penStyle]}>
+          <View style={[s.weeklyResultPenHalo, { backgroundColor: `${card.accent}2E` }]} />
+          <View style={[s.weeklyResultPenCore, { borderColor: card.accent }]} />
+        </Reanimated.View>
       </View>
     </View>
   );
@@ -18927,33 +19042,40 @@ function WeeklyEvidenceCardView({
   chartWidth: number;
   chartHeight: number;
 }) {
-  const reveal = useSharedValue(active ? 1 : 0);
+  const reveal = useSharedValue(0);
   // The delta chip strikes only when the chart line lands — the verdict
   // arrives with the evidence, not before it.
-  const chipPop = useSharedValue(active ? 1 : 0);
+  const chipPop = useSharedValue(0);
 
   useEffect(() => {
     reveal.value = active
-      ? withTiming(1, { duration: 520, easing: Easing.bezier(0.16, 1, 0.28, 1) })
-      : withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) });
+      ? withTiming(1, { duration: 560, easing: Easing.bezier(0.16, 1, 0.28, 1) })
+      : withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
     if (active) {
       chipPop.value = 0;
-      chipPop.value = withDelay(860, withTiming(1, { duration: 340, easing: Easing.bezier(0.16, 1, 0.28, 1) }));
+      chipPop.value = withDelay(1370, withTiming(1, { duration: 360, easing: Easing.bezier(0.16, 1, 0.28, 1) }));
     } else {
       chipPop.value = withTiming(0, { duration: 160 });
     }
+    return () => {
+      cancelAnimation(reveal);
+      cancelAnimation(chipPop);
+    };
   }, [active, chipPop, reveal]);
 
+  // Inactive neighbours sit dimmer, lower and a touch smaller — the active
+  // card owns the stage.
   const cardStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(reveal.value, [0, 0.2, 1], [0.72, 0.9, 1]),
+    opacity: interpolate(reveal.value, [0, 0.35, 1], [0.56, 0.82, 1]),
     transform: [
-      { translateY: interpolate(reveal.value, [0, 1], [8, 0]) },
+      { translateY: interpolate(reveal.value, [0, 1], [11, 0]) },
+      { scale: interpolate(reveal.value, [0, 1], [0.962, 1]) },
     ],
   }));
   const chipStyle = useAnimatedStyle(() => ({
     opacity: interpolate(chipPop.value, [0, 0.4], [0, 1], 'clamp'),
     transform: [
-      { scale: interpolate(chipPop.value, [0, 0.7, 1], [0.55, 1.1, 1], 'clamp') },
+      { scale: interpolate(chipPop.value, [0, 0.7, 1], [0.55, 1.12, 1], 'clamp') },
       { rotate: `${interpolate(chipPop.value, [0, 1], [-6, 0], 'clamp')}deg` },
     ],
   }));
@@ -18968,6 +19090,7 @@ function WeeklyEvidenceCardView({
           end={{ x: 0.92, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
+        <V2PanelWeave color={card.accent} />
         <View pointerEvents="none" style={[s.v4ToolTopSheen, { backgroundColor: `${card.accent}22` }]} />
         <View pointerEvents="none" style={[s.weeklyEvidenceWhisperFrame, { borderColor: `${card.accent}1A` }]} />
         <View pointerEvents="none" style={[s.weeklyEvidenceGlint, { right: 13, top: 14, backgroundColor: `${card.accent}5C` }]} />
@@ -18980,6 +19103,11 @@ function WeeklyEvidenceCardView({
               {card.title}
             </Text>
             <Reanimated.View style={[s.weeklyEvidenceDeltaChip, { backgroundColor: card.accent }, chipStyle]}>
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(255,255,255,0.34)', 'rgba(255,255,255,0.06)', 'rgba(0,0,0,0.05)']}
+                style={StyleSheet.absoluteFill}
+              />
               <Text style={s.weeklyEvidenceDeltaChipText}>{card.deltaText}</Text>
             </Reanimated.View>
           </View>
@@ -30667,10 +30795,13 @@ const s = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 3.5,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.42)',
     shadowColor: '#1C1917',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.14,
-    shadowRadius: 6,
+    shadowOpacity: 0.16,
+    shadowRadius: 7,
     elevation: 2,
   },
   weeklyEvidenceDeltaChipText: {
@@ -30842,8 +30973,31 @@ const s = StyleSheet.create({
     position: 'absolute',
     left: 0,
     top: 0,
+    width: '100%',
     height: '100%',
     overflow: 'hidden',
+  },
+  weeklyResultPen: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weeklyResultPenHalo: {
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+  },
+  weeklyResultPenCore: {
+    width: 7.5,
+    height: 7.5,
+    borderRadius: 3.75,
+    backgroundColor: '#FFFDF8',
+    borderWidth: 2.2,
   },
   weeklyResultEndpointGlow: {
     position: 'absolute',
