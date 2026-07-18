@@ -19589,7 +19589,7 @@ function ChristMote({
     // Motes wake only after the icon has arrived — the air stirs around a
     // presence, it does not precede it.
     drift.value = withDelay(
-      seed.delay + 1450,
+      seed.delay + 800,
       withRepeat(withTiming(1, { duration: seed.dur, easing: Easing.linear }), -1, false),
     );
     return () => {
@@ -19643,6 +19643,11 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
   const leave = useSharedValue(0);
   const dawn = useSharedValue(0);
   const veil = useSharedValue(1);
+  // The icon's arrival is driven by its own shared value (NOT a layout
+  // `entering` animation): the wrap also carries an animated style for float
+  // and exit, and an animated style overrides `entering` props from frame
+  // one — the icon would simply pop in.
+  const iconIn = useSharedValue(0);
   const breath = useSharedValue(0);
   const float = useSharedValue(0);
   const orn = useSharedValue(0);
@@ -19663,20 +19668,23 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
   const glowSize = Math.min(width * 1.45, 560);
 
   useEffect(() => {
-    // The entrance is a slow liturgy in acts, each beat given room to land:
-    // half a second of stillness — light dawns alone and warms the room —
-    // the icon ascends into the prepared light — only then the words, the
-    // ornament, the verse, and last the door forward.
+    // The entrance keeps its dramaturgy — light first, then the icon, then
+    // the words — but tight: a short breath of stillness, and every beat
+    // arrives on the heels of the one before it.
     dawn.value = withDelay(
-      500,
-      withTiming(1, { duration: 1800, easing: Easing.bezier(0.18, 0.5, 0.22, 1) }),
+      250,
+      withTiming(1, { duration: 1200, easing: Easing.bezier(0.18, 0.5, 0.22, 1) }),
     );
     veil.value = withDelay(
+      350,
+      withTiming(0, { duration: 1400, easing: Easing.inOut(Easing.sin) }),
+    );
+    iconIn.value = withDelay(
       700,
-      withTiming(0, { duration: 2100, easing: Easing.inOut(Easing.sin) }),
+      withTiming(1, { duration: 1300, easing: Easing.bezier(0.19, 1, 0.22, 1) }),
     );
     breath.value = withDelay(
-      2700,
+      1800,
       withRepeat(
         withSequence(
           withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
@@ -19687,7 +19695,7 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
       ),
     );
     float.value = withDelay(
-      2900,
+      2000,
       withRepeat(
         withSequence(
           withTiming(1, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
@@ -19698,30 +19706,31 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
       ),
     );
     eyebrowIn.value = withDelay(
-      3250,
-      withTiming(1, { duration: 900, easing: Easing.bezier(0.19, 1, 0.22, 1) }),
+      1750,
+      withTiming(1, { duration: 700, easing: Easing.bezier(0.19, 1, 0.22, 1) }),
     );
     orn.value = withDelay(
-      4280,
-      withTiming(1, { duration: 700, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+      2500,
+      withTiming(1, { duration: 600, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
     );
     const timers = [
       // Three quiet touches: light at fullness, the icon settling, the words.
-      setTimeout(() => runSelectionHaptic(), 2050),
-      setTimeout(() => runBubbleHaptic(), 3050),
-      setTimeout(() => runSelectionHaptic(), 3950),
+      setTimeout(() => runSelectionHaptic(), 1250),
+      setTimeout(() => runBubbleHaptic(), 1950),
+      setTimeout(() => runSelectionHaptic(), 2750),
     ];
     return () => {
       timers.forEach(timer => clearTimeout(timer));
       cancelAnimation(dawn);
       cancelAnimation(veil);
+      cancelAnimation(iconIn);
       cancelAnimation(breath);
       cancelAnimation(float);
       cancelAnimation(orn);
       cancelAnimation(eyebrowIn);
       cancelAnimation(leave);
     };
-  }, [breath, dawn, eyebrowIn, float, leave, orn, veil]);
+  }, [breath, dawn, eyebrowIn, float, iconIn, leave, orn, veil]);
 
   const handleContinue = () => {
     if (leavingRef.current) return;
@@ -19761,14 +19770,21 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
   }));
 
   const iconStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(leave.value, [0, 0.22, 0.62, 1], [1, 1, 0, 0]),
+    opacity:
+      interpolate(iconIn.value, [0, 0.5, 1], [0, 0.85, 1]) *
+      interpolate(leave.value, [0, 0.22, 0.62, 1], [1, 1, 0, 0]),
     transform: [
       {
         translateY:
+          interpolate(iconIn.value, [0, 1], [26, 0]) +
           interpolate(float.value, [0, 1], [0, -3.5]) +
           interpolate(leave.value, [0, 0.12, 1], [0, 0, -26]),
       },
-      { scale: 1 + 0.035 * interpolate(leave.value, [0, 0.12, 1], [0, 0, 1]) },
+      {
+        scale:
+          interpolate(iconIn.value, [0, 1], [1.07, 1]) *
+          (1 + 0.035 * interpolate(leave.value, [0, 0.12, 1], [0, 0, 1])),
+      },
     ],
   }));
 
@@ -19812,7 +19828,7 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
     <View style={s.christSlide}>
       <Reanimated.View
         pointerEvents="none"
-        entering={FadeIn.delay(4900).duration(1200)}
+        entering={FadeIn.delay(3050).duration(1000)}
         style={s.christFloorWash}
       >
         <LinearGradient
@@ -19883,13 +19899,7 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
             </Svg>
           </Reanimated.View>
 
-          <Reanimated.View
-            entering={FadeIn.delay(1400).duration(1650).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
-              opacity: 0,
-              transform: [{ translateY: 30 }, { scale: 1.08 }],
-            })}
-            style={[s.christIconWrap, iconStyle]}
-          >
+          <Reanimated.View style={[s.christIconWrap, iconStyle]}>
             <Image source={CHRIST_ICON} style={s.christIcon} resizeMode="contain" />
           </Reanimated.View>
 
@@ -19906,18 +19916,18 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
 
         <Reanimated.View style={[s.christTitleBlock, { marginTop: compact ? 18 : 26 }, titleLeaveStyle]}>
           <Reanimated.Text
-            entering={FadeIn.delay(3450).duration(1150).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
+            entering={FadeIn.delay(1950).duration(880).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
               opacity: 0,
-              transform: [{ translateY: 22 }, { scale: 0.965 }],
+              transform: [{ translateY: 20 }, { scale: 0.968 }],
             })}
             style={[s.christTitle, compact && s.christTitleCompact]}
           >
             Build your life
           </Reanimated.Text>
           <Reanimated.Text
-            entering={FadeIn.delay(3730).duration(1150).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
+            entering={FadeIn.delay(2170).duration(880).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
               opacity: 0,
-              transform: [{ translateY: 22 }, { scale: 0.965 }],
+              transform: [{ translateY: 20 }, { scale: 0.968 }],
             })}
             style={[s.christTitle, compact && s.christTitleCompact]}
           >
@@ -19932,9 +19942,9 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
         </View>
 
         <Reanimated.View
-          entering={FadeIn.delay(4560).duration(1050).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
+          entering={FadeIn.delay(2700).duration(820).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
             opacity: 0,
-            transform: [{ translateY: 14 }],
+            transform: [{ translateY: 12 }],
           })}
           style={[s.christVerseBlock, { marginTop: compact ? 13 : 17 }, verseLeaveStyle]}
         >
@@ -19942,7 +19952,7 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
             Seek first the kingdom of God, and all these things will be added to you.
           </Text>
           <Reanimated.Text
-            entering={FadeIn.delay(4900).duration(720).withInitialValues({ opacity: 0 })}
+            entering={FadeIn.delay(2950).duration(620).withInitialValues({ opacity: 0 })}
             style={s.christVerseRef}
           >
             Matthew 6:33
@@ -19954,7 +19964,7 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
         pointerEvents={leaving ? 'none' : 'auto'}
         style={[s.christFooter, { bottom: insets.bottom + 18 }, ctaLeaveStyle]}
       >
-        <AnimatedCta delay={5200} duration={760}>
+        <AnimatedCta delay={3250} duration={680}>
           <View style={s.ctaIsland}>
             <TouchableOpacity
               activeOpacity={0.9}
