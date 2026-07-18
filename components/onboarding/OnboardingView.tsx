@@ -15365,6 +15365,12 @@ function OrganizeLayerHeroCard({
   const isActive = active && activeReady;
   const state = useSharedValue(done ? 2 : isActive ? 1 : 0);
   const isGold = area.accent === GOLD;
+  // The living card: while this layer is the one about to be set up, a
+  // band of light sweeps across it every few seconds and the surface
+  // breathes — the same life grammar as the app's focus cards.
+  const sweep = useSharedValue(0);
+  const breathe = useSharedValue(0);
+  const [cardW, setCardW] = useState(0);
 
   useEffect(() => {
     state.value = withSpring(done ? 2 : isActive ? 1 : 0, {
@@ -15372,14 +15378,47 @@ function OrganizeLayerHeroCard({
       stiffness: 168,
       mass: 0.9,
     });
-  }, [done, isActive, state]);
+    if (isActive) {
+      sweep.value = 0;
+      sweep.value = withRepeat(
+        withTiming(1, { duration: 4400, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        false,
+      );
+      breathe.value = 0;
+      breathe.value = withRepeat(
+        withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.sin) }),
+        -1,
+        true,
+      );
+    } else {
+      cancelAnimation(sweep);
+      cancelAnimation(breathe);
+      sweep.value = 0;
+      breathe.value = withTiming(0, { duration: 300 });
+    }
+    return () => {
+      cancelAnimation(sweep);
+      cancelAnimation(breathe);
+    };
+  }, [breathe, done, isActive, state, sweep]);
 
   const cardStyle = useAnimatedStyle(() => ({
     opacity: interpolate(state.value, [0, 1, 2], [0.8, 1, 0.99]),
     transform: [
-      { scale: interpolate(state.value, [0, 1, 2], [0.988, 1.014, 1]) },
+      { scale: interpolate(state.value, [0, 1, 2], [0.988, 1.014, 1]) + breathe.value * 0.003 },
       { translateY: interpolate(state.value, [0, 1, 2], [0, -2, 0]) },
     ],
+  }));
+  const sweepStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(sweep.value, [0, 0.1, 0.4, 0.52, 1], [0, 0.9, 0.9, 0, 0]),
+    transform: [
+      { translateX: interpolate(sweep.value, [0, 0.52, 1], [-120, cardW + 70, cardW + 70]) },
+      { rotate: '14deg' },
+    ],
+  }));
+  const breatheWashStyle = useAnimatedStyle(() => ({
+    opacity: 0.03 + breathe.value * 0.06,
   }));
   const displayAccent = done ? (isGold ? GOLD : '#2F9B61') : area.accent;
   const gradientColors = done
@@ -15412,6 +15451,35 @@ function OrganizeLayerHeroCard({
       {/* The plaque's inner whisper frame + a corner glint */}
       <View pointerEvents="none" style={[s.organizeLayerHeroFrame, { borderColor: `${displayAccent}1C` }]} />
       <View pointerEvents="none" style={[s.organizeLayerHeroGlint, { backgroundColor: `${displayAccent}66` }]} />
+      {isActive && (
+        <>
+          {/* Breathing accent wash + the sweeping band of light */}
+          <Reanimated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFillObject, { backgroundColor: area.accent }, breatheWashStyle]}
+          />
+          <View
+            pointerEvents="none"
+            style={StyleSheet.absoluteFill}
+            onLayout={event => setCardW(event.nativeEvent.layout.width)}
+          >
+            <Reanimated.View style={[s.organizeLayerHeroSweep, sweepStyle]}>
+              <LinearGradient
+                colors={['rgba(255,251,235,0)', 'rgba(255,247,219,0.5)', 'rgba(255,251,235,0)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{ flex: 1 }}
+              />
+            </Reanimated.View>
+          </View>
+          <Reanimated.View
+            entering={FadeIn.delay(380).duration(420).easing(Easing.out(Easing.cubic))}
+            style={[s.organizeLayerHeroNowTag, { backgroundColor: area.accent }]}
+          >
+            <Text style={s.organizeLayerHeroNowText}>UP NEXT</Text>
+          </Reanimated.View>
+        </>
+      )}
 
       <View style={s.organizeLayerHeroTop}>
         <View style={s.organizeLayerHeroTitleWrap}>
@@ -30861,6 +30929,33 @@ const s = StyleSheet.create({
     height: 4,
     borderRadius: 0.8,
     transform: [{ rotate: '45deg' }],
+  },
+  organizeLayerHeroSweep: {
+    position: 'absolute',
+    top: -24,
+    bottom: -24,
+    width: 82,
+  },
+  organizeLayerHeroNowTag: {
+    position: 'absolute',
+    top: 0,
+    alignSelf: 'center',
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  organizeLayerHeroNowText: {
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    lineHeight: 10,
+    letterSpacing: 1.6,
+    color: '#FFFFFF',
   },
   charterHeader: {
     alignItems: 'center',
