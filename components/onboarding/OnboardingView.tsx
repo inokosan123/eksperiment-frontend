@@ -1198,10 +1198,10 @@ const ONBOARDING_DEV_JUMP_GROUPS: OnboardingDevJumpGroup[] = [
       { step: 'organizeHubAfterSpiritualV2', title: 'Routine tasks', body: 'Watch spiritual check, then routine setup.', accent: '#4D8586' },
       { step: 'organizeHubAfterRoutineV2', title: 'Challenges', body: 'Watch routine check, then challenge setup.', accent: '#8F5B4B' },
       { step: 'organizeHubAfterChallengesV2', title: 'Habits', body: 'Watch challenge check, then habit setup.', accent: '#2F9B61' },
-      { step: 'organizeHabitsConceptV2', title: 'Habit goals', body: 'Clear goal explanation screen.', accent: '#2F9B61' },
-      { step: 'organizeHabitsExamples', title: 'Habit steps', body: 'Goal steps explanation screen.', accent: '#2F9B61' },
+      { step: 'organizeHabitsConceptV2', title: 'Goals', body: 'Clear goal explanation screen.', accent: '#2F9B61' },
+      { step: 'organizeHabitsExamples', title: 'Habits / steps', body: 'Goal habits / steps explanation screen.', accent: '#2F9B61' },
       { step: 'organizeHabitsMomentumV2', title: 'Habit momentum', body: 'Imperfect day / keep moving screen.', accent: '#2F9B61' },
-      { step: 'organizeHabitsBuilderV2', title: 'Habit setup', body: 'Build first habit screen.', accent: '#2F9B61' },
+      { step: 'organizeHabitsBuilderV2', title: 'Goal setup', body: 'Build first goal screen.', accent: '#2F9B61' },
       { step: 'organizeGuidedHomeTour', title: 'Home guide', body: 'Guided Home and My Rhythm walkthrough.', accent: '#4D8586' },
       { step: 'organizeHomePreview', title: 'Home preview', body: 'Organized home mock.', accent: GOLD },
       { step: 'organizeComplete', title: 'Organize complete', body: 'End of organize section.', accent: '#2F9B61' },
@@ -17847,8 +17847,8 @@ const ORGANIZE_HUB_STAGES: Record<OrganizeHubStage, {
     doneBefore: 2,
     checksNow: true,
     heading: 'The challenge is set.',
-    body: 'Last come habits — goals built from small repeated steps.',
-    ctaLabel: 'Build habits',
+    body: 'Last come goals — each built from small repeated habits / steps.',
+    ctaLabel: 'Build a goal',
   },
   complete: {
     doneBefore: 3,
@@ -18409,8 +18409,8 @@ function OrganizeHabitStorySlide({ onNext }: { onNext: () => void }) {
 
   return (
     <OrganizeLessonSlide
-      title="A habit is a goal with steps."
-      body="You name the goal, then choose the small actions that build it. Miss one step and you are still moving — the goal holds you, not the single day."
+      title="A goal is built from habits / steps."
+      body="You name the goal, then choose the small repeated actions that build it. Miss one habit / step and you are still moving — the goal holds you, not the single day."
       accent="#2F9B61"
       ctaLabel="See examples"
       onNext={onNext}
@@ -19574,8 +19574,10 @@ function ChristMote({
   const haloSize = seed.size * 2.8;
 
   useEffect(() => {
+    // Motes wake only after the icon has arrived — the air stirs around a
+    // presence, it does not precede it.
     drift.value = withDelay(
-      seed.delay,
+      seed.delay + 1450,
       withRepeat(withTiming(1, { duration: seed.dur, easing: Easing.linear }), -1, false),
     );
     return () => {
@@ -19628,6 +19630,7 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
   const leavingRef = useRef(false);
   const leave = useSharedValue(0);
   const dawn = useSharedValue(0);
+  const veil = useSharedValue(1);
   const breath = useSharedValue(0);
   const float = useSharedValue(0);
   const orn = useSharedValue(0);
@@ -19648,12 +19651,20 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
   const glowSize = Math.min(width * 1.45, 560);
 
   useEffect(() => {
+    // The entrance is a slow liturgy in acts, each beat given room to land:
+    // half a second of stillness — light dawns alone and warms the room —
+    // the icon ascends into the prepared light — only then the words, the
+    // ornament, the verse, and last the door forward.
     dawn.value = withDelay(
-      140,
-      withTiming(1, { duration: 1350, easing: Easing.bezier(0.22, 1, 0.3, 1) }),
+      500,
+      withTiming(1, { duration: 1800, easing: Easing.bezier(0.18, 0.5, 0.22, 1) }),
+    );
+    veil.value = withDelay(
+      700,
+      withTiming(0, { duration: 2100, easing: Easing.inOut(Easing.sin) }),
     );
     breath.value = withDelay(
-      1600,
+      2700,
       withRepeat(
         withSequence(
           withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
@@ -19664,7 +19675,7 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
       ),
     );
     float.value = withDelay(
-      1600,
+      2900,
       withRepeat(
         withSequence(
           withTiming(1, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
@@ -19675,27 +19686,30 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
       ),
     );
     eyebrowIn.value = withDelay(
-      1080,
-      withTiming(1, { duration: 780, easing: Easing.bezier(0.19, 1, 0.22, 1) }),
+      3250,
+      withTiming(1, { duration: 900, easing: Easing.bezier(0.19, 1, 0.22, 1) }),
     );
     orn.value = withDelay(
-      1860,
-      withTiming(1, { duration: 620, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+      4280,
+      withTiming(1, { duration: 700, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
     );
     const timers = [
-      setTimeout(() => runSelectionHaptic(), 1300),
-      setTimeout(() => runBubbleHaptic(), 1640),
+      // Three quiet touches: light at fullness, the icon settling, the words.
+      setTimeout(() => runSelectionHaptic(), 2050),
+      setTimeout(() => runBubbleHaptic(), 3050),
+      setTimeout(() => runSelectionHaptic(), 3950),
     ];
     return () => {
       timers.forEach(timer => clearTimeout(timer));
       cancelAnimation(dawn);
+      cancelAnimation(veil);
       cancelAnimation(breath);
       cancelAnimation(float);
       cancelAnimation(orn);
       cancelAnimation(eyebrowIn);
       cancelAnimation(leave);
     };
-  }, [breath, dawn, eyebrowIn, float, leave, orn]);
+  }, [breath, dawn, eyebrowIn, float, leave, orn, veil]);
 
   const handleContinue = () => {
     if (leavingRef.current) return;
@@ -19705,20 +19719,25 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
     setTimeout(onNext, 660);
   };
 
+  // Light seeps in first, then blooms — a candle catching, not a switch.
   const radianceStyle = useAnimatedStyle(() => ({
     opacity:
-      dawn.value *
+      interpolate(dawn.value, [0, 0.45, 1], [0, 0.3, 1]) *
       (0.82 + 0.18 * breath.value) *
       interpolate(leave.value, [0, 0.3, 0.82, 1], [1, 1, 0, 0]),
     transform: [
       { translateY: interpolate(float.value, [0, 1], [0, 1.4]) },
       {
         scale:
-          (0.7 + 0.3 * dawn.value) *
+          (0.55 + 0.45 * dawn.value) *
           (1 + 0.06 * breath.value) *
           interpolate(leave.value, [0, 0.3, 1], [1, 1.08, 1.16]),
       },
     ],
+  }));
+
+  const veilStyle = useAnimatedStyle(() => ({
+    opacity: 0.05 * veil.value,
   }));
 
   const eyebrowStyle = useAnimatedStyle(() => ({
@@ -19781,7 +19800,7 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
     <View style={s.christSlide}>
       <Reanimated.View
         pointerEvents="none"
-        entering={FadeIn.delay(2500).duration(900)}
+        entering={FadeIn.delay(4900).duration(1200)}
         style={s.christFloorWash}
       >
         <LinearGradient
@@ -19853,9 +19872,9 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
           </Reanimated.View>
 
           <Reanimated.View
-            entering={FadeIn.delay(430).duration(1050).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
+            entering={FadeIn.delay(1400).duration(1650).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
               opacity: 0,
-              transform: [{ translateY: 20 }, { scale: 1.06 }],
+              transform: [{ translateY: 30 }, { scale: 1.08 }],
             })}
             style={[s.christIconWrap, iconStyle]}
           >
@@ -19875,18 +19894,18 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
 
         <Reanimated.View style={[s.christTitleBlock, { marginTop: compact ? 18 : 26 }, titleLeaveStyle]}>
           <Reanimated.Text
-            entering={FadeIn.delay(1220).duration(860).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
+            entering={FadeIn.delay(3450).duration(1150).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
               opacity: 0,
-              transform: [{ translateY: 18 }, { scale: 0.972 }],
+              transform: [{ translateY: 22 }, { scale: 0.965 }],
             })}
             style={[s.christTitle, compact && s.christTitleCompact]}
           >
             Build your life
           </Reanimated.Text>
           <Reanimated.Text
-            entering={FadeIn.delay(1420).duration(860).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
+            entering={FadeIn.delay(3730).duration(1150).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
               opacity: 0,
-              transform: [{ translateY: 18 }, { scale: 0.972 }],
+              transform: [{ translateY: 22 }, { scale: 0.965 }],
             })}
             style={[s.christTitle, compact && s.christTitleCompact]}
           >
@@ -19901,9 +19920,9 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
         </View>
 
         <Reanimated.View
-          entering={FadeIn.delay(2150).duration(860).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
+          entering={FadeIn.delay(4560).duration(1050).easing(Easing.bezier(0.19, 1, 0.22, 1)).withInitialValues({
             opacity: 0,
-            transform: [{ translateY: 12 }],
+            transform: [{ translateY: 14 }],
           })}
           style={[s.christVerseBlock, { marginTop: compact ? 13 : 17 }, verseLeaveStyle]}
         >
@@ -19911,7 +19930,7 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
             Seek first the kingdom of God, and all these things will be added to you.
           </Text>
           <Reanimated.Text
-            entering={FadeIn.delay(2380).duration(640).withInitialValues({ opacity: 0 })}
+            entering={FadeIn.delay(4900).duration(720).withInitialValues({ opacity: 0 })}
             style={s.christVerseRef}
           >
             Matthew 6:33
@@ -19923,7 +19942,7 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
         pointerEvents={leaving ? 'none' : 'auto'}
         style={[s.christFooter, { bottom: insets.bottom + 18 }, ctaLeaveStyle]}
       >
-        <AnimatedCta delay={2650}>
+        <AnimatedCta delay={5200} duration={760}>
           <View style={s.ctaIsland}>
             <TouchableOpacity
               activeOpacity={0.9}
@@ -19938,6 +19957,8 @@ function OrganizeChristCenterV2Slide({ onNext }: { onNext: () => void }) {
           </View>
         </AnimatedCta>
       </Reanimated.View>
+
+      <Reanimated.View pointerEvents="none" style={[s.christWarmVeil, veilStyle]} />
     </View>
   );
 }
@@ -19965,7 +19986,7 @@ const HUB_V2_ITEMS: { id: string; accent: string; card: Omit<TaskData, 'state'> 
   {
     id: 'habit',
     accent: '#2F9B61',
-    card: { variant: 'habit', title: 'Habits', subtitle: 'Steps toward a goal', habitColor: '#2F9B61', habitIconName: 'Target' },
+    card: { variant: 'habit', title: 'Habits', subtitle: 'Habits / steps toward a goal', habitColor: '#2F9B61', habitIconName: 'Target' },
   },
 ];
 
@@ -20005,7 +20026,7 @@ const HUB_V2_STAGES: Record<OrganizeHubV2Stage, {
     doneBefore: 2,
     checksNow: true,
     title: 'The challenge is set.',
-    body: 'Last come habits — small steps toward a goal.',
+    body: 'Last come habits — small repeated actions toward a goal.',
     accent: GOLD,
     ctaLabel: 'Build your habits',
   },
@@ -20221,6 +20242,66 @@ type SavedV2Entry = {
   card: TaskData;
 };
 
+function normalizedTaskTitle(title: string) {
+  return title.trim().toLocaleLowerCase();
+}
+
+function spiritualCatalogIdForTask(task: TaskDefinition): string | null {
+  if (task.status !== 'active' || task.source !== 'spiritual') return null;
+
+  const title = normalizedTaskTitle(task.title);
+  const exactCatalogItem = SPIRITUAL_V2_ITEMS.find(item => normalizedTaskTitle(item.title) === title);
+  if (exactCatalogItem) return exactCatalogItem.id;
+
+  if (task.targetView === '/jesus-prayer' || title.includes('jesus prayer')) return 'jesus-prayer';
+  if (task.type === 'prayer' && title.includes('morning')) return 'morning-prayer';
+  if (task.type === 'prayer' && title.includes('evening')) return 'evening-prayer';
+  if (task.type === 'reading' && (title.includes('psalm') || title.includes('psalter'))) return 'psalms-reading';
+  if (task.type === 'reading' && title.includes('new testament')) return 'new-testament';
+  if (task.type === 'reading' && title.includes('old testament')) return 'old-testament';
+  if (task.type === 'church') return 'church';
+  if (task.type === 'custom') return 'custom-spiritual';
+  return null;
+}
+
+function routineCatalogIdForTask(task: TaskDefinition): string | null {
+  if (task.status !== 'active' || task.source !== 'routine') return null;
+  const title = normalizedTaskTitle(task.title);
+  return ROUTINE_TASK_EXAMPLE_ITEMS.find(item => normalizedTaskTitle(item.title) === title)?.id ?? null;
+}
+
+function taskDefinitionToSavedV2Entry(
+  task: TaskDefinition,
+  catalogId: string | null,
+  variant: 'spiritual' | 'routine',
+): SavedV2Entry {
+  return {
+    key: task.id,
+    catalogId,
+    time: task.schedule.time,
+    card: {
+      variant,
+      title: task.title,
+      time: task.schedule.time,
+      subtitle: task.subtitle,
+      state: 'pending',
+      type: task.type,
+      habitIconName: task.icon,
+    },
+  };
+}
+
+function persistedV2Entries(tasks: TaskDefinition[], source: 'spiritual' | 'routine'): SavedV2Entry[] {
+  return tasks
+    .filter(task => task.status === 'active' && task.source === source)
+    .map(task => taskDefinitionToSavedV2Entry(
+      task,
+      source === 'spiritual' ? spiritualCatalogIdForTask(task) : routineCatalogIdForTask(task),
+      source,
+    ))
+    .sort((left, right) => left.time.localeCompare(right.time));
+}
+
 function insertSortedByTime(list: SavedV2Entry[], entry: SavedV2Entry): SavedV2Entry[] {
   return [...list, entry].sort((a, b) => a.time.localeCompare(b.time));
 }
@@ -20399,6 +20480,26 @@ function useV2BuilderLife(onNext: () => void) {
   };
 }
 
+// Task sheets can emit another press while the first SQL save is still in
+// flight. Every onboarding builder shares the same promise for those presses,
+// so one user action can create at most one record and every caller waits for
+// the real refresh before the sheet closes.
+function useOnboardingSaveOnce() {
+  const pendingSaveRef = useRef<Promise<void> | null>(null);
+
+  return useCallback((save: () => Promise<void>) => {
+    if (pendingSaveRef.current) return pendingSaveRef.current;
+
+    const pending = save();
+    pendingSaveRef.current = pending;
+    const clearPending = () => {
+      if (pendingSaveRef.current === pending) pendingSaveRef.current = null;
+    };
+    void pending.then(clearPending, clearPending);
+    return pending;
+  }, []);
+}
+
 // One dashed invitation shared by the V2 builders — the app's own add-button
 // anatomy (warm gradient inside a dashed frame, white orb, soft shadow),
 // tinted per chapter. Defaults are the spiritual gold.
@@ -20478,13 +20579,14 @@ function V2InviteBreath({ children, style }: { children: React.ReactNode; style?
 
 function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
   const insets = useSafeAreaInsets();
-  const { createOrUpdateTask } = useTasks();
+  const { createOrUpdateTask, ready: taskBackendReady, tasks } = useTasks();
   const [sheetItem, setSheetItem] = useState<(typeof SPIRITUAL_V2_ITEMS)[number] | null>(null);
   const [editorItem, setEditorItem] = useState<(typeof SPIRITUAL_V2_ITEMS)[number] | null>(null);
-  const [saved, setSaved] = useState<SavedV2Entry[]>([]);
   const [freshKey, setFreshKey] = useState<string | null>(null);
+  const saved = useMemo(() => persistedV2Entries(tasks, 'spiritual'), [tasks]);
   const savedIds = useMemo(() => new Set(saved.map(entry => entry.catalogId)), [saved]);
-  const ready = saved.length > 0;
+  const ready = taskBackendReady && saved.length > 0;
+  const runSaveOnce = useOnboardingSaveOnce();
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
   const {
     leaving,
@@ -20498,27 +20600,29 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
   } = useV2BuilderLife(onNext);
 
   const openItem = (item: (typeof SPIRITUAL_V2_ITEMS)[number]) => {
+    if (!taskBackendReady) return;
     runSelectionHaptic();
     if (item.setup.kind === 'editor') setEditorItem(item);
     else setSheetItem(item);
   };
 
   const openFirstSpiritualTask = () => {
+    if (!taskBackendReady) return;
     const item = SPIRITUAL_V2_ITEMS.find(candidate => !savedIds.has(candidate.id)) ?? SPIRITUAL_V2_ITEMS[0];
     openItem(item);
   };
 
-  const completeSave = useCallback((catalogId: string | null, draft: TaskDraft) => {
-    const key = `${catalogId ?? 'custom'}-${Date.now()}`;
-    const time = draftConsistentTime(draft);
-    setSaved(current =>
-      insertSortedByTime(current, { key, catalogId, time, card: spiritualDraftToTaskData(draft) })
-    );
-    setFreshKey(key);
+  const persistSpiritualDraft = useCallback((
+    target: (typeof SPIRITUAL_V2_ITEMS)[number],
+    draft: TaskDraft,
+  ) => runSaveOnce(async () => {
+    const existing = tasks.find(task => spiritualCatalogIdForTask(task) === target.id);
+    const persisted = await createOrUpdateTask(existing ? { ...draft, id: existing.id } : draft);
+    setFreshKey(persisted.id);
     runPreviewTaskCheckHaptic();
     void playTaskCheckSoundOnly();
-    setTimeout(() => setFreshKey(current => (current === key ? null : current)), 1050);
-  }, []);
+    setTimeout(() => setFreshKey(current => (current === persisted.id ? null : current)), 1050);
+  }), [createOrUpdateTask, runSaveOnce, tasks]);
 
   return (
     <View style={s.organizeRuleScreen}>
@@ -20531,11 +20635,11 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
       >
         <Reanimated.View style={headerLeaveStyle}>
           <OrganizeStageHeader
-            title={'Your spiritual\nrhythm'}
-            body="Add prayer, Scripture, church or any practice you want to repeat. Set the rhythm once, and Anasta places it in your weekly plan."
+            title={'My spiritual\nroutine'}
+            body="Plan your weekly spiritual routine by setting a time for prayer, Scripture, church, and other spiritual practices. A clear plan helps you stay consistent and build discipline."
             accent={GOLD}
             variant="premium"
-            bodyHighlights={['prayer, Scripture, church', 'time and rhythm', 'weekly plan']}
+            bodyHighlights={['weekly spiritual routine', 'prayer, Scripture, church', 'stay consistent', 'build discipline']}
             staged
           />
         </Reanimated.View>
@@ -20583,10 +20687,11 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
             </ScrollView>
           ) : (
             <V2BuilderInvite
-              icon={<Plus s={15} c={GOLD} w={2.6} />}
-              title="Add Spiritual Task"
-              caption="Prayer, Scripture, Church — begin with one"
+              icon={taskBackendReady ? <Plus s={15} c={GOLD} w={2.6} /> : <ActivityIndicator size="small" color={GOLD} />}
+              title={taskBackendReady ? 'Add Spiritual Task' : 'Loading your tasks'}
+              caption={taskBackendReady ? 'Prayer, Scripture, Church — begin with one' : 'Checking your existing spiritual routine'}
               onPress={openFirstSpiritualTask}
+              disabled={!taskBackendReady}
             />
           )}
         </Reanimated.View>
@@ -20613,7 +20718,12 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
                 exiting={FadeOut.duration(200)}
                 layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
               >
-                <TouchableOpacity activeOpacity={0.88} haptic="none" onPress={() => openItem(item)}>
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  haptic="none"
+                  disabled={!taskBackendReady}
+                  onPress={() => openItem(item)}
+                >
                   <V2MutedTaskCard
                     card={{
                       variant: 'spiritual',
@@ -20644,8 +20754,7 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
           onClose={() => setSheetItem(null)}
           onTaskDraft={async draft => {
             const target = sheetItem;
-            await createOrUpdateTask(draft);
-            if (target) completeSave(target.id, draft);
+            if (target) await persistSpiritualDraft(target, draft);
           }}
         />
       ) : null}
@@ -20659,9 +20768,8 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
         onSave={async task => {
           const target = editorItem;
           const draft = routineTaskToDraft(task);
-          await createOrUpdateTask(draft);
+          if (target) await persistSpiritualDraft(target, draft);
           setEditorItem(null);
-          if (target) completeSave(target.id, draft);
         }}
         onDelete={() => {}}
       />
@@ -20811,12 +20919,13 @@ function OrganizeRoutineBuilderV2Slide({ onNext }: { onNext: () => void }) {
 
 function OrganizeRoutineBuilderPremiumV2Slide({ onNext }: { onNext: () => void }) {
   const insets = useSafeAreaInsets();
-  const { createOrUpdateTask } = useTasks();
+  const { createOrUpdateTask, ready: taskBackendReady, tasks } = useTasks();
   const [editorSession, setEditorSession] = useState<{ item: RoutineTaskExample | null; task: RoutineTask | null } | null>(null);
-  const [saved, setSaved] = useState<SavedV2Entry[]>([]);
   const [freshKey, setFreshKey] = useState<string | null>(null);
+  const saved = useMemo(() => persistedV2Entries(tasks, 'routine'), [tasks]);
   const savedIds = useMemo(() => new Set(saved.map(entry => entry.catalogId)), [saved]);
-  const ready = saved.length > 0;
+  const ready = taskBackendReady && saved.length > 0;
+  const runSaveOnce = useOnboardingSaveOnce();
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
   const {
     leaving,
@@ -20830,26 +20939,27 @@ function OrganizeRoutineBuilderPremiumV2Slide({ onNext }: { onNext: () => void }
   } = useV2BuilderLife(onNext);
 
   const openExample = (item: RoutineTaskExample) => {
+    if (!taskBackendReady) return;
     runSelectionHaptic();
     setEditorSession({ item, task: routineExampleToPrefill(item) });
   };
 
   const openCustomRoutineTask = () => {
+    if (!taskBackendReady) return;
     runSelectionHaptic();
     setEditorSession({ item: null, task: null });
   };
 
-  const completeSave = useCallback((catalogId: string | null, draft: TaskDraft) => {
-    const key = `${catalogId ?? 'routine'}-${Date.now()}`;
-    const time = draftConsistentTime(draft);
-    setSaved(current =>
-      insertSortedByTime(current, { key, catalogId, time, card: routineDraftToTaskData(draft) })
-    );
-    setFreshKey(key);
+  const persistRoutineDraft = useCallback((target: RoutineTaskExample | null, draft: TaskDraft) => runSaveOnce(async () => {
+    const existing = target
+      ? tasks.find(task => routineCatalogIdForTask(task) === target.id)
+      : undefined;
+    const persisted = await createOrUpdateTask(existing ? { ...draft, id: existing.id } : draft);
+    setFreshKey(persisted.id);
     runPreviewTaskCheckHaptic();
     void playTaskCheckSoundOnly();
-    setTimeout(() => setFreshKey(current => (current === key ? null : current)), 1050);
-  }, []);
+    setTimeout(() => setFreshKey(current => (current === persisted.id ? null : current)), 1050);
+  }), [createOrUpdateTask, runSaveOnce, tasks]);
 
   return (
     <View style={s.organizeRuleScreen}>
@@ -20914,10 +21024,11 @@ function OrganizeRoutineBuilderPremiumV2Slide({ onNext }: { onNext: () => void }
             </ScrollView>
           ) : (
             <V2BuilderInvite
-              icon={<Plus s={15} c="#5F5A54" w={2.6} />}
-              title="Add Routine Task"
-              caption="Cleaning, study, work — begin with one"
+              icon={taskBackendReady ? <Plus s={15} c="#5F5A54" w={2.6} /> : <ActivityIndicator size="small" color="#5F5A54" />}
+              title={taskBackendReady ? 'Add Routine Task' : 'Loading your tasks'}
+              caption={taskBackendReady ? 'Cleaning, study, work — begin with one' : 'Checking your existing weekly routine'}
               onPress={openCustomRoutineTask}
+              disabled={!taskBackendReady}
               gradient={['#FAFAF8', '#F0EFE9']}
               border="rgba(95,90,84,0.42)"
               orbBorder="rgba(95,90,84,0.3)"
@@ -20948,7 +21059,12 @@ function OrganizeRoutineBuilderPremiumV2Slide({ onNext }: { onNext: () => void }
                 exiting={FadeOut.duration(200)}
                 layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
               >
-                <TouchableOpacity activeOpacity={0.88} haptic="none" onPress={() => openExample(item)}>
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  haptic="none"
+                  disabled={!taskBackendReady}
+                  onPress={() => openExample(item)}
+                >
                   <V2MutedTaskCard
                     card={routineExampleToTaskData(item)}
                     idle={idleMuted}
@@ -20972,9 +21088,8 @@ function OrganizeRoutineBuilderPremiumV2Slide({ onNext }: { onNext: () => void }
         onSave={async task => {
           const target = editorSession?.item ?? null;
           const draft = routineTaskToDraft(task);
-          await createOrUpdateTask(draft);
+          await persistRoutineDraft(target, draft);
           setEditorSession(null);
-          completeSave(target?.id ?? null, draft);
         }}
         onDelete={() => {}}
       />
@@ -21667,7 +21782,7 @@ function OrganizeHabitsStepsV2Slide({ onNext }: { onNext: () => void }) {
 
   return (
     <OrganizeLessonSlide
-      title={'Define steps\ntoward your goal'}
+      title={'Define habits / steps\ntoward your goal'}
       body="To achieve a goal, you need a clear plan and strong habits. Anasta helps with both: build the habits, shape a strong plan around them and keep moving toward your bigger goal."
       accent="#2F9B61"
       headerVariant="premium"
@@ -22167,7 +22282,7 @@ function OrganizeHabitsBuilderV2Slide({ onNext }: { onNext: () => void }) {
         ]}
       >
         <OrganizeStageHeader
-          title="Build your first habit"
+          title="Build your first goal"
           body="Name the goal, choose a color, then add the steps / habits to your weekly plan so they can lead you toward achieving it."
           accent="#2F9B61"
           variant="premium"
@@ -22184,7 +22299,7 @@ function OrganizeHabitsBuilderV2Slide({ onNext }: { onNext: () => void }) {
           <View pointerEvents="none" style={s.v2HabitPanelHalo} />
           <View style={[s.v2PanelHeader, s.v2HabitPanelHeader]}>
             <View style={s.v2HabitPanelTitleGroup}>
-              <Text style={[s.v2PanelTitle, s.v2HabitPanelTitle]}>My Habits</Text>
+              <Text style={[s.v2PanelTitle, s.v2HabitPanelTitle]}>My Goals</Text>
               <View style={s.v2HabitPanelUnderline} />
             </View>
             <View style={[s.v2PanelCount, s.v2HabitPanelCount, { backgroundColor: 'rgba(47,155,97,0.12)', borderColor: 'rgba(47,155,97,0.26)' }]}>
@@ -22198,8 +22313,8 @@ function OrganizeHabitsBuilderV2Slide({ onNext }: { onNext: () => void }) {
                 <View style={[s.v2EmptyIcon, s.v2HabitEmptyIcon, { backgroundColor: 'rgba(47,155,97,0.12)', borderColor: 'rgba(47,155,97,0.24)' }]}>
                   <Target s={17} c="#2F9B61" w={2} />
                 </View>
-                <Text style={[s.v2EmptyTitle, s.v2HabitEmptyTitle]}>No habits yet</Text>
-                <Text style={[s.v2EmptyBody, s.v2HabitEmptyBody]}>Connect one goal with the steps that will repeat through your week.</Text>
+                <Text style={[s.v2EmptyTitle, s.v2HabitEmptyTitle]}>No goals yet</Text>
+                <Text style={[s.v2EmptyBody, s.v2HabitEmptyBody]}>Connect one goal with the habits / steps that will repeat through your week.</Text>
               </View>
             ) : null}
           </ScrollView>
@@ -22223,7 +22338,7 @@ function OrganizeHabitsBuilderV2Slide({ onNext }: { onNext: () => void }) {
             <View style={[s.v2AddIcon, s.v2HabitAddIcon]}>
               <Plus s={15} c="#FFFFFF" w={2.6} />
             </View>
-            <Text style={[s.v2AddText, s.v2HabitAddText]}>Add habit</Text>
+            <Text style={[s.v2AddText, s.v2HabitAddText]}>Add goal</Text>
           </TouchableOpacity>
         </Reanimated.View>
       </View>
@@ -22686,7 +22801,7 @@ function OrganizeMyRhythmPreviewSlide({ onNext }: { onNext: () => void }) {
   const sections = [
     { title: 'Spiritual', body: 'Prayer and Scripture tasks', accent: GOLD, icon: <Cross s={17} c={GOLD} w={2} /> },
     { title: 'Routine', body: 'Responsibilities by day', accent: '#4D8586', icon: <ListChecks s={17} c="#4D8586" w={2} /> },
-    { title: 'Habits', body: 'Goals with repeatable steps', accent: '#2F9B61', icon: <Target s={17} c="#2F9B61" w={2} /> },
+    { title: 'Habits', body: 'Goals with repeatable habits / steps', accent: '#2F9B61', icon: <Target s={17} c="#2F9B61" w={2} /> },
     { title: 'Challenges', body: 'Focused commitments', accent: '#705B9B', icon: <Sparkles s={17} c="#705B9B" w={2} /> },
   ];
 
@@ -24608,7 +24723,7 @@ export default function OnboardingView() {
         .map(id => PROTECT_RECAP_WINS[id])
         .filter(Boolean);
       if ((answers.confirmedOrganizeProblems ?? []).length > 0) {
-        wins.push('Big event on the horizon', 'Monthly goal set', 'First habit started', 'A challenge running', 'Your week organized');
+        wins.push('Big event on the horizon', 'Monthly goal set', 'First goal started', 'A challenge running', 'Your week organized');
       }
       if (answers.gratitudeDailyTask) {
         wins.push('Daily gratitude in your rhythm');
@@ -31297,6 +31412,10 @@ const s = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: '32%',
+  },
+  christWarmVeil: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#241A0E',
   },
   christContent: {
     flex: 1,
