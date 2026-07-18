@@ -20098,12 +20098,13 @@ function insertSortedByTime(list: SavedV2Entry[], entry: SavedV2Entry): SavedV2E
 }
 
 // A catalog card waiting to be set up: the exact Home card, resting in gray.
-// With `idle`, a water-wave ripple travels down the sleeping catalog once per
-// cycle (user-designed): the card at the crest sheds most of its muting veil
-// (reads darker/awake) and lifts a breath, its direct neighbours turn a touch
-// LIGHTER than rest, the next ring a whisper darker again, and beyond that the
-// list is still — a damped ripple, like water. Without `idle` the card renders
-// exactly as before (all other builders).
+// With `idle`, the sleeping catalog runs the standard staggered cascade pulse
+// (the shimmer-wave pattern): each card swells through the same slow sin²
+// bell — its muting veil thins so the card reads darker/awake, with a breath
+// of lift — offset 260ms after the card above. The overlap draws the user's
+// gradient by itself: the crest card is darkest, its neighbours are partway
+// lit, two away barely stirs, three away is still. Without `idle` the card
+// renders exactly as before (all other builders).
 function V2MutedTaskCard({
   card,
   idle,
@@ -20113,44 +20114,34 @@ function V2MutedTaskCard({
   idle?: SharedValue<number>;
   idleIndex?: number;
 }) {
-  // Damped cosine around the travelling crest: +1 at the crest, negative at
-  // distance 1 (lighter), small positive at distance 2, ~0 from 3 on.
-  const waveIntensity = (value: number) => {
+  // sin²(π·t) — the classic smooth pulse: zero velocity at both ends, one
+  // soft crest in the middle.
+  const pulseAt = (value: number) => {
     'worklet';
-    const wavePos = value * 11 - 2;
-    const d = Math.abs(idleIndex - wavePos);
-    if (d > 3.2) return 0;
-    const cut = d > 2.6 ? 1 - (d - 2.6) / 0.6 : 1;
-    return Math.cos(Math.PI * d) * Math.exp(-0.9 * d) * cut;
+    const elapsed = value * 3200;
+    const raw = (elapsed - idleIndex * 260) / 1300;
+    if (raw <= 0 || raw >= 1) return 0;
+    const wave = Math.sin(Math.PI * raw);
+    return wave * wave;
   };
 
-  const crestStyle = useAnimatedStyle(() => {
+  const liftStyle = useAnimatedStyle(() => {
     if (!idle) return {};
-    const intensity = waveIntensity(idle.value);
-    const crest = intensity > 0 ? intensity : 0;
+    const pulse = pulseAt(idle.value);
     return {
-      transform: [{ translateY: -3 * crest }, { scale: 1 + 0.006 * crest }],
+      transform: [{ translateY: -2.5 * pulse }, { scale: 1 + 0.005 * pulse }],
     };
   });
   const veilStyle = useAnimatedStyle(() => {
     if (!idle) return { opacity: 1 };
-    const intensity = waveIntensity(idle.value);
-    return { opacity: 1 - 0.66 * (intensity > 0 ? intensity : 0) };
-  });
-  const lightStyle = useAnimatedStyle(() => {
-    if (!idle) return { opacity: 0 };
-    const intensity = waveIntensity(idle.value);
-    return { opacity: 0.55 * (intensity < 0 ? -intensity : 0) };
+    return { opacity: 1 - 0.6 * pulseAt(idle.value) };
   });
 
   return (
-    <Reanimated.View style={[s.v2MutedFrame, crestStyle]}>
+    <Reanimated.View style={[s.v2MutedFrame, liftStyle]}>
       <AnyTaskCard task={card} />
       {idle ? (
-        <>
-          <Reanimated.View pointerEvents="none" style={[s.v2MutedVeil, veilStyle]} />
-          <Reanimated.View pointerEvents="none" style={[s.v2MutedLight, lightStyle]} />
-        </>
+        <Reanimated.View pointerEvents="none" style={[s.v2MutedVeil, veilStyle]} />
       ) : (
         <View pointerEvents="none" style={s.v2MutedVeil} />
       )}
@@ -20225,9 +20216,9 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
       7600,
       withRepeat(
         withSequence(
-          withTiming(1, { duration: 2000, easing: Easing.linear }),
+          withTiming(1, { duration: 3200, easing: Easing.linear }),
           withTiming(0, { duration: 30 }),
-          withDelay(11970, withTiming(0, { duration: 30 })),
+          withDelay(10770, withTiming(0, { duration: 30 })),
         ),
         -1,
         false,
@@ -24224,7 +24215,7 @@ export default function OnboardingView() {
         <OrganizeExampleCarouselSlide
           overline="Beginning with Him"
           title="Spiritual Tasks"
-          body="We never forget them — we postpone them, while the world feels more urgent. Prayer, Scripture, church and every spiritual task: the week is built around them."
+          body="If Christ is at the center of your life, begin your weekly plan with the time you want to give Him. Add your spiritual tasks first, then organize everything else around them."
           examples={SPIRITUAL_TASK_EXAMPLES}
           ctaLabel="Set spiritual tasks"
           onNext={goNext}
@@ -31614,10 +31605,6 @@ const s = StyleSheet.create({
   v2MutedVeil: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(246,244,239,0.5)',
-  },
-  v2MutedLight: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#FFFFFF',
   },
   v2AddButton: {
     width: '100%',
