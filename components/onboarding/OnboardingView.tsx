@@ -7,7 +7,7 @@ import LottieView from 'lottie-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle as SvgCircle, G, Path as SvgPath } from 'react-native-svg';
+import Svg, { Circle as SvgCircle, Defs, G, LinearGradient as SvgLinearGradient, Path as SvgPath, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import FocusLottie from '@/components/focus/FocusLottie';
 import Reanimated, {
@@ -18480,12 +18480,25 @@ function WeeklyEvidenceResultChart({
         <Reanimated.View style={[s.weeklyResultRevealFull, chartRevealStyle]}>
           <Reanimated.View style={[StyleSheet.absoluteFillObject, areaBloomStyle]}>
             <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg}>
-              <SvgPath d={areaPath} fill={`${card.accent}16`} />
+              <Defs>
+                <SvgLinearGradient id={`evArea-${card.curve}`} x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0" stopColor={card.accent} stopOpacity={0.3} />
+                  <Stop offset="0.7" stopColor={card.accent} stopOpacity={0.08} />
+                  <Stop offset="1" stopColor={card.accent} stopOpacity={0} />
+                </SvgLinearGradient>
+              </Defs>
+              <SvgPath d={areaPath} fill={`url(#evArea-${card.curve})`} />
             </Svg>
           </Reanimated.View>
           <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg}>
+            <Defs>
+              <SvgLinearGradient id={`evLine-${card.curve}`} x1="0" y1="0" x2="1" y2="0">
+                <Stop offset="0" stopColor={card.accent} stopOpacity={0.55} />
+                <Stop offset="1" stopColor={card.accent} stopOpacity={1} />
+              </SvgLinearGradient>
+            </Defs>
             <SvgPath d={resultPath} stroke={`${card.accent}22`} strokeWidth={16} fill="none" strokeLinecap="round" />
-            <SvgPath d={resultPath} stroke={card.accent} strokeWidth={5.2} fill="none" strokeLinecap="round" />
+            <SvgPath d={resultPath} stroke={`url(#evLine-${card.curve})`} strokeWidth={5.2} fill="none" strokeLinecap="round" />
           </Svg>
         </Reanimated.View>
 
@@ -18503,11 +18516,13 @@ function WeeklyEvidenceResultChart({
           ]}
         />
 
-        <View style={[s.weeklyChartValuePill, s.weeklyChartValuePillBaseline, { left: left - 2, top: startLabelTop }]}>
+        <View style={[s.weeklyChartValuePill, s.weeklyChartValuePillBaseline, { left: left - 2, top: startLabelTop - 6 }]}>
           <Text style={s.weeklyChartValueTextMuted}>{card.baselinePercent}%</Text>
+          <Text style={s.weeklyChartPillLabelMuted}>NO PLAN</Text>
         </View>
-        <Reanimated.View style={[s.weeklyChartValuePill, { right: 0, top: resultLabelTop, borderColor: `${card.accent}2F`, backgroundColor: '#FFFFFF' }, resultPillStyle]}>
+        <Reanimated.View style={[s.weeklyChartValuePill, { right: 0, top: resultLabelTop - 6, borderColor: `${card.accent}2F`, backgroundColor: '#FFFFFF' }, resultPillStyle]}>
           <Text style={[s.weeklyChartValueText, { color: card.accent }]}>{card.resultPercent}%</Text>
+          <Text style={[s.weeklyChartPillLabel, { color: card.accent }]}>WITH A PLAN</Text>
         </Reanimated.View>
 
         <Svg width={width} height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} style={s.weeklyResultSvg} pointerEvents="none">
@@ -18536,17 +18551,33 @@ function WeeklyEvidenceCardView({
   chartHeight: number;
 }) {
   const reveal = useSharedValue(active ? 1 : 0);
+  // The delta chip strikes only when the chart line lands — the verdict
+  // arrives with the evidence, not before it.
+  const chipPop = useSharedValue(active ? 1 : 0);
 
   useEffect(() => {
     reveal.value = active
       ? withTiming(1, { duration: 520, easing: Easing.bezier(0.16, 1, 0.28, 1) })
       : withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) });
-  }, [active, reveal]);
+    if (active) {
+      chipPop.value = 0;
+      chipPop.value = withDelay(860, withTiming(1, { duration: 340, easing: Easing.bezier(0.16, 1, 0.28, 1) }));
+    } else {
+      chipPop.value = withTiming(0, { duration: 160 });
+    }
+  }, [active, chipPop, reveal]);
 
   const cardStyle = useAnimatedStyle(() => ({
     opacity: interpolate(reveal.value, [0, 0.2, 1], [0.72, 0.9, 1]),
     transform: [
       { translateY: interpolate(reveal.value, [0, 1], [8, 0]) },
+    ],
+  }));
+  const chipStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(chipPop.value, [0, 0.4], [0, 1], 'clamp'),
+    transform: [
+      { scale: interpolate(chipPop.value, [0, 0.7, 1], [0.55, 1.1, 1], 'clamp') },
+      { rotate: `${interpolate(chipPop.value, [0, 1], [-6, 0], 'clamp')}deg` },
     ],
   }));
 
@@ -18571,9 +18602,9 @@ function WeeklyEvidenceCardView({
             <Text style={s.weeklyEvidenceTitleSerif} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
               {card.title}
             </Text>
-            <View style={[s.weeklyEvidenceDeltaChip, { backgroundColor: card.accent }]}>
+            <Reanimated.View style={[s.weeklyEvidenceDeltaChip, { backgroundColor: card.accent }, chipStyle]}>
               <Text style={s.weeklyEvidenceDeltaChipText}>{card.deltaText}</Text>
-            </View>
+            </Reanimated.View>
           </View>
           <View style={s.weeklyEvidenceOrnamentRow}>
             <View style={[s.weeklyEvidenceOrnamentLine, { backgroundColor: `${card.accent}52` }]} />
@@ -29547,6 +29578,21 @@ const s = StyleSheet.create({
     lineHeight: 21,
     color: 'rgba(25,23,20,0.72)',
     includeFontPadding: false,
+  },
+  weeklyChartPillLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 6.8,
+    lineHeight: 9,
+    letterSpacing: 1,
+    marginTop: 0.5,
+  },
+  weeklyChartPillLabelMuted: {
+    fontFamily: F.sansBold,
+    fontSize: 6.8,
+    lineHeight: 9,
+    letterSpacing: 1,
+    marginTop: 0.5,
+    color: 'rgba(25,23,20,0.42)',
   },
   weeklyResultDeltaTag: {
     position: 'absolute',
