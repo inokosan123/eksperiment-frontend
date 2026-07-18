@@ -2039,11 +2039,15 @@ export function ChallengePanel({
             const expanded = expandedChallengeId === item.id;
             const recentlyStarted = item.templateId === recentlyStartedTemplateId;
             const tone = challengePanelTone(item.category);
+            const progressPct = item.showBar && item.progressTotal
+              ? Math.min(100, Math.round((item.progressCurrent / item.progressTotal) * 100))
+              : null;
             return (
               <View
                 key={item.id}
                 style={[
                   s.challengeCardShell,
+                  { borderLeftColor: tone.accent, borderRightColor: tone.accent },
                   recentlyStarted && s.challengeCardShellStarted,
                 ]}
               >
@@ -2052,8 +2056,18 @@ export function ChallengePanel({
                   activeOpacity={0.84}
                   style={s.challengeCard}
                 >
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(255,255,255,0)', `${tone.accent}0C`, 'rgba(255,253,247,0.85)']}
+                    start={{ x: 0.05, y: 0 }}
+                    end={{ x: 0.95, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View pointerEvents="none" style={s.challengeWatermark}>
+                    {challengeIcon(item.icon, `${tone.accent}1C`, 54)}
+                  </View>
                   <View style={s.challengeTop}>
-                    <View style={[s.challengeBadge, { backgroundColor: tone.badgeBg }]}>
+                    <View style={[s.challengeBadge, { backgroundColor: tone.badgeBg, borderWidth: 1, borderColor: tone.border }]}>
                       <Text style={[s.challengeBadgeText, { color: tone.badgeText }]}>{item.category.toUpperCase()}</Text>
                     </View>
                     <ChallengeStreakPill count={item.streak} />
@@ -2066,11 +2080,16 @@ export function ChallengePanel({
                     </View>
                   </View>
 
-                  <Text style={s.challengeMetaText}>
-                    {item.time || '--:--'}  ·  {item.paceLabel || item.scheduleLabel}
-                  </Text>
+                  <View style={s.challengeMetaRow}>
+                    <Text style={[s.challengeMetaText, s.challengeMetaTextInRow]} numberOfLines={1}>
+                      {item.time || '--:--'}  ·  {item.paceLabel || item.scheduleLabel}
+                    </Text>
+                    {progressPct !== null ? (
+                      <Text style={[s.challengePctText, { color: tone.meta }]}>{progressPct}%</Text>
+                    ) : null}
+                  </View>
 
-                  {item.showBar && item.progressTotal ? (
+                  {progressPct !== null ? (
                     <View style={s.challengeProgressTrack}>
                       <LinearGradient
                         colors={['#E0B770', C.gold, '#B6913D']}
@@ -2078,9 +2097,7 @@ export function ChallengePanel({
                         end={{ x: 1, y: 0.5 }}
                         style={[
                           s.challengeProgressFill,
-                          {
-                            width: `${Math.min(100, Math.round((item.progressCurrent / item.progressTotal) * 100))}%`,
-                          },
+                          { width: `${progressPct}%` },
                         ]}
                       />
                     </View>
@@ -2665,13 +2682,21 @@ function ChallengeCatalogEntryCard({
   guideEntryBinding?: GuideTargetBinding;
   guideStartBinding?: GuideTargetBinding;
 }) {
+  const tone = challengePanelTone(entry.category);
   return (
     <View style={[s.catalogStartCard, expanded && s.catalogStartCardExpanded]}>
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(255,255,255,0.92)', `${tone.accent}07`, 'rgba(255,252,244,0.9)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
       <TouchableOpacity {...guideEntryBinding} onPress={onToggle} activeOpacity={0.84} style={s.catalogStartTap}>
         <View style={s.catalogStartTopRow}>
           <View style={s.catalogStartMain}>
-            <View style={s.catalogStartIconWrap}>
-              {challengeIcon(entry.icon, '#C5A059', 16)}
+            <View style={[s.catalogStartIconWrap, { backgroundColor: `${tone.accent}10`, borderColor: `${tone.accent}26` }]}>
+              {challengeIcon(entry.icon, tone.accent, 16)}
             </View>
             <View style={s.catalogStartCopy}>
               <Text style={s.catalogStartTitle} numberOfLines={2}>{entry.title}</Text>
@@ -4646,6 +4671,31 @@ const s = StyleSheet.create({
     letterSpacing: 1.1,
     color: '#B49B67',
   },
+  challengeMetaRow: {
+    marginTop: 9,
+    marginBottom: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: 8,
+  },
+  challengeMetaTextInRow: {
+    flexShrink: 1,
+    marginTop: 0,
+    marginBottom: 0,
+  },
+  challengePctText: {
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    letterSpacing: 0.4,
+    fontVariant: ['tabular-nums'],
+  },
+  challengeWatermark: {
+    position: 'absolute',
+    right: 40,
+    top: 4,
+    transform: [{ rotate: '-8deg' }],
+  },
   challengeMetaTextPaused: {
     color: '#A8A29E',
   },
@@ -4970,9 +5020,9 @@ const s = StyleSheet.create({
   catalogStartBody: {
     marginTop: 2,
     fontFamily: F.sans,
-    fontSize: 11.6,
-    lineHeight: 15,
-    color: '#A1A4B2',
+    fontSize: 12,
+    lineHeight: 15.5,
+    color: '#8D867B',
   },
   catalogStartMeta: {
     marginTop: 8,
