@@ -10914,6 +10914,23 @@ function ToolsTypedSubtitle({
 
 type ToolsScenePhase = 'rain' | 'reveal' | 'purge' | 'morph' | 'convo';
 
+// The deal: per-seat windows on the deck entrance clock (seat 0 = the
+// asking card, dealt last). Shared by the cards' glide worklets and the
+// slide's haptic schedule, so touch and eye can never drift apart.
+const DECK_DEAL_WINDOWS = [
+  [0.52, 0.92],
+  [0.4, 0.76],
+  [0.28, 0.64],
+  [0.16, 0.52],
+] as const;
+const DECK_DEAL_CLOCK_MS = 1150;
+const DECK_DEAL_DELAY_MS = 90;
+// With a quint ease-out the card is visually at rest ~78% into its window.
+function deckDealArrivalMs(seat: number) {
+  const [start, end] = DECK_DEAL_WINDOWS[seat] ?? DECK_DEAL_WINDOWS[3];
+  return DECK_DEAL_DELAY_MS + (start + 0.78 * (end - start)) * DECK_DEAL_CLOCK_MS;
+}
+
 function ToolsShowcaseSlide({
   topInset,
   bottomInset,
@@ -11657,17 +11674,17 @@ function V4StatementDeckSlide({
 
   useEffect(() => {
     enterT.value = 0;
-    enterT.value = withDelay(90, withTiming(1, { duration: 1150, easing: Easing.linear }));
+    enterT.value = withDelay(DECK_DEAL_DELAY_MS, withTiming(1, { duration: DECK_DEAL_CLOCK_MS, easing: Easing.linear }));
     const seats = Math.min(cards.length, 4);
-    const landAt = [0.92, 0.76, 0.64, 0.52];
     const timers: ReturnType<typeof setTimeout>[] = [];
-    // A quiet tick as each card of the pile lands, a fuller tap when the
-    // asking card takes its place.
+    // A quiet tick as each card of the pile glides home, a fuller tap when
+    // the asking card takes its place — timed to the visual arrival, not
+    // the end of the animation window.
     for (let seat = seats - 1; seat >= 1; seat -= 1) {
-      timers.push(setTimeout(runSelectionHaptic, 90 + landAt[seat] * 1150));
+      timers.push(setTimeout(runSelectionHaptic, deckDealArrivalMs(seat)));
     }
-    timers.push(setTimeout(runBubbleHaptic, 90 + landAt[0] * 1150));
-    timers.push(setTimeout(() => setEntranceSettled(true), 90 + 1150 + 60));
+    timers.push(setTimeout(runBubbleHaptic, deckDealArrivalMs(0)));
+    timers.push(setTimeout(() => setEntranceSettled(true), DECK_DEAL_DELAY_MS + DECK_DEAL_CLOCK_MS + 60));
     return () => timers.forEach(clearTimeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -12165,34 +12182,26 @@ function V4DeckCard({
   const initialPose = stackPose(initialDepth, cardHeight);
   const initialHidden = cardIndex - activeIndex < 0 || cardIndex - activeIndex > 3;
 
-  // The deal: this card's window on the shared entrance clock. Seats are the
-  // four visible pile depths; deeper cards (hidden by pose anyway) enter
-  // instantly. The wrapper composes OVER the frozen pose system — it only
-  // rises, tilts and fades, never touching drag or depth transforms.
+  // The deal: this card's window on the shared entrance clock. Seats are
+  // the four visible pile depths; deeper cards (hidden by pose anyway)
+  // enter instantly. Cards glide in from the dealer's side — one flat
+  // horizontal motion with a small tilt that settles, quint-eased so the
+  // landing is soft. The wrapper composes OVER the frozen pose system.
   const dealSeat = Math.min(cardIndex, 3);
   const dealAnimated = enterT !== undefined && cardIndex <= 3;
-  const dealWindow = dealSeat === 0
-    ? [0.52, 0.92]
-    : dealSeat === 1
-      ? [0.4, 0.76]
-      : dealSeat === 2
-        ? [0.28, 0.64]
-        : [0.16, 0.52];
-  const dealRise = dealSeat === 0 ? 118 : dealSeat === 1 ? 100 : dealSeat === 2 ? 88 : 78;
-  const dealDrift = dealSeat % 2 === 0 ? 14 : -12;
-  const dealTilt = dealSeat === 0 ? 2.8 : dealSeat === 1 ? -2.3 : dealSeat === 2 ? 1.9 : -1.6;
+  const dealWindow = DECK_DEAL_WINDOWS[dealSeat];
+  const dealTilt = dealSeat % 2 === 0 ? 5.5 : -4.5;
 
   const entranceStyle = useAnimatedStyle(() => {
     if (!dealAnimated || enterT === undefined) {
-      return { opacity: 1, transform: [{ translateY: 0 }, { translateX: 0 }, { rotate: '0deg' }] };
+      return { opacity: 1, transform: [{ translateX: 0 }, { rotate: '0deg' }] };
     }
     const t = interpolate(enterT.value, dealWindow, [0, 1], 'clamp');
-    const e = 1 - Math.pow(1 - t, 3);
+    const e = 1 - Math.pow(1 - t, 5);
     return {
-      opacity: Math.min(1, t * 1.7),
+      opacity: interpolate(t, [0, 0.2], [0, 1], 'clamp'),
       transform: [
-        { translateY: (1 - e) * dealRise },
-        { translateX: (1 - e) * dealDrift },
+        { translateX: (1 - e) * 310 },
         { rotate: `${(1 - e) * dealTilt}deg` },
       ],
     };
