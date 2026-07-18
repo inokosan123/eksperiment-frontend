@@ -20098,9 +20098,12 @@ function insertSortedByTime(list: SavedV2Entry[], entry: SavedV2Entry): SavedV2E
 }
 
 // A catalog card waiting to be set up: the exact Home card, resting in gray.
-// With `idle`, a sleeping catalog card stirs once per cycle — a smaller lift
-// than the saved cards, one after another, then stillness. Without `idle`
-// the card renders exactly as before (all other builders).
+// With `idle`, a water-wave ripple travels down the sleeping catalog once per
+// cycle (user-designed): the card at the crest sheds most of its muting veil
+// (reads darker/awake) and lifts a breath, its direct neighbours turn a touch
+// LIGHTER than rest, the next ring a whisper darker again, and beyond that the
+// list is still — a damped ripple, like water. Without `idle` the card renders
+// exactly as before (all other builders).
 function V2MutedTaskCard({
   card,
   idle,
@@ -20110,21 +20113,47 @@ function V2MutedTaskCard({
   idle?: SharedValue<number>;
   idleIndex?: number;
 }) {
-  const stirStyle = useAnimatedStyle(() => {
+  // Damped cosine around the travelling crest: +1 at the crest, negative at
+  // distance 1 (lighter), small positive at distance 2, ~0 from 3 on.
+  const waveIntensity = (value: number) => {
+    'worklet';
+    const wavePos = value * 11 - 2;
+    const d = Math.abs(idleIndex - wavePos);
+    if (d > 3.2) return 0;
+    const cut = d > 2.6 ? 1 - (d - 2.6) / 0.6 : 1;
+    return Math.cos(Math.PI * d) * Math.exp(-0.9 * d) * cut;
+  };
+
+  const crestStyle = useAnimatedStyle(() => {
     if (!idle) return {};
-    const elapsed = idle.value * 2000;
-    const raw = (elapsed - idleIndex * 150) / 620;
-    const local = raw < 0 ? 0 : raw > 1 ? 1 : raw;
-    const wave = Math.sin(Math.PI * local);
+    const intensity = waveIntensity(idle.value);
+    const crest = intensity > 0 ? intensity : 0;
     return {
-      transform: [{ translateY: -2.2 * wave }, { scale: 1 + 0.005 * wave }],
+      transform: [{ translateY: -3 * crest }, { scale: 1 + 0.006 * crest }],
     };
+  });
+  const veilStyle = useAnimatedStyle(() => {
+    if (!idle) return { opacity: 1 };
+    const intensity = waveIntensity(idle.value);
+    return { opacity: 1 - 0.66 * (intensity > 0 ? intensity : 0) };
+  });
+  const lightStyle = useAnimatedStyle(() => {
+    if (!idle) return { opacity: 0 };
+    const intensity = waveIntensity(idle.value);
+    return { opacity: 0.55 * (intensity < 0 ? -intensity : 0) };
   });
 
   return (
-    <Reanimated.View style={[s.v2MutedFrame, stirStyle]}>
+    <Reanimated.View style={[s.v2MutedFrame, crestStyle]}>
       <AnyTaskCard task={card} />
-      <View pointerEvents="none" style={s.v2MutedVeil} />
+      {idle ? (
+        <>
+          <Reanimated.View pointerEvents="none" style={[s.v2MutedVeil, veilStyle]} />
+          <Reanimated.View pointerEvents="none" style={[s.v2MutedLight, lightStyle]} />
+        </>
+      ) : (
+        <View pointerEvents="none" style={s.v2MutedVeil} />
+      )}
     </Reanimated.View>
   );
 }
@@ -20328,13 +20357,20 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
                 activeOpacity={0.88}
                 haptic="medium"
                 onPress={openFirstSpiritualTask}
-                style={[s.v2Empty, s.v2SpiritualEmpty]}
+                style={s.spiritualEmptyPress}
               >
-                <View style={s.spiritualEmptyOrb}>
-                  <Plus s={15} c={GOLD} w={2.6} />
-                </View>
-                <Text style={s.spiritualEmptyTitle}>Add Spiritual Task</Text>
-                <Text style={s.spiritualEmptyCaption}>Prayer, Scripture, church — begin with one</Text>
+                <LinearGradient
+                  colors={['#FFFBEB', '#FFF4D5']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[s.v2Empty, s.v2SpiritualEmpty]}
+                >
+                  <View style={s.spiritualEmptyOrb}>
+                    <Plus s={15} c={GOLD} w={2.6} />
+                  </View>
+                  <Text style={s.spiritualEmptyTitle}>Add Spiritual Task</Text>
+                  <Text style={s.spiritualEmptyCaption}>Prayer, Scripture, church — begin with one</Text>
+                </LinearGradient>
               </TouchableOpacity>
             </V2InviteBreath>
           )}
@@ -31275,11 +31311,10 @@ const s = StyleSheet.create({
     alignSelf: 'stretch',
     flexGrow: 1,
     minHeight: 88,
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1.5,
     borderStyle: 'dashed',
-    borderColor: 'rgba(197,160,89,0.5)',
-    backgroundColor: 'rgba(255,253,248,0.72)',
+    borderColor: 'rgba(197,160,89,0.45)',
     rowGap: 6,
     paddingVertical: 14,
     paddingHorizontal: 14,
@@ -31288,15 +31323,25 @@ const s = StyleSheet.create({
     flexGrow: 1,
     alignSelf: 'stretch',
   },
+  spiritualEmptyPress: {
+    flexGrow: 1,
+    alignSelf: 'stretch',
+    borderRadius: 18,
+    shadowColor: '#C5A059',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 1,
+  },
   spiritualEmptyOrb: {
     width: 36,
     height: 36,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(197,160,89,0.13)',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.45)',
+    borderColor: 'rgba(197,160,89,0.32)',
     marginBottom: 2,
   },
   spiritualEmptyTitle: {
@@ -31569,6 +31614,10 @@ const s = StyleSheet.create({
   v2MutedVeil: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(246,244,239,0.5)',
+  },
+  v2MutedLight: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFFFFF',
   },
   v2AddButton: {
     width: '100%',
