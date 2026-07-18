@@ -20563,6 +20563,7 @@ function HabitMomentumScenarioCard({
   height,
   headerHeight,
   footerHeight,
+  imageHeight,
   index,
 }: {
   scenario: HabitMomentumScenario;
@@ -20571,6 +20572,7 @@ function HabitMomentumScenarioCard({
   height: number;
   headerHeight: number;
   footerHeight: number;
+  imageHeight: number;
   index: number;
 }) {
   const ratio = scenario.completed / 90;
@@ -20603,6 +20605,9 @@ function HabitMomentumScenarioCard({
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
+      <View pointerEvents="none" style={[s.v4ToolTopSheen, { backgroundColor: `${scenario.accent}20` }]} />
+      <View pointerEvents="none" style={[s.weeklyEvidenceWhisperFrame, { borderColor: `${scenario.accent}1A` }]} />
+      <View pointerEvents="none" style={[s.weeklyEvidenceGlint, { right: 12, bottom: 12, backgroundColor: `${scenario.accent}5C` }]} />
 
       <View
         style={[
@@ -20633,7 +20638,7 @@ function HabitMomentumScenarioCard({
       </View>
 
       <View style={s.organizeBigEventsVisualPanel}>
-        <View style={[s.organizeBigEventsIllustrationBox, s.habitMomentumIllustrationBox, { height: width }]}>
+        <View style={[s.organizeBigEventsIllustrationBox, s.habitMomentumIllustrationBox, { height: imageHeight }]}>
           <ExpoImage
             source={scenario.image}
             style={s.organizeBigEventsIllustrationImage}
@@ -20695,11 +20700,14 @@ function OrganizeHabitsMomentumV2Slide({ onNext }: { onNext: () => void }) {
   const activeIndexRef = useRef(0);
   const userScrolledRef = useRef(false);
   const compact = height < 720;
-  const cardMax = height < 720 ? 304 : height < 800 ? 326 : 344;
+  // The cards sit in the same league as the evidence cards — the image is a
+  // landscape band now, not a full square, so the whole card reads compact.
+  const cardMax = height < 720 ? 296 : height < 800 ? 312 : 324;
   const cardWidth = Math.min(width - 48, cardMax);
-  const momentumHeaderHeight = compact ? 130 : height < 800 ? 136 : 140;
-  const momentumFooterHeight = compact ? 112 : height < 800 ? 120 : 126;
-  const cardHeight = cardWidth + momentumHeaderHeight + momentumFooterHeight;
+  const momentumHeaderHeight = compact ? 118 : height < 800 ? 122 : 126;
+  const momentumFooterHeight = compact ? 94 : height < 800 ? 100 : 104;
+  const momentumImageHeight = Math.round(cardWidth * 0.64);
+  const cardHeight = momentumImageHeight + momentumHeaderHeight + momentumFooterHeight;
   const gap = 16;
   const snapOffsets = HABIT_MOMENTUM_SCENARIOS.map((_, index) => index * (cardWidth + gap));
 
@@ -20767,7 +20775,10 @@ function OrganizeHabitsMomentumV2Slide({ onNext }: { onNext: () => void }) {
         <View
           style={[
             s.organizeRuleContent,
-            { flexGrow: 1, paddingTop: Math.max(insets.top + 54, 80), paddingBottom: insets.bottom + 134 },
+            // This act is full — three plaques + header — so the title sits
+            // at the normal height (the lowered title is only for sparse
+            // screens like the two-card macro boards).
+            { flexGrow: 1, paddingTop: Math.max(insets.top + 26, 52), paddingBottom: insets.bottom + 134 },
           ]}
         >
           <Reanimated.View style={actExitStyle}>
@@ -20918,6 +20929,7 @@ function OrganizeHabitsMomentumV2Slide({ onNext }: { onNext: () => void }) {
                 height={cardHeight}
                 headerHeight={momentumHeaderHeight}
                 footerHeight={momentumFooterHeight}
+                imageHeight={momentumImageHeight}
                 index={index}
               />
             ))}
