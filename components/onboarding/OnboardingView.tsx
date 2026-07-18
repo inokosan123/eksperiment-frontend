@@ -22546,18 +22546,22 @@ function OrganizeHabitsBuilderV2Slide({ onNext }: { onNext: () => void }) {
 }
 
 const SYSTEM_BUILD_STEPS = [
+  'Reading your answers',
   'Weekly rhythm in place',
   'Big events in view',
   'Habits tied to goals',
   'Preparing your Home',
 ];
-// Irregular on purpose — real work never ticks like a metronome.
-const SYSTEM_BUILD_TICKS = [620, 1560, 2120, 3040];
-const SYSTEM_BUILD_DONE_AT = 4100;
+// Irregular on purpose — real work never ticks like a metronome. The third
+// row stalls, the last one takes the longest.
+const SYSTEM_BUILD_TICKS = [800, 1600, 3050, 3800, 5100];
+const SYSTEM_BUILD_READY_AT = 5340;
+const SYSTEM_BUILD_LEAVE_AT = 6420;
+const SYSTEM_BUILD_DONE_AT = 6900;
 // Home mounts beneath the veil only AFTER the last row has ticked: its heavy
 // first render blocks the JS thread, and any pending tick timers would all
 // fire at once the moment it finished.
-const SYSTEM_BUILD_HOME_MOUNT_AT = 3140;
+const SYSTEM_BUILD_HOME_MOUNT_AT = 5180;
 
 // The pulsing "being worked on" marker of the current loading row.
 function SysVeilWorkingDot() {
@@ -22588,35 +22592,201 @@ function SysVeilWorkingDot() {
   );
 }
 
-// Plays over the real Home while it does its heavy first render: by the time
-// "Creating your system" finishes ticking, the screen underneath is warm and
-// the reveal lands without a stutter. Styled after the onboarding intro
-// loading screens: logo plate, gold rule, big serif line, warm floor glow.
+// Three gold dots breathing in turn after the working row's text.
+function SysVeilEllipsis() {
+  const t = useSharedValue(0);
+
+  useEffect(() => {
+    t.value = withRepeat(withTiming(1, { duration: 1150, easing: Easing.linear }), -1, false);
+    return () => cancelAnimation(t);
+  }, [t]);
+
+  const dotOne = useAnimatedStyle(() => {
+    const local = t.value % 1;
+    const wave = Math.sin(Math.PI * local);
+    return { opacity: 0.22 + 0.68 * wave * wave };
+  });
+  const dotTwo = useAnimatedStyle(() => {
+    const local = (t.value + 0.82) % 1;
+    const wave = Math.sin(Math.PI * local);
+    return { opacity: 0.22 + 0.68 * wave * wave };
+  });
+  const dotThree = useAnimatedStyle(() => {
+    const local = (t.value + 0.64) % 1;
+    const wave = Math.sin(Math.PI * local);
+    return { opacity: 0.22 + 0.68 * wave * wave };
+  });
+
+  return (
+    <View style={s.sysVeilEllipsis}>
+      <Reanimated.View style={[s.sysVeilEllipsisDot, dotOne]} />
+      <Reanimated.View style={[s.sysVeilEllipsisDot, dotTwo]} />
+      <Reanimated.View style={[s.sysVeilEllipsisDot, dotThree]} />
+    </View>
+  );
+}
+
+// One checklist row of the build veil. The entrance lives on the inner view,
+// the leave cascade on this outer shell — never on the same element.
+function SysVeilRow({
+  step,
+  index,
+  done,
+  current,
+  leave,
+}: {
+  step: string;
+  index: number;
+  done: boolean;
+  current: boolean;
+  leave: SharedValue<number>;
+}) {
+  const leaveStyle = useAnimatedStyle(() => {
+    const raw = (leave.value * 480 - index * 45) / 240;
+    const local = raw < 0 ? 0 : raw > 1 ? 1 : raw;
+    const eased = 1 - (1 - local) * (1 - local) * (1 - local);
+    return {
+      opacity: 1 - eased,
+      transform: [{ translateY: 8 * eased }],
+    };
+  });
+
+  return (
+    <Reanimated.View style={leaveStyle}>
+      <Reanimated.View
+        entering={FadeInUp.delay(360 + index * 90).duration(430).easing(Easing.out(Easing.cubic))}
+        style={s.sysVeilRow}
+      >
+        <View
+          style={[
+            s.sysVeilRowIcon,
+            done && s.sysVeilRowIconDone,
+            !done && !current && s.sysVeilRowIconIdle,
+          ]}
+        >
+          {done ? (
+            <Reanimated.View entering={ZoomIn.springify().damping(12).stiffness(260).mass(0.6)}>
+              <CheckSmall s={12} c="#FFFFFF" w={3} />
+            </Reanimated.View>
+          ) : current ? (
+            <SysVeilWorkingDot />
+          ) : null}
+        </View>
+        <View style={s.sysVeilRowMain}>
+          <View style={s.sysVeilTextWrap}>
+            <Text
+              style={[
+                s.sysVeilRowText,
+                done && s.sysVeilRowTextDone,
+                current && s.sysVeilRowTextCurrent,
+              ]}
+            >
+              {step}
+            </Text>
+            {done ? (
+              <Reanimated.View
+                pointerEvents="none"
+                entering={FadeIn.duration(420).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                  opacity: 0,
+                  transform: [{ scaleX: 0 }],
+                })}
+                style={s.sysVeilStrike}
+              />
+            ) : null}
+          </View>
+          {current ? <SysVeilEllipsis /> : null}
+        </View>
+      </Reanimated.View>
+    </Reanimated.View>
+  );
+}
+
+// Plays over the real Home while it does its heavy first render: a believable
+// build — rows tick unevenly and get struck through, the progress bar surges
+// and stalls like real work with a light sweeping it, then the title turns to
+// "Your Home is ready." and the room is handed over in stages. Styled after
+// the onboarding intro loading screens: logo plate, gold rule, big serif
+// line, warm floor glow.
 function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   const [ticked, setTicked] = useState(0);
+  const [phase, setPhase] = useState<'working' | 'ready' | 'leaving'>('working');
+  const [barWidth, setBarWidth] = useState(172);
+  const progress = useSharedValue(0);
+  const sheen = useSharedValue(0);
+  const leave = useSharedValue(0);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
   useEffect(() => {
+    // The bar surges, crawls through the stall, surges again — keyframed to
+    // land at 100% as the title flips. Real loading, faked honestly.
+    progress.value = withSequence(
+      withTiming(0.13, { duration: 620, easing: Easing.out(Easing.cubic) }),
+      withTiming(0.18, { duration: 480, easing: Easing.inOut(Easing.quad) }),
+      withTiming(0.34, { duration: 540, easing: Easing.inOut(Easing.quad) }),
+      withTiming(0.39, { duration: 820, easing: Easing.linear }),
+      withTiming(0.57, { duration: 620, easing: Easing.inOut(Easing.quad) }),
+      withTiming(0.63, { duration: 380, easing: Easing.linear }),
+      withTiming(0.74, { duration: 520, easing: Easing.inOut(Easing.quad) }),
+      withTiming(0.83, { duration: 760, easing: Easing.linear }),
+      withTiming(0.96, { duration: 380, easing: Easing.out(Easing.cubic) }),
+      withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) }),
+    );
+    sheen.value = withRepeat(withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.quad) }), -1, false);
+
     const timers: ReturnType<typeof setTimeout>[] = [];
     SYSTEM_BUILD_TICKS.forEach((at, index) => {
       timers.push(setTimeout(() => {
-        if (index === SYSTEM_BUILD_TICKS.length - 1) {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        } else {
-          runSelectionHaptic();
-        }
+        runSelectionHaptic();
         setTicked(index + 1);
       }, at));
     });
     timers.push(setTimeout(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      cancelAnimation(sheen);
+      sheen.value = 0;
+      setPhase('ready');
+    }, SYSTEM_BUILD_READY_AT));
+    timers.push(setTimeout(() => {
+      setPhase('leaving');
+      leave.value = withTiming(1, { duration: 480, easing: Easing.linear });
+    }, SYSTEM_BUILD_LEAVE_AT));
+    timers.push(setTimeout(() => {
       onDoneRef.current();
     }, SYSTEM_BUILD_DONE_AT));
-    return () => timers.forEach(clearTimeout);
+    return () => {
+      timers.forEach(clearTimeout);
+      cancelAnimation(progress);
+      cancelAnimation(sheen);
+      cancelAnimation(leave);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const fillStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: -(1 - progress.value) * barWidth }],
+  }));
+  const sheenStyle = useAnimatedStyle(() => {
+    const wave = Math.sin(Math.PI * sheen.value);
+    return {
+      opacity: 0.5 * wave,
+      transform: [{ translateX: -40 + sheen.value * (barWidth + 80) }],
+    };
+  });
+  const barLeaveStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(leave.value, [0, 0.3], [1, 0], 'clamp'),
+  }));
+  const crownLeaveStyle = useAnimatedStyle(() => {
+    const raw = (leave.value - 0.5) / 0.5;
+    const local = raw < 0 ? 0 : raw > 1 ? 1 : raw;
+    return {
+      opacity: 1 - local,
+      transform: [{ translateY: -10 * local }],
+    };
+  });
+
   return (
-    <Reanimated.View exiting={FadeOut.duration(460)} style={s.sysVeil}>
+    <Reanimated.View exiting={FadeOut.duration(320)} style={s.sysVeil}>
       <View pointerEvents="none" style={s.introWarmth}>
         <LinearGradient
           colors={['rgba(255,255,255,0)', 'rgba(246,225,202,0.46)', 'rgba(255,241,225,0.98)']}
@@ -22625,71 +22795,73 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
         />
       </View>
       <View style={s.sysVeilContent}>
-        <Reanimated.View
-          entering={FadeInLeft.duration(420).withInitialValues({
-            opacity: 0,
-            transform: [{ translateX: -16 }],
-          })}
-          style={s.introLogoFrame}
-        >
-          <View style={s.introLogoPlate}>
-            <Image source={APP_LOGO} style={s.introLogo} resizeMode="cover" />
-          </View>
-        </Reanimated.View>
-        <Reanimated.View entering={FadeIn.delay(90).duration(320)} style={s.introRule} />
-        <Reanimated.View
-          entering={FadeInRight.delay(140).duration(460).withInitialValues({
-            opacity: 0,
-            transform: [{ translateX: 16 }],
-          })}
-          style={s.introCopy}
-        >
-          <Text style={s.sysVeilEyebrow}>ONE MOMENT</Text>
-          <Text style={s.introTitle}>Creating{'\n'}your system.</Text>
+        <Reanimated.View style={crownLeaveStyle}>
+          <Reanimated.View
+            entering={FadeInLeft.duration(420).withInitialValues({
+              opacity: 0,
+              transform: [{ translateX: -16 }],
+            })}
+            style={s.introLogoFrame}
+          >
+            <View style={s.introLogoPlate}>
+              <Image source={APP_LOGO} style={s.introLogo} resizeMode="cover" />
+            </View>
+          </Reanimated.View>
+          <Reanimated.View entering={FadeIn.delay(90).duration(320)} style={s.introRule} />
+          <Reanimated.View
+            entering={FadeInRight.delay(140).duration(460).withInitialValues({
+              opacity: 0,
+              transform: [{ translateX: 16 }],
+            })}
+            style={s.introCopy}
+          >
+            <Text style={s.sysVeilEyebrow}>{phase === 'working' ? 'ONE MOMENT' : 'ALL SET'}</Text>
+            <View style={s.sysVeilTitleSlot}>
+              {phase === 'working' ? (
+                <Reanimated.Text key="sysveil-title-working" exiting={FadeOut.duration(240)} style={s.introTitle}>
+                  Creating{'\n'}your system.
+                </Reanimated.Text>
+              ) : (
+                <Reanimated.Text
+                  key="sysveil-title-ready"
+                  entering={FadeInUp.delay(140).duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+                    opacity: 0,
+                    transform: [{ translateY: 12 }],
+                  })}
+                  style={s.introTitle}
+                >
+                  Your Home{'\n'}is ready.
+                </Reanimated.Text>
+              )}
+            </View>
+          </Reanimated.View>
         </Reanimated.View>
         <View style={s.sysVeilRows}>
-          {SYSTEM_BUILD_STEPS.map((step, index) => {
-            const done = index < ticked;
-            const current = index === ticked;
-            return (
-              <Reanimated.View
-                key={step}
-                entering={FadeInUp.delay(360 + index * 90).duration(400).easing(Easing.out(Easing.cubic))}
-                style={s.sysVeilRow}
-              >
-                <View
-                  style={[
-                    s.sysVeilRowIcon,
-                    done && s.sysVeilRowIconDone,
-                    !done && !current && s.sysVeilRowIconIdle,
-                  ]}
-                >
-                  {done ? (
-                    <Reanimated.View entering={ZoomIn.springify().damping(12).stiffness(260).mass(0.6)}>
-                      <CheckSmall s={12} c="#FFFFFF" w={3} />
-                    </Reanimated.View>
-                  ) : current ? (
-                    <SysVeilWorkingDot />
-                  ) : null}
-                </View>
-                <Text
-                  style={[
-                    s.sysVeilRowText,
-                    done && s.sysVeilRowTextDone,
-                    current && s.sysVeilRowTextCurrent,
-                  ]}
-                >
-                  {step}
-                </Text>
-              </Reanimated.View>
-            );
-          })}
+          {SYSTEM_BUILD_STEPS.map((step, index) => (
+            <SysVeilRow
+              key={step}
+              step={step}
+              index={index}
+              done={index < ticked}
+              current={index === ticked}
+              leave={leave}
+            />
+          ))}
         </View>
-        <Reanimated.View entering={FadeIn.delay(680).duration(420)} style={s.sysVeilBar}>
-          <Reanimated.View
-            layout={LinearTransition.duration(430).easing(Easing.out(Easing.cubic))}
-            style={[s.sysVeilBarFill, { width: `${(ticked / SYSTEM_BUILD_STEPS.length) * 100}%` }]}
-          />
+        <Reanimated.View
+          entering={FadeIn.delay(680).duration(420)}
+          style={[s.sysVeilBar, barLeaveStyle]}
+          onLayout={event => setBarWidth(Math.max(1, event.nativeEvent.layout.width))}
+        >
+          <Reanimated.View style={[s.sysVeilBarFillFull, fillStyle]} />
+          <Reanimated.View style={[s.sysVeilBarSheen, sheenStyle]}>
+            <LinearGradient
+              colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.85)', 'rgba(255,255,255,0)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Reanimated.View>
         </Reanimated.View>
       </View>
     </Reanimated.View>
@@ -36146,17 +36318,53 @@ const s = StyleSheet.create({
   },
   sysVeilRows: {
     width: '100%',
-    maxWidth: 300,
+    maxWidth: 316,
     alignSelf: 'center',
-    rowGap: 13,
-    marginTop: 34,
-    marginBottom: 30,
+    rowGap: 15,
+    marginTop: 32,
+    marginBottom: 28,
+  },
+  sysVeilTitleSlot: {
+    minHeight: 90,
+    justifyContent: 'center',
+  },
+  sysVeilRowMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 7,
+  },
+  sysVeilTextWrap: {
+    alignSelf: 'flex-start',
+    position: 'relative',
+  },
+  sysVeilStrike: {
+    position: 'absolute',
+    left: -2,
+    right: -2,
+    top: '50%',
+    marginTop: 1,
+    height: 1.5,
+    borderRadius: 1,
+    backgroundColor: 'rgba(25,23,20,0.5)',
+  },
+  sysVeilEllipsis: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 3.5,
+    marginTop: 3,
+  },
+  sysVeilEllipsisDot: {
+    width: 3.5,
+    height: 3.5,
+    borderRadius: 1.75,
+    backgroundColor: '#C5A059',
   },
   sysVeilRowIconIdle: {
     opacity: 0.5,
   },
   sysVeilRowTextCurrent: {
-    color: '#3E382F',
+    color: '#241F19',
   },
   sysVeilWorkBox: {
     width: 24,
@@ -36198,25 +36406,35 @@ const s = StyleSheet.create({
     borderColor: '#C5A059',
   },
   sysVeilRowText: {
-    flex: 1,
     fontFamily: F.serifMedium,
-    fontSize: 15.5,
-    color: 'rgba(25,23,20,0.42)',
+    fontSize: 18.5,
+    lineHeight: 25,
+    color: 'rgba(25,23,20,0.36)',
   },
   sysVeilRowTextDone: {
-    color: '#15120F',
+    color: 'rgba(25,23,20,0.44)',
   },
   sysVeilBar: {
-    width: 148,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(197,160,89,0.18)',
+    width: 186,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: 'rgba(197,160,89,0.16)',
     overflow: 'hidden',
   },
-  sysVeilBarFill: {
-    height: '100%',
-    borderRadius: 2,
+  sysVeilBarFillFull: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '100%',
+    borderRadius: 2.5,
     backgroundColor: '#C5A059',
+  },
+  sysVeilBarSheen: {
+    position: 'absolute',
+    top: -2,
+    bottom: -2,
+    width: 40,
   },
   v4WeeklyRhythmWrap: {
     marginHorizontal: -4,
