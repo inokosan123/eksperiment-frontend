@@ -18040,10 +18040,42 @@ function SpiritualTaskPreviewCard({
 }
 
 // A freshly-activated task: the real Home card landing with a brief gold seal.
-function SpiritualSavedTaskCard({ card, fresh }: { card: TaskData; fresh: boolean }) {
+// `idle` + `idleIndex` opt into the ambient sheen: every idle cycle a soft
+// band of light crosses the saved cards one after another. Callers that do
+// not pass them render exactly as before.
+function SpiritualSavedTaskCard({
+  card,
+  fresh,
+  idle,
+  idleIndex = 0,
+}: {
+  card: TaskData;
+  fresh: boolean;
+  idle?: SharedValue<number>;
+  idleIndex?: number;
+}) {
+  const sheenStyle = useAnimatedStyle(() => {
+    if (!idle) return { opacity: 0, transform: [{ translateX: -140 }, { rotate: '14deg' }] };
+    const elapsed = idle.value * 1500;
+    const raw = (elapsed - idleIndex * 110) / 640;
+    const local = raw < 0 ? 0 : raw > 1 ? 1 : raw;
+    return {
+      opacity: Math.sin(Math.PI * local) * 0.5,
+      transform: [{ translateX: -140 + local * 560 }, { rotate: '14deg' }],
+    };
+  });
+
   return (
     <View style={s.spiritualBuilderTaskFrame}>
       <AnyTaskCard task={card} />
+      <Reanimated.View pointerEvents="none" style={[s.spiritualIdleSheen, sheenStyle]}>
+        <LinearGradient
+          colors={['rgba(255,249,232,0)', 'rgba(255,247,224,0.55)', 'rgba(255,249,232,0)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Reanimated.View>
       {fresh ? (
         <Reanimated.View
           pointerEvents="none"
@@ -20072,11 +20104,56 @@ function insertSortedByTime(list: SavedV2Entry[], entry: SavedV2Entry): SavedV2E
 }
 
 // A catalog card waiting to be set up: the exact Home card, resting in gray.
-function V2MutedTaskCard({ card }: { card: TaskData }) {
+// With `idle`, a sleeping catalog card briefly stirs as light passes over it:
+// the muting veil thins for a moment, then settles back. Without `idle` the
+// card renders exactly as before (all other builders).
+function V2MutedTaskCard({
+  card,
+  idle,
+  idleIndex = 0,
+}: {
+  card: TaskData;
+  idle?: SharedValue<number>;
+  idleIndex?: number;
+}) {
+  const localAt = (value: number) => {
+    'worklet';
+    const elapsed = value * 2000;
+    const raw = (elapsed - idleIndex * 130) / 700;
+    return raw < 0 ? 0 : raw > 1 ? 1 : raw;
+  };
+
+  const sheenStyle = useAnimatedStyle(() => {
+    if (!idle) return { opacity: 0, transform: [{ translateX: -140 }, { rotate: '14deg' }] };
+    const local = localAt(idle.value);
+    return {
+      opacity: Math.sin(Math.PI * local) * 0.34,
+      transform: [{ translateX: -140 + local * 560 }, { rotate: '14deg' }],
+    };
+  });
+  const veilStyle = useAnimatedStyle(() => {
+    if (!idle) return { opacity: 1 };
+    return { opacity: 1 - 0.5 * Math.sin(Math.PI * localAt(idle.value)) };
+  });
+
   return (
     <View style={s.v2MutedFrame}>
       <AnyTaskCard task={card} />
-      <View pointerEvents="none" style={s.v2MutedVeil} />
+      {idle ? (
+        <>
+          <Reanimated.View pointerEvents="none" style={[s.v2MutedVeil, veilStyle]} />
+          <Reanimated.View pointerEvents="none" style={[s.spiritualIdleSheen, sheenStyle]}>
+            <LinearGradient
+              colors={['rgba(255,249,232,0)', 'rgba(255,247,224,0.5)', 'rgba(255,249,232,0)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Reanimated.View>
+        </>
+      ) : (
+        <View pointerEvents="none" style={s.v2MutedVeil} />
+      )}
     </View>
   );
 }
@@ -20123,12 +20200,45 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
   const savedIds = useMemo(() => new Set(saved.map(entry => entry.catalogId)), [saved]);
   const ready = saved.length > 0;
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
+  // Ambient idle life. People stay on this screen for minutes, so the room
+  // may not go still — but the motion must stay rare enough to never become
+  // wallpaper: one pass of light over the saved rhythm every ~14s, and the
+  // sleeping examples stir on the same period, offset five seconds so the
+  // two moments never collide.
+  const idleActive = useSharedValue(0);
+  const idleMuted = useSharedValue(0);
 
   useEffect(() => {
+    idleActive.value = withDelay(
+      2600,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 1500, easing: Easing.linear }),
+          withTiming(0, { duration: 30 }),
+          withDelay(12470, withTiming(0, { duration: 30 })),
+        ),
+        -1,
+        false,
+      ),
+    );
+    idleMuted.value = withDelay(
+      7600,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 2000, easing: Easing.linear }),
+          withTiming(0, { duration: 30 }),
+          withDelay(11970, withTiming(0, { duration: 30 })),
+        ),
+        -1,
+        false,
+      ),
+    );
     return () => {
       cancelAnimation(leave);
+      cancelAnimation(idleActive);
+      cancelAnimation(idleMuted);
     };
-  }, [leave]);
+  }, [idleActive, idleMuted, leave]);
 
   const handleContinue = () => {
     if (leavingRef.current) return;
@@ -20182,6 +20292,19 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
 
   return (
     <View style={s.organizeRuleScreen}>
+      <Reanimated.View pointerEvents="none" entering={FadeIn.delay(260).duration(980)} style={s.spiritualAmbientTop}>
+        <LinearGradient
+          colors={['rgba(246,222,169,0.34)', 'rgba(246,222,169,0.1)', 'rgba(246,222,169,0)']}
+          style={StyleSheet.absoluteFill}
+        />
+      </Reanimated.View>
+      <Reanimated.View pointerEvents="none" entering={FadeIn.delay(420).duration(1100)} style={s.spiritualAmbientAura} />
+      <Reanimated.View pointerEvents="none" entering={FadeIn.delay(600).duration(1100)} style={s.spiritualAmbientFloor}>
+        <LinearGradient
+          colors={['rgba(212,175,110,0)', 'rgba(212,175,110,0.1)']}
+          style={StyleSheet.absoluteFill}
+        />
+      </Reanimated.View>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
@@ -20205,25 +20328,29 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
             opacity: 0,
             transform: [{ translateY: 18 }, { scale: 0.985 }],
           })}
-          style={[s.v2MyPanel, !saved.length && s.v2SpiritualMyPanelEmpty, { borderColor: 'rgba(197,160,89,0.28)' }, myPanelLeaveStyle]}
+          style={[s.v2MyPanel, !saved.length && s.v2SpiritualMyPanelEmpty, s.v2SpiritualMyPanelRich, myPanelLeaveStyle]}
         >
           <LinearGradient
             pointerEvents="none"
-            colors={['rgba(255,255,255,0.98)', 'rgba(197,160,89,0.13)', 'rgba(255,253,248,0.96)']}
+            colors={['rgba(255,255,255,0.98)', 'rgba(197,160,89,0.19)', 'rgba(255,253,248,0.96)']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
           <View pointerEvents="none" style={s.v2SpiritualPanelHalo} />
+          <View pointerEvents="none" style={s.spiritualPanelTickTL} />
+          <View pointerEvents="none" style={s.spiritualPanelTickTR} />
+          <View pointerEvents="none" style={s.spiritualPanelTickBL} />
+          <View pointerEvents="none" style={s.spiritualPanelTickBR} />
           <View style={s.v2PanelHeader}>
             <Text style={s.v2PanelTitle}>Add Your Tasks</Text>
-            <View style={[s.v2PanelCount, { backgroundColor: 'rgba(197,160,89,0.12)', borderColor: 'rgba(197,160,89,0.26)' }]}>
+            <View style={[s.v2PanelCount, { backgroundColor: 'rgba(197,160,89,0.17)', borderColor: 'rgba(197,160,89,0.4)' }]}>
               <Text style={[s.v2PanelCountText, { color: '#9A7B33' }]}>{saved.length}</Text>
             </View>
           </View>
           {saved.length ? (
             <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={s.v2SavedList}>
-              {saved.map(entry => (
+              {saved.map((entry, entryIndex) => (
                 <Reanimated.View
                   key={entry.key}
                   entering={FadeInUp.duration(470).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
@@ -20232,7 +20359,12 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
                   })}
                   layout={LinearTransition.duration(260).easing(Easing.out(Easing.cubic))}
                 >
-                  <SpiritualSavedTaskCard card={entry.card} fresh={freshKey === entry.key} />
+                  <SpiritualSavedTaskCard
+                    card={entry.card}
+                    fresh={freshKey === entry.key}
+                    idle={idleActive}
+                    idleIndex={entryIndex}
+                  />
                 </Reanimated.View>
               ))}
             </ScrollView>
@@ -20287,6 +20419,8 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
                       type: item.type,
                       habitIconName: item.icon,
                     }}
+                    idle={idleMuted}
+                    idleIndex={itemIndex}
                   />
                 </TouchableOpacity>
               </Reanimated.View>
@@ -31068,12 +31202,94 @@ const s = StyleSheet.create({
   },
   v2SpiritualPanelHalo: {
     position: 'absolute',
-    right: -42,
-    top: -52,
-    width: 156,
-    height: 156,
-    borderRadius: 78,
-    backgroundColor: 'rgba(197,160,89,0.16)',
+    right: -46,
+    top: -58,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(197,160,89,0.24)',
+  },
+  v2SpiritualMyPanelRich: {
+    borderColor: 'rgba(197,160,89,0.45)',
+    shadowColor: '#C5A059',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.17,
+    shadowRadius: 24,
+    elevation: 4,
+  },
+  spiritualPanelTickTL: {
+    position: 'absolute',
+    top: 9,
+    left: 9,
+    width: 13,
+    height: 13,
+    borderColor: 'rgba(197,160,89,0.5)',
+    borderTopWidth: 1.4,
+    borderLeftWidth: 1.4,
+    borderTopLeftRadius: 6,
+  },
+  spiritualPanelTickTR: {
+    position: 'absolute',
+    top: 9,
+    right: 9,
+    width: 13,
+    height: 13,
+    borderColor: 'rgba(197,160,89,0.5)',
+    borderTopWidth: 1.4,
+    borderRightWidth: 1.4,
+    borderTopRightRadius: 6,
+  },
+  spiritualPanelTickBL: {
+    position: 'absolute',
+    bottom: 9,
+    left: 9,
+    width: 13,
+    height: 13,
+    borderColor: 'rgba(197,160,89,0.5)',
+    borderBottomWidth: 1.4,
+    borderLeftWidth: 1.4,
+    borderBottomLeftRadius: 6,
+  },
+  spiritualPanelTickBR: {
+    position: 'absolute',
+    bottom: 9,
+    right: 9,
+    width: 13,
+    height: 13,
+    borderColor: 'rgba(197,160,89,0.5)',
+    borderBottomWidth: 1.4,
+    borderRightWidth: 1.4,
+    borderBottomRightRadius: 6,
+  },
+  spiritualIdleSheen: {
+    position: 'absolute',
+    top: -26,
+    bottom: -26,
+    left: 0,
+    width: 110,
+  },
+  spiritualAmbientTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '26%',
+  },
+  spiritualAmbientAura: {
+    position: 'absolute',
+    top: -70,
+    right: -64,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: 'rgba(232,195,116,0.13)',
+  },
+  spiritualAmbientFloor: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '24%',
   },
   v2RoutinePanelHalo: {
     position: 'absolute',
@@ -31378,8 +31594,8 @@ const s = StyleSheet.create({
     flexGrow: 0,
     overflow: 'visible',
     paddingBottom: 14,
-    borderColor: 'rgba(197,160,89,0.16)',
-    backgroundColor: 'rgba(255,253,248,0.85)',
+    borderColor: 'rgba(197,160,89,0.28)',
+    backgroundColor: 'rgba(255,253,248,0.94)',
   },
   v2RoutineCatalogPanel: {
     borderColor: 'rgba(95,90,84,0.10)',
