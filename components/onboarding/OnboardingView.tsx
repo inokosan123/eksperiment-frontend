@@ -20151,12 +20151,38 @@ function HubV2Row({
   );
 }
 
+// Outer leave shell for one hub row: the entrance stays on the inner view's
+// layout animation, the exit cascade lives here — the two must never share
+// an element (an animated style overrides `entering` props from frame one).
+function HubV2LeaveWrap({
+  index,
+  leave,
+  children,
+}: {
+  index: number;
+  leave: SharedValue<number>;
+  children: React.ReactNode;
+}) {
+  const leaveStyle = useAnimatedStyle(() => {
+    const raw = (leave.value * 560 - index * 65) / 300;
+    const local = raw < 0 ? 0 : raw > 1 ? 1 : raw;
+    const eased = 1 - (1 - local) * (1 - local) * (1 - local);
+    return {
+      opacity: 1 - eased,
+      transform: [{ translateY: 10 * eased }, { scale: 1 - 0.012 * eased }],
+    };
+  });
+  return <Reanimated.View style={leaveStyle}>{children}</Reanimated.View>;
+}
+
 function OrganizeHubV2Slide({ stage, onNext }: { stage: OrganizeHubV2Stage; onNext: () => void }) {
   const insets = useSafeAreaInsets();
   const config = HUB_V2_STAGES[stage];
   const [checkedNow, setCheckedNow] = useState(!config.checksNow);
   const [awake, setAwake] = useState(false);
-  const exitProgress = useSharedValue(0);
+  const [leaving, setLeaving] = useState(false);
+  const leavingRef = useRef(false);
+  const leave = useSharedValue(0);
   const isComplete = stage === 'complete';
   const doneCount = config.doneBefore + (checkedNow && config.checksNow ? 1 : 0);
   const pendingIndex = isComplete ? -1 : doneCount;
@@ -20171,12 +20197,31 @@ function OrganizeHubV2Slide({ stage, onNext }: { stage: OrganizeHubV2Stage; onNe
     },
   ];
   const footerStyle = [s.questionFooter, { bottom: insets.bottom + 14 }];
-  const exitStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(exitProgress.value, [0, 1], [1, 0]),
-    transform: [
-      { translateY: interpolate(exitProgress.value, [0, 1], [0, -20]) },
-      { scale: interpolate(exitProgress.value, [0, 1], [1, 0.986]) },
-    ],
+
+  // The stage empties top to bottom — cards bow out one after another, the
+  // title holds a beat and lifts away last, and a short stillness hands the
+  // blank room to the next slide (the Christ dawn opens on exactly that
+  // stillness). The master clock runs linear; each window carries its own
+  // easing.
+  const beginLeave = useCallback(() => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    setLeaving(true);
+    leave.value = withTiming(1, { duration: 560, easing: Easing.linear });
+    setTimeout(onNext, 660);
+  }, [leave, onNext]);
+
+  const headerLeaveStyle = useAnimatedStyle(() => {
+    const raw = (leave.value * 560 - 320) / 240;
+    const local = raw < 0 ? 0 : raw > 1 ? 1 : raw;
+    const eased = 1 - (1 - local) * (1 - local) * (1 - local);
+    return {
+      opacity: 1 - eased,
+      transform: [{ translateY: -12 * eased }],
+    };
+  });
+  const ctaLeaveStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(leave.value, [0, 0.28], [1, 0], 'clamp'),
   }));
 
   // The choreography: seal the finished kind with the real task-check
@@ -20184,7 +20229,10 @@ function OrganizeHubV2Slide({ stage, onNext }: { stage: OrganizeHubV2Stage; onNe
   useEffect(() => {
     setCheckedNow(!config.checksNow);
     setAwake(false);
-    exitProgress.value = 0;
+    setLeaving(false);
+    leavingRef.current = false;
+    cancelAnimation(leave);
+    leave.value = 0;
 
     const timers: ReturnType<typeof setTimeout>[] = [];
     if (config.checksNow) {
@@ -20210,32 +20258,24 @@ function OrganizeHubV2Slide({ stage, onNext }: { stage: OrganizeHubV2Stage; onNe
       );
     }
     return () => timers.forEach(clearTimeout);
-  }, [config.checksNow, exitProgress, isComplete, stage]);
+  }, [config.checksNow, isComplete, leave, stage]);
 
   // The finished board holds for a breath, then carries itself forward.
   useEffect(() => {
     if (!isComplete || !checkedNow) return undefined;
-    let nextTimer: ReturnType<typeof setTimeout> | undefined;
     const exitTimer = setTimeout(() => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      exitProgress.value = withTiming(1, {
-        duration: 640,
-        easing: Easing.bezier(0.16, 1, 0.28, 1),
-      });
-      nextTimer = setTimeout(onNext, 690);
+      beginLeave();
     }, 2050);
-    return () => {
-      clearTimeout(exitTimer);
-      if (nextTimer) clearTimeout(nextTimer);
-    };
-  }, [checkedNow, exitProgress, isComplete, onNext]);
+    return () => clearTimeout(exitTimer);
+  }, [beginLeave, checkedNow, isComplete]);
 
   const ctaVisible = !!config.ctaLabel && awake;
 
   return (
     <View style={s.organizeRuleScreen}>
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
-        <Reanimated.View style={exitStyle}>
+        <Reanimated.View style={headerLeaveStyle}>
           <OrganizeStageHeader
             title={config.title}
             body={config.body}
@@ -20246,40 +20286,53 @@ function OrganizeHubV2Slide({ stage, onNext }: { stage: OrganizeHubV2Stage; onNe
                 ? ['Spiritual life', 'daily duties', 'focused challenges', 'growing habits']
                 : []
             }
+            staged={stage === 'start'}
           />
         </Reanimated.View>
 
-        <Reanimated.View style={[s.hubV2Board, s.hubV2BoardStart, exitStyle]}>
+        <View style={[s.hubV2Board, s.hubV2BoardStart]}>
           {HUB_V2_ITEMS.map((item, index) => {
             const state: TaskState = index < doneCount ? 'done' : index === pendingIndex ? 'pending' : 'locked';
             return (
-              <Reanimated.View
-                key={item.id}
-                entering={
-                  stage === 'start'
-                    ? organizeSideEntrance(index, 340)
-                    : FadeInUp.delay(120 + index * 70).duration(430).easing(Easing.out(Easing.cubic)).withInitialValues({
-                        opacity: 0,
-                        transform: [{ translateY: 14 }],
-                      })
-                }
-              >
-                <HubV2Row item={item} state={state} awake={awake} />
-              </Reanimated.View>
+              <HubV2LeaveWrap key={item.id} index={index} leave={leave}>
+                <Reanimated.View
+                  entering={
+                    stage === 'start'
+                      ? organizeSideEntrance(index, 340)
+                      : FadeInUp.delay(120 + index * 70).duration(430).easing(Easing.out(Easing.cubic)).withInitialValues({
+                          opacity: 0,
+                          transform: [{ translateY: 14 }],
+                        })
+                  }
+                >
+                  <HubV2Row item={item} state={state} awake={awake} />
+                </Reanimated.View>
+              </HubV2LeaveWrap>
             );
           })}
-        </Reanimated.View>
+        </View>
       </ScrollView>
 
       {config.ctaLabel ? (
-        <AnimatedCta active={ctaVisible} delay={120} style={footerStyle} pointerEvents={ctaVisible ? 'auto' : 'none'}>
-          <View style={s.ctaIsland}>
-            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-              <Text style={s.primaryButtonText}>{config.ctaLabel}</Text>
-              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
-            </TouchableOpacity>
-          </View>
-        </AnimatedCta>
+        <Reanimated.View
+          style={[...footerStyle, ctaLeaveStyle]}
+          pointerEvents={!ctaVisible || leaving ? 'none' : 'auto'}
+        >
+          <AnimatedCta active={ctaVisible} delay={120}>
+            <View style={s.ctaIsland}>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                haptic="medium"
+                disabled={leaving}
+                onPress={beginLeave}
+                style={s.primaryButton}
+              >
+                <Text style={s.primaryButtonText}>{config.ctaLabel}</Text>
+                <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+              </TouchableOpacity>
+            </View>
+          </AnimatedCta>
+        </Reanimated.View>
       ) : null}
     </View>
   );
