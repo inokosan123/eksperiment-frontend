@@ -24,6 +24,7 @@ import Reanimated, {
   LinearTransition,
   runOnJS,
   useAnimatedStyle,
+  useFrameCallback,
   useSharedValue,
   withDelay,
   withRepeat,
@@ -22555,9 +22556,19 @@ const SYSTEM_BUILD_STEPS = [
 // Irregular on purpose — real work never ticks like a metronome. The third
 // row stalls, the last one takes the longest.
 const SYSTEM_BUILD_TICKS = [800, 1600, 3050, 3800, 5100];
-const SYSTEM_BUILD_READY_AT = 5340;
-const SYSTEM_BUILD_LEAVE_AT = 6420;
-const SYSTEM_BUILD_DONE_AT = 6900;
+// Each struck row flies into the crest this long after its tick.
+const SYSTEM_BUILD_ABSORB_DELAY = 620;
+const SYSTEM_BUILD_READY_AT = 5900;
+const SYSTEM_BUILD_LEAVE_AT = 7050;
+const SYSTEM_BUILD_DONE_AT = 7530;
+// Orbit speed in deg/s: starts below the preload's cruising pace and rises
+// with every absorbed row — the crest grows visibly unstable.
+const SYSTEM_BUILD_ORBIT_SPEEDS = [55, 95, 140, 190, 250, 320];
+// Flight vector from a row's check circle into the crest centre (fixed dp —
+// the column between them is constant-height chrome).
+const SYSTEM_BUILD_GHOST_DX = 134;
+const SYSTEM_BUILD_GHOST_BASE_DY = 245;
+const SYSTEM_BUILD_GHOST_ROW_DY = 40;
 // Home mounts beneath the veil only AFTER the last row has ticked: its heavy
 // first render blocks the JS thread, and any pending tick timers would all
 // fire at once the moment it finished.
@@ -22626,6 +22637,28 @@ function SysVeilEllipsis() {
   );
 }
 
+// The gold spark that leaves a finished row and flies up into the crest —
+// the row is "taken into" the system. One-shot, mounts when the row is done.
+function SysVeilAbsorbGhost({ dx, dy }: { dx: number; dy: number }) {
+  const t = useSharedValue(0);
+
+  useEffect(() => {
+    t.value = withTiming(1, { duration: SYSTEM_BUILD_ABSORB_DELAY, easing: Easing.bezier(0.36, 0.02, 0.16, 1) });
+    return () => cancelAnimation(t);
+  }, [t]);
+
+  const ghostStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(t.value, [0, 0.08, 0.8, 1], [0, 1, 0.85, 0]),
+    transform: [
+      { translateX: interpolate(t.value, [0, 1], [0, dx]) },
+      { translateY: interpolate(t.value, [0, 0.55, 1], [0, dy * 0.6, dy]) },
+      { scale: interpolate(t.value, [0, 0.16, 1], [0.5, 1, 0.34]) },
+    ],
+  }));
+
+  return <Reanimated.View pointerEvents="none" style={[s.sysVeilGhost, ghostStyle]} />;
+}
+
 // One checklist row of the build veil. The entrance lives on the inner view,
 // the leave cascade on this outer shell — never on the same element.
 function SysVeilRow({
@@ -22672,6 +22705,12 @@ function SysVeilRow({
             <SysVeilWorkingDot />
           ) : null}
         </View>
+        {done ? (
+          <SysVeilAbsorbGhost
+            dx={SYSTEM_BUILD_GHOST_DX}
+            dy={-(SYSTEM_BUILD_GHOST_BASE_DY + index * SYSTEM_BUILD_GHOST_ROW_DY)}
+          />
+        ) : null}
         <View style={s.sysVeilRowMain}>
           <View style={s.sysVeilTextWrap}>
             <Text
@@ -22714,8 +22753,25 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   const progress = useSharedValue(0);
   const sheen = useSharedValue(0);
   const leave = useSharedValue(0);
+  // The crest engine: a frame-driven orbit angle (accelerates smoothly, no
+  // restart hitches), a spring kick fired each time a row is absorbed, the
+  // slow growth of the crest, a continuous instability wobble that scales
+  // with how much the crest has swallowed, and the final ring-disperse bloom.
+  const orbitAngle = useSharedValue(0);
+  const orbitSpeed = useSharedValue(SYSTEM_BUILD_ORBIT_SPEEDS[0]);
+  const kick = useSharedValue(0);
+  const kickSign = useSharedValue(1);
+  const grow = useSharedValue(0);
+  const wobble = useSharedValue(0);
+  const bloom = useSharedValue(0);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+
+  useFrameCallback(frame => {
+    const dt = frame.timeSincePreviousFrame;
+    if (dt == null) return;
+    orbitAngle.value = (orbitAngle.value + (orbitSpeed.value * dt) / 1000) % 360;
+  });
 
   useEffect(() => {
     // The bar surges, crawls through the stall, surges again — keyframed to
@@ -22733,6 +22789,8 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) }),
     );
     sheen.value = withRepeat(withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.quad) }), -1, false);
+    wobble.value = withRepeat(withTiming(1, { duration: 2300, easing: Easing.linear }), -1, false);
+    preloadAchievementFeedbackSound();
 
     const timers: ReturnType<typeof setTimeout>[] = [];
     SYSTEM_BUILD_TICKS.forEach((at, index) => {
@@ -22740,9 +22798,41 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
         runSelectionHaptic();
         setTicked(index + 1);
       }, at));
+      // The struck row arrives at the crest: the logo hops, grows a step and
+      // the orbit spins up — each absorption leaves it a little less stable.
+      timers.push(setTimeout(() => {
+        runPreviewTaskCheckHaptic();
+        kickSign.value = index % 2 === 0 ? 1 : -1;
+        kick.value = withSequence(
+          withTiming(1, { duration: 110, easing: Easing.out(Easing.quad) }),
+          withSpring(0, { damping: 10, stiffness: 250, mass: 0.7 }),
+        );
+        grow.value = withTiming((index + 1) / SYSTEM_BUILD_TICKS.length, {
+          duration: 520,
+          easing: Easing.out(Easing.cubic),
+        });
+        orbitSpeed.value = withTiming(SYSTEM_BUILD_ORBIT_SPEEDS[index + 1], {
+          duration: 680,
+          easing: Easing.inOut(Easing.quad),
+        });
+      }, at + SYSTEM_BUILD_ABSORB_DELAY));
     });
     timers.push(setTimeout(() => {
+      // The burst: one last furious lap, the ring disperses, the crest pops
+      // and settles — heard, felt and seen in the same instant.
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      runStrongHaptic();
+      void playAchievementCompleteFeedback();
+      orbitSpeed.value = withSequence(
+        withTiming(560, { duration: 380, easing: Easing.in(Easing.quad) }),
+        withTiming(0, { duration: 700, easing: Easing.out(Easing.cubic) }),
+      );
+      bloom.value = withTiming(1, { duration: 640, easing: Easing.out(Easing.cubic) });
+      kickSign.value = 1;
+      kick.value = withSequence(
+        withTiming(1.7, { duration: 150, easing: Easing.out(Easing.quad) }),
+        withSpring(0, { damping: 11, stiffness: 210, mass: 0.85 }),
+      );
       cancelAnimation(sheen);
       sheen.value = 0;
       setPhase('ready');
@@ -22759,10 +22849,48 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       cancelAnimation(progress);
       cancelAnimation(sheen);
       cancelAnimation(leave);
+      cancelAnimation(orbitSpeed);
+      cancelAnimation(kick);
+      cancelAnimation(grow);
+      cancelAnimation(wobble);
+      cancelAnimation(bloom);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const ringStyle = useAnimatedStyle(() => ({
+    opacity: (1 - bloom.value) * 0.95,
+    transform: [{ scale: 1 + bloom.value * 0.5 }, { rotate: `${orbitAngle.value}deg` }],
+  }));
+  const ringTailAStyle = useAnimatedStyle(() => ({
+    opacity: (1 - bloom.value) * 0.5,
+    transform: [{ scale: 1 + bloom.value * 0.5 }, { rotate: `${orbitAngle.value - 15}deg` }],
+  }));
+  const ringTailBStyle = useAnimatedStyle(() => ({
+    opacity: (1 - bloom.value) * 0.26,
+    transform: [{ scale: 1 + bloom.value * 0.5 }, { rotate: `${orbitAngle.value - 29}deg` }],
+  }));
+  const crestPlateStyle = useAnimatedStyle(() => {
+    const wobblePhase = wobble.value * Math.PI * 2;
+    const instability = grow.value * (1 - bloom.value);
+    return {
+      transform: [
+        {
+          translateY:
+            -3.5 * kick.value + Math.sin(wobblePhase * 1.7) * 0.7 * instability,
+        },
+        { translateX: Math.sin(wobblePhase) * 0.8 * instability },
+        {
+          rotate: `${kickSign.value * 2.2 * kick.value + Math.sin(wobblePhase) * 1.1 * instability}deg`,
+        },
+        { scale: 1 + 0.2 * grow.value + 0.06 * kick.value },
+      ],
+    };
+  });
+  const crestHaloStyle = useAnimatedStyle(() => ({
+    opacity: 0.14 + 0.2 * grow.value + 0.45 * bloom.value,
+    transform: [{ scale: 0.9 + 0.14 * grow.value + 0.5 * bloom.value }],
+  }));
   const fillStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: -(1 - progress.value) * barWidth }],
   }));
@@ -22797,15 +22925,25 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       <View style={s.sysVeilContent}>
         <Reanimated.View style={crownLeaveStyle}>
           <Reanimated.View
-            entering={FadeInLeft.duration(420).withInitialValues({
+            entering={FadeIn.duration(520).withInitialValues({
               opacity: 0,
-              transform: [{ translateX: -16 }],
+              transform: [{ translateY: 10 }, { scale: 0.92 }],
             })}
-            style={s.introLogoFrame}
+            style={s.sysVeilCrestBox}
           >
-            <View style={s.introLogoPlate}>
+            <Reanimated.View pointerEvents="none" style={[s.sysVeilCrestHalo, crestHaloStyle]} />
+            <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringStyle]}>
+              <View style={s.sysVeilOrbitComet} />
+            </Reanimated.View>
+            <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringTailAStyle]}>
+              <View style={[s.sysVeilOrbitComet, s.sysVeilOrbitCometSmall]} />
+            </Reanimated.View>
+            <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringTailBStyle]}>
+              <View style={[s.sysVeilOrbitComet, s.sysVeilOrbitCometTiny]} />
+            </Reanimated.View>
+            <Reanimated.View style={[s.introLogoPlate, crestPlateStyle]}>
               <Image source={APP_LOGO} style={s.introLogo} resizeMode="cover" />
-            </View>
+            </Reanimated.View>
           </Reanimated.View>
           <Reanimated.View entering={FadeIn.delay(90).duration(320)} style={s.introRule} />
           <Reanimated.View
@@ -22864,6 +23002,20 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
           </Reanimated.View>
         </Reanimated.View>
       </View>
+      {phase !== 'working' ? (
+        <View pointerEvents="none" style={s.sysVeilConfetti}>
+          <LottieView
+            source={CONFETTI_SOURCE}
+            autoPlay
+            loop={false}
+            speed={0.92}
+            resizeMode="cover"
+            renderMode="AUTOMATIC"
+            cacheComposition
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
+      ) : null}
     </Reanimated.View>
   );
 }
