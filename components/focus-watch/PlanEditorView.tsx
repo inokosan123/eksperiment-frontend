@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeInDown, LinearTransition, interpolateColor, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { Calendar, CheckSmall, ChevronRight, Clock, Lock, Plus, Shield, Trash2 } from '@/components/icons/Icons';
+import { NotoEmoji } from '@/components/shared/NotoEmoji';
+import { CheckSmall, ChevronRight, Lock, Plus, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import DailyTargetEditor, { PlanningRail, type TargetValues } from './DailyTargetEditor';
@@ -90,6 +91,45 @@ function ruleModeLabel(rule: GroupRule) {
   if (mode === 'blocked') return 'Blocked';
   if (mode === 'limit' && rule.dailyMinutes != null) return formatMinutesShort(rule.dailyMinutes);
   return 'No limit';
+}
+
+// A plan color: springs up when chosen, settles back when another takes over.
+function ColorSwatch({
+  visual,
+  selected,
+  onPress,
+}: {
+  visual: (typeof PLAN_VISUALS)[number];
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const progress = useSharedValue(selected ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withSpring(selected ? 1 : 0, { damping: 15, stiffness: 235, mass: 0.72 });
+  }, [progress, selected]);
+
+  const ringStyle = useAnimatedStyle(() => ({
+    borderColor: interpolateColor(progress.value, [0, 1], [visual.border, visual.accent]),
+    borderWidth: 1 + progress.value,
+    transform: [{ scale: 1 + progress.value * 0.09 }],
+  }));
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      haptic="selection"
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      accessibilityLabel={`${visual.label} plan color`}
+    >
+      <Animated.View style={[s.colorSwatchButton, { backgroundColor: visual.gradient[1] }, ringStyle]}>
+        <View style={[s.colorSwatch, { backgroundColor: visual.accent }]}>
+          <FocusCheck checked={selected} size={22} accent={visual.accent} />
+        </View>
+      </Animated.View>
+    </TouchableOpacity>
+  );
 }
 
 function GroupRuleMeta({
@@ -352,47 +392,34 @@ export default function PlanEditorView() {
             <TextInput
               value={name}
               onChangeText={setName}
-              placeholder="e.g. Workday"
+              placeholder="Name this plan..."
               placeholderTextColor={C.textMuted}
               maxLength={28}
               style={s.nameInput}
             />
-            {name.trim().length > 0 && <CheckSmall s={15} c="#4E8C69" w={2.6} />}
+            {name.trim().length > 0 && (
+              <Animated.View entering={FadeInDown.duration(220)}>
+                <CheckSmall s={16} c="#4E8C69" w={2.6} />
+              </Animated.View>
+            )}
           </View>
-          {name.length === 0 && <Text style={s.requiredText}>A name is required before this plan can be saved.</Text>}
+          {name.length === 0 && <Text style={s.requiredText}>Give it a name to save it.</Text>}
 
           <View style={s.colorPickerHeader}>
-            <View>
-              <Text style={s.colorPickerLabel}>PLAN COLOR</Text>
-              <Text style={s.colorPickerHint}>Give this plan its own identity across Screen Time.</Text>
-            </View>
+            <Text style={s.colorPickerLabel}>PLAN COLOR</Text>
             <Text style={[s.colorPickerValue, { color: planVisualForTheme(themeId).accent }]}>
               {planVisualForTheme(themeId).label}
             </Text>
           </View>
           <View style={s.colorPickerSurface}>
-            {PLAN_VISUALS.map(visual => {
-              const selected = visual.id === themeId;
-              return (
-                <TouchableOpacity
-                  key={visual.id}
-                  style={[
-                    s.colorSwatchButton,
-                    { backgroundColor: visual.gradient[1], borderColor: selected ? visual.accent : visual.border },
-                    selected && s.colorSwatchButtonOn,
-                  ]}
-                  onPress={() => setThemeId(visual.id)}
-                  haptic="selection"
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected }}
-                  accessibilityLabel={`${visual.label} plan color`}
-                >
-                  <View style={[s.colorSwatch, { backgroundColor: visual.accent }]}>
-                    <FocusCheck checked={selected} size={22} accent={visual.accent} />
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+            {PLAN_VISUALS.map(visual => (
+              <ColorSwatch
+                key={visual.id}
+                visual={visual}
+                selected={visual.id === themeId}
+                onPress={() => setThemeId(visual.id)}
+              />
+            ))}
           </View>
         </Animated.View>
 
@@ -404,13 +431,13 @@ export default function PlanEditorView() {
             onPress={toggleEssentialsOnlyDay}
           >
             <View style={[s.essOnlyIcon, essentialsOnlyDay && s.essOnlyIconOn]}>
-              <Shield s={19} c={essentialsOnlyDay ? '#FFFFFF' : '#A63A4B'} w={2.2} />
+              <NotoEmoji name="lock" size={24} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[s.essOnlyLabel, essentialsOnlyDay && s.essOnlyLabelOn]}>ESSENTIALS-ONLY DAY</Text>
-              <Text style={[s.essOnlyTitle, essentialsOnlyDay && s.essOnlyTitleOn]}>Close the whole day to distractions</Text>
+              <Text style={[s.essOnlyTitle, essentialsOnlyDay && s.essOnlyTitleOn]}>Lock the whole day</Text>
               <Text style={[s.essOnlyBody, essentialsOnlyDay && s.essOnlyBodyOn]}>
-                Only Essentials and the apps chosen for this plan stay reachable. Goal and Tolerance still measure the day.
+                ON: only your Essential apps open, all day. Everything else stays locked from minute one.
               </Text>
             </View>
             <FocusSwitch value={essentialsOnlyDay} onToggle={toggleEssentialsOnlyDay} />
@@ -426,32 +453,31 @@ export default function PlanEditorView() {
             <Animated.View entering={enter(100)} layout={LinearTransition.duration(220)}>
               <View style={s.sectionTitleRow}>
                 <View>
-                  <Text style={s.sectionLabelNoMargin}>APPS AVAILABLE IN THIS PLAN</Text>
-                  <Text style={s.sectionSub}>Global Essentials are already included. Add only the extra apps this specific day needs.</Text>
+                  <Text style={s.sectionLabelNoMargin}>APPS THAT STAY OPEN</Text>
+                  <Text style={s.sectionSub}>Your Essentials are already in. Add only what this day truly needs.</Text>
                 </View>
               </View>
               <View style={[s.essentialsSurface, s.planAccessSurface]}>
                 <View style={s.essentialsAccent} />
                 <View style={s.essentialsOutcomeRow}>
-                  <View style={s.essentialsOutcomeIcon}><Shield s={21} c="#FFFFFF" w={2.2} /></View>
+                  <View style={s.essentialsOutcomeIcon}><NotoEmoji name="lock" size={24} /></View>
                   <View style={{ flex: 1 }}>
-                    <Text style={s.essentialsOutcomeLabel}>PROTECTED FROM MINUTE ONE</Text>
-                    <Text style={s.essentialsOutcomeTitle}>Distractions stay closed all day.</Text>
-                    <Text style={s.essentialsOutcomeBody}>Your Goal and Tolerance track total phone time without changing which apps are available.</Text>
+                    <Text style={s.essentialsOutcomeLabel}>LOCKED FROM MINUTE ONE</Text>
+                    <Text style={s.essentialsOutcomeTitle}>Everything else stays closed all day.</Text>
+                    <Text style={s.essentialsOutcomeBody}>Goal and Tolerance still keep the score of the day.</Text>
                   </View>
                 </View>
 
                 <TouchableOpacity style={s.essentialsPicker} onPress={() => setEssentialsOpen(true)} activeOpacity={0.76}>
                   <View style={s.essentialsPickerIcon}><Lock s={17} c="#A63A4B" w={2.2} /></View>
                   <View style={{ flex: 1 }}>
-                    <Text style={s.essentialsPickerLabel}>CHOOSE APPS FOR THIS PLAN</Text>
-                    <Text style={s.essentialsPickerTitle}>Decide what stays reachable</Text>
+                    <Text style={s.essentialsPickerTitle}>Choose this plan&apos;s apps</Text>
                     <Text style={s.essentialsPickerMeta}>
                       {nativeAvailable
                         ? planEssentialsSummary
-                          ? `${planEssentialsSummary.applicationCount} plan-only apps · Global Essentials included`
+                          ? `${planEssentialsSummary.applicationCount} plan-only apps · Essentials included`
                           : 'Loading private iPhone selection'
-                        : `${planEssentialAppIds.length} plan-only apps · Global Essentials included`}
+                        : `${planEssentialAppIds.length} plan-only apps · Essentials included`}
                     </Text>
                   </View>
                   <View style={s.essentialsPickerArrow}><ChevronRight s={17} c="#7A303D" w={2.2} /></View>
@@ -464,79 +490,42 @@ export default function PlanEditorView() {
         {!essentialsOnlyDay && (
         <View style={s.sectionsGroup}>
         <Animated.View entering={enter(50)}>
-          <Text style={s.sectionLabel}>PLANNING STYLE</Text>
-          <View style={s.kindControl}>
-            <View style={[s.kindOption, s.kindOptionOn]} accessibilityRole="radio" accessibilityState={{ selected: true }}>
-              <View style={[s.kindIconSeal, s.kindIconSealOn]}>
-                <Calendar s={18} c={C.goldDark} w={2} />
-              </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={[s.kindTitle, s.kindTitleOn]}>Daily Plan</Text>
-                <Text style={s.kindBody}>One set of rules holds the whole day.</Text>
-                <View style={s.kindStrip}>
-                  <View style={[s.kindStripSegment, { flex: 1, backgroundColor: C.gold }]} />
-                </View>
-              </View>
-              <FocusCheck checked size={20} />
-            </View>
-            <View style={[s.kindOption, s.kindOptionDisabled]} accessibilityRole="radio" accessibilityState={{ disabled: true, selected: false }}>
-              <View style={s.kindIconSeal}>
-                <Clock s={18} c={C.textMuted} w={2} />
-              </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <View style={s.kindDisabledTitleRow}>
-                  <Text style={s.kindTitle}>Session Plan</Text>
-                  <View style={s.laterTag}><Text style={s.laterTagText}>LATER</Text></View>
-                </View>
-                <Text style={s.kindBody}>Multiple rule sets will arrive in a later update.</Text>
-                <View style={s.kindStrip}>
-                  <View style={[s.kindStripSegment, { flex: 1, backgroundColor: '#DDD8CC' }]} />
-                  <View style={[s.kindStripSegment, { flex: 1.6, marginLeft: 3, backgroundColor: '#DDD8CC' }]} />
-                  <View style={[s.kindStripSegment, { flex: 1, marginLeft: 3, backgroundColor: '#DDD8CC' }]} />
-                </View>
-              </View>
-            </View>
-          </View>
-        </Animated.View>
-
-        <Animated.View entering={enter(100)}>
           <DailyTargetEditor values={target} onChange={setTarget} />
         </Animated.View>
 
         <Animated.View entering={enter(200)}>
           <View style={s.sectionTitleRow}>
             <View>
-              <Text style={s.sectionLabelNoMargin}>ESSENTIALS AFTER TOLERANCE</Text>
-              <Text style={s.sectionSub}>Choose the few apps that should remain reachable after protection begins.</Text>
+              <Text style={s.sectionLabelNoMargin}>ESSENTIALS</Text>
+              <Text style={s.sectionSub}>The few apps that stay open after the phone locks.</Text>
             </View>
           </View>
 
           <View style={s.essentialsSurface}>
             <View style={s.essentialsAccent} />
             <View style={s.essentialsOutcomeRow}>
-              <View style={s.essentialsOutcomeIcon}><Shield s={21} c="#FFFFFF" w={2.2} /></View>
+              <View style={s.essentialsOutcomeIcon}><NotoEmoji name="lock" size={24} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={s.essentialsOutcomeLabel}>WHEN TOLERANCE ENDS</Text>
                 <Text style={s.essentialsOutcomeTitle}>
                   {draftToleranceEnd == null
-                    ? 'Set a Goal to activate Essentials-only protection.'
-                    : `At ${formatMinutesShort(draftToleranceEnd)}, the rest of your day is protected.`}
+                    ? 'Set a Goal first.'
+                    : `At ${formatMinutesShort(draftToleranceEnd)}, the phone locks.`}
                 </Text>
-                <Text style={s.essentialsOutcomeBody}>Non-essential apps close for the rest of the day. Essentials and iOS system access remain reachable.</Text>
+                <Text style={s.essentialsOutcomeBody}>Everything closes for the rest of the day — except your Essentials.</Text>
               </View>
             </View>
 
             <TouchableOpacity style={s.essentialsPicker} onPress={() => setEssentialsOpen(true)} activeOpacity={0.76}>
               <View style={s.essentialsPickerIcon}><Lock s={17} c="#A63A4B" w={2.2} /></View>
               <View style={{ flex: 1 }}>
-                <Text style={s.essentialsPickerLabel}>CHOOSE YOUR ESSENTIAL APPS</Text>
-                <Text style={s.essentialsPickerTitle}>Decide what stays reachable</Text>
+                <Text style={s.essentialsPickerTitle}>Choose your Essentials</Text>
                 <Text style={s.essentialsPickerMeta}>
                   {nativeAvailable
                     ? optionalEssentialsSummary
-                      ? `${optionalEssentialsSummary.applicationCount} optional apps · Core safety access always remains`
+                      ? `${optionalEssentialsSummary.applicationCount} apps chosen · safety access always stays`
                       : 'Loading private iPhone selection'
-                    : `${state.optionalEssentialAppIds.length} optional apps · Core safety access always remains`}
+                    : `${state.optionalEssentialAppIds.length} apps chosen · safety access always stays`}
                 </Text>
               </View>
               <View style={s.essentialsPickerArrow}><ChevronRight s={17} c="#7A303D" w={2.2} /></View>
@@ -547,8 +536,8 @@ export default function PlanEditorView() {
         <Animated.View entering={enter(240)} layout={LinearTransition.duration(220)}>
           <View style={s.sectionTitleRow}>
             <View>
-              <Text style={s.sectionLabelNoMargin}>DAILY APP RULES</Text>
-              <Text style={s.sectionSub}>Divide your daily capacity across groups and individual apps.</Text>
+              <Text style={s.sectionLabelNoMargin}>APP RULES</Text>
+              <Text style={s.sectionSub}>Give each group its share of the day — or block it.</Text>
             </View>
           </View>
           <View style={s.ruleList}>
@@ -681,7 +670,7 @@ const s = StyleSheet.create({
   page: { paddingHorizontal: 16, gap: 18 },
   sectionLabel: { marginBottom: 8, marginLeft: 4, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted },
   sectionLabelNoMargin: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted },
-  sectionSub: { marginTop: 4, maxWidth: 320, fontFamily: F.sans, fontSize: 11.5, lineHeight: 16.5, color: C.textSecondary },
+  sectionSub: { marginTop: 4, maxWidth: 320, fontFamily: F.sans, fontSize: 12.5, lineHeight: 17.5, color: C.textSecondary },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, marginBottom: 8 },
   sectionsGroup: { gap: 18 },
   dormant: { opacity: 0.38 },
@@ -716,71 +705,33 @@ const s = StyleSheet.create({
   essOnlyIconOn: { backgroundColor: '#E14B5A', boxShadow: '0 5px 14px rgba(225,75,90,0.3)' },
   essOnlyLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.5, color: '#A63A4B' },
   essOnlyLabelOn: { color: '#D4B7BC' },
-  essOnlyTitle: { marginTop: 2, fontFamily: F.serifSemiBold, fontSize: 17, lineHeight: 21, color: '#3A252A' },
+  essOnlyTitle: { marginTop: 2, fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 23, color: '#3A252A' },
   essOnlyTitleOn: { color: '#FFFFFF' },
-  essOnlyBody: { marginTop: 3, fontFamily: F.sans, fontSize: 10.5, lineHeight: 14.5, color: '#7A6468' },
+  essOnlyBody: { marginTop: 3, fontFamily: F.sans, fontSize: 11.5, lineHeight: 15.5, color: '#7A6468' },
   essOnlyBodyOn: { color: '#C8C9CC' },
   railRulesDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E3DFD6', marginHorizontal: -10 },
-  nameSurface: { height: 52, flexDirection: 'row', alignItems: 'center', borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DFD7C8', backgroundColor: C.surface, paddingHorizontal: 14 },
+  nameSurface: { height: 58, flexDirection: 'row', alignItems: 'center', borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DFD7C8', backgroundColor: C.surface, paddingHorizontal: 16, boxShadow: '0 6px 18px rgba(45, 40, 33, 0.04)' },
   nameSurfaceEmpty: { borderColor: '#E1C5A1' },
-  nameInput: { flex: 1, fontFamily: F.serifMedium, fontSize: 17.5, color: C.text },
+  nameInput: { flex: 1, fontFamily: F.serifMedium, fontSize: 21, color: C.text },
   requiredText: { marginTop: 5, marginLeft: 4, fontFamily: F.sansMedium, fontSize: 10, color: '#A36F2B' },
-  colorPickerHeader: { marginTop: 15, marginHorizontal: 4, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 },
-  colorPickerLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.9, color: C.textMuted },
-  colorPickerHint: { marginTop: 3, fontFamily: F.sans, fontSize: 10.5, lineHeight: 14, color: C.textSecondary },
-  colorPickerValue: { paddingBottom: 1, fontFamily: F.serifSemiBold, fontSize: 14 },
-  colorPickerSurface: { marginTop: 9, height: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E7E0D4', backgroundColor: '#FFFDF9', paddingHorizontal: 10, boxShadow: '0 4px 12px rgba(69, 58, 39, 0.04)' },
-  colorSwatchButton: { width: 43, height: 43, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  colorSwatchButtonOn: { borderWidth: 2, transform: [{ scale: 1.07 }] },
+  colorPickerHeader: { marginTop: 16, marginHorizontal: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  colorPickerLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted },
+  colorPickerValue: { fontFamily: F.serifSemiBold, fontSize: 15 },
+  colorPickerSurface: { marginTop: 9, height: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E7E0D4', backgroundColor: '#FFFDF9', paddingHorizontal: 11, boxShadow: '0 4px 12px rgba(69, 58, 39, 0.04)' },
+  colorSwatchButton: { width: 43, height: 43, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   colorSwatch: { width: 29, height: 29, borderRadius: 15, alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(47, 39, 28, 0.13)' },
-  kindControl: { gap: 8 },
-  kindOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderRadius: 20,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: '#E1DDD4',
-    backgroundColor: '#FFFDF9',
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    boxShadow: '0 6px 18px rgba(45, 40, 33, 0.045)',
-  },
-  kindOptionOn: { borderColor: '#D9BA70', backgroundColor: '#FFF9EA', boxShadow: '0 8px 22px rgba(150, 110, 35, 0.1)' },
-  kindOptionDisabled: { opacity: 0.58, backgroundColor: '#F4F1EA' },
-  kindIconSeal: {
-    flexShrink: 0,
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    borderCurve: 'continuous',
-    backgroundColor: '#F4F2EC',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  kindIconSealOn: { backgroundColor: C.goldLight },
-  kindTitle: { fontFamily: F.serifMedium, fontSize: 17.5, color: C.text },
-  kindTitleOn: { color: C.goldDark },
-  kindDisabledTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  laterTag: { borderRadius: 999, backgroundColor: '#E4E0D7', paddingHorizontal: 7, paddingVertical: 3 },
-  laterTagText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.1, color: C.textMuted },
-  kindBody: { marginTop: 2, fontFamily: F.sans, fontSize: 11.5, lineHeight: 15.5, color: C.textSecondary },
-  kindStrip: { marginTop: 8, height: 6, flexDirection: 'row', borderRadius: 3, overflow: 'hidden' },
-  kindStripSegment: { height: '100%', borderRadius: 3 },
   essentialsSurface: { position: 'relative', overflow: 'hidden', borderRadius: 25, borderCurve: 'continuous', backgroundColor: '#202123', padding: 16, gap: 15, boxShadow: '0 12px 28px rgba(24, 24, 25, 0.16)' },
   planAccessSurface: { borderWidth: 1, borderColor: '#35363A', backgroundColor: '#1D1E20', boxShadow: '0 14px 32px rgba(24, 24, 25, 0.2)' },
   essentialsAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: '#E14B5A' },
   essentialsOutcomeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingLeft: 3 },
   essentialsOutcomeIcon: { flexShrink: 0, width: 42, height: 42, borderRadius: 14, borderCurve: 'continuous', backgroundColor: '#E14B5A', alignItems: 'center', justifyContent: 'center', boxShadow: '0 5px 14px rgba(225,75,90,0.28)' },
   essentialsOutcomeLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.55, color: '#D4B7BC' },
-  essentialsOutcomeTitle: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 20, lineHeight: 24, color: '#FFFFFF' },
-  essentialsOutcomeBody: { marginTop: 6, fontFamily: F.sans, fontSize: 12, lineHeight: 17.5, color: '#C8C9CC' },
+  essentialsOutcomeTitle: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 25, letterSpacing: -0.25, color: '#FFFFFF' },
+  essentialsOutcomeBody: { marginTop: 6, fontFamily: F.sans, fontSize: 12.5, lineHeight: 18, color: '#C8C9CC' },
   essentialsPicker: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E8CDD2', backgroundColor: '#FFF8F8', paddingHorizontal: 12, paddingVertical: 11 },
   essentialsPickerIcon: { flexShrink: 0, width: 38, height: 38, borderRadius: 12, borderCurve: 'continuous', backgroundColor: '#F8E3E7', alignItems: 'center', justifyContent: 'center' },
-  essentialsPickerLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.35, color: '#A63A4B' },
-  essentialsPickerTitle: { marginTop: 2, fontFamily: F.serifSemiBold, fontSize: 17, lineHeight: 20, color: '#3A252A' },
-  essentialsPickerMeta: { marginTop: 3, fontFamily: F.sans, fontSize: 9.5, lineHeight: 13.5, color: '#7A6468' },
+  essentialsPickerTitle: { fontFamily: F.serifSemiBold, fontSize: 18.5, lineHeight: 22, color: '#3A252A' },
+  essentialsPickerMeta: { marginTop: 3, fontFamily: F.sans, fontSize: 11, lineHeight: 15, color: '#7A6468' },
   essentialsPickerArrow: { flexShrink: 0, width: 30, height: 30, borderRadius: 15, backgroundColor: '#F4D9DE', alignItems: 'center', justifyContent: 'center' },
   sessionCount: { borderRadius: 999, backgroundColor: C.goldLight, paddingHorizontal: 10, paddingVertical: 6 },
   sessionCountText: { fontFamily: F.sansBold, fontSize: 9.5, color: C.goldDark },
@@ -801,11 +752,11 @@ const s = StyleSheet.create({
   ruleRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 3, paddingVertical: 8 },
   ruleAvatar: { width: 40, height: 40, borderRadius: 14, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
   ruleAvatarText: { fontFamily: F.serifSemiBold, fontSize: 17 },
-  ruleName: { fontFamily: F.serifMedium, fontSize: 17, color: C.text },
-  ruleMeta: { marginTop: 3, fontFamily: F.sans, fontSize: 10, lineHeight: 13.5, color: C.textMuted },
-  ruleTag: { borderRadius: 999, backgroundColor: '#F0EFEB', paddingHorizontal: 9, paddingVertical: 6 },
+  ruleName: { fontFamily: F.serifMedium, fontSize: 18, color: C.text },
+  ruleMeta: { marginTop: 3, fontFamily: F.sans, fontSize: 11, lineHeight: 14.5, color: C.textMuted },
+  ruleTag: { borderRadius: 999, backgroundColor: '#F0EFEB', paddingHorizontal: 10, paddingVertical: 6.5 },
   ruleTagBlocked: { backgroundColor: '#F8E7EA' },
-  ruleTagText: { fontFamily: F.sansSemiBold, fontSize: 9.5, color: C.textSecondary, fontVariant: ['tabular-nums'] },
+  ruleTagText: { fontFamily: F.sansBold, fontSize: 10.5, color: C.textSecondary, fontVariant: ['tabular-nums'] },
   ruleTagTextBlocked: { color: '#A24351' },
   strengthTag: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 6 },
   looseTag: { backgroundColor: '#FFF0C5' },
