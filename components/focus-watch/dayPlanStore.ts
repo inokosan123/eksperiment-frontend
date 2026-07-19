@@ -27,8 +27,14 @@ export type PlanKind = 'daily' | 'session';
 // as a dormant future feature, but this flag is the only switch allowed to
 // make that model affect runtime behavior again.
 export const FOCUS_SESSION_PLANNING_ENABLED = false;
-export const PLAN_THEME_IDS = ['gold', 'teal', 'plum', 'blue', 'rose', 'clay'] as const;
+export const PLAN_THEME_IDS = [
+  'gold', 'teal', 'plum', 'blue', 'rose', 'clay',
+  'ember', 'olive', 'leaf', 'navy', 'orchid', 'stone',
+] as const;
 export type PlanThemeId = typeof PLAN_THEME_IDS[number];
+// The auto-assigned palette stays the original six on purpose: a legacy plan
+// saved before themeId existed must not change colour when new themes ship.
+const AUTO_THEME_IDS: readonly PlanThemeId[] = ['gold', 'teal', 'plum', 'blue', 'rose', 'clay'];
 export type RuleMode = 'noLimit' | 'limit' | 'blocked';
 
 export function defaultPlanThemeId(planId: string): PlanThemeId {
@@ -36,7 +42,7 @@ export function defaultPlanThemeId(planId: string): PlanThemeId {
   for (let index = 0; index < planId.length; index += 1) {
     hash = ((hash * 31) + planId.charCodeAt(index)) >>> 0;
   }
-  return PLAN_THEME_IDS[hash % PLAN_THEME_IDS.length];
+  return AUTO_THEME_IDS[hash % AUTO_THEME_IDS.length];
 }
 
 function isPlanThemeId(value: unknown): value is PlanThemeId {

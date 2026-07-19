@@ -641,7 +641,9 @@ const s = StyleSheet.create({
   colorPickerHeader: { marginTop: 16, marginHorizontal: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   colorPickerLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted },
   colorPickerValue: { fontFamily: F.serifSemiBold, fontSize: 15 },
-  colorPickerSurface: { marginTop: 9, height: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E7E0D4', backgroundColor: '#FFFDF9', paddingHorizontal: 11, boxShadow: '0 4px 12px rgba(69, 58, 39, 0.04)' },
+  // Twelve themes ride two rows of six; both rows are full, so space-between
+  // keeps the grid even without hand-tuned gaps.
+  colorPickerSurface: { marginTop: 9, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', rowGap: 11, borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E7E0D4', backgroundColor: '#FFFDF9', paddingHorizontal: 11, paddingVertical: 12, boxShadow: '0 4px 12px rgba(69, 58, 39, 0.04)' },
   colorSwatchButton: { width: 43, height: 43, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   colorSwatch: { width: 29, height: 29, borderRadius: 15, alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(47, 39, 28, 0.13)' },
   essentialsSurface: { position: 'relative', overflow: 'hidden', borderRadius: 25, borderCurve: 'continuous', backgroundColor: '#202123', padding: 16, gap: 15, boxShadow: '0 12px 28px rgba(24, 24, 25, 0.16)' },
