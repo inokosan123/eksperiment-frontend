@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import Reanimated, {
+  FadeIn,
   interpolateColor,
   useAnimatedStyle,
   useSharedValue,
@@ -62,6 +63,16 @@ function formatTimeFromDate(date: Date) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
+function withAlpha(hex: string, alpha: number) {
+  const normalized = hex.replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return `rgba(197,160,89,${alpha})`;
+  const value = Number.parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function useToggleMotion(active: boolean) {
   const progress = useSharedValue(active ? 1 : 0);
 
@@ -95,7 +106,7 @@ export default function TaskTimeEditor({
     <View style={s.stack}>
       <View style={s.labelRow}>
         <Text style={[s.label, { color: accent }]}>{label}</Text>
-        <Clock s={14} c={mutedColor} />
+        <Clock s={14} c={accent} />
       </View>
 
       {sameTimeEveryDay && (
@@ -105,6 +116,7 @@ export default function TaskTimeEditor({
           accent={accent}
           softBg={softBg}
           borderColor={borderColor}
+          sublabel={allowPerDayTimes ? 'Same time every day' : 'Scheduled time'}
         />
       )}
 
@@ -119,21 +131,24 @@ export default function TaskTimeEditor({
       )}
 
       {allowPerDayTimes && !sameTimeEveryDay && (
-        <View style={s.dayTimeStack}>
-          {activeDayIndexes.map(index => (
-            <View key={WEEKDAY_LABELS[index]} style={[s.dayTimeRow, { borderColor, backgroundColor: softBg }]}>
-              <Text style={s.dayTimeLabel}>{WEEKDAY_LABELS[index]}</Text>
+        <Reanimated.View
+          entering={FadeIn.duration(220)}
+          style={[s.dayTimeCard, { borderColor, backgroundColor: softBg }]}
+        >
+          {activeDayIndexes.map((index, position) => (
+            <View key={WEEKDAY_LABELS[index]}>
+              {position > 0 && <View style={[s.dayDivider, { backgroundColor: borderColor }]} />}
               <TimePickerButton
                 value={dayTimes[index] || time}
                 onChangeText={nextTime => onDayTimesChange({ ...dayTimes, [index]: nextTime })}
                 accent={accent}
-                softBg="#FFFFFF"
+                softBg={softBg}
                 borderColor={borderColor}
-                compact
+                dayLabel={WEEKDAY_LABELS[index]}
               />
             </View>
           ))}
-        </View>
+        </Reanimated.View>
       )}
     </View>
   );
@@ -154,7 +169,7 @@ function ToggleRow({
 }) {
   const progress = useToggleMotion(active);
   const trackStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(progress.value, [0, 1], ['#E5E7EB', accent]),
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#E7E2D6', accent]),
   }));
   const thumbStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: progress.value * 16 }],
@@ -176,14 +191,16 @@ function TimePickerButton({
   accent,
   softBg,
   borderColor,
-  compact = false,
+  sublabel,
+  dayLabel,
 }: {
   value: string;
   onChangeText: (text: string) => void;
   accent: string;
   softBg: string;
   borderColor: string;
-  compact?: boolean;
+  sublabel?: string;
+  dayLabel?: string;
 }) {
   const normalized = parseTimeParts(value);
   const [visible, setVisible] = useState(false);
@@ -230,34 +247,37 @@ function TimePickerButton({
 
   return (
     <>
-      <TouchableOpacity
-        onPress={openPicker}
-        activeOpacity={0.86}
-        style={[
-          s.timeButton,
-          compact && s.timeButtonCompact,
-          { backgroundColor: softBg, borderColor },
-        ]}
-      >
-        {compact ? (
-          <>
-            <Text style={[s.timeValue, s.timeValueCompact, { color: '#2F3440' }]}>
+      {dayLabel ? (
+        // One row of the per-day schedule: the whole row is the button.
+        <TouchableOpacity onPress={openPicker} activeOpacity={0.84} style={s.dayRow}>
+          <View style={[s.dayChip, { backgroundColor: withAlpha(accent, 0.1) }]}>
+            <Text style={[s.dayChipText, { color: accent }]}>{dayLabel}</Text>
+          </View>
+          <Text style={s.dayTimeValue}>
+            {formatTimeValue(normalized.hour, normalized.minute)}
+          </Text>
+          <ChevronDown s={15} c={accent} />
+        </TouchableOpacity>
+      ) : (
+        // The hero row — same grammar as the sheet's date button: icon seat,
+        // serif value with a quiet sub-line, chevron affordance.
+        <TouchableOpacity
+          onPress={openPicker}
+          activeOpacity={0.88}
+          style={[s.timeButton, { backgroundColor: softBg, borderColor }]}
+        >
+          <View style={[s.timeIconSeat, { borderColor }]}>
+            <Clock s={17} c={accent} />
+          </View>
+          <View style={s.timeCopy}>
+            <Text style={s.timeValue}>
               {formatTimeValue(normalized.hour, normalized.minute)}
             </Text>
-            <ChevronDown s={14} c={accent} />
-          </>
-        ) : (
-          <>
-            <Text style={[s.timeValue, { color: '#1F2937' }]}>
-              {formatTimeValue(normalized.hour, normalized.minute)}
-            </Text>
-            <View style={[s.timeActionPill, { borderColor }]}>
-              <Text style={[s.timeActionText, { color: accent }]}>Change</Text>
-              <ChevronDown s={14} c={accent} />
-            </View>
-          </>
-        )}
-      </TouchableOpacity>
+            {sublabel ? <Text style={s.timeSub}>{sublabel}</Text> : null}
+          </View>
+          <ChevronDown s={16} c={accent} />
+        </TouchableOpacity>
+      )}
 
       <Modal transparent visible={visible} animationType="fade" onRequestClose={() => setVisible(false)}>
         <View style={s.modalOverlay}>
@@ -317,41 +337,41 @@ const s = StyleSheet.create({
   labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   label: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, textTransform: 'uppercase' },
   timeButton: {
-    minHeight: 52,
-    borderRadius: 18,
+    minHeight: 62,
+    borderRadius: 19,
     borderWidth: 1,
-    paddingLeft: 16,
-    paddingRight: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  timeButtonCompact: {
-    minHeight: 44,
-    minWidth: 108,
-    borderRadius: 16,
     paddingHorizontal: 14,
-    marginLeft: 'auto',
-    justifyContent: 'space-between',
-  },
-  timeValue: { fontFamily: F.serifMedium, fontSize: 24, letterSpacing: 0.2 },
-  timeValueCompact: { fontSize: 18 },
-  timeActionPill: {
-    minHeight: 32,
-    borderRadius: 16,
-    borderWidth: 1,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 12,
   },
-  timeActionText: {
-    fontFamily: F.sansBold,
-    fontSize: 8,
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
+  timeIconSeat: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timeCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  timeValue: {
+    fontFamily: F.serifMedium,
+    fontSize: 22,
+    lineHeight: 26,
+    letterSpacing: 0.3,
+    color: '#1C1917',
+  },
+  timeSub: {
+    marginTop: 1,
+    fontFamily: F.sans,
+    fontSize: 12,
+    lineHeight: 16,
+    color: '#8A8177',
   },
   toggleRow: {
     minHeight: 38,
@@ -360,36 +380,63 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
-  toggleText: { flex: 1, fontFamily: F.sans, fontSize: 12 },
+  toggleText: { flex: 1, fontFamily: F.sans, fontSize: 12.5 },
   toggleTrack: {
-    width: 38,
-    height: 22,
-    borderRadius: 11,
+    width: 40,
+    height: 24,
+    borderRadius: 12,
     padding: 2,
   },
   toggleThumb: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.14,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  dayTimeStack: { gap: 8, overflow: 'hidden' },
-  dayTimeRow: {
-    minHeight: 52,
-    borderRadius: 18,
+  dayTimeCard: {
+    borderRadius: 19,
     borderWidth: 1,
+    overflow: 'hidden',
+  },
+  dayDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 68,
+    marginRight: 12,
+    opacity: 0.8,
+  },
+  dayRow: {
+    minHeight: 50,
     paddingHorizontal: 12,
-    paddingVertical: 5,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
-  dayTimeLabel: {
-    flex: 1,
+  dayChip: {
+    minWidth: 44,
+    height: 28,
+    borderRadius: 9,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayChipText: {
     fontFamily: F.sansBold,
-    fontSize: 14,
-    letterSpacing: 0.15,
-    color: '#5B616C',
+    fontSize: 11,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+  },
+  dayTimeValue: {
+    flex: 1,
+    textAlign: 'right',
+    fontFamily: F.serifMedium,
+    fontSize: 18.5,
+    letterSpacing: 0.3,
+    color: '#1C1917',
   },
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16,24,40,0.28)' },
   modalSheet: { borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: '#FFFEFB', paddingHorizontal: 18, paddingTop: 12, paddingBottom: 24, gap: 16 },
