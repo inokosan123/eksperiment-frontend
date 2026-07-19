@@ -378,7 +378,7 @@ function HabitBreakdownSection({ items }: { items: PerItemBreakdown[] }) {
       </View>
       {active.length === 0 ? (
         <View style={section.empty}>
-          <Text style={section.emptyText}>No active habits</Text>
+          <Text style={section.emptyText}>No active goals</Text>
         </View>
       ) : (
         active.map(item => <HabitBreakdownCard key={item.id} item={item} />)

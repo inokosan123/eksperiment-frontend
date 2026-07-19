@@ -1,87 +1,53 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { BarChart3, ChevronRight, Lock, Pencil, Shield } from '@/components/icons/Icons';
+import { BarChart3, ChevronRight, Pencil, Shield } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
-import DayGauge, { GAUGE_ESSENTIALS_COLOR, gaugeStanding, gaugeStateColor } from './DayGauge';
-import { FocusMeter } from './FocusMeter';
+import DayGauge, { gaugeStanding, gaugeStateColor } from './DayGauge';
+import FocusNativeActivityReport, { hasNativeActivityReport } from './FocusNativeActivityReport';
 import PlanCardBackdrop from './PlanCardBackdrop';
-import { CATEGORY_TINTS, ESSENTIAL_APP_OPTIONS, PREVIEW_APPS } from './focusContent';
 import { planVisualFor } from './planVisuals';
+import TodayUsageBreakdown from './TodayUsageBreakdown';
+import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
 import {
   dateKey,
   formatMinutesShort,
   getEffectivePlan,
   getLiveUsageSnapshot,
-  groupName,
+  rulesForPlanAt,
+  tickDayPlanStore,
   useDayPlan,
-  type AppRule,
-  type DayPlan,
 } from './dayPlanStore';
 
-// Today's plan under a magnifying glass: the same macro gauge as the hub,
-// then every group boundary with how today's real activity stands against it.
+// Today's plan under a magnifying glass: the existing macro card stays intact,
+// while private activity below it is ordered by real group and app usage.
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
-
-const APP_NAMES: Record<string, string> = Object.fromEntries([
-  ...PREVIEW_APPS.map(app => [app.id, app.name]),
-  ...ESSENTIAL_APP_OPTIONS.map(app => [app.id, app.name]),
-]);
-
-type GroupRow = {
-  groupId: string;
-  plannedMinutes: number | null;
-  blocked: boolean;
-  appRules: AppRule[];
-};
-
-function buildGroupRows(plan: DayPlan): GroupRow[] {
-  const source = plan.kind === 'session'
-    ? plan.zones.flatMap(zone => zone.rules ?? [])
-    : plan.rules;
-  const map = new Map<string, GroupRow>();
-  for (const rule of source) {
-    const row = map.get(rule.groupId)
-      ?? { groupId: rule.groupId, plannedMinutes: null, blocked: false, appRules: [] };
-    const mode = rule.mode ?? (rule.dailyMinutes == null ? 'noLimit' : 'limit');
-    if (mode === 'blocked') row.blocked = true;
-    else if (mode === 'limit' && rule.dailyMinutes != null) {
-      row.plannedMinutes = (row.plannedMinutes ?? 0) + rule.dailyMinutes;
-    }
-    for (const appRule of rule.appRules ?? []) {
-      const appMode = appRule.mode ?? (appRule.minutes == null ? 'noLimit' : 'limit');
-      if (appMode === 'blocked' || (appMode === 'limit' && appRule.minutes != null)) {
-        if (!row.appRules.some(existing => existing.appId === appRule.appId)) {
-          row.appRules.push(appRule);
-        }
-      }
-    }
-    map.set(rule.groupId, row);
-  }
-  return [...map.values()]
-    .filter(row => row.blocked || row.plannedMinutes != null || row.appRules.length > 0)
-    .sort((a, b) => {
-      if (a.blocked !== b.blocked) return a.blocked ? 1 : -1;
-      return (b.plannedMinutes ?? -1) - (a.plannedMinutes ?? -1);
-    });
-}
-
-function groupTint(groupId: string) {
-  return CATEGORY_TINTS[groupId] ?? { bg: C.goldLight, color: C.goldDark };
-}
 
 export default function TodayDetailView() {
   const router = useRouter();
   const state = useDayPlan();
-  const now = new Date();
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const next = Date.now();
+      tickDayPlanStore(next);
+      setNowMs(next);
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  const now = useMemo(() => new Date(nowMs), [nowMs]);
+  const todayKey = dateKey(now);
   const plan = getEffectivePlan(state, now);
-  const usage = getLiveUsageSnapshot(dateKey(now));
-  const rows = useMemo(() => (plan ? buildGroupRows(plan) : []), [plan]);
+  const planEssentialsSummary = useNativeActivitySelectionSummary(
+    `plan.${plan?.id ?? 'none'}.essentials`
+  );
+  const usage = getLiveUsageSnapshot(todayKey);
+  const rules = useMemo(() => rulesForPlanAt(plan, now), [now, plan]);
   const dateLine = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
   if (!plan) {
@@ -103,10 +69,24 @@ export default function TodayDetailView() {
   const goal = plan.budgetMinutes;
   const toleranceEnd = plan.essentialOnlyMinutes ?? plan.tolerableMinutes;
   const used = usage?.totalMinutes ?? null;
+  const usageMatchesPlan = usage?.planId == null || usage.planId === plan.id;
+  const groupUsageAvailable = !!usage && usageMatchesPlan;
+  const appUsageAvailable = !!usage && usageMatchesPlan && Object.keys(usage.appMinutes).length > 0;
+  const groupMinutes = usage?.groupMinutes ?? {};
+  const appMinutes = usage?.appMinutes ?? {};
   const standing = goal != null ? gaugeStanding(goal, toleranceEnd, used) : 'unknown';
   const stateColor = gaugeStateColor(standing, visual.ink);
+  const nativeActivityAvailable = hasNativeActivityReport();
 
-  const headline = goal == null
+  const headline = plan.essentialsOnly
+    ? used == null
+      ? 'Essentials-only access is active from minute one.'
+      : standing === 'under'
+        ? `Essentials-only is active · ${formatMinutesShort(Math.max(0, (goal ?? 0) - used))} left before your goal.`
+        : standing === 'tolerance'
+          ? `Essentials-only is active · ${formatMinutesShort(Math.max(0, (toleranceEnd ?? goal ?? 0) - used))} of tolerance left.`
+          : 'Essentials-only is still active · the daily ceiling has been crossed.'
+    : goal == null
     ? 'This plan works through group limits only.'
     : used == null
       ? `The goal is ${formatMinutesShort(goal)} of phone time.`
@@ -152,121 +132,36 @@ export default function TodayDetailView() {
             )}
             <Text style={[s.macroNote, { color: visual.body }]}>
               {used == null
-                ? 'Usage syncs privately from your iPhone and appears here as the day moves.'
+                ? 'Exact activity stays inside Apple’s private report below.'
                 : 'Live from your iPhone · numbers are approximate by design.'}
             </Text>
           </View>
         </Animated.View>
 
         <Animated.View entering={enter(60)}>
-          <Text style={s.sectionLabel}>GROUP BOUNDARIES</Text>
-          {rows.length === 0 ? (
+          <Text style={s.sectionLabel}>TODAY&apos;S ACTIVITY</Text>
+          {nativeActivityAvailable ? (
+            <FocusNativeActivityReport date={todayKey} />
+          ) : plan.essentialsOnly ? (
             <View style={s.emptyGroups}>
-              <Text style={s.emptyGroupsTitle}>No group limits in this plan</Text>
-              <Text style={s.emptyGroupsBody}>Open the plan and distribute its time across groups to see them here.</Text>
+              <Text style={s.emptyGroupsTitle}>Protected from minute one</Text>
+              <Text style={s.emptyGroupsBody}>
+                Global Essentials and {planEssentialsSummary?.applicationCount ?? plan.essentialAppIds?.length ?? 0} plan-only apps stay reachable. Every other shieldable app stays closed all day.
+              </Text>
             </View>
           ) : (
-            <View style={s.groupList}>
-              {rows.map((row, index) => {
-                const tint = groupTint(row.groupId);
-                const groupUsed = usage ? usage.groupMinutes[row.groupId] ?? 0 : null;
-                const over = row.plannedMinutes != null && groupUsed != null && groupUsed > row.plannedMinutes;
-                const rightValue = row.blocked
-                  ? 'Blocked'
-                  : row.plannedMinutes == null
-                    ? `${row.appRules.length} app ${row.appRules.length === 1 ? 'rule' : 'rules'}`
-                    : groupUsed == null
-                      ? `${formatMinutesShort(row.plannedMinutes)} planned`
-                      : `${formatMinutesShort(groupUsed)} / ${formatMinutesShort(row.plannedMinutes)}`;
-                const caption = row.blocked
-                  ? 'Closed for the whole day'
-                  : row.plannedMinutes != null && groupUsed != null
-                    ? over
-                      ? 'Limit used up'
-                      : `${formatMinutesShort(row.plannedMinutes - groupUsed)} left today`
-                    : null;
-                return (
-                  <View key={row.groupId}>
-                    {index > 0 && <View style={s.groupSeparator} />}
-                    <View style={s.groupRow}>
-                      <View style={[s.groupAvatar, { backgroundColor: tint.bg }]}>
-                        {row.blocked
-                          ? <Lock s={15} c={tint.color} w={2.2} />
-                          : <Text style={[s.groupAvatarText, { color: tint.color }]}>{groupName(state, row.groupId).slice(0, 1)}</Text>}
-                      </View>
-                      <View style={s.groupCopy}>
-                        <View style={s.groupTitleRow}>
-                          <Text style={s.groupName} numberOfLines={1}>{groupName(state, row.groupId)}</Text>
-                          <Text style={[s.groupValue, over && { color: GAUGE_ESSENTIALS_COLOR }, row.blocked && { color: GAUGE_ESSENTIALS_COLOR }]} numberOfLines={1}>
-                            {rightValue}
-                          </Text>
-                        </View>
-                        {row.plannedMinutes != null && !row.blocked && (
-                          <FocusMeter
-                            fraction={groupUsed == null ? 0 : groupUsed / row.plannedMinutes}
-                            height={7}
-                            fill={over ? GAUGE_ESSENTIALS_COLOR : tint.color}
-                            track="#F0EDE5"
-                            style={s.groupMeter}
-                          />
-                        )}
-                        {caption && <Text style={[s.groupCaption, over && { color: GAUGE_ESSENTIALS_COLOR }]}>{caption}</Text>}
-                        {row.appRules.map(appRule => {
-                          const appName = appRule.label?.trim() || APP_NAMES[appRule.appId] || 'App rule';
-                          const appMode = appRule.mode ?? (appRule.minutes == null ? 'noLimit' : 'limit');
-                          const appUsed = usage ? usage.appMinutes[appRule.appId] ?? 0 : null;
-                          const appOver = appMode === 'limit' && appRule.minutes != null && appUsed != null && appUsed > appRule.minutes;
-                          return (
-                            <View key={appRule.appId} style={s.appRow}>
-                              <View style={[s.appDot, { backgroundColor: tint.color }]} />
-                              <Text style={s.appName} numberOfLines={1}>{appName}</Text>
-                              <Text style={[s.appValue, (appOver || appMode === 'blocked') && { color: GAUGE_ESSENTIALS_COLOR }]} numberOfLines={1}>
-                                {appMode === 'blocked'
-                                  ? 'Blocked'
-                                  : appUsed == null
-                                    ? `${formatMinutesShort(appRule.minutes ?? 0)} planned`
-                                    : `${formatMinutesShort(appUsed)} / ${formatMinutesShort(appRule.minutes ?? 0)}`}
-                              </Text>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
+            <TodayUsageBreakdown
+              plan={plan}
+              state={state}
+              rules={rules}
+              groupMinutes={groupMinutes}
+              appMinutes={appMinutes}
+              groupUsageAvailable={groupUsageAvailable}
+              appUsageAvailable={appUsageAvailable}
+              scopeLabel="Today"
+            />
           )}
         </Animated.View>
-
-        {usage != null && (() => {
-          const covered = new Set(rows.map(row => row.groupId));
-          const other = Object.entries(usage.groupMinutes)
-            .filter(([groupId, minutes]) => !covered.has(groupId) && minutes > 0)
-            .sort(([, a], [, b]) => b - a);
-          if (other.length === 0) return null;
-          return (
-            <Animated.View entering={enter(120)}>
-              <Text style={s.sectionLabel}>OUTSIDE THE PLAN</Text>
-              <View style={s.groupList}>
-                {other.map(([groupId, minutes], index) => {
-                  const tint = groupTint(groupId);
-                  return (
-                    <View key={groupId}>
-                      {index > 0 && <View style={s.groupSeparator} />}
-                      <View style={s.otherRow}>
-                        <View style={[s.appDot, { backgroundColor: tint.color }]} />
-                        <Text style={s.appName} numberOfLines={1}>{groupName(state, groupId)}</Text>
-                        <Text style={s.appValue}>{formatMinutesShort(minutes)}</Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-              <Text style={s.otherNote}>Time in groups this plan leaves without a limit.</Text>
-            </Animated.View>
-          );
-        })()}
 
         <Animated.View entering={enter(180)} style={s.actionsRow}>
           <TouchableOpacity
@@ -310,26 +205,16 @@ const s = StyleSheet.create({
   macroGauge: { marginTop: 13 },
   macroNote: { marginTop: 12, fontFamily: F.sansMedium, fontSize: 9, lineHeight: 12.5 },
   sectionLabel: { marginBottom: 9, marginLeft: 4, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted },
+  sessionCard: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12 },
+  sessionDot: { width: 9, height: 9, borderRadius: 5 },
+  sessionCopy: { flex: 1, minWidth: 0 },
+  sessionName: { fontFamily: F.serifSemiBold, fontSize: 17.5, lineHeight: 21 },
+  sessionTime: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 10.5, fontVariant: ['tabular-nums'] },
+  sessionLive: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 6 },
+  sessionLiveText: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.2 },
   emptyGroups: { borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: '#DDD8CC', backgroundColor: '#FEFDF9', paddingHorizontal: 16, paddingVertical: 15 },
   emptyGroupsTitle: { fontFamily: F.serifMedium, fontSize: 16, color: C.text },
   emptyGroupsBody: { marginTop: 3, fontFamily: F.sans, fontSize: 11, lineHeight: 15.5, color: C.textSecondary },
-  groupList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
-  groupSeparator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border },
-  groupRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 13, paddingHorizontal: 3 },
-  groupAvatar: { width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
-  groupAvatarText: { fontFamily: F.serifSemiBold, fontSize: 17 },
-  groupCopy: { flex: 1, minWidth: 0 },
-  groupTitleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
-  groupName: { flexShrink: 1, fontFamily: F.serifMedium, fontSize: 16.5, color: C.text },
-  groupValue: { fontFamily: F.serifSemiBold, fontSize: 14.5, color: C.text, fontVariant: ['tabular-nums'] },
-  groupMeter: { marginTop: 8 },
-  groupCaption: { marginTop: 5, fontFamily: F.sansMedium, fontSize: 9.5, color: C.textSecondary },
-  appRow: { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  appDot: { width: 5, height: 5, borderRadius: 3 },
-  appName: { flex: 1, minWidth: 0, fontFamily: F.sansMedium, fontSize: 11, color: C.textSecondary },
-  appValue: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.textSecondary, fontVariant: ['tabular-nums'] },
-  otherRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 11, paddingHorizontal: 3 },
-  otherNote: { marginTop: 7, marginLeft: 4, fontFamily: F.sansMedium, fontSize: 9, color: C.textMuted },
   actionsRow: { flexDirection: 'row', gap: 10 },
   actionButton: {
     flex: 1,

@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { AppState, Platform } from 'react-native';
 import {
   type BigEvent,
   loadAllBigEvents,
@@ -7,6 +8,10 @@ import {
   hardDeleteBigEvent,
 } from './bigEventsDb';
 import { todayKey } from './bigEventsLogic';
+import {
+  cancelBigEventNotifications,
+  reconcileBigEventNotifications,
+} from './bigEventNotifications';
 
 type BigEventsContextValue = {
   bigEvents: BigEvent[];
@@ -28,11 +33,19 @@ export function BigEventsProvider({ children }: { children: React.ReactNode }) {
   const [bigEvents, setBigEvents] = useState<BigEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  const refresh = useCallback(async () => {
+  const loadAndSet = useCallback(async (requestPermission = false) => {
     const rows = await loadAllBigEvents();
     setBigEvents(rows);
     setLoaded(true);
+    void reconcileBigEventNotifications(rows, { requestPermission }).catch(error => {
+      console.warn('[BigEvents] notification reconcile failed', error);
+    });
+    return rows;
   }, []);
+
+  const refresh = useCallback(async () => {
+    await loadAndSet(false);
+  }, [loadAndSet]);
 
   useEffect(() => {
     refresh().catch(err => {
@@ -40,6 +53,17 @@ export function BigEventsProvider({ children }: { children: React.ReactNode }) {
       setLoaded(true);
     });
   }, [refresh]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return undefined;
+    const subscription = AppState.addEventListener('change', state => {
+      if (state !== 'active') return;
+      void loadAndSet(false).catch(error => {
+        console.warn('[BigEvents] foreground refresh failed', error);
+      });
+    });
+    return () => subscription.remove();
+  }, [loadAndSet]);
 
   const addBigEvent = useCallback<BigEventsContextValue['addBigEvent']>(async (input) => {
     const now = Date.now();
@@ -50,19 +74,22 @@ export function BigEventsProvider({ children }: { children: React.ReactNode }) {
       endDate: input.endDate,
       color: input.color,
       icon: input.icon,
+      recurrence: input.recurrence,
+      leadDays: input.leadDays,
+      remindersEnabled: input.remindersEnabled,
       createdAt: input.createdAt ?? now,
       updatedAt: input.updatedAt ?? now,
       deletedAt: input.deletedAt ?? null,
     };
     await insertBigEvent(event);
-    await refresh();
-  }, [refresh]);
+    await loadAndSet(event.remindersEnabled);
+  }, [loadAndSet]);
 
   const updateBigEvent = useCallback(async (event: BigEvent) => {
     const next: BigEvent = { ...event, updatedAt: Date.now() };
     await updateBigEventRow(next);
-    await refresh();
-  }, [refresh]);
+    await loadAndSet(next.remindersEnabled);
+  }, [loadAndSet]);
 
   const softDeleteBigEvent = useCallback(async (id: string) => {
     const target = bigEvents.find(e => e.id === id);
@@ -73,13 +100,15 @@ export function BigEventsProvider({ children }: { children: React.ReactNode }) {
       updatedAt: Date.now(),
     };
     await updateBigEventRow(next);
-    await refresh();
-  }, [bigEvents, refresh]);
+    await cancelBigEventNotifications(id);
+    await loadAndSet(false);
+  }, [bigEvents, loadAndSet]);
 
   const hardDeleteFn = useCallback(async (id: string) => {
     await hardDeleteBigEvent(id);
-    await refresh();
-  }, [refresh]);
+    await cancelBigEventNotifications(id);
+    await loadAndSet(false);
+  }, [loadAndSet]);
 
   const value: BigEventsContextValue = {
     bigEvents,

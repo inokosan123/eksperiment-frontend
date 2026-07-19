@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Reanimated, {
+  cancelAnimation,
   Easing,
   useAnimatedStyle,
   useSharedValue,
@@ -278,21 +279,84 @@ export function CompletionFlourish({
   done,
   color,
   layerStyle,
+  unmountWhenSettled = false,
+}: {
+  done: boolean;
+  color: string;
+  layerStyle?: StyleProp<ViewStyle>;
+  unmountWhenSettled?: boolean;
+}) {
+  if (!unmountWhenSettled) {
+    return <CompletionFlourishAnimation done={done} color={color} layerStyle={layerStyle} />;
+  }
+
+  return <TransientCompletionFlourish done={done} color={color} layerStyle={layerStyle} />;
+}
+
+function TransientCompletionFlourish({
+  done,
+  color,
+  layerStyle,
 }: {
   done: boolean;
   color: string;
   layerStyle?: StyleProp<ViewStyle>;
 }) {
-  const phase = useSharedValue(0);
-  const previousDone = useRef(done);
+  const [visual, setVisual] = useState(() => ({
+    observedDone: done,
+    run: 0,
+    visible: false,
+  }));
+
+  // React's prop-derived state pattern lets the first completion frame mount
+  // the visual immediately, while an initially completed task stays static.
+  if (visual.observedDone !== done) {
+    setVisual({
+      observedDone: done,
+      run: done ? visual.run + 1 : visual.run,
+      visible: done,
+    });
+  }
 
   useEffect(() => {
-    const becameDone = previousDone.current !== done && done;
-    previousDone.current = done;
+    if (!visual.visible) return;
+    const run = visual.run;
+    const hideTimer = setTimeout(() => {
+      setVisual(current => current.run === run
+        ? { ...current, visible: false }
+        : current);
+    }, 1100);
+    return () => clearTimeout(hideTimer);
+  }, [visual.run, visual.visible]);
 
-    if (!becameDone) {
-      if (!done) phase.value = withTiming(0, { duration: 90 });
-      return;
+  // Once the pixels are transparent, keeping the SVG/worklet subtree mounted
+  // only adds scroll compositing work to every settled task row.
+  if (!visual.visible) return null;
+
+  return <CompletionFlourishAnimation key={visual.run} color={color} layerStyle={layerStyle} />;
+}
+
+function CompletionFlourishAnimation({
+  done,
+  color,
+  layerStyle,
+}: {
+  done?: boolean;
+  color: string;
+  layerStyle?: StyleProp<ViewStyle>;
+}) {
+  const phase = useSharedValue(0);
+  const previousDone = useRef(done ?? false);
+
+  useEffect(() => {
+    if (done !== undefined) {
+      const becameDone = previousDone.current !== done && done;
+      previousDone.current = done;
+
+      if (!becameDone) {
+        if (!done) phase.value = withTiming(0, { duration: 90 });
+        return;
+      }
     }
 
     phase.value = 0;
@@ -300,6 +364,8 @@ export function CompletionFlourish({
       duration: 980,
       easing: Easing.out(Easing.cubic),
     });
+
+    return () => cancelAnimation(phase);
   }, [done, phase]);
 
   // Small central pop, brief and soft so the sparks stay visually dominant.

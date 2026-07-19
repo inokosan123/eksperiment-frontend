@@ -7,17 +7,13 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import { C, F } from '@/constants/tokens';
 import FocusNativeActivityReport from './FocusNativeActivityReport';
 import FocusSegments from './FocusSegments';
-import { SESSION_COLORS } from './SessionClockEditor';
 import {
   dateKey,
   formatMinutesShort,
-  formatTimeOfDay,
   getPlanSnapshotForDate,
-  normalizeConnectedSessions,
   useDayPlan,
   type DayPlan,
   type DayRecord,
-  type PlanZone,
 } from './dayPlanStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
@@ -53,14 +49,6 @@ function recentDateKeys(count: number) {
   return Array.from({ length: count }, (_, index) => shiftDateKey(today, index - count + 1));
 }
 
-function planRuleCount(session: PlanZone) {
-  return (session.rules ?? []).reduce((count, rule) => {
-    const groupProtected = rule.mode === 'blocked' || rule.dailyMinutes != null;
-    const appProtected = (rule.appRules ?? []).filter(app => app.mode === 'blocked' || app.minutes != null).length;
-    return count + (groupProtected ? 1 : 0) + appProtected;
-  }, 0);
-}
-
 function targetState(record: DayRecord | undefined, plan: DayPlan | null, key: string, today: string) {
   if (record?.targetLost || record?.status === 'broken') {
     return { label: 'TARGET MISSED', tone: 'lost' as const };
@@ -75,44 +63,6 @@ function targetState(record: DayRecord | undefined, plan: DayPlan | null, key: s
     return { label: 'TARGET KEPT', tone: 'kept' as const };
   }
   return { label: 'NOT RESOLVED', tone: 'neutral' as const };
-}
-
-function SessionOutline({ plan, dayKey }: { plan: DayPlan; dayKey: string }) {
-  const state = useDayPlan();
-  const ledger = state.eligibilityByDate[dayKey];
-  const sessions = normalizeConnectedSessions(plan.zones);
-
-  return (
-    <View style={s.sessionList}>
-      {sessions.map((session, index) => {
-        const prefix = `${session.id}:`;
-        const continuationRecorded = [
-          ...Object.entries(ledger?.groups ?? {}),
-          ...Object.entries(ledger?.apps ?? {}),
-        ].some(([key, value]) => key.startsWith(prefix) && value === 'lost');
-        const count = planRuleCount(session);
-        return (
-          <View key={session.id}>
-            {index > 0 && <View style={s.separator} />}
-            <View style={s.sessionRow}>
-              <View style={[s.sessionLine, { backgroundColor: SESSION_COLORS[index % SESSION_COLORS.length] }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={s.sessionName}>{session.name}</Text>
-                <Text style={s.sessionTime}>
-                  {formatTimeOfDay(session.startMinutes)} - {formatTimeOfDay(session.endMinutes)}
-                </Text>
-              </View>
-              <View style={[s.sessionOutcome, continuationRecorded && s.sessionOutcomeLost]}>
-                <Text style={[s.sessionOutcomeText, continuationRecorded && s.sessionOutcomeTextLost]}>
-                  {continuationRecorded ? 'OVERRIDE USED' : count > 0 ? `${count} RULE${count === 1 ? '' : 'S'}` : 'NO LIMITS'}
-                </Text>
-              </View>
-            </View>
-          </View>
-        );
-      })}
-    </View>
-  );
 }
 
 export default function FocusAnalyticsView() {
@@ -263,7 +213,13 @@ export default function FocusAnalyticsView() {
 
           <View style={s.planBand}>
             <View style={{ flex: 1 }}>
-              <Text style={s.planKicker}>{selectedPlan?.kind === 'session' ? 'SESSION PLAN' : selectedPlan ? 'DAILY PLAN' : 'REST DAY'}</Text>
+              <Text style={s.planKicker}>
+                {selectedPlan?.essentialsOnly
+                  ? 'ESSENTIALS-ONLY PLAN'
+                  : selectedPlan
+                    ? 'DAILY PLAN'
+                    : 'REST DAY'}
+              </Text>
               <Text style={s.planName}>{selectedPlan?.name ?? 'No plan assigned'}</Text>
               <Text style={s.planTarget}>
                 {selectedPlan?.budgetMinutes == null
@@ -287,13 +243,6 @@ export default function FocusAnalyticsView() {
               ]}>{selectedTarget.label}</Text>
             </View>
           </View>
-
-          {selectedPlan?.kind === 'session' && (
-            <>
-              <Text style={s.subsectionLabel}>SESSION OUTLINE</Text>
-              <SessionOutline plan={selectedPlan} dayKey={selectedDay} />
-            </>
-          )}
 
           <Text style={s.subsectionLabel}>PRIVATE ACTIVITY DETAIL</Text>
           <FocusNativeActivityReport date={selectedDay} />

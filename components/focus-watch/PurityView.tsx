@@ -1,84 +1,93 @@
-import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
+import { useMemo, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  LinearTransition,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Line } from 'react-native-svg';
+import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
-import { ChevronRight, Globe, Hourglass, Lock, Plus, Shield, Trash2, X } from '@/components/icons/Icons';
+import { CheckSmall, ChevronRight, Clock, Globe, Hourglass, Lock, Plus, Shield, Trash2, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import FocusSwitch from './FocusSwitch';
 import GoldButton from './GoldButton';
 import FocusSheetHeader from './FocusSheetHeader';
 import PackDomainsSheet from './PackDomainsSheet';
+import WebProtectionIntroAnimation from './WebProtectionIntroAnimation';
 import { CUSTOM_PACK_EMOJI, WEB_PACKS } from './focusContent';
 import { resolveWebProtectionDomains, WEB_DOMAIN_LIMIT } from './webProtectionCatalog';
 import { usePermissionGate } from './usePermissionGate';
 import {
   addCustomDomain,
+  addDomainToWebPack,
   addDomainToCustomWebPack,
   cancelPendingChange,
   createCustomWebPack,
   formatEndsAt,
+  HARD_LOCK_DISABLE_DELAY_MS,
+  hardLockDelayMs,
   normalizeDomain,
   removeCustomDomain,
+  removeDomainFromWebPack,
   removeDomainFromCustomWebPack,
   removeCustomWebPack,
   setCustomWebPackMode,
   setDomainNever,
   setPackMode,
-  updateLocks,
+  updateWebHardLock,
   useDayPlan,
   type CustomWebPack,
   type LockCooldown,
   type PackMode,
+  type PendingChange,
   type WebPackId,
 } from './dayPlanStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
-const COOLDOWNS: { id: LockCooldown; label: string }[] = [
-  { id: '10m', label: '10 min' },
-  { id: '1h', label: '1 hour' },
-  { id: 'morning', label: 'Until morning' },
+const PACK_EXPANSION_EASE = Easing.bezier(0.22, 1, 0.36, 1);
+const PACK_COLLAPSE_EASE = Easing.bezier(0.4, 0, 0.2, 1);
+const PACK_LAYOUT_TRANSITION = LinearTransition
+  .duration(280)
+  .easing(PACK_EXPANSION_EASE);
+const PACK_BODY_ENTER = FadeIn
+  .duration(220)
+  .easing(PACK_EXPANSION_EASE);
+const PACK_BODY_EXIT = FadeOut
+  .duration(150)
+  .easing(PACK_COLLAPSE_EASE);
+const COOLDOWNS: { id: LockCooldown; label: string; detail: string }[] = [
+  { id: '45m', label: '45 minutes', detail: 'The minimum impulse-protection delay' },
+  { id: '1h', label: '1 hour', detail: 'A short pause before protection can weaken' },
+  { id: '6h', label: '6 hours', detail: 'Keep today’s vulnerable hours protected' },
+  { id: '12h', label: '12 hours', detail: 'Half a day between impulse and access' },
+  { id: '24h', label: '24 hours', detail: 'Sleep on every weakening decision' },
+  { id: '3d', label: '3 days', detail: 'The strongest removable delay in this version' },
 ];
 
 // The tab-wide hairline weave, in the card's state color — the texture that
 // marks a surface as alive in this app.
 function CardWeave({ color }: { color: string }) {
-  const [box, setBox] = useState({ w: 0, h: 0 });
-  const step = 30;
-  const lineCount = box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
+  const patternId = `pack-weave-${color.replace(/[^a-z0-9]/gi, '')}`;
   return (
-    <View
-      pointerEvents="none"
-      style={StyleSheet.absoluteFill}
-      onLayout={event => {
-        const { width, height } = event.nativeEvent.layout;
-        setBox({ w: width, h: height });
-      }}
-    >
-      {lineCount > 0 && (
-        <Svg width={box.w} height={box.h} style={StyleSheet.absoluteFill}>
-          {Array.from({ length: lineCount }).map((_, index) => {
-            const offset = index * step;
-            return (
-              <Line
-                key={index}
-                x1={offset}
-                y1={-4}
-                x2={offset - box.h - 8}
-                y2={box.h + 4}
-                stroke={color}
-                strokeOpacity={0.05}
-                strokeWidth={1}
-              />
-            );
-          })}
-        </Svg>
-      )}
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+        <Defs>
+          <Pattern id={patternId} width={30} height={30} patternUnits="userSpaceOnUse">
+            <Path d="M 0 30 L 30 0" stroke={color} strokeOpacity={0.05} strokeWidth={1} />
+          </Pattern>
+        </Defs>
+        <Rect width="100%" height="100%" fill={`url(#${patternId})`} />
+      </Svg>
     </View>
   );
 }
@@ -112,6 +121,8 @@ function PackRow({
   onNever,
   onSeeAll,
   onRemove,
+  pendingText,
+  onCancelPending,
 }: {
   name: string;
   detail: string;
@@ -124,52 +135,91 @@ function PackRow({
   onNever: () => void;
   onSeeAll: () => void;
   onRemove?: () => void;
+  pendingText?: string;
+  onCancelPending?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const expandedTarget = useRef(false);
+  const expansionProgress = useSharedValue(0);
   const enabled = mode !== 'off';
   const never = mode === 'never';
+  const pending = !!pendingText;
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${expansionProgress.value * 90}deg` }],
+  }));
+
+  const toggleExpanded = () => {
+    const nextExpanded = !expandedTarget.current;
+    expandedTarget.current = nextExpanded;
+    expansionProgress.value = withTiming(nextExpanded ? 1 : 0, {
+      duration: nextExpanded ? 280 : 220,
+      easing: nextExpanded ? PACK_EXPANSION_EASE : PACK_COLLAPSE_EASE,
+    });
+    setExpanded(nextExpanded);
+  };
 
   return (
     <Animated.View
-      layout={LinearTransition.duration(200)}
-      style={[s.packCard, enabled && s.packCardOn, never && s.packCardNever]}
+      layout={PACK_LAYOUT_TRANSITION}
+      style={[s.packCard, enabled && s.packCardOn, never && s.packCardNever, pending && s.packCardPending]}
     >
       {enabled && (
         <LinearGradient
-          colors={never ? ['#FBECEF', '#FFFAFB', '#FFFDFD'] : ['#E6F3EC', '#F9FCFA', '#FEFFFE']}
+          colors={pending
+            ? ['#ECECEA', '#F7F6F3', '#FBFAF7']
+            : never
+              ? ['#FBECEF', '#FFFAFB', '#FFFDFD']
+              : ['#E6F3EC', '#F9FCFA', '#FEFFFE']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
       )}
-      {enabled && <CardWeave color={never ? '#A24351' : '#2D7967'} />}
+      {enabled && <CardWeave color={pending ? '#77756F' : never ? '#A24351' : '#2D7967'} />}
+      {pending && (
+        <Animated.View
+          pointerEvents="none"
+          entering={FadeIn.duration(220)}
+          exiting={FadeOut.duration(160)}
+          style={s.pendingSurfaceWash}
+        />
+      )}
       <View style={s.packRow}>
-        <TouchableOpacity style={s.packMain} onPress={() => setExpanded(current => !current)} activeOpacity={0.72}>
+        <TouchableOpacity
+          style={s.packMain}
+          onPress={toggleExpanded}
+          activeOpacity={0.72}
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+          accessibilityLabel={`${name}. ${expanded ? 'Collapse' : 'Expand'} details.`}
+        >
           <View style={s.packIcon}>
             <PackEmoji emoji={emoji} slashed={slashed} size={27} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <View style={s.packTitleRow}>
               <Text style={s.packName} numberOfLines={1}>{name}</Text>
-              {appleFilter && enabled && !never && (
-                <Animated.View entering={FadeIn.duration(180)} layout={LinearTransition.duration(180)} style={s.appleFilterTag}>
-                  <View style={s.appleFilterTagIcon}>
-                    <Shield s={9} c="#566276" w={2.1} />
-                  </View>
-                  <Text style={s.appleFilterTagText}>APPLE FILTER</Text>
+              {pending && (
+                <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(140)} style={s.packPendingTag}>
+                  <Clock s={9} c="#7A5A1D" w={2.2} />
+                  <Text style={s.packPendingTagText}>PENDING</Text>
                 </Animated.View>
               )}
             </View>
             <View style={s.packStatusRow}>
-              <View style={[
-                s.packStatusDot,
-                { backgroundColor: never ? '#A24351' : enabled ? '#2D7967' : '#CFC9BB' },
-              ]} />
+              {pending
+                ? <Clock s={11} c="#77736B" w={2.1} />
+                : <View style={[
+                    s.packStatusDot,
+                    { backgroundColor: never ? '#A24351' : enabled ? '#2D7967' : '#CFC9BB' },
+                  ]} />}
               <Text
-                style={[s.packDetail, enabled && s.packDetailOn, never && s.packDetailNever]}
+                style={[s.packDetail, enabled && s.packDetailOn, never && s.packDetailNever, pending && s.packDetailPending]}
                 numberOfLines={1}
               >
-                {never
+                {pending
+                  ? pendingText
+                  : never
                   ? `Never allowed · ${domains.length} domains stay locked`
                   : enabled
                     ? `${domains.length} domains blocked`
@@ -177,9 +227,13 @@ function PackRow({
               </Text>
             </View>
           </View>
-          <View style={[s.packChevron, expanded && s.packChevronOpen]}><ChevronRight s={16} c={C.textMuted} w={2} /></View>
+          <Animated.View style={[s.packChevron, chevronStyle]}>
+            <ChevronRight s={16} c={C.textMuted} w={2} />
+          </Animated.View>
         </TouchableOpacity>
-        {never ? (
+        {pending ? (
+          <FocusSwitch value={false} onToggle={onCancelPending ?? onToggle} activeColor="#77736B" />
+        ) : never ? (
           <TouchableOpacity
             style={s.neverSeal}
             onPress={onNever}
@@ -194,8 +248,47 @@ function PackRow({
         )}
       </View>
 
+      {pending && (
+        <Animated.View
+          entering={FadeInDown.duration(220)}
+          exiting={FadeOut.duration(150)}
+          layout={LinearTransition.duration(200)}
+          style={s.packPendingBar}
+        >
+          <View style={s.packPendingBarIcon}><Hourglass s={13} c="#67635C" w={2.1} /></View>
+          <Text style={s.packPendingBarText}>These websites are still blocked by Hard Lock.</Text>
+          <TouchableOpacity style={s.packPendingCancel} onPress={onCancelPending} haptic="selection">
+            <Text style={s.packPendingCancelText}>KEEP ON</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+
       {expanded && (
-        <Animated.View entering={FadeIn.duration(180)} style={s.packBody}>
+        <Animated.View
+          entering={PACK_BODY_ENTER}
+          exiting={PACK_BODY_EXIT}
+          style={s.packBody}
+        >
+          {appleFilter && (
+            <Animated.View entering={FadeIn.duration(180)} style={s.expandedAppleFilter}>
+              <View style={s.expandedAppleFilterIcon}><Shield s={13} c="#566276" w={2.1} /></View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <View style={s.expandedAppleFilterTitleRow}>
+                  <Text style={s.expandedAppleFilterTitle}>Apple Filter</Text>
+                  <View style={s.expandedAppleFilterTag}><Text style={s.expandedAppleFilterTagText}>BUILT IN</Text></View>
+                </View>
+                <Text style={s.expandedAppleFilterBody}>Apple’s adult website filter strengthens this pack when it is active.</Text>
+              </View>
+            </Animated.View>
+          )}
+          <TouchableOpacity style={s.addToPackButton} onPress={onSeeAll} activeOpacity={0.74}>
+            <View style={s.addToPackIcon}><Plus s={14} c="#2D7967" w={2.4} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.addToPackTitle}>Add a website to this pack</Text>
+              <Text style={s.addToPackBody}>Open the full list and enter a domain.</Text>
+            </View>
+            <ChevronRight s={14} c="#2D7967" w={2.2} />
+          </TouchableOpacity>
           <Text style={s.domainListLabel}>BLOCKED DOMAINS</Text>
           <View style={s.domainChips}>
             {domains.slice(0, 6).map(domain => (
@@ -209,7 +302,7 @@ function PackRow({
             </Text>
             <ChevronRight s={14} c="#2D7967" w={2.2} />
           </TouchableOpacity>
-          <View style={s.packActions}>
+          {!pending && <View style={s.packActions}>
             <TouchableOpacity
               style={[s.neverButton, mode === 'never' && s.neverButtonOn]}
               onPress={onNever}
@@ -221,7 +314,7 @@ function PackRow({
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={s.neverButtonText}>{mode === 'never' ? 'Request unlock' : 'Never allow'}</Text>
                 <Text style={s.neverButtonSub} numberOfLines={1}>
-                  {mode === 'never' ? 'Strict Watch decides when' : 'Locked even from yourself'}
+                  {mode === 'never' ? 'Hard Lock protects the exit' : 'Locked even from yourself'}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -231,7 +324,7 @@ function PackRow({
                 <Text style={s.removeButtonText}>Remove</Text>
               </TouchableOpacity>
             )}
-          </View>
+          </View>}
         </Animated.View>
       )}
     </Animated.View>
@@ -290,12 +383,22 @@ function pendingWhen(effectiveAt: number) {
   return `${day} at ${formatEndsAt(effectiveAt)}`;
 }
 
+type PackTurnOffRequest =
+  | { kind: 'builtin'; id: WebPackId; name: string; domainCount: number }
+  | { kind: 'custom'; id: string; name: string; domainCount: number };
+
 export default function PurityView() {
+  const { height: screenHeight } = useWindowDimensions();
   const state = useDayPlan();
   const { purity, pendingChanges } = state;
   const { request, gate } = usePermissionGate();
   const [newPackOpen, setNewPackOpen] = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
+  const [cooldownOpen, setCooldownOpen] = useState(false);
+  const [hardLockExpanded, setHardLockExpanded] = useState(false);
+  const [confirmHardLockOff, setConfirmHardLockOff] = useState(false);
+  const [confirmPackOff, setConfirmPackOff] = useState<PackTurnOffRequest | null>(null);
+  const [confirmDomainRemoval, setConfirmDomainRemoval] = useState<string | null>(null);
   const [draftDomain, setDraftDomain] = useState('');
   const [confirmNeverPack, setConfirmNeverPack] = useState<WebPackId | null>(null);
   const [confirmRemovePack, setConfirmRemovePack] = useState<CustomWebPack | null>(null);
@@ -351,7 +454,39 @@ export default function PurityView() {
     () => pendingChanges.length ? formatEndsAt(Math.min(...pendingChanges.map(change => change.effectiveAt))) : null,
     [pendingChanges]
   );
+  const hardLockDelay = COOLDOWNS.find(option => option.id === purity.locks.cooldown) ?? COOLDOWNS[1];
+  const hardLockPendingOff = pendingChanges.find(change =>
+    change.action.kind === 'locks' && change.action.partial.enabled === false
+  );
+  const hardLockTurningOff = !!hardLockPendingOff;
+  const hardLockSummary = hardLockPendingOff
+    ? `Turns off ${pendingWhen(hardLockPendingOff.effectiveAt)}`
+    : purity.locks.enabled
+      ? `Blocked websites stay blocked for ${hardLockDelay.label} after an unlock request`
+      : 'Set a delay before blocked websites can be unlocked';
   const packMode = (id: WebPackId) => purity.packs.find(pack => pack.id === id)?.mode ?? 'off';
+  const domainsForBuiltInPack = (id: WebPackId) => {
+    const curated = WEB_PACKS.find(pack => pack.id === id)?.sites ?? [];
+    const extra = purity.packs.find(pack => pack.id === id)?.extraDomains ?? [];
+    return [...curated, ...extra];
+  };
+  const builtInPackPending = (id: WebPackId) => pendingChanges.find(change =>
+    change.action.kind === 'pack-mode'
+      && change.action.packId === id
+      && change.action.mode === 'off'
+  );
+  const customPackPending = (id: string) => pendingChanges.find(change =>
+    (change.action.kind === 'custom-pack-mode'
+      && change.action.packId === id
+      && change.action.mode === 'off')
+    || (change.action.kind === 'custom-pack-remove' && change.action.packId === id)
+  );
+  const pendingPackText = (change: PendingChange | undefined) => {
+    if (!change) return undefined;
+    return change.action.kind === 'custom-pack-remove'
+      ? `Removal pending · ${pendingWhen(change.effectiveAt)}`
+      : `Turns off ${pendingWhen(change.effectiveAt)}`;
+  };
 
   const addOneDomain = () => {
     if (!normalizeDomain(draftDomain).includes('.')) return;
@@ -364,12 +499,50 @@ export default function PurityView() {
     if (domainsFor.kind === 'builtin') {
       const pack = WEB_PACKS.find(entry => entry.id === domainsFor.id);
       if (!pack) return null;
-      return { title: pack.name, domains: pack.sites, note: pack.sitesNote, editable: false as const, customId: null };
+      const packState = purity.packs.find(entry => entry.id === pack.id);
+      const addedDomains = packState?.extraDomains ?? [];
+      const pendingRemovals: Record<string, { id: string; text: string }> = {};
+      pendingChanges.forEach(change => {
+        if (change.action.kind !== 'pack-domain-remove' || change.action.packId !== pack.id) return;
+        pendingRemovals[change.action.domain] = {
+          id: change.id,
+          text: `Removal pending · ${pendingWhen(change.effectiveAt)}`,
+        };
+      });
+      return {
+        title: pack.name,
+        domains: [...pack.sites, ...addedDomains],
+        note: pack.sitesNote,
+        addedDomains,
+        appleFilter: pack.id === 'adult',
+        builtInId: pack.id,
+        customId: null,
+        pendingRemovals,
+        removalDelayLabel: purity.locks.enabled && packState?.mode !== 'off' ? hardLockDelay.label : undefined,
+      };
     }
     const pack = purity.customPacks.find(entry => entry.id === domainsFor.id);
     if (!pack) return null;
-    return { title: pack.name, domains: pack.domains, note: undefined, editable: true as const, customId: pack.id };
-  }, [domainsFor, purity.customPacks]);
+    const pendingRemovals: Record<string, { id: string; text: string }> = {};
+    pendingChanges.forEach(change => {
+      if (change.action.kind !== 'custom-pack-domain-remove' || change.action.packId !== pack.id) return;
+      pendingRemovals[change.action.domain] = {
+        id: change.id,
+        text: `Removal pending · ${pendingWhen(change.effectiveAt)}`,
+      };
+    });
+    return {
+      title: pack.name,
+      domains: pack.domains,
+      note: undefined,
+      addedDomains: pack.domains.length > 1 ? pack.domains : [],
+      appleFilter: false,
+      builtInId: null,
+      customId: pack.id,
+      pendingRemovals,
+      removalDelayLabel: purity.locks.enabled && pack.mode !== 'off' ? hardLockDelay.label : undefined,
+    };
+  }, [domainsFor, hardLockDelay.label, pendingChanges, purity.customPacks, purity.locks.enabled, purity.packs]);
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -378,6 +551,7 @@ export default function PurityView() {
         <Animated.View entering={enter(0)} style={s.introWrap}>
           <Text style={s.intro}>“Far from the eyes, far from the heart.”</Text>
         </Animated.View>
+        <WebProtectionIntroAnimation />
 
         <Animated.View entering={enter(40)} style={s.statusCardShell}>
           <LinearGradient
@@ -478,16 +652,11 @@ export default function PurityView() {
           </View>
         )}
 
-        {pendingChanges.length > 0 && (
-          <TouchableOpacity style={s.pendingBand} onPress={() => setPendingOpen(true)} activeOpacity={0.72}>
-            <View style={s.pendingIcon}><Hourglass s={16} c={C.goldDark} w={2} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.pendingTitle}>{pendingChanges.length} {pendingChanges.length === 1 ? 'change' : 'changes'} waiting</Text>
-              <Text style={s.pendingText}>Eligible {pendingAt}</Text>
-            </View>
-            <ChevronRight s={17} c={C.goldDark} w={2} />
-          </TouchableOpacity>
-        )}
+        <View style={s.zoneDivider}>
+          <View style={s.zoneDividerLine} />
+          <Text style={s.zoneDividerText}>BLOCKING SETTINGS</Text>
+          <View style={s.zoneDividerLine} />
+        </View>
 
         <Animated.View entering={enter(90)} style={s.sectionBlock}>
           <View style={s.sectionHeader}>
@@ -500,99 +669,309 @@ export default function PurityView() {
           <View style={s.packList}>
             {WEB_PACKS.map(pack => {
               const mode = packMode(pack.id);
+              const pending = builtInPackPending(pack.id);
+              const domains = domainsForBuiltInPack(pack.id);
               return (
                 <PackRow
                   key={pack.id}
                   name={pack.name}
                   detail={pack.detail}
-                  domains={pack.sites}
+                  domains={domains}
                   mode={mode}
                   emoji={pack.emoji}
                   slashed={pack.slashed}
                   appleFilter={pack.id === 'adult'}
-                  onToggle={() => request(() => setPackMode(pack.id, mode === 'off' ? 'on' : 'off'))}
-                  onNever={() => mode === 'never' ? setPackMode(pack.id, 'off') : setConfirmNeverPack(pack.id)}
+                  onToggle={() => {
+                    if (pending) {
+                      cancelPendingChange(pending.id);
+                    } else if (mode === 'off') {
+                      request(() => setPackMode(pack.id, 'on'));
+                    } else {
+                      setConfirmPackOff({ kind: 'builtin', id: pack.id, name: pack.name, domainCount: domains.length });
+                    }
+                  }}
+                  onNever={() => mode === 'never'
+                    ? setConfirmPackOff({ kind: 'builtin', id: pack.id, name: pack.name, domainCount: domains.length })
+                    : setConfirmNeverPack(pack.id)}
                   onSeeAll={() => setDomainsFor({ kind: 'builtin', id: pack.id })}
+                  pendingText={pendingPackText(pending)}
+                  onCancelPending={pending ? () => cancelPendingChange(pending.id) : undefined}
                 />
               );
             })}
-            {purity.customPacks.map(pack => (
-              <PackRow
-                key={pack.id}
-                name={pack.name}
-                detail="Your custom domain collection"
-                domains={pack.domains}
-                mode={pack.mode}
-                emoji={CUSTOM_PACK_EMOJI}
-                onToggle={() => request(() => setCustomWebPackMode(pack.id, pack.mode === 'off' ? 'on' : 'off'))}
-                onNever={() => setCustomWebPackMode(pack.id, pack.mode === 'never' ? 'off' : 'never')}
-                onSeeAll={() => setDomainsFor({ kind: 'custom', id: pack.id })}
-                onRemove={() => setConfirmRemovePack(pack)}
-              />
-            ))}
+            {purity.customPacks.map(pack => {
+              const pending = customPackPending(pack.id);
+              return (
+                <PackRow
+                  key={pack.id}
+                  name={pack.name}
+                  detail="Your custom domain collection"
+                  domains={pack.domains}
+                  mode={pack.mode}
+                  emoji={CUSTOM_PACK_EMOJI}
+                  onToggle={() => {
+                    if (pending) {
+                      cancelPendingChange(pending.id);
+                    } else if (pack.mode === 'off') {
+                      request(() => setCustomWebPackMode(pack.id, 'on'));
+                    } else {
+                      setConfirmPackOff({ kind: 'custom', id: pack.id, name: pack.name, domainCount: pack.domains.length });
+                    }
+                  }}
+                  onNever={() => pack.mode === 'never'
+                    ? setConfirmPackOff({ kind: 'custom', id: pack.id, name: pack.name, domainCount: pack.domains.length })
+                    : setCustomWebPackMode(pack.id, 'never')}
+                  onSeeAll={() => setDomainsFor({ kind: 'custom', id: pack.id })}
+                  onRemove={() => setConfirmRemovePack(pack)}
+                  pendingText={pendingPackText(pending)}
+                  onCancelPending={pending ? () => cancelPendingChange(pending.id) : undefined}
+                />
+              );
+            })}
           </View>
           <TouchableOpacity style={s.newPackButton} onPress={() => setNewPackOpen(true)}>
             <View style={s.plusIcon}><Plus s={15} c="#2D7967" w={2.5} /></View>
             <Text style={s.newPackText}>Create a custom pack</Text>
           </TouchableOpacity>
+          <View style={s.bottomNote}>
+            <View style={s.bottomNoteIcon}><Shield s={17} c="#2D7967" w={2.1} /></View>
+            <Text style={s.bottomNoteText}>Blocked websites stay blocked in every browser.</Text>
+          </View>
         </Animated.View>
 
-        <Animated.View entering={enter(150)} style={s.sectionBlock}>
+        {[
+        <Animated.View key="hard-lock" entering={enter(175)} style={s.sectionBlock}>
+          <View style={s.zoneDivider}>
+            <View style={s.zoneDividerLine} />
+            <Text style={s.zoneDividerText}>UNLOCK PROTECTION</Text>
+            <View style={s.zoneDividerLine} />
+          </View>
+          <Animated.View
+            layout={LinearTransition.duration(220)}
+            style={[
+            s.hardLockPanel,
+            purity.locks.enabled && s.hardLockPanelOn,
+            purity.locks.locked && s.hardLockPanelPermanent,
+            hardLockTurningOff && s.hardLockPanelPending,
+            ]}
+          >
+            {purity.locks.enabled && (
+              <LinearGradient
+                colors={hardLockTurningOff
+                  ? ['#E9E9E6', '#F5F4F1', '#FBFAF7']
+                  : purity.locks.locked
+                    ? ['#F9EDCE', '#FFF9EC', '#FFFDF8']
+                    : ['#F8F0DC', '#FFFDF8', '#FFFFFF']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+            )}
+            {purity.locks.enabled && <CardWeave color={hardLockTurningOff ? '#706D67' : '#A97724'} />}
+            {hardLockTurningOff && (
+              <Animated.View
+                pointerEvents="none"
+                entering={FadeIn.duration(220)}
+                exiting={FadeOut.duration(160)}
+                style={s.pendingSurfaceWash}
+              />
+            )}
+            <View style={s.hardLockHeader}>
+              <TouchableOpacity
+                style={s.hardLockMain}
+                onPress={() => setHardLockExpanded(current => !current)}
+                activeOpacity={0.72}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: hardLockExpanded }}
+                accessibilityLabel={`Hard Lock. ${hardLockSummary}. ${hardLockExpanded ? 'Collapse' : 'Expand'} details.`}
+              >
+                <View style={[
+                  s.hardLockIcon,
+                  purity.locks.locked && s.hardLockIconPermanent,
+                  hardLockTurningOff && s.hardLockIconPending,
+                ]}>
+                  {hardLockTurningOff
+                    ? <Hourglass s={19} c="#66635D" w={2.2} />
+                    : <Lock s={20} c={purity.locks.locked ? '#FFFFFF' : C.goldDark} w={2.3} />}
+                </View>
+                <View style={s.hardLockCopy}>
+                  <Text style={[s.hardLockEyebrow, hardLockTurningOff && s.hardLockEyebrowPending]}>
+                    {purity.locks.locked ? 'PERMANENTLY LOCKED' : 'IMPULSE PROTECTION'}
+                  </Text>
+                  <View style={s.hardLockTitleRow}>
+                    <Text style={s.hardLockTitle}>Hard Lock</Text>
+                    {hardLockTurningOff && (
+                      <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(140)} style={s.hardLockPendingTag}>
+                        <Hourglass s={9} c="#7A5A1D" w={2.2} />
+                        <Text style={s.hardLockPendingTagText}>PENDING</Text>
+                      </Animated.View>
+                    )}
+                  </View>
+                  <Text
+                    style={[
+                      s.hardLockBody,
+                      purity.locks.enabled && s.hardLockBodyOn,
+                      purity.locks.locked && s.hardLockBodyLocked,
+                      hardLockTurningOff && s.hardLockBodyPending,
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {hardLockSummary}
+                  </Text>
+                </View>
+                <View style={[s.hardLockChevron, hardLockExpanded && s.hardLockChevronOpen]}>
+                  <ChevronRight s={16} c={C.textMuted} w={2} />
+                </View>
+              </TouchableOpacity>
+              {purity.locks.locked ? (
+                <View style={s.hardLockOnBadge}>
+                  <Lock s={10} c="#7A5A1D" w={2.4} />
+                  <Text style={s.hardLockOnBadgeText}>LOCKED ON</Text>
+                </View>
+              ) : (
+                <FocusSwitch
+                  value={purity.locks.enabled && !hardLockTurningOff}
+                  onToggle={() => {
+                    if (hardLockPendingOff) {
+                      cancelPendingChange(hardLockPendingOff.id);
+                    } else if (purity.locks.enabled) {
+                      setConfirmHardLockOff(true);
+                    } else {
+                      updateWebHardLock({ enabled: true });
+                    }
+                  }}
+                  activeColor={hardLockTurningOff ? '#77736B' : C.gold}
+                />
+              )}
+            </View>
+
+            {hardLockExpanded && (
+              <Animated.View entering={FadeIn.duration(180)} style={s.hardLockSettings}>
+                {hardLockPendingOff ? (
+                  <Animated.View entering={FadeIn.duration(180)} style={s.hardLockPendingDetail}>
+                    <View style={s.hardLockPendingDetailIcon}><Hourglass s={17} c="#66635D" w={2.2} /></View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={s.hardLockPendingDetailTitle}>Hard Lock is still protecting you.</Text>
+                      <Text style={s.hardLockPendingDetailBody}>
+                        It turns off {pendingWhen(hardLockPendingOff.effectiveAt)}. Until then, blocked websites and every unlock delay stay active.
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={s.hardLockPendingCancel}
+                      onPress={() => cancelPendingChange(hardLockPendingOff.id)}
+                      haptic="selection"
+                    >
+                      <Text style={s.hardLockPendingCancelText}>KEEP ON</Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+                ) : <>
+                  <View style={s.hardLockExplanationCard}>
+                  <Text style={s.hardLockExplanationLabel}>HOW HARD LOCK WORKS</Text>
+                  <Text style={s.hardLockExplanationTitle}>
+                    With Hard Lock on, unblocking websites takes {hardLockDelay.label}.
+                  </Text>
+                  <Text style={s.hardLockExplanation}>
+                    If temptation makes you try to restore access, those websites remain blocked during the delay. This gives you time to let the urge pass instead of acting on it immediately.
+                  </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={s.hardLockDelayRow}
+                    onPress={() => setCooldownOpen(true)}
+                    haptic="selection"
+                    accessibilityRole="button"
+                    accessibilityLabel={`Unlock delay, ${hardLockDelay.label}`}
+                  >
+                    <View style={s.hardLockDelayIcon}><Clock s={16} c={C.goldDark} w={2.1} /></View>
+                    <View style={s.hardLockDelayCopy}>
+                      <Text style={s.hardLockDelayLabel}>UNLOCK DELAY</Text>
+                      <Text style={s.hardLockDelayValue}>{hardLockDelay.label}</Text>
+                    </View>
+                    <Text style={s.hardLockDelayHint}>Change</Text>
+                    <ChevronRight s={15} c={C.goldDark} w={2.2} />
+                  </TouchableOpacity>
+
+                  {purity.locks.locked && (
+                    <Animated.View entering={FadeIn.duration(180)} style={s.permanentNote}>
+                      <Shield s={15} c="#7A5A1D" w={2.2} />
+                      <Text style={s.permanentNoteText}>
+                        This legacy Hard Lock remains on. Shortening its delay must first wait through the current delay.
+                      </Text>
+                    </Animated.View>
+                  )}
+                </>}
+              </Animated.View>
+            )}
+          </Animated.View>
+        </Animated.View>,
+
+        pendingChanges.length > 0 ? (
+          <TouchableOpacity key="pending-changes" style={s.pendingBand} onPress={() => setPendingOpen(true)} activeOpacity={0.72}>
+            <View style={s.pendingIcon}><Hourglass s={16} c={C.goldDark} w={2} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.pendingTitle}>{pendingChanges.length} {pendingChanges.length === 1 ? 'change' : 'changes'} waiting</Text>
+              <Text style={s.pendingText}>Eligible {pendingAt}</Text>
+            </View>
+            <ChevronRight s={17} c={C.goldDark} w={2} />
+          </TouchableOpacity>
+        ) : null,
+
+        <Animated.View key="individual-domains" entering={enter(135)} style={s.sectionBlock}>
+          <View style={s.subsectionDivider} />
           <View style={s.sectionIntro}>
             <Text style={s.sectionLabel}>INDIVIDUAL DOMAINS</Text>
             <Text style={s.sectionTitle}>Block one site directly</Text>
             <Text style={s.sectionBody}>Add a domain that does not belong in a full pack.</Text>
           </View>
           <View style={s.individualList}>
-            {purity.customDomains.map((entry, index) => (
-              <View key={entry.domain}>
+            {purity.customDomains.map((entry, index) => {
+              const pending = pendingChanges.find(change =>
+                (change.action.kind === 'domain-remove' || change.action.kind === 'domain-never')
+                  && change.action.domain === entry.domain
+              );
+              const pendingText = pending?.action.kind === 'domain-never'
+                ? `Leaves Never Allowed ${pendingWhen(pending.effectiveAt)}`
+                : pending
+                  ? `Removal pending · ${pendingWhen(pending.effectiveAt)}`
+                  : null;
+              return <View key={entry.domain}>
                 {index > 0 && <View style={s.individualSeparator} />}
-                <View style={s.individualRow}>
-                  <View style={[s.individualIcon, entry.never && s.individualIconNever]}>
-                    <Globe s={16} c={entry.never ? '#A24351' : '#2D7967'} w={2} />
+                <Animated.View layout={LinearTransition.duration(200)} style={[s.individualRow, pending && s.individualRowPending]}>
+                  {pending && <Animated.View pointerEvents="none" entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)} style={s.individualPendingWash} />}
+                  <View style={[s.individualIcon, entry.never && s.individualIconNever, pending && s.individualIconPending]}>
+                    {pending
+                      ? <Hourglass s={15} c="#66635D" w={2.1} />
+                      : <Globe s={16} c={entry.never ? '#A24351' : '#2D7967'} w={2} />}
                   </View>
-                  <Text style={s.individualDomain} numberOfLines={1}>{entry.domain}</Text>
-                  <TouchableOpacity style={[s.smallLock, entry.never && s.smallLockOn]} onPress={() => setDomainNever(entry.domain, !entry.never)}>
-                    <Lock s={13} c={entry.never ? '#A24351' : C.textMuted} w={2.2} />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={s.removeDomainButton} onPress={() => removeCustomDomain(entry.domain)} hitSlop={8}>
-                    <X s={15} c={C.textMuted} w={2.2} />
-                  </TouchableOpacity>
-                </View>
+                  <View style={s.individualCopy}>
+                    <Text style={[s.individualDomain, pending && s.individualDomainPending]} numberOfLines={1}>{entry.domain}</Text>
+                    {!!pendingText && <Text style={s.individualPendingText} numberOfLines={1}>{pendingText}</Text>}
+                  </View>
+                  {pending ? (
+                    <TouchableOpacity style={s.individualPendingCancel} onPress={() => cancelPendingChange(pending.id)} haptic="selection">
+                      <Text style={s.individualPendingCancelText}>CANCEL</Text>
+                    </TouchableOpacity>
+                  ) : <>
+                    <TouchableOpacity style={[s.smallLock, entry.never && s.smallLockOn]} onPress={() => setDomainNever(entry.domain, !entry.never)}>
+                      <Lock s={13} c={entry.never ? '#A24351' : C.textMuted} w={2.2} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={s.removeDomainButton} onPress={() => setConfirmDomainRemoval(entry.domain)} hitSlop={8}>
+                      <X s={15} c={C.textMuted} w={2.2} />
+                    </TouchableOpacity>
+                  </>}
+                </Animated.View>
               </View>
-            ))}
+            })}
             {purity.customDomains.length > 0 && <View style={s.individualSeparator} />}
             <View style={s.domainInputRow}>
+              <View style={s.domainInputIcon}><Globe s={15} c="#2D7967" w={2} /></View>
               <TextInput value={draftDomain} onChangeText={setDraftDomain} onSubmitEditing={addOneDomain} placeholder="example.com" placeholderTextColor={C.textMuted} autoCapitalize="none" autoCorrect={false} keyboardType="url" style={s.domainInput} />
               <TouchableOpacity style={[s.inlineAdd, !normalizeDomain(draftDomain).includes('.') && s.disabled]} onPress={addOneDomain} disabled={!normalizeDomain(draftDomain).includes('.')}><Plus s={15} c="#fff" w={2.5} /></TouchableOpacity>
             </View>
           </View>
-        </Animated.View>
+        </Animated.View>,
+        ].reverse()}
 
-        <Animated.View entering={enter(210)} style={s.sectionBlock}>
-          <View style={s.lockPanel}>
-            <View style={s.lockHeader}>
-              <View style={s.lockIcon}><Lock s={19} c={C.goldDark} w={2.2} /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.lockEyebrow}>ANTI-BYPASS</Text>
-                <Text style={s.lockTitle}>Strict Watch</Text>
-                <Text style={s.lockBody}>Weakening protection waits. Stronger changes apply now.</Text>
-              </View>
-              <FocusSwitch value={purity.locks.enabled} onToggle={() => updateLocks({ enabled: !purity.locks.enabled })} />
-            </View>
-            <View style={[s.lockSettings, !purity.locks.enabled && s.lockSettingsDisabled]} pointerEvents={purity.locks.enabled ? 'auto' : 'none'}>
-              <Text style={s.lockSettingLabel}>WEAKER CHANGES WAIT FOR</Text>
-              <View style={s.cooldownRow}>{COOLDOWNS.map(option => <TouchableOpacity key={option.id} style={[s.cooldownChip, purity.locks.cooldown === option.id && s.cooldownChipOn]} onPress={() => updateLocks({ cooldown: option.id })} haptic="selection"><Text style={[s.cooldownText, purity.locks.cooldown === option.id && s.cooldownTextOn]}>{option.label}</Text></TouchableOpacity>)}</View>
-              <View style={s.lockToggleRow}><View style={{ flex: 1 }}><Text style={s.lockToggleTitle}>Protect app removal</Text><Text style={s.lockToggleBody}>Make Anasta harder to remove in a weak moment.</Text></View><FocusSwitch value={purity.locks.uninstallProtection} onToggle={() => updateLocks({ uninstallProtection: !purity.locks.uninstallProtection })} /></View>
-              <View style={s.lockToggleRow}><View style={{ flex: 1 }}><Text style={s.lockToggleTitle}>Block new app installs</Text><Text style={s.lockToggleBody}>Prevent replacing a blocked website with its app.</Text></View><FocusSwitch value={purity.locks.denyNewApps} onToggle={() => updateLocks({ denyNewApps: !purity.locks.denyNewApps })} /></View>
-            </View>
-          </View>
-        </Animated.View>
-
-        <View style={s.bottomNote}>
-          <View style={s.bottomNoteIcon}><Shield s={17} c="#2D7967" w={2.1} /></View>
-          <Text style={s.bottomNoteText}>Web Protection works independently of Phone Plans. An Essential browser still cannot open a blocked domain.</Text>
-        </View>
       </ScrollView>
 
       <NewPackSheet visible={newPackOpen} onClose={() => setNewPackOpen(false)} />
@@ -601,18 +980,78 @@ export default function PurityView() {
         title={domainsSheet?.title ?? ''}
         domains={domainsSheet?.domains ?? []}
         note={domainsSheet?.note}
-        editable={domainsSheet?.editable ?? false}
-        onAdd={domainsSheet?.customId ? domain => addDomainToCustomWebPack(domainsSheet.customId!, domain) : undefined}
-        onRemove={domainsSheet?.customId ? domain => removeDomainFromCustomWebPack(domainsSheet.customId!, domain) : undefined}
+        addedDomains={domainsSheet?.addedDomains}
+        pendingRemovals={domainsSheet?.pendingRemovals}
+        removalDelayLabel={domainsSheet?.removalDelayLabel}
+        onAdd={domainsSheet?.builtInId
+          ? domain => addDomainToWebPack(domainsSheet.builtInId!, domain)
+          : domainsSheet?.customId
+            ? domain => addDomainToCustomWebPack(domainsSheet.customId!, domain)
+            : undefined}
+        onRemove={domainsSheet?.builtInId
+          ? domain => { removeDomainFromWebPack(domainsSheet.builtInId!, domain); }
+          : domainsSheet?.customId
+            ? domain => removeDomainFromCustomWebPack(domainsSheet.customId!, domain)
+            : undefined}
+        onCancelPending={id => cancelPendingChange(id)}
         onClose={() => setDomainsFor(null)}
       />
+      <SmoothBottomSheet
+        visible={cooldownOpen}
+        onClose={() => setCooldownOpen(false)}
+        sheetStyle={s.cooldownSheet}
+      >
+        <FocusSheetHeader
+          kicker="HARD LOCK"
+          title="Choose the unlock delay"
+          subtitle="A request to weaken website blocking becomes eligible only after this time passes."
+          onClose={() => setCooldownOpen(false)}
+          large
+        />
+        <ScrollView
+          style={[s.cooldownList, { maxHeight: Math.min(420, screenHeight * 0.55) }]}
+          contentContainerStyle={s.cooldownListContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {COOLDOWNS.map((option, index) => {
+            const selected = purity.locks.cooldown === option.id;
+            return (
+              <TouchableOpacity
+                key={option.id}
+                style={[s.cooldownOption, index > 0 && s.cooldownOptionBorder]}
+                onPress={() => {
+                  updateWebHardLock({ cooldown: option.id });
+                  setCooldownOpen(false);
+                }}
+                haptic="selection"
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+              >
+                <View style={[s.cooldownOptionIcon, selected && s.cooldownOptionIconOn]}>
+                  {selected
+                    ? <CheckSmall s={17} c="#FFFFFF" w={2.7} />
+                    : <Clock s={15} c={C.textMuted} w={2} />}
+                </View>
+                <View style={s.cooldownOptionCopy}>
+                  <Text style={[s.cooldownOptionTitle, selected && s.cooldownOptionTitleOn]}>{option.label}</Text>
+                  <Text style={s.cooldownOptionDetail}>{option.detail}</Text>
+                </View>
+                {selected && <Text style={s.cooldownCurrent}>CURRENT</Text>}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+        <Text style={s.cooldownFootnote}>
+          If you choose a shorter delay while Hard Lock is on, the current longer delay protects that change too.
+        </Text>
+      </SmoothBottomSheet>
       <SmoothBottomSheet
         visible={pendingOpen && pendingChanges.length > 0}
         onClose={() => setPendingOpen(false)}
         sheetStyle={s.pendingSheet}
       >
         <FocusSheetHeader
-          kicker="STRICT WATCH"
+          kicker="HARD LOCK"
           title="Pending Changes"
           onClose={() => setPendingOpen(false)}
           large
@@ -643,11 +1082,71 @@ export default function PurityView() {
       </SmoothBottomSheet>
       {gate}
       <ConfirmModal
+        visible={confirmHardLockOff}
+        icon={<Hourglass s={21} c="#765F37" w={2.2} />}
+        iconBg="#F1ECE2"
+        title="Turn off Hard Lock?"
+        body="Hard Lock will remain active for the next 24 hours. Blocked websites and every unlock delay stay protected during that time. You can cancel the turn-off at any moment."
+        subject={`Turns off ${pendingWhen(Date.now() + HARD_LOCK_DISABLE_DELAY_MS)}`}
+        cancelLabel="Cancel"
+        confirmLabel="Turn Off"
+        confirmColor="#A24351"
+        naturalButtonLabels
+        onCancel={() => setConfirmHardLockOff(false)}
+        onConfirm={() => {
+          updateWebHardLock({ enabled: false });
+          setConfirmHardLockOff(false);
+        }}
+      />
+      <ConfirmModal
+        visible={confirmPackOff !== null}
+        icon={<Hourglass s={21} c="#765F37" w={2.2} />}
+        iconBg="#F1ECE2"
+        title={`Turn off ${confirmPackOff?.name ?? 'this pack'}?`}
+        body={purity.locks.enabled
+          ? `Hard Lock will keep all ${confirmPackOff?.domainCount ?? 0} domains blocked for ${hardLockDelay.label}. The pack changes to Pending now and turns off only when that delay ends.`
+          : 'This pack will stop blocking its domains immediately because Hard Lock is off.'}
+        subject={purity.locks.enabled
+          ? `Turns off ${pendingWhen(Date.now() + hardLockDelayMs(purity.locks.cooldown))}`
+          : `${confirmPackOff?.domainCount ?? 0} domains will no longer be blocked by this pack`}
+        cancelLabel="Cancel"
+        confirmLabel="Turn Off"
+        confirmColor="#A24351"
+        naturalButtonLabels
+        onCancel={() => setConfirmPackOff(null)}
+        onConfirm={() => {
+          if (confirmPackOff?.kind === 'builtin') {
+            request(() => setPackMode(confirmPackOff.id, 'off'));
+          } else if (confirmPackOff?.kind === 'custom') {
+            request(() => setCustomWebPackMode(confirmPackOff.id, 'off'));
+          }
+          setConfirmPackOff(null);
+        }}
+      />
+      <ConfirmModal
+        visible={confirmDomainRemoval !== null}
+        icon={<Globe s={21} c="#765F37" w={2.1} />}
+        iconBg="#F1ECE2"
+        title="Remove this blocked website?"
+        body={purity.locks.enabled
+          ? `Hard Lock keeps this website blocked for ${hardLockDelay.label}. Its row changes to Pending now, and removal happens only when the delay ends.`
+          : 'This website will be removed from Web Protection immediately because Hard Lock is off.'}
+        subject={confirmDomainRemoval ?? undefined}
+        cancelLabel="KEEP BLOCKED"
+        confirmLabel={purity.locks.enabled ? 'START REMOVAL' : 'REMOVE'}
+        confirmColor="#7A7368"
+        onCancel={() => setConfirmDomainRemoval(null)}
+        onConfirm={() => {
+          if (confirmDomainRemoval) removeCustomDomain(confirmDomainRemoval);
+          setConfirmDomainRemoval(null);
+        }}
+      />
+      <ConfirmModal
         visible={confirmNeverPack !== null}
         icon={<Lock s={21} c="#A24351" w={2.2} />}
         iconBg="#F8E7EA"
         title="Make this pack Never Allowed?"
-        body="It stays active without an ordinary unlock. A later weakening change must wait for Strict Watch when enabled."
+        body="It stays active without an ordinary unlock. If Hard Lock is on, a later weakening request must wait through its selected delay."
         subject={WEB_PACKS.find(pack => pack.id === confirmNeverPack)?.name}
         confirmLabel="MAKE NEVER"
         confirmColor="#A24351"
@@ -659,10 +1158,12 @@ export default function PurityView() {
         icon={<Trash2 s={21} c="#A24351" w={2.1} />}
         iconBg="#F8E7EA"
         title="Remove this custom pack?"
-        body="Its domains leave this pack. Any same domain protected elsewhere remains blocked."
+        body={purity.locks.enabled && confirmRemovePack?.mode !== 'off'
+          ? `Hard Lock keeps this pack active for ${hardLockDelay.label}. The pack remains visible as Pending until removal can take effect.`
+          : 'Its domains leave this pack immediately. Any same domain protected elsewhere remains blocked.'}
         subject={confirmRemovePack?.name}
-        confirmLabel="REMOVE PACK"
-        confirmColor="#A24351"
+        confirmLabel={purity.locks.enabled && confirmRemovePack?.mode !== 'off' ? 'START REMOVAL' : 'REMOVE PACK'}
+        confirmColor="#7A7368"
         onCancel={() => setConfirmRemovePack(null)}
         onConfirm={() => { if (confirmRemovePack) removeCustomWebPack(confirmRemovePack.id); setConfirmRemovePack(null); }}
       />
@@ -730,6 +1231,10 @@ const s = StyleSheet.create({
   pendingIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
   pendingTitle: { fontFamily: F.serifSemiBold, fontSize: 16.5, color: C.text },
   pendingText: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 12, color: C.goldDark },
+  zoneDivider: { marginTop: 27, marginBottom: 4, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  zoneDividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: '#D8D1C5' },
+  zoneDividerText: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.55, color: C.textMuted },
+  subsectionDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#D8D1C5', marginBottom: 20 },
   sectionBlock: { marginTop: 22 },
   sectionHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, paddingHorizontal: 3, marginBottom: 12 },
   sectionIntro: { gap: 3, paddingHorizontal: 3, marginBottom: 12 },
@@ -742,6 +1247,8 @@ const s = StyleSheet.create({
   packCard: { position: 'relative', overflow: 'hidden', borderRadius: 21, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 12, paddingVertical: 10, boxShadow: '0 6px 16px rgba(35, 40, 37, 0.06)' },
   packCardOn: { borderColor: '#B7D8CA' },
   packCardNever: { borderColor: '#EAC6CD' },
+  packCardPending: { borderColor: '#C8C5BE', boxShadow: '0 7px 18px rgba(70, 68, 63, 0.08)' },
+  pendingSurfaceWash: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(235,235,232,0.38)' },
   packRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 11 },
   packMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 11 },
   packIcon: { flexShrink: 0, width: 48, height: 48, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(169,134,63,0.22)', backgroundColor: '#FBF3DE', alignItems: 'center', justifyContent: 'center' },
@@ -749,16 +1256,31 @@ const s = StyleSheet.create({
   packName: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22, color: C.text },
   packStatusRow: { marginTop: 3.5, flexDirection: 'row', alignItems: 'center', gap: 6 },
   packStatusDot: { width: 5, height: 5, borderRadius: 3 },
+  packPendingTag: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, borderWidth: 1, borderColor: '#D8BD7B', backgroundColor: 'rgba(255,249,232,0.94)', paddingHorizontal: 7, paddingVertical: 3 },
+  packPendingTagText: { fontFamily: F.sansBold, fontSize: 7.2, letterSpacing: 0.75, color: '#7A5A1D' },
   neverSeal: { width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', backgroundColor: '#A24351', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 9px rgba(162, 67, 81, 0.3)' },
-  appleFilterTag: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, borderWidth: 1, borderColor: '#D8DDE6', backgroundColor: '#F6F8FB', paddingLeft: 3, paddingRight: 7, paddingVertical: 3, boxShadow: '0 2px 7px rgba(62,72,88,0.08)' },
-  appleFilterTagIcon: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#E5E9F0', alignItems: 'center', justifyContent: 'center' },
-  appleFilterTagText: { fontFamily: F.sansBold, fontSize: 7.2, lineHeight: 9, letterSpacing: 0.65, color: '#566276' },
   packDetail: { flexShrink: 1, fontFamily: F.sans, fontSize: 12, lineHeight: 16, color: C.textSecondary },
   packDetailOn: { fontFamily: F.sansMedium, color: '#2D7967' },
   packDetailNever: { fontFamily: F.sansMedium, color: '#A24351' },
-  packChevron: { transform: [{ rotate: '0deg' }] },
-  packChevronOpen: { transform: [{ rotate: '90deg' }] },
+  packDetailPending: { fontFamily: F.serifMedium, color: '#6D6962' },
+  packChevron: { alignItems: 'center', justifyContent: 'center' },
   packBody: { marginTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border, paddingTop: 13, gap: 11 },
+  expandedAppleFilter: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: '#D8DDE6', backgroundColor: '#F6F8FB', paddingHorizontal: 10, paddingVertical: 10 },
+  expandedAppleFilterIcon: { width: 32, height: 32, borderRadius: 11, borderCurve: 'continuous', backgroundColor: '#E5E9F0', alignItems: 'center', justifyContent: 'center' },
+  expandedAppleFilterTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  expandedAppleFilterTitle: { fontFamily: F.serifSemiBold, fontSize: 15.5, lineHeight: 19, color: '#3F4856' },
+  expandedAppleFilterTag: { borderRadius: 999, backgroundColor: '#E7EAF0', paddingHorizontal: 6, paddingVertical: 3 },
+  expandedAppleFilterTagText: { fontFamily: F.sansBold, fontSize: 6.8, letterSpacing: 0.7, color: '#566276' },
+  expandedAppleFilterBody: { marginTop: 2, fontFamily: F.sans, fontSize: 11.5, lineHeight: 16, color: '#697384' },
+  addToPackButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: '#BFDCCF', backgroundColor: '#F4FAF7', paddingHorizontal: 9, paddingVertical: 7 },
+  addToPackIcon: { width: 32, height: 32, borderRadius: 11, borderCurve: 'continuous', backgroundColor: '#DDEFE8', alignItems: 'center', justifyContent: 'center' },
+  addToPackTitle: { fontFamily: F.serifSemiBold, fontSize: 14.5, lineHeight: 18, color: '#2D7967' },
+  addToPackBody: { marginTop: 1, fontFamily: F.sans, fontSize: 10.5, lineHeight: 14, color: C.textSecondary },
+  packPendingBar: { minHeight: 42, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 13, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(121,117,108,0.20)', backgroundColor: 'rgba(255,255,255,0.60)', paddingHorizontal: 8, paddingVertical: 6 },
+  packPendingBarIcon: { width: 28, height: 28, borderRadius: 9, borderCurve: 'continuous', backgroundColor: '#E1E0DB', alignItems: 'center', justifyContent: 'center' },
+  packPendingBarText: { flex: 1, fontFamily: F.serifMedium, fontSize: 11.5, lineHeight: 15, color: '#625F59' },
+  packPendingCancel: { minHeight: 29, justifyContent: 'center', borderRadius: 9, borderCurve: 'continuous', borderWidth: 1, borderColor: '#C6C3BC', backgroundColor: 'rgba(255,255,255,0.80)', paddingHorizontal: 8 },
+  packPendingCancelText: { fontFamily: F.sansBold, fontSize: 7.8, letterSpacing: 0.75, color: '#5D5953' },
   emojiSlashUnder: { position: 'absolute', height: 4.6, borderRadius: 3, backgroundColor: '#FFFFFF', transform: [{ rotate: '-45deg' }] },
   emojiSlash: { position: 'absolute', height: 2.4, borderRadius: 2, backgroundColor: '#C63B4E', transform: [{ rotate: '-45deg' }] },
   domainListLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5, color: C.textMuted },
@@ -781,38 +1303,86 @@ const s = StyleSheet.create({
   newPackButton: { marginTop: 11, height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: '#BFDCCF', backgroundColor: '#F4FAF7' },
   plusIcon: { width: 32, height: 32, borderRadius: 11, backgroundColor: '#DDEFE8', alignItems: 'center', justifyContent: 'center' },
   newPackText: { fontFamily: F.serifSemiBold, fontSize: 16.5, color: '#2D7967' },
-  individualList: { overflow: 'hidden', borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 12 },
+  individualList: { overflow: 'hidden', borderRadius: 23, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DAD5CB', backgroundColor: '#FBFAF7', paddingHorizontal: 12, boxShadow: '0 7px 18px rgba(40,45,42,0.055)' },
   individualSeparator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 46 },
-  individualRow: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  individualRow: { position: 'relative', overflow: 'hidden', minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  individualRowPending: { minHeight: 66 },
+  individualPendingWash: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(235,235,232,0.72)' },
   individualIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#E7F3EE', alignItems: 'center', justifyContent: 'center' },
   individualIconNever: { backgroundColor: '#F8E7EA' },
-  individualDomain: { flex: 1, fontFamily: F.sansSemiBold, fontSize: 14, color: C.text },
+  individualIconPending: { backgroundColor: '#DEDDD8' },
+  individualCopy: { flex: 1, minWidth: 0 },
+  individualDomain: { fontFamily: F.sansSemiBold, fontSize: 14, color: C.text },
+  individualDomainPending: { color: '#55524D' },
+  individualPendingText: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 11.5, lineHeight: 15, color: '#77736B' },
+  individualPendingCancel: { minHeight: 31, justifyContent: 'center', borderRadius: 10, borderCurve: 'continuous', borderWidth: 1, borderColor: '#C7C4BD', backgroundColor: 'rgba(255,255,255,0.72)', paddingHorizontal: 8 },
+  individualPendingCancelText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.8, color: '#625F59' },
   smallLock: { width: 34, height: 34, borderRadius: 11, backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
   smallLockOn: { backgroundColor: '#F8E7EA' },
   removeDomainButton: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  domainInputRow: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  domainInputRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  domainInputIcon: { width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', backgroundColor: '#E7F3EE', alignItems: 'center', justifyContent: 'center' },
   domainInput: { flex: 1, fontFamily: F.sansMedium, fontSize: 14, color: C.text },
-  lockPanel: { borderRadius: 24, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E4D6B8', backgroundColor: '#FFFDF8', overflow: 'hidden', boxShadow: '0 8px 22px rgba(73, 57, 25, 0.07)' },
-  lockHeader: { minHeight: 104, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 15, paddingVertical: 14 },
-  lockIcon: { flexShrink: 0, width: 46, height: 46, borderRadius: 15, borderCurve: 'continuous', backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
-  lockEyebrow: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.6, color: C.goldDark },
-  lockTitle: { marginTop: 2, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 24, color: C.text },
-  lockBody: { marginTop: 4, fontFamily: F.sans, fontSize: 12.5, lineHeight: 17, color: C.textSecondary },
-  lockSettings: { borderTopWidth: 1, borderTopColor: '#EEE5D3', padding: 15, gap: 13 },
-  lockSettingsDisabled: { opacity: 0.38 },
-  lockSettingLabel: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.4, color: C.textMuted },
-  cooldownRow: { flexDirection: 'row', gap: 7 },
-  cooldownChip: { flex: 1, alignItems: 'center', borderRadius: 999, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 6, paddingVertical: 10 },
-  cooldownChipOn: { borderColor: C.gold, backgroundColor: C.goldLight },
-  cooldownText: { fontFamily: F.sansMedium, fontSize: 11, color: C.textSecondary },
-  cooldownTextOn: { fontFamily: F.sansSemiBold, color: C.goldDark },
-  lockToggleRow: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: 11, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border },
-  lockToggleTitle: { fontFamily: F.serifMedium, fontSize: 16, color: C.text },
-  lockToggleBody: { marginTop: 3, fontFamily: F.sans, fontSize: 12.5, lineHeight: 17, color: C.textSecondary },
-  bottomNote: { marginTop: 22, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 18, borderCurve: 'continuous', backgroundColor: '#EAF5F0', paddingHorizontal: 13, paddingVertical: 12 },
+  hardLockPanel: { position: 'relative', overflow: 'hidden', borderRadius: 24, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DED8CC', backgroundColor: '#FBFAF7', boxShadow: '0 8px 22px rgba(73, 57, 25, 0.07)' },
+  hardLockPanelOn: { borderColor: '#DDC994' },
+  hardLockPanelPermanent: { borderColor: '#D3B66F', boxShadow: '0 10px 26px rgba(111, 78, 21, 0.12)' },
+  hardLockPanelPending: { borderColor: '#C7C4BD', boxShadow: '0 8px 20px rgba(68,66,61,0.09)' },
+  hardLockHeader: { minHeight: 88, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13, paddingVertical: 10 },
+  hardLockMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  hardLockIcon: { flexShrink: 0, width: 46, height: 46, borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E2D3B3', backgroundColor: '#F7EBCF', alignItems: 'center', justifyContent: 'center' },
+  hardLockIconPermanent: { borderColor: '#A97825', backgroundColor: '#A97825', boxShadow: '0 5px 12px rgba(127,86,20,0.25)' },
+  hardLockIconPending: { borderColor: '#CBC8C1', backgroundColor: '#E3E2DD', boxShadow: 'none' },
+  hardLockCopy: { flex: 1, minWidth: 0 },
+  hardLockEyebrow: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.55, color: C.goldDark },
+  hardLockEyebrowPending: { color: '#6D6962' },
+  hardLockTitleRow: { marginTop: 1, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 7 },
+  hardLockTitle: { fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 24, color: C.text },
+  hardLockPendingTag: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, borderWidth: 1, borderColor: '#D8BD7B', backgroundColor: 'rgba(255,249,232,0.92)', paddingHorizontal: 7, paddingVertical: 3 },
+  hardLockPendingTagText: { fontFamily: F.sansBold, fontSize: 7.4, lineHeight: 9, letterSpacing: 0.75, color: '#7A5A1D' },
+  hardLockBody: { marginTop: 4, fontFamily: F.serifMedium, fontSize: 13.25, lineHeight: 17, color: C.textSecondary },
+  hardLockBodyOn: { color: '#89651F' },
+  hardLockBodyLocked: { color: '#8F3846' },
+  hardLockBodyPending: { color: '#625F59' },
+  hardLockChevron: { flexShrink: 0, transform: [{ rotate: '0deg' }] },
+  hardLockChevronOpen: { transform: [{ rotate: '90deg' }] },
+  hardLockOnBadge: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, borderWidth: 1, borderColor: '#D9BF82', backgroundColor: 'rgba(255,250,236,0.92)', paddingHorizontal: 8, paddingVertical: 7 },
+  hardLockOnBadgeText: { fontFamily: F.sansBold, fontSize: 7.8, letterSpacing: 0.7, color: '#7A5A1D' },
+  hardLockSettings: { borderTopWidth: 1, borderTopColor: 'rgba(150,119,54,0.16)', padding: 13, paddingTop: 14, gap: 11 },
+  hardLockPendingDetail: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#C8C5BE', backgroundColor: 'rgba(255,255,255,0.66)', paddingHorizontal: 11, paddingVertical: 12 },
+  hardLockPendingDetailIcon: { width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', backgroundColor: '#E1E0DB', alignItems: 'center', justifyContent: 'center' },
+  hardLockPendingDetailTitle: { fontFamily: F.serifSemiBold, fontSize: 16.5, lineHeight: 20, color: '#4F4C47' },
+  hardLockPendingDetailBody: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 12.5, lineHeight: 17, color: '#716D66' },
+  hardLockPendingCancel: { alignSelf: 'center', minHeight: 32, justifyContent: 'center', borderRadius: 10, borderCurve: 'continuous', borderWidth: 1, borderColor: '#C6C3BC', backgroundColor: '#FFFFFF', paddingHorizontal: 8 },
+  hardLockPendingCancelText: { fontFamily: F.sansBold, fontSize: 7.8, letterSpacing: 0.75, color: '#5D5953' },
+  hardLockExplanationCard: { borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(190,156,84,0.30)', backgroundColor: 'rgba(255,252,244,0.78)', paddingHorizontal: 13, paddingVertical: 13 },
+  hardLockExplanationLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.4, color: C.goldDark },
+  hardLockExplanationTitle: { marginTop: 5, fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22, color: C.text },
+  hardLockDelayRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 17, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E2D5B9', backgroundColor: 'rgba(255,255,255,0.78)', paddingHorizontal: 11, paddingVertical: 9 },
+  hardLockDelayIcon: { width: 38, height: 38, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F7EBCF', alignItems: 'center', justifyContent: 'center' },
+  hardLockDelayCopy: { flex: 1, minWidth: 0 },
+  hardLockDelayLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.25, color: C.textMuted },
+  hardLockDelayValue: { marginTop: 2, fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 21, color: C.text },
+  hardLockDelayHint: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.goldDark },
+  hardLockExplanation: { marginTop: 6, fontFamily: F.serifMedium, fontSize: 14.5, lineHeight: 20.5, color: C.textSecondary },
+  permanentNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, borderRadius: 16, borderCurve: 'continuous', backgroundColor: 'rgba(246,234,202,0.72)', paddingHorizontal: 11, paddingVertical: 10 },
+  permanentNoteText: { flex: 1, fontFamily: F.serifMedium, fontSize: 13, lineHeight: 18, color: '#71551E' },
+  bottomNote: { marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#CDE3DA', backgroundColor: '#EAF5F0', paddingHorizontal: 13, paddingVertical: 12 },
   bottomNoteIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#D7EBE2', alignItems: 'center', justifyContent: 'center' },
   bottomNoteText: { flex: 1, fontFamily: F.sansMedium, fontSize: 13, lineHeight: 18, color: '#35685C' },
   newPackSheet: { backgroundColor: C.bg, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 18, paddingBottom: 28 },
+  cooldownSheet: { backgroundColor: C.bg, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 18, paddingBottom: 30 },
+  cooldownList: { marginTop: 14, overflow: 'hidden', borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface },
+  cooldownListContent: { paddingHorizontal: 12 },
+  cooldownOption: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10 },
+  cooldownOptionBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border },
+  cooldownOptionIcon: { width: 38, height: 38, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
+  cooldownOptionIconOn: { backgroundColor: '#A97825' },
+  cooldownOptionCopy: { flex: 1, minWidth: 0 },
+  cooldownOptionTitle: { fontFamily: F.serifSemiBold, fontSize: 16.5, lineHeight: 20, color: C.text },
+  cooldownOptionTitleOn: { color: '#7A5A1D' },
+  cooldownOptionDetail: { marginTop: 2, fontFamily: F.sans, fontSize: 11, lineHeight: 15.5, color: C.textSecondary },
+  cooldownCurrent: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.85, color: C.goldDark },
+  cooldownFootnote: { marginTop: 13, paddingHorizontal: 3, fontFamily: F.sansMedium, fontSize: 11.5, lineHeight: 16.5, color: C.textSecondary },
   pendingSheet: { backgroundColor: C.bg, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 18, paddingBottom: 30 },
   packNameInput: { marginTop: 18, height: 54, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, justifyContent: 'center', paddingHorizontal: 14 },
   nameInput: { fontFamily: F.serifMedium, fontSize: 18, color: C.text },

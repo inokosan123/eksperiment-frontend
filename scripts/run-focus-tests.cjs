@@ -20,6 +20,38 @@ const fixtures = {
       created_at: 100,
       updated_at: 100,
     },
+    {
+      id: 'daily-with-dormant-session-draft',
+      name: 'Daily with dormant draft',
+      zones_json: JSON.stringify([
+        {
+          id: 'morning-draft',
+          name: 'Morning',
+          startMinutes: 0,
+          endMinutes: 720,
+          closedGroupIds: [],
+          rules: [],
+        },
+        {
+          id: 'evening-draft',
+          name: 'Evening',
+          startMinutes: 720,
+          endMinutes: 0,
+          closedGroupIds: [],
+          rules: [],
+        },
+      ]),
+      rules_json: JSON.stringify([]),
+      meta_json: JSON.stringify({
+        schemaVersion: 4,
+        kind: 'daily',
+        budgetMinutes: 240,
+        tolerableMinutes: 300,
+        essentialOnlyMinutes: 360,
+      }),
+      created_at: 200,
+      updated_at: 200,
+    },
   ],
   schedule: [{ day: 0, plan_id: 'legacy-plan' }],
   days: [

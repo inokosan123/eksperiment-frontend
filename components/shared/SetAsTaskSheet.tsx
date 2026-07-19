@@ -368,41 +368,14 @@ function churchScheduleToConfig(schedule: ChallengeChurchScheduleDraft): Challen
 }
 
 function challengePanelTone(category: ChallengeRecord['category'] | ChallengeCatalogEntry['category']) {
-  switch (category) {
-    case 'prayer':
-      return {
-        accent: '#C58A2D',
-        border: 'rgba(197,138,45,0.28)',
-        badgeBg: '#FFF6E8',
-        badgeText: '#B7791F',
-        meta: '#B78331',
-      };
-    case 'journal':
-      return {
-        accent: '#8B5CF6',
-        border: 'rgba(139,92,246,0.26)',
-        badgeBg: '#F4EEFF',
-        badgeText: '#7C3AED',
-        meta: '#7C6EAF',
-      };
-    case 'church':
-      return {
-        accent: '#2F8A62',
-        border: 'rgba(47,138,98,0.26)',
-        badgeBg: '#EAF8F1',
-        badgeText: '#17603F',
-        meta: '#2F8A62',
-      };
-    case 'scripture':
-    default:
-      return {
-        accent: '#2C9AEF',
-        border: 'rgba(44,154,239,0.24)',
-        badgeBg: '#EDF7FF',
-        badgeText: '#2C9AEF',
-        meta: '#8B6B2F',
-      };
-  }
+  void category;
+  return {
+    accent: '#C5A059',
+    border: 'rgba(197,160,89,0.30)',
+    badgeBg: '#FBF4E7',
+    badgeText: '#8B6B2F',
+    meta: '#9B7A39',
+  };
 }
 
 function challengeIcon(icon: ChallengeIconKey, color: string, size = 18) {
@@ -2047,7 +2020,7 @@ export function ChallengePanel({
                 key={item.id}
                 style={[
                   s.challengeCardShell,
-                  { borderLeftColor: tone.accent, borderRightColor: tone.accent },
+                  { borderColor: tone.border },
                   recentlyStarted && s.challengeCardShellStarted,
                 ]}
               >
@@ -2058,16 +2031,18 @@ export function ChallengePanel({
                 >
                   <LinearGradient
                     pointerEvents="none"
-                    colors={['rgba(255,255,255,0)', `${tone.accent}0C`, 'rgba(255,253,247,0.85)']}
-                    start={{ x: 0.05, y: 0 }}
-                    end={{ x: 0.95, y: 1 }}
+                    colors={['#FFF8E9', '#FFFDF7', '#FFFFFF']}
+                    start={{ x: 0.04, y: 0 }}
+                    end={{ x: 0.94, y: 1 }}
                     style={StyleSheet.absoluteFill}
                   />
-                  <View pointerEvents="none" style={s.challengeWatermark}>
-                    {challengeIcon(item.icon, `${tone.accent}1C`, 54)}
-                  </View>
+                  <View pointerEvents="none" style={s.challengeCardGlow} />
+                  <View pointerEvents="none" style={[s.challengeSideRail, s.challengeSideRailLeft]} />
+                  <View pointerEvents="none" style={[s.challengeSideRail, s.challengeSideRailRight]} />
+                  <View pointerEvents="none" style={s.challengeTopHighlight} />
                   <View style={s.challengeTop}>
-                    <View style={[s.challengeBadge, { backgroundColor: tone.badgeBg, borderWidth: 1, borderColor: tone.border }]}>
+                    <View style={[s.challengeBadge, { backgroundColor: tone.badgeBg, borderColor: tone.border }]}>
+                      <View style={[s.challengeBadgeDot, { backgroundColor: tone.accent }]} />
                       <Text style={[s.challengeBadgeText, { color: tone.badgeText }]}>{item.category.toUpperCase()}</Text>
                     </View>
                     <ChallengeStreakPill count={item.streak} />
@@ -2075,34 +2050,40 @@ export function ChallengePanel({
 
                   <View style={s.challengeTitleRow}>
                     <Text style={s.challengeTitle}>{item.title}</Text>
-                    <View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
+                    <View style={[s.challengeChevron, expanded && s.challengeChevronExpanded]}>
                       <ChevronDown s={14} c="#C9B18A" />
                     </View>
                   </View>
 
-                  <View style={s.challengeMetaRow}>
-                    <Text style={[s.challengeMetaText, s.challengeMetaTextInRow]} numberOfLines={1}>
+                  <View style={s.challengeMetaCapsule}>
+                    <Text style={s.challengeMetaText} numberOfLines={1}>
                       {item.time || '--:--'}  ·  {item.paceLabel || item.scheduleLabel}
                     </Text>
-                    {progressPct !== null ? (
-                      <Text style={[s.challengePctText, { color: tone.meta }]}>{progressPct}%</Text>
-                    ) : null}
                   </View>
 
                   {progressPct !== null ? (
-                    <View style={s.challengeProgressTrack}>
-                      <LinearGradient
-                        colors={['#E0B770', C.gold, '#B6913D']}
-                        start={{ x: 0, y: 0.5 }}
-                        end={{ x: 1, y: 0.5 }}
-                        style={[
-                          s.challengeProgressFill,
-                          { width: `${progressPct}%` },
-                        ]}
-                      />
+                    <View style={s.challengeProgressBlock}>
+                      <View style={s.challengeProgressHeader}>
+                        <Text style={[s.challengeProgressLabel, { color: tone.meta }]} numberOfLines={1}>
+                          {item.headline || 'Progress'}
+                        </Text>
+                        <Text style={s.challengeProgressValue}>
+                          {item.progressCurrent}/{item.progressTotal} {item.progressUnit}
+                        </Text>
+                      </View>
+                      <View style={s.challengeProgressTrack}>
+                        <LinearGradient
+                          colors={['#E7C77F', C.gold, '#A97925']}
+                          start={{ x: 0, y: 0.5 }}
+                          end={{ x: 1, y: 0.5 }}
+                          style={[s.challengeProgressFill, { width: `${progressPct}%` }]}
+                        >
+                          <View style={s.challengeProgressShine} />
+                        </LinearGradient>
+                      </View>
                     </View>
                   ) : (
-                    <View style={[s.challengeProgressTrack, { opacity: 0.4 }]} />
+                    <View style={[s.challengeProgressTrack, s.challengeProgressTrackEmpty]} />
                   )}
                 </TouchableOpacity>
 
@@ -2254,6 +2235,9 @@ export function ChallengePanel({
           {pausedItems.map(item => {
             const expanded = expandedChallengeId === item.id;
             const tone = challengePanelTone(item.category);
+            const progressPct = item.showBar && item.progressTotal
+              ? Math.min(100, Math.round((item.progressCurrent / item.progressTotal) * 100))
+              : null;
             return (
             <View
               key={item.id}
@@ -2269,34 +2253,59 @@ export function ChallengePanel({
                 activeOpacity={0.84}
                 style={[s.challengeCard, s.challengeCardPaused]}
               >
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['#FAF6ED', '#FCFAF6', '#FFFFFF']}
+                  start={{ x: 0.05, y: 0 }}
+                  end={{ x: 0.95, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View pointerEvents="none" style={[s.challengeCardGlow, s.challengeCardGlowPaused]} />
+                <View pointerEvents="none" style={[s.challengeSideRail, s.challengeSideRailLeft, s.challengeSideRailPaused]} />
+                <View pointerEvents="none" style={[s.challengeSideRail, s.challengeSideRailRight, s.challengeSideRailPaused]} />
+                <View pointerEvents="none" style={s.challengeTopHighlight} />
                 <View style={s.challengeTop}>
-                  <View style={[s.challengeBadgeMuted, { backgroundColor: tone.badgeBg }]}>
+                  <View style={[s.challengeBadgeMuted, { backgroundColor: tone.badgeBg, borderColor: tone.border }]}>
+                    <View style={[s.challengeBadgeDot, s.challengeBadgeDotPaused, { backgroundColor: tone.accent }]} />
                     <Text style={[s.challengeBadgeMutedText, { color: tone.badgeText }]}>{item.category.toUpperCase()}</Text>
                   </View>
                   <View style={s.challengePausedPill}>
+                    <Pause s={10} c="#938A7D" />
                     <Text style={s.challengePausedText}>PAUSED</Text>
                   </View>
                 </View>
                 <View style={s.challengeTitleRow}>
                   <Text style={[s.challengeTitle, s.challengeTitlePaused]}>{item.title}</Text>
-                  <View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
+                  <View style={[s.challengeChevron, s.challengeChevronPaused, expanded && s.challengeChevronExpanded]}>
                     <ChevronDown s={14} c="#BEB6A8" />
                   </View>
                 </View>
-                {item.showBar && item.progressTotal ? (
-                  <View style={[s.challengeProgressTrack, s.challengeProgressTrackPaused]}>
-                    <View
-                      style={[
-                        s.challengeProgressFill,
-                        s.challengeProgressFillPaused,
-                        { width: `${Math.min(100, Math.round((item.progressCurrent / item.progressTotal) * 100))}%` },
-                      ]}
-                    />
+                <View style={[s.challengeMetaCapsule, s.challengeMetaCapsulePaused]}>
+                  <Text style={[s.challengeMetaText, s.challengeMetaTextPaused]} numberOfLines={1}>
+                    {item.time || '--:--'}  ·  {item.paceLabel || item.scheduleLabel}
+                  </Text>
+                </View>
+                {progressPct !== null ? (
+                  <View style={s.challengeProgressBlock}>
+                    <View style={s.challengeProgressHeader}>
+                      <Text style={[s.challengeProgressLabel, s.challengeProgressLabelPaused]}>Saved progress</Text>
+                      <Text style={[s.challengeProgressValue, s.challengeProgressValuePaused]}>
+                        {item.progressCurrent}/{item.progressTotal} {item.progressUnit}
+                      </Text>
+                    </View>
+                    <View style={[s.challengeProgressTrack, s.challengeProgressTrackPaused]}>
+                      <View
+                        style={[
+                          s.challengeProgressFill,
+                          s.challengeProgressFillPaused,
+                          { width: `${progressPct}%` },
+                        ]}
+                      />
+                    </View>
                   </View>
                 ) : (
-                  <View style={[s.challengeProgressTrack, { opacity: 0.28 }]} />
+                  <View style={[s.challengeProgressTrack, s.challengeProgressTrackPaused, s.challengeProgressTrackEmpty]} />
                 )}
-                <Text style={s.challengeMetaText}>{item.time || '--:--'}  ·  {item.paceLabel || item.scheduleLabel}</Text>
               </TouchableOpacity>
               {expanded && (
                 <View style={s.challengeEditor}>
@@ -2684,21 +2693,31 @@ function ChallengeCatalogEntryCard({
 }) {
   const tone = challengePanelTone(entry.category);
   return (
-    <View style={[s.catalogStartCard, expanded && s.catalogStartCardExpanded]}>
+    <View style={[s.catalogStartCard, { borderColor: tone.border }, expanded && s.catalogStartCardExpanded]}>
       <LinearGradient
         pointerEvents="none"
-        colors={['rgba(255,255,255,0.92)', `${tone.accent}07`, 'rgba(255,252,244,0.9)']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+        colors={['#FFF8EA', '#FFFDF7', '#FFFFFF']}
+        start={{ x: 0.04, y: 0 }}
+        end={{ x: 0.96, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
+      <View pointerEvents="none" style={s.catalogStartGlow} />
+      <View pointerEvents="none" style={[s.challengeSideRail, s.challengeSideRailLeft]} />
+      <View pointerEvents="none" style={[s.challengeSideRail, s.challengeSideRailRight]} />
+      <View pointerEvents="none" style={s.challengeTopHighlight} />
       <TouchableOpacity {...guideEntryBinding} onPress={onToggle} activeOpacity={0.84} style={s.catalogStartTap}>
         <View style={s.catalogStartTopRow}>
           <View style={s.catalogStartMain}>
-            <View style={[s.catalogStartIconWrap, { backgroundColor: `${tone.accent}10`, borderColor: `${tone.accent}26` }]}>
-              {challengeIcon(entry.icon, tone.accent, 16)}
+            <View style={[s.catalogStartIconWrap, { backgroundColor: tone.badgeBg, borderColor: tone.border }]}>
+              {challengeIcon(entry.icon, tone.accent, 18)}
             </View>
             <View style={s.catalogStartCopy}>
+              <View style={s.catalogStartEyebrow}>
+                <View style={[s.catalogStartCategory, { backgroundColor: tone.badgeBg, borderColor: tone.border }]}>
+                  <View style={[s.catalogStartCategoryDot, { backgroundColor: tone.accent }]} />
+                  <Text style={[s.catalogStartCategoryText, { color: tone.badgeText }]}>{entry.category}</Text>
+                </View>
+              </View>
               <Text style={s.catalogStartTitle} numberOfLines={2}>{entry.title}</Text>
               <Text style={s.catalogStartBody} numberOfLines={expanded ? 3 : 2}>{entry.description}</Text>
             </View>
@@ -4536,101 +4555,145 @@ const s = StyleSheet.create({
   },
   challengeCardShell: {
     borderRadius: 24,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
     borderColor: 'rgba(197,160,89,0.34)',
-    borderTopColor: 'rgba(197,160,89,0.40)',
-    borderBottomColor: 'rgba(197,160,89,0.40)',
-    borderLeftColor: C.gold,
-    borderRightColor: C.gold,
     backgroundColor: '#FFFFFF',
     overflow: 'hidden',
-    marginBottom: 4,
-    shadowColor: '#1C1917',
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 10,
-    elevation: 3,
+    marginBottom: 5,
+    boxShadow: '0 5px 16px rgba(77,57,27,0.085)',
   },
   challengeCardShellStarted: {
     borderColor: 'rgba(197,160,89,0.48)',
-    borderLeftColor: C.gold,
-    borderRightColor: C.gold,
     backgroundColor: '#FFFDF7',
-    shadowOpacity: 0.16,
-    shadowRadius: 24,
-    elevation: 4,
+    boxShadow: '0 8px 22px rgba(92,67,25,0.13)',
   },
   challengeCardShellPaused: {
-    borderColor: '#E9E3D8',
-    borderLeftColor: '#D8C49A',
-    borderRightColor: '#D8C49A',
+    borderColor: 'rgba(197,160,89,0.22)',
     backgroundColor: '#FBFAF7',
-    shadowColor: '#A8A29E',
-    shadowOpacity: 0.035,
+    boxShadow: '0 3px 11px rgba(67,60,51,0.05)',
   },
   challengeCardPaused: {
     backgroundColor: 'transparent',
   },
   challengeCard: {
+    position: 'relative',
+    overflow: 'hidden',
     paddingHorizontal: 16,
-    paddingTop: 9,
-    paddingBottom: 11,
+    paddingTop: 10,
+    paddingBottom: 12,
+  },
+  challengeCardGlow: {
+    position: 'absolute',
+    width: 118,
+    height: 66,
+    borderRadius: 59,
+    right: -31,
+    top: -36,
+    backgroundColor: 'rgba(197,160,89,0.09)',
+    transform: [{ rotate: '-10deg' }],
+  },
+  challengeCardGlowPaused: {
+    backgroundColor: 'rgba(143,132,113,0.055)',
+  },
+  challengeSideRail: {
+    position: 'absolute',
+    top: 7,
+    bottom: 7,
+    width: 4,
+    borderRadius: 3,
+    backgroundColor: '#C5A059',
+    boxShadow: '0 1px 3px rgba(120,83,20,0.18)',
+  },
+  challengeSideRailLeft: {
+    left: 1,
+  },
+  challengeSideRailRight: {
+    right: 1,
+  },
+  challengeSideRailPaused: {
+    backgroundColor: '#D8C49A',
+    opacity: 0.78,
+  },
+  challengeTopHighlight: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    top: 1,
+    height: 1,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,255,255,0.82)',
   },
   challengeTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 1,
+    marginBottom: 3,
   },
   challengeBadge: {
     alignSelf: 'flex-start',
     borderRadius: 999,
+    borderWidth: 1,
     backgroundColor: '#EFF6FF',
-    paddingHorizontal: 9,
-    paddingVertical: 3.5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  challengeBadgeDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+  },
+  challengeBadgeDotPaused: {
+    opacity: 0.64,
   },
   challengeBadgeText: {
     fontFamily: F.sansBold,
-    fontSize: 8.5,
-    lineHeight: 11,
-    letterSpacing: 1.5,
+    fontSize: 8,
+    lineHeight: 10,
+    letterSpacing: 1.25,
     color: '#3B82F6',
     textTransform: 'uppercase',
   },
   challengeBadgeMuted: {
     alignSelf: 'flex-start',
     borderRadius: 999,
+    borderWidth: 1,
     backgroundColor: '#F5F5F4',
-    paddingHorizontal: 9,
-    paddingVertical: 3.5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   challengeBadgeMutedText: {
     fontFamily: F.sansBold,
-    fontSize: 8.5,
-    lineHeight: 11,
-    letterSpacing: 1.5,
+    fontSize: 8,
+    lineHeight: 10,
+    letterSpacing: 1.25,
     color: '#A8A29E',
     textTransform: 'uppercase',
   },
   challengeFlame: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 0,
+    gap: 1,
     height: 24,
     borderRadius: 12,
+    borderCurve: 'continuous',
     backgroundColor: '#FFF5E7',
     borderWidth: 1,
-    borderColor: '#FBE0BE',
-    paddingLeft: 10,
-    paddingRight: 4,
+    borderColor: '#F2D8B4',
+    paddingLeft: 9,
+    paddingRight: 3,
   },
   challengeFlameIcon: {
     width: 17,
     height: 17,
-    borderRadius: 8.5,
-    backgroundColor: '#FFF1D6',
+    borderRadius: 9,
+    backgroundColor: '#FFF0D4',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -4642,10 +4705,10 @@ const s = StyleSheet.create({
     fontFamily: F.sansBold,
     fontSize: 10.5,
     color: '#C46A19',
-    minWidth: 10,
+    minWidth: 9,
     textAlign: 'right',
     includeFontPadding: false,
-    textAlignVertical: 'center',
+    fontVariant: ['tabular-nums'],
   },
   challengeTitleRow: {
     flexDirection: 'row',
@@ -4656,45 +4719,47 @@ const s = StyleSheet.create({
   challengeTitle: {
     flex: 1,
     fontFamily: F.serifMedium,
-    fontSize: 19,
-    lineHeight: 24,
+    fontSize: 18.5,
+    lineHeight: 23,
     color: '#1A1714',
   },
   challengeTitlePaused: {
     color: '#4B5563',
   },
-  challengeMetaText: {
-    marginTop: 9,
-    marginBottom: 1,
-    fontFamily: F.sansBold,
-    fontSize: 10.5,
-    letterSpacing: 1.1,
-    color: '#B49B67',
-  },
-  challengeMetaRow: {
-    marginTop: 9,
-    marginBottom: 1,
-    flexDirection: 'row',
+  challengeChevron: {
+    width: 27,
+    height: 27,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#EEE4D3',
+    backgroundColor: 'rgba(255,251,242,0.9)',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    columnGap: 8,
+    justifyContent: 'center',
+    transform: [{ rotate: '0deg' }],
   },
-  challengeMetaTextInRow: {
-    flexShrink: 1,
-    marginTop: 0,
-    marginBottom: 0,
+  challengeChevronPaused: {
+    borderColor: '#E7E1D7',
+    backgroundColor: 'rgba(255,255,255,0.72)',
   },
-  challengePctText: {
+  challengeChevronExpanded: {
+    transform: [{ rotate: '180deg' }],
+  },
+  challengeMetaCapsule: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    marginTop: 4,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+  },
+  challengeMetaCapsulePaused: {
+    opacity: 0.9,
+  },
+  challengeMetaText: {
     fontFamily: F.sansBold,
-    fontSize: 10.5,
-    letterSpacing: 0.4,
-    fontVariant: ['tabular-nums'],
-  },
-  challengeWatermark: {
-    position: 'absolute',
-    right: 40,
-    top: 4,
-    transform: [{ rotate: '-8deg' }],
+    fontSize: 9.6,
+    lineHeight: 12,
+    letterSpacing: 0.8,
+    color: '#B49B67',
   },
   challengeMetaTextPaused: {
     color: '#A8A29E',
@@ -4703,9 +4768,12 @@ const s = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: '#E7E5E4',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    backgroundColor: 'rgba(255,255,255,0.76)',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   challengePausedText: {
     fontFamily: F.sansBold,
@@ -4719,19 +4787,64 @@ const s = StyleSheet.create({
     marginTop: 0,
     height: 6,
     borderRadius: 999,
-    backgroundColor: 'rgba(197,160,89,0.13)',
+    backgroundColor: 'rgba(197,160,89,0.14)',
     overflow: 'hidden',
   },
+  challengeProgressTrackEmpty: {
+    marginTop: 10,
+    opacity: 0.44,
+  },
   challengeProgressTrackPaused: {
-    backgroundColor: '#EEEAE2',
+    backgroundColor: '#E9E4DB',
   },
   challengeProgressFill: {
     height: '100%',
     borderRadius: 999,
     backgroundColor: C.gold,
+    overflow: 'hidden',
   },
   challengeProgressFillPaused: {
-    backgroundColor: '#D6D3D1',
+    backgroundColor: '#CFC8BC',
+  },
+  challengeProgressShine: {
+    position: 'absolute',
+    top: 1,
+    left: 6,
+    right: 6,
+    height: 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.42)',
+  },
+  challengeProgressBlock: {
+    marginTop: 9,
+  },
+  challengeProgressHeader: {
+    marginBottom: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  challengeProgressLabel: {
+    flex: 1,
+    fontFamily: F.sansBold,
+    fontSize: 8.2,
+    letterSpacing: 1.05,
+    textTransform: 'uppercase',
+    color: '#A8884C',
+  },
+  challengeProgressLabelPaused: {
+    color: '#9B9489',
+  },
+  challengeProgressValue: {
+    fontFamily: F.sansBold,
+    fontSize: 9.3,
+    letterSpacing: 0.35,
+    color: '#756342',
+    fontVariant: ['tabular-nums'],
+  },
+  challengeProgressValuePaused: {
+    color: '#918B82',
   },
   challengeEditor: {
     paddingHorizontal: 18,
@@ -4952,42 +5065,39 @@ const s = StyleSheet.create({
     color: '#9CA3AF',
   },
   catalogStartCard: {
+    position: 'relative',
     borderRadius: 24,
-    borderLeftWidth: 3,
-    borderRightWidth: 3,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderLeftColor: 'rgba(197,160,89,0.40)',
-    borderRightColor: 'rgba(197,160,89,0.30)',
-    borderTopColor: 'rgba(197,160,89,0.16)',
-    borderBottomColor: 'rgba(197,160,89,0.14)',
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.30)',
     backgroundColor: '#FFFDF9',
     overflow: 'hidden',
-    shadowColor: '#C5A059',
-    shadowOpacity: 0.055,
-    shadowOffset: { width: 0, height: 5 },
-    shadowRadius: 12,
-    elevation: 2,
+    boxShadow: '0 5px 16px rgba(77,57,27,0.075)',
   },
   catalogStartCardExpanded: {
-    borderLeftColor: '#C5A059',
-    borderRightColor: '#C5A059',
-    borderTopColor: 'rgba(197,160,89,0.34)',
-    borderBottomColor: 'rgba(197,160,89,0.34)',
+    borderColor: 'rgba(197,160,89,0.46)',
     backgroundColor: '#FFFCF4',
-    shadowOpacity: 0.14,
-    shadowRadius: 22,
-    elevation: 4,
+    boxShadow: '0 8px 22px rgba(92,67,25,0.12)',
+  },
+  catalogStartGlow: {
+    position: 'absolute',
+    width: 108,
+    height: 62,
+    borderRadius: 54,
+    right: -32,
+    top: -35,
+    backgroundColor: 'rgba(197,160,89,0.085)',
+    transform: [{ rotate: '-10deg' }],
   },
   catalogStartTap: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
   },
   catalogStartTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 9,
   },
   catalogStartMain: {
     flex: 1,
@@ -4997,9 +5107,10 @@ const s = StyleSheet.create({
     gap: 10,
   },
   catalogStartIconWrap: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     borderRadius: 13,
+    borderCurve: 'continuous',
     backgroundColor: '#FBF4E7',
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.18)',
@@ -5011,18 +5122,47 @@ const s = StyleSheet.create({
     minWidth: 0,
     paddingTop: 0,
   },
+  catalogStartEyebrow: {
+    minHeight: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 3,
+  },
+  catalogStartCategory: {
+    maxWidth: '100%',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  catalogStartCategoryDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
+  catalogStartCategoryText: {
+    fontFamily: F.sansBold,
+    fontSize: 7.2,
+    lineHeight: 9,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
   catalogStartTitle: {
     fontFamily: F.serifMedium,
-    fontSize: 16.8,
+    fontSize: 17,
     lineHeight: 21,
     color: '#231F20',
   },
   catalogStartBody: {
     marginTop: 2,
     fontFamily: F.sans,
-    fontSize: 12,
-    lineHeight: 15.5,
-    color: '#8D867B',
+    fontSize: 11.6,
+    lineHeight: 15,
+    color: '#8F9098',
   },
   catalogStartMeta: {
     marginTop: 8,

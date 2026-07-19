@@ -41,6 +41,7 @@ import { FormatState, RichTextEditor, RichTextEditorRef, RichToolbar } from '@/c
 import RichCommentText from '@/components/shared/RichCommentText';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { CategoryChipPicker, CategoryEditorModal, CategoryEditorPanel } from './CategoryColorTools';
+import ScriptureBibleNotesSheet from './ScriptureBibleNotesSheet';
 import { BibleVerse, ScriptureAnnotation, useScripture } from './ScriptureContext';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
@@ -103,7 +104,14 @@ export default function ScriptureReaderView({
   onGuidedAdvance,
 }: ScriptureReaderViewProps = {}) {
   const router = useRouter();
-  const params = useLocalSearchParams<{ bookId?: string; chapter?: string; verse?: string; lang?: ScriptureLanguage; editCommentId?: string }>();
+  const params = useLocalSearchParams<{
+    bookId?: string;
+    chapter?: string;
+    verse?: string;
+    lang?: ScriptureLanguage;
+    editCommentId?: string;
+    bibleNotes?: 'collapsed' | 'expanded';
+  }>();
   const insets = useSafeAreaInsets();
   const { settings } = useAppSettings();
   const {
@@ -139,6 +147,13 @@ export default function ScriptureReaderView({
   const [viewingComment, setViewingComment] = useState<ScriptureAnnotation | null>(null);
   const [editCommentTarget, setEditCommentTarget] = useState<ScriptureAnnotation | null>(null);
   const [colorEditorOpen, setColorEditorOpen] = useState(false);
+  const [bibleNotesSheetMode, setBibleNotesSheetMode] = useState<'closed' | 'collapsed' | 'expanded'>(
+    params.bibleNotes === 'collapsed'
+      ? 'collapsed'
+      : params.bibleNotes === 'expanded'
+        ? 'expanded'
+        : 'closed',
+  );
   const scrollRef = useRef<ScrollView>(null);
   const verseLayoutYRef = useRef<Record<number, number>>({});
   const handledInitialScrollKeyRef = useRef<string | null>(null);
@@ -520,10 +535,10 @@ export default function ScriptureReaderView({
       onGuidedAdvance?.('openNotes');
       return;
     }
-    router.push({
-      pathname: '/bible-notes',
-      params: { bookId: String(bookId), chapter: String(chapter), open: '1' },
-    });
+    Keyboard.dismiss();
+    clearSelection();
+    setViewingComment(null);
+    setBibleNotesSheetMode('expanded');
   };
 
   const handleBack = () => {
@@ -823,6 +838,19 @@ export default function ScriptureReaderView({
       </ScrollView>
 
       {bottomDock}
+
+      {!isGuided && bibleNotesSheetMode !== 'closed' && (
+        <ScriptureBibleNotesSheet
+          bookId={bookId}
+          bookName={currentBook.name}
+          chapter={chapter}
+          expanded={bibleNotesSheetMode === 'expanded'}
+          onExpandedChange={nextExpanded => {
+            setBibleNotesSheetMode(nextExpanded ? 'expanded' : 'collapsed');
+          }}
+          onClose={() => setBibleNotesSheetMode('closed')}
+        />
+      )}
 
       <SelectionTools
         visible={selectionActive}

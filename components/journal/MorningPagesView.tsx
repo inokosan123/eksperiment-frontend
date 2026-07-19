@@ -2,8 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Keyboard, View, Text, StyleSheet, TextInput } from 'react-native';
 import Animated, { useAnimatedProps, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-
-const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -17,6 +15,7 @@ import { useTasks } from '@/components/tasks/TaskProvider';
 import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 
+const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 
 const BG = '#FAF7F0';
 const TARGET = 750;
@@ -53,10 +52,22 @@ export default function MorningPagesView() {
   const hydratedDateRef = useRef('');
   const dirtyRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exitSaveRef = useRef({
+    date: selectedDateKey,
+    html: '',
+    readOnly: isReadOnly,
+    queueCelebration: !isTaskLaunch,
+  });
   const wordCount = countWords(html);
   const pct = Math.min(wordCount / TARGET, 1);
   const isComplete = wordCount >= COMPLETE_MINIMUM;
   const reachedTarget = wordCount >= TARGET;
+  exitSaveRef.current = {
+    date: selectedDateKey,
+    html,
+    readOnly: isReadOnly,
+    queueCelebration: !isTaskLaunch,
+  };
 
   const animPct = useSharedValue(pct);
   const animCount = useSharedValue(wordCount);
@@ -108,6 +119,8 @@ export default function MorningPagesView() {
       void upsertEntry(selectedDateKey, {
         morningPagesHtml: html,
         morningPagesWordCount: countWords(html),
+      }, {
+        queueCompletionCelebration: !isTaskLaunch,
       }).then(() => {
         dirtyRef.current = false;
       }).catch(error => {
@@ -120,7 +133,7 @@ export default function MorningPagesView() {
         clearTimeout(saveTimerRef.current);
       }
     };
-  }, [html, isReadOnly, selectedDateKey, upsertEntry]);
+  }, [html, isReadOnly, isTaskLaunch, selectedDateKey, upsertEntry]);
 
   const saveNow = async () => {
     if (isReadOnly) return;
@@ -132,9 +145,30 @@ export default function MorningPagesView() {
     await upsertEntry(selectedDateKey, {
       morningPagesHtml: html,
       morningPagesWordCount: countWords(html),
+    }, {
+      queueCompletionCelebration: !isTaskLaunch,
     });
     dirtyRef.current = false;
   };
+
+  useEffect(() => () => {
+    const snapshot = exitSaveRef.current;
+    if (
+      snapshot.readOnly
+      || !dirtyRef.current
+      || hydratedDateRef.current !== snapshot.date
+    ) return;
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    void upsertEntry(snapshot.date, {
+      morningPagesHtml: snapshot.html,
+      morningPagesWordCount: countWords(snapshot.html),
+    }, {
+      queueCompletionCelebration: snapshot.queueCelebration,
+    }).catch(error => {
+      console.warn('Morning pages exit save failed', error);
+    });
+  }, [upsertEntry]);
 
   const finish = async () => {
     const shouldCompleteTask = isTaskLaunch && !!params.taskInstanceId && isComplete;
@@ -157,7 +191,13 @@ export default function MorningPagesView() {
         title={taskTitle.toUpperCase()}
         showBack
         bg={BG}
-        onBackOverride={() => router.back()}
+        onBackOverride={() => {
+          if (isReadOnly) {
+            router.back();
+            return;
+          }
+          void finish();
+        }}
         rightElement={(
           <TouchableOpacity
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowInfo(v => !v); }}

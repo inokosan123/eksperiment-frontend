@@ -15,9 +15,6 @@ import FocusSwitch from './FocusSwitch';
 import GoldButton from './GoldButton';
 import GroupLimitSheet from './GroupLimitSheet';
 import PlanGroupSheet from './PlanGroupSheet';
-import SessionClockEditor, { SESSION_COLORS } from './SessionClockEditor';
-import SessionCopySheet from './SessionCopySheet';
-import TimeWheelSheet from './TimeWheelSheet';
 import {
   clearNativeActivitySelectionsWithPrefix,
   getNativeActivitySelectionSummary,
@@ -30,26 +27,17 @@ import { PLAN_VISUALS, planVisualForTheme } from './planVisuals';
 import {
   APP_CATEGORIES,
   DEFAULT_GROUP_APP_IDS,
-  connectedSessionsAreValid,
   dateKey,
   defaultPlanThemeId,
   deleteDayPlan,
   formatMinutesShort,
-  formatTimeOfDay,
   getEffectivePlan,
   groupName,
-  moveSessionBoundary,
-  normalizeConnectedSessions,
   recordLimitExceeded,
-  removeSessionAndExtendPrevious,
   saveDayPlan,
-  splitSessionAt,
   useDayPlan,
-  zoneContains,
   type GroupRule,
-  type PlanKind,
   type PlanThemeId,
-  type PlanZone,
   type Strength,
 } from './dayPlanStore';
 
@@ -76,33 +64,8 @@ function completeRules(rules: GroupRule[], groupIds: string[]) {
   return groupIds.map(groupId => byId.get(groupId) ?? defaultRule(groupId));
 }
 
-function blankSessions(count: number, groupIds: string[]): PlanZone[] {
-  const safeCount = Math.max(1, Math.min(4, count));
-  const boundariesByCount: Record<number, number[]> = {
-    1: [0],
-    2: [0, 720],
-    3: [0, 480, 1020],
-    4: [0, 360, 720, 1080],
-  };
-  const namesByCount: Record<number, string[]> = {
-    1: ['Day'],
-    2: ['Day', 'Evening'],
-    3: ['Morning', 'Day', 'Evening'],
-    4: ['Morning', 'Day', 'Evening', 'Night'],
-  };
-  const starts = boundariesByCount[safeCount];
-  return starts.map((startMinutes, index) => ({
-    id: makeId('session'),
-    name: namesByCount[safeCount][index],
-    startMinutes,
-    endMinutes: starts[(index + 1) % starts.length],
-    closedGroupIds: [],
-    rules: groupIds.map(defaultRule),
-  }));
-}
-
-function draftPlannedByGroup(kind: PlanKind, rules: GroupRule[], sessions: PlanZone[]) {
-  const source = kind === 'session' ? sessions.flatMap(session => session.rules ?? []) : rules;
+function draftPlannedByGroup(rules: GroupRule[]) {
+  const source = rules;
   const result: Record<string, number> = {};
   for (const rule of source) {
     if (rule.mode === 'blocked' || rule.dailyMinutes == null) continue;
@@ -165,6 +128,7 @@ export default function PlanEditorView() {
   const optionalEssentialsSummary = useNativeActivitySelectionSummary('global.essentials');
   const existing = useMemo(() => state.plans.find(plan => plan.id === planId), [planId, state.plans]);
   const [draftPlanId] = useState(() => existing?.id ?? makeId('plan'));
+  const planEssentialsSummary = useNativeActivitySelectionSummary(`plan.${draftPlanId}.essentials`);
   const retainNativeSelections = useRef(!!existing);
   const initialGroupIds = useMemo(
     () => [...APP_CATEGORIES.map(group => group.id), ...(existing?.customGroupIds ?? [])],
@@ -173,33 +137,23 @@ export default function PlanEditorView() {
 
   const [name, setName] = useState(existing?.name ?? '');
   const [themeId, setThemeId] = useState<PlanThemeId>(existing?.themeId ?? defaultPlanThemeId(draftPlanId));
-  const [kind, setKind] = useState<PlanKind>(existing?.kind ?? 'daily');
   const existingToleranceEnd = existing?.essentialOnlyMinutes ?? existing?.tolerableMinutes ?? null;
   const [target, setTarget] = useState<TargetValues>({
     target: existing ? existing.budgetMinutes : null,
     tolerable: existing ? existingToleranceEnd : null,
     essentialOnly: existing ? existingToleranceEnd : null,
   });
+  const [essentialsOnlyDay, setEssentialsOnlyDay] = useState(() => !!existing?.essentialsOnly);
+  const [planEssentialAppIds, setPlanEssentialAppIds] = useState(existing?.essentialAppIds ?? []);
   const [planStrength] = useState<Strength>(existing?.strength ?? 'loose');
   const [customGroupIds, setCustomGroupIds] = useState(existing?.customGroupIds ?? []);
   const [groupCatalog, setGroupCatalog] = useState(() => clonePlanCatalog(existing?.groupCatalog));
   const [rules, setRules] = useState(() => completeRules(existing?.rules ?? [], initialGroupIds));
-  const [sessions, setSessions] = useState<PlanZone[]>(() => {
-    if (existing?.kind === 'session') return normalizeConnectedSessions(existing.zones);
-    return blankSessions(3, initialGroupIds);
-  });
-  const [selectedSessionId, setSelectedSessionId] = useState(() => sessions[0]?.id ?? '');
   const [ruleGroupId, setRuleGroupId] = useState<string | null>(null);
   const [essentialsOpen, setEssentialsOpen] = useState(false);
   const [groupSheetOpen, setGroupSheetOpen] = useState(false);
-  const [sessionCopyOpen, setSessionCopyOpen] = useState(false);
-  const [pendingKind, setPendingKind] = useState<PlanKind | null>(null);
-  const [timeEdit, setTimeEdit] = useState<{ type: 'start' | 'end' | 'add'; sessionId?: string; value: number } | null>(null);
-  const [pendingAddMinute, setPendingAddMinute] = useState<number | null>(null);
-  const [confirmRemoveSession, setConfirmRemoveSession] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [targetConfirmation, setTargetConfirmation] = useState<'known-loss' | 'native-reconcile' | null>(null);
-  const [structuralError, setStructuralError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [checkingSelections, setCheckingSelections] = useState(false);
 
@@ -207,15 +161,14 @@ export default function PlanEditorView() {
     () => [...APP_CATEGORIES.map(group => group.id), ...customGroupIds],
     [customGroupIds]
   );
-  const selectedSession = sessions.find(session => session.id === selectedSessionId) ?? sessions[0];
-  const activeRules = kind === 'session' ? (selectedSession?.rules ?? []) : rules;
+  // Session Planning is intentionally dormant in Focus v1. The editor owns a
+  // single Daily rule set; any legacy zones are preserved only when saving.
+  const activeRules = rules;
   const activeRule = activeRules.find(rule => rule.groupId === ruleGroupId) ?? null;
-  const plannedByGroup = useMemo(() => draftPlannedByGroup(kind, rules, sessions), [kind, rules, sessions]);
+  const plannedByGroup = useMemo(() => draftPlannedByGroup(rules), [rules]);
   const draftToleranceEnd = target.essentialOnly ?? target.tolerable;
   const draftRequiresNative = useMemo(() => {
-    const ruleSets = kind === 'session'
-      ? sessions.flatMap(session => session.rules ?? [])
-      : rules;
+    const ruleSets = rules;
     const hasBoundary = ruleSets.some(rule => {
       const mode = rule.mode ?? (rule.dailyMinutes == null ? 'noLimit' : 'limit');
       if (mode === 'blocked' || (mode === 'limit' && rule.dailyMinutes != null)) return true;
@@ -225,28 +178,25 @@ export default function PlanEditorView() {
       });
     });
     return target.target != null || target.essentialOnly != null || hasBoundary;
-  }, [kind, rules, sessions, target.essentialOnly, target.target]);
+  }, [rules, target.essentialOnly, target.target]);
   const currentPlan = getEffectivePlan(state, new Date());
   const isActivePlan = !!existing && currentPlan?.id === existing.id;
-  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
-  const canSave = name.trim().length > 0 && (kind === 'daily' || connectedSessionsAreValid(sessions));
+  const essentialsTargetReady = !essentialsOnlyDay
+    || (target.target != null && target.target > 0 && draftToleranceEnd != null);
+  const canSave = name.trim().length > 0
+    && essentialsTargetReady;
 
-  // Essentials-only day: the whole day closes to distractions from minute one.
-  // Represented through the existing target model (goal 0, tolerance 0), so
-  // nothing below the switch matters — those sections rest while it is on.
-  const [essentialsOnlyDay, setEssentialsOnlyDay] = useState(
-    () => !!existing && existing.budgetMinutes === 0 && existing.essentialOnlyMinutes === 0
-  );
-  const savedTargetRef = useRef<TargetValues | null>(null);
+  // Essentials-only is an access mode, not a zero-minute target. Goal and
+  // Tolerance keep measuring the day while the allowlist starts immediately.
   const toggleEssentialsOnlyDay = () => {
     if (essentialsOnlyDay) {
       setEssentialsOnlyDay(false);
-      setTarget(savedTargetRef.current ?? { target: null, tolerable: null, essentialOnly: null });
       return;
     }
-    savedTargetRef.current = target;
     setEssentialsOnlyDay(true);
-    setTarget({ target: 0, tolerable: 0, essentialOnly: 0 });
+    if (target.target == null || target.target <= 0) {
+      setTarget({ target: 60, tolerable: 180, essentialOnly: 180 });
+    }
   };
 
   useEffect(() => () => {
@@ -256,30 +206,7 @@ export default function PlanEditorView() {
   }, [draftPlanId]);
 
   const updateActiveRule = (groupId: string, partial: Partial<GroupRule>) => {
-    if (kind === 'daily') {
-      setRules(current => current.map(rule => rule.groupId === groupId ? { ...rule, ...partial } : rule));
-      return;
-    }
-    setSessions(current => current.map(session => session.id === selectedSessionId
-      ? {
-          ...session,
-          rules: completeRules(session.rules ?? [], groupIds).map(rule => rule.groupId === groupId ? { ...rule, ...partial } : rule),
-        }
-      : session
-    ));
-  };
-
-  const applyKind = (next: PlanKind) => {
-    if (next === kind) return;
-    if (next === 'session') {
-      const nextSessions = blankSessions(3, groupIds);
-      setSessions(nextSessions);
-      setSelectedSessionId(nextSessions[0].id);
-    } else {
-      setRules(groupIds.map(defaultRule));
-    }
-    setKind(next);
-    setPendingKind(null);
+    setRules(current => current.map(rule => rule.groupId === groupId ? { ...rule, ...partial } : rule));
   };
 
   const addGroup = (groupId: string, appIds: string[]) => {
@@ -291,7 +218,6 @@ export default function PlanEditorView() {
       return next;
     });
     setRules(current => completeRules(current, [...groupIds, groupId]));
-    setSessions(current => current.map(session => ({ ...session, rules: completeRules(session.rules ?? [], [...groupIds, groupId]) })));
   };
 
   const removeGroup = (groupId: string) => {
@@ -307,52 +233,7 @@ export default function PlanEditorView() {
       return next;
     });
     setRules(current => current.filter(rule => rule.groupId !== groupId));
-    setSessions(current => current.map(session => ({ ...session, rules: (session.rules ?? []).filter(rule => rule.groupId !== groupId) })));
     if (ruleGroupId === groupId) setRuleGroupId(null);
-  };
-
-  const commitTimeEdit = (minutes: number) => {
-    if (!timeEdit) return;
-    if (timeEdit.type === 'add') {
-      if (isActivePlan && minutes < nowMinutes) {
-        setStructuralError('A new Session in today\'s active plan may start only now or later.');
-        setTimeEdit(null);
-        return;
-      }
-      const source = sessions.find(session => zoneContains(session, minutes));
-      if (!source || !splitSessionAt(sessions, minutes)) {
-        setStructuralError('Choose a point that leaves at least 30 minutes on both sides.');
-        setTimeEdit(null);
-        return;
-      }
-      setPendingAddMinute(minutes);
-      setStructuralError(null);
-      setTimeEdit(null);
-      return;
-    }
-    const session = sessions.find(entry => entry.id === timeEdit.sessionId);
-    if (!session) return;
-    if (timeEdit.type === 'start') {
-      const next = moveSessionBoundary(sessions, session.id, minutes);
-      if (next === sessions) {
-        setStructuralError('Keep every Session at least 30 minutes long and every midnight interval at least 15 minutes long.');
-      } else {
-        setSessions(next);
-        setStructuralError(null);
-      }
-    } else {
-      const nextSession = sessions.find(entry => entry.startMinutes === session.endMinutes);
-      if (nextSession) {
-        const next = moveSessionBoundary(sessions, nextSession.id, minutes);
-        if (next === sessions) {
-          setStructuralError('Keep every Session at least 30 minutes long and every midnight interval at least 15 minutes long.');
-        } else {
-          setSessions(next);
-          setStructuralError(null);
-        }
-      }
-    }
-    setTimeEdit(null);
   };
 
   const doSave = () => {
@@ -363,8 +244,10 @@ export default function PlanEditorView() {
     const saved = saveDayPlan({
       id: draftPlanId,
       name: name.trim(),
-      kind,
+      kind: 'daily',
       themeId,
+      essentialsOnly: essentialsOnlyDay,
+      essentialAppIds: planEssentialAppIds,
       budgetMinutes: target.target,
       // v4 has one post-Goal Tolerance period. Its endpoint is also the
       // existing native Essentials-only threshold; these must never diverge.
@@ -373,8 +256,10 @@ export default function PlanEditorView() {
       strength: planStrength,
       customGroupIds,
       groupCatalog,
-      zones: kind === 'session' ? normalizeConnectedSessions(sessions) : [],
-      rules: kind === 'daily' ? completeRules(rules, groupIds) : groupIds.map(defaultRule),
+      // Keep an old Session draft intact without allowing it to participate in
+      // v1 runtime. A later release can explicitly offer to restore it.
+      zones: existing?.zones ?? [],
+      rules: completeRules(rules, groupIds),
     });
     if (isActivePlan) {
       const actual = state.usageByDate[dateKey(new Date())]?.totalMinutes ?? 0;
@@ -389,10 +274,9 @@ export default function PlanEditorView() {
   };
 
   const missingNativeSelections = async () => {
+    if (essentialsOnlyDay) return [];
     const required = new Map<string, string>();
-    const ruleSets = kind === 'session'
-      ? sessions.map(session => ({ sessionName: session.name, rules: session.rules ?? [] }))
-      : [{ sessionName: '', rules }];
+    const ruleSets = [{ rules }];
     for (const ruleSet of ruleSets) {
       for (const draftRule of ruleSet.rules) {
         const appRules = (draftRule.appRules ?? []).filter(appRule => appRule.mode !== 'noLimit');
@@ -452,14 +336,6 @@ export default function PlanEditorView() {
     }
     commitSave();
   };
-
-  const selectedRemoveAllowed = !isActivePlan || (!!selectedSession && selectedSession.startMinutes > nowMinutes && !zoneContains(selectedSession, nowMinutes));
-  const sourceForAdd = pendingAddMinute == null ? null : sessions.find(session => zoneContains(session, pendingAddMinute));
-  const splitPreview = pendingAddMinute == null ? null : splitSessionAt(sessions, pendingAddMinute);
-  const newSessionPreview = splitPreview?.find(session => !sessions.some(existingSession => existingSession.id === session.id));
-  const previousForRemove = selectedSession
-    ? normalizeConnectedSessions(sessions)[(normalizeConnectedSessions(sessions).findIndex(session => session.id === selectedSession.id) - 1 + sessions.length) % sessions.length]
-    : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -534,130 +410,98 @@ export default function PlanEditorView() {
               <Text style={[s.essOnlyLabel, essentialsOnlyDay && s.essOnlyLabelOn]}>ESSENTIALS-ONLY DAY</Text>
               <Text style={[s.essOnlyTitle, essentialsOnlyDay && s.essOnlyTitleOn]}>Close the whole day to distractions</Text>
               <Text style={[s.essOnlyBody, essentialsOnlyDay && s.essOnlyBodyOn]}>
-                Only Essentials and iOS system access stay reachable, from the first minute. Name it, give it a color — done.
+                Only Essentials and the apps chosen for this plan stay reachable. Goal and Tolerance still measure the day.
               </Text>
             </View>
             <FocusSwitch value={essentialsOnlyDay} onToggle={toggleEssentialsOnlyDay} />
           </TouchableOpacity>
-          {essentialsOnlyDay && (
-            <Text style={s.dormantNote}>Everything below rests while this day is Essentials-only.</Text>
-          )}
         </Animated.View>
 
-        <View
-          style={[s.sectionsGroup, essentialsOnlyDay && s.dormant]}
-          pointerEvents={essentialsOnlyDay ? 'none' : 'auto'}
-        >
+        {essentialsOnlyDay && (
+          <View style={s.sectionsGroup}>
+            <Animated.View entering={enter(50)} layout={LinearTransition.duration(220)}>
+              <DailyTargetEditor values={target} onChange={setTarget} essentialsOnly />
+            </Animated.View>
+
+            <Animated.View entering={enter(100)} layout={LinearTransition.duration(220)}>
+              <View style={s.sectionTitleRow}>
+                <View>
+                  <Text style={s.sectionLabelNoMargin}>APPS AVAILABLE IN THIS PLAN</Text>
+                  <Text style={s.sectionSub}>Global Essentials are already included. Add only the extra apps this specific day needs.</Text>
+                </View>
+              </View>
+              <View style={[s.essentialsSurface, s.planAccessSurface]}>
+                <View style={s.essentialsAccent} />
+                <View style={s.essentialsOutcomeRow}>
+                  <View style={s.essentialsOutcomeIcon}><Shield s={21} c="#FFFFFF" w={2.2} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.essentialsOutcomeLabel}>PROTECTED FROM MINUTE ONE</Text>
+                    <Text style={s.essentialsOutcomeTitle}>Distractions stay closed all day.</Text>
+                    <Text style={s.essentialsOutcomeBody}>Your Goal and Tolerance track total phone time without changing which apps are available.</Text>
+                  </View>
+                </View>
+
+                <TouchableOpacity style={s.essentialsPicker} onPress={() => setEssentialsOpen(true)} activeOpacity={0.76}>
+                  <View style={s.essentialsPickerIcon}><Lock s={17} c="#A63A4B" w={2.2} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.essentialsPickerLabel}>CHOOSE APPS FOR THIS PLAN</Text>
+                    <Text style={s.essentialsPickerTitle}>Decide what stays reachable</Text>
+                    <Text style={s.essentialsPickerMeta}>
+                      {nativeAvailable
+                        ? planEssentialsSummary
+                          ? `${planEssentialsSummary.applicationCount} plan-only apps · Global Essentials included`
+                          : 'Loading private iPhone selection'
+                        : `${planEssentialAppIds.length} plan-only apps · Global Essentials included`}
+                    </Text>
+                  </View>
+                  <View style={s.essentialsPickerArrow}><ChevronRight s={17} c="#7A303D" w={2.2} /></View>
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+          </View>
+        )}
+
+        {!essentialsOnlyDay && (
+        <View style={s.sectionsGroup}>
         <Animated.View entering={enter(50)}>
           <Text style={s.sectionLabel}>PLANNING STYLE</Text>
           <View style={s.kindControl}>
-            <TouchableOpacity style={[s.kindOption, kind === 'daily' && s.kindOptionOn]} onPress={() => kind !== 'daily' && setPendingKind('daily')} haptic="selection">
-              <View style={[s.kindIconSeal, kind === 'daily' && s.kindIconSealOn]}>
-                <Calendar s={18} c={kind === 'daily' ? C.goldDark : C.textMuted} w={2} />
+            <View style={[s.kindOption, s.kindOptionOn]} accessibilityRole="radio" accessibilityState={{ selected: true }}>
+              <View style={[s.kindIconSeal, s.kindIconSealOn]}>
+                <Calendar s={18} c={C.goldDark} w={2} />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={[s.kindTitle, kind === 'daily' && s.kindTitleOn]}>Daily Plan</Text>
+                <Text style={[s.kindTitle, s.kindTitleOn]}>Daily Plan</Text>
                 <Text style={s.kindBody}>One set of rules holds the whole day.</Text>
                 <View style={s.kindStrip}>
-                  <View style={[s.kindStripSegment, { flex: 1, backgroundColor: kind === 'daily' ? C.gold : '#DDD8CC' }]} />
+                  <View style={[s.kindStripSegment, { flex: 1, backgroundColor: C.gold }]} />
                 </View>
               </View>
-              <FocusCheck checked={kind === 'daily'} size={20} />
-            </TouchableOpacity>
-            <TouchableOpacity style={[s.kindOption, kind === 'session' && s.kindOptionOn]} onPress={() => kind !== 'session' && setPendingKind('session')} haptic="selection">
-              <View style={[s.kindIconSeal, kind === 'session' && s.kindIconSealOn]}>
-                <Clock s={18} c={kind === 'session' ? C.goldDark : C.textMuted} w={2} />
+              <FocusCheck checked size={20} />
+            </View>
+            <View style={[s.kindOption, s.kindOptionDisabled]} accessibilityRole="radio" accessibilityState={{ disabled: true, selected: false }}>
+              <View style={s.kindIconSeal}>
+                <Clock s={18} c={C.textMuted} w={2} />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={[s.kindTitle, kind === 'session' && s.kindTitleOn]}>Session Plan</Text>
-                <Text style={s.kindBody}>Morning, work, and evening each keep their own rules.</Text>
+                <View style={s.kindDisabledTitleRow}>
+                  <Text style={s.kindTitle}>Session Plan</Text>
+                  <View style={s.laterTag}><Text style={s.laterTagText}>LATER</Text></View>
+                </View>
+                <Text style={s.kindBody}>Multiple rule sets will arrive in a later update.</Text>
                 <View style={s.kindStrip}>
-                  {SESSION_COLORS.slice(0, 3).map((color, index) => (
-                    <View
-                      key={color}
-                      style={[
-                        s.kindStripSegment,
-                        { flex: index === 1 ? 1.6 : 1, backgroundColor: kind === 'session' ? color : '#DDD8CC' },
-                        index > 0 && { marginLeft: 3 },
-                      ]}
-                    />
-                  ))}
+                  <View style={[s.kindStripSegment, { flex: 1, backgroundColor: '#DDD8CC' }]} />
+                  <View style={[s.kindStripSegment, { flex: 1.6, marginLeft: 3, backgroundColor: '#DDD8CC' }]} />
+                  <View style={[s.kindStripSegment, { flex: 1, marginLeft: 3, backgroundColor: '#DDD8CC' }]} />
                 </View>
               </View>
-              <FocusCheck checked={kind === 'session'} size={20} />
-            </TouchableOpacity>
+            </View>
           </View>
         </Animated.View>
 
         <Animated.View entering={enter(100)}>
           <DailyTargetEditor values={target} onChange={setTarget} />
         </Animated.View>
-
-        {kind === 'session' && (
-          <Animated.View entering={enter(170)} layout={LinearTransition.duration(220)}>
-            <View style={s.sectionTitleRow}>
-              <View>
-                <Text style={s.sectionLabelNoMargin}>THE 24-HOUR DAY</Text>
-                <Text style={s.sectionSub}>Drag a boundary or enter an exact time. Adjacent Sessions move together.</Text>
-              </View>
-              <View style={s.sessionCount}><Text style={s.sessionCountText}>{sessions.length}/4</Text></View>
-            </View>
-            <View style={s.clockSurface}>
-              <SessionClockEditor sessions={sessions} selectedId={selectedSessionId} onSelect={setSelectedSessionId} onChange={setSessions} />
-
-              {selectedSession && (
-                <View style={s.selectedSessionPanel}>
-                  <TextInput
-                    value={selectedSession.name}
-                    onChangeText={next => setSessions(current => current.map(session => session.id === selectedSession.id ? { ...session, name: next } : session))}
-                    maxLength={20}
-                    style={s.sessionNameInput}
-                  />
-                  <View style={s.timeButtons}>
-                    <TouchableOpacity
-                      style={s.timeButton}
-                      disabled={sessions.length === 1}
-                      onPress={() => setTimeEdit({ type: 'start', sessionId: selectedSession.id, value: selectedSession.startMinutes })}
-                    >
-                      <Text style={s.timeButtonLabel}>START</Text><Text style={s.timeButtonValue}>{sessions.length === 1 ? '00:00' : formatTimeOfDay(selectedSession.startMinutes)}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={s.timeButton}
-                      disabled={sessions.length === 1}
-                      onPress={() => setTimeEdit({ type: 'end', sessionId: selectedSession.id, value: selectedSession.endMinutes })}
-                    >
-                      <Text style={s.timeButtonLabel}>END</Text><Text style={s.timeButtonValue}>{sessions.length === 1 ? '24:00' : formatTimeOfDay(selectedSession.endMinutes)}</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              <View style={s.structuralActions}>
-                <TouchableOpacity
-                  style={s.structuralButton}
-                  onPress={() => setSessionCopyOpen(true)}
-                >
-                  <Clock s={13} c={C.goldDark} w={2.2} /><Text style={s.structuralButtonText}>Copy rules</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[s.structuralButton, sessions.length >= 4 && s.buttonDisabled]}
-                  disabled={sessions.length >= 4}
-                  onPress={() => setTimeEdit({ type: 'add', value: selectedSession ? Math.round((selectedSession.startMinutes + 120) / 5) * 5 % 1440 : 720 })}
-                >
-                  <Plus s={13} c={C.goldDark} w={2.5} /><Text style={s.structuralButtonText}>Add Session</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[s.structuralButton, (sessions.length <= 1 || !selectedRemoveAllowed) && s.buttonDisabled]}
-                  disabled={sessions.length <= 1 || !selectedRemoveAllowed}
-                  onPress={() => setConfirmRemoveSession(true)}
-                >
-                  <Trash2 s={13} c="#A24351" w={2.1} /><Text style={[s.structuralButtonText, { color: '#A24351' }]}>Remove</Text>
-                </TouchableOpacity>
-              </View>
-              {structuralError && <Text style={s.structuralError}>{structuralError}</Text>}
-            </View>
-          </Animated.View>
-        )}
 
         <Animated.View entering={enter(200)}>
           <View style={s.sectionTitleRow}>
@@ -703,8 +547,8 @@ export default function PlanEditorView() {
         <Animated.View entering={enter(240)} layout={LinearTransition.duration(220)}>
           <View style={s.sectionTitleRow}>
             <View>
-              <Text style={s.sectionLabelNoMargin}>{kind === 'session' ? `${selectedSession?.name?.toUpperCase() ?? 'SESSION'} RULES` : 'DAILY APP RULES'}</Text>
-              <Text style={s.sectionSub}>{kind === 'session' ? 'Divide this Session’s capacity. Its rules reset when the next Session begins.' : 'Divide your daily capacity across groups and individual apps.'}</Text>
+              <Text style={s.sectionLabelNoMargin}>DAILY APP RULES</Text>
+              <Text style={s.sectionSub}>Divide your daily capacity across groups and individual apps.</Text>
             </View>
           </View>
           <View style={s.ruleList}>
@@ -754,6 +598,7 @@ export default function PlanEditorView() {
           </TouchableOpacity>
         </Animated.View>
         </View>
+        )}
 
         {existing && (
           <TouchableOpacity style={s.deletePlanButton} onPress={() => setConfirmDelete(true)}>
@@ -772,7 +617,13 @@ export default function PlanEditorView() {
         />
       </View>
 
-      <EssentialAppsSheet visible={essentialsOpen} onClose={() => setEssentialsOpen(false)} />
+      <EssentialAppsSheet
+        visible={essentialsOpen}
+        onClose={() => setEssentialsOpen(false)}
+        planId={essentialsOnlyDay ? draftPlanId : undefined}
+        planAppIds={planEssentialAppIds}
+        onChangePlanApps={setPlanEssentialAppIds}
+      />
       <PlanGroupSheet
         visible={groupSheetOpen}
         planId={draftPlanId}
@@ -780,98 +631,15 @@ export default function PlanEditorView() {
         onClose={() => setGroupSheetOpen(false)}
         onAdd={addGroup}
       />
-      <SessionCopySheet
-        visible={sessionCopyOpen}
-        currentPlanId={draftPlanId}
-        currentGroupIds={groupIds}
-        currentCatalog={groupCatalog}
-        onClose={() => setSessionCopyOpen(false)}
-        onCopy={copiedRules => {
-          setSessions(current => current.map(session => session.id === selectedSessionId
-            ? { ...session, rules: completeRules(copiedRules, groupIds) }
-            : session
-          ));
-        }}
-      />
       <GroupLimitSheet
         rule={activeRule}
         groupLabel={ruleGroupId ? groupName(state, ruleGroupId) : ''}
         apps={ruleGroupId ? appsForGroup(groupCatalog, ruleGroupId) : []}
         planStrength={planStrength}
         nativeSelectionBaseId={`plan.${draftPlanId}`}
-        sessionName={kind === 'session' ? selectedSession?.name : undefined}
         onChange={partial => { if (ruleGroupId) updateActiveRule(ruleGroupId, partial); }}
         onClose={() => setRuleGroupId(null)}
       />
-      <TimeWheelSheet
-        visible={timeEdit !== null}
-        title={timeEdit?.type === 'add' ? 'New Session starts' : timeEdit?.type === 'start' ? 'Session starts' : 'Session ends'}
-        minutes={timeEdit?.value ?? 0}
-        onClose={() => setTimeEdit(null)}
-        onSave={commitTimeEdit}
-      />
-
-      <ConfirmModal
-        visible={pendingKind !== null}
-        icon={pendingKind === 'session' ? <Clock s={21} c={C.goldDark} w={2.1} /> : <Calendar s={21} c={C.goldDark} w={2.1} />}
-        iconBg={C.goldLight}
-        title={`Change to ${pendingKind === 'session' ? 'Session Plan' : 'Daily Plan'}?`}
-        body={pendingKind === 'session'
-          ? 'This creates a connected three-Session day. Existing Daily rules do not silently become Session limits.'
-          : 'Session rules are structural and will not be silently merged. The new Daily rules begin at No limit.'}
-        confirmLabel="CHANGE STYLE"
-        onCancel={() => setPendingKind(null)}
-        onConfirm={() => pendingKind && applyKind(pendingKind)}
-      />
-
-      <ConfirmModal
-        visible={pendingAddMinute !== null}
-        icon={<Plus s={21} c={C.goldDark} w={2.5} />}
-        iconBg={C.goldLight}
-        title="Add this Session?"
-        body={sourceForAdd && newSessionPreview
-          ? `${sourceForAdd.name} will end at ${formatTimeOfDay(pendingAddMinute ?? 0)}. The new Session runs until ${formatTimeOfDay(newSessionPreview.endMinutes)} and begins with the same rules.`
-          : 'The selected Session will be split at this point.'}
-        subject={pendingAddMinute == null ? undefined : `${formatTimeOfDay(pendingAddMinute)} start`}
-        confirmLabel="ADD SESSION"
-        onCancel={() => setPendingAddMinute(null)}
-        onConfirm={() => {
-          if (pendingAddMinute != null) {
-            const next = splitSessionAt(sessions, pendingAddMinute);
-            if (next) {
-              setSessions(next);
-              const added = next.find(session => !sessions.some(old => old.id === session.id));
-              if (added) setSelectedSessionId(added.id);
-            }
-          }
-          setPendingAddMinute(null);
-        }}
-      />
-
-      <ConfirmModal
-        visible={confirmRemoveSession}
-        icon={<Trash2 s={21} c="#A24351" w={2.1} />}
-        iconBg="#F8E7EA"
-        title="Remove this Session?"
-        body={selectedSession && previousForRemove
-          ? `${previousForRemove.name} will expand through ${selectedSession.name}'s time and keep its own rules.`
-          : 'The preceding Session will expand through this time.'}
-        subject={selectedSession?.name}
-        confirmLabel="REMOVE SESSION"
-        confirmColor="#A24351"
-        onCancel={() => setConfirmRemoveSession(false)}
-        onConfirm={() => {
-          if (selectedSession) {
-            const next = removeSessionAndExtendPrevious(sessions, selectedSession.id);
-            if (next) {
-              setSessions(next);
-              setSelectedSessionId(previousForRemove?.id ?? next[0].id);
-            }
-          }
-          setConfirmRemoveSession(false);
-        }}
-      />
-
       <ConfirmModal
         visible={targetConfirmation !== null}
         icon={<Lock s={21} c="#A24351" w={2.2} />}
@@ -980,6 +748,7 @@ const s = StyleSheet.create({
     boxShadow: '0 6px 18px rgba(45, 40, 33, 0.045)',
   },
   kindOptionOn: { borderColor: '#D9BA70', backgroundColor: '#FFF9EA', boxShadow: '0 8px 22px rgba(150, 110, 35, 0.1)' },
+  kindOptionDisabled: { opacity: 0.58, backgroundColor: '#F4F1EA' },
   kindIconSeal: {
     flexShrink: 0,
     width: 42,
@@ -993,10 +762,14 @@ const s = StyleSheet.create({
   kindIconSealOn: { backgroundColor: C.goldLight },
   kindTitle: { fontFamily: F.serifMedium, fontSize: 17.5, color: C.text },
   kindTitleOn: { color: C.goldDark },
+  kindDisabledTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  laterTag: { borderRadius: 999, backgroundColor: '#E4E0D7', paddingHorizontal: 7, paddingVertical: 3 },
+  laterTagText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.1, color: C.textMuted },
   kindBody: { marginTop: 2, fontFamily: F.sans, fontSize: 11.5, lineHeight: 15.5, color: C.textSecondary },
   kindStrip: { marginTop: 8, height: 6, flexDirection: 'row', borderRadius: 3, overflow: 'hidden' },
   kindStripSegment: { height: '100%', borderRadius: 3 },
   essentialsSurface: { position: 'relative', overflow: 'hidden', borderRadius: 25, borderCurve: 'continuous', backgroundColor: '#202123', padding: 16, gap: 15, boxShadow: '0 12px 28px rgba(24, 24, 25, 0.16)' },
+  planAccessSurface: { borderWidth: 1, borderColor: '#35363A', backgroundColor: '#1D1E20', boxShadow: '0 14px 32px rgba(24, 24, 25, 0.2)' },
   essentialsAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: '#E14B5A' },
   essentialsOutcomeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingLeft: 3 },
   essentialsOutcomeIcon: { flexShrink: 0, width: 42, height: 42, borderRadius: 14, borderCurve: 'continuous', backgroundColor: '#E14B5A', alignItems: 'center', justifyContent: 'center', boxShadow: '0 5px 14px rgba(225,75,90,0.28)' },

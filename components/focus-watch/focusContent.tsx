@@ -21,7 +21,7 @@ export const WEB_PACKS: WebPackContent[] = [
     detail: 'Betting sites, casinos, lotteries',
     emoji: 'joker',
     sites: [...WEB_PACK_DOMAINS.gambling],
-    sitesNote: '…and a curated list we keep growing',
+    sitesNote: 'This pack also includes a curated list we will keep growing.',
   },
   {
     id: 'adult',
@@ -30,7 +30,7 @@ export const WEB_PACKS: WebPackContent[] = [
     emoji: 'eye',
     slashed: true,
     sites: [...WEB_PACK_DOMAINS.adult],
-    sitesNote: "…plus Apple's automatic adult filter for the rest",
+    sitesNote: "Apple's automatic adult-content filter strengthens coverage beyond this list.",
   },
   {
     id: 'social',
@@ -38,7 +38,7 @@ export const WEB_PACKS: WebPackContent[] = [
     detail: 'Feeds in the browser — X, Reddit, Facebook',
     emoji: 'mobile-phone',
     sites: [...WEB_PACK_DOMAINS.social],
-    sitesNote: '…the apps themselves live in Screen Time',
+    sitesNote: 'Social media apps themselves are managed separately through Screen Time.',
   },
   {
     id: 'news',
@@ -46,7 +46,7 @@ export const WEB_PACKS: WebPackContent[] = [
     detail: 'Endless headlines and comment wars',
     emoji: 'newspaper',
     sites: [...WEB_PACK_DOMAINS.news],
-    sitesNote: '…and a curated list we keep growing',
+    sitesNote: 'This pack also includes a curated list we will keep growing.',
   },
 ];
 

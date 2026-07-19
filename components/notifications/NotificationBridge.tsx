@@ -14,6 +14,7 @@ import {
   reconcileTaskNotifications,
   snoozeTaskNotification,
 } from '@/components/notifications/notificationService';
+import { getBigEventNotificationData } from '@/components/journal/bigEventNotifications';
 
 export default function NotificationBridge() {
   const router = useRouter();
@@ -28,7 +29,11 @@ export default function NotificationBridge() {
 
   const handleResponse = useCallback(async (response: Notifications.NotificationResponse) => {
     const data = getManagedNotificationData(response);
-    if (!data) return;
+    if (!data) {
+      const bigEventData = getBigEventNotificationData(response);
+      if (bigEventData) router.push('/big-events');
+      return;
+    }
 
     if (response.actionIdentifier === NOTIFICATION_ACTION_COMPLETE) {
       await completeInstance(data.instanceId, data.instanceDate);

@@ -24,11 +24,31 @@ enforcement, and copy decisions can all be checked against the same intent.
   but their user-facing purpose and setup remain separate.
 - The old Watch system is removed from the Phone Plans product. There are no
   overlapping watches to create, inspect, or resolve.
-- "Session Plan" refers only to fixed time segments inside one day. It is not
-  a separately started focus session.
-- `Session` is the user-facing name for those time segments. Focus does not
-  call them Watches: a Watch implied a separately started blocker, while a
-  Session is one connected part of a single planned day.
+- A future "Session Plan" may refer to fixed time segments inside one day. It
+  is not a separately started focus session and is not part of the v1 release.
+
+## V1 Shipping Scope: Daily Planning Only
+
+- Focus v1 has one planning model: one Daily Plan, one Daily Target, one
+  Tolerance endpoint, one Essentials configuration, and one set of app/group
+  rules that applies to the full local day.
+- Session Planning is not selectable, schedulable, displayed, enforced, or
+  included in native payloads in v1. The plan editor keeps Daily selected and
+  shows Session Plan only as a disabled later-release option.
+- The Session types, connected-clock geometry, and native schema remain in the
+  codebase as dormant infrastructure. `FOCUS_SESSION_PLANNING_ENABLED` is the
+  single runtime gate. While it is false, an old row that says `kind: session`
+  is treated as Daily everywhere.
+- Dormant Session zones may remain stored so future work does not require a new
+  persistence model. They must never affect v1 rule resolution, protection
+  status, analytics, editor validation, selection requirements, or iOS native
+  enforcement.
+- Editing an old draft during v1 saves the visible Daily rule set. Its dormant
+  zones are preserved as inert data until a later release explicitly defines a
+  restoration/migration flow.
+- The detailed Session sections later in this document are a future product
+  specification, not current acceptance criteria. No active v1 screen should
+  expose their controls or terminology.
 
 ### Why this boundary matters
 
@@ -52,8 +72,8 @@ a separate design language.
   calm. It is more dynamic than the other tabs, but still elegant and clearly
   part of the same application.
 - The landing screen is redesigned for the Phone Plan model. It must show
-  current protection, the active Session when one exists, the day's plan state,
-  and Clean Sight. It must not carry legacy Watch cards, overlapping Watch
+  current protection, the day's Daily Plan state, and Clean Sight. It must not
+  carry Session controls, legacy Watch cards, overlapping Watch
   language, or an Upcoming/Past layout built for the old system.
 - High-tech character comes from meaningful native status, precise progress,
   polished state transitions, and a strong visual response to protection being
@@ -187,6 +207,27 @@ It opens the focused Clean Sight detail surface for packs and domains.
 - A Session Plan has no overlaps and no uncovered time. Its sessions always
   cover the complete day.
 
+### Essentials-only plan mode
+
+Essentials-only is a simplified access mode, not a third planning style and not
+a zero-minute Daily Target. When it is enabled, the plan hides Planning Style,
+Sessions, group budgets, and individual app rules. The person configures only:
+
+1. a finite Daily Target;
+2. a Tolerance buffer; and
+3. the apps that remain reachable during this specific plan.
+
+The native allowlist is active from the first minute of the local day. It is the
+union of global Essentials and plan-only app exceptions; Always Blocked still
+wins, and Clean Sight still governs configured web content. Plan-only exceptions
+do not become global Essentials and do not leak into another plan.
+
+All allowed-app use continues to count toward the Daily Target. Crossing the
+Target loses trophy eligibility under the ordinary outcome rule. Tolerance
+records the permitted overflow, but does not change app availability because
+the plan is already Essentials-only. Its endpoint therefore does not schedule a
+second Essential-only wall.
+
 ### Why one active plan matters
 
 The old Watch model asked the system to reconcile multiple independently active
@@ -227,8 +268,8 @@ than a claim of exhaustive or permanently current coverage.
 - A person can create a named custom pack, add domains one by one, or add a
   custom domain to an existing relevant pack.
 - Domains inside a custom pack can be removed individually. Removing a domain
-  from an active pack is a weakening change and therefore respects Strict
-  Watch cooldown. A custom pack cannot be left empty: add a replacement first,
+  from an active pack is a weakening change and therefore respects the Hard
+  Lock delay. A custom pack cannot be left empty: add a replacement first,
   or remove the whole pack through its confirmed removal flow.
 - The Clean Sight detail screen is for choosing packs and editing domains; it
   does not contain Phone Plan sessions, Daily Targets, or a second scheduling
@@ -237,33 +278,42 @@ than a claim of exhaustive or permanently current coverage.
   Essential browser can open ordinary allowed websites, but not domains or
   content covered by active Clean Sight protection.
 
-### Strict Watch for persistent web protection
+### Hard Lock for persistent web protection
 
-Strict Watch protects the act of weakening Clean Sight; it is not another web
-filter or another Phone Plan. When enabled, stronger changes apply immediately,
-while a change that removes or weakens protection waits through the selected
-cooldown (`10 minutes`, `1 hour`, or `tomorrow at 06:00`). This includes turning
-off or lowering a built-in/custom pack, removing a protected domain, leaving
-Never Allowed, disabling install/removal protection, or turning Strict Watch
-off itself.
+The first release has one focused anti-bypass tool for Clean Sight. Hard Lock
+protects the act of weakening website blocking; it is not another filter, an
+app-install lock, or another Phone Plan. When it is off, web-rule changes apply
+normally. When it is on, stronger changes apply immediately, while a request
+that removes or weakens protection waits through the selected delay.
 
-Shortening the selected cooldown is itself a weakening change. For example,
-changing `tomorrow at 06:00` to `10 minutes` must wait through the currently
-active longer cooldown; otherwise the cooldown setting would become a direct
-bypass. Lengthening the cooldown is strengthening and applies immediately.
+The available delays are `45 minutes`, `1 hour`, `6 hours`, `12 hours`, `24
+hours`, and `3 days`. Forty-five minutes is the hard minimum. The delay covers
+turning off or lowering a built-in/custom pack, removing a protected domain,
+leaving Never Allowed, removing an active custom pack, and turning Hard Lock off
+itself.
+
+Shortening the selected delay is itself a weakening change and must wait through
+the currently active longer delay; otherwise the setting becomes a direct
+bypass. Lengthening the delay is strengthening and applies immediately.
+
+An enabled Hard Lock may be permanently locked through a separate irreversible
+confirmation. After that confirmation, the off switch is removed and neither
+UI nor store actions can disable it. The delay can still be lengthened, while a
+shorter delay must wait through the current one. `Permanent` means no recovery
+inside Anasta; this MVP does not claim to prevent deleting the app or erasing the
+device.
 
 - There is only one pending request for each logical target. Repeating or
   replacing the same request updates that request instead of stacking delayed
   surprises.
 - The pending surface states the requested change and exact eligible time. The
   person can cancel it at any time; canceling keeps the stronger rule.
-- iOS does not provide a reliable arbitrary background timer for every cooldown,
-  especially a 10-minute weakening. A due request applies while Anasta is
-  active or on the next app open. Until then, the stronger protection remains;
+- iOS does not provide a reliable arbitrary background timer for every delay.
+  A due request applies while Anasta is active or on the next app open. Until
+  then, the stronger protection remains;
   the UI must say `eligible at`, not falsely promise an exact closed-app change.
-- Optional Strict Watch device locks can deny new app installation and app
-  removal through Managed Settings. A native error is visible and never shown
-  as successfully armed.
+- App installation and app-removal restrictions are deliberately outside this
+  first-release Hard Lock and can be designed as a separate future feature.
 
 The Focus landing surface only needs to show whether Clean Sight protection is
 on and provide one clear path to its packs. This preserves the product's major
@@ -282,6 +332,11 @@ the week one clear phone-use plan.
 - The weekly assignment is the source for future occurrences of that weekday.
 - At the start of a local calendar day, the plan assigned to that weekday
   becomes the active Phone Plan for the day.
+- The current weekday cell is an explicit combined control. Its sheet says
+  `Today and future [weekday]s`; confirming it changes both today's active plan
+  and the reusable assignment for future occurrences of that weekday.
+- The separate `Change` action on the Today card changes today only. Editing any
+  other weekday changes future occurrences only.
 - One day still resolves to exactly one active plan. Weekly planning does not
   reintroduce overlapping plans or independently running watches.
 
@@ -300,11 +355,13 @@ person wants to view or change it.
 
 ### History and future schedule
 
-The weekly assignment defines future days. It must not rewrite the resolved
-plan, usage, eligibility, or trophies of a day that is already in progress or
-has already ended. This keeps the weekly planner compatible with the Plan
-Integrity and Streak Ledger: changing a Tuesday template is planning for future
-Tuesdays, not an edit to historical phone use.
+The weekly assignment defines future days, except when the person deliberately
+uses the clearly labelled combined control for the current weekday. That action
+may replace today's active plan, but it never rewrites elapsed usage, restored
+eligibility, trophies, or any earlier day. A tighter replacement target that is
+already below today's actual use loses eligibility immediately under Plan
+Integrity. Changing a non-current Tuesday is still planning for future Tuesdays,
+not an edit to historical phone use.
 
 ## Daily Target
 
@@ -781,7 +838,7 @@ break the plan's historical configuration, so removal is unavailable. The
 interface shows a locked Delete action that explains this reason when tapped;
 it does not silently discard a group that a saved plan still needs.
 
-## Session Plans
+## Future Scope: Session Plans (Dormant in v1)
 
 - Sessions are time ranges within the one active day, for example Morning,
   Work, Evening, and Night.
@@ -1051,6 +1108,13 @@ The end-of-day report is a reflective, interactive explanation of a day, not a
 generic chart screen. Its purpose is to help a person make a better next plan:
 where did time actually go, where did it differ from the plan, and which future
 Session or group deserves a change?
+
+Tapping Today's Phone Plan opens the live today variant of this review. It reads
+the same materialized day record and plan snapshot as the Focus landing screen,
+so a deliberate mid-day plan change is reflected immediately without erasing
+elapsed usage. For a Session Plan it shows only the currently active Session's
+rules; allowances from other Sessions are never added together as if they were
+simultaneously active.
 
 The React-owned Daily Review opens with:
 

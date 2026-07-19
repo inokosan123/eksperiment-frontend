@@ -30,6 +30,31 @@ struct AnastaNamedActivity: Identifiable {
   let duration: TimeInterval
 }
 
+enum AnastaBoundaryMode: Equatable {
+  case blocked
+  case limit
+  case noLimit
+}
+
+struct AnastaActivityBoundary {
+  let mode: AnastaBoundaryMode
+  let minutes: Int?
+}
+
+struct AnastaGroupAppActivity {
+  let token: ApplicationToken
+  let duration: TimeInterval
+  let boundary: AnastaActivityBoundary?
+}
+
+struct AnastaGroupActivity: Identifiable {
+  let id: String
+  let name: String
+  let duration: TimeInterval
+  let boundary: AnastaActivityBoundary
+  let applications: [AnastaGroupAppActivity]
+}
+
 struct AnastaActivityBucket: Identifiable {
   let date: Date
   let duration: TimeInterval
@@ -42,7 +67,7 @@ struct AnastaActivityConfiguration {
   let applications: [AnastaAppActivity]
   let websites: [AnastaWebActivity]
   let categories: [AnastaNamedActivity]
-  let groups: [AnastaNamedActivity]
+  let groups: [AnastaGroupActivity]
   let buckets: [AnastaActivityBucket]
 }
 
@@ -226,133 +251,399 @@ private enum AnastaReportMetadata {
     return selection("plan.\(planId).group.\(groupId)")
   }
 
+  private static func appSelection(
+    planId: String,
+    groupId: String,
+    appId: String,
+    on date: Date
+  ) -> FamilyActivitySelection {
+    let day = dateKey(date)
+    let scopes = defaults.dictionary(forKey: reportSelectionScopesKey) as? [String: String]
+    if let scope = scopes?[day] {
+      let snapshotId = "report.\(scope).group.\(groupId).app.\(appId)"
+      if defaults.data(forKey: selectionKey(snapshotId)) != nil {
+        return selection(snapshotId)
+      }
+    }
+    return selection("plan.\(planId).group.\(groupId).app.\(appId)")
+  }
+
+  private static func boundary(from rule: [String: Any]?) -> AnastaActivityBoundary {
+    guard let rule else {
+      return AnastaActivityBoundary(mode: .noLimit, minutes: nil)
+    }
+    let minutes = (rule["dailyMinutes"] as? Int) ?? (rule["minutes"] as? Int)
+    let rawMode = rule["mode"] as? String ?? (minutes == nil ? "noLimit" : "limit")
+    switch rawMode {
+    case "blocked":
+      return AnastaActivityBoundary(mode: .blocked, minutes: nil)
+    case "limit":
+      return AnastaActivityBoundary(mode: .limit, minutes: minutes)
+    default:
+      return AnastaActivityBoundary(mode: .noLimit, minutes: nil)
+    }
+  }
+
+  private static func minuteOfDay(_ date: Date) -> Int {
+    let components = Calendar.autoupdatingCurrent.dateComponents([.hour, .minute], from: date)
+    return (components.hour ?? 0) * 60 + (components.minute ?? 0)
+  }
+
+  private static func sessionContains(_ session: [String: Any], minute: Int) -> Bool {
+    let start = session["startMinutes"] as? Int ?? 0
+    let end = session["endMinutes"] as? Int ?? 0
+    if start == end { return true }
+    if end > start { return minute >= start && minute < end }
+    return minute >= start || minute < end
+  }
+
+  private static func effectiveRules(in plan: [String: Any], on date: Date) -> [[String: Any]] {
+    if plan["essentialsOnly"] as? Bool == true { return [] }
+    if plan["kind"] as? String != "session" {
+      return plan["dailyRules"] as? [[String: Any]] ?? []
+    }
+    guard Calendar.autoupdatingCurrent.isDateInToday(date) else { return [] }
+    let minute = minuteOfDay(Date())
+    let sessions = plan["sessions"] as? [[String: Any]] ?? []
+    return sessions.first(where: { sessionContains($0, minute: minute) })?["rules"] as? [[String: Any]] ?? []
+  }
+
   static func groups(
     for appDurations: [ApplicationToken: TimeInterval],
     on date: Date
-  ) -> [AnastaNamedActivity] {
+  ) -> [AnastaGroupActivity] {
     guard
       let plan = plan(on: date),
       let planId = plan["id"] as? String,
       let catalog = plan["groupCatalog"] as? [String: Any]
     else { return [] }
     let names = plan["groupNames"] as? [String: String] ?? [:]
+    let rules = effectiveRules(in: plan, on: date)
+    let rulesByGroup = Dictionary(uniqueKeysWithValues: rules.compactMap { rule -> (String, [String: Any])? in
+      guard let groupId = rule["groupId"] as? String else { return nil }
+      return (groupId, rule)
+    })
+    var ownedTokens = Set<ApplicationToken>()
 
-    return catalog.keys.compactMap { groupId in
+    var groups = catalog.keys.map { groupId in
       let selectedApps = groupSelection(
         planId: planId,
         groupId: groupId,
         on: date
       ).applicationTokens
+      ownedTokens.formUnion(selectedApps)
+      let groupRule = rulesByGroup[groupId]
+      let appRules = groupRule?["appRules"] as? [[String: Any]] ?? []
+      var appBoundaries: [ApplicationToken: AnastaActivityBoundary] = [:]
+      for appRule in appRules {
+        guard let appId = appRule["appId"] as? String else { continue }
+        let appSelection = appSelection(
+          planId: planId,
+          groupId: groupId,
+          appId: appId,
+          on: date
+        )
+        let appBoundary = boundary(from: appRule)
+        for token in appSelection.applicationTokens {
+          appBoundaries[token] = appBoundary
+        }
+      }
+      let applications = selectedApps.map { token in
+        AnastaGroupAppActivity(
+          token: token,
+          duration: appDurations[token] ?? 0,
+          boundary: appBoundaries[token]
+        )
+      }.sorted { first, second in
+        let firstActive = first.duration > 0
+        let secondActive = second.duration > 0
+        if firstActive != secondActive { return firstActive }
+        return first.duration > second.duration
+      }
       let duration = selectedApps.reduce(0) { partial, token in
         partial + (appDurations[token] ?? 0)
       }
-      guard duration > 0 else { return nil }
-      return AnastaNamedActivity(
+      return AnastaGroupActivity(
         id: groupId,
         name: names[groupId] ?? groupId,
-        duration: duration
+        duration: duration,
+        boundary: boundary(from: groupRule),
+        applications: applications
       )
-    }.sorted { $0.duration > $1.duration }
+    }
+
+    let unassignedApps = appDurations.keys.filter { !ownedTokens.contains($0) }
+      .map { token in
+        AnastaGroupAppActivity(token: token, duration: appDurations[token] ?? 0, boundary: nil)
+      }
+      .sorted { $0.duration > $1.duration }
+    let unassignedDuration = unassignedApps.reduce(0) { $0 + $1.duration }
+    if unassignedDuration > 0 {
+      groups.append(AnastaGroupActivity(
+        id: "__other",
+        name: "Other activity",
+        duration: unassignedDuration,
+        boundary: AnastaActivityBoundary(mode: .noLimit, minutes: nil),
+        applications: unassignedApps
+      ))
+    }
+
+    return groups.sorted { first, second in
+      let firstActive = first.duration > 0
+      let secondActive = second.duration > 0
+      if firstActive != secondActive { return firstActive }
+      if firstActive && secondActive && first.duration != second.duration {
+        return first.duration > second.duration
+      }
+      return first.name.localizedCaseInsensitiveCompare(second.name) == .orderedAscending
+    }
   }
 }
 
 struct AnastaActivityReportContent: View {
+  private enum UsageState: Equatable {
+    case blocked
+    case open
+    case over
+    case planned
+    case within
+  }
+
   let configuration: AnastaActivityConfiguration
+  @State private var expandedGroupId: String?
+  @State private var showingMoreDetail = false
+
+  init(configuration: AnastaActivityConfiguration) {
+    self.configuration = configuration
+    _expandedGroupId = State(initialValue: nil)
+  }
 
   var body: some View {
     ScrollView(.vertical, showsIndicators: false) {
-      VStack(alignment: .leading, spacing: 14) {
-        header
-
-        if !configuration.buckets.isEmpty {
-          activityChart
-        }
-
-        if configuration.totalDuration <= 0 {
-          Text(configuration.mode == .trend
-            ? "No iPhone activity was reported for this period."
-            : "No iPhone activity was reported for this day.")
-            .font(.system(size: 13))
-            .foregroundStyle(.secondary)
+      VStack(alignment: .leading, spacing: 16) {
+        if configuration.mode == .trend {
+          header
+          if !configuration.buckets.isEmpty {
+            activityChart
+          }
+          trendContent
         } else {
-          if !configuration.groups.isEmpty {
-            sectionTitle("ANASTA GROUPS")
-            namedRows(configuration.groups.prefix(6), color: gold)
+          dailyOverview
+          if !configuration.buckets.isEmpty {
+            activityChart
           }
-
-          if !configuration.categories.isEmpty {
-            sectionTitle("APPLE CATEGORIES")
-            namedRows(configuration.categories.prefix(6), color: crimson)
-          }
-
-          if !configuration.applications.isEmpty {
-            sectionTitle("MOST USED APPS")
-            ForEach(configuration.applications, id: \.token) { application in
-              HStack(spacing: 10) {
-                Label(application.token)
-                  .labelStyle(.titleAndIcon)
-                  .lineLimit(1)
-                Spacer(minLength: 8)
-                durationText(application.duration)
-              }
-              .padding(.vertical, 3)
-            }
-          }
-
-          if !configuration.websites.isEmpty {
-            sectionTitle("WEBSITES")
-            ForEach(configuration.websites, id: \.token) { website in
-              HStack(spacing: 10) {
-                Label(website.token)
-                  .labelStyle(.titleAndIcon)
-                  .lineLimit(1)
-                Spacer(minLength: 8)
-                durationText(website.duration)
-              }
-              .padding(.vertical, 3)
-            }
-          }
+          dailyContent
         }
 
-        HStack(spacing: 6) {
-          Image(systemName: "lock.shield")
-          Text("Activity detail stays inside Apple's private report.")
-        }
-        .font(.system(size: 10, weight: .medium))
-        .foregroundStyle(.secondary)
-        .padding(.top, 2)
+        privacyNote
       }
       .padding(16)
     }
-    .background(Color(red: 1.0, green: 0.985, blue: 0.94))
-    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    .background(reportBackground)
+    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+  }
+
+  private var dailyOverview: some View {
+    let activeGroups = configuration.groups.filter { $0.duration > 0 }
+    let total = max(activeGroups.reduce(0) { $0 + $1.duration }, 1)
+    let overCount = activeGroups.filter {
+      usageState(boundary: $0.boundary, duration: $0.duration) == .over
+    }.count
+    let onTrackCount = activeGroups.filter {
+      usageState(boundary: $0.boundary, duration: $0.duration) == .within
+    }.count
+
+    return VStack(alignment: .leading, spacing: 12) {
+      HStack(spacing: 10) {
+        ZStack {
+          RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(gold.opacity(0.1))
+          RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .stroke(gold.opacity(0.24), lineWidth: 1)
+          Image(systemName: "chart.bar.fill")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(gold)
+        }
+        .frame(width: 38, height: 38)
+
+        VStack(alignment: .leading, spacing: 2) {
+          Text("TODAY · USAGE MAP")
+            .font(.system(size: 7.5, weight: .bold))
+            .tracking(1.35)
+            .foregroundStyle(gold)
+          Text("Where your time went")
+            .font(.system(size: 19, weight: .semibold, design: .serif))
+            .foregroundStyle(ink)
+        }
+
+        Spacer(minLength: 8)
+
+        VStack(spacing: 1) {
+          Text("\(activeGroups.count)")
+            .font(.system(size: 17, weight: .semibold, design: .serif))
+            .foregroundStyle(gold)
+          Text("ACTIVE")
+            .font(.system(size: 5.5, weight: .bold))
+            .tracking(0.75)
+            .foregroundStyle(gold)
+        }
+        .frame(width: 46, height: 46)
+        .background(Color.white.opacity(0.58))
+        .clipShape(Circle())
+        .overlay(Circle().stroke(gold.opacity(0.25), lineWidth: 1))
+      }
+
+      GeometryReader { proxy in
+        if activeGroups.isEmpty {
+          Capsule().fill(ink.opacity(0.06))
+        } else {
+          HStack(spacing: 3) {
+            ForEach(activeGroups) { group in
+              Capsule()
+                .fill(groupColor(group.id).opacity(0.88))
+                .frame(width: max(5, (proxy.size.width - CGFloat(max(0, activeGroups.count - 1) * 3)) * CGFloat(group.duration / total)))
+            }
+          }
+        }
+      }
+      .frame(height: 8)
+
+      HStack(spacing: 10) {
+        Text("\(duration(configuration.totalDuration)) tracked")
+          .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+          .foregroundStyle(secondary)
+        Spacer(minLength: 6)
+        if onTrackCount > 0 {
+          overviewSignal("\(onTrackCount) on track", color: safe)
+        }
+        if overCount > 0 {
+          overviewSignal("\(overCount) over", color: danger)
+        }
+        if onTrackCount == 0 && overCount == 0 {
+          Text("Tap a group for apps")
+            .font(.system(size: 8.5, weight: .medium))
+            .foregroundStyle(secondary)
+        }
+      }
+    }
+    .padding(14)
+    .background(
+      LinearGradient(
+        colors: [Color.white.opacity(0.9), gold.opacity(0.08)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+      )
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 21, style: .continuous)
+        .stroke(gold.opacity(0.22), lineWidth: 1)
+    )
+  }
+
+  private func overviewSignal(_ value: String, color: Color) -> some View {
+    HStack(spacing: 4) {
+      Circle().fill(color).frame(width: 5, height: 5)
+      Text(value)
+        .font(.system(size: 8.5, weight: .medium))
+        .foregroundStyle(color)
+    }
+  }
+
+  private var dailyContent: some View {
+    let activeGroups = configuration.groups.filter { $0.duration > 0 }
+    let quietGroups = configuration.groups.filter { $0.duration <= 0 }
+    return VStack(alignment: .leading, spacing: 13) {
+      if activeGroups.isEmpty && configuration.totalDuration <= 0 {
+        emptyActivity
+      }
+
+      if !activeGroups.isEmpty {
+        dailySectionHeading(
+          "Active today",
+          subtitle: "Ranked by screen time",
+          count: activeGroups.count
+        )
+        VStack(spacing: 8) {
+          ForEach(activeGroups) { group in
+            groupCard(group, rank: (activeGroups.firstIndex(where: { $0.id == group.id }) ?? 0) + 1)
+          }
+        }
+      }
+
+      if !quietGroups.isEmpty {
+        dailySectionHeading(
+          activeGroups.isEmpty ? "Plan groups" : "Inactive today",
+          subtitle: activeGroups.isEmpty ? "No group activity yet" : "No screen time recorded",
+          count: quietGroups.count
+        )
+        VStack(spacing: 6) {
+          ForEach(quietGroups) { group in
+            quietGroupRow(group)
+          }
+        }
+      }
+
+      if configuration.groups.isEmpty && configuration.totalDuration > 0 {
+        sectionHeading("MOST USED APPS", count: configuration.applications.count)
+        appFallbackRows
+      }
+
+      if !configuration.categories.isEmpty || !configuration.websites.isEmpty {
+        moreDetail
+      }
+    }
+  }
+
+  private var trendContent: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      if configuration.totalDuration <= 0 {
+        Text("No iPhone activity was reported for this period.")
+          .font(.system(size: 13))
+          .foregroundStyle(.secondary)
+      }
+      if !configuration.categories.isEmpty {
+        sectionHeading("APPLE CATEGORIES", count: configuration.categories.count)
+        namedRows(configuration.categories.prefix(6), color: crimson)
+      }
+      if !configuration.applications.isEmpty {
+        sectionHeading("MOST USED APPS", count: configuration.applications.count)
+        appFallbackRows
+      }
+      if !configuration.websites.isEmpty {
+        sectionHeading("WEBSITES", count: configuration.websites.count)
+        websiteRows
+      }
+    }
   }
 
   private var header: some View {
-    HStack(alignment: .firstTextBaseline) {
+    HStack(alignment: .top, spacing: 12) {
       VStack(alignment: .leading, spacing: 2) {
-        Text(configuration.mode == .trend ? "PRIVATE 30-DAY TREND" : "PRIVATE DAILY ACTIVITY")
-          .font(.system(size: 10, weight: .bold))
-          .tracking(1.5)
-          .foregroundStyle(.secondary)
+        Text(configuration.mode == .trend ? "PRIVATE 30-DAY TREND" : "PRIVATE IPHONE ACTIVITY")
+          .font(.system(size: 9, weight: .bold))
+          .tracking(1.55)
+          .foregroundStyle(gold)
         Text(headlineDuration)
-          .font(.system(size: 30, weight: .medium, design: .serif))
-        Text(configuration.mode == .trend ? "daily average" : "total iPhone time")
-          .font(.system(size: 11))
-          .foregroundStyle(.secondary)
+          .font(.system(size: 32, weight: .medium, design: .serif))
+          .foregroundStyle(ink)
+        Text(configuration.mode == .trend ? "daily average" : "in this report window")
+          .font(.system(size: 10, weight: .medium))
+          .foregroundStyle(secondary)
       }
-      Spacer()
-      Image(systemName: "lock.shield")
-        .font(.system(size: 18, weight: .semibold))
-        .foregroundStyle(gold)
+      Spacer(minLength: 8)
+      ZStack {
+        Circle().fill(gold.opacity(0.11)).frame(width: 44, height: 44)
+        Circle().stroke(gold.opacity(0.28), lineWidth: 1).frame(width: 34, height: 34)
+        Image(systemName: "lock.shield")
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundStyle(gold)
+      }
     }
   }
 
   private var headlineDuration: String {
     if configuration.mode == .trend {
-      // The host's trend context is one complete 30-day window. Divide by the
-      // calendar window, not only buckets returned by iOS, so zero-use days do
-      // not inflate the displayed average.
       return duration(configuration.totalDuration / 30)
     }
     return duration(configuration.totalDuration)
@@ -363,43 +654,520 @@ struct AnastaActivityReportContent: View {
       ? Array(configuration.buckets.suffix(14))
       : Array(configuration.buckets.suffix(24))
     let maximum = max(visible.map(\.duration).max() ?? 0, 60)
-    return VStack(alignment: .leading, spacing: 7) {
+    return VStack(alignment: .leading, spacing: 8) {
       Text(configuration.mode == .trend ? "LAST 14 DAYS" : "HOURLY RHYTHM")
-        .font(.system(size: 9, weight: .bold))
-        .tracking(1.1)
-        .foregroundStyle(.secondary)
-      HStack(alignment: .bottom, spacing: 4) {
+        .font(.system(size: 8, weight: .bold))
+        .tracking(1.25)
+        .foregroundStyle(secondary)
+      HStack(alignment: .bottom, spacing: 3) {
         ForEach(visible) { bucket in
           VStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
               .fill(configuration.mode == .trend ? gold : crimson)
-              .frame(height: max(CGFloat(4), CGFloat(62 * bucket.duration / maximum)))
+              .frame(height: max(CGFloat(3), CGFloat(48 * bucket.duration / maximum)))
             Text(bucketLabel(bucket.date))
-              .font(.system(size: 7, weight: .semibold))
-              .foregroundStyle(.secondary)
+              .font(.system(size: 6.5, weight: .semibold))
+              .foregroundStyle(secondary)
           }
           .frame(maxWidth: .infinity)
         }
       }
-      .frame(height: 82, alignment: .bottom)
+      .frame(height: 66, alignment: .bottom)
     }
-    .padding(.vertical, 4)
+    .padding(12)
+    .background(Color.white.opacity(0.65))
+    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 16, style: .continuous)
+        .stroke(Color.black.opacity(0.05), lineWidth: 1)
+    )
   }
 
-  private var gold: Color {
-    Color(red: 0.63, green: 0.45, blue: 0.16)
+  private func groupCard(_ group: AnastaGroupActivity, rank: Int) -> some View {
+    let state = usageState(boundary: group.boundary, duration: group.duration)
+    let expanded = expandedGroupId == group.id
+    let color = state == .over ? danger : groupColor(group.id)
+    return VStack(spacing: 0) {
+      Button {
+        withAnimation(.easeInOut(duration: 0.18)) {
+          expandedGroupId = expanded ? nil : group.id
+        }
+      } label: {
+        VStack(alignment: .leading, spacing: 11) {
+          HStack(spacing: 10) {
+            Text(String(format: "%02d", rank))
+              .font(.system(size: 8, weight: .bold, design: .rounded))
+              .foregroundStyle(groupColor(group.id).opacity(0.76))
+              .frame(width: 21, height: 42)
+
+            groupMark(group)
+
+            VStack(alignment: .leading, spacing: 2) {
+              Text(group.name)
+                .font(.system(size: 19.5, weight: .semibold, design: .serif))
+                .foregroundStyle(ink)
+                .lineLimit(1)
+              Text(boundaryCaption(state, boundary: group.boundary, duration: group.duration))
+                .font(.system(size: 9.3, weight: .medium))
+                .foregroundStyle(state == .over ? danger : secondary)
+                .lineLimit(1)
+            }
+
+            Spacer(minLength: 4)
+
+            VStack(alignment: .trailing, spacing: 4) {
+              Text(duration(group.duration))
+                .font(.system(size: 18.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(state == .over ? danger : ink)
+              statusBadge(state, boundary: group.boundary)
+            }
+          }
+
+          if group.boundary.mode == .limit, let minutes = group.boundary.minutes {
+            progressRail(group.duration, limitMinutes: minutes, color: color)
+          }
+
+          HStack(spacing: 6) {
+            Circle().fill(color.opacity(0.7)).frame(width: 5, height: 5)
+            Text(expanded ? "Hide app detail" : "View \(group.applications.count) \(group.applications.count == 1 ? "app" : "apps")")
+              .font(.system(size: 9.2, weight: .semibold))
+              .foregroundStyle(secondary)
+            Spacer()
+            Image(systemName: expanded ? "chevron.down" : "chevron.right")
+              .font(.system(size: 9, weight: .bold))
+              .foregroundStyle(secondary)
+              .frame(width: 28, height: 28)
+              .background(Color.white.opacity(expanded ? 0.35 : 0.6))
+              .clipShape(Circle())
+          }
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+
+      if expanded {
+        groupApps(group)
+          .transition(.opacity.combined(with: .move(edge: .top)))
+      }
+    }
+    .background(
+      LinearGradient(
+        colors: [Color.white.opacity(0.96), color.opacity(state == .over ? 0.07 : 0.055)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+      )
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 21, style: .continuous)
+        .stroke(state == .over ? danger.opacity(0.28) : Color.black.opacity(0.065), lineWidth: 1)
+    )
+    .overlay(alignment: .leading) {
+      Rectangle()
+        .fill(color)
+        .frame(width: 3)
+    }
   }
 
-  private var crimson: Color {
-    Color(red: 0.63, green: 0.24, blue: 0.29)
+  private func quietGroupRow(_ group: AnastaGroupActivity) -> some View {
+    let expanded = expandedGroupId == group.id
+    let protectedGroup = group.boundary.mode == .blocked
+    return VStack(spacing: 0) {
+      Button {
+        withAnimation(.easeInOut(duration: 0.18)) {
+          expandedGroupId = expanded ? nil : group.id
+        }
+      } label: {
+        HStack(spacing: 10) {
+          ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+              .fill(groupColor(group.id).opacity(0.075))
+            if group.boundary.mode == .blocked {
+              Image(systemName: "lock.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(groupColor(group.id))
+            } else {
+              Text(String(group.name.prefix(1)).uppercased())
+                .font(.system(size: 16.5, weight: .semibold, design: .serif))
+                .foregroundStyle(groupColor(group.id))
+            }
+          }
+          .frame(width: 38, height: 38)
+
+          VStack(alignment: .leading, spacing: 2) {
+            Text(group.name)
+              .font(.system(size: 16.5, weight: .medium, design: .serif))
+              .foregroundStyle(ink)
+              .lineLimit(1)
+            Text("\(quietBoundaryLabel(group.boundary))  ·  \(group.applications.count) \(group.applications.count == 1 ? "app" : "apps")")
+              .font(.system(size: 8.8, weight: .medium))
+              .foregroundStyle(secondary)
+              .lineLimit(1)
+          }
+
+          Spacer(minLength: 6)
+
+          VStack(alignment: .trailing, spacing: 3) {
+            Text("0m")
+              .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+              .foregroundStyle(secondary)
+            Text(protectedGroup ? "PROTECTED" : "INACTIVE")
+              .font(.system(size: 5.8, weight: .bold))
+              .tracking(0.62)
+              .foregroundStyle(protectedGroup ? safe : secondary.opacity(0.72))
+              .padding(.horizontal, 5.5)
+              .frame(minHeight: 15)
+              .background((protectedGroup ? safe : secondary).opacity(0.07))
+              .clipShape(Capsule())
+          }
+
+          Image(systemName: expanded ? "chevron.down" : "chevron.right")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(secondary)
+            .frame(width: 26, height: 26)
+            .background(Color.white.opacity(expanded ? 0.4 : 0.72))
+            .clipShape(Circle())
+        }
+        .padding(.leading, 13)
+        .padding(.trailing, 11)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      if expanded {
+        groupApps(group)
+          .transition(.opacity.combined(with: .move(edge: .top)))
+      }
+    }
+    .background(
+      LinearGradient(
+        colors: [Color.white.opacity(0.86), groupColor(group.id).opacity(0.035)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+      )
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 19, style: .continuous)
+        .stroke(Color.black.opacity(0.055), lineWidth: 1)
+    )
+    .overlay(alignment: .leading) {
+      Capsule()
+        .fill(groupColor(group.id).opacity(0.42))
+        .frame(width: 2, height: 40)
+    }
   }
 
-  private func sectionTitle(_ value: String) -> some View {
-    Text(value)
-      .font(.system(size: 9, weight: .bold))
-      .tracking(1.1)
-      .foregroundStyle(.secondary)
-      .padding(.top, 2)
+  private func quietBoundaryLabel(_ boundary: AnastaActivityBoundary) -> String {
+    if boundary.mode == .blocked { return "Blocked" }
+    if let minutes = boundary.minutes { return "\(duration(TimeInterval(minutes * 60))) limit" }
+    return "No limit"
+  }
+
+  private func groupMark(_ group: AnastaGroupActivity) -> some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .fill(groupColor(group.id).opacity(0.12))
+        .frame(width: 44, height: 44)
+      if group.boundary.mode == .blocked {
+        Image(systemName: "lock.fill")
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundStyle(groupColor(group.id))
+      } else {
+        Text(String(group.name.prefix(1)).uppercased())
+          .font(.system(size: 19, weight: .semibold, design: .serif))
+          .foregroundStyle(groupColor(group.id))
+      }
+    }
+  }
+
+  private func groupApps(_ group: AnastaGroupActivity) -> some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack {
+        ZStack {
+          RoundedRectangle(cornerRadius: 11, style: .continuous)
+            .fill(groupColor(group.id).opacity(0.11))
+          Image(systemName: "chart.bar.fill")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(groupColor(group.id))
+        }
+        .frame(width: 34, height: 34)
+
+        VStack(alignment: .leading, spacing: 1) {
+          Text("Apps in this group")
+            .font(.system(size: 15.5, weight: .medium, design: .serif))
+            .foregroundStyle(ink)
+          Text("RANKED BY USE")
+            .font(.system(size: 7.3, weight: .bold))
+            .tracking(1.05)
+            .foregroundStyle(secondary)
+        }
+
+        Spacer(minLength: 8)
+
+        ZStack {
+          Circle().fill(Color.black.opacity(0.055))
+          Text("\(group.applications.count)")
+            .font(.system(size: 9, weight: .bold, design: .rounded))
+            .foregroundStyle(secondary)
+            .monospacedDigit()
+        }
+        .frame(width: 28, height: 28)
+      }
+      .padding(.bottom, 10)
+
+      if group.applications.isEmpty {
+        Text("No private app selections are stored for this group.")
+          .font(.system(size: 10, weight: .medium))
+          .foregroundStyle(secondary)
+          .padding(.vertical, 8)
+      } else {
+        ForEach(Array(group.applications.enumerated()), id: \.element.token) { index, application in
+          appRow(application, groupBoundary: group.boundary)
+          if index < group.applications.count - 1 {
+            Divider().padding(.leading, 48)
+          }
+        }
+      }
+    }
+    .padding(.horizontal, 13)
+    .padding(.top, 11)
+    .padding(.bottom, 6)
+    .background(Color.white.opacity(0.7))
+    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 18, style: .continuous)
+        .stroke(Color.black.opacity(0.045), lineWidth: 1)
+    )
+    .padding(.horizontal, 8)
+    .padding(.bottom, 8)
+  }
+
+  private func appRow(_ application: AnastaGroupAppActivity, groupBoundary: AnastaActivityBoundary) -> some View {
+    let specificState = application.boundary.map { usageState(boundary: $0, duration: application.duration) }
+    return VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 9) {
+        VStack(alignment: .leading, spacing: 2) {
+          Label(application.token)
+            .labelStyle(.titleAndIcon)
+            .font(.system(size: 12.2, weight: .medium))
+            .lineLimit(1)
+          Text(appRuleCaption(application.boundary, groupBoundary: groupBoundary))
+            .font(.system(size: 8.6, weight: .medium))
+            .foregroundStyle(secondary)
+        }
+        Spacer(minLength: 6)
+        if let boundary = application.boundary, let state = specificState {
+          VStack(alignment: .trailing, spacing: 2) {
+            Text(duration(application.duration))
+              .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+              .foregroundStyle(state == .over ? danger : ink.opacity(0.72))
+            Text(appBoundaryLabel(boundary, state: state))
+              .font(.system(size: 6.8, weight: .bold))
+              .tracking(0.65)
+              .foregroundStyle(state == .over ? danger : state == .blocked ? secondary : safe)
+          }
+        } else {
+          VStack(alignment: .trailing, spacing: 2) {
+            Text(duration(application.duration))
+              .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+              .foregroundStyle(ink.opacity(0.72))
+            Text(groupBoundary.mode == .noLimit ? "NO LIMIT" : "GROUP RULE")
+              .font(.system(size: 6.8, weight: .bold))
+              .tracking(0.65)
+              .foregroundStyle(secondary)
+          }
+        }
+      }
+
+      if
+        let boundary = application.boundary,
+        boundary.mode == .limit,
+        let minutes = boundary.minutes
+      {
+        progressRail(
+          application.duration,
+          limitMinutes: minutes,
+          color: specificState == .over ? danger : safe
+        )
+        .frame(height: 3)
+      }
+    }
+    .padding(.vertical, 9)
+  }
+
+  private func appRuleCaption(
+    _ boundary: AnastaActivityBoundary?,
+    groupBoundary: AnastaActivityBoundary
+  ) -> String {
+    guard let boundary else {
+      return groupBoundary.mode == .noLimit ? "No individual limit" : "Uses group boundary"
+    }
+    if boundary.mode == .blocked { return "Blocked" }
+    if let minutes = boundary.minutes { return "\(duration(TimeInterval(minutes * 60))) app limit" }
+    return "No limit"
+  }
+
+  private var moreDetail: some View {
+    VStack(spacing: 0) {
+      Button {
+        withAnimation(.easeInOut(duration: 0.18)) {
+          showingMoreDetail.toggle()
+        }
+      } label: {
+        HStack(spacing: 8) {
+          Image(systemName: "chart.bar.xaxis")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(gold)
+          Text("MORE IPHONE DETAIL")
+            .font(.system(size: 8, weight: .bold))
+            .tracking(1.15)
+            .foregroundStyle(secondary)
+          Spacer()
+          Image(systemName: showingMoreDetail ? "chevron.down" : "chevron.right")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(secondary)
+        }
+        .padding(12)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+
+      if showingMoreDetail {
+        VStack(alignment: .leading, spacing: 13) {
+          if !configuration.categories.isEmpty {
+            sectionHeading("APPLE CATEGORIES", count: configuration.categories.count)
+            namedRows(configuration.categories.prefix(6), color: crimson)
+          }
+          if !configuration.websites.isEmpty {
+            sectionHeading("WEBSITES", count: configuration.websites.count)
+            websiteRows
+          }
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
+        .transition(.opacity.combined(with: .move(edge: .top)))
+      }
+    }
+    .background(Color.white.opacity(0.65))
+    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 16, style: .continuous)
+        .stroke(Color.black.opacity(0.05), lineWidth: 1)
+    )
+  }
+
+  private var appFallbackRows: some View {
+    VStack(spacing: 0) {
+      ForEach(configuration.applications, id: \.token) { application in
+        HStack(spacing: 9) {
+          Label(application.token)
+            .labelStyle(.titleAndIcon)
+            .font(.system(size: 11, weight: .medium))
+            .lineLimit(1)
+          Spacer(minLength: 8)
+          durationText(application.duration)
+        }
+        .padding(.vertical, 6)
+      }
+    }
+  }
+
+  private var websiteRows: some View {
+    VStack(spacing: 0) {
+      ForEach(configuration.websites, id: \.token) { website in
+        HStack(spacing: 9) {
+          Label(website.token)
+            .labelStyle(.titleAndIcon)
+            .font(.system(size: 11, weight: .medium))
+            .lineLimit(1)
+          Spacer(minLength: 8)
+          durationText(website.duration)
+        }
+        .padding(.vertical, 6)
+      }
+    }
+  }
+
+  private var emptyActivity: some View {
+    HStack(spacing: 11) {
+      ZStack {
+        Circle().fill(gold.opacity(0.1)).frame(width: 36, height: 36)
+        Image(systemName: "moon.stars")
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(gold)
+      }
+      VStack(alignment: .leading, spacing: 2) {
+        Text("A quiet report window")
+          .font(.system(size: 15, weight: .semibold, design: .serif))
+          .foregroundStyle(ink)
+        Text("No iPhone activity was recorded here.")
+          .font(.system(size: 9.5, weight: .medium))
+          .foregroundStyle(secondary)
+      }
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.white.opacity(0.7))
+    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+  }
+
+  private var privacyNote: some View {
+    HStack(spacing: 6) {
+      Image(systemName: "lock.shield")
+      Text("App names and activity stay inside Apple's private report.")
+    }
+    .font(.system(size: 9, weight: .medium))
+    .foregroundStyle(secondary)
+    .padding(.top, 1)
+  }
+
+  private func dailySectionHeading(
+    _ title: String,
+    subtitle: String,
+    count: Int
+  ) -> some View {
+    HStack(spacing: 12) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title)
+          .font(.system(size: 20, weight: .semibold, design: .serif))
+          .foregroundStyle(ink)
+        Text(subtitle)
+          .font(.system(size: 9.5, weight: .medium))
+          .foregroundStyle(secondary)
+      }
+      Spacer(minLength: 8)
+      ZStack {
+        Circle().fill(Color(red: 0.96, green: 0.94, blue: 0.90))
+        Circle().stroke(gold.opacity(0.16), lineWidth: 1)
+        Text("\(count)")
+          .font(.system(size: 12.5, weight: .semibold, design: .serif))
+          .foregroundStyle(ink.opacity(0.76))
+          .monospacedDigit()
+      }
+      .frame(width: 36, height: 36)
+    }
+    .frame(minHeight: 44)
+    .padding(.horizontal, 3)
+  }
+
+  private func sectionHeading(_ value: String, count: Int) -> some View {
+    HStack(spacing: 6) {
+      Text(value)
+        .font(.system(size: 8, weight: .bold))
+        .tracking(1.35)
+        .foregroundStyle(secondary)
+      Text("\(count)")
+        .font(.system(size: 7, weight: .bold, design: .rounded))
+        .foregroundStyle(secondary)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Color.black.opacity(0.045))
+        .clipShape(Capsule())
+    }
   }
 
   private func namedRows<C: RandomAccessCollection>(
@@ -410,7 +1178,7 @@ struct AnastaActivityReportContent: View {
       ForEach(Array(values)) { item in
         HStack(spacing: 9) {
           Circle().fill(color).frame(width: 7, height: 7)
-          Text(item.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+          Text(item.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
           Spacer(minLength: 8)
           durationText(item.duration)
         }
@@ -418,10 +1186,84 @@ struct AnastaActivityReportContent: View {
     }
   }
 
+  private func usageState(boundary: AnastaActivityBoundary, duration: TimeInterval) -> UsageState {
+    switch boundary.mode {
+    case .blocked:
+      return duration > 0 ? .over : .blocked
+    case .noLimit:
+      return .open
+    case .limit:
+      guard let minutes = boundary.minutes else { return .open }
+      if duration <= 0 { return .planned }
+      return duration > TimeInterval(minutes * 60) ? .over : .within
+    }
+  }
+
+  private func statusBadge(_ state: UsageState, boundary: AnastaActivityBoundary) -> some View {
+    let value: String
+    switch state {
+    case .blocked: value = "BLOCKED"
+    case .open: value = "OPEN"
+    case .over: value = "OVER"
+    case .planned:
+      value = boundary.minutes == nil ? "LIMIT" : "LIMIT SET"
+    case .within: value = "OK"
+    }
+    return HStack(spacing: 3) {
+      if state == .within {
+        Image(systemName: "checkmark").font(.system(size: 6.5, weight: .heavy))
+      } else if state == .blocked {
+        Image(systemName: "lock.fill").font(.system(size: 6, weight: .bold))
+      }
+      Text(value)
+        .font(.system(size: 7, weight: .bold))
+        .tracking(0.65)
+    }
+    .foregroundStyle(state == .over ? danger : state == .within ? safe : secondary)
+    .padding(.horizontal, 8)
+    .padding(.vertical, 4.5)
+    .background((state == .over ? danger : state == .within ? safe : secondary).opacity(0.09))
+    .clipShape(Capsule())
+  }
+
+  private func boundaryCaption(
+    _ state: UsageState,
+    boundary: AnastaActivityBoundary,
+    duration value: TimeInterval
+  ) -> String {
+    guard let minutes = boundary.minutes else {
+      return boundary.mode == .blocked ? "Closed in this plan" : "Open use"
+    }
+    let limit = TimeInterval(minutes * 60)
+    if state == .over { return "\(duration(max(0, value - limit))) over" }
+    if state == .within { return "\(duration(max(0, limit - value))) left" }
+    return "Waiting for activity"
+  }
+
+  private func appBoundaryLabel(_ boundary: AnastaActivityBoundary, state: UsageState) -> String {
+    if state == .over { return "OVER" }
+    if boundary.mode == .blocked { return "LOCKED" }
+    if state == .within { return "OK" }
+    if let minutes = boundary.minutes { return "\(duration(TimeInterval(minutes * 60))) LIMIT" }
+    return "NO LIMIT"
+  }
+
+  private func progressRail(_ value: TimeInterval, limitMinutes: Int, color: Color) -> some View {
+    let limit = max(TimeInterval(limitMinutes * 60), 1)
+    let fraction = min(max(value / limit, 0), 1)
+    return GeometryReader { proxy in
+      ZStack(alignment: .leading) {
+        Capsule().fill(Color.black.opacity(0.065))
+        Capsule().fill(color).frame(width: proxy.size.width * CGFloat(fraction))
+      }
+    }
+    .frame(height: 6)
+  }
+
   private func durationText(_ value: TimeInterval) -> some View {
     Text(duration(value))
-      .font(.system(size: 13, weight: .semibold, design: .rounded))
-      .foregroundStyle(.secondary)
+      .font(.system(size: 11, weight: .semibold, design: .rounded))
+      .foregroundStyle(secondary)
   }
 
   private func bucketLabel(_ date: Date) -> String {
@@ -431,6 +1273,18 @@ struct AnastaActivityReportContent: View {
     return formatter.string(from: date)
   }
 
+  private func groupColor(_ id: String) -> Color {
+    switch id {
+    case "social": return Color(red: 0.43, green: 0.35, blue: 0.68)
+    case "entertainment": return Color(red: 0.71, green: 0.25, blue: 0.33)
+    case "games": return Color(red: 0.31, green: 0.28, blue: 0.90)
+    case "news": return Color(red: 0.36, green: 0.34, blue: 0.31)
+    case "shopping": return Color(red: 0.66, green: 0.52, blue: 0.25)
+    case "dating": return Color(red: 0.71, green: 0.25, blue: 0.33)
+    default: return gold
+    }
+  }
+
   private func duration(_ value: TimeInterval) -> String {
     let formatter = DateComponentsFormatter()
     formatter.allowedUnits = [.hour, .minute]
@@ -438,4 +1292,12 @@ struct AnastaActivityReportContent: View {
     formatter.zeroFormattingBehavior = .pad
     return formatter.string(from: value) ?? "0m"
   }
+
+  private var reportBackground: Color { Color(red: 1.0, green: 0.987, blue: 0.955) }
+  private var ink: Color { Color(red: 0.16, green: 0.14, blue: 0.11) }
+  private var secondary: Color { Color(red: 0.47, green: 0.44, blue: 0.40) }
+  private var gold: Color { Color(red: 0.63, green: 0.45, blue: 0.16) }
+  private var crimson: Color { Color(red: 0.63, green: 0.24, blue: 0.29) }
+  private var danger: Color { Color(red: 0.66, green: 0.28, blue: 0.34) }
+  private var safe: Color { Color(red: 0.23, green: 0.48, blue: 0.42) }
 }

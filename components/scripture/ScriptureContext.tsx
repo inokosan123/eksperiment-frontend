@@ -1,5 +1,5 @@
 import React, {
-  createContext, useCallback, useContext, useEffect, useMemo, useState,
+  createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
 } from 'react';
 import * as SQLite from 'expo-sqlite';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -254,6 +254,8 @@ export function ScriptureProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [annotations, setAnnotations] = useState<ScriptureAnnotation[]>([]);
   const [bibleNotes, setBibleNotes] = useState<ScriptureBibleNote[]>([]);
+  const bibleNotesRef = useRef<ScriptureBibleNote[]>([]);
+  const bibleNoteMutationVersionsRef = useRef(new Map<string, number>());
   const [categories, setCategories] = useState<ColorCategory[]>(DEFAULT_CATEGORIES);
 
   const refreshScriptureData = useCallback(async () => {
@@ -273,11 +275,14 @@ export function ScriptureProvider({ children }: { children: React.ReactNode }) {
         return [category.color, category];
       }));
       setAnnotations(annotationRows.map(rowToAnnotation));
-      setBibleNotes(noteRows.map(rowToBibleNote));
+      const nextBibleNotes = noteRows.map(rowToBibleNote);
+      bibleNotesRef.current = nextBibleNotes;
+      setBibleNotes(nextBibleNotes);
       setCategories(DEFAULT_CATEGORIES.map(category => categoryMap.get(category.color) ?? category));
     } catch (error) {
       console.warn('Scripture user data refresh failed', error);
       setAnnotations([]);
+      bibleNotesRef.current = [];
       setBibleNotes([]);
       setCategories(DEFAULT_CATEGORIES);
     }
@@ -450,39 +455,107 @@ export function ScriptureProvider({ children }: { children: React.ReactNode }) {
     application: string,
   ) => {
     if (!userDb) return;
-    const now = Date.now();
-    const empty = !observations.trim() && !lessons.trim() && !application.trim();
-    if (empty) {
-      await userDb.runAsync('DELETE FROM bible_notes WHERE book_id = ? AND chapter = ?', bookId, chapter);
-      await refreshScriptureData();
-      return;
-    }
 
-    await userDb.runAsync(
-      `INSERT INTO bible_notes
-        (book_id, chapter, observations, lessons, application, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(book_id, chapter) DO UPDATE SET
-        observations = excluded.observations,
-        lessons = excluded.lessons,
-        application = excluded.application,
-        updated_at = excluded.updated_at`,
-      bookId,
-      chapter,
-      observations,
-      lessons,
-      application,
-      now,
-      now,
-    );
-    await refreshScriptureData();
-  }, [refreshScriptureData, userDb]);
+    const now = Date.now();
+    const noteId = bookId + ':' + chapter;
+    const previousNotes = bibleNotesRef.current;
+    const previousNote = previousNotes.find(note => note.id === noteId);
+    const mutationVersion = (bibleNoteMutationVersionsRef.current.get(noteId) ?? 0) + 1;
+    bibleNoteMutationVersionsRef.current.set(noteId, mutationVersion);
+    const empty = !observations.trim() && !lessons.trim() && !application.trim();
+
+    const optimisticNotes = empty
+      ? previousNotes.filter(note => note.id !== noteId)
+      : [
+          {
+            id: noteId,
+            bookId,
+            bookName: getBibleBook(bookId)?.name ?? 'Book ' + bookId,
+            chapter,
+            observations,
+            lessons,
+            application,
+            createdAt: previousNote?.createdAt ?? now,
+            updatedAt: now,
+          },
+          ...previousNotes.filter(note => note.id !== noteId),
+        ];
+    bibleNotesRef.current = optimisticNotes;
+    setBibleNotes(optimisticNotes);
+
+    try {
+      if (empty) {
+        await userDb.runAsync(
+          'DELETE FROM bible_notes WHERE book_id = ? AND chapter = ?',
+          bookId,
+          chapter,
+        );
+        return;
+      }
+
+      await userDb.runAsync(
+        `INSERT INTO bible_notes
+          (book_id, chapter, observations, lessons, application, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(book_id, chapter) DO UPDATE SET
+          observations = excluded.observations,
+          lessons = excluded.lessons,
+          application = excluded.application,
+          updated_at = excluded.updated_at`,
+        bookId,
+        chapter,
+        observations,
+        lessons,
+        application,
+        now,
+        now,
+      );
+    } catch (error) {
+      if (bibleNoteMutationVersionsRef.current.get(noteId) === mutationVersion) {
+        const withoutFailedNote = bibleNotesRef.current.filter(note => note.id !== noteId);
+        const rolledBackNotes = previousNote
+          ? [previousNote, ...withoutFailedNote]
+          : withoutFailedNote;
+        bibleNotesRef.current = rolledBackNotes;
+        setBibleNotes(rolledBackNotes);
+      }
+      throw error;
+    }
+  }, [userDb]);
 
   const deleteBibleNote = useCallback(async (bookId: number, chapter: number) => {
     if (!userDb) return;
-    await userDb.runAsync('DELETE FROM bible_notes WHERE book_id = ? AND chapter = ?', bookId, chapter);
-    await refreshScriptureData();
-  }, [refreshScriptureData, userDb]);
+
+    const noteId = bookId + ':' + chapter;
+    const previousNotes = bibleNotesRef.current;
+    const previousNote = previousNotes.find(note => note.id === noteId);
+    const mutationVersion = (bibleNoteMutationVersionsRef.current.get(noteId) ?? 0) + 1;
+    bibleNoteMutationVersionsRef.current.set(noteId, mutationVersion);
+    const optimisticNotes = previousNotes.filter(note => note.id !== noteId);
+    bibleNotesRef.current = optimisticNotes;
+    setBibleNotes(optimisticNotes);
+
+    try {
+      await userDb.runAsync(
+        'DELETE FROM bible_notes WHERE book_id = ? AND chapter = ?',
+        bookId,
+        chapter,
+      );
+    } catch (error) {
+      if (
+        previousNote
+        && bibleNoteMutationVersionsRef.current.get(noteId) === mutationVersion
+      ) {
+        const rolledBackNotes = [
+          previousNote,
+          ...bibleNotesRef.current.filter(note => note.id !== noteId),
+        ];
+        bibleNotesRef.current = rolledBackNotes;
+        setBibleNotes(rolledBackNotes);
+      }
+      throw error;
+    }
+  }, [userDb]);
 
   const value = useMemo<ScriptureContextValue>(() => ({
     ready,

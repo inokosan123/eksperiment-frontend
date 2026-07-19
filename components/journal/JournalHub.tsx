@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Modal,
@@ -7,7 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
@@ -37,6 +37,7 @@ import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
 import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
 import FocusLottie from '@/components/focus/FocusLottie';
+import JournalStreakCelebration from '@/components/journal/JournalStreakCelebration';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { useJournal, type JournalDotKind } from '@/components/journal/JournalContext';
 import { F } from '@/constants/tokens';
@@ -815,7 +816,13 @@ function YearInPixelsSection({
 export default function JournalHub() {
   const router = useRouter();
   const { createOrUpdateTask, refresh: refreshTasks } = useTasks();
-  const { dotsByDate, streak, entries } = useJournal();
+  const {
+    completionEvent,
+    dismissCompletionEvent,
+    dotsByDate,
+    streak,
+    entries,
+  } = useJournal();
   const today = useMemo(() => new Date(), []);
   const todayKey = localDateKey(today);
   const yesterdayKey = useMemo(() => previousDateKey(todayKey), [todayKey]);
@@ -824,9 +831,21 @@ export default function JournalHub() {
   const [taskOpen, setTaskOpen] = useState(false);
   const [taskSummary, setTaskSummary] = useState('Add to your daily routine');
   const [chosenDate, setChosenDate] = useState('');
+  const [celebrationStreak, setCelebrationStreak] = useState<number | null>(null);
   const chosenKinds = chosenDate ? dotsByDate[chosenDate] ?? [] : [];
   const chosenDateEditable = chosenDate === todayKey || chosenDate === yesterdayKey;
   const canNext = year < today.getFullYear() || (year === today.getFullYear() && month < today.getMonth());
+
+  useFocusEffect(useCallback(() => {
+    if (!completionEvent) return undefined;
+
+    dismissCompletionEvent(completionEvent.id);
+    if (completionEvent.date === todayKey) {
+      setCelebrationStreak(Math.max(1, completionEvent.currentStreak));
+    }
+
+    return undefined;
+  }, [completionEvent, dismissCompletionEvent, todayKey]));
 
   const nav = (route?: string, date?: string, readOnly = false) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -944,6 +963,13 @@ export default function JournalHub() {
         onTaskDraft={createOrUpdateTask}
         onTaskMutation={refreshTasks}
       />
+
+      {celebrationStreak !== null && (
+        <JournalStreakCelebration
+          currentStreak={celebrationStreak}
+          onClose={() => setCelebrationStreak(null)}
+        />
+      )}
     </View>
   );
 }

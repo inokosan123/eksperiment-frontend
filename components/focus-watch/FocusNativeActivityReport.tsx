@@ -3,15 +3,18 @@ import { Platform, StyleSheet, Text, View } from 'react-native';
 import { requireNativeViewManager } from 'expo-modules-core';
 import { BarChart3 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
+import { isNativeFocusAvailable } from './focusNativeBridge';
 
 type NativeReportProps = {
   date: string;
   days: number;
+  startMinutes: number;
+  endMinutes: number;
   style?: object;
 };
 
 let NativeReport: ComponentType<NativeReportProps> | null = null;
-if (Platform.OS === 'ios') {
+if (Platform.OS === 'ios' && isNativeFocusAvailable()) {
   try {
     NativeReport = requireNativeViewManager<NativeReportProps>('AnastaFocus');
   } catch {
@@ -19,9 +22,31 @@ if (Platform.OS === 'ios') {
   }
 }
 
-export default function FocusNativeActivityReport({ date, days = 1 }: { date: string; days?: number }) {
+export function hasNativeActivityReport() {
+  return NativeReport !== null;
+}
+
+export default function FocusNativeActivityReport({
+  date,
+  days = 1,
+  startMinutes,
+  endMinutes,
+}: {
+  date: string;
+  days?: number;
+  startMinutes?: number;
+  endMinutes?: number;
+}) {
   if (NativeReport) {
-    return <NativeReport date={date} days={days} style={[s.nativeReport, days > 1 && s.nativeReportRange]} />;
+    return (
+      <NativeReport
+        date={date}
+        days={days}
+        startMinutes={startMinutes ?? -1}
+        endMinutes={endMinutes ?? -1}
+        style={[s.nativeReport, days > 1 && s.nativeReportRange]}
+      />
+    );
   }
 
   return (
@@ -40,7 +65,7 @@ export default function FocusNativeActivityReport({ date, days = 1 }: { date: st
 }
 
 const s = StyleSheet.create({
-  nativeReport: { width: '100%', height: 500 },
+  nativeReport: { width: '100%', height: 640 },
   nativeReportRange: { height: 540 },
   fallback: {
     minHeight: 112,

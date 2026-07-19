@@ -17,7 +17,7 @@ import Animated, {
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { ArrowUpRight, ChevronRight, Clock, Lock, Plus, Shield } from '@/components/icons/Icons';
+import { ArrowUpRight, ChevronRight, Lock, Plus, Shield } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
@@ -25,7 +25,6 @@ import EssentialAppsSheet from './EssentialAppsSheet';
 import FocusCheck from './FocusCheck';
 import FocusSheetHeader from './FocusSheetHeader';
 import HairlineWeave from './HairlineWeave';
-import ZoneClock from './ZoneClock';
 import DayGauge, { gaugeStanding, gaugeStateColor } from './DayGauge';
 import PlanCardBackdrop from './PlanCardBackdrop';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
@@ -33,7 +32,6 @@ import { getNativeActivitySelectionSummary, isNativeFocusAvailable } from './foc
 import { usePermissionGate } from './usePermissionGate';
 import { PLAN_VISUALS, planVisualFor } from './planVisuals';
 import {
-  activeZone,
   assignPlanToWeekday,
   assignPlanToWeekdayAndToday,
   dateKey,
@@ -52,7 +50,6 @@ import {
   wouldPlanLoseTodayTarget,
   type DayPlan,
   type DayPlanState,
-  type PlanZone,
 } from './dayPlanStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
@@ -160,13 +157,11 @@ function PlanPickerSheet({
   };
 
   const missingNativeSelections = async (nextPlan: DayPlan) => {
-    // Stored Daily/Session rules are only a reversible draft in this mode.
+    // Essentials-only keeps ordinary Daily rules as a reversible draft.
     // Activation must not demand selections for invisible rules.
     if (nextPlan.essentialsOnly) return [];
     const required = new Map<string, string>();
-    const ruleSets = nextPlan.kind === 'session'
-      ? nextPlan.zones.flatMap(session => session.rules ?? [])
-      : nextPlan.rules;
+    const ruleSets = nextPlan.rules;
     for (const rule of ruleSets) {
       const groupMode = rule.mode ?? (rule.dailyMinutes == null ? 'noLimit' : 'limit');
       const activeAppRules = (rule.appRules ?? []).filter(appRule => {
@@ -320,7 +315,6 @@ function PlanPickerSheet({
         >
           {state.plans.map(plan => {
             const selected = currentPlanId === plan.id;
-            const isSession = !plan.essentialsOnly && plan.kind === 'session';
             const visual = planVisualFor(plan);
             return (
               <TouchableOpacity
@@ -340,9 +334,7 @@ function PlanPickerSheet({
                 <LinearGradient colors={visual.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
                 <View pointerEvents="none" style={[s.pickerBloom, { backgroundColor: visual.bloom }]} />
                 <View style={[s.pickerVisual, { backgroundColor: visual.accentSoft, borderColor: visual.border }]}>
-                  {isSession
-                    ? <Clock s={22} c={visual.accent} w={2} />
-                    : <Shield s={22} c={visual.accent} w={2} />}
+                  <Shield s={22} c={visual.accent} w={2} />
                 </View>
                 <View style={s.pickerCopy}>
                   <Text style={[s.pickerName, { color: visual.ink }]} numberOfLines={1}>{plan.name}</Text>
@@ -352,7 +344,6 @@ function PlanPickerSheet({
                       : [
                           plan.budgetMinutes == null ? 'No daily target' : `${formatMinutesShort(plan.budgetMinutes)} target`,
                           plan.essentialsOnly ? 'Essentials only' : null,
-                          isSession ? `${plan.zones.length} Sessions` : null,
                         ].filter(Boolean).join(' · ')}
                   </Text>
                 </View>
@@ -391,14 +382,12 @@ function PlanPickerSheet({
 
 function TodayPlanHero({
   plan,
-  currentSession,
   usedMinutes,
   onChoose,
   onOpenDetail,
   notice,
 }: {
   plan: DayPlan | null;
-  currentSession?: PlanZone | null;
   usedMinutes: number | null;
   onChoose: () => void;
   onOpenDetail: () => void;
@@ -477,11 +466,7 @@ function TodayPlanHero({
             <Text style={[s.todayPlanStatus, { color: visual.body }]} numberOfLines={1}>
               Essentials only · protected from minute one
             </Text>
-          ) : currentSession && (
-            <Text style={[s.todayPlanStatus, { color: visual.body }]} numberOfLines={1}>
-              {currentSession.name} · active until {formatTimeOfDaySafe(currentSession.endMinutes)}
-            </Text>
-          )}
+          ) : null}
         </View>
         <TouchableOpacity style={[s.todayPlanChange, { borderColor: visual.border }]} onPress={onChoose} haptic="selection">
           <Text style={[s.todayPlanChangeText, { color: visual.accent }]}>Change</Text>
@@ -554,7 +539,6 @@ function PlanCard({
   onPress: () => void;
 }) {
   const visual = planVisualFor(plan);
-  const isSession = !plan.essentialsOnly && plan.kind === 'session';
   const today = weekdayMondayFirst(new Date());
   const goal = plan.budgetMinutes;
   const toleranceEnd = plan.essentialOnlyMinutes ?? plan.tolerableMinutes;
@@ -587,14 +571,8 @@ function PlanCard({
 
       <View style={s.planCardRow}>
         <View style={[s.planCardSeal, { borderColor: visual.border }]}>
-          {isSession ? (
-            <ZoneClock zones={plan.zones} size={40} compact />
-          ) : (
-            <>
-              <View style={[s.planCardSealRing, { borderColor: visual.accent }]} />
-              <Shield s={20} c={visual.accent} w={1.9} />
-            </>
-          )}
+          <View style={[s.planCardSealRing, { borderColor: visual.accent }]} />
+          <Shield s={20} c={visual.accent} w={1.9} />
         </View>
         <View style={s.planCardCopy}>
           <View style={s.planCardNameRow}>
@@ -651,7 +629,6 @@ export default function DayPlanHubView() {
   const [alwaysBlockedOpen, setAlwaysBlockedOpen] = useState(false);
   const today = weekdayMondayFirst(new Date());
   const todayPlan = getEffectivePlan(state, new Date());
-  const currentSession = todayPlan?.essentialsOnly ? null : activeZone(todayPlan, new Date());
   const todayPlanProtects = planHasProtectionNow(todayPlan, new Date());
   const todayUsage = getLiveUsageSnapshot(dateKey(new Date()));
 
@@ -671,7 +648,6 @@ export default function DayPlanHubView() {
         <Animated.View entering={enter(0)}>
           <TodayPlanHero
             plan={todayPlan}
-            currentSession={currentSession}
             usedMinutes={todayUsage?.totalMinutes ?? null}
             onChoose={() => setPicker({ mode: 'today', day: today })}
             onOpenDetail={() => router.push('/day-plan-today' as never)}
@@ -835,13 +811,6 @@ export default function DayPlanHubView() {
       {gate}
     </View>
   );
-}
-
-function formatTimeOfDaySafe(minutes: number) {
-  const normalized = ((minutes % 1440) + 1440) % 1440;
-  const hours = Math.floor(normalized / 60);
-  const mins = normalized % 60;
-  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 }
 
 const s = StyleSheet.create({

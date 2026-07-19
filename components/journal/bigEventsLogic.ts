@@ -1,6 +1,20 @@
 import type { BigEvent } from './bigEventsDb';
+import { normalizeBigEventLeadDays } from './bigEventsConfig';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+function dateKeyFromParts(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function dateParts(dateKey: string) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return { year, month, day };
+}
+
+function daysInMonth(year: number, month: number) {
+  return new Date(year, month, 0, 12, 0, 0).getDate();
+}
 
 export function toLocalDateKey(date: Date): string {
   const year = date.getFullYear();
@@ -11,6 +25,12 @@ export function toLocalDateKey(date: Date): string {
 
 export function todayKey() {
   return toLocalDateKey(new Date());
+}
+
+export function addDaysToDateKey(dateKey: string, days: number): string {
+  const date = new Date(`${dateKey}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return toLocalDateKey(date);
 }
 
 export function getBigEventStartDate(event: BigEvent): string {
@@ -33,7 +53,34 @@ export function normalizeBigEvent(event: BigEvent): BigEvent {
     ...event,
     startDate: orderedStart,
     endDate: orderedEnd,
+    recurrence: event.recurrence === 'yearly' ? 'yearly' : 'none',
+    leadDays: normalizeBigEventLeadDays(event.leadDays, event.recurrence),
+    remindersEnabled: event.remindersEnabled === true,
     createdAt: event.createdAt || Date.now(),
+  };
+}
+
+export function getYearlyOccurrenceDate(event: BigEvent, year: number): string {
+  const anchor = dateParts(event.endDate);
+  const month = Math.min(12, Math.max(1, anchor.month || 1));
+  const day = Math.min(Math.max(1, anchor.day || 1), daysInMonth(year, month));
+  return dateKeyFromParts(year, month, day);
+}
+
+export function resolveBigEventForDate(event: BigEvent, referenceDate: string): BigEvent {
+  const normalized = normalizeBigEvent(event);
+  if (normalized.recurrence !== 'yearly') return normalized;
+
+  const { year } = dateParts(referenceDate);
+  let occurrenceDate = getYearlyOccurrenceDate(normalized, year);
+  if (occurrenceDate < referenceDate) {
+    occurrenceDate = getYearlyOccurrenceDate(normalized, year + 1);
+  }
+
+  return {
+    ...normalized,
+    startDate: addDaysToDateKey(occurrenceDate, -normalized.leadDays),
+    endDate: occurrenceDate,
   };
 }
 
@@ -42,18 +89,22 @@ export function isBigEventDeletedOnDate(event: BigEvent, date: string): boolean 
 }
 
 export function isBigEventVisibleOnDate(event: BigEvent, date: string): boolean {
-  const normalized = normalizeBigEvent(event);
+  const resolved = resolveBigEventForDate(event, date);
   return (
-    date >= normalized.startDate &&
-    date <= normalized.endDate &&
-    !isBigEventDeletedOnDate(normalized, date)
+    date >= resolved.startDate &&
+    date <= resolved.endDate &&
+    !isBigEventDeletedOnDate(resolved, date)
   );
 }
 
 export function getBigEventsForDate(events: BigEvent[], date: string, limit?: number): BigEvent[] {
   const visible = events
-    .map(normalizeBigEvent)
-    .filter(event => isBigEventVisibleOnDate(event, date))
+    .map(event => resolveBigEventForDate(event, date))
+    .filter(event => (
+      date >= event.startDate &&
+      date <= event.endDate &&
+      !isBigEventDeletedOnDate(event, date)
+    ))
     .sort((a, b) => {
       const byEnd = a.endDate.localeCompare(b.endDate);
       if (byEnd !== 0) return byEnd;
@@ -63,22 +114,17 @@ export function getBigEventsForDate(events: BigEvent[], date: string, limit?: nu
   return typeof limit === 'number' ? visible.slice(0, limit) : visible;
 }
 
-/**
- * Days between fromDate and event.endDate (inclusive of end day).
- * - >0 means event is in the future (X days)
- * - 0 means event is today
- * - <0 means event has passed
- */
+/** Days between fromDate and the next occurrence. */
 export function getBigEventCountdown(event: BigEvent, fromDate: string): number {
-  const endDate = getBigEventEndDate(event);
+  const endDate = resolveBigEventForDate(event, fromDate).endDate;
   const target = new Date(`${endDate}T12:00:00`);
   const current = new Date(`${fromDate}T12:00:00`);
   return Math.ceil((target.getTime() - current.getTime()) / DAY_MS);
 }
 
-export function sortBigEvents(events: BigEvent[]): BigEvent[] {
+export function sortBigEvents(events: BigEvent[], referenceDate: string = todayKey()): BigEvent[] {
   return events
-    .map(normalizeBigEvent)
+    .map(event => resolveBigEventForDate(event, referenceDate))
     .sort((a, b) => {
       const byEnd = a.endDate.localeCompare(b.endDate);
       if (byEnd !== 0) return byEnd;

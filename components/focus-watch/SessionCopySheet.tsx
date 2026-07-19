@@ -73,7 +73,10 @@ export default function SessionCopySheet({
     checking: boolean;
   } | null>(null);
   const [copying, setCopying] = useState(false);
-  const plans = useMemo(() => state.plans.filter(plan => plan.kind === 'session'), [state.plans]);
+  const plans = useMemo(
+    () => state.plans.filter(plan => plan.kind === 'session' && !plan.essentialsOnly),
+    [state.plans]
+  );
 
   const close = () => {
     setOpenPlanId(null);

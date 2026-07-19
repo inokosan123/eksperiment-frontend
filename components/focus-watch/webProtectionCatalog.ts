@@ -53,7 +53,11 @@ export const WEB_PACK_DOMAINS = {
 } as const;
 
 type WebProtectionInput = {
-  packs: { id: keyof typeof WEB_PACK_DOMAINS; mode: 'off' | 'on' | 'never' }[];
+  packs: {
+    id: keyof typeof WEB_PACK_DOMAINS;
+    mode: 'off' | 'on' | 'never';
+    extraDomains?: string[];
+  }[];
   customPacks: { mode: 'off' | 'on' | 'never'; domains: string[] }[];
   customDomains: { domain: string }[];
 };
@@ -89,6 +93,9 @@ export function resolveWebProtectionDomains(input: WebProtectionInput) {
 
   // A person's explicit choices must never be displaced by a broad starter pack.
   input.customDomains.forEach(entry => add(entry.domain));
+  input.packs
+    .filter(pack => pack.mode !== 'off')
+    .forEach(pack => pack.extraDomains?.forEach(add));
   input.customPacks
     .filter(pack => pack.mode !== 'off')
     .forEach(pack => pack.domains.forEach(add));

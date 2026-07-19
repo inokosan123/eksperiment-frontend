@@ -3,20 +3,45 @@ import { before, describe, test } from 'node:test';
 import {
   APP_CATEGORIES,
   addCustomDomain,
+  addDomainToWebPack,
   activeZone,
   assignPlanToWeekday,
+  assignPlanToWeekdayAndToday,
+  cancelPendingChange,
   computeStreak,
   connectedSessionsAreValid,
   dateKey,
+  describeRules,
+  describeZones,
+  FOCUS_SESSION_PLANNING_ENABLED,
   getDayPlanState,
+  getEffectivePlan,
+  getPlanSnapshotForDate,
+  HARD_LOCK_DISABLE_DELAY_MS,
+  hardLockDelayMs,
   normalizeConnectedSessions,
+  planHasProtectionNow,
+  planLeisureBudget,
+  plannedMinutesByGroup,
+  permanentlyLockWebHardLock,
+  reconcileNativeTargetArmedDays,
+  recordUsageSnapshot,
+  removeCustomDomain,
+  removeDomainFromWebPack,
   removeSessionAndExtendPrevious,
   resolveAppAccess,
+  rulesForPlanAt,
+  runtimePlanKind,
   saveDayPlan,
   saveOptionalEssentialApps,
+  setPackMode,
   splitSessionAt,
   startQuietHour,
+  swapTodayPlan,
+  tickDayPlanStore,
+  updateWebHardLock,
   endQuietHour,
+  weekdayMondayFirst,
   zoneContains,
   zoneDurationMinutes,
   type DayPlan,
@@ -30,6 +55,11 @@ import {
   resolveWebProtectionDomains,
   WEB_DOMAIN_LIMIT,
 } from '../components/focus-watch/webProtectionCatalog';
+import {
+  sortUsageRows,
+  usageActivityState,
+  usageBoundaryState,
+} from '../components/focus-watch/todayUsageModel';
 
 declare global {
   var __focusTestDb: { calls: { kind: string; sql: string }[] };
@@ -124,6 +154,11 @@ describe('legacy persistence hydration', () => {
     assert.equal(migrated.rules.length, APP_CATEGORIES.length);
     assert.equal(hydrated.schedule[0], 'legacy-plan');
     assert.equal(hydrated.days['2026-07-10']?.status, 'kept');
+    const dormant = hydrated.plans.find(entry => entry.id === 'daily-with-dormant-session-draft');
+    assert.ok(dormant);
+    assert.equal(dormant.kind, 'daily');
+    assert.equal(dormant.zones.length, 2);
+    assert.equal(activeZone(dormant, now), null);
     assert.ok(global.__focusTestDb.calls.some(call =>
       call.kind === 'write' && call.sql.includes('INSERT INTO focus_watch_plans')
     ));
@@ -145,11 +180,13 @@ describe('connected Session geometry', () => {
     assert.equal(zoneContains(normalized[0], 30), false);
   });
 
-  test('selects the correct active Session around midnight', () => {
+  test('keeps Session ranges dormant in the Daily-only v1 runtime', () => {
     const sessionPlan = plan({ kind: 'session', zones: sessions });
-    assert.equal(activeZone(sessionPlan, new Date(2026, 6, 12, 22, 30))?.id, 'night');
-    assert.equal(activeZone(sessionPlan, new Date(2026, 6, 13, 5, 30))?.id, 'night');
-    assert.equal(activeZone(sessionPlan, new Date(2026, 6, 13, 6, 0))?.id, 'day');
+    assert.equal(FOCUS_SESSION_PLANNING_ENABLED, false);
+    assert.equal(runtimePlanKind(sessionPlan), 'daily');
+    assert.equal(activeZone(sessionPlan, new Date(2026, 6, 12, 22, 30)), null);
+    assert.equal(activeZone(sessionPlan, new Date(2026, 6, 13, 5, 30)), null);
+    assert.equal(describeZones(sessionPlan), 'Daily Plan · one set of rules');
   });
 
   test('adds a valid Session and gives removed time to its predecessor', () => {
@@ -188,6 +225,78 @@ describe('v4 protection hierarchy', () => {
     });
     assert.equal(decision.allowed, true);
     assert.equal(decision.layer, 'permission');
+  });
+
+  test('Essentials-only protects from minute one without turning the target into zero', () => {
+    const essentialsPlan = plan({
+      essentialsOnly: true,
+      essentialAppIds: ['gmail'],
+      budgetMinutes: 90,
+      tolerableMinutes: 150,
+      essentialOnlyMinutes: 150,
+    });
+    assert.equal(planHasProtectionNow(essentialsPlan, now), true);
+    assert.equal(essentialsPlan.budgetMinutes, 90);
+
+    const allowed = resolveAppAccess({
+      state: state(), plan: essentialsPlan, now,
+      appId: 'gmail', usage: usage({ totalMinutes: 0 }),
+    });
+    assert.equal(allowed.allowed, true);
+    assert.equal(allowed.layer, 'dailyHardWall');
+
+    const blocked = resolveAppAccess({
+      state: state(), plan: essentialsPlan, now,
+      appId: 'instagram', groupId: 'social', usage: usage({ totalMinutes: 0 }),
+    });
+    assert.equal(blocked.allowed, false);
+    assert.equal(blocked.layer, 'dailyHardWall');
+  });
+
+  test('Always Blocked still wins over a plan-only Essentials exception', () => {
+    const decision = resolveAppAccess({
+      state: state({
+        alwaysBlockedApps: [{ appId: 'gmail', strength: 'strict', practice: 'prayer' }],
+      }),
+      plan: plan({ essentialsOnly: true, essentialAppIds: ['gmail'] }),
+      now,
+      appId: 'gmail',
+      usage: usage(),
+    });
+    assert.equal(decision.allowed, false);
+    assert.equal(decision.strength, 'strict');
+  });
+
+  test('Essentials-only keeps former Daily and Session rules dormant everywhere', () => {
+    const dormantRule = rule('social', { mode: 'blocked', dailyMinutes: 45 });
+    const essentialsPlan = plan({
+      essentialsOnly: true,
+      kind: 'session',
+      essentialAppIds: ['instagram'],
+      rules: [dormantRule],
+      zones: [{
+        id: 'work',
+        name: 'Work',
+        startMinutes: 0,
+        endMinutes: 0,
+        closedGroupIds: ['social'],
+        rules: [dormantRule],
+      }],
+    });
+
+    assert.equal(activeZone(essentialsPlan, now), null);
+    assert.deepEqual(rulesForPlanAt(essentialsPlan, now), []);
+    assert.deepEqual(plannedMinutesByGroup(essentialsPlan), {});
+    assert.equal(planLeisureBudget(essentialsPlan), 0);
+    assert.equal(describeRules(state(), essentialsPlan), 'Protected from minute one');
+    assert.equal(describeZones(essentialsPlan), 'Essentials-only Plan · protected all day');
+
+    const decision = resolveAppAccess({
+      state: state(), plan: essentialsPlan, now,
+      appId: 'instagram', groupId: 'social', usage: usage(),
+    });
+    assert.equal(decision.allowed, true);
+    assert.equal(decision.layer, 'dailyHardWall');
   });
 
   test('Quiet Hour may temporarily allow any selected app', () => {
@@ -289,7 +398,7 @@ describe('v4 protection hierarchy', () => {
     assert.equal(decision.remainingMinutes, 15);
   });
 
-  test('a new Session gets its own allowance without carrying saved time forward', () => {
+  test('dormant Session allowances cannot override the v1 Daily rule set', () => {
     const sessionRule = (minutes: number, strength: 'strict' | 'loose') => rule('social', {
       dailyMinutes: minutes, mode: 'limit', strength,
       appRules: [{
@@ -313,15 +422,15 @@ describe('v4 protection hierarchy', () => {
       state: state(), plan: sessionPlan, now: new Date(2026, 6, 12, 9),
       appId: 'instagram', groupId: 'social', usage: snapshot,
     });
-    assert.equal(morning.allowed, false);
-    assert.equal(morning.strength, 'strict');
+    assert.equal(morning.allowed, true);
+    assert.deepEqual(rulesForPlanAt(sessionPlan, new Date(2026, 6, 12, 9)), sessionPlan.rules);
 
     const evening = resolveAppAccess({
       state: state(), plan: sessionPlan, now: new Date(2026, 6, 12, 13),
       appId: 'instagram', groupId: 'social', usage: snapshot,
     });
     assert.equal(evening.allowed, true);
-    assert.equal(evening.remainingMinutes, 45);
+    assert.deepEqual(rulesForPlanAt(sessionPlan, new Date(2026, 6, 12, 13)), sessionPlan.rules);
   });
 });
 
@@ -375,6 +484,213 @@ describe('Clean Sight domain rules', () => {
     assert.ok(resolved.omittedDomains.length > 3);
     assert.equal(resolved.adultFilterActive, false);
   });
+
+  test('adds personal domains to a built-in pack and delays their removal through Hard Lock', () => {
+    const domain = 'local-news.example.com';
+    updateWebHardLock({ enabled: true });
+    setPackMode('news', 'on');
+    assert.equal(addDomainToWebPack('news', domain), true);
+    assert.equal(addDomainToWebPack('news', domain), false);
+    assert.equal(addDomainToWebPack('news', 'cnn.com'), false);
+
+    const activePurity = getDayPlanState().purity;
+    const resolved = resolveWebProtectionDomains(activePurity);
+    assert.ok(resolved.domains.includes(domain));
+    assert.ok(activePurity.packs.find(pack => pack.id === 'news')?.extraDomains.includes(domain));
+
+    assert.equal(removeDomainFromWebPack('news', domain), true);
+    const pendingRemoval = getDayPlanState().pendingChanges.find(change =>
+      change.action.kind === 'pack-domain-remove'
+        && change.action.packId === 'news'
+        && change.action.domain === domain
+    );
+    assert.ok(pendingRemoval);
+    assert.ok(getDayPlanState().purity.packs.find(pack => pack.id === 'news')?.extraDomains.includes(domain));
+
+    tickDayPlanStore(pendingRemoval.effectiveAt);
+    assert.equal(getDayPlanState().purity.packs.find(pack => pack.id === 'news')?.extraDomains.includes(domain), false);
+  });
+
+  test('Hard Lock keeps pack and domain weakening requests blocked until the delay ends', () => {
+    const domain = 'hard-lock-test.example.com';
+    assert.equal(hardLockDelayMs('45m'), 45 * 60_000);
+    assert.equal(hardLockDelayMs('3d'), 3 * 24 * 60 * 60_000);
+
+    updateWebHardLock({ cooldown: '45m' });
+    updateWebHardLock({ enabled: true });
+    addCustomDomain(domain);
+    setPackMode('gambling', 'on');
+
+    removeCustomDomain(domain);
+    setPackMode('gambling', 'off');
+    const waiting = getDayPlanState().pendingChanges.filter(change =>
+      change.action.kind === 'domain-remove' || change.action.kind === 'pack-mode'
+    );
+    assert.equal(waiting.length, 2);
+    assert.equal(getDayPlanState().purity.customDomains.some(entry => entry.domain === domain), true);
+    assert.equal(getDayPlanState().purity.packs.find(pack => pack.id === 'gambling')?.mode, 'on');
+
+    const firstDue = Math.min(...waiting.map(change => change.effectiveAt));
+    const lastDue = Math.max(...waiting.map(change => change.effectiveAt));
+    tickDayPlanStore(firstDue - 1);
+    assert.equal(getDayPlanState().purity.customDomains.some(entry => entry.domain === domain), true);
+    assert.equal(getDayPlanState().purity.packs.find(pack => pack.id === 'gambling')?.mode, 'on');
+
+    tickDayPlanStore(lastDue);
+    assert.equal(getDayPlanState().purity.customDomains.some(entry => entry.domain === domain), false);
+    assert.equal(getDayPlanState().purity.packs.find(pack => pack.id === 'gambling')?.mode, 'off');
+  });
+
+  test('Hard Lock uses a full-day exit delay and preserves legacy permanent locks', () => {
+    assert.equal(getDayPlanState().purity.locks.enabled, true);
+    const requestedAt = Date.now();
+    updateWebHardLock({ enabled: false });
+    const pendingDisable = getDayPlanState().pendingChanges.find(change =>
+      change.action.kind === 'locks' && change.action.partial.enabled === false
+    );
+    assert.ok(pendingDisable);
+    assert.ok(pendingDisable.effectiveAt - requestedAt >= HARD_LOCK_DISABLE_DELAY_MS);
+    assert.ok(pendingDisable.effectiveAt - requestedAt < HARD_LOCK_DISABLE_DELAY_MS + 1_000);
+    assert.equal(getDayPlanState().purity.locks.enabled, true);
+    cancelPendingChange(pendingDisable.id);
+
+    updateWebHardLock({ cooldown: '3d' });
+    assert.equal(getDayPlanState().purity.locks.cooldown, '3d');
+    assert.equal(permanentlyLockWebHardLock(), true);
+    assert.deepEqual(getDayPlanState().purity.locks, {
+      enabled: true,
+      locked: true,
+      cooldown: '3d',
+    });
+    assert.equal(updateWebHardLock({ enabled: false }), false);
+    assert.equal(getDayPlanState().pendingChanges.some(change =>
+      change.action.kind === 'locks' && change.action.partial.enabled === false
+    ), false);
+
+    // A shorter delay is itself a weakening request. The current three-day
+    // delay stays visible until that request becomes due.
+    assert.equal(updateWebHardLock({ cooldown: '45m' }), true);
+    const pendingShorterDelay = getDayPlanState().pendingChanges.find(change =>
+      change.action.kind === 'locks' && change.action.partial.cooldown === '45m'
+    );
+    assert.ok(pendingShorterDelay);
+    assert.equal(getDayPlanState().purity.locks.cooldown, '3d');
+    tickDayPlanStore(pendingShorterDelay.effectiveAt);
+    assert.deepEqual(getDayPlanState().purity.locks, {
+      enabled: true,
+      locked: true,
+      cooldown: '45m',
+    });
+  });
+});
+
+describe('today plan assignment', () => {
+  test('the current weekday changes protection now and the reusable weekly template', () => {
+    const today = new Date();
+    const weekday = weekdayMondayFirst(today);
+    const futureWeekday = (weekday + 1) % 7;
+    const first = saveDayPlan({
+      id: 'today-assignment-first',
+      name: 'First today plan',
+      budgetMinutes: 300,
+      tolerableMinutes: 360,
+      essentialOnlyMinutes: 420,
+      strength: 'strict',
+      rules: [],
+      zones: [],
+    });
+    const second = saveDayPlan({
+      id: 'today-assignment-second',
+      name: 'Second today plan',
+      budgetMinutes: 210,
+      tolerableMinutes: 270,
+      essentialOnlyMinutes: 330,
+      strength: 'strict',
+      rules: [],
+      zones: [],
+    });
+
+    swapTodayPlan(first.id, today);
+    assignPlanToWeekday(weekday, first.id);
+    reconcileNativeTargetArmedDays({ [dateKey(today)]: first.id });
+    recordUsageSnapshot({
+      date: dateKey(today),
+      planId: first.id,
+      totalMinutes: 220,
+      groupMinutes: {},
+      appMinutes: {},
+      sessionGroupMinutes: {},
+      sessionAppMinutes: {},
+      updatedAt: today.getTime(),
+    });
+    assert.equal(getEffectivePlan(getDayPlanState(), today)?.id, first.id);
+    assert.equal(getDayPlanState().days[dateKey(today)]?.targetLost, false);
+
+    const changed = assignPlanToWeekdayAndToday(weekday, second.id, today);
+    const after = getDayPlanState();
+    assert.equal(changed, true);
+    assert.equal(after.schedule[weekday], second.id);
+    assert.equal(after.days[dateKey(today)]?.planId, second.id);
+    assert.equal(after.days[dateKey(today)]?.targetLost, true);
+    assert.equal(getEffectivePlan(after, today)?.id, second.id);
+    assert.equal(getPlanSnapshotForDate(after, today)?.id, second.id);
+    assert.equal(after.targetArmedByDate[dateKey(today)], undefined);
+
+    // Editing another weekday is planning only. It cannot silently replace the
+    // active day or its immutable plan snapshot.
+    assignPlanToWeekday(futureWeekday, first.id);
+    const afterFutureEdit = getDayPlanState();
+    assert.equal(afterFutureEdit.schedule[futureWeekday], first.id);
+    assert.equal(getEffectivePlan(afterFutureEdit, today)?.id, second.id);
+    assert.equal(getPlanSnapshotForDate(afterFutureEdit, today)?.id, second.id);
+    assert.equal(assignPlanToWeekdayAndToday(futureWeekday, first.id, today), false);
+
+    // Rest is a real assignment too. It clears both surfaces but cannot undo
+    // eligibility already lost earlier in the same day.
+    assert.equal(assignPlanToWeekdayAndToday(weekday, null, today), true);
+    const rest = getDayPlanState();
+    assert.equal(rest.schedule[weekday], null);
+    assert.equal(rest.days[dateKey(today)]?.planId, null);
+    assert.equal(rest.days[dateKey(today)]?.targetLost, true);
+    assert.equal(getEffectivePlan(rest, today), null);
+    assert.equal(getPlanSnapshotForDate(rest, today), null);
+  });
+});
+
+describe('Today usage breakdown', () => {
+  test('keeps active, quiet, and pending group states distinct', () => {
+    assert.equal(usageActivityState(32), 'active');
+    assert.equal(usageActivityState(0), 'quiet');
+    assert.equal(usageActivityState(null), 'pending');
+  });
+
+  test('orders active groups and apps by usage, then quiet rows by name', () => {
+    const ordered = sortUsageRows([
+      { name: 'Shopping', usedMinutes: 0 },
+      { name: 'Social', usedMinutes: 95 },
+      { name: 'Dating', usedMinutes: 0 },
+      { name: 'Games', usedMinutes: 28 },
+      { name: 'Entertainment', usedMinutes: 61 },
+    ]);
+
+    assert.deepEqual(ordered.map(row => row.name), [
+      'Social',
+      'Entertainment',
+      'Games',
+      'Dating',
+      'Shopping',
+    ]);
+  });
+
+  test('distinguishes planned, within, over, blocked, and open boundaries', () => {
+    assert.equal(usageBoundaryState('limit', 45, null), 'planned');
+    assert.equal(usageBoundaryState('limit', 45, 0), 'planned');
+    assert.equal(usageBoundaryState('limit', 45, 44), 'within');
+    assert.equal(usageBoundaryState('limit', 45, 46), 'over');
+    assert.equal(usageBoundaryState('blocked', null, 0), 'blocked');
+    assert.equal(usageBoundaryState('blocked', null, 1), 'over');
+    assert.equal(usageBoundaryState('noLimit', null, 240), 'open');
+  });
 });
 
 describe('SQLite persistence queue', () => {
@@ -382,11 +698,17 @@ describe('SQLite persistence queue', () => {
     const beforeWrites = global.__focusTestDb.calls.length;
     const saved = saveDayPlan({
       name: 'Persisted plan',
-      budgetMinutes: 240,
+      essentialsOnly: true,
+      essentialAppIds: ['gmail'],
+      budgetMinutes: 0,
       strength: 'strict',
       rules: [],
       zones: [],
     });
+    assert.equal(saved.essentialsOnly, true);
+    assert.equal(saved.budgetMinutes, 60);
+    assert.equal(saved.tolerableMinutes, 180);
+    assert.equal(saved.essentialOnlyMinutes, 180);
     assignPlanToWeekday(2, saved.id);
     saveOptionalEssentialApps(['gmail']);
     startQuietHour({

@@ -5,6 +5,8 @@
   "scripts": {
     "start": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-expo.ps1",
     "start:clear": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-expo.ps1 -Clear",
+    "start:tunnel": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-expo.ps1 -Connection tunnel",
+    "start:tunnel:clear": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-expo.ps1 -Connection tunnel -Clear",
     "test:focus": "node scripts/run-focus-tests.cjs",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",

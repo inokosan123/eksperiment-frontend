@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -19,6 +20,7 @@ import {
 import {
   computeJournalStreak,
   getJournalKindsForEntry,
+  isJournalDayComplete,
 } from '@/components/journal/journalLogic';
 import type { JournalSection } from '@/components/journal/journalSections';
 
@@ -40,6 +42,16 @@ export type JournalEntryPatch = Partial<
   >
 >;
 
+export type JournalCompletionEvent = {
+  id: number;
+  date: string;
+  currentStreak: number;
+};
+
+export type JournalUpsertOptions = {
+  queueCompletionCelebration?: boolean;
+};
+
 type JournalContextValue = {
   ready: boolean;
   entries: JournalEntry[];
@@ -47,9 +59,15 @@ type JournalContextValue = {
   dotsByDate: Record<string, JournalDotKind[]>;
   sections: JournalSection[];
   streak: ReturnType<typeof computeJournalStreak>;
+  completionEvent: JournalCompletionEvent | null;
   refresh: () => Promise<void>;
   getEntry: (date: string) => JournalEntry;
-  upsertEntry: (date: string, patch: JournalEntryPatch) => Promise<JournalEntry>;
+  upsertEntry: (
+    date: string,
+    patch: JournalEntryPatch,
+    options?: JournalUpsertOptions,
+  ) => Promise<JournalEntry>;
+  dismissCompletionEvent: (id: number) => void;
   setJournalSections: (sections: JournalSection[]) => Promise<void>;
 };
 
@@ -90,10 +108,23 @@ function mergeEntry(base: JournalEntry, patch: JournalEntryPatch): JournalEntry 
   };
 }
 
+function upsertEntryInList(entries: JournalEntry[], next: JournalEntry) {
+  const exists = entries.some(entry => entry.date === next.date);
+  const merged = exists
+    ? entries.map(entry => entry.date === next.date ? next : entry)
+    : [next, ...entries];
+  return merged.sort((left, right) => right.date.localeCompare(left.date));
+}
+
 export function JournalProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [sections, setSections] = useState<JournalSection[]>([]);
+  const [completionEvent, setCompletionEvent] = useState<JournalCompletionEvent | null>(null);
+  const entriesRef = useRef<JournalEntry[]>([]);
+  const completionEventIdRef = useRef(0);
+  const queuedCompletionDatesRef = useRef(new Set<string>());
+  const persistedCompletionDatesRef = useRef(new Set<string>());
 
   const refresh = useCallback(async () => {
     try {
@@ -101,10 +132,16 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
         listJournalEntries(),
         listJournalSections(),
       ]);
+      entriesRef.current = entryRows;
+      persistedCompletionDatesRef.current = new Set(
+        entryRows.filter(entry => isJournalDayComplete(entry)).map(entry => entry.date),
+      );
       setEntries(entryRows);
       setSections(sectionRows);
     } catch (error) {
       console.warn('Journal backend refresh failed', error);
+      entriesRef.current = [];
+      persistedCompletionDatesRef.current.clear();
       setEntries([]);
       setSections([]);
     } finally {
@@ -121,11 +158,17 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
           listJournalSections(),
         ]);
         if (!active) return;
+        entriesRef.current = entryRows;
+        persistedCompletionDatesRef.current = new Set(
+          entryRows.filter(entry => isJournalDayComplete(entry)).map(entry => entry.date),
+        );
         setEntries(entryRows);
         setSections(sectionRows);
       } catch (error) {
         console.warn('Journal backend init failed', error);
         if (!active) return;
+        entriesRef.current = [];
+        persistedCompletionDatesRef.current.clear();
         setEntries([]);
         setSections([]);
       } finally {
@@ -146,28 +189,60 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
     return entriesByDate[date] ?? emptyJournalEntry(date);
   }, [entriesByDate]);
 
-  const upsertEntry = useCallback(async (date: string, patch: JournalEntryPatch) => {
-    const next = mergeEntry(entriesByDate[date] ?? emptyJournalEntry(date), patch);
-
-    setEntries(prev => {
-      const exists = prev.some(entry => entry.date === date);
-      const merged = exists
-        ? prev.map(entry => entry.date === date ? next : entry)
-        : [next, ...prev];
-      return merged.sort((left, right) => right.date.localeCompare(left.date));
-    });
+  const upsertEntry = useCallback(async (
+    date: string,
+    patch: JournalEntryPatch,
+    options?: JournalUpsertOptions,
+  ) => {
+    const previousEntry = entriesRef.current.find(entry => entry.date === date);
+    const next = mergeEntry(previousEntry ?? emptyJournalEntry(date), patch);
+    const optimisticEntries = upsertEntryInList(entriesRef.current, next);
+    entriesRef.current = optimisticEntries;
+    setEntries(optimisticEntries);
 
     const saved = await upsertJournalEntry(next);
-    setEntries(prev => prev.map(entry => entry.date === date ? saved : entry));
+    const persistedEntries = upsertEntryInList(entriesRef.current, saved);
+    entriesRef.current = persistedEntries;
+    setEntries(persistedEntries);
+
+    const wasPersistedComplete = persistedCompletionDatesRef.current.has(date);
+    const isPersistedComplete = isJournalDayComplete(saved);
+    if (isPersistedComplete) {
+      persistedCompletionDatesRef.current.add(date);
+    } else {
+      persistedCompletionDatesRef.current.delete(date);
+    }
+
+    if (
+      options?.queueCompletionCelebration
+      && !wasPersistedComplete
+      && isPersistedComplete
+      && !queuedCompletionDatesRef.current.has(date)
+    ) {
+      queuedCompletionDatesRef.current.add(date);
+      completionEventIdRef.current += 1;
+      setCompletionEvent({
+        id: completionEventIdRef.current,
+        date,
+        currentStreak: computeJournalStreak(persistedEntries).currentStreak,
+      });
+    }
+
     return saved;
-  }, [entriesByDate]);
+  }, []);
+
+  const dismissCompletionEvent = useCallback((id: number) => {
+    setCompletionEvent(current => current?.id === id ? null : current);
+  }, []);
 
   const setJournalSections = useCallback(async (nextSections: JournalSection[]) => {
     const previousSections = sections.length ? sections : nextSections;
     await backfillJournalEntrySections(previousSections);
-    setEntries(prev => prev.map(entry => (
+    const nextEntries = entriesRef.current.map(entry => (
       entry.dailySections?.length ? entry : { ...entry, dailySections: previousSections }
-    )));
+    ));
+    entriesRef.current = nextEntries;
+    setEntries(nextEntries);
     setSections(nextSections);
     await saveJournalSections(nextSections);
   }, [sections]);
@@ -179,9 +254,11 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
     dotsByDate,
     sections,
     streak,
+    completionEvent,
     refresh,
     getEntry,
     upsertEntry,
+    dismissCompletionEvent,
     setJournalSections,
   }), [
     ready,
@@ -190,9 +267,11 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
     dotsByDate,
     sections,
     streak,
+    completionEvent,
     refresh,
     getEntry,
     upsertEntry,
+    dismissCompletionEvent,
     setJournalSections,
   ]);
 

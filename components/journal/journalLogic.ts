@@ -66,6 +66,13 @@ export function isJournalDayComplete(entry?: JournalEntry) {
   return hasDailyJournalContent(entry) || isMorningPagesComplete(entry) || hasFreeWritingContent(entry);
 }
 
+export function didJournalDayBecomeComplete(
+  previousEntry: JournalEntry | undefined,
+  nextEntry: JournalEntry,
+) {
+  return !isJournalDayComplete(previousEntry) && isJournalDayComplete(nextEntry);
+}
+
 export function getJournalKindsForEntry(entry?: JournalEntry) {
   const kinds: ('daily' | 'morning' | 'morningDraft' | 'free')[] = [];
   if (hasDailyJournalContent(entry)) kinds.push('daily');

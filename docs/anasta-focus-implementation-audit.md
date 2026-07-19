@@ -45,20 +45,24 @@ the conversation.
   not offer an override.
 - Clean Sight has built-in packs, named custom packs, individual domains,
   Never Allowed modes, a visible 50-domain native capacity, deterministic
-  priority, an automatic adult-filter state, and Strict Watch cooldowns.
+  priority, an automatic adult-filter state, and MVP Hard Lock delays.
 - Custom-pack domains can be removed individually; active-pack removals pass
-  through Strict Watch, while the last domain remains until the user adds a
+  through Hard Lock, while the last domain remains until the user adds a
   replacement or confirms removal of the complete pack.
 - Domain input is normalized through one shared validator before it reaches
   persistence or the 50-slot resolver. Schemes, `www`, paths, query strings,
   fragments, numeric ports, and trailing dots are removed; malformed labels,
   consecutive dots, and oversized hostnames are rejected instead of silently
   consuming a native slot.
-- Strict Watch deduplicates delayed weakening requests by logical target. Its
+- Hard Lock deduplicates delayed weakening requests by logical target. Its
   pending sheet shows every request, effective time, and a Cancel action that
   keeps the stronger rule.
-- Shortening Strict Watch's cooldown is treated as a weakening and waits under
-  the previously active cooldown; lengthening it applies immediately.
+- Hard Lock offers 45 minutes through 3 days, can irreversibly remove its own
+  off switch, and enforces that invariant in the store rather than only in UI.
+- Shortening Hard Lock's delay is treated as a weakening and waits under the
+  previously active delay; lengthening it applies immediately.
+- App-install and app-removal restrictions are not part of the first-release
+  Hard Lock and are no longer sent to Managed Settings.
 - Focus Analytics has one privacy-preserving native Device Activity Report at a
   time. It switches between navigable 30-day windows and a selected Daily
   Review. Actual totals, hourly/daily bars, Anasta groups, Apple categories,

@@ -2457,10 +2457,10 @@ export function RoutineTaskEditorSheet({
         embedded
         visible={confirmDeleteVisible}
         icon={<Trash2 s={22} c={C.red} />}
-        title={isHabitTask ? 'Delete Step?' : 'Delete Activity?'}
+        title={isHabitTask ? 'Delete Habit / Step?' : 'Delete Activity?'}
         body={task
           ? isHabitTask
-            ? `"${task.title}" will be removed from this habit.`
+            ? `"${task.title}" will be removed from this goal.`
             : `"${task.title}" will be removed from your routine and Home tasks.`
           : ''}
         confirmLabel="DELETE"
@@ -2717,7 +2717,7 @@ export function RoutineTaskEditorSheet({
             {task && !hideDelete && (
               <TouchableOpacity onPress={() => setConfirmDeleteVisible(true)} activeOpacity={0.84} style={s.deleteBtn}>
                 <Trash2 s={16} c="#EF4444" />
-                <Text style={s.deleteBtnText}>{isHabitTask ? 'Delete Step' : 'Delete Activity'}</Text>
+                <Text style={s.deleteBtnText}>{isHabitTask ? 'Delete Habit / Step' : 'Delete Activity'}</Text>
               </TouchableOpacity>
             )}
           </ScrollView>

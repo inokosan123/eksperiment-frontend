@@ -17,6 +17,9 @@ import Reanimated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  FadeIn,
+  FadeOut,
+  LinearTransition,
   withDelay,
   withRepeat,
   withTiming,
@@ -25,13 +28,14 @@ import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { ChevronLeft, ChevronRight, Plus, Trash2 } from '@/components/icons/Icons';
-import { useMonthlyGoals } from '@/components/inner-tools/MonthlyGoalsContext';
+import { CheckSmall, ChevronLeft, ChevronRight, Plus, Trash2 } from '@/components/icons/Icons';
+import { sortMonthlyGoals, useMonthlyGoals } from '@/components/inner-tools/MonthlyGoalsContext';
 import {
   AnimatedSealCheck,
   AnimatedStrikeText,
   fireGoalToggleHaptic,
   GoalCompletionConfetti,
+  MONTHLY_GOAL_CELEBRATION_MS,
   StaticSealCheck,
   toRoman,
 } from '@/components/inner-tools/MonthlyGoalRow';
@@ -336,6 +340,9 @@ export default function MonthlyGoalsView({
   const [selectedMonth, setSelectedMonth] = useState(todayMonth);
   const [draftText, setDraftText] = useState('');
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [uncheckTarget, setUncheckTarget] = useState<{ id: string; text: string } | null>(null);
+  const [celebratingGoalIds, setCelebratingGoalIds] = useState<string[]>([]);
+  const completionTimersRef = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const isGuided = guided && session?.active === true && session.activeStep === 'buildMonthlyGoals';
   const guidePhase = session?.phase ?? 'intro';
   const monthsTarget = useGuideTarget(MONTHLY_GOALS_GUIDE_TARGETS.months, isGuided);
@@ -396,9 +403,7 @@ export default function MonthlyGoalsView({
   }, [goalsByMonth, viewYear]);
 
   const monthGoals = useMemo(() => {
-    return [...(goalsByMonth[selectedMonth] ?? [])].sort(
-      (a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt,
-    );
+    return sortMonthlyGoals(goalsByMonth[selectedMonth] ?? []);
   }, [goalsByMonth, selectedMonth]);
 
   const completedCount = monthGoals.filter(g => g.isCompleted).length;
@@ -541,12 +546,40 @@ export default function MonthlyGoalsView({
     if (isPastMonth && draftText) setDraftText('');
   }, [draftText, isPastMonth]);
 
+  useEffect(() => () => {
+    Object.values(completionTimersRef.current).forEach(clearTimeout);
+  }, []);
+
+  const completeAfterCelebration = useCallback((id: string) => {
+    if (completionTimersRef.current[id]) return;
+    setCelebratingGoalIds(current => current.includes(id) ? current : [...current, id]);
+    completionTimersRef.current[id] = setTimeout(() => {
+      delete completionTimersRef.current[id];
+      void toggleGoal(id).finally(() => {
+        setCelebratingGoalIds(current => current.filter(goalId => goalId !== id));
+      });
+    }, MONTHLY_GOAL_CELEBRATION_MS);
+  }, [toggleGoal]);
+
   const handleToggle = async (id: string, willComplete: boolean) => {
     if (!canEditSelectedMonth) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
       return;
     }
+    if (!willComplete) {
+      const goal = monthGoals.find(item => item.id === id);
+      if (goal) setUncheckTarget({ id: goal.id, text: goal.text });
+      return;
+    }
     fireGoalToggleHaptic(willComplete);
+    completeAfterCelebration(id);
+  };
+
+  const confirmUncheck = async () => {
+    if (!uncheckTarget) return;
+    const id = uncheckTarget.id;
+    setUncheckTarget(null);
+    fireGoalToggleHaptic(false);
     await toggleGoal(id);
   };
 
@@ -812,15 +845,25 @@ export default function MonthlyGoalsView({
 
         <View style={s.goalsList}>
           {monthGoals.map((goal, index) => (
-            <View
+            (() => {
+              const isCelebrating = celebratingGoalIds.includes(goal.id);
+              const displayDone = goal.isCompleted || isCelebrating;
+              return (
+            <Reanimated.View
               key={goal.id}
-              style={[s.goalCard, goal.isCompleted && s.goalCardDone, isPastMonth && s.goalCardArchived]}
+              entering={FadeIn.duration(180)}
+              exiting={FadeOut.duration(140)}
+              layout={LinearTransition.duration(360).easing(Easing.out(Easing.cubic))}
             >
-              <View pointerEvents="none" style={[s.goalHighlight, goal.isCompleted && s.goalHighlightDone]} />
-              {goal.isCompleted && <View pointerEvents="none" style={s.goalDoneSpine} />}
+            <View
+              pointerEvents={isCelebrating ? 'none' : 'auto'}
+              style={[s.goalCard, displayDone && s.goalCardDone, isPastMonth && s.goalCardArchived]}
+            >
+              <View pointerEvents="none" style={[s.goalHighlight, displayDone && s.goalHighlightDone]} />
+              {displayDone && <View pointerEvents="none" style={s.goalDoneSpine} />}
               {canEditSelectedMonth ? (
                 <AnimatedSealCheck
-                  done={goal.isCompleted}
+                  done={displayDone}
                   numeral={toRoman(index)}
                   onPress={() => handleToggle(goal.id, !goal.isCompleted)}
                   size={33}
@@ -830,7 +873,7 @@ export default function MonthlyGoalsView({
               )}
               <AnimatedStrikeText
                 text={goal.text}
-                done={goal.isCompleted}
+                done={displayDone}
                 numberOfLines={3}
                 textStyle={[s.goalText, isPastMonth && s.goalTextArchived]}
               />
@@ -842,8 +885,11 @@ export default function MonthlyGoalsView({
               >
                 <Trash2 s={15} c="#B9AFA2" w={1.9} />
               </TouchableOpacity>
-              <GoalCompletionConfetti done={goal.isCompleted} />
             </View>
+            <GoalCompletionConfetti done={displayDone} />
+            </Reanimated.View>
+              );
+            })()
           ))}
         </View>
 
@@ -863,6 +909,19 @@ export default function MonthlyGoalsView({
           </View>
         )}
       </ScrollView>
+
+      <ConfirmModal
+        visible={!!uncheckTarget}
+        icon={<CheckSmall s={20} c="#9B6F22" w={3} />}
+        iconBg="#FFF7E5"
+        title="Uncheck this goal?"
+        body="Do you want to mark this goal as incomplete?"
+        subject={uncheckTarget?.text}
+        confirmLabel="UNCHECK"
+        confirmColor={C.red}
+        onCancel={() => setUncheckTarget(null)}
+        onConfirm={confirmUncheck}
+      />
 
       <ConfirmModal
         visible={!!deleteTargetId}

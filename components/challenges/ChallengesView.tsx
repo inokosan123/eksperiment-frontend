@@ -1,6 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Reanimated, {
+  Easing,
+  FadeInLeft,
+  FadeInRight,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import NotificationSettings, { type NotificationMode } from '@/components/shared/NotificationSettings';
@@ -328,19 +336,49 @@ function TabPill({
   color: string;
   onPress: () => void;
 }) {
+  const selectedProgress = useSharedValue(active ? 1 : 0);
+
+  useEffect(() => {
+    selectedProgress.value = withSpring(active ? 1 : 0, {
+      damping: 19,
+      stiffness: 250,
+      mass: 0.72,
+      overshootClamping: true,
+    });
+  }, [active, selectedProgress]);
+
+  const motionStyle = useAnimatedStyle(() => ({
+    opacity: 0.9 + selectedProgress.value * 0.1,
+    transform: [{ scale: 0.975 + selectedProgress.value * 0.025 }],
+  }));
+
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.84}
-      style={[
-        s.tabPill,
-        active
-          ? { backgroundColor: color, borderColor: color }
-          : { backgroundColor: hexToRgba(color, 0.08), borderColor: hexToRgba(color, 0.18) },
-      ]}
-    >
-      <Text style={[s.tabText, active ? s.tabTextActive : { color: hexToRgba(color, 0.72) }]}>{label}</Text>
-    </TouchableOpacity>
+    <Reanimated.View style={[s.tabPillMotion, motionStyle]}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.84}
+        style={[
+          s.tabPill,
+          active
+            ? {
+              backgroundColor: color,
+              borderColor: hexToRgba(color, 0.88),
+              boxShadow: `0 3px 9px ${hexToRgba(color, 0.2)}`,
+            }
+            : {
+              backgroundColor: hexToRgba(color, 0.075),
+              borderColor: hexToRgba(color, 0.2),
+              boxShadow: `0 1px 4px ${hexToRgba(color, 0.065)}`,
+            },
+        ]}
+      >
+        {active ? <View pointerEvents="none" style={s.tabPillGlaze} /> : null}
+        <View style={s.tabPillInner}>
+          <View style={[s.tabPillDot, { backgroundColor: active ? '#FFFFFF' : hexToRgba(color, 0.58) }]} />
+          <Text style={[s.tabText, active ? s.tabTextActive : { color: hexToRgba(color, 0.76) }]}>{label}</Text>
+        </View>
+      </TouchableOpacity>
+    </Reanimated.View>
   );
 }
 
@@ -711,6 +749,14 @@ function HistoryCard({
 
 type PanelChallengeContext = ChallengeCategory;
 const PANEL_CONTEXTS: PanelChallengeContext[] = ['prayer', 'scripture', 'journal', 'church'];
+const TAB_CONTENT_ENTER_FORWARD = FadeInRight
+  .duration(240)
+  .easing(Easing.bezier(0.22, 1, 0.36, 1))
+  .withInitialValues({ opacity: 0, transform: [{ translateX: 14 }] });
+const TAB_CONTENT_ENTER_BACKWARD = FadeInLeft
+  .duration(240)
+  .easing(Easing.bezier(0.22, 1, 0.36, 1))
+  .withInitialValues({ opacity: 0, transform: [{ translateX: -14 }] });
 
 function isPanelChallengeContext(value: ChallengeTab): value is PanelChallengeContext {
   return value === 'prayer' || value === 'scripture' || value === 'journal' || value === 'church';
@@ -754,6 +800,8 @@ export default function ChallengesView({
   const [expandedChallengeId, setExpandedChallengeId] = useState<string | null>(null);
   const [recentlyStartedTemplateId, setRecentlyStartedTemplateId] = useState<string | null>(null);
   const contentScrollRef = useRef<ScrollView>(null);
+  const hasMountedRef = useRef(false);
+  const tabDirectionRef = useRef<1 | -1>(1);
   const {
     session,
     patchSession,
@@ -770,6 +818,10 @@ export default function ChallengesView({
       void refreshTasks();
     }, [refreshChallenges, refreshTasks]),
   );
+
+  useEffect(() => {
+    hasMountedRef.current = true;
+  }, []);
 
   const ongoingChallenges = useMemo(
     () => [...activeChallenges, ...pausedChallenges],
@@ -1177,6 +1229,11 @@ export default function ChallengesView({
             label={tab.label}
             color={TAB_ACTIVE_COLORS[tab.key]}
             onPress={() => {
+              if (tab.key !== activeTab) {
+                const currentIndex = tabs.findIndex(item => item.key === activeTab);
+                const nextIndex = tabs.findIndex(item => item.key === tab.key);
+                tabDirectionRef.current = nextIndex >= currentIndex ? 1 : -1;
+              }
               setActiveTab(tab.key);
               setExpandedChallengeId(null);
               setSelectedCatalog(null);
@@ -1191,65 +1248,76 @@ export default function ChallengesView({
         contentContainerStyle={[s.scrollContent, onlyPausedOnActiveTab && s.scrollContentOnlyPaused]}
         showsVerticalScrollIndicator={false}
       >
-        {activeTab === 'active' ? (
-          <View style={s.sectionStack}>
-            {activeChallenges.length === 0 && pausedChallenges.length === 0 ? (
-              <View style={s.emptyWrap}>
-                <Text style={s.emptyTitle}>No active challenges</Text>
-                <Text style={s.emptyBody}>Pick a category above and start your next rule.</Text>
-              </View>
-            ) : null}
+        <Reanimated.View
+          key={activeTab}
+          entering={hasMountedRef.current
+            ? (tabDirectionRef.current > 0 ? TAB_CONTENT_ENTER_FORWARD : TAB_CONTENT_ENTER_BACKWARD)
+            : undefined}
+          style={s.tabContent}
+        >
+          {activeTab === 'active' ? (
+            <View style={s.sectionStack}>
+              {activeChallenges.length === 0 && pausedChallenges.length === 0 ? (
+                <View style={s.emptyWrap}>
+                  <Text style={s.emptyTitle}>No active challenges</Text>
+                  <Text style={s.emptyBody}>Pick a category above and start your next rule.</Text>
+                </View>
+              ) : null}
 
-            {activeChallenges.length > 0 ? (
-              <Text style={[s.sectionLabel, { color: '#10B981' }]}>ACTIVE</Text>
-            ) : null}
+              {activeChallenges.length > 0 ? (
+                <Text style={[s.sectionLabel, { color: '#10B981' }]}>ACTIVE</Text>
+              ) : null}
 
-            {activeLifecycleChallenges.length > 0
-              ? renderLifecyclePanel(activeLifecycleChallenges, [])
-              : null}
+              {activeLifecycleChallenges.length > 0
+                ? renderLifecyclePanel(activeLifecycleChallenges, [])
+                : null}
 
-            {pausedChallenges.length > 0 ? (
-              <Text style={[s.sectionLabel, { color: '#A8A29E' }]}>PAUSED</Text>
-            ) : null}
+              {pausedChallenges.length > 0 ? (
+                <Text style={[s.sectionLabel, { color: '#A8A29E' }]}>PAUSED</Text>
+              ) : null}
 
-            {pausedLifecycleChallenges.length > 0
-              ? renderLifecyclePanel([], pausedLifecycleChallenges)
-              : null}
+              {pausedLifecycleChallenges.length > 0
+                ? renderLifecyclePanel([], pausedLifecycleChallenges)
+                : null}
 
-          </View>
-        ) : null}
+            </View>
+          ) : null}
 
-        {isPanelChallengeContext(activeTab) ? (
-          <View style={s.sectionStack}>
-            {renderUnifiedPanel(activeTab, true)}
-          </View>
-        ) : null}
+          {isPanelChallengeContext(activeTab) ? (
+            <View style={s.sectionStack}>
+              {renderUnifiedPanel(activeTab, true)}
+            </View>
+          ) : null}
 
-        {activeTab === 'history' ? (
-          <View style={s.sectionStack}>
-            {completedChallenges.length > 0 ? (
-              <View style={s.sectionBlock}>
-                <Text style={[s.sectionLabel, { color: C.gold }]}>ACHIEVEMENTS</Text>
-                {historyGroups.map(group => (
-                  <HistoryCard key={group.templateId} group={group} />
-                ))}
-              </View>
-            ) : null}
+          {activeTab === 'history' ? (
+            <View style={s.sectionStack}>
+              {completedChallenges.length > 0 ? (
+                <View style={s.sectionBlock}>
+                  <Text style={[s.sectionLabel, { color: C.gold }]}>ACHIEVEMENTS</Text>
+                  {historyGroups.map(group => (
+                    <HistoryCard key={group.templateId} group={group} />
+                  ))}
+                </View>
+              ) : null}
 
-            {completedChallenges.length === 0 ? (
-              <View style={s.emptyWrap}>
-                <Text style={s.emptyTitle}>No history yet</Text>
-                <Text style={s.emptyBody}>Successfully completed challenges will live here.</Text>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
+              {completedChallenges.length === 0 ? (
+                <View style={s.emptyWrap}>
+                  <Text style={s.emptyTitle}>No history yet</Text>
+                  <Text style={s.emptyBody}>Successfully completed challenges will live here.</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+        </Reanimated.View>
       </ScrollView>
     </View>
   );
 }
 
 const s = StyleSheet.create({
+  tabContent: {
+    width: '100%',
+  },
   scrollContent: {
     paddingHorizontal: 18,
     paddingBottom: 128,
@@ -1260,30 +1328,57 @@ const s = StyleSheet.create({
   },
   tabsScroll: {
     flexGrow: 0,
-    maxHeight: 52,
+    maxHeight: 58,
+    overflow: 'visible',
+    zIndex: 2,
   },
   tabsRow: {
     gap: 8,
     paddingHorizontal: 18,
-    paddingBottom: 8,
+    paddingTop: 2,
+    paddingBottom: 14,
     alignItems: 'center',
   },
-  tabPill: {
+  tabPillMotion: {
     flexShrink: 0,
     alignSelf: 'center',
-    minHeight: 34,
-    borderRadius: 17,
-    paddingHorizontal: 16,
+  },
+  tabPill: {
+    position: 'relative',
+    minHeight: 38,
+    borderRadius: 19,
+    borderCurve: 'continuous',
+    paddingHorizontal: 15,
     borderWidth: 1,
     borderColor: '#EEE8DA',
     backgroundColor: '#F7F4ED',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  tabPillGlaze: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    top: 1,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  tabPillInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  tabPillDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
   },
   tabText: {
     fontFamily: F.sansBold,
-    fontSize: 9.8,
-    letterSpacing: 1.5,
+    fontSize: 9.4,
+    letterSpacing: 1.35,
     color: '#B4AE9F',
   },
   tabTextActive: {

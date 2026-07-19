@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Keyboard, View, Text, StyleSheet } from 'react-native';
+import { Keyboard, View, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { CheckSmall } from '@/components/icons/Icons';
-import { C, F } from '@/constants/tokens';
+import { C } from '@/constants/tokens';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { FormatState, RichTextEditor, RichTextEditorRef, RichToolbar } from '@/components/shared/RichTextEditor';
 import { useJournal } from '@/components/journal/JournalContext';
@@ -45,6 +45,18 @@ export default function FreeWritingView() {
   const hydratedDateRef = useRef('');
   const dirtyRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exitSaveRef = useRef({
+    date: selectedDateKey,
+    html: '',
+    readOnly: isReadOnly,
+    queueCelebration: !isTaskLaunch,
+  });
+  exitSaveRef.current = {
+    date: selectedDateKey,
+    html,
+    readOnly: isReadOnly,
+    queueCelebration: !isTaskLaunch,
+  };
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardWillShow', e => setKbHeight(e.endCoordinates.height));
@@ -76,7 +88,9 @@ export default function FreeWritingView() {
     }
 
     saveTimerRef.current = setTimeout(() => {
-      void upsertEntry(selectedDateKey, { freeWritingHtml: html }).then(() => {
+      void upsertEntry(selectedDateKey, { freeWritingHtml: html }, {
+        queueCompletionCelebration: !isTaskLaunch,
+      }).then(() => {
         dirtyRef.current = false;
       }).catch(error => {
         console.warn('Free writing autosave failed', error);
@@ -88,7 +102,7 @@ export default function FreeWritingView() {
         clearTimeout(saveTimerRef.current);
       }
     };
-  }, [html, isReadOnly, selectedDateKey, upsertEntry]);
+  }, [html, isReadOnly, isTaskLaunch, selectedDateKey, upsertEntry]);
 
   const saveNow = async () => {
     if (isReadOnly) return;
@@ -97,9 +111,29 @@ export default function FreeWritingView() {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
-    await upsertEntry(selectedDateKey, { freeWritingHtml: html });
+    await upsertEntry(selectedDateKey, { freeWritingHtml: html }, {
+      queueCompletionCelebration: !isTaskLaunch,
+    });
     dirtyRef.current = false;
   };
+
+  useEffect(() => () => {
+    const snapshot = exitSaveRef.current;
+    if (
+      snapshot.readOnly
+      || !dirtyRef.current
+      || hydratedDateRef.current !== snapshot.date
+    ) return;
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    void upsertEntry(snapshot.date, {
+      freeWritingHtml: snapshot.html,
+    }, {
+      queueCompletionCelebration: snapshot.queueCelebration,
+    }).catch(error => {
+      console.warn('Free writing exit save failed', error);
+    });
+  }, [upsertEntry]);
 
   const finish = async () => {
     const hasContent = stripRichTextToPlainText(html).length > 0;
@@ -123,7 +157,13 @@ export default function FreeWritingView() {
         title={taskTitle.toUpperCase()}
         showBack
         bg={BG}
-        onBackOverride={() => router.back()}
+        onBackOverride={() => {
+          if (isReadOnly) {
+            router.back();
+            return;
+          }
+          void finish();
+        }}
         rightElement={isReadOnly ? undefined : (
           <TouchableOpacity
             style={[s.doneBtn, stripRichTextToPlainText(html).length > 0 && s.doneBtnActive]}

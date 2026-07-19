@@ -387,7 +387,7 @@ export default function SettingsView() {
               <ToggleRow
                 icon={<Activity s={16} c={C.textSecondary} w={2} />}
                 label="Habits"
-                sublabel="Habit reminders and streak checks"
+                sublabel="Habit / step reminders and streak checks"
                 enabled={notifHabits}
                 onChange={setNotifHabits}
               />

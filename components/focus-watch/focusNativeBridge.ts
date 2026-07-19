@@ -9,6 +9,7 @@ import {
   getEffectivePlan,
   groupName,
   normalizeConnectedSessions,
+  runtimePlanKind,
   type DayPlanState,
 } from './dayPlanStore';
 import { resolveWebProtectionDomains } from './webProtectionCatalog';
@@ -124,18 +125,27 @@ export async function requestNativeAuthorization(): Promise<NativeAuthorizationS
 export function buildNativeProtectionPayload(state: DayPlanState, now = new Date()) {
   const plan = getEffectivePlan(state, now);
   const resolvedWeb = resolveWebProtectionDomains(state.purity);
-  const serializePlan = (entry: NonNullable<typeof plan>) => ({
+  const serializePlan = (entry: NonNullable<typeof plan>) => {
+    const kind = runtimePlanKind(entry);
+    return {
     id: entry.id,
-    kind: entry.kind,
+    // Essentials-only has no Session or app-rule layer. Keep those drafts in
+    // local storage so turning the mode off can restore them, but never send
+    // them as active native enforcement while this mode is enabled.
+    kind: entry.essentialsOnly ? 'daily' : kind,
+    essentialsOnly: !!entry.essentialsOnly,
+    essentialsSelectionId: `plan.${entry.id}.essentials`,
     targetMinutes: entry.budgetMinutes,
     tolerableMinutes: entry.tolerableMinutes,
-    essentialOnlyMinutes: entry.essentialOnlyMinutes,
+    // The allowlist is already active from minute one, so its buffer endpoint
+    // must not schedule a second, redundant Daily Hard Wall event.
+    essentialOnlyMinutes: entry.essentialsOnly ? null : entry.essentialOnlyMinutes,
     groupCatalog: entry.groupCatalog,
     groupNames: Object.fromEntries(
       Object.keys(entry.groupCatalog).map(groupId => [groupId, groupName(state, groupId)])
     ),
-    dailyRules: entry.kind === 'daily' ? entry.rules : [],
-    sessions: entry.kind === 'session'
+    dailyRules: !entry.essentialsOnly && kind === 'daily' ? entry.rules : [],
+    sessions: !entry.essentialsOnly && kind === 'session'
       ? normalizeConnectedSessions(entry.zones).map(session => ({
           id: session.id,
           name: session.name,
@@ -144,7 +154,8 @@ export function buildNativeProtectionPayload(state: DayPlanState, now = new Date
           rules: session.rules ?? [],
         }))
       : [],
-  });
+    };
+  };
   const dayOverrides = Object.fromEntries(
     Object.values(state.days)
       .map(day => [day.date, day.planId])
@@ -187,7 +198,6 @@ export function buildNativeProtectionPayload(state: DayPlanState, now = new Date
       resolvedDomains: resolvedWeb.domains,
       omittedDomainCount: resolvedWeb.omittedDomains.length,
       adultFilterActive: resolvedWeb.adultFilterActive,
-      locks: state.purity.locks,
     },
   };
 }

@@ -21,7 +21,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
-  CheckSmall, ChevronDown, Search, Trash2, X,
+  Book, CheckSmall, ChevronDown, Search, Trash2, X,
 } from '@/components/icons/Icons';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
@@ -331,6 +331,36 @@ export default function BibleNotesView({
     handleGuidedEditorClosed();
   };
 
+  const openChapterInScripture = () => {
+    if (!activeChapter) return;
+
+    const target = activeChapter;
+    const cleanObservations = observations.trim();
+    const cleanLessons = lessons.trim();
+    const cleanApplication = application.trim();
+
+    // saveBibleNote updates shared Scripture state optimistically, allowing
+    // the reader sheet to show this draft on the very next screen.
+    void saveBibleNote(
+      target.book.id,
+      target.chapter,
+      cleanObservations,
+      cleanLessons,
+      cleanApplication,
+    ).catch(error => console.warn('Failed to save Bible note before opening Scripture', error));
+
+    openedFromDeepLinkRef.current = false;
+    setActiveChapter(null);
+    router.push({
+      pathname: '/scripture-reader',
+      params: {
+        bookId: String(target.book.id),
+        chapter: String(target.chapter),
+        bibleNotes: 'collapsed',
+      },
+    });
+  };
+
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     await deleteBibleNote(deleteTarget.bookId, deleteTarget.chapter);
@@ -465,6 +495,7 @@ export default function BibleNotesView({
           }
         }}
         onSave={saveChapter}
+        onScripture={openChapterInScripture}
         onDelete={activeChapter?.note ? () => setDeleteTarget(activeChapter.note ?? null) : undefined}
         deleteVisible={!!deleteTarget}
         onCancelDelete={() => setDeleteTarget(null)}
@@ -504,6 +535,7 @@ function ChapterEditor({
   onApplication,
   onClose,
   onSave,
+  onScripture,
   onDelete,
   deleteVisible,
   onCancelDelete,
@@ -518,6 +550,7 @@ function ChapterEditor({
   onApplication: (value: string) => void;
   onClose: () => void;
   onSave: () => void;
+  onScripture: () => void;
   onDelete?: () => void;
   deleteVisible: boolean;
   onCancelDelete: () => void;
@@ -535,9 +568,18 @@ function ChapterEditor({
           showBack
           bg={BG}
           onBackOverride={onClose}
-          sideWidth={88}
+          sideWidth={132}
           rightElement={(
             <View style={s.editorActions}>
+            <TouchableOpacity
+              onPress={onScripture}
+              accessibilityRole='button'
+              accessibilityLabel='Open this chapter in Scripture'
+              style={[s.editorIconBtn, s.editorScriptureBtn]}
+              activeOpacity={0.76}
+            >
+              <Book s={18} c='#55705C' />
+            </TouchableOpacity>
             {onDelete && (
               <TouchableOpacity onPress={onDelete} style={[s.editorIconBtn, s.editorDeleteBtn]} activeOpacity={0.76}>
                 <Trash2 s={18} c={C.red} />
@@ -789,7 +831,7 @@ const s = StyleSheet.create({
   noteDot: { position: 'absolute', top: 7, right: 8, width: 6, height: 6, borderRadius: 3, backgroundColor: GOLD },
 
   editorScreen: { flex: 1, backgroundColor: '#FDFBF5' },
-  editorActions: { width: 86, flexDirection: 'row', justifyContent: 'flex-end', gap: 7 },
+  editorActions: { width: 130, flexDirection: 'row', justifyContent: 'flex-end', gap: 7 },
   editorIconBtn: {
     width: 36,
     height: 36,
@@ -799,6 +841,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
   },
   editorDeleteBtn: { backgroundColor: '#FEF2F2', borderColor: 'rgba(190,18,60,0.14)' },
+  editorScriptureBtn: { backgroundColor: '#F1F6EF', borderColor: 'rgba(85,112,92,0.16)' },
   editorSaveBtn: {
     backgroundColor: GOLD,
     borderColor: 'rgba(255,255,255,0.30)',

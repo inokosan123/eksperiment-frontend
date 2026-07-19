@@ -3,7 +3,6 @@ import { useRouter } from 'expo-router';
 import { ChevronRight, Smartphone } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
-import ZoneTimeline from './ZoneTimeline';
 import {
   DAY_NAMES,
   dateKey,
@@ -42,11 +41,6 @@ export default function RoutinePhonePlanCard({ dayIndex }: { dayIndex: number })
         </Text>
         {plan ? (
           <>
-            {plan.kind === 'session' && (
-              <View style={{ marginTop: 7 }}>
-                <ZoneTimeline zones={plan.zones} height={6} />
-              </View>
-            )}
             <Text style={s.meta} numberOfLines={1}>
               {describeZones(plan)}
             </Text>

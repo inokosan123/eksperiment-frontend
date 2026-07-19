@@ -8,7 +8,17 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeOut,
+  interpolate,
+  LinearTransition,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -17,9 +27,12 @@ import ConfirmModal from '@/components/shared/ConfirmModal';
 import {
   Calendar as CalendarIcon,
   CalendarHeart,
+  BellRing,
   CheckSmall,
   ChevronDown,
+  Minus,
   Plus,
+  RotateCcw,
   Trash2,
   X,
 } from '@/components/icons/Icons';
@@ -29,6 +42,7 @@ import { normalizeHabitIcon } from '@/components/shared/notoEmoji/legacyMap';
 import type { HabitEmojiName } from '@/components/shared/notoEmoji/habits';
 import { useBigEvents } from './BigEventsContext';
 import {
+  addDaysToDateKey,
   formatDateMedium,
   formatDateShort,
   getBigEventCountdown,
@@ -36,7 +50,13 @@ import {
   sortBigEvents,
   todayKey,
 } from './bigEventsLogic';
-import type { BigEvent } from './bigEventsDb';
+import {
+  BIG_EVENT_DEFAULT_LEAD_DAYS,
+  BIG_EVENT_MAX_LEAD_DAYS,
+  BIG_EVENT_MIN_LEAD_DAYS,
+  normalizeBigEventLeadDays,
+} from './bigEventsConfig';
+import type { BigEvent, BigEventRecurrence } from './bigEventsDb';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 import {
   notifyGuideEvent,
@@ -45,6 +65,8 @@ import {
 } from '@/components/onboarding/guided/GuidedSetupContext';
 
 
+// The native picker has no web implementation, so it must stay behind this platform guard.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const DateTimePickerModule = Platform.OS === 'web' ? null : require('@react-native-community/datetimepicker');
 const NativeDateTimePicker = DateTimePickerModule?.default ?? null;
 const NativeDateTimePickerAndroid = DateTimePickerModule?.DateTimePickerAndroid ?? null;
@@ -54,6 +76,11 @@ const GOLD = '#C5A059';
 const DEFAULT_EVENT_COLOR = GOLD;
 const EVENT_ICON_CHIP_SIZE = 54;
 const EVENT_ICON_MIN_GAP = 9;
+const LEAD_DAY_PRESETS = [15, 20, 30] as const;
+
+function isLeadDayPreset(value: number) {
+  return LEAD_DAY_PRESETS.some(preset => preset === value);
+}
 const BIG_EVENTS_GUIDE_TARGETS = {
   add: 'big-events.add',
   title: 'big-events.title',
@@ -125,6 +152,19 @@ function clampDateKey(key: string, minDate?: string, maxDate?: string): string {
   return key;
 }
 
+function formatDateLong(dateKey: string) {
+  return dateFromKey(dateKey).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function formatDateMonth(dateKey: string) {
+  return dateFromKey(dateKey).toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+}
+
 function newId() {
   return `be_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
@@ -148,9 +188,41 @@ function DateRow({
   guideTarget?: GuideTargetBinding;
   onGuideConfirmed?: () => void;
 }) {
-  const [iosVisible, setIosVisible] = useState(false);
+  const insets = useSafeAreaInsets();
+  const [sheetMounted, setSheetMounted] = useState(false);
   const [draft, setDraft] = useState(value);
+  const sheetProgress = useSharedValue(0);
   const pickerValue = clampDateKey(value, minDate, maxDate);
+
+  useEffect(() => {
+    if (!sheetMounted) return;
+    sheetProgress.value = 0;
+    sheetProgress.value = withTiming(1, {
+      duration: 235,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [sheetMounted, sheetProgress]);
+
+  const scrimStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(sheetProgress.value, [0, 1], [0, 1], 'clamp'),
+  }));
+  const sheetStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(sheetProgress.value, [0, 0.28, 1], [0, 1, 1], 'clamp'),
+    transform: [
+      { translateY: interpolate(sheetProgress.value, [0, 1], [34, 0], 'clamp') },
+      { scale: interpolate(sheetProgress.value, [0, 1], [0.992, 1], 'clamp') },
+    ],
+  }));
+
+  const closeSheet = () => {
+    sheetProgress.value = withTiming(
+      0,
+      { duration: 180, easing: Easing.in(Easing.cubic) },
+      finished => {
+        if (finished) runOnJS(setSheetMounted)(false);
+      },
+    );
+  };
 
   const open = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -176,12 +248,12 @@ function DateRow({
     }
 
     setDraft(pickerValue);
-    setIosVisible(true);
+    setSheetMounted(true);
   };
 
   const apply = () => {
     onChange(clampDateKey(draft, minDate, maxDate));
-    setIosVisible(false);
+    closeSheet();
     onGuideConfirmed?.();
   };
 
@@ -204,16 +276,52 @@ function DateRow({
         <ChevronDown s={16} c={GOLD} />
       </TouchableOpacity>
 
-      <Modal transparent visible={iosVisible} animationType="fade" onRequestClose={() => setIosVisible(false)}>
+      <Modal
+        transparent
+        visible={sheetMounted}
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={closeSheet}
+      >
         <View style={d.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setIosVisible(false)} />
-          <View style={d.modalSheet}>
+          <Animated.View pointerEvents="none" style={[d.modalScrim, scrimStyle]} />
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet} />
+          <Animated.View
+            style={[
+              d.modalSheet,
+              { paddingBottom: Math.max(24, insets.bottom + 12) },
+              sheetStyle,
+            ]}
+          >
             <View style={d.modalHandle} />
             <View style={d.modalHead}>
-              <Text style={d.modalTitle}>{label}</Text>
-              <TouchableOpacity onPress={() => setIosVisible(false)} style={d.modalClose}>
+              <View style={d.modalHeadingRow}>
+                <View style={d.modalHeadingIcon}>
+                  <CalendarHeart s={20} c={GOLD} w={1.8} />
+                </View>
+                <View style={d.modalHeadingCopy}>
+                  <Text style={d.modalTitle}>Choose a date</Text>
+                  <Text style={d.modalSubtitle}>{label}</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={closeSheet}
+                style={d.modalClose}
+                accessibilityLabel="Close date picker"
+              >
                 <X s={18} c="#A8A29E" />
               </TouchableOpacity>
+            </View>
+
+            <View style={d.selectedDateCard}>
+              <View style={d.selectedDateBadge}>
+                <Text style={d.selectedDateMonth}>{formatDateMonth(draft)}</Text>
+                <Text style={d.selectedDateDay}>{dateFromKey(draft).getDate()}</Text>
+              </View>
+              <View style={d.selectedDateCopy}>
+                <Text style={d.selectedDateLabel}>SELECTED DATE</Text>
+                <Text style={d.selectedDateValue} numberOfLines={2}>{formatDateLong(draft)}</Text>
+              </View>
             </View>
 
             {Platform.OS === 'ios' && NativeDateTimePicker && (
@@ -226,6 +334,7 @@ function DateRow({
                   display="inline"
                   themeVariant="light"
                   accentColor={GOLD}
+                  style={d.iosPicker}
                   onChange={(_event: unknown, selectedDate?: Date) => {
                     if (!selectedDate) return;
                     const y = selectedDate.getFullYear();
@@ -237,10 +346,20 @@ function DateRow({
               </View>
             )}
 
-            <TouchableOpacity onPress={apply} activeOpacity={0.88} style={d.modalSave}>
-              <Text style={d.modalSaveText}>SAVE DATE</Text>
-            </TouchableOpacity>
-          </View>
+            <View style={d.modalActions}>
+              <TouchableOpacity
+                onPress={closeSheet}
+                activeOpacity={0.82}
+                style={d.modalCancel}
+              >
+                <Text style={d.modalCancelText}>CANCEL</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={apply} activeOpacity={0.88} style={d.modalSave}>
+                <CheckSmall s={16} c="#FFFFFF" w={2.8} />
+                <Text style={d.modalSaveText}>CONFIRM DATE</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
         </View>
       </Modal>
     </>
@@ -250,23 +369,50 @@ function DateRow({
 const d = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', columnGap: 12,
-    backgroundColor: '#FFFBF2', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(197,160,89,0.2)',
-    paddingHorizontal: 14, paddingVertical: 12,
+    backgroundColor: '#FFFBF2', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
+    paddingHorizontal: 14, paddingVertical: 13,
   },
-  iconWrap: { width: 32, height: 32, borderRadius: 11, backgroundColor: 'rgba(197,160,89,0.12)', alignItems: 'center', justifyContent: 'center' },
+  iconWrap: { width: 38, height: 38, borderRadius: 13, backgroundColor: 'rgba(197,160,89,0.13)', alignItems: 'center', justifyContent: 'center' },
   copy:    { flex: 1 },
-  label:   { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.6, color: '#A09487' },
-  value:   { marginTop: 2, fontFamily: F.serifMedium, fontSize: 15, color: C.text },
+  label:   { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.6, color: '#9A8B78' },
+  value:   { marginTop: 2, fontFamily: F.serifMedium, fontSize: 16, color: C.text },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.42)', justifyContent: 'flex-end' },
-  modalSheet:   { backgroundColor: '#FAF7F0', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
-  modalHandle:  { alignSelf: 'center', width: 44, height: 5, borderRadius: 3, backgroundColor: '#D6D3CC', marginBottom: 8 },
-  modalHead:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, paddingBottom: 6 },
-  modalTitle:   { fontFamily: F.serifMedium, fontSize: 18, color: C.text },
-  modalClose:   { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-  iosWrap:      { backgroundColor: '#FFFFFF', borderRadius: 16, marginVertical: 10, paddingVertical: 6 },
-  modalSave:    { backgroundColor: GOLD, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
-  modalSaveText:{ fontFamily: F.sansBold, fontSize: 12, letterSpacing: 1.8, color: '#fff' },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
+  modalScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(34,29,22,0.5)' },
+  modalSheet: {
+    backgroundColor: '#FAF7F0', borderTopLeftRadius: 30, borderTopRightRadius: 30,
+    paddingHorizontal: 18, paddingTop: 9, paddingBottom: 28,
+    borderWidth: 1, borderBottomWidth: 0, borderColor: 'rgba(255,255,255,0.7)',
+  },
+  modalHandle: { alignSelf: 'center', width: 42, height: 4, borderRadius: 2, backgroundColor: '#D1CBC1', marginBottom: 14 },
+  modalHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 13 },
+  modalHeadingRow: { flex: 1, flexDirection: 'row', alignItems: 'center', columnGap: 11 },
+  modalHeadingIcon: { width: 40, height: 40, borderRadius: 14, backgroundColor: 'rgba(197,160,89,0.13)', alignItems: 'center', justifyContent: 'center' },
+  modalHeadingCopy: { flex: 1 },
+  modalTitle: { fontFamily: F.serifMedium, fontSize: 21, lineHeight: 24, color: C.text },
+  modalSubtitle: { marginTop: 1, fontFamily: F.sansMedium, fontSize: 12.5, color: '#968B7F' },
+  modalClose: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#F0ECE4', alignItems: 'center', justifyContent: 'center' },
+  selectedDateCard: {
+    flexDirection: 'row', alignItems: 'center', columnGap: 12,
+    backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(197,160,89,0.28)',
+    padding: 13,
+  },
+  selectedDateBadge: { width: 57, height: 62, borderRadius: 16, backgroundColor: GOLD, alignItems: 'center', justifyContent: 'center' },
+  selectedDateMonth: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.35, color: 'rgba(255,255,255,0.84)' },
+  selectedDateDay: { marginTop: 1, fontFamily: F.serifSemiBold, fontSize: 27, lineHeight: 29, color: '#FFFFFF', fontVariant: ['tabular-nums'] },
+  selectedDateCopy: { flex: 1, minWidth: 0 },
+  selectedDateLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.35, color: '#9A8E80' },
+  selectedDateValue: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 17, lineHeight: 21, color: C.text },
+  iosWrap: {
+    width: '100%', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 20,
+    marginVertical: 12, paddingVertical: 5, overflow: 'hidden', borderWidth: 1, borderColor: '#ECE7DE',
+  },
+  iosPicker: { width: '100%', alignSelf: 'center' },
+  modalActions: { flexDirection: 'row', columnGap: 10, marginTop: 2 },
+  modalCancel: { minWidth: 100, borderRadius: 15, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EEEAE2' },
+  modalCancelText: { fontFamily: F.sansBold, fontSize: 12.5, letterSpacing: 1.35, color: '#81786E' },
+  modalSave: { flex: 1, flexDirection: 'row', columnGap: 7, backgroundColor: GOLD, borderRadius: 15, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
+  modalSaveText: { fontFamily: F.sansBold, fontSize: 12.5, letterSpacing: 1.35, color: '#FFFFFF' },
 });
 
 // ─── Add / Edit form ────────────────────────────────────────────────────────
@@ -276,6 +422,9 @@ type FormState = {
   title: string;
   endDate: string;
   icon: HabitEmojiName;
+  recurrence: BigEventRecurrence;
+  leadDays: number;
+  remindersEnabled: boolean;
 };
 
 function emptyForm(): FormState {
@@ -284,7 +433,25 @@ function emptyForm(): FormState {
     title: '',
     endDate: todayKey(),
     icon: EVENT_ICONS[0],
+    recurrence: 'none',
+    leadDays: BIG_EVENT_DEFAULT_LEAD_DAYS,
+    remindersEnabled: true,
   };
+}
+
+function ReminderSwitch({ enabled }: { enabled: boolean }) {
+  const progress = useSharedValue(enabled ? 1 : 0);
+  useEffect(() => {
+    progress.value = withTiming(enabled ? 1 : 0, { duration: 180 });
+  }, [enabled, progress]);
+  const thumbStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: progress.value * 18 }],
+  }));
+  return (
+    <View style={[ef.switchTrack, enabled && ef.switchTrackOn]}>
+      <Animated.View style={[ef.switchThumb, thumbStyle]} />
+    </View>
+  );
 }
 
 function EventForm({
@@ -308,7 +475,17 @@ function EventForm({
   const iconsTarget = useGuideTarget(BIG_EVENTS_GUIDE_TARGETS.icons, isGuided);
   const dateTarget = useGuideTarget(BIG_EVENTS_GUIDE_TARGETS.date, isGuided);
   const saveTarget = useGuideTarget(BIG_EVENTS_GUIDE_TARGETS.save, isGuided);
-  const canSave = !!form.title.trim() && !!form.endDate && form.endDate >= minDate;
+  const [customLeadOpen, setCustomLeadOpen] = useState(!isLeadDayPreset(form.leadDays));
+  const [customLeadDraft, setCustomLeadDraft] = useState(String(
+    form.leadDays || BIG_EVENT_DEFAULT_LEAD_DAYS,
+  ));
+  const parsedCustomLead = Number(customLeadDraft);
+  const customLeadValid = Number.isInteger(parsedCustomLead) &&
+    parsedCustomLead >= BIG_EVENT_MIN_LEAD_DAYS &&
+    parsedCustomLead <= BIG_EVENT_MAX_LEAD_DAYS;
+  const canSave = !!form.title.trim() && !!form.endDate && (
+    form.recurrence === 'yearly' || form.endDate >= minDate
+  ) && (!customLeadOpen || customLeadValid);
   const isEdit = form.id !== null;
   const guidePhase = session?.phase;
   const [iconGridWidth, setIconGridWidth] = useState(0);
@@ -338,12 +515,32 @@ function EventForm({
     }
   };
 
+  const setCustomLeadDays = (value: number) => {
+    const next = normalizeBigEventLeadDays(value, 'yearly');
+    setCustomLeadDraft(String(next));
+    onChange({ ...form, leadDays: next });
+  };
+
+  const changeCustomLeadDraft = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 3);
+    setCustomLeadDraft(digits);
+    const parsed = Number(digits);
+    if (
+      digits &&
+      Number.isInteger(parsed) &&
+      parsed >= BIG_EVENT_MIN_LEAD_DAYS &&
+      parsed <= BIG_EVENT_MAX_LEAD_DAYS
+    ) {
+      onChange({ ...form, leadDays: parsed });
+    }
+  };
+
   return (
     <Animated.View
       style={ef.wrap}
       entering={FadeIn.duration(220)}
       exiting={FadeOut.duration(160)}
-      layout={LinearTransition.springify().damping(15).stiffness(160).mass(1)}
+      layout={LinearTransition.duration(240).easing(Easing.out(Easing.cubic))}
     >
       <View style={ef.head}>
         <Text style={ef.heading}>{isEdit ? 'EDIT EVENT' : 'NEW EVENT'}</Text>
@@ -364,14 +561,184 @@ function EventForm({
         onSubmitEditing={advanceAfterTitle}
       />
 
+      {!isGuided && (
+        <View>
+          <Text style={ef.sectionLabel}>EVENT TYPE</Text>
+          <View style={ef.typePicker}>
+            {([
+              { value: 'none', label: 'ONE-TIME', detail: 'A single important date' },
+              { value: 'yearly', label: 'EVERY YEAR', detail: 'Birthday or anniversary' },
+            ] as const).map(option => {
+              const active = form.recurrence === option.value;
+              return (
+                <Pressable
+                  key={option.value}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    onChange({
+                      ...form,
+                      recurrence: option.value,
+                      remindersEnabled: option.value === 'yearly' && form.recurrence === 'none'
+                        ? true
+                        : form.remindersEnabled,
+                    });
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  style={({ pressed }) => [ef.typeOption, active && ef.typeOptionActive, pressed && ef.pressed]}
+                >
+                  <View style={[ef.typeIcon, active && ef.typeIconActive]}>
+                    {option.value === 'yearly'
+                      ? <RotateCcw s={17} c={active ? '#FFFFFF' : GOLD} w={2} />
+                      : <CalendarIcon s={17} c={active ? '#FFFFFF' : GOLD} w={2} />}
+                  </View>
+                  <Text style={[ef.typeLabel, active && ef.typeLabelActive]}>{option.label}</Text>
+                  <Text style={[ef.typeDetail, active && ef.typeDetailActive]}>{option.detail}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
       <DateRow
-        label="Event"
+        label={form.recurrence === 'yearly' ? 'Anniversary date' : 'Event'}
         value={form.endDate}
-        minDate={minDate}
+        minDate={form.recurrence === 'yearly' ? undefined : minDate}
         onChange={v => onChange({ ...form, endDate: v })}
         guideTarget={dateTarget}
         onGuideConfirmed={advanceAfterDate}
       />
+
+      {form.recurrence === 'yearly' && !isGuided && (
+        <Animated.View
+          layout={LinearTransition.duration(220).easing(Easing.out(Easing.cubic))}
+          style={ef.reminderCard}
+        >
+          <View style={ef.reminderHead}>
+            <View style={ef.reminderIcon}><BellRing s={21} c={GOLD} w={1.9} /></View>
+            <View style={ef.reminderCopy}>
+              <Text style={ef.reminderTitle}>Show it early</Text>
+              <Text style={ef.reminderBody}>Choose when it appears on Home and when its reminder begins.</Text>
+            </View>
+          </View>
+          <Text style={ef.leadLabel}>HOW MANY DAYS BEFORE?</Text>
+          <View style={ef.leadOptions}>
+            {LEAD_DAY_PRESETS.map(days => {
+              const active = !customLeadOpen && form.leadDays === days;
+              return (
+                <Pressable
+                  key={days}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setCustomLeadOpen(false);
+                    onChange({ ...form, leadDays: days });
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  style={({ pressed }) => [ef.leadChip, active && ef.leadChipActive, pressed && ef.pressed]}
+                >
+                  <Text style={[ef.leadNumber, active && ef.leadNumberActive]}>{days}</Text>
+                  <Text style={[ef.leadUnit, active && ef.leadUnitActive]}>DAYS</Text>
+                </Pressable>
+              );
+            })}
+            <Pressable
+              onPress={() => {
+                Haptics.selectionAsync();
+                setCustomLeadDraft(String(form.leadDays || BIG_EVENT_DEFAULT_LEAD_DAYS));
+                setCustomLeadOpen(true);
+              }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: customLeadOpen }}
+              style={({ pressed }) => [
+                ef.leadChip,
+                customLeadOpen && ef.leadChipActive,
+                pressed && ef.pressed,
+              ]}
+            >
+              <Text style={[ef.leadCustomText, customLeadOpen && ef.leadNumberActive]}>CUSTOM</Text>
+              <Text style={[ef.leadUnit, customLeadOpen && ef.leadUnitActive]}>DAYS</Text>
+            </Pressable>
+          </View>
+
+          {customLeadOpen && (
+            <Animated.View
+              entering={FadeIn.duration(170).easing(Easing.out(Easing.cubic))}
+              exiting={FadeOut.duration(130).easing(Easing.in(Easing.quad))}
+              layout={LinearTransition.duration(210).easing(Easing.out(Easing.cubic))}
+              style={ef.customLeadPanel}
+            >
+              <View style={ef.customLeadHeader}>
+                <View>
+                  <Text style={ef.customLeadLabel}>CUSTOM LEAD TIME</Text>
+                  <Text style={ef.customLeadHint}>Choose from 1 to 365 days</Text>
+                </View>
+                {customLeadValid && (
+                  <View style={ef.customLeadValidBadge}>
+                    <CheckSmall s={12} c="#FFFFFF" w={2.8} />
+                  </View>
+                )}
+              </View>
+
+              <View style={ef.customLeadControl}>
+                <Pressable
+                  onPress={() => setCustomLeadDays((customLeadValid ? parsedCustomLead : form.leadDays) - 1)}
+                  accessibilityRole="button"
+                  accessibilityLabel="One fewer day"
+                  style={({ pressed }) => [ef.customStepButton, pressed && ef.pressed]}
+                >
+                  <Minus s={18} c="#7C6A4C" w={2.2} />
+                </Pressable>
+                <View style={[ef.customLeadInputWrap, !customLeadValid && ef.customLeadInputWrapError]}>
+                  <TextInput
+                    value={customLeadDraft}
+                    onChangeText={changeCustomLeadDraft}
+                    keyboardType="number-pad"
+                    returnKeyType="done"
+                    maxLength={3}
+                    selectTextOnFocus
+                    accessibilityLabel="Custom number of days before event"
+                    style={ef.customLeadInput}
+                  />
+                  <Text style={ef.customLeadSuffix}>DAYS</Text>
+                </View>
+                <Pressable
+                  onPress={() => setCustomLeadDays((customLeadValid ? parsedCustomLead : form.leadDays) + 1)}
+                  accessibilityRole="button"
+                  accessibilityLabel="One more day"
+                  style={({ pressed }) => [ef.customStepButton, pressed && ef.pressed]}
+                >
+                  <Plus s={18} c="#7C6A4C" w={2.2} />
+                </Pressable>
+              </View>
+
+              {!customLeadValid && (
+                <Text style={ef.customLeadError}>Enter a whole number between 1 and 365.</Text>
+              )}
+            </Animated.View>
+          )}
+          <Animated.View
+            layout={LinearTransition.duration(220).easing(Easing.out(Easing.cubic))}
+          >
+            <Pressable
+              onPress={() => {
+                Haptics.selectionAsync();
+                onChange({ ...form, remindersEnabled: !form.remindersEnabled });
+              }}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: form.remindersEnabled }}
+              style={({ pressed }) => [ef.notificationRow, pressed && ef.pressed]}
+            >
+              <View style={ef.notificationCopy}>
+                <Text style={ef.notificationTitle}>Phone notification</Text>
+                <Text style={ef.notificationBody}>At 9:00 AM when this event first appears on Home</Text>
+              </View>
+              <ReminderSwitch enabled={form.remindersEnabled} />
+            </Pressable>
+          </Animated.View>
+        </Animated.View>
+      )}
 
       <View>
         <Text style={ef.sectionLabel}>ICON</Text>
@@ -449,6 +816,92 @@ const ef = StyleSheet.create({
   },
 
   sectionLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.8, color: C.textMuted, marginBottom: 8 },
+  pressed: { opacity: 0.78 },
+  typePicker: { flexDirection: 'row', columnGap: 9 },
+  typeOption: {
+    flex: 1, minHeight: 102, borderRadius: 16, borderWidth: 1, borderColor: '#E9E3D8',
+    backgroundColor: '#FBF9F4', paddingHorizontal: 12, paddingVertical: 12,
+  },
+  typeOptionActive: {
+    borderColor: 'rgba(197,160,89,0.58)', backgroundColor: '#FFF7E4',
+    shadowColor: GOLD, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 9, elevation: 2,
+  },
+  typeIcon: {
+    width: 31, height: 31, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(197,160,89,0.12)', marginBottom: 9,
+  },
+  typeIconActive: { backgroundColor: GOLD },
+  typeLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.35, color: '#887B6D' },
+  typeLabelActive: { color: '#7D622C' },
+  typeDetail: { marginTop: 3, fontFamily: F.serif, fontSize: 12.5, lineHeight: 16, color: '#A39A8F' },
+  typeDetailActive: { color: '#7F756A' },
+  reminderCard: {
+    borderRadius: 18, borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
+    backgroundColor: '#FFFBF2', padding: 16,
+  },
+  reminderHead: { flexDirection: 'row', alignItems: 'center', columnGap: 12 },
+  reminderIcon: {
+    width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(197,160,89,0.13)',
+  },
+  reminderCopy: { flex: 1, minWidth: 0 },
+  reminderTitle: { fontFamily: F.serifMedium, fontSize: 18, lineHeight: 21, color: C.text },
+  reminderBody: { marginTop: 3, fontFamily: F.serif, fontSize: 14.5, lineHeight: 19, color: C.textSecondary },
+  leadLabel: {
+    marginTop: 17, marginBottom: 9, fontFamily: F.sansBold, fontSize: 10.5,
+    letterSpacing: 1.35, color: '#8E806D',
+  },
+  leadOptions: { flexDirection: 'row', columnGap: 7 },
+  leadChip: {
+    flex: 1, height: 58, borderRadius: 14, borderWidth: 1, borderColor: '#E7E0D4',
+    backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+  },
+  leadChipActive: { borderColor: GOLD, backgroundColor: GOLD },
+  leadNumber: { fontFamily: F.serifSemiBold, fontSize: 22, lineHeight: 24, color: '#675D51', fontVariant: ['tabular-nums'] },
+  leadNumberActive: { color: '#FFFFFF' },
+  leadCustomText: { fontFamily: F.sansBold, fontSize: 10.5, lineHeight: 18, letterSpacing: 0.75, color: '#675D51' },
+  leadUnit: { marginTop: 2, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.05, color: '#9D9388' },
+  leadUnitActive: { color: 'rgba(255,255,255,0.82)' },
+  customLeadPanel: {
+    marginTop: 11, borderRadius: 17, borderWidth: 1, borderColor: '#E4DAC9',
+    backgroundColor: '#FFFFFF', padding: 14,
+  },
+  customLeadHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  customLeadLabel: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 1.25, color: '#746653' },
+  customLeadHint: { marginTop: 3, fontFamily: F.serif, fontSize: 14, lineHeight: 18, color: '#91877D' },
+  customLeadValidBadge: { width: 25, height: 25, borderRadius: 13, backgroundColor: GOLD, alignItems: 'center', justifyContent: 'center' },
+  customLeadControl: { flexDirection: 'row', alignItems: 'center', columnGap: 8, marginTop: 13 },
+  customStepButton: {
+    width: 42, height: 44, borderRadius: 13, borderWidth: 1, borderColor: '#E4DCCD',
+    backgroundColor: '#F7F3EB', alignItems: 'center', justifyContent: 'center',
+  },
+  customLeadInputWrap: {
+    flex: 1, height: 44, borderRadius: 13, borderWidth: 1.5, borderColor: 'rgba(197,160,89,0.58)',
+    backgroundColor: '#FFFCF5', flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  customLeadInputWrapError: { borderColor: '#D97979', backgroundColor: '#FFF8F7' },
+  customLeadInput: {
+    minWidth: 45, paddingVertical: 0, paddingHorizontal: 4, textAlign: 'right',
+    fontFamily: F.serifSemiBold, fontSize: 22, lineHeight: 26, color: C.text,
+    fontVariant: ['tabular-nums'],
+  },
+  customLeadSuffix: { marginLeft: 3, fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.05, color: '#8F8375' },
+  customLeadError: { marginTop: 8, fontFamily: F.sansMedium, fontSize: 13, lineHeight: 17, color: '#C65F5F' },
+  notificationRow: {
+    marginTop: 13, paddingHorizontal: 13, paddingVertical: 12, borderRadius: 15,
+    borderWidth: 1, borderColor: '#E3DACB', backgroundColor: '#FFFFFF',
+    flexDirection: 'row', alignItems: 'center', columnGap: 12,
+  },
+  notificationCopy: { flex: 1 },
+  notificationTitle: { fontFamily: F.serifMedium, fontSize: 16, lineHeight: 19, color: '#5F564D' },
+  notificationBody: { marginTop: 3, fontFamily: F.serif, fontSize: 13.5, lineHeight: 18, color: '#8E857C' },
+  switchTrack: { width: 45, height: 27, borderRadius: 14, padding: 3, backgroundColor: '#D9D4CB' },
+  switchTrackOn: { backgroundColor: GOLD },
+  switchThumb: {
+    width: 21, height: 21, borderRadius: 11, backgroundColor: '#FFFFFF',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.14, shadowRadius: 2, elevation: 2,
+  },
 
   iconGrid: {
     width: '100%',
@@ -533,7 +986,9 @@ function EventCard({
         <View style={ec.copy}>
           <Text style={[ec.title, isPast && ec.titlePast]} numberOfLines={1}>{event.title}</Text>
           <Text style={[ec.range, isPast && ec.rangePast]} numberOfLines={1}>
-            {formatDateShort(event.startDate)} – {formatDateMedium(event.endDate)}
+            {event.recurrence === 'yearly'
+              ? `${formatDateShort(event.endDate)}  •  EVERY YEAR  •  ${event.leadDays} DAYS EARLY`
+              : `${formatDateShort(event.startDate)} – ${formatDateMedium(event.endDate)}`}
           </Text>
         </View>
 
@@ -619,11 +1074,11 @@ function EmptyState({ onAddPress }: { onAddPress: () => void }) {
         </View>
         <View style={es.tipRow}>
           <View style={es.tipDot} />
-          <Text style={es.tipText}>Appears on Home from the day you create it</Text>
+          <Text style={es.tipText}>Choose when it begins appearing on Home</Text>
         </View>
         <View style={es.tipRow}>
           <View style={es.tipDot} />
-          <Text style={es.tipText}>Past events stay in your history</Text>
+          <Text style={es.tipText}>Birthdays and anniversaries can repeat every year</Text>
         </View>
       </View>
 
@@ -712,11 +1167,15 @@ export default function BigEventsView({
   const openEdit = (event: BigEvent) => {
     if (event.endDate < today) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const source = bigEvents.find(candidate => candidate.id === event.id) ?? event;
     setForm({
-      id: event.id,
-      title: event.title,
-      endDate: event.endDate,
-      icon: normalizeHabitIcon(event.icon),
+      id: source.id,
+      title: source.title,
+      endDate: source.endDate,
+      icon: normalizeHabitIcon(source.icon),
+      recurrence: source.recurrence,
+      leadDays: source.leadDays || BIG_EVENT_DEFAULT_LEAD_DAYS,
+      remindersEnabled: source.remindersEnabled,
     });
   };
 
@@ -726,11 +1185,12 @@ export default function BigEventsView({
     if (!form) return;
     const trimmed = form.title.trim();
     if (!trimmed) return;
-    if (form.endDate < today) {
+    if (form.recurrence === 'none' && form.endDate < today) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setForm({ ...form, endDate: today });
       return;
     }
+    const leadDays = normalizeBigEventLeadDays(form.leadDays, form.recurrence);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     if (form.id === null) {
@@ -739,10 +1199,15 @@ export default function BigEventsView({
       await addBigEvent({
         id: eventId,
         title: trimmed,
-        startDate: today,
+        startDate: form.recurrence === 'yearly'
+          ? addDaysToDateKey(form.endDate, -leadDays)
+          : today,
         endDate: form.endDate,
         color: DEFAULT_EVENT_COLOR,
         icon: form.icon,
+        recurrence: form.recurrence,
+        leadDays,
+        remindersEnabled: form.recurrence === 'yearly' && form.remindersEnabled,
       });
       if (isGuided) {
         notifyGuideEvent({
@@ -759,8 +1224,14 @@ export default function BigEventsView({
         await updateBigEvent({
           ...existing,
           title: trimmed,
+          startDate: form.recurrence === 'yearly'
+            ? addDaysToDateKey(form.endDate, -leadDays)
+            : existing.startDate,
           endDate: form.endDate,
           icon: form.icon,
+          recurrence: form.recurrence,
+          leadDays,
+          remindersEnabled: form.recurrence === 'yearly' && form.remindersEnabled,
         });
       }
     }

@@ -258,6 +258,7 @@ export default function CelebrationOverlayBase({
   title = 'Congratulations!',
   subtitleStrong = 'Dream achieved!',
   subtitle = 'Keep building your bucket list and chasing your dreams!',
+  visual,
 }: {
   onClose: () => void;
   // Optional copy overrides so other features (e.g. Focus milestones) can
@@ -265,6 +266,7 @@ export default function CelebrationOverlayBase({
   title?: string;
   subtitleStrong?: string;
   subtitle?: string;
+  visual?: React.ReactNode;
 }) {
   const { width, height } = useWindowDimensions();
   const lottieRef = useRef<LottieView>(null);
@@ -405,6 +407,7 @@ export default function CelebrationOverlayBase({
           <Reanimated.View style={[s.trophyStage, iconStyle]}>
             <View style={s.trophyAura} />
             <View style={s.trophyCircle}>
+              {visual ?? (
               <LottieView
                 ref={lottieRef}
                 source={CHALLENGE_TROPHY_SOURCE}
@@ -415,6 +418,7 @@ export default function CelebrationOverlayBase({
                 resizeMode="contain"
                 renderMode="HARDWARE"
               />
+              )}
             </View>
           </Reanimated.View>
           <Text style={s.title}>{title}</Text>

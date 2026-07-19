@@ -15,6 +15,12 @@ final class AnastaActivityReportView: ExpoView {
   var days: Int = 1 {
     didSet { render() }
   }
+  var startMinutes: Int = -1 {
+    didSet { render() }
+  }
+  var endMinutes: Int = -1 {
+    didSet { render() }
+  }
 
   private var hostingController: UIHostingController<AnyView>?
   private weak var containingController: UIViewController?
@@ -42,8 +48,25 @@ final class AnastaActivityReportView: ExpoView {
     let calendar = Calendar.autoupdatingCurrent
     let selectedDay = calendar.startOfDay(for: selectedDate)
     let safeDays = max(1, min(days, 31))
-    let start = calendar.date(byAdding: .day, value: -(safeDays - 1), to: selectedDay) ?? selectedDay
-    let end = calendar.date(byAdding: .day, value: 1, to: selectedDay) ?? selectedDate
+    let fullStart = calendar.date(byAdding: .day, value: -(safeDays - 1), to: selectedDay) ?? selectedDay
+    let fullEnd = calendar.date(byAdding: .day, value: 1, to: selectedDay) ?? selectedDate
+    let hasSessionScope = safeDays == 1 && startMinutes >= 0 && endMinutes >= 0
+    let current = calendar.dateComponents([.hour, .minute], from: Date())
+    let currentMinute = (current.hour ?? 0) * 60 + (current.minute ?? 0)
+    let wrappedSessionContinuesFromYesterday = hasSessionScope
+      && endMinutes <= startMinutes
+      && currentMinute < endMinutes
+    let start = hasSessionScope
+      ? wrappedSessionContinuesFromYesterday
+        ? selectedDay
+        : calendar.date(byAdding: .minute, value: startMinutes, to: selectedDay) ?? selectedDay
+      : fullStart
+    let sessionEndDay = endMinutes <= startMinutes && !wrappedSessionContinuesFromYesterday
+      ? calendar.date(byAdding: .day, value: 1, to: selectedDay) ?? selectedDay
+      : selectedDay
+    let end = hasSessionScope
+      ? calendar.date(byAdding: .minute, value: endMinutes, to: sessionEndDay) ?? fullEnd
+      : fullEnd
     let interval = DateInterval(start: start, end: end)
     let segment: DeviceActivityFilter.SegmentInterval = safeDays > 1
       ? .daily(during: interval)

@@ -114,6 +114,12 @@ public final class AnastaFocusModule: Module {
       Prop("days") { (view: AnastaActivityReportView, days: Int) in
         view.days = days
       }
+      Prop("startMinutes") { (view: AnastaActivityReportView, startMinutes: Int) in
+        view.startMinutes = startMinutes
+      }
+      Prop("endMinutes") { (view: AnastaActivityReportView, endMinutes: Int) in
+        view.endMinutes = endMinutes
+      }
     }
   }
 

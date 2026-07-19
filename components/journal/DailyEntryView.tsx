@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TextInput, Keyboard, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   Easing,
   FadeIn,
@@ -21,6 +22,7 @@ import {
   ChevronUp,
   Plus,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
   X,
 } from '@/components/icons/Icons';
@@ -77,9 +79,9 @@ const ENERGIES: { name: EnergyName; label: string }[] = [
   { name: 'high-voltage',  label: 'Peak' },
 ];
 
-type PromptItem = { id: string; q: string; a: string };
+export type PromptItem = { id: string; q: string; a: string };
 
-const DEFAULT_PROMPTS: PromptItem[] = [
+export const DEFAULT_PROMPTS: PromptItem[] = [
   { id: 'gp_1', q: 'What was your biggest achievement today?', a: '' },
   { id: 'gp_2', q: 'What did you learn today?', a: '' },
   { id: 'gp_4', q: 'How did you grow closer to God today?', a: '' },
@@ -101,7 +103,7 @@ function dateFromKey(key: string) {
   return new Date(year, (month || 1) - 1, day || 1, 12);
 }
 
-function promptsFromEntry(prompts: JournalPromptAnswer[]): PromptItem[] {
+export function promptsFromEntry(prompts: JournalPromptAnswer[]): PromptItem[] {
   if (!prompts.length) return DEFAULT_PROMPTS.map(p => ({ ...p }));
   const byId = new Map(prompts.map(prompt => [prompt.id, prompt]));
   const mergedDefaults = DEFAULT_PROMPTS.map(prompt => {
@@ -118,7 +120,7 @@ function promptsFromEntry(prompts: JournalPromptAnswer[]): PromptItem[] {
   return [...mergedDefaults, ...customPrompts];
 }
 
-function promptsToEntry(prompts: PromptItem[]): JournalPromptAnswer[] {
+export function promptsToEntry(prompts: PromptItem[]): JournalPromptAnswer[] {
   return prompts.map(prompt => ({
     id: prompt.id,
     question: prompt.q,
@@ -265,7 +267,7 @@ function bandFor(v: number): ScaleBand {
   return SCALE_BANDS[i];
 }
 
-function clampScaleValue(value: unknown, fallback = 5) {
+export function clampScaleValue(value: unknown, fallback = 5) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.max(1, Math.min(10, Math.round(numeric)));
@@ -279,7 +281,7 @@ function sanitizeScaleValues(values: Record<string, number> | undefined) {
   return next;
 }
 
-function cloneJournalSections(value: JournalSection[]): JournalSection[] {
+export function cloneJournalSections(value: JournalSection[]): JournalSection[] {
   return value.map(section => ({
     id: section.id,
     type: section.type,
@@ -335,7 +337,7 @@ function recoverLegacySections(entry: JournalEntry, currentSections: JournalSect
   return next;
 }
 
-function sectionsForEntry(entry: JournalEntry, currentSections: JournalSection[], dateKey: string) {
+export function sectionsForEntry(entry: JournalEntry, currentSections: JournalSection[], dateKey: string) {
   if (entry.dailySections?.length) return cloneJournalSections(entry.dailySections);
   if (dateKey < todayKey()) return recoverLegacySections(entry, currentSections);
   return cloneJournalSections(currentSections.length ? currentSections : DEFAULT_SECTIONS);
@@ -1247,6 +1249,7 @@ export default function DailyEntryView() {
   } = useJournal();
   const { completeInstance } = useTasks();
   const hydratedDateRef = useRef('');
+  const hydratedUpdatedAtRef = useRef<number | undefined>(undefined);
   const dirtyRef = useRef(false);
   const touchedFieldsRef = useRef({ mood: false, energy: false, satisfaction: false });
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1320,8 +1323,27 @@ export default function DailyEntryView() {
     return patch;
   }, [mood, energy, satisfaction, sections, prompts, whoChecks, scaleValues, freeWriting]);
 
+  const exitSaveRef = useRef<{
+    date: string;
+    patch: JournalEntryPatch;
+    readOnly: boolean;
+    queueCelebration: boolean;
+  }>({
+    date: selectedDateKey,
+    patch: {},
+    readOnly: isReadOnly,
+    queueCelebration: !isTaskLaunch,
+  });
+  exitSaveRef.current = {
+    date: selectedDateKey,
+    patch: buildEntryPatch(),
+    readOnly: isReadOnly,
+    queueCelebration: !isTaskLaunch,
+  };
+
   useEffect(() => {
     hydratedDateRef.current = '';
+    hydratedUpdatedAtRef.current = undefined;
     dirtyRef.current = false;
     touchedFieldsRef.current = { mood: false, energy: false, satisfaction: false };
     setMood(undefined);
@@ -1331,9 +1353,11 @@ export default function DailyEntryView() {
   }, [selectedDateKey]);
 
   useEffect(() => {
-    if (!journalReady || hydratedDateRef.current === selectedDateKey) return;
-
     const entry = getEntry(selectedDateKey);
+    const isAlreadyHydrated = hydratedDateRef.current === selectedDateKey
+      && hydratedUpdatedAtRef.current === entry.updatedAt;
+    if (!journalReady || isAlreadyHydrated || dirtyRef.current) return;
+
     setSections(sectionsForEntry(entry, storedSections, selectedDateKey));
     setMood(entry.mood);
     setEnergy(entry.energy);
@@ -1344,6 +1368,7 @@ export default function DailyEntryView() {
     setFreeWriting(entry.freeWritingHtml ?? '');
     setEditorContentKey(`daily:${selectedDateKey}:${entry.updatedAt || 0}`);
     hydratedDateRef.current = selectedDateKey;
+    hydratedUpdatedAtRef.current = entry.updatedAt;
     dirtyRef.current = false;
     touchedFieldsRef.current = { mood: false, energy: false, satisfaction: false };
   }, [journalReady, selectedDateKey, getEntry, storedSections]);
@@ -1357,7 +1382,9 @@ export default function DailyEntryView() {
     }
 
     saveTimerRef.current = setTimeout(() => {
-      void upsertEntry(selectedDateKey, buildEntryPatch()).then(() => {
+      void upsertEntry(selectedDateKey, buildEntryPatch(), {
+        queueCompletionCelebration: !isTaskLaunch,
+      }).then(() => {
         dirtyRef.current = false;
       }).catch(error => {
         console.warn('Daily journal autosave failed', error);
@@ -1373,6 +1400,7 @@ export default function DailyEntryView() {
     selectedDateKey,
     isReadOnly,
     buildEntryPatch,
+    isTaskLaunch,
     upsertEntry,
   ]);
 
@@ -1383,8 +1411,44 @@ export default function DailyEntryView() {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
-    await upsertEntry(selectedDateKey, buildEntryPatch());
+    await upsertEntry(selectedDateKey, buildEntryPatch(), {
+      queueCompletionCelebration: !isTaskLaunch,
+    });
     dirtyRef.current = false;
+  };
+
+  useEffect(() => () => {
+    const snapshot = exitSaveRef.current;
+    if (
+      snapshot.readOnly
+      || !dirtyRef.current
+      || hydratedDateRef.current !== snapshot.date
+    ) return;
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    void upsertEntry(snapshot.date, snapshot.patch, {
+      queueCompletionCelebration: snapshot.queueCelebration,
+    }).catch(error => {
+      console.warn('Daily journal exit save failed', error);
+    });
+  }, [upsertEntry]);
+
+  const openGuidedJournal = async () => {
+    try {
+      await saveNow();
+      router.push({
+        pathname: '/journal-daily-guided' as any,
+        params: {
+          date: selectedDateKey,
+          ...(params.title ? { title: params.title } : {}),
+          ...(isTaskLaunch ? { isTask: 'true' } : {}),
+          ...(params.taskInstanceId ? { taskInstanceId: params.taskInstanceId } : {}),
+          ...(params.taskDate ? { taskDate: params.taskDate } : {}),
+        },
+      });
+    } catch (error) {
+      console.warn('Could not open guided daily journal', error);
+    }
   };
 
   const finish = async () => {
@@ -1533,15 +1597,32 @@ export default function DailyEntryView() {
         title={taskTitle}
         showBack
         bg={BG}
+        onBackOverride={() => {
+          if (isReadOnly) {
+            router.back();
+            return;
+          }
+          void finish();
+        }}
         rightElement={isReadOnly ? undefined : (
-          <TouchableOpacity
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCustomizeOpen(true); }}
-            style={hd.rightBtn}
-            activeOpacity={0.7}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          >
-            <SlidersHorizontal s={20} c={C.textMuted} />
-          </TouchableOpacity>
+          <View style={hd.actions}>
+            <TouchableOpacity
+              onPress={() => { void openGuidedJournal(); }}
+              style={[hd.rightBtn, hd.guidedBtn]}
+              activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Sparkles s={18} c="#A8853C" w={2.2} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCustomizeOpen(true); }}
+              style={hd.rightBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <SlidersHorizontal s={20} c={C.textMuted} />
+            </TouchableOpacity>
+          </View>
         )}
       />
 
@@ -1554,6 +1635,31 @@ export default function DailyEntryView() {
         scrollEventThrottle={16}
       >
         <DateBanner date={selectedDate} />
+
+        {!isReadOnly && (
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => { void openGuidedJournal(); }}
+            style={guidedLaunch.card}
+          >
+            <LinearGradient
+              colors={['#2E2618', '#1E1911']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+            />
+            <View style={guidedLaunch.ringA} pointerEvents="none" />
+            <View style={guidedLaunch.ringB} pointerEvents="none" />
+            <View style={guidedLaunch.icon}><Sparkles s={19} c="#F7D98B" w={2.1} /></View>
+            <View style={guidedLaunch.copy}>
+              <Text style={guidedLaunch.eyebrow}>GUIDED REFLECTION</Text>
+              <Text style={guidedLaunch.title}>A quieter way to journal</Text>
+              <Text style={guidedLaunch.body}>Move through your reflection one thoughtful question at a time.</Text>
+            </View>
+            <View style={guidedLaunch.go}><Text style={guidedLaunch.goText}>START</Text></View>
+          </TouchableOpacity>
+        )}
 
         <Animated.View layout={LinearTransition.duration(120)}>
           {activeSections.map(section => (
@@ -1602,7 +1708,26 @@ export default function DailyEntryView() {
 export type { JournalSection, SectionType };
 
 const hd = StyleSheet.create({
+  actions: { flexDirection: 'row', alignItems: 'center', columnGap: 2 },
   rightBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  guidedBtn: { backgroundColor: 'rgba(197,160,89,0.11)', borderRadius: 14 },
+});
+
+const guidedLaunch = StyleSheet.create({
+  card: {
+    minHeight: 130, marginHorizontal: 16, marginBottom: 16, borderRadius: 22, overflow: 'hidden',
+    paddingHorizontal: 18, paddingVertical: 18, flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderColor: 'rgba(247,217,139,0.18)', shadowColor: '#1C160B', shadowOffset: { width: 0, height: 9 }, shadowOpacity: 0.2, shadowRadius: 15, elevation: 5,
+  },
+  ringA: { position: 'absolute', width: 170, height: 170, right: -78, top: -66, borderRadius: 85, borderWidth: 1, borderColor: 'rgba(247,217,139,0.15)' },
+  ringB: { position: 'absolute', width: 118, height: 118, right: -42, top: -39, borderRadius: 59, borderWidth: 1, borderColor: 'rgba(247,217,139,0.13)' },
+  icon: { width: 38, height: 38, borderRadius: 14, backgroundColor: 'rgba(247,217,139,0.12)', alignItems: 'center', justifyContent: 'center', marginRight: 12, alignSelf: 'flex-start', marginTop: 4 },
+  copy: { flex: 1, paddingRight: 8 },
+  eyebrow: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.7, color: '#E8C875' },
+  title: { marginTop: 5, fontFamily: F.serifSemiBold, fontSize: 20, lineHeight: 23, color: '#FFF8E8' },
+  body: { marginTop: 6, fontFamily: F.serifMedium, fontSize: 13, lineHeight: 17, color: 'rgba(255,248,232,0.72)' },
+  go: { alignSelf: 'flex-end', marginBottom: 2, backgroundColor: 'rgba(247,217,139,0.14)', borderWidth: 1, borderColor: 'rgba(247,217,139,0.28)', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 7 },
+  goText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.25, color: '#F7D98B' },
 });
 
 const fin = StyleSheet.create({

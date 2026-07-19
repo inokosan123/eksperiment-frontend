@@ -17,6 +17,7 @@ type Props = {
   cancelBorderColor?: string;
   confirmLabel: string;
   confirmColor?: string;
+  naturalButtonLabels?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
   onBackdropPress?: () => void;
@@ -39,6 +40,7 @@ export default function ConfirmModal({
   cancelBorderColor,
   confirmLabel,
   confirmColor = C.red,
+  naturalButtonLabels = false,
   onCancel,
   onConfirm,
   onBackdropPress,
@@ -68,14 +70,22 @@ export default function ConfirmModal({
               cancelBorderColor ? { borderColor: cancelBorderColor } : null,
             ]}
           >
-            <Text style={[s.cancelText, cancelTextColor ? { color: cancelTextColor } : null]}>{cancelLabel}</Text>
+            <Text
+              style={[
+                s.cancelText,
+                naturalButtonLabels ? s.naturalButtonText : null,
+                cancelTextColor ? { color: cancelTextColor } : null,
+              ]}
+            >
+              {cancelLabel}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={onConfirm}
             activeOpacity={0.82}
             style={[s.confirmBtn, { backgroundColor: confirmColor }]}
           >
-            <Text style={s.confirmText}>{confirmLabel}</Text>
+            <Text style={[s.confirmText, naturalButtonLabels ? s.naturalButtonText : null]}>{confirmLabel}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -192,5 +202,11 @@ const s = StyleSheet.create({
     letterSpacing: 1.8,
     color: '#FFFFFF',
     textTransform: 'uppercase',
+  },
+  naturalButtonText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 15.5,
+    letterSpacing: 0,
+    textTransform: 'none',
   },
 });

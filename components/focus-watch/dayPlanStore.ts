@@ -8,7 +8,7 @@ import {
   upsertDayRow,
   upsertPlanRow,
 } from './focusWatchDb';
-import { normalizeWebDomain } from './webProtectionCatalog';
+import { normalizeWebDomain, WEB_PACK_DOMAINS } from './webProtectionCatalog';
 
 // The Focus v4 store is the React-side source of truth. Product state persists
 // to SQLite; private Family Controls selections stay in the shared iOS App
@@ -21,6 +21,12 @@ import { normalizeWebDomain } from './webProtectionCatalog';
 export type Strength = 'loose' | 'strict';
 export type PracticeKind = 'prayer' | 'jesus-prayer' | 'psalm' | 'chapter' | 'intention';
 export type PlanKind = 'daily' | 'session';
+
+// Focus v1 intentionally ships one planning model: one Daily Plan with one
+// rule set for the entire day. Session data and geometry remain in the model
+// as a dormant future feature, but this flag is the only switch allowed to
+// make that model affect runtime behavior again.
+export const FOCUS_SESSION_PLANNING_ENABLED = false;
 export const PLAN_THEME_IDS = ['gold', 'teal', 'plum', 'blue', 'rose', 'clay'] as const;
 export type PlanThemeId = typeof PLAN_THEME_IDS[number];
 export type RuleMode = 'noLimit' | 'limit' | 'blocked';
@@ -74,6 +80,13 @@ export type DayPlan = {
   name: string;
   kind: PlanKind;
   themeId?: PlanThemeId;
+  // Essentials-only is an access mode, not a zero-minute target. When active,
+  // the phone uses an allowlist from the first minute while the Daily Target
+  // and Tolerance continue to measure the day's outcome.
+  essentialsOnly?: boolean;
+  // Preview/fallback ids for apps allowed only inside this plan. On iPhone the
+  // private FamilyActivitySelection lives under `plan.<id>.essentials`.
+  essentialAppIds?: string[];
   // The day's whole leisure budget ("4h with this plan"), distributed across
   // group rules; null = no budget, limits stand on their own.
   budgetMinutes: number | null;
@@ -87,6 +100,13 @@ export type DayPlan = {
   createdAt: number;
   updatedAt: number;
 };
+
+export function runtimePlanKind(
+  planOrKind: Pick<DayPlan, 'kind'> | PlanKind | null | undefined
+): PlanKind {
+  const storedKind = typeof planOrKind === 'string' ? planOrKind : planOrKind?.kind;
+  return FOCUS_SESSION_PLANNING_ENABLED && storedKind === 'session' ? 'session' : 'daily';
+}
 
 export type AlwaysBlockedRule = {
   appId: string;
@@ -176,20 +196,22 @@ export type CustomWebPack = {
   mode: PackMode;
 };
 
-export type LockCooldown = '10m' | '1h' | 'morning';
+export type LockCooldown = '45m' | '1h' | '6h' | '12h' | '24h' | '3d';
+export const HARD_LOCK_DISABLE_DELAY_MS = 24 * 60 * 60_000;
 
-export type LocksState = {
+export type WebHardLockState = {
   enabled: boolean;
+  // Once true, Hard Lock can never be disabled from the app. The delay may
+  // still be lengthened immediately or shortened through its current delay.
+  locked: boolean;
   cooldown: LockCooldown;
-  uninstallProtection: boolean;
-  denyNewApps: boolean;
 };
 
 export type PurityState = {
-  packs: { id: WebPackId; mode: PackMode }[];
+  packs: { id: WebPackId; mode: PackMode; extraDomains: string[] }[];
   customPacks: CustomWebPack[];
   customDomains: CustomDomain[];
-  locks: LocksState;
+  locks: WebHardLockState;
 };
 
 // A weakening change held back by the lock cooldown. Applied by tick().
@@ -199,12 +221,13 @@ export type PendingChange = {
   label: string;
   action:
     | { kind: 'pack-mode'; packId: WebPackId; mode: PackMode }
+    | { kind: 'pack-domain-remove'; packId: WebPackId; domain: string }
     | { kind: 'custom-pack-mode'; packId: string; mode: PackMode }
     | { kind: 'custom-pack-remove'; packId: string }
     | { kind: 'custom-pack-domain-remove'; packId: string; domain: string }
     | { kind: 'domain-never'; domain: string; never: boolean }
     | { kind: 'domain-remove'; domain: string }
-    | { kind: 'locks'; partial: Partial<LocksState> };
+    | { kind: 'locks'; partial: Partial<WebHardLockState> };
 };
 
 export type ScreenTimePermissionStatus = 'notDetermined' | 'approved' | 'denied' | 'preview';
@@ -493,14 +516,17 @@ export function removeSessionAndExtendPrevious(
 }
 
 export function activeZone(plan: DayPlan | null | undefined, now: Date): PlanZone | null {
-  if (!plan) return null;
+  // Dormant Session drafts must never leak into the v1 Daily runtime. Keeping
+  // this guard in the store protects every screen and native coordinator even
+  // if an older database row still says `kind: session`.
+  if (!plan || plan.essentialsOnly || runtimePlanKind(plan) !== 'session') return null;
   const minute = minutesOfDay(now);
   return plan.zones.find(zone => zoneContains(zone, minute)) ?? null;
 }
 
 // The next moment the zone picture changes today — for "Next: Evening 21:00".
 export function nextZoneStart(plan: DayPlan | null | undefined, now: Date): PlanZone | null {
-  if (!plan || plan.zones.length === 0) return null;
+  if (!plan || runtimePlanKind(plan) !== 'session' || plan.zones.length === 0) return null;
   const minute = minutesOfDay(now);
   const upcoming = plan.zones
     .filter(zone => zone.startMinutes > minute)
@@ -541,7 +567,8 @@ export function selectionTagLabels(
 }
 
 export function describeZones(plan: DayPlan): string {
-  if (plan.kind === 'daily') return 'Daily Plan · one set of rules';
+  if (plan.essentialsOnly) return 'Essentials-only Plan · protected all day';
+  if (runtimePlanKind(plan) === 'daily') return 'Daily Plan · one set of rules';
   if (plan.zones.length === 0) return 'Session Plan · setup needed';
   const count = `${plan.zones.length} ${plan.zones.length === 1 ? 'Session' : 'Sessions'}`;
   const names = plan.zones.map(zone => zone.name).join(', ');
@@ -549,7 +576,8 @@ export function describeZones(plan: DayPlan): string {
 }
 
 export function describeRules(state: DayPlanState, plan: DayPlan): string {
-  const sourceRules = plan.kind === 'session'
+  if (plan.essentialsOnly) return 'Protected from minute one';
+  const sourceRules = runtimePlanKind(plan) === 'session'
     ? plan.zones.flatMap(session => session.rules ?? [])
     : plan.rules;
   const totals = new Map<string, number>();
@@ -566,7 +594,8 @@ export function describeRules(state: DayPlanState, plan: DayPlan): string {
 }
 
 export function planLeisureBudget(plan: DayPlan): number {
-  const rules = plan.kind === 'session'
+  if (plan.essentialsOnly) return 0;
+  const rules = runtimePlanKind(plan) === 'session'
     ? plan.zones.flatMap(session => session.rules ?? [])
     : plan.rules;
   return rules.reduce(
@@ -612,27 +641,49 @@ function withCompleteRules(plan: DayPlan, customGroups: CustomGroup[]): DayPlan 
       };
     });
   };
-  const kind: PlanKind = plan.kind ?? 'daily';
+  const storedKind: PlanKind = plan.kind ?? 'daily';
+  const kind = runtimePlanKind(storedKind);
   const rules = complete(plan.rules);
-  const target = plan.budgetMinutes;
+  const legacyEssentialsOnly = plan.essentialsOnly == null
+    && plan.budgetMinutes === 0
+    && plan.essentialOnlyMinutes === 0;
+  const essentialsOnly = plan.essentialsOnly ?? legacyEssentialsOnly;
+  const needsEssentialsTargetRepair = essentialsOnly
+    && (plan.budgetMinutes == null || plan.budgetMinutes <= 0);
+  // The retired Essentials-only representation erased the person's target by
+  // persisting 0/0. Repair every invalid variant, including short-lived builds
+  // that already wrote the new flag but still carried the old zero target.
+  const target = needsEssentialsTargetRepair ? 60 : plan.budgetMinutes;
+  const repairedToleranceEnd = Math.max(
+    180,
+    plan.tolerableMinutes ?? 0,
+    plan.essentialOnlyMinutes ?? 0
+  );
   const tolerable = target == null
     ? null
-    : Math.max(target, plan.tolerableMinutes ?? target + 60);
+    : needsEssentialsTargetRepair
+      ? repairedToleranceEnd
+      : Math.max(target, plan.tolerableMinutes ?? target + 60);
   const essentialOnly = target == null
     ? null
-    : Math.max(tolerable ?? target, plan.essentialOnlyMinutes ?? target + 120);
-  const sourceSessions = kind === 'session'
-    ? (plan.zones.length > 0
-        ? plan.zones
-        : [{
+    : needsEssentialsTargetRepair
+      ? repairedToleranceEnd
+      : Math.max(tolerable ?? target, plan.essentialOnlyMinutes ?? target + 120);
+  // Preserve valid Session drafts while v1 runs as Daily-only. New Daily plans
+  // have no zones; old Session plans retain theirs so a later feature release
+  // can restore the editor without rebuilding the data model.
+  const sourceSessions = plan.zones.length > 0
+    ? plan.zones
+    : storedKind === 'session'
+      ? [{
             id: makeId('session'),
             name: 'Day',
             startMinutes: 0,
             endMinutes: 0,
             closedGroupIds: [],
             rules,
-          }])
-    : [];
+        }]
+      : [];
   const catalog: Record<string, string[]> = Object.fromEntries(
     ALL_CATEGORY_IDS.map(id => [id, [...(plan.groupCatalog?.[id] ?? DEFAULT_GROUP_APP_IDS[id] ?? [])]])
   );
@@ -656,6 +707,9 @@ function withCompleteRules(plan: DayPlan, customGroups: CustomGroup[]): DayPlan 
   return {
     ...plan,
     kind,
+    essentialsOnly,
+    essentialAppIds: [...(plan.essentialAppIds ?? [])],
+    budgetMinutes: target,
     tolerableMinutes: tolerable,
     essentialOnlyMinutes: essentialOnly,
     customGroupIds: validCustomIds,
@@ -674,13 +728,14 @@ export function ruleFor(plan: DayPlan | null | undefined, groupId: string): Grou
 }
 
 export function rulesForPlanAt(plan: DayPlan | null | undefined, now: Date): GroupRule[] {
-  if (!plan) return [];
-  if (plan.kind === 'daily') return plan.rules;
+  if (!plan || plan.essentialsOnly) return [];
+  if (runtimePlanKind(plan) === 'daily') return plan.rules;
   return activeZone(plan, now)?.rules ?? [];
 }
 
 export function plannedMinutesByGroup(plan: DayPlan): Record<string, number> {
-  const source = plan.kind === 'session'
+  if (plan.essentialsOnly) return {};
+  const source = runtimePlanKind(plan) === 'session'
     ? plan.zones.flatMap(session => session.rules ?? [])
     : plan.rules;
   const totals: Record<string, number> = {};
@@ -726,20 +781,44 @@ export function computeStreak(days: Record<string, DayRecord>): StreakSummary {
 // State
 // ---------------------------------------------------------------------------
 
+const HARD_LOCK_COOLDOWNS: readonly LockCooldown[] = ['45m', '1h', '6h', '12h', '24h', '3d'];
+
+function normalizeLockCooldown(value: unknown): LockCooldown {
+  if (typeof value === 'string' && HARD_LOCK_COOLDOWNS.includes(value as LockCooldown)) {
+    return value as LockCooldown;
+  }
+  // v4 migration: the retired 10-minute choice is below the new 45-minute
+  // floor. The variable "until morning" option becomes a conservative day.
+  if (value === '10m') return '45m';
+  if (value === 'morning') return '24h';
+  return '1h';
+}
+
+function normalizeWebHardLock(value: unknown): WebHardLockState {
+  const stored = value && typeof value === 'object'
+    ? value as Partial<WebHardLockState> & Record<string, unknown>
+    : {};
+  const locked = stored.locked === true;
+  return {
+    enabled: locked || stored.enabled === true,
+    locked,
+    cooldown: normalizeLockCooldown(stored.cooldown),
+  };
+}
+
 const DEFAULT_PURITY: PurityState = {
   packs: [
-    { id: 'gambling', mode: 'off' },
-    { id: 'adult', mode: 'off' },
-    { id: 'social', mode: 'off' },
-    { id: 'news', mode: 'off' },
+    { id: 'gambling', mode: 'off', extraDomains: [] },
+    { id: 'adult', mode: 'off', extraDomains: [] },
+    { id: 'social', mode: 'off', extraDomains: [] },
+    { id: 'news', mode: 'off', extraDomains: [] },
   ],
   customPacks: [],
   customDomains: [],
   locks: {
-    enabled: false,
+    enabled: true,
+    locked: false,
     cooldown: '1h',
-    uninstallProtection: true,
-    denyNewApps: false,
   },
 };
 
@@ -873,6 +952,8 @@ function persistPlan(plan: DayPlan) {
         schemaVersion: 4,
         kind: plan.kind,
         themeId: plan.themeId ?? defaultPlanThemeId(plan.id),
+        essentialsOnly: !!plan.essentialsOnly,
+        essentialAppIds: plan.essentialAppIds ?? [],
         budgetMinutes: plan.budgetMinutes,
         tolerableMinutes: plan.tolerableMinutes,
         essentialOnlyMinutes: plan.essentialOnlyMinutes,
@@ -894,6 +975,30 @@ const PLAN_SNAPSHOT_DAY_LIMIT = 400;
 
 function clonePlanSnapshot(plan: DayPlan): DayPlan {
   return JSON.parse(JSON.stringify(plan)) as DayPlan;
+}
+
+function normalizeStoredPlanSnapshot(plan: DayPlan | null): DayPlan | null {
+  if (!plan) return null;
+  const legacyEssentialsOnly = plan.essentialsOnly == null
+    && plan.budgetMinutes === 0
+    && plan.essentialOnlyMinutes === 0;
+  const essentialsOnly = plan.essentialsOnly ?? legacyEssentialsOnly;
+  const needsTargetRepair = essentialsOnly
+    && (plan.budgetMinutes == null || plan.budgetMinutes <= 0);
+  const repairedToleranceEnd = Math.max(
+    180,
+    plan.tolerableMinutes ?? 0,
+    plan.essentialOnlyMinutes ?? 0
+  );
+  return {
+    ...plan,
+    kind: runtimePlanKind(plan),
+    essentialsOnly,
+    essentialAppIds: [...(plan.essentialAppIds ?? [])],
+    budgetMinutes: needsTargetRepair ? 60 : plan.budgetMinutes,
+    tolerableMinutes: needsTargetRepair ? repairedToleranceEnd : plan.tolerableMinutes,
+    essentialOnlyMinutes: needsTargetRepair ? repairedToleranceEnd : plan.essentialOnlyMinutes,
+  };
 }
 
 function compactPlanSnapshots(
@@ -1059,6 +1164,8 @@ export async function hydrateDayPlanStore() {
         schemaVersion?: number;
         kind?: PlanKind;
         themeId?: PlanThemeId;
+        essentialsOnly?: boolean;
+        essentialAppIds?: string[];
         budgetMinutes?: number | null;
         tolerableMinutes?: number | null;
         essentialOnlyMinutes?: number | null;
@@ -1071,20 +1178,31 @@ export async function hydrateDayPlanStore() {
       );
       const kind = planMeta.kind ?? 'daily';
       if (!planMeta.kind) migratedLegacyPlan = true;
+      const legacyEssentialsOnly = planMeta.essentialsOnly == null
+        && planMeta.budgetMinutes === 0
+        && planMeta.essentialOnlyMinutes === 0;
+      const essentialsOnly = planMeta.essentialsOnly ?? legacyEssentialsOnly;
+      const needsEssentialsTargetRepair = essentialsOnly
+        && (planMeta.budgetMinutes == null || planMeta.budgetMinutes <= 0);
+      if (legacyEssentialsOnly || needsEssentialsTargetRepair) migratedLegacyPlan = true;
       return {
         id: row.id,
         name: row.name,
         kind,
         themeId: isPlanThemeId(planMeta.themeId) ? planMeta.themeId : defaultPlanThemeId(row.id),
-        budgetMinutes: planMeta.budgetMinutes ?? null,
-        tolerableMinutes: planMeta.tolerableMinutes ?? null,
-        essentialOnlyMinutes: planMeta.essentialOnlyMinutes ?? null,
+        essentialsOnly,
+        essentialAppIds: planMeta.essentialAppIds ?? [],
+        budgetMinutes: legacyEssentialsOnly ? 60 : planMeta.budgetMinutes ?? null,
+        tolerableMinutes: legacyEssentialsOnly ? 180 : planMeta.tolerableMinutes ?? null,
+        essentialOnlyMinutes: legacyEssentialsOnly ? 180 : planMeta.essentialOnlyMinutes ?? null,
         customGroupIds: planMeta.customGroupIds ?? [],
         groupCatalog: planMeta.groupCatalog ?? DEFAULT_GROUP_APP_IDS,
         strength: planMeta.strength ?? 'loose',
-        // Legacy Watch zones were independent ranges. They cannot honestly be
-        // migrated into v4 Sessions, which must cover a connected 24-hour day.
-        zones: kind === 'session' ? parse<PlanZone[]>(row.zones_json, []) : [],
+        // Rows without a stored v4 kind contain retired independent Watches,
+        // so their ranges are discarded. A v4 Daily row may intentionally
+        // carry dormant connected Session drafts and must retain them across
+        // launches even though they never affect the Daily-only v1 runtime.
+        zones: planMeta.kind ? parse<PlanZone[]>(row.zones_json, []) : [],
         rules: parse<GroupRule[]>(row.rules_json, []),
         createdAt: row.created_at,
         updatedAt: row.updated_at,
@@ -1141,18 +1259,42 @@ export async function hydrateDayPlanStore() {
       parse<Record<string, FocusUsageSnapshot>>(data.meta.usage_by_date, {})
     );
     persistMeta('usage_by_date', state.usageByDate);
-    state.planSnapshotsByDate = compactPlanSnapshots(
-      parse<Record<string, DayPlan | null>>(data.meta.plan_snapshots_by_date, {})
+    const storedPlanSnapshots = parse<Record<string, DayPlan | null>>(
+      data.meta.plan_snapshots_by_date,
+      {}
     );
+    state.planSnapshotsByDate = compactPlanSnapshots(Object.fromEntries(
+      Object.entries(storedPlanSnapshots).map(([day, snapshot]) => [
+        day,
+        normalizeStoredPlanSnapshot(snapshot),
+      ])
+    ));
     persistMeta('plan_snapshots_by_date', state.planSnapshotsByDate);
     state.targetArmedByDate = compactTargetArmedDays(
       parse<Record<string, string>>(data.meta.target_armed_by_date, {})
     );
     persistMeta('target_armed_by_date', state.targetArmedByDate);
     state.eligibilityByDate = parse<Record<string, DayEligibilityLedger>>(data.meta.eligibility_ledger, {});
-    state.purity = { ...DEFAULT_PURITY, ...parse<Partial<PurityState>>(data.meta.purity_state, {}) };
+    const storedPurity = parse<Partial<PurityState>>(data.meta.purity_state, {});
+    state.purity = { ...DEFAULT_PURITY, ...storedPurity };
+    state.purity.packs = DEFAULT_PURITY.packs.map(defaultPack => {
+      const storedPack = storedPurity.packs?.find(pack => pack.id === defaultPack.id);
+      const curatedDomains = new Set<string>(WEB_PACK_DOMAINS[defaultPack.id]);
+      const mode = storedPack?.mode === 'on' || storedPack?.mode === 'never'
+        ? storedPack.mode
+        : 'off';
+      const extraDomains = Array.from(new Set(
+        (storedPack?.extraDomains ?? [])
+          .map(normalizeDomain)
+          .filter(domain => domain.includes('.') && !curatedDomains.has(domain))
+      ));
+      return { id: defaultPack.id, mode, extraDomains };
+    });
     state.purity.customPacks = state.purity.customPacks ?? [];
-    state.purity.locks = { ...DEFAULT_PURITY.locks, ...state.purity.locks };
+    state.purity.locks = normalizeWebHardLock(storedPurity.locks);
+    // Persist the compact MVP shape once so retired legacy app-lock
+    // fields and legacy cooldown ids cannot reappear on the next launch.
+    persistPurity();
     state.pendingChanges = parse<PendingChange[]>(data.meta.pending_changes, []);
     state.milestonesShown = parse<number[]>(data.meta.milestones_shown, []);
     state.returnedMoments = parse<number>(data.meta.returned_moments, 0);
@@ -1273,6 +1415,8 @@ export type SaveDayPlanInput = Omit<
   | 'updatedAt'
   | 'kind'
   | 'themeId'
+  | 'essentialsOnly'
+  | 'essentialAppIds'
   | 'tolerableMinutes'
   | 'essentialOnlyMinutes'
   | 'customGroupIds'
@@ -1280,7 +1424,7 @@ export type SaveDayPlanInput = Omit<
 > &
   Partial<Pick<
     DayPlan,
-    'kind' | 'themeId' | 'tolerableMinutes' | 'essentialOnlyMinutes' | 'customGroupIds' | 'groupCatalog'
+    'kind' | 'themeId' | 'essentialsOnly' | 'essentialAppIds' | 'tolerableMinutes' | 'essentialOnlyMinutes' | 'customGroupIds' | 'groupCatalog'
   >> &
   { id?: string };
 
@@ -1294,6 +1438,8 @@ export function saveDayPlan(input: SaveDayPlanInput): DayPlan {
       id: savedId,
       kind: input.kind ?? existing?.kind ?? 'daily',
       themeId: input.themeId ?? existing?.themeId ?? defaultPlanThemeId(savedId),
+      essentialsOnly: input.essentialsOnly ?? existing?.essentialsOnly ?? false,
+      essentialAppIds: input.essentialAppIds ?? existing?.essentialAppIds ?? [],
       tolerableMinutes: input.tolerableMinutes ?? existing?.tolerableMinutes ?? null,
       essentialOnlyMinutes: input.essentialOnlyMinutes ?? existing?.essentialOnlyMinutes ?? null,
       customGroupIds: input.customGroupIds ?? existing?.customGroupIds ?? [],
@@ -1338,34 +1484,82 @@ export function deleteDayPlan(id: string) {
 
 export function assignPlanToWeekday(day: number, planId: string | null) {
   if (day < 0 || day > 6) return;
+  if (state.schedule[day] === planId) return;
   state.schedule = state.schedule.map((entry, index) => (index === day ? planId : entry));
   persist(() => setScheduleDayRow(day, planId));
   emit();
 }
 
-export function wouldPlanLoseTodayTarget(planId: string | null) {
+export function wouldPlanLoseTodayTarget(planId: string | null, now = new Date()) {
   if (!planId) return false;
   const plan = state.plans.find(entry => entry.id === planId);
-  const usage = state.usageByDate[dateKey(new Date())];
+  const key = dateKey(now);
+  const usage = liveUsageByDate[key] ?? state.usageByDate[key];
   return !!plan && plan.budgetMinutes != null && (usage?.totalMinutes ?? 0) > plan.budgetMinutes;
 }
 
-// Today can be changed deliberately, but elapsed usage remains historical
-// truth. A replacement target already below actual use loses eligibility.
-export function swapTodayPlan(planId: string | null) {
-  const now = new Date();
+type TodayPlanChangeSource = 'today' | 'weekly-today';
+
+function applyTodayPlanChange(
+  planId: string | null,
+  now: Date,
+  source: TodayPlanChangeSource
+) {
   const today = ensureTodayRecord(now);
-  const losesTarget = wouldPlanLoseTodayTarget(planId);
+  if (today.planId === planId) return false;
+
+  const losesTarget = wouldPlanLoseTodayTarget(planId, now);
   const next = {
     ...today,
     planId,
+    // A target already lost earlier today can never be restored by replacing
+    // the plan. A newly tighter target is also lost immediately when the host
+    // already has enough aggregate usage to prove it.
     targetLost: today.targetLost || losesTarget,
   };
   state.days = { ...state.days, [today.date]: next };
   snapshotPlanForDay(today.date, planId, true);
   persistDay(next);
-  logEvent('plan_swapped', { planId: planId ?? undefined, meta: { losesTarget } });
-  emit();
+
+  // Native target proof belongs to an exact day + plan pair. Clear the old
+  // proof optimistically; a successful native re-apply arms the replacement.
+  if (Object.prototype.hasOwnProperty.call(state.targetArmedByDate, today.date)) {
+    const nextArmed = { ...state.targetArmedByDate };
+    delete nextArmed[today.date];
+    state.targetArmedByDate = nextArmed;
+    persistMeta('target_armed_by_date', state.targetArmedByDate);
+  }
+
+  logEvent('plan_swapped', {
+    planId: planId ?? undefined,
+    meta: { losesTarget, source },
+  });
+  return true;
+}
+
+// Today can be changed deliberately, but elapsed usage remains historical
+// truth. A replacement target already below actual use loses eligibility.
+export function swapTodayPlan(planId: string | null, now = new Date()) {
+  if (applyTodayPlanChange(planId, now, 'today')) emit();
+}
+
+// The current weekday circle is an explicit combined action: update the
+// reusable weekly template and today's already-materialized day record in one
+// optimistic transaction. Other weekday edits remain future-only.
+export function assignPlanToWeekdayAndToday(
+  day: number,
+  planId: string | null,
+  now = new Date()
+) {
+  if (day < 0 || day > 6 || day !== weekdayMondayFirst(now)) return false;
+  const scheduleChanged = state.schedule[day] !== planId;
+  if (scheduleChanged) {
+    state.schedule = state.schedule.map((entry, index) => (index === day ? planId : entry));
+    persist(() => setScheduleDayRow(day, planId));
+  }
+  const todayChanged = applyTodayPlanChange(planId, now, 'weekly-today');
+  if (scheduleChanged || todayChanged) emit();
+  return scheduleChanged || todayChanged;
 }
 
 export function getEffectivePlan(stateArg: DayPlanState, date: Date): DayPlan | null {
@@ -1882,16 +2076,19 @@ export function acknowledgeMilestone() {
 }
 
 // ---------------------------------------------------------------------------
-// Purity (Clean Sight) + Locks with cooldown pending changes
+// Purity (Clean Sight) + Hard Lock delayed weakening changes
 // ---------------------------------------------------------------------------
 
-function cooldownMs(cooldown: LockCooldown, nowMs: number) {
-  if (cooldown === '10m') return 10 * 60_000;
-  if (cooldown === '1h') return 60 * 60_000;
-  const next = new Date(nowMs);
-  next.setDate(next.getDate() + 1);
-  next.setHours(6, 0, 0, 0);
-  return next.getTime() - nowMs;
+export function hardLockDelayMs(cooldown: LockCooldown) {
+  const minutes: Record<LockCooldown, number> = {
+    '45m': 45,
+    '1h': 60,
+    '6h': 6 * 60,
+    '12h': 12 * 60,
+    '24h': 24 * 60,
+    '3d': 3 * 24 * 60,
+  };
+  return minutes[cooldown] * 60_000;
 }
 
 function persistPurity() {
@@ -1908,6 +2105,15 @@ function applyChangeAction(action: PendingChange['action']) {
       ...state.purity,
       packs: state.purity.packs.map(pack =>
         pack.id === action.packId ? { ...pack, mode: action.mode } : pack
+      ),
+    };
+  } else if (action.kind === 'pack-domain-remove') {
+    state.purity = {
+      ...state.purity,
+      packs: state.purity.packs.map(pack =>
+        pack.id === action.packId
+          ? { ...pack, extraDomains: pack.extraDomains.filter(domain => domain !== action.domain) }
+          : pack
       ),
     };
   } else if (action.kind === 'custom-pack-mode') {
@@ -1944,9 +2150,18 @@ function applyChangeAction(action: PendingChange['action']) {
       customDomains: state.purity.customDomains.filter(entry => entry.domain !== action.domain),
     };
   } else {
+    const current = state.purity.locks;
+    const locked = current.locked || action.partial.locked === true;
+    const requestedEnabled = action.partial.enabled ?? current.enabled;
     state.purity = {
       ...state.purity,
-      locks: { ...state.purity.locks, ...action.partial },
+      locks: {
+        enabled: locked || requestedEnabled,
+        locked,
+        cooldown: action.partial.cooldown == null
+          ? current.cooldown
+          : normalizeLockCooldown(action.partial.cooldown),
+      },
     };
   }
   persistPurity();
@@ -1963,6 +2178,9 @@ function applyDuePendingChanges(nowMs: number): boolean {
 
 function pendingChangeKeys(action: PendingChange['action']): string[] {
   if (action.kind === 'pack-mode') return [`pack:${action.packId}`];
+  if (action.kind === 'pack-domain-remove') {
+    return [`pack-domain:${action.packId}:${action.domain}`];
+  }
   if (action.kind === 'custom-pack-mode' || action.kind === 'custom-pack-remove') {
     return [`custom-pack:${action.packId}`];
   }
@@ -1976,6 +2194,15 @@ function pendingChangeKeys(action: PendingChange['action']): string[] {
 }
 
 function pendingChangesOverlap(a: PendingChange['action'], b: PendingChange['action']) {
+  const builtInPackId = (action: PendingChange['action']) =>
+    action.kind === 'pack-mode' || action.kind === 'pack-domain-remove'
+      ? action.packId
+      : null;
+  const aBuiltInPackId = builtInPackId(a);
+  const bBuiltInPackId = builtInPackId(b);
+  if (aBuiltInPackId && aBuiltInPackId === bBuiltInPackId) {
+    if (a.kind === 'pack-mode' || b.kind === 'pack-mode') return true;
+  }
   const customPackId = (action: PendingChange['action']) =>
     action.kind === 'custom-pack-mode'
       || action.kind === 'custom-pack-remove'
@@ -1993,7 +2220,12 @@ function pendingChangesOverlap(a: PendingChange['action'], b: PendingChange['act
   return pendingChangeKeys(b).some(key => aKeys.has(key));
 }
 
-function queueOrApply(action: PendingChange['action'], label: string, weakening: boolean) {
+function queueOrApply(
+  action: PendingChange['action'],
+  label: string,
+  weakening: boolean,
+  delayMs = hardLockDelayMs(state.purity.locks.cooldown)
+) {
   const nowMs = Date.now();
   // One pending intent per logical target. Repeating or superseding a request
   // replaces the old one instead of creating a stack of delayed surprises.
@@ -2005,7 +2237,7 @@ function queueOrApply(action: PendingChange['action'], label: string, weakening:
       ...state.pendingChanges,
       {
         id: makeId('pending'),
-        effectiveAt: nowMs + cooldownMs(state.purity.locks.cooldown, nowMs),
+        effectiveAt: nowMs + delayMs,
         label,
         action,
       },
@@ -2040,6 +2272,38 @@ export function setPackMode(packId: WebPackId, mode: PackMode) {
     `${packName[packId]} changes to ${mode === 'off' ? 'Off' : mode === 'on' ? 'On' : 'Never Allowed'}`,
     weakening
   );
+}
+
+export function addDomainToWebPack(packId: WebPackId, rawDomain: string) {
+  const domain = normalizeDomain(rawDomain);
+  if (!domain.includes('.')) return false;
+  const pack = state.purity.packs.find(entry => entry.id === packId);
+  if (!pack) return false;
+  const curatedDomains = new Set<string>(WEB_PACK_DOMAINS[packId]);
+  if (curatedDomains.has(domain) || pack.extraDomains.includes(domain)) return false;
+  state.purity = {
+    ...state.purity,
+    packs: state.purity.packs.map(entry =>
+      entry.id === packId
+        ? { ...entry, extraDomains: [...entry.extraDomains, domain] }
+        : entry
+    ),
+  };
+  persistPurity();
+  emit();
+  return true;
+}
+
+export function removeDomainFromWebPack(packId: WebPackId, rawDomain: string) {
+  const domain = normalizeDomain(rawDomain);
+  const pack = state.purity.packs.find(entry => entry.id === packId);
+  if (!pack || !pack.extraDomains.includes(domain)) return false;
+  queueOrApply(
+    { kind: 'pack-domain-remove', packId, domain },
+    `Remove ${domain} from ${packId}`,
+    pack.mode !== 'off'
+  );
+  return true;
 }
 
 export function createCustomWebPack(name: string, rawDomains: string[]): CustomWebPack | null {
@@ -2077,10 +2341,12 @@ export function setCustomWebPackMode(packId: string, mode: PackMode) {
 export function addDomainToCustomWebPack(packId: string, rawDomain: string) {
   const domain = normalizeDomain(rawDomain);
   if (!domain.includes('.')) return false;
+  const pack = state.purity.customPacks.find(entry => entry.id === packId);
+  if (!pack || pack.domains.includes(domain)) return false;
   state.purity = {
     ...state.purity,
     customPacks: state.purity.customPacks.map(pack =>
-      pack.id === packId && !pack.domains.includes(domain)
+      pack.id === packId
         ? { ...pack, domains: [...pack.domains, domain] }
         : pack
     ),
@@ -2144,24 +2410,61 @@ export function removeCustomDomain(domain: string) {
   queueOrApply({ kind: 'domain-remove', domain }, `Remove ${domain}`, true);
 }
 
-export function updateLocks(partial: Partial<LocksState>) {
+const HARD_LOCK_LABELS: Record<LockCooldown, string> = {
+  '45m': '45 minutes',
+  '1h': '1 hour',
+  '6h': '6 hours',
+  '12h': '12 hours',
+  '24h': '24 hours',
+  '3d': '3 days',
+};
+
+export function updateWebHardLock(
+  partial: Partial<Pick<WebHardLockState, 'enabled' | 'cooldown'>>
+) {
   const current = state.purity.locks;
-  const cooldownRank: Record<LockCooldown, number> = { '10m': 0, '1h': 1, morning: 2 };
+  if (current.locked && partial.enabled === false) return false;
+  const nextCooldown = partial.cooldown == null
+    ? current.cooldown
+    : normalizeLockCooldown(partial.cooldown);
+  const enabledChanged = partial.enabled != null && partial.enabled !== current.enabled;
+  const cooldownChanged = partial.cooldown != null && nextCooldown !== current.cooldown;
+  if (!enabledChanged && !cooldownChanged) return false;
   const weakening =
     (partial.enabled === false && current.enabled) ||
-    (partial.uninstallProtection === false && current.uninstallProtection) ||
-    (partial.denyNewApps === false && current.denyNewApps) ||
-    (partial.cooldown != null && cooldownRank[partial.cooldown] < cooldownRank[current.cooldown]);
-  const [key] = Object.keys(partial) as (keyof LocksState)[];
-  const labels: Record<keyof LocksState, string> = {
-    enabled: partial.enabled === false ? 'Turn off Strict Watch' : 'Turn on Strict Watch',
-    cooldown: 'Change Strict Watch cooldown',
-    uninstallProtection: partial.uninstallProtection === false
-      ? 'Turn off uninstall protection'
-      : 'Turn on uninstall protection',
-    denyNewApps: partial.denyNewApps === false ? 'Allow new app installs' : 'Block new app installs',
+    (cooldownChanged && hardLockDelayMs(nextCooldown) < hardLockDelayMs(current.cooldown));
+  const label = enabledChanged
+    ? partial.enabled === false ? 'Turn off Hard Lock' : 'Turn on Hard Lock'
+    : `Change Hard Lock delay to ${HARD_LOCK_LABELS[nextCooldown]}`;
+  const normalizedPartial: Partial<WebHardLockState> = {};
+  if (enabledChanged) normalizedPartial.enabled = partial.enabled;
+  if (cooldownChanged) normalizedPartial.cooldown = nextCooldown;
+  queueOrApply(
+    { kind: 'locks', partial: normalizedPartial },
+    label,
+    weakening,
+    partial.enabled === false ? HARD_LOCK_DISABLE_DELAY_MS : undefined
+  );
+  return true;
+}
+
+export function permanentlyLockWebHardLock() {
+  const current = state.purity.locks;
+  if (current.locked) return false;
+  // An already-requested disable must never fire after the irreversible lock.
+  const nextPending = state.pendingChanges.filter(change => !(
+    change.action.kind === 'locks' && change.action.partial.enabled === false
+  ));
+  const pendingChanged = nextPending.length !== state.pendingChanges.length;
+  state.pendingChanges = nextPending;
+  state.purity = {
+    ...state.purity,
+    locks: { ...current, enabled: true, locked: true },
   };
-  queueOrApply({ kind: 'locks', partial }, labels[key] ?? 'Change Strict Watch', weakening);
+  persistPurity();
+  if (pendingChanged) persistPendingChanges();
+  emit();
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -2204,6 +2507,7 @@ function appRuleMode(rule: AppRule): RuleMode {
 }
 
 export function planHasProtectionNow(plan: DayPlan | null | undefined, now: Date): boolean {
+  if (plan?.essentialsOnly) return true;
   if (plan?.essentialOnlyMinutes != null) return true;
   const rules = rulesForPlanAt(plan, now);
   return rules.some(rule => {
@@ -2231,15 +2535,39 @@ export function resolveAppAccess({
   const coreEssential = allCoreEssentialIds(stateArg).includes(appId);
   const optionalEssential = stateArg.optionalEssentialAppIds.includes(appId);
   const globalEssential = coreEssential || optionalEssential;
+  const planEssential = !!plan?.essentialAppIds?.includes(appId);
+  const essentialsOnlyAllowed = globalEssential || planEssential;
   const quietAllowed = coreEssential || !!stateArg.quiet?.selection.appIds.includes(appId);
   const alwaysBlocked = stateArg.alwaysBlockedApps.find(entry => entry.appId === appId);
   const resolvedUsage = usage
     ?? liveUsageByDate[dateKey(now)]
     ?? stateArg.usageByDate[dateKey(now)];
   const totalMinutes = resolvedUsage?.totalMinutes ?? 0;
-  const hardWallReached =
+  const essentialsOnlyActive = !!plan?.essentialsOnly;
+  const hardWallReached = !essentialsOnlyActive && (
     stateArg.nativeProtection.hardWallDate === dateKey(now)
-    || (plan?.essentialOnlyMinutes != null && totalMinutes >= plan.essentialOnlyMinutes);
+    || (plan?.essentialOnlyMinutes != null && totalMinutes >= plan.essentialOnlyMinutes)
+  );
+
+  if (essentialsOnlyActive) {
+    const allowed = !alwaysBlocked
+      && essentialsOnlyAllowed
+      && (!stateArg.quiet || quietAllowed);
+    return {
+      allowed,
+      layer: 'dailyHardWall',
+      reason: allowed
+        ? planEssential
+          ? 'Available for this Essentials-only plan.'
+          : 'Available as a permanent Essential.'
+        : alwaysBlocked
+          ? 'Always Blocked remains unavailable inside every protection mode.'
+          : stateArg.quiet
+            ? 'This app must be allowed by both the plan and Quiet Hour.'
+            : 'This plan allows only Essentials and its selected plan apps.',
+      strength: allowed ? undefined : 'strict',
+    };
+  }
 
   // The two allowlist walls combine by intersection. Neither one is allowed
   // to make the other wall more permissive.
@@ -2291,16 +2619,16 @@ export function resolveAppAccess({
     return { allowed: true, layer: 'essential', reason: 'Available as an Essential App.' };
   }
 
-  const session = plan?.kind === 'session' ? activeZone(plan, now) : null;
+  const session = runtimePlanKind(plan) === 'session' ? activeZone(plan, now) : null;
   const rules = rulesForPlanAt(plan, now);
   const groupRule = groupId ? rules.find(rule => rule.groupId === groupId) : undefined;
   const appRule = rules.flatMap(rule => rule.appRules ?? []).find(rule => rule.appId === appId);
   const groupUsed = groupId
-    ? plan?.kind === 'session' && session
+    ? runtimePlanKind(plan) === 'session' && session
       ? resolvedUsage?.sessionGroupMinutes[session.id]?.[groupId] ?? 0
       : resolvedUsage?.groupMinutes[groupId] ?? 0
     : 0;
-  const appUsed = plan?.kind === 'session' && session
+  const appUsed = runtimePlanKind(plan) === 'session' && session
     ? resolvedUsage?.sessionAppMinutes[session.id]?.[appId] ?? 0
     : resolvedUsage?.appMinutes[appId] ?? 0;
 

@@ -11,6 +11,7 @@ import {
   cacheNativeActivitySelectionSummary,
   useNativeActivitySelectionSummary,
 } from './nativeSelectionSummaryStore';
+import NativeActivitySelectionLabels from './NativeActivitySelectionLabels';
 import { usePermissionGate } from './usePermissionGate';
 import type { ActivitySelectionSummary } from '@/modules/anasta-focus';
 
@@ -44,6 +45,7 @@ export default function NativeActivitySelectionButton({
   const nativeAvailable = isNativeFocusAvailable();
   const summary = useNativeActivitySelectionSummary(selectionId);
   const [busy, setBusy] = useState(false);
+  const [selectionRefreshKey, setSelectionRefreshKey] = useState(0);
   const { request, gate } = usePermissionGate({ embedded: true });
 
   const open = () => {
@@ -54,6 +56,7 @@ export default function NativeActivitySelectionButton({
         const next = await openNativeActivityPicker(selectionId, title);
         if (next) {
           cacheNativeActivitySelectionSummary(next);
+          setSelectionRefreshKey(value => value + 1);
           onSelected?.(next);
         }
       } finally {
@@ -81,6 +84,12 @@ export default function NativeActivitySelectionButton({
         </View>
         {nativeAvailable && <ChevronRight s={prominent ? 18 : 16} c={prominent ? C.goldDark : C.textMuted} w={2} />}
       </TouchableOpacity>
+      <NativeActivitySelectionLabels
+        selectionId={selectionId}
+        summary={summary}
+        refreshKey={selectionRefreshKey}
+        maxItems={prominent ? 5 : 4}
+      />
       {!!summary?.notice && <Text style={[s.notice, prominent && s.noticeProminent]}>{summary.notice}</Text>}
       {gate}
     </>

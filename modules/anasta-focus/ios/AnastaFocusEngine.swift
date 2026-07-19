@@ -158,6 +158,19 @@ enum AnastaSelectionStore {
     let permanentEssentials = load(selectionId: "core.designated").applicationTokens
       .union(load(selectionId: "global.essentials").applicationTokens)
 
+    if isPlanEssentials(selectionId) {
+      let rejected = selection.applicationTokens.intersection(alwaysApplications)
+      let alreadyPermanent = selection.applicationTokens.intersection(permanentEssentials)
+      selection.applicationTokens.subtract(alwaysApplications)
+      selection.applicationTokens.subtract(permanentEssentials)
+      if !rejected.isEmpty {
+        notices.append("Always Blocked apps were not allowed by this plan.")
+      }
+      if !alreadyPermanent.isEmpty {
+        notices.append("Apps already in global Essentials stay available without being duplicated here.")
+      }
+    }
+
     switch selectionId {
     case "core.designated":
       let existing = load(selectionId: selectionId).applicationTokens
@@ -287,8 +300,13 @@ enum AnastaSelectionStore {
       || selectionId == "quiet.current"
       || selectionId.hasPrefix("always.")
       || selectionId.hasPrefix("group.library.")
+      || isPlanEssentials(selectionId)
       || isPlanGroup(selectionId)
       || isSingleApplication(selectionId)
+  }
+
+  private static func isPlanEssentials(_ selectionId: String) -> Bool {
+    selectionId.hasPrefix("plan.") && selectionId.hasSuffix(".essentials")
   }
 
   private static func isPlanGroup(_ selectionId: String) -> Bool {
@@ -971,15 +989,38 @@ enum AnastaFocusEngine {
       }
 
       let groupIds = catalog.keys.sorted()
+      let dailyRules = plan["dailyRules"] as? [[String: Any]] ?? []
+      let sessionRules = (plan["sessions"] as? [[String: Any]] ?? []).flatMap { session in
+        session["rules"] as? [[String: Any]] ?? []
+      }
+      let appRulePairs: [(groupId: String, appId: String)] = (dailyRules + sessionRules).flatMap { rule in
+        guard let groupId = rule["groupId"] as? String else { return [] }
+        return (rule["appRules"] as? [[String: Any]] ?? []).compactMap { appRule in
+          guard let appId = appRule["appId"] as? String else { return nil }
+          return (groupId: groupId, appId: appId)
+        }
+      }
       let fingerprintGroups: [[String: Any]] = groupIds.map { groupId in
         let selection = AnastaSelectionStore.load(
           selectionId: "plan.\(planId).group.\(groupId)"
         )
+        let appSelections = appRulePairs
+          .filter { $0.groupId == groupId }
+          .map { pair -> [String: Any] in
+            let appSelection = AnastaSelectionStore.load(
+              selectionId: "plan.\(planId).group.\(groupId).app.\(pair.appId)"
+            )
+            return [
+              "appId": pair.appId,
+              "applications": encodedTokens(appSelection.applicationTokens),
+            ]
+          }
         return [
           "groupId": groupId,
           "applications": encodedTokens(selection.applicationTokens),
           "categories": encodedTokens(selection.categoryTokens),
           "webDomains": encodedTokens(selection.webDomainTokens),
+          "appSelections": appSelections,
         ]
       }
       let scope = "\(planId)-\(compactFingerprint(stableFingerprint(fingerprintGroups)))"
@@ -990,6 +1031,15 @@ enum AnastaFocusEngine {
         AnastaSelectionStore.save(
           selection,
           selectionId: "report.\(scope).group.\(groupId)"
+        )
+      }
+      for pair in appRulePairs {
+        let selection = AnastaSelectionStore.load(
+          selectionId: "plan.\(planId).group.\(pair.groupId).app.\(pair.appId)"
+        )
+        AnastaSelectionStore.save(
+          selection,
+          selectionId: "report.\(scope).group.\(pair.groupId).app.\(pair.appId)"
         )
       }
       dayScopes[dayKey] = scope
@@ -1499,7 +1549,6 @@ enum AnastaFocusEngine {
   ) {
     store.clearAllSettings()
     applyWebProtection(payload: payload)
-    applyDeviceLocks(payload: payload)
 
     let plan = planForDay(payload: payload, day: now)
     let planId = plan?["id"] as? String ?? "plan"
@@ -1554,11 +1603,18 @@ enum AnastaFocusEngine {
     let alwaysLoose = AnastaSelectionStore.load(selectionId: "always.loose")
     let permanentEssentials = globalEssentials.applicationTokens.union(designatedCore.applicationTokens)
     let alwaysApplications = alwaysStrict.applicationTokens.union(alwaysLoose.applicationTokens)
+    let essentialsOnlyPlan = plan?["essentialsOnly"] as? Bool ?? false
+    let planEssentials = AnastaSelectionStore.load(
+      selectionId: plan?["essentialsSelectionId"] as? String ?? "plan.\(planId).essentials"
+    )
+    var planAllowed = permanentEssentials.union(planEssentials.applicationTokens)
+    planAllowed.subtract(alwaysApplications)
     var quietAllowed = quietEssentials.applicationTokens.union(designatedCore.applicationTokens)
     quietAllowed.subtract(alwaysApplications)
 
     var allowedApplications: Set<ApplicationToken>? = nil
-    if hardWall { allowedApplications = permanentEssentials }
+    if essentialsOnlyPlan { allowedApplications = planAllowed }
+    if hardWall && !essentialsOnlyPlan { allowedApplications = permanentEssentials }
     if quiet != nil {
       allowedApplications = allowedApplications == nil
         ? quietAllowed
@@ -1661,6 +1717,22 @@ enum AnastaFocusEngine {
       && AnastaFocusShared.defaults.bool(forKey: AnastaFocusShared.dailyHardWallKey)
     if protectsByAllowlist && hardWallIsCurrent {
       return ["kind": "daily-hard", "selectionId": "", "strength": "strict", "minutes": 0, "practice": "prayer"]
+    }
+
+    if
+      protectsByAllowlist,
+      let plan = planForDay(payload: payload, day: now),
+      plan["essentialsOnly"] as? Bool == true
+    {
+      let planId = plan["id"] as? String ?? "plan"
+      let planEssentials = AnastaSelectionStore.load(
+        selectionId: plan["essentialsSelectionId"] as? String ?? "plan.\(planId).essentials"
+      )
+      let globalEssentials = AnastaSelectionStore.load(selectionId: "global.essentials")
+      let designatedCore = AnastaSelectionStore.load(selectionId: "core.designated")
+      if !matches(planEssentials) && !matches(globalEssentials) && !matches(designatedCore) {
+        return ["kind": "daily-hard", "selectionId": "", "strength": "strict", "minutes": 0, "practice": "prayer"]
+      }
     }
 
     if protectsByAllowlist, activeQuietHour(payload: payload, now: now) != nil {
@@ -1829,18 +1901,6 @@ enum AnastaFocusEngine {
     applications.formUnion(selection.applicationTokens)
     categories.formUnion(selection.categoryTokens)
     webDomains.formUnion(selection.webDomainTokens)
-  }
-
-  private static func applyDeviceLocks(payload: [String: Any]) {
-    let web = payload["webProtection"] as? [String: Any]
-    let locks = web?["locks"] as? [String: Any]
-    let enabled = locks?["enabled"] as? Bool ?? false
-    store.application.denyAppRemoval = enabled
-      ? locks?["uninstallProtection"] as? Bool
-      : nil
-    store.application.denyAppInstallation = enabled
-      ? locks?["denyNewApps"] as? Bool
-      : nil
   }
 
   private static func applyWebProtection(payload: [String: Any]) {

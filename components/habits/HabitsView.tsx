@@ -1,6 +1,14 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { LayoutAnimation, Platform, ScrollView, StyleSheet, Text, TextInput, UIManager, View } from 'react-native';
-import Reanimated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import Reanimated, {
+  Easing,
+  FadeInDown,
+  FadeOutUp,
+  LinearTransition,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
@@ -123,31 +131,15 @@ const SEGMENT_SPRING = {
   stiffness: 235,
   mass: 0.72,
 };
-
-if (Platform.OS === 'android' && typeof UIManager.setLayoutAnimationEnabledExperimental === 'function') {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-function animateHabitExpand() {
-  try {
-    LayoutAnimation.configureNext({
-      duration: 280,
-      create: {
-        type: LayoutAnimation.Types.easeInEaseOut,
-        property: LayoutAnimation.Properties.opacity,
-      },
-      update: {
-        type: LayoutAnimation.Types.easeInEaseOut,
-      },
-      delete: {
-        type: LayoutAnimation.Types.easeInEaseOut,
-        property: LayoutAnimation.Properties.opacity,
-      },
-    });
-  } catch {
-    // Web may ignore LayoutAnimation; native gets the smoother drawer.
-  }
-}
+const HABIT_CARD_LAYOUT = LinearTransition
+  .duration(260)
+  .easing(Easing.bezier(0.22, 1, 0.36, 1));
+const HABIT_BODY_ENTERING = FadeInDown
+  .duration(220)
+  .easing(Easing.bezier(0.16, 1, 0.3, 1));
+const HABIT_BODY_EXITING = FadeOutUp
+  .duration(170)
+  .easing(Easing.bezier(0.4, 0, 1, 1));
 
 function getFreqLabel(step: HabitStep) {
   switch (step.frequency) {
@@ -339,6 +331,29 @@ export type HabitsViewProps = {
   onGuidedComplete?: () => void;
 };
 
+function HabitDisclosureChevron({ expanded }: { expanded: boolean }) {
+  const progress = useSharedValue(expanded ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withSpring(expanded ? 1 : 0, {
+      damping: 20,
+      stiffness: 260,
+      mass: 0.72,
+      overshootClamping: true,
+    });
+  }, [expanded, progress]);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${progress.value * 180}deg` }],
+  }));
+
+  return (
+    <Reanimated.View pointerEvents="none" style={[s.chevronWrap, style]}>
+      <ChevronDown s={16} c="#D1D5DB" />
+    </Reanimated.View>
+  );
+}
+
 const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function HabitsView({
   compact = false,
   activeOnly = false,
@@ -504,7 +519,7 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
         targetId: HABITS_GUIDE_TARGETS.add,
         placement: 'above',
         allowTargetInteraction: true,
-        message: 'Habits turn repeated actions into a rhythm you can keep.\n\nAdd one habit you want to build.',
+        message: 'Habits are repeated actions that move a goal forward.\n\nAdd one goal you want to work toward.',
       });
       return;
     }
@@ -513,7 +528,7 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
         key: 'habits-complete',
         placement: 'center',
         celebrate: true,
-        message: 'Your first habit is ready.',
+        message: 'Your first goal is ready.',
         ctaLabel: 'CONTINUE',
         onCta: finishGuidedStep,
       });
@@ -566,8 +581,8 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
       {!activeOnly && !compact && (
         <Text style={s.helperText}>
           {tab === 'active'
-            ? 'Active habits appear in your daily flow and can be checked off each day.'
-            : 'Paused habits stay here so you can resume them whenever you want.'}
+            ? 'Active goals bring their habits / steps into your daily flow.'
+            : 'Paused goals stay here so you can resume them whenever you want.'}
         </Text>
       )}
 
@@ -579,10 +594,10 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
             const otherSteps = habit.steps.filter(step => !isStepActiveToday(step));
             const todayMetaText = todaysSteps.length === 0
               ? 'Not scheduled today'
-              : `${todaysSteps.length} ${todaysSteps.length === 1 ? 'step' : 'steps'} today`;
+              : `${todaysSteps.length} ${todaysSteps.length === 1 ? 'habit / step' : 'habits / steps'} today`;
             return (
-              <View key={habit.id} style={s.habitCard}>
-                <TouchableOpacity onPress={() => { animateHabitExpand(); setExpandedId(current => current === habit.id ? null : habit.id); }} activeOpacity={0.85} style={s.habitHead}>
+              <Reanimated.View key={habit.id} layout={HABIT_CARD_LAYOUT} style={s.habitCard}>
+                <TouchableOpacity onPress={() => setExpandedId(current => current === habit.id ? null : habit.id)} activeOpacity={0.85} style={s.habitHead}>
                   <LinearGradient
                     colors={[hexToRgba(habit.color, 0.18), hexToRgba(habit.color, 0.06)]}
                     start={{ x: 0, y: 0 }}
@@ -601,13 +616,15 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
                       <AnimatedProgressFill percent={progress.pct} color={habit.color} height={6} />
                     </View>
                   </View>
-                  <View style={[s.chevronWrap, expanded && s.chevronWrapExpanded]}>
-                    <ChevronDown s={16} c="#D1D5DB" />
-                  </View>
+                  <HabitDisclosureChevron expanded={expanded} />
                 </TouchableOpacity>
 
                 {expanded && (
-                  <View style={s.habitBody}>
+                  <Reanimated.View
+                    entering={HABIT_BODY_ENTERING}
+                    exiting={HABIT_BODY_EXITING}
+                    style={s.habitBody}
+                  >
                     {todaysSteps.length > 0 ? (
                       <View style={s.stepsContainer}>
                         {todaysSteps.map(step => {
@@ -646,7 +663,7 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
                       </View>
                     ) : (
                       <View style={s.stepsEmpty}>
-                        <Text style={s.stepsEmptyText}>No steps scheduled today.</Text>
+                        <Text style={s.stepsEmptyText}>No habits / steps scheduled today.</Text>
                       </View>
                     )}
 
@@ -680,7 +697,7 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
                       style={[s.addStepCard, { borderColor: hexToRgba(habit.color, 0.45) }]}
                     >
                       <Plus s={16} c={habit.color} w={2.4} />
-                      <Text style={[s.addStepCardText, { color: habit.color }]}>Add Step</Text>
+                      <Text style={[s.addStepCardText, { color: habit.color }]}>Add Habit / Step</Text>
                     </TouchableOpacity>
 
                     <View style={s.actionGrid}>
@@ -708,20 +725,20 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
                         onPress={() => setDeleteTarget(habit)}
                       />
                     </View>
-                  </View>
+                  </Reanimated.View>
                 )}
-              </View>
+              </Reanimated.View>
             );
           })}
         </View>
 
         {visibleHabits.length === 0 && (
           <View style={s.emptyCard}>
-            <Text style={s.emptyTitle}>{showingActiveHabits ? 'No active habits' : 'No paused habits'}</Text>
+            <Text style={s.emptyTitle}>{showingActiveHabits ? 'No active goals' : 'No paused goals'}</Text>
             <Text style={s.emptyBody}>
               {showingActiveHabits
-                ? 'Tap + to add your first habit.'
-                : 'Paused habits will appear here.'}
+                ? 'Tap + to add your first goal.'
+                : 'Paused goals will appear here.'}
             </Text>
           </View>
         )}
@@ -734,7 +751,7 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
           style={[s.addHabitCard, { borderColor: hexToRgba(C.gold, 0.45) }]}
         >
           <Plus s={16} c={C.gold} w={2.4} />
-          <Text style={s.addHabitText}>Add Habit</Text>
+          <Text style={s.addHabitText}>Add Goal</Text>
         </TouchableOpacity>
     </>
   );
@@ -753,8 +770,8 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
         visible={!!deleteTarget}
         icon={<Trash2 s={22} c={C.red} />}
         iconBg="#FEF2F2"
-        title="Delete Habit"
-        body={deleteTarget ? `"${deleteTarget.name}" and all its steps will be removed.` : ''}
+        title="Delete Goal"
+        body={deleteTarget ? `"${deleteTarget.name}" and all its habits / steps will be removed.` : ''}
         confirmLabel="DELETE"
         onCancel={() => setDeleteTarget(null)}
         onConfirm={async () => {
@@ -776,8 +793,8 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
         visible={!!pauseConfirmTarget}
         icon={<Pause s={22} c={C.gold} />}
         iconBg="#FFF8E8"
-        title="Pause Habit"
-        body={pauseConfirmTarget ? `"${pauseConfirmTarget.name}" will stop appearing in your active habit list.` : ''}
+        title="Pause Goal"
+        body={pauseConfirmTarget ? `"${pauseConfirmTarget.name}" will stop appearing in your active goal list.` : ''}
         confirmLabel="CONTINUE"
         confirmColor={C.gold}
         onCancel={() => setPauseConfirmTarget(null)}
@@ -1002,7 +1019,7 @@ function HabitEditorSheet({
         targetId: HABITS_GUIDE_TARGETS.name,
         placement: 'above',
         allowTargetInteraction: true,
-        message: 'Name the habit you want to practice. Tap Done when it feels clear.',
+        message: 'Name the goal you want to work toward. Tap Done when it feels clear.',
       });
       return;
     }
@@ -1023,7 +1040,7 @@ function HabitEditorSheet({
         cutoutPadding: 5,
         placement: 'above',
         allowTargetInteraction: true,
-        message: 'Choose an icon that feels natural for this habit.',
+        message: 'Choose an icon that feels natural for this goal.',
       });
       return;
     }
@@ -1043,7 +1060,7 @@ function HabitEditorSheet({
         targetId: HABITS_GUIDE_TARGETS.habitSave,
         placement: 'below',
         allowTargetInteraction: true,
-        message: 'Your habit has a clear action and schedule. Save it.',
+        message: 'Your goal has a clear habit / step and schedule. Save it.',
       });
     }
   }, [guidePhase, isGuided, setPresentation, visible]);
@@ -1126,8 +1143,8 @@ function HabitEditorSheet({
         visible={!!pendingDeleteStep}
         icon={<Trash2 s={22} c={C.red} />}
         iconBg="#FEF2F2"
-        title="Delete Step"
-        body={pendingDeleteStep ? `"${pendingDeleteStep.title}" will be removed from this habit.` : ''}
+        title="Delete Habit / Step"
+        body={pendingDeleteStep ? `"${pendingDeleteStep.title}" will be removed from this goal.` : ''}
         confirmLabel="DELETE"
         confirmColor={C.red}
         onCancel={() => setPendingDeleteStep(null)}
@@ -1143,10 +1160,10 @@ function HabitEditorSheet({
         visible={pendingNoSteps}
         icon={<Target s={22} c={color} w={2.2} />}
         iconBg={hexToRgba(color, 0.12)}
-        title="Add at least one step"
-        body="A habit is the rhythm you want to build. Steps are the concrete actions that appear on Home and help you practice it."
+        title="Add at least one habit / step"
+        body="A goal is what you want to achieve. Habits / steps are the concrete repeated actions that appear on Home and move you toward it."
         cancelLabel="CLOSE"
-        confirmLabel="ADD STEP"
+        confirmLabel="ADD HABIT"
         confirmColor={color}
         onCancel={() => setPendingNoSteps(false)}
         onConfirm={() => {
@@ -1167,8 +1184,8 @@ function HabitEditorSheet({
                 <X s={18} c="#9CA3AF" />
               </TouchableOpacity>
               <View style={{ alignItems: 'center' }}>
-                <Text style={s.sheetKicker}>{editHabit ? 'Edit Habit' : 'Create Habit'}</Text>
-                <Text style={s.sheetTitle}>Habit Builder</Text>
+                <Text style={s.sheetKicker}>{editHabit ? 'Edit Goal' : 'Create Goal'}</Text>
+                <Text style={s.sheetTitle}>Goal Builder</Text>
               </View>
               <TouchableOpacity
                 ref={habitSaveTarget.ref}
@@ -1212,21 +1229,21 @@ function HabitEditorSheet({
                   <NotoEmoji name={icon} size={28} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={s.previewTitle}>{name.trim() || 'Your new habit'}</Text>
+                  <Text style={s.previewTitle}>{name.trim() || 'Your new goal'}</Text>
                   <Text style={s.previewSubtitle}>
-                    {steps.length === 0 ? 'Add a name, choose a look, then add steps.' : `${steps.length} ${steps.length === 1 ? 'step' : 'steps'} ready`}
+                    {steps.length === 0 ? 'Add a name, choose a look, then add habits / steps.' : `${steps.length} ${steps.length === 1 ? 'habit / step' : 'habits / steps'} ready`}
                   </Text>
                 </View>
               </View>
 
               <View style={s.sheetBlock}>
-                <Text style={s.sheetBlockLabel}>Habit Name</Text>
+                <Text style={s.sheetBlockLabel}>Goal Name</Text>
                 <TextInput
                   ref={nameTarget.ref}
                   onLayout={nameTarget.onLayout}
                   value={name}
                   onChangeText={setName}
-                  placeholder="Name this habit..."
+                  placeholder="Name this goal..."
                   placeholderTextColor="#D1D5DB"
                   style={s.sheetInput}
                   returnKeyType="done"
@@ -1332,7 +1349,7 @@ function HabitEditorSheet({
 
               <View style={s.sheetBlock}>
                 <View style={s.blockTitleCol}>
-                  <Text style={s.editStepsLabel}>Steps</Text>
+                  <Text style={s.editStepsLabel}>Habits / Steps</Text>
                   <Text style={s.editStepsHelper}>Add, edit or remove</Text>
                 </View>
                 <View style={s.stepDraftList}>
@@ -1394,7 +1411,7 @@ function HabitEditorSheet({
                     style={[s.stepDraftAddCard, { borderColor: hexToRgba(color, 0.45) }]}
                   >
                     <Plus s={16} c={color} w={2.4} />
-                    <Text style={[s.stepDraftAddText, { color }]}>Add Step</Text>
+                    <Text style={[s.stepDraftAddText, { color }]}>Add Habit / Step</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1476,7 +1493,7 @@ function HabitTaskEditorSheet({
         targetId: HABITS_GUIDE_TARGETS.activity,
         placement: 'above',
         allowTargetInteraction: true,
-        message: 'What action will move this habit forward? Name your first step, then tap Done.',
+        message: 'What action will move this goal forward? Name your first habit / step, then tap Done.',
       });
       return;
     }
@@ -1510,7 +1527,7 @@ function HabitTaskEditorSheet({
         targetId: HABITS_GUIDE_TARGETS.stepSave,
         placement: 'below',
         allowTargetInteraction: true,
-        message: 'Save this action and return to your habit.',
+        message: 'Save this action and return to your goal.',
       });
     }
   }, [guidePhase, isGuided, patchSession, setPresentation, visible]);
@@ -1588,8 +1605,8 @@ function HabitTaskEditorSheet({
       visible={confirmDeleteVisible}
       icon={<Trash2 s={22} c={C.red} />}
       iconBg="#FEF2F2"
-      title="Delete Step?"
-      body={step ? `"${step.title}" will be removed from this habit.` : ''}
+      title="Delete Habit / Step?"
+      body={step ? `"${step.title}" will be removed from this goal.` : ''}
       confirmLabel="DELETE"
       confirmColor={C.red}
       onCancel={() => setConfirmDeleteVisible(false)}
@@ -1618,8 +1635,8 @@ function HabitTaskEditorSheet({
           <X s={18} c="#9CA3AF" />
         </TouchableOpacity>
         <View style={{ alignItems: 'center' }}>
-          <Text style={s.sheetKicker}>{step ? 'Edit Step' : 'New Step'}</Text>
-          <Text style={s.sheetTitle}>Habit Schedule</Text>
+          <Text style={s.sheetKicker}>{step ? 'Edit Habit / Step' : 'New Habit / Step'}</Text>
+          <Text style={s.sheetTitle}>Habit / Step Schedule</Text>
         </View>
         <TouchableOpacity
           ref={stepSaveTarget.ref}
@@ -1635,13 +1652,13 @@ function HabitTaskEditorSheet({
 
       <ScrollView ref={scrollRef} contentContainerStyle={s.taskContent} showsVerticalScrollIndicator={false}>
         <View style={s.sheetBlock}>
-          <Text style={[s.sheetBlockLabel, { color: accent }]}>Activity Name</Text>
+          <Text style={[s.sheetBlockLabel, { color: accent }]}>Habit / Step Name</Text>
           <TextInput
             ref={activityTarget.ref}
             onLayout={activityTarget.onLayout}
             value={title}
             onChangeText={setTitle}
-            placeholder="Step name..."
+            placeholder="Name this habit / step..."
             placeholderTextColor="#D1D5DB"
             style={s.sheetInput}
             returnKeyType="done"
@@ -1713,7 +1730,7 @@ function HabitTaskEditorSheet({
             style={s.taskDeleteBtn}
           >
             <Trash2 s={16} c="#EF4444" />
-            <Text style={s.taskDeleteText}>DELETE STEP</Text>
+            <Text style={s.taskDeleteText}>DELETE HABIT / STEP</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -1781,7 +1798,7 @@ function HabitAnalyticsSheet({
               </View>
             )}
 
-            <Text style={s.breakdownLabel}>TASK BREAKDOWN</Text>
+            <Text style={s.breakdownLabel}>HABITS / STEPS</Text>
             <View style={s.breakdownList}>
               {habit.steps.map(step => (
                 <TouchableOpacity key={step.id} onPress={() => onOpenStep(step)} activeOpacity={0.84} style={s.breakdownCard}>
@@ -1985,7 +2002,6 @@ const s = StyleSheet.create({
   progressBar: { marginTop: 11, height: 6, borderRadius: 999, backgroundColor: '#F3F0EA', overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 999 },
   chevronWrap: { marginTop: 2 },
-  chevronWrapExpanded: { transform: [{ rotate: '180deg' }] },
   habitBody: {
     paddingHorizontal: 14,
     paddingTop: 12,

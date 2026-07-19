@@ -46,9 +46,11 @@ function rangeStops(from: number, to: number): number[] {
 function ZoneBar({
   target,
   toleranceEnd,
+  essentialsOnly = false,
 }: {
   target: number;
   toleranceEnd: number;
+  essentialsOnly?: boolean;
 }) {
   const [width, setWidth] = useState(0);
   const targetW = useSharedValue(0);
@@ -60,7 +62,7 @@ function ZoneBar({
     const availableWidth = Math.max(0, width - (hasTolerance ? 4 : 0));
     targetW.value = withTiming((target / toleranceEnd) * availableWidth, GLIDE);
     toleranceW.value = withTiming(((toleranceEnd - target) / toleranceEnd) * availableWidth, GLIDE);
-  }, [target, toleranceEnd, width, targetW, toleranceW]);
+  }, [essentialsOnly, target, toleranceEnd, width, targetW, toleranceW]);
 
   const targetStyle = useAnimatedStyle(() => ({ width: targetW.value }));
   const toleranceStyle = useAnimatedStyle(() => ({ width: toleranceW.value }));
@@ -73,8 +75,14 @@ function ZoneBar({
           <Animated.View style={[s.zoneTarget, targetStyle]} />
           {toleranceDuration > 0 && <Animated.View style={[s.zoneTolerance, toleranceStyle]} />}
         </View>
-        <View style={s.zoneEssentialsCap} />
+        {!essentialsOnly && <View style={s.zoneEssentialsCap} />}
       </View>
+      {essentialsOnly && (
+        <View style={s.alwaysProtectedBand}>
+          <View style={s.alwaysProtectedDot} />
+          <Text style={s.alwaysProtectedText}>ESSENTIALS-ONLY ACCESS STAYS ACTIVE ALL DAY</Text>
+        </View>
+      )}
       <View style={s.zoneLegend}>
         <View style={s.zoneLegendItem}>
           <View style={[s.zoneLegendDot, { backgroundColor: GOAL_COLOR }]} />
@@ -95,9 +103,9 @@ function ZoneBar({
         <View style={s.zoneLegendItem}>
           <View style={[s.zoneLegendDot, { backgroundColor: ESSENTIALS_COLOR }]} />
           <View>
-            <Text style={s.zoneLegendLabel}>ESSENTIALS</Text>
-            <Text style={s.zoneLegendValue}>From {formatMinutesShort(toleranceEnd)}</Text>
-            <Text style={s.zoneLegendMeta}>protection starts</Text>
+            <Text style={s.zoneLegendLabel}>{essentialsOnly ? 'ACCESS' : 'ESSENTIALS'}</Text>
+            <Text style={s.zoneLegendValue}>{essentialsOnly ? 'All day' : `From ${formatMinutesShort(toleranceEnd)}`}</Text>
+            <Text style={s.zoneLegendMeta}>{essentialsOnly ? 'protected from minute one' : 'protection starts'}</Text>
           </View>
         </View>
       </View>
@@ -345,9 +353,11 @@ export function PlanningRail({
 export default function DailyTargetEditor({
   values,
   onChange,
+  essentialsOnly = false,
 }: {
   values: TargetValues;
   onChange: (values: TargetValues) => void;
+  essentialsOnly?: boolean;
 }) {
   const setTarget = (target: number | null) => {
     if (target == null) {
@@ -378,8 +388,12 @@ export default function DailyTargetEditor({
     <View style={s.surface}>
       <View style={s.editorIntro}>
         <Text style={s.kicker}>DAILY TARGET</Text>
-        <Text style={s.editorTitle}>Draw the line before the day begins.</Text>
-        <Text style={s.editorBody}>The goal is not a trophy — it is a saved day: time spent with God and the people you love, not thrown at a screen.</Text>
+        <Text style={s.editorTitle}>{essentialsOnly ? 'Protect the whole day. Still measure the time.' : 'Draw the line before the day begins.'}</Text>
+        <Text style={s.editorBody}>
+          {essentialsOnly
+            ? 'Only your chosen apps stay reachable from minute one. The Goal and Tolerance still show whether the day was truly saved.'
+            : 'The goal is not a trophy — it is a saved day: time spent with God and the people you love, not thrown at a screen.'}
+        </Text>
       </View>
 
       <View style={s.limitBlock}>
@@ -388,12 +402,16 @@ export default function DailyTargetEditor({
           <Text style={s.controlLabel}>SET A GOAL</Text>
         </View>
         <Text style={s.targetTitle}>How much of today may the phone have?</Text>
-        <Text style={s.controlHint}>The value you want to stay under. Within it, your blocking works exactly as you set it below.</Text>
+        <Text style={s.controlHint}>
+          {essentialsOnly
+            ? 'All allowed-app use counts. Stay within this line to keep the day and earn its trophy.'
+            : 'The value you want to stay under. Within it, your blocking works exactly as you set it below.'}
+        </Text>
         <LimitSlider
           value={values.target}
           onChange={setTarget}
-          stops={TARGET_STOPS}
-          edgeLabels={{ left: '1h', right: 'No limit' }}
+          stops={essentialsOnly ? TARGET_STOPS.filter((value): value is number => value != null) : TARGET_STOPS}
+          edgeLabels={{ left: '1h', right: essentialsOnly ? '12h' : 'No limit' }}
           accent={GOAL_COLOR}
           trackColor="#E5E3DE"
           bubbleText={values.target == null ? 'No limit' : formatMinutesShort(values.target)}
@@ -407,8 +425,12 @@ export default function DailyTargetEditor({
               <View style={[s.controlDot, { backgroundColor: TOLERANCE_COLOR }]} />
               <Text style={s.controlLabel}>SET A TOLERANCE</Text>
             </View>
-            <Text style={s.targetTitle}>How much overflow can you tolerate before the phone closes?</Text>
-            <Text style={s.controlHint}>Time past the goal that is not with your people — tolerated, not planned. When it is spent, only Essentials stay open.</Text>
+            <Text style={s.targetTitle}>{essentialsOnly ? 'How much overflow will you tolerate?' : 'How much overflow can you tolerate before the phone closes?'}</Text>
+            <Text style={s.controlHint}>
+              {essentialsOnly
+                ? 'Crossing the Goal loses the trophy. This buffer records tolerated overflow; app access stays Essentials-only throughout.'
+                : 'Time past the goal that is not with your people — tolerated, not planned. When it is spent, only Essentials stay open.'}
+            </Text>
             <LimitSlider
               value={toleranceEnd}
               onChange={next => {
@@ -425,8 +447,8 @@ export default function DailyTargetEditor({
           </View>
 
           <View style={s.zonesBlock}>
-            <Text style={s.zonesTitle}>YOUR DAY IN THREE STATES</Text>
-            <ZoneBar target={values.target} toleranceEnd={toleranceEnd} />
+            <Text style={s.zonesTitle}>{essentialsOnly ? 'ONE ACCESS MODE, TWO OUTCOMES' : 'YOUR DAY IN THREE STATES'}</Text>
+            <ZoneBar target={values.target} toleranceEnd={toleranceEnd} essentialsOnly={essentialsOnly} />
           </View>
         </>
       )}
@@ -457,6 +479,9 @@ const s = StyleSheet.create({
   zoneTarget: { height: '100%', borderRadius: 7, borderCurve: 'continuous', backgroundColor: GOAL_COLOR },
   zoneTolerance: { height: '100%', borderRadius: 7, borderCurve: 'continuous', backgroundColor: TOLERANCE_COLOR },
   zoneEssentialsCap: { width: 22, height: '100%', borderRadius: 7, borderCurve: 'continuous', backgroundColor: ESSENTIALS_COLOR, boxShadow: '0 3px 9px rgba(225,75,90,0.24)' },
+  alwaysProtectedBand: { marginTop: 7, minHeight: 27, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 10, borderCurve: 'continuous', backgroundColor: '#F9E4E7', paddingHorizontal: 10 },
+  alwaysProtectedDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: ESSENTIALS_COLOR, boxShadow: '0 2px 6px rgba(225,75,90,0.28)' },
+  alwaysProtectedText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.05, color: '#A63A4B' },
   zoneLegend: { marginTop: 12, flexDirection: 'row', gap: 7 },
   zoneLegendItem: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'flex-start', gap: 5 },
   zoneLegendDot: { flexShrink: 0, width: 8, height: 8, marginTop: 2, borderRadius: 4 },

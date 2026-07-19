@@ -34,7 +34,6 @@ import FocusCard, { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
 import { PulseDot } from './FocusMeter';
 import DayGauge, { gaugeStanding, gaugeStateColor, GAUGE_ESSENTIALS_COLOR } from './DayGauge';
 import PlanCardBackdrop from './PlanCardBackdrop';
-import ZoneClock from './ZoneClock';
 import { planVisualFor, type PlanVisual } from './planVisuals';
 import { RadiantTrophy, StreakMedallion, TrophyShineBackdrop } from './TrophyRadiance';
 import GoldButton from './GoldButton';
@@ -46,13 +45,11 @@ import { isNativeFocusAvailable } from './focusNativeBridge';
 import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
 import {
   acknowledgeMilestone,
-  activeZone,
   allCoreEssentialIds,
   dateKey,
   formatClockMs,
   formatEndsAt,
   formatMinutesShort,
-  formatTimeOfDay,
   getEffectivePlan,
   getLiveDayStatus,
   getLiveUsageSnapshot,
@@ -124,8 +121,7 @@ function TodayRing() {
 }
 
 // Today's plan wears the streak trophy's radiance in its own colors: a ray
-// burst and a slow-breathing glow behind the plan's seal. Session plans carry
-// their real day-clock on the seal; daily plans carry the shield. Radiance is
+// burst and a slow-breathing glow behind the Daily Plan shield. Radiance is
 // reserved for what is alive right now — list and editor views stay still.
 function RadiantPlanSeal({ visual, plan }: { visual: PlanVisual; plan: DayPlan }) {
   const reduceMotion = useReducedMotion();
@@ -149,7 +145,6 @@ function RadiantPlanSeal({ visual, plan }: { visual: PlanVisual; plan: DayPlan }
 
   const glowStyle = useAnimatedStyle(() => ({ opacity: 0.4 + breathe.value * 0.6 }));
 
-  const isSession = !plan.essentialsOnly && plan.kind === 'session';
   const field = 92;
   const cx = field / 2;
   const inner = 29;
@@ -178,14 +173,8 @@ function RadiantPlanSeal({ visual, plan }: { visual: PlanVisual; plan: DayPlan }
         })}
       </Svg>
       <View style={[s.sealDisc, { borderColor: visual.border }]}>
-        {isSession ? (
-          <ZoneClock zones={plan.zones} size={40} compact />
-        ) : (
-          <>
-            <View style={[s.sealDiscRing, { borderColor: visual.accent }]} />
-            <Shield s={21} c={visual.accent} w={1.9} />
-          </>
-        )}
+        <View style={[s.sealDiscRing, { borderColor: visual.accent }]} />
+        <Shield s={21} c={visual.accent} w={1.9} />
       </View>
       <View pointerEvents="none" style={[s.sealGlint, { backgroundColor: visual.accent }]} />
       <View pointerEvents="none" style={[s.sealGlintSmall, { backgroundColor: visual.accent }]} />
@@ -393,7 +382,6 @@ export default function FocusWatchView() {
 
   const now = useMemo(() => new Date(nowMs), [nowMs]);
   const plan = getEffectivePlan(state, now);
-  const session = activeZone(plan, now);
   const packsOn = state.purity.packs.filter(pack => pack.mode !== 'off').length
     + state.purity.customPacks.filter(pack => pack.mode !== 'off').length;
   const customSites = state.purity.customDomains.length
@@ -435,13 +423,6 @@ export default function FocusWatchView() {
   const essentialsNow = !!plan && !plan.essentialsOnly
     && (hardWallActive || todayStanding === 'essentials');
 
-  // Session-plan facts: which Session runs and what follows it. Sessions
-  // carry no boundaries of their own on this card — the global Screen Time
-  // border is the only one that counts here.
-  const sessionZones = plan?.kind === 'session' ? plan.zones : [];
-  const nextSession = session && sessionZones.length > 1
-    ? sessionZones[(sessionZones.findIndex(zone => zone.id === session.id) + 1) % sessionZones.length]
-    : null;
   let screenTimeValue: string | undefined;
   let screenTimeCaption: string | undefined;
   let screenTimeValueColor: string = C.text;
@@ -506,9 +487,7 @@ export default function FocusWatchView() {
         : 'Daily Essentials and iOS system access remain available until the local day ends.'
     : state.quiet && isProtected
     ? `${formatClockMs(state.quiet.endsAt - nowMs)} remaining · ends ${formatEndsAt(state.quiet.endsAt)}`
-    : session
-      ? `${session.name} · until ${formatTimeOfDay(session.endMinutes)}`
-      : planProtects
+    : planProtects
         ? webActive
           ? `${plan?.name} and Web Protection are standing guard.`
           : `${plan?.name} is shaping today.`
@@ -523,17 +502,9 @@ export default function FocusWatchView() {
     ? <FocusStatusChip text="Essentials only" color="#8F3544" pulse={false} />
     : hardWallActive && isProtected
     ? <FocusStatusChip text="Limit reached" color="#8F3544" pulse={false} />
-    : session && planProtects
-      ? <FocusStatusChip text="Live now" color="#327153" pulse />
-      : planProtects
+    : planProtects
         ? <FocusStatusChip text="Active" color="#327153" pulse />
         : undefined;
-  const webChip = webActive
-    ? <FocusStatusChip text="On" color="#2C7565" pulse />
-    : previewMode && webConfigured
-      ? <FocusStatusChip text="Preview" color="#65548E" pulse={false} />
-      : <FocusStatusChip text="Off" color="rgba(42,110,95,0.62)" pulse={false} />;
-
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScrollView
@@ -624,15 +595,13 @@ export default function FocusWatchView() {
                     <View style={s.todayCopy}>
                       <Text style={[s.todayKicker, { color: visual.accent }]}>TODAY’S PLAN</Text>
                       <Text style={[s.todayName, { color: visual.ink }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{plan.name}</Text>
-                      {(essentialsOnly || essentialsNow || session) && (
+                      {(essentialsOnly || essentialsNow) && (
                         <Text style={[s.todayStatus, { color: visual.body }]} numberOfLines={1}>
                           {essentialsOnly
                             ? 'Only Essentials are open today'
                             : essentialsNow
                               ? 'Limit spent · Essentials remain open'
-                              : nextSession
-                                ? `${session!.name} is running · ${nextSession.name} follows`
-                                : `${session!.name} is running`}
+                              : null}
                         </Text>
                       )}
                       {(usedToday != null || (!essentialsOnly && targetMinutes != null)) && (
@@ -859,7 +828,6 @@ export default function FocusWatchView() {
             title="Web Protection"
             tint={FOCUS_TINTS.green}
             watermark={<Globe s={84} c="#3D8273" w={1.1} />}
-            chip={webChip}
             description="Block gambling, adult content, and other harmful sites in browsers."
             onPress={() => router.push('/clean-sight' as never)}
             style={s.navCard}

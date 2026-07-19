@@ -4,6 +4,10 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
+  Easing,
+  FadeIn,
+  FadeOut,
+  LinearTransition,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -44,8 +48,8 @@ import TaskAnalyticsSheet from '@/components/tasks/TaskAnalyticsSheet';
 import NotificationsSheet from '@/components/tasks/NotificationsSheet';
 import { useReadingList } from '@/components/library/ReadingListContext';
 import { useInnerTools } from '@/components/inner-tools/InnerToolsContext';
-import { useMonthlyGoals } from '@/components/inner-tools/MonthlyGoalsContext';
-import { AnimatedSealCheck, AnimatedStrikeText, fireGoalToggleHaptic, GoalCompletionConfetti, toRoman } from '@/components/inner-tools/MonthlyGoalRow';
+import { sortMonthlyGoals, useMonthlyGoals } from '@/components/inner-tools/MonthlyGoalsContext';
+import { AnimatedSealCheck, AnimatedStrikeText, fireGoalToggleHaptic, GoalCompletionConfetti, MONTHLY_GOAL_CELEBRATION_MS, toRoman } from '@/components/inner-tools/MonthlyGoalRow';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { useBigEvents } from '@/components/journal/BigEventsContext';
 import { getBigEventCountdown, getBigEventsForDate } from '@/components/journal/bigEventsLogic';
@@ -1754,6 +1758,7 @@ export default function HomeView({
                               done={displayTask.state === 'done'}
                               color="#C5A059"
                               layerStyle={s.checkFlourishLayer}
+                              unmountWhenSettled
                             />
                           )}
                           {canToggle && (
@@ -1933,12 +1938,14 @@ function MonthlyGoalsHomeCard() {
   const monthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   const monthLabel = today.toLocaleDateString('en-US', { month: 'long' });
   const [uncheckConfirm, setUncheckConfirm] = useState<{ id: string; text: string } | null>(null);
+  const [celebratingGoalIds, setCelebratingGoalIds] = useState<string[]>([]);
+  const completionTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  const allGoals = goalsByMonth[monthKey] ?? [];
+  const allGoals = useMemo(() => goalsByMonth[monthKey] ?? [], [goalsByMonth, monthKey]);
   // Stable order: respect sortOrder, then creation time. Completed goals stay
   // in place — checking should not reorder the list.
   const sorted = useMemo(() => {
-    return [...allGoals].sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
+    return sortMonthlyGoals(allGoals);
   }, [allGoals]);
 
   const total = allGoals.length;
@@ -1951,13 +1958,28 @@ function MonthlyGoalsHomeCard() {
   const visible = sorted.slice(0, MAX_VISIBLE);
   const hiddenCount = Math.max(0, sorted.length - MAX_VISIBLE);
 
+  useEffect(() => () => {
+    Object.values(completionTimersRef.current).forEach(clearTimeout);
+  }, []);
+
+  const completeAfterCelebration = (id: string) => {
+    if (completionTimersRef.current[id]) return;
+    setCelebratingGoalIds(current => current.includes(id) ? current : [...current, id]);
+    completionTimersRef.current[id] = setTimeout(() => {
+      delete completionTimersRef.current[id];
+      void toggleGoal(id).finally(() => {
+        setCelebratingGoalIds(current => current.filter(goalId => goalId !== id));
+      });
+    }, MONTHLY_GOAL_CELEBRATION_MS);
+  };
+
   const onToggle = (goal: { id: string; text: string; isCompleted: boolean }) => {
     if (goal.isCompleted) {
       setUncheckConfirm({ id: goal.id, text: goal.text });
       return;
     }
     fireGoalToggleHaptic(true);
-    toggleGoal(goal.id);
+    completeAfterCelebration(goal.id);
   };
 
   const confirmUncheck = () => {
@@ -1998,22 +2020,35 @@ function MonthlyGoalsHomeCard() {
         </Text>
       </View>
       {visible.map((goal, index) => (
-        <View key={goal.id} style={[s.mgRow, goal.isCompleted && s.mgRowDone]}>
-          <View pointerEvents="none" style={[s.mgRowHighlight, goal.isCompleted && s.mgRowHighlightDone]} />
-          {goal.isCompleted && <View pointerEvents="none" style={s.mgDoneSpine} />}
+        (() => {
+          const isCelebrating = celebratingGoalIds.includes(goal.id);
+          const displayDone = goal.isCompleted || isCelebrating;
+          return (
+        <Reanimated.View
+          key={goal.id}
+          entering={FadeIn.duration(180)}
+          exiting={FadeOut.duration(140)}
+          layout={LinearTransition.duration(340).easing(Easing.out(Easing.cubic))}
+        >
+        <View pointerEvents={isCelebrating ? 'none' : 'auto'} style={[s.mgRow, displayDone && s.mgRowDone]}>
+          <View pointerEvents="none" style={[s.mgRowHighlight, displayDone && s.mgRowHighlightDone]} />
+          {displayDone && <View pointerEvents="none" style={s.mgDoneSpine} />}
           <AnimatedSealCheck
-            done={goal.isCompleted}
+            done={displayDone}
             numeral={toRoman(index)}
             onPress={() => onToggle(goal)}
             size={30}
           />
           <AnimatedStrikeText
             text={goal.text}
-            done={goal.isCompleted}
+            done={displayDone}
             textStyle={s.mgRowText}
           />
-          <GoalCompletionConfetti done={goal.isCompleted} />
         </View>
+        <GoalCompletionConfetti done={displayDone} />
+        </Reanimated.View>
+          );
+        })()
       ))}
       <TouchableOpacity onPress={openManage} activeOpacity={0.84} style={s.mgFooter}>
         <Text style={s.mgFooterText}>
@@ -2074,21 +2109,32 @@ function StatusAnimatedTaskRow({
   children: React.ReactNode;
 }) {
   const isInactive = state === 'done' || state === 'skipped';
-  const opacity = useSharedValue(isInactive ? 0.72 : 1);
+  const tintOpacity = useSharedValue(isInactive ? 1 : 0);
   const scale = useSharedValue(1);
   const lift = useSharedValue(0);
   const previousState = useRef(state);
+  const [transitionActive, setTransitionActive] = useState(false);
+  const stateChangedThisRender = previousState.current !== state;
 
   useEffect(() => {
-    const becameInactive = previousState.current !== state && isInactive;
-    const becameActive = previousState.current !== state && !isInactive;
+    const stateChanged = previousState.current !== state;
+    const becameInactive = stateChanged && isInactive;
+    const becameActive = stateChanged && !isInactive;
     previousState.current = state;
+
+    if (!stateChanged) {
+      tintOpacity.value = isInactive ? 1 : 0;
+      return;
+    }
+
+    setTransitionActive(true);
+    let finishMs: number;
 
     if (becameInactive) {
       // For 'done' we delay the dim until the celebratory burst + strike
       // finish (~1160ms). For 'skipped' there's no celebration, so dim now.
       const dimDelay = state === 'done' ? 1160 : 0;
-      opacity.value = withDelay(dimDelay, withTiming(0.72, { duration: 280 }));
+      tintOpacity.value = withDelay(dimDelay, withTiming(1, { duration: 280 }));
       scale.value = withTiming(0.985, { duration: 95 }, () => {
         scale.value = withSpring(1, {
           damping: 18,
@@ -2103,11 +2149,9 @@ function StatusAnimatedTaskRow({
           mass: 0.7,
         });
       });
-      return;
-    }
-
-    if (becameActive) {
-      opacity.value = withTiming(1, { duration: 115 });
+      finishMs = dimDelay + 340;
+    } else if (becameActive) {
+      tintOpacity.value = withTiming(0, { duration: 115 });
       lift.value = withSpring(0, {
         damping: 20,
         stiffness: 260,
@@ -2124,33 +2168,45 @@ function StatusAnimatedTaskRow({
           mass: 0.72,
         });
       });
-      return;
+      finishMs = 520;
+    } else {
+      tintOpacity.value = withTiming(isInactive ? 1 : 0, { duration: 150 });
+      scale.value = withSpring(1, {
+        damping: 18,
+        stiffness: 245,
+        mass: 0.72,
+      });
+      lift.value = withSpring(0, {
+        damping: 18,
+        stiffness: 245,
+        mass: 0.72,
+      });
+      finishMs = 220;
     }
 
-    opacity.value = withTiming(isInactive ? 0.72 : 1, { duration: 150 });
-    scale.value = withSpring(1, {
-      damping: 18,
-      stiffness: 245,
-      mass: 0.72,
-    });
-    lift.value = withSpring(0, {
-      damping: 18,
-      stiffness: 245,
-      mass: 0.72,
-    });
-  }, [isInactive, lift, opacity, scale, state]);
+    const finishTimer = setTimeout(() => setTransitionActive(false), finishMs);
+    return () => clearTimeout(finishTimer);
+  }, [isInactive, lift, scale, state, tintOpacity]);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
+  const rowStyle = useAnimatedStyle(() => ({
     transform: [
       { translateY: lift.value },
       { scale: scale.value },
     ],
   }));
+  const tintStyle = useAnimatedStyle(() => ({
+    opacity: tintOpacity.value,
+  }));
+  const showAnimatedTint = stateChangedThisRender || transitionActive;
 
   return (
-    <Reanimated.View style={animatedStyle}>
+    <Reanimated.View style={rowStyle}>
       {children}
+      {showAnimatedTint
+        ? <Reanimated.View pointerEvents="none" style={[s.settledTaskTint, tintStyle]} />
+        : isInactive
+          ? <View pointerEvents="none" style={s.settledTaskTint} />
+          : null}
     </Reanimated.View>
   );
 }
@@ -2533,6 +2589,15 @@ const s = StyleSheet.create({
     color: '#8F7138',
   },
   swipeWrap: { position: 'relative', marginBottom: 0 },
+  settledTaskTint: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 4,
+    borderRadius: 18,
+    backgroundColor: 'rgba(252,252,252,0.28)',
+  },
   dayActionsRow: {
     flexDirection: 'row',
     gap: 8,
@@ -2755,7 +2820,7 @@ const s = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  mgSection: { marginTop: 14 },
+  mgSection: { marginTop: 14, position: 'relative', overflow: 'visible' },
   mgHead: {
     flexDirection: 'row',
     alignItems: 'flex-end',

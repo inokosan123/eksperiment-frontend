@@ -27,11 +27,29 @@ type MonthlyGoalsContextValue = {
 const MonthlyGoalsContext = createContext<MonthlyGoalsContextValue | null>(null);
 
 function indexByMonth(goals: MonthlyGoal[]) {
-  return goals.reduce<Record<string, MonthlyGoal[]>>((acc, goal) => {
+  const indexed = goals.reduce<Record<string, MonthlyGoal[]>>((acc, goal) => {
     if (!acc[goal.month]) acc[goal.month] = [];
     acc[goal.month].push(goal);
     return acc;
   }, {});
+  Object.keys(indexed).forEach(month => {
+    indexed[month] = sortMonthlyGoals(indexed[month]);
+  });
+  return indexed;
+}
+
+// Open intentions always lead. Completed goals stay in the month's record,
+// but settle below every open item so Home never hides unfinished work.
+export function sortMonthlyGoals(goals: MonthlyGoal[]) {
+  return [...goals].sort((left, right) => (
+    Number(left.isCompleted) - Number(right.isCompleted)
+    || left.sortOrder - right.sortOrder
+    || left.createdAt - right.createdAt
+  ));
+}
+
+function reindexMonthlyGoals(goals: MonthlyGoal[]) {
+  return sortMonthlyGoals(goals).map((goal, index) => ({ ...goal, sortOrder: index }));
 }
 
 function currentMonthKey() {
@@ -112,9 +130,26 @@ export function MonthlyGoalsProvider({ children }: { children: React.ReactNode }
   const toggleGoal = useCallback(async (id: string) => {
     const target = goals.find(g => g.id === id);
     if (!target) return;
-    const next: MonthlyGoal = { ...target, isCompleted: !target.isCompleted };
-    await updateGoal(next);
-  }, [goals, updateGoal]);
+    const reorderedMonth = reindexMonthlyGoals(
+      goals
+        .filter(goal => goal.month === target.month)
+        .map(goal => goal.id === id ? { ...goal, isCompleted: !goal.isCompleted } : goal),
+    );
+    const byId = new Map(reorderedMonth.map(goal => [goal.id, goal]));
+
+    // Move first, persist second: the UI responds instantly and its Roman
+    // numerals close up at the same time as the completed item moves down.
+    setGoals(prev => prev.map(goal => byId.get(goal.id) ?? goal));
+
+    try {
+      const savedGoals = await Promise.all(reorderedMonth.map(upsertMonthlyGoal));
+      const savedById = new Map(savedGoals.map(goal => [goal.id, goal]));
+      setGoals(prev => prev.map(goal => savedById.get(goal.id) ?? goal));
+    } catch (error) {
+      console.warn('Failed to reorder monthly goals after toggle', error);
+      await refresh();
+    }
+  }, [goals, refresh]);
 
   const deleteGoal = useCallback(async (id: string) => {
     setGoals(prev => prev.filter(g => g.id !== id));

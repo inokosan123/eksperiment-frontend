@@ -244,6 +244,9 @@ export default function FocusNativeCoordinator() {
     let lastTimeContext = localTimeContext();
     const appStateSubscription = AppState.addEventListener('change', next => {
       if (next !== 'active') return;
+      // A Hard Lock request may have become eligible while iOS suspended the
+      // host. Apply it before rebuilding native web protection on foreground.
+      tickDayPlanStore();
       lastTimeContext = localTimeContext();
       void reconcileAuthorization();
     });

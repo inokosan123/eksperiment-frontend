@@ -129,22 +129,29 @@ motion is involved.
 4. Exercise a Session Plan through a back-to-back boundary and an overnight
    Session split. Confirm there is no visible unprotected gap.
 5. Reach the Daily Target and verify only trophy eligibility changes; then reach
-   the Essential-only threshold and verify the hard wall remains for the local
-   day.
-6. Start Quiet Hour with a custom temporary allowlist. Verify it overrides
+   the ordinary plan's Essentials-only threshold and verify the hard wall
+   remains for the local day.
+6. Activate an Essentials-only Plan with a non-zero Goal and Tolerance. Verify
+   its Global Essentials plus plan-only app allowlist applies from minute one,
+   dormant Daily/Session rules never apply, the Goal can still earn or lose the
+   trophy, and no redundant hard-wall event fires at the Tolerance endpoint.
+7. Switch that same plan back to its prior planning style. Verify its dormant
+   rules return, while plan-only Essentials do not leak into Global Essentials
+   or another plan. Confirm Always Blocked still wins in both modes.
+8. Start Quiet Hour with a custom temporary allowlist. Verify it overrides
    ordinary Session limits, intersects with a reached hard wall, never opens an
    Always Blocked app, and expires while Anasta is closed.
-7. Grant a Loose 15-minute temporary window. Edit or foreground Focus during
+9. Grant a Loose 15-minute temporary window. Edit or foreground Focus during
    that window and verify access still expires on time.
-8. Turn Clean Sight packs and custom domains on and off. Test Safari plus at
+10. Turn Clean Sight packs and custom domains on and off. Test Safari plus at
    least one supported third-party browser and verify the capacity/omitted
    status matches the native result.
-9. Open one-day and 30-day native analytics. Confirm private report data renders
+11. Open one-day and 30-day native analytics. Confirm private report data renders
    without being copied into the JavaScript history store.
-10. Change time zone, cross local midnight, revoke authorization, and relaunch
+12. Change time zone, cross local midnight, revoke authorization, and relaunch
     after the app was terminated. Confirm the resolver recalculates the current
     plan and shows any native scheduling error honestly.
-11. Leave the Focus landing screen open for at least ten minutes on the weakest
+13. Leave the Focus landing screen open for at least ten minutes on the weakest
     supported iPhone. Check touch latency, scrolling, frame pacing, temperature,
     and battery impact. The primary Lottie pauses off-screen/backgrounded and
     no second continuous animation competes with it.
