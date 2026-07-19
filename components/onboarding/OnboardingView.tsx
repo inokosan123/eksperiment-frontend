@@ -22683,15 +22683,19 @@ const SYSTEM_BUILD_TICKS = [800, 1600, 3050, 3800, 5100];
 // Each struck row flies into the crest this long after its tick.
 const SYSTEM_BUILD_ABSORB_DELAY = 620;
 const SYSTEM_BUILD_READY_AT = 5900;
-const SYSTEM_BUILD_LEAVE_AT = 7050;
-const SYSTEM_BUILD_DONE_AT = 7820;
+const SYSTEM_BUILD_LEAVE_AT = 6450;
+// The forge handover, borrowed 1:1 from the recap loading: a warm disc
+// blooms from the centre and covers the cut; onDone fires while it is still
+// wide, the root FadeOut carries the rest.
+const SYSTEM_BUILD_FLARE_AT = 6600;
+const SYSTEM_BUILD_DONE_AT = 7070;
 // Orbit speed in deg/s: starts below the preload's cruising pace and rises
 // with every absorbed row — the crest grows visibly unstable.
 const SYSTEM_BUILD_ORBIT_SPEEDS = [55, 95, 140, 190, 250, 320];
 // Flight vector from a row's check circle into the crest centre (fixed dp —
 // the column between them is constant-height chrome).
 const SYSTEM_BUILD_GHOST_DX = 134;
-const SYSTEM_BUILD_GHOST_BASE_DY = 260;
+const SYSTEM_BUILD_GHOST_BASE_DY = 122;
 const SYSTEM_BUILD_GHOST_ROW_DY = 40;
 // Home mounts beneath the veil only AFTER the last row has ticked: its heavy
 // first render blocks the JS thread, and any pending tick timers would all
@@ -22888,9 +22892,8 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   const grow = useSharedValue(0);
   const wobble = useSharedValue(0);
   const bloom = useSharedValue(0);
-  // The handover light: fires on leave, swells from the crest zone while the
-  // veil's own background melts away — Home is revealed inside the light.
-  const burst = useSharedValue(0);
+  // The forge disc that covers the cut to Home — recap-loading grammar.
+  const flare = useSharedValue(0);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
@@ -22917,7 +22920,6 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
     );
     sheen.value = withRepeat(withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.quad) }), -1, false);
     wobble.value = withRepeat(withTiming(1, { duration: 2300, easing: Easing.linear }), -1, false);
-    preloadAchievementFeedbackSound();
 
     const timers: ReturnType<typeof setTimeout>[] = [];
     SYSTEM_BUILD_TICKS.forEach((at, index) => {
@@ -22946,10 +22948,9 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
     });
     timers.push(setTimeout(() => {
       // The burst: one last furious lap, the ring disperses, the crest pops
-      // and settles — heard, felt and seen in the same instant.
+      // and settles — felt and seen in the same instant. No sound by design.
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       runStrongHaptic();
-      void playAchievementCompleteFeedback();
       orbitSpeed.value = withSequence(
         withTiming(560, { duration: 380, easing: Easing.in(Easing.quad) }),
         withTiming(0, { duration: 700, easing: Easing.out(Easing.cubic) }),
@@ -22967,8 +22968,11 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
     timers.push(setTimeout(() => {
       setPhase('leaving');
       leave.value = withTiming(1, { duration: 480, easing: Easing.linear });
-      burst.value = withTiming(1, { duration: 740, easing: Easing.out(Easing.cubic) });
     }, SYSTEM_BUILD_LEAVE_AT));
+    timers.push(setTimeout(() => {
+      runBubbleHaptic();
+      flare.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.cubic) });
+    }, SYSTEM_BUILD_FLARE_AT));
     timers.push(setTimeout(() => {
       onDoneRef.current();
     }, SYSTEM_BUILD_DONE_AT));
@@ -22982,7 +22986,7 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       cancelAnimation(grow);
       cancelAnimation(wobble);
       cancelAnimation(bloom);
-      cancelAnimation(burst);
+      cancelAnimation(flare);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -23035,85 +23039,46 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   const barLeaveStyle = useAnimatedStyle(() => ({
     opacity: interpolate(leave.value, [0, 0.3], [1, 0], 'clamp'),
   }));
-  const crownLeaveStyle = useAnimatedStyle(() => {
-    const raw = (leave.value - 0.5) / 0.5;
-    const local = raw < 0 ? 0 : raw > 1 ? 1 : raw;
-    return {
-      opacity: 1 - local,
-      transform: [{ translateY: -10 * local }],
-    };
-  });
-  // Two-layer handover, same grammar as the preload farewell: the veil's own
-  // paper melts away first, Home appears inside the swelling light.
-  const bgMeltStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(burst.value, [0.18, 0.62], [1, 0], 'clamp'),
+  // The whole tableau dissolves into the flare, forge-style: content fades
+  // and swells a touch as the disc covers the screen.
+  const contentFlareStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(flare.value, [0.3, 1], [1, 0], 'clamp'),
+    transform: [{ scale: 1 + flare.value * 0.04 }],
   }));
-  const burstStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(burst.value, [0, 0.22, 0.72, 1], [0, 0.95, 0.55, 0]),
-    transform: [{ scale: 0.12 + burst.value * 2.2 }],
+  const flareStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(flare.value, [0, 0.3, 1], [0, 0.92, 0], 'clamp'),
+    transform: [{ scale: interpolate(flare.value, [0, 1], [0.4, 3.6], 'clamp') }],
   }));
 
   return (
-    <Reanimated.View exiting={FadeOut.duration(320)} style={s.sysVeil}>
-      <Reanimated.View pointerEvents="none" style={[s.sysVeilBg, bgMeltStyle]}>
-        <View pointerEvents="none" style={s.introWarmth}>
-          <LinearGradient
-            colors={['rgba(255,255,255,0)', 'rgba(246,225,202,0.46)', 'rgba(255,241,225,0.98)']}
-            locations={[0, 0.52, 1]}
-            style={StyleSheet.absoluteFill}
-          />
-        </View>
-      </Reanimated.View>
-      <View style={s.sysVeilContent}>
-        <Reanimated.View style={crownLeaveStyle}>
-          <Reanimated.View
-            entering={FadeIn.duration(520).withInitialValues({
-              opacity: 0,
-              transform: [{ translateY: 10 }, { scale: 0.92 }],
-            })}
-            style={s.sysVeilCrestBox}
-          >
-            <Reanimated.View pointerEvents="none" style={[s.sysVeilCrestHalo, crestHaloStyle]} />
-            <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringStyle]}>
-              <View style={s.sysVeilOrbitComet} />
-            </Reanimated.View>
-            <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringTailAStyle]}>
-              <View style={[s.sysVeilOrbitComet, s.sysVeilOrbitCometSmall]} />
-            </Reanimated.View>
-            <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringTailBStyle]}>
-              <View style={[s.sysVeilOrbitComet, s.sysVeilOrbitCometTiny]} />
-            </Reanimated.View>
-            <Reanimated.View style={[s.sysVeilLogoPlate, crestPlateStyle]}>
-              <Image source={APP_LOGO} style={s.sysVeilLogo} resizeMode="cover" />
-            </Reanimated.View>
+    <Reanimated.View exiting={FadeOut.duration(260)} style={s.sysVeil}>
+      <View pointerEvents="none" style={s.introWarmth}>
+        <LinearGradient
+          colors={['rgba(255,255,255,0)', 'rgba(246,225,202,0.46)', 'rgba(255,241,225,0.98)']}
+          locations={[0, 0.52, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
+      <Reanimated.View style={[s.sysVeilContent, contentFlareStyle]}>
+        <Reanimated.View
+          entering={FadeIn.duration(520).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 10 }, { scale: 0.92 }],
+          })}
+          style={s.sysVeilCrestBox}
+        >
+          <Reanimated.View pointerEvents="none" style={[s.sysVeilCrestHalo, crestHaloStyle]} />
+          <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringStyle]}>
+            <View style={s.sysVeilOrbitComet} />
           </Reanimated.View>
-          <Reanimated.View entering={FadeIn.delay(90).duration(320)} style={s.introRule} />
-          <Reanimated.View
-            entering={FadeInRight.delay(140).duration(460).withInitialValues({
-              opacity: 0,
-              transform: [{ translateX: 16 }],
-            })}
-            style={s.introCopy}
-          >
-            <Text style={s.sysVeilEyebrow}>{phase === 'working' ? 'ONE MOMENT' : 'ALL SET'}</Text>
-            <View style={s.sysVeilTitleSlot}>
-              {phase === 'working' ? (
-                <Reanimated.Text key="sysveil-title-working" exiting={FadeOut.duration(240)} style={s.introTitle}>
-                  Creating{'\n'}your system.
-                </Reanimated.Text>
-              ) : (
-                <Reanimated.Text
-                  key="sysveil-title-ready"
-                  entering={FadeInUp.delay(140).duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-                    opacity: 0,
-                    transform: [{ translateY: 12 }],
-                  })}
-                  style={s.introTitle}
-                >
-                  Your Home{'\n'}is ready.
-                </Reanimated.Text>
-              )}
-            </View>
+          <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringTailAStyle]}>
+            <View style={[s.sysVeilOrbitComet, s.sysVeilOrbitCometSmall]} />
+          </Reanimated.View>
+          <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringTailBStyle]}>
+            <View style={[s.sysVeilOrbitComet, s.sysVeilOrbitCometTiny]} />
+          </Reanimated.View>
+          <Reanimated.View style={[s.sysVeilLogoPlate, crestPlateStyle]}>
+            <Image source={APP_LOGO} style={s.sysVeilLogo} resizeMode="cover" />
           </Reanimated.View>
         </Reanimated.View>
         <View style={s.sysVeilRows}>
@@ -23143,27 +23108,9 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
             />
           </Reanimated.View>
         </Reanimated.View>
-      </View>
-      {phase !== 'working' ? (
-        <View pointerEvents="none" style={s.sysVeilConfetti}>
-          <LottieView
-            source={CONFETTI_SOURCE}
-            autoPlay
-            loop={false}
-            speed={0.92}
-            resizeMode="cover"
-            renderMode="AUTOMATIC"
-            cacheComposition
-            style={StyleSheet.absoluteFill}
-          />
-        </View>
-      ) : null}
+      </Reanimated.View>
       {phase === 'leaving' ? (
-        <Reanimated.View pointerEvents="none" style={[s.sysVeilBurst, burstStyle]}>
-          <View style={s.sysVeilBurstOuter} />
-          <View style={s.sysVeilBurstMid} />
-          <View style={s.sysVeilBurstCore} />
-        </Reanimated.View>
+        <Reanimated.View pointerEvents="none" style={[s.sysVeilBloom, flareStyle]} />
       ) : null}
     </Reanimated.View>
   );
@@ -36708,10 +36655,15 @@ const s = StyleSheet.create({
     zIndex: 2000,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  sysVeilBg: {
-    ...StyleSheet.absoluteFillObject,
     backgroundColor: '#FFFDF8',
+  },
+  sysVeilBloom: {
+    position: 'absolute',
+    alignSelf: 'center',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: '#FFF4DC',
   },
   sysVeilCrestBox: {
     width: 132,
@@ -36800,43 +36752,6 @@ const s = StyleSheet.create({
     elevation: 6,
     zIndex: 20,
   },
-  sysVeilConfetti: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 2,
-  },
-  sysVeilBurst: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    width: 340,
-    height: 340,
-    marginLeft: -170,
-    marginTop: -370,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 3,
-  },
-  sysVeilBurstOuter: {
-    position: 'absolute',
-    width: 340,
-    height: 340,
-    borderRadius: 170,
-    backgroundColor: 'rgba(238,206,144,0.30)',
-  },
-  sysVeilBurstMid: {
-    position: 'absolute',
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: 'rgba(244,219,166,0.55)',
-  },
-  sysVeilBurstCore: {
-    position: 'absolute',
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: 'rgba(255,248,231,0.95)',
-  },
   sysVeilContent: {
     width: '100%',
     maxWidth: 360,
@@ -36844,25 +36759,13 @@ const s = StyleSheet.create({
     paddingHorizontal: 34,
     zIndex: 1,
   },
-  sysVeilEyebrow: {
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 2.6,
-    color: '#A98544',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
   sysVeilRows: {
     width: '100%',
     maxWidth: 316,
     alignSelf: 'center',
     rowGap: 15,
-    marginTop: 32,
+    marginTop: 28,
     marginBottom: 28,
-  },
-  sysVeilTitleSlot: {
-    minHeight: 90,
-    justifyContent: 'center',
   },
   sysVeilRowMain: {
     flex: 1,
