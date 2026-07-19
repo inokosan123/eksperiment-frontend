@@ -2602,20 +2602,20 @@ function TraditionIntroSlide({
 // bands; this trades it for bright vellum wearing the app's medallion
 // grammar. Hairline gold halo rings breathe behind the title like a
 // watermark, two watercolour washes drift and quietly take the active
-// slide's accent as the user swipes, a dawn glow grounds the bottom chrome,
-// and every so often a soft shaft of light crosses the paper like sun
-// through a curtain. Everything is translate/opacity only — no scale.
+// slide's accent as the user swipes, and a dawn glow grounds the bottom
+// chrome. Motion is deliberately spare — two drifting washes and floating
+// gold dust, translate/opacity only — so the carousel keeps every frame.
 const VALUE_ATELIER_WASH_COLORS = [
-  'rgba(197,160,89,0.15)', // organize — brand gold
-  'rgba(126,152,90,0.14)', // discipline — moss
-  'rgba(77,133,134,0.14)', // focus — teal
-  'rgba(213,171,88,0.17)', // faith — warm gold
+  'rgba(197,160,89,0.18)', // organize — brand gold
+  'rgba(126,152,90,0.17)', // discipline — moss
+  'rgba(77,133,134,0.17)', // focus — teal
+  'rgba(213,171,88,0.20)', // faith — warm gold
 ];
 const VALUE_ATELIER_COMPANION_COLORS = [
-  'rgba(213,171,88,0.12)', // organize — warmer gold echo
-  'rgba(197,160,89,0.12)', // discipline — gold steadies the moss
-  'rgba(143,93,108,0.11)', // focus — rose answers the teal
-  'rgba(197,160,89,0.13)', // faith — gold all the way down
+  'rgba(213,171,88,0.14)', // organize — warmer gold echo
+  'rgba(197,160,89,0.14)', // discipline — gold steadies the moss
+  'rgba(143,93,108,0.13)', // focus — rose answers the teal
+  'rgba(197,160,89,0.15)', // faith — gold all the way down
 ];
 const VALUE_ATELIER_GRADIENT = ['#FFFEFC', '#FFFDF8', '#FBF2E0'] as const;
 const VALUE_ATELIER_GRADIENT_LOCATIONS = [0, 0.5, 1] as const;
@@ -2631,30 +2631,16 @@ function ValueAtelierBackdrop({
 }) {
   const { width } = useWindowDimensions();
   const drift = useSharedValue(0);
-  const ringBreath = useSharedValue(0);
-  const twinkle = useSharedValue(0);
-  const sweep = useSharedValue(0);
+  const dust = useSharedValue(0);
 
   useEffect(() => {
-    drift.value = withRepeat(withTiming(1, { duration: 19000, easing: Easing.inOut(Easing.sin) }), -1, true);
-    ringBreath.value = withRepeat(withTiming(1, { duration: 8400, easing: Easing.inOut(Easing.sin) }), -1, true);
-    twinkle.value = withRepeat(withTiming(1, { duration: 3700, easing: Easing.inOut(Easing.quad) }), -1, true);
-    sweep.value = withRepeat(
-      withSequence(
-        withTiming(0, { duration: 3400 }),
-        withTiming(1, { duration: 6400, easing: Easing.inOut(Easing.cubic) }),
-        withTiming(0, { duration: 0 }),
-      ),
-      -1,
-      false,
-    );
+    drift.value = withRepeat(withTiming(1, { duration: 16000, easing: Easing.inOut(Easing.sin) }), -1, true);
+    dust.value = withRepeat(withTiming(1, { duration: 7400, easing: Easing.inOut(Easing.sin) }), -1, true);
     return () => {
       cancelAnimation(drift);
-      cancelAnimation(ringBreath);
-      cancelAnimation(twinkle);
-      cancelAnimation(sweep);
+      cancelAnimation(dust);
     };
-  }, [drift, ringBreath, sweep, twinkle]);
+  }, [drift, dust]);
 
   // Where the carousel actually stands, drag included — the washes take the
   // active slide's accent mid-swipe, not after it.
@@ -2670,36 +2656,43 @@ function ValueAtelierBackdrop({
   const companionColorStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(accent.value, [0, 1, 2, 3], VALUE_ATELIER_COMPANION_COLORS),
   }));
+  // Visible but unhurried: the washes actually travel, the dust motes float
+  // counter to each other. Pure transforms — nothing here forces a repaint.
   const washDriftStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: interpolate(drift.value, [0, 1], [-9, 11]) },
-      { translateY: interpolate(drift.value, [0, 1], [7, -10]) },
+      { translateX: interpolate(drift.value, [0, 1], [-20, 24]) },
+      { translateY: interpolate(drift.value, [0, 1], [16, -20]) },
     ],
   }));
   const companionDriftStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: interpolate(drift.value, [0, 1], [10, -8]) },
-      { translateY: interpolate(drift.value, [0, 1], [-6, 9]) },
+      { translateX: interpolate(drift.value, [0, 1], [22, -18]) },
+      { translateY: interpolate(drift.value, [0, 1], [-14, 20]) },
     ],
   }));
-  const dawnBreathStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(drift.value, [0, 1], [0.78, 1]),
+  const dustOne = useAnimatedStyle(() => ({
+    opacity: interpolate(dust.value, [0, 1], [0.45, 1]),
+    transform: [{ translateY: interpolate(dust.value, [0, 1], [-7, 7]) }],
   }));
-  const ringBreathA = useAnimatedStyle(() => ({
-    opacity: interpolate(ringBreath.value, [0, 1], [0.55, 1]),
+  const dustTwo = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(dust.value, [0, 1], [6, -6]) },
+      { translateX: interpolate(dust.value, [0, 1], [3, -3]) },
+    ],
   }));
-  const ringBreathB = useAnimatedStyle(() => ({
-    opacity: interpolate(ringBreath.value, [0, 1], [1, 0.5]),
+  const dustThree = useAnimatedStyle(() => ({
+    opacity: interpolate(dust.value, [0, 1], [1, 0.4]),
+    transform: [{ translateY: interpolate(dust.value, [0, 1], [-8, 6]) }],
   }));
-  const twinkleA = useAnimatedStyle(() => ({
-    opacity: interpolate(twinkle.value, [0, 1], [0.25, 1]),
+  const dustFour = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(dust.value, [0, 1], [5, -7]) }],
   }));
-  const twinkleB = useAnimatedStyle(() => ({
-    opacity: interpolate(twinkle.value, [0, 1], [1, 0.3]),
-  }));
-  const sweepStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(sweep.value, [0, 0.14, 0.5, 0.86, 1], [0, 0.7, 1, 0.7, 0]),
-    transform: [{ translateX: interpolate(sweep.value, [0, 1], [-width * 0.92, width * 0.92]) }],
+  const dustFive = useAnimatedStyle(() => ({
+    opacity: interpolate(dust.value, [0, 1], [0.5, 1]),
+    transform: [
+      { translateY: interpolate(dust.value, [0, 1], [-6, 8]) },
+      { translateX: interpolate(dust.value, [0, 1], [-3, 3]) },
+    ],
   }));
 
   const haloCenter = topInset + 64;
@@ -2707,22 +2700,22 @@ function ValueAtelierBackdrop({
   return (
     <View pointerEvents="none" style={s.valueAtelier}>
       {/* Dawn — the caramel foot, reborn as light */}
-      <Reanimated.View style={[s.valueAtelierDawnFar, dawnBreathStyle]} />
-      <Reanimated.View style={[s.valueAtelierDawn, dawnBreathStyle]} />
+      <View style={s.valueAtelierDawnFar} />
+      <View style={s.valueAtelierDawn} />
 
-      {/* Watermark halo behind the title */}
+      {/* Watermark halo behind the title — still, the way a watermark is */}
       <View style={[s.valueAtelierHaloDisc, { top: haloCenter - 140 }]} />
-      <Reanimated.View style={[s.valueAtelierRing, s.valueAtelierRingOne, { top: haloCenter - 110 }, ringBreathA]} />
-      <Reanimated.View style={[s.valueAtelierRing, s.valueAtelierRingTwo, { top: haloCenter - 160 }, ringBreathB]} />
-      <Reanimated.View style={[s.valueAtelierRing, s.valueAtelierRingThree, { top: haloCenter - 215 }, ringBreathA]} />
-      <Reanimated.View style={[s.valueAtelierRing, s.valueAtelierRingFour, { top: haloCenter - 274 }, ringBreathB]} />
+      <View style={[s.valueAtelierRing, s.valueAtelierRingOne, { top: haloCenter - 110 }]} />
+      <View style={[s.valueAtelierRing, s.valueAtelierRingTwo, { top: haloCenter - 160 }]} />
+      <View style={[s.valueAtelierRing, s.valueAtelierRingThree, { top: haloCenter - 215 }]} />
+      <View style={[s.valueAtelierRing, s.valueAtelierRingFour, { top: haloCenter - 274 }]} />
 
-      {/* Gold diamonds sprinkled along the margins */}
-      <Reanimated.View style={[s.valueAtelierSpark, { top: haloCenter + 148, left: '7.5%' }, twinkleA]} />
-      <View style={[s.valueAtelierSpark, { top: haloCenter - 6, right: '9%' }]} />
-      <Reanimated.View style={[s.valueAtelierSpark, { top: haloCenter + 236, right: '6%' }, twinkleB]} />
-      <View style={[s.valueAtelierSpark, { top: haloCenter + 56, left: '5%' }]} />
-      <Reanimated.View style={[s.valueAtelierSparkSmall, { top: haloCenter + 320, left: '11.5%' }, twinkleA]} />
+      {/* Gold dust floating along the margins */}
+      <Reanimated.View style={[s.valueAtelierSpark, { top: haloCenter + 148, left: '7.5%' }, dustOne]} />
+      <Reanimated.View style={[s.valueAtelierSpark, { top: haloCenter - 6, right: '9%' }, dustTwo]} />
+      <Reanimated.View style={[s.valueAtelierSpark, { top: haloCenter + 236, right: '6%' }, dustThree]} />
+      <Reanimated.View style={[s.valueAtelierSpark, { top: haloCenter + 56, left: '5%' }, dustFour]} />
+      <Reanimated.View style={[s.valueAtelierSparkSmall, { top: haloCenter + 320, left: '11.5%' }, dustFive]} />
 
       {/* Watercolour washes that take the slide's accent */}
       <Reanimated.View style={[s.valueAtelierWashWrap, washDriftStyle]}>
@@ -2733,19 +2726,6 @@ function ValueAtelierBackdrop({
         <Reanimated.View style={[s.valueAtelierWashHalo, companionColorStyle]} />
         <Reanimated.View style={[s.valueAtelierWashCore, companionColorStyle]} />
       </Reanimated.View>
-
-      {/* Sun through the curtain */}
-      <View style={s.valueAtelierSweepFrame}>
-        <Reanimated.View style={[s.valueAtelierSweep, sweepStyle]}>
-          <LinearGradient
-            colors={['rgba(255,246,224,0)', 'rgba(247,231,196,0.20)', 'rgba(255,253,246,0.34)', 'rgba(247,231,196,0.20)', 'rgba(255,246,224,0)']}
-            locations={[0, 0.3, 0.5, 0.7, 1]}
-            start={{ x: 0, y: 0.5 }}
-            end={{ x: 1, y: 0.5 }}
-            style={StyleSheet.absoluteFill}
-          />
-        </Reanimated.View>
-      </View>
     </View>
   );
 }
@@ -25944,7 +25924,7 @@ const s = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 1.5,
-    backgroundColor: 'rgba(183,141,64,0.30)',
+    backgroundColor: 'rgba(183,141,64,0.36)',
     transform: [{ rotate: '45deg' }],
   },
   valueAtelierSparkSmall: {
@@ -25952,7 +25932,7 @@ const s = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 1.2,
-    backgroundColor: 'rgba(183,141,64,0.26)',
+    backgroundColor: 'rgba(183,141,64,0.32)',
     transform: [{ rotate: '45deg' }],
   },
   valueAtelierWashWrap: {
@@ -25982,23 +25962,6 @@ const s = StyleSheet.create({
     width: '78%',
     height: '80%',
     borderRadius: 999,
-  },
-  valueAtelierSweepFrame: {
-    position: 'absolute',
-    top: '-14%',
-    bottom: '-14%',
-    left: '-16%',
-    right: '-16%',
-    overflow: 'hidden',
-    transform: [{ rotate: '14deg' }],
-  },
-  valueAtelierSweep: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: '50%',
-    width: 230,
-    marginLeft: -115,
   },
   valueCopy: {
     paddingHorizontal: 25,
