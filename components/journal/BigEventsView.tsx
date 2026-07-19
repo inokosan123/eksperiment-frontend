@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   Platform,
@@ -76,6 +76,9 @@ const GOLD = '#C5A059';
 const DEFAULT_EVENT_COLOR = GOLD;
 const EVENT_ICON_CHIP_SIZE = 54;
 const EVENT_ICON_MIN_GAP = 9;
+const EVENT_ICON_COLLAPSED_ROWS = 5;
+const EVENT_TYPE_GOLD = '#8A5A1A';
+const EVENT_TYPE_GREEN = '#2A6E5F';
 const LEAD_DAY_PRESETS = [15, 20, 30] as const;
 
 function isLeadDayPreset(value: number) {
@@ -313,7 +316,11 @@ function DateRow({
               </TouchableOpacity>
             </View>
 
-            <View style={d.selectedDateCard}>
+            <Animated.View
+              key={draft}
+              entering={FadeIn.duration(145).easing(Easing.out(Easing.quad))}
+              style={d.selectedDateCard}
+            >
               <View style={d.selectedDateBadge}>
                 <Text style={d.selectedDateMonth}>{formatDateMonth(draft)}</Text>
                 <Text style={d.selectedDateDay}>{dateFromKey(draft).getDate()}</Text>
@@ -322,7 +329,7 @@ function DateRow({
                 <Text style={d.selectedDateLabel}>SELECTED DATE</Text>
                 <Text style={d.selectedDateValue} numberOfLines={2}>{formatDateLong(draft)}</Text>
               </View>
-            </View>
+            </Animated.View>
 
             {Platform.OS === 'ios' && NativeDateTimePicker && (
               <View style={d.iosWrap}>
@@ -454,6 +461,63 @@ function ReminderSwitch({ enabled }: { enabled: boolean }) {
   );
 }
 
+function IconGridChevron({ expanded }: { expanded: boolean }) {
+  const progress = useSharedValue(expanded ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withTiming(expanded ? 1 : 0, {
+      duration: 190,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [expanded, progress]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${progress.value * 180}deg` }],
+  }));
+
+  return (
+    <View style={ef.showMoreArrowShell}>
+      <Animated.View style={animatedStyle}>
+        <ChevronDown s={16} c="#786C5E" w={2.2} />
+      </Animated.View>
+    </View>
+  );
+}
+
+function EventIconChoice({
+  icon,
+  active,
+  onSelect,
+}: {
+  icon: HabitEmojiName;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <View style={ef.iconCell}>
+      <Pressable
+        onPress={onSelect}
+        accessibilityRole="button"
+        accessibilityState={{ selected: active }}
+        style={({ pressed }) => [
+          ef.iconChip,
+          active && ef.iconChipActive,
+          pressed && { opacity: 0.78 },
+        ]}
+      >
+        <View style={ef.iconGlyphBox}>
+          <NotoEmoji name={icon} size={32} />
+        </View>
+        {active && (
+          <View pointerEvents="none" style={ef.iconSelectedBadge}>
+            <CheckSmall s={12} c="#FFFFFF" w={3} />
+          </View>
+        )}
+      </Pressable>
+    </View>
+  );
+}
+
 function EventForm({
   form,
   onChange,
@@ -489,14 +553,58 @@ function EventForm({
   const isEdit = form.id !== null;
   const guidePhase = session?.phase;
   const [iconGridWidth, setIconGridWidth] = useState(0);
+  const [iconsExpanded, setIconsExpanded] = useState(false);
+  const iconExpansionInitialized = useRef(false);
+  const iconRevealProgress = useSharedValue(0);
+  const extraIconsHeight = useSharedValue(0);
   const iconColumns = iconGridWidth > 0
     ? Math.max(3, Math.floor((iconGridWidth + EVENT_ICON_MIN_GAP) / (EVENT_ICON_CHIP_SIZE + EVENT_ICON_MIN_GAP)))
     : 5;
-  const trailingSpacerCount = (iconColumns - (EVENT_ICONS.length % iconColumns)) % iconColumns;
-  const trailingSpacers = useMemo(
-    () => Array.from({ length: trailingSpacerCount }, (_, index) => index),
-    [trailingSpacerCount],
+  const collapsedIconCount = iconColumns * EVENT_ICON_COLLAPSED_ROWS;
+  const collapsedIcons = useMemo(
+    () => EVENT_ICONS.slice(0, collapsedIconCount),
+    [collapsedIconCount],
   );
+  const extraIcons = useMemo(
+    () => EVENT_ICONS.slice(collapsedIconCount),
+    [collapsedIconCount],
+  );
+  const hiddenIconCount = extraIcons.length;
+  const collapsedSpacerCount = (iconColumns - (collapsedIcons.length % iconColumns)) % iconColumns;
+  const extraSpacerCount = (iconColumns - (extraIcons.length % iconColumns)) % iconColumns;
+  const collapsedSpacers = useMemo(
+    () => Array.from({ length: collapsedSpacerCount }, (_, index) => index),
+    [collapsedSpacerCount],
+  );
+  const extraSpacers = useMemo(
+    () => Array.from({ length: extraSpacerCount }, (_, index) => index),
+    [extraSpacerCount],
+  );
+
+  useEffect(() => {
+    if (!iconGridWidth || iconExpansionInitialized.current) return;
+    iconExpansionInitialized.current = true;
+    if (EVENT_ICONS.indexOf(form.icon) >= collapsedIconCount) {
+      setIconsExpanded(true);
+    }
+  }, [collapsedIconCount, form.icon, iconGridWidth]);
+
+  useEffect(() => {
+    iconRevealProgress.value = withTiming(iconsExpanded ? 1 : 0, {
+      duration: iconsExpanded ? 285 : 220,
+      easing: iconsExpanded
+        ? Easing.bezier(0.22, 1, 0.36, 1)
+        : Easing.bezier(0.4, 0, 0.2, 1),
+    });
+  }, [iconRevealProgress, iconsExpanded]);
+
+  const extraIconsRevealStyle = useAnimatedStyle(() => ({
+    height: extraIconsHeight.value * iconRevealProgress.value,
+    opacity: interpolate(iconRevealProgress.value, [0, 0.14, 1], [0, 0.34, 1]),
+    transform: [{
+      translateY: interpolate(iconRevealProgress.value, [0, 1], [-5, 0]),
+    }],
+  }));
   // Guided phases walk the form top-to-bottom: name → date → icon → save,
   // so the spotlight never jumps back up the screen.
   const advanceAfterTitle = () => {
@@ -556,6 +664,7 @@ function EventForm({
         onChangeText={t => onChange({ ...form, title: t })}
         placeholder="Event name..."
         placeholderTextColor="#C7C0B4"
+        selectionColor={GOLD}
         style={ef.input}
         returnKeyType="done"
         onSubmitEditing={advanceAfterTitle}
@@ -566,8 +675,20 @@ function EventForm({
           <Text style={ef.sectionLabel}>EVENT TYPE</Text>
           <View style={ef.typePicker}>
             {([
-              { value: 'none', label: 'ONE-TIME', detail: 'A single important date' },
-              { value: 'yearly', label: 'EVERY YEAR', detail: 'Birthday or anniversary' },
+              {
+                value: 'none',
+                label: 'ONE-TIME',
+                detail: 'A single important date',
+                accent: EVENT_TYPE_GOLD,
+                isYearly: false,
+              },
+              {
+                value: 'yearly',
+                label: 'EVERY YEAR',
+                detail: 'Birthday or anniversary',
+                accent: EVENT_TYPE_GREEN,
+                isYearly: true,
+              },
             ] as const).map(option => {
               const active = form.recurrence === option.value;
               return (
@@ -585,15 +706,47 @@ function EventForm({
                   }}
                   accessibilityRole="button"
                   accessibilityState={{ selected: active }}
-                  style={({ pressed }) => [ef.typeOption, active && ef.typeOptionActive, pressed && ef.pressed]}
+                  style={({ pressed }) => [
+                    ef.typeOption,
+                    option.isYearly ? ef.typeOptionGreen : ef.typeOptionGold,
+                    active && (option.isYearly ? ef.typeOptionGreenActive : ef.typeOptionGoldActive),
+                    pressed && ef.pressed,
+                  ]}
                 >
-                  <View style={[ef.typeIcon, active && ef.typeIconActive]}>
-                    {option.value === 'yearly'
-                      ? <RotateCcw s={17} c={active ? '#FFFFFF' : GOLD} w={2} />
-                      : <CalendarIcon s={17} c={active ? '#FFFFFF' : GOLD} w={2} />}
+                  <View pointerEvents="none" style={[
+                    ef.typeGlow,
+                    option.isYearly ? ef.typeGlowGreen : ef.typeGlowGold,
+                  ]} />
+                  <View style={ef.typeOptionTop}>
+                    <View style={[
+                      ef.typeIcon,
+                      option.isYearly ? ef.typeIconGreen : ef.typeIconGold,
+                      active && { backgroundColor: option.accent },
+                    ]}>
+                      {option.value === 'yearly'
+                        ? <RotateCcw s={18} c={active ? '#FFFFFF' : option.accent} w={2.1} />
+                        : <CalendarIcon s={18} c={active ? '#FFFFFF' : option.accent} w={2.1} />}
+                    </View>
+                    <View style={[
+                      ef.typeSelectionMark,
+                      { borderColor: option.accent },
+                      active && { backgroundColor: option.accent },
+                    ]}>
+                      {active ? (
+                        <Animated.View entering={FadeIn.duration(130)}>
+                          <CheckSmall s={11} c="#FFFFFF" w={2.8} />
+                        </Animated.View>
+                      ) : (
+                        <View style={[ef.typeSelectionDot, { backgroundColor: option.accent }]} />
+                      )}
+                    </View>
                   </View>
-                  <Text style={[ef.typeLabel, active && ef.typeLabelActive]}>{option.label}</Text>
-                  <Text style={[ef.typeDetail, active && ef.typeDetailActive]}>{option.detail}</Text>
+                  <Text style={[ef.typeLabel, { color: option.accent }]}>{option.label}</Text>
+                  <Text style={[
+                    ef.typeDetail,
+                    option.isYearly ? ef.typeDetailGreen : ef.typeDetailGold,
+                    active && ef.typeDetailActive,
+                  ]}>{option.detail}</Text>
                 </Pressable>
               );
             })}
@@ -750,39 +903,76 @@ function EventForm({
             iconsTarget.onLayout(event);
           }}
         >
-          {EVENT_ICONS.map(ic => {
-            const active = form.icon === ic;
-            return (
-              <Pressable
-                key={ic}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  onChange({ ...form, icon: ic });
-                  advanceAfterIcon();
-                }}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                style={({ pressed }) => [
-                  ef.iconChip,
-                  active && ef.iconChipActive,
-                  pressed && { opacity: 0.78 },
-                ]}
-              >
-                <View style={ef.iconGlyphBox}>
-                  <NotoEmoji name={ic} size={32} />
-                </View>
-                {active && (
-                  <View pointerEvents="none" style={ef.iconSelectedBadge}>
-                    <CheckSmall s={12} c="#FFFFFF" w={3} />
-                  </View>
-                )}
-              </Pressable>
-            );
-          })}
-          {trailingSpacers.map(index => (
-            <View key={`icon-spacer-${index}`} pointerEvents="none" style={ef.iconGridSpacer} />
+          {collapsedIcons.map(ic => (
+            <EventIconChoice
+              key={ic}
+              icon={ic}
+              active={form.icon === ic}
+              onSelect={() => {
+                Haptics.selectionAsync();
+                onChange({ ...form, icon: ic });
+                advanceAfterIcon();
+              }}
+            />
+          ))}
+          {collapsedSpacers.map(index => (
+            <View key={`collapsed-icon-spacer-${index}`} pointerEvents="none" style={ef.iconGridSpacer} />
           ))}
         </View>
+
+        <Animated.View
+          pointerEvents={iconsExpanded ? 'auto' : 'none'}
+          accessibilityElementsHidden={!iconsExpanded}
+          importantForAccessibility={iconsExpanded ? 'auto' : 'no-hide-descendants'}
+          style={[ef.extraIconClip, extraIconsRevealStyle]}
+        >
+          <View
+            style={ef.extraIconMeasure}
+            onLayout={event => {
+              extraIconsHeight.value = Math.ceil(event.nativeEvent.layout.height);
+            }}
+          >
+            <View style={ef.iconGrid}>
+              {extraIcons.map(ic => (
+                <EventIconChoice
+                  key={ic}
+                  icon={ic}
+                  active={form.icon === ic}
+                  onSelect={() => {
+                    Haptics.selectionAsync();
+                    onChange({ ...form, icon: ic });
+                    advanceAfterIcon();
+                  }}
+                />
+              ))}
+              {extraSpacers.map(index => (
+                <View key={`extra-icon-spacer-${index}`} pointerEvents="none" style={ef.iconGridSpacer} />
+              ))}
+            </View>
+          </View>
+        </Animated.View>
+
+        {hiddenIconCount > 0 && (
+          <Pressable
+            onPress={() => setIconsExpanded(current => !current)}
+            accessibilityRole="button"
+            accessibilityLabel={iconsExpanded ? 'Show fewer event icons' : 'Show more event icons'}
+            accessibilityState={{ expanded: iconsExpanded }}
+            style={({ pressed }) => [
+              ef.showMoreButton,
+              iconsExpanded && ef.showMoreButtonExpanded,
+              pressed && ef.pressed,
+            ]}
+          >
+            <View style={ef.showMoreCopy}>
+              <Text style={ef.showMoreTitle}>{iconsExpanded ? 'SHOW LESS' : 'SHOW MORE'}</Text>
+              <Text style={ef.showMoreMeta}>
+                {iconsExpanded ? 'Back to the first five rows' : `${hiddenIconCount} more icons`}
+              </Text>
+            </View>
+            <IconGridChevron expanded={iconsExpanded} />
+          </Pressable>
+        )}
       </View>
 
       <TouchableOpacity
@@ -811,30 +1001,101 @@ const ef = StyleSheet.create({
   close: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
 
   input: {
-    backgroundColor: '#F8F5EE', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
-    fontFamily: F.serifMedium, fontSize: 16, color: C.text,
+    minHeight: 64,
+    backgroundColor: '#FFFDF9',
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#E6DED0',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontFamily: F.serifMedium,
+    fontSize: 22,
+    lineHeight: 27,
+    letterSpacing: -0.25,
+    color: C.text,
+    shadowColor: '#6D5C42',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.035,
+    shadowRadius: 10,
+    elevation: 1,
   },
 
   sectionLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.8, color: C.textMuted, marginBottom: 8 },
   pressed: { opacity: 0.78 },
-  typePicker: { flexDirection: 'row', columnGap: 9 },
+  typePicker: { flexDirection: 'row', columnGap: 10 },
   typeOption: {
-    flex: 1, minHeight: 102, borderRadius: 16, borderWidth: 1, borderColor: '#E9E3D8',
-    backgroundColor: '#FBF9F4', paddingHorizontal: 12, paddingVertical: 12,
+    position: 'relative',
+    flex: 1,
+    minHeight: 124,
+    overflow: 'hidden',
+    borderRadius: 19,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 13,
   },
-  typeOptionActive: {
-    borderColor: 'rgba(197,160,89,0.58)', backgroundColor: '#FFF7E4',
-    shadowColor: GOLD, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 9, elevation: 2,
+  typeOptionGold: { borderColor: '#F0E3B8', backgroundColor: '#FFFCF5' },
+  typeOptionGreen: { borderColor: '#CFE6DE', backgroundColor: '#F7FBF9' },
+  typeOptionGoldActive: {
+    borderColor: '#D9BE79',
+    backgroundColor: '#FBF3DE',
+    shadowColor: EVENT_TYPE_GOLD,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.13,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  typeOptionGreenActive: {
+    borderColor: '#9FCABA',
+    backgroundColor: '#E1F1EC',
+    shadowColor: EVENT_TYPE_GREEN,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.13,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  typeGlow: {
+    position: 'absolute',
+    right: -20,
+    bottom: -26,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+  },
+  typeGlowGold: { backgroundColor: 'rgba(197,160,89,0.09)' },
+  typeGlowGreen: { backgroundColor: 'rgba(42,110,95,0.07)' },
+  typeOptionTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
   typeIcon: {
-    width: 31, height: 31, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(197,160,89,0.12)', marginBottom: 9,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  typeIconActive: { backgroundColor: GOLD },
-  typeLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.35, color: '#887B6D' },
-  typeLabelActive: { color: '#7D622C' },
-  typeDetail: { marginTop: 3, fontFamily: F.serif, fontSize: 12.5, lineHeight: 16, color: '#A39A8F' },
-  typeDetailActive: { color: '#7F756A' },
+  typeIconGold: { backgroundColor: '#F4E6BF' },
+  typeIconGreen: { backgroundColor: '#D4EAE2' },
+  typeSelectionMark: {
+    width: 23,
+    height: 23,
+    borderRadius: 12,
+    borderWidth: 1.25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.62)',
+  },
+  typeSelectionDot: { width: 5, height: 5, borderRadius: 3, opacity: 0.46 },
+  typeLabel: { fontFamily: F.sansBold, fontSize: 11.5, lineHeight: 14, letterSpacing: 1.35 },
+  typeDetail: { marginTop: 4, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17.5 },
+  typeDetailGold: { color: '#A9863F' },
+  typeDetailGreen: { color: '#3D8273' },
+  typeDetailActive: { opacity: 0.96 },
   reminderCard: {
     borderRadius: 18, borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
     backgroundColor: '#FFFBF2', padding: 16,
@@ -908,8 +1169,12 @@ const ef = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
+    columnGap: EVENT_ICON_MIN_GAP,
     rowGap: EVENT_ICON_MIN_GAP,
   },
+  extraIconClip: { width: '100%', overflow: 'hidden' },
+  extraIconMeasure: { width: '100%', paddingTop: EVENT_ICON_MIN_GAP },
+  iconCell: { width: EVENT_ICON_CHIP_SIZE, height: EVENT_ICON_CHIP_SIZE },
   iconChip: {
     width: EVENT_ICON_CHIP_SIZE, height: EVENT_ICON_CHIP_SIZE,
     borderRadius: 19, borderWidth: 1, borderColor: '#E5E7EB',
@@ -942,6 +1207,35 @@ const ef = StyleSheet.create({
     justifyContent: 'center',
   },
   iconGridSpacer: { width: EVENT_ICON_CHIP_SIZE, height: 0 },
+  showMoreButton: {
+    minHeight: 54,
+    marginTop: 12,
+    borderRadius: 17,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#E7E0D4',
+    backgroundColor: '#F8F5EE',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: 12,
+  },
+  showMoreButtonExpanded: { borderColor: '#E7D6B1', backgroundColor: '#FFF9EC' },
+  showMoreCopy: { flex: 1, minWidth: 0 },
+  showMoreTitle: { fontFamily: F.sansBold, fontSize: 11, lineHeight: 14, letterSpacing: 1.5, color: '#6F6253' },
+  showMoreMeta: { marginTop: 2, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17, color: '#9A9085' },
+  showMoreArrowShell: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5DCCB',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   saveBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8,

@@ -134,6 +134,51 @@ export function sortBigEvents(events: BigEvent[], referenceDate: string = todayK
     });
 }
 
+export type BigEventSections = {
+  upcoming: BigEvent[];
+  recurring: BigEvent[];
+  past: BigEvent[];
+};
+
+/**
+ * Groups events for the Big Events screen without persisting a time-sensitive UI state.
+ * Yearly events are upcoming only inside their configured lead window; otherwise they
+ * remain editable in the recurring section until that window begins.
+ */
+export function getBigEventSectionsForDate(events: BigEvent[], date: string): BigEventSections {
+  const sections: BigEventSections = { upcoming: [], recurring: [], past: [] };
+
+  for (const source of events) {
+    if (isBigEventDeletedOnDate(source, date)) continue;
+    const event = resolveBigEventForDate(source, date);
+
+    if (event.recurrence === 'yearly') {
+      if (date >= event.startDate && date <= event.endDate) {
+        sections.upcoming.push(event);
+      } else {
+        sections.recurring.push(event);
+      }
+      continue;
+    }
+
+    if (event.endDate >= date) sections.upcoming.push(event);
+    else sections.past.push(event);
+  }
+
+  const byNextDate = (a: BigEvent, b: BigEvent) => {
+    const byEnd = a.endDate.localeCompare(b.endDate);
+    if (byEnd !== 0) return byEnd;
+    const byStart = a.startDate.localeCompare(b.startDate);
+    if (byStart !== 0) return byStart;
+    return a.createdAt - b.createdAt;
+  };
+
+  sections.upcoming.sort(byNextDate);
+  sections.recurring.sort(byNextDate);
+  sections.past.sort(byNextDate);
+  return sections;
+}
+
 export function formatDateShort(dateStr: string): string {
   const d = new Date(`${dateStr}T12:00:00`);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
