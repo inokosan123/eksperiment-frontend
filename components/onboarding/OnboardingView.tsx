@@ -22684,14 +22684,14 @@ const SYSTEM_BUILD_TICKS = [800, 1600, 3050, 3800, 5100];
 const SYSTEM_BUILD_ABSORB_DELAY = 620;
 const SYSTEM_BUILD_READY_AT = 5900;
 const SYSTEM_BUILD_LEAVE_AT = 7050;
-const SYSTEM_BUILD_DONE_AT = 7530;
+const SYSTEM_BUILD_DONE_AT = 7820;
 // Orbit speed in deg/s: starts below the preload's cruising pace and rises
 // with every absorbed row — the crest grows visibly unstable.
 const SYSTEM_BUILD_ORBIT_SPEEDS = [55, 95, 140, 190, 250, 320];
 // Flight vector from a row's check circle into the crest centre (fixed dp —
 // the column between them is constant-height chrome).
 const SYSTEM_BUILD_GHOST_DX = 134;
-const SYSTEM_BUILD_GHOST_BASE_DY = 245;
+const SYSTEM_BUILD_GHOST_BASE_DY = 260;
 const SYSTEM_BUILD_GHOST_ROW_DY = 40;
 // Home mounts beneath the veil only AFTER the last row has ticked: its heavy
 // first render blocks the JS thread, and any pending tick timers would all
@@ -22888,6 +22888,9 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   const grow = useSharedValue(0);
   const wobble = useSharedValue(0);
   const bloom = useSharedValue(0);
+  // The handover light: fires on leave, swells from the crest zone while the
+  // veil's own background melts away — Home is revealed inside the light.
+  const burst = useSharedValue(0);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
@@ -22964,6 +22967,7 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
     timers.push(setTimeout(() => {
       setPhase('leaving');
       leave.value = withTiming(1, { duration: 480, easing: Easing.linear });
+      burst.value = withTiming(1, { duration: 740, easing: Easing.out(Easing.cubic) });
     }, SYSTEM_BUILD_LEAVE_AT));
     timers.push(setTimeout(() => {
       onDoneRef.current();
@@ -22978,6 +22982,7 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       cancelAnimation(grow);
       cancelAnimation(wobble);
       cancelAnimation(bloom);
+      cancelAnimation(burst);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -22998,16 +23003,18 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
     const wobblePhase = wobble.value * Math.PI * 2;
     const instability = grow.value * (1 - bloom.value);
     return {
+      // The plate is laid out at FULL size and starts scaled down — growth
+      // never upscales the logo bitmap, so it stays crisp on Android.
       transform: [
         {
           translateY:
-            -3.5 * kick.value + Math.sin(wobblePhase * 1.7) * 0.7 * instability,
+            -3.5 * kick.value + Math.sin(wobblePhase * 1.7) * 1.1 * instability,
         },
-        { translateX: Math.sin(wobblePhase) * 0.8 * instability },
+        { translateX: Math.sin(wobblePhase) * 1.3 * instability },
         {
-          rotate: `${kickSign.value * 2.2 * kick.value + Math.sin(wobblePhase) * 1.1 * instability}deg`,
+          rotate: `${kickSign.value * 2.4 * kick.value + Math.sin(wobblePhase) * 1.6 * instability}deg`,
         },
-        { scale: 1 + 0.2 * grow.value + 0.06 * kick.value },
+        { scale: 0.74 + 0.26 * grow.value + 0.045 * kick.value },
       ],
     };
   });
@@ -23036,16 +23043,27 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       transform: [{ translateY: -10 * local }],
     };
   });
+  // Two-layer handover, same grammar as the preload farewell: the veil's own
+  // paper melts away first, Home appears inside the swelling light.
+  const bgMeltStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(burst.value, [0.18, 0.62], [1, 0], 'clamp'),
+  }));
+  const burstStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(burst.value, [0, 0.22, 0.72, 1], [0, 0.95, 0.55, 0]),
+    transform: [{ scale: 0.12 + burst.value * 2.2 }],
+  }));
 
   return (
     <Reanimated.View exiting={FadeOut.duration(320)} style={s.sysVeil}>
-      <View pointerEvents="none" style={s.introWarmth}>
-        <LinearGradient
-          colors={['rgba(255,255,255,0)', 'rgba(246,225,202,0.46)', 'rgba(255,241,225,0.98)']}
-          locations={[0, 0.52, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-      </View>
+      <Reanimated.View pointerEvents="none" style={[s.sysVeilBg, bgMeltStyle]}>
+        <View pointerEvents="none" style={s.introWarmth}>
+          <LinearGradient
+            colors={['rgba(255,255,255,0)', 'rgba(246,225,202,0.46)', 'rgba(255,241,225,0.98)']}
+            locations={[0, 0.52, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
+      </Reanimated.View>
       <View style={s.sysVeilContent}>
         <Reanimated.View style={crownLeaveStyle}>
           <Reanimated.View
@@ -23065,8 +23083,8 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
             <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringTailBStyle]}>
               <View style={[s.sysVeilOrbitComet, s.sysVeilOrbitCometTiny]} />
             </Reanimated.View>
-            <Reanimated.View style={[s.introLogoPlate, crestPlateStyle]}>
-              <Image source={APP_LOGO} style={s.introLogo} resizeMode="cover" />
+            <Reanimated.View style={[s.sysVeilLogoPlate, crestPlateStyle]}>
+              <Image source={APP_LOGO} style={s.sysVeilLogo} resizeMode="cover" />
             </Reanimated.View>
           </Reanimated.View>
           <Reanimated.View entering={FadeIn.delay(90).duration(320)} style={s.introRule} />
@@ -23139,6 +23157,13 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
             style={StyleSheet.absoluteFill}
           />
         </View>
+      ) : null}
+      {phase === 'leaving' ? (
+        <Reanimated.View pointerEvents="none" style={[s.sysVeilBurst, burstStyle]}>
+          <View style={s.sysVeilBurstOuter} />
+          <View style={s.sysVeilBurstMid} />
+          <View style={s.sysVeilBurstCore} />
+        </Reanimated.View>
       ) : null}
     </Reanimated.View>
   );
@@ -36683,7 +36708,134 @@ const s = StyleSheet.create({
     zIndex: 2000,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  sysVeilBg: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: '#FFFDF8',
+  },
+  sysVeilCrestBox: {
+    width: 132,
+    height: 132,
+    marginBottom: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sysVeilCrestHalo: {
+    position: 'absolute',
+    top: 0,
+    left: '50%',
+    width: 132,
+    height: 132,
+    marginLeft: -66,
+    borderRadius: 34,
+    backgroundColor: 'rgba(197,160,89,0.12)',
+    transform: [{ rotate: '7deg' }],
+  },
+  sysVeilOrbitRing: {
+    position: 'absolute',
+    top: 5,
+    left: '50%',
+    width: 122,
+    height: 122,
+    marginLeft: -61,
+    alignItems: 'center',
+  },
+  sysVeilOrbitComet: {
+    position: 'absolute',
+    top: -2,
+    width: 24,
+    height: 4,
+    borderRadius: 3,
+    backgroundColor: '#D9B468',
+    shadowColor: '#C5A059',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 7,
+    elevation: 2,
+  },
+  sysVeilOrbitCometSmall: {
+    width: 17,
+    height: 3.2,
+    backgroundColor: '#E3C894',
+  },
+  sysVeilOrbitCometTiny: {
+    width: 12,
+    height: 2.6,
+    backgroundColor: '#EFDCB4',
+  },
+  sysVeilLogoPlate: {
+    width: 92,
+    height: 92,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.26)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.12,
+    shadowRadius: 22,
+    elevation: 8,
+  },
+  sysVeilLogo: {
+    width: 82,
+    height: 82,
+    borderRadius: 19,
+  },
+  sysVeilGhost: {
+    position: 'absolute',
+    left: 7,
+    top: '50%',
+    marginTop: -5,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#C5A059',
+    shadowColor: '#C5A059',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
+    elevation: 6,
+    zIndex: 20,
+  },
+  sysVeilConfetti: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 2,
+  },
+  sysVeilBurst: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: 340,
+    height: 340,
+    marginLeft: -170,
+    marginTop: -370,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
+  },
+  sysVeilBurstOuter: {
+    position: 'absolute',
+    width: 340,
+    height: 340,
+    borderRadius: 170,
+    backgroundColor: 'rgba(238,206,144,0.30)',
+  },
+  sysVeilBurstMid: {
+    position: 'absolute',
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: 'rgba(244,219,166,0.55)',
+  },
+  sysVeilBurstCore: {
+    position: 'absolute',
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: 'rgba(255,248,231,0.95)',
   },
   sysVeilContent: {
     width: '100%',
