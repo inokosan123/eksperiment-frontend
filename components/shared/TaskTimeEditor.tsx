@@ -14,7 +14,9 @@ import Reanimated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import { ChevronDown, Clock, X } from '@/components/icons/Icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CheckSmall, ChevronDown, Clock, X } from '@/components/icons/Icons';
 import { F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 
@@ -71,6 +73,16 @@ function withAlpha(hex: string, alpha: number) {
   const g = (value >> 8) & 255;
   const b = value & 255;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function shade(hex: string, factor: number) {
+  const normalized = hex.replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return hex;
+  const value = Number.parseInt(normalized, 16);
+  const r = Math.round(((value >> 16) & 255) * factor);
+  const g = Math.round(((value >> 8) & 255) * factor);
+  const b = Math.round((value & 255) * factor);
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 function useToggleMotion(active: boolean) {
@@ -203,6 +215,7 @@ function TimePickerButton({
   dayLabel?: string;
 }) {
   const normalized = parseTimeParts(value);
+  const insets = useSafeAreaInsets();
   const [visible, setVisible] = useState(false);
   const [draft, setDraft] = useState(formatTimeValue(normalized.hour, normalized.minute));
   const nativeDate = useMemo(() => {
@@ -282,10 +295,11 @@ function TimePickerButton({
       <Modal transparent visible={visible} animationType="fade" onRequestClose={() => setVisible(false)}>
         <View style={s.modalOverlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setVisible(false)} />
-          <View style={s.modalSheet}>
+          <View style={[s.modalSheet, { paddingBottom: Math.max(insets.bottom, 12) + 14 }]}>
             <View style={s.handle} />
             <View style={s.modalHead}>
               <Text style={s.modalTitle}>Select Time</Text>
+              <View style={[s.modalTitleRule, { backgroundColor: withAlpha(accent, 0.45) }]} />
               <TouchableOpacity onPress={() => setVisible(false)} activeOpacity={0.84} style={s.modalClose}>
                 <X s={18} c="#A8A29E" />
               </TouchableOpacity>
@@ -322,8 +336,16 @@ function TimePickerButton({
               </View>
             )}
 
-            <TouchableOpacity onPress={applyValue} activeOpacity={0.88} style={[s.modalSave, { backgroundColor: accent, shadowColor: accent }]}>
-              <Text style={s.modalSaveText}>SAVE TIME</Text>
+            <TouchableOpacity onPress={applyValue} activeOpacity={0.9} style={[s.modalSave, { backgroundColor: accent, shadowColor: accent }]}>
+              <LinearGradient
+                pointerEvents="none"
+                colors={[accent, shade(accent, 0.84)]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <CheckSmall s={16} c="#FFFFFF" w={3} />
+              <Text style={s.modalSaveText}>Save time</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -439,16 +461,17 @@ const s = StyleSheet.create({
     color: '#1C1917',
   },
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16,24,40,0.28)' },
-  modalSheet: { borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: '#FFFEFB', paddingHorizontal: 18, paddingTop: 12, paddingBottom: 24, gap: 16 },
+  modalSheet: { borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: '#FFFEFB', paddingHorizontal: 20, paddingTop: 12, gap: 16 },
   handle: { width: 42, height: 4, borderRadius: 999, backgroundColor: '#D6D3D1', alignSelf: 'center' },
-  modalHead: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  modalTitle: { fontFamily: F.serifMedium, fontSize: 22, color: '#1F2937' },
-  modalClose: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F2EC' },
+  modalHead: { minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingTop: 4 },
+  modalTitle: { fontFamily: F.serifMedium, fontSize: 21, lineHeight: 26, letterSpacing: 0.2, color: '#1C1917', textAlign: 'center' },
+  modalTitleRule: { width: 38, height: 2, borderRadius: 999, marginTop: 7 },
+  modalClose: { position: 'absolute', right: 0, top: 2, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F2EC' },
   nativeWrap: { borderRadius: 26, borderWidth: 1, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', paddingVertical: 6 },
   nativePicker: { width: '100%', height: 210 },
   fallbackWrap: { borderRadius: 22, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center' },
   fallbackLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.7, textTransform: 'uppercase' },
   fallbackInput: { textAlign: 'center', fontFamily: F.serifMedium, fontSize: 34, lineHeight: 42, paddingVertical: 4, minWidth: 120 },
-  modalSave: { minHeight: 56, borderRadius: 22, alignItems: 'center', justifyContent: 'center', shadowOpacity: 0.22, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
-  modalSaveText: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 2, color: '#fff' },
+  modalSave: { minHeight: 54, borderRadius: 20, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, shadowOpacity: 0.26, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
+  modalSaveText: { fontFamily: F.sansBold, fontSize: 12.5, letterSpacing: 1.5, color: '#FFFFFF', textTransform: 'uppercase' },
 });
