@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle as SvgCircle, Defs, G, Line as SvgLine, LinearGradient as SvgLinearGradient, Path as SvgPath, RadialGradient as SvgRadialGradient, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import FocusLottie from '@/components/focus/FocusLottie';
+import PrayerBookView from '@/components/prayer/PrayerBookView';
 import Reanimated, {
   type AnimatedRef,
   type SharedValue,
@@ -238,6 +239,7 @@ type StepId =
   | 'weeklyReveal'
   | 'flameOrganize'
   | 'giftMoment'
+  | 'giftShowcase'
   | 'bibleWalkthrough'
   | 'prayerBook'
   | 'flameGrow'
@@ -1226,6 +1228,7 @@ const ONBOARDING_DEV_JUMP_GROUPS: OnboardingDevJumpGroup[] = [
     title: 'Finish',
     targets: [
       { step: 'giftMoment', title: 'Free gift', body: 'Scripture/free tools moment.', accent: GOLD },
+      { step: 'giftShowcase', title: 'Gift showcase', body: 'Grow closer to God value slide reprise.', accent: GOLD },
       { step: 'bibleWalkthrough', title: 'Bible walkthrough', body: 'Bible preview moment.', accent: GOLD },
       { step: 'prayerBook', title: 'Prayer Book', body: 'Prayer preview moment.', accent: GOLD },
       { step: 'flameGrow', title: 'Grow flame', body: 'Third checkpoint flame.', accent: GOLD },
@@ -1301,6 +1304,7 @@ function stepOrder(answers: Answers): StepId[] {
     ...organizeSetup,
     'flameOrganize',
     'giftMoment',
+    'giftShowcase',
     'bibleWalkthrough',
     'prayerBook',
     'flameGrow',
@@ -1611,6 +1615,7 @@ function isGuidedWalkthroughStep(step: StepId) {
     step === 'weeklyReveal' ||
     step === 'flameOrganize' ||
     step === 'giftMoment' ||
+    step === 'giftShowcase' ||
     step === 'bibleWalkthrough' ||
     step === 'prayerBook' ||
     step === 'flameGrow' ||
@@ -10532,10 +10537,14 @@ function V4ProgressRail({
   completedCount,
   previousCompletedCount = completedCount,
   showTools = completedCount >= 4,
+  surpriseSlot = false,
 }: {
   completedCount: number;
   previousCompletedCount?: number;
   showTools?: boolean;
+  // The "one more thing" beat: a 4th empty slot slides onto a 3-slot rail
+  // from the right while the lit three make room for it.
+  surpriseSlot?: boolean;
 }) {
   const slots = showTools ? V4_PROGRESS_SLOTS : V4_PROGRESS_SLOTS.slice(0, 3);
 
@@ -10551,6 +10560,7 @@ function V4ProgressRail({
               opacity: 0,
               transform: [{ translateY: 8 }, { scale: 0.97 }],
             })}
+            layout={LinearTransition.duration(460).easing(Easing.bezier(0.22, 1, 0.36, 1))}
             style={s.chapterCheckpointStep}
           >
             <View style={[s.chapterCheckpointStepLine, done && s.chapterCheckpointStepLineDone]}>
@@ -10561,6 +10571,21 @@ function V4ProgressRail({
           </Reanimated.View>
         );
       })}
+      {!showTools && surpriseSlot ? (
+        <Reanimated.View
+          key="surprise-tools"
+          entering={FadeIn.duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateX: 52 }],
+          })}
+          layout={LinearTransition.duration(460).easing(Easing.bezier(0.22, 1, 0.36, 1))}
+          style={s.chapterCheckpointStep}
+        >
+          <View style={s.chapterCheckpointStepLine} />
+          <ChapterCheckpointStepDot done={false} animate={false} />
+          <Text style={s.chapterCheckpointStepText}>{V4_PROGRESS_SLOTS[3]}</Text>
+        </Reanimated.View>
+      ) : null}
     </View>
   );
 }
@@ -11875,6 +11900,146 @@ function V4MomentSlide({
           </View>
         </AnimatedCta>
       )}
+    </LinearGradient>
+  );
+}
+
+// ── Gift moment · the statement (24a) ──────────────────────────────────────
+// The register of the onboarding changes here. Two chapters were about fixing
+// problems and building systems; this screen is neither — it is a statement
+// of values, given a whole screen to land on its own. Warm golden light, one
+// sentence, and the charter's rule—◆—rule drawing itself beneath it.
+function GiftStatementSlide({ bottomInset, onNext }: { bottomInset: number; onNext: () => void }) {
+  const ruleDraw = useSharedValue(0);
+
+  useEffect(() => {
+    ruleDraw.value = withDelay(1120, withTiming(1, { duration: 640, easing: Easing.bezier(0.22, 1, 0.36, 1) }));
+    const titleBeat = setTimeout(runBubbleHaptic, 720);
+    const ruleBeat = setTimeout(runSelectionHaptic, 1260);
+    return () => {
+      clearTimeout(titleBeat);
+      clearTimeout(ruleBeat);
+      cancelAnimation(ruleDraw);
+    };
+  }, [ruleDraw]);
+
+  const leftRuleStyle = useAnimatedStyle(() => ({
+    transform: [{ scaleX: Math.max(0.0001, ruleDraw.value) }],
+  }));
+  const rightRuleStyle = useAnimatedStyle(() => ({
+    transform: [{ scaleX: Math.max(0.0001, ruleDraw.value) }],
+  }));
+  const gemStyle = useAnimatedStyle(() => ({
+    opacity: ruleDraw.value,
+    transform: [
+      { rotate: '45deg' },
+      { scale: interpolate(ruleDraw.value, [0, 1], [0.4, 1]) },
+    ],
+  }));
+
+  return (
+    <LinearGradient
+      colors={[...CONVERSE_GRADIENT]}
+      locations={[...CONVERSE_GRADIENT_LOCATIONS]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={s.giftStatementSlide}
+    >
+      <ConverseBackdrop />
+
+      <View style={s.giftStatementStage}>
+        <Reanimated.View
+          entering={FadeIn.delay(140).duration(560).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 10 }],
+          })}
+        >
+          <Text style={s.giftStatementEyebrow}>OUR PROMISE</Text>
+        </Reanimated.View>
+
+        <Reanimated.Text
+          entering={FadeIn.delay(320).duration(780).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 18 }, { scale: 0.985 }],
+          })}
+          style={s.giftStatementTitle}
+        >
+          Learning about God will always be free in Anasta.
+        </Reanimated.Text>
+
+        <View style={s.giftStatementOrnament}>
+          <Reanimated.View style={[s.giftStatementRule, s.giftStatementRuleLeft, leftRuleStyle]} />
+          <Reanimated.View style={[s.giftStatementGem, gemStyle]} />
+          <Reanimated.View style={[s.giftStatementRule, s.giftStatementRuleRight, rightRuleStyle]} />
+        </View>
+
+        <Reanimated.Text
+          entering={FadeIn.delay(1460).duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 12 }],
+          })}
+          style={s.giftStatementBody}
+        >
+          We are a Christian productivity app that helps you build discipline, organize your
+          life, and grow closer to God. Scripture, prayer, and spiritual growth will always
+          be free — for everyone.
+        </Reanimated.Text>
+      </View>
+
+      <AnimatedCta delay={2260} style={[s.questionFooter, { bottom: bottomInset + 18 }]}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>Show me</Text>
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
+    </LinearGradient>
+  );
+}
+
+// ── Gift moment · the showcase (24b) ───────────────────────────────────────
+// A deliberate repeat: the exact "Grow closer to God!" value slide from the
+// opening carousel, shown again right before the guided walkthrough begins —
+// the promise made at the start, about to be kept. Reuses the value page
+// wholesale; only the bottom action belongs to this screen.
+function GiftShowcaseSlide({
+  topInset,
+  bottomInset,
+  onNext,
+}: {
+  topInset: number;
+  bottomInset: number;
+  onNext: () => void;
+}) {
+  const { width } = useWindowDimensions();
+
+  return (
+    <LinearGradient
+      colors={[...VALUE_ATELIER_GRADIENT]}
+      locations={[...VALUE_ATELIER_GRADIENT_LOCATIONS]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={s.valueSlide}
+    >
+      <ValueAtelierBackdrop topInset={topInset} />
+
+      <View style={s.valueClosingViewport}>
+        <ValuePreviewPage
+          width={width}
+          topInset={topInset}
+          slide={VALUE_SLIDES.valueFaith}
+          animateIntro
+          active
+        />
+      </View>
+
+      <AnimatedCta delay={2200} style={[s.valueBottomAction, { paddingBottom: bottomInset + 8 }]}>
+        <View style={s.ctaIsland}>
+          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
+            <Text style={s.primaryButtonText}>Open the Bible</Text>
+          </TouchableOpacity>
+        </View>
+      </AnimatedCta>
     </LinearGradient>
   );
 }
@@ -23587,6 +23752,47 @@ function BibleGuideSlide({ onNext }: { onNext: () => void }) {
   );
 }
 
+// ─── Prayer Book walkthrough ─────────────────────────────────────────────────
+// The real Prayer Book screen carried by one guided session: the prayer-rule
+// banner, the day's categories, the Jesus Prayer, the loaded Orthodox rules
+// (when the user is Orthodox), and My Rule's calm screen — closed by the
+// promise that it is all free.
+function PrayerBookGuideSlide({ isOrthodox, onNext }: { isOrthodox: boolean; onNext: () => void }) {
+  const { beginGuidedSetup, endGuidedSetup } = useGuidedSetup();
+  const sessionStartedRef = useRef(false);
+
+  useEffect(() => {
+    if (sessionStartedRef.current) return;
+    sessionStartedRef.current = true;
+    // A stale restored session must never drive the tour.
+    endGuidedSetup();
+    beginGuidedSetup({
+      currentChapter: 'grow',
+      chapterOrder: ['grow'],
+      activeStep: 'risePrayerBook',
+      phase: 'prayerIntro',
+      route: '/onboarding',
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => () => endGuidedSetup(), [endGuidedSetup]);
+
+  const handleComplete = useCallback(() => {
+    endGuidedSetup();
+    onNext();
+  }, [endGuidedSetup, onNext]);
+
+  return (
+    <View style={s.screen}>
+      <View style={{ flex: 1, backgroundColor: '#FCFCFC' }}>
+        <PrayerBookView guided guidedOrthodox={isOrthodox} onGuidedComplete={handleComplete} />
+      </View>
+      <GuidedOverlayHost />
+    </View>
+  );
+}
+
 function OrganizeHomePreviewSlide({ onNext }: { onNext: () => void }) {
   const rows = [
     { title: 'Morning Prayer', meta: '07:00 · Every day', accent: GOLD, icon: <Sun s={17} c={GOLD} w={2} /> },
@@ -23936,6 +24142,7 @@ function V4FlameSlide({
   completedCount,
   title,
   body,
+  surprise = false,
   recapItems,
   topInset = 0,
   bottomInset = 0,
@@ -23953,6 +24160,7 @@ function V4FlameSlide({
   const { width, height } = useWindowDimensions();
   const [reveal, setReveal] = useState(0);
   const [railLit, setRailLit] = useState(false);
+  const [surpriseIn, setSurpriseIn] = useState(false);
   const [soloTypedCount, setSoloTypedCount] = useState(0);
   const showTools = completedCount >= 4;
   const isSoloMessage = !title && Boolean(body);
@@ -23968,6 +24176,7 @@ function V4FlameSlide({
   useEffect(() => {
     setReveal(0);
     setRailLit(false);
+    setSurpriseIn(false);
     setSoloTypedCount(0);
     cancelAnimation(sealFlight);
     cancelAnimation(charge);
@@ -24024,8 +24233,18 @@ function V4FlameSlide({
         runBubbleHaptic();
         void playTaskCompleteFeedback();
       }, 3920),
-      setTimeout(() => setReveal(5), 4340),
-      setTimeout(() => setReveal(6), 5140),
+      // On a surprise flame the full rail must sit finished for a beat —
+      // "we're done" has to land before the 4th slot proves it wrong.
+      ...(surprise
+        ? [
+            setTimeout(() => {
+              setSurpriseIn(true);
+              runSelectionHaptic();
+            }, 5120),
+          ]
+        : []),
+      setTimeout(() => setReveal(5), surprise ? 5680 : 4340),
+      setTimeout(() => setReveal(6), surprise ? 6480 : 5140),
     ];
     return () => {
       timers.forEach(timer => clearTimeout(timer));
@@ -24034,7 +24253,7 @@ function V4FlameSlide({
       cancelAnimation(kick);
       cancelAnimation(breathe);
     };
-  }, [breathe, charge, completedCount, isSoloMessage, kick, sealFlight, showTools]);
+  }, [breathe, charge, completedCount, isSoloMessage, kick, sealFlight, showTools, surprise]);
 
   const sealKickStyle = useAnimatedStyle(() => ({
     transform: [{ scale: (1 + 0.02 * charge.value) * (1 + 0.07 * kick.value) }],
@@ -24160,6 +24379,7 @@ function V4FlameSlide({
               completedCount={railCompletedCount}
               previousCompletedCount={previousCompletedCount}
               showTools={showTools}
+              surpriseSlot={surprise && surpriseIn}
             />
           ) : null}
         </View>
@@ -25105,6 +25325,8 @@ export default function OnboardingView() {
     activeStep === 'organizeHubCompleteV2' ||
     activeStep === 'organizeGuidedHomeTour' ||
     activeStep === 'dayVisualizationHeader' ||
+    activeStep === 'giftMoment' ||
+    activeStep === 'giftShowcase' ||
     valueStepActive ||
     flameStepActive ||
     activeStep === 'bridge' ||
@@ -25122,6 +25344,17 @@ export default function OnboardingView() {
     return (
       <GuideCrashBoundary label="Bible walkthrough" onSkip={goNext}>
         <BibleGuideSlide onNext={goNext} />
+      </GuideCrashBoundary>
+    );
+  }
+
+  if (activeStep === 'prayerBook') {
+    return (
+      <GuideCrashBoundary label="Prayer Book tour" onSkip={goNext}>
+        <PrayerBookGuideSlide
+          isOrthodox={!!answers.isOrthodox || answers.tradition === 'orthodox'}
+          onNext={goNext}
+        />
       </GuideCrashBoundary>
     );
   }
@@ -25543,33 +25776,17 @@ export default function OnboardingView() {
       );
     }
     if (activeStep === 'giftMoment') {
-      return (
-        <V4MomentSlide
-          eyebrow="Free for everyone"
-          title="Grow closer to God."
-          body="Scripture, Favorites, Bible Notes, and Prayer Book stay available to everyone."
-          icon={<OpenBook s={54} c={GOLD} w={1.5} />}
-          onNext={goNext}
-        />
-      );
+      return <GiftStatementSlide bottomInset={insets.bottom} onNext={goNext} />;
     }
-    if (activeStep === 'prayerBook') {
-      return (
-        <V4MomentSlide
-          title="Prayer Book"
-          body={answers.isOrthodox || answers.tradition === 'orthodox'
-            ? 'As an Orthodox Christian, morning, evening, and Jesus Prayer rules can be prepared for you.'
-            : 'Morning, evening, and mealtime prayers are organized and always available.'}
-          icon={<Candle s={54} c={GOLD} w={1.5} />}
-          onNext={goNext}
-        />
-      );
+    if (activeStep === 'giftShowcase') {
+      return <GiftShowcaseSlide topInset={insets.top} bottomInset={insets.bottom} onNext={goNext} />;
     }
     if (activeStep === 'flameGrow') {
+      const growName = nameForDisplay(answers.displayName);
       return (
         <V4FlameSlide
           completedCount={3}
-          title="One more thing."
+          title={growName ? `One more thing, ${growName}.` : 'One more thing.'}
           body="Let's show you a few more tools Anasta has for you."
           surprise
           topInset={insets.top}
@@ -41865,6 +42082,69 @@ const s = StyleSheet.create({
     alignSelf: 'stretch',
     alignItems: 'center',
     marginTop: 8,
+  },
+  // Gift statement (24a): one sentence in warm golden light, nothing else.
+  giftStatementSlide: {
+    flex: 1,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  giftStatementStage: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 30,
+    paddingBottom: 108,
+  },
+  giftStatementEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    letterSpacing: 2.6,
+    color: GOLD,
+    textAlign: 'center',
+  },
+  giftStatementTitle: {
+    marginTop: 16,
+    maxWidth: 336,
+    fontFamily: F.serifSemiBold,
+    fontSize: 34,
+    lineHeight: 42,
+    letterSpacing: -0.3,
+    color: INK,
+    textAlign: 'center',
+  },
+  giftStatementOrnament: {
+    marginTop: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 9,
+  },
+  giftStatementRule: {
+    width: 52,
+    height: 1.4,
+    borderRadius: 1,
+    backgroundColor: 'rgba(183,141,64,0.55)',
+  },
+  giftStatementRuleLeft: {
+    transformOrigin: 'right',
+  },
+  giftStatementRuleRight: {
+    transformOrigin: 'left',
+  },
+  giftStatementGem: {
+    width: 7,
+    height: 7,
+    borderRadius: 1.6,
+    backgroundColor: GOLD,
+  },
+  giftStatementBody: {
+    marginTop: 22,
+    maxWidth: 330,
+    fontFamily: F.serifMedium,
+    fontSize: 16.5,
+    lineHeight: 24.5,
+    color: 'rgba(25,23,20,0.64)',
+    textAlign: 'center',
   },
   v4ProgressRail: {
     width: '100%',

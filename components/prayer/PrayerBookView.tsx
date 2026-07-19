@@ -25,6 +25,7 @@ import { getLocalDateKey } from '@/components/tasks/taskScheduler';
 import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 
 import {
   getPrayerOptions,
@@ -43,6 +44,13 @@ type PrayerSlide = { title: string; parts: PrayerSlidePart[] };
 
 const DEFAULT_PRAYER_LANGUAGE: PrayerLanguage = 'sr';
 const PRAYER_CATEGORIES: PrayerCategory[] = ['morning', 'meal', 'evening', 'jesus', 'other'];
+
+// Spotlight anchors for the onboarding Prayer Book tour (risePrayerBook).
+const PRAYER_GUIDE_TARGETS = {
+  banner: 'prayer-guide-banner',
+  jesusTab: 'prayer-guide-jesus-tab',
+  card: 'prayer-guide-card',
+} as const;
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -510,7 +518,17 @@ function buildPrayerSlides(section: PrayerSection): PrayerSlide[] {
   return mergeShortEveningOpeningSlides(section, slides);
 }
 
-export default function PrayerBookView() {
+export default function PrayerBookView({
+  guided = false,
+  guidedOrthodox = false,
+  onGuidedComplete,
+}: {
+  // Onboarding-only: the real screen carries the spotlight tour without any
+  // change to its normal behavior. All three props default off.
+  guided?: boolean;
+  guidedOrthodox?: boolean;
+  onGuidedComplete?: () => void;
+} = {}) {
   const router = useRouter();
   const params = useLocalSearchParams<{
     category?: string | string[];
@@ -539,6 +557,21 @@ export default function PrayerBookView() {
   const [showTaskSheet, setShowTaskSheet] = useState(false);
   const [taskSummary, setTaskSummary] = useState('Add to your daily routine');
   const insets = useSafeAreaInsets();
+
+  // ─── Onboarding Prayer Book tour (risePrayerBook) ─────────────────────────
+  const { session, patchSession, setPresentation } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'risePrayerBook';
+  const guidePhase = isGuided ? session.phase : '';
+  const bannerTarget = useGuideTarget(PRAYER_GUIDE_TARGETS.banner, isGuided);
+  const jesusTabTarget = useGuideTarget(PRAYER_GUIDE_TARGETS.jesusTab, isGuided);
+  const cardTarget = useGuideTarget(PRAYER_GUIDE_TARGETS.card, isGuided);
+  const guideScrollRef = useRef<ScrollView>(null);
+  const guideCardYRef = useRef(0);
+  const guideTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const clearGuideTimers = useCallback(() => {
+    guideTimersRef.current.forEach(clearTimeout);
+    guideTimersRef.current = [];
+  }, []);
 
   const theme = CAT_THEMES[category];
   const options = useMemo(() => getPrayerOptions(prayerLanguage, category), [category, prayerLanguage]);
@@ -590,6 +623,10 @@ export default function PrayerBookView() {
     setCategory(cat);
     setOptionId(defaultOptionId(nextOptions));
     setIsReaderActive(false);
+    // Tour beat: tapping JESUS while the grid is spotlit advances the story.
+    if (isGuided && guidePhase === 'prayerCategories' && cat === 'jesus') {
+      patchSession({ phase: 'prayerJesus' });
+    }
   };
 
   const handleLanguageChange = (lang: PrayerLanguage) => {
@@ -632,6 +669,8 @@ export default function PrayerBookView() {
   }, []);
 
   const handleStartPrayer = () => {
+    // During the tour the screen is a stage — starting a prayer would leave it.
+    if (isGuided) return;
     if (isPersonalRuleOption(category, selectedOption?.id)) {
       openPersonalRule();
       return;
@@ -656,6 +695,140 @@ export default function PrayerBookView() {
     setIsReaderActive(true);
   };
 
+  // The tour dresses the stage itself: Orthodox rules want the loaded morning
+  // rule in view, My Rule wants the personal option's calm preview. Both
+  // switches run only inside the guided session — normal use never sees them.
+  useEffect(() => {
+    if (!isGuided) return;
+    if (guidePhase === 'prayerOrthodox') {
+      setCategory('morning');
+      setOptionId(defaultOptionId(getPrayerOptions(prayerLanguage, 'morning')));
+    } else if (guidePhase === 'prayerMyRule') {
+      setCategory('morning');
+      setOptionId('personal');
+    }
+  }, [guidePhase, isGuided, prayerLanguage]);
+
+  // Card phases scroll the prayer card into view before the spotlight lands.
+  const stageCard = useCallback((present: () => void) => {
+    guideScrollRef.current?.scrollTo({ y: Math.max(0, guideCardYRef.current - 98), animated: true });
+    guideTimersRef.current.push(setTimeout(() => {
+      cardTarget.measure();
+      guideTimersRef.current.push(setTimeout(present, 60));
+    }, 380));
+  }, [cardTarget]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+    clearGuideTimers();
+
+    if (guidePhase === 'prayerIntro') {
+      setPresentation({
+        key: 'prayer-intro',
+        placement: 'bottom',
+        lightScrim: true,
+        eyebrow: 'PRAYER BOOK',
+        message: "This is your Prayer Book. Let's build your prayer rule.",
+        highlights: ['prayer rule'],
+        ctaLabel: 'Continue',
+        onCta: () => patchSession({ phase: 'prayerTimes' }),
+      });
+      return;
+    }
+    if (guidePhase === 'prayerTimes') {
+      setPresentation({
+        key: 'prayer-times',
+        targetId: PRAYER_GUIDE_TARGETS.banner,
+        cutoutPadding: 8,
+        placement: 'below',
+        eyebrow: 'PRAYER BOOK',
+        message: 'Plan prayer around your day — morning, evening, and before meals. Each becomes a daily task with its own time and reminder.',
+        highlights: ['morning', 'evening', 'before meals'],
+        ctaLabel: 'Continue',
+        onCta: () => patchSession({ phase: 'prayerCategories' }),
+      });
+      return;
+    }
+    if (guidePhase === 'prayerCategories') {
+      setPresentation({
+        key: 'prayer-categories',
+        targetId: PRAYER_GUIDE_TARGETS.jesusTab,
+        cutoutPadding: 7,
+        placement: 'below',
+        allowTargetInteraction: true,
+        eyebrow: 'PRAYER BOOK',
+        message: 'The Jesus Prayer has its own place in your day, too.',
+        highlights: ['Jesus Prayer'],
+        action: 'Tap JESUS to see it',
+        hint: 'tap',
+      });
+      return;
+    }
+    if (guidePhase === 'prayerJesus') {
+      stageCard(() => {
+        setPresentation({
+          key: 'prayer-jesus',
+          targetId: PRAYER_GUIDE_TARGETS.card,
+          cutoutPadding: 8,
+          placement: 'above',
+          eyebrow: 'JESUS PRAYER',
+          message: 'Give it a number of minutes, or a number of repetitions — either way, it becomes part of your rhythm, tracked like any other task.',
+          highlights: ['minutes', 'repetitions'],
+          ctaLabel: 'Continue',
+          onCta: () => patchSession({ phase: guidedOrthodox ? 'prayerOrthodox' : 'prayerMyRule' }),
+        });
+      });
+      return;
+    }
+    if (guidePhase === 'prayerOrthodox') {
+      stageCard(() => {
+        setPresentation({
+          key: 'prayer-orthodox',
+          targetId: PRAYER_GUIDE_TARGETS.card,
+          cutoutPadding: 8,
+          placement: 'above',
+          eyebrow: 'PRAYER BOOK',
+          message: 'As an Orthodox Christian, your Prayer Book already comes loaded and ready — in English, Serbian, and Russian.',
+          highlights: ['loaded and ready'],
+          ctaLabel: 'Continue',
+          onCta: () => patchSession({ phase: 'prayerMyRule' }),
+        });
+      });
+      return;
+    }
+    if (guidePhase === 'prayerMyRule') {
+      stageCard(() => {
+        setPresentation({
+          key: 'prayer-my-rule',
+          targetId: PRAYER_GUIDE_TARGETS.card,
+          cutoutPadding: 8,
+          placement: 'above',
+          eyebrow: 'MY RULE',
+          message: 'Or pray My Rule — from your own prayer book. A timer if you want one, and a calm icon of Christ — nothing else on the screen to pull you away.',
+          highlights: ['My Rule'],
+          ctaLabel: 'Continue',
+          onCta: () => patchSession({ phase: 'prayerClose' }),
+        });
+      });
+      return;
+    }
+    if (guidePhase === 'prayerClose') {
+      setPresentation({
+        key: 'prayer-close',
+        placement: 'bottom',
+        lightScrim: true,
+        eyebrow: 'PRAYER BOOK',
+        message: 'Available anytime. Completely free.',
+        highlights: ['Completely free'],
+        ctaLabel: 'Continue',
+        onCta: () => onGuidedComplete?.(),
+      });
+      return;
+    }
+  }, [clearGuideTimers, guidePhase, guidedOrthodox, isGuided, onGuidedComplete, patchSession, setPresentation, stageCard]);
+
+  useEffect(() => clearGuideTimers, [clearGuideTimers, guidePhase]);
+
   if (isReaderActive) {
     return (
       <PrayerReader
@@ -679,10 +852,11 @@ export default function PrayerBookView() {
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScreenTitleBar
         title="PRAYER BOOK"
-        showBack
+        showBack={!isGuided}
         rightElement={(
           <TouchableOpacity
             onPress={() => {
+              if (isGuided) return;
               Haptics.selectionAsync().catch(() => {});
               setShowLanguageMenu(value => !value);
             }}
@@ -737,11 +911,24 @@ export default function PrayerBookView() {
       </Modal>
 
       <ScrollView
+        ref={guideScrollRef}
         contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
         showsVerticalScrollIndicator={false}
       >
-        <View style={s.bannerWrap}>
-          <SetAsDailyTaskCard onPress={() => setShowTaskSheet(true)} variant="soft" subtitle={taskSummary} />
+        <View
+          style={s.bannerWrap}
+          collapsable={false}
+          ref={bannerTarget.ref}
+          onLayout={bannerTarget.onLayout}
+        >
+          <SetAsDailyTaskCard
+            onPress={() => {
+              if (isGuided) return;
+              setShowTaskSheet(true);
+            }}
+            variant="soft"
+            subtitle={taskSummary}
+          />
         </View>
 
         <View style={s.catGrid}>
@@ -749,9 +936,9 @@ export default function PrayerBookView() {
             const active = category === cat.id;
             const t = CAT_THEMES[cat.id];
 
-            return (
+            const button = (
               <TouchableOpacity
-                key={cat.id}
+                key={cat.id === 'jesus' ? undefined : cat.id}
                 onPress={() => handleCategoryChange(cat.id)}
                 activeOpacity={0.78}
                 style={[
@@ -773,6 +960,22 @@ export default function PrayerBookView() {
                 <Text style={[s.catLabel, { color: active ? t.accent : '#B5ADA0' }]}>{cat.label}</Text>
               </TouchableOpacity>
             );
+
+            // The JESUS tab is a spotlight anchor during the onboarding tour.
+            if (cat.id === 'jesus') {
+              return (
+                <View
+                  key={cat.id}
+                  style={{ flex: 1 }}
+                  collapsable={false}
+                  ref={jesusTabTarget.ref}
+                  onLayout={jesusTabTarget.onLayout}
+                >
+                  {button}
+                </View>
+              );
+            }
+            return button;
           })}
         </View>
 
@@ -805,7 +1008,15 @@ export default function PrayerBookView() {
           </ScrollView>
         )}
 
-        <View style={s.cardWrap}>
+        <View
+          style={s.cardWrap}
+          collapsable={false}
+          ref={cardTarget.ref}
+          onLayout={event => {
+            guideCardYRef.current = event.nativeEvent.layout.y;
+            cardTarget.onLayout(event);
+          }}
+        >
           <View style={[s.prayerCard, { backgroundColor: theme.bg, borderColor: theme.border }]}>
             {isOrthodoxRule && (
               <View style={s.orthodoxBadge} pointerEvents="none">
