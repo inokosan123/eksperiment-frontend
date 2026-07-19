@@ -6,10 +6,11 @@ import Animated, { FadeInDown, LinearTransition, interpolateColor, useAnimatedSt
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
-import { CheckSmall, ChevronRight, Lock, Plus, Trash2 } from '@/components/icons/Icons';
+import { CheckSmall, ChevronRight, Lock, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
-import DailyTargetEditor, { PlanningRail, type TargetValues } from './DailyTargetEditor';
+import DailyTargetEditor, { type TargetValues } from './DailyTargetEditor';
+import AppRulesBoard from './AppRulesBoard';
 import EssentialAppsSheet from './EssentialAppsSheet';
 import FocusCheck from './FocusCheck';
 import FocusSwitch from './FocusSwitch';
@@ -22,7 +23,7 @@ import {
   isNativeFocusAvailable,
 } from './focusNativeBridge';
 import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
-import { CATEGORY_TINTS, PREVIEW_APPS, type PreviewApp } from './focusContent';
+import { PREVIEW_APPS, type PreviewApp } from './focusContent';
 import { usePermissionGate } from './usePermissionGate';
 import { PLAN_VISUALS, planVisualForTheme } from './planVisuals';
 import {
@@ -65,16 +66,6 @@ function completeRules(rules: GroupRule[], groupIds: string[]) {
   return groupIds.map(groupId => byId.get(groupId) ?? defaultRule(groupId));
 }
 
-function draftPlannedByGroup(rules: GroupRule[]) {
-  const source = rules;
-  const result: Record<string, number> = {};
-  for (const rule of source) {
-    if (rule.mode === 'blocked' || rule.dailyMinutes == null) continue;
-    result[rule.groupId] = (result[rule.groupId] ?? 0) + rule.dailyMinutes;
-  }
-  return result;
-}
-
 function clonePlanCatalog(source?: Record<string, string[]>) {
   const catalog = source ?? DEFAULT_GROUP_APP_IDS;
   return Object.fromEntries(Object.entries(catalog).map(([id, appIds]) => [id, [...appIds]]));
@@ -84,13 +75,6 @@ function appsForGroup(catalog: Record<string, string[]>, groupId: string): Previ
   return (catalog[groupId] ?? [])
     .map(appId => PREVIEW_APPS.find(app => app.id === appId))
     .filter(Boolean) as PreviewApp[];
-}
-
-function ruleModeLabel(rule: GroupRule) {
-  const mode = rule.mode ?? (rule.dailyMinutes == null ? 'noLimit' : 'limit');
-  if (mode === 'blocked') return 'Blocked';
-  if (mode === 'limit' && rule.dailyMinutes != null) return formatMinutesShort(rule.dailyMinutes);
-  return 'No limit';
 }
 
 // A plan color: springs up when chosen, settles back when another takes over.
@@ -132,31 +116,6 @@ function ColorSwatch({
   );
 }
 
-function GroupRuleMeta({
-  nativeAvailable,
-  selectionId,
-  previewCount,
-  individualCount,
-}: {
-  nativeAvailable: boolean;
-  selectionId: string;
-  previewCount: number;
-  individualCount: number;
-}) {
-  const summary = useNativeActivitySelectionSummary(selectionId);
-  const groupPart = nativeAvailable
-    ? summary
-      ? summary.applicationCount > 0
-        ? `${summary.applicationCount} selected ${summary.applicationCount === 1 ? 'app' : 'apps'}`
-        : 'Choose apps'
-      : 'Loading iPhone selection'
-    : `${previewCount} apps`;
-  return (
-    <Text style={s.ruleMeta}>
-      {groupPart} · {individualCount} individual {individualCount === 1 ? 'rule' : 'rules'}
-    </Text>
-  );
-}
 
 export default function PlanEditorView() {
   const router = useRouter();
@@ -205,7 +164,10 @@ export default function PlanEditorView() {
   // single Daily rule set; any legacy zones are preserved only when saving.
   const activeRules = rules;
   const activeRule = activeRules.find(rule => rule.groupId === ruleGroupId) ?? null;
-  const plannedByGroup = useMemo(() => draftPlannedByGroup(rules), [rules]);
+  const groupAppCounts = useMemo(
+    () => Object.fromEntries(groupIds.map(groupId => [groupId, (groupCatalog[groupId] ?? []).length])),
+    [groupCatalog, groupIds]
+  );
   const draftToleranceEnd = target.essentialOnly ?? target.tolerable;
   const draftRequiresNative = useMemo(() => {
     const ruleSets = rules;
@@ -534,57 +496,20 @@ export default function PlanEditorView() {
         </Animated.View>
 
         <Animated.View entering={enter(240)} layout={LinearTransition.duration(220)}>
-          <View style={s.sectionTitleRow}>
-            <View>
-              <Text style={s.sectionLabelNoMargin}>APP RULES</Text>
-              <Text style={s.sectionSub}>Give each group its share of the day — or block it.</Text>
-            </View>
-          </View>
-          <View style={s.ruleList}>
-            <PlanningRail values={target} plannedByGroup={plannedByGroup} embedded />
-            <View style={s.railRulesDivider} />
-            {groupIds.map((groupId, index) => {
-              const rule = activeRules.find(entry => entry.groupId === groupId) ?? defaultRule(groupId);
-              const tint = CATEGORY_TINTS[groupId] ?? { bg: C.goldLight, color: C.goldDark };
-              const custom = customGroupIds.includes(groupId);
-              return (
-                <View key={groupId}>
-                  {index > 0 && <View style={s.separator} />}
-                  <TouchableOpacity style={s.ruleRow} onPress={() => setRuleGroupId(groupId)} activeOpacity={0.72}>
-                    <View style={[s.ruleAvatar, { backgroundColor: tint.bg }]}><Text style={[s.ruleAvatarText, { color: tint.color }]}>{groupName(state, groupId)[0]}</Text></View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.ruleName}>{groupName(state, groupId)}</Text>
-                      <GroupRuleMeta
-                        nativeAvailable={nativeAvailable}
-                        selectionId={`plan.${draftPlanId}.group.${groupId}`}
-                        previewCount={(groupCatalog[groupId] ?? []).length}
-                        individualCount={(rule.appRules ?? []).length}
-                      />
-                    </View>
-                    <View style={[s.ruleTag, rule.mode === 'blocked' && s.ruleTagBlocked]}>
-                      <Text style={[s.ruleTagText, rule.mode === 'blocked' && s.ruleTagTextBlocked]}>{ruleModeLabel(rule)}</Text>
-                    </View>
-                    {rule.mode !== 'noLimit' && (
-                      <View style={[s.strengthTag, rule.strength === 'strict' ? s.strictTag : s.looseTag]}>
-                        <Text style={[s.strengthTagText, rule.strength === 'strict' ? s.strictTagText : s.looseTagText]}>{rule.strength === 'strict' ? 'STRICT' : 'LOOSE'}</Text>
-                      </View>
-                    )}
-                    {custom && (
-                      <TouchableOpacity onPress={() => removeGroup(groupId)} hitSlop={8}>
-                        <Trash2 s={13} c={C.textMuted} w={2} />
-                      </TouchableOpacity>
-                    )}
-                    <ChevronRight s={15} c={C.textMuted} w={2} />
-                  </TouchableOpacity>
-                </View>
-              );
-            })}
-          </View>
-
-          <TouchableOpacity style={s.addGroupRow} onPress={() => setGroupSheetOpen(true)} activeOpacity={0.74}>
-            <View style={s.addGroupIcon}><Plus s={13} c={C.goldDark} w={2.5} /></View>
-            <Text style={s.addGroupText}>Add or reuse a group</Text>
-          </TouchableOpacity>
+          <AppRulesBoard
+            goalMinutes={target.target}
+            lockAtMinutes={draftToleranceEnd}
+            rules={completeRules(activeRules, groupIds)}
+            groupIds={groupIds}
+            customGroupIds={customGroupIds}
+            groupAppCounts={groupAppCounts}
+            resolveGroupName={groupId => groupName(state, groupId)}
+            nativeAvailable={nativeAvailable}
+            selectionIdForGroup={groupId => `plan.${draftPlanId}.group.${groupId}`}
+            onOpenRule={setRuleGroupId}
+            onRemoveGroup={removeGroup}
+            onAddGroup={() => setGroupSheetOpen(true)}
+          />
         </Animated.View>
         </View>
         )}
@@ -709,7 +634,6 @@ const s = StyleSheet.create({
   essOnlyTitleOn: { color: '#FFFFFF' },
   essOnlyBody: { marginTop: 3, fontFamily: F.sans, fontSize: 11.5, lineHeight: 15.5, color: '#7A6468' },
   essOnlyBodyOn: { color: '#C8C9CC' },
-  railRulesDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E3DFD6', marginHorizontal: -10 },
   nameSurface: { height: 58, flexDirection: 'row', alignItems: 'center', borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DFD7C8', backgroundColor: C.surface, paddingHorizontal: 16, boxShadow: '0 6px 18px rgba(45, 40, 33, 0.04)' },
   nameSurfaceEmpty: { borderColor: '#E1C5A1' },
   nameInput: { flex: 1, fontFamily: F.serifMedium, fontSize: 21, color: C.text },
@@ -747,26 +671,6 @@ const s = StyleSheet.create({
   structuralButtonText: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.goldDark },
   buttonDisabled: { opacity: 0.35 },
   structuralError: { marginTop: 8, textAlign: 'center', fontFamily: F.sansMedium, fontSize: 10, color: '#A24351' },
-  ruleList: { overflow: 'hidden', borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E1DDD4', backgroundColor: '#FFFDF9', paddingHorizontal: 10, boxShadow: '0 8px 24px rgba(45, 40, 33, 0.05)' },
-  separator: { height: StyleSheet.hairlineWidth, backgroundColor: '#E9E5DE', marginLeft: 50 },
-  ruleRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 3, paddingVertical: 8 },
-  ruleAvatar: { width: 40, height: 40, borderRadius: 14, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
-  ruleAvatarText: { fontFamily: F.serifSemiBold, fontSize: 17 },
-  ruleName: { fontFamily: F.serifMedium, fontSize: 18, color: C.text },
-  ruleMeta: { marginTop: 3, fontFamily: F.sans, fontSize: 11, lineHeight: 14.5, color: C.textMuted },
-  ruleTag: { borderRadius: 999, backgroundColor: '#F0EFEB', paddingHorizontal: 10, paddingVertical: 6.5 },
-  ruleTagBlocked: { backgroundColor: '#F8E7EA' },
-  ruleTagText: { fontFamily: F.sansBold, fontSize: 10.5, color: C.textSecondary, fontVariant: ['tabular-nums'] },
-  ruleTagTextBlocked: { color: '#A24351' },
-  strengthTag: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 6 },
-  looseTag: { backgroundColor: '#FFF0C5' },
-  strictTag: { backgroundColor: '#F8E7EA' },
-  strengthTagText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 0.8 },
-  looseTagText: { color: '#95681F' },
-  strictTagText: { color: '#A24351' },
-  addGroupRow: { marginTop: 10, minHeight: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: '#D7C398', backgroundColor: '#FFF9EC' },
-  addGroupIcon: { width: 30, height: 30, borderRadius: 10, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
-  addGroupText: { fontFamily: F.serifSemiBold, fontSize: 16, color: C.goldDark },
   deletePlanButton: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 9 },
   deletePlanText: { fontFamily: F.sansSemiBold, fontSize: 11, color: '#A24351' },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border, backgroundColor: 'rgba(252,252,252,0.96)', paddingHorizontal: 16, paddingTop: 11 },

@@ -10,13 +10,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { AlertTriangle, ChevronRight } from '@/components/icons/Icons';
+import { ChevronRight } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import DayGauge from './DayGauge';
 import LimitSlider from './LimitSlider';
 import GoldButton from './GoldButton';
-import { CATEGORY_TINTS } from './focusContent';
 import { formatMinutesShort } from './dayPlanStore';
 
 const TARGET_STOPS: (number | null)[] = [
@@ -456,116 +455,6 @@ export default function DailyTargetEditor({
   );
 }
 
-// ————— The projection rail: colored group segments glide to their share. —————
-function RailSegment({ left, width, color }: { left: number; width: number; color: string }) {
-  const l = useSharedValue(left);
-  const w = useSharedValue(width);
-
-  useEffect(() => {
-    l.value = withTiming(left, GLIDE);
-    w.value = withTiming(width, GLIDE);
-  }, [left, width, l, w]);
-
-  const style = useAnimatedStyle(() => ({ left: l.value, width: w.value }));
-  return <Animated.View style={[s.railSegment, { backgroundColor: color }, style]} />;
-}
-
-export function PlanningRail({
-  values,
-  plannedByGroup,
-  embedded = false,
-}: {
-  values: TargetValues;
-  plannedByGroup: Record<string, number>;
-  // Embedded skips the card chrome so the rail can live inside another surface
-  // (the app-rules card) — the projection and the rules it feeds stay together.
-  embedded?: boolean;
-}) {
-  const [railWidth, setRailWidth] = useState(0);
-  const groups = Object.entries(plannedByGroup).filter(([, minutes]) => minutes > 0);
-  const planned = groups.reduce((sum, [, minutes]) => sum + minutes, 0);
-  const scale = values.essentialOnly ?? values.target ?? Math.max(60, planned);
-  const capacity = values.target == null ? null : Math.round(values.target * 0.8);
-  const warning = values.target != null && planned > values.target * 0.9;
-
-  const segments = useMemo(() => {
-    let consumed = 0;
-    return groups.map(([groupId, minutes]) => {
-      const left = consumed / scale;
-      consumed += minutes;
-      const width = Math.min(1 - left, minutes / scale);
-      return { groupId, left, width: Math.max(0, width) };
-    });
-  }, [groups, scale]);
-
-  return (
-    <View style={[s.planningWrap, embedded && s.planningWrapEmbedded]}>
-      <View style={s.planningHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={s.planningLabel}>DAILY PLANNING CAPACITY</Text>
-          <Text style={s.planningTitle}>
-            {capacity == null ? 'Set a Goal before dividing app time.' : `${formatMinutesShort(capacity)} for app rules`}
-          </Text>
-          <Text style={s.planningBody}>Plan 80% of the Goal. The rest stays free for real life.</Text>
-        </View>
-        <View style={s.plannedPill}>
-          <Text style={s.plannedPillLabel}>PLANNED</Text>
-          <Text style={s.plannedPillValue}>{formatMinutesShort(planned)}</Text>
-        </View>
-      </View>
-
-      <View style={s.railBlock}>
-        {values.target != null && railWidth > 0 && (
-          <>
-            <View style={[s.markerChip, { left: Math.max(0, (values.target * 0.8 / scale) * railWidth - 15) }]}>
-              <Text style={s.markerChipText}>80%</Text>
-            </View>
-            <View style={[s.markerChip, s.goalChip, { left: Math.min(railWidth - 36, Math.max(0, (values.target / scale) * railWidth - 18)) }]}>
-              <Text style={[s.markerChipText, s.goalChipText]}>GOAL</Text>
-            </View>
-          </>
-        )}
-        <View style={s.rail} onLayout={event => setRailWidth(event.nativeEvent.layout.width)}>
-          {railWidth > 0 && segments.map(segment => (
-            <RailSegment
-              key={segment.groupId}
-              left={segment.left * railWidth}
-              width={segment.width * railWidth}
-              color={(CATEGORY_TINTS[segment.groupId] ?? { color: C.goldDark }).color}
-            />
-          ))}
-          {values.target != null && railWidth > 0 && (
-            <>
-              <View style={[s.railMarker, s.capacityMarker, { left: (values.target * 0.8 / scale) * railWidth }]} />
-              <View style={[s.railMarker, s.goalMarker, { left: (values.target / scale) * railWidth }]} />
-            </>
-          )}
-          {values.essentialOnly != null && railWidth > 0 && (
-            <View style={[s.railMarker, s.hardMarker, { left: railWidth - 3 }]} />
-          )}
-        </View>
-        <View style={s.railBottomLabels}>
-          <Text style={s.railBottomText}>0</Text>
-          <Text style={s.railBottomText}>
-            {values.essentialOnly == null ? 'No daily boundary' : `Locked from ${formatMinutesShort(values.essentialOnly)}`}
-          </Text>
-        </View>
-      </View>
-
-      {warning && (
-        <View style={[s.warning, planned >= (values.target ?? Infinity) && s.warningStrong]}>
-          <AlertTriangle s={14} c={planned >= (values.target ?? Infinity) ? '#A24351' : '#A36F2B'} w={2.2} />
-          <Text style={[s.warningText, planned >= (values.target ?? Infinity) && s.warningTextStrong]}>
-            {planned >= (values.target ?? Infinity)
-              ? 'Your app rules use the full Goal. The plan can be saved, but no reserve remains.'
-              : 'Your app rules leave very little room for messages, maps, and unplanned use.'}
-          </Text>
-        </View>
-      )}
-    </View>
-  );
-}
-
 const s = StyleSheet.create({
   surface: { gap: 12 },
   editorIntro: { paddingHorizontal: 4, paddingBottom: 2 },
@@ -659,40 +548,4 @@ const s = StyleSheet.create({
   legendLabel: { fontFamily: F.sansSemiBold, fontSize: 11, color: C.textSecondary },
   legendValue: { fontFamily: F.sansBold, fontSize: 11.5, color: C.text, fontVariant: ['tabular-nums'] },
 
-  planningWrap: { borderRadius: 24, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DFDBD3', backgroundColor: '#FFFDF9', padding: 16, gap: 11, boxShadow: '0 8px 24px rgba(45, 40, 33, 0.055)' },
-  planningWrapEmbedded: { borderWidth: 0, backgroundColor: 'transparent', padding: 0, paddingTop: 12, paddingBottom: 14, boxShadow: 'none' },
-  planningHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
-  planningLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.65, color: C.textMuted },
-  planningTitle: { marginTop: 3, fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 23, color: C.text },
-  planningBody: { marginTop: 4, fontFamily: F.sans, fontSize: 11.5, lineHeight: 16, color: C.textSecondary },
-  plannedPill: { flexShrink: 0, minWidth: 68, borderRadius: 15, borderCurve: 'continuous', backgroundColor: '#F0EEE8', paddingHorizontal: 10, paddingVertical: 8, alignItems: 'center' },
-  plannedPillLabel: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.1, color: C.textMuted },
-  plannedPillValue: { marginTop: 2, fontFamily: F.serifSemiBold, fontSize: 17, color: C.text, fontVariant: ['tabular-nums'] },
-  railBlock: { position: 'relative', paddingTop: 20 },
-  markerChip: {
-    position: 'absolute',
-    top: 0,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#EAD9B7',
-    backgroundColor: '#FFFBEB',
-    paddingHorizontal: 6,
-    paddingVertical: 2.5,
-    zIndex: 2,
-  },
-  goalChip: { borderColor: '#D9CBB2', backgroundColor: '#F4EFE4' },
-  markerChipText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 0.6, color: C.goldDark },
-  goalChipText: { color: '#2D2923' },
-  rail: { position: 'relative', height: 18, borderRadius: 9, backgroundColor: '#ECE9E1' },
-  railSegment: { position: 'absolute', top: 2, bottom: 2, borderRadius: 6 },
-  railMarker: { position: 'absolute', top: -4, width: 1.5, height: 24, borderRadius: 1 },
-  capacityMarker: { backgroundColor: C.goldDark },
-  goalMarker: { width: 2, backgroundColor: '#2D2923' },
-  hardMarker: { width: 3, backgroundColor: ESSENTIALS_COLOR },
-  railBottomLabels: { marginTop: 5, flexDirection: 'row', justifyContent: 'space-between' },
-  railBottomText: { fontFamily: F.sansMedium, fontSize: 10, color: C.textMuted, fontVariant: ['tabular-nums'] },
-  warning: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 14, backgroundColor: '#FFF4DC', paddingHorizontal: 12, paddingVertical: 10 },
-  warningStrong: { backgroundColor: '#F9E8EB' },
-  warningText: { flex: 1, fontFamily: F.sansMedium, fontSize: 11, lineHeight: 15.5, color: '#8D5C1E' },
-  warningTextStrong: { color: '#8F3443' },
 });
