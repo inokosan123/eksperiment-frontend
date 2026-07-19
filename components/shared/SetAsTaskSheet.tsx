@@ -26,6 +26,7 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import { StaticChallengeTrophy } from '@/components/challenges/ChallengeTrophy';
+import TaskTimeEditor from '@/components/shared/TaskTimeEditor';
 import {
   Book,
   BookMarked,
@@ -3089,6 +3090,11 @@ function FrequencyChoice({
   );
 }
 
+// Challenges pick their time on the same universal editor tasks use — the
+// hero time row with its sub-line and the per-day schedule card, plus the
+// redesigned picker sheet. The gold theme is TaskTimeEditor's own default, so
+// it drops straight into the challenge cards. This is a thin adapter from the
+// challenge schedule draft to the editor's flat props.
 function ChallengeTimeEditor({
   value,
   onChange,
@@ -3098,38 +3104,16 @@ function ChallengeTimeEditor({
   onChange: (value: ChallengeScheduleDraft) => void;
   allowPerDayTimes?: boolean;
 }) {
-  const showBaseTime = !allowPerDayTimes || value.sameTimeEveryDay;
-
   return (
-    <View style={s.stack}>
-      {showBaseTime && (
-        <TimeField label="Time" value={value.time} onChangeText={time => onChange({ ...value, time })} />
-      )}
-
-      {allowPerDayTimes && (
-        <ToggleRow
-          label="Different time per day"
-          active={!value.sameTimeEveryDay}
-          onPress={() => onChange({ ...value, sameTimeEveryDay: !value.sameTimeEveryDay })}
-        />
-      )}
-
-      {allowPerDayTimes && !value.sameTimeEveryDay && (
-        <View style={s.dayTimeStack}>
-          {WEEKDAY_LABELS.map((label, index) => (
-            <View key={label} style={s.dayTimeRow}>
-              <Text style={s.dayTimeLabel}>{label}</Text>
-              <TimePickerButton
-                value={value.dayTimes[index] || value.time}
-                onChangeText={time => onChange({ ...value, dayTimes: { ...value.dayTimes, [index]: time } })}
-                compact
-              />
-            </View>
-          ))}
-        </View>
-      )}
-
-    </View>
+    <TaskTimeEditor
+      time={value.time}
+      sameTimeEveryDay={value.sameTimeEveryDay}
+      dayTimes={value.dayTimes}
+      onTimeChange={time => onChange({ ...value, time })}
+      onSameTimeEveryDayChange={sameTimeEveryDay => onChange({ ...value, sameTimeEveryDay })}
+      onDayTimesChange={dayTimes => onChange({ ...value, dayTimes })}
+      allowPerDayTimes={allowPerDayTimes}
+    />
   );
 }
 
