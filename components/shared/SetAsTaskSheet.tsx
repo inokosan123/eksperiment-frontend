@@ -2225,6 +2225,8 @@ export function ChallengePanel({
                     </View>
                   </Reanimated.View>
                 )}
+                <View pointerEvents="none" style={[s.challengeRail, s.challengeRailLeft]} />
+                <View pointerEvents="none" style={[s.challengeRail, s.challengeRailRight]} />
               </View>
             );
           })}
@@ -2411,6 +2413,8 @@ export function ChallengePanel({
                   </View>
                 </Reanimated.View>
               )}
+              <View pointerEvents="none" style={[s.challengeRail, s.challengeRailLeft, s.challengeRailPaused]} />
+              <View pointerEvents="none" style={[s.challengeRail, s.challengeRailRight, s.challengeRailPaused]} />
             </View>
             );
           })}
@@ -2672,6 +2676,8 @@ function ScriptureCatalogEntryCard({
           <PrimaryButton label="Start Challenge" onPress={onStart} targetBinding={guideStartBinding} />
         </Reanimated.View>
       )}
+      <View pointerEvents="none" style={[s.challengeRail, s.challengeRailSlim, s.challengeRailLeft, !expanded && s.challengeRailStart]} />
+      <View pointerEvents="none" style={[s.challengeRail, s.challengeRailSlim, s.challengeRailRight, !expanded && s.challengeRailStart]} />
     </View>
   );
 }
@@ -2825,6 +2831,8 @@ function ChallengeCatalogEntryCard({
           <PrimaryButton label="Start Challenge" onPress={onStart} targetBinding={guideStartBinding} />
         </Reanimated.View>
       )}
+      <View pointerEvents="none" style={[s.challengeRail, s.challengeRailLeft, !expanded && s.challengeRailStart]} />
+      <View pointerEvents="none" style={[s.challengeRail, s.challengeRailRight, !expanded && s.challengeRailStart]} />
     </View>
   );
 }
@@ -4578,38 +4586,61 @@ const s = StyleSheet.create({
     fontSize: 11,
     color: '#9CA3AF',
   },
-  // The Home challenge task card, grown up: the same cream face inside the
-  // same solid gold rails — here the rails are the shell's own left and right
-  // borders, so they hold the whole card, opened editor included.
+  // The Home challenge task card, grown up. The shell wears ONE uniform
+  // hairline all the way around — so the rounded corners stay crisp — and the
+  // gold rails live just inside it as full-height bands, each finished with
+  // its own thin dark edge, the same boundary the top and bottom wear. The
+  // shell's radius clips the bands into the curve like a bound book cover.
   challengeCardShell: {
     borderRadius: 22,
     borderCurve: 'continuous',
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderTopColor: 'rgba(197,160,89,0.35)',
-    borderBottomColor: 'rgba(197,160,89,0.35)',
-    borderLeftColor: '#C5A059',
-    borderRightColor: '#C5A059',
+    borderWidth: 1,
+    borderColor: 'rgba(158,120,50,0.40)',
     backgroundColor: '#FFFFFF',
     overflow: 'hidden',
     marginBottom: 5,
     boxShadow: '0 6px 18px rgba(92,67,25,0.10)',
   },
   challengeCardShellStarted: {
-    borderTopColor: 'rgba(197,160,89,0.52)',
-    borderBottomColor: 'rgba(197,160,89,0.52)',
+    borderColor: 'rgba(158,120,50,0.55)',
     backgroundColor: '#FFFDF7',
     boxShadow: '0 9px 24px rgba(92,67,25,0.14)',
   },
   challengeCardShellPaused: {
-    borderTopColor: 'rgba(197,160,89,0.20)',
-    borderBottomColor: 'rgba(197,160,89,0.20)',
-    borderLeftColor: '#DCCBA2',
-    borderRightColor: '#DCCBA2',
+    borderColor: 'rgba(150,132,96,0.32)',
     backgroundColor: '#FCFAF5',
     boxShadow: '0 3px 12px rgba(67,60,51,0.05)',
+  },
+  challengeRail: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 5,
+    backgroundColor: '#C5A059',
+  },
+  challengeRailLeft: {
+    left: 0,
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(146,108,40,0.45)',
+  },
+  challengeRailRight: {
+    right: 0,
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(146,108,40,0.45)',
+  },
+  challengeRailPaused: {
+    backgroundColor: '#DCCBA2',
+    borderLeftColor: 'rgba(150,132,96,0.40)',
+    borderRightColor: 'rgba(150,132,96,0.40)',
+  },
+  // Start cards keep quieter rails until they are opened.
+  challengeRailStart: {
+    backgroundColor: 'rgba(197,160,89,0.62)',
+    borderLeftColor: 'rgba(146,108,40,0.32)',
+    borderRightColor: 'rgba(146,108,40,0.32)',
+  },
+  challengeRailSlim: {
+    width: 4,
   },
   challengeCardPaused: {
     backgroundColor: 'transparent',
@@ -4638,8 +4669,8 @@ const s = StyleSheet.create({
   // floating just inside the face.
   challengeWhisperFrame: {
     ...StyleSheet.absoluteFillObject,
-    margin: 5,
-    borderRadius: 13,
+    margin: 9,
+    borderRadius: 12,
     borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.15)',
@@ -4647,11 +4678,12 @@ const s = StyleSheet.create({
   challengeWhisperFramePaused: {
     borderColor: 'rgba(160,146,118,0.12)',
   },
-  // The prize itself, ghosted into the face of a live challenge.
+  // The prize itself, ghosted into the face of a live challenge — pulled in
+  // from the edge so the chevron never crosses it.
   challengeTrophyWatermark: {
     position: 'absolute',
-    right: 2,
-    top: 26,
+    right: 40,
+    top: 24,
     opacity: 0.34,
     transform: [{ rotate: '10deg' }],
   },
@@ -5111,29 +5143,20 @@ const s = StyleSheet.create({
     lineHeight: 15,
     color: '#9CA3AF',
   },
-  // The start card wears the same rails as its active sibling — quieter until
-  // it is opened, then fully lit: one family across all three states.
+  // The start card wears the same construction as its active sibling — one
+  // uniform hairline around the shell, rails quieter until it is opened.
   catalogStartCard: {
     position: 'relative',
     borderRadius: 22,
     borderCurve: 'continuous',
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderTopColor: 'rgba(197,160,89,0.28)',
-    borderBottomColor: 'rgba(197,160,89,0.28)',
-    borderLeftColor: 'rgba(197,160,89,0.55)',
-    borderRightColor: 'rgba(197,160,89,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(158,120,50,0.34)',
     backgroundColor: '#FFFDF9',
     overflow: 'hidden',
     boxShadow: '0 5px 16px rgba(77,57,27,0.075)',
   },
   catalogStartCardExpanded: {
-    borderTopColor: 'rgba(197,160,89,0.48)',
-    borderBottomColor: 'rgba(197,160,89,0.48)',
-    borderLeftColor: '#C5A059',
-    borderRightColor: '#C5A059',
+    borderColor: 'rgba(158,120,50,0.52)',
     backgroundColor: '#FFFCF4',
     boxShadow: '0 9px 24px rgba(92,67,25,0.13)',
   },
@@ -5269,15 +5292,11 @@ const s = StyleSheet.create({
     color: '#8B8E96',
   },
   scriptureStartCard: {
+    position: 'relative',
     borderRadius: 22,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderLeftColor: 'rgba(197,160,89,0.50)',
-    borderRightColor: 'rgba(197,160,89,0.50)',
-    borderTopColor: 'rgba(197,160,89,0.18)',
-    borderBottomColor: 'rgba(197,160,89,0.16)',
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: 'rgba(158,120,50,0.30)',
     backgroundColor: '#FFFDFB',
     overflow: 'hidden',
     shadowColor: '#C5A059',
@@ -5287,10 +5306,7 @@ const s = StyleSheet.create({
     elevation: 1,
   },
   scriptureStartCardExpanded: {
-    borderLeftColor: '#C5A059',
-    borderRightColor: '#C5A059',
-    borderTopColor: 'rgba(197,160,89,0.3)',
-    borderBottomColor: 'rgba(197,160,89,0.3)',
+    borderColor: 'rgba(158,120,50,0.50)',
     backgroundColor: '#FFFDF7',
   },
   scriptureStartCardTap: {
