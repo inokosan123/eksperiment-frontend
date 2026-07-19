@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, InteractionManager, PixelRatio, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, InteractionManager, Modal, PixelRatio, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import type { NativeScrollEvent, NativeSyntheticEvent, StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as ExpoImage, type ImageRef as ExpoImageRef } from 'expo-image';
@@ -11,6 +11,7 @@ import Svg, { Circle as SvgCircle, Defs, G, Line as SvgLine, LinearGradient as S
 import * as Haptics from 'expo-haptics';
 import FocusLottie from '@/components/focus/FocusLottie';
 import Reanimated, {
+  type AnimatedRef,
   type SharedValue,
   cancelAnimation,
   FadeIn,
@@ -22,7 +23,10 @@ import Reanimated, {
   interpolate,
   interpolateColor,
   LinearTransition,
+  measure,
   runOnJS,
+  runOnUI,
+  useAnimatedRef,
   useAnimatedStyle,
   useDerivedValue,
   useFrameCallback,
@@ -48,6 +52,7 @@ import {
   Cross,
   Crown,
   Feather,
+  Globe,
   Heart,
   Home,
   Hourglass,
@@ -120,6 +125,11 @@ import type { TaskDefinition, TaskDraft } from '@/components/tasks/taskTypes';
 import { useGuidedSetup } from '@/components/onboarding/guided/GuidedSetupContext';
 import { GuideCrashBoundary } from '@/components/onboarding/guided/GuideCrashBoundary';
 import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
+import {
+  FocusOverviewGuideSlide,
+  FocusProtectionToolGuide,
+  type FocusProtectionToolId,
+} from '@/components/onboarding/focus/FocusProtectionGuideSlide';
 import { C, F } from '@/constants/tokens';
 
 type ChristianAnswer = 'yes' | 'exploring' | 'no' | 'prefer_not';
@@ -179,6 +189,7 @@ type StepId =
   | 'dayVisualizationHeader'
   | 'dayVisualization'
   | 'protectRecap'
+  | 'focusOverview'
   | 'setupProtect'
   | 'flameProtect'
   | 'organizeDeck'
@@ -1177,6 +1188,7 @@ const ONBOARDING_DEV_JUMP_GROUPS: OnboardingDevJumpGroup[] = [
       { step: 'screenTimeSlider', title: 'Screen time slider', body: 'Phone hours input.', accent: '#4D8586' },
       { step: 'dayVisualizationHeader', title: 'Day visualization', body: 'Daily time breakdown sequence.', accent: '#2F9B61' },
       { step: 'protectRecap', title: 'Protect recap', body: 'Selected answers and recommendations.', accent: '#4D8586' },
+      { step: 'focusOverview', title: 'Focus tour', body: 'Real Focus status, Quiet Hour, streak, and main cards.', accent: '#4D8586' },
       { step: 'flameProtect', title: 'Protect flame', body: 'First checkpoint flame.', accent: GOLD },
     ],
   },
@@ -1282,6 +1294,7 @@ function stepOrder(answers: Answers): StepId[] {
     'screenTimeSlider',
     'dayVisualizationHeader',
     'protectRecap',
+    'focusOverview',
     'flameProtect',
     'organizeDeck',
     'organizeRecap',
@@ -1584,6 +1597,7 @@ function isGuidedWalkthroughStep(step: StepId) {
     step === 'dayVisualizationHeader' ||
     step === 'dayVisualization' ||
     step === 'protectRecap' ||
+    step === 'focusOverview' ||
     step === 'setupProtect' ||
     step === 'flameProtect' ||
     step === 'organizeDeck' ||
@@ -2104,16 +2118,13 @@ function NameIntroSlide({
 
   return (
     <LinearGradient
-      colors={['#FFFDF8', '#FFFDF8', '#F8EEDC', '#D9B98E']}
-      locations={[0, 0.56, 0.86, 1]}
+      colors={[...CONVERSE_GRADIENT]}
+      locations={[...CONVERSE_GRADIENT_LOCATIONS]}
       start={{ x: 0.5, y: 0 }}
       end={{ x: 0.5, y: 1 }}
       style={s.nameIntroSlide}
     >
-      <View pointerEvents="none" style={s.nameIntroBackdrop}>
-        <View style={s.nameIntroGlow} />
-        <View style={s.nameIntroLine} />
-      </View>
+      <ConverseBackdrop />
 
       <ScrollView
         style={s.nameIntroScroll}
@@ -2413,16 +2424,13 @@ function TraditionIntroSlide({
 
   return (
     <LinearGradient
-      colors={['#FFFDF8', '#FFFDF8', '#F8EEDC', '#D9B98E']}
-      locations={[0, 0.56, 0.86, 1]}
+      colors={[...CONVERSE_GRADIENT]}
+      locations={[...CONVERSE_GRADIENT_LOCATIONS]}
       start={{ x: 0.5, y: 0 }}
       end={{ x: 0.5, y: 1 }}
       style={s.nameIntroSlide}
     >
-      <View pointerEvents="none" style={s.nameIntroBackdrop}>
-        <View style={s.nameIntroGlow} />
-        <View style={s.nameIntroLine} />
-      </View>
+      <ConverseBackdrop />
 
       <ScrollView
         style={s.nameIntroScroll}
@@ -2619,6 +2627,50 @@ const VALUE_ATELIER_COMPANION_COLORS = [
 ];
 const VALUE_ATELIER_GRADIENT = ['#FFFEFC', '#FFFDF8', '#FBF2E0'] as const;
 const VALUE_ATELIER_GRADIENT_LOCATIONS = [0, 0.5, 1] as const;
+
+// ── Conversation screens · calm vellum backdrop ────────────────────────────
+// nameIntro, traditionIntro and the tools message scene used to share the
+// value slides' old caramel foot. They now wear their OWN backdrop: the same
+// bright vellum family as the value slides, but stripped to a whisper — no
+// drifting washes, no floating dust, no swipe-borne colour. A warm dawn
+// grounds the foot, two faint STILL halo arcs echo the value rings, a few
+// motionless gold specks sit in the margins, and a single slow breath on the
+// dawn keeps it alive without ever pulling focus from the conversation.
+const CONVERSE_GRADIENT = ['#FFFEFC', '#FFFDF8', '#FAF1DF'] as const;
+const CONVERSE_GRADIENT_LOCATIONS = [0, 0.52, 1] as const;
+
+function ConverseBackdrop() {
+  const { height } = useWindowDimensions();
+  const breath = useSharedValue(0);
+
+  useEffect(() => {
+    breath.value = withRepeat(withTiming(1, { duration: 9000, easing: Easing.inOut(Easing.sin) }), -1, true);
+    return () => cancelAnimation(breath);
+  }, [breath]);
+
+  const dawnStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(breath.value, [0, 1], [0.82, 1]),
+  }));
+
+  const haloCenter = height * 0.2;
+
+  return (
+    <View pointerEvents="none" style={s.converse}>
+      {/* Dawn — grounds the foot the way the value slides' does, but still */}
+      <View style={s.converseDawnFar} />
+      <Reanimated.View style={[s.converseDawn, dawnStyle]} />
+
+      {/* Two faint halo arcs — a quiet echo of the value rings, never moving */}
+      <View style={[s.converseRing, s.converseRingOne, { top: haloCenter - 160 }]} />
+      <View style={[s.converseRing, s.converseRingTwo, { top: haloCenter - 226 }]} />
+
+      {/* Still gold specks scattered along the margins */}
+      <View style={[s.converseSpeck, { top: haloCenter + 44, left: '9%' }]} />
+      <View style={[s.converseSpeck, { top: haloCenter + 158, right: '8%' }]} />
+      <View style={[s.converseSpeckSmall, { top: haloCenter + 256, left: '13%' }]} />
+    </View>
+  );
+}
 
 function ValueAtelierBackdrop({
   topInset,
@@ -11580,19 +11632,14 @@ function ToolsShowcaseSlide({
   });
   return (
     <LinearGradient
-      colors={['#FFFDF8', '#FFFDF8', '#F6EBD9', '#E3C894']}
-      locations={[0, 0.48, 0.84, 1]}
+      colors={[...CONVERSE_GRADIENT]}
+      locations={[...CONVERSE_GRADIENT_LOCATIONS]}
       start={{ x: 0.5, y: 0 }}
       end={{ x: 0.5, y: 1 }}
       style={s.toolsShowcaseRoot}
     >
       <Reanimated.View style={[s.toolsSceneWorld, dipStyle]}>
-        <View pointerEvents="none" style={s.valueBackdrop}>
-          <View style={s.valueBackdropBandTop} />
-          <View style={s.valueBackdropBandBottom} />
-          <View style={s.valueBackdropLineOne} />
-          <View style={s.valueBackdropLineTwo} />
-        </View>
+        <ConverseBackdrop />
 
         <Reanimated.View pointerEvents="none" style={[s.toolsCardStack, { backgroundColor: '#EFE4CC' }, stackDeepStyle]} />
         <Reanimated.View pointerEvents="none" style={[s.toolsCardStack, { backgroundColor: '#F9F2E2' }, stackMidStyle]} />
@@ -11602,20 +11649,33 @@ function ToolsShowcaseSlide({
           style={[s.toolsMorphCard, morphCardStyle, phase === 'convo' && s.toolsHidden]}
         >
           <Reanimated.View style={[s.toolsMorphShowcase, showcaseContentStyle]}>
+            {/* The message plate wears the app's "worked gold": a warm gold
+                face with a band through its middle, a caught sheen streak,
+                a gold floor glow and glinting corner seals — the weekly-plan
+                card's grammar. The morph into the chat bubble is untouched. */}
             <LinearGradient
-              colors={['#FFFEFB', '#FBF4E5']}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
+              colors={['#FFFDF6', 'rgba(210,174,94,0.24)', '#FFF7E3']}
+              locations={[0, 0.5, 1]}
+              start={{ x: 0.12, y: 0 }}
+              end={{ x: 0.9, y: 1 }}
               pointerEvents="none"
               style={s.toolsCardFace}
             />
             <LinearGradient
-              colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.07)']}
+              colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.13)']}
               start={{ x: 0.5, y: 0 }}
               end={{ x: 0.5, y: 1 }}
               pointerEvents="none"
               style={s.toolsCardFloorWash}
             />
+            <View pointerEvents="none" style={s.toolsCardSheen}>
+              <LinearGradient
+                colors={['rgba(255,251,236,0)', 'rgba(255,250,232,0.55)', 'rgba(255,251,236,0)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={StyleSheet.absoluteFill}
+              />
+            </View>
             <View pointerEvents="none" style={s.toolsCardTopSheen} />
             <View pointerEvents="none" style={s.toolsCardBottomEdge} />
             <View pointerEvents="none" style={s.toolsMessageBoxFrame} />
@@ -11624,6 +11684,8 @@ function ToolsShowcaseSlide({
             <View pointerEvents="none" style={[s.toolsCardCorner, s.toolsCardCornerTR]} />
             <View pointerEvents="none" style={[s.toolsCardCorner, s.toolsCardCornerBL]} />
             <View pointerEvents="none" style={[s.toolsCardCorner, s.toolsCardCornerBR]} />
+            <View pointerEvents="none" style={[s.toolsCardGlint, s.toolsCardGlintTL]} />
+            <View pointerEvents="none" style={[s.toolsCardGlint, s.toolsCardGlintBR]} />
             <ToolsOrnamentDraw progress={cardSettle} />
             <Text
               style={[s.toolsTitle, compact && s.toolsTitleCompact]}
@@ -14493,32 +14555,27 @@ type RecapProblemGroup = {
   cardIds: string[];
   accent: string;
   icon: React.ReactNode;
+  alwaysShow?: boolean;
 };
 
 const PROTECT_RECAP_GROUPS: RecapProblemGroup[] = [
   {
     id: 'screen-time',
-    title: 'Screen Time Protection',
-    subtitle: 'Limits, morning blocks, evening blocks',
-    cardIds: ['lost-hour', 'morning-night', 'procrastination'],
+    title: 'Screen Time Control',
+    subtitle: 'Daily Goal, Tolerance, and app boundaries',
+    cardIds: PROTECT_DECK_CARDS.map(card => card.id),
     accent: '#4D8586',
     icon: <Clock s={16} c="#4D8586" w={2} />,
+    alwaysShow: true,
   },
   {
-    id: 'focus',
-    title: 'Do Not Disturb',
-    subtitle: 'Quiet windows for focus and presence',
-    cardIds: ['focus-pulled', 'presence'],
+    id: 'web-protection',
+    title: 'Web Protection',
+    subtitle: 'Protection packs and Hard Lock',
+    cardIds: PROTECT_DECK_CARDS.map(card => card.id),
     accent: '#4D8586',
-    icon: <BellRing s={16} c="#4D8586" w={2} />,
-  },
-  {
-    id: 'blockers',
-    title: 'Content Blocker',
-    subtitle: 'Block what pulls you in',
-    cardIds: ['ashamed-content'],
-    accent: '#4D8586',
-    icon: <SlidersHorizontal s={16} c="#4D8586" w={2} />,
+    icon: <Globe s={16} c="#4D8586" w={2} />,
+    alwaysShow: true,
   },
 ];
 
@@ -15231,22 +15288,31 @@ function V4RecapPathConnector({ accent, index }: { accent: string; index: number
   );
 }
 
-// Deo 3 — setup loop. The settled clean list becomes a checklist: tap a tool to
-// "set it up" (a brief busy state, like leaving to configure it and returning),
-// then it lands a gold check + haptic. When all are done the board auto-advances
-// to the flame screen. This is an onboarding-only simulated setup — it does NOT
-// drive the real tools.
-function V4RecapToolsBoard({ groups, selected, onNext }: { groups: RecapProblemGroup[]; selected: string[]; onNext: () => void }) {
+// Deo 3 — setup loop. The board owns the queue and completion animation. A
+// chapter may provide a real-screen renderer; without one, the older simulated
+// behavior remains unchanged for every existing recap flow.
+function V4RecapToolsBoard({
+  groups,
+  selected,
+  renderSetup,
+  onNext,
+}: {
+  groups: RecapProblemGroup[];
+  selected: string[];
+  renderSetup?: (group: RecapProblemGroup, onComplete: () => void) => React.ReactNode;
+  onNext: () => void;
+}) {
   const recs = useMemo(
     () =>
       groups
-        .filter(group => group.cardIds.some(id => selected.includes(id)))
+        .filter(group => group.alwaysShow || group.cardIds.some(id => selected.includes(id)))
         .slice(0, 3),
     [groups, selected],
   );
   const [reveal, setReveal] = useState(0);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [completedCount, setCompletedCount] = useState(0);
+  const [setupGroupId, setSetupGroupId] = useState<string | null>(null);
   const finishingRef = useRef(false);
   const selectedKey = selected.join('|');
 
@@ -15256,6 +15322,7 @@ function V4RecapToolsBoard({ groups, selected, onNext }: { groups: RecapProblemG
     setReveal(0);
     setActiveIndex(-1);
     setCompletedCount(0);
+    setSetupGroupId(null);
   }, [selectedKey]);
 
   useEffect(() => {
@@ -15279,7 +15346,7 @@ function V4RecapToolsBoard({ groups, selected, onNext }: { groups: RecapProblemG
     return undefined;
   }, [activeIndex, recs.length, reveal]);
 
-  const handleContinue = useCallback(() => {
+  const settleActiveSetup = useCallback(() => {
     if (finishingRef.current) return;
     if (recs.length === 0) {
       finishingRef.current = true;
@@ -15302,7 +15369,27 @@ function V4RecapToolsBoard({ groups, selected, onNext }: { groups: RecapProblemG
     }, 620);
   }, [activeIndex, onNext, recs.length]);
 
+  const handleContinue = useCallback(() => {
+    if (finishingRef.current) return;
+    if (recs.length === 0 || activeIndex < 0) {
+      settleActiveSetup();
+      return;
+    }
+    if (renderSetup) {
+      setSetupGroupId(recs[activeIndex]?.id ?? null);
+      return;
+    }
+    settleActiveSetup();
+  }, [activeIndex, recs, renderSetup, settleActiveSetup]);
+
+  const handleRealSetupComplete = useCallback(() => {
+    setSetupGroupId(null);
+    settleActiveSetup();
+  }, [settleActiveSetup]);
+
   const ctaVisible = reveal >= recs.length && (recs.length === 0 || activeIndex >= 0);
+
+  const activeSetupGroup = setupGroupId ? recs.find(group => group.id === setupGroupId) : undefined;
 
   return (
     <View style={s.v4RecapSlide}>
@@ -15347,6 +15434,17 @@ function V4RecapToolsBoard({ groups, selected, onNext }: { groups: RecapProblemG
           </TouchableOpacity>
         </View>
       </AnimatedCta>
+
+      {activeSetupGroup && renderSetup ? (
+        <Modal
+          visible
+          animationType="fade"
+          presentationStyle="fullScreen"
+          onRequestClose={() => {}}
+        >
+          {renderSetup(activeSetupGroup, handleRealSetupComplete)}
+        </Modal>
+      ) : null}
     </View>
   );
 }
@@ -22671,36 +22769,35 @@ function OrganizeHabitsBuilderV2Slide({ onNext }: { onNext: () => void }) {
 }
 
 const SYSTEM_BUILD_STEPS = [
-  'Reading your answers',
-  'Weekly rhythm in place',
-  'Big events in view',
-  'Habits tied to goals',
-  'Preparing your Home',
+  'Answers mapped to your priorities',
+  'Weekly rhythm assembled',
+  'Big events placed in view',
+  'Habits connected to your goals',
+  'Home organized around your day',
 ];
 // Irregular on purpose — real work never ticks like a metronome. The third
 // row stalls, the last one takes the longest.
-const SYSTEM_BUILD_TICKS = [800, 1600, 3050, 3800, 5100];
+const SYSTEM_BUILD_TICKS = [900, 1780, 2980, 4050, 5160];
 // Each struck row flies into the crest this long after its tick.
-const SYSTEM_BUILD_ABSORB_DELAY = 620;
-const SYSTEM_BUILD_READY_AT = 5900;
-const SYSTEM_BUILD_LEAVE_AT = 6450;
+const SYSTEM_BUILD_PACKET_DELAY = 300;
+const SYSTEM_BUILD_PACKET_DURATION = 570;
+const SYSTEM_BUILD_READY_AT = 6370;
+const SYSTEM_BUILD_LEAVE_AT = 9000;
 // The forge handover, borrowed 1:1 from the recap loading: a warm disc
 // blooms from the centre and covers the cut; onDone fires while it is still
 // wide, the root FadeOut carries the rest.
-const SYSTEM_BUILD_FLARE_AT = 6600;
-const SYSTEM_BUILD_DONE_AT = 7070;
+const SYSTEM_BUILD_FLARE_AT = 9240;
+const SYSTEM_BUILD_REVEAL_AFTER_FLARE = 470;
 // Orbit speed in deg/s: starts below the preload's cruising pace and rises
 // with every absorbed row — the crest grows visibly unstable.
-const SYSTEM_BUILD_ORBIT_SPEEDS = [55, 95, 140, 190, 250, 320];
+const SYSTEM_BUILD_ORBIT_SPEEDS = [42, 76, 116, 168, 236, 322];
 // Flight vector from a row's check circle into the crest centre (fixed dp —
 // the column between them is constant-height chrome).
-const SYSTEM_BUILD_GHOST_DX = 134;
-const SYSTEM_BUILD_GHOST_BASE_DY = 122;
-const SYSTEM_BUILD_GHOST_ROW_DY = 40;
+const SYSTEM_BUILD_ROW_FALLBACK_DY = 210;
 // Home mounts beneath the veil only AFTER the last row has ticked: its heavy
 // first render blocks the JS thread, and any pending tick timers would all
 // fire at once the moment it finished.
-const SYSTEM_BUILD_HOME_MOUNT_AT = 5180;
+const SYSTEM_BUILD_HOME_MOUNT_AT = 6830;
 
 // The pulsing "being worked on" marker of the current loading row.
 function SysVeilWorkingDot() {
@@ -22732,91 +22829,119 @@ function SysVeilWorkingDot() {
 }
 
 // Three gold dots breathing in turn after the working row's text.
-function SysVeilEllipsis() {
-  const t = useSharedValue(0);
-
-  useEffect(() => {
-    t.value = withRepeat(withTiming(1, { duration: 1150, easing: Easing.linear }), -1, false);
-    return () => cancelAnimation(t);
-  }, [t]);
-
-  const dotOne = useAnimatedStyle(() => {
-    const local = t.value % 1;
-    const wave = Math.sin(Math.PI * local);
-    return { opacity: 0.22 + 0.68 * wave * wave };
-  });
-  const dotTwo = useAnimatedStyle(() => {
-    const local = (t.value + 0.82) % 1;
-    const wave = Math.sin(Math.PI * local);
-    return { opacity: 0.22 + 0.68 * wave * wave };
-  });
-  const dotThree = useAnimatedStyle(() => {
-    const local = (t.value + 0.64) % 1;
-    const wave = Math.sin(Math.PI * local);
-    return { opacity: 0.22 + 0.68 * wave * wave };
-  });
-
-  return (
-    <View style={s.sysVeilEllipsis}>
-      <Reanimated.View style={[s.sysVeilEllipsisDot, dotOne]} />
-      <Reanimated.View style={[s.sysVeilEllipsisDot, dotTwo]} />
-      <Reanimated.View style={[s.sysVeilEllipsisDot, dotThree]} />
-    </View>
-  );
-}
-
 // The gold spark that leaves a finished row and flies up into the crest —
 // the row is "taken into" the system. One-shot, mounts when the row is done.
-function SysVeilAbsorbGhost({ dx, dy }: { dx: number; dy: number }) {
-  const t = useSharedValue(0);
-
-  useEffect(() => {
-    t.value = withTiming(1, { duration: SYSTEM_BUILD_ABSORB_DELAY, easing: Easing.bezier(0.36, 0.02, 0.16, 1) });
-    return () => cancelAnimation(t);
-  }, [t]);
-
-  const ghostStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(t.value, [0, 0.08, 0.8, 1], [0, 1, 0.85, 0]),
-    transform: [
-      { translateX: interpolate(t.value, [0, 1], [0, dx]) },
-      { translateY: interpolate(t.value, [0, 0.55, 1], [0, dy * 0.6, dy]) },
-      { scale: interpolate(t.value, [0, 0.16, 1], [0.5, 1, 0.34]) },
-    ],
-  }));
-
-  return <Reanimated.View pointerEvents="none" style={[s.sysVeilGhost, ghostStyle]} />;
-}
-
 // One checklist row of the build veil. The entrance lives on the inner view,
 // the leave cascade on this outer shell — never on the same element.
 function SysVeilRow({
   step,
-  index,
+  originalIndex,
   done,
   current,
-  leave,
+  crestRef,
+  onAbsorbed,
+  compact,
 }: {
   step: string;
-  index: number;
+  originalIndex: number;
   done: boolean;
   current: boolean;
-  leave: SharedValue<number>;
+  crestRef: AnimatedRef<View>;
+  onAbsorbed: (index: number) => void;
+  compact: boolean;
 }) {
-  const leaveStyle = useAnimatedStyle(() => {
-    const raw = (leave.value * 480 - index * 45) / 240;
-    const local = raw < 0 ? 0 : raw > 1 ? 1 : raw;
-    const eased = 1 - (1 - local) * (1 - local) * (1 - local);
+  const rowRef = useAnimatedRef<View>();
+  const strike = useSharedValue(0);
+  const gate = useSharedValue(0);
+  const flight = useSharedValue(0);
+  const flightX = useSharedValue(0);
+  const flightY = useSharedValue(-SYSTEM_BUILD_ROW_FALLBACK_DY);
+
+  useEffect(() => {
+    if (done) {
+      strike.value = 0;
+      gate.value = 0;
+      flight.value = 0;
+      strike.value = withTiming(1, {
+        duration: 240,
+        easing: Easing.out(Easing.cubic),
+      });
+      runOnUI(() => {
+        'worklet';
+        gate.value = withDelay(
+          SYSTEM_BUILD_PACKET_DELAY,
+          withTiming(1, { duration: 1 }, finished => {
+            if (!finished) return;
+            const row = measure(rowRef);
+            const crest = measure(crestRef);
+            if (row && crest) {
+              flightX.value = crest.pageX + crest.width / 2 - (row.pageX + row.width / 2);
+              flightY.value = crest.pageY + crest.height / 2 - (row.pageY + row.height / 2);
+            } else {
+              flightX.value = 0;
+              flightY.value = -SYSTEM_BUILD_ROW_FALLBACK_DY;
+            }
+            flight.value = withTiming(
+              1,
+              {
+                duration: SYSTEM_BUILD_PACKET_DURATION,
+                easing: Easing.bezier(0.36, 0.02, 0.16, 1),
+              },
+              completed => {
+                if (completed) runOnJS(onAbsorbed)(originalIndex);
+              },
+            );
+          }),
+        );
+      })();
+    } else {
+      strike.value = withTiming(0, { duration: 120 });
+      gate.value = 0;
+      flight.value = 0;
+    }
+    return () => {
+      cancelAnimation(strike);
+      cancelAnimation(gate);
+      cancelAnimation(flight);
+    };
+  }, [crestRef, done, flight, flightX, flightY, gate, onAbsorbed, originalIndex, rowRef, strike]);
+
+  const flightStyle = useAnimatedStyle(() => {
+    const p = flight.value;
+    const direction = originalIndex % 2 === 0 ? -1 : 1;
+    const arc = Math.sin(Math.PI * p);
     return {
-      opacity: 1 - eased,
-      transform: [{ translateY: 8 * eased }],
+      opacity: interpolate(p, [0, 0.78, 1], [1, 1, 0], 'clamp'),
+      transform: [
+        { translateX: flightX.value * p + direction * arc * 14 },
+        { translateY: flightY.value * p - arc * 18 },
+        {
+          rotate: `${direction * interpolate(p, [0, 0.52, 1], [0, 3, -7], 'clamp')}deg`,
+        },
+        { scale: interpolate(p, [0, 0.34, 0.82, 1], [1, 0.9, 0.3, 0.06], 'clamp') },
+      ],
     };
   });
+  const strikeStyle = useAnimatedStyle(() => ({
+    opacity: strike.value,
+    transform: [{ scaleX: strike.value }],
+  }));
 
   return (
-    <Reanimated.View style={leaveStyle}>
+    <Reanimated.View
+      layout={LinearTransition.duration(240).easing(Easing.bezier(0.16, 1, 0.28, 1))}
+    >
       <Reanimated.View
-        entering={FadeInUp.delay(360 + index * 90).duration(430).easing(Easing.out(Easing.cubic))}
-        style={s.sysVeilRow}
+        ref={rowRef}
+        collapsable={false}
+        entering={FadeInUp.delay(360 + originalIndex * 90).duration(430).easing(Easing.out(Easing.cubic))}
+        style={[
+          s.sysVeilRow,
+          current && s.sysVeilRowCurrent,
+          done && s.sysVeilRowDone,
+          compact && s.sysVeilRowCompact,
+          flightStyle,
+        ]}
       >
         <View
           style={[
@@ -22833,12 +22958,6 @@ function SysVeilRow({
             <SysVeilWorkingDot />
           ) : null}
         </View>
-        {done ? (
-          <SysVeilAbsorbGhost
-            dx={SYSTEM_BUILD_GHOST_DX}
-            dy={-(SYSTEM_BUILD_GHOST_BASE_DY + index * SYSTEM_BUILD_GHOST_ROW_DY)}
-          />
-        ) : null}
         <View style={s.sysVeilRowMain}>
           <View style={s.sysVeilTextWrap}>
             <Text
@@ -22853,15 +22972,10 @@ function SysVeilRow({
             {done ? (
               <Reanimated.View
                 pointerEvents="none"
-                entering={FadeIn.duration(420).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-                  opacity: 0,
-                  transform: [{ scaleX: 0 }],
-                })}
-                style={s.sysVeilStrike}
+                style={[s.sysVeilStrike, strikeStyle]}
               />
             ) : null}
           </View>
-          {current ? <SysVeilEllipsis /> : null}
         </View>
       </Reanimated.View>
     </Reanimated.View>
@@ -22875,12 +22989,15 @@ function SysVeilRow({
 // the onboarding intro loading screens: logo plate, gold rule, big serif
 // line, warm floor glow.
 function SystemBuildVeil({ onDone }: { onDone: () => void }) {
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const compact = viewportHeight < 720;
   const [ticked, setTicked] = useState(0);
+  const [absorbedCount, setAbsorbedCount] = useState(0);
   const [phase, setPhase] = useState<'working' | 'ready' | 'leaving'>('working');
   const [barWidth, setBarWidth] = useState(172);
+  const flareTargetScale = Math.max(4, (Math.hypot(viewportWidth, viewportHeight) / 220) * 1.12);
   const progress = useSharedValue(0);
   const sheen = useSharedValue(0);
-  const leave = useSharedValue(0);
   // The crest engine: a frame-driven orbit angle (accelerates smoothly, no
   // restart hitches), a spring kick fired each time a row is absorbed, the
   // slow growth of the crest, a continuous instability wobble that scales
@@ -22892,10 +23009,32 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   const grow = useSharedValue(0);
   const wobble = useSharedValue(0);
   const bloom = useSharedValue(0);
+  const charge = useSharedValue(0);
+  const arrival = useSharedValue(0);
   // The forge disc that covers the cut to Home — recap-loading grammar.
   const flare = useSharedValue(0);
+  const crestRef = useAnimatedRef<View>();
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+  const finishBuild = useCallback(() => {
+    onDoneRef.current();
+  }, []);
+  const handleRowAbsorbed = useCallback((index: number) => {
+    setAbsorbedCount(current => Math.max(current, index + 1));
+    kickSign.value = index % 2 === 0 ? 1 : -1;
+    kick.value = withSequence(
+      withTiming(1, { duration: 110, easing: Easing.out(Easing.quad) }),
+      withSpring(0, { damping: 10, stiffness: 250, mass: 0.7 }),
+    );
+    grow.value = withTiming((index + 1) / SYSTEM_BUILD_TICKS.length, {
+      duration: 520,
+      easing: Easing.out(Easing.cubic),
+    });
+    orbitSpeed.value = withTiming(SYSTEM_BUILD_ORBIT_SPEEDS[index + 1], {
+      duration: 680,
+      easing: Easing.inOut(Easing.quad),
+    });
+  }, [grow, kick, kickSign, orbitSpeed]);
 
   useFrameCallback(frame => {
     const dt = frame.timeSincePreviousFrame;
@@ -22904,6 +23043,11 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   });
 
   useEffect(() => {
+    arrival.value = 0;
+    arrival.value = withTiming(1, {
+      duration: 920,
+      easing: Easing.bezier(0.16, 1, 0.28, 1),
+    });
     // The bar surges, crawls through the stall, surges again — keyframed to
     // land at 100% as the title flips. Real loading, faked honestly.
     progress.value = withSequence(
@@ -22914,9 +23058,9 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       withTiming(0.57, { duration: 620, easing: Easing.inOut(Easing.quad) }),
       withTiming(0.63, { duration: 380, easing: Easing.linear }),
       withTiming(0.74, { duration: 520, easing: Easing.inOut(Easing.quad) }),
-      withTiming(0.83, { duration: 760, easing: Easing.linear }),
-      withTiming(0.96, { duration: 380, easing: Easing.out(Easing.cubic) }),
-      withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) }),
+      withTiming(0.83, { duration: 1050, easing: Easing.linear }),
+      withTiming(0.96, { duration: 850, easing: Easing.out(Easing.cubic) }),
+      withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) }),
     );
     sheen.value = withRepeat(withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.quad) }), -1, false);
     wobble.value = withRepeat(withTiming(1, { duration: 2300, easing: Easing.linear }), -1, false);
@@ -22929,37 +23073,17 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       }, at));
       // The struck row arrives at the crest: the logo hops, grows a step and
       // the orbit spins up — each absorption leaves it a little less stable.
-      timers.push(setTimeout(() => {
-        runPreviewTaskCheckHaptic();
-        kickSign.value = index % 2 === 0 ? 1 : -1;
-        kick.value = withSequence(
-          withTiming(1, { duration: 110, easing: Easing.out(Easing.quad) }),
-          withSpring(0, { damping: 10, stiffness: 250, mass: 0.7 }),
-        );
-        grow.value = withTiming((index + 1) / SYSTEM_BUILD_TICKS.length, {
-          duration: 520,
-          easing: Easing.out(Easing.cubic),
-        });
-        orbitSpeed.value = withTiming(SYSTEM_BUILD_ORBIT_SPEEDS[index + 1], {
-          duration: 680,
-          easing: Easing.inOut(Easing.quad),
-        });
-      }, at + SYSTEM_BUILD_ABSORB_DELAY));
     });
     timers.push(setTimeout(() => {
       // The burst: one last furious lap, the ring disperses, the crest pops
       // and settles — felt and seen in the same instant. No sound by design.
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      runStrongHaptic();
-      orbitSpeed.value = withSequence(
-        withTiming(560, { duration: 380, easing: Easing.in(Easing.quad) }),
-        withTiming(0, { duration: 700, easing: Easing.out(Easing.cubic) }),
-      );
-      bloom.value = withTiming(1, { duration: 640, easing: Easing.out(Easing.cubic) });
+      orbitSpeed.value = withTiming(570, { duration: 560, easing: Easing.inOut(Easing.quad) });
+      charge.value = withTiming(1, { duration: 620, easing: Easing.out(Easing.cubic) });
       kickSign.value = 1;
       kick.value = withSequence(
-        withTiming(1.7, { duration: 150, easing: Easing.out(Easing.quad) }),
-        withSpring(0, { damping: 11, stiffness: 210, mass: 0.85 }),
+        withTiming(1.35, { duration: 140, easing: Easing.out(Easing.quad) }),
+        withSpring(0, { damping: 10, stiffness: 220, mass: 0.78 }),
       );
       cancelAnimation(sheen);
       sheen.value = 0;
@@ -22967,64 +23091,100 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
     }, SYSTEM_BUILD_READY_AT));
     timers.push(setTimeout(() => {
       setPhase('leaving');
-      leave.value = withTiming(1, { duration: 480, easing: Easing.linear });
+      orbitSpeed.value = withSequence(
+        withTiming(690, { duration: 220, easing: Easing.in(Easing.quad) }),
+        withTiming(0, { duration: 760, easing: Easing.out(Easing.cubic) }),
+      );
+      kickSign.value = -1;
+      kick.value = withSequence(
+        withTiming(1.8, { duration: 140, easing: Easing.out(Easing.quad) }),
+        withSpring(0, { damping: 12, stiffness: 205, mass: 0.88 }),
+      );
     }, SYSTEM_BUILD_LEAVE_AT));
     timers.push(setTimeout(() => {
       runBubbleHaptic();
+      bloom.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.cubic) });
+      charge.value = withTiming(0.24, { duration: 560, easing: Easing.out(Easing.cubic) });
       flare.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.cubic) });
     }, SYSTEM_BUILD_FLARE_AT));
-    timers.push(setTimeout(() => {
-      onDoneRef.current();
-    }, SYSTEM_BUILD_DONE_AT));
+    timers.push(setTimeout(finishBuild, SYSTEM_BUILD_FLARE_AT + SYSTEM_BUILD_REVEAL_AFTER_FLARE));
     return () => {
       timers.forEach(clearTimeout);
       cancelAnimation(progress);
       cancelAnimation(sheen);
-      cancelAnimation(leave);
       cancelAnimation(orbitSpeed);
       cancelAnimation(kick);
       cancelAnimation(grow);
       cancelAnimation(wobble);
       cancelAnimation(bloom);
-      cancelAnimation(flare);
+      cancelAnimation(charge);
+      cancelAnimation(arrival);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const ringStyle = useAnimatedStyle(() => ({
-    opacity: (1 - bloom.value) * 0.95,
-    transform: [{ scale: 1 + bloom.value * 0.5 }, { rotate: `${orbitAngle.value}deg` }],
+    opacity: (1 - bloom.value) * (0.72 + 0.18 * grow.value + 0.1 * charge.value),
+    transform: [
+      { scale: 0.84 + 0.16 * grow.value + 0.05 * charge.value + bloom.value * 0.45 },
+      { rotate: `${orbitAngle.value}deg` },
+    ],
   }));
   const ringTailAStyle = useAnimatedStyle(() => ({
-    opacity: (1 - bloom.value) * 0.5,
-    transform: [{ scale: 1 + bloom.value * 0.5 }, { rotate: `${orbitAngle.value - 15}deg` }],
+    opacity: (1 - bloom.value) * (0.32 + 0.25 * grow.value + 0.1 * charge.value),
+    transform: [
+      { scale: 0.85 + 0.15 * grow.value + 0.05 * charge.value + bloom.value * 0.45 },
+      { rotate: `${orbitAngle.value - 15}deg` },
+    ],
   }));
   const ringTailBStyle = useAnimatedStyle(() => ({
-    opacity: (1 - bloom.value) * 0.26,
-    transform: [{ scale: 1 + bloom.value * 0.5 }, { rotate: `${orbitAngle.value - 29}deg` }],
+    opacity: (1 - bloom.value) * (0.18 + 0.18 * grow.value + 0.08 * charge.value),
+    transform: [
+      { scale: 0.86 + 0.14 * grow.value + 0.05 * charge.value + bloom.value * 0.45 },
+      { rotate: `${orbitAngle.value - 29}deg` },
+    ],
   }));
   const crestPlateStyle = useAnimatedStyle(() => {
     const wobblePhase = wobble.value * Math.PI * 2;
-    const instability = grow.value * (1 - bloom.value);
+    const instability = (0.24 * grow.value + 0.76 * charge.value) * (1 - bloom.value);
     return {
       // The plate is laid out at FULL size and starts scaled down — growth
       // never upscales the logo bitmap, so it stays crisp on Android.
       transform: [
         {
           translateY:
-            -3.5 * kick.value + Math.sin(wobblePhase * 1.7) * 1.1 * instability,
+            -3.7 * kick.value + Math.sin(wobblePhase * 1.7) * 2.8 * instability,
         },
-        { translateX: Math.sin(wobblePhase) * 1.3 * instability },
+        { translateX: Math.sin(wobblePhase) * 3.1 * instability },
         {
-          rotate: `${kickSign.value * 2.4 * kick.value + Math.sin(wobblePhase) * 1.6 * instability}deg`,
+          rotate: `${kickSign.value * 2.6 * kick.value + Math.sin(wobblePhase) * 3.2 * instability}deg`,
         },
-        { scale: 0.74 + 0.26 * grow.value + 0.045 * kick.value },
+        { scale: 0.82 + 0.18 * grow.value + 0.035 * charge.value + 0.04 * kick.value },
       ],
     };
   });
   const crestHaloStyle = useAnimatedStyle(() => ({
-    opacity: 0.14 + 0.2 * grow.value + 0.45 * bloom.value,
-    transform: [{ scale: 0.9 + 0.14 * grow.value + 0.5 * bloom.value }],
+    opacity: arrival.value * (0.11 + 0.24 * grow.value + 0.28 * charge.value + 0.38 * bloom.value),
+    transform: [{ scale: 0.84 + 0.16 * grow.value + 0.1 * charge.value + 0.42 * bloom.value }],
+  }));
+  const chargeRingStyle = useAnimatedStyle(() => {
+    const pulse = 0.5 + 0.5 * Math.sin(wobble.value * Math.PI * 4);
+    return {
+      opacity: charge.value * (1 - bloom.value) * (0.22 + 0.18 * pulse),
+      transform: [{ scale: 0.82 + charge.value * 0.28 + pulse * 0.035 }],
+    };
+  });
+  const entryAuraStyle = useAnimatedStyle(() => ({
+    opacity:
+      interpolate(arrival.value, [0, 0.42, 1], [0, 0.72, 0.38], 'clamp')
+      + charge.value * 0.18,
+    transform: [
+      {
+        scale:
+          interpolate(arrival.value, [0, 1], [0.62, 1], 'clamp')
+          + charge.value * 0.08,
+      },
+    ],
   }));
   const fillStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: -(1 - progress.value) * barWidth }],
@@ -23036,39 +23196,77 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       transform: [{ translateX: -40 + sheen.value * (barWidth + 80) }],
     };
   });
-  const barLeaveStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(leave.value, [0, 0.3], [1, 0], 'clamp'),
-  }));
   // The whole tableau dissolves into the flare, forge-style: content fades
   // and swells a touch as the disc covers the screen.
   const contentFlareStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(flare.value, [0.3, 1], [1, 0], 'clamp'),
-    transform: [{ scale: 1 + flare.value * 0.04 }],
+    opacity:
+      interpolate(arrival.value, [0, 1], [0, 1], 'clamp')
+      * interpolate(flare.value, [0.3, 1], [1, 0], 'clamp'),
+    transform: [
+      { translateY: (1 - arrival.value) * 14 },
+      { scale: 1 + flare.value * 0.04 },
+    ],
   }));
   const flareStyle = useAnimatedStyle(() => ({
     opacity: interpolate(flare.value, [0, 0.3, 1], [0, 0.92, 0], 'clamp'),
-    transform: [{ scale: interpolate(flare.value, [0, 1], [0.4, 3.6], 'clamp') }],
+    transform: [
+      { scale: interpolate(flare.value, [0, 1], [0.4, flareTargetScale], 'clamp') },
+    ],
   }));
 
+  const isWorking = phase === 'working';
+
   return (
-    <Reanimated.View exiting={FadeOut.duration(260)} style={s.sysVeil}>
+    <Reanimated.View exiting={FadeOut.duration(240)} style={s.sysVeil}>
       <View pointerEvents="none" style={s.introWarmth}>
         <LinearGradient
-          colors={['rgba(255,255,255,0)', 'rgba(246,225,202,0.46)', 'rgba(255,241,225,0.98)']}
-          locations={[0, 0.52, 1]}
+          colors={['rgba(255,255,255,0)', 'rgba(248,231,207,0.52)', 'rgba(255,242,222,0.98)']}
+          locations={[0, 0.5, 1]}
           style={StyleSheet.absoluteFill}
         />
       </View>
-      <Reanimated.View style={[s.sysVeilContent, contentFlareStyle]}>
+      <Reanimated.View pointerEvents="none" style={[s.sysVeilEntryAura, entryAuraStyle]}>
+        <LinearGradient
+          colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.2)', 'rgba(197,160,89,0)']}
+          locations={[0, 0.52, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </Reanimated.View>
+      <Reanimated.View
+        style={[s.sysVeilContent, compact && s.sysVeilContentCompact, contentFlareStyle]}
+      >
         <Reanimated.View
-          entering={FadeIn.duration(520).withInitialValues({
+          entering={FadeIn.duration(620).withInitialValues({
             opacity: 0,
-            transform: [{ translateY: 10 }, { scale: 0.92 }],
+            transform: [{ translateY: 12 }, { scale: 0.9 }],
           })}
           style={s.sysVeilCrestBox}
         >
+          <Reanimated.View
+            ref={crestRef}
+            collapsable={false}
+            pointerEvents="none"
+            style={s.sysVeilCrestAnchor}
+          />
+          <Reanimated.View
+            pointerEvents="none"
+            style={[s.sysVeilChargeRing, chargeRingStyle]}
+          />
           <Reanimated.View pointerEvents="none" style={[s.sysVeilCrestHalo, crestHaloStyle]} />
+          <View pointerEvents="none" style={s.sysVeilOrbitRail} />
           <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringStyle]}>
+            <Svg width={208} height={208} viewBox="0 0 208 208" style={StyleSheet.absoluteFill}>
+              <SvgCircle
+                cx="104"
+                cy="104"
+                r="99"
+                fill="none"
+                stroke="rgba(197,160,89,0.38)"
+                strokeWidth="1.35"
+                strokeDasharray={[218, 404]}
+                strokeLinecap="round"
+              />
+            </Svg>
             <View style={s.sysVeilOrbitComet} />
           </Reanimated.View>
           <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringTailAStyle]}>
@@ -23081,37 +23279,70 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
             <Image source={APP_LOGO} style={s.sysVeilLogo} resizeMode="cover" />
           </Reanimated.View>
         </Reanimated.View>
-        <View style={s.sysVeilRows}>
-          {SYSTEM_BUILD_STEPS.map((step, index) => (
-            <SysVeilRow
-              key={step}
-              step={step}
-              index={index}
-              done={index < ticked}
-              current={index === ticked}
-              leave={leave}
-            />
-          ))}
-        </View>
-        <Reanimated.View
-          entering={FadeIn.delay(680).duration(420)}
-          style={[s.sysVeilBar, barLeaveStyle]}
-          onLayout={event => setBarWidth(Math.max(1, event.nativeEvent.layout.width))}
-        >
-          <Reanimated.View style={[s.sysVeilBarFillFull, fillStyle]} />
-          <Reanimated.View style={[s.sysVeilBarSheen, sheenStyle]}>
-            <LinearGradient
-              colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.85)', 'rgba(255,255,255,0)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={StyleSheet.absoluteFill}
-            />
+
+        <Reanimated.View style={s.sysVeilHeader}>
+          <Reanimated.View
+            key={isWorking ? 'system-building' : 'system-ready'}
+            entering={FadeInUp.duration(460).easing(Easing.out(Easing.cubic))}
+            style={s.sysVeilHeaderInner}
+          >
+            <Text style={s.sysVeilKicker}>
+              {isWorking ? 'BUILDING YOUR HOME' : 'READY FOR YOU'}
+            </Text>
+            <Text style={s.sysVeilTitle}>
+              {isWorking ? 'Bringing your plan to life.' : 'Your Home is ready.'}
+            </Text>
           </Reanimated.View>
         </Reanimated.View>
+
+        <Reanimated.View
+          entering={FadeInUp.delay(260).duration(520).easing(Easing.out(Easing.cubic))}
+          style={s.sysVeilRows}
+        >
+          {SYSTEM_BUILD_STEPS.slice(absorbedCount).map((step, index) => {
+            const originalIndex = absorbedCount + index;
+            return (
+              <SysVeilRow
+                key={step}
+                step={step}
+                originalIndex={originalIndex}
+                done={originalIndex < ticked}
+                current={originalIndex === ticked}
+                crestRef={crestRef}
+                onAbsorbed={handleRowAbsorbed}
+                compact={compact}
+              />
+            );
+          })}
+        </Reanimated.View>
+
+        <Reanimated.View
+          entering={FadeIn.delay(680).duration(420)}
+          style={s.sysVeilProgress}
+        >
+          <View style={s.sysVeilProgressMeta}>
+            <Text style={s.sysVeilProgressLabel}>{isWorking ? 'ASSEMBLING' : 'COMPLETE'}</Text>
+            <Text style={s.sysVeilProgressCount}>
+              {Math.min(ticked, SYSTEM_BUILD_STEPS.length)} / {SYSTEM_BUILD_STEPS.length}
+            </Text>
+          </View>
+          <View
+            style={s.sysVeilBar}
+            onLayout={event => setBarWidth(Math.max(1, event.nativeEvent.layout.width))}
+          >
+            <Reanimated.View style={[s.sysVeilBarFillFull, fillStyle]} />
+            <Reanimated.View style={[s.sysVeilBarSheen, sheenStyle]}>
+              <LinearGradient
+                colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.85)', 'rgba(255,255,255,0)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={StyleSheet.absoluteFill}
+              />
+            </Reanimated.View>
+          </View>
+        </Reanimated.View>
       </Reanimated.View>
-      {phase === 'leaving' ? (
-        <Reanimated.View pointerEvents="none" style={[s.sysVeilBloom, flareStyle]} />
-      ) : null}
+      <Reanimated.View pointerEvents="none" style={[s.sysVeilBloom, flareStyle]} />
     </Reanimated.View>
   );
 }
@@ -23478,6 +23709,7 @@ function V4RecapSequence({
   groups,
   hours,
   skipToolsBoard = false,
+  renderToolSetup,
   onNext,
 }: {
   cards: StatementDeckCard[];
@@ -23487,6 +23719,7 @@ function V4RecapSequence({
   title?: string;
   hours?: number;
   skipToolsBoard?: boolean;
+  renderToolSetup?: (group: RecapProblemGroup, onComplete: () => void) => React.ReactNode;
   onNext: () => void;
 }) {
   const { width, height } = useWindowDimensions();
@@ -23558,7 +23791,14 @@ function V4RecapSequence({
   }
 
   if (phase === 'tools') {
-    return <V4RecapToolsBoard groups={groups} selected={selected} onNext={onNext} />;
+    return (
+      <V4RecapToolsBoard
+        groups={groups}
+        selected={selected}
+        renderSetup={renderToolSetup}
+        onNext={onNext}
+      />
+    );
   }
 
   const visibleCards = orderedCards.slice(0, Math.min(revealCount, cardCount));
@@ -24886,6 +25126,14 @@ export default function OnboardingView() {
     );
   }
 
+  if (activeStep === 'focusOverview') {
+    return (
+      <GuideCrashBoundary label="Focus tour" onSkip={goNext}>
+        <FocusOverviewGuideSlide onComplete={goNext} />
+      </GuideCrashBoundary>
+    );
+  }
+
   if (activeStep === 'buildBigEvents') {
     return (
       <View style={s.screen}>
@@ -25046,13 +25294,24 @@ export default function OnboardingView() {
       );
     }
     if (activeStep === 'protectRecap') {
+      const selectedProtectProblems = answers.confirmedProtectProblems ?? [];
       return (
         <V4RecapSequence
           cards={PROTECT_DECK_CARDS}
-          selected={answers.confirmedProtectProblems ?? []}
+          selected={selectedProtectProblems}
           accent="#4D8586"
           groups={PROTECT_RECAP_GROUPS}
           hours={answers.screenTimeHours}
+          renderToolSetup={(group, onComplete) => (
+            <GuideCrashBoundary label={`${group.title} setup`} onSkip={onComplete}>
+              <FocusProtectionToolGuide
+                toolId={group.id as FocusProtectionToolId}
+                screenTimeHours={answers.screenTimeHours}
+                selectedProblems={selectedProtectProblems}
+                onComplete={onComplete}
+              />
+            </GuideCrashBoundary>
+          )}
           onNext={goNext}
         />
       );
@@ -25934,6 +26193,66 @@ const s = StyleSheet.create({
     width: '78%',
     height: '80%',
     borderRadius: 999,
+  },
+  // Conversation backdrop — the value slides' calm sibling. Same vellum
+  // family, stripped to a whisper: a warm still dawn, two faint halo arcs,
+  // a few motionless gold specks. Only the dawn breathes.
+  converse: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  converseDawnFar: {
+    position: 'absolute',
+    bottom: -232,
+    left: -76,
+    right: -76,
+    height: 400,
+    borderRadius: 999,
+    backgroundColor: 'rgba(197,160,89,0.055)',
+  },
+  converseDawn: {
+    position: 'absolute',
+    bottom: -178,
+    left: -58,
+    right: -58,
+    height: 312,
+    borderRadius: 999,
+    backgroundColor: 'rgba(202,163,88,0.085)',
+  },
+  converseRing: {
+    position: 'absolute',
+    left: '50%',
+    borderWidth: 1,
+  },
+  converseRingOne: {
+    width: 300,
+    height: 300,
+    marginLeft: -150,
+    borderRadius: 150,
+    borderColor: 'rgba(183,141,64,0.11)',
+  },
+  converseRingTwo: {
+    width: 432,
+    height: 432,
+    marginLeft: -216,
+    borderRadius: 216,
+    borderColor: 'rgba(183,141,64,0.075)',
+  },
+  converseSpeck: {
+    position: 'absolute',
+    width: 5,
+    height: 5,
+    borderRadius: 1.5,
+    backgroundColor: 'rgba(183,141,64,0.26)',
+    transform: [{ rotate: '45deg' }],
+  },
+  converseSpeckSmall: {
+    position: 'absolute',
+    width: 4,
+    height: 4,
+    borderRadius: 1.2,
+    backgroundColor: 'rgba(183,141,64,0.22)',
+    transform: [{ rotate: '45deg' }],
   },
   valueCopy: {
     paddingHorizontal: 25,
@@ -29202,17 +29521,17 @@ const s = StyleSheet.create({
     margin: 7,
     borderRadius: 23,
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.20)',
+    borderColor: 'rgba(184,146,74,0.30)',
   },
   // The engraved-plate details of the showcase square: a whisper of a second
-  // frame, gold corner flourishes, and a warm floor glow. Decoration only —
-  // the morph into the chat bubble is untouched.
+  // frame, gold corner flourishes, a caught sheen streak and corner seals.
+  // Decoration only — the morph into the chat bubble is untouched.
   toolsCardFrameInner: {
     ...StyleSheet.absoluteFillObject,
     margin: 11,
     borderRadius: 19,
     borderWidth: 0.8,
-    borderColor: 'rgba(197,160,89,0.12)',
+    borderColor: 'rgba(184,146,74,0.15)',
   },
   toolsCardFloorWash: {
     position: 'absolute',
@@ -29221,11 +29540,33 @@ const s = StyleSheet.create({
     bottom: 0,
     height: '46%',
   },
+  // A soft light band caught diagonally across the gold — the "worked metal"
+  // sheen, static so it never competes with the morph.
+  toolsCardSheen: {
+    position: 'absolute',
+    top: -40,
+    bottom: -40,
+    left: '18%',
+    width: 78,
+    opacity: 0.9,
+    transform: [{ rotate: '16deg' }],
+  },
+  // Wax-seal glints at two opposite corners — the charter-grammar flourish.
+  toolsCardGlint: {
+    position: 'absolute',
+    width: 7,
+    height: 7,
+    borderRadius: 2,
+    backgroundColor: 'rgba(176,138,66,0.5)',
+    transform: [{ rotate: '45deg' }],
+  },
+  toolsCardGlintTL: { top: 15, left: 15 },
+  toolsCardGlintBR: { bottom: 15, right: 15 },
   toolsCardCorner: {
     position: 'absolute',
-    width: 16,
-    height: 16,
-    borderColor: 'rgba(197,160,89,0.55)',
+    width: 17,
+    height: 17,
+    borderColor: 'rgba(176,138,66,0.62)',
   },
   toolsCardCornerTL: {
     top: 13,
@@ -36656,6 +36997,16 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFDF8',
+    overflow: 'hidden',
+  },
+  sysVeilEntryAura: {
+    position: 'absolute',
+    top: '2%',
+    alignSelf: 'center',
+    width: 500,
+    height: 500,
+    borderRadius: 250,
+    overflow: 'hidden',
   },
   sysVeilBloom: {
     position: 'absolute',
@@ -36664,108 +37015,147 @@ const s = StyleSheet.create({
     height: 220,
     borderRadius: 110,
     backgroundColor: '#FFF4DC',
+    zIndex: 10,
   },
   sysVeilCrestBox: {
-    width: 132,
-    height: 132,
-    marginBottom: 16,
+    width: 228,
+    height: 228,
+    marginBottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 4,
+  },
+  sysVeilCrestAnchor: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: 1,
+    height: 1,
+    marginLeft: -0.5,
+    marginTop: -0.5,
+  },
+  sysVeilChargeRing: {
+    position: 'absolute',
+    width: 244,
+    height: 244,
+    borderRadius: 122,
+    borderWidth: 1.2,
+    borderColor: 'rgba(197,160,89,0.46)',
+    backgroundColor: 'rgba(255,248,235,0.28)',
   },
   sysVeilCrestHalo: {
     position: 'absolute',
-    top: 0,
+    top: 5,
     left: '50%',
-    width: 132,
-    height: 132,
-    marginLeft: -66,
-    borderRadius: 34,
-    backgroundColor: 'rgba(197,160,89,0.12)',
-    transform: [{ rotate: '7deg' }],
+    width: 218,
+    height: 218,
+    marginLeft: -109,
+    borderRadius: 109,
+    backgroundColor: 'rgba(232,196,128,0.18)',
+  },
+  sysVeilOrbitRail: {
+    position: 'absolute',
+    top: 10,
+    left: '50%',
+    width: 208,
+    height: 208,
+    marginLeft: -104,
+    borderRadius: 104,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.14)',
   },
   sysVeilOrbitRing: {
     position: 'absolute',
-    top: 5,
+    top: 10,
     left: '50%',
-    width: 122,
-    height: 122,
-    marginLeft: -61,
+    width: 208,
+    height: 208,
+    marginLeft: -104,
     alignItems: 'center',
   },
   sysVeilOrbitComet: {
     position: 'absolute',
-    top: -2,
-    width: 24,
-    height: 4,
-    borderRadius: 3,
-    backgroundColor: '#D9B468',
-    shadowColor: '#C5A059',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 7,
-    elevation: 2,
+    top: -4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#E2B457',
+    boxShadow: '0 0 12px rgba(197,160,89,0.86)',
   },
   sysVeilOrbitCometSmall: {
-    width: 17,
-    height: 3.2,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: '#E3C894',
   },
   sysVeilOrbitCometTiny: {
-    width: 12,
-    height: 2.6,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: '#EFDCB4',
   },
   sysVeilLogoPlate: {
-    width: 92,
-    height: 92,
-    borderRadius: 22,
+    width: 156,
+    height: 156,
+    borderRadius: 36,
+    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.26)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.12,
-    shadowRadius: 22,
-    elevation: 8,
+    borderColor: 'rgba(197,160,89,0.34)',
+    boxShadow: '0 20px 42px rgba(71,55,31,0.15)',
   },
   sysVeilLogo: {
-    width: 82,
-    height: 82,
-    borderRadius: 19,
-  },
-  sysVeilGhost: {
-    position: 'absolute',
-    left: 7,
-    top: '50%',
-    marginTop: -5,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#C5A059',
-    shadowColor: '#C5A059',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 8,
-    elevation: 6,
-    zIndex: 20,
+    width: 144,
+    height: 144,
+    borderRadius: 32,
   },
   sysVeilContent: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 380,
     alignItems: 'center',
-    paddingHorizontal: 34,
+    paddingHorizontal: 30,
     zIndex: 1,
+  },
+  sysVeilContentCompact: {
+    paddingHorizontal: 26,
+  },
+  sysVeilHeader: {
+    width: '100%',
+    minHeight: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  sysVeilHeaderInner: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  sysVeilKicker: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    lineHeight: 12,
+    letterSpacing: 2.2,
+    color: '#A67E34',
+    marginBottom: 5,
+  },
+  sysVeilTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 22,
+    lineHeight: 28,
+    color: '#231F1A',
+    textAlign: 'center',
   },
   sysVeilRows: {
     width: '100%',
-    maxWidth: 316,
+    maxWidth: 304,
+    height: 200,
     alignSelf: 'center',
-    rowGap: 15,
-    marginTop: 28,
-    marginBottom: 28,
+    rowGap: 5,
+    overflow: 'visible',
+    zIndex: 2,
   },
   sysVeilRowMain: {
     flex: 1,
@@ -36774,8 +37164,8 @@ const s = StyleSheet.create({
     columnGap: 7,
   },
   sysVeilTextWrap: {
-    alignSelf: 'flex-start',
     position: 'relative',
+    flexShrink: 1,
   },
   sysVeilStrike: {
     position: 'absolute',
@@ -36786,18 +37176,6 @@ const s = StyleSheet.create({
     height: 1.5,
     borderRadius: 1,
     backgroundColor: 'rgba(25,23,20,0.5)',
-  },
-  sysVeilEllipsis: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    columnGap: 3.5,
-    marginTop: 3,
-  },
-  sysVeilEllipsisDot: {
-    width: 3.5,
-    height: 3.5,
-    borderRadius: 1.75,
-    backgroundColor: '#C5A059',
   },
   sysVeilRowIconIdle: {
     opacity: 0.5,
@@ -36826,9 +37204,31 @@ const s = StyleSheet.create({
     backgroundColor: '#C5A059',
   },
   sysVeilRow: {
+    width: '100%',
+    minHeight: 36,
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 12,
+    columnGap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 15,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: 'rgba(35,31,26,0.055)',
+    backgroundColor: 'rgba(255,255,255,0.48)',
+  },
+  sysVeilRowCurrent: {
+    borderColor: 'rgba(197,160,89,0.3)',
+    backgroundColor: '#FFFEFB',
+    boxShadow: '0 7px 20px rgba(89,67,33,0.075)',
+  },
+  sysVeilRowDone: {
+    borderColor: 'rgba(197,160,89,0.24)',
+    backgroundColor: 'rgba(249,239,220,0.88)',
+  },
+  sysVeilRowCompact: {
+    minHeight: 34,
+    paddingVertical: 3,
   },
   sysVeilRowIcon: {
     width: 24,
@@ -36846,17 +37246,43 @@ const s = StyleSheet.create({
   },
   sysVeilRowText: {
     fontFamily: F.serifMedium,
-    fontSize: 18.5,
-    lineHeight: 25,
+    fontSize: 15.5,
+    lineHeight: 20,
     color: 'rgba(25,23,20,0.36)',
   },
   sysVeilRowTextDone: {
     color: 'rgba(25,23,20,0.44)',
   },
+  sysVeilProgress: {
+    width: '100%',
+    maxWidth: 304,
+    marginTop: 12,
+  },
+  sysVeilProgressMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 7,
+    paddingHorizontal: 1,
+  },
+  sysVeilProgressLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    lineHeight: 11,
+    letterSpacing: 1.45,
+    color: 'rgba(116,83,31,0.7)',
+  },
+  sysVeilProgressCount: {
+    fontFamily: F.sansMedium,
+    fontSize: 10,
+    lineHeight: 12,
+    letterSpacing: 0.5,
+    color: 'rgba(35,31,26,0.42)',
+  },
   sysVeilBar: {
-    width: 186,
-    height: 5,
-    borderRadius: 2.5,
+    width: '100%',
+    height: 6,
+    borderRadius: 3,
     backgroundColor: 'rgba(197,160,89,0.16)',
     overflow: 'hidden',
   },
@@ -36866,7 +37292,7 @@ const s = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: '100%',
-    borderRadius: 2.5,
+    borderRadius: 3,
     backgroundColor: '#C5A059',
   },
   sysVeilBarSheen: {

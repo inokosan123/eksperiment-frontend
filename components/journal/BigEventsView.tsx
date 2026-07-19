@@ -28,6 +28,7 @@ import {
   Calendar as CalendarIcon,
   CalendarHeart,
   BellRing,
+  BellOff,
   CheckSmall,
   ChevronDown,
   Minus,
@@ -46,8 +47,7 @@ import {
   formatDateMedium,
   formatDateShort,
   getBigEventCountdown,
-  isBigEventDeletedOnDate,
-  sortBigEvents,
+  getBigEventSectionsForDate,
   todayKey,
 } from './bigEventsLogic';
 import {
@@ -765,6 +765,8 @@ function EventForm({
 
       {form.recurrence === 'yearly' && !isGuided && (
         <Animated.View
+          entering={FadeIn.duration(180).easing(Easing.out(Easing.cubic))}
+          exiting={FadeOut.duration(120).easing(Easing.in(Easing.quad))}
           layout={LinearTransition.duration(220).easing(Easing.out(Easing.cubic))}
           style={ef.reminderCard}
         >
@@ -1247,23 +1249,109 @@ const ef = StyleSheet.create({
 
 // ─── Event card ─────────────────────────────────────────────────────────────
 
+type EventCardVariant = 'upcoming' | 'recurring' | 'past';
+
+// A little calendar-page tile: a tinted cap with the month, a big serif day
+// beneath it. Carries a soft touch of the event's own colour so each date
+// keeps its identity while the recurring card stays calm.
+function DateMedallion({ dateKey, color }: { dateKey: string; color: string }) {
+  const d = new Date(`${dateKey}T12:00:00`);
+  const month = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+  const day = d.getDate();
+  return (
+    <View style={[ec.medallion, { borderColor: `${color}33` }]}>
+      <View style={[ec.medallionCap, { backgroundColor: `${color}1A` }]}>
+        <Text style={[ec.medallionMonth, { color }]}>{month}</Text>
+      </View>
+      <Text style={ec.medallionDay}>{day}</Text>
+    </View>
+  );
+}
+
 function EventCard({
-  event, today, isPast, onTap, onAskDelete,
+  event, today, variant, onTap, onAskDelete,
 }: {
   event: BigEvent;
   today: string;
-  isPast: boolean;
+  variant: EventCardVariant;
   onTap?: () => void;
   onAskDelete: () => void;
 }) {
   const daysLeft = getBigEventCountdown(event, today);
   const tintBg = `${event.color}22`;
+  const isPast = variant === 'past';
+  const isRecurring = variant === 'recurring';
+
+  const deleteButton = (
+    <TouchableOpacity onPress={onAskDelete} style={ec.del} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
+      <Trash2 s={16} c="#D76A6A" w={1.9} />
+    </TouchableOpacity>
+  );
+
+  // Recurring events sit here while they wait for their yearly window — their
+  // "inactive" state. The card grows a foot bar that says, plainly, how early
+  // the reminder fires and how far off the day still is, and the next date is
+  // shown as an elegant calendar medallion instead of a cramped label.
+  if (isRecurring) {
+    const remindsOn = event.remindersEnabled;
+    return (
+      <Animated.View
+        entering={FadeIn.duration(170).easing(Easing.out(Easing.cubic))}
+        exiting={FadeOut.duration(120).easing(Easing.in(Easing.quad))}
+        layout={LinearTransition.duration(220).easing(Easing.bezier(0.22, 1, 0.36, 1))}
+        style={[ec.card, ec.cardRecurring]}
+      >
+        <View pointerEvents="none" style={ec.recurringRail} />
+        <View style={ec.recTopRow}>
+          <Pressable
+            onPress={onTap}
+            disabled={!onTap}
+            style={ec.recTap}
+            android_ripple={onTap ? { color: 'rgba(0,0,0,0.04)' } : undefined}
+          >
+            <View style={[ec.iconBox, ec.iconBoxRecurring, { backgroundColor: '#E3EDE7' }]}>
+              <View style={[ec.eventGlyph, ec.eventGlyphRecurring]}>
+                <NotoEmoji name={normalizeHabitIcon(event.icon)} size={26} />
+              </View>
+            </View>
+            <View style={ec.copy}>
+              <Text style={[ec.title, ec.titleRecurring]} numberOfLines={1}>{event.title}</Text>
+              <View style={ec.recTag}>
+                <RotateCcw s={10} c="#7D9186" w={2} />
+                <Text style={ec.recTagText}>EVERY YEAR</Text>
+              </View>
+            </View>
+            <DateMedallion dateKey={event.endDate} color={event.color} />
+          </Pressable>
+          {deleteButton}
+        </View>
+
+        <View style={ec.recFoot}>
+          <View style={ec.recFootLeft}>
+            <View style={[ec.recFootIcon, !remindsOn && ec.recFootIconOff]}>
+              {remindsOn
+                ? <BellRing s={12} c="#5F7F6F" w={1.9} />
+                : <BellOff s={12} c="#A7A29A" w={1.9} />}
+            </View>
+            <Text style={ec.recFootText} numberOfLines={1}>
+              {remindsOn
+                ? `Reminds you ${event.leadDays} ${event.leadDays === 1 ? 'day' : 'days'} early`
+                : 'No reminder set'}
+            </Text>
+          </View>
+          <View style={ec.recFootCount}>
+            <Text style={ec.recFootCountText}>in {daysLeft} {daysLeft === 1 ? 'day' : 'days'}</Text>
+          </View>
+        </View>
+      </Animated.View>
+    );
+  }
 
   return (
     <Animated.View
-      entering={FadeIn.duration(180)}
-      exiting={FadeOut.duration(140)}
-      layout={LinearTransition.springify().damping(15).stiffness(160).mass(1)}
+      entering={FadeIn.duration(170).easing(Easing.out(Easing.cubic))}
+      exiting={FadeOut.duration(120).easing(Easing.in(Easing.quad))}
+      layout={LinearTransition.duration(220).easing(Easing.bezier(0.22, 1, 0.36, 1))}
       style={[ec.card, isPast && ec.cardPast]}
     >
       <Pressable
@@ -1272,7 +1360,11 @@ function EventCard({
         style={ec.tap}
         android_ripple={onTap ? { color: 'rgba(0,0,0,0.04)' } : undefined}
       >
-        <View style={[ec.iconBox, { backgroundColor: isPast ? '#ECE8DF' : tintBg }, isPast && ec.iconBoxPast]}>
+        <View style={[
+          ec.iconBox,
+          { backgroundColor: isPast ? '#ECE8DF' : tintBg },
+          isPast && ec.iconBoxPast,
+        ]}>
           <View style={[ec.eventGlyph, isPast && ec.eventGlyphPast]}>
             <NotoEmoji name={normalizeHabitIcon(event.icon)} size={26} />
           </View>
@@ -1280,9 +1372,7 @@ function EventCard({
         <View style={ec.copy}>
           <Text style={[ec.title, isPast && ec.titlePast]} numberOfLines={1}>{event.title}</Text>
           <Text style={[ec.range, isPast && ec.rangePast]} numberOfLines={1}>
-            {event.recurrence === 'yearly'
-              ? `${formatDateShort(event.endDate)}  •  EVERY YEAR  •  ${event.leadDays} DAYS EARLY`
-              : `${formatDateShort(event.startDate)} – ${formatDateMedium(event.endDate)}`}
+            {`${formatDateShort(event.startDate)} – ${formatDateMedium(event.endDate)}`}
           </Text>
         </View>
 
@@ -1301,9 +1391,7 @@ function EventCard({
         )}
       </Pressable>
 
-      <TouchableOpacity onPress={onAskDelete} style={ec.del} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
-        <Trash2 s={16} c="#D76A6A" w={1.9} />
-      </TouchableOpacity>
+      {deleteButton}
     </Animated.View>
   );
 }
@@ -1321,13 +1409,63 @@ const ec = StyleSheet.create({
     shadowOpacity: 0,
     elevation: 0,
   },
+  cardRecurring: {
+    flexDirection: 'column', alignItems: 'stretch',
+    backgroundColor: '#F3F6F3',
+    borderColor: '#D8E3DC',
+    paddingRight: 0,
+    shadowOpacity: 0.018,
+    elevation: 0,
+    overflow: 'hidden',
+  },
+  recurringRail: {
+    position: 'absolute', left: 0, top: 11, bottom: 11, width: 3, borderRadius: 2,
+    backgroundColor: '#7FA491', opacity: 0.72,
+    zIndex: 1,
+  },
+  recTopRow: { flexDirection: 'row', alignItems: 'center', paddingRight: 6 },
+  recTap: { flex: 1, flexDirection: 'row', alignItems: 'center', columnGap: 12, paddingHorizontal: 14, paddingVertical: 11, paddingRight: 4 },
+  recTag: { marginTop: 3, flexDirection: 'row', alignItems: 'center', columnGap: 4 },
+  recTagText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5, color: '#7D9186', textTransform: 'uppercase' },
+  // The calendar medallion — the beautified date display.
+  medallion: {
+    width: 46, borderRadius: 12, overflow: 'hidden',
+    borderWidth: 1, backgroundColor: '#FFFFFF', alignItems: 'stretch',
+  },
+  medallionCap: { paddingVertical: 2.5, alignItems: 'center' },
+  medallionMonth: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.2 },
+  medallionDay: {
+    paddingTop: 2, paddingBottom: 3, textAlign: 'center',
+    fontFamily: F.serifSemiBold, fontSize: 20, lineHeight: 23, color: '#41514A',
+  },
+  // The foot bar — reminder lead-days on the left, days-until on the right.
+  recFoot: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', columnGap: 10,
+    borderTopWidth: 1, borderTopColor: '#E1EAE4', backgroundColor: 'rgba(226,236,230,0.5)',
+    paddingLeft: 14, paddingRight: 12, paddingVertical: 8,
+  },
+  recFootLeft: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', columnGap: 7 },
+  recFootIcon: {
+    width: 22, height: 22, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#DCE9E1', borderWidth: 1, borderColor: '#CBDFD4',
+  },
+  recFootIconOff: { backgroundColor: '#ECEAE4', borderColor: '#DED9CF' },
+  recFootText: { flex: 1, minWidth: 0, fontFamily: F.sansMedium, fontSize: 11.5, color: '#607A6D' },
+  recFootCount: {
+    borderRadius: 999, backgroundColor: '#E5EFE9', borderWidth: 1, borderColor: '#D2E1D9',
+    paddingHorizontal: 9, paddingVertical: 3.5,
+  },
+  recFootCountText: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 0.5, color: '#5A7669', fontVariant: ['tabular-nums'] },
   tap:     { flex: 1, flexDirection: 'row', alignItems: 'center', columnGap: 12, paddingHorizontal: 14, paddingVertical: 11, paddingRight: 4 },
   iconBox: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  iconBoxRecurring: { borderWidth: 1, borderColor: '#D1E1D8' },
   iconBoxPast: { borderWidth: 1, borderColor: '#DDD7CE' },
   eventGlyph: { alignItems: 'center', justifyContent: 'center' },
+  eventGlyphRecurring: { opacity: 0.76 },
   eventGlyphPast: { opacity: 0.48 },
   copy:    { flex: 1, minWidth: 0 },
   title:   { fontFamily: F.serifMedium, fontSize: 17, color: C.text },
+  titleRecurring: { color: '#52645B' },
   titlePast: { color: '#827C73' },
   range:   { marginTop: 2, fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.4, color: '#A8A29E', textTransform: 'uppercase' },
   rangePast: { color: '#B6AEA4' },
@@ -1344,11 +1482,51 @@ const ec = StyleSheet.create({
   del:     { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
 });
 
+function EventSectionHeader({ variant, count }: { variant: EventCardVariant; count: number }) {
+  const copy = variant === 'upcoming'
+    ? { label: 'UPCOMING', detail: 'Inside their active countdown window' }
+    : variant === 'recurring'
+      ? { label: 'RECURRING', detail: 'Waiting for their next lead window' }
+      : { label: 'PAST', detail: 'Completed one-time events' };
+
+  return (
+    <View style={s.sectionHeader}>
+      <View style={s.sectionHeaderCopy}>
+        <Text style={[
+          s.sectionLabel,
+          variant === 'recurring' && s.sectionLabelRecurring,
+          variant === 'past' && s.sectionLabelPast,
+        ]}>{copy.label}</Text>
+        <Text style={[
+          s.sectionDetail,
+          variant === 'recurring' && s.sectionDetailRecurring,
+          variant === 'past' && s.sectionDetailPast,
+        ]}>{copy.detail}</Text>
+      </View>
+      <View style={[
+        s.sectionCount,
+        variant === 'recurring' && s.sectionCountRecurring,
+        variant === 'past' && s.sectionCountPast,
+      ]}>
+        <Text style={[
+          s.sectionCountText,
+          variant === 'recurring' && s.sectionCountTextRecurring,
+          variant === 'past' && s.sectionCountTextPast,
+        ]}>{count}</Text>
+      </View>
+    </View>
+  );
+}
+
 // ─── Empty state ────────────────────────────────────────────────────────────
 
 function EmptyState({ onAddPress }: { onAddPress: () => void }) {
   return (
-    <Animated.View entering={FadeIn.duration(260)} style={es.wrap}>
+    <Animated.View
+      entering={FadeIn.duration(220).easing(Easing.out(Easing.cubic))}
+      exiting={FadeOut.duration(120).easing(Easing.in(Easing.quad))}
+      style={es.wrap}
+    >
       <View style={es.iconCircle}>
         <CalendarHeart s={32} c={GOLD} w={1.6} />
       </View>
@@ -1444,13 +1622,10 @@ export default function BigEventsView({
   const addTarget = useGuideTarget(BIG_EVENTS_GUIDE_TARGETS.add, isGuided);
   const guidePhase = session?.phase ?? 'intro';
 
-  const { upcoming, past } = useMemo(() => {
-    const sorted = sortBigEvents(bigEvents).filter(e => !isBigEventDeletedOnDate(e, today));
-    return {
-      upcoming: sorted.filter(e => e.endDate >= today),
-      past: sorted.filter(e => e.endDate < today),
-    };
-  }, [bigEvents, today]);
+  const { upcoming, recurring, past } = useMemo(
+    () => getBigEventSectionsForDate(bigEvents, today),
+    [bigEvents, today],
+  );
 
   const openNew = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1700,14 +1875,40 @@ export default function BigEventsView({
         )}
 
         {upcoming.length > 0 && (
-          <Animated.View layout={LinearTransition.springify().damping(15).stiffness(160).mass(1)} style={{ marginBottom: 14 }}>
-            <Text style={s.sectionLabel}>UPCOMING</Text>
+          <Animated.View
+            entering={FadeIn.duration(170).easing(Easing.out(Easing.cubic))}
+            exiting={FadeOut.duration(120).easing(Easing.in(Easing.quad))}
+            layout={LinearTransition.duration(220).easing(Easing.bezier(0.22, 1, 0.36, 1))}
+            style={s.section}
+          >
+            <EventSectionHeader variant="upcoming" count={upcoming.length} />
             {upcoming.map(e => (
               <EventCard
                 key={e.id}
                 event={e}
                 today={today}
-                isPast={false}
+                variant="upcoming"
+                onTap={() => openEdit(e)}
+                onAskDelete={() => askDelete(e.id)}
+              />
+            ))}
+          </Animated.View>
+        )}
+
+        {recurring.length > 0 && (
+          <Animated.View
+            entering={FadeIn.duration(170).easing(Easing.out(Easing.cubic))}
+            exiting={FadeOut.duration(120).easing(Easing.in(Easing.quad))}
+            layout={LinearTransition.duration(220).easing(Easing.bezier(0.22, 1, 0.36, 1))}
+            style={s.section}
+          >
+            <EventSectionHeader variant="recurring" count={recurring.length} />
+            {recurring.map(e => (
+              <EventCard
+                key={e.id}
+                event={e}
+                today={today}
+                variant="recurring"
                 onTap={() => openEdit(e)}
                 onAskDelete={() => askDelete(e.id)}
               />
@@ -1716,14 +1917,19 @@ export default function BigEventsView({
         )}
 
         {past.length > 0 && (
-          <Animated.View layout={LinearTransition.springify().damping(15).stiffness(160).mass(1)}>
-            <Text style={s.sectionLabel}>PAST</Text>
+          <Animated.View
+            entering={FadeIn.duration(170).easing(Easing.out(Easing.cubic))}
+            exiting={FadeOut.duration(120).easing(Easing.in(Easing.quad))}
+            layout={LinearTransition.duration(220).easing(Easing.bezier(0.22, 1, 0.36, 1))}
+            style={s.section}
+          >
+            <EventSectionHeader variant="past" count={past.length} />
             {past.map(e => (
               <EventCard
                 key={e.id}
                 event={e}
                 today={today}
-                isPast
+                variant="past"
                 onTap={undefined}
                 onAskDelete={() => askDelete(e.id)}
               />
@@ -1731,7 +1937,7 @@ export default function BigEventsView({
           </Animated.View>
         )}
 
-        {upcoming.length === 0 && past.length === 0 && !form && (
+        {upcoming.length === 0 && recurring.length === 0 && past.length === 0 && !form && (
           <EmptyState onAddPress={openNew} />
         )}
       </ScrollView>
@@ -1753,5 +1959,26 @@ export default function BigEventsView({
 
 const s = StyleSheet.create({
   headRight: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  sectionLabel: { fontFamily: F.sansBold, fontSize: 11.5, letterSpacing: 2.25, color: '#9C8A70', marginBottom: 9, marginLeft: 4 },
+  section: { marginBottom: 16 },
+  sectionHeader: {
+    minHeight: 47, marginBottom: 8, paddingHorizontal: 4,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', columnGap: 12,
+  },
+  sectionHeaderCopy: { flex: 1, minWidth: 0 },
+  sectionLabel: { fontFamily: F.sansBold, fontSize: 11.5, lineHeight: 14, letterSpacing: 2.25, color: '#9C7A3F' },
+  sectionLabelRecurring: { color: '#62816F' },
+  sectionLabelPast: { color: '#9D968C' },
+  sectionDetail: { marginTop: 3, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17, color: '#A19688' },
+  sectionDetailRecurring: { color: '#819187' },
+  sectionDetailPast: { color: '#ADA79F' },
+  sectionCount: {
+    minWidth: 29, height: 29, borderRadius: 15, paddingHorizontal: 8,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: '#E9D8B4', backgroundColor: '#FFF7E6',
+  },
+  sectionCountRecurring: { borderColor: '#D2E2D9', backgroundColor: '#EAF2ED' },
+  sectionCountPast: { borderColor: '#E2DED7', backgroundColor: '#F1EFEB' },
+  sectionCountText: { fontFamily: F.sansBold, fontSize: 11, color: '#9C7A3F', fontVariant: ['tabular-nums'] },
+  sectionCountTextRecurring: { color: '#62816F' },
+  sectionCountTextPast: { color: '#999289' },
 });

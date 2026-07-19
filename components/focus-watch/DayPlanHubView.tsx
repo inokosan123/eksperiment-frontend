@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Line } from 'react-native-svg';
 import Animated, {
@@ -20,6 +21,7 @@ import ConfirmModal from '@/components/shared/ConfirmModal';
 import { ArrowUpRight, ChevronRight, Lock, Plus, Shield } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
 import EssentialAppsSheet from './EssentialAppsSheet';
 import FocusCheck from './FocusCheck';
@@ -620,10 +622,25 @@ function PlanCard({
   );
 }
 
-export default function DayPlanHubView() {
+export default function DayPlanHubView({
+  guided = false,
+  onGuidedCreatePlan,
+}: {
+  guided?: boolean;
+  onGuidedCreatePlan?: () => void;
+} = {}) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { height: guideScreenHeight } = useWindowDimensions();
   const state = useDayPlan();
   const { request, gate } = usePermissionGate();
+  const { session, patchSession, setPresentation } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'focusScreenTime';
+  const guidePhase = isGuided ? session.phase : '';
+  const guideScrollRef = useRef<React.ElementRef<typeof ScrollView>>(null);
+  const createPlanTarget = useGuideTarget('focus-screen-time-create-plan', isGuided);
+  const guideScrollY = useRef(0);
+  const guideTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [picker, setPicker] = useState<PickerState>(null);
   const [essentialsOpen, setEssentialsOpen] = useState(false);
   const [alwaysBlockedOpen, setAlwaysBlockedOpen] = useState(false);
@@ -641,10 +658,107 @@ export default function DayPlanHubView() {
     return result;
   }, [state.schedule]);
 
+  const clearGuideTimers = useCallback(() => {
+    guideTimersRef.current.forEach(clearTimeout);
+    guideTimersRef.current = [];
+  }, []);
+
+  const stageCreatePlan = useCallback((present: () => void) => {
+    const node = createPlanTarget.ref.current;
+    if (!node?.measureInWindow) {
+      guideTimersRef.current.push(setTimeout(present, 40));
+      return;
+    }
+    node.measureInWindow((_x: number, y: number, _width: number, height: number) => {
+      const desired = Math.max(insets.top + 92, guideScreenHeight * 0.5 - height / 2);
+      const delta = y - desired;
+      if (Math.abs(delta) < 14) {
+        createPlanTarget.measure();
+        guideTimersRef.current.push(setTimeout(present, 56));
+        return;
+      }
+      guideScrollRef.current?.scrollTo({ y: Math.max(0, guideScrollY.current + delta), animated: true });
+      guideTimersRef.current.push(setTimeout(() => {
+        createPlanTarget.measure();
+        guideTimersRef.current.push(setTimeout(present, 48));
+      }, 340));
+    });
+  }, [createPlanTarget, guideScreenHeight, insets.top]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+    clearGuideTimers();
+
+    if (guidePhase === 'hubIntro') {
+      if (guideScrollY.current > 4) guideScrollRef.current?.scrollTo({ y: 0, animated: true });
+      guideTimersRef.current.push(setTimeout(() => {
+        setPresentation({
+          key: 'focus-screen-time-hub-intro',
+          placement: 'bottom',
+          lightScrim: true,
+          eyebrow: 'SCREEN TIME CONTROL',
+          progress: { current: 1, total: 5 },
+          message: 'This is the real Screen Time area. Plans decide how much phone time belongs in a day and what stays available afterward.',
+          highlights: ['real Screen Time area', 'Plans'],
+          ctaLabel: 'Set my first plan',
+          onCta: () => patchSession({ phase: 'hubCreatePlan' }),
+        });
+      }, 360));
+      return;
+    }
+
+    if (guidePhase === 'hubCreatePlan') {
+      stageCreatePlan(() => {
+        setPresentation({
+          key: 'focus-screen-time-create-plan',
+          targetId: 'focus-screen-time-create-plan',
+          cutoutPadding: 8,
+          placement: 'above',
+          allowTargetInteraction: true,
+          eyebrow: 'SCREEN TIME CONTROL',
+          progress: { current: 2, total: 5 },
+          message: 'Start with one plan built from the screen-time answer you just gave us.',
+          highlights: ['one plan', 'your screen-time answer'],
+          action: state.plans.length === 0 ? 'Tap Create your first plan' : 'Tap Create a new plan',
+          hint: 'tap',
+        });
+      });
+      return;
+    }
+
+    setPresentation(null);
+  }, [
+    clearGuideTimers,
+    guidePhase,
+    isGuided,
+    patchSession,
+    setPresentation,
+    stageCreatePlan,
+    state.plans.length,
+  ]);
+
+  useEffect(() => () => clearGuideTimers(), [clearGuideTimers]);
+
+  const openPlanEditor = useCallback(() => {
+    if (isGuided && guidePhase === 'hubCreatePlan') {
+      setPresentation(null);
+      patchSession({ phase: 'planName' });
+      onGuidedCreatePlan?.();
+      return;
+    }
+    router.push('/day-plan' as never);
+  }, [guidePhase, isGuided, onGuidedCreatePlan, patchSession, router, setPresentation]);
+
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScreenTitleBar title="SCREEN TIME" showBack />
-      <ScrollView contentContainerStyle={s.page} showsVerticalScrollIndicator={false}>
+      <ScreenTitleBar title="SCREEN TIME" showBack onBackOverride={isGuided ? () => {} : undefined} />
+      <ScrollView
+        ref={isGuided ? guideScrollRef : undefined}
+        contentContainerStyle={s.page}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={isGuided ? 16 : undefined}
+        onScroll={isGuided ? event => { guideScrollY.current = event.nativeEvent.contentOffset.y; } : undefined}
+      >
         <Animated.View entering={enter(0)}>
           <TodayPlanHero
             plan={todayPlan}
@@ -764,8 +878,9 @@ export default function DayPlanHubView() {
           <View style={s.planList}>
             {state.plans.length === 0 ? (
               <TouchableOpacity
+                {...(isGuided ? createPlanTarget : {})}
                 style={[s.planEmptyCard, { borderColor: EMPTY_PLAN_VISUAL.border }]}
-                onPress={() => router.push('/day-plan' as never)}
+                onPress={openPlanEditor}
                 activeOpacity={0.9}
               >
                 <LinearGradient colors={EMPTY_PLAN_VISUAL.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
@@ -794,7 +909,11 @@ export default function DayPlanHubView() {
             ))}
           </View>
           {state.plans.length > 0 && (
-            <TouchableOpacity style={s.newPlanButton} onPress={() => router.push('/day-plan' as never)}>
+            <TouchableOpacity
+              {...(isGuided ? createPlanTarget : {})}
+              style={s.newPlanButton}
+              onPress={openPlanEditor}
+            >
               <View style={s.newPlanIcon}><Plus s={14} c={C.goldDark} w={2.5} /></View>
               <Text style={s.newPlanText}>Create a new plan</Text>
             </TouchableOpacity>

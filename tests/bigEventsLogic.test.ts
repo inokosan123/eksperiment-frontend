@@ -8,6 +8,7 @@ import {
 } from '@/components/journal/bigEventsConfig';
 import {
   getBigEventCountdown,
+  getBigEventSectionsForDate,
   getBigEventsForDate,
   getYearlyOccurrenceDate,
   resolveBigEventForDate,
@@ -50,6 +51,25 @@ describe('yearly Big Events', () => {
     assert.equal(resolveBigEventForDate(source, '2026-10-06').endDate, '2027-10-05');
   });
 
+  test('stays in recurring until its configured lead window begins', () => {
+    const source = event();
+    const beforeWindow = getBigEventSectionsForDate([source], '2026-09-14');
+    assert.equal(beforeWindow.upcoming.length, 0);
+    assert.equal(beforeWindow.recurring.length, 1);
+    assert.equal(beforeWindow.recurring[0].endDate, '2026-10-05');
+
+    const activeWindow = getBigEventSectionsForDate([source], '2026-09-15');
+    assert.equal(activeWindow.upcoming.length, 1);
+    assert.equal(activeWindow.recurring.length, 0);
+  });
+
+  test('returns to recurring after this year occurrence passes', () => {
+    const sections = getBigEventSectionsForDate([event()], '2026-10-06');
+    assert.equal(sections.upcoming.length, 0);
+    assert.equal(sections.recurring.length, 1);
+    assert.equal(sections.recurring[0].endDate, '2027-10-05');
+  });
+
   test('clamps February 29 safely and restores it in leap years', () => {
     const leapDay = event({ endDate: '2024-02-29' });
     assert.equal(getYearlyOccurrenceDate(leapDay, 2027), '2027-02-28');
@@ -84,5 +104,15 @@ describe('yearly Big Events', () => {
     assert.equal(getBigEventsForDate([oneTime], '2026-06-30').length, 0);
     assert.equal(getBigEventsForDate([oneTime], '2026-07-10').length, 1);
     assert.equal(getBigEventsForDate([oneTime], '2026-07-21').length, 0);
+
+    const before = getBigEventSectionsForDate([oneTime], '2026-07-10');
+    assert.equal(before.upcoming.length, 1);
+    assert.equal(before.recurring.length, 0);
+    assert.equal(before.past.length, 0);
+
+    const after = getBigEventSectionsForDate([oneTime], '2026-07-21');
+    assert.equal(after.upcoming.length, 0);
+    assert.equal(after.recurring.length, 0);
+    assert.equal(after.past.length, 1);
   });
 });

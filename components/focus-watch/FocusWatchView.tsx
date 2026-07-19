@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   cancelAnimation,
@@ -29,6 +30,7 @@ import {
 import { StaticChallengeTrophy } from '@/components/challenges/ChallengeTrophy';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 import FocusPhoneStatus from './FocusPhoneStatus';
 import FocusCard, { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
 import { PulseDot } from './FocusMeter';
@@ -358,9 +360,27 @@ function ProtectionRow({
   );
 }
 
-export default function FocusWatchView() {
+export default function FocusWatchView({
+  guided = false,
+  onGuidedComplete,
+}: {
+  guided?: boolean;
+  onGuidedComplete?: () => void;
+} = {}) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { height: guideScreenHeight } = useWindowDimensions();
   const state = useDayPlan();
+  const { session, patchSession, setPresentation } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'focusOverview';
+  const guidePhase = isGuided ? session.phase : '';
+  const guideScrollRef = useRef<React.ElementRef<typeof ScrollView>>(null);
+  const protectionTarget = useGuideTarget('focus-overview-protection-status', isGuided);
+  const quietTarget = useGuideTarget('focus-overview-quiet-hour', isGuided);
+  const streakTarget = useGuideTarget('focus-overview-streak', isGuided);
+  const toolsTarget = useGuideTarget('focus-overview-main-cards', isGuided);
+  const guideScrollY = useRef(0);
+  const guideTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const nativeAvailable = isNativeFocusAvailable();
   const quietSelectionSummary = useNativeActivitySelectionSummary('quiet.current');
   const designatedCoreSummary = useNativeActivitySelectionSummary('core.designated');
@@ -505,11 +525,227 @@ export default function FocusWatchView() {
     : planProtects
         ? <FocusStatusChip text="Active" color="#327153" pulse />
         : undefined;
+
+  const clearGuideTimers = useCallback(() => {
+    guideTimersRef.current.forEach(clearTimeout);
+    guideTimersRef.current = [];
+  }, []);
+
+  const stageGuideTarget = useCallback((
+    binding: ReturnType<typeof useGuideTarget>,
+    position: 'origin' | 'middle',
+    present: () => void,
+  ) => {
+    const node = binding.ref.current;
+    if (!node?.measureInWindow) {
+      guideTimersRef.current.push(setTimeout(present, 40));
+      return;
+    }
+    if (position === 'origin') {
+      guideScrollRef.current?.scrollTo({ y: 0, animated: guideScrollY.current > 4 });
+      guideTimersRef.current.push(setTimeout(() => {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 48));
+      }, guideScrollY.current > 4 ? 330 : 56));
+      return;
+    }
+    node.measureInWindow((_x: number, y: number, _width: number, height: number) => {
+      const desired = Math.max(insets.top + 92, guideScreenHeight * 0.48 - height / 2);
+      const delta = y - desired;
+      if (Math.abs(delta) < 14) {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 56));
+        return;
+      }
+      guideScrollRef.current?.scrollTo({ y: Math.max(0, guideScrollY.current + delta), animated: true });
+      guideTimersRef.current.push(setTimeout(() => {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 48));
+      }, 340));
+    });
+  }, [guideScreenHeight, insets.top]);
+
+  const finishGuidedOverview = useCallback(() => {
+    setPresentation(null);
+    onGuidedComplete?.();
+  }, [onGuidedComplete, setPresentation]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+    clearGuideTimers();
+
+    if (guidePhase === 'focusIntro') {
+      if (guideScrollY.current > 4) guideScrollRef.current?.scrollTo({ y: 0, animated: true });
+      guideTimersRef.current.push(setTimeout(() => {
+        setPresentation({
+          key: 'focus-overview-intro',
+          placement: 'bottom',
+          lightScrim: true,
+          eyebrow: 'FOCUS TOUR',
+          progress: { current: 1, total: 5 },
+          message: 'This is the real Focus screen. Screen Time, Web Protection, Quiet Hour, and your streak meet here.',
+          highlights: ['real Focus screen', 'meet here'],
+          ctaLabel: 'See my protection',
+          onCta: () => patchSession({ phase: 'focusProtection' }),
+        });
+      }, 360));
+      return;
+    }
+
+    if (guidePhase === 'focusProtection') {
+      stageGuideTarget(protectionTarget, 'origin', () => {
+        setPresentation({
+          key: 'focus-overview-protection-status',
+          targetId: 'focus-overview-protection-status',
+          cutoutPadding: 8,
+          placement: 'below',
+          allowTargetInteraction: false,
+          eyebrow: 'FOCUS TOUR',
+          progress: { current: 2, total: 5 },
+          message: 'The Protection badge tells you immediately whether your saved rules are active, starting, waiting for access, or resting.',
+          highlights: ['Protection badge', 'active', 'resting'],
+          ctaLabel: 'Show Quiet Hour',
+          onCta: () => patchSession({ phase: 'focusQuiet' }),
+        });
+      });
+      return;
+    }
+
+    if (guidePhase === 'focusQuiet') {
+      stageGuideTarget(quietTarget, 'middle', () => {
+        setPresentation({
+          key: 'focus-overview-quiet-hour',
+          targetId: 'focus-overview-quiet-hour',
+          cutoutPadding: 8,
+          placement: 'above',
+          allowTargetInteraction: false,
+          eyebrow: 'FOCUS TOUR',
+          progress: { current: 3, total: 5 },
+          message: 'Quiet Hour is the fast option for a focused block right now. It temporarily keeps only the apps you choose available.',
+          highlights: ['Quiet Hour', 'focused block right now'],
+          ctaLabel: 'See my streak',
+          onCta: () => patchSession({ phase: 'focusStreak' }),
+        });
+      });
+      return;
+    }
+
+    if (guidePhase === 'focusStreak') {
+      stageGuideTarget(streakTarget, 'middle', () => {
+        setPresentation({
+          key: 'focus-overview-streak',
+          targetId: 'focus-overview-streak',
+          cutoutPadding: 8,
+          placement: 'above',
+          allowTargetInteraction: true,
+          eyebrow: 'FOCUS TOUR',
+          progress: { current: 4, total: 5 },
+          message: 'Each day you hold your Goal earns a trophy and keeps the streak alive. Open the real monthly streak view.',
+          highlights: ['earns a trophy', 'keeps the streak alive'],
+          action: 'Tap Trophy Streak',
+          hint: 'tap',
+        });
+      });
+      return;
+    }
+
+    if (guidePhase === 'focusStreakOpen') {
+      setPresentation(null);
+      return;
+    }
+
+    if (guidePhase === 'focusTools') {
+      stageGuideTarget(toolsTarget, 'middle', () => {
+        setPresentation({
+          key: 'focus-overview-main-cards',
+          targetId: 'focus-overview-main-cards',
+          cutoutPadding: 8,
+          placement: 'above',
+          allowTargetInteraction: false,
+          eyebrow: 'FOCUS TOUR',
+          progress: { current: 5, total: 5 },
+          message: 'These are the two main doors back into your setup: Screen Time for app boundaries and Web Protection for harmful sites.',
+          highlights: ['two main doors', 'Screen Time', 'Web Protection'],
+          celebrate: true,
+          ctaLabel: 'Finish Focus setup',
+          onCta: finishGuidedOverview,
+        });
+      });
+      return;
+    }
+
+    setPresentation(null);
+  }, [
+    clearGuideTimers,
+    finishGuidedOverview,
+    guidePhase,
+    isGuided,
+    patchSession,
+    protectionTarget,
+    quietTarget,
+    setPresentation,
+    stageGuideTarget,
+    streakTarget,
+    toolsTarget,
+  ]);
+
+  useEffect(() => () => clearGuideTimers(), [clearGuideTimers]);
+
+  const openTrophyCalendar = useCallback(() => {
+    if (isGuided && guidePhase === 'focusStreak') {
+      setPresentation(null);
+      patchSession({ phase: 'focusStreakOpen' });
+    }
+    setTrophiesOpen(true);
+  }, [guidePhase, isGuided, patchSession, setPresentation]);
+
+  const closeTrophyCalendar = useCallback(() => {
+    setTrophiesOpen(false);
+    if (isGuided && guidePhase === 'focusStreakOpen') {
+      patchSession({ phase: 'focusTools' });
+    }
+  }, [guidePhase, isGuided, patchSession]);
+
+  const withQuietGuideTarget = (content: ReactElement) => (
+    isGuided ? <View {...quietTarget}>{content}</View> : content
+  );
+
+  const focusNavigationCards = (
+    <>
+      <Animated.View entering={enter(210)} style={s.contentSection}>
+        <FocusCard
+          label="APP BLOCKING"
+          title="Screen Time"
+          tint={FOCUS_TINTS.gold}
+          watermark={<Clock s={84} c="#A9863F" w={1.1} />}
+          chip={screenTimeChip}
+          description="Plan how much of the day the phone may have — goals, limits, and app rules."
+          onPress={() => router.push('/day-plans' as never)}
+          style={s.navCard}
+        />
+      </Animated.View>
+
+      <Animated.View entering={enter(280)} style={s.contentSectionTight}>
+        <FocusCard
+          label="CLEAN SIGHT"
+          title="Web Protection"
+          tint={FOCUS_TINTS.green}
+          watermark={<Globe s={84} c="#3D8273" w={1.1} />}
+          description="Block gambling, adult content, and other harmful sites in browsers."
+          onPress={() => router.push('/clean-sight' as never)}
+          style={s.navCard}
+        />
+      </Animated.View>
+    </>
+  );
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScrollView
+        ref={isGuided ? guideScrollRef : undefined}
         contentContainerStyle={s.page}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={isGuided ? 16 : undefined}
+        onScroll={isGuided ? event => { guideScrollY.current = event.nativeEvent.contentOffset.y; } : undefined}
       >
         <ScreenTitleBar title="FOCUS" />
         <Animated.View entering={enter(0)} style={s.quoteWrap}>
@@ -527,7 +763,7 @@ export default function FocusWatchView() {
             style={s.protectionLight}
             pointerEvents="none"
           />
-          <View style={s.surfaceHeaderRow}>
+          <View {...(isGuided ? protectionTarget : {})} style={s.surfaceHeaderRow}>
             <Text style={s.surfaceLabel}>PROTECTION</Text>
             <View style={[s.liveBadge, isProtected && s.liveBadgeOn, (needsPermission || nativeApplying) && s.liveBadgeNeedsAccess, nativeError && s.liveBadgeError, previewMode && s.liveBadgePreview]}>
               {badgePulse ? (
@@ -551,18 +787,18 @@ export default function FocusWatchView() {
           <Text style={s.protectionDetail}>{protectionDetail}</Text>
 
           <View style={(state.quiet || alwaysConfigured) ? s.protectionRows : undefined}>
-            {state.quiet && (
-              <ProtectionRow
-                icon={<Lock s={16} c="#A24351" w={2.2} />}
-                iconBg="#FBE6E9"
-                title="Quiet Hour"
-                detail={nativeAvailable
-                  ? quietSelectionSummary && designatedCoreSummary
-                    ? `${quietSelectionSummary.applicationCount + designatedCoreSummary.applicationCount} chosen apps / strict`
-                    : 'Private app selection / strict'
-                  : `${state.quiet.selection.appIds.length + allCoreEssentialIds(state).length} essentials / strict`}
-                onPress={() => setQuietOpen(true)}
-              />
+            {state.quiet && withQuietGuideTarget(
+                <ProtectionRow
+                  icon={<Lock s={16} c="#A24351" w={2.2} />}
+                  iconBg="#FBE6E9"
+                  title="Quiet Hour"
+                  detail={nativeAvailable
+                    ? quietSelectionSummary && designatedCoreSummary
+                      ? `${quietSelectionSummary.applicationCount + designatedCoreSummary.applicationCount} chosen apps / strict`
+                      : 'Private app selection / strict'
+                    : `${state.quiet.selection.appIds.length + allCoreEssentialIds(state).length} essentials / strict`}
+                  onPress={() => setQuietOpen(true)}
+                />
             )}
             {alwaysConfigured && (
               <ProtectionRow
@@ -713,13 +949,13 @@ export default function FocusWatchView() {
             </View>
           )}
 
-          {!state.quiet && (
-            <GoldButton
-              label="Begin Quiet Hour"
-              height={50}
-              onPress={() => setQuietOpen(true)}
-              style={s.quietButton}
-            />
+          {!state.quiet && withQuietGuideTarget(
+              <GoldButton
+                label="Begin Quiet Hour"
+                height={50}
+                onPress={() => setQuietOpen(true)}
+                style={s.quietButton}
+              />
           )}
         </Animated.View>
 
@@ -735,7 +971,12 @@ export default function FocusWatchView() {
               <Text style={s.analyticsButtonText}>Analytics</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={s.progressSurface} activeOpacity={0.86} onPress={() => setTrophiesOpen(true)}>
+          <TouchableOpacity
+            {...(isGuided ? streakTarget : {})}
+            style={s.progressSurface}
+            activeOpacity={0.86}
+            onPress={openTrophyCalendar}
+          >
             <LinearGradient
               colors={['#F8E7BE', '#FFF8E9', '#FFFEFA']}
               start={{ x: 0, y: 0 }}
@@ -809,35 +1050,12 @@ export default function FocusWatchView() {
           </TouchableOpacity>
         </Animated.View>
 
-        <Animated.View entering={enter(210)} style={s.contentSection}>
-          <FocusCard
-            label="APP BLOCKING"
-            title="Screen Time"
-            tint={FOCUS_TINTS.gold}
-            watermark={<Clock s={84} c="#A9863F" w={1.1} />}
-            chip={screenTimeChip}
-            description="Plan how much of the day the phone may have — goals, limits, and app rules."
-            onPress={() => router.push('/day-plans' as never)}
-            style={s.navCard}
-          />
-        </Animated.View>
-
-        <Animated.View entering={enter(280)} style={s.contentSectionTight}>
-          <FocusCard
-            label="CLEAN SIGHT"
-            title="Web Protection"
-            tint={FOCUS_TINTS.green}
-            watermark={<Globe s={84} c="#3D8273" w={1.1} />}
-            description="Block gambling, adult content, and other harmful sites in browsers."
-            onPress={() => router.push('/clean-sight' as never)}
-            style={s.navCard}
-          />
-        </Animated.View>
+        {isGuided ? <View {...toolsTarget}>{focusNavigationCards}</View> : focusNavigationCards}
       </ScrollView>
 
       <QuietHourSheet visible={quietOpen} onClose={() => setQuietOpen(false)} editingSession={state.quiet} />
       <AlwaysBlockedSheet visible={alwaysBlockedOpen} onClose={() => setAlwaysBlockedOpen(false)} />
-      <TrophyCalendarSheet visible={trophiesOpen} onClose={() => setTrophiesOpen(false)} />
+      <TrophyCalendarSheet visible={trophiesOpen} onClose={closeTrophyCalendar} />
       <MilestoneCongratsOverlay milestone={state.pendingMilestone} onClose={acknowledgeMilestone} />
     </View>
   );

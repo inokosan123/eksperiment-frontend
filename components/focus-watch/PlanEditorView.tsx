@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown, LinearTransition, interpolateColor, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -9,6 +9,7 @@ import { NotoEmoji } from '@/components/shared/NotoEmoji';
 import { CheckSmall, ChevronRight, Lock, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 import DailyTargetEditor, { type TargetValues } from './DailyTargetEditor';
 import AppRulesBoard from './AppRulesBoard';
 import EssentialAppsSheet from './EssentialAppsSheet';
@@ -29,6 +30,7 @@ import { PLAN_VISUALS, planVisualForTheme } from './planVisuals';
 import {
   APP_CATEGORIES,
   DEFAULT_GROUP_APP_IDS,
+  assignPlanToWeekdayAndToday,
   dateKey,
   defaultPlanThemeId,
   deleteDayPlan,
@@ -41,6 +43,7 @@ import {
   type GroupRule,
   type PlanThemeId,
   type Strength,
+  weekdayMondayFirst,
 } from './dayPlanStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
@@ -117,12 +120,30 @@ function ColorSwatch({
 }
 
 
-export default function PlanEditorView() {
+export default function PlanEditorView({
+  guided = false,
+  guidedRecommendedMinutes = 240,
+  onGuidedComplete,
+}: {
+  guided?: boolean;
+  guidedRecommendedMinutes?: number;
+  onGuidedComplete?: (planId: string) => void;
+} = {}) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { height: guideScreenHeight } = useWindowDimensions();
   const { planId } = useLocalSearchParams<{ planId?: string }>();
   const state = useDayPlan();
   const { request: requestProtection, gate: permissionGate } = usePermissionGate();
+  const { session, patchSession, setPresentation } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'focusScreenTime';
+  const guidePhase = isGuided ? session.phase : '';
+  const guideScrollRef = useRef<React.ElementRef<typeof ScrollView>>(null);
+  const nameTarget = useGuideTarget('focus-screen-time-plan-name', isGuided);
+  const dailyTarget = useGuideTarget('focus-screen-time-daily-target', isGuided);
+  const saveTarget = useGuideTarget('focus-screen-time-save-plan', isGuided);
+  const guideScrollY = useRef(0);
+  const guideTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const nativeAvailable = isNativeFocusAvailable();
   const optionalEssentialsSummary = useNativeActivitySelectionSummary('global.essentials');
   const existing = useMemo(() => state.plans.find(plan => plan.id === planId), [planId, state.plans]);
@@ -134,14 +155,24 @@ export default function PlanEditorView() {
     [existing]
   );
 
-  const [name, setName] = useState(existing?.name ?? '');
+  const recommendedMinutes = Math.max(60, Math.min(10 * 60, Math.round(guidedRecommendedMinutes / 15) * 15));
+  const recommendedTolerance = Math.min(12 * 60, recommendedMinutes + 60);
+  const [name, setName] = useState(existing?.name ?? (guided ? 'My Daily Guard' : ''));
   const [themeId, setThemeId] = useState<PlanThemeId>(existing?.themeId ?? defaultPlanThemeId(draftPlanId));
   const existingToleranceEnd = existing?.essentialOnlyMinutes ?? existing?.tolerableMinutes ?? null;
-  const [target, setTarget] = useState<TargetValues>({
-    target: existing ? existing.budgetMinutes : null,
-    tolerable: existing ? existingToleranceEnd : null,
-    essentialOnly: existing ? existingToleranceEnd : null,
-  });
+  const [target, setTarget] = useState<TargetValues>(() => existing
+    ? {
+        target: existing.budgetMinutes,
+        tolerable: existingToleranceEnd,
+        essentialOnly: existingToleranceEnd,
+      }
+    : guided
+      ? {
+          target: recommendedMinutes,
+          tolerable: recommendedTolerance,
+          essentialOnly: recommendedTolerance,
+        }
+      : { target: null, tolerable: null, essentialOnly: null });
   const [essentialsOnlyDay, setEssentialsOnlyDay] = useState(() => !!existing?.essentialsOnly);
   const [planEssentialAppIds, setPlanEssentialAppIds] = useState(existing?.essentialAppIds ?? []);
   const [planStrength] = useState<Strength>(existing?.strength ?? 'loose');
@@ -187,6 +218,123 @@ export default function PlanEditorView() {
     || (target.target != null && target.target > 0 && draftToleranceEnd != null);
   const canSave = name.trim().length > 0
     && essentialsTargetReady;
+
+  const clearGuideTimers = useCallback(() => {
+    guideTimersRef.current.forEach(clearTimeout);
+    guideTimersRef.current = [];
+  }, []);
+
+  const stageGuideTarget = useCallback((
+    binding: ReturnType<typeof useGuideTarget>,
+    position: 'origin' | 'middle',
+    present: () => void,
+  ) => {
+    const node = binding.ref.current;
+    if (!node?.measureInWindow) {
+      guideTimersRef.current.push(setTimeout(present, 40));
+      return;
+    }
+    if (position === 'origin') {
+      guideScrollRef.current?.scrollTo({ y: 0, animated: guideScrollY.current > 4 });
+      guideTimersRef.current.push(setTimeout(() => {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 48));
+      }, guideScrollY.current > 4 ? 330 : 56));
+      return;
+    }
+    node.measureInWindow((_x: number, y: number, _width: number, height: number) => {
+      const desired = Math.max(insets.top + 108, guideScreenHeight * 0.46 - height / 2);
+      const delta = y - desired;
+      if (Math.abs(delta) < 14) {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 56));
+        return;
+      }
+      guideScrollRef.current?.scrollTo({ y: Math.max(0, guideScrollY.current + delta), animated: true });
+      guideTimersRef.current.push(setTimeout(() => {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 48));
+      }, 340));
+    });
+  }, [guideScreenHeight, insets.top]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+    clearGuideTimers();
+
+    if (guidePhase === 'planName') {
+      stageGuideTarget(nameTarget, 'origin', () => {
+        setPresentation({
+          key: 'focus-screen-time-plan-name',
+          targetId: 'focus-screen-time-plan-name',
+          cutoutPadding: 7,
+          placement: 'below',
+          allowTargetInteraction: true,
+          eyebrow: 'SCREEN TIME CONTROL',
+          progress: { current: 3, total: 5 },
+          message: 'We prepared a clear first plan. Keep this name or make it your own.',
+          highlights: ['first plan', 'make it your own'],
+          ctaLabel: 'Use this name',
+          onCta: () => patchSession({ phase: 'planTarget' }),
+        });
+      });
+      return;
+    }
+
+    if (guidePhase === 'planTarget') {
+      stageGuideTarget(dailyTarget, 'middle', () => {
+        setPresentation({
+          key: 'focus-screen-time-daily-target',
+          targetId: 'focus-screen-time-daily-target',
+          cutoutPadding: 7,
+          placement: 'above',
+          allowTargetInteraction: false,
+          eyebrow: 'SCREEN TIME CONTROL',
+          progress: { current: 4, total: 5 },
+          message: `Your answer becomes a ${formatMinutesShort(recommendedMinutes)} Goal. The extra hour of Tolerance gives a warning before only Essentials remain.`,
+          highlights: [`${formatMinutesShort(recommendedMinutes)} Goal`, 'Tolerance', 'Essentials'],
+          ctaLabel: 'Use this boundary',
+          onCta: () => patchSession({ phase: 'planSave' }),
+        });
+      });
+      return;
+    }
+
+    if (guidePhase === 'planSave') {
+      guideTimersRef.current.push(setTimeout(() => {
+        saveTarget.measure();
+        setPresentation({
+          key: 'focus-screen-time-save-plan',
+          targetId: 'focus-screen-time-save-plan',
+          cutoutPadding: 7,
+          placement: 'above',
+          allowTargetInteraction: true,
+          eyebrow: 'SCREEN TIME CONTROL',
+          progress: { current: 5, total: 5 },
+          message: 'Create the real plan. It will become today’s active Screen Time boundary.',
+          highlights: ['real plan', 'today’s active'],
+          action: 'Tap Create plan',
+          hint: 'tap',
+        });
+      }, 180));
+      return;
+    }
+
+    setPresentation(null);
+  }, [
+    clearGuideTimers,
+    dailyTarget,
+    guidePhase,
+    isGuided,
+    nameTarget,
+    patchSession,
+    recommendedMinutes,
+    saveTarget,
+    setPresentation,
+    stageGuideTarget,
+  ]);
+
+  useEffect(() => () => clearGuideTimers(), [clearGuideTimers]);
 
   // Essentials-only is an access mode, not a zero-minute target. Goal and
   // Tolerance keep measuring the day while the allowlist starts immediately.
@@ -267,6 +415,12 @@ export default function PlanEditorView() {
       const actual = state.usageByDate[dateKey(new Date())]?.totalMinutes ?? 0;
       if (saved.budgetMinutes != null && actual > saved.budgetMinutes) recordLimitExceeded('daily-target');
     }
+    if (isGuided) {
+      assignPlanToWeekdayAndToday(weekdayMondayFirst(new Date()), saved.id);
+      setPresentation(null);
+      onGuidedComplete?.(saved.id);
+      return;
+    }
     router.back();
   };
 
@@ -342,15 +496,23 @@ export default function PlanEditorView() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScrollView
+        ref={isGuided ? guideScrollRef : undefined}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[s.page, { paddingBottom: 130 + insets.bottom }]}
+        scrollEventThrottle={isGuided ? 16 : undefined}
+        onScroll={isGuided ? event => { guideScrollY.current = event.nativeEvent.contentOffset.y; } : undefined}
       >
-        <ScreenTitleBar title={existing ? 'EDIT PLAN' : 'NEW PLAN'} showBack horizontalBleed={16} />
+        <ScreenTitleBar
+          title={existing ? 'EDIT PLAN' : 'NEW PLAN'}
+          showBack
+          horizontalBleed={16}
+          onBackOverride={isGuided ? () => {} : undefined}
+        />
 
         <Animated.View entering={enter(0)}>
           <Text style={s.sectionLabel}>PLAN NAME</Text>
-          <View style={[s.nameSurface, name.length === 0 && s.nameSurfaceEmpty]}>
+          <View {...(isGuided ? nameTarget : {})} style={[s.nameSurface, name.length === 0 && s.nameSurfaceEmpty]}>
             <TextInput
               value={name}
               onChangeText={setName}
@@ -451,7 +613,7 @@ export default function PlanEditorView() {
 
         {!essentialsOnlyDay && (
         <View style={s.sectionsGroup}>
-        <Animated.View entering={enter(50)}>
+        <Animated.View {...(isGuided ? dailyTarget : {})} entering={enter(50)}>
           <DailyTargetEditor values={target} onChange={setTarget} />
         </Animated.View>
 
@@ -524,11 +686,21 @@ export default function PlanEditorView() {
 
       <View style={[s.footer, { paddingBottom: Math.max(12, insets.bottom) }]}>
         {saveError && <Text style={s.saveError}>{saveError}</Text>}
-        <GoldButton
-          label={checkingSelections ? 'Checking iPhone selections...' : existing ? 'Save changes' : 'Create plan'}
-          disabled={!canSave || checkingSelections}
-          onPress={requestSave}
-        />
+        {isGuided ? (
+          <View {...saveTarget}>
+            <GoldButton
+              label={checkingSelections ? 'Checking iPhone selections...' : existing ? 'Save changes' : 'Create plan'}
+              disabled={!canSave || checkingSelections}
+              onPress={requestSave}
+            />
+          </View>
+        ) : (
+          <GoldButton
+            label={checkingSelections ? 'Checking iPhone selections...' : existing ? 'Save changes' : 'Create plan'}
+            disabled={!canSave || checkingSelections}
+            onPress={requestSave}
+          />
+        )}
       </View>
 
       <EssentialAppsSheet

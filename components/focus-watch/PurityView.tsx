@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import Animated, {
   Easing,
@@ -19,6 +19,7 @@ import { NotoEmoji } from '@/components/shared/NotoEmoji';
 import { CheckSmall, ChevronRight, Clock, Globe, Hourglass, Lock, Plus, Shield, Trash2, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 import FocusSwitch from './FocusSwitch';
 import GoldButton from './GoldButton';
 import FocusSheetHeader from './FocusSheetHeader';
@@ -387,11 +388,32 @@ type PackTurnOffRequest =
   | { kind: 'builtin'; id: WebPackId; name: string; domainCount: number }
   | { kind: 'custom'; id: string; name: string; domainCount: number };
 
-export default function PurityView() {
+export default function PurityView({
+  guided = false,
+  guidedPackId = 'social',
+  onGuidedComplete,
+}: {
+  guided?: boolean;
+  guidedPackId?: WebPackId;
+  onGuidedComplete?: () => void;
+} = {}) {
   const { height: screenHeight } = useWindowDimensions();
   const state = useDayPlan();
   const { purity, pendingChanges } = state;
   const { request, gate } = usePermissionGate();
+  const { session, patchSession, setPresentation } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'focusWebProtection';
+  const guidePhase = isGuided ? session.phase : '';
+  const guideScrollRef = useRef<React.ElementRef<typeof ScrollView>>(null);
+  const guidePackTarget = useGuideTarget('focus-web-protection-pack', isGuided);
+  const hardLockTarget = useGuideTarget('focus-web-protection-hard-lock', isGuided);
+  const guideScrollY = useRef(0);
+  const guideTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [guidePackId] = useState<WebPackId>(() => {
+    const recommended = purity.packs.find(pack => pack.id === guidedPackId);
+    if (recommended?.mode === 'off') return guidedPackId;
+    return purity.packs.find(pack => pack.mode === 'off')?.id ?? guidedPackId;
+  });
   const [newPackOpen, setNewPackOpen] = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [cooldownOpen, setCooldownOpen] = useState(false);
@@ -465,6 +487,8 @@ export default function PurityView() {
       ? `Blocked websites stay blocked for ${hardLockDelay.label} after an unlock request`
       : 'Set a delay before blocked websites can be unlocked';
   const packMode = (id: WebPackId) => purity.packs.find(pack => pack.id === id)?.mode ?? 'off';
+  const guidePackMode = packMode(guidePackId);
+  const guidePackName = WEB_PACKS.find(pack => pack.id === guidePackId)?.name ?? 'Protection Pack';
   const domainsForBuiltInPack = (id: WebPackId) => {
     const curated = WEB_PACKS.find(pack => pack.id === id)?.sites ?? [];
     const extra = purity.packs.find(pack => pack.id === id)?.extraDomains ?? [];
@@ -486,6 +510,180 @@ export default function PurityView() {
     return change.action.kind === 'custom-pack-remove'
       ? `Removal pending · ${pendingWhen(change.effectiveAt)}`
       : `Turns off ${pendingWhen(change.effectiveAt)}`;
+  };
+
+  const clearGuideTimers = useCallback(() => {
+    guideTimersRef.current.forEach(clearTimeout);
+    guideTimersRef.current = [];
+  }, []);
+
+  const stageGuideTarget = useCallback((
+    binding: ReturnType<typeof useGuideTarget>,
+    position: 'origin' | 'middle',
+    present: () => void,
+  ) => {
+    const node = binding.ref.current;
+    if (!node?.measureInWindow) {
+      guideTimersRef.current.push(setTimeout(present, 40));
+      return;
+    }
+    if (position === 'origin') {
+      guideScrollRef.current?.scrollTo({ y: 0, animated: guideScrollY.current > 4 });
+      guideTimersRef.current.push(setTimeout(() => {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 48));
+      }, guideScrollY.current > 4 ? 330 : 56));
+      return;
+    }
+    node.measureInWindow((_x: number, y: number, _width: number, height: number) => {
+      const desired = Math.max(86, screenHeight * 0.47 - height / 2);
+      const delta = y - desired;
+      if (Math.abs(delta) < 14) {
+        binding.measure();
+        guideTimersRef.current.push(setTimeout(present, 56));
+        return;
+      }
+      guideScrollRef.current?.scrollTo({ y: Math.max(0, guideScrollY.current + delta), animated: true });
+      guideTimersRef.current.push(setTimeout(() => {
+        const refreshedNode = binding.ref.current;
+        if (!refreshedNode?.measureInWindow) {
+          binding.measure();
+          guideTimersRef.current.push(setTimeout(present, 48));
+          return;
+        }
+        refreshedNode.measureInWindow((_nextX: number, nextY: number, _nextWidth: number, nextHeight: number) => {
+          const safeTop = 82;
+          const safeBottom = screenHeight - 84;
+          const correction = nextY < safeTop
+            ? nextY - safeTop
+            : nextY + nextHeight > safeBottom
+              ? nextY + nextHeight - safeBottom
+              : 0;
+          if (Math.abs(correction) > 4) {
+            guideScrollRef.current?.scrollTo({
+              y: Math.max(0, guideScrollY.current + correction),
+              animated: false,
+            });
+          }
+          guideTimersRef.current.push(setTimeout(() => {
+            binding.measure();
+            guideTimersRef.current.push(setTimeout(present, 48));
+          }, Math.abs(correction) > 4 ? 80 : 0));
+        });
+      }, 340));
+    });
+  }, [screenHeight]);
+
+  const finishGuidedWebProtection = useCallback(() => {
+    setPresentation(null);
+    onGuidedComplete?.();
+  }, [onGuidedComplete, setPresentation]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+    clearGuideTimers();
+
+    if (guidePhase === 'webIntro') {
+      if (guideScrollY.current > 4) guideScrollRef.current?.scrollTo({ y: 0, animated: true });
+      guideTimersRef.current.push(setTimeout(() => {
+        setPresentation({
+          key: 'focus-web-protection-intro',
+          placement: 'bottom',
+          lightScrim: true,
+          eyebrow: 'WEB PROTECTION',
+          progress: { current: 1, total: 3 },
+          message: 'This is the real Web Protection screen. Ready-made packs block entire groups of harmful sites across supported browsers.',
+          highlights: ['real Web Protection screen', 'Ready-made packs'],
+          ctaLabel: 'Choose my first pack',
+          onCta: () => patchSession({ phase: 'webPack' }),
+        });
+      }, 360));
+      return;
+    }
+
+    if (guidePhase === 'webPack') {
+      stageGuideTarget(guidePackTarget, 'middle', () => {
+        const alreadyOn = guidePackMode !== 'off';
+        setPresentation({
+          key: 'focus-web-protection-pack',
+          targetId: 'focus-web-protection-pack',
+          cutoutPadding: 7,
+          placement: 'above',
+          allowTargetInteraction: !alreadyOn,
+          eyebrow: 'WEB PROTECTION',
+          progress: { current: 2, total: 3 },
+          message: alreadyOn
+            ? `${guidePackName} is already protecting you. Packs can be changed from this real screen at any time.`
+            : `${guidePackName} best matches the protection you asked for. Turn it on now.`,
+          highlights: [guidePackName, alreadyOn ? 'already protecting you' : 'Turn it on now'],
+          action: alreadyOn ? undefined : `Turn on ${guidePackName}`,
+          hint: alreadyOn ? undefined : 'tap',
+          hintAnchor: 'right',
+          ctaLabel: alreadyOn ? 'Continue' : undefined,
+          onCta: alreadyOn ? () => patchSession({ phase: 'webHardLock' }) : undefined,
+        });
+      });
+      return;
+    }
+
+    if (guidePhase === 'webHardLock') {
+      stageGuideTarget(hardLockTarget, 'middle', () => {
+        setPresentation({
+          key: 'focus-web-protection-hard-lock',
+          targetId: 'focus-web-protection-hard-lock',
+          cutoutPadding: 7,
+          placement: 'above',
+          allowTargetInteraction: false,
+          eyebrow: 'WEB PROTECTION',
+          progress: { current: 3, total: 3 },
+          message: 'Hard Lock adds a delay before protection can be weakened. It is already on, but permanent lock remains your choice.',
+          highlights: ['Hard Lock', 'delay', 'your choice'],
+          ctaLabel: 'Finish Web Protection',
+          onCta: finishGuidedWebProtection,
+        });
+      });
+      return;
+    }
+
+    setPresentation(null);
+  }, [
+    clearGuideTimers,
+    finishGuidedWebProtection,
+    guidePackMode,
+    guidePackName,
+    guidePackTarget,
+    guidePhase,
+    hardLockTarget,
+    isGuided,
+    patchSession,
+    setPresentation,
+    stageGuideTarget,
+  ]);
+
+  useEffect(() => () => clearGuideTimers(), [clearGuideTimers]);
+
+  const handleBuiltInPackToggle = (
+    id: WebPackId,
+    name: string,
+    mode: PackMode,
+    pending: PendingChange | undefined,
+    domainCount: number,
+  ) => {
+    if (pending) {
+      cancelPendingChange(pending.id);
+      return;
+    }
+    if (mode === 'off') {
+      request(() => {
+        setPackMode(id, 'on');
+        if (isGuided && guidePhase === 'webPack' && id === guidePackId) {
+          setPresentation(null);
+          patchSession({ phase: 'webHardLock' });
+        }
+      });
+      return;
+    }
+    setConfirmPackOff({ kind: 'builtin', id, name, domainCount });
   };
 
   const addOneDomain = () => {
@@ -546,8 +744,21 @@ export default function PurityView() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScrollView contentContainerStyle={s.page} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <ScreenTitleBar title="WEB PROTECTION" showBack horizontalBleed={16} sideWidth={56} />
+      <ScrollView
+        ref={isGuided ? guideScrollRef : undefined}
+        contentContainerStyle={s.page}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        scrollEventThrottle={isGuided ? 16 : undefined}
+        onScroll={isGuided ? event => { guideScrollY.current = event.nativeEvent.contentOffset.y; } : undefined}
+      >
+        <ScreenTitleBar
+          title="WEB PROTECTION"
+          showBack
+          horizontalBleed={16}
+          sideWidth={56}
+          onBackOverride={isGuided ? () => {} : undefined}
+        />
         <Animated.View entering={enter(0)} style={s.introWrap}>
           <Text style={s.intro}>“Far from the eyes, far from the heart.”</Text>
         </Animated.View>
@@ -671,7 +882,7 @@ export default function PurityView() {
               const mode = packMode(pack.id);
               const pending = builtInPackPending(pack.id);
               const domains = domainsForBuiltInPack(pack.id);
-              return (
+              const row = (
                 <PackRow
                   key={pack.id}
                   name={pack.name}
@@ -681,15 +892,7 @@ export default function PurityView() {
                   emoji={pack.emoji}
                   slashed={pack.slashed}
                   appleFilter={pack.id === 'adult'}
-                  onToggle={() => {
-                    if (pending) {
-                      cancelPendingChange(pending.id);
-                    } else if (mode === 'off') {
-                      request(() => setPackMode(pack.id, 'on'));
-                    } else {
-                      setConfirmPackOff({ kind: 'builtin', id: pack.id, name: pack.name, domainCount: domains.length });
-                    }
-                  }}
+                  onToggle={() => handleBuiltInPackToggle(pack.id, pack.name, mode, pending, domains.length)}
                   onNever={() => mode === 'never'
                     ? setConfirmPackOff({ kind: 'builtin', id: pack.id, name: pack.name, domainCount: domains.length })
                     : setConfirmNeverPack(pack.id)}
@@ -698,6 +901,9 @@ export default function PurityView() {
                   onCancelPending={pending ? () => cancelPendingChange(pending.id) : undefined}
                 />
               );
+              return isGuided && pack.id === guidePackId ? (
+                <View key={`guided-${pack.id}`} {...guidePackTarget}>{row}</View>
+              ) : row;
             })}
             {purity.customPacks.map(pack => {
               const pending = customPackPending(pack.id);
@@ -740,7 +946,12 @@ export default function PurityView() {
         </Animated.View>
 
         {[
-        <Animated.View key="hard-lock" entering={enter(175)} style={s.sectionBlock}>
+        <Animated.View
+          key="hard-lock"
+          {...(isGuided ? hardLockTarget : {})}
+          entering={enter(175)}
+          style={s.sectionBlock}
+        >
           <View style={s.zoneDivider}>
             <View style={s.zoneDividerLine} />
             <Text style={s.zoneDividerText}>UNLOCK PROTECTION</Text>
