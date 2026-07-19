@@ -11907,93 +11907,57 @@ function V4MomentSlide({
 // ── Gift moment · the statement (24a) ──────────────────────────────────────
 // The register of the onboarding changes here. Two chapters were about fixing
 // problems and building systems; this screen is neither — it is a statement
-// of values, given a whole screen to land on its own. Warm golden light, one
-// sentence, and the charter's rule—◆—rule drawing itself beneath it.
+// of values, given a whole screen to land on its own. It speaks in the
+// house's own charter voice on the onboarding's plain white ground, and the
+// crest signs it beneath — a promise with a seal, not a sales screen.
 function GiftStatementSlide({ bottomInset, onNext }: { bottomInset: number; onNext: () => void }) {
-  const ruleDraw = useSharedValue(0);
-
   useEffect(() => {
-    ruleDraw.value = withDelay(1120, withTiming(1, { duration: 640, easing: Easing.bezier(0.22, 1, 0.36, 1) }));
-    const titleBeat = setTimeout(runBubbleHaptic, 720);
-    const ruleBeat = setTimeout(runSelectionHaptic, 1260);
+    const titleBeat = setTimeout(runBubbleHaptic, 620);
+    const sealBeat = setTimeout(runSelectionHaptic, 1500);
     return () => {
       clearTimeout(titleBeat);
-      clearTimeout(ruleBeat);
-      cancelAnimation(ruleDraw);
+      clearTimeout(sealBeat);
     };
-  }, [ruleDraw]);
-
-  const leftRuleStyle = useAnimatedStyle(() => ({
-    transform: [{ scaleX: Math.max(0.0001, ruleDraw.value) }],
-  }));
-  const rightRuleStyle = useAnimatedStyle(() => ({
-    transform: [{ scaleX: Math.max(0.0001, ruleDraw.value) }],
-  }));
-  const gemStyle = useAnimatedStyle(() => ({
-    opacity: ruleDraw.value,
-    transform: [
-      { rotate: '45deg' },
-      { scale: interpolate(ruleDraw.value, [0, 1], [0.4, 1]) },
-    ],
-  }));
+  }, []);
 
   return (
-    <LinearGradient
-      colors={[...CONVERSE_GRADIENT]}
-      locations={[...CONVERSE_GRADIENT_LOCATIONS]}
-      start={{ x: 0.5, y: 0 }}
-      end={{ x: 0.5, y: 1 }}
-      style={s.giftStatementSlide}
-    >
-      <ConverseBackdrop />
-
+    <View style={s.giftStatementSlide}>
       <View style={s.giftStatementStage}>
+        <OrganizeLayersCharterHeader
+          eyebrow="OUR PROMISE"
+          title={'Learning about God will\nalways be free in Anasta.'}
+          body="We are a Christian productivity app that helps you build discipline, organize your life, and grow closer to God. Scripture, prayer, and spiritual growth will always be free — for everyone."
+          accent={GOLD}
+        />
+
         <Reanimated.View
-          entering={FadeIn.delay(140).duration(560).withInitialValues({
+          entering={FadeIn.delay(1340).duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
             opacity: 0,
-            transform: [{ translateY: 10 }],
+            transform: [{ translateY: 14 }, { scale: 0.92 }],
           })}
+          style={s.giftStatementSealWrap}
         >
-          <Text style={s.giftStatementEyebrow}>OUR PROMISE</Text>
+          <View style={s.giftStatementSealHalo} />
+          <View style={s.giftStatementSealPlate}>
+            <Image source={APP_LOGO} style={s.giftStatementSealLogo} resizeMode="cover" />
+          </View>
+          <Reanimated.Text
+            entering={FadeIn.delay(1560).duration(480)}
+            style={s.giftStatementSealCaption}
+          >
+            ANASTA
+          </Reanimated.Text>
         </Reanimated.View>
-
-        <Reanimated.Text
-          entering={FadeIn.delay(320).duration(780).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-            opacity: 0,
-            transform: [{ translateY: 18 }, { scale: 0.985 }],
-          })}
-          style={s.giftStatementTitle}
-        >
-          Learning about God will always be free in Anasta.
-        </Reanimated.Text>
-
-        <View style={s.giftStatementOrnament}>
-          <Reanimated.View style={[s.giftStatementRule, s.giftStatementRuleLeft, leftRuleStyle]} />
-          <Reanimated.View style={[s.giftStatementGem, gemStyle]} />
-          <Reanimated.View style={[s.giftStatementRule, s.giftStatementRuleRight, rightRuleStyle]} />
-        </View>
-
-        <Reanimated.Text
-          entering={FadeIn.delay(1460).duration(680).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-            opacity: 0,
-            transform: [{ translateY: 12 }],
-          })}
-          style={s.giftStatementBody}
-        >
-          We are a Christian productivity app that helps you build discipline, organize your
-          life, and grow closer to God. Scripture, prayer, and spiritual growth will always
-          be free — for everyone.
-        </Reanimated.Text>
       </View>
 
-      <AnimatedCta delay={2260} style={[s.questionFooter, { bottom: bottomInset + 18 }]}>
+      <AnimatedCta delay={2050} style={[s.questionFooter, { bottom: bottomInset + 18 }]}>
         <View style={s.ctaIsland}>
           <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
             <Text style={s.primaryButtonText}>Show me</Text>
           </TouchableOpacity>
         </View>
       </AnimatedCta>
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -42083,68 +42047,60 @@ const s = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  // Gift statement (24a): one sentence in warm golden light, nothing else.
+  // Gift statement (24a): the charter voice on the onboarding's plain white
+  // ground — sparse screen, so the header sits low (the macro-board seat) and
+  // the crest signs the promise beneath it.
   giftStatementSlide: {
     flex: 1,
-    position: 'relative',
-    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
   },
   giftStatementStage: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 30,
+    paddingTop: 88,
+    paddingHorizontal: 18,
     paddingBottom: 108,
   },
-  giftStatementEyebrow: {
-    fontFamily: F.sansBold,
-    fontSize: 11,
-    letterSpacing: 2.6,
-    color: GOLD,
-    textAlign: 'center',
-  },
-  giftStatementTitle: {
-    marginTop: 16,
-    maxWidth: 336,
-    fontFamily: F.serifSemiBold,
-    fontSize: 34,
-    lineHeight: 42,
-    letterSpacing: -0.3,
-    color: INK,
-    textAlign: 'center',
-  },
-  giftStatementOrnament: {
-    marginTop: 20,
-    flexDirection: 'row',
+  giftStatementSealWrap: {
+    marginTop: 40,
     alignItems: 'center',
-    columnGap: 9,
   },
-  giftStatementRule: {
-    width: 52,
-    height: 1.4,
-    borderRadius: 1,
-    backgroundColor: 'rgba(183,141,64,0.55)',
+  giftStatementSealHalo: {
+    position: 'absolute',
+    top: -14,
+    width: 96,
+    height: 96,
+    borderRadius: 30,
+    backgroundColor: 'rgba(197,160,89,0.10)',
+    transform: [{ rotate: '7deg' }],
   },
-  giftStatementRuleLeft: {
-    transformOrigin: 'right',
+  giftStatementSealPlate: {
+    width: 68,
+    height: 68,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.30)',
+    shadowColor: '#5E5142',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+    elevation: 5,
   },
-  giftStatementRuleRight: {
-    transformOrigin: 'left',
+  giftStatementSealLogo: {
+    width: 60,
+    height: 60,
+    borderRadius: 17,
   },
-  giftStatementGem: {
-    width: 7,
-    height: 7,
-    borderRadius: 1.6,
-    backgroundColor: GOLD,
-  },
-  giftStatementBody: {
-    marginTop: 22,
-    maxWidth: 330,
-    fontFamily: F.serifMedium,
-    fontSize: 16.5,
-    lineHeight: 24.5,
-    color: 'rgba(25,23,20,0.64)',
-    textAlign: 'center',
+  giftStatementSealCaption: {
+    marginTop: 10,
+    fontFamily: F.sansBold,
+    fontSize: 9,
+    letterSpacing: 3,
+    color: 'rgba(25,23,20,0.34)',
   },
   v4ProgressRail: {
     width: '100%',
