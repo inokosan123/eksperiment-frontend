@@ -23149,12 +23149,12 @@ function SysVeilRow({
     backgroundColor: interpolateColor(
       emphasis.value,
       [0, 0.72, 1],
-      ['rgba(255,255,255,0.62)', 'rgba(250,241,222,0.94)', '#FFFEFB'],
+      ['rgba(255,253,248,0.55)', 'rgba(250,241,222,0.94)', '#FFFEFB'],
     ),
     borderColor: interpolateColor(
       emphasis.value,
       [0, 0.72, 1],
-      ['rgba(35,31,26,0.075)', 'rgba(197,160,89,0.25)', 'rgba(197,160,89,0.42)'],
+      ['rgba(197,160,89,0.16)', 'rgba(197,160,89,0.28)', 'rgba(197,160,89,0.46)'],
     ),
   }));
   const strikeStyle = useAnimatedStyle(() => ({
@@ -23449,11 +23449,17 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   const fillStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: -(1 - progress.value) * barWidth }],
   }));
-  const sheenStyle = useAnimatedStyle(() => {
-    const wave = Math.sin(Math.PI * sheen.value);
+  // A glowing gold bead rides the leading edge of the fill (the "gold thread"
+  // grammar), breathing gently so the thread reads as live work even between
+  // ticks. Sits on the edge; hidden until the weave begins.
+  const beadStyle = useAnimatedStyle(() => {
+    const pulse = 0.5 + 0.5 * Math.sin(sheen.value * Math.PI * 2);
     return {
-      opacity: 0.5 * wave,
-      transform: [{ translateX: -40 + sheen.value * (barWidth + 80) }],
+      opacity: interpolate(progress.value, [0.004, 0.03], [0, 1], 'clamp') * (0.82 + 0.18 * pulse),
+      transform: [
+        { translateX: progress.value * barWidth },
+        { scale: 0.86 + 0.2 * pulse },
+      ],
     };
   });
   // The whole tableau dissolves into the flare, forge-style: content fades
@@ -23488,7 +23494,13 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       <Reanimated.View
         pointerEvents="none"
         style={[s.sysVeilBackdrop, backdropExitStyle]}
-      />
+      >
+        <LinearGradient
+          colors={['#FFFEFC', '#FFFDF8', '#FAF1DF']}
+          locations={[0, 0.52, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </Reanimated.View>
       <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, ambientExitStyle]}>
         <View style={s.introWarmth}>
           <LinearGradient
@@ -23511,6 +23523,12 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
             style={StyleSheet.absoluteFill}
           />
         </View>
+        {/* Gold dust in the paper — the vellum signal the value/converse stages carry */}
+        <View style={[s.sysVeilDust, { top: viewportHeight * 0.15, left: '10%' }]} />
+        <View style={[s.sysVeilDustSmall, { top: viewportHeight * 0.24, right: '9%' }]} />
+        <View style={[s.sysVeilDustSmall, { top: viewportHeight * 0.5, left: '6.5%' }]} />
+        <View style={[s.sysVeilDust, { top: viewportHeight * 0.73, right: '11.5%' }]} />
+        <View style={[s.sysVeilDustSmall, { top: viewportHeight * 0.82, left: '13%' }]} />
       </Reanimated.View>
       <Reanimated.View
         style={[s.sysVeilContent, compact && s.sysVeilContentCompact, contentFlareStyle]}
@@ -23583,16 +23601,31 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
             entering={FadeInUp.delay(isWorking ? 150 : 0).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1))}
             style={s.sysVeilHeaderInner}
           >
-            <View style={s.sysVeilKickerRow}>
-              <View style={s.sysVeilKickerRule} />
-              <Text style={s.sysVeilKicker}>
-                {isWorking ? 'BUILDING YOUR HOME' : 'READY FOR YOU'}
-              </Text>
-              <View style={s.sysVeilKickerRule} />
-            </View>
+            <Text style={s.sysVeilKicker}>
+              {isWorking ? 'BUILDING YOUR HOME' : 'READY FOR YOU'}
+            </Text>
             {isWorking ? (
               <Text style={s.sysVeilTitle}>Bringing your plan to life.</Text>
             ) : null}
+            <View style={[s.sysVeilOrnament, !isWorking && s.sysVeilOrnamentReady]}>
+              <View style={s.sysVeilOrnamentRule}>
+                <LinearGradient
+                  colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.6)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </View>
+              <View style={s.sysVeilOrnamentDiamond} />
+              <View style={s.sysVeilOrnamentRule}>
+                <LinearGradient
+                  colors={['rgba(197,160,89,0.6)', 'rgba(197,160,89,0)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </View>
+            </View>
           </Reanimated.View>
         </Reanimated.View>
 
@@ -23638,33 +23671,27 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
               style={s.sysVeilProgress}
             >
           <View style={s.sysVeilProgressMeta}>
-            <Text style={s.sysVeilProgressLabel}>ASSEMBLING YOUR HOME</Text>
-            <View style={s.sysVeilProgressCountPill}>
-              <Text style={s.sysVeilProgressCount}>
-                {Math.min(ticked, SYSTEM_BUILD_STEPS.length)} / {SYSTEM_BUILD_STEPS.length}
-              </Text>
-            </View>
+            <Text style={s.sysVeilProgressLabel}>WEAVING IT TOGETHER</Text>
+            <Text style={s.sysVeilProgressCount}>
+              {Math.min(ticked, SYSTEM_BUILD_STEPS.length)}
+              <Text style={s.sysVeilProgressCountTotal}> / {SYSTEM_BUILD_STEPS.length}</Text>
+            </Text>
           </View>
-          <View
-            style={s.sysVeilBar}
-            onLayout={event => setBarWidth(Math.max(1, event.nativeEvent.layout.width))}
-          >
-            <Reanimated.View style={[s.sysVeilBarFillFull, fillStyle]}>
-              <LinearGradient
-                colors={['#AA823C', '#D7B76B', '#B58B40']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFill}
-              />
-            </Reanimated.View>
-            <Reanimated.View style={[s.sysVeilBarSheen, sheenStyle]}>
-              <LinearGradient
-                colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.85)', 'rgba(255,255,255,0)']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFill}
-              />
-            </Reanimated.View>
+          <View style={s.sysVeilThreadWrap}>
+            <View
+              style={s.sysVeilBar}
+              onLayout={event => setBarWidth(Math.max(1, event.nativeEvent.layout.width))}
+            >
+              <Reanimated.View style={[s.sysVeilBarFillFull, fillStyle]}>
+                <LinearGradient
+                  colors={['#AA823C', '#D7B76B', '#B58B40']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </Reanimated.View>
+            </View>
+            <Reanimated.View pointerEvents="none" style={[s.sysVeilThreadBead, beadStyle]} />
           </View>
             </Reanimated.View>
           ) : null}
@@ -38149,6 +38176,22 @@ const s = StyleSheet.create({
     width: 1,
     opacity: 0.72,
   },
+  sysVeilDust: {
+    position: 'absolute',
+    width: 7,
+    height: 7,
+    borderRadius: 1.5,
+    backgroundColor: 'rgba(206,168,90,0.5)',
+    transform: [{ rotate: '45deg' }],
+  },
+  sysVeilDustSmall: {
+    position: 'absolute',
+    width: 5,
+    height: 5,
+    borderRadius: 1,
+    backgroundColor: 'rgba(206,168,90,0.36)',
+    transform: [{ rotate: '45deg' }],
+  },
   sysVeilBloom: {
     position: 'absolute',
     alignSelf: 'center',
@@ -38269,7 +38312,8 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#F3F3F1',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.32)',
+    borderColor: 'rgba(197,160,89,0.42)',
+    boxShadow: '0 20px 44px rgba(94,71,38,0.2)',
     zIndex: 4,
   },
   sysVeilLogo: {
@@ -38316,18 +38360,43 @@ const s = StyleSheet.create({
   },
   sysVeilKicker: {
     fontFamily: F.sansBold,
-    fontSize: 9,
+    fontSize: 9.5,
     lineHeight: 12,
-    letterSpacing: 2.05,
+    letterSpacing: 2.4,
     color: '#9D762F',
+    marginBottom: 9,
   },
   sysVeilTitle: {
     fontFamily: F.serifSemiBold,
-    fontSize: 24,
+    fontSize: 24.5,
     lineHeight: 30,
     color: '#231F1A',
     textAlign: 'center',
     letterSpacing: -0.25,
+  },
+  sysVeilOrnament: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 9,
+    marginTop: 12,
+  },
+  sysVeilOrnamentReady: {
+    marginTop: 3,
+  },
+  sysVeilOrnamentRule: {
+    width: 40,
+    height: 1,
+    borderRadius: 1,
+    overflow: 'hidden',
+  },
+  sysVeilOrnamentDiamond: {
+    width: 6,
+    height: 6,
+    borderRadius: 1,
+    backgroundColor: '#C5A059',
+    transform: [{ rotate: '45deg' }],
+    boxShadow: '0 0 7px rgba(197,160,89,0.55)',
   },
   sysVeilRows: {
     width: '100%',
@@ -38364,9 +38433,9 @@ const s = StyleSheet.create({
     right: -2,
     top: '50%',
     marginTop: 1,
-    height: 1.5,
+    height: 1.25,
     borderRadius: 1,
-    backgroundColor: 'rgba(25,23,20,0.5)',
+    backgroundColor: 'rgba(168,132,60,0.62)',
   },
   sysVeilRowIconIdle: {
     opacity: 0.64,
@@ -38446,7 +38515,8 @@ const s = StyleSheet.create({
   },
   sysVeilRowIconDone: {
     backgroundColor: '#C5A059',
-    borderColor: '#C5A059',
+    borderColor: '#D8B672',
+    boxShadow: '0 0 10px rgba(197,160,89,0.5)',
   },
   sysVeilRowText: {
     fontFamily: F.serifMedium,
@@ -38455,7 +38525,7 @@ const s = StyleSheet.create({
     color: 'rgba(25,23,20,0.52)',
   },
   sysVeilRowTextDone: {
-    color: 'rgba(25,23,20,0.5)',
+    color: 'rgba(96,74,42,0.6)',
   },
   sysVeilCompleteMark: {
     position: 'absolute',
@@ -38504,35 +38574,31 @@ const s = StyleSheet.create({
     fontFamily: F.sansBold,
     fontSize: 8.5,
     lineHeight: 11,
-    letterSpacing: 1.35,
-    color: 'rgba(116,83,31,0.7)',
-  },
-  sysVeilProgressCountPill: {
-    minWidth: 38,
-    height: 20,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.2)',
-    backgroundColor: 'rgba(255,255,255,0.58)',
+    letterSpacing: 1.6,
+    color: 'rgba(116,83,31,0.72)',
   },
   sysVeilProgressCount: {
-    fontFamily: F.sansMedium,
-    fontSize: 9.5,
-    lineHeight: 11,
-    letterSpacing: 0.5,
-    color: 'rgba(35,31,26,0.42)',
+    fontFamily: F.sansBold,
+    fontSize: 10,
+    lineHeight: 12,
+    letterSpacing: 1.2,
+    color: '#9D762F',
     fontVariant: ['tabular-nums'],
+  },
+  sysVeilProgressCountTotal: {
+    color: 'rgba(157,118,47,0.5)',
+  },
+  sysVeilThreadWrap: {
+    width: '100%',
+    justifyContent: 'center',
   },
   sysVeilBar: {
     width: '100%',
-    height: 5,
-    borderRadius: 2.5,
+    height: 4,
+    borderRadius: 2,
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.12)',
-    backgroundColor: 'rgba(197,160,89,0.13)',
+    borderColor: 'rgba(197,160,89,0.14)',
+    backgroundColor: 'rgba(197,160,89,0.12)',
     overflow: 'hidden',
   },
   sysVeilBarFillFull: {
@@ -38544,11 +38610,17 @@ const s = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: '#C5A059',
   },
-  sysVeilBarSheen: {
+  sysVeilThreadBead: {
     position: 'absolute',
-    top: -2,
-    bottom: -2,
-    width: 40,
+    left: -5,
+    top: '50%',
+    marginTop: -5,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#E9CB79',
+    boxShadow: '0 0 10px rgba(216,182,106,0.95)',
+    zIndex: 4,
   },
   v4WeeklyRhythmWrap: {
     marginHorizontal: -4,
