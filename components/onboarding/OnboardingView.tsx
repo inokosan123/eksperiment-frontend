@@ -23236,7 +23236,7 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   const [absorbedCount, setAbsorbedCount] = useState(0);
   const [phase, setPhase] = useState<'working' | 'ready' | 'leaving'>('working');
   const [barWidth, setBarWidth] = useState(172);
-  const flareTargetScale = Math.max(4, (Math.hypot(viewportWidth, viewportHeight) / 220) * 1.12);
+  const flareTargetScale = Math.max(4.4, (Math.hypot(viewportWidth, viewportHeight) / 220) * 1.28);
   const progress = useSharedValue(0);
   const queueOffset = useSharedValue(0);
   const sheen = useSharedValue(0);
@@ -23464,27 +23464,32 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   });
   // The whole tableau dissolves into the flare, forge-style: content fades
   // and swells a touch as the disc covers the screen.
+  // The handover is a warm bloom, forge-style: content dissolves UNDER the
+  // rising light, the light holds as a full warm-white cover, then it and the
+  // (near-white) backdrop fade together to reveal the already-mounted Home.
   const contentFlareStyle = useAnimatedStyle(() => ({
     opacity:
       interpolate(arrival.value, [0, 1], [0, 1], 'clamp')
-      * interpolate(flare.value, [0.12, 0.72], [1, 0], 'clamp'),
+      * interpolate(flare.value, [0.06, 0.32], [1, 0], 'clamp'),
     transform: [
       { translateY: (1 - arrival.value) * 14 },
-      { scale: 1 + flare.value * 0.04 },
+      { scale: 1 + flare.value * 0.05 },
     ],
   }));
   const flareStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(flare.value, [0, 0.12, 0.72, 1], [0, 0.58, 0.18, 0], 'clamp'),
+    // Rise to a near-opaque warm cover as it reaches full size, hold, then fade.
+    opacity: interpolate(flare.value, [0, 0.3, 0.55, 1], [0, 0.94, 0.9, 0], 'clamp'),
     transform: [
-      { scale: interpolate(flare.value, [0, 1], [0.4, flareTargetScale], 'clamp') },
+      { scale: interpolate(flare.value, [0, 0.3, 1], [0.4, flareTargetScale, flareTargetScale * 1.08], 'clamp') },
     ],
   }));
   const ambientExitStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(flare.value, [0, 0.14, 0.68], [1, 0.96, 0], 'clamp'),
+    opacity: interpolate(flare.value, [0.55, 1], [1, 0], 'clamp'),
   }));
   const backdropExitStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(flare.value, [0, 0.12, 0.88, 1], [1, 1, 0.08, 0], 'clamp'),
-    transform: [{ scale: 1 + flare.value * 0.012 }],
+    // Holds under the warm cover, then dissolves with the bloom into Home.
+    opacity: interpolate(flare.value, [0.55, 1], [1, 0], 'clamp'),
+    transform: [{ scale: 1 + flare.value * 0.014 }],
   }));
 
   const isWorking = phase === 'working';
@@ -38182,9 +38187,8 @@ const s = StyleSheet.create({
     width: 220,
     height: 220,
     borderRadius: 110,
-    borderWidth: 1.5,
-    borderColor: 'rgba(222,181,100,0.58)',
-    backgroundColor: 'rgba(255,244,220,0.13)',
+    backgroundColor: '#FFF4DC',
+    boxShadow: '0 0 90px 46px rgba(255,244,220,0.9)',
     zIndex: 10,
   },
   sysVeilCrestBox: {
