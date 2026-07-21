@@ -22973,9 +22973,9 @@ const SYSTEM_BUILD_STEPS = [
 ];
 // Deliberately uneven: each line gets time to be read, while the long second
 // and fourth passes keep the loading from feeling like a metronome.
-const SYSTEM_BUILD_STEP_DURATIONS = [900, 2900, 200, 1950, 700];
-const SYSTEM_BUILD_PACKET_DELAY = 300;
-const SYSTEM_BUILD_PACKET_DURATION = 570;
+const SYSTEM_BUILD_STEP_DURATIONS = [800, 2200, 200, 1500, 600];
+const SYSTEM_BUILD_PACKET_DELAY = 260;
+const SYSTEM_BUILD_PACKET_DURATION = 500;
 const SYSTEM_BUILD_PACKET_SETTLE = SYSTEM_BUILD_PACKET_DELAY + SYSTEM_BUILD_PACKET_DURATION;
 const SYSTEM_BUILD_TICKS = SYSTEM_BUILD_STEP_DURATIONS.reduce<number[]>((ticks, duration, index) => {
   const previousTick = ticks[index - 1] ?? 0;
@@ -22984,14 +22984,14 @@ const SYSTEM_BUILD_TICKS = SYSTEM_BUILD_STEP_DURATIONS.reduce<number[]>((ticks, 
 }, []);
 const SYSTEM_BUILD_FINAL_ABSORPTION_AT =
   (SYSTEM_BUILD_TICKS[SYSTEM_BUILD_TICKS.length - 1] ?? 0) + SYSTEM_BUILD_PACKET_SETTLE;
-const SYSTEM_BUILD_READY_AT = SYSTEM_BUILD_FINAL_ABSORPTION_AT + 700;
-const SYSTEM_BUILD_READY_HOLD = 2500;
+const SYSTEM_BUILD_READY_AT = SYSTEM_BUILD_FINAL_ABSORPTION_AT + 500;
+const SYSTEM_BUILD_READY_HOLD = 2000;
 const SYSTEM_BUILD_LEAVE_AT = SYSTEM_BUILD_READY_AT + SYSTEM_BUILD_READY_HOLD;
 // The final bloom is the handover itself: its expanding radius cuts the veil
 // away and reveals the already-mounted Home underneath.
-const SYSTEM_BUILD_FLARE_AT = SYSTEM_BUILD_LEAVE_AT + 420;
-const SYSTEM_BUILD_FLARE_DURATION = 620;
-const SYSTEM_BUILD_REVEAL_AFTER_FLARE = 600;
+const SYSTEM_BUILD_FLARE_AT = SYSTEM_BUILD_LEAVE_AT + 460;
+const SYSTEM_BUILD_FLARE_DURATION = 820;
+const SYSTEM_BUILD_REVEAL_AFTER_FLARE = 760;
 // Orbit speed in deg/s: starts below the preload's cruising pace and rises
 // with every absorbed row — the crest grows visibly unstable.
 const SYSTEM_BUILD_ORBIT_SPEEDS = [42, 76, 116, 168, 236, 322];
@@ -23356,11 +23356,11 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
     }, SYSTEM_BUILD_LEAVE_AT));
     timers.push(setTimeout(() => {
       runBubbleHaptic();
-      bloom.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.cubic) });
-      charge.value = withTiming(0.24, { duration: 560, easing: Easing.out(Easing.cubic) });
+      bloom.value = withTiming(1, { duration: 760, easing: Easing.out(Easing.cubic) });
+      charge.value = withTiming(0.24, { duration: 760, easing: Easing.out(Easing.cubic) });
       flare.value = withTiming(1, {
         duration: SYSTEM_BUILD_FLARE_DURATION,
-        easing: Easing.bezier(0.2, 0.72, 0.22, 1),
+        easing: Easing.bezier(0.32, 0.12, 0.2, 1),
       });
     }, SYSTEM_BUILD_FLARE_AT));
     timers.push(setTimeout(finishBuild, SYSTEM_BUILD_FLARE_AT + SYSTEM_BUILD_REVEAL_AFTER_FLARE));
@@ -23490,45 +23490,39 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   const isWorking = phase === 'working';
 
   return (
-    <Reanimated.View exiting={FadeOut.duration(240)} style={s.sysVeil}>
+    <Reanimated.View exiting={FadeOut.duration(340)} style={s.sysVeil}>
       <Reanimated.View
         pointerEvents="none"
         style={[s.sysVeilBackdrop, backdropExitStyle]}
       >
         <LinearGradient
-          colors={['#FFFFFF', '#FFFDF9', '#FCF6EC']}
-          locations={[0, 0.55, 1]}
+          colors={['#FFFFFF', '#FFFEFC', '#FDFAF4']}
+          locations={[0, 0.6, 1]}
           style={StyleSheet.absoluteFill}
         />
       </Reanimated.View>
       <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, ambientExitStyle]}>
         <View style={s.introWarmth}>
           <LinearGradient
-            colors={['rgba(255,255,255,0)', 'rgba(254,248,238,0.42)', 'rgba(255,250,240,0.86)']}
-            locations={[0, 0.52, 1]}
+            colors={['rgba(255,255,255,0)', 'rgba(255,253,248,0.26)', 'rgba(255,254,250,0.62)']}
+            locations={[0, 0.55, 1]}
             style={StyleSheet.absoluteFill}
           />
         </View>
         <Reanimated.View style={[s.sysVeilEntryAura, entryAuraStyle]}>
           <LinearGradient
-            colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.2)', 'rgba(197,160,89,0)']}
+            colors={['rgba(197,160,89,0)', 'rgba(206,171,96,0.13)', 'rgba(197,160,89,0)']}
             locations={[0, 0.52, 1]}
             style={StyleSheet.absoluteFill}
           />
         </Reanimated.View>
         <View style={s.sysVeilAxis}>
           <LinearGradient
-            colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.13)', 'rgba(197,160,89,0)']}
+            colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.09)', 'rgba(197,160,89,0)']}
             locations={[0, 0.46, 1]}
             style={StyleSheet.absoluteFill}
           />
         </View>
-        {/* Gold dust in the paper — the vellum signal the value/converse stages carry */}
-        <View style={[s.sysVeilDust, { top: viewportHeight * 0.15, left: '10%' }]} />
-        <View style={[s.sysVeilDustSmall, { top: viewportHeight * 0.24, right: '9%' }]} />
-        <View style={[s.sysVeilDustSmall, { top: viewportHeight * 0.5, left: '6.5%' }]} />
-        <View style={[s.sysVeilDust, { top: viewportHeight * 0.73, right: '11.5%' }]} />
-        <View style={[s.sysVeilDustSmall, { top: viewportHeight * 0.82, left: '13%' }]} />
       </Reanimated.View>
       <Reanimated.View
         style={[s.sysVeilContent, compact && s.sysVeilContentCompact, contentFlareStyle]}
@@ -23556,6 +23550,12 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
           />
           <Reanimated.View pointerEvents="none" style={[s.sysVeilCrestHalo, crestHaloStyle]} />
           <View pointerEvents="none" style={s.sysVeilOrbitRail} />
+          {/* Gold setting AROUND the plate — beautifies the frame without ever
+              touching the illustration; scales with the logo as it grows. */}
+          <Reanimated.View
+            pointerEvents="none"
+            style={[s.sysVeilPlateSetting, crestPlateStyle]}
+          />
           <Reanimated.View style={[s.sysVeilLogoPlate, crestPlateStyle]}>
             <Image
               source={APP_LOGO}
@@ -23564,18 +23564,6 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
               resizeMethod="scale"
               resizeMode="cover"
             />
-            {/* Glassy dome light on the upper half — the medallion catches light */}
-            <View pointerEvents="none" style={s.sysVeilLogoSheen}>
-              <LinearGradient
-                colors={['rgba(255,255,255,0.24)', 'rgba(255,255,255,0.04)', 'rgba(255,255,255,0)']}
-                locations={[0, 0.42, 0.72]}
-                start={{ x: 0.32, y: 0 }}
-                end={{ x: 0.6, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-            </View>
-            {/* Minted inner rim — a warm-white bezel set just inside the gold edge */}
-            <View pointerEvents="none" style={s.sysVeilLogoBezel} />
           </Reanimated.View>
           <Reanimated.View
             pointerEvents="none"
@@ -38188,22 +38176,6 @@ const s = StyleSheet.create({
     width: 1,
     opacity: 0.72,
   },
-  sysVeilDust: {
-    position: 'absolute',
-    width: 7,
-    height: 7,
-    borderRadius: 1.5,
-    backgroundColor: 'rgba(206,168,90,0.5)',
-    transform: [{ rotate: '45deg' }],
-  },
-  sysVeilDustSmall: {
-    position: 'absolute',
-    width: 5,
-    height: 5,
-    borderRadius: 1,
-    backgroundColor: 'rgba(206,168,90,0.36)',
-    transform: [{ rotate: '45deg' }],
-  },
   sysVeilBloom: {
     position: 'absolute',
     alignSelf: 'center',
@@ -38323,8 +38295,8 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
     backgroundColor: '#F3F3F1',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.5)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(197,160,89,0.58)',
     boxShadow: '0 22px 48px rgba(94,71,38,0.22)',
     zIndex: 4,
   },
@@ -38336,15 +38308,22 @@ const s = StyleSheet.create({
     top: -20,
     borderRadius: 48,
   },
-  sysVeilLogoSheen: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  sysVeilLogoBezel: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 39,
+  // Gold mount set around the plate — a thin ring + faint wash showing in the
+  // few px that protrude past the logo box. Never overlaps the illustration.
+  sysVeilPlateSetting: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: 186,
+    height: 186,
+    marginTop: -93,
+    marginLeft: -93,
+    borderRadius: 44,
     borderCurve: 'continuous',
-    borderWidth: 1.2,
-    borderColor: 'rgba(255,250,239,0.5)',
+    borderWidth: 1.4,
+    borderColor: 'rgba(197,160,89,0.6)',
+    backgroundColor: 'rgba(201,163,90,0.05)',
+    zIndex: 3,
   },
   sysVeilContent: {
     width: '100%',
@@ -38608,7 +38587,7 @@ const s = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   sysVeilProgressCountTotal: {
-    color: 'rgba(157,118,47,0.5)',
+    color: 'rgba(157,118,47,0.7)',
   },
   sysVeilThreadWrap: {
     width: '100%',
