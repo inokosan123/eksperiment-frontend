@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
+  runOnJS,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -10,10 +11,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { ChevronRight } from '@/components/icons/Icons';
+import { ChevronRight, Shield } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import DayGauge from './DayGauge';
+import HairlineWeave from './HairlineWeave';
 import LimitSlider from './LimitSlider';
 import GoldButton from './GoldButton';
 import { formatMinutesShort } from './dayPlanStore';
@@ -33,6 +35,7 @@ const TOLERANCE_COLOR = '#9EA4AB';
 const ESSENTIALS_COLOR = '#E14B5A';
 const PRODUCTIVE_COLOR = '#D3A33B';
 const SLEEP_COLOR = '#BFB0E4';
+const TROPHY_EMBLEM = require('@/assets/animations/challenge-trophy-preview.png');
 
 export type TargetValues = {
   target: number | null;
@@ -281,11 +284,57 @@ function TargetSheet({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const reducedMotion = useReducedMotion();
+  const [mounted, setMounted] = useState(visible);
+  const progress = useSharedValue(visible ? 1 : 0);
+
+  useEffect(() => {
+    if (visible) setMounted(true);
+  }, [visible]);
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    if (visible) {
+      progress.value = 0;
+      progress.value = withTiming(1, {
+        duration: reducedMotion ? 1 : 260,
+        easing: Easing.out(Easing.cubic),
+      });
+      return;
+    }
+
+    progress.value = withTiming(0, {
+      duration: reducedMotion ? 1 : 210,
+      easing: Easing.in(Easing.cubic),
+    }, finished => {
+      if (finished) runOnJS(setMounted)(false);
+    });
+  }, [mounted, progress, reducedMotion, visible]);
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+  }));
+  const panelStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: (1 - progress.value) * 86 }],
+  }));
+
+  if (!mounted) return null;
+
   return (
-    <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal
+      transparent
+      visible
+      animationType="none"
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
       <View style={s.sheetOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={s.sheet}>
+        <Animated.View style={[s.sheetBackdrop, backdropStyle]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close time picker" />
+        </Animated.View>
+        <Animated.View style={[s.sheet, panelStyle]}>
           <View style={s.sheetHandle} />
           <View style={s.sheetHead}>
             <Text style={s.sheetTitle}>{title}</Text>
@@ -293,7 +342,7 @@ function TargetSheet({
           </View>
           {children}
           <GoldButton label="Done" onPress={onClose} />
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -303,27 +352,65 @@ function TargetRow({
   label,
   value,
   hint,
-  accent,
+  tone,
   onPress,
-  delayEnter,
 }: {
   label: string;
   value: string;
   hint: string;
-  accent: string;
+  tone: 'goal' | 'tolerance';
   onPress: () => void;
-  delayEnter?: boolean;
 }) {
+  const pressScale = useSharedValue(1);
+  const isGoal = tone === 'goal';
+  const pressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pressScale.value }],
+  }));
+
   return (
-    <TouchableOpacity style={s.targetRow} onPress={onPress} activeOpacity={0.85} haptic="selection">
-      <View style={[s.targetRowDot, { backgroundColor: accent }]} />
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={s.targetRowLabel}>{label}</Text>
-        <Text style={s.targetRowHint}>{hint}</Text>
-      </View>
-      <Text style={s.targetRowValue}>{value}</Text>
-      <ChevronRight s={16} c={C.textMuted} w={2.2} />
-    </TouchableOpacity>
+    <Animated.View style={pressStyle}>
+      <TouchableOpacity
+        style={[s.targetCard, isGoal ? s.goalCard : s.toleranceCard]}
+        onPress={onPress}
+        onPressIn={() => {
+          pressScale.value = withTiming(0.988, { duration: 90, easing: Easing.out(Easing.quad) });
+        }}
+        onPressOut={() => {
+          pressScale.value = withTiming(1, { duration: 150, easing: Easing.out(Easing.cubic) });
+        }}
+        activeOpacity={1}
+        haptic="selection"
+        accessibilityRole="button"
+        accessibilityLabel={`${label}, ${value}`}
+      >
+        <LinearGradient
+          colors={isGoal ? ['#17191A', '#292C2D', '#1D1F20'] : ['#E3E5E5', '#F3F4F2', '#E7E9E8']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <HairlineWeave color={isGoal ? '#FFFFFF' : '#242729'} opacity={isGoal ? 0.075 : 0.045} />
+
+        <View style={s.targetCardHead}>
+          <View style={s.targetCardTitleGroup}>
+            <View style={[s.targetCardIcon, isGoal ? s.goalIcon : s.toleranceIcon]}>
+              {isGoal
+                ? <Image source={TROPHY_EMBLEM} style={s.goalTrophyImage} resizeMode="contain" />
+                : <Shield s={20} c="#656B70" w={2} />}
+            </View>
+            <Text style={[s.targetCardTitle, isGoal && s.targetCardTitleDark]}>{label}</Text>
+          </View>
+
+          <View style={[s.targetTimePill, isGoal ? s.goalTimePill : s.toleranceTimePill]}>
+            <Text style={[s.targetTimeValue, isGoal && s.targetTimeValueDark]}>{value}</Text>
+            <ChevronRight s={14} c={isGoal ? '#D8AD53' : '#656B70'} w={2.3} />
+          </View>
+        </View>
+
+        <View style={[s.targetCardDivider, isGoal && s.targetCardDividerDark]} />
+        <Text style={[s.targetCardHint, isGoal && s.targetCardHintDark]}>{hint}</Text>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
@@ -366,30 +453,27 @@ export default function DailyTargetEditor({
   return (
     <View style={s.surface}>
       <View style={s.editorIntro}>
-        <Text style={s.kicker}>DAILY TARGET</Text>
-        <Text style={s.editorTitle}>
-          {essentialsOnly ? 'Lock the day. Keep the score.' : 'How much of today does the phone get?'}
-        </Text>
+        <Text style={s.editorTitle}>Daily target</Text>
       </View>
 
       <TargetRow
-        label="GOAL"
+        label="Goal"
         value={values.target == null ? 'No limit' : formatMinutesShort(values.target)}
         hint={essentialsOnly
-          ? 'Stay under this and the day earns its trophy.'
-          : 'Stay under this and the day is won.'}
-        accent={GOAL_COLOR}
+          ? 'The screen-time boundary for this day. Stay within it to earn today\'s trophy while only Essentials remain available.'
+          : 'The screen-time boundary for this day. Stay within it to keep the day on track and earn today\'s trophy.'}
+        tone="goal"
         onPress={() => setOpenSheet('goal')}
       />
 
       {values.target != null && toleranceEnd != null && (
         <TargetRow
-          label="TOLERANCE"
+          label="Tolerance"
           value={`+${formatMinutesShort(toleranceDuration ?? 0)}`}
           hint={essentialsOnly
-            ? 'Overflow past the Goal, recorded but tolerated.'
-            : 'Overflow past the Goal. When it runs out, the phone locks.'}
-          accent={TOLERANCE_COLOR}
+            ? 'Extra time after the Goal. It records the overflow without opening any other apps.'
+            : 'Extra time after the Goal. When it ends, the phone locks and only your Essentials stay open.'}
+          tone="tolerance"
           onPress={() => setOpenSheet('tolerance')}
         />
       )}
@@ -456,30 +540,47 @@ export default function DailyTargetEditor({
 }
 
 const s = StyleSheet.create({
-  surface: { gap: 12 },
-  editorIntro: { paddingHorizontal: 4, paddingBottom: 2 },
-  kicker: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: C.goldDark },
-  editorTitle: { marginTop: 5, fontFamily: F.serifSemiBold, fontSize: 24, lineHeight: 28, letterSpacing: -0.3, color: C.text },
+  surface: { gap: 14 },
+  editorIntro: { paddingHorizontal: 4, paddingBottom: 1 },
+  editorTitle: { fontFamily: F.serifSemiBold, fontSize: 25, lineHeight: 30, letterSpacing: -0.35, color: C.text },
 
-  // The set rows: quiet cards holding the current value; tap to open the sheet.
-  targetRow: {
-    minHeight: 66,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderRadius: 20,
+  // Goal and Tolerance are full settings cards: boundary above, meaning below.
+  targetCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    minHeight: 128,
+    borderRadius: 24,
     borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: '#E1DDD4',
-    backgroundColor: '#FFFDF9',
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    boxShadow: '0 6px 18px rgba(45, 40, 33, 0.05)',
+    padding: 15,
   },
-  targetRowDot: { flexShrink: 0, width: 9, height: 9, borderRadius: 5 },
-  targetRowLabel: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.8, color: C.textMuted },
-  targetRowHint: { marginTop: 3, fontFamily: F.sans, fontSize: 11.5, lineHeight: 15.5, color: C.textSecondary },
-  targetRowValue: { fontFamily: F.serifSemiBold, fontSize: 21, color: C.text, fontVariant: ['tabular-nums'] },
+  goalCard: {
+    borderColor: '#353838',
+    backgroundColor: '#1D1F20',
+    boxShadow: '0 12px 28px rgba(25, 27, 28, 0.18)',
+  },
+  toleranceCard: {
+    borderColor: '#D0D3D3',
+    backgroundColor: '#EAEBEA',
+    boxShadow: '0 8px 22px rgba(49, 54, 55, 0.08)',
+  },
+  targetCardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  targetCardTitleGroup: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  targetCardIcon: { flexShrink: 0, width: 40, height: 40, borderRadius: 13, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  goalIcon: { borderColor: 'rgba(216,173,83,0.32)', backgroundColor: 'rgba(216,173,83,0.13)' },
+  goalTrophyImage: { width: 31, height: 31 },
+  toleranceIcon: { borderColor: '#CFD2D2', backgroundColor: 'rgba(255,255,255,0.66)' },
+  targetCardTitle: { fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 25, letterSpacing: -0.2, color: '#2E3233' },
+  targetCardTitleDark: { color: '#F8F7F2' },
+  targetTimePill: { flexShrink: 0, minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 13, borderCurve: 'continuous', borderWidth: 1, paddingHorizontal: 11 },
+  goalTimePill: { borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.075)' },
+  toleranceTimePill: { borderColor: '#D0D3D3', backgroundColor: 'rgba(255,255,255,0.72)' },
+  targetTimeValue: { fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 23, color: '#303435', fontVariant: ['tabular-nums'] },
+  targetTimeValueDark: { color: '#FFFFFF' },
+  targetCardDivider: { height: StyleSheet.hairlineWidth, marginVertical: 13, backgroundColor: '#C9CDCD' },
+  targetCardDividerDark: { backgroundColor: 'rgba(255,255,255,0.13)' },
+  targetCardHint: { fontFamily: F.sans, fontSize: 13.5, lineHeight: 19, color: '#5E6466' },
+  targetCardHintDark: { color: '#C7C9C8' },
 
   // One fused surface: the title, the day gauge, the year beads below it.
   dayCard: {
@@ -508,8 +609,9 @@ const s = StyleSheet.create({
   alwaysProtectedText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.05, color: '#A63A4B' },
 
   // Target sheet.
-  sheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16,24,40,0.3)' },
-  sheet: { borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: '#FFFEFB', paddingHorizontal: 18, paddingTop: 12, paddingBottom: 26, gap: 18 },
+  sheetOverlay: { flex: 1, justifyContent: 'flex-end' },
+  sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15, 19, 23, 0.36)' },
+  sheet: { borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, borderBottomWidth: 0, borderColor: '#E2DED6', backgroundColor: '#FFFEFB', paddingHorizontal: 18, paddingTop: 12, paddingBottom: 26, gap: 18, boxShadow: '0 -12px 36px rgba(19, 22, 24, 0.14)' },
   sheetHandle: { width: 42, height: 4, borderRadius: 999, backgroundColor: '#D6D3D1', alignSelf: 'center' },
   sheetHead: { alignItems: 'center', paddingTop: 2 },
   sheetTitle: { fontFamily: F.serifSemiBold, fontSize: 22, lineHeight: 27, color: C.text, textAlign: 'center' },
