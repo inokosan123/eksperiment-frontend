@@ -22973,7 +22973,7 @@ const SYSTEM_BUILD_STEPS = [
 ];
 // Deliberately uneven: each line gets time to be read, while the long second
 // and fourth passes keep the loading from feeling like a metronome.
-const SYSTEM_BUILD_STEP_DURATIONS = [1400, 3400, 700, 2450, 1200];
+const SYSTEM_BUILD_STEP_DURATIONS = [900, 2900, 200, 1950, 700];
 const SYSTEM_BUILD_PACKET_DELAY = 300;
 const SYSTEM_BUILD_PACKET_DURATION = 570;
 const SYSTEM_BUILD_PACKET_SETTLE = SYSTEM_BUILD_PACKET_DELAY + SYSTEM_BUILD_PACKET_DURATION;
@@ -22985,7 +22985,7 @@ const SYSTEM_BUILD_TICKS = SYSTEM_BUILD_STEP_DURATIONS.reduce<number[]>((ticks, 
 const SYSTEM_BUILD_FINAL_ABSORPTION_AT =
   (SYSTEM_BUILD_TICKS[SYSTEM_BUILD_TICKS.length - 1] ?? 0) + SYSTEM_BUILD_PACKET_SETTLE;
 const SYSTEM_BUILD_READY_AT = SYSTEM_BUILD_FINAL_ABSORPTION_AT + 700;
-const SYSTEM_BUILD_READY_HOLD = 3500;
+const SYSTEM_BUILD_READY_HOLD = 2500;
 const SYSTEM_BUILD_LEAVE_AT = SYSTEM_BUILD_READY_AT + SYSTEM_BUILD_READY_HOLD;
 // The final bloom is the handover itself: its expanding radius cuts the veil
 // away and reveals the already-mounted Home underneath.
@@ -23386,29 +23386,28 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
     opacity: (1 - bloom.value) * (0.72 + 0.18 * grow.value + 0.1 * charge.value),
     transform: [
       {
-        scale:
-          0.84
-          + 0.16 * grow.value
-          + 0.05 * charge.value
-          + interpolate(intake.value, [0, 0.18, 1], [0, 0.025, 0], 'clamp')
-          + bloom.value * 0.45,
+        // Fixed size — the rotating ring is a constant frame; only the logo
+        // inside it grows as beads are absorbed (Pavle). Finale charge/bloom
+        // are the dispersal burst, not the build.
+        scale: 1 + 0.05 * charge.value + bloom.value * 0.45,
       },
       { rotate: `${orbitAngle.value}deg` },
     ],
   }));
   const crestPlateStyle = useAnimatedStyle(() => {
-    const intakeImpact = interpolate(intake.value, [0, 0.18, 1], [0, 0.026, 0], 'clamp');
+    const intakeImpact = interpolate(intake.value, [0, 0.18, 1], [0, 0.032, 0], 'clamp');
     return {
-      // Keep the bitmap at rest between discrete absorption kicks. Continuous
-      // fractional wobble/rotation softens even a high-resolution texture.
+      // The logo starts small and grows one step with every absorbed bead
+      // (0.6 -> 1.0 across the five ticks); never exceeds 1.0, so the bitmap
+      // is only ever downscaled and stays crisp.
       transform: [
         { translateY: -3 * kick.value },
         { rotate: `${kickSign.value * 1.25 * kick.value}deg` },
         {
           scale:
-            0.96
-            + 0.04 * grow.value
-            + 0.018 * kick.value
+            0.6
+            + 0.4 * grow.value
+            + 0.02 * kick.value
             + intakeImpact,
         },
       ],
@@ -23419,7 +23418,8 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       arrival.value
       * (0.11 + 0.24 * grow.value + 0.28 * charge.value + 0.38 * bloom.value)
       + interpolate(intake.value, [0, 0.18, 1], [0, 0.22, 0], 'clamp'),
-    transform: [{ scale: 0.84 + 0.16 * grow.value + 0.1 * charge.value + 0.42 * bloom.value }],
+    // The glow hugs the growing medallion — starts small, grows with the logo.
+    transform: [{ scale: 0.66 + 0.34 * grow.value + 0.1 * charge.value + 0.42 * bloom.value }],
   }));
   const intakePulseStyle = useAnimatedStyle(() => ({
     opacity: interpolate(intake.value, [0, 0.12, 0.72, 1], [0, 0.56, 0.16, 0], 'clamp'),
@@ -23496,16 +23496,16 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
         style={[s.sysVeilBackdrop, backdropExitStyle]}
       >
         <LinearGradient
-          colors={['#FFFEFC', '#FFFDF8', '#FAF1DF']}
-          locations={[0, 0.52, 1]}
+          colors={['#FFFFFF', '#FFFDF9', '#FCF6EC']}
+          locations={[0, 0.55, 1]}
           style={StyleSheet.absoluteFill}
         />
       </Reanimated.View>
       <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, ambientExitStyle]}>
         <View style={s.introWarmth}>
           <LinearGradient
-            colors={['rgba(255,255,255,0)', 'rgba(248,231,207,0.52)', 'rgba(255,242,222,0.98)']}
-            locations={[0, 0.5, 1]}
+            colors={['rgba(255,255,255,0)', 'rgba(254,248,238,0.42)', 'rgba(255,250,240,0.86)']}
+            locations={[0, 0.52, 1]}
             style={StyleSheet.absoluteFill}
           />
         </View>
@@ -23564,6 +23564,18 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
               resizeMethod="scale"
               resizeMode="cover"
             />
+            {/* Glassy dome light on the upper half — the medallion catches light */}
+            <View pointerEvents="none" style={s.sysVeilLogoSheen}>
+              <LinearGradient
+                colors={['rgba(255,255,255,0.24)', 'rgba(255,255,255,0.04)', 'rgba(255,255,255,0)']}
+                locations={[0, 0.42, 0.72]}
+                start={{ x: 0.32, y: 0 }}
+                end={{ x: 0.6, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+            </View>
+            {/* Minted inner rim — a warm-white bezel set just inside the gold edge */}
+            <View pointerEvents="none" style={s.sysVeilLogoBezel} />
           </Reanimated.View>
           <Reanimated.View
             pointerEvents="none"
@@ -38312,8 +38324,8 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#F3F3F1',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.42)',
-    boxShadow: '0 20px 44px rgba(94,71,38,0.2)',
+    borderColor: 'rgba(197,160,89,0.5)',
+    boxShadow: '0 22px 48px rgba(94,71,38,0.22)',
     zIndex: 4,
   },
   sysVeilLogo: {
@@ -38323,6 +38335,16 @@ const s = StyleSheet.create({
     left: -20,
     top: -20,
     borderRadius: 48,
+  },
+  sysVeilLogoSheen: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  sysVeilLogoBezel: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 39,
+    borderCurve: 'continuous',
+    borderWidth: 1.2,
+    borderColor: 'rgba(255,250,239,0.5)',
   },
   sysVeilContent: {
     width: '100%',
