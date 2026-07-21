@@ -20,8 +20,9 @@ import LimitSlider from './LimitSlider';
 import GoldButton from './GoldButton';
 import { formatMinutesShort } from './dayPlanStore';
 
+// 1h → 8h30 in 15-min steps; anything past that is "No limit".
 const TARGET_STOPS: (number | null)[] = [
-  ...Array.from({ length: 45 }, (_, index) => 60 + index * 15),
+  ...Array.from({ length: 31 }, (_, index) => 60 + index * 15),
   null,
 ];
 const YEAR_DAYS = 365;
@@ -153,25 +154,21 @@ function YearPerspective({
 
   return (
     <View style={embedded ? s.yearWrapEmbedded : s.yearWrap}>
-      <Text style={s.yearLabel}>IF EVERY DAY IS LIKE THIS</Text>
-      <View style={s.yearHeroRow}>
-        <View style={s.yearBadge}>
-          <Text style={s.yearNumber}>{target == null ? '—' : phoneDays}</Text>
-          <Text style={s.yearNumberUnit}>
-            {target == null ? 'NO GOAL' : phoneDays === 1 ? 'DAY' : 'DAYS'}
-          </Text>
+      <View style={s.wasteHero}>
+        <View style={s.wasteHeadingRow}>
+          <View style={s.wasteHeadingRule} />
+          <Text style={s.wasteHeading}>YOU WASTE</Text>
+          <View style={s.wasteHeadingRule} />
         </View>
-        <View style={s.yearCopy}>
-          <Text style={s.yearTitle}>
-            {target == null ? 'Set a Goal to see the cost.' : 'lost to your phone,\nevery single year'}
-          </Text>
-          {bufferDays > 0 && (
-            <View style={s.yearBufferChip}>
-              <View style={s.yearBufferDot} />
-              <Text style={s.yearBufferText}>up to +{bufferDays} more at full tolerance</Text>
-            </View>
+        <View style={s.wasteFigureRow}>
+          <Text style={s.wasteNumber}>{target == null ? '—' : phoneDays}</Text>
+          {target != null && bufferDays > 0 && (
+            <Text style={s.wastePlus}>+{bufferDays}</Text>
           )}
         </View>
+        <Text style={s.wasteUnit}>
+          {target == null ? 'set a goal to see the cost' : 'full days, in one year'}
+        </Text>
       </View>
       <View style={s.dotField} onLayout={event => setFieldWidth(event.nativeEvent.layout.width)}>
         {cellWidth > 0 &&
@@ -203,10 +200,8 @@ function LegendItem({
   return (
     <View style={[s.legendItem, emphasis && s.legendItemEmphasis]}>
       <View style={[s.legendSwatch, { backgroundColor: color }]} />
-      <View style={s.legendText}>
-        <Text style={[s.legendValue, emphasis && s.legendValueEmphasis]}>{value}</Text>
-        <Text style={s.legendLabel}>{label}</Text>
-      </View>
+      <Text style={[s.legendValue, emphasis && s.legendValueEmphasis]}>{value}</Text>
+      <Text style={s.legendLabel}>{label}</Text>
     </View>
   );
 }
@@ -530,7 +525,7 @@ export default function DailyTargetEditor({
           value={values.target}
           onChange={setTarget}
           stops={essentialsOnly ? TARGET_STOPS.filter((value): value is number => value != null) : TARGET_STOPS}
-          edgeLabels={{ left: '1h', right: essentialsOnly ? '12h' : 'No limit' }}
+          edgeLabels={{ left: '1h', right: essentialsOnly ? '8h 30m' : 'No limit' }}
           accent={GOAL_COLOR}
           trackColor="#E5E3DE"
           bubbleText={values.target == null ? 'No limit' : formatMinutesShort(values.target)}
@@ -643,65 +638,40 @@ const s = StyleSheet.create({
 
   yearWrap: { borderRadius: 24, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E1D7C3', backgroundColor: '#FFFCF4', padding: 16, boxShadow: '0 8px 24px rgba(67, 53, 31, 0.05)' },
   yearWrapEmbedded: {},
-  yearLabel: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2, color: '#9A5A55' },
-  yearHeroRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 15 },
-  yearBadge: {
-    minWidth: 82,
-    borderRadius: 19,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: '#E4D3AC',
-    backgroundColor: '#FFFBF0',
-    paddingTop: 10,
-    paddingBottom: 9,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    boxShadow: '0 6px 16px rgba(45, 33, 16, 0.08)',
-  },
-  yearNumber: { fontFamily: F.serifBold, fontSize: 46, lineHeight: 47, color: '#1A1B1D', fontVariant: ['tabular-nums'] },
-  yearNumberUnit: { marginTop: 2, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 2, color: '#8A6A2F' },
-  yearCopy: { flex: 1, minWidth: 0 },
-  yearTitle: { fontFamily: F.serifSemiBold, fontSize: 20.5, lineHeight: 24.5, letterSpacing: -0.25, color: '#242021' },
-  yearBufferChip: {
-    marginTop: 9,
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: 9,
-    borderWidth: 1,
-    borderColor: '#DADDE0',
-    backgroundColor: '#F4F5F6',
-    paddingVertical: 4,
-    paddingHorizontal: 9,
-  },
-  yearBufferDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: TOLERANCE_COLOR },
-  yearBufferText: { fontFamily: F.sansSemiBold, fontSize: 11, letterSpacing: 0.1, color: '#6B7075' },
-  dotField: { marginTop: 18 },
+  // "You waste — N — full days, in one year": a centred cost statement,
+  // the tolerance rolled in as a grey +N. Echoes the onboarding YOU WASTE beat.
+  wasteHero: { alignItems: 'center' },
+  wasteHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  wasteHeadingRule: { width: 22, height: 1, borderRadius: 1, backgroundColor: 'rgba(162,67,81,0.34)' },
+  wasteHeading: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 3, color: '#A24351' },
+  wasteFigureRow: { marginTop: 8, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center' },
+  wasteNumber: { fontFamily: F.serifBold, fontSize: 62, lineHeight: 64, letterSpacing: -1, color: '#1A1B1D', fontVariant: ['tabular-nums'] },
+  wastePlus: { marginLeft: 8, fontFamily: F.serifSemiBold, fontSize: 30, lineHeight: 34, color: '#9EA4AB', fontVariant: ['tabular-nums'] },
+  wasteUnit: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 16.5, lineHeight: 20, letterSpacing: 0.1, color: '#5E5751' },
+  dotField: { marginTop: 20 },
   dotCell: { height: BEAD_ROW_H, alignItems: 'center', justifyContent: 'center' },
   yearDot: { width: BEAD_SIZE, height: BEAD_SIZE, borderRadius: BEAD_SIZE / 2 },
   dotSleep: { backgroundColor: SLEEP_COLOR },
   dotPhone: { backgroundColor: GOAL_COLOR },
   dotBuffer: { backgroundColor: TOLERANCE_COLOR },
   dotAway: { backgroundColor: PRODUCTIVE_COLOR },
-  legendRow: { marginTop: 18, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  legendRow: { marginTop: 20, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 7 },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    borderRadius: 12,
-    borderCurve: 'continuous',
+    gap: 7,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#ECE2CE',
+    borderColor: '#EBE1CD',
     backgroundColor: '#FFFDF6',
-    paddingVertical: 7,
-    paddingHorizontal: 11,
+    paddingVertical: 6,
+    paddingLeft: 9,
+    paddingRight: 13,
   },
-  legendItemEmphasis: { borderColor: '#CFC3AE', backgroundColor: '#F6F1E6' },
-  legendSwatch: { width: 11, height: 11, borderRadius: 3.5 },
-  legendText: { flexDirection: 'row', alignItems: 'baseline', gap: 5 },
-  legendValue: { fontFamily: F.serifSemiBold, fontSize: 16, lineHeight: 18, color: C.text, fontVariant: ['tabular-nums'] },
+  legendItemEmphasis: { borderColor: '#C7BBA4', backgroundColor: '#F4EEE1' },
+  legendSwatch: { width: 10, height: 10, borderRadius: 3 },
+  legendValue: { fontFamily: F.serifBold, fontSize: 15.5, lineHeight: 17, color: '#3A342D', fontVariant: ['tabular-nums'] },
   legendValueEmphasis: { color: '#1A1B1D' },
-  legendLabel: { fontFamily: F.sansSemiBold, fontSize: 10.5, letterSpacing: 0.2, color: C.textSecondary },
+  legendLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 0.8, textTransform: 'uppercase', color: '#93887B' },
 
 });
