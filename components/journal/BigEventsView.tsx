@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Keyboard,
   Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Animated, {
@@ -39,6 +41,7 @@ import {
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
+import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { normalizeHabitIcon } from '@/components/shared/notoEmoji/legacyMap';
 import type { HabitEmojiName } from '@/components/shared/notoEmoji/habits';
 import { useBigEvents } from './BigEventsContext';
@@ -525,13 +528,17 @@ function EventForm({
   onCancel,
   minDate,
   guided = false,
+  sheetMode = false,
+  onCanSaveChange,
 }: {
   form: FormState;
   onChange: (next: FormState) => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   onCancel: () => void;
   minDate: string;
   guided?: boolean;
+  sheetMode?: boolean;
+  onCanSaveChange?: (canSave: boolean) => void;
 }) {
   const { session, patchSession } = useGuidedSetup();
   const isGuided = guided && session?.active === true && session.activeStep === 'buildBigEvents';
@@ -554,6 +561,7 @@ function EventForm({
   const guidePhase = session?.phase;
   const [iconGridWidth, setIconGridWidth] = useState(0);
   const [iconsExpanded, setIconsExpanded] = useState(false);
+  const [extraIconsReady, setExtraIconsReady] = useState(!sheetMode);
   const iconExpansionInitialized = useRef(false);
   const iconRevealProgress = useSharedValue(0);
   const extraIconsHeight = useSharedValue(0);
@@ -590,6 +598,19 @@ function EventForm({
   }, [collapsedIconCount, form.icon, iconGridWidth]);
 
   useEffect(() => {
+    if (!sheetMode) {
+      setExtraIconsReady(true);
+      return undefined;
+    }
+
+    // The hidden icon set is intentionally warmed after the sheet has begun
+    // moving. Rendering every emoji in the opening tap used to hold the JS
+    // thread long enough to create a visible pause before the sheet appeared.
+    const timer = setTimeout(() => setExtraIconsReady(true), 300);
+    return () => clearTimeout(timer);
+  }, [sheetMode]);
+
+  useEffect(() => {
     iconRevealProgress.value = withTiming(iconsExpanded ? 1 : 0, {
       duration: iconsExpanded ? 285 : 220,
       easing: iconsExpanded
@@ -605,6 +626,11 @@ function EventForm({
       translateY: interpolate(iconRevealProgress.value, [0, 1], [-5, 0]),
     }],
   }));
+
+  useEffect(() => {
+    onCanSaveChange?.(canSave);
+  }, [canSave, onCanSaveChange]);
+
   // Guided phases walk the form top-to-bottom: name → date → icon → save,
   // so the spotlight never jumps back up the screen.
   const advanceAfterTitle = () => {
@@ -621,6 +647,12 @@ function EventForm({
     if (isGuided && guidePhase === 'icon') {
       patchSession({ phase: 'save' });
     }
+  };
+
+  const toggleIconExpansion = () => {
+    const nextExpanded = !iconsExpanded;
+    if (nextExpanded && !extraIconsReady) setExtraIconsReady(true);
+    setIconsExpanded(nextExpanded);
   };
 
   const setCustomLeadDays = (value: number) => {
@@ -645,17 +677,19 @@ function EventForm({
 
   return (
     <Animated.View
-      style={ef.wrap}
-      entering={FadeIn.duration(220)}
-      exiting={FadeOut.duration(160)}
+      style={[ef.wrap, sheetMode && ef.wrapSheet]}
+      entering={sheetMode ? undefined : FadeIn.duration(220)}
+      exiting={sheetMode ? undefined : FadeOut.duration(160)}
       layout={LinearTransition.duration(240).easing(Easing.out(Easing.cubic))}
     >
-      <View style={ef.head}>
-        <Text style={ef.heading}>{isEdit ? 'EDIT EVENT' : 'NEW EVENT'}</Text>
-        <TouchableOpacity onPress={onCancel} style={ef.close} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <X s={16} c={C.textMuted} />
-        </TouchableOpacity>
-      </View>
+      {!sheetMode && (
+        <View style={ef.head}>
+          <Text style={ef.heading}>{isEdit ? 'EDIT EVENT' : 'NEW EVENT'}</Text>
+          <TouchableOpacity onPress={onCancel} style={ef.close} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <X s={16} c={C.textMuted} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       <TextInput
         ref={titleTarget.ref}
@@ -928,35 +962,44 @@ function EventForm({
           importantForAccessibility={iconsExpanded ? 'auto' : 'no-hide-descendants'}
           style={[ef.extraIconClip, extraIconsRevealStyle]}
         >
-          <View
-            style={ef.extraIconMeasure}
-            onLayout={event => {
-              extraIconsHeight.value = Math.ceil(event.nativeEvent.layout.height);
-            }}
-          >
-            <View style={ef.iconGrid}>
-              {extraIcons.map(ic => (
-                <EventIconChoice
-                  key={ic}
-                  icon={ic}
-                  active={form.icon === ic}
-                  onSelect={() => {
-                    Haptics.selectionAsync();
-                    onChange({ ...form, icon: ic });
-                    advanceAfterIcon();
-                  }}
-                />
-              ))}
-              {extraSpacers.map(index => (
-                <View key={`extra-icon-spacer-${index}`} pointerEvents="none" style={ef.iconGridSpacer} />
-              ))}
+          {extraIconsReady && (
+            <View
+              style={ef.extraIconMeasure}
+              onLayout={event => {
+                extraIconsHeight.value = Math.ceil(event.nativeEvent.layout.height);
+                if (iconsExpanded) {
+                  iconRevealProgress.value = 0;
+                  iconRevealProgress.value = withTiming(1, {
+                    duration: 285,
+                    easing: Easing.bezier(0.22, 1, 0.36, 1),
+                  });
+                }
+              }}
+            >
+              <View style={ef.iconGrid}>
+                {extraIcons.map(ic => (
+                  <EventIconChoice
+                    key={ic}
+                    icon={ic}
+                    active={form.icon === ic}
+                    onSelect={() => {
+                      Haptics.selectionAsync();
+                      onChange({ ...form, icon: ic });
+                      advanceAfterIcon();
+                    }}
+                  />
+                ))}
+                {extraSpacers.map(index => (
+                  <View key={`extra-icon-spacer-${index}`} pointerEvents="none" style={ef.iconGridSpacer} />
+                ))}
+              </View>
             </View>
-          </View>
+          )}
         </Animated.View>
 
         {hiddenIconCount > 0 && (
           <Pressable
-            onPress={() => setIconsExpanded(current => !current)}
+            onPress={toggleIconExpansion}
             accessibilityRole="button"
             accessibilityLabel={iconsExpanded ? 'Show fewer event icons' : 'Show more event icons'}
             accessibilityState={{ expanded: iconsExpanded }}
@@ -998,6 +1041,7 @@ const ef = StyleSheet.create({
     padding: 18, marginBottom: 16, rowGap: 14,
     shadowColor: '#8C7A4F', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 14, elevation: 2,
   },
+  wrapSheet: { marginBottom: 0 },
   head:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   heading: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2, color: C.textMuted },
   close: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
@@ -1175,7 +1219,13 @@ const ef = StyleSheet.create({
     rowGap: EVENT_ICON_MIN_GAP,
   },
   extraIconClip: { width: '100%', overflow: 'hidden' },
-  extraIconMeasure: { width: '100%', paddingTop: EVENT_ICON_MIN_GAP },
+  extraIconMeasure: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingTop: EVENT_ICON_MIN_GAP,
+  },
   iconCell: { width: EVENT_ICON_CHIP_SIZE, height: EVENT_ICON_CHIP_SIZE },
   iconChip: {
     width: EVENT_ICON_CHIP_SIZE, height: EVENT_ICON_CHIP_SIZE,
@@ -1245,6 +1295,198 @@ const ef = StyleSheet.create({
   },
   saveBtnDisabled: { opacity: 0.4 },
   saveText: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 1.6, color: '#fff' },
+});
+
+function BigEventEditorSheet({
+  visible,
+  form,
+  onChange,
+  onSave,
+  onClose,
+  minDate,
+  guided,
+}: {
+  visible: boolean;
+  form: FormState | null;
+  onChange: (next: FormState) => void;
+  onSave: () => Promise<void>;
+  onClose: () => void;
+  minDate: string;
+  guided: boolean;
+}) {
+  const { height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const [canSave, setCanSave] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [kbHeight, setKbHeight] = useState(0);
+
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      event => setKbHeight(event.endCoordinates.height),
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKbHeight(0),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (visible) setSaving(false);
+  }, [form?.id, visible]);
+
+  const save = useCallback(async () => {
+    if (!canSave || saving) return;
+    setSaving(true);
+    try {
+      await onSave();
+    } catch (error) {
+      console.warn('[BigEvents] save failed', error);
+      setSaving(false);
+    }
+  }, [canSave, onSave, saving]);
+
+  if (!form) return null;
+
+  const baseSheetHeight = Math.min(height * 0.92, 720);
+  const sheetHeight = kbHeight > 0
+    ? Math.max(360, Math.min(baseSheetHeight, height - kbHeight - insets.top - 24))
+    : baseSheetHeight;
+  const isEdit = form.id !== null;
+
+  return (
+    <SmoothBottomSheet
+      visible={visible}
+      onClose={onClose}
+      closeOnBackdropPress={!guided}
+      keyboardAware
+      embedded={guided}
+      backdropOpacity={0.34}
+      overlayStyle={guided ? bes.embeddedOverlay : undefined}
+      sheetStyle={[
+        bes.sheet,
+        {
+          height: sheetHeight,
+          paddingBottom: Math.max(insets.bottom, 10) + 12,
+        },
+      ]}
+    >
+      <View style={bes.handle} />
+      <View style={bes.header}>
+        <TouchableOpacity
+          onPress={onClose}
+          activeOpacity={0.82}
+          style={bes.closeButton}
+          accessibilityLabel="Close Big Event editor"
+        >
+          <X s={19} c="#A8A29E" />
+        </TouchableOpacity>
+
+        <View style={bes.headerCopy}>
+          <Text style={bes.eyebrow}>BIG EVENTS</Text>
+          <Text style={bes.title}>{isEdit ? 'Edit Event' : 'Add an Event'}</Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={save}
+          disabled={!canSave || saving}
+          activeOpacity={0.86}
+          style={[bes.doneButton, (!canSave || saving) && bes.doneButtonDisabled]}
+          accessibilityLabel={isEdit ? 'Save event changes' : 'Add event'}
+        >
+          <CheckSmall s={19} c="#FFFFFF" w={3} />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        style={bes.scroll}
+        contentContainerStyle={bes.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <EventForm
+          form={form}
+          onChange={onChange}
+          onSave={save}
+          onCancel={onClose}
+          minDate={minDate}
+          guided={guided}
+          sheetMode
+          onCanSaveChange={setCanSave}
+        />
+      </ScrollView>
+    </SmoothBottomSheet>
+  );
+}
+
+const bes = StyleSheet.create({
+  embeddedOverlay: { zIndex: 50, elevation: 50 },
+  sheet: {
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    backgroundColor: '#FFFEFB',
+    overflow: 'hidden',
+  },
+  handle: {
+    width: 42,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: '#D6D3D1',
+    alignSelf: 'center',
+    marginTop: 10,
+  },
+  header: {
+    minHeight: 70,
+    paddingHorizontal: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0EDE8',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  closeButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F7F5F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCopy: { flex: 1, minWidth: 0, alignItems: 'center' },
+  eyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 2,
+    color: '#A8A29E',
+  },
+  title: {
+    marginTop: 2,
+    fontFamily: F.serifMedium,
+    fontSize: 22,
+    lineHeight: 26,
+    color: C.text,
+  },
+  doneButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: GOLD,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  doneButtonDisabled: { backgroundColor: '#D6D3D1', shadowOpacity: 0, elevation: 0 },
+  scroll: { flex: 1 },
+  content: { padding: 18, gap: 14 },
 });
 
 // ─── Event card ─────────────────────────────────────────────────────────────
@@ -1616,6 +1858,7 @@ export default function BigEventsView({
   } = useGuidedSetup();
   const { bigEvents, addBigEvent, updateBigEvent, softDeleteBigEvent } = useBigEvents();
   const [form, setForm] = useState<FormState | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const today = todayKey();
   const isGuided = guided && session?.active === true && session.activeStep === 'buildBigEvents';
@@ -1630,6 +1873,7 @@ export default function BigEventsView({
   const openNew = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setForm(emptyForm());
+    setEditorOpen(true);
     if (isGuided) patchSession({ phase: 'title' });
   };
 
@@ -1646,9 +1890,10 @@ export default function BigEventsView({
       leadDays: source.leadDays || BIG_EVENT_DEFAULT_LEAD_DAYS,
       remindersEnabled: source.remindersEnabled,
     });
+    setEditorOpen(true);
   };
 
-  const closeForm = () => setForm(null);
+  const closeForm = () => setEditorOpen(false);
 
   const saveForm = async () => {
     if (!form) return;
@@ -1704,7 +1949,7 @@ export default function BigEventsView({
         });
       }
     }
-    setForm(null);
+    setEditorOpen(false);
   };
 
   const finishGuidedStep = useCallback(() => {
@@ -1716,13 +1961,15 @@ export default function BigEventsView({
   const addAnotherGuidedEvent = useCallback(() => {
     setPresentation(null);
     setForm(emptyForm());
+    setEditorOpen(true);
     patchSession({ phase: 'title' });
   }, [patchSession, setPresentation]);
 
   useEffect(() => {
-    if (!isGuided || form || guidePhase === 'intro' || guidePhase === 'complete') return;
+    if (!isGuided || editorOpen || guidePhase === 'intro' || guidePhase === 'complete') return;
     setForm(emptyForm());
-  }, [form, guidePhase, isGuided]);
+    setEditorOpen(true);
+  }, [editorOpen, guidePhase, isGuided]);
 
   useEffect(() => {
     if (!isGuided) return;
@@ -1832,7 +2079,7 @@ export default function BigEventsView({
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     await softDeleteBigEvent(confirmId);
     setConfirmId(null);
-    if (form?.id === confirmId) setForm(null);
+    if (editorOpen && form?.id === confirmId) setEditorOpen(false);
   };
 
   return (
@@ -1846,12 +2093,12 @@ export default function BigEventsView({
           <TouchableOpacity
             ref={addTarget.ref}
             onLayout={addTarget.onLayout}
-            onPress={form ? closeForm : openNew}
+            onPress={editorOpen ? closeForm : openNew}
             style={s.headRight}
             activeOpacity={0.7}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            {form
+            {editorOpen
               ? <X s={22} c={C.textMuted} />
               : <Plus s={22} c={GOLD} w={2.4} />}
           </TouchableOpacity>
@@ -1863,17 +2110,6 @@ export default function BigEventsView({
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 40, paddingTop: 8 }}
         keyboardShouldPersistTaps="handled"
       >
-        {form && (
-          <EventForm
-            form={form}
-            onChange={setForm}
-            onSave={saveForm}
-            onCancel={closeForm}
-            minDate={today}
-            guided={isGuided}
-          />
-        )}
-
         {upcoming.length > 0 && (
           <Animated.View
             entering={FadeIn.duration(170).easing(Easing.out(Easing.cubic))}
@@ -1937,10 +2173,20 @@ export default function BigEventsView({
           </Animated.View>
         )}
 
-        {upcoming.length === 0 && recurring.length === 0 && past.length === 0 && !form && (
+        {upcoming.length === 0 && recurring.length === 0 && past.length === 0 && !editorOpen && (
           <EmptyState onAddPress={openNew} />
         )}
       </ScrollView>
+
+      <BigEventEditorSheet
+        visible={editorOpen}
+        form={form}
+        onChange={setForm}
+        onSave={saveForm}
+        onClose={closeForm}
+        minDate={today}
+        guided={isGuided}
+      />
 
       <ConfirmModal
         visible={!!confirmId}

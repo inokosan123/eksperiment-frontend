@@ -1327,11 +1327,28 @@ export default function HomeView({
 
   const confirmSkipAllDay = useCallback(() => {
     setSkipDayConfirmOpen(false);
-    if (skippableCards.length === 0) return;
+    const instanceIds = skippableCards.flatMap(card => card.instanceId ? [card.instanceId] : []);
+    if (instanceIds.length === 0) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    for (const card of skippableCards) {
-      if (!card.instanceId) continue;
-      void skipInstance(card.instanceId, taskContentDate).catch(() => {});
+
+    // A previous uncheck can still have a local `pending` override while its
+    // refresh is settling. Replace every targeted override before persisting so
+    // the task cards and the backend-driven daily progress stay in sync.
+    setOptimisticStates(prev => {
+      const next = { ...prev };
+      for (const instanceId of instanceIds) next[instanceId] = 'skipped';
+      return next;
+    });
+
+    for (const instanceId of instanceIds) {
+      void skipInstance(instanceId, taskContentDate).catch(() => {
+        setOptimisticStates(prev => {
+          if (prev[instanceId] !== 'skipped') return prev;
+          const next = { ...prev };
+          delete next[instanceId];
+          return next;
+        });
+      });
     }
   }, [skippableCards, skipInstance, taskContentDate]);
 

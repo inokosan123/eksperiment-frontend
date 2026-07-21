@@ -15,6 +15,7 @@ import { C, F } from '@/constants/tokens';
 import { CATEGORY_TINTS, ESSENTIAL_APP_OPTIONS, PREVIEW_APPS } from './focusContent';
 import { FocusMeter } from './FocusMeter';
 import {
+  ALWAYS_BLOCKED_GROUP_ID,
   formatMinutesShort,
   groupName,
   type AppRule,
@@ -132,13 +133,14 @@ function buildRows({
   state: DayPlanState;
 }): GroupAnalyticsRow[] {
   const rulesByGroup = new Map(rules.map(rule => [rule.groupId, rule]));
+  const alwaysBlockedIds = new Set(state.alwaysBlockedApps.map(entry => entry.appId));
   const groupIds = Array.from(new Set([
     ...Object.keys(plan.groupCatalog),
     ...rules.map(rule => rule.groupId),
     ...Object.keys(groupMinutes),
   ]));
 
-  return sortUsageRows(groupIds.map(groupId => {
+  const regularRows = sortUsageRows(groupIds.map(groupId => {
     const rule = rulesByGroup.get(groupId) ?? {
       groupId,
       dailyMinutes: null,
@@ -152,14 +154,22 @@ function buildRows({
     const appIds = Array.from(new Set([
       ...(plan.groupCatalog[groupId] ?? []),
       ...(rule.appRules ?? []).map(appRule => appRule.appId),
-    ]));
+    ])).filter(appId => !alwaysBlockedIds.has(appId));
     const apps = sortUsageRows(appIds.map(appId => ({
       appId,
       name: ruleByApp.get(appId)?.label?.trim() || APP_NAMES[appId] || appId,
       rule: ruleByApp.get(appId) ?? null,
       usedMinutes: appUsageAvailable ? appMinutes[appId] ?? 0 : null,
     })));
-    const usedMinutes = groupUsageAvailable ? groupMinutes[groupId] ?? 0 : null;
+    const blockedMinutes = appUsageAvailable
+      ? Array.from(alwaysBlockedIds).reduce(
+          (sum, appId) => sum + ((plan.groupCatalog[groupId] ?? []).includes(appId) ? appMinutes[appId] ?? 0 : 0),
+          0
+        )
+      : 0;
+    const usedMinutes = groupUsageAvailable
+      ? Math.max(0, (groupMinutes[groupId] ?? 0) - blockedMinutes)
+      : null;
     return {
       groupId,
       name: groupName(state, groupId),
@@ -169,6 +179,36 @@ function buildRows({
       apps,
     };
   }));
+
+  if (state.alwaysBlockedApps.length === 0) return regularRows;
+
+  const alwaysBlockedRule: GroupRule = {
+    groupId: ALWAYS_BLOCKED_GROUP_ID,
+    dailyMinutes: null,
+    strength: 'strict',
+    practice: 'prayer',
+    mode: 'blocked',
+    checkInMinutes: null,
+    appRules: [],
+  };
+  const alwaysBlockedApps = sortUsageRows(state.alwaysBlockedApps.map(entry => ({
+    appId: entry.appId,
+    name: APP_NAMES[entry.appId] || entry.appId,
+    rule: null,
+    usedMinutes: appUsageAvailable ? appMinutes[entry.appId] ?? 0 : null,
+  })));
+  const alwaysBlockedMinutes = appUsageAvailable
+    ? alwaysBlockedApps.reduce((sum, app) => sum + (app.usedMinutes ?? 0), 0)
+    : null;
+
+  return [...regularRows, {
+    groupId: ALWAYS_BLOCKED_GROUP_ID,
+    name: 'Always Blocked',
+    rule: alwaysBlockedRule,
+    usedMinutes: alwaysBlockedMinutes,
+    activityState: usageActivityState(alwaysBlockedMinutes),
+    apps: alwaysBlockedApps,
+  }];
 }
 
 function UsageShareRail({ rows }: { rows: GroupAnalyticsRow[] }) {
@@ -391,22 +431,26 @@ function InactiveGroupCard({
   expanded,
   onToggle,
   row,
+  system = false,
 }: {
   expanded: boolean;
   onToggle: () => void;
   row: GroupAnalyticsRow;
+  system?: boolean;
 }) {
   const tint = CATEGORY_TINTS[row.groupId] ?? { bg: C.goldLight, color: C.goldDark };
   const mode = modeFor(row.rule);
   const limit = row.rule.dailyMinutes;
-  const pending = row.activityState === 'pending';
-  const protectedGroup = !pending && mode === 'blocked';
-  const boundary = mode === 'blocked'
-    ? 'Blocked'
+  const pending = !system && row.activityState === 'pending';
+  const protectedGroup = system || (!pending && mode === 'blocked');
+  const boundary = system
+    ? 'No plan limit controls'
+    : mode === 'blocked'
+      ? 'Blocked'
     : mode === 'limit' && limit != null
       ? `${formatMinutesShort(limit)} limit`
       : 'No limit';
-  const stateLabel = pending ? 'PENDING' : protectedGroup ? 'PROTECTED' : 'INACTIVE';
+  const stateLabel = system ? 'ALWAYS BLOCKED' : pending ? 'PENDING' : protectedGroup ? 'PROTECTED' : 'INACTIVE';
   return (
     <Animated.View
       layout={LinearTransition.duration(190)}
@@ -414,7 +458,7 @@ function InactiveGroupCard({
     >
       <LinearGradient
         pointerEvents="none"
-        colors={pending ? ['#FCFBF8', '#F1EEE7'] : ['#FCFBF8', tint.bg]}
+        colors={system ? ['#FFFDFD', '#F8E7EA'] : pending ? ['#FCFBF8', '#F1EEE7'] : ['#FCFBF8', tint.bg]}
         locations={[0.46, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -428,7 +472,7 @@ function InactiveGroupCard({
         haptic="selection"
         accessibilityRole="button"
         accessibilityState={{ expanded }}
-        accessibilityLabel={`${row.name}, ${pending ? 'usage pending' : protectedGroup ? 'protected with no use today' : 'not used today'}, ${boundary}`}
+        accessibilityLabel={`${row.name}, ${system ? 'system protected' : pending ? 'usage pending' : protectedGroup ? 'protected with no use today' : 'not used today'}, ${boundary}`}
       >
         <View style={[s.inactiveAvatar, { backgroundColor: `${tint.color}12` }]}>
           {mode === 'blocked'
@@ -446,9 +490,9 @@ function InactiveGroupCard({
           </View>
         </View>
         <View style={s.inactiveValueWrap}>
-          <Text style={s.inactiveValue}>{pending ? '—' : '0m'}</Text>
-          <View style={[s.inactiveStatePill, protectedGroup && s.inactiveStatePillProtected]}>
-            <Text style={[s.inactiveState, protectedGroup && s.inactiveStateProtected]}>{stateLabel}</Text>
+          <Text style={s.inactiveValue}>{row.usedMinutes == null ? '—' : formatMinutesShort(row.usedMinutes)}</Text>
+          <View style={[s.inactiveStatePill, protectedGroup && s.inactiveStatePillProtected, system && s.inactiveStatePillSystem]}>
+            <Text style={[s.inactiveState, protectedGroup && s.inactiveStateProtected, system && s.inactiveStateSystem]}>{stateLabel}</Text>
           </View>
         </View>
         <View style={[s.inactiveChevron, expanded && s.inactiveChevronOpen]}>
@@ -512,12 +556,17 @@ export default function TodayUsageBreakdown({
     rules,
     state,
   }), [appMinutes, appUsageAvailable, groupMinutes, groupUsageAvailable, plan, rules, state]);
-  const activeRows = rows.filter(row => row.activityState === 'active');
-  const quietRows = rows.filter(row => row.activityState === 'quiet');
-  const pendingRows = rows.filter(row => row.activityState === 'pending');
+  const alwaysBlockedRow = rows.find(row => row.groupId === ALWAYS_BLOCKED_GROUP_ID) ?? null;
+  const regularRows = rows.filter(row => row.groupId !== ALWAYS_BLOCKED_GROUP_ID);
+  const activeRows = regularRows.filter(row => row.activityState === 'active');
+  const quietRows = regularRows.filter(row => row.activityState === 'quiet');
+  const pendingRows = regularRows.filter(row => row.activityState === 'pending');
+  const overviewRows = alwaysBlockedRow?.activityState === 'active'
+    ? [...activeRows, alwaysBlockedRow]
+    : activeRows;
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const totalTracked = activeRows.reduce((sum, row) => sum + (row.usedMinutes ?? 0), 0);
+  const totalTracked = overviewRows.reduce((sum, row) => sum + (row.usedMinutes ?? 0), 0);
   const overCount = activeRows.filter(row => {
     const mode = modeFor(row.rule);
     return usageBoundaryState(mode, row.rule.dailyMinutes, row.usedMinutes) === 'over';
@@ -546,11 +595,11 @@ export default function TodayUsageBreakdown({
             <Text style={s.overviewTitle}>Where your time went</Text>
           </View>
           <View style={s.overviewCount}>
-            <Text style={s.overviewCountValue}>{groupUsageAvailable ? activeRows.length : '—'}</Text>
+            <Text style={s.overviewCountValue}>{groupUsageAvailable ? overviewRows.length : '—'}</Text>
             <Text style={s.overviewCountLabel}>ACTIVE</Text>
           </View>
         </View>
-        <UsageShareRail rows={activeRows} />
+        <UsageShareRail rows={overviewRows} />
         <View style={s.overviewFooter}>
           <Text style={s.overviewTracked}>
             {groupUsageAvailable ? `${formatMinutesShort(totalTracked)} tracked` : `${rows.length} plan groups`}
@@ -634,6 +683,24 @@ export default function TodayUsageBreakdown({
                 onToggle={() => setExpandedId(expandedId === row.groupId ? null : row.groupId)}
               />
             ))}
+          </View>
+        </View>
+      )}
+
+      {alwaysBlockedRow && (
+        <View style={s.section}>
+          <UsageSectionHeading
+            title="System group"
+            hint="Outside every plan limit"
+            count={1}
+          />
+          <View style={s.inactiveList}>
+            <InactiveGroupCard
+              row={alwaysBlockedRow}
+              system
+              expanded={expandedId === ALWAYS_BLOCKED_GROUP_ID}
+              onToggle={() => setExpandedId(expandedId === ALWAYS_BLOCKED_GROUP_ID ? null : ALWAYS_BLOCKED_GROUP_ID)}
+            />
           </View>
         </View>
       )}
@@ -781,8 +848,10 @@ const s = StyleSheet.create({
   inactiveValue: { fontFamily: F.sansSemiBold, fontSize: 11.5, color: C.textSecondary, fontVariant: ['tabular-nums'] },
   inactiveStatePill: { minHeight: 15, borderRadius: 8, backgroundColor: 'rgba(84,77,66,0.065)', paddingHorizontal: 5.5, alignItems: 'center', justifyContent: 'center' },
   inactiveStatePillProtected: { backgroundColor: WITHIN_BG },
+  inactiveStatePillSystem: { minWidth: 92, backgroundColor: '#F8E7EA' },
   inactiveState: { fontFamily: F.sansBold, fontSize: 5.8, letterSpacing: 0.62, color: C.textMuted },
   inactiveStateProtected: { color: WITHIN },
+  inactiveStateSystem: { fontSize: 7.2, letterSpacing: 0.65, color: '#A24351' },
   inactiveChevron: { width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.64)', borderWidth: 1, borderColor: 'rgba(79,70,56,0.045)', alignItems: 'center', justifyContent: 'center' },
   inactiveChevronOpen: { backgroundColor: 'rgba(84,77,66,0.085)' },
 });

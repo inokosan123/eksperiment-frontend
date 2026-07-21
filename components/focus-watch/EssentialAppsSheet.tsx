@@ -10,6 +10,7 @@ import FocusCheck from './FocusCheck';
 import NativeActivitySelectionButton from './NativeActivitySelectionButton';
 import FocusSheetHeader from './FocusSheetHeader';
 import { isNativeFocusAvailable } from './focusNativeBridge';
+import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
 import {
   allCoreEssentialIds,
   saveOptionalEssentialApps,
@@ -48,6 +49,8 @@ export default function EssentialAppsSheet({
 }) {
   const state = useDayPlan();
   const nativeAvailable = isNativeFocusAvailable();
+  const alwaysStrictSummary = useNativeActivitySelectionSummary('always.strict');
+  const alwaysLooseSummary = useNativeActivitySelectionSummary('always.loose');
   const planMode = !!planId;
   const [query, setQuery] = useState('');
   const coreIds = useMemo(() => new Set([
@@ -70,17 +73,25 @@ export default function EssentialAppsSheet({
   );
   const chosenApps = useMemo(
     () => ESSENTIAL_APP_OPTIONS
-      .filter(app => !coreIds.has(app.id) && selectedIds.has(app.id))
+      .filter(app => !coreIds.has(app.id) && !blockedIds.has(app.id) && selectedIds.has(app.id))
       .sort((a, b) => a.name.localeCompare(b.name)),
-    [coreIds, selectedIds]
+    [blockedIds, coreIds, selectedIds]
   );
   const otherApps = useMemo(
     () => ESSENTIAL_APP_OPTIONS
-      .filter(app => !coreIds.has(app.id) && !selectedIds.has(app.id))
+      .filter(app => !coreIds.has(app.id) && !selectedIds.has(app.id) && !blockedIds.has(app.id))
       .filter(app => !normalizedQuery || app.name.toLocaleLowerCase().includes(normalizedQuery))
       .sort((a, b) => a.name.localeCompare(b.name)),
-    [coreIds, selectedIds, normalizedQuery]
+    [blockedIds, coreIds, selectedIds, normalizedQuery]
   );
+  const blockedApps = useMemo(
+    () => ESSENTIAL_APP_OPTIONS
+      .filter(app => blockedIds.has(app.id))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [blockedIds]
+  );
+  const nativeBlockedCount = (alwaysStrictSummary?.applicationCount ?? 0)
+    + (alwaysLooseSummary?.applicationCount ?? 0);
 
   const toggleOptional = (appId: string) => {
     if (coreIds.has(appId) || blockedIds.has(appId)) return;
@@ -210,34 +221,67 @@ export default function EssentialAppsSheet({
               )}
             </View>
             <View style={s.list}>
-              {otherApps.map((app, index) => {
-                const blocked = blockedIds.has(app.id);
-                return (
-                  <Animated.View key={app.id} layout={LinearTransition.duration(220)}>
-                    {index > 0 && <View style={s.separator} />}
-                    <TouchableOpacity
-                      style={[s.row, blocked && s.rowDisabled]}
-                      onPress={() => toggleOptional(app.id)}
-                      disabled={blocked}
-                      haptic="selection"
-                      activeOpacity={0.72}
-                    >
-                      <View style={s.monogram}>
-                        <Text style={s.monogramText}>{app.name[0]}</Text>
-                      </View>
-                      <Text style={s.appName}>{app.name}</Text>
-                      {blocked ? (
-                        <View style={s.blockedTag}>
-                          <Lock s={10} c="#A24351" w={2.2} />
-                          <Text style={s.blockedText}>Always Blocked</Text>
-                        </View>
-                      ) : (
-                        <FocusCheck checked={false} size={25} />
-                      )}
-                    </TouchableOpacity>
-                  </Animated.View>
-                );
-              })}
+              {otherApps.map((app, index) => (
+                <Animated.View key={app.id} layout={LinearTransition.duration(220)}>
+                  {index > 0 && <View style={s.separator} />}
+                  <TouchableOpacity
+                    style={s.row}
+                    onPress={() => toggleOptional(app.id)}
+                    haptic="selection"
+                    activeOpacity={0.72}
+                  >
+                    <View style={s.monogram}>
+                      <Text style={s.monogramText}>{app.name[0]}</Text>
+                    </View>
+                    <Text style={s.appName}>{app.name}</Text>
+                    <FocusCheck checked={false} size={25} />
+                  </TouchableOpacity>
+                </Animated.View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {!nativeAvailable && blockedApps.length > 0 && (
+          <View>
+            <SectionHeading
+              label="ALWAYS BLOCKED"
+              note="This system group always stays closed. Its apps cannot become Essentials unless you remove that protection first."
+            />
+            <View style={[s.list, s.blockedList]}>
+              {blockedApps.map((app, index) => (
+                <View key={app.id}>
+                  {index > 0 && <View style={s.separator} />}
+                  <View style={[s.row, s.rowDisabled]} accessibilityLabel={`${app.name}, Always Blocked, unavailable as an Essential`}>
+                    <View style={s.monogramBlocked}>
+                      <Lock s={14} c="#A24351" w={2.2} />
+                    </View>
+                    <Text style={s.appNameBlocked}>{app.name}</Text>
+                    <View style={s.blockedTag}>
+                      <Text style={s.blockedText}>UNAVAILABLE</Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {nativeAvailable && nativeBlockedCount > 0 && (
+          <View>
+            <SectionHeading
+              label="ALWAYS BLOCKED"
+              note="Apple keeps app names private. This system group is shown here so it is clear why those apps cannot be selected as Essentials."
+            />
+            <View style={[s.list, s.blockedList]}>
+              <View style={[s.row, s.rowDisabled]} accessibilityLabel={`Always Blocked, ${nativeBlockedCount} apps, unavailable as Essentials`}>
+                <View style={s.monogramBlocked}><Lock s={14} c="#A24351" w={2.2} /></View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={s.appNameBlocked}>Always Blocked</Text>
+                  <Text style={s.blockedGroupMeta}>{nativeBlockedCount} {nativeBlockedCount === 1 ? 'private app' : 'private apps'}</Text>
+                </View>
+                <View style={s.blockedTag}><Text style={s.blockedText}>UNAVAILABLE</Text></View>
+              </View>
             </View>
           </View>
         )}
@@ -270,14 +314,18 @@ const s = StyleSheet.create({
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 52 },
   row: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 3 },
   rowDisabled: { opacity: 0.55 },
+  blockedList: { borderColor: '#E7C4CB', backgroundColor: '#FFF8F9' },
   monogram: { width: 39, height: 39, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
   monogramText: { fontFamily: F.serifSemiBold, fontSize: 16, color: C.textSecondary },
   monogramOn: { width: 39, height: 39, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F1E3BF', alignItems: 'center', justifyContent: 'center' },
   monogramOnText: { fontFamily: F.serifSemiBold, fontSize: 16, color: C.goldDark },
   monogramLocked: { width: 39, height: 39, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F2F1ED', alignItems: 'center', justifyContent: 'center' },
   monogramLockedText: { fontFamily: F.serifSemiBold, fontSize: 16, color: C.textMuted },
+  monogramBlocked: { width: 39, height: 39, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F8E7EA', alignItems: 'center', justifyContent: 'center' },
   appName: { flex: 1, minWidth: 0, fontFamily: F.serifMedium, fontSize: 17, color: C.text },
   appNameLocked: { flex: 1, minWidth: 0, fontFamily: F.serifMedium, fontSize: 17, color: C.textMuted },
+  appNameBlocked: { flexShrink: 1, fontFamily: F.serifMedium, fontSize: 17, color: '#7B3945' },
+  blockedGroupMeta: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 10, color: C.textMuted },
   emptyNote: { paddingHorizontal: 2, fontFamily: F.serifItalic, fontSize: 14.5, color: C.textMuted },
   searchSurface: { height: 50, flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 14, marginBottom: 12 },
   searchInput: { flex: 1, fontFamily: F.sansMedium, fontSize: 15, color: C.text },

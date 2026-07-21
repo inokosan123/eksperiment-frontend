@@ -289,6 +289,8 @@ export const APP_CATEGORIES = [
   { id: 'dating', name: 'Dating' },
 ] as const;
 
+export const ALWAYS_BLOCKED_GROUP_ID = 'always-blocked';
+
 export const DEFAULT_GROUP_APP_IDS: Record<string, string[]> = {
   social: ['whatsapp', 'viber', 'instagram', 'tiktok', 'x', 'facebook', 'reddit', 'snapchat'],
   entertainment: ['youtube', 'netflix', 'twitch', 'primevideo'],
@@ -545,6 +547,7 @@ export function nextZoneStart(plan: DayPlan | null | undefined, now: Date): Plan
 // ---------------------------------------------------------------------------
 
 export function groupName(state: DayPlanState, groupId: string): string {
+  if (groupId === ALWAYS_BLOCKED_GROUP_ID) return 'Always Blocked';
   const category = APP_CATEGORIES.find(entry => entry.id === groupId);
   if (category) return category.name;
   const group = state.customGroups.find(entry => entry.id === groupId);
@@ -1438,6 +1441,10 @@ export function saveDayPlan(input: SaveDayPlanInput): DayPlan {
   const now = Date.now();
   const existing = input.id ? state.plans.find(plan => plan.id === input.id) : undefined;
   const savedId = input.id ?? makeId('plan');
+  const alwaysBlockedIds = new Set(state.alwaysBlockedApps.map(entry => entry.appId));
+  const essentialAppIds = Array.from(new Set(
+    input.essentialAppIds ?? existing?.essentialAppIds ?? []
+  )).filter(appId => !alwaysBlockedIds.has(appId));
   const saved = withCompleteRules(
     {
       ...input,
@@ -1445,7 +1452,7 @@ export function saveDayPlan(input: SaveDayPlanInput): DayPlan {
       kind: input.kind ?? existing?.kind ?? 'daily',
       themeId: input.themeId ?? existing?.themeId ?? defaultPlanThemeId(savedId),
       essentialsOnly: input.essentialsOnly ?? existing?.essentialsOnly ?? false,
-      essentialAppIds: input.essentialAppIds ?? existing?.essentialAppIds ?? [],
+      essentialAppIds,
       tolerableMinutes: input.tolerableMinutes ?? existing?.tolerableMinutes ?? null,
       essentialOnlyMinutes: input.essentialOnlyMinutes ?? existing?.essentialOnlyMinutes ?? null,
       customGroupIds: input.customGroupIds ?? existing?.customGroupIds ?? [],
@@ -1594,6 +1601,7 @@ export function getPlanById(stateArg: DayPlanState, planId: string | null | unde
 export function customGroupNameAvailable(name: string, exceptId?: string) {
   const normalized = name.trim().toLocaleLowerCase();
   if (!normalized) return false;
+  if (normalized === 'always blocked') return false;
   if (APP_CATEGORIES.some(group => group.name.toLocaleLowerCase() === normalized)) return false;
   return !state.customGroups.some(
     group => group.id !== exceptId && group.name.toLocaleLowerCase() === normalized
@@ -1680,10 +1688,10 @@ export function saveAlwaysBlockedApp(rule: AlwaysBlockedRule) {
     allCoreEssentialIds().includes(rule.appId)
     || state.optionalEssentialAppIds.includes(rule.appId)
   ) return false;
-  state.alwaysBlockedApps = [
-    ...state.alwaysBlockedApps.filter(entry => entry.appId !== rule.appId),
-    rule,
-  ];
+  const existingIndex = state.alwaysBlockedApps.findIndex(entry => entry.appId === rule.appId);
+  state.alwaysBlockedApps = existingIndex >= 0
+    ? state.alwaysBlockedApps.map((entry, index) => index === existingIndex ? rule : entry)
+    : [...state.alwaysBlockedApps, rule];
   persistMeta('always_blocked_apps', state.alwaysBlockedApps);
   emit();
   return true;

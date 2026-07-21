@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeIn, FadeInDown, FadeOutUp, LinearTransition } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import { Lock, Plus, Trash2 } from '@/components/icons/Icons';
@@ -38,6 +39,10 @@ export default function AlwaysBlockedSheet({ visible, onClose }: { visible: bool
     () => PREVIEW_APPS.filter(app => !blockedIds.has(app.id)).sort((a, b) => a.name.localeCompare(b.name)),
     [blockedIds]
   );
+  const blockedRules = useMemo(
+    () => [...state.alwaysBlockedApps].sort((a, b) => nameFor(a.appId).localeCompare(nameFor(b.appId))),
+    [state.alwaysBlockedApps]
+  );
 
   const updateStrength = (appId: string, strength: Strength) => {
     const current = state.alwaysBlockedApps.find(rule => rule.appId === appId);
@@ -45,12 +50,41 @@ export default function AlwaysBlockedSheet({ visible, onClose }: { visible: bool
     saveAlwaysBlockedApp({ ...current, strength });
   };
 
+  const closeSheet = () => {
+    setAdding(false);
+    setPendingRemove(null);
+    onClose();
+  };
+
+  const removeConfirm = (
+    <ConfirmModal
+      embedded
+      visible={pendingRemove !== null}
+      icon={<Trash2 s={22} c={C.red} w={2.1} />}
+      iconBg="#FEE2E2"
+      title="Remove from Always Blocked?"
+      body="The app will leave this system group and return to its previous app group and ordinary plan rules."
+      subject={pendingRemove ? nameFor(pendingRemove) : undefined}
+      confirmLabel="REMOVE"
+      confirmColor={C.red}
+      onCancel={() => setPendingRemove(null)}
+      onConfirm={() => {
+        if (pendingRemove) removeAlwaysBlockedApp(pendingRemove);
+        setPendingRemove(null);
+      }}
+    />
+  );
+
   return (
-    <>
-      <SmoothBottomSheet visible={visible} onClose={onClose} sheetStyle={s.sheet}>
+    <SmoothBottomSheet
+      visible={visible}
+      onClose={closeSheet}
+      sheetStyle={s.sheet}
+      overlayChildren={removeConfirm}
+    >
         <FocusSheetHeader
           title="Always Blocked"
-          onClose={onClose}
+          onClose={closeSheet}
           centered
         />
 
@@ -90,37 +124,75 @@ export default function AlwaysBlockedSheet({ visible, onClose }: { visible: bool
               <Text style={s.emptyBody}>Use Always Blocked for an app you want to enter only through a deliberate Loose gateway, or never through a Strict shield.</Text>
             </View>
           ) : (
-            <View style={s.blockedList}>
-              {state.alwaysBlockedApps.map((rule, index) => (
-                <View key={rule.appId}>
-                  {index > 0 && <View style={s.separator} />}
-                  <View style={s.blockedRow}>
-                    <View style={s.appMark}><Text style={s.appMarkText}>{nameFor(rule.appId)[0]}</Text></View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.appName}>{nameFor(rule.appId)}</Text>
-                      <Text style={s.appMeta}>{rule.strength === 'strict' ? 'No continuation' : '15-minute intentional gateway'}</Text>
+            <View style={s.blockedCards}>
+              {blockedRules.map((rule, index) => (
+                <Animated.View
+                  key={rule.appId}
+                  entering={FadeInDown.duration(220).delay(Math.min(index, 5) * 35)}
+                  exiting={FadeOutUp.duration(180)}
+                  layout={LinearTransition.duration(220)}
+                  style={s.appCard}
+                >
+                  <View style={s.cardHeader}>
+                    <View style={s.appIdentity}>
+                      <View style={s.appIconPreview}>
+                        <Text style={s.appIconPreviewText}>{nameFor(rule.appId)[0]}</Text>
+                      </View>
+                      <View style={s.appTitleWrap}>
+                        <Text style={s.appName} numberOfLines={1}>{nameFor(rule.appId)}</Text>
+                        <Text style={s.appSystemLabel}>IPHONE APP</Text>
+                      </View>
                     </View>
-                    <View style={s.strengthControl}>
-                      {(['loose', 'strict'] as Strength[]).map(strength => (
-                        <TouchableOpacity
-                          key={strength}
-                          style={[
-                            s.strengthOption,
-                            rule.strength === strength && (strength === 'strict' ? s.strictOn : s.looseOn),
-                          ]}
-                          onPress={() => updateStrength(rule.appId, strength)}
-                          haptic="selection"
-                        >
-                          <Text style={[
-                            s.strengthText,
-                            rule.strength === strength && (strength === 'strict' ? s.strictText : s.looseText),
-                          ]}>{strength === 'strict' ? 'S' : 'L'}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    <TouchableOpacity onPress={() => setPendingRemove(rule.appId)} hitSlop={8}><Trash2 s={14} c={C.textMuted} w={2} /></TouchableOpacity>
+                    <TouchableOpacity
+                      style={s.removeButton}
+                      onPress={() => setPendingRemove(rule.appId)}
+                      haptic="medium"
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${nameFor(rule.appId)} from Always Blocked`}
+                    >
+                      <Trash2 s={18} c={C.red} w={2.1} />
+                    </TouchableOpacity>
                   </View>
-                </View>
+
+                  <View style={s.strengthSection}>
+                    <Text style={s.strengthLabel}>BLOCKING MODE</Text>
+                    <View style={s.strengthControl} accessibilityRole="radiogroup">
+                      {(['loose', 'strict'] as Strength[]).map(strength => {
+                          const selected = rule.strength === strength;
+                          return (
+                            <TouchableOpacity
+                              key={strength}
+                              style={s.strengthOption}
+                              onPress={() => updateStrength(rule.appId, strength)}
+                              haptic="selection"
+                              accessibilityRole="radio"
+                              accessibilityState={{ checked: selected }}
+                              accessibilityLabel={`${strength === 'strict' ? 'Strict' : 'Loose'} blocking for ${nameFor(rule.appId)}`}
+                            >
+                              {selected && (
+                                <Animated.View
+                                  entering={FadeIn.duration(120)}
+                                  style={[StyleSheet.absoluteFill, s.strengthSelected, strength === 'strict' ? s.strictOn : s.looseOn]}
+                                />
+                              )}
+                              <Text style={[
+                                s.strengthText,
+                                selected && (strength === 'strict' ? s.strictText : s.looseText),
+                              ]}>{strength === 'strict' ? 'Strict' : 'Loose'}</Text>
+                            </TouchableOpacity>
+                          );
+                      })}
+                    </View>
+                  </View>
+                  <View style={s.modeExplanation}>
+                    <View style={[s.modeDot, rule.strength === 'strict' ? s.modeDotStrict : s.modeDotLoose]} />
+                    <Text style={s.appMeta}>
+                      {rule.strength === 'strict'
+                        ? 'This app stays closed with no continuation option.'
+                        : 'Opening it requires a deliberate 15-minute gateway.'}
+                    </Text>
+                  </View>
+                </Animated.View>
               ))}
             </View>
           )}
@@ -151,21 +223,7 @@ export default function AlwaysBlockedSheet({ visible, onClose }: { visible: bool
             </View>
           )}
         </ScrollView>
-      </SmoothBottomSheet>
-
-      <ConfirmModal
-        visible={pendingRemove !== null}
-        icon={<Lock s={20} c="#A24351" w={2.2} />}
-        iconBg="#F8E7EA"
-        title="Remove Always Blocked?"
-        body="The app will return to ordinary Daily or Session rules. This does not make it Essential."
-        subject={pendingRemove ? nameFor(pendingRemove) : undefined}
-        confirmLabel="REMOVE"
-        confirmColor="#A24351"
-        onCancel={() => setPendingRemove(null)}
-        onConfirm={() => { if (pendingRemove) removeAlwaysBlockedApp(pendingRemove); setPendingRemove(null); }}
-      />
-    </>
+    </SmoothBottomSheet>
   );
 }
 
@@ -183,20 +241,31 @@ const s = StyleSheet.create({
   emptyIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { marginTop: 10, fontFamily: F.serifMedium, fontSize: 18, color: C.text },
   emptyBody: { marginTop: 4, fontFamily: F.serif, fontSize: 12.5, lineHeight: 17, color: C.textSecondary, textAlign: 'center' },
-  blockedList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
-  separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 42 },
-  blockedRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  appMark: { width: 39, height: 39, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F8E7EA', alignItems: 'center', justifyContent: 'center' },
-  appMarkText: { fontFamily: F.serifSemiBold, fontSize: 16, color: '#A24351' },
-  appName: { fontFamily: F.serifMedium, fontSize: 17, color: C.text },
-  appMeta: { marginTop: 2, fontFamily: F.serif, fontSize: 12.5, color: C.textSecondary },
-  strengthControl: { flexDirection: 'row', gap: 3, borderRadius: 999, backgroundColor: '#EEECE7', padding: 2.5 },
-  strengthOption: { width: 29, height: 29, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  blockedCards: { gap: 12 },
+  appCard: { borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: '#EACBD1', backgroundColor: '#FFF9FA', padding: 14, gap: 13, boxShadow: '0 7px 20px rgba(111, 45, 60, 0.07)' },
+  cardHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  appIdentity: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  appIconPreview: { width: 46, height: 46, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E6C3CA', backgroundColor: '#F8E7EA', alignItems: 'center', justifyContent: 'center' },
+  appIconPreviewText: { fontFamily: F.serifSemiBold, fontSize: 19, color: '#A24351' },
+  appTitleWrap: { flex: 1, minWidth: 0, paddingTop: 3 },
+  appName: { fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 23, color: C.text },
+  appSystemLabel: { marginTop: 3, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.45, color: '#AA7A84' },
+  strengthSection: { gap: 6 },
+  strengthLabel: { paddingLeft: 2, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.7, color: C.textMuted },
+  strengthControl: { height: 44, flexDirection: 'row', gap: 4, borderRadius: 14, borderCurve: 'continuous', backgroundColor: '#EEECE7', padding: 3 },
+  strengthOption: { position: 'relative', flex: 1, minWidth: 68, borderRadius: 11, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  strengthSelected: { borderRadius: 11 },
   looseOn: { backgroundColor: '#FFF0C5' },
   strictOn: { backgroundColor: '#F3CBD2' },
-  strengthText: { fontFamily: F.sansBold, fontSize: 8.5, color: C.textMuted },
+  strengthText: { zIndex: 1, fontFamily: F.sansBold, fontSize: 12, color: C.textMuted },
   looseText: { color: '#95681F' },
   strictText: { color: '#A24351' },
+  modeExplanation: { minHeight: 38, flexDirection: 'row', alignItems: 'flex-start', gap: 9, borderRadius: 13, borderCurve: 'continuous', backgroundColor: 'rgba(248, 231, 234, 0.58)', paddingHorizontal: 11, paddingVertical: 9 },
+  modeDot: { width: 7, height: 7, borderRadius: 4, marginTop: 6 },
+  modeDotStrict: { backgroundColor: '#B34E60' },
+  modeDotLoose: { backgroundColor: '#C69A43' },
+  appMeta: { flex: 1, fontFamily: F.serif, fontSize: 14.5, lineHeight: 19.5, color: C.textSecondary },
+  removeButton: { width: 42, height: 42, borderRadius: 13, borderCurve: 'continuous', borderWidth: 1, borderColor: '#F3C7C7', backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' },
   addButton: { height: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: '#DDCEAD', backgroundColor: '#FFFDF7' },
   plusIcon: { width: 26, height: 26, borderRadius: 9, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
   addText: { fontFamily: F.serifSemiBold, fontSize: 15, color: C.goldDark },

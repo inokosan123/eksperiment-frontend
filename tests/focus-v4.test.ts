@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { before, describe, test } from 'node:test';
 import {
+  ALWAYS_BLOCKED_GROUP_ID,
   APP_CATEGORIES,
   addCustomDomain,
   addDomainToWebPack,
@@ -11,12 +12,14 @@ import {
   computeStreak,
   connectedSessionsAreValid,
   dateKey,
+  deleteDayPlan,
   describeRules,
   describeZones,
   FOCUS_SESSION_PLANNING_ENABLED,
   getDayPlanState,
   getEffectivePlan,
   getPlanSnapshotForDate,
+  groupName,
   HARD_LOCK_DISABLE_DELAY_MS,
   hardLockDelayMs,
   normalizeConnectedSessions,
@@ -26,12 +29,14 @@ import {
   permanentlyLockWebHardLock,
   reconcileNativeTargetArmedDays,
   recordUsageSnapshot,
+  removeAlwaysBlockedApp,
   removeCustomDomain,
   removeDomainFromWebPack,
   removeSessionAndExtendPrevious,
   resolveAppAccess,
   rulesForPlanAt,
   runtimePlanKind,
+  saveAlwaysBlockedApp,
   saveDayPlan,
   saveOptionalEssentialApps,
   setPackMode,
@@ -44,6 +49,7 @@ import {
   weekdayMondayFirst,
   zoneContains,
   zoneDurationMinutes,
+  customGroupNameAvailable,
   type DayPlan,
   type DayPlanState,
   type FocusUsageSnapshot,
@@ -690,6 +696,93 @@ describe('Today usage breakdown', () => {
     assert.equal(usageBoundaryState('blocked', null, 0), 'blocked');
     assert.equal(usageBoundaryState('blocked', null, 1), 'over');
     assert.equal(usageBoundaryState('noLimit', null, 240), 'open');
+  });
+});
+
+describe('Always Blocked system group', () => {
+  test('reserves one stable group identity outside user-created plan groups', () => {
+    assert.equal(ALWAYS_BLOCKED_GROUP_ID, 'always-blocked');
+    assert.equal(groupName(state(), ALWAYS_BLOCKED_GROUP_ID), 'Always Blocked');
+    assert.equal(customGroupNameAvailable('Always Blocked'), false);
+  });
+
+  test('never persists an Always Blocked app as a plan-only Essential', () => {
+    assert.equal(saveAlwaysBlockedApp({
+      appId: 'instagram',
+      strength: 'strict',
+      practice: 'prayer',
+    }), true);
+
+    const saved = saveDayPlan({
+      name: 'Always Blocked invariant',
+      essentialAppIds: ['instagram', 'gmail'],
+      budgetMinutes: 240,
+      strength: 'loose',
+      rules: [],
+      zones: [],
+    });
+
+    try {
+      assert.deepEqual(saved.essentialAppIds, ['gmail']);
+    } finally {
+      removeAlwaysBlockedApp('instagram');
+      deleteDayPlan(saved.id);
+    }
+  });
+
+  test('keeps the previous plan group so removal restores the app there', () => {
+    const saved = saveDayPlan({
+      name: 'Always Blocked group restoration',
+      budgetMinutes: 240,
+      strength: 'loose',
+      rules: [],
+      zones: [],
+      groupCatalog: {
+        ...Object.fromEntries(APP_CATEGORIES.map(group => [group.id, []])),
+        social: ['instagram'],
+      },
+    });
+
+    try {
+      assert.equal(saveAlwaysBlockedApp({
+        appId: 'instagram',
+        strength: 'loose',
+        practice: 'prayer',
+      }), true);
+      assert.deepEqual(
+        getDayPlanState().plans.find(item => item.id === saved.id)?.groupCatalog.social,
+        ['instagram']
+      );
+
+      removeAlwaysBlockedApp('instagram');
+      assert.deepEqual(
+        getDayPlanState().plans.find(item => item.id === saved.id)?.groupCatalog.social,
+        ['instagram']
+      );
+    } finally {
+      removeAlwaysBlockedApp('instagram');
+      deleteDayPlan(saved.id);
+    }
+  });
+
+  test('changing strength updates in place instead of reordering the list', () => {
+    removeAlwaysBlockedApp('instagram');
+    removeAlwaysBlockedApp('tiktok');
+
+    try {
+      assert.equal(saveAlwaysBlockedApp({ appId: 'instagram', strength: 'strict', practice: 'prayer' }), true);
+      assert.equal(saveAlwaysBlockedApp({ appId: 'tiktok', strength: 'strict', practice: 'prayer' }), true);
+      assert.equal(saveAlwaysBlockedApp({ appId: 'instagram', strength: 'loose', practice: 'prayer' }), true);
+
+      const rules = getDayPlanState().alwaysBlockedApps.filter(rule => (
+        rule.appId === 'instagram' || rule.appId === 'tiktok'
+      ));
+      assert.deepEqual(rules.map(rule => rule.appId), ['instagram', 'tiktok']);
+      assert.equal(rules[0]?.strength, 'loose');
+    } finally {
+      removeAlwaysBlockedApp('instagram');
+      removeAlwaysBlockedApp('tiktok');
+    }
   });
 });
 

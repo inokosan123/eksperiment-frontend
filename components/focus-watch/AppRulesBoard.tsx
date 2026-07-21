@@ -11,7 +11,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
-import { AlertTriangle, ChevronRight, Plus, Trash2 } from '@/components/icons/Icons';
+import { AlertTriangle, ChevronRight, Lock, Plus, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
 import { C, F } from '@/constants/tokens';
@@ -253,6 +253,64 @@ function GroupRuleCard({
   );
 }
 
+function AlwaysBlockedGroupCard({
+  appCount,
+  appNames,
+  index,
+}: {
+  appCount: number;
+  appNames: string[];
+  index: number;
+}) {
+  if (appCount <= 0) return null;
+  const visibleNames = appNames.slice(0, 2);
+  const remaining = Math.max(0, appCount - visibleNames.length);
+  const summary = visibleNames.length > 0
+    ? `${visibleNames.join(', ')}${remaining > 0 ? ` +${remaining}` : ''}`
+    : `${appCount} private ${appCount === 1 ? 'app' : 'apps'}`;
+
+  return (
+    <Animated.View
+      entering={FadeInDown.duration(360).delay(index * 55).easing(Easing.out(Easing.cubic))}
+      layout={CARD_LAYOUT}
+      style={[s.card, s.systemCard]}
+      accessibilityRole="summary"
+      accessibilityLabel={`Always Blocked, ${appCount} ${appCount === 1 ? 'app' : 'apps'}, no plan limit controls`}
+    >
+      <LinearGradient
+        colors={['#F8E7EA', '#FFFAFB', '#FFFDFD']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <RuleWeave color={BLOCKED_COLOR} />
+
+      <View style={s.cardRow}>
+        <View style={[s.cardIcon, s.systemCardIcon]}>
+          <Lock s={19} c={BLOCKED_COLOR} w={2.3} />
+        </View>
+        <View style={s.cardBody}>
+          <View style={s.cardTitleRow}>
+            <Text style={s.cardName} numberOfLines={1}>Always Blocked</Text>
+            <View style={s.systemBadge}><Text style={s.systemBadgeText}>SYSTEM</Text></View>
+          </View>
+          <View style={s.cardMetaRow}>
+            <View style={[s.cardDot, { backgroundColor: BLOCKED_COLOR }]} />
+            <Text style={s.cardMeta} numberOfLines={1}>{summary}</Text>
+          </View>
+        </View>
+        <View style={[s.valueChip, s.systemValueChip]}>
+          <Text style={[s.valueChipText, s.systemValueText]}>Always blocked</Text>
+        </View>
+      </View>
+
+      <View style={s.systemBand}>
+        <Text style={s.systemBandText}>NO PLAN LIMIT CONTROLS · MANAGED GLOBALLY</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
 // The projection rail: each planned group takes its colored span of the goal.
 function RailSegment({ left, width, color }: { left: number; width: number; color: string }) {
   const l = useSharedValue(left);
@@ -368,6 +426,8 @@ export default function AppRulesBoard({
   groupIds,
   customGroupIds,
   groupAppCounts,
+  alwaysBlockedAppCount,
+  alwaysBlockedAppNames,
   resolveGroupName,
   nativeAvailable,
   selectionIdForGroup,
@@ -381,6 +441,8 @@ export default function AppRulesBoard({
   groupIds: string[];
   customGroupIds: string[];
   groupAppCounts: Record<string, number>;
+  alwaysBlockedAppCount: number;
+  alwaysBlockedAppNames: string[];
   resolveGroupName: (groupId: string) => string;
   nativeAvailable: boolean;
   selectionIdForGroup: (groupId: string) => string;
@@ -427,6 +489,11 @@ export default function AppRulesBoard({
             />
           );
         })}
+        <AlwaysBlockedGroupCard
+          appCount={alwaysBlockedAppCount}
+          appNames={alwaysBlockedAppNames}
+          index={groupIds.length}
+        />
       </View>
 
       <TouchableOpacity style={s.addRow} onPress={onAddGroup} activeOpacity={0.76} haptic="selection">
@@ -505,6 +572,14 @@ const s = StyleSheet.create({
   warningTextStrong: { color: '#8F3443' },
 
   cardStack: { marginTop: 12, gap: 9 },
+  systemCard: { borderColor: '#E7C4CB' },
+  systemCardIcon: { backgroundColor: '#F8E7EA', borderColor: '#E7C4CB' },
+  systemBadge: { borderRadius: 999, borderWidth: 1, borderColor: '#E7C4CB', backgroundColor: '#FFF7F8', paddingHorizontal: 7, paddingVertical: 4 },
+  systemBadgeText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.1, color: BLOCKED_COLOR },
+  systemValueChip: { backgroundColor: BLOCKED_TINT, borderColor: '#E7C4CB' },
+  systemValueText: { color: BLOCKED_COLOR },
+  systemBand: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E7C4CB', paddingHorizontal: 15, paddingVertical: 9 },
+  systemBandText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.15, color: BLOCKED_COLOR },
   card: {
     position: 'relative',
     overflow: 'hidden',

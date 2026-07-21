@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, InteractionManager, Modal, PixelRatio, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, InteractionManager, LayoutAnimation, Modal, PixelRatio, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import type { NativeScrollEvent, NativeSyntheticEvent, StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as ExpoImage, type ImageRef as ExpoImageRef } from 'expo-image';
@@ -40,16 +40,21 @@ import Reanimated, {
   ZoomIn,
 } from 'react-native-reanimated';
 import {
+  Activity,
   ArrowUpRight,
+  BarChart3,
   BellRing,
   Book,
   BookMarked,
+  Brain,
   Calendar,
   Candle,
   CheckSmall,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
+  Coffee,
   Cross,
   Crown,
   Feather,
@@ -64,12 +69,14 @@ import {
   Pencil,
   Plus,
   Sun,
+  TrendingUp,
   Trophy,
   SlidersHorizontal,
   Sparkles,
   Settings,
   Target,
   User,
+  Wind,
   X,
 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
@@ -8774,11 +8781,10 @@ function ChapterCheckpointSlide({
   );
 }
 
-// `lit={false}` pre-mounts the Lottie at full layout size, invisible, so the
-// layer rasterizes sharp and the composition is already playing when the pop
-// happens — mounting mid-scale-transform is what made the first seconds blurry.
-// The Lottie renders at 2x and is statically scaled to 0.5 so every displayed
-// frame is a downsample.
+// `lit={false}` pre-mounts the Lottie at its final display size, invisible, so
+// the composition is warm before ignition. Keep scale motion on the cheap aura
+// only: scaling the animated Lottie (especially through nested parent scales)
+// makes Android stretch a transient render layer and visibly softens the flame.
 function CheckpointFlameBurst({ lit = true }: { lit?: boolean }) {
   const pop = useSharedValue(0);
 
@@ -8789,30 +8795,38 @@ function CheckpointFlameBurst({ lit = true }: { lit?: boolean }) {
       return undefined;
     }
     pop.value = withSequence(
-      withTiming(0.06, { duration: 30, easing: Easing.linear }),
-      withTiming(0.78, { duration: 260, easing: Easing.out(Easing.cubic) }),
-      withSpring(1, { damping: 12, stiffness: 150, mass: 0.9 }),
+      withTiming(0.08, { duration: 34, easing: Easing.linear }),
+      withTiming(0.82, { duration: 300, easing: Easing.bezier(0.16, 1, 0.28, 1) }),
+      withTiming(1, { duration: 180, easing: Easing.out(Easing.cubic) }),
     );
     return () => {
       cancelAnimation(pop);
     };
   }, [lit, pop]);
 
-  const popStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(pop.value, [0, 0.06, 0.22, 1], [0, 0, 1, 1]),
+  const flameRevealStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(pop.value, [0, 0.08, 0.28, 1], [0, 0, 1, 1]),
     transform: [
-      { translateY: interpolate(pop.value, [0, 0.06, 0.78, 1], [0, 12, -2, 0]) },
-      { scale: interpolate(pop.value, [0, 0.06, 0.78, 1], [1, 0.3, 1.16, 1]) },
+      { translateY: interpolate(pop.value, [0, 0.08, 0.76, 1], [10, 10, -1.5, 0]) },
     ],
+  }));
+  const auraRevealStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(pop.value, [0, 0.08, 0.24, 1], [0, 0, 1, 1]),
+    transform: [{ scale: interpolate(pop.value, [0, 0.08, 0.78, 1], [0.58, 0.58, 1.08, 1]) }],
   }));
 
   return (
-    <Reanimated.View style={[s.checkpointFlameBurst, popStyle]}>
-      <View style={s.checkpointFlameAura} />
-      <View style={s.checkpointFlameLottieBox}>
-        <FocusLottie name="flame" loop speed={0.82} style={s.checkpointFlameLottieHiRes} />
-      </View>
-    </Reanimated.View>
+    <View style={s.checkpointFlameBurst}>
+      <Reanimated.View style={[s.checkpointFlameAura, auraRevealStyle]} />
+      <Reanimated.View
+        collapsable={false}
+        renderToHardwareTextureAndroid={false}
+        shouldRasterizeIOS={false}
+        style={[s.checkpointFlameLottieBox, flameRevealStyle]}
+      >
+        <FocusLottie name="flame" loop speed={0.82} style={s.checkpointFlameLottie} />
+      </Reanimated.View>
+    </View>
   );
 }
 
@@ -8953,13 +8967,18 @@ function CheckpointIgniteBurst() {
   );
 }
 
-function CheckpointRailFlame() {
+function CheckpointRailFlame({ landed = false }: { landed?: boolean }) {
   return (
     <Reanimated.View
-      entering={FadeIn.duration(420).withInitialValues({
-        opacity: 0,
-        transform: [{ scale: 0.24 }, { translateY: 8 }],
-      })}
+      entering={landed
+        ? FadeIn.duration(180).easing(Easing.out(Easing.cubic)).withInitialValues({
+            opacity: 0.35,
+            transform: [{ scale: 0.96 }, { translateY: 1 }],
+          })
+        : FadeIn.duration(420).withInitialValues({
+            opacity: 0,
+            transform: [{ scale: 0.24 }, { translateY: 8 }],
+          })}
       style={s.chapterCheckpointRailFlameWrap}
     >
       <FocusLottie name="flame" loop speed={0.9} style={s.chapterCheckpointRailFlame} />
@@ -8988,7 +9007,17 @@ function ChapterCheckpointLineFill({ animate }: { animate: boolean }) {
   return <Reanimated.View style={[s.chapterCheckpointStepLineFill, fillStyle]} />;
 }
 
-function ChapterCheckpointStepDot({ done, animate }: { done: boolean; animate: boolean }) {
+function ChapterCheckpointStepDot({
+  done,
+  animate,
+  targetRef,
+  preciseLanding = false,
+}: {
+  done: boolean;
+  animate: boolean;
+  targetRef?: AnimatedRef<View>;
+  preciseLanding?: boolean;
+}) {
   const pop = useSharedValue(animate ? 0 : 1);
 
   useEffect(() => {
@@ -9003,14 +9032,25 @@ function ChapterCheckpointStepDot({ done, animate }: { done: boolean; animate: b
 
   const popStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateY: interpolate(pop.value, [0, 0.48, 0.78, 1], [3, -4.5, 0.8, 0]) },
-      { scale: interpolate(pop.value, [0, 0.46, 0.78, 1], [0.86, 1.14, 0.99, 1]) },
+      {
+        translateY: preciseLanding
+          ? interpolate(pop.value, [0, 0.52, 0.8, 1], [0, -2, 0.4, 0])
+          : interpolate(pop.value, [0, 0.48, 0.78, 1], [3, -4.5, 0.8, 0]),
+      },
+      {
+        scale: preciseLanding
+          ? interpolate(pop.value, [0, 0.52, 0.8, 1], [1, 1.055, 0.995, 1])
+          : interpolate(pop.value, [0, 0.46, 0.78, 1], [0.86, 1.14, 0.99, 1]),
+      },
     ],
   }));
 
   return (
-    <Reanimated.View style={[s.chapterCheckpointStepDot, done && s.chapterCheckpointStepDotDone, popStyle]}>
-      {done ? <CheckpointRailFlame /> : null}
+    <Reanimated.View
+      ref={targetRef}
+      style={[s.chapterCheckpointStepDot, done && s.chapterCheckpointStepDotDone, popStyle]}
+    >
+      {done ? <CheckpointRailFlame landed={preciseLanding} /> : null}
     </Reanimated.View>
   );
 }
@@ -10532,12 +10572,18 @@ function FreeRow({ icon, title, body }: { icon: React.ReactNode; title: string; 
 }
 
 const V4_PROGRESS_SLOTS = ['Protect', 'Organize', 'Grow', 'Tools'] as const;
+const CHECKPOINT_SEAL_SIZE = 102;
+const CHECKPOINT_FLAME_SIZE = 86;
+const CHECKPOINT_RAIL_DOT_SIZE = 28;
+const CHECKPOINT_RAIL_FLAME_SIZE = 38;
 
 function V4ProgressRail({
   completedCount,
   previousCompletedCount = completedCount,
   showTools = completedCount >= 4,
   surpriseSlot = false,
+  landingTargetRef,
+  landingTargetIndex,
 }: {
   completedCount: number;
   previousCompletedCount?: number;
@@ -10545,8 +10591,14 @@ function V4ProgressRail({
   // The "one more thing" beat: a 4th empty slot slides onto a 3-slot rail
   // from the right while the lit three make room for it.
   surpriseSlot?: boolean;
+  landingTargetRef?: AnimatedRef<View>;
+  landingTargetIndex?: number;
 }) {
   const slots = showTools ? V4_PROGRESS_SLOTS : V4_PROGRESS_SLOTS.slice(0, 3);
+  const resolvedLandingTargetIndex = Math.min(
+    Math.max(landingTargetIndex ?? completedCount - 1, 0),
+    slots.length - 1,
+  );
 
   return (
     <View style={s.chapterCheckpointRail}>
@@ -10566,7 +10618,12 @@ function V4ProgressRail({
             <View style={[s.chapterCheckpointStepLine, done && s.chapterCheckpointStepLineDone]}>
               {done && <ChapterCheckpointLineFill key={`${label}-${index}`} animate={isNewlyCompleted} />}
             </View>
-            <ChapterCheckpointStepDot done={done} animate={isNewlyCompleted} />
+            <ChapterCheckpointStepDot
+              done={done}
+              animate={isNewlyCompleted}
+              targetRef={index === resolvedLandingTargetIndex ? landingTargetRef : undefined}
+              preciseLanding={isNewlyCompleted}
+            />
             <Text style={[s.chapterCheckpointStepText, done && s.chapterCheckpointStepTextDone]}>{label}</Text>
           </Reanimated.View>
         );
@@ -22904,29 +22961,32 @@ const SYSTEM_BUILD_STEPS = [
   'Habits connected to your goals',
   'Home organized around your day',
 ];
-// Irregular on purpose — real work never ticks like a metronome. The third
-// row stalls, the last one takes the longest.
-const SYSTEM_BUILD_TICKS = [900, 1780, 2980, 4050, 5160];
-// Each struck row flies into the crest this long after its tick.
+// Deliberately uneven: each line gets time to be read, while the long second
+// and fourth passes keep the loading from feeling like a metronome.
+const SYSTEM_BUILD_STEP_DURATIONS = [1400, 3400, 700, 2450, 1200];
 const SYSTEM_BUILD_PACKET_DELAY = 300;
 const SYSTEM_BUILD_PACKET_DURATION = 570;
-const SYSTEM_BUILD_READY_AT = 6370;
-const SYSTEM_BUILD_LEAVE_AT = 9000;
-// The forge handover, borrowed 1:1 from the recap loading: a warm disc
-// blooms from the centre and covers the cut; onDone fires while it is still
-// wide, the root FadeOut carries the rest.
-const SYSTEM_BUILD_FLARE_AT = 9240;
-const SYSTEM_BUILD_REVEAL_AFTER_FLARE = 470;
+const SYSTEM_BUILD_PACKET_SETTLE = SYSTEM_BUILD_PACKET_DELAY + SYSTEM_BUILD_PACKET_DURATION;
+const SYSTEM_BUILD_TICKS = SYSTEM_BUILD_STEP_DURATIONS.reduce<number[]>((ticks, duration, index) => {
+  const previousTick = ticks[index - 1] ?? 0;
+  ticks.push(previousTick + (index === 0 ? 0 : SYSTEM_BUILD_PACKET_SETTLE) + duration);
+  return ticks;
+}, []);
+const SYSTEM_BUILD_FINAL_ABSORPTION_AT =
+  (SYSTEM_BUILD_TICKS[SYSTEM_BUILD_TICKS.length - 1] ?? 0) + SYSTEM_BUILD_PACKET_SETTLE;
+const SYSTEM_BUILD_READY_AT = SYSTEM_BUILD_FINAL_ABSORPTION_AT + 700;
+const SYSTEM_BUILD_READY_HOLD = 3500;
+const SYSTEM_BUILD_LEAVE_AT = SYSTEM_BUILD_READY_AT + SYSTEM_BUILD_READY_HOLD;
+// The final bloom is the handover itself: its expanding radius cuts the veil
+// away and reveals the already-mounted Home underneath.
+const SYSTEM_BUILD_FLARE_AT = SYSTEM_BUILD_LEAVE_AT + 420;
+const SYSTEM_BUILD_FLARE_DURATION = 620;
+const SYSTEM_BUILD_REVEAL_AFTER_FLARE = 600;
 // Orbit speed in deg/s: starts below the preload's cruising pace and rises
 // with every absorbed row — the crest grows visibly unstable.
 const SYSTEM_BUILD_ORBIT_SPEEDS = [42, 76, 116, 168, 236, 322];
-// Flight vector from a row's check circle into the crest centre (fixed dp —
-// the column between them is constant-height chrome).
+// Fallback vector from a row's check circle into the crest centre.
 const SYSTEM_BUILD_ROW_FALLBACK_DY = 210;
-// Home mounts beneath the veil only AFTER the last row has ticked: its heavy
-// first render blocks the JS thread, and any pending tick timers would all
-// fire at once the moment it finished.
-const SYSTEM_BUILD_HOME_MOUNT_AT = 6830;
 
 // The pulsing "being worked on" marker of the current loading row.
 function SysVeilWorkingDot() {
@@ -22967,29 +23027,50 @@ function SysVeilRow({
   originalIndex,
   done,
   current,
+  visible,
   crestRef,
   onAbsorbed,
+  queueOffset,
+  rowPitch,
   compact,
 }: {
   step: string;
   originalIndex: number;
   done: boolean;
   current: boolean;
+  visible: boolean;
   crestRef: AnimatedRef<View>;
   onAbsorbed: (index: number) => void;
+  queueOffset: SharedValue<number>;
+  rowPitch: number;
   compact: boolean;
 }) {
   const rowRef = useAnimatedRef<View>();
   const strike = useSharedValue(0);
-  const gate = useSharedValue(0);
+  const emphasis = useSharedValue(0);
   const flight = useSharedValue(0);
   const flightX = useSharedValue(0);
   const flightY = useSharedValue(-SYSTEM_BUILD_ROW_FALLBACK_DY);
+  const visibility = useSharedValue(visible ? 1 : 0);
+
+  useEffect(() => {
+    visibility.value = visible
+      ? withDelay(180, withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) }))
+      : withTiming(0, { duration: 120, easing: Easing.out(Easing.quad) });
+    return () => cancelAnimation(visibility);
+  }, [visibility, visible]);
+
+  useEffect(() => {
+    emphasis.value = withTiming(current ? 1 : done ? 0.72 : 0, {
+      duration: current ? 360 : 260,
+      easing: Easing.bezier(0.16, 1, 0.28, 1),
+    });
+    return () => cancelAnimation(emphasis);
+  }, [current, done, emphasis]);
 
   useEffect(() => {
     if (done) {
       strike.value = 0;
-      gate.value = 0;
       flight.value = 0;
       strike.value = withTiming(1, {
         duration: 240,
@@ -22997,81 +23078,101 @@ function SysVeilRow({
       });
       runOnUI(() => {
         'worklet';
-        gate.value = withDelay(
+        const row = measure(rowRef);
+        const crest = measure(crestRef);
+        if (row && crest) {
+          flightX.value = crest.pageX + crest.width / 2 - (row.pageX + 25);
+          flightY.value = crest.pageY + crest.height / 2 - (row.pageY + row.height / 2);
+        } else {
+          flightX.value = 0;
+          flightY.value = -SYSTEM_BUILD_ROW_FALLBACK_DY;
+        }
+        flight.value = withDelay(
           SYSTEM_BUILD_PACKET_DELAY,
-          withTiming(1, { duration: 1 }, finished => {
-            if (!finished) return;
-            const row = measure(rowRef);
-            const crest = measure(crestRef);
-            if (row && crest) {
-              flightX.value = crest.pageX + crest.width / 2 - (row.pageX + row.width / 2);
-              flightY.value = crest.pageY + crest.height / 2 - (row.pageY + row.height / 2);
-            } else {
-              flightX.value = 0;
-              flightY.value = -SYSTEM_BUILD_ROW_FALLBACK_DY;
-            }
-            flight.value = withTiming(
-              1,
-              {
-                duration: SYSTEM_BUILD_PACKET_DURATION,
-                easing: Easing.bezier(0.36, 0.02, 0.16, 1),
-              },
-              completed => {
-                if (completed) runOnJS(onAbsorbed)(originalIndex);
-              },
-            );
-          }),
+          withTiming(
+            1,
+            {
+              duration: SYSTEM_BUILD_PACKET_DURATION,
+              easing: Easing.bezier(0.36, 0.02, 0.16, 1),
+            },
+            completed => {
+              if (completed) runOnJS(onAbsorbed)(originalIndex);
+            },
+          ),
         );
       })();
     } else {
       strike.value = withTiming(0, { duration: 120 });
-      gate.value = 0;
       flight.value = 0;
     }
     return () => {
       cancelAnimation(strike);
-      cancelAnimation(gate);
       cancelAnimation(flight);
     };
-  }, [crestRef, done, flight, flightX, flightY, gate, onAbsorbed, originalIndex, rowRef, strike]);
+  }, [crestRef, done, flight, flightX, flightY, onAbsorbed, originalIndex, rowRef, strike]);
 
-  const flightStyle = useAnimatedStyle(() => {
+  const completionStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(flight.value, [0, 0.74, 1], [1, 1, 0], 'clamp'),
+    transform: [
+      { translateY: interpolate(flight.value, [0, 0.74, 1], [0, 0, -4], 'clamp') },
+      {
+        scale:
+          (0.988 + emphasis.value * 0.012)
+          * interpolate(flight.value, [0, 1], [1, 0.985], 'clamp'),
+      },
+    ],
+  }));
+  const packetStyle = useAnimatedStyle(() => {
     const p = flight.value;
     const direction = originalIndex % 2 === 0 ? -1 : 1;
     const arc = Math.sin(Math.PI * p);
     return {
-      opacity: interpolate(p, [0, 0.78, 1], [1, 1, 0], 'clamp'),
+      opacity: interpolate(p, [0, 0.04, 0.72, 1], [0, 1, 1, 0], 'clamp'),
       transform: [
-        { translateX: flightX.value * p + direction * arc * 14 },
-        { translateY: flightY.value * p - arc * 18 },
-        {
-          rotate: `${direction * interpolate(p, [0, 0.52, 1], [0, 3, -7], 'clamp')}deg`,
-        },
-        { scale: interpolate(p, [0, 0.34, 0.82, 1], [1, 0.9, 0.3, 0.06], 'clamp') },
+        { translateX: flightX.value * p + direction * arc * 18 },
+        { translateY: flightY.value * p - arc * 16 },
+        { scale: interpolate(p, [0, 0.18, 0.76, 1], [0.7, 1.1, 0.72, 0.24], 'clamp') },
       ],
     };
   });
+  const surfaceStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      emphasis.value,
+      [0, 0.72, 1],
+      ['rgba(255,255,255,0.62)', 'rgba(250,241,222,0.94)', '#FFFEFB'],
+    ),
+    borderColor: interpolateColor(
+      emphasis.value,
+      [0, 0.72, 1],
+      ['rgba(35,31,26,0.075)', 'rgba(197,160,89,0.25)', 'rgba(197,160,89,0.42)'],
+    ),
+  }));
   const strikeStyle = useAnimatedStyle(() => ({
     opacity: strike.value,
     transform: [{ scaleX: strike.value }],
   }));
+  const queueStyle = useAnimatedStyle(() => ({
+    opacity: visibility.value,
+    transform: [{ translateY: originalIndex * rowPitch - queueOffset.value }],
+  }));
 
   return (
-    <Reanimated.View
-      layout={LinearTransition.duration(240).easing(Easing.bezier(0.16, 1, 0.28, 1))}
-    >
+    <Reanimated.View pointerEvents="none" style={[s.sysVeilRowSlot, queueStyle]}>
       <Reanimated.View
         ref={rowRef}
         collapsable={false}
-        entering={FadeInUp.delay(360 + originalIndex * 90).duration(430).easing(Easing.out(Easing.cubic))}
         style={[
           s.sysVeilRow,
           current && s.sysVeilRowCurrent,
           done && s.sysVeilRowDone,
           compact && s.sysVeilRowCompact,
-          flightStyle,
+          surfaceStyle,
+          completionStyle,
         ]}
       >
+        {done ? (
+          <Reanimated.View pointerEvents="none" style={[s.sysVeilPacket, packetStyle]} />
+        ) : null}
         <View
           style={[
             s.sysVeilRowIcon,
@@ -23120,12 +23221,14 @@ function SysVeilRow({
 function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const compact = viewportHeight < 720;
+  const rowPitch = compact ? 39 : 45;
   const [ticked, setTicked] = useState(0);
   const [absorbedCount, setAbsorbedCount] = useState(0);
   const [phase, setPhase] = useState<'working' | 'ready' | 'leaving'>('working');
   const [barWidth, setBarWidth] = useState(172);
   const flareTargetScale = Math.max(4, (Math.hypot(viewportWidth, viewportHeight) / 220) * 1.12);
   const progress = useSharedValue(0);
+  const queueOffset = useSharedValue(0);
   const sheen = useSharedValue(0);
   // The crest engine: a frame-driven orbit angle (accelerates smoothly, no
   // restart hitches), a spring kick fired each time a row is absorbed, the
@@ -23137,10 +23240,11 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   const kickSign = useSharedValue(1);
   const grow = useSharedValue(0);
   const wobble = useSharedValue(0);
+  const intake = useSharedValue(0);
   const bloom = useSharedValue(0);
   const charge = useSharedValue(0);
   const arrival = useSharedValue(0);
-  // The forge disc that covers the cut to Home — recap-loading grammar.
+  // The light bloom and the veil fade share one UI-thread progress value.
   const flare = useSharedValue(0);
   const crestRef = useAnimatedRef<View>();
   const onDoneRef = useRef(onDone);
@@ -23150,6 +23254,15 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   }, []);
   const handleRowAbsorbed = useCallback((index: number) => {
     setAbsorbedCount(current => Math.max(current, index + 1));
+    queueOffset.value = withTiming((index + 1) * rowPitch, {
+      duration: 420,
+      easing: Easing.bezier(0.16, 1, 0.28, 1),
+    });
+    intake.value = 0;
+    intake.value = withTiming(1, {
+      duration: 520,
+      easing: Easing.out(Easing.cubic),
+    });
     kickSign.value = index % 2 === 0 ? 1 : -1;
     kick.value = withSequence(
       withTiming(1, { duration: 110, easing: Easing.out(Easing.quad) }),
@@ -23163,7 +23276,7 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       duration: 680,
       easing: Easing.inOut(Easing.quad),
     });
-  }, [grow, kick, kickSign, orbitSpeed]);
+  }, [grow, intake, kick, kickSign, orbitSpeed, queueOffset, rowPitch]);
 
   useFrameCallback(frame => {
     const dt = frame.timeSincePreviousFrame;
@@ -23177,20 +23290,8 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       duration: 920,
       easing: Easing.bezier(0.16, 1, 0.28, 1),
     });
-    // The bar surges, crawls through the stall, surges again — keyframed to
-    // land at 100% as the title flips. Real loading, faked honestly.
-    progress.value = withSequence(
-      withTiming(0.13, { duration: 620, easing: Easing.out(Easing.cubic) }),
-      withTiming(0.18, { duration: 480, easing: Easing.inOut(Easing.quad) }),
-      withTiming(0.34, { duration: 540, easing: Easing.inOut(Easing.quad) }),
-      withTiming(0.39, { duration: 820, easing: Easing.linear }),
-      withTiming(0.57, { duration: 620, easing: Easing.inOut(Easing.quad) }),
-      withTiming(0.63, { duration: 380, easing: Easing.linear }),
-      withTiming(0.74, { duration: 520, easing: Easing.inOut(Easing.quad) }),
-      withTiming(0.83, { duration: 1050, easing: Easing.linear }),
-      withTiming(0.96, { duration: 850, easing: Easing.out(Easing.cubic) }),
-      withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) }),
-    );
+    // Progress advances with completed rows, so its stalls match the text.
+    progress.value = withTiming(0.035, { duration: 520, easing: Easing.out(Easing.cubic) });
     sheen.value = withRepeat(withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.quad) }), -1, false);
     wobble.value = withRepeat(withTiming(1, { duration: 2300, easing: Easing.linear }), -1, false);
 
@@ -23199,6 +23300,13 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       timers.push(setTimeout(() => {
         runSelectionHaptic();
         setTicked(index + 1);
+        progress.value = withTiming((index + 1) / SYSTEM_BUILD_STEPS.length, {
+          duration: Math.min(
+            820,
+            Math.max(360, (SYSTEM_BUILD_STEP_DURATIONS[index] ?? 0) * 0.34),
+          ),
+          easing: Easing.bezier(0.16, 1, 0.28, 1),
+        });
       }, at));
       // The struck row arrives at the crest: the logo hops, grows a step and
       // the orbit spins up — each absorption leaves it a little less stable.
@@ -23207,8 +23315,14 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       // The burst: one last furious lap, the ring disperses, the crest pops
       // and settles — felt and seen in the same instant. No sound by design.
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      orbitSpeed.value = withTiming(570, { duration: 560, easing: Easing.inOut(Easing.quad) });
-      charge.value = withTiming(1, { duration: 620, easing: Easing.out(Easing.cubic) });
+      orbitSpeed.value = withSequence(
+        withTiming(460, { duration: 380, easing: Easing.out(Easing.cubic) }),
+        withTiming(82, { duration: 1250, easing: Easing.out(Easing.cubic) }),
+      );
+      charge.value = withSequence(
+        withTiming(1, { duration: 520, easing: Easing.out(Easing.cubic) }),
+        withTiming(0.34, { duration: 1100, easing: Easing.out(Easing.cubic) }),
+      );
       kickSign.value = 1;
       kick.value = withSequence(
         withTiming(1.35, { duration: 140, easing: Easing.out(Easing.quad) }),
@@ -23221,8 +23335,8 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
     timers.push(setTimeout(() => {
       setPhase('leaving');
       orbitSpeed.value = withSequence(
-        withTiming(690, { duration: 220, easing: Easing.in(Easing.quad) }),
-        withTiming(0, { duration: 760, easing: Easing.out(Easing.cubic) }),
+        withTiming(520, { duration: 260, easing: Easing.in(Easing.quad) }),
+        withTiming(0, { duration: 720, easing: Easing.out(Easing.cubic) }),
       );
       kickSign.value = -1;
       kick.value = withSequence(
@@ -23234,20 +23348,26 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
       runBubbleHaptic();
       bloom.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.cubic) });
       charge.value = withTiming(0.24, { duration: 560, easing: Easing.out(Easing.cubic) });
-      flare.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.cubic) });
+      flare.value = withTiming(1, {
+        duration: SYSTEM_BUILD_FLARE_DURATION,
+        easing: Easing.bezier(0.2, 0.72, 0.22, 1),
+      });
     }, SYSTEM_BUILD_FLARE_AT));
     timers.push(setTimeout(finishBuild, SYSTEM_BUILD_FLARE_AT + SYSTEM_BUILD_REVEAL_AFTER_FLARE));
     return () => {
       timers.forEach(clearTimeout);
       cancelAnimation(progress);
+      cancelAnimation(queueOffset);
       cancelAnimation(sheen);
       cancelAnimation(orbitSpeed);
       cancelAnimation(kick);
       cancelAnimation(grow);
       cancelAnimation(wobble);
+      cancelAnimation(intake);
       cancelAnimation(bloom);
       cancelAnimation(charge);
       cancelAnimation(arrival);
+      cancelAnimation(flare);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -23255,46 +23375,47 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   const ringStyle = useAnimatedStyle(() => ({
     opacity: (1 - bloom.value) * (0.72 + 0.18 * grow.value + 0.1 * charge.value),
     transform: [
-      { scale: 0.84 + 0.16 * grow.value + 0.05 * charge.value + bloom.value * 0.45 },
+      {
+        scale:
+          0.84
+          + 0.16 * grow.value
+          + 0.05 * charge.value
+          + interpolate(intake.value, [0, 0.18, 1], [0, 0.025, 0], 'clamp')
+          + bloom.value * 0.45,
+      },
       { rotate: `${orbitAngle.value}deg` },
     ],
   }));
-  const ringTailAStyle = useAnimatedStyle(() => ({
-    opacity: (1 - bloom.value) * (0.32 + 0.25 * grow.value + 0.1 * charge.value),
-    transform: [
-      { scale: 0.85 + 0.15 * grow.value + 0.05 * charge.value + bloom.value * 0.45 },
-      { rotate: `${orbitAngle.value - 15}deg` },
-    ],
-  }));
-  const ringTailBStyle = useAnimatedStyle(() => ({
-    opacity: (1 - bloom.value) * (0.18 + 0.18 * grow.value + 0.08 * charge.value),
-    transform: [
-      { scale: 0.86 + 0.14 * grow.value + 0.05 * charge.value + bloom.value * 0.45 },
-      { rotate: `${orbitAngle.value - 29}deg` },
-    ],
-  }));
   const crestPlateStyle = useAnimatedStyle(() => {
-    const wobblePhase = wobble.value * Math.PI * 2;
-    const instability = (0.24 * grow.value + 0.76 * charge.value) * (1 - bloom.value);
+    const intakeImpact = interpolate(intake.value, [0, 0.18, 1], [0, 0.026, 0], 'clamp');
     return {
-      // The plate is laid out at FULL size and starts scaled down — growth
-      // never upscales the logo bitmap, so it stays crisp on Android.
+      // Keep the bitmap at rest between discrete absorption kicks. Continuous
+      // fractional wobble/rotation softens even a high-resolution texture.
       transform: [
+        { translateY: -3 * kick.value },
+        { rotate: `${kickSign.value * 1.25 * kick.value}deg` },
         {
-          translateY:
-            -3.7 * kick.value + Math.sin(wobblePhase * 1.7) * 2.8 * instability,
+          scale:
+            0.96
+            + 0.04 * grow.value
+            + 0.018 * kick.value
+            + intakeImpact,
         },
-        { translateX: Math.sin(wobblePhase) * 3.1 * instability },
-        {
-          rotate: `${kickSign.value * 2.6 * kick.value + Math.sin(wobblePhase) * 3.2 * instability}deg`,
-        },
-        { scale: 0.82 + 0.18 * grow.value + 0.035 * charge.value + 0.04 * kick.value },
       ],
     };
   });
   const crestHaloStyle = useAnimatedStyle(() => ({
-    opacity: arrival.value * (0.11 + 0.24 * grow.value + 0.28 * charge.value + 0.38 * bloom.value),
+    opacity:
+      arrival.value
+      * (0.11 + 0.24 * grow.value + 0.28 * charge.value + 0.38 * bloom.value)
+      + interpolate(intake.value, [0, 0.18, 1], [0, 0.22, 0], 'clamp'),
     transform: [{ scale: 0.84 + 0.16 * grow.value + 0.1 * charge.value + 0.42 * bloom.value }],
+  }));
+  const intakePulseStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(intake.value, [0, 0.12, 0.72, 1], [0, 0.56, 0.16, 0], 'clamp'),
+    transform: [
+      { scale: interpolate(intake.value, [0, 1], [0.66, 1.18], 'clamp') },
+    ],
   }));
   const chargeRingStyle = useAnimatedStyle(() => {
     const pulse = 0.5 + 0.5 * Math.sin(wobble.value * Math.PI * 4);
@@ -23330,44 +23451,64 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   const contentFlareStyle = useAnimatedStyle(() => ({
     opacity:
       interpolate(arrival.value, [0, 1], [0, 1], 'clamp')
-      * interpolate(flare.value, [0.3, 1], [1, 0], 'clamp'),
+      * interpolate(flare.value, [0.12, 0.72], [1, 0], 'clamp'),
     transform: [
       { translateY: (1 - arrival.value) * 14 },
       { scale: 1 + flare.value * 0.04 },
     ],
   }));
   const flareStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(flare.value, [0, 0.3, 1], [0, 0.92, 0], 'clamp'),
+    opacity: interpolate(flare.value, [0, 0.12, 0.72, 1], [0, 0.58, 0.18, 0], 'clamp'),
     transform: [
       { scale: interpolate(flare.value, [0, 1], [0.4, flareTargetScale], 'clamp') },
     ],
+  }));
+  const ambientExitStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(flare.value, [0, 0.14, 0.68], [1, 0.96, 0], 'clamp'),
+  }));
+  const backdropExitStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(flare.value, [0, 0.12, 0.88, 1], [1, 1, 0.08, 0], 'clamp'),
+    transform: [{ scale: 1 + flare.value * 0.012 }],
   }));
 
   const isWorking = phase === 'working';
 
   return (
     <Reanimated.View exiting={FadeOut.duration(240)} style={s.sysVeil}>
-      <View pointerEvents="none" style={s.introWarmth}>
-        <LinearGradient
-          colors={['rgba(255,255,255,0)', 'rgba(248,231,207,0.52)', 'rgba(255,242,222,0.98)']}
-          locations={[0, 0.5, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-      </View>
-      <Reanimated.View pointerEvents="none" style={[s.sysVeilEntryAura, entryAuraStyle]}>
-        <LinearGradient
-          colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.2)', 'rgba(197,160,89,0)']}
-          locations={[0, 0.52, 1]}
-          style={StyleSheet.absoluteFill}
-        />
+      <Reanimated.View
+        pointerEvents="none"
+        style={[s.sysVeilBackdrop, backdropExitStyle]}
+      />
+      <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, ambientExitStyle]}>
+        <View style={s.introWarmth}>
+          <LinearGradient
+            colors={['rgba(255,255,255,0)', 'rgba(248,231,207,0.52)', 'rgba(255,242,222,0.98)']}
+            locations={[0, 0.5, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
+        <Reanimated.View style={[s.sysVeilEntryAura, entryAuraStyle]}>
+          <LinearGradient
+            colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.2)', 'rgba(197,160,89,0)']}
+            locations={[0, 0.52, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Reanimated.View>
+        <View style={s.sysVeilAxis}>
+          <LinearGradient
+            colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.13)', 'rgba(197,160,89,0)']}
+            locations={[0, 0.46, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
       </Reanimated.View>
       <Reanimated.View
         style={[s.sysVeilContent, compact && s.sysVeilContentCompact, contentFlareStyle]}
       >
         <Reanimated.View
-          entering={FadeIn.duration(620).withInitialValues({
+          entering={FadeIn.delay(30).duration(760).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
             opacity: 0,
-            transform: [{ translateY: 12 }, { scale: 0.9 }],
+            transform: [{ translateY: 18 }, { scale: 0.84 }],
           })}
           style={s.sysVeilCrestBox}
         >
@@ -23381,55 +23522,75 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
             pointerEvents="none"
             style={[s.sysVeilChargeRing, chargeRingStyle]}
           />
+          <Reanimated.View
+            pointerEvents="none"
+            style={[s.sysVeilIntakePulse, intakePulseStyle]}
+          />
           <Reanimated.View pointerEvents="none" style={[s.sysVeilCrestHalo, crestHaloStyle]} />
           <View pointerEvents="none" style={s.sysVeilOrbitRail} />
-          <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringStyle]}>
-            <Svg width={208} height={208} viewBox="0 0 208 208" style={StyleSheet.absoluteFill}>
+          <Reanimated.View style={[s.sysVeilLogoPlate, crestPlateStyle]}>
+            <Image
+              source={APP_LOGO}
+              style={s.sysVeilLogo}
+              fadeDuration={0}
+              resizeMethod="scale"
+              resizeMode="cover"
+            />
+          </Reanimated.View>
+          <Reanimated.View
+            pointerEvents="none"
+            renderToHardwareTextureAndroid
+            shouldRasterizeIOS
+            style={[s.sysVeilOrbitRing, ringStyle]}
+          >
+            <Svg width={216} height={216} viewBox="0 0 216 216" style={StyleSheet.absoluteFill}>
               <SvgCircle
-                cx="104"
-                cy="104"
-                r="99"
+                cx="108"
+                cy="108"
+                r="103"
                 fill="none"
                 stroke="rgba(197,160,89,0.38)"
                 strokeWidth="1.35"
-                strokeDasharray={[218, 404]}
+                strokeDasharray={[228, 420]}
                 strokeLinecap="round"
               />
             </Svg>
-            <View style={s.sysVeilOrbitComet} />
-          </Reanimated.View>
-          <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringTailAStyle]}>
-            <View style={[s.sysVeilOrbitComet, s.sysVeilOrbitCometSmall]} />
-          </Reanimated.View>
-          <Reanimated.View pointerEvents="none" style={[s.sysVeilOrbitRing, ringTailBStyle]}>
-            <View style={[s.sysVeilOrbitComet, s.sysVeilOrbitCometTiny]} />
-          </Reanimated.View>
-          <Reanimated.View style={[s.sysVeilLogoPlate, crestPlateStyle]}>
-            <Image source={APP_LOGO} style={s.sysVeilLogo} resizeMode="cover" />
+            <View style={s.sysVeilOrbitMarker}>
+              <View style={s.sysVeilOrbitComet} />
+            </View>
+            <View style={[s.sysVeilOrbitMarker, s.sysVeilOrbitMarkerTailA]}>
+              <View style={[s.sysVeilOrbitComet, s.sysVeilOrbitCometSmall]} />
+            </View>
+            <View style={[s.sysVeilOrbitMarker, s.sysVeilOrbitMarkerTailB]}>
+              <View style={[s.sysVeilOrbitComet, s.sysVeilOrbitCometTiny]} />
+            </View>
           </Reanimated.View>
         </Reanimated.View>
 
         <Reanimated.View style={s.sysVeilHeader}>
           <Reanimated.View
             key={isWorking ? 'system-building' : 'system-ready'}
-            entering={FadeInUp.duration(460).easing(Easing.out(Easing.cubic))}
+            entering={FadeInUp.delay(isWorking ? 150 : 0).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1))}
             style={s.sysVeilHeaderInner}
           >
-            <Text style={s.sysVeilKicker}>
-              {isWorking ? 'BUILDING YOUR HOME' : 'READY FOR YOU'}
-            </Text>
-            <Text style={s.sysVeilTitle}>
-              {isWorking ? 'Bringing your plan to life.' : 'Your Home is ready.'}
-            </Text>
+            <View style={s.sysVeilKickerRow}>
+              <View style={s.sysVeilKickerRule} />
+              <Text style={s.sysVeilKicker}>
+                {isWorking ? 'BUILDING YOUR HOME' : 'READY FOR YOU'}
+              </Text>
+              <View style={s.sysVeilKickerRule} />
+            </View>
+            {isWorking ? (
+              <Text style={s.sysVeilTitle}>Bringing your plan to life.</Text>
+            ) : null}
           </Reanimated.View>
         </Reanimated.View>
 
         <Reanimated.View
-          entering={FadeInUp.delay(260).duration(520).easing(Easing.out(Easing.cubic))}
-          style={s.sysVeilRows}
+          entering={FadeInUp.delay(260).duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1))}
+          style={[s.sysVeilRows, compact && s.sysVeilRowsCompact]}
         >
-          {SYSTEM_BUILD_STEPS.slice(absorbedCount).map((step, index) => {
-            const originalIndex = absorbedCount + index;
+          {SYSTEM_BUILD_STEPS.map((step, originalIndex) => {
             return (
               <SysVeilRow
                 key={step}
@@ -23437,29 +23598,55 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
                 originalIndex={originalIndex}
                 done={originalIndex < ticked}
                 current={originalIndex === ticked}
+                visible={originalIndex >= absorbedCount && originalIndex < absorbedCount + 2}
                 crestRef={crestRef}
                 onAbsorbed={handleRowAbsorbed}
+                queueOffset={queueOffset}
+                rowPitch={rowPitch}
                 compact={compact}
               />
             );
           })}
+          {!isWorking && absorbedCount === SYSTEM_BUILD_STEPS.length ? (
+            <Reanimated.View
+              entering={FadeInUp.duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1))}
+              style={s.sysVeilCompleteMark}
+            >
+              <View style={s.sysVeilCompleteIcon}>
+                <CheckSmall s={13} c="#FFFFFF" w={3} />
+              </View>
+              <Text style={s.sysVeilCompleteText}>Everything is ready</Text>
+            </Reanimated.View>
+          ) : null}
         </Reanimated.View>
 
-        <Reanimated.View
-          entering={FadeIn.delay(680).duration(420)}
-          style={s.sysVeilProgress}
-        >
+        <View style={s.sysVeilProgressSlot}>
+          {isWorking ? (
+            <Reanimated.View
+              entering={FadeIn.delay(680).duration(420)}
+              exiting={FadeOut.duration(220)}
+              style={s.sysVeilProgress}
+            >
           <View style={s.sysVeilProgressMeta}>
-            <Text style={s.sysVeilProgressLabel}>{isWorking ? 'ASSEMBLING' : 'COMPLETE'}</Text>
-            <Text style={s.sysVeilProgressCount}>
-              {Math.min(ticked, SYSTEM_BUILD_STEPS.length)} / {SYSTEM_BUILD_STEPS.length}
-            </Text>
+            <Text style={s.sysVeilProgressLabel}>ASSEMBLING YOUR HOME</Text>
+            <View style={s.sysVeilProgressCountPill}>
+              <Text style={s.sysVeilProgressCount}>
+                {Math.min(ticked, SYSTEM_BUILD_STEPS.length)} / {SYSTEM_BUILD_STEPS.length}
+              </Text>
+            </View>
           </View>
           <View
             style={s.sysVeilBar}
             onLayout={event => setBarWidth(Math.max(1, event.nativeEvent.layout.width))}
           >
-            <Reanimated.View style={[s.sysVeilBarFillFull, fillStyle]} />
+            <Reanimated.View style={[s.sysVeilBarFillFull, fillStyle]}>
+              <LinearGradient
+                colors={['#AA823C', '#D7B76B', '#B58B40']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={StyleSheet.absoluteFill}
+              />
+            </Reanimated.View>
             <Reanimated.View style={[s.sysVeilBarSheen, sheenStyle]}>
               <LinearGradient
                 colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.85)', 'rgba(255,255,255,0)']}
@@ -23469,7 +23656,9 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
               />
             </Reanimated.View>
           </View>
-        </Reanimated.View>
+            </Reanimated.View>
+          ) : null}
+        </View>
       </Reanimated.View>
       <Reanimated.View pointerEvents="none" style={[s.sysVeilBloom, flareStyle]} />
     </Reanimated.View>
@@ -23479,17 +23668,19 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
 function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
   const { beginGuidedSetup, endGuidedSetup, patchSession, setPresentation } = useGuidedSetup();
   const [stage, setStage] = useState<'loading' | 'home' | 'routine'>('loading');
-  // Home's heavy first render is deferred a beat, so the cut from the habits
-  // builder lands on a calm, already-opaque loading scene — not on a stutter.
-  const [homeWarm, setHomeWarm] = useState(false);
+  // The real Home mounts behind the opaque veil in the initial commit. All
+  // loading motion starts after that commit, so no heavy screen is inserted
+  // between the first and second checklist rows.
   const sessionStartedRef = useRef(false);
 
   useEffect(() => {
     // Kill any stale restored session before the fresh tour begins.
     endGuidedSetup();
-    const timer = setTimeout(() => setHomeWarm(true), SYSTEM_BUILD_HOME_MOUNT_AT);
-    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSystemBuildDone = useCallback(() => {
+    setStage('home');
   }, []);
 
   useEffect(() => {
@@ -23530,16 +23721,14 @@ function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
       >
         {stage === 'routine' ? (
           <MyRoutineView guided onGuidedComplete={handleRoutineComplete} />
-        ) : homeWarm ? (
-          <HomeView guided={stage === 'home'} onGuidedComplete={handleHomeComplete} />
         ) : (
-          <View style={{ flex: 1, backgroundColor: '#FAF7F0' }} />
+          <HomeView guided={stage === 'home'} onGuidedComplete={handleHomeComplete} />
         )}
       </Reanimated.View>
       {/* Root host carries the tour over BOTH screens — MyRoutineView itself
           only mounts hosts inside its bottom sheets (for in-modal phases). */}
       <GuidedOverlayHost />
-      {stage === 'loading' && <SystemBuildVeil onDone={() => setStage('home')} />}
+      {stage === 'loading' && <SystemBuildVeil onDone={handleSystemBuildDone} />}
     </Reanimated.View>
   );
 }
@@ -24132,7 +24321,11 @@ function V4FlameSlide({
   const previousCompletedCount = Math.max(0, completedCount - 1);
   const railCompletedCount = railLit ? completedCount : previousCompletedCount;
   const slotCount = showTools ? 4 : 3;
+  const flightSourceRef = useAnimatedRef<View>();
+  const flightTargetRef = useAnimatedRef<View>();
   const sealFlight = useSharedValue(0);
+  const flightTargetX = useSharedValue(0);
+  const flightTargetY = useSharedValue(-(height * 0.36 + 34));
   const charge = useSharedValue(0);
   const kick = useSharedValue(0);
   const breathe = useSharedValue(0);
@@ -24147,6 +24340,8 @@ function V4FlameSlide({
     cancelAnimation(kick);
     cancelAnimation(breathe);
     sealFlight.value = 0;
+    flightTargetX.value = 0;
+    flightTargetY.value = -(height * 0.36 + 34);
     charge.value = 0;
     kick.value = 0;
     breathe.value = 0;
@@ -24185,18 +24380,38 @@ function V4FlameSlide({
       setTimeout(() => runSelectionHaptic(), 1400),
       setTimeout(() => setReveal(3), 2460),
       setTimeout(() => {
-        setReveal(4);
-        sealFlight.value = withTiming(1, {
-          duration: 860,
-          easing: Easing.bezier(0.5, 0.04, 0.16, 1),
-        });
+        const railWidth = Math.min(Math.max(width - 44, 260), 338);
+        const railGap = 9;
+        const slotWidth = (railWidth - railGap * (slotCount - 1)) / slotCount;
+        const targetIndex = Math.min(Math.max(completedCount - 1, 0), slotCount - 1);
+        const fallbackX = -railWidth / 2 + slotWidth / 2 + targetIndex * (slotWidth + railGap);
+        const fallbackY = -(height * 0.36 + 34);
+
+        // Measure both centers on the UI thread immediately before launch. The
+        // fallback keeps the animation safe if a native node is unavailable,
+        // while every normally mounted checkpoint lands on its exact dot.
+        runOnUI(() => {
+          'worklet';
+          const source = measure(flightSourceRef);
+          const target = measure(flightTargetRef);
+          flightTargetX.value = source && target
+            ? target.pageX + target.width / 2 - (source.pageX + source.width / 2)
+            : fallbackX;
+          flightTargetY.value = source && target
+            ? target.pageY + target.height / 2 - (source.pageY + source.height / 2)
+            : fallbackY;
+          sealFlight.value = withTiming(1, {
+            duration: 900,
+            easing: Easing.bezier(0.32, 0.02, 0.2, 1),
+          });
+        })();
       }, 3260),
       setTimeout(() => {
         // The reward arrives only when the seal lands in its slot.
         setRailLit(true);
         runBubbleHaptic();
         void playTaskCompleteFeedback();
-      }, 3920),
+      }, 4160),
       // On a surprise flame the full rail must sit finished for a beat —
       // "we're done" has to land before the 4th slot proves it wrong.
       ...(surprise
@@ -24217,10 +24432,42 @@ function V4FlameSlide({
       cancelAnimation(kick);
       cancelAnimation(breathe);
     };
-  }, [breathe, charge, completedCount, isSoloMessage, kick, sealFlight, showTools, surprise]);
+  }, [
+    breathe,
+    charge,
+    completedCount,
+    flightSourceRef,
+    flightTargetRef,
+    flightTargetX,
+    flightTargetY,
+    height,
+    isSoloMessage,
+    kick,
+    sealFlight,
+    showTools,
+    slotCount,
+    surprise,
+    width,
+  ]);
 
-  const sealKickStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: (1 + 0.02 * charge.value) * (1 + 0.07 * kick.value) }],
+  const sealKickStyle = useAnimatedStyle(() => {
+    const flight = sealFlight.value;
+    const idlePulse = (1 + 0.02 * charge.value * (1 - flight)) * (1 + 0.07 * kick.value * (1 - flight));
+    const landingScale = interpolate(flight, [0, 1], [1, CHECKPOINT_RAIL_DOT_SIZE / CHECKPOINT_SEAL_SIZE]);
+    return {
+      transform: [{ scale: idlePulse * landingScale }],
+    };
+  });
+  const flameFlightStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        scale: interpolate(
+          sealFlight.value,
+          [0, 0.16, 0.82, 1],
+          [1, 1, 0.62, CHECKPOINT_RAIL_FLAME_SIZE / CHECKPOINT_FLAME_SIZE],
+        ),
+      },
+    ],
   }));
   const sealGlowStyle = useAnimatedStyle(() => ({
     opacity: 0.35 + 0.65 * charge.value,
@@ -24262,19 +24509,17 @@ function V4FlameSlide({
   }, [body, isSoloMessage, reveal]);
 
   const sealFlightStyle = useAnimatedStyle(() => {
-    const railWidth = Math.min(Math.max(width - 44, 260), 338);
-    const railGap = 9;
-    const usableRailWidth = railWidth - railGap * (slotCount - 1);
-    const slotWidth = usableRailWidth / slotCount;
-    const targetIndex = Math.min(Math.max(completedCount - 1, 0), slotCount - 1);
-    const targetX = -railWidth / 2 + slotWidth / 2 + targetIndex * (slotWidth + railGap);
-    const targetY = -(height * 0.36 + 34);
+    const progress = sealFlight.value;
+    // Smoothstep keeps the curved lateral approach continuous instead of
+    // changing velocity abruptly at interpolation breakpoints.
+    const lateralProgress = progress * progress * (3 - 2 * progress);
+    const liftProgress = 1 - (1 - progress) * (1 - progress);
+    const arcLift = Math.sin(progress * Math.PI) * 10;
     return {
-      opacity: interpolate(sealFlight.value, [0, 0.72, 1], [1, 0.96, 0]),
+      opacity: interpolate(progress, [0, 0.88, 1], [1, 1, 0]),
       transform: [
-        { translateX: interpolate(sealFlight.value, [0, 0.58, 1], [0, targetX * 0.18, targetX]) },
-        { translateY: interpolate(sealFlight.value, [0, 0.62, 1], [0, targetY * 0.58, targetY]) },
-        { scale: interpolate(sealFlight.value, [0, 0.64, 1], [1, 0.42, 0.13]) },
+        { translateX: flightTargetX.value * lateralProgress },
+        { translateY: flightTargetY.value * liftProgress - arcLift },
       ],
     };
   });
@@ -24307,7 +24552,10 @@ function V4FlameSlide({
               exiting={FadeOut.duration(1060)}
               style={s.chapterCheckpointAchievement}
             >
-              <Reanimated.View style={[s.chapterCheckpointSealFlight, sealFlightStyle]}>
+              <Reanimated.View
+                ref={flightSourceRef}
+                style={[s.chapterCheckpointSealFlight, sealFlightStyle]}
+              >
                 <Reanimated.View style={[s.chapterCheckpointSeal, sealKickStyle]}>
                   <Reanimated.View style={[s.chapterCheckpointSealGlow, sealGlowStyle]} />
                   <LinearGradient
@@ -24317,6 +24565,11 @@ function V4FlameSlide({
                     style={s.sealFace}
                   />
                   <View style={s.sealInnerRing} />
+                </Reanimated.View>
+                <Reanimated.View
+                  pointerEvents="none"
+                  style={[s.checkpointFlameFlightLayer, flameFlightStyle]}
+                >
                   <CheckpointFlameBurst lit={reveal >= 2} />
                 </Reanimated.View>
                 {reveal < 2 ? <SealChargeOrbit charge={charge} /> : null}
@@ -24344,6 +24597,8 @@ function V4FlameSlide({
               previousCompletedCount={previousCompletedCount}
               showTools={showTools}
               surpriseSlot={surprise && surpriseIn}
+              landingTargetRef={flightTargetRef}
+              landingTargetIndex={completedCount - 1}
             />
           ) : null}
         </View>
@@ -24494,105 +24749,672 @@ function V4WeeklyRevealSlide({ displayName, onNext }: { displayName?: string; on
   );
 }
 
-const V4_TOOLS_SLIDES = [
-  {
-    title: 'Journal',
-    body: 'Reflection builds self-awareness, clarity, and consistency over time. Three ways to write — pick what fits the moment.',
-    icon: <Feather s={30} c={GOLD} w={1.8} />,
-    chips: ['Daily Journal', 'Morning Pages', 'Free Writing'],
-  },
-  {
-    title: 'Gratitude',
-    body: 'Gratitude during the day has a measurable impact on mood, focus, and your spiritual life.',
-    icon: <Heart s={30} c={GOLD} w={1.8} />,
-    chips: ['Life Gratitude', 'Daily Gratitude'],
-  },
-  {
-    title: 'Other tools',
-    body: 'Ready whenever you need them — no setup required.',
-    icon: <Sparkles s={30} c={GOLD} w={1.8} />,
-    chips: ['Pomodoro', 'Reading List', 'Bucket List', 'Notes'],
-  },
-];
+// ═══ Tools section (Screens 28a–28d) ═══════════════════════════════════════
+// The surprise fourth slot: the supporting tools that round out the picture —
+// Journal, Pomodoro, Bucket List, Gratitude. Built on the onboarding's own
+// white ground and charter/plaque grammar; three of the screens share one
+// premium "science" scroller, the section ends on the only action in the
+// chapter (Daily Gratitude as a task). CTA-driven, forward-only.
 
-function V4ToolsSlides({ onNext, onGratitude }: { onNext: () => void; onGratitude: (enabled: boolean) => void }) {
-  const [slideIndex, setSlideIndex] = useState(0);
-  const [gratitudeSet, setGratitudeSet] = useState(false);
-  const slide = V4_TOOLS_SLIDES[slideIndex];
+// A soft height/opacity transition for the technique drawer open/collapse.
+function animateSoftLayoutChange() {
+  LayoutAnimation.configureNext({
+    duration: 300,
+    create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+    update: { type: LayoutAnimation.Types.easeInEaseOut },
+    delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+  });
+}
 
+type ToolsScienceCard = { icon: React.ReactNode; headline: string; body: string };
+type ToolsScienceScreen = { eyebrow: string; title: string; intro: string; cards: ToolsScienceCard[] };
+
+const TOOLS_JOURNAL_SCIENCE: ToolsScienceScreen = {
+  eyebrow: 'THE FIRST TOOL',
+  title: 'Journal',
+  intro: 'A few minutes of writing, backed by decades of research.',
+  cards: [
+    { icon: <Brain s={20} c={GOLD} w={1.9} />, headline: 'Backed by decades of research', body: "Foundational studies by psychologist James Pennebaker found that writing about emotional experiences for just 15–20 minutes, a few days in a row, led to lasting improvements in mental clarity and resilience." },
+    { icon: <Wind s={20} c={GOLD} w={1.9} />, headline: 'Reduces stress and anxiety', body: 'A widely cited 2005 review found that regular journaling lowers stress and measurably improves emotional and physical health — including lower blood pressure.' },
+    { icon: <Moon s={20} c={GOLD} w={1.9} />, headline: 'Better sleep', body: 'Research on gratitude journaling before bed found that a short writing practice helped people fall asleep faster and sleep more soundly through the night.' },
+    { icon: <Heart s={20} c={GOLD} w={1.9} />, headline: "Helps process what's hard to carry", body: 'A 2022 review of clinical studies found that journaling improved outcomes for people dealing with anxiety and difficult emotional experiences.' },
+  ],
+};
+
+const TOOLS_POMODORO_SCIENCE: ToolsScienceScreen = {
+  eyebrow: 'THE SECOND TOOL',
+  title: 'Pomodoro',
+  intro: 'Work in bursts that protect your focus — not longer hours, sharper ones.',
+  cards: [
+    { icon: <Activity s={20} c={GOLD} w={1.9} />, headline: 'Your focus works in cycles', body: 'Attention naturally rises and falls in cycles of roughly 90 minutes. Structured breaks reset concentration before it fades — instead of pushing through until it collapses.' },
+    { icon: <TrendingUp s={20} c={GOLD} w={1.9} />, headline: 'Backed by a growing body of research', body: 'A 2025 review of 32 studies found that focus-and-break techniques like Pomodoro improved concentration, reduced mental fatigue, and helped people sustain performance over longer stretches.' },
+    { icon: <Target s={20} c={GOLD} w={1.9} />, headline: 'Measurable results', body: 'Peer-reviewed research shows that working in focused intervals can improve concentration by 15–25% and cut distractions by nearly half.' },
+    { icon: <Trophy s={20} c={GOLD} w={1.9} />, headline: 'What the most productive already do', body: 'Large-scale workplace data found the most productive people naturally worked in bursts close to an hour, followed by a short break — strikingly close to the Pomodoro structure.' },
+  ],
+};
+
+const TOOLS_GRATITUDE_SCIENCE: ToolsScienceScreen = {
+  eyebrow: 'THE LAST TOOL',
+  title: 'Gratitude',
+  intro: 'A practice as old as faith itself — now backed by decades of research.',
+  cards: [
+    { icon: <Sparkles s={20} c={GOLD} w={1.9} />, headline: 'A foundational finding', body: 'A landmark 2003 study by Robert Emmons and Michael McCullough found that people who kept a weekly gratitude journal felt more optimistic, evaluated their lives more positively, and even exercised more.' },
+    { icon: <Heart s={20} c={GOLD} w={1.9} />, headline: 'Fewer physical symptoms', body: 'The same study found that people who journaled about gratitude reported fewer headaches, less physical pain, and better overall health than those who journaled about daily hassles.' },
+    { icon: <Brain s={20} c={GOLD} w={1.9} />, headline: 'Lasting changes in the brain', body: 'Neuroimaging research found that practicing gratitude writing raised activity in brain regions tied to emotional regulation — still measurable three months later.' },
+    { icon: <Moon s={20} c={GOLD} w={1.9} />, headline: 'Better mood, sleep, relationships', body: 'Research in Frontiers in Psychology linked gratitude journaling to lower anxiety and depression, improved sleep, and stronger social connection.' },
+  ],
+};
+
+const TOOLS_JOURNAL_TECHNIQUES = [
+  {
+    key: 'daily',
+    name: 'Daily Journal',
+    icon: <Feather s={17} c={GOLD} w={1.9} />,
+    description: 'A structured daily reflection — a guided format that helps you process your day, your thoughts, and what mattered.',
+    benefits: 'Best for building a consistent habit of reflection. Creates a running record you can look back on over time.',
+  },
+  {
+    key: 'morning',
+    name: 'Morning Pages',
+    icon: <Sun s={17} c={GOLD} w={1.9} />,
+    description: 'Free-form, stream-of-consciousness writing done first thing in the morning — whatever comes to mind, without editing or structure.',
+    benefits: 'Clears mental clutter before the day begins. Surfaces thoughts and feelings that might otherwise stay buried under the busyness of the day.',
+  },
+  {
+    key: 'free',
+    name: 'Free Writing',
+    icon: <Wind s={17} c={GOLD} w={1.9} />,
+    description: 'Completely open — no format, no prompts, no rules. Write whatever, whenever, however long.',
+    benefits: 'Total flexibility for whoever wants a blank page rather than structure. Good for creative thinking, working through a problem, or writing in the moment.',
+  },
+] as const;
+
+const TOOLS_BUCKET_ITEMS = [
+  { label: 'Visit Jerusalem', done: true },
+  { label: 'Learn to play guitar', done: true },
+  { label: 'Run a marathon', done: false },
+  { label: 'Write a book', done: false },
+  { label: 'See the Northern Lights', done: false },
+] as const;
+
+// One shared premium science scroller — Journal, Pomodoro and Gratitude all
+// wear it. Title + intro at the top, a calm feed of finding plaques, a fixed
+// Continue at the foot.
+function ToolsScienceScreen({ screen, bottomInset, onNext }: { screen: ToolsScienceScreen; bottomInset: number; onNext: () => void }) {
   return (
-    <View style={s.v4CenteredSlide}>
-      <V4ProgressRail completedCount={3} showTools />
-      <Reanimated.View
-        key={`tools-slide-${slideIndex}`}
-        entering={FadeIn.duration(420).easing(Easing.out(Easing.cubic)).withInitialValues({
-          opacity: 0,
-          transform: [{ translateY: 14 }, { scale: 0.98 }],
-        })}
-        style={s.v4ToolsSlideBody}
-      >
-        <View style={s.v4ToolsSlideIcon}>{slide.icon}</View>
-        <Text style={s.v4Eyebrow}>Bonus tools</Text>
-        <Text style={s.v4MomentTitle}>{slide.title}</Text>
-        <Text style={s.v4MomentBody}>{slide.body}</Text>
-        <View style={s.v4ToolsChipRow}>
-          {slide.chips.map((chip, chipIndex) => (
+    <View style={tools.screen}>
+      <ScrollView contentContainerStyle={[tools.scienceScroll, { paddingBottom: bottomInset + 118 }]} showsVerticalScrollIndicator={false}>
+        <Reanimated.Text entering={FadeIn.duration(440).easing(Easing.out(Easing.cubic))} style={tools.scienceEyebrow}>
+          {screen.eyebrow}
+        </Reanimated.Text>
+        <Reanimated.Text
+          entering={FadeInUp.delay(90).duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 16 }] })}
+          style={tools.scienceTitle}
+        >
+          {screen.title}
+        </Reanimated.Text>
+        <Reanimated.Text
+          entering={FadeInUp.delay(200).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 12 }] })}
+          style={tools.scienceIntro}
+        >
+          {screen.intro}
+        </Reanimated.Text>
+
+        <View style={tools.scienceFeed}>
+          {screen.cards.map((card, index) => (
             <Reanimated.View
-              key={chip}
-              entering={FadeIn.delay(220 + chipIndex * 110).duration(360).withInitialValues({
-                opacity: 0,
-                transform: [{ translateY: 8 }],
-              })}
-              style={s.v4ToolsChip}
+              key={card.headline}
+              entering={FadeInUp.delay(360 + index * 130).duration(500).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 20 }] })}
+              style={tools.scienceCard}
             >
-              <View style={s.v4ToolsChipDot} />
-              <Text style={s.v4ToolsChipText}>{chip}</Text>
+              <View pointerEvents="none" style={tools.scienceCardSheen} />
+              <View style={tools.scienceCardIcon}>{card.icon}</View>
+              <View style={tools.scienceCardBody}>
+                <Text style={tools.scienceCardHeadline}>{card.headline}</Text>
+                <Text style={tools.scienceCardText}>{card.body}</Text>
+              </View>
             </Reanimated.View>
           ))}
         </View>
-        {slideIndex === 1 ? (
-          <TouchableOpacity
-            activeOpacity={0.88}
-            haptic="medium"
-            onPress={() => {
-              setGratitudeSet(true);
-              onGratitude(true);
-            }}
-            style={[s.v4SetupCard, gratitudeSet && s.v4SetupCardDone]}
-          >
-            <View style={s.v4ToolsGratitudeRow}>
-              <View style={s.v4ToolsGratitudeCopy}>
-                <Text style={s.v4SetupTitle}>
-                  {gratitudeSet ? 'Daily Gratitude is now a task' : 'Set Daily Gratitude as a task'}
-                </Text>
-                <Text style={s.v4SetupBody}>
-                  {gratitudeSet ? 'A quiet rhythm, every day.' : 'Add a quiet gratitude rhythm to your day.'}
-                </Text>
-              </View>
-              {gratitudeSet ? <CheckSmall s={22} c={GOLD} w={2.4} /> : null}
-            </View>
-          </TouchableOpacity>
-        ) : null}
-      </Reanimated.View>
-      <View style={s.v4ToolsDots}>
-        {V4_TOOLS_SLIDES.map((_, dotIndex) => (
-          <View key={`tools-dot-${dotIndex}`} style={[s.v4ToolsDot, dotIndex === slideIndex && s.v4ToolsDotActive]} />
-        ))}
-      </View>
+      </ScrollView>
+
+      <ToolsFooterCta delay={620} bottomInset={bottomInset} label="Continue" onPress={onNext} />
+    </View>
+  );
+}
+
+// The shared foot: the CTA island floating over a soft white fade, matching
+// the rest of onboarding's primary button.
+function ToolsFooterCta({ label, onPress, delay = 220, bottomInset }: { label: string; onPress: () => void; delay?: number; bottomInset: number }) {
+  return (
+    <AnimatedCta delay={delay} style={[tools.footer, { bottom: bottomInset + 18 }]}>
       <View style={s.ctaIsland}>
-        <TouchableOpacity
-          activeOpacity={0.9}
-          haptic="medium"
-          onPress={() => slideIndex >= V4_TOOLS_SLIDES.length - 1 ? onNext() : setSlideIndex(prev => prev + 1)}
-          style={s.primaryButton}
-        >
-          <Text style={s.primaryButtonText}>{slideIndex >= V4_TOOLS_SLIDES.length - 1 ? 'Continue' : 'Next'}</Text>
-          <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+        <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onPress} style={s.primaryButton}>
+          <Text style={s.primaryButtonText}>{label}</Text>
         </TouchableOpacity>
+      </View>
+    </AnimatedCta>
+  );
+}
+
+// 28a-2: the three techniques as flat tabs that pull a drawer out below. Only
+// one is open at a time; inside, two panels (Description / Benefits) swipe.
+function ToolsJournalTechniques({ bottomInset, onNext }: { bottomInset: number; onNext: () => void }) {
+  const { width } = useWindowDimensions();
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [panel, setPanel] = useState(0);
+  const pagePos = useSharedValue(0);
+  const dragX = useSharedValue(0);
+  const openIndex = TOOLS_JOURNAL_TECHNIQUES.findIndex(t => t.key === openKey);
+  const active = openIndex >= 0 ? TOOLS_JOURNAL_TECHNIQUES[openIndex] : null;
+
+  const selectTab = (key: string) => {
+    animateSoftLayoutChange();
+    if (key === openKey) {
+      setOpenKey(null);
+      return;
+    }
+    setOpenKey(key);
+    setPanel(0);
+    pagePos.value = 0;
+    dragX.value = 0;
+  };
+
+  const goPanel = useCallback((next: number) => {
+    setPanel(next);
+  }, []);
+
+  const swipe = useMemo(() => Gesture.Pan()
+    .activeOffsetX([-12, 12])
+    .failOffsetY([-16, 16])
+    .onUpdate(e => {
+      const atStart = panel === 0 && e.translationX > 0;
+      const atEnd = panel === 1 && e.translationX < 0;
+      dragX.value = atStart || atEnd ? e.translationX * 0.2 : e.translationX;
+    })
+    .onEnd(e => {
+      const threshold = Math.min(70, width * 0.2);
+      if (e.translationX < -threshold && panel === 0) {
+        pagePos.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) });
+        runOnJS(goPanel)(1);
+      } else if (e.translationX > threshold && panel === 1) {
+        pagePos.value = withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) });
+        runOnJS(goPanel)(0);
+      }
+      dragX.value = withTiming(0, { duration: 260, easing: Easing.out(Easing.cubic) });
+    }), [dragX, goPanel, pagePos, panel, width]);
+
+  const trackStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: -pagePos.value * (width - 76) + dragX.value }],
+  }));
+
+  return (
+    <View style={tools.screen}>
+      <ScrollView contentContainerStyle={[tools.techScroll, { paddingBottom: bottomInset + 118 }]} showsVerticalScrollIndicator={false}>
+        <Text style={tools.scienceEyebrow}>THREE WAYS TO WRITE</Text>
+        <Text style={tools.techTitle}>Pick what fits the moment.</Text>
+        <Text style={tools.techIntro}>Tap a technique to see how it works.</Text>
+
+        <View style={tools.techList}>
+          {TOOLS_JOURNAL_TECHNIQUES.map(technique => {
+            const isOpen = technique.key === openKey;
+            return (
+              <View key={technique.key} style={[tools.techTab, isOpen && tools.techTabOpen]}>
+                <TouchableOpacity activeOpacity={0.84} haptic="selection" onPress={() => selectTab(technique.key)} style={tools.techTabHead}>
+                  <View style={[tools.techTabIcon, isOpen && tools.techTabIconOpen]}>{technique.icon}</View>
+                  <Text style={[tools.techTabName, isOpen && tools.techTabNameOpen]}>{technique.name}</Text>
+                  <View style={[tools.techChevron, isOpen && tools.techChevronOpen]}>
+                    <ChevronDown s={15} c={isOpen ? GOLD : '#C9B18A'} w={2.2} />
+                  </View>
+                </TouchableOpacity>
+
+                {isOpen && active ? (
+                  <Reanimated.View
+                    entering={FadeIn.duration(240).easing(Easing.out(Easing.cubic))}
+                    style={tools.techDrawer}
+                  >
+                    <GestureDetector gesture={swipe}>
+                      <View style={tools.techDrawerViewport}>
+                        <Reanimated.View style={[tools.techDrawerTrack, { width: (width - 76) * 2 }, trackStyle]}>
+                          <View style={[tools.techPanel, { width: width - 76 }]}>
+                            <Text style={tools.techPanelLabel}>DESCRIPTION</Text>
+                            <Text style={tools.techPanelText}>{active.description}</Text>
+                          </View>
+                          <View style={[tools.techPanel, { width: width - 76 }]}>
+                            <Text style={tools.techPanelLabel}>WHY IT HELPS</Text>
+                            <Text style={tools.techPanelText}>{active.benefits}</Text>
+                          </View>
+                        </Reanimated.View>
+                      </View>
+                    </GestureDetector>
+                    <View style={tools.techDots}>
+                      {[0, 1].map(dotIndex => (
+                        <TouchableOpacity
+                          key={dotIndex}
+                          haptic="selection"
+                          onPress={() => { pagePos.value = withTiming(dotIndex, { duration: 300, easing: Easing.out(Easing.cubic) }); setPanel(dotIndex); }}
+                          hitSlop={8}
+                          style={[tools.techDot, panel === dotIndex && tools.techDotActive]}
+                        />
+                      ))}
+                    </View>
+                  </Reanimated.View>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+
+      <ToolsFooterCta delay={480} bottomInset={bottomInset} label="Continue" onPress={onNext} />
+    </View>
+  );
+}
+
+// 28b-2: the two work regimes, the medal reward, and the analytics nuance.
+function ToolsPomodoroRegimes({ bottomInset, onNext }: { bottomInset: number; onNext: () => void }) {
+  return (
+    <View style={tools.screen}>
+      <ScrollView contentContainerStyle={[tools.centerScroll, { paddingBottom: bottomInset + 118 }]} showsVerticalScrollIndicator={false}>
+        <Text style={tools.scienceEyebrow}>HOW IT WORKS</Text>
+        <Text style={tools.scienceTitle}>Two ways to work.</Text>
+
+        <View style={tools.regimeRow}>
+          {[
+            { name: 'Single Session', icon: <Clock s={22} c={GOLD} w={1.9} />, body: 'One timer. When it runs out, you earn a medal marking the session complete.' },
+            { name: 'Classic Cycle', icon: <Coffee s={22} c={GOLD} w={1.9} />, body: 'The traditional rhythm: a work interval, a short break, repeated — with a longer break at the end.' },
+          ].map((regime, index) => (
+            <Reanimated.View
+              key={regime.name}
+              entering={FadeInUp.delay(200 + index * 130).duration(500).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 18 }] })}
+              style={tools.regimeCard}
+            >
+              <View pointerEvents="none" style={tools.scienceCardSheen} />
+              <View style={tools.regimeIcon}>{regime.icon}</View>
+              <Text style={tools.regimeName}>{regime.name}</Text>
+              <Text style={tools.regimeBody}>{regime.body}</Text>
+            </Reanimated.View>
+          ))}
+        </View>
+
+        <Reanimated.View
+          entering={FadeInUp.delay(480).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 18 }] })}
+          style={tools.rewardCard}
+        >
+          <View style={tools.rewardMedal}><Trophy s={22} c={GOLD} w={1.7} /></View>
+          <Text style={tools.rewardText}>
+            Every completed session earns a medal — and your medals show up in your stats, so you can see how many focused sessions you had on any day.
+          </Text>
+        </Reanimated.View>
+
+        <Reanimated.View
+          entering={FadeInUp.delay(600).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 18 }] })}
+          style={tools.nuanceCard}
+        >
+          <View style={tools.nuanceHead}>
+            <BarChart3 s={17} c="#8B6B2F" w={2} />
+            <Text style={tools.nuanceEyebrow}>THE NUMBER THAT MATTERS</Text>
+          </View>
+          <Text style={tools.nuanceText}>
+            More medals doesn&apos;t always mean more focus. That&apos;s why your analytics track <Text style={tools.nuanceStrong}>total time focused</Text> — not just how many sessions you started.
+          </Text>
+        </Reanimated.View>
+      </ScrollView>
+
+      <ToolsFooterCta delay={720} bottomInset={bottomInset} label="Continue" onPress={onNext} />
+    </View>
+  );
+}
+
+// 28c: the bucket list — light and aspirational, a short mock list.
+function ToolsBucketList({ bottomInset, onNext }: { bottomInset: number; onNext: () => void }) {
+  return (
+    <View style={tools.screen}>
+      <View style={tools.bucketStage}>
+        <Reanimated.View entering={FadeIn.delay(120).duration(480)} style={tools.bucketCrown}>
+          <Crown s={30} c={GOLD} w={1.6} />
+        </Reanimated.View>
+        <Text style={tools.scienceEyebrow}>ONE MORE TOOL</Text>
+        <Text style={tools.scienceTitle}>Bucket List</Text>
+        <Text style={tools.bucketBody}>Everything you want to do, see, or experience in your lifetime — kept in one place.</Text>
+
+        <View style={tools.bucketCard}>
+          <View pointerEvents="none" style={tools.scienceCardSheen} />
+          {TOOLS_BUCKET_ITEMS.map((item, index) => (
+            <Reanimated.View
+              key={item.label}
+              entering={FadeInUp.delay(280 + index * 100).duration(420).easing(Easing.out(Easing.cubic)).withInitialValues({ opacity: 0, transform: [{ translateY: 12 }] })}
+              style={[tools.bucketRow, index > 0 && tools.bucketRowBorder]}
+            >
+              <View style={[tools.bucketCheck, item.done && tools.bucketCheckDone]}>
+                {item.done ? <CheckSmall s={13} c="#FFFFFF" w={2.8} /> : null}
+              </View>
+              <Text style={[tools.bucketItem, item.done && tools.bucketItemDone]}>{item.label}</Text>
+            </Reanimated.View>
+          ))}
+        </View>
+
+        <Reanimated.Text entering={FadeIn.delay(880).duration(520)} style={tools.bucketValue}>
+          Some things matter too much to forget. Keep them somewhere you&apos;ll actually see them again.
+        </Reanimated.Text>
+      </View>
+
+      <ToolsFooterCta delay={1040} bottomInset={bottomInset} label="Continue" onPress={onNext} />
+    </View>
+  );
+}
+
+// 28d-1: gratitude and faith — a warm white statement in the charter voice.
+function ToolsGratitudeFaith({ bottomInset, onNext }: { bottomInset: number; onNext: () => void }) {
+  useEffect(() => {
+    const beat = setTimeout(runBubbleHaptic, 640);
+    return () => clearTimeout(beat);
+  }, []);
+
+  return (
+    <View style={tools.screen}>
+      <View style={tools.faithStage}>
+        <OrganizeLayersCharterHeader
+          eyebrow="GRATITUDE & FAITH"
+          title={'Give thanks\nin all things.'}
+          body="Long before it was a wellness idea, thanksgiving was a way of noticing God's presence in ordinary moments — not one more thing to do, but a way of seeing the day you already have."
+          accent={GOLD}
+        />
+
+        <Reanimated.View
+          entering={FadeInUp.delay(1340).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}
+          style={tools.scriptureCard}
+        >
+          <Text style={tools.scriptureText}>
+            &ldquo;In everything give thanks: for this is the will of God in Christ Jesus concerning you.&rdquo;
+          </Text>
+          <Text style={tools.scriptureRef}>1 THESSALONIANS 5:18</Text>
+        </Reanimated.View>
+      </View>
+
+      <ToolsFooterCta delay={1720} bottomInset={bottomInset} label="Continue" onPress={onNext} />
+    </View>
+  );
+}
+
+// A small warm contribution grid — gratitude entries building over weeks.
+const GRATITUDE_GRID = [3, 2, 4, 1, 3, 0, 2, 4, 3, 2, 4, 1, 0, 3, 2, 4, 3, 1, 2, 4, 3, 0, 2, 3, 4, 2, 1, 3, 4, 2, 3, 4, 2, 0, 3, 4, 1, 2, 3, 4, 2, 3, 4, 3, 2, 4, 1, 3, 0, 2, 3, 4, 2, 3, 4, 3];
+
+function ToolsGratitudeGrid() {
+  const bloom = useSharedValue(0);
+  useEffect(() => {
+    bloom.value = withDelay(280, withTiming(1, { duration: 1100, easing: Easing.out(Easing.cubic) }));
+    return () => cancelAnimation(bloom);
+  }, [bloom]);
+  return (
+    <View style={tools.grid}>
+      {GRATITUDE_GRID.map((level, index) => (
+        <ToolsGratitudeCell key={index} level={level} index={index} bloom={bloom} />
+      ))}
+    </View>
+  );
+}
+
+function ToolsGratitudeCell({ level, index, bloom }: { level: number; index: number; bloom: SharedValue<number> }) {
+  const style = useAnimatedStyle(() => {
+    const local = interpolate(bloom.value, [index / GRATITUDE_GRID.length, 1], [0, 1], 'clamp');
+    return { opacity: 0.3 + local * 0.7, transform: [{ scale: 0.6 + local * 0.4 }] };
+  });
+  const bg = level === 0 ? 'rgba(197,160,89,0.10)'
+    : level === 1 ? 'rgba(197,160,89,0.30)'
+    : level === 2 ? 'rgba(197,160,89,0.52)'
+    : level === 3 ? 'rgba(184,139,66,0.74)'
+    : GOLD;
+  return <Reanimated.View style={[tools.gridCell, { backgroundColor: bg }, style]} />;
+}
+
+// 28d-3: the two kinds of gratitude, the chart, and the section's one action.
+function ToolsGratitudeHow({ bottomInset, onNext, onGratitude }: { bottomInset: number; onNext: () => void; onGratitude: (enabled: boolean) => void }) {
+  return (
+    <View style={tools.screen}>
+      <ScrollView contentContainerStyle={[tools.centerScroll, { paddingBottom: bottomInset + 150 }]} showsVerticalScrollIndicator={false}>
+        <Text style={tools.scienceEyebrow}>IN ANASTA</Text>
+        <Text style={tools.scienceTitle}>Two ways to practice.</Text>
+
+        <Reanimated.View entering={FadeInUp.delay(180).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 16 }] })} style={tools.gratitudeCard}>
+          <View pointerEvents="none" style={tools.scienceCardSheen} />
+          <View style={tools.gratitudeCardHead}>
+            <View style={tools.gratitudeCardIcon}><Sparkles s={17} c={GOLD} w={1.9} /></View>
+            <Text style={tools.gratitudeCardName}>Life Gratitude</Text>
+          </View>
+          <Text style={tools.gratitudeCardBody}>The bigger things — the people, moments, and blessings you&apos;re grateful for in life overall. Not tied to a single day.</Text>
+        </Reanimated.View>
+
+        <Reanimated.View entering={FadeInUp.delay(300).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 16 }] })} style={tools.gratitudeCard}>
+          <View pointerEvents="none" style={tools.scienceCardSheen} />
+          <View style={tools.gratitudeCardHead}>
+            <View style={tools.gratitudeCardIcon}><Sun s={17} c={GOLD} w={1.9} /></View>
+            <Text style={tools.gratitudeCardName}>Daily Gratitude</Text>
+          </View>
+          <Text style={tools.gratitudeCardBody}>Three things you&apos;re grateful for today, every day — as its own task, or answered inside your Daily Journal.</Text>
+          <ToolsGratitudeGrid />
+          <Text style={tools.gratitudeGridCaption}>Noticing what&apos;s good, every single day.</Text>
+        </Reanimated.View>
+      </ScrollView>
+
+      <View style={[tools.actionFooter, { paddingBottom: bottomInset + 14 }]}>
+        <Text style={tools.actionQuestion}>Set Daily Gratitude as a daily task?</Text>
+        <View style={tools.actionRow}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            haptic="medium"
+            onPress={() => { onGratitude(true); runSelectionHaptic(); onNext(); }}
+            style={tools.actionPrimary}
+          >
+            <LinearGradient colors={['#E7C77F', GOLD, '#A97925']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+            <Plus s={15} c="#FFFFFF" w={2.6} />
+            <Text style={tools.actionPrimaryText}>Set up as daily task</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.86}
+            haptic="light"
+            onPress={() => { onGratitude(false); onNext(); }}
+            style={tools.actionSkip}
+          >
+            <Text style={tools.actionSkipText}>Not now</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
 }
+
+// The section controller: forward-only, CTA-driven, with a slim progress rail
+// of eight beads so the user always knows where they stand.
+const TOOLS_SEQUENCE = ['journalSci', 'journalTech', 'pomodoroSci', 'pomodoroReg', 'bucket', 'gratitudeFaith', 'gratitudeSci', 'gratitudeHow'] as const;
+
+function V4ToolsSlides({ onNext, onGratitude }: { onNext: () => void; onGratitude: (enabled: boolean) => void }) {
+  const insets = useSafeAreaInsets();
+  const [index, setIndex] = useState(0);
+  const step = TOOLS_SEQUENCE[index];
+  const advance = useCallback(() => {
+    setIndex(prev => {
+      if (prev >= TOOLS_SEQUENCE.length - 1) {
+        onNext();
+        return prev;
+      }
+      return prev + 1;
+    });
+  }, [onNext]);
+
+  return (
+    <View style={tools.root}>
+      <View style={[tools.progressRail, { top: insets.top + 12 }]} pointerEvents="none">
+        {TOOLS_SEQUENCE.map((key, beadIndex) => (
+          <View key={key} style={[tools.progressBead, beadIndex <= index && tools.progressBeadDone]} />
+        ))}
+      </View>
+
+      <Reanimated.View key={step} entering={FadeIn.duration(320).easing(Easing.out(Easing.cubic))} style={tools.stepFill}>
+        {step === 'journalSci' && <ToolsScienceScreen screen={TOOLS_JOURNAL_SCIENCE} bottomInset={insets.bottom} onNext={advance} />}
+        {step === 'journalTech' && <ToolsJournalTechniques bottomInset={insets.bottom} onNext={advance} />}
+        {step === 'pomodoroSci' && <ToolsScienceScreen screen={TOOLS_POMODORO_SCIENCE} bottomInset={insets.bottom} onNext={advance} />}
+        {step === 'pomodoroReg' && <ToolsPomodoroRegimes bottomInset={insets.bottom} onNext={advance} />}
+        {step === 'bucket' && <ToolsBucketList bottomInset={insets.bottom} onNext={advance} />}
+        {step === 'gratitudeFaith' && <ToolsGratitudeFaith bottomInset={insets.bottom} onNext={advance} />}
+        {step === 'gratitudeSci' && <ToolsScienceScreen screen={TOOLS_GRATITUDE_SCIENCE} bottomInset={insets.bottom} onNext={advance} />}
+        {step === 'gratitudeHow' && <ToolsGratitudeHow bottomInset={insets.bottom} onNext={advance} onGratitude={onGratitude} />}
+      </Reanimated.View>
+    </View>
+  );
+}
+
+const tools = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#FFFFFF' },
+  stepFill: { flex: 1 },
+  screen: { flex: 1, backgroundColor: '#FFFFFF' },
+  progressRail: {
+    position: 'absolute', left: 0, right: 0, zIndex: 10,
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center', columnGap: 6,
+  },
+  progressBead: { width: 16, height: 3, borderRadius: 999, backgroundColor: 'rgba(25,23,20,0.10)' },
+  progressBeadDone: { backgroundColor: GOLD },
+
+  scienceScroll: { paddingHorizontal: 22, paddingTop: 74 },
+  scienceEyebrow: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.6, color: GOLD, textAlign: 'center' },
+  scienceTitle: { marginTop: 9, fontFamily: F.serifBold, fontSize: 37, lineHeight: 42, letterSpacing: -0.4, color: INK, textAlign: 'center' },
+  scienceIntro: { marginTop: 12, alignSelf: 'center', maxWidth: 320, fontFamily: F.serifMediumItalic, fontSize: 16.5, lineHeight: 23, color: 'rgba(25,23,20,0.56)', textAlign: 'center' },
+  scienceFeed: { marginTop: 26, rowGap: 12 },
+  scienceCard: {
+    position: 'relative', overflow: 'hidden',
+    flexDirection: 'row', alignItems: 'flex-start', columnGap: 13,
+    borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
+    backgroundColor: '#FFFDF9', paddingHorizontal: 15, paddingVertical: 15,
+    boxShadow: '0 8px 22px rgba(92,67,25,0.06)',
+  },
+  scienceCardSheen: { position: 'absolute', top: 0, left: 20, right: 20, height: 1, backgroundColor: 'rgba(255,255,255,0.9)' },
+  scienceCardIcon: {
+    flexShrink: 0, width: 42, height: 42, borderRadius: 15, borderCurve: 'continuous',
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)',
+  },
+  scienceCardBody: { flex: 1, minWidth: 0 },
+  scienceCardHeadline: { fontFamily: F.serifSemiBold, fontSize: 17.5, lineHeight: 22, color: INK },
+  scienceCardText: { marginTop: 5, fontFamily: F.sans, fontSize: 13, lineHeight: 18.5, color: 'rgba(25,23,20,0.6)' },
+
+  footer: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  centerScroll: { paddingHorizontal: 22, paddingTop: 74 },
+
+  // Journal techniques
+  techScroll: { paddingHorizontal: 22, paddingTop: 74 },
+  techTitle: { marginTop: 9, fontFamily: F.serifBold, fontSize: 31, lineHeight: 36, letterSpacing: -0.3, color: INK, textAlign: 'center' },
+  techIntro: { marginTop: 10, alignSelf: 'center', maxWidth: 300, fontFamily: F.sans, fontSize: 13, lineHeight: 18, color: 'rgba(25,23,20,0.5)', textAlign: 'center' },
+  techList: { marginTop: 24, rowGap: 10 },
+  techTab: {
+    overflow: 'hidden', borderRadius: 20, borderCurve: 'continuous', borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.24)', backgroundColor: '#FFFDF9',
+  },
+  techTabOpen: { borderColor: 'rgba(197,160,89,0.5)', backgroundColor: '#FFFCF4', boxShadow: '0 10px 24px rgba(92,67,25,0.09)' },
+  techTabHead: { minHeight: 58, flexDirection: 'row', alignItems: 'center', columnGap: 12, paddingHorizontal: 15 },
+  techTabIcon: {
+    width: 36, height: 36, borderRadius: 13, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.2)',
+  },
+  techTabIconOpen: { backgroundColor: '#FBEFD6' },
+  techTabName: { flex: 1, fontFamily: F.serifSemiBold, fontSize: 18, color: INK },
+  techTabNameOpen: { color: C.goldDark },
+  techChevron: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(197,160,89,0.09)' },
+  techChevronOpen: { transform: [{ rotate: '180deg' }], backgroundColor: 'rgba(197,160,89,0.16)' },
+  techDrawer: { paddingHorizontal: 15, paddingBottom: 14, paddingTop: 2 },
+  techDrawerViewport: { overflow: 'hidden' },
+  techDrawerTrack: { flexDirection: 'row' },
+  techPanel: { paddingRight: 8, minHeight: 92 },
+  techPanelLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, color: C.goldDark },
+  techPanelText: { marginTop: 6, fontFamily: F.sans, fontSize: 13.5, lineHeight: 19.5, color: 'rgba(25,23,20,0.62)' },
+  techDots: { flexDirection: 'row', justifyContent: 'center', columnGap: 7, marginTop: 4 },
+  techDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(197,160,89,0.26)' },
+  techDotActive: { backgroundColor: GOLD, width: 18 },
+
+  // Pomodoro regimes
+  regimeRow: { marginTop: 24, flexDirection: 'row', columnGap: 11 },
+  regimeCard: {
+    flex: 1, position: 'relative', overflow: 'hidden', alignItems: 'center',
+    borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.26)',
+    backgroundColor: '#FFFDF9', paddingHorizontal: 13, paddingVertical: 18, rowGap: 8,
+    boxShadow: '0 8px 22px rgba(92,67,25,0.06)',
+  },
+  regimeIcon: { width: 48, height: 48, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)' },
+  regimeName: { fontFamily: F.serifSemiBold, fontSize: 16.5, color: INK, textAlign: 'center' },
+  regimeBody: { fontFamily: F.sans, fontSize: 12, lineHeight: 16.5, color: 'rgba(25,23,20,0.56)', textAlign: 'center' },
+  rewardCard: {
+    marginTop: 12, flexDirection: 'row', alignItems: 'center', columnGap: 13,
+    borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
+    backgroundColor: '#FFFCF4', paddingHorizontal: 15, paddingVertical: 15,
+  },
+  rewardMedal: { flexShrink: 0, width: 46, height: 46, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FBEFD6', borderWidth: 1, borderColor: 'rgba(197,160,89,0.28)' },
+  rewardText: { flex: 1, fontFamily: F.sans, fontSize: 13, lineHeight: 18.5, color: 'rgba(25,23,20,0.62)' },
+  nuanceCard: {
+    marginTop: 12, borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E7DFCB',
+    backgroundColor: '#FBF8F1', paddingHorizontal: 15, paddingVertical: 15,
+  },
+  nuanceHead: { flexDirection: 'row', alignItems: 'center', columnGap: 7 },
+  nuanceEyebrow: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.7, color: '#8B6B2F' },
+  nuanceText: { marginTop: 7, fontFamily: F.sans, fontSize: 13.5, lineHeight: 19.5, color: 'rgba(25,23,20,0.62)' },
+  nuanceStrong: { fontFamily: F.sansBold, color: C.goldDark },
+
+  // Bucket list
+  bucketStage: { flex: 1, alignItems: 'center', paddingTop: 78, paddingHorizontal: 26 },
+  bucketCrown: { width: 62, height: 62, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)', marginBottom: 16 },
+  bucketBody: { marginTop: 10, maxWidth: 300, fontFamily: F.sans, fontSize: 14, lineHeight: 20, color: 'rgba(25,23,20,0.56)', textAlign: 'center' },
+  bucketCard: {
+    position: 'relative', overflow: 'hidden', width: '100%', marginTop: 22,
+    borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
+    backgroundColor: '#FFFDF9', paddingHorizontal: 16, paddingVertical: 6,
+    boxShadow: '0 8px 22px rgba(92,67,25,0.06)',
+  },
+  bucketRow: { flexDirection: 'row', alignItems: 'center', columnGap: 12, paddingVertical: 13 },
+  bucketRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EFE7D6' },
+  bucketCheck: { width: 22, height: 22, borderRadius: 7, borderWidth: 1.5, borderColor: 'rgba(197,160,89,0.4)', alignItems: 'center', justifyContent: 'center' },
+  bucketCheckDone: { backgroundColor: GOLD, borderColor: GOLD },
+  bucketItem: { flex: 1, fontFamily: F.serifMedium, fontSize: 16, color: INK },
+  bucketItemDone: { color: 'rgba(25,23,20,0.4)', textDecorationLine: 'line-through' },
+  bucketValue: { marginTop: 22, maxWidth: 310, fontFamily: F.serifMediumItalic, fontSize: 15.5, lineHeight: 22, color: 'rgba(25,23,20,0.5)', textAlign: 'center' },
+
+  // Gratitude faith
+  faithStage: { flex: 1, alignItems: 'center', paddingTop: 84, paddingHorizontal: 18 },
+  scriptureCard: {
+    marginTop: 40, maxWidth: 340,
+    borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.28)',
+    backgroundColor: '#FFFCF4', paddingHorizontal: 22, paddingVertical: 20, alignItems: 'center',
+    boxShadow: '0 8px 22px rgba(92,67,25,0.07)',
+  },
+  scriptureText: { fontFamily: F.serifMediumItalic, fontSize: 17, lineHeight: 25, color: 'rgba(25,23,20,0.72)', textAlign: 'center' },
+  scriptureRef: { marginTop: 14, fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2, color: GOLD },
+
+  // Gratitude how + chart + action
+  gratitudeCard: {
+    position: 'relative', overflow: 'hidden', marginTop: 14,
+    borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
+    backgroundColor: '#FFFDF9', paddingHorizontal: 16, paddingVertical: 16,
+    boxShadow: '0 8px 22px rgba(92,67,25,0.06)',
+  },
+  gratitudeCardHead: { flexDirection: 'row', alignItems: 'center', columnGap: 10 },
+  gratitudeCardIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.2)' },
+  gratitudeCardName: { fontFamily: F.serifSemiBold, fontSize: 18, color: INK },
+  gratitudeCardBody: { marginTop: 8, fontFamily: F.sans, fontSize: 13, lineHeight: 18.5, color: 'rgba(25,23,20,0.6)' },
+  grid: { marginTop: 15, flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  gridCell: { width: 15, height: 15, borderRadius: 3.5 },
+  gratitudeGridCaption: { marginTop: 11, fontFamily: F.serifMediumItalic, fontSize: 13, color: 'rgba(25,23,20,0.46)' },
+  actionFooter: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 20, paddingTop: 14,
+    backgroundColor: 'rgba(255,255,255,0.97)', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EFE7D6',
+  },
+  actionQuestion: { fontFamily: F.serifSemiBold, fontSize: 16, color: INK, textAlign: 'center', marginBottom: 12 },
+  actionRow: { rowGap: 9 },
+  actionPrimary: {
+    position: 'relative', overflow: 'hidden', minHeight: 54, borderRadius: 18, borderCurve: 'continuous',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8,
+    shadowColor: GOLD, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.24, shadowRadius: 14, elevation: 3,
+  },
+  actionPrimaryText: { fontFamily: F.sansBold, fontSize: 12.5, letterSpacing: 1, color: '#FFFFFF', textTransform: 'uppercase' },
+  actionSkip: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  actionSkipText: { fontFamily: F.sansBold, fontSize: 11.5, letterSpacing: 1, color: 'rgba(25,23,20,0.4)', textTransform: 'uppercase' },
+});
 
 function V4HomeRevealSlide({ onNext }: { onNext: () => void }) {
   const rows = ['Big Event countdown', 'Morning prayer', 'Deep work', 'Read Scripture', 'Daily gratitude'];
@@ -25179,6 +26001,7 @@ export default function OnboardingView() {
     activeStep === 'flameGrow' ||
     activeStep === 'flameTools';
   const hideTopChrome =
+    activeStep === 'toolsSlides' ||
     activeStep === 'nameIntro' ||
     activeStep === 'onboardingDevJump' ||
     activeStep === 'traditionIntro' ||
@@ -25291,6 +26114,7 @@ export default function OnboardingView() {
     activeStep === 'dayVisualizationHeader' ||
     activeStep === 'giftMoment' ||
     activeStep === 'giftShowcase' ||
+    activeStep === 'toolsSlides' ||
     valueStepActive ||
     flameStepActive ||
     activeStep === 'bridge' ||
@@ -37177,17 +38001,29 @@ const s = StyleSheet.create({
     zIndex: 2000,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFDF8',
+    backgroundColor: 'transparent',
     overflow: 'hidden',
+  },
+  sysVeilBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFFDF8',
   },
   sysVeilEntryAura: {
     position: 'absolute',
-    top: '2%',
+    top: '0%',
     alignSelf: 'center',
-    width: 500,
-    height: 500,
-    borderRadius: 250,
+    width: 520,
+    height: 520,
+    borderRadius: 260,
     overflow: 'hidden',
+  },
+  sysVeilAxis: {
+    position: 'absolute',
+    top: 76,
+    bottom: 68,
+    alignSelf: 'center',
+    width: 1,
+    opacity: 0.72,
   },
   sysVeilBloom: {
     position: 'absolute',
@@ -37195,13 +38031,15 @@ const s = StyleSheet.create({
     width: 220,
     height: 220,
     borderRadius: 110,
-    backgroundColor: '#FFF4DC',
+    borderWidth: 1.5,
+    borderColor: 'rgba(222,181,100,0.58)',
+    backgroundColor: 'rgba(255,244,220,0.13)',
     zIndex: 10,
   },
   sysVeilCrestBox: {
-    width: 228,
-    height: 228,
-    marginBottom: 0,
+    width: 240,
+    height: 240,
+    marginBottom: 2,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 4,
@@ -37217,42 +38055,64 @@ const s = StyleSheet.create({
   },
   sysVeilChargeRing: {
     position: 'absolute',
-    width: 244,
-    height: 244,
-    borderRadius: 122,
+    width: 252,
+    height: 252,
+    borderRadius: 126,
     borderWidth: 1.2,
     borderColor: 'rgba(197,160,89,0.46)',
     backgroundColor: 'rgba(255,248,235,0.28)',
   },
+  sysVeilIntakePulse: {
+    position: 'absolute',
+    width: 204,
+    height: 204,
+    borderRadius: 102,
+    borderWidth: 1.5,
+    borderColor: 'rgba(219,181,105,0.72)',
+    boxShadow: '0 0 18px rgba(197,160,89,0.18)',
+  },
   sysVeilCrestHalo: {
     position: 'absolute',
-    top: 5,
+    top: 7,
     left: '50%',
-    width: 218,
-    height: 218,
-    marginLeft: -109,
-    borderRadius: 109,
+    width: 226,
+    height: 226,
+    marginLeft: -113,
+    borderRadius: 113,
     backgroundColor: 'rgba(232,196,128,0.18)',
   },
   sysVeilOrbitRail: {
     position: 'absolute',
-    top: 10,
+    top: 12,
     left: '50%',
-    width: 208,
-    height: 208,
-    marginLeft: -104,
-    borderRadius: 104,
+    width: 216,
+    height: 216,
+    marginLeft: -108,
+    borderRadius: 108,
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.14)',
   },
   sysVeilOrbitRing: {
     position: 'absolute',
-    top: 10,
+    top: 12,
     left: '50%',
-    width: 208,
-    height: 208,
-    marginLeft: -104,
+    width: 216,
+    height: 216,
+    marginLeft: -108,
     alignItems: 'center',
+    zIndex: 8,
+  },
+  sysVeilOrbitMarker: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+  },
+  sysVeilOrbitMarkerTailA: {
+    opacity: 0.62,
+    transform: [{ rotate: '-16deg' }],
+  },
+  sysVeilOrbitMarkerTailB: {
+    opacity: 0.38,
+    transform: [{ rotate: '-30deg' }],
   },
   sysVeilOrbitComet: {
     position: 'absolute',
@@ -37276,28 +38136,31 @@ const s = StyleSheet.create({
     backgroundColor: '#EFDCB4',
   },
   sysVeilLogoPlate: {
-    width: 156,
-    height: 156,
-    borderRadius: 36,
+    width: 176,
+    height: 176,
+    borderRadius: 40,
     borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F3F3F1',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.34)',
-    boxShadow: '0 20px 42px rgba(71,55,31,0.15)',
+    borderColor: 'rgba(197,160,89,0.32)',
+    zIndex: 4,
   },
   sysVeilLogo: {
-    width: 144,
-    height: 144,
-    borderRadius: 32,
+    position: 'absolute',
+    width: 216,
+    height: 216,
+    left: -20,
+    top: -20,
+    borderRadius: 48,
   },
   sysVeilContent: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 390,
     alignItems: 'center',
-    paddingHorizontal: 30,
+    paddingHorizontal: 26,
     zIndex: 1,
   },
   sysVeilContentCompact: {
@@ -37305,38 +38168,61 @@ const s = StyleSheet.create({
   },
   sysVeilHeader: {
     width: '100%',
-    minHeight: 60,
+    minHeight: 70,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   sysVeilHeaderInner: {
     width: '100%',
     alignItems: 'center',
   },
+  sysVeilKickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 9,
+    marginBottom: 7,
+  },
+  sysVeilKickerRule: {
+    width: 24,
+    height: 1,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.48)',
+  },
   sysVeilKicker: {
     fontFamily: F.sansBold,
-    fontSize: 9.5,
+    fontSize: 9,
     lineHeight: 12,
-    letterSpacing: 2.2,
-    color: '#A67E34',
-    marginBottom: 5,
+    letterSpacing: 2.05,
+    color: '#9D762F',
   },
   sysVeilTitle: {
     fontFamily: F.serifSemiBold,
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 24,
+    lineHeight: 30,
     color: '#231F1A',
     textAlign: 'center',
+    letterSpacing: -0.25,
   },
   sysVeilRows: {
     width: '100%',
-    maxWidth: 304,
-    height: 200,
+    maxWidth: 318,
+    height: 92,
     alignSelf: 'center',
-    rowGap: 5,
+    rowGap: 7,
     overflow: 'visible',
     zIndex: 2,
+  },
+  sysVeilRowsCompact: {
+    height: 84,
+    rowGap: 5,
+  },
+  sysVeilRowSlot: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   sysVeilRowMain: {
     flex: 1,
@@ -37359,7 +38245,7 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(25,23,20,0.5)',
   },
   sysVeilRowIconIdle: {
-    opacity: 0.5,
+    opacity: 0.64,
   },
   sysVeilRowTextCurrent: {
     color: '#241F19',
@@ -37386,22 +38272,35 @@ const s = StyleSheet.create({
   },
   sysVeilRow: {
     width: '100%',
-    minHeight: 36,
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
     columnGap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 15,
+    paddingHorizontal: 13,
+    paddingVertical: 5,
+    borderRadius: 16,
     borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: 'rgba(35,31,26,0.055)',
-    backgroundColor: 'rgba(255,255,255,0.48)',
+    borderColor: 'rgba(35,31,26,0.075)',
+    backgroundColor: 'rgba(255,255,255,0.62)',
+    overflow: 'visible',
+  },
+  sysVeilPacket: {
+    position: 'absolute',
+    left: 19,
+    top: '50%',
+    marginTop: -6,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#D5AE60',
+    boxShadow: '0 0 12px rgba(197,160,89,0.72)',
+    zIndex: 12,
   },
   sysVeilRowCurrent: {
-    borderColor: 'rgba(197,160,89,0.3)',
+    borderColor: 'rgba(197,160,89,0.42)',
     backgroundColor: '#FFFEFB',
-    boxShadow: '0 7px 20px rgba(89,67,33,0.075)',
+    boxShadow: '0 9px 24px rgba(89,67,33,0.095)',
   },
   sysVeilRowDone: {
     borderColor: 'rgba(197,160,89,0.24)',
@@ -37427,44 +38326,89 @@ const s = StyleSheet.create({
   },
   sysVeilRowText: {
     fontFamily: F.serifMedium,
-    fontSize: 15.5,
+    fontSize: 15.25,
     lineHeight: 20,
-    color: 'rgba(25,23,20,0.36)',
+    color: 'rgba(25,23,20,0.52)',
   },
   sysVeilRowTextDone: {
-    color: 'rgba(25,23,20,0.44)',
+    color: 'rgba(25,23,20,0.5)',
+  },
+  sysVeilCompleteMark: {
+    position: 'absolute',
+    top: 20,
+    left: 0,
+    right: 0,
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 11,
+  },
+  sysVeilCompleteIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#C5A059',
+    boxShadow: '0 4px 12px rgba(197,160,89,0.24)',
+  },
+  sysVeilCompleteText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 20.5,
+    lineHeight: 26,
+    color: '#2B251E',
+  },
+  sysVeilProgressSlot: {
+    width: '100%',
+    maxWidth: 318,
+    height: 43,
+    marginTop: 10,
   },
   sysVeilProgress: {
     width: '100%',
-    maxWidth: 304,
-    marginTop: 12,
+    height: 43,
   },
   sysVeilProgressMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 7,
+    marginBottom: 8,
     paddingHorizontal: 1,
   },
   sysVeilProgressLabel: {
     fontFamily: F.sansBold,
-    fontSize: 9,
+    fontSize: 8.5,
     lineHeight: 11,
-    letterSpacing: 1.45,
+    letterSpacing: 1.35,
     color: 'rgba(116,83,31,0.7)',
+  },
+  sysVeilProgressCountPill: {
+    minWidth: 38,
+    height: 20,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.58)',
   },
   sysVeilProgressCount: {
     fontFamily: F.sansMedium,
-    fontSize: 10,
-    lineHeight: 12,
+    fontSize: 9.5,
+    lineHeight: 11,
     letterSpacing: 0.5,
     color: 'rgba(35,31,26,0.42)',
+    fontVariant: ['tabular-nums'],
   },
   sysVeilBar: {
     width: '100%',
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(197,160,89,0.16)',
+    height: 5,
+    borderRadius: 2.5,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.12)',
+    backgroundColor: 'rgba(197,160,89,0.13)',
     overflow: 'hidden',
   },
   sysVeilBarFillFull: {
@@ -40287,9 +41231,9 @@ const s = StyleSheet.create({
     zIndex: 3,
   },
   chapterCheckpointSeal: {
-    width: 102,
-    height: 102,
-    borderRadius: 51,
+    width: CHECKPOINT_SEAL_SIZE,
+    height: CHECKPOINT_SEAL_SIZE,
+    borderRadius: CHECKPOINT_SEAL_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#17130F',
@@ -40316,6 +41260,16 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  checkpointFlameFlightLayer: {
+    position: 'absolute',
+    top: (CHECKPOINT_SEAL_SIZE - 96) / 2,
+    left: (CHECKPOINT_SEAL_SIZE - 96) / 2,
+    width: 96,
+    height: 96,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 4,
+  },
   checkpointFlameAura: {
     position: 'absolute',
     width: 82,
@@ -40326,15 +41280,14 @@ const s = StyleSheet.create({
     borderColor: 'rgba(255,233,182,0.40)',
   },
   checkpointFlameLottieBox: {
-    width: 86,
-    height: 86,
+    width: CHECKPOINT_FLAME_SIZE,
+    height: CHECKPOINT_FLAME_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkpointFlameLottieHiRes: {
-    width: 172,
-    height: 172,
-    transform: [{ scale: 0.5 }],
+  checkpointFlameLottie: {
+    width: CHECKPOINT_FLAME_SIZE,
+    height: CHECKPOINT_FLAME_SIZE,
   },
   sealFace: {
     position: 'absolute',
@@ -40486,9 +41439,9 @@ const s = StyleSheet.create({
   },
   chapterCheckpointStepDot: {
     marginTop: -14,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: CHECKPOINT_RAIL_DOT_SIZE,
+    height: CHECKPOINT_RAIL_DOT_SIZE,
+    borderRadius: CHECKPOINT_RAIL_DOT_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFDF8',
@@ -40505,15 +41458,15 @@ const s = StyleSheet.create({
     elevation: 4,
   },
   chapterCheckpointRailFlameWrap: {
-    width: 38,
-    height: 38,
+    width: CHECKPOINT_RAIL_FLAME_SIZE,
+    height: CHECKPOINT_RAIL_FLAME_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: -4,
   },
   chapterCheckpointRailFlame: {
-    width: 38,
-    height: 38,
+    width: CHECKPOINT_RAIL_FLAME_SIZE,
+    height: CHECKPOINT_RAIL_FLAME_SIZE,
     transform: [{ translateY: 2 }],
   },
   chapterCheckpointStepText: {

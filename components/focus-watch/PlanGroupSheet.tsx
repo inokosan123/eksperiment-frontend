@@ -10,7 +10,7 @@ import FocusSegments from './FocusSegments';
 import GoldButton from './GoldButton';
 import NativeActivitySelectionButton from './NativeActivitySelectionButton';
 import FocusSheetHeader from './FocusSheetHeader';
-import { appsInCategory, CATEGORY_TINTS, PREVIEW_APPS } from './focusContent';
+import { appsInCategory, CATEGORY_TINTS, ESSENTIAL_APP_OPTIONS, PREVIEW_APPS } from './focusContent';
 import {
   clearNativeActivitySelection,
   copyNativeActivitySelection,
@@ -35,6 +35,34 @@ type Mode = 'new' | 'existing';
 
 function librarySelectionId(groupId: string) {
   return `group.library.${groupId}`;
+}
+
+function AlwaysBlockedPickerGroup({
+  appNames,
+  count,
+}: {
+  appNames: string[];
+  count: number;
+}) {
+  if (count <= 0) return null;
+  return (
+    <View style={s.alwaysBlockedGroup} accessibilityLabel={`Always Blocked, ${count} ${count === 1 ? 'app' : 'apps'}, unavailable for plan groups`}>
+      <View style={s.alwaysBlockedHeader}>
+        <View style={s.alwaysBlockedIcon}><Lock s={14} c="#A24351" w={2.2} /></View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={s.alwaysBlockedTitle}>Always Blocked</Text>
+          <Text style={s.alwaysBlockedMeta}>System group · no plan limits</Text>
+        </View>
+        <Text style={s.alwaysBlockedCount}>{count}</Text>
+      </View>
+      {appNames.length > 0 && (
+        <View style={s.alwaysBlockedNames}>
+          {appNames.map(name => <Text key={name} style={s.alwaysBlockedName}>{name}</Text>)}
+        </View>
+      )}
+      <Text style={s.alwaysBlockedReason}>Remove Always Blocked first if an app should return to a plan group.</Text>
+    </View>
+  );
 }
 
 function NativeExistingGroupActions({
@@ -118,6 +146,8 @@ export default function PlanGroupSheet({
 }) {
   const state = useDayPlan();
   const nativeAvailable = isNativeFocusAvailable();
+  const alwaysStrictSummary = useNativeActivitySelectionSummary('always.strict');
+  const alwaysLooseSummary = useNativeActivitySelectionSummary('always.loose');
   const [mode, setMode] = useState<Mode>('new');
   const [name, setName] = useState('');
   const [appIds, setAppIds] = useState<string[]>([]);
@@ -132,9 +162,26 @@ export default function PlanGroupSheet({
   );
   const nameAvailable = customGroupNameAvailable(name);
   const draftNativeSummary = useNativeActivitySelectionSummary(librarySelectionId(draftGroupId));
+  const alwaysBlockedIds = useMemo(
+    () => new Set(state.alwaysBlockedApps.map(entry => entry.appId)),
+    [state.alwaysBlockedApps]
+  );
+  const alwaysBlockedAppNames = useMemo(
+    () => state.alwaysBlockedApps
+      .map(entry => ESSENTIAL_APP_OPTIONS.find(app => app.id === entry.appId)?.name ?? entry.appId)
+      .sort((a, b) => a.localeCompare(b)),
+    [state.alwaysBlockedApps]
+  );
+  const selectableAppIds = useMemo(
+    () => appIds.filter(appId => !alwaysBlockedIds.has(appId)),
+    [alwaysBlockedIds, appIds]
+  );
+  const nativeAlwaysBlockedCount = (alwaysStrictSummary?.applicationCount ?? 0)
+    + (alwaysLooseSummary?.applicationCount ?? 0);
+  const alwaysBlockedCount = nativeAvailable ? nativeAlwaysBlockedCount : alwaysBlockedAppNames.length;
   const canCreate = name.trim().length > 0
     && nameAvailable
-    && (nativeAvailable ? (draftNativeSummary?.applicationCount ?? 0) > 0 : appIds.length > 0);
+    && (nativeAvailable ? (draftNativeSummary?.applicationCount ?? 0) > 0 : selectableAppIds.length > 0);
 
   const reset = (preserveNativeSelection: boolean) => {
     if (nativeAvailable && !preserveNativeSelection) {
@@ -171,7 +218,7 @@ export default function PlanGroupSheet({
     const saved = saveCustomGroup({
       id: draftGroupId,
       name: name.trim(),
-      appIds: nativeAvailable ? [] : appIds,
+      appIds: nativeAvailable ? [] : selectableAppIds,
     });
     if (!saved) {
       if (nativeAvailable) void clearNativeActivitySelection(destinationId);
@@ -224,12 +271,16 @@ export default function PlanGroupSheet({
                 label="Choose group apps privately"
               />
               <Text style={s.nativeSetupNote}>Apple keeps app names private. Anasta stores this group by name and uses only its protected selection token.</Text>
+              <AlwaysBlockedPickerGroup appNames={[]} count={alwaysBlockedCount} />
             </View>
           ) : <ScrollView style={s.list} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            {APP_CATEGORIES.map(category => (
+            {APP_CATEGORIES.map(category => {
+              const availableApps = appsInCategory(category.id).filter(app => !alwaysBlockedIds.has(app.id));
+              if (availableApps.length === 0) return null;
+              return (
               <View key={category.id}>
                 <Text style={s.groupLabel}>{category.name.toUpperCase()}</Text>
-                {appsInCategory(category.id).map(app => {
+                {availableApps.map(app => {
                   const selected = appIds.includes(app.id);
                   const tint = CATEGORY_TINTS[app.categoryId] ?? { bg: C.goldLight, color: C.goldDark };
                   return (
@@ -246,7 +297,8 @@ export default function PlanGroupSheet({
                   );
                 })}
               </View>
-            ))}
+            );})}
+            <AlwaysBlockedPickerGroup appNames={alwaysBlockedAppNames} count={alwaysBlockedCount} />
           </ScrollView>}
           <GoldButton label={creating ? 'Adding group...' : 'Add group'} disabled={!canCreate || creating} onPress={create} style={{ marginTop: 12 }} />
         </>
@@ -262,25 +314,34 @@ export default function PlanGroupSheet({
             const open = previewId === group.id;
             const alreadyAdded = currentGroupIds.includes(group.id);
             const inUse = isCustomGroupInUse(group.id);
+            const availableAppIds = group.appIds.filter(appId => !alwaysBlockedIds.has(appId));
+            const blockedAppCount = group.appIds.length - availableAppIds.length;
             return (
               <View key={group.id} style={s.existingGroup}>
                 <TouchableOpacity style={s.existingRow} onPress={() => setPreviewId(open ? null : group.id)}>
                   <View style={s.existingMark}>{group.name[0]}</View>
                   <View style={{ flex: 1 }}>
                     <Text style={s.existingName}>{group.name}</Text>
-                    <Text style={s.existingMeta}>{nativeAvailable ? 'Private iPhone group' : `${group.appIds.length} apps`}</Text>
+                    <Text style={s.existingMeta}>
+                      {nativeAvailable
+                        ? 'Private iPhone group'
+                        : `${availableAppIds.length} apps${blockedAppCount > 0 ? ` · ${blockedAppCount} Always Blocked` : ''}`}
+                    </Text>
                   </View>
                   <View style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}><ChevronRight s={16} c={C.textMuted} w={2} /></View>
                 </TouchableOpacity>
                 {open && (
                   <View style={s.preview}>
                     {!nativeAvailable && <View style={s.previewApps}>
-                      {group.appIds.map(appId => (
+                      {availableAppIds.map(appId => (
                         <View key={appId} style={s.previewChip}>
                           <Text style={s.previewChipText}>{PREVIEW_APPS.find(app => app.id === appId)?.name ?? appId}</Text>
                         </View>
                       ))}
                     </View>}
+                    {!nativeAvailable && blockedAppCount > 0 && (
+                      <Text style={s.excludedAppsNote}>{blockedAppCount} {blockedAppCount === 1 ? 'app stays' : 'apps stay'} in the Always Blocked system group.</Text>
+                    )}
                     {nativeAvailable ? (
                       <NativeExistingGroupActions
                         group={group}
@@ -295,7 +356,11 @@ export default function PlanGroupSheet({
                         <Text style={s.alreadyText}>Already in this plan</Text>
                       </View>
                     ) : (
-                      <GoldButton label="Add this group" onPress={() => { onAdd(group.id, group.appIds); close(); }} />
+                      <GoldButton
+                        label="Add this group"
+                        disabled={availableAppIds.length === 0}
+                        onPress={() => { onAdd(group.id, availableAppIds); close(); }}
+                      />
                     )}
                     <TouchableOpacity
                       style={[s.deleteGroupButton, inUse && s.deleteGroupButtonLocked]}
@@ -365,6 +430,15 @@ const s = StyleSheet.create({
   helper: { marginTop: 8, fontFamily: F.sans, fontSize: 9.5, lineHeight: 14, color: C.textSecondary },
   nativeNewGroup: { marginTop: 12, gap: 8 },
   nativeSetupNote: { paddingHorizontal: 4, fontFamily: F.sans, fontSize: 9, lineHeight: 13, color: C.textMuted, textAlign: 'center' },
+  alwaysBlockedGroup: { marginTop: 14, borderRadius: 17, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E7C4CB', backgroundColor: '#FFF8F9', padding: 13, opacity: 0.68, gap: 9 },
+  alwaysBlockedHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  alwaysBlockedIcon: { width: 34, height: 34, borderRadius: 11, borderCurve: 'continuous', backgroundColor: '#F8E7EA', alignItems: 'center', justifyContent: 'center' },
+  alwaysBlockedTitle: { fontFamily: F.serifSemiBold, fontSize: 16, color: '#7B3945' },
+  alwaysBlockedMeta: { marginTop: 1, fontFamily: F.sansMedium, fontSize: 9.5, color: C.textMuted },
+  alwaysBlockedCount: { minWidth: 28, height: 28, borderRadius: 14, backgroundColor: '#F8E7EA', textAlign: 'center', textAlignVertical: 'center', fontFamily: F.sansBold, fontSize: 11, color: '#A24351', fontVariant: ['tabular-nums'] },
+  alwaysBlockedNames: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  alwaysBlockedName: { borderRadius: 999, backgroundColor: '#F8E7EA', paddingHorizontal: 8, paddingVertical: 5, fontFamily: F.sansSemiBold, fontSize: 8.5, color: '#8A4854' },
+  alwaysBlockedReason: { fontFamily: F.sans, fontSize: 9.5, lineHeight: 13.5, color: C.textMuted },
   list: { marginTop: 4, maxHeight: 440 },
   groupLabel: { marginTop: 13, marginBottom: 3, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.7, color: C.textMuted },
   appRow: { minHeight: 47, flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border },
@@ -383,6 +457,7 @@ const s = StyleSheet.create({
   previewApps: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
   previewChip: { borderRadius: 999, backgroundColor: '#F0EFEB', paddingHorizontal: 8, paddingVertical: 5 },
   previewChipText: { fontFamily: F.sansMedium, fontSize: 8.5, color: C.textSecondary },
+  excludedAppsNote: { fontFamily: F.sansMedium, fontSize: 9, lineHeight: 13, color: '#8A4854' },
   alreadyRow: { minHeight: 43, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 13, backgroundColor: '#EAF3ED' },
   alreadyText: { fontFamily: F.sansSemiBold, fontSize: 11, color: '#397A5A' },
   deleteGroupButton: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 7 },

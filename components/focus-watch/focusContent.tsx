@@ -55,6 +55,7 @@ export const WEB_PACKS: WebPackContent[] = [
 export type PreviewApp = { id: string; name: string; categoryId: string };
 
 export const CATEGORY_TINTS: Record<string, { bg: string; color: string }> = {
+  'always-blocked': { bg: '#F8E7EA', color: '#A24351' },
   social: { bg: '#EEEAF5', color: '#6D5AAE' },
   entertainment: { bg: '#FBE6E9', color: '#B54155' },
   games: { bg: '#E8EAFB', color: '#4F46E5' },

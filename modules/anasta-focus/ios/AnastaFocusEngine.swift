@@ -158,6 +158,14 @@ enum AnastaSelectionStore {
     let permanentEssentials = load(selectionId: "core.designated").applicationTokens
       .union(load(selectionId: "global.essentials").applicationTokens)
 
+    if isPlanGroup(selectionId) || isSingleApplication(selectionId) || isLibraryGroup(selectionId) {
+      let rejected = selection.applicationTokens.intersection(alwaysApplications)
+      selection.applicationTokens.subtract(alwaysApplications)
+      if !rejected.isEmpty {
+        notices.append("Always Blocked apps stay in their system group and cannot receive plan limits.")
+      }
+    }
+
     if isPlanEssentials(selectionId) {
       let rejected = selection.applicationTokens.intersection(alwaysApplications)
       let alreadyPermanent = selection.applicationTokens.intersection(permanentEssentials)
@@ -213,6 +221,13 @@ enum AnastaSelectionStore {
         otherSelection.applicationTokens.subtract(selection.applicationTokens)
         save(normalized(otherSelection, selectionId: otherId), selectionId: otherId)
         notices.append("Apps already in the other Always Blocked mode were moved here.")
+      }
+      let removed = removeFromPlanningGroups(selection.applicationTokens)
+      if removed.moved > 0 {
+        notices.append("Always Blocked apps were removed from plan groups and reusable groups.")
+      }
+      if removed.clearedRules > 0 {
+        notices.append("Individual app rules for those apps were cleared.")
       }
 
     default:
@@ -315,6 +330,10 @@ enum AnastaSelectionStore {
       && !selectionId.contains(".app.")
   }
 
+  private static func isLibraryGroup(_ selectionId: String) -> Bool {
+    selectionId.hasPrefix("group.library.")
+  }
+
   private static func isSingleApplication(_ selectionId: String) -> Bool {
     selectionId.hasPrefix("plan.") && selectionId.contains(".app.")
   }
@@ -384,6 +403,34 @@ enum AnastaSelectionStore {
         siblingId,
         allowedApplications: sibling.applicationTokens
       )
+    }
+    return (moved, clearedRules)
+  }
+
+  private static func removeFromPlanningGroups(
+    _ applications: Set<ApplicationToken>
+  ) -> (moved: Int, clearedRules: Int) {
+    guard !applications.isEmpty else { return (0, 0) }
+    let selectionKeyPrefix = key("")
+    var moved = 0
+    var clearedRules = 0
+
+    for storedKey in AnastaFocusShared.defaults.dictionaryRepresentation().keys {
+      guard storedKey.hasPrefix(selectionKeyPrefix) else { continue }
+      let selectionId = String(storedKey.dropFirst(selectionKeyPrefix.count))
+      guard isPlanGroup(selectionId) || isLibraryGroup(selectionId) else { continue }
+      var group = load(selectionId: selectionId)
+      let overlap = group.applicationTokens.intersection(applications)
+      guard !overlap.isEmpty else { continue }
+      group.applicationTokens.subtract(applications)
+      moved += overlap.count
+      save(normalized(group, selectionId: selectionId), selectionId: selectionId)
+      if isPlanGroup(selectionId) {
+        clearedRules += clearChildSelectionsOutsideGroup(
+          selectionId,
+          allowedApplications: group.applicationTokens
+        )
+      }
     }
     return (moved, clearedRules)
   }

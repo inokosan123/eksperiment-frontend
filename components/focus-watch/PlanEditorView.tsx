@@ -24,7 +24,7 @@ import {
   isNativeFocusAvailable,
 } from './focusNativeBridge';
 import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
-import { PREVIEW_APPS, type PreviewApp } from './focusContent';
+import { ESSENTIAL_APP_OPTIONS, PREVIEW_APPS, type PreviewApp } from './focusContent';
 import { usePermissionGate } from './usePermissionGate';
 import { PLAN_VISUALS, planVisualForTheme } from './planVisuals';
 import {
@@ -149,6 +149,8 @@ export default function PlanEditorView({
   const existing = useMemo(() => state.plans.find(plan => plan.id === planId), [planId, state.plans]);
   const [draftPlanId] = useState(() => existing?.id ?? makeId('plan'));
   const planEssentialsSummary = useNativeActivitySelectionSummary(`plan.${draftPlanId}.essentials`);
+  const alwaysStrictSummary = useNativeActivitySelectionSummary('always.strict');
+  const alwaysLooseSummary = useNativeActivitySelectionSummary('always.loose');
   const retainNativeSelections = useRef(!!existing);
   const initialGroupIds = useMemo(
     () => [...APP_CATEGORIES.map(group => group.id), ...(existing?.customGroupIds ?? [])],
@@ -187,6 +189,29 @@ export default function PlanEditorView({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [checkingSelections, setCheckingSelections] = useState(false);
 
+  const alwaysBlockedIds = useMemo(
+    () => new Set(state.alwaysBlockedApps.map(entry => entry.appId)),
+    [state.alwaysBlockedApps]
+  );
+  const planningGroupCatalog = useMemo(
+    () => Object.fromEntries(
+      Object.entries(groupCatalog).map(([groupId, appIds]) => [
+        groupId,
+        appIds.filter(appId => !alwaysBlockedIds.has(appId)),
+      ])
+    ),
+    [alwaysBlockedIds, groupCatalog]
+  );
+  const alwaysBlockedAppNames = useMemo(
+    () => state.alwaysBlockedApps
+      .map(entry => ESSENTIAL_APP_OPTIONS.find(app => app.id === entry.appId)?.name ?? entry.appId)
+      .sort((a, b) => a.localeCompare(b)),
+    [state.alwaysBlockedApps]
+  );
+  const alwaysBlockedAppCount = nativeAvailable
+    ? (alwaysStrictSummary?.applicationCount ?? 0) + (alwaysLooseSummary?.applicationCount ?? 0)
+    : alwaysBlockedAppNames.length;
+
   const groupIds = useMemo(
     () => [...APP_CATEGORIES.map(group => group.id), ...customGroupIds],
     [customGroupIds]
@@ -196,8 +221,8 @@ export default function PlanEditorView({
   const activeRules = rules;
   const activeRule = activeRules.find(rule => rule.groupId === ruleGroupId) ?? null;
   const groupAppCounts = useMemo(
-    () => Object.fromEntries(groupIds.map(groupId => [groupId, (groupCatalog[groupId] ?? []).length])),
-    [groupCatalog, groupIds]
+    () => Object.fromEntries(groupIds.map(groupId => [groupId, (planningGroupCatalog[groupId] ?? []).length])),
+    [groupIds, planningGroupCatalog]
   );
   const draftToleranceEnd = target.essentialOnly ?? target.tolerable;
   const draftRequiresNative = useMemo(() => {
@@ -360,11 +385,12 @@ export default function PlanEditorView({
   };
 
   const addGroup = (groupId: string, appIds: string[]) => {
+    const planAppIds = appIds.filter(appId => !alwaysBlockedIds.has(appId));
     setCustomGroupIds(current => current.includes(groupId) ? current : [...current, groupId]);
     setGroupCatalog(current => {
       const next = clonePlanCatalog(current);
-      for (const id of Object.keys(next)) next[id] = next[id].filter(appId => !appIds.includes(appId));
-      next[groupId] = [...appIds];
+      for (const id of Object.keys(next)) next[id] = next[id].filter(appId => !planAppIds.includes(appId));
+      next[groupId] = [...planAppIds];
       return next;
     });
     setRules(current => completeRules(current, [...groupIds, groupId]));
@@ -665,6 +691,8 @@ export default function PlanEditorView({
             groupIds={groupIds}
             customGroupIds={customGroupIds}
             groupAppCounts={groupAppCounts}
+            alwaysBlockedAppCount={alwaysBlockedAppCount}
+            alwaysBlockedAppNames={alwaysBlockedAppNames}
             resolveGroupName={groupId => groupName(state, groupId)}
             nativeAvailable={nativeAvailable}
             selectionIdForGroup={groupId => `plan.${draftPlanId}.group.${groupId}`}
@@ -720,7 +748,7 @@ export default function PlanEditorView({
       <GroupLimitSheet
         rule={activeRule}
         groupLabel={ruleGroupId ? groupName(state, ruleGroupId) : ''}
-        apps={ruleGroupId ? appsForGroup(groupCatalog, ruleGroupId) : []}
+        apps={ruleGroupId ? appsForGroup(planningGroupCatalog, ruleGroupId) : []}
         planStrength={planStrength}
         nativeSelectionBaseId={`plan.${draftPlanId}`}
         onChange={partial => { if (ruleGroupId) updateActiveRule(ruleGroupId, partial); }}
