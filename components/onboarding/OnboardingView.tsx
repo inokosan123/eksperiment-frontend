@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, InteractionManager, LayoutAnimation, Modal, PixelRatio, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, InteractionManager, Modal, PixelRatio, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import type { NativeScrollEvent, NativeSyntheticEvent, StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as ExpoImage, type ImageRef as ExpoImageRef } from 'expo-image';
@@ -50,7 +50,6 @@ import {
   Calendar,
   Candle,
   CheckSmall,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -95,8 +94,10 @@ import { AnimatedTaskRow, CompletionFlourish } from '@/components/shared/taskAni
 import LottieFlame from '@/components/journal/LottieFlame';
 import BigEventsView from '@/components/journal/BigEventsView';
 import ScriptureReaderView from '@/components/scripture/ScriptureReaderView';
+import HolyScriptureView from '@/components/scripture/HolyScriptureView';
 import MyFavoritesView from '@/components/scripture/MyFavoritesView';
 import BibleNotesView from '@/components/inner-tools/BibleNotesView';
+import { GratitudeTaskSetupSheet } from '@/components/inner-tools/GratitudeView';
 import { useScripture } from '@/components/scripture/ScriptureContext';
 import { normalizeScriptureLanguage } from '@/constants/scripture';
 import { useAppSettings } from '@/components/settings/SettingsContext';
@@ -17755,19 +17756,16 @@ function OrganizeExampleCarouselSlide({
   const [, setImageWarmVersion] = useState(0);
   const displayTitle = title || overline;
   const usePolishedExampleCarousel = true;
-  const needsTallExampleHeader = examples.some(example => example.title.length > 18);
-  // The header lost its dead air and the freed height went to the
-  // illustration: the card is a square image of cardWidth, so a wider card
-  // IS a bigger picture. Each height bucket grows by what its header gave
-  // up (plus the slack we measured), so the top rail and the CTA never
-  // overlap the card.
-  const bigEventsCardMax = height < 720 ? 206 : height < 800 ? 246 : 278;
-  const bigEventsFooterHeight = compactFooter ? height < 720 ? 78 : height < 800 ? 88 : 94 : height < 720 ? 84 : 98;
-  const bigEventsHeaderHeight = compactFooter
-    ? needsTallExampleHeader ? height < 720 ? 74 : 78 : height < 720 ? 60 : 64
-    : needsTallExampleHeader ? height < 720 ? 76 : 80 : height < 720 ? 60 : 64;
+  // Moving the swipe hint into the CTA rail frees 42px above the card. Grow
+  // the square illustration by at most 32px, so every height bucket remains
+  // at least as safe from the bottom rail as the previous layout.
+  const bigEventsCardMax = height < 720 ? 238 : height < 800 ? 278 : 310;
+  const bigEventsFooterHeight = compactFooter
+    ? height < 720 ? 78 : height < 800 ? 82 : 78
+    : height < 720 ? 84 : height < 800 ? 86 : 80;
+  const bigEventsHeaderHeight = height < 720 ? 70 : 72;
   const bigEventsChromeHeight = bigEventsHeaderHeight + bigEventsFooterHeight;
-  const cardWidth = Math.min(width - (usePolishedExampleCarousel ? 88 : 42), usePolishedExampleCarousel ? bigEventsCardMax : 360);
+  const cardWidth = Math.min(width - (usePolishedExampleCarousel ? 64 : 42), usePolishedExampleCarousel ? bigEventsCardMax : 360);
   const cardHeight = usePolishedExampleCarousel
     ? cardWidth + bigEventsChromeHeight
     : Math.min(Math.max(height - insets.top - insets.bottom - 262, 386), 482);
@@ -17859,10 +17857,6 @@ function OrganizeExampleCarouselSlide({
                   />
                 ))}
               </View>
-              <View style={s.organizeSwipeTag}>
-                <Text style={s.organizeSwipeTagText}>Swipe to continue</Text>
-                <ChevronRight s={14} c="rgba(112,82,26,0.62)" w={2.3} />
-              </View>
             </View>
 
             <ScrollView
@@ -17898,16 +17892,23 @@ function OrganizeExampleCarouselSlide({
                       end={{ x: 1, y: 1 }}
                       style={StyleSheet.absoluteFill}
                     />
-                    <View style={[s.organizeExampleQuotePanel, s.organizeBigEventsExampleHeader, compactFooter && s.organizeBigEventsExampleHeaderCompact, { height: bigEventsHeaderHeight, minHeight: bigEventsHeaderHeight, backgroundColor: `${example.accent}10`, borderColor: `${example.accent}24` }]}>
-                      <View style={[s.organizeBigEventsExampleEyebrowRow, compactFooter && s.organizeBigEventsExampleEyebrowPinned]}>
+                    <View style={[s.organizeExampleQuotePanel, s.organizeBigEventsExampleHeader, { height: bigEventsHeaderHeight, minHeight: bigEventsHeaderHeight, backgroundColor: `${example.accent}10`, borderColor: `${example.accent}24` }]}>
+                      <View style={s.organizeBigEventsExampleEyebrowRow}>
                         <View style={[s.organizeExampleEyebrowRule, { backgroundColor: `${example.accent}45` }]} />
                         <View style={[s.organizeExampleEyebrowDiamond, { backgroundColor: example.accent }]} />
                         <Text style={[s.organizeBigEventsExampleEyebrow, { color: example.accent }]}>Example</Text>
                         <View style={[s.organizeExampleEyebrowDiamond, { backgroundColor: example.accent }]} />
                         <View style={[s.organizeExampleEyebrowRule, { backgroundColor: `${example.accent}45` }]} />
                       </View>
-                      <View style={compactFooter ? s.organizeBigEventsExampleTitleGroupCompact : s.organizeBigEventsExampleTitleGroup}>
-                        <Text style={[s.organizeBigEventsExampleTitle, compactFooter && s.organizeBigEventsExampleTitleCompact]}>{example.title}</Text>
+                      <View style={s.organizeBigEventsExampleTitleGroup}>
+                        <Text
+                          numberOfLines={2}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.86}
+                          style={s.organizeBigEventsExampleTitle}
+                        >
+                          {example.title}
+                        </Text>
                         <LinearGradient
                           pointerEvents="none"
                           colors={[`${example.accent}00`, `${example.accent}CC`, `${example.accent}00`]}
@@ -17955,7 +17956,7 @@ function OrganizeExampleCarouselSlide({
                           minimumFontScale={0.9}
                           style={[s.organizeBigEventsIllustrationText, compactFooter && s.organizeBigEventsIllustrationTextCompact]}
                         >
-                          "{example.body}"
+                          {'“'}{example.body}{'”'}
                         </Text>
                       </View>
                     </View>
@@ -17966,7 +17967,16 @@ function OrganizeExampleCarouselSlide({
           </Reanimated.View>
         </View>
 
-        <AnimatedCta active={ready} delay={120} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
+        <AnimatedCta active={!ready} delay={140} duration={360} distance={12} style={footerStyle} pointerEvents="none">
+          <View style={s.organizeSwipeFooterSlot}>
+            <View style={s.organizeSwipeTag}>
+              <Text style={s.organizeSwipeTagText}>Swipe to continue</Text>
+              <ChevronRight s={14} c="rgba(112,82,26,0.62)" w={2.3} />
+            </View>
+          </View>
+        </AnimatedCta>
+
+        <AnimatedCta active={ready} delay={90} duration={420} distance={16} style={footerStyle} pointerEvents={ready ? 'auto' : 'none'}>
           <View style={s.ctaIsland}>
             <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
               <Text style={s.primaryButtonText}>{ctaLabel}</Text>
@@ -22580,7 +22590,7 @@ function HabitMomentumScenarioCard({
             minimumFontScale={0.86}
             style={[s.organizeBigEventsIllustrationText, s.habitMomentumQuoteText]}
           >
-            "{renderHighlightedBodyText(scenario.message, [...scenario.highlights], [s.habitMomentumQuoteStrong, { color: scenario.accent }])}"
+            {'“'}{renderHighlightedBodyText(scenario.message, [...scenario.highlights], [s.habitMomentumQuoteStrong, { color: scenario.accent }])}{'”'}
           </Text>
         </View>
       </View>
@@ -23734,19 +23744,17 @@ function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
 }
 
 // ─── Bible walkthrough ────────────────────────────────────────────────────────
-// Four real scripture screens carried by one continuous guided session:
-// the reader on the slogan chapter (Ephesians 5, pre-seeded with our comment
-// and a highlight), My Favorites with the color shelves, a deep-link back
-// into John 16, and the Bible Notes shelf.
+// Five real scripture surfaces carried by one continuous guided session:
+// the slogan reader, My Favorites, a deep-link back to the prepared Anasta
+// comment, Bible Notes, and the real book/chapter library.
 const BIBLE_GUIDE_SLOGAN = { bookId: 49, chapter: 5, verse: 14 };
-const BIBLE_GUIDE_SEED_VERSE = 16;
 const BIBLE_GUIDE_RETURN = { bookId: 43, chapter: 16, verse: 33 };
 
 function BibleGuideSlide({ onNext }: { onNext: () => void }) {
   const { beginGuidedSetup, endGuidedSetup, patchSession, setPresentation } = useGuidedSetup();
   const { ready, categories, getChapter, upsertAnnotations, updateCategory } = useScripture();
   const { settings } = useAppSettings();
-  const [scene, setScene] = useState<'reader1' | 'favorites' | 'reader2' | 'notes'>('reader1');
+  const [scene, setScene] = useState<'library' | 'reader1' | 'favorites' | 'reader2' | 'notes'>('reader1');
   // The reader mounts only after seeding is done: every seed write refreshes
   // the whole scripture context, and mounting the reader inside that render
   // storm is exactly where the tour used to go down.
@@ -23754,9 +23762,8 @@ function BibleGuideSlide({ onNext }: { onNext: () => void }) {
   const seedStartedRef = useRef(false);
   const sessionStartedRef = useRef(false);
 
-  // Seed the page the tour opens on: our comment on the slogan verse, a gold
-  // highlight two verses below, and the Encouragement verse waiting in
-  // Favorites. Real annotations — they stay with the user after onboarding.
+  // The one spec-approved seed: an Anasta comment. The user creates the
+  // slogan highlight and their own comment inside the real walkthrough.
   useEffect(() => {
     if (!ready || seedStartedRef.current) return;
     seedStartedRef.current = true;
@@ -23767,49 +23774,26 @@ function BibleGuideSlide({ onNext }: { onNext: () => void }) {
     (async () => {
       try {
         const lang = normalizeScriptureLanguage(settings.bibleLang);
-        const [ephesians, john] = await Promise.all([
-          getChapter(BIBLE_GUIDE_SLOGAN.bookId, BIBLE_GUIDE_SLOGAN.chapter, lang),
-          getChapter(BIBLE_GUIDE_RETURN.bookId, BIBLE_GUIDE_RETURN.chapter, lang),
-        ]);
-        const sloganVerse = ephesians.find(verse => verse.verse === BIBLE_GUIDE_SLOGAN.verse);
-        const seedVerse = ephesians.find(verse => verse.verse === BIBLE_GUIDE_SEED_VERSE);
+        const john = await getChapter(BIBLE_GUIDE_RETURN.bookId, BIBLE_GUIDE_RETURN.chapter, lang);
         const courageVerse = john.find(verse => verse.verse === BIBLE_GUIDE_RETURN.verse);
         const inputs = [];
-        if (sloganVerse) {
-          inputs.push({
-            kind: 'comment' as const,
-            color: 'gold' as const,
-            bookId: BIBLE_GUIDE_SLOGAN.bookId,
-            chapter: BIBLE_GUIDE_SLOGAN.chapter,
-            verse: BIBLE_GUIDE_SLOGAN.verse,
-            text: sloganVerse.text,
-            comment: 'Anasta begins here — the call to wake, and to walk as a child of light.',
-          });
-        }
-        if (seedVerse) {
-          inputs.push({
-            kind: 'highlight' as const,
-            color: 'gold' as const,
-            bookId: BIBLE_GUIDE_SLOGAN.bookId,
-            chapter: BIBLE_GUIDE_SLOGAN.chapter,
-            verse: BIBLE_GUIDE_SEED_VERSE,
-            text: seedVerse.text,
-          });
-        }
         if (courageVerse) {
           inputs.push({
-            kind: 'highlight' as const,
+            kind: 'comment' as const,
             color: 'orange' as const,
             bookId: BIBLE_GUIDE_RETURN.bookId,
             chapter: BIBLE_GUIDE_RETURN.chapter,
             verse: BIBLE_GUIDE_RETURN.verse,
             text: courageVerse.text,
+            comment: 'Peace is not the absence of the storm. It is knowing Who is with you in it.',
           });
         }
         if (inputs.length > 0) await upsertAnnotations(inputs);
         // Rename the seventh color only while it still wears its default name.
         const orange = categories.find(category => category.color === 'orange');
-        if (!orange || orange.label === 'Zeal') await updateCategory('orange', 'Encouragement');
+        if (!orange || orange.label === 'Zeal' || orange.label === 'Encouragement') {
+          await updateCategory('orange', 'Anasta');
+        }
       } catch (error) {
         console.warn('[BibleGuide] seeding failed', error);
       }
@@ -23831,6 +23815,11 @@ function BibleGuideSlide({ onNext }: { onNext: () => void }) {
 
   useEffect(() => () => endGuidedSetup(), [endGuidedSetup]);
 
+  const handleLibraryAdvance = useCallback(() => {
+    endGuidedSetup();
+    onNext();
+  }, [endGuidedSetup, onNext]);
+
   const handleReaderAdvance = useCallback((event: 'sceneDone' | 'openNotes') => {
     setPresentation(null);
     if (event === 'sceneDone') {
@@ -23849,9 +23838,10 @@ function BibleGuideSlide({ onNext }: { onNext: () => void }) {
   }, [patchSession, setPresentation]);
 
   const handleNotesComplete = useCallback(() => {
-    endGuidedSetup();
-    onNext();
-  }, [endGuidedSetup, onNext]);
+    setPresentation(null);
+    patchSession({ phase: 'libraryIntro' });
+    setScene('library');
+  }, [patchSession, setPresentation]);
 
   return (
     <View style={s.screen}>
@@ -23862,6 +23852,9 @@ function BibleGuideSlide({ onNext }: { onNext: () => void }) {
           </View>
         ) : (
           <>
+            {scene === 'library' && (
+              <HolyScriptureView guided onGuidedOpen={handleLibraryAdvance} />
+            )}
             {scene === 'reader1' && (
               <ScriptureReaderView
                 guided
@@ -24756,20 +24749,10 @@ function V4WeeklyRevealSlide({ displayName, onNext }: { displayName?: string; on
 // premium "science" scroller, the section ends on the only action in the
 // chapter (Daily Gratitude as a task). CTA-driven, forward-only.
 
-// A soft height/opacity transition for the technique drawer open/collapse.
-function animateSoftLayoutChange() {
-  LayoutAnimation.configureNext({
-    duration: 300,
-    create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-    update: { type: LayoutAnimation.Types.easeInEaseOut },
-    delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-  });
-}
-
 type ToolsScienceCard = { icon: React.ReactNode; headline: string; body: string };
-type ToolsScienceScreen = { eyebrow: string; title: string; intro: string; cards: ToolsScienceCard[] };
+type ToolsScienceSpec = { eyebrow: string; title: string; intro: string; cards: ToolsScienceCard[] };
 
-const TOOLS_JOURNAL_SCIENCE: ToolsScienceScreen = {
+const TOOLS_JOURNAL_SCIENCE: ToolsScienceSpec = {
   eyebrow: 'THE FIRST TOOL',
   title: 'Journal',
   intro: 'A few minutes of writing, backed by decades of research.',
@@ -24781,7 +24764,7 @@ const TOOLS_JOURNAL_SCIENCE: ToolsScienceScreen = {
   ],
 };
 
-const TOOLS_POMODORO_SCIENCE: ToolsScienceScreen = {
+const TOOLS_POMODORO_SCIENCE: ToolsScienceSpec = {
   eyebrow: 'THE SECOND TOOL',
   title: 'Pomodoro',
   intro: 'Work in bursts that protect your focus — not longer hours, sharper ones.',
@@ -24793,7 +24776,7 @@ const TOOLS_POMODORO_SCIENCE: ToolsScienceScreen = {
   ],
 };
 
-const TOOLS_GRATITUDE_SCIENCE: ToolsScienceScreen = {
+const TOOLS_GRATITUDE_SCIENCE: ToolsScienceSpec = {
   eyebrow: 'THE LAST TOOL',
   title: 'Gratitude',
   intro: 'A practice as old as faith itself — now backed by decades of research.',
@@ -24840,10 +24823,23 @@ const TOOLS_BUCKET_ITEMS = [
 // One shared premium science scroller — Journal, Pomodoro and Gratitude all
 // wear it. Title + intro at the top, a calm feed of finding plaques, a fixed
 // Continue at the foot.
-function ToolsScienceScreen({ screen, bottomInset, onNext }: { screen: ToolsScienceScreen; bottomInset: number; onNext: () => void }) {
+function ToolsScienceScreen({ screen, bottomInset, onNext }: { screen: ToolsScienceSpec; bottomInset: number; onNext: () => void }) {
+  const heroIcon = screen.title === 'Journal'
+    ? <Feather s={23} c={GOLD} w={1.8} />
+    : screen.title === 'Pomodoro'
+      ? <Hourglass s={23} c={GOLD} w={1.8} />
+      : <Sparkles s={23} c={GOLD} w={1.8} />;
+
   return (
     <View style={tools.screen}>
-      <ScrollView contentContainerStyle={[tools.scienceScroll, { paddingBottom: bottomInset + 118 }]} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[tools.scienceScroll, { paddingBottom: bottomInset + 172 }]} showsVerticalScrollIndicator={false}>
+        <Reanimated.View
+          entering={FadeInUp.duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }, { scale: 0.92 }] })}
+          style={tools.heroSeal}
+        >
+          <View style={tools.heroSealHalo} />
+          {heroIcon}
+        </Reanimated.View>
         <Reanimated.Text entering={FadeIn.duration(440).easing(Easing.out(Easing.cubic))} style={tools.scienceEyebrow}>
           {screen.eyebrow}
         </Reanimated.Text>
@@ -24860,6 +24856,11 @@ function ToolsScienceScreen({ screen, bottomInset, onNext }: { screen: ToolsScie
           {screen.intro}
         </Reanimated.Text>
 
+        <View style={tools.findingsHeader}>
+          <Text style={tools.findingsLabel}>RESEARCH-BACKED BENEFITS</Text>
+          <View style={tools.findingsCount}><Text style={tools.findingsCountText}>4 FINDINGS</Text></View>
+        </View>
+
         <View style={tools.scienceFeed}>
           {screen.cards.map((card, index) => (
             <Reanimated.View
@@ -24867,8 +24868,18 @@ function ToolsScienceScreen({ screen, bottomInset, onNext }: { screen: ToolsScie
               entering={FadeInUp.delay(360 + index * 130).duration(500).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 20 }] })}
               style={tools.scienceCard}
             >
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(255,255,255,0.98)', 'rgba(255,251,241,0.95)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
               <View pointerEvents="none" style={tools.scienceCardSheen} />
-              <View style={tools.scienceCardIcon}>{card.icon}</View>
+              <View style={tools.scienceCardMark}>
+                <View style={tools.scienceCardIcon}>{card.icon}</View>
+                <Text style={tools.scienceCardIndex}>{String(index + 1).padStart(2, '0')}</Text>
+              </View>
               <View style={tools.scienceCardBody}>
                 <Text style={tools.scienceCardHeadline}>{card.headline}</Text>
                 <Text style={tools.scienceCardText}>{card.body}</Text>
@@ -24887,7 +24898,13 @@ function ToolsScienceScreen({ screen, bottomInset, onNext }: { screen: ToolsScie
 // the rest of onboarding's primary button.
 function ToolsFooterCta({ label, onPress, delay = 220, bottomInset }: { label: string; onPress: () => void; delay?: number; bottomInset: number }) {
   return (
-    <AnimatedCta delay={delay} style={[tools.footer, { bottom: bottomInset + 18 }]}>
+    <AnimatedCta delay={delay} style={[tools.footer, { paddingBottom: bottomInset + 18 }]}>
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(251,242,224,0)', 'rgba(255,253,248,0.94)', '#FFFDF8']}
+        locations={[0, 0.46, 1]}
+        style={StyleSheet.absoluteFill}
+      />
       <View style={s.ctaIsland}>
         <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onPress} style={s.primaryButton}>
           <Text style={s.primaryButtonText}>{label}</Text>
@@ -24907,9 +24924,9 @@ function ToolsJournalTechniques({ bottomInset, onNext }: { bottomInset: number; 
   const dragX = useSharedValue(0);
   const openIndex = TOOLS_JOURNAL_TECHNIQUES.findIndex(t => t.key === openKey);
   const active = openIndex >= 0 ? TOOLS_JOURNAL_TECHNIQUES[openIndex] : null;
+  const drawerPageWidth = Math.max(220, width - 76);
 
   const selectTab = (key: string) => {
-    animateSoftLayoutChange();
     if (key === openKey) {
       setOpenKey(null);
       return;
@@ -24945,65 +24962,94 @@ function ToolsJournalTechniques({ bottomInset, onNext }: { bottomInset: number; 
     }), [dragX, goPanel, pagePos, panel, width]);
 
   const trackStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: -pagePos.value * (width - 76) + dragX.value }],
+    transform: [{ translateX: -pagePos.value * drawerPageWidth + dragX.value }],
   }));
 
   return (
     <View style={tools.screen}>
-      <ScrollView contentContainerStyle={[tools.techScroll, { paddingBottom: bottomInset + 118 }]} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[tools.techScroll, { paddingBottom: bottomInset + 172 }]} showsVerticalScrollIndicator={false}>
+        <Reanimated.View entering={FadeInUp.duration(520)} style={tools.heroSeal}>
+          <View style={tools.heroSealHalo} />
+          <Feather s={23} c={GOLD} w={1.8} />
+        </Reanimated.View>
         <Text style={tools.scienceEyebrow}>THREE WAYS TO WRITE</Text>
         <Text style={tools.techTitle}>Pick what fits the moment.</Text>
-        <Text style={tools.techIntro}>Tap a technique to see how it works.</Text>
+        <Text style={tools.techIntro}>One journal, three different doors. Tap any technique to open its guide.</Text>
 
-        <View style={tools.techList}>
+        <View style={tools.techTabsRow}>
           {TOOLS_JOURNAL_TECHNIQUES.map(technique => {
             const isOpen = technique.key === openKey;
             return (
-              <View key={technique.key} style={[tools.techTab, isOpen && tools.techTabOpen]}>
-                <TouchableOpacity activeOpacity={0.84} haptic="selection" onPress={() => selectTab(technique.key)} style={tools.techTabHead}>
+              <TouchableOpacity
+                key={technique.key}
+                activeOpacity={0.84}
+                haptic="selection"
+                onPress={() => selectTab(technique.key)}
+                style={[tools.techTab, isOpen && tools.techTabOpen]}
+              >
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={isOpen ? ['#FFF9EA', '#F9EBCB'] : ['rgba(255,255,255,0.92)', 'rgba(255,252,246,0.92)']}
+                  style={StyleSheet.absoluteFill}
+                />
                   <View style={[tools.techTabIcon, isOpen && tools.techTabIconOpen]}>{technique.icon}</View>
                   <Text style={[tools.techTabName, isOpen && tools.techTabNameOpen]}>{technique.name}</Text>
-                  <View style={[tools.techChevron, isOpen && tools.techChevronOpen]}>
-                    <ChevronDown s={15} c={isOpen ? GOLD : '#C9B18A'} w={2.2} />
-                  </View>
-                </TouchableOpacity>
-
-                {isOpen && active ? (
-                  <Reanimated.View
-                    entering={FadeIn.duration(240).easing(Easing.out(Easing.cubic))}
-                    style={tools.techDrawer}
-                  >
-                    <GestureDetector gesture={swipe}>
-                      <View style={tools.techDrawerViewport}>
-                        <Reanimated.View style={[tools.techDrawerTrack, { width: (width - 76) * 2 }, trackStyle]}>
-                          <View style={[tools.techPanel, { width: width - 76 }]}>
-                            <Text style={tools.techPanelLabel}>DESCRIPTION</Text>
-                            <Text style={tools.techPanelText}>{active.description}</Text>
-                          </View>
-                          <View style={[tools.techPanel, { width: width - 76 }]}>
-                            <Text style={tools.techPanelLabel}>WHY IT HELPS</Text>
-                            <Text style={tools.techPanelText}>{active.benefits}</Text>
-                          </View>
-                        </Reanimated.View>
-                      </View>
-                    </GestureDetector>
-                    <View style={tools.techDots}>
-                      {[0, 1].map(dotIndex => (
-                        <TouchableOpacity
-                          key={dotIndex}
-                          haptic="selection"
-                          onPress={() => { pagePos.value = withTiming(dotIndex, { duration: 300, easing: Easing.out(Easing.cubic) }); setPanel(dotIndex); }}
-                          hitSlop={8}
-                          style={[tools.techDot, panel === dotIndex && tools.techDotActive]}
-                        />
-                      ))}
-                    </View>
-                  </Reanimated.View>
-                ) : null}
-              </View>
+                  <View style={[tools.techTabIndicator, isOpen && tools.techTabIndicatorOpen]} />
+              </TouchableOpacity>
             );
           })}
         </View>
+
+        <Reanimated.View layout={LinearTransition.duration(280).easing(Easing.out(Easing.cubic))} style={tools.techDrawerStage}>
+          {active ? (
+            <Reanimated.View
+              key={active.key}
+              entering={FadeInUp.duration(340).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 12 }] })}
+              exiting={FadeOut.duration(150)}
+              style={tools.techDrawer}
+            >
+              <View style={tools.techDrawerHeader}>
+                <View>
+                  <Text style={tools.techDrawerEyebrow}>{active.name.toUpperCase()}</Text>
+                  <Text style={tools.techDrawerTitle}>{panel === 0 ? 'What it is' : 'Why it helps'}</Text>
+                </View>
+                <Text style={tools.techDrawerPage}>{panel + 1} / 2</Text>
+              </View>
+              <GestureDetector gesture={swipe}>
+                <View style={tools.techDrawerViewport}>
+                  <Reanimated.View style={[tools.techDrawerTrack, { width: drawerPageWidth * 2 }, trackStyle]}>
+                    <View style={[tools.techPanel, { width: drawerPageWidth }]}>
+                      <Text style={tools.techPanelLabel}>DESCRIPTION</Text>
+                      <Text style={tools.techPanelText}>{active.description}</Text>
+                    </View>
+                    <View style={[tools.techPanel, { width: drawerPageWidth }]}>
+                      <Text style={tools.techPanelLabel}>BENEFITS</Text>
+                      <Text style={tools.techPanelText}>{active.benefits}</Text>
+                    </View>
+                  </Reanimated.View>
+                </View>
+              </GestureDetector>
+              <View style={tools.techDots}>
+                {[0, 1].map(dotIndex => (
+                  <TouchableOpacity
+                    key={dotIndex}
+                    haptic="selection"
+                    onPress={() => { pagePos.value = withTiming(dotIndex, { duration: 300, easing: Easing.out(Easing.cubic) }); setPanel(dotIndex); }}
+                    hitSlop={10}
+                    style={[tools.techDot, panel === dotIndex && tools.techDotActive]}
+                  />
+                ))}
+              </View>
+              <Text style={tools.techSwipeHint}>Swipe to move between description and benefits</Text>
+            </Reanimated.View>
+          ) : (
+            <Reanimated.View entering={FadeIn.duration(240)} style={tools.techEmptyDrawer}>
+              <View style={tools.techEmptyLine} />
+              <Text style={tools.techEmptyText}>Choose a technique above. You can explore one, all three, or simply continue.</Text>
+              <View style={tools.techEmptyLine} />
+            </Reanimated.View>
+          )}
+        </Reanimated.View>
       </ScrollView>
 
       <ToolsFooterCta delay={480} bottomInset={bottomInset} label="Continue" onPress={onNext} />
@@ -25015,14 +25061,18 @@ function ToolsJournalTechniques({ bottomInset, onNext }: { bottomInset: number; 
 function ToolsPomodoroRegimes({ bottomInset, onNext }: { bottomInset: number; onNext: () => void }) {
   return (
     <View style={tools.screen}>
-      <ScrollView contentContainerStyle={[tools.centerScroll, { paddingBottom: bottomInset + 118 }]} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[tools.centerScroll, { paddingBottom: bottomInset + 172 }]} showsVerticalScrollIndicator={false}>
+        <Reanimated.View entering={FadeInUp.duration(520)} style={tools.heroSeal}>
+          <View style={tools.heroSealHalo} />
+          <Hourglass s={23} c={GOLD} w={1.8} />
+        </Reanimated.View>
         <Text style={tools.scienceEyebrow}>HOW IT WORKS</Text>
         <Text style={tools.scienceTitle}>Two ways to work.</Text>
 
         <View style={tools.regimeRow}>
           {[
-            { name: 'Single Session', icon: <Clock s={22} c={GOLD} w={1.9} />, body: 'One timer. When it runs out, you earn a medal marking the session complete.' },
-            { name: 'Classic Cycle', icon: <Coffee s={22} c={GOLD} w={1.9} />, body: 'The traditional rhythm: a work interval, a short break, repeated — with a longer break at the end.' },
+            { name: 'Single Session', label: '01 · ONE CLEAR BLOCK', icon: <Clock s={22} c={GOLD} w={1.9} />, body: 'One timer. When it runs out, you earn a medal marking the session complete.' },
+            { name: 'Pomodoro Classic Cycle', label: '02 · FOCUS + RECOVERY', icon: <Coffee s={22} c={GOLD} w={1.9} />, body: 'The traditional rhythm: a work interval, a short break, repeated — with a longer break at the end.' },
           ].map((regime, index) => (
             <Reanimated.View
               key={regime.name}
@@ -25031,6 +25081,7 @@ function ToolsPomodoroRegimes({ bottomInset, onNext }: { bottomInset: number; on
             >
               <View pointerEvents="none" style={tools.scienceCardSheen} />
               <View style={tools.regimeIcon}>{regime.icon}</View>
+              <Text style={tools.regimeLabel}>{regime.label}</Text>
               <Text style={tools.regimeName}>{regime.name}</Text>
               <Text style={tools.regimeBody}>{regime.body}</Text>
             </Reanimated.View>
@@ -25070,7 +25121,7 @@ function ToolsPomodoroRegimes({ bottomInset, onNext }: { bottomInset: number; on
 function ToolsBucketList({ bottomInset, onNext }: { bottomInset: number; onNext: () => void }) {
   return (
     <View style={tools.screen}>
-      <View style={tools.bucketStage}>
+      <ScrollView contentContainerStyle={[tools.bucketStage, { paddingBottom: bottomInset + 172 }]} showsVerticalScrollIndicator={false}>
         <Reanimated.View entering={FadeIn.delay(120).duration(480)} style={tools.bucketCrown}>
           <Crown s={30} c={GOLD} w={1.6} />
         </Reanimated.View>
@@ -25097,7 +25148,7 @@ function ToolsBucketList({ bottomInset, onNext }: { bottomInset: number; onNext:
         <Reanimated.Text entering={FadeIn.delay(880).duration(520)} style={tools.bucketValue}>
           Some things matter too much to forget. Keep them somewhere you&apos;ll actually see them again.
         </Reanimated.Text>
-      </View>
+      </ScrollView>
 
       <ToolsFooterCta delay={1040} bottomInset={bottomInset} label="Continue" onPress={onNext} />
     </View>
@@ -25113,7 +25164,7 @@ function ToolsGratitudeFaith({ bottomInset, onNext }: { bottomInset: number; onN
 
   return (
     <View style={tools.screen}>
-      <View style={tools.faithStage}>
+      <ScrollView contentContainerStyle={[tools.faithStage, { paddingBottom: bottomInset + 172 }]} showsVerticalScrollIndicator={false}>
         <OrganizeLayersCharterHeader
           eyebrow="GRATITUDE & FAITH"
           title={'Give thanks\nin all things.'}
@@ -25130,7 +25181,7 @@ function ToolsGratitudeFaith({ bottomInset, onNext }: { bottomInset: number; onN
           </Text>
           <Text style={tools.scriptureRef}>1 THESSALONIANS 5:18</Text>
         </Reanimated.View>
-      </View>
+      </ScrollView>
 
       <ToolsFooterCta delay={1720} bottomInset={bottomInset} label="Continue" onPress={onNext} />
     </View>
@@ -25170,9 +25221,15 @@ function ToolsGratitudeCell({ level, index, bloom }: { level: number; index: num
 
 // 28d-3: the two kinds of gratitude, the chart, and the section's one action.
 function ToolsGratitudeHow({ bottomInset, onNext, onGratitude }: { bottomInset: number; onNext: () => void; onGratitude: (enabled: boolean) => void }) {
+  const [taskSheetOpen, setTaskSheetOpen] = useState(false);
+
   return (
     <View style={tools.screen}>
-      <ScrollView contentContainerStyle={[tools.centerScroll, { paddingBottom: bottomInset + 150 }]} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[tools.centerScroll, { paddingBottom: bottomInset + 205 }]} showsVerticalScrollIndicator={false}>
+        <Reanimated.View entering={FadeInUp.duration(520)} style={tools.heroSeal}>
+          <View style={tools.heroSealHalo} />
+          <Sparkles s={23} c={GOLD} w={1.8} />
+        </Reanimated.View>
         <Text style={tools.scienceEyebrow}>IN ANASTA</Text>
         <Text style={tools.scienceTitle}>Two ways to practice.</Text>
 
@@ -25203,7 +25260,11 @@ function ToolsGratitudeHow({ bottomInset, onNext, onGratitude }: { bottomInset: 
           <TouchableOpacity
             activeOpacity={0.9}
             haptic="medium"
-            onPress={() => { onGratitude(true); runSelectionHaptic(); onNext(); }}
+            onPress={() => {
+              onGratitude(true);
+              runSelectionHaptic();
+              setTaskSheetOpen(true);
+            }}
             style={tools.actionPrimary}
           >
             <LinearGradient colors={['#E7C77F', GOLD, '#A97925']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
@@ -25216,10 +25277,23 @@ function ToolsGratitudeHow({ bottomInset, onNext, onGratitude }: { bottomInset: 
             onPress={() => { onGratitude(false); onNext(); }}
             style={tools.actionSkip}
           >
-            <Text style={tools.actionSkipText}>Not now</Text>
+            <Text style={tools.actionSkipText}>Continue</Text>
           </TouchableOpacity>
         </View>
       </View>
+
+      <GratitudeTaskSetupSheet
+        visible={taskSheetOpen}
+        onClose={() => {
+          setTaskSheetOpen(false);
+          onGratitude(false);
+        }}
+        onSaved={() => {
+          setTaskSheetOpen(false);
+          onGratitude(true);
+          onNext();
+        }}
+      />
     </View>
   );
 }
@@ -25227,6 +25301,16 @@ function ToolsGratitudeHow({ bottomInset, onNext, onGratitude }: { bottomInset: 
 // The section controller: forward-only, CTA-driven, with a slim progress rail
 // of eight beads so the user always knows where they stand.
 const TOOLS_SEQUENCE = ['journalSci', 'journalTech', 'pomodoroSci', 'pomodoroReg', 'bucket', 'gratitudeFaith', 'gratitudeSci', 'gratitudeHow'] as const;
+const TOOLS_STEP_LABELS: Record<(typeof TOOLS_SEQUENCE)[number], string> = {
+  journalSci: 'JOURNAL · RESEARCH',
+  journalTech: 'JOURNAL · TECHNIQUES',
+  pomodoroSci: 'POMODORO · RESEARCH',
+  pomodoroReg: 'POMODORO · MODES',
+  bucket: 'BUCKET LIST',
+  gratitudeFaith: 'GRATITUDE · FAITH',
+  gratitudeSci: 'GRATITUDE · RESEARCH',
+  gratitudeHow: 'GRATITUDE · PRACTICE',
+};
 
 function V4ToolsSlides({ onNext, onGratitude }: { onNext: () => void; onGratitude: (enabled: boolean) => void }) {
   const insets = useSafeAreaInsets();
@@ -25244,13 +25328,32 @@ function V4ToolsSlides({ onNext, onGratitude }: { onNext: () => void; onGratitud
 
   return (
     <View style={tools.root}>
-      <View style={[tools.progressRail, { top: insets.top + 12 }]} pointerEvents="none">
-        {TOOLS_SEQUENCE.map((key, beadIndex) => (
-          <View key={key} style={[tools.progressBead, beadIndex <= index && tools.progressBeadDone]} />
-        ))}
+      <LinearGradient
+        pointerEvents="none"
+        colors={[...VALUE_ATELIER_GRADIENT]}
+        locations={[...VALUE_ATELIER_GRADIENT_LOCATIONS]}
+        style={StyleSheet.absoluteFill}
+      />
+      <ValueAtelierBackdrop topInset={insets.top + 18} />
+
+      <View style={[tools.progressHud, { top: insets.top + 10 }]} pointerEvents="none">
+        <View style={tools.progressMeta}>
+          <Text style={tools.progressLabel}>{TOOLS_STEP_LABELS[step]}</Text>
+          <Text style={tools.progressCount}>{index + 1} / {TOOLS_SEQUENCE.length}</Text>
+        </View>
+        <View style={tools.progressRail}>
+          {TOOLS_SEQUENCE.map((key, beadIndex) => (
+            <View key={key} style={[tools.progressBead, beadIndex <= index && tools.progressBeadDone]} />
+          ))}
+        </View>
       </View>
 
-      <Reanimated.View key={step} entering={FadeIn.duration(320).easing(Easing.out(Easing.cubic))} style={tools.stepFill}>
+      <Reanimated.View
+        key={step}
+        entering={FadeInRight.duration(380).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateX: 18 }] })}
+        exiting={FadeOut.duration(150)}
+        style={tools.stepFill}
+      >
         {step === 'journalSci' && <ToolsScienceScreen screen={TOOLS_JOURNAL_SCIENCE} bottomInset={insets.bottom} onNext={advance} />}
         {step === 'journalTech' && <ToolsJournalTechniques bottomInset={insets.bottom} onNext={advance} />}
         {step === 'pomodoroSci' && <ToolsScienceScreen screen={TOOLS_POMODORO_SCIENCE} bottomInset={insets.bottom} onNext={advance} />}
@@ -25265,81 +25368,117 @@ function V4ToolsSlides({ onNext, onGratitude }: { onNext: () => void; onGratitud
 }
 
 const tools = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#FFFFFF' },
-  stepFill: { flex: 1 },
-  screen: { flex: 1, backgroundColor: '#FFFFFF' },
-  progressRail: {
-    position: 'absolute', left: 0, right: 0, zIndex: 10,
-    flexDirection: 'row', justifyContent: 'center', alignItems: 'center', columnGap: 6,
+  root: { flex: 1, overflow: 'hidden', backgroundColor: '#FFFDF8' },
+  stepFill: { flex: 1, zIndex: 2 },
+  screen: { flex: 1, backgroundColor: 'transparent' },
+  progressHud: {
+    position: 'absolute', left: 22, right: 22, zIndex: 20,
+    paddingHorizontal: 4, paddingVertical: 2,
   },
-  progressBead: { width: 16, height: 3, borderRadius: 999, backgroundColor: 'rgba(25,23,20,0.10)' },
+  progressMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 },
+  progressLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.6, color: 'rgba(126,91,31,0.72)' },
+  progressCount: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.2, color: 'rgba(25,23,20,0.35)' },
+  progressRail: { flexDirection: 'row', alignItems: 'center', columnGap: 5 },
+  progressBead: { flex: 1, height: 3, borderRadius: 999, backgroundColor: 'rgba(25,23,20,0.09)' },
   progressBeadDone: { backgroundColor: GOLD },
 
-  scienceScroll: { paddingHorizontal: 22, paddingTop: 74 },
+  scienceScroll: { paddingHorizontal: 22, paddingTop: 78 },
+  heroSeal: {
+    width: 58, height: 58, borderRadius: 21, borderCurve: 'continuous', alignSelf: 'center',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 15,
+    overflow: 'visible', backgroundColor: 'rgba(255,253,248,0.96)',
+    borderWidth: 1, borderColor: 'rgba(197,160,89,0.28)',
+    shadowColor: '#72531D', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.11, shadowRadius: 19, elevation: 4,
+  },
+  heroSealHalo: {
+    position: 'absolute', width: 78, height: 78, borderRadius: 28,
+    backgroundColor: 'rgba(197,160,89,0.10)', transform: [{ rotate: '9deg' }],
+  },
   scienceEyebrow: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.6, color: GOLD, textAlign: 'center' },
   scienceTitle: { marginTop: 9, fontFamily: F.serifBold, fontSize: 37, lineHeight: 42, letterSpacing: -0.4, color: INK, textAlign: 'center' },
   scienceIntro: { marginTop: 12, alignSelf: 'center', maxWidth: 320, fontFamily: F.serifMediumItalic, fontSize: 16.5, lineHeight: 23, color: 'rgba(25,23,20,0.56)', textAlign: 'center' },
-  scienceFeed: { marginTop: 26, rowGap: 12 },
+  findingsHeader: { marginTop: 26, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  findingsLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.5, color: 'rgba(126,91,31,0.64)' },
+  findingsCount: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: 'rgba(197,160,89,0.10)', borderWidth: 1, borderColor: 'rgba(197,160,89,0.18)' },
+  findingsCountText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.1, color: C.goldDark },
+  scienceFeed: { rowGap: 12 },
   scienceCard: {
     position: 'relative', overflow: 'hidden',
     flexDirection: 'row', alignItems: 'flex-start', columnGap: 13,
-    borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
-    backgroundColor: '#FFFDF9', paddingHorizontal: 15, paddingVertical: 15,
-    boxShadow: '0 8px 22px rgba(92,67,25,0.06)',
+    borderRadius: 24, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.26)',
+    backgroundColor: '#FFFDF9', paddingHorizontal: 16, paddingVertical: 17,
+    boxShadow: '0 12px 28px rgba(92,67,25,0.075)',
   },
-  scienceCardSheen: { position: 'absolute', top: 0, left: 20, right: 20, height: 1, backgroundColor: 'rgba(255,255,255,0.9)' },
+  scienceCardSheen: { position: 'absolute', top: 0, left: 24, right: 24, height: 1, backgroundColor: 'rgba(255,255,255,0.96)' },
+  scienceCardMark: { width: 44, flexShrink: 0, alignItems: 'center' },
   scienceCardIcon: {
-    flexShrink: 0, width: 42, height: 42, borderRadius: 15, borderCurve: 'continuous',
+    width: 42, height: 42, borderRadius: 15, borderCurve: 'continuous',
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)',
   },
+  scienceCardIndex: { marginTop: 7, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.4, color: 'rgba(126,91,31,0.38)' },
   scienceCardBody: { flex: 1, minWidth: 0 },
-  scienceCardHeadline: { fontFamily: F.serifSemiBold, fontSize: 17.5, lineHeight: 22, color: INK },
-  scienceCardText: { marginTop: 5, fontFamily: F.sans, fontSize: 13, lineHeight: 18.5, color: 'rgba(25,23,20,0.6)' },
+  scienceCardHeadline: { fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22.5, color: INK },
+  scienceCardText: { marginTop: 6, fontFamily: F.sans, fontSize: 13.2, lineHeight: 19.2, color: 'rgba(25,23,20,0.62)' },
 
-  footer: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
-  centerScroll: { paddingHorizontal: 22, paddingTop: 74 },
+  footer: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center', paddingTop: 42, zIndex: 20 },
+  centerScroll: { paddingHorizontal: 22, paddingTop: 84 },
 
   // Journal techniques
-  techScroll: { paddingHorizontal: 22, paddingTop: 74 },
+  techScroll: { paddingHorizontal: 22, paddingTop: 78 },
   techTitle: { marginTop: 9, fontFamily: F.serifBold, fontSize: 31, lineHeight: 36, letterSpacing: -0.3, color: INK, textAlign: 'center' },
-  techIntro: { marginTop: 10, alignSelf: 'center', maxWidth: 300, fontFamily: F.sans, fontSize: 13, lineHeight: 18, color: 'rgba(25,23,20,0.5)', textAlign: 'center' },
-  techList: { marginTop: 24, rowGap: 10 },
+  techIntro: { marginTop: 10, alignSelf: 'center', maxWidth: 320, fontFamily: F.sans, fontSize: 13.2, lineHeight: 19, color: 'rgba(25,23,20,0.54)', textAlign: 'center' },
+  techTabsRow: { marginTop: 24, flexDirection: 'row', columnGap: 8, alignItems: 'stretch' },
   techTab: {
-    overflow: 'hidden', borderRadius: 20, borderCurve: 'continuous', borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.24)', backgroundColor: '#FFFDF9',
+    flex: 1, minHeight: 106, overflow: 'hidden', borderRadius: 19, borderCurve: 'continuous', borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.20)', backgroundColor: '#FFFDF9',
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7, paddingVertical: 12,
   },
-  techTabOpen: { borderColor: 'rgba(197,160,89,0.5)', backgroundColor: '#FFFCF4', boxShadow: '0 10px 24px rgba(92,67,25,0.09)' },
-  techTabHead: { minHeight: 58, flexDirection: 'row', alignItems: 'center', columnGap: 12, paddingHorizontal: 15 },
+  techTabOpen: { borderColor: 'rgba(197,160,89,0.52)', backgroundColor: '#FFFCF4', boxShadow: '0 10px 24px rgba(92,67,25,0.10)' },
   techTabIcon: {
-    width: 36, height: 36, borderRadius: 13, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center',
+    width: 36, height: 36, borderRadius: 13, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', marginBottom: 8,
     backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.2)',
   },
-  techTabIconOpen: { backgroundColor: '#FBEFD6' },
-  techTabName: { flex: 1, fontFamily: F.serifSemiBold, fontSize: 18, color: INK },
+  techTabIconOpen: { backgroundColor: '#F9E8C2', borderColor: 'rgba(197,160,89,0.42)' },
+  techTabName: { minHeight: 30, fontFamily: F.serifSemiBold, fontSize: 12.5, lineHeight: 15, color: INK, textAlign: 'center' },
   techTabNameOpen: { color: C.goldDark },
-  techChevron: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(197,160,89,0.09)' },
-  techChevronOpen: { transform: [{ rotate: '180deg' }], backgroundColor: 'rgba(197,160,89,0.16)' },
-  techDrawer: { paddingHorizontal: 15, paddingBottom: 14, paddingTop: 2 },
+  techTabIndicator: { width: 18, height: 3, borderRadius: 999, marginTop: 7, backgroundColor: 'rgba(197,160,89,0.18)' },
+  techTabIndicatorOpen: { width: 32, backgroundColor: GOLD },
+  techDrawerStage: { marginTop: 18, minHeight: 236 },
+  techDrawer: {
+    overflow: 'hidden', borderRadius: 24, borderCurve: 'continuous', borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.34)', backgroundColor: 'rgba(255,253,248,0.96)',
+    paddingHorizontal: 16, paddingTop: 17, paddingBottom: 14,
+    boxShadow: '0 14px 32px rgba(92,67,25,0.09)',
+  },
+  techDrawerHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 },
+  techDrawerEyebrow: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.6, color: C.goldDark },
+  techDrawerTitle: { marginTop: 3, fontFamily: F.serifSemiBold, fontSize: 20, color: INK },
+  techDrawerPage: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.2, color: 'rgba(25,23,20,0.34)' },
   techDrawerViewport: { overflow: 'hidden' },
   techDrawerTrack: { flexDirection: 'row' },
-  techPanel: { paddingRight: 8, minHeight: 92 },
+  techPanel: { paddingRight: 10, minHeight: 100 },
   techPanelLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, color: C.goldDark },
-  techPanelText: { marginTop: 6, fontFamily: F.sans, fontSize: 13.5, lineHeight: 19.5, color: 'rgba(25,23,20,0.62)' },
-  techDots: { flexDirection: 'row', justifyContent: 'center', columnGap: 7, marginTop: 4 },
+  techPanelText: { marginTop: 7, fontFamily: F.sans, fontSize: 14, lineHeight: 20.5, color: 'rgba(25,23,20,0.64)' },
+  techDots: { flexDirection: 'row', justifyContent: 'center', columnGap: 7, marginTop: 10 },
   techDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(197,160,89,0.26)' },
   techDotActive: { backgroundColor: GOLD, width: 18 },
+  techSwipeHint: { marginTop: 9, fontFamily: F.sans, fontSize: 10.5, color: 'rgba(25,23,20,0.34)', textAlign: 'center' },
+  techEmptyDrawer: { minHeight: 176, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22 },
+  techEmptyLine: { width: 42, height: 1, backgroundColor: 'rgba(197,160,89,0.32)' },
+  techEmptyText: { maxWidth: 282, marginVertical: 16, fontFamily: F.serifMediumItalic, fontSize: 14.5, lineHeight: 21, color: 'rgba(25,23,20,0.48)', textAlign: 'center' },
 
   // Pomodoro regimes
   regimeRow: { marginTop: 24, flexDirection: 'row', columnGap: 11 },
   regimeCard: {
     flex: 1, position: 'relative', overflow: 'hidden', alignItems: 'center',
     borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.26)',
-    backgroundColor: '#FFFDF9', paddingHorizontal: 13, paddingVertical: 18, rowGap: 8,
-    boxShadow: '0 8px 22px rgba(92,67,25,0.06)',
+    backgroundColor: 'rgba(255,253,249,0.96)', paddingHorizontal: 13, paddingVertical: 18, rowGap: 7,
+    boxShadow: '0 10px 26px rgba(92,67,25,0.07)',
   },
   regimeIcon: { width: 48, height: 48, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)' },
-  regimeName: { fontFamily: F.serifSemiBold, fontSize: 16.5, color: INK, textAlign: 'center' },
+  regimeLabel: { marginTop: 3, fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.1, color: 'rgba(126,91,31,0.62)', textAlign: 'center' },
+  regimeName: { minHeight: 39, fontFamily: F.serifSemiBold, fontSize: 16.2, lineHeight: 19.5, color: INK, textAlign: 'center' },
   regimeBody: { fontFamily: F.sans, fontSize: 12, lineHeight: 16.5, color: 'rgba(25,23,20,0.56)', textAlign: 'center' },
   rewardCard: {
     marginTop: 12, flexDirection: 'row', alignItems: 'center', columnGap: 13,
@@ -25358,14 +25497,14 @@ const tools = StyleSheet.create({
   nuanceStrong: { fontFamily: F.sansBold, color: C.goldDark },
 
   // Bucket list
-  bucketStage: { flex: 1, alignItems: 'center', paddingTop: 78, paddingHorizontal: 26 },
-  bucketCrown: { width: 62, height: 62, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)', marginBottom: 16 },
+  bucketStage: { flexGrow: 1, alignItems: 'center', paddingTop: 88, paddingHorizontal: 24 },
+  bucketCrown: { width: 64, height: 64, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(251,243,222,0.94)', borderWidth: 1, borderColor: 'rgba(197,160,89,0.30)', marginBottom: 16, boxShadow: '0 12px 26px rgba(92,67,25,0.09)' },
   bucketBody: { marginTop: 10, maxWidth: 300, fontFamily: F.sans, fontSize: 14, lineHeight: 20, color: 'rgba(25,23,20,0.56)', textAlign: 'center' },
   bucketCard: {
     position: 'relative', overflow: 'hidden', width: '100%', marginTop: 22,
     borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
-    backgroundColor: '#FFFDF9', paddingHorizontal: 16, paddingVertical: 6,
-    boxShadow: '0 8px 22px rgba(92,67,25,0.06)',
+    backgroundColor: 'rgba(255,253,249,0.96)', paddingHorizontal: 17, paddingVertical: 7,
+    boxShadow: '0 14px 32px rgba(92,67,25,0.08)',
   },
   bucketRow: { flexDirection: 'row', alignItems: 'center', columnGap: 12, paddingVertical: 13 },
   bucketRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EFE7D6' },
@@ -25376,12 +25515,12 @@ const tools = StyleSheet.create({
   bucketValue: { marginTop: 22, maxWidth: 310, fontFamily: F.serifMediumItalic, fontSize: 15.5, lineHeight: 22, color: 'rgba(25,23,20,0.5)', textAlign: 'center' },
 
   // Gratitude faith
-  faithStage: { flex: 1, alignItems: 'center', paddingTop: 84, paddingHorizontal: 18 },
+  faithStage: { flexGrow: 1, alignItems: 'center', paddingTop: 92, paddingHorizontal: 18 },
   scriptureCard: {
     marginTop: 40, maxWidth: 340,
     borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.28)',
-    backgroundColor: '#FFFCF4', paddingHorizontal: 22, paddingVertical: 20, alignItems: 'center',
-    boxShadow: '0 8px 22px rgba(92,67,25,0.07)',
+    backgroundColor: 'rgba(255,252,244,0.96)', paddingHorizontal: 22, paddingVertical: 20, alignItems: 'center',
+    boxShadow: '0 14px 32px rgba(92,67,25,0.09)',
   },
   scriptureText: { fontFamily: F.serifMediumItalic, fontSize: 17, lineHeight: 25, color: 'rgba(25,23,20,0.72)', textAlign: 'center' },
   scriptureRef: { marginTop: 14, fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2, color: GOLD },
@@ -25390,8 +25529,8 @@ const tools = StyleSheet.create({
   gratitudeCard: {
     position: 'relative', overflow: 'hidden', marginTop: 14,
     borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
-    backgroundColor: '#FFFDF9', paddingHorizontal: 16, paddingVertical: 16,
-    boxShadow: '0 8px 22px rgba(92,67,25,0.06)',
+    backgroundColor: 'rgba(255,253,249,0.96)', paddingHorizontal: 16, paddingVertical: 16,
+    boxShadow: '0 12px 28px rgba(92,67,25,0.075)',
   },
   gratitudeCardHead: { flexDirection: 'row', alignItems: 'center', columnGap: 10 },
   gratitudeCardIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.2)' },
@@ -25402,7 +25541,7 @@ const tools = StyleSheet.create({
   gratitudeGridCaption: { marginTop: 11, fontFamily: F.serifMediumItalic, fontSize: 13, color: 'rgba(25,23,20,0.46)' },
   actionFooter: {
     position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 20, paddingTop: 14,
-    backgroundColor: 'rgba(255,255,255,0.97)', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EFE7D6',
+    backgroundColor: 'rgba(255,253,248,0.97)', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E9DDC5',
   },
   actionQuestion: { fontFamily: F.serifSemiBold, fontSize: 16, color: INK, textAlign: 'center', marginBottom: 12 },
   actionRow: { rowGap: 9 },
@@ -26601,7 +26740,6 @@ export default function OnboardingView() {
           completedCount={4}
           title={`You're ready${nameForDisplay(answers.displayName) ? `, ${nameForDisplay(answers.displayName)}` : ''}.`}
           body="Look at everything you just built. Now keep what you made."
-          surprise
           recapItems={wins}
           topInset={insets.top}
           bottomInset={insets.bottom}
@@ -35041,27 +35179,18 @@ const s = StyleSheet.create({
     minHeight: 58,
     borderBottomWidth: 1,
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 6,
+    paddingTop: 7,
+    paddingBottom: 4,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     borderRadius: 0,
   },
-  organizeBigEventsExampleHeaderCompact: {
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 7,
-    justifyContent: 'flex-start',
-  },
   organizeBigEventsExampleTitleGroup: {
-    alignItems: 'center',
-  },
-  organizeBigEventsExampleTitleGroupCompact: {
     flex: 1,
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 11,
+    paddingTop: 4,
   },
   organizeExampleNumber: {
     position: 'absolute',
@@ -35115,12 +35244,6 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
     textAlign: 'center',
   },
-  organizeBigEventsExampleEyebrowPinned: {
-    position: 'absolute',
-    top: 9,
-    left: 0,
-    right: 0,
-  },
   organizeBigEventsExampleTitle: {
     marginTop: 2,
     fontFamily: F.serifBold,
@@ -35129,11 +35252,6 @@ const s = StyleSheet.create({
     color: INK,
     textAlign: 'center',
     maxWidth: 288,
-  },
-  organizeBigEventsExampleTitleCompact: {
-    fontSize: 22.3,
-    lineHeight: 23.4,
-    maxWidth: 260,
   },
   organizeBigEventsExampleUnderline: {
     width: '46%',
@@ -35201,13 +35319,13 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingTop: 6,
+    paddingBottom: 6,
   },
   organizeBigEventsImageFooterCompact: {
     paddingHorizontal: 14,
-    paddingTop: 6,
-    paddingBottom: 6,
+    paddingTop: 5,
+    paddingBottom: 5,
   },
   organizeBigEventsIllustrationText: {
     fontFamily: F.serifMediumItalic,
@@ -35283,6 +35401,12 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(255,253,248,0.88)',
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.25)',
+  },
+  organizeSwipeFooterSlot: {
+    width: '100%',
+    minHeight: 63,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   organizeSwipeTagText: {
     fontFamily: F.serifSemiBold,
