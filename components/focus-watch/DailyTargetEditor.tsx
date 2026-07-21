@@ -26,7 +26,11 @@ const TARGET_STOPS: (number | null)[] = [
 ];
 const YEAR_DAYS = 365;
 const SLEEP_DAYS = Math.round((8 / 24) * YEAR_DAYS);
-const WEEK_COLS = 52;
+// Fewer columns → chunkier beads you can't unsee. Each bead is one day of the
+// year; the dark block of phone-days is the pain point, so it reads big.
+const WEEK_COLS = 30;
+const BEAD_SIZE = 8.4;
+const BEAD_ROW_H = 12;
 const TOLERANCE_SPAN = 180;
 const DEFAULT_TOLERANCE = 120;
 const GLIDE = { duration: 620, easing: Easing.out(Easing.cubic) };
@@ -76,7 +80,7 @@ function YearDotRow({
   });
 
   return (
-    <View style={{ flexDirection: 'row', height: 7.5 }}>
+    <View style={{ flexDirection: 'row', height: BEAD_ROW_H }}>
       {Array.from({ length: count }).map((_, column) => (
         <View key={column} style={[s.dotCell, { width: cellWidth }]}>
           <View style={[s.yearDot, startIndex + column < SLEEP_DAYS ? s.dotSleep : s.dotAway]} />
@@ -149,7 +153,7 @@ function YearPerspective({
 
   return (
     <View style={embedded ? s.yearWrapEmbedded : s.yearWrap}>
-      <Text style={s.yearLabel}>ONE YEAR WITH THIS PLAN</Text>
+      <Text style={s.yearLabel}>IF EVERY DAY IS LIKE THIS</Text>
       <View style={s.yearHeroRow}>
         <View style={s.yearBadge}>
           <Text style={s.yearNumber}>{target == null ? '—' : phoneDays}</Text>
@@ -159,10 +163,13 @@ function YearPerspective({
         </View>
         <View style={s.yearCopy}>
           <Text style={s.yearTitle}>
-            {target == null ? 'Set a Goal to see what it costs.' : 'full days a year, spent on the phone'}
+            {target == null ? 'Set a Goal to see the cost.' : 'lost to your phone,\nevery single year'}
           </Text>
           {bufferDays > 0 && (
-            <Text style={s.yearBufferLine}>+{bufferDays} more if you spend the tolerance</Text>
+            <View style={s.yearBufferChip}>
+              <View style={s.yearBufferDot} />
+              <Text style={s.yearBufferText}>up to +{bufferDays} more at full tolerance</Text>
+            </View>
           )}
         </View>
       </View>
@@ -173,49 +180,66 @@ function YearPerspective({
           ))}
       </View>
       <View style={s.legendRow}>
-        <LegendItem color={SLEEP_COLOR} label="Sleep" value={`${SLEEP_DAYS}`} />
-        <LegendItem color={GOAL_COLOR} label="Phone" value={`${phoneDays}`} />
+        <LegendItem color={GOAL_COLOR} label="Phone" value={`${phoneDays}`} emphasis />
         {bufferDays > 0 && <LegendItem color={TOLERANCE_COLOR} label="Tolerance" value={`+${bufferDays}`} />}
         <LegendItem color={PRODUCTIVE_COLOR} label="Life" value={`${awayDays}`} />
+        <LegendItem color={SLEEP_COLOR} label="Sleep" value={`${SLEEP_DAYS}`} />
       </View>
     </View>
   );
 }
 
-function LegendItem({ color, label, value }: { color: string; label: string; value: string }) {
+function LegendItem({
+  color,
+  label,
+  value,
+  emphasis = false,
+}: {
+  color: string;
+  label: string;
+  value: string;
+  emphasis?: boolean;
+}) {
   return (
-    <View style={s.legendItem}>
-      <View style={[s.legendDot, { backgroundColor: color }]} />
-      <Text style={s.legendLabel}>{label}</Text>
-      <Text style={s.legendValue}>{value}</Text>
+    <View style={[s.legendItem, emphasis && s.legendItemEmphasis]}>
+      <View style={[s.legendSwatch, { backgroundColor: color }]} />
+      <View style={s.legendText}>
+        <Text style={[s.legendValue, emphasis && s.legendValueEmphasis]}>{value}</Text>
+        <Text style={s.legendLabel}>{label}</Text>
+      </View>
     </View>
   );
 }
 
 // A drawn swash under the card's title: two tapering curves meeting at a
-// gold gem, beads at the tips — the app's rule—◆—rule ornament, given a curve.
+// haloed gold gem, flanking beads and tip beads — the app's rule—◆—rule
+// ornament, given a curve and a little more jewellery.
 function TitleFlourish() {
   return (
-    <Svg width={138} height={13} viewBox="0 0 138 13" style={s.flourish}>
+    <Svg width={152} height={15} viewBox="0 0 152 15" style={s.flourish}>
+      <Circle cx={76} cy={7.4} r={6.4} fill={C.gold} opacity={0.13} />
       <Path
-        d="M7 5 C 22 11.4, 42 11.4, 59 6.6"
+        d="M9 6 C 25 12.6, 47 12.6, 65 7.8"
         stroke={C.gold}
-        strokeWidth={1.25}
+        strokeWidth={1.3}
         strokeLinecap="round"
         fill="none"
         opacity={0.85}
       />
       <Path
-        d="M79 6.6 C 96 11.4, 116 11.4, 131 5"
+        d="M87 7.8 C 105 12.6, 127 12.6, 143 6"
         stroke={C.gold}
-        strokeWidth={1.25}
+        strokeWidth={1.3}
         strokeLinecap="round"
         fill="none"
         opacity={0.85}
       />
-      <Path d="M69 1.9 L 73.6 6.5 L 69 11.1 L 64.4 6.5 Z" fill={C.goldDark} />
-      <Circle cx={7} cy={5} r={1.35} fill={C.gold} opacity={0.7} />
-      <Circle cx={131} cy={5} r={1.35} fill={C.gold} opacity={0.7} />
+      <Path d="M76 1.6 L 81.4 7.4 L 76 13.2 L 70.6 7.4 Z" fill={C.goldDark} />
+      <Path d="M76 3.5 L 78.6 7.4 L 76 8.6 L 73.4 7.4 Z" fill={C.goldSoft} opacity={0.9} />
+      <Circle cx={65} cy={7.6} r={1.55} fill={C.gold} />
+      <Circle cx={87} cy={7.6} r={1.55} fill={C.gold} />
+      <Circle cx={9} cy={6} r={1.4} fill={C.gold} opacity={0.6} />
+      <Circle cx={143} cy={6} r={1.4} fill={C.gold} opacity={0.6} />
     </Svg>
   );
 }
@@ -252,7 +276,7 @@ function DayShape({
         </View>
         <View style={s.captionRight}>
           <Text style={[s.captionLabel, s.captionLabelLock]}>
-            {essentialsOnly ? 'LOCKED' : 'PHONE LOCKS AT'}
+            {essentialsOnly ? 'ESSENTIALS ONLY' : 'ESSENTIALS ONLY AT'}
           </Text>
           <Text style={[s.captionValue, s.captionValueLock]}>
             {essentialsOnly ? 'All day' : formatMinutesShort(toleranceEnd)}
@@ -593,17 +617,17 @@ const s = StyleSheet.create({
     padding: 18,
     boxShadow: '0 10px 28px rgba(67, 53, 31, 0.07)',
   },
-  dayCardHead: { alignItems: 'center', marginBottom: 22 },
-  dayCardTitle: { fontFamily: F.serifSemiBold, fontSize: 24, lineHeight: 28, letterSpacing: -0.3, color: C.text },
-  flourish: { marginTop: 8 },
+  dayCardHead: { alignItems: 'center', marginBottom: 20 },
+  dayCardTitle: { fontFamily: F.serifSemiBold, fontSize: 25.5, lineHeight: 29, letterSpacing: -0.4, color: C.text },
+  flourish: { marginTop: 2 },
   dayCardDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E7DCC6', marginVertical: 18 },
 
   barCaptionRow: { marginTop: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 },
   captionRight: { alignItems: 'flex-end' },
   captionLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5, color: C.textMuted },
-  captionLabelLock: { color: '#A63A4B' },
+  captionLabelLock: { color: '#A24351' },
   captionValue: { marginTop: 3, fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22, color: C.text, fontVariant: ['tabular-nums'] },
-  captionValueLock: { color: '#A63A4B' },
+  captionValueLock: { color: '#A24351' },
   alwaysProtectedBand: { marginTop: 12, minHeight: 27, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 10, borderCurve: 'continuous', backgroundColor: '#F9E4E7', paddingHorizontal: 10 },
   alwaysProtectedDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: ESSENTIALS_COLOR, boxShadow: '0 2px 6px rgba(225,75,90,0.28)' },
   alwaysProtectedText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.05, color: '#A63A4B' },
@@ -619,35 +643,65 @@ const s = StyleSheet.create({
 
   yearWrap: { borderRadius: 24, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E1D7C3', backgroundColor: '#FFFCF4', padding: 16, boxShadow: '0 8px 24px rgba(67, 53, 31, 0.05)' },
   yearWrapEmbedded: {},
-  yearLabel: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.9, color: C.goldDark },
-  yearHeroRow: { marginTop: 11, flexDirection: 'row', alignItems: 'center', gap: 14 },
+  yearLabel: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2, color: '#9A5A55' },
+  yearHeroRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 15 },
   yearBadge: {
-    minWidth: 74,
-    borderRadius: 18,
+    minWidth: 82,
+    borderRadius: 19,
     borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: '#EAD9B0',
-    backgroundColor: '#FFF8E6',
-    paddingVertical: 9,
-    paddingHorizontal: 10,
+    borderColor: '#E4D3AC',
+    backgroundColor: '#FFFBF0',
+    paddingTop: 10,
+    paddingBottom: 9,
+    paddingHorizontal: 12,
     alignItems: 'center',
+    boxShadow: '0 6px 16px rgba(45, 33, 16, 0.08)',
   },
-  yearNumber: { fontFamily: F.serifSemiBold, fontSize: 34, lineHeight: 37, color: C.goldDark, fontVariant: ['tabular-nums'] },
-  yearNumberUnit: { marginTop: 1, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.4, color: '#A9863F' },
+  yearNumber: { fontFamily: F.serifBold, fontSize: 46, lineHeight: 47, color: '#1A1B1D', fontVariant: ['tabular-nums'] },
+  yearNumberUnit: { marginTop: 2, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 2, color: '#8A6A2F' },
   yearCopy: { flex: 1, minWidth: 0 },
-  yearTitle: { fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 24, letterSpacing: -0.2, color: C.text },
-  yearBufferLine: { marginTop: 5, fontFamily: F.sansSemiBold, fontSize: 11.5, lineHeight: 15.5, color: TOLERANCE_COLOR },
-  dotField: { marginTop: 16 },
-  dotCell: { height: 7.5, alignItems: 'center', justifyContent: 'center' },
-  yearDot: { width: 5.2, height: 5.2, borderRadius: 3 },
+  yearTitle: { fontFamily: F.serifSemiBold, fontSize: 20.5, lineHeight: 24.5, letterSpacing: -0.25, color: '#242021' },
+  yearBufferChip: {
+    marginTop: 9,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: '#DADDE0',
+    backgroundColor: '#F4F5F6',
+    paddingVertical: 4,
+    paddingHorizontal: 9,
+  },
+  yearBufferDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: TOLERANCE_COLOR },
+  yearBufferText: { fontFamily: F.sansSemiBold, fontSize: 11, letterSpacing: 0.1, color: '#6B7075' },
+  dotField: { marginTop: 18 },
+  dotCell: { height: BEAD_ROW_H, alignItems: 'center', justifyContent: 'center' },
+  yearDot: { width: BEAD_SIZE, height: BEAD_SIZE, borderRadius: BEAD_SIZE / 2 },
   dotSleep: { backgroundColor: SLEEP_COLOR },
   dotPhone: { backgroundColor: GOAL_COLOR },
   dotBuffer: { backgroundColor: TOLERANCE_COLOR },
   dotAway: { backgroundColor: PRODUCTIVE_COLOR },
-  legendRow: { marginTop: 15, flexDirection: 'row', flexWrap: 'wrap', columnGap: 15, rowGap: 8 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendLabel: { fontFamily: F.sansSemiBold, fontSize: 11, color: C.textSecondary },
-  legendValue: { fontFamily: F.sansBold, fontSize: 11.5, color: C.text, fontVariant: ['tabular-nums'] },
+  legendRow: { marginTop: 18, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#ECE2CE',
+    backgroundColor: '#FFFDF6',
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+  },
+  legendItemEmphasis: { borderColor: '#CFC3AE', backgroundColor: '#F6F1E6' },
+  legendSwatch: { width: 11, height: 11, borderRadius: 3.5 },
+  legendText: { flexDirection: 'row', alignItems: 'baseline', gap: 5 },
+  legendValue: { fontFamily: F.serifSemiBold, fontSize: 16, lineHeight: 18, color: C.text, fontVariant: ['tabular-nums'] },
+  legendValueEmphasis: { color: '#1A1B1D' },
+  legendLabel: { fontFamily: F.sansSemiBold, fontSize: 10.5, letterSpacing: 0.2, color: C.textSecondary },
 
 });
