@@ -177,8 +177,8 @@ function YearPerspective({
           ))}
       </View>
       <View style={s.legendRow}>
-        <LegendItem color={GOAL_COLOR} label="Phone" value={`${phoneDays}`} emphasis />
-        {bufferDays > 0 && <LegendItem color={TOLERANCE_COLOR} label="Tolerance" value={`+${bufferDays}`} />}
+        <LegendItem color={GOAL_COLOR} label="Phone" value={`${phoneDays}`} emphasis first />
+        {bufferDays > 0 && <LegendItem color={TOLERANCE_COLOR} label="Tolerance" value={`${bufferDays}`} />}
         <LegendItem color={PRODUCTIVE_COLOR} label="Life" value={`${awayDays}`} />
         <LegendItem color={SLEEP_COLOR} label="Sleep" value={`${SLEEP_DAYS}`} />
       </View>
@@ -186,20 +186,24 @@ function YearPerspective({
   );
 }
 
+// A legend column: a coloured bar on top, the count, the name beneath —
+// four of them fused into one divided strip.
 function LegendItem({
   color,
   label,
   value,
   emphasis = false,
+  first = false,
 }: {
   color: string;
   label: string;
   value: string;
   emphasis?: boolean;
+  first?: boolean;
 }) {
   return (
-    <View style={[s.legendItem, emphasis && s.legendItemEmphasis]}>
-      <View style={[s.legendSwatch, { backgroundColor: color }]} />
+    <View style={[s.legendItem, !first && s.legendItemDivided, emphasis && s.legendItemEmphasis]}>
+      <View style={[s.legendBar, { backgroundColor: color }]} />
       <Text style={[s.legendValue, emphasis && s.legendValueEmphasis]}>{value}</Text>
       <Text style={s.legendLabel}>{label}</Text>
     </View>
@@ -655,23 +659,29 @@ const s = StyleSheet.create({
   dotPhone: { backgroundColor: GOAL_COLOR },
   dotBuffer: { backgroundColor: TOLERANCE_COLOR },
   dotAway: { backgroundColor: PRODUCTIVE_COLOR },
-  legendRow: { marginTop: 20, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 7 },
-  legendItem: {
+  legendRow: {
+    marginTop: 20,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    borderRadius: 999,
+    alignItems: 'stretch',
+    borderRadius: 16,
+    borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: '#EBE1CD',
     backgroundColor: '#FFFDF6',
-    paddingVertical: 6,
-    paddingLeft: 9,
-    paddingRight: 13,
+    overflow: 'hidden',
   },
-  legendItemEmphasis: { borderColor: '#C7BBA4', backgroundColor: '#F4EEE1' },
-  legendSwatch: { width: 10, height: 10, borderRadius: 3 },
-  legendValue: { fontFamily: F.serifBold, fontSize: 15.5, lineHeight: 17, color: '#3A342D', fontVariant: ['tabular-nums'] },
+  legendItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 7,
+    paddingVertical: 13,
+    paddingHorizontal: 4,
+  },
+  legendItemDivided: { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: '#EAE0CC' },
+  legendItemEmphasis: { backgroundColor: '#F6F0E3' },
+  legendBar: { width: 26, height: 3.5, borderRadius: 2 },
+  legendValue: { fontFamily: F.serifBold, fontSize: 21, lineHeight: 23, color: '#3A342D', fontVariant: ['tabular-nums'] },
   legendValueEmphasis: { color: '#1A1B1D' },
-  legendLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 0.8, textTransform: 'uppercase', color: '#93887B' },
+  legendLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 0.7, textTransform: 'uppercase', color: '#93887B' },
 
 });
