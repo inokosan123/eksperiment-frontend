@@ -150,7 +150,7 @@ function GroupRuleCard({
         <GroupSeal
           groupId={rule.groupId}
           name={name}
-          size={46}
+          size={42}
           share={mode === 'limit' && goalMinutes != null ? share : 0}
           blocked={mode === 'blocked'}
           dim={!lit}
@@ -229,10 +229,12 @@ function AlwaysBlockedGroupCard({
   appCount,
   appNames,
   index,
+  onPress,
 }: {
   appCount: number;
   appNames: string[];
   index: number;
+  onPress: () => void;
 }) {
   if (appCount <= 0) return null;
   const visibleNames = appNames.slice(0, 2);
@@ -246,8 +248,6 @@ function AlwaysBlockedGroupCard({
       entering={FadeInDown.duration(360).delay(index * 55).easing(Easing.out(Easing.cubic))}
       layout={CARD_LAYOUT}
       style={[s.card, s.systemCard]}
-      accessibilityRole="summary"
-      accessibilityLabel={`Always Blocked, ${appCount} ${appCount === 1 ? 'app' : 'apps'}, no plan limit controls`}
     >
       <LinearGradient
         colors={['#FFFEFC', '#FFFDFB', '#FFFEFD']}
@@ -265,23 +265,34 @@ function AlwaysBlockedGroupCard({
 
       <View style={s.closedEdge} />
 
-      <View style={s.cardRow}>
+      {/* Opens the same Always Blocked sheet the rest of the app uses — the
+          list is managed globally, this is just its door on this screen. */}
+      <TouchableOpacity
+        style={s.cardRow}
+        onPress={onPress}
+        activeOpacity={0.74}
+        haptic="selection"
+        accessibilityRole="button"
+        accessibilityLabel={`Always Blocked, ${appCount} ${appCount === 1 ? 'app' : 'apps'}. Opens the Always Blocked settings.`}
+      >
         <View style={s.systemSeal}>
-          <Lock s={21} c={BLOCKED_COLOR} w={2.3} />
+          <Lock s={19} c={BLOCKED_COLOR} w={2.3} />
         </View>
         <View style={s.cardBody}>
           <View style={s.cardTitleRow}>
             <Text style={s.cardName} numberOfLines={1}>Always Blocked</Text>
-            <View style={s.systemBadge}><Text style={s.systemBadgeText}>SYSTEM</Text></View>
           </View>
           <View style={s.cardMetaRow}>
             <Text style={s.cardMeta} numberOfLines={1}>{summary}</Text>
           </View>
         </View>
-        <View style={[s.valueChip, s.systemValueChip]}>
-          <Text style={[s.valueChipText, s.systemValueText]}>Blocked</Text>
+        <View style={s.cardTail}>
+          <View style={[s.valueChip, s.systemValueChip]}>
+            <Text style={[s.valueChipText, s.systemValueText]}>Blocked</Text>
+          </View>
+          <ChevronRight s={16} c={C.textMuted} w={2} />
         </View>
-      </View>
+      </TouchableOpacity>
     </Animated.View>
   );
 }
@@ -533,6 +544,7 @@ export default function AppRulesBoard({
   onOpenRule,
   onRemoveGroup,
   onAddGroup,
+  onOpenAlwaysBlocked,
 }: {
   goalMinutes: number | null;
   lockAtMinutes: number | null;
@@ -548,6 +560,7 @@ export default function AppRulesBoard({
   onOpenRule: (groupId: string) => void;
   onRemoveGroup: (groupId: string) => void;
   onAddGroup: () => void;
+  onOpenAlwaysBlocked: () => void;
 }) {
   const plannedByGroup = useMemo(() => {
     const result: Record<string, number> = {};
@@ -592,6 +605,7 @@ export default function AppRulesBoard({
           appCount={alwaysBlockedAppCount}
           appNames={alwaysBlockedAppNames}
           index={groupIds.length}
+          onPress={onOpenAlwaysBlocked}
         />
       </View>
 
@@ -668,34 +682,32 @@ const s = StyleSheet.create({
   warningText: { flex: 1, fontFamily: F.sansMedium, fontSize: 11.5, lineHeight: 16, color: '#8D5C1E' },
   warningTextStrong: { color: '#8F3443' },
 
-  cardStack: { marginTop: 12, gap: 9 },
+  cardStack: { marginTop: 12, gap: 7 },
   systemCard: { borderColor: '#E7C4CB' },
   systemSeal: {
     flexShrink: 0,
-    width: 46,
-    height: 46,
+    width: 42,
+    height: 42,
     marginHorizontal: 5.5,
-    borderRadius: 23,
+    borderRadius: 21,
     borderWidth: 1,
     borderColor: 'rgba(162,67,81,0.3)',
     backgroundColor: '#FBE9EC',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  systemBadge: { borderRadius: 999, borderWidth: 1, borderColor: '#E7C4CB', backgroundColor: '#FFF7F8', paddingHorizontal: 7, paddingVertical: 3 },
-  systemBadgeText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.1, color: BLOCKED_COLOR },
   systemValueChip: { backgroundColor: BLOCKED_TINT, borderColor: '#E7C4CB' },
   systemValueText: { color: BLOCKED_COLOR },
   card: {
     position: 'relative',
     overflow: 'hidden',
-    borderRadius: 21,
+    borderRadius: 20,
     borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: C.border,
     backgroundColor: C.surface,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 7,
     boxShadow: '0 6px 16px rgba(35, 40, 37, 0.055)',
   },
   // A closed group carries a rose edge down its left side — the same bar the
@@ -706,10 +718,10 @@ const s = StyleSheet.create({
   // brighter pool centred on the seal.
   cardWashBloom: { position: 'absolute', left: -90, top: -46, width: 440, height: 170 },
   cardSealBloom: { position: 'absolute', left: -36, top: -44, width: 152, height: 164 },
-  cardRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cardRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardBody: { flex: 1, minWidth: 0, paddingLeft: 3 },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cardName: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 18.5, lineHeight: 22, letterSpacing: -0.15, color: C.text },
+  cardName: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 17, lineHeight: 20, letterSpacing: -0.15, color: C.text },
   strengthMark: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
   strengthDot: { width: 4.5, height: 4.5, borderRadius: 3 },
   strengthText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.9 },
@@ -719,45 +731,45 @@ const s = StyleSheet.create({
   cardClosed: { flexShrink: 0, fontFamily: F.sansSemiBold, fontSize: 11.5, lineHeight: 15.5, color: BLOCKED_COLOR },
   cardTail: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
   valueChip: {
-    minWidth: 62,
-    borderRadius: 13,
+    minWidth: 56,
+    borderRadius: 12,
     borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: '#E7E2D6',
     backgroundColor: '#F6F4EE',
-    paddingHorizontal: 9,
-    paddingVertical: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 5.5,
     alignItems: 'center',
   },
-  valueChipText: { fontFamily: F.serifSemiBold, fontSize: 15.5, lineHeight: 19, color: C.textSecondary, fontVariant: ['tabular-nums'] },
+  valueChipText: { fontFamily: F.serifSemiBold, fontSize: 14, lineHeight: 17, color: C.textSecondary, fontVariant: ['tabular-nums'] },
 
-  removeRow: { marginTop: 8 },
+  removeRow: { marginTop: 6 },
   removeRule: { height: StyleSheet.hairlineWidth, backgroundColor: '#E7E3DA' },
   removeButton: {
     alignSelf: 'flex-end',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingTop: 8,
+    paddingTop: 7,
     paddingBottom: 1,
     paddingHorizontal: 4,
   },
   removeText: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.1, color: C.textMuted },
 
   addRow: {
-    marginTop: 11,
-    minHeight: 58,
+    marginTop: 9,
+    minHeight: 50,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 9,
-    borderRadius: 19,
+    gap: 8,
+    borderRadius: 17,
     borderCurve: 'continuous',
     borderWidth: 1,
     borderStyle: 'dashed',
     borderColor: '#D7C398',
     backgroundColor: '#FFF9EC',
   },
-  addIcon: { width: 32, height: 32, borderRadius: 11, borderCurve: 'continuous', backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
-  addText: { fontFamily: F.serifSemiBold, fontSize: 16.5, color: C.goldDark },
+  addIcon: { width: 28, height: 28, borderRadius: 10, borderCurve: 'continuous', backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
+  addText: { fontFamily: F.serifSemiBold, fontSize: 15.5, color: C.goldDark },
 });

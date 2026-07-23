@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import DailyTargetEditor, { type TargetValues } from './DailyTargetEditor';
 import Bloom from './Bloom';
 import { LockGhost, LockSeal } from './EssentialsEmblem';
+import AlwaysBlockedSheet from './AlwaysBlockedSheet';
 import AppRulesBoard from './AppRulesBoard';
 import EssentialAppsSheet from './EssentialAppsSheet';
 import FocusCheck from './FocusCheck';
@@ -216,6 +217,7 @@ export default function PlanEditorView({
   const [rules, setRules] = useState(() => completeRules(existing?.rules ?? [], initialGroupIds));
   const [ruleGroupId, setRuleGroupId] = useState<string | null>(null);
   const [essentialsOpen, setEssentialsOpen] = useState(false);
+  const [alwaysBlockedOpen, setAlwaysBlockedOpen] = useState(false);
   const [groupSheetOpen, setGroupSheetOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [targetConfirmation, setTargetConfirmation] = useState<'known-loss' | 'native-reconcile' | null>(null);
@@ -781,6 +783,7 @@ export default function PlanEditorView({
             onOpenRule={setRuleGroupId}
             onRemoveGroup={removeGroup}
             onAddGroup={() => setGroupSheetOpen(true)}
+            onOpenAlwaysBlocked={() => setAlwaysBlockedOpen(true)}
           />
         </Animated.View>
         </View>
@@ -827,6 +830,9 @@ export default function PlanEditorView({
         onClose={() => setGroupSheetOpen(false)}
         onAdd={addGroup}
       />
+      {/* The same global Always Blocked sheet the Day Plan hub opens — the list
+          is app-wide, this screen only offers another door to it. */}
+      <AlwaysBlockedSheet visible={alwaysBlockedOpen} onClose={() => setAlwaysBlockedOpen(false)} />
       <GroupLimitSheet
         rule={activeRule}
         groupLabel={ruleGroupId ? groupName(state, ruleGroupId) : ''}
