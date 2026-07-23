@@ -690,14 +690,14 @@ const rf = StyleSheet.create({
 
 /* ── Bottom badge ─────────────────────────────────────────── */
 // A soft ring that breathes around today's tile — the only motion in the
-// week band, marking the day being written.
-function TodayPulseRing({ muted = false, mutedColor }: { muted?: boolean; mutedColor?: string }) {
+// week band, marking the day being written. It appears only on an ACTIVE
+// today — never around a skipped or empty day, which carry no ring at all.
+function TodayPulseRing() {
   const reduceMotion = useReducedMotion();
   const t = useSharedValue(0);
 
   useEffect(() => {
-    // A banked day's ring is held, not breathing.
-    if (reduceMotion || muted) {
+    if (reduceMotion) {
       t.value = 0.5;
       return;
     }
@@ -708,18 +708,13 @@ function TodayPulseRing({ muted = false, mutedColor }: { muted?: boolean; mutedC
       true,
     );
     return () => cancelAnimation(t);
-  }, [muted, reduceMotion, t]);
+  }, [reduceMotion, t]);
 
   const pulse = useAnimatedStyle(() => ({
-    opacity: muted ? 0.5 : 0.2 + t.value * 0.5,
+    opacity: 0.2 + t.value * 0.5,
   }));
 
-  return (
-    <Reanimated.View
-      pointerEvents="none"
-      style={[s.todayRing, muted && !!mutedColor && { borderColor: mutedColor }, pulse]}
-    />
-  );
+  return <Reanimated.View pointerEvents="none" style={[s.todayRing, pulse]} />;
 }
 
 // Static PNG flames only — the hero carries the one living Lottie, so a
@@ -856,10 +851,9 @@ function FlameTile({
   // on — warm on parchment, graphite on the struck grey.
   chrome: BankedPalette;
 }) {
-  const quiet = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
-  const ring = isToday
-    ? <TodayPulseRing muted={quiet} mutedColor={chrome.engraving} />
-    : null;
+  // The breathing ring marks today only while the day is ACTIVE — a day
+  // with tasks in play. A skipped or empty today carries no ring.
+  const ring = isToday && mode === 'normal' ? <TodayPulseRing /> : null;
 
   let token: ReactNode;
   if (mode === 'all-skipped') {
