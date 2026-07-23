@@ -25843,36 +25843,240 @@ function ToolsJournalTechniques({
   );
 }
 
+// ── 28b-2: the two work regimes ────────────────────────────────────────────
+// A regime is a shape in TIME, so it is drawn as time: a strip that a band of
+// light travels, lighting the rhythm behind it, ending on the medal it earns.
+type ToolsRegimeSegment = { span: number; kind: 'work' | 'break' | 'long' };
+
+const TOOLS_REGIME_SINGLE: ToolsRegimeSegment[] = [{ span: 1, kind: 'work' }];
+const TOOLS_REGIME_CYCLE: ToolsRegimeSegment[] = [
+  { span: 25, kind: 'work' },
+  { span: 5, kind: 'break' },
+  { span: 25, kind: 'work' },
+  { span: 5, kind: 'break' },
+  { span: 25, kind: 'work' },
+  { span: 15, kind: 'long' },
+];
+
+function ToolsRegimeSegments({ segments, lit }: { segments: ToolsRegimeSegment[]; lit: boolean }) {
+  return (
+    <View style={tools.regimeStripRow}>
+      {segments.map((segment, index) => (
+        <View
+          key={index}
+          style={[
+            tools.regimeSegment,
+            { flex: segment.span },
+            segment.kind === 'work' && (lit ? tools.regimeWorkLit : tools.regimeWork),
+            segment.kind === 'break' && (lit ? tools.regimeBreakLit : tools.regimeBreak),
+            segment.kind === 'long' && (lit ? tools.regimeLongLit : tools.regimeLong),
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+function ToolsRegimeTimeline({ segments, delay }: { segments: ToolsRegimeSegment[]; delay: number }) {
+  const run = useSharedValue(0);
+  const [trackWidth, setTrackWidth] = useState(0);
+
+  useEffect(() => {
+    run.value = withDelay(
+      delay,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 2900, easing: Easing.inOut(Easing.quad) }),
+          // hold on the struck medal, snap back, breathe before running again
+          withDelay(1700, withTiming(0, { duration: 1 })),
+          withDelay(700, withTiming(0, { duration: 1 })),
+        ),
+        -1,
+        false,
+      ),
+    );
+    return () => cancelAnimation(run);
+  }, [delay, run]);
+
+  const clipStyle = useAnimatedStyle(() => ({ transform: [{ translateX: -trackWidth * (1 - run.value) }] }));
+  const counterStyle = useAnimatedStyle(() => ({ transform: [{ translateX: trackWidth * (1 - run.value) }] }));
+  const headStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(run.value, [0, 0.03, 0.95, 1], [0, 1, 1, 0], 'clamp'),
+    transform: [{ translateX: run.value * trackWidth - 1 }],
+  }));
+  const medalStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(run.value, [0.88, 1], [0.3, 1], 'clamp'),
+    transform: [{ scale: interpolate(run.value, [0.88, 1], [0.72, 1], 'clamp') }],
+  }));
+
+  return (
+    <View style={tools.regimeTimeline}>
+      <View style={tools.regimeStripWrap}>
+        <View style={tools.regimeStrip} onLayout={event => setTrackWidth(event.nativeEvent.layout.width)}>
+          <ToolsRegimeSegments segments={segments} lit={false} />
+          <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, tools.regimeClip, clipStyle]}>
+            <Reanimated.View style={[{ width: trackWidth }, counterStyle]}>
+              <ToolsRegimeSegments segments={segments} lit />
+            </Reanimated.View>
+          </Reanimated.View>
+        </View>
+        <Reanimated.View pointerEvents="none" style={[tools.regimeHeadLight, headStyle]} />
+      </View>
+      <Reanimated.View style={[tools.regimeMedal, medalStyle]}>
+        <Trophy s={15} c="#8A5A1A" w={1.9} />
+      </Reanimated.View>
+    </View>
+  );
+}
+
+function ToolsRegimeCard({
+  index,
+  label,
+  name,
+  caption,
+  body,
+  Icon,
+  segments,
+  delay,
+}: {
+  index: number;
+  label: string;
+  name: string;
+  caption: string;
+  body: string;
+  Icon: ToolsIconComponent;
+  segments: ToolsRegimeSegment[];
+  delay: number;
+}) {
+  return (
+    <Reanimated.View
+      entering={FadeInUp.delay(delay).duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 22 }] })}
+      style={tools.regimeCardV2}
+    >
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(255,255,255,0.99)', 'rgba(255,250,238,0.96)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View pointerEvents="none" style={tools.scienceCardSheen} />
+
+      <View style={tools.regimeCardHead}>
+        <View style={tools.regimeCardIcon}><Icon s={19} c={GOLD} w={1.9} /></View>
+        <View style={tools.regimeCardCopy}>
+          <Text style={tools.regimeCardLabel}>{`0${index} · ${label}`}</Text>
+          <Text style={tools.regimeCardName}>{name}</Text>
+        </View>
+      </View>
+
+      <ToolsRegimeTimeline segments={segments} delay={delay + 520} />
+      <Text style={tools.regimeCardCaption}>{caption}</Text>
+      <Text style={tools.regimeCardBody}>{body}</Text>
+    </Reanimated.View>
+  );
+}
+
+// The proof behind the analytics nuance: two days that earn wildly different
+// numbers of medals and are not remotely the same amount of work.
+function ToolsFocusProofRow({
+  label,
+  medals,
+  time,
+  share,
+  delay,
+  emphasis,
+}: {
+  label: string;
+  medals: number;
+  time: string;
+  share: number;
+  delay: number;
+  emphasis: boolean;
+}) {
+  const grow = useSharedValue(0);
+  const [trackWidth, setTrackWidth] = useState(0);
+
+  useEffect(() => {
+    grow.value = withDelay(delay, withTiming(1, { duration: 900, easing: Easing.bezier(0.16, 1, 0.28, 1) }));
+    return () => cancelAnimation(grow);
+  }, [delay, grow]);
+
+  // Full-width fill walked in from the left — no animated width, no layout
+  // work per frame.
+  const fillStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: -trackWidth * (1 - grow.value * share) }],
+  }));
+
+  return (
+    <View style={tools.proofRow}>
+      <View style={tools.proofRowHead}>
+        <Text style={tools.proofLabel}>{label}</Text>
+        <View style={tools.proofMedals}>
+          {Array.from({ length: medals }).map((_, medal) => (
+            <View key={medal} style={tools.proofMedalDot} />
+          ))}
+        </View>
+      </View>
+      <View style={tools.proofBarRow}>
+        <View style={tools.proofTrack} onLayout={event => setTrackWidth(event.nativeEvent.layout.width)}>
+          <Reanimated.View style={[tools.proofFill, emphasis && tools.proofFillStrong, fillStyle]} />
+        </View>
+        <Text style={[tools.proofTime, emphasis && tools.proofTimeStrong]}>{time}</Text>
+      </View>
+    </View>
+  );
+}
+
 // 28b-2: the two work regimes, the medal reward, and the analytics nuance.
 function ToolsPomodoroRegimes({ chapter, bottomInset, onNext }: { chapter: ToolsChapter; bottomInset: number; onNext: () => void }) {
   const [headHeight, setHeadHeight] = useState(0);
   return (
     <View style={tools.screen}>
       <ScrollView contentContainerStyle={[tools.centerScroll, { paddingTop: headHeight + 20, paddingBottom: bottomInset + 168 }]} showsVerticalScrollIndicator={false}>
-        <Text style={tools.barEyebrow}>HOW IT WORKS</Text>
-        <Text style={tools.scienceTitle}>Two ways to work.</Text>
+        <View style={tools.barHeader}>
+          <Reanimated.Text entering={FadeIn.delay(120).duration(520)} style={tools.barEyebrow}>
+            HOW IT WORKS
+          </Reanimated.Text>
+          <Reanimated.Text
+            entering={FadeInUp.delay(200).duration(660).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}
+            style={tools.barTitle}
+          >
+            Two ways to work.
+          </Reanimated.Text>
+          <Reanimated.Text
+            entering={FadeInUp.delay(320).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 10 }] })}
+            style={tools.barIntro}
+          >
+            Both end the same way — with a medal you earned.
+          </Reanimated.Text>
+        </View>
 
-        <View style={tools.regimeRow}>
-          {[
-            { name: 'Single Session', label: '01 · ONE CLEAR BLOCK', icon: <Clock s={22} c={GOLD} w={1.9} />, body: 'One timer. When it runs out, you earn a medal marking the session complete.' },
-            { name: 'Pomodoro Classic Cycle', label: '02 · FOCUS + RECOVERY', icon: <Coffee s={22} c={GOLD} w={1.9} />, body: 'The traditional rhythm: a work interval, a short break, repeated — with a longer break at the end.' },
-          ].map((regime, index) => (
-            <Reanimated.View
-              key={regime.name}
-              entering={FadeInUp.delay(200 + index * 130).duration(500).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 18 }] })}
-              style={tools.regimeCard}
-            >
-              <View pointerEvents="none" style={tools.scienceCardSheen} />
-              <View style={tools.regimeIcon}>{regime.icon}</View>
-              <Text style={tools.regimeLabel}>{regime.label}</Text>
-              <Text style={tools.regimeName}>{regime.name}</Text>
-              <Text style={tools.regimeBody}>{regime.body}</Text>
-            </Reanimated.View>
-          ))}
+        <View style={tools.regimeStack}>
+          <ToolsRegimeCard
+            index={1}
+            label="ONE CLEAR BLOCK"
+            name="Single Session"
+            caption="One block, start to finish"
+            body="One timer. When it runs out, you earn a medal marking that session complete."
+            Icon={Clock}
+            segments={TOOLS_REGIME_SINGLE}
+            delay={470}
+          />
+          <ToolsRegimeCard
+            index={2}
+            label="FOCUS + RECOVERY"
+            name="Pomodoro Classic Cycle"
+            caption="Work · break · work · break · work · a longer rest"
+            body="The traditional rhythm: a work interval, a short break, repeated — with a longer break at the end of the cycle."
+            Icon={Coffee}
+            segments={TOOLS_REGIME_CYCLE}
+            delay={610}
+          />
         </View>
 
         <Reanimated.View
-          entering={FadeInUp.delay(480).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 18 }] })}
+          entering={FadeInUp.delay(770).duration(600).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 20 }] })}
           style={tools.rewardCard}
         >
           <View style={tools.rewardMedal}><Trophy s={22} c={GOLD} w={1.7} /></View>
@@ -25882,21 +26086,27 @@ function ToolsPomodoroRegimes({ chapter, bottomInset, onNext }: { chapter: Tools
         </Reanimated.View>
 
         <Reanimated.View
-          entering={FadeInUp.delay(600).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 18 }] })}
+          entering={FadeInUp.delay(900).duration(600).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 20 }] })}
           style={tools.nuanceCard}
         >
           <View style={tools.nuanceHead}>
             <BarChart3 s={17} c="#8B6B2F" w={2} />
             <Text style={tools.nuanceEyebrow}>THE NUMBER THAT MATTERS</Text>
           </View>
+
+          <View style={tools.proofStack}>
+            <ToolsFocusProofRow label="TEN ONE-MINUTE SESSIONS" medals={10} time="10 min" share={0.04} delay={1180} emphasis={false} />
+            <ToolsFocusProofRow label="FIVE LONG SESSIONS" medals={5} time="8h 20m" share={1} delay={1340} emphasis />
+          </View>
+
           <Text style={tools.nuanceText}>
-            More medals doesn&apos;t always mean more focus. That&apos;s why your analytics track <Text style={tools.nuanceStrong}>total time focused</Text> — not just how many sessions you started.
+            Twice the medals, a fraction of the work. That&apos;s why your analytics track <Text style={tools.nuanceStrong}>total time focused</Text> — the number that actually reflects a day.
           </Text>
         </Reanimated.View>
       </ScrollView>
 
       <ToolsChapterBar chapter={chapter} onHeight={setHeadHeight} />
-      <ToolsFooterCta delay={720} bottomInset={bottomInset} label="Continue" onPress={onNext} />
+      <ToolsFooterCta delay={1180} bottomInset={bottomInset} label="Continue" onPress={onNext} />
     </View>
   );
 }
