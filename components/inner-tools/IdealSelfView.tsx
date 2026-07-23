@@ -1057,7 +1057,20 @@ function Summary({
         contentContainerStyle={[s.summaryContent, { paddingBottom: insets.bottom + 32 }]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={s.summaryHeader}>
+        {/* The profile opens on its own lit plate — the vow, then the promise
+            that failing it is not the end. */}
+        <View style={s.summaryHero}>
+          <LinearGradient
+            colors={['#FFFDF6', '#FDF6E6', '#FFFCF4']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <HairlineWeave color="#8A6A2F" opacity={0.05} />
+          <View pointerEvents="none" style={s.summaryHeroBloom}>
+            <Bloom color={C.gold} opacity={0.24} />
+          </View>
+          <View style={s.summaryHeaderRule} />
           <Text style={s.summaryHeaderEyebrow}>WHO I AM BECOMING</Text>
           <Text style={s.summaryHeaderTitle}>This is the path</Text>
           <Text style={s.summaryHeaderTagline}>
@@ -1962,17 +1975,18 @@ const s = StyleSheet.create({
   },
   sumBlock: { gap: 8 },
   sumLabel: {
+    flex: 1,
     fontFamily: F.sansBold,
     fontSize: 10,
     letterSpacing: 1.8,
-    color: C.gold,
+    color: C.goldDark,
     textTransform: 'uppercase',
   },
   sumBody: {
-    fontFamily: F.serif,
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#1F2937',
+    fontFamily: F.serifMedium,
+    fontSize: 17.5,
+    lineHeight: 26,
+    color: '#221E1A',
   },
   sumDivider: { height: 1, backgroundColor: '#F0E9D5' },
   sumListItem: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
@@ -1986,24 +2000,45 @@ const s = StyleSheet.create({
 
   // Summary screen (mode='summary')
   summaryContent: { paddingHorizontal: 22, paddingTop: 6, paddingBottom: 32, gap: 18 },
-  summaryHeader: { paddingVertical: 4, gap: 6 },
+  // The vow's own plate: parchment, weave, a gold breath and a struck rule.
+  summaryHero: {
+    position: 'relative',
+    overflow: 'hidden',
+    alignItems: 'center',
+    borderRadius: 24,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#E7D7B4',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 22,
+    gap: 7,
+    boxShadow: '0 10px 28px rgba(67, 53, 31, 0.08)',
+  },
+  summaryHeroBloom: { position: 'absolute', left: -40, right: -40, top: -96, height: 200 },
+  summaryHeaderRule: { width: 34, height: 2, borderRadius: 1, backgroundColor: C.gold, opacity: 0.65, marginBottom: 3 },
   summaryHeaderEyebrow: {
     fontFamily: F.sansBold,
     fontSize: 10,
-    letterSpacing: 2.2,
-    color: C.gold,
+    letterSpacing: 2.4,
+    color: C.goldDark,
     textTransform: 'uppercase',
   },
   summaryHeaderTitle: {
-    fontFamily: F.serifMedium,
-    fontSize: 30,
-    color: '#1F2937',
+    fontFamily: F.serifSemiBold,
+    fontSize: 34,
+    lineHeight: 40,
+    letterSpacing: -0.5,
+    color: '#221E1A',
+    textAlign: 'center',
   },
   summaryHeaderTagline: {
-    fontFamily: F.serifMediumItalic,
-    fontSize: 14,
-    color: '#A8A29E',
-    marginTop: 4,
+    fontFamily: F.serifMedium,
+    fontSize: 16.5,
+    lineHeight: 23,
+    color: '#7C7266',
+    textAlign: 'center',
+    marginTop: 2,
   },
   // Group dividers in the summary view: WHO I AM BECOMING / LIFE / FAITH.
   // Sit above their associated cards as a quiet section header.
@@ -2011,22 +2046,24 @@ const s = StyleSheet.create({
     fontFamily: F.sansBold,
     fontSize: 11,
     letterSpacing: 2.4,
-    color: C.gold,
+    color: C.goldDark,
     textTransform: 'uppercase',
     marginTop: 14,
     marginBottom: -4,
     paddingHorizontal: 4,
   },
-  summaryHeaderAnasta: { color: C.gold, fontFamily: F.serifMedium },
+  summaryHeaderAnasta: { color: C.goldDark, fontFamily: F.serifSemiBold },
 
   editBlock: {
     borderRadius: 22,
-    backgroundColor: '#FFFFFF',
+    borderCurve: 'continuous',
+    backgroundColor: '#FFFEFB',
     borderWidth: 1,
-    borderColor: '#EAE3CF',
-    paddingVertical: 16,
+    borderColor: '#E6DCC2',
+    paddingVertical: 17,
     paddingHorizontal: 18,
-    gap: 10,
+    gap: 11,
+    boxShadow: '0 6px 18px rgba(67, 53, 31, 0.05)',
   },
   editBlockHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   editIconBtn: {
@@ -2056,10 +2093,10 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
   linkedBody: {
-    fontFamily: F.serif,
-    fontSize: 14,
-    lineHeight: 22,
-    color: '#6B7280',
+    fontFamily: F.serifMedium,
+    fontSize: 16,
+    lineHeight: 23,
+    color: '#7C7266',
   },
   linkedComing: {
     marginTop: 4,
@@ -2070,28 +2107,29 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
+  // Reads as an invitation to walk it again, not a caps-locked control.
   refineBtn: {
     marginTop: 10,
-    height: 52,
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
+    height: 54,
+    borderRadius: 17,
+    borderCurve: 'continuous',
+    backgroundColor: '#FFFEFB',
     borderWidth: 1.5,
-    borderColor: C.gold,
+    borderColor: '#E2CE9F',
     alignItems: 'center',
     justifyContent: 'center',
   },
   refineBtnText: {
-    fontFamily: F.sansBold,
-    fontSize: 12,
-    letterSpacing: 2.4,
-    color: C.gold,
-    textTransform: 'uppercase',
+    fontFamily: F.serifSemiBold,
+    fontSize: 19,
+    letterSpacing: 0.2,
+    color: C.goldDark,
   },
   refineCaption: {
     textAlign: 'center',
-    fontFamily: F.serif,
-    fontSize: 12,
-    color: '#A8A29E',
+    fontFamily: F.serifMedium,
+    fontSize: 15,
+    color: '#9A9086',
   },
 
   // Edit sheet
