@@ -17,6 +17,7 @@ import { AlertTriangle, ChevronRight, Lock, Plus, Trash2 } from '@/components/ic
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import Bloom from './Bloom';
+import ProtectionRegisterCard, { REGISTER_TONES } from './ProtectionRegister';
 import GroupSeal, { groupTint, withAlpha } from './GroupSeal';
 import { CATEGORY_TINTS } from './focusContent';
 import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
@@ -243,56 +244,20 @@ function AlwaysBlockedGroupCard({
     ? `${visibleNames.join(', ')}${remaining > 0 ? ` +${remaining}` : ''}`
     : `${appCount} private ${appCount === 1 ? 'app' : 'apps'}`;
 
+  // The same register the Focus screen's rows and the Always Blocked sheet are
+  // cut from — one recognisable object wherever a standing boundary is named.
   return (
-    <Animated.View
-      entering={FadeInDown.duration(360).delay(index * 55).easing(Easing.out(Easing.cubic))}
-      layout={CARD_LAYOUT}
-      style={[s.card, s.systemCard]}
-    >
-      <LinearGradient
-        colors={['#FFFEFC', '#FFFDFB', '#FFFEFD']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0.9 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <RuleWeave color={BLOCKED_COLOR} />
-      <View pointerEvents="none" style={s.cardWashBloom}>
-        <Bloom color={BLOCKED_COLOR} opacity={0.15} />
-      </View>
-      <View pointerEvents="none" style={s.cardSealBloom}>
-        <Bloom color={BLOCKED_COLOR} opacity={0.22} />
-      </View>
-
-      <View style={s.closedEdge} />
-
-      {/* Opens the same Always Blocked sheet the rest of the app uses — the
-          list is managed globally, this is just its door on this screen. */}
-      <TouchableOpacity
-        style={s.cardRow}
+    <Animated.View layout={CARD_LAYOUT}>
+      <ProtectionRegisterCard
+        tone={REGISTER_TONES.rose}
+        icon={<Lock s={19} c={BLOCKED_COLOR} w={2.3} />}
+        title="Always Blocked"
+        detail={summary}
+        chipLabel="Blocked"
+        index={index}
         onPress={onPress}
-        activeOpacity={0.74}
-        haptic="selection"
-        accessibilityRole="button"
         accessibilityLabel={`Always Blocked, ${appCount} ${appCount === 1 ? 'app' : 'apps'}. Opens the Always Blocked settings.`}
-      >
-        <View style={s.systemSeal}>
-          <Lock s={19} c={BLOCKED_COLOR} w={2.3} />
-        </View>
-        <View style={s.cardBody}>
-          <View style={s.cardTitleRow}>
-            <Text style={s.cardName} numberOfLines={1}>Always Blocked</Text>
-          </View>
-          <View style={s.cardMetaRow}>
-            <Text style={s.cardMeta} numberOfLines={1}>{summary}</Text>
-          </View>
-        </View>
-        <View style={s.cardTail}>
-          <View style={[s.valueChip, s.systemValueChip]}>
-            <Text style={[s.valueChipText, s.systemValueText]}>Blocked</Text>
-          </View>
-          <ChevronRight s={16} c={C.textMuted} w={2} />
-        </View>
-      </TouchableOpacity>
+      />
     </Animated.View>
   );
 }
@@ -683,21 +648,8 @@ const s = StyleSheet.create({
   warningTextStrong: { color: '#8F3443' },
 
   cardStack: { marginTop: 12, gap: 7 },
-  systemCard: { borderColor: '#E7C4CB' },
-  systemSeal: {
-    flexShrink: 0,
-    width: 42,
-    height: 42,
-    marginHorizontal: 5.5,
-    borderRadius: 21,
-    borderWidth: 1,
-    borderColor: 'rgba(162,67,81,0.3)',
-    backgroundColor: '#FBE9EC',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  systemValueChip: { backgroundColor: BLOCKED_TINT, borderColor: '#E7C4CB' },
-  systemValueText: { color: BLOCKED_COLOR },
+  // The Always Blocked card's own styles moved to ProtectionRegister, which
+  // now draws it here, on Home, and inside its sheet.
   card: {
     position: 'relative',
     overflow: 'hidden',

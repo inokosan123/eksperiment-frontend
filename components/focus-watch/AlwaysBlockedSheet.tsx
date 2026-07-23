@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, FadeOutUp, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeOutUp, LinearTransition } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import { Lock, Plus, Trash2 } from '@/components/icons/Icons';
@@ -8,7 +8,13 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import { C, F } from '@/constants/tokens';
 import { ESSENTIAL_APP_OPTIONS, PREVIEW_APPS } from './focusContent';
 import NativeActivitySelectionButton from './NativeActivitySelectionButton';
-import { RegisterGround, RegisterSeal, REGISTER_TONES } from './ProtectionRegister';
+import {
+  RegisterGround,
+  RegisterModeNote,
+  RegisterSeal,
+  RegisterStrengthControl,
+  REGISTER_TONES,
+} from './ProtectionRegister';
 import FocusSheetHeader from './FocusSheetHeader';
 import { isNativeFocusAvailable } from './focusNativeBridge';
 import { refreshNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
@@ -162,41 +168,16 @@ export default function AlwaysBlockedSheet({ visible, onClose }: { visible: bool
 
                   <View style={s.strengthSection}>
                     <Text style={s.strengthLabel}>BLOCKING MODE</Text>
-                    <View style={s.strengthControl} accessibilityRole="radiogroup">
-                      {(['loose', 'strict'] as Strength[]).map(strength => {
-                          const selected = rule.strength === strength;
-                          return (
-                            <TouchableOpacity
-                              key={strength}
-                              style={s.strengthOption}
-                              onPress={() => updateStrength(rule.appId, strength)}
-                              haptic="selection"
-                              accessibilityRole="radio"
-                              accessibilityState={{ checked: selected }}
-                              accessibilityLabel={`${strength === 'strict' ? 'Strict' : 'Loose'} blocking for ${nameFor(rule.appId)}`}
-                            >
-                              {selected && (
-                                <Animated.View
-                                  entering={FadeIn.duration(120)}
-                                  style={[StyleSheet.absoluteFill, s.strengthSelected, strength === 'strict' ? s.strictOn : s.looseOn]}
-                                />
-                              )}
-                              <Text style={[
-                                s.strengthText,
-                                selected && (strength === 'strict' ? s.strictText : s.looseText),
-                              ]}>{strength === 'strict' ? 'Strict' : 'Loose'}</Text>
-                            </TouchableOpacity>
-                          );
-                      })}
-                    </View>
-                  </View>
-                  <View style={s.modeExplanation}>
-                    <View style={[s.modeDot, rule.strength === 'strict' ? s.modeDotStrict : s.modeDotLoose]} />
-                    <Text style={s.appMeta}>
-                      {rule.strength === 'strict'
+                    <RegisterStrengthControl
+                      value={rule.strength}
+                      onChange={strength => updateStrength(rule.appId, strength)}
+                    />
+                    <RegisterModeNote
+                      strength={rule.strength}
+                      text={rule.strength === 'strict'
                         ? 'This app stays closed with no continuation option.'
                         : 'Opening it requires a deliberate 15-minute gateway.'}
-                    </Text>
+                    />
                   </View>
                 </Animated.View>
               ))}
@@ -269,21 +250,8 @@ const s = StyleSheet.create({
   appTitleWrap: { flex: 1, minWidth: 0, paddingTop: 3 },
   appName: { fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 23, color: C.text },
   appSystemLabel: { marginTop: 3, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.45, color: '#AA7A84' },
-  strengthSection: { gap: 6 },
+  strengthSection: { gap: 7 },
   strengthLabel: { paddingLeft: 2, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.7, color: C.textMuted },
-  strengthControl: { height: 44, flexDirection: 'row', gap: 4, borderRadius: 14, borderCurve: 'continuous', backgroundColor: '#EEECE7', padding: 3 },
-  strengthOption: { position: 'relative', flex: 1, minWidth: 68, borderRadius: 11, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
-  strengthSelected: { borderRadius: 11 },
-  looseOn: { backgroundColor: '#FFF0C5' },
-  strictOn: { backgroundColor: '#F3CBD2' },
-  strengthText: { zIndex: 1, fontFamily: F.sansBold, fontSize: 12, color: C.textMuted },
-  looseText: { color: '#95681F' },
-  strictText: { color: '#A24351' },
-  modeExplanation: { minHeight: 38, flexDirection: 'row', alignItems: 'flex-start', gap: 9, borderRadius: 13, borderCurve: 'continuous', backgroundColor: 'rgba(248, 231, 234, 0.58)', paddingHorizontal: 11, paddingVertical: 9 },
-  modeDot: { width: 7, height: 7, borderRadius: 4, marginTop: 6 },
-  modeDotStrict: { backgroundColor: '#B34E60' },
-  modeDotLoose: { backgroundColor: '#C69A43' },
-  appMeta: { flex: 1, fontFamily: F.serif, fontSize: 14.5, lineHeight: 19.5, color: C.textSecondary },
   removeButton: { width: 42, height: 42, borderRadius: 13, borderCurve: 'continuous', borderWidth: 1, borderColor: '#F3C7C7', backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' },
   addButton: { height: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: '#DDCEAD', backgroundColor: '#FFFDF7' },
   plusIcon: { width: 26, height: 26, borderRadius: 9, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
