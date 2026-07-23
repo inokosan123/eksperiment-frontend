@@ -6,13 +6,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import Reanimated, {
   Easing,
+  FadeInDown,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
+  withDelay,
   withTiming,
 } from 'react-native-reanimated';
 import {
   ArrowLeft, CheckSmall, Pencil, Plus, Trash2, X,
 } from '@/components/icons/Icons';
+import Bloom from '@/components/focus-watch/Bloom';
+import GoldButton from '@/components/focus-watch/GoldButton';
+import HairlineWeave from '@/components/focus-watch/HairlineWeave';
 import { C, F } from '@/constants/tokens';
 import {
   getTitleBarTopPadding,
@@ -249,6 +255,11 @@ export default function IdealSelfView() {
   // KeyboardAvoidingView fights with both, so we don't.
   return (
     <View style={s.screen}>
+      {/* The flow is lit from above — a warm gold breath over the parchment, so
+          every question sits in light rather than on a flat sheet. */}
+      <View pointerEvents="none" style={s.screenBloom}>
+        <Bloom color={C.gold} opacity={0.17} />
+      </View>
       {step !== 'anasta' && step !== 'congrats' && (
         <FlowHeader
           dotIndex={dotIndex}
@@ -340,61 +351,44 @@ function FlowHeader({
       <TouchableOpacity onPress={onBack} style={s.titleBarBtn} activeOpacity={0.72}>
         <ArrowLeft s={22} c={canBack ? '#5C5752' : '#C9C5BD'} />
       </TouchableOpacity>
-      <View style={s.dotsRow}>
-        {DOT_STEPS.map((_, i) => (
-          <FlowDot key={i} index={i} activeIndex={dotIndex} />
-        ))}
+      {/* One gold thread that fills as the flow advances — nine tiny dots read
+          as debris at this size; a single rail reads as progress. */}
+      <View style={s.progressRail}>
+        <FlowProgress dotIndex={dotIndex} />
       </View>
       <View style={s.titleBarBtn} />
     </View>
   );
 }
 
-function FlowDot({ index, activeIndex }: { index: number; activeIndex: number }) {
-  const state: 'past' | 'active' | 'future' =
-    index < activeIndex ? 'past' : index === activeIndex ? 'active' : 'future';
-
-  const widthSv = useSharedValue(state === 'active' ? 24 : 8);
-  const colorSv = useSharedValue(
-    state === 'active' ? 1 : state === 'past' ? 0.5 : 0
-  );
+function FlowProgress({ dotIndex }: { dotIndex: number }) {
+  const reduceMotion = useReducedMotion();
+  const target = DOT_STEPS.length <= 1
+    ? 1
+    : Math.max(0, Math.min(1, (dotIndex + 1) / DOT_STEPS.length));
+  const progress = useSharedValue(reduceMotion ? target : 0);
 
   useEffect(() => {
-    widthSv.value = withTiming(state === 'active' ? 24 : 8, {
-      duration: 320,
-      easing: Easing.out(Easing.cubic),
-    });
-    colorSv.value = withTiming(
-      state === 'active' ? 1 : state === 'past' ? 0.5 : 0,
-      { duration: 320, easing: Easing.out(Easing.cubic) }
-    );
-  }, [state, widthSv, colorSv]);
+    progress.value = reduceMotion
+      ? target
+      : withTiming(target, { duration: 520, easing: Easing.out(Easing.cubic) });
+  }, [progress, reduceMotion, target]);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    width: widthSv.value,
-    // Lerp manually between three states by sampling colour points.
-    backgroundColor:
-      colorSv.value >= 1
-        ? C.gold
-        : colorSv.value >= 0.5
-        ? '#B5944A'
-        : '#E7E1D2',
+  const fillStyle = useAnimatedStyle(() => ({
+    width: `${progress.value * 100}%`,
   }));
 
   return (
-    <Reanimated.View
-      style={[
-        { height: 8, borderRadius: 4 },
-        state === 'active' && {
-          shadowColor: C.gold,
-          shadowOpacity: 0.45,
-          shadowOffset: { width: 0, height: 1 },
-          shadowRadius: 4,
-          elevation: 2,
-        },
-        animatedStyle,
-      ]}
-    />
+    <View style={s.progressTrack}>
+      <Reanimated.View style={[s.progressFill, fillStyle]}>
+        <LinearGradient
+          colors={['#E0C489', C.gold, '#B8933F']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Reanimated.View>
+    </View>
   );
 }
 
@@ -416,7 +410,7 @@ function StepRenderer({
       return (
         <RichStep
           title="Picture your ideal self"
-          body="Take a moment. Picture the person you're meant to become. Not who you are on your best day, but who you want to become. Write what you see. Honestly. Not what sounds right on paper."
+          body="Not your best day. The person you mean to become."
           html={draft.vision}
           onChangeHtml={value => updateField('vision', value)}
           placeholder="Someone disciplined and at peace. A man of his word. Close to God — not just on Sundays. Strong, but gentle…"
@@ -443,7 +437,7 @@ function StepRenderer({
       return (
         <ListStep
           title="What separates you most from that person?"
-          body="Be honest. Not the polite answer — the real one. Naming it is half the battle."
+          body="The real answer, not the polite one. Naming it is half the battle."
           values={draft.obstacles}
           onChange={value => updateField('obstacles', value)}
           maxItems={3}
@@ -458,7 +452,7 @@ function StepRenderer({
       return (
         <ListStep
           title="What can you do every day to come closer?"
-          body="Forget the perfect plan. What can you carry — every day? A small thing kept is worth more than a great thing abandoned."
+          body="A small thing kept beats a great thing abandoned."
           values={draft.actions}
           onChange={value => updateField('actions', value)}
           maxItems={5}
@@ -473,7 +467,7 @@ function StepRenderer({
       return (
         <ListStep
           title="What routines does that person keep?"
-          body="What anchors their day? Morning rule. Evening reflection. Daily walk. The rhythms that hold a soul together."
+          body="The rhythms that hold a day together."
           values={draft.routines}
           onChange={value => updateField('routines', value)}
           maxItems={6}
@@ -489,7 +483,7 @@ function StepRenderer({
       return (
         <RichStep
           title="What relationship with God do you want?"
-          body="Set aside what you should believe. What kind of bond — what kind of trust, prayer, surrender — do you long for with Him?"
+          body="Not what you should believe. What you long for."
           html={draft.relationshipWithGod}
           onChangeHtml={value => updateField('relationshipWithGod', value)}
           placeholder=""
@@ -503,7 +497,7 @@ function StepRenderer({
       return (
         <ListStep
           title="What blocks that relationship most?"
-          body="Distraction. Doubt. Pride. The habit of forgetting Him. What stands between you and Him?"
+          body="Distraction. Doubt. Pride. The habit of forgetting Him."
           values={draft.spiritualObstacles}
           onChange={value => updateField('spiritualObstacles', value)}
           maxItems={3}
@@ -518,7 +512,7 @@ function StepRenderer({
       return (
         <ListStep
           title="What can you do every day to draw closer?"
-          body="Small things. Honest things. The ones you can keep, even on tired days."
+          body="The ones you can keep, even on tired days."
           values={draft.spiritualActions}
           onChange={value => updateField('spiritualActions', value)}
           maxItems={5}
@@ -533,7 +527,7 @@ function StepRenderer({
       return (
         <ListStep
           title="What does their faith practice look like?"
-          body="Prayer. Scripture. Confession. Fasting. The shape of a life set apart for Him."
+          body="Prayer. Scripture. Confession. Fasting."
           values={draft.faithPractice}
           onChange={value => updateField('faithPractice', value)}
           maxItems={6}
@@ -656,20 +650,36 @@ function FlowScroll({
   );
 }
 
+// The question carries the screen: one large serif line, one quiet line under
+// it. The heading rises first, the body a beat later — the page composes
+// itself rather than appearing all at once.
 function StepHeading({
   title, body,
 }: {
   title: string;
   body: string;
 }) {
+  const reduceMotion = useReducedMotion();
   return (
     <View style={s.stepHeading}>
-      <Text style={s.stepTitle}>{title}</Text>
-      <Text style={s.stepBody}>{body}</Text>
+      <Reanimated.View
+        entering={reduceMotion ? undefined : FadeInDown.duration(460).easing(Easing.out(Easing.cubic))}
+      >
+        <Text style={s.stepTitle}>{title}</Text>
+      </Reanimated.View>
+      {!!body && (
+        <Reanimated.View
+          entering={reduceMotion ? undefined : FadeInDown.delay(110).duration(460).easing(Easing.out(Easing.cubic))}
+        >
+          <Text style={s.stepBody}>{body}</Text>
+        </Reanimated.View>
+      )}
     </View>
   );
 }
 
+// The flow's own action, in the app's signature gold — the black pill with
+// 11pt letterspaced caps read like a form's submit, not like an invitation.
 function PrimaryButton({
   label, onPress, disabled,
 }: {
@@ -677,16 +687,7 @@ function PrimaryButton({
   onPress: () => void;
   disabled?: boolean;
 }) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      disabled={disabled}
-      activeOpacity={0.84}
-      style={[s.primaryBtn, disabled && s.primaryBtnDisabled]}
-    >
-      <Text style={s.primaryBtnText}>{label}</Text>
-    </TouchableOpacity>
-  );
+  return <GoldButton label={label} onPress={onPress} disabled={disabled} height={54} style={s.primaryBtn} />;
 }
 
 // ─── Step: Qualities (chips) ────────────────────────────────────────────────
@@ -725,7 +726,7 @@ function QualitiesStep({
     <FlowScroll insetsBottom={insets.bottom}>
       <StepHeading
         title="What they're made of"
-        body="Don't overthink it — write what comes when you picture that person."
+        body="Write what comes when you picture them."
       />
 
       <View style={s.chipInputRow}>
@@ -1540,6 +1541,7 @@ function toneToDeleteIconColor(tone: Tone): string {
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
+  screenBloom: { position: 'absolute', left: -60, right: -60, top: -170, height: 420 },
 
   // Top bars
   titleBarBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
@@ -1548,13 +1550,20 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
-    paddingBottom: 14,
+    paddingBottom: 18,
   },
-  dotsRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  progressRail: { flex: 1, paddingHorizontal: 10 },
+  progressTrack: {
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: '#EBE3D2',
+    overflow: 'hidden',
+  },
+  progressFill: { height: '100%', borderRadius: 999, overflow: 'hidden' },
 
   // Flow
-  flowContent: { paddingHorizontal: 22, paddingTop: 4, gap: 14 },
-  stepHeading: { gap: 8, marginBottom: 2 },
+  flowContent: { paddingHorizontal: 22, paddingTop: 6, gap: 16 },
+  stepHeading: { gap: 10, marginBottom: 4 },
   stepEyebrow: {
     fontFamily: F.sansBold,
     fontSize: 10,
@@ -1562,21 +1571,22 @@ const s = StyleSheet.create({
     color: C.gold,
     textTransform: 'uppercase',
   },
+  // The question is the screen. Big enough to be read once and felt, not
+  // scanned — it carries the weight the old 28pt shared with a paragraph.
   stepTitle: {
-    fontFamily: F.serifMedium,
-    fontSize: 28,
-    color: '#1F2937',
-    lineHeight: 34,
-    letterSpacing: -0.2,
+    fontFamily: F.serifSemiBold,
+    fontSize: 33,
+    color: '#221E1A',
+    lineHeight: 39,
+    letterSpacing: -0.5,
   },
-  // Body reads as a quiet invitation, not an instruction. Italic serif gives
-  // it the right "voice" — the user feels prompted, not lectured. Slight
-  // warm-grey tone matches the parchment background.
+  // One quiet line under it. Upright serif at a readable size — the old 15pt
+  // italic paragraph competed with the question and read as fine print.
   stepBody: {
-    fontFamily: F.serifMediumItalic,
-    fontSize: 15,
+    fontFamily: F.serifMedium,
+    fontSize: 17,
     lineHeight: 25,
-    color: '#8A7E6E',
+    color: '#7C7266',
     letterSpacing: 0.05,
   },
   // Rich step
@@ -1587,15 +1597,18 @@ const s = StyleSheet.create({
     paddingBottom: 14,
     gap: 8,
   },
+  // The writing surface is a page, not a form field: warm parchment, a gold
+  // hairline and a soft lift, so what you write feels inscribed.
   richEditorWrap: {
     flex: 1,
     marginHorizontal: 22,
     marginBottom: 12,
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    backgroundColor: '#FFFEFB',
     borderWidth: 1,
-    borderColor: '#EAE3CF',
+    borderColor: '#E6DCC2',
     overflow: 'hidden',
+    boxShadow: '0 10px 26px rgba(67, 53, 31, 0.08)',
   },
   richEditor: { flex: 1 },
   richFooter: {
@@ -1625,14 +1638,7 @@ const s = StyleSheet.create({
   },
 
   // Buttons
-  primaryBtn: {
-    marginTop: 2,
-    height: 46,
-    borderRadius: 14,
-    backgroundColor: '#1C1917',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  primaryBtn: { marginTop: 6 },
   primaryBtnDisabled: { backgroundColor: '#D6D3D1' },
   primaryBtnText: {
     fontFamily: F.sansBold,
@@ -1651,80 +1657,82 @@ const s = StyleSheet.create({
   },
   helperHint: {
     textAlign: 'center',
-    fontFamily: F.serif,
-    fontSize: 13,
-    color: '#A8A29E',
-    marginTop: -8,
+    fontFamily: F.serifMedium,
+    fontSize: 15,
+    color: '#9A9086',
+    marginTop: -2,
   },
 
   // Chips
   chipInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   chipTextInput: {
     flex: 1,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
+    height: 56,
+    borderRadius: 17,
+    backgroundColor: '#FFFEFB',
     borderWidth: 1,
-    borderColor: '#EAE3CF',
-    paddingHorizontal: 16,
+    borderColor: '#E6DCC2',
+    paddingHorizontal: 17,
     paddingVertical: 0,
-    fontFamily: F.serif,
-    fontSize: 16,
-    lineHeight: 22,
-    color: '#1F2937',
+    fontFamily: F.serifMedium,
+    fontSize: 18,
+    lineHeight: 24,
+    color: '#221E1A',
     // Android-only: stop the platform from adding extra vertical padding
     // around the text run, which pushes single-line placeholders down.
     includeFontPadding: false,
     textAlignVertical: 'center',
   },
   chipAddBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+    width: 56,
+    height: 56,
+    borderRadius: 17,
     backgroundColor: C.gold,
     alignItems: 'center',
     justifyContent: 'center',
+    boxShadow: '0 4px 12px rgba(197,160,89,0.35)',
   },
-  chipAddBtnDisabled: { backgroundColor: '#D6D3D1' },
-  chipBlock: { gap: 10 },
+  chipAddBtnDisabled: { backgroundColor: '#DDD8CE', boxShadow: 'none' },
+  chipBlock: { gap: 11 },
   chipBlockLabel: {
     fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 1.6,
-    color: '#A8A29E',
+    fontSize: 10,
+    letterSpacing: 1.9,
+    color: '#A09585',
     textTransform: 'uppercase',
   },
-  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
+  // A chosen quality is minted — warm gold on parchment. A suggestion is bare.
   chipFilled: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    height: 34,
-    paddingHorizontal: 14,
-    borderRadius: 17,
-    backgroundColor: '#F8F0D8',
+    gap: 7,
+    height: 42,
+    paddingHorizontal: 16,
+    borderRadius: 21,
+    backgroundColor: '#F8EFD6',
     borderWidth: 1,
-    borderColor: '#E8DCC4',
+    borderColor: '#E2CE9F',
   },
   chipFilledText: {
-    fontFamily: F.serifMedium,
-    fontSize: 13,
-    color: '#7C6328',
+    fontFamily: F.serifSemiBold,
+    fontSize: 16,
+    color: '#7A5E22',
   },
   chipSuggested: {
-    height: 34,
-    paddingHorizontal: 14,
-    borderRadius: 17,
-    backgroundColor: '#FFFFFF',
+    height: 42,
+    paddingHorizontal: 16,
+    borderRadius: 21,
+    backgroundColor: '#FFFEFB',
     borderWidth: 1,
-    borderColor: '#EAE3CF',
+    borderColor: '#E6DCC2',
     alignItems: 'center',
     justifyContent: 'center',
   },
   chipSuggestedText: {
-    fontFamily: F.serif,
-    fontSize: 13,
-    color: '#6B7280',
+    fontFamily: F.serifMedium,
+    fontSize: 16,
+    color: '#6E665C',
   },
 
   // Lists — single input + commit pattern. Input is white, committed cards
@@ -1732,30 +1740,31 @@ const s = StyleSheet.create({
   entryRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   entryInput: {
     flex: 1,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
+    height: 56,
+    borderRadius: 17,
+    backgroundColor: '#FFFEFB',
     borderWidth: 1,
-    borderColor: '#EAE3CF',
-    paddingHorizontal: 16,
+    borderColor: '#E6DCC2',
+    paddingHorizontal: 17,
     paddingVertical: 0,
-    fontFamily: F.serif,
-    fontSize: 16,
-    lineHeight: 22,
-    color: '#1F2937',
+    fontFamily: F.serifMedium,
+    fontSize: 18,
+    lineHeight: 24,
+    color: '#221E1A',
     includeFontPadding: false,
     textAlignVertical: 'center',
   },
   entryAddBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+    width: 56,
+    height: 56,
+    borderRadius: 17,
     backgroundColor: C.gold,
     alignItems: 'center',
     justifyContent: 'center',
+    boxShadow: '0 4px 12px rgba(197,160,89,0.35)',
   },
-  entryAddBtnDisabled: { backgroundColor: '#D6D3D1' },
-  itemList: { gap: 8 },
+  entryAddBtnDisabled: { backgroundColor: '#DDD8CE', boxShadow: 'none' },
+  itemList: { gap: 9 },
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1771,9 +1780,9 @@ const s = StyleSheet.create({
   itemText: {
     flex: 1,
     fontFamily: F.serifMedium,
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#3D3229',
+    fontSize: 17.5,
+    lineHeight: 24,
+    color: '#332B22',
   },
   itemDeleteBtn: {
     width: 28,
@@ -1788,8 +1797,8 @@ const s = StyleSheet.create({
   itemCounter: {
     fontFamily: F.sansBold,
     fontSize: 10,
-    letterSpacing: 1.6,
-    color: '#A8A29E',
+    letterSpacing: 1.9,
+    color: '#A09585',
     textTransform: 'uppercase',
     textAlign: 'right',
   },
