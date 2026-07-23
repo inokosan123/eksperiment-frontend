@@ -25644,6 +25644,72 @@ function ToolsValueChip({
   );
 }
 
+// The banner placeholder, held until the real illustration exists: a warm
+// toned ground with light from above, a breathing glow, two engraved rings,
+// a scatter of gold dust, and the tool's icon set in a cream medallion — the
+// app's own plaque language, so the empty slot already looks finished.
+const TOOLS_PH_DOTS = [
+  { top: -52, left: -64, size: 3 },
+  { top: -34, left: 58, size: 2.4 },
+  { top: 46, left: -50, size: 2.6 },
+  { top: 40, left: 66, size: 3 },
+  { top: 8, left: 84, size: 2 },
+] as const;
+
+function ToolsBannerPlaceholder({ tone, Icon }: { tone: ToolsCardTone; Icon: ToolsIconComponent }) {
+  const breathe = useSharedValue(0);
+
+  useEffect(() => {
+    breathe.value = withRepeat(withTiming(1, { duration: 2900, easing: Easing.inOut(Easing.sin) }), -1, true);
+    return () => cancelAnimation(breathe);
+  }, [breathe]);
+
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: 0.6 + breathe.value * 0.4,
+    transform: [{ scale: 0.92 + breathe.value * 0.12 }],
+  }));
+
+  return (
+    <>
+      <LinearGradient
+        pointerEvents="none"
+        colors={[tone.tint, tone.soft]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0)']}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 0.7 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <Reanimated.View pointerEvents="none" style={[tools.phGlow, { backgroundColor: `${tone.accent}18` }, glowStyle]} />
+      <View pointerEvents="none" style={[tools.phRing, tools.phRingOuter, { borderColor: `${tone.accent}1E` }]} />
+      <View pointerEvents="none" style={[tools.phRing, tools.phRingInner, { borderColor: `${tone.accent}30` }]} />
+      {TOOLS_PH_DOTS.map((dot, dotIndex) => (
+        <View
+          key={dotIndex}
+          pointerEvents="none"
+          style={[
+            tools.phDot,
+            {
+              width: dot.size, height: dot.size, borderRadius: dot.size / 2,
+              backgroundColor: `${tone.accent}66`,
+              marginTop: dot.top - dot.size / 2, marginLeft: dot.left - dot.size / 2,
+            },
+          ]}
+        />
+      ))}
+      <View style={[tools.phMedallion, { borderColor: `${tone.accent}40` }]}>
+        <View pointerEvents="none" style={tools.phMedallionInner} />
+        <Icon s={31} c={tone.accent} w={1.6} />
+      </View>
+    </>
+  );
+}
+
 // One template, worn by every finding — a white card led by a full-width
 // illustration banner (the user's art drops in edge-to-edge; a toned ground
 // with the icon holds the space meanwhile), label and value beneath it, the
@@ -25756,11 +25822,7 @@ function ToolsFindingCard({
             {card.illustration ? (
               <Image source={card.illustration} style={tools.findingBannerImage} resizeMode="cover" />
             ) : (
-              <>
-                <View style={[tools.findingBannerHalo, { backgroundColor: `${tone.accent}14` }]} />
-                <View style={[tools.findingBannerHaloCore, { backgroundColor: `${tone.accent}12` }]} />
-                <card.Icon s={46} c={tone.accent} w={1.5} />
-              </>
+              <ToolsBannerPlaceholder tone={tone} Icon={card.Icon} />
             )}
           </Reanimated.View>
           <View pointerEvents="none" style={[tools.findingBannerEdge, { backgroundColor: `${tone.accent}24` }]} />
@@ -25851,11 +25913,35 @@ function ToolsScienceScreen({
   bottomInset: number;
   onNext: () => void;
 }) {
+  const { height: viewportHeight } = useWindowDimensions();
   const scrollY = useSharedValue(0);
   const [headHeight, setHeadHeight] = useState(0);
+  // Where the feed begins inside the scroll content — each card adds its own
+  // offset within the feed to know its absolute scroll position.
+  const [feedTop, setFeedTop] = useState(-1);
+  // The Continue button is withheld until the reader reaches the foot of the
+  // feed, then stays for good. `ctaLatch` fires the reveal once on the UI
+  // thread; `contentH`/`viewH` also reveal it when the feed is too short to
+  // scroll, so it can never be unreachable.
+  const [ctaShown, setCtaShown] = useState(false);
+  const [contentH, setContentH] = useState(0);
+  const [viewH, setViewH] = useState(0);
+  const ctaLatch = useSharedValue(0);
+  const revealCta = useCallback(() => setCtaShown(true), []);
   const onScroll = useAnimatedScrollHandler(event => {
     scrollY.value = event.contentOffset.y;
+    if (ctaLatch.value === 0) {
+      const distanceToEnd = event.contentSize.height - (event.contentOffset.y + event.layoutMeasurement.height);
+      if (distanceToEnd <= 130) {
+        ctaLatch.value = 1;
+        runOnJS(revealCta)();
+      }
+    }
   });
+
+  useEffect(() => {
+    if (!ctaShown && contentH > 0 && viewH > 0 && contentH <= viewH + 6) setCtaShown(true);
+  }, [contentH, viewH, ctaShown]);
 
   const opens = screen.emblem !== null;
   const base = opens ? 1240 : 420;
@@ -25866,6 +25952,8 @@ function ToolsScienceScreen({
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
+        onLayout={event => setViewH(event.nativeEvent.layout.height)}
+        onContentSizeChange={(_w, h) => setContentH(h)}
         contentContainerStyle={[
           tools.scienceScroll,
           { paddingTop: headHeight + (opens ? 26 : 20), paddingBottom: bottomInset + 168 },
@@ -25921,16 +26009,39 @@ function ToolsScienceScreen({
         <ToolsChapterBar chapter={chapter} scrollY={scrollY} onHeight={setHeadHeight} />
       )}
 
-      <ToolsFooterCta delay={base + 620} bottomInset={bottomInset} label="Continue" onPress={onNext} />
+      <ToolsFooterCta shown={ctaShown} bottomInset={bottomInset} label="Continue" onPress={onNext} />
     </View>
   );
 }
 
 // The shared foot: the CTA island floating over a soft white fade, matching
-// the rest of onboarding's primary button.
-function ToolsFooterCta({ label, onPress, delay = 220, bottomInset }: { label: string; onPress: () => void; delay?: number; bottomInset: number }) {
+// the rest of onboarding's primary button. Two modes: on a `delay` timer (the
+// other tools screens), or `shown`-gated (the research feed reveals it only
+// once the reader reaches the bottom, then it stays).
+function ToolsFooterCta({ label, onPress, delay = 220, shown, bottomInset }: { label: string; onPress: () => void; delay?: number; shown?: boolean; bottomInset: number }) {
+  const reveal = useSharedValue(shown ? 1 : 0);
+
+  useEffect(() => {
+    if (shown === undefined) {
+      const timer = setTimeout(() => {
+        reveal.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.cubic) });
+      }, delay);
+      return () => clearTimeout(timer);
+    }
+    reveal.value = withTiming(shown ? 1 : 0, { duration: 600, easing: Easing.bezier(0.16, 1, 0.28, 1) });
+    return undefined;
+  }, [delay, shown, reveal]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: reveal.value,
+    transform: [{ translateY: (1 - reveal.value) * 26 }],
+  }));
+
   return (
-    <AnimatedCta delay={delay} style={[tools.footer, { paddingBottom: bottomInset + 18 }]}>
+    <Reanimated.View
+      pointerEvents={shown === false ? 'none' : 'auto'}
+      style={[tools.footer, { paddingBottom: bottomInset + 18 }, style]}
+    >
       <LinearGradient
         pointerEvents="none"
         colors={['rgba(251,242,224,0)', 'rgba(255,253,248,0.94)', '#FFFDF8']}
@@ -25942,7 +26053,7 @@ function ToolsFooterCta({ label, onPress, delay = 220, bottomInset }: { label: s
           <Text style={s.primaryButtonText}>{label}</Text>
         </TouchableOpacity>
       </View>
-    </AnimatedCta>
+    </Reanimated.View>
   );
 }
 
@@ -26845,9 +26956,22 @@ const tools = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   findingBannerImage: { width: '100%', height: '100%' },
-  findingBannerHalo: { position: 'absolute', width: 190, height: 190, borderRadius: 95 },
-  findingBannerHaloCore: { position: 'absolute', width: 112, height: 112, borderRadius: 56 },
   findingBannerEdge: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 1 },
+  // Placeholder plaque, centred off the banner's midpoint.
+  phGlow: { position: 'absolute', top: '50%', left: '50%', width: 172, height: 172, borderRadius: 86, marginTop: -86, marginLeft: -86 },
+  phRing: { position: 'absolute', top: '50%', left: '50%', borderRadius: 999, borderWidth: 1 },
+  phRingOuter: { width: 134, height: 134, marginTop: -67, marginLeft: -67 },
+  phRingInner: { width: 98, height: 98, marginTop: -49, marginLeft: -49 },
+  phDot: { position: 'absolute', top: '50%', left: '50%' },
+  phMedallion: {
+    width: 66, height: 66, borderRadius: 33, borderWidth: 1,
+    backgroundColor: '#FFFDF6', alignItems: 'center', justifyContent: 'center',
+    boxShadow: '0 8px 18px rgba(92,67,25,0.16)',
+  },
+  phMedallionInner: {
+    position: 'absolute', width: 56, height: 56, borderRadius: 28,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.6)',
+  },
   findingBadge: {
     position: 'absolute', left: 12, top: 12, minWidth: 26, height: 21, paddingHorizontal: 6,
     alignItems: 'center', justifyContent: 'center',
@@ -26879,8 +27003,9 @@ const tools = StyleSheet.create({
 
   findingDetailWrap: { overflow: 'hidden' },
   findingDetailInner: { position: 'absolute', left: 0, right: 0, top: 0, paddingTop: 13 },
-  findingDetailText: { fontFamily: F.sans, fontSize: 13, lineHeight: 20, color: 'rgba(25,23,20,0.6)' },
-  findingDetailNext: { marginTop: 10 },
+  // The long study write-up wears the app's reading serif, not the plain sans.
+  findingDetailText: { fontFamily: F.serifMedium, fontSize: 15.5, lineHeight: 23, color: 'rgba(25,23,20,0.68)' },
+  findingDetailNext: { marginTop: 9 },
   findingSourceChip: {
     marginTop: 13, alignSelf: 'flex-start',
     flexDirection: 'row', alignItems: 'center', columnGap: 7,
