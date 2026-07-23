@@ -2,15 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeInDown, LinearTransition, interpolateColor, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { Easing, FadeInDown, LinearTransition, interpolateColor, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import ConfirmModal from '@/components/shared/ConfirmModal';
-import { NotoEmoji } from '@/components/shared/NotoEmoji';
 import { CheckSmall, ChevronRight, Lock, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
+import { LinearGradient } from 'expo-linear-gradient';
 import DailyTargetEditor, { type TargetValues } from './DailyTargetEditor';
+import Bloom from './Bloom';
+import { LockGhost, LockSeal } from './EssentialsEmblem';
 import AppRulesBoard from './AppRulesBoard';
 import EssentialAppsSheet from './EssentialAppsSheet';
 import FocusCheck from './FocusCheck';
@@ -80,7 +82,7 @@ function appsForGroup(catalog: Record<string, string[]>, groupId: string): Previ
     .filter(Boolean) as PreviewApp[];
 }
 
-// A plan color: springs up when chosen, settles back when another takes over.
+// The selected color rises just enough to read, without a spring or bounce.
 function ColorSwatch({
   visual,
   selected,
@@ -93,13 +95,16 @@ function ColorSwatch({
   const progress = useSharedValue(selected ? 1 : 0);
 
   useEffect(() => {
-    progress.value = withSpring(selected ? 1 : 0, { damping: 15, stiffness: 235, mass: 0.72 });
+    progress.value = withTiming(selected ? 1 : 0, {
+      duration: 170,
+      easing: Easing.out(Easing.cubic),
+    });
   }, [progress, selected]);
 
   const ringStyle = useAnimatedStyle(() => ({
     borderColor: interpolateColor(progress.value, [0, 1], [visual.border, visual.accent]),
     borderWidth: 1 + progress.value,
-    transform: [{ scale: 1 + progress.value * 0.09 }],
+    transform: [{ scale: 1 + progress.value * 0.055 }],
   }));
 
   return (
@@ -119,6 +124,34 @@ function ColorSwatch({
   );
 }
 
+
+// Both Essentials surfaces are lit the same way: a warm rose-black ground, the
+// lock ghosted at the right edge, a rose bloom in the corner, and a tapered
+// rose bar down the left — the register that says "this is what stays open".
+function EssentialsSurfaceChrome() {
+  return (
+    <>
+      <LinearGradient
+        colors={['#241E20', '#2B2325', '#181415']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View pointerEvents="none" style={s.essentialsBloom}>
+        <Bloom color="#E14B5A" opacity={0.32} />
+      </View>
+      <View pointerEvents="none" style={s.essentialsWatermark}>
+        <LockGhost size={132} />
+      </View>
+      <LinearGradient
+        colors={['rgba(225,75,90,0.25)', '#E14B5A', 'rgba(225,75,90,0.3)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={s.essentialsAccent}
+      />
+    </>
+  );
+}
 
 export default function PlanEditorView({
   guided = false,
@@ -168,13 +201,13 @@ export default function PlanEditorView({
         tolerable: existingToleranceEnd,
         essentialOnly: existingToleranceEnd,
       }
-    : guided
-      ? {
-          target: recommendedMinutes,
-          tolerable: recommendedTolerance,
-          essentialOnly: recommendedTolerance,
-        }
-      : { target: null, tolerable: null, essentialOnly: null });
+    : {
+        // A new plan opens as a complete, editable day instead of hiding
+        // Tolerance and the Your day preview behind an unset Goal.
+        target: recommendedMinutes,
+        tolerable: recommendedTolerance,
+        essentialOnly: recommendedTolerance,
+      });
   const [essentialsOnlyDay, setEssentialsOnlyDay] = useState(() => !!existing?.essentialsOnly);
   const [planEssentialAppIds, setPlanEssentialAppIds] = useState(existing?.essentialAppIds ?? []);
   const [planStrength] = useState<Strength>(existing?.strength ?? 'loose');
@@ -536,40 +569,50 @@ export default function PlanEditorView({
           onBackOverride={isGuided ? () => {} : undefined}
         />
 
-        <Animated.View entering={enter(0)}>
-          <Text style={s.sectionLabel}>PLAN NAME</Text>
-          <View {...(isGuided ? nameTarget : {})} style={[s.nameSurface, name.length === 0 && s.nameSurfaceEmpty]}>
-            <TextInput
-              value={name}
-              onChangeText={setName}
-              placeholder="Name this plan..."
-              placeholderTextColor={C.textMuted}
-              maxLength={28}
-              style={s.nameInput}
-            />
-            {name.trim().length > 0 && (
-              <Animated.View entering={FadeInDown.duration(220)}>
-                <CheckSmall s={16} c="#4E8C69" w={2.6} />
-              </Animated.View>
-            )}
-          </View>
-          {name.length === 0 && <Text style={s.requiredText}>Give it a name to save it.</Text>}
-
-          <View style={s.colorPickerHeader}>
-            <Text style={s.colorPickerLabel}>PLAN COLOR</Text>
-            <Text style={[s.colorPickerValue, { color: planVisualForTheme(themeId).accent }]}>
-              {planVisualForTheme(themeId).label}
-            </Text>
-          </View>
-          <View style={s.colorPickerSurface}>
-            {PLAN_VISUALS.map(visual => (
-              <ColorSwatch
-                key={visual.id}
-                visual={visual}
-                selected={visual.id === themeId}
-                onPress={() => setThemeId(visual.id)}
+        <Animated.View entering={enter(0)} style={s.identitySurface}>
+          <View style={s.identitySection}>
+            <Text style={s.sectionLabel}>PLAN NAME</Text>
+            <View {...(isGuided ? nameTarget : {})} style={[s.nameSurface, name.length === 0 && s.nameSurfaceEmpty]}>
+              <TextInput
+                value={name}
+                onChangeText={setName}
+                placeholder="Name this plan..."
+                placeholderTextColor={C.textMuted}
+                maxLength={28}
+                style={s.nameInput}
               />
-            ))}
+              {name.trim().length > 0 && (
+                <Animated.View entering={FadeInDown.duration(220)} style={s.nameCheck}>
+                  <CheckSmall s={16} c="#397557" w={2.6} />
+                </Animated.View>
+              )}
+            </View>
+            {name.length === 0 && <Text style={s.requiredText}>Give it a name to save it.</Text>}
+          </View>
+
+          <View style={s.identityDivider} />
+
+          <View style={s.identitySection}>
+            <View style={s.colorPickerHeader}>
+              <Text style={s.colorPickerLabel}>PLAN COLOR</Text>
+              <View style={[s.colorPickerValuePill, { backgroundColor: planVisualForTheme(themeId).accentSoft }]}>
+                <View style={[s.colorPickerValueDot, { backgroundColor: planVisualForTheme(themeId).accent }]} />
+                <Text style={[s.colorPickerValue, { color: planVisualForTheme(themeId).accent }]}>
+                  {planVisualForTheme(themeId).label}
+                </Text>
+              </View>
+            </View>
+            <View style={s.colorPickerSurface} accessibilityRole="radiogroup">
+              {PLAN_VISUALS.map(visual => (
+                <View key={visual.id} style={s.colorSwatchCell}>
+                  <ColorSwatch
+                    visual={visual}
+                    selected={visual.id === themeId}
+                    onPress={() => setThemeId(visual.id)}
+                  />
+                </View>
+              ))}
+            </View>
           </View>
         </Animated.View>
 
@@ -580,14 +623,23 @@ export default function PlanEditorView({
             haptic="medium"
             onPress={toggleEssentialsOnlyDay}
           >
-            <View style={[s.essOnlyIcon, essentialsOnlyDay && s.essOnlyIconOn]}>
-              <NotoEmoji name="lock" size={24} />
+            <LinearGradient
+              colors={essentialsOnlyDay
+                ? ['#241E20', '#2C2426', '#1A1516']
+                : ['#FFFAFA', '#FDF2F3', '#FFF7F7']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View pointerEvents="none" style={s.essBloom}>
+              <Bloom color="#E14B5A" opacity={essentialsOnlyDay ? 0.34 : 0.2} />
             </View>
-            <View style={{ flex: 1 }}>
+            <LockSeal size={34} lit={essentialsOnlyDay} />
+            <View style={s.essOnlyCopy}>
               <Text style={[s.essOnlyLabel, essentialsOnlyDay && s.essOnlyLabelOn]}>ESSENTIALS-ONLY DAY</Text>
               <Text style={[s.essOnlyTitle, essentialsOnlyDay && s.essOnlyTitleOn]}>Lock the whole day</Text>
               <Text style={[s.essOnlyBody, essentialsOnlyDay && s.essOnlyBodyOn]}>
-                ON: only your Essential apps open, all day. Everything else stays locked from minute one.
+                Only your Essentials open, from minute one.
               </Text>
             </View>
             <FocusSwitch value={essentialsOnlyDay} onToggle={toggleEssentialsOnlyDay} />
@@ -608,10 +660,10 @@ export default function PlanEditorView({
                 </View>
               </View>
               <View style={[s.essentialsSurface, s.planAccessSurface]}>
-                <View style={s.essentialsAccent} />
+                <EssentialsSurfaceChrome />
                 <View style={s.essentialsOutcomeRow}>
-                  <View style={s.essentialsOutcomeIcon}><NotoEmoji name="lock" size={24} /></View>
-                  <View style={{ flex: 1 }}>
+                  <LockSeal size={36} lit />
+                  <View style={s.essentialsOutcomeCopy}>
                     <Text style={s.essentialsOutcomeLabel}>LOCKED FROM MINUTE ONE</Text>
                     <Text style={s.essentialsOutcomeTitle}>Everything else stays closed all day.</Text>
                     <Text style={s.essentialsOutcomeBody}>Goal and Tolerance still keep the score of the day.</Text>
@@ -619,8 +671,14 @@ export default function PlanEditorView({
                 </View>
 
                 <TouchableOpacity style={s.essentialsPicker} onPress={() => setEssentialsOpen(true)} activeOpacity={0.76}>
-                  <View style={s.essentialsPickerIcon}><Lock s={17} c="#A63A4B" w={2.2} /></View>
-                  <View style={{ flex: 1 }}>
+                  <LinearGradient
+                    colors={['#FFFAFA', '#FDF1F2', '#FFF7F7']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <LockSeal size={30} />
+                  <View style={s.essentialsPickerCopy}>
                     <Text style={s.essentialsPickerTitle}>Choose this plan&apos;s apps</Text>
                     <Text style={s.essentialsPickerMeta}>
                       {nativeAvailable
@@ -630,7 +688,7 @@ export default function PlanEditorView({
                         : `${planEssentialAppIds.length} plan-only apps · Essentials included`}
                     </Text>
                   </View>
-                  <View style={s.essentialsPickerArrow}><ChevronRight s={17} c="#7A303D" w={2.2} /></View>
+                  <View style={s.essentialsPickerArrow}><ChevronRight s={16} c="#8E3A48" w={2.2} /></View>
                 </TouchableOpacity>
               </View>
             </Animated.View>
@@ -652,10 +710,10 @@ export default function PlanEditorView({
           </View>
 
           <View style={s.essentialsSurface}>
-            <View style={s.essentialsAccent} />
+            <EssentialsSurfaceChrome />
             <View style={s.essentialsOutcomeRow}>
-              <View style={s.essentialsOutcomeIcon}><NotoEmoji name="lock" size={24} /></View>
-              <View style={{ flex: 1 }}>
+              <LockSeal size={36} lit />
+              <View style={s.essentialsOutcomeCopy}>
                 <Text style={s.essentialsOutcomeLabel}>WHEN TOLERANCE ENDS</Text>
                 <Text style={s.essentialsOutcomeTitle}>
                   {draftToleranceEnd == null
@@ -667,8 +725,14 @@ export default function PlanEditorView({
             </View>
 
             <TouchableOpacity style={s.essentialsPicker} onPress={() => setEssentialsOpen(true)} activeOpacity={0.76}>
-              <View style={s.essentialsPickerIcon}><Lock s={17} c="#A63A4B" w={2.2} /></View>
-              <View style={{ flex: 1 }}>
+              <LinearGradient
+                colors={['#FFFAFA', '#FDF1F2', '#FFF7F7']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <LockSeal size={30} />
+              <View style={s.essentialsPickerCopy}>
                 <Text style={s.essentialsPickerTitle}>Choose your Essentials</Text>
                 <Text style={s.essentialsPickerMeta}>
                   {nativeAvailable
@@ -678,7 +742,7 @@ export default function PlanEditorView({
                     : `${state.optionalEssentialAppIds.length} apps chosen · safety access always stays`}
                 </Text>
               </View>
-              <View style={s.essentialsPickerArrow}><ChevronRight s={17} c="#7A303D" w={2.2} /></View>
+              <View style={s.essentialsPickerArrow}><ChevronRight s={16} c="#8E3A48" w={2.2} /></View>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -793,72 +857,79 @@ export default function PlanEditorView({
 
 const s = StyleSheet.create({
   page: { paddingHorizontal: 16, gap: 18 },
-  sectionLabel: { marginBottom: 8, marginLeft: 4, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted },
+  sectionLabel: { marginBottom: 9, fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.25, color: C.textMuted },
   sectionLabelNoMargin: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted },
   sectionSub: { marginTop: 4, maxWidth: 320, fontFamily: F.sans, fontSize: 12.5, lineHeight: 17.5, color: C.textSecondary },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, marginBottom: 8 },
   sectionsGroup: { gap: 18 },
   dormant: { opacity: 0.38 },
   dormantNote: { marginTop: 9, textAlign: 'center', fontFamily: F.serifItalic, fontSize: 13, color: C.textMuted },
+  // The Essentials register: rose on cream when the day is open, rose on a warm
+  // black when it's locked. Same seal, same ghost, both states.
   essOnlyCard: {
+    position: 'relative',
+    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 13,
     borderRadius: 22,
     borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: '#E8CDD2',
-    backgroundColor: '#FFF8F8',
-    padding: 14,
+    borderColor: '#EFD3D7',
+    backgroundColor: '#FFF9F9',
+    paddingVertical: 14,
+    paddingHorizontal: 15,
     boxShadow: '0 6px 18px rgba(120, 52, 63, 0.07)',
   },
   essOnlyCardOn: {
-    borderColor: '#33282B',
-    backgroundColor: '#202123',
-    boxShadow: '0 12px 28px rgba(24, 24, 25, 0.2)',
+    borderColor: '#3C2E31',
+    backgroundColor: '#241E20',
+    boxShadow: '0 12px 28px rgba(24, 24, 25, 0.22)',
   },
-  essOnlyIcon: {
-    flexShrink: 0,
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    borderCurve: 'continuous',
-    backgroundColor: '#F8E3E7',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  essOnlyIconOn: { backgroundColor: '#E14B5A', boxShadow: '0 5px 14px rgba(225,75,90,0.3)' },
+  essBloom: { position: 'absolute', right: -66, top: -78, width: 196, height: 158 },
+  essOnlyCopy: { flex: 1, minWidth: 0 },
   essOnlyLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.5, color: '#A63A4B' },
-  essOnlyLabelOn: { color: '#D4B7BC' },
-  essOnlyTitle: { marginTop: 2, fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 23, color: '#3A252A' },
-  essOnlyTitleOn: { color: '#FFFFFF' },
-  essOnlyBody: { marginTop: 3, fontFamily: F.sans, fontSize: 11.5, lineHeight: 15.5, color: '#7A6468' },
-  essOnlyBodyOn: { color: '#C8C9CC' },
-  nameSurface: { height: 58, flexDirection: 'row', alignItems: 'center', borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DFD7C8', backgroundColor: C.surface, paddingHorizontal: 16, boxShadow: '0 6px 18px rgba(45, 40, 33, 0.04)' },
+  essOnlyLabelOn: { color: '#E6A9B1' },
+  essOnlyTitle: { marginTop: 3, fontFamily: F.serifSemiBold, fontSize: 19.5, lineHeight: 23, letterSpacing: -0.2, color: '#3A252A' },
+  essOnlyTitleOn: { color: '#FDF6F6' },
+  essOnlyBody: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 14.5, lineHeight: 18.5, color: '#7E6165' },
+  essOnlyBodyOn: { color: '#C4B4B6' },
+  identitySurface: { borderRadius: 25, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E2DDD4', backgroundColor: '#FFFEFB', padding: 15, gap: 15, boxShadow: '0 9px 25px rgba(42, 38, 31, 0.055)' },
+  identitySection: { minWidth: 0 },
+  identityDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E8E3DA' },
+  nameSurface: { height: 62, flexDirection: 'row', alignItems: 'center', borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DCD8D0', backgroundColor: '#F7F6F2', paddingLeft: 16, paddingRight: 10, boxShadow: 'inset 0 1px 2px rgba(34, 31, 26, 0.035)' },
   nameSurfaceEmpty: { borderColor: '#E1C5A1' },
-  nameInput: { flex: 1, fontFamily: F.serifMedium, fontSize: 21, color: C.text },
+  nameInput: { flex: 1, fontFamily: F.serifMedium, fontSize: 22, lineHeight: 27, color: C.text, paddingVertical: 0 },
+  nameCheck: { width: 32, height: 32, borderRadius: 11, borderCurve: 'continuous', backgroundColor: '#E7F1EB', alignItems: 'center', justifyContent: 'center' },
   requiredText: { marginTop: 5, marginLeft: 4, fontFamily: F.sansMedium, fontSize: 10, color: '#A36F2B' },
-  colorPickerHeader: { marginTop: 16, marginHorizontal: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  colorPickerLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.textMuted },
-  colorPickerValue: { fontFamily: F.serifSemiBold, fontSize: 15 },
-  // Twelve themes ride two rows of six; both rows are full, so space-between
-  // keeps the grid even without hand-tuned gaps.
-  colorPickerSurface: { marginTop: 9, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', rowGap: 11, borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E7E0D4', backgroundColor: '#FFFDF9', paddingHorizontal: 11, paddingVertical: 12, boxShadow: '0 4px 12px rgba(69, 58, 39, 0.04)' },
-  colorSwatchButton: { width: 43, height: 43, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  colorPickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  colorPickerLabel: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.25, color: C.textMuted },
+  colorPickerValuePill: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 999, paddingHorizontal: 11 },
+  colorPickerValueDot: { width: 7, height: 7, borderRadius: 4 },
+  colorPickerValue: { fontFamily: F.sansSemiBold, fontSize: 12.5 },
+  // Every swatch owns exactly one sixth of the tray, so narrow and wide
+  // devices always keep the intended two rows of six.
+  colorPickerSurface: { marginTop: 11, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', rowGap: 12, borderRadius: 19, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E3E0D9', backgroundColor: '#F4F3EF', paddingHorizontal: 3, paddingVertical: 13, boxShadow: 'inset 0 1px 2px rgba(34, 31, 26, 0.035)' },
+  colorSwatchCell: { width: '16.666666%', alignItems: 'center', justifyContent: 'center' },
+  colorSwatchButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   colorSwatch: { width: 29, height: 29, borderRadius: 15, alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(47, 39, 28, 0.13)' },
-  essentialsSurface: { position: 'relative', overflow: 'hidden', borderRadius: 25, borderCurve: 'continuous', backgroundColor: '#202123', padding: 16, gap: 15, boxShadow: '0 12px 28px rgba(24, 24, 25, 0.16)' },
-  planAccessSurface: { borderWidth: 1, borderColor: '#35363A', backgroundColor: '#1D1E20', boxShadow: '0 14px 32px rgba(24, 24, 25, 0.2)' },
-  essentialsAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: '#E14B5A' },
-  essentialsOutcomeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingLeft: 3 },
-  essentialsOutcomeIcon: { flexShrink: 0, width: 42, height: 42, borderRadius: 14, borderCurve: 'continuous', backgroundColor: '#E14B5A', alignItems: 'center', justifyContent: 'center', boxShadow: '0 5px 14px rgba(225,75,90,0.28)' },
-  essentialsOutcomeLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.55, color: '#D4B7BC' },
-  essentialsOutcomeTitle: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 25, letterSpacing: -0.25, color: '#FFFFFF' },
-  essentialsOutcomeBody: { marginTop: 6, fontFamily: F.sans, fontSize: 12.5, lineHeight: 18, color: '#C8C9CC' },
-  essentialsPicker: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E8CDD2', backgroundColor: '#FFF8F8', paddingHorizontal: 12, paddingVertical: 11 },
-  essentialsPickerIcon: { flexShrink: 0, width: 38, height: 38, borderRadius: 12, borderCurve: 'continuous', backgroundColor: '#F8E3E7', alignItems: 'center', justifyContent: 'center' },
-  essentialsPickerTitle: { fontFamily: F.serifSemiBold, fontSize: 18.5, lineHeight: 22, color: '#3A252A' },
+  essentialsSurface: { position: 'relative', overflow: 'hidden', borderRadius: 25, borderCurve: 'continuous', borderWidth: 1, borderColor: '#3A2E30', backgroundColor: '#241E20', padding: 16, gap: 15, boxShadow: '0 12px 28px rgba(24, 24, 25, 0.18)' },
+  planAccessSurface: { borderColor: '#403234', boxShadow: '0 14px 32px rgba(24, 24, 25, 0.22)' },
+  essentialsBloom: { position: 'absolute', right: -76, top: -92, width: 224, height: 180 },
+  essentialsWatermark: { position: 'absolute', right: -32, top: -10, opacity: 0.26, transform: [{ rotate: '7deg' }] },
+  // A tapered rose bar instead of a flat slab: inset, rounded, brightest at the
+  // middle where the lock sits.
+  essentialsAccent: { position: 'absolute', left: 0, top: 16, bottom: 16, width: 4, borderTopRightRadius: 3, borderBottomRightRadius: 3 },
+  essentialsOutcomeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 13, paddingLeft: 6 },
+  essentialsOutcomeCopy: { flex: 1, minWidth: 0, paddingTop: 1 },
+  essentialsOutcomeLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.55, color: '#E6A9B1' },
+  essentialsOutcomeTitle: { marginTop: 5, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 25, letterSpacing: -0.25, color: '#FDF6F6' },
+  essentialsOutcomeBody: { marginTop: 5, fontFamily: F.serifMedium, fontSize: 15, lineHeight: 19.5, color: '#C4B4B6' },
+  essentialsPicker: { position: 'relative', overflow: 'hidden', minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#EFD3D7', backgroundColor: '#FFF9F9', paddingHorizontal: 13, paddingVertical: 12 },
+  essentialsPickerCopy: { flex: 1, minWidth: 0 },
+  essentialsPickerTitle: { fontFamily: F.serifSemiBold, fontSize: 18.5, lineHeight: 22, letterSpacing: -0.2, color: '#3A252A' },
   essentialsPickerMeta: { marginTop: 3, fontFamily: F.sans, fontSize: 11, lineHeight: 15, color: '#7A6468' },
-  essentialsPickerArrow: { flexShrink: 0, width: 30, height: 30, borderRadius: 15, backgroundColor: '#F4D9DE', alignItems: 'center', justifyContent: 'center' },
+  essentialsPickerArrow: { flexShrink: 0, width: 29, height: 29, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(166,58,75,0.28)', backgroundColor: 'rgba(244,217,222,0.7)', alignItems: 'center', justifyContent: 'center' },
   sessionCount: { borderRadius: 999, backgroundColor: C.goldLight, paddingHorizontal: 10, paddingVertical: 6 },
   sessionCountText: { fontFamily: F.sansBold, fontSize: 9.5, color: C.goldDark },
   clockSurface: { borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E5DDCF', backgroundColor: '#FFFDF8', padding: 14 },

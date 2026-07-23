@@ -15,11 +15,12 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Defs, Ellipse, Line, Path, RadialGradient, Stop, SvgXml } from 'react-native-svg';
+import Svg, { Circle, Line, Path, SvgXml } from 'react-native-svg';
 import { ChevronRight, Shield } from '@/components/icons/Icons';
 import { HABIT_SVG } from '@/components/shared/notoEmoji/habits';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import Bloom from './Bloom';
 import DayGauge from './DayGauge';
 import HairlineWeave from './HairlineWeave';
 import { RadiantTrophy } from './TrophyRadiance';
@@ -71,24 +72,6 @@ function rangeStops(from: number, to: number): number[] {
   const stops: number[] = [];
   for (let value = from; value <= to; value += 15) stops.push(value);
   return stops;
-}
-
-// A soft radial bloom. Rose behind the cost figure, gold behind the title —
-// the app already lights its wow moments this way (trophy rays, streak hearth).
-function Bloom({ color, opacity = 0.5 }: { color: string; opacity?: number }) {
-  const id = `bloom-${color.replace('#', '')}`;
-  return (
-    <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
-      <Defs>
-        <RadialGradient id={id} cx="50%" cy="50%" rx="50%" ry="50%">
-          <Stop offset="0%" stopColor={color} stopOpacity={opacity} />
-          <Stop offset="55%" stopColor={color} stopOpacity={opacity * 0.34} />
-          <Stop offset="100%" stopColor={color} stopOpacity={0} />
-        </RadialGradient>
-      </Defs>
-      <Ellipse cx="50" cy="50" rx="50" ry="50" fill={`url(#${id})`} />
-    </Svg>
-  );
 }
 
 // The cost figure doesn't snap to its new value — it runs there. An exponential
