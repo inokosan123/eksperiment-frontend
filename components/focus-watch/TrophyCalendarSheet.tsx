@@ -16,24 +16,27 @@ import Reanimated, {
 } from 'react-native-reanimated';
 
 const Animated = Reanimated;
+import Svg, { Ellipse, Path } from 'react-native-svg';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import FocusSheetHeader from './FocusSheetHeader';
 import { ChevronLeft, ChevronRight, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { StaticChallengeTrophy } from '@/components/challenges/ChallengeTrophy';
-import { RadiantTrophy, TrophyShineBackdrop } from './TrophyRadiance';
 import { C, F } from '@/constants/tokens';
 import { dateKey, useDayPlan, type DayRecord } from './dayPlanStore';
 
 // The streak sheet is the app's trophy hall, and it is built to travel:
 // the same composition will later stand behind the Journal and Home
 // streaks. Three moves carry it —
-//   1. the hero is the trophy CARD's own dawn surface (gradient, weave,
-//      sparkles, radiant emblem), so tapping the card opens more of the
-//      same world rather than a plain white report;
+//   1. the hero is the hall's OWN emblem, not a copy of the card that
+//      opened it: the current streak held between two engraved laurel
+//      sprigs, open on the page — no plaque, no repeated dawn surface —
+//      with best and trophies as full-size counters beneath;
 //   2. the calendar reads as treasure, not bookkeeping: struck gold
 //      coins nearly fill their cells, and consecutive kept days fuse
-//      into one golden band — the streak itself made visible;
+//      into one golden band. Rest days do not break the merciful streak,
+//      so the band BRIDGES them — a paler run under the resting ring —
+//      and reaches today with a soft tail when yesterday was kept;
 //   3. everything arrives: numbers count up from zero, the month pours
 //      in as a diagonal wave of coins.
 
@@ -59,10 +62,15 @@ type CellState = 'kept' | 'broken' | 'off' | 'today' | 'future' | 'blank';
 type Cell = {
   day: number;
   cell: CellState;
-  // Consecutive kept days fuse: each kept cell knows whether the golden
-  // band continues into its neighbours within the week row.
+  // Consecutive run days fuse: each cell knows whether the golden band
+  // continues into its neighbours within the week row, and whether that
+  // half-segment is full gold (kept↔kept) or the paler bridge tone
+  // (carried across a rest day, or reaching into today).
   linkLeft: boolean;
   linkRight: boolean;
+  softLeft: boolean;
+  softRight: boolean;
+  bridge: boolean;
 };
 
 /* ── Count-up ─────────────────────────────────────────────── */
@@ -118,6 +126,52 @@ function CountUp({
 const cu = StyleSheet.create({
   reset: { padding: 0, margin: 0 },
 });
+
+/* ── Laurel sprig ─────────────────────────────────────────── */
+// The hall's own emblem: an engraved laurel branch — hairline stem, leaf
+// pairs set along it like a struck medal's wreath. Drawn once, mirrored
+// for the right side (a pure flip keeps the vector crisp).
+const LAUREL_LEAVES: { x: number; y: number; a: number; inner?: boolean }[] = [
+  { x: 21.5, y: 51, a: -34 },
+  { x: 24.5, y: 45, a: -6, inner: true },
+  { x: 15, y: 42.5, a: -50 },
+  { x: 19, y: 34.5, a: -20, inner: true },
+  { x: 11.5, y: 32.5, a: -64 },
+  { x: 15.5, y: 24, a: -36, inner: true },
+  { x: 10.5, y: 22.5, a: -78 },
+  { x: 14, y: 14, a: -52, inner: true },
+  { x: 12.5, y: 12, a: -95 },
+];
+
+function LaurelSprig({ flip = false }: { flip?: boolean }) {
+  return (
+    <Svg
+      width={30}
+      height={60}
+      viewBox="0 0 30 60"
+      style={flip ? { transform: [{ scaleX: -1 }] } : undefined}
+    >
+      <Path
+        d="M 25 57 C 13 48, 9.5 36, 11.5 25 C 13 16, 15.5 10, 17.5 4"
+        fill="none"
+        stroke="rgba(197,160,89,0.8)"
+        strokeWidth={1.4}
+        strokeLinecap="round"
+      />
+      {LAUREL_LEAVES.map((leaf, index) => (
+        <Ellipse
+          key={index}
+          cx={leaf.x}
+          cy={leaf.y}
+          rx={4.7}
+          ry={1.95}
+          fill={leaf.inner ? 'rgba(197,160,89,0.34)' : 'rgba(197,160,89,0.52)'}
+          transform={`rotate(${leaf.a} ${leaf.x} ${leaf.y})`}
+        />
+      ))}
+    </Svg>
+  );
+}
 
 /* ── Today ring ───────────────────────────────────────────── */
 // The one live pulse in the grid — an outer ring breathing around today,
@@ -224,10 +278,12 @@ export default function TrophyCalendarSheet({
     const daysInMonth = new Date(shownYear, shownMonth + 1, 0).getDate();
     const todayStr = dateKey(today);
 
+    const blank = (): Cell => ({
+      day: 0, cell: 'blank',
+      linkLeft: false, linkRight: false, softLeft: false, softRight: false, bridge: false,
+    });
     const result: Cell[] = [];
-    for (let i = 0; i < leading; i++) {
-      result.push({ day: 0, cell: 'blank', linkLeft: false, linkRight: false });
-    }
+    for (let i = 0; i < leading; i++) result.push(blank());
     for (let day = 1; day <= daysInMonth; day++) {
       const key = dateKey(new Date(shownYear, shownMonth, day));
       const record: DayRecord | undefined = state.days[key];
@@ -236,13 +292,49 @@ export default function TrophyCalendarSheet({
       else if (key > todayStr) cell = 'future';
       else if (!record || record.status === 'off' || record.status === 'pending') cell = 'off';
       else cell = record.status === 'kept' ? 'kept' : 'broken';
-      result.push({ day, cell, linkLeft: false, linkRight: false });
+      result.push({
+        day, cell,
+        linkLeft: false, linkRight: false, softLeft: false, softRight: false, bridge: false,
+      });
     }
-    // Fuse consecutive kept days into bands, within each week row.
+
+    // The merciful streak survives rest days, so the band must too: any
+    // stretch of rest days with a kept day on BOTH sides becomes a bridge.
     for (let i = 0; i < result.length; i++) {
-      if (result[i].cell !== 'kept') continue;
-      result[i].linkLeft = i % 7 !== 0 && result[i - 1]?.cell === 'kept';
-      result[i].linkRight = i % 7 !== 6 && result[i + 1]?.cell === 'kept';
+      if (result[i].cell !== 'off') continue;
+      let prev = i - 1;
+      while (prev >= 0 && result[prev].cell === 'off') prev--;
+      let next = i + 1;
+      while (next < result.length && result[next].cell === 'off') next++;
+      if (result[prev]?.cell === 'kept' && result[next]?.cell === 'kept') {
+        result[i].bridge = true;
+      }
+    }
+
+    // Fuse run members into bands; drawing stays within the week row.
+    const inRun = (entry?: Cell) => !!entry && (entry.cell === 'kept' || entry.bridge);
+    for (let i = 0; i < result.length; i++) {
+      if (!inRun(result[i])) continue;
+      result[i].linkLeft = i % 7 !== 0 && inRun(result[i - 1]);
+      result[i].linkRight = i % 7 !== 6 && inRun(result[i + 1]);
+    }
+    // A half-segment is soft when either side of the seam is a bridge.
+    for (let i = 0; i < result.length; i++) {
+      if (result[i].linkLeft) {
+        result[i].softLeft = result[i].bridge || result[i - 1]?.bridge === true;
+      }
+      if (result[i].linkRight) {
+        result[i].softRight = result[i].bridge || result[i + 1]?.bridge === true;
+      }
+    }
+    // The streak is alive: when yesterday is part of the run, a soft tail
+    // reaches into today's ring.
+    const todayIndex = result.findIndex(entry => entry.cell === 'today');
+    if (todayIndex > 0 && todayIndex % 7 !== 0 && inRun(result[todayIndex - 1])) {
+      result[todayIndex].linkLeft = true;
+      result[todayIndex].softLeft = true;
+      result[todayIndex - 1].linkRight = true;
+      result[todayIndex - 1].softRight = true;
     }
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -270,44 +362,38 @@ export default function TrophyCalendarSheet({
         onClose={close}
       />
 
-      {/* Hero — the trophy card's own dawn surface, carried into the
-          sheet: current streak counted up beside the radiant emblem, best
-          and total on an engraved rail beneath. */}
+      {/* Hero — the hall's own emblem, open on the page: the current
+          streak crowned between two engraved laurel sprigs, best and
+          trophies as full-size counters beneath. */}
       <Animated.View entering={enter(40)} style={s.hero}>
-        <LinearGradient
-          colors={['#F8E7BE', '#FFF8E9', '#FFFEFA']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <TrophyShineBackdrop />
-        <View style={s.heroTop}>
-          <View style={s.heroCopy}>
-            <Text style={s.heroKicker}>CURRENT STREAK</Text>
-            <View style={s.heroValueRow}>
-              <CountUp value={state.streak.current} delay={340} textStyle={s.heroValue} />
-              <Text style={s.heroUnit}>{state.streak.current === 1 ? 'day' : 'days'}</Text>
-            </View>
-            <View style={s.heroRule} />
+        <View style={s.laurelRow}>
+          <LaurelSprig />
+          <View style={s.heroCenter}>
+            <CountUp value={state.streak.current} delay={320} textStyle={s.heroValue} />
+            <Text style={s.heroUnit}>day streak</Text>
           </View>
-          <RadiantTrophy size={72} halo />
+          <LaurelSprig flip />
         </View>
-        <View style={s.heroRail}>
-          <View style={s.railCell}>
-            <Text style={s.railLabel}>BEST</Text>
-            <View style={s.railValueRow}>
-              <CountUp value={state.streak.best} delay={480} textStyle={s.railValue} />
-              <Text style={s.railUnit}>{state.streak.best === 1 ? 'day' : 'days'}</Text>
+
+        <View style={s.subStats}>
+          <View style={s.subCell}>
+            <View style={s.subValueRow}>
+              <CountUp value={state.streak.best} delay={460} textStyle={s.subValue} />
+              <Text style={s.subUnit}>{state.streak.best === 1 ? 'day' : 'days'}</Text>
             </View>
+            <Text style={s.subLabel}>BEST STREAK</Text>
           </View>
-          <View style={s.railDiamond} />
-          <View style={s.railCell}>
-            <Text style={s.railLabel}>TROPHIES</Text>
-            <View style={s.railValueRow}>
-              <StaticChallengeTrophy size={15} />
-              <CountUp value={state.streak.trophies} delay={560} textStyle={s.railValue} />
-              <Text style={s.railUnit}>earned</Text>
+          <View style={s.subSeparator}>
+            <View style={s.subSeparatorLine} />
+            <View style={s.subSeparatorDiamond} />
+            <View style={s.subSeparatorLine} />
+          </View>
+          <View style={s.subCell}>
+            <View style={s.subValueRow}>
+              <StaticChallengeTrophy size={20} />
+              <CountUp value={state.streak.trophies} delay={540} textStyle={s.subValue} />
             </View>
+            <Text style={s.subLabel}>TROPHIES EARNED</Text>
           </View>
         </View>
       </Animated.View>
@@ -362,13 +448,13 @@ export default function TrophyCalendarSheet({
               {entry.linkLeft && (
                 <Reanimated.View
                   entering={FadeIn.duration(220).delay(140 + (row + col) * 26)}
-                  style={[s.band, s.bandLeft]}
+                  style={[s.band, s.bandLeft, entry.softLeft && s.bandSoft]}
                 />
               )}
               {entry.linkRight && (
                 <Reanimated.View
                   entering={FadeIn.duration(220).delay(140 + (row + col) * 26)}
-                  style={[s.band, s.bandRight]}
+                  style={[s.band, s.bandRight, entry.softRight && s.bandSoft]}
                 />
               )}
               <Reanimated.View
@@ -440,109 +526,86 @@ const s = StyleSheet.create({
     paddingBottom: 28,
   },
 
-  /* Hero plaque */
+  /* Hero — laurel emblem, open on the page */
   hero: {
-    position: 'relative',
-    overflow: 'hidden',
-    marginTop: 16,
-    borderRadius: 22,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: '#E8D8B5',
-    paddingTop: 14,
-    paddingBottom: 12,
-    paddingHorizontal: 16,
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+    marginTop: 10,
+    alignItems: 'center',
   },
-  heroTop: {
+  laurelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingLeft: 6,
-    paddingRight: 12,
+    justifyContent: 'center',
+    gap: 14,
   },
-  heroCopy: {
-    flexShrink: 1,
-    paddingRight: 10,
-  },
-  heroKicker: {
-    fontFamily: F.sansBold,
-    fontSize: 8.5,
-    lineHeight: 11,
-    letterSpacing: 1.6,
-    color: 'rgba(121,89,30,0.72)',
-  },
-  heroValueRow: {
-    marginTop: 2,
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 7,
+  heroCenter: {
+    alignItems: 'center',
+    minWidth: 96,
   },
   heroValue: {
     fontFamily: F.serifSemiBold,
-    fontSize: 40,
-    lineHeight: 46,
-    letterSpacing: -1,
+    fontSize: 52,
+    lineHeight: 58,
+    letterSpacing: -1.5,
     color: '#4A3820',
+    textAlign: 'center',
     includeFontPadding: false,
     fontVariant: ['lining-nums', 'tabular-nums'],
   },
   heroUnit: {
-    fontFamily: F.serif,
-    fontSize: 14,
+    marginTop: 1,
+    fontFamily: F.serifItalic,
+    fontSize: 14.5,
+    lineHeight: 18,
     color: '#8B6B2F',
-    paddingBottom: 5,
   },
-  heroRule: {
-    marginTop: 6,
-    width: 44,
-    height: 1,
-    borderRadius: 1,
-    backgroundColor: 'rgba(169,134,63,0.45)',
-  },
-  heroRail: {
-    marginTop: 12,
-    paddingTop: 11,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#EADFC8',
+  subStats: {
+    marginTop: 14,
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'stretch',
+    paddingHorizontal: 8,
   },
-  railCell: {
+  subCell: {
     flex: 1,
     alignItems: 'center',
-    gap: 2,
+    gap: 3,
   },
-  railLabel: {
-    fontFamily: F.sansBold,
-    fontSize: 8.5,
-    lineHeight: 11,
-    letterSpacing: 1.6,
-    color: 'rgba(121,89,30,0.66)',
-  },
-  railValueRow: {
+  subValueRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: 5,
+    gap: 6,
   },
-  railValue: {
+  subValue: {
     fontFamily: F.serifSemiBold,
-    fontSize: 19,
-    lineHeight: 23,
+    fontSize: 26,
+    lineHeight: 31,
     color: '#4A3820',
     includeFontPadding: false,
     fontVariant: ['lining-nums', 'tabular-nums'],
   },
-  railUnit: {
-    fontFamily: F.sans,
-    fontSize: 11,
+  subUnit: {
+    fontFamily: F.serif,
+    fontSize: 13,
     color: '#8B6B2F',
   },
-  railDiamond: {
+  subLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    lineHeight: 12,
+    letterSpacing: 1.5,
+    color: 'rgba(121,89,30,0.7)',
+  },
+  subSeparator: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  subSeparatorLine: {
+    width: 1,
+    height: 12,
+    borderRadius: 1,
+    backgroundColor: 'rgba(197,160,89,0.35)',
+  },
+  subSeparatorDiamond: {
     width: 4.5,
     height: 4.5,
     borderRadius: 0.5,
@@ -625,6 +688,12 @@ const s = StyleSheet.create({
   },
   bandLeft: { left: 0, right: '50%' },
   bandRight: { left: '50%', right: 0 },
+  // The bridge tone: the run carried across a rest day, or reaching
+  // into today.
+  bandSoft: {
+    backgroundColor: 'rgba(247,226,171,0.28)',
+    borderColor: 'rgba(197,160,89,0.16)',
+  },
 
   /* Day marks */
   keptCoin: {
