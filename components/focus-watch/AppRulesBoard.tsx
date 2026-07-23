@@ -122,25 +122,26 @@ function GroupRuleCard({
         lit && { borderColor: withAlpha(accent, 0.34) },
       ]}
     >
-      {/* Every card is laid paper now, not flat white — an inactive group is
-          warm cream, a ruled one is washed in its own colour from the seal side,
-          a closed one in rose. The weave ties them to the cards above. */}
+      {/* The colour never meets a hard edge with white. The card body is a warm
+          near-white; the group's colour is a soft radial pool behind the seal
+          that fades out on its own, so a ruled card reads coloured-on-the-left
+          without any seam. Inactive is plain warm cream. */}
       <LinearGradient
-        colors={mode === 'blocked'
-          ? ['#FBEAED', '#FFF9FA', '#FFFDFD']
-          : lit
-            ? [withAlpha(accent, 0.16), '#FFFDF9', '#FFFEFC']
-            : ['#FEFCF6', '#FFFEFB', '#FDFBF5']}
+        colors={lit ? ['#FFFEFC', '#FFFDFB', '#FFFEFD'] : ['#FEFCF6', '#FFFEFB', '#FDFBF5']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0.9 }}
         style={StyleSheet.absoluteFill}
       />
       <RuleWeave color={lit ? accent : '#8A6A2F'} />
-      {/* A soft pool of the group's colour gathered behind its seal. */}
       {lit && (
-        <View pointerEvents="none" style={s.cardSealBloom}>
-          <Bloom color={accent} opacity={mode === 'blocked' ? 0.22 : 0.26} />
-        </View>
+        <>
+          <View pointerEvents="none" style={s.cardWashBloom}>
+            <Bloom color={accent} opacity={mode === 'blocked' ? 0.16 : 0.19} />
+          </View>
+          <View pointerEvents="none" style={s.cardSealBloom}>
+            <Bloom color={accent} opacity={mode === 'blocked' ? 0.24 : 0.28} />
+          </View>
+        </>
       )}
 
       {mode === 'blocked' && <View style={s.closedEdge} />}
@@ -249,14 +250,17 @@ function AlwaysBlockedGroupCard({
       accessibilityLabel={`Always Blocked, ${appCount} ${appCount === 1 ? 'app' : 'apps'}, no plan limit controls`}
     >
       <LinearGradient
-        colors={['#FBEAED', '#FFF9FA', '#FFFDFD']}
+        colors={['#FFFEFC', '#FFFDFB', '#FFFEFD']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0.9 }}
         style={StyleSheet.absoluteFill}
       />
       <RuleWeave color={BLOCKED_COLOR} />
+      <View pointerEvents="none" style={s.cardWashBloom}>
+        <Bloom color={BLOCKED_COLOR} opacity={0.15} />
+      </View>
       <View pointerEvents="none" style={s.cardSealBloom}>
-        <Bloom color={BLOCKED_COLOR} opacity={0.2} />
+        <Bloom color={BLOCKED_COLOR} opacity={0.22} />
       </View>
 
       <View style={s.closedEdge} />
@@ -329,8 +333,11 @@ function CapacitySeal({ fraction, full }: { fraction: number; full: boolean }) {
         />
       </Svg>
       <View style={[s.capacityDisc, { width: size, height: size, borderRadius: size / 2, borderColor: withAlpha(accent, 0.28) }]}>
-        <Text style={[s.capacityDiscValue, { color: accent }]}>{Math.round(target * 100)}</Text>
-        <Text style={[s.capacityDiscUnit, { color: accent }]}>%</Text>
+        {/* One text block so the number and its unit share a baseline and center
+            as a whole; the small optical nudge left balances the wider '%'. */}
+        <Text style={[s.capacityDiscValue, { color: accent }]} numberOfLines={1}>
+          {Math.round(target * 100)}<Text style={s.capacityDiscUnit}>%</Text>
+        </Text>
       </View>
     </View>
   );
@@ -423,10 +430,20 @@ function CapacityMeter({
             color={(CATEGORY_TINTS[segment.groupId] ?? { color: C.goldDark }).color}
           />
         ))}
+        {/* A glass sheen across the whole bar for a little depth. */}
+        <LinearGradient
+          colors={['rgba(255,255,255,0.5)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)']}
+          locations={[0, 0.55, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={s.railSheen}
+          pointerEvents="none"
+        />
         {goalMinutes != null && railWidth > 0 && (
           <>
-            <View style={[s.railMarker, s.capacityMarker, { left: (goalMinutes * 0.8 / scale) * railWidth }]} />
-            <View style={[s.railMarker, s.goalMarker, { left: (goalMinutes / scale) * railWidth }]} />
+            <View style={[s.capacityMarker, { left: (goalMinutes * 0.8 / scale) * railWidth }]} />
+            {/* The Goal boundary: a haloed tick so it reads on any segment. */}
+            <View style={[s.goalMarker, { left: (goalMinutes / scale) * railWidth - 1.25 }]} />
           </>
         )}
       </View>
@@ -607,16 +624,16 @@ const s = StyleSheet.create({
   meterKicker: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2.2, color: C.goldDark },
   meterTitle: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 24, letterSpacing: -0.3, color: C.text },
   meterBody: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 14, lineHeight: 18, color: '#6A625A' },
-  capacityDisc: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', borderWidth: 1, backgroundColor: 'rgba(255,253,247,0.7)' },
-  capacityDiscValue: { fontFamily: F.serifBold, fontSize: 20, lineHeight: 22, fontVariant: ['tabular-nums'] },
-  capacityDiscUnit: { fontFamily: F.serifSemiBold, fontSize: 11, lineHeight: 13, marginLeft: 0.5 },
+  capacityDisc: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, backgroundColor: 'rgba(255,253,247,0.7)' },
+  capacityDiscValue: { paddingLeft: 3, fontFamily: F.serifBold, fontSize: 19, lineHeight: 21, textAlign: 'center', textAlignVertical: 'center', includeFontPadding: false, fontVariant: ['tabular-nums'] },
+  capacityDiscUnit: { fontFamily: F.serifSemiBold, fontSize: 10.5 },
 
-  rail: { position: 'relative', height: 18, borderRadius: 9, borderCurve: 'continuous', backgroundColor: '#F0EADC', overflow: 'hidden', boxShadow: 'inset 0 1px 2px rgba(63, 52, 30, 0.07)' },
+  rail: { position: 'relative', height: 18, borderRadius: 9, borderCurve: 'continuous', backgroundColor: '#EFE8D8', overflow: 'hidden', boxShadow: 'inset 0 1px 2.5px rgba(63, 52, 30, 0.09)' },
   railSegment: { position: 'absolute', top: 2.5, bottom: 2.5, borderRadius: 6, borderCurve: 'continuous' },
-  toleranceZone: { position: 'absolute', top: 0, bottom: 0, right: 0, backgroundColor: 'rgba(158,164,171,0.16)' },
-  railMarker: { position: 'absolute', top: 0, bottom: 0, width: 1.5, borderRadius: 1 },
-  capacityMarker: { backgroundColor: C.goldDark, opacity: 0.5 },
-  goalMarker: { width: 2, backgroundColor: '#2D2923' },
+  railSheen: { position: 'absolute', left: 0, right: 0, top: 0, height: 11 },
+  toleranceZone: { position: 'absolute', top: 0, bottom: 0, right: 0, backgroundColor: 'rgba(158,164,171,0.18)' },
+  capacityMarker: { position: 'absolute', top: 3, bottom: 3, width: StyleSheet.hairlineWidth, backgroundColor: C.goldDark, opacity: 0.45 },
+  goalMarker: { position: 'absolute', top: 1.5, bottom: 1.5, width: 2.5, borderRadius: 1.5, backgroundColor: '#2D2923', boxShadow: '0 0 0 1.5px rgba(255,255,255,0.55)' },
   railBottomLabels: { marginTop: 7, flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   railBottomText: { fontFamily: F.sansMedium, fontSize: 10.5, color: C.textMuted, fontVariant: ['tabular-nums'] },
 
@@ -672,8 +689,11 @@ const s = StyleSheet.create({
   // A closed group carries a rose edge down its left side — the same bar the
   // Essentials surface wears.
   closedEdge: { position: 'absolute', left: 0, top: 14, bottom: 14, width: 3.5, borderTopRightRadius: 3, borderBottomRightRadius: 3, backgroundColor: BLOCKED_COLOR, opacity: 0.85 },
-  // The colour pooled behind a ruled group's seal, cropped by the left edge.
-  cardSealBloom: { position: 'absolute', left: -52, top: -34, width: 150, height: 122 },
+  // Two blooms so the colour never hits a seam: a wide, faint wash spanning the
+  // whole card that fades to nothing before the right edge, and a tighter,
+  // brighter pool centred on the seal.
+  cardWashBloom: { position: 'absolute', left: -90, top: -46, width: 440, height: 170 },
+  cardSealBloom: { position: 'absolute', left: -36, top: -44, width: 152, height: 164 },
   cardRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardBody: { flex: 1, minWidth: 0, paddingLeft: 3 },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
