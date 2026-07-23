@@ -30,8 +30,8 @@ const SLEEP_DAYS = Math.round((8 / 24) * YEAR_DAYS);
 // Fewer columns → chunkier beads you can't unsee. Each bead is one day of the
 // year; the dark block of phone-days is the pain point, so it reads big.
 const WEEK_COLS = 30;
-const BEAD_SIZE = 8.4;
-const BEAD_ROW_H = 12;
+const BEAD_SIZE = 7.3;
+const BEAD_ROW_H = 11;
 const TOLERANCE_SPAN = 180;
 const DEFAULT_TOLERANCE = 120;
 const GLIDE = { duration: 620, easing: Easing.out(Easing.cubic) };
@@ -161,9 +161,20 @@ function YearPerspective({
           <View style={s.wasteHeadingRule} />
         </View>
         <View style={s.wasteFigureRow}>
+          {/* The cost number owns the centre line; the tolerance hangs off it as
+              a slashed annotation, mirrored by a ghost so nothing shifts. */}
+          {target != null && bufferDays > 0 && (
+            <View style={[s.wasteAnnex, s.wasteAnnexGhost]} pointerEvents="none">
+              <View style={s.wasteSlash} />
+              <Text style={s.wastePlus}>+{bufferDays}</Text>
+            </View>
+          )}
           <Text style={s.wasteNumber}>{target == null ? '—' : phoneDays}</Text>
           {target != null && bufferDays > 0 && (
-            <Text style={s.wastePlus}>+{bufferDays}</Text>
+            <View style={s.wasteAnnex}>
+              <View style={s.wasteSlash} />
+              <Text style={s.wastePlus}>+{bufferDays}</Text>
+            </View>
           )}
         </View>
         <Text style={s.wasteUnit}>
@@ -176,18 +187,23 @@ function YearPerspective({
             <YearDotRow key={row} row={row} cellWidth={cellWidth} phoneEnd={phoneEnd} bufferEnd={bufferEnd} />
           ))}
       </View>
-      <View style={s.legendRow}>
-        <LegendItem color={GOAL_COLOR} label="Phone" value={`${phoneDays}`} emphasis first />
-        {bufferDays > 0 && <LegendItem color={TOLERANCE_COLOR} label="Tolerance" value={`${bufferDays}`} />}
-        <LegendItem color={PRODUCTIVE_COLOR} label="Life" value={`${awayDays}`} />
-        <LegendItem color={SLEEP_COLOR} label="Sleep" value={`${SLEEP_DAYS}`} />
+      <View style={s.legendBand}>
+        <View style={s.legendRule} />
+        <View style={s.legendRow}>
+          <LegendItem color={GOAL_COLOR} label="Phone" value={`${phoneDays}`} emphasis first />
+          {bufferDays > 0 && <LegendItem color={TOLERANCE_COLOR} label="Tolerance" value={`${bufferDays}`} />}
+          <LegendItem color={PRODUCTIVE_COLOR} label="Life" value={`${awayDays}`} />
+          <LegendItem color={SLEEP_COLOR} label="Sleep" value={`${SLEEP_DAYS}`} />
+        </View>
+        <View style={s.legendRule} />
       </View>
     </View>
   );
 }
 
-// A legend column: a coloured bar on top, the count, the name beneath —
-// four of them fused into one divided strip.
+// A legend column: a haloed bead of the same colour it names, the count in
+// serif, the name beneath — four of them read between two gold hairlines,
+// like a line in an almanac rather than a boxed-in widget.
 function LegendItem({
   color,
   label,
@@ -202,10 +218,31 @@ function LegendItem({
   first?: boolean;
 }) {
   return (
-    <View style={[s.legendItem, !first && s.legendItemDivided, emphasis && s.legendItemEmphasis]}>
-      <View style={[s.legendBar, { backgroundColor: color }]} />
-      <Text style={[s.legendValue, emphasis && s.legendValueEmphasis]}>{value}</Text>
-      <Text style={s.legendLabel}>{label}</Text>
+    <>
+      {!first && <View style={s.legendDivider} />}
+      <View style={s.legendItem}>
+        <View style={s.legendHalo}>
+          <View
+            style={[s.legendHaloRing, { borderColor: color }, emphasis && s.legendHaloRingEmphasis]}
+            pointerEvents="none"
+          />
+          <View style={[s.legendBead, { backgroundColor: color }]} />
+        </View>
+        <Text style={[s.legendValue, emphasis && s.legendValueEmphasis]}>{value}</Text>
+        <Text style={[s.legendLabel, emphasis && s.legendLabelEmphasis]}>{label}</Text>
+      </View>
+    </>
+  );
+}
+
+// The hairline that parts GOAL from ESSENTIALS ONLY under the day bar, and the
+// one that parts the legend columns: a rule broken by a small gold lozenge.
+function GemDivider({ height = 34 }: { height?: number }) {
+  return (
+    <View style={[s.gemDivider, { height }]}>
+      <View style={s.gemDividerLine} />
+      <View style={s.gemDividerGem} />
+      <View style={s.gemDividerLine} />
     </View>
   );
 }
@@ -268,12 +305,15 @@ function DayShape({
         height={14}
       />
 
+      {/* Two halves of the same statement, each centred in its own column and
+          parted by a gold-gemmed hairline. */}
       <View style={s.barCaptionRow}>
-        <View>
+        <View style={s.captionCell}>
           <Text style={s.captionLabel}>GOAL</Text>
           <Text style={s.captionValue}>{formatMinutesShort(target)}</Text>
         </View>
-        <View style={s.captionRight}>
+        <GemDivider height={40} />
+        <View style={s.captionCell}>
           <Text style={[s.captionLabel, s.captionLabelLock]}>
             {essentialsOnly ? 'ESSENTIALS ONLY' : 'ESSENTIALS ONLY AT'}
           </Text>
@@ -621,12 +661,17 @@ const s = StyleSheet.create({
   flourish: { marginTop: 2 },
   dayCardDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E7DCC6', marginVertical: 18 },
 
-  barCaptionRow: { marginTop: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 },
-  captionRight: { alignItems: 'flex-end' },
-  captionLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5, color: C.textMuted },
+  barCaptionRow: { marginTop: 15, flexDirection: 'row', alignItems: 'center' },
+  captionCell: { flex: 1, minWidth: 0, alignItems: 'center', paddingHorizontal: 6 },
+  captionLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5, color: C.textMuted, textAlign: 'center' },
   captionLabelLock: { color: '#A24351' },
-  captionValue: { marginTop: 3, fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22, color: C.text, fontVariant: ['tabular-nums'] },
+  captionValue: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22, color: C.text, textAlign: 'center', fontVariant: ['tabular-nums'] },
   captionValueLock: { color: '#A24351' },
+
+  // A rule broken by a small gold lozenge — the app's ornament, stood upright.
+  gemDivider: { width: 9, alignItems: 'center', justifyContent: 'center' },
+  gemDividerLine: { flex: 1, width: StyleSheet.hairlineWidth, backgroundColor: '#E0D2B2' },
+  gemDividerGem: { width: 4.6, height: 4.6, marginVertical: 4, backgroundColor: C.goldDark, opacity: 0.75, transform: [{ rotate: '45deg' }] },
   alwaysProtectedBand: { marginTop: 12, minHeight: 27, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 10, borderCurve: 'continuous', backgroundColor: '#F9E4E7', paddingHorizontal: 10 },
   alwaysProtectedDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: ESSENTIALS_COLOR, boxShadow: '0 2px 6px rgba(225,75,90,0.28)' },
   alwaysProtectedText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.05, color: '#A63A4B' },
@@ -648,40 +693,36 @@ const s = StyleSheet.create({
   wasteHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   wasteHeadingRule: { width: 22, height: 1, borderRadius: 1, backgroundColor: 'rgba(162,67,81,0.34)' },
   wasteHeading: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 3, color: '#A24351' },
-  wasteFigureRow: { marginTop: 8, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center' },
-  wasteNumber: { fontFamily: F.serifBold, fontSize: 62, lineHeight: 64, letterSpacing: -1, color: '#1A1B1D', fontVariant: ['tabular-nums'] },
-  wastePlus: { marginLeft: 8, fontFamily: F.serifSemiBold, fontSize: 30, lineHeight: 34, color: '#9EA4AB', fontVariant: ['tabular-nums'] },
-  wasteUnit: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 16.5, lineHeight: 20, letterSpacing: 0.1, color: '#5E5751' },
-  dotField: { marginTop: 20 },
+  wasteFigureRow: { marginTop: 7, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center' },
+  wasteNumber: { fontFamily: F.serifBold, fontSize: 52, lineHeight: 55, letterSpacing: -0.9, color: '#1A1B1D', fontVariant: ['tabular-nums'] },
+  // The tolerance, hung off the cost as a fraction-like aside: slash, then the
+  // grey +N sitting a touch lower than the big number's baseline.
+  wasteAnnex: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, marginLeft: 7 },
+  wasteAnnexGhost: { opacity: 0, marginLeft: 0, marginRight: 7 },
+  wasteSlash: { width: 1.4, height: 23, borderRadius: 1, marginBottom: 1, backgroundColor: '#C2C7CC', transform: [{ rotate: '18deg' }] },
+  wastePlus: { marginBottom: -4, fontFamily: F.serifSemiBold, fontSize: 23, lineHeight: 25, color: '#9EA4AB', fontVariant: ['tabular-nums'] },
+  wasteUnit: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 16.5, lineHeight: 20, letterSpacing: 0.1, color: '#5E5751' },
+  dotField: { marginTop: 15 },
   dotCell: { height: BEAD_ROW_H, alignItems: 'center', justifyContent: 'center' },
   yearDot: { width: BEAD_SIZE, height: BEAD_SIZE, borderRadius: BEAD_SIZE / 2 },
   dotSleep: { backgroundColor: SLEEP_COLOR },
   dotPhone: { backgroundColor: GOAL_COLOR },
   dotBuffer: { backgroundColor: TOLERANCE_COLOR },
   dotAway: { backgroundColor: PRODUCTIVE_COLOR },
-  legendRow: {
-    marginTop: 20,
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    borderRadius: 16,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: '#EBE1CD',
-    backgroundColor: '#FFFDF6',
-    overflow: 'hidden',
-  },
-  legendItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 7,
-    paddingVertical: 13,
-    paddingHorizontal: 4,
-  },
-  legendItemDivided: { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: '#EAE0CC' },
-  legendItemEmphasis: { backgroundColor: '#F6F0E3' },
-  legendBar: { width: 26, height: 3.5, borderRadius: 2 },
-  legendValue: { fontFamily: F.serifBold, fontSize: 21, lineHeight: 23, color: '#3A342D', fontVariant: ['tabular-nums'] },
-  legendValueEmphasis: { color: '#1A1B1D' },
-  legendLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 0.7, textTransform: 'uppercase', color: '#93887B' },
+  // The legend reads as a line in an almanac: two gold hairlines, four columns
+  // parted by fainter rules, each led by a haloed bead of its own colour.
+  legendBand: { marginTop: 18 },
+  legendRule: { height: StyleSheet.hairlineWidth, backgroundColor: '#E4D7BB' },
+  legendRow: { flexDirection: 'row', alignItems: 'stretch', paddingVertical: 12 },
+  legendItem: { flex: 1, alignItems: 'center', gap: 6, paddingHorizontal: 4 },
+  legendDivider: { width: StyleSheet.hairlineWidth, marginVertical: 3, backgroundColor: '#EDE3CE' },
+  legendHalo: { width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },
+  legendHaloRing: { ...StyleSheet.absoluteFillObject, borderRadius: 7, borderWidth: StyleSheet.hairlineWidth, opacity: 0.38 },
+  legendHaloRingEmphasis: { opacity: 0.72 },
+  legendBead: { width: 6, height: 6, borderRadius: 3 },
+  legendValue: { fontFamily: F.serifBold, fontSize: 19, lineHeight: 21, color: '#4A4239', fontVariant: ['tabular-nums'] },
+  legendValueEmphasis: { fontSize: 21, lineHeight: 23, color: '#1A1B1D' },
+  legendLabel: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1, textTransform: 'uppercase', color: '#9C9081' },
+  legendLabelEmphasis: { color: '#6E6355' },
 
 });
