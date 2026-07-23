@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import Svg, { Line, Path } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
   cancelAnimation,
   Easing,
+  interpolate,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withDelay,
   withRepeat,
+  withSequence,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { F } from '@/constants/tokens';
@@ -94,6 +99,7 @@ export type BankedPalette = {
   inkSoft: string;
   inkMuted: string;
   stud: string;
+  socketStud: string;
   seal: BankedTone;
 };
 
@@ -121,6 +127,7 @@ const ASH_PALETTE: BankedPalette = {
   inkSoft: 'rgba(122,112,94,0.78)',
   inkMuted: '#8A806D',
   stud: '#D8B77E',
+  socketStud: '#D8CDB6',
   seal: 'quiet',
 };
 
@@ -154,6 +161,7 @@ const STRUCK_PALETTE: BankedPalette = {
   inkSoft: 'rgba(28,25,23,0.6)',
   inkMuted: '#57534E',
   stud: '#A24351',
+  socketStud: '#C4C4BF',
   seal: 'struck',
 };
 
@@ -365,7 +373,13 @@ const ember = StyleSheet.create({
 // hand presses it. Both streak cards wear it, so a resting Home and a
 // resting Focus are recognizably the same state.
 //
-// `struck` gives it the app's oxblood: the entry was ruled out on purpose.
+// `struck` gives it the app's oxblood, and the entrance to match: the
+// stamp FALLS — a fast drop with the app's own spring at the bottom, so
+// it overshoots a couple of pixels and thuds home — and at the moment of
+// impact a white flash blooms behind it, then settles into a standing
+// white glow, light pooled where the plate hit the page. The quiet tone
+// simply eases in; a rest was never struck. All of it is translate,
+// rotate and opacity — never scale, which resamples small Android views.
 export function RestSeal({
   label,
   tone = 'quiet',
@@ -375,20 +389,77 @@ export function RestSeal({
   tone?: BankedTone;
   style?: ViewStyle;
 }) {
+  const reduceMotion = useReducedMotion();
   const ink = toneInk(tone);
   const line = toneLine(tone);
   const struck = tone === 'struck';
-
   const hair = struck ? BANKED.struckHair : BANKED.ashSoft;
 
+  // drop: 0 = raised above the page, 1 = seated. The spring carries it a
+  // few px past the seat and back — the thud. flash: 0 = dark, spikes to
+  // ~2.6 at impact, settles at 1 = the standing glow.
+  const drop = useSharedValue(0);
+  const flash = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      drop.value = 1;
+      flash.value = struck ? 1 : 0;
+      return;
+    }
+    drop.value = 0;
+    flash.value = 0;
+    if (struck) {
+      drop.value = withDelay(
+        420,
+        withSpring(1, { damping: 15, stiffness: 160, mass: 1, velocity: 9 }),
+      );
+      flash.value = withDelay(
+        540,
+        withSequence(
+          withTiming(2.6, { duration: 110, easing: Easing.out(Easing.quad) }),
+          withTiming(1, { duration: 720, easing: Easing.out(Easing.cubic) }),
+        ),
+      );
+    } else {
+      drop.value = withDelay(260, withTiming(1, { duration: 460, easing: Easing.out(Easing.cubic) }));
+    }
+    return () => {
+      cancelAnimation(drop);
+      cancelAnimation(flash);
+    };
+  }, [drop, flash, reduceMotion, struck]);
+
+  const stampStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(1, drop.value * 1.6),
+    transform: [
+      { translateY: interpolate(drop.value, [0, 1], [struck ? -22 : -8, 0]) },
+      { rotate: `${interpolate(drop.value, [0, 1], [struck ? -11 : -6.5, -4])}deg` },
+    ],
+  }));
+
+  const flashStyle = useAnimatedStyle(() => ({
+    opacity: flash.value * 0.34,
+  }));
+
   return (
-    <View pointerEvents="none" style={[seal.wrap, style]}>
+    <Reanimated.View pointerEvents="none" style={[seal.wrap, style, stampStyle]}>
+      {/* Impact light — a white bloom behind the plate that flares when the
+          stamp lands and stays on as a soft standing glow. */}
+      {struck && (
+        <Reanimated.View style={[seal.flashWrap, flashStyle]}>
+          <View style={[seal.flashDisc, seal.flashOuter]} />
+          <View style={[seal.flashDisc, seal.flashMid]} />
+          <View style={[seal.flashDisc, seal.flashHeart]} />
+        </Reanimated.View>
+      )}
+
       <View style={seal.wingGroup}>
         <View style={[seal.serif, { backgroundColor: hair }]} />
         <View style={[seal.wing, { backgroundColor: hair }]} />
       </View>
 
-      <View style={[seal.plaque, { borderColor: line, backgroundColor: struck ? BANKED.struckWash : 'transparent' }]}>
+      <View style={[seal.plaque, { borderColor: line }, struck ? seal.plaqueStruck : null]}>
         <View style={[seal.plaqueInner, { borderColor: hair }]}>
           <View style={[seal.diamond, { backgroundColor: line }]} />
           <Text style={[seal.text, { color: ink }]}>{label}</Text>
@@ -406,17 +477,50 @@ export function RestSeal({
         <View style={[seal.wing, { backgroundColor: hair }]} />
         <View style={[seal.serif, { backgroundColor: hair }]} />
       </View>
-    </View>
+    </Reanimated.View>
   );
 }
 
 const seal = StyleSheet.create({
+  // The tilt lives in the animated transform, not here — the strike
+  // rotates through it and lands at −4°.
   wrap: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 9,
-    transform: [{ rotate: '-4deg' }],
+  },
+  flashWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  flashDisc: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF',
+  },
+  flashOuter: {
+    width: 210,
+    height: 66,
+    borderRadius: 33,
+    opacity: 0.42,
+  },
+  flashMid: {
+    width: 150,
+    height: 48,
+    borderRadius: 24,
+    opacity: 0.6,
+  },
+  flashHeart: {
+    width: 96,
+    height: 34,
+    borderRadius: 17,
+    opacity: 0.75,
+  },
+  // The struck plate sits on white paper, not on a wash — the stamp is a
+  // thing pressed onto the page, so it carries its own plate.
+  plaqueStruck: {
+    backgroundColor: 'rgba(255,255,255,0.66)',
   },
   wingGroup: {
     flexDirection: 'row',
@@ -470,6 +574,39 @@ const seal = StyleSheet.create({
     fontSize: 10.5,
     lineHeight: 13,
     letterSpacing: 3.4,
+  },
+});
+
+/* ── Struck light ─────────────────────────────────────────── */
+// The white light a struck card is held under. Grey on its own is a
+// closed drawer; grey with light falling on it is a page on a desk. A
+// soft white wash pours from the top edge and dies out by two thirds
+// down, and a white hairline rim runs just inside the card's border —
+// the edge a plate catches when lit from above.
+export function StruckLight({ radius = 24 }: { radius?: number }) {
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <LinearGradient
+        colors={['rgba(255,255,255,0.5)', 'rgba(255,255,255,0.16)', 'rgba(255,255,255,0)']}
+        locations={[0, 0.4, 0.66]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={[light.rim, { borderRadius: Math.max(0, radius - 1) }]} />
+    </View>
+  );
+}
+
+const light = StyleSheet.create({
+  rim: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    bottom: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.55)',
   },
 });
 

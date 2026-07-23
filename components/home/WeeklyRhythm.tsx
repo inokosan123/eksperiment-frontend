@@ -36,6 +36,7 @@ import {
   EmberPulse,
   LedgerCartouche,
   RestSeal,
+  StruckLight,
   type BankedPalette,
 } from '@/components/shared/BankedEmber';
 
@@ -725,11 +726,23 @@ function TodayPulseRing({ muted = false, mutedColor }: { muted?: boolean; mutedC
 // full week never stacks seven looping animations on the phone. Each
 // tile is struck like a small coin: a gradient face, a warm rim, and a
 // sheen once the day is won.
-function FlameTile({ pct, mode, isToday }: { pct: number | null; mode: DayMode; isToday: boolean }) {
+function FlameTile({
+  pct,
+  mode,
+  isToday,
+  chrome,
+}: {
+  pct: number | null;
+  mode: DayMode;
+  isToday: boolean;
+  // The CARD's register, not the day's own: earned gold always keeps its
+  // gold, but sockets, studs and rings are chrome, and chrome must match
+  // the page it sits on — warm on parchment, graphite on the struck grey.
+  chrome: BankedPalette;
+}) {
   const bankedDay = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
-  const pal = paletteFor(mode);
   const ring = isToday
-    ? <TodayPulseRing muted={bankedDay} mutedColor={pal.engraving} />
+    ? <TodayPulseRing muted={bankedDay} mutedColor={chrome.engraving} />
     : null;
 
   // No tasks OR all-skipped → an empty socket with a resting stud. Today's
@@ -739,8 +752,14 @@ function FlameTile({ pct, mode, isToday }: { pct: number | null; mode: DayMode; 
     return (
       <View style={s.flameWrap}>
         {ring}
-        <View style={[s.flameTile, s.flameEmpty]}>
-          <View style={[s.emptyStud, isToday && [s.emptyStudToday, { backgroundColor: pal.stud }]]} />
+        <View style={[s.flameTile, s.flameEmpty, { borderColor: chrome.border }]}>
+          <View
+            style={[
+              s.emptyStud,
+              { backgroundColor: chrome.socketStud },
+              isToday && [s.emptyStudToday, { backgroundColor: chrome.stud }],
+            ]}
+          />
         </View>
       </View>
     );
@@ -919,6 +938,9 @@ export default function WeeklyRhythm() {
           style={StyleSheet.absoluteFill}
         />
         <DawnBackdrop muted={banked} palette={todayPal} />
+        {/* The struck card is held under white light — wash from the top,
+            hairline rim inside the border. */}
+        {skippedToday && <StruckLight radius={24} />}
         {/* No sweep across a resting card — the ember carries the motion. */}
         {!banked && <CardGlint />}
 
@@ -954,7 +976,7 @@ export default function WeeklyRhythm() {
           <View style={s.daysRow}>
             {display.map((d, i) => (
               <View key={i} style={s.weekCol}>
-                <FlameTile pct={d.pct} mode={d.mode} isToday={d.isToday} />
+                <FlameTile pct={d.pct} mode={d.mode} isToday={d.isToday} chrome={todayPal} />
               </View>
             ))}
           </View>
@@ -1092,11 +1114,11 @@ const s = StyleSheet.create({
     borderColor: '#E0D6BE',
     borderStyle: 'dashed',
   },
+  // Stud and socket colours come from the card's chrome at the call site.
   emptyStud: {
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: '#D8CDB6',
   },
   // Its colour is the register's stud, applied at the call site.
   emptyStudToday: {
