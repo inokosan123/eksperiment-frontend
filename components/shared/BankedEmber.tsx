@@ -171,14 +171,6 @@ export function bankedPalette(register: BankedRegister): BankedPalette {
 
 export type BankedTone = 'quiet' | 'struck';
 
-function toneInk(tone: BankedTone) {
-  return tone === 'struck' ? BANKED.struckInk : BANKED.inkMuted;
-}
-
-function toneLine(tone: BankedTone) {
-  return tone === 'struck' ? BANKED.struckLine : BANKED.ashLine;
-}
-
 /* ── Banked weave ─────────────────────────────────────────── */
 // The active cards are raked with a single diagonal hairline weave. A
 // resting card is raked twice — the second pass coarser, fainter and
@@ -368,10 +360,16 @@ const ember = StyleSheet.create({
 
 /* ── Rest seal ────────────────────────────────────────────── */
 // The resting card's focal ornament, and the reason it reads as composed
-// rather than merely drained: a double-ruled plaque pressed between two
-// engraved wings and tilted a few degrees, the way a stamp lands when a
-// hand presses it. Both streak cards wear it, so a resting Home and a
-// resting Focus are recognizably the same state.
+// rather than merely drained: a clipped-corner cartouche — the same
+// corner grammar the medallion's ledger cartouche wears — on its own
+// paper plate, pressed between two engraved wings and tilted the way a
+// stamp lands from a hand. Both streak cards wear it, so a resting Home
+// and a resting Focus are recognizably the same state.
+//
+// Every line of it is drawn in ONE Svg: View borders and rotated squares
+// alias into mush the moment the stamp tilts, while a single vector
+// surface rotates clean — even stroke weights, true joins, corner marks
+// that sit exactly on the corners they register.
 //
 // `struck` gives it the app's oxblood, and the entrance to match: the
 // stamp FALLS — a fast drop with the app's own spring at the bottom, so
@@ -380,6 +378,44 @@ const ember = StyleSheet.create({
 // white glow, light pooled where the plate hit the page. The quiet tone
 // simply eases in; a rest was never struck. All of it is translate,
 // rotate and opacity — never scale, which resamples small Android views.
+
+function cartouchePath(x: number, y: number, w: number, h: number, cut: number) {
+  return [
+    `M ${x + cut} ${y}`,
+    `H ${x + w - cut}`,
+    `L ${x + w} ${y + cut}`,
+    `V ${y + h - cut}`,
+    `L ${x + w - cut} ${y + h}`,
+    `H ${x + cut}`,
+    `L ${x} ${y + h - cut}`,
+    `V ${y + cut}`,
+    'Z',
+  ].join(' ');
+}
+
+const SEAL_COLORS = {
+  struck: {
+    ink: '#A24351',
+    frame: 'rgba(162,67,81,0.82)',
+    hairline: 'rgba(162,67,81,0.4)',
+    wing: 'rgba(162,67,81,0.5)',
+    tick: 'rgba(162,67,81,0.5)',
+    gem: 'rgba(162,67,81,0.62)',
+    plate: 'rgba(255,255,255,0.72)',
+    emboss: 'rgba(255,255,255,0.6)',
+  },
+  quiet: {
+    ink: '#8A806D',
+    frame: 'rgba(168,152,119,0.68)',
+    hairline: 'rgba(168,152,119,0.36)',
+    wing: 'rgba(168,152,119,0.48)',
+    tick: 'rgba(168,152,119,0.44)',
+    gem: 'rgba(168,152,119,0.58)',
+    plate: 'rgba(255,255,255,0.42)',
+    emboss: 'rgba(255,255,255,0.5)',
+  },
+} as const;
+
 export function RestSeal({
   label,
   tone = 'quiet',
@@ -390,10 +426,9 @@ export function RestSeal({
   style?: ViewStyle;
 }) {
   const reduceMotion = useReducedMotion();
-  const ink = toneInk(tone);
-  const line = toneLine(tone);
   const struck = tone === 'struck';
-  const hair = struck ? BANKED.struckHair : BANKED.ashSoft;
+  const c = SEAL_COLORS[struck ? 'struck' : 'quiet'];
+  const [textBox, setTextBox] = useState({ w: 0, h: 0 });
 
   // drop: 0 = raised above the page, 1 = seated. The spring carries it a
   // few px past the seat and back — the thud. flash: 0 = dark, spikes to
@@ -442,6 +477,28 @@ export function RestSeal({
     opacity: flash.value * 0.34,
   }));
 
+  /* Geometry — everything keys off the measured label. */
+  const ready = textBox.w > 0;
+  const padH = 15;
+  const padV = 6.5;
+  const cut = 5.5;
+  const margin = 5; // room for corner marks and the emboss line
+  const wingGap = 7;
+  const wingLine = 25;
+  const serifGap = 3;
+  const wingTotal = wingGap + wingLine + serifGap + 1.6;
+  const plaqueW = textBox.w + padH * 2;
+  const plaqueH = textBox.h + padV * 2;
+  const svgW = margin * 2 + wingTotal * 2 + plaqueW;
+  const svgH = margin * 2 + plaqueH;
+  const px = margin + wingTotal;
+  const py = margin;
+  const cy = margin + plaqueH / 2;
+  const gem = 3.2;
+  // Corner marks: short strokes parallel to each cut, floated 1.8 off it —
+  // the plate's registration, echoing the cut instead of boxing it.
+  const off = 1.8;
+
   return (
     <Reanimated.View pointerEvents="none" style={[seal.wrap, style, stampStyle]}>
       {/* Impact light — a white bloom behind the plate that flares when the
@@ -454,41 +511,85 @@ export function RestSeal({
         </Reanimated.View>
       )}
 
-      <View style={seal.wingGroup}>
-        <View style={[seal.serif, { backgroundColor: hair }]} />
-        <View style={[seal.wing, { backgroundColor: hair }]} />
-      </View>
+      {/* Invisible measurer — the seal is drawn around the label's box. */}
+      <Text
+        style={[seal.text, seal.measurer]}
+        numberOfLines={1}
+        onLayout={event => {
+          const { width, height } = event.nativeEvent.layout;
+          setTextBox(previous =>
+            Math.abs(previous.w - width) < 0.5 && Math.abs(previous.h - height) < 0.5
+              ? previous
+              : { w: width, h: height });
+        }}
+      >
+        {label}
+      </Text>
 
-      <View style={[seal.plaque, { borderColor: line }, struck ? seal.plaqueStruck : null]}>
-        <View style={[seal.plaqueInner, { borderColor: hair }]}>
-          <View style={[seal.diamond, { backgroundColor: line }]} />
-          <Text style={[seal.text, { color: ink }]}>{label}</Text>
-          <View style={[seal.diamond, { backgroundColor: line }]} />
+      {ready && (
+        <View style={{ width: svgW, height: svgH, alignItems: 'center', justifyContent: 'center' }}>
+          <Svg pointerEvents="none" width={svgW} height={svgH} style={StyleSheet.absoluteFill}>
+            {/* Emboss — the impression's lower lip catching the card's
+                top-light, drawn under the frame. */}
+            <Path
+              d={cartouchePath(px, py + 1, plaqueW, plaqueH, cut)}
+              fill="none"
+              stroke={c.emboss}
+              strokeWidth={1.3}
+              strokeLinejoin="round"
+            />
+            {/* Paper plate + main rule, one crisp path. */}
+            <Path
+              d={cartouchePath(px, py, plaqueW, plaqueH, cut)}
+              fill={c.plate}
+              stroke={c.frame}
+              strokeWidth={1.4}
+              strokeLinejoin="round"
+            />
+            {/* Inner hairline, inset, cuts eased to match. */}
+            <Path
+              d={cartouchePath(px + 2.4, py + 2.4, plaqueW - 4.8, plaqueH - 4.8, cut - 1.5)}
+              fill="none"
+              stroke={c.hairline}
+              strokeWidth={0.8}
+              strokeLinejoin="round"
+            />
+
+            {/* Registration marks on the four cuts. */}
+            <Line x1={px + cut - off} y1={py - off} x2={px - off} y2={py + cut - off} stroke={c.tick} strokeWidth={1} strokeLinecap="round" />
+            <Line x1={px + plaqueW - cut + off} y1={py - off} x2={px + plaqueW + off} y2={py + cut - off} stroke={c.tick} strokeWidth={1} strokeLinecap="round" />
+            <Line x1={px + cut - off} y1={py + plaqueH + off} x2={px - off} y2={py + plaqueH - cut + off} stroke={c.tick} strokeWidth={1} strokeLinecap="round" />
+            <Line x1={px + plaqueW - cut + off} y1={py + plaqueH + off} x2={px + plaqueW + off} y2={py + plaqueH - cut + off} stroke={c.tick} strokeWidth={1} strokeLinecap="round" />
+
+            {/* Wings: serif cap, engraved line, and a gem seated at the
+                plaque's edge — mirrored. */}
+            <Line x1={margin + 0.8} y1={cy - 3.5} x2={margin + 0.8} y2={cy + 3.5} stroke={c.wing} strokeWidth={1.6} strokeLinecap="round" />
+            <Line x1={margin + 1.6 + serifGap} y1={cy} x2={margin + 1.6 + serifGap + wingLine} y2={cy} stroke={c.wing} strokeWidth={1.2} strokeLinecap="round" />
+            <Line x1={svgW - margin - 0.8} y1={cy - 3.5} x2={svgW - margin - 0.8} y2={cy + 3.5} stroke={c.wing} strokeWidth={1.6} strokeLinecap="round" />
+            <Line x1={svgW - margin - 1.6 - serifGap - wingLine} y1={cy} x2={svgW - margin - 1.6 - serifGap} y2={cy} stroke={c.wing} strokeWidth={1.2} strokeLinecap="round" />
+
+            {/* Gems flanking the label, inside the plate. */}
+            <Path d={`M ${px + 9.5} ${cy - gem} L ${px + 9.5 + gem} ${cy} L ${px + 9.5} ${cy + gem} L ${px + 9.5 - gem} ${cy} Z`} fill={c.gem} />
+            <Path d={`M ${px + plaqueW - 9.5} ${cy - gem} L ${px + plaqueW - 9.5 + gem} ${cy} L ${px + plaqueW - 9.5} ${cy + gem} L ${px + plaqueW - 9.5 - gem} ${cy} Z`} fill={c.gem} />
+          </Svg>
+          {/* translateX rebalances the tracking's trailing space. */}
+          <Text style={[seal.text, { color: c.ink, transform: [{ translateX: 1.7 }] }]} numberOfLines={1}>
+            {label}
+          </Text>
         </View>
-        {/* Registration ticks — the marks a struck plate leaves at its
-            corners. They are what separates a stamp from a bordered box. */}
-        <View style={[seal.tick, seal.tickTL, { borderColor: line }]} />
-        <View style={[seal.tick, seal.tickTR, { borderColor: line }]} />
-        <View style={[seal.tick, seal.tickBL, { borderColor: line }]} />
-        <View style={[seal.tick, seal.tickBR, { borderColor: line }]} />
-      </View>
-
-      <View style={seal.wingGroup}>
-        <View style={[seal.wing, { backgroundColor: hair }]} />
-        <View style={[seal.serif, { backgroundColor: hair }]} />
-      </View>
+      )}
     </Reanimated.View>
   );
 }
 
 const seal = StyleSheet.create({
   // The tilt lives in the animated transform, not here — the strike
-  // rotates through it and lands at −4°.
+  // rotates through it and lands at −4°. minHeight holds the layout
+  // steady for the frame the measurer needs.
   wrap: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 9,
+    minHeight: 36,
   },
   flashWrap: {
     ...StyleSheet.absoluteFillObject,
@@ -517,57 +618,9 @@ const seal = StyleSheet.create({
     borderRadius: 17,
     opacity: 0.75,
   },
-  // The struck plate sits on white paper, not on a wash — the stamp is a
-  // thing pressed onto the page, so it carries its own plate.
-  plaqueStruck: {
-    backgroundColor: 'rgba(255,255,255,0.66)',
-  },
-  wingGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  wing: {
-    width: 26,
-    height: 1,
-    borderRadius: 1,
-  },
-  serif: {
-    width: 1,
-    height: 7,
-    borderRadius: 1,
-  },
-  plaque: {
-    position: 'relative',
-    borderWidth: 1,
-    borderRadius: 4,
-    borderCurve: 'continuous',
-    padding: 2.5,
-  },
-  tick: {
+  measurer: {
     position: 'absolute',
-    width: 5,
-    height: 5,
-  },
-  tickTL: { top: -3.5, left: -3.5, borderLeftWidth: 1, borderTopWidth: 1 },
-  tickTR: { top: -3.5, right: -3.5, borderRightWidth: 1, borderTopWidth: 1 },
-  tickBL: { bottom: -3.5, left: -3.5, borderLeftWidth: 1, borderBottomWidth: 1 },
-  tickBR: { bottom: -3.5, right: -3.5, borderRightWidth: 1, borderBottomWidth: 1 },
-  plaqueInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 2,
-    borderCurve: 'continuous',
-    paddingHorizontal: 11,
-    paddingVertical: 4.5,
-  },
-  diamond: {
-    width: 3.5,
-    height: 3.5,
-    borderRadius: 0.5,
-    transform: [{ rotate: '45deg' }],
+    opacity: 0,
   },
   text: {
     fontFamily: F.sansBold,
