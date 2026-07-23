@@ -1,7 +1,8 @@
 import {
   useEffect,
   useMemo,
-  useState } from 'react';
+  useState,
+  type ReactNode } from 'react';
 import { Image,
   View,
   Text,
@@ -23,7 +24,7 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { Activity, BarChart3 } from '@/components/icons/Icons';
+import { Activity, BarChart3, Skip } from '@/components/icons/Icons';
 import FocusLottie from '@/components/focus/FocusLottie';
 import { C, F } from '@/constants/tokens';
 import { useTasks } from '@/components/tasks/TaskProvider';
@@ -48,7 +49,6 @@ const AnimatedPath = Reanimated.createAnimatedComponent(Path);
 // The week reads through the flame tiles alone now — the candle row said the
 // same thing twice, so the tiles took its space and grew into it.
 const TILE_SIZE = 38;
-const ICON_SIZE = 23;
 const GOLD = '#C5A059';
 // Indexed by Date.getDay() — Sun=0, Mon=1, ..., Sat=6
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -723,9 +723,125 @@ function TodayPulseRing({ muted = false, mutedColor }: { muted?: boolean; mutedC
 }
 
 // Static PNG flames only — the hero carries the one living Lottie, so a
-// full week never stacks seven looping animations on the phone. Each
-// tile is struck like a small coin: a gradient face, a warm rim, and a
-// sheen once the day is won.
+// full week never stacks seven looping animations on the phone. Each day
+// is struck as a small coin, and every state has its own mint:
+//   won (100%)   — a gold medal: layered face, raised inner ring, a warm
+//                  halo behind a full-colour flame, sheen and glints;
+//   rising (<100)— the fire climbs bottom-up behind a gold meniscus line;
+//   missed (0%)  — an oxblood coin, the flame gone cold and red;
+//   awaiting     — today at 0%: a warm, neutral coin, the day still open;
+//   skipped      — a graphite coin carrying the skip glyph, set aside;
+//   empty        — no tasks: a dashed socket with a resting stud.
+
+const TOKEN = 38;
+
+function TokenGlints() {
+  return (
+    <>
+      <View pointerEvents="none" style={[tok.glint, { right: 5, top: 7 }]} />
+      <View pointerEvents="none" style={[tok.glintSmall, { left: 7, bottom: 9 }]} />
+    </>
+  );
+}
+
+// 100% — a struck gold medal.
+function WonMedal() {
+  return (
+    <View style={[tok.coin, tok.coinGold, tok.glow]}>
+      <LinearGradient
+        colors={['#FFF8E1', '#F7E1A6', '#EFCF86']}
+        locations={[0, 0.58, 1]}
+        start={{ x: 0.22, y: 0.06 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View pointerEvents="none" style={tok.innerRing} />
+      <View pointerEvents="none" style={tok.heartGlow} />
+      <Image key="flame-full" source={FLAME_PNG} style={tok.flameFull} />
+      <View pointerEvents="none" style={tok.sheen} />
+      <TokenGlints />
+    </View>
+  );
+}
+
+// 0 < pct < 100 — the fire rises from the floor of the coin, a bright gold
+// meniscus riding the top of the fill.
+function RisingFire({ pct }: { pct: number }) {
+  const filled = Math.max(1, Math.min(99, pct));
+  return (
+    <View style={[tok.coin, tok.coinCream]}>
+      <LinearGradient
+        colors={['#FBF9F2', '#F1EBDC']}
+        start={{ x: 0.2, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <Image key="flame-dim" source={FLAME_PNG} style={[tok.flame, { tintColor: '#D3C8AE' }]} />
+      <View style={[tok.clip, { height: `${filled}%` }]} pointerEvents="none">
+        <View style={tok.clipInner}>
+          <LinearGradient
+            colors={['#FFF3CF', '#F6D98F']}
+            start={{ x: 0.2, y: 0 }}
+            end={{ x: 0.8, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <Image key="flame-fill" source={FLAME_PNG} style={tok.flame} />
+        </View>
+        <View pointerEvents="none" style={tok.meniscus} />
+      </View>
+      <View pointerEvents="none" style={tok.sheen} />
+    </View>
+  );
+}
+
+// A past day with tasks but nothing done — the fire went cold, and red.
+function MissedEmber() {
+  return (
+    <View style={[tok.coin, tok.coinMissed]}>
+      <LinearGradient
+        colors={['#FCEEF0', '#F6DBDF']}
+        start={{ x: 0.2, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View pointerEvents="none" style={tok.missedRing} />
+      <Image key="flame-missed" source={FLAME_PNG} style={[tok.flame, tok.flameMissed]} />
+    </View>
+  );
+}
+
+// Today, still at zero — warm and neutral, the day not yet spent.
+function AwaitingEmber() {
+  return (
+    <View style={[tok.coin, tok.coinCream]}>
+      <LinearGradient
+        colors={['#FFFDF6', '#F3ECDC']}
+        start={{ x: 0.2, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <Image key="flame-wait" source={FLAME_PNG} style={[tok.flame, { tintColor: '#D8CDB4' }]} />
+      <View pointerEvents="none" style={tok.sheen} />
+    </View>
+  );
+}
+
+// A day set aside — the skip glyph on a quiet graphite coin.
+function SkipToken() {
+  return (
+    <View style={[tok.coin, tok.coinSkip]}>
+      <LinearGradient
+        colors={['#F7F5F0', '#EAE6DE']}
+        start={{ x: 0.2, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View pointerEvents="none" style={tok.skipRing} />
+      <Skip s={16} c="#9A9488" w={2.3} />
+    </View>
+  );
+}
+
 function FlameTile({
   pct,
   mode,
@@ -736,86 +852,172 @@ function FlameTile({
   mode: DayMode;
   isToday: boolean;
   // The CARD's register, not the day's own: earned gold always keeps its
-  // gold, but sockets, studs and rings are chrome, and chrome must match
-  // the page it sits on — warm on parchment, graphite on the struck grey.
+  // gold, but the empty socket and today's ring follow the page they sit
+  // on — warm on parchment, graphite on the struck grey.
   chrome: BankedPalette;
 }) {
-  const bankedDay = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
+  const quiet = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
   const ring = isToday
-    ? <TodayPulseRing muted={bankedDay} mutedColor={chrome.engraving} />
+    ? <TodayPulseRing muted={quiet} mutedColor={chrome.engraving} />
     : null;
 
-  // No tasks OR all-skipped → an empty socket with a resting stud. Today's
-  // own socket keeps a live mark: a coal on a quiet day, a drop of the
-  // stamp's oxblood on a struck one.
-  if (bankedDay) {
-    return (
-      <View style={s.flameWrap}>
-        {ring}
-        <View style={[s.flameTile, s.flameEmpty, { borderColor: chrome.border }]}>
-          <View
-            style={[
-              s.emptyStud,
-              { backgroundColor: chrome.socketStud },
-              isToday && [s.emptyStudToday, { backgroundColor: chrome.stud }],
-            ]}
-          />
-        </View>
+  let token: ReactNode;
+  if (mode === 'all-skipped') {
+    token = <SkipToken />;
+  } else if (mode === 'no-tasks' || pct === null) {
+    token = (
+      <View style={[s.flameTile, s.flameEmpty, { borderColor: chrome.border }]}>
+        <View
+          style={[
+            s.emptyStud,
+            { backgroundColor: chrome.socketStud },
+            isToday && [s.emptyStudToday, { backgroundColor: chrome.stud }],
+          ]}
+        />
       </View>
     );
-  }
-
-  const filled = Math.max(0, Math.min(100, pct));
-  const isFull = filled >= 100;
-
-  if (isFull) {
-    return (
-      <View style={s.flameWrap}>
-        {ring}
-        <View style={[s.flameTile, s.flameColored, s.flameGlow]}>
-          <LinearGradient
-            colors={['#FFF7DE', '#F7E0A8']}
-            start={{ x: 0.2, y: 0 }}
-            end={{ x: 0.8, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          {/* key remount: a tinted Image must never be reused untinted —
-              template rendering sticks and iOS paints it system blue */}
-          <Image key="flame-full" source={FLAME_PNG} style={s.flameImgFull} />
-          <View style={s.tileSheen} pointerEvents="none" />
-        </View>
-      </View>
-    );
+  } else {
+    const filled = Math.max(0, Math.min(100, pct));
+    if (filled >= 100) token = <WonMedal />;
+    else if (filled > 0) token = <RisingFire pct={filled} />;
+    else if (isToday) token = <AwaitingEmber />;
+    else token = <MissedEmber />;
   }
 
   return (
     <View style={s.flameWrap}>
       {ring}
-      <View style={[s.flameTile, s.flameGray]}>
-        <LinearGradient
-          colors={['#FBF9F2', '#F1EBDC']}
-          start={{ x: 0.2, y: 0 }}
-          end={{ x: 0.8, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <Image key="flame-tinted" source={FLAME_PNG} style={[s.flameImg, { tintColor: '#CDC2A8' }]} />
-      </View>
-      {filled > 0 && (
-        <View style={[s.flameClip, { height: `${filled}%` }]} pointerEvents="none">
-          <View style={[s.flameTile, s.flameColored, s.flameColoredAbs]}>
-            <LinearGradient
-              colors={['#FFF7DE', '#F7E0A8']}
-              start={{ x: 0.2, y: 0 }}
-              end={{ x: 0.8, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <Image key="flame-fill" source={FLAME_PNG} style={s.flameImg} />
-          </View>
-        </View>
-      )}
+      {token}
     </View>
   );
 }
+
+const tok = StyleSheet.create({
+  coin: {
+    width: TOKEN,
+    height: TOKEN,
+    borderRadius: TOKEN / 2,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  coinGold: { borderColor: '#CBA153' },
+  coinCream: { borderColor: '#E3DCC8' },
+  coinMissed: { borderColor: '#E4B9C0' },
+  coinSkip: { borderColor: '#DAD4C8' },
+  glow: {
+    shadowColor: C.gold,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  // The minted, raised inner ring of the won medal.
+  innerRing: {
+    position: 'absolute',
+    top: 3,
+    left: 3,
+    right: 3,
+    bottom: 3,
+    borderRadius: (TOKEN - 6) / 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.55)',
+  },
+  heartGlow: {
+    position: 'absolute',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,249,225,0.9)',
+  },
+  flameFull: {
+    width: 25,
+    height: 25,
+    resizeMode: 'contain',
+  },
+  flame: {
+    width: 23,
+    height: 23,
+    resizeMode: 'contain',
+  },
+  flameMissed: {
+    tintColor: '#C06B78',
+    opacity: 0.85,
+  },
+  clip: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    overflow: 'hidden',
+  },
+  clipInner: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    width: TOKEN - 3,
+    height: TOKEN - 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // The bright line the rising fire rides — the meniscus of the fill.
+  meniscus: {
+    position: 'absolute',
+    top: 0,
+    left: 2,
+    right: 2,
+    height: 1.6,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,236,178,0.95)',
+  },
+  missedRing: {
+    position: 'absolute',
+    top: 3,
+    left: 3,
+    right: 3,
+    bottom: 3,
+    borderRadius: (TOKEN - 6) / 2,
+    borderWidth: 1,
+    borderColor: 'rgba(162,67,81,0.16)',
+  },
+  skipRing: {
+    position: 'absolute',
+    top: 3.5,
+    left: 3.5,
+    right: 3.5,
+    bottom: 3.5,
+    borderRadius: (TOKEN - 7) / 2,
+    borderWidth: 1,
+    borderColor: 'rgba(154,148,136,0.28)',
+  },
+  sheen: {
+    position: 'absolute',
+    top: 5,
+    left: 8,
+    width: 11,
+    height: 4,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,253,246,0.85)',
+    transform: [{ rotate: '-18deg' }],
+  },
+  glint: {
+    position: 'absolute',
+    width: 3.5,
+    height: 3.5,
+    borderRadius: 0.5,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    transform: [{ rotate: '45deg' }],
+  },
+  glintSmall: {
+    position: 'absolute',
+    width: 2.5,
+    height: 2.5,
+    borderRadius: 0.5,
+    backgroundColor: 'rgba(255,250,232,0.75)',
+    transform: [{ rotate: '45deg' }],
+  },
+});
 
 /* ── Main ─────────────────────────────────────────────────── */
 export default function WeeklyRhythm() {
@@ -1086,7 +1288,7 @@ const s = StyleSheet.create({
   dayLetter: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 0.9, color: C.textMuted },
   dayLetterToday: { color: C.goldDark },
 
-  /* Bottom flame badge */
+  /* Week-band token */
   flameWrap: {
     width: TILE_SIZE,
     height: TILE_SIZE,
@@ -1100,14 +1302,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-  },
-  flameGray: {
-    backgroundColor: '#F7F4EA',
-    borderColor: '#E3DCC8',
-  },
-  flameColored: {
-    backgroundColor: '#FFF3D8',
-    borderColor: '#D2A755',
   },
   flameEmpty: {
     backgroundColor: 'rgba(255,255,255,0.5)',
@@ -1126,38 +1320,6 @@ const s = StyleSheet.create({
     height: 6.5,
     borderRadius: 3.25,
   },
-  tileSheen: {
-    position: 'absolute',
-    top: 5,
-    left: 8,
-    width: 11,
-    height: 4,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,253,246,0.85)',
-    transform: [{ rotate: '-18deg' }],
-  },
-  flameColoredAbs: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-  },
-  flameClip: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    overflow: 'hidden',
-  },
-  flameImg: {
-    width: ICON_SIZE,
-    height: ICON_SIZE,
-    resizeMode: 'contain',
-  },
-  flameImgFull: {
-    width: ICON_SIZE + 2,
-    height: ICON_SIZE + 2,
-    resizeMode: 'contain',
-  },
   todayRing: {
     position: 'absolute',
     top: -4,
@@ -1167,12 +1329,5 @@ const s = StyleSheet.create({
     borderRadius: (TILE_SIZE + 8) / 2,
     borderWidth: 1.5,
     borderColor: C.gold,
-  },
-  flameGlow: {
-    shadowColor: C.gold,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
-    elevation: 3,
   },
 });
