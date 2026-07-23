@@ -30,6 +30,7 @@ import { useTasks } from '@/components/tasks/TaskProvider';
 import { listTaskInstancesBetween } from '@/components/tasks/taskDb';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import { BANKED, EmberPulse, LedgerRule, RestSeal } from '@/components/shared/BankedEmber';
 
 
 const FLAME_PNG = require('@/assets/images/streak-flame-512.png');
@@ -88,11 +89,13 @@ function Sparkle({
   delay,
   style,
   color = GOLD,
+  slow = false,
 }: {
   size: number;
   delay: number;
   style: object;
   color?: string;
+  slow?: boolean;
 }) {
   const reduceMotion = useReducedMotion();
   const t = useSharedValue(0);
@@ -106,16 +109,17 @@ function Sparkle({
     t.value = withDelay(
       delay,
       withRepeat(
-        withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.quad) }),
+        withTiming(1, { duration: slow ? 4400 : 2400, easing: Easing.inOut(Easing.quad) }),
         -1,
         true,
       ),
     );
     return () => cancelAnimation(t);
-  }, [reduceMotion, delay, t]);
+  }, [reduceMotion, delay, slow, t]);
 
+  // Banked: the sparks are half as bright and take nearly twice as long.
   const twinkle = useAnimatedStyle(() => ({
-    opacity: 0.14 + t.value * 0.42,
+    opacity: slow ? 0.07 + t.value * 0.19 : 0.14 + t.value * 0.42,
   }));
 
   return (
@@ -181,8 +185,8 @@ function DawnBackdrop({ muted = false }: { muted?: boolean }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   const step = 30;
   const lineCount = box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
-  const weaveColor = muted ? '#A8A093' : GOLD;
-  const sparkleColor = muted ? '#B0A995' : GOLD;
+  const weaveColor = muted ? BANKED.ash : GOLD;
+  const sparkleColor = muted ? BANKED.ember : GOLD;
 
   return (
     <View
@@ -212,10 +216,10 @@ function DawnBackdrop({ muted = false }: { muted?: boolean }) {
           })}
         </Svg>
       )}
-      <Sparkle size={13} delay={0} style={{ right: 86, top: 30 }} color={sparkleColor} />
-      <Sparkle size={9} delay={900} style={{ right: 16, top: 18 }} color={sparkleColor} />
-      <Sparkle size={8} delay={1700} style={{ left: 148, top: 24 }} color={sparkleColor} />
-      <Sparkle size={11} delay={2600} style={{ left: 20, top: 118 }} color={sparkleColor} />
+      <Sparkle size={13} delay={0} style={{ right: 86, top: 30 }} color={sparkleColor} slow={muted} />
+      <Sparkle size={9} delay={900} style={{ right: 16, top: 18 }} color={sparkleColor} slow={muted} />
+      <Sparkle size={8} delay={1700} style={{ left: 148, top: 24 }} color={sparkleColor} slow={muted} />
+      <Sparkle size={11} delay={2600} style={{ left: 20, top: 118 }} color={sparkleColor} slow={muted} />
     </View>
   );
 }
@@ -224,13 +228,18 @@ function DawnBackdrop({ muted = false }: { muted?: boolean }) {
 // The layered-ellipse bloom carrying today's percentage in its brightest
 // pool — but unlike the trophy's purely ornamental engraving, the curve
 // beneath the number here is alive: a hairline track that fills with
-// gold to today's progress, sweeping when the day moves.
+// gold to today's progress, sweeping when the day moves. Banked, the whole
+// instrument goes out of service — ash bloom, dashed track, and a ruled
+// entry where the reading would stand.
 function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
   const size = 74;
-  const quiet = mode === 'no-tasks' || mode === 'all-skipped';
+  // Banked: nothing was scheduled, or the whole day was laid aside. The
+  // instrument keeps its face but stops reading — an empty ruled entry
+  // where the number would stand, and a dashed track instead of a live one.
+  const banked = mode === 'no-tasks' || mode === 'all-skipped';
   const skipped = mode === 'all-skipped';
   const clamped = Math.round(Math.max(0, Math.min(100, pct)));
-  const display = quiet ? '—' : String(clamped);
+  const display = banked ? '' : String(clamped);
   const extraCharacters = Math.max(0, display.length - 1);
   const digitExpansion = extraCharacters === 0
     ? 0
@@ -242,7 +251,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
   // Progress arc: dash length approximates the bezier's arc length —
   // slightly generous so 100% closes the track completely.
   const arcLen = width * 0.98;
-  const frac = quiet ? 0 : clamped / 100;
+  const frac = banked ? 0 : clamped / 100;
   const arcProgress = useSharedValue(0);
 
   useEffect(() => {
@@ -271,7 +280,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           cy={height * 0.56}
           rx={width * 0.52}
           ry={height * 0.52}
-          fill={skipped ? '#DBD7CA' : '#EBD5A0'}
+          fill={banked ? BANKED.bloomRim : '#EBD5A0'}
           opacity={0.8}
           transform={`rotate(-5 ${width * 0.52} ${height * 0.56})`}
         />
@@ -280,7 +289,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           cy={height * 0.53}
           rx={width * 0.46}
           ry={height * 0.44}
-          fill={skipped ? '#E8E5DA' : '#F5E5BE'}
+          fill={banked ? BANKED.bloomMid : '#F5E5BE'}
           opacity={0.85}
           transform={`rotate(4 ${width * 0.52} ${height * 0.53})`}
         />
@@ -289,34 +298,39 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           cy={height * 0.57}
           rx={width * 0.42}
           ry={height * 0.39}
-          fill={skipped ? '#F5F3EC' : '#FFF8E4'}
+          fill={banked ? BANKED.bloomHeart : '#FFF8E4'}
           opacity={0.95}
           transform={`rotate(-3 ${width * 0.49} ${height * 0.57})`}
         />
+        {/* The progress track. Solid while the day can still be written,
+            dashed once it is banked — a gauge visibly taken out of service. */}
         <Path
           d={`M ${size * 0.13 + width * 0.07} ${height * 0.82} C ${width * 0.43} ${height * 1.01}, ${width * 0.76} ${height * 0.97}, ${width * 1.0} ${height * 0.64}`}
           fill="none"
-          stroke={skipped ? '#9B9484' : GOLD}
-          strokeOpacity={skipped ? 0.24 : 0.18}
+          stroke={banked ? BANKED.ash : GOLD}
+          strokeOpacity={banked ? 0.42 : 0.18}
           strokeWidth={1.5}
           strokeLinecap="round"
+          strokeDasharray={banked ? '3 5' : undefined}
         />
-        <AnimatedPath
-          d={`M ${size * 0.13 + width * 0.07} ${height * 0.82} C ${width * 0.43} ${height * 1.01}, ${width * 0.76} ${height * 0.97}, ${width * 1.0} ${height * 0.64}`}
-          fill="none"
-          stroke={GOLD}
-          strokeOpacity={0.9}
-          strokeWidth={1.6}
-          strokeLinecap="round"
-          strokeDasharray={`${arcLen} ${arcLen}`}
-          animatedProps={arcProps}
-        />
+        {!banked && (
+          <AnimatedPath
+            d={`M ${size * 0.13 + width * 0.07} ${height * 0.82} C ${width * 0.43} ${height * 1.01}, ${width * 0.76} ${height * 0.97}, ${width * 1.0} ${height * 0.64}`}
+            fill="none"
+            stroke={GOLD}
+            strokeOpacity={0.9}
+            strokeWidth={1.6}
+            strokeLinecap="round"
+            strokeDasharray={`${arcLen} ${arcLen}`}
+            animatedProps={arcProps}
+          />
+        )}
         <Line
           x1={size * 0.92 + digitExpansion + width * 0.07}
           y1={height * 0.32}
           x2={size * 0.92 + digitExpansion + width * 0.07}
           y2={height * 0.78}
-          stroke={skipped ? '#9B9484' : GOLD}
+          stroke={banked ? BANKED.ash : GOLD}
           strokeOpacity={0.38}
           strokeWidth={1}
           strokeLinecap="round"
@@ -329,18 +343,17 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           { left: size * 0.04, width: size * 0.86 + digitExpansion, height },
         ]}
       >
-        <Text
-          style={[
-            ms.value,
-            { fontSize: size * 0.58, lineHeight: size * 0.66 },
-            quiet && ms.valueDormant,
-            skipped && ms.valueSkipped,
-          ]}
-          numberOfLines={1}
-        >
-          {display}
-          {!quiet && <Text style={ms.valuePct}>%</Text>}
-        </Text>
+        {banked ? (
+          <LedgerRule width={size * 0.7} />
+        ) : (
+          <Text
+            style={[ms.value, { fontSize: size * 0.58, lineHeight: size * 0.66 }]}
+            numberOfLines={1}
+          >
+            {display}
+            <Text style={ms.valuePct}>%</Text>
+          </Text>
+        )}
       </View>
 
       <View
@@ -349,22 +362,15 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           { left: size * 1.04 + digitExpansion, top: height * 0.27 },
         ]}
       >
-        <Text style={[ms.eyebrow, skipped && ms.eyebrowSkipped]} numberOfLines={1}>TODAY</Text>
-        <Text style={[ms.label, skipped && ms.labelSkipped]} numberOfLines={1}>PROGRESS</Text>
-        <View style={[ms.copyRule, skipped && ms.copyRuleSkipped]} />
+        <Text style={[ms.eyebrow, banked && ms.eyebrowBanked]} numberOfLines={1}>TODAY</Text>
+        <Text style={[ms.label, banked && ms.labelBanked]} numberOfLines={1}>
+          {skipped ? 'AT REST' : banked ? 'NO TASKS' : 'PROGRESS'}
+        </Text>
+        <View style={[ms.copyRule, banked && ms.copyRuleBanked]} />
       </View>
 
-      <View pointerEvents="none" style={[ms.glint, { right: size * 0.05, top: height * 0.08 }, skipped && ms.glintSkipped]} />
-      <View pointerEvents="none" style={[ms.glintSmall, { right: size * 0.42, top: height * 0.86 }, skipped && ms.glintSkipped]} />
-
-      {/* A rest-day stamp struck at a slight angle across the arc line */}
-      {skipped && (
-        <View pointerEvents="none" style={[ms.stampWrap, { top: height * 0.74 }]}>
-          <View style={ms.stampLine} />
-          <Text style={ms.stampText}>SKIPPED</Text>
-          <View style={ms.stampLine} />
-        </View>
-      )}
+      <View pointerEvents="none" style={[ms.glint, { right: size * 0.05, top: height * 0.08 }, banked && ms.glintBanked]} />
+      <View pointerEvents="none" style={[ms.glintSmall, { right: size * 0.42, top: height * 0.86 }, banked && ms.glintBanked]} />
     </View>
   );
 }
@@ -390,45 +396,17 @@ const ms = StyleSheet.create({
     letterSpacing: 0,
     color: '#8B6B2F',
   },
-  valueDormant: {
-    color: '#9A7F4D',
+  eyebrowBanked: {
+    color: BANKED.inkSoft,
   },
-  valueSkipped: {
-    color: '#8F887A',
+  labelBanked: {
+    color: BANKED.ink,
   },
-  eyebrowSkipped: {
-    color: 'rgba(122,116,102,0.75)',
+  copyRuleBanked: {
+    backgroundColor: BANKED.ashLine,
   },
-  labelSkipped: {
-    color: '#6E685B',
-  },
-  copyRuleSkipped: {
-    backgroundColor: 'rgba(155,148,132,0.45)',
-  },
-  glintSkipped: {
-    backgroundColor: 'rgba(155,148,132,0.5)',
-  },
-  stampWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    transform: [{ rotate: '-6deg' }],
-  },
-  stampText: {
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    lineHeight: 13,
-    letterSpacing: 3,
-    color: '#9B9484',
-  },
-  stampLine: {
-    width: 22,
-    height: 1,
-    backgroundColor: 'rgba(155,148,132,0.5)',
+  glintBanked: {
+    backgroundColor: BANKED.ashLine,
   },
   copy: {
     position: 'absolute',
@@ -479,14 +457,15 @@ const ms = StyleSheet.create({
 // The one living animation on the card: today's fire in a true sun — a
 // layered radiance built like the medallion's bloom (dark rim to bright
 // heart), a hairline halo ring, a struck-medal ray burst, and diamond
-// glints at the corners. The flame always burns in full color; on quiet
-// days the sun around it simply softens.
+// glints at the corners. On a day that cannot be written the whole sun is
+// banked: the rays pull back to even stubs, the ring breaks into dashes,
+// the flame stills to a warm ashen silhouette, and a coal breathes under it.
 function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
   const reduceMotion = useReducedMotion();
-  const quiet = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
-  const skipped = mode === 'all-skipped';
-  const full = !quiet && pct >= 100;
-  const sunColor = skipped ? '#A8A093' : GOLD;
+  // Nothing scheduled and a day laid aside are the same fire: banked.
+  const banked = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
+  const full = !banked && pct >= 100;
+  const sunColor = banked ? BANKED.ash : GOLD;
   const field = 150;
   const cx = field / 2;
   const ringR = 44;
@@ -495,8 +474,11 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
   const spin = useSharedValue(0);
 
   useEffect(() => {
-    if (reduceMotion) {
+    // A banked sun neither breathes nor turns — the coal underneath is the
+    // only thing still moving on the card.
+    if (reduceMotion || banked) {
       breathe.value = 0.5;
+      spin.value = 0;
       return;
     }
     breathe.value = 0;
@@ -506,23 +488,20 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
       true,
     );
     // The sun turns, imperceptibly slow — one revolution per minute.
-    // On a rest day it stands still.
     spin.value = 0;
-    if (!skipped) {
-      spin.value = withRepeat(
-        withTiming(1, { duration: 60000, easing: Easing.linear }),
-        -1,
-        false,
-      );
-    }
+    spin.value = withRepeat(
+      withTiming(1, { duration: 60000, easing: Easing.linear }),
+      -1,
+      false,
+    );
     return () => {
       cancelAnimation(breathe);
       cancelAnimation(spin);
     };
-  }, [breathe, reduceMotion, skipped, spin]);
+  }, [banked, breathe, reduceMotion, spin]);
 
   const outerGlowStyle = useAnimatedStyle(() => ({
-    opacity: (quiet ? 0.3 : 0.5) + breathe.value * (quiet ? 0.15 : 0.4),
+    opacity: banked ? 0.34 : 0.5 + breathe.value * 0.4,
   }));
 
   const spinStyle = useAnimatedStyle(() => ({
@@ -532,24 +511,35 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
   return (
     <View style={rf.stage}>
       {/* Layered radiance — the bloom grammar, radial */}
-      <Reanimated.View pointerEvents="none" style={[rf.glowOuter, outerGlowStyle, skipped && rf.glowOuterSkipped]} />
-      <View pointerEvents="none" style={[rf.glowMid, quiet && rf.glowQuiet, skipped && rf.glowMidSkipped]} />
-      <View pointerEvents="none" style={[rf.glowHeart, quiet && rf.glowHeartQuiet, full && rf.glowHeartFull, skipped && rf.glowHeartSkipped]} />
+      <Reanimated.View pointerEvents="none" style={[rf.glowOuter, outerGlowStyle, banked && rf.glowOuterBanked]} />
+      <View pointerEvents="none" style={[rf.glowMid, banked && rf.glowMidBanked]} />
+      <View pointerEvents="none" style={[rf.glowHeart, full && rf.glowHeartFull, banked && rf.glowHeartBanked]} />
 
-      {/* Hairline halo ring — steady while the rays turn */}
-      <Svg pointerEvents="none" width={field} height={field} style={[rf.rays, quiet && rf.raysQuiet]}>
-        <Circle cx={cx} cy={cx} r={ringR} fill="none" stroke={sunColor} strokeOpacity={full ? 0.44 : 0.32} strokeWidth={1} />
+      {/* Hairline halo ring — steady while the rays turn, and broken into
+          dashes once the sun is banked. */}
+      <Svg pointerEvents="none" width={field} height={field} style={[rf.rays, banked && rf.raysBanked]}>
+        <Circle
+          cx={cx}
+          cy={cx}
+          r={ringR}
+          fill="none"
+          stroke={sunColor}
+          strokeOpacity={banked ? 0.5 : full ? 0.44 : 0.32}
+          strokeWidth={1}
+          strokeDasharray={banked ? '3 6' : undefined}
+        />
       </Svg>
 
-      <Reanimated.View pointerEvents="none" style={[rf.rays, spinStyle, quiet && rf.raysQuiet]}>
+      <Reanimated.View pointerEvents="none" style={[rf.rays, spinStyle, banked && rf.raysBanked]}>
         <Svg width={field} height={field}>
-          {/* Ray burst — long/short alternating, like a struck medal.
-              On a finished day the sun stands at full strength. */}
+          {/* Ray burst — long/short alternating, like a struck medal. On a
+              finished day the sun stands at full strength; on a banked one
+              every ray pulls back to the same short stub. */}
           {Array.from({ length: 12 }).map((_, index) => {
             const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
-            const long = index % 2 === 0;
+            const long = !banked && index % 2 === 0;
             const r1 = rayInner;
-            const r2 = rayInner + (long ? (full ? 24 : 20) : (full ? 15 : 12));
+            const r2 = rayInner + (banked ? 7 : long ? (full ? 24 : 20) : (full ? 15 : 12));
             return (
               <Line
                 key={index}
@@ -558,8 +548,8 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
                 x2={cx + r2 * Math.cos(angle)}
                 y2={cx + r2 * Math.sin(angle)}
                 stroke={sunColor}
-                strokeOpacity={long ? (full ? 0.64 : 0.52) : (full ? 0.4 : 0.3)}
-                strokeWidth={long ? 1.9 : 1.35}
+                strokeOpacity={banked ? 0.36 : long ? (full ? 0.64 : 0.52) : (full ? 0.4 : 0.3)}
+                strokeWidth={banked ? 1.2 : long ? 1.9 : 1.35}
                 strokeLinecap="round"
               />
             );
@@ -568,13 +558,17 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
       </Reanimated.View>
 
       {/* Diamond glints in the sun's corners — a third joins on a full day */}
-      <View pointerEvents="none" style={[rf.glint, { right: 6, top: 10 }, skipped && rf.glintSkipped]} />
-      <View pointerEvents="none" style={[rf.glintSmall, { left: 10, bottom: 14 }, skipped && rf.glintSkipped]} />
+      <View pointerEvents="none" style={[rf.glint, { right: 6, top: 10 }, banked && rf.glintBanked]} />
+      <View pointerEvents="none" style={[rf.glintSmall, { left: 10, bottom: 14 }, banked && rf.glintBanked]} />
       {full && <View pointerEvents="none" style={[rf.glintSmall, { left: 6, top: 20 }]} />}
 
-      {/* On a rest day the fire itself rests: a still, ashen silhouette. */}
-      {skipped ? (
-        <Image source={FLAME_PNG} style={[rf.flameStill, { tintColor: '#AFA795' }]} />
+      {/* Banked: the fire itself stands still — a warm ashen silhouette over
+          a coal that is still breathing, so the day reads as held, not over. */}
+      {banked ? (
+        <>
+          <EmberPulse size={34} style={rf.emberSeat} />
+          <Image key="flame-banked" source={FLAME_PNG} style={rf.flameStill} />
+        </>
       ) : (
         <FocusLottie name="flame" loop speed={0.9} style={rf.flame} />
       )}
@@ -610,35 +604,33 @@ const rf = StyleSheet.create({
     borderRadius: 27,
     backgroundColor: 'rgba(255,248,228,0.95)',
   },
-  glowQuiet: {
-    backgroundColor: 'rgba(245,229,190,0.35)',
-  },
-  glowHeartQuiet: {
-    backgroundColor: 'rgba(255,248,228,0.6)',
-  },
   glowHeartFull: {
     width: 58,
     height: 58,
     borderRadius: 29,
     backgroundColor: 'rgba(255,250,232,1)',
   },
-  glowOuterSkipped: {
-    backgroundColor: 'rgba(198,192,178,0.4)',
+  glowOuterBanked: {
+    backgroundColor: 'rgba(222,210,184,0.42)',
   },
-  glowMidSkipped: {
-    backgroundColor: 'rgba(213,208,196,0.55)',
+  glowMidBanked: {
+    backgroundColor: 'rgba(239,231,212,0.55)',
   },
-  glowHeartSkipped: {
-    backgroundColor: 'rgba(246,244,238,0.92)',
+  glowHeartBanked: {
+    backgroundColor: 'rgba(251,247,236,0.92)',
   },
-  glintSkipped: {
-    backgroundColor: 'rgba(155,148,132,0.5)',
+  glintBanked: {
+    backgroundColor: BANKED.ashLine,
+  },
+  emberSeat: {
+    bottom: 24,
   },
   flameStill: {
-    width: 60,
-    height: 60,
+    width: 58,
+    height: 58,
     resizeMode: 'contain',
-    opacity: 0.62,
+    opacity: 0.66,
+    tintColor: '#C6B594',
   },
   rays: {
     position: 'absolute',
@@ -647,8 +639,8 @@ const rf = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  raysQuiet: {
-    opacity: 0.55,
+  raysBanked: {
+    opacity: 0.72,
   },
   glint: {
     position: 'absolute',
@@ -868,7 +860,8 @@ function TodayPulseRing({ muted = false }: { muted?: boolean }) {
   const t = useSharedValue(0);
 
   useEffect(() => {
-    if (reduceMotion) {
+    // A banked day's ring is held, not breathing.
+    if (reduceMotion || muted) {
       t.value = 0.5;
       return;
     }
@@ -879,10 +872,10 @@ function TodayPulseRing({ muted = false }: { muted?: boolean }) {
       true,
     );
     return () => cancelAnimation(t);
-  }, [reduceMotion, t]);
+  }, [muted, reduceMotion, t]);
 
   const pulse = useAnimatedStyle(() => ({
-    opacity: 0.2 + t.value * 0.5,
+    opacity: muted ? 0.5 : 0.2 + t.value * 0.5,
   }));
 
   return <Reanimated.View pointerEvents="none" style={[s.todayRing, muted && s.todayRingMuted, pulse]} />;
@@ -893,15 +886,17 @@ function TodayPulseRing({ muted = false }: { muted?: boolean }) {
 // tile is struck like a small coin: a gradient face, a warm rim, and a
 // sheen once the day is won.
 function FlameTile({ pct, mode, isToday }: { pct: number | null; mode: DayMode; isToday: boolean }) {
-  const ring = isToday ? <TodayPulseRing muted={mode === 'all-skipped'} /> : null;
+  const bankedDay = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
+  const ring = isToday ? <TodayPulseRing muted={bankedDay} /> : null;
 
-  // No tasks OR all-skipped → an empty socket with a resting stud
-  if (pct === null || mode === 'no-tasks' || mode === 'all-skipped') {
+  // No tasks OR all-skipped → an empty socket with a resting stud; today's
+  // own socket keeps a warm coal in it rather than a cold one.
+  if (bankedDay) {
     return (
       <View style={s.flameWrap}>
         {ring}
         <View style={[s.flameTile, s.flameEmpty]}>
-          <View style={s.emptyStud} />
+          <View style={[s.emptyStud, isToday && s.emptyStudToday]} />
         </View>
       </View>
     );
@@ -1023,6 +1018,9 @@ export default function WeeklyRhythm() {
   const todayPct = todayStat?.pct ?? 0;
   const todayMode: DayMode = todayStat?.mode ?? 'no-tasks';
   const skippedToday = todayMode === 'all-skipped';
+  // The card banks whenever today cannot be written: nothing was scheduled,
+  // or every task was laid aside.
+  const banked = todayMode === 'no-tasks' || skippedToday;
 
   const openAnalytics = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -1041,9 +1039,9 @@ export default function WeeklyRhythm() {
   // The voice keeps pace with the day: reserved while little is done,
   // warm in the middle, expectant near the top.
   const headline = todayMode === 'no-tasks'
-    ? 'A quiet day — nothing scheduled.'
+    ? 'A quiet day — nothing is scheduled. The fire keeps its warmth.'
     : todayMode === 'all-skipped'
-      ? 'Today was laid aside to rest.'
+      ? 'Today was laid aside to rest. Tomorrow the candle is lit again.'
       : todayPct >= 100
         ? 'The candle is full — today’s flame is lit.'
         : todayPct >= 70
@@ -1061,17 +1059,16 @@ export default function WeeklyRhythm() {
         <Text style={s.heading}>Your Progress</Text>
       </View>
 
-      <TouchableOpacity style={[s.card, skippedToday && s.cardSkipped]} activeOpacity={0.88} onPress={openAnalytics}>
+      <TouchableOpacity style={[s.card, banked && s.cardBanked]} activeOpacity={0.88} onPress={openAnalytics}>
         <LinearGradient
-          colors={skippedToday
-            ? ['#E9E7DF', '#F4F3EE', '#FBFAF8']
-            : ['#F8E7BE', '#FFF8E9', '#FFFEFA']}
+          colors={banked ? BANKED.surface : ['#F8E7BE', '#FFF8E9', '#FFFEFA']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <DawnBackdrop muted={skippedToday} />
-        {!skippedToday && <CardGlint />}
+        <DawnBackdrop muted={banked} />
+        {/* No sweep across a resting card — the ember carries the motion. */}
+        {!banked && <CardGlint />}
 
         {/* Hero: today's percentage in the bloom, today's fire radiant */}
         <View style={s.heroRow}>
@@ -1079,10 +1076,12 @@ export default function WeeklyRhythm() {
           <RadiantFlame pct={todayStat?.pct ?? null} mode={todayMode} />
         </View>
 
-        <Text style={[s.headline, skippedToday && s.headlineSkipped]} numberOfLines={2}>{headline}</Text>
+        {banked && <RestSeal label={skippedToday ? 'SKIPPED' : 'UNWRITTEN'} style={s.restSeal} />}
+
+        <Text style={[s.headline, banked && s.headlineBanked]} numberOfLines={2}>{headline}</Text>
 
         {/* The week band: candles, letters, flames between hairline rails */}
-        <View style={[s.weekBand, skippedToday && s.weekBandSkipped]}>
+        <View style={[s.weekBand, banked && s.weekBandBanked]}>
           <View style={s.candlesRow}>
             {display.map((d, i) => (
               <View key={i} style={s.weekCol}>
@@ -1094,7 +1093,7 @@ export default function WeeklyRhythm() {
           <View style={s.daysLabelRow}>
             {display.map((d, i) => (
               <View key={i} style={s.weekCol}>
-                <Text style={[s.dayLetter, d.isToday && (skippedToday ? s.dayLetterTodaySkipped : s.dayLetterToday)]}>{d.letter}</Text>
+                <Text style={[s.dayLetter, d.isToday && (banked ? s.dayLetterTodayBanked : s.dayLetterToday)]}>{d.letter}</Text>
               </View>
             ))}
           </View>
@@ -1113,18 +1112,18 @@ export default function WeeklyRhythm() {
       <TouchableOpacity
         activeOpacity={0.86}
         onPress={openAnalytics}
-        style={[s.analyticsBtn, skippedToday && s.analyticsBtnSkipped]}
+        style={[s.analyticsBtn, banked && s.analyticsBtnBanked]}
       >
         <LinearGradient
-          colors={skippedToday ? ['#F0EEE7', '#FAF9F5'] : ['#FBEED0', '#FFFDF7']}
+          colors={banked ? BANKED.buttonSurface : ['#FBEED0', '#FFFDF7']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <View style={[s.analyticsDiamond, skippedToday && s.analyticsDiamondSkipped]} />
-        <BarChart3 s={13} c={skippedToday ? '#8F887A' : C.goldDark} w={2.1} />
-        <Text style={[s.analyticsTxt, skippedToday && s.analyticsTxtSkipped]}>VIEW ANALYTICS</Text>
-        <View style={[s.analyticsDiamond, skippedToday && s.analyticsDiamondSkipped]} />
+        <View style={[s.analyticsDiamond, banked && s.analyticsDiamondBanked]} />
+        <BarChart3 s={13} c={banked ? BANKED.inkMuted : C.goldDark} w={2.1} />
+        <Text style={[s.analyticsTxt, banked && s.analyticsTxtBanked]}>VIEW ANALYTICS</Text>
+        <View style={[s.analyticsDiamond, banked && s.analyticsDiamondBanked]} />
       </TouchableOpacity>
     </View>
   );
@@ -1153,9 +1152,9 @@ const s = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
-  analyticsBtnSkipped: { borderColor: '#DED9CB' },
+  analyticsBtnBanked: { borderColor: BANKED.border },
   analyticsTxt: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.2, color: C.goldDark },
-  analyticsTxtSkipped: { color: '#8F887A' },
+  analyticsTxtBanked: { color: BANKED.inkMuted },
   analyticsDiamond: {
     width: 4,
     height: 4,
@@ -1163,7 +1162,7 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(197,160,89,0.5)',
     transform: [{ rotate: '45deg' }],
   },
-  analyticsDiamondSkipped: { backgroundColor: 'rgba(155,148,132,0.5)' },
+  analyticsDiamondBanked: { backgroundColor: BANKED.ashLine },
   card: {
     position: 'relative',
     overflow: 'hidden',
@@ -1187,7 +1186,8 @@ const s = StyleSheet.create({
     paddingLeft: 8,
     paddingRight: 10,
   },
-  cardSkipped: { borderColor: '#D9D4C6' },
+  cardBanked: { borderColor: BANKED.border },
+  restSeal: { marginTop: 12 },
   headline: {
     marginTop: 12,
     fontFamily: F.serif,
@@ -1196,9 +1196,10 @@ const s = StyleSheet.create({
     color: C.textSecondary,
     textAlign: 'center',
   },
-  headlineSkipped: {
+  headlineBanked: {
+    marginTop: 9,
     fontFamily: F.serifItalic,
-    color: '#8F887A',
+    color: BANKED.ink,
   },
   weekBand: {
     marginTop: 12,
@@ -1208,14 +1209,14 @@ const s = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: '#EADFC8',
   },
-  weekBandSkipped: { borderColor: '#DFDACD' },
+  weekBandBanked: { borderColor: BANKED.rule },
   candlesRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   daysLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 5, marginBottom: 6 },
   daysRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   weekCol: { flex: 1, alignItems: 'center' },
   dayLetter: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 0.6, color: C.textMuted },
   dayLetterToday: { color: C.goldDark },
-  dayLetterTodaySkipped: { color: '#8F887A' },
+  dayLetterTodayBanked: { color: BANKED.inkMuted },
 
   /* Bottom flame badge */
   flameWrap: {
@@ -1250,6 +1251,12 @@ const s = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: '#D8CDB6',
+  },
+  emptyStudToday: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: BANKED.ember,
   },
   tileSheen: {
     position: 'absolute',
@@ -1294,7 +1301,7 @@ const s = StyleSheet.create({
     borderColor: C.gold,
   },
   todayRingMuted: {
-    borderColor: '#B7B0A0',
+    borderColor: BANKED.ash,
   },
   flameGlow: {
     shadowColor: C.gold,

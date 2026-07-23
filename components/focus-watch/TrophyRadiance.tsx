@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
-import Svg, { Ellipse, Line, Path } from 'react-native-svg';
+import Svg, { Circle, Ellipse, Line, Path } from 'react-native-svg';
 import { F } from '@/constants/tokens';
+import { BANKED, EmberPulse, LedgerRule } from '@/components/shared/BankedEmber';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -28,10 +29,14 @@ function Sparkle({
   size,
   delay,
   style,
+  color = GOLD,
+  slow = false,
 }: {
   size: number;
   delay: number;
   style: object;
+  color?: string;
+  slow?: boolean;
 }) {
   const reduceMotion = useReducedMotion();
   const t = useSharedValue(0);
@@ -45,32 +50,35 @@ function Sparkle({
     t.value = withDelay(
       delay,
       withRepeat(
-        withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.quad) }),
+        withTiming(1, { duration: slow ? 4400 : 2400, easing: Easing.inOut(Easing.quad) }),
         -1,
         true
       )
     );
     return () => cancelAnimation(t);
-  }, [reduceMotion, delay, t]);
+  }, [reduceMotion, delay, slow, t]);
 
+  // Banked: the sparks are half as bright and take nearly twice as long.
   const twinkle = useAnimatedStyle(() => ({
-    opacity: 0.14 + t.value * 0.42,
+    opacity: slow ? 0.07 + t.value * 0.19 : 0.14 + t.value * 0.42,
   }));
 
   return (
     <Animated.View pointerEvents="none" style={[{ position: 'absolute' }, style, twinkle]}>
       <Svg width={size} height={size} viewBox="0 0 24 24">
-        <Path d={SPARKLE_PATH} fill={GOLD} />
+        <Path d={SPARKLE_PATH} fill={color} />
       </Svg>
     </Animated.View>
   );
 }
 
 // Card-wide backdrop: the shared hairline weave plus the twinkling sparkles.
-export function TrophyShineBackdrop() {
+export function TrophyShineBackdrop({ muted = false }: { muted?: boolean }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   const step = 30;
   const lineCount = box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
+  const weaveColor = muted ? BANKED.ash : GOLD;
+  const sparkleColor = muted ? BANKED.ember : GOLD;
 
   return (
     <View
@@ -92,7 +100,7 @@ export function TrophyShineBackdrop() {
                 y1={-4}
                 x2={offset - box.h - 8}
                 y2={box.h + 4}
-                stroke={GOLD}
+                stroke={weaveColor}
                 strokeOpacity={0.05}
                 strokeWidth={1}
               />
@@ -100,10 +108,10 @@ export function TrophyShineBackdrop() {
           })}
         </Svg>
       )}
-      <Sparkle size={13} delay={0} style={{ right: 92, top: 40 }} />
-      <Sparkle size={9} delay={900} style={{ right: 14, top: 24 }} />
-      <Sparkle size={11} delay={1700} style={{ right: 34, top: 104 }} />
-      <Sparkle size={8} delay={2600} style={{ left: 150, top: 30 }} />
+      <Sparkle size={13} delay={0} style={{ right: 92, top: 40 }} color={sparkleColor} slow={muted} />
+      <Sparkle size={9} delay={900} style={{ right: 14, top: 24 }} color={sparkleColor} slow={muted} />
+      <Sparkle size={11} delay={1700} style={{ right: 34, top: 104 }} color={sparkleColor} slow={muted} />
+      <Sparkle size={8} delay={2600} style={{ left: 150, top: 30 }} color={sparkleColor} slow={muted} />
     </View>
   );
 }
@@ -111,20 +119,32 @@ export function TrophyShineBackdrop() {
 // An open illustrated streak signature: the value and label stay readable,
 // while a small tilted trophy turns the metric into a quiet award moment.
 // There is deliberately no enclosing badge competing with the parent card.
-export function StreakMedallion({ value, size = 74 }: { value: number; size?: number }) {
+export function StreakMedallion({
+  value,
+  size = 74,
+  banked = false,
+}: {
+  value: number;
+  size?: number;
+  banked?: boolean;
+}) {
   const normalizedValue = Math.max(0, Math.trunc(value));
   const displayValue = normalizedValue >= 1_000_000
     ? `${Math.floor(normalizedValue / 1_000_000)}M`
     : normalizedValue >= 1_000
       ? `${Math.floor(normalizedValue / 1_000)}K`
       : String(normalizedValue);
-  const extraCharacters = Math.max(0, displayValue.length - 1);
+  // A held streak is still an earned one — the number keeps its full weight
+  // and only the bloom around it cools. A streak of zero on a banked day has
+  // nothing to show, so the well takes a ruled entry instead.
+  const ruled = banked && normalizedValue === 0;
+  const extraCharacters = ruled ? 0 : Math.max(0, displayValue.length - 1);
   const digitExpansion = extraCharacters === 0
     ? 0
     : size * 0.28 + Math.max(0, extraCharacters - 1) * size * 0.18;
   const valueFontScale = displayValue.length >= 3 ? 0.59 : 0.63;
   const ornamentSpacing = size * 0.16;
-  const dormant = normalizedValue === 0;
+  const dormant = !banked && normalizedValue === 0;
   const width = size * 2.05 + digitExpansion + ornamentSpacing;
   const height = size * 0.92;
 
@@ -144,7 +164,7 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
           cy={height * 0.56}
           rx={width * 0.52}
           ry={height * 0.52}
-          fill="#EBD5A0"
+          fill={banked ? BANKED.bloomRim : '#EBD5A0'}
           opacity={0.8}
           transform={`rotate(-5 ${width * 0.52} ${height * 0.56})`}
         />
@@ -153,7 +173,7 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
           cy={height * 0.53}
           rx={width * 0.46}
           ry={height * 0.44}
-          fill="#F5E5BE"
+          fill={banked ? BANKED.bloomMid : '#F5E5BE'}
           opacity={0.85}
           transform={`rotate(4 ${width * 0.52} ${height * 0.53})`}
         />
@@ -162,24 +182,27 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
           cy={height * 0.57}
           rx={width * 0.42}
           ry={height * 0.39}
-          fill="#FFF8E4"
+          fill={banked ? BANKED.bloomHeart : '#FFF8E4'}
           opacity={0.95}
           transform={`rotate(-3 ${width * 0.49} ${height * 0.57})`}
         />
+        {/* The engraved curve under the number, broken into dashes once the
+            day can no longer advance the streak. */}
         <Path
           d={`M ${size * 0.13 + width * 0.07} ${height * 0.82} C ${width * 0.43} ${height * 1.01}, ${width * 0.76} ${height * 0.97}, ${width * 1.0} ${height * 0.64}`}
           fill="none"
-          stroke={GOLD}
-          strokeOpacity={0.3}
+          stroke={banked ? BANKED.ash : GOLD}
+          strokeOpacity={banked ? 0.44 : 0.3}
           strokeWidth={1.15}
           strokeLinecap="round"
+          strokeDasharray={banked ? '3 5' : undefined}
         />
         <Line
           x1={size * 0.73 + digitExpansion + width * 0.07}
           y1={height * 0.32}
           x2={size * 0.73 + digitExpansion + width * 0.07}
           y2={height * 0.78}
-          stroke={GOLD}
+          stroke={banked ? BANKED.ash : GOLD}
           strokeOpacity={0.38}
           strokeWidth={1}
           strokeLinecap="round"
@@ -192,16 +215,20 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
           { left: size * 0.06, width: size * 0.62 + digitExpansion, height },
         ]}
       >
-        <Text
-          style={[
-            medallionStyles.value,
-            { fontSize: size * valueFontScale, lineHeight: size * 0.67 },
-            dormant && medallionStyles.valueDormant,
-          ]}
-          numberOfLines={1}
-        >
-          {displayValue}
-        </Text>
+        {ruled ? (
+          <LedgerRule width={size * 0.58} />
+        ) : (
+          <Text
+            style={[
+              medallionStyles.value,
+              { fontSize: size * valueFontScale, lineHeight: size * 0.67 },
+              dormant && medallionStyles.valueDormant,
+            ]}
+            numberOfLines={1}
+          >
+            {displayValue}
+          </Text>
+        )}
       </View>
 
       <View
@@ -210,13 +237,13 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
           { left: size * 0.82 + digitExpansion, top: height * 0.27 },
         ]}
       >
-        <Text style={medallionStyles.eyebrow} numberOfLines={1}>
+        <Text style={[medallionStyles.eyebrow, banked && medallionStyles.eyebrowBanked]} numberOfLines={1}>
           CURRENT
         </Text>
-        <Text style={medallionStyles.label} numberOfLines={1}>
+        <Text style={[medallionStyles.label, banked && medallionStyles.labelBanked]} numberOfLines={1}>
           STREAK
         </Text>
-        <View style={medallionStyles.copyRule} />
+        <View style={[medallionStyles.copyRule, banked && medallionStyles.copyRuleBanked]} />
       </View>
 
       <View
@@ -230,17 +257,24 @@ export function StreakMedallion({ value, size = 74 }: { value: number; size?: nu
           style={[
             medallionStyles.miniTrophyGlow,
             { width: size * 0.52, height: size * 0.52, borderRadius: size * 0.26 },
+            banked && medallionStyles.miniTrophyGlowBanked,
           ]}
         />
+        {/* A tinted Image must never share its key with an untinted one — the
+            template render sticks and the emblem comes back painted. */}
         <Image
+          key={banked ? 'mini-trophy-ash' : 'mini-trophy-gold'}
           source={TROPHY_EMBLEM}
           resizeMode="contain"
-          style={{ width: size * 0.45, height: size * 0.45, transform: [{ rotate: '-11deg' }] }}
+          style={[
+            { width: size * 0.45, height: size * 0.45, transform: [{ rotate: '-11deg' }] },
+            banked && medallionStyles.miniTrophyBanked,
+          ]}
         />
       </View>
 
-      <View pointerEvents="none" style={[medallionStyles.glint, { right: size * 0.03, top: height * 0.06 }]} />
-      <View pointerEvents="none" style={[medallionStyles.glintSmall, { right: size * 0.53, top: height * 0.12 }]} />
+      <View pointerEvents="none" style={[medallionStyles.glint, { right: size * 0.03, top: height * 0.06 }, banked && medallionStyles.glintBanked]} />
+      <View pointerEvents="none" style={[medallionStyles.glintSmall, { right: size * 0.53, top: height * 0.12 }, banked && medallionStyles.glintBanked]} />
     </View>
   );
 }
@@ -277,6 +311,9 @@ const medallionStyles = StyleSheet.create({
     letterSpacing: 1.15,
     color: 'rgba(121,89,30,0.72)',
   },
+  eyebrowBanked: {
+    color: BANKED.inkSoft,
+  },
   label: {
     fontFamily: F.sansBold,
     fontSize: 12,
@@ -284,12 +321,18 @@ const medallionStyles = StyleSheet.create({
     letterSpacing: 1.3,
     color: '#6F5016',
   },
+  labelBanked: {
+    color: BANKED.ink,
+  },
   copyRule: {
     width: 27,
     height: 1,
     marginTop: 4,
     borderRadius: 1,
     backgroundColor: 'rgba(169,134,63,0.45)',
+  },
+  copyRuleBanked: {
+    backgroundColor: BANKED.ashLine,
   },
   miniTrophy: {
     position: 'absolute',
@@ -299,6 +342,16 @@ const medallionStyles = StyleSheet.create({
   miniTrophyGlow: {
     position: 'absolute',
     backgroundColor: 'rgba(224,190,116,0.3)',
+  },
+  miniTrophyGlowBanked: {
+    backgroundColor: 'rgba(198,181,148,0.26)',
+  },
+  miniTrophyBanked: {
+    tintColor: '#C6B594',
+    opacity: 0.78,
+  },
+  glintBanked: {
+    backgroundColor: BANKED.ashLine,
   },
   glint: {
     position: 'absolute',
@@ -320,10 +373,46 @@ const medallionStyles = StyleSheet.create({
 
 // The emblem itself: a soft glow disc and a golden ray burst behind the real
 // trophy PNG. Rays alternate long/short like a struck medal.
-export function RadiantTrophy({ size = 62 }: { size?: number }) {
+//
+// `halo` is the hero dress the Trophy Streak card wears — a hairline ring
+// around the burst, and the burst turning imperceptibly slowly, one
+// revolution a minute, the same clock Home's sun keeps. Small inline
+// emblems leave it off and stay perfectly still.
+//
+// Banked, everything is held: the rays pull back to even stubs, the ring
+// breaks into dashes, the emblem cools to ash, and only a slow coal keeps
+// glowing behind it.
+export function RadiantTrophy({
+  size = 62,
+  banked = false,
+  halo = false,
+}: {
+  size?: number;
+  banked?: boolean;
+  halo?: boolean;
+}) {
+  const reduceMotion = useReducedMotion();
   const field = size * 1.9;
   const cx = field / 2;
   const inner = size * 0.62;
+  const ringR = inner * 0.92;
+  const rayColor = banked ? BANKED.ash : GOLD;
+  const spin = useSharedValue(0);
+
+  useEffect(() => {
+    spin.value = 0;
+    if (reduceMotion || banked || !halo) return;
+    spin.value = withRepeat(
+      withTiming(1, { duration: 60000, easing: Easing.linear }),
+      -1,
+      false
+    );
+    return () => cancelAnimation(spin);
+  }, [banked, halo, reduceMotion, spin]);
+
+  const spinStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${spin.value * 360}deg` }],
+  }));
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -334,36 +423,65 @@ export function RadiantTrophy({ size = 62 }: { size?: number }) {
           width: size * 1.35,
           height: size * 1.35,
           borderRadius: (size * 1.35) / 2,
-          backgroundColor: 'rgba(216,182,114,0.20)',
+          backgroundColor: banked ? 'rgba(206,193,166,0.22)' : 'rgba(216,182,114,0.20)',
         }}
       />
-      <Svg
-        pointerEvents="none"
-        width={field}
-        height={field}
-        style={{ position: 'absolute' }}
-      >
-        {Array.from({ length: 12 }).map((_, index) => {
-          const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
-          const long = index % 2 === 0;
-          const r1 = inner;
-          const r2 = inner + (long ? size * 0.30 : size * 0.17);
-          return (
-            <Line
-              key={index}
-              x1={cx + r1 * Math.cos(angle)}
-              y1={cx + r1 * Math.sin(angle)}
-              x2={cx + r2 * Math.cos(angle)}
-              y2={cx + r2 * Math.sin(angle)}
-              stroke={GOLD}
-              strokeOpacity={long ? 0.42 : 0.24}
-              strokeWidth={long ? 1.7 : 1.3}
-              strokeLinecap="round"
-            />
-          );
-        })}
-      </Svg>
-      <Image source={TROPHY_EMBLEM} style={{ width: size, height: size }} resizeMode="contain" />
+      {banked && <EmberPulse size={size * 0.52} />}
+
+      {/* Hairline halo — steady while the burst turns, dashed once banked. */}
+      {(halo || banked) && (
+        <Svg pointerEvents="none" width={field} height={field} style={{ position: 'absolute' }}>
+          <Circle
+            cx={cx}
+            cy={cx}
+            r={ringR}
+            fill="none"
+            stroke={rayColor}
+            strokeOpacity={banked ? 0.46 : 0.28}
+            strokeWidth={1}
+            strokeDasharray={banked ? '3 6' : undefined}
+          />
+        </Svg>
+      )}
+
+      <Animated.View pointerEvents="none" style={[{ position: 'absolute' }, spinStyle]}>
+        <Svg width={field} height={field}>
+          {Array.from({ length: 12 }).map((_, index) => {
+            const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
+            const long = !banked && index % 2 === 0;
+            const r1 = inner;
+            const r2 = inner + (banked ? size * 0.09 : long ? size * 0.30 : size * 0.17);
+            return (
+              <Line
+                key={index}
+                x1={cx + r1 * Math.cos(angle)}
+                y1={cx + r1 * Math.sin(angle)}
+                x2={cx + r2 * Math.cos(angle)}
+                y2={cx + r2 * Math.sin(angle)}
+                stroke={rayColor}
+                strokeOpacity={banked ? 0.32 : long ? 0.42 : 0.24}
+                strokeWidth={banked ? 1.2 : long ? 1.7 : 1.3}
+                strokeLinecap="round"
+              />
+            );
+          })}
+        </Svg>
+      </Animated.View>
+
+      {/* A tinted Image must never share its key with an untinted one. */}
+      <Image
+        key={banked ? 'trophy-ash' : 'trophy-gold'}
+        source={TROPHY_EMBLEM}
+        style={[{ width: size, height: size }, banked && trophyStyles.emblemBanked]}
+        resizeMode="contain"
+      />
     </View>
   );
 }
+
+const trophyStyles = StyleSheet.create({
+  emblemBanked: {
+    tintColor: '#C6B594',
+    opacity: 0.72,
+  },
+});
