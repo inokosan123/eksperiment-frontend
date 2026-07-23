@@ -58,6 +58,109 @@ export const BANKED = {
   struckWash: 'rgba(162,67,81,0.05)',
 } as const;
 
+/* ── Registers ────────────────────────────────────────────── */
+// Two resting registers, because two resting days are not the same day.
+//
+//   ash    — nobody ever scheduled anything. Warm parchment, warm ash
+//            marks, a warm coal. Gentle; nothing was lost.
+//   struck — you set the day aside yourself. That is graver, so it is
+//            graphite: a grey field, a black silhouette over a white
+//            pool, and the app's oxblood as the single accent. Value
+//            contrast does the work here, not tint — which is exactly
+//            what the ash register could not do on its own.
+export type BankedRegister = 'ash' | 'struck';
+
+export type BankedPalette = {
+  surface: readonly [string, string, string];
+  buttonSurface: readonly [string, string];
+  border: string;
+  rule: string;
+  line: string;
+  hair: string;
+  weave: string;
+  weaveOpacity: readonly [number, number];
+  sparkle: string | null;
+  bloomRim: string;
+  bloomMid: string;
+  bloomHeart: string;
+  engraving: string;
+  silhouette: string;
+  silhouetteOpacity: number;
+  glowOuter: string;
+  glowMid: string;
+  glowHeart: string;
+  coreDiscs: readonly [string, string, string];
+  ink: string;
+  inkSoft: string;
+  inkMuted: string;
+  stud: string;
+  seal: BankedTone;
+};
+
+const ASH_PALETTE: BankedPalette = {
+  surface: ['#F0E7D4', '#FAF6EC', '#FEFCF7'],
+  buttonSurface: ['#F3ECDC', '#FDFBF6'],
+  border: '#E4DAC4',
+  rule: '#E7DECC',
+  line: 'rgba(168,152,119,0.5)',
+  hair: 'rgba(168,152,119,0.34)',
+  weave: '#A89877',
+  weaveOpacity: [0.055, 0.032],
+  sparkle: '#D8B77E',
+  bloomRim: '#DED2B8',
+  bloomMid: '#EFE7D4',
+  bloomHeart: '#FBF7EC',
+  engraving: '#A89877',
+  silhouette: '#A2937A',
+  silhouetteOpacity: 0.82,
+  glowOuter: 'rgba(222,210,184,0.42)',
+  glowMid: 'rgba(239,231,212,0.55)',
+  glowHeart: 'rgba(251,247,236,0.92)',
+  coreDiscs: ['rgba(216,183,126,0.32)', 'rgba(233,203,145,0.48)', 'rgba(250,230,186,0.6)'],
+  ink: '#6C6151',
+  inkSoft: 'rgba(122,112,94,0.78)',
+  inkMuted: '#8A806D',
+  stud: '#D8B77E',
+  seal: 'quiet',
+};
+
+const STRUCK_PALETTE: BankedPalette = {
+  // Grey, and it keeps its gradient — the field lifts to near-white at the
+  // far corner so the card still has light in it.
+  surface: ['#D5D5D2', '#EBEBE8', '#FAFAF9'],
+  buttonSurface: ['#E3E3E0', '#FAFAF9'],
+  border: '#C7C7C2',
+  rule: '#D4D4CF',
+  line: 'rgba(41,38,35,0.5)',
+  hair: 'rgba(41,38,35,0.26)',
+  weave: '#3A3733',
+  weaveOpacity: [0.045, 0.026],
+  // A struck page does not twinkle.
+  sparkle: null,
+  bloomRim: '#CECECA',
+  bloomMid: '#E9E9E6',
+  bloomHeart: '#FFFFFF',
+  engraving: '#3A3733',
+  // The app's near-black, struck nearly solid — this is the element the
+  // whole composition hangs on.
+  silhouette: '#1C1917',
+  silhouetteOpacity: 0.92,
+  glowOuter: 'rgba(198,198,194,0.44)',
+  glowMid: 'rgba(228,228,224,0.62)',
+  glowHeart: 'rgba(255,255,255,0.96)',
+  // White, not gold: the silhouette reads as a cut-out held to the light.
+  coreDiscs: ['rgba(255,255,255,0.46)', 'rgba(255,255,255,0.7)', 'rgba(255,255,255,0.92)'],
+  ink: '#1C1917',
+  inkSoft: 'rgba(28,25,23,0.6)',
+  inkMuted: '#57534E',
+  stud: '#A24351',
+  seal: 'struck',
+};
+
+export function bankedPalette(register: BankedRegister): BankedPalette {
+  return register === 'struck' ? STRUCK_PALETTE : ASH_PALETTE;
+}
+
 export type BankedTone = 'quiet' | 'struck';
 
 function toneInk(tone: BankedTone) {
@@ -74,7 +177,7 @@ function toneLine(tone: BankedTone) {
 // running against the first — so the surface reads as laid paper rather
 // than as the same gold field with the colour taken out. It is the
 // texture, not the tint, that makes a quiet card look composed.
-export function BankedWeave() {
+export function BankedWeave({ palette = ASH_PALETTE }: { palette?: BankedPalette }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   const stepA = 30;
   const stepB = 46;
@@ -102,8 +205,8 @@ export function BankedWeave() {
                 y1={-4}
                 x2={offset - box.h - 8}
                 y2={box.h + 4}
-                stroke={BANKED.ash}
-                strokeOpacity={0.055}
+                stroke={palette.weave}
+                strokeOpacity={palette.weaveOpacity[0]}
                 strokeWidth={1}
               />
             );
@@ -117,8 +220,8 @@ export function BankedWeave() {
                 y1={-4}
                 x2={offset + box.h + 8}
                 y2={box.h + 4}
-                stroke={BANKED.ash}
-                strokeOpacity={0.032}
+                stroke={palette.weave}
+                strokeOpacity={palette.weaveOpacity[1]}
                 strokeWidth={1}
               />
             );
@@ -137,13 +240,15 @@ export function BankedWeave() {
 export function LedgerCartouche({
   width = 58,
   height = 32,
-  tone = 'quiet',
+  line = BANKED.ashLine,
+  gem = line,
 }: {
   width?: number;
   height?: number;
-  tone?: BankedTone;
+  line?: string;
+  // The one drop of the stamp's ink inside an otherwise engraved frame.
+  gem?: string;
 }) {
-  const line = toneLine(tone);
   const cut = Math.min(7, height * 0.24);
   const inset = 0.75;
   const frame = [
@@ -160,18 +265,18 @@ export function LedgerCartouche({
 
   const cy = height / 2;
   const cx = width / 2;
-  const gem = Math.max(3, width * 0.055);
+  const gemR = Math.max(3, width * 0.055);
   const barOuter = width * 0.19;
   // Held off the gem by a fixed gap so the rule never crowds it at any size.
-  const barInner = cx - gem - 3.5;
+  const barInner = cx - gemR - 3.5;
 
   return (
     <Svg pointerEvents="none" width={width} height={height}>
       <Path d={frame} fill="none" stroke={line} strokeWidth={1} strokeLinejoin="round" />
       <Line x1={barOuter} y1={cy} x2={barInner} y2={cy} stroke={line} strokeWidth={1.5} strokeLinecap="round" />
       <Path
-        d={`M ${cx} ${cy - gem} L ${cx + gem} ${cy} L ${cx} ${cy + gem} L ${cx - gem} ${cy} Z`}
-        fill={line}
+        d={`M ${cx} ${cy - gemR} L ${cx + gemR} ${cy} L ${cx} ${cy + gemR} L ${cx - gemR} ${cy} Z`}
+        fill={gem}
       />
       <Line
         x1={width - barInner}
@@ -192,9 +297,13 @@ export function LedgerCartouche({
 // activity. Concentric discs stand in for a radial falloff.
 export function EmberPulse({
   size = 30,
+  discs = ASH_PALETTE.coreDiscs,
   style,
 }: {
   size?: number;
+  // Warm in the ash register, white in the struck one — there the glow is
+  // light behind a cut-out rather than a coal under ash.
+  discs?: readonly [string, string, string];
   style?: ViewStyle;
 }) {
   const reduceMotion = useReducedMotion();
@@ -225,19 +334,19 @@ export function EmberPulse({
       <View
         style={[
           ember.disc,
-          { width: size, height: size, borderRadius: size / 2, backgroundColor: 'rgba(216,183,126,0.32)' },
+          { width: size, height: size, borderRadius: size / 2, backgroundColor: discs[0] },
         ]}
       />
       <View
         style={[
           ember.disc,
-          { width: size * 0.66, height: size * 0.66, borderRadius: size * 0.33, backgroundColor: 'rgba(233,203,145,0.48)' },
+          { width: size * 0.66, height: size * 0.66, borderRadius: size * 0.33, backgroundColor: discs[1] },
         ]}
       />
       <View
         style={[
           ember.disc,
-          { width: size * 0.36, height: size * 0.36, borderRadius: size * 0.18, backgroundColor: 'rgba(250,230,186,0.6)' },
+          { width: size * 0.36, height: size * 0.36, borderRadius: size * 0.18, backgroundColor: discs[2] },
         ]}
       />
     </Reanimated.View>

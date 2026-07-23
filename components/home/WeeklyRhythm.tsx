@@ -30,7 +30,14 @@ import { useTasks } from '@/components/tasks/TaskProvider';
 import { listTaskInstancesBetween } from '@/components/tasks/taskDb';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import { BANKED, BankedWeave, EmberPulse, LedgerCartouche, RestSeal } from '@/components/shared/BankedEmber';
+import {
+  bankedPalette,
+  BankedWeave,
+  EmberPulse,
+  LedgerCartouche,
+  RestSeal,
+  type BankedPalette,
+} from '@/components/shared/BankedEmber';
 
 
 const FLAME_PNG = require('@/assets/images/streak-flame-512.png');
@@ -46,6 +53,12 @@ const GOLD = '#C5A059';
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 type DayMode = 'no-tasks' | 'all-skipped' | 'normal';
+
+// A day laid aside is graver than a day nobody scheduled, so it rests in
+// the graphite register while an unscheduled one stays on warm parchment.
+function paletteFor(mode: DayMode): BankedPalette {
+  return bankedPalette(mode === 'all-skipped' ? 'struck' : 'ash');
+}
 
 type DayStat = {
   letter: string;
@@ -181,11 +194,11 @@ const cg = StyleSheet.create({
   band: { position: 'absolute', top: -30, bottom: -30, width: 96 },
 });
 
-function DawnBackdrop({ muted = false }: { muted?: boolean }) {
+function DawnBackdrop({ muted = false, palette }: { muted?: boolean; palette: BankedPalette }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   const step = 30;
   const lineCount = !muted && box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
-  const sparkleColor = muted ? BANKED.ember : GOLD;
+  const sparkleColor = muted ? palette.sparkle : GOLD;
 
   return (
     <View
@@ -198,7 +211,7 @@ function DawnBackdrop({ muted = false }: { muted?: boolean }) {
     >
       {/* Resting, the single gold rake gives way to the counter-raked ash
           weave — laid paper instead of a drained gold field. */}
-      {muted && <BankedWeave />}
+      {muted && <BankedWeave palette={palette} />}
       {lineCount > 0 && (
         <Svg width={box.w} height={box.h} style={StyleSheet.absoluteFill}>
           {Array.from({ length: lineCount }).map((_, index) => {
@@ -218,10 +231,15 @@ function DawnBackdrop({ muted = false }: { muted?: boolean }) {
           })}
         </Svg>
       )}
-      <Sparkle size={13} delay={0} style={{ right: 86, top: 30 }} color={sparkleColor} slow={muted} />
-      <Sparkle size={9} delay={900} style={{ right: 16, top: 18 }} color={sparkleColor} slow={muted} />
-      <Sparkle size={8} delay={1700} style={{ left: 148, top: 24 }} color={sparkleColor} slow={muted} />
-      <Sparkle size={11} delay={2600} style={{ left: 20, top: 118 }} color={sparkleColor} slow={muted} />
+      {/* A struck page does not twinkle — its palette returns no spark. */}
+      {sparkleColor !== null && (
+        <>
+          <Sparkle size={13} delay={0} style={{ right: 86, top: 30 }} color={sparkleColor} slow={muted} />
+          <Sparkle size={9} delay={900} style={{ right: 16, top: 18 }} color={sparkleColor} slow={muted} />
+          <Sparkle size={8} delay={1700} style={{ left: 148, top: 24 }} color={sparkleColor} slow={muted} />
+          <Sparkle size={11} delay={2600} style={{ left: 20, top: 118 }} color={sparkleColor} slow={muted} />
+        </>
+      )}
     </View>
   );
 }
@@ -240,6 +258,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
   // where the number would stand, and a dashed track instead of a live one.
   const banked = mode === 'no-tasks' || mode === 'all-skipped';
   const skipped = mode === 'all-skipped';
+  const pal = paletteFor(mode);
   const clamped = Math.round(Math.max(0, Math.min(100, pct)));
   const display = banked ? '' : String(clamped);
   const extraCharacters = Math.max(0, display.length - 1);
@@ -282,7 +301,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           cy={height * 0.56}
           rx={width * 0.52}
           ry={height * 0.52}
-          fill={banked ? BANKED.bloomRim : '#EBD5A0'}
+          fill={banked ? pal.bloomRim : '#EBD5A0'}
           opacity={0.8}
           transform={`rotate(-5 ${width * 0.52} ${height * 0.56})`}
         />
@@ -291,7 +310,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           cy={height * 0.53}
           rx={width * 0.46}
           ry={height * 0.44}
-          fill={banked ? BANKED.bloomMid : '#F5E5BE'}
+          fill={banked ? pal.bloomMid : '#F5E5BE'}
           opacity={0.85}
           transform={`rotate(4 ${width * 0.52} ${height * 0.53})`}
         />
@@ -300,7 +319,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           cy={height * 0.57}
           rx={width * 0.42}
           ry={height * 0.39}
-          fill={banked ? BANKED.bloomHeart : '#FFF8E4'}
+          fill={banked ? pal.bloomHeart : '#FFF8E4'}
           opacity={0.95}
           transform={`rotate(-3 ${width * 0.49} ${height * 0.57})`}
         />
@@ -309,7 +328,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
         <Path
           d={`M ${size * 0.13 + width * 0.07} ${height * 0.82} C ${width * 0.43} ${height * 1.01}, ${width * 0.76} ${height * 0.97}, ${width * 1.0} ${height * 0.64}`}
           fill="none"
-          stroke={banked ? BANKED.ash : GOLD}
+          stroke={banked ? pal.engraving : GOLD}
           strokeOpacity={banked ? 0.42 : 0.18}
           strokeWidth={1.5}
           strokeLinecap="round"
@@ -332,7 +351,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           y1={height * 0.32}
           x2={size * 0.92 + digitExpansion + width * 0.07}
           y2={height * 0.78}
-          stroke={banked ? BANKED.ash : GOLD}
+          stroke={banked ? pal.engraving : GOLD}
           strokeOpacity={0.38}
           strokeWidth={1}
           strokeLinecap="round"
@@ -346,12 +365,13 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
         ]}
       >
         {banked ? (
-          // A day you struck yourself is ruled out in oxblood; a day nobody
-          // ever wrote on is simply left blank in ash.
+          // A day you struck yourself carries one drop of oxblood in the
+          // gem; a day nobody ever wrote on is simply left blank in ash.
           <LedgerCartouche
             width={size * 0.78}
             height={size * 0.44}
-            tone={skipped ? 'struck' : 'quiet'}
+            line={pal.line}
+            gem={skipped ? pal.stud : undefined}
           />
         ) : (
           <Text
@@ -370,15 +390,15 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
           { left: size * 1.04 + digitExpansion, top: height * 0.27 },
         ]}
       >
-        <Text style={[ms.eyebrow, banked && ms.eyebrowBanked]} numberOfLines={1}>TODAY</Text>
-        <Text style={[ms.label, banked && ms.labelBanked]} numberOfLines={1}>
+        <Text style={[ms.eyebrow, banked && { color: pal.inkSoft }]} numberOfLines={1}>TODAY</Text>
+        <Text style={[ms.label, banked && { color: pal.ink }]} numberOfLines={1}>
           {skipped ? 'AT REST' : banked ? 'NO TASKS' : 'PROGRESS'}
         </Text>
-        <View style={[ms.copyRule, banked && ms.copyRuleBanked]} />
+        <View style={[ms.copyRule, banked && { backgroundColor: pal.line }]} />
       </View>
 
-      <View pointerEvents="none" style={[ms.glint, { right: size * 0.05, top: height * 0.08 }, banked && ms.glintBanked]} />
-      <View pointerEvents="none" style={[ms.glintSmall, { right: size * 0.42, top: height * 0.86 }, banked && ms.glintBanked]} />
+      <View pointerEvents="none" style={[ms.glint, { right: size * 0.05, top: height * 0.08 }, banked && { backgroundColor: pal.line }]} />
+      <View pointerEvents="none" style={[ms.glintSmall, { right: size * 0.42, top: height * 0.86 }, banked && { backgroundColor: pal.line }]} />
     </View>
   );
 }
@@ -403,18 +423,6 @@ const ms = StyleSheet.create({
     fontSize: 21,
     letterSpacing: 0,
     color: '#8B6B2F',
-  },
-  eyebrowBanked: {
-    color: BANKED.inkSoft,
-  },
-  labelBanked: {
-    color: BANKED.ink,
-  },
-  copyRuleBanked: {
-    backgroundColor: BANKED.ashLine,
-  },
-  glintBanked: {
-    backgroundColor: BANKED.ashLine,
   },
   copy: {
     position: 'absolute',
@@ -467,13 +475,16 @@ const ms = StyleSheet.create({
 // heart), a hairline halo ring, a struck-medal ray burst, and diamond
 // glints at the corners. On a day that cannot be written the whole sun is
 // banked: the rays pull back to even stubs, the ring breaks into dashes,
-// the flame stills to a warm ashen silhouette, and a coal breathes under it.
+// the flame stills to a silhouette over a breathing core. In the ash
+// register that is a warm shadow over a coal; struck, it is a black
+// cut-out held against white light.
 function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
   const reduceMotion = useReducedMotion();
   // Nothing scheduled and a day laid aside are the same fire: banked.
   const banked = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
   const full = !banked && pct >= 100;
-  const sunColor = banked ? BANKED.ash : GOLD;
+  const pal = paletteFor(mode);
+  const sunColor = banked ? pal.engraving : GOLD;
   const field = 150;
   const cx = field / 2;
   const ringR = 44;
@@ -519,9 +530,9 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
   return (
     <View style={rf.stage}>
       {/* Layered radiance — the bloom grammar, radial */}
-      <Reanimated.View pointerEvents="none" style={[rf.glowOuter, outerGlowStyle, banked && rf.glowOuterBanked]} />
-      <View pointerEvents="none" style={[rf.glowMid, banked && rf.glowMidBanked]} />
-      <View pointerEvents="none" style={[rf.glowHeart, full && rf.glowHeartFull, banked && rf.glowHeartBanked]} />
+      <Reanimated.View pointerEvents="none" style={[rf.glowOuter, outerGlowStyle, banked && { backgroundColor: pal.glowOuter }]} />
+      <View pointerEvents="none" style={[rf.glowMid, banked && { backgroundColor: pal.glowMid }]} />
+      <View pointerEvents="none" style={[rf.glowHeart, full && rf.glowHeartFull, banked && { backgroundColor: pal.glowHeart }]} />
 
       {/* Hairline halo ring — steady while the rays turn, and broken into
           dashes once the sun is banked. */}
@@ -580,16 +591,20 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
       </Reanimated.View>
 
       {/* Diamond glints in the sun's corners — a third joins on a full day */}
-      <View pointerEvents="none" style={[rf.glint, { right: 6, top: 10 }, banked && rf.glintBanked]} />
-      <View pointerEvents="none" style={[rf.glintSmall, { left: 10, bottom: 14 }, banked && rf.glintBanked]} />
+      <View pointerEvents="none" style={[rf.glint, { right: 6, top: 10 }, banked && { backgroundColor: pal.line }]} />
+      <View pointerEvents="none" style={[rf.glintSmall, { left: 10, bottom: 14 }, banked && { backgroundColor: pal.line }]} />
       {full && <View pointerEvents="none" style={[rf.glintSmall, { left: 6, top: 20 }]} />}
 
-      {/* Banked: the fire itself stands still — a warm ashen silhouette over
-          a coal that is still breathing, so the day reads as held, not over. */}
+      {/* Banked: the fire itself stands still — a silhouette over a core
+          that is still breathing, so the day reads as held, not over. */}
       {banked ? (
         <>
-          <EmberPulse size={40} style={rf.emberSeat} />
-          <Image key="flame-banked" source={FLAME_PNG} style={rf.flameStill} />
+          <EmberPulse size={40} discs={pal.coreDiscs} style={rf.emberSeat} />
+          <Image
+            key={mode === 'all-skipped' ? 'flame-struck' : 'flame-banked'}
+            source={FLAME_PNG}
+            style={[rf.flameStill, { tintColor: pal.silhouette, opacity: pal.silhouetteOpacity }]}
+          />
         </>
       ) : (
         <FocusLottie name="flame" loop speed={0.9} style={rf.flame} />
@@ -632,30 +647,16 @@ const rf = StyleSheet.create({
     borderRadius: 29,
     backgroundColor: 'rgba(255,250,232,1)',
   },
-  glowOuterBanked: {
-    backgroundColor: 'rgba(222,210,184,0.42)',
-  },
-  glowMidBanked: {
-    backgroundColor: 'rgba(239,231,212,0.55)',
-  },
-  glowHeartBanked: {
-    backgroundColor: 'rgba(251,247,236,0.92)',
-  },
-  glintBanked: {
-    backgroundColor: BANKED.ashLine,
-  },
   emberSeat: {
     bottom: 24,
   },
   // A silhouette only reads as one when it is genuinely darker than the
-  // paper behind it. Warm ash, not grey, and struck firmly — the coal
-  // breathing underneath does the softening.
+  // paper behind it — the register's palette supplies the ink and the
+  // breathing core underneath does the softening.
   flameStill: {
     width: 58,
     height: 58,
     resizeMode: 'contain',
-    opacity: 0.82,
-    tintColor: '#A2937A',
   },
   rays: {
     position: 'absolute',
@@ -689,7 +690,7 @@ const rf = StyleSheet.create({
 /* ── Bottom badge ─────────────────────────────────────────── */
 // A soft ring that breathes around today's tile — the only motion in the
 // week band, marking the day being written.
-function TodayPulseRing({ muted = false }: { muted?: boolean }) {
+function TodayPulseRing({ muted = false, mutedColor }: { muted?: boolean; mutedColor?: string }) {
   const reduceMotion = useReducedMotion();
   const t = useSharedValue(0);
 
@@ -712,7 +713,12 @@ function TodayPulseRing({ muted = false }: { muted?: boolean }) {
     opacity: muted ? 0.5 : 0.2 + t.value * 0.5,
   }));
 
-  return <Reanimated.View pointerEvents="none" style={[s.todayRing, muted && s.todayRingMuted, pulse]} />;
+  return (
+    <Reanimated.View
+      pointerEvents="none"
+      style={[s.todayRing, muted && !!mutedColor && { borderColor: mutedColor }, pulse]}
+    />
+  );
 }
 
 // Static PNG flames only — the hero carries the one living Lottie, so a
@@ -721,16 +727,20 @@ function TodayPulseRing({ muted = false }: { muted?: boolean }) {
 // sheen once the day is won.
 function FlameTile({ pct, mode, isToday }: { pct: number | null; mode: DayMode; isToday: boolean }) {
   const bankedDay = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
-  const ring = isToday ? <TodayPulseRing muted={bankedDay} /> : null;
+  const pal = paletteFor(mode);
+  const ring = isToday
+    ? <TodayPulseRing muted={bankedDay} mutedColor={pal.engraving} />
+    : null;
 
-  // No tasks OR all-skipped → an empty socket with a resting stud; today's
-  // own socket keeps a warm coal in it rather than a cold one.
+  // No tasks OR all-skipped → an empty socket with a resting stud. Today's
+  // own socket keeps a live mark: a coal on a quiet day, a drop of the
+  // stamp's oxblood on a struck one.
   if (bankedDay) {
     return (
       <View style={s.flameWrap}>
         {ring}
         <View style={[s.flameTile, s.flameEmpty]}>
-          <View style={[s.emptyStud, isToday && s.emptyStudToday]} />
+          <View style={[s.emptyStud, isToday && [s.emptyStudToday, { backgroundColor: pal.stud }]]} />
         </View>
       </View>
     );
@@ -853,8 +863,10 @@ export default function WeeklyRhythm() {
   const todayMode: DayMode = todayStat?.mode ?? 'no-tasks';
   const skippedToday = todayMode === 'all-skipped';
   // The card banks whenever today cannot be written: nothing was scheduled,
-  // or every task was laid aside.
+  // or every task was laid aside. The register follows the reason — warm
+  // parchment for an unwritten day, graphite for a struck one.
   const banked = todayMode === 'no-tasks' || skippedToday;
+  const todayPal = paletteFor(todayMode);
 
   const openAnalytics = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -895,14 +907,18 @@ export default function WeeklyRhythm() {
         <Text style={s.heading}>Your Progress</Text>
       </View>
 
-      <TouchableOpacity style={[s.card, banked && s.cardBanked]} activeOpacity={0.88} onPress={openAnalytics}>
+      <TouchableOpacity
+        style={[s.card, banked && { borderColor: todayPal.border }]}
+        activeOpacity={0.88}
+        onPress={openAnalytics}
+      >
         <LinearGradient
-          colors={banked ? BANKED.surface : ['#F8E7BE', '#FFF8E9', '#FFFEFA']}
+          colors={banked ? todayPal.surface : ['#F8E7BE', '#FFF8E9', '#FFFEFA']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <DawnBackdrop muted={banked} />
+        <DawnBackdrop muted={banked} palette={todayPal} />
         {/* No sweep across a resting card — the ember carries the motion. */}
         {!banked && <CardGlint />}
 
@@ -915,19 +931,22 @@ export default function WeeklyRhythm() {
         {banked && (
           <RestSeal
             label={skippedToday ? 'SKIPPED' : 'UNWRITTEN'}
-            tone={skippedToday ? 'struck' : 'quiet'}
+            tone={todayPal.seal}
             style={s.restSeal}
           />
         )}
 
-        <Text style={[s.headline, banked && s.headlineBanked]} numberOfLines={2}>{headline}</Text>
+        <Text
+          style={[s.headline, banked && [s.headlineBanked, { color: todayPal.ink }]]}
+          numberOfLines={2}
+        >{headline}</Text>
 
         {/* The week band: letters over flame tiles, between hairline rails */}
-        <View style={[s.weekBand, banked && s.weekBandBanked]}>
+        <View style={[s.weekBand, banked && { borderColor: todayPal.rule }]}>
           <View style={s.daysLabelRow}>
             {display.map((d, i) => (
               <View key={i} style={s.weekCol}>
-                <Text style={[s.dayLetter, d.isToday && (banked ? s.dayLetterTodayBanked : s.dayLetterToday)]}>{d.letter}</Text>
+                <Text style={[s.dayLetter, d.isToday && (banked ? { color: todayPal.inkMuted } : s.dayLetterToday)]}>{d.letter}</Text>
               </View>
             ))}
           </View>
@@ -946,18 +965,18 @@ export default function WeeklyRhythm() {
       <TouchableOpacity
         activeOpacity={0.86}
         onPress={openAnalytics}
-        style={[s.analyticsBtn, banked && s.analyticsBtnBanked]}
+        style={[s.analyticsBtn, banked && { borderColor: todayPal.border }]}
       >
         <LinearGradient
-          colors={banked ? BANKED.buttonSurface : ['#FBEED0', '#FFFDF7']}
+          colors={banked ? todayPal.buttonSurface : ['#FBEED0', '#FFFDF7']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <View style={[s.analyticsDiamond, banked && s.analyticsDiamondBanked]} />
-        <BarChart3 s={13} c={banked ? BANKED.inkMuted : C.goldDark} w={2.1} />
-        <Text style={[s.analyticsTxt, banked && s.analyticsTxtBanked]}>VIEW ANALYTICS</Text>
-        <View style={[s.analyticsDiamond, banked && s.analyticsDiamondBanked]} />
+        <View style={[s.analyticsDiamond, banked && { backgroundColor: todayPal.line }]} />
+        <BarChart3 s={13} c={banked ? todayPal.inkMuted : C.goldDark} w={2.1} />
+        <Text style={[s.analyticsTxt, banked && { color: todayPal.inkMuted }]}>VIEW ANALYTICS</Text>
+        <View style={[s.analyticsDiamond, banked && { backgroundColor: todayPal.line }]} />
       </TouchableOpacity>
     </View>
   );
@@ -986,9 +1005,7 @@ const s = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
-  analyticsBtnBanked: { borderColor: BANKED.border },
   analyticsTxt: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.2, color: C.goldDark },
-  analyticsTxtBanked: { color: BANKED.inkMuted },
   analyticsDiamond: {
     width: 4,
     height: 4,
@@ -996,7 +1013,6 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(197,160,89,0.5)',
     transform: [{ rotate: '45deg' }],
   },
-  analyticsDiamondBanked: { backgroundColor: BANKED.ashLine },
   card: {
     position: 'relative',
     overflow: 'hidden',
@@ -1020,7 +1036,6 @@ const s = StyleSheet.create({
     paddingLeft: 8,
     paddingRight: 10,
   },
-  cardBanked: { borderColor: BANKED.border },
   restSeal: { marginTop: 14 },
   headline: {
     marginTop: 12,
@@ -1030,10 +1045,10 @@ const s = StyleSheet.create({
     color: C.textSecondary,
     textAlign: 'center',
   },
+  // Colour comes from the register's palette at the call site.
   headlineBanked: {
     marginTop: 9,
     fontFamily: F.serifItalic,
-    color: BANKED.ink,
   },
   weekBand: {
     marginTop: 14,
@@ -1043,13 +1058,11 @@ const s = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: '#EADFC8',
   },
-  weekBandBanked: { borderColor: BANKED.rule },
   daysLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   daysRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   weekCol: { flex: 1, alignItems: 'center' },
   dayLetter: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 0.9, color: C.textMuted },
   dayLetterToday: { color: C.goldDark },
-  dayLetterTodayBanked: { color: BANKED.inkMuted },
 
   /* Bottom flame badge */
   flameWrap: {
@@ -1085,11 +1098,11 @@ const s = StyleSheet.create({
     borderRadius: 2.5,
     backgroundColor: '#D8CDB6',
   },
+  // Its colour is the register's stud, applied at the call site.
   emptyStudToday: {
     width: 6.5,
     height: 6.5,
     borderRadius: 3.25,
-    backgroundColor: BANKED.ember,
   },
   tileSheen: {
     position: 'absolute',
@@ -1132,9 +1145,6 @@ const s = StyleSheet.create({
     borderRadius: (TILE_SIZE + 8) / 2,
     borderWidth: 1.5,
     borderColor: C.gold,
-  },
-  todayRingMuted: {
-    borderColor: BANKED.ash,
   },
   flameGlow: {
     shadowColor: C.gold,
