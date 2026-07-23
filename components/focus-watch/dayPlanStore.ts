@@ -2729,3 +2729,35 @@ export function purityActiveCount(purity: PurityState) {
     + purity.customPacks.filter(pack => pack.mode !== 'off').length;
   return packs + purity.customDomains.length;
 }
+
+export type WebProtectionSummary = {
+  state: 'on' | 'preview' | 'off';
+  configured: boolean;
+  packsOn: number;
+  customSites: number;
+};
+
+// One shared read model for every surface that summarizes Web Protection.
+// This prevents My Routine and Focus from drifting into different answers.
+export function getWebProtectionSummary(stateArg: DayPlanState): WebProtectionSummary {
+  const activeBuiltInPacks = stateArg.purity.packs.filter(pack => pack.mode !== 'off');
+  const activeCustomPacks = stateArg.purity.customPacks.filter(pack => pack.mode !== 'off');
+  const packsOn = activeBuiltInPacks.length + activeCustomPacks.length;
+  const customSites = new Set([
+    ...stateArg.purity.customDomains.map(entry => entry.domain),
+    ...activeBuiltInPacks.flatMap(pack => pack.extraDomains),
+    ...activeCustomPacks.flatMap(pack => pack.domains),
+  ]).size;
+  const configured = purityActiveCount(stateArg.purity) > 0;
+  const active = configured
+    && stateArg.permission === 'approved'
+    && stateArg.nativeProtection.status === 'applied';
+  const preview = configured && stateArg.permission === 'preview';
+
+  return {
+    state: active ? 'on' : preview ? 'preview' : 'off',
+    configured,
+    packsOn,
+    customSites,
+  };
+}

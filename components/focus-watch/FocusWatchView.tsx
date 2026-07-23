@@ -3,25 +3,12 @@ import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-n
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, {
-  cancelAnimation,
-  Easing,
-  FadeInDown,
-  useAnimatedProps,
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
-} from 'react-native-reanimated';
-import Svg, { Circle, Line } from 'react-native-svg';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import {
   BarChart3,
   ChevronRight,
   Clock,
-  Eye,
   Globe,
   Lock,
   Shield,
@@ -35,11 +22,13 @@ import FocusPhoneStatus from './FocusPhoneStatus';
 import FocusCard, { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
 import { PulseDot } from './FocusMeter';
 import DayGauge, { gaugeStanding, gaugeStateColor, GAUGE_ESSENTIALS_COLOR } from './DayGauge';
-import PlanCardBackdrop from './PlanCardBackdrop';
-import { planVisualFor, type PlanVisual } from './planVisuals';
+import { ScreenTimeProtectionCard, WebProtectionCard } from './ProtectionPillarCards';
 import { RadiantTrophy, StreakMedallion, TrophyShineBackdrop } from './TrophyRadiance';
+import { BANKED, LedgerRail, RestSeal } from '@/components/shared/BankedEmber';
+import RadiantTodayPulse from '@/components/shared/RadiantTodayPulse';
 import GoldButton from './GoldButton';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
+import ProtectionRegisterCard, { REGISTER_TONES } from './ProtectionRegister';
 import QuietHourSheet from './QuietHourSheet';
 import TrophyCalendarSheet from './TrophyCalendarSheet';
 import MilestoneCongratsOverlay from './MilestoneCongratsOverlay';
@@ -55,11 +44,10 @@ import {
   getEffectivePlan,
   getLiveDayStatus,
   getLiveUsageSnapshot,
+  getWebProtectionSummary,
   planHasProtectionNow,
-  purityActiveCount,
   tickDayPlanStore,
   useDayPlan,
-  type DayPlan,
   type DayPlanState,
   type DayRecord,
 } from './dayPlanStore';
@@ -97,266 +85,56 @@ function buildWeek(state: DayPlanState, now: Date): WeekCell[] {
   });
 }
 
-// A soft breathing ring around today's cell in the week strip.
-function TodayRing() {
-  const reduceMotion = useReducedMotion();
-  const t = useSharedValue(0);
-
-  useEffect(() => {
-    if (reduceMotion) return;
-    t.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 1700, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0, { duration: 1700, easing: Easing.inOut(Easing.quad) })
-      ),
-      -1
-    );
-    return () => cancelAnimation(t);
-  }, [reduceMotion, t]);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: 0.25 + t.value * 0.55,
-    transform: [{ scale: 1 + t.value * 0.06 }],
-  }));
-
-  return <Animated.View pointerEvents="none" style={[s.todayRing, style]} />;
+// Today's marker in the week strip. Active, it wears the shared radiant
+// pulse (a warm breathing bloom); banked, it is held to a single still
+// ashen ring — nothing on a resting card moves but the ember.
+function TodayRing({ banked = false }: { banked?: boolean }) {
+  if (banked) {
+    return <View pointerEvents="none" style={[s.todayRing, s.todayRingBanked, s.todayRingHeld]} />;
+  }
+  return <RadiantTodayPulse size={34} />;
 }
 
-// Today's plan wears the streak trophy's radiance in its own colors: a ray
-// burst and a slow-breathing glow behind the Daily Plan shield. Radiance is
-// reserved for what is alive right now — list and editor views stay still.
-function RadiantPlanSeal({ visual, plan }: { visual: PlanVisual; plan: DayPlan }) {
-  const reduceMotion = useReducedMotion();
-  const breathe = useSharedValue(0);
-
-  useEffect(() => {
-    if (reduceMotion) {
-      breathe.value = 0.6;
-      return;
-    }
-    breathe.value = 0;
-    breathe.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0, { duration: 2600, easing: Easing.inOut(Easing.sin) })
-      ),
-      -1
-    );
-    return () => cancelAnimation(breathe);
-  }, [reduceMotion, breathe]);
-
-  const glowStyle = useAnimatedStyle(() => ({ opacity: 0.4 + breathe.value * 0.6 }));
-
-  const field = 92;
-  const cx = field / 2;
-  const inner = 29;
-
-  return (
-    <View style={s.sealStage}>
-      <Animated.View pointerEvents="none" style={[s.sealGlow, { backgroundColor: visual.bloom }, glowStyle]} />
-      <Svg pointerEvents="none" width={field} height={field} style={s.sealRays}>
-        {Array.from({ length: 12 }).map((_, index) => {
-          const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
-          const long = index % 2 === 0;
-          const r2 = inner + (long ? 14 : 8);
-          return (
-            <Line
-              key={index}
-              x1={cx + inner * Math.cos(angle)}
-              y1={cx + inner * Math.sin(angle)}
-              x2={cx + r2 * Math.cos(angle)}
-              y2={cx + r2 * Math.sin(angle)}
-              stroke={visual.accent}
-              strokeOpacity={long ? 0.4 : 0.22}
-              strokeWidth={long ? 1.7 : 1.3}
-              strokeLinecap="round"
-            />
-          );
-        })}
-      </Svg>
-      <View style={[s.sealDisc, { borderColor: visual.border }]}>
-        <View style={[s.sealDiscRing, { borderColor: visual.accent }]} />
-        <Shield s={21} c={visual.accent} w={1.9} />
-      </View>
-      <View pointerEvents="none" style={[s.sealGlint, { backgroundColor: visual.accent }]} />
-      <View pointerEvents="none" style={[s.sealGlintSmall, { backgroundColor: visual.accent }]} />
-    </View>
-  );
-}
-
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-
-// The web card's surface: the shared weave crossed with its own mirror — a
-// fine diamond lattice, the filter everything from the web must pass through.
-function LatticeWeave({ color }: { color: string }) {
-  const [box, setBox] = useState({ w: 0, h: 0 });
-  const step = 30;
-  const lineCount = box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
-
-  return (
-    <View
-      pointerEvents="none"
-      style={StyleSheet.absoluteFill}
-      onLayout={event => {
-        const { width, height } = event.nativeEvent.layout;
-        setBox({ w: width, h: height });
-      }}
-    >
-      {lineCount > 0 && (
-        <Svg width={box.w} height={box.h} style={StyleSheet.absoluteFill}>
-          {Array.from({ length: lineCount }).map((_, index) => {
-            const offset = index * step;
-            return (
-              <Line
-                key={`a${index}`}
-                x1={offset}
-                y1={-4}
-                x2={offset - box.h - 8}
-                y2={box.h + 4}
-                stroke={color}
-                strokeOpacity={0.035}
-                strokeWidth={1}
-              />
-            );
-          })}
-          {Array.from({ length: lineCount }).map((_, index) => {
-            const offset = index * step;
-            return (
-              <Line
-                key={`b${index}`}
-                x1={box.w - offset}
-                y1={-4}
-                x2={box.w - offset + box.h + 8}
-                y2={box.h + 4}
-                stroke={color}
-                strokeOpacity={0.035}
-                strokeWidth={1}
-              />
-            );
-          })}
-        </Svg>
-      )}
-    </View>
-  );
-}
-
-// Web Protection's emblem: Clean Sight's eye behind a half-drawn veil, held
-// inside a watch ring. While the guard stands, the veil is drawn solid and a
-// sentinel node patrols the ring — the same quiet life as the phone's orbits;
-// when the guard rests, the watch stands still and the veil hangs open.
-function GuardedSightEmblem({ active }: { active: boolean }) {
-  const reduceMotion = useReducedMotion();
-  const patrol = useSharedValue(0);
-  const animate = active && !reduceMotion;
-
-  useEffect(() => {
-    if (animate) {
-      patrol.value = 0;
-      patrol.value = withRepeat(
-        withTiming(1, { duration: 11000, easing: Easing.linear }),
-        -1,
-        false
-      );
-    } else {
-      cancelAnimation(patrol);
-      patrol.value = 0;
-    }
-    return () => cancelAnimation(patrol);
-  }, [animate, patrol]);
-
-  const sentinelProps = useAnimatedProps(() => {
-    const angle = -Math.PI / 2 + patrol.value * Math.PI * 2;
-    return { cx: 32 + 29 * Math.cos(angle), cy: 32 + 29 * Math.sin(angle) };
-  });
-  // Half a revolution behind, so the watch never looks empty.
-  const counterProps = useAnimatedProps(() => {
-    const angle = Math.PI / 2 + patrol.value * Math.PI * 2;
-    return { cx: 32 + 29 * Math.cos(angle), cy: 32 + 29 * Math.sin(angle) };
-  });
-
-  return (
-    <View style={s.webEmblemStage}>
-      <View pointerEvents="none" style={[s.webEmblemGlow, active && s.webEmblemGlowOn]} />
-      <Svg pointerEvents="none" width={64} height={64} style={StyleSheet.absoluteFill}>
-        <Circle
-          cx={32}
-          cy={32}
-          r={29}
-          stroke="#2D7967"
-          strokeOpacity={active ? 0.32 : 0.15}
-          strokeWidth={1}
-          fill="none"
-          strokeDasharray={active ? undefined : '1 5'}
-        />
-        <Circle cx={32} cy={32} r={24.5} stroke="#2D7967" strokeOpacity={active ? 0.15 : 0.09} strokeWidth={1} fill="none" strokeDasharray="1 4" />
-        {active && (
-          <>
-            <AnimatedCircle animatedProps={sentinelProps} r={2.1} fill="#2D7967" fillOpacity={0.55} />
-            <AnimatedCircle animatedProps={counterProps} r={1.5} fill="#2D7967" fillOpacity={0.32} />
-          </>
-        )}
-      </Svg>
-      <View style={[s.webEmblemDisc, !active && s.webEmblemDiscOff]}>
-        <Eye s={21} c={active ? '#2D7967' : 'rgba(45,121,103,0.6)'} w={1.9} />
-        <Svg pointerEvents="none" width={42} height={42} style={StyleSheet.absoluteFill}>
-          {[
-            { y: 9, x1: 6.3, x2: 35.7 },
-            { y: 13.5, x1: 3.9, x2: 38.1 },
-            { y: 18, x1: 2.7, x2: 39.3 },
-          ].map(line => (
-            <Line
-              key={line.y}
-              x1={line.x1}
-              y1={line.y}
-              x2={line.x2}
-              y2={line.y}
-              stroke="#2D7967"
-              strokeOpacity={active ? 0.38 : 0.2}
-              strokeWidth={1.3}
-              strokeLinecap="round"
-              strokeDasharray={active ? undefined : '2 4'}
-            />
-          ))}
-        </Svg>
-      </View>
-    </View>
-  );
-}
-
+// The two protection registers now wear the plan builder's Always Blocked
+// material verbatim — white ground, weave, blooms, accent edge — so a standing
+// boundary looks the same everywhere it is mentioned. Gold = essentials kept
+// open, rose = permanently closed.
 function ProtectionRow({
   icon,
-  iconBg,
+  tone,
   title,
   detail,
+  chipLabel,
   value,
   valueCaption,
   valueColor = C.text,
+  index = 0,
   onPress,
 }: {
   icon: React.ReactNode;
-  iconBg: string;
+  tone: keyof typeof REGISTER_TONES;
   title: string;
   detail: string;
+  chipLabel?: string;
   value?: string;
   valueCaption?: string;
   valueColor?: string;
+  index?: number;
   onPress: () => void;
 }) {
   return (
-    <TouchableOpacity style={s.protectionRow} activeOpacity={0.72} onPress={onPress}>
-      <View style={[s.protectionRowIcon, { backgroundColor: iconBg }]}>{icon}</View>
-      <View style={s.protectionRowCopy}>
-        <Text style={s.protectionRowTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.84}>{title}</Text>
-        <Text style={s.protectionRowDetail} numberOfLines={1}>{detail}</Text>
-      </View>
-      {value != null && (
-        <View style={s.protectionRowValueBlock}>
-          <Text style={[s.protectionRowValue, { color: valueColor }]} numberOfLines={1}>{value}</Text>
-          {!!valueCaption && <Text style={s.protectionRowValueCaption} numberOfLines={1}>{valueCaption}</Text>}
-        </View>
-      )}
-      <ChevronRight s={16} c={C.textMuted} w={2.1} />
-    </TouchableOpacity>
+    <ProtectionRegisterCard
+      tone={REGISTER_TONES[tone]}
+      icon={icon}
+      title={title}
+      detail={detail}
+      chipLabel={chipLabel}
+      value={value}
+      valueCaption={valueCaption}
+      valueColor={valueColor}
+      index={index}
+      onPress={onPress}
+    />
   );
 }
 
@@ -402,11 +180,8 @@ export default function FocusWatchView({
 
   const now = useMemo(() => new Date(nowMs), [nowMs]);
   const plan = getEffectivePlan(state, now);
-  const packsOn = state.purity.packs.filter(pack => pack.mode !== 'off').length
-    + state.purity.customPacks.filter(pack => pack.mode !== 'off').length;
-  const customSites = state.purity.customDomains.length
-    + state.purity.customPacks.reduce((sum, pack) => sum + pack.domains.length, 0);
-  const webConfigured = purityActiveCount(state.purity) > 0;
+  const webProtection = getWebProtectionSummary(state);
+  const { packsOn, customSites, configured: webConfigured, state: webState } = webProtection;
   const permissionGranted = state.permission === 'approved';
   const previewMode = state.permission === 'preview';
   const nativeApplied = state.nativeProtection.status === 'applied';
@@ -418,10 +193,9 @@ export default function FocusWatchView({
     ? (strictAlwaysSummary?.applicationCount ?? 0) + (looseAlwaysSummary?.applicationCount ?? 0)
     : state.alwaysBlockedApps.length;
   const alwaysConfigured = alwaysBlockedCount > 0;
-  const webActive = permissionGranted && nativeApplied && webConfigured;
+  const webActive = webState === 'on';
   // The web pillar shows whenever rules exist: standing guard, previewing,
   // or resting — the resting card is designed too, not hidden.
-  const webState: 'on' | 'preview' | 'off' = webActive ? 'on' : previewMode && webConfigured ? 'preview' : 'off';
   const planConfigured = planHasProtectionNow(plan, now);
   const planProtects = permissionGranted && nativeApplied && planConfigured;
   const protectionConfigured = !!state.quiet || webConfigured || planConfigured || alwaysConfigured;
@@ -436,6 +210,10 @@ export default function FocusWatchView({
   const todayStanding = targetMinutes != null
     ? gaugeStanding(targetMinutes, toleranceEndMinutes, usedToday)
     : 'unknown';
+  // The Trophy Streak card banks whenever no trophy is on the table today:
+  // no plan is scheduled, or the plan that is carries no daily limit. A day
+  // already lost still counts as live — it has a verdict to show.
+  const streakBanked = targetMinutes == null && liveStatus !== 'broken';
 
   // The Screen Time card divides its job cleanly: the status line says WHICH
   // rules hold right now, the right block says WHERE today stands, and the
@@ -789,164 +567,63 @@ export default function FocusWatchView({
           <View style={(state.quiet || alwaysConfigured) ? s.protectionRows : undefined}>
             {state.quiet && withQuietGuideTarget(
                 <ProtectionRow
-                  icon={<Lock s={16} c="#A24351" w={2.2} />}
-                  iconBg="#FBE6E9"
+                  icon={<Lock s={19} c="#8B6B2F" w={2.2} />}
+                  tone="gold"
                   title="Quiet Hour"
                   detail={nativeAvailable
                     ? quietSelectionSummary && designatedCoreSummary
                       ? `${quietSelectionSummary.applicationCount + designatedCoreSummary.applicationCount} chosen apps / strict`
                       : 'Private app selection / strict'
                     : `${state.quiet.selection.appIds.length + allCoreEssentialIds(state).length} essentials / strict`}
+                  chipLabel="Quiet"
                   onPress={() => setQuietOpen(true)}
                 />
             )}
             {alwaysConfigured && (
               <ProtectionRow
-                icon={<Shield s={16} c="#A24351" w={2.1} />}
-                iconBg="#FBE6E9"
+                icon={<Shield s={19} c="#A24351" w={2.1} />}
+                tone="rose"
                 title="Always Blocked"
                 detail={`${alwaysBlockedCount} ${alwaysBlockedCount === 1 ? 'app' : 'apps'} · permanent intent`}
+                chipLabel="Blocked"
+                index={state.quiet ? 1 : 0}
                 onPress={() => setAlwaysBlockedOpen(true)}
               />
             )}
           </View>
 
-          {plan && (() => {
-            const visual = planVisualFor(plan);
-            const essentialsOnly = !!plan.essentialsOnly;
-            return (
-              <View style={s.pillarBlock}>
-                <Text style={s.pillarLabel}>SCREEN TIME</Text>
-                <TouchableOpacity
-                  style={[s.todayCard, { borderColor: visual.border }]}
-                  activeOpacity={0.86}
-                  onPress={() => router.push('/day-plan-today' as never)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${plan.name} is active today. Open today's detail.`}
-                >
-                  <LinearGradient colors={visual.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-                  <PlanCardBackdrop visual={visual} ringSize={128} live />
-                  <View style={s.todayHeroRow}>
-                    <RadiantPlanSeal visual={visual} plan={plan} />
-                    <View style={s.todayCopy}>
-                      <Text style={[s.todayKicker, { color: visual.accent }]}>TODAY’S PLAN</Text>
-                      <Text style={[s.todayName, { color: visual.ink }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{plan.name}</Text>
-                      {(essentialsOnly || essentialsNow) && (
-                        <Text style={[s.todayStatus, { color: visual.body }]} numberOfLines={1}>
-                          {essentialsOnly
-                            ? 'Only Essentials are open today'
-                            : essentialsNow
-                              ? 'Limit spent · Essentials remain open'
-                              : null}
-                        </Text>
-                      )}
-                      {(usedToday != null || (!essentialsOnly && targetMinutes != null)) && (
-                        <View style={s.todaySpentRow}>
-                          {!essentialsOnly && targetMinutes != null && (
-                            <View style={[s.todaySpentRail, { backgroundColor: visual.track }]}>
-                              <View
-                                style={[
-                                  s.todaySpentFill,
-                                  {
-                                    backgroundColor: screenTimeNumbersColor,
-                                    width: usedToday
-                                      ? Math.max(4, Math.min(1, usedToday / targetMinutes) * 46)
-                                      : 0,
-                                  },
-                                ]}
-                              />
-                            </View>
-                          )}
-                          <Text numberOfLines={1}>
-                            <Text style={[s.todaySpentValue, { color: screenTimeNumbersColor }]}>
-                              {usedToday == null ? '– –' : formatMinutesShort(usedToday)}
-                            </Text>
-                            <Text style={[s.todaySpentMeta, { color: visual.body }]}>
-                              {!essentialsOnly && targetMinutes != null
-                                ? ` of ${formatMinutesShort(targetMinutes)}`
-                                : ' today'}
-                            </Text>
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                    {screenTimeValue != null && (
-                      <View style={s.todayValueBlock}>
-                        <Text style={[s.todayValue, { color: screenTimeValueColor }]} numberOfLines={1}>{screenTimeValue}</Text>
-                        <Text style={[s.todayValueCaption, { color: visual.body }]} numberOfLines={1}>{screenTimeCaption}</Text>
-                      </View>
-                    )}
-                  </View>
-                </TouchableOpacity>
-              </View>
-            );
-          })()}
+          {plan && (
+            <ScreenTimeProtectionCard
+              plan={plan}
+              statusText={plan.essentialsOnly
+                ? 'Only Essentials are open today'
+                : essentialsNow
+                  ? 'Limit spent · Essentials remain open'
+                  : null}
+              usedMinutes={usedToday}
+              targetMinutes={targetMinutes}
+              numbersColor={screenTimeNumbersColor}
+              value={screenTimeValue}
+              valueCaption={screenTimeCaption}
+              valueColor={screenTimeValueColor}
+              live
+              onPress={() => router.push('/day-plan-today' as never)}
+              accessibilityLabel={`${plan.name} is active today. Open today's detail.`}
+            />
+          )}
 
           {webConfigured && (
-            <View style={s.pillarBlock}>
-              <Text style={s.pillarLabel}>WEB PROTECTION</Text>
-              <TouchableOpacity
-                style={[s.webCard, webState === 'off' && s.webCardOff]}
-                activeOpacity={0.86}
-                onPress={() => router.push('/clean-sight' as never)}
-                accessibilityRole="button"
-                accessibilityLabel={webState === 'off'
-                  ? 'Web Protection is resting. Open Clean Sight.'
-                  : 'Web Protection is standing guard. Open Clean Sight.'}
-              >
-                <LinearGradient
-                  colors={webState === 'off'
-                    ? ['#EDF3F0', '#FBFDFC', '#FFFFFF']
-                    : ['#E6F3EC', '#F9FCFA', '#FEFFFE']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                <LatticeWeave color="#2D7967" />
-                <View pointerEvents="none" style={[s.webBloom, webState !== 'off' && s.webBloomOn]} />
-                <View style={s.webHeroRow}>
-                  <View style={s.webCopy}>
-                    <Text style={s.webKicker}>CLEAN SIGHT</Text>
-                    <Text style={[s.webName, webState === 'off' && s.webNameOff]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                      {webState === 'off' ? 'The guard is resting' : 'Standing guard'}
-                    </Text>
-                    <Text style={s.webStatusLine} numberOfLines={1}>
-                      {packsOn} {packsOn === 1 ? 'pack' : 'packs'} · {customSites} custom {customSites === 1 ? 'site' : 'sites'} blocked
-                    </Text>
-                  </View>
-                  <GuardedSightEmblem active={webState !== 'off'} />
-                </View>
-                <View style={s.webRule}>
-                  <View style={s.webRuleLine} />
-                  <View style={s.webRuleCross}>
-                    <View style={s.webRuleCrossH} />
-                    <View style={s.webRuleCrossV} />
-                  </View>
-                  <View style={s.webRuleLine} />
-                </View>
-                <View style={s.webStateRow}>
-                  {webState === 'on' ? (
-                    <PulseDot size={5} color="#2C7565" />
-                  ) : (
-                    <View style={[s.webStateDot, webState === 'preview' && s.webStateDotPreview]} />
-                  )}
-                  <Text style={[
-                    s.webStateText,
-                    webState === 'preview' && s.webStateTextPreview,
-                    webState === 'off' && s.webStateTextOff,
-                  ]}>
-                    {webState === 'on' ? 'ON' : webState === 'preview' ? 'PREVIEW' : 'OFF'}
-                  </Text>
-                  <Text style={s.webStateCaption} numberOfLines={1}>
-                    {state.purity.locks.locked
-                      ? 'HARD LOCKED'
-                      : state.purity.locks.enabled
-                        ? 'HARD LOCK'
-                        : 'SYSTEM-WIDE'}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            </View>
+            <WebProtectionCard
+              state={webState}
+              packsOn={packsOn}
+              customSites={customSites}
+              lockCaption={state.purity.locks.locked
+                ? 'HARD LOCKED'
+                : state.purity.locks.enabled
+                  ? 'HARD LOCK'
+                  : 'SYSTEM-WIDE'}
+              onPress={() => router.push('/clean-sight' as never)}
+            />
           )}
 
           {!state.quiet && withQuietGuideTarget(
@@ -973,66 +650,89 @@ export default function FocusWatchView({
           </View>
           <TouchableOpacity
             {...(isGuided ? streakTarget : {})}
-            style={s.progressSurface}
+            style={[s.progressSurface, streakBanked && s.progressSurfaceBanked]}
             activeOpacity={0.86}
             onPress={openTrophyCalendar}
           >
             <LinearGradient
-              colors={['#F8E7BE', '#FFF8E9', '#FFFEFA']}
+              colors={streakBanked ? BANKED.surface : ['#F8E7BE', '#FFF8E9', '#FFFEFA']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
-            <TrophyShineBackdrop />
+            <TrophyShineBackdrop muted={streakBanked} />
             <View style={s.progressHeaderRow}>
-              <Text style={s.progressKicker}>TROPHY STREAK</Text>
+              <Text style={[s.progressKicker, streakBanked && s.progressKickerBanked]}>TROPHY STREAK</Text>
               <View style={s.calendarLink}>
-                <Text style={s.calendarLinkText}>Monthly calendar</Text>
-                <ChevronRight s={13} c={C.goldDark} w={2.2} />
+                <Text style={[s.calendarLinkText, streakBanked && s.calendarLinkTextBanked]}>Monthly calendar</Text>
+                <ChevronRight s={13} c={streakBanked ? BANKED.inkMuted : C.goldDark} w={2.2} />
               </View>
             </View>
 
             <View style={s.progressHeroRow}>
               <View style={s.progressMedallion}>
-                <StreakMedallion value={state.streak.current} />
+                <StreakMedallion value={state.streak.current} banked={streakBanked} />
               </View>
-              <RadiantTrophy size={76} />
+              <RadiantTrophy size={76} banked={streakBanked} halo />
             </View>
-            <Text style={s.progressHeadline} numberOfLines={2}>
+
+            {streakBanked && (
+              <RestSeal
+                label={state.streak.current > 0 ? 'STREAK HELD' : plan ? 'NO TARGET' : 'REST DAY'}
+                style={s.progressSeal}
+              />
+            )}
+
+            <Text style={[s.progressHeadline, streakBanked && s.progressHeadlineBanked]} numberOfLines={2}>
               {liveStatus === 'broken'
                 ? 'Today’s trophy is resting.'
                 : targetMinutes != null
                   ? state.streak.current === 0
                     ? 'Hold today’s limit and day one is yours.'
                     : 'Today’s trophy is within reach.'
-                  : plan
-                    ? 'No trophy target today.'
-                    : 'Today is a rest day.'}
+                  : state.streak.current > 0
+                    ? plan
+                      ? 'No target today — the streak keeps its place.'
+                      : 'A rest day — the streak keeps its place.'
+                    : plan
+                      ? 'No target today. Set a daily limit to strike day one.'
+                      : 'A rest day. Your first trophy waits for a plan.'}
             </Text>
 
-            <View style={s.weekBand}>
-              {week.map(cell => (
-                <View key={cell.key} style={s.weekCell}>
-                  <Text style={[s.weekLetter, cell.status === 'today' && s.weekLetterToday]}>{cell.letter}</Text>
-                  <View style={[
-                    s.weekDot,
-                    cell.status === 'kept' && s.weekDotKept,
-                    cell.status === 'broken' && s.weekDotBroken,
-                    cell.status === 'today' && s.weekDotToday,
-                    cell.status === 'rest' && s.weekDotRest,
-                  ]}>
-                    {cell.status === 'today' && <TodayRing />}
-                    {cell.status === 'kept' && <StaticChallengeTrophy size={22} />}
-                    {cell.status === 'today' && (
-                      <View style={s.todayTrophyFaint}>
-                        <StaticChallengeTrophy size={20} />
-                      </View>
-                    )}
-                    {cell.status === 'broken' && <X s={11} c="#B45360" w={2.5} />}
-                    {cell.status === 'rest' && <View style={s.restDot} />}
+            <View style={[s.weekBand, streakBanked && s.weekBandBanked]}>
+              {week.map(cell => {
+                // Today can only be won when a trophy is on the table; on a
+                // banked day its cell rests with the others, keeping a warm
+                // coal so it is still findable.
+                const todayBanked = streakBanked && cell.status === 'today';
+                return (
+                  <View key={cell.key} style={s.weekCell}>
+                    <Text style={[
+                      s.weekLetter,
+                      cell.status === 'today' && (todayBanked ? s.weekLetterTodayBanked : s.weekLetterToday),
+                    ]}>{cell.letter}</Text>
+                    <View style={[
+                      s.weekDot,
+                      cell.status === 'kept' && s.weekDotKept,
+                      cell.status === 'broken' && s.weekDotBroken,
+                      cell.status === 'today' && (todayBanked ? s.weekDotTodayBanked : s.weekDotToday),
+                      cell.status === 'rest' && s.weekDotRest,
+                    ]}>
+                      {cell.status === 'today' && <TodayRing banked={todayBanked} />}
+                      {cell.status === 'kept' && <StaticChallengeTrophy size={22} />}
+                      {cell.status === 'today' && (todayBanked ? (
+                        <View style={s.todayEmber} />
+                      ) : (
+                        <View style={s.todayTrophyFaint}>
+                          <StaticChallengeTrophy size={20} />
+                        </View>
+                      ))}
+                      {cell.status === 'broken' && <X s={11} c="#B45360" w={2.5} />}
+                      {cell.status === 'rest' && <View style={s.restDot} />}
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
 
             {targetMinutes != null ? (
@@ -1045,7 +745,9 @@ export default function FocusWatchView({
                 style={s.progressGauge}
               />
             ) : (
-              <Text style={s.progressNoLimit}>No daily limit today</Text>
+              // The instrument's slot is kept, closed like a ledger line,
+              // rather than collapsing to a lonely sentence.
+              <LedgerRail label="NO DAILY LIMIT TODAY" style={s.progressRail} />
             )}
           </TouchableOpacity>
         </Animated.View>
@@ -1166,142 +868,11 @@ const s = StyleSheet.create({
     textAlign: 'center',
     fontVariant: ['tabular-nums'],
   },
-  protectionRows: {
-    marginTop: 15,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.border,
-  },
-  protectionRow: {
-    minHeight: 55,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: C.border,
-  },
-  protectionRowIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
-    borderCurve: 'continuous',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  protectionRowCopy: { flex: 1, minWidth: 0 },
-  protectionRowTitle: { fontFamily: F.serifMedium, fontSize: 16, color: C.text },
-  protectionRowDetail: { marginTop: 1.5, fontFamily: F.sans, fontSize: 10.5, color: C.textSecondary },
-  protectionRowValueBlock: { maxWidth: 96, alignItems: 'flex-end' },
-  protectionRowValue: { fontFamily: F.serifSemiBold, fontSize: 15.5, fontVariant: ['tabular-nums'] },
-  protectionRowValueCaption: { marginTop: 1, fontFamily: F.sansBold, fontSize: 6.5, letterSpacing: 0.9, color: C.textMuted },
-  pillarBlock: { marginTop: 14 },
-  pillarLabel: { marginBottom: 7, marginLeft: 2, fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2, color: C.textMuted },
-  // Web Protection card — the veiled watch. Unique to the web pillar: lattice
-  // surface, the eye behind a half-drawn veil, a sentinel patrolling the ring
-  // while the guard stands; everything still and open when it rests.
-  webCard: {
-    position: 'relative',
-    overflow: 'hidden',
-    borderRadius: 22,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: '#B7D8CA',
-    paddingHorizontal: 15,
-    paddingTop: 13,
-    paddingBottom: 13,
-    boxShadow: '0 6px 16px rgba(34, 61, 51, 0.07)',
-  },
-  webCardOff: {
-    borderColor: '#CFDCD5',
-    boxShadow: '0 4px 12px rgba(34, 61, 51, 0.05)',
-  },
-  webBloom: { position: 'absolute', right: -30, top: -38, width: 118, height: 118, borderRadius: 59, backgroundColor: 'rgba(61,130,115,0.07)' },
-  webBloomOn: { backgroundColor: 'rgba(61,130,115,0.15)' },
-  webHeroRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 64 },
-  webCopy: { flex: 1, minWidth: 0 },
-  webKicker: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.8, color: '#2D7967' },
-  webName: { marginTop: 2.5, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 25, letterSpacing: -0.25, color: '#1F4E45' },
-  webNameOff: { color: 'rgba(31,78,69,0.72)' },
-  webStatusLine: { marginTop: 2.5, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17, color: '#3D8273' },
-  webEmblemStage: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center' },
-  webEmblemGlow: { position: 'absolute', left: 5, top: 5, width: 54, height: 54, borderRadius: 27, backgroundColor: 'rgba(61,130,115,0.06)' },
-  webEmblemGlowOn: { backgroundColor: 'rgba(61,130,115,0.16)' },
-  webEmblemDisc: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    borderWidth: 1,
-    borderColor: '#B7D8CA',
-    backgroundColor: 'rgba(255,255,255,0.88)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#12271F',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  webEmblemDiscOff: { backgroundColor: 'rgba(255,255,255,0.62)', borderColor: 'rgba(183,216,202,0.72)', shadowOpacity: 0.05, elevation: 1 },
-  webRule: { marginTop: 10, marginBottom: 9, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  webRuleLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: '#CBE0D5' },
-  webRuleCross: { width: 7, height: 7, alignItems: 'center', justifyContent: 'center' },
-  webRuleCrossH: { position: 'absolute', width: 7, height: 1, borderRadius: 0.5, backgroundColor: '#2D7967', opacity: 0.65 },
-  webRuleCrossV: { position: 'absolute', width: 1, height: 7, borderRadius: 0.5, backgroundColor: '#2D7967', opacity: 0.65 },
-  webStateRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  webStateDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: 'rgba(42,110,95,0.4)' },
-  webStateDotPreview: { backgroundColor: '#7866A4' },
-  webStateText: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.2, color: '#2C7565' },
-  webStateTextPreview: { color: '#65548E' },
-  webStateTextOff: { color: 'rgba(31,78,69,0.55)' },
-  webStateCaption: { flex: 1, textAlign: 'right', fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1, color: '#3D8273' },
-  // Today's plan card — the radiant-seal view of the plan (view two of the
-  // set: hero dashboard / radiant today / bound library card).
-  todayCard: {
-    position: 'relative',
-    overflow: 'hidden',
-    borderRadius: 22,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    paddingHorizontal: 15,
-    paddingTop: 13,
-    paddingBottom: 13,
-    boxShadow: '0 6px 16px rgba(57, 48, 34, 0.07)',
-  },
-  todayHeroRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 66 },
-  sealStage: { width: 66, height: 66, alignItems: 'center', justifyContent: 'center' },
-  sealGlow: { position: 'absolute', left: 4, top: 4, width: 58, height: 58, borderRadius: 29 },
-  sealRays: { position: 'absolute', left: -13, top: -13 },
-  sealDisc: {
-    width: 47,
-    height: 47,
-    borderRadius: 23.5,
-    borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.88)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  sealDiscRing: { position: 'absolute', left: 3.5, top: 3.5, right: 3.5, bottom: 3.5, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, opacity: 0.45 },
-  sealGlint: { position: 'absolute', right: 6, top: 7, width: 5.5, height: 5.5, borderRadius: 1.5, opacity: 0.72, transform: [{ rotate: '45deg' }] },
-  sealGlintSmall: { position: 'absolute', left: 7, bottom: 9, width: 3.2, height: 3.2, borderRadius: 1, opacity: 0.5, transform: [{ rotate: '45deg' }] },
-  todayCopy: { flex: 1, minWidth: 0 },
-  todayKicker: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.8 },
-  todayName: { marginTop: 2.5, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 25, letterSpacing: -0.25 },
-  todayStatus: { marginTop: 2.5, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17 },
-  todayValueBlock: { maxWidth: 104, alignItems: 'flex-end' },
-  todayValue: { fontFamily: F.serifSemiBold, fontSize: 19, fontVariant: ['tabular-nums'] },
-  todayValueCaption: { marginTop: 1.5, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
-  // The spent line: the hero gauge in miniature — a tiny rail in the plan's
-  // own track color, filled in the live state color, then the numbers in
-  // words. No caption needed; "of 3h" carries it.
-  todaySpentRow: { marginTop: 5, flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
-  todaySpentRail: { width: 46, height: 3, borderRadius: 1.5, overflow: 'hidden' },
-  todaySpentFill: { height: 3, borderRadius: 1.5 },
-  todaySpentValue: { fontFamily: F.serifSemiBold, fontSize: 14.5, fontVariant: ['tabular-nums'] },
-  todaySpentMeta: { fontFamily: F.serif, fontSize: 12.5 },
+  // Compact register cards, not a flat hairline list — the same grammar the
+  // hub's protection defaults wear, kept to one row each.
+  // The rows themselves now come from ProtectionRegister — only their stacking
+  // lives here.
+  protectionRows: { marginTop: 15, gap: 9 },
   quietButton: { marginTop: 16 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
   sectionTitle: {
@@ -1339,11 +910,15 @@ const s = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2,
   },
+  progressSurfaceBanked: { borderColor: BANKED.border },
   progressHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   progressKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.goldDark },
+  progressKickerBanked: { color: BANKED.inkMuted },
   progressHeroRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 14, paddingRight: 22 },
   progressMedallion: { alignItems: 'center' },
+  progressSeal: { marginTop: 12 },
   progressHeadline: { marginTop: 11, fontFamily: F.serif, fontSize: 14.5, lineHeight: 19, color: C.textSecondary, textAlign: 'center' },
+  progressHeadlineBanked: { marginTop: 9, fontFamily: F.serifItalic, color: BANKED.ink },
   weekBand: {
     marginTop: 14,
     paddingVertical: 12,
@@ -1353,9 +928,11 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  weekBandBanked: { borderColor: BANKED.rule },
   weekCell: { alignItems: 'center', gap: 6, minWidth: 34 },
   weekLetter: { fontFamily: F.sansBold, fontSize: 9.5, color: C.textMuted },
   weekLetterToday: { color: C.goldDark },
+  weekLetterTodayBanked: { color: BANKED.inkMuted },
   weekDot: {
     width: 34,
     height: 34,
@@ -1376,7 +953,14 @@ const s = StyleSheet.create({
   weekDotBroken: { backgroundColor: '#FBEDEF', borderWidth: 1, borderColor: '#EBC7CD' },
   weekDotToday: { borderWidth: 1.5, borderColor: C.gold, backgroundColor: '#FFFBEF' },
   weekDotRest: { borderWidth: 1.5, borderColor: '#DDD8CC', borderStyle: 'dashed', backgroundColor: 'transparent' },
+  weekDotTodayBanked: {
+    borderWidth: 1.5,
+    borderColor: BANKED.ash,
+    borderStyle: 'dashed',
+    backgroundColor: '#FBF8F0',
+  },
   todayTrophyFaint: { position: 'absolute', opacity: 0.34 },
+  todayEmber: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: BANKED.ember },
   restDot: { width: 4.5, height: 4.5, borderRadius: 3, backgroundColor: '#D3CEC1' },
   todayRing: {
     position: 'absolute',
@@ -1388,8 +972,11 @@ const s = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: C.gold,
   },
+  todayRingBanked: { borderColor: BANKED.ashLine },
+  todayRingHeld: { opacity: 0.55 },
   progressGauge: { marginTop: 14, paddingHorizontal: 2 },
-  progressNoLimit: { marginTop: 14, textAlign: 'center', fontFamily: F.sansMedium, fontSize: 10.5, color: '#A9863F' },
+  progressRail: { marginTop: 16, paddingHorizontal: 2 },
   calendarLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   calendarLinkText: { fontFamily: F.serifSemiBold, fontSize: 13.5, color: C.goldDark },
+  calendarLinkTextBanked: { color: BANKED.inkMuted },
 });
