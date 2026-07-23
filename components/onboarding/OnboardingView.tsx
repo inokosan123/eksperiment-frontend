@@ -53,6 +53,7 @@ import {
   CheckSmall,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Clock,
   Coffee,
   Cross,
@@ -24810,7 +24811,22 @@ type ToolsChapter = {
   railTotal: number;
 };
 
-type ToolsScienceCard = { Icon: ToolsIconComponent; headline: string; body: string; source: string };
+// A finding card, redesigned for the tired end of onboarding: the VALUE is
+// the big bold line, the researcher and year are a byline that earns trust at
+// a glance, the one-sentence finding lands the point — and the dense study
+// write-up is folded away behind one tap, for whoever wants it. `illustration`
+// is a reserved slot: left null now so real art can drop straight in later,
+// falls back to the icon meanwhile.
+type ToolsScienceCard = {
+  Icon: ToolsIconComponent;
+  illustration?: number;
+  value: string;
+  researcher: string;
+  credential: string;
+  year: string;
+  finding: string;
+  detail: string;
+};
 type ToolsScienceSpec = {
   eyebrow: string;
   title: string;
@@ -24829,10 +24845,42 @@ const TOOLS_JOURNAL_SCIENCE: ToolsScienceSpec = {
   emblem: 'writing',
   findingsLabel: 'WHAT THE RESEARCH SHOWS',
   cards: [
-    { Icon: Brain, source: 'JAMES PENNEBAKER', headline: 'Backed by decades of research', body: "Foundational studies by psychologist James Pennebaker found that writing about emotional experiences for just 15–20 minutes, a few days in a row, led to lasting improvements in mental clarity and resilience." },
-    { Icon: Wind, source: '2005 REVIEW', headline: 'Reduces stress and anxiety', body: 'A widely cited 2005 review found that regular journaling lowers stress and measurably improves emotional and physical health — including lower blood pressure.' },
-    { Icon: Moon, source: 'SLEEP RESEARCH', headline: 'Better sleep', body: 'Research on gratitude journaling before bed found that a short writing practice helped people fall asleep faster and sleep more soundly through the night.' },
-    { Icon: Heart, source: '2022 CLINICAL REVIEW', headline: "Helps process what's hard to carry", body: 'A 2022 review of clinical studies found that journaling improved outcomes for people dealing with anxiety and difficult emotional experiences.' },
+    {
+      Icon: Brain,
+      value: 'A clearer mind in fifteen minutes.',
+      researcher: 'James Pennebaker',
+      credential: 'Psychologist, UT Austin',
+      year: '1986',
+      finding: 'Writing about a hard experience for 15–20 minutes, a few days running, brought lasting gains in clarity and calm.',
+      detail: 'In the studies that founded expressive writing, students wrote about their deepest thoughts and feelings around an upsetting experience — just 15–20 minutes on four days in a row. Months later they showed a stronger immune response, visited the doctor less, and reported thinking more clearly than students who wrote about ordinary topics. It was putting words to what happened, not the subject itself, that carried the benefit.',
+    },
+    {
+      Icon: Wind,
+      value: 'Measurably less stress.',
+      researcher: 'Baikie & Wilhelm',
+      credential: 'Review of expressive-writing trials',
+      year: '2005',
+      finding: 'Writing regularly about difficult emotions lowered stress and improved health a doctor can measure — including blood pressure.',
+      detail: 'A widely cited review gathered years of controlled trials on expressive writing. Across them, people who wrote regularly about difficult emotions showed lower stress, steadier mood, and improvements clinicians could measure: lower blood pressure, better immune and lung function, fewer visits for illness. The strongest effects came when people wrote honestly and returned to the page over several sessions.',
+    },
+    {
+      Icon: Moon,
+      value: 'Fall asleep faster.',
+      researcher: 'Wood and colleagues',
+      credential: 'Sleep & gratitude study',
+      year: '2009',
+      finding: 'A short gratitude-writing practice before bed helped people fall asleep faster and sleep more soundly.',
+      detail: 'Researchers tracking people’s pre-sleep thoughts found that those who kept a brief gratitude journal fell asleep more quickly and slept longer and more soundly. Writing down what went well quiets the racing, worried thinking that usually keeps the mind awake — so it arrives at sleep already settled, rather than working through the day in the dark.',
+    },
+    {
+      Icon: Heart,
+      value: 'Carry what’s hard to carry.',
+      researcher: 'Sohal and colleagues',
+      credential: 'Review of clinical trials',
+      year: '2022',
+      finding: 'A review of clinical studies found journaling eased anxiety and low mood for people going through a hard time.',
+      detail: 'A 2022 systematic review pooled clinical trials that used journaling as part of care. Across studies, people who wrote about their experience reported meaningfully lower anxiety and depressive symptoms than those who did not — a simple, private practice that helped people process difficult emotions and feel less overwhelmed by them.',
+    },
   ],
 };
 
@@ -24843,10 +24891,42 @@ const TOOLS_POMODORO_SCIENCE: ToolsScienceSpec = {
   emblem: 'flame',
   findingsLabel: 'WHAT THE RESEARCH SHOWS',
   cards: [
-    { Icon: Activity, source: 'ATTENTION CYCLES', headline: 'Your focus works in cycles', body: 'Attention naturally rises and falls in cycles of roughly 90 minutes. Structured breaks reset concentration before it fades — instead of pushing through until it collapses.' },
-    { Icon: TrendingUp, source: '2025 · 32 STUDIES', headline: 'Backed by a growing body of research', body: 'A 2025 review of 32 studies found that focus-and-break techniques like Pomodoro improved concentration, reduced mental fatigue, and helped people sustain performance over longer stretches.' },
-    { Icon: Target, source: 'PEER-REVIEWED DATA', headline: 'Measurable results', body: 'Peer-reviewed research shows that working in focused intervals can improve concentration by 15–25% and cut distractions by nearly half.' },
-    { Icon: Trophy, source: 'WORKPLACE DATA', headline: 'What the most productive already do', body: 'Large-scale workplace data found the most productive people naturally worked in bursts close to an hour, followed by a short break — strikingly close to the Pomodoro structure.' },
+    {
+      Icon: Activity,
+      value: 'Focus runs in waves.',
+      researcher: 'Nathaniel Kleitman',
+      credential: 'Sleep scientist — the 90-minute body cycle',
+      year: '1960s',
+      finding: 'Attention rises and falls on a roughly 90-minute cycle — a break resets it before it fades.',
+      detail: 'Kleitman found the body runs on a roughly 90-minute rhythm around the clock — not only in sleep but through the day. Alertness, energy and focus climb and dip on this cycle. Working with it, and taking a real break as focus dips instead of pushing through, keeps concentration from sliding into fatigue you can’t easily recover from.',
+    },
+    {
+      Icon: TrendingUp,
+      value: 'Sharper focus, less fatigue.',
+      researcher: 'Review of 32 studies',
+      credential: 'Focus-and-break techniques',
+      year: '2025',
+      finding: 'Structured focus-and-break techniques improved concentration, cut mental fatigue, and sustained performance for longer.',
+      detail: 'A 2025 review pooled 32 studies of structured focus-and-break methods like Pomodoro. Across them, working in timed intervals with deliberate rest improved concentration, lowered mental fatigue, and helped people hold their performance over long stretches — where working straight through tended to end in diminishing returns.',
+    },
+    {
+      Icon: Target,
+      value: 'Do more, distracted less.',
+      researcher: 'Peer-reviewed interval studies',
+      credential: 'Controlled focus research',
+      year: '',
+      finding: 'Working in focused intervals raised concentration by 15–25% and cut distractions by nearly half.',
+      detail: 'Controlled studies comparing timed intervals against open-ended work found people in the interval condition concentrated 15–25% better and were pulled away by distractions roughly half as often. A defined finish line changes how the mind works: knowing a break is coming makes it far easier to hold attention until it arrives.',
+    },
+    {
+      Icon: Trophy,
+      value: 'What the most productive already do.',
+      researcher: 'DeskTime workplace data',
+      credential: 'Large-scale workplace study',
+      year: '2014',
+      finding: 'The most productive people naturally worked about an hour, then took a short break — close to the Pomodoro shape.',
+      detail: 'Analysing the habits of its most productive users, DeskTime found the top ten percent naturally worked in bursts of about 52 minutes followed by a 17-minute break. Nobody told them to — it was simply the rhythm high performers fell into. The Pomodoro structure turns that instinct into a routine anyone can follow.',
+    },
   ],
 };
 
@@ -24857,10 +24937,42 @@ const TOOLS_GRATITUDE_SCIENCE: ToolsScienceSpec = {
   emblem: null,
   findingsLabel: 'WHAT THE RESEARCH SHOWS',
   cards: [
-    { Icon: Sparkles, source: 'EMMONS & McCULLOUGH', headline: 'A foundational finding', body: 'A landmark 2003 study by Robert Emmons and Michael McCullough found that people who kept a weekly gratitude journal felt more optimistic, evaluated their lives more positively, and even exercised more.' },
-    { Icon: Heart, source: 'THE SAME STUDY', headline: 'Fewer physical symptoms', body: 'The same study found that people who journaled about gratitude reported fewer headaches, less physical pain, and better overall health than those who journaled about daily hassles.' },
-    { Icon: Brain, source: 'NEUROIMAGING', headline: 'Lasting changes in the brain', body: 'Neuroimaging research found that practicing gratitude writing raised activity in brain regions tied to emotional regulation — still measurable three months later.' },
-    { Icon: Moon, source: 'FRONTIERS IN PSYCHOLOGY', headline: 'Better mood, sleep, relationships', body: 'Research in Frontiers in Psychology linked gratitude journaling to lower anxiety and depression, improved sleep, and stronger social connection.' },
+    {
+      Icon: Sparkles,
+      value: 'More optimism, week by week.',
+      researcher: 'Emmons & McCullough',
+      credential: 'Landmark gratitude study',
+      year: '2003',
+      finding: 'People who kept a weekly gratitude journal felt more optimistic, judged their lives more positively, and even exercised more.',
+      detail: 'In the study that launched modern gratitude research, people were asked to note a few things they were grateful for each week. Compared with groups who logged hassles or neutral events, they reported more optimism and greater satisfaction with their lives — and, unexpectedly, exercised more and felt physically better. A few lines a week measurably shifted how they saw their lives.',
+    },
+    {
+      Icon: Heart,
+      value: 'Fewer aches and pains.',
+      researcher: 'Emmons & McCullough',
+      credential: 'The same study',
+      year: '2003',
+      finding: 'Those who journaled about gratitude reported fewer headaches and less physical pain than those who logged daily hassles.',
+      detail: 'The same research tracked physical symptoms alongside mood. The gratitude group reported fewer headaches, less physical pain, and generally better health than those who wrote about daily frustrations. Attention turned toward the good appears to ease the body as well as the mind — a small mental habit with a measurable physical echo.',
+    },
+    {
+      Icon: Brain,
+      value: 'A calmer, steadier brain.',
+      researcher: 'Kini and colleagues',
+      credential: 'Neuroimaging study',
+      year: '2016',
+      finding: 'Gratitude writing raised activity in brain regions tied to emotional regulation — still measurable three months later.',
+      detail: 'Using brain imaging, researchers found that people who practised gratitude writing showed greater activity in regions tied to emotional regulation and empathy. What is striking is that the effect lasted: scans taken three months after the writing ended still showed the change. Gratitude appears to train the brain, not just lift the mood of the moment.',
+    },
+    {
+      Icon: Moon,
+      value: 'Better mood, sleep, and bonds.',
+      researcher: 'Frontiers in Psychology',
+      credential: 'Published research',
+      year: '',
+      finding: 'Gratitude journaling was linked to lower anxiety and depression, improved sleep, and stronger relationships.',
+      detail: 'Reviewing the wider body of gratitude research, work published in Frontiers in Psychology linked a regular gratitude practice to lower anxiety and depression, better sleep, and stronger social connection. The same simple habit touches several parts of a life at once — mood, rest, and the relationships that hold it all together.',
+    },
   ],
 };
 
@@ -25444,30 +25556,66 @@ function ToolsFindingCard({ card, index, delay }: { card: ToolsScienceCard; inde
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      <View pointerEvents="none" style={tools.findingWatermark}>
-        <card.Icon s={92} c="rgba(197,160,89,0.07)" w={1.1} />
-      </View>
       <View pointerEvents="none" style={tools.scienceCardSheen} />
 
-      <View style={tools.findingHead}>
-        <View style={tools.findingIndex}>
-          <Text style={tools.findingIndexText}>{String(index + 1).padStart(2, '0')}</Text>
+      <View style={tools.findingTopRow}>
+        {/* Illustration slot — reserved for real art; the icon stands in until
+            then. Numbered so the feed still reads as an ordered set. */}
+        <View style={tools.findingArt}>
+          <LinearGradient
+            pointerEvents="none"
+            colors={['#FCF3DE', '#F6E7C4']}
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 0.9, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          {card.illustration ? (
+            <Image source={card.illustration} style={tools.findingArtImage} resizeMode="cover" />
+          ) : (
+            <card.Icon s={30} c={GOLD} w={1.7} />
+          )}
+          <View pointerEvents="none" style={tools.findingArtRing} />
+          <View style={tools.findingArtIndex}>
+            <Text style={tools.findingArtIndexText}>{String(index + 1).padStart(2, '0')}</Text>
+          </View>
         </View>
-        <View style={tools.findingRuleTrack}>
-          <Reanimated.View style={[tools.findingRule, ruleStyle]} />
+
+        <View style={tools.findingHeadCopy}>
+          <Text style={tools.findingValue}>{card.value}</Text>
+          <View style={tools.findingByline}>
+            <View style={tools.findingBylineDiamond} />
+            <Text style={tools.findingResearcher} numberOfLines={1}>{card.researcher}</Text>
+            {card.year ? <Text style={tools.findingYear}>{card.year}</Text> : null}
+          </View>
         </View>
-        <Text style={tools.findingSource} numberOfLines={1}>{card.source}</Text>
       </View>
 
-      <View style={tools.findingBodyRow}>
-        <View style={tools.findingIcon}>
-          <card.Icon s={20} c={GOLD} w={1.9} />
+      <Text style={tools.findingFinding}>{card.finding}</Text>
+
+      <TouchableOpacity
+        activeOpacity={0.75}
+        haptic="none"
+        onPress={toggle}
+        style={[tools.findingMoreBtn, expanded && tools.findingMoreBtnOpen]}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+      >
+        <Text style={tools.findingMoreText}>{expanded ? 'Show less' : 'More about this study'}</Text>
+        <Reanimated.View style={chevronStyle}>
+          <ChevronDown s={14} c={C.goldDark} w={2.2} />
+        </Reanimated.View>
+      </TouchableOpacity>
+
+      {/* Overflow-clipped accordion. The copy inside is absolutely positioned so
+          it keeps its full natural height regardless of the animated wrapper,
+          and reports that height once via onLayout. */}
+      <Reanimated.View style={[tools.findingDetailWrap, detailStyle]}>
+        <View style={tools.findingDetailInner} onLayout={event => setDetailHeight(event.nativeEvent.layout.height)}>
+          <View style={tools.findingDetailRule} />
+          <Text style={tools.findingCredential}>{card.credential.toUpperCase()}</Text>
+          <Text style={tools.findingDetailText}>{card.detail}</Text>
         </View>
-        <View style={tools.findingCopy}>
-          <Text style={tools.findingHeadline}>{card.headline}</Text>
-          <Text style={tools.findingText}>{card.body}</Text>
-        </View>
-      </View>
+      </Reanimated.View>
     </Reanimated.View>
   );
 }
@@ -25529,7 +25677,7 @@ function ToolsScienceScreen({
 
         <View style={tools.scienceFeed}>
           {screen.cards.map((card, index) => (
-            <ToolsFindingCard key={card.headline} card={card} index={index} delay={base + 140 + index * 120} />
+            <ToolsFindingCard key={card.value} card={card} index={index} delay={base + 140 + index * 120} />
           ))}
         </View>
       </Reanimated.ScrollView>
@@ -26457,29 +26605,53 @@ const tools = StyleSheet.create({
   findingCard: {
     position: 'relative', overflow: 'hidden',
     borderRadius: 26, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
-    backgroundColor: '#FFFDF9', paddingHorizontal: 17, paddingTop: 15, paddingBottom: 17,
+    backgroundColor: '#FFFDF9', paddingHorizontal: 16, paddingTop: 15, paddingBottom: 14,
     boxShadow: '0 14px 30px rgba(92,67,25,0.08)',
   },
-  findingWatermark: { position: 'absolute', right: -16, bottom: -20, transform: [{ rotate: '-12deg' }] },
-  findingHead: { flexDirection: 'row', alignItems: 'center', columnGap: 10, marginBottom: 13 },
-  findingIndex: {
-    minWidth: 31, height: 21, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center',
-    borderRadius: 8, borderCurve: 'continuous',
-    backgroundColor: 'rgba(197,160,89,0.10)', borderWidth: 1, borderColor: 'rgba(197,160,89,0.26)',
-  },
-  findingIndexText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 0.6, color: C.goldDark, fontVariant: ['tabular-nums'] },
-  findingRuleTrack: { flex: 1, minWidth: 0, height: 1, overflow: 'hidden' },
-  findingRule: { flex: 1, height: 1, backgroundColor: 'rgba(197,160,89,0.36)' },
-  findingSource: { flexShrink: 0, maxWidth: 182, fontFamily: F.sansBold, fontSize: 7.8, letterSpacing: 1.2, color: 'rgba(126,91,31,0.62)' },
-  findingBodyRow: { flexDirection: 'row', alignItems: 'flex-start', columnGap: 13 },
-  findingIcon: {
-    width: 42, height: 42, borderRadius: 15, borderCurve: 'continuous',
+  findingTopRow: { flexDirection: 'row', alignItems: 'center', columnGap: 14 },
+  // Illustration slot — a real square for the user's art to drop into.
+  findingArt: {
+    width: 76, height: 76, flexShrink: 0, overflow: 'hidden',
+    borderRadius: 19, borderCurve: 'continuous',
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)',
+    borderWidth: 1, borderColor: 'rgba(197,160,89,0.30)',
   },
-  findingCopy: { flex: 1, minWidth: 0 },
-  findingHeadline: { fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 23, color: INK },
-  findingText: { marginTop: 6, fontFamily: F.sans, fontSize: 13.2, lineHeight: 19.4, color: 'rgba(25,23,20,0.6)' },
+  findingArtImage: { width: '100%', height: '100%' },
+  findingArtRing: {
+    position: 'absolute', left: 4, top: 4, right: 4, bottom: 4,
+    borderRadius: 15, borderCurve: 'continuous',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)',
+  },
+  findingArtIndex: {
+    position: 'absolute', left: 6, top: 6, minWidth: 18, height: 15, paddingHorizontal: 4,
+    alignItems: 'center', justifyContent: 'center',
+    borderRadius: 6, backgroundColor: 'rgba(23,19,15,0.42)',
+  },
+  findingArtIndexText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.4, color: '#FBEFD6', fontVariant: ['tabular-nums'] },
+  findingHeadCopy: { flex: 1, minWidth: 0 },
+  findingValue: { fontFamily: F.serifBold, fontSize: 21, lineHeight: 25, letterSpacing: -0.3, color: INK },
+  findingByline: { flexDirection: 'row', alignItems: 'center', columnGap: 7, marginTop: 8 },
+  findingBylineDiamond: { width: 4, height: 4, backgroundColor: GOLD, transform: [{ rotate: '45deg' }] },
+  findingResearcher: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 11, letterSpacing: 0.2, color: C.goldDark },
+  findingYear: {
+    flexShrink: 0, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 0.8, color: 'rgba(126,91,31,0.66)',
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+    backgroundColor: 'rgba(197,160,89,0.12)', borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)',
+    fontVariant: ['tabular-nums'], overflow: 'hidden',
+  },
+  findingFinding: { marginTop: 13, fontFamily: F.sans, fontSize: 13.6, lineHeight: 20, color: 'rgba(25,23,20,0.66)' },
+  findingMoreBtn: {
+    marginTop: 13, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', columnGap: 6,
+    paddingLeft: 13, paddingRight: 11, paddingVertical: 8,
+    borderRadius: 999, backgroundColor: 'rgba(197,160,89,0.09)', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
+  },
+  findingMoreBtnOpen: { backgroundColor: 'rgba(197,160,89,0.14)', borderColor: 'rgba(197,160,89,0.34)' },
+  findingMoreText: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 0.5, color: C.goldDark },
+  findingDetailWrap: { overflow: 'hidden' },
+  findingDetailInner: { position: 'absolute', left: 0, right: 0, top: 0, paddingTop: 14 },
+  findingDetailRule: { height: 1, backgroundColor: 'rgba(197,160,89,0.2)', marginBottom: 11 },
+  findingCredential: { fontFamily: F.sansBold, fontSize: 8.2, letterSpacing: 1.3, color: 'rgba(126,91,31,0.6)', marginBottom: 7 },
+  findingDetailText: { fontFamily: F.sans, fontSize: 13, lineHeight: 20, color: 'rgba(25,23,20,0.58)' },
 
   progressMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 },
   progressRail: { flexDirection: 'row', alignItems: 'center', columnGap: 5 },
@@ -26582,33 +26754,78 @@ const tools = StyleSheet.create({
   techEmptyLine: { width: 42, height: 1, backgroundColor: 'rgba(197,160,89,0.32)' },
   techEmptyText: { maxWidth: 282, marginVertical: 16, fontFamily: F.serifMediumItalic, fontSize: 14.5, lineHeight: 21, color: 'rgba(25,23,20,0.48)', textAlign: 'center' },
 
-  // Pomodoro regimes
-  regimeRow: { marginTop: 24, flexDirection: 'row', columnGap: 11 },
-  regimeCard: {
-    flex: 1, position: 'relative', overflow: 'hidden', alignItems: 'center',
-    borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.26)',
-    backgroundColor: 'rgba(255,253,249,0.96)', paddingHorizontal: 13, paddingVertical: 18, rowGap: 7,
-    boxShadow: '0 10px 26px rgba(92,67,25,0.07)',
+  // Pomodoro regimes — each one drawn as the shape it makes in time.
+  regimeStack: { marginTop: 22, rowGap: 12 },
+  regimeCardV2: {
+    position: 'relative', overflow: 'hidden',
+    borderRadius: 26, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
+    backgroundColor: '#FFFDF9', paddingHorizontal: 17, paddingTop: 15, paddingBottom: 16,
+    boxShadow: '0 14px 30px rgba(92,67,25,0.08)',
   },
-  regimeIcon: { width: 48, height: 48, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)' },
-  regimeLabel: { marginTop: 3, fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.1, color: 'rgba(126,91,31,0.62)', textAlign: 'center' },
-  regimeName: { minHeight: 39, fontFamily: F.serifSemiBold, fontSize: 16.2, lineHeight: 19.5, color: INK, textAlign: 'center' },
-  regimeBody: { fontFamily: F.sans, fontSize: 12, lineHeight: 16.5, color: 'rgba(25,23,20,0.56)', textAlign: 'center' },
+  regimeCardHead: { flexDirection: 'row', alignItems: 'center', columnGap: 12 },
+  regimeCardIcon: {
+    width: 40, height: 40, borderRadius: 14, borderCurve: 'continuous',
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)',
+  },
+  regimeCardCopy: { flex: 1, minWidth: 0 },
+  regimeCardLabel: { fontFamily: F.sansBold, fontSize: 7.8, letterSpacing: 1.3, color: 'rgba(126,91,31,0.62)' },
+  regimeCardName: { marginTop: 3, fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 23, color: INK },
+  regimeCardCaption: { marginTop: 10, fontFamily: F.sansBold, fontSize: 8.2, letterSpacing: 1.15, color: 'rgba(126,91,31,0.5)' },
+  regimeCardBody: { marginTop: 7, fontFamily: F.sans, fontSize: 13, lineHeight: 19, color: 'rgba(25,23,20,0.6)' },
+
+  regimeTimeline: { marginTop: 15, flexDirection: 'row', alignItems: 'center', columnGap: 11 },
+  regimeStripWrap: { flex: 1, minWidth: 0, justifyContent: 'center' },
+  regimeStrip: { position: 'relative', height: 11 },
+  regimeStripRow: { flexDirection: 'row', columnGap: 3, height: 11 },
+  regimeClip: { overflow: 'hidden' },
+  regimeSegment: { height: 11, borderRadius: 4, borderCurve: 'continuous' },
+  regimeWork: { backgroundColor: 'rgba(197,160,89,0.20)' },
+  regimeWorkLit: { backgroundColor: GOLD },
+  regimeBreak: { backgroundColor: 'rgba(25,23,20,0.05)' },
+  regimeBreakLit: { backgroundColor: 'rgba(197,160,89,0.30)' },
+  regimeLong: { backgroundColor: 'rgba(25,23,20,0.07)' },
+  regimeLongLit: { backgroundColor: 'rgba(139,107,47,0.42)' },
+  regimeHeadLight: {
+    position: 'absolute', left: 0, top: -4, bottom: -4, width: 2, borderRadius: 1,
+    backgroundColor: '#FFF6DF',
+    shadowColor: GOLD, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.95, shadowRadius: 6, elevation: 3,
+  },
+  regimeMedal: {
+    flexShrink: 0, width: 28, height: 28, borderRadius: 10, borderCurve: 'continuous',
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FBEFD6', borderWidth: 1, borderColor: 'rgba(197,160,89,0.42)',
+  },
+
   rewardCard: {
     marginTop: 12, flexDirection: 'row', alignItems: 'center', columnGap: 13,
-    borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
-    backgroundColor: '#FFFCF4', paddingHorizontal: 15, paddingVertical: 15,
+    borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
+    backgroundColor: '#FFFCF4', paddingHorizontal: 16, paddingVertical: 15,
   },
-  rewardMedal: { flexShrink: 0, width: 46, height: 46, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FBEFD6', borderWidth: 1, borderColor: 'rgba(197,160,89,0.28)' },
+  rewardMedal: { flexShrink: 0, width: 46, height: 46, borderRadius: 16, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FBEFD6', borderWidth: 1, borderColor: 'rgba(197,160,89,0.28)' },
   rewardText: { flex: 1, fontFamily: F.sans, fontSize: 13, lineHeight: 18.5, color: 'rgba(25,23,20,0.62)' },
+
   nuanceCard: {
-    marginTop: 12, borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E7DFCB',
-    backgroundColor: '#FBF8F1', paddingHorizontal: 15, paddingVertical: 15,
+    marginTop: 12, borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E7DFCB',
+    backgroundColor: '#FBF8F1', paddingHorizontal: 16, paddingVertical: 16,
   },
   nuanceHead: { flexDirection: 'row', alignItems: 'center', columnGap: 7 },
   nuanceEyebrow: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.7, color: '#8B6B2F' },
-  nuanceText: { marginTop: 7, fontFamily: F.sans, fontSize: 13.5, lineHeight: 19.5, color: 'rgba(25,23,20,0.62)' },
+  nuanceText: { marginTop: 14, fontFamily: F.sans, fontSize: 13.5, lineHeight: 19.5, color: 'rgba(25,23,20,0.62)' },
   nuanceStrong: { fontFamily: F.sansBold, color: C.goldDark },
+
+  proofStack: { marginTop: 15, rowGap: 13 },
+  proofRow: {},
+  proofRowHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', columnGap: 10, marginBottom: 7 },
+  proofLabel: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 7.8, letterSpacing: 1.2, color: 'rgba(126,91,31,0.66)' },
+  proofMedals: { flexDirection: 'row', columnGap: 3.5 },
+  proofMedalDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(197,160,89,0.62)' },
+  proofBarRow: { flexDirection: 'row', alignItems: 'center', columnGap: 10 },
+  proofTrack: { flex: 1, minWidth: 0, height: 8, borderRadius: 999, overflow: 'hidden', backgroundColor: 'rgba(25,23,20,0.06)' },
+  proofFill: { width: '100%', height: 8, borderRadius: 999, backgroundColor: 'rgba(197,160,89,0.5)' },
+  proofFillStrong: { backgroundColor: GOLD },
+  proofTime: { flexShrink: 0, minWidth: 52, textAlign: 'right', fontFamily: F.sansBold, fontSize: 11, color: 'rgba(25,23,20,0.45)', fontVariant: ['tabular-nums'] },
+  proofTimeStrong: { color: C.goldDark },
 
   // Bucket list
   bucketStage: { flexGrow: 1, alignItems: 'center', paddingTop: 88, paddingHorizontal: 24 },
