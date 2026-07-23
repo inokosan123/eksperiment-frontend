@@ -924,15 +924,60 @@ function ListStep({
 
 // ─── Step: Anasta (pause) ──────────────────────────────────────────────────
 
-function AnastaScreen({ onContinue }: { onContinue: () => void }) {
-  const insets = useSafeAreaInsets();
-  const fade = useSharedValue(0);
+// The two benediction screens are read, not scanned — so they arrive the way
+// they are read: one thought at a time, the word itself last and lit.
+function Rising({ delay, children }: { delay: number; children: React.ReactNode }) {
+  const reduceMotion = useReducedMotion();
+  if (reduceMotion) return <>{children}</>;
+  return (
+    <Reanimated.View entering={FadeInDown.delay(delay).duration(620).easing(Easing.out(Easing.cubic))}>
+      {children}
+    </Reanimated.View>
+  );
+}
+
+// "Anasta." — the word the whole app is named for. It rises last, over a gold
+// breath that keeps living behind it.
+function AnastaWord({
+  word, sub, delay, wordStyle, subStyle,
+}: {
+  word: string;
+  sub: string;
+  delay: number;
+  wordStyle: object;
+  subStyle: object;
+}) {
+  const reduceMotion = useReducedMotion();
+  const breath = useSharedValue(0);
 
   useEffect(() => {
-    fade.value = withTiming(1, { duration: 520, easing: Easing.out(Easing.cubic) });
-  }, [fade]);
+    if (reduceMotion) {
+      breath.value = 0.5;
+      return;
+    }
+    breath.value = withDelay(
+      delay,
+      withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.quad) }),
+    );
+  }, [breath, delay, reduceMotion]);
 
-  const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
+  const glowStyle = useAnimatedStyle(() => ({ opacity: 0.2 + breath.value * 0.5 }));
+
+  return (
+    <Rising delay={delay}>
+      <View style={s.anastaWordWrap}>
+        <Reanimated.View pointerEvents="none" style={[s.anastaGlow, glowStyle]}>
+          <Bloom color={C.gold} opacity={0.5} />
+        </Reanimated.View>
+        <Text style={wordStyle}>{word}</Text>
+        <Text style={subStyle}>{sub}</Text>
+      </View>
+    </Rising>
+  );
+}
+
+function AnastaScreen({ onContinue }: { onContinue: () => void }) {
+  const insets = useSafeAreaInsets();
 
   return (
     <LinearGradient
@@ -941,42 +986,47 @@ function AnastaScreen({ onContinue }: { onContinue: () => void }) {
       end={{ x: 0.5, y: 1 }}
       style={[s.anastaScreen, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}
     >
-      <Reanimated.View style={[s.anastaContent, fadeStyle]}>
-        <Text style={s.anastaIntro}>Before you go further, hear this.</Text>
+      <View style={s.anastaContent}>
+        <Rising delay={0}>
+          <Text style={s.anastaIntro}>Before you go further, hear this.</Text>
+        </Rising>
 
-        <View style={s.anastaBlock}>
-          <Text style={s.anastaLine}>You will not become this person perfectly.</Text>
-          <Text style={s.anastaLine}>You will fall. Many times.</Text>
-        </View>
+        <Rising delay={260}>
+          <View style={s.anastaBlock}>
+            <Text style={s.anastaLine}>You will not become this person perfectly.</Text>
+            <Text style={s.anastaLine}>You will fall. Many times.</Text>
+          </View>
+        </Rising>
 
-        <View style={s.anastaBlock}>
-          <Text style={s.anastaLine}>That is not failure — that is the path.</Text>
-          <Text style={s.anastaLine}>Every saint fell. Every saint rose again.</Text>
-        </View>
+        <Rising delay={520}>
+          <View style={s.anastaBlock}>
+            <Text style={s.anastaLine}>That is not failure — that is the path.</Text>
+            <Text style={s.anastaLine}>Every saint fell. Every saint rose again.</Text>
+          </View>
+        </Rising>
 
-        <View style={s.anastaBlock}>
-          <Text style={s.anastaLine}>{"The devil's trap is not the fall."}</Text>
-          <Text style={s.anastaLine}>It is the shame after — the lie that says</Text>
-          <Text style={[s.anastaLine, s.anastaItalic]}>God does not want you back.</Text>
-          <Text style={s.anastaLine}>He always does.</Text>
-        </View>
+        <Rising delay={780}>
+          <View style={s.anastaBlock}>
+            <Text style={s.anastaLine}>{"The devil's trap is not the fall."}</Text>
+            <Text style={s.anastaLine}>It is the shame after — the lie that says</Text>
+            <Text style={[s.anastaLine, s.anastaItalic]}>God does not want you back.</Text>
+            <Text style={s.anastaLine}>He always does.</Text>
+          </View>
+        </Rising>
 
-        <View style={s.anastaBlock}>
-          <Text style={s.anastaLine}>So when you fall, do not lie there.</Text>
-          <Text style={s.anastaLine}>Get up. Without shame. Without delay.</Text>
-        </View>
+        <Rising delay={1040}>
+          <View style={s.anastaBlock}>
+            <Text style={s.anastaLine}>So when you fall, do not lie there.</Text>
+            <Text style={s.anastaLine}>Get up. Without shame. Without delay.</Text>
+          </View>
+        </Rising>
 
-        <Text style={s.anastaWord}>Anasta.</Text>
-        <Text style={s.anastaWordSub}>Rise.</Text>
+        <AnastaWord word="Anasta." sub="Rise." delay={1320} wordStyle={s.anastaWord} subStyle={s.anastaWordSub} />
 
-        <TouchableOpacity
-          onPress={onContinue}
-          activeOpacity={0.84}
-          style={s.anastaBtn}
-        >
-          <Text style={s.anastaBtnText}>I am ready to continue</Text>
-        </TouchableOpacity>
-      </Reanimated.View>
+        <Rising delay={1620}>
+          <GoldButton label="I am ready to continue" onPress={onContinue} height={54} style={s.anastaBtn} />
+        </Rising>
+      </View>
     </LinearGradient>
   );
 }
@@ -985,18 +1035,6 @@ function AnastaScreen({ onContinue }: { onContinue: () => void }) {
 
 function CongratsScreen({ onContinue }: { onContinue: () => void }) {
   const insets = useSafeAreaInsets();
-  const fade = useSharedValue(0);
-  const lift = useSharedValue(16);
-
-  useEffect(() => {
-    fade.value = withTiming(1, { duration: 620, easing: Easing.out(Easing.cubic) });
-    lift.value = withTiming(0, { duration: 620, easing: Easing.out(Easing.cubic) });
-  }, [fade, lift]);
-
-  const fadeStyle = useAnimatedStyle(() => ({
-    opacity: fade.value,
-    transform: [{ translateY: lift.value }],
-  }));
 
   return (
     <LinearGradient
@@ -1005,32 +1043,39 @@ function CongratsScreen({ onContinue }: { onContinue: () => void }) {
       end={{ x: 0.5, y: 1 }}
       style={[s.congratsScreen, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}
     >
-      <Reanimated.View style={[s.congratsContent, fadeStyle]}>
-        <Text style={s.congratsEyebrow}>The path is laid</Text>
+      <View style={s.congratsContent}>
+        <Rising delay={0}>
+          <Text style={s.congratsEyebrow}>The path is laid</Text>
+        </Rising>
 
-        <Text style={s.congratsTitle}>You named it.</Text>
+        <Rising delay={200}>
+          <Text style={s.congratsTitle}>You named it.</Text>
+        </Rising>
 
-        <View style={s.congratsBlock}>
-          <Text style={s.congratsLine}>Who you want to become.</Text>
-          <Text style={s.congratsLine}>What gets in the way.</Text>
-          <Text style={s.congratsLine}>What you can carry.</Text>
-        </View>
+        <Rising delay={480}>
+          <View style={s.congratsBlock}>
+            <Text style={s.congratsLine}>Who you want to become.</Text>
+            <Text style={s.congratsLine}>What gets in the way.</Text>
+            <Text style={s.congratsLine}>What you can carry.</Text>
+          </View>
+        </Rising>
 
-        <View style={s.congratsBlock}>
-          <Text style={s.congratsLine}>Now begins the walking.</Text>
-          <Text style={s.congratsLine}>One day at a time.</Text>
-          <Text style={[s.congratsLine, s.anastaItalic]}>
-            Every fall is part of the road.
-          </Text>
-        </View>
+        <Rising delay={760}>
+          <View style={s.congratsBlock}>
+            <Text style={s.congratsLine}>Now begins the walking.</Text>
+            <Text style={s.congratsLine}>One day at a time.</Text>
+            <Text style={[s.congratsLine, s.anastaItalic]}>
+              Every fall is part of the road.
+            </Text>
+          </View>
+        </Rising>
 
-        <Text style={s.congratsWord}>Anasta.</Text>
-        <Text style={s.congratsWordSub}>Begin.</Text>
+        <AnastaWord word="Anasta." sub="Begin." delay={1040} wordStyle={s.congratsWord} subStyle={s.congratsWordSub} />
 
-        <TouchableOpacity onPress={onContinue} activeOpacity={0.84} style={s.congratsBtn}>
-          <Text style={s.congratsBtnText}>Walk this path</Text>
-        </TouchableOpacity>
-      </Reanimated.View>
+        <Rising delay={1340}>
+          <GoldButton label="Walk this path" onPress={onContinue} height={54} style={s.congratsBtn} />
+        </Rising>
+      </View>
     </LinearGradient>
   );
 }
@@ -1842,47 +1887,35 @@ const s = StyleSheet.create({
   },
   anastaBlock: { gap: 4, alignItems: 'center' },
   anastaLine: {
-    fontFamily: F.serif,
-    fontSize: 17,
-    lineHeight: 26,
-    color: '#3D3229',
+    fontFamily: F.serifMedium,
+    fontSize: 18.5,
+    lineHeight: 28,
+    color: '#332B22',
     textAlign: 'center',
   },
   anastaItalic: {
     fontFamily: F.serifMediumItalic,
     color: '#5C5752',
   },
+  // The word sits over its own gold breath.
+  anastaWordWrap: { alignItems: 'center', marginTop: 18 },
+  anastaGlow: { position: 'absolute', left: -110, right: -110, top: -54, height: 170 },
   anastaWord: {
-    fontFamily: F.serifMedium,
-    fontSize: 36,
-    color: C.gold,
-    letterSpacing: 2,
-    marginTop: 18,
+    fontFamily: F.serifSemiBold,
+    fontSize: 44,
+    lineHeight: 52,
+    color: C.goldDark,
+    letterSpacing: 1.5,
     textAlign: 'center',
   },
   anastaWordSub: {
-    fontFamily: F.serifMediumItalic,
-    fontSize: 18,
-    color: '#A8853C',
+    fontFamily: F.serifMedium,
+    fontSize: 20,
+    color: '#9A7C36',
     marginTop: 2,
     textAlign: 'center',
   },
-  anastaBtn: {
-    marginTop: 28,
-    height: 56,
-    paddingHorizontal: 28,
-    borderRadius: 18,
-    backgroundColor: '#1C1917',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  anastaBtnText: {
-    fontFamily: F.sansBold,
-    fontSize: 12,
-    letterSpacing: 2.4,
-    color: '#FFFFFF',
-    textTransform: 'uppercase',
-  },
+  anastaBtn: { marginTop: 28, minWidth: 250 },
   anastaTagline: {
     fontFamily: F.serifMediumItalic,
     fontSize: 15,
@@ -1925,43 +1958,28 @@ const s = StyleSheet.create({
   },
   congratsBlock: { gap: 4, alignItems: 'center' },
   congratsLine: {
-    fontFamily: F.serif,
-    fontSize: 17,
-    lineHeight: 26,
-    color: '#3D3229',
+    fontFamily: F.serifMedium,
+    fontSize: 18.5,
+    lineHeight: 28,
+    color: '#332B22',
     textAlign: 'center',
   },
   congratsWord: {
-    fontFamily: F.serifMedium,
-    fontSize: 40,
-    color: C.gold,
-    letterSpacing: 2,
-    marginTop: 14,
+    fontFamily: F.serifSemiBold,
+    fontSize: 46,
+    lineHeight: 54,
+    color: C.goldDark,
+    letterSpacing: 1.5,
     textAlign: 'center',
   },
   congratsWordSub: {
-    fontFamily: F.serifMediumItalic,
-    fontSize: 18,
-    color: '#A8853C',
+    fontFamily: F.serifMedium,
+    fontSize: 20,
+    color: '#9A7C36',
     marginTop: 2,
     textAlign: 'center',
   },
-  congratsBtn: {
-    marginTop: 22,
-    height: 56,
-    paddingHorizontal: 36,
-    borderRadius: 18,
-    backgroundColor: '#1C1917',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  congratsBtnText: {
-    fontFamily: F.sansBold,
-    fontSize: 12,
-    letterSpacing: 2.4,
-    color: '#FFFFFF',
-    textTransform: 'uppercase',
-  },
+  congratsBtn: { marginTop: 22, minWidth: 250 },
 
   // Summary card (inside review step)
   summaryCard: {
