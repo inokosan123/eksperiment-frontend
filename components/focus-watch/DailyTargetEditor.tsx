@@ -1,16 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
+  cancelAnimation,
   Easing,
+  FadeIn,
   runOnJS,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Circle, Defs, Ellipse, Path, RadialGradient, Stop } from 'react-native-svg';
 import { ChevronRight, Shield } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
@@ -29,9 +34,13 @@ const YEAR_DAYS = 365;
 const SLEEP_DAYS = Math.round((8 / 24) * YEAR_DAYS);
 // Fewer columns → chunkier beads you can't unsee. Each bead is one day of the
 // year; the dark block of phone-days is the pain point, so it reads big.
-const WEEK_COLS = 30;
+// 29 columns: still 13 rows, but the year ends on a 17-bead row instead of a
+// 5-bead stub — it reads finished now that the beads sit on a plate.
+const WEEK_COLS = 29;
 const BEAD_SIZE = 7.3;
 const BEAD_ROW_H = 11;
+const RING_SIZE = 12.6;
+const SHINE_W = 86;
 const TOLERANCE_SPAN = 180;
 const DEFAULT_TOLERANCE = 120;
 const GLIDE = { duration: 620, easing: Easing.out(Easing.cubic) };
@@ -48,14 +57,178 @@ export type TargetValues = {
   essentialOnly: number | null;
 };
 
+function withAlpha(hex: string, alpha: number): string {
+  const value = parseInt(hex.slice(1), 16);
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
+}
+
 function rangeStops(from: number, to: number): number[] {
   const stops: number[] = [];
   for (let value = from; value <= to; value += 15) stops.push(value);
   return stops;
 }
 
+// A soft radial bloom. Rose behind the cost figure, gold behind the title —
+// the app already lights its wow moments this way (trophy rays, streak hearth).
+function Bloom({ color, opacity = 0.5 }: { color: string; opacity?: number }) {
+  const id = `bloom-${color.replace('#', '')}`;
+  return (
+    <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <Defs>
+        <RadialGradient id={id} cx="50%" cy="50%" rx="50%" ry="50%">
+          <Stop offset="0%" stopColor={color} stopOpacity={opacity} />
+          <Stop offset="55%" stopColor={color} stopOpacity={opacity * 0.34} />
+          <Stop offset="100%" stopColor={color} stopOpacity={0} />
+        </RadialGradient>
+      </Defs>
+      <Ellipse cx="50" cy="50" rx="50" ry="50" fill={`url(#${id})`} />
+    </Svg>
+  );
+}
+
+// The cost figure doesn't snap to its new value — it runs there. An exponential
+// chase, so dragging the slider keeps the digits alive without ever jumping,
+// and the first appearance counts up from nothing.
+function useChasedNumber(target: number, reduceMotion: boolean) {
+  const [display, setDisplay] = useState(reduceMotion ? target : 0);
+  const currentRef = useRef(reduceMotion ? target : 0);
+  const targetRef = useRef(target);
+  targetRef.current = target;
+
+  useEffect(() => {
+    if (reduceMotion) {
+      currentRef.current = target;
+      setDisplay(target);
+      return;
+    }
+    let frame = 0;
+    let last = Date.now();
+    // Only whole days ever reach state: the card re-renders a few dozen times
+    // across a count, not once per frame.
+    const publish = (value: number) => setDisplay(previous => (previous === value ? previous : value));
+    const tick = () => {
+      const now = Date.now();
+      const dt = Math.min(64, now - last);
+      last = now;
+      const diff = targetRef.current - currentRef.current;
+      if (Math.abs(diff) < 0.4) {
+        currentRef.current = targetRef.current;
+        publish(targetRef.current);
+        return;
+      }
+      currentRef.current += diff * (1 - Math.exp(-dt / 110));
+      publish(Math.round(currentRef.current));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [reduceMotion, target]);
+
+  return display;
+}
+
+// A slow glint of light that crosses the year every few seconds — the same
+// polish the trophy card gets, laid over 365 beads so the plate feels alive.
+function YearShine({
+  width,
+  height,
+  reduceMotion,
+}: {
+  width: number;
+  height: number;
+  reduceMotion: boolean;
+}) {
+  const travel = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion || width <= 0) return;
+    travel.value = 0;
+    travel.value = withRepeat(
+      withSequence(
+        withDelay(2600, withTiming(1, { duration: 1650, easing: Easing.inOut(Easing.quad) })),
+        withTiming(0, { duration: 0 }),
+      ),
+      -1,
+      false,
+    );
+    return () => cancelAnimation(travel);
+  }, [reduceMotion, travel, width]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: travel.value > 0 && travel.value < 1 ? 1 : 0,
+    transform: [
+      { translateX: -SHINE_W + travel.value * (width + SHINE_W * 2) },
+      { rotate: '14deg' },
+    ],
+  }));
+
+  if (reduceMotion || width <= 0 || height <= 0) return null;
+
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, s.shineClip]}>
+      <Animated.View style={[s.shineBand, { height: height * 1.7, top: -height * 0.35 }, style]}>
+        <LinearGradient
+          colors={['rgba(255,247,224,0)', 'rgba(255,250,235,0.62)', 'rgba(255,247,224,0)']}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+    </View>
+  );
+}
+
+// The last phone-day of the year, ringed in gold: a marker that travels bead by
+// bead as you move the goal, so you watch the boundary of the loss move.
+function FrontierRing({
+  phoneEnd,
+  cellWidth,
+  visible,
+  reduceMotion,
+}: {
+  phoneEnd: SharedValue<number>;
+  cellWidth: number;
+  visible: boolean;
+  reduceMotion: boolean;
+}) {
+  const pulse = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion || !visible) {
+      pulse.value = 0.5;
+      return;
+    }
+    pulse.value = 0;
+    pulse.value = withRepeat(
+      withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true,
+    );
+    return () => cancelAnimation(pulse);
+  }, [pulse, reduceMotion, visible]);
+
+  // No scale — small ringed views pixelate on Android. Position and opacity only.
+  const style = useAnimatedStyle(() => {
+    const index = Math.max(0, Math.round(phoneEnd.value) - 1);
+    const row = Math.floor(index / WEEK_COLS);
+    const column = index % WEEK_COLS;
+    return {
+      opacity: 0.34 + pulse.value * 0.5,
+      transform: [
+        { translateX: column * cellWidth + cellWidth / 2 - RING_SIZE / 2 },
+        { translateY: row * BEAD_ROW_H + BEAD_ROW_H / 2 - RING_SIZE / 2 },
+      ],
+    };
+  });
+
+  if (!visible || cellWidth <= 0) return null;
+  return <Animated.View pointerEvents="none" style={[s.frontierRing, style]} />;
+}
+
 // ————— One year of days; the phone's share and its buffer glide in and out. —————
-function YearDotRow({
+// Memoised: the row's props never change while the tally counts, so a re-render
+// of the card doesn't reconcile hundreds of beads.
+const YearDotRow = memo(function YearDotRow({
   row,
   cellWidth,
   phoneEnd,
@@ -119,7 +292,7 @@ function YearDotRow({
       )}
     </View>
   );
-}
+});
 
 // The year in dark beads. `embedded` drops the card chrome so it can live
 // fused under the day bar, or inside the target sheet.
@@ -138,9 +311,10 @@ function YearPerspective({
   const bufferDays = target == null || toleranceDuration == null
     ? 0
     : Math.round((toleranceDuration / 1440) * YEAR_DAYS);
-  const awayDays = Math.max(0, YEAR_DAYS - SLEEP_DAYS - phoneDays - bufferDays);
-  const phoneEnd = useSharedValue(SLEEP_DAYS + phoneDays);
-  const bufferEnd = useSharedValue(SLEEP_DAYS + phoneDays + bufferDays);
+  // Both start empty at the sleep boundary, so the first paint grows the cost
+  // out of the year instead of stamping it there.
+  const phoneEnd = useSharedValue(reduceMotion ? SLEEP_DAYS + phoneDays : SLEEP_DAYS);
+  const bufferEnd = useSharedValue(reduceMotion ? SLEEP_DAYS + phoneDays + bufferDays : SLEEP_DAYS);
 
   useEffect(() => {
     const nextPhone = SLEEP_DAYS + phoneDays;
@@ -151,52 +325,110 @@ function YearPerspective({
 
   const rows = Math.ceil(YEAR_DAYS / WEEK_COLS);
   const cellWidth = fieldWidth > 0 ? fieldWidth / WEEK_COLS : 0;
+  // Two chased figures drive every number on the card; Life falls out of them,
+  // so the whole tally moves as one.
+  const shownPhone = useChasedNumber(phoneDays, reduceMotion);
+  const shownBuffer = useChasedNumber(bufferDays, reduceMotion);
+  const shownAway = Math.max(0, YEAR_DAYS - SLEEP_DAYS - shownPhone - shownBuffer);
+
+  // The ember behind the number: it breathes at rest and flares on every change,
+  // so the cost feels like it's smouldering rather than printed.
+  const breath = useSharedValue(0);
+  const flare = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      breath.value = 0.5;
+      return;
+    }
+    breath.value = withRepeat(
+      withTiming(1, { duration: 3200, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true,
+    );
+    return () => cancelAnimation(breath);
+  }, [breath, reduceMotion]);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    flare.value = withSequence(
+      withTiming(1, { duration: 170, easing: Easing.out(Easing.quad) }),
+      withTiming(0, { duration: 780, easing: Easing.out(Easing.cubic) }),
+    );
+  }, [flare, phoneDays, bufferDays, reduceMotion]);
+
+  const emberStyle = useAnimatedStyle(() => ({
+    opacity: 0.3 + breath.value * 0.12 + flare.value * 0.44,
+  }));
 
   return (
     <View style={embedded ? s.yearWrapEmbedded : s.yearWrap}>
-      <View style={s.wasteHero}>
+      <Animated.View
+        style={s.wasteHero}
+        entering={reduceMotion ? undefined : FadeIn.duration(420).easing(Easing.out(Easing.cubic))}
+      >
         <View style={s.wasteHeadingRow}>
           <View style={s.wasteHeadingRule} />
           <Text style={s.wasteHeading}>YOU WASTE</Text>
           <View style={s.wasteHeadingRule} />
         </View>
         <View style={s.wasteFigureRow}>
+          <Animated.View pointerEvents="none" style={[s.wasteEmber, emberStyle]}>
+            <Bloom color="#A8354A" opacity={0.46} />
+          </Animated.View>
           {/* The cost number owns the centre line; the tolerance hangs off it as
               a slashed annotation, mirrored by a ghost so nothing shifts. */}
           {target != null && bufferDays > 0 && (
             <View style={[s.wasteAnnex, s.wasteAnnexGhost]} pointerEvents="none">
               <View style={s.wasteSlash} />
-              <Text style={s.wastePlus}>+{bufferDays}</Text>
+              <Text style={s.wastePlus}>+{shownBuffer}</Text>
             </View>
           )}
-          <Text style={s.wasteNumber}>{target == null ? '—' : phoneDays}</Text>
+          <Text style={s.wasteNumber}>{target == null ? '—' : shownPhone}</Text>
           {target != null && bufferDays > 0 && (
             <View style={s.wasteAnnex}>
               <View style={s.wasteSlash} />
-              <Text style={s.wastePlus}>+{bufferDays}</Text>
+              <Text style={s.wastePlus}>+{shownBuffer}</Text>
             </View>
           )}
         </View>
         <Text style={s.wasteUnit}>
           {target == null ? 'set a goal to see the cost' : 'full days, in one year'}
         </Text>
-      </View>
-      <View style={s.dotField} onLayout={event => setFieldWidth(event.nativeEvent.layout.width)}>
+      </Animated.View>
+      <Animated.View
+        style={s.dotField}
+        onLayout={event => setFieldWidth(event.nativeEvent.layout.width)}
+        entering={reduceMotion ? undefined : FadeIn.delay(110).duration(460).easing(Easing.out(Easing.cubic))}
+      >
+        {/* The plate the year is inlaid on. Absolute, so it costs no height —
+            the beads stay tucked under the figure. */}
+        <View pointerEvents="none" style={s.dotPlate} />
         {cellWidth > 0 &&
           Array.from({ length: rows }).map((_, row) => (
             <YearDotRow key={row} row={row} cellWidth={cellWidth} phoneEnd={phoneEnd} bufferEnd={bufferEnd} />
           ))}
-      </View>
-      <View style={s.legendBand}>
+        <FrontierRing
+          phoneEnd={phoneEnd}
+          cellWidth={cellWidth}
+          visible={target != null && phoneDays > 0}
+          reduceMotion={reduceMotion}
+        />
+        <YearShine width={fieldWidth} height={rows * BEAD_ROW_H} reduceMotion={reduceMotion} />
+      </Animated.View>
+      <Animated.View
+        style={s.legendBand}
+        entering={reduceMotion ? undefined : FadeIn.delay(200).duration(460).easing(Easing.out(Easing.cubic))}
+      >
         <View style={s.legendRule} />
         <View style={s.legendRow}>
-          <LegendItem color={GOAL_COLOR} label="Phone" value={`${phoneDays}`} emphasis first />
-          {bufferDays > 0 && <LegendItem color={TOLERANCE_COLOR} label="Tolerance" value={`${bufferDays}`} />}
-          <LegendItem color={PRODUCTIVE_COLOR} label="Life" value={`${awayDays}`} />
+          <LegendItem color={GOAL_COLOR} label="Phone" value={`${shownPhone}`} emphasis first />
+          {bufferDays > 0 && <LegendItem color={TOLERANCE_COLOR} label="Tolerance" value={`${shownBuffer}`} />}
+          <LegendItem color={PRODUCTIVE_COLOR} label="Life" value={`${shownAway}`} />
           <LegendItem color={SLEEP_COLOR} label="Sleep" value={`${SLEEP_DAYS}`} />
         </View>
         <View style={s.legendRule} />
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -226,7 +458,12 @@ function LegendItem({
             style={[s.legendHaloRing, { borderColor: color }, emphasis && s.legendHaloRingEmphasis]}
             pointerEvents="none"
           />
-          <View style={[s.legendBead, { backgroundColor: color }]} />
+          <View
+            style={[
+              s.legendBead,
+              { backgroundColor: color, boxShadow: `0 1px 6px ${withAlpha(color, emphasis ? 0.55 : 0.4)}` },
+            ]}
+          />
         </View>
         <Text style={[s.legendValue, emphasis && s.legendValueEmphasis]}>{value}</Text>
         <Text style={[s.legendLabel, emphasis && s.legendLabelEmphasis]}>{label}</Text>
@@ -549,7 +786,11 @@ export default function DailyTargetEditor({
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
+          <HairlineWeave color="#8A6A2F" opacity={0.045} />
           <View style={s.dayCardHead}>
+            <View pointerEvents="none" style={s.dayCardHalo}>
+              <Bloom color={C.gold} opacity={0.2} />
+            </View>
             <Text style={s.dayCardTitle}>Your day</Text>
             <TitleFlourish />
           </View>
@@ -657,6 +898,8 @@ const s = StyleSheet.create({
     boxShadow: '0 10px 28px rgba(67, 53, 31, 0.07)',
   },
   dayCardHead: { alignItems: 'center', marginBottom: 20 },
+  // A gold breath of light behind the title — the card lights itself.
+  dayCardHalo: { position: 'absolute', top: -34, left: -20, right: -20, height: 108 },
   dayCardTitle: { fontFamily: F.serifSemiBold, fontSize: 25.5, lineHeight: 29, letterSpacing: -0.4, color: C.text },
   flourish: { marginTop: 2 },
   dayCardDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E7DCC6', marginVertical: 18 },
@@ -671,7 +914,15 @@ const s = StyleSheet.create({
   // A rule broken by a small gold lozenge — the app's ornament, stood upright.
   gemDivider: { width: 9, alignItems: 'center', justifyContent: 'center' },
   gemDividerLine: { flex: 1, width: StyleSheet.hairlineWidth, backgroundColor: '#E0D2B2' },
-  gemDividerGem: { width: 4.6, height: 4.6, marginVertical: 4, backgroundColor: C.goldDark, opacity: 0.75, transform: [{ rotate: '45deg' }] },
+  gemDividerGem: {
+    width: 4.6,
+    height: 4.6,
+    marginVertical: 4,
+    backgroundColor: C.goldDark,
+    opacity: 0.78,
+    boxShadow: '0 0 6px rgba(201, 162, 39, 0.5)',
+    transform: [{ rotate: '45deg' }],
+  },
   alwaysProtectedBand: { marginTop: 12, minHeight: 27, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 10, borderCurve: 'continuous', backgroundColor: '#F9E4E7', paddingHorizontal: 10 },
   alwaysProtectedDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: ESSENTIALS_COLOR, boxShadow: '0 2px 6px rgba(225,75,90,0.28)' },
   alwaysProtectedText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.05, color: '#A63A4B' },
@@ -694,6 +945,7 @@ const s = StyleSheet.create({
   wasteHeadingRule: { width: 22, height: 1, borderRadius: 1, backgroundColor: 'rgba(162,67,81,0.34)' },
   wasteHeading: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 3, color: '#A24351' },
   wasteFigureRow: { marginTop: 7, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center' },
+  wasteEmber: { position: 'absolute', top: -20, left: -58, right: -58, bottom: -22 },
   wasteNumber: { fontFamily: F.serifBold, fontSize: 52, lineHeight: 55, letterSpacing: -0.9, color: '#1A1B1D', fontVariant: ['tabular-nums'] },
   // The tolerance, hung off the cost as a fraction-like aside: slash, then the
   // grey +N sitting a touch lower than the big number's baseline.
@@ -704,6 +956,32 @@ const s = StyleSheet.create({
   wasteUnit: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 16.5, lineHeight: 20, letterSpacing: 0.1, color: '#5E5751' },
   dotField: { marginTop: 15 },
   dotCell: { height: BEAD_ROW_H, alignItems: 'center', justifyContent: 'center' },
+  dotPlate: {
+    position: 'absolute',
+    top: -9,
+    left: -9,
+    right: -9,
+    bottom: -9,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(201,162,39,0.16)',
+    backgroundColor: 'rgba(255,254,248,0.7)',
+  },
+  shineClip: { overflow: 'hidden' },
+  shineBand: { position: 'absolute', left: 0, width: SHINE_W },
+  // The travelling frontier: where the phone's days end in the year.
+  frontierRing: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: RING_SIZE,
+    height: RING_SIZE,
+    borderRadius: RING_SIZE / 2,
+    borderWidth: 1.3,
+    borderColor: C.gold,
+    boxShadow: '0 0 7px rgba(201, 162, 39, 0.55)',
+  },
   yearDot: { width: BEAD_SIZE, height: BEAD_SIZE, borderRadius: BEAD_SIZE / 2 },
   dotSleep: { backgroundColor: SLEEP_COLOR },
   dotPhone: { backgroundColor: GOAL_COLOR },
@@ -711,7 +989,7 @@ const s = StyleSheet.create({
   dotAway: { backgroundColor: PRODUCTIVE_COLOR },
   // The legend reads as a line in an almanac: two gold hairlines, four columns
   // parted by fainter rules, each led by a haloed bead of its own colour.
-  legendBand: { marginTop: 18 },
+  legendBand: { marginTop: 23 },
   legendRule: { height: StyleSheet.hairlineWidth, backgroundColor: '#E4D7BB' },
   legendRow: { flexDirection: 'row', alignItems: 'stretch', paddingVertical: 12 },
   legendItem: { flex: 1, alignItems: 'center', gap: 6, paddingHorizontal: 4 },
