@@ -144,10 +144,12 @@ const LAUREL_LEAVES: { x: number; y: number; a: number; inner?: boolean }[] = [
 ];
 
 function LaurelSprig({ flip = false }: { flip?: boolean }) {
+  // Drawn on a 30×60 board, rendered larger — the wreath should hug the
+  // number, not stand off from it.
   return (
     <Svg
-      width={30}
-      height={60}
+      width={37}
+      height={74}
       viewBox="0 0 30 60"
       style={flip ? { transform: [{ scaleX: -1 }] } : undefined}
     >
@@ -390,7 +392,7 @@ export default function TrophyCalendarSheet({
           </View>
           <View style={s.subCell}>
             <View style={s.subValueRow}>
-              <StaticChallengeTrophy size={20} />
+              <StaticChallengeTrophy size={23} />
               <CountUp value={state.streak.trophies} delay={540} textStyle={s.subValue} />
             </View>
             <Text style={s.subLabel}>TROPHIES EARNED</Text>
@@ -526,73 +528,75 @@ const s = StyleSheet.create({
     paddingBottom: 28,
   },
 
-  /* Hero — laurel emblem, open on the page */
+  /* Hero — laurel emblem, open on the page. One tight crest: the wreath
+     hugs a 66pt number, the unit sits right under it, and the counters
+     row follows close — no dead air between the pieces. */
   hero: {
-    marginTop: 10,
+    marginTop: 6,
     alignItems: 'center',
   },
   laurelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 14,
+    gap: 8,
   },
   heroCenter: {
     alignItems: 'center',
-    minWidth: 96,
+    minWidth: 118,
   },
   heroValue: {
     fontFamily: F.serifSemiBold,
-    fontSize: 52,
-    lineHeight: 58,
-    letterSpacing: -1.5,
+    fontSize: 66,
+    lineHeight: 72,
+    letterSpacing: -2,
     color: '#4A3820',
     textAlign: 'center',
     includeFontPadding: false,
     fontVariant: ['lining-nums', 'tabular-nums'],
   },
   heroUnit: {
-    marginTop: 1,
+    marginTop: -3,
     fontFamily: F.serifItalic,
-    fontSize: 14.5,
-    lineHeight: 18,
+    fontSize: 16,
+    lineHeight: 21,
     color: '#8B6B2F',
   },
   subStats: {
-    marginTop: 14,
+    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'stretch',
-    paddingHorizontal: 8,
+    paddingHorizontal: 2,
   },
   subCell: {
     flex: 1,
     alignItems: 'center',
-    gap: 3,
+    gap: 1,
   },
   subValueRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: 6,
+    gap: 5,
   },
   subValue: {
     fontFamily: F.serifSemiBold,
-    fontSize: 26,
-    lineHeight: 31,
+    fontSize: 31,
+    lineHeight: 36,
     color: '#4A3820',
     includeFontPadding: false,
     fontVariant: ['lining-nums', 'tabular-nums'],
   },
   subUnit: {
     fontFamily: F.serif,
-    fontSize: 13,
+    fontSize: 14.5,
     color: '#8B6B2F',
   },
   subLabel: {
     fontFamily: F.sansBold,
-    fontSize: 9.5,
-    lineHeight: 12,
-    letterSpacing: 1.5,
+    fontSize: 10.5,
+    lineHeight: 14,
+    letterSpacing: 1.8,
     color: 'rgba(121,89,30,0.7)',
   },
   subSeparator: {
@@ -601,13 +605,13 @@ const s = StyleSheet.create({
   },
   subSeparatorLine: {
     width: 1,
-    height: 12,
+    height: 15,
     borderRadius: 1,
     backgroundColor: 'rgba(197,160,89,0.35)',
   },
   subSeparatorDiamond: {
-    width: 4.5,
-    height: 4.5,
+    width: 5,
+    height: 5,
     borderRadius: 0.5,
     backgroundColor: 'rgba(197,160,89,0.5)',
     transform: [{ rotate: '45deg' }],
