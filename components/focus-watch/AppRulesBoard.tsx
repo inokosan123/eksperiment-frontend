@@ -459,33 +459,6 @@ function CapacityMeter({
         )}
       </View>
 
-      {/* The tally, read between two gold hairlines — the same almanac band the
-          Your Day card ends on. */}
-      <View style={s.tallyBand}>
-        <View style={s.tallyRule} />
-        <View style={s.tallyRow}>
-          <TallyColumn
-            label="Planned"
-            value={formatMinutesShort(planned)}
-            color={full ? BLOCKED_COLOR : C.goldDark}
-            emphasis
-          />
-          <View style={s.tallyDivider} />
-          <TallyColumn
-            label="Free"
-            value={free == null ? '—' : formatMinutesShort(free)}
-            color={full ? BLOCKED_COLOR : '#5C7A63'}
-          />
-          <View style={s.tallyDivider} />
-          <TallyColumn
-            label="Goal"
-            value={goalMinutes == null ? '—' : formatMinutesShort(goalMinutes)}
-            color="#2D2923"
-          />
-        </View>
-        <View style={s.tallyRule} />
-      </View>
-
       {pastBuffer && (
         <Animated.View entering={FadeIn.duration(240)} style={[s.warning, full && s.warningStrong]}>
           <AlertTriangle s={14} c={full ? BLOCKED_COLOR : '#A36F2B'} w={2.2} />
@@ -496,13 +469,36 @@ function CapacityMeter({
           </Text>
         </Animated.View>
       )}
+
+      {/* The tally is the card's footer: a solid parchment band, full bleed to
+          the card's edges, each figure set under its name. Keep it last — it
+          swallows the card's bottom padding. */}
+      <View style={s.tallyBand}>
+        <TallyColumn
+          label="Planned"
+          value={formatMinutesShort(planned)}
+          color={full ? BLOCKED_COLOR : C.goldDark}
+          emphasis
+        />
+        <View style={s.tallyDivider} />
+        <TallyColumn
+          label="Free"
+          value={free == null ? '—' : formatMinutesShort(free)}
+          color={full ? BLOCKED_COLOR : '#5C7A63'}
+        />
+        <View style={s.tallyDivider} />
+        <TallyColumn
+          label="Goal"
+          value={goalMinutes == null ? '—' : formatMinutesShort(goalMinutes)}
+          color="#2D2923"
+        />
+      </View>
     </View>
   );
 }
 
-// One entry of the capacity tally, read across rather than down: the bead, the
-// name, then the figure — all on one line, since the band has width to spare
-// and the card had none to spare in height.
+// One entry of the capacity tally: the name in small caps, its figure beneath.
+// No beads — the solid band carries the register on its own.
 function TallyColumn({
   label,
   value,
@@ -516,10 +512,6 @@ function TallyColumn({
 }) {
   return (
     <View style={s.tallyColumn}>
-      <View style={s.tallyHalo}>
-        <View style={[s.tallyHaloRing, { borderColor: color }, emphasis && s.tallyHaloRingEmphasis]} pointerEvents="none" />
-        <View style={[s.tallyBead, { backgroundColor: color }]} />
-      </View>
       <Text style={s.tallyLabel} numberOfLines={1}>{label}</Text>
       <Text style={[s.tallyValue, emphasis && s.tallyValueEmphasis, { color }]} numberOfLines={1}>{value}</Text>
     </View>
@@ -651,19 +643,25 @@ const s = StyleSheet.create({
   railBottomLabels: { marginTop: 7, flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   railBottomText: { fontFamily: F.sansMedium, fontSize: 10.5, color: C.textMuted, fontVariant: ['tabular-nums'] },
 
-  // The capacity tally: one ledger line between two gold hairlines.
-  tallyBand: { marginTop: 1 },
-  tallyRule: { height: StyleSheet.hairlineWidth, backgroundColor: '#E4D7BB' },
-  tallyRow: { flexDirection: 'row', alignItems: 'stretch', paddingVertical: 9 },
-  tallyColumn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 2 },
-  tallyDivider: { width: StyleSheet.hairlineWidth, marginVertical: 2, backgroundColor: '#EDE3CE' },
-  tallyHalo: { flexShrink: 0, width: 12, height: 12, alignItems: 'center', justifyContent: 'center' },
-  tallyHaloRing: { ...StyleSheet.absoluteFillObject, borderRadius: 6, borderWidth: StyleSheet.hairlineWidth, opacity: 0.4 },
-  tallyHaloRingEmphasis: { opacity: 0.75 },
-  tallyBead: { width: 5.5, height: 5.5, borderRadius: 3 },
-  tallyValue: { flexShrink: 0, fontFamily: F.serifBold, fontSize: 15.5, lineHeight: 19, fontVariant: ['tabular-nums'] },
-  tallyValueEmphasis: { fontSize: 16.5, lineHeight: 20 },
-  tallyLabel: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 0.85, textTransform: 'uppercase', color: '#9C9081' },
+  // The tally footer: a solid parchment strip, full bleed to the card's edges —
+  // clearly its own ground against the gradient body above it.
+  tallyBand: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    marginTop: 0,
+    marginHorizontal: -16,
+    marginBottom: -11,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#F4EBD2',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2D2AC',
+  },
+  tallyColumn: { flex: 1, alignItems: 'center', gap: 2, paddingHorizontal: 4 },
+  tallyDivider: { width: StyleSheet.hairlineWidth, marginVertical: 4, backgroundColor: 'rgba(139,107,47,0.24)' },
+  tallyValue: { fontFamily: F.serifBold, fontSize: 17.5, lineHeight: 21, fontVariant: ['tabular-nums'] },
+  tallyValueEmphasis: { fontSize: 18.5, lineHeight: 22 },
+  tallyLabel: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.3, textTransform: 'uppercase', color: '#8F8060' },
 
   warning: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 14, borderCurve: 'continuous', backgroundColor: '#FFF4DC', paddingHorizontal: 12, paddingVertical: 10 },
   warningStrong: { backgroundColor: '#F9E8EB' },
