@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -15,12 +15,14 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Defs, Ellipse, Path, RadialGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, Ellipse, Line, Path, RadialGradient, Stop, SvgXml } from 'react-native-svg';
 import { ChevronRight, Shield } from '@/components/icons/Icons';
+import { HABIT_SVG } from '@/components/shared/notoEmoji/habits';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import DayGauge from './DayGauge';
 import HairlineWeave from './HairlineWeave';
+import { RadiantTrophy } from './TrophyRadiance';
 import LimitSlider from './LimitSlider';
 import GoldButton from './GoldButton';
 import { formatMinutesShort } from './dayPlanStore';
@@ -49,7 +51,10 @@ const TOLERANCE_COLOR = '#9EA4AB';
 const ESSENTIALS_COLOR = '#E14B5A';
 const PRODUCTIVE_COLOR = '#D3A33B';
 const SLEEP_COLOR = '#BFB0E4';
-const TROPHY_EMBLEM = require('@/assets/animations/challenge-trophy-preview.png');
+// The card's watermark trophy: the shipped Noto glyph with every fill collapsed
+// to one gold, so it reads as an emblem stamped into the card. (RadiantTrophy's
+// preview PNG carries a baked pale halo — right at badge size, a smudge blown up.)
+const TROPHY_GHOST_XML = HABIT_SVG.trophy.replace(/fill:#[0-9A-Fa-f]{6}/g, 'fill:#E8C070');
 
 export type TargetValues = {
   target: number | null;
@@ -484,6 +489,114 @@ function GemDivider({ height = 34 }: { height?: number }) {
   );
 }
 
+// Tolerance's answer to RadiantTrophy. The trophy is struck like a medal, so
+// the shield gets set in a bezel of hour ticks instead — the buffer is a span
+// of time you're guarded through, and it echoes the plan cards' day-clock.
+function ShieldSeal({ size = 33 }: { size?: number }) {
+  const field = size * 2;
+  const cx = field / 2;
+
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          width: size * 1.22,
+          height: size * 1.22,
+          borderRadius: (size * 1.22) / 2,
+          backgroundColor: 'rgba(122,133,141,0.16)',
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: 'rgba(110,121,130,0.38)',
+        }}
+      />
+      <Svg pointerEvents="none" width={field} height={field} style={{ position: 'absolute' }}>
+        {Array.from({ length: 16 }).map((_, index) => {
+          const angle = (index / 16) * Math.PI * 2 - Math.PI / 2;
+          const strong = index % 4 === 0;
+          const r1 = size * 0.72;
+          const r2 = r1 + size * (strong ? 0.13 : 0.08);
+          return (
+            <Line
+              key={index}
+              x1={cx + r1 * Math.cos(angle)}
+              y1={cx + r1 * Math.sin(angle)}
+              x2={cx + r2 * Math.cos(angle)}
+              y2={cx + r2 * Math.sin(angle)}
+              stroke="#7A858D"
+              strokeOpacity={strong ? 0.42 : 0.24}
+              strokeWidth={strong ? 1.2 : 1}
+              strokeLinecap="round"
+            />
+          );
+        })}
+      </Svg>
+      <Shield s={size * 0.58} c="#535C63" w={1.9} />
+    </View>
+  );
+}
+
+// The same shield, blown up as the card's watermark.
+function ShieldGhost({ size }: { size: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
+        fill="rgba(120,130,138,0.06)"
+        stroke="#78828A"
+        strokeOpacity={0.3}
+        strokeWidth={0.34}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+// A slow band of light across a card. The Goal is the hero of the three, so
+// it's the one that catches the light — same grammar as the plan cards' glint.
+function CardGlint({ width, height }: { width: number; height: number }) {
+  const reduceMotion = useReducedMotion();
+  const travel = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion || width <= 0) return;
+    travel.value = 0;
+    travel.value = withRepeat(
+      withSequence(
+        withDelay(3800, withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.quad) })),
+        withTiming(0, { duration: 0 }),
+      ),
+      -1,
+      false,
+    );
+    return () => cancelAnimation(travel);
+  }, [reduceMotion, travel, width]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: travel.value > 0 && travel.value < 1 ? 1 : 0,
+    transform: [
+      { translateX: -SHINE_W + travel.value * (width + SHINE_W * 2) },
+      { rotate: '14deg' },
+    ],
+  }));
+
+  if (reduceMotion || width <= 0) return null;
+
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, s.shineClip]}>
+      <Animated.View style={[s.shineBand, { height: height * 1.7, top: -height * 0.35 }, style]}>
+        <LinearGradient
+          colors={['rgba(255,244,214,0)', 'rgba(255,247,226,0.2)', 'rgba(255,244,214,0)']}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+    </View>
+  );
+}
+
 // A drawn swash under the card's title: two tapering curves meeting at a
 // haloed gold gem, flanking beads and tip beads — the app's rule—◆—rule
 // ornament, given a curve and a little more jewellery.
@@ -648,6 +761,9 @@ function TargetSheet({
   );
 }
 
+// Goal and Tolerance: one card each, built the same way — its emblem struck at
+// the left, the same emblem blown up and cropped by the right edge as the
+// card's watermark, a corner bloom, and the meaning set in serif underneath.
 function TargetRow({
   label,
   value,
@@ -662,6 +778,7 @@ function TargetRow({
   onPress: () => void;
 }) {
   const pressScale = useSharedValue(1);
+  const [box, setBox] = useState({ width: 0, height: 0 });
   const isGoal = tone === 'goal';
   const pressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pressScale.value }],
@@ -672,6 +789,10 @@ function TargetRow({
       <TouchableOpacity
         style={[s.targetCard, isGoal ? s.goalCard : s.toleranceCard]}
         onPress={onPress}
+        onLayout={event => {
+          const { width, height } = event.nativeEvent.layout;
+          setBox({ width, height });
+        }}
         onPressIn={() => {
           pressScale.value = withTiming(0.988, { duration: 90, easing: Easing.out(Easing.quad) });
         }}
@@ -684,30 +805,52 @@ function TargetRow({
         accessibilityLabel={`${label}, ${value}`}
       >
         <LinearGradient
-          colors={isGoal ? ['#17191A', '#292C2D', '#1D1F20'] : ['#E3E5E5', '#F3F4F2', '#E7E9E8']}
+          colors={isGoal ? ['#1A1C1D', '#26292A', '#151718'] : ['#E7EAE9', '#F5F6F4', '#E9ECEB']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <HairlineWeave color={isGoal ? '#FFFFFF' : '#242729'} opacity={isGoal ? 0.075 : 0.045} />
+        {/* The shield is a bare outline, so Tolerance gets a corner light of its
+            own. The trophy carries its own halo — a second bloom only muddies it. */}
+        {!isGoal && (
+          <View pointerEvents="none" style={s.cardBloom}>
+            <Bloom color="#78828A" opacity={0.24} />
+          </View>
+        )}
+        <HairlineWeave color={isGoal ? '#D8AD53' : '#242729'} opacity={isGoal ? 0.06 : 0.045} />
+        {isGoal ? (
+          <View pointerEvents="none" style={s.goalWatermark}>
+            <SvgXml xml={TROPHY_GHOST_XML} width={126} height={126} preserveAspectRatio="xMidYMid meet" />
+          </View>
+        ) : (
+          <View pointerEvents="none" style={s.toleranceWatermark}>
+            <ShieldGhost size={112} />
+          </View>
+        )}
+        {isGoal && <CardGlint width={box.width} height={box.height} />}
 
         <View style={s.targetCardHead}>
           <View style={s.targetCardTitleGroup}>
-            <View style={[s.targetCardIcon, isGoal ? s.goalIcon : s.toleranceIcon]}>
-              {isGoal
-                ? <Image source={TROPHY_EMBLEM} style={s.goalTrophyImage} resizeMode="contain" />
-                : <Shield s={20} c="#656B70" w={2} />}
+            <View style={s.targetEmblem}>
+              {isGoal ? <RadiantTrophy size={30} /> : <ShieldSeal size={33} />}
             </View>
             <Text style={[s.targetCardTitle, isGoal && s.targetCardTitleDark]}>{label}</Text>
           </View>
 
           <View style={[s.targetTimePill, isGoal ? s.goalTimePill : s.toleranceTimePill]}>
             <Text style={[s.targetTimeValue, isGoal && s.targetTimeValueDark]}>{value}</Text>
-            <ChevronRight s={14} c={isGoal ? '#D8AD53' : '#656B70'} w={2.3} />
+            <ChevronRight s={13} c={isGoal ? '#D8AD53' : '#656B70'} w={2.3} />
           </View>
         </View>
 
-        <View style={[s.targetCardDivider, isGoal && s.targetCardDividerDark]} />
+        <LinearGradient
+          colors={isGoal
+            ? ['rgba(216,173,83,0)', 'rgba(216,173,83,0.36)', 'rgba(216,173,83,0)']
+            : ['rgba(90,99,105,0)', 'rgba(90,99,105,0.26)', 'rgba(90,99,105,0)']}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={s.targetCardDivider}
+        />
         <Text style={[s.targetCardHint, isGoal && s.targetCardHintDark]}>{hint}</Text>
       </TouchableOpacity>
     </Animated.View>
@@ -760,8 +903,8 @@ export default function DailyTargetEditor({
         label="Goal"
         value={values.target == null ? 'No limit' : formatMinutesShort(values.target)}
         hint={essentialsOnly
-          ? 'The screen-time boundary for this day. Stay within it to earn today\'s trophy while only Essentials remain available.'
-          : 'The screen-time boundary for this day. Stay within it to keep the day on track and earn today\'s trophy.'}
+          ? 'Earn today\'s trophy with only your Essentials open.'
+          : 'Stay inside it and the day earns its trophy.'}
         tone="goal"
         onPress={() => setOpenSheet('goal')}
       />
@@ -771,8 +914,8 @@ export default function DailyTargetEditor({
           label="Tolerance"
           value={`+${formatMinutesShort(toleranceDuration ?? 0)}`}
           hint={essentialsOnly
-            ? 'Extra time after the Goal. It records the overflow without opening any other apps.'
-            : 'Extra time after the Goal. When it ends, the phone locks and only your Essentials stay open.'}
+            ? 'Extra time past the Goal. Nothing else opens.'
+            : 'Extra time past the Goal, then Essentials only.'}
           tone="tolerance"
           onPress={() => setOpenSheet('tolerance')}
         />
@@ -852,39 +995,53 @@ const s = StyleSheet.create({
   targetCard: {
     position: 'relative',
     overflow: 'hidden',
-    minHeight: 128,
-    borderRadius: 24,
+    borderRadius: 23,
     borderCurve: 'continuous',
     borderWidth: 1,
-    padding: 15,
+    paddingHorizontal: 15,
+    paddingTop: 14,
+    paddingBottom: 15,
   },
   goalCard: {
-    borderColor: '#353838',
-    backgroundColor: '#1D1F20',
-    boxShadow: '0 12px 28px rgba(25, 27, 28, 0.18)',
+    borderColor: '#38393A',
+    backgroundColor: '#1B1D1E',
+    boxShadow: '0 12px 28px rgba(25, 27, 28, 0.2)',
   },
   toleranceCard: {
-    borderColor: '#D0D3D3',
-    backgroundColor: '#EAEBEA',
+    borderColor: '#D3D6D6',
+    backgroundColor: '#EAECEB',
     boxShadow: '0 8px 22px rgba(49, 54, 55, 0.08)',
   },
+  // The corner the emblem is lit from, and the same emblem writ large behind
+  // the copy — cropped by the card's own edge.
+  cardBloom: { position: 'absolute', right: -74, top: -84, width: 208, height: 168 },
+  goalWatermark: {
+    position: 'absolute',
+    right: -22,
+    top: -8,
+    opacity: 0.15,
+    transform: [{ rotate: '-8deg' }],
+  },
+  toleranceWatermark: {
+    position: 'absolute',
+    right: -12,
+    top: -2,
+    opacity: 0.55,
+    transform: [{ rotate: '7deg' }],
+  },
   targetCardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  targetCardTitleGroup: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  targetCardIcon: { flexShrink: 0, width: 40, height: 40, borderRadius: 13, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  goalIcon: { borderColor: 'rgba(216,173,83,0.32)', backgroundColor: 'rgba(216,173,83,0.13)' },
-  goalTrophyImage: { width: 31, height: 31 },
-  toleranceIcon: { borderColor: '#CFD2D2', backgroundColor: 'rgba(255,255,255,0.66)' },
-  targetCardTitle: { fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 25, letterSpacing: -0.2, color: '#2E3233' },
-  targetCardTitleDark: { color: '#F8F7F2' },
-  targetTimePill: { flexShrink: 0, minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 13, borderCurve: 'continuous', borderWidth: 1, paddingHorizontal: 11 },
-  goalTimePill: { borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.075)' },
-  toleranceTimePill: { borderColor: '#D0D3D3', backgroundColor: 'rgba(255,255,255,0.72)' },
-  targetTimeValue: { fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 23, color: '#303435', fontVariant: ['tabular-nums'] },
-  targetTimeValueDark: { color: '#FFFFFF' },
-  targetCardDivider: { height: StyleSheet.hairlineWidth, marginVertical: 13, backgroundColor: '#C9CDCD' },
-  targetCardDividerDark: { backgroundColor: 'rgba(255,255,255,0.13)' },
-  targetCardHint: { fontFamily: F.sans, fontSize: 13.5, lineHeight: 19, color: '#5E6466' },
-  targetCardHintDark: { color: '#C7C9C8' },
+  targetCardTitleGroup: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  targetEmblem: { flexShrink: 0, alignItems: 'center', justifyContent: 'center', marginLeft: 2 },
+  targetCardTitle: { fontFamily: F.serifSemiBold, fontSize: 20.5, lineHeight: 24, letterSpacing: -0.2, color: '#2C3031' },
+  targetCardTitleDark: { color: '#F8F5EC' },
+  targetTimePill: { flexShrink: 0, minHeight: 35, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, paddingHorizontal: 11 },
+  goalTimePill: { borderColor: 'rgba(216,173,83,0.34)', backgroundColor: 'rgba(216,173,83,0.12)' },
+  toleranceTimePill: { borderColor: '#CFD4D5', backgroundColor: 'rgba(255,255,255,0.82)' },
+  targetTimeValue: { fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22, color: '#2E3335', fontVariant: ['tabular-nums'] },
+  targetTimeValueDark: { color: '#FBF3E2' },
+  targetCardDivider: { height: 1, marginTop: 12, marginBottom: 11 },
+  targetCardHint: { fontFamily: F.serifMedium, fontSize: 15.5, lineHeight: 20, letterSpacing: 0.1, color: '#5A6062' },
+  targetCardHintDark: { color: '#BEB8AB' },
 
   // One fused surface: the title, the day gauge, the year beads below it.
   dayCard: {
