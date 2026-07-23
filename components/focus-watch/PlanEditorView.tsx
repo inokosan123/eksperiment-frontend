@@ -15,6 +15,7 @@ import Bloom from './Bloom';
 import { LockGhost, LockSeal } from './EssentialsEmblem';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
 import AppRulesBoard from './AppRulesBoard';
+import HairlineWeave from './HairlineWeave';
 import EssentialAppsSheet from './EssentialAppsSheet';
 import FocusCheck from './FocusCheck';
 import FocusSwitch from './FocusSwitch';
@@ -195,6 +196,7 @@ export default function PlanEditorView({
   const recommendedTolerance = Math.min(12 * 60, recommendedMinutes + 60);
   const [name, setName] = useState(existing?.name ?? (guided ? 'My Daily Guard' : ''));
   const [themeId, setThemeId] = useState<PlanThemeId>(existing?.themeId ?? defaultPlanThemeId(draftPlanId));
+  const identityVisual = planVisualForTheme(themeId);
   const existingToleranceEnd = existing?.essentialOnlyMinutes ?? existing?.tolerableMinutes ?? null;
   const [target, setTarget] = useState<TargetValues>(() => existing
     ? {
@@ -571,17 +573,35 @@ export default function PlanEditorView({
           onBackOverride={isGuided ? () => {} : undefined}
         />
 
-        <Animated.View entering={enter(0)} style={s.identitySurface}>
+        {/* The plan's identity card wears the plan itself: pick a colour and
+            the whole card repaints into that plan's face — the same gradient,
+            weave and bloom its card will wear on the Day Plan hub. */}
+        <Animated.View entering={enter(0)} style={[s.identitySurface, { borderColor: identityVisual.border }]}>
+          <LinearGradient
+            colors={[identityVisual.gradient[0], identityVisual.gradient[1], identityVisual.gradient[2]]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <HairlineWeave color={identityVisual.accent} opacity={0.05} />
+          <View pointerEvents="none" style={s.identityBloom}>
+            <Bloom color={identityVisual.accent} opacity={0.22} />
+          </View>
+
           <View style={s.identitySection}>
-            <Text style={s.sectionLabel}>PLAN NAME</Text>
-            <View {...(isGuided ? nameTarget : {})} style={[s.nameSurface, name.length === 0 && s.nameSurfaceEmpty]}>
+            <Text style={[s.sectionLabel, { color: identityVisual.accent }]}>PLAN NAME</Text>
+            {/* Empty state nudges in the theme's own accent, not a fixed amber. */}
+            <View
+              {...(isGuided ? nameTarget : {})}
+              style={[s.nameSurface, { borderColor: name.length === 0 ? identityVisual.accent : identityVisual.border }]}
+            >
               <TextInput
                 value={name}
                 onChangeText={setName}
                 placeholder="Name this plan..."
-                placeholderTextColor={C.textMuted}
+                placeholderTextColor={identityVisual.body}
                 maxLength={28}
-                style={s.nameInput}
+                style={[s.nameInput, { color: identityVisual.ink }]}
               />
               {name.trim().length > 0 && (
                 <Animated.View entering={FadeInDown.duration(220)} style={s.nameCheck}>
@@ -589,18 +609,20 @@ export default function PlanEditorView({
                 </Animated.View>
               )}
             </View>
-            {name.length === 0 && <Text style={s.requiredText}>Give it a name to save it.</Text>}
+            {name.length === 0 && (
+              <Text style={[s.requiredText, { color: identityVisual.accent }]}>Give it a name to save it.</Text>
+            )}
           </View>
 
-          <View style={s.identityDivider} />
+          <View style={[s.identityDivider, { backgroundColor: identityVisual.border }]} />
 
           <View style={s.identitySection}>
             <View style={s.colorPickerHeader}>
-              <Text style={s.colorPickerLabel}>PLAN COLOR</Text>
-              <View style={[s.colorPickerValuePill, { backgroundColor: planVisualForTheme(themeId).accentSoft }]}>
-                <View style={[s.colorPickerValueDot, { backgroundColor: planVisualForTheme(themeId).accent }]} />
-                <Text style={[s.colorPickerValue, { color: planVisualForTheme(themeId).accent }]}>
-                  {planVisualForTheme(themeId).label}
+              <Text style={[s.colorPickerLabel, { color: identityVisual.accent }]}>PLAN COLOR</Text>
+              <View style={[s.colorPickerValuePill, { backgroundColor: identityVisual.accentSoft }]}>
+                <View style={[s.colorPickerValueDot, { backgroundColor: identityVisual.accent }]} />
+                <Text style={[s.colorPickerValue, { color: identityVisual.accent }]}>
+                  {identityVisual.label}
                 </Text>
               </View>
             </View>
@@ -918,22 +940,25 @@ const s = StyleSheet.create({
   essOnlyTitleOn: { color: '#FDF6F6' },
   essOnlyBody: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 14.5, lineHeight: 18.5, color: '#7E6165' },
   essOnlyBodyOn: { color: '#C4B4B6' },
-  identitySurface: { borderRadius: 25, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E2DDD4', backgroundColor: '#FFFEFB', padding: 15, gap: 15, boxShadow: '0 9px 25px rgba(42, 38, 31, 0.055)' },
+  // The identity card is painted at render time in the chosen plan's visual —
+  // border, gradient, weave and bloom all come from planVisuals.
+  identitySurface: { position: 'relative', overflow: 'hidden', borderRadius: 25, borderCurve: 'continuous', borderWidth: 1, padding: 15, gap: 14, boxShadow: '0 9px 25px rgba(42, 38, 31, 0.07)' },
+  identityBloom: { position: 'absolute', right: -70, top: -80, width: 210, height: 170 },
   identitySection: { minWidth: 0 },
-  identityDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E8E3DA' },
-  nameSurface: { height: 62, flexDirection: 'row', alignItems: 'center', borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DCD8D0', backgroundColor: '#F7F6F2', paddingLeft: 16, paddingRight: 10, boxShadow: 'inset 0 1px 2px rgba(34, 31, 26, 0.035)' },
-  nameSurfaceEmpty: { borderColor: '#E1C5A1' },
-  nameInput: { flex: 1, fontFamily: F.serifMedium, fontSize: 22, lineHeight: 27, color: C.text, paddingVertical: 0 },
-  nameCheck: { width: 32, height: 32, borderRadius: 11, borderCurve: 'continuous', backgroundColor: '#E7F1EB', alignItems: 'center', justifyContent: 'center' },
-  requiredText: { marginTop: 5, marginLeft: 4, fontFamily: F.sansMedium, fontSize: 10, color: '#A36F2B' },
+  identityDivider: { height: StyleSheet.hairlineWidth, opacity: 0.55 },
+  nameSurface: { height: 58, flexDirection: 'row', alignItems: 'center', borderRadius: 17, borderCurve: 'continuous', borderWidth: 1, backgroundColor: 'rgba(255,255,255,0.62)', paddingLeft: 15, paddingRight: 9, boxShadow: 'inset 0 1px 2px rgba(34, 31, 26, 0.04)' },
+  nameInput: { flex: 1, fontFamily: F.serifMedium, fontSize: 21, lineHeight: 26, paddingVertical: 0 },
+  nameCheck: { width: 30, height: 30, borderRadius: 10, borderCurve: 'continuous', backgroundColor: 'rgba(255,255,255,0.85)', alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(57,117,87,0.35)' },
+  requiredText: { marginTop: 5, marginLeft: 4, fontFamily: F.sansMedium, fontSize: 10 },
   colorPickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  colorPickerLabel: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.25, color: C.textMuted },
-  colorPickerValuePill: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 999, paddingHorizontal: 11 },
+  colorPickerLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.25 },
+  colorPickerValuePill: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 10 },
   colorPickerValueDot: { width: 7, height: 7, borderRadius: 4 },
-  colorPickerValue: { fontFamily: F.sansSemiBold, fontSize: 12.5 },
+  colorPickerValue: { fontFamily: F.sansSemiBold, fontSize: 12 },
   // Every swatch owns exactly one sixth of the tray, so narrow and wide
-  // devices always keep the intended two rows of six.
-  colorPickerSurface: { marginTop: 11, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', rowGap: 12, borderRadius: 19, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E3E0D9', backgroundColor: '#F4F3EF', paddingHorizontal: 3, paddingVertical: 13, boxShadow: 'inset 0 1px 2px rgba(34, 31, 26, 0.035)' },
+  // devices always keep the intended two rows of six. The tray is translucent
+  // white so the card's colour breathes through it.
+  colorPickerSurface: { marginTop: 10, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', rowGap: 11, borderRadius: 18, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.9)', backgroundColor: 'rgba(255,255,255,0.42)', paddingHorizontal: 3, paddingVertical: 12, boxShadow: 'inset 0 1px 2px rgba(34, 31, 26, 0.03)' },
   colorSwatchCell: { width: '16.666666%', alignItems: 'center', justifyContent: 'center' },
   colorSwatchButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   colorSwatch: { width: 29, height: 29, borderRadius: 15, alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(47, 39, 28, 0.13)' },
