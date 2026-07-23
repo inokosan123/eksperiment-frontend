@@ -370,8 +370,12 @@ function CapacityMeter({
   const groups = Object.entries(plannedByGroup).filter(([, minutes]) => minutes > 0);
   const planned = groups.reduce((sum, [, minutes]) => sum + minutes, 0);
   const scale = lockAtMinutes ?? goalMinutes ?? Math.max(60, planned);
-  const capacity = goalMinutes == null ? null : Math.round(goalMinutes * 0.8);
-  const overCapacity = goalMinutes != null && planned > goalMinutes * 0.9;
+  // 80% is a recommendation, not a ceiling. Everything the card states is
+  // measured against the whole Goal — the buffer is shown, never subtracted, so
+  // "still free" and the almanac's "Free" are always the same number.
+  const recommended = goalMinutes == null ? null : Math.round(goalMinutes * 0.8);
+  const free = goalMinutes == null ? null : Math.max(0, goalMinutes - planned);
+  const pastBuffer = recommended != null && planned > recommended;
   const full = goalMinutes != null && planned >= goalMinutes;
 
   const segments = useMemo(() => {
@@ -383,8 +387,6 @@ function CapacityMeter({
     });
   }, [groups, scale]);
 
-  const free = goalMinutes == null ? null : Math.max(0, goalMinutes - planned);
-  const capacityLeft = capacity == null ? null : Math.max(0, capacity - planned);
   const plannedFraction = goalMinutes == null || goalMinutes === 0 ? 0 : planned / goalMinutes;
 
   return (
@@ -404,13 +406,13 @@ function CapacityMeter({
         <View style={s.meterHeadCopy}>
           <Text style={s.meterKicker}>PLANNING CAPACITY</Text>
           <Text style={s.meterTitle}>
-            {capacity == null
+            {goalMinutes == null
               ? 'Set a Goal first.'
-              : capacityLeft != null && capacityLeft > 0
-                ? `${formatMinutesShort(capacityLeft)} left to divide`
-                : 'Every minute is spoken for'}
+              : free != null && free > 0
+                ? `${formatMinutesShort(free)} still free`
+                : 'Every minute is planned'}
           </Text>
-          <Text style={s.meterBody}>Plan 80% of your Goal — the rest stays free.</Text>
+          <Text style={s.meterBody}>Leave about a fifth unplanned — for essentials and days that run over.</Text>
         </View>
       </View>
 
@@ -419,6 +421,15 @@ function CapacityMeter({
           gone — the almanac below names every number, so the rail only has to
           show the shape. */}
       <View style={s.rail} onLayout={event => setRailWidth(event.nativeEvent.layout.width)}>
+        {/* The recommended buffer (last fifth of the Goal) is shaded warm gold,
+            the overflow past the Goal grey — you can see the fifth to leave free
+            instead of being told a number that fights the almanac. */}
+        {goalMinutes != null && recommended != null && railWidth > 0 && (
+          <View style={[s.bufferZone, {
+            left: (recommended / scale) * railWidth,
+            width: Math.max(0, ((goalMinutes - recommended) / scale) * railWidth),
+          }]} />
+        )}
         {goalMinutes != null && lockAtMinutes != null && railWidth > 0 && lockAtMinutes > goalMinutes && (
           <View style={[s.toleranceZone, { left: (goalMinutes / scale) * railWidth }]} />
         )}
@@ -440,11 +451,8 @@ function CapacityMeter({
           pointerEvents="none"
         />
         {goalMinutes != null && railWidth > 0 && (
-          <>
-            <View style={[s.capacityMarker, { left: (goalMinutes * 0.8 / scale) * railWidth }]} />
-            {/* The Goal boundary: a haloed tick so it reads on any segment. */}
-            <View style={[s.goalMarker, { left: (goalMinutes / scale) * railWidth - 1.25 }]} />
-          </>
+          /* The Goal boundary: a haloed tick so it reads on any segment. */
+          <View style={[s.goalMarker, { left: (goalMinutes / scale) * railWidth - 1.25 }]} />
         )}
       </View>
 
@@ -475,13 +483,13 @@ function CapacityMeter({
         <View style={s.tallyRule} />
       </View>
 
-      {overCapacity && (
+      {pastBuffer && (
         <Animated.View entering={FadeIn.duration(240)} style={[s.warning, full && s.warningStrong]}>
           <AlertTriangle s={14} c={full ? BLOCKED_COLOR : '#A36F2B'} w={2.2} />
           <Text style={[s.warningText, full && s.warningTextStrong]}>
             {full
-              ? 'Your rules use the whole Goal. Nothing is left for real life.'
-              : 'Very little room left for messages, maps, and real life.'}
+              ? 'Every minute is planned. Leave a little free, or a long day breaks the streak.'
+              : 'You’re into the last fifth. Leaving it free makes the Goal easier to keep.'}
           </Text>
         </Animated.View>
       )}
@@ -631,8 +639,10 @@ const s = StyleSheet.create({
   rail: { position: 'relative', height: 18, borderRadius: 9, borderCurve: 'continuous', backgroundColor: '#EFE8D8', overflow: 'hidden', boxShadow: 'inset 0 1px 2.5px rgba(63, 52, 30, 0.09)' },
   railSegment: { position: 'absolute', top: 2.5, bottom: 2.5, borderRadius: 6, borderCurve: 'continuous' },
   railSheen: { position: 'absolute', left: 0, right: 0, top: 0, height: 11 },
+  // The recommended buffer (80% → Goal) reads warm gold; the overflow past the
+  // Goal reads grey, the same grey the Your Day legend gives Tolerance.
+  bufferZone: { position: 'absolute', top: 0, bottom: 0, backgroundColor: 'rgba(201,162,39,0.12)' },
   toleranceZone: { position: 'absolute', top: 0, bottom: 0, right: 0, backgroundColor: 'rgba(158,164,171,0.18)' },
-  capacityMarker: { position: 'absolute', top: 3, bottom: 3, width: StyleSheet.hairlineWidth, backgroundColor: C.goldDark, opacity: 0.45 },
   goalMarker: { position: 'absolute', top: 1.5, bottom: 1.5, width: 2.5, borderRadius: 1.5, backgroundColor: '#2D2923', boxShadow: '0 0 0 1.5px rgba(255,255,255,0.55)' },
   railBottomLabels: { marginTop: 7, flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   railBottomText: { fontFamily: F.sansMedium, fontSize: 10.5, color: C.textMuted, fontVariant: ['tabular-nums'] },
