@@ -47,7 +47,25 @@ export const BANKED = {
   ink: '#6C6151',
   inkSoft: 'rgba(122,112,94,0.78)',
   inkMuted: '#8A806D',
+
+  /* Struck — the app's own oxblood, the ink reserved for an entry that was
+     deliberately ruled out. A day nobody scheduled is quiet; a day you
+     yourself set aside was an act, and gets stamped for it. */
+  struckInk: '#A24351',
+  struckLine: 'rgba(162,67,81,0.55)',
+  struckHair: 'rgba(162,67,81,0.34)',
+  struckWash: 'rgba(162,67,81,0.05)',
 } as const;
+
+export type BankedTone = 'quiet' | 'struck';
+
+function toneInk(tone: BankedTone) {
+  return tone === 'struck' ? BANKED.struckInk : BANKED.inkMuted;
+}
+
+function toneLine(tone: BankedTone) {
+  return tone === 'struck' ? BANKED.struckLine : BANKED.ashLine;
+}
 
 /* ── Ember pulse ──────────────────────────────────────────── */
 // The single living element a dormant card is allowed: a warm coal
@@ -113,18 +131,37 @@ const ember = StyleSheet.create({
 });
 
 /* ── Rest seal ────────────────────────────────────────────── */
-// Struck across the card between the hero and its line of copy: hairline,
-// diamond, word, diamond, hairline, tilted a few degrees like a stamp
-// pressed by hand. Both streak cards wear the same seal so a resting
-// Home and a resting Focus are recognizably the same state.
-export function RestSeal({ label, style }: { label: string; style?: ViewStyle }) {
+// The resting card's focal ornament, and the reason it reads as composed
+// rather than merely drained: a double-ruled plaque pressed between two
+// engraved wings and tilted a few degrees, the way a stamp lands when a
+// hand presses it. Both streak cards wear it, so a resting Home and a
+// resting Focus are recognizably the same state.
+//
+// `struck` gives it the app's oxblood: the entry was ruled out on purpose.
+export function RestSeal({
+  label,
+  tone = 'quiet',
+  style,
+}: {
+  label: string;
+  tone?: BankedTone;
+  style?: ViewStyle;
+}) {
+  const ink = toneInk(tone);
+  const line = toneLine(tone);
+  const struck = tone === 'struck';
+
   return (
     <View pointerEvents="none" style={[seal.wrap, style]}>
-      <View style={seal.line} />
-      <View style={seal.diamond} />
-      <Text style={seal.text}>{label}</Text>
-      <View style={seal.diamond} />
-      <View style={seal.line} />
+      <View style={[seal.wing, { backgroundColor: struck ? BANKED.struckHair : BANKED.ashSoft }]} />
+      <View style={[seal.plaque, { borderColor: line, backgroundColor: struck ? BANKED.struckWash : 'transparent' }]}>
+        <View style={[seal.plaqueInner, { borderColor: struck ? BANKED.struckHair : BANKED.ashSoft }]}>
+          <View style={[seal.diamond, { backgroundColor: line }]} />
+          <Text style={[seal.text, { color: ink }]}>{label}</Text>
+          <View style={[seal.diamond, { backgroundColor: line }]} />
+        </View>
+      </View>
+      <View style={[seal.wing, { backgroundColor: struck ? BANKED.struckHair : BANKED.ashSoft }]} />
     </View>
   );
 }
@@ -134,28 +171,41 @@ const seal = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
-    transform: [{ rotate: '-5deg' }],
+    gap: 9,
+    transform: [{ rotate: '-4deg' }],
   },
-  line: {
-    width: 26,
+  wing: {
+    width: 28,
     height: 1,
     borderRadius: 1,
-    backgroundColor: BANKED.ashLine,
+  },
+  plaque: {
+    borderWidth: 1,
+    borderRadius: 4,
+    borderCurve: 'continuous',
+    padding: 2.5,
+  },
+  plaqueInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 2,
+    borderCurve: 'continuous',
+    paddingHorizontal: 11,
+    paddingVertical: 4.5,
   },
   diamond: {
     width: 3.5,
     height: 3.5,
     borderRadius: 0.5,
-    backgroundColor: BANKED.ashLine,
     transform: [{ rotate: '45deg' }],
   },
   text: {
     fontFamily: F.sansBold,
-    fontSize: 9.5,
-    lineHeight: 12,
-    letterSpacing: 2.6,
-    color: BANKED.inkMuted,
+    fontSize: 10.5,
+    lineHeight: 13,
+    letterSpacing: 3.4,
   },
 });
 
@@ -164,16 +214,17 @@ const seal = StyleSheet.create({
 // a dash — a ruled entry: serif end-caps around a hairline with a diamond
 // at its center, the mark a ledger keeps for a day left deliberately
 // blank.
-export function LedgerRule({ width = 52 }: { width?: number }) {
+export function LedgerRule({ width = 52, tone = 'quiet' }: { width?: number; tone?: BankedTone }) {
   const bar = Math.max(8, width * 0.32);
+  const line = toneLine(tone);
 
   return (
     <View pointerEvents="none" style={ledger.wrap}>
-      <View style={ledger.cap} />
-      <View style={[ledger.bar, { width: bar }]} />
-      <View style={ledger.diamond} />
-      <View style={[ledger.bar, { width: bar }]} />
-      <View style={ledger.cap} />
+      <View style={[ledger.cap, { backgroundColor: line }]} />
+      <View style={[ledger.bar, { width: bar, backgroundColor: line }]} />
+      <View style={[ledger.diamond, { backgroundColor: line }]} />
+      <View style={[ledger.bar, { width: bar, backgroundColor: line }]} />
+      <View style={[ledger.cap, { backgroundColor: line }]} />
     </View>
   );
 }
@@ -184,19 +235,16 @@ const ledger = StyleSheet.create({
     width: 1.4,
     height: 12,
     borderRadius: 1,
-    backgroundColor: BANKED.ashLine,
   },
   bar: {
     height: 1.6,
     borderRadius: 1,
-    backgroundColor: BANKED.ashLine,
   },
   diamond: {
     width: 6.5,
     height: 6.5,
     borderRadius: 1,
     marginHorizontal: 4,
-    backgroundColor: 'rgba(168,152,119,0.62)',
     transform: [{ rotate: '45deg' }],
   },
 });
