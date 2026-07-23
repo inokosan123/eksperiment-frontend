@@ -500,8 +500,9 @@ function CapacityMeter({
   );
 }
 
-// One column of the capacity tally: a coloured bead, the value in serif, the
-// name beneath.
+// One entry of the capacity tally, read across rather than down: the bead, the
+// name, then the figure — all on one line, since the band has width to spare
+// and the card had none to spare in height.
 function TallyColumn({
   label,
   value,
@@ -519,8 +520,8 @@ function TallyColumn({
         <View style={[s.tallyHaloRing, { borderColor: color }, emphasis && s.tallyHaloRingEmphasis]} pointerEvents="none" />
         <View style={[s.tallyBead, { backgroundColor: color }]} />
       </View>
-      <Text style={[s.tallyValue, emphasis && s.tallyValueEmphasis, { color }]}>{value}</Text>
-      <Text style={s.tallyLabel}>{label}</Text>
+      <Text style={s.tallyLabel} numberOfLines={1}>{label}</Text>
+      <Text style={[s.tallyValue, emphasis && s.tallyValueEmphasis, { color }]} numberOfLines={1}>{value}</Text>
     </View>
   );
 }
@@ -625,9 +626,9 @@ const s = StyleSheet.create({
     borderColor: '#E7D9B9',
     backgroundColor: '#FFFDF8',
     paddingHorizontal: 16,
-    paddingTop: 15,
-    paddingBottom: 14,
-    gap: 14,
+    paddingTop: 14,
+    paddingBottom: 11,
+    gap: 12,
     boxShadow: '0 8px 24px rgba(45, 40, 33, 0.055)',
   },
   meterHead: { flexDirection: 'row', alignItems: 'center', gap: 13 },
@@ -650,19 +651,19 @@ const s = StyleSheet.create({
   railBottomLabels: { marginTop: 7, flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   railBottomText: { fontFamily: F.sansMedium, fontSize: 10.5, color: C.textMuted, fontVariant: ['tabular-nums'] },
 
-  // The capacity tally, read between two gold hairlines.
+  // The capacity tally: one ledger line between two gold hairlines.
   tallyBand: { marginTop: 1 },
   tallyRule: { height: StyleSheet.hairlineWidth, backgroundColor: '#E4D7BB' },
-  tallyRow: { flexDirection: 'row', alignItems: 'stretch', paddingVertical: 11 },
-  tallyColumn: { flex: 1, alignItems: 'center', gap: 6, paddingHorizontal: 4 },
-  tallyDivider: { width: StyleSheet.hairlineWidth, marginVertical: 3, backgroundColor: '#EDE3CE' },
-  tallyHalo: { width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },
-  tallyHaloRing: { ...StyleSheet.absoluteFillObject, borderRadius: 7, borderWidth: StyleSheet.hairlineWidth, opacity: 0.38 },
-  tallyHaloRingEmphasis: { opacity: 0.72 },
-  tallyBead: { width: 6, height: 6, borderRadius: 3 },
-  tallyValue: { fontFamily: F.serifBold, fontSize: 18, lineHeight: 21, fontVariant: ['tabular-nums'] },
-  tallyValueEmphasis: { fontSize: 20, lineHeight: 23 },
-  tallyLabel: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1, textTransform: 'uppercase', color: '#9C9081' },
+  tallyRow: { flexDirection: 'row', alignItems: 'stretch', paddingVertical: 9 },
+  tallyColumn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 2 },
+  tallyDivider: { width: StyleSheet.hairlineWidth, marginVertical: 2, backgroundColor: '#EDE3CE' },
+  tallyHalo: { flexShrink: 0, width: 12, height: 12, alignItems: 'center', justifyContent: 'center' },
+  tallyHaloRing: { ...StyleSheet.absoluteFillObject, borderRadius: 6, borderWidth: StyleSheet.hairlineWidth, opacity: 0.4 },
+  tallyHaloRingEmphasis: { opacity: 0.75 },
+  tallyBead: { width: 5.5, height: 5.5, borderRadius: 3 },
+  tallyValue: { flexShrink: 0, fontFamily: F.serifBold, fontSize: 15.5, lineHeight: 19, fontVariant: ['tabular-nums'] },
+  tallyValueEmphasis: { fontSize: 16.5, lineHeight: 20 },
+  tallyLabel: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 0.85, textTransform: 'uppercase', color: '#9C9081' },
 
   warning: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 14, borderCurve: 'continuous', backgroundColor: '#FFF4DC', paddingHorizontal: 12, paddingVertical: 10 },
   warningStrong: { backgroundColor: '#F9E8EB' },
