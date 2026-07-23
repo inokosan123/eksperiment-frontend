@@ -412,9 +412,10 @@ function CapacityMeter({
                 ? `${formatMinutesShort(free)} still free`
                 : 'Every minute is planned'}
           </Text>
-          {/* The reason, not just the rule: rules only govern the groups, so the
-              minutes outside them have to come from somewhere. */}
-          <Text style={s.meterBody}>Essentials and overruns take time no rule covers. Leave a fifth free and the Goal holds.</Text>
+          {/* The advice first, then one short line of why: rules only govern
+              their own groups, so the minutes outside them land on the Goal
+              uncounted. */}
+          <Text style={s.meterBody}>Leave 20% unplanned. Essentials and overruns take time no rule covers.</Text>
         </View>
       </View>
 
