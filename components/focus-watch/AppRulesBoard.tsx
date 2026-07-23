@@ -5,15 +5,18 @@ import Animated, {
   FadeIn,
   FadeInDown,
   LinearTransition,
+  useAnimatedProps,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
+import Svg, { Circle, Defs, Path, Pattern, Rect } from 'react-native-svg';
 import { AlertTriangle, ChevronRight, Lock, Plus, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import Bloom from './Bloom';
 import GroupSeal, { groupTint, withAlpha } from './GroupSeal';
 import { CATEGORY_TINTS } from './focusContent';
 import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
@@ -26,6 +29,7 @@ import { formatMinutesShort, type GroupRule } from './dayPlanStore';
 
 const GLIDE = { duration: 520, easing: Easing.out(Easing.cubic) };
 const CARD_LAYOUT = LinearTransition.duration(260).easing(Easing.bezier(0.22, 1, 0.36, 1));
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const BLOCKED_COLOR = '#A24351';
 const BLOCKED_TINT = '#FBE9EC';
@@ -118,18 +122,25 @@ function GroupRuleCard({
         lit && { borderColor: withAlpha(accent, 0.34) },
       ]}
     >
+      {/* Every card is laid paper now, not flat white — an inactive group is
+          warm cream, a ruled one is washed in its own colour from the seal side,
+          a closed one in rose. The weave ties them to the cards above. */}
+      <LinearGradient
+        colors={mode === 'blocked'
+          ? ['#FBEAED', '#FFF9FA', '#FFFDFD']
+          : lit
+            ? [withAlpha(accent, 0.16), '#FFFDF9', '#FFFEFC']
+            : ['#FEFCF6', '#FFFEFB', '#FDFBF5']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0.9 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <RuleWeave color={lit ? accent : '#8A6A2F'} />
+      {/* A soft pool of the group's colour gathered behind its seal. */}
       {lit && (
-        <>
-          <LinearGradient
-            colors={mode === 'blocked'
-              ? [BLOCKED_TINT, '#FFFAFB', '#FFFDFD']
-              : [withAlpha(accent, 0.13), '#FFFDFA', '#FFFEFC']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <RuleWeave color={accent} />
-        </>
+        <View pointerEvents="none" style={s.cardSealBloom}>
+          <Bloom color={accent} opacity={mode === 'blocked' ? 0.22 : 0.26} />
+        </View>
       )}
 
       {mode === 'blocked' && <View style={s.closedEdge} />}
@@ -238,12 +249,15 @@ function AlwaysBlockedGroupCard({
       accessibilityLabel={`Always Blocked, ${appCount} ${appCount === 1 ? 'app' : 'apps'}, no plan limit controls`}
     >
       <LinearGradient
-        colors={['#F8E7EA', '#FFFAFB', '#FFFDFD']}
+        colors={['#FBEAED', '#FFF9FA', '#FFFDFD']}
         start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+        end={{ x: 1, y: 0.9 }}
         style={StyleSheet.absoluteFill}
       />
       <RuleWeave color={BLOCKED_COLOR} />
+      <View pointerEvents="none" style={s.cardSealBloom}>
+        <Bloom color={BLOCKED_COLOR} opacity={0.2} />
+      </View>
 
       <View style={s.closedEdge} />
 
@@ -265,6 +279,60 @@ function AlwaysBlockedGroupCard({
         </View>
       </View>
     </Animated.View>
+  );
+}
+
+// The section's own seal, built like a group's: a disc ringed by how much of
+// the goal is already spoken for. The board reads as one family — every row,
+// including this one, is a face in a ring.
+function CapacitySeal({ fraction, full }: { fraction: number; full: boolean }) {
+  const reduceMotion = useReducedMotion();
+  const size = 52;
+  const ringSize = size + 11;
+  const radius = (ringSize - 3) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const accent = full ? BLOCKED_COLOR : C.goldDark;
+  const target = Math.max(0, Math.min(1, fraction));
+  const progress = useSharedValue(reduceMotion ? target : 0);
+
+  useEffect(() => {
+    progress.value = reduceMotion ? target : withTiming(target, GLIDE);
+  }, [progress, reduceMotion, target]);
+
+  const arcProps = useAnimatedProps(() => ({
+    strokeDashoffset: circumference * (1 - progress.value),
+  }));
+
+  return (
+    <View style={{ width: ringSize, height: ringSize, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg pointerEvents="none" width={ringSize} height={ringSize} style={StyleSheet.absoluteFill}>
+        <Circle
+          cx={ringSize / 2}
+          cy={ringSize / 2}
+          r={radius}
+          stroke={accent}
+          strokeOpacity={0.16}
+          strokeWidth={2.6}
+          fill="none"
+        />
+        <AnimatedCircle
+          animatedProps={arcProps}
+          cx={ringSize / 2}
+          cy={ringSize / 2}
+          r={radius}
+          stroke={accent}
+          strokeWidth={2.6}
+          strokeLinecap="round"
+          fill="none"
+          strokeDasharray={`${circumference} ${circumference}`}
+          transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`}
+        />
+      </Svg>
+      <View style={[s.capacityDisc, { width: size, height: size, borderRadius: size / 2, borderColor: withAlpha(accent, 0.28) }]}>
+        <Text style={[s.capacityDiscValue, { color: accent }]}>{Math.round(target * 100)}</Text>
+        <Text style={[s.capacityDiscUnit, { color: accent }]}>%</Text>
+      </View>
+    </View>
   );
 }
 
@@ -310,6 +378,7 @@ function CapacityMeter({
 
   const free = goalMinutes == null ? null : Math.max(0, goalMinutes - planned);
   const capacityLeft = capacity == null ? null : Math.max(0, capacity - planned);
+  const plannedFraction = goalMinutes == null || goalMinutes === 0 ? 0 : planned / goalMinutes;
 
   return (
     <View style={s.meterCard}>
@@ -321,61 +390,45 @@ function CapacityMeter({
       />
       <RuleWeave color="#8A6A2F" />
 
+      {/* The head reads like a group row: a seal on the left carrying the % of
+          the goal spoken for, the copy beside it. */}
       <View style={s.meterHead}>
-        <Text style={s.meterKicker}>PLANNING CAPACITY</Text>
-        <Text style={s.meterTitle}>
-          {capacity == null
-            ? 'Set a Goal first.'
-            : capacityLeft != null && capacityLeft > 0
-              ? `${formatMinutesShort(capacityLeft)} left to divide`
-              : 'Every minute is spoken for'}
-        </Text>
-        <Text style={s.meterBody}>Plan 80% of the Goal. The rest stays free for real life.</Text>
+        <CapacitySeal fraction={plannedFraction} full={full} />
+        <View style={s.meterHeadCopy}>
+          <Text style={s.meterKicker}>PLANNING CAPACITY</Text>
+          <Text style={s.meterTitle}>
+            {capacity == null
+              ? 'Set a Goal first.'
+              : capacityLeft != null && capacityLeft > 0
+                ? `${formatMinutesShort(capacityLeft)} left to divide`
+                : 'Every minute is spoken for'}
+          </Text>
+          <Text style={s.meterBody}>Plan 80% of your Goal — the rest stays free.</Text>
+        </View>
       </View>
 
-      <View style={s.railBlock}>
-        {goalMinutes != null && railWidth > 0 && (
-          <View style={s.markerRow} pointerEvents="none">
-            <View style={[s.marker, { left: Math.max(0, (goalMinutes * 0.8 / scale) * railWidth - 16) }]}>
-              <Text style={s.markerText}>80%</Text>
-              <View style={s.markerGem} />
-            </View>
-            <View style={[s.marker, { left: Math.min(railWidth - 32, Math.max(0, (goalMinutes / scale) * railWidth - 16)) }]}>
-              <Text style={[s.markerText, s.markerTextGoal]}>GOAL</Text>
-              <View style={[s.markerGem, s.markerGemGoal]} />
-            </View>
-          </View>
+      {/* Just the bar now: each group's colour filling toward the Goal tick,
+          Tolerance shaded past it. The 80%/GOAL chips and the 0…locked axis are
+          gone — the almanac below names every number, so the rail only has to
+          show the shape. */}
+      <View style={s.rail} onLayout={event => setRailWidth(event.nativeEvent.layout.width)}>
+        {goalMinutes != null && lockAtMinutes != null && railWidth > 0 && lockAtMinutes > goalMinutes && (
+          <View style={[s.toleranceZone, { left: (goalMinutes / scale) * railWidth }]} />
         )}
-        <View style={s.rail} onLayout={event => setRailWidth(event.nativeEvent.layout.width)}>
-          {/* Past the Goal the rail is Tolerance, not capacity — it gets the
-              same grey the Your Day legend gives that time. */}
-          {goalMinutes != null && lockAtMinutes != null && railWidth > 0 && lockAtMinutes > goalMinutes && (
-            <View style={[s.toleranceZone, { left: (goalMinutes / scale) * railWidth }]} />
-          )}
-          {railWidth > 0 && segments.map(segment => (
-            <RailSegment
-              key={segment.groupId}
-              left={segment.left * railWidth}
-              width={segment.width * railWidth}
-              color={(CATEGORY_TINTS[segment.groupId] ?? { color: C.goldDark }).color}
-            />
-          ))}
-          {goalMinutes != null && railWidth > 0 && (
-            <>
-              <View style={[s.railMarker, s.capacityMarker, { left: (goalMinutes * 0.8 / scale) * railWidth }]} />
-              <View style={[s.railMarker, s.goalMarker, { left: (goalMinutes / scale) * railWidth }]} />
-            </>
-          )}
-          {lockAtMinutes != null && railWidth > 0 && (
-            <View style={[s.railMarker, s.hardMarker, { left: railWidth - 3 }]} />
-          )}
-        </View>
-        <View style={s.railBottomLabels}>
-          <Text style={s.railBottomText}>0</Text>
-          <Text style={s.railBottomText}>
-            {lockAtMinutes == null ? 'No daily boundary' : `Locked from ${formatMinutesShort(lockAtMinutes)}`}
-          </Text>
-        </View>
+        {railWidth > 0 && segments.map(segment => (
+          <RailSegment
+            key={segment.groupId}
+            left={segment.left * railWidth}
+            width={segment.width * railWidth}
+            color={(CATEGORY_TINTS[segment.groupId] ?? { color: C.goldDark }).color}
+          />
+        ))}
+        {goalMinutes != null && railWidth > 0 && (
+          <>
+            <View style={[s.railMarker, s.capacityMarker, { left: (goalMinutes * 0.8 / scale) * railWidth }]} />
+            <View style={[s.railMarker, s.goalMarker, { left: (goalMinutes / scale) * railWidth }]} />
+          </>
+        )}
       </View>
 
       {/* The tally, read between two gold hairlines — the same almanac band the
@@ -549,25 +602,21 @@ const s = StyleSheet.create({
     gap: 14,
     boxShadow: '0 8px 24px rgba(45, 40, 33, 0.055)',
   },
-  meterHead: { alignItems: 'center' },
+  meterHead: { flexDirection: 'row', alignItems: 'center', gap: 13 },
+  meterHeadCopy: { flex: 1, minWidth: 0 },
   meterKicker: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2.2, color: C.goldDark },
-  meterTitle: { marginTop: 5, fontFamily: F.serifSemiBold, fontSize: 21.5, lineHeight: 25, letterSpacing: -0.25, textAlign: 'center', color: C.text },
-  meterBody: { marginTop: 4, maxWidth: 290, fontFamily: F.serifMedium, fontSize: 14.5, lineHeight: 19, textAlign: 'center', color: '#6A625A' },
+  meterTitle: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 24, letterSpacing: -0.3, color: C.text },
+  meterBody: { marginTop: 3, fontFamily: F.serifMedium, fontSize: 14, lineHeight: 18, color: '#6A625A' },
+  capacityDisc: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', borderWidth: 1, backgroundColor: 'rgba(255,253,247,0.7)' },
+  capacityDiscValue: { fontFamily: F.serifBold, fontSize: 20, lineHeight: 22, fontVariant: ['tabular-nums'] },
+  capacityDiscUnit: { fontFamily: F.serifSemiBold, fontSize: 11, lineHeight: 13, marginLeft: 0.5 },
 
-  railBlock: { position: 'relative', paddingTop: 20 },
-  markerRow: { position: 'absolute', left: 0, right: 0, top: 0, height: 20, zIndex: 2 },
-  marker: { position: 'absolute', top: 0, width: 32, alignItems: 'center' },
-  markerText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.9, color: C.goldDark },
-  markerTextGoal: { color: '#2D2923' },
-  markerGem: { width: 4.2, height: 4.2, marginTop: 3, backgroundColor: C.goldDark, opacity: 0.8, transform: [{ rotate: '45deg' }] },
-  markerGemGoal: { backgroundColor: '#2D2923', opacity: 0.9 },
-  rail: { position: 'relative', height: 20, borderRadius: 10, borderCurve: 'continuous', backgroundColor: '#F0EADC', overflow: 'hidden', boxShadow: 'inset 0 1px 2px rgba(63, 52, 30, 0.07)' },
-  railSegment: { position: 'absolute', top: 2.5, bottom: 2.5, borderRadius: 7, borderCurve: 'continuous' },
+  rail: { position: 'relative', height: 18, borderRadius: 9, borderCurve: 'continuous', backgroundColor: '#F0EADC', overflow: 'hidden', boxShadow: 'inset 0 1px 2px rgba(63, 52, 30, 0.07)' },
+  railSegment: { position: 'absolute', top: 2.5, bottom: 2.5, borderRadius: 6, borderCurve: 'continuous' },
   toleranceZone: { position: 'absolute', top: 0, bottom: 0, right: 0, backgroundColor: 'rgba(158,164,171,0.16)' },
   railMarker: { position: 'absolute', top: 0, bottom: 0, width: 1.5, borderRadius: 1 },
-  capacityMarker: { backgroundColor: C.goldDark, opacity: 0.55 },
+  capacityMarker: { backgroundColor: C.goldDark, opacity: 0.5 },
   goalMarker: { width: 2, backgroundColor: '#2D2923' },
-  hardMarker: { width: 3, backgroundColor: BLOCKED_COLOR },
   railBottomLabels: { marginTop: 7, flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   railBottomText: { fontFamily: F.sansMedium, fontSize: 10.5, color: C.textMuted, fontVariant: ['tabular-nums'] },
 
@@ -623,6 +672,8 @@ const s = StyleSheet.create({
   // A closed group carries a rose edge down its left side — the same bar the
   // Essentials surface wears.
   closedEdge: { position: 'absolute', left: 0, top: 14, bottom: 14, width: 3.5, borderTopRightRadius: 3, borderBottomRightRadius: 3, backgroundColor: BLOCKED_COLOR, opacity: 0.85 },
+  // The colour pooled behind a ruled group's seal, cropped by the left edge.
+  cardSealBloom: { position: 'absolute', left: -52, top: -34, width: 150, height: 122 },
   cardRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardBody: { flex: 1, minWidth: 0, paddingLeft: 3 },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
