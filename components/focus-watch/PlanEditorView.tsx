@@ -665,7 +665,15 @@ export default function PlanEditorView({
                   <LockSeal size={36} lit />
                   <View style={s.essentialsOutcomeCopy}>
                     <Text style={s.essentialsOutcomeLabel}>LOCKED FROM MINUTE ONE</Text>
-                    <Text style={s.essentialsOutcomeTitle}>Everything else stays closed all day.</Text>
+                    <Text style={s.essentialsOutcomeTitle}>
+                      Everything else stays closed <Text style={s.essentialsOutcomeTime}>all day</Text>.
+                    </Text>
+                    <LinearGradient
+                      colors={['rgba(225,75,90,0.42)', 'rgba(225,75,90,0.14)', 'rgba(225,75,90,0)']}
+                      start={{ x: 0, y: 0.5 }}
+                      end={{ x: 1, y: 0.5 }}
+                      style={s.essentialsOutcomeRule}
+                    />
                     <Text style={s.essentialsOutcomeBody}>Goal and Tolerance still keep the score of the day.</Text>
                   </View>
                 </View>
@@ -715,11 +723,21 @@ export default function PlanEditorView({
               <LockSeal size={36} lit />
               <View style={s.essentialsOutcomeCopy}>
                 <Text style={s.essentialsOutcomeLabel}>WHEN TOLERANCE ENDS</Text>
-                <Text style={s.essentialsOutcomeTitle}>
-                  {draftToleranceEnd == null
-                    ? 'Set a Goal first.'
-                    : `At ${formatMinutesShort(draftToleranceEnd)}, the phone locks.`}
-                </Text>
+                {/* The hour the phone closes is the fact this whole card exists
+                    for — it gets lit, the way the Goal card lights its value. */}
+                {draftToleranceEnd == null ? (
+                  <Text style={s.essentialsOutcomeTitle}>Set a Goal first.</Text>
+                ) : (
+                  <Text style={s.essentialsOutcomeTitle}>
+                    At <Text style={s.essentialsOutcomeTime}>{formatMinutesShort(draftToleranceEnd)}</Text>, the phone locks.
+                  </Text>
+                )}
+                <LinearGradient
+                  colors={['rgba(225,75,90,0.42)', 'rgba(225,75,90,0.14)', 'rgba(225,75,90,0)']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={s.essentialsOutcomeRule}
+                />
                 <Text style={s.essentialsOutcomeBody}>Everything closes for the rest of the day — except your Essentials.</Text>
               </View>
             </View>
@@ -924,7 +942,11 @@ const s = StyleSheet.create({
   essentialsOutcomeCopy: { flex: 1, minWidth: 0, paddingTop: 1 },
   essentialsOutcomeLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.55, color: '#E6A9B1' },
   essentialsOutcomeTitle: { marginTop: 5, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 25, letterSpacing: -0.25, color: '#FDF6F6' },
-  essentialsOutcomeBody: { marginTop: 5, fontFamily: F.serifMedium, fontSize: 15, lineHeight: 19.5, color: '#C4B4B6' },
+  // The lock hour, lit inside its own sentence: same size so the line still
+  // sits on one baseline, but bolder, rose, and tabular.
+  essentialsOutcomeTime: { fontFamily: F.serifBold, color: '#FF9DA8', fontVariant: ['tabular-nums'] },
+  essentialsOutcomeRule: { height: 1, width: 96, marginTop: 10, borderRadius: 1 },
+  essentialsOutcomeBody: { marginTop: 9, fontFamily: F.serifMedium, fontSize: 15, lineHeight: 19.5, color: '#C4B4B6' },
   essentialsPicker: { position: 'relative', overflow: 'hidden', minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#EFD3D7', backgroundColor: '#FFF9F9', paddingHorizontal: 13, paddingVertical: 12 },
   essentialsPickerCopy: { flex: 1, minWidth: 0 },
   essentialsPickerTitle: { fontFamily: F.serifSemiBold, fontSize: 18.5, lineHeight: 22, letterSpacing: -0.2, color: '#3A252A' },
