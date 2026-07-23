@@ -13,8 +13,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
 import { AlertTriangle, ChevronRight, Lock, Plus, Trash2 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import { NotoEmoji } from '@/components/shared/NotoEmoji';
 import { C, F } from '@/constants/tokens';
+import GroupSeal, { groupTint, withAlpha } from './GroupSeal';
 import { CATEGORY_TINTS } from './focusContent';
 import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
 import { formatMinutesShort, type GroupRule } from './dayPlanStore';
@@ -27,16 +27,6 @@ import { formatMinutesShort, type GroupRule } from './dayPlanStore';
 const GLIDE = { duration: 520, easing: Easing.out(Easing.cubic) };
 const CARD_LAYOUT = LinearTransition.duration(260).easing(Easing.bezier(0.22, 1, 0.36, 1));
 
-// Known categories wear their face; custom groups fall back to an initial.
-const GROUP_EMOJI: Record<string, string> = {
-  social: 'mobile-phone',
-  entertainment: 'movie-camera',
-  games: 'joker',
-  news: 'newspaper',
-  shopping: 'money-bag',
-  dating: 'red-heart',
-};
-
 const BLOCKED_COLOR = '#A24351';
 const BLOCKED_TINT = '#FBE9EC';
 
@@ -44,13 +34,6 @@ export type RuleMode = 'noLimit' | 'limit' | 'blocked';
 
 export function ruleModeOf(rule: GroupRule): RuleMode {
   return (rule.mode ?? (rule.dailyMinutes == null ? 'noLimit' : 'limit')) as RuleMode;
-}
-
-function withAlpha(hex: string, alpha: number) {
-  const normalized = hex.replace('#', '');
-  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return `rgba(169,134,63,${alpha})`;
-  const value = Number.parseInt(normalized, 16);
-  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
 }
 
 // The faint diagonal weave every lit focus card wears.
@@ -66,23 +49,6 @@ function RuleWeave({ color }: { color: string }) {
         </Defs>
         <Rect width="100%" height="100%" fill={`url(#${patternId})`} />
       </Svg>
-    </View>
-  );
-}
-
-// A group's slice of the goal, gliding to its width whenever the rule changes.
-function ShareBar({ share, color }: { share: number; color: string }) {
-  const width = useSharedValue(0);
-
-  useEffect(() => {
-    width.value = withTiming(Math.max(0, Math.min(1, share)), GLIDE);
-  }, [share, width]);
-
-  const fillStyle = useAnimatedStyle(() => ({ width: `${width.value * 100}%` }));
-
-  return (
-    <View style={[s.shareTrack, { backgroundColor: withAlpha(color, 0.14) }]}>
-      <Animated.View style={[s.shareFill, { backgroundColor: color }, fillStyle]} />
     </View>
   );
 }
@@ -106,9 +72,9 @@ function GroupMeta({
         : 'Choose apps'
       : 'Loading selection'
     : `${previewCount} apps`;
-  const rulesPart = individualCount > 0
-    ? ` · ${individualCount} app ${individualCount === 1 ? 'rule' : 'rules'}`
-    : '';
+  // The row is narrow — the share percent shares this line, so "app rules"
+  // abbreviates rather than pushing the meta into a second line.
+  const rulesPart = individualCount > 0 ? ` · ${individualCount} ${individualCount === 1 ? 'rule' : 'rules'}` : '';
   return <Text style={s.cardMeta} numberOfLines={1}>{groupPart}{rulesPart}</Text>;
 }
 
@@ -136,9 +102,7 @@ function GroupRuleCard({
   onRemove: () => void;
 }) {
   const mode = ruleModeOf(rule);
-  const tint = CATEGORY_TINTS[rule.groupId] ?? { bg: C.goldLight, color: C.goldDark };
-  const emoji = GROUP_EMOJI[rule.groupId];
-  const accent = mode === 'blocked' ? BLOCKED_COLOR : tint.color;
+  const accent = mode === 'blocked' ? BLOCKED_COLOR : groupTint(rule.groupId).color;
   const lit = mode !== 'noLimit';
   const share = mode === 'limit' && goalMinutes != null && rule.dailyMinutes != null
     ? rule.dailyMinutes / goalMinutes
@@ -168,27 +132,25 @@ function GroupRuleCard({
         </>
       )}
 
+      {mode === 'blocked' && <View style={s.closedEdge} />}
+
       <TouchableOpacity style={s.cardRow} onPress={onPress} activeOpacity={0.74} haptic="selection">
-        <View style={[s.cardIcon, { backgroundColor: tint.bg, borderColor: withAlpha(tint.color, 0.24) }]}>
-          {emoji
-            ? <NotoEmoji name={emoji} size={26} />
-            : <Text style={[s.cardIconLetter, { color: tint.color }]}>{name.charAt(0).toUpperCase()}</Text>}
-        </View>
+        <GroupSeal
+          groupId={rule.groupId}
+          name={name}
+          size={46}
+          share={mode === 'limit' && goalMinutes != null ? share : 0}
+          blocked={mode === 'blocked'}
+          dim={!lit}
+        />
 
         <View style={s.cardBody}>
           <View style={s.cardTitleRow}>
             <Text style={s.cardName} numberOfLines={1}>{name}</Text>
             {lit && (
-              <Animated.View
-                entering={FadeIn.duration(200)}
-                style={[
-                  s.strengthChip,
-                  rule.strength === 'strict'
-                    ? { backgroundColor: '#F8E7EA', borderColor: '#E7C4CB' }
-                    : { backgroundColor: '#FFF6DF', borderColor: '#EAD7A8' },
-                ]}
-              >
-                <Text style={[s.strengthChipText, { color: rule.strength === 'strict' ? BLOCKED_COLOR : '#95681F' }]}>
+              <Animated.View entering={FadeIn.duration(200)} style={s.strengthMark}>
+                <View style={[s.strengthDot, { backgroundColor: rule.strength === 'strict' ? BLOCKED_COLOR : '#B98A2E' }]} />
+                <Text style={[s.strengthText, { color: rule.strength === 'strict' ? BLOCKED_COLOR : '#95681F' }]}>
                   {rule.strength === 'strict' ? 'STRICT' : 'LOOSE'}
                 </Text>
               </Animated.View>
@@ -196,13 +158,18 @@ function GroupRuleCard({
           </View>
 
           <View style={s.cardMetaRow}>
-            <View style={[s.cardDot, { backgroundColor: lit ? accent : '#CFC9BB' }]} />
             <GroupMeta
               nativeAvailable={nativeAvailable}
               selectionId={selectionId}
               previewCount={previewCount}
               individualCount={(rule.appRules ?? []).length}
             />
+            {/* The share used to need its own bar under the card; the seal's
+                ring carries it now, so this is just the number. */}
+            {mode === 'limit' && goalMinutes != null && (
+              <Text style={[s.cardShare, { color: accent }]} numberOfLines={1}>· {sharePercent}%</Text>
+            )}
+            {mode === 'blocked' && <Text style={s.cardClosed} numberOfLines={1}>· closed all day</Text>}
           </View>
         </View>
 
@@ -231,23 +198,16 @@ function GroupRuleCard({
         </View>
       </TouchableOpacity>
 
-      {mode === 'limit' && goalMinutes != null && (
-        <Animated.View entering={FadeIn.duration(240)} layout={CARD_LAYOUT} style={s.shareBlock}>
-          <ShareBar share={share} color={accent} />
-          <Text style={s.shareCaption}>{sharePercent}% of your goal</Text>
-        </Animated.View>
-      )}
-
-      {mode === 'blocked' && (
-        <Animated.View entering={FadeIn.duration(240)} layout={CARD_LAYOUT} style={s.blockedBand}>
-          <Text style={s.blockedBandText}>CLOSED ALL DAY</Text>
-        </Animated.View>
-      )}
-
+      {/* Custom groups can be taken off the plan. It used to be a floating bin
+          over the card's corner, a tap away from opening the rule by mistake. */}
       {custom && (
-        <TouchableOpacity style={s.removeButton} onPress={onRemove} hitSlop={8} haptic="selection">
-          <Trash2 s={13} c={C.textMuted} w={2} />
-        </TouchableOpacity>
+        <View style={s.removeRow}>
+          <View style={s.removeRule} />
+          <TouchableOpacity style={s.removeButton} onPress={onRemove} hitSlop={6} haptic="selection" activeOpacity={0.7}>
+            <Trash2 s={12} c={C.textMuted} w={2} />
+            <Text style={s.removeText}>REMOVE GROUP</Text>
+          </TouchableOpacity>
+        </View>
       )}
     </Animated.View>
   );
@@ -285,9 +245,11 @@ function AlwaysBlockedGroupCard({
       />
       <RuleWeave color={BLOCKED_COLOR} />
 
+      <View style={s.closedEdge} />
+
       <View style={s.cardRow}>
-        <View style={[s.cardIcon, s.systemCardIcon]}>
-          <Lock s={19} c={BLOCKED_COLOR} w={2.3} />
+        <View style={s.systemSeal}>
+          <Lock s={21} c={BLOCKED_COLOR} w={2.3} />
         </View>
         <View style={s.cardBody}>
           <View style={s.cardTitleRow}>
@@ -295,17 +257,12 @@ function AlwaysBlockedGroupCard({
             <View style={s.systemBadge}><Text style={s.systemBadgeText}>SYSTEM</Text></View>
           </View>
           <View style={s.cardMetaRow}>
-            <View style={[s.cardDot, { backgroundColor: BLOCKED_COLOR }]} />
             <Text style={s.cardMeta} numberOfLines={1}>{summary}</Text>
           </View>
         </View>
         <View style={[s.valueChip, s.systemValueChip]}>
-          <Text style={[s.valueChipText, s.systemValueText]}>Always blocked</Text>
+          <Text style={[s.valueChipText, s.systemValueText]}>Blocked</Text>
         </View>
-      </View>
-
-      <View style={s.systemBand}>
-        <Text style={s.systemBandText}>NO PLAN LIMIT CONTROLS · MANAGED GLOBALLY</Text>
       </View>
     </Animated.View>
   );
@@ -351,34 +308,50 @@ function CapacityMeter({
     });
   }, [groups, scale]);
 
+  const free = goalMinutes == null ? null : Math.max(0, goalMinutes - planned);
+  const capacityLeft = capacity == null ? null : Math.max(0, capacity - planned);
+
   return (
     <View style={s.meterCard}>
+      <LinearGradient
+        colors={['#FFFDF8', '#FDF8EC', '#FFFDF7']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <RuleWeave color="#8A6A2F" />
+
       <View style={s.meterHead}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={s.meterKicker}>PLANNING CAPACITY</Text>
-          <Text style={s.meterTitle}>
-            {capacity == null ? 'Set a Goal first.' : `${formatMinutesShort(capacity)} to divide`}
-          </Text>
-          <Text style={s.meterBody}>Plan 80% of the Goal. The rest stays free for real life.</Text>
-        </View>
-        <View style={[s.plannedPill, full && s.plannedPillFull]}>
-          <Text style={[s.plannedPillLabel, full && s.plannedPillLabelFull]}>PLANNED</Text>
-          <Text style={[s.plannedPillValue, full && s.plannedPillValueFull]}>{formatMinutesShort(planned)}</Text>
-        </View>
+        <Text style={s.meterKicker}>PLANNING CAPACITY</Text>
+        <Text style={s.meterTitle}>
+          {capacity == null
+            ? 'Set a Goal first.'
+            : capacityLeft != null && capacityLeft > 0
+              ? `${formatMinutesShort(capacityLeft)} left to divide`
+              : 'Every minute is spoken for'}
+        </Text>
+        <Text style={s.meterBody}>Plan 80% of the Goal. The rest stays free for real life.</Text>
       </View>
 
       <View style={s.railBlock}>
         {goalMinutes != null && railWidth > 0 && (
-          <>
-            <View style={[s.markerChip, { left: Math.max(0, (goalMinutes * 0.8 / scale) * railWidth - 17) }]}>
-              <Text style={s.markerChipText}>80%</Text>
+          <View style={s.markerRow} pointerEvents="none">
+            <View style={[s.marker, { left: Math.max(0, (goalMinutes * 0.8 / scale) * railWidth - 16) }]}>
+              <Text style={s.markerText}>80%</Text>
+              <View style={s.markerGem} />
             </View>
-            <View style={[s.markerChip, s.goalChip, { left: Math.min(railWidth - 40, Math.max(0, (goalMinutes / scale) * railWidth - 20)) }]}>
-              <Text style={[s.markerChipText, s.goalChipText]}>GOAL</Text>
+            <View style={[s.marker, { left: Math.min(railWidth - 32, Math.max(0, (goalMinutes / scale) * railWidth - 16)) }]}>
+              <Text style={[s.markerText, s.markerTextGoal]}>GOAL</Text>
+              <View style={[s.markerGem, s.markerGemGoal]} />
             </View>
-          </>
+          </View>
         )}
         <View style={s.rail} onLayout={event => setRailWidth(event.nativeEvent.layout.width)}>
+          {/* Past the Goal the rail is Tolerance, not capacity — it gets the
+              same grey the Your Day legend gives that time. */}
+          {goalMinutes != null && lockAtMinutes != null && railWidth > 0 && lockAtMinutes > goalMinutes && (
+            <View style={[s.toleranceZone, { left: (goalMinutes / scale) * railWidth }]} />
+          )}
           {railWidth > 0 && segments.map(segment => (
             <RailSegment
               key={segment.groupId}
@@ -405,6 +378,33 @@ function CapacityMeter({
         </View>
       </View>
 
+      {/* The tally, read between two gold hairlines — the same almanac band the
+          Your Day card ends on. */}
+      <View style={s.tallyBand}>
+        <View style={s.tallyRule} />
+        <View style={s.tallyRow}>
+          <TallyColumn
+            label="Planned"
+            value={formatMinutesShort(planned)}
+            color={full ? BLOCKED_COLOR : C.goldDark}
+            emphasis
+          />
+          <View style={s.tallyDivider} />
+          <TallyColumn
+            label="Free"
+            value={free == null ? '—' : formatMinutesShort(free)}
+            color={full ? BLOCKED_COLOR : '#5C7A63'}
+          />
+          <View style={s.tallyDivider} />
+          <TallyColumn
+            label="Goal"
+            value={goalMinutes == null ? '—' : formatMinutesShort(goalMinutes)}
+            color="#2D2923"
+          />
+        </View>
+        <View style={s.tallyRule} />
+      </View>
+
       {overCapacity && (
         <Animated.View entering={FadeIn.duration(240)} style={[s.warning, full && s.warningStrong]}>
           <AlertTriangle s={14} c={full ? BLOCKED_COLOR : '#A36F2B'} w={2.2} />
@@ -415,6 +415,31 @@ function CapacityMeter({
           </Text>
         </Animated.View>
       )}
+    </View>
+  );
+}
+
+// One column of the capacity tally: a coloured bead, the value in serif, the
+// name beneath.
+function TallyColumn({
+  label,
+  value,
+  color,
+  emphasis = false,
+}: {
+  label: string;
+  value: string;
+  color: string;
+  emphasis?: boolean;
+}) {
+  return (
+    <View style={s.tallyColumn}>
+      <View style={s.tallyHalo}>
+        <View style={[s.tallyHaloRing, { borderColor: color }, emphasis && s.tallyHaloRingEmphasis]} pointerEvents="none" />
+        <View style={[s.tallyBead, { backgroundColor: color }]} />
+      </View>
+      <Text style={[s.tallyValue, emphasis && s.tallyValueEmphasis, { color }]}>{value}</Text>
+      <Text style={s.tallyLabel}>{label}</Text>
     </View>
   );
 }
@@ -464,7 +489,7 @@ export default function AppRulesBoard({
       <View style={s.header}>
         <Text style={s.headerKicker}>APP RULES</Text>
         <Text style={s.headerTitle}>Divide the day</Text>
-        <Text style={s.headerBody}>Give each group its share of your goal — or close it entirely.</Text>
+        <Text style={s.headerBody}>Plan app usage</Text>
       </View>
 
       <CapacityMeter goalMinutes={goalMinutes} lockAtMinutes={lockAtMinutes} plannedByGroup={plannedByGroup} />
@@ -511,60 +536,54 @@ const s = StyleSheet.create({
   headerBody: { marginTop: 4, maxWidth: 320, fontFamily: F.sans, fontSize: 12.5, lineHeight: 17.5, color: C.textSecondary },
 
   meterCard: {
+    position: 'relative',
+    overflow: 'hidden',
     borderRadius: 24,
     borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: '#DFDBD3',
-    backgroundColor: '#FFFDF9',
-    padding: 16,
-    gap: 12,
+    borderColor: '#E7D9B9',
+    backgroundColor: '#FFFDF8',
+    paddingHorizontal: 16,
+    paddingTop: 15,
+    paddingBottom: 14,
+    gap: 14,
     boxShadow: '0 8px 24px rgba(45, 40, 33, 0.055)',
   },
-  meterHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
-  meterKicker: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.9, color: C.textMuted },
-  meterTitle: { marginTop: 4, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 25, letterSpacing: -0.25, color: C.text },
-  meterBody: { marginTop: 4, fontFamily: F.sans, fontSize: 12.5, lineHeight: 17, color: C.textSecondary },
-  plannedPill: {
-    flexShrink: 0,
-    minWidth: 76,
-    borderRadius: 16,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: '#E7E2D6',
-    backgroundColor: '#F6F4EE',
-    paddingHorizontal: 11,
-    paddingVertical: 9,
-    alignItems: 'center',
-  },
-  plannedPillFull: { borderColor: '#E7C4CB', backgroundColor: BLOCKED_TINT },
-  plannedPillLabel: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.2, color: C.textMuted },
-  plannedPillLabelFull: { color: BLOCKED_COLOR },
-  plannedPillValue: { marginTop: 3, fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 23, color: C.text, fontVariant: ['tabular-nums'] },
-  plannedPillValueFull: { color: BLOCKED_COLOR },
+  meterHead: { alignItems: 'center' },
+  meterKicker: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2.2, color: C.goldDark },
+  meterTitle: { marginTop: 5, fontFamily: F.serifSemiBold, fontSize: 21.5, lineHeight: 25, letterSpacing: -0.25, textAlign: 'center', color: C.text },
+  meterBody: { marginTop: 4, maxWidth: 290, fontFamily: F.serifMedium, fontSize: 14.5, lineHeight: 19, textAlign: 'center', color: '#6A625A' },
 
-  railBlock: { position: 'relative', paddingTop: 22 },
-  markerChip: {
-    position: 'absolute',
-    top: 0,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#EAD9B7',
-    backgroundColor: '#FFFBEB',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    zIndex: 2,
-  },
-  goalChip: { borderColor: '#D9CBB2', backgroundColor: '#F4EFE4' },
-  markerChipText: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 0.7, color: C.goldDark },
-  goalChipText: { color: '#2D2923' },
-  rail: { position: 'relative', height: 20, borderRadius: 10, borderCurve: 'continuous', backgroundColor: '#ECE9E1', overflow: 'hidden' },
+  railBlock: { position: 'relative', paddingTop: 20 },
+  markerRow: { position: 'absolute', left: 0, right: 0, top: 0, height: 20, zIndex: 2 },
+  marker: { position: 'absolute', top: 0, width: 32, alignItems: 'center' },
+  markerText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.9, color: C.goldDark },
+  markerTextGoal: { color: '#2D2923' },
+  markerGem: { width: 4.2, height: 4.2, marginTop: 3, backgroundColor: C.goldDark, opacity: 0.8, transform: [{ rotate: '45deg' }] },
+  markerGemGoal: { backgroundColor: '#2D2923', opacity: 0.9 },
+  rail: { position: 'relative', height: 20, borderRadius: 10, borderCurve: 'continuous', backgroundColor: '#F0EADC', overflow: 'hidden', boxShadow: 'inset 0 1px 2px rgba(63, 52, 30, 0.07)' },
   railSegment: { position: 'absolute', top: 2.5, bottom: 2.5, borderRadius: 7, borderCurve: 'continuous' },
+  toleranceZone: { position: 'absolute', top: 0, bottom: 0, right: 0, backgroundColor: 'rgba(158,164,171,0.16)' },
   railMarker: { position: 'absolute', top: 0, bottom: 0, width: 1.5, borderRadius: 1 },
   capacityMarker: { backgroundColor: C.goldDark, opacity: 0.55 },
   goalMarker: { width: 2, backgroundColor: '#2D2923' },
   hardMarker: { width: 3, backgroundColor: BLOCKED_COLOR },
   railBottomLabels: { marginTop: 7, flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   railBottomText: { fontFamily: F.sansMedium, fontSize: 10.5, color: C.textMuted, fontVariant: ['tabular-nums'] },
+
+  // The capacity tally, read between two gold hairlines.
+  tallyBand: { marginTop: 1 },
+  tallyRule: { height: StyleSheet.hairlineWidth, backgroundColor: '#E4D7BB' },
+  tallyRow: { flexDirection: 'row', alignItems: 'stretch', paddingVertical: 11 },
+  tallyColumn: { flex: 1, alignItems: 'center', gap: 6, paddingHorizontal: 4 },
+  tallyDivider: { width: StyleSheet.hairlineWidth, marginVertical: 3, backgroundColor: '#EDE3CE' },
+  tallyHalo: { width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },
+  tallyHaloRing: { ...StyleSheet.absoluteFillObject, borderRadius: 7, borderWidth: StyleSheet.hairlineWidth, opacity: 0.38 },
+  tallyHaloRingEmphasis: { opacity: 0.72 },
+  tallyBead: { width: 6, height: 6, borderRadius: 3 },
+  tallyValue: { fontFamily: F.serifBold, fontSize: 18, lineHeight: 21, fontVariant: ['tabular-nums'] },
+  tallyValueEmphasis: { fontSize: 20, lineHeight: 23 },
+  tallyLabel: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1, textTransform: 'uppercase', color: '#9C9081' },
 
   warning: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 14, borderCurve: 'continuous', backgroundColor: '#FFF4DC', paddingHorizontal: 12, paddingVertical: 10 },
   warningStrong: { backgroundColor: '#F9E8EB' },
@@ -573,13 +592,22 @@ const s = StyleSheet.create({
 
   cardStack: { marginTop: 12, gap: 9 },
   systemCard: { borderColor: '#E7C4CB' },
-  systemCardIcon: { backgroundColor: '#F8E7EA', borderColor: '#E7C4CB' },
-  systemBadge: { borderRadius: 999, borderWidth: 1, borderColor: '#E7C4CB', backgroundColor: '#FFF7F8', paddingHorizontal: 7, paddingVertical: 4 },
+  systemSeal: {
+    flexShrink: 0,
+    width: 46,
+    height: 46,
+    marginHorizontal: 5.5,
+    borderRadius: 23,
+    borderWidth: 1,
+    borderColor: 'rgba(162,67,81,0.3)',
+    backgroundColor: '#FBE9EC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  systemBadge: { borderRadius: 999, borderWidth: 1, borderColor: '#E7C4CB', backgroundColor: '#FFF7F8', paddingHorizontal: 7, paddingVertical: 3 },
   systemBadgeText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.1, color: BLOCKED_COLOR },
   systemValueChip: { backgroundColor: BLOCKED_TINT, borderColor: '#E7C4CB' },
   systemValueText: { color: BLOCKED_COLOR },
-  systemBand: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E7C4CB', paddingHorizontal: 15, paddingVertical: 9 },
-  systemBandText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.15, color: BLOCKED_COLOR },
   card: {
     position: 'relative',
     overflow: 'hidden',
@@ -589,29 +617,23 @@ const s = StyleSheet.create({
     borderColor: C.border,
     backgroundColor: C.surface,
     paddingHorizontal: 12,
-    paddingVertical: 11,
+    paddingVertical: 10,
     boxShadow: '0 6px 16px rgba(35, 40, 37, 0.055)',
   },
-  cardRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  cardIcon: {
-    flexShrink: 0,
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardIconLetter: { fontFamily: F.serifSemiBold, fontSize: 20 },
-  cardBody: { flex: 1, minWidth: 0 },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  cardName: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22, color: C.text },
-  strengthChip: { flexShrink: 0, borderRadius: 999, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 2.5 },
-  strengthChipText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.8 },
-  cardMetaRow: { marginTop: 3.5, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  cardDot: { flexShrink: 0, width: 5, height: 5, borderRadius: 3 },
-  cardMeta: { flexShrink: 1, fontFamily: F.sans, fontSize: 12, lineHeight: 16, color: C.textSecondary },
+  // A closed group carries a rose edge down its left side — the same bar the
+  // Essentials surface wears.
+  closedEdge: { position: 'absolute', left: 0, top: 14, bottom: 14, width: 3.5, borderTopRightRadius: 3, borderBottomRightRadius: 3, backgroundColor: BLOCKED_COLOR, opacity: 0.85 },
+  cardRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cardBody: { flex: 1, minWidth: 0, paddingLeft: 3 },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cardName: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 18.5, lineHeight: 22, letterSpacing: -0.15, color: C.text },
+  strengthMark: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  strengthDot: { width: 4.5, height: 4.5, borderRadius: 3 },
+  strengthText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.9 },
+  cardMetaRow: { marginTop: 3, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  cardMeta: { flexShrink: 1, fontFamily: F.sans, fontSize: 11.5, lineHeight: 15.5, color: C.textSecondary },
+  cardShare: { flexShrink: 0, fontFamily: F.sansSemiBold, fontSize: 11.5, lineHeight: 15.5, fontVariant: ['tabular-nums'] },
+  cardClosed: { flexShrink: 0, fontFamily: F.sansSemiBold, fontSize: 11.5, lineHeight: 15.5, color: BLOCKED_COLOR },
   cardTail: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
   valueChip: {
     minWidth: 62,
@@ -626,35 +648,18 @@ const s = StyleSheet.create({
   },
   valueChipText: { fontFamily: F.serifSemiBold, fontSize: 15.5, lineHeight: 19, color: C.textSecondary, fontVariant: ['tabular-nums'] },
 
-  shareBlock: { marginTop: 11, paddingLeft: 59, paddingRight: 2 },
-  shareTrack: { height: 7, borderRadius: 4, overflow: 'hidden' },
-  shareFill: { height: '100%', borderRadius: 4 },
-  shareCaption: { marginTop: 5, fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.textMuted, fontVariant: ['tabular-nums'] },
-
-  blockedBand: {
-    marginTop: 11,
-    marginLeft: 59,
-    alignSelf: 'flex-start',
-    borderRadius: 8,
-    borderCurve: 'continuous',
-    backgroundColor: BLOCKED_TINT,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
-  blockedBandText: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.1, color: BLOCKED_COLOR },
-
+  removeRow: { marginTop: 8 },
+  removeRule: { height: StyleSheet.hairlineWidth, backgroundColor: '#E7E3DA' },
   removeButton: {
-    position: 'absolute',
-    right: 10,
-    bottom: 10,
-    width: 28,
-    height: 28,
-    borderRadius: 10,
-    borderCurve: 'continuous',
-    backgroundColor: 'rgba(245,242,236,0.9)',
+    alignSelf: 'flex-end',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 6,
+    paddingTop: 8,
+    paddingBottom: 1,
+    paddingHorizontal: 4,
   },
+  removeText: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.1, color: C.textMuted },
 
   addRow: {
     marginTop: 11,
