@@ -28,6 +28,7 @@ import Reanimated, {
   runOnJS,
   runOnUI,
   useAnimatedRef,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
   useDerivedValue,
   useFrameCallback,
@@ -24775,24 +24776,63 @@ function V4WeeklyRevealSlide({ displayName, onNext }: { displayName?: string; on
 }
 
 // ═══ Tools section (Screens 28a–28d) ═══════════════════════════════════════
-// The surprise fourth slot: the supporting tools that round out the picture —
-// Journal, Pomodoro, Bucket List, Gratitude. Built on the onboarding's own
-// white ground and charter/plaque grammar; three of the screens share one
-// premium "science" scroller, the section ends on the only action in the
-// chapter (Daily Gratitude as a task). CTA-driven, forward-only.
+// The surprise fourth chapter — Journal, Pomodoro, Bucket List, Gratitude.
+//
+// Everything before this is daylight: cream ground, gold ink. But the tools
+// are what a person does for themselves — reflect, focus, hope, give thanks —
+// so this chapter is lit differently, and it is the only place in onboarding
+// that goes dark. Each tool OPENS on a velvet chapter plate cut from the
+// Journal hub's own hearth (warm near-black gradient, a band of light sweeping
+// across it, gold dust hanging in the air) with a living emblem inside it; the
+// tool's later screens wear the slim chapter bar of the same velvet, so the
+// chapter never loses its signature. Under the velvet the screen returns to
+// the onboarding's cream and the research arrives as archive slips.
+//
+// House rules honoured here: entrances that share a prop with an animated
+// style are driven from a shared value (never `entering`), all motion is on
+// the UI thread, and every reveal is a wipe/transform — never an animated
+// width.
 
-type ToolsScienceCard = { icon: React.ReactNode; headline: string; body: string };
-type ToolsScienceSpec = { eyebrow: string; title: string; intro: string; cards: ToolsScienceCard[] };
+type ToolsIconComponent = React.ComponentType<{ s: number; c: string; w: number }>;
+type ToolsEmblemKind = 'writing' | 'flame' | 'grid';
+
+// The chapter's own materials.
+const TOOLS_VELVET = ['#2F2819', '#231E14', '#17130F'] as const;
+const TOOLS_PLATE_INK = '#F7EEDC';
+const TOOLS_EMBER = '#E8C87E';
+
+// What every tools screen needs to draw its velvet head: where the safe area
+// starts, and where the reader stands in the chapter.
+type ToolsChapter = {
+  topInset: number;
+  railLabel: string;
+  railIndex: number;
+  railTotal: number;
+};
+
+type ToolsScienceCard = { Icon: ToolsIconComponent; headline: string; body: string; source: string };
+type ToolsScienceSpec = {
+  eyebrow: string;
+  title: string;
+  intro: string;
+  // Chapter openers carry the full velvet plate and its emblem; a tool's
+  // later screens pass null and wear the slim bar instead.
+  emblem: ToolsEmblemKind | null;
+  findingsLabel: string;
+  cards: ToolsScienceCard[];
+};
 
 const TOOLS_JOURNAL_SCIENCE: ToolsScienceSpec = {
   eyebrow: 'THE FIRST TOOL',
   title: 'Journal',
   intro: 'A few minutes of writing, backed by decades of research.',
+  emblem: 'writing',
+  findingsLabel: 'WHAT THE RESEARCH SHOWS',
   cards: [
-    { icon: <Brain s={20} c={GOLD} w={1.9} />, headline: 'Backed by decades of research', body: "Foundational studies by psychologist James Pennebaker found that writing about emotional experiences for just 15–20 minutes, a few days in a row, led to lasting improvements in mental clarity and resilience." },
-    { icon: <Wind s={20} c={GOLD} w={1.9} />, headline: 'Reduces stress and anxiety', body: 'A widely cited 2005 review found that regular journaling lowers stress and measurably improves emotional and physical health — including lower blood pressure.' },
-    { icon: <Moon s={20} c={GOLD} w={1.9} />, headline: 'Better sleep', body: 'Research on gratitude journaling before bed found that a short writing practice helped people fall asleep faster and sleep more soundly through the night.' },
-    { icon: <Heart s={20} c={GOLD} w={1.9} />, headline: "Helps process what's hard to carry", body: 'A 2022 review of clinical studies found that journaling improved outcomes for people dealing with anxiety and difficult emotional experiences.' },
+    { Icon: Brain, source: 'JAMES PENNEBAKER', headline: 'Backed by decades of research', body: "Foundational studies by psychologist James Pennebaker found that writing about emotional experiences for just 15–20 minutes, a few days in a row, led to lasting improvements in mental clarity and resilience." },
+    { Icon: Wind, source: '2005 REVIEW', headline: 'Reduces stress and anxiety', body: 'A widely cited 2005 review found that regular journaling lowers stress and measurably improves emotional and physical health — including lower blood pressure.' },
+    { Icon: Moon, source: 'SLEEP RESEARCH', headline: 'Better sleep', body: 'Research on gratitude journaling before bed found that a short writing practice helped people fall asleep faster and sleep more soundly through the night.' },
+    { Icon: Heart, source: '2022 CLINICAL REVIEW', headline: "Helps process what's hard to carry", body: 'A 2022 review of clinical studies found that journaling improved outcomes for people dealing with anxiety and difficult emotional experiences.' },
   ],
 };
 
@@ -24800,49 +24840,92 @@ const TOOLS_POMODORO_SCIENCE: ToolsScienceSpec = {
   eyebrow: 'THE SECOND TOOL',
   title: 'Pomodoro',
   intro: 'Work in bursts that protect your focus — not longer hours, sharper ones.',
+  emblem: 'flame',
+  findingsLabel: 'WHAT THE RESEARCH SHOWS',
   cards: [
-    { icon: <Activity s={20} c={GOLD} w={1.9} />, headline: 'Your focus works in cycles', body: 'Attention naturally rises and falls in cycles of roughly 90 minutes. Structured breaks reset concentration before it fades — instead of pushing through until it collapses.' },
-    { icon: <TrendingUp s={20} c={GOLD} w={1.9} />, headline: 'Backed by a growing body of research', body: 'A 2025 review of 32 studies found that focus-and-break techniques like Pomodoro improved concentration, reduced mental fatigue, and helped people sustain performance over longer stretches.' },
-    { icon: <Target s={20} c={GOLD} w={1.9} />, headline: 'Measurable results', body: 'Peer-reviewed research shows that working in focused intervals can improve concentration by 15–25% and cut distractions by nearly half.' },
-    { icon: <Trophy s={20} c={GOLD} w={1.9} />, headline: 'What the most productive already do', body: 'Large-scale workplace data found the most productive people naturally worked in bursts close to an hour, followed by a short break — strikingly close to the Pomodoro structure.' },
+    { Icon: Activity, source: 'ATTENTION CYCLES', headline: 'Your focus works in cycles', body: 'Attention naturally rises and falls in cycles of roughly 90 minutes. Structured breaks reset concentration before it fades — instead of pushing through until it collapses.' },
+    { Icon: TrendingUp, source: '2025 · 32 STUDIES', headline: 'Backed by a growing body of research', body: 'A 2025 review of 32 studies found that focus-and-break techniques like Pomodoro improved concentration, reduced mental fatigue, and helped people sustain performance over longer stretches.' },
+    { Icon: Target, source: 'PEER-REVIEWED DATA', headline: 'Measurable results', body: 'Peer-reviewed research shows that working in focused intervals can improve concentration by 15–25% and cut distractions by nearly half.' },
+    { Icon: Trophy, source: 'WORKPLACE DATA', headline: 'What the most productive already do', body: 'Large-scale workplace data found the most productive people naturally worked in bursts close to an hour, followed by a short break — strikingly close to the Pomodoro structure.' },
   ],
 };
 
 const TOOLS_GRATITUDE_SCIENCE: ToolsScienceSpec = {
-  eyebrow: 'THE LAST TOOL',
-  title: 'Gratitude',
-  intro: 'A practice as old as faith itself — now backed by decades of research.',
+  eyebrow: 'GRATITUDE · THE EVIDENCE',
+  title: 'And the research agrees.',
+  intro: 'A practice as old as faith itself — now backed by decades of study.',
+  emblem: null,
+  findingsLabel: 'WHAT THE RESEARCH SHOWS',
   cards: [
-    { icon: <Sparkles s={20} c={GOLD} w={1.9} />, headline: 'A foundational finding', body: 'A landmark 2003 study by Robert Emmons and Michael McCullough found that people who kept a weekly gratitude journal felt more optimistic, evaluated their lives more positively, and even exercised more.' },
-    { icon: <Heart s={20} c={GOLD} w={1.9} />, headline: 'Fewer physical symptoms', body: 'The same study found that people who journaled about gratitude reported fewer headaches, less physical pain, and better overall health than those who journaled about daily hassles.' },
-    { icon: <Brain s={20} c={GOLD} w={1.9} />, headline: 'Lasting changes in the brain', body: 'Neuroimaging research found that practicing gratitude writing raised activity in brain regions tied to emotional regulation — still measurable three months later.' },
-    { icon: <Moon s={20} c={GOLD} w={1.9} />, headline: 'Better mood, sleep, relationships', body: 'Research in Frontiers in Psychology linked gratitude journaling to lower anxiety and depression, improved sleep, and stronger social connection.' },
+    { Icon: Sparkles, source: 'EMMONS & McCULLOUGH', headline: 'A foundational finding', body: 'A landmark 2003 study by Robert Emmons and Michael McCullough found that people who kept a weekly gratitude journal felt more optimistic, evaluated their lives more positively, and even exercised more.' },
+    { Icon: Heart, source: 'THE SAME STUDY', headline: 'Fewer physical symptoms', body: 'The same study found that people who journaled about gratitude reported fewer headaches, less physical pain, and better overall health than those who journaled about daily hassles.' },
+    { Icon: Brain, source: 'NEUROIMAGING', headline: 'Lasting changes in the brain', body: 'Neuroimaging research found that practicing gratitude writing raised activity in brain regions tied to emotional regulation — still measurable three months later.' },
+    { Icon: Moon, source: 'FRONTIERS IN PSYCHOLOGY', headline: 'Better mood, sleep, relationships', body: 'Research in Frontiers in Psychology linked gratitude journaling to lower anxiety and depression, improved sleep, and stronger social connection.' },
   ],
 };
 
-const TOOLS_JOURNAL_TECHNIQUES = [
+// The three techniques wear the exact tints the real Journal hub gives them —
+// gold, violet, green. The colour language is learned here and recognised the
+// first time the user opens Journal for real.
+type ToolsTechnique = {
+  key: string;
+  name: string;
+  label: string;
+  Icon: ToolsIconComponent;
+  tint: string;
+  border: string;
+  ink: string;
+  accent: string;
+  deep: string;
+  description: string;
+  benefits: string;
+};
+
+const TOOLS_JOURNAL_TECHNIQUES: ToolsTechnique[] = [
   {
     key: 'daily',
     name: 'Daily Journal',
-    icon: <Feather s={17} c={GOLD} w={1.9} />,
+    label: 'EVENING REFLECTION',
+    Icon: Pencil,
+    tint: '#FBF3DE',
+    border: '#F0E3B8',
+    ink: '#6D4F13',
+    accent: '#A9863F',
+    deep: '#8A5A1A',
     description: 'A structured daily reflection — a guided format that helps you process your day, your thoughts, and what mattered.',
     benefits: 'Best for building a consistent habit of reflection. Creates a running record you can look back on over time.',
   },
   {
     key: 'morning',
     name: 'Morning Pages',
-    icon: <Sun s={17} c={GOLD} w={1.9} />,
+    label: 'CLEAR YOUR MIND',
+    Icon: Feather,
+    tint: '#EEEAF5',
+    border: '#DDD5ED',
+    ink: '#3B2F76',
+    accent: '#6D5AAE',
+    deep: '#2E2478',
     description: 'Free-form, stream-of-consciousness writing done first thing in the morning — whatever comes to mind, without editing or structure.',
     benefits: 'Clears mental clutter before the day begins. Surfaces thoughts and feelings that might otherwise stay buried under the busyness of the day.',
   },
   {
     key: 'free',
     name: 'Free Writing',
-    icon: <Wind s={17} c={GOLD} w={1.9} />,
+    label: 'OPEN PAGE',
+    Icon: Notebook,
+    tint: '#E1F1EC',
+    border: '#C8E6DD',
+    ink: '#1F4E45',
+    accent: '#3D8273',
+    deep: '#2A6E5F',
     description: 'Completely open — no format, no prompts, no rules. Write whatever, whenever, however long.',
     benefits: 'Total flexibility for whoever wants a blank page rather than structure. Good for creative thinking, working through a problem, or writing in the moment.',
   },
-] as const;
+];
+
+// The gutter between the three technique tabs — the drawer's tongue needs it
+// to work out which tab it was pulled from.
+const TOOLS_TAB_GAP = 9;
 
 const TOOLS_BUCKET_ITEMS = [
   { label: 'Visit Jerusalem', done: true },
@@ -24852,76 +24935,620 @@ const TOOLS_BUCKET_ITEMS = [
   { label: 'See the Northern Lights', done: false },
 ] as const;
 
+// ── The chapter's velvet ───────────────────────────────────────────────────
+// A band of warm light crossing the hearth every few seconds. Lifted from the
+// real Journal hub so the material is literally the app's own.
+function ToolsHearthGlint({ width }: { width: number }) {
+  const t = useSharedValue(0);
+
+  useEffect(() => {
+    t.value = withRepeat(withTiming(1, { duration: 7600, easing: Easing.inOut(Easing.quad) }), -1, false);
+    return () => cancelAnimation(t);
+  }, [t]);
+
+  const sweep = useAnimatedStyle(() => ({
+    opacity: interpolate(t.value, [0, 0.08, 0.3, 0.44, 1], [0, 1, 1, 0, 0]),
+    transform: [
+      { translateX: interpolate(t.value, [0, 0.44, 1], [-120, width + 70, width + 70]) },
+      { rotate: '14deg' },
+    ],
+  }));
+
+  return (
+    <Reanimated.View pointerEvents="none" style={[tools.hearthGlint, sweep]}>
+      <LinearGradient
+        colors={['rgba(255,241,205,0)', 'rgba(255,241,205,0.15)', 'rgba(255,241,205,0)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={StyleSheet.absoluteFill}
+      />
+    </Reanimated.View>
+  );
+}
+
+// A speck of gold dust hanging in the hearth's light, breathing at its own pace.
+function ToolsHearthMote({ delay, size = 3, style }: { delay: number; size?: number; style: StyleProp<ViewStyle> }) {
+  const t = useSharedValue(0);
+
+  useEffect(() => {
+    t.value = withDelay(delay, withRepeat(withTiming(1, { duration: 3100, easing: Easing.inOut(Easing.quad) }), -1, true));
+    return () => cancelAnimation(t);
+  }, [delay, t]);
+
+  const twinkle = useAnimatedStyle(() => ({
+    opacity: 0.14 + t.value * 0.52,
+    transform: [{ translateY: interpolate(t.value, [0, 1], [3.5, -4.5]) }],
+  }));
+
+  return (
+    <Reanimated.View
+      pointerEvents="none"
+      style={[tools.hearthMote, { width: size, height: size, borderRadius: size / 2 }, style, twinkle]}
+    />
+  );
+}
+
+// ── The emblems ────────────────────────────────────────────────────────────
+// A line of handwriting, built as a bouncing script wave. Drawn once per
+// line at module level cost — no randomness at render, so the page is the
+// same page every time it opens.
+function toolsScribblePath(length: number, seed: number) {
+  const amps = [5.4, 3.4, 5.8, 4.2, 5.1, 3.1, 5.6];
+  let d = 'M 0 8';
+  let x = 0;
+  let i = 0;
+  while (x < length - 1) {
+    const step = Math.min(length - x, 6.4 + ((seed + i) % 4) * 1.5);
+    const rising = i % 2 === 0;
+    const amp = amps[(seed + i * 3) % amps.length] * (rising ? -1 : 0.66);
+    d += ` q ${(step / 2).toFixed(1)} ${amp.toFixed(1)} ${step.toFixed(1)} 0`;
+    x += step;
+    i += 1;
+  }
+  return d;
+}
+
+const TOOLS_WRITE_LINES = [
+  { w: 62, weight: 2.1, head: true, seed: 3, from: 0.02, to: 0.15 },
+  { w: 136, weight: 1.5, head: false, seed: 1, from: 0.19, to: 0.42 },
+  { w: 142, weight: 1.5, head: false, seed: 4, from: 0.44, to: 0.65 },
+  { w: 127, weight: 1.5, head: false, seed: 2, from: 0.67, to: 0.85 },
+  { w: 76, weight: 1.5, head: false, seed: 5, from: 0.87, to: 0.99 },
+] as const;
+
+// One written line. The ink is a static SVG; a clipping host slides across it
+// left to right so the stroke appears to be laid down — the same wipe grammar
+// the weekly-rhythm strips and the evidence chart already use. A gold nib
+// rides the frontier.
+function ToolsWritingLine({ write, line }: { write: SharedValue<number>; line: (typeof TOOLS_WRITE_LINES)[number] }) {
+  const d = useMemo(() => toolsScribblePath(line.w, line.seed), [line.seed, line.w]);
+  const progress = useDerivedValue(() => interpolate(write.value, [line.from, line.to], [0, 1], 'clamp'));
+
+  const hostStyle = useAnimatedStyle(() => ({ transform: [{ translateX: -line.w * (1 - progress.value) }] }));
+  const inkStyle = useAnimatedStyle(() => ({ transform: [{ translateX: line.w * (1 - progress.value) }] }));
+  const nibStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0, 0.05, 0.9, 1], [0, 1, 1, 0], 'clamp'),
+    transform: [{ translateX: progress.value * line.w - 2 }],
+  }));
+
+  return (
+    <View style={[tools.writeLineRow, { width: line.w }, line.head && tools.writeLineHead]}>
+      <Reanimated.View style={[tools.writeLineClip, { width: line.w }, hostStyle]}>
+        <Reanimated.View style={inkStyle}>
+          <Svg width={line.w} height={14}>
+            <SvgPath
+              d={d}
+              stroke={line.head ? 'rgba(150,110,44,0.9)' : 'rgba(56,45,30,0.8)'}
+              strokeWidth={line.weight}
+              strokeLinecap="round"
+              fill="none"
+            />
+          </Svg>
+        </Reanimated.View>
+      </Reanimated.View>
+      <Reanimated.View pointerEvents="none" style={[tools.writeNib, nibStyle]} />
+    </View>
+  );
+}
+
+// Journal's emblem: a page that writes itself. Two leaves rest behind it so
+// it reads as a journal rather than a sheet; when the last line lands, the
+// warmth behind the page blooms and the hearth answers with a haptic.
+function ToolsWritingEmblem() {
+  const write = useSharedValue(0);
+  const rise = useSharedValue(0);
+  const bloom = useSharedValue(0);
+  const float = useSharedValue(0);
+
+  useEffect(() => {
+    rise.value = withDelay(150, withTiming(1, { duration: 780, easing: Easing.bezier(0.16, 1, 0.28, 1) }));
+    write.value = withDelay(560, withTiming(1, { duration: 2280, easing: Easing.inOut(Easing.quad) }));
+    bloom.value = withDelay(2620, withTiming(1, { duration: 940, easing: Easing.out(Easing.cubic) }));
+    float.value = withRepeat(withTiming(1, { duration: 5400, easing: Easing.inOut(Easing.sin) }), -1, true);
+    const beat = setTimeout(runBubbleHaptic, 2760);
+    return () => {
+      cancelAnimation(rise);
+      cancelAnimation(write);
+      cancelAnimation(bloom);
+      cancelAnimation(float);
+      clearTimeout(beat);
+    };
+  }, [bloom, float, rise, write]);
+
+  // The leaf owns both its entrance and its resting drift, so the entrance
+  // rides a shared value — an `entering` here would be overridden on frame 0.
+  const leafStyle = useAnimatedStyle(() => ({
+    opacity: rise.value,
+    transform: [
+      { translateY: interpolate(rise.value, [0, 1], [20, 0]) + interpolate(float.value, [0, 1], [1.8, -1.8]) },
+      { rotate: `${-3 + interpolate(float.value, [0, 1], [-0.55, 0.55])}deg` },
+      { scale: interpolate(rise.value, [0, 1], [0.93, 1]) },
+    ],
+  }));
+  // The resting offset lives in here too: an animated style REPLACES the
+  // static `transform`, it does not merge with it.
+  const backStyle = useAnimatedStyle(() => ({
+    opacity: rise.value * 0.9,
+    transform: [
+      { translateX: 9 },
+      { translateY: 6 + interpolate(rise.value, [0, 1], [24, 0]) },
+      { rotate: '6.5deg' },
+    ],
+  }));
+  const bloomStyle = useAnimatedStyle(() => ({
+    opacity: 0.42 + bloom.value * 0.58,
+    transform: [{ scale: 0.86 + bloom.value * 0.14 }],
+  }));
+
+  return (
+    <View style={tools.writeStage}>
+      <Reanimated.View pointerEvents="none" style={[tools.writeBloom, bloomStyle]}>
+        <Svg width={244} height={244}>
+          <Defs>
+            <SvgRadialGradient id="toolsWriteBloom" cx="50%" cy="50%" r="50%">
+              <Stop offset="0" stopColor="#F3D492" stopOpacity={0.42} />
+              <Stop offset="0.52" stopColor="#C5A059" stopOpacity={0.15} />
+              <Stop offset="1" stopColor="#C5A059" stopOpacity={0} />
+            </SvgRadialGradient>
+          </Defs>
+          <SvgCircle cx={122} cy={122} r={122} fill="url(#toolsWriteBloom)" />
+        </Svg>
+      </Reanimated.View>
+
+      <Reanimated.View pointerEvents="none" style={[tools.writeLeafBack, backStyle]} />
+
+      <Reanimated.View style={[tools.writeLeaf, leafStyle]}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['#FFFDF6', '#F6ECD7']}
+          start={{ x: 0.1, y: 0 }}
+          end={{ x: 0.9, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View pointerEvents="none" style={tools.writeLeafMargin} />
+        <View style={tools.writeLines}>
+          {TOOLS_WRITE_LINES.map(line => (
+            <ToolsWritingLine key={line.seed} write={write} line={line} />
+          ))}
+        </View>
+      </Reanimated.View>
+    </View>
+  );
+}
+
+// Pomodoro's emblem: the app's own focus flame. Mounted at full size and
+// scaled down by a static transform so every displayed frame is a downsample —
+// a Lottie that rasterises mid-scale comes up blurry.
+function ToolsFlameEmblem() {
+  const rise = useSharedValue(0);
+
+  useEffect(() => {
+    rise.value = withDelay(180, withTiming(1, { duration: 820, easing: Easing.bezier(0.16, 1, 0.28, 1) }));
+    return () => cancelAnimation(rise);
+  }, [rise]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: rise.value,
+    transform: [{ translateY: interpolate(rise.value, [0, 1], [16, 0]) }, { scale: interpolate(rise.value, [0, 1], [0.9, 1]) }],
+  }));
+
+  return (
+    <View style={tools.writeStage}>
+      <View pointerEvents="none" style={tools.writeBloom}>
+        <Svg width={244} height={244}>
+          <Defs>
+            <SvgRadialGradient id="toolsFlameBloom" cx="50%" cy="50%" r="50%">
+              <Stop offset="0" stopColor="#F0B76C" stopOpacity={0.34} />
+              <Stop offset="0.5" stopColor="#C5A059" stopOpacity={0.13} />
+              <Stop offset="1" stopColor="#C5A059" stopOpacity={0} />
+            </SvgRadialGradient>
+          </Defs>
+          <SvgCircle cx={122} cy={122} r={122} fill="url(#toolsFlameBloom)" />
+        </Svg>
+      </View>
+      <Reanimated.View style={[tools.flameBox, style]} pointerEvents="none">
+        <View style={tools.flameInner}>
+          <FocusLottie name="flame" loop autoplay speed={0.9} style={tools.flameLottie} />
+        </View>
+      </Reanimated.View>
+    </View>
+  );
+}
+
+const TOOLS_GRID_EMBLEM = [
+  0, 2, 3, 1, 0, 2, 4,
+  3, 1, 4, 2, 3, 0, 2,
+  2, 4, 1, 3, 4, 2, 3,
+  4, 3, 2, 4, 1, 3, 4,
+];
+
+// Gratitude's emblem: a month of thanks lighting up cell by cell.
+function ToolsGridEmblem() {
+  const wake = useSharedValue(0);
+
+  useEffect(() => {
+    wake.value = withDelay(320, withTiming(1, { duration: 1700, easing: Easing.out(Easing.cubic) }));
+    return () => cancelAnimation(wake);
+  }, [wake]);
+
+  return (
+    <View style={tools.writeStage}>
+      <View pointerEvents="none" style={tools.writeBloom}>
+        <Svg width={244} height={244}>
+          <Defs>
+            <SvgRadialGradient id="toolsGridBloom" cx="50%" cy="50%" r="50%">
+              <Stop offset="0" stopColor="#F3D492" stopOpacity={0.36} />
+              <Stop offset="0.52" stopColor="#C5A059" stopOpacity={0.13} />
+              <Stop offset="1" stopColor="#C5A059" stopOpacity={0} />
+            </SvgRadialGradient>
+          </Defs>
+          <SvgCircle cx={122} cy={122} r={122} fill="url(#toolsGridBloom)" />
+        </Svg>
+      </View>
+      <View style={tools.emblemGrid}>
+        {TOOLS_GRID_EMBLEM.map((level, index) => (
+          <ToolsGridEmblemCell key={index} level={level} index={index} wake={wake} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function ToolsGridEmblemCell({ level, index, wake }: { level: number; index: number; wake: SharedValue<number> }) {
+  const start = (index % 7) * 0.055 + Math.floor(index / 7) * 0.11;
+  const style = useAnimatedStyle(() => {
+    const local = interpolate(wake.value, [start, Math.min(1, start + 0.34)], [0, 1], 'clamp');
+    return { opacity: 0.06 + local * 0.94, transform: [{ scale: 0.55 + local * 0.45 }] };
+  });
+  const tint = level === 0
+    ? 'rgba(247,238,220,0.10)'
+    : level === 1
+      ? 'rgba(232,200,126,0.26)'
+      : level === 2
+        ? 'rgba(232,200,126,0.46)'
+        : level === 3
+          ? 'rgba(232,200,126,0.72)'
+          : TOOLS_EMBER;
+  return <Reanimated.View style={[tools.emblemGridCell, { backgroundColor: tint }, style]} />;
+}
+
+function ToolsEmblem({ kind }: { kind: ToolsEmblemKind }) {
+  if (kind === 'writing') return <ToolsWritingEmblem />;
+  if (kind === 'flame') return <ToolsFlameEmblem />;
+  return <ToolsGridEmblem />;
+}
+
+// ── Chapter head ───────────────────────────────────────────────────────────
+// Where the reader stands in the chapter, set in the velvet itself.
+function ToolsChapterRail({ chapter }: { chapter: ToolsChapter }) {
+  return (
+    <View style={tools.plateRail}>
+      <View style={tools.progressMeta}>
+        <Text style={tools.plateRailLabel}>{chapter.railLabel}</Text>
+        <Text style={tools.plateRailCount}>{chapter.railIndex + 1} / {chapter.railTotal}</Text>
+      </View>
+      <View style={tools.progressRail}>
+        {Array.from({ length: chapter.railTotal }).map((_, bead) => (
+          <View key={bead} style={[tools.plateBead, bead <= chapter.railIndex && tools.plateBeadDone]} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// The velvet ground both heads are cut from.
+function ToolsVelvetGround({ width, tall }: { width: number; tall: boolean }) {
+  return (
+    <>
+      <LinearGradient
+        pointerEvents="none"
+        colors={[...TOOLS_VELVET]}
+        start={{ x: 0.08, y: 0 }}
+        end={{ x: 0.92, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <ToolsHearthGlint width={width} />
+      {tall ? (
+        <>
+          <ToolsHearthMote delay={0} style={{ right: 30, top: 118 }} />
+          <ToolsHearthMote delay={900} size={2} style={{ right: 74, top: 168 }} />
+          <ToolsHearthMote delay={1800} style={{ left: 34, top: 196 }} />
+          <ToolsHearthMote delay={2600} size={2} style={{ left: 78, top: 132 }} />
+          <ToolsHearthMote delay={1300} size={2.4} style={{ right: 46, top: 256 }} />
+        </>
+      ) : (
+        <>
+          <ToolsHearthMote delay={0} size={2.4} style={{ right: 42, bottom: 26 }} />
+          <ToolsHearthMote delay={1400} size={2} style={{ left: 52, bottom: 18 }} />
+        </>
+      )}
+      <View pointerEvents="none" style={tools.plateSeam}>
+        <LinearGradient
+          colors={['rgba(232,200,126,0)', 'rgba(232,200,126,0.5)', 'rgba(232,200,126,0)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
+    </>
+  );
+}
+
+// A tool's opening screen: the full plate — emblem, name, promise. It is laid
+// over the feed rather than in it, so the findings slide underneath the velvet
+// as the reader scrolls, and the plate leaves at two thirds their speed.
+function ToolsChapterPlate({
+  chapter,
+  eyebrow,
+  title,
+  intro,
+  emblem,
+  scrollY,
+  onHeight,
+}: {
+  chapter: ToolsChapter;
+  eyebrow: string;
+  title: string;
+  intro?: string;
+  emblem: ToolsEmblemKind;
+  scrollY: SharedValue<number>;
+  onHeight: (height: number) => void;
+}) {
+  const { width, height } = useWindowDimensions();
+  // Short phones get the same plate, drawn a size down, so the first finding
+  // still breaks the fold and the screen reads as a feed rather than a poster.
+  const compact = height < 730;
+  const parallax = useAnimatedStyle(() => ({
+    transform: [{ translateY: -Math.max(0, scrollY.value) * 0.62 }],
+  }));
+
+  return (
+    <Reanimated.View
+      pointerEvents="none"
+      style={[tools.plate, parallax]}
+      onLayout={event => onHeight(event.nativeEvent.layout.height)}
+    >
+      <View style={tools.plateVelvet}>
+        <ToolsVelvetGround width={width} tall />
+        <View style={[tools.plateInner, compact && tools.plateInnerCompact, { paddingTop: chapter.topInset + 12 }]}>
+          <ToolsChapterRail chapter={chapter} />
+          <View style={[tools.plateEmblemStage, compact && tools.plateEmblemStageCompact]}>
+            <View style={compact ? tools.plateEmblemShrink : undefined}>
+              <ToolsEmblem kind={emblem} />
+            </View>
+          </View>
+          <Reanimated.Text
+            entering={FadeIn.delay(760).duration(620)}
+            style={tools.plateEyebrow}
+          >
+            {eyebrow}
+          </Reanimated.Text>
+          <Reanimated.Text
+            entering={FadeInUp.delay(880).duration(760).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 16 }] })}
+            style={[tools.plateTitle, compact && tools.plateTitleCompact]}
+          >
+            {title}
+          </Reanimated.Text>
+          {intro ? (
+            <Reanimated.Text
+              entering={FadeInUp.delay(1060).duration(700).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 12 }] })}
+              style={[tools.plateIntro, compact && tools.plateIntroCompact]}
+            >
+              {intro}
+            </Reanimated.Text>
+          ) : null}
+        </View>
+      </View>
+    </Reanimated.View>
+  );
+}
+
+// A tool's later screens: the same velvet, cut down to a band, so the chapter
+// keeps its signature without spending the height twice.
+function ToolsChapterBar({
+  chapter,
+  scrollY,
+  onHeight,
+}: {
+  chapter: ToolsChapter;
+  scrollY?: SharedValue<number>;
+  onHeight?: (height: number) => void;
+}) {
+  const { width } = useWindowDimensions();
+  const parallax = useAnimatedStyle(() => ({
+    transform: [{ translateY: scrollY ? -Math.max(0, scrollY.value) * 0.5 : 0 }],
+  }));
+
+  return (
+    <Reanimated.View
+      pointerEvents="none"
+      style={[tools.plate, parallax]}
+      onLayout={event => onHeight?.(event.nativeEvent.layout.height)}
+    >
+      <View style={tools.barVelvet}>
+        <ToolsVelvetGround width={width} tall={false} />
+        <View style={[tools.plateInner, { paddingTop: chapter.topInset + 12, paddingBottom: 17 }]}>
+          <ToolsChapterRail chapter={chapter} />
+        </View>
+      </View>
+    </Reanimated.View>
+  );
+}
+
+// ── The feed ───────────────────────────────────────────────────────────────
+// rule · diamond · label · diamond · rule — the onboarding's own ornament,
+// borrowed from the example-card headers.
+function ToolsSectionLabel({ label, delay }: { label: string; delay: number }) {
+  return (
+    <Reanimated.View entering={FadeIn.delay(delay).duration(560)} style={tools.sectionLabelRow}>
+      <LinearGradient
+        colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.46)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={tools.sectionLabelRule}
+      />
+      <View style={tools.sectionLabelDiamond} />
+      <Text style={tools.sectionLabelText}>{label}</Text>
+      <View style={tools.sectionLabelDiamond} />
+      <LinearGradient
+        colors={['rgba(197,160,89,0.46)', 'rgba(197,160,89,0)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={tools.sectionLabelRule}
+      />
+    </Reanimated.View>
+  );
+}
+
+// One finding, set like an archive slip: index, a rule that draws itself, the
+// source in small caps, and the tool's icon watermarked into the corner.
+function ToolsFindingCard({ card, index, delay }: { card: ToolsScienceCard; index: number; delay: number }) {
+  const draw = useSharedValue(0);
+
+  useEffect(() => {
+    draw.value = withDelay(delay + 240, withTiming(1, { duration: 620, easing: Easing.bezier(0.16, 1, 0.28, 1) }));
+    return () => cancelAnimation(draw);
+  }, [delay, draw]);
+
+  const ruleStyle = useAnimatedStyle(() => ({ transform: [{ scaleX: 0.06 + draw.value * 0.94 }] }));
+
+  return (
+    <Reanimated.View
+      entering={FadeInUp.delay(delay).duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 24 }] })}
+      style={tools.findingCard}
+    >
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(255,255,255,0.99)', 'rgba(255,250,238,0.96)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View pointerEvents="none" style={tools.findingWatermark}>
+        <card.Icon s={92} c="rgba(197,160,89,0.07)" w={1.1} />
+      </View>
+      <View pointerEvents="none" style={tools.scienceCardSheen} />
+
+      <View style={tools.findingHead}>
+        <View style={tools.findingIndex}>
+          <Text style={tools.findingIndexText}>{String(index + 1).padStart(2, '0')}</Text>
+        </View>
+        <View style={tools.findingRuleTrack}>
+          <Reanimated.View style={[tools.findingRule, ruleStyle]} />
+        </View>
+        <Text style={tools.findingSource} numberOfLines={1}>{card.source}</Text>
+      </View>
+
+      <View style={tools.findingBodyRow}>
+        <View style={tools.findingIcon}>
+          <card.Icon s={20} c={GOLD} w={1.9} />
+        </View>
+        <View style={tools.findingCopy}>
+          <Text style={tools.findingHeadline}>{card.headline}</Text>
+          <Text style={tools.findingText}>{card.body}</Text>
+        </View>
+      </View>
+    </Reanimated.View>
+  );
+}
+
 // One shared premium science scroller — Journal, Pomodoro and Gratitude all
-// wear it. Title + intro at the top, a calm feed of finding plaques, a fixed
-// Continue at the foot.
-function ToolsScienceScreen({ screen, bottomInset, onNext }: { screen: ToolsScienceSpec; bottomInset: number; onNext: () => void }) {
-  const heroIcon = screen.title === 'Journal'
-    ? <Feather s={23} c={GOLD} w={1.8} />
-    : screen.title === 'Pomodoro'
-      ? <Hourglass s={23} c={GOLD} w={1.8} />
-      : <Sparkles s={23} c={GOLD} w={1.8} />;
+// wear it. Velvet head, a calm feed of findings, a fixed Continue at the foot.
+function ToolsScienceScreen({
+  screen,
+  chapter,
+  bottomInset,
+  onNext,
+}: {
+  screen: ToolsScienceSpec;
+  chapter: ToolsChapter;
+  bottomInset: number;
+  onNext: () => void;
+}) {
+  const scrollY = useSharedValue(0);
+  const [headHeight, setHeadHeight] = useState(0);
+  const onScroll = useAnimatedScrollHandler(event => {
+    scrollY.value = event.contentOffset.y;
+  });
+
+  const opens = screen.emblem !== null;
+  const base = opens ? 1240 : 420;
 
   return (
     <View style={tools.screen}>
-      <ScrollView contentContainerStyle={[tools.scienceScroll, { paddingBottom: bottomInset + 172 }]} showsVerticalScrollIndicator={false}>
-        <Reanimated.View
-          entering={FadeInUp.duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }, { scale: 0.92 }] })}
-          style={tools.heroSeal}
-        >
-          <View style={tools.heroSealHalo} />
-          {heroIcon}
-        </Reanimated.View>
-        <Reanimated.Text entering={FadeIn.duration(440).easing(Easing.out(Easing.cubic))} style={tools.scienceEyebrow}>
-          {screen.eyebrow}
-        </Reanimated.Text>
-        <Reanimated.Text
-          entering={FadeInUp.delay(90).duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 16 }] })}
-          style={tools.scienceTitle}
-        >
-          {screen.title}
-        </Reanimated.Text>
-        <Reanimated.Text
-          entering={FadeInUp.delay(200).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 12 }] })}
-          style={tools.scienceIntro}
-        >
-          {screen.intro}
-        </Reanimated.Text>
+      <Reanimated.ScrollView
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          tools.scienceScroll,
+          { paddingTop: headHeight + (opens ? 26 : 20), paddingBottom: bottomInset + 168 },
+        ]}
+      >
+        {opens ? null : (
+          <View style={tools.barHeader}>
+            <Reanimated.Text entering={FadeIn.delay(120).duration(520)} style={tools.barEyebrow}>
+              {screen.eyebrow}
+            </Reanimated.Text>
+            <Reanimated.Text
+              entering={FadeInUp.delay(200).duration(660).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}
+              style={tools.barTitle}
+            >
+              {screen.title}
+            </Reanimated.Text>
+            <Reanimated.Text
+              entering={FadeInUp.delay(320).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 10 }] })}
+              style={tools.barIntro}
+            >
+              {screen.intro}
+            </Reanimated.Text>
+          </View>
+        )}
 
-        <View style={tools.findingsHeader}>
-          <Text style={tools.findingsLabel}>RESEARCH-BACKED BENEFITS</Text>
-          <View style={tools.findingsCount}><Text style={tools.findingsCountText}>4 FINDINGS</Text></View>
-        </View>
+        <ToolsSectionLabel label={screen.findingsLabel} delay={base} />
 
         <View style={tools.scienceFeed}>
           {screen.cards.map((card, index) => (
-            <Reanimated.View
-              key={card.headline}
-              entering={FadeInUp.delay(360 + index * 130).duration(500).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 20 }] })}
-              style={tools.scienceCard}
-            >
-              <LinearGradient
-                pointerEvents="none"
-                colors={['rgba(255,255,255,0.98)', 'rgba(255,251,241,0.95)']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-              <View pointerEvents="none" style={tools.scienceCardSheen} />
-              <View style={tools.scienceCardMark}>
-                <View style={tools.scienceCardIcon}>{card.icon}</View>
-                <Text style={tools.scienceCardIndex}>{String(index + 1).padStart(2, '0')}</Text>
-              </View>
-              <View style={tools.scienceCardBody}>
-                <Text style={tools.scienceCardHeadline}>{card.headline}</Text>
-                <Text style={tools.scienceCardText}>{card.body}</Text>
-              </View>
-            </Reanimated.View>
+            <ToolsFindingCard key={card.headline} card={card} index={index} delay={base + 140 + index * 120} />
           ))}
         </View>
-      </ScrollView>
+      </Reanimated.ScrollView>
 
-      <ToolsFooterCta delay={620} bottomInset={bottomInset} label="Continue" onPress={onNext} />
+      {opens ? (
+        <ToolsChapterPlate
+          chapter={chapter}
+          eyebrow={screen.eyebrow}
+          title={screen.title}
+          intro={screen.intro}
+          emblem={screen.emblem as ToolsEmblemKind}
+          scrollY={scrollY}
+          onHeight={setHeadHeight}
+        />
+      ) : (
+        <ToolsChapterBar chapter={chapter} scrollY={scrollY} onHeight={setHeadHeight} />
+      )}
+
+      <ToolsFooterCta delay={base + 620} bottomInset={bottomInset} label="Continue" onPress={onNext} />
     </View>
   );
 }
@@ -24946,48 +25573,131 @@ function ToolsFooterCta({ label, onPress, delay = 220, bottomInset }: { label: s
   );
 }
 
-// 28a-2: the three techniques as flat tabs that pull a drawer out below. Only
-// one is open at a time; inside, two panels (Description / Benefits) swipe.
-function ToolsJournalTechniques({ bottomInset, onNext }: { bottomInset: number; onNext: () => void }) {
+// One technique tab. Closed it is a pale card wearing only a hairline of its
+// own colour; open it becomes the card the user will meet in the real Journal
+// hub — same tint, same border, same ink. The state is a spring so switching
+// between them reads as one continuous move.
+function ToolsTechniqueTab({
+  technique,
+  open,
+  onPress,
+}: {
+  technique: ToolsTechnique;
+  open: boolean;
+  onPress: () => void;
+}) {
+  const state = useSharedValue(open ? 1 : 0);
+
+  useEffect(() => {
+    state.value = withSpring(open ? 1 : 0, { damping: 17, stiffness: 190, mass: 0.82 });
+  }, [open, state]);
+
+  const cardStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(state.value, [0, 1], [0, -4]) }, { scale: interpolate(state.value, [0, 1], [1, 1.02]) }],
+    borderColor: interpolateColor(state.value, [0, 1], ['rgba(25,23,20,0.08)', technique.border]),
+  }));
+  const tintStyle = useAnimatedStyle(() => ({ opacity: state.value }));
+  const plateStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(state.value, [0, 1], ['#FFFFFF', technique.tint]),
+    borderColor: interpolateColor(state.value, [0, 1], ['rgba(25,23,20,0.07)', technique.border]),
+    transform: [{ scale: interpolate(state.value, [0, 1], [1, 1.06]) }],
+  }));
+  const nameStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(state.value, [0, 1], ['rgba(25,23,20,0.5)', technique.ink]),
+  }));
+  const barStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(state.value, [0, 1], [0.3, 1]),
+    transform: [{ scaleX: interpolate(state.value, [0, 1], [0.42, 1]) }],
+  }));
+
+  return (
+    <TouchableOpacity activeOpacity={0.88} haptic="selection" onPress={onPress} style={tools.techTabPress}>
+      <Reanimated.View style={[tools.techTab, cardStyle]}>
+        <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, tintStyle]}>
+          <LinearGradient
+            colors={[technique.tint, '#FFFFFF']}
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 0.9, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Reanimated.View>
+
+        <Reanimated.View style={[tools.techTabIcon, plateStyle]}>
+          <technique.Icon s={17} c={technique.accent} w={1.9} />
+        </Reanimated.View>
+        <Reanimated.Text style={[tools.techTabName, nameStyle]}>{technique.name}</Reanimated.Text>
+        <Reanimated.View style={[tools.techTabBar, { backgroundColor: technique.accent }, barStyle]} />
+      </Reanimated.View>
+    </TouchableOpacity>
+  );
+}
+
+// 28a-2: the three techniques as tabs that pull a drawer out below. Only one
+// is open at a time; the drawer's tongue slides to whichever tab it came out
+// of, and inside, two panels (Description / Benefits) swipe.
+function ToolsJournalTechniques({
+  chapter,
+  bottomInset,
+  onNext,
+}: {
+  chapter: ToolsChapter;
+  bottomInset: number;
+  onNext: () => void;
+}) {
   const { width } = useWindowDimensions();
+  const [headHeight, setHeadHeight] = useState(0);
+  const [rowWidth, setRowWidth] = useState(0);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [panel, setPanel] = useState(0);
   const pagePos = useSharedValue(0);
   const dragX = useSharedValue(0);
-  const openIndex = TOOLS_JOURNAL_TECHNIQUES.findIndex(t => t.key === openKey);
+  const tongue = useSharedValue(0);
+  const openIndex = TOOLS_JOURNAL_TECHNIQUES.findIndex(technique => technique.key === openKey);
   const active = openIndex >= 0 ? TOOLS_JOURNAL_TECHNIQUES[openIndex] : null;
-  const drawerPageWidth = Math.max(220, width - 76);
+  const drawerPageWidth = Math.max(200, width - 44 - 34);
 
-  const selectTab = (key: string) => {
-    if (key === openKey) {
-      setOpenKey(null);
+  // Three equal tabs in a measured row: the tongue's home is arithmetic, no
+  // per-tab measurement needed.
+  const tabPitch = rowWidth > 0 ? (rowWidth - TOOLS_TAB_GAP * 2) / 3 + TOOLS_TAB_GAP : 0;
+  const tabCentre = rowWidth > 0 ? (rowWidth - TOOLS_TAB_GAP * 2) / 6 : 0;
+
+  useEffect(() => {
+    if (openIndex < 0 || tabPitch === 0) return;
+    const target = tabCentre + tabPitch * openIndex - 8;
+    if (tongue.value === 0) {
+      tongue.value = target;
       return;
     }
-    setOpenKey(key);
+    tongue.value = withSpring(target, { damping: 18, stiffness: 210, mass: 0.8 });
+  }, [openIndex, tabCentre, tabPitch, tongue]);
+
+  const selectTab = useCallback((key: string) => {
+    setOpenKey(current => (current === key ? null : key));
     setPanel(0);
     pagePos.value = 0;
     dragX.value = 0;
-  };
+  }, [dragX, pagePos]);
 
   const goPanel = useCallback((next: number) => {
     setPanel(next);
+    runSelectionHaptic();
   }, []);
 
   const swipe = useMemo(() => Gesture.Pan()
     .activeOffsetX([-12, 12])
     .failOffsetY([-16, 16])
-    .onUpdate(e => {
-      const atStart = panel === 0 && e.translationX > 0;
-      const atEnd = panel === 1 && e.translationX < 0;
-      dragX.value = atStart || atEnd ? e.translationX * 0.2 : e.translationX;
+    .onUpdate(event => {
+      const atStart = panel === 0 && event.translationX > 0;
+      const atEnd = panel === 1 && event.translationX < 0;
+      dragX.value = atStart || atEnd ? event.translationX * 0.2 : event.translationX;
     })
-    .onEnd(e => {
+    .onEnd(event => {
       const threshold = Math.min(70, width * 0.2);
-      if (e.translationX < -threshold && panel === 0) {
-        pagePos.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) });
+      if (event.translationX < -threshold && panel === 0) {
+        pagePos.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) });
         runOnJS(goPanel)(1);
-      } else if (e.translationX > threshold && panel === 1) {
-        pagePos.value = withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) });
+      } else if (event.translationX > threshold && panel === 1) {
+        pagePos.value = withTiming(0, { duration: 320, easing: Easing.out(Easing.cubic) });
         runOnJS(goPanel)(0);
       }
       dragX.value = withTiming(0, { duration: 260, easing: Easing.out(Easing.cubic) });
@@ -24996,109 +25706,150 @@ function ToolsJournalTechniques({ bottomInset, onNext }: { bottomInset: number; 
   const trackStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: -pagePos.value * drawerPageWidth + dragX.value }],
   }));
+  const tongueStyle = useAnimatedStyle(() => ({ transform: [{ translateX: tongue.value }, { rotate: '45deg' }] }));
 
   return (
     <View style={tools.screen}>
-      <ScrollView contentContainerStyle={[tools.techScroll, { paddingBottom: bottomInset + 172 }]} showsVerticalScrollIndicator={false}>
-        <Reanimated.View entering={FadeInUp.duration(520)} style={tools.heroSeal}>
-          <View style={tools.heroSealHalo} />
-          <Feather s={23} c={GOLD} w={1.8} />
-        </Reanimated.View>
-        <Text style={tools.scienceEyebrow}>THREE WAYS TO WRITE</Text>
-        <Text style={tools.techTitle}>Pick what fits the moment.</Text>
-        <Text style={tools.techIntro}>One journal, three different doors. Tap any technique to open its guide.</Text>
+      <ScrollView
+        contentContainerStyle={[tools.techScroll, { paddingTop: headHeight + 20, paddingBottom: bottomInset + 168 }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={tools.barHeader}>
+          <Reanimated.Text entering={FadeIn.delay(120).duration(520)} style={tools.barEyebrow}>
+            THREE WAYS TO WRITE
+          </Reanimated.Text>
+          <Reanimated.Text
+            entering={FadeInUp.delay(200).duration(660).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}
+            style={tools.barTitle}
+          >
+            Pick what fits the moment.
+          </Reanimated.Text>
+          <Reanimated.Text
+            entering={FadeInUp.delay(320).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 10 }] })}
+            style={tools.barIntro}
+          >
+            One journal, three different doors. Open any of them.
+          </Reanimated.Text>
+        </View>
 
-        <View style={tools.techTabsRow}>
-          {TOOLS_JOURNAL_TECHNIQUES.map(technique => {
-            const isOpen = technique.key === openKey;
-            return (
-              <TouchableOpacity
-                key={technique.key}
-                activeOpacity={0.84}
-                haptic="selection"
+        <View style={tools.techTabsRow} onLayout={event => setRowWidth(event.nativeEvent.layout.width)}>
+          {TOOLS_JOURNAL_TECHNIQUES.map((technique, index) => (
+            <Reanimated.View
+              key={technique.key}
+              entering={FadeInUp.delay(460 + index * 110).duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 18 }] })}
+              style={tools.techTabSlot}
+            >
+              <ToolsTechniqueTab
+                technique={technique}
+                open={technique.key === openKey}
                 onPress={() => selectTab(technique.key)}
-                style={[tools.techTab, isOpen && tools.techTabOpen]}
+              />
+            </Reanimated.View>
+          ))}
+        </View>
+
+        <Reanimated.View layout={LinearTransition.duration(300).easing(Easing.out(Easing.cubic))} style={tools.techDrawerStage}>
+          {active ? (
+            <View style={tools.techDrawerHost}>
+              <Reanimated.View
+                pointerEvents="none"
+                style={[
+                  tools.techTongue,
+                  { backgroundColor: active.tint, borderColor: active.border },
+                  tongueStyle,
+                ]}
+              />
+              <Reanimated.View
+                key={active.key}
+                entering={FadeInUp.duration(360).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}
+                exiting={FadeOut.duration(150)}
+                style={[tools.techDrawer, { backgroundColor: active.tint, borderColor: active.border }]}
               >
                 <LinearGradient
                   pointerEvents="none"
-                  colors={isOpen ? ['#FFF9EA', '#F9EBCB'] : ['rgba(255,255,255,0.92)', 'rgba(255,252,246,0.92)']}
+                  colors={[active.tint, '#FFFFFF']}
+                  start={{ x: 0.15, y: 0 }}
+                  end={{ x: 0.85, y: 1 }}
                   style={StyleSheet.absoluteFill}
                 />
-                  <View style={[tools.techTabIcon, isOpen && tools.techTabIconOpen]}>{technique.icon}</View>
-                  <Text style={[tools.techTabName, isOpen && tools.techTabNameOpen]}>{technique.name}</Text>
-                  <View style={[tools.techTabIndicator, isOpen && tools.techTabIndicatorOpen]} />
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+                <View pointerEvents="none" style={tools.techDrawerWatermark}>
+                  <active.Icon s={112} c={`${active.accent}14`} w={1} />
+                </View>
 
-        <Reanimated.View layout={LinearTransition.duration(280).easing(Easing.out(Easing.cubic))} style={tools.techDrawerStage}>
-          {active ? (
-            <Reanimated.View
-              key={active.key}
-              entering={FadeInUp.duration(340).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 12 }] })}
-              exiting={FadeOut.duration(150)}
-              style={tools.techDrawer}
-            >
-              <View style={tools.techDrawerHeader}>
-                <View>
-                  <Text style={tools.techDrawerEyebrow}>{active.name.toUpperCase()}</Text>
-                  <Text style={tools.techDrawerTitle}>{panel === 0 ? 'What it is' : 'Why it helps'}</Text>
+                <View style={tools.techDrawerHeader}>
+                  <View style={tools.techDrawerHeadCopy}>
+                    <Text style={[tools.techDrawerEyebrow, { color: active.accent }]}>{active.label}</Text>
+                    <Text style={[tools.techDrawerTitle, { color: active.ink }]}>{active.name}</Text>
+                  </View>
+                  <View style={[tools.techDrawerPagePill, { borderColor: active.border }]}>
+                    <Text style={[tools.techDrawerPage, { color: active.accent }]}>{panel + 1} / 2</Text>
+                  </View>
                 </View>
-                <Text style={tools.techDrawerPage}>{panel + 1} / 2</Text>
-              </View>
-              <GestureDetector gesture={swipe}>
-                <View style={tools.techDrawerViewport}>
-                  <Reanimated.View style={[tools.techDrawerTrack, { width: drawerPageWidth * 2 }, trackStyle]}>
-                    <View style={[tools.techPanel, { width: drawerPageWidth }]}>
-                      <Text style={tools.techPanelLabel}>DESCRIPTION</Text>
-                      <Text style={tools.techPanelText}>{active.description}</Text>
-                    </View>
-                    <View style={[tools.techPanel, { width: drawerPageWidth }]}>
-                      <Text style={tools.techPanelLabel}>BENEFITS</Text>
-                      <Text style={tools.techPanelText}>{active.benefits}</Text>
-                    </View>
-                  </Reanimated.View>
+
+                <GestureDetector gesture={swipe}>
+                  <View style={tools.techDrawerViewport}>
+                    <Reanimated.View style={[tools.techDrawerTrack, { width: drawerPageWidth * 2 }, trackStyle]}>
+                      <View style={[tools.techPanel, { width: drawerPageWidth }]}>
+                        <Text style={[tools.techPanelLabel, { color: active.accent }]}>WHAT IT IS</Text>
+                        <Text style={[tools.techPanelText, { color: active.deep }]}>{active.description}</Text>
+                      </View>
+                      <View style={[tools.techPanel, { width: drawerPageWidth }]}>
+                        <Text style={[tools.techPanelLabel, { color: active.accent }]}>WHY IT HELPS</Text>
+                        <Text style={[tools.techPanelText, { color: active.deep }]}>{active.benefits}</Text>
+                      </View>
+                    </Reanimated.View>
+                  </View>
+                </GestureDetector>
+
+                <View style={tools.techFoot}>
+                  <View style={tools.techDots}>
+                    {[0, 1].map(dotIndex => (
+                      <TouchableOpacity
+                        key={dotIndex}
+                        haptic="selection"
+                        onPress={() => {
+                          pagePos.value = withTiming(dotIndex, { duration: 320, easing: Easing.out(Easing.cubic) });
+                          setPanel(dotIndex);
+                        }}
+                        hitSlop={10}
+                        style={[
+                          tools.techDot,
+                          { backgroundColor: `${active.accent}3D` },
+                          panel === dotIndex && [tools.techDotActive, { backgroundColor: active.accent }],
+                        ]}
+                      />
+                    ))}
+                  </View>
+                  <Text style={[tools.techSwipeHint, { color: `${active.accent}B0` }]}>
+                    {panel === 0 ? 'Swipe for the benefits' : 'Swipe back for the description'}
+                  </Text>
                 </View>
-              </GestureDetector>
-              <View style={tools.techDots}>
-                {[0, 1].map(dotIndex => (
-                  <TouchableOpacity
-                    key={dotIndex}
-                    haptic="selection"
-                    onPress={() => { pagePos.value = withTiming(dotIndex, { duration: 300, easing: Easing.out(Easing.cubic) }); setPanel(dotIndex); }}
-                    hitSlop={10}
-                    style={[tools.techDot, panel === dotIndex && tools.techDotActive]}
-                  />
-                ))}
-              </View>
-              <Text style={tools.techSwipeHint}>Swipe to move between description and benefits</Text>
-            </Reanimated.View>
+              </Reanimated.View>
+            </View>
           ) : (
-            <Reanimated.View entering={FadeIn.duration(240)} style={tools.techEmptyDrawer}>
+            <Reanimated.View entering={FadeIn.duration(260)} style={tools.techEmptyDrawer}>
               <View style={tools.techEmptyLine} />
-              <Text style={tools.techEmptyText}>Choose a technique above. You can explore one, all three, or simply continue.</Text>
+              <Text style={tools.techEmptyText}>Open one, open all three, or simply continue — nothing is required here.</Text>
               <View style={tools.techEmptyLine} />
             </Reanimated.View>
           )}
         </Reanimated.View>
       </ScrollView>
 
-      <ToolsFooterCta delay={480} bottomInset={bottomInset} label="Continue" onPress={onNext} />
+      <ToolsChapterBar chapter={chapter} onHeight={setHeadHeight} />
+
+      <ToolsFooterCta delay={900} bottomInset={bottomInset} label="Continue" onPress={onNext} />
     </View>
   );
 }
 
 // 28b-2: the two work regimes, the medal reward, and the analytics nuance.
-function ToolsPomodoroRegimes({ bottomInset, onNext }: { bottomInset: number; onNext: () => void }) {
+function ToolsPomodoroRegimes({ chapter, bottomInset, onNext }: { chapter: ToolsChapter; bottomInset: number; onNext: () => void }) {
+  const [headHeight, setHeadHeight] = useState(0);
   return (
     <View style={tools.screen}>
-      <ScrollView contentContainerStyle={[tools.centerScroll, { paddingBottom: bottomInset + 172 }]} showsVerticalScrollIndicator={false}>
-        <Reanimated.View entering={FadeInUp.duration(520)} style={tools.heroSeal}>
-          <View style={tools.heroSealHalo} />
-          <Hourglass s={23} c={GOLD} w={1.8} />
-        </Reanimated.View>
-        <Text style={tools.scienceEyebrow}>HOW IT WORKS</Text>
+      <ScrollView contentContainerStyle={[tools.centerScroll, { paddingTop: headHeight + 20, paddingBottom: bottomInset + 168 }]} showsVerticalScrollIndicator={false}>
+        <Text style={tools.barEyebrow}>HOW IT WORKS</Text>
         <Text style={tools.scienceTitle}>Two ways to work.</Text>
 
         <View style={tools.regimeRow}>
@@ -25144,20 +25895,22 @@ function ToolsPomodoroRegimes({ bottomInset, onNext }: { bottomInset: number; on
         </Reanimated.View>
       </ScrollView>
 
+      <ToolsChapterBar chapter={chapter} onHeight={setHeadHeight} />
       <ToolsFooterCta delay={720} bottomInset={bottomInset} label="Continue" onPress={onNext} />
     </View>
   );
 }
 
 // 28c: the bucket list — light and aspirational, a short mock list.
-function ToolsBucketList({ bottomInset, onNext }: { bottomInset: number; onNext: () => void }) {
+function ToolsBucketList({ chapter, bottomInset, onNext }: { chapter: ToolsChapter; bottomInset: number; onNext: () => void }) {
+  const [headHeight, setHeadHeight] = useState(0);
   return (
     <View style={tools.screen}>
-      <ScrollView contentContainerStyle={[tools.bucketStage, { paddingBottom: bottomInset + 172 }]} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[tools.bucketStage, { paddingTop: headHeight + 22, paddingBottom: bottomInset + 168 }]} showsVerticalScrollIndicator={false}>
         <Reanimated.View entering={FadeIn.delay(120).duration(480)} style={tools.bucketCrown}>
           <Crown s={30} c={GOLD} w={1.6} />
         </Reanimated.View>
-        <Text style={tools.scienceEyebrow}>ONE MORE TOOL</Text>
+        <Text style={tools.barEyebrow}>ONE MORE TOOL</Text>
         <Text style={tools.scienceTitle}>Bucket List</Text>
         <Text style={tools.bucketBody}>Everything you want to do, see, or experience in your lifetime — kept in one place.</Text>
 
@@ -25182,13 +25935,16 @@ function ToolsBucketList({ bottomInset, onNext }: { bottomInset: number; onNext:
         </Reanimated.Text>
       </ScrollView>
 
+      <ToolsChapterBar chapter={chapter} onHeight={setHeadHeight} />
       <ToolsFooterCta delay={1040} bottomInset={bottomInset} label="Continue" onPress={onNext} />
     </View>
   );
 }
 
 // 28d-1: gratitude and faith — a warm white statement in the charter voice.
-function ToolsGratitudeFaith({ bottomInset, onNext }: { bottomInset: number; onNext: () => void }) {
+function ToolsGratitudeFaith({ chapter, bottomInset, onNext }: { chapter: ToolsChapter; bottomInset: number; onNext: () => void }) {
+  const [headHeight, setHeadHeight] = useState(0);
+
   useEffect(() => {
     const beat = setTimeout(runBubbleHaptic, 640);
     return () => clearTimeout(beat);
@@ -25196,7 +25952,7 @@ function ToolsGratitudeFaith({ bottomInset, onNext }: { bottomInset: number; onN
 
   return (
     <View style={tools.screen}>
-      <ScrollView contentContainerStyle={[tools.faithStage, { paddingBottom: bottomInset + 172 }]} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[tools.faithStage, { paddingTop: headHeight + 26, paddingBottom: bottomInset + 168 }]} showsVerticalScrollIndicator={false}>
         <OrganizeLayersCharterHeader
           eyebrow="GRATITUDE & FAITH"
           title={'Give thanks\nin all things.'}
@@ -25215,6 +25971,7 @@ function ToolsGratitudeFaith({ bottomInset, onNext }: { bottomInset: number; onN
         </Reanimated.View>
       </ScrollView>
 
+      <ToolsChapterBar chapter={chapter} onHeight={setHeadHeight} />
       <ToolsFooterCta delay={1720} bottomInset={bottomInset} label="Continue" onPress={onNext} />
     </View>
   );
@@ -25252,17 +26009,14 @@ function ToolsGratitudeCell({ level, index, bloom }: { level: number; index: num
 }
 
 // 28d-3: the two kinds of gratitude, the chart, and the section's one action.
-function ToolsGratitudeHow({ bottomInset, onNext, onGratitude }: { bottomInset: number; onNext: () => void; onGratitude: (enabled: boolean) => void }) {
+function ToolsGratitudeHow({ chapter, bottomInset, onNext, onGratitude }: { chapter: ToolsChapter; bottomInset: number; onNext: () => void; onGratitude: (enabled: boolean) => void }) {
   const [taskSheetOpen, setTaskSheetOpen] = useState(false);
+  const [headHeight, setHeadHeight] = useState(0);
 
   return (
     <View style={tools.screen}>
-      <ScrollView contentContainerStyle={[tools.centerScroll, { paddingBottom: bottomInset + 205 }]} showsVerticalScrollIndicator={false}>
-        <Reanimated.View entering={FadeInUp.duration(520)} style={tools.heroSeal}>
-          <View style={tools.heroSealHalo} />
-          <Sparkles s={23} c={GOLD} w={1.8} />
-        </Reanimated.View>
-        <Text style={tools.scienceEyebrow}>IN ANASTA</Text>
+      <ScrollView contentContainerStyle={[tools.centerScroll, { paddingTop: headHeight + 20, paddingBottom: bottomInset + 205 }]} showsVerticalScrollIndicator={false}>
+        <Text style={tools.barEyebrow}>IN ANASTA</Text>
         <Text style={tools.scienceTitle}>Two ways to practice.</Text>
 
         <Reanimated.View entering={FadeInUp.delay(180).duration(520).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 16 }] })} style={tools.gratitudeCard}>
@@ -25314,6 +26068,8 @@ function ToolsGratitudeHow({ bottomInset, onNext, onGratitude }: { bottomInset: 
         </View>
       </View>
 
+      <ToolsChapterBar chapter={chapter} onHeight={setHeadHeight} />
+
       <GratitudeTaskSetupSheet
         visible={taskSheetOpen}
         onClose={() => {
@@ -25330,8 +26086,8 @@ function ToolsGratitudeHow({ bottomInset, onNext, onGratitude }: { bottomInset: 
   );
 }
 
-// The section controller: forward-only, CTA-driven, with a slim progress rail
-// of eight beads so the user always knows where they stand.
+// The section controller: forward-only, CTA-driven. The progress rail is not
+// its own furniture any more — it lives inside each screen's velvet head.
 const TOOLS_SEQUENCE = ['journalSci', 'journalTech', 'pomodoroSci', 'pomodoroReg', 'bucket', 'gratitudeFaith', 'gratitudeSci', 'gratitudeHow'] as const;
 const TOOLS_STEP_LABELS: Record<(typeof TOOLS_SEQUENCE)[number], string> = {
   journalSci: 'JOURNAL · RESEARCH',
@@ -25358,6 +26114,13 @@ function V4ToolsSlides({ onNext, onGratitude }: { onNext: () => void; onGratitud
     });
   }, [onNext]);
 
+  const chapter = useMemo<ToolsChapter>(() => ({
+    topInset: insets.top,
+    railLabel: TOOLS_STEP_LABELS[step],
+    railIndex: index,
+    railTotal: TOOLS_SEQUENCE.length,
+  }), [index, insets.top, step]);
+
   return (
     <View style={tools.root}>
       <LinearGradient
@@ -25368,32 +26131,20 @@ function V4ToolsSlides({ onNext, onGratitude }: { onNext: () => void; onGratitud
       />
       <ValueAtelierBackdrop topInset={insets.top + 18} />
 
-      <View style={[tools.progressHud, { top: insets.top + 10 }]} pointerEvents="none">
-        <View style={tools.progressMeta}>
-          <Text style={tools.progressLabel}>{TOOLS_STEP_LABELS[step]}</Text>
-          <Text style={tools.progressCount}>{index + 1} / {TOOLS_SEQUENCE.length}</Text>
-        </View>
-        <View style={tools.progressRail}>
-          {TOOLS_SEQUENCE.map((key, beadIndex) => (
-            <View key={key} style={[tools.progressBead, beadIndex <= index && tools.progressBeadDone]} />
-          ))}
-        </View>
-      </View>
-
       <Reanimated.View
         key={step}
         entering={FadeInRight.duration(380).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateX: 18 }] })}
         exiting={FadeOut.duration(150)}
         style={tools.stepFill}
       >
-        {step === 'journalSci' && <ToolsScienceScreen screen={TOOLS_JOURNAL_SCIENCE} bottomInset={insets.bottom} onNext={advance} />}
-        {step === 'journalTech' && <ToolsJournalTechniques bottomInset={insets.bottom} onNext={advance} />}
-        {step === 'pomodoroSci' && <ToolsScienceScreen screen={TOOLS_POMODORO_SCIENCE} bottomInset={insets.bottom} onNext={advance} />}
-        {step === 'pomodoroReg' && <ToolsPomodoroRegimes bottomInset={insets.bottom} onNext={advance} />}
-        {step === 'bucket' && <ToolsBucketList bottomInset={insets.bottom} onNext={advance} />}
-        {step === 'gratitudeFaith' && <ToolsGratitudeFaith bottomInset={insets.bottom} onNext={advance} />}
-        {step === 'gratitudeSci' && <ToolsScienceScreen screen={TOOLS_GRATITUDE_SCIENCE} bottomInset={insets.bottom} onNext={advance} />}
-        {step === 'gratitudeHow' && <ToolsGratitudeHow bottomInset={insets.bottom} onNext={advance} onGratitude={onGratitude} />}
+        {step === 'journalSci' && <ToolsScienceScreen screen={TOOLS_JOURNAL_SCIENCE} chapter={chapter} bottomInset={insets.bottom} onNext={advance} />}
+        {step === 'journalTech' && <ToolsJournalTechniques chapter={chapter} bottomInset={insets.bottom} onNext={advance} />}
+        {step === 'pomodoroSci' && <ToolsScienceScreen screen={TOOLS_POMODORO_SCIENCE} chapter={chapter} bottomInset={insets.bottom} onNext={advance} />}
+        {step === 'pomodoroReg' && <ToolsPomodoroRegimes chapter={chapter} bottomInset={insets.bottom} onNext={advance} />}
+        {step === 'bucket' && <ToolsBucketList chapter={chapter} bottomInset={insets.bottom} onNext={advance} />}
+        {step === 'gratitudeFaith' && <ToolsGratitudeFaith chapter={chapter} bottomInset={insets.bottom} onNext={advance} />}
+        {step === 'gratitudeSci' && <ToolsScienceScreen screen={TOOLS_GRATITUDE_SCIENCE} chapter={chapter} bottomInset={insets.bottom} onNext={advance} />}
+        {step === 'gratitudeHow' && <ToolsGratitudeHow chapter={chapter} bottomInset={insets.bottom} onNext={advance} onGratitude={onGratitude} />}
       </Reanimated.View>
     </View>
   );
@@ -25403,18 +26154,127 @@ const tools = StyleSheet.create({
   root: { flex: 1, overflow: 'hidden', backgroundColor: '#FFFDF8' },
   stepFill: { flex: 1, zIndex: 2 },
   screen: { flex: 1, backgroundColor: 'transparent' },
-  progressHud: {
-    position: 'absolute', left: 22, right: 22, zIndex: 20,
-    paddingHorizontal: 4, paddingVertical: 2,
+  // ── The chapter's velvet head ────────────────────────────────────────────
+  plate: { position: 'absolute', left: 0, right: 0, top: 0, zIndex: 8 },
+  plateVelvet: {
+    overflow: 'hidden',
+    borderBottomLeftRadius: 34, borderBottomRightRadius: 34, borderCurve: 'continuous',
+    boxShadow: '0 20px 36px rgba(28,21,10,0.20)',
   },
-  progressMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 },
-  progressLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.6, color: 'rgba(126,91,31,0.72)' },
-  progressCount: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.2, color: 'rgba(25,23,20,0.35)' },
-  progressRail: { flexDirection: 'row', alignItems: 'center', columnGap: 5 },
-  progressBead: { flex: 1, height: 3, borderRadius: 999, backgroundColor: 'rgba(25,23,20,0.09)' },
-  progressBeadDone: { backgroundColor: GOLD },
+  barVelvet: {
+    overflow: 'hidden',
+    borderBottomLeftRadius: 26, borderBottomRightRadius: 26, borderCurve: 'continuous',
+    boxShadow: '0 14px 26px rgba(28,21,10,0.16)',
+  },
+  plateInner: { paddingHorizontal: 22, paddingBottom: 30 },
+  hearthGlint: { position: 'absolute', top: -40, bottom: -40, width: 96 },
+  hearthMote: { position: 'absolute', backgroundColor: '#F4DCA4' },
+  plateSeam: { position: 'absolute', left: 46, right: 46, bottom: 13, height: 1 },
 
-  scienceScroll: { paddingHorizontal: 22, paddingTop: 78 },
+  plateRail: { paddingHorizontal: 2 },
+  plateRailLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.7, color: 'rgba(232,200,126,0.72)' },
+  plateRailCount: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.2, color: 'rgba(247,238,220,0.34)' },
+  plateBead: { flex: 1, height: 3, borderRadius: 999, backgroundColor: 'rgba(247,238,220,0.13)' },
+  plateBeadDone: { backgroundColor: TOOLS_EMBER },
+
+  plateInnerCompact: { paddingBottom: 23 },
+  plateEmblemStage: { height: 146, alignItems: 'center', justifyContent: 'center', marginTop: 6 },
+  plateEmblemStageCompact: { height: 118, marginTop: 2 },
+  plateEmblemShrink: { transform: [{ scale: 0.84 }] },
+  plateEyebrow: { marginTop: 6, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.6, color: 'rgba(232,200,126,0.82)', textAlign: 'center' },
+  plateTitle: { marginTop: 9, fontFamily: F.serifBold, fontSize: 42, lineHeight: 46, letterSpacing: -0.5, color: TOOLS_PLATE_INK, textAlign: 'center' },
+  plateTitleCompact: { marginTop: 7, fontSize: 35, lineHeight: 39 },
+  plateIntro: {
+    marginTop: 11, alignSelf: 'center', maxWidth: 306,
+    fontFamily: F.serifMediumItalic, fontSize: 16.5, lineHeight: 23,
+    color: 'rgba(247,238,220,0.56)', textAlign: 'center',
+  },
+  plateIntroCompact: { marginTop: 8, fontSize: 15, lineHeight: 21 },
+
+  // The cream header a continuation screen wears instead of the plate.
+  barHeader: { alignItems: 'center', marginBottom: 4 },
+  barEyebrow: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.6, color: GOLD, textAlign: 'center' },
+  barTitle: { marginTop: 9, fontFamily: F.serifBold, fontSize: 33, lineHeight: 37, letterSpacing: -0.35, color: INK, textAlign: 'center' },
+  barIntro: {
+    marginTop: 11, alignSelf: 'center', maxWidth: 314,
+    fontFamily: F.serifMediumItalic, fontSize: 15.5, lineHeight: 22,
+    color: 'rgba(25,23,20,0.5)', textAlign: 'center',
+  },
+
+  // ── Journal's emblem: the page that writes itself ────────────────────────
+  writeStage: { width: 214, height: 130, alignItems: 'center', justifyContent: 'center' },
+  // Absolute + all four insets + centring: the oversized bloom overflows the
+  // stage evenly instead of pinning itself to the top-left corner.
+  writeBloom: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  writeLeafBack: {
+    position: 'absolute', left: 24, top: 13, width: 166, height: 104,
+    borderRadius: 9, borderCurve: 'continuous',
+    backgroundColor: '#EBDFC6',
+  },
+  writeLeaf: {
+    width: 172, height: 108, overflow: 'hidden',
+    borderRadius: 9, borderCurve: 'continuous',
+    paddingLeft: 19, paddingRight: 11, paddingTop: 12,
+    borderWidth: 1, borderColor: 'rgba(120,94,52,0.16)',
+    boxShadow: '0 12px 22px rgba(12,9,5,0.32)',
+  },
+  writeLeafMargin: { position: 'absolute', left: 12, top: 8, bottom: 8, width: 1, backgroundColor: 'rgba(197,160,89,0.34)' },
+  writeLines: { rowGap: 3 },
+  writeLineRow: { height: 14, overflow: 'hidden' },
+  writeLineHead: { marginBottom: 5 },
+  writeLineClip: { height: 14, overflow: 'hidden' },
+  writeNib: {
+    position: 'absolute', top: 6, left: 0, width: 4, height: 4, borderRadius: 2,
+    backgroundColor: '#D9AF5C',
+    shadowColor: '#C5A059', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.9, shadowRadius: 4, elevation: 2,
+  },
+
+  // Pomodoro's emblem: the app's focus flame, rasterised big, shown small.
+  flameBox: { width: 104, height: 104, alignItems: 'center', justifyContent: 'center' },
+  flameInner: { width: 200, height: 200, alignItems: 'center', justifyContent: 'center', transform: [{ scale: 0.52 }] },
+  flameLottie: { width: 200, height: 200 },
+
+  // Gratitude's emblem: a month of thanks lighting up.
+  emblemGrid: { width: 180, flexDirection: 'row', flexWrap: 'wrap', gap: 4.5, justifyContent: 'center' },
+  emblemGridCell: { width: 20, height: 20, borderRadius: 5, borderCurve: 'continuous' },
+
+  // ── The feed ─────────────────────────────────────────────────────────────
+  sectionLabelRow: { flexDirection: 'row', alignItems: 'center', columnGap: 8, marginBottom: 15, paddingHorizontal: 2 },
+  sectionLabelRule: { flex: 1, height: 1 },
+  sectionLabelDiamond: { width: 4, height: 4, backgroundColor: 'rgba(197,160,89,0.7)', transform: [{ rotate: '45deg' }] },
+  sectionLabelText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.2, color: 'rgba(126,91,31,0.72)' },
+
+  findingCard: {
+    position: 'relative', overflow: 'hidden',
+    borderRadius: 26, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
+    backgroundColor: '#FFFDF9', paddingHorizontal: 17, paddingTop: 15, paddingBottom: 17,
+    boxShadow: '0 14px 30px rgba(92,67,25,0.08)',
+  },
+  findingWatermark: { position: 'absolute', right: -16, bottom: -20, transform: [{ rotate: '-12deg' }] },
+  findingHead: { flexDirection: 'row', alignItems: 'center', columnGap: 10, marginBottom: 13 },
+  findingIndex: {
+    minWidth: 31, height: 21, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center',
+    borderRadius: 8, borderCurve: 'continuous',
+    backgroundColor: 'rgba(197,160,89,0.10)', borderWidth: 1, borderColor: 'rgba(197,160,89,0.26)',
+  },
+  findingIndexText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 0.6, color: C.goldDark, fontVariant: ['tabular-nums'] },
+  findingRuleTrack: { flex: 1, minWidth: 0, height: 1, overflow: 'hidden' },
+  findingRule: { flex: 1, height: 1, backgroundColor: 'rgba(197,160,89,0.36)' },
+  findingSource: { flexShrink: 0, maxWidth: 182, fontFamily: F.sansBold, fontSize: 7.8, letterSpacing: 1.2, color: 'rgba(126,91,31,0.62)' },
+  findingBodyRow: { flexDirection: 'row', alignItems: 'flex-start', columnGap: 13 },
+  findingIcon: {
+    width: 42, height: 42, borderRadius: 15, borderCurve: 'continuous',
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)',
+  },
+  findingCopy: { flex: 1, minWidth: 0 },
+  findingHeadline: { fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 23, color: INK },
+  findingText: { marginTop: 6, fontFamily: F.sans, fontSize: 13.2, lineHeight: 19.4, color: 'rgba(25,23,20,0.6)' },
+
+  progressMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 },
+  progressRail: { flexDirection: 'row', alignItems: 'center', columnGap: 5 },
+
+  scienceScroll: { paddingHorizontal: 22 },
   heroSeal: {
     width: 58, height: 58, borderRadius: 21, borderCurve: 'continuous', alignSelf: 'center',
     alignItems: 'center', justifyContent: 'center', marginBottom: 15,
@@ -25456,46 +26316,58 @@ const tools = StyleSheet.create({
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center', paddingTop: 42, zIndex: 20 },
   centerScroll: { paddingHorizontal: 22, paddingTop: 84 },
 
-  // Journal techniques
-  techScroll: { paddingHorizontal: 22, paddingTop: 78 },
-  techTitle: { marginTop: 9, fontFamily: F.serifBold, fontSize: 31, lineHeight: 36, letterSpacing: -0.3, color: INK, textAlign: 'center' },
-  techIntro: { marginTop: 10, alignSelf: 'center', maxWidth: 320, fontFamily: F.sans, fontSize: 13.2, lineHeight: 19, color: 'rgba(25,23,20,0.54)', textAlign: 'center' },
-  techTabsRow: { marginTop: 24, flexDirection: 'row', columnGap: 8, alignItems: 'stretch' },
+  // Journal techniques — the tints are the real Journal hub's own.
+  techScroll: { paddingHorizontal: 22 },
+  techTabsRow: { marginTop: 24, flexDirection: 'row', columnGap: TOOLS_TAB_GAP, alignItems: 'stretch' },
+  techTabSlot: { flex: 1 },
+  techTabPress: { flex: 1 },
   techTab: {
-    flex: 1, minHeight: 106, overflow: 'hidden', borderRadius: 19, borderCurve: 'continuous', borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.20)', backgroundColor: '#FFFDF9',
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7, paddingVertical: 12,
+    minHeight: 104, overflow: 'hidden', borderRadius: 20, borderCurve: 'continuous', borderWidth: 1,
+    backgroundColor: '#FFFDF9',
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 13,
   },
-  techTabOpen: { borderColor: 'rgba(197,160,89,0.52)', backgroundColor: '#FFFCF4', boxShadow: '0 10px 24px rgba(92,67,25,0.10)' },
   techTabIcon: {
-    width: 36, height: 36, borderRadius: 13, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', marginBottom: 8,
-    backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.2)',
+    width: 36, height: 36, borderRadius: 13, borderCurve: 'continuous',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 9, borderWidth: 1,
   },
-  techTabIconOpen: { backgroundColor: '#F9E8C2', borderColor: 'rgba(197,160,89,0.42)' },
-  techTabName: { minHeight: 30, fontFamily: F.serifSemiBold, fontSize: 12.5, lineHeight: 15, color: INK, textAlign: 'center' },
-  techTabNameOpen: { color: C.goldDark },
-  techTabIndicator: { width: 18, height: 3, borderRadius: 999, marginTop: 7, backgroundColor: 'rgba(197,160,89,0.18)' },
-  techTabIndicatorOpen: { width: 32, backgroundColor: GOLD },
-  techDrawerStage: { marginTop: 18, minHeight: 236 },
+  techTabName: { minHeight: 30, fontFamily: F.serifSemiBold, fontSize: 12.8, lineHeight: 15, textAlign: 'center' },
+  techTabBar: { width: 26, height: 3, borderRadius: 999, marginTop: 8 },
+
+  techDrawerStage: { marginTop: 17, minHeight: 246 },
+  techDrawerHost: { position: 'relative', paddingTop: 8 },
+  // The drawer's tongue: a rotated square wearing the drawer's own fill and
+  // two of its borders, sliding to whichever tab the drawer was pulled from.
+  // Painted before the drawer on purpose: the drawer covers its lower half, so
+  // only the pointing corner survives. Never give this a zIndex.
+  techTongue: {
+    position: 'absolute', top: 2, left: 0, width: 16, height: 16,
+    borderTopWidth: 1, borderLeftWidth: 1, borderTopLeftRadius: 4,
+  },
   techDrawer: {
     overflow: 'hidden', borderRadius: 24, borderCurve: 'continuous', borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.34)', backgroundColor: 'rgba(255,253,248,0.96)',
-    paddingHorizontal: 16, paddingTop: 17, paddingBottom: 14,
-    boxShadow: '0 14px 32px rgba(92,67,25,0.09)',
+    paddingHorizontal: 17, paddingTop: 16, paddingBottom: 13,
+    boxShadow: '0 16px 32px rgba(92,67,25,0.10)',
   },
-  techDrawerHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 },
-  techDrawerEyebrow: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.6, color: C.goldDark },
-  techDrawerTitle: { marginTop: 3, fontFamily: F.serifSemiBold, fontSize: 20, color: INK },
-  techDrawerPage: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.2, color: 'rgba(25,23,20,0.34)' },
+  techDrawerWatermark: { position: 'absolute', right: -22, bottom: -26, transform: [{ rotate: '-10deg' }] },
+  techDrawerHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', columnGap: 10, marginBottom: 14 },
+  techDrawerHeadCopy: { flex: 1, minWidth: 0 },
+  techDrawerEyebrow: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.7 },
+  techDrawerTitle: { marginTop: 3, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 25 },
+  techDrawerPagePill: {
+    paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.6)',
+  },
+  techDrawerPage: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.1, fontVariant: ['tabular-nums'] },
   techDrawerViewport: { overflow: 'hidden' },
   techDrawerTrack: { flexDirection: 'row' },
-  techPanel: { paddingRight: 10, minHeight: 100 },
-  techPanelLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, color: C.goldDark },
-  techPanelText: { marginTop: 7, fontFamily: F.sans, fontSize: 14, lineHeight: 20.5, color: 'rgba(25,23,20,0.64)' },
-  techDots: { flexDirection: 'row', justifyContent: 'center', columnGap: 7, marginTop: 10 },
-  techDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(197,160,89,0.26)' },
-  techDotActive: { backgroundColor: GOLD, width: 18 },
-  techSwipeHint: { marginTop: 9, fontFamily: F.sans, fontSize: 10.5, color: 'rgba(25,23,20,0.34)', textAlign: 'center' },
+  techPanel: { paddingRight: 12, minHeight: 104 },
+  techPanelLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.9 },
+  techPanelText: { marginTop: 8, fontFamily: F.sans, fontSize: 14, lineHeight: 20.5 },
+  techFoot: { marginTop: 12, alignItems: 'center' },
+  techDots: { flexDirection: 'row', justifyContent: 'center', columnGap: 7 },
+  techDot: { width: 6, height: 6, borderRadius: 3 },
+  techDotActive: { width: 18 },
+  techSwipeHint: { marginTop: 9, fontFamily: F.sans, fontSize: 10.5, textAlign: 'center' },
   techEmptyDrawer: { minHeight: 176, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22 },
   techEmptyLine: { width: 42, height: 1, backgroundColor: 'rgba(197,160,89,0.32)' },
   techEmptyText: { maxWidth: 282, marginVertical: 16, fontFamily: F.serifMediumItalic, fontSize: 14.5, lineHeight: 21, color: 'rgba(25,23,20,0.48)', textAlign: 'center' },
