@@ -8,6 +8,7 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import { C, F } from '@/constants/tokens';
 import { ESSENTIAL_APP_OPTIONS, PREVIEW_APPS } from './focusContent';
 import NativeActivitySelectionButton from './NativeActivitySelectionButton';
+import { RegisterGround, RegisterSeal, REGISTER_TONES } from './ProtectionRegister';
 import FocusSheetHeader from './FocusSheetHeader';
 import { isNativeFocusAvailable } from './focusNativeBridge';
 import { refreshNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
@@ -18,6 +19,10 @@ import {
   useDayPlan,
   type Strength,
 } from './dayPlanStore';
+
+// The sheet speaks about the same standing boundary as the row that opened it,
+// so its cards are cut from the register's cloth.
+const ROSE = REGISTER_TONES.rose;
 
 function nameFor(appId: string) {
   return PREVIEW_APPS.find(app => app.id === appId)?.name
@@ -119,7 +124,7 @@ export default function AlwaysBlockedSheet({ visible, onClose }: { visible: bool
             </View>
           ) : state.alwaysBlockedApps.length === 0 ? (
             <View style={s.empty}>
-              <View style={s.emptyIcon}><Lock s={20} c={C.goldDark} w={2} /></View>
+              <RegisterSeal tone={ROSE} size={46}><Lock s={20} c={ROSE.accent} w={2} /></RegisterSeal>
               <Text style={s.emptyTitle}>Nothing is permanently closed.</Text>
               <Text style={s.emptyBody}>Use Always Blocked for an app you want to enter only through a deliberate Loose gateway, or never through a Strict shield.</Text>
             </View>
@@ -133,11 +138,12 @@ export default function AlwaysBlockedSheet({ visible, onClose }: { visible: bool
                   layout={LinearTransition.duration(220)}
                   style={s.appCard}
                 >
+                  <RegisterGround tone={ROSE} tall />
                   <View style={s.cardHeader}>
                     <View style={s.appIdentity}>
-                      <View style={s.appIconPreview}>
+                      <RegisterSeal tone={ROSE} size={46} style={s.appSeal}>
                         <Text style={s.appIconPreviewText}>{nameFor(rule.appId)[0]}</Text>
-                      </View>
+                      </RegisterSeal>
                       <View style={s.appTitleWrap}>
                         <Text style={s.appName} numberOfLines={1}>{nameFor(rule.appId)}</Text>
                         <Text style={s.appSystemLabel}>IPHONE APP</Text>
@@ -238,14 +244,27 @@ const s = StyleSheet.create({
   content: { paddingTop: 15, paddingBottom: 28, gap: 15 },
   description: { paddingRight: 10, fontFamily: F.serif, fontSize: 16, lineHeight: 22.5, color: C.textSecondary },
   empty: { minHeight: 160, alignItems: 'center', justifyContent: 'center', borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border, paddingHorizontal: 24 },
-  emptyIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { marginTop: 10, fontFamily: F.serifMedium, fontSize: 18, color: C.text },
   emptyBody: { marginTop: 4, fontFamily: F.serif, fontSize: 12.5, lineHeight: 17, color: C.textSecondary, textAlign: 'center' },
   blockedCards: { gap: 12 },
-  appCard: { borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: '#EACBD1', backgroundColor: '#FFF9FA', padding: 14, gap: 13, boxShadow: '0 7px 20px rgba(111, 45, 60, 0.07)' },
+  // Same ground as the register row on the Focus screen: white, lit by the
+  // accent rather than painted with it.
+  appCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 22,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#E7C4CB',
+    backgroundColor: C.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 13,
+    boxShadow: '0 7px 20px rgba(111, 45, 60, 0.07)',
+  },
   cardHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   appIdentity: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  appIconPreview: { width: 46, height: 46, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E6C3CA', backgroundColor: '#F8E7EA', alignItems: 'center', justifyContent: 'center' },
+  appSeal: { marginHorizontal: 0 },
   appIconPreviewText: { fontFamily: F.serifSemiBold, fontSize: 19, color: '#A24351' },
   appTitleWrap: { flex: 1, minWidth: 0, paddingTop: 3 },
   appName: { fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 23, color: C.text },
