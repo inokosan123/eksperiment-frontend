@@ -40,6 +40,7 @@ import {
   StruckLight,
   type BankedPalette,
 } from '@/components/shared/BankedEmber';
+import RadiantTodayPulse from '@/components/shared/RadiantTodayPulse';
 
 
 const FLAME_PNG = require('@/assets/images/streak-flame-512.png');
@@ -688,35 +689,6 @@ const rf = StyleSheet.create({
   flame: { width: 74, height: 74 },
 });
 
-/* ── Bottom badge ─────────────────────────────────────────── */
-// A soft ring that breathes around today's tile — the only motion in the
-// week band, marking the day being written. It appears only on an ACTIVE
-// today — never around a skipped or empty day, which carry no ring at all.
-function TodayPulseRing() {
-  const reduceMotion = useReducedMotion();
-  const t = useSharedValue(0);
-
-  useEffect(() => {
-    if (reduceMotion) {
-      t.value = 0.5;
-      return;
-    }
-    t.value = 0;
-    t.value = withRepeat(
-      withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.sin) }),
-      -1,
-      true,
-    );
-    return () => cancelAnimation(t);
-  }, [reduceMotion, t]);
-
-  const pulse = useAnimatedStyle(() => ({
-    opacity: 0.2 + t.value * 0.5,
-  }));
-
-  return <Reanimated.View pointerEvents="none" style={[s.todayRing, pulse]} />;
-}
-
 // Static PNG flames only — the hero carries the one living Lottie, so a
 // full week never stacks seven looping animations on the phone. Each day
 // is struck as a small coin, and every state has its own mint:
@@ -851,9 +823,9 @@ function FlameTile({
   // on — warm on parchment, graphite on the struck grey.
   chrome: BankedPalette;
 }) {
-  // The breathing ring marks today only while the day is ACTIVE — a day
+  // The radiant pulse marks today only while the day is ACTIVE — a day
   // with tasks in play. A skipped or empty today carries no ring.
-  const ring = isToday && mode === 'normal' ? <TodayPulseRing /> : null;
+  const ring = isToday && mode === 'normal' ? <RadiantTodayPulse size={TILE_SIZE} /> : null;
 
   let token: ReactNode;
   if (mode === 'all-skipped') {
@@ -1313,15 +1285,5 @@ const s = StyleSheet.create({
     width: 6.5,
     height: 6.5,
     borderRadius: 3.25,
-  },
-  todayRing: {
-    position: 'absolute',
-    top: -4,
-    left: -4,
-    width: TILE_SIZE + 8,
-    height: TILE_SIZE + 8,
-    borderRadius: (TILE_SIZE + 8) / 2,
-    borderWidth: 1.5,
-    borderColor: C.gold,
   },
 });
