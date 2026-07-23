@@ -30,7 +30,7 @@ import { useTasks } from '@/components/tasks/TaskProvider';
 import { listTaskInstancesBetween } from '@/components/tasks/taskDb';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import { BANKED, EmberPulse, LedgerRule, RestSeal } from '@/components/shared/BankedEmber';
+import { BANKED, BankedWeave, EmberPulse, LedgerCartouche, RestSeal } from '@/components/shared/BankedEmber';
 
 
 const FLAME_PNG = require('@/assets/images/streak-flame-512.png');
@@ -184,8 +184,7 @@ const cg = StyleSheet.create({
 function DawnBackdrop({ muted = false }: { muted?: boolean }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   const step = 30;
-  const lineCount = box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
-  const weaveColor = muted ? BANKED.ash : GOLD;
+  const lineCount = !muted && box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
   const sparkleColor = muted ? BANKED.ember : GOLD;
 
   return (
@@ -197,6 +196,9 @@ function DawnBackdrop({ muted = false }: { muted?: boolean }) {
         setBox({ w: width, h: height });
       }}
     >
+      {/* Resting, the single gold rake gives way to the counter-raked ash
+          weave — laid paper instead of a drained gold field. */}
+      {muted && <BankedWeave />}
       {lineCount > 0 && (
         <Svg width={box.w} height={box.h} style={StyleSheet.absoluteFill}>
           {Array.from({ length: lineCount }).map((_, index) => {
@@ -208,7 +210,7 @@ function DawnBackdrop({ muted = false }: { muted?: boolean }) {
                 y1={-4}
                 x2={offset - box.h - 8}
                 y2={box.h + 4}
-                stroke={weaveColor}
+                stroke={GOLD}
                 strokeOpacity={0.05}
                 strokeWidth={1}
               />
@@ -346,7 +348,11 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
         {banked ? (
           // A day you struck yourself is ruled out in oxblood; a day nobody
           // ever wrote on is simply left blank in ash.
-          <LedgerRule width={size * 0.7} tone={skipped ? 'struck' : 'quiet'} />
+          <LedgerCartouche
+            width={size * 0.78}
+            height={size * 0.44}
+            tone={skipped ? 'struck' : 'quiet'}
+          />
         ) : (
           <Text
             style={[ms.value, { fontSize: size * 0.58, lineHeight: size * 0.66 }]}
@@ -530,6 +536,20 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
           strokeWidth={1}
           strokeDasharray={banked ? '3 6' : undefined}
         />
+        {/* A banked instrument gains an outer orbit on a slower dash rhythm,
+            so the face reads as layered rather than as one broken circle. */}
+        {banked && (
+          <Circle
+            cx={cx}
+            cy={cx}
+            r={ringR + 17}
+            fill="none"
+            stroke={sunColor}
+            strokeOpacity={0.26}
+            strokeWidth={1}
+            strokeDasharray="2 9"
+          />
+        )}
       </Svg>
 
       <Reanimated.View pointerEvents="none" style={[rf.rays, spinStyle, banked && rf.raysBanked]}>
@@ -541,7 +561,7 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
             const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
             const long = !banked && index % 2 === 0;
             const r1 = rayInner;
-            const r2 = rayInner + (banked ? 7 : long ? (full ? 24 : 20) : (full ? 15 : 12));
+            const r2 = rayInner + (banked ? 5 : long ? (full ? 24 : 20) : (full ? 15 : 12));
             return (
               <Line
                 key={index}
@@ -550,8 +570,8 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
                 x2={cx + r2 * Math.cos(angle)}
                 y2={cx + r2 * Math.sin(angle)}
                 stroke={sunColor}
-                strokeOpacity={banked ? 0.36 : long ? (full ? 0.64 : 0.52) : (full ? 0.4 : 0.3)}
-                strokeWidth={banked ? 1.2 : long ? 1.9 : 1.35}
+                strokeOpacity={banked ? 0.3 : long ? (full ? 0.64 : 0.52) : (full ? 0.4 : 0.3)}
+                strokeWidth={banked ? 1 : long ? 1.9 : 1.35}
                 strokeLinecap="round"
               />
             );
@@ -1001,7 +1021,7 @@ const s = StyleSheet.create({
     paddingRight: 10,
   },
   cardBanked: { borderColor: BANKED.border },
-  restSeal: { marginTop: 12 },
+  restSeal: { marginTop: 14 },
   headline: {
     marginTop: 12,
     fontFamily: F.serif,

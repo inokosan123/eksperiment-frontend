@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import Svg, { Line, Path } from 'react-native-svg';
 import Reanimated, {
   cancelAnimation,
   Easing,
@@ -65,6 +66,124 @@ function toneInk(tone: BankedTone) {
 
 function toneLine(tone: BankedTone) {
   return tone === 'struck' ? BANKED.struckLine : BANKED.ashLine;
+}
+
+/* ── Banked weave ─────────────────────────────────────────── */
+// The active cards are raked with a single diagonal hairline weave. A
+// resting card is raked twice — the second pass coarser, fainter and
+// running against the first — so the surface reads as laid paper rather
+// than as the same gold field with the colour taken out. It is the
+// texture, not the tint, that makes a quiet card look composed.
+export function BankedWeave() {
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const stepA = 30;
+  const stepB = 46;
+  const span = box.w + box.h;
+  const countA = box.w > 0 ? Math.ceil(span / stepA) + 1 : 0;
+  const countB = box.w > 0 ? Math.ceil(span / stepB) + 1 : 0;
+
+  return (
+    <View
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      onLayout={event => {
+        const { width, height } = event.nativeEvent.layout;
+        setBox({ w: width, h: height });
+      }}
+    >
+      {countA > 0 && (
+        <Svg width={box.w} height={box.h} style={StyleSheet.absoluteFill}>
+          {Array.from({ length: countA }).map((_, index) => {
+            const offset = index * stepA;
+            return (
+              <Line
+                key={`rake-${index}`}
+                x1={offset}
+                y1={-4}
+                x2={offset - box.h - 8}
+                y2={box.h + 4}
+                stroke={BANKED.ash}
+                strokeOpacity={0.055}
+                strokeWidth={1}
+              />
+            );
+          })}
+          {Array.from({ length: countB }).map((_, index) => {
+            const offset = index * stepB - box.h;
+            return (
+              <Line
+                key={`counter-${index}`}
+                x1={offset}
+                y1={-4}
+                x2={offset + box.h + 8}
+                y2={box.h + 4}
+                stroke={BANKED.ash}
+                strokeOpacity={0.032}
+                strokeWidth={1}
+              />
+            );
+          })}
+        </Svg>
+      )}
+    </View>
+  );
+}
+
+/* ── Ledger cartouche ─────────────────────────────────────── */
+// What a resting instrument shows where its reading would be. A bare rule
+// left the well looking empty — the card's largest element became nothing.
+// This is a proper engraved field instead: a clipped-corner frame around a
+// ruled blank, big enough to hold the space the number gave up.
+export function LedgerCartouche({
+  width = 58,
+  height = 32,
+  tone = 'quiet',
+}: {
+  width?: number;
+  height?: number;
+  tone?: BankedTone;
+}) {
+  const line = toneLine(tone);
+  const cut = Math.min(7, height * 0.24);
+  const inset = 0.75;
+  const frame = [
+    `M ${cut} ${inset}`,
+    `H ${width - cut}`,
+    `L ${width - inset} ${cut}`,
+    `V ${height - cut}`,
+    `L ${width - cut} ${height - inset}`,
+    `H ${cut}`,
+    `L ${inset} ${height - cut}`,
+    `V ${cut}`,
+    'Z',
+  ].join(' ');
+
+  const cy = height / 2;
+  const cx = width / 2;
+  const gem = Math.max(3, width * 0.055);
+  const barOuter = width * 0.19;
+  // Held off the gem by a fixed gap so the rule never crowds it at any size.
+  const barInner = cx - gem - 3.5;
+
+  return (
+    <Svg pointerEvents="none" width={width} height={height}>
+      <Path d={frame} fill="none" stroke={line} strokeWidth={1} strokeLinejoin="round" />
+      <Line x1={barOuter} y1={cy} x2={barInner} y2={cy} stroke={line} strokeWidth={1.5} strokeLinecap="round" />
+      <Path
+        d={`M ${cx} ${cy - gem} L ${cx + gem} ${cy} L ${cx} ${cy + gem} L ${cx - gem} ${cy} Z`}
+        fill={line}
+      />
+      <Line
+        x1={width - barInner}
+        y1={cy}
+        x2={width - barOuter}
+        y2={cy}
+        stroke={line}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
 }
 
 /* ── Ember pulse ──────────────────────────────────────────── */
@@ -151,17 +270,33 @@ export function RestSeal({
   const line = toneLine(tone);
   const struck = tone === 'struck';
 
+  const hair = struck ? BANKED.struckHair : BANKED.ashSoft;
+
   return (
     <View pointerEvents="none" style={[seal.wrap, style]}>
-      <View style={[seal.wing, { backgroundColor: struck ? BANKED.struckHair : BANKED.ashSoft }]} />
+      <View style={seal.wingGroup}>
+        <View style={[seal.serif, { backgroundColor: hair }]} />
+        <View style={[seal.wing, { backgroundColor: hair }]} />
+      </View>
+
       <View style={[seal.plaque, { borderColor: line, backgroundColor: struck ? BANKED.struckWash : 'transparent' }]}>
-        <View style={[seal.plaqueInner, { borderColor: struck ? BANKED.struckHair : BANKED.ashSoft }]}>
+        <View style={[seal.plaqueInner, { borderColor: hair }]}>
           <View style={[seal.diamond, { backgroundColor: line }]} />
           <Text style={[seal.text, { color: ink }]}>{label}</Text>
           <View style={[seal.diamond, { backgroundColor: line }]} />
         </View>
+        {/* Registration ticks — the marks a struck plate leaves at its
+            corners. They are what separates a stamp from a bordered box. */}
+        <View style={[seal.tick, seal.tickTL, { borderColor: line }]} />
+        <View style={[seal.tick, seal.tickTR, { borderColor: line }]} />
+        <View style={[seal.tick, seal.tickBL, { borderColor: line }]} />
+        <View style={[seal.tick, seal.tickBR, { borderColor: line }]} />
       </View>
-      <View style={[seal.wing, { backgroundColor: struck ? BANKED.struckHair : BANKED.ashSoft }]} />
+
+      <View style={seal.wingGroup}>
+        <View style={[seal.wing, { backgroundColor: hair }]} />
+        <View style={[seal.serif, { backgroundColor: hair }]} />
+      </View>
     </View>
   );
 }
@@ -174,17 +309,37 @@ const seal = StyleSheet.create({
     gap: 9,
     transform: [{ rotate: '-4deg' }],
   },
+  wingGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
   wing: {
-    width: 28,
+    width: 26,
     height: 1,
     borderRadius: 1,
   },
+  serif: {
+    width: 1,
+    height: 7,
+    borderRadius: 1,
+  },
   plaque: {
+    position: 'relative',
     borderWidth: 1,
     borderRadius: 4,
     borderCurve: 'continuous',
     padding: 2.5,
   },
+  tick: {
+    position: 'absolute',
+    width: 5,
+    height: 5,
+  },
+  tickTL: { top: -3.5, left: -3.5, borderLeftWidth: 1, borderTopWidth: 1 },
+  tickTR: { top: -3.5, right: -3.5, borderRightWidth: 1, borderTopWidth: 1 },
+  tickBL: { bottom: -3.5, left: -3.5, borderLeftWidth: 1, borderBottomWidth: 1 },
+  tickBR: { bottom: -3.5, right: -3.5, borderRightWidth: 1, borderBottomWidth: 1 },
   plaqueInner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -206,46 +361,6 @@ const seal = StyleSheet.create({
     fontSize: 10.5,
     lineHeight: 13,
     letterSpacing: 3.4,
-  },
-});
-
-/* ── Ledger rule ──────────────────────────────────────────── */
-// What stands in a value well when there is no value to stand there. Not
-// a dash — a ruled entry: serif end-caps around a hairline with a diamond
-// at its center, the mark a ledger keeps for a day left deliberately
-// blank.
-export function LedgerRule({ width = 52, tone = 'quiet' }: { width?: number; tone?: BankedTone }) {
-  const bar = Math.max(8, width * 0.32);
-  const line = toneLine(tone);
-
-  return (
-    <View pointerEvents="none" style={ledger.wrap}>
-      <View style={[ledger.cap, { backgroundColor: line }]} />
-      <View style={[ledger.bar, { width: bar, backgroundColor: line }]} />
-      <View style={[ledger.diamond, { backgroundColor: line }]} />
-      <View style={[ledger.bar, { width: bar, backgroundColor: line }]} />
-      <View style={[ledger.cap, { backgroundColor: line }]} />
-    </View>
-  );
-}
-
-const ledger = StyleSheet.create({
-  wrap: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  cap: {
-    width: 1.4,
-    height: 12,
-    borderRadius: 1,
-  },
-  bar: {
-    height: 1.6,
-    borderRadius: 1,
-  },
-  diamond: {
-    width: 6.5,
-    height: 6.5,
-    borderRadius: 1,
-    marginHorizontal: 4,
-    transform: [{ rotate: '45deg' }],
   },
 });
 

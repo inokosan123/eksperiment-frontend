@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Ellipse, Line, Path } from 'react-native-svg';
 import { F } from '@/constants/tokens';
-import { BANKED, EmberPulse, LedgerRule } from '@/components/shared/BankedEmber';
+import { BANKED, BankedWeave, EmberPulse, LedgerCartouche } from '@/components/shared/BankedEmber';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -76,8 +76,7 @@ function Sparkle({
 export function TrophyShineBackdrop({ muted = false }: { muted?: boolean }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   const step = 30;
-  const lineCount = box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
-  const weaveColor = muted ? BANKED.ash : GOLD;
+  const lineCount = !muted && box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
   const sparkleColor = muted ? BANKED.ember : GOLD;
 
   return (
@@ -89,6 +88,9 @@ export function TrophyShineBackdrop({ muted = false }: { muted?: boolean }) {
         setBox({ w: width, h: height });
       }}
     >
+      {/* Resting, the single gold rake gives way to the counter-raked ash
+          weave — laid paper instead of a drained gold field. */}
+      {muted && <BankedWeave />}
       {lineCount > 0 && (
         <Svg width={box.w} height={box.h} style={StyleSheet.absoluteFill}>
           {Array.from({ length: lineCount }).map((_, index) => {
@@ -100,7 +102,7 @@ export function TrophyShineBackdrop({ muted = false }: { muted?: boolean }) {
                 y1={-4}
                 x2={offset - box.h - 8}
                 y2={box.h + 4}
-                stroke={weaveColor}
+                stroke={GOLD}
                 strokeOpacity={0.05}
                 strokeWidth={1}
               />
@@ -216,7 +218,7 @@ export function StreakMedallion({
         ]}
       >
         {ruled ? (
-          <LedgerRule width={size * 0.58} />
+          <LedgerCartouche width={size * 0.56} height={size * 0.4} />
         ) : (
           <Text
             style={[
@@ -441,6 +443,20 @@ export function RadiantTrophy({
             strokeWidth={1}
             strokeDasharray={banked ? '3 6' : undefined}
           />
+          {/* The outer orbit on a slower dash rhythm — a layered instrument
+              face rather than one broken circle. */}
+          {banked && (
+            <Circle
+              cx={cx}
+              cy={cx}
+              r={ringR + size * 0.22}
+              fill="none"
+              stroke={rayColor}
+              strokeOpacity={0.24}
+              strokeWidth={1}
+              strokeDasharray="2 9"
+            />
+          )}
         </Svg>
       )}
 
@@ -459,8 +475,8 @@ export function RadiantTrophy({
                 x2={cx + r2 * Math.cos(angle)}
                 y2={cx + r2 * Math.sin(angle)}
                 stroke={rayColor}
-                strokeOpacity={banked ? 0.32 : long ? 0.42 : 0.24}
-                strokeWidth={banked ? 1.2 : long ? 1.7 : 1.3}
+                strokeOpacity={banked ? 0.28 : long ? 0.42 : 0.24}
+                strokeWidth={banked ? 1 : long ? 1.7 : 1.3}
                 strokeLinecap="round"
               />
             );
