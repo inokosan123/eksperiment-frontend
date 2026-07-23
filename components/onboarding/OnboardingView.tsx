@@ -27,6 +27,7 @@ import Reanimated, {
   measure,
   runOnJS,
   runOnUI,
+  useAnimatedReaction,
   useAnimatedRef,
   useAnimatedScrollHandler,
   useAnimatedStyle,
@@ -25618,30 +25619,95 @@ function ToolsSectionLabel({ label, delay }: { label: string; delay: number }) {
   );
 }
 
-// A finding, redesigned for the tired end of onboarding. Read top to bottom in
-// one glance: an illustration slot, the VALUE in big bold serif, a byline that
-// says who proved it and when, and the finding in one sentence. The heavy study
-// write-up is folded behind one tap — a real accordion whose height is measured
-// once and driven on the UI thread, so nothing thrashes layout per frame.
-function ToolsFindingCard({ card, index, delay }: { card: ToolsScienceCard; index: number; delay: number }) {
+// One of the values-card virtue chips; it wakes in sequence off the card's own
+// entrance clock, so the row cascades right as the card lands.
+function ToolsValueChip({
+  label,
+  tone,
+  index,
+  enter,
+}: {
+  label: string;
+  tone: ToolsCardTone;
+  index: number;
+  enter: SharedValue<number>;
+}) {
+  const style = useAnimatedStyle(() => {
+    const from = Math.min(0.9, 0.52 + index * 0.055);
+    const local = interpolate(enter.value, [from, Math.min(1, from + 0.1)], [0, 1], 'clamp');
+    return { opacity: local, transform: [{ translateY: (1 - local) * 6 }] };
+  });
+  return (
+    <Reanimated.View style={[tools.findingChip, { backgroundColor: `${tone.accent}12`, borderColor: `${tone.accent}30` }, style]}>
+      <Text style={[tools.findingChipText, { color: tone.deep }]}>{label}</Text>
+    </Reanimated.View>
+  );
+}
+
+// One template, worn by every finding — a white card led by a full-width
+// illustration banner (the user's art drops in edge-to-edge; a toned ground
+// with the icon holds the space meanwhile), label and value beneath it, the
+// stat where there is one, and the study folded behind the card's foot strip.
+//
+// Cards TOSS IN from alternating sides as the reader scrolls to them — the
+// recap deck's film-throw: released over-tilted and oversized, sailing in on a
+// decelerating arc, landing with a soft overshoot and a bubble haptic. The
+// trigger is the card's own position crossing the viewport, watched on the UI
+// thread; cards already in view at mount go first, in sequence.
+function ToolsFindingCard({
+  card,
+  index,
+  scrollY,
+  viewportHeight,
+  feedTop,
+}: {
+  card: ToolsScienceCard;
+  index: number;
+  scrollY: SharedValue<number>;
+  viewportHeight: number;
+  feedTop: number;
+}) {
+  const enter = useSharedValue(0);
+  const pop = useSharedValue(0);
   const open = useSharedValue(0);
+  const seen = useSharedValue(0);
+  const [cardTop, setCardTop] = useState(-1);
   const [expanded, setExpanded] = useState(false);
   const [detailHeight, setDetailHeight] = useState(0);
-  const bloom = useSharedValue(0);
-  const pop = useSharedValue(0);
   const tone = card.tone;
-  // Every other card mirrors — art swaps sides and the entrance comes from the
-  // other edge, so the feed zig-zags instead of marching.
-  const flip = index % 2 === 1;
+  const dir = index % 2 === 0 ? -1 : 1;
+  const hapticTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    bloom.value = withDelay(delay + 140, withTiming(1, { duration: 860, easing: Easing.out(Easing.cubic) }));
-    pop.value = withDelay(delay + 300, withSpring(1, { damping: 14, stiffness: 190, mass: 0.8 }));
-    return () => {
-      cancelAnimation(bloom);
-      cancelAnimation(pop);
-    };
-  }, [bloom, delay, pop]);
+  useEffect(() => () => {
+    if (hapticTimer.current) clearTimeout(hapticTimer.current);
+  }, []);
+
+  const scheduleLandingHaptic = useCallback((afterMs: number) => {
+    if (hapticTimer.current) clearTimeout(hapticTimer.current);
+    hapticTimer.current = setTimeout(runBubbleHaptic, afterMs + 500);
+  }, []);
+
+  const triggerY = cardTop >= 0 && feedTop >= 0 ? feedTop + cardTop : -1;
+
+  useAnimatedReaction(
+    () => scrollY.value,
+    current => {
+      if (seen.value === 1 || triggerY < 0) return;
+      if (triggerY > current + viewportHeight * 0.94) return;
+      seen.value = 1;
+      // Cards on screen at mount arrive as a dealt sequence; cards met while
+      // scrolling arrive the moment they cross the fold.
+      const stagger = current < 40 ? 260 + index * 170 : 40;
+      enter.value = withDelay(
+        stagger,
+        withTiming(1, { duration: 820, easing: Easing.bezier(0.16, 0.84, 0.26, 1) }, finished => {
+          if (finished) pop.value = withSpring(1, { damping: 13, stiffness: 200, mass: 0.75 });
+        }),
+      );
+      runOnJS(scheduleLandingHaptic)(stagger);
+    },
+    [triggerY, viewportHeight, index, scheduleLandingHaptic],
+  );
 
   const toggle = useCallback(() => {
     runSelectionHaptic();
@@ -25651,130 +25717,124 @@ function ToolsFindingCard({ card, index, delay }: { card: ToolsScienceCard; inde
     });
   }, [open]);
 
+  const motionStyle = useAnimatedStyle(() => {
+    const e = enter.value;
+    return {
+      opacity: interpolate(e, [0, 0.1], [0, 1], 'clamp'),
+      transform: [
+        { translateX: interpolate(e, [0, 1], [dir * 330, 0]) },
+        { translateY: interpolate(e, [0, 0.55, 0.85, 1], [-44, -9, 3.5, 0]) },
+        { rotate: `${interpolate(e, [0, 0.6, 0.85, 1], [dir * -12, dir * 3.2, dir * -1.1, 0])}deg` },
+        { scale: interpolate(e, [0, 0.6, 0.85, 1], [1.14, 0.985, 1.006, 1]) },
+      ],
+    };
+  });
   const detailStyle = useAnimatedStyle(() => ({
     height: open.value * detailHeight,
     opacity: interpolate(open.value, [0, 0.5, 1], [0, 0.5, 1]),
   }));
   const chevronStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${open.value * 180}deg` }] }));
-  // Ken-burns on the art slot — the same bloom the habit goal cards use, so a
-  // real illustration will arrive with a little life rather than just appear.
+  // Ken-burns inside the banner: the art settles from slightly oversized as
+  // the card lands, so a real illustration arrives with a little life.
   const artStyle = useAnimatedStyle(() => ({
-    opacity: 0.45 + bloom.value * 0.55,
-    transform: [{ scale: 1.12 - bloom.value * 0.12 }],
+    opacity: 0.35 + enter.value * 0.65,
+    transform: [{ scale: 1.16 - Math.min(1, enter.value) * 0.16 }],
   }));
   const statStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(pop.value, [0, 0.4, 1], [0, 0.9, 1], 'clamp'),
-    transform: [{ scale: 0.82 + pop.value * 0.18 }],
+    opacity: pop.value,
+    transform: [{ scale: 0.8 + pop.value * 0.2 }],
   }));
 
   return (
-    <Reanimated.View
-      entering={FadeInUp.delay(delay).duration(660).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-        opacity: 0,
-        transform: [{ translateY: 26 }, { translateX: flip ? 20 : -20 }],
-      })}
-      style={[tools.findingCard, { backgroundColor: tone.tint, borderColor: tone.border }]}
-    >
-      <LinearGradient
-        pointerEvents="none"
-        colors={[tone.tint, '#FFFFFF']}
-        start={{ x: flip ? 0.95 : 0.05, y: 0 }}
-        end={{ x: flip ? 0.05 : 0.95, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <View pointerEvents="none" style={[tools.findingWatermark, flip && tools.findingWatermarkFlip]}>
-        <card.Icon s={108} c={`${tone.accent}12`} w={1} />
-      </View>
-      <View pointerEvents="none" style={tools.scienceCardSheen} />
-
-      <View style={[tools.findingTopRow, flip && tools.findingTopRowFlip]}>
-        {/* Illustration slot — reserved for real art; the icon stands in until
-            then. Numbered so the feed still reads as an ordered set. */}
-        <View style={[tools.findingArt, { backgroundColor: tone.soft, borderColor: tone.border }]}>
-          <Reanimated.View style={[tools.findingArtBloom, artStyle]}>
+    <View style={tools.findingSlot} onLayout={event => setCardTop(event.nativeEvent.layout.y)}>
+      <Reanimated.View style={[tools.findingCard, motionStyle]}>
+        {/* The banner: the user's illustration fills it edge to edge. Until the
+            art exists, a toned ground with a soft halo and the icon holds the
+            space so the slot never looks empty. */}
+        <View style={[tools.findingBanner, { backgroundColor: tone.soft }]}>
+          <Reanimated.View style={[tools.findingBannerFill, artStyle]}>
             {card.illustration ? (
-              <Image source={card.illustration} style={tools.findingArtImage} resizeMode="cover" />
+              <Image source={card.illustration} style={tools.findingBannerImage} resizeMode="cover" />
             ) : (
-              <card.Icon s={32} c={tone.accent} w={1.7} />
+              <>
+                <View style={[tools.findingBannerHalo, { backgroundColor: `${tone.accent}14` }]} />
+                <View style={[tools.findingBannerHaloCore, { backgroundColor: `${tone.accent}12` }]} />
+                <card.Icon s={46} c={tone.accent} w={1.5} />
+              </>
             )}
           </Reanimated.View>
-          <View pointerEvents="none" style={tools.findingArtRing} />
-          <View style={[tools.findingArtIndex, { backgroundColor: tone.accent }]}>
-            <Text style={tools.findingArtIndexText}>{String(index + 1).padStart(2, '0')}</Text>
+          <View pointerEvents="none" style={[tools.findingBannerEdge, { backgroundColor: `${tone.accent}24` }]} />
+          <View style={tools.findingBadge}>
+            <Text style={tools.findingBadgeText}>{String(index + 1).padStart(2, '0')}</Text>
           </View>
         </View>
 
-        <View style={tools.findingHeadCopy}>
-          <View style={[tools.findingLabelChip, { backgroundColor: `${tone.accent}16`, borderColor: `${tone.accent}3D` }]}>
+        <View style={tools.findingBody}>
+          <View style={tools.findingLabelRow}>
+            <View style={[tools.findingLabelDiamond, { backgroundColor: tone.accent }]} />
             <Text style={[tools.findingLabelText, { color: tone.accent }]}>{card.label}</Text>
           </View>
-          <Text style={[tools.findingValue, { color: tone.deep }]}>{card.value}</Text>
-        </View>
-      </View>
+          <Text style={tools.findingValue}>{card.value}</Text>
 
-      {card.stat ? (
-        <Reanimated.View style={[tools.findingStat, { backgroundColor: `${tone.accent}0F`, borderColor: `${tone.accent}33` }, statStyle]}>
-          <Text style={[tools.findingStatFigure, { color: tone.accent }]}>{card.stat.figure}</Text>
-          <View style={[tools.findingStatDivider, { backgroundColor: `${tone.accent}33` }]} />
-          <Text style={[tools.findingStatCaption, { color: tone.deep }]}>{card.stat.caption}</Text>
-        </Reanimated.View>
-      ) : null}
-
-      <Text style={tools.findingFinding}>{card.finding}</Text>
-
-      {card.chips ? (
-        <View style={tools.findingChips}>
-          {card.chips.map((chip, chipIndex) => (
-            <Reanimated.View
-              key={chip}
-              entering={FadeIn.delay(delay + 520 + chipIndex * 70).duration(420)}
-              style={[tools.findingChip, { backgroundColor: `${tone.accent}12`, borderColor: `${tone.accent}30` }]}
-            >
-              <Text style={[tools.findingChipText, { color: tone.deep }]}>{chip}</Text>
+          {card.stat ? (
+            <Reanimated.View style={[tools.findingStat, { backgroundColor: `${tone.accent}0D`, borderColor: `${tone.accent}30` }, statStyle]}>
+              <Text style={[tools.findingStatFigure, { color: tone.accent }]}>{card.stat.figure}</Text>
+              <View style={[tools.findingStatDivider, { backgroundColor: `${tone.accent}30` }]} />
+              <Text style={[tools.findingStatCaption, { color: tone.deep }]}>{card.stat.caption}</Text>
             </Reanimated.View>
-          ))}
-        </View>
-      ) : null}
+          ) : null}
 
-      <TouchableOpacity
-        activeOpacity={0.75}
-        haptic="none"
-        onPress={toggle}
-        style={[tools.findingMoreBtn, { backgroundColor: `${tone.accent}12`, borderColor: `${tone.accent}30` }]}
-        accessibilityRole="button"
-        accessibilityState={{ expanded }}
-      >
-        <Text style={[tools.findingMoreText, { color: tone.accent }]}>
-          {expanded ? 'Show less' : card.source ? 'More about this study' : 'More on this'}
-        </Text>
-        <Reanimated.View style={chevronStyle}>
-          <ChevronDown s={14} c={tone.accent} w={2.2} />
-        </Reanimated.View>
-      </TouchableOpacity>
+          <Text style={tools.findingFinding}>{card.finding}</Text>
 
-      {/* Overflow-clipped accordion. The copy inside is absolutely positioned so
-          it keeps its full natural height regardless of the animated wrapper,
-          and reports that height once via onLayout. */}
-      <Reanimated.View style={[tools.findingDetailWrap, detailStyle]}>
-        <View style={tools.findingDetailInner} onLayout={event => setDetailHeight(event.nativeEvent.layout.height)}>
-          <View style={[tools.findingDetailRule, { backgroundColor: `${tone.accent}33` }]} />
-          {card.detail.map((paragraph, paragraphIndex) => (
-            <Text
-              key={paragraphIndex}
-              style={[tools.findingDetailText, paragraphIndex > 0 && tools.findingDetailNext]}
-            >
-              {paragraph}
-            </Text>
-          ))}
-          {card.source ? (
-            <View style={tools.findingSourceRow}>
-              <View style={[tools.findingSourceDiamond, { backgroundColor: tone.accent }]} />
-              <Text style={[tools.findingSourceText, { color: tone.accent }]}>{card.source}</Text>
+          {card.chips ? (
+            <View style={tools.findingChips}>
+              {card.chips.map((chip, chipIndex) => (
+                <ToolsValueChip key={chip} label={chip} tone={tone} index={chipIndex} enter={enter} />
+              ))}
             </View>
           ) : null}
+
+          {/* Overflow-clipped accordion. The copy inside is absolutely positioned
+              so it keeps its natural height regardless of the animated wrapper,
+              and reports that height once via onLayout. */}
+          <Reanimated.View style={[tools.findingDetailWrap, detailStyle]}>
+            <View style={tools.findingDetailInner} onLayout={event => setDetailHeight(event.nativeEvent.layout.height)}>
+              {card.detail.map((paragraph, paragraphIndex) => (
+                <Text
+                  key={paragraphIndex}
+                  style={[tools.findingDetailText, paragraphIndex > 0 && tools.findingDetailNext]}
+                >
+                  {paragraph}
+                </Text>
+              ))}
+              {card.source ? (
+                <View style={[tools.findingSourceChip, { backgroundColor: `${tone.accent}0F`, borderColor: `${tone.accent}2E` }]}>
+                  <OpenBook s={12} c={tone.accent} w={2} />
+                  <Text style={[tools.findingSourceText, { color: tone.accent }]}>{card.source}</Text>
+                </View>
+              ) : null}
+            </View>
+          </Reanimated.View>
         </View>
+
+        {/* The card's foot: a full-width strip, always visible, one obvious tap. */}
+        <TouchableOpacity
+          activeOpacity={0.82}
+          haptic="none"
+          onPress={toggle}
+          style={[tools.findingFoot, { backgroundColor: `${tone.accent}0C`, borderTopColor: `${tone.accent}1F` }]}
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+        >
+          <Text style={[tools.findingFootText, { color: tone.accent }]}>
+            {expanded ? 'Show less' : card.source ? 'More about this study' : 'More on this'}
+          </Text>
+          <Reanimated.View style={chevronStyle}>
+            <ChevronDown s={14} c={tone.accent} w={2.2} />
+          </Reanimated.View>
+        </TouchableOpacity>
       </Reanimated.View>
-    </Reanimated.View>
+    </View>
   );
 }
 
@@ -25833,9 +25893,16 @@ function ToolsScienceScreen({
 
         <ToolsSectionLabel label={screen.findingsLabel} delay={base} />
 
-        <View style={tools.scienceFeed}>
+        <View style={tools.scienceFeed} onLayout={event => setFeedTop(event.nativeEvent.layout.y)}>
           {screen.cards.map((card, index) => (
-            <ToolsFindingCard key={card.value} card={card} index={index} delay={base + 140 + index * 120} />
+            <ToolsFindingCard
+              key={card.value}
+              card={card}
+              index={index}
+              scrollY={scrollY}
+              viewportHeight={viewportHeight}
+              feedTop={feedTop}
+            />
           ))}
         </View>
       </Reanimated.ScrollView>
@@ -26760,74 +26827,73 @@ const tools = StyleSheet.create({
   sectionLabelDiamond: { width: 4, height: 4, backgroundColor: 'rgba(197,160,89,0.7)', transform: [{ rotate: '45deg' }] },
   sectionLabelText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2.2, color: 'rgba(126,91,31,0.72)' },
 
+  findingSlot: {},
+  // The single template: white card, banner on top, foot strip below. The toss
+  // motion lives on this card, not the slot, so measurement stays stable.
   findingCard: {
     position: 'relative', overflow: 'hidden',
-    borderRadius: 26, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
-    backgroundColor: '#FFFDF9', paddingHorizontal: 16, paddingTop: 15, paddingBottom: 14,
-    boxShadow: '0 14px 30px rgba(92,67,25,0.08)',
+    borderRadius: 28, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(25,23,20,0.07)',
+    backgroundColor: '#FFFFFF',
+    boxShadow: '0 16px 34px rgba(92,67,25,0.10)',
   },
-  findingWatermark: { position: 'absolute', right: -22, bottom: -26, transform: [{ rotate: '-12deg' }] },
-  findingWatermarkFlip: { right: undefined, left: -22, transform: [{ rotate: '12deg' }] },
-  findingTopRow: { flexDirection: 'row', alignItems: 'center', columnGap: 14 },
-  findingTopRowFlip: { flexDirection: 'row-reverse' },
-  // Illustration slot — a real square for the user's art to drop into.
-  findingArt: {
-    width: 82, height: 82, flexShrink: 0, overflow: 'hidden',
-    borderRadius: 21, borderCurve: 'continuous',
+  findingBanner: {
+    height: 148, overflow: 'hidden',
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1,
   },
-  findingArtBloom: { alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' },
-  findingArtImage: { width: '100%', height: '100%' },
-  findingArtRing: {
-    position: 'absolute', left: 4, top: 4, right: 4, bottom: 4,
-    borderRadius: 17, borderCurve: 'continuous',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)',
-  },
-  findingArtIndex: {
-    position: 'absolute', left: 6, top: 6, minWidth: 19, height: 16, paddingHorizontal: 4,
+  findingBannerFill: {
+    position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
     alignItems: 'center', justifyContent: 'center',
-    borderRadius: 7, borderCurve: 'continuous',
   },
-  findingArtIndexText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.4, color: '#FFFFFF', fontVariant: ['tabular-nums'] },
-  findingHeadCopy: { flex: 1, minWidth: 0 },
-  findingLabelChip: {
-    alignSelf: 'flex-start', maxWidth: '100%',
-    paddingHorizontal: 8, paddingVertical: 4, marginBottom: 9,
-    borderRadius: 8, borderCurve: 'continuous', borderWidth: 1,
+  findingBannerImage: { width: '100%', height: '100%' },
+  findingBannerHalo: { position: 'absolute', width: 190, height: 190, borderRadius: 95 },
+  findingBannerHaloCore: { position: 'absolute', width: 112, height: 112, borderRadius: 56 },
+  findingBannerEdge: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 1 },
+  findingBadge: {
+    position: 'absolute', left: 12, top: 12, minWidth: 26, height: 21, paddingHorizontal: 6,
+    alignItems: 'center', justifyContent: 'center',
+    borderRadius: 8, borderCurve: 'continuous',
+    backgroundColor: 'rgba(23,19,15,0.38)',
   },
-  findingLabelText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.2 },
-  findingValue: { fontFamily: F.serifBold, fontSize: 21, lineHeight: 25.5, letterSpacing: -0.3 },
+  findingBadgeText: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 0.5, color: '#FFFDF6', fontVariant: ['tabular-nums'] },
+
+  findingBody: { paddingHorizontal: 17, paddingTop: 15, paddingBottom: 15 },
+  findingLabelRow: { flexDirection: 'row', alignItems: 'center', columnGap: 7, marginBottom: 8 },
+  findingLabelDiamond: { width: 4.5, height: 4.5, transform: [{ rotate: '45deg' }] },
+  findingLabelText: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.5 },
+  findingValue: { fontFamily: F.serifBold, fontSize: 22, lineHeight: 26.5, letterSpacing: -0.35, color: INK },
 
   findingStat: {
-    marginTop: 14, alignSelf: 'flex-start',
+    marginTop: 13, alignSelf: 'flex-start',
     flexDirection: 'row', alignItems: 'center', columnGap: 10,
-    paddingHorizontal: 13, paddingVertical: 9,
-    borderRadius: 15, borderCurve: 'continuous', borderWidth: 1,
+    paddingHorizontal: 13, paddingVertical: 8,
+    borderRadius: 14, borderCurve: 'continuous', borderWidth: 1,
   },
   findingStatFigure: { fontFamily: F.serifBold, fontSize: 24, lineHeight: 27, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
   findingStatDivider: { width: 1, height: 20 },
   findingStatCaption: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 0.7, opacity: 0.85 },
 
-  findingFinding: { marginTop: 13, fontFamily: F.sans, fontSize: 13.6, lineHeight: 20, color: 'rgba(25,23,20,0.66)' },
+  findingFinding: { marginTop: 12, fontFamily: F.sans, fontSize: 13.6, lineHeight: 20.2, color: 'rgba(25,23,20,0.64)' },
   findingChips: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   findingChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1 },
   findingChipText: { fontFamily: F.serifSemiBold, fontSize: 12.5 },
 
-  findingMoreBtn: {
-    marginTop: 14, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', columnGap: 6,
-    paddingLeft: 13, paddingRight: 11, paddingVertical: 8,
-    borderRadius: 999, borderWidth: 1,
-  },
-  findingMoreText: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 0.5 },
   findingDetailWrap: { overflow: 'hidden' },
-  findingDetailInner: { position: 'absolute', left: 0, right: 0, top: 0, paddingTop: 14 },
-  findingDetailRule: { height: 1, marginBottom: 12 },
+  findingDetailInner: { position: 'absolute', left: 0, right: 0, top: 0, paddingTop: 13 },
   findingDetailText: { fontFamily: F.sans, fontSize: 13, lineHeight: 20, color: 'rgba(25,23,20,0.6)' },
   findingDetailNext: { marginTop: 10 },
-  findingSourceRow: { marginTop: 13, flexDirection: 'row', alignItems: 'center', columnGap: 7 },
-  findingSourceDiamond: { width: 4, height: 4, transform: [{ rotate: '45deg' }] },
-  findingSourceText: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.1 },
+  findingSourceChip: {
+    marginTop: 13, alignSelf: 'flex-start',
+    flexDirection: 'row', alignItems: 'center', columnGap: 7,
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 999, borderWidth: 1,
+  },
+  findingSourceText: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1 },
+
+  findingFoot: {
+    minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 6,
+    borderTopWidth: 1,
+  },
+  findingFootText: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 0.6 },
 
   progressMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 },
   progressRail: { flexDirection: 'row', alignItems: 'center', columnGap: 5 },
