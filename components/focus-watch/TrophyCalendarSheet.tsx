@@ -391,7 +391,9 @@ export default function TrophyCalendarSheet({
             <View style={s.subSeparatorLine} />
           </View>
           <View style={s.subCell}>
-            <View style={s.subValueRow}>
+            {/* Centre-aligned, not baseline — an image on a text baseline
+                sinks under the digits instead of standing beside them. */}
+            <View style={[s.subValueRow, s.subValueRowCenter]}>
               <StaticChallengeTrophy size={23} />
               <CountUp value={state.streak.trophies} delay={540} textStyle={s.subValue} />
             </View>
@@ -545,10 +547,12 @@ const s = StyleSheet.create({
     alignItems: 'center',
     minWidth: 118,
   },
+  // lineHeight well under the font size collapses the digits' line box,
+  // so the number sits right on its caption instead of floating above it.
   heroValue: {
     fontFamily: F.serifSemiBold,
     fontSize: 66,
-    lineHeight: 72,
+    lineHeight: 58,
     letterSpacing: -2,
     color: '#4A3820',
     textAlign: 'center',
@@ -556,7 +560,7 @@ const s = StyleSheet.create({
     fontVariant: ['lining-nums', 'tabular-nums'],
   },
   heroUnit: {
-    marginTop: -3,
+    marginTop: -2,
     fontFamily: F.serifItalic,
     fontSize: 16,
     lineHeight: 21,
@@ -578,6 +582,10 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 5,
+  },
+  subValueRowCenter: {
+    alignItems: 'center',
+    gap: 7,
   },
   subValue: {
     fontFamily: F.serifSemiBold,
