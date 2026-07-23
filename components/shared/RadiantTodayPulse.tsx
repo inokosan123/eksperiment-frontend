@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import Reanimated, {
   cancelAnimation,
   Easing,
@@ -16,12 +17,18 @@ import Reanimated, {
 // both, and ready for the Journal/Home streak sheets later.
 //
 // A single flat ring blinking its opacity was a functional marker, not a
-// beautiful one. This is a small bloom instead: a soft gold halo built
-// from concentric discs (a radial falloff, the app's own glow grammar),
-// a crisp inner ring, and a fainter outer ring breathing a touch behind
-// it — so the light seems to swell and settle rather than flick on and
-// off. Everything animates OPACITY only; nothing scales, so small Android
-// views never resample (the app's standing rule).
+// beautiful one. This is a small living jewel instead:
+//   · a soft gold halo built from concentric discs (a radial falloff, the
+//     app's own glow grammar), swelling and settling;
+//   · a crisp inner ring and a fainter outer hairline, breathing a touch
+//     OUT OF PHASE with the halo so there is always something moving;
+//   · a single four-point sparkle that slowly orbits the ring and twinkles
+//     as it goes — the one spark of life that lifts the whole mark.
+// The halo and rings animate OPACITY only; the sparkle ORBITS by rotation.
+// Nothing scales, so small Android views never resample (standing rule).
+
+const SPARKLE_PATH =
+  'M12 0 C13.2 7.4 16.6 10.8 24 12 C16.6 13.2 13.2 16.6 12 24 C10.8 16.6 7.4 13.2 0 12 C7.4 10.8 10.8 7.4 12 0 Z';
 
 export default function RadiantTodayPulse({
   size,
@@ -31,33 +38,58 @@ export default function RadiantTodayPulse({
   color?: string;
 }) {
   const reduceMotion = useReducedMotion();
-  const t = useSharedValue(0);
+  const breath = useSharedValue(0);
+  const spin = useSharedValue(0);
 
   useEffect(() => {
     if (reduceMotion) {
-      t.value = 0.5;
+      breath.value = 0.5;
+      spin.value = 0;
       return;
     }
-    t.value = 0;
-    t.value = withRepeat(
+    breath.value = 0;
+    breath.value = withRepeat(
       withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
       -1,
       true,
     );
-    return () => cancelAnimation(t);
-  }, [reduceMotion, t]);
+    // One slow, graceful revolution — the spark makes its round in ~4.6s.
+    spin.value = 0;
+    spin.value = withRepeat(
+      withTiming(1, { duration: 4600, easing: Easing.linear }),
+      -1,
+      false,
+    );
+    return () => {
+      cancelAnimation(breath);
+      cancelAnimation(spin);
+    };
+  }, [breath, reduceMotion, spin]);
 
-  // The halo swells; the crisp ring brightens with it; the outer hairline
-  // trails a little softer, giving the pulse depth without motion.
-  const haloStyle = useAnimatedStyle(() => ({ opacity: 0.35 + t.value * 0.65 }));
-  const innerStyle = useAnimatedStyle(() => ({ opacity: 0.5 + t.value * 0.45 }));
-  const outerStyle = useAnimatedStyle(() => ({ opacity: 0.12 + t.value * 0.32 }));
+  // The halo leads; the crisp ring counter-breathes so the mark never sits
+  // still; the outer hairline trails soft behind the halo.
+  const haloStyle = useAnimatedStyle(() => ({ opacity: 0.4 + breath.value * 0.6 }));
+  const innerStyle = useAnimatedStyle(() => ({ opacity: 0.9 - breath.value * 0.4 }));
+  const outerStyle = useAnimatedStyle(() => ({ opacity: 0.12 + breath.value * 0.3 }));
 
-  const haloOuter = size + 14;
-  const haloMid = size + 8;
-  const haloInner = size + 2;
-  const ringOuter = size + 11;
+  // The sparkle rides the ring, brightest at the far side of its orbit.
+  const orbitStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${spin.value * 360}deg` }],
+  }));
+  const sparkleStyle = useAnimatedStyle(() => ({
+    opacity: 0.35 + (0.5 + 0.5 * Math.sin(spin.value * Math.PI * 2)) * 0.6,
+  }));
+
+  const haloOuter = size + 15;
+  const haloMid = size + 9;
+  const haloInner = size + 3;
+  const ringOuter = size + 10;
   const ringInner = size + 5;
+
+  // The spark rides the crisp inner ring, kept tight so it never wanders
+  // into the neighbouring day.
+  const orbitR = ringInner / 2;
+  const sparkleSize = Math.max(6, size * 0.18);
 
   return (
     <View pointerEvents="none" style={pulse.center}>
@@ -72,13 +104,13 @@ export default function RadiantTodayPulse({
         <View
           style={[
             pulse.disc,
-            { width: haloMid, height: haloMid, borderRadius: haloMid / 2, backgroundColor: 'rgba(226,192,116,0.14)' },
+            { width: haloMid, height: haloMid, borderRadius: haloMid / 2, backgroundColor: 'rgba(228,194,118,0.15)' },
           ]}
         />
         <View
           style={[
             pulse.disc,
-            { width: haloInner, height: haloInner, borderRadius: haloInner / 2, backgroundColor: 'rgba(244,220,150,0.18)' },
+            { width: haloInner, height: haloInner, borderRadius: haloInner / 2, backgroundColor: 'rgba(246,224,158,0.20)' },
           ]}
         />
       </Reanimated.View>
@@ -98,6 +130,17 @@ export default function RadiantTodayPulse({
           innerStyle,
         ]}
       />
+
+      {/* The orbiting spark — a four-point sparkle riding the ring. The
+          container is centred and rotates; the spark is a centred child
+          lifted up by the orbit radius, so it circles the token cleanly. */}
+      <Reanimated.View style={[pulse.fill, orbitStyle]}>
+        <Reanimated.View style={[{ transform: [{ translateY: -orbitR }] }, sparkleStyle]}>
+          <Svg width={sparkleSize} height={sparkleSize} viewBox="0 0 24 24">
+            <Path d={SPARKLE_PATH} fill="#FFF3CF" />
+          </Svg>
+        </Reanimated.View>
+      </Reanimated.View>
     </View>
   );
 }
