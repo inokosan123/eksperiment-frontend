@@ -391,11 +391,12 @@ export default function TrophyCalendarSheet({
             <View style={s.subSeparatorLine} />
           </View>
           <View style={s.subCell}>
-            {/* Centre-aligned, not baseline — an image on a text baseline
-                sinks under the digits instead of standing beside them. */}
+            {/* Number first, then the coin — centre-aligned, not baseline,
+                so the image stands beside the digits instead of sinking
+                under them. */}
             <View style={[s.subValueRow, s.subValueRowCenter]}>
-              <StaticChallengeTrophy size={23} />
               <CountUp value={state.streak.trophies} delay={540} textStyle={s.subValue} />
+              <StaticChallengeTrophy size={23} />
             </View>
             <Text style={s.subLabel}>TROPHIES EARNED</Text>
           </View>
@@ -547,12 +548,13 @@ const s = StyleSheet.create({
     alignItems: 'center',
     minWidth: 118,
   },
-  // lineHeight well under the font size collapses the digits' line box,
-  // so the number sits right on its caption instead of floating above it.
+  // A tall line box seats the glyph LOW in its own space (away from the
+  // sheet title above), then the caption is pulled up hard under it — so
+  // the number rests on "day streak" instead of floating in the middle.
   heroValue: {
     fontFamily: F.serifSemiBold,
     fontSize: 66,
-    lineHeight: 58,
+    lineHeight: 78,
     letterSpacing: -2,
     color: '#4A3820',
     textAlign: 'center',
@@ -560,7 +562,7 @@ const s = StyleSheet.create({
     fontVariant: ['lining-nums', 'tabular-nums'],
   },
   heroUnit: {
-    marginTop: -2,
+    marginTop: -14,
     fontFamily: F.serifItalic,
     fontSize: 16,
     lineHeight: 21,
@@ -585,7 +587,7 @@ const s = StyleSheet.create({
   },
   subValueRowCenter: {
     alignItems: 'center',
-    gap: 7,
+    gap: 4,
   },
   subValue: {
     fontFamily: F.serifSemiBold,
