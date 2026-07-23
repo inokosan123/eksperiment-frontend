@@ -24817,15 +24817,31 @@ type ToolsChapter = {
 // write-up is folded away behind one tap, for whoever wants it. `illustration`
 // is a reserved slot: left null now so real art can drop straight in later,
 // falls back to the icon meanwhile.
+// Each finding wears its own colour, drawn from the palette the real Journal
+// already uses for its sections — so the feed is genuinely varied rather than
+// six of the same card, and every tone still belongs to the app.
+type ToolsCardTone = { accent: string; deep: string; tint: string; border: string; soft: string };
+
+const TOOLS_TONES: Record<'gold' | 'green' | 'rose' | 'violet' | 'amber' | 'blue', ToolsCardTone> = {
+  gold: { accent: '#A9863F', deep: '#5E4310', tint: '#FDF7EA', border: 'rgba(169,134,63,0.30)', soft: '#FBF3DE' },
+  green: { accent: '#3D8273', deep: '#1F4E45', tint: '#F1F8F5', border: 'rgba(61,130,115,0.28)', soft: '#E1F1EC' },
+  rose: { accent: '#B54155', deep: '#752535', tint: '#FDF3F4', border: 'rgba(181,65,85,0.26)', soft: '#FBE6E9' },
+  violet: { accent: '#6D5AAE', deep: '#3B2F76', tint: '#F6F4FC', border: 'rgba(109,90,174,0.26)', soft: '#EEEAF5' },
+  amber: { accent: '#C2690B', deep: '#7E4409', tint: '#FEF6EE', border: 'rgba(194,105,11,0.26)', soft: '#FCE5D5' },
+  blue: { accent: '#4E5394', deep: '#2C3067', tint: '#F4F6FC', border: 'rgba(78,83,148,0.26)', soft: '#E2E9F8' },
+};
+
 type ToolsScienceCard = {
   Icon: ToolsIconComponent;
   illustration?: number;
+  tone: ToolsCardTone;
+  label: string;
   value: string;
-  researcher: string;
-  credential: string;
-  year: string;
   finding: string;
-  detail: string;
+  detail: string[];
+  source?: string;
+  stat?: { figure: string; caption: string };
+  chips?: string[];
 };
 type ToolsScienceSpec = {
   eyebrow: string;
@@ -24843,43 +24859,86 @@ const TOOLS_JOURNAL_SCIENCE: ToolsScienceSpec = {
   title: 'Journal',
   intro: 'A few minutes of writing, backed by decades of research.',
   emblem: 'writing',
-  findingsLabel: 'WHAT THE RESEARCH SHOWS',
+  findingsLabel: 'WHY IT WORKS',
   cards: [
     {
-      Icon: Brain,
-      value: 'A clearer mind in fifteen minutes.',
-      researcher: 'James Pennebaker',
-      credential: 'Psychologist, UT Austin',
-      year: '1986',
-      finding: 'Writing about a hard experience for 15–20 minutes, a few days running, brought lasting gains in clarity and calm.',
-      detail: 'In the studies that founded expressive writing, students wrote about their deepest thoughts and feelings around an upsetting experience — just 15–20 minutes on four days in a row. Months later they showed a stronger immune response, visited the doctor less, and reported thinking more clearly than students who wrote about ordinary topics. It was putting words to what happened, not the subject itself, that carried the benefit.',
+      Icon: TrendingUp,
+      tone: TOOLS_TONES.gold,
+      label: 'HARVARD BUSINESS SCHOOL STUDY',
+      value: 'Reflection can outperform more work.',
+      finding: 'In a Harvard field study, employees who spent 15 minutes reflecting on what they had learned performed 22.8% better than those who used that time to keep working.',
+      stat: { figure: '22.8%', caption: 'better performance' },
+      detail: [
+        'The study followed employees completing a job-training program. One group continued working, while another spent the final 15 minutes reflecting on what they had learned. After one month, the reflection group performed 22.8% better on the final assessment.',
+        'Journaling creates this pause in everyday life. Instead of moving immediately from one day to the next, you can identify what worked, what failed, what you learned, and what should change tomorrow. The Daily Journal supports this through guided questions that turn experience into practical improvement.',
+      ],
+      source: 'Research by Harvard Business School',
     },
     {
-      Icon: Wind,
-      value: 'Measurably less stress.',
-      researcher: 'Baikie & Wilhelm',
-      credential: 'Review of expressive-writing trials',
-      year: '2005',
-      finding: 'Writing regularly about difficult emotions lowered stress and improved health a doctor can measure — including blood pressure.',
-      detail: 'A widely cited review gathered years of controlled trials on expressive writing. Across them, people who wrote regularly about difficult emotions showed lower stress, steadier mood, and improvements clinicians could measure: lower blood pressure, better immune and lung function, fewer visits for illness. The strongest effects came when people wrote honestly and returned to the page over several sessions.',
-    },
-    {
-      Icon: Moon,
-      value: 'Fall asleep faster.',
-      researcher: 'Wood and colleagues',
-      credential: 'Sleep & gratitude study',
-      year: '2009',
-      finding: 'A short gratitude-writing practice before bed helped people fall asleep faster and sleep more soundly.',
-      detail: 'Researchers tracking people’s pre-sleep thoughts found that those who kept a brief gratitude journal fell asleep more quickly and slept longer and more soundly. Writing down what went well quiets the racing, worried thinking that usually keeps the mind awake — so it arrives at sleep already settled, rather than working through the day in the dark.',
+      Icon: Target,
+      tone: TOOLS_TONES.green,
+      label: '138-STUDY META-ANALYSIS',
+      value: 'Goals are easier to reach when progress is recorded, not merely remembered.',
+      finding: 'Across 138 studies, monitoring progress improved goal attainment — and the effect was stronger when progress was physically recorded.',
+      stat: { figure: '138', caption: 'studies · almost 20,000 people' },
+      detail: [
+        'This meta-analysis included 138 studies and almost 20,000 participants. It found that regularly monitoring progress increased the likelihood of achieving a goal, with stronger effects when people recorded their progress instead of only thinking about it.',
+        'Journaling turns a distant goal into something visible. Monthly Goals, custom scales, and daily check-ins help you see whether you are moving forward, standing still, or drifting away from what you intended to accomplish.',
+      ],
+      source: 'Goal-monitoring meta-analysis',
     },
     {
       Icon: Heart,
-      value: 'Carry what’s hard to carry.',
-      researcher: 'Sohal and colleagues',
-      credential: 'Review of clinical trials',
-      year: '2022',
-      finding: 'A review of clinical studies found journaling eased anxiety and low mood for people going through a hard time.',
-      detail: 'A 2022 systematic review pooled clinical trials that used journaling as part of care. Across studies, people who wrote about their experience reported meaningfully lower anxiety and depressive symptoms than those who did not — a simple, private practice that helped people process difficult emotions and feel less overwhelmed by them.',
+      tone: TOOLS_TONES.rose,
+      label: 'VALUES & CHARACTER',
+      value: 'It is easy to believe you are growing when you never stop to look honestly.',
+      finding: 'Journaling helps you compare how you actually lived with the values you say matter.',
+      chips: ['Discipline', 'Patience', 'Humility', 'Honesty', 'Faith', 'Courage', 'Self-control'],
+      detail: [
+        'Good intentions and real growth are not always the same. A journal gives you an honest record of your decisions, reactions, failures, and progress over time.',
+        'Scripture provides the standard; journaling helps you examine your response to it. By reflecting on values such as discipline, patience, humility, honesty, faith, courage, and self-control, you can notice where your actions reflect the person you want to become — and where change is still needed.',
+        'The Ideal Self values and custom Daily Journal questions make that examination specific and personal.',
+      ],
+    },
+    {
+      Icon: Sparkles,
+      tone: TOOLS_TONES.violet,
+      label: 'CREATIVE THINKING STUDY',
+      value: 'Writing gives unfinished ideas room to develop.',
+      finding: 'In an experiment, people generated more ideas when they wrote them down than when they spoke them aloud.',
+      detail: [
+        'In a study of 90 participants, people completing a creative-thinking task produced more ideas when they wrote them down. Writing reduced the mental effort required to remember and compare earlier thoughts, leaving more capacity to continue exploring.',
+        'The study measured the number of ideas, not a guaranteed increase in originality. The honest value of free writing is that more thoughts are captured before they disappear — and those thoughts can later be connected, developed, refined, or turned into something useful.',
+        'Morning Pages provides an uninterrupted space to write before evaluating or rejecting what appears on the page.',
+      ],
+      source: 'Creative idea-generation study',
+    },
+    {
+      Icon: Activity,
+      tone: TOOLS_TONES.amber,
+      label: 'PROBLEM FINDING & ACTION PLANNING',
+      value: 'You cannot change a pattern you have not clearly named.',
+      finding: 'Journaling helps you spot repeated behaviour, uncover the obstacle behind it, and decide how you will respond before the same situation returns.',
+      detail: [
+        'Many problems continue because we react to individual incidents without recognising the pattern connecting them. Research on problem finding shows that clearly discovering and defining a problem is meaningfully connected with creative problem-solving.',
+        'Research on mental contrasting and implementation intentions also shows the value of identifying the real obstacle and preparing a specific response. Journaling brings these steps together: What happened? When does it usually happen? What triggers it? What is the real obstacle? What will I do differently when it happens again?',
+        'Daily Journal reflections can reveal the pattern, while Habits, Monthly Goals, and clear action plans help turn that insight into a better response.',
+      ],
+      source: 'Problem-finding and mental-contrasting meta-analyses',
+    },
+    {
+      Icon: Brain,
+      tone: TOOLS_TONES.blue,
+      label: 'DISTANCED REFLECTION STUDY',
+      value: 'Personal problems are difficult to see clearly from the inside.',
+      finding: 'Writing from a more distant perspective can help you reason with greater humility, openness, and consideration for others.',
+      stat: { figure: '555', caption: 'people · two preregistered trials' },
+      detail: [
+        'In two preregistered experiments involving 555 participants, people regularly reflected in a diary on significant personal experiences. Those instructed to write from a more distant, third-person perspective showed improvements in wise reasoning about interpersonal challenges.',
+        'They demonstrated greater intellectual humility, considered more ways a situation could develop, and paid greater attention to other people’s perspectives.',
+        'Free Writing can create this distance. Instead of only recording how a situation felt, you can step outside the moment, examine your own motives, consider the other person, and approach conflicts or difficult decisions with greater honesty and wisdom.',
+      ],
+      source: 'Distanced-reflection experiments',
     },
   ],
 };
@@ -24893,39 +24952,53 @@ const TOOLS_POMODORO_SCIENCE: ToolsScienceSpec = {
   cards: [
     {
       Icon: Activity,
+      tone: TOOLS_TONES.gold,
+      label: 'THE 90-MINUTE BODY CYCLE',
       value: 'Focus runs in waves.',
-      researcher: 'Nathaniel Kleitman',
-      credential: 'Sleep scientist — the 90-minute body cycle',
-      year: '1960s',
       finding: 'Attention rises and falls on a roughly 90-minute cycle — a break resets it before it fades.',
-      detail: 'Kleitman found the body runs on a roughly 90-minute rhythm around the clock — not only in sleep but through the day. Alertness, energy and focus climb and dip on this cycle. Working with it, and taking a real break as focus dips instead of pushing through, keeps concentration from sliding into fatigue you can’t easily recover from.',
+      detail: [
+        'Kleitman found the body runs on a roughly 90-minute rhythm around the clock — not only in sleep but through the day. Alertness, energy and focus climb and dip on this cycle.',
+        'Working with it, and taking a real break as focus dips instead of pushing through, keeps concentration from sliding into fatigue you cannot easily recover from.',
+      ],
+      source: 'Nathaniel Kleitman, sleep science',
     },
     {
       Icon: TrendingUp,
+      tone: TOOLS_TONES.green,
+      label: '32-STUDY REVIEW',
       value: 'Sharper focus, less fatigue.',
-      researcher: 'Review of 32 studies',
-      credential: 'Focus-and-break techniques',
-      year: '2025',
       finding: 'Structured focus-and-break techniques improved concentration, cut mental fatigue, and sustained performance for longer.',
-      detail: 'A 2025 review pooled 32 studies of structured focus-and-break methods like Pomodoro. Across them, working in timed intervals with deliberate rest improved concentration, lowered mental fatigue, and helped people hold their performance over long stretches — where working straight through tended to end in diminishing returns.',
+      stat: { figure: '32', caption: 'studies reviewed' },
+      detail: [
+        'A 2025 review pooled 32 studies of structured focus-and-break methods like Pomodoro. Across them, working in timed intervals with deliberate rest improved concentration, lowered mental fatigue, and helped people hold their performance over long stretches — where working straight through tended to end in diminishing returns.',
+      ],
+      source: 'Focus-and-break research review, 2025',
     },
     {
       Icon: Target,
+      tone: TOOLS_TONES.amber,
+      label: 'CONTROLLED FOCUS RESEARCH',
       value: 'Do more, distracted less.',
-      researcher: 'Peer-reviewed interval studies',
-      credential: 'Controlled focus research',
-      year: '',
       finding: 'Working in focused intervals raised concentration by 15–25% and cut distractions by nearly half.',
-      detail: 'Controlled studies comparing timed intervals against open-ended work found people in the interval condition concentrated 15–25% better and were pulled away by distractions roughly half as often. A defined finish line changes how the mind works: knowing a break is coming makes it far easier to hold attention until it arrives.',
+      stat: { figure: '15–25%', caption: 'better concentration' },
+      detail: [
+        'Controlled studies comparing timed intervals against open-ended work found people in the interval condition concentrated 15–25% better and were pulled away by distractions roughly half as often.',
+        'A defined finish line changes how the mind works: knowing a break is coming makes it far easier to hold attention until it arrives.',
+      ],
+      source: 'Peer-reviewed interval studies',
     },
     {
       Icon: Trophy,
+      tone: TOOLS_TONES.blue,
+      label: 'LARGE-SCALE WORKPLACE DATA',
       value: 'What the most productive already do.',
-      researcher: 'DeskTime workplace data',
-      credential: 'Large-scale workplace study',
-      year: '2014',
       finding: 'The most productive people naturally worked about an hour, then took a short break — close to the Pomodoro shape.',
-      detail: 'Analysing the habits of its most productive users, DeskTime found the top ten percent naturally worked in bursts of about 52 minutes followed by a 17-minute break. Nobody told them to — it was simply the rhythm high performers fell into. The Pomodoro structure turns that instinct into a routine anyone can follow.',
+      stat: { figure: '52 / 17', caption: 'minutes on · minutes off' },
+      detail: [
+        'Analysing the habits of its most productive users, DeskTime found the top ten percent naturally worked in bursts of about 52 minutes followed by a 17-minute break. Nobody told them to — it was simply the rhythm high performers fell into.',
+        'The Pomodoro structure turns that instinct into a routine anyone can follow.',
+      ],
+      source: 'DeskTime workplace study, 2014',
     },
   ],
 };
@@ -24939,39 +25012,52 @@ const TOOLS_GRATITUDE_SCIENCE: ToolsScienceSpec = {
   cards: [
     {
       Icon: Sparkles,
+      tone: TOOLS_TONES.gold,
+      label: 'LANDMARK GRATITUDE STUDY',
       value: 'More optimism, week by week.',
-      researcher: 'Emmons & McCullough',
-      credential: 'Landmark gratitude study',
-      year: '2003',
       finding: 'People who kept a weekly gratitude journal felt more optimistic, judged their lives more positively, and even exercised more.',
-      detail: 'In the study that launched modern gratitude research, people were asked to note a few things they were grateful for each week. Compared with groups who logged hassles or neutral events, they reported more optimism and greater satisfaction with their lives — and, unexpectedly, exercised more and felt physically better. A few lines a week measurably shifted how they saw their lives.',
+      detail: [
+        'In the study that launched modern gratitude research, people were asked to note a few things they were grateful for each week. Compared with groups who logged hassles or neutral events, they reported more optimism and greater satisfaction with their lives — and, unexpectedly, exercised more and felt physically better.',
+        'A few lines a week measurably shifted how they saw their lives.',
+      ],
+      source: 'Emmons & McCullough, 2003',
     },
     {
       Icon: Heart,
+      tone: TOOLS_TONES.rose,
+      label: 'THE SAME STUDY',
       value: 'Fewer aches and pains.',
-      researcher: 'Emmons & McCullough',
-      credential: 'The same study',
-      year: '2003',
       finding: 'Those who journaled about gratitude reported fewer headaches and less physical pain than those who logged daily hassles.',
-      detail: 'The same research tracked physical symptoms alongside mood. The gratitude group reported fewer headaches, less physical pain, and generally better health than those who wrote about daily frustrations. Attention turned toward the good appears to ease the body as well as the mind — a small mental habit with a measurable physical echo.',
+      detail: [
+        'The same research tracked physical symptoms alongside mood. The gratitude group reported fewer headaches, less physical pain, and generally better health than those who wrote about daily frustrations.',
+        'Attention turned toward the good appears to ease the body as well as the mind — a small mental habit with a measurable physical echo.',
+      ],
+      source: 'Emmons & McCullough, 2003',
     },
     {
       Icon: Brain,
+      tone: TOOLS_TONES.violet,
+      label: 'NEUROIMAGING STUDY',
       value: 'A calmer, steadier brain.',
-      researcher: 'Kini and colleagues',
-      credential: 'Neuroimaging study',
-      year: '2016',
       finding: 'Gratitude writing raised activity in brain regions tied to emotional regulation — still measurable three months later.',
-      detail: 'Using brain imaging, researchers found that people who practised gratitude writing showed greater activity in regions tied to emotional regulation and empathy. What is striking is that the effect lasted: scans taken three months after the writing ended still showed the change. Gratitude appears to train the brain, not just lift the mood of the moment.',
+      stat: { figure: '3 months', caption: 'effect still measurable' },
+      detail: [
+        'Using brain imaging, researchers found that people who practised gratitude writing showed greater activity in regions tied to emotional regulation and empathy.',
+        'What is striking is that the effect lasted: scans taken three months after the writing ended still showed the change. Gratitude appears to train the brain, not just lift the mood of the moment.',
+      ],
+      source: 'Kini and colleagues, 2016',
     },
     {
       Icon: Moon,
+      tone: TOOLS_TONES.green,
+      label: 'PUBLISHED RESEARCH',
       value: 'Better mood, sleep, and bonds.',
-      researcher: 'Frontiers in Psychology',
-      credential: 'Published research',
-      year: '',
       finding: 'Gratitude journaling was linked to lower anxiety and depression, improved sleep, and stronger relationships.',
-      detail: 'Reviewing the wider body of gratitude research, work published in Frontiers in Psychology linked a regular gratitude practice to lower anxiety and depression, better sleep, and stronger social connection. The same simple habit touches several parts of a life at once — mood, rest, and the relationships that hold it all together.',
+      detail: [
+        'Reviewing the wider body of gratitude research, work published in Frontiers in Psychology linked a regular gratitude practice to lower anxiety and depression, better sleep, and stronger social connection.',
+        'The same simple habit touches several parts of a life at once — mood, rest, and the relationships that hold it all together.',
+      ],
+      source: 'Frontiers in Psychology',
     },
   ],
 };
@@ -25532,77 +25618,137 @@ function ToolsSectionLabel({ label, delay }: { label: string; delay: number }) {
   );
 }
 
-// One finding, set like an archive slip: index, a rule that draws itself, the
-// source in small caps, and the tool's icon watermarked into the corner.
+// A finding, redesigned for the tired end of onboarding. Read top to bottom in
+// one glance: an illustration slot, the VALUE in big bold serif, a byline that
+// says who proved it and when, and the finding in one sentence. The heavy study
+// write-up is folded behind one tap — a real accordion whose height is measured
+// once and driven on the UI thread, so nothing thrashes layout per frame.
 function ToolsFindingCard({ card, index, delay }: { card: ToolsScienceCard; index: number; delay: number }) {
-  const draw = useSharedValue(0);
+  const open = useSharedValue(0);
+  const [expanded, setExpanded] = useState(false);
+  const [detailHeight, setDetailHeight] = useState(0);
+  const bloom = useSharedValue(0);
+  const pop = useSharedValue(0);
+  const tone = card.tone;
+  // Every other card mirrors — art swaps sides and the entrance comes from the
+  // other edge, so the feed zig-zags instead of marching.
+  const flip = index % 2 === 1;
 
   useEffect(() => {
-    draw.value = withDelay(delay + 240, withTiming(1, { duration: 620, easing: Easing.bezier(0.16, 1, 0.28, 1) }));
-    return () => cancelAnimation(draw);
-  }, [delay, draw]);
+    bloom.value = withDelay(delay + 140, withTiming(1, { duration: 860, easing: Easing.out(Easing.cubic) }));
+    pop.value = withDelay(delay + 300, withSpring(1, { damping: 14, stiffness: 190, mass: 0.8 }));
+    return () => {
+      cancelAnimation(bloom);
+      cancelAnimation(pop);
+    };
+  }, [bloom, delay, pop]);
 
-  const ruleStyle = useAnimatedStyle(() => ({ transform: [{ scaleX: 0.06 + draw.value * 0.94 }] }));
+  const toggle = useCallback(() => {
+    runSelectionHaptic();
+    setExpanded(prev => {
+      open.value = withTiming(prev ? 0 : 1, { duration: 360, easing: Easing.bezier(0.22, 1, 0.3, 1) });
+      return !prev;
+    });
+  }, [open]);
+
+  const detailStyle = useAnimatedStyle(() => ({
+    height: open.value * detailHeight,
+    opacity: interpolate(open.value, [0, 0.5, 1], [0, 0.5, 1]),
+  }));
+  const chevronStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${open.value * 180}deg` }] }));
+  // Ken-burns on the art slot — the same bloom the habit goal cards use, so a
+  // real illustration will arrive with a little life rather than just appear.
+  const artStyle = useAnimatedStyle(() => ({
+    opacity: 0.45 + bloom.value * 0.55,
+    transform: [{ scale: 1.12 - bloom.value * 0.12 }],
+  }));
+  const statStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(pop.value, [0, 0.4, 1], [0, 0.9, 1], 'clamp'),
+    transform: [{ scale: 0.82 + pop.value * 0.18 }],
+  }));
 
   return (
     <Reanimated.View
-      entering={FadeInUp.delay(delay).duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 24 }] })}
-      style={tools.findingCard}
+      entering={FadeInUp.delay(delay).duration(660).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 26 }, { translateX: flip ? 20 : -20 }],
+      })}
+      style={[tools.findingCard, { backgroundColor: tone.tint, borderColor: tone.border }]}
     >
       <LinearGradient
         pointerEvents="none"
-        colors={['rgba(255,255,255,0.99)', 'rgba(255,250,238,0.96)']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+        colors={[tone.tint, '#FFFFFF']}
+        start={{ x: flip ? 0.95 : 0.05, y: 0 }}
+        end={{ x: flip ? 0.05 : 0.95, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
+      <View pointerEvents="none" style={[tools.findingWatermark, flip && tools.findingWatermarkFlip]}>
+        <card.Icon s={108} c={`${tone.accent}12`} w={1} />
+      </View>
       <View pointerEvents="none" style={tools.scienceCardSheen} />
 
-      <View style={tools.findingTopRow}>
+      <View style={[tools.findingTopRow, flip && tools.findingTopRowFlip]}>
         {/* Illustration slot — reserved for real art; the icon stands in until
             then. Numbered so the feed still reads as an ordered set. */}
-        <View style={tools.findingArt}>
-          <LinearGradient
-            pointerEvents="none"
-            colors={['#FCF3DE', '#F6E7C4']}
-            start={{ x: 0.1, y: 0 }}
-            end={{ x: 0.9, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          {card.illustration ? (
-            <Image source={card.illustration} style={tools.findingArtImage} resizeMode="cover" />
-          ) : (
-            <card.Icon s={30} c={GOLD} w={1.7} />
-          )}
+        <View style={[tools.findingArt, { backgroundColor: tone.soft, borderColor: tone.border }]}>
+          <Reanimated.View style={[tools.findingArtBloom, artStyle]}>
+            {card.illustration ? (
+              <Image source={card.illustration} style={tools.findingArtImage} resizeMode="cover" />
+            ) : (
+              <card.Icon s={32} c={tone.accent} w={1.7} />
+            )}
+          </Reanimated.View>
           <View pointerEvents="none" style={tools.findingArtRing} />
-          <View style={tools.findingArtIndex}>
+          <View style={[tools.findingArtIndex, { backgroundColor: tone.accent }]}>
             <Text style={tools.findingArtIndexText}>{String(index + 1).padStart(2, '0')}</Text>
           </View>
         </View>
 
         <View style={tools.findingHeadCopy}>
-          <Text style={tools.findingValue}>{card.value}</Text>
-          <View style={tools.findingByline}>
-            <View style={tools.findingBylineDiamond} />
-            <Text style={tools.findingResearcher} numberOfLines={1}>{card.researcher}</Text>
-            {card.year ? <Text style={tools.findingYear}>{card.year}</Text> : null}
+          <View style={[tools.findingLabelChip, { backgroundColor: `${tone.accent}16`, borderColor: `${tone.accent}3D` }]}>
+            <Text style={[tools.findingLabelText, { color: tone.accent }]}>{card.label}</Text>
           </View>
+          <Text style={[tools.findingValue, { color: tone.deep }]}>{card.value}</Text>
         </View>
       </View>
 
+      {card.stat ? (
+        <Reanimated.View style={[tools.findingStat, { backgroundColor: `${tone.accent}0F`, borderColor: `${tone.accent}33` }, statStyle]}>
+          <Text style={[tools.findingStatFigure, { color: tone.accent }]}>{card.stat.figure}</Text>
+          <View style={[tools.findingStatDivider, { backgroundColor: `${tone.accent}33` }]} />
+          <Text style={[tools.findingStatCaption, { color: tone.deep }]}>{card.stat.caption}</Text>
+        </Reanimated.View>
+      ) : null}
+
       <Text style={tools.findingFinding}>{card.finding}</Text>
+
+      {card.chips ? (
+        <View style={tools.findingChips}>
+          {card.chips.map((chip, chipIndex) => (
+            <Reanimated.View
+              key={chip}
+              entering={FadeIn.delay(delay + 520 + chipIndex * 70).duration(420)}
+              style={[tools.findingChip, { backgroundColor: `${tone.accent}12`, borderColor: `${tone.accent}30` }]}
+            >
+              <Text style={[tools.findingChipText, { color: tone.deep }]}>{chip}</Text>
+            </Reanimated.View>
+          ))}
+        </View>
+      ) : null}
 
       <TouchableOpacity
         activeOpacity={0.75}
         haptic="none"
         onPress={toggle}
-        style={[tools.findingMoreBtn, expanded && tools.findingMoreBtnOpen]}
+        style={[tools.findingMoreBtn, { backgroundColor: `${tone.accent}12`, borderColor: `${tone.accent}30` }]}
         accessibilityRole="button"
         accessibilityState={{ expanded }}
       >
-        <Text style={tools.findingMoreText}>{expanded ? 'Show less' : 'More about this study'}</Text>
+        <Text style={[tools.findingMoreText, { color: tone.accent }]}>
+          {expanded ? 'Show less' : card.source ? 'More about this study' : 'More on this'}
+        </Text>
         <Reanimated.View style={chevronStyle}>
-          <ChevronDown s={14} c={C.goldDark} w={2.2} />
+          <ChevronDown s={14} c={tone.accent} w={2.2} />
         </Reanimated.View>
       </TouchableOpacity>
 
@@ -25611,9 +25757,21 @@ function ToolsFindingCard({ card, index, delay }: { card: ToolsScienceCard; inde
           and reports that height once via onLayout. */}
       <Reanimated.View style={[tools.findingDetailWrap, detailStyle]}>
         <View style={tools.findingDetailInner} onLayout={event => setDetailHeight(event.nativeEvent.layout.height)}>
-          <View style={tools.findingDetailRule} />
-          <Text style={tools.findingCredential}>{card.credential.toUpperCase()}</Text>
-          <Text style={tools.findingDetailText}>{card.detail}</Text>
+          <View style={[tools.findingDetailRule, { backgroundColor: `${tone.accent}33` }]} />
+          {card.detail.map((paragraph, paragraphIndex) => (
+            <Text
+              key={paragraphIndex}
+              style={[tools.findingDetailText, paragraphIndex > 0 && tools.findingDetailNext]}
+            >
+              {paragraph}
+            </Text>
+          ))}
+          {card.source ? (
+            <View style={tools.findingSourceRow}>
+              <View style={[tools.findingSourceDiamond, { backgroundColor: tone.accent }]} />
+              <Text style={[tools.findingSourceText, { color: tone.accent }]}>{card.source}</Text>
+            </View>
+          ) : null}
         </View>
       </Reanimated.View>
     </Reanimated.View>
@@ -26608,50 +26766,68 @@ const tools = StyleSheet.create({
     backgroundColor: '#FFFDF9', paddingHorizontal: 16, paddingTop: 15, paddingBottom: 14,
     boxShadow: '0 14px 30px rgba(92,67,25,0.08)',
   },
+  findingWatermark: { position: 'absolute', right: -22, bottom: -26, transform: [{ rotate: '-12deg' }] },
+  findingWatermarkFlip: { right: undefined, left: -22, transform: [{ rotate: '12deg' }] },
   findingTopRow: { flexDirection: 'row', alignItems: 'center', columnGap: 14 },
+  findingTopRowFlip: { flexDirection: 'row-reverse' },
   // Illustration slot — a real square for the user's art to drop into.
   findingArt: {
-    width: 76, height: 76, flexShrink: 0, overflow: 'hidden',
-    borderRadius: 19, borderCurve: 'continuous',
+    width: 82, height: 82, flexShrink: 0, overflow: 'hidden',
+    borderRadius: 21, borderCurve: 'continuous',
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(197,160,89,0.30)',
+    borderWidth: 1,
   },
+  findingArtBloom: { alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' },
   findingArtImage: { width: '100%', height: '100%' },
   findingArtRing: {
     position: 'absolute', left: 4, top: 4, right: 4, bottom: 4,
-    borderRadius: 15, borderCurve: 'continuous',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)',
+    borderRadius: 17, borderCurve: 'continuous',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)',
   },
   findingArtIndex: {
-    position: 'absolute', left: 6, top: 6, minWidth: 18, height: 15, paddingHorizontal: 4,
+    position: 'absolute', left: 6, top: 6, minWidth: 19, height: 16, paddingHorizontal: 4,
     alignItems: 'center', justifyContent: 'center',
-    borderRadius: 6, backgroundColor: 'rgba(23,19,15,0.42)',
+    borderRadius: 7, borderCurve: 'continuous',
   },
-  findingArtIndexText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.4, color: '#FBEFD6', fontVariant: ['tabular-nums'] },
+  findingArtIndexText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.4, color: '#FFFFFF', fontVariant: ['tabular-nums'] },
   findingHeadCopy: { flex: 1, minWidth: 0 },
-  findingValue: { fontFamily: F.serifBold, fontSize: 21, lineHeight: 25, letterSpacing: -0.3, color: INK },
-  findingByline: { flexDirection: 'row', alignItems: 'center', columnGap: 7, marginTop: 8 },
-  findingBylineDiamond: { width: 4, height: 4, backgroundColor: GOLD, transform: [{ rotate: '45deg' }] },
-  findingResearcher: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 11, letterSpacing: 0.2, color: C.goldDark },
-  findingYear: {
-    flexShrink: 0, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 0.8, color: 'rgba(126,91,31,0.66)',
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
-    backgroundColor: 'rgba(197,160,89,0.12)', borderWidth: 1, borderColor: 'rgba(197,160,89,0.22)',
-    fontVariant: ['tabular-nums'], overflow: 'hidden',
+  findingLabelChip: {
+    alignSelf: 'flex-start', maxWidth: '100%',
+    paddingHorizontal: 8, paddingVertical: 4, marginBottom: 9,
+    borderRadius: 8, borderCurve: 'continuous', borderWidth: 1,
   },
+  findingLabelText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.2 },
+  findingValue: { fontFamily: F.serifBold, fontSize: 21, lineHeight: 25.5, letterSpacing: -0.3 },
+
+  findingStat: {
+    marginTop: 14, alignSelf: 'flex-start',
+    flexDirection: 'row', alignItems: 'center', columnGap: 10,
+    paddingHorizontal: 13, paddingVertical: 9,
+    borderRadius: 15, borderCurve: 'continuous', borderWidth: 1,
+  },
+  findingStatFigure: { fontFamily: F.serifBold, fontSize: 24, lineHeight: 27, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
+  findingStatDivider: { width: 1, height: 20 },
+  findingStatCaption: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 0.7, opacity: 0.85 },
+
   findingFinding: { marginTop: 13, fontFamily: F.sans, fontSize: 13.6, lineHeight: 20, color: 'rgba(25,23,20,0.66)' },
+  findingChips: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  findingChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1 },
+  findingChipText: { fontFamily: F.serifSemiBold, fontSize: 12.5 },
+
   findingMoreBtn: {
-    marginTop: 13, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', columnGap: 6,
+    marginTop: 14, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', columnGap: 6,
     paddingLeft: 13, paddingRight: 11, paddingVertical: 8,
-    borderRadius: 999, backgroundColor: 'rgba(197,160,89,0.09)', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
+    borderRadius: 999, borderWidth: 1,
   },
-  findingMoreBtnOpen: { backgroundColor: 'rgba(197,160,89,0.14)', borderColor: 'rgba(197,160,89,0.34)' },
-  findingMoreText: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 0.5, color: C.goldDark },
+  findingMoreText: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 0.5 },
   findingDetailWrap: { overflow: 'hidden' },
   findingDetailInner: { position: 'absolute', left: 0, right: 0, top: 0, paddingTop: 14 },
-  findingDetailRule: { height: 1, backgroundColor: 'rgba(197,160,89,0.2)', marginBottom: 11 },
-  findingCredential: { fontFamily: F.sansBold, fontSize: 8.2, letterSpacing: 1.3, color: 'rgba(126,91,31,0.6)', marginBottom: 7 },
-  findingDetailText: { fontFamily: F.sans, fontSize: 13, lineHeight: 20, color: 'rgba(25,23,20,0.58)' },
+  findingDetailRule: { height: 1, marginBottom: 12 },
+  findingDetailText: { fontFamily: F.sans, fontSize: 13, lineHeight: 20, color: 'rgba(25,23,20,0.6)' },
+  findingDetailNext: { marginTop: 10 },
+  findingSourceRow: { marginTop: 13, flexDirection: 'row', alignItems: 'center', columnGap: 7 },
+  findingSourceDiamond: { width: 4, height: 4, transform: [{ rotate: '45deg' }] },
+  findingSourceText: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.1 },
 
   progressMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 },
   progressRail: { flexDirection: 'row', alignItems: 'center', columnGap: 5 },
