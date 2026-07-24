@@ -69,6 +69,7 @@ type HeroPalette = {
   grad: readonly [string, string, string];
   border: string;
   weave: string;
+  bloom: string;         // instrument backdrop bloom, in the state's colour
   glow: string;          // breathing halo colour (null-glow states get low alpha)
   glowActive: boolean;   // whether the halo breathes
   kicker: string;
@@ -86,6 +87,7 @@ type HeroPalette = {
 const HERO_PALETTE: Record<WebProtectionHeroState, HeroPalette> = {
   on: {
     grad: ['#E6F3EC', '#F6FBF8', '#FEFFFE'], border: '#A9D0C0', weave: '#2D7967',
+    bloom: 'rgba(61,130,115,0.22)',
     glow: 'rgba(45,121,103,0.55)', glowActive: true,
     kicker: '#2D7967', ink: '#183F37', body: '#4E746A',
     badgeBorder: '#B9DACD', badgeBg: 'rgba(239,249,245,0.90)', dot: '#2C7565',
@@ -93,6 +95,7 @@ const HERO_PALETTE: Record<WebProtectionHeroState, HeroPalette> = {
   },
   preview: {
     grad: ['#EFEAF8', '#F8F5FC', '#FEFEFF'], border: '#CFC4E6', weave: '#6A57A0',
+    bloom: 'rgba(120,102,164,0.2)',
     glow: 'rgba(120,102,164,0.4)', glowActive: false,
     kicker: '#6A57A0', ink: '#2E2450', body: '#665A86',
     badgeBorder: '#D3CBE4', badgeBg: 'rgba(246,242,251,0.92)', dot: '#7866A4',
@@ -100,6 +103,7 @@ const HERO_PALETTE: Record<WebProtectionHeroState, HeroPalette> = {
   },
   error: {
     grad: ['#FBEAEC', '#FFF4F5', '#FFFCFC'], border: '#EEC2C8', weave: '#A6404E',
+    bloom: 'rgba(190,68,82,0.2)',
     glow: 'rgba(190,68,82,0.45)', glowActive: true,
     kicker: '#A6404E', ink: '#5A2029', body: '#8A5860',
     badgeBorder: '#EDC4CA', badgeBg: 'rgba(251,238,240,0.94)', dot: '#BE4452',
@@ -107,6 +111,7 @@ const HERO_PALETTE: Record<WebProtectionHeroState, HeroPalette> = {
   },
   off: {
     grad: ['#EEF1F0', '#F8FAF9', '#FEFFFE'], border: '#D2DAD7', weave: '#5C6B66',
+    bloom: 'rgba(92,107,102,0.16)',
     glow: 'rgba(92,107,102,0.28)', glowActive: false,
     kicker: '#6B7B75', ink: '#2C3733', body: '#657069',
     badgeBorder: '#D2DAD7', badgeBg: 'rgba(244,247,246,0.94)', dot: '#8A968F',
@@ -119,11 +124,6 @@ const HERO_STATE_LABEL: Record<WebProtectionHeroState, string> = {
 };
 const HERO_FOOTER_LABEL: Record<WebProtectionHeroState, string> = {
   on: 'PROTECTION ACTIVE', preview: 'PROTECTION PREVIEW', error: 'COULD NOT START', off: 'PROTECTION RESTING',
-};
-
-const WEB_PROTECTION_VISUAL = {
-  accent: '#2D7967',
-  bloom: 'rgba(61,130,115,0.22)',
 };
 
 // One shared visual for the live Focus protection pillar and My Routine.
@@ -240,7 +240,17 @@ function LatticeWeave({ color }: { color: string }) {
   );
 }
 
-function GuardedSightEmblem({ active }: { active: boolean }) {
+// `line`/`disc` let the emblem take the card's state colour — green when guarding,
+// rose on an error, slate at rest — so the green never bleeds through a red card.
+function GuardedSightEmblem({
+  active,
+  line = '#2D7967',
+  disc = '#B7D8CA',
+}: {
+  active: boolean;
+  line?: string;
+  disc?: string;
+}) {
   const reduceMotion = useReducedMotion();
   const patrol = useSharedValue(0);
   const animate = active && !reduceMotion;
@@ -267,41 +277,41 @@ function GuardedSightEmblem({ active }: { active: boolean }) {
 
   return (
     <View style={s.webEmblemStage}>
-      <View pointerEvents="none" style={[s.webEmblemGlow, active && s.webEmblemGlowOn]} />
+      <View pointerEvents="none" style={[s.webEmblemGlow, { backgroundColor: line, opacity: active ? 0.16 : 0.06 }]} />
       <Svg pointerEvents="none" width={64} height={64} style={StyleSheet.absoluteFill}>
         <Circle
           cx={32}
           cy={32}
           r={29}
-          stroke="#2D7967"
+          stroke={line}
           strokeOpacity={active ? 0.32 : 0.15}
           strokeWidth={1}
           fill="none"
           strokeDasharray={active ? undefined : '1 5'}
         />
-        <Circle cx={32} cy={32} r={24.5} stroke="#2D7967" strokeOpacity={active ? 0.15 : 0.09} strokeWidth={1} fill="none" strokeDasharray="1 4" />
+        <Circle cx={32} cy={32} r={24.5} stroke={line} strokeOpacity={active ? 0.15 : 0.09} strokeWidth={1} fill="none" strokeDasharray="1 4" />
         {active && (
           <>
-            <AnimatedCircle animatedProps={sentinelProps} r={2.1} fill="#2D7967" fillOpacity={0.55} />
-            <AnimatedCircle animatedProps={counterProps} r={1.5} fill="#2D7967" fillOpacity={0.32} />
+            <AnimatedCircle animatedProps={sentinelProps} r={2.1} fill={line} fillOpacity={0.55} />
+            <AnimatedCircle animatedProps={counterProps} r={1.5} fill={line} fillOpacity={0.32} />
           </>
         )}
       </Svg>
-      <View style={[s.webEmblemDisc, !active && s.webEmblemDiscOff]}>
-        <Eye s={21} c={active ? '#2D7967' : 'rgba(45,121,103,0.6)'} w={1.9} />
+      <View style={[s.webEmblemDisc, { borderColor: disc }, !active && s.webEmblemDiscOff]}>
+        <Eye s={21} c={line} w={1.9} />
         <Svg pointerEvents="none" width={42} height={42} style={StyleSheet.absoluteFill}>
           {[
             { y: 9, x1: 6.3, x2: 35.7 },
             { y: 13.5, x1: 3.9, x2: 38.1 },
             { y: 18, x1: 2.7, x2: 39.3 },
-          ].map(line => (
+          ].map(rowLine => (
             <Line
-              key={line.y}
-              x1={line.x1}
-              y1={line.y}
-              x2={line.x2}
-              y2={line.y}
-              stroke="#2D7967"
+              key={rowLine.y}
+              x1={rowLine.x1}
+              y1={rowLine.y}
+              x2={rowLine.x2}
+              y2={rowLine.y}
+              stroke={line}
               strokeOpacity={active ? 0.38 : 0.2}
               strokeWidth={1.3}
               strokeLinecap="round"
@@ -525,9 +535,9 @@ export function WebProtectionHeroCard({
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        {/* The instrument backdrop only spins on the live card; the others keep
-            a still face so the state reads clearly. */}
-        <PlanCardBackdrop visual={WEB_PROTECTION_VISUAL} ringSize={218} live={live} />
+        {/* The instrument backdrop takes the state's own colour and only spins on
+            the live card — no green bleeding through a red error card. */}
+        <PlanCardBackdrop visual={{ accent: p.weave, bloom: p.bloom }} ringSize={218} live={live} />
         <LatticeWeave color={p.weave} />
         <View pointerEvents="none" style={s.heroShieldWatermark}>
           <Shield s={168} c={p.weave} w={1.05} />
@@ -555,7 +565,7 @@ export function WebProtectionHeroCard({
             </Text>
           </View>
           <View style={s.heroEmblem}>
-            <GuardedSightEmblem active={state === 'on' || state === 'preview'} />
+            <GuardedSightEmblem active={state === 'on' || state === 'preview'} line={p.weave} disc={p.border} />
           </View>
         </View>
 
@@ -667,8 +677,7 @@ const s = StyleSheet.create({
   webNameOff: { color: 'rgba(31,78,69,0.72)' },
   webStatusLine: { marginTop: 2.5, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17, color: '#3D8273' },
   webEmblemStage: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center' },
-  webEmblemGlow: { position: 'absolute', left: 5, top: 5, width: 54, height: 54, borderRadius: 27, backgroundColor: 'rgba(61,130,115,0.06)' },
-  webEmblemGlowOn: { backgroundColor: 'rgba(61,130,115,0.16)' },
+  webEmblemGlow: { position: 'absolute', left: 5, top: 5, width: 54, height: 54, borderRadius: 27 },
   webEmblemDisc: {
     width: 42,
     height: 42,
@@ -684,7 +693,7 @@ const s = StyleSheet.create({
     shadowRadius: 5,
     elevation: 2,
   },
-  webEmblemDiscOff: { backgroundColor: 'rgba(255,255,255,0.62)', borderColor: 'rgba(183,216,202,0.72)', shadowOpacity: 0.05, elevation: 1 },
+  webEmblemDiscOff: { backgroundColor: 'rgba(255,255,255,0.62)', shadowOpacity: 0.05, elevation: 1 },
   webRule: { marginTop: 10, marginBottom: 9, flexDirection: 'row', alignItems: 'center', gap: 7 },
   webRuleLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: '#CBE0D5' },
   webRuleCross: { width: 7, height: 7, alignItems: 'center', justifyContent: 'center' },
