@@ -12,7 +12,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { Circle, Line } from 'react-native-svg';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { Eye, Shield } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
@@ -515,6 +515,59 @@ function CardGlow({ color, active }: { color: string; active: boolean }) {
   );
 }
 
+// The card's whole identity in one background crest: the protection shield with
+// the watching eye set inside it — Clean Sight. Both live in the background, in
+// the state's colour, and breathe faintly when the guard is awake (the orbit
+// instrument that used to spin here belongs to app blocking, not the web).
+function CleanSightCrest({ color, active }: { color: string; active: boolean }) {
+  const reduceMotion = useReducedMotion();
+  const breath = useSharedValue(0);
+
+  useEffect(() => {
+    if (!active || reduceMotion) {
+      cancelAnimation(breath);
+      breath.value = active ? 0.5 : 0;
+      return;
+    }
+    breath.value = 0;
+    breath.value = withRepeat(
+      withTiming(1, { duration: 3600, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true,
+    );
+    return () => cancelAnimation(breath);
+  }, [active, breath, reduceMotion]);
+
+  const style = useAnimatedStyle(() => ({ opacity: 0.07 + breath.value * 0.055 }));
+
+  return (
+    <Animated.View pointerEvents="none" style={[s.heroCrest, style]}>
+      <Svg width={214} height={248} viewBox="0 0 100 116">
+        {/* Shield */}
+        <Path
+          d="M50 5 L88 20 V56 C88 85 50 110 50 110 C50 110 12 85 12 56 V20 Z"
+          fill={color}
+          fillOpacity={0.14}
+          stroke={color}
+          strokeWidth={2.2}
+          strokeLinejoin="round"
+        />
+        {/* Eye, set inside the shield */}
+        <Path
+          d="M27 51 C37 39 63 39 73 51 C63 63 37 63 27 51 Z"
+          fill="none"
+          stroke={color}
+          strokeWidth={2.2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        <Circle cx={50} cy={51} r={9} fill="none" stroke={color} strokeWidth={2.2} />
+        <Circle cx={50} cy={51} r={3.6} fill={color} />
+      </Svg>
+    </Animated.View>
+  );
+}
+
 export function WebProtectionHeroCard({
   state,
   title,
@@ -535,13 +588,10 @@ export function WebProtectionHeroCard({
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        {/* The instrument backdrop takes the state's own colour and only spins on
-            the live card — no green bleeding through a red error card. */}
-        <PlanCardBackdrop visual={{ accent: p.weave, bloom: p.bloom }} ringSize={218} live={live} />
         <LatticeWeave color={p.weave} />
-        <View pointerEvents="none" style={s.heroShieldWatermark}>
-          <Shield s={168} c={p.weave} w={1.05} />
-        </View>
+        {/* The shield-with-eye crest is the card's whole identity now — the dark
+            orbit instrument (app blocking) and the foreground eye disc are gone. */}
+        <CleanSightCrest color={p.weave} active={state === 'on' || state === 'preview'} />
         <CardGlow color={p.glow} active={p.glowActive} />
 
         <View style={s.heroTopRow}>
@@ -563,9 +613,6 @@ export function WebProtectionHeroCard({
             <Text selectable style={[s.heroBody, { color: p.body }]} numberOfLines={3}>
               {body}
             </Text>
-          </View>
-          <View style={s.heroEmblem}>
-            <GuardedSightEmblem active={state === 'on' || state === 'preview'} line={p.weave} disc={p.border} />
           </View>
         </View>
 
@@ -740,7 +787,9 @@ const s = StyleSheet.create({
     shadowRadius: 11,
     elevation: 0,
   },
-  heroShieldWatermark: { position: 'absolute', right: -32, top: 50, opacity: 0.055, transform: [{ rotate: '4deg' }] },
+  // The shield-and-eye crest: large, on the right, bled off the edge and a touch
+  // rotated so it reads as a mark, not a diagram.
+  heroCrest: { position: 'absolute', right: -34, top: 18, transform: [{ rotate: '4deg' }] },
   heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   heroCopy: { flex: 1, minWidth: 0, paddingTop: 1 },
   heroIdentityRow: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 9 },
@@ -752,7 +801,6 @@ const s = StyleSheet.create({
   heroStateTextPreview: { color: '#65548E' },
   heroTitle: { marginTop: 7, fontFamily: F.serifSemiBold, fontSize: 27, lineHeight: 29, letterSpacing: -0.35, color: '#183F37' },
   heroBody: { marginTop: 4, maxWidth: 250, fontFamily: F.serifMedium, fontSize: 14.5, lineHeight: 18.5, color: '#4E746A' },
-  heroEmblem: { width: 66, height: 68, alignItems: 'center', justifyContent: 'center' },
   heroRule: { marginTop: 13, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   heroRuleLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(72,139,124,0.30)' },
   heroRuleCross: { width: 8, height: 8, alignItems: 'center', justifyContent: 'center' },
