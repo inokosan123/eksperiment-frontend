@@ -129,17 +129,20 @@ function RoundedDashedOutline({ color, radius }: { color: string; radius: number
   );
 }
 
+// The screen's section header, one grammar for every section: a dominant serif
+// title, a bold same-size lead line that says what the section does, then a
+// quieter sentence describing the extras. An optional stat tile on the right.
 function ProtectionSectionHeader({
-  kicker,
   title,
+  subtitle,
   description,
   activeCount,
   totalCount,
 }: {
-  kicker?: string;
   title: string;
-  description: string;
-  // When both are given, the badge reads "active / total" in the green register.
+  subtitle: string;
+  description?: string;
+  // When both are given, the tile shows the active count over the total.
   activeCount?: number;
   totalCount?: number;
 }) {
@@ -148,19 +151,16 @@ function ProtectionSectionHeader({
   return (
     <View style={s.contentSectionHeader}>
       <View style={s.contentSectionTitleRow}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          {!!kicker && <Text style={s.contentSectionKicker}>{kicker}</Text>}
-          <Text selectable style={s.contentSectionTitle}>{title}</Text>
-        </View>
+        <Text selectable style={s.contentSectionTitle}>{title}</Text>
         {showBadge && (
-          <View style={[s.packCountBadge, lit && s.packCountBadgeOn]}>
-            <View style={[s.packCountDot, lit && s.packCountDotOn]} />
-            <Text selectable style={[s.packCountValue, lit && s.packCountValueOn]}>{activeCount}</Text>
-            <Text style={[s.packCountTotal, lit && s.packCountTotalOn]}>/ {totalCount}</Text>
+          <View style={[s.packStatTile, lit && s.packStatTileOn]}>
+            <Text selectable style={[s.packStatValue, lit && s.packStatValueOn]}>{activeCount}</Text>
+            <Text style={[s.packStatCaption, lit && s.packStatCaptionOn]}>OF {totalCount} ON</Text>
           </View>
         )}
       </View>
-      <Text selectable style={s.contentSectionDescription}>{description}</Text>
+      <Text selectable style={s.contentSectionSubtitle}>{subtitle}</Text>
+      {!!description && <Text selectable style={s.contentSectionDescription}>{description}</Text>}
     </View>
   );
 }
@@ -917,9 +917,9 @@ export default function PurityView({
 
         <Animated.View entering={enter(90)} style={s.sectionBlock}>
           <ProtectionSectionHeader
-            kicker="PROTECTION PACKS"
-            title="Choose what stays out"
-            description="Turn on a category and every site inside it is blocked in every browser."
+            title="Protection Packs"
+            subtitle="Choose which groups of websites will be blocked."
+            description="Block whole categories at once, add your own sites, or build a new pack."
             activeCount={activePacks}
             totalCount={WEB_PACKS.length + purity.customPacks.length}
           />
@@ -1009,9 +1009,9 @@ export default function PurityView({
         >
           <View style={s.subsectionDivider} />
           <ProtectionSectionHeader
-            kicker="COMMITMENT"
             title="Hard Lock"
-            description="Choose how long blocked websites stay protected before any weakening change can take effect."
+            subtitle="Keep your choices from being undone too fast."
+            description="Set how long blocked sites stay protected before any weakening change can take effect."
           />
           <Animated.View
             layout={LinearTransition.duration(220)}
@@ -1186,9 +1186,9 @@ export default function PurityView({
         <Animated.View key="individual-domains" entering={enter(135)} style={s.sectionBlock}>
           <View style={s.subsectionDivider} />
           <ProtectionSectionHeader
-            kicker="INDIVIDUAL DOMAINS"
-            title="Block a single site"
-            description="Enter a specific website you want to block, even when it is not part of a pack."
+            title="Individual Domains"
+            subtitle="Block one specific website on its own."
+            description="Add any site that isn’t already covered by a pack above."
           />
           <View style={s.individualList}>
             {purity.customDomains.map((entry, index) => {
@@ -1504,20 +1504,20 @@ const s = StyleSheet.create({
   zoneDividerText: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.55, color: C.textMuted },
   subsectionDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#D8D1C5', marginBottom: 20 },
   sectionBlock: { marginTop: 22 },
-  contentSectionHeader: { gap: 5, paddingHorizontal: 3, marginBottom: 12 },
-  contentSectionTitleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
-  contentSectionKicker: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2, color: '#2D7967', marginBottom: 4 },
-  contentSectionTitle: { fontFamily: F.serifSemiBold, fontSize: 24, lineHeight: 28, letterSpacing: -0.25, color: C.text },
-  contentSectionDescription: { maxWidth: 330, fontFamily: F.serifMedium, fontSize: 15.5, lineHeight: 21.5, color: C.textSecondary },
-  // "active / total" — a quiet register pill that lights green once any pack is on.
-  packCountBadge: { flexShrink: 0, marginTop: 2, flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 30, borderRadius: 999, borderWidth: 1, borderColor: '#DFDBD2', backgroundColor: '#F6F4EF', paddingLeft: 9, paddingRight: 11 },
-  packCountBadgeOn: { borderColor: '#BADACC', backgroundColor: '#E9F5EF' },
-  packCountDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#C4BFB4' },
-  packCountDotOn: { backgroundColor: '#2D7967' },
-  packCountValue: { fontFamily: F.serifSemiBold, fontSize: 15.5, lineHeight: 19, color: '#8A8378', fontVariant: ['tabular-nums'] },
-  packCountValueOn: { color: '#1F5A4C' },
-  packCountTotal: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: '#A9A398', fontVariant: ['tabular-nums'] },
-  packCountTotalOn: { color: '#5E9484' },
+  // One header grammar for the whole screen: dominant serif title, a bold
+  // same-size lead line, then a quieter description sentence.
+  contentSectionHeader: { gap: 4, paddingHorizontal: 3, marginBottom: 13 },
+  contentSectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 44 },
+  contentSectionTitle: { flex: 1, minWidth: 0, fontFamily: F.serifSemiBold, fontSize: 29, lineHeight: 33, letterSpacing: -0.5, color: C.text },
+  contentSectionSubtitle: { marginTop: 2, fontFamily: F.sansBold, fontSize: 14, lineHeight: 19, color: '#3A3733' },
+  contentSectionDescription: { marginTop: 2, maxWidth: 340, fontFamily: F.sans, fontSize: 14, lineHeight: 19, color: C.textSecondary },
+  // A little stat tile: the active count over "OF N ON", green once anything is on.
+  packStatTile: { flexShrink: 0, minWidth: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DFDBD2', backgroundColor: '#F6F4EF', paddingHorizontal: 11, paddingVertical: 7 },
+  packStatTileOn: { borderColor: '#BADACC', backgroundColor: '#E9F5EF' },
+  packStatValue: { fontFamily: F.serifBold, fontSize: 24, lineHeight: 26, color: '#A29B8E', fontVariant: ['tabular-nums'] },
+  packStatValueOn: { color: '#1F5A4C' },
+  packStatCaption: { marginTop: 1, fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 0.8, color: '#A9A398' },
+  packStatCaptionOn: { color: '#4E8B7A' },
   packList: { gap: 7 },
   packCard: { position: 'relative', overflow: 'hidden', borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 12, paddingVertical: 8, boxShadow: '0 6px 16px rgba(35, 40, 37, 0.06)' },
   packCardOn: { borderColor: '#B7D8CA' },
