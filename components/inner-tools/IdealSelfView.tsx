@@ -227,6 +227,18 @@ const RHYTHM: FlowTheme = {
   button: ['#7E96C4', '#5A75A8', '#4F6693'], buttonInk: '#FFFFFF', addBtn: '#5A75A8',
 };
 
+// What they're made of — a fresh, living green, so naming your virtues doesn't
+// read as more gold.
+const EMERALD: FlowTheme = {
+  mode: 'light', scene: 'constellation',
+  bg: ['#F5FBF8', '#E9F5EF', '#F5FBF8'],
+  ink: '#132A22', sub: '#5C7268', accent: '#178A66', accentSoft: 'rgba(23,138,102,0.12)',
+  topIcon: '#5C7268', track: '#DBEDE4', fill: ['#5FC7A2', '#2AA982', '#178A66'],
+  surface: '#FFFFFF', surfaceBorder: '#DBEDE4', placeholder: '#A7C1B6', inputText: '#132A22',
+  itemBg: '#E4F4EC', itemBorder: '#C4E4D6', itemText: '#155C43',
+  button: ['#5FC7A2', '#2AA982', '#178A66'], buttonInk: '#FFFFFF', addBtn: '#2AA982',
+};
+
 // The bond — the relationship with God, a warm sacred light.
 const BOND: FlowTheme = {
   mode: 'light', scene: 'bond',
@@ -240,8 +252,7 @@ const BOND: FlowTheme = {
 
 const STEP_THEME: Record<StepId, FlowTheme> = {
   vision: AURORA,
-  // qualities keeps the cream register until its own scene lands next.
-  qualities: CONSTELLATION,
+  qualities: EMERALD,
   anasta: WEIGHT, // unused (own screen), kept for the map's completeness
   obstacles: WEIGHT,
   actions: LIGHT,
@@ -503,10 +514,57 @@ function BondScene() {
   );
 }
 
+// A small constellation for the qualities step — trait-stars linked into a
+// figure, a few of them twinkling.
+const CONSTELLATION_STARS: readonly (readonly [number, number, number])[] = [
+  [150, 26, 3.4], [110, 52, 2.4], [190, 50, 2.4], [86, 92, 2], [150, 84, 3],
+  [214, 90, 2], [128, 112, 1.8], [172, 112, 1.8],
+];
+const CONSTELLATION_LINKS: readonly (readonly [number, number])[] = [
+  [0, 1], [0, 2], [1, 3], [1, 4], [2, 5], [2, 4], [4, 6], [4, 7],
+];
+
+function ConstellationScene() {
+  const reduceMotion = useReducedMotion();
+  const t = useSharedValue(reduceMotion ? 0.5 : 0);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    t.value = withRepeat(withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.quad) }), -1, true);
+  }, [reduceMotion, t]);
+
+  const twinkle = useAnimatedStyle(() => ({ opacity: 0.5 + t.value * 0.5 }));
+
+  return (
+    <View style={s.sceneBox}>
+      <Svg width={SCENE_W} height={SCENE_H} viewBox="0 0 300 132" style={{ position: 'absolute' }} pointerEvents="none">
+        {CONSTELLATION_LINKS.map(([a, b], i) => (
+          <Line
+            key={i}
+            x1={CONSTELLATION_STARS[a][0]} y1={CONSTELLATION_STARS[a][1]}
+            x2={CONSTELLATION_STARS[b][0]} y2={CONSTELLATION_STARS[b][1]}
+            stroke="#2AA982" strokeWidth={1} opacity={0.28}
+          />
+        ))}
+        {CONSTELLATION_STARS.map(([cx, cy, r], i) => (
+          <Circle key={i} cx={cx} cy={cy} r={r} fill="#178A66" opacity={0.85} />
+        ))}
+      </Svg>
+      <Reanimated.View style={[StyleSheet.absoluteFill, twinkle]} pointerEvents="none">
+        <Svg width={SCENE_W} height={SCENE_H} viewBox="0 0 300 132">
+          <Circle cx={150} cy={26} r={6} fill="#5FC7A2" opacity={0.5} />
+          <Circle cx={150} cy={84} r={5} fill="#5FC7A2" opacity={0.45} />
+        </Svg>
+      </Reanimated.View>
+    </View>
+  );
+}
+
 function SceneFor({ kind }: { kind: SceneKind }) {
   if (kind === 'light') return <SunriseScene />;
   if (kind === 'weight') return <EclipseScene />;
   if (kind === 'rhythm') return <RippleScene />;
+  if (kind === 'constellation') return <ConstellationScene />;
   return null;
 }
 
@@ -1059,46 +1117,6 @@ function FlowScroll({
   );
 }
 
-// The question carries the screen: one large serif line, one quiet line under
-// it. The heading rises first, the body a beat later — the page composes
-// itself rather than appearing all at once.
-function StepHeading({
-  title, body,
-}: {
-  title: string;
-  body: string;
-}) {
-  const reduceMotion = useReducedMotion();
-  return (
-    <View style={s.stepHeading}>
-      <Reanimated.View
-        entering={reduceMotion ? undefined : FadeInDown.duration(460).easing(Easing.out(Easing.cubic))}
-      >
-        <Text style={s.stepTitle}>{title}</Text>
-      </Reanimated.View>
-      {!!body && (
-        <Reanimated.View
-          entering={reduceMotion ? undefined : FadeInDown.delay(110).duration(460).easing(Easing.out(Easing.cubic))}
-        >
-          <Text style={s.stepBody}>{body}</Text>
-        </Reanimated.View>
-      )}
-    </View>
-  );
-}
-
-// The flow's own action, in the app's signature gold — the black pill with
-// 11pt letterspaced caps read like a form's submit, not like an invitation.
-function PrimaryButton({
-  label, onPress, disabled,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-}) {
-  return <GoldButton label={label} onPress={onPress} disabled={disabled} height={54} style={s.primaryBtn} />;
-}
-
 // ─── Step: Qualities (chips) ────────────────────────────────────────────────
 
 function QualitiesStep({
@@ -1126,6 +1144,7 @@ function QualitiesStep({
     onChange(values.filter(q => q !== item));
   };
 
+  const theme = EMERALD;
   const canContinue = values.length >= 3;
   const remainingSuggestions = SUGGESTED_QUALITIES.filter(
     suggestion => !values.some(item => item.toLowerCase() === suggestion.toLowerCase())
@@ -1133,7 +1152,8 @@ function QualitiesStep({
 
   return (
     <FlowScroll insetsBottom={insets.bottom}>
-      <StepHeading
+      <SceneHeading
+        theme={theme}
         title="What they're made of"
         body="Write what comes when you picture them."
       />
@@ -1148,8 +1168,8 @@ function QualitiesStep({
           multiline={false}
           maxLength={32}
           placeholder="Type a quality and press enter"
-          placeholderTextColor="#C9C5BD"
-          style={s.chipTextInput}
+          placeholderTextColor={theme.placeholder}
+          style={[s.chipTextInput, { backgroundColor: theme.surface, borderColor: theme.surfaceBorder, color: theme.inputText }]}
         />
         <TouchableOpacity
           onPress={() => addQuality(draft)}
@@ -1157,6 +1177,7 @@ function QualitiesStep({
           activeOpacity={0.84}
           style={[
             s.chipAddBtn,
+            { backgroundColor: theme.addBtn },
             (draft.trim().length === 0 || values.length >= 10) && s.chipAddBtnDisabled,
           ]}
         >
@@ -1166,18 +1187,19 @@ function QualitiesStep({
 
       {values.length > 0 && (
         <View style={s.chipBlock}>
-          <Text style={s.chipBlockLabel}>YOUR QUALITIES · {values.length} / 10</Text>
+          <Text style={[s.chipBlockLabel, { color: theme.accent }]}>YOUR QUALITIES · {values.length} / 10</Text>
           <View style={s.chipsWrap}>
             {values.map(item => (
-              <TouchableOpacity
-                key={item}
-                onPress={() => removeQuality(item)}
-                activeOpacity={0.78}
-                style={s.chipFilled}
-              >
-                <Text style={s.chipFilledText}>{item}</Text>
-                <X s={12} c="#7C6328" w={2.4} />
-              </TouchableOpacity>
+              <Reanimated.View key={item} entering={FadeInDown.duration(240).easing(Easing.out(Easing.cubic))}>
+                <TouchableOpacity
+                  onPress={() => removeQuality(item)}
+                  activeOpacity={0.78}
+                  style={[s.chipFilled, { backgroundColor: theme.itemBg, borderColor: theme.itemBorder }]}
+                >
+                  <Text style={[s.chipFilledText, { color: theme.itemText }]}>{item}</Text>
+                  <X s={12} c={theme.accent} w={2.4} />
+                </TouchableOpacity>
+              </Reanimated.View>
             ))}
           </View>
         </View>
@@ -1185,7 +1207,7 @@ function QualitiesStep({
 
       {remainingSuggestions.length > 0 && (
         <View style={s.chipBlock}>
-          <Text style={s.chipBlockLabel}>OR PICK FROM BELOW</Text>
+          <Text style={[s.chipBlockLabel, { color: theme.sub }]}>OR PICK FROM BELOW</Text>
           <View style={s.chipsWrap}>
             {remainingSuggestions.map(item => (
               <TouchableOpacity
@@ -1193,22 +1215,19 @@ function QualitiesStep({
                 onPress={() => addQuality(item)}
                 disabled={values.length >= 10}
                 activeOpacity={0.84}
-                style={[s.chipSuggested, values.length >= 10 && { opacity: 0.45 }]}
+                style={[s.chipSuggested, { backgroundColor: theme.surface, borderColor: theme.surfaceBorder }, values.length >= 10 && { opacity: 0.45 }]}
               >
-                <Text style={s.chipSuggestedText}>{item}</Text>
+                <Plus s={12} c={theme.accent} w={2.4} />
+                <Text style={[s.chipSuggestedText, { color: theme.itemText }]}>{item}</Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
       )}
 
-      <PrimaryButton
-        label="Continue"
-        onPress={onContinue}
-        disabled={!canContinue}
-      />
+      <SceneButton label="Continue" onPress={onContinue} disabled={!canContinue} theme={theme} />
       {!canContinue && (
-        <Text style={s.helperHint}>Pick at least 3 qualities to continue.</Text>
+        <Text style={[s.helperHint, { color: theme.sub }]}>Pick at least 3 qualities to continue.</Text>
       )}
     </FlowScroll>
   );
@@ -2177,13 +2196,16 @@ const s = StyleSheet.create({
     color: '#7A5E22',
   },
   chipSuggested: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     height: 42,
-    paddingHorizontal: 16,
+    paddingLeft: 12,
+    paddingRight: 15,
     borderRadius: 21,
     backgroundColor: '#FFFEFB',
     borderWidth: 1,
     borderColor: '#E6DCC2',
-    alignItems: 'center',
     justifyContent: 'center',
   },
   chipSuggestedText: {
