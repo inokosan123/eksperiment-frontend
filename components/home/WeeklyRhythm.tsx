@@ -28,9 +28,14 @@ import { Activity, BarChart3, Skip } from '@/components/icons/Icons';
 import FocusLottie from '@/components/focus/FocusLottie';
 import { C, F } from '@/constants/tokens';
 import { useTasks } from '@/components/tasks/TaskProvider';
-import { listTaskInstancesBetween } from '@/components/tasks/taskDb';
+import { listTaskDailyStatusCountsThrough } from '@/components/tasks/taskDb';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import MyProgressCalendarSheet from '@/components/home/my-progress-calendar-sheet';
+import {
+  buildHomeProgressCalendarModel,
+  type HomeProgressCalendarModel,
+} from '@/components/home/progress-calendar-model';
 import {
   bankedPalette,
   BankedWeave,
@@ -75,9 +80,9 @@ function formatLocalDateKey(date: Date) {
   return getLocalDateKey(date);
 }
 
-function buildWeek(): { dateKey: string; letter: string; isToday: boolean; isFuture: boolean }[] {
-  const today = new Date();
-  const todayKey = formatLocalDateKey(today);
+function buildWeek(todayKey: string): { dateKey: string; letter: string; isToday: boolean; isFuture: boolean }[] {
+  const [year, month, day] = todayKey.split('-').map(Number);
+  const today = new Date(year, month - 1, day, 12);
   // Rolling 7-day window ending today: index 0 = 6 days ago, index 6 = today.
   return Array.from({ length: 7 }).map((_, i) => {
     const d = new Date(today);
@@ -990,16 +995,25 @@ export default function WeeklyRhythm() {
   const router = useRouter();
   const { instances } = useTasks();
   const [weekStats, setWeekStats] = useState<DayStat[]>([]);
+  const [progressCalendarOpen, setProgressCalendarOpen] = useState(false);
+  const [progressCalendarModel, setProgressCalendarModel] = useState<HomeProgressCalendarModel>({
+    current: 0,
+    best: 0,
+    perfectDays: 0,
+    days: {},
+  });
 
-  const week = useMemo(() => buildWeek(), []);
+  const todayKey = formatLocalDateKey(new Date());
+  const week = useMemo(() => buildWeek(todayKey), [todayKey]);
 
   // Reload weekly stats whenever today's instances change (proxy for data updates).
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const fromKey = week[0].dateKey;
+      const referenceDate = new Date();
       const toKey = week[6].dateKey;
-      const all = await listTaskInstancesBetween(fromKey, toKey);
+      const all = await listTaskDailyStatusCountsThrough(toKey);
+      const countsByDate = new Map(all.map(day => [day.date, day]));
 
       const stats: DayStat[] = week.map(day => {
         if (day.isFuture) {
@@ -1009,8 +1023,10 @@ export default function WeeklyRhythm() {
             pct: null, mode: 'no-tasks',
           };
         }
-        const dayInstances = all.filter(inst => inst.date === day.dateKey);
-        const scheduled = dayInstances.filter(inst => inst.status !== 'not_applicable').length;
+        const counts = countsByDate.get(day.dateKey);
+        const scheduled = counts
+          ? counts.completed + counts.skipped + counts.missed + counts.pending
+          : 0;
         if (scheduled === 0) {
           return {
             letter: day.letter, dateKey: day.dateKey,
@@ -1018,8 +1034,8 @@ export default function WeeklyRhythm() {
             pct: null, mode: 'no-tasks',
           };
         }
-        const completed = dayInstances.filter(inst => inst.status === 'completed').length;
-        const skipped = dayInstances.filter(inst => inst.status === 'skipped').length;
+        const completed = counts?.completed ?? 0;
+        const skipped = counts?.skipped ?? 0;
 
         // ALL skipped (no completed, no missed, no pending) → quiet state
         if (completed === 0 && skipped > 0 && skipped === scheduled) {
@@ -1040,8 +1056,13 @@ export default function WeeklyRhythm() {
         };
       });
 
-      if (!cancelled) setWeekStats(stats);
-    })();
+      if (!cancelled) {
+        setWeekStats(stats);
+        setProgressCalendarModel(buildHomeProgressCalendarModel(all, referenceDate));
+      }
+    })().catch(error => {
+      console.warn('Home trophy analytics failed to load:', error);
+    });
     return () => { cancelled = true; };
   }, [instances, week]);
 
@@ -1074,9 +1095,9 @@ export default function WeeklyRhythm() {
   // burns down — and the noun follows what is actually on the card now that
   // the candle row is gone.
   const headline = todayMode === 'no-tasks'
-    ? 'A quiet day — nothing is scheduled. The fire keeps its warmth.'
+    ? 'A quiet day — nothing scheduled, and nothing missed.'
     : todayMode === 'all-skipped'
-      ? 'Today was laid aside to rest. Tomorrow the fire is lit again.'
+      ? 'Today was set aside to rest — your rhythm still holds.'
       : todayPct >= 100
         ? 'The day is full — today’s flame is lit.'
         : todayPct >= 70
@@ -1097,7 +1118,8 @@ export default function WeeklyRhythm() {
       <TouchableOpacity
         style={[s.card, banked && { borderColor: todayPal.border }]}
         activeOpacity={0.88}
-        onPress={openAnalytics}
+        onPress={() => setProgressCalendarOpen(true)}
+        accessibilityLabel="Open daily trophy streak"
       >
         <LinearGradient
           colors={banked ? todayPal.surface : ['#F8E7BE', '#FFF8E9', '#FFFEFA']}
@@ -1127,28 +1149,35 @@ export default function WeeklyRhythm() {
         )}
 
         <Text
-          style={[s.headline, banked && [s.headlineBanked, { color: todayPal.ink }]]}
+          style={[
+            s.headline,
+            banked && [s.headlineBanked, s.headlineBankedSolo, { color: todayPal.ink }],
+          ]}
           numberOfLines={2}
         >{headline}</Text>
 
-        {/* The week band: letters over flame tiles, between hairline rails */}
-        <View style={[s.weekBand, banked && { borderColor: todayPal.rule }]}>
-          <View style={s.daysLabelRow}>
-            {display.map((d, i) => (
-              <View key={i} style={s.weekCol}>
-                <Text style={[s.dayLetter, d.isToday && (banked ? { color: todayPal.inkMuted } : s.dayLetterToday)]}>{d.letter}</Text>
-              </View>
-            ))}
-          </View>
+        {/* On a banked day the week band is dropped entirely: no tasks means
+            nothing to place across the week, so the hero and seal carry the
+            card alone — the same stripped-down rest the Focus card wears. */}
+        {!banked && (
+          <View style={s.weekBand}>
+            <View style={s.daysLabelRow}>
+              {display.map((d, i) => (
+                <View key={i} style={s.weekCol}>
+                  <Text style={[s.dayLetter, d.isToday && s.dayLetterToday]}>{d.letter}</Text>
+                </View>
+              ))}
+            </View>
 
-          <View style={s.daysRow}>
-            {display.map((d, i) => (
-              <View key={i} style={s.weekCol}>
-                <FlameTile pct={d.pct} mode={d.mode} isToday={d.isToday} chrome={todayPal} />
-              </View>
-            ))}
+            <View style={s.daysRow}>
+              {display.map((d, i) => (
+                <View key={i} style={s.weekCol}>
+                  <FlameTile pct={d.pct} mode={d.mode} isToday={d.isToday} chrome={todayPal} />
+                </View>
+              ))}
+            </View>
           </View>
-        </View>
+        )}
       </TouchableOpacity>
 
       {/* The card's sibling: same dawn surface, quieted to a single line */}
@@ -1168,6 +1197,20 @@ export default function WeeklyRhythm() {
         <Text style={[s.analyticsTxt, banked && { color: todayPal.inkMuted }]}>VIEW ANALYTICS</Text>
         <View style={[s.analyticsDiamond, banked && { backgroundColor: todayPal.line }]} />
       </TouchableOpacity>
+
+      <MyProgressCalendarSheet
+        visible={progressCalendarOpen}
+        onClose={() => setProgressCalendarOpen(false)}
+        model={progressCalendarModel}
+        renderDay={({ pct, mode, isToday }) => (
+          <FlameTile
+            pct={pct}
+            mode={mode}
+            isToday={isToday}
+            chrome={bankedPalette('ash')}
+          />
+        )}
+      />
     </View>
   );
 }
@@ -1219,16 +1262,16 @@ const s = StyleSheet.create({
     elevation: 2,
   },
   heroRow: {
-    marginTop: 4,
+    marginTop: 6,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingLeft: 8,
-    paddingRight: 10,
+    paddingLeft: 6,
+    paddingRight: 8,
   },
   restSeal: { marginTop: 14 },
   headline: {
-    marginTop: 12,
+    marginTop: 13,
     fontFamily: F.serif,
     fontSize: 14.5,
     lineHeight: 19,
@@ -1237,21 +1280,29 @@ const s = StyleSheet.create({
   },
   // Colour comes from the register's palette at the call site.
   headlineBanked: {
-    marginTop: 9,
+    marginTop: 10,
     fontFamily: F.serifItalic,
   },
+  // With the week band gone, the headline is the card's last line — give it
+  // a little room below so the card closes gracefully instead of cramped.
+  headlineBankedSolo: {
+    marginBottom: 4,
+  },
+  // The token band, framed by hairline rails. Generous, balanced padding so
+  // the 38px coins — heavy with their borders and glows — never crowd the
+  // rails, and the letters sit clear of today's pulse halo above their coins.
   weekBand: {
-    marginTop: 14,
-    paddingTop: 13,
-    paddingBottom: 14,
+    marginTop: 16,
+    paddingTop: 15,
+    paddingBottom: 16,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: '#EADFC8',
   },
-  daysLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  daysRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  daysLabelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 11 },
+  daysRow: { flexDirection: 'row', alignItems: 'center' },
   weekCol: { flex: 1, alignItems: 'center' },
-  dayLetter: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 0.9, color: C.textMuted },
+  dayLetter: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 1.15, color: C.textMuted },
   dayLetterToday: { color: C.goldDark },
 
   /* Week-band token */

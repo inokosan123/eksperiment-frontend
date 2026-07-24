@@ -1386,6 +1386,33 @@ export async function listTaskInstancesBetween(fromDate: string, toDate: string)
   return rows.map(rowToInstance);
 }
 
+export type TaskDailyStatusCounts = {
+  date: string;
+  completed: number;
+  skipped: number;
+  missed: number;
+  pending: number;
+};
+
+// Compact all-time feed for Home trophies. SQL performs the aggregation so
+// opening Home never has to hydrate every historical task instance into JS.
+export async function listTaskDailyStatusCountsThrough(toDate: string): Promise<TaskDailyStatusCounts[]> {
+  const db = await openTaskDb();
+  return db.getAllAsync<TaskDailyStatusCounts>(
+    `SELECT
+       date,
+       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+       SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) AS skipped,
+       SUM(CASE WHEN status = 'missed' THEN 1 ELSE 0 END) AS missed,
+       SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending
+     FROM task_instances
+     WHERE date <= ? AND status <> 'not_applicable'
+     GROUP BY date
+     ORDER BY date ASC`,
+    toDate,
+  );
+}
+
 // Single-task range query: only rows for the given taskId. Used by the
 // per-task analytics popup so we don't pull thousands of unrelated rows
 // just to filter one task in memory.
