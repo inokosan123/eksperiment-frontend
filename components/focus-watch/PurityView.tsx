@@ -24,6 +24,7 @@ import FocusSwitch from './FocusSwitch';
 import GoldButton from './GoldButton';
 import FocusSheetHeader from './FocusSheetHeader';
 import PackDomainsSheet from './PackDomainsSheet';
+import { WebProtectionHeroCard, type WebProtectionHeroState } from './ProtectionPillarCards';
 import WebProtectionIntroAnimation from './WebProtectionIntroAnimation';
 import { CUSTOM_PACK_EMOJI, WEB_PACKS } from './focusContent';
 import { resolveWebProtectionDomains, WEB_DOMAIN_LIMIT } from './webProtectionCatalog';
@@ -89,6 +90,65 @@ function CardWeave({ color }: { color: string }) {
         </Defs>
         <Rect width="100%" height="100%" fill={`url(#${patternId})`} />
       </Svg>
+    </View>
+  );
+}
+
+function RoundedDashedOutline({ color, radius }: { color: string; radius: number }) {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  return (
+    <View
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      onLayout={({ nativeEvent }) => {
+        const { width, height } = nativeEvent.layout;
+        setSize(current => current.width === width && current.height === height
+          ? current
+          : { width, height });
+      }}
+    >
+      {size.width > 2 && size.height > 2 ? (
+        <Svg width={size.width} height={size.height}>
+          <Rect
+            x={1}
+            y={1}
+            width={size.width - 2}
+            height={size.height - 2}
+            rx={radius - 1}
+            ry={radius - 1}
+            fill="none"
+            stroke={color}
+            strokeWidth={1.4}
+            strokeDasharray={[6, 5]}
+            strokeLinecap="round"
+          />
+        </Svg>
+      ) : null}
+    </View>
+  );
+}
+
+function ProtectionSectionHeader({
+  title,
+  description,
+  count,
+}: {
+  title: string;
+  description: string;
+  count?: number;
+}) {
+  return (
+    <View style={s.contentSectionHeader}>
+      <View style={s.contentSectionTitleRow}>
+        <Text selectable style={s.contentSectionTitle}>{title}</Text>
+        {count != null && (
+          <View style={s.contentSectionCount}>
+            <Text selectable style={s.contentSectionCountText}>{count}</Text>
+          </View>
+        )}
+      </View>
+      <Text selectable style={s.contentSectionDescription}>{description}</Text>
     </View>
   );
 }
@@ -472,6 +532,15 @@ export default function PurityView({
             ? 'Allow Screen Time access to activate these rules.'
             : 'Turn on a ready-made pack or add one specific domain.';
   const statusReady = enforced || previewReady;
+  // One hero card covers every state: live, armed (preview / saved / applying),
+  // couldn't-start, and resting (nothing chosen yet).
+  const heroState: WebProtectionHeroState = enforced
+    ? 'on'
+    : nativeError
+      ? 'error'
+      : configured
+        ? 'preview'
+        : 'off';
   const pendingAt = useMemo(
     () => pendingChanges.length ? formatEndsAt(Math.min(...pendingChanges.map(change => change.effectiveAt))) : null,
     [pendingChanges]
@@ -764,73 +833,20 @@ export default function PurityView({
         </Animated.View>
         <WebProtectionIntroAnimation />
 
-        <Animated.View entering={enter(40)} style={s.statusCardShell}>
-          <LinearGradient
-            colors={nativeError
-              ? ['#FFF0F2', '#FFFAFA']
-              : statusReady
-                ? ['#E7F5EF', '#F8FCFA']
-                : configured
-                  ? ['#FFF4D8', '#FFFCF5']
-                  : ['#F1F0EC', '#FBFAF7']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[s.statusCard, nativeError && s.statusCardError]}
-          >
-            <View pointerEvents="none" style={[s.statusBeam, statusReady && s.statusBeamOn, nativeError && s.statusBeamError]} />
-            <View pointerEvents="none" style={s.statusBeamSoft} />
-            <View pointerEvents="none" style={[s.statusShieldGlow, statusReady && s.statusShieldGlowOn, nativeError && s.statusShieldGlowError]} />
-            <View pointerEvents="none" style={[s.statusOrbit, statusReady && s.statusOrbitOn, nativeError && s.statusOrbitError]} />
-            <View pointerEvents="none" style={[s.statusOrbitInner, statusReady && s.statusOrbitInnerOn, nativeError && s.statusOrbitInnerError]} />
-            <View pointerEvents="none" style={s.statusWatermark}>
-              <Shield s={140} c={nativeError ? '#A24351' : statusReady ? '#2D7967' : C.goldDark} w={1.05} />
-            </View>
-
-            <View style={s.statusHeadingRow}>
-              <Text style={[s.statusKicker, nativeError && s.statusKickerError]}>CLEAN SIGHT</Text>
-              <View style={[s.liveBadge, statusReady && s.liveBadgeOn, nativeError && s.liveBadgeError]}>
-                <View style={[s.liveIndicator, statusReady && s.liveIndicatorOn, nativeError && s.liveIndicatorError]}>
-                  <View style={[s.liveDot, statusReady && s.liveDotOn, nativeError && s.liveDotError]} />
-                </View>
-                <Text style={[s.liveText, statusReady && s.liveTextOn, nativeError && s.liveTextError]}>{statusLabel}</Text>
-              </View>
-            </View>
-
-            <View style={s.statusCopy}>
-              <Text style={s.statusTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.86}>
-                {statusTitle}
-              </Text>
-              <Text style={s.statusBody} numberOfLines={3}>
-                {statusBody}
-              </Text>
-            </View>
-
-            <View style={s.statusMetricsShell}>
-              <View style={[s.statusMetricsClip, statusReady && s.statusMetricsOn, nativeError && s.statusMetricsError]}>
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={nativeError
-                    ? ['rgba(255,255,255,0.94)', 'rgba(255,244,246,0.86)']
-                    : statusReady
-                      ? ['rgba(255,255,255,0.94)', 'rgba(239,249,245,0.86)']
-                      : ['rgba(255,255,255,0.94)', 'rgba(253,249,239,0.86)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFillObject}
-                />
-                <View pointerEvents="none" style={s.statusMetricsHighlight} />
-                <View style={s.statusMetric}>
-                  <Text style={s.statusMetricValue}>{activePacks}</Text>
-                  <Text style={s.statusMetricLabel}>{activePacks === 1 ? 'active pack' : 'active packs'}</Text>
-                </View>
-                <View style={s.statusMetricDivider} />
-                <View style={s.statusMetric}>
-                  <Text style={s.statusMetricValue}>{webResolution.domains.length}</Text>
-                  <Text style={s.statusMetricLabel}>{webResolution.domains.length === 1 ? 'domain ready' : 'domains ready'}</Text>
-                </View>
-              </View>
-            </View>
-          </LinearGradient>
+        {/* One hero for every state — live, armed, couldn't-start, resting. */}
+        <Animated.View entering={enter(40)} style={s.statusReadyWrap}>
+          <WebProtectionHeroCard
+            state={heroState}
+            title={statusTitle}
+            body={statusBody}
+            packsOn={activePacks}
+            domainsReady={webResolution.domains.length}
+            lockCaption={purity.locks.locked
+              ? 'HARD LOCKED'
+              : purity.locks.enabled
+                ? 'HARD LOCK'
+                : 'SYSTEM-WIDE'}
+          />
         </Animated.View>
 
         {state.permission !== 'approved' && configured && (
@@ -870,13 +886,11 @@ export default function PurityView({
         </View>
 
         <Animated.View entering={enter(90)} style={s.sectionBlock}>
-          <View style={s.sectionHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.sectionLabel}>PROTECTION PACKS</Text>
-              <Text style={s.sectionTitle}>Choose what stays out</Text>
-            </View>
-            <View style={s.sectionCount}><Text style={s.sectionCountText}>{WEB_PACKS.length + purity.customPacks.length}</Text></View>
-          </View>
+          <ProtectionSectionHeader
+            title="Protection Packs"
+            description="Select the website categories you want Clean Sight to block."
+            count={WEB_PACKS.length + purity.customPacks.length}
+          />
           <View style={s.packList}>
             {WEB_PACKS.map(pack => {
               const mode = packMode(pack.id);
@@ -936,7 +950,16 @@ export default function PurityView({
             })}
           </View>
           <TouchableOpacity style={s.newPackButton} onPress={() => setNewPackOpen(true)}>
-            <View style={s.plusIcon}><Plus s={15} c="#2D7967" w={2.5} /></View>
+            <LinearGradient
+              pointerEvents="none"
+              colors={['#F7E8C5', '#FFF7E5', '#FFFCF4']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <CardWeave color="#9A6C1E" />
+            <RoundedDashedOutline color="#D0AA55" radius={18} />
+            <View style={s.plusIcon}><Plus s={15} c={C.goldDark} w={2.5} /></View>
             <Text style={s.newPackText}>Create a custom pack</Text>
           </TouchableOpacity>
           <View style={s.bottomNote}>
@@ -952,11 +975,11 @@ export default function PurityView({
           entering={enter(175)}
           style={s.sectionBlock}
         >
-          <View style={s.zoneDivider}>
-            <View style={s.zoneDividerLine} />
-            <Text style={s.zoneDividerText}>UNLOCK PROTECTION</Text>
-            <View style={s.zoneDividerLine} />
-          </View>
+          <View style={s.subsectionDivider} />
+          <ProtectionSectionHeader
+            title="Hard Lock"
+            description="Choose how long blocked websites stay protected before any weakening change can take effect."
+          />
           <Animated.View
             layout={LinearTransition.duration(220)}
             style={[
@@ -1129,11 +1152,11 @@ export default function PurityView({
 
         <Animated.View key="individual-domains" entering={enter(135)} style={s.sectionBlock}>
           <View style={s.subsectionDivider} />
-          <View style={s.sectionIntro}>
-            <Text style={s.sectionLabel}>INDIVIDUAL DOMAINS</Text>
-            <Text style={s.sectionTitle}>Block one site directly</Text>
-            <Text style={s.sectionBody}>Add a domain that does not belong in a full pack.</Text>
-          </View>
+          <ProtectionSectionHeader
+            title="Individual Domains"
+            description="Enter a specific website you want to block, even when it is not part of a pack."
+            count={purity.customDomains.length}
+          />
           <View style={s.individualList}>
             {purity.customDomains.map((entry, index) => {
               const pending = pendingChanges.find(change =>
@@ -1386,6 +1409,7 @@ const s = StyleSheet.create({
   page: { paddingHorizontal: 16, paddingBottom: 90 },
   introWrap: { paddingHorizontal: 26, paddingTop: 8, paddingBottom: 6, alignItems: 'center' },
   intro: { fontFamily: F.serifMediumItalic, fontSize: 17, lineHeight: 21.5, color: C.textSecondary, textAlign: 'center' },
+  statusReadyWrap: { marginTop: 12 },
   statusCardShell: { marginTop: 12, borderRadius: 28, borderCurve: 'continuous', backgroundColor: C.surface, boxShadow: '0 12px 30px rgba(35, 40, 37, 0.10)' },
   statusCard: { position: 'relative', overflow: 'hidden', borderRadius: 28, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DFD9CC', paddingHorizontal: 18, paddingTop: 13, paddingBottom: 18 },
   statusCardError: { borderColor: '#E9C7CD' },
@@ -1447,13 +1471,12 @@ const s = StyleSheet.create({
   zoneDividerText: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.55, color: C.textMuted },
   subsectionDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#D8D1C5', marginBottom: 20 },
   sectionBlock: { marginTop: 22 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, paddingHorizontal: 3, marginBottom: 12 },
-  sectionIntro: { gap: 3, paddingHorizontal: 3, marginBottom: 12 },
-  sectionLabel: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2, color: '#2D7967' },
-  sectionTitle: { marginTop: 3, fontFamily: F.serifSemiBold, fontSize: 23, lineHeight: 27, color: C.text },
-  sectionBody: { marginTop: 3, fontFamily: F.sans, fontSize: 13.5, lineHeight: 19, color: C.textSecondary },
-  sectionCount: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E7F3EE', alignItems: 'center', justifyContent: 'center' },
-  sectionCountText: { fontFamily: F.sansBold, fontSize: 13, color: '#2D7967', fontVariant: ['tabular-nums'] },
+  contentSectionHeader: { gap: 6, paddingHorizontal: 3, marginBottom: 14 },
+  contentSectionTitleRow: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  contentSectionTitle: { flex: 1, fontFamily: F.serifSemiBold, fontSize: 24, lineHeight: 28, letterSpacing: -0.25, color: C.text },
+  contentSectionDescription: { maxWidth: 328, fontFamily: F.serifMedium, fontSize: 15.5, lineHeight: 21.5, color: C.textSecondary },
+  contentSectionCount: { flexShrink: 0, minWidth: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#C6DED4', backgroundColor: '#E7F3EE', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9 },
+  contentSectionCountText: { fontFamily: F.serifSemiBold, fontSize: 15, lineHeight: 18, color: '#2D7967', fontVariant: ['tabular-nums'] },
   packList: { gap: 8 },
   packCard: { position: 'relative', overflow: 'hidden', borderRadius: 21, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 12, paddingVertical: 10, boxShadow: '0 6px 16px rgba(35, 40, 37, 0.06)' },
   packCardOn: { borderColor: '#B7D8CA' },
@@ -1511,9 +1534,9 @@ const s = StyleSheet.create({
   neverButtonSub: { marginTop: 1, fontFamily: F.sansMedium, fontSize: 9.5, color: '#B87681' },
   removeButton: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: '#FBFAF7', paddingHorizontal: 13 },
   removeButtonText: { fontFamily: F.sansSemiBold, fontSize: 12, color: C.textSecondary },
-  newPackButton: { marginTop: 11, height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: '#BFDCCF', backgroundColor: '#F4FAF7' },
-  plusIcon: { width: 32, height: 32, borderRadius: 11, backgroundColor: '#DDEFE8', alignItems: 'center', justifyContent: 'center' },
-  newPackText: { fontFamily: F.serifSemiBold, fontSize: 16.5, color: '#2D7967' },
+  newPackButton: { position: 'relative', overflow: 'hidden', marginTop: 11, height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 18, borderCurve: 'continuous', backgroundColor: '#FFF6E1', boxShadow: '0 5px 14px rgba(126,88,24,0.08)' },
+  plusIcon: { width: 33, height: 33, borderRadius: 11, borderWidth: 1, borderColor: '#DEC688', backgroundColor: '#F2DFB2', alignItems: 'center', justifyContent: 'center' },
+  newPackText: { fontFamily: F.serifSemiBold, fontSize: 16.5, color: '#76521A' },
   individualList: { overflow: 'hidden', borderRadius: 23, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DAD5CB', backgroundColor: '#FBFAF7', paddingHorizontal: 12, boxShadow: '0 7px 18px rgba(40,45,42,0.055)' },
   individualSeparator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 46 },
   individualRow: { position: 'relative', overflow: 'hidden', minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 9 },
