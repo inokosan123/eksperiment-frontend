@@ -56,6 +56,13 @@ import {
 } from './dayPlanStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
+
+function withAlpha(hex: string, alpha: number) {
+  const normalized = hex.replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return `rgba(45,121,103,${alpha})`;
+  const value = Number.parseInt(normalized, 16);
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
+}
 const PACK_EXPANSION_EASE = Easing.bezier(0.22, 1, 0.36, 1);
 const PACK_COLLAPSE_EASE = Easing.bezier(0.4, 0, 0.2, 1);
 const PACK_LAYOUT_TRANSITION = LinearTransition
@@ -613,10 +620,6 @@ export default function PurityView({
       : configured
         ? 'preview'
         : 'off';
-  const pendingAt = useMemo(
-    () => pendingChanges.length ? formatEndsAt(Math.min(...pendingChanges.map(change => change.effectiveAt))) : null,
-    [pendingChanges]
-  );
   const hardLockDelay = COOLDOWNS.find(option => option.id === purity.locks.cooldown) ?? COOLDOWNS[1];
   const hardLockPendingOff = pendingChanges.find(change =>
     change.action.kind === 'locks' && change.action.partial.enabled === false
@@ -1215,70 +1218,118 @@ export default function PurityView({
           </Animated.View>
         </Animated.View>,
 
-        pendingChanges.length > 0 ? (
-          <TouchableOpacity key="pending-changes" style={s.pendingBand} onPress={() => setPendingOpen(true)} activeOpacity={0.72}>
-            <View style={s.pendingIcon}><Hourglass s={16} c={C.goldDark} w={2} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.pendingTitle}>{pendingChanges.length} {pendingChanges.length === 1 ? 'change' : 'changes'} waiting</Text>
-              <Text style={s.pendingText}>Eligible {pendingAt}</Text>
-            </View>
-            <ChevronRight s={17} c={C.goldDark} w={2} />
-          </TouchableOpacity>
-        ) : null,
-
         <Animated.View key="individual-domains" entering={enter(135)} style={s.sectionBlock}>
           <View style={s.subsectionDivider} />
           <ProtectionSectionHeader
             title="Individual Domains"
-            subtitle="Block one specific website on its own."
-            description="Add any site that isn’t already covered by a pack above."
+            subtitle="Block one specific website on its own!"
+            description="Add any sites that aren’t already covered by the packs above."
           />
-          <View style={s.individualList}>
-            {purity.customDomains.map((entry, index) => {
-              const pending = pendingChanges.find(change =>
-                (change.action.kind === 'domain-remove' || change.action.kind === 'domain-never')
-                  && change.action.domain === entry.domain
-              );
-              const pendingText = pending?.action.kind === 'domain-never'
-                ? `Leaves Never Allowed ${pendingWhen(pending.effectiveAt)}`
-                : pending
-                  ? `Removal pending · ${pendingWhen(pending.effectiveAt)}`
-                  : null;
-              return <View key={entry.domain}>
-                {index > 0 && <View style={s.individualSeparator} />}
-                <Animated.View layout={LinearTransition.duration(200)} style={[s.individualRow, pending && s.individualRowPending]}>
-                  {pending && <Animated.View pointerEvents="none" entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)} style={s.individualPendingWash} />}
-                  <View style={[s.individualIcon, entry.never && s.individualIconNever, pending && s.individualIconPending]}>
-                    {pending
-                      ? <Hourglass s={15} c="#66635D" w={2.1} />
-                      : <Globe s={16} c={entry.never ? '#A24351' : '#2D7967'} w={2} />}
-                  </View>
-                  <View style={s.individualCopy}>
-                    <Text style={[s.individualDomain, pending && s.individualDomainPending]} numberOfLines={1}>{entry.domain}</Text>
-                    {!!pendingText && <Text style={s.individualPendingText} numberOfLines={1}>{pendingText}</Text>}
-                  </View>
-                  {pending ? (
-                    <TouchableOpacity style={s.individualPendingCancel} onPress={() => cancelPendingChange(pending.id)} haptic="selection">
-                      <Text style={s.individualPendingCancelText}>CANCEL</Text>
-                    </TouchableOpacity>
-                  ) : <>
-                    <TouchableOpacity style={[s.smallLock, entry.never && s.smallLockOn]} onPress={() => setDomainNever(entry.domain, !entry.never)}>
-                      <Lock s={13} c={entry.never ? '#A24351' : C.textMuted} w={2.2} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={s.removeDomainButton} onPress={() => setConfirmDomainRemoval(entry.domain)} hitSlop={8}>
-                      <X s={15} c={C.textMuted} w={2.2} />
-                    </TouchableOpacity>
-                  </>}
-                </Animated.View>
-              </View>
-            })}
-            {purity.customDomains.length > 0 && <View style={s.individualSeparator} />}
-            <View style={s.domainInputRow}>
-              <View style={s.domainInputIcon}><Globe s={15} c="#2D7967" w={2} /></View>
-              <TextInput value={draftDomain} onChangeText={setDraftDomain} onSubmitEditing={addOneDomain} placeholder="example.com" placeholderTextColor={C.textMuted} autoCapitalize="none" autoCorrect={false} keyboardType="url" style={s.domainInput} />
-              <TouchableOpacity style={[s.inlineAdd, !normalizeDomain(draftDomain).includes('.') && s.disabled]} onPress={addOneDomain} disabled={!normalizeDomain(draftDomain).includes('.')}><Plus s={15} c="#fff" w={2.5} /></TouchableOpacity>
-            </View>
+          {/* Compose card: type a domain, tap the green add. */}
+          <View style={[s.domainAddCard, normalizeDomain(draftDomain).includes('.') && s.domainAddCardReady]}>
+            <View style={s.domainAddGlobe}><Globe s={16} c="#2D7967" w={2} /></View>
+            <TextInput
+              value={draftDomain}
+              onChangeText={setDraftDomain}
+              onSubmitEditing={addOneDomain}
+              placeholder="example.com"
+              placeholderTextColor="#A7B5AE"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              style={s.domainAddInput}
+            />
+            <TouchableOpacity
+              style={[s.domainAddBtn, !normalizeDomain(draftDomain).includes('.') && s.domainAddBtnOff]}
+              onPress={addOneDomain}
+              disabled={!normalizeDomain(draftDomain).includes('.')}
+              haptic="selection"
+            >
+              <Plus s={16} c="#FFFFFF" w={2.6} />
+            </TouchableOpacity>
           </View>
+
+          {purity.customDomains.length === 0 ? (
+            <View style={s.domainEmpty}>
+              <Text style={s.domainEmptyText}>No individual sites yet. Add one above.</Text>
+            </View>
+          ) : (
+            <View style={s.domainCardStack}>
+              {purity.customDomains.map(entry => {
+                const pending = pendingChanges.find(change =>
+                  (change.action.kind === 'domain-remove' || change.action.kind === 'domain-never')
+                    && change.action.domain === entry.domain
+                );
+                const pendingText = pending?.action.kind === 'domain-never'
+                  ? `Leaves Never Allowed ${pendingWhen(pending.effectiveAt)}`
+                  : pending
+                    ? `Removal pending · ${pendingWhen(pending.effectiveAt)}`
+                    : null;
+                const state: 'pending' | 'never' | 'on' = pending ? 'pending' : entry.never ? 'never' : 'on';
+                const accent = state === 'pending' ? '#6E6A63' : state === 'never' ? '#A24351' : '#2D7967';
+                return (
+                  <Animated.View
+                    key={entry.domain}
+                    layout={LinearTransition.duration(200)}
+                    entering={FadeInDown.duration(240).easing(Easing.out(Easing.cubic))}
+                    style={[s.domainCard, state === 'never' && s.domainCardNever, state === 'pending' && s.domainCardPending]}
+                  >
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={state === 'pending'
+                        ? ['#EFEEEB', '#F8F7F4', '#FBFAF8']
+                        : state === 'never'
+                          ? ['#FBECEF', '#FFFAFB', '#FFFDFD']
+                          : ['#E9F4EF', '#FAFDFB', '#FEFFFE']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <View style={[s.domainCardChip, { borderColor: withAlpha(accent, 0.28), backgroundColor: withAlpha(accent, 0.1) }]}>
+                      {state === 'pending'
+                        ? <Hourglass s={16} c={accent} w={2.1} />
+                        : state === 'never'
+                          ? <Lock s={15} c={accent} w={2.2} />
+                          : <Globe s={16} c={accent} w={2} />}
+                    </View>
+                    <View style={s.domainCardCopy}>
+                      <Text style={s.domainCardName} numberOfLines={1}>{entry.domain}</Text>
+                      <View style={s.domainCardStatusRow}>
+                        <View style={[s.domainCardDot, { backgroundColor: accent }]} />
+                        <Text style={[s.domainCardStatus, { color: accent }]} numberOfLines={1}>
+                          {pendingText ?? (state === 'never' ? 'Locked · never allowed' : 'Blocked everywhere')}
+                        </Text>
+                      </View>
+                    </View>
+                    {state === 'pending' ? (
+                      <TouchableOpacity style={s.domainKeepBtn} onPress={() => cancelPendingChange(pending!.id)} haptic="selection" activeOpacity={0.8}>
+                        <Text style={s.domainKeepText}>Keep</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={s.domainCardActions}>
+                        <TouchableOpacity
+                          style={[s.domainLockBtn, state === 'never' && s.domainLockBtnOn]}
+                          onPress={() => setDomainNever(entry.domain, !entry.never)}
+                          haptic="selection"
+                          accessibilityLabel={entry.never ? 'Remove Never Allowed' : 'Lock as Never Allowed'}
+                        >
+                          <Lock s={14} c={state === 'never' ? '#FFFFFF' : '#8A8378'} w={2.2} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={s.domainTrashBtn}
+                          onPress={() => setConfirmDomainRemoval(entry.domain)}
+                          haptic="selection"
+                          accessibilityLabel={`Remove ${entry.domain}`}
+                        >
+                          <Trash2 s={15} c="#B0554F" w={2} />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </Animated.View>
+                );
+              })}
+            </View>
+          )}
         </Animated.View>,
         ].reverse()}
 
@@ -1442,9 +1493,10 @@ export default function PurityView({
           ? `Hard Lock keeps this website blocked for ${hardLockDelay.label}. Its row changes to Pending now, and removal happens only when the delay ends.`
           : 'This website will be removed from Web Protection immediately because Hard Lock is off.'}
         subject={confirmDomainRemoval ?? undefined}
-        cancelLabel="KEEP BLOCKED"
-        confirmLabel={purity.locks.enabled ? 'START REMOVAL' : 'REMOVE'}
-        confirmColor="#7A7368"
+        naturalButtonLabels
+        cancelLabel="Keep Blocking"
+        confirmLabel={purity.locks.enabled ? 'Start Removal' : 'Remove'}
+        confirmColor="#BE123C"
         onCancel={() => setConfirmDomainRemoval(null)}
         onConfirm={() => {
           if (confirmDomainRemoval) removeCustomDomain(confirmDomainRemoval);
@@ -1650,26 +1702,34 @@ const s = StyleSheet.create({
   newPackButton: { position: 'relative', overflow: 'hidden', marginTop: 11, height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 18, borderCurve: 'continuous', backgroundColor: '#FFF6E1', boxShadow: '0 5px 14px rgba(126,88,24,0.08)' },
   plusIcon: { width: 33, height: 33, borderRadius: 11, borderWidth: 1, borderColor: '#DEC688', backgroundColor: '#F2DFB2', alignItems: 'center', justifyContent: 'center' },
   newPackText: { fontFamily: F.serifSemiBold, fontSize: 16.5, color: '#76521A' },
-  individualList: { overflow: 'hidden', borderRadius: 23, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DAD5CB', backgroundColor: '#FBFAF7', paddingHorizontal: 12, boxShadow: '0 7px 18px rgba(40,45,42,0.055)' },
-  individualSeparator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 46 },
-  individualRow: { position: 'relative', overflow: 'hidden', minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  individualRowPending: { minHeight: 66 },
-  individualPendingWash: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(235,235,232,0.72)' },
-  individualIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#E7F3EE', alignItems: 'center', justifyContent: 'center' },
-  individualIconNever: { backgroundColor: '#F8E7EA' },
-  individualIconPending: { backgroundColor: '#DEDDD8' },
-  individualCopy: { flex: 1, minWidth: 0 },
-  individualDomain: { fontFamily: F.sansSemiBold, fontSize: 14, color: C.text },
-  individualDomainPending: { color: '#55524D' },
-  individualPendingText: { marginTop: 2, fontFamily: F.serifMedium, fontSize: 11.5, lineHeight: 15, color: '#77736B' },
-  individualPendingCancel: { minHeight: 31, justifyContent: 'center', borderRadius: 10, borderCurve: 'continuous', borderWidth: 1, borderColor: '#C7C4BD', backgroundColor: 'rgba(255,255,255,0.72)', paddingHorizontal: 8 },
-  individualPendingCancelText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.8, color: '#625F59' },
-  smallLock: { width: 34, height: 34, borderRadius: 11, backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
-  smallLockOn: { backgroundColor: '#F8E7EA' },
-  removeDomainButton: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  domainInputRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  domainInputIcon: { width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', backgroundColor: '#E7F3EE', alignItems: 'center', justifyContent: 'center' },
-  domainInput: { flex: 1, fontFamily: F.sansMedium, fontSize: 14, color: C.text },
+  // Compose card — type a site, green add button; border warms green when valid.
+  domainAddCard: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56, borderRadius: 17, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E1DCD2', backgroundColor: '#FFFFFF', paddingLeft: 10, paddingRight: 8, boxShadow: '0 6px 16px rgba(35,40,37,0.05)' },
+  domainAddCardReady: { borderColor: '#BADACC' },
+  domainAddGlobe: { width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: '#C7E1D6', backgroundColor: '#EAF5F0', alignItems: 'center', justifyContent: 'center' },
+  domainAddInput: { flex: 1, fontFamily: F.sansMedium, fontSize: 15, color: C.text, paddingVertical: 0 },
+  domainAddBtn: { width: 40, height: 40, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#2D7967', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 11px rgba(45,121,103,0.32)' },
+  domainAddBtnOff: { backgroundColor: '#CFCEC8', boxShadow: 'none' },
+
+  domainEmpty: { marginTop: 9, alignItems: 'center', paddingVertical: 16, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4DFD4', backgroundColor: '#FBFAF7' },
+  domainEmptyText: { fontFamily: F.serifMedium, fontSize: 14.5, color: '#8A8378' },
+
+  // Each site is its own state-coloured card: green blocked, rose locked, slate pending.
+  domainCardStack: { marginTop: 9, gap: 7 },
+  domainCard: { position: 'relative', overflow: 'hidden', minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#C2E0D4', paddingLeft: 11, paddingRight: 10, paddingVertical: 9, boxShadow: '0 6px 16px rgba(35,40,37,0.055)' },
+  domainCardNever: { borderColor: '#EAC6CD' },
+  domainCardPending: { borderColor: '#D6D3CC' },
+  domainCardChip: { flexShrink: 0, width: 40, height: 40, borderRadius: 13, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  domainCardCopy: { flex: 1, minWidth: 0 },
+  domainCardName: { fontFamily: F.serifSemiBold, fontSize: 16.5, lineHeight: 20, letterSpacing: -0.15, color: C.text },
+  domainCardStatusRow: { marginTop: 2, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  domainCardDot: { width: 5, height: 5, borderRadius: 3 },
+  domainCardStatus: { flexShrink: 1, fontFamily: F.sansMedium, fontSize: 11.5, lineHeight: 15 },
+  domainCardActions: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  domainLockBtn: { width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E4DFD4', backgroundColor: 'rgba(255,255,255,0.7)', alignItems: 'center', justifyContent: 'center' },
+  domainLockBtnOn: { borderColor: '#A24351', backgroundColor: '#A24351' },
+  domainTrashBtn: { width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: '#EAC6CD', backgroundColor: '#FCEFF1', alignItems: 'center', justifyContent: 'center' },
+  domainKeepBtn: { flexShrink: 0, minHeight: 34, justifyContent: 'center', borderRadius: 11, borderCurve: 'continuous', borderWidth: 1, borderColor: '#C6C3BC', backgroundColor: 'rgba(255,255,255,0.82)', paddingHorizontal: 14 },
+  domainKeepText: { fontFamily: F.sansSemiBold, fontSize: 12.5, color: '#5D5953' },
   hardLockPanel: { position: 'relative', overflow: 'hidden', borderRadius: 24, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DED8CC', backgroundColor: '#FBFAF7', boxShadow: '0 8px 22px rgba(73, 57, 25, 0.07)' },
   hardLockPanelOn: { borderColor: '#DDC994' },
   hardLockPanelPermanent: { borderColor: '#D3B66F', boxShadow: '0 10px 26px rgba(111, 78, 21, 0.12)' },
