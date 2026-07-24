@@ -239,15 +239,14 @@ const BOND: FlowTheme = {
 };
 
 const STEP_THEME: Record<StepId, FlowTheme> = {
-  // vision / qualities / relationship still wear the cream register until their
-  // own scenes land in the next pass — their content is not themed yet.
-  vision: CONSTELLATION,
+  vision: AURORA,
+  // qualities keeps the cream register until its own scene lands next.
   qualities: CONSTELLATION,
   anasta: WEIGHT, // unused (own screen), kept for the map's completeness
   obstacles: WEIGHT,
   actions: LIGHT,
   routines: RHYTHM,
-  relationshipWithGod: CONSTELLATION,
+  relationshipWithGod: BOND,
   spiritualObstacles: WEIGHT,
   spiritualActions: LIGHT,
   faithPractice: RHYTHM,
@@ -290,6 +289,7 @@ function SceneButton({
 
 const SCENE_W = 300;
 const SCENE_H = 132;
+const RICH_SCENE_H = 88;
 
 function SunriseScene() {
   const reduceMotion = useReducedMotion();
@@ -418,11 +418,101 @@ function RippleScene() {
   );
 }
 
+// A slim aurora for the writing steps — soft violet-rose bands that breathe,
+// with a scatter of faint stars. Compact so the editor keeps its room.
+function AuroraScene() {
+  const reduceMotion = useReducedMotion();
+  const t = useSharedValue(reduceMotion ? 0.5 : 0);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    t.value = withRepeat(withTiming(1, { duration: 4200, easing: Easing.inOut(Easing.quad) }), -1, true);
+  }, [reduceMotion, t]);
+
+  const bandStyle = useAnimatedStyle(() => ({ opacity: 0.6 + t.value * 0.4 }));
+
+  return (
+    <View style={s.richScene}>
+      <Reanimated.View style={[StyleSheet.absoluteFill, bandStyle]} pointerEvents="none">
+        <Svg width="100%" height={RICH_SCENE_H} viewBox="0 0 300 88" preserveAspectRatio="none">
+          <Defs>
+            <RadialGradient id="aur1" cx="34%" cy="42%" rx="46%" ry="70%">
+              <Stop offset="0%" stopColor="#C7A9F0" stopOpacity={0.6} />
+              <Stop offset="100%" stopColor="#C7A9F0" stopOpacity={0} />
+            </RadialGradient>
+            <RadialGradient id="aur2" cx="68%" cy="52%" rx="42%" ry="66%">
+              <Stop offset="0%" stopColor="#F0AEC6" stopOpacity={0.5} />
+              <Stop offset="100%" stopColor="#F0AEC6" stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Ellipse cx={102} cy={40} rx={130} ry={54} fill="url(#aur1)" />
+          <Ellipse cx={206} cy={48} rx={120} ry={48} fill="url(#aur2)" />
+        </Svg>
+      </Reanimated.View>
+      <Svg width={SCENE_W} height={RICH_SCENE_H} viewBox="0 0 300 88" style={{ position: 'absolute' }} pointerEvents="none">
+        {[[54, 22], [96, 46], [150, 18], [206, 40], [246, 26], [128, 62], [180, 66]].map(([cx, cy], i) => (
+          <Circle key={i} cx={cx} cy={cy} r={i % 3 === 0 ? 1.8 : 1.1} fill="#8A6FD0" opacity={0.5} />
+        ))}
+      </Svg>
+    </View>
+  );
+}
+
+// A warm halo for the "relationship with God" step — a soft golden light rising
+// with a ring of rays.
+function BondScene() {
+  const reduceMotion = useReducedMotion();
+  const breath = useSharedValue(reduceMotion ? 0.5 : 0);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    breath.value = withRepeat(withTiming(1, { duration: 3400, easing: Easing.inOut(Easing.quad) }), -1, true);
+  }, [reduceMotion, breath]);
+
+  const glowStyle = useAnimatedStyle(() => ({ opacity: 0.45 + breath.value * 0.45, transform: [{ scale: 0.96 + breath.value * 0.08 }] }));
+
+  return (
+    <View style={s.richScene}>
+      <Reanimated.View style={[StyleSheet.absoluteFill, s.sceneCenter, glowStyle]} pointerEvents="none">
+        <Svg width={SCENE_W} height={RICH_SCENE_H} viewBox="0 0 300 88">
+          <Defs>
+            <RadialGradient id="halo" cx="50%" cy="52%" rx="40%" ry="70%">
+              <Stop offset="0%" stopColor="#FBE3B2" stopOpacity={0.9} />
+              <Stop offset="55%" stopColor="#E9C074" stopOpacity={0.4} />
+              <Stop offset="100%" stopColor="#E9C074" stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Ellipse cx={150} cy={46} rx={96} ry={44} fill="url(#halo)" />
+        </Svg>
+      </Reanimated.View>
+      <View style={[StyleSheet.absoluteFill, s.sceneCenter]} pointerEvents="none">
+        <Svg width={92} height={92} viewBox="0 0 92 92">
+          {Array.from({ length: 12 }).map((_, i) => {
+            const a = (i / 12) * Math.PI * 2;
+            const x1 = 46 + Math.cos(a) * 26;
+            const y1 = 46 + Math.sin(a) * 26;
+            const x2 = 46 + Math.cos(a) * (i % 2 === 0 ? 40 : 33);
+            const y2 = 46 + Math.sin(a) * (i % 2 === 0 ? 40 : 33);
+            return <Line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#CFA155" strokeWidth={i % 2 === 0 ? 1.8 : 1.2} strokeLinecap="round" opacity={0.55} />;
+          })}
+          <Circle cx={46} cy={46} r={15} fill="#F0CE84" />
+          <Circle cx={46} cy={46} r={15} fill="#FFF0CC" opacity={0.5} />
+        </Svg>
+      </View>
+    </View>
+  );
+}
+
 function SceneFor({ kind }: { kind: SceneKind }) {
   if (kind === 'light') return <SunriseScene />;
   if (kind === 'weight') return <EclipseScene />;
   if (kind === 'rhythm') return <RippleScene />;
   return null;
+}
+
+function RichSceneFor({ kind }: { kind: SceneKind }) {
+  if (kind === 'bond') return <BondScene />;
+  return <AuroraScene />;
 }
 
 // The question, on its scene: the illustration breathes above, then the title
@@ -733,6 +823,7 @@ function StepRenderer({
           insetsBottom={insetsBottom}
           continueDisabled={richIsEmpty(draft.vision)}
           onContinue={advance}
+          theme={AURORA}
         />
       );
 
@@ -802,10 +893,11 @@ function StepRenderer({
           body="Not what you should believe. What you long for."
           html={draft.relationshipWithGod}
           onChangeHtml={value => updateField('relationshipWithGod', value)}
-          placeholder=""
+          placeholder="A quieter trust. To pray without performing. To feel Him near on ordinary days…"
           insetsBottom={insetsBottom}
           continueDisabled={false}
           onContinue={advance}
+          theme={BOND}
         />
       );
 
@@ -886,6 +978,7 @@ function RichStep({
   insetsBottom,
   continueDisabled,
   onContinue,
+  theme,
 }: {
   title: string;
   body: React.ReactNode;
@@ -895,8 +988,10 @@ function RichStep({
   insetsBottom: number;
   continueDisabled: boolean;
   onContinue: () => void;
+  theme: FlowTheme;
 }) {
   const editorRef = useRef<RichTextEditorRef>(null);
+  const reduceMotion = useReducedMotion();
   const [formatState, setFormatState] = useState<FormatState>({ bold: false, italic: false, underline: false });
   // Keep the editor's source HTML stable for its lifetime (the RichTextEditor
   // intentionally never re-renders source mid-typing), so we capture it once
@@ -906,15 +1001,20 @@ function RichStep({
   return (
     <View style={s.richStep}>
       <View style={s.richHeading}>
-        <Text style={s.stepTitle}>{title}</Text>
+        <RichSceneFor kind={theme.scene} />
+        <Reanimated.View entering={reduceMotion ? undefined : FadeInDown.duration(460).easing(Easing.out(Easing.cubic))}>
+          <Text style={[s.stepTitle, { color: theme.ink }]}>{title}</Text>
+        </Reanimated.View>
         {typeof body === 'string'
-          ? <Text style={s.stepBody}>{body}</Text>
+          ? <Reanimated.View entering={reduceMotion ? undefined : FadeInDown.delay(110).duration(460).easing(Easing.out(Easing.cubic))}>
+              <Text style={[s.stepBody, { color: theme.sub }]}>{body}</Text>
+            </Reanimated.View>
           : body}
       </View>
 
       {/* Toolbar pinned to the top of the editor area — always visible, even
           when the keyboard pushes the WebView up. */}
-      <View style={s.richEditorWrap}>
+      <View style={[s.richEditorWrap, { borderColor: theme.surfaceBorder }]}>
         <RichToolbar
           editorRef={editorRef}
           activeFormats={formatState}
@@ -927,20 +1027,13 @@ function RichStep({
           onFormatChange={setFormatState}
           placeholder={placeholder}
           backgroundColor="#FFFFFF"
-          color="#1F2937"
+          color={theme.inputText}
           style={s.richEditor}
         />
       </View>
 
-      <View style={[s.richFooter, { paddingBottom: insetsBottom + 10 }]}>
-        <TouchableOpacity
-          onPress={onContinue}
-          disabled={continueDisabled}
-          activeOpacity={0.84}
-          style={[s.primaryBtn, continueDisabled && s.primaryBtnDisabled]}
-        >
-          <Text style={s.primaryBtnText}>Continue</Text>
-        </TouchableOpacity>
+      <View style={[s.richFooter, { paddingBottom: insetsBottom + 10, backgroundColor: 'transparent', borderTopColor: theme.surfaceBorder }]}>
+        <SceneButton label="Continue" onPress={onContinue} disabled={continueDisabled} theme={theme} />
       </View>
     </View>
   );
@@ -1925,6 +2018,7 @@ const s = StyleSheet.create({
   // Scene: an animated illustration banner above the question.
   sceneHeadingWrap: { gap: 10, marginBottom: 4 },
   sceneBox: { height: SCENE_H, marginTop: 2, marginBottom: 6, alignItems: 'center', justifyContent: 'flex-end' },
+  richScene: { height: RICH_SCENE_H, marginBottom: 8, alignItems: 'center', justifyContent: 'center' },
   sceneCenter: { alignItems: 'center', justifyContent: 'center' },
   sceneRays: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center' },
   sceneSun: { position: 'absolute', left: 0, right: 0, alignItems: 'center', bottom: 18 },
