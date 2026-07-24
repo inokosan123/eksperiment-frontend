@@ -185,10 +185,19 @@ function ProtectionSectionHeader({
         </View>
         {showBadge && (
           <View style={[s.packStatPill, lit && s.packStatPillOn]}>
-            <View style={[s.packStatDot, lit && s.packStatDotOn]} />
+            <LinearGradient
+              pointerEvents="none"
+              colors={lit ? ['#F4FBF8', '#E4F2EC'] : ['#FBFAF6', '#F1EFE8']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
             <Text selectable style={[s.packStatNum, lit && s.packStatNumOn]}>{activeCount}</Text>
-            <Text style={[s.packStatRest, lit && s.packStatRestOn]}> / {totalCount}</Text>
-            <Text style={[s.packStatWord, lit && s.packStatWordOn]}>ON</Text>
+            <View style={[s.packStatDivider, lit && s.packStatDividerOn]} />
+            <View style={s.packStatLabelCol}>
+              <Text style={[s.packStatLabelTop, lit && s.packStatLabelTopOn]}>ACTIVE</Text>
+              <Text style={[s.packStatLabelBot, lit && s.packStatLabelBotOn]}>OF {totalCount}</Text>
+            </View>
           </View>
         )}
       </View>
@@ -1551,17 +1560,25 @@ const s = StyleSheet.create({
   headerRuleBar: { flex: 1, height: 2.5, borderRadius: 2 },
   contentSectionSubtitle: { marginTop: 8, fontFamily: F.serifBold, fontSize: 15.5, lineHeight: 18.5, color: '#2E2A25' },
   contentSectionDescription: { marginTop: 1, maxWidth: 344, fontFamily: F.serifMedium, fontSize: 15, lineHeight: 18.5, color: C.textSecondary },
-  // A slim stat pill: green dot, active count, "/ total", tiny ON — lights green.
-  packStatPill: { flexShrink: 0, marginTop: 3, flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 27, borderRadius: 999, borderWidth: 1, borderColor: '#DFDBD2', backgroundColor: '#F6F4EF', paddingLeft: 9, paddingRight: 10 },
-  packStatPillOn: { borderColor: '#BADACC', backgroundColor: '#E9F5EF' },
-  packStatDot: { width: 5.5, height: 5.5, borderRadius: 3, backgroundColor: '#C4BFB4' },
-  packStatDotOn: { backgroundColor: '#2D7967' },
-  packStatNum: { fontFamily: F.serifBold, fontSize: 15.5, lineHeight: 18, color: '#8A8378', fontVariant: ['tabular-nums'] },
+  // A refined stat tag: a big serif active count, a hairline, then a two-line
+  // ACTIVE / OF N caption. No dot; a soft gradient and shadow give it depth.
+  packStatPill: {
+    flexShrink: 0, marginTop: 3, position: 'relative', overflow: 'hidden',
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    minHeight: 34, borderRadius: 13, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E1DCD2',
+    paddingLeft: 12, paddingRight: 12,
+    boxShadow: '0 4px 12px rgba(45, 40, 33, 0.06)',
+  },
+  packStatPillOn: { borderColor: '#B7DACB', boxShadow: '0 4px 12px rgba(31, 90, 76, 0.1)' },
+  packStatNum: { fontFamily: F.serifBold, fontSize: 20, lineHeight: 22, color: '#9A9186', fontVariant: ['tabular-nums'] },
   packStatNumOn: { color: '#1F5A4C' },
-  packStatRest: { fontFamily: F.sansSemiBold, fontSize: 11, color: '#A9A398', fontVariant: ['tabular-nums'] },
-  packStatRestOn: { color: '#5E9484' },
-  packStatWord: { marginLeft: 3, fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 0.8, color: '#A9A398' },
-  packStatWordOn: { color: '#4E8B7A' },
+  packStatDivider: { width: StyleSheet.hairlineWidth, height: 20, backgroundColor: 'rgba(60,54,46,0.18)' },
+  packStatDividerOn: { backgroundColor: 'rgba(45,121,103,0.28)' },
+  packStatLabelCol: { justifyContent: 'center' },
+  packStatLabelTop: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1, color: '#9A9186' },
+  packStatLabelTopOn: { color: '#2D7967' },
+  packStatLabelBot: { marginTop: 1.5, fontFamily: F.sansSemiBold, fontSize: 8, letterSpacing: 0.6, color: '#B4AEA3', fontVariant: ['tabular-nums'] },
+  packStatLabelBotOn: { color: '#66998A' },
   packList: { gap: 7 },
   packCard: { position: 'relative', overflow: 'hidden', borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 12, paddingVertical: 8, boxShadow: '0 6px 16px rgba(35, 40, 37, 0.06)' },
   packCardOn: { borderColor: '#B7D8CA' },
