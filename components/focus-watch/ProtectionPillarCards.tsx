@@ -49,13 +49,76 @@ export type WebProtectionCardProps = {
   accessibilityLabel?: string;
 };
 
+// The full Clean Sight hero, one card for every state the page can be in:
+//   on      — standing guard, live
+//   preview — armed but not enforced yet
+//   error   — protection couldn't start
+//   off     — nothing is blocked, the guard rests
+export type WebProtectionHeroState = 'on' | 'preview' | 'error' | 'off';
+
 export type WebProtectionHeroCardProps = {
-  state: Exclude<WebProtectionCardState, 'off'>;
+  state: WebProtectionHeroState;
   title: string;
   body: string;
   packsOn: number;
   domainsReady: number;
   lockCaption: string;
+};
+
+type HeroPalette = {
+  grad: readonly [string, string, string];
+  border: string;
+  weave: string;
+  glow: string;          // breathing halo colour (null-glow states get low alpha)
+  glowActive: boolean;   // whether the halo breathes
+  kicker: string;
+  ink: string;
+  body: string;
+  badgeBorder: string;
+  badgeBg: string;
+  dot: string;
+  stateText: string;
+  footer: string;
+  metricInk: string;
+  metricBorder: string;
+};
+
+const HERO_PALETTE: Record<WebProtectionHeroState, HeroPalette> = {
+  on: {
+    grad: ['#E6F3EC', '#F6FBF8', '#FEFFFE'], border: '#A9D0C0', weave: '#2D7967',
+    glow: 'rgba(45,121,103,0.55)', glowActive: true,
+    kicker: '#2D7967', ink: '#183F37', body: '#4E746A',
+    badgeBorder: '#B9DACD', badgeBg: 'rgba(239,249,245,0.90)', dot: '#2C7565',
+    stateText: '#2C7565', footer: '#2C7565', metricInk: '#183F37', metricBorder: 'rgba(45,121,103,0.20)',
+  },
+  preview: {
+    grad: ['#EFEAF8', '#F8F5FC', '#FEFEFF'], border: '#CFC4E6', weave: '#6A57A0',
+    glow: 'rgba(120,102,164,0.4)', glowActive: false,
+    kicker: '#6A57A0', ink: '#2E2450', body: '#665A86',
+    badgeBorder: '#D3CBE4', badgeBg: 'rgba(246,242,251,0.92)', dot: '#7866A4',
+    stateText: '#65548E', footer: '#65548E', metricInk: '#2E2450', metricBorder: 'rgba(106,87,160,0.20)',
+  },
+  error: {
+    grad: ['#FBEAEC', '#FFF4F5', '#FFFCFC'], border: '#EEC2C8', weave: '#A6404E',
+    glow: 'rgba(190,68,82,0.45)', glowActive: true,
+    kicker: '#A6404E', ink: '#5A2029', body: '#8A5860',
+    badgeBorder: '#EDC4CA', badgeBg: 'rgba(251,238,240,0.94)', dot: '#BE4452',
+    stateText: '#A6404E', footer: '#A6404E', metricInk: '#5A2029', metricBorder: 'rgba(166,64,78,0.20)',
+  },
+  off: {
+    grad: ['#EEF1F0', '#F8FAF9', '#FEFFFE'], border: '#D2DAD7', weave: '#5C6B66',
+    glow: 'rgba(92,107,102,0.28)', glowActive: false,
+    kicker: '#6B7B75', ink: '#2C3733', body: '#657069',
+    badgeBorder: '#D2DAD7', badgeBg: 'rgba(244,247,246,0.94)', dot: '#8A968F',
+    stateText: '#6B7B75', footer: '#6B7B75', metricInk: '#3A4642', metricBorder: 'rgba(92,107,102,0.18)',
+  },
+};
+
+const HERO_STATE_LABEL: Record<WebProtectionHeroState, string> = {
+  on: 'ON', preview: 'PREVIEW', error: 'ERROR', off: 'OFF',
+};
+const HERO_FOOTER_LABEL: Record<WebProtectionHeroState, string> = {
+  on: 'PROTECTION ACTIVE', preview: 'PROTECTION PREVIEW', error: 'COULD NOT START', off: 'PROTECTION RESTING',
 };
 
 const WEB_PROTECTION_VISUAL = {
@@ -411,6 +474,37 @@ export function WebProtectionCard({
   );
 }
 
+// A soft halo that breathes on the card — the glow the active states wear. It
+// lives just inside the rounded card, opacity-only so nothing pixelates on
+// Android, and rests to a still frame under reduce-motion or when inactive.
+function CardGlow({ color, active }: { color: string; active: boolean }) {
+  const reduceMotion = useReducedMotion();
+  const breath = useSharedValue(0);
+
+  useEffect(() => {
+    if (!active || reduceMotion) {
+      cancelAnimation(breath);
+      breath.value = active ? 0.5 : 0;
+      return;
+    }
+    breath.value = 0;
+    breath.value = withRepeat(
+      withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true,
+    );
+    return () => cancelAnimation(breath);
+  }, [active, breath, reduceMotion]);
+
+  const style = useAnimatedStyle(() => ({ opacity: 0.32 + breath.value * 0.45 }));
+
+  if (!active) return null;
+
+  return (
+    <Animated.View pointerEvents="none" style={[s.heroGlow, { borderColor: color, shadowColor: color }, style]} />
+  );
+}
+
 export function WebProtectionHeroCard({
   state,
   title,
@@ -420,84 +514,84 @@ export function WebProtectionHeroCard({
   lockCaption,
 }: WebProtectionHeroCardProps) {
   const live = state === 'on';
+  const p = HERO_PALETTE[state];
 
   return (
     <View style={s.heroShell}>
-      <View style={s.heroCard}>
+      <View style={[s.heroCard, { borderColor: p.border }]}>
         <LinearGradient
-          colors={['#E6F3EC', '#F6FBF8', '#FEFFFE']}
+          colors={[p.grad[0], p.grad[1], p.grad[2]]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
+        {/* The instrument backdrop only spins on the live card; the others keep
+            a still face so the state reads clearly. */}
         <PlanCardBackdrop visual={WEB_PROTECTION_VISUAL} ringSize={218} live={live} />
-        <LatticeWeave color="#2D7967" />
+        <LatticeWeave color={p.weave} />
         <View pointerEvents="none" style={s.heroShieldWatermark}>
-          <Shield s={168} c="#2D7967" w={1.05} />
+          <Shield s={168} c={p.weave} w={1.05} />
         </View>
+        <CardGlow color={p.glow} active={p.glowActive} />
 
         <View style={s.heroTopRow}>
           <View style={s.heroCopy}>
             <View style={s.heroIdentityRow}>
-              <Text style={s.heroKicker}>CLEAN SIGHT</Text>
-              <View style={[s.heroStateBadge, !live && s.heroStateBadgePreview]}>
+              <Text style={[s.heroKicker, { color: p.kicker }]}>CLEAN SIGHT</Text>
+              <View style={[s.heroStateBadge, { borderColor: p.badgeBorder, backgroundColor: p.badgeBg }]}>
                 {live ? (
-                  <PulseDot size={5} color="#2C7565" />
+                  <PulseDot size={5} color={p.dot} />
                 ) : (
-                  <View style={s.heroPreviewDot} />
+                  <View style={[s.heroPreviewDot, { backgroundColor: p.dot }]} />
                 )}
-                <Text style={[s.heroStateText, !live && s.heroStateTextPreview]}>
-                  {live ? 'ON' : 'PREVIEW'}
-                </Text>
+                <Text style={[s.heroStateText, { color: p.stateText }]}>{HERO_STATE_LABEL[state]}</Text>
               </View>
             </View>
-            <Text selectable style={s.heroTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.84}>
+            <Text selectable style={[s.heroTitle, { color: p.ink }]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.84}>
               {title}
             </Text>
-            <Text selectable style={s.heroBody} numberOfLines={3}>
+            <Text selectable style={[s.heroBody, { color: p.body }]} numberOfLines={3}>
               {body}
             </Text>
           </View>
           <View style={s.heroEmblem}>
-            <GuardedSightEmblem active />
+            <GuardedSightEmblem active={state === 'on' || state === 'preview'} />
           </View>
         </View>
 
         <View style={s.heroRule}>
-          <View style={s.heroRuleLine} />
+          <View style={[s.heroRuleLine, { backgroundColor: p.metricBorder }]} />
           <View style={s.heroRuleCross}>
-            <View style={s.heroRuleCrossH} />
-            <View style={s.heroRuleCrossV} />
+            <View style={[s.heroRuleCrossH, { backgroundColor: p.weave }]} />
+            <View style={[s.heroRuleCrossV, { backgroundColor: p.weave }]} />
           </View>
-          <View style={s.heroRuleLine} />
+          <View style={[s.heroRuleLine, { backgroundColor: p.metricBorder }]} />
         </View>
 
-        <View style={s.heroMetricsSurface}>
+        <View style={[s.heroMetricsSurface, { borderColor: p.metricBorder }]}>
           <LinearGradient
             pointerEvents="none"
-            colors={['rgba(255,255,255,0.94)', 'rgba(239,249,245,0.82)']}
+            colors={['rgba(255,255,255,0.94)', 'rgba(255,255,255,0.7)']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
           <View pointerEvents="none" style={s.heroMetricsHighlight} />
           <View style={s.heroMetric}>
-            <Text selectable style={s.heroMetricValue}>{packsOn}</Text>
-            <Text style={s.heroMetricLabel}>{packsOn === 1 ? 'active pack' : 'active packs'}</Text>
+            <Text selectable style={[s.heroMetricValue, { color: p.metricInk }]}>{packsOn}</Text>
+            <Text style={[s.heroMetricLabel, { color: p.body }]}>{packsOn === 1 ? 'active pack' : 'active packs'}</Text>
           </View>
-          <View style={s.heroMetricDivider} />
+          <View style={[s.heroMetricDivider, { backgroundColor: p.metricBorder }]} />
           <View style={s.heroMetric}>
-            <Text selectable style={s.heroMetricValue}>{domainsReady}</Text>
-            <Text style={s.heroMetricLabel}>{domainsReady === 1 ? 'domain ready' : 'domains ready'}</Text>
+            <Text selectable style={[s.heroMetricValue, { color: p.metricInk }]}>{domainsReady}</Text>
+            <Text style={[s.heroMetricLabel, { color: p.body }]}>{domainsReady === 1 ? 'domain ready' : 'domains ready'}</Text>
           </View>
         </View>
 
         <View style={s.heroFooter}>
-          {live ? <PulseDot size={5} color="#2C7565" /> : <View style={s.heroPreviewDot} />}
-          <Text style={[s.heroFooterState, !live && s.heroStateTextPreview]}>
-            {live ? 'PROTECTION ACTIVE' : 'PROTECTION PREVIEW'}
-          </Text>
-          <Text style={s.heroFooterCaption} numberOfLines={1}>{lockCaption}</Text>
+          {live ? <PulseDot size={5} color={p.dot} /> : <View style={[s.heroPreviewDot, { backgroundColor: p.dot }]} />}
+          <Text style={[s.heroFooterState, { color: p.footer }]}>{HERO_FOOTER_LABEL[state]}</Text>
+          <Text style={[s.heroFooterCaption, { color: p.footer }]} numberOfLines={1}>{lockCaption}</Text>
         </View>
       </View>
     </View>
@@ -620,6 +714,22 @@ const s = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 16,
     paddingBottom: 14,
+  },
+  // The breathing halo: a bright inner ring hugging the card edge, plus a
+  // colour-matched shadow so the glow reads on both the border and around it.
+  heroGlow: {
+    position: 'absolute',
+    left: 1.5,
+    right: 1.5,
+    top: 1.5,
+    bottom: 1.5,
+    borderRadius: 26.5,
+    borderCurve: 'continuous',
+    borderWidth: 1.5,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 11,
+    elevation: 0,
   },
   heroShieldWatermark: { position: 'absolute', right: -32, top: 50, opacity: 0.055, transform: [{ rotate: '4deg' }] },
   heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
