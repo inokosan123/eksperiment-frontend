@@ -129,20 +129,46 @@ function RoundedDashedOutline({ color, radius }: { color: string; radius: number
   );
 }
 
+const HEADER_TONES = {
+  green: { rule: '#2D7967', ruleSoft: 'rgba(45,121,103,0.28)', gem: '#2D7967' },
+  gold: { rule: '#B78A22', ruleSoft: 'rgba(183,138,34,0.30)', gem: '#C9A227' },
+};
+
+// A short designed underline: a small gold/green gem, then a rule that fades
+// out — the app's gem-rule ornament, sized for a section title.
+function HeaderRule({ tone }: { tone: keyof typeof HEADER_TONES }) {
+  const t = HEADER_TONES[tone];
+  return (
+    <View style={s.headerRuleWrap} pointerEvents="none">
+      <View style={[s.headerGem, { backgroundColor: t.gem }]} />
+      <LinearGradient
+        colors={[t.rule, t.ruleSoft, 'rgba(0,0,0,0)']}
+        locations={[0, 0.55, 1]}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={s.headerRuleBar}
+      />
+    </View>
+  );
+}
+
 // The screen's section header, one grammar for every section: a dominant serif
-// title, a bold same-size lead line that says what the section does, then a
-// quieter sentence describing the extras. An optional stat tile on the right.
+// title underlined by the section's own tone, a bold same-size lead line that
+// says what the section does, then a quieter serif sentence describing the
+// extras. An optional slim stat pill on the right.
 function ProtectionSectionHeader({
   title,
   subtitle,
   description,
+  tone = 'green',
   activeCount,
   totalCount,
 }: {
   title: string;
   subtitle: string;
   description?: string;
-  // When both are given, the tile shows the active count over the total.
+  tone?: keyof typeof HEADER_TONES;
+  // When both are given, the pill shows the active count out of the total.
   activeCount?: number;
   totalCount?: number;
 }) {
@@ -153,12 +179,15 @@ function ProtectionSectionHeader({
       <View style={s.contentSectionTitleRow}>
         <Text selectable style={s.contentSectionTitle}>{title}</Text>
         {showBadge && (
-          <View style={[s.packStatTile, lit && s.packStatTileOn]}>
-            <Text selectable style={[s.packStatValue, lit && s.packStatValueOn]}>{activeCount}</Text>
-            <Text style={[s.packStatCaption, lit && s.packStatCaptionOn]}>OF {totalCount} ON</Text>
+          <View style={[s.packStatPill, lit && s.packStatPillOn]}>
+            <View style={[s.packStatDot, lit && s.packStatDotOn]} />
+            <Text selectable style={[s.packStatNum, lit && s.packStatNumOn]}>{activeCount}</Text>
+            <Text style={[s.packStatRest, lit && s.packStatRestOn]}> / {totalCount}</Text>
+            <Text style={[s.packStatWord, lit && s.packStatWordOn]}>ON</Text>
           </View>
         )}
       </View>
+      <HeaderRule tone={tone} />
       <Text selectable style={s.contentSectionSubtitle}>{subtitle}</Text>
       {!!description && <Text selectable style={s.contentSectionDescription}>{description}</Text>}
     </View>
@@ -1012,6 +1041,7 @@ export default function PurityView({
             title="Hard Lock"
             subtitle="Keep your choices from being undone too fast."
             description="Set how long blocked sites stay protected before any weakening change can take effect."
+            tone="gold"
           />
           <Animated.View
             layout={LinearTransition.duration(220)}
@@ -1504,20 +1534,27 @@ const s = StyleSheet.create({
   zoneDividerText: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.55, color: C.textMuted },
   subsectionDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#D8D1C5', marginBottom: 20 },
   sectionBlock: { marginTop: 22 },
-  // One header grammar for the whole screen: dominant serif title, a bold
-  // same-size lead line, then a quieter description sentence.
-  contentSectionHeader: { gap: 4, paddingHorizontal: 3, marginBottom: 13 },
-  contentSectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 44 },
-  contentSectionTitle: { flex: 1, minWidth: 0, fontFamily: F.serifSemiBold, fontSize: 29, lineHeight: 33, letterSpacing: -0.5, color: C.text },
-  contentSectionSubtitle: { marginTop: 2, fontFamily: F.sansBold, fontSize: 14, lineHeight: 19, color: '#3A3733' },
-  contentSectionDescription: { marginTop: 2, maxWidth: 340, fontFamily: F.sans, fontSize: 14, lineHeight: 19, color: C.textSecondary },
-  // A little stat tile: the active count over "OF N ON", green once anything is on.
-  packStatTile: { flexShrink: 0, minWidth: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DFDBD2', backgroundColor: '#F6F4EF', paddingHorizontal: 11, paddingVertical: 7 },
-  packStatTileOn: { borderColor: '#BADACC', backgroundColor: '#E9F5EF' },
-  packStatValue: { fontFamily: F.serifBold, fontSize: 24, lineHeight: 26, color: '#A29B8E', fontVariant: ['tabular-nums'] },
-  packStatValueOn: { color: '#1F5A4C' },
-  packStatCaption: { marginTop: 1, fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 0.8, color: '#A9A398' },
-  packStatCaptionOn: { color: '#4E8B7A' },
+  // One header grammar for the whole screen: dominant serif title underlined by
+  // the section's tone, a bold serif lead line, then a quieter serif sentence.
+  contentSectionHeader: { paddingHorizontal: 3, marginBottom: 13 },
+  contentSectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  contentSectionTitle: { flex: 1, minWidth: 0, fontFamily: F.serifSemiBold, fontSize: 29, lineHeight: 34, letterSpacing: -0.5, color: C.text },
+  headerRuleWrap: { marginTop: 7, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerGem: { width: 5, height: 5, borderRadius: 1, transform: [{ rotate: '45deg' }] },
+  headerRuleBar: { flex: 0, width: 52, height: 2.5, borderRadius: 2 },
+  contentSectionSubtitle: { marginTop: 9, fontFamily: F.serifBold, fontSize: 15.5, lineHeight: 20, color: '#2E2A25' },
+  contentSectionDescription: { marginTop: 2, maxWidth: 344, fontFamily: F.serifMedium, fontSize: 15, lineHeight: 20, color: C.textSecondary },
+  // A slim stat pill: green dot, active count, "/ total", tiny ON — lights green.
+  packStatPill: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 27, borderRadius: 999, borderWidth: 1, borderColor: '#DFDBD2', backgroundColor: '#F6F4EF', paddingLeft: 9, paddingRight: 10 },
+  packStatPillOn: { borderColor: '#BADACC', backgroundColor: '#E9F5EF' },
+  packStatDot: { width: 5.5, height: 5.5, borderRadius: 3, backgroundColor: '#C4BFB4' },
+  packStatDotOn: { backgroundColor: '#2D7967' },
+  packStatNum: { fontFamily: F.serifBold, fontSize: 15.5, lineHeight: 18, color: '#8A8378', fontVariant: ['tabular-nums'] },
+  packStatNumOn: { color: '#1F5A4C' },
+  packStatRest: { fontFamily: F.sansSemiBold, fontSize: 11, color: '#A9A398', fontVariant: ['tabular-nums'] },
+  packStatRestOn: { color: '#5E9484' },
+  packStatWord: { marginLeft: 3, fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 0.8, color: '#A9A398' },
+  packStatWordOn: { color: '#4E8B7A' },
   packList: { gap: 7 },
   packCard: { position: 'relative', overflow: 'hidden', borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 12, paddingVertical: 8, boxShadow: '0 6px 16px rgba(35, 40, 37, 0.06)' },
   packCardOn: { borderColor: '#B7D8CA' },
