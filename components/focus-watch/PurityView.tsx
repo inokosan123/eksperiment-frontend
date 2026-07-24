@@ -130,21 +130,33 @@ function RoundedDashedOutline({ color, radius }: { color: string; radius: number
 }
 
 function ProtectionSectionHeader({
+  kicker,
   title,
   description,
-  count,
+  activeCount,
+  totalCount,
 }: {
+  kicker?: string;
   title: string;
   description: string;
-  count?: number;
+  // When both are given, the badge reads "active / total" in the green register.
+  activeCount?: number;
+  totalCount?: number;
 }) {
+  const showBadge = activeCount != null && totalCount != null;
+  const lit = showBadge && activeCount > 0;
   return (
     <View style={s.contentSectionHeader}>
       <View style={s.contentSectionTitleRow}>
-        <Text selectable style={s.contentSectionTitle}>{title}</Text>
-        {count != null && (
-          <View style={s.contentSectionCount}>
-            <Text selectable style={s.contentSectionCountText}>{count}</Text>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          {!!kicker && <Text style={s.contentSectionKicker}>{kicker}</Text>}
+          <Text selectable style={s.contentSectionTitle}>{title}</Text>
+        </View>
+        {showBadge && (
+          <View style={[s.packCountBadge, lit && s.packCountBadgeOn]}>
+            <View style={[s.packCountDot, lit && s.packCountDotOn]} />
+            <Text selectable style={[s.packCountValue, lit && s.packCountValueOn]}>{activeCount}</Text>
+            <Text style={[s.packCountTotal, lit && s.packCountTotalOn]}>/ {totalCount}</Text>
           </View>
         )}
       </View>
@@ -254,8 +266,8 @@ function PackRow({
           accessibilityState={{ expanded }}
           accessibilityLabel={`${name}. ${expanded ? 'Collapse' : 'Expand'} details.`}
         >
-          <View style={s.packIcon}>
-            <PackEmoji emoji={emoji} slashed={slashed} size={27} />
+          <View style={[s.packIcon, enabled && !never && !pending && s.packIconOn, never && s.packIconNever, pending && s.packIconPending]}>
+            <PackEmoji emoji={emoji} slashed={slashed} size={26} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <View style={s.packTitleRow}>
@@ -332,7 +344,7 @@ function PackRow({
         >
           {appleFilter && (
             <Animated.View entering={FadeIn.duration(180)} style={s.expandedAppleFilter}>
-              <View style={s.expandedAppleFilterIcon}><Shield s={13} c="#566276" w={2.1} /></View>
+              <View style={s.expandedAppleFilterIcon}><Shield s={14} c="#566276" w={2.1} /></View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <View style={s.expandedAppleFilterTitleRow}>
                   <Text style={s.expandedAppleFilterTitle}>Apple Filter</Text>
@@ -342,50 +354,68 @@ function PackRow({
               </View>
             </Animated.View>
           )}
-          <TouchableOpacity style={s.addToPackButton} onPress={onSeeAll} activeOpacity={0.74}>
-            <View style={s.addToPackIcon}><Plus s={14} c="#2D7967" w={2.4} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.addToPackTitle}>Add a website to this pack</Text>
-              <Text style={s.addToPackBody}>Open the full list and enter a domain.</Text>
-            </View>
-            <ChevronRight s={14} c="#2D7967" w={2.2} />
-          </TouchableOpacity>
-          <Text style={s.domainListLabel}>BLOCKED DOMAINS</Text>
-          <View style={s.domainChips}>
-            {domains.slice(0, 6).map(domain => (
-              <View key={domain} style={s.domainChip}><Text style={s.domainChipText}>{domain}</Text></View>
-            ))}
-          </View>
-          <TouchableOpacity style={s.seeAllButton} onPress={onSeeAll} activeOpacity={0.74}>
-            <Globe s={14} c="#2D7967" w={2.1} />
-            <Text style={s.seeAllText}>
-              {domains.length > 6 ? `See all ${domains.length} domains` : 'Open the domain list'}
-            </Text>
-            <ChevronRight s={14} c="#2D7967" w={2.2} />
-          </TouchableOpacity>
-          {!pending && <View style={s.packActions}>
-            <TouchableOpacity
-              style={[s.neverButton, mode === 'never' && s.neverButtonOn]}
-              onPress={onNever}
-              activeOpacity={0.78}
-            >
-              <View style={[s.neverButtonSeal, mode === 'never' && s.neverButtonSealOn]}>
-                <Lock s={13} c={mode === 'never' ? '#FFFFFF' : '#A24351'} w={2.2} />
+
+          {/* The blocked sites, in one framed well: a header that carries the
+              count and the add action, the domains as chips, then a full-list
+              row. Reads as "inside this pack" rather than a stack of buttons. */}
+          <View style={s.domainWell}>
+            <View style={s.domainWellHead}>
+              <View style={s.domainWellHeadLeft}>
+                <Globe s={13} c="#2D7967" w={2.1} />
+                <Text style={s.domainWellLabel}>BLOCKED SITES</Text>
+                <View style={s.domainWellCount}><Text style={s.domainWellCountText}>{domains.length}</Text></View>
               </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={s.neverButtonText}>{mode === 'never' ? 'Request unlock' : 'Never allow'}</Text>
-                <Text style={s.neverButtonSub} numberOfLines={1}>
-                  {mode === 'never' ? 'Hard Lock protects the exit' : 'Locked even from yourself'}
-                </Text>
-              </View>
-            </TouchableOpacity>
-            {onRemove && (
-              <TouchableOpacity style={s.removeButton} onPress={onRemove} activeOpacity={0.78}>
-                <Trash2 s={13} c={C.textSecondary} w={2} />
-                <Text style={s.removeButtonText}>Remove</Text>
+              <TouchableOpacity style={s.domainAddPill} onPress={onSeeAll} activeOpacity={0.76} haptic="selection">
+                <Plus s={12} c="#2D7967" w={2.5} />
+                <Text style={s.domainAddPillText}>Add</Text>
               </TouchableOpacity>
-            )}
-          </View>}
+            </View>
+            <View style={s.domainChips}>
+              {domains.slice(0, 6).map(domain => (
+                <View key={domain} style={s.domainChip}>
+                  <View style={s.domainChipDot} />
+                  <Text style={s.domainChipText} numberOfLines={1}>{domain}</Text>
+                </View>
+              ))}
+              {domains.length > 6 && (
+                <View style={[s.domainChip, s.domainChipMore]}>
+                  <Text style={s.domainChipMoreText}>+{domains.length - 6}</Text>
+                </View>
+              )}
+            </View>
+            <TouchableOpacity style={s.seeAllRow} onPress={onSeeAll} activeOpacity={0.72}>
+              <Text style={s.seeAllText}>
+                {domains.length > 6 ? `See all ${domains.length} sites` : 'Open the full list'}
+              </Text>
+              <ChevronRight s={14} c="#2D7967" w={2.2} />
+            </TouchableOpacity>
+          </View>
+
+          {!pending && (
+            <View style={s.packActions}>
+              <TouchableOpacity
+                style={[s.neverButton, mode === 'never' && s.neverButtonOn]}
+                onPress={onNever}
+                activeOpacity={0.78}
+                haptic="selection"
+              >
+                <View style={[s.neverButtonSeal, mode === 'never' && s.neverButtonSealOn]}>
+                  <Lock s={13} c={mode === 'never' ? '#FFFFFF' : '#A24351'} w={2.2} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={s.neverButtonText}>{mode === 'never' ? 'Request unlock' : 'Never allow'}</Text>
+                  <Text style={s.neverButtonSub} numberOfLines={1}>
+                    {mode === 'never' ? 'Hard Lock protects the exit' : 'Locked even from yourself'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+              {onRemove && (
+                <TouchableOpacity style={s.removeButton} onPress={onRemove} activeOpacity={0.78} haptic="selection">
+                  <Trash2 s={14} c={C.textSecondary} w={2} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
         </Animated.View>
       )}
     </Animated.View>
@@ -887,9 +917,11 @@ export default function PurityView({
 
         <Animated.View entering={enter(90)} style={s.sectionBlock}>
           <ProtectionSectionHeader
-            title="Protection Packs"
-            description="Select the website categories you want Clean Sight to block."
-            count={WEB_PACKS.length + purity.customPacks.length}
+            kicker="PROTECTION PACKS"
+            title="Choose what stays out"
+            description="Turn on a category and every site inside it is blocked in every browser."
+            activeCount={activePacks}
+            totalCount={WEB_PACKS.length + purity.customPacks.length}
           />
           <View style={s.packList}>
             {WEB_PACKS.map(pack => {
@@ -977,6 +1009,7 @@ export default function PurityView({
         >
           <View style={s.subsectionDivider} />
           <ProtectionSectionHeader
+            kicker="COMMITMENT"
             title="Hard Lock"
             description="Choose how long blocked websites stay protected before any weakening change can take effect."
           />
@@ -1153,9 +1186,9 @@ export default function PurityView({
         <Animated.View key="individual-domains" entering={enter(135)} style={s.sectionBlock}>
           <View style={s.subsectionDivider} />
           <ProtectionSectionHeader
-            title="Individual Domains"
+            kicker="INDIVIDUAL DOMAINS"
+            title="Block a single site"
             description="Enter a specific website you want to block, even when it is not part of a pack."
-            count={purity.customDomains.length}
           />
           <View style={s.individualList}>
             {purity.customDomains.map((entry, index) => {
@@ -1471,21 +1504,33 @@ const s = StyleSheet.create({
   zoneDividerText: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.55, color: C.textMuted },
   subsectionDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#D8D1C5', marginBottom: 20 },
   sectionBlock: { marginTop: 22 },
-  contentSectionHeader: { gap: 6, paddingHorizontal: 3, marginBottom: 14 },
-  contentSectionTitleRow: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  contentSectionTitle: { flex: 1, fontFamily: F.serifSemiBold, fontSize: 24, lineHeight: 28, letterSpacing: -0.25, color: C.text },
-  contentSectionDescription: { maxWidth: 328, fontFamily: F.serifMedium, fontSize: 15.5, lineHeight: 21.5, color: C.textSecondary },
-  contentSectionCount: { flexShrink: 0, minWidth: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#C6DED4', backgroundColor: '#E7F3EE', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9 },
-  contentSectionCountText: { fontFamily: F.serifSemiBold, fontSize: 15, lineHeight: 18, color: '#2D7967', fontVariant: ['tabular-nums'] },
-  packList: { gap: 8 },
-  packCard: { position: 'relative', overflow: 'hidden', borderRadius: 21, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 12, paddingVertical: 10, boxShadow: '0 6px 16px rgba(35, 40, 37, 0.06)' },
+  contentSectionHeader: { gap: 5, paddingHorizontal: 3, marginBottom: 12 },
+  contentSectionTitleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  contentSectionKicker: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 2, color: '#2D7967', marginBottom: 4 },
+  contentSectionTitle: { fontFamily: F.serifSemiBold, fontSize: 24, lineHeight: 28, letterSpacing: -0.25, color: C.text },
+  contentSectionDescription: { maxWidth: 330, fontFamily: F.serifMedium, fontSize: 15.5, lineHeight: 21.5, color: C.textSecondary },
+  // "active / total" — a quiet register pill that lights green once any pack is on.
+  packCountBadge: { flexShrink: 0, marginTop: 2, flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 30, borderRadius: 999, borderWidth: 1, borderColor: '#DFDBD2', backgroundColor: '#F6F4EF', paddingLeft: 9, paddingRight: 11 },
+  packCountBadgeOn: { borderColor: '#BADACC', backgroundColor: '#E9F5EF' },
+  packCountDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#C4BFB4' },
+  packCountDotOn: { backgroundColor: '#2D7967' },
+  packCountValue: { fontFamily: F.serifSemiBold, fontSize: 15.5, lineHeight: 19, color: '#8A8378', fontVariant: ['tabular-nums'] },
+  packCountValueOn: { color: '#1F5A4C' },
+  packCountTotal: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: '#A9A398', fontVariant: ['tabular-nums'] },
+  packCountTotalOn: { color: '#5E9484' },
+  packList: { gap: 7 },
+  packCard: { position: 'relative', overflow: 'hidden', borderRadius: 20, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 12, paddingVertical: 8, boxShadow: '0 6px 16px rgba(35, 40, 37, 0.06)' },
   packCardOn: { borderColor: '#B7D8CA' },
   packCardNever: { borderColor: '#EAC6CD' },
   packCardPending: { borderColor: '#C8C5BE', boxShadow: '0 7px 18px rgba(70, 68, 63, 0.08)' },
   pendingSurfaceWash: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(235,235,232,0.38)' },
   packRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 11 },
   packMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  packIcon: { flexShrink: 0, width: 48, height: 48, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(169,134,63,0.22)', backgroundColor: '#FBF3DE', alignItems: 'center', justifyContent: 'center' },
+  // The face chip takes the pack's state colour, not a fixed gold.
+  packIcon: { flexShrink: 0, width: 46, height: 46, borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E4DFD4', backgroundColor: '#F5F3EE', alignItems: 'center', justifyContent: 'center' },
+  packIconOn: { borderColor: '#C2E0D4', backgroundColor: '#E4F3EC' },
+  packIconNever: { borderColor: '#EAC6CD', backgroundColor: '#FBEBEF' },
+  packIconPending: { borderColor: '#D6D3CC', backgroundColor: '#EEEDEA' },
   packTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   packName: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22, color: C.text },
   packStatusRow: { marginTop: 3.5, flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -1498,18 +1543,24 @@ const s = StyleSheet.create({
   packDetailNever: { fontFamily: F.sansMedium, color: '#A24351' },
   packDetailPending: { fontFamily: F.serifMedium, color: '#6D6962' },
   packChevron: { alignItems: 'center', justifyContent: 'center' },
-  packBody: { marginTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border, paddingTop: 13, gap: 11 },
-  expandedAppleFilter: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: '#D8DDE6', backgroundColor: '#F6F8FB', paddingHorizontal: 10, paddingVertical: 10 },
+  packBody: { marginTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#ECEAE3', paddingTop: 12, gap: 10 },
+  expandedAppleFilter: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderColor: '#D8DDE6', backgroundColor: '#F6F8FB', paddingHorizontal: 11, paddingVertical: 10 },
   expandedAppleFilterIcon: { width: 32, height: 32, borderRadius: 11, borderCurve: 'continuous', backgroundColor: '#E5E9F0', alignItems: 'center', justifyContent: 'center' },
   expandedAppleFilterTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   expandedAppleFilterTitle: { fontFamily: F.serifSemiBold, fontSize: 15.5, lineHeight: 19, color: '#3F4856' },
   expandedAppleFilterTag: { borderRadius: 999, backgroundColor: '#E7EAF0', paddingHorizontal: 6, paddingVertical: 3 },
   expandedAppleFilterTagText: { fontFamily: F.sansBold, fontSize: 6.8, letterSpacing: 0.7, color: '#566276' },
   expandedAppleFilterBody: { marginTop: 2, fontFamily: F.sans, fontSize: 11.5, lineHeight: 16, color: '#697384' },
-  addToPackButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: '#BFDCCF', backgroundColor: '#F4FAF7', paddingHorizontal: 9, paddingVertical: 7 },
-  addToPackIcon: { width: 32, height: 32, borderRadius: 11, borderCurve: 'continuous', backgroundColor: '#DDEFE8', alignItems: 'center', justifyContent: 'center' },
-  addToPackTitle: { fontFamily: F.serifSemiBold, fontSize: 14.5, lineHeight: 18, color: '#2D7967' },
-  addToPackBody: { marginTop: 1, fontFamily: F.sans, fontSize: 10.5, lineHeight: 14, color: C.textSecondary },
+
+  // The blocked-sites well: framed, so the dropdown reads as "inside this pack".
+  domainWell: { borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DCE9E3', backgroundColor: '#F5FAF8', paddingHorizontal: 11, paddingTop: 10, paddingBottom: 4 },
+  domainWellHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 9 },
+  domainWellHeadLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
+  domainWellLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.4, color: '#3D8273' },
+  domainWellCount: { minWidth: 19, height: 19, borderRadius: 10, backgroundColor: '#DDEFE8', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  domainWellCountText: { fontFamily: F.sansBold, fontSize: 10, color: '#1F5A4C', fontVariant: ['tabular-nums'] },
+  domainAddPill: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 28, borderRadius: 999, borderWidth: 1, borderColor: '#C4E0D4', backgroundColor: '#FFFFFF', paddingHorizontal: 10 },
+  domainAddPillText: { fontFamily: F.sansSemiBold, fontSize: 11.5, color: '#2D7967' },
   packPendingBar: { minHeight: 42, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 13, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(121,117,108,0.20)', backgroundColor: 'rgba(255,255,255,0.60)', paddingHorizontal: 8, paddingVertical: 6 },
   packPendingBarIcon: { width: 28, height: 28, borderRadius: 9, borderCurve: 'continuous', backgroundColor: '#E1E0DB', alignItems: 'center', justifyContent: 'center' },
   packPendingBarText: { flex: 1, fontFamily: F.serifMedium, fontSize: 11.5, lineHeight: 15, color: '#625F59' },
@@ -1517,23 +1568,24 @@ const s = StyleSheet.create({
   packPendingCancelText: { fontFamily: F.sansBold, fontSize: 7.8, letterSpacing: 0.75, color: '#5D5953' },
   emojiSlashUnder: { position: 'absolute', height: 4.6, borderRadius: 3, backgroundColor: '#FFFFFF', transform: [{ rotate: '-45deg' }] },
   emojiSlash: { position: 'absolute', height: 2.4, borderRadius: 2, backgroundColor: '#C63B4E', transform: [{ rotate: '-45deg' }] },
-  domainListLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5, color: C.textMuted },
-  domainChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  domainChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, backgroundColor: '#F0EFEB', paddingHorizontal: 10, paddingVertical: 7 },
-  domainChipText: { fontFamily: F.sansMedium, fontSize: 11.5, color: C.textSecondary },
-  seeAllButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, borderColor: '#C4E0D4', backgroundColor: '#F2FAF6' },
+  domainChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  domainChip: { flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: '100%', borderRadius: 999, borderWidth: StyleSheet.hairlineWidth, borderColor: '#D4E6DE', backgroundColor: '#FFFFFF', paddingLeft: 8, paddingRight: 11, paddingVertical: 6 },
+  domainChipDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#7FB3A2' },
+  domainChipText: { flexShrink: 1, fontFamily: F.sansMedium, fontSize: 11.5, color: '#4A6B62' },
+  domainChipMore: { backgroundColor: '#E4F1EB', borderColor: '#C4E0D4', paddingHorizontal: 11 },
+  domainChipMoreText: { fontFamily: F.sansBold, fontSize: 11, color: '#2D7967' },
+  seeAllRow: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 4, marginHorizontal: -11, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#DCE9E3' },
   seeAllText: { fontFamily: F.sansSemiBold, fontSize: 12.5, color: '#2D7967' },
   inlineAdd: { width: 36, height: 36, borderRadius: 12, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center' },
   disabled: { opacity: 0.35 },
   packActions: { flexDirection: 'row', alignItems: 'stretch', gap: 8 },
-  neverButton: { flex: 1, minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderColor: '#EDCBD2', backgroundColor: '#FFF6F7', paddingHorizontal: 10 },
+  neverButton: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, borderColor: '#EDCBD2', backgroundColor: '#FFF6F7', paddingHorizontal: 10 },
   neverButtonOn: { borderColor: '#E2AEB8', backgroundColor: '#FDEEF1' },
   neverButtonSeal: { width: 30, height: 30, borderRadius: 10, borderCurve: 'continuous', backgroundColor: '#F6DFE4', alignItems: 'center', justifyContent: 'center' },
   neverButtonSealOn: { backgroundColor: '#A24351' },
   neverButtonText: { fontFamily: F.sansSemiBold, fontSize: 12.5, color: '#A24351' },
   neverButtonSub: { marginTop: 1, fontFamily: F.sansMedium, fontSize: 9.5, color: '#B87681' },
-  removeButton: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 15, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: '#FBFAF7', paddingHorizontal: 13 },
-  removeButtonText: { fontFamily: F.sansSemiBold, fontSize: 12, color: C.textSecondary },
+  removeButton: { width: 48, borderRadius: 14, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: '#FBFAF7', alignItems: 'center', justifyContent: 'center' },
   newPackButton: { position: 'relative', overflow: 'hidden', marginTop: 11, height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 18, borderCurve: 'continuous', backgroundColor: '#FFF6E1', boxShadow: '0 5px 14px rgba(126,88,24,0.08)' },
   plusIcon: { width: 33, height: 33, borderRadius: 11, borderWidth: 1, borderColor: '#DEC688', backgroundColor: '#F2DFB2', alignItems: 'center', justifyContent: 'center' },
   newPackText: { fontFamily: F.serifSemiBold, fontSize: 16.5, color: '#76521A' },
