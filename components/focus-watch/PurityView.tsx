@@ -5,8 +5,10 @@ import Animated, {
   FadeIn,
   FadeInDown,
   FadeOut,
+  interpolateColor,
   LinearTransition,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
@@ -56,13 +58,6 @@ import {
 } from './dayPlanStore';
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
-
-function withAlpha(hex: string, alpha: number) {
-  const normalized = hex.replace('#', '');
-  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return `rgba(45,121,103,${alpha})`;
-  const value = Number.parseInt(normalized, 16);
-  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
-}
 const PACK_EXPANSION_EASE = Easing.bezier(0.22, 1, 0.36, 1);
 const PACK_COLLAPSE_EASE = Easing.bezier(0.4, 0, 0.2, 1);
 const PACK_LAYOUT_TRANSITION = LinearTransition
@@ -521,6 +516,139 @@ function pendingWhen(effectiveAt: number) {
     && a.getDate() === b.getDate();
   const day = sameDay(target, today) ? 'Today' : sameDay(target, tomorrow) ? 'Tomorrow' : target.toLocaleDateString();
   return `${day} at ${formatEndsAt(effectiveAt)}`;
+}
+
+// The three states an individual site can be in, and the colours each wears.
+const DOMAIN_ON = { border: '#C2E0D4', accent: '#2D7967' };
+const DOMAIN_NEVER = { border: '#EAC6CD', accent: '#A24351' };
+const DOMAIN_PENDING = { border: '#D6D3CC', accent: '#6E6A63' };
+
+// One site card. The tint, chip, status colour and lock button all cross-fade
+// between states, so locking a site — or letting it go — reads as one smooth
+// change rather than a hard repaint.
+function DomainCard({
+  domain,
+  never,
+  pending,
+  pendingText,
+  onToggleNever,
+  onRemove,
+  onKeep,
+}: {
+  domain: string;
+  never: boolean;
+  pending: boolean;
+  pendingText: string | null;
+  onToggleNever: () => void;
+  onRemove: () => void;
+  onKeep: () => void;
+}) {
+  const reduceMotion = useReducedMotion();
+  const neverV = useSharedValue(never ? 1 : 0);
+  const pendingV = useSharedValue(pending ? 1 : 0);
+
+  useEffect(() => {
+    neverV.value = reduceMotion ? (never ? 1 : 0) : withTiming(never ? 1 : 0, { duration: 300, easing: Easing.out(Easing.cubic) });
+  }, [never, neverV, reduceMotion]);
+  useEffect(() => {
+    pendingV.value = reduceMotion ? (pending ? 1 : 0) : withTiming(pending ? 1 : 0, { duration: 300, easing: Easing.out(Easing.cubic) });
+  }, [pending, pendingV, reduceMotion]);
+
+  const cardStyle = useAnimatedStyle(() => {
+    const base = interpolateColor(neverV.value, [0, 1], [DOMAIN_ON.border, DOMAIN_NEVER.border]);
+    return { borderColor: interpolateColor(pendingV.value, [0, 1], [base, DOMAIN_PENDING.border]) };
+  });
+  const greenOverlay = useAnimatedStyle(() => ({ opacity: (1 - neverV.value) * (1 - pendingV.value) }));
+  const roseOverlay = useAnimatedStyle(() => ({ opacity: neverV.value * (1 - pendingV.value) }));
+  const slateOverlay = useAnimatedStyle(() => ({ opacity: pendingV.value }));
+
+  const chipBorder = useAnimatedStyle(() => {
+    const base = interpolateColor(neverV.value, [0, 1], ['rgba(45,121,103,0.28)', 'rgba(162,67,81,0.28)']);
+    const baseBg = interpolateColor(neverV.value, [0, 1], ['rgba(45,121,103,0.1)', 'rgba(162,67,81,0.1)']);
+    return {
+      borderColor: interpolateColor(pendingV.value, [0, 1], [base, 'rgba(110,106,99,0.28)']),
+      backgroundColor: interpolateColor(pendingV.value, [0, 1], [baseBg, 'rgba(110,106,99,0.1)']),
+    };
+  });
+  const globeOp = useAnimatedStyle(() => ({ opacity: (1 - neverV.value) * (1 - pendingV.value) }));
+  const lockIconOp = useAnimatedStyle(() => ({ opacity: neverV.value * (1 - pendingV.value) }));
+  const hourglassOp = useAnimatedStyle(() => ({ opacity: pendingV.value }));
+
+  const accentStyle = useAnimatedStyle(() => {
+    const base = interpolateColor(neverV.value, [0, 1], [DOMAIN_ON.accent, DOMAIN_NEVER.accent]);
+    return { color: interpolateColor(pendingV.value, [0, 1], [base, DOMAIN_PENDING.accent]) };
+  });
+  const dotStyle = useAnimatedStyle(() => {
+    const base = interpolateColor(neverV.value, [0, 1], [DOMAIN_ON.accent, DOMAIN_NEVER.accent]);
+    return { backgroundColor: interpolateColor(pendingV.value, [0, 1], [base, DOMAIN_PENDING.accent]) };
+  });
+  const lockFillStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(neverV.value, [0, 1], ['rgba(255,255,255,0.7)', '#A24351']),
+    borderColor: interpolateColor(neverV.value, [0, 1], ['#E4DFD4', '#A24351']),
+  }));
+  const lockGreyOp = useAnimatedStyle(() => ({ opacity: 1 - neverV.value }));
+  const lockWhiteOp = useAnimatedStyle(() => ({ opacity: neverV.value }));
+
+  const statusLabel = pending ? (pendingText ?? '') : never ? 'Locked' : 'Blocked';
+
+  return (
+    <Animated.View
+      layout={LinearTransition.duration(240)}
+      entering={reduceMotion ? undefined : FadeInDown.duration(240).easing(Easing.out(Easing.cubic))}
+      style={[s.domainCard, cardStyle]}
+    >
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, greenOverlay]}>
+        <LinearGradient colors={['#E9F4EF', '#FAFDFB', '#FEFFFE']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      </Animated.View>
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, roseOverlay]}>
+        <LinearGradient colors={['#FBECEF', '#FFFAFB', '#FFFDFD']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      </Animated.View>
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, slateOverlay]}>
+        <LinearGradient colors={['#EFEEEB', '#F8F7F4', '#FBFAF8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      </Animated.View>
+
+      <Animated.View style={[s.domainCardChip, chipBorder]}>
+        <Animated.View pointerEvents="none" style={[s.domainChipIcon, globeOp]}><Globe s={16} c={DOMAIN_ON.accent} w={2} /></Animated.View>
+        <Animated.View pointerEvents="none" style={[s.domainChipIcon, lockIconOp]}><Lock s={15} c={DOMAIN_NEVER.accent} w={2.2} /></Animated.View>
+        <Animated.View pointerEvents="none" style={[s.domainChipIcon, hourglassOp]}><Hourglass s={16} c={DOMAIN_PENDING.accent} w={2.1} /></Animated.View>
+      </Animated.View>
+
+      <View style={s.domainCardCopy}>
+        <Text style={s.domainCardName} numberOfLines={1}>{domain}</Text>
+        <View style={s.domainCardStatusRow}>
+          <Animated.View style={[s.domainCardDot, dotStyle]} />
+          <Animated.Text style={[s.domainCardStatus, accentStyle]} numberOfLines={1}>{statusLabel}</Animated.Text>
+        </View>
+      </View>
+
+      {pending ? (
+        <TouchableOpacity style={s.domainKeepBtn} onPress={onKeep} haptic="selection" activeOpacity={0.8}>
+          <Text style={s.domainKeepText}>Keep</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={s.domainCardActions}>
+          <TouchableOpacity
+            style={s.domainLockBtn}
+            onPress={onToggleNever}
+            haptic="selection"
+            accessibilityLabel={never ? 'Unlock this site' : 'Lock this site'}
+          >
+            <Animated.View pointerEvents="none" style={[s.domainLockFill, lockFillStyle]} />
+            <Animated.View pointerEvents="none" style={[s.domainChipIcon, lockGreyOp]}><Lock s={14} c="#8A8378" w={2.2} /></Animated.View>
+            <Animated.View pointerEvents="none" style={[s.domainChipIcon, lockWhiteOp]}><Lock s={14} c="#FFFFFF" w={2.2} /></Animated.View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={s.domainTrashBtn}
+            onPress={onRemove}
+            haptic="selection"
+            accessibilityLabel={`Remove ${domain}`}
+          >
+            <Trash2 s={15} c="#B0554F" w={2} />
+          </TouchableOpacity>
+        </View>
+      )}
+    </Animated.View>
+  );
 }
 
 type PackTurnOffRequest =
@@ -1261,71 +1389,21 @@ export default function PurityView({
                     && change.action.domain === entry.domain
                 );
                 const pendingText = pending?.action.kind === 'domain-never'
-                  ? `Leaves Never Allowed ${pendingWhen(pending.effectiveAt)}`
+                  ? `Unlocks at ${formatEndsAt(pending.effectiveAt)}`
                   : pending
-                    ? `Removal pending · ${pendingWhen(pending.effectiveAt)}`
+                    ? `Blocking stops at ${formatEndsAt(pending.effectiveAt)}`
                     : null;
-                const state: 'pending' | 'never' | 'on' = pending ? 'pending' : entry.never ? 'never' : 'on';
-                const accent = state === 'pending' ? '#6E6A63' : state === 'never' ? '#A24351' : '#2D7967';
                 return (
-                  <Animated.View
+                  <DomainCard
                     key={entry.domain}
-                    layout={LinearTransition.duration(200)}
-                    entering={FadeInDown.duration(240).easing(Easing.out(Easing.cubic))}
-                    style={[s.domainCard, state === 'never' && s.domainCardNever, state === 'pending' && s.domainCardPending]}
-                  >
-                    <LinearGradient
-                      pointerEvents="none"
-                      colors={state === 'pending'
-                        ? ['#EFEEEB', '#F8F7F4', '#FBFAF8']
-                        : state === 'never'
-                          ? ['#FBECEF', '#FFFAFB', '#FFFDFD']
-                          : ['#E9F4EF', '#FAFDFB', '#FEFFFE']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={StyleSheet.absoluteFill}
-                    />
-                    <View style={[s.domainCardChip, { borderColor: withAlpha(accent, 0.28), backgroundColor: withAlpha(accent, 0.1) }]}>
-                      {state === 'pending'
-                        ? <Hourglass s={16} c={accent} w={2.1} />
-                        : state === 'never'
-                          ? <Lock s={15} c={accent} w={2.2} />
-                          : <Globe s={16} c={accent} w={2} />}
-                    </View>
-                    <View style={s.domainCardCopy}>
-                      <Text style={s.domainCardName} numberOfLines={1}>{entry.domain}</Text>
-                      <View style={s.domainCardStatusRow}>
-                        <View style={[s.domainCardDot, { backgroundColor: accent }]} />
-                        <Text style={[s.domainCardStatus, { color: accent }]} numberOfLines={1}>
-                          {pendingText ?? (state === 'never' ? 'Locked · never allowed' : 'Blocked everywhere')}
-                        </Text>
-                      </View>
-                    </View>
-                    {state === 'pending' ? (
-                      <TouchableOpacity style={s.domainKeepBtn} onPress={() => cancelPendingChange(pending!.id)} haptic="selection" activeOpacity={0.8}>
-                        <Text style={s.domainKeepText}>Keep</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <View style={s.domainCardActions}>
-                        <TouchableOpacity
-                          style={[s.domainLockBtn, state === 'never' && s.domainLockBtnOn]}
-                          onPress={() => setDomainNever(entry.domain, !entry.never)}
-                          haptic="selection"
-                          accessibilityLabel={entry.never ? 'Remove Never Allowed' : 'Lock as Never Allowed'}
-                        >
-                          <Lock s={14} c={state === 'never' ? '#FFFFFF' : '#8A8378'} w={2.2} />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={s.domainTrashBtn}
-                          onPress={() => setConfirmDomainRemoval(entry.domain)}
-                          haptic="selection"
-                          accessibilityLabel={`Remove ${entry.domain}`}
-                        >
-                          <Trash2 s={15} c="#B0554F" w={2} />
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </Animated.View>
+                    domain={entry.domain}
+                    never={!!entry.never}
+                    pending={!!pending}
+                    pendingText={pendingText}
+                    onToggleNever={() => setDomainNever(entry.domain, !entry.never)}
+                    onRemove={() => setConfirmDomainRemoval(entry.domain)}
+                    onKeep={() => pending && cancelPendingChange(pending.id)}
+                  />
                 );
               })}
             </View>
@@ -1713,20 +1791,20 @@ const s = StyleSheet.create({
   domainEmpty: { marginTop: 9, alignItems: 'center', paddingVertical: 16, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E4DFD4', backgroundColor: '#FBFAF7' },
   domainEmptyText: { fontFamily: F.serifMedium, fontSize: 14.5, color: '#8A8378' },
 
-  // Each site is its own state-coloured card: green blocked, rose locked, slate pending.
+  // Each site is its own state-coloured card: green blocked, rose locked, slate
+  // pending. The tint layers cross-fade between states (see DomainCard).
   domainCardStack: { marginTop: 9, gap: 7 },
   domainCard: { position: 'relative', overflow: 'hidden', minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#C2E0D4', paddingLeft: 11, paddingRight: 10, paddingVertical: 9, boxShadow: '0 6px 16px rgba(35,40,37,0.055)' },
-  domainCardNever: { borderColor: '#EAC6CD' },
-  domainCardPending: { borderColor: '#D6D3CC' },
   domainCardChip: { flexShrink: 0, width: 40, height: 40, borderRadius: 13, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  domainChipIcon: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   domainCardCopy: { flex: 1, minWidth: 0 },
   domainCardName: { fontFamily: F.serifSemiBold, fontSize: 16.5, lineHeight: 20, letterSpacing: -0.15, color: C.text },
   domainCardStatusRow: { marginTop: 2, flexDirection: 'row', alignItems: 'center', gap: 5 },
   domainCardDot: { width: 5, height: 5, borderRadius: 3 },
   domainCardStatus: { flexShrink: 1, fontFamily: F.sansMedium, fontSize: 11.5, lineHeight: 15 },
   domainCardActions: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  domainLockBtn: { width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E4DFD4', backgroundColor: 'rgba(255,255,255,0.7)', alignItems: 'center', justifyContent: 'center' },
-  domainLockBtnOn: { borderColor: '#A24351', backgroundColor: '#A24351' },
+  domainLockBtn: { position: 'relative', overflow: 'hidden', width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
+  domainLockFill: { ...StyleSheet.absoluteFillObject, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1 },
   domainTrashBtn: { width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: '#EAC6CD', backgroundColor: '#FCEFF1', alignItems: 'center', justifyContent: 'center' },
   domainKeepBtn: { flexShrink: 0, minHeight: 34, justifyContent: 'center', borderRadius: 11, borderCurve: 'continuous', borderWidth: 1, borderColor: '#C6C3BC', backgroundColor: 'rgba(255,255,255,0.82)', paddingHorizontal: 14 },
   domainKeepText: { fontFamily: F.sansSemiBold, fontSize: 12.5, color: '#5D5953' },
