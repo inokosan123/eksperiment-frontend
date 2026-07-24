@@ -214,6 +214,10 @@ export default function FocusWatchView({
   // no plan is scheduled, or the plan that is carries no daily limit. A day
   // already lost still counts as live — it has a verdict to show.
   const streakBanked = targetMinutes == null && liveStatus !== 'broken';
+  // A true rest day: no plan at all. The card strips down to the crest and
+  // the seal — the week strip is meaningless when nothing is scheduled — and
+  // says plainly that the streak still stands.
+  const restDay = streakBanked && !plan;
 
   // The Screen Time card divides its job cleanly: the status line says WHICH
   // rules hold right now, the right block says WHERE today stands, and the
@@ -678,7 +682,7 @@ export default function FocusWatchView({
 
             {streakBanked && (
               <RestSeal
-                label={state.streak.current > 0 ? 'STREAK HELD' : plan ? 'NO TARGET' : 'REST DAY'}
+                label={restDay ? 'REST DAY' : state.streak.current > 0 ? 'STREAK HELD' : 'NO TARGET'}
                 style={s.progressSeal}
               />
             )}
@@ -690,50 +694,54 @@ export default function FocusWatchView({
                   ? state.streak.current === 0
                     ? 'Hold today’s limit and day one is yours.'
                     : 'Today’s trophy is within reach.'
-                  : state.streak.current > 0
-                    ? plan
+                  : restDay
+                    ? state.streak.current > 0
+                      ? 'A rest day — your streak is still active.'
+                      : 'A rest day. Your first trophy waits for a plan.'
+                    : state.streak.current > 0
                       ? 'No target today — the streak keeps its place.'
-                      : 'A rest day — the streak keeps its place.'
-                    : plan
-                      ? 'No target today. Set a daily limit to strike day one.'
-                      : 'A rest day. Your first trophy waits for a plan.'}
+                      : 'No target today. Set a daily limit to strike day one.'}
             </Text>
 
-            <View style={[s.weekBand, streakBanked && s.weekBandBanked]}>
-              {week.map(cell => {
-                // Today can only be won when a trophy is on the table; on a
-                // banked day its cell rests with the others, keeping a warm
-                // coal so it is still findable.
-                const todayBanked = streakBanked && cell.status === 'today';
-                return (
-                  <View key={cell.key} style={s.weekCell}>
-                    <Text style={[
-                      s.weekLetter,
-                      cell.status === 'today' && (todayBanked ? s.weekLetterTodayBanked : s.weekLetterToday),
-                    ]}>{cell.letter}</Text>
-                    <View style={[
-                      s.weekDot,
-                      cell.status === 'kept' && s.weekDotKept,
-                      cell.status === 'broken' && s.weekDotBroken,
-                      cell.status === 'today' && (todayBanked ? s.weekDotTodayBanked : s.weekDotToday),
-                      cell.status === 'rest' && s.weekDotRest,
-                    ]}>
-                      {cell.status === 'today' && <TodayRing banked={todayBanked} />}
-                      {cell.status === 'kept' && <StaticChallengeTrophy size={22} />}
-                      {cell.status === 'today' && (todayBanked ? (
-                        <View style={s.todayEmber} />
-                      ) : (
-                        <View style={s.todayTrophyFaint}>
-                          <StaticChallengeTrophy size={20} />
-                        </View>
-                      ))}
-                      {cell.status === 'broken' && <X s={11} c="#B45360" w={2.5} />}
-                      {cell.status === 'rest' && <View style={s.restDot} />}
+            {/* A rest day has nothing to place across the week, so the strip
+                is dropped entirely — the crest and seal carry it alone. */}
+            {!restDay && (
+              <View style={[s.weekBand, streakBanked && s.weekBandBanked]}>
+                {week.map(cell => {
+                  // Today can only be won when a trophy is on the table; on a
+                  // banked day its cell rests with the others, keeping a warm
+                  // coal so it is still findable.
+                  const todayBanked = streakBanked && cell.status === 'today';
+                  return (
+                    <View key={cell.key} style={s.weekCell}>
+                      <Text style={[
+                        s.weekLetter,
+                        cell.status === 'today' && (todayBanked ? s.weekLetterTodayBanked : s.weekLetterToday),
+                      ]}>{cell.letter}</Text>
+                      <View style={[
+                        s.weekDot,
+                        cell.status === 'kept' && s.weekDotKept,
+                        cell.status === 'broken' && s.weekDotBroken,
+                        cell.status === 'today' && (todayBanked ? s.weekDotTodayBanked : s.weekDotToday),
+                        cell.status === 'rest' && s.weekDotRest,
+                      ]}>
+                        {cell.status === 'today' && <TodayRing banked={todayBanked} />}
+                        {cell.status === 'kept' && <StaticChallengeTrophy size={22} />}
+                        {cell.status === 'today' && (todayBanked ? (
+                          <View style={s.todayEmber} />
+                        ) : (
+                          <View style={s.todayTrophyFaint}>
+                            <StaticChallengeTrophy size={20} />
+                          </View>
+                        ))}
+                        {cell.status === 'broken' && <X s={11} c="#B45360" w={2.5} />}
+                        {cell.status === 'rest' && <View style={s.restDot} />}
+                      </View>
                     </View>
-                  </View>
-                );
-              })}
-            </View>
+                  );
+                })}
+              </View>
+            )}
 
             {targetMinutes != null ? (
               <DayGauge
@@ -745,9 +753,12 @@ export default function FocusWatchView({
                 style={s.progressGauge}
               />
             ) : (
-              // The instrument's slot is kept, closed like a ledger line,
-              // rather than collapsing to a lonely sentence.
-              <LedgerRail label="NO DAILY LIMIT TODAY" style={s.progressRail} />
+              // The instrument's slot is kept, closed like a ledger line: a
+              // resting plan has no daily limit, a rest day has no plan at all.
+              <LedgerRail
+                label={plan ? 'NO DAILY LIMIT TODAY' : 'NO ACTIVE PLAN TODAY'}
+                style={restDay ? s.progressRailRestDay : s.progressRail}
+              />
             )}
           </TouchableOpacity>
         </Animated.View>
@@ -976,6 +987,9 @@ const s = StyleSheet.create({
   todayRingHeld: { opacity: 0.55 },
   progressGauge: { marginTop: 14, paddingHorizontal: 2 },
   progressRail: { marginTop: 16, paddingHorizontal: 2 },
+  // With the week strip gone, the rail needs a little more air under the
+  // headline so it reads as the card's quiet footer, not a crowded line.
+  progressRailRestDay: { marginTop: 20, marginBottom: 2, paddingHorizontal: 2 },
   calendarLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   calendarLinkText: { fontFamily: F.serifSemiBold, fontSize: 13.5, color: C.goldDark },
   calendarLinkTextBanked: { color: BANKED.inkMuted },
