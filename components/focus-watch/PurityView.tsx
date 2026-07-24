@@ -142,8 +142,8 @@ function HeaderRule({ tone }: { tone: keyof typeof HEADER_TONES }) {
     <View style={s.headerRuleWrap} pointerEvents="none">
       <View style={[s.headerGem, { backgroundColor: t.gem }]} />
       <LinearGradient
-        colors={[t.rule, t.ruleSoft, 'rgba(0,0,0,0)']}
-        locations={[0, 0.55, 1]}
+        colors={[t.rule, t.rule, t.ruleSoft]}
+        locations={[0, 0.62, 1]}
         start={{ x: 0, y: 0.5 }}
         end={{ x: 1, y: 0.5 }}
         style={s.headerRuleBar}
@@ -177,7 +177,12 @@ function ProtectionSectionHeader({
   return (
     <View style={s.contentSectionHeader}>
       <View style={s.contentSectionTitleRow}>
-        <Text selectable style={s.contentSectionTitle}>{title}</Text>
+        {/* Title + its rule live in a column that shrinks to the title, so the
+            rule spans exactly from the start to the end of the title text. */}
+        <View style={s.contentSectionTitleBlock}>
+          <Text selectable style={s.contentSectionTitle}>{title}</Text>
+          <HeaderRule tone={tone} />
+        </View>
         {showBadge && (
           <View style={[s.packStatPill, lit && s.packStatPillOn]}>
             <View style={[s.packStatDot, lit && s.packStatDotOn]} />
@@ -187,7 +192,6 @@ function ProtectionSectionHeader({
           </View>
         )}
       </View>
-      <HeaderRule tone={tone} />
       <Text selectable style={s.contentSectionSubtitle}>{subtitle}</Text>
       {!!description && <Text selectable style={s.contentSectionDescription}>{description}</Text>}
     </View>
@@ -1537,15 +1541,18 @@ const s = StyleSheet.create({
   // One header grammar for the whole screen: dominant serif title underlined by
   // the section's tone, a bold serif lead line, then a quieter serif sentence.
   contentSectionHeader: { paddingHorizontal: 3, marginBottom: 13 },
-  contentSectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  contentSectionTitle: { flex: 1, minWidth: 0, fontFamily: F.serifSemiBold, fontSize: 29, lineHeight: 34, letterSpacing: -0.5, color: C.text },
-  headerRuleWrap: { marginTop: 7, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  contentSectionTitleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  contentSectionTitleBlock: { flexShrink: 1, minWidth: 0 },
+  contentSectionTitle: { fontFamily: F.serifSemiBold, fontSize: 29, lineHeight: 34, letterSpacing: -0.5, color: C.text },
+  // The rule sits close under the title and spans its full width: gem at the
+  // start, a bar that runs to the end and softens.
+  headerRuleWrap: { marginTop: 3, flexDirection: 'row', alignItems: 'center', gap: 6 },
   headerGem: { width: 5, height: 5, borderRadius: 1, transform: [{ rotate: '45deg' }] },
-  headerRuleBar: { flex: 0, width: 52, height: 2.5, borderRadius: 2 },
-  contentSectionSubtitle: { marginTop: 9, fontFamily: F.serifBold, fontSize: 15.5, lineHeight: 20, color: '#2E2A25' },
-  contentSectionDescription: { marginTop: 2, maxWidth: 344, fontFamily: F.serifMedium, fontSize: 15, lineHeight: 20, color: C.textSecondary },
+  headerRuleBar: { flex: 1, height: 2.5, borderRadius: 2 },
+  contentSectionSubtitle: { marginTop: 8, fontFamily: F.serifBold, fontSize: 15.5, lineHeight: 18.5, color: '#2E2A25' },
+  contentSectionDescription: { marginTop: 1, maxWidth: 344, fontFamily: F.serifMedium, fontSize: 15, lineHeight: 18.5, color: C.textSecondary },
   // A slim stat pill: green dot, active count, "/ total", tiny ON — lights green.
-  packStatPill: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 27, borderRadius: 999, borderWidth: 1, borderColor: '#DFDBD2', backgroundColor: '#F6F4EF', paddingLeft: 9, paddingRight: 10 },
+  packStatPill: { flexShrink: 0, marginTop: 3, flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 27, borderRadius: 999, borderWidth: 1, borderColor: '#DFDBD2', backgroundColor: '#F6F4EF', paddingLeft: 9, paddingRight: 10 },
   packStatPillOn: { borderColor: '#BADACC', backgroundColor: '#E9F5EF' },
   packStatDot: { width: 5.5, height: 5.5, borderRadius: 3, backgroundColor: '#C4BFB4' },
   packStatDotOn: { backgroundColor: '#2D7967' },
