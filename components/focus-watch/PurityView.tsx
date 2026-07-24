@@ -1604,7 +1604,7 @@ const s = StyleSheet.create({
   contentSectionHeader: { paddingHorizontal: 3, marginBottom: 13 },
   contentSectionTitleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   contentSectionTitleBlock: { flexShrink: 1, minWidth: 0 },
-  contentSectionTitle: { fontFamily: F.serifSemiBold, fontSize: 29, lineHeight: 34, letterSpacing: -0.5, color: C.text },
+  contentSectionTitle: { fontFamily: F.serifSemiBold, fontSize: 24, lineHeight: 29, letterSpacing: -0.4, color: C.text },
   // The rule sits close under the title and spans its full width: gem at the
   // start, a bar that runs to the end and softens.
   headerRuleWrap: { marginTop: 3, flexDirection: 'row', alignItems: 'center', gap: 6 },
