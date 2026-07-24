@@ -24,7 +24,7 @@ import { PulseDot } from './FocusMeter';
 import DayGauge, { gaugeStanding, gaugeStateColor, GAUGE_ESSENTIALS_COLOR } from './DayGauge';
 import { ScreenTimeProtectionCard, WebProtectionCard } from './ProtectionPillarCards';
 import { RadiantTrophy, StreakMedallion, TrophyShineBackdrop } from './TrophyRadiance';
-import { BANKED, LedgerRail, RestSeal } from '@/components/shared/BankedEmber';
+import { BANKED, BankedGlint, LedgerRail, RestSeal } from '@/components/shared/BankedEmber';
 import RadiantTodayPulse from '@/components/shared/RadiantTodayPulse';
 import GoldButton from './GoldButton';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
@@ -665,6 +665,9 @@ export default function FocusWatchView({
               style={StyleSheet.absoluteFill}
             />
             <TrophyShineBackdrop muted={streakBanked} />
+            {/* A resting card still catches the light — a warm pass sweeps
+                over the parchment, the same glint the Home rest cards wear. */}
+            {streakBanked && <BankedGlint variant="ash" />}
             <View style={s.progressHeaderRow}>
               <Text style={[s.progressKicker, streakBanked && s.progressKickerBanked]}>TROPHY STREAK</Text>
               <View style={s.calendarLink}>
