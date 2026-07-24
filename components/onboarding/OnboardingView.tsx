@@ -25122,10 +25122,6 @@ const TOOLS_JOURNAL_TECHNIQUES: ToolsTechnique[] = [
   },
 ];
 
-// The gutter between the three technique tabs — the drawer's tongue needs it
-// to work out which tab it was pulled from.
-const TOOLS_TAB_GAP = 9;
-
 const TOOLS_BUCKET_ITEMS = [
   { label: 'Visit Jerusalem', done: true },
   { label: 'Learn to play guitar', done: true },
@@ -26061,64 +26057,190 @@ function ToolsFooterCta({ label, onPress, delay = 220, shown, bottomInset }: { l
 // own colour; open it becomes the card the user will meet in the real Journal
 // hub — same tint, same border, same ink. The state is a spring so switching
 // between them reads as one continuous move.
-function ToolsTechniqueTab({
+// ── 28a-2: the techniques ride a wire ──────────────────────────────────────
+// The user's own image: the three techniques are cards CLIPPED TO A WIRE, and
+// you slide them along it like a cable car. The centred card is the chosen one;
+// its name feeds the description-then-benefits below, which swap as the wire
+// turns. White ground — the colour is a whisper (an icon disc, a hairline),
+// never a fill.
+//
+// Physics, all on the UI thread: `scroll` is a continuous position in card
+// units; each card sits where the wire is at its x (a hanging-cable parabola,
+// lowest at centre) so the cards genuinely ride the curve; and a `sway` value
+// leans them into the drag and lets them swing to rest on release, pivoting at
+// the clip where they meet the wire.
+const TOOLS_WIRE_SAG = 30;
+const TOOLS_WIRE_TOP = 26;
+
+function ToolsWireCard({
   technique,
-  open,
+  index,
+  scroll,
+  sway,
+  pitch,
+  centerX,
+  cardW,
+  cardH,
+  hanger,
+  ringRow,
+  depth,
   onPress,
 }: {
   technique: ToolsTechnique;
-  open: boolean;
+  index: number;
+  scroll: SharedValue<number>;
+  sway: SharedValue<number>;
+  pitch: number;
+  centerX: number;
+  cardW: number;
+  cardH: number;
+  hanger: number;
+  ringRow: number;
+  depth: number;
   onPress: () => void;
 }) {
-  const state = useSharedValue(open ? 1 : 0);
+  // Where the wire hangs at a given screen x, measured down from the end posts.
+  const wireDrop = (x: number) => {
+    'worklet';
+    const t = Math.max(-1, Math.min(1, (x - centerX) / centerX));
+    return TOOLS_WIRE_SAG * (1 - t * t);
+  };
+  const restDrop = wireDrop(centerX);
+  const wrapperH = ringRow + hanger + cardH;
 
-  useEffect(() => {
-    state.value = withSpring(open ? 1 : 0, { damping: 17, stiffness: 190, mass: 0.82 });
-  }, [open, state]);
+  // Where it hangs on the wire: x from the wire position, y from the cable
+  // curve, plus depth by distance from centre.
+  const hangStyle = useAnimatedStyle(() => {
+    const off = index - scroll.value;
+    const cardX = centerX + off * pitch;
+    const dy = wireDrop(cardX) - restDrop;
+    const dist = Math.abs(off);
+    return {
+      opacity: interpolate(dist, [0, 1, 2], [1, 0.5, 0.2], 'clamp'),
+      transform: [
+        { translateX: off * pitch },
+        { translateY: dy },
+        { scale: interpolate(dist, [0, 1, 2], [1, 0.82, 0.68], 'clamp') },
+      ],
+    };
+  });
 
-  const cardStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: interpolate(state.value, [0, 1], [0, -4]) }, { scale: interpolate(state.value, [0, 1], [1, 1.02]) }],
-    borderColor: interpolateColor(state.value, [0, 1], ['rgba(25,23,20,0.08)', technique.border]),
-  }));
-  const tintStyle = useAnimatedStyle(() => ({ opacity: state.value }));
-  const plateStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(state.value, [0, 1], ['#FFFFFF', technique.tint]),
-    borderColor: interpolateColor(state.value, [0, 1], ['rgba(25,23,20,0.07)', technique.border]),
-    transform: [{ scale: interpolate(state.value, [0, 1], [1, 1.06]) }],
-  }));
-  const nameStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(state.value, [0, 1], ['rgba(25,23,20,0.5)', technique.ink]),
-  }));
-  const barStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(state.value, [0, 1], [0.3, 1]),
-    transform: [{ scaleX: interpolate(state.value, [0, 1], [0.42, 1]) }],
-  }));
+  // How it swings: it leans with the drag and settles with a spring, turning
+  // about the clip at the top. Side cards fan out a touch so the row reads as a
+  // strung line rather than a stack.
+  const pivot = wrapperH / 2;
+  const swingStyle = useAnimatedStyle(() => {
+    const off = index - scroll.value;
+    const angle = sway.value + off * 1.4;
+    return {
+      transform: [
+        { translateY: -pivot },
+        { rotate: `${angle}deg` },
+        { translateY: pivot },
+      ],
+    };
+  });
+
+  // The centred card's face brightens; neighbours quiet to near-mono.
+  const faceStyle = useAnimatedStyle(() => {
+    const dist = Math.abs(index - scroll.value);
+    return {
+      borderColor: interpolateColor(Math.min(1, dist), [0, 1], [technique.border, 'rgba(25,23,20,0.08)']),
+    };
+  });
+  const discStyle = useAnimatedStyle(() => {
+    const dist = Math.min(1, Math.abs(index - scroll.value));
+    return {
+      backgroundColor: interpolateColor(dist, [0, 1], [technique.tint, '#F6F5F2']),
+      borderColor: interpolateColor(dist, [0, 1], [technique.border, 'rgba(25,23,20,0.06)']),
+    };
+  });
+  const underlineStyle = useAnimatedStyle(() => {
+    const dist = Math.abs(index - scroll.value);
+    return {
+      opacity: interpolate(dist, [0, 0.6], [1, 0], 'clamp'),
+      transform: [{ scaleX: interpolate(dist, [0, 1], [1, 0.3], 'clamp') }],
+    };
+  });
 
   return (
-    <TouchableOpacity activeOpacity={0.88} haptic="selection" onPress={onPress} style={tools.techTabPress}>
-      <Reanimated.View style={[tools.techTab, cardStyle]}>
-        <Reanimated.View pointerEvents="none" style={[StyleSheet.absoluteFill, tintStyle]}>
-          <LinearGradient
-            colors={[technique.tint, '#FFFFFF']}
-            start={{ x: 0.1, y: 0 }}
-            end={{ x: 0.9, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-        </Reanimated.View>
+    <Reanimated.View style={[tools.wireCardHang, { top: ringRow, left: (centerX * 2 - cardW) / 2, width: cardW, zIndex: depth }, hangStyle]}>
+      <Reanimated.View style={swingStyle}>
+        {/* The clip and the thread down to the card. */}
+        <View style={tools.wireClip}>
+          <View style={tools.wireClipRing} />
+        </View>
+        <View style={[tools.wireThread, { height: hanger }]} />
 
-        <Reanimated.View style={[tools.techTabIcon, plateStyle]}>
-          <technique.Icon s={17} c={technique.accent} w={1.9} />
-        </Reanimated.View>
-        <Reanimated.Text style={[tools.techTabName, nameStyle]}>{technique.name}</Reanimated.Text>
-        <Reanimated.View style={[tools.techTabBar, { backgroundColor: technique.accent }, barStyle]} />
+        <TouchableOpacity activeOpacity={0.9} haptic="selection" onPress={onPress} style={{ width: cardW }}>
+          <Reanimated.View style={[tools.wireCard, { height: cardH }, faceStyle]}>
+            <Reanimated.View style={[tools.wireDisc, discStyle]}>
+              <technique.Icon s={19} c={technique.accent} w={1.85} />
+            </Reanimated.View>
+            <Text style={[tools.wireLabel, { color: technique.accent }]}>{technique.label}</Text>
+            <Text style={[tools.wireName, { color: technique.ink }]} numberOfLines={2}>{technique.name}</Text>
+            <Reanimated.View style={[tools.wireUnderline, { backgroundColor: technique.accent }, underlineStyle]} />
+          </Reanimated.View>
+        </TouchableOpacity>
       </Reanimated.View>
-    </TouchableOpacity>
+    </Reanimated.View>
   );
 }
 
-// 28a-2: the three techniques as tabs that pull a drawer out below. Only one
-// is open at a time; the drawer's tongue slides to whichever tab it came out
-// of, and inside, two panels (Description / Benefits) swipe.
+// The wire itself: a hanging cable between two posts, drawn once as a parabola
+// so the cards have a curve to ride.
+function ToolsWire({ width }: { width: number }) {
+  const path = useMemo(() => {
+    const left = 14;
+    const right = width - 14;
+    const topY = TOOLS_WIRE_TOP;
+    const midY = TOOLS_WIRE_TOP + TOOLS_WIRE_SAG;
+    // Quadratic through both posts sagging to midY at centre; control point at
+    // 2× the sag makes the curve pass through the intended midpoint.
+    return `M ${left} ${topY} Q ${width / 2} ${topY + TOOLS_WIRE_SAG * 2} ${right} ${topY} `
+      + `M ${left} ${topY} L ${left} ${midY - 6} M ${right} ${topY} L ${right} ${midY - 6}`;
+  }, [width]);
+
+  return (
+    <Svg width={width} height={TOOLS_WIRE_TOP + TOOLS_WIRE_SAG + 12} style={tools.wireSvg} pointerEvents="none">
+      <SvgPath d={path} stroke="rgba(25,23,20,0.24)" strokeWidth={1.5} strokeLinecap="round" fill="none" />
+      <SvgCircle cx={14} cy={TOOLS_WIRE_TOP} r={3.4} fill="#FFFFFF" stroke="rgba(25,23,20,0.32)" strokeWidth={1.4} />
+      <SvgCircle cx={width - 14} cy={TOOLS_WIRE_TOP} r={3.4} fill="#FFFFFF" stroke="rgba(25,23,20,0.32)" strokeWidth={1.4} />
+    </Svg>
+  );
+}
+
+// The "swipe to see other techniques" tag — a floating pill that breathes and
+// nudges left–right until the reader has moved the wire.
+function ToolsSwipeTag({ dismissed }: { dismissed: boolean }) {
+  const nudge = useSharedValue(0);
+
+  useEffect(() => {
+    if (dismissed) {
+      nudge.value = withTiming(0, { duration: 300 });
+      return;
+    }
+    nudge.value = withRepeat(withSequence(
+      withTiming(1, { duration: 900, easing: Easing.inOut(Easing.sin) }),
+      withTiming(-1, { duration: 900, easing: Easing.inOut(Easing.sin) }),
+    ), -1, true);
+    return () => cancelAnimation(nudge);
+  }, [dismissed, nudge]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: withTiming(dismissed ? 0 : 1, { duration: 260 }),
+    transform: [{ translateX: nudge.value * 3 }],
+  }));
+
+  return (
+    <Reanimated.View pointerEvents="none" style={[tools.swipeTag, style]}>
+      <ChevronLeft s={12} c="rgba(25,23,20,0.4)" w={2.2} />
+      <Text style={tools.swipeTagText}>Swipe to see other techniques</Text>
+      <ChevronRight s={12} c="rgba(25,23,20,0.4)" w={2.2} />
+    </Reanimated.View>
+  );
+}
+
 function ToolsJournalTechniques({
   chapter,
   bottomInset,
@@ -26130,72 +26252,83 @@ function ToolsJournalTechniques({
 }) {
   const { width } = useWindowDimensions();
   const [headHeight, setHeadHeight] = useState(0);
-  const [rowWidth, setRowWidth] = useState(0);
-  const [openKey, setOpenKey] = useState<string | null>(null);
-  const [panel, setPanel] = useState(0);
-  const pagePos = useSharedValue(0);
-  const dragX = useSharedValue(0);
-  const tongue = useSharedValue(0);
-  const openIndex = TOOLS_JOURNAL_TECHNIQUES.findIndex(technique => technique.key === openKey);
-  const active = openIndex >= 0 ? TOOLS_JOURNAL_TECHNIQUES[openIndex] : null;
-  const drawerPageWidth = Math.max(200, width - 44 - 34);
+  const [active, setActive] = useState(0);
+  const [touched, setTouched] = useState(false);
+  const scroll = useSharedValue(0);
+  const sway = useSharedValue(0);
+  const start = useSharedValue(0);
+  const count = TOOLS_JOURNAL_TECHNIQUES.length;
 
-  // Three equal tabs in a measured row: the tongue's home is arithmetic, no
-  // per-tab measurement needed.
-  const tabPitch = rowWidth > 0 ? (rowWidth - TOOLS_TAB_GAP * 2) / 3 + TOOLS_TAB_GAP : 0;
-  const tabCentre = rowWidth > 0 ? (rowWidth - TOOLS_TAB_GAP * 2) / 6 : 0;
+  const cardW = Math.min(214, width * 0.55);
+  const cardH = 138;
+  const hanger = 20;
+  const ringRow = 16;
+  const pitch = cardW * 0.82;
+  const centerX = width / 2;
+  const stageH = TOOLS_WIRE_TOP + TOOLS_WIRE_SAG + ringRow + hanger + cardH + 26;
 
-  useEffect(() => {
-    if (openIndex < 0 || tabPitch === 0) return;
-    const target = tabCentre + tabPitch * openIndex - 8;
-    if (tongue.value === 0) {
-      tongue.value = target;
-      return;
-    }
-    tongue.value = withSpring(target, { damping: 18, stiffness: 210, mass: 0.8 });
-  }, [openIndex, tabCentre, tabPitch, tongue]);
-
-  const selectTab = useCallback((key: string) => {
-    setOpenKey(current => (current === key ? null : key));
-    setPanel(0);
-    pagePos.value = 0;
-    dragX.value = 0;
-  }, [dragX, pagePos]);
-
-  const goPanel = useCallback((next: number) => {
-    setPanel(next);
-    runSelectionHaptic();
+  const settle = useCallback((next: number) => {
+    setActive(prev => {
+      if (prev !== next) runSelectionHaptic();
+      return next;
+    });
   }, []);
+  const markTouched = useCallback(() => setTouched(true), []);
 
-  const swipe = useMemo(() => Gesture.Pan()
-    .activeOffsetX([-12, 12])
+  // The active technique follows the wire live — the text below changes the
+  // instant a new card takes the centre, not only on release.
+  useAnimatedReaction(
+    () => Math.round(scroll.value),
+    (current, previous) => {
+      if (current !== previous && current >= 0 && current < count) {
+        runOnJS(settle)(current);
+      }
+    },
+    [count],
+  );
+
+  const rubber = (raw: number) => {
+    'worklet';
+    if (raw < 0) return raw * 0.32;
+    if (raw > count - 1) return count - 1 + (raw - (count - 1)) * 0.32;
+    return raw;
+  };
+
+  const pan = useMemo(() => Gesture.Pan()
+    .activeOffsetX([-10, 10])
     .failOffsetY([-16, 16])
+    .onStart(() => {
+      start.value = scroll.value;
+      runOnJS(markTouched)();
+    })
     .onUpdate(event => {
-      const atStart = panel === 0 && event.translationX > 0;
-      const atEnd = panel === 1 && event.translationX < 0;
-      dragX.value = atStart || atEnd ? event.translationX * 0.2 : event.translationX;
+      scroll.value = rubber(start.value - event.translationX / pitch);
+      sway.value = Math.max(-14, Math.min(14, -event.velocityX * 0.016));
     })
     .onEnd(event => {
-      const threshold = Math.min(70, width * 0.2);
-      if (event.translationX < -threshold && panel === 0) {
-        pagePos.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) });
-        runOnJS(goPanel)(1);
-      } else if (event.translationX > threshold && panel === 1) {
-        pagePos.value = withTiming(0, { duration: 320, easing: Easing.out(Easing.cubic) });
-        runOnJS(goPanel)(0);
-      }
-      dragX.value = withTiming(0, { duration: 260, easing: Easing.out(Easing.cubic) });
-    }), [dragX, goPanel, pagePos, panel, width]);
+      const projected = scroll.value - (event.velocityX / pitch) * 0.09;
+      const target = Math.max(0, Math.min(count - 1, Math.round(projected)));
+      scroll.value = withSpring(target, { damping: 16, stiffness: 130, mass: 0.9 });
+      sway.value = withSpring(0, { damping: 7, stiffness: 82, mass: 0.9 });
+      runOnJS(settle)(target);
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pitch, count],
+  );
 
-  const trackStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: -pagePos.value * drawerPageWidth + dragX.value }],
-  }));
-  const tongueStyle = useAnimatedStyle(() => ({ transform: [{ translateX: tongue.value }, { rotate: '45deg' }] }));
+  const tapTo = useCallback((index: number) => {
+    setTouched(true);
+    scroll.value = withSpring(index, { damping: 16, stiffness: 140, mass: 0.9 });
+    sway.value = withSpring(0, { damping: 8, stiffness: 90, mass: 0.9 });
+    settle(index);
+  }, [scroll, settle, sway]);
+
+  const activeTech = TOOLS_JOURNAL_TECHNIQUES[active];
 
   return (
     <View style={tools.screen}>
       <ScrollView
-        contentContainerStyle={[tools.techScroll, { paddingTop: headHeight + 20, paddingBottom: bottomInset + 168 }]}
+        contentContainerStyle={[tools.techScroll, { paddingTop: headHeight + 18, paddingBottom: bottomInset + 168 }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={tools.barHeader}>
@@ -26208,116 +26341,79 @@ function ToolsJournalTechniques({
           >
             Pick what fits the moment.
           </Reanimated.Text>
-          <Reanimated.Text
-            entering={FadeInUp.delay(320).duration(620).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 10 }] })}
-            style={tools.barIntro}
-          >
-            One journal, three different doors. Open any of them.
-          </Reanimated.Text>
         </View>
 
-        <View style={tools.techTabsRow} onLayout={event => setRowWidth(event.nativeEvent.layout.width)}>
+        <Reanimated.View entering={FadeIn.delay(360).duration(460)} style={tools.swipeTagRow}>
+          <ToolsSwipeTag dismissed={touched} />
+        </Reanimated.View>
+
+        {/* The wire and its cards break the scroll's side padding to span the
+            whole width, so the cable runs post to post. */}
+        <View style={[tools.wireStage, { height: stageH, width, marginLeft: -22 }]}>
+          <ToolsWire width={width} />
+          <GestureDetector gesture={pan}>
+            <View style={StyleSheet.absoluteFill}>
+              {TOOLS_JOURNAL_TECHNIQUES.map((technique, index) => (
+                <ToolsWireCard
+                  key={technique.key}
+                  technique={technique}
+                  index={index}
+                  scroll={scroll}
+                  sway={sway}
+                  pitch={pitch}
+                  centerX={centerX}
+                  cardW={cardW}
+                  cardH={cardH}
+                  hanger={hanger}
+                  ringRow={ringRow}
+                  depth={index === active ? 30 : 20 - Math.abs(index - active)}
+                  onPress={() => tapTo(index)}
+                />
+              ))}
+            </View>
+          </GestureDetector>
+        </View>
+
+        <View style={tools.wireDots}>
           {TOOLS_JOURNAL_TECHNIQUES.map((technique, index) => (
-            <Reanimated.View
+            <View
               key={technique.key}
-              entering={FadeInUp.delay(460 + index * 110).duration(560).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 18 }] })}
-              style={tools.techTabSlot}
-            >
-              <ToolsTechniqueTab
-                technique={technique}
-                open={technique.key === openKey}
-                onPress={() => selectTab(technique.key)}
-              />
-            </Reanimated.View>
+              style={[
+                tools.wireDot,
+                index === active && [tools.wireDotActive, { backgroundColor: technique.accent }],
+              ]}
+            />
           ))}
         </View>
 
-        <Reanimated.View layout={LinearTransition.duration(300).easing(Easing.out(Easing.cubic))} style={tools.techDrawerStage}>
-          {active ? (
-            <View style={tools.techDrawerHost}>
-              <Reanimated.View
-                pointerEvents="none"
-                style={[
-                  tools.techTongue,
-                  { backgroundColor: active.tint, borderColor: active.border },
-                  tongueStyle,
-                ]}
-              />
-              <Reanimated.View
-                key={active.key}
-                entering={FadeInUp.duration(360).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}
-                exiting={FadeOut.duration(150)}
-                style={[tools.techDrawer, { backgroundColor: active.tint, borderColor: active.border }]}
-              >
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={[active.tint, '#FFFFFF']}
-                  start={{ x: 0.15, y: 0 }}
-                  end={{ x: 0.85, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                <View pointerEvents="none" style={tools.techDrawerWatermark}>
-                  <active.Icon s={112} c={`${active.accent}14`} w={1} />
-                </View>
-
-                <View style={tools.techDrawerHeader}>
-                  <View style={tools.techDrawerHeadCopy}>
-                    <Text style={[tools.techDrawerEyebrow, { color: active.accent }]}>{active.label}</Text>
-                    <Text style={[tools.techDrawerTitle, { color: active.ink }]}>{active.name}</Text>
-                  </View>
-                  <View style={[tools.techDrawerPagePill, { borderColor: active.border }]}>
-                    <Text style={[tools.techDrawerPage, { color: active.accent }]}>{panel + 1} / 2</Text>
-                  </View>
-                </View>
-
-                <GestureDetector gesture={swipe}>
-                  <View style={tools.techDrawerViewport}>
-                    <Reanimated.View style={[tools.techDrawerTrack, { width: drawerPageWidth * 2 }, trackStyle]}>
-                      <View style={[tools.techPanel, { width: drawerPageWidth }]}>
-                        <Text style={[tools.techPanelLabel, { color: active.accent }]}>WHAT IT IS</Text>
-                        <Text style={[tools.techPanelText, { color: active.deep }]}>{active.description}</Text>
-                      </View>
-                      <View style={[tools.techPanel, { width: drawerPageWidth }]}>
-                        <Text style={[tools.techPanelLabel, { color: active.accent }]}>WHY IT HELPS</Text>
-                        <Text style={[tools.techPanelText, { color: active.deep }]}>{active.benefits}</Text>
-                      </View>
-                    </Reanimated.View>
-                  </View>
-                </GestureDetector>
-
-                <View style={tools.techFoot}>
-                  <View style={tools.techDots}>
-                    {[0, 1].map(dotIndex => (
-                      <TouchableOpacity
-                        key={dotIndex}
-                        haptic="selection"
-                        onPress={() => {
-                          pagePos.value = withTiming(dotIndex, { duration: 320, easing: Easing.out(Easing.cubic) });
-                          setPanel(dotIndex);
-                        }}
-                        hitSlop={10}
-                        style={[
-                          tools.techDot,
-                          { backgroundColor: `${active.accent}3D` },
-                          panel === dotIndex && [tools.techDotActive, { backgroundColor: active.accent }],
-                        ]}
-                      />
-                    ))}
-                  </View>
-                  <Text style={[tools.techSwipeHint, { color: `${active.accent}B0` }]}>
-                    {panel === 0 ? 'Swipe for the benefits' : 'Swipe back for the description'}
-                  </Text>
-                </View>
-              </Reanimated.View>
+        {/* The reading below the wire — it swaps as the centred card changes:
+            first what the technique is, then what it gives you. */}
+        <View style={tools.wireReadStage}>
+          <Reanimated.View
+            key={activeTech.key}
+            entering={FadeInUp.duration(360).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({ opacity: 0, transform: [{ translateY: 14 }] })}
+            exiting={FadeOut.duration(160)}
+            style={tools.wireRead}
+          >
+            <View style={tools.wireReadBlock}>
+              <View style={tools.wireReadLabelRow}>
+                <View style={[tools.wireReadTick, { backgroundColor: activeTech.accent }]} />
+                <Text style={[tools.wireReadLabel, { color: activeTech.accent }]}>WHAT IT IS</Text>
+              </View>
+              <Text style={tools.wireReadText}>{activeTech.description}</Text>
             </View>
-          ) : (
-            <Reanimated.View entering={FadeIn.duration(260)} style={tools.techEmptyDrawer}>
-              <View style={tools.techEmptyLine} />
-              <Text style={tools.techEmptyText}>Open one, open all three, or simply continue — nothing is required here.</Text>
-              <View style={tools.techEmptyLine} />
-            </Reanimated.View>
-          )}
-        </Reanimated.View>
+
+            <View style={tools.wireReadDivider} />
+
+            <View style={tools.wireReadBlock}>
+              <View style={tools.wireReadLabelRow}>
+                <View style={[tools.wireReadTick, { backgroundColor: activeTech.accent }]} />
+                <Text style={[tools.wireReadLabel, { color: activeTech.accent }]}>THE BENEFIT</Text>
+              </View>
+              <Text style={tools.wireReadText}>{activeTech.benefits}</Text>
+            </View>
+          </Reanimated.View>
+        </View>
       </ScrollView>
 
       <ToolsChapterBar chapter={chapter} onHeight={setHeadHeight} />
@@ -27065,61 +27161,54 @@ const tools = StyleSheet.create({
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center', paddingTop: 42, zIndex: 20 },
   centerScroll: { paddingHorizontal: 22, paddingTop: 84 },
 
-  // Journal techniques — the tints are the real Journal hub's own.
+  // Journal techniques — cards clipped to a wire, over white.
   techScroll: { paddingHorizontal: 22 },
-  techTabsRow: { marginTop: 24, flexDirection: 'row', columnGap: TOOLS_TAB_GAP, alignItems: 'stretch' },
-  techTabSlot: { flex: 1 },
-  techTabPress: { flex: 1 },
-  techTab: {
-    minHeight: 104, overflow: 'hidden', borderRadius: 20, borderCurve: 'continuous', borderWidth: 1,
-    backgroundColor: '#FFFDF9',
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 13,
-  },
-  techTabIcon: {
-    width: 36, height: 36, borderRadius: 13, borderCurve: 'continuous',
-    alignItems: 'center', justifyContent: 'center', marginBottom: 9, borderWidth: 1,
-  },
-  techTabName: { minHeight: 30, fontFamily: F.serifSemiBold, fontSize: 12.8, lineHeight: 15, textAlign: 'center' },
-  techTabBar: { width: 26, height: 3, borderRadius: 999, marginTop: 8 },
 
-  techDrawerStage: { marginTop: 17, minHeight: 246 },
-  techDrawerHost: { position: 'relative', paddingTop: 8 },
-  // The drawer's tongue: a rotated square wearing the drawer's own fill and
-  // two of its borders, sliding to whichever tab the drawer was pulled from.
-  // Painted before the drawer on purpose: the drawer covers its lower half, so
-  // only the pointing corner survives. Never give this a zIndex.
-  techTongue: {
-    position: 'absolute', top: 2, left: 0, width: 16, height: 16,
-    borderTopWidth: 1, borderLeftWidth: 1, borderTopLeftRadius: 4,
+  swipeTagRow: { marginTop: 20, alignItems: 'center' },
+  swipeTag: {
+    flexDirection: 'row', alignItems: 'center', columnGap: 7,
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 999, backgroundColor: 'rgba(25,23,20,0.035)', borderWidth: 1, borderColor: 'rgba(25,23,20,0.07)',
   },
-  techDrawer: {
-    overflow: 'hidden', borderRadius: 24, borderCurve: 'continuous', borderWidth: 1,
-    paddingHorizontal: 17, paddingTop: 16, paddingBottom: 13,
-    boxShadow: '0 16px 32px rgba(92,67,25,0.10)',
+  swipeTagText: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 0.9, color: 'rgba(25,23,20,0.5)' },
+
+  wireStage: { position: 'relative', marginTop: 6, overflow: 'visible' },
+  wireSvg: { position: 'absolute', top: 0, left: 0 },
+  wireCardHang: { position: 'absolute' },
+  // The clip that meets the wire, and the thread down to the card.
+  wireClip: { alignSelf: 'center', width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },
+  wireClipRing: {
+    width: 11, height: 11, borderRadius: 6,
+    backgroundColor: '#FFFFFF', borderWidth: 1.6, borderColor: 'rgba(25,23,20,0.34)',
   },
-  techDrawerWatermark: { position: 'absolute', right: -22, bottom: -26, transform: [{ rotate: '-10deg' }] },
-  techDrawerHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', columnGap: 10, marginBottom: 14 },
-  techDrawerHeadCopy: { flex: 1, minWidth: 0 },
-  techDrawerEyebrow: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.7 },
-  techDrawerTitle: { marginTop: 3, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 25 },
-  techDrawerPagePill: {
-    paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.6)',
+  wireThread: { alignSelf: 'center', width: 1.4, backgroundColor: 'rgba(25,23,20,0.2)' },
+  wireCard: {
+    overflow: 'hidden',
+    borderRadius: 22, borderCurve: 'continuous', borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 15,
+    boxShadow: '0 16px 30px rgba(30,26,20,0.12)',
   },
-  techDrawerPage: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.1, fontVariant: ['tabular-nums'] },
-  techDrawerViewport: { overflow: 'hidden' },
-  techDrawerTrack: { flexDirection: 'row' },
-  techPanel: { paddingRight: 12, minHeight: 104 },
-  techPanelLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.9 },
-  techPanelText: { marginTop: 8, fontFamily: F.sans, fontSize: 14, lineHeight: 20.5 },
-  techFoot: { marginTop: 12, alignItems: 'center' },
-  techDots: { flexDirection: 'row', justifyContent: 'center', columnGap: 7 },
-  techDot: { width: 6, height: 6, borderRadius: 3 },
-  techDotActive: { width: 18 },
-  techSwipeHint: { marginTop: 9, fontFamily: F.sans, fontSize: 10.5, textAlign: 'center' },
-  techEmptyDrawer: { minHeight: 176, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22 },
-  techEmptyLine: { width: 42, height: 1, backgroundColor: 'rgba(197,160,89,0.32)' },
-  techEmptyText: { maxWidth: 282, marginVertical: 16, fontFamily: F.serifMediumItalic, fontSize: 14.5, lineHeight: 21, color: 'rgba(25,23,20,0.48)', textAlign: 'center' },
+  wireDisc: {
+    width: 44, height: 44, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 12,
+  },
+  wireLabel: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.5, textAlign: 'center' },
+  wireName: { marginTop: 6, fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 21, letterSpacing: -0.2, textAlign: 'center' },
+  wireUnderline: { marginTop: 9, width: 28, height: 2.5, borderRadius: 999 },
+
+  wireDots: { marginTop: 4, flexDirection: 'row', justifyContent: 'center', columnGap: 6 },
+  wireDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(25,23,20,0.14)' },
+  wireDotActive: { width: 18 },
+
+  wireReadStage: { marginTop: 20, minHeight: 200 },
+  wireRead: { rowGap: 14 },
+  wireReadBlock: {},
+  wireReadLabelRow: { flexDirection: 'row', alignItems: 'center', columnGap: 7, marginBottom: 7 },
+  wireReadTick: { width: 5, height: 5, borderRadius: 3, transform: [{ rotate: '45deg' }] },
+  wireReadLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.9 },
+  wireReadText: { fontFamily: F.serifMedium, fontSize: 16, lineHeight: 23.5, color: 'rgba(25,23,20,0.72)' },
+  wireReadDivider: { height: 1, backgroundColor: 'rgba(25,23,20,0.07)' },
 
   // Pomodoro regimes — each one drawn as the shape it makes in time.
   regimeStack: { marginTop: 22, rowGap: 12 },
