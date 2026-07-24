@@ -11,8 +11,10 @@ import Reanimated, {
   useReducedMotion,
   useSharedValue,
   withDelay,
+  withRepeat,
   withTiming,
 } from 'react-native-reanimated';
+import Svg, { Circle, Defs, Ellipse, Line, Path, RadialGradient, Stop } from 'react-native-svg';
 import {
   ArrowLeft, CheckSmall, Pencil, Plus, Trash2, X,
 } from '@/components/icons/Icons';
@@ -140,6 +142,312 @@ const SUGGESTED_QUALITIES = [
 const BG = '#FAF7F0';
 const PARCHMENT = '#F5ECD7';
 
+type Tone = 'neutral' | 'warning' | 'positive';
+
+// ─── Per-step worlds ────────────────────────────────────────────────────────
+// Each question gets its own scene and palette so the flow stops reading as one
+// gold sheet. Positive steps live in light and colour; the heavy, honest steps
+// (what holds you back) live in a dark field lit only by red.
+
+type SceneKind = 'portrait' | 'constellation' | 'light' | 'weight' | 'rhythm' | 'bond';
+
+type FlowTheme = {
+  mode: 'light' | 'dark';
+  scene: SceneKind;
+  bg: readonly [string, string, string];
+  ink: string;          // title
+  sub: string;          // body
+  accent: string;       // primary accent (labels, focus)
+  accentSoft: string;   // soft accent fill
+  topIcon: string;      // back arrow
+  track: string;        // progress track
+  fill: readonly [string, string, string];  // progress fill gradient
+  surface: string;      // input background
+  surfaceBorder: string;
+  placeholder: string;
+  inputText: string;
+  itemBg: string;
+  itemBorder: string;
+  itemText: string;
+  button: readonly [string, string, string]; // CTA gradient
+  buttonInk: string;
+  addBtn: string;       // add button fill
+};
+
+const AURORA: FlowTheme = {
+  mode: 'light', scene: 'portrait',
+  bg: ['#FBF8FF', '#F4EEFB', '#FBF7FE'],
+  ink: '#221A2E', sub: '#75688A', accent: '#6D5AAE', accentSoft: 'rgba(109,90,174,0.12)',
+  topIcon: '#6A5C82', track: '#E7DEF3', fill: ['#B49BE6', '#8A6FD0', '#6D5AAE'],
+  surface: '#FFFEFF', surfaceBorder: '#E7DEF3', placeholder: '#B4A9C6', inputText: '#221A2E',
+  itemBg: '#F6F1FD', itemBorder: '#E3D8F3', itemText: '#3B2F53',
+  button: ['#8A6FD0', '#6D5AAE', '#57458F'], buttonInk: '#FFFFFF', addBtn: '#6D5AAE',
+};
+
+const CONSTELLATION: FlowTheme = {
+  mode: 'light', scene: 'constellation',
+  bg: ['#FEFCF7', '#F7F1E6', '#FEFBF4'],
+  ink: '#22201A', sub: '#7C7364', accent: '#9A7C36', accentSoft: 'rgba(154,124,54,0.12)',
+  topIcon: '#7C7364', track: '#EAE1CE', fill: ['#E0C489', '#C9A227', '#B8933F'],
+  surface: '#FFFEFB', surfaceBorder: '#E6DCC2', placeholder: '#B3AA9C', inputText: '#221E1A',
+  itemBg: '#F8EFD6', itemBorder: '#E2CE9F', itemText: '#7A5E22',
+  button: ['#D8B672', '#C9A227', '#B8933F'], buttonInk: '#FFFFFF', addBtn: '#C9A227',
+};
+
+// The bright, hopeful world — white ground, sunrise colour.
+const LIGHT: FlowTheme = {
+  mode: 'light', scene: 'light',
+  bg: ['#FFFDFB', '#FFF6EF', '#FFFBF6'],
+  ink: '#241B16', sub: '#7E7065', accent: '#D9663E', accentSoft: 'rgba(217,102,62,0.12)',
+  topIcon: '#8A6A5C', track: '#F2E2D6', fill: ['#F2B36B', '#E8785A', '#D9663E'],
+  surface: '#FFFFFF', surfaceBorder: '#F0DECE', placeholder: '#C7B4A6', inputText: '#241B16',
+  itemBg: '#FFF3E9', itemBorder: '#F3D6BE', itemText: '#7A3B22',
+  button: ['#F2B36B', '#EC7F52', '#E1613A'], buttonInk: '#FFFFFF', addBtn: '#E8785A',
+};
+
+// The heavy, honest world — near-black lit only by red.
+const WEIGHT: FlowTheme = {
+  mode: 'dark', scene: 'weight',
+  bg: ['#1A1613', '#120E0C', '#0C0908'],
+  ink: '#F4EAE2', sub: '#B3A79E', accent: '#E0604E', accentSoft: 'rgba(224,96,78,0.16)',
+  topIcon: '#C9BAB0', track: 'rgba(255,255,255,0.1)', fill: ['#E0604E', '#C4443A', '#9C3128'],
+  surface: 'rgba(255,255,255,0.05)', surfaceBorder: 'rgba(224,96,78,0.28)', placeholder: '#8A7E76', inputText: '#F4EAE2',
+  itemBg: 'rgba(224,96,78,0.1)', itemBorder: 'rgba(224,96,78,0.32)', itemText: '#F1D9D2',
+  button: ['#E0604E', '#C4443A', '#9C3128'], buttonInk: '#FFFFFF', addBtn: '#C4443A',
+};
+
+// The steady world — routines and practice, a calm blue pulse on cream.
+const RHYTHM: FlowTheme = {
+  mode: 'light', scene: 'rhythm',
+  bg: ['#FAFBFE', '#F0F3FA', '#FAFBFE'],
+  ink: '#1A1F2B', sub: '#6C7488', accent: '#4F6693', accentSoft: 'rgba(79,102,147,0.12)',
+  topIcon: '#6C7488', track: '#E1E6F1', fill: ['#7E96C4', '#5A75A8', '#4F6693'],
+  surface: '#FFFFFF', surfaceBorder: '#E1E6F1', placeholder: '#AEB5C6', inputText: '#1A1F2B',
+  itemBg: '#EFF3FA', itemBorder: '#D9E1EF', itemText: '#324066',
+  button: ['#7E96C4', '#5A75A8', '#4F6693'], buttonInk: '#FFFFFF', addBtn: '#5A75A8',
+};
+
+// The bond — the relationship with God, a warm sacred light.
+const BOND: FlowTheme = {
+  mode: 'light', scene: 'bond',
+  bg: ['#FFFCF7', '#FBF3E9', '#FFFBF4'],
+  ink: '#2A2019', sub: '#83715F', accent: '#B67A3C', accentSoft: 'rgba(182,122,60,0.12)',
+  topIcon: '#83715F', track: '#EFE2D0', fill: ['#E8C98A', '#CF9B54', '#B67A3C'],
+  surface: '#FFFEFB', surfaceBorder: '#EDDFC7', placeholder: '#BCAE9C', inputText: '#2A2019',
+  itemBg: '#FBF1E1', itemBorder: '#EAD7BC', itemText: '#7A5326',
+  button: ['#E8C98A', '#CFA155', '#B67A3C'], buttonInk: '#FFFFFF', addBtn: '#CFA155',
+};
+
+const STEP_THEME: Record<StepId, FlowTheme> = {
+  // vision / qualities / relationship still wear the cream register until their
+  // own scenes land in the next pass — their content is not themed yet.
+  vision: CONSTELLATION,
+  qualities: CONSTELLATION,
+  anasta: WEIGHT, // unused (own screen), kept for the map's completeness
+  obstacles: WEIGHT,
+  actions: LIGHT,
+  routines: RHYTHM,
+  relationshipWithGod: CONSTELLATION,
+  spiritualObstacles: WEIGHT,
+  spiritualActions: LIGHT,
+  faithPractice: RHYTHM,
+  congrats: CONSTELLATION,
+};
+
+// A warm gradient CTA in the step's own colour — the flow no longer ends every
+// screen in gold.
+function SceneButton({
+  label, onPress, disabled, theme,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  theme: FlowTheme;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.85}
+      style={[s.sceneButton, { opacity: disabled ? 0.4 : 1 }]}
+    >
+      <LinearGradient
+        colors={[theme.button[0], theme.button[1], theme.button[2]]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1.4 }}
+        style={s.sceneButtonGradient}
+      >
+        <View style={s.sceneButtonSheen} pointerEvents="none" />
+        <Text style={[s.sceneButtonText, { color: theme.buttonInk }]} numberOfLines={1}>{label}</Text>
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
+
+// ─── Scene illustrations ────────────────────────────────────────────────────
+// Each is a wide banner that lives above the question, animated and reduce-
+// motion aware. They give every step its own identity at a glance.
+
+const SCENE_W = 300;
+const SCENE_H = 132;
+
+function SunriseScene() {
+  const reduceMotion = useReducedMotion();
+  const rise = useSharedValue(reduceMotion ? 1 : 0);
+  const breath = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    rise.value = withTiming(1, { duration: 900, easing: Easing.out(Easing.cubic) });
+    breath.value = withDelay(600, withTiming(1, { duration: 3200, easing: Easing.inOut(Easing.quad) }));
+  }, [reduceMotion, rise, breath]);
+
+  const sunStyle = useAnimatedStyle(() => ({
+    opacity: 0.5 + rise.value * 0.5,
+    transform: [{ translateY: (1 - rise.value) * 26 }],
+  }));
+  const rayStyle = useAnimatedStyle(() => ({ opacity: 0.32 + breath.value * 0.34 }));
+
+  return (
+    <View style={s.sceneBox}>
+      <Svg width={SCENE_W} height={SCENE_H} viewBox="0 0 300 132">
+        <Defs>
+          <RadialGradient id="sunriseGlow" cx="50%" cy="88%" rx="60%" ry="90%">
+            <Stop offset="0%" stopColor="#FFE7C4" stopOpacity={0.95} />
+            <Stop offset="45%" stopColor="#F7C08A" stopOpacity={0.5} />
+            <Stop offset="100%" stopColor="#F7C08A" stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        {/* Warm horizon bands */}
+        <Path d="M0 96 Q150 74 300 96 L300 132 L0 132 Z" fill="#FBE1C6" opacity={0.55} />
+        <Path d="M0 110 Q150 92 300 110 L300 132 L0 132 Z" fill="#F6CBA6" opacity={0.6} />
+        <Ellipse cx={150} cy={122} rx={150} ry={44} fill="url(#sunriseGlow)" />
+      </Svg>
+      {/* Rays + sun ride above the SVG so they can animate on the RN thread */}
+      <Reanimated.View style={[s.sceneRays, rayStyle]} pointerEvents="none">
+        <Svg width={SCENE_W} height={SCENE_H} viewBox="0 0 300 132">
+          {Array.from({ length: 9 }).map((_, i) => {
+            const a = (-90 + (i - 4) * 20) * (Math.PI / 180);
+            const x1 = 150 + Math.cos(a) * 30;
+            const y1 = 108 + Math.sin(a) * 30;
+            const x2 = 150 + Math.cos(a) * 60;
+            const y2 = 108 + Math.sin(a) * 60;
+            return <Line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#F0A867" strokeWidth={2.4} strokeLinecap="round" opacity={0.7} />;
+          })}
+        </Svg>
+      </Reanimated.View>
+      <Reanimated.View style={[s.sceneSun, sunStyle]} pointerEvents="none">
+        <Svg width={64} height={64} viewBox="0 0 64 64">
+          <Circle cx={32} cy={32} r={19} fill="#FBBE63" />
+          <Circle cx={32} cy={32} r={19} fill="#FFD98A" opacity={0.5} />
+          <Circle cx={26} cy={26} r={6} fill="#FFEFC9" opacity={0.8} />
+        </Svg>
+      </Reanimated.View>
+    </View>
+  );
+}
+
+function EclipseScene() {
+  const reduceMotion = useReducedMotion();
+  const breath = useSharedValue(reduceMotion ? 0.5 : 0);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    breath.value = withRepeat(withTiming(1, { duration: 3200, easing: Easing.inOut(Easing.quad) }), -1, true);
+  }, [reduceMotion, breath]);
+
+  const coronaStyle = useAnimatedStyle(() => ({ opacity: 0.5 + breath.value * 0.5, transform: [{ scale: 0.96 + breath.value * 0.08 }] }));
+
+  return (
+    <View style={s.sceneBox}>
+      <Reanimated.View style={[StyleSheet.absoluteFill, s.sceneCenter, coronaStyle]} pointerEvents="none">
+        <Svg width={SCENE_W} height={SCENE_H} viewBox="0 0 300 132">
+          <Defs>
+            <RadialGradient id="corona" cx="50%" cy="50%" rx="50%" ry="50%">
+              <Stop offset="42%" stopColor="#E0604E" stopOpacity={0} />
+              <Stop offset="58%" stopColor="#E0604E" stopOpacity={0.55} />
+              <Stop offset="72%" stopColor="#C4443A" stopOpacity={0.28} />
+              <Stop offset="100%" stopColor="#C4443A" stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Ellipse cx={150} cy={66} rx={120} ry={62} fill="url(#corona)" />
+        </Svg>
+      </Reanimated.View>
+      <View style={[StyleSheet.absoluteFill, s.sceneCenter]} pointerEvents="none">
+        <Svg width={98} height={98} viewBox="0 0 98 98">
+          <Circle cx={49} cy={49} r={34} fill="#0C0908" />
+          <Circle cx={49} cy={49} r={34} fill="none" stroke="#E0604E" strokeWidth={1.6} opacity={0.85} />
+          <Circle cx={49} cy={49} r={34} fill="none" stroke="#F2A08F" strokeWidth={0.7} opacity={0.5} />
+        </Svg>
+      </View>
+    </View>
+  );
+}
+
+function RippleScene() {
+  const reduceMotion = useReducedMotion();
+  const t = useSharedValue(reduceMotion ? 0.5 : 0);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    t.value = withRepeat(withTiming(1, { duration: 4200, easing: Easing.inOut(Easing.quad) }), -1, false);
+  }, [reduceMotion, t]);
+
+  const r1 = useAnimatedStyle(() => ({ opacity: 0.5 - t.value * 0.5, transform: [{ scale: 0.6 + t.value * 0.7 }] }));
+  const r2 = useAnimatedStyle(() => {
+    const p = (t.value + 0.5) % 1;
+    return { opacity: 0.5 - p * 0.5, transform: [{ scale: 0.6 + p * 0.7 }] };
+  });
+
+  return (
+    <View style={s.sceneBox}>
+      {[r1, r2].map((style, i) => (
+        <Reanimated.View key={i} style={[StyleSheet.absoluteFill, s.sceneCenter, style]} pointerEvents="none">
+          <Svg width={140} height={140} viewBox="0 0 140 140">
+            <Circle cx={70} cy={70} r={64} fill="none" stroke="#5A75A8" strokeWidth={2} opacity={0.5} />
+          </Svg>
+        </Reanimated.View>
+      ))}
+      <View style={[StyleSheet.absoluteFill, s.sceneCenter]} pointerEvents="none">
+        <Svg width={54} height={54} viewBox="0 0 54 54">
+          <Circle cx={27} cy={27} r={11} fill="#5A75A8" />
+          <Circle cx={27} cy={27} r={11} fill="#8EA4CE" opacity={0.4} />
+        </Svg>
+      </View>
+    </View>
+  );
+}
+
+function SceneFor({ kind }: { kind: SceneKind }) {
+  if (kind === 'light') return <SunriseScene />;
+  if (kind === 'weight') return <EclipseScene />;
+  if (kind === 'rhythm') return <RippleScene />;
+  return null;
+}
+
+// The question, on its scene: the illustration breathes above, then the title
+// and one line rise in beneath it.
+function SceneHeading({ theme, title, body }: { theme: FlowTheme; title: string; body: string }) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <View style={s.sceneHeadingWrap}>
+      <SceneFor kind={theme.scene} />
+      <Reanimated.View
+        entering={reduceMotion ? undefined : FadeInDown.duration(460).easing(Easing.out(Easing.cubic))}
+      >
+        <Text style={[s.stepTitle, { color: theme.ink }]}>{title}</Text>
+      </Reanimated.View>
+      {!!body && (
+        <Reanimated.View
+          entering={reduceMotion ? undefined : FadeInDown.delay(110).duration(460).easing(Easing.out(Easing.cubic))}
+        >
+          <Text style={[s.stepBody, { color: theme.sub }]}>{body}</Text>
+        </Reanimated.View>
+      )}
+    </View>
+  );
+}
+
 // ─── Container ──────────────────────────────────────────────────────────────
 
 export default function IdealSelfView() {
@@ -253,19 +561,25 @@ export default function IdealSelfView() {
   // the WebView. List/chip steps use plain TextInput inside a ScrollView with
   // keyboardShouldPersistTaps. Wrapping everything in a top-level
   // KeyboardAvoidingView fights with both, so we don't.
+  const theme = STEP_THEME[step];
   return (
     <View style={s.screen}>
-      {/* The flow is lit from above — a warm gold breath over the parchment, so
-          every question sits in light rather than on a flat sheet. */}
-      <View pointerEvents="none" style={s.screenBloom}>
-        <Bloom color={C.gold} opacity={0.17} />
-      </View>
+      {/* The whole screen takes the step's colour — light for the hopeful
+          questions, near-black for the heavy ones — so each world is full-bleed
+          rather than a card on parchment. */}
+      <LinearGradient
+        colors={[theme.bg[0], theme.bg[1], theme.bg[2]]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
       {step !== 'anasta' && step !== 'congrats' && (
         <FlowHeader
           dotIndex={dotIndex}
           onBack={goBackTopBar}
           canBack={stepIndex > 0}
           topInset={insets.top}
+          theme={theme}
         />
       )}
 
@@ -340,28 +654,30 @@ function FlowHeader({
   onBack,
   canBack,
   topInset,
+  theme,
 }: {
   dotIndex: number;
   onBack: () => void;
   canBack: boolean;
   topInset: number;
+  theme: FlowTheme;
 }) {
   return (
     <View style={[s.flowHeader, { paddingTop: getTitleBarTopPadding(topInset) }]}>
       <TouchableOpacity onPress={onBack} style={s.titleBarBtn} activeOpacity={0.72}>
-        <ArrowLeft s={22} c={canBack ? '#5C5752' : '#C9C5BD'} />
+        <ArrowLeft s={22} c={canBack ? theme.topIcon : (theme.mode === 'dark' ? '#5B534C' : '#C9C5BD')} />
       </TouchableOpacity>
-      {/* One gold thread that fills as the flow advances — nine tiny dots read
-          as debris at this size; a single rail reads as progress. */}
+      {/* One thread in the step's colour that fills as the flow advances — nine
+          tiny dots read as debris at this size; a single rail reads as progress. */}
       <View style={s.progressRail}>
-        <FlowProgress dotIndex={dotIndex} />
+        <FlowProgress dotIndex={dotIndex} theme={theme} />
       </View>
       <View style={s.titleBarBtn} />
     </View>
   );
 }
 
-function FlowProgress({ dotIndex }: { dotIndex: number }) {
+function FlowProgress({ dotIndex, theme }: { dotIndex: number; theme: FlowTheme }) {
   const reduceMotion = useReducedMotion();
   const target = DOT_STEPS.length <= 1
     ? 1
@@ -379,10 +695,10 @@ function FlowProgress({ dotIndex }: { dotIndex: number }) {
   }));
 
   return (
-    <View style={s.progressTrack}>
+    <View style={[s.progressTrack, { backgroundColor: theme.track }]}>
       <Reanimated.View style={[s.progressFill, fillStyle]}>
         <LinearGradient
-          colors={['#E0C489', C.gold, '#B8933F']}
+          colors={[theme.fill[0], theme.fill[1], theme.fill[2]]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={StyleSheet.absoluteFill}
@@ -828,6 +1144,8 @@ function ListStep({
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState('');
   const [pendingDelete, setPendingDelete] = useState<number | null>(null);
+  // warning → the heavy dark world, positive → the bright one, neutral → rhythm.
+  const theme = tone === 'warning' ? WEIGHT : tone === 'positive' ? LIGHT : RHYTHM;
 
   // Treat values as the committed list — empty drafts are not part of state
   // anymore. The single input above commits its content on +/Enter.
@@ -856,7 +1174,7 @@ function ListStep({
   return (
     <>
       <FlowScroll insetsBottom={insets.bottom}>
-        <StepHeading title={title} body={body} />
+        <SceneHeading theme={theme} title={title} body={body} />
 
         <View style={s.entryRow}>
           <TextInput
@@ -864,19 +1182,19 @@ function ListStep({
             onChangeText={setDraft}
             onSubmitEditing={commit}
             placeholder={atMax ? `Maximum reached (${maxItems})` : placeholder}
-            placeholderTextColor="#C9C5BD"
+            placeholderTextColor={theme.placeholder}
             multiline={false}
             maxLength={120}
             returnKeyType="done"
             blurOnSubmit={false}
             editable={!atMax}
-            style={s.entryInput}
+            style={[s.entryInput, { backgroundColor: theme.surface, borderColor: theme.surfaceBorder, color: theme.inputText }]}
           />
           <TouchableOpacity
             onPress={commit}
             disabled={!canCommit}
             activeOpacity={0.84}
-            style={[s.entryAddBtn, !canCommit && s.entryAddBtnDisabled]}
+            style={[s.entryAddBtn, { backgroundColor: theme.addBtn }, !canCommit && s.entryAddBtnDisabled]}
           >
             <Plus s={18} c="#FFFFFF" w={2.6} />
           </TouchableOpacity>
@@ -885,26 +1203,31 @@ function ListStep({
         {items.length > 0 && (
           <View style={s.itemList}>
             {items.map((value, idx) => (
-              <View key={`${value}-${idx}`} style={[s.itemCard, toneToCardStyle(tone)]}>
-                <Text style={[s.itemText, toneToTextStyle(tone)]} numberOfLines={3}>{value}</Text>
+              <Reanimated.View
+                key={`${value}-${idx}`}
+                entering={FadeInDown.duration(280).easing(Easing.out(Easing.cubic))}
+                style={[s.itemCard, { backgroundColor: theme.itemBg, borderColor: theme.itemBorder }]}
+              >
+                <View style={[s.itemDot, { backgroundColor: theme.accent }]} />
+                <Text style={[s.itemText, { color: theme.itemText }]} numberOfLines={3}>{value}</Text>
                 <TouchableOpacity
                   onPress={() => requestDelete(idx)}
                   activeOpacity={0.7}
                   hitSlop={6}
-                  style={[s.itemDeleteBtn, toneToDeleteStyle(tone)]}
+                  style={[s.itemDeleteBtn, { borderColor: theme.itemBorder, backgroundColor: theme.mode === 'dark' ? 'rgba(255,255,255,0.06)' : '#FFFFFF' }]}
                 >
-                  <X s={14} c={toneToDeleteIconColor(tone)} w={2.4} />
+                  <X s={14} c={theme.accent} w={2.4} />
                 </TouchableOpacity>
-              </View>
+              </Reanimated.View>
             ))}
           </View>
         )}
 
-        <Text style={s.itemCounter}>{items.length} / {maxItems}</Text>
+        <Text style={[s.itemCounter, { color: theme.sub }]}>{items.length} / {maxItems}</Text>
 
-        {footer && <Text style={s.listFooter}>{footer}</Text>}
+        {footer && <Text style={[s.listFooter, { color: theme.sub }]}>{footer}</Text>}
 
-        <PrimaryButton label={continueLabel} onPress={onContinue} disabled={continueDisabled} />
+        <SceneButton label={continueLabel} onPress={onContinue} disabled={continueDisabled} theme={theme} />
       </FlowScroll>
 
       <ConfirmModal
@@ -1564,37 +1887,6 @@ function ListEditor({
   );
 }
 
-// ─── Tone helpers ──────────────────────────────────────────────────────────
-// Obstacles read as "what I struggle with" → warm rust/terracotta cards.
-// Actions read as "what helps me grow"     → soft sage green cards.
-// Falls back to the default gold tone for everything else.
-
-type Tone = 'neutral' | 'warning' | 'positive';
-
-function toneToCardStyle(tone: Tone) {
-  if (tone === 'warning') return { backgroundColor: '#FBE6DD', borderColor: '#F0C6B5' };
-  if (tone === 'positive') return { backgroundColor: '#E5EFDF', borderColor: '#C6D9B5' };
-  return null;
-}
-
-function toneToTextStyle(tone: Tone) {
-  if (tone === 'warning') return { color: '#7A2E18' };
-  if (tone === 'positive') return { color: '#2E5223' };
-  return null;
-}
-
-function toneToDeleteStyle(tone: Tone) {
-  if (tone === 'warning') return { borderColor: '#F0C6B5' };
-  if (tone === 'positive') return { borderColor: '#C6D9B5' };
-  return null;
-}
-
-function toneToDeleteIconColor(tone: Tone): string {
-  if (tone === 'warning') return '#B65A3C';
-  if (tone === 'positive') return '#5C7A48';
-  return '#A8A29E';
-}
-
 // ─── Styles ────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
@@ -1629,6 +1921,19 @@ const s = StyleSheet.create({
     color: C.gold,
     textTransform: 'uppercase',
   },
+
+  // Scene: an animated illustration banner above the question.
+  sceneHeadingWrap: { gap: 10, marginBottom: 4 },
+  sceneBox: { height: SCENE_H, marginTop: 2, marginBottom: 6, alignItems: 'center', justifyContent: 'flex-end' },
+  sceneCenter: { alignItems: 'center', justifyContent: 'center' },
+  sceneRays: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center' },
+  sceneSun: { position: 'absolute', left: 0, right: 0, alignItems: 'center', bottom: 18 },
+
+  // The step's own CTA — a warm gradient pill in its colour, not gold.
+  sceneButton: { marginTop: 6, borderRadius: 17, borderCurve: 'continuous', overflow: 'hidden' },
+  sceneButtonGradient: { height: 54, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 },
+  sceneButtonSheen: { position: 'absolute', left: 0, right: 0, top: 0, height: '50%', backgroundColor: 'rgba(255,255,255,0.22)' },
+  sceneButtonText: { fontFamily: F.serifSemiBold, fontSize: 19, letterSpacing: 0.2 },
   // The question is the screen. Big enough to be read once and felt, not
   // scanned — it carries the weight the old 28pt shared with a paragraph.
   stepTitle: {
@@ -1825,16 +2130,18 @@ const s = StyleSheet.create({
   itemList: { gap: 9 },
   itemCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    alignItems: 'flex-start',
+    gap: 11,
     minHeight: 56,
     borderRadius: 16,
+    borderCurve: 'continuous',
     backgroundColor: '#F8F0D8',
     borderWidth: 1,
     borderColor: '#E8DCC4',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
   },
+  itemDot: { width: 7, height: 7, borderRadius: 4, marginTop: 8, flexShrink: 0 },
   itemText: {
     flex: 1,
     fontFamily: F.serifMedium,
