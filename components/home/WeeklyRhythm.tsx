@@ -151,28 +151,96 @@ function Sparkle({
   );
 }
 
-// A band of warm light that sweeps across the whole card every few
-// seconds — the glint grammar of the focus cards, in daylight.
-function CardGlint() {
+// A band of light that sweeps across the whole card every few seconds —
+// the glint grammar of the focus cards. It comes in three keys so a
+// resting card still catches the light, tuned to its register:
+//   active — warm gold on the live dawn card;
+//   ash    — a softer, slower warm sweep for an unwritten day;
+//   struck — a cool white pane passing over the graphite skipped card.
+// The "little more": a narrow bright core rides just ahead of the wide
+// band, so the light reads as a pane with a bright leading edge rather
+// than a flat wash — and a faint after-glimmer trails behind it.
+type GlintVariant = 'active' | 'ash' | 'struck';
+
+// Each gradient is shaped by five stops with a HOT centre — a defined beam
+// with a bright heart and soft falloff, not a flat wash — so the sweep
+// reads as a real pane of light. `loc` places the stops tight around centre.
+const WIDE_LOC = [0, 0.32, 0.5, 0.68, 1] as const;
+const CORE_LOC = [0, 0.4, 0.5, 0.6, 1] as const;
+
+// `arrival` = the fraction of the cycle at which the beam reaches the far
+// side; the rest is the off-screen pause before it returns. A high arrival
+// keeps the pause short (the light comes back sooner) WITHOUT speeding up
+// the sweep — the crossing time is arrival × duration, held roughly
+// constant. The active card keeps its slow ambient cadence; the resting
+// cards come round far more often, per Pavle.
+const GLINT: Record<GlintVariant, {
+  duration: number;
+  arrival: number;
+  peak: number;
+  corePeak: number;
+  wide: readonly [string, string, string, string, string];
+  core: readonly [string, string, string, string, string];
+}> = {
+  active: {
+    duration: 7000,
+    arrival: 0.44,
+    peak: 0.95,
+    corePeak: 0.9,
+    wide: ['rgba(255,251,235,0)', 'rgba(255,246,214,0.4)', 'rgba(255,249,224,0.82)', 'rgba(255,246,214,0.4)', 'rgba(255,251,235,0)'],
+    core: ['rgba(255,255,255,0)', 'rgba(255,253,243,0.6)', 'rgba(255,255,255,0.98)', 'rgba(255,253,243,0.6)', 'rgba(255,255,255,0)'],
+  },
+  ash: {
+    duration: 4600,
+    arrival: 0.78,
+    peak: 0.82,
+    corePeak: 0.68,
+    wide: ['rgba(247,238,217,0)', 'rgba(242,228,194,0.38)', 'rgba(246,233,201,0.72)', 'rgba(242,228,194,0.38)', 'rgba(247,238,217,0)'],
+    core: ['rgba(255,251,238,0)', 'rgba(253,246,226,0.55)', 'rgba(255,252,241,0.9)', 'rgba(253,246,226,0.55)', 'rgba(255,251,238,0)'],
+  },
+  struck: {
+    duration: 4800,
+    arrival: 0.78,
+    peak: 0.8,
+    corePeak: 0.78,
+    wide: ['rgba(255,255,255,0)', 'rgba(255,255,255,0.32)', 'rgba(255,255,255,0.6)', 'rgba(255,255,255,0.32)', 'rgba(255,255,255,0)'],
+    core: ['rgba(255,255,255,0)', 'rgba(255,255,255,0.66)', 'rgba(255,255,255,0.98)', 'rgba(255,255,255,0.66)', 'rgba(255,255,255,0)'],
+  },
+};
+
+function CardGlint({ variant = 'active' }: { variant?: GlintVariant }) {
   const reduceMotion = useReducedMotion();
   const [w, setW] = useState(0);
   const t = useSharedValue(0);
+  const cfg = GLINT[variant];
+  const { duration, arrival, peak, corePeak } = cfg;
 
   useEffect(() => {
     if (reduceMotion || w === 0) return;
     t.value = 0;
     t.value = withRepeat(
-      withTiming(1, { duration: 7600, easing: Easing.inOut(Easing.quad) }),
+      withTiming(1, { duration, easing: Easing.inOut(Easing.quad) }),
       -1,
       false,
     );
     return () => cancelAnimation(t);
-  }, [reduceMotion, w, t]);
+  }, [reduceMotion, w, t, duration]);
 
+  // The wide soft halo. A gentle visible window so the beam is legible as
+  // it travels rather than blinking past.
   const sweep = useAnimatedStyle(() => ({
-    opacity: interpolate(t.value, [0, 0.08, 0.3, 0.42, 1], [0, 0.85, 0.85, 0, 0]),
+    opacity: interpolate(t.value, [0, arrival * 0.2, arrival * 0.82, arrival * 1.14, 1], [0, peak, peak, 0, 0]),
     transform: [
-      { translateX: interpolate(t.value, [0, 0.42, 1], [-110, w + 60, w + 60]) },
+      { translateX: interpolate(t.value, [0, arrival, 1], [-140, w + 80, w + 80]) },
+      { rotate: '14deg' },
+    ],
+  }));
+
+  // The bright core, riding a touch ahead of the halo's centre.
+  const core = useAnimatedStyle(() => ({
+    opacity: interpolate(t.value, [0, arrival * 0.24, arrival * 0.78, arrival * 1.1, 1], [0, corePeak, corePeak, 0, 0]),
+    transform: [
+      { translateX: interpolate(t.value, [0, arrival, 1], [-90, w + 120, w + 120]) },
       { rotate: '14deg' },
     ],
   }));
@@ -184,21 +252,22 @@ function CardGlint() {
       onLayout={event => setW(event.nativeEvent.layout.width)}
     >
       {!reduceMotion && w > 0 && (
-        <Reanimated.View style={[cg.band, sweep]}>
-          <LinearGradient
-            colors={['rgba(255,251,235,0)', 'rgba(255,247,219,0.55)', 'rgba(255,251,235,0)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={{ flex: 1 }}
-          />
-        </Reanimated.View>
+        <>
+          <Reanimated.View style={[cg.band, sweep]}>
+            <LinearGradient colors={cfg.wide} locations={WIDE_LOC} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
+          </Reanimated.View>
+          <Reanimated.View style={[cg.core, core]}>
+            <LinearGradient colors={cfg.core} locations={CORE_LOC} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
+          </Reanimated.View>
+        </>
       )}
     </View>
   );
 }
 
 const cg = StyleSheet.create({
-  band: { position: 'absolute', top: -30, bottom: -30, width: 96 },
+  band: { position: 'absolute', top: -34, bottom: -34, width: 168 },
+  core: { position: 'absolute', top: -34, bottom: -34, width: 60 },
 });
 
 function DawnBackdrop({ muted = false, palette }: { muted?: boolean; palette: BankedPalette }) {
@@ -1131,8 +1200,10 @@ export default function WeeklyRhythm() {
         {/* The struck card is held under white light — wash from the top,
             hairline rim inside the border. */}
         {skippedToday && <StruckLight radius={24} />}
-        {/* No sweep across a resting card — the ember carries the motion. */}
-        {!banked && <CardGlint />}
+        {/* A light sweep passes over every card, keyed to its register:
+            warm gold when live, a soft warm pass on an unwritten day, a cool
+            white pane over the graphite skipped card. */}
+        <CardGlint variant={!banked ? 'active' : skippedToday ? 'struck' : 'ash'} />
 
         {/* Hero: today's percentage in the bloom, today's fire radiant */}
         <View style={s.heroRow}>

@@ -677,22 +677,30 @@ export type BankedGlintVariant = 'ash' | 'struck';
 const GLINT_WIDE_LOC = [0, 0.32, 0.5, 0.68, 1] as const;
 const GLINT_CORE_LOC = [0, 0.4, 0.5, 0.6, 1] as const;
 
+// `arrival` = the fraction of the cycle at which the beam reaches the far
+// side; the rest is the off-screen pause before it returns. A high arrival
+// keeps the pause short (the light comes back sooner) WITHOUT speeding up
+// the sweep itself — the crossing time is arrival × duration, held roughly
+// constant so the motion feels the same, just more frequent.
 const BANKED_GLINT: Record<BankedGlintVariant, {
   duration: number;
+  arrival: number;
   peak: number;
   corePeak: number;
   wide: readonly [string, string, string, string, string];
   core: readonly [string, string, string, string, string];
 }> = {
   ash: {
-    duration: 8200,
+    duration: 4600,
+    arrival: 0.78,
     peak: 0.82,
     corePeak: 0.68,
     wide: ['rgba(247,238,217,0)', 'rgba(242,228,194,0.38)', 'rgba(246,233,201,0.72)', 'rgba(242,228,194,0.38)', 'rgba(247,238,217,0)'],
     core: ['rgba(255,251,238,0)', 'rgba(253,246,226,0.55)', 'rgba(255,252,241,0.9)', 'rgba(253,246,226,0.55)', 'rgba(255,251,238,0)'],
   },
   struck: {
-    duration: 8600,
+    duration: 4800,
+    arrival: 0.78,
     peak: 0.8,
     corePeak: 0.78,
     wide: ['rgba(255,255,255,0)', 'rgba(255,255,255,0.32)', 'rgba(255,255,255,0.6)', 'rgba(255,255,255,0.32)', 'rgba(255,255,255,0)'],
@@ -705,30 +713,31 @@ export function BankedGlint({ variant = 'ash' }: { variant?: BankedGlintVariant 
   const [w, setW] = useState(0);
   const t = useSharedValue(0);
   const cfg = BANKED_GLINT[variant];
+  const { duration, arrival, peak, corePeak } = cfg;
 
   useEffect(() => {
     if (reduceMotion || w === 0) return;
     t.value = 0;
     t.value = withRepeat(
-      withTiming(1, { duration: cfg.duration, easing: Easing.inOut(Easing.quad) }),
+      withTiming(1, { duration, easing: Easing.inOut(Easing.quad) }),
       -1,
       false,
     );
     return () => cancelAnimation(t);
-  }, [reduceMotion, w, t, cfg.duration]);
+  }, [reduceMotion, w, t, duration]);
 
   const sweep = useAnimatedStyle(() => ({
-    opacity: interpolate(t.value, [0, 0.09, 0.36, 0.5, 1], [0, cfg.peak, cfg.peak, 0, 0]),
+    opacity: interpolate(t.value, [0, arrival * 0.2, arrival * 0.82, arrival * 1.14, 1], [0, peak, peak, 0, 0]),
     transform: [
-      { translateX: interpolate(t.value, [0, 0.44, 1], [-140, w + 80, w + 80]) },
+      { translateX: interpolate(t.value, [0, arrival, 1], [-140, w + 80, w + 80]) },
       { rotate: '14deg' },
     ],
   }));
 
   const core = useAnimatedStyle(() => ({
-    opacity: interpolate(t.value, [0, 0.11, 0.34, 0.48, 1], [0, cfg.corePeak, cfg.corePeak, 0, 0]),
+    opacity: interpolate(t.value, [0, arrival * 0.24, arrival * 0.78, arrival * 1.1, 1], [0, corePeak, corePeak, 0, 0]),
     transform: [
-      { translateX: interpolate(t.value, [0, 0.44, 1], [-90, w + 120, w + 120]) },
+      { translateX: interpolate(t.value, [0, arrival, 1], [-90, w + 120, w + 120]) },
       { rotate: '14deg' },
     ],
   }));
