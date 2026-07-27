@@ -738,11 +738,51 @@ const ms = StyleSheet.create({
 // rather than lit, because a banked instrument keeps its face and loses its
 // glow; one oxblood tick marks the day at twelve; and the seal comes down
 // to bite into the crest's base, so the mark belongs to the thing it marks.
+// An inscription cut into the plate beside the crest. Same typography the
+// live card gives its reading, so the two states are plainly the same
+// instrument — only here there are two of them, and they flank the fire
+// instead of standing opposite it.
+function StruckInscription({
+  eyebrow,
+  value,
+  unit,
+}: {
+  eyebrow: string;
+  value: number;
+  unit: string;
+}) {
+  const pal = bankedPalette('struck');
+  return (
+    <View style={sl.cell}>
+      <Text style={[sl.eyebrow, { color: pal.inkSoft }]} numberOfLines={1}>{eyebrow}</Text>
+      <Text style={[sl.value, { color: pal.ink }]} numberOfLines={1}>{value}</Text>
+      <Text style={[sl.unit, { color: pal.inkMuted }]} numberOfLines={1}>{unit}</Text>
+      <View style={[sl.rule, { backgroundColor: pal.line }]} />
+    </View>
+  );
+}
+
+const sl = StyleSheet.create({
+  cell: { flex: 1, alignItems: 'center', marginTop: 8 },
+  eyebrow: { fontFamily: F.sansBold, fontSize: 8.2, lineHeight: 10, letterSpacing: 1.15 },
+  value: {
+    marginTop: 2,
+    fontFamily: F.serifSemiBold,
+    fontSize: 30,
+    lineHeight: 34,
+    letterSpacing: -0.5,
+    includeFontPadding: false,
+    fontVariant: ['lining-nums', 'tabular-nums'],
+  },
+  unit: { marginTop: 1, fontFamily: F.sansBold, fontSize: 9.5, lineHeight: 12, letterSpacing: 1.5 },
+  rule: { width: 22, height: 1, marginTop: 5, borderRadius: 1 },
+});
+
 function StruckCrest() {
   const pal = bankedPalette('struck');
-  const field = 132;
+  const field = 120;
   const c = field / 2;
-  const ringR = 47;
+  const ringR = 43;
 
   return (
     <View style={cr.stage}>
@@ -797,8 +837,8 @@ function StruckCrest() {
 }
 
 const cr = StyleSheet.create({
-  stage: { width: 132, height: 132, alignItems: 'center', justifyContent: 'center' },
-  flame: { width: 68, height: 68, resizeMode: 'contain' },
+  stage: { width: 120, height: 120, alignItems: 'center', justifyContent: 'center' },
+  flame: { width: 62, height: 62, resizeMode: 'contain' },
 });
 
 /* ── Radiant flame ────────────────────────────────────────── */
@@ -1317,6 +1357,8 @@ export default function WeeklyRhythm() {
   const router = useRouter();
   const { instances } = useTasks();
   const [weekStats, setWeekStats] = useState<DayStat[]>([]);
+  // How many of today's tasks were laid aside — the struck card inscribes it.
+  const [todaySetAside, setTodaySetAside] = useState(0);
   const [progressCalendarOpen, setProgressCalendarOpen] = useState(false);
   const [progressCalendarModel, setProgressCalendarModel] = useState<HomeProgressCalendarModel>({
     current: 0,
@@ -1380,13 +1422,14 @@ export default function WeeklyRhythm() {
 
       if (!cancelled) {
         setWeekStats(stats);
+        setTodaySetAside(countsByDate.get(todayKey)?.skipped ?? 0);
         setProgressCalendarModel(buildHomeProgressCalendarModel(all, referenceDate));
       }
     })().catch(error => {
       console.warn('Home trophy analytics failed to load:', error);
     });
     return () => { cancelled = true; };
-  }, [instances, week]);
+  }, [instances, todayKey, week]);
 
   const todayStat = weekStats.find(d => d.isToday);
   const todayPct = todayStat?.pct ?? 0;
@@ -1419,7 +1462,12 @@ export default function WeeklyRhythm() {
   const headline = todayMode === 'no-tasks'
     ? 'A quiet day — nothing scheduled, and nothing missed.'
     : todayMode === 'all-skipped'
-      ? 'Today’s tasks were skipped — your streak still holds.'
+      // The claim has to match the inscription beside it: with no run behind
+      // today there is no streak to hold, and saying so anyway would be the
+      // old mistake — a card whose words its own face contradicts.
+      ? progressCalendarModel.current > 0
+        ? 'Today’s tasks were skipped — your streak still holds.'
+        : 'Today’s tasks were skipped — nothing was lost.'
       : todayPct >= 100
         ? 'The day is full — today’s flame is lit.'
         : todayPct >= 70
@@ -1470,9 +1518,27 @@ export default function WeeklyRhythm() {
             line; every other day gets the reading and the fire, side by
             side, with the light between them. */}
         {skippedToday ? (
-          <View style={s.struckHero}>
-            <StruckCrest />
-            <RestSeal label="SKIPPED" tone="struck" style={s.struckSeal} />
+          <View style={[s.struckPlate, { borderColor: todayPal.hair }]}>
+            {/* Registration marks — the plate is struck, not drawn. */}
+            <View style={[s.plateTick, s.plateTickTL, { backgroundColor: todayPal.line }]} />
+            <View style={[s.plateTick, s.plateTickTR, { backgroundColor: todayPal.line }]} />
+            <View style={[s.plateTick, s.plateTickBL, { backgroundColor: todayPal.line }]} />
+            <View style={[s.plateTick, s.plateTickBR, { backgroundColor: todayPal.line }]} />
+
+            <StruckInscription
+              eyebrow="STREAK"
+              value={progressCalendarModel.current}
+              unit={progressCalendarModel.current === 1 ? 'DAY' : 'DAYS'}
+            />
+            <View style={s.struckHero}>
+              <StruckCrest />
+              <RestSeal label="SKIPPED" tone="struck" style={s.struckSeal} />
+            </View>
+            <StruckInscription
+              eyebrow="SET ASIDE"
+              value={todaySetAside}
+              unit={todaySetAside === 1 ? 'TASK' : 'TASKS'}
+            />
           </View>
         ) : (
           <>
@@ -1618,14 +1684,32 @@ const s = StyleSheet.create({
     paddingRight: 8,
   },
   restSeal: { marginTop: 14 },
-  // The struck crest stands on the card's centre line and the stamp lands
-  // ACROSS it, cutting the flame off at the foot. Struck through the middle
-  // the silhouette broke into two black fragments and stopped reading as a
-  // flame at all; low, the whole shape stands and the mark still crosses
-  // it. Absolute, so the seal costs the card no height: the crest and the
-  // mark share one band.
-  struckHero: { marginTop: 4, alignItems: 'center', justifyContent: 'center' },
-  struckSeal: { position: 'absolute', marginTop: 20, zIndex: 2 },
+  // The struck day's hero is one plate, not three things floating in grey.
+  // The crest holds the middle and two inscriptions are cut either side of
+  // it, which is what the empty flanks were asking for: the fire alone left
+  // eighty points of nothing on each side of the card.
+  struckPlate: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(255,255,255,0.26)',
+    paddingHorizontal: 6,
+    paddingVertical: 8,
+  },
+  plateTick: { position: 'absolute', width: 7, height: 1, opacity: 0.5 },
+  plateTickTL: { left: 8, top: 8 },
+  plateTickTR: { right: 8, top: 8 },
+  plateTickBL: { left: 8, bottom: 8 },
+  plateTickBR: { right: 8, bottom: 8 },
+  // The stamp lands ACROSS the crest, cutting the flame off at the foot.
+  // Struck through the middle the silhouette broke into two black fragments
+  // and stopped reading as a flame at all. Absolute, so the seal costs the
+  // plate no height: the crest and the mark share one band.
+  struckHero: { alignItems: 'center', justifyContent: 'center' },
+  struckSeal: { position: 'absolute', marginTop: 18, zIndex: 2 },
   // Close under the hero, because the line is the hero's caption; the week
   // then takes the air that the gap used to waste.
   headline: {
