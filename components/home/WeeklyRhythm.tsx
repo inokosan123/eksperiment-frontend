@@ -468,24 +468,27 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
     <View style={{ width, height }}>
       {/* Mostly the old bloom, and a little of the new: FOUR struck rims on
           the outside, laid flat and rotated against each other exactly as
-          they were — more of them than before, so the fall from dark gold to
-          pale reads as steps of a minted face rather than one hard ring —
+          they were — more of them than before, so the fall from dark metal
+          to pale reads as steps of a minted face rather than one hard ring —
           and, only at the heart, the new light: a soft gradient that goes
-          white and fades, which is what the number needs to sit in. Its own
-          canvas, wide enough that no layer is ever cut off at an edge. */}
-      {!banked && (
-        <Svg
-          pointerEvents="none"
-          width={width * 1.3}
-          height={height * 1.9}
-          style={{ position: 'absolute', left: -width * 0.15, top: -height * 0.45 }}
-        >
+          white and fades, which is what the reading needs to sit in. Its own
+          canvas, wide enough that no layer is ever cut off at an edge.
+          One face, two metals: gold while the day is live, ash once it is
+          unwritten. The quiet register used to wear three flat ellipses of
+          its own here, which drew exactly the hard oval the live card was
+          redesigned to be rid of. */}
+      <Svg
+        pointerEvents="none"
+        width={width * 1.3}
+        height={height * 1.9}
+        style={{ position: 'absolute', left: -width * 0.15, top: -height * 0.45 }}
+      >
           <Defs>
             <RadialGradient id="todayBloom" cx="50%" cy="50%" r="50%">
-              <Stop offset="0" stopColor="#FFFDF6" stopOpacity={1} />
-              <Stop offset="0.5" stopColor="#FFF8E6" stopOpacity={0.94} />
-              <Stop offset="0.8" stopColor="#FBEFCF" stopOpacity={0.6} />
-              <Stop offset="1" stopColor="#F6E7BE" stopOpacity={0} />
+              <Stop offset="0" stopColor={banked ? '#FEFCF7' : '#FFFDF6'} stopOpacity={1} />
+              <Stop offset="0.5" stopColor={banked ? '#FBF7EC' : '#FFF8E6'} stopOpacity={0.94} />
+              <Stop offset="0.8" stopColor={banked ? '#EFE7D4' : '#FBEFCF'} stopOpacity={0.6} />
+              <Stop offset="1" stopColor={banked ? '#DED2B8' : '#F6E7BE'} stopOpacity={0} />
             </RadialGradient>
           </Defs>
           <Ellipse
@@ -493,7 +496,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
             cy={height * 1.0}
             rx={width * 0.55}
             ry={height * 0.56}
-            fill="#E6CC92"
+            fill={banked ? '#DED2B8' : '#E6CC92'}
             opacity={0.4}
             transform={`rotate(-6 ${width * 0.65} ${height * 1.0})`}
           />
@@ -502,7 +505,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
             cy={height * 0.97}
             rx={width * 0.5}
             ry={height * 0.5}
-            fill="#EDD9A6"
+            fill={banked ? '#E8DFC9' : '#EDD9A6'}
             opacity={0.5}
             transform={`rotate(5 ${width * 0.65} ${height * 0.97})`}
           />
@@ -511,7 +514,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
             cy={height * 1.01}
             rx={width * 0.45}
             ry={height * 0.44}
-            fill="#F4E5BF"
+            fill={banked ? '#EFE7D4' : '#F4E5BF'}
             opacity={0.62}
             transform={`rotate(-3 ${width * 0.64} ${height * 1.01})`}
           />
@@ -520,7 +523,7 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
             cy={height * 0.98}
             rx={width * 0.4}
             ry={height * 0.38}
-            fill="#FAF0D9"
+            fill={banked ? '#F7F2E4' : '#FAF0D9'}
             opacity={0.72}
             transform={`rotate(6 ${width * 0.64} ${height * 0.98})`}
           />
@@ -531,47 +534,13 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
             ry={height * 0.33}
             fill="url(#todayBloom)"
           />
-        </Svg>
-      )}
+      </Svg>
       <Svg
         pointerEvents="none"
         width={width * 1.14}
         height={height * 1.12}
         style={{ position: 'absolute', left: -width * 0.07, top: -height * 0.06 }}
       >
-        {/* Banked, the layered rims stay flat and opaque: a gauge out of
-            service should read as struck metal, not as light. */}
-        {banked && (
-          <>
-            <Ellipse
-              cx={width * 0.52}
-              cy={height * 0.56}
-              rx={width * 0.52}
-              ry={height * 0.52}
-              fill={pal.bloomRim}
-              opacity={0.8}
-              transform={`rotate(-5 ${width * 0.52} ${height * 0.56})`}
-            />
-            <Ellipse
-              cx={width * 0.52}
-              cy={height * 0.53}
-              rx={width * 0.46}
-              ry={height * 0.44}
-              fill={pal.bloomMid}
-              opacity={0.85}
-              transform={`rotate(4 ${width * 0.52} ${height * 0.53})`}
-            />
-            <Ellipse
-              cx={width * 0.49}
-              cy={height * 0.57}
-              rx={width * 0.42}
-              ry={height * 0.39}
-              fill={pal.bloomHeart}
-              opacity={0.95}
-              transform={`rotate(-3 ${width * 0.49} ${height * 0.57})`}
-            />
-          </>
-        )}
         {/* The progress track. Solid while the day can still be written,
             dashed once it is banked — a gauge visibly taken out of service. */}
         <Path
@@ -1657,7 +1626,9 @@ const s = StyleSheet.create({
     paddingLeft: 6,
     paddingRight: 8,
   },
-  restSeal: { marginTop: 14 },
+  // The unwritten day closes up the way the live one did: the seal comes
+  // nearer the hero, and the line nearer the seal.
+  restSeal: { marginTop: 8 },
   // The crest holds the card's centre line and the flanks it leaves empty
   // are filled with ash rather than with anything to read.
   // The stamp lands ACROSS the crest, cutting the flame off at the foot.
@@ -1686,13 +1657,13 @@ const s = StyleSheet.create({
   },
   // Colour comes from the register's palette at the call site.
   headlineBanked: {
-    marginTop: 10,
+    marginTop: 8,
     fontFamily: F.serifItalic,
   },
   // With the week band gone, the headline is the card's last line — give it
   // a little room below so the card closes gracefully instead of cramped.
   headlineBankedSolo: {
-    marginBottom: 4,
+    marginBottom: 2,
   },
   // The token band, framed by hairline rails. Generous, balanced padding so
   // the 38px coins — heavy with their borders and glows — never crowd the
