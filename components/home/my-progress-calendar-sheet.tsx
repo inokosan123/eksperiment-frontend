@@ -1,7 +1,9 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Image, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Asset } from 'expo-asset';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Ellipse, Path } from 'react-native-svg';
 import { ChevronLeft, ChevronRight, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
@@ -23,6 +25,19 @@ import { C, F } from '@/constants/tokens';
 // so the calendar already speaks Home's language.
 
 const FLAME_PNG = require('@/assets/images/streak-flame-512.png');
+let flameAssetWarmup: Promise<void> | null = null;
+
+function preloadFlameAsset() {
+  if (!flameAssetWarmup) {
+    flameAssetWarmup = (async () => {
+      const asset = Asset.fromModule(FLAME_PNG);
+      await asset.downloadAsync();
+      const uri = asset.localUri ?? asset.uri;
+      if (uri) await Image.prefetch(uri);
+    })().catch(() => undefined);
+  }
+  return flameAssetWarmup;
+}
 
 // The parted wreath — a beautiful dark gold on one side, a beautiful dark
 // green on the other.
@@ -128,6 +143,39 @@ function FlameMark({ size = 20 }: { size?: number }) {
   return <Image source={FLAME_PNG} style={{ width: size, height: size }} resizeMode="contain" />;
 }
 
+// ── One screen, never a scroll ────────────────────────────────────────
+// The crest, the month, the grid, the legend and the closing line all have
+// to land inside a single screen. The seams between them are the only give
+// there is, so they open as wide as the screen allows and close down to a
+// floor when it doesn't — and the day rows surrender their padding last,
+// because that is the only slack that costs the design nothing.
+const BLOCK = {
+  handle: 14,   // marginTop 10 + bar 4
+  header: 52,
+  hero: 170,    // borders 2 + 10 + rhythm 85 + 10 + counters 51 + 12
+  month: 40,
+  week: 18,
+  legend: 52,   // rule 1 + token 38 + gap 2 + label 11
+  footer: 22,
+};
+const DAY_MARK = 38;    // the caller's own token, fixed at the call site
+const DAY_NUMBER = 13;  // marginTop 1 + lineHeight 12
+const CELL_PAD = 3;     // air above and below each day mark
+const TOP_GAP = 12;     // the sheet never rides up into the status bar
+
+// [floor, ceiling] for every seam allowed to breathe.
+const SEAM = {
+  hero: [4, 12],
+  month: [2, 10],
+  grid: [6, 10],
+  legend: [14, 28],
+  footer: [10, 20],
+} as const;
+type SeamKey = keyof typeof SEAM;
+const SEAM_KEYS = Object.keys(SEAM) as SeamKey[];
+const SEAM_FLOOR = SEAM_KEYS.reduce((total, key) => total + SEAM[key][0], 0);
+const SEAM_SPAN = SEAM_KEYS.reduce((total, key) => total + SEAM[key][1] - SEAM[key][0], 0);
+
 const LEGEND: { label: string; pct: number | null; mode: HomeProgressMode }[] = [
   { label: 'Complete', pct: 100, mode: 'normal' },
   { label: 'Partial', pct: 56, mode: 'normal' },
@@ -138,6 +186,13 @@ const LEGEND: { label: string; pct: number | null; mode: HomeProgressMode }[] = 
 
 export default function MyProgressCalendarSheet({ visible, onClose, model, renderDay }: Props) {
   const [monthOffset, setMonthOffset] = useState(0);
+  const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    void preloadFlameAsset();
+  }, []);
+
   const today = new Date();
   const todayKey = localDateKey(today);
   const currentMonth = monthIndex(today);
@@ -232,13 +287,46 @@ export default function MyProgressCalendarSheet({ visible, onClose, model, rende
     return result;
   }, [model.days, shownMonth, shownYear, todayKey]);
 
+  // How much room this month actually needs, and how much the screen has
+  // to spend on the seams once it is paid for.
+  const fit = useMemo(() => {
+    const rows = Math.ceil(cells.length / 7);
+    // The closing line rides close to the sheet's edge. A gesture bar needs
+    // only a hair of clearance under a line nobody taps, so we trim it back;
+    // a tall button bar is left alone, because there the text would land
+    // inside it.
+    const padBottom = insets.bottom > 36 ? insets.bottom : Math.max(10, insets.bottom - 10);
+    const ceiling = windowHeight - insets.top - TOP_GAP;
+    const blocks =
+      BLOCK.handle + BLOCK.header + BLOCK.hero + BLOCK.month +
+      BLOCK.week + BLOCK.legend + BLOCK.footer + padBottom;
+    const grid = rows * (DAY_MARK + DAY_NUMBER + CELL_PAD * 2);
+    const spare = ceiling - blocks - grid - SEAM_FLOOR;
+    const open = Math.max(0, Math.min(1, spare / SEAM_SPAN));
+    const seam = (key: SeamKey) => SEAM[key][0] + (SEAM[key][1] - SEAM[key][0]) * open;
+    return {
+      padBottom,
+      // Below the floor the rows tighten rather than the sheet overflowing.
+      cellPad: spare < 0 ? Math.max(0, CELL_PAD + spare / (rows * 2)) : CELL_PAD,
+      heroTop: seam('hero'),
+      monthTop: seam('month'),
+      gridTop: seam('grid'),
+      legendTop: seam('legend'),
+      footerTop: seam('footer'),
+    };
+  }, [cells.length, insets.bottom, insets.top, windowHeight]);
+
   const close = () => {
     setMonthOffset(0);
     onClose();
   };
 
   return (
-    <SmoothBottomSheet visible={visible} onClose={close} sheetStyle={s.sheet}>
+    <SmoothBottomSheet
+      visible={visible}
+      onClose={close}
+      sheetStyle={[s.sheet, { paddingBottom: fit.padBottom }]}
+    >
       <View style={s.handle} />
       <View style={s.header}>
         <View style={s.headerCopy}>
@@ -256,7 +344,7 @@ export default function MyProgressCalendarSheet({ visible, onClose, model, rende
         </TouchableOpacity>
       </View>
 
-      <Reanimated.View entering={enter(25)} style={s.hero}>
+      <Reanimated.View entering={enter(25)} style={[s.hero, { marginTop: fit.heroTop }]}>
         <LinearGradient
           colors={['#F7F1DB', '#FBF8ED', '#F2F5EA']}
           start={{ x: 0, y: 0 }}
@@ -294,7 +382,7 @@ export default function MyProgressCalendarSheet({ visible, onClose, model, rende
         </View>
       </Reanimated.View>
 
-      <Reanimated.View entering={enter(55)} style={s.monthRow}>
+      <Reanimated.View entering={enter(55)} style={[s.monthRow, { marginTop: fit.monthTop }]}>
         <TouchableOpacity
           style={[s.monthButton, !canGoBack && s.monthButtonDisabled]}
           disabled={!canGoBack}
@@ -327,40 +415,42 @@ export default function MyProgressCalendarSheet({ visible, onClose, model, rende
         ))}
       </View>
 
-      <View style={s.grid} key={shownKey}>
-        {cells.map((cell, index) => {
-          if (cell.blank) return <View key={cell.key} style={s.cell} />;
-          const row = Math.floor(index / 7);
-          const col = index % 7;
-          const delay = 75 + (row + col) * 18;
+      <Reanimated.View
+        key={shownKey}
+        entering={FadeIn.duration(140)}
+        style={[s.grid, { marginTop: fit.gridTop }]}
+      >
+        {cells.map((cell) => {
+          const cellStyle = [s.cell, { paddingVertical: fit.cellPad }];
+          if (cell.blank) return <View key={cell.key} style={cellStyle} />;
+          const bandSeat = { top: fit.cellPad + 4 };
           return (
-            <View key={cell.key} style={s.cell}>
+            <View key={cell.key} style={cellStyle}>
               {cell.linkLeft && (
-                <Reanimated.View
-                  entering={FadeIn.duration(200).delay(delay)}
-                  style={[s.band, s.bandLeft, cell.softLeft && s.bandSoft]}
-                />
+                <View style={[s.band, bandSeat, s.bandLeft, cell.softLeft && s.bandSoft]} />
               )}
               {cell.linkRight && (
-                <Reanimated.View
-                  entering={FadeIn.duration(200).delay(delay)}
-                  style={[s.band, s.bandRight, cell.softRight && s.bandSoft]}
-                />
+                <View style={[s.band, bandSeat, s.bandRight, cell.softRight && s.bandSoft]} />
               )}
-              <Reanimated.View entering={FadeInDown.duration(210).delay(delay)} style={s.cellInner}>
+              <View style={s.cellInner}>
                 <View style={s.mark}>
                   {cell.future
                     ? <View style={s.futureDot} />
                     : renderDay({ pct: cell.pct, mode: cell.mode, isToday: cell.isToday })}
                 </View>
                 <Text style={[s.dayNumber, cell.isToday && s.dayNumberToday]}>{cell.day}</Text>
-              </Reanimated.View>
+              </View>
             </View>
           );
         })}
-      </View>
+      </Reanimated.View>
 
-      <Reanimated.View entering={enter(105)} style={s.legend}>
+      {/* The seam falls on both sides of the rule — a touch more above it,
+          so the calendar lets go before the legend begins. */}
+      <Reanimated.View
+        entering={enter(105)}
+        style={[s.legend, { marginTop: fit.legendTop * 0.6, paddingTop: fit.legendTop * 0.4 }]}
+      >
         {LEGEND.map(item => (
           <View key={item.label} style={s.legendItem}>
             {renderDay({ pct: item.pct, mode: item.mode, isToday: false })}
@@ -369,9 +459,9 @@ export default function MyProgressCalendarSheet({ visible, onClose, model, rende
         ))}
       </Reanimated.View>
 
-      <Reanimated.View entering={enter(135)} style={s.footer}>
+      <Reanimated.View entering={enter(135)} style={[s.footer, { marginTop: fit.footerTop }]}>
         <View style={s.footerLeaf} />
-        <Text style={s.footerText}>Every flame preserves the full story of that day.</Text>
+        <Text style={s.footerText}>Every flame preserves the full story of that day!</Text>
         <View style={[s.footerLeaf, s.footerLeafGold]} />
       </Reanimated.View>
     </SmoothBottomSheet>
@@ -379,12 +469,14 @@ export default function MyProgressCalendarSheet({ visible, onClose, model, rende
 }
 
 const s = StyleSheet.create({
+  // Bottom padding and every seam are measured against the screen in
+  // `fit` — this sheet never scrolls, so it has to be cut to fit.
   sheet: {
     backgroundColor: '#FBF9F3',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
+    borderCurve: 'continuous',
     paddingHorizontal: 16,
-    paddingBottom: 20,
   },
   handle: {
     width: 42,
@@ -395,7 +487,7 @@ const s = StyleSheet.create({
     backgroundColor: '#D9DDCF',
   },
   header: {
-    minHeight: 61,
+    minHeight: BLOCK.header,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -496,7 +588,7 @@ const s = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
   },
   monthRow: {
-    height: 43,
+    height: BLOCK.month,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -513,7 +605,7 @@ const s = StyleSheet.create({
   },
   monthButtonDisabled: { opacity: 0.28 },
   monthTitle: { fontFamily: F.serifMedium, fontSize: 18, color: '#35402F' },
-  weekHeader: { height: 18, flexDirection: 'row', alignItems: 'center' },
+  weekHeader: { height: BLOCK.week, flexDirection: 'row', alignItems: 'center' },
   weekLetter: {
     flex: 1,
     textAlign: 'center',
@@ -523,20 +615,18 @@ const s = StyleSheet.create({
     color: C.textMuted,
   },
   weekLetterToday: { color: '#66805A' },
-  grid: { marginTop: 6, flexDirection: 'row', flexWrap: 'wrap' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: {
     width: `${100 / 7}%`,
     position: 'relative',
     alignItems: 'center',
-    paddingVertical: 3,
   },
   cellInner: { alignItems: 'center' },
-  mark: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
+  mark: { width: DAY_MARK, height: DAY_MARK, alignItems: 'center', justifyContent: 'center' },
   // The golden chain fusing a run — two half segments meeting at the cell
   // border, seated on the coins' vertical centre. Same grammar as Focus.
   band: {
     position: 'absolute',
-    top: 3 + 4,
     height: 30,
     backgroundColor: 'rgba(247,226,171,0.55)',
     borderTopWidth: 1,
@@ -560,8 +650,7 @@ const s = StyleSheet.create({
   },
   dayNumberToday: { fontFamily: F.sansBold, color: '#66805A' },
   legend: {
-    minHeight: 57,
-    paddingTop: 5,
+    minHeight: BLOCK.legend,
     borderTopWidth: 1,
     borderTopColor: '#EEEADF',
     flexDirection: 'row',
@@ -576,7 +665,7 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
   footer: {
-    minHeight: 25,
+    minHeight: BLOCK.footer,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
