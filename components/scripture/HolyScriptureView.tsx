@@ -1,5 +1,5 @@
 import React, {
-  useCallback, useEffect, useMemo, useState,
+  useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
 import {
   ActivityIndicator,
@@ -46,6 +46,8 @@ import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { useAppSettings } from '@/components/settings/SettingsContext';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
+import { useGuidedScrollTransition } from '@/components/onboarding/guided/use-guided-scroll-transition';
 
 
 const BG = '#FCFCFC';
@@ -54,6 +56,7 @@ const GREEN = '#5E7B55';
 const ROSE = '#BE123C';
 
 type ScriptureTab = 'bible' | 'psalter';
+type ScriptureGuideEntryTarget = 'top' | 'bibleNotes' | 'browse';
 const SEGMENT_SPRING = {
   damping: 18,
   stiffness: 235,
@@ -64,10 +67,33 @@ const NEW_TESTAMENT = BIBLE_BOOKS.filter(book => book.testament === 'nt');
 const OLD_TESTAMENT = BIBLE_BOOKS.filter(book => book.testament !== 'nt' && book.id !== PSALMS_ID);
 const PSALTER = BIBLE_BOOKS.filter(book => book.id === PSALMS_ID);
 const PSALMS_BOOK = PSALTER[0];
-export default function HolyScriptureView() {
+const HOLY_SCRIPTURE_GUIDE_TARGETS = {
+  ephesians: 'scripture-library.ephesians',
+  chapterFive: 'scripture-library.chapter-five',
+  bibleNotes: 'scripture-library.bible-notes',
+  bibleNotesAction: 'scripture-library.bible-notes-action',
+  rhythm: 'scripture-library.rhythm',
+  browse: 'scripture-library.browse',
+} as const;
+
+export default function HolyScriptureView({
+  guided = false,
+  onGuidedOpen,
+  onGuidedOpenBibleNotes,
+  onGuidedComplete,
+  onGuidedReady,
+  guidedEntryTarget = 'top',
+}: {
+  guided?: boolean;
+  onGuidedOpen?: (bookId: number, chapter: number) => void;
+  onGuidedOpenBibleNotes?: () => void;
+  onGuidedComplete?: () => void;
+  onGuidedReady?: () => void;
+  guidedEntryTarget?: ScriptureGuideEntryTarget;
+} = {}) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height: screenHeight } = useWindowDimensions();
   const { ready, searchVerses } = useScripture();
   const { settings, updateSettings } = useAppSettings();
   const scriptureLanguage = normalizeScriptureLanguage(settings.bibleLang);
@@ -89,8 +115,137 @@ export default function HolyScriptureView() {
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const [showTaskSheet, setShowTaskSheet] = useState(false);
   const [taskSummary, setTaskSummary] = useState('Add to your daily routine');
+  const { session, patchSession, setPresentation } = useGuidedSetup();
+  const isGuided = guided && session?.active === true && session.activeStep === 'riseBibleHighlight';
+  const guidePhase = isGuided ? session.phase : '';
+  const ephesiansTarget = useGuideTarget(HOLY_SCRIPTURE_GUIDE_TARGETS.ephesians, isGuided);
+  const chapterFiveTarget = useGuideTarget(HOLY_SCRIPTURE_GUIDE_TARGETS.chapterFive, isGuided);
+  const bibleNotesTarget = useGuideTarget(HOLY_SCRIPTURE_GUIDE_TARGETS.bibleNotes, isGuided);
+  const bibleNotesActionTarget = useGuideTarget(HOLY_SCRIPTURE_GUIDE_TARGETS.bibleNotesAction, isGuided);
+  const rhythmTarget = useGuideTarget(HOLY_SCRIPTURE_GUIDE_TARGETS.rhythm, isGuided);
+  const browseTarget = useGuideTarget(HOLY_SCRIPTURE_GUIDE_TARGETS.browse, isGuided);
+  const guideScrollRef = useRef<ScrollView>(null);
+  const guideActionLockRef = useRef('');
+  const guidedReadyNotifiedRef = useRef(false);
+  const {
+    clear: clearGuideTimers,
+    finish: finishGuideScroll,
+    onScroll: handleGuideScroll,
+    schedule: scheduleGuide,
+    scrollYRef: guideScrollYRef,
+    stageTarget: stageGuideScrollTarget,
+  } = useGuidedScrollTransition({
+    scrollRef: guideScrollRef,
+    screenHeight,
+    setPresentation,
+    // Ephesians can sit several viewports below the hub. The native momentum
+    // event normally wins; this only prevents an early fallback on slower phones.
+    scrollFallbackMs: 620,
+    dismissOnAnyReposition: true,
+  });
 
   const query = searchQuery.trim().toLowerCase();
+
+  const guidedEntryDesiredY = useCallback((
+    entry: Exclude<ScriptureGuideEntryTarget, 'top'>,
+    targetHeight: number,
+  ) => {
+    const baseY = entry === 'bibleNotes'
+      ? Math.max(126, screenHeight * 0.18)
+      : Math.max(150, screenHeight * 0.24);
+    return baseY - Math.max(0, targetHeight - 56) * 0.22;
+  }, [screenHeight]);
+
+  useEffect(() => {
+    if (
+      !isGuided
+      || !ready
+      || !onGuidedReady
+      || guidedReadyNotifiedRef.current
+    ) return undefined;
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const frames: number[] = [];
+    const scheduleFrames = (callback: () => void) => {
+      const first = requestAnimationFrame(() => {
+        const second = requestAnimationFrame(callback);
+        frames.push(second);
+      });
+      frames.push(first);
+    };
+    const finishReady = () => {
+      if (cancelled || guidedReadyNotifiedRef.current) return;
+      guidedReadyNotifiedRef.current = true;
+      onGuidedReady();
+    };
+
+    if (guidedEntryTarget === 'top') {
+      guideScrollRef.current?.scrollTo({ y: 0, animated: false });
+      guideScrollYRef.current = 0;
+      scheduleFrames(finishReady);
+    } else {
+      const target = guidedEntryTarget === 'bibleNotes' ? bibleNotesTarget : browseTarget;
+      const positionTarget = (attempt = 0) => {
+        if (cancelled || guidedReadyNotifiedRef.current) return;
+        target.measureNow(layout => {
+          if (cancelled || guidedReadyNotifiedRef.current) return;
+          if (!layout) {
+            if (attempt >= 48) {
+              finishReady();
+              return;
+            }
+            retryTimer = setTimeout(() => positionTarget(attempt + 1), 40);
+            return;
+          }
+
+          const desiredY = guidedEntryDesiredY(guidedEntryTarget, layout.height);
+          const delta = layout.y - desiredY;
+          const visible = layout.y < screenHeight - 8
+            && layout.y + layout.height > insets.top + 56;
+          if (Math.abs(delta) <= 3) {
+            finishReady();
+            return;
+          }
+
+          if (attempt >= 48) {
+            finishReady();
+            return;
+          }
+
+          const nextScrollY = Math.max(0, guideScrollYRef.current + delta);
+          if (nextScrollY === 0 && guideScrollYRef.current === 0 && visible) {
+            finishReady();
+            return;
+          }
+          guideScrollRef.current?.scrollTo({ y: nextScrollY, animated: false });
+          // The silent jump does not always dispatch an onScroll event before
+          // the incoming screen is revealed. Keep the choreography's source
+          // of truth in sync so the first spotlight never corrects twice.
+          guideScrollYRef.current = nextScrollY;
+          scheduleFrames(() => positionTarget(attempt + 1));
+        });
+      };
+      scheduleFrames(positionTarget);
+    }
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      frames.forEach(cancelAnimationFrame);
+    };
+  }, [
+    bibleNotesTarget,
+    browseTarget,
+    guideScrollYRef,
+    guidedEntryDesiredY,
+    guidedEntryTarget,
+    insets.top,
+    isGuided,
+    onGuidedReady,
+    ready,
+    screenHeight,
+  ]);
   const psalmCardWidth = useMemo(() => {
     const contentWidth = Math.min(width, 430) - 44;
     return Math.max(128, Math.floor((contentWidth - 10) / 2));
@@ -156,6 +311,7 @@ export default function HolyScriptureView() {
   }), [sectionPillWidth, sectionPillTravel]);
 
   const switchTab = (next: ScriptureTab) => {
+    if (isGuided) return;
     if (next === tab) return;
     setTab(next);
     setExpandedBookId(null);
@@ -163,6 +319,7 @@ export default function HolyScriptureView() {
   };
 
   const handleLanguageChange = (lang: ScriptureLanguage) => {
+    if (isGuided) return;
     Haptics.selectionAsync().catch(() => {});
     updateSettings({ bibleLang: lang });
     setSearchResults([]);
@@ -171,6 +328,14 @@ export default function HolyScriptureView() {
 
   const openReader = (book: BibleBook, chapter = 1, verse?: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (isGuided) {
+      if (guidePhase === 'libraryChapter' && book.id === 49 && chapter === 5) {
+        if (guideActionLockRef.current === guidePhase) return;
+        guideActionLockRef.current = guidePhase;
+        onGuidedOpen?.(book.id, chapter);
+      }
+      return;
+    }
     setExpandedBookId(null);
     router.push({
       pathname: '/scripture-reader',
@@ -184,6 +349,7 @@ export default function HolyScriptureView() {
   };
 
   const switchSection = (next: 'new' | 'old') => {
+    if (isGuided) return;
     if (next === activeSection) return;
     setActiveSection(next);
     setExpandedBookId(null);
@@ -192,8 +358,261 @@ export default function HolyScriptureView() {
 
   const toggleBook = (book: BibleBook) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (isGuided) {
+      if (guidePhase === 'libraryBook' && book.id === 49) {
+        if (guideActionLockRef.current === guidePhase) return;
+        guideActionLockRef.current = guidePhase;
+        // Never let a rapid second tap collapse the chapter grid while its next
+        // spotlight is being measured.
+        setExpandedBookId(book.id);
+        setPresentation(null);
+        patchSession({ phase: 'libraryChapter' });
+      }
+      return;
+    }
     setExpandedBookId(expandedBookId === book.id ? null : book.id);
   };
+
+  useEffect(() => {
+    guideActionLockRef.current = '';
+  }, [guidePhase]);
+
+  const stageGuideTarget = useCallback((
+    target: { ref: React.RefObject<any>; measure: () => void },
+    present: () => void,
+    desiredY: number,
+    delay = 80,
+    onUnavailable?: () => void,
+  ) => {
+    scheduleGuide(() => {
+      stageGuideScrollTarget(
+        target,
+        targetHeight => desiredY - Math.max(0, targetHeight - 56) * 0.22,
+        present,
+        onUnavailable,
+      );
+    }, delay);
+  }, [scheduleGuide, stageGuideScrollTarget]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+    clearGuideTimers();
+
+    if (guidePhase === 'legacyLibraryIntro') {
+      setPresentation({
+        key: 'scripture-library-intro',
+        placement: 'bottom',
+        lightScrim: true,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'Every reading begins here: choose a Testament, open a book, then choose its chapter. Let’s open the passage behind Anasta’s call to rise.',
+        highlights: ['choose a Testament', 'open a book', 'choose its chapter'],
+        ctaLabel: 'Find Ephesians',
+        onCta: () => {
+          setTab('bible');
+          setActiveSection('new');
+          setSearchQuery('');
+          patchSession({ phase: 'libraryBook' });
+        },
+      });
+      return;
+    }
+
+    if (guidePhase === 'legacyLibraryBook') {
+      stageGuideTarget(ephesiansTarget, () => {
+        setPresentation({
+          key: 'scripture-library-book',
+          targetId: HOLY_SCRIPTURE_GUIDE_TARGETS.ephesians,
+          cutoutPadding: 7,
+          placement: 'above',
+          allowTargetInteraction: true,
+          eyebrow: 'NEW TESTAMENT',
+          message: 'Each book opens in place, without leaving the library.',
+          highlights: ['opens in place'],
+          action: 'Tap Ephesians',
+          hint: 'tap',
+        });
+      }, 154, 120);
+      return;
+    }
+
+    if (guidePhase === 'legacyLibraryChapter') {
+      stageGuideTarget(chapterFiveTarget, () => {
+        setPresentation({
+          key: 'scripture-library-chapter',
+          targetId: HOLY_SCRIPTURE_GUIDE_TARGETS.chapterFive,
+          cutoutPadding: 7,
+          placement: 'above',
+          allowTargetInteraction: true,
+          eyebrow: 'EPHESIANS',
+          message: 'The chapter grid is the fastest way to return to an exact place.',
+          highlights: ['chapter grid', 'exact place'],
+          action: 'Open Chapter 5',
+          hint: 'tap',
+        });
+      }, 205, 180);
+    }
+  }, [chapterFiveTarget, clearGuideTimers, ephesiansTarget, guidePhase, isGuided, patchSession, setPresentation, stageGuideTarget]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+    clearGuideTimers();
+
+    if (guidePhase === 'libraryIntro') {
+      setPresentation({
+        key: 'scripture-library-intro-v2',
+        coachGroupKey: 'bible-primary-coach',
+        placement: 'bottom',
+        lightScrim: true,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'This is your Holy Scripture — the home of your Bible and Psalter!',
+        highlights: ['your Holy Scripture'],
+        ctaLabel: 'Open Ephesians 5:14',
+        onCta: () => {
+          if (guideActionLockRef.current === guidePhase) return;
+          guideActionLockRef.current = guidePhase;
+          setTab('bible');
+          setActiveSection('new');
+          setSearchQuery('');
+          setPresentation(null);
+          onGuidedOpen?.(49, 5);
+        },
+      });
+      return;
+    }
+
+    if (guidePhase === 'libraryBook') {
+      setPresentation({
+        key: 'scripture-library-find-v2',
+        coachGroupKey: 'bible-primary-coach',
+        placement: 'bottom',
+        hideDim: true,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'Let’s open the verse behind Anasta’s call to arise.',
+      });
+      stageGuideTarget(ephesiansTarget, () => {
+        setPresentation({
+          key: 'scripture-library-book-v2',
+          coachGroupKey: 'bible-primary-coach',
+          targetId: HOLY_SCRIPTURE_GUIDE_TARGETS.ephesians,
+          cutoutPadding: 7,
+          placement: 'above',
+          allowTargetInteraction: true,
+          eyebrow: 'NEW TESTAMENT',
+          message: 'Open Ephesians.',
+          action: 'Tap Ephesians',
+          hint: 'tap',
+        });
+      }, Math.max(142, screenHeight * 0.22), 150);
+      return;
+    }
+
+    if (guidePhase === 'libraryChapter') {
+      stageGuideTarget(chapterFiveTarget, () => {
+        setPresentation({
+          key: 'scripture-library-chapter-v2',
+          coachGroupKey: 'bible-primary-coach',
+          targetId: HOLY_SCRIPTURE_GUIDE_TARGETS.chapterFive,
+          cutoutPadding: 7,
+          placement: 'above',
+          allowTargetInteraction: true,
+          eyebrow: 'EPHESIANS',
+          message: 'Now open Chapter 5.',
+          action: 'Tap Chapter 5',
+          hint: 'tap',
+        });
+      }, Math.max(198, screenHeight * 0.30), 120);
+      return;
+    }
+
+    if (guidePhase === 'hubSaved') {
+      const openBibleNotesFallback = () => {
+        if (guideActionLockRef.current === guidePhase) return;
+        guideActionLockRef.current = guidePhase;
+        setPresentation(null);
+        onGuidedOpenBibleNotes?.();
+      };
+      stageGuideTarget(bibleNotesTarget, () => {
+        setPresentation({
+          key: 'scripture-hub-saved',
+          coachGroupKey: 'bible-primary-coach',
+          targetId: HOLY_SCRIPTURE_GUIDE_TARGETS.bibleNotes,
+          hintTargetId: HOLY_SCRIPTURE_GUIDE_TARGETS.bibleNotesAction,
+          cutoutPadding: 8,
+          placement: 'below',
+          allowTargetInteraction: true,
+          eyebrow: 'HOLY SCRIPTURE',
+          message: 'My Favorites keeps your highlights and comments. Bible Notes keeps your chapter notes.',
+          highlights: ['My Favorites', 'Bible Notes'],
+          action: 'Open Bible Notes',
+          hint: 'tap',
+        });
+      }, Math.max(126, screenHeight * 0.18), 90, () => {
+        setPresentation({
+          key: 'scripture-hub-saved-fallback',
+          coachGroupKey: 'bible-primary-coach',
+          placement: 'center',
+          lightScrim: true,
+          eyebrow: 'HOLY SCRIPTURE',
+          message: 'My Favorites keeps your highlights and comments. Bible Notes keeps your chapter notes.',
+          highlights: ['My Favorites', 'Bible Notes'],
+          ctaLabel: 'Open Bible Notes',
+          onCta: openBibleNotesFallback,
+        });
+      });
+      return;
+    }
+
+    if (guidePhase === 'hubRhythm') {
+      stageGuideTarget(rhythmTarget, () => {
+        setPresentation({
+          key: 'scripture-hub-rhythm',
+          coachGroupKey: 'bible-primary-coach',
+          targetId: HOLY_SCRIPTURE_GUIDE_TARGETS.rhythm,
+          cutoutPadding: 8,
+          placement: 'above',
+          allowTargetInteraction: false,
+          eyebrow: 'HOLY SCRIPTURE',
+          message: 'Checkpoints return you to your reading. You can also add Scripture to your daily routine.',
+          highlights: ['Checkpoints', 'daily routine'],
+          ctaLabel: 'Continue',
+          onCta: () => patchSession({ phase: 'hubBrowse' }),
+        });
+      }, Math.max(132, screenHeight * 0.20), 90);
+      return;
+    }
+
+    if (guidePhase === 'hubBrowse') {
+      stageGuideTarget(browseTarget, () => {
+        setPresentation({
+          key: 'scripture-hub-browse',
+          coachGroupKey: 'bible-primary-coach',
+          targetId: HOLY_SCRIPTURE_GUIDE_TARGETS.browse,
+          cutoutPadding: 8,
+          placement: 'above',
+          allowTargetInteraction: false,
+          eyebrow: 'HOLY SCRIPTURE',
+          message: 'Switch between the Bible and Psalter, or search for any book or passage.',
+          highlights: ['Bible and Psalter', 'search'],
+          ctaLabel: 'Finish Bible tour',
+          onCta: onGuidedComplete,
+        });
+      }, Math.max(150, screenHeight * 0.24), 90, () => {
+        setPresentation({
+          key: 'scripture-hub-browse-fallback',
+          coachGroupKey: 'bible-primary-coach',
+          placement: 'center',
+          lightScrim: true,
+          eyebrow: 'HOLY SCRIPTURE',
+          message: 'Switch between the Bible and Psalter, or search for any book or passage.',
+          highlights: ['Bible and Psalter', 'search'],
+          ctaLabel: 'Finish Bible tour',
+          onCta: onGuidedComplete,
+        });
+      });
+    }
+  }, [bibleNotesTarget, browseTarget, chapterFiveTarget, clearGuideTimers, ephesiansTarget, guidePhase, isGuided, onGuidedComplete, onGuidedOpen, onGuidedOpenBibleNotes, patchSession, rhythmTarget, screenHeight, setPresentation, stageGuideTarget]);
+
+  useEffect(() => clearGuideTimers, [clearGuideTimers, guidePhase]);
 
   const openResult = (result: ScriptureSearchResult) => {
     const book = BIBLE_BOOKS.find(item => item.id === result.bookId);
@@ -216,14 +635,16 @@ export default function HolyScriptureView() {
     <View style={s.screen}>
       <ScreenTitleBar
         title="HOLY SCRIPTURE"
-        showBack
+        showBack={!isGuided}
         bg={BG}
         rightElement={(
           <TouchableOpacity
             onPress={() => {
+              if (isGuided) return;
               Haptics.selectionAsync().catch(() => {});
               setShowLanguageMenu(value => !value);
             }}
+            disabled={isGuided}
             style={s.titleSettingsBtn}
             activeOpacity={0.76}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -234,7 +655,7 @@ export default function HolyScriptureView() {
       />
 
       <Modal
-        visible={showLanguageMenu}
+        visible={!isGuided && showLanguageMenu}
         transparent
         animationType="fade"
         onRequestClose={() => setShowLanguageMenu(false)}
@@ -282,13 +703,27 @@ export default function HolyScriptureView() {
       </Modal>
 
       <ScrollView
+        ref={guideScrollRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 110 }]}
+        onScroll={isGuided ? handleGuideScroll : undefined}
+        onMomentumScrollEnd={isGuided ? finishGuideScroll : undefined}
+        scrollEventThrottle={isGuided ? 16 : undefined}
       >
         {/* Quick access — the reader's doors: haloed icons on parchment,
             each under its own fall of light */}
-        <View style={s.quickGrid}>
-          <TouchableOpacity onPress={() => router.push('/favorites')} activeOpacity={0.86} style={[s.quickCard, s.quickCardGold]}>
+        <View
+          {...(isGuided ? { ref: bibleNotesTarget.ref, onLayout: bibleNotesTarget.onLayout } : {})}
+          collapsable={false}
+          style={s.quickGrid}
+        >
+          <TouchableOpacity
+            onPress={() => {
+              if (!isGuided) router.push('/favorites');
+            }}
+            activeOpacity={0.86}
+            style={[s.quickCard, s.quickCardGold]}
+          >
             <LinearGradient
               colors={['#FFFEF9', '#FAF1DC']}
               start={{ x: 0, y: 0 }}
@@ -312,7 +747,23 @@ export default function HolyScriptureView() {
               <Text style={s.quickLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.88}>Favorites</Text>
             </View>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/bible-notes')} activeOpacity={0.86} style={[s.quickCard, s.quickCardGreen]}>
+          <TouchableOpacity
+            {...(isGuided ? { ref: bibleNotesActionTarget.ref, onLayout: bibleNotesActionTarget.onLayout } : {})}
+            onPress={() => {
+              if (isGuided) {
+                if (guidePhase === 'hubSaved') {
+                  if (guideActionLockRef.current === guidePhase) return;
+                  guideActionLockRef.current = guidePhase;
+                  setPresentation(null);
+                  onGuidedOpenBibleNotes?.();
+                }
+                return;
+              }
+              router.push('/bible-notes');
+            }}
+            activeOpacity={0.86}
+            style={[s.quickCard, s.quickCardGreen]}
+          >
             <LinearGradient
               colors={['#FDFEFB', '#F0F6E9']}
               start={{ x: 0, y: 0 }}
@@ -339,11 +790,19 @@ export default function HolyScriptureView() {
         </View>
 
         {/* Checkpoints — the reader's bookmark hangs from its edge */}
+        <View
+          {...(isGuided ? { ref: rhythmTarget.ref, onLayout: rhythmTarget.onLayout } : {})}
+          collapsable={false}
+          style={s.doorColumn}
+        >
         <TouchableOpacity
-          onPress={() => router.push({
-            pathname: '/scripture-checkpoint',
-            params: { readingType: 'custom', title: 'Scripture Checkpoints' },
-          } as any)}
+          onPress={() => {
+            if (isGuided) return;
+            router.push({
+              pathname: '/scripture-checkpoint',
+              params: { readingType: 'custom', title: 'Scripture Checkpoints' },
+            } as any);
+          }}
           activeOpacity={0.86}
           style={s.checkpointCard}
         >
@@ -371,10 +830,22 @@ export default function HolyScriptureView() {
           </View>
         </TouchableOpacity>
 
-        <SetAsDailyTaskCard variant="scripture" onPress={() => setShowTaskSheet(true)} subtitle={taskSummary} />
+        <SetAsDailyTaskCard
+          variant="scripture"
+          onPress={() => {
+            if (!isGuided) setShowTaskSheet(true);
+          }}
+          subtitle={taskSummary}
+          ornament={<DoorMotif variant="rays" stroke="#B49B67" />}
+        />
+        </View>
 
         {/* Bible / Psalter toggle + search */}
-        <View style={s.selectorPanel}>
+        <View
+          {...(isGuided ? { ref: browseTarget.ref, onLayout: browseTarget.onLayout } : {})}
+          collapsable={false}
+          style={s.selectorPanel}
+        >
           <View style={s.segmented} onLayout={e => setSegWidth(e.nativeEvent.layout.width)}>
             <Reanimated.View
               pointerEvents="none"
@@ -399,12 +870,15 @@ export default function HolyScriptureView() {
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
+              editable={!isGuided}
               placeholder={tab === 'psalter' ? 'Search psalms...' : 'Search books or passages...'}
               placeholderTextColor="#AEB4BE"
               style={s.searchInput}
             />
             {!!searchQuery && (
-              <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+              <Pressable onPress={() => {
+                if (!isGuided) setSearchQuery('');
+              }} hitSlop={8}>
                 <X s={15} c="#AEB4BE" />
               </Pressable>
             )}
@@ -449,13 +923,17 @@ export default function HolyScriptureView() {
               expandedBookId={expandedBookId}
               onBook={toggleBook}
               onChapter={openReader}
+              guidedBookId={isGuided ? 49 : undefined}
+              guidedChapter={isGuided ? 5 : undefined}
+              bookTargetProps={isGuided ? { ref: ephesiansTarget.ref, onLayout: ephesiansTarget.onLayout } : undefined}
+              chapterTargetProps={isGuided ? { ref: chapterFiveTarget.ref, onLayout: chapterFiveTarget.onLayout } : undefined}
             />
           </View>
         )}
       </ScrollView>
 
       <SetAsTaskSheet
-        visible={showTaskSheet}
+        visible={!isGuided && showTaskSheet}
         context="scripture"
         onClose={() => setShowTaskSheet(false)}
         onSummaryChange={setTaskSummary}
@@ -483,13 +961,17 @@ function TabButton({
 }
 
 function BookList({
-  books, tone, expandedBookId, onBook, onChapter,
+  books, tone, expandedBookId, onBook, onChapter, guidedBookId, guidedChapter, bookTargetProps, chapterTargetProps,
 }: {
   books: BibleBook[];
   tone: 'green' | 'stone';
   expandedBookId: number | null;
   onBook: (book: BibleBook) => void;
   onChapter: (book: BibleBook, chapter?: number) => void;
+  guidedBookId?: number;
+  guidedChapter?: number;
+  bookTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
+  chapterTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
 }) {
   const isGreen = tone === 'green';
   const panelColors = (isGreen ? ['#FCFDF9', '#F4F8EF'] : ['#FFFDF9', '#F8F4EC']) as [string, string];
@@ -509,18 +991,22 @@ function BookList({
       />
       {books.map(book => (
         <View key={book.id} style={s.bookListItem}>
-          <PremiumBookCard
-            book={book}
-            tone={tone}
-            expanded={expandedBookId === book.id}
-            onPress={() => onBook(book)}
-          />
+          <View {...(book.id === guidedBookId ? bookTargetProps : undefined)}>
+            <PremiumBookCard
+              book={book}
+              tone={tone}
+              expanded={expandedBookId === book.id}
+              onPress={() => onBook(book)}
+            />
+          </View>
           {expandedBookId === book.id && (
             <View style={s.chapterPanelWrap}>
               <ChapterPanel
                 book={book}
                 tone={tone}
                 onChapter={chapter => onChapter(book, chapter)}
+                guidedChapter={book.id === guidedBookId ? guidedChapter : undefined}
+                chapterTargetProps={book.id === guidedBookId ? chapterTargetProps : undefined}
               />
             </View>
           )}
@@ -854,11 +1340,13 @@ function PremiumBookCard({
 }
 
 function ChapterPanel({
-  book, tone, onChapter,
+  book, tone, onChapter, guidedChapter, chapterTargetProps,
 }: {
   book: BibleBook;
   tone: 'green' | 'stone';
   onChapter: (chapter: number) => void;
+  guidedChapter?: number;
+  chapterTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
 }) {
   const isGreen = tone === 'green';
   const rows = Array.from({ length: Math.ceil(book.chapters / 5) }, (_, rowIndex) => rowIndex);
@@ -897,6 +1385,7 @@ function ChapterPanel({
               return (
                 <TouchableOpacity
                   key={chapter}
+                  {...(chapter === guidedChapter ? chapterTargetProps : undefined)}
                   onPress={() => onChapter(chapter)}
                   activeOpacity={0.78}
                   style={[
@@ -1099,9 +1588,13 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: GREEN,
   },
-  content: { width: '100%', maxWidth: 430, alignSelf: 'center', paddingHorizontal: 22, paddingTop: 14, gap: 8 },
+  content: { width: '100%', maxWidth: 430, alignSelf: 'center', paddingHorizontal: 22, paddingTop: 14, gap: 10 },
 
-  quickGrid: { flexDirection: 'row', gap: 9 },
+  quickGrid: { flexDirection: 'row', gap: 10 },
+  // This wrapper exists for the guided tour's measurement; without a gap of
+  // its own the two cards inside it sat flush against each other while every
+  // other seam on the screen breathed.
+  doorColumn: { gap: 10 },
   quickCard: {
     flex: 1,
     minHeight: 64,
@@ -1191,7 +1684,7 @@ const s = StyleSheet.create({
   },
   quickLabel: { fontFamily: F.serifMedium, fontSize: 16.5, lineHeight: 20, letterSpacing: 0.2, color: '#2B2723', flex: 1 },
   checkpointCard: {
-    minHeight: 62,
+    minHeight: 64,
     borderRadius: 19,
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.26)',
