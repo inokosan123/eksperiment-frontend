@@ -725,6 +725,82 @@ const ms = StyleSheet.create({
   },
 });
 
+/* ── Struck crest ─────────────────────────────────────────── */
+// A day you set aside gets ONE object, not two dead ones. The card used to
+// keep the reading's instrument standing beside the fire even though it had
+// nothing left to read — an empty ruled ticket floating in a grey bloom —
+// and then drop the stamp underneath it as a third voice. Nothing agreed
+// with anything, and a card whose sentence says the rhythm still holds
+// looked like a form somebody forgot to fill in.
+//
+// Here the fire and the stamp are a single crest. The flame stands as a
+// black cut-out in a disc of white light; the dial around it is ENGRAVED
+// rather than lit, because a banked instrument keeps its face and loses its
+// glow; one oxblood tick marks the day at twelve; and the seal comes down
+// to bite into the crest's base, so the mark belongs to the thing it marks.
+function StruckCrest() {
+  const pal = bankedPalette('struck');
+  const field = 132;
+  const c = field / 2;
+  const ringR = 47;
+
+  return (
+    <View style={cr.stage}>
+      <Svg pointerEvents="none" width={field} height={field} style={StyleSheet.absoluteFill}>
+        <Defs>
+          <RadialGradient id="struckCore" cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor="#FFFFFF" stopOpacity={1} />
+            <Stop offset="0.55" stopColor="#FFFFFF" stopOpacity={0.86} />
+            <Stop offset="1" stopColor="#FFFFFF" stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Circle cx={c} cy={c} r={ringR} fill="url(#struckCore)" />
+        <Circle
+          cx={c}
+          cy={c}
+          r={ringR}
+          fill="none"
+          stroke={pal.engraving}
+          strokeOpacity={0.3}
+          strokeWidth={1}
+        />
+        {Array.from({ length: 12 }).map((_, index) => {
+          const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
+          const marked = index === 0;
+          const long = index % 3 === 0;
+          const r1 = ringR + 4;
+          const r2 = r1 + (long ? 7 : 3.5);
+          return (
+            <Line
+              key={index}
+              x1={c + r1 * Math.cos(angle)}
+              y1={c + r1 * Math.sin(angle)}
+              x2={c + r2 * Math.cos(angle)}
+              y2={c + r2 * Math.sin(angle)}
+              stroke={marked ? pal.stud : pal.engraving}
+              strokeOpacity={marked ? 0.85 : long ? 0.34 : 0.2}
+              strokeWidth={marked ? 1.8 : long ? 1.3 : 1}
+              strokeLinecap="round"
+            />
+          );
+        })}
+      </Svg>
+      {/* The one living thing on a struck card: the light behind the
+          cut-out is still breathing. */}
+      <EmberPulse size={72} discs={pal.coreDiscs} />
+      <Image
+        source={FLAME_PNG}
+        style={[cr.flame, { tintColor: pal.silhouette, opacity: pal.silhouetteOpacity }]}
+      />
+    </View>
+  );
+}
+
+const cr = StyleSheet.create({
+  stage: { width: 132, height: 132, alignItems: 'center', justifyContent: 'center' },
+  flame: { width: 62, height: 62, resizeMode: 'contain' },
+});
+
 /* ── Radiant flame ────────────────────────────────────────── */
 // The one living animation on the card: today's fire in a true sun — a
 // layered radiance built like the medallion's bloom (dark rim to bright
@@ -1390,38 +1466,53 @@ export default function WeeklyRhythm() {
             white pane over the graphite skipped card. */}
         <CardGlint variant={!banked ? 'active' : skippedToday ? 'struck' : 'ash'} />
 
-        {/* Hero: today's percentage in the bloom, today's fire radiant */}
-        <View style={s.heroRow}>
-          <TodayMedallion pct={todayPct} mode={todayMode} />
-          <RadiantFlame pct={todayStat?.pct ?? null} mode={todayMode} />
-        </View>
-
-        {banked && (
-          <RestSeal
-            label={skippedToday ? 'SKIPPED' : 'UNWRITTEN'}
-            tone={todayPal.seal}
-            style={s.restSeal}
-          />
+        {/* Hero. A struck day gets one sealed crest on the card's centre
+            line; every other day gets the reading and the fire, side by
+            side, with the light between them. */}
+        {skippedToday ? (
+          <View style={s.struckHero}>
+            <StruckCrest />
+            <RestSeal label="SET ASIDE" tone="struck" style={s.struckSeal} />
+          </View>
+        ) : (
+          <>
+            <View style={s.heroRow}>
+              <TodayMedallion pct={todayPct} mode={todayMode} />
+              <RadiantFlame pct={todayStat?.pct ?? null} mode={todayMode} />
+            </View>
+            {banked && (
+              <RestSeal label="UNWRITTEN" tone={todayPal.seal} style={s.restSeal} />
+            )}
+          </>
         )}
 
         <Text
           style={[
             s.headline,
             !banked && s.headlineActive,
-            banked && [s.headlineBanked, s.headlineBankedSolo, { color: todayPal.ink }],
+            banked && [s.headlineBanked, { color: todayPal.ink }],
+            banked && !skippedToday && s.headlineBankedSolo,
           ]}
           numberOfLines={2}
         >{headline}</Text>
 
-        {/* On a banked day the week band is dropped entirely: no tasks means
-            nothing to place across the week, so the hero and seal carry the
-            card alone — the same stripped-down rest the Focus card wears. */}
-        {!banked && (
-          <View style={s.weekBand}>
+        {/* An unwritten day drops the week: nothing was scheduled, so there
+            is nothing to place across it, and the hero carries the card
+            alone. A day you set ASIDE keeps it — the sentence above says
+            the rhythm still holds, and this is the card proving it. The
+            gold of the days you earned is the only colour left on a struck
+            page, which is exactly the point of showing it. */}
+        {(!banked || skippedToday) && (
+          <View style={[s.weekBand, skippedToday && { borderColor: todayPal.rule }]}>
             <View style={s.daysLabelRow}>
               {display.map((d, i) => (
                 <View key={i} style={s.weekCol}>
-                  <Text style={[s.dayLetter, d.isToday && s.dayLetterToday]}>{d.letter}</Text>
+                  <Text
+                    style={[
+                      s.dayLetter,
+                      d.isToday && (skippedToday ? { color: todayPal.inkMuted } : s.dayLetterToday),
+                    ]}
+                  >{d.letter}</Text>
                 </View>
               ))}
             </View>
@@ -1527,6 +1618,10 @@ const s = StyleSheet.create({
     paddingRight: 8,
   },
   restSeal: { marginTop: 14 },
+  // The struck crest stands on the card's centre line, and the seal comes
+  // down over its base rather than landing somewhere underneath it.
+  struckHero: { marginTop: 4, alignItems: 'center' },
+  struckSeal: { marginTop: -15, zIndex: 2 },
   // Close under the hero, because the line is the hero's caption; the week
   // then takes the air that the gap used to waste.
   headline: {
