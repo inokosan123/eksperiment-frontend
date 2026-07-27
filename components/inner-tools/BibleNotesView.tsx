@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   ScrollView,
@@ -17,6 +17,7 @@ import Reanimated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import Svg, { Line } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -30,10 +31,18 @@ import { RichTextEditor, RichToolbar, RichTextEditorRef, FormatState } from '@/c
 import { ScriptureBibleNote, useScripture } from '@/components/scripture/ScriptureContext';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
+import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
 
 
 const BG = '#F5F3EE';
 const GOLD = '#C5A059';
+// Bible Notes is Scripture's sibling, not its copy. It borrows Scripture's
+// grammar — the thin spine, the double rule, the lit edge, the leader ruled
+// across to a folio — but reads it in its own register: this screen is the
+// notebook, so its light is the green ruling of a ruled page rather than
+// Scripture's gold parchment, and a book with nothing written in it stays
+// quiet until it has something to show.
+const NOTE_GREEN = '#5E7B55';
 const PSALMS_ID = 19;
 const CHAPTER_COLUMNS = 5;
 const CHAPTER_GAP = 7;
@@ -132,6 +141,7 @@ function tabMatches(book: BibleBook, tab: BibleTab) {
 const BIBLE_NOTES_GUIDE_TARGETS = {
   tabs: 'bible-notes.tabs',
   search: 'bible-notes.search',
+  back: 'bible-notes.back',
 } as const;
 
 export default function BibleNotesView({
@@ -139,24 +149,110 @@ export default function BibleNotesView({
   initialBookId,
   initialChapter,
   onGuidedComplete,
+  onGuidedReady,
 }: {
   guided?: boolean;
   initialBookId?: number;
   initialChapter?: number;
   onGuidedComplete?: () => void;
+  onGuidedReady?: () => void;
 } = {}) {
   const router = useRouter();
   const params = useLocalSearchParams<{ bookId?: string; chapter?: string; open?: string }>();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { bibleNotes, saveBibleNote, deleteBibleNote } = useScripture();
+  const { ready, bibleNotes, saveBibleNote, deleteBibleNote } = useScripture();
 
   const { session, patchSession, setPresentation } = useGuidedSetup();
   const isGuided = guided && session?.active === true && session.activeStep === 'riseBibleHighlight';
   const guidePhase = isGuided ? session.phase : '';
   const tabsTarget = useGuideTarget(BIBLE_NOTES_GUIDE_TARGETS.tabs, isGuided);
   const searchTarget = useGuideTarget(BIBLE_NOTES_GUIDE_TARGETS.search, isGuided);
+  const backTarget = useGuideTarget(BIBLE_NOTES_GUIDE_TARGETS.back, isGuided);
   const guideEntryOpenedRef = useRef(false);
+  const guideActionLockRef = useRef(false);
+  const guidedReadyNotifiedRef = useRef(false);
+  const guideTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const guideStageTokenRef = useRef(0);
+  const visibleBibleNotes = useMemo<ScriptureBibleNote[]>(
+    () => (isGuided ? [] : bibleNotes),
+    [bibleNotes, isGuided],
+  );
+
+  const clearGuideTimers = useCallback(() => {
+    guideStageTokenRef.current += 1;
+    guideTimersRef.current.forEach(clearTimeout);
+    guideTimersRef.current = [];
+  }, []);
+
+  useEffect(() => {
+    if (!isGuided || !ready || !onGuidedReady || guidedReadyNotifiedRef.current) return undefined;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const confirmReady = (attempt = 0) => {
+      tabsTarget.measureNow(layout => {
+        if (cancelled || guidedReadyNotifiedRef.current) return;
+        if (!layout) {
+          if (attempt >= 48) {
+            guidedReadyNotifiedRef.current = true;
+            onGuidedReady();
+            return;
+          }
+          retryTimer = setTimeout(
+            () => confirmReady(attempt + 1),
+            32,
+          );
+          return;
+        }
+        guidedReadyNotifiedRef.current = true;
+        onGuidedReady();
+      });
+    };
+    const frame = requestAnimationFrame(() => confirmReady());
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [isGuided, onGuidedReady, ready, tabsTarget]);
+
+  const stageStaticTarget = useCallback((
+    target: ReturnType<typeof useGuideTarget>,
+    present: () => void,
+    onUnavailable: () => void,
+    attempt = 0,
+    token = guideStageTokenRef.current,
+  ) => {
+    if (token !== guideStageTokenRef.current) return;
+    target.measureNow(layout => {
+      if (token !== guideStageTokenRef.current) return;
+      if (!layout) {
+        if (attempt >= 24) {
+          onUnavailable();
+          return;
+        }
+        guideTimersRef.current.push(setTimeout(
+          () => stageStaticTarget(target, present, onUnavailable, attempt + 1, token),
+          48,
+        ));
+        return;
+      }
+      guideTimersRef.current.push(setTimeout(() => {
+        if (token === guideStageTokenRef.current) present();
+      }, 42));
+    });
+  }, []);
+
+  const handleGuidedBack = useCallback(() => {
+    if (!isGuided) {
+      onGuidedComplete?.();
+      return;
+    }
+    if (guideActionLockRef.current) return;
+    guideActionLockRef.current = true;
+    setPresentation(null);
+    onGuidedComplete?.();
+  }, [isGuided, onGuidedComplete, setPresentation]);
 
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<BibleTab>('nt');
@@ -164,6 +260,10 @@ export default function BibleNotesView({
   const [tabsWidth, setTabsWidth] = useState(0);
   const tabPillWidth = tabsWidth > 0 ? (tabsWidth - 14) / 3 : 0;
   const tabPillTravel = tabPillWidth + 3;
+
+  useEffect(() => {
+    guideActionLockRef.current = false;
+  }, [guidePhase]);
 
   useEffect(() => {
     const idx = activeTab === 'nt' ? 0 : activeTab === 'psalms' ? 1 : 2;
@@ -192,9 +292,9 @@ export default function BibleNotesView({
 
   const notesByChapter = useMemo(() => {
     const map = new Map<string, ScriptureBibleNote>();
-    bibleNotes.forEach(note => map.set(noteKey(note.bookId, note.chapter), note));
+    visibleBibleNotes.forEach(note => map.set(noteKey(note.bookId, note.chapter), note));
     return map;
-  }, [bibleNotes]);
+  }, [visibleBibleNotes]);
 
   const filteredBooks = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -202,7 +302,7 @@ export default function BibleNotesView({
       .filter(book => !q || book.name.toLowerCase().includes(q));
   }, [activeTab, search]);
 
-  const tabCount = (tab: BibleTab) => bibleNotes.filter(note => {
+  const tabCount = (tab: BibleTab) => visibleBibleNotes.filter(note => {
     const book = BOOKS.find(item => item.id === note.bookId);
     return book ? tabMatches(book, tab) : false;
   }).length;
@@ -211,6 +311,11 @@ export default function BibleNotesView({
   const chapterCellWidth = Math.floor((chapterGridWidth - (CHAPTER_GAP * (CHAPTER_COLUMNS - 1))) / CHAPTER_COLUMNS);
 
   useEffect(() => {
+    if (guided || isGuided) {
+      openedFromDeepLinkRef.current = false;
+      setActiveChapter(null);
+      return;
+    }
     const paramBookId = Number(params.bookId);
     const paramChapter = Number(params.chapter);
     if (!paramBookId || !paramChapter) return;
@@ -229,9 +334,10 @@ export default function BibleNotesView({
       setApplication(note?.application ?? '');
       openedFromDeepLinkRef.current = true;
     }
-  }, [notesByChapter, params.bookId, params.chapter, params.open]);
+  }, [guided, isGuided, notesByChapter, params.bookId, params.chapter, params.open]);
 
   const openChapter = (book: BibleBook, chapter: number) => {
+    if (isGuided && guidePhase !== 'noteEntry') return;
     const existing = notesByChapter.get(noteKey(book.id, chapter));
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setActiveChapter({ book, chapter, note: existing });
@@ -266,8 +372,21 @@ export default function BibleNotesView({
     if (!isGuided) return;
 
     if (guidePhase === 'noteEntry') {
-      // Full-screen editor modal owns the stage.
-      setPresentation(null);
+      setPresentation({
+        key: 'bible-notes-editor',
+        placement: 'bottom',
+        lightScrim: true,
+        eyebrow: 'BIBLE NOTES',
+        message: 'Every chapter note has three parts: what you observed, what God is teaching, and how you will live it.',
+        highlights: ['what you observed', 'what God is teaching', 'how you will live it'],
+        chips: ['Observations', 'Lessons', 'Application'],
+        ctaLabel: 'Continue',
+        onCta: () => {
+          setPresentation(null);
+          setActiveChapter(null);
+          patchSession({ phase: 'notesTabs' });
+        },
+      });
       return;
     }
     if (guidePhase === 'notesTabs') {
@@ -285,7 +404,7 @@ export default function BibleNotesView({
       });
       return;
     }
-    if (guidePhase === 'notesSearch') {
+    if (guidePhase === 'legacyNotesSearch') {
       setPresentation({
         key: 'bible-notes-search',
         targetId: BIBLE_NOTES_GUIDE_TARGETS.search,
@@ -295,6 +414,20 @@ export default function BibleNotesView({
         eyebrow: 'BIBLE NOTES',
         message: 'And when you need a thought back — search carries you straight to it.',
         highlights: ['search'],
+        ctaLabel: 'Continue',
+        onCta: () => patchSession({ phase: 'notesRhythm' }),
+      });
+      return;
+    }
+    if (guidePhase === 'notesRhythm') {
+      setPresentation({
+        key: 'bible-notes-rhythm',
+        placement: 'center',
+        lightScrim: true,
+        eyebrow: 'SCRIPTURE IN YOUR RHYTHM',
+        message: 'A Bible reading can become a task or a challenge, and your saved Favorites remain one tap away from the Scripture reader.',
+        highlights: ['task or a challenge', 'Favorites'],
+        chips: ['Daily task', 'Challenge', 'Favorites'],
         ctaLabel: 'Continue',
         onCta: () => patchSession({ phase: 'notesDone' }),
       });
@@ -314,8 +447,93 @@ export default function BibleNotesView({
     }
   }, [guidePhase, isGuided, onGuidedComplete, patchSession, setPresentation]);
 
+  useEffect(() => {
+    if (!isGuided) return;
+    clearGuideTimers();
+
+    if (guidePhase === 'notesOverview') {
+      stageStaticTarget(tabsTarget, () => {
+        setPresentation({
+          key: 'bible-notes-overview-v2',
+          coachGroupKey: 'bible-primary-coach',
+          targetId: BIBLE_NOTES_GUIDE_TARGETS.tabs,
+          cutoutPadding: 7,
+          placement: 'below',
+          allowTargetInteraction: false,
+          eyebrow: 'BIBLE NOTES',
+          message: 'Your chapter notes are organized by New Testament, Psalter, and Old Testament.',
+          highlights: ['chapter notes'],
+          chips: ['New Testament', 'Psalter', 'Old Testament'],
+          ctaLabel: 'Continue',
+          onCta: () => patchSession({ phase: 'notesSearch' }),
+        });
+      }, () => {
+        setPresentation(null);
+        patchSession({ phase: 'notesSearch' });
+      });
+      return;
+    }
+
+    if (guidePhase === 'notesSearch') {
+      stageStaticTarget(searchTarget, () => {
+        setPresentation({
+          key: 'bible-notes-search-v2',
+          coachGroupKey: 'bible-primary-coach',
+          targetId: BIBLE_NOTES_GUIDE_TARGETS.search,
+          cutoutPadding: 7,
+          placement: 'below',
+          allowTargetInteraction: false,
+          eyebrow: 'BIBLE NOTES',
+          message: 'Search by book to find the note you need.',
+          highlights: ['Search by book'],
+          ctaLabel: 'Continue',
+          onCta: () => patchSession({ phase: 'notesBack' }),
+        });
+      }, () => {
+        setPresentation(null);
+        patchSession({ phase: 'notesBack' });
+      });
+      return;
+    }
+
+    if (guidePhase === 'notesBack') {
+      stageStaticTarget(backTarget, () => {
+        setPresentation({
+          key: 'bible-notes-back-v2',
+          coachGroupKey: 'bible-primary-coach',
+          targetId: BIBLE_NOTES_GUIDE_TARGETS.back,
+          cutoutPadding: 7,
+          placement: 'below',
+          allowTargetInteraction: true,
+          eyebrow: 'BIBLE NOTES',
+          message: 'Return to Holy Scripture.',
+          action: 'Tap the back arrow',
+          hint: 'tap',
+        });
+      }, handleGuidedBack);
+    }
+  }, [
+    backTarget,
+    clearGuideTimers,
+    guidePhase,
+    handleGuidedBack,
+    isGuided,
+    patchSession,
+    searchTarget,
+    setPresentation,
+    stageStaticTarget,
+    tabsTarget,
+  ]);
+
+  useEffect(() => clearGuideTimers, [clearGuideTimers, guidePhase]);
+
   const saveChapter = async () => {
     if (!activeChapter) return;
+    if (isGuided) {
+      setActiveChapter(null);
+      handleGuidedEditorClosed();
+      return;
+    }
     const cleanObservations = observations.trim();
     const cleanLessons = lessons.trim();
     const cleanApplication = application.trim();
@@ -333,6 +551,7 @@ export default function BibleNotesView({
 
   const openChapterInScripture = () => {
     if (!activeChapter) return;
+    if (isGuided) return;
 
     const target = activeChapter;
     const cleanObservations = observations.trim();
@@ -363,6 +582,11 @@ export default function BibleNotesView({
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
+    if (isGuided) {
+      setDeleteTarget(null);
+      setActiveChapter(null);
+      return;
+    }
     await deleteBibleNote(deleteTarget.bookId, deleteTarget.chapter);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setDeleteTarget(null);
@@ -371,20 +595,32 @@ export default function BibleNotesView({
 
   return (
     <View style={s.screen}>
-      <ScreenTitleBar title="BIBLE NOTES" showBack={!isGuided} bg={BG} />
+      <ScreenTitleBar
+        title="BIBLE NOTES"
+        showBack
+        bg={BG}
+        onBackOverride={isGuided ? handleGuidedBack : undefined}
+        backButtonProps={isGuided ? {
+          ref: backTarget.ref,
+          onLayout: backTarget.onLayout,
+        } : undefined}
+      />
 
-      <View {...searchTarget} style={s.searchWrap}>
+      <View ref={searchTarget.ref} onLayout={searchTarget.onLayout} style={s.searchWrap}>
         <View style={s.searchBox}>
           <Search s={15} c="#D1D5DB" />
           <TextInput
             value={search}
             onChangeText={setSearch}
+            editable={!isGuided}
             placeholder="Search books..."
             placeholderTextColor="#D1D5DB"
             style={s.searchInput}
           />
           {!!search && (
-            <Pressable onPress={() => setSearch('')} hitSlop={8}>
+            <Pressable onPress={() => {
+              if (!isGuided) setSearch('');
+            }} hitSlop={8}>
               <X s={15} c="#D1D5DB" />
             </Pressable>
           )}
@@ -398,9 +634,15 @@ export default function BibleNotesView({
             pointerEvents="none"
             style={[s.tabPill, tabPillMotionStyle]}
           />
-          <TabButton label="New Test." active={activeTab === 'nt'} count={tabCount('nt')} onPress={() => setActiveTab('nt')} />
-          <TabButton label="Psalter" active={activeTab === 'psalms'} count={tabCount('psalms')} onPress={() => setActiveTab('psalms')} />
-          <TabButton label="Old Test." active={activeTab === 'ot'} count={tabCount('ot')} onPress={() => setActiveTab('ot')} />
+          <TabButton label="New Test." active={activeTab === 'nt'} count={tabCount('nt')} onPress={() => {
+            if (!isGuided) setActiveTab('nt');
+          }} />
+          <TabButton label="Psalter" active={activeTab === 'psalms'} count={tabCount('psalms')} onPress={() => {
+            if (!isGuided) setActiveTab('psalms');
+          }} />
+          <TabButton label="Old Test." active={activeTab === 'ot'} count={tabCount('ot')} onPress={() => {
+            if (!isGuided) setActiveTab('ot');
+          }} />
         </View>
       </View>
 
@@ -417,30 +659,14 @@ export default function BibleNotesView({
             return (
               <Reanimated.View key={book.id} layout={bibleNotesLayout}>
                 {activeTab !== 'psalms' && (
-                  <TouchableOpacity
-                    onPress={() => setExpandedBookId(isExpanded ? null : book.id)}
-                    activeOpacity={0.88}
-                    style={[
-                      s.bookCard,
-                      isExpanded && s.bookCardExpanded,
-                      !hasAnyNote && !isExpanded && s.bookCardMuted,
-                    ]}
-                  >
-                    <View
-                      style={[
-                        s.bookAccent,
-                        hasAnyNote && s.bookAccentActive,
-                        isExpanded && s.bookAccentExpanded,
-                      ]}
-                    />
-                    <Text style={[s.bookName, !hasAnyNote && s.bookNameMuted]} numberOfLines={1}>{book.name}</Text>
-                    {hasAnyNote && (
-                      <Text style={s.bookCount}>{chaptersWithNotes.length}</Text>
-                    )}
-                    <View style={[s.chevronWrap, isExpanded && s.chevronWrapOpen, isExpanded && s.chevronOpen]}>
-                      <ChevronDown s={15} c={isExpanded ? GOLD : '#D1D5DB'} />
-                    </View>
-                  </TouchableOpacity>
+                  <NotedBookRow
+                    name={book.name}
+                    count={chaptersWithNotes.length}
+                    expanded={isExpanded}
+                    onPress={() => {
+                      if (!isGuided) setExpandedBookId(isExpanded ? null : book.id);
+                    }}
+                  />
                 )}
 
                 {isExpanded && (
@@ -458,7 +684,9 @@ export default function BibleNotesView({
                       return (
                         <TouchableOpacity
                           key={chapter}
-                          onPress={() => openChapter(book, chapter)}
+                          onPress={() => {
+                            if (!isGuided) openChapter(book, chapter);
+                          }}
                           activeOpacity={0.82}
                           style={[s.chapterCell, { width: chapterCellWidth }, hasNote && s.chapterCellActive]}
                         >
@@ -496,12 +724,108 @@ export default function BibleNotesView({
         }}
         onSave={saveChapter}
         onScripture={openChapterInScripture}
-        onDelete={activeChapter?.note ? () => setDeleteTarget(activeChapter.note ?? null) : undefined}
+        onDelete={!isGuided && activeChapter?.note ? () => setDeleteTarget(activeChapter.note ?? null) : undefined}
         deleteVisible={!!deleteTarget}
         onCancelDelete={() => setDeleteTarget(null)}
         onConfirmDelete={confirmDelete}
+        guidedOverlay={isGuided && guidePhase === 'noteEntry' ? <GuidedOverlayHost /> : undefined}
       />
     </View>
+  );
+}
+
+// A ruled page's own light, raked behind a book that has been written in.
+function NoteRuling() {
+  const W = 170;
+  const H = 90;
+  return (
+    <View pointerEvents="none" style={s.noteMotif}>
+      <Svg width={W} height={H}>
+        {Array.from({ length: 5 }).map((_, index) => {
+          const y = 12 + index * 17;
+          return (
+            <Line
+              key={index}
+              x1={16}
+              y1={y}
+              x2={W}
+              y2={y}
+              stroke={NOTE_GREEN}
+              strokeOpacity={0.075}
+              strokeWidth={1}
+            />
+          );
+        })}
+      </Svg>
+    </View>
+  );
+}
+
+function NotedBookRow({
+  name, count, expanded, onPress,
+}: {
+  name: string;
+  count: number;
+  expanded: boolean;
+  onPress: () => void;
+}) {
+  // Measured, not scaled: a viewBox would stretch each dot as the leader
+  // lengthens, so short names would be ruled in different dots than long.
+  const [leaderWidth, setLeaderWidth] = useState(0);
+  const written = count > 0;
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.88}
+      style={[
+        s.bookCard,
+        written ? s.bookCardWritten : s.bookCardBlank,
+        expanded && s.bookCardExpanded,
+      ]}
+    >
+      {written && <NoteRuling />}
+      {written && <View pointerEvents="none" style={s.bookFrame} />}
+      {written && <View pointerEvents="none" style={s.bookFrameInner} />}
+      <View pointerEvents="none" style={s.bookLit} />
+      <View
+        pointerEvents="none"
+        style={[s.bookSpine, written ? s.bookSpineWritten : s.bookSpineBlank]}
+      />
+      <View style={s.bookCopy}>
+        <View style={s.bookLine}>
+          <Text style={[s.bookName, !written && s.bookNameMuted]} numberOfLines={1}>{name}</Text>
+          {written && (
+            <>
+              <View
+                style={s.bookLeader}
+                onLayout={event => setLeaderWidth(event.nativeEvent.layout.width)}
+              >
+                {leaderWidth > 0 && (
+                  <Svg width={leaderWidth} height={4}>
+                    <Line
+                      x1={0}
+                      y1={2}
+                      x2={leaderWidth}
+                      y2={2}
+                      stroke={NOTE_GREEN}
+                      strokeOpacity={0.32}
+                      strokeWidth={1.4}
+                      strokeLinecap="round"
+                      strokeDasharray="0.5 5"
+                    />
+                  </Svg>
+                )}
+              </View>
+              <Text style={s.bookFolio}>{count}</Text>
+            </>
+          )}
+        </View>
+      </View>
+      <View style={[s.chevronWrap, written && s.chevronWrapWritten, expanded && s.chevronOpen]}>
+        <ChevronDown s={13} c={written ? '#8FA986' : '#C7C2B8'} />
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -540,6 +864,7 @@ function ChapterEditor({
   deleteVisible,
   onCancelDelete,
   onConfirmDelete,
+  guidedOverlay,
 }: {
   chapter: { book: BibleBook; chapter: number; note?: ScriptureBibleNote } | null;
   observations: string;
@@ -555,6 +880,7 @@ function ChapterEditor({
   deleteVisible: boolean;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
+  guidedOverlay?: React.ReactNode;
 }) {
   const insets = useSafeAreaInsets();
   const chapterKey = chapter ? `${chapter.book.id}-${chapter.chapter}` : 'empty';
@@ -625,6 +951,7 @@ function ChapterEditor({
           onCancel={onCancelDelete}
           onConfirm={onConfirmDelete}
         />
+        {guidedOverlay}
       </View>
     </Modal>
   );
@@ -709,8 +1036,10 @@ const s = StyleSheet.create({
     gap: 3,
     borderRadius: 19,
     borderWidth: 1,
-    borderColor: 'rgba(232,220,196,0.68)',
-    backgroundColor: 'rgba(255,255,255,0.84)',
+    // Recessed track, raised leaf: a pale plaque on a white track had
+    // nothing to lift off, which is why this pill used to be solid gold.
+    borderColor: '#E4DED2',
+    backgroundColor: '#EDEAE2',
     padding: 4,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 5 },
@@ -718,6 +1047,8 @@ const s = StyleSheet.create({
     shadowRadius: 14,
     elevation: 1,
   },
+  // The selected tab is a leaf of the notebook, not a gold slab: the same
+  // pale green page the written books wear, under a green hairline.
   tabPill: {
     position: 'absolute',
     top: 4,
@@ -725,79 +1056,122 @@ const s = StyleSheet.create({
     left: 4,
     width: '32%',
     borderRadius: 14,
-    backgroundColor: GOLD,
-    shadowColor: GOLD,
+    borderWidth: 1,
+    borderColor: 'rgba(94,123,85,0.34)',
+    backgroundColor: '#F3F9EE',
+    shadowColor: NOTE_GREEN,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.24,
+    shadowOpacity: 0.16,
     shadowRadius: 10,
     elevation: 2,
     zIndex: 0,
   },
   tabButton: { flex: 1, minHeight: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5, zIndex: 1 },
   tabActive: {},
-  tabText: { fontFamily: F.serifMedium, fontSize: 13.5, color: '#B5ADA0' },
-  tabTextActive: { color: '#FFFFFF' },
-  tabCount: { minWidth: 17, height: 17, borderRadius: 9, backgroundColor: 'rgba(197,160,89,0.15)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  tabCountActive: { backgroundColor: 'rgba(255,255,255,0.25)' },
-  tabCountText: { fontFamily: F.sansBold, fontSize: 8, color: GOLD },
-  tabCountTextActive: { color: '#FFFFFF' },
+  tabText: { fontFamily: F.serifMedium, fontSize: 13.5, color: '#9A968C' },
+  tabTextActive: { color: '#4C6647' },
+  tabCount: { minWidth: 17, height: 17, borderRadius: 9, backgroundColor: 'rgba(94,123,85,0.12)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  tabCountActive: { backgroundColor: 'rgba(94,123,85,0.18)' },
+  tabCountText: { fontFamily: F.sansBold, fontSize: 8, color: '#6E8A64' },
+  tabCountTextActive: { color: '#4C6647' },
   bookList: { paddingHorizontal: 16, gap: 7 },
   noBooks: { textAlign: 'center', paddingVertical: 60, fontFamily: F.serif, fontSize: 17, color: '#D1D5DB' },
+  // The shelf card of Scripture, read in the notebook's register. A book
+  // that has been written in carries the ruled page, the double rule and a
+  // leader out to its count; one that has not stays a blank line.
   bookCard: {
-    minHeight: 56,
+    minHeight: 54,
     borderRadius: 19,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: 'rgba(232,216,186,0.45)',
-    backgroundColor: '#FFFDF9',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
+    paddingLeft: 14,
+    paddingVertical: 9,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 11,
+    gap: 10,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  bookCardWritten: {
+    borderColor: '#DDE6D9',
+    backgroundColor: '#F7FBF4',
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.045,
     shadowRadius: 14,
     elevation: 1,
   },
-  bookCardExpanded: { backgroundColor: '#FFFCF3', borderColor: 'rgba(197,160,89,0.34)' },
-  bookCardMuted: { backgroundColor: 'rgba(255,255,255,0.50)', borderColor: 'rgba(255,255,255,0.40)', shadowOpacity: 0 },
-  bookAccent: {
-    width: 7,
-    height: 26,
-    borderRadius: 7,
-    backgroundColor: 'rgba(214,207,195,0.55)',
+  bookCardBlank: {
+    borderColor: 'rgba(226,222,213,0.7)',
+    backgroundColor: 'rgba(252,251,248,0.72)',
   },
-  bookAccentActive: { backgroundColor: 'rgba(197,160,89,0.45)' },
-  bookAccentExpanded: { backgroundColor: GOLD },
-  bookName: { flex: 1, fontFamily: F.serifMedium, fontSize: 17.5, lineHeight: 23, color: '#2D2520' },
-  bookNameMuted: { fontFamily: F.serif, color: '#C9C3BA' },
-  bookCount: {
-    minWidth: 25,
-    textAlign: 'center',
-    fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 0.9,
-    color: GOLD,
-    backgroundColor: 'rgba(197,160,89,0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+  bookCardExpanded: { borderColor: 'rgba(94,123,85,0.4)' },
+  noteMotif: { position: 'absolute', top: 0, right: 0, bottom: 0, overflow: 'hidden' },
+  bookFrame: {
+    position: 'absolute',
+    top: 5,
+    left: 5,
+    right: 5,
+    bottom: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(94,123,85,0.16)',
+  },
+  bookFrameInner: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    right: 8,
+    bottom: 8,
     borderRadius: 11,
-    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(94,123,85,0.09)',
+  },
+  bookLit: {
+    position: 'absolute',
+    top: 1,
+    left: 10,
+    right: 10,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  bookSpine: {
+    position: 'absolute',
+    left: 0,
+    top: 9,
+    bottom: 9,
+    width: 2.5,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
+  },
+  bookSpineWritten: { backgroundColor: 'rgba(94,123,85,0.45)' },
+  bookSpineBlank: { backgroundColor: 'rgba(198,193,183,0.5)' },
+  bookCopy: { flex: 1, minWidth: 0, justifyContent: 'center' },
+  bookLine: { flexDirection: 'row', alignItems: 'baseline', gap: 9, minWidth: 0 },
+  bookName: { fontFamily: F.serif, fontSize: 17.5, lineHeight: 21, letterSpacing: 0.25, color: '#2D2520', flexShrink: 1 },
+  bookNameMuted: { color: '#BDB8AF' },
+  bookLeader: { flex: 1, minWidth: 10, height: 4, alignSelf: 'center' },
+  bookFolio: {
+    fontFamily: F.serif,
+    fontSize: 14,
+    lineHeight: 18,
+    letterSpacing: 0.3,
+    color: '#6E8A64',
+    fontVariant: ['lining-nums', 'tabular-nums'],
   },
   chevronWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(245,243,238,0.76)',
+    backgroundColor: 'rgba(255,255,255,0.7)',
     borderWidth: 1,
-    borderColor: 'rgba(232,216,186,0.24)',
+    borderColor: 'rgba(214,209,199,0.5)',
+    flexShrink: 0,
   },
-  chevronWrapOpen: {
-    backgroundColor: 'rgba(197,160,89,0.10)',
-    borderColor: 'rgba(197,160,89,0.22)',
-  },
+  chevronWrapWritten: { borderColor: 'rgba(94,123,85,0.24)' },
   chevronOpen: { transform: [{ rotate: '180deg' }] },
   chapterGrid: {
     flexDirection: 'row',
@@ -818,9 +1192,9 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   chapterCellActive: {
-    backgroundColor: '#FFF9EA',
-    borderColor: 'rgba(197,160,89,0.52)',
-    shadowColor: GOLD,
+    backgroundColor: '#F4FAF0',
+    borderColor: 'rgba(94,123,85,0.42)',
+    shadowColor: NOTE_GREEN,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.12,
     shadowRadius: 8,
@@ -828,7 +1202,7 @@ const s = StyleSheet.create({
   },
   chapterText: { fontFamily: F.serifMedium, fontSize: 15, color: '#D4CEC6' },
   chapterTextActive: { color: '#3D3229' },
-  noteDot: { position: 'absolute', top: 7, right: 8, width: 6, height: 6, borderRadius: 3, backgroundColor: GOLD },
+  noteDot: { position: 'absolute', top: 7, right: 8, width: 5, height: 5, borderRadius: 2.5, backgroundColor: NOTE_GREEN },
 
   editorScreen: { flex: 1, backgroundColor: '#FDFBF5' },
   editorActions: { width: 130, flexDirection: 'row', justifyContent: 'flex-end', gap: 7 },
@@ -864,7 +1238,10 @@ const s = StyleSheet.create({
     shadowRadius: 18,
     elevation: 1,
   },
-  fieldLabel: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.05, color: GOLD, marginBottom: 9 },
+  // Identity is green on this screen, action stays gold: the field heads
+  // name what you are writing, so they follow the notebook; the save button
+  // is the app's confirm and keeps the app's colour.
+  fieldLabel: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.05, color: '#6E8A64', marginBottom: 9 },
   fieldToolbar: { marginBottom: 8 },
   fieldEditor: { height: 220 },
 
