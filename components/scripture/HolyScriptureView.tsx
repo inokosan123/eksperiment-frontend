@@ -725,7 +725,7 @@ export default function HolyScriptureView({
             style={[s.quickCard, s.quickCardGold]}
           >
             <LinearGradient
-              colors={['#FFFEF9', '#FAF1DC']}
+              colors={['#FFFEFA', '#F6E9CB']}
               start={{ x: 0, y: 0 }}
               end={{ x: 0, y: 1 }}
               style={s.cardGround}
@@ -733,11 +733,12 @@ export default function HolyScriptureView({
             />
             <DoorMotif variant="rays" stroke="#B49B67" />
             <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(197,160,89,0.18)' }]} />
-            <View pointerEvents="none" style={[s.doorGlint, { backgroundColor: 'rgba(197,160,89,0.55)' }]} />
-            <View pointerEvents="none" style={[s.doorGlintSmall, { backgroundColor: 'rgba(197,160,89,0.4)' }]} />
+            <PlateCorners tone={GOLD} />
+            <View pointerEvents="none" style={s.litEdge} />
             <View style={s.quickCardRow}>
               <View style={s.haloWrap}>
                 <View style={[s.haloAura, { backgroundColor: 'rgba(197,160,89,0.09)' }]} />
+                <View style={[s.haloOuter, { borderColor: 'rgba(197,160,89,0.16)' }]} />
                 <View style={[s.haloRing, { borderColor: 'rgba(197,160,89,0.38)' }]}>
                   <View style={[s.haloCore, { backgroundColor: 'rgba(197,160,89,0.10)' }]}>
                     <Star s={14} c={GOLD} />
@@ -765,7 +766,7 @@ export default function HolyScriptureView({
             style={[s.quickCard, s.quickCardGreen]}
           >
             <LinearGradient
-              colors={['#FDFEFB', '#F0F6E9']}
+              colors={['#FEFFFC', '#E9F2DF']}
               start={{ x: 0, y: 0 }}
               end={{ x: 0, y: 1 }}
               style={s.cardGround}
@@ -773,11 +774,12 @@ export default function HolyScriptureView({
             />
             <DoorMotif variant="ruling" stroke="#5E7B55" />
             <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(94,123,85,0.17)' }]} />
-            <View pointerEvents="none" style={[s.doorGlint, { backgroundColor: 'rgba(94,123,85,0.5)' }]} />
-            <View pointerEvents="none" style={[s.doorGlintSmall, { backgroundColor: 'rgba(94,123,85,0.36)' }]} />
+            <PlateCorners tone={GREEN} opacity={0.4} />
+            <View pointerEvents="none" style={s.litEdge} />
             <View style={s.quickCardRow}>
               <View style={s.haloWrap}>
                 <View style={[s.haloAura, { backgroundColor: 'rgba(94,123,85,0.08)' }]} />
+                <View style={[s.haloOuter, { borderColor: 'rgba(94,123,85,0.15)' }]} />
                 <View style={[s.haloRing, { borderColor: 'rgba(94,123,85,0.36)' }]}>
                   <View style={[s.haloCore, { backgroundColor: 'rgba(94,123,85,0.10)' }]}>
                     <Notebook s={13} c={GREEN} />
@@ -807,7 +809,7 @@ export default function HolyScriptureView({
           style={s.checkpointCard}
         >
           <LinearGradient
-            colors={['#FFFEF9', '#FBF3E1']}
+            colors={['#FFFEFA', '#F8EDD4']}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
             style={s.cardGround}
@@ -815,10 +817,15 @@ export default function HolyScriptureView({
           />
           <DoorMotif variant="ruling" stroke="#B49B67" />
           <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(197,160,89,0.18)' }]} />
+          <PlateCorners tone={GOLD} />
+          <View pointerEvents="none" style={s.litEdge} />
           <BookmarkRibbon />
-          <View style={[s.haloRing, { borderColor: 'rgba(197,160,89,0.38)' }]}>
-            <View style={[s.haloCore, { backgroundColor: 'rgba(197,160,89,0.10)' }]}>
-              <Book s={15} c={GOLD} w={2.1} />
+          <View style={s.haloWrap}>
+            <View pointerEvents="none" style={[s.haloOuter, { borderColor: 'rgba(197,160,89,0.16)' }]} />
+            <View style={[s.haloRing, { borderColor: 'rgba(197,160,89,0.38)' }]}>
+              <View style={[s.haloCore, { backgroundColor: 'rgba(197,160,89,0.10)' }]}>
+                <Book s={15} c={GOLD} w={2.1} />
+              </View>
             </View>
           </View>
           <View style={s.checkpointTextWrap}>
@@ -837,6 +844,7 @@ export default function HolyScriptureView({
           }}
           subtitle={taskSummary}
           ornament={<DoorMotif variant="rays" stroke="#B49B67" />}
+          corners={<PlateCorners tone={GOLD} />}
         />
         </View>
 
@@ -1100,6 +1108,29 @@ function BookSection({
 
 // The doors carry their own faint light: rays for what is treasured,
 // ruling lines for what is written and read.
+// The illumination inside the ruled frame: four right-angle marks set at the
+// plate's corners, the way a manuscript's ruling is finished before anything
+// is written in it. These replaced two diamond glints that sat at opposite
+// corners — scattered, asymmetric, and saying nothing. A plate reads as
+// struck when its corners are registered.
+function PlateCorners({ tone, opacity = 0.45 }: { tone: string; opacity?: number }) {
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {([
+        ['cornerTL', s.cornerBarH, s.cornerBarV],
+        ['cornerTR', s.cornerBarHRight, s.cornerBarVRight],
+        ['cornerBL', s.cornerBarHBottom, s.cornerBarV],
+        ['cornerBR', s.cornerBarHBottomRight, s.cornerBarVRightBottom],
+      ] as const).map(([seat, bar, stem]) => (
+        <View key={seat} style={s[seat]}>
+          <View style={[bar, { backgroundColor: tone, opacity }]} />
+          <View style={[stem, { backgroundColor: tone, opacity }]} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function DoorMotif({ variant, stroke }: { variant: 'rays' | 'ruling'; stroke: string }) {
   const W = 150;
   const H = 96;
@@ -1619,14 +1650,38 @@ const s = StyleSheet.create({
     bottom: 1,
     borderRadius: 18,
   },
-  doorGlint: {
+  // Corner registration — an 8pt arm each way, set 9 in from the plate's
+  // edge so the marks sit inside the ruled frame rather than on it.
+  cornerTL: { position: 'absolute', top: 9, left: 9, width: 8, height: 8 },
+  cornerTR: { position: 'absolute', top: 9, right: 9, width: 8, height: 8 },
+  cornerBL: { position: 'absolute', bottom: 9, left: 9, width: 8, height: 8 },
+  cornerBR: { position: 'absolute', bottom: 9, right: 9, width: 8, height: 8 },
+  cornerBarH: { position: 'absolute', top: 0, left: 0, width: 8, height: 1, borderRadius: 0.5 },
+  cornerBarV: { position: 'absolute', top: 0, left: 0, width: 1, height: 8, borderRadius: 0.5 },
+  cornerBarHRight: { position: 'absolute', top: 0, right: 0, width: 8, height: 1, borderRadius: 0.5 },
+  cornerBarVRight: { position: 'absolute', top: 0, right: 0, width: 1, height: 8, borderRadius: 0.5 },
+  cornerBarHBottom: { position: 'absolute', bottom: 0, left: 0, width: 8, height: 1, borderRadius: 0.5 },
+  cornerBarHBottomRight: { position: 'absolute', bottom: 0, right: 0, width: 8, height: 1, borderRadius: 0.5 },
+  cornerBarVRightBottom: { position: 'absolute', bottom: 0, right: 0, width: 1, height: 8, borderRadius: 0.5 },
+  // A hairline of light lying along the top edge, inside the border — the
+  // plate catches the light before anything on it does.
+  litEdge: {
     position: 'absolute',
-    top: 9,
-    right: 9,
-    width: 4,
-    height: 4,
-    borderRadius: 0.8,
-    transform: [{ rotate: '45deg' }],
+    top: 1,
+    left: 12,
+    right: 12,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  // The halo's outer ring. The seat was already a ring holding a toned core;
+  // this is the nimbus around it, and it is what makes the icon read as
+  // haloed rather than merely circled.
+  haloOuter: {
+    position: 'absolute',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
   },
   ribbonWrap: {
     position: 'absolute',
@@ -1656,15 +1711,6 @@ const s = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-  },
-  doorGlintSmall: {
-    position: 'absolute',
-    bottom: 10,
-    left: 10,
-    width: 3,
-    height: 3,
-    borderRadius: 0.8,
-    transform: [{ rotate: '45deg' }],
   },
   haloRing: {
     width: 34,

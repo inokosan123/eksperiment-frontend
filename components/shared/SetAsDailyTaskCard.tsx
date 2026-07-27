@@ -21,6 +21,11 @@ type Props = {
    * the doors it sits beneath; nothing else passes one.
    */
   ornament?: ReactNode;
+  /**
+   * The plate's corner registration marks. Scripture passes its own so all
+   * four of its doors are finished the same way; nothing else passes any.
+   */
+  corners?: ReactNode;
 };
 
 export default function SetAsDailyTaskCard({
@@ -31,6 +36,7 @@ export default function SetAsDailyTaskCard({
   style,
   textMaxFontSizeMultiplier = 1.08,
   ornament,
+  corners,
 }: Props) {
   const scripture = variant === 'scripture';
 
@@ -43,22 +49,25 @@ export default function SetAsDailyTaskCard({
         style={[s.base, scripture ? s.scriptureBase : s.softBase]}
       >
         {/* In Scripture this card stands last in a row of doors, so it wears
-            what they wear: the same faint motif, the inner hairline frame and
-            a corner glint. Without them it read as the one plain plaque in a
-            set of four. */}
+            what they wear: the same faint motif, the ruled inner frame, the
+            corner registration and the lit top edge. Without them it read as
+            the one plain plaque in a set of four. */}
         {scripture && (
           <>
             {ornament}
             <View pointerEvents="none" style={s.scriptureFrame} />
-            <View pointerEvents="none" style={s.scriptureGlint} />
-            <View pointerEvents="none" style={s.scriptureGlintSmall} />
+            {corners}
+            <View pointerEvents="none" style={s.litEdge} />
           </>
         )}
         <View style={[s.iconBase, scripture ? s.scriptureIconBase : s.softIconBase]}>
           {scripture ? (
-            <View style={s.scriptureIconCore}>
-              <CalendarCheck s={15} c={C.gold} />
-            </View>
+            <>
+              <View pointerEvents="none" style={s.scriptureHaloOuter} />
+              <View style={s.scriptureIconCore}>
+                <CalendarCheck s={15} c={C.gold} />
+              </View>
+            </>
           ) : (
             <CalendarCheck s={20} c={C.gold} />
           )}
@@ -138,25 +147,13 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.16)',
   },
-  scriptureGlint: {
+  litEdge: {
     position: 'absolute',
-    top: 9,
-    right: 9,
-    width: 4,
-    height: 4,
-    borderRadius: 0.8,
-    backgroundColor: 'rgba(197,160,89,0.5)',
-    transform: [{ rotate: '45deg' }],
-  },
-  scriptureGlintSmall: {
-    position: 'absolute',
-    bottom: 10,
-    left: 10,
-    width: 3,
-    height: 3,
-    borderRadius: 0.8,
-    backgroundColor: 'rgba(197,160,89,0.36)',
-    transform: [{ rotate: '45deg' }],
+    top: 1,
+    left: 12,
+    right: 12,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.9)',
   },
   scriptureChevronSeat: {
     width: 30,
@@ -187,6 +184,16 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.38)',
     backgroundColor: '#FFFFFF',
+    // The nimbus overflows this ring by 5 on every side.
+    overflow: 'visible',
+  },
+  scriptureHaloOuter: {
+    position: 'absolute',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.16)',
   },
   scriptureIconCore: {
     width: 26,
