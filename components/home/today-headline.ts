@@ -8,11 +8,11 @@
 // says nothing. It spends them on the counts instead — how many are done,
 // how many are left — which is the one thing the big number cannot tell you.
 //
-// The flame is named exactly once, at the top, where it is the reward. Every
-// other rung is plain: what happened, and what it means. The card used to
-// talk in fire at every level ("the flame is within reach", "keep feeding
-// today's fire") while the number beside it spoke plainly, and the two did
-// not sound like the same card.
+// Every rung closes on an exclamation. The ladder is meant to sound like
+// somebody is on your side, and a row of full stops read like a status
+// report. The top rung is the only one that stops reporting altogether and
+// simply congratulates you — by then the fact is obvious and the card can
+// afford to say the human thing.
 //
 // The ladder:
 //
@@ -22,7 +22,7 @@
 //   1–39%        under way
 //   40–69%       on pace
 //   70–99%       almost closed, and what is left is small enough to name
-//   100%         the day is complete — the one line that carries the flame
+//   100%         congratulations — the only rung that stops counting
 
 export type HomeDayMode = 'no-tasks' | 'all-skipped' | 'normal';
 
@@ -43,15 +43,15 @@ function count(n: number, one: string, many: string) {
 }
 
 export function todayHeadline({ mode, pct, done, total, streak }: TodayHeadlineInput): string {
-  if (mode === 'no-tasks') return 'No tasks are scheduled today — nothing to miss.';
+  if (mode === 'no-tasks') return 'No tasks are scheduled today — nothing to miss!';
 
   if (mode === 'all-skipped') {
     // The claim has to match the card's own face: with no run behind today
     // there is no streak to hold, and saying so anyway would be a card
     // contradicting itself.
     return streak > 0
-      ? 'Today’s tasks were skipped — your streak still holds.'
-      : 'Today’s tasks were skipped — nothing was lost.';
+      ? 'Today’s tasks were skipped — your streak still holds!'
+      : 'Today’s tasks were skipped — nothing was lost!';
   }
 
   // The counts have not arrived yet. Claim nothing that cannot be backed up.
@@ -61,14 +61,14 @@ export function todayHeadline({ mode, pct, done, total, streak }: TodayHeadlineI
 
   if (pct >= 100) {
     return total === 1
-      ? 'Your one task is done — today’s flame is lit.'
-      : `All ${total} done — today’s flame is lit.`;
+      ? 'Congratulations — your one task is done!'
+      : `Congratulations — all ${total} tasks are done!`;
   }
-  if (pct >= 70) return `Almost there — ${count(left, 'task', 'tasks')} left.`;
-  if (pct >= 40) return `${done} of ${total} done — you’re on pace.`;
-  if (pct > 0) return `${done} of ${total} done — keep going.`;
+  if (pct >= 70) return `Almost there — ${count(left, 'task', 'tasks')} left!`;
+  if (pct >= 40) return `${done} of ${total} done — you’re on pace!`;
+  if (pct > 0) return `${done} of ${total} done — keep going!`;
 
   return total === 1
-    ? 'One task waiting — start there.'
-    : `${total} tasks waiting — start with one.`;
+    ? 'One task waiting — start there!'
+    : `${total} tasks waiting — start with one!`;
 }
