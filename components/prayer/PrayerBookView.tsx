@@ -926,7 +926,6 @@ export default function PrayerBookView({
               if (isGuided) return;
               setShowTaskSheet(true);
             }}
-            variant="soft"
             subtitle={taskSummary}
           />
         </View>

@@ -838,12 +838,10 @@ export default function HolyScriptureView({
         </TouchableOpacity>
 
         <SetAsDailyTaskCard
-          variant="scripture"
           onPress={() => {
             if (!isGuided) setShowTaskSheet(true);
           }}
           subtitle={taskSummary}
-          ornament={<DoorMotif variant="rays" stroke="#B49B67" />}
         />
         </View>
 

@@ -1559,7 +1559,6 @@ function Summary({
         </View>
 
         <SetAsDailyTaskCard
-          variant="soft"
           title="Set as Daily Task"
           subtitle="Add Ideal Self to your daily routine"
           onPress={() => setShowTaskSheet(true)}

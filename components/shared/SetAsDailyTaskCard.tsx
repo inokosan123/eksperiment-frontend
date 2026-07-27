@@ -1,75 +1,91 @@
-import type { ReactNode } from 'react';
 import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Line } from 'react-native-svg';
 import { CalendarCheck, ChevronRight } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 
-
-type Variant = 'soft' | 'scripture';
+// ONE card, everywhere. This row appears at the foot of Scripture, Prayer
+// Book, Journal and Ideal Self, and it used to come in two registers — a
+// "scripture" one that had been detailed and a "soft" one that had not — so
+// the same button looked like two different buttons depending on where you
+// met it. It is now a single element with no variants: change it here and it
+// changes on all four screens, which is the point of it being shared.
+//
+// The look is Scripture's, because that is where it was worked out: a
+// parchment plaque under a double rule, a faint ruling of light behind the
+// copy, a haloed icon and a chevron in its own ghost seat. Everything is
+// drawn inside the component — nothing is passed in — so no caller can end
+// up with a different card by forgetting an argument.
 
 type Props = {
   onPress: () => void;
-  variant?: Variant;
   title?: string;
   subtitle?: string;
   style?: StyleProp<ViewStyle>;
   textMaxFontSizeMultiplier?: number;
-  /**
-   * A background light drawn inside the card, behind its contents. Scripture
-   * hands its own door motif in so this card carries the same faint ruling as
-   * the doors it sits beneath; nothing else passes one.
-   */
-  ornament?: ReactNode;
 };
+
+// The door motif from the Scripture shelf: a fall of light raked across the
+// plate's right side, well under the copy.
+function CardMotif() {
+  const W = 150;
+  const H = 96;
+  return (
+    <View pointerEvents="none" style={s.motifAnchor}>
+      <Svg width={W} height={H}>
+        {Array.from({ length: 5 }).map((_, index) => {
+          const offset = index * 24;
+          return (
+            <Line
+              key={index}
+              x1={W - offset}
+              y1={-6}
+              x2={W - offset - 54}
+              y2={H + 6}
+              stroke="#B49B67"
+              strokeOpacity={0.08}
+              strokeWidth={1}
+            />
+          );
+        })}
+      </Svg>
+    </View>
+  );
+}
 
 export default function SetAsDailyTaskCard({
   onPress,
-  variant = 'soft',
   title = 'Set as Daily Task',
   subtitle = 'Add to your daily routine',
   style,
   textMaxFontSizeMultiplier = 1.08,
-  ornament,
 }: Props) {
-  const scripture = variant === 'scripture';
-
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.84} style={style}>
       <LinearGradient
-        colors={scripture ? ['#FFFDF8', '#FFF7EA'] : ['#FFFBF2', '#FFF8E7']}
-        start={{ x: 0, y: scripture ? 0 : 0 }}
-        end={{ x: scripture ? 0 : 1, y: 1 }}
-        style={[s.base, scripture ? s.scriptureBase : s.softBase]}
+        colors={['#FFFDF8', '#FFF7EA']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={s.card}
       >
-        {/* In Scripture this card stands last in a row of doors, so it wears
-            what they wear: the same faint motif, the double-ruled frame and
-            the lit top edge. Without them it read as the one plain plaque in
-            a set of four. */}
-        {scripture && (
-          <>
-            {ornament}
-            <View pointerEvents="none" style={s.scriptureFrame} />
-            <View pointerEvents="none" style={s.scriptureFrameInner} />
-            <View pointerEvents="none" style={s.litEdge} />
-          </>
-        )}
-        <View style={[s.iconBase, scripture ? s.scriptureIconBase : s.softIconBase]}>
-          {scripture ? (
-            <>
-              <View pointerEvents="none" style={s.scriptureHaloOuter} />
-              <View style={s.scriptureIconCore}>
-                <CalendarCheck s={15} c={C.gold} />
-              </View>
-            </>
-          ) : (
-            <CalendarCheck s={20} c={C.gold} />
-          )}
+        <CardMotif />
+        {/* The double rule: a firmer line with a finer one just inside it. */}
+        <View pointerEvents="none" style={s.frame} />
+        <View pointerEvents="none" style={s.frameInner} />
+        {/* The plate catches the light along its top edge. */}
+        <View pointerEvents="none" style={s.litEdge} />
+
+        <View style={s.iconSeat}>
+          <View pointerEvents="none" style={s.haloOuter} />
+          <View style={s.iconCore}>
+            <CalendarCheck s={15} c={C.gold} />
+          </View>
         </View>
 
         <View style={s.copy}>
           <Text
-            style={[s.titleBase, scripture ? s.scriptureTitle : s.softTitle]}
+            style={s.title}
             allowFontScaling={false}
             maxFontSizeMultiplier={textMaxFontSizeMultiplier}
             numberOfLines={1}
@@ -79,20 +95,19 @@ export default function SetAsDailyTaskCard({
             {title}
           </Text>
           <Text
-            style={[s.subtitleBase, scripture ? s.scriptureSubtitle : s.softSubtitle]}
+            style={s.subtitle}
             allowFontScaling={false}
-            numberOfLines={scripture ? 1 : 2}
+            numberOfLines={1}
             maxFontSizeMultiplier={textMaxFontSizeMultiplier}
-            adjustsFontSizeToFit={scripture}
+            adjustsFontSizeToFit
             minimumFontScale={0.82}
           >
             {subtitle}
           </Text>
         </View>
 
-        {/* Scripture seats its chevron in a ghost ring, as its doors do. */}
-        <View style={[s.chevronSlot, scripture && s.scriptureChevronSeat]}>
-          <ChevronRight s={15} c={scripture ? '#BCA476' : 'rgba(197,160,89,0.4)'} />
+        <View style={s.chevronSeat}>
+          <ChevronRight s={15} c="#BCA476" />
         </View>
       </LinearGradient>
     </TouchableOpacity>
@@ -100,25 +115,16 @@ export default function SetAsDailyTaskCard({
 }
 
 const s = StyleSheet.create({
-  base: {
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-  },
-  softBase: {
-    gap: 14,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(232,220,196,0.7)',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-  },
-  scriptureBase: {
-    // 64 and a 14pt gutter: the doors above use both, and this card sits in
-    // their column.
+    // 64 and a 14pt gutter: the Scripture doors use both, and this card sits
+    // in their column.
     minHeight: 64,
     gap: 14,
     borderRadius: 19,
+    borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.26)',
     paddingHorizontal: 14,
@@ -131,8 +137,14 @@ const s = StyleSheet.create({
     shadowRadius: 14,
     elevation: 1,
   },
-  // The doors' double ruling: a firmer line with a finer one inside it.
-  scriptureFrame: {
+  motifAnchor: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    overflow: 'hidden',
+  },
+  frame: {
     position: 'absolute',
     top: 5,
     left: 5,
@@ -142,7 +154,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.2)',
   },
-  scriptureFrameInner: {
+  frameInner: {
     position: 'absolute',
     top: 8,
     left: 8,
@@ -160,39 +172,22 @@ const s = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.9)',
   },
-  scriptureChevronSeat: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(180,155,103,0.28)',
-    backgroundColor: 'rgba(255,255,255,0.72)',
-  },
-  iconBase: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  softIconBase: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: 'rgba(197,160,89,0.1)',
-  },
-  // The doors' halo seat, to the point: a white ring at 34 holding a toned
-  // core. This was a squarer 15-radius plaque, which read as a different
-  // family from the three icons directly above it.
-  scriptureIconBase: {
+  // The doors' halo seat: a white ring at 34 holding a toned core, with the
+  // nimbus around it. It overflows the ring by 5 a side, hence the visible
+  // overflow.
+  iconSeat: {
     width: 34,
     height: 34,
     borderRadius: 17,
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.38)',
     backgroundColor: '#FFFFFF',
-    // The nimbus overflows this ring by 5 on every side.
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
     overflow: 'visible',
   },
-  scriptureHaloOuter: {
+  haloOuter: {
     position: 'absolute',
     width: 44,
     height: 44,
@@ -200,7 +195,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.16)',
   },
-  scriptureIconCore: {
+  iconCore: {
     width: 26,
     height: 26,
     borderRadius: 13,
@@ -213,42 +208,29 @@ const s = StyleSheet.create({
     minWidth: 0,
     paddingRight: 2,
   },
-  chevronSlot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  titleBase: {
-    color: '#374151',
-  },
-  softTitle: {
-    fontFamily: F.sansSemiBold,
-    fontSize: 14,
-    lineHeight: 18,
-  },
-  scriptureTitle: {
+  title: {
     fontFamily: F.serifMedium,
     fontSize: 16,
     lineHeight: 20,
     letterSpacing: 0,
     color: '#2B2723',
   },
-  subtitleBase: {
+  subtitle: {
     marginTop: 2,
-    color: '#9CA3AF',
-  },
-  softSubtitle: {
-    fontFamily: F.sans,
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  scriptureSubtitle: {
     fontFamily: F.serif,
     fontSize: 12.5,
     lineHeight: 16,
     color: '#9F9890',
+  },
+  chevronSeat: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(180,155,103,0.28)',
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
 });

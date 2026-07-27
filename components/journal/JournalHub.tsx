@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
+  InteractionManager,
   Modal,
   ScrollView,
   StyleSheet,
@@ -38,6 +39,7 @@ import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
 import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
 import FocusLottie from '@/components/focus/FocusLottie';
 import JournalStreakCelebration from '@/components/journal/JournalStreakCelebration';
+import JournalStreakSheet from '@/components/journal/JournalStreakSheet';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { useJournal, type JournalDotKind } from '@/components/journal/JournalContext';
 import { F } from '@/constants/tokens';
@@ -423,6 +425,7 @@ function CalendarStreakCard({
   dotsByDate,
   completedDates,
   currentStreak,
+  onOpenStreak,
 }: {
   year: number;
   month: number;
@@ -435,6 +438,7 @@ function CalendarStreakCard({
   dotsByDate: Record<string, JournalDotKind[]>;
   completedDates: string[];
   currentStreak: number;
+  onOpenStreak: () => void;
 }) {
   const cells = useMemo(() => monthCells(year, month), [year, month]);
   const completedSet = useMemo(() => new Set(completedDates), [completedDates]);
@@ -546,7 +550,13 @@ function CalendarStreakCard({
       {/* The hearth: one dark velvet panel inside the pale card — the book
           glows against it, light sweeps across, gold dust hangs in the air.
           The most precious corner of the screen. */}
-      <View style={s.hearth}>
+      <TouchableOpacity
+        style={s.hearth}
+        activeOpacity={0.9}
+        onPress={onOpenStreak}
+        accessibilityRole="button"
+        accessibilityLabel="Open journal trophy streak"
+      >
         <LinearGradient
           colors={['#2C2517', '#211C12', '#1A160E']}
           start={{ x: 0, y: 0 }}
@@ -625,7 +635,7 @@ function CalendarStreakCard({
           );
         })}
         </View>
-      </View>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -831,20 +841,45 @@ export default function JournalHub() {
   const [taskOpen, setTaskOpen] = useState(false);
   const [taskSummary, setTaskSummary] = useState('Add to your daily routine');
   const [chosenDate, setChosenDate] = useState('');
+  const [trophiesOpen, setTrophiesOpen] = useState(false);
   const [celebrationStreak, setCelebrationStreak] = useState<number | null>(null);
+  const handledCompletionEventRef = useRef<number | null>(null);
   const chosenKinds = chosenDate ? dotsByDate[chosenDate] ?? [] : [];
   const chosenDateEditable = chosenDate === todayKey || chosenDate === yesterdayKey;
   const canNext = year < today.getFullYear() || (year === today.getFullYear() && month < today.getMonth());
+  // The journal's streak sheet reads the journal's own record directly —
+  // it is its own room, not a themed copy of the Focus trophy hall.
+  const journalEntryDates = useMemo(() => entries.map(entry => entry.date), [entries]);
 
   useFocusEffect(useCallback(() => {
     if (!completionEvent) return undefined;
+    if (handledCompletionEventRef.current === completionEvent.id) return undefined;
 
-    dismissCompletionEvent(completionEvent.id);
-    if (completionEvent.date === todayKey) {
-      setCelebrationStreak(Math.max(1, completionEvent.currentStreak));
-    }
+    let active = true;
+    let firstFrame: number | null = null;
+    let secondFrame: number | null = null;
+    const event = completionEvent;
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      // Let the returning Journal Hub paint twice after the editor/navigation
+      // teardown before mounting the celebration's Lottie and SVG field.
+      firstFrame = requestAnimationFrame(() => {
+        secondFrame = requestAnimationFrame(() => {
+          if (!active) return;
+          handledCompletionEventRef.current = event.id;
+          dismissCompletionEvent(event.id);
+          if (event.date === todayKey) {
+            setCelebrationStreak(Math.max(1, event.currentStreak));
+          }
+        });
+      });
+    });
 
-    return undefined;
+    return () => {
+      active = false;
+      interaction.cancel();
+      if (firstFrame !== null) cancelAnimationFrame(firstFrame);
+      if (secondFrame !== null) cancelAnimationFrame(secondFrame);
+    };
   }, [completionEvent, dismissCompletionEvent, todayKey]));
 
   const nav = (route?: string, date?: string, readOnly = false) => {
@@ -913,6 +948,7 @@ export default function JournalHub() {
             dotsByDate={dotsByDate}
             completedDates={streak.completedDates}
             currentStreak={streak.currentStreak}
+            onOpenStreak={() => setTrophiesOpen(true)}
           />
 
           <DayChoicesPanel
@@ -935,7 +971,6 @@ export default function JournalHub() {
 
           <View style={s.taskCardWrap}>
             <SetAsDailyTaskCard
-              variant="soft"
               subtitle={taskSummary}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -962,6 +997,15 @@ export default function JournalHub() {
         onSummaryChange={setTaskSummary}
         onTaskDraft={createOrUpdateTask}
         onTaskMutation={refreshTasks}
+      />
+
+      <JournalStreakSheet
+        visible={trophiesOpen}
+        onClose={() => setTrophiesOpen(false)}
+        completedDates={streak.completedDates}
+        entryDates={journalEntryDates}
+        currentStreak={streak.currentStreak}
+        bestStreak={streak.bestStreak}
       />
 
       {celebrationStreak !== null && (
