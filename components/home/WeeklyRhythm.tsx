@@ -36,6 +36,7 @@ import {
   buildHomeProgressCalendarModel,
   type HomeProgressCalendarModel,
 } from '@/components/home/progress-calendar-model';
+import { todayHeadline, type HomeDayMode } from '@/components/home/today-headline';
 import {
   bankedPalette,
   BankedWeave,
@@ -59,7 +60,7 @@ const GOLD = '#C5A059';
 // Indexed by Date.getDay() — Sun=0, Mon=1, ..., Sat=6
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-type DayMode = 'no-tasks' | 'all-skipped' | 'normal';
+type DayMode = HomeDayMode;
 
 // A day laid aside is graver than a day nobody scheduled, so it rests in
 // the graphite register while an unscheduled one stays on warm parchment.
@@ -1320,6 +1321,9 @@ export default function WeeklyRhythm() {
   const router = useRouter();
   const { instances } = useTasks();
   const [weekStats, setWeekStats] = useState<DayStat[]>([]);
+  // Today's task counts, which the card's line speaks in rather than
+  // repeating the percentage already set above it.
+  const [todayCounts, setTodayCounts] = useState({ done: 0, total: 0 });
   const [progressCalendarOpen, setProgressCalendarOpen] = useState(false);
   const [progressCalendarModel, setProgressCalendarModel] = useState<HomeProgressCalendarModel>({
     current: 0,
@@ -1382,14 +1386,24 @@ export default function WeeklyRhythm() {
       });
 
       if (!cancelled) {
+        const today = countsByDate.get(todayKey);
+        const scheduledToday = today
+          ? today.completed + today.skipped + today.missed + today.pending
+          : 0;
         setWeekStats(stats);
+        setTodayCounts({
+          done: today?.completed ?? 0,
+          // Laid-aside tasks leave the denominator, exactly as the reading
+          // above the line computes it.
+          total: scheduledToday - (today?.skipped ?? 0),
+        });
         setProgressCalendarModel(buildHomeProgressCalendarModel(all, referenceDate));
       }
     })().catch(error => {
       console.warn('Home trophy analytics failed to load:', error);
     });
     return () => { cancelled = true; };
-  }, [instances, week]);
+  }, [instances, todayKey, week]);
 
   const todayStat = weekStats.find(d => d.isToday);
   const todayPct = todayStat?.pct ?? 0;
@@ -1415,28 +1429,13 @@ export default function WeeklyRhythm() {
     mode: 'no-tasks',
   }));
 
-  // The voice keeps pace with the day: reserved while little is done, warm
-  // in the middle, expectant near the top. The fire always FILLS — never
-  // burns down — and the noun follows what is actually on the card now that
-  // the candle row is gone.
-  const headline = todayMode === 'no-tasks'
-    ? 'A quiet day — nothing scheduled, and nothing missed.'
-    : todayMode === 'all-skipped'
-      // The claim has to match the inscription beside it: with no run behind
-      // today there is no streak to hold, and saying so anyway would be the
-      // old mistake — a card whose words its own face contradicts.
-      ? progressCalendarModel.current > 0
-        ? 'Today’s tasks were skipped — your streak still holds.'
-        : 'Today’s tasks were skipped — nothing was lost.'
-      : todayPct >= 100
-        ? 'The day is full — today’s flame is lit.'
-        : todayPct >= 70
-          ? 'Almost there — the flame is within reach.'
-          : todayPct >= 40
-            ? 'Good pace — the fire is rising steadily.'
-            : todayPct > 0
-              ? `Only ${todayPct}% so far — keep feeding today’s fire.`
-              : 'The day’s fire awaits its first task.';
+  const headline = todayHeadline({
+    mode: todayMode,
+    pct: todayPct,
+    done: todayCounts.done,
+    total: todayCounts.total,
+    streak: progressCalendarModel.current,
+  });
 
   return (
     <View style={s.wrap}>
