@@ -401,7 +401,11 @@ const SEAL_COLORS = {
     wing: 'rgba(162,67,81,0.5)',
     tick: 'rgba(162,67,81,0.5)',
     gem: 'rgba(162,67,81,0.62)',
-    plate: 'rgba(255,255,255,0.72)',
+    // Near-opaque: the struck seal is stamped ACROSS the flame's silhouette
+    // on the Home card, and at 0.72 the black read straight through the
+    // plate and dirtied the oxblood. (Only the Home skipped card uses this
+    // tone; every other seal is 'quiet'.)
+    plate: 'rgba(255,255,255,0.93)',
     emboss: 'rgba(255,255,255,0.6)',
   },
   quiet: {

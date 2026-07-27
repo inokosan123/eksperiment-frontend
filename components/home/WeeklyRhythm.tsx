@@ -798,7 +798,7 @@ function StruckCrest() {
 
 const cr = StyleSheet.create({
   stage: { width: 132, height: 132, alignItems: 'center', justifyContent: 'center' },
-  flame: { width: 62, height: 62, resizeMode: 'contain' },
+  flame: { width: 68, height: 68, resizeMode: 'contain' },
 });
 
 /* ── Radiant flame ────────────────────────────────────────── */
@@ -1419,7 +1419,7 @@ export default function WeeklyRhythm() {
   const headline = todayMode === 'no-tasks'
     ? 'A quiet day — nothing scheduled, and nothing missed.'
     : todayMode === 'all-skipped'
-      ? 'Today was set aside to rest — your rhythm still holds.'
+      ? 'Today’s tasks were skipped — your streak still holds.'
       : todayPct >= 100
         ? 'The day is full — today’s flame is lit.'
         : todayPct >= 70
@@ -1472,7 +1472,7 @@ export default function WeeklyRhythm() {
         {skippedToday ? (
           <View style={s.struckHero}>
             <StruckCrest />
-            <RestSeal label="SET ASIDE" tone="struck" style={s.struckSeal} />
+            <RestSeal label="SKIPPED" tone="struck" style={s.struckSeal} />
           </View>
         ) : (
           <>
@@ -1618,10 +1618,14 @@ const s = StyleSheet.create({
     paddingRight: 8,
   },
   restSeal: { marginTop: 14 },
-  // The struck crest stands on the card's centre line, and the seal comes
-  // down over its base rather than landing somewhere underneath it.
-  struckHero: { marginTop: 4, alignItems: 'center' },
-  struckSeal: { marginTop: -15, zIndex: 2 },
+  // The struck crest stands on the card's centre line and the stamp lands
+  // ACROSS it, cutting the flame off at the foot. Struck through the middle
+  // the silhouette broke into two black fragments and stopped reading as a
+  // flame at all; low, the whole shape stands and the mark still crosses
+  // it. Absolute, so the seal costs the card no height: the crest and the
+  // mark share one band.
+  struckHero: { marginTop: 4, alignItems: 'center', justifyContent: 'center' },
+  struckSeal: { position: 'absolute', marginTop: 20, zIndex: 2 },
   // Close under the hero, because the line is the hero's caption; the week
   // then takes the air that the gap used to waste.
   headline: {
