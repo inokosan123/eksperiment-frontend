@@ -145,14 +145,16 @@ const seg = StyleSheet.create({
     backgroundColor: '#FFF9E8',
   },
   emblemArt: { width: 17, height: 17 },
+  // On the light plaque the halo is a whitening, not a glow: it lifts the
+  // emblem off the cream the way the doors' halo seats do.
   emblemGlow: {
     position: 'absolute',
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255,236,190,0.18)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.72)',
   },
-  emblemGlowWarm: { backgroundColor: 'rgba(255,180,90,0.20)' },
+  emblemGlowWarm: { backgroundColor: 'rgba(255,252,244,0.8)' },
   // Unselected, the emblem is still itself — only dimmer. Greying it out
   // would have thrown away the one thing worth showing.
   emblemResting: { opacity: 0.55 },
@@ -1127,6 +1129,13 @@ export default function SetAsTaskSheet({
       translateX: tabMotion.value * (((segmentWidth - 12) / 2) + 4),
     }],
   }));
+  // The plaque's two faces, cross-fading on the same value as the slide.
+  const segmentSpiritualFaceStyle = useAnimatedStyle(() => ({
+    opacity: 1 - tabMotion.value,
+  }));
+  const segmentChallengeFaceStyle = useAnimatedStyle(() => ({
+    opacity: tabMotion.value,
+  }));
   const tabContentMotionStyle = useAnimatedStyle(() => ({
     opacity: tabContentMotion.value,
     transform: [{ translateY: (1 - tabContentMotion.value) * 10 }],
@@ -1160,6 +1169,13 @@ export default function SetAsTaskSheet({
               style={s.segmentWrap}
               onLayout={event => setSegmentWidth(event.nativeEvent.layout.width)}
             >
+              {/* The plaque does not just travel — it CHANGES INTO the thing
+                  it is selecting. Sitting left it is a spiritual task: warm
+                  cream under a soft gold hairline. Sliding right it becomes
+                  an active challenge card: pale parchment between two thick
+                  gold rails, exactly as the Challenges screen strikes its
+                  live cards. The two faces cross-fade on the same value that
+                  drives the slide, so one gesture carries both. */}
               {segmentWidth > 0 && (
                 <Reanimated.View
                   pointerEvents="none"
@@ -1169,20 +1185,27 @@ export default function SetAsTaskSheet({
                     segmentPillMotionStyle,
                   ]}
                 >
-                  {/* The selected side is a struck plaque, not a slab of
-                      colour. Flat gold gave the emblems nothing to stand
-                      against — gold artwork on a gold ground — so the plaque
-                      goes to deep ink and the flame and the trophy finally
-                      carry their own light. */}
-                  <LinearGradient
-                    colors={['#3A3630', '#211E1A', '#14120F']}
-                    locations={[0, 0.55, 1]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={StyleSheet.absoluteFill}
-                  />
-                  <View style={s.segmentPillRing} />
-                  <View style={s.segmentPillSheen} />
+                  <Reanimated.View style={[StyleSheet.absoluteFill, segmentSpiritualFaceStyle]}>
+                    <LinearGradient
+                      colors={['#FFFCF2', '#FFF4DC']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 0, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <View style={s.segmentFaceSpiritual} />
+                  </Reanimated.View>
+
+                  <Reanimated.View style={[StyleSheet.absoluteFill, segmentChallengeFaceStyle]}>
+                    <LinearGradient
+                      colors={['#FFFDF8', '#FFFFFF']}
+                      start={{ x: 0.02, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <View style={s.segmentFaceChallenge} />
+                    <View style={[s.segmentRail, s.segmentRailLeft]} />
+                    <View style={[s.segmentRail, s.segmentRailRight]} />
+                  </Reanimated.View>
                 </Reanimated.View>
               )}
               <TouchableOpacity
@@ -3609,8 +3632,10 @@ const s = StyleSheet.create({
     gap: 4,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#ECE8E0',
-    backgroundColor: '#FFFFFF',
+    borderColor: '#E8E3D9',
+    // The track is recessed and the plaque is raised. On a white track a
+    // pale plaque had nothing to lift off.
+    backgroundColor: '#F5F2EC',
     position: 'relative',
     overflow: 'hidden',
   },
@@ -3621,33 +3646,35 @@ const s = StyleSheet.create({
     bottom: 4,
     borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#14120F',
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 14,
+    shadowColor: '#B6913D',
+    shadowOpacity: 0.22,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 12,
     elevation: 3,
   },
-  // A gold hairline just inside the edge — the plaque is struck, not printed.
-  segmentPillRing: {
-    position: 'absolute',
-    top: 1.5,
-    left: 1.5,
-    right: 1.5,
-    bottom: 1.5,
-    borderRadius: 14.5,
+  // A spiritual task's own frame: a soft gold hairline on warm cream.
+  segmentFaceSpiritual: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(212,176,106,0.34)',
+    borderColor: 'rgba(197,160,89,0.34)',
   },
-  segmentPillSheen: {
+  // An active challenge card: a fine gold outline carrying two heavy rails.
+  segmentFaceChallenge: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.gold,
+  },
+  segmentRail: {
     position: 'absolute',
-    top: 5,
-    left: 14,
-    width: 44,
-    height: 7,
-    borderRadius: 7,
-    backgroundColor: 'rgba(255,247,224,0.13)',
-    transform: [{ rotate: '-6deg' }],
+    top: 0,
+    bottom: 0,
+    width: 4,
+    backgroundColor: C.gold,
   },
+  segmentRailLeft: { left: 0, borderTopLeftRadius: 16, borderBottomLeftRadius: 16 },
+  segmentRailRight: { right: 0, borderTopRightRadius: 16, borderBottomRightRadius: 16 },
   segmentBtn: {
     flex: 1,
     // 52, up from 46: the emblems are 32 and were crowding a 46 band.
@@ -3666,9 +3693,7 @@ const s = StyleSheet.create({
     color: '#A8A29E',
     textTransform: 'uppercase',
   },
-  // Warm cream on ink reads as gilt lettering; plain white read as a
-  // system control.
-  segmentTextActive: { color: '#F0DDB0' },
+  segmentTextActive: { color: '#8B6B2F' },
   content: {
     paddingHorizontal: 18,
     paddingTop: 16,
