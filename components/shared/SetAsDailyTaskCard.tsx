@@ -21,11 +21,6 @@ type Props = {
    * the doors it sits beneath; nothing else passes one.
    */
   ornament?: ReactNode;
-  /**
-   * The plate's corner registration marks. Scripture passes its own so all
-   * four of its doors are finished the same way; nothing else passes any.
-   */
-  corners?: ReactNode;
 };
 
 export default function SetAsDailyTaskCard({
@@ -36,7 +31,6 @@ export default function SetAsDailyTaskCard({
   style,
   textMaxFontSizeMultiplier = 1.08,
   ornament,
-  corners,
 }: Props) {
   const scripture = variant === 'scripture';
 
@@ -49,14 +43,14 @@ export default function SetAsDailyTaskCard({
         style={[s.base, scripture ? s.scriptureBase : s.softBase]}
       >
         {/* In Scripture this card stands last in a row of doors, so it wears
-            what they wear: the same faint motif, the ruled inner frame, the
-            corner registration and the lit top edge. Without them it read as
-            the one plain plaque in a set of four. */}
+            what they wear: the same faint motif, the double-ruled frame and
+            the lit top edge. Without them it read as the one plain plaque in
+            a set of four. */}
         {scripture && (
           <>
             {ornament}
             <View pointerEvents="none" style={s.scriptureFrame} />
-            {corners}
+            <View pointerEvents="none" style={s.scriptureFrameInner} />
             <View pointerEvents="none" style={s.litEdge} />
           </>
         )}
@@ -137,6 +131,7 @@ const s = StyleSheet.create({
     shadowRadius: 14,
     elevation: 1,
   },
+  // The doors' double ruling: a firmer line with a finer one inside it.
   scriptureFrame: {
     position: 'absolute',
     top: 5,
@@ -145,7 +140,17 @@ const s = StyleSheet.create({
     bottom: 5,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.16)',
+    borderColor: 'rgba(197,160,89,0.2)',
+  },
+  scriptureFrameInner: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    right: 8,
+    bottom: 8,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.11)',
   },
   litEdge: {
     position: 'absolute',
