@@ -1200,14 +1200,19 @@ function TestamentMotif({ tone }: { tone: 'green' | 'stone' }) {
             );
           })
           : Array.from({ length: 5 }).map((_, index) => {
-            const y = 10 + index * 18;
+            // The same rake as the New Testament, running the other way:
+            // the elder half of the canon, lit from the other side. This was
+            // horizontal scroll-ruling, but the shelf card's leader dots run
+            // horizontally too, so the two ran parallel and the card read as
+            // mis-registered ruling rather than as a lit page.
+            const offset = index * 26;
             return (
               <Line
                 key={index}
-                x1={24}
-                y1={y}
-                x2={W}
-                y2={y}
+                x1={W - offset - 62}
+                y1={-6}
+                x2={W - offset}
+                y2={H + 6}
                 stroke={stroke}
                 strokeOpacity={0.085}
                 strokeWidth={1}

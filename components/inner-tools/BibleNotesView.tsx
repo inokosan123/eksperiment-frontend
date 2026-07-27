@@ -59,7 +59,7 @@ type NoteTone = {
   frameInner: string;
   spine: string;
   leader: string;
-  motif: 'rays' | 'ruling';
+  motif: 'rays' | 'counter';
   pill: string;
   pillBorder: string;
   pillText: string;
@@ -114,7 +114,7 @@ const NOTE_TONES: Record<BibleTab, NoteTone> = {
     frameInner: 'rgba(138,106,69,0.09)',
     spine: 'rgba(138,106,69,0.45)',
     leader: '#8A6A45',
-    motif: 'ruling',
+    motif: 'counter',
     pill: '#F7EFE3',
     pillBorder: 'rgba(138,106,69,0.36)',
     pillText: '#6E5334',
@@ -854,9 +854,11 @@ export default function BibleNotesView({
   );
 }
 
-// The room's own light, raked behind a book that has been written in. Rays
-// for the New Testament and the Psalter, horizontal scroll-ruling for the
-// Old — the two motifs Scripture gives its testaments.
+// The room's own light, raked behind a book that has been written in: the
+// New Testament and the Psalter are lit from the right, the Old Testament
+// from the left. Horizontal ruling was tried here and does not work — the
+// leader dots crossing the card are horizontal too, so the two ran parallel
+// and the whole card read as mis-registered ruling.
 function NoteMotif({ tone }: { tone: NoteTone }) {
   const W = 170;
   const H = 90;
@@ -880,14 +882,14 @@ function NoteMotif({ tone }: { tone: NoteTone }) {
             );
           })
           : Array.from({ length: 5 }).map((_, index) => {
-            const y = 12 + index * 17;
+            const offset = index * 26;
             return (
               <Line
                 key={index}
-                x1={16}
-                y1={y}
-                x2={W}
-                y2={y}
+                x1={W - offset - 56}
+                y1={-6}
+                x2={W - offset}
+                y2={H + 6}
                 stroke={tone.accent}
                 strokeOpacity={0.085}
                 strokeWidth={1}
@@ -1249,7 +1251,7 @@ const s = StyleSheet.create({
   tabText: { fontFamily: F.serifMedium, fontSize: 13.5, color: '#9A968C' },
   tabCount: { minWidth: 17, height: 17, borderRadius: 9, backgroundColor: 'rgba(94,123,85,0.12)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   tabCountText: { fontFamily: F.sansBold, fontSize: 8, color: '#6E8A64' },
-  bookList: { paddingHorizontal: 16, gap: 5 },
+  bookList: { paddingHorizontal: 16, gap: 4 },
   noBooks: { textAlign: 'center', paddingVertical: 60, fontFamily: F.serif, fontSize: 17, color: '#D1D5DB' },
   // The shelf card of Scripture, read in the notebook's register. A book
   // that has been written in carries the ruled page, the double rule and a
