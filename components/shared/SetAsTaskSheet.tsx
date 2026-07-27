@@ -90,12 +90,25 @@ function SegmentEmblem({
   kind: 'flame' | 'book' | 'trophy';
   active: boolean;
 }) {
+  // Selected, the emblem sits on ink and throws its own light: amber off the
+  // flame, gilt off the trophy and the book. It is the plaque catching what
+  // stands on it, and it is what stops the emblem reading as pasted on.
+  const glow = active ? (
+    <View style={[seg.emblemGlow, kind === 'flame' && seg.emblemGlowWarm]} />
+  ) : null;
+
   if (kind === 'trophy') {
     // The challenge screen's own trophy, which already carries this disc.
-    return <StaticChallengeTrophy size={32} style={!active && seg.emblemResting} />;
+    return (
+      <View style={[seg.emblemSeat, !active && seg.emblemResting]}>
+        {glow}
+        <StaticChallengeTrophy size={32} />
+      </View>
+    );
   }
   return (
     <View style={[seg.emblemSeat, !active && seg.emblemResting]}>
+      {glow}
       <View style={seg.emblemDisc} />
       <View style={seg.emblemHeart} />
       <Image
@@ -132,6 +145,14 @@ const seg = StyleSheet.create({
     backgroundColor: '#FFF9E8',
   },
   emblemArt: { width: 17, height: 17 },
+  emblemGlow: {
+    position: 'absolute',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,236,190,0.18)',
+  },
+  emblemGlowWarm: { backgroundColor: 'rgba(255,180,90,0.20)' },
   // Unselected, the emblem is still itself — only dimmer. Greying it out
   // would have thrown away the one thing worth showing.
   emblemResting: { opacity: 0.55 },
@@ -747,9 +768,6 @@ export default function SetAsTaskSheet({
   const primaryTaskTab: TaskTab = context === 'journal' ? 'routine' : 'spiritual';
   const primaryTaskTabActive = taskTab === primaryTaskTab;
   const primaryTaskTabLabel = context === 'journal' ? 'ROUTINE' : 'SPIRITUAL';
-  const primaryTaskTabAccent = context === 'journal' ? ROUTINE_TASK_ACCENT : C.gold;
-  const primaryTaskTabMuted = context === 'journal' ? ROUTINE_TASK_ACCENT_MUTED : C.gold;
-  const activeSegmentColor = taskTab === 'challenge' ? C.gold : primaryTaskTabAccent;
   const showTaskSwitcher = !lockToPrimaryTask;
 
   const activeForContext = useMemo(
@@ -1147,14 +1165,25 @@ export default function SetAsTaskSheet({
                   pointerEvents="none"
                   style={[
                     s.segmentPill,
-                    {
-                      width: (segmentWidth - 12) / 2,
-                      backgroundColor: activeSegmentColor,
-                      shadowColor: activeSegmentColor,
-                    },
+                    { width: (segmentWidth - 12) / 2 },
                     segmentPillMotionStyle,
                   ]}
-                />
+                >
+                  {/* The selected side is a struck plaque, not a slab of
+                      colour. Flat gold gave the emblems nothing to stand
+                      against — gold artwork on a gold ground — so the plaque
+                      goes to deep ink and the flame and the trophy finally
+                      carry their own light. */}
+                  <LinearGradient
+                    colors={['#3A3630', '#211E1A', '#14120F']}
+                    locations={[0, 0.55, 1]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View style={s.segmentPillRing} />
+                  <View style={s.segmentPillSheen} />
+                </Reanimated.View>
               )}
               <TouchableOpacity
                 onPress={() => switchTaskTab(primaryTaskTab)}
@@ -3591,12 +3620,33 @@ const s = StyleSheet.create({
     top: 4,
     bottom: 4,
     borderRadius: 16,
-    backgroundColor: C.gold,
-    shadowColor: C.gold,
-    shadowOpacity: 0.25,
+    overflow: 'hidden',
+    shadowColor: '#14120F',
+    shadowOpacity: 0.3,
     shadowOffset: { width: 0, height: 6 },
     shadowRadius: 14,
     elevation: 3,
+  },
+  // A gold hairline just inside the edge — the plaque is struck, not printed.
+  segmentPillRing: {
+    position: 'absolute',
+    top: 1.5,
+    left: 1.5,
+    right: 1.5,
+    bottom: 1.5,
+    borderRadius: 14.5,
+    borderWidth: 1,
+    borderColor: 'rgba(212,176,106,0.34)',
+  },
+  segmentPillSheen: {
+    position: 'absolute',
+    top: 5,
+    left: 14,
+    width: 44,
+    height: 7,
+    borderRadius: 7,
+    backgroundColor: 'rgba(255,247,224,0.13)',
+    transform: [{ rotate: '-6deg' }],
   },
   segmentBtn: {
     flex: 1,
@@ -3616,7 +3666,9 @@ const s = StyleSheet.create({
     color: '#A8A29E',
     textTransform: 'uppercase',
   },
-  segmentTextActive: { color: '#FFFFFF' },
+  // Warm cream on ink reads as gilt lettering; plain white read as a
+  // system control.
+  segmentTextActive: { color: '#F0DDB0' },
   content: {
     paddingHorizontal: 18,
     paddingTop: 16,
