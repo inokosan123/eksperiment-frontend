@@ -33,6 +33,7 @@ import {
 } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import { ScriptureBibleNote, useScripture } from './ScriptureContext';
+import { BIBLE_NOTE_FIELDS, BibleNoteFieldHead } from '@/components/scripture/bibleNoteFields';
 
 const GOLD = '#C5A059';
 const SHEET_BG = '#FDFBF5';
@@ -64,6 +65,14 @@ type Props = {
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
   onClose: () => void;
+  onMotionSettled?: (expanded: boolean) => void;
+  closeDisabled?: boolean;
+  expandedChangeEnabled?: boolean;
+  guidedPreview?: boolean;
+  guideHeaderTargetProps?: {
+    ref: React.Ref<any>;
+    onLayout: (event: any) => void;
+  };
 };
 
 function noteForReference(
@@ -81,6 +90,11 @@ export default function ScriptureBibleNotesSheet({
   expanded,
   onExpandedChange,
   onClose,
+  onMotionSettled,
+  closeDisabled = false,
+  expandedChangeEnabled = true,
+  guidedPreview = false,
+  guideHeaderTargetProps,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
@@ -106,6 +120,8 @@ export default function ScriptureBibleNotesSheet({
   const hasPresentedRef = useRef(false);
   const initiallyExpandedRef = useRef(expanded);
   const mountedRef = useRef(true);
+  const onMotionSettledRef = useRef(onMotionSettled);
+  onMotionSettledRef.current = onMotionSettled;
   const loadedReferenceRef = useRef(referenceKey);
   const saveVersionRef = useRef(0);
   const draftRef = useRef<DraftSnapshot>({
@@ -123,6 +139,9 @@ export default function ScriptureBibleNotesSheet({
   );
   const dragStartY = useSharedValue(0);
   const maxOffset = useSharedValue(collapsedOffset);
+  const notifyMotionSettled = useCallback((nextExpanded: boolean) => {
+    onMotionSettledRef.current?.(nextExpanded);
+  }, []);
 
   useEffect(() => {
     if (expanded) setBodyMounted(true);
@@ -136,17 +155,23 @@ export default function ScriptureBibleNotesSheet({
           withTiming(0, {
             duration: EXPANDED_ENTRY_DURATION_MS,
             easing: ENTRY_EASING,
+          }, finished => {
+            if (finished) runOnJS(notifyMotionSettled)(true);
           }),
         )
         : withDelay(
           COLLAPSED_ENTRY_DELAY_MS,
-          withSpring(collapsedOffset, ENTRY_SPRING),
+          withSpring(collapsedOffset, ENTRY_SPRING, finished => {
+            if (finished) runOnJS(notifyMotionSettled)(false);
+          }),
         );
       return;
     }
 
-    translateY.value = withSpring(expanded ? 0 : collapsedOffset, SHEET_SPRING);
-  }, [collapsedOffset, expanded, maxOffset, translateY]);
+    translateY.value = withSpring(expanded ? 0 : collapsedOffset, SHEET_SPRING, finished => {
+      if (finished) runOnJS(notifyMotionSettled)(expanded);
+    });
+  }, [collapsedOffset, expanded, maxOffset, notifyMotionSettled, translateY]);
 
   const persistSnapshot = useCallback(async (snapshot: DraftSnapshot) => {
     await saveBibleNote(
@@ -266,6 +291,7 @@ export default function ScriptureBibleNotesSheet({
   }, []);
 
   const headerGesture = useMemo(() => Gesture.Pan()
+    .enabled(expandedChangeEnabled)
     .activeOffsetY([-5, 5])
     .onBegin(() => {
       runOnJS(ensureBodyMounted)();
@@ -282,7 +308,7 @@ export default function ScriptureBibleNotesSheet({
         || (event.velocityY < 420 && translateY.value < maxOffset.value * 0.5);
       translateY.value = withSpring(shouldExpand ? 0 : maxOffset.value, SHEET_SPRING);
       runOnJS(handleExpandedChange)(shouldExpand);
-    }), [dragStartY, ensureBodyMounted, handleExpandedChange, maxOffset, translateY]);
+    }), [dragStartY, ensureBodyMounted, expandedChangeEnabled, handleExpandedChange, maxOffset, translateY]);
 
   const sheetMotionStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
@@ -295,6 +321,7 @@ export default function ScriptureBibleNotesSheet({
   };
 
   const handleDelete = () => {
+    if (guidedPreview) return;
     const target = { ...draftRef.current };
     const emptyDraft: DraftSnapshot = {
       ...target,
@@ -344,9 +371,14 @@ export default function ScriptureBibleNotesSheet({
         <View pointerEvents='none' style={sheetStyles.topOutline} />
 
         <GestureDetector gesture={headerGesture}>
-          <Reanimated.View style={sheetStyles.header}>
+          <Reanimated.View
+            collapsable={false}
+            style={sheetStyles.header}
+          >
             <View style={sheetStyles.grabber} />
             <Pressable
+              {...guideHeaderTargetProps}
+              disabled={!expandedChangeEnabled}
               haptic='none'
               onPress={() => handleExpandedChange(!expanded)}
               accessibilityRole='button'
@@ -370,11 +402,12 @@ export default function ScriptureBibleNotesSheet({
               </View>
             </Pressable>
             <TouchableOpacity
+              disabled={closeDisabled}
               onPress={handleClose}
               accessibilityRole='button'
               accessibilityLabel='Close Bible Notes'
               activeOpacity={0.72}
-              style={sheetStyles.closeButton}
+              style={[sheetStyles.closeButton, closeDisabled && { opacity: 0.45 }]}
             >
               <X s={19} c='#8B8176' />
             </TouchableOpacity>
@@ -396,35 +429,45 @@ export default function ScriptureBibleNotesSheet({
           <View style={sheetStyles.referenceCard}>
             <View style={sheetStyles.referenceRule} />
             <View style={sheetStyles.referenceCopy}>
-              <Text style={sheetStyles.referenceKicker}>CHAPTER STUDY NOTE</Text>
               <Text style={sheetStyles.referenceTitle}>{bookName} {chapter}</Text>
             </View>
             <Text style={sheetStyles.autosaveText}>AUTO-SAVE</Text>
           </View>
 
-          <BibleNoteSheetField
-            label='OBSERVATIONS'
-            editorKey={referenceKey + '-observations'}
-            value={observations}
-            onChange={value => updateDraft('observations', value)}
-            placeholder='What do you notice in this chapter?'
-          />
-          <BibleNoteSheetField
-            label='LESSONS'
-            editorKey={referenceKey + '-lessons'}
-            value={lessons}
-            onChange={value => updateDraft('lessons', value)}
-            placeholder='What is God teaching here?'
-          />
-          <BibleNoteSheetField
-            label='APPLICATION'
-            editorKey={referenceKey + '-application'}
-            value={application}
-            onChange={value => updateDraft('application', value)}
-            placeholder='How will you live this today?'
-          />
+          {guidedPreview ? (
+            <>
+              {BIBLE_NOTE_FIELDS.map(field => (
+                <View key={field.key} style={[sheetStyles.fieldCard, sheetStyles.guidedPreviewField]}>
+                  <View pointerEvents="none" style={sheetStyles.fieldLit} />
+                  <BibleNoteFieldHead
+                    step={field.step}
+                    label={field.label}
+                    description={field.description}
+                  />
+                  <View style={sheetStyles.guidedPreviewLine} />
+                  <View style={[sheetStyles.guidedPreviewLine, { width: '72%' }]} />
+                </View>
+              ))}
+            </>
+          ) : (
+            <>
+              {BIBLE_NOTE_FIELDS.map(field => (
+                <BibleNoteSheetField
+                  key={field.key}
+                  field={field}
+                  editorKey={referenceKey + '-' + field.key}
+                  value={
+                    field.key === 'observations' ? observations
+                      : field.key === 'lessons' ? lessons
+                        : application
+                  }
+                  onChange={value => updateDraft(field.key, value)}
+                />
+              ))}
+            </>
+          )}
 
-          {hasContent && (
+          {hasContent && !guidedPreview && (
             <TouchableOpacity
               onPress={() => setDeleteVisible(true)}
               activeOpacity={0.78}
@@ -453,17 +496,15 @@ export default function ScriptureBibleNotesSheet({
 }
 
 function BibleNoteSheetField({
-  label,
+  field,
   editorKey,
   value,
   onChange,
-  placeholder,
 }: {
-  label: string;
+  field: typeof BIBLE_NOTE_FIELDS[number];
   editorKey: string;
   value: string;
   onChange: (value: string) => void;
-  placeholder: string;
 }) {
   const editorRef = useRef<RichTextEditorRef>(null);
   const [formats, setFormats] = useState<FormatState>({
@@ -474,7 +515,8 @@ function BibleNoteSheetField({
 
   return (
     <View style={sheetStyles.fieldCard}>
-      <Text style={sheetStyles.fieldLabel}>{label}</Text>
+      <View pointerEvents="none" style={sheetStyles.fieldLit} />
+      <BibleNoteFieldHead step={field.step} label={field.label} description={field.description} />
       <RichToolbar
         editorRef={editorRef}
         activeFormats={formats}
@@ -487,7 +529,7 @@ function BibleNoteSheetField({
         initialHTML={value}
         onChange={onChange}
         onFormatChange={setFormats}
-        placeholder={placeholder}
+        placeholder={field.placeholder}
         backgroundColor='#FFFEFB'
         color='#3D3229'
         style={sheetStyles.fieldEditor}
@@ -626,13 +668,6 @@ const sheetStyles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  referenceKicker: {
-    fontFamily: F.sansBold,
-    fontSize: 8.5,
-    lineHeight: 12,
-    letterSpacing: 1.8,
-    color: GOLD,
-  },
   referenceTitle: {
     marginTop: 2,
     fontFamily: F.serifMedium,
@@ -647,11 +682,15 @@ const sheetStyles = StyleSheet.create({
     color: '#B7AD9F',
   },
   fieldCard: {
-    minHeight: 310,
+    position: 'relative',
+    overflow: 'hidden',
+    // No floor any more: the head and the editor set the height between
+    // them, and the floor was below their sum anyway.
     borderRadius: 22,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: 'rgba(232,220,196,0.84)',
-    backgroundColor: '#FFFDF8',
+    borderColor: 'rgba(94,123,85,0.20)',
+    backgroundColor: '#FDFEFB',
     padding: 15,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 7 },
@@ -659,18 +698,33 @@ const sheetStyles = StyleSheet.create({
     shadowRadius: 18,
     elevation: 1,
   },
-  fieldLabel: {
-    marginBottom: 9,
-    fontFamily: F.sansBold,
-    fontSize: 10.5,
-    letterSpacing: 2.05,
-    color: GOLD,
+  fieldLit: {
+    position: 'absolute',
+    top: 1,
+    left: 14,
+    right: 14,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
+  guidedPreviewField: {
+    minHeight: 132,
+    paddingVertical: 14,
+  },
+  guidedPreviewLine: {
+    width: '91%',
+    height: 1,
+    marginTop: 13,
+    backgroundColor: 'rgba(139,129,118,0.18)',
   },
   fieldToolbar: {
     marginBottom: 8,
   },
+  // Shorter here than in the full-screen editor. The head costs each card
+  // about 70pt, and on a sheet — where the keyboard takes the lower half —
+  // that has to come back out of the writing area or you end up typing into
+  // a slot you cannot see.
   fieldEditor: {
-    height: 220,
+    height: 170,
   },
   deleteButton: {
     alignSelf: 'center',

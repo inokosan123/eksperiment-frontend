@@ -30,6 +30,7 @@ import { C, F } from '@/constants/tokens';
 import { RichTextEditor, RichToolbar, RichTextEditorRef, FormatState } from '@/components/shared/RichTextEditor';
 import { ScriptureBibleNote, useScripture } from '@/components/scripture/ScriptureContext';
 import { groupPsalmsIntoKathismata } from '@/components/scripture/kathismata';
+import { BIBLE_NOTE_FIELDS, BibleNoteFieldHead } from '@/components/scripture/bibleNoteFields';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
@@ -1070,7 +1071,6 @@ function ChapterEditor({
       <View style={s.editorScreen}>
         <ScreenTitleBar
           title={(chapter ? `${chapter.book.name} ${chapter.chapter}` : 'Bible Note').toUpperCase()}
-          subtitle="Chapter study note"
           showBack
           bg={BG}
           onBackOverride={onClose}
@@ -1102,27 +1102,23 @@ function ChapterEditor({
           contentContainerStyle={[s.editorContent, { paddingBottom: insets.bottom + 42 }]}
           keyboardShouldPersistTaps="handled"
         >
-          <BibleField
-            label="OBSERVATIONS"
-            editorKey={`${chapterKey}-observations`}
-            value={observations}
-            onChange={onObservations}
-            placeholder="What do you notice in this chapter?"
-          />
-          <BibleField
-            label="LESSONS"
-            editorKey={`${chapterKey}-lessons`}
-            value={lessons}
-            onChange={onLessons}
-            placeholder="What is God teaching here?"
-          />
-          <BibleField
-            label="APPLICATION"
-            editorKey={`${chapterKey}-application`}
-            value={application}
-            onChange={onApplication}
-            placeholder="How will you live this today?"
-          />
+          {BIBLE_NOTE_FIELDS.map(field => (
+            <BibleField
+              key={field.key}
+              field={field}
+              editorKey={`${chapterKey}-${field.key}`}
+              value={
+                field.key === 'observations' ? observations
+                  : field.key === 'lessons' ? lessons
+                    : application
+              }
+              onChange={
+                field.key === 'observations' ? onObservations
+                  : field.key === 'lessons' ? onLessons
+                    : onApplication
+              }
+            />
+          ))}
         </ScrollView>
 
         <DeleteBibleModal
@@ -1160,20 +1156,20 @@ function DeleteBibleModal({
   );
 }
 function BibleField({
-  label, editorKey, value, onChange, placeholder,
+  field, editorKey, value, onChange,
 }: {
-  label: string;
+  field: typeof BIBLE_NOTE_FIELDS[number];
   editorKey: string;
   value: string;
   onChange: (value: string) => void;
-  placeholder: string;
 }) {
   const editorRef = useRef<RichTextEditorRef>(null);
   const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
 
   return (
     <View style={s.fieldCard}>
-      <Text style={s.fieldLabel}>{label}</Text>
+      <View pointerEvents="none" style={s.fieldLit} />
+      <BibleNoteFieldHead step={field.step} label={field.label} description={field.description} />
       <RichToolbar editorRef={editorRef} activeFormats={fmt} style={s.fieldToolbar} />
       <RichTextEditor
         key={editorKey}
@@ -1181,7 +1177,7 @@ function BibleField({
         initialHTML={value}
         onChange={onChange}
         onFormatChange={setFmt}
-        placeholder={placeholder}
+        placeholder={field.placeholder}
         backgroundColor="#FFFEFB"
         color="#3D3229"
         style={s.fieldEditor}
@@ -1427,10 +1423,13 @@ const s = StyleSheet.create({
   },
   editorContent: { padding: 18, gap: 13 },
   fieldCard: {
+    position: 'relative',
+    overflow: 'hidden',
     borderRadius: 22,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: 'rgba(232,220,196,0.84)',
-    backgroundColor: '#FFFDF8',
+    borderColor: 'rgba(94,123,85,0.20)',
+    backgroundColor: '#FDFEFB',
     padding: 15,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 7 },
@@ -1438,10 +1437,16 @@ const s = StyleSheet.create({
     shadowRadius: 18,
     elevation: 1,
   },
-  // Identity is green on this screen, action stays gold: the field heads
-  // name what you are writing, so they follow the notebook; the save button
-  // is the app's confirm and keeps the app's colour.
-  fieldLabel: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.05, color: '#6E8A64', marginBottom: 9 },
+  // The card catches the light along its top edge, as every plate on this
+  // screen does.
+  fieldLit: {
+    position: 'absolute',
+    top: 1,
+    left: 14,
+    right: 14,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
   fieldToolbar: { marginBottom: 8 },
   fieldEditor: { height: 220 },
 
