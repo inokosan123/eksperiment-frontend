@@ -86,15 +86,24 @@ const SEGMENT_BOOK = require('@/assets/images/streak-book-512.png');
 function SegmentEmblem({
   kind,
   active,
+  onInk = false,
 }: {
   kind: 'flame' | 'book' | 'trophy';
   active: boolean;
+  onInk?: boolean;
 }) {
   // Selected, the emblem sits on ink and throws its own light: amber off the
   // flame, gilt off the trophy and the book. It is the plaque catching what
   // stands on it, and it is what stops the emblem reading as pasted on.
   const glow = active ? (
-    <View style={[seg.emblemGlow, kind === 'flame' && seg.emblemGlowWarm]} />
+    <View
+      style={[
+        seg.emblemGlow,
+        kind === 'flame' && seg.emblemGlowWarm,
+        // On ink a halo is light; on cream it can only be a whitening.
+        onInk && seg.emblemGlowOnInk,
+      ]}
+    />
   ) : null;
 
   if (kind === 'trophy') {
@@ -155,6 +164,12 @@ const seg = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.72)',
   },
   emblemGlowWarm: { backgroundColor: 'rgba(255,252,244,0.8)' },
+  emblemGlowOnInk: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,240,205,0.20)',
+  },
   // Unselected, the emblem is still itself — only dimmer. Greying it out
   // would have thrown away the one thing worth showing.
   emblemResting: { opacity: 0.55 },
@@ -770,6 +785,9 @@ export default function SetAsTaskSheet({
   const primaryTaskTab: TaskTab = context === 'journal' ? 'routine' : 'spiritual';
   const primaryTaskTabActive = taskTab === primaryTaskTab;
   const primaryTaskTabLabel = context === 'journal' ? 'ROUTINE' : 'SPIRITUAL';
+  // Journal's primary side is a routine task, which the app strikes in slate
+  // rather than gold — so that plaque is ink, not cream.
+  const primaryFaceIsInk = context === 'journal';
   const showTaskSwitcher = !lockToPrimaryTask;
 
   const activeForContext = useMemo(
@@ -1181,18 +1199,30 @@ export default function SetAsTaskSheet({
                   pointerEvents="none"
                   style={[
                     s.segmentPill,
-                    { width: (segmentWidth - 12) / 2 },
+                    {
+                      width: (segmentWidth - 12) / 2,
+                      // Gold light under a gold plaque; slate under an ink one.
+                      shadowColor: primaryFaceIsInk ? '#1F2937' : '#B6913D',
+                    },
                     segmentPillMotionStyle,
                   ]}
                 >
                   <Reanimated.View style={[StyleSheet.absoluteFill, segmentSpiritualFaceStyle]}>
+                    {/* Journal's other side is a ROUTINE task, and a routine
+                        task is not gold — the app gives it slate (#1F2937).
+                        So there the plaque is struck in ink instead, and the
+                        book stands on it the way the flame stands on cream. */}
                     <LinearGradient
-                      colors={['#FFFCF2', '#FFF4DC']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 0, y: 1 }}
+                      colors={primaryFaceIsInk
+                        ? ['#343A44', '#1F2937', '#141A22']
+                        : ['#FFFCF2', '#FFF4DC']}
+                      locations={primaryFaceIsInk ? [0, 0.55, 1] : undefined}
+                      start={primaryFaceIsInk ? { x: 0, y: 0 } : { x: 0, y: 0 }}
+                      end={primaryFaceIsInk ? { x: 1, y: 1 } : { x: 0, y: 1 }}
                       style={StyleSheet.absoluteFill}
                     />
-                    <View style={s.segmentFaceSpiritual} />
+                    <View style={primaryFaceIsInk ? s.segmentFaceInk : s.segmentFaceSpiritual} />
+                    {primaryFaceIsInk && <View style={s.segmentInkSheen} />}
                   </Reanimated.View>
 
                   <Reanimated.View style={[StyleSheet.absoluteFill, segmentChallengeFaceStyle]}>
@@ -1216,8 +1246,14 @@ export default function SetAsTaskSheet({
                 <SegmentEmblem
                   kind={context === 'journal' ? 'book' : 'flame'}
                   active={primaryTaskTabActive}
+                  onInk={primaryFaceIsInk}
                 />
-                <Text style={[s.segmentText, primaryTaskTabActive && s.segmentTextActive]}>{primaryTaskTabLabel}</Text>
+                <Text
+                  style={[
+                    s.segmentText,
+                    primaryTaskTabActive && (primaryFaceIsInk ? s.segmentTextOnInk : s.segmentTextActive),
+                  ]}
+                >{primaryTaskTabLabel}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => switchTaskTab('challenge')}
@@ -3659,6 +3695,23 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.34)',
   },
+  // A routine task's ink plaque: a pale hairline, since slate takes no gold.
+  segmentFaceInk: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  segmentInkSheen: {
+    position: 'absolute',
+    top: 5,
+    left: 14,
+    width: 44,
+    height: 7,
+    borderRadius: 7,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    transform: [{ rotate: '-6deg' }],
+  },
   // An active challenge card: a fine gold outline carrying two heavy rails.
   segmentFaceChallenge: {
     ...StyleSheet.absoluteFillObject,
@@ -3694,6 +3747,7 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
   segmentTextActive: { color: '#8B6B2F' },
+  segmentTextOnInk: { color: '#F3F1EC' },
   content: {
     paddingHorizontal: 18,
     paddingTop: 16,
