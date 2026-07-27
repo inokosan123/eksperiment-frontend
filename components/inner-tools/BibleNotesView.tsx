@@ -29,6 +29,7 @@ import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { C, F } from '@/constants/tokens';
 import { RichTextEditor, RichToolbar, RichTextEditorRef, FormatState } from '@/components/shared/RichTextEditor';
 import { ScriptureBibleNote, useScripture } from '@/components/scripture/ScriptureContext';
+import { groupPsalmsIntoKathismata } from '@/components/scripture/kathismata';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
@@ -38,11 +39,90 @@ const BG = '#F5F3EE';
 const GOLD = '#C5A059';
 // Bible Notes is Scripture's sibling, not its copy. It borrows Scripture's
 // grammar — the thin spine, the double rule, the lit edge, the leader ruled
-// across to a folio — but reads it in its own register: this screen is the
-// notebook, so its light is the green ruling of a ruled page rather than
-// Scripture's gold parchment, and a book with nothing written in it stays
-// quiet until it has something to show.
+// across to a folio — and a book with nothing written in it stays quiet
+// until it has something to show.
+//
+// But the three parts of the Bible are three different rooms, and the screen
+// changes lamp when you cross between them, exactly as Scripture does. The
+// New Testament is green under a fall of diagonal rays; the Psalter is a
+// pale gold and is divided into its kathismata; the Old Testament is a
+// deeper brown under horizontal scroll-ruling — the same two motifs
+// Scripture gives its testaments, so the two screens read as one canon.
 const NOTE_GREEN = '#5E7B55';
+
+type NoteTone = {
+  accent: string;      // the ink of this room
+  soft: string;        // the ink at rest, for folios and chevrons
+  ground: string;      // the ground of a book that has been written in
+  border: string;
+  frame: string;
+  frameInner: string;
+  spine: string;
+  leader: string;
+  motif: 'rays' | 'ruling';
+  pill: string;
+  pillBorder: string;
+  pillText: string;
+  countBg: string;
+  countBgActive: string;
+  countText: string;
+};
+
+const NOTE_TONES: Record<BibleTab, NoteTone> = {
+  nt: {
+    accent: NOTE_GREEN,
+    soft: '#6E8A64',
+    ground: '#F7FBF4',
+    border: '#DDE6D9',
+    frame: 'rgba(94,123,85,0.16)',
+    frameInner: 'rgba(94,123,85,0.09)',
+    spine: 'rgba(94,123,85,0.45)',
+    leader: '#5E7B55',
+    motif: 'rays',
+    pill: '#F3F9EE',
+    pillBorder: 'rgba(94,123,85,0.34)',
+    pillText: '#4C6647',
+    countBg: 'rgba(94,123,85,0.12)',
+    countBgActive: 'rgba(94,123,85,0.18)',
+    countText: '#6E8A64',
+  },
+  psalms: {
+    accent: '#C5A059',
+    soft: '#A9873F',
+    ground: '#FFFBF0',
+    border: '#EEE1C7',
+    frame: 'rgba(197,160,89,0.18)',
+    frameInner: 'rgba(197,160,89,0.10)',
+    spine: 'rgba(197,160,89,0.5)',
+    leader: '#C5A059',
+    motif: 'rays',
+    pill: '#FFF8E7',
+    pillBorder: 'rgba(197,160,89,0.38)',
+    pillText: '#8B6B2F',
+    countBg: 'rgba(197,160,89,0.13)',
+    countBgActive: 'rgba(197,160,89,0.2)',
+    countText: '#A9873F',
+  },
+  ot: {
+    // The Old Testament's brown: the elder half of the canon, and the
+    // deepest note on either screen.
+    accent: '#8A6A45',
+    soft: '#8A6A45',
+    ground: '#FBF5EC',
+    border: '#E6D9C6',
+    frame: 'rgba(138,106,69,0.17)',
+    frameInner: 'rgba(138,106,69,0.09)',
+    spine: 'rgba(138,106,69,0.45)',
+    leader: '#8A6A45',
+    motif: 'ruling',
+    pill: '#F7EFE3',
+    pillBorder: 'rgba(138,106,69,0.36)',
+    pillText: '#6E5334',
+    countBg: 'rgba(138,106,69,0.12)',
+    countBgActive: 'rgba(138,106,69,0.19)',
+    countText: '#8A6A45',
+  },
+};
 const PSALMS_ID = 19;
 const CHAPTER_COLUMNS = 5;
 const CHAPTER_GAP = 7;
@@ -301,6 +381,9 @@ export default function BibleNotesView({
     return BOOKS.filter(book => tabMatches(book, activeTab))
       .filter(book => !q || book.name.toLowerCase().includes(q));
   }, [activeTab, search]);
+
+  // The room the screen is standing in.
+  const tone = NOTE_TONES[activeTab];
 
   const tabCount = (tab: BibleTab) => visibleBibleNotes.filter(note => {
     const book = BOOKS.find(item => item.id === note.bookId);
@@ -632,15 +715,19 @@ export default function BibleNotesView({
           {/* Animated sliding pill */}
           <Reanimated.View
             pointerEvents="none"
-            style={[s.tabPill, tabPillMotionStyle]}
+            style={[
+              s.tabPill,
+              { backgroundColor: tone.pill, borderColor: tone.pillBorder, shadowColor: tone.accent },
+              tabPillMotionStyle,
+            ]}
           />
-          <TabButton label="New Test." active={activeTab === 'nt'} count={tabCount('nt')} onPress={() => {
+          <TabButton label="New Test." tone={tone} active={activeTab === 'nt'} count={tabCount('nt')} onPress={() => {
             if (!isGuided) setActiveTab('nt');
           }} />
-          <TabButton label="Psalter" active={activeTab === 'psalms'} count={tabCount('psalms')} onPress={() => {
+          <TabButton label="Psalter" tone={tone} active={activeTab === 'psalms'} count={tabCount('psalms')} onPress={() => {
             if (!isGuided) setActiveTab('psalms');
           }} />
-          <TabButton label="Old Test." active={activeTab === 'ot'} count={tabCount('ot')} onPress={() => {
+          <TabButton label="Old Test." tone={tone} active={activeTab === 'ot'} count={tabCount('ot')} onPress={() => {
             if (!isGuided) setActiveTab('ot');
           }} />
         </View>
@@ -663,6 +750,7 @@ export default function BibleNotesView({
                     name={book.name}
                     count={chaptersWithNotes.length}
                     expanded={isExpanded}
+                    tone={tone}
                     onPress={() => {
                       if (!isGuided) setExpandedBookId(isExpanded ? null : book.id);
                     }}
@@ -677,24 +765,56 @@ export default function BibleNotesView({
                     })}
                     exiting={FadeOutUp.duration(118).easing(Easing.out(Easing.cubic))}
                     layout={bibleNotesLayout}
-                    style={s.chapterGrid}
                   >
-                    {Array.from({ length: book.chapters }, (_, index) => index + 1).map(chapter => {
-                      const hasNote = notesByChapter.has(noteKey(book.id, chapter));
-                      return (
-                        <TouchableOpacity
-                          key={chapter}
-                          onPress={() => {
-                            if (!isGuided) openChapter(book, chapter);
-                          }}
-                          activeOpacity={0.82}
-                          style={[s.chapterCell, { width: chapterCellWidth }, hasNote && s.chapterCellActive]}
-                        >
-                          <Text style={[s.chapterText, hasNote && s.chapterTextActive]}>{chapter}</Text>
-                          {hasNote && <View style={s.noteDot} />}
-                        </TouchableOpacity>
-                      );
-                    })}
+                    {activeTab === 'psalms' ? (
+                      // The Psalter is read in kathismata, so it is written in
+                      // them too — the same twenty divisions Holy Scripture
+                      // lays it out in, from the same shared table.
+                      groupPsalmsIntoKathismata(
+                        Array.from({ length: book.chapters }, (_, index) => index + 1),
+                      ).map(section => (
+                        <View key={section.key}>
+                          <View style={s.kathismaHead}>
+                            <View style={[s.kathismaRule, { backgroundColor: tone.frame }]} />
+                            <View style={[s.kathismaDiamond, { backgroundColor: tone.spine }]} />
+                            <Text style={[s.kathismaLabel, { color: tone.soft }]} numberOfLines={1}>
+                              {section.label}
+                            </Text>
+                            <View style={[s.kathismaDiamond, { backgroundColor: tone.spine }]} />
+                            <View style={[s.kathismaRule, { backgroundColor: tone.frame }]} />
+                          </View>
+                          <View style={s.chapterGrid}>
+                            {section.psalms.map(chapter => (
+                              <ChapterCell
+                                key={chapter}
+                                chapter={chapter}
+                                width={chapterCellWidth}
+                                tone={tone}
+                                hasNote={notesByChapter.has(noteKey(book.id, chapter))}
+                                onPress={() => {
+                                  if (!isGuided) openChapter(book, chapter);
+                                }}
+                              />
+                            ))}
+                          </View>
+                        </View>
+                      ))
+                    ) : (
+                      <View style={s.chapterGrid}>
+                        {Array.from({ length: book.chapters }, (_, index) => index + 1).map(chapter => (
+                          <ChapterCell
+                            key={chapter}
+                            chapter={chapter}
+                            width={chapterCellWidth}
+                            tone={tone}
+                            hasNote={notesByChapter.has(noteKey(book.id, chapter))}
+                            onPress={() => {
+                              if (!isGuided) openChapter(book, chapter);
+                            }}
+                          />
+                        ))}
+                      </View>
+                    )}
                   </Reanimated.View>
                 )}
               </Reanimated.View>
@@ -734,39 +854,58 @@ export default function BibleNotesView({
   );
 }
 
-// A ruled page's own light, raked behind a book that has been written in.
-function NoteRuling() {
+// The room's own light, raked behind a book that has been written in. Rays
+// for the New Testament and the Psalter, horizontal scroll-ruling for the
+// Old — the two motifs Scripture gives its testaments.
+function NoteMotif({ tone }: { tone: NoteTone }) {
   const W = 170;
   const H = 90;
   return (
     <View pointerEvents="none" style={s.noteMotif}>
       <Svg width={W} height={H}>
-        {Array.from({ length: 5 }).map((_, index) => {
-          const y = 12 + index * 17;
-          return (
-            <Line
-              key={index}
-              x1={16}
-              y1={y}
-              x2={W}
-              y2={y}
-              stroke={NOTE_GREEN}
-              strokeOpacity={0.075}
-              strokeWidth={1}
-            />
-          );
-        })}
+        {tone.motif === 'rays'
+          ? Array.from({ length: 5 }).map((_, index) => {
+            const offset = index * 26;
+            return (
+              <Line
+                key={index}
+                x1={W - offset}
+                y1={-6}
+                x2={W - offset - 56}
+                y2={H + 6}
+                stroke={tone.accent}
+                strokeOpacity={0.075}
+                strokeWidth={1}
+              />
+            );
+          })
+          : Array.from({ length: 5 }).map((_, index) => {
+            const y = 12 + index * 17;
+            return (
+              <Line
+                key={index}
+                x1={16}
+                y1={y}
+                x2={W}
+                y2={y}
+                stroke={tone.accent}
+                strokeOpacity={0.085}
+                strokeWidth={1}
+              />
+            );
+          })}
       </Svg>
     </View>
   );
 }
 
 function NotedBookRow({
-  name, count, expanded, onPress,
+  name, count, expanded, tone, onPress,
 }: {
   name: string;
   count: number;
   expanded: boolean;
+  tone: NoteTone;
   onPress: () => void;
 }) {
   // Measured, not scaled: a viewBox would stretch each dot as the leader
@@ -780,17 +919,19 @@ function NotedBookRow({
       activeOpacity={0.88}
       style={[
         s.bookCard,
-        written ? s.bookCardWritten : s.bookCardBlank,
-        expanded && s.bookCardExpanded,
+        written
+          ? [s.bookCardWritten, { backgroundColor: tone.ground, borderColor: tone.border }]
+          : s.bookCardBlank,
+        expanded && { borderColor: tone.pillBorder },
       ]}
     >
-      {written && <NoteRuling />}
-      {written && <View pointerEvents="none" style={s.bookFrame} />}
-      {written && <View pointerEvents="none" style={s.bookFrameInner} />}
+      {written && <NoteMotif tone={tone} />}
+      {written && <View pointerEvents="none" style={[s.bookFrame, { borderColor: tone.frame }]} />}
+      {written && <View pointerEvents="none" style={[s.bookFrameInner, { borderColor: tone.frameInner }]} />}
       <View pointerEvents="none" style={s.bookLit} />
       <View
         pointerEvents="none"
-        style={[s.bookSpine, written ? s.bookSpineWritten : s.bookSpineBlank]}
+        style={[s.bookSpine, { backgroundColor: written ? tone.spine : 'rgba(198,193,183,0.5)' }]}
       />
       <View style={s.bookCopy}>
         <View style={s.bookLine}>
@@ -808,7 +949,7 @@ function NotedBookRow({
                       y1={2}
                       x2={leaderWidth}
                       y2={2}
-                      stroke={NOTE_GREEN}
+                      stroke={tone.leader}
                       strokeOpacity={0.32}
                       strokeWidth={1.4}
                       strokeLinecap="round"
@@ -817,32 +958,69 @@ function NotedBookRow({
                   </Svg>
                 )}
               </View>
-              <Text style={s.bookFolio}>{count}</Text>
+              <Text style={[s.bookFolio, { color: tone.soft }]}>{count}</Text>
             </>
           )}
         </View>
       </View>
-      <View style={[s.chevronWrap, written && s.chevronWrapWritten, expanded && s.chevronOpen]}>
-        <ChevronDown s={13} c={written ? '#8FA986' : '#C7C2B8'} />
+      <View
+        style={[
+          s.chevronWrap,
+          written && { borderColor: tone.pillBorder },
+          expanded && s.chevronOpen,
+        ]}
+      >
+        <ChevronDown s={13} c={written ? tone.soft : '#C7C2B8'} />
       </View>
     </TouchableOpacity>
   );
 }
 
+function ChapterCell({
+  chapter, width, tone, hasNote, onPress,
+}: {
+  chapter: number;
+  width: number;
+  tone: NoteTone;
+  hasNote: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.82}
+      style={[
+        s.chapterCell,
+        { width },
+        hasNote && [s.chapterCellActive, {
+          backgroundColor: tone.ground,
+          borderColor: tone.pillBorder,
+          shadowColor: tone.accent,
+        }],
+      ]}
+    >
+      <View pointerEvents="none" style={s.chapterCellLit} />
+      <Text style={[s.chapterText, hasNote && s.chapterTextActive]}>{chapter}</Text>
+      {hasNote && <View style={[s.noteDot, { backgroundColor: tone.accent }]} />}
+    </TouchableOpacity>
+  );
+}
+
 function TabButton({
-  label, active, count, onPress,
+  label, active, count, tone, onPress,
 }: {
   label: string;
   active: boolean;
   count: number;
+  tone: NoteTone;
   onPress: () => void;
 }) {
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.86} style={[s.tabButton, active && s.tabActive]}>
-      <Text style={[s.tabText, active && s.tabTextActive]}>{label}</Text>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.86} style={s.tabButton}>
+      <Text style={[s.tabText, active && { color: tone.pillText }]} numberOfLines={1}>{label}</Text>
       {count > 0 && (
-        <View style={[s.tabCount, active && s.tabCountActive]}>
-          <Text style={[s.tabCountText, active && s.tabCountTextActive]}>{count}</Text>
+        <View style={[s.tabCount, { backgroundColor: active ? tone.countBgActive : tone.countBg }]}>
+          <Text style={[s.tabCountText, { color: active ? tone.pillText : tone.countText }]}>{count}</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -1069,12 +1247,9 @@ const s = StyleSheet.create({
   tabButton: { flex: 1, minHeight: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5, zIndex: 1 },
   tabActive: {},
   tabText: { fontFamily: F.serifMedium, fontSize: 13.5, color: '#9A968C' },
-  tabTextActive: { color: '#4C6647' },
   tabCount: { minWidth: 17, height: 17, borderRadius: 9, backgroundColor: 'rgba(94,123,85,0.12)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  tabCountActive: { backgroundColor: 'rgba(94,123,85,0.18)' },
   tabCountText: { fontFamily: F.sansBold, fontSize: 8, color: '#6E8A64' },
-  tabCountTextActive: { color: '#4C6647' },
-  bookList: { paddingHorizontal: 16, gap: 7 },
+  bookList: { paddingHorizontal: 16, gap: 5 },
   noBooks: { textAlign: 'center', paddingVertical: 60, fontFamily: F.serif, fontSize: 17, color: '#D1D5DB' },
   // The shelf card of Scripture, read in the notebook's register. A book
   // that has been written in carries the ruled page, the double rule and a
@@ -1145,7 +1320,6 @@ const s = StyleSheet.create({
     borderTopRightRadius: 2,
     borderBottomRightRadius: 2,
   },
-  bookSpineWritten: { backgroundColor: 'rgba(94,123,85,0.45)' },
   bookSpineBlank: { backgroundColor: 'rgba(198,193,183,0.5)' },
   bookCopy: { flex: 1, minWidth: 0, justifyContent: 'center' },
   bookLine: { flexDirection: 'row', alignItems: 'baseline', gap: 9, minWidth: 0 },
@@ -1171,7 +1345,6 @@ const s = StyleSheet.create({
     borderColor: 'rgba(214,209,199,0.5)',
     flexShrink: 0,
   },
-  chevronWrapWritten: { borderColor: 'rgba(94,123,85,0.24)' },
   chevronOpen: { transform: [{ rotate: '180deg' }] },
   chapterGrid: {
     flexDirection: 'row',
@@ -1182,7 +1355,32 @@ const s = StyleSheet.create({
     paddingTop: 9,
     paddingBottom: 7,
   },
+  kathismaHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    marginTop: 12,
+    marginBottom: 7,
+    paddingHorizontal: CHAPTER_GRID_SIDE_PADDING + 2,
+  },
+  kathismaRule: { flex: 1, height: 1 },
+  kathismaDiamond: {
+    width: 4,
+    height: 4,
+    borderRadius: 0.8,
+    transform: [{ rotate: '45deg' }],
+  },
+  kathismaLabel: { fontFamily: F.sansBold, fontSize: 8.8, letterSpacing: 2.1 },
+  chapterCellLit: {
+    position: 'absolute',
+    top: 1,
+    left: 7,
+    right: 7,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
   chapterCell: {
+    overflow: 'hidden',
     minHeight: 44,
     borderRadius: 15,
     borderWidth: 1,
