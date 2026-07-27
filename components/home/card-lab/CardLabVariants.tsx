@@ -83,10 +83,14 @@ type VariantProps = { card: LabCard };
  * deeper tone at the foot — the tint carried a little toward its
  * own title colour, so the richness never leaves the hue.
  *
- * THE MARK AND THE WAY OUT SIT APART. The emblem is a raised
- * seat at the far left, the arrow a quieter one at the far
- * right, and the whole width of the eyebrow lies between them —
- * no chance of reaching for one and catching the other.
+ * THE MARK IS A WATERMARK, NOT A BUTTON. It was sitting in a
+ * raised 42pt disc beside the eyebrow, which made the card's
+ * ornament look like a control and left the eyebrow squeezed
+ * between two round seats. It is large and low in the plate
+ * now, behind the type, and the constellation gathers AROUND
+ * it — which is what it was for in the first place. The only
+ * seat left is the way out, at the far right, where a seat
+ * means something because you can press it.
  *
  * THE SENTENCE IS SET TO BE READ. In Inter, not the serif: this
  * is the line that has to explain the feature to somebody who
@@ -119,7 +123,6 @@ const BTFL_SPARK =
 const BTFL_BEZEL = 5;
 const BTFL_R = 26;
 const BTFL_PLATE_R = BTFL_R - BTFL_BEZEL;
-const BTFL_SEAT = 42;   // the emblem's seat, far left
 const BTFL_EXIT = 34;   // the way out, far right
 
 type Star = {
@@ -136,13 +139,23 @@ type Star = {
   spin: number;
 };
 
+// The mark sits low at the right, and these ring it: two above, two off its
+// shoulders, one below. Scattered across the whole plate they read as dust on
+// the type; gathered here they read as light coming off the emblem.
+// They ring the mark along its upper shoulder — the arc between where the
+// emblem's outline begins and the plate's top right. Spread evenly over the
+// plate they read as dust settled on the type; gathered on that arc they read
+// as light coming off the emblem, which is what Pavle asked for.
 const BTFL_STARS: Star[] = [
-  { right: 60, top: 9, size: 12, phase: 0.0, window: 0.3, peak: 0.8, spin: 0.5 },
-  { right: 132, top: 30, size: 8, phase: 0.42, window: 0.26, peak: 0.5, spin: -0.4 },
-  { right: 26, top: 74, size: 10, phase: 0.68, window: 0.28, peak: 0.66, spin: 0.35 },
-  { right: 98, top: 62, size: 7, phase: 0.22, window: 0.22, peak: 0.46, spin: -0.6 },
-  { right: 42, top: 152, size: 9, phase: 0.85, window: 0.26, peak: 0.56, spin: 0.45 },
+  { right: 104, top: 30, size: 12, phase: 0.0, window: 0.3, peak: 0.72, spin: 0.5 },
+  { right: 58, top: 20, size: 7, phase: 0.22, window: 0.22, peak: 0.44, spin: -0.6 },
+  { right: 24, top: 56, size: 9, phase: 0.42, window: 0.26, peak: 0.5, spin: -0.4 },
+  { right: 134, top: 74, size: 10, phase: 0.68, window: 0.28, peak: 0.58, spin: 0.35 },
+  { right: 88, top: 108, size: 8, phase: 0.85, window: 0.26, peak: 0.46, spin: 0.45 },
 ];
+
+// How large the watermark stands, and where its heart sits in the plate.
+const BTFL_MARK = 132;
 
 function BtflStar({
   star,
@@ -237,7 +250,12 @@ export function VariantBtfl({ card }: VariantProps) {
         <View pointerEvents="none" style={btfl.plateShade} />
         <View pointerEvents="none" style={btfl.plateLit} />
 
-        {/* The constellation, behind the copy */}
+        {/* The mark, low and large behind the type, with the constellation
+            gathered around it. */}
+        <View pointerEvents="none" style={btfl.mark}>
+          <card.Decor s={BTFL_MARK} c={withAlpha(card.decorColor, 0.11)} w={1.1} />
+        </View>
+
         {BTFL_STARS.map((star, i) => (
           <BtflStar key={i} star={star} clock={clock} color={card.decorColor} still={reduceMotion} />
         ))}
@@ -246,19 +264,10 @@ export function VariantBtfl({ card }: VariantProps) {
           {/* The emblem at one end, the way out at the other, the eyebrow
               between them: the two touch targets are a card's width apart. */}
           <View style={btfl.headRow}>
-            <View style={[btfl.seat, { borderColor: withAlpha(card.labelColor, 0.34) }]}>
-              <LinearGradient
-                colors={['#FFFFFF', mixWhite(card.bg, 0.42)]}
-                start={{ x: 0.35, y: 0 }}
-                end={{ x: 0.65, y: 1 }}
-                style={StyleSheet.absoluteFill}
-                pointerEvents="none"
-              />
-              <card.Decor s={21} c={card.arrowBg} w={1.8} />
-              <View pointerEvents="none" style={btfl.seatGlint} />
-            </View>
-
-            <Text style={[btfl.label, { color: ink }]} numberOfLines={1}>
+            {/* The eyebrow, set as an engraved line: a short bar in the card's
+                own colour, then the words, spaced but no longer shouting. */}
+            <View style={[btfl.labelBar, { backgroundColor: withAlpha(card.labelColor, 0.55) }]} />
+            <Text style={[btfl.label, { color: card.labelColor }]} numberOfLines={1}>
               {card.label}
             </Text>
 
@@ -352,33 +361,19 @@ const btfl = StyleSheet.create({
 
   body: { paddingHorizontal: 19, paddingTop: 13, paddingBottom: 17 },
 
-  headRow: { flexDirection: 'row', alignItems: 'center', columnGap: 12 },
+  headRow: { flexDirection: 'row', alignItems: 'center', columnGap: 9 },
   headSpacer: { flex: 1, minWidth: 16 },
   // A raised seat, lit across its face like every other jewel in this app.
-  seat: {
-    width: BTFL_SEAT,
-    height: BTFL_SEAT,
-    borderRadius: BTFL_SEAT / 2,
-    borderWidth: 1,
+  // Low and to the right, and allowed to run off the plate's foot — a
+  // watermark is a thing the card is printed over, not a thing placed on it.
+  mark: {
+    position: 'absolute',
+    // Far enough out that only its shoulder is on the plate: at -18/-26 the
+    // emblem's points reached up into the description and crossed the type.
+    right: -32,
+    bottom: -36,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
-    flexShrink: 0,
-    shadowColor: '#2A2118',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  seatGlint: {
-    position: 'absolute',
-    top: 5,
-    left: 10,
-    width: 12,
-    height: 4.5,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    transform: [{ rotate: '-22deg' }],
   },
   exit: {
     width: BTFL_EXIT,
@@ -392,7 +387,11 @@ const btfl = StyleSheet.create({
   },
   exitTilt: { transform: [{ rotate: '-15deg' }] },
 
-  label: { fontFamily: F.sansBold, fontSize: 9.5, lineHeight: 12, letterSpacing: 2.2 },
+  // The eyebrow. It was 9.5 at 2.2 tracking in the body ink — small, loose
+  // and grey, so it read as a caption that had lost its way rather than as
+  // the card's own heading. Bigger, tighter, and in the card's colour.
+  label: { fontFamily: F.sansBold, fontSize: 10.5, lineHeight: 13, letterSpacing: 1.5 },
+  labelBar: { width: 14, height: 2, borderRadius: 1, flexShrink: 0 },
 
   titleBlock: { alignSelf: 'flex-start', marginTop: 12 },
   title: {
@@ -944,7 +943,11 @@ const one = StyleSheet.create({
   body: { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 20 },
   // Clears the seal: its 18 inset + 62 width − this 22 padding + a 12 gap.
   head: { paddingRight: 70 },
-  label: { fontFamily: F.sansBold, fontSize: 9.5, lineHeight: 12, letterSpacing: 2.2 },
+  // The eyebrow. It was 9.5 at 2.2 tracking in the body ink — small, loose
+  // and grey, so it read as a caption that had lost its way rather than as
+  // the card's own heading. Bigger, tighter, and in the card's colour.
+  label: { fontFamily: F.sansBold, fontSize: 10.5, lineHeight: 13, letterSpacing: 1.5 },
+  labelBar: { width: 14, height: 2, borderRadius: 1, flexShrink: 0 },
   title: {
     marginTop: 5,
     fontFamily: F.serifSemiBold,
