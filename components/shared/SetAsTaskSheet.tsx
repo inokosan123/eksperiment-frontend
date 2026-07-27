@@ -35,7 +35,6 @@ import {
   ChevronDown,
   Cross,
   Feather,
-  Flame,
   Moon,
   Notebook,
   OpenBook,
@@ -47,7 +46,6 @@ import {
   Sparkles,
   Sun,
   Trash2,
-  Trophy,
   Utensils,
   X,
 } from '@/components/icons/Icons';
@@ -75,6 +73,69 @@ const NativeDateTimePickerAndroid = DateTimePickerModule?.DateTimePickerAndroid 
 const STREAK_FLAME_PNG = require('@/assets/images/streak-flame.png');
 const ROUTINE_TASK_ACCENT = '#1F2937';
 const ROUTINE_TASK_ACCENT_MUTED = '#57534E';
+
+// The two sides of this switch are two different things, so they are shown
+// as the app's own currencies rather than as two line icons from the same
+// set: a challenge is a trophy, a spiritual task is a flame, a journal
+// routine is a book. Each sits in the trophy's own double disc — a warmer
+// outer ring and a paler heart — so the three read as one family struck to
+// one pattern. Line icons said "two options"; these say what each one is.
+const SEGMENT_FLAME = require('@/assets/images/streak-flame-512.png');
+const SEGMENT_BOOK = require('@/assets/images/streak-book-512.png');
+
+function SegmentEmblem({
+  kind,
+  active,
+}: {
+  kind: 'flame' | 'book' | 'trophy';
+  active: boolean;
+}) {
+  if (kind === 'trophy') {
+    // The challenge screen's own trophy, which already carries this disc.
+    return <StaticChallengeTrophy size={32} style={!active && seg.emblemResting} />;
+  }
+  return (
+    <View style={[seg.emblemSeat, !active && seg.emblemResting]}>
+      <View style={seg.emblemDisc} />
+      <View style={seg.emblemHeart} />
+      <Image
+        source={kind === 'flame' ? SEGMENT_FLAME : SEGMENT_BOOK}
+        style={seg.emblemArt}
+        resizeMode="contain"
+      />
+    </View>
+  );
+}
+
+const seg = StyleSheet.create({
+  // The trophy's own construction, to the point. Its discs are 52 and 41 of
+  // a 120 box, so at 32 they come out 28 and 22 — the box stays 32 so both
+  // emblems sit on the same centre and the two halves of the switch line up.
+  emblemSeat: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emblemDisc: {
+    position: 'absolute',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FFF4D6',
+  },
+  emblemHeart: {
+    position: 'absolute',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFF9E8',
+  },
+  emblemArt: { width: 17, height: 17 },
+  // Unselected, the emblem is still itself — only dimmer. Greying it out
+  // would have thrown away the one thing worth showing.
+  emblemResting: { opacity: 0.55 },
+});
 const ROUTINE_TASK_SOFT = '#F5F5F4';
 const ROUTINE_TASK_BORDER = '#D6D3D1';
 
@@ -1100,11 +1161,10 @@ export default function SetAsTaskSheet({
                 activeOpacity={0.86}
                 style={s.segmentBtn}
               >
-                {context === 'journal' ? (
-                  <Notebook s={16} c={primaryTaskTabActive ? '#FFFFFF' : primaryTaskTabMuted} />
-                ) : (
-                  <Flame s={16} color={primaryTaskTabActive ? '#FFFFFF' : primaryTaskTabMuted} filled={primaryTaskTabActive} />
-                )}
+                <SegmentEmblem
+                  kind={context === 'journal' ? 'book' : 'flame'}
+                  active={primaryTaskTabActive}
+                />
                 <Text style={[s.segmentText, primaryTaskTabActive && s.segmentTextActive]}>{primaryTaskTabLabel}</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -1112,7 +1172,7 @@ export default function SetAsTaskSheet({
                 activeOpacity={0.86}
                 style={s.segmentBtn}
               >
-                <Trophy s={16} c={taskTab === 'challenge' ? '#FFFFFF' : '#C5A059'} />
+                <SegmentEmblem kind="trophy" active={taskTab === 'challenge'} />
                 <Text style={[s.segmentText, taskTab === 'challenge' && s.segmentTextActive]}>CHALLENGE</Text>
               </TouchableOpacity>
             </View>
@@ -1812,6 +1872,7 @@ export function ChallengePanel({
   onChallengeJesusCountChange,
   onChurchScheduleChange,
   onStartChallenge,
+  onChallengePress,
   onExpandedChallengeChange,
   onPauseChallenge,
   onResumeChallenge,
@@ -1847,6 +1908,7 @@ export function ChallengePanel({
   onChallengeJesusCountChange: (value: string) => void;
   onChurchScheduleChange?: (value: ChallengeChurchScheduleDraft) => void;
   onStartChallenge: () => void | Promise<void>;
+  onChallengePress?: (item: ChallengeRecord) => void;
   onExpandedChallengeChange: (id: string | null) => void;
   onPauseChallenge: (id: string) => void | Promise<void>;
   onResumeChallenge: (id: string) => void | Promise<void>;
@@ -1920,6 +1982,10 @@ export function ChallengePanel({
   };
 
   const toggleActiveChallenge = (item: ChallengeRecord, expanded: boolean) => {
+    if (onChallengePress) {
+      onChallengePress(item);
+      return;
+    }
     animateSoftLayoutChange();
     if (expanded) {
       onExpandedChallengeChange(null);
@@ -3534,18 +3600,19 @@ const s = StyleSheet.create({
   },
   segmentBtn: {
     flex: 1,
-    minHeight: 46,
+    // 52, up from 46: the emblems are 32 and were crowding a 46 band.
+    minHeight: 52,
     borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 9,
     zIndex: 1,
   },
   segmentText: {
     fontFamily: F.sansBold,
     fontSize: 11,
-    letterSpacing: 2,
+    letterSpacing: 1.6,
     color: '#A8A29E',
     textTransform: 'uppercase',
   },
