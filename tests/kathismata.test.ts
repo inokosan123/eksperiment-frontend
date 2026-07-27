@@ -6,8 +6,9 @@ test('twenty kathismata, contiguous, covering 1-150 exactly once', () => {
   assert.equal(KATHISMATA.length, 20);
   const seen = new Set<number>();
   KATHISMATA.forEach((k, i) => {
-    assert.ok(k.to >= k.from, `${k.numeral} range inverted`);
-    if (i > 0) assert.equal(k.from, KATHISMATA[i - 1].to + 1, `${k.numeral} not contiguous`);
+    assert.ok(k.to >= k.from, `kathisma ${k.number} range inverted`);
+    if (i > 0) assert.equal(k.from, KATHISMATA[i - 1].to + 1, `kathisma ${k.number} not contiguous`);
+    assert.equal(k.number, i + 1, 'kathismata are numbered 1..20 in order');
     for (let n = k.from; n <= k.to; n += 1) {
       assert.ok(!seen.has(n), `psalm ${n} appears twice`);
       seen.add(n);
@@ -32,11 +33,22 @@ test('a filtered psalter keeps its divisions and drops the empty ones', () => {
   assert.equal(sections.length, 2);
   assert.deepEqual(sections[0].psalms, [1, 2]);
   assert.deepEqual(sections[1].psalms, [100]);
-  assert.match(sections[1].label, /KATHISMA XIII/);
+  assert.match(sections[1].label, /KATHISMA 13/);
 });
 
-test('kathisma XVII is the single psalm 118', () => {
+test('kathisma 17 is the single psalm 118', () => {
   const sections = groupPsalmsIntoKathismata([118]);
   assert.equal(sections.length, 1);
-  assert.equal(sections[0].label, 'KATHISMA XVII · PSALM 118');
+  assert.equal(sections[0].label, 'KATHISMA 17 · PSALM 118');
+});
+
+test('no label carries a Roman numeral', () => {
+  const all = Array.from({ length: 151 }, (_, i) => i + 1);
+  for (const section of groupPsalmsIntoKathismata(all)) {
+    assert.doesNotMatch(
+      section.label,
+      /KATHISMA\s+[IVXLC]+/,
+      `${section.label} still reads in Roman numerals`,
+    );
+  }
 });
