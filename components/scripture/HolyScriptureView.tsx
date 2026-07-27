@@ -1311,26 +1311,34 @@ function PremiumBookCard({
           ]}
         />
       )}
+      {/* A book's own contents page: the name, a leader ruled across to the
+          count, and the count. Stacking the two on separate lines cost the
+          card 18pt of height and made a list of short names look like a list
+          of paragraphs. */}
       <View style={s.bookCopy}>
-        <Reanimated.Text
-          numberOfLines={1}
-          onLayout={event => setTitleWidth(event.nativeEvent.layout.width)}
-          style={[s.bookName, titleStyle]}
-        >
-          {book.name}
-        </Reanimated.Text>
-        <Reanimated.View style={[s.bookMetaRow, expanded && { display: 'none' }, fadeAwayStyle]}>
-          <View style={[s.metaDiamond, { backgroundColor: isGreen ? 'rgba(94,123,85,0.55)' : 'rgba(180,155,103,0.6)' }]} />
-          <Text style={[s.bookMeta, { color: isGreen ? '#7E9270' : '#A48F6C' }]}>
-            {book.chapters} {book.chapters === 1 ? 'CHAPTER' : 'CHAPTERS'}{isDeutero ? ' · DEUTEROCANON' : ''}
-          </Text>
-        </Reanimated.View>
+        <View style={s.bookLine}>
+          <Reanimated.Text
+            numberOfLines={1}
+            onLayout={event => setTitleWidth(event.nativeEvent.layout.width)}
+            style={[s.bookName, titleStyle]}
+          >
+            {book.name}
+          </Reanimated.Text>
+          <Reanimated.View style={[s.bookTail, expanded && { display: 'none' }, fadeAwayStyle]}>
+            <View style={[s.bookLeader, { backgroundColor: isGreen ? 'rgba(94,123,85,0.16)' : 'rgba(180,155,103,0.18)' }]} />
+            {isDeutero && (
+              <Text style={[s.bookMeta, { color: isGreen ? '#8AA07C' : '#B09B76' }]}>DEUTEROCANON</Text>
+            )}
+            <View style={[s.metaDiamond, { backgroundColor: isGreen ? 'rgba(94,123,85,0.5)' : 'rgba(180,155,103,0.55)' }]} />
+            <Text style={[s.bookMeta, { color: isGreen ? '#8AA07C' : '#B09B76' }]}>{book.chapters}</Text>
+          </Reanimated.View>
+        </View>
       </View>
       <Reanimated.View
-        style={[s.chevronSeat, { borderColor: isGreen ? 'rgba(94,123,85,0.24)' : 'rgba(180,155,103,0.28)' }, fadeAwayStyle]}
+        style={[s.bookChevronSeat, { borderColor: isGreen ? 'rgba(94,123,85,0.22)' : 'rgba(180,155,103,0.26)' }, fadeAwayStyle]}
         pointerEvents="none"
       >
-        <ChevronRight s={15} c={isGreen ? '#8FA986' : '#BCA476'} />
+        <ChevronRight s={13} c={isGreen ? '#8FA986' : '#BCA476'} />
       </Reanimated.View>
       {/* The gradient ground swallows the native border at the rounded top
           corners of the open card — redraw the boundary line above it. */}
@@ -1844,8 +1852,8 @@ const s = StyleSheet.create({
     marginTop: 10,
     borderRadius: 21,
     borderWidth: 1,
-    padding: 12,
-    gap: 8,
+    padding: 10,
+    gap: 6,
     overflow: 'hidden',
     shadowColor: '#0F172A',
     shadowOpacity: 0.04,
@@ -1861,12 +1869,15 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   premiumBook: {
-    minHeight: 72,
+    // 54, down from 72. The name and its count now share a line, so the card
+    // only ever needed one line's worth of height.
+    minHeight: 54,
     borderRadius: 18,
     borderWidth: 1,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
-    paddingVertical: 13,
+    paddingHorizontal: 12,
+    paddingLeft: 14,
+    paddingVertical: 9,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -1885,8 +1896,8 @@ const s = StyleSheet.create({
   },
   // The open card folds to a heading band: title only, centered.
   premiumBookCompact: {
-    minHeight: 50,
-    paddingVertical: 9,
+    minHeight: 44,
+    paddingVertical: 7,
   },
   openTopFrame: {
     ...StyleSheet.absoluteFillObject,
@@ -1902,12 +1913,14 @@ const s = StyleSheet.create({
     bottom: 0,
     overflow: 'hidden',
   },
+  // The board of the book, standing clear of the card's ends rather than
+  // running the full edge like a stripe.
   bookSpine: {
     position: 'absolute',
     left: 0,
-    top: 11,
-    bottom: 11,
-    width: 3,
+    top: 9,
+    bottom: 9,
+    width: 2.5,
     borderTopRightRadius: 2,
     borderBottomRightRadius: 2,
   },
@@ -1921,15 +1934,29 @@ const s = StyleSheet.create({
     borderWidth: 1,
   },
   bookCopy: { flex: 1, minWidth: 0, justifyContent: 'center' },
-  bookName: { alignSelf: 'flex-start', fontFamily: F.serif, fontSize: 20, lineHeight: 24, letterSpacing: 0.2, color: '#2F2B27' },
-  bookMetaRow: { marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  bookLine: { flexDirection: 'row', alignItems: 'baseline', gap: 9, minWidth: 0 },
+  bookName: { fontFamily: F.serif, fontSize: 17.5, lineHeight: 21, letterSpacing: 0.25, color: '#2F2B27', flexShrink: 1 },
+  // The leader: it takes whatever the name leaves, so short books rule far
+  // and long ones rule barely at all.
+  bookTail: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  bookLeader: { flex: 1, minWidth: 8, height: 1 },
   metaDiamond: {
     width: 4,
     height: 4,
     borderRadius: 0.8,
     transform: [{ rotate: '45deg' }],
   },
-  bookMeta: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.6 },
+  bookMeta: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5 },
+  bookChevronSeat: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
   chevronSeat: {
     width: 30,
     height: 30,
