@@ -9,7 +9,7 @@ import { Image,
   StyleSheet,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Ellipse, Line, Path } from 'react-native-svg';
+import Svg, { Circle, Defs, Ellipse, Line, Path, RadialGradient, Stop } from 'react-native-svg';
 import Reanimated, {
   cancelAnimation,
   Easing,
@@ -129,7 +129,10 @@ function Sparkle({
     t.value = withDelay(
       delay,
       withRepeat(
-        withTiming(1, { duration: slow ? 4400 : 2400, easing: Easing.inOut(Easing.quad) }),
+        // 2800ms is the sun's breath. Everything that breathes on this card
+        // breathes with it — the sparks used to run at their own 2400 and
+        // the whole surface shimmered slightly out of step with itself.
+        withTiming(1, { duration: slow ? 5600 : 2800, easing: Easing.inOut(Easing.quad) }),
         -1,
         true,
       ),
@@ -183,7 +186,9 @@ const GLINT: Record<GlintVariant, {
   core: readonly [string, string, string, string, string];
 }> = {
   active: {
-    duration: 7000,
+    // Three breaths exactly (3 × 2800): the sweep arrives on the beat the
+    // card is already keeping instead of drifting against it.
+    duration: 8400,
     arrival: 0.44,
     peak: 0.95,
     corePeak: 0.9,
@@ -307,14 +312,50 @@ function DawnBackdrop({ muted = false, palette }: { muted?: boolean; palette: Ba
           })}
         </Svg>
       )}
-      {/* A struck page does not twinkle — its palette returns no spark. */}
+      {/* A struck page does not twinkle — its palette returns no spark.
+          Two sparks, and both stand clear of the hero: the sun is the thing
+          that moves on this card, and a spark crossing its rays only made
+          the corner look restless. One waits in the far corner the light
+          never reaches, the other is thrown off the fire. */}
       {sparkleColor !== null && (
         <>
-          <Sparkle size={13} delay={0} style={{ right: 86, top: 30 }} color={sparkleColor} slow={muted} />
-          <Sparkle size={9} delay={900} style={{ right: 16, top: 18 }} color={sparkleColor} slow={muted} />
-          <Sparkle size={8} delay={1700} style={{ left: 148, top: 24 }} color={sparkleColor} slow={muted} />
-          <Sparkle size={11} delay={2600} style={{ left: 20, top: 118 }} color={sparkleColor} slow={muted} />
+          <Sparkle size={11} delay={0} style={{ left: 17, top: 22 }} color={sparkleColor} slow={muted} />
+          <Sparkle size={8} delay={1600} style={{ right: 30, top: 104 }} color={sparkleColor} slow={muted} />
         </>
+      )}
+    </View>
+  );
+}
+
+/* ── Hero wash ────────────────────────────────────────────── */
+// The reading and the fire each brought their own radiance, so the card had
+// two suns and the eye had nowhere to land. This is the ground they now
+// share: one soft pool of warmth lying UNDER the hero — brightest beneath
+// the fire, because the fire is the light here, and falling away to
+// nothing across the number. Laid low on purpose. A pool drawn over their
+// faces would only have flattened the bloom it was meant to join.
+function HeroWash() {
+  const [w, setW] = useState(0);
+  const band = 200;
+
+  return (
+    <View
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      onLayout={event => setW(event.nativeEvent.layout.width)}
+    >
+      {w > 0 && (
+        <Svg width={w} height={band}>
+          <Defs>
+            <RadialGradient id="heroWash" cx="50%" cy="50%" r="50%">
+              <Stop offset="0" stopColor="#FFF3D2" stopOpacity={0.72} />
+              <Stop offset="0.5" stopColor="#F9E9C2" stopOpacity={0.34} />
+              <Stop offset="1" stopColor="#F6E4B6" stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          {/* Seated under the fire, which stands at the right of the row. */}
+          <Ellipse cx={w - 76} cy={118} rx={w * 0.74} ry={62} fill="url(#heroWash)" />
+        </Svg>
       )}
     </View>
   );
@@ -370,35 +411,61 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
         height={height * 1.12}
         style={{ position: 'absolute', left: -width * 0.07, top: -height * 0.06 }}
       >
-        {/* Layered ellipses, darker rim to lightest heart — the number sits
-            in the brightest pool. */}
-        <Ellipse
-          cx={width * 0.52}
-          cy={height * 0.56}
-          rx={width * 0.52}
-          ry={height * 0.52}
-          fill={banked ? pal.bloomRim : '#EBD5A0'}
-          opacity={0.8}
-          transform={`rotate(-5 ${width * 0.52} ${height * 0.56})`}
-        />
-        <Ellipse
-          cx={width * 0.52}
-          cy={height * 0.53}
-          rx={width * 0.46}
-          ry={height * 0.44}
-          fill={banked ? pal.bloomMid : '#F5E5BE'}
-          opacity={0.85}
-          transform={`rotate(4 ${width * 0.52} ${height * 0.53})`}
-        />
-        <Ellipse
-          cx={width * 0.49}
-          cy={height * 0.57}
-          rx={width * 0.42}
-          ry={height * 0.39}
-          fill={banked ? pal.bloomHeart : '#FFF8E4'}
-          opacity={0.95}
-          transform={`rotate(-3 ${width * 0.49} ${height * 0.57})`}
-        />
+        {/* Live, the bloom is real light: one pool that fades out instead of
+            three flat ellipses stacked. Stacked, their edges drew a hard
+            gold ring around the number — a lasso, not a glow — and that ring
+            was half the reason the card looked crowded. Banked, the layered
+            rims stay: a gauge out of service should read as struck metal,
+            not as light. */}
+        {banked ? (
+          <>
+            <Ellipse
+              cx={width * 0.52}
+              cy={height * 0.56}
+              rx={width * 0.52}
+              ry={height * 0.52}
+              fill={pal.bloomRim}
+              opacity={0.8}
+              transform={`rotate(-5 ${width * 0.52} ${height * 0.56})`}
+            />
+            <Ellipse
+              cx={width * 0.52}
+              cy={height * 0.53}
+              rx={width * 0.46}
+              ry={height * 0.44}
+              fill={pal.bloomMid}
+              opacity={0.85}
+              transform={`rotate(4 ${width * 0.52} ${height * 0.53})`}
+            />
+            <Ellipse
+              cx={width * 0.49}
+              cy={height * 0.57}
+              rx={width * 0.42}
+              ry={height * 0.39}
+              fill={pal.bloomHeart}
+              opacity={0.95}
+              transform={`rotate(-3 ${width * 0.49} ${height * 0.57})`}
+            />
+          </>
+        ) : (
+          <>
+            <Defs>
+              <RadialGradient id="todayBloom" cx="50%" cy="50%" r="50%">
+                <Stop offset="0" stopColor="#FFFCF1" stopOpacity={1} />
+                <Stop offset="0.42" stopColor="#FDF2D8" stopOpacity={0.92} />
+                <Stop offset="0.72" stopColor="#F4E3B6" stopOpacity={0.52} />
+                <Stop offset="1" stopColor="#EBD5A0" stopOpacity={0} />
+              </RadialGradient>
+            </Defs>
+            <Ellipse
+              cx={width * 0.5}
+              cy={height * 0.55}
+              rx={width * 0.56}
+              ry={height * 0.68}
+              fill="url(#todayBloom)"
+            />
+          </>
+        )}
         {/* The progress track. Solid while the day can still be written,
             dashed once it is banked — a gauge visibly taken out of service. */}
         <Path
@@ -473,8 +540,15 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
         <View style={[ms.copyRule, banked && { backgroundColor: pal.line }]} />
       </View>
 
-      <View pointerEvents="none" style={[ms.glint, { right: size * 0.05, top: height * 0.08 }, banked && { backgroundColor: pal.line }]} />
-      <View pointerEvents="none" style={[ms.glintSmall, { right: size * 0.42, top: height * 0.86 }, banked && { backgroundColor: pal.line }]} />
+      {/* Banked, the reading keeps its two struck glints — they are what is
+          left of the instrument when the fire is out. Live, the sun holds
+          the only diamonds on the card. */}
+      {banked && (
+        <>
+          <View pointerEvents="none" style={[ms.glint, { right: size * 0.05, top: height * 0.08 }, { backgroundColor: pal.line }]} />
+          <View pointerEvents="none" style={[ms.glintSmall, { right: size * 0.42, top: height * 0.86 }, { backgroundColor: pal.line }]} />
+        </>
+      )}
     </View>
   );
 }
@@ -599,16 +673,43 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
     opacity: banked ? 0.34 : 0.5 + breathe.value * 0.4,
   }));
 
+  // The live sun breathes as one body of light rather than pulsing a single
+  // outer disc, so the swell is gentler than the old 0.5→0.9.
+  const sunGlowStyle = useAnimatedStyle(() => ({
+    opacity: 0.8 + breathe.value * 0.2,
+  }));
+
   const spinStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${spin.value * 360}deg` }],
   }));
 
   return (
     <View style={rf.stage}>
-      {/* Layered radiance — the bloom grammar, radial */}
-      <Reanimated.View pointerEvents="none" style={[rf.glowOuter, outerGlowStyle, banked && { backgroundColor: pal.glowOuter }]} />
-      <View pointerEvents="none" style={[rf.glowMid, banked && { backgroundColor: pal.glowMid }]} />
-      <View pointerEvents="none" style={[rf.glowHeart, full && rf.glowHeartFull, banked && { backgroundColor: pal.glowHeart }]} />
+      {/* The radiance. Live, it is one soft body of light: three flat discs
+          stacked read as a pale ball with a hard rim, and the fire sat on it
+          instead of inside it. Banked, the discs stay — a coal under ash is
+          a solid thing, not a glow. */}
+      {banked ? (
+        <>
+          <Reanimated.View pointerEvents="none" style={[rf.glowOuter, outerGlowStyle, { backgroundColor: pal.glowOuter }]} />
+          <View pointerEvents="none" style={[rf.glowMid, { backgroundColor: pal.glowMid }]} />
+          <View pointerEvents="none" style={[rf.glowHeart, { backgroundColor: pal.glowHeart }]} />
+        </>
+      ) : (
+        <Reanimated.View pointerEvents="none" style={[rf.rays, sunGlowStyle]}>
+          <Svg width={field} height={field}>
+            <Defs>
+              <RadialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
+                <Stop offset="0" stopColor="#FFFDF4" stopOpacity={1} />
+                <Stop offset="0.3" stopColor="#FFF6DF" stopOpacity={0.95} />
+                <Stop offset="0.58" stopColor="#F8E6BC" stopOpacity={0.6} />
+                <Stop offset="1" stopColor="#EBD5A0" stopOpacity={0} />
+              </RadialGradient>
+            </Defs>
+            <Circle cx={cx} cy={cx} r={full ? ringR + 14 : ringR + 10} fill="url(#sunGlow)" />
+          </Svg>
+        </Reanimated.View>
+      )}
 
       {/* Hairline halo ring — steady while the rays turn, and broken into
           dashes once the sun is banked. */}
@@ -717,12 +818,6 @@ const rf = StyleSheet.create({
     borderRadius: 27,
     backgroundColor: 'rgba(255,248,228,0.95)',
   },
-  glowHeartFull: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: 'rgba(255,250,232,1)',
-  },
   emberSeat: {
     bottom: 24,
   },
@@ -767,7 +862,9 @@ const rf = StyleSheet.create({
 // full week never stacks seven looping animations on the phone. Each day
 // is struck as a small coin, and every state has its own mint:
 //   won (100%)   — a gold medal: layered face, raised inner ring, a warm
-//                  halo behind a full-colour flame, sheen and glints;
+//                  halo behind a full-colour flame, and one sheen. The two
+//                  diamond glints came off: seven medals meant fourteen
+//                  more sparks on a card whose fire should hold them all;
 //   rising (<100)— the fire climbs bottom-up behind a gold meniscus line;
 //   missed (0%)  — an oxblood coin, the flame gone cold and red;
 //   awaiting     — today at 0%: a warm, neutral coin, the day still open;
@@ -775,15 +872,6 @@ const rf = StyleSheet.create({
 //   empty        — no tasks: a dashed socket with a resting stud.
 
 const TOKEN = 38;
-
-function TokenGlints() {
-  return (
-    <>
-      <View pointerEvents="none" style={[tok.glint, { right: 5, top: 7 }]} />
-      <View pointerEvents="none" style={[tok.glintSmall, { left: 7, bottom: 9 }]} />
-    </>
-  );
-}
 
 // 100% — a struck gold medal.
 function WonMedal() {
@@ -800,7 +888,6 @@ function WonMedal() {
       <View pointerEvents="none" style={tok.heartGlow} />
       <Image key="flame-full" source={FLAME_PNG} style={tok.flameFull} />
       <View pointerEvents="none" style={tok.sheen} />
-      <TokenGlints />
     </View>
   );
 }
@@ -1041,22 +1128,6 @@ const tok = StyleSheet.create({
     backgroundColor: 'rgba(255,253,246,0.85)',
     transform: [{ rotate: '-18deg' }],
   },
-  glint: {
-    position: 'absolute',
-    width: 3.5,
-    height: 3.5,
-    borderRadius: 0.5,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    transform: [{ rotate: '45deg' }],
-  },
-  glintSmall: {
-    position: 'absolute',
-    width: 2.5,
-    height: 2.5,
-    borderRadius: 0.5,
-    backgroundColor: 'rgba(255,250,232,0.75)',
-    transform: [{ rotate: '45deg' }],
-  },
 });
 
 /* ── Main ─────────────────────────────────────────────────── */
@@ -1190,13 +1261,21 @@ export default function WeeklyRhythm() {
         onPress={() => setProgressCalendarOpen(true)}
         accessibilityLabel="Open daily trophy streak"
       >
+        {/* Same dawn tones, but the sweep now runs the way the light does:
+            almost level, deep gold at the left edge and palest where the
+            fire stands. It used to fall diagonally to the bottom-right
+            corner — nothing on the card was lit from there. The left stays
+            deep on purpose: it is the ground the reading's bloom needs to
+            read against. */}
         <LinearGradient
           colors={banked ? todayPal.surface : ['#F8E7BE', '#FFF8E9', '#FFFEFA']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+          start={banked ? { x: 0, y: 0 } : { x: 0, y: 0.08 }}
+          end={banked ? { x: 1, y: 1 } : { x: 1, y: 0.72 }}
           style={StyleSheet.absoluteFill}
         />
         <DawnBackdrop muted={banked} palette={todayPal} />
+        {/* One pool of light welding the reading to the fire. */}
+        {!banked && <HeroWash />}
         {/* The struck card is held under white light — wash from the top,
             hairline rim inside the border. */}
         {skippedToday && <StruckLight radius={24} />}
@@ -1222,6 +1301,7 @@ export default function WeeklyRhythm() {
         <Text
           style={[
             s.headline,
+            !banked && s.headlineActive,
             banked && [s.headlineBanked, s.headlineBankedSolo, { color: todayPal.ink }],
           ]}
           numberOfLines={2}
@@ -1341,13 +1421,23 @@ const s = StyleSheet.create({
     paddingRight: 8,
   },
   restSeal: { marginTop: 14 },
+  // Close under the hero, because the line is the hero's caption; the week
+  // then takes the air that the gap used to waste.
   headline: {
-    marginTop: 13,
+    marginTop: 9,
     fontFamily: F.serif,
     fontSize: 14.5,
     lineHeight: 19,
     color: C.textSecondary,
     textAlign: 'center',
+  },
+  // Live, the line is the reading's own caption: it hangs off the same left
+  // margin as the number instead of floating, centred, between two
+  // ornaments that were never centred themselves.
+  headlineActive: {
+    textAlign: 'left',
+    paddingLeft: 6,
+    paddingRight: 4,
   },
   // Colour comes from the register's palette at the call site.
   headlineBanked: {
@@ -1362,12 +1452,14 @@ const s = StyleSheet.create({
   // The token band, framed by hairline rails. Generous, balanced padding so
   // the 38px coins — heavy with their borders and glows — never crowd the
   // rails, and the letters sit clear of today's pulse halo above their coins.
+  // One rail, not two. Boxed between hairlines the week read as a table
+  // pasted under a poster; with only the top rule it belongs to the card,
+  // and the coins close on the card's own bottom padding.
   weekBand: {
-    marginTop: 16,
+    marginTop: 19,
     paddingTop: 15,
-    paddingBottom: 16,
+    paddingBottom: 2,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: '#EADFC8',
   },
   daysLabelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 11 },
