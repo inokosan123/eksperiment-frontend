@@ -104,24 +104,37 @@ function buildWeek(todayKey: string): { dateKey: string; letter: string; isToday
 
 const SPARKLE_PATH = 'M12 0 C13.2 7.4 16.6 10.8 24 12 C16.6 13.2 13.2 16.6 12 24 C10.8 16.6 7.4 13.2 0 12 C7.4 10.8 10.8 7.4 12 0 Z';
 
-function Sparkle({
+// The card's dust — deliberately NOT one ornament tiled seven times. Four-
+// point stars carry the light and twinkle; round motes are the quiet ones,
+// mostly still; struck diamonds never move at all. Sizes run from 11 down
+// to 2.5. Read together they scatter like real dust rather than like a
+// pattern, which is the whole point of having more than a couple.
+type MoteKind = 'star' | 'dot' | 'diamond';
+
+function Mote({
+  kind,
   size,
-  delay,
+  delay = 0,
   style,
   color = GOLD,
   slow = false,
+  still = false,
+  peak = 0.42,
 }: {
+  kind: MoteKind;
   size: number;
-  delay: number;
+  delay?: number;
   style: object;
   color?: string;
   slow?: boolean;
+  still?: boolean;
+  peak?: number;
 }) {
   const reduceMotion = useReducedMotion();
   const t = useSharedValue(0);
 
   useEffect(() => {
-    if (reduceMotion) {
+    if (reduceMotion || still) {
       t.value = 0.5;
       return;
     }
@@ -138,21 +151,38 @@ function Sparkle({
       ),
     );
     return () => cancelAnimation(t);
-  }, [reduceMotion, delay, slow, t]);
+  }, [reduceMotion, delay, slow, still, t]);
 
-  // Banked: the sparks are half as bright and take nearly twice as long.
+  // Banked: the dust is half as bright and takes nearly twice as long.
   const twinkle = useAnimatedStyle(() => ({
-    opacity: slow ? 0.07 + t.value * 0.19 : 0.14 + t.value * 0.42,
+    opacity: slow ? 0.07 + t.value * peak * 0.45 : 0.13 + t.value * peak,
   }));
 
   return (
-    <Reanimated.View pointerEvents="none" style={[{ position: 'absolute' }, style, twinkle]}>
-      <Svg width={size} height={size} viewBox="0 0 24 24">
-        <Path d={SPARKLE_PATH} fill={color} />
-      </Svg>
+    <Reanimated.View pointerEvents="none" style={[bg.mote, style, twinkle]}>
+      {kind === 'star' ? (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Path d={SPARKLE_PATH} fill={color} />
+        </Svg>
+      ) : (
+        <View
+          style={{
+            width: size,
+            height: size,
+            // A round mote, or a struck one turned on its corner.
+            borderRadius: kind === 'dot' ? size / 2 : size * 0.16,
+            backgroundColor: color,
+            transform: kind === 'diamond' ? [{ rotate: '45deg' }] : undefined,
+          }}
+        />
+      )}
     </Reanimated.View>
   );
 }
+
+const bg = StyleSheet.create({
+  mote: { position: 'absolute' },
+});
 
 // A band of light that sweeps across the whole card every few seconds —
 // the glint grammar of the focus cards. It comes in three keys so a
@@ -312,15 +342,24 @@ function DawnBackdrop({ muted = false, palette }: { muted?: boolean; palette: Ba
           })}
         </Svg>
       )}
-      {/* A struck page does not twinkle — its palette returns no spark.
-          Two sparks, and both stand clear of the hero: the sun is the thing
-          that moves on this card, and a spark crossing its rays only made
-          the corner look restless. One waits in the far corner the light
-          never reaches, the other is thrown off the fire. */}
+      {/* A struck page does not twinkle — its palette returns no dust.
+          Everything here keeps to the card's edges and to the seam between
+          the reading and the fire, so nothing crosses the rays or sits on
+          the number: dust belongs in the air around the instruments, never
+          on their faces. */}
       {sparkleColor !== null && (
         <>
-          <Sparkle size={11} delay={0} style={{ left: 17, top: 22 }} color={sparkleColor} slow={muted} />
-          <Sparkle size={8} delay={1600} style={{ right: 30, top: 104 }} color={sparkleColor} slow={muted} />
+          {/* Stars carry the light — biggest in the far corner the fire
+              never reaches. */}
+          <Mote kind="star" size={11} delay={0} style={{ left: 16, top: 18 }} color={sparkleColor} slow={muted} />
+          <Mote kind="star" size={6.5} delay={1200} style={{ left: 106, top: 10 }} color={sparkleColor} slow={muted} peak={0.3} />
+          <Mote kind="star" size={8} delay={1600} style={{ right: 14, top: 124 }} color={sparkleColor} slow={muted} peak={0.36} />
+          {/* Round motes — the quiet register, held to the margins. */}
+          <Mote kind="dot" size={3} still style={{ left: 7, top: 86 }} color={sparkleColor} peak={0.22} />
+          <Mote kind="dot" size={2.5} delay={2400} style={{ right: 11, top: 42 }} color={sparkleColor} slow={muted} peak={0.24} />
+          {/* Struck diamonds — these never move. */}
+          <Mote kind="diamond" size={4} still style={{ left: 209, top: 15 }} color={sparkleColor} peak={0.26} />
+          <Mote kind="diamond" size={2.5} still style={{ left: 7, top: 152 }} color={sparkleColor} peak={0.22} />
         </>
       )}
     </View>
@@ -369,7 +408,10 @@ function HeroWash() {
 // instrument goes out of service — ash bloom, dashed track, and a ruled
 // entry where the reading would stand.
 function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
-  const size = 74;
+  // 66, down from 74: at the old size the reading crowded the fire, and the
+  // fire is what the card is about. Everything here is struck from this
+  // number, so the whole instrument comes in with it.
+  const size = 66;
   // Banked: nothing was scheduled, or the whole day was laid aside. The
   // instrument keeps its face but stops reading — an empty ruled entry
   // where the number would stand, and a dashed track instead of a live one.
@@ -405,19 +447,82 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
 
   return (
     <View style={{ width, height }}>
+      {/* Mostly the old bloom, and a little of the new: FOUR struck rims on
+          the outside, laid flat and rotated against each other exactly as
+          they were — more of them than before, so the fall from dark gold to
+          pale reads as steps of a minted face rather than one hard ring —
+          and, only at the heart, the new light: a soft gradient that goes
+          white and fades, which is what the number needs to sit in. Its own
+          canvas, wide enough that no layer is ever cut off at an edge. */}
+      {!banked && (
+        <Svg
+          pointerEvents="none"
+          width={width * 1.3}
+          height={height * 1.9}
+          style={{ position: 'absolute', left: -width * 0.15, top: -height * 0.45 }}
+        >
+          <Defs>
+            <RadialGradient id="todayBloom" cx="50%" cy="50%" r="50%">
+              <Stop offset="0" stopColor="#FFFDF6" stopOpacity={1} />
+              <Stop offset="0.5" stopColor="#FFF8E6" stopOpacity={0.94} />
+              <Stop offset="0.8" stopColor="#FBEFCF" stopOpacity={0.6} />
+              <Stop offset="1" stopColor="#F6E7BE" stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Ellipse
+            cx={width * 0.65}
+            cy={height * 1.0}
+            rx={width * 0.55}
+            ry={height * 0.56}
+            fill="#E6CC92"
+            opacity={0.4}
+            transform={`rotate(-6 ${width * 0.65} ${height * 1.0})`}
+          />
+          <Ellipse
+            cx={width * 0.65}
+            cy={height * 0.97}
+            rx={width * 0.5}
+            ry={height * 0.5}
+            fill="#EDD9A6"
+            opacity={0.5}
+            transform={`rotate(5 ${width * 0.65} ${height * 0.97})`}
+          />
+          <Ellipse
+            cx={width * 0.64}
+            cy={height * 1.01}
+            rx={width * 0.45}
+            ry={height * 0.44}
+            fill="#F4E5BF"
+            opacity={0.62}
+            transform={`rotate(-3 ${width * 0.64} ${height * 1.01})`}
+          />
+          <Ellipse
+            cx={width * 0.64}
+            cy={height * 0.98}
+            rx={width * 0.4}
+            ry={height * 0.38}
+            fill="#FAF0D9"
+            opacity={0.72}
+            transform={`rotate(6 ${width * 0.64} ${height * 0.98})`}
+          />
+          <Ellipse
+            cx={width * 0.63}
+            cy={height * 1.0}
+            rx={width * 0.35}
+            ry={height * 0.33}
+            fill="url(#todayBloom)"
+          />
+        </Svg>
+      )}
       <Svg
         pointerEvents="none"
         width={width * 1.14}
         height={height * 1.12}
         style={{ position: 'absolute', left: -width * 0.07, top: -height * 0.06 }}
       >
-        {/* Live, the bloom is real light: one pool that fades out instead of
-            three flat ellipses stacked. Stacked, their edges drew a hard
-            gold ring around the number — a lasso, not a glow — and that ring
-            was half the reason the card looked crowded. Banked, the layered
-            rims stay: a gauge out of service should read as struck metal,
-            not as light. */}
-        {banked ? (
+        {/* Banked, the layered rims stay flat and opaque: a gauge out of
+            service should read as struck metal, not as light. */}
+        {banked && (
           <>
             <Ellipse
               cx={width * 0.52}
@@ -445,24 +550,6 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
               fill={pal.bloomHeart}
               opacity={0.95}
               transform={`rotate(-3 ${width * 0.49} ${height * 0.57})`}
-            />
-          </>
-        ) : (
-          <>
-            <Defs>
-              <RadialGradient id="todayBloom" cx="50%" cy="50%" r="50%">
-                <Stop offset="0" stopColor="#FFFCF1" stopOpacity={1} />
-                <Stop offset="0.42" stopColor="#FDF2D8" stopOpacity={0.92} />
-                <Stop offset="0.72" stopColor="#F4E3B6" stopOpacity={0.52} />
-                <Stop offset="1" stopColor="#EBD5A0" stopOpacity={0} />
-              </RadialGradient>
-            </Defs>
-            <Ellipse
-              cx={width * 0.5}
-              cy={height * 0.55}
-              rx={width * 0.56}
-              ry={height * 0.68}
-              fill="url(#todayBloom)"
             />
           </>
         )}
@@ -570,7 +657,7 @@ const ms = StyleSheet.create({
     fontVariant: ['lining-nums', 'tabular-nums'],
   },
   valuePct: {
-    fontSize: 21,
+    fontSize: 19,
     letterSpacing: 0,
     color: '#8B6B2F',
   },
@@ -1456,13 +1543,15 @@ const s = StyleSheet.create({
   // pasted under a poster; with only the top rule it belongs to the card,
   // and the coins close on the card's own bottom padding.
   weekBand: {
-    marginTop: 19,
-    paddingTop: 15,
+    marginTop: 11,
+    paddingTop: 10,
     paddingBottom: 2,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: '#EADFC8',
   },
-  daysLabelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 11 },
+  // 8 is the floor: today's coin breathes a halo 7.5pt past its own edge,
+  // and the letters have to stay clear of it.
+  daysLabelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   daysRow: { flexDirection: 'row', alignItems: 'center' },
   weekCol: { flex: 1, alignItems: 'center' },
   dayLetter: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 1.15, color: C.textMuted },
