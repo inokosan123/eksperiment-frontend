@@ -1237,6 +1237,9 @@ function PremiumBookCard({
   const centerShift = useSharedValue(0);
   const [cardWidth, setCardWidth] = useState(0);
   const [titleWidth, setTitleWidth] = useState(0);
+  // The leader is drawn, not stretched: dots keep their size and spacing at
+  // any width, so it is measured rather than scaled through a viewBox.
+  const [leaderWidth, setLeaderWidth] = useState(0);
 
   useEffect(() => {
     progress.value = withTiming(expanded ? 1 : 0, {
@@ -1325,12 +1328,30 @@ function PremiumBookCard({
             {book.name}
           </Reanimated.Text>
           <Reanimated.View style={[s.bookTail, expanded && { display: 'none' }, fadeAwayStyle]}>
-            <View style={[s.bookLeader, { backgroundColor: isGreen ? 'rgba(94,123,85,0.16)' : 'rgba(180,155,103,0.18)' }]} />
+            <View
+              style={s.bookLeader}
+              onLayout={event => setLeaderWidth(event.nativeEvent.layout.width)}
+            >
+              {leaderWidth > 0 && (
+                <Svg width={leaderWidth} height={4}>
+                  <Line
+                    x1={0}
+                    y1={2}
+                    x2={leaderWidth}
+                    y2={2}
+                    stroke={isGreen ? '#5E7B55' : '#B49B67'}
+                    strokeOpacity={0.34}
+                    strokeWidth={1.4}
+                    strokeLinecap="round"
+                    strokeDasharray="0.5 5"
+                  />
+                </Svg>
+              )}
+            </View>
             {isDeutero && (
               <Text style={[s.bookMeta, { color: isGreen ? '#8AA07C' : '#B09B76' }]}>DEUTEROCANON</Text>
             )}
-            <View style={[s.metaDiamond, { backgroundColor: isGreen ? 'rgba(94,123,85,0.5)' : 'rgba(180,155,103,0.55)' }]} />
-            <Text style={[s.bookMeta, { color: isGreen ? '#8AA07C' : '#B09B76' }]}>{book.chapters}</Text>
+            <Text style={[s.bookFolio, { color: isGreen ? '#7E9270' : '#A48F6C' }]}>{book.chapters}</Text>
           </Reanimated.View>
         </View>
       </View>
@@ -1938,13 +1959,18 @@ const s = StyleSheet.create({
   bookName: { fontFamily: F.serif, fontSize: 17.5, lineHeight: 21, letterSpacing: 0.25, color: '#2F2B27', flexShrink: 1 },
   // The leader: it takes whatever the name leaves, so short books rule far
   // and long ones rule barely at all.
-  bookTail: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  bookLeader: { flex: 1, minWidth: 8, height: 1 },
-  metaDiamond: {
-    width: 4,
-    height: 4,
-    borderRadius: 0.8,
-    transform: [{ rotate: '45deg' }],
+  bookTail: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'baseline', gap: 9 },
+  // Leader dots, ruled from the name across to the count — the device a
+  // printed contents page uses, and the reason this row reads as typeset
+  // rather than as a label with a number stuck to it.
+  bookLeader: { flex: 1, minWidth: 10, height: 4, alignSelf: 'center' },
+  // The count is set as a folio: the book's own serif, not a meta badge.
+  bookFolio: {
+    fontFamily: F.serif,
+    fontSize: 14,
+    lineHeight: 18,
+    letterSpacing: 0.3,
+    fontVariant: ['lining-nums', 'tabular-nums'],
   },
   bookMeta: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5 },
   bookChevronSeat: {
