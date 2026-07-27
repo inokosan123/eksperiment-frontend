@@ -360,6 +360,25 @@ function DawnBackdrop({ muted = false, palette }: { muted?: boolean; palette: Ba
           {/* Struck diamonds — these never move. */}
           <Mote kind="diamond" size={4} still style={{ left: 209, top: 15 }} color={sparkleColor} peak={0.26} />
           <Mote kind="diamond" size={2.5} still style={{ left: 7, top: 152 }} color={sparkleColor} peak={0.22} />
+
+          {/* The drift. Between the reading, the fire and the line beneath
+              them there is a wedge of empty card, and it was the only place
+              on the surface with nothing in it at all. Dust settles there
+              now and fades as it falls — biggest and brightest up by the
+              reading, down to a mote of nothing by the time it reaches the
+              line. Anchored to the right edge, as the fire is, so the wedge
+              keeps its constellation whatever the screen is worth. It stays
+              outside the ray burst; nothing here crosses the sun. */}
+          {!muted && (
+            <>
+              <Mote kind="dot" size={2} still style={{ right: 188, top: 114 }} color={sparkleColor} peak={0.2} />
+              <Mote kind="star" size={7} delay={600} style={{ right: 168, top: 120 }} color={sparkleColor} peak={0.3} />
+              <Mote kind="diamond" size={3.5} still style={{ right: 148, top: 107 }} color={sparkleColor} peak={0.24} />
+              <Mote kind="dot" size={2.5} delay={2000} style={{ right: 134, top: 127 }} color={sparkleColor} peak={0.2} />
+              <Mote kind="dot" size={1.8} still style={{ right: 156, top: 138 }} color={sparkleColor} peak={0.15} />
+              <Mote kind="star" size={5} delay={3200} style={{ right: 121, top: 136 }} color={sparkleColor} peak={0.22} />
+            </>
+          )}
         </>
       )}
     </View>
