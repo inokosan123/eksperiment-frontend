@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Image,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
   type StyleProp,
   type TextStyle,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Line } from 'react-native-svg';
+import { Asset } from 'expo-asset';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
 import Reanimated, {
   cancelAnimation,
   Easing,
@@ -21,11 +25,9 @@ import Reanimated, {
   useSharedValue,
   withDelay,
   withRepeat,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import FocusLottie from '@/components/focus/FocusLottie';
 import { ChevronLeft, ChevronRight, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { F } from '@/constants/tokens';
@@ -53,17 +55,32 @@ const ASH_BOOK = '#6E6553';
 const RAIL = 'rgba(197,160,89,0.32)';
 
 const BOOK_PNG = require('@/assets/images/streak-book-512.png');
+let bookAssetWarmup: Promise<void> | null = null;
+
+function preloadBookAsset() {
+  if (!bookAssetWarmup) {
+    bookAssetWarmup = (async () => {
+      const asset = Asset.fromModule(BOOK_PNG);
+      await asset.downloadAsync();
+      const uri = asset.localUri ?? asset.uri;
+      if (uri) await Image.prefetch(uri);
+    })().catch(() => undefined);
+  }
+  return bookAssetWarmup;
+}
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
-const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
-// Verified habit-formation copy only — no invented numbers.
+// Anasta means rise. The closing line says it plainly: standing back up is
+// the whole point, which is why this sheet counts the books you have kept
+// rather than the days you have lost.
 const MERCY_LINE =
-  'An unwritten day does not close the book — returning to the page is what writes it.';
-const STEADY_LINE = 'Never miss twice: one unwritten day is a pause, not the end of the story.';
+  'A missed day is not a failure — rise, write today, and your books keep adding up!';
+const STEADY_LINE = 'The streak is not the score — every book you write is yours to keep!';
 
 const enter = (delay: number) => FadeInDown.duration(360).delay(delay);
 
@@ -181,7 +198,7 @@ function GoldDust({ delay, style }: { delay: number; style: object }) {
 // on Android. Straight from the streak chain on the Journal card.
 const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
 
-function TodayPulse({ field = 54 }: { field?: number }) {
+function TodayPulse({ field = 50 }: { field?: number }) {
   const reduceMotion = useReducedMotion();
   const t = useSharedValue(0);
 
@@ -201,7 +218,7 @@ function TodayPulse({ field = 54 }: { field?: number }) {
 
   const ringProps = useAnimatedProps(() => ({
     opacity: (1 - t.value) * 0.5,
-    r: 15 + t.value * 8,
+    r: 14 + t.value * 7,
   }));
 
   return (
@@ -220,62 +237,50 @@ function TodayPulse({ field = 54 }: { field?: number }) {
   );
 }
 
-/* ── The book of days ─────────────────────────────────────── */
-// The hall's emblem: the living book on a breathing glow inside a struck
-// ray burst — the journal's answer to the Focus laurel, and the same
-// radiance the card reserves for what is alive and earned.
-function RadiantBookHero() {
-  const reduceMotion = useReducedMotion();
-  const breathe = useSharedValue(0);
+/* ── Laurel sprig ─────────────────────────────────────────── */
+// The crown the streak halls share — an engraved laurel branch, the same
+// wreath Focus and Home wear, here struck in straight GOLD on the dark
+// velvet where it glows like gilt. Drawn once, mirrored by a pure flip.
+const LAUREL_LEAVES: { x: number; y: number; a: number; inner?: boolean }[] = [
+  { x: 21.5, y: 51, a: -34 },
+  { x: 24.5, y: 45, a: -6, inner: true },
+  { x: 15, y: 42.5, a: -50 },
+  { x: 19, y: 34.5, a: -20, inner: true },
+  { x: 11.5, y: 32.5, a: -64 },
+  { x: 15.5, y: 24, a: -36, inner: true },
+  { x: 10.5, y: 22.5, a: -78 },
+  { x: 14, y: 14, a: -52, inner: true },
+  { x: 12.5, y: 12, a: -95 },
+];
 
-  useEffect(() => {
-    if (reduceMotion) {
-      breathe.value = 0.6;
-      return;
-    }
-    breathe.value = 0;
-    breathe.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
-      ),
-      -1,
-    );
-    return () => cancelAnimation(breathe);
-  }, [reduceMotion, breathe]);
-
-  const glowStyle = useAnimatedStyle(() => ({ opacity: 0.4 + breathe.value * 0.55 }));
-  const field = 128;
-  const cx = field / 2;
-  const inner = 35;
-
+function LaurelSprig({ flip = false }: { flip?: boolean }) {
   return (
-    <View style={s.bookStage}>
-      <Reanimated.View pointerEvents="none" style={[s.bookGlow, glowStyle]} />
-      <Svg pointerEvents="none" width={field} height={field} style={s.bookRays}>
-        {Array.from({ length: 12 }).map((_, index) => {
-          const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
-          const long = index % 2 === 0;
-          const r2 = inner + (long ? 17 : 9);
-          return (
-            <Line
-              key={index}
-              x1={cx + inner * Math.cos(angle)}
-              y1={cx + inner * Math.sin(angle)}
-              x2={cx + r2 * Math.cos(angle)}
-              y2={cx + r2 * Math.sin(angle)}
-              stroke={GOLD_RAY}
-              strokeOpacity={long ? 0.5 : 0.28}
-              strokeWidth={long ? 1.6 : 1.2}
-              strokeLinecap="round"
-            />
-          );
-        })}
-      </Svg>
-      <View style={s.bookLottie} pointerEvents="none">
-        <FocusLottie name="meru-book" loop autoplay speed={0.85} style={{ width: '100%', height: '100%' }} />
-      </View>
-    </View>
+    <Svg
+      width={38}
+      height={76}
+      viewBox="0 0 30 60"
+      style={flip ? { transform: [{ scaleX: -1 }] } : undefined}
+    >
+      <Path
+        d="M 25 57 C 13 48, 9.5 36, 11.5 25 C 13 16, 15.5 10, 17.5 4"
+        fill="none"
+        stroke="rgba(217,176,100,0.9)"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+      {LAUREL_LEAVES.map((leaf, index) => (
+        <Ellipse
+          key={index}
+          cx={leaf.x}
+          cy={leaf.y}
+          rx={4.8}
+          ry={2}
+          fill={leaf.inner ? GOLD_RAY : GOLD_LIT}
+          fillOpacity={leaf.inner ? 0.5 : 0.72}
+          transform={`rotate(${leaf.a} ${leaf.x} ${leaf.y})`}
+        />
+      ))}
+    </Svg>
   );
 }
 
@@ -333,6 +338,16 @@ export default function JournalStreakSheet({
   bestStreak: number;
 }) {
   const [monthOffset, setMonthOffset] = useState(0);
+  const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  // A ceiling, not a height: the sheet stands as tall as the hearth needs
+  // and no taller, so the closing line always rests near the edge instead
+  // of floating above a stretch of empty velvet.
+  const sheetMaxHeight = Math.min(760, windowHeight * 0.88);
+
+  useEffect(() => {
+    void preloadBookAsset();
+  }, []);
 
   const today = new Date();
   const todayStr = dateKeyOf(today);
@@ -414,7 +429,11 @@ export default function JournalStreakSheet({
   };
 
   return (
-    <SmoothBottomSheet visible={visible} onClose={close} sheetStyle={s.sheet}>
+    <SmoothBottomSheet
+      visible={visible}
+      onClose={close}
+      sheetStyle={[s.sheet, { maxHeight: sheetMaxHeight }]}
+    >
       <LinearGradient
         colors={VELVET}
         start={{ x: 0, y: 0 }}
@@ -443,11 +462,28 @@ export default function JournalStreakSheet({
       {/* Hero — the living book above its count, a shrine rather than a
           plaque. Focus crowns its number with laurels; the journal sets
           the book itself over the page. */}
+      <ScrollView
+        style={s.scroll}
+        contentContainerStyle={[
+          s.scrollContent,
+          // Same clearance the Home rhythm sheet keeps: a gesture bar gets a
+          // hair of room under a line nobody taps, a tall button bar keeps
+          // its full inset so the text never lands inside it.
+          { paddingBottom: insets.bottom > 36 ? insets.bottom : Math.max(10, insets.bottom - 10) },
+        ]}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+        overScrollMode="never"
+        contentInsetAdjustmentBehavior="never"
+      >
       <Reanimated.View entering={enter(40)} style={s.hero}>
-        <RadiantBookHero />
-        <View style={s.heroCount}>
-          <CountUp value={currentStreak} delay={320} textStyle={s.heroValue} />
-          <Text style={s.heroUnit}>day streak</Text>
+        <View style={s.laurelRow}>
+          <LaurelSprig />
+          <View style={s.heroCenter}>
+            <CountUp value={currentStreak} delay={320} textStyle={s.heroValue} />
+            <Text style={s.heroUnit}>day streak</Text>
+          </View>
+          <LaurelSprig flip />
         </View>
       </Reanimated.View>
 
@@ -494,33 +530,34 @@ export default function JournalStreakSheet({
       </Reanimated.View>
 
       <Reanimated.View entering={enter(140)} style={s.weekHeader}>
-        {DAY_LETTERS.map((letter, index) => (
+        {DAY_LABELS.map((label, index) => (
           <Text
-            key={index}
+            key={label}
             style={[s.weekLetter, onCurrentMonth && index === todayColumn && s.weekLetterToday]}
           >
-            {letter}
+            {label}
           </Text>
         ))}
       </Reanimated.View>
 
-      {/* The month arrives as a diagonal wave of books; the chain lights
-          between the days you wrote. */}
-      <View style={s.grid} key={shownKey}>
+      {/* Reveal the fully prepared month as one surface so switching months
+          never exposes per-day drawing. Written days still share a chain. */}
+      <Reanimated.View
+        key={shownKey}
+        entering={FadeIn.duration(140)}
+        style={s.grid}
+      >
         {cells.map((entry, index) => {
           if (entry.cell === 'blank') return <View key={index} style={s.cell} />;
-          const row = Math.floor(index / 7);
-          const col = index % 7;
-          const delay = 150 + (row + col) * 26;
           return (
             <View key={index} style={s.cell}>
               {entry.linkLeft && (
-                <Reanimated.View entering={FadeIn.duration(220).delay(delay)} style={[s.chain, s.chainLeft]} />
+                <View style={[s.chain, s.chainLeft]} />
               )}
               {entry.linkRight && (
-                <Reanimated.View entering={FadeIn.duration(220).delay(delay)} style={[s.chain, s.chainRight]} />
+                <View style={[s.chain, s.chainRight]} />
               )}
-              <Reanimated.View entering={FadeInDown.duration(240).delay(delay)} style={s.cellInner}>
+              <View style={s.cellInner}>
                 <View style={s.markWrap}>
                   <DayMark cell={entry.cell} />
                 </View>
@@ -534,11 +571,11 @@ export default function JournalStreakSheet({
                 >
                   {entry.day}
                 </Text>
-              </Reanimated.View>
+              </View>
             </View>
           );
         })}
-      </View>
+      </Reanimated.View>
 
       <Reanimated.View entering={enter(420)} style={s.legend}>
         <View style={s.legendItem}>
@@ -564,6 +601,7 @@ export default function JournalStreakSheet({
         </View>
         <Text style={s.mercy}>{recentEmpty ? MERCY_LINE : STEADY_LINE}</Text>
       </Reanimated.View>
+      </ScrollView>
     </SmoothBottomSheet>
   );
 }
@@ -578,8 +616,12 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: RAIL,
     paddingHorizontal: 20,
-    paddingBottom: 28,
+    paddingBottom: 0,
   },
+  // Hugs its content, and only shrinks into a scroll once the sheet has
+  // hit its ceiling.
+  scroll: { flexGrow: 0, flexShrink: 1 },
+  scrollContent: { paddingBottom: 22 },
   dustWrap: { position: 'absolute' },
   dust: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: GOLD_RAY },
 
@@ -624,31 +666,29 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  /* Hero */
-  hero: { marginTop: 10, alignItems: 'center' },
-  bookStage: { width: 128, height: 128, alignItems: 'center', justifyContent: 'center' },
-  bookGlow: {
-    position: 'absolute',
-    width: 74,
-    height: 74,
-    borderRadius: 37,
-    backgroundColor: 'rgba(232,200,126,0.16)',
+  /* Hero — the streak crowned between two gold laurels, open on the dark. */
+  hero: { marginTop: 8, alignItems: 'center' },
+  laurelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
-  bookRays: { position: 'absolute' },
-  bookLottie: { width: 132, height: 132, marginTop: 2 },
-  heroCount: { alignItems: 'center', marginTop: -10 },
+  heroCenter: { alignItems: 'center', minWidth: 118 },
+  // Crowned like the Focus hall: a tall line box seats the glyph low, the
+  // caption pulled up hard beneath so the laurels hug the number.
   heroValue: {
     fontFamily: F.serifSemiBold,
-    fontSize: 62,
-    lineHeight: 72,
-    letterSpacing: -1.6,
+    fontSize: 66,
+    lineHeight: 78,
+    letterSpacing: -2,
     color: CREAM,
     textAlign: 'center',
     includeFontPadding: false,
     fontVariant: ['lining-nums', 'tabular-nums'],
   },
   heroUnit: {
-    marginTop: -12,
+    marginTop: -14,
     fontFamily: F.serifMediumItalic,
     fontSize: 16,
     lineHeight: 21,
@@ -657,7 +697,7 @@ const s = StyleSheet.create({
 
   /* Counters */
   counters: {
-    marginTop: 12,
+    marginTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'stretch',
@@ -668,8 +708,8 @@ const s = StyleSheet.create({
   counterRowCenter: { alignItems: 'center', gap: 6 },
   counterValue: {
     fontFamily: F.serifSemiBold,
-    fontSize: 30,
-    lineHeight: 35,
+    fontSize: 27,
+    lineHeight: 32,
     color: CREAM,
     includeFontPadding: false,
     fontVariant: ['lining-nums', 'tabular-nums'],
@@ -682,7 +722,7 @@ const s = StyleSheet.create({
   counterBook: { width: 23, height: 23 },
   counterLabel: {
     fontFamily: F.sansBold,
-    fontSize: 10,
+    fontSize: 9.5,
     lineHeight: 13,
     letterSpacing: 1.7,
     color: EYEBROW,
@@ -699,7 +739,7 @@ const s = StyleSheet.create({
 
   /* Month navigation */
   monthRow: {
-    marginTop: 16,
+    marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -718,27 +758,29 @@ const s = StyleSheet.create({
   monthTitle: { fontFamily: F.serifMedium, fontSize: 19, color: CREAM },
 
   /* Week header */
-  weekHeader: { marginTop: 12, flexDirection: 'row' },
+  weekHeader: { marginTop: 10, width: '100%', flexDirection: 'row' },
   weekLetter: {
-    flex: 1,
+    width: `${100 / 7}%`,
+    flexGrow: 0,
+    flexShrink: 0,
     textAlign: 'center',
     fontFamily: F.sansBold,
-    fontSize: 11,
+    fontSize: 9.5,
     lineHeight: 14,
-    letterSpacing: 0.8,
+    letterSpacing: 0.55,
     color: 'rgba(255,255,255,0.34)',
   },
   weekLetterToday: { color: EYEBROW },
 
   /* Grid */
-  grid: { marginTop: 6, flexDirection: 'row', flexWrap: 'wrap' },
-  cell: { width: `${100 / 7}%`, position: 'relative', alignItems: 'center', paddingVertical: 3 },
+  grid: { marginTop: 5, flexDirection: 'row', flexWrap: 'wrap' },
+  cell: { width: `${100 / 7}%`, position: 'relative', alignItems: 'center', paddingVertical: 2 },
   cellInner: { alignItems: 'center' },
-  markWrap: { height: 36, width: 36, alignItems: 'center', justifyContent: 'center' },
+  markWrap: { height: 34, width: 34, alignItems: 'center', justifyContent: 'center' },
   // The chain of light between written days.
   chain: {
     position: 'absolute',
-    top: 3 + 17,
+    top: 2 + 16,
     height: 2,
     borderRadius: 1,
     backgroundColor: 'rgba(212,176,106,0.55)',
@@ -749,9 +791,9 @@ const s = StyleSheet.create({
   /* Day marks */
   medalWrap: { alignItems: 'center', justifyContent: 'center' },
   medal: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
@@ -774,7 +816,7 @@ const s = StyleSheet.create({
     borderColor: GOLD_LIT,
     backgroundColor: 'rgba(255,244,214,0.08)',
   },
-  book: { width: 22, height: 22 },
+  book: { width: 20, height: 20 },
   bookAsh: { tintColor: ASH_BOOK, opacity: 0.55 },
   // Today's book is a ghost of the one you can still earn.
   bookToday: { tintColor: '#D9C79A', opacity: 0.4 },
@@ -794,7 +836,7 @@ const s = StyleSheet.create({
 
   /* Legend */
   legend: {
-    marginTop: 12,
+    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -821,7 +863,7 @@ const s = StyleSheet.create({
 
   /* Mercy */
   mercyRail: {
-    marginTop: 13,
+    marginTop: 11,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
