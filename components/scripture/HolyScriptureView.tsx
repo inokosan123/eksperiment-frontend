@@ -1441,6 +1441,74 @@ function ChapterPanel({
   );
 }
 
+// The Psalter is not a list of 151 numbers — it is twenty kathismata, the
+// divisions it is actually read in, and this app ships the Septuagint text
+// (151 psalms, twelve deuterocanonical books) so these are its own. Psalm
+// 151 belongs to none of them: its superscription calls it outside the
+// number, and it is set apart here for the same reason.
+const KATHISMATA: { numeral: string; from: number; to: number }[] = [
+  { numeral: 'I', from: 1, to: 8 },
+  { numeral: 'II', from: 9, to: 16 },
+  { numeral: 'III', from: 17, to: 23 },
+  { numeral: 'IV', from: 24, to: 31 },
+  { numeral: 'V', from: 32, to: 36 },
+  { numeral: 'VI', from: 37, to: 45 },
+  { numeral: 'VII', from: 46, to: 54 },
+  { numeral: 'VIII', from: 55, to: 63 },
+  { numeral: 'IX', from: 64, to: 69 },
+  { numeral: 'X', from: 70, to: 76 },
+  { numeral: 'XI', from: 77, to: 84 },
+  { numeral: 'XII', from: 85, to: 90 },
+  { numeral: 'XIII', from: 91, to: 100 },
+  { numeral: 'XIV', from: 101, to: 104 },
+  { numeral: 'XV', from: 105, to: 108 },
+  { numeral: 'XVI', from: 109, to: 117 },
+  { numeral: 'XVII', from: 118, to: 118 },
+  { numeral: 'XVIII', from: 119, to: 133 },
+  { numeral: 'XIX', from: 134, to: 142 },
+  { numeral: 'XX', from: 143, to: 150 },
+];
+
+function PsalmRows({ psalms, onPsalm }: { psalms: number[]; onPsalm: (psalm: number) => void }) {
+  const rows = Array.from({ length: Math.ceil(psalms.length / 5) }, (_, i) => i);
+  return (
+    <View style={s.psalmGrid}>
+      {rows.map(rowIndex => (
+        <View key={rowIndex} style={s.psalmGridRow}>
+          {Array.from({ length: 5 }, (_, offset) => {
+            const psalm = psalms[rowIndex * 5 + offset];
+            if (!psalm) return <View key={`e-${rowIndex}-${offset}`} style={s.psalmSpacer} />;
+            return (
+              <TouchableOpacity
+                key={psalm}
+                onPress={() => onPsalm(psalm)}
+                activeOpacity={0.78}
+                style={s.psalmCell}
+              >
+                <View pointerEvents="none" style={s.psalmCellLit} />
+                <Text style={s.psalmCellText}>{psalm}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// The engraved head the rest of this screen uses for its divisions.
+function KathismaHead({ label }: { label: string }) {
+  return (
+    <View style={s.kathismaHead}>
+      <View style={s.kathismaRule} />
+      <View style={s.kathismaDiamond} />
+      <Text style={s.kathismaLabel} numberOfLines={1}>{label}</Text>
+      <View style={s.kathismaDiamond} />
+      <View style={s.kathismaRule} />
+    </View>
+  );
+}
+
 function PsalterBrowse({
   psalms, results, searching, onPsalm, onResult,
 }: {
@@ -1451,7 +1519,29 @@ function PsalterBrowse({
   onPsalm: (psalm: number) => void;
   onResult: (result: ScriptureSearchResult) => void;
 }) {
-  const rows = Array.from({ length: Math.ceil(psalms.length / 5) }, (_, i) => i);
+  // Grouped from whatever the search left standing, so a filtered Psalter
+  // keeps its divisions and simply drops the ones nothing matched in.
+  const sections = useMemo(() => {
+    const present = new Set(psalms);
+    const groups = KATHISMATA
+      .map(kathisma => ({
+        key: kathisma.numeral,
+        label: `KATHISMA ${kathisma.numeral} · ${kathisma.from === kathisma.to
+          ? `PSALM ${kathisma.from}`
+          : `PSALMS ${kathisma.from}–${kathisma.to}`}`,
+        psalms: Array.from(
+          { length: kathisma.to - kathisma.from + 1 },
+          (_, index) => kathisma.from + index,
+        ).filter(number => present.has(number)),
+      }))
+      .filter(group => group.psalms.length > 0);
+
+    const beyond = psalms.filter(number => number > 150);
+    if (beyond.length > 0) {
+      groups.push({ key: 'beyond', label: 'OUTSIDE THE NUMBER · PSALM 151', psalms: beyond });
+    }
+    return groups;
+  }, [psalms]);
 
   return (
     <View style={s.psalterWrap}>
@@ -1462,26 +1552,12 @@ function PsalterBrowse({
           end={{ x: 0, y: 1 }}
           style={s.psalmPanel}
         >
-          <View style={s.chapterGrid}>
-            {rows.map(rowIndex => (
-              <View key={rowIndex} style={s.chapterGridRow}>
-                {Array.from({ length: 5 }, (_, offset) => {
-                  const psalm = psalms[rowIndex * 5 + offset];
-                  if (!psalm) return <View key={`e-${rowIndex}-${offset}`} style={s.chapterSpacer} />;
-                  return (
-                    <TouchableOpacity
-                      key={psalm}
-                      onPress={() => onPsalm(psalm)}
-                      activeOpacity={0.78}
-                      style={[s.chapterCell, { borderColor: '#E8DECD', backgroundColor: '#FFFEFB' }]}
-                    >
-                      <Text style={[s.chapterCellText, { color: '#6F5E41' }]}>{psalm}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ))}
-          </View>
+          {sections.map((section, index) => (
+            <View key={section.key} style={index > 0 && s.kathismaBlock}>
+              <KathismaHead label={section.label} />
+              <PsalmRows psalms={section.psalms} onPsalm={onPsalm} />
+            </View>
+          ))}
         </LinearGradient>
       )}
 
@@ -2054,6 +2130,55 @@ const s = StyleSheet.create({
   chapterSpacer: { flex: 1, minHeight: 44 },
   chapterCellText: { fontFamily: F.serif, fontSize: 18, lineHeight: 21 },
   psalterWrap: { gap: 14 },
+  // The Psalter's own divisions. The head is the screen's engraved rule, and
+  // the cells are a touch smaller than a book's chapter grid because there
+  // are 151 of them and they now sit in twenty groups.
+  kathismaBlock: { marginTop: 14 },
+  kathismaHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    marginTop: 2,
+    marginBottom: 9,
+    paddingHorizontal: 2,
+  },
+  kathismaRule: { flex: 1, height: 1, backgroundColor: 'rgba(180,155,103,0.28)' },
+  kathismaDiamond: {
+    width: 4,
+    height: 4,
+    borderRadius: 0.8,
+    backgroundColor: 'rgba(180,155,103,0.6)',
+    transform: [{ rotate: '45deg' }],
+  },
+  kathismaLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 8.8,
+    letterSpacing: 2.1,
+    color: '#A0885B',
+  },
+  psalmGrid: { gap: 6 },
+  psalmGridRow: { flexDirection: 'row', gap: 6 },
+  psalmSpacer: { flex: 1, minHeight: 40 },
+  psalmCell: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: '#EADFCC',
+    backgroundColor: '#FFFEFB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  psalmCellLit: {
+    position: 'absolute',
+    top: 1,
+    left: 8,
+    right: 8,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
+  psalmCellText: { fontFamily: F.serif, fontSize: 16.5, lineHeight: 19, color: '#6F5E41' },
   psalmPanel: {
     borderRadius: 23,
     borderWidth: 1,
