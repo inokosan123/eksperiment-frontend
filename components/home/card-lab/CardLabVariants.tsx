@@ -1299,6 +1299,8 @@ const s0 = StyleSheet.create({
     borderCurve: 'continuous',
     borderWidth: 1,
     overflow: 'hidden',
+    // The app's own card shadow, to the number — Habits, Journal and the
+    // production SectionCard all sit on this one.
     shadowColor: '#1C1917',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.07,
@@ -1313,7 +1315,17 @@ const s0 = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.9)',
   },
-  mark: { position: 'absolute', right: 6, bottom: -6, alignItems: 'center', justifyContent: 'center' },
+  // The app's own watermark seat: low right, and tilted. The tilt is the
+  // production card's own, and it is what keeps the emblem from reading as
+  // a sticker squared to the plate.
+  mark: {
+    position: 'absolute',
+    right: 6,
+    bottom: -6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '-8deg' }],
+  },
   arrow: {
     position: 'absolute',
     top: 14,
@@ -1401,9 +1413,9 @@ const s1 = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
     shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
     elevation: 4,
   },
   litEdge: {
@@ -1414,7 +1426,14 @@ const s1 = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.92)',
   },
-  mark: { position: 'absolute', right: -26, bottom: -30, alignItems: 'center', justifyContent: 'center' },
+  mark: {
+    position: 'absolute',
+    right: -26,
+    bottom: -30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '-8deg' }],
+  },
   arrow: {
     position: 'absolute',
     top: 14,
@@ -1500,15 +1519,15 @@ export function VariantLeaf({ card }: VariantProps) {
 const s2 = StyleSheet.create({
   plate: {
     position: 'relative',
-    borderRadius: 24,
+    borderRadius: 26,
     borderCurve: 'continuous',
     borderWidth: 1,
     overflow: 'hidden',
     shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.06,
-    shadowRadius: 13,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    elevation: 4,
   },
   tab: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 7 },
   litEdge: {
@@ -1519,7 +1538,14 @@ const s2 = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.94)',
   },
-  mark: { position: 'absolute', right: 10, bottom: -2, alignItems: 'center', justifyContent: 'center' },
+  mark: {
+    position: 'absolute',
+    right: 10,
+    bottom: -2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '-8deg' }],
+  },
   arrow: {
     position: 'absolute',
     top: 14,
