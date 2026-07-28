@@ -120,10 +120,8 @@ type VariantProps = { card: LabCard };
 const BTFL_SPARK =
   'M12 0 C13.2 7.4 16.6 10.8 24 12 C16.6 13.2 13.2 16.6 12 24 C10.8 16.6 7.4 13.2 0 12 C7.4 10.8 10.8 7.4 12 0 Z';
 
-const BTFL_BEZEL = 5;
 const BTFL_R = 26;
-const BTFL_PLATE_R = BTFL_R - BTFL_BEZEL;
-const BTFL_EXIT = 34;   // the way out, far right
+const BTFL_EXIT = 30;   // the way out, at the foot
 
 type Star = {
   /** From the plate's right edge and top, in points. */
@@ -213,89 +211,72 @@ export function VariantBtfl({ card }: VariantProps) {
     return () => cancelAnimation(clock);
   }, [clock, reduceMotion]);
 
-  // The bezel's material and the plate's ground, both drawn from the card's
-  // own tint so nothing here is a colour the app does not already own.
-  const rimTop = mixWhite(card.bg, 0.74);
-  const rimFoot = mixHex(card.bg, card.titleColor, 0.17);
+  // The plate's ground, drawn from the card's own tint so nothing here is a
+  // colour the app does not already own.
   const groundTop = mixWhite(card.bg, 0.6);
   const groundMid = mixWhite(card.bg, 0.14);
   const groundFoot = mixHex(card.bg, card.titleColor, 0.1);
 
   return (
-    // The bezel: a band of material, lit along the top, deepening to its foot.
-    <View style={[btfl.bezel, { borderColor: mixHex(card.border, card.titleColor, 0.12) }]}>
+    // ONE plate. The bezel-and-plate pair was two nested rounded rects with
+    // four hairlines between them — a great deal of chrome for a card that
+    // has three lines on it, and it read as framed rather than as fine. The
+    // depth is kept where depth actually comes from: a lit top edge, and a
+    // ground that deepens toward its foot.
+    <View style={[btfl.plate, { borderColor: mixHex(card.border, card.titleColor, 0.14) }]}>
       <LinearGradient
-        colors={[rimTop, rimFoot]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
+        colors={[groundTop, groundMid, groundFoot]}
+        locations={[0, 0.52, 1]}
+        start={{ x: 0.08, y: 0 }}
+        end={{ x: 0.92, y: 1 }}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
-      <View pointerEvents="none" style={btfl.bezelLit} />
-      <View pointerEvents="none" style={btfl.bezelShade} />
 
-      {/* The plate, set down inside the rim */}
-      <View style={[btfl.plate, { borderColor: withAlpha(card.labelColor, 0.26) }]}>
-        <LinearGradient
-          colors={[groundTop, groundMid, groundFoot]}
-          locations={[0, 0.52, 1]}
-          start={{ x: 0.08, y: 0 }}
-          end={{ x: 0.92, y: 1 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
+      {/* Double ruling — the app's own finish, from the Scripture doors: a
+          firmer line with a finer one inside it, all curve, so it sits with
+          the plate's corners instead of against them. */}
+      <View pointerEvents="none" style={[btfl.frame, { borderColor: withAlpha(card.labelColor, 0.22) }]} />
+      <View pointerEvents="none" style={[btfl.frameInner, { borderColor: withAlpha(card.labelColor, 0.11) }]} />
+      <View pointerEvents="none" style={btfl.lit} />
 
-        {/* Recessed, so the light falls the other way: shade at the top lip,
-            light along the bottom. This is the whole trick of the depth. */}
-        <View pointerEvents="none" style={btfl.plateShade} />
-        <View pointerEvents="none" style={btfl.plateLit} />
+      {/* The mark, low and large, with the constellation on its shoulder. */}
+      <View pointerEvents="none" style={btfl.mark}>
+        <card.Decor s={BTFL_MARK} c={withAlpha(card.decorColor, 0.1)} w={1.1} />
+      </View>
+      {BTFL_STARS.map((star, i) => (
+        <BtflStar key={i} star={star} clock={clock} color={card.decorColor} still={reduceMotion} />
+      ))}
 
-        {/* The mark, low and large behind the type, with the constellation
-            gathered around it. */}
-        <View pointerEvents="none" style={btfl.mark}>
-          <card.Decor s={BTFL_MARK} c={withAlpha(card.decorColor, 0.11)} w={1.1} />
+      <View style={btfl.body}>
+        {/* The head is one engraved line across the plate — diamond, name,
+            rule, diamond — the same head this app rules its divisions with. */}
+        <View style={btfl.rail}>
+          <View style={[btfl.diamond, { backgroundColor: withAlpha(card.labelColor, 0.62) }]} />
+          <Text style={[btfl.label, { color: card.labelColor }]} numberOfLines={1}>
+            {card.label}
+          </Text>
+          <View style={[btfl.railRule, { backgroundColor: withAlpha(card.labelColor, 0.22) }]} />
+          <View style={[btfl.diamond, { backgroundColor: withAlpha(card.labelColor, 0.62) }]} />
         </View>
 
-        {BTFL_STARS.map((star, i) => (
-          <BtflStar key={i} star={star} clock={clock} color={card.decorColor} still={reduceMotion} />
-        ))}
+        {/* Full width, so a long name wraps at full size rather than shrinking. */}
+        <Text style={[btfl.title, { color: card.titleColor }]} numberOfLines={2}>
+          {card.title}
+        </Text>
 
-        <View style={btfl.body}>
-          {/* The emblem at one end, the way out at the other, the eyebrow
-              between them: the two touch targets are a card's width apart. */}
-          <View style={btfl.headRow}>
-            {/* The eyebrow, set as an engraved line: a short bar in the card's
-                own colour, then the words, spaced but no longer shouting. */}
-            <View style={[btfl.labelBar, { backgroundColor: withAlpha(card.labelColor, 0.55) }]} />
-            <Text style={[btfl.label, { color: card.labelColor }]} numberOfLines={1}>
-              {card.label}
-            </Text>
+        <Text style={[btfl.desc, { color: ink }]}>{card.description}</Text>
 
-            <View style={btfl.headSpacer} />
-
-            <View style={[btfl.exit, { borderColor: withAlpha(card.labelColor, 0.28) }]}>
-              <View style={btfl.exitTilt}>
-                <ArrowUpRight s={16} c={card.arrowBg} w={2.2} />
-              </View>
+        {/* And the foot closes what the head opened: the way out stands where
+            you finish reading, not floating in the space beside the eyebrow. */}
+        <View style={btfl.rail}>
+          <Text style={[btfl.open, { color: card.labelColor }]}>OPEN</Text>
+          <View style={[btfl.railRule, { backgroundColor: withAlpha(card.labelColor, 0.22) }]} />
+          <View style={[btfl.exit, { borderColor: withAlpha(card.labelColor, 0.3) }]}>
+            <View style={btfl.exitTilt}>
+              <ArrowUpRight s={15} c={card.arrowBg} w={2.2} />
             </View>
           </View>
-
-          {/* Full width, so a long name almost never needs a second line — and
-              when it does it gets one at full size rather than being shrunk. */}
-          <View style={btfl.titleBlock}>
-            <Text style={[btfl.title, { color: card.titleColor }]} numberOfLines={2}>
-              {card.title}
-            </Text>
-            <LinearGradient
-              colors={[withAlpha(card.labelColor, 0.44), withAlpha(card.labelColor, 0.08)]}
-              start={{ x: 0, y: 0.5 }}
-              end={{ x: 1, y: 0.5 }}
-              style={btfl.titleRule}
-              pointerEvents="none"
-            />
-          </View>
-
-          <Text style={[btfl.desc, { color: ink }]}>{card.description}</Text>
         </View>
       </View>
     </View>
@@ -303,108 +284,91 @@ export function VariantBtfl({ card }: VariantProps) {
 }
 
 const btfl = StyleSheet.create({
-  bezel: {
+  plate: {
     position: 'relative',
     borderRadius: BTFL_R,
     borderCurve: 'continuous',
     borderWidth: 1,
-    padding: BTFL_BEZEL,
     overflow: 'hidden',
     shadowColor: '#6B5836',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.13,
     shadowRadius: 20,
     elevation: 5,
   },
-  bezelLit: {
+  frame: {
     position: 'absolute',
-    top: 0,
-    left: BTFL_R,
-    right: BTFL_R,
+    top: 6,
+    left: 6,
+    right: 6,
+    bottom: 6,
+    borderRadius: BTFL_R - 8,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+  },
+  frameInner: {
+    position: 'absolute',
+    top: 9,
+    left: 9,
+    right: 9,
+    bottom: 9,
+    borderRadius: BTFL_R - 11,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+  },
+  lit: {
+    position: 'absolute',
+    top: 1,
+    left: 20,
+    right: 20,
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.96)',
   },
-  bezelShade: {
-    position: 'absolute',
-    bottom: 0,
-    left: BTFL_R,
-    right: BTFL_R,
-    height: 1,
-    backgroundColor: 'rgba(74,56,32,0.13)',
-  },
 
-  plate: {
-    position: 'relative',
-    borderRadius: BTFL_PLATE_R,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  plateShade: {
-    position: 'absolute',
-    top: 0,
-    left: BTFL_PLATE_R,
-    right: BTFL_PLATE_R,
-    height: 1,
-    backgroundColor: 'rgba(74,56,32,0.10)',
-  },
-  plateLit: {
-    position: 'absolute',
-    bottom: 0,
-    left: BTFL_PLATE_R,
-    right: BTFL_PLATE_R,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.7)',
-  },
-
-  star: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-
-  body: { paddingHorizontal: 19, paddingTop: 13, paddingBottom: 17 },
-
-  headRow: { flexDirection: 'row', alignItems: 'center', columnGap: 9 },
-  headSpacer: { flex: 1, minWidth: 16 },
-  // A raised seat, lit across its face like every other jewel in this app.
   // Low and to the right, and allowed to run off the plate's foot — a
   // watermark is a thing the card is printed over, not a thing placed on it.
   mark: {
     position: 'absolute',
-    // Far enough out that only its shoulder is on the plate: at -18/-26 the
-    // emblem's points reached up into the description and crossed the type.
-    right: -32,
-    bottom: -36,
+    right: -34,
+    bottom: -40,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  star: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+
+  body: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16 },
+
+  // One rail, used twice: it opens the card and it closes it.
+  rail: { flexDirection: 'row', alignItems: 'center', columnGap: 9 },
+  railRule: { flex: 1, height: 1, minWidth: 10 },
+  diamond: { width: 4, height: 4, borderRadius: 0.8, transform: [{ rotate: '45deg' }], flexShrink: 0 },
+
+  label: { fontFamily: F.sansBold, fontSize: 10.5, lineHeight: 13, letterSpacing: 1.5 },
+  open: { fontFamily: F.sansBold, fontSize: 9.5, lineHeight: 12, letterSpacing: 1.8 },
+
   exit: {
     width: BTFL_EXIT,
     height: BTFL_EXIT,
     borderRadius: BTFL_EXIT / 2,
     borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.72)',
+    backgroundColor: 'rgba(255,255,255,0.7)',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
   exitTilt: { transform: [{ rotate: '-15deg' }] },
 
-  // The eyebrow. It was 9.5 at 2.2 tracking in the body ink — small, loose
-  // and grey, so it read as a caption that had lost its way rather than as
-  // the card's own heading. Bigger, tighter, and in the card's colour.
-  label: { fontFamily: F.sansBold, fontSize: 10.5, lineHeight: 13, letterSpacing: 1.5 },
-  labelBar: { width: 14, height: 2, borderRadius: 1, flexShrink: 0 },
-
-  titleBlock: { alignSelf: 'flex-start', marginTop: 12 },
   title: {
+    marginTop: 13,
     fontFamily: F.serifSemiBold,
-    fontSize: 28,
-    lineHeight: 33,
-    letterSpacing: -0.45,
+    fontSize: 29,
+    lineHeight: 34,
+    letterSpacing: -0.5,
   },
-  titleRule: { alignSelf: 'stretch', height: 1, marginTop: 8, borderRadius: 1 },
 
   // Inter, and larger: this is the line that has to explain the feature to
-  // someone who has never seen it.
-  desc: { marginTop: 9, fontFamily: F.sans, fontSize: 14.5, lineHeight: 21 },
+  // someone who has never seen it. It stops short of the mark's densest part.
+  desc: { marginTop: 10, marginBottom: 15, fontFamily: F.sans, fontSize: 14.5, lineHeight: 21, maxWidth: '90%' },
 });
 
 /* ═══ NEW ENGRAVED — THE RAISED PLATE ═════════════════════════
@@ -943,11 +907,7 @@ const one = StyleSheet.create({
   body: { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 20 },
   // Clears the seal: its 18 inset + 62 width − this 22 padding + a 12 gap.
   head: { paddingRight: 70 },
-  // The eyebrow. It was 9.5 at 2.2 tracking in the body ink — small, loose
-  // and grey, so it read as a caption that had lost its way rather than as
-  // the card's own heading. Bigger, tighter, and in the card's colour.
-  label: { fontFamily: F.sansBold, fontSize: 10.5, lineHeight: 13, letterSpacing: 1.5 },
-  labelBar: { width: 14, height: 2, borderRadius: 1, flexShrink: 0 },
+  label: { fontFamily: F.sansBold, fontSize: 9.5, lineHeight: 12, letterSpacing: 2.2 },
   title: {
     marginTop: 5,
     fontFamily: F.serifSemiBold,
