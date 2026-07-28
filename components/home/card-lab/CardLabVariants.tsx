@@ -1151,7 +1151,20 @@ function deep(hex: string, lightness: number, satFloor = 55): string {
   return `hsl(${Math.round(h)} ${Math.round(Math.max(s, satFloor))}% ${lightness}%)`;
 }
 
-type StarSpec = { right: number; bottom: number; size: number; phase: number; peak: number; spin: number };
+type StarSpec = {
+  right: number;
+  bottom: number;
+  size: number;
+  phase: number;
+  peak: number;
+  spin: number;
+  /**
+   * Ribbon runs from near-white at the shoulder to full colour at the foot,
+   * so one star colour cannot serve the whole plate: white disappears up top
+   * and the tint disappears down below. Each star carries its own.
+   */
+  onLight?: boolean;
+};
 
 const STAR_WINDOW = 0.42;
 
@@ -1356,10 +1369,11 @@ const s0 = StyleSheet.create({
  * ─────────────────────────────────────────────────────────── */
 
 const RIBBON_STARS: StarSpec[] = [
-  { right: 152, bottom: 34, size: 11, phase: 0.0, peak: 0.7, spin: 0.4 },
-  { right: 116, bottom: 96, size: 9, phase: 0.25, peak: 0.55, spin: -0.35 },
-  { right: 52, bottom: 116, size: 12, phase: 0.5, peak: 0.66, spin: 0.3 },
-  { right: 14, bottom: 62, size: 9, phase: 0.75, peak: 0.5, spin: -0.45 },
+  { right: 158, bottom: 30, size: 11, phase: 0.0, peak: 0.62, spin: 0.4, onLight: true },
+  { right: 122, bottom: 100, size: 9, phase: 0.22, peak: 0.5, spin: -0.35, onLight: true },
+  { right: 60, bottom: 122, size: 12, phase: 0.44, peak: 0.58, spin: 0.3, onLight: true },
+  { right: 20, bottom: 84, size: 10, phase: 0.62, peak: 0.85, spin: -0.45 },
+  { right: 46, bottom: 40, size: 9, phase: 0.8, peak: 0.9, spin: 0.5 },
 ];
 
 export function VariantRibbon({ card }: VariantProps) {
@@ -1367,9 +1381,15 @@ export function VariantRibbon({ card }: VariantProps) {
   const clock = useCardClock(reduceMotion, 10000);
   const tint = card.decorColor;
 
+  // The emblem sits at the foot, and the last two stars pass closest to it —
+  // so its light swells as the wave reaches THEM rather than on a rhythm of
+  // its own. Same clock, no extra cost, and the card reads as one system
+  // instead of two things moving near each other.
   const markStyle = useAnimatedStyle(() => {
     if (reduceMotion) return { opacity: 0.34 };
-    return { opacity: 0.28 + (0.5 + 0.5 * Math.sin(clock.value * Math.PI * 2)) * 0.12 };
+    const p = (clock.value + 0.71) % 1;
+    const near = p < STAR_WINDOW ? Math.sin((p / STAR_WINDOW) * Math.PI) : 0;
+    return { opacity: 0.26 + near * 0.16 };
   });
 
   return (
@@ -1383,13 +1403,29 @@ export function VariantRibbon({ card }: VariantProps) {
         pointerEvents="none"
       />
       <View pointerEvents="none" style={s1.litEdge} />
+      {/* A pane of light lying across the shoulder. The app sweeps this on
+          its hero cards; here it is drawn once and left still, because seven
+          of these share a screen and a sweep apiece is a sweep too many. */}
+      <LinearGradient
+        colors={['rgba(255,255,255,0.5)', 'rgba(255,255,255,0)']}
+        start={{ x: 0.15, y: 0 }}
+        end={{ x: 0.72, y: 0.9 }}
+        style={s1.sheen}
+        pointerEvents="none"
+      />
 
       {/* Large, and allowed off the edge — the card wears its emblem. */}
       <Animated.View pointerEvents="none" style={[s1.mark, markStyle]}>
         <card.Decor s={150} c={deep(tint, 42)} w={1.2} />
       </Animated.View>
       {RIBBON_STARS.map((star, i) => (
-        <CardStar key={i} star={star} clock={clock} color="#FFFFFF" still={reduceMotion} />
+        <CardStar
+          key={i}
+          star={star}
+          clock={clock}
+          color={star.onLight ? deep(tint, 52) : '#FFFFFF'}
+          still={reduceMotion}
+        />
       ))}
 
       <View style={[s1.arrow, { backgroundColor: card.arrowBg }]} pointerEvents="none">
@@ -1426,6 +1462,7 @@ const s1 = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.92)',
   },
+  sheen: { position: 'absolute', left: 0, right: 0, top: 0, height: '62%' },
   mark: {
     position: 'absolute',
     right: -26,

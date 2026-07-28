@@ -41,11 +41,14 @@ export const LAB_CARDS: LabCard[] = [
     bg: '#FBF3DE',
     border: '#F0E3B8',
     labelColor: '#A9863F',
-    titleColor: '#451A03',
+    // Gold, not orange. The app's gold family sits at hue 39–40; the burnt
+    // orange this used to carry sat at 26, which is why it read as a
+    // different app's colour beside the rest of the set.
+    titleColor: '#6D4F13',
     bodyColor: '#A9863F',
-    arrowBg: '#78350F',
+    arrowBg: '#8B6B2F',
     Decor: Crown,
-    decorColor: '#B45309',
+    decorColor: '#C5A059',
   },
   {
     id: 'habits',
