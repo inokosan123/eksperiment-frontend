@@ -44,6 +44,7 @@ import { ScriptureSearchResult, useScripture } from './ScriptureContext';
 import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
 import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
+import { DoorGround, DoorSeal, doorInk } from '@/components/scripture/ScriptureDoor';
 import { useAppSettings } from '@/components/settings/SettingsContext';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
@@ -725,28 +726,15 @@ export default function HolyScriptureView({
             activeOpacity={0.86}
             style={[s.quickCard, s.quickCardGold]}
           >
-            <LinearGradient
-              colors={['#FFFEFA', '#F6E9CB']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={s.cardGround}
-              pointerEvents="none"
-            />
-            <DoorMotif variant="rays" stroke="#B49B67" />
-            <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(197,160,89,0.22)' }]} />
-            <View pointerEvents="none" style={[s.quickFrameInner, { borderColor: 'rgba(197,160,89,0.12)' }]} />
-            <View pointerEvents="none" style={s.litEdge} />
+            <DoorGround tint={GOLD} motif="rays" index={0} />
             <View style={s.quickCardRow}>
-              <View style={s.haloWrap}>
-                <View style={[s.haloAura, { backgroundColor: 'rgba(197,160,89,0.09)' }]} />
-                <View style={[s.haloOuter, { borderColor: 'rgba(197,160,89,0.16)' }]} />
-                <View style={[s.haloRing, { borderColor: 'rgba(197,160,89,0.38)' }]}>
-                  <View style={[s.haloCore, { backgroundColor: 'rgba(197,160,89,0.10)' }]}>
-                    <Star s={14} c={GOLD} />
-                  </View>
-                </View>
-              </View>
-              <Text style={s.quickLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.88}>Favorites</Text>
+              <DoorSeal tint={GOLD} Icon={Star} size={15} width={2} />
+              <Text
+                style={[s.quickLabel, { color: doorInk(GOLD, 24) }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.88}
+              >Favorites</Text>
             </View>
           </TouchableOpacity>
           <TouchableOpacity
@@ -766,28 +754,15 @@ export default function HolyScriptureView({
             activeOpacity={0.86}
             style={[s.quickCard, s.quickCardGreen]}
           >
-            <LinearGradient
-              colors={['#FEFFFC', '#E9F2DF']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={s.cardGround}
-              pointerEvents="none"
-            />
-            <DoorMotif variant="ruling" stroke="#5E7B55" />
-            <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(94,123,85,0.21)' }]} />
-            <View pointerEvents="none" style={[s.quickFrameInner, { borderColor: 'rgba(94,123,85,0.11)' }]} />
-            <View pointerEvents="none" style={s.litEdge} />
+            <DoorGround tint={GREEN} motif="counter" index={1} />
             <View style={s.quickCardRow}>
-              <View style={s.haloWrap}>
-                <View style={[s.haloAura, { backgroundColor: 'rgba(94,123,85,0.08)' }]} />
-                <View style={[s.haloOuter, { borderColor: 'rgba(94,123,85,0.15)' }]} />
-                <View style={[s.haloRing, { borderColor: 'rgba(94,123,85,0.36)' }]}>
-                  <View style={[s.haloCore, { backgroundColor: 'rgba(94,123,85,0.10)' }]}>
-                    <Notebook s={13} c={GREEN} />
-                  </View>
-                </View>
-              </View>
-              <Text style={s.quickLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.88}>Bible Notes</Text>
+              <DoorSeal tint={GREEN} Icon={Notebook} size={14} width={2} />
+              <Text
+                style={[s.quickLabel, { color: doorInk(GREEN, 24) }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.88}
+              >Bible Notes</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -809,32 +784,15 @@ export default function HolyScriptureView({
           activeOpacity={0.86}
           style={s.checkpointCard}
         >
-          <LinearGradient
-            colors={['#FFFEFA', '#F8EDD4']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={s.cardGround}
-            pointerEvents="none"
-          />
-          <DoorMotif variant="ruling" stroke="#B49B67" />
-          <View pointerEvents="none" style={[s.quickFrame, { borderColor: 'rgba(197,160,89,0.22)' }]} />
-          <View pointerEvents="none" style={[s.quickFrameInner, { borderColor: 'rgba(197,160,89,0.12)' }]} />
-          <View pointerEvents="none" style={s.litEdge} />
+          <DoorGround tint={GOLD} motif="ruling" index={2} reserveRight={52} sealLeft={14} />
           <BookmarkRibbon />
-          <View style={s.haloWrap}>
-            <View pointerEvents="none" style={[s.haloOuter, { borderColor: 'rgba(197,160,89,0.16)' }]} />
-            <View style={[s.haloRing, { borderColor: 'rgba(197,160,89,0.38)' }]}>
-              <View style={[s.haloCore, { backgroundColor: 'rgba(197,160,89,0.10)' }]}>
-                <Book s={15} c={GOLD} w={2.1} />
-              </View>
-            </View>
-          </View>
+          <DoorSeal tint={GOLD} Icon={Book} size={16} width={2.1} />
           <View style={s.checkpointTextWrap}>
-            <Text style={s.checkpointTitle} numberOfLines={1}>Checkpoints</Text>
-            <Text style={s.checkpointKicker}>Continue scripture reading</Text>
+            <Text style={[s.checkpointTitle, { color: doorInk(GOLD, 24) }]} numberOfLines={1}>Checkpoints</Text>
+            <Text style={[s.checkpointKicker, { color: doorInk(GOLD, 48) }]}>Continue scripture reading</Text>
           </View>
-          <View style={[s.chevronSeat, { borderColor: 'rgba(180,155,103,0.28)' }]}>
-            <ChevronRight s={15} c="#BCA476" />
+          <View style={[s.chevronSeat, { borderColor: doorInk(GOLD, 64) }]}>
+            <ChevronRight s={15} c={doorInk(GOLD, 44)} />
           </View>
         </TouchableOpacity>
 
@@ -1106,48 +1064,6 @@ function BookSection({
 
 // The doors carry their own faint light: rays for what is treasured,
 // ruling lines for what is written and read.
-function DoorMotif({ variant, stroke }: { variant: 'rays' | 'ruling'; stroke: string }) {
-  const W = 150;
-  const H = 96;
-
-  return (
-    <View pointerEvents="none" style={s.motifAnchor}>
-      <Svg width={W} height={H}>
-        {variant === 'rays'
-          ? Array.from({ length: 5 }).map((_, index) => {
-            const offset = index * 24;
-            return (
-              <Line
-                key={index}
-                x1={W - offset}
-                y1={-6}
-                x2={W - offset - 54}
-                y2={H + 6}
-                stroke={stroke}
-                strokeOpacity={0.08}
-                strokeWidth={1}
-              />
-            );
-          })
-          : Array.from({ length: 4 }).map((_, index) => {
-            const y = 14 + index * 16;
-            return (
-              <Line
-                key={index}
-                x1={18}
-                y1={y}
-                x2={W}
-                y2={y}
-                stroke={stroke}
-                strokeOpacity={0.09}
-                strokeWidth={1}
-              />
-            );
-          })}
-      </Svg>
-    </View>
-  );
-}
 
 // A gold ribbon hanging from the card's top edge — the reader's bookmark.
 function BookmarkRibbon() {
@@ -1679,99 +1595,28 @@ const s = StyleSheet.create({
     shadowRadius: 14,
     elevation: 1,
   },
-  cardGround: {
-    position: 'absolute',
-    top: 1,
-    left: 1,
-    right: 1,
-    bottom: 1,
-    borderRadius: 18,
-  },
-  // A hairline of light lying along the top edge, inside the border — the
-  // plate catches the light before anything on it does.
-  litEdge: {
-    position: 'absolute',
-    top: 1,
-    left: 12,
-    right: 12,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-  },
-  // The halo's outer ring. The seat was already a ring holding a toned core;
-  // this is the nimbus around it, and it is what makes the icon read as
-  // haloed rather than merely circled.
-  haloOuter: {
-    position: 'absolute',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-  },
   ribbonWrap: {
     position: 'absolute',
     top: 0,
     right: 54,
   },
-  quickCardGold: { backgroundColor: '#FFFDF8', borderColor: 'rgba(197,160,89,0.26)' },
-  quickCardGreen: { backgroundColor: '#FBFDF8', borderColor: 'rgba(94,123,85,0.20)' },
-  // Double ruling. A manuscript's frame is drawn as a pair — a firmer line
-  // with a finer one just inside it — and unlike a square corner mark it is
-  // all curve, so it sits with the plate's soft corners instead of against
-  // them. The inner rule takes its colour at the call site, at roughly half
-  // the outer's strength.
-  quickFrame: {
+  quickCardGold: { backgroundColor: '#FFFDF8', borderColor: 'hsl(39 48% 76%)' },
+  quickCardGreen: { backgroundColor: '#FBFDF8', borderColor: 'hsl(106 40% 76%)' },
+  // Shared by the testament cards' motif — the doors carry their own now.
+  motifAnchor: {
     position: 'absolute',
-    top: 5,
-    left: 5,
-    right: 5,
-    bottom: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  quickFrameInner: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    right: 8,
-    bottom: 8,
-    borderRadius: 11,
-    borderWidth: 1,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    overflow: 'hidden',
   },
   quickCardRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  haloWrap: {
-    width: 34,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  haloAura: {
-    position: 'absolute',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-  },
-  haloRing: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  haloCore: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   quickLabel: { fontFamily: F.serifMedium, fontSize: 16.5, lineHeight: 20, letterSpacing: 0.2, color: '#2B2723', flex: 1 },
   checkpointCard: {
     minHeight: 64,
     borderRadius: 19,
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.26)',
+    borderColor: 'hsl(39 48% 76%)',
     backgroundColor: '#FFFDF8',
     paddingHorizontal: 14,
     paddingVertical: 11,
@@ -1960,13 +1805,6 @@ const s = StyleSheet.create({
     borderTopRightRadius: 18,
     borderWidth: 1,
     borderBottomWidth: 0,
-  },
-  motifAnchor: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    overflow: 'hidden',
   },
   // The board of the book, standing clear of the card's ends rather than
   // running the full edge like a stripe.
