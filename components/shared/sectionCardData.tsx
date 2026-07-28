@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ComponentType, ReactNode } from 'react';
 import {
   Book,
   CalendarHeart,
@@ -44,8 +44,20 @@ export type SectionCardConfig = {
   arrowBg: string;
   decor: ReactNode;
   decorUpright?: boolean;
+  /**
+   * The same emblem as `decor`, but handed over as a COMPONENT rather than
+   * an already-rendered element, so a card design can choose its own size.
+   * `decor` is locked to 84 the moment it is written, which is fine for the
+   * original card and useless to one that wants the mark large.
+   *
+   * Optional: only the cards a re-designed screen renders need it.
+   */
+  Decor?: SectionCardIcon;
+  decorColor?: string;
   route: SectionCardRoute;
 };
+
+export type SectionCardIcon = ComponentType<{ s?: number; c?: string; w?: number }>;
 
 export const PRAYER_BOOK_CARD: SectionCardConfig = {
   id: 'prayer-book',
@@ -59,6 +71,8 @@ export const PRAYER_BOOK_CARD: SectionCardConfig = {
   bodyColor: '#6D5AAE',
   arrowBg: '#2E2478',
   decor: <Cross s={84} c="#6D5AAE" w={1} />,
+  Decor: Cross,
+  decorColor: '#6D5AAE',
   decorUpright: true,
   route: '/prayer',
 };
@@ -75,6 +89,8 @@ export const HOLY_SCRIPTURE_CARD: SectionCardConfig = {
   bodyColor: '#B54155',
   arrowBg: '#8C2636',
   decor: <OpenBook s={84} c="#B54155" w={1} />,
+  Decor: OpenBook,
+  decorColor: '#B54155',
   route: '/scripture',
 };
 
@@ -90,6 +106,8 @@ export const FAVORITES_CARD: SectionCardConfig = {
   bodyColor: '#A9863F',
   arrowBg: '#8A5A1A',
   decor: <Star s={84} c="#A9863F" w={1} />,
+  Decor: Star,
+  decorColor: '#A9863F',
   route: '/favorites',
 };
 
@@ -105,6 +123,8 @@ export const BIBLE_NOTES_CARD: SectionCardConfig = {
   bodyColor: '#5B564F',
   arrowBg: '#1C1917',
   decor: <Notebook s={84} c="#5B564F" w={1} />,
+  Decor: Notebook,
+  decorColor: '#5B564F',
   route: '/bible-notes',
 };
 
@@ -120,6 +140,8 @@ export const READING_LIST_CARD: SectionCardConfig = {
   bodyColor: '#4B8152',
   arrowBg: '#2C6A36',
   decor: <Book s={84} c="#4B8152" w={1} />,
+  Decor: Book,
+  decorColor: '#4B8152',
   route: '/reading-list',
 };
 

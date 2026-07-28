@@ -1,7 +1,7 @@
 import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import SectionCard from '@/components/shared/SectionCard';
+import RibbonSectionCard from '@/components/shared/RibbonSectionCard';
 import { LIBRARY_SECTION_CARDS } from '@/components/shared/sectionCardData';
 import { C, F } from '@/constants/tokens';
 
@@ -22,7 +22,7 @@ export default function LibraryView() {
 
         <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
           {LIBRARY_SECTION_CARDS.map(card => (
-            <SectionCard
+            <RibbonSectionCard
               key={card.id}
               {...card}
               onPress={() => router.push(card.route as any)}
