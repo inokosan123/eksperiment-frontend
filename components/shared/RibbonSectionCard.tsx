@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
-import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import {
+  LayoutChangeEvent, StyleSheet, Text, View,
+  type StyleProp, type ViewStyle,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   cancelAnimation,
@@ -16,8 +19,9 @@ import Svg, { Path } from 'react-native-svg';
 import { ArrowUpRight } from '@/components/icons/Icons';
 import { F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import type { SectionCardConfig } from '@/components/shared/sectionCardData';
+import type { SectionCardIcon } from '@/components/shared/sectionCardData';
 import {
+  RIBBON,
   placeRibbonStars,
   ribbonCardRhythm,
   ribbonEmblem,
@@ -149,7 +153,26 @@ function useClock(reduceMotion: boolean, duration: number) {
   return clock;
 }
 
-type Props = SectionCardConfig & {
+/**
+ * Only what the card actually draws.
+ *
+ * It used to take the whole `SectionCardConfig`, which meant anything wanting
+ * this look had to invent an `id`, a `route`, a `bg` and a `border` that were
+ * never read. Focus has neither a route nor a card id, and asking it to
+ * pretend was the only thing keeping it on the old card. Spreading a full
+ * config still works — the extra fields are simply ignored.
+ */
+export type RibbonCardProps = {
+  label: string;
+  title: string;
+  description?: string;
+  titleColor: string;
+  arrowBg: string;
+  Decor?: SectionCardIcon;
+  decorColor?: string;
+  decorUpright?: boolean;
+  /** A live status pill beside the eyebrow — Focus's "PROTECTED", and such. */
+  chip?: ReactNode;
   onPress?: () => void;
   /**
    * Where this card sits in its stack. It buys the card its own moment and
@@ -157,12 +180,13 @@ type Props = SectionCardConfig & {
    * keeps identical time with every other.
    */
   index?: number;
+  style?: StyleProp<ViewStyle>;
 };
 
 export default function RibbonSectionCard({
   label, title, description, titleColor, arrowBg,
-  Decor, decorColor, decorUpright, onPress, index = 0,
-}: Props) {
+  Decor, decorColor, decorUpright, chip, onPress, index = 0, style,
+}: RibbonCardProps) {
   const reduceMotion = useReducedMotion();
   // Its own moment in the cycle, and its own slightly different length of
   // cycle, so it never falls back into step with the card above it.
@@ -173,6 +197,14 @@ export default function RibbonSectionCard({
   // The plate's own size. Nothing decorative can be placed until it is known,
   // and everything decorative follows from it.
   const [plate, setPlate] = useState({ w: 0, h: 0 });
+  // How far the eyebrow row actually reaches. A status pill beside the words,
+  // or a large system font size, both push it past anything a constant could
+  // guess — and the pocket star stands immediately after it.
+  const [labelEnd, setLabelEnd] = useState<number | undefined>(undefined);
+  const onLabelLayout = useCallback((e: LayoutChangeEvent) => {
+    const right = RIBBON.pad + e.nativeEvent.layout.width;
+    setLabelEnd(prev => (prev !== undefined && Math.abs(prev - right) < 0.5 ? prev : right));
+  }, []);
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     setPlate(prev =>
@@ -183,7 +215,7 @@ export default function RibbonSectionCard({
 
   const tint = decorColor ?? titleColor;
   const measured = plate.w > 0 && plate.h > 0;
-  const stars = measured ? placeRibbonStars(plate.w, plate.h) : [];
+  const stars = measured ? placeRibbonStars(plate.w, plate.h, labelEnd) : [];
   const emblem = measured ? ribbonEmblem(plate.w, plate.h) : null;
 
   // The emblem's light swells as the wave reaches the two stars nearest it,
@@ -199,9 +231,10 @@ export default function RibbonSectionCard({
   return (
     <TouchableOpacity
       onPress={onPress}
+      disabled={!onPress}
       onLayout={onLayout}
       activeOpacity={0.86}
-      style={[s.plate, { borderColor: lit(tint, 74, 62) }]}
+      style={[s.plate, { borderColor: lit(tint, 74, 62) }, style]}
     >
       <LinearGradient
         colors={[lit(tint, 97), lit(tint, 88), lit(tint, 76, 76)]}
@@ -261,16 +294,23 @@ export default function RibbonSectionCard({
         </Svg>
       )}
 
-      <View style={[s.arrow, { backgroundColor: arrowBg }]} pointerEvents="none">
-        <View style={s.arrowTilt}>
-          <ArrowUpRight s={15} c="#fff" w={2.5} />
+      {!!onPress && (
+        <View style={[s.arrow, { backgroundColor: arrowBg }]} pointerEvents="none">
+          <View style={s.arrowTilt}>
+            <ArrowUpRight s={15} c="#fff" w={2.5} />
+          </View>
         </View>
-      </View>
+      )}
 
       <View style={s.body}>
-        <Text style={[s.label, { color: deep(tint, 36) }]}>{label}</Text>
+        <View style={s.labelRow} onLayout={onLabelLayout}>
+          <Text style={[s.label, { color: deep(tint, 36) }]} numberOfLines={1}>{label}</Text>
+          {chip}
+        </View>
         <Text style={[s.title, { color: titleColor }]}>{title}</Text>
-        <Text style={[s.desc, { color: deep(tint, 32) }]}>{description}</Text>
+        {!!description && (
+          <Text style={[s.desc, { color: deep(tint, 32) }]}>{description}</Text>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -322,7 +362,17 @@ const s = StyleSheet.create({
   },
   arrowTilt: { transform: [{ rotate: '-15deg' }] },
   body: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 18, maxWidth: '82%' },
-  label: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 8 },
+  // `flex-start` matters: the row must be as wide as its contents, not as wide
+  // as the card, or measuring it tells the geometry nothing.
+  labelRow: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 8,
+    marginBottom: 8,
+    maxWidth: '100%',
+  },
+  label: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, textTransform: 'uppercase' },
   title: { fontFamily: F.serifMedium, fontSize: 28, lineHeight: 32, letterSpacing: -0.3, marginBottom: 4 },
   desc: { fontFamily: F.serif, fontSize: 16, lineHeight: 23 },
 });

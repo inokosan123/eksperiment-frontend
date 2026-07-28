@@ -1,7 +1,7 @@
 import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import SectionCard from '@/components/shared/SectionCard';
+import RibbonSectionCard from '@/components/shared/RibbonSectionCard';
 import { INNER_SECTION_CARDS } from '@/components/shared/sectionCardData';
 import { C, F } from '@/constants/tokens';
 
@@ -21,10 +21,11 @@ export default function InnerLifeView() {
         </View>
 
         <View style={{ paddingHorizontal: 16, paddingTop: 4 }}>
-          {INNER_SECTION_CARDS.map(card => (
-            <SectionCard
+          {INNER_SECTION_CARDS.map((card, i) => (
+            <RibbonSectionCard
               key={card.id}
               {...card}
+              index={i}
               onPress={() => router.push(card.route as any)}
             />
           ))}

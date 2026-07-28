@@ -1,6 +1,6 @@
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -19,7 +19,8 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import { C, F } from '@/constants/tokens';
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 import FocusPhoneStatus from './FocusPhoneStatus';
-import FocusCard, { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
+import { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
+import RibbonSectionCard from '@/components/shared/RibbonSectionCard';
 import { PulseDot } from './FocusMeter';
 import DayGauge, { gaugeStanding, gaugeStateColor, GAUGE_ESSENTIALS_COLOR } from './DayGauge';
 import { ScreenTimeProtectionCard, WebProtectionCard } from './ProtectionPillarCards';
@@ -146,6 +147,7 @@ export default function FocusWatchView({
   onGuidedComplete?: () => void;
 } = {}) {
   const router = useRouter();
+  const routeParams = useLocalSearchParams<{ sheet?: string }>();
   const insets = useSafeAreaInsets();
   const { height: guideScreenHeight } = useWindowDimensions();
   const state = useDayPlan();
@@ -168,6 +170,18 @@ export default function FocusWatchView({
   const [quietOpen, setQuietOpen] = useState(false);
   const [alwaysBlockedOpen, setAlwaysBlockedOpen] = useState(false);
   const [trophiesOpen, setTrophiesOpen] = useState(false);
+  const handledQuietRouteRef = useRef(false);
+
+  useEffect(() => {
+    if (
+      guided
+      || routeParams.sheet !== 'quiet'
+      || handledQuietRouteRef.current
+    ) return;
+    handledQuietRouteRef.current = true;
+    setQuietOpen(true);
+    router.setParams({ sheet: '' } as never);
+  }, [guided, routeParams.sheet, router]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -495,26 +509,32 @@ export default function FocusWatchView({
   const focusNavigationCards = (
     <>
       <Animated.View entering={enter(210)} style={s.contentSection}>
-        <FocusCard
+        <RibbonSectionCard
           label="APP BLOCKING"
           title="Screen Time"
-          tint={FOCUS_TINTS.gold}
-          watermark={<Clock s={84} c="#A9863F" w={1.1} />}
+          titleColor={FOCUS_TINTS.gold.title}
+          arrowBg={FOCUS_TINTS.gold.arrowBg}
+          Decor={Clock}
+          decorColor={FOCUS_TINTS.gold.label}
           chip={screenTimeChip}
           description="Plan how much of the day the phone may have — goals, limits, and app rules."
           onPress={() => router.push('/day-plans' as never)}
+          index={0}
           style={s.navCard}
         />
       </Animated.View>
 
       <Animated.View entering={enter(280)} style={s.contentSectionTight}>
-        <FocusCard
+        <RibbonSectionCard
           label="CLEAN SIGHT"
           title="Web Protection"
-          tint={FOCUS_TINTS.green}
-          watermark={<Globe s={84} c="#3D8273" w={1.1} />}
+          titleColor={FOCUS_TINTS.green.title}
+          arrowBg={FOCUS_TINTS.green.arrowBg}
+          Decor={Globe}
+          decorColor={FOCUS_TINTS.green.label}
           description="Block gambling, adult content, and other harmful sites in browsers."
           onPress={() => router.push('/clean-sight' as never)}
+          index={1}
           style={s.navCard}
         />
       </Animated.View>

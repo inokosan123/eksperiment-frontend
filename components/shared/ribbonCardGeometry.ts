@@ -66,7 +66,11 @@ export type Rect = { x0: number; y0: number; x1: number; y1: number };
  * The three rooms a star may stand in — each one disjoint from the type,
  * the arrow and the plate's edges by construction, at any size.
  */
-export function ribbonZones(w: number, h: number): Record<RibbonZone, Rect> {
+export function ribbonZones(
+  w: number,
+  h: number,
+  labelEnd: number = RIBBON.labelEnd,
+): Record<RibbonZone, Rect> {
   const arrowLeft = w - RIBBON.arrowInset - RIBBON.arrowSize;
   const arrowBottom = RIBBON.arrowInset + RIBBON.arrowSize;
   // Where the sentence is allowed to reach before it wraps.
@@ -75,8 +79,10 @@ export function ribbonZones(w: number, h: number): Record<RibbonZone, Rect> {
   return {
     // Left of the type, down the pale fold of the card.
     gutter: { x0: 2, y0: RIBBON.titleTop, x1: RIBBON.pad - 3, y1: h - RIBBON.bottom - 4 },
-    // Past the end of the longest eyebrow, and stopping short of the arrow.
-    pocket: { x0: RIBBON.labelEnd + 6, y0: RIBBON.top, x1: arrowLeft - 12, y1: RIBBON.labelBottom },
+    // Past the end of the eyebrow ROW — which on Focus carries a live status
+    // pill beside the words, and under a large system font size runs wider
+    // than any constant could predict, so the card measures it and says.
+    pocket: { x0: labelEnd + 6, y0: RIBBON.top, x1: arrowLeft - 12, y1: RIBBON.labelBottom },
     // Right of the sentence's wrap and below the arrow: the emblem's corner.
     column: { x0: wrapRight + 5, y0: arrowBottom + 6, x1: w - 6, y1: h - 6 },
   };
@@ -203,16 +209,22 @@ const round = (n: number) => Math.round(n * 100) / 100;
  * `u: 1` puts its right edge on the room's right wall rather than its origin —
  * a star can never overhang the room it was given.
  */
-export function placeRibbonStars(w: number, h: number): PlacedStar[] {
-  const zones = ribbonZones(w, h);
-  return RIBBON_STARS.map(star => {
+export function placeRibbonStars(w: number, h: number, labelEnd?: number): PlacedStar[] {
+  const zones = ribbonZones(w, h, labelEnd);
+  const placed: PlacedStar[] = [];
+  RIBBON_STARS.forEach(star => {
     const room = zones[star.zone];
-    const spanX = Math.max(0, room.x1 - room.x0 - star.size);
-    const spanY = Math.max(0, room.y1 - room.y0 - star.size);
-    const x = room.x0 + star.u * spanX;
-    const y = room.y0 + star.v * spanY;
-    return { ...star, x, y, d: sparkPath(x, y, star.size, star.turn) };
+    // A room can be squeezed out of existence — a long eyebrow with a status
+    // pill beside it leaves almost nothing between the words and the arrow.
+    // The star then goes without rather than being crushed onto the type: one
+    // spark fewer is a thing nobody notices, and a spark on a word is the
+    // thing everybody does.
+    if (room.x1 - room.x0 < star.size || room.y1 - room.y0 < star.size) return;
+    const x = room.x0 + star.u * (room.x1 - room.x0 - star.size);
+    const y = room.y0 + star.v * (room.y1 - room.y0 - star.size);
+    placed.push({ ...star, x, y, d: sparkPath(x, y, star.size, star.turn) });
   });
+  return placed;
 }
 
 /**

@@ -22,32 +22,36 @@ const WIDTHS = [288, 280, 320, 328, 335, 343, 353, 358, 361, 372, 380, 390, 398]
 // Two-, three-, four- and five-line sentences.
 const HEIGHTS = [136, 159, 182, 205];
 
-function forEveryPlate(fn: (w: number, h: number) => void) {
-  WIDTHS.forEach(w => HEIGHTS.forEach(h => fn(w, h)));
+// How far the eyebrow row reaches: the plain constant, a Focus card with a
+// status pill beside the words, and a long label under a large system font.
+const LABEL_ENDS = [undefined, 175, 212, 248, 300];
+
+function forEveryPlate(fn: (w: number, h: number, labelEnd?: number) => void) {
+  WIDTHS.forEach(w => HEIGHTS.forEach(h => LABEL_ENDS.forEach(le => fn(w, h, le))));
 }
 
 test('no star is hidden behind the arrow button', () => {
-  forEveryPlate((w, h) => {
+  forEveryPlate((w, h, labelEnd) => {
     const arrow = {
       x0: w - RIBBON.arrowInset - RIBBON.arrowSize,
       x1: w - RIBBON.arrowInset,
       y0: RIBBON.arrowInset,
       y1: RIBBON.arrowInset + RIBBON.arrowSize,
     };
-    placeRibbonStars(w, h).forEach((s, i) => {
+    placeRibbonStars(w, h, labelEnd).forEach((s, i) => {
       const clear =
         s.x + s.size <= arrow.x0 || s.x >= arrow.x1 || s.y + s.size <= arrow.y0 || s.y >= arrow.y1;
-      assert.ok(clear, `star ${i} (${s.zone}) sits under the arrow at ${w}x${h}`);
+      assert.ok(clear, `star ${i} (${s.zone}) sits under the arrow at ${w}x${h} label ${labelEnd}`);
     });
   });
 });
 
 test('no star lands on the type', () => {
-  forEveryPlate((w, h) => {
+  forEveryPlate((w, h, labelEnd) => {
     // What the three rows of type can actually cover. The eyebrow and title are
     // absolutely sized; only the sentence's wrap point moves with the plate.
     const rows = [
-      { x0: RIBBON.pad, x1: RIBBON.labelEnd, y0: RIBBON.top, y1: RIBBON.labelBottom },
+      { x0: RIBBON.pad, x1: labelEnd ?? RIBBON.labelEnd, y0: RIBBON.top, y1: RIBBON.labelBottom },
       { x0: RIBBON.pad, x1: RIBBON.titleEnd, y0: RIBBON.titleTop, y1: RIBBON.titleBottom },
       {
         x0: RIBBON.pad,
@@ -56,18 +60,18 @@ test('no star lands on the type', () => {
         y1: h - RIBBON.bottom,
       },
     ];
-    placeRibbonStars(w, h).forEach((s, i) => {
+    placeRibbonStars(w, h, labelEnd).forEach((s, i) => {
       rows.forEach((r, ri) => {
         const clear = s.x + s.size <= r.x0 || s.x >= r.x1 || s.y + s.size <= r.y0 || s.y >= r.y1;
-        assert.ok(clear, `star ${i} (${s.zone}) covers row ${ri} at ${w}x${h}`);
+        assert.ok(clear, `star ${i} (${s.zone}) covers row ${ri} at ${w}x${h} label ${labelEnd}`);
       });
     });
   });
 });
 
 test('no star is clipped by the plate edge', () => {
-  forEveryPlate((w, h) => {
-    placeRibbonStars(w, h).forEach((s, i) => {
+  forEveryPlate((w, h, labelEnd) => {
+    placeRibbonStars(w, h, labelEnd).forEach((s, i) => {
       assert.ok(s.x >= 0 && s.y >= 0, `star ${i} runs off the top/left at ${w}x${h}`);
       assert.ok(s.x + s.size <= w, `star ${i} runs off the right at ${w}x${h}`);
       assert.ok(s.y + s.size <= h, `star ${i} runs off the bottom at ${w}x${h}`);
@@ -75,16 +79,25 @@ test('no star is clipped by the plate edge', () => {
   });
 });
 
-test('every room stays wide enough to hold its largest star', () => {
-  const biggest = Math.max(...RIBBON_STARS.map(s => s.size));
-  forEveryPlate((w, h) => {
-    const zones = ribbonZones(w, h);
-    (Object.keys(zones) as (keyof typeof zones)[]).forEach(name => {
-      const r = zones[name];
-      assert.ok(r.x1 - r.x0 >= biggest, `${name} is narrower than a star at ${w}x${h}`);
-      assert.ok(r.y1 - r.y0 >= biggest, `${name} is shorter than a star at ${w}x${h}`);
-    });
-  });
+test('the whole field is placed on an ordinary card, at every size', () => {
+  WIDTHS.forEach(w => HEIGHTS.forEach(h => {
+    assert.equal(placeRibbonStars(w, h).length, RIBBON_STARS.length,
+      `a star went missing on a plain card at ${w}x${h}`);
+  }));
+});
+
+test('a crowded eyebrow drops the pocket star rather than crushing it', () => {
+  // Focus's Screen Time card sets a live status pill beside the words, and the
+  // room between the eyebrow and the arrow can close up entirely. One spark
+  // fewer is a thing nobody notices; a spark sitting on a word is the thing
+  // everybody does.
+  const roomy = placeRibbonStars(288, 159, 175);
+  const crowded = placeRibbonStars(288, 159, 300);
+  assert.equal(roomy.filter(s => s.zone === 'pocket').length, 1);
+  assert.equal(crowded.filter(s => s.zone === 'pocket').length, 0);
+  // and the rest of the field is untouched
+  assert.equal(crowded.length, roomy.length - 1);
+  assert.ok(crowded.every(s => s.zone !== 'pocket'));
 });
 
 test('a star stays inside the room it was given, at either extreme of u/v', () => {

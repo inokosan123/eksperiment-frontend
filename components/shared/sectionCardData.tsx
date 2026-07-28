@@ -2,12 +2,13 @@ import { ComponentType, ReactNode } from 'react';
 import {
   Book,
   CalendarHeart,
-  CheckSmall,
   Cross,
   Crown,
   Feather,
   Heart,
   HourGlass,
+  Leaf,
+  ListChecks,
   Notebook,
   OpenBook,
   Star,
@@ -157,6 +158,8 @@ export const JOURNAL_CARD: SectionCardConfig = {
   bodyColor: '#57534E',
   arrowBg: '#1C1917',
   decor: <Feather s={84} c="#57534E" w={1} />,
+  Decor: Feather,
+  decorColor: '#78716C',
   route: '/journal',
 };
 
@@ -171,7 +174,9 @@ export const HABITS_CARD: SectionCardConfig = {
   titleColor: '#1E4E27',
   bodyColor: '#4B8152',
   arrowBg: '#2C6A36',
-  decor: <CheckSmall s={84} c="#15803D" w={1} />,
+  decor: <ListChecks s={84} c="#15803D" w={1} />,
+  Decor: ListChecks,
+  decorColor: '#4B8152',
   route: '/habits',
 };
 
@@ -183,10 +188,12 @@ export const NOTES_CARD: SectionCardConfig = {
   bg: '#FBF3DE',
   border: '#F0E3B8',
   labelColor: '#A9863F',
-  titleColor: '#451A03',
+  titleColor: '#6D4F13',
   bodyColor: '#A9863F',
-  arrowBg: '#78350F',
+  arrowBg: '#8A5A1A',
   decor: <Notebook s={84} c="#B45309" w={1} />,
+  Decor: Notebook,
+  decorColor: '#A9863F',
   route: '/notes',
 };
 
@@ -202,6 +209,8 @@ export const GRATITUDE_CARD: SectionCardConfig = {
   bodyColor: '#B54155',
   arrowBg: '#5E1E1E',
   decor: <Heart s={84} c="#7F1D1D" w={1} />,
+  Decor: Heart,
+  decorColor: '#B54155',
   route: '/gratitude',
 };
 
@@ -216,7 +225,9 @@ export const IDEAL_SELF_CARD: SectionCardConfig = {
   titleColor: '#1F4E45',
   bodyColor: '#3D8273',
   arrowBg: '#2A6E5F',
-  decor: <Star s={84} c="#3D8273" w={1} />,
+  decor: <Leaf s={84} c="#3D8273" w={1} />,
+  Decor: Leaf,
+  decorColor: '#3D8273',
   route: '/ideal-self',
 };
 
@@ -232,6 +243,8 @@ export const BUCKET_LIST_CARD: SectionCardConfig = {
   bodyColor: '#4B8152',
   arrowBg: '#2C6A36',
   decor: <Star s={84} c="#4B8152" w={1} />,
+  Decor: Star,
+  decorColor: '#4B8152',
   route: '/bucket-list',
 };
 
@@ -247,6 +260,8 @@ export const MONTHLY_GOALS_CARD: SectionCardConfig = {
   bodyColor: '#3D8273',
   arrowBg: '#2A6E5F',
   decor: <Target s={84} c="#3D8273" w={1} />,
+  Decor: Target,
+  decorColor: '#3D8273',
   route: '/monthly-goals',
 };
 
@@ -262,6 +277,8 @@ export const BIG_EVENTS_CARD: SectionCardConfig = {
   bodyColor: '#B54155',
   arrowBg: '#8C2636',
   decor: <CalendarHeart s={84} c="#B54155" w={1} />,
+  Decor: CalendarHeart,
+  decorColor: '#B54155',
   route: '/big-events',
 };
 
@@ -277,6 +294,8 @@ export const FOCUS_ZONE_CARD: SectionCardConfig = {
   bodyColor: '#4F46E5',
   arrowBg: '#312E81',
   decor: <HourGlass s={84} c="#4F46E5" w={1} />,
+  Decor: HourGlass,
+  decorColor: '#4F46E5',
   route: '/focus-zone',
 };
 
@@ -288,10 +307,12 @@ export const CHALLENGES_CARD: SectionCardConfig = {
   bg: '#FBF3DE',
   border: '#F0E3B8',
   labelColor: '#A9863F',
-  titleColor: '#451A03',
+  titleColor: '#6D4F13',
   bodyColor: '#A9863F',
-  arrowBg: '#78350F',
+  arrowBg: '#8A5A1A',
   decor: <Crown s={84} c="#B45309" w={1} />,
+  Decor: Crown,
+  decorColor: '#A9863F',
   route: '/challenges',
 };
 
