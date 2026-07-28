@@ -57,63 +57,41 @@ function readingTone(card: LabCard): string {
 }
 
 /** Mix two hex colours. Lets a tint be carried toward its own deep tone. */
-function mixHex(a: string, b: string, t: number): string {
-  const na = parseInt(a.replace('#', ''), 16);
-  const nb = parseInt(b.replace('#', ''), 16);
-  const ch = (shift: number) =>
-    Math.round((((na >> shift) & 255) * (1 - t)) + (((nb >> shift) & 255) * t));
-  return `rgb(${ch(16)}, ${ch(8)}, ${ch(0)})`;
-}
 
 type VariantProps = { card: LabCard };
 
 /* ═══ BTFL ════════════════════════════════════════════════════
  * The one that is allowed to be lovely.
  *
- * THE FRAME IS A REAL BEZEL. Not a line drawn near the edge — a
- * band of material 5 wide, lit along its top and deepening to
- * its foot, with the plate set down INSIDE it. The plate carries
- * the inverse hairlines (shade at its top lip, light at its
- * bottom), which is what a surface recessed into a raised rim
- * actually does to light. Two facing gradients, and the card
- * stops being flat.
+ * These cards carry four of the app's main screens and dominate
+ * two of them, so this is the piece that decides whether the app
+ * looks alive. It is built to three rules.
  *
- * THE GROUND IS THREE STOPS, NOT TWO. Light gathers at the upper
- * left, passes through the card's own tint, and settles into a
- * deeper tone at the foot — the tint carried a little toward its
- * own title colour, so the richness never leaves the hue.
+ * THE COLOUR IS BRIGHT, AND IT IS THE CARD'S OWN. Every tone on
+ * the plate is mixed from the card's vivid decor colour rather
+ * than its pale wash — so the greens are green, the golds gold,
+ * the rose actually rose. The ground runs from near-white at the
+ * shoulder to a real tint at the foot: light and shade, but the
+ * shade is colour rather than grey. Nothing is dimmed to make
+ * type legible; the type is dark enough already.
  *
- * THE MARK IS A WATERMARK, NOT A BUTTON. It was sitting in a
- * raised 42pt disc beside the eyebrow, which made the card's
- * ornament look like a control and left the eyebrow squeezed
- * between two round seats. It is large and low in the plate
- * now, behind the type, and the constellation gathers AROUND
- * it — which is what it was for in the first place. The only
- * seat left is the way out, at the far right, where a seat
- * means something because you can press it.
+ * THE LIGHT TRAVELS AROUND THE MARK. The emblem stands large and
+ * low behind the type, and the constellation is set in a ring
+ * around it. Each star's phase follows its place on that ring,
+ * so the kindling walks from one to the next and reads as light
+ * going round the emblem rather than as five separate blinks.
+ * The mark breathes on the same clock, so the two are plainly
+ * one thing.
  *
- * THE SENTENCE IS SET TO BE READ. In Inter, not the serif: this
- * is the line that has to explain the feature to somebody who
- * installed the app ten seconds ago, and it is bigger and
- * plainer than anywhere else on the card for that reason.
- *
- * LONG TITLES WRAP, THEY NEVER SHRINK. A title that gets scaled
- * down to fit is a title that reads as an accident. This one
- * runs the plate's full width, so almost nothing needs a second
- * line — and what does gets one, at full size.
- *
- * AND IT HAS STARS. The app already keeps one: the four-point
- * spark orbiting today's marker on Your Progress and the Focus
- * trophy. Here a small constellation kindles and goes out across
- * the plate — each star on its own phase, so one is always
- * arriving as another dies, and the card is never still and
- * never busy.
- *
- * Two rules the app set, kept exactly:
- *   · NOTHING SCALES. Opacity and rotation only — small views
- *     that scale resample on Android.
- *   · ONE DRIVER. A single clock per card runs the whole
- *     constellation; every star reads it at its own offset.
+ * IT HAS TO SURVIVE SEVEN AT ONCE. Six or seven of these sit on
+ * screen together, so the budget is fixed and small:
+ *   · ONE clock per card. Every star and the mark read that one
+ *     shared value at their own offset — no timer per star.
+ *   · OPACITY AND ROTATION ONLY. Never scale: a small view that
+ *     scales resamples its bitmap on Android. Never shadow,
+ *     blur or colour — those re-rasterise every frame.
+ *   · FIVE stars, not a galaxy. Six animated styles per card.
+ *   · The plate itself never animates. It is drawn once.
  * ═════════════════════════════════════════════════════════════ */
 
 // The app's own four-point spark, from RadiantTodayPulse.
@@ -121,39 +99,35 @@ const BTFL_SPARK =
   'M12 0 C13.2 7.4 16.6 10.8 24 12 C16.6 13.2 13.2 16.6 12 24 C10.8 16.6 7.4 13.2 0 12 C7.4 10.8 10.8 7.4 12 0 Z';
 
 const BTFL_R = 26;
-const BTFL_EXIT = 30;   // the way out, at the foot
+const BTFL_EXIT = 30;
+const BTFL_MARK = 140;
 
 type Star = {
-  /** From the plate's right edge and top, in points. */
+  /** Placed from the plate's right and foot, so they ring the mark. */
   right: number;
-  top: number;
+  bottom: number;
   size: number;
-  /** Where in the shared cycle this one kindles. */
+  /** Where on the ring it sits — and therefore when it kindles. */
   phase: number;
-  /** How much of the cycle it is alight for. */
   window: number;
   peak: number;
-  /** Turns per cycle, so the light crawls around its points. */
   spin: number;
 };
 
-// The mark sits low at the right, and these ring it: two above, two off its
-// shoulders, one below. Scattered across the whole plate they read as dust on
-// the type; gathered here they read as light coming off the emblem.
-// They ring the mark along its upper shoulder — the arc between where the
-// emblem's outline begins and the plate's top right. Spread evenly over the
-// plate they read as dust settled on the type; gathered on that arc they read
-// as light coming off the emblem, which is what Pavle asked for.
+// Set on an arc around the mark, and phased IN THAT ORDER: the light walks
+// from the one at the mark's left, up over its shoulder, and away to the
+// plate's far side. Scattered at random they blink; in order they circle.
+// The windows are wide on purpose — 0.42 of the cycle against a 0.18 spacing
+// puts two or three alight at any moment, so the eye reads a light MOVING
+// around the mark. Narrow windows lit them one at a time, which reads as
+// blinking and wastes the whole idea.
 const BTFL_STARS: Star[] = [
-  { right: 104, top: 30, size: 12, phase: 0.0, window: 0.3, peak: 0.72, spin: 0.5 },
-  { right: 58, top: 20, size: 7, phase: 0.22, window: 0.22, peak: 0.44, spin: -0.6 },
-  { right: 24, top: 56, size: 9, phase: 0.42, window: 0.26, peak: 0.5, spin: -0.4 },
-  { right: 134, top: 74, size: 10, phase: 0.68, window: 0.28, peak: 0.58, spin: 0.35 },
-  { right: 88, top: 108, size: 8, phase: 0.85, window: 0.26, peak: 0.46, spin: 0.45 },
+  { right: 138, bottom: 34, size: 13, phase: 0.00, window: 0.42, peak: 0.92, spin: 0.5 },
+  { right: 126, bottom: 88, size: 10, phase: 0.18, window: 0.42, peak: 0.74, spin: -0.4 },
+  { right: 92, bottom: 120, size: 12, phase: 0.36, window: 0.42, peak: 0.86, spin: 0.35 },
+  { right: 46, bottom: 132, size: 9, phase: 0.54, window: 0.42, peak: 0.68, spin: -0.55 },
+  { right: 12, bottom: 106, size: 11, phase: 0.72, window: 0.42, peak: 0.8, spin: 0.45 },
 ];
-
-// How large the watermark stands, and where its heart sits in the plate.
-const BTFL_MARK = 132;
 
 function BtflStar({
   star,
@@ -168,10 +142,9 @@ function BtflStar({
 }) {
   const style = useAnimatedStyle(() => {
     if (still) return { opacity: star.peak * 0.5, transform: [{ rotate: '0deg' }] };
-    // Its own place in the shared cycle.
     const p = (clock.value + star.phase) % 1;
-    // Alight only inside its window, and there it swells and dies on a sine —
-    // so it arrives and leaves rather than blinking.
+    // Alight only inside its window, and there it swells and dies on a sine,
+    // so it arrives and leaves rather than switching on.
     const lit = p < star.window ? Math.sin((p / star.window) * Math.PI) : 0;
     return {
       opacity: lit * star.peak,
@@ -184,7 +157,7 @@ function BtflStar({
       pointerEvents="none"
       style={[
         btfl.star,
-        { right: star.right, top: star.top, width: star.size, height: star.size },
+        { right: star.right, bottom: star.bottom, width: star.size, height: star.size },
         style,
       ]}
     >
@@ -197,7 +170,6 @@ function BtflStar({
 
 export function VariantBtfl({ card }: VariantProps) {
   const reduceMotion = useReducedMotion();
-  const ink = readingTone(card);
   const clock = useSharedValue(0);
 
   useEffect(() => {
@@ -211,68 +183,70 @@ export function VariantBtfl({ card }: VariantProps) {
     return () => cancelAnimation(clock);
   }, [clock, reduceMotion]);
 
-  // The plate's ground, drawn from the card's own tint so nothing here is a
-  // colour the app does not already own.
-  const groundTop = mixWhite(card.bg, 0.6);
-  const groundMid = mixWhite(card.bg, 0.14);
-  const groundFoot = mixHex(card.bg, card.titleColor, 0.1);
+  // The mark breathes on the card's one clock — the same value the stars
+  // read, so the emblem and the light around it are visibly one thing.
+  const markStyle = useAnimatedStyle(() => {
+    if (reduceMotion) return { opacity: 0.13 };
+    return { opacity: 0.1 + (0.5 + 0.5 * Math.sin(clock.value * Math.PI * 2)) * 0.06 };
+  });
+
+  // Every tone is mixed from the card's VIVID colour, not its pale wash: the
+  // wash is what made these read as dusty. Light at the shoulder, real colour
+  // at the foot.
+  const tint = card.decorColor;
+  const groundTop = mixWhite(tint, 0.94);
+  const groundMid = mixWhite(tint, 0.85);
+  const groundFoot = mixWhite(tint, 0.71);
 
   return (
-    // ONE plate. The bezel-and-plate pair was two nested rounded rects with
-    // four hairlines between them — a great deal of chrome for a card that
-    // has three lines on it, and it read as framed rather than as fine. The
-    // depth is kept where depth actually comes from: a lit top edge, and a
-    // ground that deepens toward its foot.
-    <View style={[btfl.plate, { borderColor: mixHex(card.border, card.titleColor, 0.14) }]}>
+    <View style={[btfl.plate, { borderColor: withAlpha(tint, 0.34) }]}>
       <LinearGradient
         colors={[groundTop, groundMid, groundFoot]}
-        locations={[0, 0.52, 1]}
-        start={{ x: 0.08, y: 0 }}
-        end={{ x: 0.92, y: 1 }}
+        locations={[0, 0.5, 1]}
+        start={{ x: 0.1, y: 0 }}
+        end={{ x: 0.9, y: 1 }}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
 
-      {/* Double ruling — the app's own finish, from the Scripture doors: a
-          firmer line with a finer one inside it, all curve, so it sits with
-          the plate's corners instead of against them. */}
-      <View pointerEvents="none" style={[btfl.frame, { borderColor: withAlpha(card.labelColor, 0.22) }]} />
-      <View pointerEvents="none" style={[btfl.frameInner, { borderColor: withAlpha(card.labelColor, 0.11) }]} />
+      {/* Double ruling — the app's own finish, all curve, so it sits with the
+          plate's corners instead of against them. */}
+      <View pointerEvents="none" style={[btfl.frame, { borderColor: withAlpha(tint, 0.26) }]} />
+      <View pointerEvents="none" style={[btfl.frameInner, { borderColor: withAlpha(tint, 0.13) }]} />
       <View pointerEvents="none" style={btfl.lit} />
 
-      {/* The mark, low and large, with the constellation on its shoulder. */}
-      <View pointerEvents="none" style={btfl.mark}>
-        <card.Decor s={BTFL_MARK} c={withAlpha(card.decorColor, 0.1)} w={1.1} />
-      </View>
+      {/* The mark, low and large, with the constellation ringing it. */}
+      <Animated.View pointerEvents="none" style={[btfl.mark, markStyle]}>
+        <card.Decor s={BTFL_MARK} c={tint} w={1.1} />
+      </Animated.View>
       {BTFL_STARS.map((star, i) => (
-        <BtflStar key={i} star={star} clock={clock} color={card.decorColor} still={reduceMotion} />
+        <BtflStar key={i} star={star} clock={clock} color={tint} still={reduceMotion} />
       ))}
 
       <View style={btfl.body}>
-        {/* The head is one engraved line across the plate — diamond, name,
-            rule, diamond — the same head this app rules its divisions with. */}
+        {/* One engraved line across the plate: diamond, name, rule, diamond —
+            the head this app rules its divisions with. */}
         <View style={btfl.rail}>
-          <View style={[btfl.diamond, { backgroundColor: withAlpha(card.labelColor, 0.62) }]} />
-          <Text style={[btfl.label, { color: card.labelColor }]} numberOfLines={1}>
+          <View style={[btfl.diamond, { backgroundColor: withAlpha(tint, 0.7) }]} />
+          <Text style={[btfl.label, { color: tint }]} numberOfLines={1}>
             {card.label}
           </Text>
-          <View style={[btfl.railRule, { backgroundColor: withAlpha(card.labelColor, 0.22) }]} />
-          <View style={[btfl.diamond, { backgroundColor: withAlpha(card.labelColor, 0.62) }]} />
+          <View style={[btfl.railRule, { backgroundColor: withAlpha(tint, 0.26) }]} />
+          <View style={[btfl.diamond, { backgroundColor: withAlpha(tint, 0.7) }]} />
         </View>
 
-        {/* Full width, so a long name wraps at full size rather than shrinking. */}
         <Text style={[btfl.title, { color: card.titleColor }]} numberOfLines={2}>
           {card.title}
         </Text>
 
-        <Text style={[btfl.desc, { color: ink }]}>{card.description}</Text>
+        <Text style={[btfl.desc, { color: card.titleColor }]}>{card.description}</Text>
 
         {/* And the foot closes what the head opened: the way out stands where
-            you finish reading, not floating in the space beside the eyebrow. */}
+            you finish reading, not floating beside the eyebrow. */}
         <View style={btfl.rail}>
-          <Text style={[btfl.open, { color: card.labelColor }]}>OPEN</Text>
-          <View style={[btfl.railRule, { backgroundColor: withAlpha(card.labelColor, 0.22) }]} />
-          <View style={[btfl.exit, { borderColor: withAlpha(card.labelColor, 0.3) }]}>
+          <Text style={[btfl.open, { color: tint }]}>OPEN</Text>
+          <View style={[btfl.railRule, { backgroundColor: withAlpha(tint, 0.26) }]} />
+          <View style={[btfl.exit, { borderColor: withAlpha(tint, 0.4) }]}>
             <View style={btfl.exitTilt}>
               <ArrowUpRight s={15} c={card.arrowBg} w={2.2} />
             </View>
@@ -325,8 +299,8 @@ const btfl = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.96)',
   },
 
-  // Low and to the right, and allowed to run off the plate's foot — a
-  // watermark is a thing the card is printed over, not a thing placed on it.
+  // Low and to the right, run off the plate's foot: a watermark is a thing
+  // the card is printed over, not a thing placed on it.
   mark: {
     position: 'absolute',
     right: -34,
@@ -351,7 +325,7 @@ const btfl = StyleSheet.create({
     height: BTFL_EXIT,
     borderRadius: BTFL_EXIT / 2,
     borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.7)',
+    backgroundColor: 'rgba(255,255,255,0.8)',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -367,8 +341,16 @@ const btfl = StyleSheet.create({
   },
 
   // Inter, and larger: this is the line that has to explain the feature to
-  // someone who has never seen it. It stops short of the mark's densest part.
-  desc: { marginTop: 10, marginBottom: 15, fontFamily: F.sans, fontSize: 14.5, lineHeight: 21, maxWidth: '90%' },
+  // someone who installed the app ten seconds ago.
+  desc: {
+    marginTop: 10,
+    marginBottom: 15,
+    fontFamily: F.sans,
+    fontSize: 14.5,
+    lineHeight: 21,
+    maxWidth: '90%',
+    opacity: 0.78,
+  },
 });
 
 /* ═══ NEW ENGRAVED — THE RAISED PLATE ═════════════════════════
