@@ -62,6 +62,11 @@ const MARK = '#A9863F';
 const TITLE = '#6D4F13';
 const SUBTITLE = '#A9863F';
 const ARROW_BG = '#8A5A1A';
+// A deeper draw of the plate itself — the seat is the paper pressed darker,
+// not a new colour laid on it.
+const SEAT = '#F3E5C2';
+/** Close to the arrow orb's 38, so the two read as a pair. */
+const SEAT_SIZE = 42;
 
 type Props = {
   onPress: () => void;
@@ -88,20 +93,37 @@ export default function SetAsDailyTaskCard({
         pointerEvents="none"
       />
 
-      {/* The mark, faint, and anchoring the left of the row.
+      {/* A pane of light on the shoulder, and the hairline the plate catches
+          along its top edge — both are the card family's, and the row was
+          missing them. The pane reaches nothing well before any edge, so it
+          never rules a line across the plate. */}
+      <LinearGradient
+        colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0)']}
+        locations={[0, 0.58]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      <View pointerEvents="none" style={s.litEdge} />
+
+      {/* The mark, on a seat of the plate pressed darker.
        *
-       * The cards carry theirs bleeding off the bottom-RIGHT corner, and this
-       * row did too at first — but a card is tall enough to keep its arrow at
-       * the top and its watermark at the foot, while a 72pt row centres the
-       * orb straight onto the mark and chops it in half. So the mark moves to
-       * the far side of the row, where nothing is laid over it.
+       * The cards carry their watermark bleeding off the bottom-RIGHT, and
+       * this row did too at first — but a card is tall enough to keep its
+       * arrow at the top and its mark at the foot, while a 72pt row centres
+       * the orb straight onto the mark and cuts it in half. So the mark took
+       * the far side, where nothing is laid over it.
        *
-       * It stands whole rather than cropped: at this size a piece of a
-       * calendar reads as damage, not as a watermark. And it appears once —
-       * a ringed seat here as well was tried and dropped, because the same
-       * symbol twice on one row is the fault the doors were just cured of. */}
-      <View style={s.watermark} pointerEvents="none">
-        <CalendarCheck s={56} c={MARK} w={1} />
+       * Left as a pale ghost it made that side read empty. Seated, it answers
+       * the arrow orb across the row — a soft disc for what this is, a solid
+       * one for what it does — and the words sit between them.
+       *
+       * ⚠ The seat is FILLED, not ringed. Concentric rings around a mark are
+       * Scripture's doors, three of which stand directly above this row. */}
+      <View style={s.seat} pointerEvents="none">
+        <View style={s.seatDisc} />
+        <CalendarCheck s={21} c={MARK} w={1.8} />
       </View>
 
       <View style={s.copy}>
@@ -146,7 +168,7 @@ const s = StyleSheet.create({
     gap: 14,
     // Between the doors' 19 and the section cards' 28: it is a row of the
     // card family, not a card and not a door.
-    borderRadius: 22,
+    borderRadius: 24,
     borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: BORDER,
@@ -163,21 +185,37 @@ const s = StyleSheet.create({
   },
   // `top`/`bottom` rather than a percentage and a negative margin: it centres
   // on whatever height the row settles at, including a scaled font.
-  watermark: {
+  litEdge: {
     position: 'absolute',
-    left: 14,
+    top: 1,
+    left: 16,
+    right: 16,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
+  // `top`/`bottom` rather than a percentage and a negative margin: it centres
+  // on whatever height the row settles at, including a scaled font.
+  seat: {
+    position: 'absolute',
+    left: 13,
     top: 0,
     bottom: 0,
-    width: 56,
+    width: SEAT_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.13,
+  },
+  seatDisc: {
+    position: 'absolute',
+    width: SEAT_SIZE,
+    height: SEAT_SIZE,
+    borderRadius: SEAT_SIZE / 2,
+    backgroundColor: SEAT,
   },
   copy: {
     flex: 1,
     minWidth: 0,
-    // Clear of the mark, which stands from 14 to 70.
-    paddingLeft: 56,
+    // Clear of the seat, which stands from 13 to 55.
+    paddingLeft: 48,
   },
   title: {
     fontFamily: F.serifMedium,
