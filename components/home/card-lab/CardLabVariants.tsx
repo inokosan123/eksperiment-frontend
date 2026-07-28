@@ -1363,7 +1363,267 @@ export type LabVariant = {
 };
 
 // ONE leads, so the lab opens on the proposal with the baseline one tap away.
+/* ═══ BTFL 2 ══════════════════════════════════════════════════
+ * The next one. It keeps what worked in BTFL — the card's own
+ * bright colour, the mark low behind the type, the engraved head
+ * — and changes the two things that were still flat.
+ *
+ * THE CORNER IS LIT, NOT STAMPED. In BTFL the emblem was an
+ * outline printed at eleven percent: a flat mark on a flat
+ * ground. Here a real pool of light sits in that corner — a
+ * radial bloom in the card's own colour, brightest at its heart
+ * and fading to nothing — and the emblem stands INSIDE it. This
+ * is the lesson the Home progress card taught: an emblem sitting
+ * ON a disc reads as a sticker; the same emblem sitting IN light
+ * reads as lit. It is one SVG gradient, drawn once, never
+ * animated.
+ *
+ * THE WAY OUT IS FILLED. A white ghost ring is what you use when
+ * you do not want to be noticed. This card wants to be opened,
+ * so its arrow sits in a solid disc of the card's deep tone —
+ * the one piece of full-strength colour on the plate, and the
+ * thing your eye lands on last.
+ *
+ * The constellation is kept and re-aimed: the stars ring the
+ * BLOOM rather than the outline, so the light that travels and
+ * the light that pools are the same light.
+ *
+ * Budget, unchanged and still strict — six or seven of these
+ * share a screen:
+ *   · one clock per card, read by every star and the mark;
+ *   · opacity and rotation only, never scale;
+ *   · the plate, the bloom and the rules are drawn once.
+ * ═════════════════════════════════════════════════════════════ */
+
+const B2_R = 28;
+const B2_MARK = 116;
+const B2_EXIT = 34;
+// The bloom's heart, measured from the plate's right and foot. The mark and
+// the constellation are both hung off this one point.
+const B2_LIGHT_X = 66;
+const B2_LIGHT_Y = 54;
+
+type B2Star = { right: number; bottom: number; size: number; phase: number; peak: number; spin: number };
+
+// Ringing the bloom, phased in ring order so the kindling walks around it.
+const B2_STARS: B2Star[] = [
+  { right: 150, bottom: 42, size: 12, phase: 0.00, peak: 0.9, spin: 0.45 },
+  { right: 132, bottom: 104, size: 9, phase: 0.2, peak: 0.7, spin: -0.4 },
+  { right: 78, bottom: 132, size: 11, phase: 0.4, peak: 0.82, spin: 0.35 },
+  { right: 26, bottom: 122, size: 8, phase: 0.6, peak: 0.62, spin: -0.5 },
+  { right: 8, bottom: 74, size: 10, phase: 0.8, peak: 0.74, spin: 0.4 },
+];
+
+const B2_WINDOW = 0.42;
+
+function B2Star({
+  star, clock, color, still,
+}: {
+  star: B2Star;
+  clock: SharedValue<number>;
+  color: string;
+  still: boolean;
+}) {
+  const style = useAnimatedStyle(() => {
+    if (still) return { opacity: star.peak * 0.5, transform: [{ rotate: '0deg' }] };
+    const p = (clock.value + star.phase) % 1;
+    const lit = p < B2_WINDOW ? Math.sin((p / B2_WINDOW) * Math.PI) : 0;
+    return { opacity: lit * star.peak, transform: [{ rotate: `${p * 360 * star.spin}deg` }] };
+  });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[b2.star, { right: star.right, bottom: star.bottom, width: star.size, height: star.size }, style]}
+    >
+      <Svg width={star.size} height={star.size} viewBox="0 0 24 24">
+        <Path d={BTFL_SPARK} fill={color} />
+      </Svg>
+    </Animated.View>
+  );
+}
+
+export function VariantBtfl2({ card }: VariantProps) {
+  const reduceMotion = useReducedMotion();
+  const clock = useSharedValue(0);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    clock.value = 0;
+    clock.value = withRepeat(withTiming(1, { duration: 9000, easing: Easing.linear }), -1, false);
+    return () => cancelAnimation(clock);
+  }, [clock, reduceMotion]);
+
+  // The mark rises and settles on the card's one clock, so it belongs to the
+  // same light that travels around it.
+  const markStyle = useAnimatedStyle(() => {
+    if (reduceMotion) return { opacity: 0.3 };
+    return { opacity: 0.24 + (0.5 + 0.5 * Math.sin(clock.value * Math.PI * 2)) * 0.12 };
+  });
+
+  const tint = card.decorColor;
+  const groundTop = mixWhite(tint, 0.95);
+  const groundMid = mixWhite(tint, 0.87);
+  const groundFoot = mixWhite(tint, 0.74);
+  const gradientId = `b2-${card.id}`;
+
+  return (
+    <View
+      style={[b2.plate, { borderColor: withAlpha(tint, 0.34) }]}
+      onLayout={event => {
+        const { width, height } = event.nativeEvent.layout;
+        setBox({ w: width, h: height });
+      }}
+    >
+      <LinearGradient
+        colors={[groundTop, groundMid, groundFoot]}
+        locations={[0, 0.5, 1]}
+        start={{ x: 0.1, y: 0 }}
+        end={{ x: 0.9, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+
+      {/* The pool of light the emblem stands in. Drawn once, never animated. */}
+      {box.w > 0 && (
+        <Svg
+          pointerEvents="none"
+          width={box.w}
+          height={box.h}
+          style={StyleSheet.absoluteFill}
+        >
+          <Defs>
+            <RadialGradient id={gradientId} cx="50%" cy="50%" r="50%">
+              <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.92} />
+              <Stop offset="0.45" stopColor={mixWhite(tint, 0.66)} stopOpacity={0.6} />
+              <Stop offset="1" stopColor={tint} stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Circle
+            cx={box.w - B2_LIGHT_X}
+            cy={box.h - B2_LIGHT_Y}
+            r={132}
+            fill={`url(#${gradientId})`}
+          />
+        </Svg>
+      )}
+
+      <View pointerEvents="none" style={[b2.frame, { borderColor: withAlpha(tint, 0.24) }]} />
+      <View pointerEvents="none" style={b2.lit} />
+
+      {/* The emblem, standing in that light rather than printed on the card. */}
+      <Animated.View pointerEvents="none" style={[b2.mark, markStyle]}>
+        <card.Decor s={B2_MARK} c={tint} w={1.3} />
+      </Animated.View>
+
+      {B2_STARS.map((star, i) => (
+        <B2Star key={i} star={star} clock={clock} color={tint} still={reduceMotion} />
+      ))}
+
+      <View style={b2.body}>
+        <View style={b2.rail}>
+          <View style={[b2.diamond, { backgroundColor: withAlpha(tint, 0.7) }]} />
+          <Text style={[b2.label, { color: tint }]} numberOfLines={1}>{card.label}</Text>
+          <View style={[b2.railRule, { backgroundColor: withAlpha(tint, 0.24) }]} />
+        </View>
+
+        <Text style={[b2.title, { color: card.titleColor }]} numberOfLines={2}>{card.title}</Text>
+        <Text style={[b2.desc, { color: card.titleColor }]}>{card.description}</Text>
+
+        {/* Filled, because this card wants to be opened. The one piece of
+            full-strength colour on the plate, and the last thing you see. */}
+        <View style={b2.footRow}>
+          <View style={[b2.exit, { backgroundColor: card.arrowBg }]}>
+            <View style={b2.exitTilt}>
+              <ArrowUpRight s={16} c="#FFFFFF" w={2.3} />
+            </View>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const b2 = StyleSheet.create({
+  plate: {
+    position: 'relative',
+    borderRadius: B2_R,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#6B5836',
+    shadowOffset: { width: 0, height: 9 },
+    shadowOpacity: 0.14,
+    shadowRadius: 22,
+    elevation: 5,
+  },
+  // One rule here, not two: with a lit corner doing the work, a second
+  // hairline was just another line.
+  frame: {
+    position: 'absolute',
+    top: 7,
+    left: 7,
+    right: 7,
+    bottom: 7,
+    borderRadius: B2_R - 9,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+  },
+  lit: {
+    position: 'absolute',
+    top: 1,
+    left: 22,
+    right: 22,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+  },
+  mark: {
+    position: 'absolute',
+    right: B2_LIGHT_X - B2_MARK / 2,
+    bottom: B2_LIGHT_Y - B2_MARK / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  star: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+
+  body: { paddingHorizontal: 21, paddingTop: 17, paddingBottom: 17 },
+
+  rail: { flexDirection: 'row', alignItems: 'center', columnGap: 9 },
+  railRule: { flex: 1, height: 1, minWidth: 10 },
+  diamond: { width: 4, height: 4, borderRadius: 0.8, transform: [{ rotate: '45deg' }], flexShrink: 0 },
+  label: { fontFamily: F.sansBold, fontSize: 10.5, lineHeight: 13, letterSpacing: 1.5 },
+
+  title: {
+    marginTop: 13,
+    fontFamily: F.serifSemiBold,
+    fontSize: 30,
+    lineHeight: 35,
+    letterSpacing: -0.5,
+  },
+  desc: {
+    marginTop: 10,
+    fontFamily: F.sans,
+    fontSize: 14.5,
+    lineHeight: 21,
+    maxWidth: '84%',
+    opacity: 0.78,
+  },
+
+  footRow: { marginTop: 15, flexDirection: 'row' },
+  exit: {
+    width: B2_EXIT,
+    height: B2_EXIT,
+    borderRadius: B2_EXIT / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  exitTilt: { transform: [{ rotate: '-15deg' }] },
+});
+
 export const LAB_VARIANTS: LabVariant[] = [
+  { key: 'btfl2', label: 'BTFL 2', Card: VariantBtfl2, gap: 11 },
   { key: 'btfl', label: 'BTFL', Card: VariantBtfl, gap: 11 },
   { key: 'newengraved', label: 'New Engraved', Card: VariantNewEngraved, gap: 10 },
   { key: 'one', label: 'ONE', Card: VariantOne, gap: 10 },
