@@ -60,298 +60,6 @@ function readingTone(card: LabCard): string {
 
 type VariantProps = { card: LabCard };
 
-/* ═══ BTFL ════════════════════════════════════════════════════
- * The one that is allowed to be lovely.
- *
- * These cards carry four of the app's main screens and dominate
- * two of them, so this is the piece that decides whether the app
- * looks alive. It is built to three rules.
- *
- * THE COLOUR IS BRIGHT, AND IT IS THE CARD'S OWN. Every tone on
- * the plate is mixed from the card's vivid decor colour rather
- * than its pale wash — so the greens are green, the golds gold,
- * the rose actually rose. The ground runs from near-white at the
- * shoulder to a real tint at the foot: light and shade, but the
- * shade is colour rather than grey. Nothing is dimmed to make
- * type legible; the type is dark enough already.
- *
- * THE LIGHT TRAVELS AROUND THE MARK. The emblem stands large and
- * low behind the type, and the constellation is set in a ring
- * around it. Each star's phase follows its place on that ring,
- * so the kindling walks from one to the next and reads as light
- * going round the emblem rather than as five separate blinks.
- * The mark breathes on the same clock, so the two are plainly
- * one thing.
- *
- * IT HAS TO SURVIVE SEVEN AT ONCE. Six or seven of these sit on
- * screen together, so the budget is fixed and small:
- *   · ONE clock per card. Every star and the mark read that one
- *     shared value at their own offset — no timer per star.
- *   · OPACITY AND ROTATION ONLY. Never scale: a small view that
- *     scales resamples its bitmap on Android. Never shadow,
- *     blur or colour — those re-rasterise every frame.
- *   · FIVE stars, not a galaxy. Six animated styles per card.
- *   · The plate itself never animates. It is drawn once.
- * ═════════════════════════════════════════════════════════════ */
-
-// The app's own four-point spark, from RadiantTodayPulse.
-const BTFL_SPARK =
-  'M12 0 C13.2 7.4 16.6 10.8 24 12 C16.6 13.2 13.2 16.6 12 24 C10.8 16.6 7.4 13.2 0 12 C7.4 10.8 10.8 7.4 12 0 Z';
-
-const BTFL_R = 26;
-const BTFL_EXIT = 30;
-const BTFL_MARK = 140;
-
-type Star = {
-  /** Placed from the plate's right and foot, so they ring the mark. */
-  right: number;
-  bottom: number;
-  size: number;
-  /** Where on the ring it sits — and therefore when it kindles. */
-  phase: number;
-  window: number;
-  peak: number;
-  spin: number;
-};
-
-// Set on an arc around the mark, and phased IN THAT ORDER: the light walks
-// from the one at the mark's left, up over its shoulder, and away to the
-// plate's far side. Scattered at random they blink; in order they circle.
-// The windows are wide on purpose — 0.42 of the cycle against a 0.18 spacing
-// puts two or three alight at any moment, so the eye reads a light MOVING
-// around the mark. Narrow windows lit them one at a time, which reads as
-// blinking and wastes the whole idea.
-const BTFL_STARS: Star[] = [
-  { right: 138, bottom: 34, size: 13, phase: 0.00, window: 0.42, peak: 0.92, spin: 0.5 },
-  { right: 126, bottom: 88, size: 10, phase: 0.18, window: 0.42, peak: 0.74, spin: -0.4 },
-  { right: 92, bottom: 120, size: 12, phase: 0.36, window: 0.42, peak: 0.86, spin: 0.35 },
-  { right: 46, bottom: 132, size: 9, phase: 0.54, window: 0.42, peak: 0.68, spin: -0.55 },
-  { right: 12, bottom: 106, size: 11, phase: 0.72, window: 0.42, peak: 0.8, spin: 0.45 },
-];
-
-function BtflStar({
-  star,
-  clock,
-  color,
-  still,
-}: {
-  star: Star;
-  clock: SharedValue<number>;
-  color: string;
-  still: boolean;
-}) {
-  const style = useAnimatedStyle(() => {
-    if (still) return { opacity: star.peak * 0.5, transform: [{ rotate: '0deg' }] };
-    const p = (clock.value + star.phase) % 1;
-    // Alight only inside its window, and there it swells and dies on a sine,
-    // so it arrives and leaves rather than switching on.
-    const lit = p < star.window ? Math.sin((p / star.window) * Math.PI) : 0;
-    return {
-      opacity: lit * star.peak,
-      transform: [{ rotate: `${p * 360 * star.spin}deg` }],
-    };
-  });
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        btfl.star,
-        { right: star.right, bottom: star.bottom, width: star.size, height: star.size },
-        style,
-      ]}
-    >
-      <Svg width={star.size} height={star.size} viewBox="0 0 24 24">
-        <Path d={BTFL_SPARK} fill={color} />
-      </Svg>
-    </Animated.View>
-  );
-}
-
-export function VariantBtfl({ card }: VariantProps) {
-  const reduceMotion = useReducedMotion();
-  const clock = useSharedValue(0);
-
-  useEffect(() => {
-    if (reduceMotion) return;
-    clock.value = 0;
-    clock.value = withRepeat(
-      withTiming(1, { duration: 9000, easing: Easing.linear }),
-      -1,
-      false,
-    );
-    return () => cancelAnimation(clock);
-  }, [clock, reduceMotion]);
-
-  // The mark breathes on the card's one clock — the same value the stars
-  // read, so the emblem and the light around it are visibly one thing.
-  const markStyle = useAnimatedStyle(() => {
-    if (reduceMotion) return { opacity: 0.13 };
-    return { opacity: 0.1 + (0.5 + 0.5 * Math.sin(clock.value * Math.PI * 2)) * 0.06 };
-  });
-
-  // Every tone is mixed from the card's VIVID colour, not its pale wash: the
-  // wash is what made these read as dusty. Light at the shoulder, real colour
-  // at the foot.
-  const tint = card.decorColor;
-  const groundTop = mixWhite(tint, 0.94);
-  const groundMid = mixWhite(tint, 0.85);
-  const groundFoot = mixWhite(tint, 0.71);
-
-  return (
-    <View style={[btfl.plate, { borderColor: withAlpha(tint, 0.34) }]}>
-      <LinearGradient
-        colors={[groundTop, groundMid, groundFoot]}
-        locations={[0, 0.5, 1]}
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
-
-      {/* Double ruling — the app's own finish, all curve, so it sits with the
-          plate's corners instead of against them. */}
-      <View pointerEvents="none" style={[btfl.frame, { borderColor: withAlpha(tint, 0.26) }]} />
-      <View pointerEvents="none" style={[btfl.frameInner, { borderColor: withAlpha(tint, 0.13) }]} />
-      <View pointerEvents="none" style={btfl.lit} />
-
-      {/* The mark, low and large, with the constellation ringing it. */}
-      <Animated.View pointerEvents="none" style={[btfl.mark, markStyle]}>
-        <card.Decor s={BTFL_MARK} c={tint} w={1.1} />
-      </Animated.View>
-      {BTFL_STARS.map((star, i) => (
-        <BtflStar key={i} star={star} clock={clock} color={tint} still={reduceMotion} />
-      ))}
-
-      <View style={btfl.body}>
-        {/* One engraved line across the plate: diamond, name, rule, diamond —
-            the head this app rules its divisions with. */}
-        <View style={btfl.rail}>
-          <View style={[btfl.diamond, { backgroundColor: withAlpha(tint, 0.7) }]} />
-          <Text style={[btfl.label, { color: tint }]} numberOfLines={1}>
-            {card.label}
-          </Text>
-          <View style={[btfl.railRule, { backgroundColor: withAlpha(tint, 0.26) }]} />
-          <View style={[btfl.diamond, { backgroundColor: withAlpha(tint, 0.7) }]} />
-        </View>
-
-        <Text style={[btfl.title, { color: card.titleColor }]} numberOfLines={2}>
-          {card.title}
-        </Text>
-
-        <Text style={[btfl.desc, { color: card.titleColor }]}>{card.description}</Text>
-
-        {/* And the foot closes what the head opened: the way out stands where
-            you finish reading, not floating beside the eyebrow. */}
-        <View style={btfl.rail}>
-          <Text style={[btfl.open, { color: tint }]}>OPEN</Text>
-          <View style={[btfl.railRule, { backgroundColor: withAlpha(tint, 0.26) }]} />
-          <View style={[btfl.exit, { borderColor: withAlpha(tint, 0.4) }]}>
-            <View style={btfl.exitTilt}>
-              <ArrowUpRight s={15} c={card.arrowBg} w={2.2} />
-            </View>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-const btfl = StyleSheet.create({
-  plate: {
-    position: 'relative',
-    borderRadius: BTFL_R,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    overflow: 'hidden',
-    shadowColor: '#6B5836',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.13,
-    shadowRadius: 20,
-    elevation: 5,
-  },
-  frame: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
-    right: 6,
-    bottom: 6,
-    borderRadius: BTFL_R - 8,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-  },
-  frameInner: {
-    position: 'absolute',
-    top: 9,
-    left: 9,
-    right: 9,
-    bottom: 9,
-    borderRadius: BTFL_R - 11,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-  },
-  lit: {
-    position: 'absolute',
-    top: 1,
-    left: 20,
-    right: 20,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.96)',
-  },
-
-  // Low and to the right, run off the plate's foot: a watermark is a thing
-  // the card is printed over, not a thing placed on it.
-  mark: {
-    position: 'absolute',
-    right: -34,
-    bottom: -40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  star: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-
-  body: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16 },
-
-  // One rail, used twice: it opens the card and it closes it.
-  rail: { flexDirection: 'row', alignItems: 'center', columnGap: 9 },
-  railRule: { flex: 1, height: 1, minWidth: 10 },
-  diamond: { width: 4, height: 4, borderRadius: 0.8, transform: [{ rotate: '45deg' }], flexShrink: 0 },
-
-  label: { fontFamily: F.sansBold, fontSize: 10.5, lineHeight: 13, letterSpacing: 1.5 },
-  open: { fontFamily: F.sansBold, fontSize: 9.5, lineHeight: 12, letterSpacing: 1.8 },
-
-  exit: {
-    width: BTFL_EXIT,
-    height: BTFL_EXIT,
-    borderRadius: BTFL_EXIT / 2,
-    borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  exitTilt: { transform: [{ rotate: '-15deg' }] },
-
-  title: {
-    marginTop: 13,
-    fontFamily: F.serifSemiBold,
-    fontSize: 29,
-    lineHeight: 34,
-    letterSpacing: -0.5,
-  },
-
-  // Inter, and larger: this is the line that has to explain the feature to
-  // someone who installed the app ten seconds ago.
-  desc: {
-    marginTop: 10,
-    marginBottom: 15,
-    fontFamily: F.sans,
-    fontSize: 14.5,
-    lineHeight: 21,
-    maxWidth: '90%',
-    opacity: 0.78,
-  },
-});
 
 /* ═══ NEW ENGRAVED — THE RAISED PLATE ═════════════════════════
  * Everything the app already knows how to do, on one card.
@@ -1363,63 +1071,94 @@ export type LabVariant = {
 };
 
 // ONE leads, so the lab opens on the proposal with the baseline one tap away.
-/* ═══ BTFL 2 ══════════════════════════════════════════════════
- * The next one. It keeps what worked in BTFL — the card's own
- * bright colour, the mark low behind the type, the engraved head
- * — and changes the two things that were still flat.
+
+/* ═══ THE THREE ══════════════════════════════════════════════
+ * Three candidates for the app's main section card. They appear
+ * on four main screens and are the ONLY thing on two of them,
+ * usually four or more at once — so they are judged as a stack,
+ * not one at a time, and every one of them has to hold up in
+ * every colour the app owns.
  *
- * THE CORNER IS LIT, NOT STAMPED. In BTFL the emblem was an
- * outline printed at eleven percent: a flat mark on a flat
- * ground. Here a real pool of light sits in that corner — a
- * radial bloom in the card's own colour, brightest at its heart
- * and fading to nothing — and the emblem stands INSIDE it. This
- * is the lesson the Home progress card taught: an emblem sitting
- * ON a disc reads as a sticker; the same emblem sitting IN light
- * reads as lit. It is one SVG gradient, drawn once, never
- * animated.
+ * All three are built on the same three corrections.
  *
- * THE WAY OUT IS FILLED. A white ghost ring is what you use when
- * you do not want to be noticed. This card wants to be opened,
- * so its arrow sits in a solid disc of the card's deep tone —
- * the one piece of full-strength colour on the plate, and the
- * thing your eye lands on last.
+ * 1. THE TYPE IS THE APP'S TYPE. The card carries EB Garamond,
+ *    exactly as the app's own SectionCard does: the title in
+ *    Garamond Medium and — this is the one that was wrong — the
+ *    DESCRIPTION IN GARAMOND TOO, at 16/23. It had been set in
+ *    Inter, which is the app's interface face, not its reading
+ *    face. On a card whose largest block is a sentence, that is
+ *    the difference between the card belonging to this app and
+ *    looking imported from another one.
  *
- * The constellation is kept and re-aimed: the stars ring the
- * BLOOM rather than the outline, so the light that travels and
- * the light that pools are the same light.
+ * 2. THE COLOUR IS LIFTED, NOT WHITENED. Mixing a deep colour
+ *    with white destroys its saturation — the app's green went
+ *    from 72% to 30% that way, which is precisely why the last
+ *    attempt read as dusty rather than alive. Every tone here is
+ *    built in HSL: hue kept, saturation HELD HIGH, and only
+ *    lightness raised. Bright and vivid, never pale, never dark.
  *
- * Budget, unchanged and still strict — six or seven of these
- * share a screen:
- *   · one clock per card, read by every star and the mark;
- *   · opacity and rotation only, never scale;
- *   · the plate, the bloom and the rules are drawn once.
+ * 3. THE LIGHT IS REAL. A gradient across the plate and, where
+ *    the emblem sits, a pool it stands inside — the device the
+ *    Home progress card is built on.
+ *
+ * The budget is fixed, because seven of these share a screen:
+ *   · ONE clock per card, read by every moving part at its own
+ *     offset. No timer per star.
+ *   · Opacity and rotation only — never scale (a small view that
+ *     scales resamples its bitmap on Android), never shadow,
+ *     blur, or colour.
+ *   · The plate, its gradient and its rules are drawn once.
  * ═════════════════════════════════════════════════════════════ */
 
-const B2_R = 28;
-const B2_MARK = 116;
-const B2_EXIT = 34;
-// The bloom's heart, measured from the plate's right and foot. The mark and
-// the constellation are both hung off this one point.
-const B2_LIGHT_X = 66;
-const B2_LIGHT_Y = 54;
+const SPARK_PATH =
+  'M12 0 C13.2 7.4 16.6 10.8 24 12 C16.6 13.2 13.2 16.6 12 24 C10.8 16.6 7.4 13.2 0 12 C7.4 10.8 10.8 7.4 12 0 Z';
 
-type B2Star = { right: number; bottom: number; size: number; phase: number; peak: number; spin: number };
+/** Hex → HSL parts, so a card's hue can be re-lit rather than washed out. */
+function toHsl(hex: string): { h: number; s: number; l: number } {
+  const m = hex.replace('#', '');
+  const v = m.length === 3 ? m.split('').map(c => c + c).join('') : m;
+  const n = parseInt(v, 16);
+  const r = ((n >> 16) & 255) / 255;
+  const g = ((n >> 8) & 255) / 255;
+  const b = (n & 255) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return { h: 0, s: 0, l: l * 100 };
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r
+    ? (g - b) / d + (g < b ? 6 : 0)
+    : max === g
+      ? (b - r) / d + 2
+      : (r - g) / d + 4;
+  return { h: (h / 6) * 360, s: s * 100, l: l * 100 };
+}
 
-// Ringing the bloom, phased in ring order so the kindling walks around it.
-const B2_STARS: B2Star[] = [
-  { right: 150, bottom: 42, size: 12, phase: 0.00, peak: 0.9, spin: 0.45 },
-  { right: 132, bottom: 104, size: 9, phase: 0.2, peak: 0.7, spin: -0.4 },
-  { right: 78, bottom: 132, size: 11, phase: 0.4, peak: 0.82, spin: 0.35 },
-  { right: 26, bottom: 122, size: 8, phase: 0.6, peak: 0.62, spin: -0.5 },
-  { right: 8, bottom: 74, size: 10, phase: 0.8, peak: 0.74, spin: 0.4 },
-];
+/**
+ * The card's hue at a chosen lightness, with its saturation held at or above
+ * a floor. This is the whole colour system: never mix toward white, because
+ * that drains the hue and leaves grey.
+ */
+function lit(hex: string, lightness: number, satFloor = 70): string {
+  const { h, s } = toHsl(hex);
+  return `hsl(${Math.round(h)} ${Math.round(Math.max(s, satFloor))}% ${lightness}%)`;
+}
 
-const B2_WINDOW = 0.42;
+/** The same hue kept deep — for ink, rules and the filled affordance. */
+function deep(hex: string, lightness: number, satFloor = 55): string {
+  const { h, s } = toHsl(hex);
+  return `hsl(${Math.round(h)} ${Math.round(Math.max(s, satFloor))}% ${lightness}%)`;
+}
 
-function B2Star({
+type StarSpec = { right: number; bottom: number; size: number; phase: number; peak: number; spin: number };
+
+const STAR_WINDOW = 0.42;
+
+function CardStar({
   star, clock, color, still,
 }: {
-  star: B2Star;
+  star: StarSpec;
   clock: SharedValue<number>;
   color: string;
   still: boolean;
@@ -1427,204 +1166,383 @@ function B2Star({
   const style = useAnimatedStyle(() => {
     if (still) return { opacity: star.peak * 0.5, transform: [{ rotate: '0deg' }] };
     const p = (clock.value + star.phase) % 1;
-    const lit = p < B2_WINDOW ? Math.sin((p / B2_WINDOW) * Math.PI) : 0;
-    return { opacity: lit * star.peak, transform: [{ rotate: `${p * 360 * star.spin}deg` }] };
+    const on = p < STAR_WINDOW ? Math.sin((p / STAR_WINDOW) * Math.PI) : 0;
+    return { opacity: on * star.peak, transform: [{ rotate: `${p * 360 * star.spin}deg` }] };
   });
 
   return (
     <Animated.View
       pointerEvents="none"
-      style={[b2.star, { right: star.right, bottom: star.bottom, width: star.size, height: star.size }, style]}
+      style={[
+        { position: 'absolute', right: star.right, bottom: star.bottom, width: star.size, height: star.size },
+        style,
+      ]}
     >
       <Svg width={star.size} height={star.size} viewBox="0 0 24 24">
-        <Path d={BTFL_SPARK} fill={color} />
+        <Path d={SPARK_PATH} fill={color} />
       </Svg>
     </Animated.View>
   );
 }
 
-export function VariantBtfl2({ card }: VariantProps) {
-  const reduceMotion = useReducedMotion();
+/** One clock per card, started once. Every moving part reads it. */
+function useCardClock(reduceMotion: boolean, duration = 9000) {
   const clock = useSharedValue(0);
-  const [box, setBox] = useState({ w: 0, h: 0 });
-
   useEffect(() => {
     if (reduceMotion) return;
     clock.value = 0;
-    clock.value = withRepeat(withTiming(1, { duration: 9000, easing: Easing.linear }), -1, false);
+    clock.value = withRepeat(withTiming(1, { duration, easing: Easing.linear }), -1, false);
     return () => cancelAnimation(clock);
-  }, [clock, reduceMotion]);
+  }, [clock, duration, reduceMotion]);
+  return clock;
+}
 
-  // The mark rises and settles on the card's one clock, so it belongs to the
-  // same light that travels around it.
+/* ── DAWN ─────────────────────────────────────────────────────
+ * The app's own morning, in the card's colour. This is the
+ * language of the streak cards — a bright gradient raked with a
+ * hairline weave, sparks that come and go, and the emblem
+ * standing in a pool of light. It is the closest of the three to
+ * what the rest of the app already looks like.
+ * ─────────────────────────────────────────────────────────── */
+
+const DAWN_STARS: StarSpec[] = [
+  { right: 148, bottom: 40, size: 12, phase: 0.0, peak: 0.85, spin: 0.45 },
+  { right: 128, bottom: 100, size: 9, phase: 0.22, peak: 0.66, spin: -0.4 },
+  { right: 74, bottom: 124, size: 11, phase: 0.44, peak: 0.78, spin: 0.35 },
+  { right: 22, bottom: 96, size: 9, phase: 0.66, peak: 0.62, spin: -0.5 },
+];
+
+export function VariantDawn({ card }: VariantProps) {
+  const reduceMotion = useReducedMotion();
+  const clock = useCardClock(reduceMotion);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const tint = card.decorColor;
+
   const markStyle = useAnimatedStyle(() => {
-    if (reduceMotion) return { opacity: 0.3 };
-    return { opacity: 0.24 + (0.5 + 0.5 * Math.sin(clock.value * Math.PI * 2)) * 0.12 };
+    if (reduceMotion) return { opacity: 0.26 };
+    return { opacity: 0.2 + (0.5 + 0.5 * Math.sin(clock.value * Math.PI * 2)) * 0.1 };
   });
 
-  const tint = card.decorColor;
-  const groundTop = mixWhite(tint, 0.95);
-  const groundMid = mixWhite(tint, 0.87);
-  const groundFoot = mixWhite(tint, 0.74);
-  const gradientId = `b2-${card.id}`;
+  const weaveStep = 30;
+  const weaveCount = box.w > 0 ? Math.ceil((box.w + box.h) / weaveStep) + 1 : 0;
+  const glowId = `dawn-${card.id}`;
 
   return (
     <View
-      style={[b2.plate, { borderColor: withAlpha(tint, 0.34) }]}
-      onLayout={event => {
-        const { width, height } = event.nativeEvent.layout;
-        setBox({ w: width, h: height });
-      }}
+      style={[s0.plate, { borderColor: lit(tint, 78, 60) }]}
+      onLayout={e => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
     >
       <LinearGradient
-        colors={[groundTop, groundMid, groundFoot]}
-        locations={[0, 0.5, 1]}
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
+        colors={[lit(tint, 96), lit(tint, 91), lit(tint, 84)]}
+        locations={[0, 0.55, 1]}
+        start={{ x: 0.05, y: 0 }}
+        end={{ x: 0.95, y: 1 }}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
 
-      {/* The pool of light the emblem stands in. Drawn once, never animated. */}
       {box.w > 0 && (
-        <Svg
-          pointerEvents="none"
-          width={box.w}
-          height={box.h}
-          style={StyleSheet.absoluteFill}
-        >
+        <Svg pointerEvents="none" width={box.w} height={box.h} style={StyleSheet.absoluteFill}>
           <Defs>
-            <RadialGradient id={gradientId} cx="50%" cy="50%" r="50%">
-              <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.92} />
-              <Stop offset="0.45" stopColor={mixWhite(tint, 0.66)} stopOpacity={0.6} />
-              <Stop offset="1" stopColor={tint} stopOpacity={0} />
+            <RadialGradient id={glowId} cx="50%" cy="50%" r="50%">
+              <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.9} />
+              <Stop offset="0.5" stopColor={lit(tint, 92)} stopOpacity={0.55} />
+              <Stop offset="1" stopColor={lit(tint, 84)} stopOpacity={0} />
             </RadialGradient>
           </Defs>
-          <Circle
-            cx={box.w - B2_LIGHT_X}
-            cy={box.h - B2_LIGHT_Y}
-            r={132}
-            fill={`url(#${gradientId})`}
-          />
+          {/* The weave: the streak cards' own rake, at a whisper. */}
+          {Array.from({ length: weaveCount }).map((_, i) => {
+            const o = i * weaveStep;
+            return (
+              <Line
+                key={i}
+                x1={o}
+                y1={-4}
+                x2={o - box.h - 8}
+                y2={box.h + 4}
+                stroke={deep(tint, 40)}
+                strokeOpacity={0.05}
+                strokeWidth={1}
+              />
+            );
+          })}
+          <Circle cx={box.w - 62} cy={box.h - 50} r={124} fill={`url(#${glowId})`} />
         </Svg>
       )}
 
-      <View pointerEvents="none" style={[b2.frame, { borderColor: withAlpha(tint, 0.24) }]} />
-      <View pointerEvents="none" style={b2.lit} />
+      <View pointerEvents="none" style={s0.litEdge} />
 
-      {/* The emblem, standing in that light rather than printed on the card. */}
-      <Animated.View pointerEvents="none" style={[b2.mark, markStyle]}>
-        <card.Decor s={B2_MARK} c={tint} w={1.3} />
+      <Animated.View pointerEvents="none" style={[s0.mark, markStyle]}>
+        <card.Decor s={112} c={deep(tint, 45)} w={1.3} />
       </Animated.View>
-
-      {B2_STARS.map((star, i) => (
-        <B2Star key={i} star={star} clock={clock} color={tint} still={reduceMotion} />
+      {DAWN_STARS.map((star, i) => (
+        <CardStar key={i} star={star} clock={clock} color={deep(tint, 48)} still={reduceMotion} />
       ))}
 
-      <View style={b2.body}>
-        <View style={b2.rail}>
-          <View style={[b2.diamond, { backgroundColor: withAlpha(tint, 0.7) }]} />
-          <Text style={[b2.label, { color: tint }]} numberOfLines={1}>{card.label}</Text>
-          <View style={[b2.railRule, { backgroundColor: withAlpha(tint, 0.24) }]} />
-        </View>
+      <View style={[s0.arrow, { backgroundColor: card.arrowBg }]} pointerEvents="none">
+        <View style={s0.arrowTilt}><ArrowUpRight s={15} c="#fff" w={2.5} /></View>
+      </View>
 
-        <Text style={[b2.title, { color: card.titleColor }]} numberOfLines={2}>{card.title}</Text>
-        <Text style={[b2.desc, { color: card.titleColor }]}>{card.description}</Text>
-
-        {/* Filled, because this card wants to be opened. The one piece of
-            full-strength colour on the plate, and the last thing you see. */}
-        <View style={b2.footRow}>
-          <View style={[b2.exit, { backgroundColor: card.arrowBg }]}>
-            <View style={b2.exitTilt}>
-              <ArrowUpRight s={16} c="#FFFFFF" w={2.3} />
-            </View>
-          </View>
-        </View>
+      <View style={s0.body}>
+        <Text style={[s0.label, { color: deep(tint, 38) }]}>{card.label}</Text>
+        <Text style={[s0.title, { color: card.titleColor }]}>{card.title}</Text>
+        <Text style={[s0.desc, { color: deep(tint, 34) }]}>{card.description}</Text>
       </View>
     </View>
   );
 }
 
-const b2 = StyleSheet.create({
+const s0 = StyleSheet.create({
   plate: {
     position: 'relative',
-    borderRadius: B2_R,
+    borderRadius: 26,
     borderCurve: 'continuous',
     borderWidth: 1,
     overflow: 'hidden',
-    shadowColor: '#6B5836',
-    shadowOffset: { width: 0, height: 9 },
-    shadowOpacity: 0.14,
-    shadowRadius: 22,
-    elevation: 5,
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    elevation: 4,
   },
-  // One rule here, not two: with a lit corner doing the work, a second
-  // hairline was just another line.
-  frame: {
-    position: 'absolute',
-    top: 7,
-    left: 7,
-    right: 7,
-    bottom: 7,
-    borderRadius: B2_R - 9,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-  },
-  lit: {
+  litEdge: {
     position: 'absolute',
     top: 1,
     left: 22,
     right: 22,
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.96)',
+    backgroundColor: 'rgba(255,255,255,0.9)',
   },
-  mark: {
+  mark: { position: 'absolute', right: 6, bottom: -6, alignItems: 'center', justifyContent: 'center' },
+  arrow: {
     position: 'absolute',
-    right: B2_LIGHT_X - B2_MARK / 2,
-    bottom: B2_LIGHT_Y - B2_MARK / 2,
+    top: 14,
+    right: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
-  star: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  arrowTilt: { transform: [{ rotate: '-15deg' }] },
+  body: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 18, maxWidth: '86%' },
+  // The app's own type, to the point: Garamond for the title AND the sentence.
+  label: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 8 },
+  title: { fontFamily: F.serifMedium, fontSize: 27, lineHeight: 31, letterSpacing: -0.3, marginBottom: 4 },
+  desc: { fontFamily: F.serif, fontSize: 16, lineHeight: 23 },
+});
 
-  body: { paddingHorizontal: 21, paddingTop: 17, paddingBottom: 17 },
+/* ── RIBBON ───────────────────────────────────────────────────
+ * The loudest of the three, and the one that stacks best: the
+ * plate runs from near-white at the shoulder to full, saturated
+ * colour at the foot, and the emblem is large and unashamed in
+ * that colour, bleeding off the right edge. Four of these in a
+ * column read as four ribbons of different colour — which is
+ * exactly the case these cards actually live in.
+ * ─────────────────────────────────────────────────────────── */
 
-  rail: { flexDirection: 'row', alignItems: 'center', columnGap: 9 },
-  railRule: { flex: 1, height: 1, minWidth: 10 },
-  diamond: { width: 4, height: 4, borderRadius: 0.8, transform: [{ rotate: '45deg' }], flexShrink: 0 },
-  label: { fontFamily: F.sansBold, fontSize: 10.5, lineHeight: 13, letterSpacing: 1.5 },
+const RIBBON_STARS: StarSpec[] = [
+  { right: 152, bottom: 34, size: 11, phase: 0.0, peak: 0.7, spin: 0.4 },
+  { right: 116, bottom: 96, size: 9, phase: 0.25, peak: 0.55, spin: -0.35 },
+  { right: 52, bottom: 116, size: 12, phase: 0.5, peak: 0.66, spin: 0.3 },
+  { right: 14, bottom: 62, size: 9, phase: 0.75, peak: 0.5, spin: -0.45 },
+];
 
-  title: {
-    marginTop: 13,
-    fontFamily: F.serifSemiBold,
-    fontSize: 30,
-    lineHeight: 35,
-    letterSpacing: -0.5,
+export function VariantRibbon({ card }: VariantProps) {
+  const reduceMotion = useReducedMotion();
+  const clock = useCardClock(reduceMotion, 10000);
+  const tint = card.decorColor;
+
+  const markStyle = useAnimatedStyle(() => {
+    if (reduceMotion) return { opacity: 0.34 };
+    return { opacity: 0.28 + (0.5 + 0.5 * Math.sin(clock.value * Math.PI * 2)) * 0.12 };
+  });
+
+  return (
+    <View style={[s1.plate, { borderColor: lit(tint, 74, 62) }]}>
+      <LinearGradient
+        colors={[lit(tint, 97), lit(tint, 88), lit(tint, 76, 76)]}
+        locations={[0, 0.45, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      <View pointerEvents="none" style={s1.litEdge} />
+
+      {/* Large, and allowed off the edge — the card wears its emblem. */}
+      <Animated.View pointerEvents="none" style={[s1.mark, markStyle]}>
+        <card.Decor s={150} c={deep(tint, 42)} w={1.2} />
+      </Animated.View>
+      {RIBBON_STARS.map((star, i) => (
+        <CardStar key={i} star={star} clock={clock} color="#FFFFFF" still={reduceMotion} />
+      ))}
+
+      <View style={[s1.arrow, { backgroundColor: card.arrowBg }]} pointerEvents="none">
+        <View style={s1.arrowTilt}><ArrowUpRight s={15} c="#fff" w={2.5} /></View>
+      </View>
+
+      <View style={s1.body}>
+        <Text style={[s1.label, { color: deep(tint, 36) }]}>{card.label}</Text>
+        <Text style={[s1.title, { color: card.titleColor }]}>{card.title}</Text>
+        <Text style={[s1.desc, { color: deep(tint, 32) }]}>{card.description}</Text>
+      </View>
+    </View>
+  );
+}
+
+const s1 = StyleSheet.create({
+  plate: {
+    position: 'relative',
+    borderRadius: 26,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
   },
-  desc: {
-    marginTop: 10,
-    fontFamily: F.sans,
-    fontSize: 14.5,
-    lineHeight: 21,
-    maxWidth: '84%',
-    opacity: 0.78,
+  litEdge: {
+    position: 'absolute',
+    top: 1,
+    left: 24,
+    right: 24,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.92)',
   },
-
-  footRow: { marginTop: 15, flexDirection: 'row' },
-  exit: {
-    width: B2_EXIT,
-    height: B2_EXIT,
-    borderRadius: B2_EXIT / 2,
+  mark: { position: 'absolute', right: -26, bottom: -30, alignItems: 'center', justifyContent: 'center' },
+  arrow: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    flexShrink: 0,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
   },
-  exitTilt: { transform: [{ rotate: '-15deg' }] },
+  arrowTilt: { transform: [{ rotate: '-15deg' }] },
+  body: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 18, maxWidth: '82%' },
+  label: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 8 },
+  title: { fontFamily: F.serifMedium, fontSize: 28, lineHeight: 32, letterSpacing: -0.3, marginBottom: 4 },
+  desc: { fontFamily: F.serif, fontSize: 16, lineHeight: 23 },
+});
+
+/* ── LEAF ─────────────────────────────────────────────────────
+ * The quiet one. The plate stays light the whole way across and
+ * all the colour is gathered into a band down its left edge, so
+ * a column of these reads as a set of tabs in a book. The type
+ * gets the most room of the three; the emblem is small and low.
+ * Where RIBBON is a stack of ribbons, this is a stack of pages.
+ * ─────────────────────────────────────────────────────────── */
+
+const LEAF_STARS: StarSpec[] = [
+  { right: 96, bottom: 30, size: 10, phase: 0.0, peak: 0.6, spin: 0.4 },
+  { right: 42, bottom: 84, size: 8, phase: 0.33, peak: 0.46, spin: -0.35 },
+  { right: 18, bottom: 40, size: 11, phase: 0.66, peak: 0.55, spin: 0.3 },
+];
+
+export function VariantLeaf({ card }: VariantProps) {
+  const reduceMotion = useReducedMotion();
+  const clock = useCardClock(reduceMotion, 11000);
+  const tint = card.decorColor;
+
+  const markStyle = useAnimatedStyle(() => {
+    if (reduceMotion) return { opacity: 0.2 };
+    return { opacity: 0.15 + (0.5 + 0.5 * Math.sin(clock.value * Math.PI * 2)) * 0.09 };
+  });
+
+  return (
+    <View style={[s2.plate, { borderColor: lit(tint, 84, 55) }]}>
+      <LinearGradient
+        colors={[lit(tint, 98), lit(tint, 94)]}
+        start={{ x: 0.1, y: 0 }}
+        end={{ x: 0.9, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      {/* The tab: all of the card's colour, in one band. */}
+      <LinearGradient
+        colors={[deep(tint, 52), deep(tint, 40)]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={s2.tab}
+        pointerEvents="none"
+      />
+      <View pointerEvents="none" style={s2.litEdge} />
+
+      <Animated.View pointerEvents="none" style={[s2.mark, markStyle]}>
+        <card.Decor s={96} c={deep(tint, 46)} w={1.4} />
+      </Animated.View>
+      {LEAF_STARS.map((star, i) => (
+        <CardStar key={i} star={star} clock={clock} color={deep(tint, 52)} still={reduceMotion} />
+      ))}
+
+      <View style={[s2.arrow, { backgroundColor: card.arrowBg }]} pointerEvents="none">
+        <View style={s2.arrowTilt}><ArrowUpRight s={15} c="#fff" w={2.5} /></View>
+      </View>
+
+      <View style={s2.body}>
+        <Text style={[s2.label, { color: deep(tint, 40) }]}>{card.label}</Text>
+        <Text style={[s2.title, { color: card.titleColor }]}>{card.title}</Text>
+        <Text style={[s2.desc, { color: deep(tint, 34) }]}>{card.description}</Text>
+      </View>
+    </View>
+  );
+}
+
+const s2 = StyleSheet.create({
+  plate: {
+    position: 'relative',
+    borderRadius: 24,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.06,
+    shadowRadius: 13,
+    elevation: 3,
+  },
+  tab: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 7 },
+  litEdge: {
+    position: 'absolute',
+    top: 1,
+    left: 24,
+    right: 24,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+  },
+  mark: { position: 'absolute', right: 10, bottom: -2, alignItems: 'center', justifyContent: 'center' },
+  arrow: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  arrowTilt: { transform: [{ rotate: '-15deg' }] },
+  body: { paddingLeft: 24, paddingRight: 18, paddingTop: 16, paddingBottom: 18, maxWidth: '86%' },
+  label: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 8 },
+  title: { fontFamily: F.serifMedium, fontSize: 27, lineHeight: 31, letterSpacing: -0.3, marginBottom: 4 },
+  desc: { fontFamily: F.serif, fontSize: 16, lineHeight: 23 },
 });
 
 export const LAB_VARIANTS: LabVariant[] = [
-  { key: 'btfl2', label: 'BTFL 2', Card: VariantBtfl2, gap: 11 },
-  { key: 'btfl', label: 'BTFL', Card: VariantBtfl, gap: 11 },
+  { key: 'dawn', label: 'Dawn', Card: VariantDawn, gap: 10 },
+  { key: 'ribbon', label: 'Ribbon', Card: VariantRibbon, gap: 10 },
+  { key: 'leaf', label: 'Leaf', Card: VariantLeaf, gap: 10 },
   { key: 'newengraved', label: 'New Engraved', Card: VariantNewEngraved, gap: 10 },
   { key: 'one', label: 'ONE', Card: VariantOne, gap: 10 },
   { key: 'current', label: 'Current', Card: VariantCurrent, gap: 6 },
