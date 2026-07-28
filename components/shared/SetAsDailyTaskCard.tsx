@@ -88,12 +88,20 @@ export default function SetAsDailyTaskCard({
         pointerEvents="none"
       />
 
-      {/* The mark, as the cards carry theirs: large, faint, and bleeding off
-          the corner rather than seated in a ring. It appears once — the seat
-          on the left was tried and dropped, because the same symbol twice on
-          one row is the fault the doors were just cured of. */}
+      {/* The mark, faint, and anchoring the left of the row.
+       *
+       * The cards carry theirs bleeding off the bottom-RIGHT corner, and this
+       * row did too at first — but a card is tall enough to keep its arrow at
+       * the top and its watermark at the foot, while a 72pt row centres the
+       * orb straight onto the mark and chops it in half. So the mark moves to
+       * the far side of the row, where nothing is laid over it.
+       *
+       * It stands whole rather than cropped: at this size a piece of a
+       * calendar reads as damage, not as a watermark. And it appears once —
+       * a ringed seat here as well was tried and dropped, because the same
+       * symbol twice on one row is the fault the doors were just cured of. */}
       <View style={s.watermark} pointerEvents="none">
-        <CalendarCheck s={80} c={MARK} w={1} />
+        <CalendarCheck s={56} c={MARK} w={1} />
       </View>
 
       <View style={s.copy}>
@@ -153,12 +161,14 @@ const s = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
+  // `top`/`bottom` rather than a percentage and a negative margin: it centres
+  // on whatever height the row settles at, including a scaled font.
   watermark: {
     position: 'absolute',
-    right: -4,
-    bottom: -14,
-    width: 80,
-    height: 80,
+    left: 14,
+    top: 0,
+    bottom: 0,
+    width: 56,
     alignItems: 'center',
     justifyContent: 'center',
     opacity: 0.13,
@@ -166,6 +176,8 @@ const s = StyleSheet.create({
   copy: {
     flex: 1,
     minWidth: 0,
+    // Clear of the mark, which stands from 14 to 70.
+    paddingLeft: 56,
   },
   title: {
     fontFamily: F.serifMedium,
