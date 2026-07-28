@@ -1565,10 +1565,156 @@ const s2 = StyleSheet.create({
   desc: { fontFamily: F.serif, fontSize: 16, lineHeight: 23 },
 });
 
+/* ── MEDALLION ────────────────────────────────────────────────
+ * The fourth, and the boldest, because it borrows the app's own
+ * best device rather than inventing one.
+ *
+ * On the Home progress card the flame does not sit ON a disc —
+ * it stands INSIDE a sun, in layered light, and that is the
+ * single thing about that card people call beautiful. The three
+ * other candidates all treat the emblem as a watermark: a ghost
+ * of an object, printed at a tenth of its strength and hidden
+ * behind the type. This one gives it back its body.
+ *
+ * The card is read left to right: the words on the left at their
+ * full width, and on the right a medallion — a pool of light
+ * with the emblem standing in it AT FULL STRENGTH, ringed by the
+ * constellation. It is the one card of the four where the emblem
+ * is a thing rather than a texture, which is what makes a stack
+ * of them legible at a glance: you learn to find Habits by its
+ * mark, not by reading four titles.
+ *
+ * Budget is the same as the others: one clock, opacity and
+ * rotation only, the medallion's light drawn once.
+ * ─────────────────────────────────────────────────────────── */
+
+const MEDAL_STARS: StarSpec[] = [
+  { right: 106, bottom: 96, size: 11, phase: 0.0, peak: 0.8, spin: 0.45 },
+  { right: 22, bottom: 108, size: 9, phase: 0.28, peak: 0.62, spin: -0.4 },
+  { right: 14, bottom: 26, size: 10, phase: 0.56, peak: 0.7, spin: 0.35 },
+  { right: 104, bottom: 22, size: 8, phase: 0.8, peak: 0.55, spin: -0.5 },
+];
+
+const MEDAL = 96;
+
+export function VariantMedallion({ card }: VariantProps) {
+  const reduceMotion = useReducedMotion();
+  const clock = useCardClock(reduceMotion, 9500);
+  const tint = card.decorColor;
+  const glowId = `medal-${card.id}`;
+
+  // The medallion breathes — the light around the emblem, never the emblem
+  // itself, so nothing ever scales.
+  const haloStyle = useAnimatedStyle(() => {
+    if (reduceMotion) return { opacity: 0.9 };
+    return { opacity: 0.78 + (0.5 + 0.5 * Math.sin(clock.value * Math.PI * 2)) * 0.22 };
+  });
+
+  return (
+    <View style={[s3.plate, { borderColor: lit(tint, 80, 60) }]}>
+      <LinearGradient
+        colors={[lit(tint, 97), lit(tint, 92), lit(tint, 86)]}
+        locations={[0, 0.55, 1]}
+        start={{ x: 0.05, y: 0 }}
+        end={{ x: 0.95, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      <View pointerEvents="none" style={s3.litEdge} />
+
+      {/* The medallion: light first, then the emblem standing in it. */}
+      <View pointerEvents="none" style={s3.medalSeat}>
+        <Animated.View style={[StyleSheet.absoluteFill, haloStyle]}>
+          <Svg width={MEDAL + 44} height={MEDAL + 44} style={s3.halo}>
+            <Defs>
+              <RadialGradient id={glowId} cx="50%" cy="50%" r="50%">
+                <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.98} />
+                <Stop offset="0.42" stopColor={lit(tint, 93)} stopOpacity={0.8} />
+                <Stop offset="0.72" stopColor={lit(tint, 88)} stopOpacity={0.42} />
+                <Stop offset="1" stopColor={lit(tint, 86)} stopOpacity={0} />
+              </RadialGradient>
+            </Defs>
+            <Circle cx={(MEDAL + 44) / 2} cy={(MEDAL + 44) / 2} r={(MEDAL + 44) / 2} fill={`url(#${glowId})`} />
+          </Svg>
+        </Animated.View>
+        {/* Full strength. This is the whole point of the variant. */}
+        <card.Decor s={46} c={deep(tint, 40)} w={1.8} />
+      </View>
+
+      {MEDAL_STARS.map((star, i) => (
+        <CardStar key={i} star={star} clock={clock} color={deep(tint, 50)} still={reduceMotion} />
+      ))}
+
+      <View style={[s3.arrow, { backgroundColor: card.arrowBg }]} pointerEvents="none">
+        <View style={s3.arrowTilt}><ArrowUpRight s={14} c="#fff" w={2.5} /></View>
+      </View>
+
+      <View style={s3.body}>
+        <Text style={[s3.label, { color: deep(tint, 38) }]}>{card.label}</Text>
+        <Text style={[s3.title, { color: card.titleColor }]}>{card.title}</Text>
+        <Text style={[s3.desc, { color: deep(tint, 34) }]}>{card.description}</Text>
+      </View>
+    </View>
+  );
+}
+
+const s3 = StyleSheet.create({
+  plate: {
+    position: 'relative',
+    borderRadius: 26,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  litEdge: {
+    position: 'absolute',
+    top: 1,
+    left: 22,
+    right: 22,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+  },
+  // Right of the type, and centred on the card's own height.
+  medalSeat: {
+    position: 'absolute',
+    right: 14,
+    top: 0,
+    bottom: 0,
+    width: MEDAL,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  halo: { position: 'absolute', left: -22, top: '50%', marginTop: -(MEDAL + 44) / 2 },
+  arrow: {
+    position: 'absolute',
+    top: 13,
+    right: 13,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  arrowTilt: { transform: [{ rotate: '-15deg' }] },
+  // The type keeps the left, and stops well clear of the medallion.
+  body: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 18, maxWidth: '64%' },
+  label: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 8 },
+  title: { fontFamily: F.serifMedium, fontSize: 26, lineHeight: 30, letterSpacing: -0.3, marginBottom: 4 },
+  desc: { fontFamily: F.serif, fontSize: 15.5, lineHeight: 22 },
+});
+
 export const LAB_VARIANTS: LabVariant[] = [
   { key: 'dawn', label: 'Dawn', Card: VariantDawn, gap: 10 },
   { key: 'ribbon', label: 'Ribbon', Card: VariantRibbon, gap: 10 },
   { key: 'leaf', label: 'Leaf', Card: VariantLeaf, gap: 10 },
+  { key: 'medallion', label: 'Medallion', Card: VariantMedallion, gap: 10 },
   { key: 'newengraved', label: 'New Engraved', Card: VariantNewEngraved, gap: 10 },
   { key: 'one', label: 'ONE', Card: VariantOne, gap: 10 },
   { key: 'current', label: 'Current', Card: VariantCurrent, gap: 6 },
