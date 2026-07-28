@@ -21,10 +21,11 @@ export default function LibraryView() {
         </View>
 
         <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
-          {LIBRARY_SECTION_CARDS.map(card => (
+          {LIBRARY_SECTION_CARDS.map((card, i) => (
             <RibbonSectionCard
               key={card.id}
               {...card}
+              index={i}
               onPress={() => router.push(card.route as any)}
             />
           ))}

@@ -117,6 +117,40 @@ export const RIBBON_STARS: RibbonStarSpec[] = [
   { zone: 'column', u: 0.46, v: 0.94, size: 8, clock: 'foot', phase: 0.8, peak: 0.9, tone: 'light', turn: -18 },
 ];
 
+/* ── The stack's rhythm ───────────────────────────────────────
+ * Every card mounts in the same frame and starts its clocks at zero, so a
+ * screen of them keeps perfect time: the big star beside the title arrives on
+ * all five at once, and five cards behaving as one is the opposite of what
+ * this design is for.
+ *
+ * Offsetting the phase alone is not enough. Cards on the SAME period and
+ * different phases hold a fixed formation — a wave rolling down the list,
+ * repeating every ten seconds, which the eye learns as quickly as unison. So
+ * the periods differ too, and the cards drift apart for good.
+ *
+ * Both come off irrationals rather than a random number: the spread is then
+ * even for any number of cards, and identical on every launch, so it can be
+ * checked here instead of watched for.
+ */
+
+/** The golden ratio: successive multiples land as far apart as numbers can. */
+const PHI = 0.618033988749895;
+/** √2 − 1, a second irrational, so stretch does not track offset. */
+const SILVER = 0.414213562373095;
+
+/** How much the periods may differ between cards, either way. */
+const STRETCH = 0.16;
+
+export function ribbonCardRhythm(index: number): { offset: number; stretch: number } {
+  // A card that never learns its place must still keep time, not stop: NaN
+  // would otherwise travel all the way into the worklet and blank the field.
+  const i = Number.isFinite(index) ? Math.max(0, Math.floor(index)) : 0;
+  return {
+    offset: (i * PHI) % 1,
+    stretch: 1 + (((i * SILVER) % 1) - 0.5) * STRETCH,
+  };
+}
+
 export type PlacedStar = RibbonStarSpec & { x: number; y: number; d: string };
 
 /* The four-pointed spark, as control points in a 24×24 box: one moveTo

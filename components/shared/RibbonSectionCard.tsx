@@ -19,6 +19,7 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import type { SectionCardConfig } from '@/components/shared/sectionCardData';
 import {
   placeRibbonStars,
+  ribbonCardRhythm,
   ribbonEmblem,
   type PlacedStar,
 } from '@/components/shared/ribbonCardGeometry';
@@ -117,17 +118,19 @@ const AnimatedPath = Animated.createAnimatedComponent(Path);
  * one Svg.
  */
 function Star({
-  star, clock, color, still,
+  star, clock, color, still, offset,
 }: {
   star: PlacedStar;
   clock: SharedValue<number>;
   color: string;
   still: boolean;
+  /** where this card sits in the stack's rhythm */
+  offset: number;
 }) {
   const window = WINDOW[star.clock];
   const animatedProps = useAnimatedProps(() => {
     if (still) return { opacity: star.peak * 0.5 };
-    const p = (clock.value + star.phase) % 1;
+    const p = (clock.value + star.phase + offset) % 1;
     const on = p < window ? Math.sin((p / window) * Math.PI) : 0;
     return { opacity: on * star.peak };
   });
@@ -146,15 +149,26 @@ function useClock(reduceMotion: boolean, duration: number) {
   return clock;
 }
 
-type Props = SectionCardConfig & { onPress?: () => void };
+type Props = SectionCardConfig & {
+  onPress?: () => void;
+  /**
+   * Where this card sits in its stack. It buys the card its own moment and
+   * its own tempo — see `ribbonCardRhythm`. Left out, every card on a screen
+   * keeps identical time with every other.
+   */
+  index?: number;
+};
 
 export default function RibbonSectionCard({
   label, title, description, titleColor, arrowBg,
-  Decor, decorColor, decorUpright, onPress,
+  Decor, decorColor, decorUpright, onPress, index = 0,
 }: Props) {
   const reduceMotion = useReducedMotion();
-  const footClock = useClock(reduceMotion, PERIOD.foot);
-  const shoulderClock = useClock(reduceMotion, PERIOD.shoulder);
+  // Its own moment in the cycle, and its own slightly different length of
+  // cycle, so it never falls back into step with the card above it.
+  const rhythm = ribbonCardRhythm(index);
+  const footClock = useClock(reduceMotion, PERIOD.foot * rhythm.stretch);
+  const shoulderClock = useClock(reduceMotion, PERIOD.shoulder * rhythm.stretch);
 
   // The plate's own size. Nothing decorative can be placed until it is known,
   // and everything decorative follows from it.
@@ -177,7 +191,7 @@ export default function RibbonSectionCard({
   // things moving near each other.
   const markStyle = useAnimatedStyle(() => {
     if (reduceMotion) return { opacity: 0.34 };
-    const p = (footClock.value + 0.71) % 1;
+    const p = (footClock.value + 0.71 + rhythm.offset) % 1;
     const near = p < WINDOW.foot ? Math.sin((p / WINDOW.foot) * Math.PI) : 0;
     return { opacity: 0.26 + near * 0.16 };
   });
@@ -241,6 +255,7 @@ export default function RibbonSectionCard({
               clock={star.clock === 'foot' ? footClock : shoulderClock}
               color={star.tone === 'light' ? '#FFFFFF' : deep(tint, 51)}
               still={reduceMotion}
+              offset={rhythm.offset}
             />
           ))}
         </Svg>

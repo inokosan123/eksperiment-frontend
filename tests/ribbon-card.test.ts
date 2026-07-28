@@ -4,6 +4,7 @@ import {
   RIBBON,
   RIBBON_STARS,
   placeRibbonStars,
+  ribbonCardRhythm,
   ribbonEmblem,
   ribbonZones,
   sparkPath,
@@ -149,6 +150,44 @@ test('both constellations are used, and each has its own clock', () => {
       if (i === 0) return;
       assert.ok(p - phases[i - 1] > 0.1, 'two stars on one clock arrive together');
     });
+  });
+});
+
+test('no two cards on a screen share a moment', () => {
+  // The complaint this answers: the big star beside the title arriving on
+  // every card at once. Screens carry four to six of these.
+  for (let n = 2; n <= 8; n += 1) {
+    const offsets = Array.from({ length: n }, (_, i) => ribbonCardRhythm(i).offset)
+      .sort((a, b) => a - b);
+    let closest = 1;
+    offsets.forEach((p, i) => {
+      const gap = i === 0 ? p + 1 - offsets[offsets.length - 1] : p - offsets[i - 1];
+      closest = Math.min(closest, gap);
+    });
+    // A star is lit for a third to a little under half of its cycle, so
+    // neighbours must be further apart than a rounding error — an eighth of
+    // the cycle keeps their peaks visibly apart.
+    assert.ok(closest > 0.08, `${n} cards: two arrive ${closest.toFixed(3)} apart`);
+  }
+});
+
+test('cards run at different tempos, so they never fall back into step', () => {
+  const stretches = Array.from({ length: 6 }, (_, i) => ribbonCardRhythm(i).stretch);
+  stretches.forEach(s => {
+    // Different, but all still the same design — a card must not read as
+    // hurried or sluggish next to its neighbour.
+    assert.ok(s > 0.9 && s < 1.1, `tempo ${s} is off the design`);
+  });
+  const unique = new Set(stretches.map(s => s.toFixed(4)));
+  assert.equal(unique.size, stretches.length, 'two cards share a tempo');
+});
+
+test('the rhythm is the same on every launch, and safe for a stray index', () => {
+  assert.deepEqual(ribbonCardRhythm(3), ribbonCardRhythm(3));
+  [0, -1, 2.7, Number.NaN].forEach(i => {
+    const r = ribbonCardRhythm(i);
+    assert.ok(Number.isFinite(r.offset) && r.offset >= 0 && r.offset < 1, `offset broke on ${i}`);
+    assert.ok(Number.isFinite(r.stretch) && r.stretch > 0, `stretch broke on ${i}`);
   });
 });
 
