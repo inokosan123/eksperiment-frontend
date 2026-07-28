@@ -1162,6 +1162,12 @@ type StarSpec = {
   peak: number;
   spin: number;
   /**
+   * How much of the cycle this star is alight for. Small windows mean a long
+   * dark wait between appearances, and — because the swell is a sine across
+   * the window — a slower rise and fall too.
+   */
+  window?: number;
+  /**
    * Ribbon runs from near-white at the shoulder to full colour at the foot,
    * so one star colour cannot serve the whole plate: white disappears up top
    * and the tint disappears down below. Each star carries its own.
@@ -1182,7 +1188,8 @@ function CardStar({
   const style = useAnimatedStyle(() => {
     if (still) return { opacity: star.peak * 0.5, transform: [{ rotate: '0deg' }] };
     const p = (clock.value + star.phase) % 1;
-    const on = p < STAR_WINDOW ? Math.sin((p / STAR_WINDOW) * Math.PI) : 0;
+    const w = star.window ?? STAR_WINDOW;
+    const on = p < w ? Math.sin((p / w) * Math.PI) : 0;
     return { opacity: on * star.peak, transform: [{ rotate: `${p * 360 * star.spin}deg` }] };
   });
 
@@ -1393,18 +1400,29 @@ const RIBBON_STARS: StarSpec[] = [
 // on a SECOND clock: the two clusters drift in and out of relation instead
 // of pulsing together, which is what keeps a card with two constellations
 // from looking like one constellation cut in half.
+// Slower AND rarer than the foot's — the two are different things and Pavle
+// asked for both. A 0.34 window on a sixteen-second clock gives each star
+// about two and three-quarter seconds to arrive and the same to leave (the
+// foot's take two), and then eleven seconds of nothing (the foot's wait
+// under six). So it swells more gently and returns half as often. And
+// the phases are deliberately UNEVEN (0.31 and 0.66, not 0.33 and 0.66), so
+// the gaps between arrivals differ and the shoulder never keeps time. That
+// unevenness is the whole point: a rhythm you cannot predict reads as
+// something happening, a rhythm you can reads as a loop.
+const SHOULDER_WINDOW = 0.34;
 const RIBBON_SHOULDER_STARS: StarSpec[] = [
-  { left: 152, top: 15, size: 10, phase: 0.0, peak: 0.55, spin: 0.4 },
-  { left: 7, top: 56, size: 12, phase: 0.34, peak: 0.62, spin: -0.35 },
-  { left: 104, top: 79, size: 8, phase: 0.67, peak: 0.44, spin: 0.5 },
+  { left: 152, top: 15, size: 10, phase: 0.0, peak: 0.58, spin: 0.4, window: SHOULDER_WINDOW },
+  { left: 7, top: 56, size: 12, phase: 0.31, peak: 0.66, spin: -0.35, window: SHOULDER_WINDOW },
+  { left: 104, top: 79, size: 8, phase: 0.66, peak: 0.46, spin: 0.5, window: SHOULDER_WINDOW },
 ];
 
 export function VariantRibbon({ card }: VariantProps) {
   const reduceMotion = useReducedMotion();
   const clock = useCardClock(reduceMotion, 10000);
-  // Deliberately not a multiple of the first: 7 against 10 means the two
-  // clusters never settle into a repeating pair.
-  const shoulderClock = useCardClock(reduceMotion, 7000);
+  // Deliberately not a multiple of the first: 16 against 10 means the two
+  // clusters only line up again every eighty seconds, which is long enough
+  // that nobody watching ever sees them keep time together.
+  const shoulderClock = useCardClock(reduceMotion, 16000);
   const tint = card.decorColor;
 
   // The emblem sits at the foot, and the last two stars pass closest to it —
