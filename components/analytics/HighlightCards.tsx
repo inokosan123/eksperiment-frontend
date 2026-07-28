@@ -1,16 +1,24 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import Animated, { Easing, FadeInDown, useReducedMotion } from 'react-native-reanimated';
 import {
-  AlertTriangle,
+  Activity,
+  CalendarCheck,
   Crown,
-  Target,
-  TrendingDown,
+  Sparkles,
   Trophy,
 } from '@/components/icons/Icons';
 import type { StreakLeader } from '@/components/analytics/analyticsOverview';
+import {
+  A,
+  cardShell,
+  Diamond,
+  HairRule,
+  MarqueeText,
+  SectionHead,
+  type IconComp,
+} from '@/components/analytics/analyticsUi';
 import { F } from '@/constants/tokens';
-
-const ACCENT = '#C5A059';
 
 interface HighlightCardsProps {
   bestStreakEver: StreakLeader | null;
@@ -30,42 +38,108 @@ interface QuickTaskHighlightCardsProps {
   thisMonthCount: number;
 }
 
-type IconComp = React.ComponentType<{ s?: number; c?: string; w?: number }>;
-
-function HighlightCard({
-  Icon,
-  label,
-  value,
-  detail,
-}: {
-  Icon: IconComp;
-  label: string;
+/**
+ * Every highlight is one half of a pair — a best against a worst, a
+ * strongest against a weakest. Six separate chips hid that; a group
+ * holding two facing readings across a ruled spine shows it, and gives
+ * each name the full half-width it needs.
+ */
+interface Reading {
+  caption: string;
   value: string;
-  detail?: string;
-}) {
+  unit?: string;
+  name: string;
+}
+
+interface PairGroup {
+  key: string;
+  eyebrow: string;
+  Icon: IconComp;
+  left: Reading;
+  right: Reading;
+  /** A weak side reads in oxblood; two neutral readings both stay gold. */
+  contrast?: boolean;
+}
+
+function PairSide({ reading, tone }: { reading: Reading; tone: 'high' | 'low' }) {
+  const ink = tone === 'low' ? A.missedInk : A.numberInk;
+  const capColor = tone === 'low' ? 'rgba(142,58,71,0.78)' : 'rgba(121,89,30,0.78)';
+  const dot = tone === 'low' ? A.missed : A.gold;
+  const known = reading.value !== '—';
+
   return (
-    <View style={s.tile}>
-      <View style={s.tileHead}>
-        <Icon s={11} c={ACCENT} w={2.2} />
-        <Text style={s.tileLabel} numberOfLines={1}>{label}</Text>
+    <View style={s.side}>
+      <View style={s.sideCap}>
+        <Diamond size={4} color={known ? dot : A.line} />
+        <Text style={[s.caption, { color: known ? capColor : A.faint }]} numberOfLines={1}>
+          {reading.caption}
+        </Text>
       </View>
-      <Text style={s.tileValue} numberOfLines={1}>{value}</Text>
-      {detail ? <Text style={s.tileDetail} numberOfLines={1}>{detail}</Text> : null}
+
+      <View style={s.valueRow}>
+        <Text
+          style={[s.value, { color: known ? ink : '#C4BDB2' }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.66}
+        >
+          {reading.value}
+        </Text>
+        {known && !!reading.unit && <Text style={s.unit}>{reading.unit}</Text>}
+      </View>
+
+      <MarqueeText
+        text={reading.name}
+        style={[s.name, !known && { color: '#C4BDB2' }]}
+        fadeColor="#FCFAF5"
+      />
     </View>
   );
 }
 
-function HighlightSection({ children }: { children: React.ReactNode }) {
+function PairGroupBlock({ group, index }: { group: PairGroup; index: number }) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <Animated.View
+      entering={
+        reduceMotion
+          ? undefined
+          : FadeInDown.duration(380).delay(70 + index * 80).easing(Easing.out(Easing.cubic))
+      }
+      style={s.group}
+    >
+      <View style={s.groupHead}>
+        <group.Icon s={13} c={A.gold} w={2.1} />
+        <Text style={s.groupEyebrow} numberOfLines={1}>
+          {group.eyebrow}
+        </Text>
+        <HairRule style={s.groupRule} />
+      </View>
+
+      <View style={s.groupBody}>
+        <PairSide reading={group.left} tone="high" />
+        <View style={s.spine} />
+        <PairSide reading={group.right} tone={group.contrast === false ? 'high' : 'low'} />
+      </View>
+    </Animated.View>
+  );
+}
+
+function HighlightSection({ groups, caption }: { groups: PairGroup[]; caption: string }) {
   return (
     <View style={s.card}>
-      <View style={s.head}>
-        <Trophy s={14} c={ACCENT} w={2} />
-        <Text style={s.kicker}>HIGHLIGHTS</Text>
+      <SectionHead Icon={Trophy} title="Highlights" caption={caption} />
+      <View style={s.groups}>
+        {groups.map((g, i) => (
+          <PairGroupBlock key={g.key} group={g} index={i} />
+        ))}
       </View>
-      <View style={s.grid}>{children}</View>
     </View>
   );
 }
+
+const days = (n: number | undefined) => (n === 1 ? 'day' : 'days');
+const tasks = (n: number | undefined) => (n === 1 ? 'task' : 'tasks');
 
 export default function HighlightCards({
   bestStreakEver,
@@ -75,46 +149,68 @@ export default function HighlightCards({
   mostConsistent,
   leastConsistent,
 }: HighlightCardsProps) {
-  return (
-    <HighlightSection>
-      <HighlightCard
-        Icon={Trophy}
-        label="Best Streak"
-        value={bestStreakEver ? `${bestStreakEver.bestStreak} days` : '--'}
-        detail={bestStreakEver?.name}
-      />
-      <HighlightCard
-        Icon={TrendingDown}
-        label="Worst Streak"
-        value={worstStreakEver ? `${worstStreakEver.bestStreak} days` : '--'}
-        detail={worstStreakEver?.name}
-      />
-      <HighlightCard
-        Icon={Trophy}
-        label="Current Best"
-        value={currentBestStreak ? `${currentBestStreak.currentStreak} days` : '--'}
-        detail={currentBestStreak?.name}
-      />
-      <HighlightCard
-        Icon={AlertTriangle}
-        label="Current Worst"
-        value={currentWorstStreak ? `${currentWorstStreak.currentStreak} days` : '--'}
-        detail={currentWorstStreak?.name}
-      />
-      <HighlightCard
-        Icon={Crown}
-        label="Most Consistent"
-        value={mostConsistent ? `${mostConsistent.pct}%` : '--'}
-        detail={mostConsistent?.name}
-      />
-      <HighlightCard
-        Icon={Target}
-        label="Least Consistent"
-        value={leastConsistent ? `${leastConsistent.pct}%` : '--'}
-        detail={leastConsistent?.name}
-      />
-    </HighlightSection>
-  );
+  const groups: PairGroup[] = [
+    {
+      key: 'ever',
+      eyebrow: 'LONGEST RUN EVER',
+      Icon: Trophy,
+      left: {
+        caption: 'BEST',
+        value: bestStreakEver ? String(bestStreakEver.bestStreak) : '—',
+        unit: days(bestStreakEver?.bestStreak),
+        name: bestStreakEver?.name ?? 'Nothing tracked yet',
+      },
+      right: {
+        caption: 'WEAKEST',
+        value: worstStreakEver ? String(worstStreakEver.bestStreak) : '—',
+        unit: days(worstStreakEver?.bestStreak),
+        name: worstStreakEver?.name ?? 'Nothing tracked yet',
+      },
+    },
+    {
+      key: 'now',
+      eyebrow: 'RUNNING RIGHT NOW',
+      Icon: Activity,
+      left: {
+        caption: 'BEST',
+        value: currentBestStreak ? String(currentBestStreak.currentStreak) : '—',
+        unit: days(currentBestStreak?.currentStreak),
+        name: currentBestStreak?.name ?? 'No streak running',
+      },
+      right: {
+        caption: 'WEAKEST',
+        value: currentWorstStreak ? String(currentWorstStreak.currentStreak) : '—',
+        unit: days(currentWorstStreak?.currentStreak),
+        name: currentWorstStreak?.name ?? 'Nothing slipping',
+      },
+    },
+    {
+      key: 'consistency',
+      eyebrow: 'CONSISTENCY',
+      Icon: Crown,
+      left: {
+        caption: 'MOST',
+        value: mostConsistent ? String(mostConsistent.pct) : '—',
+        unit: '%',
+        name: mostConsistent?.name ?? 'Nothing tracked yet',
+      },
+      right: {
+        caption: 'LEAST',
+        value: leastConsistent ? String(leastConsistent.pct) : '—',
+        unit: '%',
+        name: leastConsistent?.name ?? 'Nothing tracked yet',
+      },
+    },
+  ];
+
+  return <HighlightSection groups={groups} caption="Your strongest and weakest runs, side by side." />;
+}
+
+function formatDayLabel(dateKey: string): string {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  if (!y || !m || !d) return dateKey;
+  const date = new Date(y, m - 1, d, 12);
+  return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(date);
 }
 
 export function QuickTaskHighlightCards({
@@ -125,72 +221,115 @@ export function QuickTaskHighlightCards({
   thisWeekCount,
   thisMonthCount,
 }: QuickTaskHighlightCardsProps) {
-  return (
-    <HighlightSection>
-      <HighlightCard Icon={Target} label="Total Done" value={String(totalDone)} />
-      <HighlightCard Icon={TrendingDown} label="Avg / Day" value={String(avgPerDay)} />
-      <HighlightCard
-        Icon={Trophy}
-        label="Best Day"
-        value={bestDay ? String(bestDay.count) : '--'}
-        detail={bestDay?.date}
-      />
-      <HighlightCard
-        Icon={AlertTriangle}
-        label="Worst Day"
-        value={worstDay ? String(worstDay.count) : '--'}
-        detail={worstDay?.date}
-      />
-      <HighlightCard Icon={Trophy} label="This Week" value={String(thisWeekCount)} />
-      <HighlightCard Icon={Crown} label="This Month" value={String(thisMonthCount)} />
-    </HighlightSection>
-  );
+  const monthName = new Intl.DateTimeFormat('en-US', { month: 'long' }).format(new Date());
+
+  const groups: PairGroup[] = [
+    {
+      key: 'volume',
+      eyebrow: 'ALL TIME',
+      Icon: Sparkles,
+      contrast: false,
+      left: {
+        caption: 'TOTAL',
+        value: String(totalDone),
+        unit: tasks(totalDone),
+        name: 'Since you started',
+      },
+      right: {
+        caption: 'AVERAGE',
+        value: String(avgPerDay),
+        unit: 'a day',
+        name: 'On days with quick tasks',
+      },
+    },
+    {
+      key: 'single-day',
+      eyebrow: 'SINGLE DAY',
+      Icon: Trophy,
+      left: {
+        caption: 'BEST',
+        value: bestDay ? String(bestDay.count) : '—',
+        unit: tasks(bestDay?.count),
+        name: bestDay ? formatDayLabel(bestDay.date) : 'Nothing tracked yet',
+      },
+      right: {
+        caption: 'WEAKEST',
+        value: worstDay ? String(worstDay.count) : '—',
+        unit: tasks(worstDay?.count),
+        name: worstDay ? formatDayLabel(worstDay.date) : 'Nothing tracked yet',
+      },
+    },
+    {
+      key: 'recent',
+      eyebrow: 'RECENTLY',
+      Icon: CalendarCheck,
+      contrast: false,
+      left: {
+        caption: 'THIS WEEK',
+        value: String(thisWeekCount),
+        unit: tasks(thisWeekCount),
+        name: 'So far',
+      },
+      right: {
+        caption: 'THIS MONTH',
+        value: String(thisMonthCount),
+        unit: tasks(thisMonthCount),
+        name: monthName,
+      },
+    },
+  ];
+
+  return <HighlightSection groups={groups} caption="How your quick tasks have been adding up." />;
 }
 
 const s = StyleSheet.create({
-  card: {
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
+  card: { ...cardShell, padding: 18 },
+  groups: { marginTop: 16, rowGap: 10 },
+
+  group: {
+    borderRadius: 16,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: '#F0EDE6',
-    padding: 14,
-    shadowColor: '#1C1917',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 7,
-    elevation: 1,
+    borderColor: A.line,
+    backgroundColor: '#FCFAF5',
+    paddingHorizontal: 14,
+    paddingTop: 11,
+    paddingBottom: 13,
   },
-  head: { flexDirection: 'row', alignItems: 'center', columnGap: 6, marginBottom: 12 },
-  kicker: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: ACCENT },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 8, rowGap: 8 },
-  tile: {
-    width: '48%',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#F0EDE6',
-    backgroundColor: '#FAFAF9',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  tileHead: { flexDirection: 'row', alignItems: 'center', columnGap: 6 },
-  tileLabel: {
+  groupHead: { flexDirection: 'row', alignItems: 'center', columnGap: 7 },
+  groupEyebrow: {
     fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 1.6,
-    color: '#A8A29E',
+    fontSize: 8.4,
+    letterSpacing: 1.3,
+    color: 'rgba(121,89,30,0.72)',
+  },
+  groupRule: { flex: 1, marginLeft: 2 },
+
+  groupBody: { marginTop: 11, flexDirection: 'row', alignItems: 'flex-start' },
+  // The ruled spine the two readings face across.
+  spine: { width: 1, alignSelf: 'stretch', marginHorizontal: 13, backgroundColor: A.lineSoft },
+
+  side: { flex: 1, minWidth: 0 },
+  sideCap: { flexDirection: 'row', alignItems: 'center', columnGap: 5 },
+  caption: { fontFamily: F.sansBold, fontSize: 8.6, letterSpacing: 1.05 },
+
+  valueRow: { marginTop: 5, flexDirection: 'row', alignItems: 'baseline', columnGap: 4 },
+  value: {
     flexShrink: 1,
+    fontFamily: F.serifSemiBold,
+    fontSize: 27,
+    lineHeight: 30,
+    letterSpacing: -0.5,
+    includeFontPadding: false,
+    fontVariant: ['lining-nums', 'tabular-nums'],
   },
-  tileValue: {
-    marginTop: 6,
-    fontFamily: F.serifMedium,
-    fontSize: 17,
-    lineHeight: 19,
-    color: '#1A1714',
-  },
-  tileDetail: {
-    marginTop: 2,
-    fontFamily: F.sans,
-    fontSize: 10,
-    color: '#A8A29E',
+  unit: { fontFamily: F.serifItalic, fontSize: 13.5, color: A.faint },
+
+  name: {
+    marginTop: 4,
+    fontFamily: F.serif,
+    fontSize: 14,
+    lineHeight: 18,
+    color: A.muted,
   },
 });

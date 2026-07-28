@@ -21,6 +21,10 @@ type Props = {
   compactBottom?: boolean;
   sideWidth?: number;
   horizontalBleed?: number;
+  backButtonProps?: {
+    ref?: React.Ref<any>;
+    onLayout?: (event: any) => void;
+  };
 };
 
 export default function ScreenTitleBar({
@@ -36,6 +40,7 @@ export default function ScreenTitleBar({
   compactBottom,
   sideWidth,
   horizontalBleed = 0,
+  backButtonProps,
 }: Props) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -60,6 +65,7 @@ export default function ScreenTitleBar({
       <View style={[styles.side, wideSides && styles.sideLeftWide, { width: resolvedSideWidth }]}>
         {showBack && (
           <TouchableOpacity
+            {...backButtonProps}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               if (onBackOverride) onBackOverride();

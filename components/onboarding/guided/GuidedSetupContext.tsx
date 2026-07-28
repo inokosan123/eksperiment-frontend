@@ -68,13 +68,20 @@ export function GuidedSetupProvider({ children }: { children: React.ReactNode })
   const [presentation, setPresentation] = useState<GuidedOverlayPresentation | null>(null);
   const [targetLayouts, setTargetLayouts] = useState<Record<GuidedTargetId, GuidedTargetLayout>>({});
   const skipNextSessionSave = useRef(true);
+  // A cold-start restore must never overwrite a guide the user has already
+  // opened. This epoch makes an explicit runtime mutation authoritative while
+  // the async persisted-session read is still in flight.
+  const sessionMutationEpochRef = useRef(0);
 
   useEffect(() => {
     let alive = true;
+    const restoreEpoch = sessionMutationEpochRef.current;
     loadGuidedSetupSession()
       .then(saved => {
         if (!alive) return;
-        setSession(saved?.active ? saved : null);
+        if (sessionMutationEpochRef.current === restoreEpoch) {
+          setSession(saved?.active ? saved : null);
+        }
         setHydrated(true);
       })
       .catch(error => {
@@ -98,6 +105,7 @@ export function GuidedSetupProvider({ children }: { children: React.ReactNode })
   }, [hydrated, session]);
 
   const beginGuidedSetup = useCallback((input: StartGuidedSetupInput) => {
+    sessionMutationEpochRef.current += 1;
     skipNextSessionSave.current = false;
     setPresentation(null);
     setSession(previous => ({
@@ -115,6 +123,7 @@ export function GuidedSetupProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const patchSession = useCallback((patch: Partial<GuidedSessionState>) => {
+    sessionMutationEpochRef.current += 1;
     skipNextSessionSave.current = false;
     setSession(previous => (
       previous
@@ -124,6 +133,7 @@ export function GuidedSetupProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const completeStep = useCallback((step: GuidedStep) => {
+    sessionMutationEpochRef.current += 1;
     skipNextSessionSave.current = false;
     setSession(previous => (
       previous
@@ -137,6 +147,7 @@ export function GuidedSetupProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const endGuidedSetup = useCallback(() => {
+    sessionMutationEpochRef.current += 1;
     skipNextSessionSave.current = false;
     setPresentation(null);
     setTargetLayouts({});
@@ -249,18 +260,53 @@ export function useGuidedOverlayState() {
 
 export function useGuideTarget(id: GuidedTargetId, enabled = true) {
   const ref = useRef<any>(null);
+  const measurementEpochRef = useRef(0);
   const { session, registerTarget, unregisterTarget } = useGuidedSetup();
   const active = enabled && session?.active === true;
 
-  const measure = useCallback(() => {
-    if (!active) return;
+  const measureNow = useCallback((
+    onMeasured?: (layout: GuidedTargetLayout | null) => void,
+  ) => {
+    const measurementEpoch = ++measurementEpochRef.current;
+    if (!active) {
+      onMeasured?.(null);
+      return;
+    }
     requestAnimationFrame(() => {
-      ref.current?.measureInWindow((x: number, y: number, width: number, height: number) => {
-        if (width <= 0 || height <= 0) return;
-        registerTarget(id, { x, y, width, height });
+      if (measurementEpochRef.current !== measurementEpoch) {
+        onMeasured?.(null);
+        return;
+      }
+      const node = ref.current;
+      if (!node?.measureInWindow) {
+        onMeasured?.(null);
+        return;
+      }
+      node.measureInWindow((x: number, y: number, width: number, height: number) => {
+        if (measurementEpochRef.current !== measurementEpoch) {
+          onMeasured?.(null);
+          return;
+        }
+        const valid = Number.isFinite(x)
+          && Number.isFinite(y)
+          && Number.isFinite(width)
+          && Number.isFinite(height)
+          && width > 0
+          && height > 0;
+        if (!valid) {
+          onMeasured?.(null);
+          return;
+        }
+        const layout = { x, y, width, height };
+        registerTarget(id, layout);
+        onMeasured?.(layout);
       });
     });
   }, [active, id, registerTarget]);
+
+  const measure = useCallback(() => {
+    measureNow();
+  }, [measureNow]);
 
   const onLayout = useCallback((_event: LayoutChangeEvent) => {
     measure();
@@ -268,8 +314,14 @@ export function useGuideTarget(id: GuidedTargetId, enabled = true) {
 
   useEffect(() => {
     if (active) measure();
-    return () => unregisterTarget(id);
+    return () => {
+      measurementEpochRef.current += 1;
+      unregisterTarget(id);
+    };
   }, [active, id, measure, unregisterTarget]);
 
-  return useMemo(() => ({ ref, onLayout, measure }), [measure, onLayout]);
+  return useMemo(
+    () => ({ ref, onLayout, measure, measureNow }),
+    [measure, measureNow, onLayout],
+  );
 }

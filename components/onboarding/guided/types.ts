@@ -88,6 +88,8 @@ export type GuidedOverlayProgress = {
 export type GuidedOverlayPresentation = {
   key: string;
   message: string;
+  // Keep the coach shell mounted while only its instruction changes.
+  coachGroupKey?: string;
   targetId?: GuidedTargetId;
   cutoutPadding?: number;
   placement?: GuidedOverlayPlacement;
@@ -100,13 +102,21 @@ export type GuidedOverlayPresentation = {
   // A whisper scrim instead of the full dim — used for "look at the whole
   // screen" reveal moments where nothing is spotlit.
   lightScrim?: boolean;
+  // Sheet-level guide moments can keep content lit, dismiss the coach after
+  // an interaction, and tune the two floating elements without changing defaults.
+  hideDim?: boolean;
+  hideCoach?: boolean;
+  coachTopOffset?: number;
+  ctaBottomOffset?: number;
   // Structured coach-bubble content. All optional — presentations that only
   // pass `message` render exactly as before.
   eyebrow?: string;
   highlights?: string[];
   chips?: string[];
   action?: string;
+  actionIcon?: 'pencil';
   hint?: GuidedGestureHint;
+  hintTargetId?: GuidedTargetId;
   // Where the hint sits inside the cutout — e.g. 'left' over a task's check circle.
   hintAnchor?: 'center' | 'left' | 'right';
   // Fine offset from the anchored position, e.g. to sit on the SECOND day tab.

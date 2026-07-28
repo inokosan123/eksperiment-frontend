@@ -3,8 +3,9 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { BarChart3, ChevronRight, Pencil, Shield } from '@/components/icons/Icons';
+import { Pencil, Shield } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import DayGauge, { gaugeStanding, gaugeStateColor } from './DayGauge';
@@ -27,6 +28,21 @@ import {
 // while private activity below it is ordered by real group and app usage.
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
+
+function EditButtonPattern() {
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+        <Defs>
+          <Pattern id="edit-plan-lines" width={28} height={28} patternUnits="userSpaceOnUse">
+            <Path d="M 0 28 L 28 0" stroke="#1E201E" strokeOpacity={0.045} strokeWidth={1} />
+          </Pattern>
+        </Defs>
+        <Rect width="100%" height="100%" fill="url(#edit-plan-lines)" />
+      </Svg>
+    </View>
+  );
+}
 
 export default function TodayDetailView() {
   const router = useRouter();
@@ -163,23 +179,25 @@ export default function TodayDetailView() {
           )}
         </Animated.View>
 
-        <Animated.View entering={enter(180)} style={s.actionsRow}>
+        <Animated.View entering={enter(180)}>
           <TouchableOpacity
-            style={s.actionButton}
-            activeOpacity={0.78}
+            style={s.editPlanButton}
+            activeOpacity={0.84}
             onPress={() => router.push(`/day-plan?planId=${plan.id}` as never)}
+            accessibilityRole="button"
+            accessibilityLabel={`Edit ${plan.name}`}
           >
-            <Pencil s={14} c={C.goldDark} w={2} />
-            <Text style={s.actionButtonText}>Edit this plan</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={s.actionButton}
-            activeOpacity={0.78}
-            onPress={() => router.push('/focus-analytics' as never)}
-          >
-            <BarChart3 s={14} c={C.goldDark} w={2} />
-            <Text style={s.actionButtonText}>Analytics</Text>
-            <ChevronRight s={13} c={C.goldDark} w={2.2} />
+            <LinearGradient
+              colors={['#E9EAE7', '#F8F8F6', '#EEEFEA']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <EditButtonPattern />
+            <View style={s.editPlanIcon}>
+              <Pencil s={17} c="#292B29" w={2.2} />
+            </View>
+            <Text style={s.editPlanText}>Edit plan</Text>
           </TouchableOpacity>
         </Animated.View>
       </ScrollView>
@@ -215,19 +233,22 @@ const s = StyleSheet.create({
   emptyGroups: { borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderStyle: 'dashed', borderColor: '#DDD8CC', backgroundColor: '#FEFDF9', paddingHorizontal: 16, paddingVertical: 15 },
   emptyGroupsTitle: { fontFamily: F.serifMedium, fontSize: 16, color: C.text },
   emptyGroupsBody: { marginTop: 3, fontFamily: F.sans, fontSize: 11, lineHeight: 15.5, color: C.textSecondary },
-  actionsRow: { flexDirection: 'row', gap: 10 },
-  actionButton: {
-    flex: 1,
-    minHeight: 46,
+  editPlanButton: {
+    position: 'relative',
+    overflow: 'hidden',
+    minHeight: 58,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
-    borderRadius: 15,
+    gap: 10,
+    borderRadius: 18,
     borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: '#E5D9BD',
-    backgroundColor: '#FFF9EB',
+    borderColor: '#D2D3CF',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    boxShadow: '0 5px 14px rgba(28, 31, 28, 0.07)',
   },
-  actionButtonText: { fontFamily: F.sansSemiBold, fontSize: 11.5, color: C.goldDark },
+  editPlanIcon: { flexShrink: 0, width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: '#CED0CC', backgroundColor: 'rgba(255,255,255,0.72)', alignItems: 'center', justifyContent: 'center' },
+  editPlanText: { fontFamily: F.serifSemiBold, fontSize: 17.5, lineHeight: 21, color: '#292B29' },
 });

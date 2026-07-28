@@ -23,6 +23,10 @@ import {
   isJournalDayComplete,
 } from '@/components/journal/journalLogic';
 import type { JournalSection } from '@/components/journal/journalSections';
+import {
+  createJournalWriteCoordinator,
+  type JournalWriteCoordinator,
+} from '@/components/journal/journal-write-coordinator';
 
 export type JournalDotKind = 'daily' | 'morning' | 'morningDraft' | 'free';
 
@@ -95,7 +99,7 @@ function normalizePrompts(prompts?: JournalPromptAnswer[]) {
 }
 
 function mergeEntry(base: JournalEntry, patch: JournalEntryPatch): JournalEntry {
-  const now = Date.now();
+  const now = Math.max(Date.now(), base.updatedAt + 1);
   return {
     ...base,
     ...patch,
@@ -125,6 +129,50 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
   const completionEventIdRef = useRef(0);
   const queuedCompletionDatesRef = useRef(new Set<string>());
   const persistedCompletionDatesRef = useRef(new Set<string>());
+  const writeRevisionsRef = useRef(new Map<string, number>());
+  const saveQueueRef = useRef<JournalWriteCoordinator<JournalEntry, JournalEntry> | null>(null);
+
+  if (!saveQueueRef.current) {
+    saveQueueRef.current = createJournalWriteCoordinator({
+      persist: upsertJournalEntry,
+      isLatestRevision: (date, revision) => (
+        writeRevisionsRef.current.get(date) === revision
+      ),
+      onLatestPersisted: (date, request, saved) => {
+        // A newer optimistic revision may have been requested while this write
+        // was in flight. The coordinator only invokes this callback for the
+        // latest revision, so an older result cannot roll back the UI or emit
+        // completion feedback prematurely.
+        const persistedEntries = upsertEntryInList(entriesRef.current, saved);
+        entriesRef.current = persistedEntries;
+        setEntries(persistedEntries);
+
+        const wasPersistedComplete = persistedCompletionDatesRef.current.has(date);
+        const isPersistedComplete = isJournalDayComplete(saved);
+        if (isPersistedComplete) {
+          persistedCompletionDatesRef.current.add(date);
+        } else {
+          persistedCompletionDatesRef.current.delete(date);
+        }
+
+        if (
+          request.queueCompletionCelebration
+          && !wasPersistedComplete
+          && isPersistedComplete
+          && !queuedCompletionDatesRef.current.has(date)
+        ) {
+          queuedCompletionDatesRef.current.add(date);
+          completionEventIdRef.current += 1;
+          setCompletionEvent({
+            id: completionEventIdRef.current,
+            date,
+            currentStreak: computeJournalStreak(persistedEntries).currentStreak,
+          });
+        }
+
+      },
+    });
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -196,39 +244,17 @@ export function JournalProvider({ children }: { children: React.ReactNode }) {
   ) => {
     const previousEntry = entriesRef.current.find(entry => entry.date === date);
     const next = mergeEntry(previousEntry ?? emptyJournalEntry(date), patch);
+    const revision = (writeRevisionsRef.current.get(date) ?? 0) + 1;
+    writeRevisionsRef.current.set(date, revision);
     const optimisticEntries = upsertEntryInList(entriesRef.current, next);
     entriesRef.current = optimisticEntries;
     setEntries(optimisticEntries);
 
-    const saved = await upsertJournalEntry(next);
-    const persistedEntries = upsertEntryInList(entriesRef.current, saved);
-    entriesRef.current = persistedEntries;
-    setEntries(persistedEntries);
-
-    const wasPersistedComplete = persistedCompletionDatesRef.current.has(date);
-    const isPersistedComplete = isJournalDayComplete(saved);
-    if (isPersistedComplete) {
-      persistedCompletionDatesRef.current.add(date);
-    } else {
-      persistedCompletionDatesRef.current.delete(date);
-    }
-
-    if (
-      options?.queueCompletionCelebration
-      && !wasPersistedComplete
-      && isPersistedComplete
-      && !queuedCompletionDatesRef.current.has(date)
-    ) {
-      queuedCompletionDatesRef.current.add(date);
-      completionEventIdRef.current += 1;
-      setCompletionEvent({
-        id: completionEventIdRef.current,
-        date,
-        currentStreak: computeJournalStreak(persistedEntries).currentStreak,
-      });
-    }
-
-    return saved;
+    return saveQueueRef.current!.enqueue(date, {
+      entry: next,
+      revision,
+      queueCompletionCelebration: options?.queueCompletionCelebration === true,
+    });
   }, []);
 
   const dismissCompletionEvent = useCallback((id: number) => {

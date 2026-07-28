@@ -24,7 +24,7 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { Activity, BarChart3, Skip } from '@/components/icons/Icons';
+import { Activity, BarChart3, ChevronRight, Skip } from '@/components/icons/Icons';
 import FocusLottie from '@/components/focus/FocusLottie';
 import { C, F } from '@/constants/tokens';
 import { useTasks } from '@/components/tasks/TaskProvider';
@@ -1316,6 +1316,72 @@ const tok = StyleSheet.create({
   },
 });
 
+/* ── Analytics placard ────────────────────────────────────── */
+// The section's footer, not a second card. A full-width slab carried as much
+// weight as the reading above it; a small struck placard seated on a rule
+// that runs the card's width reads as the quiet way out of Your Progress —
+// and leaves the fire the loudest thing on screen.
+export function AnalyticsPlacard({
+  banked,
+  palette,
+  onPress,
+}: {
+  banked: boolean;
+  palette: BankedPalette;
+  onPress: () => void;
+}) {
+  const railTone = banked ? palette.line : 'rgba(197,160,89,0.45)';
+
+  return (
+    <View style={s.analyticsRow}>
+      <View style={s.analyticsRail}>
+        <LinearGradient
+          colors={['rgba(197,160,89,0)', railTone]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={s.analyticsRailFill}
+        />
+      </View>
+      <View style={[s.analyticsPip, banked && { backgroundColor: palette.line }]} />
+
+      <TouchableOpacity
+        activeOpacity={0.86}
+        onPress={onPress}
+        style={[s.analyticsBtn, banked && { borderColor: palette.border }]}
+        hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel="View analytics"
+      >
+        <LinearGradient
+          colors={banked ? palette.buttonSurface : ['#FBEED0', '#FFFDF7']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        {/* Each glyph sits in a fixed box: an svg dropped straight into a
+            clipping flex row can be shrunk to nothing before it paints. */}
+        <View style={s.analyticsGlyph}>
+          <BarChart3 s={12} c={banked ? palette.inkMuted : C.goldDark} w={2.2} />
+        </View>
+        <Text style={[s.analyticsTxt, banked && { color: palette.inkMuted }]}>ANALYTICS</Text>
+        <View style={s.analyticsGlyph}>
+          <ChevronRight s={13} c={banked ? palette.inkMuted : C.goldDark} w={2.4} />
+        </View>
+      </TouchableOpacity>
+
+      <View style={[s.analyticsPip, banked && { backgroundColor: palette.line }]} />
+      <View style={s.analyticsRail}>
+        <LinearGradient
+          colors={[railTone, 'rgba(197,160,89,0)']}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={s.analyticsRailFill}
+        />
+      </View>
+    </View>
+  );
+}
+
 /* ── Main ─────────────────────────────────────────────────── */
 export default function WeeklyRhythm() {
   const router = useRouter();
@@ -1536,23 +1602,7 @@ export default function WeeklyRhythm() {
         )}
       </TouchableOpacity>
 
-      {/* The card's sibling: same dawn surface, quieted to a single line */}
-      <TouchableOpacity
-        activeOpacity={0.86}
-        onPress={openAnalytics}
-        style={[s.analyticsBtn, banked && { borderColor: todayPal.border }]}
-      >
-        <LinearGradient
-          colors={banked ? todayPal.buttonSurface : ['#FBEED0', '#FFFDF7']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={[s.analyticsDiamond, banked && { backgroundColor: todayPal.line }]} />
-        <BarChart3 s={13} c={banked ? todayPal.inkMuted : C.goldDark} w={2.1} />
-        <Text style={[s.analyticsTxt, banked && { color: todayPal.inkMuted }]}>VIEW ANALYTICS</Text>
-        <View style={[s.analyticsDiamond, banked && { backgroundColor: todayPal.line }]} />
-      </TouchableOpacity>
+      <AnalyticsPlacard banked={banked} palette={todayPal} onPress={openAnalytics} />
 
       <MyProgressCalendarSheet
         visible={progressCalendarOpen}
@@ -1575,33 +1625,42 @@ const s = StyleSheet.create({
   wrap: { paddingTop: 18, paddingHorizontal: 20 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   heading: { fontFamily: F.serifMedium, fontSize: 18, color: C.text },
+  // The footer row: rule — pip — placard — pip — rule.
+  analyticsRow: {
+    marginTop: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  analyticsRail: { flex: 1, height: 1 },
+  analyticsRailFill: { flex: 1, borderRadius: 1 },
+  analyticsPip: {
+    width: 3.5,
+    height: 3.5,
+    marginHorizontal: 7,
+    borderRadius: 0.5,
+    backgroundColor: 'rgba(197,160,89,0.55)',
+    transform: [{ rotate: '45deg' }],
+  },
   analyticsBtn: {
     position: 'relative',
     overflow: 'hidden',
-    marginTop: 12,
-    minHeight: 46,
-    borderRadius: 16,
+    minHeight: 34,
+    paddingHorizontal: 14,
+    borderRadius: 17,
     borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: '#E8D8B5',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    gap: 7,
+    shadowColor: '#8C7A4F',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.13,
+    shadowRadius: 6,
     elevation: 2,
   },
-  analyticsTxt: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.2, color: C.goldDark },
-  analyticsDiamond: {
-    width: 4,
-    height: 4,
-    borderRadius: 0.5,
-    backgroundColor: 'rgba(197,160,89,0.5)',
-    transform: [{ rotate: '45deg' }],
-  },
+  analyticsGlyph: { width: 13, height: 13, alignItems: 'center', justifyContent: 'center' },
+  analyticsTxt: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.9, color: C.goldDark },
   card: {
     position: 'relative',
     overflow: 'hidden',

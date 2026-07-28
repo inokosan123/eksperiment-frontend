@@ -1,36 +1,15 @@
 import type { JournalEntry } from '@/components/journal/journalDb';
+import { richTextToPlainText } from '@/components/shared/rich-text/rich-text-html';
 
 const MORNING_PAGES_MINIMUM_WORDS = 50;
-
-function normalizeText(value: string) {
-  return value.replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function decodeHtmlEntities(value: string) {
-  return value
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&#39;/gi, "'")
-    .replace(/&quot;/gi, '"');
-}
+const JOURNAL_DATE_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function stripRichTextToPlainText(html = '') {
-  if (!html) return '';
-
-  const withSpacing = html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<\/div>/gi, '\n')
-    .replace(/<li>/gi, '\n- ')
-    .replace(/<[^>]+>/g, ' ');
-
-  return normalizeText(decodeHtmlEntities(withSpacing));
+  return richTextToPlainText(html);
 }
 
 export function countWords(text: string) {
-  const normalized = normalizeText(stripRichTextToPlainText(text));
+  const normalized = stripRichTextToPlainText(text);
   if (!normalized) return 0;
   return normalized.split(' ').filter(Boolean).length;
 }
@@ -52,13 +31,23 @@ export function hasFreeWritingContent(entry?: JournalEntry) {
 export function hasDailyJournalContent(entry?: JournalEntry) {
   if (!entry) return false;
 
+  // `freeWritingHtml` is shared with the standalone Free Writing technique.
+  // Count it as Daily Journal content only when the saved Daily layout proves
+  // that the Free Writing section was active on this entry.
+  const hasDailyFreeWriting = entry.dailySections?.some(section => (
+    section.active
+    && section.type === 'freeWriting'
+    && stripRichTextToPlainText(entry.freeWritingHtml ?? '').length > 0
+  )) ?? false;
+
   return (
     entry.mood !== undefined ||
     entry.energy !== undefined ||
     entry.satisfaction !== undefined ||
     entry.prompts.some(prompt => stripRichTextToPlainText(prompt.answer).length > 0) ||
     Object.values(entry.whoChecks).some(Boolean) ||
-    Object.keys(entry.scaleValues).length > 0
+    Object.keys(entry.scaleValues).length > 0 ||
+    hasDailyFreeWriting
   );
 }
 
@@ -85,8 +74,22 @@ export function getJournalKindsForEntry(entry?: JournalEntry) {
   return kinds;
 }
 
+function dateFromKey(key: string) {
+  const match = JOURNAL_DATE_KEY.exec(key);
+  if (!match) return null;
+
+  const date = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    12,
+  );
+  return localDateKey(date) === key ? date : null;
+}
+
 function isPreviousDay(date: string, candidate: string) {
-  const previous = new Date(`${date}T12:00:00`);
+  const previous = dateFromKey(date);
+  if (!previous) return false;
   previous.setDate(previous.getDate() - 1);
   return localDateKey(previous) === candidate;
 }
@@ -98,10 +101,15 @@ function localDateKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-export function computeJournalStreak(entries: JournalEntry[]) {
-  const completedDates = entries
-    .filter(entry => isJournalDayComplete(entry))
-    .map(entry => entry.date)
+export function computeJournalStreak(entries: JournalEntry[], referenceDate: Date = new Date()) {
+  const safeReferenceDate = Number.isNaN(referenceDate.getTime()) ? new Date() : referenceDate;
+  const today = localDateKey(safeReferenceDate);
+  const completedDates = Array.from(new Set(
+    entries
+      .filter(entry => isJournalDayComplete(entry))
+      .map(entry => entry.date)
+      .filter(date => date <= today && dateFromKey(date) !== null),
+  ))
     .sort((left, right) => left.localeCompare(right));
 
   if (completedDates.length === 0) {
@@ -125,8 +133,7 @@ export function computeJournalStreak(entries: JournalEntry[]) {
     }
   }
 
-  const today = localDateKey(new Date());
-  const yesterday = new Date(`${today}T12:00:00`);
+  const yesterday = dateFromKey(today) ?? new Date(safeReferenceDate);
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayKey = localDateKey(yesterday);
   const completedSet = new Set(completedDates);

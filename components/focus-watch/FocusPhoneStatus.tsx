@@ -117,7 +117,7 @@ export default function FocusPhoneStatus({
         <View style={[s.orbitNode, s.orbitNodeOpposite, { backgroundColor: accent }]} />
       </Animated.View>
       <View style={s.center} pointerEvents="none">
-        {process.env.EXPO_OS === 'web' || !isFocused || !isForeground || reduceMotion ? (
+        {process.env.EXPO_OS === 'web' || reduceMotion ? (
           <View style={[s.fallback, { borderColor: accent, width: size * 0.38, height: size * 0.54 }]}>
             <Smartphone s={size * 0.26} c={accent} w={1.7} />
           </View>
@@ -127,6 +127,7 @@ export default function FocusPhoneStatus({
             mode="periodic"
             restMs={4200}
             speed={1}
+            playing={isFocused && isForeground}
             style={{ width: size * 0.84, height: size * 0.84 }}
           />
         )}

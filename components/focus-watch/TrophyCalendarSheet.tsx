@@ -4,7 +4,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
   cancelAnimation,
   Easing,
-  FadeIn,
   FadeInDown,
   useAnimatedProps,
   useAnimatedStyle,
@@ -15,7 +14,6 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 
-const Animated = Reanimated;
 import Svg, { Ellipse, Path } from 'react-native-svg';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import FocusSheetHeader from './FocusSheetHeader';
@@ -23,7 +21,14 @@ import { ChevronLeft, ChevronRight, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { StaticChallengeTrophy } from '@/components/challenges/ChallengeTrophy';
 import { C, F } from '@/constants/tokens';
-import { dateKey, useDayPlan, type DayRecord } from './dayPlanStore';
+import { dateKey, useDayPlan } from './dayPlanStore';
+import type {
+  TrophyCalendarDay,
+  TrophyCalendarModel,
+} from '@/components/shared/trophyCalendarAnalytics';
+import { isTrophyDateKey } from '@/components/shared/trophyCalendarAnalytics';
+
+const Animated = Reanimated;
 
 // The streak sheet is the app's trophy hall, and it is built to travel:
 // the same composition will later stand behind the Journal and Home
@@ -46,7 +51,7 @@ const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
-const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
 // Verified habit-formation copy only — no invented numbers (blueprint §2).
 const MERCY_LINE =
@@ -247,24 +252,39 @@ function DayMark({ cell }: { cell: CellState }) {
 }
 
 /* ── Sheet ────────────────────────────────────────────────── */
-export default function TrophyCalendarSheet({
-  visible,
-  onClose,
-}: {
+type TrophyCalendarSheetProps = {
   visible: boolean;
   onClose: () => void;
-}) {
-  const state = useDayPlan();
+};
+
+type SharedTrophyCalendarSheetProps = TrophyCalendarSheetProps & {
+  model: TrophyCalendarModel;
+  kicker: string;
+  title: string;
+};
+
+export function SharedTrophyCalendarSheet({
+  visible,
+  onClose,
+  model,
+  kicker,
+  title,
+}: SharedTrophyCalendarSheetProps) {
   const [monthOffset, setMonthOffset] = useState(0);
 
   const today = new Date();
+  const todayStr = dateKey(today);
   const todayKey = monthKey(today);
   const firstRecordKey = useMemo(() => {
-    const dates = Object.keys(state.days).sort();
+    // Older persisted builds may contain a malformed key. Never let one bad
+    // row turn the derived month into NaN and leave the entire grid empty.
+    const dates = Object.keys(model.days)
+      .filter(key => key <= todayStr && isTrophyDateKey(key))
+      .sort();
     if (dates.length === 0) return todayKey;
     const [year, month] = dates[0].split('-').map(Number);
     return year * 12 + (month - 1);
-  }, [state.days, todayKey]);
+  }, [model.days, todayKey, todayStr]);
 
   const shownKey = Math.min(todayKey, Math.max(firstRecordKey, todayKey + monthOffset));
   const shownYear = Math.floor(shownKey / 12);
@@ -278,8 +298,6 @@ export default function TrophyCalendarSheet({
     const firstOfMonth = new Date(shownYear, shownMonth, 1);
     const leading = (firstOfMonth.getDay() + 6) % 7;
     const daysInMonth = new Date(shownYear, shownMonth + 1, 0).getDate();
-    const todayStr = dateKey(today);
-
     const blank = (): Cell => ({
       day: 0, cell: 'blank',
       linkLeft: false, linkRight: false, softLeft: false, softRight: false, bridge: false,
@@ -288,7 +306,7 @@ export default function TrophyCalendarSheet({
     for (let i = 0; i < leading; i++) result.push(blank());
     for (let day = 1; day <= daysInMonth; day++) {
       const key = dateKey(new Date(shownYear, shownMonth, day));
-      const record: DayRecord | undefined = state.days[key];
+      const record: TrophyCalendarDay | undefined = model.days[key];
       let cell: CellState;
       if (key === todayStr) cell = 'today';
       else if (key > todayStr) cell = 'future';
@@ -339,17 +357,16 @@ export default function TrophyCalendarSheet({
       result[todayIndex - 1].softRight = true;
     }
     return result;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.days, shownYear, shownMonth, visible]);
+  }, [model.days, shownYear, shownMonth, todayStr]);
 
   const recentBroken = useMemo(() => {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 7);
     const cutoffKey = dateKey(cutoff);
-    return Object.values(state.days).some(
+    return Object.values(model.days).some(
       record => record.status === 'broken' && record.date >= cutoffKey
     );
-  }, [state.days]);
+  }, [model.days]);
 
   const close = () => {
     setMonthOffset(0);
@@ -359,8 +376,8 @@ export default function TrophyCalendarSheet({
   return (
     <SmoothBottomSheet visible={visible} onClose={close} sheetStyle={s.sheet}>
       <FocusSheetHeader
-        kicker="FOCUS TROPHIES"
-        title="Your Trophy Streak"
+        kicker={kicker}
+        title={title}
         onClose={close}
       />
 
@@ -371,7 +388,7 @@ export default function TrophyCalendarSheet({
         <View style={s.laurelRow}>
           <LaurelSprig />
           <View style={s.heroCenter}>
-            <CountUp value={state.streak.current} delay={320} textStyle={s.heroValue} />
+            <CountUp value={model.current} delay={320} textStyle={s.heroValue} />
             <Text style={s.heroUnit}>day streak</Text>
           </View>
           <LaurelSprig flip />
@@ -380,8 +397,8 @@ export default function TrophyCalendarSheet({
         <View style={s.subStats}>
           <View style={s.subCell}>
             <View style={s.subValueRow}>
-              <CountUp value={state.streak.best} delay={460} textStyle={s.subValue} />
-              <Text style={s.subUnit}>{state.streak.best === 1 ? 'day' : 'days'}</Text>
+              <CountUp value={model.best} delay={460} textStyle={s.subValue} />
+              <Text style={s.subUnit}>{model.best === 1 ? 'day' : 'days'}</Text>
             </View>
             <Text style={s.subLabel}>BEST STREAK</Text>
           </View>
@@ -395,7 +412,7 @@ export default function TrophyCalendarSheet({
                 so the image stands beside the digits instead of sinking
                 under them. */}
             <View style={[s.subValueRow, s.subValueRowCenter]}>
-              <CountUp value={state.streak.trophies} delay={540} textStyle={s.subValue} />
+              <CountUp value={model.trophies} delay={540} textStyle={s.subValue} />
               <StaticChallengeTrophy size={23} />
             </View>
             <Text style={s.subLabel}>TROPHIES EARNED</Text>
@@ -425,60 +442,58 @@ export default function TrophyCalendarSheet({
         </TouchableOpacity>
       </Animated.View>
 
-      <Animated.View entering={enter(110)} style={s.weekHeader}>
-        {DAY_LETTERS.map((letter, index) => (
+      {/* Calendar coordinates are essential content, not decoration. Keep
+          them mounted at full opacity while the sheet itself animates. */}
+      <View style={s.weekHeader}>
+        {DAY_LABELS.map((label, index) => (
           <Text
-            key={index}
+            key={label}
             style={[
               s.weekHeaderText,
               onCurrentMonth && index === todayColumn && s.weekHeaderToday,
             ]}
           >
-            {letter}
+            {label}
           </Text>
         ))}
-      </Animated.View>
+      </View>
 
-      {/* The month pours in as a diagonal wave of coins; switching months
-          replays it. Consecutive kept days share one golden band. */}
-      <View style={s.grid} key={shownKey}>
-        {cells.map((entry, index) => {
-          if (entry.cell === 'blank') {
-            return <View key={index} style={s.cell} />;
-          }
-          const row = Math.floor(index / 7);
-          const col = index % 7;
-          return (
-            <View key={index} style={s.cell}>
-              {entry.linkLeft && (
-                <Reanimated.View
-                  entering={FadeIn.duration(220).delay(140 + (row + col) * 26)}
-                  style={[s.band, s.bandLeft, entry.softLeft && s.bandSoft]}
-                />
-              )}
-              {entry.linkRight && (
-                <Reanimated.View
-                  entering={FadeIn.duration(220).delay(140 + (row + col) * 26)}
-                  style={[s.band, s.bandRight, entry.softRight && s.bandSoft]}
-                />
-              )}
-              <Reanimated.View
-                entering={FadeInDown.duration(240).delay(150 + (row + col) * 26)}
-                style={s.cellInner}
-              >
-                <View style={s.markWrap}>
-                  <DayMark cell={entry.cell} />
+      {/* The sheet already owns the entrance motion. Rendering the calendar
+          as a plain native tree prevents nested entering animations from
+          occasionally leaving its rows transparent after a Modal opens. */}
+      <View key={shownKey} style={s.grid}>
+        {Array.from({ length: Math.ceil(cells.length / 7) }, (_, rowIndex) => (
+          <View key={`week-${rowIndex}`} style={s.calendarWeekRow}>
+            {Array.from({ length: 7 }, (_, columnIndex) => {
+              const index = rowIndex * 7 + columnIndex;
+              const entry = cells[index];
+              if (!entry || entry.cell === 'blank') {
+                return <View key={`day-${columnIndex}`} style={s.cell} />;
+              }
+              return (
+                <View key={`day-${columnIndex}`} style={s.cell}>
+                  {entry.linkLeft && (
+                    <View style={[s.band, s.bandLeft, entry.softLeft && s.bandSoft]} />
+                  )}
+                  {entry.linkRight && (
+                    <View style={[s.band, s.bandRight, entry.softRight && s.bandSoft]} />
+                  )}
+                  <View style={s.cellInner}>
+                    <View style={s.markWrap}>
+                      <DayMark cell={entry.cell} />
+                    </View>
+                    <Text
+                      style={[s.cellDay, entry.cell === 'today' && s.cellDayToday]}
+                      allowFontScaling={false}
+                    >
+                      {entry.day}
+                    </Text>
+                  </View>
                 </View>
-                <Text
-                  style={[s.cellDay, entry.cell === 'today' && s.cellDayToday]}
-                  allowFontScaling={false}
-                >
-                  {entry.day}
-                </Text>
-              </Reanimated.View>
-            </View>
-          );
-        })}
+              );
+            })}
+          </View>
+        ))}
       </View>
 
       <Animated.View entering={enter(420)} style={s.legendRow}>
@@ -519,6 +534,26 @@ export default function TrophyCalendarSheet({
         <Text style={s.encouragement}>{recentBroken ? MERCY_LINE : STEADY_LINE}</Text>
       </Animated.View>
     </SmoothBottomSheet>
+  );
+}
+
+export default function TrophyCalendarSheet({ visible, onClose }: TrophyCalendarSheetProps) {
+  const state = useDayPlan();
+  const model: TrophyCalendarModel = {
+    current: state.streak.current,
+    best: state.streak.best,
+    trophies: state.streak.trophies,
+    days: state.days,
+  };
+
+  return (
+    <SharedTrophyCalendarSheet
+      visible={visible}
+      onClose={onClose}
+      model={model}
+      kicker="FOCUS TROPHIES"
+      title="Your Trophy Streak"
+    />
   );
 }
 
@@ -653,15 +688,17 @@ const s = StyleSheet.create({
   /* Week header */
   weekHeader: {
     marginTop: 12,
+    width: '100%',
     flexDirection: 'row',
   },
   weekHeaderText: {
     flex: 1,
+    minWidth: 0,
     textAlign: 'center',
     fontFamily: F.sansBold,
-    fontSize: 11,
+    fontSize: 9.5,
     lineHeight: 14,
-    letterSpacing: 0.8,
+    letterSpacing: 0.55,
     color: C.textMuted,
   },
   weekHeaderToday: {
@@ -671,11 +708,14 @@ const s = StyleSheet.create({
   /* Grid */
   grid: {
     marginTop: 6,
+  },
+  calendarWeekRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    width: '100%',
   },
   cell: {
-    width: `${100 / 7}%`,
+    flex: 1,
+    minWidth: 0,
     position: 'relative',
     alignItems: 'center',
     paddingVertical: 3,

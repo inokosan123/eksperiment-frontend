@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import { Lock, X } from '@/components/icons/Icons';
+import ConfirmModal from '@/components/shared/ConfirmModal';
+import { Lock, Trash2, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import { ESSENTIAL_APP_OPTIONS } from './focusContent';
@@ -53,6 +54,7 @@ export default function EssentialAppsSheet({
   const alwaysLooseSummary = useNativeActivitySelectionSummary('always.loose');
   const planMode = !!planId;
   const [query, setQuery] = useState('');
+  const [pendingRemove, setPendingRemove] = useState<string | null>(null);
   const coreIds = useMemo(() => new Set([
     ...allCoreEssentialIds(state),
     ...(planMode ? state.optionalEssentialAppIds : []),
@@ -95,17 +97,46 @@ export default function EssentialAppsSheet({
 
   const toggleOptional = (appId: string) => {
     if (coreIds.has(appId) || blockedIds.has(appId)) return;
-    const next = selectedIds.has(appId)
-      ? selectedSource.filter(id => id !== appId)
-      : [...selectedSource, appId];
+
+    if (selectedIds.has(appId)) {
+      setPendingRemove(appId);
+      return;
+    }
+
+    const next = [...selectedSource, appId];
     if (planMode) onChangePlanApps?.(next);
     else saveOptionalEssentialApps(next);
   };
 
+  const confirmRemove = () => {
+    if (!pendingRemove) return;
+    const next = selectedSource.filter(id => id !== pendingRemove);
+    if (planMode) onChangePlanApps?.(next);
+    else saveOptionalEssentialApps(next);
+    setPendingRemove(null);
+  };
+
   const closeSheet = () => {
     setQuery('');
+    setPendingRemove(null);
     onClose();
   };
+
+  const removeConfirm = (
+    <ConfirmModal
+      embedded
+      visible={pendingRemove !== null}
+      icon={<Trash2 s={22} c={C.red} w={2.1} />}
+      iconBg="#FEE2E2"
+      title="Remove from Essentials?"
+      body="This app will no longer stay reachable after your daily limit is spent."
+      subject={pendingRemove ? appLabel(pendingRemove) : undefined}
+      confirmLabel="REMOVE"
+      confirmColor={C.red}
+      onCancel={() => setPendingRemove(null)}
+      onConfirm={confirmRemove}
+    />
+  );
 
   return (
     <SmoothBottomSheet
@@ -113,6 +144,7 @@ export default function EssentialAppsSheet({
       onClose={closeSheet}
       sheetStyle={s.sheet}
       keyboardAware
+      overlayChildren={removeConfirm}
     >
       <FocusSheetHeader
         title={planMode ? 'Plan Apps' : 'Essential Apps'}
@@ -132,7 +164,7 @@ export default function EssentialAppsSheet({
         </Text>
         <View>
           <SectionHeading
-            label={planMode ? 'ALREADY INCLUDED' : 'LOCKED ESSENTIALS'}
+            label={planMode ? 'Already Included' : 'Locked Essentials'}
             note={planMode
               ? 'Core access and your global Essentials stay available automatically.'
               : 'Kept reachable for safety. These are not a choice — they are always open.'}
@@ -155,7 +187,7 @@ export default function EssentialAppsSheet({
 
         <View>
           <SectionHeading
-            label={planMode ? 'EXTRA APPS FOR THIS PLAN' : 'YOUR ESSENTIALS'}
+            label={planMode ? 'Extra Apps for This Plan' : 'Your Essentials'}
             note={planMode
               ? 'These exceptions belong only to this plan. They do not become global Essentials.'
               : 'Apps you chose to keep open after everything else closes. Tap one to remove it.'}
@@ -199,7 +231,7 @@ export default function EssentialAppsSheet({
         {!nativeAvailable && (
           <View>
             <SectionHeading
-              label="OTHER APPS"
+              label="Other Apps"
               note={planMode
                 ? 'These stay closed throughout this plan unless you allow them here.'
                 : 'These close when your limit is spent. Tap one to make it an Essential.'}
@@ -245,7 +277,7 @@ export default function EssentialAppsSheet({
         {!nativeAvailable && blockedApps.length > 0 && (
           <View>
             <SectionHeading
-              label="ALWAYS BLOCKED"
+              label="Always Blocked"
               note="This system group always stays closed. Its apps cannot become Essentials unless you remove that protection first."
             />
             <View style={[s.list, s.blockedList]}>
@@ -270,7 +302,7 @@ export default function EssentialAppsSheet({
         {nativeAvailable && nativeBlockedCount > 0 && (
           <View>
             <SectionHeading
-              label="ALWAYS BLOCKED"
+              label="Always Blocked"
               note="Apple keeps app names private. This system group is shown here so it is clear why those apps cannot be selected as Essentials."
             />
             <View style={[s.list, s.blockedList]}>
@@ -307,9 +339,9 @@ const s = StyleSheet.create({
     color: C.textSecondary,
   },
   scrollContent: { paddingTop: 16, paddingBottom: 32, gap: 24 },
-  sectionHeading: { gap: 4, paddingHorizontal: 2, marginBottom: 10 },
-  sectionLabel: { fontFamily: F.sansBold, fontSize: 10.5, letterSpacing: 2.1, color: C.goldDark },
-  sectionNote: { fontFamily: F.serif, fontSize: 14, lineHeight: 19, color: C.textSecondary },
+  sectionHeading: { gap: 6, paddingHorizontal: 2, marginBottom: 12 },
+  sectionLabel: { fontFamily: F.serifSemiBold, fontSize: 20, lineHeight: 24, color: C.text },
+  sectionNote: { fontFamily: F.serif, fontSize: 16, lineHeight: 22.5, color: C.textSecondary },
   list: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 52 },
   row: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 3 },
@@ -325,10 +357,10 @@ const s = StyleSheet.create({
   appName: { flex: 1, minWidth: 0, fontFamily: F.serifMedium, fontSize: 17, color: C.text },
   appNameLocked: { flex: 1, minWidth: 0, fontFamily: F.serifMedium, fontSize: 17, color: C.textMuted },
   appNameBlocked: { flexShrink: 1, fontFamily: F.serifMedium, fontSize: 17, color: '#7B3945' },
-  blockedGroupMeta: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 10, color: C.textMuted },
-  emptyNote: { paddingHorizontal: 2, fontFamily: F.serifItalic, fontSize: 14.5, color: C.textMuted },
+  blockedGroupMeta: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 13, lineHeight: 18, color: C.textMuted },
+  emptyNote: { paddingHorizontal: 2, fontFamily: F.serifItalic, fontSize: 16, lineHeight: 22.5, color: C.textMuted },
   searchSurface: { height: 50, flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 14, marginBottom: 12 },
-  searchInput: { flex: 1, fontFamily: F.sansMedium, fontSize: 15, color: C.text },
+  searchInput: { flex: 1, fontFamily: F.sansMedium, fontSize: 16, color: C.text },
   blockedTag: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, backgroundColor: '#F8E7EA', paddingHorizontal: 8, paddingVertical: 6 },
   blockedText: { fontFamily: F.sansSemiBold, fontSize: 9.5, color: '#A24351' },
 });

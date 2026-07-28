@@ -4,6 +4,7 @@ import type { JournalEntry } from '@/components/journal/journalDb';
 import {
   computeJournalStreak,
   didJournalDayBecomeComplete,
+  hasDailyJournalContent,
   isJournalDayComplete,
   isMorningPagesComplete,
   JOURNAL_MORNING_PAGES_MINIMUM_WORDS,
@@ -41,6 +42,24 @@ describe('journal day completion', () => {
     });
     assert.equal(isJournalDayComplete(next), true);
     assert.equal(didJournalDayBecomeComplete(undefined, next), true);
+  });
+
+  test('Daily inline free writing counts when that Daily section is active', () => {
+    const next = journalEntry('2026-07-17', {
+      dailySections: [{ id: 'freeWriting', type: 'freeWriting', active: true }],
+      freeWritingHtml: '<p>A Daily Journal reflection.</p>',
+    });
+
+    assert.equal(hasDailyJournalContent(next), true);
+  });
+
+  test('standalone Free Writing does not masquerade as Daily Journal content', () => {
+    const next = journalEntry('2026-07-17', {
+      freeWritingHtml: '<p>A standalone Free Writing entry.</p>',
+    });
+
+    assert.equal(hasDailyJournalContent(next), false);
+    assert.equal(isJournalDayComplete(next), true);
   });
 
   test('Morning Pages stays a draft below the calendar threshold', () => {
@@ -87,5 +106,61 @@ describe('journal day completion', () => {
       '2026-07-16',
     ]);
     assert.equal(streak.bestStreak, 3);
+  });
+
+  test('today stays open without breaking a streak completed through yesterday', () => {
+    const streak = computeJournalStreak([
+      journalEntry('2026-07-14', { mood: 1 }),
+      journalEntry('2026-07-15', { freeWritingHtml: '<p>Written.</p>' }),
+      journalEntry('2026-07-16', { mood: 2 }),
+    ], new Date(2026, 6, 17, 12));
+
+    assert.equal(streak.currentStreak, 3);
+    assert.equal(streak.bestStreak, 3);
+    assert.equal(streak.lastDate, '2026-07-16');
+  });
+
+  test('a missed historical day breaks current streak but preserves the best run', () => {
+    const streak = computeJournalStreak([
+      journalEntry('2026-07-12', { mood: 1 }),
+      journalEntry('2026-07-13', { mood: 1 }),
+      journalEntry('2026-07-16', { mood: 1 }),
+    ], new Date(2026, 6, 17, 12));
+
+    assert.equal(streak.currentStreak, 1);
+    assert.equal(streak.bestStreak, 2);
+  });
+
+  test('duplicate, malformed, impossible, and future dates cannot inflate the streak', () => {
+    const streak = computeJournalStreak([
+      journalEntry('2026-07-14', { mood: 1 }),
+      journalEntry('2026-07-15', { mood: 1 }),
+      journalEntry('2026-07-15', { freeWritingHtml: '<p>Duplicate row.</p>' }),
+      journalEntry('not-a-date', { mood: 1 }),
+      journalEntry('2026-02-30', { mood: 1 }),
+      journalEntry('2026-07-18', { mood: 1 }),
+    ], new Date(2026, 6, 17, 12));
+
+    assert.deepEqual(streak.completedDates, ['2026-07-14', '2026-07-15']);
+    assert.equal(streak.bestStreak, 2);
+    assert.equal(streak.currentStreak, 0);
+    assert.equal(streak.lastDate, '2026-07-15');
+  });
+
+  test('completing today extends the live streak exactly once', () => {
+    const streak = computeJournalStreak([
+      journalEntry('2026-07-15', { mood: 1 }),
+      journalEntry('2026-07-16', { mood: 1 }),
+      journalEntry('2026-07-17', { freeWritingHtml: '<p>Today.</p>' }),
+      journalEntry('2026-07-17', { mood: 3 }),
+    ], new Date(2026, 6, 17, 12));
+
+    assert.equal(streak.currentStreak, 3);
+    assert.equal(streak.bestStreak, 3);
+    assert.deepEqual(streak.completedDates, [
+      '2026-07-15',
+      '2026-07-16',
+      '2026-07-17',
+    ]);
   });
 });

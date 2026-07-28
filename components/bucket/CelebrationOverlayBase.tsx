@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import LottieView from 'lottie-react-native';
 import Reanimated, {
+  cancelAnimation,
   Easing,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -70,6 +72,13 @@ const PARTICLES: ParticleConfig[] = [
   { angle: deg(323), distance: 168, size: 12, delay: 0.01, spin: 30, color: SKY, shape: 'leaf' },
   { angle: deg(343), distance: 137, size: 8, delay: 0.12, spin: -18, color: DEEP_GOLD, shape: 'dot' },
 ];
+
+// Journal opens this overlay immediately after a feature-heavy editor has
+// unmounted. Ten well-spaced particles preserve the celebration silhouette
+// while avoiding a burst of 24 animated SVG mounts during that handoff.
+const LIGHT_PARTICLES = PARTICLES.filter((_, index) => (
+  [0, 2, 4, 7, 9, 12, 15, 18, 21, 23].includes(index)
+));
 
 function clamp01(value: number) {
   'worklet';
@@ -259,6 +268,7 @@ export default function CelebrationOverlayBase({
   subtitleStrong = 'Dream achieved!',
   subtitle = 'Keep building your bucket list and chasing your dreams!',
   visual,
+  motionProfile = 'full',
 }: {
   onClose: () => void;
   // Optional copy overrides so other features (e.g. Focus milestones) can
@@ -267,6 +277,7 @@ export default function CelebrationOverlayBase({
   subtitleStrong?: string;
   subtitle?: string;
   visual?: React.ReactNode;
+  motionProfile?: 'full' | 'light';
 }) {
   const { width, height } = useWindowDimensions();
   const lottieRef = useRef<LottieView>(null);
@@ -278,9 +289,37 @@ export default function CelebrationOverlayBase({
   const cardScale = useSharedValue(0.96);
   const burst = useSharedValue(0);
   const iconPhase = useSharedValue(0);
+  const lightMotion = motionProfile === 'light';
+  const particles = lightMotion ? LIGHT_PARTICLES : PARTICLES;
 
   useEffect(() => {
     closingRef.current = false;
+    if (lightMotion) {
+      veil.value = withTiming(1, {
+        duration: 150,
+        easing: Easing.out(Easing.quad),
+      });
+      cardOpacity.value = withDelay(16, withTiming(1, {
+        duration: 190,
+        easing: Easing.out(Easing.cubic),
+      }));
+      cardLift.value = withTiming(0, {
+        duration: 360,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      });
+      cardScale.value = withTiming(1, {
+        duration: 360,
+        easing: Easing.bezier(0.16, 1, 0.28, 1),
+      });
+      iconPhase.value = withDelay(52, withTiming(1, {
+        duration: 520,
+        easing: Easing.out(Easing.cubic),
+      }));
+      burst.value = withDelay(48, withTiming(1, {
+        duration: 1120,
+        easing: Easing.out(Easing.cubic),
+      }));
+    } else {
     veil.value = withTiming(1, {
       duration: 120,
       easing: Easing.out(Easing.quad),
@@ -307,6 +346,7 @@ export default function CelebrationOverlayBase({
       duration: 1560,
       easing: Easing.out(Easing.cubic),
     }));
+    }
 
     const playTimer = setTimeout(() => {
       lottieRef.current?.reset();
@@ -320,11 +360,43 @@ export default function CelebrationOverlayBase({
         closeTimerRef.current = null;
       }
     };
-  }, [burst, cardLift, cardOpacity, cardScale, iconPhase, veil]);
+  }, [burst, cardLift, cardOpacity, cardScale, iconPhase, lightMotion, veil]);
 
   const handleDismiss = useCallback(() => {
     if (closingRef.current) return;
     closingRef.current = true;
+
+    if (lightMotion) {
+      cancelAnimation(burst);
+      cancelAnimation(iconPhase);
+      burst.value = withTiming(1, {
+        duration: 160,
+        easing: Easing.out(Easing.quad),
+      });
+      iconPhase.value = withTiming(0, {
+        duration: 180,
+        easing: Easing.in(Easing.quad),
+      });
+      cardLift.value = withTiming(-8, {
+        duration: 260,
+        easing: Easing.inOut(Easing.cubic),
+      });
+      cardScale.value = withTiming(0.985, {
+        duration: 240,
+        easing: Easing.in(Easing.quad),
+      });
+      cardOpacity.value = withDelay(28, withTiming(0, {
+        duration: 190,
+        easing: Easing.in(Easing.quad),
+      }));
+      veil.value = withDelay(44, withTiming(0, {
+        duration: 220,
+        easing: Easing.in(Easing.quad),
+      }, finished => {
+        if (finished) runOnJS(onClose)();
+      }));
+      return;
+    }
 
     lottieRef.current?.play(TROPHY_EXIT_START_FRAME, TROPHY_EXIT_END_FRAME);
     cardLift.value = withTiming(-4, {
@@ -348,7 +420,7 @@ export default function CelebrationOverlayBase({
       closeTimerRef.current = null;
       onClose();
     }, TROPHY_EXIT_DURATION_MS);
-  }, [cardLift, cardOpacity, cardScale, onClose, veil]);
+  }, [burst, cardLift, cardOpacity, cardScale, iconPhase, lightMotion, onClose, veil]);
 
   const veilStyle = useAnimatedStyle(() => ({
     opacity: veil.value,
@@ -395,7 +467,7 @@ export default function CelebrationOverlayBase({
         >
           <CelebrationRings phase={burst} />
           <CenterSpark phase={burst} />
-          {PARTICLES.map((particle, index) => (
+          {particles.map((particle, index) => (
             <ConfettiParticle key={`${particle.angle}-${index}`} config={particle} phase={burst} />
           ))}
         </View>

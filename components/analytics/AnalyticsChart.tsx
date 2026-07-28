@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import Animated, { Easing, FadeIn, useReducedMotion } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Path, Stop, Line, Circle, Text as SvgText } from 'react-native-svg';
-import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronLeft, ChevronRight, Minus, TrendingDown, TrendingUp } from '@/components/icons/Icons';
 import {
   aggregateByPeriod,
@@ -15,6 +15,7 @@ import {
   type DailyAnalyticsSnapshot,
   type SourceFilter,
 } from '@/components/analytics/analyticsOverview';
+import { A, cardShell, SectionHead, SegmentedRail } from '@/components/analytics/analyticsUi';
 import { F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 
@@ -33,14 +34,14 @@ const CRITERIA: { key: AnalyticsCriteria; label: string }[] = [
   { key: 'successRate', label: 'Success Rate' },
 ];
 
-const ACCENT = '#C5A059';
-const CHART_HEIGHT = 222;
-const CHART_PAD_LEFT = 38;
+const ACCENT = A.gold;
+const CHART_HEIGHT = 238;
+const CHART_PAD_LEFT = 42;
 const CHART_PAD_RIGHT = 14;
-const CHART_PAD_TOP = 22;
-const CHART_PAD_BOTTOM = 26;
-const AXIS_LABEL_COLOR = '#A8A29E';
-const AXIS_LABEL_SIZE = 11;
+const CHART_PAD_TOP = 24;
+const CHART_PAD_BOTTOM = 28;
+const AXIS_LABEL_COLOR = '#9A9287';
+const AXIS_LABEL_SIZE = 11.5;
 
 interface Props {
   snapshots: DailyAnalyticsSnapshot[];
@@ -50,7 +51,11 @@ interface Props {
 
 export default function AnalyticsChart({ snapshots, sourceFilter, accentColor = ACCENT }: Props) {
   const { width: screenWidth } = useWindowDimensions();
-  const chartWidth = Math.max(280, screenWidth - 32 /* page padding */ - 4 /* card edge */);
+  // Page padding (32) + card borders (2) + the chart well's own padding (8).
+  // Sized to the pixel so the plot never bleeds past the card's rounded edge —
+  // the card keeps its shadow, so it cannot clip its own contents.
+  const chartWidth = Math.max(260, screenWidth - 42);
+  const reduceMotion = useReducedMotion();
 
   const [period, setPeriod] = useState<AnalyticsPeriod>('1m');
   const [criteria, setCriteria] = useState<AnalyticsCriteria>('successRate');
@@ -108,25 +113,14 @@ export default function AnalyticsChart({ snapshots, sourceFilter, accentColor = 
     <View style={s.card}>
       {/* Header */}
       <View style={s.headerWrap}>
-        <View style={s.headerRow}>
-          <TrendingUp s={14} c={accentColor} w={2} />
-          <Text style={s.headerKicker}>TRENDS</Text>
-        </View>
+        <SectionHead
+          Icon={TrendingUp}
+          title="Trends"
+          caption="Tap any point on the line to read its value."
+        />
 
-        {/* Period pills */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.pillsRow}>
-          {PERIODS.map(p => (
-            <PeriodPill
-              key={p.key}
-              label={p.label}
-              active={period === p.key}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                setPeriod(p.key);
-              }}
-            />
-          ))}
-        </ScrollView>
+        {/* Period rail */}
+        <SegmentedRail size="sm" gutter={0} items={PERIODS} value={period} onChange={setPeriod} />
 
         {/* Month selector — only Monthly */}
         {period === '1m' && (
@@ -136,35 +130,28 @@ export default function AnalyticsChart({ snapshots, sourceFilter, accentColor = 
               disabled={!canGoPrev}
               activeOpacity={0.7}
               style={[s.monthBtn, !canGoPrev && s.monthBtnDisabled]}
+              hitSlop={8}
             >
-              <ChevronLeft s={18} c={canGoPrev ? accentColor : '#D6D3D1'} />
+              <ChevronLeft s={19} c={canGoPrev ? accentColor : '#D6D3D1'} />
             </TouchableOpacity>
-            <Text style={s.monthLabel}>{getMonthLabel(selectedMonth)}</Text>
+            <Text style={s.monthLabel} numberOfLines={1}>{getMonthLabel(selectedMonth)}</Text>
             <TouchableOpacity
               onPress={goNext}
               disabled={!canGoNext}
               activeOpacity={0.7}
               style={[s.monthBtn, !canGoNext && s.monthBtnDisabled]}
+              hitSlop={8}
             >
-              <ChevronRight s={18} c={canGoNext ? accentColor : '#D6D3D1'} />
+              <ChevronRight s={19} c={canGoNext ? accentColor : '#D6D3D1'} />
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Criteria pills */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.pillsRow}>
-          {CRITERIA.map(c => (
-            <CriteriaPill
-              key={c.key}
-              label={c.label}
-              active={criteria === c.key}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                setCriteria(c.key);
-              }}
-            />
-          ))}
-        </ScrollView>
+        <View style={s.divider} />
+
+        {/* Criteria rail — the ink register, so the two selectors never
+            read as the same choice made twice. */}
+        <SegmentedRail size="sm" gutter={0} variant="ink" items={CRITERIA} value={criteria} onChange={setCriteria} />
 
         {/* Trend badge */}
         <View style={s.trendRow}>
@@ -177,16 +164,21 @@ export default function AnalyticsChart({ snapshots, sourceFilter, accentColor = 
         </View>
       </View>
 
-      {/* Chart */}
+      {/* Chart — re-drawn with a soft fade whenever the filters change */}
       <View style={[s.chartWrap, { height: CHART_HEIGHT }]}>
         {visibleChartData.length > 0 ? (
-          <ChartArea
-            data={visibleChartData}
-            criteria={criteria}
-            isPercentage={isPercentage}
-            color={accentColor}
-            width={chartWidth}
-          />
+          <Animated.View
+            key={`${period}-${criteria}-${selectedMonth}-${sourceFilter}`}
+            entering={reduceMotion ? undefined : FadeIn.duration(300).easing(Easing.out(Easing.cubic))}
+          >
+            <ChartArea
+              data={visibleChartData}
+              criteria={criteria}
+              isPercentage={isPercentage}
+              color={accentColor}
+              width={chartWidth}
+            />
+          </Animated.View>
         ) : (
           <View style={s.emptyChart}>
             <Text style={s.emptyText}>No data for this period</Text>
@@ -194,41 +186,6 @@ export default function AnalyticsChart({ snapshots, sourceFilter, accentColor = 
         )}
       </View>
     </View>
-  );
-}
-
-function PeriodPill({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  if (active) {
-    return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.84}>
-        <LinearGradient
-          colors={['#E2BD75', '#C5A059', '#A87E33']}
-          locations={[0, 0.55, 1]}
-          start={{ x: 0.15, y: 0 }}
-          end={{ x: 0.85, y: 1 }}
-          style={[s.pill, s.pillActive]}
-        >
-          <Text style={[s.pillLabel, s.pillLabelActive]}>{label}</Text>
-        </LinearGradient>
-      </TouchableOpacity>
-    );
-  }
-  return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.84} style={s.pill}>
-      <Text style={s.pillLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-function CriteriaPill({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.84}
-      style={[s.pill, active && s.pillCriteriaActive]}
-    >
-      <Text style={[s.pillLabel, active && s.pillLabelInk]}>{label}</Text>
-    </TouchableOpacity>
   );
 }
 
@@ -243,36 +200,35 @@ function TrendBadge({
   unit: 'count' | 'pct';
   criteria: AnalyticsCriteria;
 }) {
-  const label = `${value}${unit === 'pct' ? '%' : ''} ${direction === 'down' ? 'less' : 'more'} vs prev`;
+  const label = `${value}${unit === 'pct' ? '%' : ''} ${direction === 'down' ? 'less' : 'more'} than the period before`;
   const isMissed = criteria === 'missed';
   const isSkipped = criteria === 'skipped';
   const isPositive = isMissed ? direction === 'down' : direction === 'up';
   const tone = isSkipped
-    ? { color: '#9A7426', bg: '#FEF3C7' }
+    ? { color: '#8A6720', bg: '#FBF4E4', border: 'rgba(154,116,38,0.22)' }
     : isPositive
-      ? { color: '#15803D', bg: '#DCFCE7' }
-      : { color: '#B91C1C', bg: '#FEE2E2' };
+      ? { color: '#2F6B3E', bg: '#F0F6F0', border: 'rgba(47,107,62,0.20)' }
+      : { color: '#A0464A', bg: '#FBF0F0', border: 'rgba(160,70,74,0.20)' };
 
-  if (direction === 'up') {
+  if (direction === 'flat') {
     return (
-      <View style={[s.badge, { backgroundColor: tone.bg }]}>
-        <TrendingUp s={12} c={tone.color} w={2.4} />
-        <Text style={[s.badgeText, { color: tone.color }]}>{label}</Text>
+      <View style={[s.badge, s.badgeFlat]}>
+        <Minus s={13} c={A.faint} w={2.4} />
+        <Text style={[s.badgeText, { color: A.muted }]} numberOfLines={1}>
+          No change from the period before
+        </Text>
       </View>
     );
   }
-  if (direction === 'down') {
-    return (
-      <View style={[s.badge, { backgroundColor: tone.bg }]}>
-        <TrendingDown s={12} c={tone.color} w={2.4} />
-        <Text style={[s.badgeText, { color: tone.color }]}>{label}</Text>
-      </View>
-    );
-  }
+
+  const Arrow = direction === 'up' ? TrendingUp : TrendingDown;
+
   return (
-    <View style={[s.badge, s.badgeFlat]}>
-      <Minus s={12} c="#A8A29E" w={2.4} />
-      <Text style={[s.badgeText, { color: '#78716C' }]}>No change</Text>
+    <View style={[s.badge, { backgroundColor: tone.bg, borderColor: tone.border }]}>
+      <Arrow s={13} c={tone.color} w={2.4} />
+      <Text style={[s.badgeText, { color: tone.color }]} numberOfLines={1}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -361,24 +317,18 @@ function ChartArea({
     selectedIdx !== null && selectedIdx >= 0 && selectedIdx < data.length ? selectedIdx : null;
 
   // Tooltip metrics — clamp to chart bounds so it never falls off the edge
-  const tooltipText =
-    safeSelected !== null
-      ? `${data[safeSelected].label} · ${
-          isPercentage ? `${data[safeSelected][criteria]}%` : data[safeSelected][criteria]
-        }`
-      : '';
-  const TOOLTIP_W = 110;
-  const TOOLTIP_H = 30;
+  const TOOLTIP_W = 128;
+  const TOOLTIP_H = 48;
   const tooltipLeft =
     safeSelected !== null
       ? Math.max(
-          CHART_PAD_LEFT - 4,
+          CHART_PAD_LEFT - 10,
           Math.min(width - TOOLTIP_W - 4, points[safeSelected].x - TOOLTIP_W / 2),
         )
       : 0;
   const tooltipTop =
     safeSelected !== null
-      ? Math.max(2, points[safeSelected].y - TOOLTIP_H - 10)
+      ? Math.max(0, points[safeSelected].y - TOOLTIP_H - 12)
       : 0;
 
   return (
@@ -386,8 +336,9 @@ function ChartArea({
     <Svg width={width} height={CHART_HEIGHT}>
       <Defs>
         <SvgLinearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%" stopColor={color} stopOpacity={0.32} />
-          <Stop offset="100%" stopColor={color} stopOpacity={0.02} />
+          <Stop offset="0%" stopColor={color} stopOpacity={0.34} />
+          <Stop offset="70%" stopColor={color} stopOpacity={0.08} />
+          <Stop offset="100%" stopColor={color} stopOpacity={0.01} />
         </SvgLinearGradient>
       </Defs>
 
@@ -401,12 +352,12 @@ function ChartArea({
               x2={CHART_PAD_LEFT + innerW}
               y1={y}
               y2={y}
-              stroke="#F0EDE6"
+              stroke={t === 0 ? '#E6DFD2' : '#F0EDE6'}
               strokeWidth={1}
-              strokeDasharray={t === 0 ? undefined : '3 4'}
+              strokeDasharray={t === 0 ? undefined : '3 5'}
             />
             <SvgText
-              x={CHART_PAD_LEFT - 6}
+              x={CHART_PAD_LEFT - 8}
               y={y + AXIS_LABEL_SIZE / 3}
               fontSize={AXIS_LABEL_SIZE}
               fill={AXIS_LABEL_COLOR}
@@ -420,26 +371,49 @@ function ChartArea({
         );
       })}
 
+      {/* Guide line under the selected point */}
+      {safeSelected !== null && (
+        <Line
+          x1={points[safeSelected].x}
+          x2={points[safeSelected].x}
+          y1={points[safeSelected].y}
+          y2={CHART_PAD_TOP + innerH}
+          stroke={color}
+          strokeOpacity={0.4}
+          strokeWidth={1.5}
+          strokeDasharray="3 4"
+        />
+      )}
+
       {/* Area fill */}
       {areaPath !== '' && <Path d={areaPath} fill="url(#chartFill)" />}
 
       {/* Line */}
-      {linePath !== '' && <Path d={linePath} stroke={color} strokeWidth={2.5} fill="none" />}
+      {linePath !== '' && (
+        <>
+          <Path d={linePath} stroke={color} strokeOpacity={0.16} strokeWidth={6} fill="none" strokeLinecap="round" />
+          <Path d={linePath} stroke={color} strokeWidth={2.8} fill="none" strokeLinecap="round" />
+        </>
+      )}
 
       {/* Dots only — values revealed on tap (tooltip rendered as RN overlay below) */}
       {points.map((p, i) => {
         const isLast = i === points.length - 1;
         const isSelected = i === safeSelected;
         return (
-          <Circle
-            key={`pt-${i}`}
-            cx={p.x}
-            cy={p.y}
-            r={isSelected ? 5 : isLast ? 4 : 2.6}
-            fill={color}
-            stroke="#FFFFFF"
-            strokeWidth={isSelected ? 2.5 : isLast ? 2 : 1.5}
-          />
+          <React.Fragment key={`pt-${i}`}>
+            {(isSelected || isLast) && (
+              <Circle cx={p.x} cy={p.y} r={isSelected ? 11 : 8} fill={color} opacity={isSelected ? 0.16 : 0.1} />
+            )}
+            <Circle
+              cx={p.x}
+              cy={p.y}
+              r={isSelected ? 5.5 : isLast ? 4.5 : 2.8}
+              fill={color}
+              stroke="#FFFFFF"
+              strokeWidth={isSelected ? 2.5 : isLast ? 2 : 1.5}
+            />
+          </React.Fragment>
         );
       })}
 
@@ -455,14 +429,14 @@ function ChartArea({
             Math.round((k * (data.length - 1)) / (maxLabels - 1)),
           );
         }
-        const xAxisY = CHART_PAD_TOP + innerH + AXIS_LABEL_SIZE + 6;
+        const xAxisY = CHART_PAD_TOP + innerH + AXIS_LABEL_SIZE + 8;
         return idxs.map(i => (
           <SvgText
             key={`xlabel-${i}`}
             x={points[i].x}
             y={xAxisY}
             fontSize={AXIS_LABEL_SIZE}
-            fill={AXIS_LABEL_COLOR}
+            fill={i === safeSelected ? color : AXIS_LABEL_COLOR}
             textAnchor={i === 0 ? 'start' : i === data.length - 1 ? 'end' : 'middle'}
             fontFamily="System"
             fontWeight="bold"
@@ -484,18 +458,19 @@ function ChartArea({
           hitSlop={6}
           style={{
             position: 'absolute',
-            left: p.x - 16,
-            top: p.y - 16,
-            width: 32,
-            height: 32,
+            left: p.x - 17,
+            top: p.y - 17,
+            width: 34,
+            height: 34,
           }}
         />
       ))}
 
       {/* Tooltip — shown only when a dot is selected */}
       {safeSelected !== null && (
-        <View
+        <Animated.View
           pointerEvents="none"
+          entering={FadeIn.duration(160)}
           style={[
             s.tooltip,
             {
@@ -503,123 +478,100 @@ function ChartArea({
               top: tooltipTop,
               width: TOOLTIP_W,
               height: TOOLTIP_H,
-              borderColor: color,
+              borderColor: `${color}55`,
             },
           ]}
         >
-          <Text style={[s.tooltipText, { color }]} numberOfLines={1}>
-            {tooltipText}
+          <Text style={s.tooltipLabel} numberOfLines={1}>
+            {data[safeSelected].label}
           </Text>
-        </View>
+          <Text style={[s.tooltipValue, { color }]} numberOfLines={1}>
+            {isPercentage ? `${data[safeSelected][criteria]}%` : data[safeSelected][criteria]}
+          </Text>
+        </Animated.View>
       )}
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  card: {
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#F0EDE6',
-    paddingVertical: 16,
-    overflow: 'hidden',
-    shadowColor: '#1C1917',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 7,
-    elevation: 1,
-  },
-  headerWrap: { paddingHorizontal: 16, rowGap: 10 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', columnGap: 6 },
-  headerKicker: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 2.2, color: ACCENT },
+  card: { ...cardShell, paddingVertical: 18 },
+  headerWrap: { paddingHorizontal: 18, rowGap: 12 },
 
-  pillsRow: { columnGap: 6, paddingRight: 4, paddingBottom: 2 },
-  pill: {
-    minHeight: 28,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F5F5F4',
-    borderWidth: 1,
-    borderColor: '#F0EDE6',
-  },
-  pillActive: {
-    borderWidth: 0,
-    shadowColor: '#A87E33',
-    shadowOpacity: 0.22,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 9,
-    elevation: 2,
-  },
-  pillCriteriaActive: {
-    backgroundColor: '#1C1917',
-    borderColor: '#1C1917',
-  },
-  pillLabel: { fontFamily: F.sansBold, fontSize: 11.5, letterSpacing: 0.6, color: '#78716C' },
-  pillLabelActive: { color: '#FFFFFF', letterSpacing: 0.8 },
-  pillLabelInk: { color: '#FFFFFF' },
+
+  divider: { height: 1, backgroundColor: A.lineSoft, marginHorizontal: 2 },
 
   monthRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    columnGap: 10,
-    paddingTop: 2,
+    columnGap: 12,
   },
   monthBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#FAFAF9',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#FCFAF6',
     borderWidth: 1,
-    borderColor: '#F0EDE6',
+    borderColor: A.line,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  monthBtnDisabled: { opacity: 0.45 },
+  monthBtnDisabled: { opacity: 0.42 },
   monthLabel: {
-    fontFamily: F.serifMedium,
-    fontSize: 15,
-    color: '#1A1714',
-    minWidth: 130,
+    fontFamily: F.serifSemiBold,
+    fontSize: 18,
+    letterSpacing: -0.2,
+    color: A.ink,
+    minWidth: 140,
     textAlign: 'center',
   },
 
-  trendRow: { flexDirection: 'row', alignItems: 'center', paddingTop: 2 },
+  trendRow: { flexDirection: 'row', alignItems: 'center' },
   badge: {
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    columnGap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
     borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
-  badgeFlat: { backgroundColor: '#F5F5F4' },
-  badgeText: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 0.4 },
+  badgeFlat: { backgroundColor: '#F6F4F1', borderColor: A.line },
+  badgeText: { flexShrink: 1, fontFamily: F.sansSemiBold, fontSize: 12.5, letterSpacing: 0.1 },
 
-  chartWrap: { paddingTop: 14, paddingHorizontal: 4 },
+  chartWrap: { paddingTop: 16, paddingHorizontal: 4 },
   emptyChart: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { fontFamily: F.serifMediumItalic, fontSize: 15, color: '#A8A29E' },
+  emptyText: { fontFamily: F.serifMediumItalic, fontSize: 16, color: A.faint },
 
   tooltip: {
     position: 'absolute',
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
-    borderRadius: 8,
-    paddingHorizontal: 8,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    paddingHorizontal: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    rowGap: 1,
     shadowColor: '#1C1917',
-    shadowOpacity: 0.12,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOpacity: 0.13,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 9,
+    elevation: 4,
   },
-  tooltipText: {
-    fontFamily: F.sansBold,
-    fontSize: 12,
-    letterSpacing: 0.3,
+  tooltipLabel: {
+    fontFamily: F.sansSemiBold,
+    fontSize: 11.5,
+    letterSpacing: 0.2,
+    color: A.muted,
+  },
+  tooltipValue: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 20,
+    lineHeight: 23,
+    fontVariant: ['tabular-nums'],
   },
 });

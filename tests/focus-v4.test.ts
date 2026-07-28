@@ -19,6 +19,7 @@ import {
   getDayPlanState,
   getEffectivePlan,
   getPlanSnapshotForDate,
+  getWebProtectionSummary,
   groupName,
   HARD_LOCK_DISABLE_DELAY_MS,
   hardLockDelayMs,
@@ -462,6 +463,37 @@ describe('streak rules', () => {
 });
 
 describe('Clean Sight domain rules', () => {
+  test('derives one accurate Web Protection summary for Focus and My Routine', () => {
+    const protectedState = state({
+      purity: {
+        packs: [
+          { id: 'gambling', mode: 'on', extraDomains: ['extra.example.com'] },
+          { id: 'adult', mode: 'off', extraDomains: ['inactive.example.com'] },
+          { id: 'social', mode: 'off', extraDomains: [] },
+          { id: 'news', mode: 'off', extraDomains: [] },
+        ],
+        customPacks: [
+          { id: 'custom-on', name: 'Active', domains: ['extra.example.com', 'one.example.com', 'two.example.com'], mode: 'on' },
+          { id: 'custom-off', name: 'Inactive', domains: ['hidden.example.com'], mode: 'off' },
+        ],
+        customDomains: [{ domain: 'personal.example.com', never: false }],
+        locks: { enabled: false, locked: false, cooldown: '45m' },
+      },
+    });
+
+    assert.deepEqual(getWebProtectionSummary(protectedState), {
+      state: 'on',
+      configured: true,
+      packsOn: 2,
+      customSites: 4,
+    });
+    assert.equal(getWebProtectionSummary({ ...protectedState, permission: 'preview' }).state, 'preview');
+    assert.equal(getWebProtectionSummary({
+      ...protectedState,
+      nativeProtection: { status: 'applying', appliedAt: null, error: null, hardWallDate: null },
+    }).state, 'off');
+  });
+
   test('normalizes user input and rejects malformed hostnames', () => {
     assert.equal(normalizeWebDomain(' HTTPS://WWW.Example.COM:443/path?q=1#top '), 'example.com');
     assert.equal(normalizeWebDomain('bad..example.com'), '');
@@ -489,6 +521,23 @@ describe('Clean Sight domain rules', () => {
     assert.equal(new Set(resolved.domains).size, WEB_DOMAIN_LIMIT);
     assert.ok(resolved.omittedDomains.length > 3);
     assert.equal(resolved.adultFilterActive, false);
+  });
+
+  test('keeps one domain in multiple protection packs while shielding it once', () => {
+    const domain = 'shared-boundary.example.com';
+    setPackMode('gambling', 'on');
+    setPackMode('social', 'on');
+
+    assert.equal(addDomainToWebPack('gambling', domain), true);
+    assert.equal(addDomainToWebPack('social', domain), true);
+    assert.equal(addDomainToWebPack('social', domain), false);
+
+    const purity = getDayPlanState().purity;
+    assert.ok(purity.packs.find(pack => pack.id === 'gambling')?.extraDomains.includes(domain));
+    assert.ok(purity.packs.find(pack => pack.id === 'social')?.extraDomains.includes(domain));
+
+    const resolved = resolveWebProtectionDomains(purity);
+    assert.equal(resolved.domains.filter(entry => entry === domain).length, 1);
   });
 
   test('adds personal domains to a built-in pack and delays their removal through Hard Lock', () => {

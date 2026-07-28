@@ -8,7 +8,8 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "ANASTA_NATIVE_BUILD": "1"
+        "ANASTA_NATIVE_BUILD": "1",
+        "EXPO_PUBLIC_NATIVE_RICH_TEXT_EDITOR": "1"
       },
       "ios": {
         "simulator": false

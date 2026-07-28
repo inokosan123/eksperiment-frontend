@@ -102,8 +102,7 @@ import MyFavoritesView from '@/components/scripture/MyFavoritesView';
 import BibleNotesView from '@/components/inner-tools/BibleNotesView';
 import { GratitudeTaskSetupSheet } from '@/components/inner-tools/GratitudeView';
 import { useScripture } from '@/components/scripture/ScriptureContext';
-import { normalizeScriptureLanguage } from '@/constants/scripture';
-import { useAppSettings } from '@/components/settings/SettingsContext';
+import type { ScriptureAnnotation } from '@/components/scripture/ScriptureContext';
 import HomeView from '@/components/home/HomeView';
 import WeeklyRhythm from '@/components/home/WeeklyRhythm';
 import MonthlyGoalsView from '@/components/inner-tools/MonthlyGoalsView';
@@ -143,6 +142,7 @@ import {
   type FocusProtectionToolId,
 } from '@/components/onboarding/focus/FocusProtectionGuideSlide';
 import { C, F } from '@/constants/tokens';
+import type { HighlightColor } from '@/constants/annotationColors';
 
 type ChristianAnswer = 'yes' | 'exploring' | 'no' | 'prefer_not';
 type TraditionAnswer =
@@ -344,10 +344,14 @@ type Answers = {
 };
 
 type OnboardingDevJumpTarget = {
+  id: string;
   step: StepId;
   title: string;
   body: string;
   accent: string;
+  guidedPhase?: string;
+  homeGuideStart?: 'loading' | 'home';
+  includeMonthlyGoals?: boolean;
 };
 
 type OnboardingDevJumpGroup = {
@@ -406,6 +410,10 @@ const DAY_PANORAMA_INTRO_ENABLED = false;
 // (Opal etc.) already burned that trick.
 const DAY_RECLAIM_SCREENS_ENABLED = false;
 const APP_LOGO = require('@/assets/images/anasta-logo.png');
+// The bundled logo is an opaque bitmap whose canvas is exactly #F1F1F1.
+// Matching the plate to the source prevents a light seam while the logo is
+// decoded or animated, especially around iOS continuous rounded clipping.
+const APP_LOGO_CANVAS_COLOR = '#F1F1F1';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const CONFETTI_SOURCE = require('@/assets/animations/onboarding-confetti.lottie');
 let onboardingAnimationReplayId = 0;
@@ -425,6 +433,12 @@ const FAITH_BIBLE_STICKER = require('@/assets/images/onboarding/faith-bible-stic
 const FAITH_BIBLE_NOTES_STICKER = require('@/assets/images/onboarding/faith-bible-notes-sticker.png');
 const FAITH_FAVORITES_STICKER = require('@/assets/images/onboarding/faith-favorites-sticker.png');
 const FAITH_PRAYER_BOOK_STICKER = require('@/assets/images/onboarding/faith-prayer-book-sticker.png');
+const FAITH_VALUE_STICKER_IMAGES = [
+  FAITH_BIBLE_STICKER,
+  FAITH_PRAYER_BOOK_STICKER,
+  FAITH_BIBLE_NOTES_STICKER,
+  FAITH_FAVORITES_STICKER,
+];
 const DAY_PANORAMA_DOME = require('@/assets/images/onboarding/day-panorama-dome-cutout.png');
 const DAY_AXIS_SUN = require('@/assets/images/onboarding/day-axis-sun-cutout.png');
 const DAY_AXIS_MOON = require('@/assets/images/onboarding/day-axis-moon-cutout.png');
@@ -517,6 +531,12 @@ const ORGANIZE_STATEMENT_IMAGES = [
 const STATEMENT_IMAGE_DECODE_SIZE = 768;
 const statementImageRefs = new Map<number, ExpoImageRef>();
 const statementImageLoads = new Map<number, Promise<ExpoImageRef | null>>();
+const GIFT_STATEMENT_LOGO_DECODE_SIZE = 768;
+let giftStatementLogoImageRef: ExpoImageRef | null = null;
+let giftStatementLogoImageLoad: Promise<ExpoImageRef | null> | null = null;
+const FAITH_VALUE_STICKER_DECODE_SIZE = 512;
+const faithValueStickerImageRefs = new Map<number, ExpoImageRef>();
+const faithValueStickerImageLoads = new Map<number, Promise<ExpoImageRef | null>>();
 const ORGANIZE_EXAMPLE_IMAGE_DECODE_SIZE = 768;
 const organizeExampleImageRefs = new Map<number, ExpoImageRef>();
 const organizeExampleImageLoads = new Map<number, Promise<ExpoImageRef | null>>();
@@ -551,6 +571,56 @@ function loadStatementImage(source: number) {
 
 function warmStatementImages(sources: number[]) {
   return Promise.all(sources.map(loadStatementImage));
+}
+
+function loadGiftStatementLogoImage() {
+  if (giftStatementLogoImageRef) return Promise.resolve(giftStatementLogoImageRef);
+  if (giftStatementLogoImageLoad) return giftStatementLogoImageLoad;
+
+  giftStatementLogoImageLoad = ExpoImage.loadAsync(APP_LOGO, {
+    maxWidth: GIFT_STATEMENT_LOGO_DECODE_SIZE,
+    maxHeight: GIFT_STATEMENT_LOGO_DECODE_SIZE,
+  })
+    .then(image => {
+      giftStatementLogoImageRef = image;
+      giftStatementLogoImageLoad = null;
+      return image;
+    })
+    .catch(() => {
+      giftStatementLogoImageLoad = null;
+      return null;
+    });
+
+  return giftStatementLogoImageLoad;
+}
+
+function loadFaithValueStickerImage(source: number) {
+  const cached = faithValueStickerImageRefs.get(source);
+  if (cached) return Promise.resolve(cached);
+
+  const pending = faithValueStickerImageLoads.get(source);
+  if (pending) return pending;
+
+  const load = ExpoImage.loadAsync(source, {
+    maxWidth: FAITH_VALUE_STICKER_DECODE_SIZE,
+    maxHeight: FAITH_VALUE_STICKER_DECODE_SIZE,
+  })
+    .then(image => {
+      faithValueStickerImageRefs.set(source, image);
+      faithValueStickerImageLoads.delete(source);
+      return image;
+    })
+    .catch(() => {
+      faithValueStickerImageLoads.delete(source);
+      return null;
+    });
+
+  faithValueStickerImageLoads.set(source, load);
+  return load;
+}
+
+function warmFaithValueStickerImages() {
+  return Promise.all(FAITH_VALUE_STICKER_IMAGES.map(loadFaithValueStickerImage));
 }
 
 function loadOrganizeExampleImage(source: number) {
@@ -1188,72 +1258,104 @@ const ONBOARDING_DEV_JUMP_GROUPS: OnboardingDevJumpGroup[] = [
   {
     title: 'Opening',
     targets: [
-      { step: 'nameIntro', title: 'Name + chat', body: 'Resume the normal first conversation.', accent: GOLD },
-      { step: 'traditionIntro', title: 'Tradition', body: 'Christian tradition selection.', accent: GOLD },
-      { step: 'valueOrganize', title: 'Values start', body: 'First value preview screen.', accent: '#4D8586' },
-      { step: 'toolsShowcase', title: 'Tools showcase', body: 'The moving system/tools presentation.', accent: GOLD },
+      { id: 'welcome', step: 'welcome', title: 'Welcome', body: 'Opening logo and onboarding introduction.', accent: GOLD },
+      { id: 'name-intro', step: 'nameIntro', title: 'Name + chat', body: 'Resume the normal first conversation.', accent: GOLD },
+      { id: 'tradition-intro', step: 'traditionIntro', title: 'Tradition', body: 'Christian tradition selection.', accent: GOLD },
+      { id: 'value-organize', step: 'valueOrganize', title: 'Value: organize', body: 'Organize your whole life preview.', accent: '#4D8586' },
+      { id: 'value-discipline', step: 'valueDiscipline', title: 'Value: discipline', body: 'Build discipline preview.', accent: '#4D8586' },
+      { id: 'value-focus', step: 'valueFocus', title: 'Value: focus', body: 'Protect your focus preview.', accent: '#4D8586' },
+      { id: 'value-faith', step: 'valueFaith', title: 'Value: faith', body: 'Grow closer to God preview.', accent: GOLD },
+      { id: 'tools-showcase', step: 'toolsShowcase', title: 'Tools showcase', body: 'The moving system and tools presentation.', accent: GOLD },
     ],
   },
   {
     title: 'Protect time',
     targets: [
-      { step: 'protectDeck', title: 'Protect questions', body: 'Swipe deck with selected pain points.', accent: '#4D8586' },
-      { step: 'screenTimeSlider', title: 'Screen time slider', body: 'Phone hours input.', accent: '#4D8586' },
-      { step: 'dayVisualizationHeader', title: 'Day visualization', body: 'Daily time breakdown sequence.', accent: '#2F9B61' },
-      { step: 'protectRecap', title: 'Protect recap', body: 'Selected answers and recommendations.', accent: '#4D8586' },
-      { step: 'focusOverview', title: 'Focus tour', body: 'Real Focus status, Quiet Hour, streak, and main cards.', accent: '#4D8586' },
-      { step: 'flameProtect', title: 'Protect flame', body: 'First checkpoint flame.', accent: GOLD },
+      { id: 'protect-deck', step: 'protectDeck', title: 'Protect questions', body: 'Swipe deck with selected pain points.', accent: '#4D8586' },
+      { id: 'screen-time-slider', step: 'screenTimeSlider', title: 'Screen time slider', body: 'Phone hours input.', accent: '#4D8586' },
+      { id: 'day-visualization', step: 'dayVisualizationHeader', title: 'Day visualization', body: 'Daily time breakdown sequence.', accent: '#2F9B61' },
+      { id: 'protect-recap', step: 'protectRecap', title: 'Protect recap + setup', body: 'Recommendations followed by both protection guides.', accent: '#4D8586' },
+      { id: 'focus-overview', step: 'focusOverview', title: 'Focus screen guide', body: 'Real Focus status, Quiet Hour, trophy streak, and protection cards.', accent: '#4D8586' },
+      { id: 'flame-protect', step: 'flameProtect', title: 'Protect flame', body: 'First checkpoint flame.', accent: GOLD },
     ],
   },
   {
-    title: 'Organize',
+    title: 'Organize · foundations',
     targets: [
-      { step: 'organizeDeck', title: 'Organize questions', body: 'Organize swipe deck.', accent: '#4D8586' },
-      { step: 'organizeRecap', title: 'Organize recap', body: 'System health and recommendations.', accent: '#4D8586' },
-      { step: 'organizeSetupPath', title: 'Two layers', body: 'Macro planning + weekly routine map.', accent: GOLD },
-      { step: 'organizeMacroIntro', title: 'Macro planning', body: 'Big events and monthly goals.', accent: '#2F9B61' },
-      { step: 'organizeBigEventsIntro', title: 'Big events', body: 'Carousel before guided setup.', accent: '#4D8586' },
-      { step: 'organizeMacroProgressAfterBigEvents', title: 'After big events', body: 'Macro progress check state.', accent: '#2F9B61' },
-      { step: 'organizeMonthlyGoalsIntro', title: 'Monthly goals', body: 'Carousel before monthly goals.', accent: GOLD },
-      { step: 'organizeMacroProgressAfterMonthlyGoals', title: 'After monthly goals', body: 'Macro complete state.', accent: '#2F9B61' },
-      { step: 'organizeWeeklyIntroV2', title: 'Weekly intro', body: 'Start of weekly routine setup.', accent: GOLD },
-      { step: 'organizeWeeklyRhythmV2', title: 'Weekly rhythm', body: 'Monday to Sunday planning preview.', accent: '#4D8586' },
-      { step: 'organizeDailySetupV2', title: 'Task rhythm', body: 'Task frequency preview.', accent: '#2F9B61' },
-      { step: 'organizeHubStartV2', title: 'Tasks hub', body: 'Four task types overview.', accent: '#4D8586' },
-      { step: 'organizeChristCenterV2', title: 'Around Christ', body: 'Build life around Christ manifesto.', accent: GOLD },
-      { step: 'organizeSpiritualTasksIntro', title: 'Spiritual tasks', body: 'Start before spiritual setup.', accent: GOLD },
-      { step: 'organizeHubAfterSpiritualV2', title: 'Routine tasks', body: 'Watch spiritual check, then routine setup.', accent: '#4D8586' },
-      { step: 'organizeHubAfterRoutineV2', title: 'Challenges', body: 'Watch routine check, then challenge setup.', accent: '#8F5B4B' },
-      { step: 'organizeHubAfterChallengesV2', title: 'Habits', body: 'Watch challenge check, then habit setup.', accent: '#2F9B61' },
-      { step: 'organizeHabitsConceptV2', title: 'Goals', body: 'Clear goal explanation screen.', accent: '#2F9B61' },
-      { step: 'organizeHabitsExamples', title: 'Habits / steps', body: 'Goal habits / steps explanation screen.', accent: '#2F9B61' },
-      { step: 'organizeHabitsMomentumV2', title: 'Habit momentum', body: 'Imperfect day / keep moving screen.', accent: '#2F9B61' },
-      { step: 'organizeHabitsBuilderV2', title: 'Goal setup', body: 'Build first goal screen.', accent: '#2F9B61' },
-      { step: 'organizeGuidedHomeTour', title: 'Home guide', body: 'Guided Home and My Rhythm walkthrough.', accent: '#4D8586' },
-      { step: 'organizeHomePreview', title: 'Home preview', body: 'Organized home mock.', accent: GOLD },
-      { step: 'organizeComplete', title: 'Organize complete', body: 'End of organize section.', accent: '#2F9B61' },
-      { step: 'flameOrganize', title: 'Organize flame', body: 'Second checkpoint flame.', accent: GOLD },
+      { id: 'organize-deck', step: 'organizeDeck', title: 'Organize questions', body: 'Organize swipe deck.', accent: '#4D8586' },
+      { id: 'organize-recap', step: 'organizeRecap', title: 'Organize recap', body: 'System health and recommendations.', accent: '#4D8586' },
+      { id: 'organize-setup-path', step: 'organizeSetupPath', title: 'Two layers', body: 'Macro planning and weekly routine map.', accent: GOLD },
+      { id: 'organize-macro-intro', step: 'organizeMacroIntro', title: 'Macro planning', body: 'Big events and monthly goals introduction.', accent: '#2F9B61' },
+    ],
+  },
+  {
+    title: 'Organize · planning',
+    targets: [
+      { id: 'big-events-examples', step: 'organizeBigEventsIntro', title: 'Big Events examples', body: 'Example carousel before the real guided setup.', accent: '#4D8586' },
+      { id: 'big-events-setup', step: 'buildBigEvents', title: 'Big Events setup', body: 'Open the real guided Big Events screen.', accent: '#4D8586', guidedPhase: 'intro' },
+      { id: 'after-big-events', step: 'organizeMacroProgressAfterBigEvents', title: 'After Big Events', body: 'First macro progress check state.', accent: '#2F9B61' },
+      { id: 'after-big-events-no-monthly', step: 'organizeSetupPathAfterAhead', title: 'After Big Events · no Monthly Goals', body: 'Alternate path when Monthly Goals are not recommended.', accent: '#2F9B61', includeMonthlyGoals: false },
+      { id: 'monthly-goals-examples', step: 'organizeMonthlyGoalsIntro', title: 'Monthly Goals examples', body: 'Example carousel before the real guided setup.', accent: GOLD },
+      { id: 'monthly-goals-setup', step: 'buildMonthlyGoals', title: 'Monthly Goals setup', body: 'Open the real guided Monthly Goals screen.', accent: GOLD, guidedPhase: 'intro' },
+      { id: 'after-monthly-goals', step: 'organizeMacroProgressAfterMonthlyGoals', title: 'After Monthly Goals', body: 'Completed macro-planning state.', accent: '#2F9B61' },
+    ],
+  },
+  {
+    title: 'Organize · weekly system',
+    targets: [
+      { id: 'weekly-intro', step: 'organizeWeeklyIntroV2', title: 'Weekly intro', body: 'Start of weekly routine setup.', accent: GOLD },
+      { id: 'weekly-rhythm', step: 'organizeWeeklyRhythmV2', title: 'Weekly rhythm', body: 'Monday-to-Sunday planning preview.', accent: '#4D8586' },
+      { id: 'task-rhythm', step: 'organizeDailySetupV2', title: 'Task rhythm', body: 'Task frequency preview.', accent: '#2F9B61' },
+      { id: 'tasks-hub-start', step: 'organizeHubStartV2', title: 'Tasks hub · start', body: 'Four task types overview before setup.', accent: '#4D8586' },
+      { id: 'christ-center', step: 'organizeChristCenterV2', title: 'Around Christ', body: 'Build life around Christ manifesto.', accent: GOLD },
+      { id: 'spiritual-examples', step: 'organizeSpiritualTasksIntro', title: 'Spiritual Tasks examples', body: 'Example carousel before spiritual-task setup.', accent: GOLD },
+      { id: 'spiritual-setup', step: 'organizeSpiritualBuilderV2', title: 'Spiritual Tasks setup', body: 'Build the first spiritual tasks.', accent: GOLD },
+      { id: 'after-spiritual', step: 'organizeHubAfterSpiritualV2', title: 'Tasks hub · spiritual added', body: 'Spiritual completion transition.', accent: '#4D8586' },
+      { id: 'routine-examples', step: 'organizeRoutineTasksIntro', title: 'Routine Tasks examples', body: 'Example carousel before routine-task setup.', accent: '#4D8586' },
+      { id: 'routine-setup', step: 'organizeRoutineBuilderV2', title: 'Routine Tasks setup', body: 'Build the first routine tasks.', accent: '#4D8586' },
+      { id: 'after-routine', step: 'organizeHubAfterRoutineV2', title: 'Tasks hub · routine added', body: 'Routine completion transition.', accent: '#8F5B4B' },
+      { id: 'challenge-examples', step: 'organizeChallengesIntro', title: 'Challenges examples', body: 'Example carousel before challenge setup.', accent: '#8F5B4B' },
+      { id: 'challenge-setup', step: 'organizeChallengesBuilderV2', title: 'Challenges setup', body: 'Build the first challenge.', accent: '#8F5B4B' },
+      { id: 'after-challenges', step: 'organizeHubAfterChallengesV2', title: 'Tasks hub · challenge added', body: 'Challenge completion transition.', accent: '#2F9B61' },
+      { id: 'habits-concept', step: 'organizeHabitsConceptV2', title: 'Goals', body: 'Clear goal explanation screen.', accent: '#2F9B61' },
+      { id: 'habits-steps', step: 'organizeHabitsExamples', title: 'Habits / steps', body: 'Goal habits and steps explanation.', accent: '#2F9B61' },
+      { id: 'habit-momentum', step: 'organizeHabitsMomentumV2', title: 'Habit momentum', body: 'Imperfect day and keep-moving screen.', accent: '#2F9B61' },
+      { id: 'goal-setup', step: 'organizeHabitsBuilderV2', title: 'Goal setup', body: 'Build the first goal.', accent: '#2F9B61' },
+      { id: 'tasks-hub-complete', step: 'organizeHubCompleteV2', title: 'Tasks hub · complete', body: 'Completed weekly-system state.', accent: '#2F9B61' },
+      { id: 'system-build-handoff', step: 'organizeGuidedHomeTour', title: 'System build handoff', body: 'Loading checklist and logo handoff before Home.', accent: GOLD, homeGuideStart: 'loading' },
+      { id: 'home-guide', step: 'organizeGuidedHomeTour', title: 'Home + My Routine guide', body: 'Open the real guided Home tour directly, without replaying the handoff.', accent: '#4D8586', homeGuideStart: 'home' },
+      { id: 'flame-organize', step: 'flameOrganize', title: 'Organize flame', body: 'Second checkpoint flame.', accent: GOLD },
+    ],
+  },
+  {
+    title: 'Grow closer to God',
+    targets: [
+      { id: 'gift-moment', step: 'giftMoment', title: 'Our promise', body: 'The free Scripture and spiritual-tools promise.', accent: GOLD },
+      { id: 'gift-showcase', step: 'giftShowcase', title: 'Grow closer to God', body: 'Bible, Prayer Book, Bible Notes, and Favorites preview.', accent: GOLD },
+      { id: 'bible-walkthrough', step: 'bibleWalkthrough', title: 'Bible guide', body: 'Real Scripture, Favorites, Notes, and library walkthrough.', accent: GOLD },
+      { id: 'prayer-book', step: 'prayerBook', title: 'Prayer Book guide', body: 'Open the real Prayer Book walkthrough.', accent: GOLD },
+      { id: 'flame-grow', step: 'flameGrow', title: 'Grow flame', body: 'Third checkpoint flame.', accent: GOLD },
+    ],
+  },
+  {
+    title: 'More tools',
+    targets: [
+      { id: 'tools-slides', step: 'toolsSlides', title: 'More tools', body: 'Journal, gratitude, and other tools.', accent: '#4D8586' },
+      { id: 'flame-tools', step: 'flameTools', title: 'Tools flame', body: 'Fourth checkpoint and complete build recap.', accent: GOLD },
     ],
   },
   {
     title: 'Finish',
     targets: [
-      { step: 'giftMoment', title: 'Free gift', body: 'Scripture/free tools moment.', accent: GOLD },
-      { step: 'giftShowcase', title: 'Gift showcase', body: 'Grow closer to God value slide reprise.', accent: GOLD },
-      { step: 'bibleWalkthrough', title: 'Bible walkthrough', body: 'Bible preview moment.', accent: GOLD },
-      { step: 'prayerBook', title: 'Prayer Book', body: 'Prayer preview moment.', accent: GOLD },
-      { step: 'flameGrow', title: 'Grow flame', body: 'Third checkpoint flame.', accent: GOLD },
-      { step: 'toolsSlides', title: 'More tools', body: 'Journal/gratitude/tools slides.', accent: '#4D8586' },
-      { step: 'flameTools', title: 'Tools flame', body: 'Final flame recap.', accent: GOLD },
-      { step: 'homeReveal', title: 'Home reveal', body: 'App home reveal.', accent: '#4D8586' },
-      { step: 'firstCheckoff', title: 'First checkoff', body: 'First task feedback.', accent: '#2F9B61' },
-      { step: 'privacy', title: 'Privacy', body: 'Privacy reassurance.', accent: '#4D8586' },
-      { step: 'callingClose', title: 'Calling close', body: 'Closing value statement.', accent: GOLD },
-      { step: 'paywall', title: 'Paywall', body: 'Trial offer screen.', accent: GOLD },
-      { step: 'postPaywallBrand', title: 'Post-paywall brand', body: 'Arise closing screen.', accent: GOLD },
-      { step: 'age', title: 'Age', body: 'Post-paywall profile question.', accent: '#4D8586' },
-      { step: 'gender', title: 'Gender', body: 'Post-paywall profile question.', accent: '#4D8586' },
-      { step: 'accountCreation', title: 'Account creation', body: 'Final account options.', accent: GOLD },
+      { id: 'home-reveal', step: 'homeReveal', title: 'Home reveal', body: 'App Home reveal.', accent: '#4D8586' },
+      { id: 'first-checkoff', step: 'firstCheckoff', title: 'First checkoff', body: 'First task feedback.', accent: '#2F9B61' },
+      { id: 'privacy', step: 'privacy', title: 'Privacy', body: 'Privacy reassurance.', accent: '#4D8586' },
+      { id: 'calling-close', step: 'callingClose', title: 'Calling close', body: 'Closing value statement.', accent: GOLD },
+      { id: 'paywall', step: 'paywall', title: 'Paywall', body: 'Trial offer screen.', accent: GOLD },
+      { id: 'post-paywall-brand', step: 'postPaywallBrand', title: 'Post-paywall brand', body: 'Arise closing screen.', accent: GOLD },
+      { id: 'age', step: 'age', title: 'Age', body: 'Post-paywall profile question.', accent: '#4D8586' },
+      { id: 'gender', step: 'gender', title: 'Gender', body: 'Post-paywall profile question.', accent: '#4D8586' },
+      { id: 'account-creation', step: 'accountCreation', title: 'Account creation', body: 'Final account options.', accent: GOLD },
     ],
   },
 ];
@@ -1331,6 +1433,52 @@ function stepOrder(answers: Answers): StepId[] {
     'gender',
     'accountCreation',
   ];
+}
+
+function onboardingDevAnswersForTarget(base: Answers, target: OnboardingDevJumpTarget): Answers {
+  return {
+    ...base,
+    ...ONBOARDING_DEV_SEED_ANSWERS,
+    ...(target.includeMonthlyGoals === false ? { confirmedOrganizeProblems: [] } : {}),
+  };
+}
+
+function auditOnboardingDevJumpTargets() {
+  const targets = ONBOARDING_DEV_JUMP_GROUPS.flatMap(group => group.targets);
+  const targetIds = new Set<string>();
+  const duplicateIds = new Set<string>();
+
+  targets.forEach(target => {
+    if (targetIds.has(target.id)) duplicateIds.add(target.id);
+    targetIds.add(target.id);
+  });
+
+  const monthlyPath = stepOrder(ONBOARDING_DEV_SEED_ANSWERS);
+  const shorterPath = stepOrder({
+    ...ONBOARDING_DEV_SEED_ANSWERS,
+    confirmedOrganizeProblems: [],
+  });
+  const expectedSteps = new Set<StepId>([...monthlyPath, ...shorterPath]);
+  expectedSteps.delete('onboardingDevJump');
+  const coveredSteps = new Set(targets.map(target => target.step));
+
+  const missingSteps = [...expectedSteps].filter(step => !coveredSteps.has(step));
+  const inactiveTargets = targets.filter(target => {
+    const targetAnswers = onboardingDevAnswersForTarget(ONBOARDING_DEV_SEED_ANSWERS, target);
+    return !stepOrder(targetAnswers).includes(target.step);
+  });
+  const incompleteGuidedTargets = targets.filter(
+    target =>
+      (target.step === 'buildBigEvents' || target.step === 'buildMonthlyGoals') &&
+      !target.guidedPhase,
+  );
+
+  return {
+    duplicateIds: [...duplicateIds],
+    missingSteps,
+    inactiveTargets: inactiveTargets.map(target => `${target.id} -> ${target.step}`),
+    incompleteGuidedTargets: incompleteGuidedTargets.map(target => target.id),
+  };
 }
 
 function selectedFor(step: StepId, answers: Answers) {
@@ -3806,7 +3954,12 @@ function ValueFaithFeatureArt({
   const float = useSharedValue(0);
   const delay = 260 + index * 270;
   const reverse = index % 2 === 1;
-  const prayerArtStyle = item.tone === 'prayer' ? s.valueFaithArtPrayerFloat : null;
+  const artSizeStyle =
+    item.tone === 'prayer' ? s.valueFaithArtPrayerFloat :
+    item.tone === 'bible' ? s.valueFaithArtBibleFloat :
+    item.tone === 'notes' ? s.valueFaithArtNotesFloat :
+    null;
+  const imageSource = faithValueStickerImageRefs.get(item.image) ?? item.image;
 
   useEffect(() => {
     reveal.value = 0;
@@ -3874,8 +4027,15 @@ function ValueFaithFeatureArt({
         slotRevealStyle,
       ]}
     >
-      <Reanimated.View style={[s.valueFaithArtFloat, prayerArtStyle, artStyle]}>
-        <Image source={item.image} style={s.valueFaithSticker} resizeMode="contain" resizeMethod="scale" />
+      <Reanimated.View style={[s.valueFaithArtFloat, artSizeStyle, artStyle]}>
+        <ExpoImage
+          source={imageSource}
+          style={s.valueFaithSticker}
+          contentFit="contain"
+          cachePolicy="memory-disk"
+          priority="high"
+          transition={0}
+        />
       </Reanimated.View>
     </Reanimated.View>
   );
@@ -3883,12 +4043,23 @@ function ValueFaithFeatureArt({
 
 function ValueFaithIllustration({ active }: { active: boolean }) {
   const [rowLayouts, setRowLayouts] = useState<Record<number, { y: number; height: number }>>({});
+  const [, refreshWarmImages] = useState(0);
   const storeRowLayout = useCallback((index: number, y: number, height: number) => {
     setRowLayouts(current => {
       const existing = current[index];
       if (existing && Math.abs(existing.y - y) < 1 && Math.abs(existing.height - height) < 1) return current;
       return { ...current, [index]: { y, height } };
     });
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    void warmFaithValueStickerImages().then(() => {
+      if (mounted) refreshWarmImages(version => version + 1);
+    });
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   return (
@@ -4304,8 +4475,22 @@ function OnboardingDevJumpSlide({
   topInset: number;
   bottomInset: number;
   onContinue: () => void;
-  onJump: (step: StepId) => void;
+  onJump: (target: OnboardingDevJumpTarget) => void;
 }) {
+  useEffect(() => {
+    const audit = auditOnboardingDevJumpTargets();
+    if (
+      audit.duplicateIds.length === 0 &&
+      audit.missingSteps.length === 0 &&
+      audit.inactiveTargets.length === 0 &&
+      audit.incompleteGuidedTargets.length === 0
+    ) {
+      return;
+    }
+
+    console.warn('[OnboardingDevJump] Menu audit failed', audit);
+  }, []);
+
   return (
     <View style={s.devJumpScreen}>
       <ScrollView
@@ -4353,10 +4538,10 @@ function OnboardingDevJumpSlide({
             <View style={s.devJumpTargetList}>
               {group.targets.map(target => (
                 <TouchableOpacity
-                  key={target.step}
+                  key={target.id}
                   activeOpacity={0.86}
                   haptic="light"
-                  onPress={() => onJump(target.step)}
+                  onPress={() => onJump(target)}
                   style={s.devJumpTarget}
                 >
                   <View style={[s.devJumpTargetAccent, { backgroundColor: target.accent }]} />
@@ -8971,19 +9156,47 @@ function CheckpointIgniteBurst() {
   );
 }
 
-function CheckpointRailFlame({ landed = false }: { landed?: boolean }) {
+function CheckpointRailFlame({
+  landed = false,
+  visible = true,
+}: {
+  landed?: boolean;
+  visible?: boolean;
+}) {
+  const visibility = useSharedValue(visible ? 1 : 0);
+
+  useEffect(() => {
+    if (!landed) {
+      visibility.value = 1;
+      return;
+    }
+    visibility.value = visible
+      ? withTiming(1, {
+          duration: 120,
+          easing: Easing.out(Easing.cubic),
+        })
+      : 0;
+  }, [landed, visibility, visible]);
+
+  const visibilityStyle = useAnimatedStyle(() => ({
+    opacity: landed ? visibility.value : 1,
+    transform: landed
+      ? [
+          { scale: interpolate(visibility.value, [0, 1], [0.96, 1]) },
+          { translateY: interpolate(visibility.value, [0, 1], [1, 0]) },
+        ]
+      : undefined,
+  }));
+
   return (
     <Reanimated.View
-      entering={landed
-        ? FadeIn.duration(180).easing(Easing.out(Easing.cubic)).withInitialValues({
-            opacity: 0.35,
-            transform: [{ scale: 0.96 }, { translateY: 1 }],
-          })
-        : FadeIn.duration(420).withInitialValues({
+      entering={!landed
+        ? FadeIn.duration(420).withInitialValues({
             opacity: 0,
             transform: [{ scale: 0.24 }, { translateY: 8 }],
-          })}
-      style={s.chapterCheckpointRailFlameWrap}
+          })
+        : undefined}
+      style={[s.chapterCheckpointRailFlameWrap, landed && visibilityStyle]}
     >
       <FocusLottie name="flame" loop speed={0.9} style={s.chapterCheckpointRailFlame} />
     </Reanimated.View>
@@ -9054,7 +9267,9 @@ function ChapterCheckpointStepDot({
       ref={targetRef}
       style={[s.chapterCheckpointStepDot, done && s.chapterCheckpointStepDotDone, popStyle]}
     >
-      {done ? <CheckpointRailFlame landed={preciseLanding} /> : null}
+      {done || preciseLanding ? (
+        <CheckpointRailFlame landed={preciseLanding} visible={done} />
+      ) : null}
     </Reanimated.View>
   );
 }
@@ -11971,53 +12186,291 @@ function V4MomentSlide({
 // of values, given a whole screen to land on its own. It speaks in the
 // house's own charter voice on the onboarding's plain white ground, and the
 // crest signs it beneath — a promise with a seal, not a sales screen.
-function GiftStatementSlide({ bottomInset, onNext }: { bottomInset: number; onNext: () => void }) {
+function GiftStatementSlide({
+  topInset,
+  bottomInset,
+  onNext,
+}: {
+  topInset: number;
+  bottomInset: number;
+  onNext: () => void;
+}) {
+  const { height } = useWindowDimensions();
+  const compact = height < 740;
+  const logoPulse = useSharedValue(0);
+  const logoEntranceScale = useSharedValue(0.9);
+  const logoOrbit = useSharedValue(0);
+  const logoShimmer = useSharedValue(0);
+  const sealReveal = useSharedValue(0);
+  const logoImageReveal = useSharedValue(giftStatementLogoImageRef ? 1 : 0);
+  const [logoImageSource, setLogoImageSource] = useState<ExpoImageRef | null>(
+    () => giftStatementLogoImageRef,
+  );
+  const handoff = useSharedValue(0);
+  const [advancing, setAdvancing] = useState(false);
+  const copyRevealStyle = useRevealStyle(true, 0, 18, 620);
+
   useEffect(() => {
-    const titleBeat = setTimeout(runBubbleHaptic, 620);
-    const sealBeat = setTimeout(runSelectionHaptic, 1500);
+    let mounted = true;
+    void warmFaithValueStickerImages();
+    void loadGiftStatementLogoImage().then(image => {
+      if (!mounted || !image) return;
+      setLogoImageSource(image);
+      logoImageReveal.value = withTiming(1, {
+        duration: 240,
+        easing: Easing.out(Easing.cubic),
+      });
+    });
+    sealReveal.value = 0;
+    sealReveal.value = withDelay(
+      1080,
+      withTiming(1, {
+        duration: 680,
+        easing: Easing.out(Easing.cubic),
+      }),
+    );
+    logoEntranceScale.value = 0.9;
+    logoEntranceScale.value = withDelay(
+      1080,
+      withSequence(
+        withTiming(1.075, {
+          duration: 460,
+          easing: Easing.out(Easing.cubic),
+        }),
+        withTiming(0.985, {
+          duration: 230,
+          easing: Easing.inOut(Easing.cubic),
+        }),
+        withSpring(1, {
+          damping: 14,
+          stiffness: 140,
+          mass: 0.65,
+        }),
+      ),
+    );
+    logoPulse.value = 0;
+    logoPulse.value = withDelay(
+      2160,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 1450, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0, { duration: 1920, easing: Easing.inOut(Easing.sin) }),
+        ),
+        -1,
+        false,
+      ),
+    );
+    logoOrbit.value = withRepeat(
+      withTiming(1, { duration: 10800, easing: Easing.linear }),
+      -1,
+      false,
+    );
+    logoShimmer.value = withRepeat(
+      withSequence(
+        withTiming(0, { duration: 2200 }),
+        withTiming(1, { duration: 980, easing: Easing.inOut(Easing.cubic) }),
+        withTiming(1, { duration: 2100 }),
+      ),
+      -1,
+      false,
+    );
+    const titleBeat = setTimeout(runBubbleHaptic, 520);
+    const sealBeat = setTimeout(runSelectionHaptic, 1320);
     return () => {
+      mounted = false;
       clearTimeout(titleBeat);
       clearTimeout(sealBeat);
+      cancelAnimation(logoPulse);
+      cancelAnimation(logoEntranceScale);
+      cancelAnimation(logoOrbit);
+      cancelAnimation(logoShimmer);
+      cancelAnimation(sealReveal);
+      cancelAnimation(logoImageReveal);
+      cancelAnimation(handoff);
     };
-  }, []);
+  }, [
+    handoff,
+    logoEntranceScale,
+    logoImageReveal,
+    logoOrbit,
+    logoPulse,
+    logoShimmer,
+    sealReveal,
+  ]);
+
+  const sealRevealStyle = useAnimatedStyle(() => ({
+    opacity: sealReveal.value,
+    transform: [{ translateY: interpolate(sealReveal.value, [0, 1], [18, 0]) }],
+  }));
+  const logoAuraStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(logoPulse.value, [0, 1], [0.3, 0.78]),
+    transform: [{ scale: interpolate(logoPulse.value, [0, 1], [0.84, 1.1]) }],
+  }));
+  const logoCoreStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(logoPulse.value, [0, 1], [1, -4]) },
+      { translateX: interpolate(logoPulse.value, [0, 1], [-0.4, 0.5]) },
+      {
+        scale:
+          logoEntranceScale.value *
+          interpolate(logoPulse.value, [0, 1], [0.994, 1.05]),
+      },
+      { rotate: `${interpolate(logoPulse.value, [0, 1], [-0.3, 0.35])}deg` },
+    ],
+  }));
+  const logoImageRevealStyle = useAnimatedStyle(() => ({
+    opacity: logoImageReveal.value,
+    transform: [{ scale: interpolate(logoImageReveal.value, [0, 1], [0.996, 1]) }],
+  }));
+  const outerRingStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(logoPulse.value, [0, 1], [0.42, 0.9]),
+    transform: [
+      { rotate: `${logoOrbit.value * 360}deg` },
+      { scale: interpolate(logoPulse.value, [0, 1], [0.97, 1.045]) },
+    ],
+  }));
+  const innerRingStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(logoPulse.value, [0, 1], [0.72, 1]),
+    transform: [
+      { rotate: `${logoOrbit.value * -280}deg` },
+      { scale: interpolate(logoPulse.value, [0, 1], [1.025, 0.985]) },
+    ],
+  }));
+  const logoShimmerStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      logoShimmer.value,
+      [0, 0.16, 0.38, 0.64, 0.86, 1],
+      [0, 0, 0.13, 0.18, 0, 0],
+    ),
+    transform: [
+      { translateX: interpolate(logoShimmer.value, [0, 1], [-36, 152]) },
+      { rotate: '16deg' },
+    ],
+  }));
+  const foregroundHandoffStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(handoff.value, [0, 0.82, 1], [1, 0.16, 0]),
+    transform: [
+      { translateY: interpolate(handoff.value, [0, 1], [0, -12]) },
+      { scale: interpolate(handoff.value, [0, 1], [1, 0.988]) },
+    ],
+  }));
+
+  const handleNext = useCallback(() => {
+    if (advancing) return;
+    setAdvancing(true);
+    handoff.value = withTiming(
+      1,
+      { duration: 420, easing: Easing.inOut(Easing.cubic) },
+      finished => {
+        if (finished) runOnJS(onNext)();
+      },
+    );
+  }, [advancing, handoff, onNext]);
 
   return (
     <View style={s.giftStatementSlide}>
-      <View style={s.giftStatementStage}>
-        <OrganizeLayersCharterHeader
-          eyebrow="OUR PROMISE"
-          title={'Learning about God will\nalways be free in Anasta.'}
-          body="We are a Christian productivity app that helps you build discipline, organize your life, and grow closer to God. Scripture, prayer, and spiritual growth will always be free — for everyone."
-          accent={GOLD}
-        />
-
-        <Reanimated.View
-          entering={FadeIn.delay(1340).duration(640).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-            opacity: 0,
-            transform: [{ translateY: 14 }, { scale: 0.92 }],
-          })}
-          style={s.giftStatementSealWrap}
+      <Reanimated.View style={[s.giftStatementForeground, foregroundHandoffStyle]}>
+        <View
+          style={[
+            s.giftStatementStage,
+            {
+              paddingTop: topInset + (compact ? 22 : 38),
+              paddingBottom: bottomInset + (compact ? 82 : 102),
+            },
+          ]}
         >
-          <View style={s.giftStatementSealHalo} />
-          <View style={s.giftStatementSealPlate}>
-            <Image source={APP_LOGO} style={s.giftStatementSealLogo} resizeMode="cover" />
-          </View>
-          <Reanimated.Text
-            entering={FadeIn.delay(1560).duration(480)}
-            style={s.giftStatementSealCaption}
-          >
-            ANASTA
-          </Reanimated.Text>
-        </Reanimated.View>
-      </View>
+          <Reanimated.View style={[s.giftStatementCopy, copyRevealStyle]}>
+              <Reanimated.View entering={FadeIn.delay(140).duration(460)} style={s.giftStatementEyebrowRow}>
+                <View style={s.giftStatementEyebrowRule} />
+                <Text style={s.giftStatementEyebrow}>OUR PROMISE</Text>
+                <View style={s.giftStatementEyebrowRule} />
+              </Reanimated.View>
 
-      <AnimatedCta delay={2050} style={[s.questionFooter, { bottom: bottomInset + 18 }]}>
-        <View style={s.ctaIsland}>
-          <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={onNext} style={s.primaryButton}>
-            <Text style={s.primaryButtonText}>Show me</Text>
-          </TouchableOpacity>
+              <View style={s.valueTitleShell}>
+                <View style={s.valueTitleTextWrap}>
+                  <Text style={[s.valueTitle, s.giftStatementTitle, compact && s.giftStatementTitleCompact]}>
+                    {'Learning about God\nwill always be free\nin Anasta.'}
+                  </Text>
+                  <Reanimated.View
+                    entering={FadeIn.delay(560).duration(520).withInitialValues({
+                      opacity: 0,
+                      transform: [{ scaleX: 0.12 }],
+                    })}
+                    style={[s.valueTitleUnderline, s.giftStatementUnderline]}
+                  />
+                </View>
+              </View>
+
+              <View style={[s.giftStatementBodyStack, compact && s.giftStatementBodyStackCompact]}>
+                <Reanimated.Text
+                  entering={FadeInUp.delay(680).duration(560).easing(Easing.out(Easing.cubic))}
+                  style={[s.giftStatementBody, compact && s.giftStatementBodyCompact]}
+                >
+                  We are a Christian productivity app that helps you build discipline, organize your life, and grow closer to God.
+                </Reanimated.Text>
+                <Reanimated.Text
+                  entering={FadeInUp.delay(840).duration(560).easing(Easing.out(Easing.cubic))}
+                  style={[s.giftStatementBody, s.giftStatementBodyClosing, compact && s.giftStatementBodyCompact]}
+                >
+                  <Text style={s.giftStatementBodyEmphasis}>Scripture, Prayer Book, the Favorites system, and Bible Notes</Text>
+                  {' will always be '}
+                  <Text style={s.giftStatementBodyPromise}>free — for everyone.</Text>
+                </Reanimated.Text>
+              </View>
+          </Reanimated.View>
+
+          <Reanimated.View
+            style={[
+              s.giftStatementSealRegion,
+              compact && s.giftStatementSealRegionCompact,
+              sealRevealStyle,
+            ]}
+          >
+            <View style={s.giftStatementSealWrap}>
+              <Reanimated.View style={[s.giftStatementSealAura, logoAuraStyle]} />
+              <Reanimated.View style={[s.giftStatementSealRingOuter, outerRingStyle]}>
+                <View style={s.giftStatementSealOrbitDotOuter} />
+              </Reanimated.View>
+              <Reanimated.View style={[s.giftStatementSealRingInner, innerRingStyle]}>
+                <View style={s.giftStatementSealOrbitDotInner} />
+              </Reanimated.View>
+              <Reanimated.View style={[s.giftStatementSealPlate, logoCoreStyle]}>
+                <Reanimated.View style={[s.giftStatementSealMask, logoImageRevealStyle]}>
+                  {logoImageSource ? (
+                    <ExpoImage
+                      source={logoImageSource}
+                      style={s.giftStatementSealLogo}
+                      contentFit="cover"
+                      contentPosition="center"
+                      cachePolicy="memory-disk"
+                      priority="high"
+                      transition={0}
+                    />
+                  ) : null}
+                </Reanimated.View>
+                <View pointerEvents="none" style={s.giftStatementSealSheen} />
+                <Reanimated.View
+                  pointerEvents="none"
+                  style={[s.giftStatementSealSweep, logoShimmerStyle]}
+                />
+              </Reanimated.View>
+            </View>
+          </Reanimated.View>
         </View>
-      </AnimatedCta>
+
+        <AnimatedCta
+          delay={1840}
+          pointerEvents={advancing ? 'none' : 'auto'}
+          style={[s.questionFooter, { bottom: bottomInset + 18 }]}
+        >
+          <View style={s.ctaIsland}>
+            <TouchableOpacity activeOpacity={0.9} haptic="medium" onPress={handleNext} style={s.primaryButton}>
+              <Text style={s.primaryButtonText}>Show me</Text>
+              <ChevronRight s={19} c="#FFFFFF" w={2.5} />
+            </TouchableOpacity>
+          </View>
+        </AnimatedCta>
+      </Reanimated.View>
     </View>
   );
 }
@@ -12039,15 +12492,7 @@ function GiftShowcaseSlide({
   const { width } = useWindowDimensions();
 
   return (
-    <LinearGradient
-      colors={[...VALUE_ATELIER_GRADIENT]}
-      locations={[...VALUE_ATELIER_GRADIENT_LOCATIONS]}
-      start={{ x: 0.5, y: 0 }}
-      end={{ x: 0.5, y: 1 }}
-      style={s.valueSlide}
-    >
-      <ValueAtelierBackdrop topInset={topInset} />
-
+    <View style={s.valueSlide}>
       <View style={s.valueClosingViewport}>
         <ValuePreviewPage
           width={width}
@@ -12065,7 +12510,7 @@ function GiftShowcaseSlide({
           </TouchableOpacity>
         </View>
       </AnimatedCta>
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -23710,13 +24155,38 @@ function SystemBuildVeil({ onDone }: { onDone: () => void }) {
   );
 }
 
-function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
+function OrganizeRealHomeGuideSlide({
+  onNext,
+  initialStage = 'loading',
+}: {
+  onNext: () => void;
+  initialStage?: 'loading' | 'home';
+}) {
   const { beginGuidedSetup, endGuidedSetup, patchSession, setPresentation } = useGuidedSetup();
-  const [stage, setStage] = useState<'loading' | 'home' | 'routine'>('loading');
+  const [stage, setStage] = useState<'loading' | 'home' | 'routine'>(initialStage);
+  const [routinePrepared, setRoutinePrepared] = useState(false);
+  const [handoffActive, setHandoffActive] = useState(false);
+  const routineHandoff = useSharedValue(0);
+  const handoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The real Home mounts behind the opaque veil in the initial commit. All
   // loading motion starts after that commit, so no heavy screen is inserted
   // between the first and second checklist rows.
   const sessionStartedRef = useRef(false);
+
+  const homeHandoffStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(routineHandoff.value, [0, 0.82, 1], [1, 0.12, 0], 'clamp'),
+    transform: [
+      { translateX: interpolate(routineHandoff.value, [0, 1], [0, -12], 'clamp') },
+      { scale: interpolate(routineHandoff.value, [0, 1], [1, 0.992], 'clamp') },
+    ],
+  }));
+  const routineHandoffStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(routineHandoff.value, [0, 0.12, 1], [0, 0, 1], 'clamp'),
+    transform: [
+      { translateX: interpolate(routineHandoff.value, [0, 1], [16, 0], 'clamp') },
+      { scale: interpolate(routineHandoff.value, [0, 1], [0.992, 1], 'clamp') },
+    ],
+  }));
 
   useEffect(() => {
     // Kill any stale restored session before the fresh tour begins.
@@ -23740,17 +24210,54 @@ function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
     });
   }, [beginGuidedSetup, stage]);
 
+  // My Routine is expensive enough to hitch if it mounts on the same frame as
+  // the page change. Prepare it after Home settles, while it is still invisible.
+  useEffect(() => {
+    if (stage !== 'home' || routinePrepared) return;
+    let interaction: ReturnType<typeof InteractionManager.runAfterInteractions> | undefined;
+    const timer = setTimeout(() => {
+      interaction = InteractionManager.runAfterInteractions(() => {
+        setRoutinePrepared(true);
+      });
+    }, 520);
+    return () => {
+      clearTimeout(timer);
+      interaction?.cancel();
+    };
+  }, [routinePrepared, stage]);
+
+  useEffect(() => () => {
+    if (handoffTimerRef.current) clearTimeout(handoffTimerRef.current);
+    cancelAnimation(routineHandoff);
+  }, [routineHandoff]);
+
   // The session ends only when the slide truly leaves the stage.
   useEffect(() => () => endGuidedSetup(), [endGuidedSetup]);
 
-  const handleHomeComplete = useCallback(() => {
-    // One continuous session: hand the baton to the routine tour by patching
-    // the step — an end→begin gap here is exactly where the overlay used to
-    // fall through and strand the user on a half-dimmed screen.
-    setPresentation(null);
+  const finishHomeHandoff = useCallback(() => {
     patchSession({ activeStep: 'buildMyRoutine', phase: 'tourWeek', route: '/onboarding' });
     setStage('routine');
-  }, [patchSession, setPresentation]);
+    setHandoffActive(false);
+  }, [patchSession]);
+
+  const handleHomeComplete = useCallback(() => {
+    if (handoffActive) return;
+    setHandoffActive(true);
+    setPresentation(null);
+    setRoutinePrepared(true);
+
+    // Let the old spotlight clear first, then move between two already-mounted
+    // screens on the UI thread. The routine guide starts only after motion rests.
+    handoffTimerRef.current = setTimeout(() => {
+      routineHandoff.value = withTiming(
+        1,
+        { duration: 360, easing: Easing.bezier(0.22, 1, 0.36, 1) },
+        finished => {
+          if (finished) runOnJS(finishHomeHandoff)();
+        },
+      );
+    }, 120);
+  }, [finishHomeHandoff, handoffActive, routineHandoff, setPresentation]);
 
   const handleRoutineComplete = useCallback(() => {
     endGuidedSetup();
@@ -23759,17 +24266,24 @@ function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
 
   return (
     <Reanimated.View entering={FadeIn.duration(240)} style={s.screen}>
-      <Reanimated.View
-        key={stage === 'routine' ? 'stage-routine' : 'stage-home'}
-        entering={FadeIn.duration(260)}
-        style={{ flex: 1, backgroundColor: '#FAF7F0' }}
+      <View
+        style={{ flex: 1, backgroundColor: '#FAF7F0', overflow: 'hidden' }}
       >
-        {stage === 'routine' ? (
-          <MyRoutineView guided onGuidedComplete={handleRoutineComplete} />
-        ) : (
+        <Reanimated.View
+          pointerEvents={stage === 'home' && !handoffActive ? 'auto' : 'none'}
+          style={[StyleSheet.absoluteFillObject, homeHandoffStyle]}
+        >
           <HomeView guided={stage === 'home'} onGuidedComplete={handleHomeComplete} />
+        </Reanimated.View>
+        {routinePrepared && (
+          <Reanimated.View
+            pointerEvents={stage === 'routine' ? 'auto' : 'none'}
+            style={[StyleSheet.absoluteFillObject, routineHandoffStyle]}
+          >
+            <MyRoutineView guided onGuidedComplete={handleRoutineComplete} />
+          </Reanimated.View>
         )}
-      </Reanimated.View>
+      </View>
       {/* Root host carries the tour over BOTH screens — MyRoutineView itself
           only mounts hosts inside its bottom sheets (for in-modal phases). */}
       <GuidedOverlayHost />
@@ -23779,156 +24293,439 @@ function OrganizeRealHomeGuideSlide({ onNext }: { onNext: () => void }) {
 }
 
 // ─── Bible walkthrough ────────────────────────────────────────────────────────
-// Five real scripture surfaces carried by one continuous guided session:
-// the slogan reader, My Favorites, a deep-link back to the prepared Anasta
-// comment, Bible Notes, and the real book/chapter library.
+// Four real Scripture surfaces carried by one continuous guided session:
+// the book library, reader, My Favorites, and Bible Notes.
 const BIBLE_GUIDE_SLOGAN = { bookId: 49, chapter: 5, verse: 14 };
-const BIBLE_GUIDE_RETURN = { bookId: 43, chapter: 16, verse: 33 };
+type BibleGuideScene = 'library' | 'reader' | 'favorites' | 'notes';
+const BIBLE_GUIDE_MODAL_OVERLAY_PHASES = new Set([
+  'chooseComment',
+  'pickColor',
+  'doHighlight',
+  'commentReady',
+  'favEditorReady',
+]);
 
 function BibleGuideSlide({ onNext }: { onNext: () => void }) {
-  const { beginGuidedSetup, endGuidedSetup, patchSession, setPresentation } = useGuidedSetup();
-  const { ready, categories, getChapter, upsertAnnotations, updateCategory } = useScripture();
-  const { settings } = useAppSettings();
-  const [scene, setScene] = useState<'library' | 'reader1' | 'favorites' | 'reader2' | 'notes'>('reader1');
-  // The reader mounts only after seeding is done: every seed write refreshes
-  // the whole scripture context, and mounting the reader inside that render
-  // storm is exactly where the tour used to go down.
-  const [seeded, setSeeded] = useState(false);
-  const seedStartedRef = useRef(false);
+  const { session, beginGuidedSetup, endGuidedSetup, patchSession, setPresentation } = useGuidedSetup();
+  const { ready } = useScripture();
+  const [scene, setScene] = useState<BibleGuideScene>('library');
+  // Wait for the Scripture store before mounting the walkthrough surfaces.
+  // This prevents an empty first frame without writing any preview data.
+  const [guideReady, setGuideReady] = useState(false);
+  const guideStartRequestedRef = useRef(false);
   const sessionStartedRef = useRef(false);
+  const [incomingScene, setIncomingScene] = useState<BibleGuideScene | null>(null);
+  // Keep only the current surface mounted. During a handoff we briefly add
+  // the incoming surface, then release the outgoing one as soon as the
+  // transition settles. Retaining Library + Reader + Favorites + Notes for
+  // the whole tour accumulated several full screens (and Reader editors) in
+  // memory, which became especially costly after Bible Notes.
+  const [mountedScenes, setMountedScenes] = useState<BibleGuideScene[]>(['library']);
+  const mountedScenesRef = useRef(new Set<BibleGuideScene>(['library']));
+  const readyScenesRef = useRef(new Set<BibleGuideScene>());
+  const [readerVerse, setReaderVerse] = useState(BIBLE_GUIDE_SLOGAN.verse);
+  const [guideHighlightColor, setGuideHighlightColor] = useState<HighlightColor>('gold');
+  const [guideAnnotations, setGuideAnnotations] = useState<ScriptureAnnotation[]>([]);
+  const [libraryEntryTarget, setLibraryEntryTarget] = useState<'top' | 'bibleNotes' | 'browse'>('top');
+  const sceneHandoff = useSharedValue(0);
+  const pendingSceneRef = useRef<BibleGuideScene | null>(null);
+  const pendingPhaseRef = useRef('');
+  const sceneFramesRef = useRef<number[]>([]);
+  const scenePrewarmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sceneStartDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sceneReadyWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sceneAnimationWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sceneTransitionTokenRef = useRef(0);
+  const sceneTransitioningRef = useRef(false);
+  const sceneAnimationStartedRef = useRef(false);
+  const introPresentedRef = useRef(false);
+  const outgoingSceneRef = useRef<BibleGuideScene>('library');
+  const returnPhaseRef = useRef('libraryIntro');
+  const sceneStartNotBeforeRef = useRef(0);
 
-  // The one spec-approved seed: an Anasta comment. The user creates the
-  // slogan highlight and their own comment inside the real walkthrough.
+  // Scripture opens its destinations directly. A short fade-through-canvas
+  // keeps that page replacement polished without imitating router motion or
+  // making the user watch a horizontal navigation animation.
+  const outgoingSceneStyle = useAnimatedStyle(() => ({
+    opacity: incomingScene
+      ? interpolate(sceneHandoff.value, [0, 0.55, 1], [1, 0, 0], 'clamp')
+      : 1,
+  }), [incomingScene]);
+  const incomingSceneStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(sceneHandoff.value, [0, 0.38, 1], [0, 0, 1], 'clamp'),
+  }));
+
+  const prepareScene = useCallback((nextScene: BibleGuideScene) => {
+    if (mountedScenesRef.current.has(nextScene)) return;
+    mountedScenesRef.current.add(nextScene);
+    setMountedScenes(current => [...current, nextScene]);
+  }, []);
+
+  const prewarmFollowingScene = useCallback((
+    currentScene: BibleGuideScene,
+    currentPhase: string,
+  ) => {
+    if (scenePrewarmTimerRef.current) clearTimeout(scenePrewarmTimerRef.current);
+    let nextScene: BibleGuideScene | null = null;
+
+    if (currentScene === 'library' && currentPhase === 'libraryIntro') {
+      setReaderVerse(BIBLE_GUIDE_SLOGAN.verse);
+      nextScene = 'reader';
+    } else if (currentScene === 'reader' && currentPhase === 'readerIntro') {
+      nextScene = 'favorites';
+    } else if (currentScene === 'favorites') {
+      setReaderVerse(15);
+      nextScene = 'reader';
+    } else if (currentScene === 'reader' && currentPhase === 'returnArrival') {
+      setLibraryEntryTarget('bibleNotes');
+      nextScene = 'library';
+    } else if (currentScene === 'library' && currentPhase === 'hubSaved') {
+      nextScene = 'notes';
+    } else if (currentScene === 'notes') {
+      setLibraryEntryTarget('browse');
+      nextScene = 'library';
+    }
+
+    if (!nextScene) return;
+    // The current coach gets its first stable frames before the next surface
+    // mounts. Most users are still reading, so their eventual tap is instant.
+    scenePrewarmTimerRef.current = setTimeout(() => {
+      scenePrewarmTimerRef.current = null;
+      prepareScene(nextScene);
+    }, 460);
+  }, [prepareScene]);
+
   useEffect(() => {
-    if (!ready || seedStartedRef.current) return;
-    seedStartedRef.current = true;
+    if (!ready || guideStartRequestedRef.current) return;
+    guideStartRequestedRef.current = true;
     // A stale session restored from storage (a killed earlier run) must not
-    // drive the screens while we are still seeding.
+    // drive the screens while the new walkthrough is starting.
     endGuidedSetup();
-    let alive = true;
-    (async () => {
-      try {
-        const lang = normalizeScriptureLanguage(settings.bibleLang);
-        const john = await getChapter(BIBLE_GUIDE_RETURN.bookId, BIBLE_GUIDE_RETURN.chapter, lang);
-        const courageVerse = john.find(verse => verse.verse === BIBLE_GUIDE_RETURN.verse);
-        const inputs = [];
-        if (courageVerse) {
-          inputs.push({
-            kind: 'comment' as const,
-            color: 'orange' as const,
-            bookId: BIBLE_GUIDE_RETURN.bookId,
-            chapter: BIBLE_GUIDE_RETURN.chapter,
-            verse: BIBLE_GUIDE_RETURN.verse,
-            text: courageVerse.text,
-            comment: 'Peace is not the absence of the storm. It is knowing Who is with you in it.',
-          });
-        }
-        if (inputs.length > 0) await upsertAnnotations(inputs);
-        // Rename the seventh color only while it still wears its default name.
-        const orange = categories.find(category => category.color === 'orange');
-        if (!orange || orange.label === 'Zeal' || orange.label === 'Encouragement') {
-          await updateCategory('orange', 'Anasta');
-        }
-      } catch (error) {
-        console.warn('[BibleGuide] seeding failed', error);
-      }
-      if (!alive || sessionStartedRef.current) return;
-      sessionStartedRef.current = true;
-      beginGuidedSetup({
-        currentChapter: 'grow',
-        chapterOrder: ['grow'],
-        activeStep: 'riseBibleHighlight',
-        phase: 'readerIntro',
-        route: '/onboarding',
-      });
-      setSeeded(true);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [beginGuidedSetup, categories, endGuidedSetup, getChapter, ready, settings.bibleLang, updateCategory, upsertAnnotations]);
+    if (sessionStartedRef.current) return;
+    sessionStartedRef.current = true;
+    beginGuidedSetup({
+      currentChapter: 'grow',
+      chapterOrder: ['grow'],
+      activeStep: 'riseBibleHighlight',
+      phase: 'biblePreparing',
+      route: '/onboarding',
+    });
+    setGuideReady(true);
+  }, [beginGuidedSetup, endGuidedSetup, patchSession, ready]);
 
   useEffect(() => () => endGuidedSetup(), [endGuidedSetup]);
 
+  const finishSceneHandoff = useCallback((transitionToken: number) => {
+    if (sceneTransitionTokenRef.current !== transitionToken) return;
+    const nextScene = pendingSceneRef.current;
+    const nextPhase = pendingPhaseRef.current;
+    if (!nextScene) return;
+    sceneTransitionTokenRef.current += 1;
+    sceneFramesRef.current.forEach(cancelAnimationFrame);
+    sceneFramesRef.current = [];
+    if (sceneReadyWatchdogRef.current) clearTimeout(sceneReadyWatchdogRef.current);
+    if (sceneAnimationWatchdogRef.current) clearTimeout(sceneAnimationWatchdogRef.current);
+    if (sceneStartDelayRef.current) clearTimeout(sceneStartDelayRef.current);
+    sceneStartDelayRef.current = null;
+    sceneReadyWatchdogRef.current = null;
+    sceneAnimationWatchdogRef.current = null;
+    cancelAnimation(sceneHandoff);
+    mountedScenesRef.current = new Set([nextScene]);
+    readyScenesRef.current = new Set([nextScene]);
+    setScene(nextScene);
+    setIncomingScene(null);
+    setMountedScenes([nextScene]);
+    pendingSceneRef.current = null;
+    pendingPhaseRef.current = '';
+    sceneTransitioningRef.current = false;
+    sceneAnimationStartedRef.current = false;
+    patchSession({ phase: nextPhase });
+    prewarmFollowingScene(nextScene, nextPhase);
+  }, [patchSession, prewarmFollowingScene, sceneHandoff]);
+
+  const abortSceneHandoff = useCallback((transitionToken: number) => {
+    if (sceneTransitionTokenRef.current !== transitionToken) return;
+    if (!pendingSceneRef.current) return;
+    sceneTransitionTokenRef.current += 1;
+    const outgoingScene = outgoingSceneRef.current;
+    const returnPhase = returnPhaseRef.current;
+    sceneFramesRef.current.forEach(cancelAnimationFrame);
+    sceneFramesRef.current = [];
+    if (sceneStartDelayRef.current) clearTimeout(sceneStartDelayRef.current);
+    if (sceneReadyWatchdogRef.current) clearTimeout(sceneReadyWatchdogRef.current);
+    if (sceneAnimationWatchdogRef.current) clearTimeout(sceneAnimationWatchdogRef.current);
+    sceneReadyWatchdogRef.current = null;
+    sceneAnimationWatchdogRef.current = null;
+    sceneStartDelayRef.current = null;
+    cancelAnimation(sceneHandoff);
+    sceneHandoff.value = 0;
+    mountedScenesRef.current = new Set([outgoingScene]);
+    readyScenesRef.current = new Set([outgoingScene]);
+    setMountedScenes([outgoingScene]);
+    setScene(outgoingScene);
+    setIncomingScene(null);
+    pendingSceneRef.current = null;
+    pendingPhaseRef.current = '';
+    sceneTransitioningRef.current = false;
+    sceneAnimationStartedRef.current = false;
+    patchSession({ phase: returnPhase });
+  }, [patchSession, sceneHandoff]);
+
+  const startSceneHandoff = useCallback((readyScene: BibleGuideScene) => {
+    if (
+      !sceneTransitioningRef.current
+      || sceneAnimationStartedRef.current
+      || pendingSceneRef.current !== readyScene
+    ) return;
+
+    sceneAnimationStartedRef.current = true;
+    const transitionToken = sceneTransitionTokenRef.current;
+    if (sceneReadyWatchdogRef.current) clearTimeout(sceneReadyWatchdogRef.current);
+    sceneReadyWatchdogRef.current = null;
+    const beginHandoff = () => {
+      if (
+        sceneTransitionTokenRef.current !== transitionToken
+        || !sceneTransitioningRef.current
+        || pendingSceneRef.current !== readyScene
+      ) return;
+      // Readiness already guarantees that the incoming target is laid out.
+      // Starting on the next frame avoids InteractionManager's variable wait
+      // (which produced a visible pause on animation-heavy Scripture screens).
+      const frame = requestAnimationFrame(() => {
+        if (sceneTransitionTokenRef.current !== transitionToken) return;
+        if (sceneAnimationWatchdogRef.current) clearTimeout(sceneAnimationWatchdogRef.current);
+        // Arm the fallback only once native motion actually starts. If JS was
+        // briefly blocked before this frame, it cannot beat the animation and
+        // replace the screen with an unanimated jump.
+        sceneAnimationWatchdogRef.current = setTimeout(
+          () => finishSceneHandoff(transitionToken),
+          760,
+        );
+        sceneHandoff.value = withTiming(
+          1,
+          { duration: 240, easing: Easing.bezier(0.22, 1, 0.36, 1) },
+          finished => {
+            if (finished) runOnJS(finishSceneHandoff)(transitionToken);
+          },
+        );
+      });
+      sceneFramesRef.current.push(frame);
+    };
+
+    const waitMs = Math.max(0, sceneStartNotBeforeRef.current - Date.now());
+    if (waitMs > 0) {
+      sceneStartDelayRef.current = setTimeout(beginHandoff, waitMs);
+    } else {
+      beginHandoff();
+    }
+  }, [finishSceneHandoff, sceneHandoff]);
+
+  const handleSceneReady = useCallback((readyScene: BibleGuideScene) => {
+    readyScenesRef.current.add(readyScene);
+    if (sceneTransitioningRef.current) {
+      if (pendingSceneRef.current !== readyScene) return;
+      // Keep the outgoing page visible while the hidden destination finishes
+      // loading and positioning. Only mark it as incoming once it is truly
+      // ready, so slower phones never sit on a disabled half-transition.
+      setIncomingScene(readyScene);
+      const frame = requestAnimationFrame(() => startSceneHandoff(readyScene));
+      sceneFramesRef.current.push(frame);
+      return;
+    }
+    if (
+      readyScene === 'library'
+      && !introPresentedRef.current
+      && guideStartRequestedRef.current
+    ) {
+      introPresentedRef.current = true;
+      patchSession({ phase: 'libraryIntro' });
+      prewarmFollowingScene('library', 'libraryIntro');
+    }
+  }, [patchSession, prewarmFollowingScene, startSceneHandoff]);
+
+  const transitionScene = useCallback((
+    nextScene: BibleGuideScene,
+    nextPhase: string,
+  ) => {
+    if (sceneTransitioningRef.current || nextScene === scene) return;
+    if (scenePrewarmTimerRef.current) {
+      clearTimeout(scenePrewarmTimerRef.current);
+      scenePrewarmTimerRef.current = null;
+    }
+    const transitionToken = ++sceneTransitionTokenRef.current;
+    sceneTransitioningRef.current = true;
+    sceneAnimationStartedRef.current = false;
+    const destinationReady = readyScenesRef.current.has(nextScene);
+    prepareScene(nextScene);
+    outgoingSceneRef.current = scene;
+    returnPhaseRef.current = session?.phase ?? '';
+    pendingSceneRef.current = nextScene;
+    pendingPhaseRef.current = nextPhase;
+    setPresentation(null);
+    // Let the old spotlight and coach fully leave before crossfading screens.
+    // Otherwise their dark scrim rides over the new surface and makes a clean
+    // direct jump look like a stuttering navigation transition.
+    sceneStartNotBeforeRef.current = Date.now() + 170;
+    patchSession({ phase: 'bibleTransition' });
+    sceneHandoff.value = 0;
+    if (destinationReady) {
+      setIncomingScene(nextScene);
+      const frame = requestAnimationFrame(() => startSceneHandoff(nextScene));
+      sceneFramesRef.current.push(frame);
+    }
+    if (sceneReadyWatchdogRef.current) clearTimeout(sceneReadyWatchdogRef.current);
+    // If an incoming target cannot load or measure, restore the current scene
+    // instead of leaving both screens non-interactive behind a blank overlay.
+    sceneReadyWatchdogRef.current = destinationReady
+      ? null
+      : setTimeout(
+          () => abortSceneHandoff(transitionToken),
+          2800,
+        );
+  }, [abortSceneHandoff, patchSession, prepareScene, scene, sceneHandoff, session?.phase, setPresentation, startSceneHandoff]);
+
+  useEffect(() => () => {
+    sceneTransitionTokenRef.current += 1;
+    sceneFramesRef.current.forEach(cancelAnimationFrame);
+    sceneFramesRef.current = [];
+    if (sceneReadyWatchdogRef.current) clearTimeout(sceneReadyWatchdogRef.current);
+    if (sceneAnimationWatchdogRef.current) clearTimeout(sceneAnimationWatchdogRef.current);
+    if (sceneStartDelayRef.current) clearTimeout(sceneStartDelayRef.current);
+    if (scenePrewarmTimerRef.current) clearTimeout(scenePrewarmTimerRef.current);
+    cancelAnimation(sceneHandoff);
+  }, [sceneHandoff]);
+
   const handleLibraryAdvance = useCallback(() => {
+    setReaderVerse(BIBLE_GUIDE_SLOGAN.verse);
+    transitionScene('reader', 'readerIntro');
+  }, [transitionScene]);
+
+  const handleGuideAnnotationsSaved = useCallback((nextAnnotations: ScriptureAnnotation[]) => {
+    setGuideAnnotations(current => {
+      const nextById = new Map(current.map(annotation => [annotation.id, annotation]));
+      nextAnnotations.forEach(annotation => nextById.set(annotation.id, annotation));
+      return Array.from(nextById.values());
+    });
+  }, []);
+
+  const handleReaderAdvance = useCallback((event: 'sceneDone' | 'openNotes') => {
+    if (event === 'sceneDone') {
+      transitionScene('favorites', 'favFilters');
+      return;
+    }
+    setLibraryEntryTarget('bibleNotes');
+    transitionScene('library', 'hubSaved');
+  }, [transitionScene]);
+
+  const handleFavoritesAdvance = useCallback(() => {
+    setReaderVerse(15);
+    transitionScene('reader', 'returnArrival');
+  }, [transitionScene]);
+
+  const handleNotesComplete = useCallback(() => {
+    setLibraryEntryTarget('browse');
+    transitionScene('library', 'hubBrowse');
+  }, [transitionScene]);
+
+  const handleOpenBibleNotes = useCallback(() => {
+    transitionScene('notes', 'notesOverview');
+  }, [transitionScene]);
+
+  const handleBibleGuideComplete = useCallback(() => {
     endGuidedSetup();
     onNext();
   }, [endGuidedSetup, onNext]);
 
-  const handleReaderAdvance = useCallback((event: 'sceneDone' | 'openNotes') => {
-    setPresentation(null);
-    if (event === 'sceneDone') {
-      patchSession({ phase: 'favIntro' });
-      setScene('favorites');
-      return;
+  const modalOwnsGuideOverlay = session?.activeStep === 'riseBibleHighlight'
+    && BIBLE_GUIDE_MODAL_OVERLAY_PHASES.has(session.phase);
+
+  const renderBibleScene = (targetScene: BibleGuideScene) => {
+    if (targetScene === 'library') {
+      return (
+        <HolyScriptureView
+          guided
+          onGuidedOpen={handleLibraryAdvance}
+          onGuidedOpenBibleNotes={handleOpenBibleNotes}
+          onGuidedComplete={handleBibleGuideComplete}
+          onGuidedReady={() => handleSceneReady('library')}
+          guidedEntryTarget={libraryEntryTarget}
+        />
+      );
     }
-    patchSession({ phase: 'noteEntry' });
-    setScene('notes');
-  }, [patchSession, setPresentation]);
-
-  const handleFavoritesAdvance = useCallback(() => {
-    setPresentation(null);
-    patchSession({ phase: 'returnIntro' });
-    setScene('reader2');
-  }, [patchSession, setPresentation]);
-
-  const handleNotesComplete = useCallback(() => {
-    setPresentation(null);
-    patchSession({ phase: 'libraryIntro' });
-    setScene('library');
-  }, [patchSession, setPresentation]);
+    if (targetScene === 'reader') {
+      return (
+        <ScriptureReaderView
+          guided
+          bookId={BIBLE_GUIDE_SLOGAN.bookId}
+          chapter={BIBLE_GUIDE_SLOGAN.chapter}
+          initialVerse={readerVerse}
+          onBack={() => {}}
+          canGoPrevChapter={false}
+          canGoNextChapter={false}
+          onGuidedAdvance={handleReaderAdvance}
+          onGuidedHighlightSaved={setGuideHighlightColor}
+          guidedAnnotations={guideAnnotations}
+          onGuidedAnnotationsSaved={handleGuideAnnotationsSaved}
+          onGuidedReady={() => handleSceneReady('reader')}
+        />
+      );
+    }
+    if (targetScene === 'favorites') {
+      return (
+        <MyFavoritesView
+          guided
+          guidedHighlightColor={guideHighlightColor}
+          guidedAnnotations={guideAnnotations}
+          onGuidedAdvance={handleFavoritesAdvance}
+          onGuidedReady={() => handleSceneReady('favorites')}
+        />
+      );
+    }
+    return (
+      <BibleNotesView
+        guided
+        initialBookId={BIBLE_GUIDE_SLOGAN.bookId}
+        initialChapter={BIBLE_GUIDE_SLOGAN.chapter}
+        onGuidedComplete={handleNotesComplete}
+        onGuidedReady={() => handleSceneReady('notes')}
+      />
+    );
+  };
 
   return (
     <View style={s.screen}>
       <View style={{ flex: 1, backgroundColor: '#FCFCFC' }}>
-        {!seeded ? (
+        {!guideReady ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             <ActivityIndicator color={GOLD} />
           </View>
         ) : (
-          <>
-            {scene === 'library' && (
-              <HolyScriptureView guided onGuidedOpen={handleLibraryAdvance} />
-            )}
-            {scene === 'reader1' && (
-              <ScriptureReaderView
-                guided
-                bookId={BIBLE_GUIDE_SLOGAN.bookId}
-                chapter={BIBLE_GUIDE_SLOGAN.chapter}
-                initialVerse={BIBLE_GUIDE_SLOGAN.verse}
-                onBack={() => {}}
-                canGoPrevChapter={false}
-                canGoNextChapter={false}
-                onGuidedAdvance={handleReaderAdvance}
-              />
-            )}
-            {scene === 'favorites' && (
-              <MyFavoritesView guided onGuidedAdvance={handleFavoritesAdvance} />
-            )}
-            {scene === 'reader2' && (
-              <ScriptureReaderView
-                guided
-                bookId={BIBLE_GUIDE_RETURN.bookId}
-                chapter={BIBLE_GUIDE_RETURN.chapter}
-                initialVerse={BIBLE_GUIDE_RETURN.verse}
-                onBack={() => {}}
-                canGoPrevChapter={false}
-                canGoNextChapter={false}
-                onGuidedAdvance={handleReaderAdvance}
-              />
-            )}
-            {scene === 'notes' && (
-              <BibleNotesView
-                guided
-                initialBookId={BIBLE_GUIDE_RETURN.bookId}
-                initialChapter={BIBLE_GUIDE_RETURN.chapter}
-                onGuidedComplete={handleNotesComplete}
-              />
-            )}
-          </>
+          <Reanimated.View entering={FadeIn.duration(260)} style={StyleSheet.absoluteFillObject}>
+            {mountedScenes.map(item => {
+              const isCurrent = item === scene;
+              const isIncoming = item === incomingScene;
+              return (
+                <Reanimated.View
+                  key={item}
+                  pointerEvents={!incomingScene && isCurrent ? 'auto' : 'none'}
+                  style={[
+                    StyleSheet.absoluteFillObject,
+                    isIncoming
+                      ? incomingSceneStyle
+                      : isCurrent
+                        ? outgoingSceneStyle
+                        : { opacity: 0 },
+                    { zIndex: isIncoming ? 2 : isCurrent ? 1 : 0 },
+                  ]}
+                >
+                  {renderBibleScene(item)}
+                </Reanimated.View>
+              );
+            })}
+          </Reanimated.View>
         )}
       </View>
-      <GuidedOverlayHost />
+      {!modalOwnsGuideOverlay && <GuidedOverlayHost />}
     </View>
   );
 }
@@ -24357,6 +25154,7 @@ function V4FlameSlide({
   const charge = useSharedValue(0);
   const kick = useSharedValue(0);
   const breathe = useSharedValue(0);
+  const congratsReveal = useSharedValue(0);
 
   useEffect(() => {
     setReveal(0);
@@ -24367,12 +25165,14 @@ function V4FlameSlide({
     cancelAnimation(charge);
     cancelAnimation(kick);
     cancelAnimation(breathe);
+    cancelAnimation(congratsReveal);
     sealFlight.value = 0;
     flightTargetX.value = 0;
     flightTargetY.value = -(height * 0.36 + 34);
     charge.value = 0;
     kick.value = 0;
     breathe.value = 0;
+    congratsReveal.value = 0;
     preloadTaskFeedbackSound();
     preloadAchievementFeedbackSound();
 
@@ -24401,6 +25201,13 @@ function V4FlameSlide({
         kick.value = withSequence(
           withTiming(1, { duration: 150, easing: Easing.out(Easing.cubic) }),
           withSpring(0, { damping: 11, stiffness: 190, mass: 0.8 }),
+        );
+        congratsReveal.value = withDelay(
+          280,
+          withTiming(1, {
+            duration: 600,
+            easing: Easing.bezier(0.16, 1, 0.28, 1),
+          }),
         );
         runStrongHaptic();
         void playAchievementCompleteFeedback();
@@ -24434,9 +25241,11 @@ function V4FlameSlide({
           });
         })();
       }, 3260),
+      // Arm the already-mounted rail flame just before impact. The flying
+      // flame still covers it here, so its native/Lottie layer is fully ready
+      // by the time the foreground seal disappears.
+      setTimeout(() => setRailLit(true), 4070),
       setTimeout(() => {
-        // The reward arrives only when the seal lands in its slot.
-        setRailLit(true);
         runBubbleHaptic();
         void playTaskCompleteFeedback();
       }, 4160),
@@ -24459,11 +25268,13 @@ function V4FlameSlide({
       cancelAnimation(charge);
       cancelAnimation(kick);
       cancelAnimation(breathe);
+      cancelAnimation(congratsReveal);
     };
   }, [
     breathe,
     charge,
     completedCount,
+    congratsReveal,
     flightSourceRef,
     flightTargetRef,
     flightTargetX,
@@ -24552,10 +25363,20 @@ function V4FlameSlide({
     };
   });
   const congratsFlightStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(sealFlight.value, [0, 0.18, 0.46], [1, 0.85, 0]),
+    opacity:
+      congratsReveal.value *
+      interpolate(sealFlight.value, [0, 0.18, 0.46], [1, 0.85, 0]),
     transform: [
-      { translateY: interpolate(sealFlight.value, [0, 0.46], [0, -9]) },
-      { scale: interpolate(sealFlight.value, [0, 0.46], [1, 0.97]) },
+      {
+        translateY:
+          interpolate(congratsReveal.value, [0, 1], [16, 0]) +
+          interpolate(sealFlight.value, [0, 0.46], [0, -9]),
+      },
+      {
+        scale:
+          interpolate(congratsReveal.value, [0, 1], [0.95, 1]) *
+          interpolate(sealFlight.value, [0, 0.46], [1, 0.97]),
+      },
     ],
   }));
   // Solo path: the wrapper stays inert so the logo owns one clean entrance
@@ -24605,10 +25426,6 @@ function V4FlameSlide({
               </Reanimated.View>
               {reveal >= 2 ? (
                 <Reanimated.Text
-                  entering={FadeIn.delay(400).duration(760).easing(Easing.bezier(0.16, 1, 0.28, 1)).withInitialValues({
-                    opacity: 0,
-                    transform: [{ translateY: 16 }, { scale: 0.95 }],
-                  })}
                   style={[s.chapterCheckpointCongrats, congratsFlightStyle]}
                 >
                   Congratulations!
@@ -27602,6 +28419,7 @@ export default function OnboardingView() {
   const [answers, setAnswers] = useState<Answers>({});
   const [preloadPhase, setPreloadPhase] = useState<PreloadPhase>('only');
   const [welcomeLogoTop, setWelcomeLogoTop] = useState<number | null>(null);
+  const [devHomeGuideStart, setDevHomeGuideStart] = useState<'loading' | 'home'>('loading');
   const steps = useMemo(() => stepOrder(answers), [answers]);
   const [index, setIndex] = useState(0);
   const activeStep = steps[Math.min(index, steps.length - 1)];
@@ -27659,7 +28477,8 @@ export default function OnboardingView() {
     const previousStep = previousStepRef.current;
     previousStepRef.current = activeStep;
 
-    if (isValueStep(previousStep) && isValueStep(activeStep)) {
+    const keepsGiftCanvas = previousStep === 'giftMoment' && activeStep === 'giftShowcase';
+    if ((isValueStep(previousStep) && isValueStep(activeStep)) || keepsGiftCanvas) {
       screenMotion.value = 1;
       return;
     }
@@ -27710,6 +28529,15 @@ export default function OnboardingView() {
     ) {
       void warmStatementImages(ORGANIZE_STATEMENT_IMAGES);
     }
+
+    if (
+      activeStep === 'flameOrganize' ||
+      activeStep === 'giftMoment' ||
+      activeStep === 'giftShowcase'
+    ) {
+      void loadGiftStatementLogoImage();
+      void warmFaithValueStickerImages();
+    }
   }, [activeStep]);
 
   const goBack = () => {
@@ -27736,18 +28564,31 @@ export default function OnboardingView() {
     setIndex(prev => Math.min(steps.length - 1, prev + 1));
   };
 
-  const jumpToDevStep = useCallback((step: StepId) => {
-    const seededAnswers: Answers = {
-      ...answers,
-      ...ONBOARDING_DEV_SEED_ANSWERS,
-    };
+  const jumpToDevStep = useCallback((target: OnboardingDevJumpTarget) => {
+    const seededAnswers = onboardingDevAnswersForTarget(answers, target);
     const seededSteps = stepOrder(seededAnswers);
-    const targetIndex = seededSteps.indexOf(step);
+    const targetIndex = seededSteps.indexOf(target.step);
+
+    if (targetIndex < 0) {
+      console.warn('[OnboardingDevJump] ' + target.id + ' points to inactive step ' + target.step);
+      return;
+    }
 
     runAdvanceHaptic();
+    endGuidedSetup();
+    if (target.guidedPhase && (target.step === 'buildBigEvents' || target.step === 'buildMonthlyGoals')) {
+      beginGuidedSetup({
+        currentChapter: 'build',
+        chapterOrder: ['build'],
+        activeStep: target.step,
+        phase: target.guidedPhase,
+        route: '/onboarding',
+      });
+    }
+    setDevHomeGuideStart(target.homeGuideStart ?? 'loading');
     setAnswers(seededAnswers);
-    setIndex(targetIndex >= 0 ? targetIndex : Math.max(0, seededSteps.indexOf('nameIntro')));
-  }, [answers]);
+    setIndex(targetIndex);
+  }, [answers, beginGuidedSetup, endGuidedSetup]);
 
   const onSelect = (step: StepId, value: string) => {
     runSelectionHaptic();
@@ -27926,6 +28767,7 @@ export default function OnboardingView() {
     activeStep === 'flameOrganize' ||
     activeStep === 'flameGrow' ||
     activeStep === 'flameTools';
+  const giftSequenceActive = activeStep === 'giftMoment' || activeStep === 'giftShowcase';
   const hideTopChrome =
     activeStep === 'toolsSlides' ||
     activeStep === 'nameIntro' ||
@@ -28056,7 +28898,7 @@ export default function OnboardingView() {
 
   if (activeStep === 'bibleWalkthrough') {
     return (
-      <GuideCrashBoundary label="Bible walkthrough" onSkip={goNext}>
+      <GuideCrashBoundary key="bible-walkthrough" label="Bible walkthrough" onSkip={goNext}>
         <BibleGuideSlide onNext={goNext} />
       </GuideCrashBoundary>
     );
@@ -28064,7 +28906,7 @@ export default function OnboardingView() {
 
   if (activeStep === 'prayerBook') {
     return (
-      <GuideCrashBoundary label="Prayer Book tour" onSkip={goNext}>
+      <GuideCrashBoundary key="prayer-book-tour" label="Prayer Book tour" onSkip={goNext}>
         <PrayerBookGuideSlide
           isOrthodox={!!answers.isOrthodox || answers.tradition === 'orthodox'}
           onNext={goNext}
@@ -28075,7 +28917,7 @@ export default function OnboardingView() {
 
   if (activeStep === 'focusOverview') {
     return (
-      <GuideCrashBoundary label="Focus tour" onSkip={goNext}>
+      <GuideCrashBoundary key="focus-tour" label="Focus tour" onSkip={goNext}>
         <FocusOverviewGuideSlide onComplete={goNext} />
       </GuideCrashBoundary>
     );
@@ -28420,7 +29262,11 @@ export default function OnboardingView() {
     if (activeStep === 'organizeGuidedHomeTour') {
       return (
         <GuideCrashBoundary label="Home tour" onSkip={goNext}>
-          <OrganizeRealHomeGuideSlide onNext={goNext} />
+          <OrganizeRealHomeGuideSlide
+            key={devHomeGuideStart}
+            initialStage={devHomeGuideStart}
+            onNext={goNext}
+          />
         </GuideCrashBoundary>
       );
     }
@@ -28490,7 +29336,7 @@ export default function OnboardingView() {
       );
     }
     if (activeStep === 'giftMoment') {
-      return <GiftStatementSlide bottomInset={insets.bottom} onNext={goNext} />;
+      return <GiftStatementSlide topInset={insets.top} bottomInset={insets.bottom} onNext={goNext} />;
     }
     if (activeStep === 'giftShowcase') {
       return <GiftShowcaseSlide topInset={insets.top} bottomInset={insets.bottom} onNext={goNext} />;
@@ -28702,6 +29548,18 @@ export default function OnboardingView() {
       )}
 
       <Reanimated.View style={[s.stage, { paddingTop: stageTopPadding, paddingBottom: stageBottomPadding, paddingHorizontal: stageHorizontalPadding }, stageStyle]}>
+        {giftSequenceActive ? (
+          <View pointerEvents="none" style={s.giftSequenceBackdrop}>
+            <LinearGradient
+              colors={[...VALUE_ATELIER_GRADIENT]}
+              locations={[...VALUE_ATELIER_GRADIENT_LOCATIONS]}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <ValueAtelierBackdrop topInset={insets.top} />
+          </View>
+        ) : null}
         {renderStep()}
       </Reanimated.View>
 
@@ -29809,9 +30667,17 @@ const s = StyleSheet.create({
     zIndex: 40,
     elevation: 40,
   },
+  valueFaithArtBibleFloat: {
+    width: 164,
+    height: 140,
+  },
   valueFaithArtPrayerFloat: {
     width: 192,
     height: 164,
+  },
+  valueFaithArtNotesFloat: {
+    width: 162,
+    height: 138,
   },
   valueFaithArtOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -40053,7 +40919,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    backgroundColor: '#F3F3F1',
+    backgroundColor: APP_LOGO_CANVAS_COLOR,
     borderWidth: 1.5,
     borderColor: 'rgba(197,160,89,0.58)',
     boxShadow: '0 22px 48px rgba(94,71,38,0.22)',
@@ -40065,7 +40931,6 @@ const s = StyleSheet.create({
     height: 216,
     left: -20,
     top: -20,
-    borderRadius: 48,
   },
   // Gold mount set around the plate — a thin ring + faint wash showing in the
   // few px that protrude past the logo box. Never overlaps the illustration.
@@ -44955,60 +45820,198 @@ const s = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  // Gift statement (24a): the charter voice on the onboarding's plain white
-  // ground — sparse screen, so the header sits low (the macro-board seat) and
-  // the crest signs the promise beneath it.
+  giftSequenceBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  // Gift statement (24a): the same warm atelier as the faith showcase, kept
+  // deliberately sparse so the promise lands before the tools appear.
   giftStatementSlide: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    position: 'relative',
+    zIndex: 2,
+  },
+  giftStatementForeground: {
+    flex: 1,
   },
   giftStatementStage: {
     flex: 1,
     alignItems: 'center',
-    paddingTop: 88,
-    paddingHorizontal: 18,
-    paddingBottom: 108,
+    paddingHorizontal: 22,
   },
-  giftStatementSealWrap: {
-    marginTop: 40,
+  giftStatementCopy: {
+    width: '100%',
     alignItems: 'center',
   },
-  giftStatementSealHalo: {
+  giftStatementEyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    marginBottom: 13,
+  },
+  giftStatementEyebrowRule: {
+    width: 32,
+    height: 1,
+    backgroundColor: 'rgba(197,160,89,0.54)',
+  },
+  giftStatementEyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 9.5,
+    lineHeight: 12,
+    letterSpacing: 2.2,
+    color: '#9C7436',
+  },
+  giftStatementTitle: {
+    maxWidth: 356,
+    fontSize: 38,
+    lineHeight: 40.5,
+    letterSpacing: -0.45,
+  },
+  giftStatementTitleCompact: {
+    fontSize: 34,
+    lineHeight: 36.5,
+  },
+  giftStatementUnderline: {
+    width: 126,
+    marginTop: 1,
+  },
+  giftStatementBodyStack: {
+    maxWidth: 354,
+    marginTop: 18,
+    rowGap: 11,
+    alignItems: 'center',
+  },
+  giftStatementBodyStackCompact: {
+    marginTop: 14,
+    rowGap: 9,
+  },
+  giftStatementBody: {
+    fontFamily: F.serifMedium,
+    fontSize: 17.6,
+    lineHeight: 25.2,
+    textAlign: 'center',
+    color: 'rgba(25,23,20,0.67)',
+  },
+  giftStatementBodyCompact: {
+    fontSize: 16.4,
+    lineHeight: 23.2,
+  },
+  giftStatementBodyClosing: {
+    color: 'rgba(25,23,20,0.75)',
+  },
+  giftStatementBodyEmphasis: {
+    fontFamily: F.serifSemiBold,
+    color: 'rgba(25,23,20,0.84)',
+  },
+  giftStatementBodyPromise: {
+    fontFamily: F.serifSemiBold,
+    color: '#8D672D',
+    textDecorationLine: 'underline',
+    textDecorationColor: 'rgba(197,160,89,0.72)',
+  },
+  giftStatementSealRegion: {
+    flex: 1,
+    width: '100%',
+    minHeight: 154,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 18,
+  },
+  giftStatementSealRegionCompact: {
+    minHeight: 132,
+    paddingTop: 10,
+  },
+  giftStatementSealWrap: {
+    position: 'relative',
+    width: 200,
+    height: 126,
+    alignItems: 'center',
+  },
+  giftStatementSealAura: {
     position: 'absolute',
-    top: -14,
-    width: 96,
-    height: 96,
-    borderRadius: 30,
-    backgroundColor: 'rgba(197,160,89,0.10)',
-    transform: [{ rotate: '7deg' }],
+    top: -29,
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    backgroundColor: 'rgba(197,160,89,0.13)',
+  },
+  giftStatementSealRingOuter: {
+    position: 'absolute',
+    top: -18,
+    width: 148,
+    height: 148,
+    borderRadius: 74,
+    borderWidth: 1,
+    borderColor: 'rgba(183,141,64,0.17)',
+  },
+  giftStatementSealOrbitDotOuter: {
+    position: 'absolute',
+    top: 6,
+    left: 68,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#D2AD63',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.92)',
+    boxShadow: '0 3px 9px rgba(171,126,49,0.32)',
+  },
+  giftStatementSealRingInner: {
+    position: 'absolute',
+    top: -7,
+    width: 126,
+    height: 126,
+    borderRadius: 63,
+    borderWidth: 1,
+    borderColor: 'rgba(183,141,64,0.24)',
+  },
+  giftStatementSealOrbitDotInner: {
+    position: 'absolute',
+    right: 7,
+    top: 26,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(184,139,62,0.82)',
+    boxShadow: '0 2px 7px rgba(171,126,49,0.26)',
   },
   giftStatementSealPlate: {
-    width: 68,
-    height: 68,
-    borderRadius: 20,
+    width: 112,
+    height: 112,
+    borderRadius: 31,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: APP_LOGO_CANVAS_COLOR,
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.30)',
-    shadowColor: '#5E5142',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.14,
-    shadowRadius: 18,
-    elevation: 5,
+    borderColor: 'rgba(197,160,89,0.34)',
+    boxShadow: '0 18px 38px rgba(94,81,66,0.15)',
+  },
+  giftStatementSealMask: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 30,
+    overflow: 'hidden',
+    backgroundColor: APP_LOGO_CANVAS_COLOR,
   },
   giftStatementSealLogo: {
-    width: 60,
-    height: 60,
-    borderRadius: 17,
+    ...StyleSheet.absoluteFillObject,
   },
-  giftStatementSealCaption: {
-    marginTop: 10,
-    fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 3,
-    color: 'rgba(25,23,20,0.34)',
+  giftStatementSealSheen: {
+    position: 'absolute',
+    top: 4,
+    width: '58%',
+    height: 1.5,
+    borderRadius: 99,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+  },
+  giftStatementSealSweep: {
+    position: 'absolute',
+    top: -18,
+    left: -34,
+    width: 24,
+    height: 148,
+    borderRadius: 99,
+    backgroundColor: '#FFFFFF',
   },
   v4ProgressRail: {
     width: '100%',

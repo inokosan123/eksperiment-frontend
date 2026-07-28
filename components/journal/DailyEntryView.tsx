@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TextInput, Keyboard, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { AppState, View, Text, ScrollView, StyleSheet, TextInput, Keyboard, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   Easing,
@@ -13,7 +13,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import {
@@ -46,6 +46,22 @@ import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressabl
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { buildInstanceId } from '@/components/tasks/taskScheduler';
 import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
+import { NativeRichTextEditor } from '@/components/shared/rich-text/native-rich-text-editor';
+import { NativeRichTextDisplay } from '@/components/shared/rich-text/native-rich-text-display';
+import { isNativeRichTextEditorEnabled } from '@/components/shared/rich-text/native-rich-text-feature';
+import { NativeRichTextKeyboardAwareScrollView } from '@/components/shared/rich-text/native-rich-text-keyboard';
+import {
+  RichTextEditorProvider,
+  useOptionalRichTextEditorCoordinator,
+} from '@/components/shared/rich-text/rich-text-editor-provider';
+import { RichTextKeyboardToolbar } from '@/components/shared/rich-text/rich-text-keyboard-toolbar';
+import {
+  captureDailyJournalSaveSnapshot,
+  dailyFreeWritingEditorId,
+  dailyPromptEditorId,
+  mergeDailyRichTextDraft,
+  settleDailyJournalDraft,
+} from '@/components/journal/daily-journal-rich-text';
 
 import {
   DEFAULT_SECTIONS,
@@ -59,6 +75,19 @@ const GOLD = '#C5A059';
 const CARD_BG = '#FFFFFF';
 const CARD_BORDER = '#EDE9E0';
 const GRATITUDE_TASK_ID = 'gratitude_daily_task';
+
+type DailyEntryRouteParams = {
+  date?: string;
+  readOnly?: string;
+  title?: string;
+  isTask?: string;
+  taskInstanceId?: string;
+  taskDate?: string;
+};
+
+type DailyEntrySessionHandle = {
+  prepareForDateChange: () => Promise<void>;
+};
 
 const WEEKDAYS_FULL = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 const MONTH_NAMES_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -401,7 +430,8 @@ function CustomScaleSection({
 
 function PromptBlock({
   prompt, canMoveUp, canMoveDown,
-  onAnswerChange, onMoveUp, onMoveDown, onDelete, onCursorScreenY, contentKey, readOnly = false,
+  onAnswerChange, onMoveUp, onMoveDown, onDelete, onCursorScreenY, contentKey,
+  nativeEditor = false, editorId, onEditorDirty, onEditorBlur, readOnly = false,
 }: {
   prompt: PromptItem;
   canMoveUp: boolean;
@@ -412,6 +442,10 @@ function PromptBlock({
   onDelete: () => void;
   onCursorScreenY?: (y: number) => void;
   contentKey?: string;
+  nativeEditor?: boolean;
+  editorId: string;
+  onEditorDirty?: () => void;
+  onEditorBlur?: () => void;
   readOnly?: boolean;
 }) {
   const editorRef = useRef<RichTextEditorRef>(null);
@@ -450,34 +484,68 @@ function PromptBlock({
         </View>
         )}
       </View>
-      {!readOnly && <RichToolbar editorRef={editorRef} activeFormats={fmt} style={gp.toolbar} />}
-      <RichTextEditor
-        ref={editorRef}
-        initialHTML={prompt.a}
-        contentKey={contentKey ? `${contentKey}:prompt:${prompt.id}` : prompt.id}
-        onChange={value => {
-          if (!readOnly) onAnswerChange(value);
-        }}
-        onFormatChange={setFmt}
-        placeholder="Write your thoughts..."
-        backgroundColor="#fff"
-        color={C.text}
-        editable={!readOnly}
-        autoHeight
-        onCursorScreenY={onCursorScreenY}
-        style={gp.editor}
-      />
+      {nativeEditor ? (
+        readOnly ? (
+          <NativeRichTextDisplay
+            html={prompt.a}
+            backgroundColor="#fff"
+            color={C.text}
+            minHeight={110}
+            style={gp.editor}
+          />
+        ) : (
+          <NativeRichTextEditor
+            editorId={editorId}
+            initialHTML={prompt.a}
+            contentKey={contentKey ? `${contentKey}:prompt:${prompt.id}` : prompt.id}
+            onDirty={onEditorDirty}
+            onBlur={onEditorBlur}
+            placeholder="Write your thoughts..."
+            backgroundColor="#fff"
+            color={C.text}
+            autoHeight
+            minHeight={110}
+            style={gp.editor}
+          />
+        )
+      ) : (
+        <>
+          {!readOnly && <RichToolbar editorRef={editorRef} activeFormats={fmt} style={gp.toolbar} />}
+          <RichTextEditor
+            ref={editorRef}
+            initialHTML={prompt.a}
+            contentKey={contentKey ? `${contentKey}:prompt:${prompt.id}` : prompt.id}
+            onChange={value => {
+              if (!readOnly) onAnswerChange(value);
+            }}
+            onFormatChange={setFmt}
+            placeholder="Write your thoughts..."
+            backgroundColor="#fff"
+            color={C.text}
+            editable={!readOnly}
+            autoHeight
+            onCursorScreenY={onCursorScreenY}
+            style={gp.editor}
+          />
+        </>
+      )}
     </Animated.View>
   );
 }
 
 function GuidedPromptsSection({
-  prompts, onPromptsChange, onCursorScreenY, contentKey, readOnly = false,
+  prompts, onPromptsChange, onCursorScreenY, contentKey, dateKey,
+  nativeEditor = false, onEditorDirty, onEditorBlur, beforeStructureChange, readOnly = false,
 }: {
   prompts: PromptItem[];
   onPromptsChange: (next: PromptItem[]) => void;
   onCursorScreenY?: (y: number) => void;
   contentKey?: string;
+  dateKey: string;
+  nativeEditor?: boolean;
+  onEditorDirty?: () => void;
+  onEditorBlur?: () => void;
+  beforeStructureChange?: () => Promise<void>;
   readOnly?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
@@ -490,10 +558,11 @@ function GuidedPromptsSection({
     onPromptsChange(prompts.map(p => p.id === id ? { ...p, a } : p));
   };
 
-  const move = (idx: number, dir: -1 | 1) => {
+  const move = async (idx: number, dir: -1 | 1) => {
     if (readOnly) return;
     const newIdx = idx + dir;
     if (newIdx < 0 || newIdx >= prompts.length) return;
+    await beforeStructureChange?.();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const next = [...prompts];
     [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
@@ -506,9 +575,10 @@ function GuidedPromptsSection({
     setConfirmId(id);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (readOnly) return;
     if (!confirmId) return;
+    await beforeStructureChange?.();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     onPromptsChange(prompts.filter(p => p.id !== confirmId));
     setConfirmId(null);
@@ -534,11 +604,15 @@ function GuidedPromptsSection({
           canMoveUp={i > 0}
           canMoveDown={i < prompts.length - 1}
           onAnswerChange={v => updateAnswer(p.id, v)}
-          onMoveUp={() => move(i, -1)}
-          onMoveDown={() => move(i, 1)}
+          onMoveUp={() => { void move(i, -1); }}
+          onMoveDown={() => { void move(i, 1); }}
           onDelete={() => askDelete(p.id)}
           onCursorScreenY={onCursorScreenY}
           contentKey={contentKey}
+          nativeEditor={nativeEditor}
+          editorId={dailyPromptEditorId(dateKey, p.id)}
+          onEditorDirty={onEditorDirty}
+          onEditorBlur={onEditorBlur}
           readOnly={readOnly}
         />
       ))}
@@ -554,7 +628,7 @@ function GuidedPromptsSection({
         confirmLabel="DELETE"
         confirmColor={C.red}
         onCancel={() => setConfirmId(null)}
-        onConfirm={confirmDelete}
+        onConfirm={() => { void confirmDelete(); }}
       />
       )}
 
@@ -1192,28 +1266,74 @@ const ue = StyleSheet.create({
 // Free Writing (inline rich text editor)
 // ────────────────────────────────────────────────────────────────────────────
 
-function FreeWritingSection({ value, onChange, onCursorScreenY, contentKey, readOnly = false }: { value: string; onChange: (v: string) => void; onCursorScreenY?: (y: number) => void; contentKey?: string; readOnly?: boolean }) {
+function FreeWritingSection({
+  value,
+  onChange,
+  onCursorScreenY,
+  contentKey,
+  editorId,
+  nativeEditor = false,
+  onEditorDirty,
+  onEditorBlur,
+  readOnly = false,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onCursorScreenY?: (y: number) => void;
+  contentKey?: string;
+  editorId: string;
+  nativeEditor?: boolean;
+  onEditorDirty?: () => void;
+  onEditorBlur?: () => void;
+  readOnly?: boolean;
+}) {
   const editorRef = useRef<RichTextEditorRef>(null);
   const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
   return (
     <SectionCard label="FREE WRITING">
-      {!readOnly && <RichToolbar editorRef={editorRef} activeFormats={fmt} style={{ marginBottom: 8 }} />}
-      <RichTextEditor
-        ref={editorRef}
-        initialHTML={value}
-        contentKey={contentKey ? `${contentKey}:freeWriting` : 'freeWriting'}
-        onChange={next => {
-          if (!readOnly) onChange(next);
-        }}
-        onFormatChange={setFmt}
-        placeholder="Write whatever flows..."
-        backgroundColor="#fff"
-        color={C.text}
-        editable={!readOnly}
-        autoHeight
-        onCursorScreenY={onCursorScreenY}
-        style={{ minHeight: 140 }}
-      />
+      {nativeEditor ? (
+        readOnly ? (
+          <NativeRichTextDisplay
+            html={value}
+            backgroundColor="#fff"
+            color={C.text}
+            minHeight={140}
+          />
+        ) : (
+          <NativeRichTextEditor
+            editorId={editorId}
+            initialHTML={value}
+            contentKey={contentKey ? `${contentKey}:freeWriting` : 'freeWriting'}
+            onDirty={onEditorDirty}
+            onBlur={onEditorBlur}
+            placeholder="Write whatever flows..."
+            backgroundColor="#fff"
+            color={C.text}
+            autoHeight
+            minHeight={140}
+          />
+        )
+      ) : (
+        <>
+          {!readOnly && <RichToolbar editorRef={editorRef} activeFormats={fmt} style={{ marginBottom: 8 }} />}
+          <RichTextEditor
+            ref={editorRef}
+            initialHTML={value}
+            contentKey={contentKey ? `${contentKey}:freeWriting` : 'freeWriting'}
+            onChange={next => {
+              if (!readOnly) onChange(next);
+            }}
+            onFormatChange={setFmt}
+            placeholder="Write whatever flows..."
+            backgroundColor="#fff"
+            color={C.text}
+            editable={!readOnly}
+            autoHeight
+            onCursorScreenY={onCursorScreenY}
+            style={{ minHeight: 140 }}
+          />
+        </>
+      )}
     </SectionCard>
   );
 }
@@ -1222,18 +1342,15 @@ function FreeWritingSection({ value, onChange, onCursorScreenY, contentKey, read
 // Main: DailyEntryView
 // ────────────────────────────────────────────────────────────────────────────
 
-export default function DailyEntryView() {
+const DailyEntryContent = forwardRef<DailyEntrySessionHandle, {
+  nativeEditor: boolean;
+  selectedDateKey: string;
+  onPersisted?: () => void;
+}>(function DailyEntryContent({ nativeEditor, selectedDateKey, onPersisted }, sessionRef) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const params = useLocalSearchParams<{
-    date?: string;
-    readOnly?: string;
-    title?: string;
-    isTask?: string;
-    taskInstanceId?: string;
-    taskDate?: string;
-  }>();
-  const selectedDateKey = typeof params.date === 'string' && params.date ? params.date : todayKey();
+  const navigation = useNavigation();
+  const params = useLocalSearchParams<DailyEntryRouteParams>();
   const isReadOnly = params.readOnly === '1' || params.readOnly === 'true';
   const isTaskLaunch = params.isTask === 'true' || !!params.taskInstanceId;
   const taskTitle = typeof params.title === 'string' && params.title.trim()
@@ -1248,17 +1365,29 @@ export default function DailyEntryView() {
     setJournalSections,
   } = useJournal();
   const { completeInstance } = useTasks();
+  const richTextCoordinator = useOptionalRichTextEditorCoordinator();
+  const flushDirtyEditors = richTextCoordinator?.flushDirty;
+  const clearDirtyEditorIds = richTextCoordinator?.clearDirtyEditorIds;
+  const dismissActiveEditor = richTextCoordinator?.dismissActiveEditor;
   const hydratedDateRef = useRef('');
   const hydratedUpdatedAtRef = useRef<number | undefined>(undefined);
   const dirtyRef = useRef(false);
+  const dirtyRevisionRef = useRef(0);
+  const screenMountedRef = useRef(true);
+  const saveAttemptRef = useRef(0);
   const touchedFieldsRef = useRef({ mood: false, energy: false, satisfaction: false });
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveNowRef = useRef<() => Promise<void>>(async () => {});
+  const latestNativeHtmlRef = useRef<Record<string, string>>({});
+  const navigationSaveInFlightRef = useRef(false);
+  const navigationBypassRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const scrollYRef = useRef(0);
   const kbHeightRef = useRef(0);
   const windowHRef = useRef(Dimensions.get('window').height);
 
   useEffect(() => {
+    if (nativeEditor) return;
     const showSub = Keyboard.addListener('keyboardWillShow', e => {
       kbHeightRef.current = e.endCoordinates.height;
     });
@@ -1273,7 +1402,7 @@ export default function DailyEntryView() {
       hideSub.remove();
       dimSub.remove();
     };
-  }, []);
+  }, [nativeEditor]);
 
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrollYRef.current = e.nativeEvent.contentOffset.y;
@@ -1283,13 +1412,14 @@ export default function DailyEntryView() {
   // the visible area (above the keyboard), nudge the outer ScrollView so
   // the cursor stays in view as the user types.
   const handleCursorScreenY = useCallback((screenY: number) => {
+    if (nativeEditor) return;
     const kb = kbHeightRef.current;
     if (kb === 0) return;
     const visibleBottom = windowHRef.current - kb - 60;
     if (screenY <= visibleBottom) return;
     const delta = screenY - visibleBottom;
     scrollRef.current?.scrollTo({ y: scrollYRef.current + delta, animated: false });
-  }, []);
+  }, [nativeEditor]);
 
   const [sections, setSections] = useState<JournalSection[]>(DEFAULT_SECTIONS);
   const [mood, setMood] = useState<number | undefined>(undefined);
@@ -1301,19 +1431,75 @@ export default function DailyEntryView() {
   const [freeWriting, setFreeWriting] = useState('');
   const [editorContentKey, setEditorContentKey] = useState(`daily:${selectedDateKey}:pending`);
   const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
 
-  const markDirty = () => {
+  const clearPendingSaveTimer = useCallback(() => {
+    if (!saveTimerRef.current) return;
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = null;
+  }, []);
+
+  useEffect(() => () => {
+    screenMountedRef.current = false;
+  }, []);
+
+  const markDirty = useCallback(() => {
     if (isReadOnly) return;
     dirtyRef.current = true;
-  };
+    dirtyRevisionRef.current += 1;
+    clearPendingSaveTimer();
+    saveTimerRef.current = setTimeout(() => {
+      void saveNowRef.current().catch(error => {
+        console.warn('Daily journal autosave failed', error);
+      });
+    }, 750);
+  }, [clearPendingSaveTimer, isReadOnly]);
 
-  const buildEntryPatch = useCallback((): JournalEntryPatch => {
+  useEffect(() => navigation.addListener('beforeRemove', event => {
+    if (
+      navigationBypassRef.current
+      || isReadOnly
+      || !dirtyRef.current
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    if (navigationSaveInFlightRef.current) return;
+    navigationSaveInFlightRef.current = true;
+    dismissActiveEditor?.();
+    Keyboard.dismiss();
+
+    void settleDailyJournalDraft({
+      isDirty: () => dirtyRef.current,
+      saveOnce: () => saveNowRef.current(),
+      label: `Daily Journal ${selectedDateKey} navigation`,
+    }).then(() => {
+      navigationBypassRef.current = true;
+      navigation.dispatch(event.data.action);
+    }).catch(error => {
+      console.warn('Daily journal navigation save failed', error);
+    }).finally(() => {
+      navigationSaveInFlightRef.current = false;
+    });
+  }), [dismissActiveEditor, isReadOnly, navigation, selectedDateKey]);
+
+  const buildEntryPatch = useCallback((nativeHtml?: Record<string, string>): JournalEntryPatch => {
+    const resolvedNativeHtml = nativeEditor
+      ? { ...latestNativeHtmlRef.current, ...nativeHtml }
+      : undefined;
+    const mergedRichText = mergeDailyRichTextDraft({
+      date: selectedDateKey,
+      prompts,
+      freeWriting,
+      htmlByEditorId: resolvedNativeHtml,
+    });
     const patch: JournalEntryPatch = {
       dailySections: cloneJournalSections(sections),
-      prompts: promptsToEntry(prompts),
+      prompts: promptsToEntry(mergedRichText.prompts),
       whoChecks,
       scaleValues,
-      freeWritingHtml: freeWriting,
+      freeWritingHtml: mergedRichText.freeWriting,
     };
 
     if (touchedFieldsRef.current.mood && mood !== undefined) patch.mood = mood;
@@ -1321,36 +1507,82 @@ export default function DailyEntryView() {
     if (touchedFieldsRef.current.satisfaction) patch.satisfaction = satisfaction;
 
     return patch;
-  }, [mood, energy, satisfaction, sections, prompts, whoChecks, scaleValues, freeWriting]);
+  }, [
+    mood,
+    energy,
+    satisfaction,
+    sections,
+    prompts,
+    whoChecks,
+    scaleValues,
+    freeWriting,
+    nativeEditor,
+    selectedDateKey,
+  ]);
+
+  const flushNativeDraft = useCallback(async () => {
+    if (!nativeEditor || !flushDirtyEditors) return latestNativeHtmlRef.current;
+    const values = await flushDirtyEditors();
+    latestNativeHtmlRef.current = {
+      ...latestNativeHtmlRef.current,
+      ...values,
+    };
+
+    setPrompts(current => mergeDailyRichTextDraft({
+      date: selectedDateKey,
+      prompts: current,
+      freeWriting: '',
+      htmlByEditorId: values,
+    }).prompts);
+    setFreeWriting(current => mergeDailyRichTextDraft({
+      date: selectedDateKey,
+      prompts: [],
+      freeWriting: current,
+      htmlByEditorId: values,
+    }).freeWriting);
+
+    return latestNativeHtmlRef.current;
+  }, [flushDirtyEditors, nativeEditor, selectedDateKey]);
+
+  const buildCurrentEntryPatch = useCallback(async () => {
+    const nativeHtml = await flushNativeDraft();
+    return buildEntryPatch(nativeHtml);
+  }, [buildEntryPatch, flushNativeDraft]);
+
+  const buildCurrentEntrySnapshot = useCallback(async () => {
+    return captureDailyJournalSaveSnapshot(
+      () => dirtyRevisionRef.current,
+      buildCurrentEntryPatch,
+    );
+  }, [buildCurrentEntryPatch]);
 
   const exitSaveRef = useRef<{
     date: string;
-    patch: JournalEntryPatch;
     readOnly: boolean;
-    queueCelebration: boolean;
   }>({
     date: selectedDateKey,
-    patch: {},
     readOnly: isReadOnly,
-    queueCelebration: !isTaskLaunch,
   });
   exitSaveRef.current = {
     date: selectedDateKey,
-    patch: buildEntryPatch(),
     readOnly: isReadOnly,
-    queueCelebration: !isTaskLaunch,
   };
 
   useEffect(() => {
     hydratedDateRef.current = '';
     hydratedUpdatedAtRef.current = undefined;
     dirtyRef.current = false;
+    dirtyRevisionRef.current = 0;
+    saveAttemptRef.current += 1;
+    latestNativeHtmlRef.current = {};
+    clearPendingSaveTimer();
     touchedFieldsRef.current = { mood: false, energy: false, satisfaction: false };
     setMood(undefined);
     setEnergy(undefined);
     setSatisfaction(5);
+    setSaveFailed(false);
     setEditorContentKey(`daily:${selectedDateKey}:pending`);
-  }, [selectedDateKey]);
+  }, [clearPendingSaveTimer, selectedDateKey]);
 
   useEffect(() => {
     const entry = getEntry(selectedDateKey);
@@ -1370,52 +1602,75 @@ export default function DailyEntryView() {
     hydratedDateRef.current = selectedDateKey;
     hydratedUpdatedAtRef.current = entry.updatedAt;
     dirtyRef.current = false;
+    dirtyRevisionRef.current = 0;
+    latestNativeHtmlRef.current = {};
     touchedFieldsRef.current = { mood: false, energy: false, satisfaction: false };
   }, [journalReady, selectedDateKey, getEntry, storedSections]);
 
-  useEffect(() => {
+  const persistEntryPatch = useCallback(async (
+    patch: JournalEntryPatch,
+    snapshotRevision: number,
+  ) => {
     if (isReadOnly) return;
     if (!dirtyRef.current || hydratedDateRef.current !== selectedDateKey) return;
-
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
+    await upsertEntry(selectedDateKey, patch, {
+      queueCompletionCelebration: !isTaskLaunch,
+    });
+    if (dirtyRevisionRef.current === snapshotRevision) {
+      dirtyRef.current = false;
+      clearDirtyEditorIds?.();
     }
-
-    saveTimerRef.current = setTimeout(() => {
-      void upsertEntry(selectedDateKey, buildEntryPatch(), {
-        queueCompletionCelebration: !isTaskLaunch,
-      }).then(() => {
-        dirtyRef.current = false;
-      }).catch(error => {
-        console.warn('Daily journal autosave failed', error);
-      });
-    }, 350);
-
-    return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-      }
-    };
   }, [
-    selectedDateKey,
     isReadOnly,
-    buildEntryPatch,
     isTaskLaunch,
+    clearDirtyEditorIds,
+    selectedDateKey,
     upsertEntry,
   ]);
 
-  const saveNow = async () => {
-    if (isReadOnly) return;
-    if (!dirtyRef.current || hydratedDateRef.current !== selectedDateKey) return;
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
+  const saveNow = useCallback(async () => {
+    if (isReadOnly || !dirtyRef.current) return;
+    const attempt = saveAttemptRef.current + 1;
+    saveAttemptRef.current = attempt;
+    clearPendingSaveTimer();
+    try {
+      const { patch, revision } = await buildCurrentEntrySnapshot();
+      await persistEntryPatch(patch, revision);
+      onPersisted?.();
+      if (screenMountedRef.current && saveAttemptRef.current === attempt) {
+        setSaveFailed(false);
+      }
+    } catch (error) {
+      if (screenMountedRef.current && saveAttemptRef.current === attempt) {
+        setSaveFailed(true);
+      }
+      throw error;
     }
-    await upsertEntry(selectedDateKey, buildEntryPatch(), {
-      queueCompletionCelebration: !isTaskLaunch,
-    });
-    dirtyRef.current = false;
-  };
+  }, [
+    buildCurrentEntrySnapshot,
+    clearPendingSaveTimer,
+    isReadOnly,
+    onPersisted,
+    persistEntryPatch,
+  ]);
+  saveNowRef.current = saveNow;
+
+  const settleCurrentEntry = useCallback((reason: string) => (
+    settleDailyJournalDraft({
+      isDirty: () => dirtyRef.current,
+      saveOnce: () => saveNowRef.current(),
+      label: `Daily Journal ${selectedDateKey} ${reason}`,
+    })
+  ), [selectedDateKey]);
+
+  useImperativeHandle(sessionRef, () => ({
+    prepareForDateChange: async () => {
+      if (isReadOnly) return;
+      dismissActiveEditor?.();
+      Keyboard.dismiss();
+      await settleCurrentEntry('date change');
+    },
+  }), [dismissActiveEditor, isReadOnly, settleCurrentEntry]);
 
   useEffect(() => () => {
     const snapshot = exitSaveRef.current;
@@ -1426,16 +1681,27 @@ export default function DailyEntryView() {
     ) return;
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    void upsertEntry(snapshot.date, snapshot.patch, {
-      queueCompletionCelebration: snapshot.queueCelebration,
-    }).catch(error => {
+    void saveNowRef.current().catch(error => {
       console.warn('Daily journal exit save failed', error);
     });
-  }, [upsertEntry]);
+  }, []);
+
+  useEffect(() => {
+    if (isReadOnly) return;
+    const subscription = AppState.addEventListener('change', state => {
+      if (state !== 'inactive' && state !== 'background') return;
+      void settleCurrentEntry(`lifecycle ${state}`).catch(error => {
+        console.warn('Daily journal lifecycle save failed', error);
+      });
+    });
+    return () => subscription.remove();
+  }, [isReadOnly, settleCurrentEntry]);
 
   const openGuidedJournal = async () => {
     try {
-      await saveNow();
+      dismissActiveEditor?.();
+      Keyboard.dismiss();
+      await settleCurrentEntry('guided navigation');
       router.push({
         pathname: '/journal-daily-guided' as any,
         params: {
@@ -1451,39 +1717,55 @@ export default function DailyEntryView() {
     }
   };
 
-  const finish = async () => {
-    const existingEntry = getEntry(selectedDateKey);
-    const entryPatch = buildEntryPatch();
-    const completionEntry = {
-      ...existingEntry,
-      ...entryPatch,
-    };
-    const shouldCompleteTask = hasDailyJournalContent(completionEntry);
-    const hadContentBefore = hasDailyJournalContent(existingEntry);
-    const shouldDeferTaskFeedback = isTaskLaunch && !!params.taskInstanceId && shouldCompleteTask;
-    if (!shouldDeferTaskFeedback) {
-      if (shouldCompleteTask) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+  const prepareForStructureChange = useCallback(async () => {
+    if (!nativeEditor) return;
+    await flushNativeDraft();
+    dismissActiveEditor?.();
+    Keyboard.dismiss();
+  }, [dismissActiveEditor, flushNativeDraft, nativeEditor]);
+
+  const openCustomize = async () => {
     try {
+      await prepareForStructureChange();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setCustomizeOpen(true);
+    } catch (error) {
+      console.warn('Could not prepare Daily Journal customization', error);
+    }
+  };
+
+  const finish = async () => {
+    try {
+      const existingEntry = getEntry(selectedDateKey);
+      dismissActiveEditor?.();
+      Keyboard.dismiss();
+      await settleCurrentEntry('Finish');
+      const entryPatch = await buildCurrentEntryPatch();
+      const completionEntry = {
+        ...existingEntry,
+        ...entryPatch,
+      };
+      const shouldCompleteTask = hasDailyJournalContent(completionEntry);
+      const hadContentBefore = hasDailyJournalContent(existingEntry);
+      const shouldDeferTaskFeedback = isTaskLaunch && !!params.taskInstanceId && shouldCompleteTask;
+      if (!shouldDeferTaskFeedback) {
+        if (shouldCompleteTask) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+
       if (!shouldCompleteTask && !hadContentBefore) {
-        if (saveTimerRef.current) {
-          clearTimeout(saveTimerRef.current);
-          saveTimerRef.current = null;
-        }
         dirtyRef.current = false;
-      } else {
-        await saveNow();
+        clearDirtyEditorIds?.();
       }
       if (isTaskLaunch && params.taskInstanceId && shouldCompleteTask) {
         const completionDate = params.taskDate ?? selectedDateKey;
         await completeInstance(params.taskInstanceId, completionDate);
         queueTaskCompletionReturnAnimation(params.taskInstanceId, 420);
       }
+      router.back();
     } catch (error) {
       console.warn('Daily journal finish failed', error);
     }
-    router.back();
   };
 
   const toggleWho = (q: string) => {
@@ -1554,7 +1836,7 @@ export default function DailyEntryView() {
           setSatisfaction(clampScaleValue(value, 5));
         }} />;
       case 'guidedPrompts':
-        return <GuidedPromptsSection key={section.id} prompts={prompts} contentKey={editorContentKey} readOnly={isReadOnly} onCursorScreenY={handleCursorScreenY} onPromptsChange={(next) => {
+        return <GuidedPromptsSection key={section.id} prompts={prompts} contentKey={editorContentKey} dateKey={selectedDateKey} nativeEditor={nativeEditor} onEditorDirty={markDirty} onEditorBlur={() => { void saveNow(); }} beforeStructureChange={prepareForStructureChange} readOnly={isReadOnly} onCursorScreenY={handleCursorScreenY} onPromptsChange={(next) => {
           if (isReadOnly) return;
           markDirty();
           setPrompts(next);
@@ -1568,7 +1850,7 @@ export default function DailyEntryView() {
       case 'upcomingEvents':
         return <View key={section.id} pointerEvents={isReadOnly ? 'none' : 'auto'}><UpcomingEventsSection /></View>;
       case 'freeWriting':
-        return <FreeWritingSection key={section.id} value={freeWriting} contentKey={editorContentKey} readOnly={isReadOnly} onCursorScreenY={handleCursorScreenY} onChange={(value) => {
+        return <FreeWritingSection key={section.id} value={freeWriting} contentKey={editorContentKey} editorId={dailyFreeWritingEditorId(selectedDateKey)} nativeEditor={nativeEditor} onEditorDirty={markDirty} onEditorBlur={() => { void saveNow(); }} readOnly={isReadOnly} onCursorScreenY={handleCursorScreenY} onChange={(value) => {
           if (isReadOnly) return;
           markDirty();
           setFreeWriting(value);
@@ -1590,6 +1872,8 @@ export default function DailyEntryView() {
   };
 
   const activeSections = sections.filter(s => s.active);
+  const JournalScrollView = nativeEditor ? NativeRichTextKeyboardAwareScrollView : ScrollView;
+  const nativeEditorActive = nativeEditor && !!richTextCoordinator?.activeEditor;
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
@@ -1615,7 +1899,7 @@ export default function DailyEntryView() {
               <Sparkles s={18} c="#A8853C" w={2.2} />
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCustomizeOpen(true); }}
+              onPress={() => { void openCustomize(); }}
               style={hd.rightBtn}
               activeOpacity={0.7}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -1626,8 +1910,35 @@ export default function DailyEntryView() {
         )}
       />
 
-      <ScrollView
+      {saveFailed && !isReadOnly && (
+        <View accessibilityRole="alert" style={saveAlert.wrap}>
+          <View style={saveAlert.copy}>
+            <Text style={saveAlert.title}>Couldn&apos;t save yet</Text>
+            <Text style={saveAlert.body}>Your writing is still open. Retry before leaving.</Text>
+          </View>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Retry saving journal entry"
+            activeOpacity={0.72}
+            onPress={() => {
+              void saveNow().catch(error => {
+                console.warn('Daily journal retry save failed', error);
+              });
+            }}
+            style={saveAlert.retry}
+          >
+            <Text style={saveAlert.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <JournalScrollView
         ref={scrollRef}
+        {...(nativeEditor ? {
+          bottomOffset: 64,
+          disableScrollOnKeyboardHide: true,
+          keyboardDismissMode: 'none' as const,
+        } : {})}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
         keyboardShouldPersistTaps="handled"
@@ -1675,9 +1986,9 @@ export default function DailyEntryView() {
         </Animated.View>
 
         <View style={{ height: 8 }} />
-      </ScrollView>
+      </JournalScrollView>
 
-      {!isReadOnly && (
+      {!isReadOnly && !nativeEditorActive && (
       <View style={[fin.wrap, { paddingBottom: insets.bottom + 12 }]}>
         <TouchableOpacity
           style={fin.btn}
@@ -1700,7 +2011,71 @@ export default function DailyEntryView() {
         onDeleteCustomScale={deleteCustomScale}
       />
       )}
+
+      {nativeEditor && !isReadOnly && <RichTextKeyboardToolbar />}
     </View>
+  );
+});
+
+export default function DailyEntryView() {
+  const params = useLocalSearchParams<DailyEntryRouteParams>();
+  const requestedDateKey = typeof params.date === 'string' && params.date
+    ? params.date
+    : todayKey();
+  const nativeEditor = isNativeRichTextEditorEnabled();
+  const [activeDateKey, setActiveDateKey] = useState(requestedDateKey);
+  const [switchRetryEpoch, setSwitchRetryEpoch] = useState(0);
+  const sessionRef = useRef<DailyEntrySessionHandle>(null);
+  const mountedRef = useRef(true);
+  const switchInFlightRef = useRef(false);
+  const requestedDateRef = useRef(requestedDateKey);
+  requestedDateRef.current = requestedDateKey;
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
+
+  const handlePersisted = useCallback(() => {
+    if (requestedDateRef.current === activeDateKey) return;
+    setSwitchRetryEpoch(value => value + 1);
+  }, [activeDateKey]);
+
+  useEffect(() => {
+    if (
+      activeDateKey === requestedDateKey
+      || switchInFlightRef.current
+    ) return;
+
+    switchInFlightRef.current = true;
+    void (sessionRef.current?.prepareForDateChange() ?? Promise.resolve())
+      .then(() => {
+        if (!mountedRef.current) return;
+        setActiveDateKey(requestedDateRef.current);
+      })
+      .catch(error => {
+        console.warn('Daily journal date switch save failed', error);
+      })
+      .finally(() => {
+        switchInFlightRef.current = false;
+      });
+  }, [activeDateKey, requestedDateKey, switchRetryEpoch]);
+
+  const content = (
+    <DailyEntryContent
+      key={activeDateKey}
+      ref={sessionRef}
+      nativeEditor={nativeEditor}
+      selectedDateKey={activeDateKey}
+      onPersisted={handlePersisted}
+    />
+  );
+
+  if (!nativeEditor) return content;
+
+  return (
+    <RichTextEditorProvider key={activeDateKey}>
+      {content}
+    </RichTextEditorProvider>
   );
 }
 
@@ -1711,6 +2086,55 @@ const hd = StyleSheet.create({
   actions: { flexDirection: 'row', alignItems: 'center', columnGap: 2 },
   rightBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   guidedBtn: { backgroundColor: 'rgba(197,160,89,0.11)', borderRadius: 14 },
+});
+
+const saveAlert = StyleSheet.create({
+  wrap: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    paddingLeft: 14,
+    paddingRight: 8,
+    minHeight: 62,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: 'rgba(158,75,56,0.20)',
+    backgroundColor: '#FFF5F1',
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+  },
+  copy: {
+    flex: 1,
+    paddingVertical: 10,
+  },
+  title: {
+    fontFamily: F.sansSemiBold,
+    fontSize: 14,
+    lineHeight: 18,
+    color: '#7A392C',
+  },
+  body: {
+    marginTop: 2,
+    fontFamily: F.sans,
+    fontSize: 13,
+    lineHeight: 17,
+    color: '#87594F',
+  },
+  retry: {
+    minWidth: 60,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#7A392C',
+  },
+  retryText: {
+    fontFamily: F.sansSemiBold,
+    fontSize: 13,
+    color: '#FFFFFF',
+  },
 });
 
 const guidedLaunch = StyleSheet.create({

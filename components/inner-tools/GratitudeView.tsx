@@ -134,6 +134,58 @@ function useChoiceMotion(active: boolean) {
   return progress;
 }
 
+// Onboarding opens the exact same Daily Gratitude setup surface as the real
+// tool. The wrapper owns only the existing persistence wiring; TaskSheet and
+// GratitudeView keep their normal runtime behavior unchanged.
+export function GratitudeTaskSetupSheet({
+  visible,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSaved?: () => void;
+}) {
+  const { createOrUpdateTask } = useTasks();
+  const {
+    setGratitudeTaskEnabled,
+    gratitudeTaskTime,
+    setGratitudeTaskTime,
+    gratitudeTaskFrequency,
+    setGratitudeTaskFrequency,
+    gratitudeTaskSameTimeEveryDay,
+    setGratitudeTaskSameTimeEveryDay,
+    gratitudeTaskDayTimes,
+    setGratitudeTaskDayTimes,
+  } = useInnerTools();
+
+  return (
+    <TaskSheet
+      visible={visible}
+      time={gratitudeTaskTime}
+      frequency={gratitudeTaskFrequency}
+      sameTimeEveryDay={gratitudeTaskSameTimeEveryDay}
+      dayTimes={gratitudeTaskDayTimes}
+      onTime={setGratitudeTaskTime}
+      onFrequency={setGratitudeTaskFrequency}
+      onSameTimeEveryDay={setGratitudeTaskSameTimeEveryDay}
+      onDayTimes={setGratitudeTaskDayTimes}
+      onClose={onClose}
+      onSave={async () => {
+        await createOrUpdateTask(buildGratitudeTaskDraft({
+          time: gratitudeTaskTime,
+          frequency: gratitudeTaskFrequency,
+          sameTimeEveryDay: gratitudeTaskSameTimeEveryDay,
+          dayTimes: gratitudeTaskDayTimes,
+        }));
+        setGratitudeTaskEnabled(true);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        onSaved?.();
+      }}
+    />
+  );
+}
+
 export default function GratitudeView() {
   const params = useLocalSearchParams<{ task?: string; kind?: GratitudeKind; taskDate?: string }>();
   const insets = useSafeAreaInsets();

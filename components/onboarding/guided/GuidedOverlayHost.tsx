@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
@@ -8,6 +8,7 @@ import Reanimated, {
   FadeInDown,
   FadeInUp,
   FadeOut,
+  LinearTransition,
   ZoomIn,
   cancelAnimation,
   interpolate,
@@ -23,15 +24,16 @@ import type { SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import { ChevronLeft, ChevronRight } from '@/components/icons/Icons';
+import { ChevronLeft, ChevronRight, Pencil } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { useGuidedOverlayState, useGuidedSetup } from './GuidedSetupContext';
 import type { GuidedGestureHint } from './types';
+import { GUIDED_TRANSITION } from './use-guided-scroll-transition';
 
 const APP_LOGO = require('@/assets/images/anasta-logo.png');
 const DIM = 'rgba(17,13,9,0.74)';
 const DIM_LIGHT = 'rgba(17,13,9,0.30)';
-const MOTION = { duration: 400, easing: Easing.bezier(0.26, 1, 0.32, 1) };
+const MOTION = { duration: GUIDED_TRANSITION.spotlightMoveMs, easing: Easing.bezier(0.22, 1, 0.36, 1) };
 const SOFT_EASE = Easing.bezier(0.16, 1, 0.28, 1);
 const CUTOUT_RADIUS = 22;
 const RING_GOLD = 'rgba(240,209,143,0.95)';
@@ -55,7 +57,7 @@ function DimPanel({ style }: { style: object }) {
   return (
     <Reanimated.View
       entering={FadeIn.duration(280)}
-      exiting={FadeOut.duration(220)}
+      exiting={FadeOut.duration(GUIDED_TRANSITION.dimExitMs)}
       style={[o.dimPanel, style]}
     >
       <Pressable style={StyleSheet.absoluteFill} />
@@ -469,29 +471,79 @@ export function GuidedOverlayHost() {
   const { session } = useGuidedSetup();
   const { presentation, targetLayouts } = useGuidedOverlayState();
   const target = presentation?.targetId ? targetLayouts[presentation.targetId] : undefined;
+  const explicitHintTarget = presentation?.hintTargetId ? targetLayouts[presentation.hintTargetId] : undefined;
+  const hintTarget = explicitHintTarget ?? target;
   const padding = presentation?.cutoutPadding ?? 8;
   const x = useSharedValue(0);
   const y = useSharedValue(0);
   const width = useSharedValue(0);
   const height = useSharedValue(0);
+  const hintX = useSharedValue(0);
+  const hintY = useSharedValue(0);
+  const hintWidth = useSharedValue(0);
+  const hintHeight = useSharedValue(0);
   const breath = useSharedValue(0);
   const sonar = useSharedValue(0);
-  const presentationKey = presentation?.key ?? null;
+  const spotlightTargetId = presentation?.targetId ?? null;
+  const spotlightInitializedRef = useRef(false);
+  const hintInitializedRef = useRef(false);
 
   useEffect(() => {
+    if (!spotlightTargetId) spotlightInitializedRef.current = false;
+  }, [spotlightTargetId]);
+
+  useLayoutEffect(() => {
     if (!target) return;
     const nextX = Math.max(0, target.x - padding);
     const nextY = Math.max(0, target.y - padding);
+    const nextWidth = Math.max(0, Math.min(screenWidth - nextX, target.width + padding * 2));
+    const nextHeight = Math.max(0, Math.min(screenHeight - nextY, target.height + padding * 2));
+    if (!spotlightInitializedRef.current) {
+      // The first spotlight on a screen must appear at its final coordinates.
+      // Animating from the shared values' zero rect created a visible diagonal
+      // sweep before every scene handoff.
+      x.value = nextX;
+      y.value = nextY;
+      width.value = nextWidth;
+      height.value = nextHeight;
+      spotlightInitializedRef.current = true;
+      return;
+    }
     x.value = withTiming(nextX, MOTION);
     y.value = withTiming(nextY, MOTION);
-    width.value = withTiming(Math.max(0, Math.min(screenWidth - nextX, target.width + padding * 2)), MOTION);
-    height.value = withTiming(Math.max(0, Math.min(screenHeight - nextY, target.height + padding * 2)), MOTION);
+    width.value = withTiming(nextWidth, MOTION);
+    height.value = withTiming(nextHeight, MOTION);
   }, [height, padding, screenHeight, screenWidth, target, width, x, y]);
+
+  useEffect(() => {
+    if (!hintTarget) hintInitializedRef.current = false;
+  }, [hintTarget]);
+
+  useLayoutEffect(() => {
+    if (!hintTarget) return;
+    const hintPadding = explicitHintTarget ? 0 : padding;
+    const nextX = Math.max(0, hintTarget.x - hintPadding);
+    const nextY = Math.max(0, hintTarget.y - hintPadding);
+    const nextWidth = Math.max(0, Math.min(screenWidth - nextX, hintTarget.width + hintPadding * 2));
+    const nextHeight = Math.max(0, Math.min(screenHeight - nextY, hintTarget.height + hintPadding * 2));
+    if (!hintInitializedRef.current) {
+      hintX.value = nextX;
+      hintY.value = nextY;
+      hintWidth.value = nextWidth;
+      hintHeight.value = nextHeight;
+      hintInitializedRef.current = true;
+      return;
+    }
+    hintX.value = withTiming(nextX, MOTION);
+    hintY.value = withTiming(nextY, MOTION);
+    hintWidth.value = withTiming(nextWidth, MOTION);
+    hintHeight.value = withTiming(nextHeight, MOTION);
+  }, [explicitHintTarget, hintHeight, hintTarget, hintWidth, hintX, hintY, padding, screenHeight, screenWidth]);
 
   // The spotlight breathes and sends out a quiet sonar ring — the eye is drawn
   // to the live part of the screen without a single written word.
   useEffect(() => {
-    if (!presentationKey) return;
+    if (!spotlightTargetId) return;
     breath.value = 0;
     breath.value = withRepeat(
       withSequence(
@@ -514,7 +566,7 @@ export function GuidedOverlayHost() {
       cancelAnimation(breath);
       cancelAnimation(sonar);
     };
-  }, [breath, presentationKey, sonar]);
+  }, [breath, sonar, spotlightTargetId]);
 
   const topStyle = useAnimatedStyle(() => ({
     left: 0,
@@ -615,16 +667,19 @@ export function GuidedOverlayHost() {
     if (presentation?.hintAnchor) return presentation.hintAnchor;
     if (
       presentation?.hint === 'tap' &&
-      target &&
-      target.width + padding * 2 < 100 &&
-      target.height + padding * 2 < 100
+      hintTarget &&
+      hintTarget.width + padding * 2 < 100 &&
+      hintTarget.height + padding * 2 < 100
     ) {
       return 'corner';
     }
     return 'center';
-  }, [padding, presentation?.hint, presentation?.hintAnchor, target]);
+  }, [hintTarget, padding, presentation?.hint, presentation?.hintAnchor]);
 
   const bubbleStyle = useMemo(() => {
+    if (presentation?.coachTopOffset !== undefined) {
+      return { top: insets.top + presentation.coachTopOffset };
+    }
     if (presentation?.celebrate) {
       return { top: Math.max(celebrateTop + 168, screenHeight * 0.46) };
     }
@@ -643,7 +698,7 @@ export function GuidedOverlayHost() {
         target.y + target.height + padding + 18,
       ),
     };
-  }, [celebrateTop, hasCta, insets.bottom, insets.top, padding, presentation?.celebrate, presentation?.placement, screenHeight, target]);
+  }, [celebrateTop, hasCta, insets.bottom, insets.top, padding, presentation?.celebrate, presentation?.coachTopOffset, presentation?.placement, screenHeight, target]);
 
   const coachEntering = useMemo(() => (
     presentation?.placement === 'above' || presentation?.placement === 'bottom'
@@ -653,39 +708,45 @@ export function GuidedOverlayHost() {
 
   if (!session?.active || !presentation) return null;
 
+  // A target-backed coach must never dim the screen before its native layout
+  // has been published. During screen handoffs that can take one extra frame;
+  // rendering the generic full-screen scrim in that gap looks like a missing
+  // spotlight and briefly blocks the very control the guide is introducing.
+  if (presentation.targetId && !target) return null;
+
   const chips = presentation.chips ?? [];
   const showHeader = Boolean(presentation.eyebrow || presentation.progress);
 
   return (
     <View pointerEvents="box-none" style={o.layer}>
-      {target ? (
+      {!presentation.hideDim && (target ? (
         <>
           <DimPanel style={topStyle} />
           <DimPanel style={leftStyle} />
           <DimPanel style={rightStyle} />
           <DimPanel style={bottomStyle} />
-          <Reanimated.View pointerEvents="none" entering={FadeIn.duration(280)} exiting={FadeOut.duration(220)} style={[o.cornerPatch, topLeftCornerStyle]}>
+          <Reanimated.View pointerEvents="none" entering={FadeIn.duration(280)} exiting={FadeOut.duration(GUIDED_TRANSITION.dimExitMs)} style={[o.cornerPatch, topLeftCornerStyle]}>
             <Reanimated.View style={[o.cornerDonut, topLeftDonutStyle]} />
           </Reanimated.View>
-          <Reanimated.View pointerEvents="none" entering={FadeIn.duration(280)} exiting={FadeOut.duration(220)} style={[o.cornerPatch, topRightCornerStyle]}>
+          <Reanimated.View pointerEvents="none" entering={FadeIn.duration(280)} exiting={FadeOut.duration(GUIDED_TRANSITION.dimExitMs)} style={[o.cornerPatch, topRightCornerStyle]}>
             <Reanimated.View style={[o.cornerDonut, topRightDonutStyle]} />
           </Reanimated.View>
-          <Reanimated.View pointerEvents="none" entering={FadeIn.duration(280)} exiting={FadeOut.duration(220)} style={[o.cornerPatch, bottomLeftCornerStyle]}>
+          <Reanimated.View pointerEvents="none" entering={FadeIn.duration(280)} exiting={FadeOut.duration(GUIDED_TRANSITION.dimExitMs)} style={[o.cornerPatch, bottomLeftCornerStyle]}>
             <Reanimated.View style={[o.cornerDonut, bottomLeftDonutStyle]} />
           </Reanimated.View>
-          <Reanimated.View pointerEvents="none" entering={FadeIn.duration(280)} exiting={FadeOut.duration(220)} style={[o.cornerPatch, bottomRightCornerStyle]}>
+          <Reanimated.View pointerEvents="none" entering={FadeIn.duration(280)} exiting={FadeOut.duration(GUIDED_TRANSITION.dimExitMs)} style={[o.cornerPatch, bottomRightCornerStyle]}>
             <Reanimated.View style={[o.cornerDonut, bottomRightDonutStyle]} />
           </Reanimated.View>
           <Reanimated.View
             pointerEvents="none"
             entering={FadeIn.duration(320)}
-            exiting={FadeOut.duration(200)}
+            exiting={FadeOut.duration(GUIDED_TRANSITION.ringExitMs)}
             style={[o.sonarRing, sonarStyle]}
           />
           <Reanimated.View
             pointerEvents="none"
             entering={FadeIn.duration(320)}
-            exiting={FadeOut.duration(200)}
+            exiting={FadeOut.duration(GUIDED_TRANSITION.ringExitMs)}
             style={[o.cutoutRing, ringStyle]}
           />
           {presentation.allowTargetInteraction === false && (
@@ -699,76 +760,87 @@ export function GuidedOverlayHost() {
               hint={presentation.hint}
               anchor={hintAnchor}
               offset={presentation.hintOffset}
-              x={x}
-              y={y}
-              width={width}
-              height={height}
+              x={hintX}
+              y={hintY}
+              width={hintWidth}
+              height={hintHeight}
             />
           ) : null}
         </>
       ) : (
         <Reanimated.View
           entering={FadeIn.duration(300)}
-          exiting={FadeOut.duration(220)}
+          exiting={FadeOut.duration(GUIDED_TRANSITION.dimExitMs)}
           style={[o.fullDim, presentation.lightScrim && o.fullDimLight]}
         >
           <Pressable style={StyleSheet.absoluteFill} />
         </Reanimated.View>
-      )}
+      ))}
 
       {presentation.celebrate && (
         <CelebrationBurst key={`${presentation.key}-success`} top={celebrateTop} />
       )}
 
-      <Reanimated.View
-        key={presentation.key}
-        entering={coachEntering}
-        exiting={FadeOut.duration(220)}
-        style={[o.coach, bubbleStyle]}
-      >
-        <LogoPlate />
-        <View style={o.bubble}>
-          {showHeader && (
-            <Reanimated.View entering={FadeIn.delay(140).duration(320)} style={o.bubbleHeader}>
-              <Text style={o.eyebrow}>{presentation.eyebrow ?? 'ANASTA'}</Text>
-              {presentation.progress ? (
-                <ProgressDots current={presentation.progress.current} total={presentation.progress.total} />
+      {!presentation.hideCoach && (
+        <Reanimated.View
+          key={presentation.coachGroupKey ?? presentation.key}
+          entering={coachEntering}
+          exiting={FadeOut.duration(GUIDED_TRANSITION.dimExitMs)}
+          style={[o.coach, bubbleStyle]}
+        >
+          <LogoPlate />
+          <Reanimated.View
+            layout={LinearTransition.duration(220).easing(SOFT_EASE)}
+            style={o.bubble}
+          >
+            <Reanimated.View
+              key={presentation.key}
+              entering={FadeInDown.duration(240).easing(SOFT_EASE)}
+              exiting={FadeOut.duration(120)}
+            >
+              {showHeader && (
+                <View style={o.bubbleHeader}>
+                  <Text style={o.eyebrow}>{presentation.eyebrow ?? 'ANASTA'}</Text>
+                  {presentation.progress ? (
+                    <ProgressDots current={presentation.progress.current} total={presentation.progress.total} />
+                  ) : null}
+                </View>
+              )}
+              <Text style={o.message}>{renderMessage(presentation.message, presentation.highlights)}</Text>
+              {chips.length > 0 && (
+                <View style={o.chipRow}>
+                  {chips.map((chip, index) => (
+                    <Reanimated.View
+                      key={chip}
+                      entering={FadeInDown.delay(80 + index * 60).duration(260).easing(SOFT_EASE)}
+                      style={o.chip}
+                    >
+                      <View style={o.chipDot} />
+                      <Text style={o.chipText}>{chip}</Text>
+                    </Reanimated.View>
+                  ))}
+                </View>
+              )}
+              {presentation.action ? (
+                <Reanimated.View
+                  entering={FadeIn.delay(chips.length > 0 ? 220 : 120).duration(280)}
+                  style={o.actionRow}
+                >
+                  {presentation.actionIcon === 'pencil'
+                    ? <View style={o.actionIcon}><Pencil s={13} c={C.gold} w={2.2} /></View>
+                    : <ActionPulseDot />}
+                  <Text style={o.actionText}>{presentation.action}</Text>
+                </Reanimated.View>
               ) : null}
             </Reanimated.View>
-          )}
-          <Reanimated.View entering={FadeIn.delay(200).duration(360)}>
-            <Text style={o.message}>{renderMessage(presentation.message, presentation.highlights)}</Text>
           </Reanimated.View>
-          {chips.length > 0 && (
-            <View style={o.chipRow}>
-              {chips.map((chip, index) => (
-                <Reanimated.View
-                  key={chip}
-                  entering={FadeInDown.delay(300 + index * 75).duration(320).easing(SOFT_EASE)}
-                  style={o.chip}
-                >
-                  <View style={o.chipDot} />
-                  <Text style={o.chipText}>{chip}</Text>
-                </Reanimated.View>
-              ))}
-            </View>
-          )}
-          {presentation.action ? (
-            <Reanimated.View
-              entering={FadeIn.delay(chips.length > 0 ? 460 : 300).duration(340)}
-              style={o.actionRow}
-            >
-              <ActionPulseDot />
-              <Text style={o.actionText}>{presentation.action}</Text>
-            </Reanimated.View>
-          ) : null}
-        </View>
-      </Reanimated.View>
+        </Reanimated.View>
+      )}
 
       {hasCta && (
         <Reanimated.View
           entering={FadeInUp.delay(340).duration(430).easing(SOFT_EASE)}
-          style={[o.ctaWrap, { bottom: insets.bottom + 20 }]}
+          style={[o.ctaWrap, { bottom: insets.bottom + (presentation.ctaBottomOffset ?? 20) }]}
         >
           {/* Same frosted island the rest of onboarding wraps its buttons in. */}
           <View style={o.ctaIsland}>
@@ -1153,6 +1225,16 @@ const o = StyleSheet.create({
     lineHeight: 17,
     letterSpacing: 0.2,
     color: '#15120F',
+  },
+  actionIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(197,160,89,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.30)',
   },
 
   // CTAs

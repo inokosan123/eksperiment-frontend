@@ -25,14 +25,14 @@ export default function WebProtectionIntroAnimation() {
 
 const s = StyleSheet.create({
   stage: {
-    height: 152,
-    marginTop: -2,
-    marginBottom: -8,
+    height: 126,
+    marginTop: -4,
+    marginBottom: -6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   animation: {
-    width: 180,
-    height: 180,
+    width: 150,
+    height: 150,
   },
 });

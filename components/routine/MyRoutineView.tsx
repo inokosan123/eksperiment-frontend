@@ -64,6 +64,7 @@ import {
   Plus,
   Sparkles,
   Star,
+  Shield,
   Sun,
   Target,
   Trash2,
@@ -74,8 +75,8 @@ import {
   X,
 } from '@/components/icons/Icons';
 import { AnyTaskCard, TaskData } from '@/components/shared/TaskCards';
-import ChallengeSummaryCard from '@/components/shared/ChallengeSummaryCard';
 import RoutinePhonePlanCard from '@/components/focus-watch/RoutinePhonePlanCard';
+import { weekdayMondayFirst } from '@/components/focus-watch/dayPlanStore';
 import { C, F } from '@/constants/tokens';
 import type { HabitItem, HabitStep } from '@/components/habits/habitDb';
 import { habitStepTaskId, listHabitsWithStats, saveHabitRecord } from '@/components/habits/habitDb';
@@ -96,6 +97,7 @@ import {
   useGuidedSetup,
   useGuideTarget,
 } from '@/components/onboarding/guided/GuidedSetupContext';
+import { useGuidedScrollTransition } from '@/components/onboarding/guided/use-guided-scroll-transition';
 import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
 import QuickTaskSheet, { QUICK_TASK_GUIDE_TARGETS } from '@/components/shared/QuickTaskSheet';
 
@@ -276,6 +278,7 @@ const ROUTINE_ICONS: {
 
 const VISIBLE_ROUTINE_ICON_COUNT = 20;
 const MY_ROUTINE_GUIDE_TARGETS = {
+  weekPlan: 'my-routine.week-plan',
   addRow: 'my-routine.add-row',
   spiritualAdd: 'my-routine.spiritual-add',
   spiritualType: 'my-routine.spiritual-type',
@@ -788,6 +791,7 @@ export default function MyRoutineView({
   const {
     challenges,
     activeChallenges,
+    pausedChallenges,
     refreshChallenges,
     updateChallenge,
     pauseChallenge,
@@ -808,7 +812,9 @@ export default function MyRoutineView({
       .map(taskDefinitionToRoutineTask),
     [backendTasks],
   );
-  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  const [selectedDayIndex, setSelectedDayIndex] = useState(() => (
+    guided ? 0 : weekdayMondayFirst(new Date())
+  ));
   const [showSpiritualTypePicker, setShowSpiritualTypePicker] = useState(false);
   const [spiritualTaskContext, setSpiritualTaskContext] = useState<RoutineTaskSheetContext | null>(null);
   const [editorVisible, setEditorVisible] = useState(false);
@@ -850,6 +856,7 @@ export default function MyRoutineView({
   const spiritualAddTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.spiritualAdd, isGuided);
   const routineAddTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.routineAdd, isGuided);
   const dayTabsTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.dayTabs, isGuided);
+  const weekPlanTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.weekPlan, isGuided);
   const taskCardTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.taskCard, isGuided);
   const habitsTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.habits, isGuided);
   const challengesTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.challenges, isGuided);
@@ -860,54 +867,35 @@ export default function MyRoutineView({
   // scroll to settle, re-measure, then present on fresh coordinates.
   const guideInsets = useSafeAreaInsets();
   const { height: guideScreenHeight } = useWindowDimensions();
-  const guideScrollY = useRef(0);
-  const guideTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-
-  const clearGuideTimers = useCallback(() => {
-    guideTimersRef.current.forEach(clearTimeout);
-    guideTimersRef.current = [];
-  }, []);
+  const tourWeekTuesdaySeenRef = useRef(false);
+  const {
+    clear: clearGuideTimers,
+    finish: finishGuideScroll,
+    onScroll: handleGuideScroll,
+    schedule: scheduleGuide,
+    stageTarget: stageGuideTarget,
+  } = useGuidedScrollTransition({
+    scrollRef: routineScrollRef,
+    screenHeight: guideScreenHeight,
+    setPresentation,
+  });
 
   const stageGuidePhase = useCallback((
     binding: ReturnType<typeof useGuideTarget> | null,
-    position: 'origin' | 'lesson' | 'middle',
+    position: 'origin' | 'lesson' | 'middle' | 'sectionTop',
     present: () => void,
   ) => {
-    const node = binding?.ref.current;
-    if (!binding || !node?.measureInWindow) {
-      guideTimersRef.current.push(setTimeout(present, 40));
-      return;
-    }
-    if (position === 'origin') {
-      if (guideScrollY.current < 4) {
-        binding.measure();
-        guideTimersRef.current.push(setTimeout(present, 56));
-        return;
-      }
-      routineScrollRef.current?.scrollTo({ y: 0, animated: true });
-      guideTimersRef.current.push(setTimeout(() => {
-        binding.measure();
-        guideTimersRef.current.push(setTimeout(present, 48));
-      }, 330));
-      return;
-    }
-    node.measureInWindow((_mx: number, my: number, _mw: number, mh: number) => {
-      const desired = position === 'lesson'
-        ? guideInsets.top + 124
-        : Math.max(guideInsets.top + 90, guideScreenHeight * 0.5 - mh / 2);
-      const delta = my - desired;
-      if (Math.abs(delta) < 14) {
-        binding.measure();
-        guideTimersRef.current.push(setTimeout(present, 56));
-        return;
-      }
-      routineScrollRef.current?.scrollTo({ y: Math.max(0, guideScrollY.current + delta), animated: true });
-      guideTimersRef.current.push(setTimeout(() => {
-        binding.measure();
-        guideTimersRef.current.push(setTimeout(present, 48));
-      }, 340));
-    });
-  }, [guideInsets.top, guideScreenHeight]);
+    const targetPosition = position === 'origin'
+      ? 'origin' as const
+      : (targetHeight: number) => (
+        position === 'lesson'
+          ? guideInsets.top + 124
+          : position === 'sectionTop'
+            ? guideInsets.top + 178
+            : Math.max(guideInsets.top + 90, guideScreenHeight * 0.5 - targetHeight / 2)
+      );
+    stageGuideTarget(binding, targetPosition, present);
+  }, [guideInsets.top, guideScreenHeight, stageGuideTarget]);
 
   const finishGuidedRoutine = useCallback(() => {
     patchSession({
@@ -926,6 +914,46 @@ export default function MyRoutineView({
   );
 
   const selectedDay = DAY_TABS[selectedDayIndex];
+
+  const showTourWeekPresentation = useCallback((showTuesdayHint: boolean) => {
+    setPresentation({
+      key: showTuesdayHint ? 'my-routine-tour-week-choose' : 'my-routine-tour-week-explore',
+      targetId: showTuesdayHint ? MY_ROUTINE_GUIDE_TARGETS.dayTabs : MY_ROUTINE_GUIDE_TARGETS.weekPlan,
+      cutoutPadding: 7,
+      placement: 'below',
+      allowTargetInteraction: true,
+      hideCoach: !showTuesdayHint,
+      eyebrow: showTuesdayHint ? 'MY ROUTINE' : undefined,
+      progress: showTuesdayHint ? { current: 1, total: 7 } : undefined,
+      message: showTuesdayHint ? 'This is My Routine. Choose a day to see the tasks planned for it.' : '',
+      highlights: showTuesdayHint ? ['Choose a day', 'tasks planned for it'] : undefined,
+      action: showTuesdayHint ? 'Tap Tuesday to preview your week' : undefined,
+      hint: showTuesdayHint ? 'tap' : undefined,
+      hintTargetId: showTuesdayHint ? MY_ROUTINE_GUIDE_TARGETS.dayTabs : undefined,
+      hintAnchor: 'left',
+      hintOffset: showTuesdayHint ? { x: 62 } : undefined,
+      ctaLabel: showTuesdayHint ? undefined : 'Continue',
+      ctaBottomOffset: 8,
+      onCta: showTuesdayHint ? undefined : () => patchSession({ phase: 'tourAdd' }),
+    });
+  }, [patchSession, setPresentation]);
+
+  const selectDay = useCallback((index: number) => {
+    setSelectedDayIndex(index);
+    if (
+      isGuided &&
+      guidePhase === 'tourWeek' &&
+      index === 1 &&
+      !tourWeekTuesdaySeenRef.current
+    ) {
+      tourWeekTuesdaySeenRef.current = true;
+      showTourWeekPresentation(false);
+      requestAnimationFrame(() => {
+        dayTabsTarget.measure();
+        weekPlanTarget.measure();
+      });
+    }
+  }, [dayTabsTarget, guidePhase, isGuided, showTourWeekPresentation, weekPlanTarget]);
 
   const tasksForDay = useMemo(() => (
     tasks
@@ -959,26 +987,8 @@ export default function MyRoutineView({
     // The tour follows the screen top-to-bottom: week tabs → add buttons →
     // the day's task list → the editor → habits → challenges → focus plan.
     if (guidePhase === 'tourWeek') {
-      stageGuidePhase(dayTabsTarget, 'origin', () => {
-        setPresentation({
-          key: 'my-routine-tour-week',
-          targetId: MY_ROUTINE_GUIDE_TARGETS.dayTabs,
-          cutoutPadding: 7,
-          placement: 'below',
-          allowTargetInteraction: true,
-          eyebrow: 'MY ROUTINE',
-          progress: { current: 1, total: 7 },
-          message: 'This is My Routine — the workshop behind your Home. Here you see the plan for every day of your week.',
-          highlights: ['every day'],
-          action: 'Tap a day to see its plan change below',
-          hint: 'tap',
-          hintAnchor: 'left',
-          // Monday is already selected — pulse on the SECOND tab so a tap
-          // visibly changes the list underneath.
-          hintOffset: { x: 62 },
-          ctaLabel: 'Continue',
-          onCta: () => patchSession({ phase: 'tourAdd' }),
-        });
+      stageGuidePhase(tourWeekTuesdaySeenRef.current ? weekPlanTarget : dayTabsTarget, 'origin', () => {
+        showTourWeekPresentation(!tourWeekTuesdaySeenRef.current);
       });
       return;
     }
@@ -992,7 +1002,7 @@ export default function MyRoutineView({
           allowTargetInteraction: false,
           eyebrow: 'MY ROUTINE',
           progress: { current: 2, total: 7 },
-          message: 'New spiritual and routine tasks are added here — each lands on the days you choose.',
+          message: 'New spiritual and routine tasks are added here.',
           highlights: ['spiritual', 'routine'],
           ctaLabel: 'Continue',
           onCta: () => patchSession({ phase: 'edit' }),
@@ -1142,9 +1152,9 @@ export default function MyRoutineView({
           allowTargetInteraction: true,
           eyebrow: 'MY ROUTINE',
           progress: { current: 3, total: 7 },
-          message: 'These are the tasks of the day you selected. When life changes, the plan bends with it.',
-          highlights: ['tasks of the day'],
-          action: 'Tap the task to open its editor',
+          message: 'Whenever you want to change a task, open My Routine and tap it to edit.',
+          highlights: ['change a task'],
+          action: 'Tap a task to open its editor',
           hint: 'tap',
           hintAnchor: 'right',
         });
@@ -1152,33 +1162,25 @@ export default function MyRoutineView({
       return;
     }
     if (guidePhase === 'editSave') {
-      setPresentation({
-        key: 'my-routine-edit-save',
-        targetId: MY_ROUTINE_GUIDE_TARGETS.save,
-        cutoutPadding: 7,
-        placement: 'below',
-        allowTargetInteraction: true,
-        eyebrow: 'MY ROUTINE',
-        progress: { current: 4, total: 7 },
-        message: 'This is the editor — name, time, repeat days, every detail of the task lives here.',
-        highlights: ['editor'],
-        action: 'When you are done, tap the check at the top right',
-        hint: 'tap',
-      });
+      // The editor owns this presentation after its entrance settles. Keeping
+      // the parent quiet prevents a stale card spotlight from flashing inside
+      // the modal while the sheet is moving.
+      setPresentation(null);
       return;
     }
     if (guidePhase === 'tourHabits') {
-      stageGuidePhase(habitsTarget, 'middle', () => {
+      stageGuidePhase(habitsTarget, 'sectionTop', () => {
         setPresentation({
           key: 'my-routine-tour-habits',
           targetId: MY_ROUTINE_GUIDE_TARGETS.habits,
           cutoutPadding: 7,
           placement: 'above',
+          coachTopOffset: 18,
           allowTargetInteraction: false,
           eyebrow: 'MY ROUTINE',
           progress: { current: 5, total: 7 },
-          message: 'Habits live here, with every control they need — edit, start, or pause them as seasons change.',
-          highlights: ['Habits'],
+          message: 'You can add, edit, delete, and pause your habits here.',
+          highlights: ['your habits'],
           ctaLabel: 'Continue',
           onCta: () => patchSession({ phase: 'tourChallenges' }),
         });
@@ -1186,17 +1188,18 @@ export default function MyRoutineView({
       return;
     }
     if (guidePhase === 'tourChallenges') {
-      stageGuidePhase(challengesTarget, 'middle', () => {
+      stageGuidePhase(challengesTarget, 'sectionTop', () => {
         setPresentation({
           key: 'my-routine-tour-challenges',
           targetId: MY_ROUTINE_GUIDE_TARGETS.challenges,
           cutoutPadding: 7,
           placement: 'above',
+          coachTopOffset: 18,
           allowTargetInteraction: false,
           eyebrow: 'MY ROUTINE',
           progress: { current: 6, total: 7 },
-          message: 'Your prayer, Scripture, and journal challenges gather here.',
-          highlights: ['challenges'],
+          message: 'Your prayer, Scripture, journal, and other challenges are also here.',
+          highlights: ['Your', 'challenges'],
           ctaLabel: 'Continue',
           onCta: () => patchSession({ phase: 'tourBlocking' }),
         });
@@ -1204,17 +1207,18 @@ export default function MyRoutineView({
       return;
     }
     if (guidePhase === 'tourBlocking') {
-      stageGuidePhase(blockingPlanTarget, 'middle', () => {
+      stageGuidePhase(blockingPlanTarget, 'sectionTop', () => {
         setPresentation({
           key: 'my-routine-tour-blocking',
           targetId: MY_ROUTINE_GUIDE_TARGETS.blockingPlan,
           cutoutPadding: 7,
           placement: 'above',
+          coachTopOffset: 18,
           allowTargetInteraction: false,
           eyebrow: 'MY ROUTINE',
           progress: { current: 7, total: 7 },
-          message: 'And at the bottom — which focus plan guards your attention on each day of the week.',
-          highlights: ['focus plan'],
+          message: 'At the bottom, you can see which Focus Plan guards your attention.',
+          highlights: ['Focus Plan'],
           ctaLabel: 'Finish tour',
           onCta: () => patchSession({ phase: 'complete' }),
         });
@@ -1227,8 +1231,8 @@ export default function MyRoutineView({
         celebrate: true,
         placement: 'center',
         eyebrow: 'MY ROUTINE',
-        message: 'Your weekly rhythm is in place.\n\nHome carries the day. My Routine carries the week.',
-        highlights: ['weekly rhythm'],
+        message: 'Your tour is complete.\n\nHome keeps your day organized, and My Routine keeps your week on track.',
+        highlights: ['Home', 'My Routine'],
         ctaLabel: 'Continue',
         onCta: finishGuidedRoutine,
       });
@@ -1244,8 +1248,10 @@ export default function MyRoutineView({
     isGuided,
     patchSession,
     setPresentation,
+    showTourWeekPresentation,
     stageGuidePhase,
     taskCardTarget,
+    weekPlanTarget,
   ]);
 
   useEffect(() => {
@@ -1254,6 +1260,7 @@ export default function MyRoutineView({
       spiritualAddTarget.measure();
       routineAddTarget.measure();
       dayTabsTarget.measure();
+      weekPlanTarget.measure();
       taskCardTarget.measure();
       habitsTarget.measure();
       challengesTarget.measure();
@@ -1270,6 +1277,7 @@ export default function MyRoutineView({
     routineAddTarget,
     spiritualAddTarget,
     taskCardTarget,
+    weekPlanTarget,
   ]);
 
   // Clears any pending stage timers whenever the phase moves on (or the tour
@@ -1289,41 +1297,61 @@ export default function MyRoutineView({
     if (isGuided) patchSession({ phase: 'routineName' });
   };
 
+  const hydrateEditorTask = async (task: RoutineTask): Promise<RoutineTask> => {
+    const [prayerConfig, scriptureConfig] = await Promise.all([
+      task.type === 'prayer'
+        ? getPrayerTaskConfig(task.id).catch(() => undefined)
+        : Promise.resolve(undefined),
+      isScriptureRoutineTask(task)
+        ? getScriptureTaskConfig(task.id).catch(() => undefined)
+        : Promise.resolve(undefined),
+    ]);
+    return {
+      ...task,
+      prayerConfig: prayerConfig ? {
+        prayerType: prayerConfig.prayerType,
+        prayerRule: prayerConfig.prayerRule,
+        prayerTaskKind: prayerConfig.prayerTaskKind,
+        jesusPrayerMode: prayerConfig.jesusPrayerMode,
+        jesusPrayerDuration: prayerConfig.jesusPrayerDuration,
+        jesusPrayerCount: prayerConfig.jesusPrayerCount,
+      } : task.prayerConfig,
+      scriptureConfig: scriptureConfig ? {
+        readingType: scriptureConfig.readingType,
+        startBookId: scriptureConfig.startBookId,
+        startChapter: scriptureConfig.startChapter,
+        chaptersPerDay: scriptureConfig.chaptersPerDay,
+        totalUnitsRead: scriptureConfig.totalUnitsRead,
+      } : task.scriptureConfig,
+    };
+  };
+
   const openEditTask = (task: RoutineTask) => {
-    setEditorTask(task);
-    void (async () => {
-      const [prayerConfig, scriptureConfig] = await Promise.all([
-        task.type === 'prayer'
-          ? getPrayerTaskConfig(task.id).catch(() => undefined)
-          : Promise.resolve(undefined),
-        isScriptureRoutineTask(task)
-          ? getScriptureTaskConfig(task.id).catch(() => undefined)
-          : Promise.resolve(undefined),
-      ]);
-      setEditorTask({
-        ...task,
-        prayerConfig: prayerConfig ? {
-          prayerType: prayerConfig.prayerType,
-          prayerRule: prayerConfig.prayerRule,
-          prayerTaskKind: prayerConfig.prayerTaskKind,
-          jesusPrayerMode: prayerConfig.jesusPrayerMode,
-          jesusPrayerDuration: prayerConfig.jesusPrayerDuration,
-          jesusPrayerCount: prayerConfig.jesusPrayerCount,
-        } : task.prayerConfig,
-        scriptureConfig: scriptureConfig ? {
-          readingType: scriptureConfig.readingType,
-          startBookId: scriptureConfig.startBookId,
-          startChapter: scriptureConfig.startChapter,
-          chaptersPerDay: scriptureConfig.chaptersPerDay,
-          totalUnitsRead: scriptureConfig.totalUnitsRead,
-        } : task.scriptureConfig,
+    const openHydratedEditor = (hydratedTask: RoutineTask) => {
+      setEditorTask(hydratedTask);
+      setEditorDefaultLevel(undefined);
+      setEditorDefaultType(undefined);
+      setEditorVisible(true);
+    };
+
+    // During the tour, finish the lightweight SQL reads before mounting the
+    // heavy form. Otherwise the form re-initializes halfway through the sheet
+    // entrance and the entire surface appears to jump.
+    if (isGuided && guidePhase === 'edit') {
+      setPresentation(null);
+      void hydrateEditorTask(task).then(hydratedTask => {
+        openHydratedEditor(hydratedTask);
+        patchSession({ phase: 'editSave' });
       });
-    })();
+      return;
+    }
+
+    setEditorTask(task);
+    void hydrateEditorTask(task).then(setEditorTask);
     setEditorDefaultLevel(undefined);
     setEditorDefaultType(undefined);
     setEditorVisible(true);
   };
-
   const openChallengeEdit = (challenge: ChallengeRecord) => {
     setChallengeEditorItem(challenge);
     setChallengeExpandedId(challenge.id);
@@ -1413,6 +1441,16 @@ export default function MyRoutineView({
   };
 
   const handleTaskSave = async (task: RoutineTask) => {
+    const isGuidedEditLesson = isGuided && guidePhase === 'editSave';
+
+    if (isGuidedEditLesson) {
+      // Start the UI-thread exit immediately. SQL persistence still runs below,
+      // but it no longer holds the sheet visibly in place after Continue.
+      setPresentation(null);
+      setEditorVisible(false);
+      scheduleGuide(() => patchSession({ phase: 'tourHabits' }), 280);
+    }
+
     let savedTask: TaskDefinition | undefined;
     if (task.source === 'habit') {
       await saveHabitBackedTask(task);
@@ -1420,16 +1458,15 @@ export default function MyRoutineView({
       savedTask = await createOrUpdateTask(routineTaskToDraft(task));
     }
     await refreshHabits();
-    setEditorVisible(false);
+    if (!isGuidedEditLesson) setEditorVisible(false);
     setEditorTask(null);
     setEditorDefaultLevel(undefined);
     setEditorDefaultType(undefined);
     if (!isGuided) return;
 
-    // Tour lesson: the user closed the editor with the top-right check —
-    // the walkthrough moves on to the sections below.
+    // This transition was already scheduled before persistence so the save
+    // latency cannot leak back into the onboarding motion.
     if (guidePhase === 'editSave') {
-      patchSession({ phase: 'tourHabits' });
       return;
     }
 
@@ -1452,15 +1489,6 @@ export default function MyRoutineView({
         entityId: savedTask?.id,
       });
       return;
-    }
-    if (guidePhase === 'editSave') {
-      notifyGuideEvent({
-        type: 'completed',
-        step: 'buildMyRoutine',
-        phase: 'tourHabits',
-        entityKey: 'editedRoutineTask',
-        entityId: savedTask?.id,
-      });
     }
   };
 
@@ -1511,8 +1539,10 @@ export default function MyRoutineView({
           ref={routineScrollRef}
           contentContainerStyle={s.content}
           showsVerticalScrollIndicator={false}
-          onScroll={isGuided ? event => { guideScrollY.current = event.nativeEvent.contentOffset.y; } : undefined}
+          onScroll={isGuided ? handleGuideScroll : undefined}
+          onMomentumScrollEnd={isGuided ? finishGuideScroll : undefined}
           scrollEventThrottle={isGuided ? 16 : undefined}
+          scrollEnabled={!isGuided || guidePhase !== 'tourWeek'}
         >
         <View>
           <View style={s.sectionHead}>
@@ -1520,6 +1550,7 @@ export default function MyRoutineView({
             <Text style={s.sectionKicker}>Weekly Template</Text>
           </View>
 
+          <View {...weekPlanTarget}>
           <View {...dayTabsTarget}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.dayTabsRow}>
               {DAY_TABS.map((day, index) => {
@@ -1527,7 +1558,7 @@ export default function MyRoutineView({
                 return (
                   <TouchableOpacity
                     key={day.label}
-                    onPress={() => setSelectedDayIndex(index)}
+                    onPress={() => selectDay(index)}
                     activeOpacity={0.84}
                     style={s.dayTabPress}
                   >
@@ -1555,7 +1586,11 @@ export default function MyRoutineView({
             </ScrollView>
           </View>
 
-          <View {...addRowTarget} style={s.addRow}>
+          <View
+            {...addRowTarget}
+            pointerEvents={isGuided && guidePhase === 'tourWeek' ? 'none' : 'auto'}
+            style={s.addRow}
+          >
             <TouchableOpacity {...spiritualAddTarget} onPress={openAddSpiritual} activeOpacity={0.84} style={s.addBtnPress}>
               <LinearGradient
                 colors={['#FFFBEB', '#FFF4D5']}
@@ -1586,7 +1621,10 @@ export default function MyRoutineView({
 
           <View style={s.addRowDivider} />
 
-          <View style={s.taskStack}>
+          <View
+            pointerEvents={isGuided && guidePhase === 'tourWeek' ? 'none' : 'auto'}
+            style={s.taskStack}
+          >
             {tasksForDay.map((task, index) => {
               const time = getTaskTimeForDay(task, selectedDay.jsDay);
               const prev = index > 0 ? tasksForDay[index - 1] : null;
@@ -1606,7 +1644,6 @@ export default function MyRoutineView({
                     {...(isGuided && (task.id === session?.createdIds.routineTask || (!session?.createdIds.routineTask && index === 0)) ? taskCardTarget : {})}
                     onPress={() => {
                       openTask(task);
-                      if (isGuided && guidePhase === 'edit') patchSession({ phase: 'editSave' });
                     }}
                     activeOpacity={0.86}
                     style={s.taskCardWrap}
@@ -1622,6 +1659,7 @@ export default function MyRoutineView({
                 <Text style={s.emptyTitle}>No activities for {selectedDay.label}</Text>
               </View>
             )}
+          </View>
           </View>
         </View>
 
@@ -1654,34 +1692,53 @@ export default function MyRoutineView({
               <Text style={s.sectionKicker}>Challenges</Text>
             </View>
             <TouchableOpacity onPress={() => router.push('/challenges')} activeOpacity={0.84} style={s.inlineTextBtn}>
-              <Text style={s.inlineTextBtnLabel}>Active ({activeChallenges.length})</Text>
+              <Text style={s.inlineTextBtnLabel}>View all</Text>
               <ChevronRight s={14} c="#A8A29E" />
             </TouchableOpacity>
           </View>
 
-          <View style={s.challengeList}>
-            {activeChallenges.map(challenge => (
-              <ChallengeSummaryCard
-                key={challenge.id}
-                challenge={challenge}
-                onPress={() => openChallengeEdit(challenge)}
-              />
-            ))}
-
-            <TouchableOpacity onPress={() => router.push('/challenges')} activeOpacity={0.84} style={s.viewAllChallenges}>
-              <View style={s.viewAllChallengesIconWrap}>
-                <Trophy s={15} c={C.gold} />
-              </View>
-              <View style={s.viewAllChallengesCopy}>
-                <Text style={s.viewAllChallengesText}>View All Challenges</Text>
-                <Text style={s.viewAllChallengesHint}>Browse the challenge library</Text>
-              </View>
-              <ChevronRight s={16} c={C.gold} w={2.2} />
-            </TouchableOpacity>
-          </View>
+          <ChallengePanel
+            context="scripture"
+            activeItems={activeChallenges}
+            pausedItems={pausedChallenges}
+            availableItems={[]}
+            selectedCatalog={null}
+            selectedPaceId={null}
+            challengeSchedule={challengeSchedule}
+            scriptureDailyAmount={challengeScriptureDailyAmount}
+            challengePrayerRule={challengePrayerRule}
+            challengeJesusMode={challengeJesusMode}
+            challengeJesusDuration={challengeJesusDuration}
+            challengeJesusCount={challengeJesusCount}
+            churchSchedule={churchSchedule}
+            expandedChallengeId={null}
+            recentlyStartedTemplateId={null}
+            onOpenSetup={() => {}}
+            onSelectedPaceIdChange={() => {}}
+            onChallengeScheduleChange={setChallengeSchedule}
+            onScriptureDailyAmountChange={setChallengeScriptureDailyAmount}
+            onChallengePrayerRuleChange={setChallengePrayerRule}
+            onChallengeJesusModeChange={setChallengeJesusMode}
+            onChallengeJesusDurationChange={setChallengeJesusDuration}
+            onChallengeJesusCountChange={setChallengeJesusCount}
+            onChurchScheduleChange={setChurchSchedule}
+            onStartChallenge={() => {}}
+            onChallengePress={openChallengeEdit}
+            onExpandedChallengeChange={() => {}}
+            onPauseChallenge={pauseChallenge}
+            onResumeChallenge={resumeChallenge}
+            onEndChallenge={endChallenge}
+            onUpdateChallenge={updateChallenge}
+          />
         </View>
 
+        <SectionDivider icon={<Shield s={17} c="#D1D5DB" />} />
+
         <View {...blockingPlanTarget}>
+          <View style={s.sectionHead}>
+            <Shield s={16} c="#16A34A" />
+            <Text style={[s.sectionKicker, { color: '#16A34A' }]}>Protection</Text>
+          </View>
           <RoutinePhonePlanCard dayIndex={selectedDayIndex} />
         </View>
 
@@ -1823,7 +1880,8 @@ export default function MyRoutineView({
           // If the user leaves the editor with the X during the tour lesson,
           // the walkthrough still moves on instead of stranding them.
           if (isGuided && guidePhase === 'editSave') {
-            patchSession({ phase: 'tourHabits' });
+            setPresentation(null);
+            scheduleGuide(() => patchSession({ phase: 'tourHabits' }), 280);
           }
         }}
         onSave={handleTaskSave}
@@ -2228,11 +2286,12 @@ export function RoutineTaskEditorSheet({
   const [showAllRoutineIcons, setShowAllRoutineIcons] = useState(false);
   const [routineIconGridWidth, setRoutineIconGridWidth] = useState(0);
   const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
-  const { session, patchSession } = useGuidedSetup();
+  const { session, patchSession, setPresentation } = useGuidedSetup();
   const isGuided = guided && session?.active === true && session.activeStep === 'buildMyRoutine';
   const guidePhase = isGuided ? session.phase : '';
   const titleTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.title, isGuided);
   const saveTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.save, isGuided);
+  const guidedSaveRef = useRef<() => void>(() => {});
   const formTask = task ?? initialTask;
 
   const advanceTitleGuide = useCallback(() => {
@@ -2248,6 +2307,7 @@ export function RoutineTaskEditorSheet({
 
   useEffect(() => {
     if (!isGuided || !visible) return;
+    if (guidePhase === 'editSave') return;
     // Three passes: the sheet is still sliding at ~200ms, settled by ~520ms,
     // and the late pass catches keyboard-driven reflows. Without the settled
     // passes the editSave spotlight can miss the top-right check entirely.
@@ -2448,7 +2508,34 @@ export function RoutineTaskEditorSheet({
     });
   };
 
-  if (!visible) return null;
+  guidedSaveRef.current = save;
+
+  useEffect(() => {
+    if (!isGuided || !visible || guidePhase !== 'editSave') return;
+    // The sheet is fully settled before its light, one-line guide appears.
+    // No spotlight or scrim is used here, so the entire form stays scrollable.
+    const timer = setTimeout(() => {
+      setPresentation({
+        key: 'my-routine-edit-save',
+        placement: 'center',
+        hideDim: true,
+        coachTopOffset: 12,
+        ctaBottomOffset: 8,
+        message: 'Now you can edit this task.',
+        highlights: ['edit this task'],
+        ctaLabel: 'Continue',
+        onCta: () => {
+          setPresentation(null);
+          guidedSaveRef.current();
+        },
+      });
+    }, 380);
+    return () => clearTimeout(timer);
+  }, [guidePhase, isGuided, setPresentation, visible]);
+
+  // Preserve the editor's existing instant unmount everywhere else; only the
+  // onboarding edit lesson keeps it mounted long enough to animate its exit.
+  if (!visible && !(isGuided && guidePhase === 'editSave')) return null;
 
   const deleteConfirmOverlay = (
     <>
@@ -2484,6 +2571,8 @@ export function RoutineTaskEditorSheet({
       onClose={onClose}
       sheetStyle={s.sheetShell}
       keyboardAware
+      durationIn={isGuided && guidePhase === 'editSave' ? 360 : 280}
+      durationOut={isGuided && guidePhase === 'editSave' ? 240 : 200}
       overlayChildren={deleteConfirmOverlay}
     >
           <View style={[s.sheetHandle, editorAccent && { backgroundColor: hexToRgba(editorAccent, 0.28) }]} />
@@ -2497,12 +2586,19 @@ export function RoutineTaskEditorSheet({
               <X s={22} c={editorAccent ?? '#9CA3AF'} />
             </TouchableOpacity>
             <Text style={s.editorHeaderTitle}>{task ? 'Edit Activity' : 'New Activity'}</Text>
-            <TouchableOpacity {...saveTarget} onPress={save} activeOpacity={0.84} style={[s.saveCircle, { backgroundColor: accent, opacity: title.trim() ? 1 : 0.35 }]}>
-              <CheckSmall s={18} c="#FFFFFF" />
-            </TouchableOpacity>
+            {isGuided && guidePhase === 'editSave' ? (
+              <View style={s.sheetHeaderSpacer} />
+            ) : (
+              <TouchableOpacity {...saveTarget} onPress={save} activeOpacity={0.84} style={[s.saveCircle, { backgroundColor: accent, opacity: title.trim() ? 1 : 0.35 }]}>
+                <CheckSmall s={18} c="#FFFFFF" />
+              </TouchableOpacity>
+            )}
           </View>
 
-          <ScrollView contentContainerStyle={s.editorContent} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            contentContainerStyle={[s.editorContent, isGuided && guidePhase === 'editSave' && s.editorContentGuided]}
+            showsVerticalScrollIndicator={false}
+          >
             <View style={[s.editorBlock, themedBlockStyle]}>
               <Text style={[s.editorBlockLabel, { color: accent }]}>Activity Name</Text>
               <TextInput
@@ -2895,66 +2991,6 @@ const s = StyleSheet.create({
   inlineActionText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.4, color: '#6B7280', textTransform: 'uppercase' },
   inlineTextBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   inlineTextBtnLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.2, color: '#A8A29E', textTransform: 'uppercase' },
-  challengeList: { gap: 6, paddingTop: 0 },
-  challengeCard: {
-    borderRadius: 28,
-    borderWidth: 1,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
-    borderColor: 'rgba(197,160,89,0.35)',
-    borderLeftColor: C.gold,
-    borderRightColor: C.gold,
-    backgroundColor: '#FFFDF7',
-    padding: 16,
-  },
-  challengeTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  challengeBadge: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.6, color: '#7C3AED', textTransform: 'uppercase', backgroundColor: '#F3E8FF', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 8, paddingVertical: 5 },
-  challengeStreak: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FFF7ED', borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 },
-  challengeStreakText: { fontFamily: F.sansBold, fontSize: 10, color: '#F97316' },
-  challengeTitle: { fontFamily: F.serifMedium, fontSize: 17, color: '#111827' },
-  challengeMeta: { marginTop: 5, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.1, color: '#A08A63' },
-  challengeProgressTrack: { marginTop: 12, height: 6, borderRadius: 999, backgroundColor: 'rgba(197,160,89,0.15)', overflow: 'hidden' },
-  challengeProgressFill: { height: '100%', borderRadius: 999, backgroundColor: C.gold },
-  viewAllChallenges: {
-    minHeight: 64,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.28)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFBF0',
-    shadowColor: C.gold,
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-    elevation: 2,
-  },
-  viewAllChallengesIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(197,160,89,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  viewAllChallengesCopy: { flex: 1, minWidth: 0 },
-  viewAllChallengesText: {
-    fontFamily: F.sansBold,
-    fontSize: 11,
-    letterSpacing: 1.8,
-    color: C.gold,
-    textTransform: 'uppercase',
-  },
-  viewAllChallengesHint: {
-    marginTop: 3,
-    fontFamily: F.serif,
-    fontSize: 12.5,
-    lineHeight: 16,
-    color: '#9C8F73',
-  },
   sheetShell: { maxHeight: '88%', borderTopLeftRadius: 32, borderTopRightRadius: 32, backgroundColor: '#FAFAFA', paddingBottom: 24 },
   sheetHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginTop: 12, marginBottom: 8 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
@@ -2971,6 +3007,7 @@ const s = StyleSheet.create({
   editorHeaderTitle: { fontFamily: F.serifMedium, fontSize: 20, color: '#111827' },
   saveCircle: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   editorContent: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 20, gap: 16 },
+  editorContentGuided: { paddingBottom: 118 },
   editorBlock: { borderRadius: 24, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F2F1EC', padding: 18 },
   editorBlockLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 12 },
   mutedLabel: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.6, color: '#A8A29E', textTransform: 'uppercase', marginBottom: 12 },

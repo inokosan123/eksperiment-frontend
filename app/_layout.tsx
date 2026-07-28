@@ -20,6 +20,7 @@ import { SettingsProvider } from '@/components/settings/SettingsContext';
 import NotificationBridge from '@/components/notifications/NotificationBridge';
 import { GuidedSetupProvider } from '@/components/onboarding/guided/GuidedSetupContext';
 import FocusNativeCoordinator from '@/components/focus-watch/FocusNativeCoordinator';
+import { NativeRichTextKeyboardBoundary } from '@/components/shared/rich-text/native-rich-text-keyboard';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -64,6 +65,7 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      <NativeRichTextKeyboardBoundary>
       <SafeAreaProvider>
         <SQLiteProvider
           databaseName="anasta_bible_v1.db"
@@ -90,6 +92,7 @@ export default function RootLayout() {
                                   <Stack.Screen name="journal"         options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="journal-daily"   options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="journal-daily-guided" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                  <Stack.Screen name="rich-text-lab" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="journal-morning" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="journal-free"    options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="bucket-list"     options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
@@ -138,6 +141,7 @@ export default function RootLayout() {
           </ScriptureProvider>
         </SQLiteProvider>
       </SafeAreaProvider>
+      </NativeRichTextKeyboardBoundary>
     </GestureHandlerRootView>
   );
 }

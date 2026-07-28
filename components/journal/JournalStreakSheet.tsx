@@ -17,7 +17,6 @@ import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
 import Reanimated, {
   cancelAnimation,
   Easing,
-  FadeIn,
   FadeInDown,
   useAnimatedProps,
   useAnimatedStyle,
@@ -31,6 +30,7 @@ import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { ChevronLeft, ChevronRight, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { F } from '@/constants/tokens';
+import { buildJournalTrophyCalendarModel } from '@/components/shared/trophyCalendarAnalytics';
 
 // The journal's own streak hall — deliberately NOT the Focus trophy sheet.
 // Focus is a bright gold morning where trophies are struck and rest days
@@ -353,14 +353,28 @@ export default function JournalStreakSheet({
   const todayStr = dateKeyOf(today);
   const todayKey = monthKey(today);
 
-  const completedSet = useMemo(() => new Set(completedDates), [completedDates]);
-  const booksEarned = completedSet.size;
+  const calendarModel = useMemo(
+    () => buildJournalTrophyCalendarModel(completedDates, entryDates, new Date()),
+    // The date key makes an already-mounted Journal screen roll over cleanly
+    // when its parent next renders after midnight.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [completedDates, entryDates, todayStr],
+  );
+  const completedSet = useMemo(
+    () => new Set(
+      Object.values(calendarModel.days)
+        .filter(day => day.status === 'kept')
+        .map(day => day.date),
+    ),
+    [calendarModel.days],
+  );
+  const booksEarned = calendarModel.trophies;
 
   // The record opens on the first day you ever touched the journal.
   const firstTracked = useMemo(() => {
-    const all = [...completedDates, ...entryDates].filter(Boolean).sort();
-    return all.length > 0 ? all[0] : todayStr;
-  }, [completedDates, entryDates, todayStr]);
+    const dates = Object.keys(calendarModel.days).sort();
+    return dates[0] ?? todayStr;
+  }, [calendarModel.days, todayStr]);
 
   const firstRecordKey = useMemo(() => {
     const [year, month] = firstTracked.split('-').map(Number);
@@ -529,7 +543,10 @@ export default function JournalStreakSheet({
         </TouchableOpacity>
       </Reanimated.View>
 
-      <Reanimated.View entering={enter(140)} style={s.weekHeader}>
+      {/* Week coordinates and day cells stay fully visible while the sheet
+          itself animates. Nested entering animations inside a native Modal
+          could otherwise leave this essential content transparent. */}
+      <View style={s.weekHeader}>
         {DAY_LABELS.map((label, index) => (
           <Text
             key={label}
@@ -538,44 +555,46 @@ export default function JournalStreakSheet({
             {label}
           </Text>
         ))}
-      </Reanimated.View>
+      </View>
 
-      {/* Reveal the fully prepared month as one surface so switching months
-          never exposes per-day drawing. Written days still share a chain. */}
-      <Reanimated.View
-        key={shownKey}
-        entering={FadeIn.duration(140)}
-        style={s.grid}
-      >
-        {cells.map((entry, index) => {
-          if (entry.cell === 'blank') return <View key={index} style={s.cell} />;
-          return (
-            <View key={index} style={s.cell}>
-              {entry.linkLeft && (
-                <View style={[s.chain, s.chainLeft]} />
-              )}
-              {entry.linkRight && (
-                <View style={[s.chain, s.chainRight]} />
-              )}
-              <View style={s.cellInner}>
-                <View style={s.markWrap}>
-                  <DayMark cell={entry.cell} />
+      <View key={shownKey} style={s.grid}>
+        {Array.from({ length: Math.ceil(cells.length / 7) }, (_, rowIndex) => (
+          <View key={`week-${rowIndex}`} style={s.calendarWeekRow}>
+            {Array.from({ length: 7 }, (_, columnIndex) => {
+              const index = rowIndex * 7 + columnIndex;
+              const entry = cells[index];
+              if (!entry || entry.cell === 'blank') {
+                return <View key={`day-${columnIndex}`} style={s.cell} />;
+              }
+              return (
+                <View key={`day-${columnIndex}`} style={s.cell}>
+                  {entry.linkLeft && (
+                    <View style={[s.chain, s.chainLeft]} />
+                  )}
+                  {entry.linkRight && (
+                    <View style={[s.chain, s.chainRight]} />
+                  )}
+                  <View style={s.cellInner}>
+                    <View style={s.markWrap}>
+                      <DayMark cell={entry.cell} />
+                    </View>
+                    <Text
+                      style={[
+                        s.cellDay,
+                        entry.cell === 'earned' && s.cellDayEarned,
+                        entry.cell === 'today' && s.cellDayToday,
+                      ]}
+                      allowFontScaling={false}
+                    >
+                      {entry.day}
+                    </Text>
+                  </View>
                 </View>
-                <Text
-                  style={[
-                    s.cellDay,
-                    entry.cell === 'earned' && s.cellDayEarned,
-                    entry.cell === 'today' && s.cellDayToday,
-                  ]}
-                  allowFontScaling={false}
-                >
-                  {entry.day}
-                </Text>
-              </View>
-            </View>
-          );
-        })}
-      </Reanimated.View>
+              );
+            })}
+          </View>
+        ))}
+      </View>
 
       <Reanimated.View entering={enter(420)} style={s.legend}>
         <View style={s.legendItem}>
@@ -760,9 +779,8 @@ const s = StyleSheet.create({
   /* Week header */
   weekHeader: { marginTop: 10, width: '100%', flexDirection: 'row' },
   weekLetter: {
-    width: `${100 / 7}%`,
-    flexGrow: 0,
-    flexShrink: 0,
+    flex: 1,
+    minWidth: 0,
     textAlign: 'center',
     fontFamily: F.sansBold,
     fontSize: 9.5,
@@ -773,8 +791,9 @@ const s = StyleSheet.create({
   weekLetterToday: { color: EYEBROW },
 
   /* Grid */
-  grid: { marginTop: 5, flexDirection: 'row', flexWrap: 'wrap' },
-  cell: { width: `${100 / 7}%`, position: 'relative', alignItems: 'center', paddingVertical: 2 },
+  grid: { marginTop: 5 },
+  calendarWeekRow: { width: '100%', flexDirection: 'row' },
+  cell: { flex: 1, minWidth: 0, position: 'relative', alignItems: 'center', paddingVertical: 2 },
   cellInner: { alignItems: 'center' },
   markWrap: { height: 34, width: 34, alignItems: 'center', justifyContent: 'center' },
   // The chain of light between written days.

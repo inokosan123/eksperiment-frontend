@@ -11,15 +11,16 @@ export default function JournalStreakCelebration({
   onClose: () => void;
 }) {
   const subtitle = currentStreak === 1
-    ? 'Your journal streak has begun.'
-    : 'Your journal streak is now ' + currentStreak + ' days.';
+    ? 'Your journal streak has begun!'
+    : 'Your journal streak is now ' + currentStreak + ' days!';
 
   return (
     <CelebrationOverlayBase
       onClose={onClose}
       title='Congratulations!'
-      subtitleStrong='Today is in the book.'
+      subtitleStrong=''
       subtitle={subtitle}
+      motionProfile='light'
       visual={(
         <View style={styles.bookStage}>
           <FocusLottie

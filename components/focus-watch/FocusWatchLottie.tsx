@@ -10,6 +10,7 @@ export default function FocusWatchLottie(_props: {
   mode?: 'loop' | 'periodic' | 'once';
   restMs?: number;
   speed?: number;
+  playing?: boolean;
 }) {
   return null;
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 
 import {
@@ -32,6 +32,9 @@ type SmoothBottomSheetProps = {
   durationOut?: number;
   statusBarTranslucent?: boolean;
   keyboardAware?: boolean;
+  onEntered?: () => void;
+  onExited?: () => void;
+  exitWatchdogMs?: number;
   // When true the sheet renders inline (no native Modal). Use this when
   // nesting one SmoothBottomSheet inside another's `overlayChildren` —
   // iOS UIKit refuses to present a second Modal while another is already
@@ -52,12 +55,30 @@ export default function SmoothBottomSheet({
   durationOut = 200,
   statusBarTranslucent = true,
   keyboardAware = false,
+  onEntered,
+  onExited,
+  exitWatchdogMs,
   embedded = false,
 }: SmoothBottomSheetProps) {
   const { height } = useWindowDimensions();
   const progress = useSharedValue(0);
   const [mounted, setMounted] = useState(visible);
   const [kbHeight, setKbHeight] = useState(0);
+  const onEnteredRef = useRef(onEntered);
+  const onExitedRef = useRef(onExited);
+  const exitCompletedRef = useRef(false);
+  onEnteredRef.current = onEntered;
+  onExitedRef.current = onExited;
+
+  const completeEnter = useCallback(() => {
+    onEnteredRef.current?.();
+  }, []);
+  const completeExit = useCallback(() => {
+    if (exitCompletedRef.current) return;
+    exitCompletedRef.current = true;
+    setMounted(false);
+    onExitedRef.current?.();
+  }, []);
 
   useEffect(() => {
     if (!keyboardAware) return;
@@ -74,12 +95,15 @@ export default function SmoothBottomSheet({
 
   useEffect(() => {
     if (visible) {
+      exitCompletedRef.current = false;
       setMounted(true);
       progress.value = 0;
       const frame = requestAnimationFrame(() => {
         progress.value = withTiming(1, {
           duration: durationIn,
           easing: Easing.out(Easing.cubic),
+        }, finished => {
+          if (finished) runOnJS(completeEnter)();
         });
       });
       return () => cancelAnimationFrame(frame);
@@ -87,15 +111,21 @@ export default function SmoothBottomSheet({
 
     if (!mounted) return undefined;
 
+    exitCompletedRef.current = false;
     progress.value = withTiming(0, {
       duration: durationOut,
       easing: Easing.in(Easing.cubic),
     }, finished => {
-      if (finished) runOnJS(setMounted)(false);
+      if (finished) runOnJS(completeExit)();
     });
 
-    return undefined;
-  }, [durationIn, durationOut, mounted, progress, visible]);
+    if (!exitWatchdogMs) return undefined;
+    const exitTimer = setTimeout(
+      completeExit,
+      Math.max(exitWatchdogMs, durationOut + 120),
+    );
+    return () => clearTimeout(exitTimer);
+  }, [completeEnter, completeExit, durationIn, durationOut, exitWatchdogMs, mounted, progress, visible]);
 
   const startOffset = Math.max(430, height * 0.72);
   const scrimStyle = useAnimatedStyle(() => ({

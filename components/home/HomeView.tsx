@@ -38,6 +38,7 @@ import {
 import DateStrip from './DateStrip';
 import WeeklyRhythm from './WeeklyRhythm';
 import OrganizeSection from './ExploreSection';
+import CardLabSection from './card-lab/CardLabSection';
 import { C, F } from '@/constants/tokens';
 import { AnyTaskCard, CompletedTaskCheck, TaskData, TaskState } from '@/components/shared/TaskCards';
 import ConfirmModal from '@/components/shared/ConfirmModal';
@@ -70,6 +71,7 @@ import type { PrayerTaskConfig, TaskDefinition, TaskDraft } from '@/components/t
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import ChallengeCompletionHomeModal from '@/components/challenges/ChallengeCompletionHomeModal';
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
+import { useGuidedScrollTransition } from '@/components/onboarding/guided/use-guided-scroll-transition';
 
 
 type HomeCard = {
@@ -1359,56 +1361,35 @@ export default function HomeView({
   // for the opening, top edge for the task lessons, center for the closing
   // sections), waits for the scroll to settle, re-measures the target, and
   // only then presents — so the spotlight always lands on fresh coordinates.
-  const guideScrollY = useRef(0);
-  const guideTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-
-  const clearGuideTimers = useCallback(() => {
-    guideTimersRef.current.forEach(clearTimeout);
-    guideTimersRef.current = [];
-  }, []);
+  const {
+    clear: clearGuideTimers,
+    finish: finishGuideScroll,
+    onScroll: handleGuideScroll,
+    schedule: scheduleGuide,
+    scrollYRef: guideScrollY,
+    stageTarget: stageGuideTarget,
+  } = useGuidedScrollTransition({
+    scrollRef: homeScrollRef,
+    screenHeight: guideScreenHeight,
+    setPresentation,
+  });
 
   const stageGuidePhase = useCallback((
     binding: ReturnType<typeof useGuideTarget> | null,
     position: 'origin' | 'topEdge' | 'lesson' | 'middle',
     present: () => void,
   ) => {
-    const node = binding?.ref.current;
-    if (!binding || !node?.measureInWindow) {
-      guideTimersRef.current.push(setTimeout(present, 40));
-      return;
-    }
-    if (position === 'origin') {
-      if (guideScrollY.current < 4) {
-        binding.measure();
-        guideTimersRef.current.push(setTimeout(present, 56));
-        return;
-      }
-      homeScrollRef.current?.scrollTo({ y: 0, animated: true });
-      guideTimersRef.current.push(setTimeout(() => {
-        binding.measure();
-        guideTimersRef.current.push(setTimeout(present, 48));
-      }, 330));
-      return;
-    }
-    node.measureInWindow((_mx: number, my: number, _mw: number, mh: number) => {
-      const desired = position === 'topEdge'
-        ? insets.top + 62
-        : position === 'lesson'
-          ? insets.top + 124
-          : Math.max(insets.top + 90, guideScreenHeight * 0.5 - mh / 2);
-      const delta = my - desired;
-      if (Math.abs(delta) < 14) {
-        binding.measure();
-        guideTimersRef.current.push(setTimeout(present, 56));
-        return;
-      }
-      homeScrollRef.current?.scrollTo({ y: Math.max(0, guideScrollY.current + delta), animated: true });
-      guideTimersRef.current.push(setTimeout(() => {
-        binding.measure();
-        guideTimersRef.current.push(setTimeout(present, 48));
-      }, 340));
-    });
-  }, [guideScreenHeight, insets.top]);
+    const targetPosition = position === 'origin'
+      ? 'origin' as const
+      : (targetHeight: number) => (
+        position === 'topEdge'
+          ? insets.top + 62
+          : position === 'lesson'
+            ? insets.top + 124
+            : Math.max(insets.top + 90, guideScreenHeight * 0.5 - targetHeight / 2)
+      );
+    stageGuideTarget(binding, targetPosition, present);
+  }, [guideScreenHeight, insets.top, stageGuideTarget]);
 
   useEffect(() => {
     if (!isGuided) return;
@@ -1434,19 +1415,19 @@ export default function HomeView({
       if (guideScrollY.current > 4) {
         homeScrollRef.current?.scrollTo({ y: 0, animated: true });
       }
-      guideTimersRef.current.push(setTimeout(() => {
+      scheduleGuide(() => {
         setPresentation({
           key: 'home-tour-welcome',
           placement: 'bottom',
           lightScrim: true,
           eyebrow: 'HOME TOUR',
           progress: progressFor('welcome'),
-          message: 'This is your Home. Everything you just built lives on this one screen.',
-          highlights: ['your Home'],
+          message: 'Welcome to your Home screen. Your day, goals, and priorities stay together here to keep you organized.',
+          highlights: ['Home screen', 'keep you organized'],
           ctaLabel: 'Look around',
           onCta: () => patchSession({ phase: hasBigEventTarget ? 'bigEvents' : 'tasks' }),
         });
-      }, 380));
+      }, 380);
       return;
     }
 
@@ -1460,8 +1441,8 @@ export default function HomeView({
           allowTargetInteraction: false,
           eyebrow: 'HOME TOUR',
           progress: progressFor('bigEvents'),
-          message: 'Big Events stand above the day, so what matters next stays in sight long before it arrives.',
-          highlights: ['above the day'],
+          message: 'Your Big Events stay at the top of Home, with a countdown showing exactly how many days remain — so nothing important catches you by surprise.',
+          highlights: ['Big Events', 'how many days remain'],
           ctaLabel: 'Continue',
           onCta: () => patchSession({ phase: 'tasks' }),
         });
@@ -1479,8 +1460,8 @@ export default function HomeView({
           allowTargetInteraction: false,
           eyebrow: 'HOME TOUR',
           progress: progressFor('tasks'),
-          message: 'These are today\'s tasks. Home carries only what belongs to this day.',
-          highlights: ['this day'],
+          message: 'Here are the tasks you planned for today.',
+          highlights: ['planned for today'],
           ctaLabel: 'Continue',
           onCta: () => patchSession({ phase: 'checkTask' }),
         });
@@ -1565,8 +1546,8 @@ export default function HomeView({
           allowTargetInteraction: true,
           eyebrow: 'HOME TOUR',
           progress: progressFor('analytics'),
-          message: 'Every task carries its pattern — progress, skipped days, consistency.',
-          highlights: ['pattern'],
+          message: 'Every task has its own analytics. See when you completed it, skipped it, or missed it — and how your consistency changes over time.',
+          highlights: ['its own analytics', 'completed it', 'skipped it', 'missed it'],
           action: guidedFirstCard ? 'Press and hold the task' : undefined,
           hint: guidedFirstCard ? 'long-press' : undefined,
           hintAnchor: 'right',
@@ -1595,8 +1576,8 @@ export default function HomeView({
           allowTargetInteraction: false,
           eyebrow: 'HOME TOUR',
           progress: progressFor('monthlyGoals'),
-          message: 'Your goals for the month rest here, keeping the bigger direction in view while the days pass.',
-          highlights: ['bigger direction'],
+          message: 'Here are your Monthly Goals. They keep what you want to achieve this month in sight.',
+          highlights: ['your Monthly Goals'],
           ctaLabel: 'Continue',
           onCta: () => patchSession({ phase: 'myRoutine' }),
         });
@@ -1630,11 +1611,13 @@ export default function HomeView({
     clearGuideTimers,
     firstTaskTarget,
     guidePhase,
+    guideScrollY,
     guidedFirstCard,
     isGuided,
     monthlyGoalsTarget,
     myRoutineTarget,
     patchSession,
+    scheduleGuide,
     setPresentation,
     stageGuidePhase,
     tasksTarget,
@@ -1654,7 +1637,8 @@ export default function HomeView({
           paddingBottom: 120,
         }}
         showsVerticalScrollIndicator={false}
-        onScroll={isGuided ? event => { guideScrollY.current = event.nativeEvent.contentOffset.y; } : undefined}
+        onScroll={isGuided ? handleGuideScroll : undefined}
+        onMomentumScrollEnd={isGuided ? finishGuideScroll : undefined}
         scrollEventThrottle={isGuided ? 16 : undefined}
       >
         <HomeHeader selectedDate={selectedDate} todayKey={todayKey} onSelectDate={selectDate} />
@@ -1878,6 +1862,9 @@ export default function HomeView({
 
         <WeeklyRhythm />
         <OrganizeSection />
+        {/* Design proving ground for the section cards — inert, isolated,
+            and removable by deleting this line. See card-lab/CardLabSection. */}
+        <CardLabSection />
       </ScrollView>
       <QuickTaskSheet
         visible={quickTaskSheetOpen}
@@ -1895,9 +1882,9 @@ export default function HomeView({
           if (isGuided && guidePhase === 'analyticsOpen') {
             // Let the sheet finish its dismissal before the tour scrolls on —
             // otherwise the background moves behind the closing modal.
-            guideTimersRef.current.push(setTimeout(() => {
+            scheduleGuide(() => {
               patchSession({ phase: 'monthlyGoals' });
-            }, 340));
+            }, 340);
           }
         }}
       />

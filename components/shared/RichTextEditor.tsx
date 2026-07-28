@@ -14,6 +14,7 @@ export type RichTextEditorRef = {
   orderedList: () => void;
   focus: () => void;
   blur: () => void;
+  setHTML: (html: string, notifyChange?: boolean) => void;
   getHTML: () => Promise<string>;
 };
 
@@ -249,6 +250,12 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
       }
       editor.blur();
       window.getSelection()?.removeAllRanges();
+      true;
+    `),
+    setHTML:     (html: string, notifyChange = true) => webViewRef.current?.injectJavaScript(`
+      editor.innerHTML = ${JSON.stringify(html)};
+      ${notifyChange ? "post({ type: 'change', html: editor.innerHTML });" : ''}
+      scheduleHeight();
       true;
     `),
     getHTML:     () => new Promise((resolve, reject) => {

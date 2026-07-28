@@ -9,10 +9,12 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
+  Easing,
   FadeInDown,
   FadeOut,
   interpolateColor,
@@ -46,6 +48,7 @@ import { BibleVerse, ScriptureAnnotation, useScripture } from './ScriptureContex
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
+import { useGuidedScrollTransition } from '@/components/onboarding/guided/use-guided-scroll-transition';
 
 
 const BG = '#FCFCFC';
@@ -54,21 +57,24 @@ const ROSE = '#BE123C';
 
 const SCRIPTURE_GUIDE_TARGETS = {
   verseSlogan: 'scripture.verse-slogan',
-  verseSeed: 'scripture.verse-seed',
-  versePractice: 'scripture.verse-practice',
+  verseHighlight: 'scripture.verse-highlight',
   annotateFab: 'scripture.annotate-fab',
   sheetColors: 'scripture.sheet-colors',
   sheetHighlight: 'scripture.sheet-highlight',
+  sheetComment: 'scripture.sheet-comment',
+  commentSave: 'scripture.comment-save',
   noteIcon: 'scripture.note-icon',
+  favoritesIcon: 'scripture.favorites-icon',
+  notesHeader: 'scripture.notes-header',
 } as const;
 
-// The onboarding Bible tour is anchored to fixed passages: the slogan verse
-// (Ephesians 5:14, pre-commented), the seeded highlight two verses below,
-// and the verse the user marks themselves.
+// The onboarding Bible tour begins on the app's real anchor passage. Target
+// measurement is staged after the reader scroll settles so the spotlight's
+// visual hole and native hit-test hole stay on the same verse.
 const GUIDE_VERSE_SLOGAN = 14;
-const GUIDE_VERSE_SEED = 16;
-const GUIDE_VERSE_PRACTICE = 17;
-const GUIDE_SELECTION_PHASES = new Set(['openTools', 'pickColor', 'doHighlight']);
+const GUIDE_VERSE_HIGHLIGHT = 15;
+const GUIDE_COMMENT_TEXT = 'No matter how many times you fall, or how hard you fall, rise again. Every fall is only a drop in the ocean of God’s mercy. Keep fighting. Rise—Anasta. Repentance is change.';
+const GUIDE_SELECTION_PHASES = new Set(['readerIntro', 'chooseComment', 'highlightIntro', 'pickColor', 'doHighlight']);
 
 type ScriptureGuideEvent = 'sceneDone' | 'openNotes';
 
@@ -86,6 +92,10 @@ type ScriptureReaderViewProps = {
   bottomDockHeight?: number;
   guided?: boolean;
   onGuidedAdvance?: (event: ScriptureGuideEvent) => void;
+  onGuidedHighlightSaved?: (color: HighlightColor) => void;
+  guidedAnnotations?: ScriptureAnnotation[];
+  onGuidedAnnotationsSaved?: (annotations: ScriptureAnnotation[]) => void;
+  onGuidedReady?: () => void;
 };
 
 export default function ScriptureReaderView({
@@ -102,6 +112,10 @@ export default function ScriptureReaderView({
   bottomDockHeight = 155,
   guided = false,
   onGuidedAdvance,
+  onGuidedHighlightSaved,
+  guidedAnnotations = [],
+  onGuidedAnnotationsSaved,
+  onGuidedReady,
 }: ScriptureReaderViewProps = {}) {
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -113,6 +127,7 @@ export default function ScriptureReaderView({
     bibleNotes?: 'collapsed' | 'expanded';
   }>();
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
   const { settings } = useAppSettings();
   const {
     ready, annotations, categories, getChapter, upsertAnnotation, upsertAnnotations, deleteAnnotation, updateCategory,
@@ -147,8 +162,16 @@ export default function ScriptureReaderView({
   const [viewingComment, setViewingComment] = useState<ScriptureAnnotation | null>(null);
   const [editCommentTarget, setEditCommentTarget] = useState<ScriptureAnnotation | null>(null);
   const [colorEditorOpen, setColorEditorOpen] = useState(false);
+  const [stagedVersePhase, setStagedVersePhase] = useState('');
+  const [stagedSheetPhase, setStagedSheetPhase] = useState('');
+  const [stagedCommentPhase, setStagedCommentPhase] = useState('');
+  const [settledSheetPhase, setSettledSheetPhase] = useState('');
+  const [commentSaving, setCommentSaving] = useState(false);
+  const [guidedInitialTargetLaidOut, setGuidedInitialTargetLaidOut] = useState(false);
   const [bibleNotesSheetMode, setBibleNotesSheetMode] = useState<'closed' | 'collapsed' | 'expanded'>(
-    params.bibleNotes === 'collapsed'
+    guided
+      ? 'closed'
+      : params.bibleNotes === 'collapsed'
       ? 'collapsed'
       : params.bibleNotes === 'expanded'
         ? 'expanded'
@@ -167,19 +190,58 @@ export default function ScriptureReaderView({
   guidePhaseRef.current = guidePhase;
   const isGuidedRef = useRef(isGuided);
   isGuidedRef.current = isGuided;
+  const guidedSelectionLockRef = useRef(false);
+  const guidedMutationLockRef = useRef(false);
+  const guidedNoteMotionLockRef = useRef(false);
+  const pendingSelectionExitRef = useRef<
+    'openComment' | 'readerIntro' | 'highlightIntro' | 'markMade' | null
+  >(null);
+  const pendingCommentExitPhaseRef = useRef<'readerIntro' | 'highlightIntro' | null>(null);
+  const commentCleanupPendingRef = useRef(false);
+  const guidedCommentPositionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const guidedReadyNotifiedRef = useRef(false);
   const sloganVerseTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.verseSlogan, isGuided);
-  const seedVerseTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.verseSeed, isGuided);
-  const practiceVerseTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.versePractice, isGuided);
+  const highlightVerseTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.verseHighlight, isGuided);
   const annotateFabTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.annotateFab, isGuided);
   const sheetColorsTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.sheetColors, isGuided);
   const sheetHighlightTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.sheetHighlight, isGuided);
+  const sheetCommentTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.sheetComment, isGuided);
+  const commentSaveTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.commentSave, isGuided);
   const noteIconTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.noteIcon, isGuided);
+  const favoritesIconTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.favoritesIcon, isGuided);
+  const notesHeaderTarget = useGuideTarget(SCRIPTURE_GUIDE_TARGETS.notesHeader, isGuided);
+  const {
+    clear: clearVerseGuideScroll,
+    finish: finishVerseGuideScroll,
+    onScroll: handleVerseGuideScroll,
+    schedule: scheduleVerseGuide,
+    scrollYRef: verseGuideScrollYRef,
+    stageTarget: stageVerseGuideTarget,
+  } = useGuidedScrollTransition({
+    scrollRef,
+    screenHeight,
+    setPresentation,
+    scrollFallbackMs: 540,
+    dismissOnAnyReposition: true,
+  });
+
+  const readerGuideTargetY = useCallback((targetHeight: number) => Math.max(
+    insets.top + 126,
+    screenHeight * 0.38 - targetHeight / 2,
+  ), [insets.top, screenHeight]);
 
   const currentBook = getBibleBook(bookId) ?? BIBLE_BOOKS[41];
+  const effectiveAnnotations = useMemo(() => {
+    if (isGuided) return guidedAnnotations;
+    return annotations;
+  }, [annotations, guidedAnnotations, isGuided]);
   const currentAnnotations = useMemo(
-    () => annotations.filter(annotation => annotation.bookId === bookId && annotation.chapter === chapter),
-    [annotations, bookId, chapter],
+    () => effectiveAnnotations.filter(annotation => annotation.bookId === bookId && annotation.chapter === chapter),
+    [bookId, chapter, effectiveAnnotations],
   );
+  // The walkthrough uses preview-only annotations, so an existing personal
+  // note on this verse never blocks the lesson and is never overwritten.
+  const guideSloganHasProtectedComment = false;
   const selectedVerseSet = useMemo(() => new Set(selectedVerseNumbers), [selectedVerseNumbers]);
   const selectedVerses = useMemo(
     () => verses.filter(verse => selectedVerseSet.has(verse.verse)),
@@ -195,13 +257,13 @@ export default function ScriptureReaderView({
     : 0;
   const initialScrollKey = targetInitialVerse > 0 ? `${bookId}:${chapter}:${targetInitialVerse}` : null;
   const hasCommentOverlap = useMemo(
-    () => selectedVerses.some(verse =>
+    () => !isGuided && selectedVerses.some(verse =>
       annotations.some(annotation =>
         annotation.kind === 'comment'
         && annotation.bookId === verse.bookId
         && annotation.chapter === verse.chapter
         && annotation.verse === verse.verse)),
-    [annotations, selectedVerses],
+    [annotations, isGuided, selectedVerses],
   );
 
   useEffect(() => {
@@ -237,13 +299,18 @@ export default function ScriptureReaderView({
 
   useEffect(() => {
     verseLayoutYRef.current = {};
+    setGuidedInitialTargetLaidOut(false);
     requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      scrollRef.current?.scrollTo({ y: 0, animated: !isGuided });
+      if (isGuided) verseGuideScrollYRef.current = 0;
     });
-  }, [bookId, chapter]);
+  }, [bookId, chapter, isGuided, verseGuideScrollYRef]);
 
   const scrollToInitialVerse = useCallback(() => {
-    if (!initialScrollKey || handledInitialScrollKeyRef.current === initialScrollKey || loading || chapterError) return;
+    // Guided positioning owns the scroll while the tour is active. Running
+    // the regular deep-link scroll as well caused two competing native
+    // animations when Reader opened, which looked like a hitch or jump.
+    if (isGuided || !initialScrollKey || handledInitialScrollKeyRef.current === initialScrollKey || loading || chapterError) return;
     if (!verses.some(verse => verse.verse === targetInitialVerse)) return;
 
     const targetY = verseLayoutYRef.current[targetInitialVerse];
@@ -256,7 +323,7 @@ export default function ScriptureReaderView({
         animated: true,
       });
     });
-  }, [chapterError, initialScrollKey, loading, targetInitialVerse, verses]);
+  }, [chapterError, initialScrollKey, isGuided, loading, targetInitialVerse, verses]);
 
   useEffect(() => {
     scrollToInitialVerse();
@@ -264,12 +331,199 @@ export default function ScriptureReaderView({
 
   const handleVerseLayout = useCallback((verseNumber: number, y: number) => {
     verseLayoutYRef.current[verseNumber] = y;
+    if (isGuided && verseNumber === targetInitialVerse) {
+      setGuidedInitialTargetLaidOut(true);
+    }
     if (verseNumber === targetInitialVerse) scrollToInitialVerse();
-  }, [scrollToInitialVerse, targetInitialVerse]);
+  }, [isGuided, scrollToInitialVerse, targetInitialVerse]);
+
+  // Incoming Reader scenes are positioned while still invisible. The parent
+  // does not begin its screen handoff until the requested verse has been
+  // jumped into place and freshly measured, so users never watch Chapter 5
+  // scroll from verse 1 to the lesson target.
+  useEffect(() => {
+    if (
+      !isGuided
+      || !onGuidedReady
+      || guidedReadyNotifiedRef.current
+      || loading
+      || chapterError
+      || !guidedInitialTargetLaidOut
+      || targetInitialVerse <= 0
+    ) return undefined;
+
+    const targetBinding = targetInitialVerse === GUIDE_VERSE_SLOGAN
+      ? sloganVerseTarget
+      : highlightVerseTarget;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const frames: number[] = [];
+    const scheduleFrames = (callback: () => void) => {
+      const first = requestAnimationFrame(() => {
+        const second = requestAnimationFrame(callback);
+        frames.push(second);
+      });
+      frames.push(first);
+    };
+
+    const positionAndConfirm = (attempt = 0) => {
+      targetBinding.measureNow(layout => {
+        if (cancelled || guidedReadyNotifiedRef.current) return;
+        if (!layout) {
+          if (attempt >= 48) {
+            guidedReadyNotifiedRef.current = true;
+            onGuidedReady();
+            return;
+          }
+          retryTimer = setTimeout(() => positionAndConfirm(attempt + 1), 40);
+          return;
+        }
+
+        const desiredY = readerGuideTargetY(layout.height);
+        const delta = layout.y - desiredY;
+        const visible = layout.y < screenHeight - 8
+          && layout.y + layout.height > insets.top + 70;
+        if (Math.abs(delta) > 3 || !visible) {
+          if (attempt >= 48) {
+            guidedReadyNotifiedRef.current = true;
+            onGuidedReady();
+            return;
+          }
+          const nextScrollY = Math.max(0, verseGuideScrollYRef.current + delta);
+          if (nextScrollY === 0 && verseGuideScrollYRef.current === 0 && visible) {
+            guidedReadyNotifiedRef.current = true;
+            onGuidedReady();
+            return;
+          }
+          scrollRef.current?.scrollTo({ y: nextScrollY, animated: false });
+          verseGuideScrollYRef.current = nextScrollY;
+          scheduleFrames(() => positionAndConfirm(attempt + 1));
+          return;
+        }
+
+        guidedReadyNotifiedRef.current = true;
+        onGuidedReady();
+      });
+    };
+
+    scheduleFrames(positionAndConfirm);
+    return () => {
+      cancelled = true;
+      frames.forEach(cancelAnimationFrame);
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [
+    chapterError,
+    guidedInitialTargetLaidOut,
+    highlightVerseTarget,
+    insets.top,
+    isGuided,
+    loading,
+    onGuidedReady,
+    readerGuideTargetY,
+    screenHeight,
+    sloganVerseTarget,
+    targetInitialVerse,
+    verseGuideScrollYRef,
+  ]);
+
+  const completeMissingVerseTarget = useCallback(() => {
+    const now = Date.now();
+    const sloganVerse = verses.find(verse => verse.verse === GUIDE_VERSE_SLOGAN);
+    const highlightVerse = verses.find(verse => verse.verse === GUIDE_VERSE_HIGHLIGHT);
+    const fallbackAnnotations: ScriptureAnnotation[] = [];
+    if (sloganVerse) {
+      fallbackAnnotations.push({
+        id: `bible-guide-comment-${bookId}-${chapter}-${GUIDE_VERSE_SLOGAN}`,
+        kind: 'comment',
+        color: selectedColor,
+        bookId,
+        chapter,
+        verse: GUIDE_VERSE_SLOGAN,
+        text: sloganVerse.text,
+        comment: GUIDE_COMMENT_TEXT,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    if (highlightVerse) {
+      fallbackAnnotations.push({
+        id: `bible-guide-highlight-${bookId}-${chapter}-${GUIDE_VERSE_HIGHLIGHT}`,
+        kind: 'highlight',
+        color: selectedColor,
+        bookId,
+        chapter,
+        verse: GUIDE_VERSE_HIGHLIGHT,
+        text: highlightVerse.text,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    if (fallbackAnnotations.length > 0) {
+      onGuidedAnnotationsSaved?.(fallbackAnnotations);
+    }
+    onGuidedHighlightSaved?.(selectedColor);
+    setPresentation(null);
+    onGuidedAdvance?.('sceneDone');
+  }, [bookId, chapter, onGuidedAdvance, onGuidedAnnotationsSaved, onGuidedHighlightSaved, selectedColor, setPresentation, verses]);
+
+  const presentMissingVerseTarget = useCallback(() => {
+    setPresentation({
+      key: `bible-verse-target-fallback-${guidePhaseRef.current}`,
+      coachGroupKey: 'bible-primary-coach',
+      placement: 'center',
+      lightScrim: true,
+      eyebrow: 'HOLY SCRIPTURE',
+      message: 'This passage is ready. Continue to see where your comments and highlights are kept.',
+      highlights: ['comments and highlights'],
+      ctaLabel: 'Continue to My Favorites',
+      onCta: completeMissingVerseTarget,
+    });
+  }, [completeMissingVerseTarget, setPresentation]);
+
+  // Match the Home guide choreography: move first, wait for native momentum
+  // to finish, re-measure in-window coordinates, and only then reveal the
+  // next spotlight. This replaces the old fixed 680ms guess.
+  useEffect(() => {
+    const needsVerseStage = guidePhase === 'readerIntro'
+      || guidePhase === 'highlightIntro'
+      || guidePhase === 'returnIntro';
+    if (!isGuided || !needsVerseStage || loading || verses.length === 0) {
+      setStagedVersePhase('');
+      return undefined;
+    }
+
+    setStagedVersePhase('');
+    if (guidePhase !== 'readerIntro') setPresentation(null);
+    const target = guidePhase === 'readerIntro' ? sloganVerseTarget : highlightVerseTarget;
+    scheduleVerseGuide(() => {
+      stageVerseGuideTarget(
+        target,
+        readerGuideTargetY,
+        () => setStagedVersePhase(guidePhase),
+        presentMissingVerseTarget,
+      );
+    }, 72);
+
+    return clearVerseGuideScroll;
+  }, [
+    clearVerseGuideScroll,
+    guidePhase,
+    highlightVerseTarget,
+    isGuided,
+    loading,
+    presentMissingVerseTarget,
+    readerGuideTargetY,
+    scheduleVerseGuide,
+    setPresentation,
+    sloganVerseTarget,
+    stageVerseGuideTarget,
+    verses.length,
+  ]);
 
   const handledEditCommentIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!ready || loading) return;
+    if (guided || isGuided || !ready || loading) return;
     const editId = params.editCommentId;
     if (!editId || handledEditCommentIdRef.current === editId) return;
     const target = annotations.find(annotation => annotation.id === editId && annotation.kind === 'comment');
@@ -278,9 +532,9 @@ export default function ScriptureReaderView({
     startEditFlow(target);
     router.setParams({ editCommentId: undefined });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, loading, annotations, params.editCommentId]);
+  }, [guided, isGuided, ready, loading, annotations, params.editCommentId]);
 
-  const clearSelection = useCallback(() => {
+  const clearSelection = useCallback((options?: { preserveGuidePhase?: boolean }) => {
     setSelectedVerseNumbers([]);
     setActionSheetOpen(false);
     setCommentOpen(false);
@@ -289,8 +543,13 @@ export default function ScriptureReaderView({
     setEditCommentTarget(null);
     // If the tour is mid-lesson and the selection is abandoned, fall back to
     // the long-press step so the guide always points at something real.
-    if (isGuidedRef.current && GUIDE_SELECTION_PHASES.has(guidePhaseRef.current)) {
-      patchSession({ phase: 'versePractice' });
+    if (!options?.preserveGuidePhase && isGuidedRef.current && GUIDE_SELECTION_PHASES.has(guidePhaseRef.current)) {
+      const interruptedPhase = guidePhaseRef.current;
+      patchSession({
+        phase: interruptedPhase === 'readerIntro' || interruptedPhase === 'chooseComment'
+          ? 'readerIntro'
+          : 'highlightIntro',
+      });
     }
   }, [patchSession]);
 
@@ -298,6 +557,12 @@ export default function ScriptureReaderView({
     if (typeof controlledBookId !== 'number' && typeof controlledChapter !== 'number') return;
     clearSelection();
   }, [clearSelection, controlledBookId, controlledChapter]);
+
+  useEffect(() => {
+    if (guidePhase === 'readerIntro' || guidePhase === 'highlightIntro') {
+      guidedSelectionLockRef.current = false;
+    }
+  }, [guidePhase]);
 
   const goChapter = useCallback((next: number) => {
     const bounded = Math.max(1, Math.min(currentBook.chapters, next));
@@ -308,15 +573,32 @@ export default function ScriptureReaderView({
   }, [chapter, clearSelection, currentBook.chapters]);
 
   const startSelection = (verse: BibleVerse) => {
+    if (isGuided && guidePhase !== 'readerIntro' && guidePhase !== 'highlightIntro') return;
+    const guidedSelectionStart = isGuided
+      && (guidePhase === 'readerIntro' || guidePhase === 'highlightIntro');
+    if (
+      guidedSelectionStart
+      && (
+        (guidePhase === 'readerIntro' && verse.verse !== GUIDE_VERSE_SLOGAN)
+        || (guidePhase === 'highlightIntro' && verse.verse !== GUIDE_VERSE_HIGHLIGHT)
+      )
+    ) return;
+    if (guidedSelectionStart && guidedSelectionLockRef.current) return;
+    if (guidedSelectionStart) guidedSelectionLockRef.current = true;
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedVerseNumbers([verse.verse]);
-    setActionSheetOpen(false);
-    if (isGuided && guidePhase === 'versePractice') {
-      patchSession({ phase: 'openTools' });
+    setSettledSheetPhase('');
+    setActionSheetOpen(guidedSelectionStart);
+    if (isGuided && guidePhase === 'readerIntro') {
+      patchSession({ phase: 'chooseComment' });
+    } else if (isGuided && guidePhase === 'highlightIntro') {
+      patchSession({ phase: 'pickColor' });
     }
   };
 
   const toggleSelection = (verse: BibleVerse) => {
+    if (isGuided) return;
     if (!selectionActive) return;
     Haptics.selectionAsync();
     setSelectedVerseNumbers(current => {
@@ -331,80 +613,212 @@ export default function ScriptureReaderView({
 
   const applyHighlight = async () => {
     if (selectedVerses.length === 0) return;
+    if (isGuided && guidePhase !== 'doHighlight') return;
+    const completingGuidedHighlight = isGuided && guidePhase === 'doHighlight';
+    if (completingGuidedHighlight && guidedMutationLockRef.current) return;
+    if (completingGuidedHighlight) guidedMutationLockRef.current = true;
+
     const joinedText = selectedVerses.map(verse => verse.text).join('\n\n');
-    await upsertAnnotations(selectedVerses.map(verse => ({
-      // Only replace same-color highlight — preserve other colors
-      kind: 'highlight',
-      color: selectedColor,
-      bookId: verse.bookId,
-      chapter: verse.chapter,
-      verse: verse.verse,
-      text: joinedText,
-    })));
-    // Advance before clearSelection so the abandoned-selection fallback in
-    // clearSelection sees a phase outside the lesson set.
-    if (isGuided && guidePhase === 'doHighlight') {
-      patchSession({ phase: 'markMade' });
+    if (completingGuidedHighlight) {
+      const now = Date.now();
+      onGuidedAnnotationsSaved?.(selectedVerses.map(verse => ({
+        id: `bible-guide-highlight-${verse.bookId}-${verse.chapter}-${verse.verse}`,
+        kind: 'highlight',
+        color: selectedColor,
+        bookId: verse.bookId,
+        chapter: verse.chapter,
+        verse: verse.verse,
+        text: joinedText,
+        createdAt: now,
+        updatedAt: now,
+      })));
+      onGuidedHighlightSaved?.(selectedColor);
+      pendingSelectionExitRef.current = 'markMade';
+      guidePhaseRef.current = 'selectionClosing';
+      setPresentation(null);
+      patchSession({ phase: 'selectionClosing' });
+      setActionSheetOpen(false);
+      return;
     }
-    clearSelection();
+
+    try {
+      await upsertAnnotations(selectedVerses.map(verse => ({
+        // Only replace same-color highlight — preserve other colors
+        kind: 'highlight',
+        color: selectedColor,
+        bookId: verse.bookId,
+        chapter: verse.chapter,
+        verse: verse.verse,
+        text: joinedText,
+      })));
+
+      clearSelection();
+    } catch (error) {
+      guidedMutationLockRef.current = false;
+      console.warn('Failed to save Scripture highlight', error);
+    }
   };
 
   const openComment = () => {
     if (selectedVerses.length === 0) return;
     if (hasCommentOverlap) return;
+    if (pendingSelectionExitRef.current) return;
+
     setCommentDraft('');
     setCommentMode('add');
     setCommentSession(value => value + 1);
+    pendingSelectionExitRef.current = 'openComment';
+    setSettledSheetPhase('');
     setActionSheetOpen(false);
-    setCommentOpen(true);
+    if (isGuided && guidePhase === 'chooseComment') {
+      guidePhaseRef.current = 'commentOpening';
+      setPresentation(null);
+      patchSession({ phase: 'commentOpening' });
+    }
   };
 
+  const closeGuidedCommentOnHighlightVerse = useCallback(() => {
+    // Verse 15 is the next lesson. Move it into place while the native comment
+    // modal still covers the reader, then let the modal fade away. This keeps
+    // the walkthrough direct and removes the visible post-save page scroll.
+    const positionBehindModal = (attempt = 0) => {
+      highlightVerseTarget.measureNow(layout => {
+        if (!layout && attempt < 6) {
+          guidedCommentPositionTimerRef.current = setTimeout(
+            () => positionBehindModal(attempt + 1),
+            32,
+          );
+          return;
+        }
+        guidedCommentPositionTimerRef.current = null;
+        if (layout) {
+          const desiredY = readerGuideTargetY(layout.height);
+          const nextScrollY = Math.max(
+            0,
+            verseGuideScrollYRef.current + (layout.y - desiredY),
+          );
+          scrollRef.current?.scrollTo({ y: nextScrollY, animated: false });
+          verseGuideScrollYRef.current = nextScrollY;
+        }
+        setCommentOpen(false);
+      });
+    };
+    if (guidedCommentPositionTimerRef.current) {
+      clearTimeout(guidedCommentPositionTimerRef.current);
+    }
+    positionBehindModal();
+  }, [highlightVerseTarget, readerGuideTargetY, verseGuideScrollYRef]);
+
+  useEffect(() => () => {
+    if (guidedCommentPositionTimerRef.current) {
+      clearTimeout(guidedCommentPositionTimerRef.current);
+    }
+  }, []);
+
   const saveComment = async () => {
+    if (commentSaving || guidedMutationLockRef.current) return;
     const cleanComment = commentDraft.trim();
     if (!plainRichText(cleanComment)) return;
-    if (commentMode === 'edit' && editCommentTarget) {
-      const targets = getGroupedCommentAnnotations(editCommentTarget);
-      const editTargets = targets.length > 0 ? targets : [editCommentTarget];
-      for (const old of editTargets) {
-        await deleteAnnotation(old.id);
+    if (commentMode !== 'edit' && selectedVerses.length === 0) return;
+    // Guided comments are preview-only. Until the typing lesson explicitly
+    // reaches its save phase, the visible editor button is intentionally inert
+    // so no timing window can fall through to Scripture persistence.
+    if (isGuidedRef.current && guidePhaseRef.current !== 'commentReady') return;
+    guidedMutationLockRef.current = true;
+    setCommentSaving(true);
+
+    try {
+      const completingGuidedComment = isGuidedRef.current && guidePhaseRef.current === 'commentReady';
+      if (completingGuidedComment) {
+        const selectionText = selectedQuoteLines.join('\n\n');
+        const now = Date.now();
+        onGuidedAnnotationsSaved?.(selectedVerses.map(verse => ({
+          id: `bible-guide-comment-${verse.bookId}-${verse.chapter}-${verse.verse}`,
+          kind: 'comment',
+          color: selectedColor,
+          bookId: verse.bookId,
+          chapter: verse.chapter,
+          verse: verse.verse,
+          text: selectionText,
+          comment: cleanComment,
+          createdAt: now,
+          updatedAt: now,
+        })));
+        commentCleanupPendingRef.current = true;
+        pendingCommentExitPhaseRef.current = 'highlightIntro';
+        guidePhaseRef.current = 'commentClosing';
+        setPresentation(null);
+        patchSession({ phase: 'commentClosing' });
+        closeGuidedCommentOnHighlightVerse();
+        return;
+      }
+
+      if (commentMode === 'edit' && editCommentTarget) {
+        const targets = getGroupedCommentAnnotations(editCommentTarget);
+        const editTargets = targets.length > 0 ? targets : [editCommentTarget];
+        for (const old of editTargets) {
+          await deleteAnnotation(old.id);
+          await upsertAnnotation({
+            kind: 'comment',
+            color: selectedColor,
+            bookId: old.bookId,
+            chapter: old.chapter,
+            verse: old.verse,
+            text: old.text,
+            comment: cleanComment,
+          });
+        }
+        commentCleanupPendingRef.current = true;
+        setCommentOpen(false);
+        return;
+      }
+
+      if (selectedVerses.length === 0) return;
+      const selectionText = selectedQuoteLines.join('\n\n');
+      for (const verse of selectedVerses) {
+        const existingComments = annotations.filter(annotation =>
+          annotation.kind === 'comment'
+          && annotation.bookId === verse.bookId
+          && annotation.chapter === verse.chapter
+          && annotation.verse === verse.verse);
+        await Promise.all(existingComments.map(annotation => deleteAnnotation(annotation.id)));
         await upsertAnnotation({
           kind: 'comment',
           color: selectedColor,
-          bookId: old.bookId,
-          chapter: old.chapter,
-          verse: old.verse,
-          text: old.text,
+          bookId: verse.bookId,
+          chapter: verse.chapter,
+          verse: verse.verse,
+          text: selectionText,
           comment: cleanComment,
         });
       }
-      clearSelection();
-      return;
+
+      commentCleanupPendingRef.current = true;
+      setCommentOpen(false);
+    } catch (error) {
+      guidedMutationLockRef.current = false;
+      console.warn('Failed to save Scripture comment', error);
+    } finally {
+      setCommentSaving(false);
     }
-    if (selectedVerses.length === 0) return;
-    const selectionText = selectedQuoteLines.join('\n\n');
-    for (const verse of selectedVerses) {
-      const existingComments = annotations.filter(annotation =>
-        annotation.kind === 'comment'
-        && annotation.bookId === verse.bookId
-        && annotation.chapter === verse.chapter
-        && annotation.verse === verse.verse);
-      await Promise.all(existingComments.map(annotation => deleteAnnotation(annotation.id)));
-      await upsertAnnotation({
-        kind: 'comment',
-        color: selectedColor,
-        bookId: verse.bookId,
-        chapter: verse.chapter,
-        verse: verse.verse,
-        text: selectionText,
-        comment: cleanComment,
-      });
-    }
-    clearSelection();
   };
+  const saveCommentRef = useRef(saveComment);
+  saveCommentRef.current = saveComment;
 
   const openCommentPreview = (annotation: ScriptureAnnotation) => {
     Haptics.selectionAsync();
+    if (isGuided && guidePhase === 'returnIntro') {
+      setPresentation(null);
+      patchSession({ phase: 'returnCommentOpen' });
+    }
     setViewingComment(annotation);
+  };
+
+  const closeCommentPreview = () => {
+    setViewingComment(null);
+    if (isGuidedRef.current && guidePhaseRef.current === 'returnCommentOpen') {
+      patchSession({ phase: 'returnCommentDone' });
+    }
   };
 
   const getGroupedCommentAnnotations = (target: ScriptureAnnotation | null) => {
@@ -496,13 +910,169 @@ export default function ScriptureReaderView({
       : '';
 
   const closeCommentModal = useCallback(() => {
+    if (commentSaving) return;
+    commentCleanupPendingRef.current = true;
     setCommentOpen(false);
-    setEditCommentTarget(null);
-    if (commentMode === 'edit') {
-      setSelectedVerseNumbers([]);
-      setActionSheetOpen(false);
+    if (
+      isGuidedRef.current
+      && (
+        guidePhaseRef.current === 'commentOpening'
+        || guidePhaseRef.current === 'commentTyping'
+        || guidePhaseRef.current === 'commentReady'
+      )
+    ) {
+      pendingCommentExitPhaseRef.current = 'readerIntro';
+      guidePhaseRef.current = 'commentClosing';
+      setPresentation(null);
+      patchSession({ phase: 'commentClosing' });
     }
-  }, [commentMode]);
+  }, [commentSaving, patchSession, setPresentation]);
+
+  const openGuidedCommentEditor = useCallback(() => {
+    const target = verses.find(verse => (
+      verse.verse > initialVerse
+      && !currentAnnotations.some(annotation => annotation.kind === 'comment' && annotation.verse === verse.verse)
+    )) ?? [...verses].reverse().find(verse => (
+      verse.verse < initialVerse
+      && !currentAnnotations.some(annotation => annotation.kind === 'comment' && annotation.verse === verse.verse)
+    )) ?? verses.find(verse => !currentAnnotations.some(annotation => annotation.kind === 'comment' && annotation.verse === verse.verse));
+    if (!target) {
+      patchSession({ phase: 'openNote' });
+      return;
+    }
+    setSelectedVerseNumbers([target.verse]);
+    setSelectedColor('gold');
+    setCommentDraft('What is this verse asking me to live today?');
+    setCommentMode('add');
+    setCommentSession(value => value + 1);
+    setActionSheetOpen(false);
+    setCommentOpen(true);
+    setPresentation(null);
+    patchSession({ phase: 'commentEditor' });
+  }, [currentAnnotations, initialVerse, patchSession, setPresentation, verses]);
+
+  const handleGuidedCommentTyped = useCallback((value: string) => {
+    setCommentDraft(value);
+    if (isGuidedRef.current && guidePhaseRef.current === 'commentTyping') {
+      guidePhaseRef.current = 'commentReady';
+      patchSession({ phase: 'commentReady' });
+    }
+  }, [patchSession]);
+
+  const handleSelectionSheetEntered = useCallback(() => {
+    const phase = guidePhaseRef.current;
+    if (phase === 'chooseComment' || phase === 'pickColor') {
+      guidedSelectionLockRef.current = false;
+      setSettledSheetPhase(phase);
+    }
+  }, []);
+
+  const handleSelectionSheetExited = useCallback(() => {
+    const next = pendingSelectionExitRef.current;
+    pendingSelectionExitRef.current = null;
+    setSettledSheetPhase('');
+
+    if (next === 'openComment') {
+      setCommentOpen(true);
+      return;
+    }
+    if (!next) return;
+
+    clearSelection({ preserveGuidePhase: true });
+    guidedMutationLockRef.current = false;
+    guidePhaseRef.current = next;
+    patchSession({ phase: next });
+    if (next === 'markMade') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    }
+  }, [clearSelection, patchSession]);
+
+  const handleSelectionDismiss = useCallback(() => {
+    const phase = guidePhaseRef.current;
+    if (
+      isGuidedRef.current
+      && (phase === 'chooseComment' || phase === 'pickColor' || phase === 'doHighlight')
+    ) {
+      if (pendingSelectionExitRef.current) return;
+      pendingSelectionExitRef.current = phase === 'chooseComment' ? 'readerIntro' : 'highlightIntro';
+      guidePhaseRef.current = 'selectionClosing';
+      setPresentation(null);
+      patchSession({ phase: 'selectionClosing' });
+      setActionSheetOpen(false);
+      return;
+    }
+    clearSelection();
+  }, [clearSelection, patchSession, setPresentation]);
+
+  const handleSelectionSheetDismiss = useCallback(() => {
+    const phase = guidePhaseRef.current;
+    if (
+      isGuidedRef.current
+      && (phase === 'chooseComment' || phase === 'pickColor' || phase === 'doHighlight')
+    ) {
+      handleSelectionDismiss();
+      return;
+    }
+    setActionSheetOpen(false);
+  }, [handleSelectionDismiss]);
+
+  const handleCommentModalEntered = useCallback(() => {
+    if (!isGuidedRef.current || guidePhaseRef.current !== 'commentOpening') return;
+    guidePhaseRef.current = 'commentTyping';
+    patchSession({ phase: 'commentTyping' });
+  }, [patchSession]);
+
+  const handleCommentModalExited = useCallback(() => {
+    if (commentCleanupPendingRef.current) {
+      commentCleanupPendingRef.current = false;
+      clearSelection({ preserveGuidePhase: true });
+    }
+
+    const next = pendingCommentExitPhaseRef.current;
+    pendingCommentExitPhaseRef.current = null;
+    guidedMutationLockRef.current = false;
+    if (!next) return;
+
+    guidePhaseRef.current = next;
+    patchSession({ phase: next });
+  }, [clearSelection, patchSession]);
+
+  // Modal and sheet completion callbacks normally advance these phases. A
+  // native transition can be interrupted when the app backgrounds or another
+  // modal replaces it, so keep a small idempotent recovery path. Without it,
+  // the guide could remain on a presentation-less phase forever.
+  useEffect(() => {
+    if (!isGuided) return undefined;
+    let recover: (() => void) | undefined;
+
+    if (
+      (guidePhase === 'chooseComment' || guidePhase === 'pickColor')
+      && actionSheetOpen
+      && settledSheetPhase !== guidePhase
+    ) {
+      recover = handleSelectionSheetEntered;
+    } else if (guidePhase === 'selectionClosing') {
+      recover = handleSelectionSheetExited;
+    } else if (guidePhase === 'commentOpening') {
+      recover = commentOpen ? handleCommentModalEntered : handleSelectionSheetExited;
+    } else if (guidePhase === 'commentClosing') {
+      recover = handleCommentModalExited;
+    }
+
+    if (!recover) return undefined;
+    const timer = setTimeout(recover, 760);
+    return () => clearTimeout(timer);
+  }, [
+    actionSheetOpen,
+    commentOpen,
+    guidePhase,
+    handleCommentModalEntered,
+    handleCommentModalExited,
+    handleSelectionSheetEntered,
+    handleSelectionSheetExited,
+    isGuided,
+    settledSheetPhase,
+  ]);
 
   const saveViewingCommentEdit = async (target: ScriptureAnnotation, newCommentHtml: string) => {
     const cleanComment = newCommentHtml.trim();
@@ -529,10 +1099,18 @@ export default function ScriptureReaderView({
   };
 
   const openBibleNote = () => {
+    if (isGuided && guidePhase !== 'openNote') return;
     // During the tour, opening the chapter note IS the lesson — hand over to
     // the notes scene instead of navigating away from onboarding.
     if (isGuided && guidePhase === 'openNote') {
-      onGuidedAdvance?.('openNotes');
+      Keyboard.dismiss();
+      clearSelection({ preserveGuidePhase: true });
+      setViewingComment(null);
+      guidedNoteMotionLockRef.current = false;
+      setBibleNotesSheetMode('expanded');
+      setPresentation(null);
+      guidePhaseRef.current = 'noteSheetOpening';
+      patchSession({ phase: 'noteSheetOpening' });
       return;
     }
     Keyboard.dismiss();
@@ -540,6 +1118,35 @@ export default function ScriptureReaderView({
     setViewingComment(null);
     setBibleNotesSheetMode('expanded');
   };
+
+  const handleBibleNotesMotionSettled = useCallback((nextExpanded: boolean) => {
+    if (!isGuidedRef.current) return;
+    if (guidePhaseRef.current === 'noteSheetOpening' && nextExpanded) {
+      guidedNoteMotionLockRef.current = false;
+      guidePhaseRef.current = 'noteSheetIntro';
+      patchSession({ phase: 'noteSheetIntro' });
+      return;
+    }
+    if (guidePhaseRef.current === 'noteSheetCollapse' && !nextExpanded) {
+      guidedNoteMotionLockRef.current = false;
+      guidePhaseRef.current = 'noteSheetCollapsed';
+      patchSession({ phase: 'noteSheetCollapsed' });
+    }
+  }, [patchSession]);
+
+  useEffect(() => {
+    if (!isGuided) return undefined;
+    const openingNeedsRecovery = guidePhase === 'noteSheetOpening'
+      && bibleNotesSheetMode === 'expanded';
+    const collapseNeedsRecovery = guidePhase === 'noteSheetCollapse'
+      && bibleNotesSheetMode === 'collapsed';
+    if (!openingNeedsRecovery && !collapseNeedsRecovery) return undefined;
+    const timer = setTimeout(
+      () => handleBibleNotesMotionSettled(openingNeedsRecovery),
+      900,
+    );
+    return () => clearTimeout(timer);
+  }, [bibleNotesSheetMode, guidePhase, handleBibleNotesMotionSettled, isGuided]);
 
   const handleBack = () => {
     if (onBack) {
@@ -553,64 +1160,31 @@ export default function ScriptureReaderView({
   useEffect(() => {
     if (!isGuided) return;
 
-    if (guidePhase === 'readerIntro') {
+    if (guidePhase === 'legacyReaderIntro') {
+      if (stagedVersePhase !== 'readerIntro') {
+        setPresentation(null);
+        return;
+      }
       setPresentation({
         key: 'bible-reader-intro',
-        placement: 'bottom',
-        lightScrim: true,
-        eyebrow: 'HOLY SCRIPTURE',
-        message: 'This is the Holy Scripture. The page you are standing on already carries two marks.',
-        highlights: ['two marks'],
-        ctaLabel: 'Show me',
-        onCta: () => patchSession({ phase: 'verseComment' }),
-      });
-      return;
-    }
-    if (guidePhase === 'verseComment') {
-      setPresentation({
-        key: 'bible-verse-comment',
         targetId: SCRIPTURE_GUIDE_TARGETS.verseSlogan,
-        cutoutPadding: 6,
-        placement: 'below',
-        allowTargetInteraction: false,
-        eyebrow: 'HOLY SCRIPTURE',
-        message: 'A commented verse. The star keeps a thought beside the words — this one is our welcome to you.',
-        highlights: ['star'],
-        ctaLabel: 'Continue',
-        onCta: () => patchSession({ phase: 'verseHighlight' }),
-      });
-      return;
-    }
-    if (guidePhase === 'verseHighlight') {
-      setPresentation({
-        key: 'bible-verse-highlight',
-        targetId: SCRIPTURE_GUIDE_TARGETS.verseSeed,
-        cutoutPadding: 6,
-        placement: 'below',
-        allowTargetInteraction: false,
-        eyebrow: 'HOLY SCRIPTURE',
-        message: 'A highlighted verse — underlined in a color. And every color carries a meaning.',
-        highlights: ['color'],
-        ctaLabel: 'Continue',
-        onCta: () => patchSession({ phase: 'versePractice' }),
-      });
-      return;
-    }
-    if (guidePhase === 'versePractice') {
-      setPresentation({
-        key: 'bible-verse-practice',
-        targetId: SCRIPTURE_GUIDE_TARGETS.versePractice,
         cutoutPadding: 6,
         placement: 'below',
         allowTargetInteraction: true,
         eyebrow: 'HOLY SCRIPTURE',
-        message: 'Now it is your turn.',
-        action: 'Press and hold the verse',
+        message: 'This is the verse Anasta is built around. Let’s highlight it.',
+        highlights: ['Anasta', 'highlight it'],
+        action: 'Press and hold Ephesians 5:14',
         hint: 'long-press',
       });
       return;
     }
-    if (guidePhase === 'openTools') {
+    if (guidePhase === 'legacyReturnCommentOpen' || guidePhase === 'legacyCommentEditor') {
+      // The real comment popup/editor owns the stage in these phases.
+      setPresentation(null);
+      return;
+    }
+    if (guidePhase === 'legacyOpenTools') {
       setPresentation({
         key: 'bible-open-tools',
         targetId: SCRIPTURE_GUIDE_TARGETS.annotateFab,
@@ -625,7 +1199,11 @@ export default function ScriptureReaderView({
       });
       return;
     }
-    if (guidePhase === 'pickColor') {
+    if (guidePhase === 'legacyPickColor') {
+      if (stagedSheetPhase !== 'pickColor') {
+        setPresentation(null);
+        return;
+      }
       setPresentation({
         key: 'bible-pick-color',
         targetId: SCRIPTURE_GUIDE_TARGETS.sheetColors,
@@ -641,7 +1219,11 @@ export default function ScriptureReaderView({
       });
       return;
     }
-    if (guidePhase === 'doHighlight') {
+    if (guidePhase === 'legacyDoHighlight') {
+      if (stagedSheetPhase !== 'doHighlight') {
+        setPresentation(null);
+        return;
+      }
       setPresentation({
         key: 'bible-do-highlight',
         targetId: SCRIPTURE_GUIDE_TARGETS.sheetHighlight,
@@ -656,33 +1238,67 @@ export default function ScriptureReaderView({
       });
       return;
     }
-    if (guidePhase === 'markMade') {
+    if (guidePhase === 'legacyMarkMade') {
       setPresentation({
         key: 'bible-mark-made',
-        placement: 'bottom',
-        lightScrim: true,
+        targetId: SCRIPTURE_GUIDE_TARGETS.favoritesIcon,
+        cutoutPadding: 8,
+        placement: 'below',
+        allowTargetInteraction: true,
         eyebrow: 'HOLY SCRIPTURE',
-        message: 'There it is — your first mark, alive on the page.',
-        highlights: ['first mark'],
-        ctaLabel: 'See where it lives',
-        onCta: () => onGuidedAdvance?.('sceneDone'),
+        message: 'Your highlight is saved. Press the star to see where every highlight and comment lives.',
+        highlights: ['saved', 'every highlight and comment'],
+        action: 'Open My Favorites',
+        hint: 'tap',
       });
       return;
     }
-    if (guidePhase === 'returnIntro') {
+    if (guidePhase === 'legacyCommentDone') {
       setPresentation({
-        key: 'bible-return-intro',
+        key: 'bible-comment-done',
         placement: 'bottom',
         lightScrim: true,
         eyebrow: 'HOLY SCRIPTURE',
-        message: 'One tap on a saved verse — and Scripture opens exactly where it lives.',
-        highlights: ['exactly where it lives'],
-        ctaLabel: 'Continue',
+        message: 'That is the complete annotation flow: select the verse, choose its meaning, then highlight it or leave a comment.',
+        highlights: ['select the verse', 'highlight it or leave a comment'],
+        ctaLabel: 'Continue to Bible Notes',
         onCta: () => patchSession({ phase: 'openNote' }),
       });
       return;
     }
-    if (guidePhase === 'openNote') {
+    if (guidePhase === 'legacyReturnIntro') {
+      if (stagedVersePhase !== 'returnIntro') {
+        setPresentation(null);
+        return;
+      }
+      setPresentation({
+        key: 'bible-return-intro',
+        targetId: SCRIPTURE_GUIDE_TARGETS.verseSlogan,
+        cutoutPadding: 6,
+        placement: 'above',
+        allowTargetInteraction: true,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'One tap on a saved comment brings you back to exactly where it lives in Scripture.',
+        highlights: ['exactly where it lives'],
+        action: 'Tap the marked verse to read the comment',
+        hint: 'tap',
+      });
+      return;
+    }
+    if (guidePhase === 'legacyReturnCommentDone') {
+      setPresentation({
+        key: 'bible-return-comment-done',
+        placement: 'bottom',
+        lightScrim: true,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'Comments can hold thoughts, reflections, or prayers — and they stay beside the text. Now add one of your own in the real editor.',
+        highlights: ['thoughts, reflections, or prayers', 'real editor'],
+        ctaLabel: 'Open Add Comment',
+        onCta: openGuidedCommentEditor,
+      });
+      return;
+    }
+    if (guidePhase === 'legacyOpenNote') {
       setPresentation({
         key: 'bible-open-note',
         targetId: SCRIPTURE_GUIDE_TARGETS.noteIcon,
@@ -696,21 +1312,373 @@ export default function ScriptureReaderView({
         hint: 'tap',
       });
     }
-  }, [guidePhase, isGuided, onGuidedAdvance, patchSession, setPresentation]);
+  }, [guidePhase, isGuided, onGuidedAdvance, openGuidedCommentEditor, patchSession, setPresentation, stagedSheetPhase, stagedVersePhase]);
 
-  // Re-measure the in-sheet targets once the bottom sheet has settled.
   useEffect(() => {
     if (!isGuided) return undefined;
+
+    if (guidePhase === 'readerIntro') {
+      if (stagedVersePhase !== 'readerIntro') return undefined;
+      setPresentation({
+        key: 'bible-reader-intro-v2',
+        coachGroupKey: 'bible-primary-coach',
+        targetId: SCRIPTURE_GUIDE_TARGETS.verseSlogan,
+        cutoutPadding: 6,
+        placement: 'below',
+        allowTargetInteraction: !guideSloganHasProtectedComment,
+        eyebrow: 'EPHESIANS 5:14',
+        message: guideSloganHasProtectedComment
+          ? 'Your comment is already saved beside this verse. Anasta never replaces your own reflection.'
+          : 'This verse inspired Anasta. Press and hold it to add a comment.',
+        highlights: guideSloganHasProtectedComment
+          ? ['already saved', 'never replaces']
+          : ['Press and hold'],
+        action: guideSloganHasProtectedComment ? undefined : 'Press and hold Ephesians 5:14',
+        hint: guideSloganHasProtectedComment ? undefined : 'long-press',
+        ctaLabel: guideSloganHasProtectedComment ? 'Keep my comment' : undefined,
+        onCta: guideSloganHasProtectedComment
+          ? () => patchSession({ phase: 'highlightIntro' })
+          : undefined,
+      });
+      return undefined;
+    }
+
+    if (guidePhase === 'chooseComment') {
+      if (stagedSheetPhase !== 'chooseComment') return undefined;
+      setPresentation({
+        key: 'bible-choose-comment',
+        coachGroupKey: 'bible-selection-coach',
+        targetId: SCRIPTURE_GUIDE_TARGETS.sheetComment,
+        cutoutPadding: 7,
+        placement: 'above',
+        allowTargetInteraction: true,
+        eyebrow: 'COMMENT',
+        message: 'Comments keep your thoughts beside the verse.',
+        action: 'Tap Add reflection',
+        hint: 'tap',
+      });
+      return undefined;
+    }
+
+    if (guidePhase === 'commentTyping') {
+      setPresentation(null);
+      return undefined;
+    }
+
+    if (guidePhase === 'commentReady') {
+      if (stagedCommentPhase !== 'commentReady') return undefined;
+      setPresentation({
+        key: 'bible-comment-ready',
+        coachGroupKey: 'bible-comment-coach',
+        targetId: SCRIPTURE_GUIDE_TARGETS.commentSave,
+        cutoutPadding: 8,
+        placement: 'above',
+        allowTargetInteraction: true,
+        eyebrow: 'COMMENT',
+        message: 'Your comment is ready.',
+        action: 'Save the comment',
+        hint: 'tap',
+      });
+      return undefined;
+    }
+
+    if (guidePhase === 'highlightIntro') {
+      if (stagedVersePhase !== 'highlightIntro') return undefined;
+      setPresentation({
+        key: 'bible-highlight-intro',
+        coachGroupKey: 'bible-primary-coach',
+        targetId: SCRIPTURE_GUIDE_TARGETS.verseHighlight,
+        cutoutPadding: 6,
+        placement: 'above',
+        allowTargetInteraction: true,
+        eyebrow: 'HIGHLIGHT',
+        message: 'Press and hold the next verse to highlight it.',
+        highlights: ['Press and hold', 'highlight it'],
+        action: 'Press and hold Ephesians 5:15',
+        hint: 'long-press',
+      });
+      return undefined;
+    }
+
+    if (guidePhase === 'pickColor') {
+      if (stagedSheetPhase !== 'pickColor') return undefined;
+      setPresentation({
+        key: 'bible-pick-color-v2',
+        coachGroupKey: 'bible-selection-coach',
+        targetId: SCRIPTURE_GUIDE_TARGETS.sheetColors,
+        cutoutPadding: 7,
+        placement: 'above',
+        allowTargetInteraction: true,
+        eyebrow: 'HIGHLIGHT',
+        message: 'Choose a color for this highlight. You can name colors in My Favorites.',
+        highlights: ['Choose a color', 'name colors'],
+        action: 'Choose a color',
+        hint: 'tap',
+        hintAnchor: 'left',
+      });
+      return undefined;
+    }
+
+    if (guidePhase === 'doHighlight') {
+      if (stagedSheetPhase !== 'doHighlight') return undefined;
+      setPresentation({
+        key: 'bible-do-highlight-v2',
+        coachGroupKey: 'bible-selection-coach',
+        targetId: SCRIPTURE_GUIDE_TARGETS.sheetHighlight,
+        cutoutPadding: 7,
+        placement: 'above',
+        allowTargetInteraction: true,
+        eyebrow: 'HIGHLIGHT',
+        message: 'Tap Highlight to save it.',
+        highlights: ['Tap Highlight'],
+        action: 'Tap Highlight',
+        hint: 'tap',
+      });
+      return undefined;
+    }
+
+    if (guidePhase === 'markMade') {
+      setPresentation({
+        key: 'bible-mark-made-v2',
+        coachGroupKey: 'bible-primary-coach',
+        targetId: SCRIPTURE_GUIDE_TARGETS.favoritesIcon,
+        cutoutPadding: 8,
+        placement: 'below',
+        allowTargetInteraction: true,
+        eyebrow: 'HOLY SCRIPTURE',
+        message: 'My Favorites keeps your comments and highlights together.',
+        highlights: ['My Favorites'],
+        action: 'Open My Favorites',
+        hint: 'tap',
+      });
+      return undefined;
+    }
+
+    if (guidePhase === 'returnArrival') {
+      // Let the direct jump land cleanly on Ephesians 5:15 before teaching the
+      // next control. This replaces a second CTA without hiding the result of
+      // tapping the saved highlight behind an immediate new spotlight.
+      setPresentation(null);
+      const timer = setTimeout(() => {
+        if (guidePhaseRef.current === 'returnArrival') {
+          patchSession({ phase: 'openNote' });
+        }
+      }, 180);
+      return () => clearTimeout(timer);
+    }
+
+    if (guidePhase === 'returnIntro') {
+      if (stagedVersePhase !== 'returnIntro') return undefined;
+      setPresentation({
+        key: 'bible-return-intro-v2',
+        coachGroupKey: 'bible-primary-coach',
+        targetId: SCRIPTURE_GUIDE_TARGETS.verseHighlight,
+        cutoutPadding: 6,
+        placement: 'above',
+        allowTargetInteraction: false,
+        eyebrow: 'EPHESIANS 5:15',
+        message: 'The highlight brings you back to its exact verse.',
+        highlights: ['exact verse'],
+        ctaLabel: 'Continue',
+        onCta: () => patchSession({ phase: 'openNote' }),
+      });
+      return undefined;
+    }
+
+    if (guidePhase === 'openNote') {
+      setPresentation({
+        key: 'bible-open-note-v2',
+        coachGroupKey: 'bible-primary-coach',
+        targetId: SCRIPTURE_GUIDE_TARGETS.noteIcon,
+        cutoutPadding: 8,
+        placement: 'below',
+        allowTargetInteraction: true,
+        eyebrow: 'BIBLE NOTES',
+        message: 'The highlight returned you to Ephesians 5:15. Bible Notes keeps one note for each chapter.',
+        highlights: ['returned you to Ephesians 5:15', 'one note for each chapter'],
+        action: 'Open this chapter’s note',
+        hint: 'tap',
+      });
+      return undefined;
+    }
+
+    if (guidePhase === 'noteSheetOpening') {
+      setPresentation(null);
+      return undefined;
+    }
+
+    if (guidePhase === 'noteSheetIntro') {
+      setPresentation({
+        key: 'bible-note-sheet-intro',
+        coachGroupKey: 'bible-primary-coach',
+        placement: 'bottom',
+        lightScrim: true,
+        eyebrow: 'BIBLE NOTES',
+        message: 'Each chapter has its own note. Use Observations, Lessons, and Application to organize what you learn.',
+        highlights: ['Each chapter', 'Observations, Lessons, and Application'],
+        chips: ['Observations', 'Lessons', 'Application'],
+        ctaLabel: 'Continue',
+        onCta: () => patchSession({ phase: 'noteSheetCollapse' }),
+      });
+      return undefined;
+    }
+
+    if (guidePhase === 'noteSheetCollapse') {
+      setPresentation(null);
+      let cancelled = false;
+      let retryTimer: ReturnType<typeof setTimeout> | undefined;
+      const stageHeader = (attempt = 0) => {
+        notesHeaderTarget.measureNow(layout => {
+          if (cancelled) return;
+          if (!layout) {
+            if (attempt >= 24) {
+              setBibleNotesSheetMode('collapsed');
+              return;
+            }
+            retryTimer = setTimeout(
+              () => stageHeader(attempt + 1),
+              48,
+            );
+            return;
+          }
+          requestAnimationFrame(() => {
+            if (cancelled) return;
+            setPresentation({
+              key: 'bible-note-sheet-collapse',
+              coachGroupKey: 'bible-primary-coach',
+              targetId: SCRIPTURE_GUIDE_TARGETS.notesHeader,
+              cutoutPadding: 6,
+              placement: 'below',
+              allowTargetInteraction: true,
+              eyebrow: 'BIBLE NOTES',
+              message: 'Collapse the sheet to keep reading without closing your note.',
+              action: 'Tap the Bible Notes title',
+              hint: 'tap',
+            });
+          });
+        });
+      };
+      retryTimer = setTimeout(() => stageHeader(), 32);
+      return () => {
+        cancelled = true;
+        if (retryTimer) clearTimeout(retryTimer);
+      };
+    }
+
+    if (guidePhase === 'noteSheetCollapsed') {
+      setPresentation({
+        key: 'bible-note-sheet-collapsed',
+        coachGroupKey: 'bible-primary-coach',
+        placement: 'bottom',
+        hideDim: true,
+        eyebrow: 'BIBLE NOTES',
+        message: 'Your note stays open and saves automatically while you read and scroll.',
+        highlights: ['saves automatically'],
+        ctaLabel: 'Return to Holy Scripture',
+        onCta: () => onGuidedAdvance?.('openNotes'),
+      });
+      return undefined;
+    }
+
+    return undefined;
+  }, [guidePhase, guideSloganHasProtectedComment, isGuided, notesHeaderTarget, onGuidedAdvance, patchSession, setPresentation, stagedCommentPhase, stagedSheetPhase, stagedVersePhase]);
+
+  // A native Modal has its own window and the sheet moves on the UI thread.
+  // Confirm the real in-window target after that motion before mounting the
+  // coach. Until confirmation, the actual sheet remains fully pressable.
+  useEffect(() => {
+    if (!isGuided) {
+      setStagedSheetPhase('');
+      return undefined;
+    }
+    if (guidePhase === 'chooseComment' || guidePhase === 'pickColor' || guidePhase === 'doHighlight') {
+      setStagedSheetPhase('');
+      if (guidePhase !== 'doHighlight') setPresentation(null);
+      if (settledSheetPhase !== guidePhase) return undefined;
+
+      let cancelled = false;
+      let retryTimer: ReturnType<typeof setTimeout> | undefined;
+      let firstFrame: number | undefined;
+      let secondFrame: number | undefined;
+      const target = guidePhase === 'chooseComment'
+        ? sheetCommentTarget
+        : guidePhase === 'pickColor'
+          ? sheetColorsTarget
+          : sheetHighlightTarget;
+
+      const measureWhenReady = (attempt = 0) => {
+        if (cancelled) return;
+        target.measureNow(layout => {
+          if (cancelled) return;
+          if (!layout) {
+            if (attempt >= 24) {
+              handleSelectionDismiss();
+              return;
+            }
+            retryTimer = setTimeout(
+              () => measureWhenReady(attempt + 1),
+              48,
+            );
+            return;
+          }
+          firstFrame = requestAnimationFrame(() => {
+            secondFrame = requestAnimationFrame(() => {
+              if (!cancelled) setStagedSheetPhase(guidePhase);
+            });
+          });
+        });
+      };
+
+      retryTimer = setTimeout(() => measureWhenReady(), 32);
+      return () => {
+        cancelled = true;
+        if (retryTimer) clearTimeout(retryTimer);
+        if (firstFrame) cancelAnimationFrame(firstFrame);
+        if (secondFrame) cancelAnimationFrame(secondFrame);
+      };
+    }
+
+    setStagedSheetPhase('');
     const timer = setTimeout(() => {
-      if (guidePhase === 'pickColor' || guidePhase === 'doHighlight') {
-        sheetColorsTarget.measure();
-        sheetHighlightTarget.measure();
-        return;
-      }
       if (guidePhase === 'openTools') annotateFabTarget.measure();
-    }, guidePhase === 'pickColor' ? 380 : 220);
+    }, 220);
     return () => clearTimeout(timer);
-  }, [annotateFabTarget, guidePhase, isGuided, sheetColorsTarget, sheetHighlightTarget]);
+  }, [annotateFabTarget, guidePhase, handleSelectionDismiss, isGuided, setPresentation, settledSheetPhase, sheetColorsTarget, sheetCommentTarget, sheetHighlightTarget]);
+
+  useEffect(() => {
+    if (!isGuided || guidePhase !== 'commentReady') {
+      setStagedCommentPhase('');
+      return undefined;
+    }
+    setStagedCommentPhase('');
+    setPresentation(null);
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const measureSave = (attempt = 0) => {
+      commentSaveTarget.measureNow(layout => {
+        if (cancelled) return;
+        if (!layout) {
+          if (attempt >= 24) {
+            void saveCommentRef.current();
+            return;
+          }
+          retryTimer = setTimeout(
+            () => measureSave(attempt + 1),
+            48,
+          );
+          return;
+        }
+        requestAnimationFrame(() => {
+          if (!cancelled) setStagedCommentPhase('commentReady');
+        });
+      });
+    };
+    retryTimer = setTimeout(() => measureSave(), 32);
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [commentSaveTarget, guidePhase, isGuided, setPresentation]);
 
   const canNavigatePrevChapter = canGoPrevChapter ?? chapter > 1;
   const canNavigateNextChapter = canGoNextChapter ?? chapter < currentBook.chapters;
@@ -762,9 +1730,19 @@ export default function ScriptureReaderView({
         title={currentBook.name}
         onBack={handleBack}
         onBibleNote={openBibleNote}
-        onFavorites={() => router.push('/favorites')}
+        onFavorites={() => {
+          if (isGuided) {
+            if (guidePhase === 'markMade') {
+              setPresentation(null);
+              onGuidedAdvance?.('sceneDone');
+            }
+            return;
+          }
+          router.push('/favorites');
+        }}
         showBack={!isGuided}
         noteTargetProps={isGuided ? { ref: noteIconTarget.ref, onLayout: noteIconTarget.onLayout } : undefined}
+        favoritesTargetProps={isGuided ? { ref: favoritesIconTarget.ref, onLayout: favoritesIconTarget.onLayout } : undefined}
       />
 
       <ChapterBar
@@ -780,6 +1758,17 @@ export default function ScriptureReaderView({
         ref={scrollRef}
         contentContainerStyle={[s.content, { paddingBottom: insets.bottom + (hasBottomDock ? bottomDockHeight : 120) }]}
         showsVerticalScrollIndicator={false}
+        onScroll={isGuided ? handleVerseGuideScroll : undefined}
+        onMomentumScrollEnd={isGuided ? () => {
+          finishVerseGuideScroll();
+          sloganVerseTarget.measure();
+          highlightVerseTarget.measure();
+        } : undefined}
+        onScrollEndDrag={isGuided ? () => {
+          sloganVerseTarget.measure();
+          highlightVerseTarget.measure();
+        } : undefined}
+        scrollEventThrottle={isGuided ? 16 : undefined}
       >
         <Reanimated.View
           key={`${bookId}:${chapter}:${loading ? 'loading' : chapterError ? 'error' : 'ready'}`}
@@ -800,22 +1789,21 @@ export default function ScriptureReaderView({
           ) : (
             <View style={s.verseList}>
               {verses.map(verse => {
+                // Keep both guided verse refs mounted for the whole Reader
+                // scene. Swapping one ref between phases can miss onLayout on
+                // native and leaves the overlay without a registered cutout.
                 const verseGuideTarget = !isGuided
                   ? null
                   : verse.verse === GUIDE_VERSE_SLOGAN
                     ? sloganVerseTarget
-                    : verse.verse === GUIDE_VERSE_SEED
-                      ? seedVerseTarget
-                      : verse.verse === GUIDE_VERSE_PRACTICE
-                        ? practiceVerseTarget
-                        : null;
+                    : verse.verse === GUIDE_VERSE_HIGHLIGHT
+                      ? highlightVerseTarget
+                      : null;
                 return (
                   <View
                     key={verse.verse}
-                    ref={verseGuideTarget?.ref}
                     onLayout={event => {
                       handleVerseLayout(verse.verse, event.nativeEvent.layout.y);
-                      verseGuideTarget?.onLayout(event);
                     }}
                   >
                     <VerseRow
@@ -828,6 +1816,7 @@ export default function ScriptureReaderView({
                       onPress={() => toggleSelection(verse)}
                       onLongPress={() => startSelection(verse)}
                       onOpenComment={openCommentPreview}
+                      guideTargetProps={verseGuideTarget ? { ref: verseGuideTarget.ref, onLayout: verseGuideTarget.onLayout } : undefined}
                     />
                   </View>
                 );
@@ -839,15 +1828,39 @@ export default function ScriptureReaderView({
 
       {bottomDock}
 
-      {!isGuided && bibleNotesSheetMode !== 'closed' && (
+      {isGuided && guidePhase === 'returnArrival' && (
+        <View
+          pointerEvents="auto"
+          onStartShouldSetResponder={() => true}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={s.guidedInteractionShield}
+        />
+      )}
+
+      {bibleNotesSheetMode !== 'closed' && (
         <ScriptureBibleNotesSheet
           bookId={bookId}
           bookName={currentBook.name}
           chapter={chapter}
           expanded={bibleNotesSheetMode === 'expanded'}
+          guidedPreview={isGuided}
+          guideHeaderTargetProps={isGuided ? {
+            ref: notesHeaderTarget.ref,
+            onLayout: notesHeaderTarget.onLayout,
+          } : undefined}
           onExpandedChange={nextExpanded => {
+            if (isGuided) {
+              if (guidePhaseRef.current !== 'noteSheetCollapse' || nextExpanded) return;
+              if (guidedNoteMotionLockRef.current) return;
+              guidedNoteMotionLockRef.current = true;
+              setPresentation(null);
+            }
             setBibleNotesSheetMode(nextExpanded ? 'expanded' : 'collapsed');
           }}
+          onMotionSettled={handleBibleNotesMotionSettled}
+          expandedChangeEnabled={!isGuided || guidePhase === 'noteSheetCollapse'}
+          closeDisabled={isGuided && guidePhase.startsWith('noteSheet')}
           onClose={() => setBibleNotesSheetMode('closed')}
         />
       )}
@@ -867,29 +1880,30 @@ export default function ScriptureReaderView({
             patchSession({ phase: 'pickColor' });
           }
         }}
-        onClose={clearSelection}
-        onCloseSheet={() => {
-          setActionSheetOpen(false);
-          // Dismissing the sheet mid-lesson returns the guide to the tools step.
-          if (isGuided && (guidePhase === 'pickColor' || guidePhase === 'doHighlight')) {
-            patchSession({ phase: 'openTools' });
-          }
-        }}
+        onClose={handleSelectionDismiss}
+        onCloseSheet={handleSelectionSheetDismiss}
+        onSheetEntered={handleSelectionSheetEntered}
+        onSheetExited={handleSelectionSheetExited}
         onSelectColor={color => {
           setSelectedColor(color);
           if (isGuided && guidePhase === 'pickColor') {
+            setSettledSheetPhase('doHighlight');
+            guidePhaseRef.current = 'doHighlight';
             patchSession({ phase: 'doHighlight' });
           }
         }}
         onHighlight={applyHighlight}
         onComment={openComment}
-        onEditColors={() => setColorEditorOpen(true)}
+        onEditColors={() => {
+          if (!isGuided) setColorEditorOpen(true);
+        }}
         colorEditorOpen={colorEditorOpen}
         onCloseColorEditor={() => setColorEditorOpen(false)}
-        onSaveCategory={updateCategory}
+        onSaveCategory={isGuided ? () => {} : updateCategory}
         fabTargetProps={isGuided ? { ref: annotateFabTarget.ref, onLayout: annotateFabTarget.onLayout } : undefined}
         colorsTargetProps={isGuided ? { ref: sheetColorsTarget.ref, onLayout: sheetColorsTarget.onLayout } : undefined}
         highlightTargetProps={isGuided ? { ref: sheetHighlightTarget.ref, onLayout: sheetHighlightTarget.onLayout } : undefined}
+        commentTargetProps={isGuided ? { ref: sheetCommentTarget.ref, onLayout: sheetCommentTarget.onLayout } : undefined}
         guidedOverlay={isGuided ? <GuidedOverlayHost /> : undefined}
       />
 
@@ -903,23 +1917,36 @@ export default function ScriptureReaderView({
         categories={categories}
         selectedColor={selectedColor}
         onSelectColor={setSelectedColor}
-        onEditColors={() => setColorEditorOpen(true)}
+        onEditColors={() => {
+          if (!isGuided) setColorEditorOpen(true);
+        }}
         onValue={setCommentDraft}
         onClose={closeCommentModal}
         onSave={saveComment}
+        onEntered={handleCommentModalEntered}
+        onExited={handleCommentModalExited}
+        saving={commentSaving}
+        guidedAutoTypeText={isGuided && guidePhase === 'commentTyping' ? GUIDE_COMMENT_TEXT : undefined}
+        onGuidedTypingDone={handleGuidedCommentTyped}
+        saveTargetProps={isGuided ? {
+          ref: commentSaveTarget.ref,
+          onLayout: commentSaveTarget.onLayout,
+        } : undefined}
+        guidedOverlay={isGuided ? <GuidedOverlayHost /> : undefined}
       />
 
       <CommentPreviewModal
         annotation={viewingComment}
         categories={categories}
         verseRange={getCommentVerseRange(viewingComment)}
-        onClose={() => setViewingComment(null)}
+        guidedReadOnly={isGuided && guidePhase === 'returnCommentOpen'}
+        onClose={closeCommentPreview}
         onSave={saveViewingCommentEdit}
         onDelete={deleteViewingComment}
       />
 
       <CategoryEditorModal
-        visible={colorEditorOpen && !(selectionActive && actionSheetOpen)}
+        visible={!isGuided && colorEditorOpen && !(selectionActive && actionSheetOpen)}
         categories={categories}
         onClose={() => setColorEditorOpen(false)}
         onSaveCategory={updateCategory}
@@ -930,7 +1957,7 @@ export default function ScriptureReaderView({
 }
 
 function Header({
-  title, onBack, onBibleNote, onFavorites, showBack = true, noteTargetProps,
+  title, onBack, onBibleNote, onFavorites, showBack = true, noteTargetProps, favoritesTargetProps,
 }: {
   title: string;
   onBack: () => void;
@@ -938,6 +1965,7 @@ function Header({
   onFavorites: () => void;
   showBack?: boolean;
   noteTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
+  favoritesTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
 }) {
   return (
     <ScreenTitleBar
@@ -951,7 +1979,7 @@ function Header({
           <TouchableOpacity {...noteTargetProps} onPress={onBibleNote} style={s.headerIconBtn} activeOpacity={0.7}>
             <Notebook s={20} c="#9CA3AF" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={onFavorites} style={s.headerIconBtn} activeOpacity={0.7}>
+          <TouchableOpacity {...favoritesTargetProps} onPress={onFavorites} style={s.headerIconBtn} activeOpacity={0.7}>
             <Star s={22} c="#9CA3AF" />
           </TouchableOpacity>
         </View>
@@ -988,7 +2016,7 @@ function ChapterBar({
 }
 
 function VerseRow({
-  verse, annotations, categories, selected, selectionActive, autoFocus, onPress, onLongPress, onOpenComment,
+  verse, annotations, categories, selected, selectionActive, autoFocus, onPress, onLongPress, onOpenComment, guideTargetProps,
 }: {
   verse: BibleVerse;
   annotations: ScriptureAnnotation[];
@@ -999,6 +2027,7 @@ function VerseRow({
   onPress: () => void;
   onLongPress: () => void;
   onOpenComment: (annotation: ScriptureAnnotation) => void;
+  guideTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
 }) {
   const allHighlights = annotations
     .filter(a => a.kind === 'highlight')
@@ -1106,6 +2135,9 @@ function VerseRow({
   return (
     <GestureDetector gesture={rowGesture}>
       <Reanimated.View
+        ref={guideTargetProps?.ref}
+        onLayout={guideTargetProps?.onLayout}
+        collapsable={false}
         style={[s.verseRow, rowMotionStyle, autoFocus && s.verseRowFocused]}
       >
       <View style={s.verseMarker}>
@@ -1185,6 +2217,8 @@ function SelectionTools({
   onOpenSheet,
   onClose,
   onCloseSheet,
+  onSheetEntered,
+  onSheetExited,
   onSelectColor,
   onHighlight,
   onComment,
@@ -1195,6 +2229,7 @@ function SelectionTools({
   fabTargetProps,
   colorsTargetProps,
   highlightTargetProps,
+  commentTargetProps,
   guidedOverlay,
 }: {
   visible: boolean;
@@ -1208,6 +2243,8 @@ function SelectionTools({
   onOpenSheet: () => void;
   onClose: () => void;
   onCloseSheet: () => void;
+  onSheetEntered?: () => void;
+  onSheetExited?: () => void;
   onSelectColor: (color: HighlightColor) => void;
   onHighlight: () => void;
   onComment: () => void;
@@ -1218,6 +2255,7 @@ function SelectionTools({
   fabTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
   colorsTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
   highlightTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
+  commentTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
   guidedOverlay?: React.ReactNode;
 }) {
   if (!visible) return null;
@@ -1225,8 +2263,9 @@ function SelectionTools({
   const accent = getAnnotationColorHex(selectedColor);
   const categoryLabel = getAnnotationCategoryLabel(categories, selectedColor);
 
-  if (!sheetOpen) {
-    return (
+  return (
+    <>
+      {!sheetOpen && (
       <Reanimated.View
         entering={FadeInDown.duration(170)}
         exiting={FadeOut.duration(110)}
@@ -1247,13 +2286,14 @@ function SelectionTools({
           </View>
         </TouchableOpacity>
       </Reanimated.View>
-    );
-  }
+      )}
 
-  return (
-    <SmoothBottomSheet
+      <SmoothBottomSheet
       visible={sheetOpen}
       onClose={onCloseSheet}
+      onEntered={onSheetEntered}
+      onExited={onSheetExited}
+      exitWatchdogMs={guidedOverlay ? 700 : undefined}
       overlayStyle={s.selectionOverlay}
       backdropOpacity={0.08}
       sheetStyle={[s.selectionSheet, { paddingBottom: Math.max(sheetBottom, 16) + 12 }]}
@@ -1277,7 +2317,7 @@ function SelectionTools({
           <View style={s.actionHandle} />
 
           <View style={s.selectionTop}>
-            <View {...colorsTargetProps} style={s.selectionChipWrap}>
+            <View {...colorsTargetProps} collapsable={false} style={s.selectionChipWrap}>
               <CategoryChipPicker
                 categories={categories}
                 selectedColor={selectedColor}
@@ -1294,31 +2334,33 @@ function SelectionTools({
 
           <View style={s.sheetDivider} />
 
-          <TouchableOpacity
-            {...highlightTargetProps}
-            onPress={onHighlight}
-            activeOpacity={0.88}
-            style={[
-              s.selectionActionCard,
-              {
-                borderColor: hexToRgba(accent, 0.30),
-                backgroundColor: hexToRgba(accent, 0.10),
-              },
-            ]}
-          >
-            <View style={[s.highlightIconCircle, { borderColor: hexToRgba(accent, 0.18) }]}>
-              <Pencil s={18} c={accent} w={2.4} />
-            </View>
-            <View style={s.sheetActionCopy}>
-              <Text style={[s.highlightKicker, { color: accent }]}>HIGHLIGHT</Text>
-              <Text style={s.highlightTitle}>Highlight as {categoryLabel}</Text>
-              {selectedCount > 1 && <Text style={s.selectionCount}>{selectedCount} verses selected</Text>}
-            </View>
-            <View style={[s.selectionActionArrow, { borderColor: hexToRgba(accent, 0.18), backgroundColor: hexToRgba(accent, 0.10) }]}>
-              <ChevronRight s={15} c={accent} w={2.4} />
-            </View>
-          </TouchableOpacity>
+          <View {...highlightTargetProps} collapsable={false}>
+            <TouchableOpacity
+              onPress={onHighlight}
+              activeOpacity={0.88}
+              style={[
+                s.selectionActionCard,
+                {
+                  borderColor: hexToRgba(accent, 0.30),
+                  backgroundColor: hexToRgba(accent, 0.10),
+                },
+              ]}
+            >
+              <View style={[s.highlightIconCircle, { borderColor: hexToRgba(accent, 0.18) }]}>
+                <Pencil s={18} c={accent} w={2.4} />
+              </View>
+              <View style={s.sheetActionCopy}>
+                <Text style={[s.highlightKicker, { color: accent }]}>HIGHLIGHT</Text>
+                <Text style={s.highlightTitle}>Highlight as {categoryLabel}</Text>
+                {selectedCount > 1 && <Text style={s.selectionCount}>{selectedCount} verses selected</Text>}
+              </View>
+              <View style={[s.selectionActionArrow, { borderColor: hexToRgba(accent, 0.18), backgroundColor: hexToRgba(accent, 0.10) }]}>
+                <ChevronRight s={15} c={accent} w={2.4} />
+              </View>
+            </TouchableOpacity>
+          </View>
 
+          <View {...commentTargetProps} collapsable={false}>
           <TouchableOpacity
             onPress={commentDisabled ? undefined : onComment}
             activeOpacity={commentDisabled ? 1 : 0.88}
@@ -1370,7 +2412,9 @@ function SelectionTools({
               <ChevronRight s={15} c={commentDisabled ? '#C4C7CC' : accent} w={2.4} />
             </View>
           </TouchableOpacity>
-    </SmoothBottomSheet>
+          </View>
+      </SmoothBottomSheet>
+    </>
   );
 }
 
@@ -1422,6 +2466,13 @@ function CommentModal({
   onValue,
   onClose,
   onSave,
+  onEntered,
+  onExited,
+  saving,
+  guidedAutoTypeText,
+  onGuidedTypingDone,
+  saveTargetProps,
+  guidedOverlay,
 }: {
   editorKey: string;
   visible: boolean;
@@ -1436,6 +2487,13 @@ function CommentModal({
   onValue: (value: string) => void;
   onClose: () => void;
   onSave: () => void;
+  onEntered?: () => void;
+  onExited?: () => void;
+  saving?: boolean;
+  guidedAutoTypeText?: string;
+  onGuidedTypingDone?: (value: string) => void;
+  saveTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
+  guidedOverlay?: React.ReactNode;
 }) {
   const accent = getAnnotationColorHex(selectedColor);
   const categoryLabel = getAnnotationCategoryLabel(categories, selectedColor);
@@ -1449,9 +2507,70 @@ function CommentModal({
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const initialValueRef = useRef('');
   const discardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const guidedTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const guidedTypingKeyRef = useRef('');
+  const [mounted, setMounted] = useState(visible);
+  const modalProgress = useSharedValue(visible ? 1 : 0);
+  const onEnteredRef = useRef(onEntered);
+  const onExitedRef = useRef(onExited);
+  const modalExitCompletedRef = useRef(false);
+  const guidedExitWatchdog = Boolean(guidedOverlay);
+  onEnteredRef.current = onEntered;
+  onExitedRef.current = onExited;
+
+  const completeModalEnter = useCallback(() => {
+    onEnteredRef.current?.();
+  }, []);
+  const completeModalExit = useCallback(() => {
+    if (modalExitCompletedRef.current) return;
+    modalExitCompletedRef.current = true;
+    setMounted(false);
+    onExitedRef.current?.();
+  }, []);
 
   useEffect(() => {
-    if (!visible) {
+    if (visible) {
+      modalExitCompletedRef.current = false;
+      setMounted(true);
+      modalProgress.value = 0;
+      const frame = requestAnimationFrame(() => {
+        modalProgress.value = withTiming(1, {
+          duration: 300,
+          easing: Easing.bezier(0.22, 1, 0.36, 1),
+        }, finished => {
+          if (finished) runOnJS(completeModalEnter)();
+        });
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    if (!mounted) return undefined;
+
+    Keyboard.dismiss();
+    modalExitCompletedRef.current = false;
+    modalProgress.value = withTiming(0, {
+      duration: 210,
+      easing: Easing.in(Easing.cubic),
+    }, finished => {
+      if (finished) runOnJS(completeModalExit)();
+    });
+    if (!guidedExitWatchdog) return undefined;
+    const exitTimer = setTimeout(completeModalExit, 700);
+    return () => clearTimeout(exitTimer);
+  }, [completeModalEnter, completeModalExit, guidedExitWatchdog, modalProgress, mounted, visible]);
+
+  const modalFadeStyle = useAnimatedStyle(() => ({
+    opacity: modalProgress.value,
+  }));
+  const commentCardMotionStyle = useAnimatedStyle(() => ({
+    opacity: modalProgress.value,
+    transform: [
+      { translateY: (1 - modalProgress.value) * 18 },
+      { scale: 0.992 + modalProgress.value * 0.008 },
+    ],
+  }));
+
+  useEffect(() => {
+    if (!mounted) {
       setVersesExpanded(false);
       setKeyboardOpen(false);
       setDiscardConfirmOpen(false);
@@ -1460,7 +2579,44 @@ function CommentModal({
         discardTimerRef.current = null;
       }
     }
-  }, [visible]);
+  }, [mounted]);
+
+  useEffect(() => {
+    if (!visible || !guidedAutoTypeText) return undefined;
+    const typingKey = `${editorKey}:${guidedAutoTypeText}`;
+    if (guidedTypingKeyRef.current === typingKey) return undefined;
+    guidedTypingKeyRef.current = typingKey;
+
+    let cancelled = false;
+    let position = 0;
+    const escapeHTML = (text: string) => text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+    const typeNext = () => {
+      if (cancelled) return;
+      position = Math.min(guidedAutoTypeText.length, position + 8);
+      const visibleText = guidedAutoTypeText.slice(0, position);
+      editorRef.current?.setHTML(escapeHTML(visibleText), false);
+      if (position >= guidedAutoTypeText.length) {
+        onValue(guidedAutoTypeText);
+        guidedTypingTimerRef.current = setTimeout(() => {
+          if (!cancelled) onGuidedTypingDone?.(guidedAutoTypeText);
+        }, 220);
+        return;
+      }
+      guidedTypingTimerRef.current = setTimeout(typeNext, 30);
+    };
+
+    guidedTypingTimerRef.current = setTimeout(typeNext, 360);
+    return () => {
+      cancelled = true;
+      if (guidedTypingTimerRef.current) clearTimeout(guidedTypingTimerRef.current);
+    };
+  }, [editorKey, guidedAutoTypeText, onGuidedTypingDone, onValue, visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -1519,8 +2675,11 @@ function CommentModal({
     onClose();
   };
 
+  if (!mounted) return null;
+
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={requestClose} statusBarTranslucent>
+    <Modal transparent visible={mounted} animationType="none" onRequestClose={requestClose} statusBarTranslucent>
+      <Reanimated.View style={[StyleSheet.absoluteFillObject, modalFadeStyle]}>
       <KeyboardAvoidingView
         style={[
           s.commentOverlay,
@@ -1529,7 +2688,7 @@ function CommentModal({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={StyleSheet.absoluteFill} pointerEvents="none" />
-        <View style={s.commentCard}>
+        <Reanimated.View style={[s.commentCard, commentCardMotionStyle]}>
           <View style={s.commentHeader}>
             <Text style={s.commentTitle} numberOfLines={1}>{mode === 'edit' ? 'Edit Comment' : 'Add Comment'}</Text>
             <TouchableOpacity onPress={requestClose} style={s.commentCloseBtn} activeOpacity={0.85} hitSlop={6}>
@@ -1606,15 +2765,25 @@ function CommentModal({
               placeholder="Write your reflection..."
               backgroundColor="#FFFDF8"
               color="#3D3229"
+              editable={!guidedAutoTypeText}
             />
           </View>
           </ScrollView>
 
-          <TouchableOpacity onPress={onSave} style={s.commentSave} activeOpacity={0.85}>
-            <Text style={s.commentSaveText}>{mode === 'edit' ? 'SAVE CHANGES' : 'SAVE COMMENT'}</Text>
+          <TouchableOpacity
+            {...saveTargetProps}
+            disabled={saving}
+            onPress={onSave}
+            style={[s.commentSave, saving && { opacity: 0.72 }]}
+            activeOpacity={0.85}
+          >
+            <Text style={s.commentSaveText}>
+              {saving ? 'SAVING...' : mode === 'edit' ? 'SAVE CHANGES' : 'SAVE COMMENT'}
+            </Text>
           </TouchableOpacity>
-        </View>
+        </Reanimated.View>
       </KeyboardAvoidingView>
+      {guidedOverlay}
 
       <ConfirmModal
         visible={discardConfirmOpen}
@@ -1630,6 +2799,7 @@ function CommentModal({
         onCancel={() => setDiscardConfirmOpen(false)}
         onConfirm={discardEditChanges}
       />
+      </Reanimated.View>
     </Modal>
   );
 }
@@ -1696,6 +2866,7 @@ function CommentPreviewModal({
   annotation,
   categories,
   verseRange,
+  guidedReadOnly = false,
   onClose,
   onSave,
   onDelete,
@@ -1703,6 +2874,7 @@ function CommentPreviewModal({
   annotation: ScriptureAnnotation | null;
   categories: ColorCategory[];
   verseRange: string;
+  guidedReadOnly?: boolean;
   onClose: () => void;
   onSave: (target: ScriptureAnnotation, newCommentHtml: string) => Promise<void> | void;
   onDelete: () => void;
@@ -1870,7 +3042,13 @@ function CommentPreviewModal({
             )}
           </ScrollView>
 
-          {editing ? (
+          {guidedReadOnly ? (
+            <View style={s.previewActions}>
+              <TouchableOpacity onPress={onClose} activeOpacity={0.86} style={[s.previewEdit, { flex: 1 }]}>
+                <Text style={s.previewEditText}>CONTINUE</Text>
+              </TouchableOpacity>
+            </View>
+          ) : editing ? (
             <TouchableOpacity onPress={handleSaveEdit} style={s.commentSave} activeOpacity={0.85}>
               <Text style={s.commentSaveText}>SAVE CHANGES</Text>
             </TouchableOpacity>
@@ -1928,6 +3106,11 @@ function CommentPreviewModal({
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
+  guidedInteractionShield: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 90,
+    backgroundColor: 'transparent',
+  },
   loadingScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG },
   loadingText: { marginTop: 12, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, color: C.textMuted, textTransform: 'uppercase' },
   headerActions: { height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4 },

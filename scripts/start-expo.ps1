@@ -1,7 +1,9 @@
 param(
   [switch]$Clear,
   [ValidateSet('lan', 'tunnel')]
-  [string]$Connection = 'lan'
+  [string]$Connection = 'lan',
+  [ValidateSet('go', 'dev-client')]
+  [string]$Target = 'go'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -43,6 +45,19 @@ if ($portInUse) {
 }
 
 $env:BROWSER = 'none'
+if ($Target -eq 'dev-client') {
+  # EAS profile variables are build-time only. The local Metro process must
+  # expose the same public config or the installed development client will
+  # correctly load the bundle but keep Anasta's native editor pilot disabled.
+  $env:ANASTA_NATIVE_BUILD = '1'
+  $env:EXPO_PUBLIC_NATIVE_RICH_TEXT_EDITOR = '1'
+} else {
+  # Expo Go does not contain either native dependency. Explicitly remove
+  # inherited pilot flags so a shell previously used for a development client
+  # cannot accidentally activate the native path in Expo Go.
+  Remove-Item Env:ANASTA_NATIVE_BUILD -ErrorAction SilentlyContinue
+  Remove-Item Env:EXPO_PUBLIC_NATIVE_RICH_TEXT_EDITOR -ErrorAction SilentlyContinue
+}
 if ($env:FORCE_COLOR -and $env:NO_COLOR) {
   Remove-Item Env:NO_COLOR -ErrorAction SilentlyContinue
 }
@@ -58,17 +73,34 @@ if ($env:NODE_OPTIONS -notlike '*expo-watchfile-guard.cjs*') {
 
 # Metro defaults to roughly half of the available CPU cores. The Windows
 # native watcher keeps that concurrency safe, so do not throttle transforms.
-$expoArgs = @('start', '--go', "--$Connection", '--port', "$port")
+$expoArgs = @('start', "--$Target", "--$Connection", '--port', "$port")
 if ($Clear) { $expoArgs += '--clear' }
 
 $portableNode = Join-Path $projectRoot '.tools\node-v22.23.1-win-x64\node.exe'
 $expoCli = Join-Path $projectRoot 'node_modules\expo\bin\cli'
+$routeTypeGenerator = Join-Path $projectRoot 'scripts\generate-expo-router-types.cjs'
+
+# Expo Router 6.0.24's live typed-route watcher treats `..\components` as an
+# in-app route on Windows because it checks only for the POSIX `../` prefix.
+# Generate a verified declaration from app/ once before startup, then disable
+# only Expo CLI's automatic TypeScript watcher. This preserves typed routes and
+# prevents unrelated source files from corrupting `.expo/types/router.d.ts`.
+$env:EXPO_NO_TYPESCRIPT_SETUP = '1'
+if ((Test-Path -LiteralPath $portableNode) -and (Test-Path -LiteralPath $routeTypeGenerator)) {
+  & $portableNode $routeTypeGenerator
+} else {
+  & node $routeTypeGenerator
+}
+if ($LASTEXITCODE -ne 0) {
+  Write-Error 'Verified Expo Router type generation failed; Metro was not started.'
+  exit $LASTEXITCODE
+}
 
 if ((Test-Path -LiteralPath $portableNode) -and (Test-Path -LiteralPath $expoCli)) {
-  Write-Host "Starting Expo Go over $Connection with Node $(& $portableNode --version)..."
+  Write-Host "Starting Expo target '$Target' over $Connection with Node $(& $portableNode --version)..."
   & $portableNode $expoCli @expoArgs
 } else {
-  Write-Host "Starting Expo Go over $Connection with the system Node runtime..."
+  Write-Host "Starting Expo target '$Target' over $Connection with the system Node runtime..."
   & npx.cmd expo @expoArgs
 }
 exit $LASTEXITCODE

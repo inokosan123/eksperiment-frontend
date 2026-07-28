@@ -1,19 +1,43 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  LinearTransition,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withTiming,
+  type SharedValue,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Haptics from 'expo-haptics';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import {
   CheckSmall,
-  ChevronDown,
-  ChevronUp,
+  ChevronRight,
   ListChecks,
+  Sparkles,
   Target,
   Trophy,
 } from '@/components/icons/Icons';
 import AnalyticsChart from '@/components/analytics/AnalyticsChart';
 import HeatmapCalendar from '@/components/analytics/HeatmapCalendar';
 import HighlightCards, { QuickTaskHighlightCards } from '@/components/analytics/HighlightCards';
+import {
+  A,
+  cardShell,
+  Diamond,
+  ExpandChevron,
+  GaugeDial,
+  HairRule,
+  ProgressBar,
+  SectionHead,
+  SegmentedRail,
+  useCountUp,
+} from '@/components/analytics/analyticsUi';
 import {
   getPerChallengeBreakdown,
   getPerHabitBreakdown,
@@ -28,9 +52,8 @@ import { useAnalytics } from '@/components/analytics/useAnalytics';
 import { F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 
-
-const BG = '#FAF7F0';
-const GOLD = '#C5A059';
+const BG = A.bg;
+const GOLD = A.gold;
 
 type FilterTab = SourceFilter;
 
@@ -44,9 +67,27 @@ const TABS: { key: FilterTab; label: string }[] = [
   { key: 'quickTasks', label: 'Quick Tasks' },
 ];
 
+/**
+ * What the hero is measuring, per filter. Kept short on purpose: the line sits
+ * beside a 112pt dial, so anything longer wraps to two lines on a 360pt phone.
+ */
+const HERO_SUBJECT: Record<FilterTab, string> = {
+  all: 'Everything you track',
+  challenges: 'Your challenges',
+  habits: 'Your habits',
+  routineTasks: 'Your routine tasks',
+  spiritualTasks: 'Your spiritual tasks',
+  otherTasks: 'Your other tasks',
+  quickTasks: 'Your quick tasks',
+};
+
 export default function StatisticsView() {
   const { ready, overview, instances, habits, habitIdByTaskId, taskMetaById, challenges } = useAnalytics();
   const [tab, setTab] = useState<FilterTab>('all');
+
+  // The rail brings whichever filter is chosen back into view on its own, so
+  // a jump from a category row lands on a segment the user can actually see.
+  const jumpToTab = useCallback((key: FilterTab) => setTab(key), []);
 
   const sourceFilter: SourceFilter = tab;
 
@@ -85,48 +126,9 @@ export default function StatisticsView() {
     <View style={s.screen}>
       <ScreenTitleBar title="ANALYTICS" showBack bg={BG} />
 
-      {/* Tab strip */}
+      {/* Filter rail — it dissolves at whichever end it can still travel to */}
       <View style={s.tabsWrap}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabsRow}>
-          {TABS.map(t => {
-            const active = t.key === tab;
-            if (active) {
-              return (
-                <TouchableOpacity
-                  key={t.key}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                    setTab(t.key);
-                  }}
-                  activeOpacity={0.84}
-                >
-                  <LinearGradient
-                    colors={['#E2BD75', '#C5A059', '#A87E33']}
-                    locations={[0, 0.55, 1]}
-                    start={{ x: 0.15, y: 0 }}
-                    end={{ x: 0.85, y: 1 }}
-                    style={[s.tabPill, s.tabPillActive]}
-                  >
-                    <Text style={[s.tabLabel, s.tabLabelActive]}>{t.label}</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              );
-            }
-            return (
-              <TouchableOpacity
-                key={t.key}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                  setTab(t.key);
-                }}
-                activeOpacity={0.84}
-                style={s.tabPill}
-              >
-                <Text style={s.tabLabel}>{t.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+        <SegmentedRail items={TABS} value={tab} onChange={setTab} fadeColor={BG} />
       </View>
 
       <ScrollView
@@ -140,13 +142,15 @@ export default function StatisticsView() {
           <Text style={s.loadingText}>No data yet</Text>
         ) : (
           <>
-            <HeroStats bucket={heroBucket} />
+            <HeroStats bucket={heroBucket} subject={HERO_SUBJECT[tab]} tabKey={tab} />
 
-            {tab === 'quickTasks' && quickHighlights ? (
-              <QuickTaskHighlightCards {...quickHighlights} />
-            ) : streakLeaders ? (
-              <HighlightCards {...streakLeaders} />
-            ) : null}
+            <Animated.View key={`highlights-${tab}`} layout={LinearTransition.duration(220)}>
+              {tab === 'quickTasks' && quickHighlights ? (
+                <QuickTaskHighlightCards {...quickHighlights} />
+              ) : streakLeaders ? (
+                <HighlightCards {...streakLeaders} />
+              ) : null}
+            </Animated.View>
 
             <AnalyticsChart snapshots={overview.dailySnapshots} sourceFilter={sourceFilter} />
 
@@ -158,7 +162,7 @@ export default function StatisticsView() {
                 spiritualTasksPct={overview.global.source.spiritualTasks.pct}
                 otherTasksPct={overview.global.source.otherTasks.pct}
                 quickTasksPct={overview.global.source.quickTasks.pct}
-                onJump={key => setTab(key)}
+                onJump={jumpToTab}
               />
             )}
 
@@ -173,36 +177,35 @@ export default function StatisticsView() {
 
             {tab === 'routineTasks' && (
               <TaskBreakdownSection
-                title="ROUTINE TASKS"
+                title="Routine tasks"
+                caption="Every routine task, ranked by how often you finish it."
                 items={taskCategoryBreakdown.routineTasks}
                 accent="#16A34A"
-                bg="#FFFFFF"
+                wash="#F1F7F2"
               />
             )}
 
             {tab === 'spiritualTasks' && (
               <TaskBreakdownSection
-                title="SPIRITUAL TASKS"
+                title="Spiritual tasks"
+                caption="Prayer and church tasks, ranked by how often you finish them."
                 items={taskCategoryBreakdown.spiritualTasks}
                 accent={GOLD}
-                bg="#FFFBEB"
+                wash={A.goldWash}
               />
             )}
 
             {tab === 'otherTasks' && (
               <TaskBreakdownSection
-                title="OTHER TASKS"
+                title="Other tasks"
+                caption="Everything else you scheduled, ranked by completion."
                 items={taskCategoryBreakdown.otherTasks}
-                accent="#374151"
-                bg="#FFFFFF"
+                accent="#4A4540"
+                wash="#F5F4F1"
               />
             )}
 
-            {tab === 'quickTasks' && (
-              <QuickTaskOverview
-                bucket={overview.global.source.quickTasks}
-              />
-            )}
+            {tab === 'quickTasks' && <QuickTaskOverview bucket={overview.global.source.quickTasks} />}
 
             <HeatmapCalendar snapshots={overview.dailySnapshots} sourceFilter={sourceFilter} />
           </>
@@ -212,44 +215,216 @@ export default function StatisticsView() {
   );
 }
 
-/* ─── Hero stats ─── */
+/* ─── Hero ───────────────────────────────────────────────────
+ * The screen's headline reading, struck in the Home card's own
+ * language: a gauge blooming with light, small-caps copy hung
+ * off a gold hairline, and — instead of four coloured chips —
+ * one ledger band whose columns are ruled apart, each carrying
+ * the register's diamond over a serif figure.
+ * ───────────────────────────────────────────────────────────── */
 
-function HeroStats({ bucket }: { bucket: CountBucket }) {
+const REGISTERS = [
+  { key: 'completed', label: 'DONE', bar: A.done, ink: A.doneInk },
+  { key: 'skipped', label: 'SKIPPED', bar: A.skipped, ink: A.skippedInk },
+  { key: 'missed', label: 'MISSED', bar: A.missed, ink: A.missedInk },
+  { key: 'pending', label: 'PENDING', bar: A.pending, ink: A.pendingInk },
+] as const;
+
+function HeroStats({
+  bucket,
+  subject,
+  tabKey,
+}: {
+  bucket: CountBucket;
+  subject: string;
+  tabKey: FilterTab;
+}) {
   const pending = Math.max(0, bucket.scheduled - bucket.completed - bucket.skipped - bucket.missed);
+  const shownPct = useCountUp(bucket.pct);
+  const empty = bucket.scheduled === 0;
+
+  const counts: Record<string, number> = {
+    completed: bucket.completed,
+    skipped: bucket.skipped,
+    missed: bucket.missed,
+    pending,
+  };
 
   return (
-    <View style={hs.card}>
-      <View style={hs.row}>
-        <View style={hs.circle}>
-          <Text style={hs.circlePct}>{bucket.pct}%</Text>
-        </View>
-        <View style={hs.stats}>
-          <Stat value={bucket.completed} label="DONE" color="#4F6B43" />
-          <Stat value={bucket.skipped} label="SKIPPED" color="#9A7426" />
-          <Stat value={bucket.missed} label="MISSED" color="#A05656" />
-          <Stat value={pending} label="PENDING" color="#78716C" />
+    <Animated.View
+      style={hs.card}
+      entering={FadeInDown.duration(420).easing(Easing.out(Easing.cubic))}
+      layout={LinearTransition.duration(220)}
+    >
+      <View style={hs.top}>
+        <GaugeDial key={`gauge-${tabKey}`} pct={bucket.pct} size={112} stroke={8}>
+          <View style={hs.readingRow}>
+            <Text style={hs.reading}>{shownPct}</Text>
+            <Text style={hs.readingSign}>%</Text>
+          </View>
+          <View style={hs.readingRule} />
+          <Text style={hs.readingCaption}>COMPLETE</Text>
+        </GaugeDial>
+
+        <View style={hs.copy}>
+          <Text style={hs.eyebrow}>COMPLETION RATE</Text>
+          <Text style={hs.subject} numberOfLines={2}>
+            {empty ? 'Nothing scheduled' : subject}
+          </Text>
+          <HairRule style={hs.copyRule} />
+          <View style={hs.countRow}>
+            <Text style={hs.countValue}>{bucket.completed}</Text>
+            <Text style={hs.countOf}>of</Text>
+            <Text style={hs.countValue}>{bucket.scheduled}</Text>
+            <Text style={hs.countLabel}>COMPLETED</Text>
+          </View>
         </View>
       </View>
-      <View style={hs.bar}>
-        <View style={[hs.barFill, { width: `${bucket.pct}%` }]} />
+
+      <CompositionBar
+        completed={bucket.completed}
+        skipped={bucket.skipped}
+        missed={bucket.missed}
+        pending={pending}
+      />
+
+      <View style={hs.ledger}>
+        {REGISTERS.map((r, i) => (
+          <React.Fragment key={r.key}>
+            {i > 0 && <View style={hs.ledgerRule} />}
+            <LedgerColumn value={counts[r.key]} label={r.label} tone={r.bar} ink={r.ink} index={i} />
+          </React.Fragment>
+        ))}
       </View>
-      <Text style={hs.summary}>
-        {bucket.completed} of {bucket.scheduled} completed
+    </Animated.View>
+  );
+}
+
+/**
+ * The composition of the range, read as one enamelled rail: every
+ * segment grows on the same sweep, hairline gaps keep the registers
+ * apart, and a light catch runs along the top so it reads as glass
+ * over the colour rather than four flat blocks.
+ */
+function CompositionBar({
+  completed,
+  skipped,
+  missed,
+  pending,
+}: {
+  completed: number;
+  skipped: number;
+  missed: number;
+  pending: number;
+}) {
+  const reduceMotion = useReducedMotion();
+  const total = completed + skipped + missed + pending;
+  const grow = useSharedValue(reduceMotion ? 1 : 0);
+
+  useEffect(() => {
+    grow.value = reduceMotion
+      ? 1
+      : withDelay(240, withTiming(1, { duration: 900, easing: Easing.out(Easing.cubic) }));
+  }, [grow, reduceMotion]);
+
+  const counts: Record<string, number> = { completed, skipped, missed, pending };
+  const segments = REGISTERS.filter(r => counts[r.key] > 0);
+
+  return (
+    <View style={hs.barTrack}>
+      {total > 0 &&
+        segments.map((seg, i) => (
+          <BarSegment
+            key={seg.key}
+            share={(counts[seg.key] / total) * 100}
+            color={seg.bar}
+            grow={grow}
+            first={i === 0}
+          />
+        ))}
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(255,255,255,0.42)', 'rgba(255,255,255,0.04)']}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={hs.barSheen}
+      />
+    </View>
+  );
+}
+
+function BarSegment({
+  share,
+  color,
+  grow,
+  first,
+}: {
+  share: number;
+  color: string;
+  grow: SharedValue<number>;
+  first: boolean;
+}) {
+  const style = useAnimatedStyle(() => ({ width: `${share * grow.value}%` }));
+  return (
+    <Animated.View
+      style={[
+        { height: '100%', backgroundColor: color },
+        !first && hs.barSegmentGap,
+        style,
+      ]}
+    />
+  );
+}
+
+function LedgerColumn({
+  value,
+  label,
+  tone,
+  ink,
+  index,
+}: {
+  value: number;
+  label: string;
+  tone: string;
+  ink: string;
+  index: number;
+}) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <Animated.View
+      entering={
+        reduceMotion
+          ? undefined
+          : FadeInDown.duration(360).delay(200 + index * 60).easing(Easing.out(Easing.cubic))
+      }
+      style={hs.ledgerCol}
+    >
+      <Diamond size={5} color={tone} />
+      <Text
+        style={[hs.ledgerValue, { color: ink }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.6}
+      >
+        {value}
       </Text>
-    </View>
+      <Text style={hs.ledgerLabel} numberOfLines={1}>
+        {label}
+      </Text>
+    </Animated.View>
   );
 }
 
-function Stat({ value, label, color }: { value: number; label: string; color: string }) {
-  return (
-    <View style={{ alignItems: 'center', flex: 1, minWidth: 0 }}>
-      <Text style={[hs.statValue, { color }]}>{value}</Text>
-      <Text style={hs.statLabel}>{label}</Text>
-    </View>
-  );
-}
+/* ─── All tab — category comparison ─── */
 
-/* ─── Section: All tab — category comparison ─── */
+const CATEGORY_ROWS: { key: FilterTab; label: string; accent: string }[] = [
+  { key: 'challenges', label: 'Challenges', accent: GOLD },
+  { key: 'habits', label: 'Habits', accent: '#2563EB' },
+  { key: 'routineTasks', label: 'Routine Tasks', accent: '#16A34A' },
+  { key: 'spiritualTasks', label: 'Spiritual Tasks', accent: '#B07D2C' },
+  { key: 'otherTasks', label: 'Other Tasks', accent: '#4A4540' },
+  { key: 'quickTasks', label: 'Quick Tasks', accent: '#D97706' },
+];
 
 function CategorySection({
   challengesPct,
@@ -268,188 +443,262 @@ function CategorySection({
   quickTasksPct: number;
   onJump: (key: FilterTab) => void;
 }) {
+  const values: Record<string, number> = {
+    challenges: challengesPct,
+    habits: habitsPct,
+    routineTasks: routineTasksPct,
+    spiritualTasks: spiritualTasksPct,
+    otherTasks: otherTasksPct,
+    quickTasks: quickTasksPct,
+  };
+
   return (
-    <View style={cs.card}>
-      <View style={cs.head}>
-        <Target s={14} c={GOLD} w={2} />
-        <Text style={cs.kicker}>BY CATEGORY</Text>
+    <Animated.View style={cs.card} entering={FadeIn.duration(280)}>
+      <SectionHead
+        Icon={Target}
+        title="By category"
+        caption="Tap a row to open that filter on its own."
+      />
+      <View style={cs.rows}>
+        {CATEGORY_ROWS.map((row, i) => (
+          <CategoryRow
+            key={row.key}
+            label={row.label}
+            pct={values[row.key] ?? 0}
+            accent={row.accent}
+            index={i}
+            onPress={() => onJump(row.key)}
+          />
+        ))}
       </View>
-      <View style={{ rowGap: 8 }}>
-        <CategoryRow label="Challenges" pct={challengesPct} accent={GOLD} onPress={() => onJump('challenges')} />
-        <CategoryRow label="Habits" pct={habitsPct} accent="#2563EB" onPress={() => onJump('habits')} />
-        <CategoryRow label="Routine Tasks" pct={routineTasksPct} accent="#16A34A" onPress={() => onJump('routineTasks')} />
-        <CategoryRow label="Spiritual Tasks" pct={spiritualTasksPct} accent={GOLD} onPress={() => onJump('spiritualTasks')} />
-        <CategoryRow label="Other Tasks" pct={otherTasksPct} accent="#374151" onPress={() => onJump('otherTasks')} />
-        <CategoryRow label="Quick Tasks" pct={quickTasksPct} accent="#D97706" onPress={() => onJump('quickTasks')} />
-      </View>
-    </View>
+    </Animated.View>
   );
 }
 
-function CategoryRow({ label, pct, accent, onPress }: { label: string; pct: number; accent: string; onPress: () => void }) {
+function CategoryRow({
+  label,
+  pct,
+  accent,
+  index,
+  onPress,
+}: {
+  label: string;
+  pct: number;
+  accent: string;
+  index: number;
+  onPress: () => void;
+}) {
+  const reduceMotion = useReducedMotion();
   return (
-    <TouchableOpacity activeOpacity={0.84} onPress={onPress} style={cs.row}>
-      <View style={{ flex: 1 }}>
-        <Text style={cs.rowLabel}>{label}</Text>
-        <View style={cs.rowBar}>
-          <View style={[cs.rowBarFill, { width: `${pct}%`, backgroundColor: accent }]} />
+    <Animated.View
+      entering={
+        reduceMotion
+          ? undefined
+          : FadeInDown.duration(340).delay(index * 50).easing(Easing.out(Easing.cubic))
+      }
+    >
+      <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={cs.row}>
+        <View style={cs.rowBody}>
+          <Text style={cs.rowLabel} numberOfLines={1}>
+            {label}
+          </Text>
+          <ProgressBar pct={pct} color={accent} height={7} delay={200 + index * 60} style={cs.rowBar} />
         </View>
-      </View>
-      <Text style={[cs.rowPct, { color: accent }]}>{pct}%</Text>
-    </TouchableOpacity>
+        <Text style={[cs.rowPct, { color: accent }]}>{pct}%</Text>
+        <ChevronRight s={17} c="#C9C2B7" />
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
-/* ─── Section: Challenges ─── */
+/* ─── Challenges ─── */
 
 function ChallengeBreakdownSection({ items, globalPct }: { items: PerItemBreakdown[]; globalPct: number }) {
   return (
-    <View style={{ rowGap: 8 }}>
-      <View style={section.head}>
-        <Target s={14} c={GOLD} w={2} />
-        <Text style={section.kicker}>PER CHALLENGE</Text>
-      </View>
+    <Animated.View style={sec.wrap} entering={FadeIn.duration(280)}>
+      <SectionHead
+        Icon={Trophy}
+        title="Per challenge"
+        caption="Open a challenge to see its streak and how it compares."
+        style={sec.head}
+      />
       {items.length === 0 ? (
-        <View style={section.empty}>
-          <Text style={section.emptyText}>No challenges yet</Text>
-        </View>
+        <EmptySection text="No challenges yet" />
       ) : (
-        items.map(item => <ChallengeBreakdownCard key={item.id} item={item} globalPct={globalPct} />)
+        items.map((item, i) => (
+          <ChallengeBreakdownCard key={item.id} item={item} globalPct={globalPct} index={i} />
+        ))
       )}
-    </View>
+    </Animated.View>
   );
 }
 
-function ChallengeBreakdownCard({ item, globalPct }: { item: PerItemBreakdown; globalPct: number }) {
+function ChallengeBreakdownCard({
+  item,
+  globalPct,
+  index,
+}: {
+  item: PerItemBreakdown;
+  globalPct: number;
+  index: number;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const reduceMotion = useReducedMotion();
   const diff = item.pct - globalPct;
+
   return (
-    <View style={ch.card}>
-      <TouchableOpacity activeOpacity={0.84} onPress={() => setExpanded(e => !e)} style={ch.head}>
+    <Animated.View
+      style={ch.card}
+      layout={LinearTransition.duration(240)}
+      entering={
+        reduceMotion
+          ? undefined
+          : FadeInDown.duration(340).delay(index * 55).easing(Easing.out(Easing.cubic))
+      }
+    >
+      <TouchableOpacity activeOpacity={0.85} onPress={() => setExpanded(e => !e)} style={ch.head}>
         <View style={ch.iconBox}>
-          <Trophy s={16} c={GOLD} w={2} />
+          <Trophy s={17} c={GOLD} w={2} />
         </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={ch.title} numberOfLines={1}>{item.name}</Text>
-          <View style={ch.bar}>
-            <View style={[ch.barFill, { width: `${item.pct}%` }]} />
-          </View>
+        <View style={ch.body}>
+          <Text style={ch.title} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <ProgressBar pct={item.pct} color={GOLD} height={6} delay={120 + index * 50} style={ch.bar} />
         </View>
         <Text style={ch.pct}>{item.pct}%</Text>
-        {expanded ? <ChevronUp s={16} c="#A8A29E" /> : <ChevronDown s={16} c="#A8A29E" />}
+        <ExpandChevron expanded={expanded} />
       </TouchableOpacity>
 
       {expanded && (
-        <View style={ch.expanded}>
-          <ExpandStat label="STREAK" value={`${item.currentStreak} / ${item.bestStreak}`} />
-          <ExpandStat
-            label="VS AVERAGE"
-            value={`${diff >= 0 ? '+' : ''}${diff}%`}
-            valueColor={diff >= 0 ? '#15803D' : '#DC2626'}
-          />
-          <ExpandStat label="DONE" value={String(item.completed)} />
-          <ExpandStat label="MISSED" value={String(item.missed)} />
-        </View>
+        <Animated.View
+          style={ch.expanded}
+          entering={reduceMotion ? undefined : FadeIn.duration(200)}
+          exiting={reduceMotion ? undefined : FadeOut.duration(120)}
+        >
+          <View style={grid.row}>
+            <MiniStat value={`${item.currentStreak}/${item.bestStreak}`} label="STREAK" color={A.ink} />
+            <MiniStat
+              value={`${diff >= 0 ? '+' : ''}${diff}%`}
+              label="VS AVG"
+              color={diff >= 0 ? '#15803D' : '#B91C1C'}
+            />
+            <MiniStat value={item.completed} label="DONE" color={A.done} />
+            <MiniStat value={item.missed} label="MISSED" color={A.missed} />
+          </View>
+        </Animated.View>
       )}
-    </View>
+    </Animated.View>
   );
 }
 
-function ExpandStat({ label, value, valueColor = '#1A1714' }: { label: string; value: string; valueColor?: string }) {
-  return (
-    <View style={ch.expandStat}>
-      <Text style={ch.expandLabel}>{label}</Text>
-      <Text style={[ch.expandValue, { color: valueColor }]}>{value}</Text>
-    </View>
-  );
-}
-
-/* ─── Section: Habits ─── */
+/* ─── Habits ─── */
 
 function HabitBreakdownSection({ items }: { items: PerItemBreakdown[] }) {
   const active = items.filter(h => h.isActive !== false);
   const inactive = items.filter(h => h.isActive === false);
 
   return (
-    <View style={{ rowGap: 8 }}>
-      <View style={section.head}>
-        <ListChecks s={14} c={GOLD} w={2} />
-        <Text style={section.kicker}>ACTIVE</Text>
-      </View>
+    <Animated.View style={sec.wrap} entering={FadeIn.duration(280)}>
+      <SectionHead
+        Icon={ListChecks}
+        title="Active goals"
+        caption="Open a goal to see its tasks and streaks."
+        style={sec.head}
+      />
       {active.length === 0 ? (
-        <View style={section.empty}>
-          <Text style={section.emptyText}>No active goals</Text>
-        </View>
+        <EmptySection text="No active goals" />
       ) : (
-        active.map(item => <HabitBreakdownCard key={item.id} item={item} />)
+        active.map((item, i) => <HabitBreakdownCard key={item.id} item={item} index={i} />)
       )}
+
       {inactive.length > 0 && (
         <>
-          <View style={[section.head, { paddingTop: 8 }]}>
-            <ListChecks s={14} c="#A8A29E" w={2} />
-            <Text style={[section.kicker, { color: '#A8A29E' }]}>INACTIVE / ARCHIVED</Text>
-          </View>
-          {inactive.map(item => (
-            <View key={item.id} style={{ opacity: 0.6 }}>
-              <HabitBreakdownCard item={item} />
+          <SectionHead
+            Icon={ListChecks}
+            title="Archived"
+            caption="Goals you have paused or finished."
+            tone={A.faint}
+            wash="#F4F2ED"
+            style={[sec.head, { marginTop: 12 }]}
+          />
+          {inactive.map((item, i) => (
+            <View key={item.id} style={{ opacity: 0.62 }}>
+              <HabitBreakdownCard item={item} index={i} />
             </View>
           ))}
         </>
       )}
-    </View>
+    </Animated.View>
   );
 }
 
-function HabitBreakdownCard({ item }: { item: PerItemBreakdown }) {
+function HabitBreakdownCard({ item, index }: { item: PerItemBreakdown; index: number }) {
   const [expanded, setExpanded] = useState(false);
+  const reduceMotion = useReducedMotion();
   const accent = item.color || GOLD;
+
   return (
-    <View style={[hb.card, { borderLeftWidth: 4, borderLeftColor: accent }]}>
-      <TouchableOpacity activeOpacity={0.84} onPress={() => setExpanded(e => !e)} style={hb.head}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={hb.title} numberOfLines={1}>{item.name}</Text>
-          <View style={hb.bar}>
-            <View style={[hb.barFill, { width: `${item.pct}%`, backgroundColor: accent }]} />
-          </View>
+    <Animated.View
+      style={[hb.card, { borderLeftWidth: 4, borderLeftColor: accent }]}
+      layout={LinearTransition.duration(240)}
+      entering={
+        reduceMotion
+          ? undefined
+          : FadeInDown.duration(340).delay(index * 55).easing(Easing.out(Easing.cubic))
+      }
+    >
+      <TouchableOpacity activeOpacity={0.85} onPress={() => setExpanded(e => !e)} style={hb.head}>
+        <View style={hb.body}>
+          <Text style={hb.title} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <ProgressBar pct={item.pct} color={accent} height={6} delay={120 + index * 50} style={hb.bar} />
         </View>
         <Text style={[hb.pct, { color: accent }]}>{item.pct}%</Text>
-        {expanded ? <ChevronUp s={16} c="#A8A29E" /> : <ChevronDown s={16} c="#A8A29E" />}
+        <ExpandChevron expanded={expanded} />
       </TouchableOpacity>
 
       {expanded && (
-        <View style={hb.expanded}>
+        <Animated.View
+          style={hb.expanded}
+          entering={reduceMotion ? undefined : FadeIn.duration(200)}
+          exiting={reduceMotion ? undefined : FadeOut.duration(120)}
+        >
           <Text style={hb.expandedKicker}>OVERALL</Text>
-          <View style={hb.statsGrid}>
-            <MiniStat value={item.completed} label="DONE" color="#4F6B43" />
-            <MiniStat value={item.skipped} label="SKIPPED" color="#9A7426" />
-            <MiniStat value={item.missed} label="MISSED" color="#A05656" />
-            <MiniStat value={`${item.currentStreak}/${item.bestStreak}`} label="STREAK" color="#1A1714" />
+          <View style={[grid.row, { marginTop: 9 }]}>
+            <MiniStat value={item.completed} label="DONE" color={A.done} />
+            <MiniStat value={item.skipped} label="SKIPPED" color={A.skipped} />
+            <MiniStat value={item.missed} label="MISSED" color={A.missed} />
+            <MiniStat value={`${item.currentStreak}/${item.bestStreak}`} label="STREAK" color={A.ink} />
           </View>
 
           {item.subTasks && item.subTasks.length > 0 && (
             <>
-              <Text style={[hb.expandedKicker, { marginTop: 12 }]}>TASKS</Text>
-              <View style={{ rowGap: 8, marginTop: 8 }}>
+              <Text style={[hb.expandedKicker, { marginTop: 16 }]}>TASKS</Text>
+              <View style={{ rowGap: 9, marginTop: 9 }}>
                 {item.subTasks.map(t => (
                   <View key={t.id} style={hb.subTask}>
                     <View style={hb.subTaskHead}>
-                      <Text style={hb.subTaskTitle} numberOfLines={1}>{t.name}</Text>
+                      <Text style={hb.subTaskTitle} numberOfLines={1}>
+                        {t.name}
+                      </Text>
                       <Text style={[hb.subTaskPct, { color: accent }]}>{t.pct}%</Text>
                     </View>
-                    <View style={hb.subTaskGrid}>
-                      <MiniStat value={t.completed} label="DONE" color="#4F6B43" small />
-                      <MiniStat value={t.skipped} label="SKIPPED" color="#9A7426" small />
-                      <MiniStat value={t.missed} label="MISSED" color="#A05656" small />
-                      <MiniStat value={`${t.currentStreak}/${t.bestStreak}`} label="STREAK" color="#1A1714" small />
+                    <View style={[grid.row, { marginTop: 9, columnGap: 5 }]}>
+                      <MiniStat value={t.completed} label="DONE" color={A.done} small />
+                      <MiniStat value={t.skipped} label="SKIPPED" color={A.skipped} small />
+                      <MiniStat value={t.missed} label="MISSED" color={A.missed} small />
+                      <MiniStat value={`${t.currentStreak}/${t.bestStreak}`} label="STREAK" color={A.ink} small />
                     </View>
                   </View>
                 ))}
               </View>
             </>
           )}
-        </View>
+        </Animated.View>
       )}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -466,99 +715,153 @@ function MiniStat({
 }) {
   return (
     <View style={[ms.tile, small && ms.tileSmall]}>
-      <Text style={[ms.value, { color }, small && ms.valueSmall]}>{value}</Text>
-      <Text style={[ms.label, small && ms.labelSmall]}>{label}</Text>
+      <Text
+        style={[ms.value, { color }, small && ms.valueSmall]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.72}
+      >
+        {value}
+      </Text>
+      <Text style={[ms.label, small && ms.labelSmall]} numberOfLines={1}>
+        {label}
+      </Text>
     </View>
   );
 }
 
-/* ─── Section: Routines ─── */
+/* ─── Task categories ─── */
 
 function TaskBreakdownSection({
   title,
+  caption,
   items,
   accent,
-  bg,
+  wash,
 }: {
   title: string;
+  caption: string;
   items: PerItemBreakdown[];
   accent: string;
-  bg: string;
+  wash: string;
 }) {
   return (
-    <View style={{ rowGap: 8 }}>
-      <View style={section.head}>
-        <CheckSmall s={14} c={accent} w={2.4} />
-        <Text style={[section.kicker, { color: accent }]}>{title}</Text>
-      </View>
-      <RoutineGroupCard title={title} items={items} accent={accent} bg={bg} />
-    </View>
-  );
-}
-
-function RoutineGroupCard({
-  title,
-  items,
-  accent,
-  bg,
-}: {
-  title: string;
-  items: PerItemBreakdown[];
-  accent: string;
-  bg: string;
-}) {
-  return (
-    <View style={[rg.card, { backgroundColor: bg, borderLeftWidth: 4, borderLeftColor: accent }]}>
-      <Text style={rg.title}>{title.toUpperCase()}</Text>
+    <Animated.View style={sec.wrap} entering={FadeIn.duration(280)}>
+      <SectionHead Icon={CheckSmall} title={title} caption={caption} tone={accent} wash={wash} style={sec.head} />
       {items.length === 0 ? (
-        <Text style={rg.empty}>No tasks yet</Text>
+        <EmptySection text="No tasks yet" />
       ) : (
-        <View style={{ rowGap: 6, marginTop: 8 }}>
-          {items.map(item => (
-            <View key={item.id} style={rg.row}>
-              <Text style={rg.rowName} numberOfLines={1}>{item.name}</Text>
-              <Text style={[rg.rowPct, { color: accent }]}>{item.pct}%</Text>
-            </View>
+        <View style={[rg.card, { borderLeftWidth: 4, borderLeftColor: accent }]}>
+          {items.map((item, i) => (
+            <TaskRow key={item.id} item={item} accent={accent} index={i} last={i === items.length - 1} />
           ))}
         </View>
       )}
-    </View>
+    </Animated.View>
   );
 }
 
-/* ─── Section: Quick tasks overview ─── */
+function TaskRow({
+  item,
+  accent,
+  index,
+  last,
+}: {
+  item: PerItemBreakdown;
+  accent: string;
+  index: number;
+  last: boolean;
+}) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <Animated.View
+      entering={
+        reduceMotion
+          ? undefined
+          : FadeInDown.duration(320).delay(index * 40).easing(Easing.out(Easing.cubic))
+      }
+      style={[rg.row, !last && rg.rowDivider]}
+    >
+      <View style={rg.rowBody}>
+        <Text style={rg.rowName} numberOfLines={1}>
+          {item.name}
+        </Text>
+        <ProgressBar pct={item.pct} color={accent} height={6} delay={140 + index * 45} style={rg.rowBar} />
+      </View>
+      <Text style={[rg.rowPct, { color: accent }]}>{item.pct}%</Text>
+    </Animated.View>
+  );
+}
+
+/* ─── Quick tasks ─── */
 
 function QuickTaskOverview({ bucket }: { bucket: CountBucket }) {
   const pending = Math.max(0, bucket.scheduled - bucket.completed - bucket.skipped - bucket.missed);
 
+  const tiles: { key: string; label: string; value: number; color: string; wash: string }[] = [
+    { key: 'scheduled', label: 'Scheduled', value: bucket.scheduled, color: A.ink, wash: '#F6F4F1' },
+    { key: 'completed', label: 'Completed', value: bucket.completed, color: A.done, wash: A.doneWash },
+    { key: 'skipped', label: 'Skipped', value: bucket.skipped, color: A.skipped, wash: A.skippedWash },
+    { key: 'missed', label: 'Missed', value: bucket.missed, color: A.missed, wash: A.missedWash },
+    { key: 'pending', label: 'Pending', value: pending, color: A.pending, wash: A.pendingWash },
+  ];
+
   return (
-    <View style={qt.card}>
-      <View style={section.head}>
-        <Target s={14} c={GOLD} w={2} />
-        <Text style={section.kicker}>OVERVIEW</Text>
-      </View>
+    <Animated.View style={qt.card} entering={FadeIn.duration(280)}>
+      <SectionHead Icon={Sparkles} title="Overview" caption="Every quick task you have logged so far." />
       <View style={qt.grid}>
-        <View style={qt.tile}>
-          <Text style={qt.tileLabel}>SCHEDULED</Text>
-          <Text style={qt.tileValue}>{bucket.scheduled}</Text>
-        </View>
-        <View style={qt.tile}>
-          <Text style={qt.tileLabel}>COMPLETED</Text>
-          <Text style={[qt.tileValue, { color: GOLD }]}>{bucket.completed}</Text>
-        </View>
-        <View style={qt.tile}>
-          <Text style={qt.tileLabel}>SKIPPED</Text>
-          <Text style={[qt.tileValue, { color: '#9A7426' }]}>{bucket.skipped}</Text>
-        </View>
-        <View style={qt.tile}>
-          <Text style={qt.tileLabel}>MISSED</Text>
-          <Text style={[qt.tileValue, { color: '#A05656' }]}>{bucket.missed}</Text>
-        </View>
-        <View style={qt.tile}>
-          <Text style={qt.tileLabel}>PENDING</Text>
-          <Text style={[qt.tileValue, { color: '#78716C' }]}>{pending}</Text>
-        </View>
+        {tiles.map((tile, i) => (
+          <QuickTile
+            key={tile.key}
+            label={tile.label}
+            value={tile.value}
+            color={tile.color}
+            wash={tile.wash}
+            index={i}
+          />
+        ))}
       </View>
+    </Animated.View>
+  );
+}
+
+function QuickTile({
+  label,
+  value,
+  color,
+  wash,
+  index,
+}: {
+  label: string;
+  value: number;
+  color: string;
+  wash: string;
+  index: number;
+}) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <Animated.View
+      entering={
+        reduceMotion
+          ? undefined
+          : FadeInDown.duration(340).delay(index * 55).easing(Easing.out(Easing.cubic))
+      }
+      style={[qt.tile, { backgroundColor: wash }]}
+    >
+      <Text style={[qt.tileValue, { color }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+        {value}
+      </Text>
+      <Text style={qt.tileLabel} numberOfLines={1}>
+        {label}
+      </Text>
+    </Animated.View>
+  );
+}
+
+function EmptySection({ text }: { text: string }) {
+  return (
+    <View style={sec.empty}>
+      <Text style={sec.emptyText}>{text}</Text>
     </View>
   );
 }
@@ -569,295 +872,306 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
   loadingText: {
     fontFamily: F.serifMediumItalic,
-    fontSize: 15,
-    color: '#A8A29E',
+    fontSize: 16,
+    color: A.faint,
     textAlign: 'center',
     marginTop: 60,
   },
-  tabsWrap: { backgroundColor: BG, paddingBottom: 6 },
-  tabsRow: { columnGap: 8, paddingHorizontal: 16, paddingVertical: 4 },
-  tabPill: {
-    minHeight: 32,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#F0EDE6',
-  },
-  tabPillActive: {
-    borderWidth: 0,
-    shadowColor: '#A87E33',
-    shadowOpacity: 0.25,
-    shadowOffset: { width: 0, height: 5 },
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  tabLabel: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 0.6, color: '#78716C' },
-  tabLabelActive: { color: '#FFFFFF', letterSpacing: 0.8 },
-  content: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 80, rowGap: 14 },
+  tabsWrap: { backgroundColor: BG, paddingTop: 2, paddingBottom: 10 },
+  content: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 90, rowGap: 16 },
 });
 
 const hs = StyleSheet.create({
-  card: {
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#F0EDE6',
-    padding: 16,
-    shadowColor: '#1C1917',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 7,
-    elevation: 1,
+  card: { ...cardShell, padding: 18, paddingBottom: 16 },
+  top: { flexDirection: 'row', alignItems: 'center', columnGap: 14 },
+
+  // Inside the dial: the figure, a hairline, and its caption.
+  readingRow: { flexDirection: 'row', alignItems: 'baseline' },
+  reading: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 34,
+    lineHeight: 38,
+    letterSpacing: -1,
+    color: A.numberInk,
+    includeFontPadding: false,
+    fontVariant: ['lining-nums', 'tabular-nums'],
   },
-  row: { flexDirection: 'row', alignItems: 'center', columnGap: 16 },
-  circle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 3,
-    borderColor: 'rgba(197,160,89,0.28)',
-    backgroundColor: '#FFFBEB',
-    alignItems: 'center',
-    justifyContent: 'center',
+  readingSign: { fontFamily: F.serifMedium, fontSize: 15, color: A.goldInk, marginLeft: 1 },
+  readingRule: {
+    width: 22,
+    height: 1,
+    marginTop: 3,
+    borderRadius: 1,
+    backgroundColor: A.hair,
   },
-  circlePct: { fontFamily: F.serifSemiBold, fontSize: 24, color: GOLD },
-  stats: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', columnGap: 4 },
-  statValue: { fontFamily: F.serifSemiBold, fontSize: 20, lineHeight: 23 },
-  statLabel: { marginTop: 4, fontFamily: F.sansBold, fontSize: 11, letterSpacing: 0.9, color: '#A8A29E' },
-  bar: {
-    marginTop: 14,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#F4F0E8',
+  readingCaption: {
+    marginTop: 4,
+    fontFamily: F.sansBold,
+    fontSize: 7.5,
+    letterSpacing: 1.15,
+    color: 'rgba(121,89,30,0.72)',
+  },
+
+  copy: { flex: 1, minWidth: 0 },
+  eyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 8.2,
+    lineHeight: 10,
+    letterSpacing: 1.15,
+    color: 'rgba(121,89,30,0.72)',
+  },
+  subject: {
+    marginTop: 5,
+    fontFamily: F.serifMedium,
+    fontSize: 19,
+    lineHeight: 24,
+    letterSpacing: -0.2,
+    color: A.ink,
+  },
+  copyRule: { width: 46, marginTop: 9 },
+  countRow: { marginTop: 9, flexDirection: 'row', alignItems: 'baseline', columnGap: 4 },
+  countValue: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17,
+    color: A.numberInk,
+    fontVariant: ['lining-nums', 'tabular-nums'],
+  },
+  countOf: { fontFamily: F.serifItalic, fontSize: 14, color: A.faint },
+  countLabel: {
+    marginLeft: 2,
+    fontFamily: F.sansBold,
+    fontSize: 8.2,
+    letterSpacing: 1.15,
+    color: A.faint,
+  },
+
+  // The enamelled composition rail.
+  barTrack: {
+    marginTop: 18,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: '#F3EEE3',
     overflow: 'hidden',
+    flexDirection: 'row',
   },
-  barFill: { height: '100%', borderRadius: 3, backgroundColor: GOLD },
-  summary: {
-    marginTop: 8,
-    fontFamily: F.sans,
-    fontSize: 13,
-    color: '#A8A29E',
-    textAlign: 'center',
+  barSegmentGap: { borderLeftWidth: 1.5, borderLeftColor: '#FFFFFF' },
+  barSheen: { position: 'absolute', left: 0, right: 0, top: 0, height: 4 },
+
+  // One ruled band instead of four floating chips.
+  ledger: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: A.line,
+    backgroundColor: '#FCFAF5',
+    paddingVertical: 12,
+  },
+  ledgerRule: { width: 1, marginVertical: 4, backgroundColor: A.lineSoft },
+  ledgerCol: { flex: 1, minWidth: 0, alignItems: 'center', paddingHorizontal: 4, rowGap: 5 },
+  ledgerValue: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 24,
+    lineHeight: 27,
+    letterSpacing: -0.4,
+    includeFontPadding: false,
+    fontVariant: ['lining-nums', 'tabular-nums'],
+  },
+  ledgerLabel: {
+    fontFamily: F.sansBold,
+    fontSize: 8.6,
+    letterSpacing: 1.05,
+    color: A.faint,
   },
 });
 
 const cs = StyleSheet.create({
-  card: {
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#F0EDE6',
-    padding: 16,
-    shadowColor: '#1C1917',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 7,
-    elevation: 1,
-  },
-  head: { flexDirection: 'row', alignItems: 'center', columnGap: 6, marginBottom: 12 },
-  kicker: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 2.2, color: GOLD },
+  card: { ...cardShell, padding: 18 },
+  rows: { marginTop: 16, rowGap: 9 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     columnGap: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: '#FAFAF9',
-    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: '#FCFAF6',
+    borderRadius: 15,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: '#F0EDE6',
+    borderColor: A.lineSoft,
   },
-  rowLabel: { fontFamily: F.serifMedium, fontSize: 15, color: '#1A1714' },
-  rowBar: {
-    marginTop: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#F0EDE6',
-    overflow: 'hidden',
+  rowBody: { flex: 1, minWidth: 0 },
+  rowLabel: { fontFamily: F.serifMedium, fontSize: 17, lineHeight: 21, color: A.ink },
+  rowBar: { marginTop: 8 },
+  rowPct: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 19,
+    fontVariant: ['tabular-nums'],
   },
-  rowBarFill: { height: '100%', borderRadius: 3 },
-  rowPct: { fontFamily: F.serifSemiBold, fontSize: 17 },
 });
 
-const section = StyleSheet.create({
-  head: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    columnGap: 6,
-    paddingHorizontal: 4,
-  },
-  kicker: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 2.2, color: GOLD },
+const sec = StyleSheet.create({
+  wrap: { rowGap: 10 },
+  head: { paddingHorizontal: 2, marginBottom: 2 },
   empty: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#F0EDE6',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 28,
+    ...cardShell,
+    paddingVertical: 32,
     alignItems: 'center',
   },
-  emptyText: { fontFamily: F.serifMediumItalic, fontSize: 15, color: '#A8A29E' },
+  emptyText: { fontFamily: F.serifMediumItalic, fontSize: 16, color: A.faint },
+});
+
+const grid = StyleSheet.create({
+  row: { flexDirection: 'row', columnGap: 7 },
 });
 
 const ch = StyleSheet.create({
   card: {
     borderRadius: 18,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.42)',
     borderLeftWidth: 4,
-    borderRightWidth: 4,
-    borderColor: 'rgba(197,160,89,0.55)',
+    borderLeftColor: 'rgba(197,160,89,0.65)',
     backgroundColor: '#FFFDF7',
     overflow: 'hidden',
   },
   head: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 11,
-    paddingHorizontal: 13,
-    paddingVertical: 11,
+    columnGap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
   },
   iconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 9,
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    borderCurve: 'continuous',
     backgroundColor: '#FFF5E1',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  title: { fontFamily: F.serifMedium, fontSize: 15, color: '#1A1714' },
-  bar: {
-    marginTop: 6,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: '#F0EDE6',
-    overflow: 'hidden',
+  body: { flex: 1, minWidth: 0 },
+  title: { fontFamily: F.serifMedium, fontSize: 17, lineHeight: 21, color: A.ink },
+  bar: { marginTop: 7 },
+  pct: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 19,
+    color: GOLD,
+    fontVariant: ['tabular-nums'],
   },
-  barFill: { height: '100%', borderRadius: 3, backgroundColor: GOLD },
-  pct: { fontFamily: F.serifSemiBold, fontSize: 17, color: GOLD },
   expanded: {
     borderTopWidth: 1,
-    borderTopColor: 'rgba(197,160,89,0.20)',
+    borderTopColor: 'rgba(197,160,89,0.22)',
     paddingHorizontal: 14,
-    paddingVertical: 11,
-    backgroundColor: 'rgba(255,251,235,0.45)',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    columnGap: 12,
-    rowGap: 8,
+    paddingVertical: 13,
+    backgroundColor: 'rgba(255,251,235,0.5)',
   },
-  expandStat: { width: '46%', alignItems: 'center' },
-  expandLabel: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.6, color: '#A8A29E' },
-  expandValue: { marginTop: 4, fontFamily: F.serifMedium, fontSize: 15 },
 });
 
 const hb = StyleSheet.create({
   card: {
-    borderRadius: 14,
+    borderRadius: 16,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: '#F0EDE6',
-    backgroundColor: '#FFFFFF',
+    borderColor: A.line,
+    backgroundColor: A.surface,
     overflow: 'hidden',
   },
   head: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: 11,
-    paddingHorizontal: 13,
-    paddingVertical: 11,
+    columnGap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
   },
-  title: { fontFamily: F.serifMedium, fontSize: 15, color: '#1A1714' },
-  bar: {
-    marginTop: 6,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: '#F0EDE6',
-    overflow: 'hidden',
-  },
-  barFill: { height: '100%', borderRadius: 3 },
-  pct: { fontFamily: F.serifSemiBold, fontSize: 17 },
+  body: { flex: 1, minWidth: 0 },
+  title: { fontFamily: F.serifMedium, fontSize: 17, lineHeight: 21, color: A.ink },
+  bar: { marginTop: 7 },
+  pct: { fontFamily: F.serifSemiBold, fontSize: 19, fontVariant: ['tabular-nums'] },
   expanded: {
     borderTopWidth: 1,
-    borderTopColor: '#F0EDE6',
+    borderTopColor: A.lineSoft,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    backgroundColor: '#FAFAF9',
+    paddingVertical: 14,
+    backgroundColor: '#FBFAF7',
   },
-  expandedKicker: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.6, color: '#A8A29E' },
-  statsGrid: {
-    marginTop: 8,
-    flexDirection: 'row',
-    columnGap: 6,
-  },
+  expandedKicker: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: A.faint },
   subTask: {
-    borderRadius: 12,
+    borderRadius: 13,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: '#F0EDE6',
-    backgroundColor: '#FFFFFF',
-    padding: 10,
+    borderColor: A.lineSoft,
+    backgroundColor: A.surface,
+    padding: 11,
   },
   subTaskHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', columnGap: 8 },
-  subTaskTitle: { flex: 1, fontFamily: F.serifMedium, fontSize: 14, color: '#1A1714' },
-  subTaskPct: { fontFamily: F.serifSemiBold, fontSize: 14 },
-  subTaskGrid: { marginTop: 8, flexDirection: 'row', columnGap: 4 },
+  subTaskTitle: { flex: 1, fontFamily: F.serifMedium, fontSize: 15.5, color: A.ink },
+  subTaskPct: { fontFamily: F.serifSemiBold, fontSize: 15.5, fontVariant: ['tabular-nums'] },
 });
 
 const ms = StyleSheet.create({
   tile: {
     flex: 1,
-    borderRadius: 9,
+    minWidth: 0,
+    borderRadius: 11,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: '#F0EDE6',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 8,
+    borderColor: A.lineSoft,
+    backgroundColor: A.surface,
+    paddingVertical: 9,
+    paddingHorizontal: 3,
     alignItems: 'center',
   },
-  tileSmall: { paddingVertical: 6 },
-  value: { fontFamily: F.serifSemiBold, fontSize: 14 },
-  valueSmall: { fontSize: 13 },
-  label: { marginTop: 2, fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#A8A29E' },
-  labelSmall: { fontSize: 10 },
+  tileSmall: { paddingVertical: 7 },
+  value: { fontFamily: F.serifSemiBold, fontSize: 16, lineHeight: 19, fontVariant: ['tabular-nums'] },
+  valueSmall: { fontSize: 14.5, lineHeight: 17 },
+  label: { marginTop: 2, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 0.4, color: A.faint },
+  labelSmall: { fontSize: 9, letterSpacing: 0.2 },
 });
 
 const rg = StyleSheet.create({
   card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#F0EDE6',
+    ...cardShell,
+    borderRadius: 16,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 4,
   },
-  title: { fontFamily: F.sansBold, fontSize: 12, letterSpacing: 2, color: '#78716C' },
-  empty: { marginTop: 8, fontFamily: F.serifMediumItalic, fontSize: 14, color: '#A8A29E' },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', columnGap: 8 },
-  rowName: { flex: 1, fontFamily: F.serifMedium, fontSize: 15, color: '#1A1714' },
-  rowPct: { fontFamily: F.serifSemiBold, fontSize: 15 },
+  row: { flexDirection: 'row', alignItems: 'center', columnGap: 12, paddingVertical: 12 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: A.lineSoft },
+  rowBody: { flex: 1, minWidth: 0 },
+  rowName: { fontFamily: F.serifMedium, fontSize: 16.5, lineHeight: 20, color: A.ink },
+  rowBar: { marginTop: 7 },
+  rowPct: { fontFamily: F.serifSemiBold, fontSize: 17, fontVariant: ['tabular-nums'] },
 });
 
 const qt = StyleSheet.create({
-  card: {
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#F0EDE6',
-    padding: 14,
-    shadowColor: '#1C1917',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 7,
-    elevation: 1,
-  },
-  grid: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', columnGap: 8, rowGap: 8 },
+  card: { ...cardShell, padding: 18 },
+  grid: { marginTop: 16, flexDirection: 'row', flexWrap: 'wrap', columnGap: 9, rowGap: 9 },
   tile: {
-    flexBasis: '48%',
+    flexBasis: '47%',
     flexGrow: 1,
-    borderRadius: 12,
-    backgroundColor: '#FAFAF9',
-    paddingVertical: 12,
+    minWidth: 0,
+    borderRadius: 15,
+    borderCurve: 'continuous',
+    paddingVertical: 14,
+    paddingHorizontal: 8,
     alignItems: 'center',
   },
-  tileLabel: { fontFamily: F.sansBold, fontSize: 11.5, letterSpacing: 1.6, color: '#A8A29E' },
-  tileValue: { marginTop: 6, fontFamily: F.serifMedium, fontSize: 22, color: '#1A1714' },
+  tileValue: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 27,
+    lineHeight: 31,
+    fontVariant: ['tabular-nums'],
+  },
+  tileLabel: {
+    marginTop: 4,
+    fontFamily: F.sansSemiBold,
+    fontSize: 12.5,
+    letterSpacing: 0.2,
+    color: A.muted,
+  },
 });

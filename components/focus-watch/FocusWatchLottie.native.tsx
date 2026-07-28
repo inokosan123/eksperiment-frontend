@@ -19,15 +19,42 @@ export default function FocusWatchLottie({
   mode = 'loop',
   restMs = 4500,
   speed = 1,
+  playing = true,
 }: {
   name: FocusWatchAnimation;
   style?: StyleProp<ViewStyle>;
   mode?: 'loop' | 'periodic' | 'once';
   restMs?: number;
   speed?: number;
+  playing?: boolean;
 }) {
   const ref = useRef<LottieView>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const started = useRef(playing);
+  const resting = useRef(false);
+  const playingRef = useRef(playing);
+
+  useEffect(() => {
+    playingRef.current = playing;
+
+    if (!playing) {
+      ref.current?.pause();
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+      return;
+    }
+
+    if (!started.current || (mode === 'periodic' && resting.current)) {
+      started.current = true;
+      resting.current = false;
+      ref.current?.play();
+      return;
+    }
+
+    ref.current?.resume();
+  }, [mode, playing]);
 
   useEffect(() => {
     return () => {
@@ -39,7 +66,7 @@ export default function FocusWatchLottie({
     <LottieView
       ref={ref}
       source={sources[name]}
-      autoPlay
+      autoPlay={playing}
       loop={mode === 'loop'}
       speed={speed}
       style={style}
@@ -47,7 +74,14 @@ export default function FocusWatchLottie({
       cacheComposition
       onAnimationFinish={isCancelled => {
         if (mode !== 'periodic' || isCancelled) return;
-        timer.current = setTimeout(() => ref.current?.play(), restMs);
+        resting.current = true;
+        if (!playingRef.current) return;
+        timer.current = setTimeout(() => {
+          timer.current = null;
+          if (!playingRef.current) return;
+          resting.current = false;
+          ref.current?.play();
+        }, restMs);
       }}
     />
   );
