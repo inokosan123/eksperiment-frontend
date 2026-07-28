@@ -1403,14 +1403,22 @@ export function VariantRibbon({ card }: VariantProps) {
         pointerEvents="none"
       />
       <View pointerEvents="none" style={s1.litEdge} />
-      {/* A pane of light lying across the shoulder. The app sweeps this on
-          its hero cards; here it is drawn once and left still, because seven
-          of these share a screen and a sweep apiece is a sweep too many. */}
+      {/* A pane of light gathered at the shoulder. The app sweeps this on its
+          hero cards; here it is drawn once and left still, because seven of
+          these share a screen and a sweep apiece is a sweep too many.
+
+          It runs corner to corner and fills the whole plate. It used to be a
+          62%-tall box, and on the left edge — where the gradient had barely
+          begun and was still near full white — the box simply STOPPED, which
+          drew a hard horizontal line straight across the card. A fading
+          layer must fade to nothing before it ends, or it must not end
+          inside the card at all. This does both. */}
       <LinearGradient
         colors={['rgba(255,255,255,0.5)', 'rgba(255,255,255,0)']}
-        start={{ x: 0.15, y: 0 }}
-        end={{ x: 0.72, y: 0.9 }}
-        style={s1.sheen}
+        locations={[0, 0.55]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
 
@@ -1462,7 +1470,6 @@ const s1 = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.92)',
   },
-  sheen: { position: 'absolute', left: 0, right: 0, top: 0, height: '62%' },
   mark: {
     position: 'absolute',
     right: -26,
