@@ -1152,8 +1152,11 @@ function deep(hex: string, lightness: number, satFloor = 55): string {
 }
 
 type StarSpec = {
-  right: number;
-  bottom: number;
+  /** Hung from whichever edges are given, so a card can carry two clusters. */
+  right?: number;
+  bottom?: number;
+  left?: number;
+  top?: number;
   size: number;
   phase: number;
   peak: number;
@@ -1187,7 +1190,15 @@ function CardStar({
     <Animated.View
       pointerEvents="none"
       style={[
-        { position: 'absolute', right: star.right, bottom: star.bottom, width: star.size, height: star.size },
+        {
+          position: 'absolute',
+          right: star.right,
+          bottom: star.bottom,
+          left: star.left,
+          top: star.top,
+          width: star.size,
+          height: star.size,
+        },
         style,
       ]}
     >
@@ -1376,9 +1387,24 @@ const RIBBON_STARS: StarSpec[] = [
   { right: 46, bottom: 40, size: 9, phase: 0.8, peak: 0.9, spin: 0.5 },
 ];
 
+// The shoulder is the lightest part of the plate, so a spark in the card's
+// own deep tone shows there better than anywhere else — and that is exactly
+// where the title sits. These are hung from the top and left, and they run
+// on a SECOND clock: the two clusters drift in and out of relation instead
+// of pulsing together, which is what keeps a card with two constellations
+// from looking like one constellation cut in half.
+const RIBBON_SHOULDER_STARS: StarSpec[] = [
+  { left: 152, top: 15, size: 10, phase: 0.0, peak: 0.55, spin: 0.4 },
+  { left: 7, top: 56, size: 12, phase: 0.34, peak: 0.62, spin: -0.35 },
+  { left: 104, top: 79, size: 8, phase: 0.67, peak: 0.44, spin: 0.5 },
+];
+
 export function VariantRibbon({ card }: VariantProps) {
   const reduceMotion = useReducedMotion();
   const clock = useCardClock(reduceMotion, 10000);
+  // Deliberately not a multiple of the first: 7 against 10 means the two
+  // clusters never settle into a repeating pair.
+  const shoulderClock = useCardClock(reduceMotion, 7000);
   const tint = card.decorColor;
 
   // The emblem sits at the foot, and the last two stars pass closest to it —
@@ -1432,6 +1458,15 @@ export function VariantRibbon({ card }: VariantProps) {
           star={star}
           clock={clock}
           color={star.onLight ? deep(tint, 52) : '#FFFFFF'}
+          still={reduceMotion}
+        />
+      ))}
+      {RIBBON_SHOULDER_STARS.map((star, i) => (
+        <CardStar
+          key={`shoulder-${i}`}
+          star={star}
+          clock={shoulderClock}
+          color={deep(tint, 50)}
           still={reduceMotion}
         />
       ))}
