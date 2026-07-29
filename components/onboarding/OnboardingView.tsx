@@ -27909,7 +27909,11 @@ const tools = StyleSheet.create({
   findingStatDivider: { width: 1, height: 20 },
   findingStatCaption: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 0.7, opacity: 0.85 },
 
-  findingFinding: { marginTop: 12, fontFamily: F.sans, fontSize: 13.6, lineHeight: 20.2, color: 'rgba(25,23,20,0.64)' },
+  // ⚠ Garamond, not Inter. This is the card's one readable sentence, and it
+  // sits between a Garamond headline and a Garamond detail — set in the
+  // interface face it changed voice twice inside a single card. Inter is
+  // this app's interface face; Garamond is what it reads in.
+  findingFinding: { marginTop: 12, fontFamily: F.serifMedium, fontSize: 15.5, lineHeight: 22, color: 'rgba(25,23,20,0.66)' },
   findingChips: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   findingChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1 },
   findingChipText: { fontFamily: F.serifSemiBold, fontSize: 12.5 },
@@ -27917,7 +27921,7 @@ const tools = StyleSheet.create({
   findingDetailWrap: { overflow: 'hidden' },
   findingDetailInner: { position: 'absolute', left: 0, right: 0, top: 0, paddingTop: 13 },
   // The long study write-up wears the app's reading serif, not the plain sans.
-  findingDetailText: { fontFamily: F.serifMedium, fontSize: 15.5, lineHeight: 23, color: 'rgba(25,23,20,0.68)' },
+  findingDetailText: { fontFamily: F.serif, fontSize: 15.5, lineHeight: 23, color: 'rgba(25,23,20,0.68)' },
   findingDetailNext: { marginTop: 9 },
   findingSourceChip: {
     marginTop: 13, alignSelf: 'flex-start',
@@ -28045,7 +28049,7 @@ const tools = StyleSheet.create({
   regimeCardLabel: { fontFamily: F.sansBold, fontSize: 7.8, letterSpacing: 1.3, color: 'rgba(126,91,31,0.62)' },
   regimeCardName: { marginTop: 3, fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 23, color: INK },
   regimeCardCaption: { marginTop: 10, fontFamily: F.sansBold, fontSize: 8.2, letterSpacing: 1.15, color: 'rgba(126,91,31,0.5)' },
-  regimeCardBody: { marginTop: 7, fontFamily: F.sans, fontSize: 13, lineHeight: 19, color: 'rgba(25,23,20,0.6)' },
+  regimeCardBody: { marginTop: 7, fontFamily: F.serif, fontSize: 14.5, lineHeight: 20.5, color: 'rgba(25,23,20,0.62)' },
 
   regimeTimeline: { marginTop: 15, flexDirection: 'row', alignItems: 'center', columnGap: 11 },
   regimeStripWrap: { flex: 1, minWidth: 0, justifyContent: 'center' },
@@ -28103,7 +28107,10 @@ const tools = StyleSheet.create({
   // Bucket list
   bucketStage: { flexGrow: 1, alignItems: 'center', paddingTop: 88, paddingHorizontal: 24 },
   bucketCrown: { width: 64, height: 64, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(251,243,222,0.94)', borderWidth: 1, borderColor: 'rgba(197,160,89,0.30)', marginBottom: 16, boxShadow: '0 12px 26px rgba(92,67,25,0.09)' },
-  bucketBody: { marginTop: 10, maxWidth: 300, fontFamily: F.sans, fontSize: 14, lineHeight: 20, color: 'rgba(25,23,20,0.56)', textAlign: 'center' },
+  // 326, not 300: Garamond at 16 needs the extra 26 to hold this line at two
+  // lines, which is what it was set at. Widening the measure is free; shrinking
+  // the reading face to fit a box is not.
+  bucketBody: { marginTop: 10, maxWidth: 326, fontFamily: F.serif, fontSize: 16, lineHeight: 22, color: 'rgba(25,23,20,0.58)', textAlign: 'center' },
   bucketCard: {
     position: 'relative', overflow: 'hidden', width: '100%', marginTop: 22,
     borderRadius: 22, borderCurve: 'continuous', borderWidth: 1, borderColor: 'rgba(197,160,89,0.24)',
@@ -28139,7 +28146,7 @@ const tools = StyleSheet.create({
   gratitudeCardHead: { flexDirection: 'row', alignItems: 'center', columnGap: 10 },
   gratitudeCardIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FBF3DE', borderWidth: 1, borderColor: 'rgba(197,160,89,0.2)' },
   gratitudeCardName: { fontFamily: F.serifSemiBold, fontSize: 18, color: INK },
-  gratitudeCardBody: { marginTop: 8, fontFamily: F.sans, fontSize: 13, lineHeight: 18.5, color: 'rgba(25,23,20,0.6)' },
+  gratitudeCardBody: { marginTop: 8, fontFamily: F.serif, fontSize: 14.5, lineHeight: 20, color: 'rgba(25,23,20,0.62)' },
   grid: { marginTop: 15, flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   gridCell: { width: 15, height: 15, borderRadius: 3.5 },
   gratitudeGridCaption: { marginTop: 11, fontFamily: F.serifMediumItalic, fontSize: 13, color: 'rgba(25,23,20,0.46)' },
