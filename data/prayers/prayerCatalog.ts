@@ -284,24 +284,29 @@ export const PRAYER_ACTION_LABELS: Record<PrayerLanguage, {
  * is one way among five, and a line that named only it would contradict the
  * list directly beneath it.
  *
- * ⚠ And it must not repeat `MY_RULE_PAGE_LABELS.startHint`, which stands a
- * finger's width below it and already says a quiet timer runs while you pray.
- * Same fact, different words: this one says the side keeps the time.
+ * ⚠ THE TIMER IS NOT THE POINT, and the line must not end on it. It said
+ * "this side keeps the time", which made the whole offer sound like a
+ * stopwatch. What Prayer Book actually does is help you build a prayer
+ * routine, and what My Rule does is open that to traditions whose texts this
+ * app does not carry: it cannot print your prayers, so it gives you the quiet
+ * space to say them and a place for it in your day. The timer is one
+ * mechanism inside that, and `MY_RULE_PAGE_LABELS.startHint` names it a
+ * finger's width below — which is the other reason this line should not.
  */
 export const PRAYER_BOOK_SWITCH_NOTES: Record<PrayerLanguage, {
   mine: string;
   orthodox: string;
 }> = {
   en: {
-    mine: 'For Christians of every tradition. Pray from a book, from memory, on a prayer rope or in your own words — this side keeps the time.',
+    mine: 'For Christians of every tradition. Pray from a book, by heart, on a prayer rope or in your own words — this side gives it a quiet space in your day.',
     orthodox: 'The full Orthodox prayer book — morning and evening prayers, prayers before and after meals, the Jesus Prayer, and others.',
   },
   sr: {
-    mine: 'За хришћане сваке традиције. Молите се из молитвеника, напамет, уз бројаницу или својим речима — ова страна мери време.',
+    mine: 'За хришћане сваке традиције. Молите се из молитвеника, напамет, уз бројаницу или својим речима — ова страна за то даје тих простор у вашем дану.',
     orthodox: 'Цео православни молитвеник — јутарње и вечерње молитве, молитве пре и после јела, Исусова молитва и друге.',
   },
   ru: {
-    mine: 'Для христиан любой традиции. Молитесь по молитвослову, наизусть, по чёткам или своими словами — эта сторона отсчитывает время.',
+    mine: 'Для христиан любой традиции. Молитесь по молитвослову, наизусть, по чёткам или своими словами — эта сторона даёт для этого тихое место в вашем дне.',
     orthodox: 'Полный православный молитвослов — утренние и вечерние молитвы, молитвы до и после еды, Иисусова молитва и другие.',
   },
 };
