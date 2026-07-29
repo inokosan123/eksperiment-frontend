@@ -115,48 +115,15 @@ function FlameBloom() {
   );
 }
 
-/**
- * The rings the strike threw.
+/* ⚠ THE RINGS OF THE STRIKE WERE HERE, AND ARE GONE.
  *
- * A plaque is struck, and the ground keeps the shock — this is the streak
- * card's own field (`TrophyRadiance`'s `STRIKE_RINGS`) brought down to the
- * size of a switch: concentric hairlines spreading from exactly where the
- * flame stands and running off the plaque's edges, the two outermost broken
- * into the engine-turning of a minted face. They are held between 5% and 13%,
- * which is texture, not decoration: at the moment you can count them they
- * have become a target instead of a ground.
- *
- * ⚠ The centre is MEASURED, never guessed. The rings' only job is to look
- * struck from under the flame, and a centre off by a few points is the one
- * error this figure cannot hide. The plaque clips them, so nothing escapes
- * onto the recessed track.
- */
-const STRIKE_RINGS: { r: number; opacity: number; dash?: string }[] = [
-  { r: 33, opacity: 0.13 },
-  { r: 51, opacity: 0.10 },
-  { r: 73, opacity: 0.075, dash: '7 6' },
-  { r: 101, opacity: 0.055, dash: '4 9' },
-];
-
-function SpiritualStrike({ width, height, cx }: { width: number; height: number; cx: number }) {
-  return (
-    <Svg pointerEvents="none" width={width} height={height} style={StyleSheet.absoluteFill}>
-      {STRIKE_RINGS.map(ring => (
-        <Circle
-          key={ring.r}
-          cx={cx}
-          cy={height / 2}
-          r={ring.r}
-          fill="none"
-          stroke={C.gold}
-          strokeOpacity={ring.opacity}
-          strokeWidth={1}
-          strokeDasharray={ring.dash}
-        />
-      ))}
-    </Svg>
-  );
-}
+ * Concentric hairlines spreading from under the flame, lifted from the medal
+ * streak card in Focus. Handsome, and the wrong dialect: rings of a strike are
+ * the language of an INSTRUMENT — a minted face, a struck medal — and this is
+ * the plaque of a spiritual task, whose register in this app is the manuscript
+ * page. The ruled frame below is the same weight of figure said in the right
+ * language, and the two could never share the surface: a frame crossing rings
+ * reads as a mistake in one of them. */
 
 function SegmentEmblem({
   kind,
@@ -267,7 +234,16 @@ const seg = StyleSheet.create({
   // a warm wash of the gold the whole spiritual register is set in. Held at
   // 0.20 it is a seat, not a badge: strong enough to give the flame a rim to
   // stand on, quiet enough that the plaque still reads as warm paper.
-  emblemDiscOnCream: { overflow: 'hidden', backgroundColor: 'rgba(197,160,89,0.20)' },
+  // ⚠ And a rim of gilt around it. The trophy opposite is a modelled object
+  // that fills its seat and holds its own edge; the flame is a small piece of
+  // art laid on a disc, and without a struck rim it reads as the lesser of the
+  // two currencies however well the disc under it is made.
+  emblemDiscOnCream: {
+    overflow: 'hidden',
+    backgroundColor: 'rgba(197,160,89,0.20)',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.5)',
+  },
   // And the heart runs the other way, near white, so the two rings show
   // against each other instead of both dissolving into the plate.
   emblemHeartOnCream: { backgroundColor: '#FFFDF7' },
@@ -941,11 +917,6 @@ export default function SetAsTaskSheet({
   const tabContentMotion = useSharedValue(1);
   const [mounted, setMounted] = useState(visible);
   const [segmentWidth, setSegmentWidth] = useState(0);
-  // Where the flame actually stands on its plaque, and how tall the plaque
-  // came out. The strike rings are struck from that point, and a centre
-  // guessed from the label's estimated width is off by however much the type
-  // measures differently — so it is measured once, on mount.
-  const [flameSeat, setFlameSeat] = useState({ cx: 0, h: 0 });
   const primaryTaskTab: TaskTab = context === 'journal' ? 'routine' : 'spiritual';
   const primaryTaskTabActive = taskTab === primaryTaskTab;
   const primaryTaskTabLabel = context === 'journal' ? 'ROUTINE' : 'SPIRITUAL';
@@ -1379,41 +1350,41 @@ export default function SetAsTaskSheet({
                     <LinearGradient
                       colors={primaryFaceIsInk
                         ? ['#343A44', '#1F2937', '#141A22']
-                        // Deeper at the foot than it was. Against the challenge
-                        // card's two heavy rails a flat cream wash read as the
-                        // weaker of the two faces; warm paper that actually
-                        // turns over stands up to it without borrowing them.
-                        : ['#FFFDF7', '#FFF0CE']}
-                      locations={primaryFaceIsInk ? [0, 0.55, 1] : undefined}
-                      start={primaryFaceIsInk ? { x: 0, y: 0 } : { x: 0, y: 0 }}
-                      end={primaryFaceIsInk ? { x: 1, y: 1 } : { x: 0, y: 1 }}
+                        // Three stops on the diagonal, not two straight down.
+                        // The challenge face is near-white on a cream track
+                        // and so it lifts off it; this one was cream on cream,
+                        // and no amount of ornament fixes a plate that has
+                        // nothing to stand out FROM. It now starts white at
+                        // the shoulder and reaches real gilt at the foot.
+                        : ['#FFFFFF', '#FFF6E2', '#FBE9C4']}
+                      locations={primaryFaceIsInk ? [0, 0.55, 1] : [0, 0.48, 1]}
+                      start={{ x: 0, y: 0 }}
+                      end={primaryFaceIsInk ? { x: 1, y: 1 } : { x: 0.85, y: 1 }}
                       style={StyleSheet.absoluteFill}
                     />
-                    {/* The ground under the flame keeps the shock of the
-                        strike. Drawn under the frame and the light, because
-                        it is the plate's own texture rather than something
-                        laid on it. */}
-                    {!primaryFaceIsInk && flameSeat.cx > 0 && flameSeat.h > 0 && (
-                      <SpiritualStrike
-                        width={(segmentWidth - 12) / 2}
-                        height={flameSeat.h}
-                        cx={flameSeat.cx}
-                      />
-                    )}
                     <View style={primaryFaceIsInk ? s.segmentFaceInk : s.segmentFaceSpiritual} />
                     {primaryFaceIsInk
                       ? <View style={s.segmentInkSheen} />
                       : (
                         <>
+                          {/* THE RULED FRAME — this face's answer to the two
+                              heavy rails opposite.
+
+                              A live challenge is struck between rails; that is
+                              the Challenges screen's signature and it is why
+                              that half looks made while this one looked
+                              defaulted. A spiritual task's own register is not
+                              the card, it is the PAGE: the manuscript double
+                              rule that closes Scripture's doors and the
+                              Orthodox plaque — a firm gilt rule with a finer
+                              one inside it. Same weight of figure, opposite
+                              axis, each taken from its own screen. */}
+                          <View style={s.segmentFaceRule} />
+                          <View style={s.segmentFaceRuleInner} />
                           {/* The hairline of light every lifted plate in this
                               app catches along its top edge; the ink face had
                               its sheen and the cream one had nothing. */}
                           <View style={s.segmentFaceLit} />
-                          {/* Two grains of the app's own dust, struck at 45°
-                              like every glint in the streak room — in the two
-                              corners the type and the emblem never reach. */}
-                          <View style={[s.segmentGlint, s.segmentGlintHead]} />
-                          <View style={[s.segmentGlint, s.segmentGlintFoot]} />
                         </>
                       )}
                   </Reanimated.View>
@@ -1435,31 +1406,12 @@ export default function SetAsTaskSheet({
                 onPress={() => switchTaskTab(primaryTaskTab)}
                 activeOpacity={0.86}
                 style={s.segmentBtn}
-                // The button and the plaque are the same width and start at
-                // the same edge, so what is measured here is also true of the
-                // face beneath it.
-                onLayout={event => {
-                  const { height } = event.nativeEvent.layout;
-                  setFlameSeat(current => Math.abs(current.h - height) < 0.5
-                    ? current
-                    : { ...current, h: height });
-                }}
               >
-                <View
-                  onLayout={event => {
-                    const { x, width } = event.nativeEvent.layout;
-                    const cx = x + width / 2;
-                    setFlameSeat(current => Math.abs(current.cx - cx) < 0.5
-                      ? current
-                      : { ...current, cx });
-                  }}
-                >
-                  <SegmentEmblem
-                    kind={context === 'journal' ? 'book' : 'flame'}
-                    active={primaryTaskTabActive}
-                    onInk={primaryFaceIsInk}
-                  />
-                </View>
+                <SegmentEmblem
+                  kind={context === 'journal' ? 'book' : 'flame'}
+                  active={primaryTaskTabActive}
+                  onInk={primaryFaceIsInk}
+                />
                 <Text
                   style={[
                     s.segmentText,
@@ -3975,12 +3927,39 @@ const s = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
-  // A spiritual task's own frame: a soft gold hairline on warm cream.
+  // A spiritual task's own frame. The hairline used to sit at 0.34 — softer
+  // than the challenge face's solid gold border, on a plate barely lighter
+  // than the track it stands in, which is the whole reason that half read as
+  // the made one and this as the default one. The gilt is firm now, and the
+  // rules inside it carry the figure.
   segmentFaceSpiritual: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.34)',
+    borderColor: 'rgba(197,160,89,0.58)',
+  },
+  // The manuscript double rule, at the doors' own insets: 5 and 8 off the
+  // frame, each radius stepping down with it. The inner one runs faint — a
+  // second line at the first one's weight is a box drawn twice, not ruling.
+  segmentFaceRule: {
+    position: 'absolute',
+    top: 5,
+    left: 5,
+    right: 5,
+    bottom: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.4)',
+  },
+  segmentFaceRuleInner: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    right: 8,
+    bottom: 8,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.19)',
   },
   // A routine task's ink plaque: a pale hairline, since slate takes no gold.
   segmentFaceInk: {
@@ -3997,15 +3976,6 @@ const s = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.95)',
   },
-  // Dust belongs in the air around the emblem, never on its face — so these
-  // two sit in the corners nothing else reaches.
-  segmentGlint: {
-    position: 'absolute',
-    backgroundColor: C.gold,
-    transform: [{ rotate: '45deg' }],
-  },
-  segmentGlintHead: { width: 3.5, height: 3.5, borderRadius: 1, left: 10, top: 9, opacity: 0.42 },
-  segmentGlintFoot: { width: 2.5, height: 2.5, borderRadius: 0.8, right: 12, bottom: 10, opacity: 0.3 },
   segmentInkSheen: {
     position: 'absolute',
     top: 5,
