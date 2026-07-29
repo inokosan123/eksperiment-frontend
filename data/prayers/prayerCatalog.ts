@@ -269,26 +269,39 @@ export const PRAYER_ACTION_LABELS: Record<PrayerLanguage, {
  * three prayers today. If the catalogue loses a category, this line is wrong
  * and has to change with it.
  *
- * ⚠ MY RULE IS NOT "your own words". That is ONE of the five ways in
- * `PERSONAL_RULE_PREVIEW.listItems` — a prayer book in hand, memorised
- * prayers, a rope or rosary, your own words, any other way — so the line says
- * "your own way", which covers all five. Narrowing it to words would exclude
- * four of them and contradict the page directly beneath it.
+ * ⚠ MY RULE IS STATED BY WHAT IT HOLDS, NOT BY WHAT IT LACKS. It read
+ * "Nothing is set for you here" first, and that was the fault: the Orthodox
+ * line is a list of what is in that book, so defining this one by absence made
+ * the two sides an abundance and an emptiness rather than two books. It now
+ * names ways to pray the way the other names prayers — an equal offer, and a
+ * true one, since the whole point of this side is that it accepts all of them.
+ *
+ * ⚠ The ways are `PERSONAL_RULE_PREVIEW.listItems` in the page's own words —
+ * a prayer book in hand, prayers known by heart, a rope or rosary, your own
+ * words, any other way. The line carries four of the five and leaves the fifth
+ * ("any other way") to the page, because a sentence that ends in "or anything
+ * else" states nothing. ⚠ "Your own words" must never be the whole of it: it
+ * is one way among five, and a line that named only it would contradict the
+ * list directly beneath it.
+ *
+ * ⚠ And it must not repeat `MY_RULE_PAGE_LABELS.startHint`, which stands a
+ * finger's width below it and already says a quiet timer runs while you pray.
+ * Same fact, different words: this one says the side keeps the time.
  */
 export const PRAYER_BOOK_SWITCH_NOTES: Record<PrayerLanguage, {
   mine: string;
   orthodox: string;
 }> = {
   en: {
-    mine: 'For Christians of every tradition. Nothing is set for you here — you pray your own way, and a timer keeps the time.',
+    mine: 'For Christians of every tradition. Pray from a book, from memory, on a prayer rope or in your own words — this side keeps the time.',
     orthodox: 'The full Orthodox prayer book — morning and evening prayers, prayers before and after meals, the Jesus Prayer, and others.',
   },
   sr: {
-    mine: 'За хришћане сваке традиције. Овде ништа није унапред задато — молите се на свој начин, а тајмер мери време.',
+    mine: 'За хришћане сваке традиције. Молите се из молитвеника, напамет, уз бројаницу или својим речима — ова страна мери време.',
     orthodox: 'Цео православни молитвеник — јутарње и вечерње молитве, молитве пре и после јела, Исусова молитва и друге.',
   },
   ru: {
-    mine: 'Для христиан любой традиции. Здесь ничего не задано — вы молитесь по-своему, а таймер отсчитывает время.',
+    mine: 'Для христиан любой традиции. Молитесь по молитвослову, наизусть, по чёткам или своими словами — эта сторона отсчитывает время.',
     orthodox: 'Полный православный молитвослов — утренние и вечерние молитвы, молитвы до и после еды, Иисусова молитва и другие.',
   },
 };
