@@ -183,7 +183,7 @@ export type PersonalRulePreviewContent = {
 
 export const PERSONAL_RULE_PREVIEW: Record<PrayerLanguage, PersonalRulePreviewContent> = {
   en: {
-    intro: 'For Christians of every tradition — Catholic, Protestant, Orthodox, non-denominational, and any other.',
+    intro: 'For Christians of every tradition: Catholic, Protestant, Orthodox, non-denominational, and any other.',
     listHeading: 'Made for the way you already pray:',
     listItems: [
       'A prayer book in your hands',
@@ -196,7 +196,7 @@ export const PERSONAL_RULE_PREVIEW: Record<PrayerLanguage, PersonalRulePreviewCo
     note: 'The other Morning and Evening rules in the app (Standard, Shortened, St. Seraphim) follow the Orthodox tradition.',
   },
   sr: {
-    intro: 'За хришћане сваке традиције — католике, протестанте, православне, неденоминационе хришћане и сваке друге.',
+    intro: 'За хришћане сваке традиције: католике, протестанте, православне, неденоминационе хришћане и сваке друге.',
     listHeading: 'За начин на који се већ молите:',
     listItems: [
       'Молитвеник у вашим рукама',
@@ -209,7 +209,7 @@ export const PERSONAL_RULE_PREVIEW: Record<PrayerLanguage, PersonalRulePreviewCo
     note: 'Остала јутарња и вечерња правила у апликацији (Стандардно, Скраћено, Светог Серафима) су из православне традиције.',
   },
   ru: {
-    intro: 'Для христиан любой традиции — католиков, протестантов, евангелистов, пятидесятников, англикан, православных, внеконфессиональных и любых других.',
+    intro: 'Для христиан любой традиции: католиков, протестантов, евангелистов, пятидесятников, англикан, православных, внеконфессиональных и любых других.',
     listHeading: 'Для того, как вы уже молитесь:',
     listItems: [
       'Молитвослов у вас в руках',
@@ -244,6 +244,10 @@ export const PERSONAL_RULE_PREVIEW: Record<PrayerLanguage, PersonalRulePreviewCo
  * one, and both buttons set it in the serif, where capitals would shout.
  * `MY_RULE_PAGE_LABELS.startAction` is the capitals version, and it stays that
  * way because the plinth it sits in is a small tracked row, not a button face.
+ * ⚠ It now says the same thing as this one ("START YOUR PRAYER" against "Start
+ * Prayer") rather than naming the rule. Two controls that open the same timer
+ * on the same page were calling it two different things; the only difference
+ * left between them is the case their own surface asks for.
  */
 export const PRAYER_ACTION_LABELS: Record<PrayerLanguage, {
   startPrayer: string;
@@ -276,37 +280,50 @@ export const PRAYER_ACTION_LABELS: Record<PrayerLanguage, {
  * names ways to pray the way the other names prayers — an equal offer, and a
  * true one, since the whole point of this side is that it accepts all of them.
  *
- * ⚠ The ways are `PERSONAL_RULE_PREVIEW.listItems` in the page's own words —
- * a prayer book in hand, prayers known by heart, a rope or rosary, your own
- * words, any other way. The line carries four of the five and leaves the fifth
- * ("any other way") to the page, because a sentence that ends in "or anything
- * else" states nothing. ⚠ "Your own words" must never be the whole of it: it
- * is one way among five, and a line that named only it would contradict the
- * list directly beneath it.
+ * ⚠ IT POINTS AT THE WAYS; IT DOES NOT LIST THEM. It spelled out four of
+ * `PERSONAL_RULE_PREVIEW.listItems` for a while — from a book, by heart, on a
+ * prayer rope, in your own words — and once the line also had to carry the
+ * quiet space and the routine, that enumeration pushed it to five wrapped
+ * lines against the Orthodox side's three. It is the page's job anyway: all
+ * five ways are printed directly below with a coloured seat each. So the line
+ * echoes the page's own heading instead ("Made for the way you already pray")
+ * and lets the list do the listing.
  *
- * ⚠ THE TIMER IS NOT THE POINT, and the line must not end on it. It said
+ * ⚠ "Your own words" must never stand for the whole of it. It is one way among
+ * five, and a line naming only it would contradict the rows beneath it.
+ *
+ * ⚠ THE TIMER IS NOT THE POINT, and the line must not end on it. It once said
  * "this side keeps the time", which made the whole offer sound like a
  * stopwatch. What Prayer Book actually does is help you build a prayer
  * routine, and what My Rule does is open that to traditions whose texts this
  * app does not carry: it cannot print your prayers, so it gives you the quiet
- * space to say them and a place for it in your day. The timer is one
- * mechanism inside that, and `MY_RULE_PAGE_LABELS.startHint` names it a
+ * space to say them and helps you build the routine around them. The timer is
+ * one mechanism inside that, and `MY_RULE_PAGE_LABELS.startHint` names it a
  * finger's width below — which is the other reason this line should not.
+ *
+ * ⚠ IT NAMES MY RULE, NOT "this side". A book is a thing and can give you
+ * something; a side of a switch is a position on a control, and a sentence
+ * whose subject is a position says nothing about what you are choosing.
+ *
+ * ⚠ The name must stay identical to `MY_RULE_PAGE_LABELS[lang].title` — it is
+ * written out rather than interpolated because that constant is declared below
+ * this one, and reading it here at module init would be a temporal-dead-zone
+ * error. If the title is ever renamed, these three lines rename with it.
  */
 export const PRAYER_BOOK_SWITCH_NOTES: Record<PrayerLanguage, {
   mine: string;
   orthodox: string;
 }> = {
   en: {
-    mine: 'For Christians of every tradition. Pray from a book, by heart, on a prayer rope or in your own words — this side gives it a quiet space in your day.',
+    mine: 'For Christians of every tradition. Pray the way you already pray — My Rule gives you the quiet space and helps you build your prayer routine.',
     orthodox: 'The full Orthodox prayer book — morning and evening prayers, prayers before and after meals, the Jesus Prayer, and others.',
   },
   sr: {
-    mine: 'За хришћане сваке традиције. Молите се из молитвеника, напамет, уз бројаницу или својим речима — ова страна за то даје тих простор у вашем дану.',
+    mine: 'За хришћане сваке традиције. Молите се како се већ молите — Моје правило вам даје тих простор и помаже да изградите своју молитвену рутину.',
     orthodox: 'Цео православни молитвеник — јутарње и вечерње молитве, молитве пре и после јела, Исусова молитва и друге.',
   },
   ru: {
-    mine: 'Для христиан любой традиции. Молитесь по молитвослову, наизусть, по чёткам или своими словами — эта сторона даёт для этого тихое место в вашем дне.',
+    mine: 'Для христиан любой традиции. Молитесь так, как молитесь всегда — Моё правило даёт вам тихое место и помогает выстроить молитвенный распорядок.',
     orthodox: 'Полный православный молитвослов — утренние и вечерние молитвы, молитвы до и после еды, Иисусова молитва и другие.',
   },
 };
@@ -326,7 +343,7 @@ export const MY_RULE_PAGE_LABELS: Record<PrayerLanguage, {
   en: {
     eyebrow: 'FOR EVERY TRADITION',
     title: 'My Rule',
-    startAction: 'START MY RULE',
+    startAction: 'START YOUR PRAYER',
     startHint: 'A quiet timer, running while you pray',
     jesusEyebrow: 'PRAYER OF THE HEART',
     jesusTitle: 'Jesus Prayer',
@@ -335,7 +352,7 @@ export const MY_RULE_PAGE_LABELS: Record<PrayerLanguage, {
   sr: {
     eyebrow: 'ЗА СВАКУ ТРАДИЦИЈУ',
     title: 'Моје правило',
-    startAction: 'ПОКРЕНИ ПРАВИЛО',
+    startAction: 'ПОЧНИ СВОЈУ МОЛИТВУ',
     startHint: 'Тих тајмер, ради док се молите',
     jesusEyebrow: 'МОЛИТВА СРЦА',
     jesusTitle: 'Исусова молитва',
@@ -344,7 +361,7 @@ export const MY_RULE_PAGE_LABELS: Record<PrayerLanguage, {
   ru: {
     eyebrow: 'ДЛЯ ЛЮБОЙ ТРАДИЦИИ',
     title: 'Моё правило',
-    startAction: 'НАЧАТЬ ПРАВИЛО',
+    startAction: 'НАЧАТЬ СВОЮ МОЛИТВУ',
     startHint: 'Тихий таймер, идёт пока вы молитесь',
     jesusEyebrow: 'МОЛИТВА СЕРДЦА',
     jesusTitle: 'Иисусова молитва',
