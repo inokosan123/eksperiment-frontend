@@ -115,6 +115,49 @@ function FlameBloom() {
   );
 }
 
+/**
+ * The rings the strike threw.
+ *
+ * A plaque is struck, and the ground keeps the shock — this is the streak
+ * card's own field (`TrophyRadiance`'s `STRIKE_RINGS`) brought down to the
+ * size of a switch: concentric hairlines spreading from exactly where the
+ * flame stands and running off the plaque's edges, the two outermost broken
+ * into the engine-turning of a minted face. They are held between 5% and 13%,
+ * which is texture, not decoration: at the moment you can count them they
+ * have become a target instead of a ground.
+ *
+ * ⚠ The centre is MEASURED, never guessed. The rings' only job is to look
+ * struck from under the flame, and a centre off by a few points is the one
+ * error this figure cannot hide. The plaque clips them, so nothing escapes
+ * onto the recessed track.
+ */
+const STRIKE_RINGS: { r: number; opacity: number; dash?: string }[] = [
+  { r: 33, opacity: 0.13 },
+  { r: 51, opacity: 0.10 },
+  { r: 73, opacity: 0.075, dash: '7 6' },
+  { r: 101, opacity: 0.055, dash: '4 9' },
+];
+
+function SpiritualStrike({ width, height, cx }: { width: number; height: number; cx: number }) {
+  return (
+    <Svg pointerEvents="none" width={width} height={height} style={StyleSheet.absoluteFill}>
+      {STRIKE_RINGS.map(ring => (
+        <Circle
+          key={ring.r}
+          cx={cx}
+          cy={height / 2}
+          r={ring.r}
+          fill="none"
+          stroke={C.gold}
+          strokeOpacity={ring.opacity}
+          strokeWidth={1}
+          strokeDasharray={ring.dash}
+        />
+      ))}
+    </Svg>
+  );
+}
+
 function SegmentEmblem({
   kind,
   active,
@@ -898,6 +941,11 @@ export default function SetAsTaskSheet({
   const tabContentMotion = useSharedValue(1);
   const [mounted, setMounted] = useState(visible);
   const [segmentWidth, setSegmentWidth] = useState(0);
+  // Where the flame actually stands on its plaque, and how tall the plaque
+  // came out. The strike rings are struck from that point, and a centre
+  // guessed from the label's estimated width is off by however much the type
+  // measures differently — so it is measured once, on mount.
+  const [flameSeat, setFlameSeat] = useState({ cx: 0, h: 0 });
   const primaryTaskTab: TaskTab = context === 'journal' ? 'routine' : 'spiritual';
   const primaryTaskTabActive = taskTab === primaryTaskTab;
   const primaryTaskTabLabel = context === 'journal' ? 'ROUTINE' : 'SPIRITUAL';
@@ -1341,13 +1389,33 @@ export default function SetAsTaskSheet({
                       end={primaryFaceIsInk ? { x: 1, y: 1 } : { x: 0, y: 1 }}
                       style={StyleSheet.absoluteFill}
                     />
+                    {/* The ground under the flame keeps the shock of the
+                        strike. Drawn under the frame and the light, because
+                        it is the plate's own texture rather than something
+                        laid on it. */}
+                    {!primaryFaceIsInk && flameSeat.cx > 0 && flameSeat.h > 0 && (
+                      <SpiritualStrike
+                        width={(segmentWidth - 12) / 2}
+                        height={flameSeat.h}
+                        cx={flameSeat.cx}
+                      />
+                    )}
                     <View style={primaryFaceIsInk ? s.segmentFaceInk : s.segmentFaceSpiritual} />
                     {primaryFaceIsInk
                       ? <View style={s.segmentInkSheen} />
-                      // The hairline of light every lifted plate in this app
-                      // catches along its top edge; the ink face had its sheen
-                      // and the cream one had nothing.
-                      : <View style={s.segmentFaceLit} />}
+                      : (
+                        <>
+                          {/* The hairline of light every lifted plate in this
+                              app catches along its top edge; the ink face had
+                              its sheen and the cream one had nothing. */}
+                          <View style={s.segmentFaceLit} />
+                          {/* Two grains of the app's own dust, struck at 45°
+                              like every glint in the streak room — in the two
+                              corners the type and the emblem never reach. */}
+                          <View style={[s.segmentGlint, s.segmentGlintHead]} />
+                          <View style={[s.segmentGlint, s.segmentGlintFoot]} />
+                        </>
+                      )}
                   </Reanimated.View>
 
                   <Reanimated.View style={[StyleSheet.absoluteFill, segmentChallengeFaceStyle]}>
@@ -1367,12 +1435,31 @@ export default function SetAsTaskSheet({
                 onPress={() => switchTaskTab(primaryTaskTab)}
                 activeOpacity={0.86}
                 style={s.segmentBtn}
+                // The button and the plaque are the same width and start at
+                // the same edge, so what is measured here is also true of the
+                // face beneath it.
+                onLayout={event => {
+                  const { height } = event.nativeEvent.layout;
+                  setFlameSeat(current => Math.abs(current.h - height) < 0.5
+                    ? current
+                    : { ...current, h: height });
+                }}
               >
-                <SegmentEmblem
-                  kind={context === 'journal' ? 'book' : 'flame'}
-                  active={primaryTaskTabActive}
-                  onInk={primaryFaceIsInk}
-                />
+                <View
+                  onLayout={event => {
+                    const { x, width } = event.nativeEvent.layout;
+                    const cx = x + width / 2;
+                    setFlameSeat(current => Math.abs(current.cx - cx) < 0.5
+                      ? current
+                      : { ...current, cx });
+                  }}
+                >
+                  <SegmentEmblem
+                    kind={context === 'journal' ? 'book' : 'flame'}
+                    active={primaryTaskTabActive}
+                    onInk={primaryFaceIsInk}
+                  />
+                </View>
                 <Text
                   style={[
                     s.segmentText,
@@ -3910,6 +3997,15 @@ const s = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.95)',
   },
+  // Dust belongs in the air around the emblem, never on its face — so these
+  // two sit in the corners nothing else reaches.
+  segmentGlint: {
+    position: 'absolute',
+    backgroundColor: C.gold,
+    transform: [{ rotate: '45deg' }],
+  },
+  segmentGlintHead: { width: 3.5, height: 3.5, borderRadius: 1, left: 10, top: 9, opacity: 0.42 },
+  segmentGlintFoot: { width: 2.5, height: 2.5, borderRadius: 0.8, right: 12, bottom: 10, opacity: 0.3 },
   segmentInkSheen: {
     position: 'absolute',
     top: 5,
