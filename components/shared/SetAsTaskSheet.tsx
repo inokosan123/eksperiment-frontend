@@ -15,6 +15,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import Reanimated, {
   Easing,
   FadeIn,
@@ -82,6 +83,38 @@ const ROUTINE_TASK_ACCENT_MUTED = '#57534E';
 const SEGMENT_FLAME = require('@/assets/images/streak-flame-512.png');
 const SEGMENT_BOOK = require('@/assets/images/streak-book-512.png');
 
+/**
+ * The light the flame casts on its own plaque.
+ *
+ * A flat disc of warm colour behind the emblem is a shape, and the eye reads
+ * it as one — a second ring outside the two the emblem already has. Light is
+ * not a shape: it is strongest at its source and gone by its edge, so it is
+ * drawn as a real radial fall-off. This is the pool of light the app pours
+ * under its seals elsewhere, lit here by the one emblem that is literally a
+ * flame.
+ *
+ * Static: no clock, no worklet, one <Svg> that mounts with the sheet. The
+ * emblem's own opacity is the only thing that ever moves.
+ */
+const BLOOM = 64;
+
+function FlameBloom() {
+  return (
+    <View pointerEvents="none" style={seg.bloom}>
+      <Svg width={BLOOM} height={BLOOM}>
+        <Defs>
+          <RadialGradient id="segFlameBloom" cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor="#FFAE4A" stopOpacity={0.40} />
+            <Stop offset="0.5" stopColor="#FFBE6E" stopOpacity={0.17} />
+            <Stop offset="1" stopColor="#FFD6A4" stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Circle cx={BLOOM / 2} cy={BLOOM / 2} r={BLOOM / 2} fill="url(#segFlameBloom)" />
+      </Svg>
+    </View>
+  );
+}
+
 function SegmentEmblem({
   kind,
   active,
@@ -110,17 +143,20 @@ function SegmentEmblem({
   // Selected, the emblem throws its own light: amber off the flame, gilt off
   // the trophy and the book. It is the plaque catching what stands on it, and
   // it is what stops the emblem reading as pasted on.
-  const glow = active ? (
+  const glow = !active ? null : onCream ? (
+    // On cream a whitening is nothing at all, and a flat amber disc is just a
+    // third ring. What a flame casts is light, so it is drawn as light.
+    <FlameBloom />
+  ) : (
     <View
       style={[
         seg.emblemGlow,
         kind === 'flame' && seg.emblemGlowWarm,
         // On ink a halo is light; on cream it can only be a bloom.
         onInk && seg.emblemGlowOnInk,
-        onCream && seg.emblemGlowOnCream,
       ]}
     />
-  ) : null;
+  );
 
   if (kind === 'trophy') {
     // The challenge screen's own trophy, which already carries this disc.
@@ -134,11 +170,26 @@ function SegmentEmblem({
   return (
     <View style={[seg.emblemSeat, !active && seg.emblemResting]}>
       {glow}
-      <View style={[seg.emblemDisc, onCream && seg.emblemDiscOnCream]} />
+      {/* On cream the seat is struck rather than painted: it takes light at
+          the shoulder and turns to gold at the foot, like every other
+          medallion in this app. A flat wash of one colour was legible — which
+          was the fault being fixed — but legible is not the same as made. */}
+      <View style={[seg.emblemDisc, onCream && seg.emblemDiscOnCream]}>
+        {onCream && (
+          <LinearGradient
+            colors={['rgba(255,255,255,0.66)', 'rgba(197,160,89,0.30)']}
+            start={{ x: 0.2, y: 0 }}
+            end={{ x: 0.8, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        )}
+      </View>
       <View style={[seg.emblemHeart, onCream && seg.emblemHeartOnCream]} />
       <Image
         source={kind === 'flame' ? SEGMENT_FLAME : SEGMENT_BOOK}
-        style={seg.emblemArt}
+        // The trophy fills its 32 box; the flame was sitting at 17 inside the
+        // same box and reading as the smaller of the two currencies.
+        style={[seg.emblemArt, onCream && seg.emblemArtFlame]}
         resizeMode="contain"
       />
     </View>
@@ -173,11 +224,15 @@ const seg = StyleSheet.create({
   // a warm wash of the gold the whole spiritual register is set in. Held at
   // 0.20 it is a seat, not a badge: strong enough to give the flame a rim to
   // stand on, quiet enough that the plaque still reads as warm paper.
-  emblemDiscOnCream: { backgroundColor: 'rgba(197,160,89,0.20)' },
+  emblemDiscOnCream: { overflow: 'hidden', backgroundColor: 'rgba(197,160,89,0.20)' },
   // And the heart runs the other way, near white, so the two rings show
   // against each other instead of both dissolving into the plate.
   emblemHeartOnCream: { backgroundColor: '#FFFDF7' },
   emblemArt: { width: 17, height: 17 },
+  emblemArtFlame: { width: 19, height: 19 },
+  // The bloom hangs outside the 32 seat, centred on it by the seat's own
+  // align rules — the same way the 40 halo already does.
+  bloom: { position: 'absolute', width: BLOOM, height: BLOOM },
   // On the light plaque the halo is a whitening, not a glow: it lifts the
   // emblem off the cream the way the doors' halo seats do.
   emblemGlow: {
@@ -188,9 +243,6 @@ const seg = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.72)',
   },
   emblemGlowWarm: { backgroundColor: 'rgba(255,252,244,0.8)' },
-  // A whitening on cream is nothing at all. What a flame casts is warmth, so
-  // on its own plaque the halo is a low amber bloom rather than a light.
-  emblemGlowOnCream: { backgroundColor: 'rgba(255,186,102,0.22)' },
   emblemGlowOnInk: {
     width: 42,
     height: 42,
