@@ -56,7 +56,6 @@ import NotificationSettings, { type NotificationMode } from '@/components/shared
 import {
   ChallengeCatalogEntry,
   ChallengeChurchConfig,
-  ChallengeIconKey,
   ChallengePrayerConfig,
   ChallengeRecord,
   ChallengeScriptureConfig,
@@ -92,16 +91,33 @@ function SegmentEmblem({
   active: boolean;
   onInk?: boolean;
 }) {
-  // Selected, the emblem sits on ink and throws its own light: amber off the
-  // flame, gilt off the trophy and the book. It is the plaque catching what
-  // stands on it, and it is what stops the emblem reading as pasted on.
+  /* ⚠ THE SEAT MUST BE READ AGAINST ITS OWN GROUND.
+   *
+   * All three emblems were struck to one pattern — a pale outer disc and a
+   * paler heart — which is right on the challenge plaque (near-white) and on
+   * the journal one (ink), and was invisible on the spiritual one: its cream
+   * face is #FFF4DC and the disc laid on it was #FFF4D6. The same colour. The
+   * halo, a whitening, disappeared into it too, so the flame stood on nothing
+   * while the trophy across the switch sat properly seated.
+   *
+   * The pattern is kept — 28 disc, 22 heart, one centre — and only the values
+   * turn over on cream: the disc goes DEEPER than its ground rather than
+   * paler, the heart stays light, and the two-ring structure comes back. The
+   * flame's halo becomes what a flame's halo should be, a warm amber bloom,
+   * since a whitening cannot show on cream. */
+  const onCream = kind === 'flame' && !onInk;
+
+  // Selected, the emblem throws its own light: amber off the flame, gilt off
+  // the trophy and the book. It is the plaque catching what stands on it, and
+  // it is what stops the emblem reading as pasted on.
   const glow = active ? (
     <View
       style={[
         seg.emblemGlow,
         kind === 'flame' && seg.emblemGlowWarm,
-        // On ink a halo is light; on cream it can only be a whitening.
+        // On ink a halo is light; on cream it can only be a bloom.
         onInk && seg.emblemGlowOnInk,
+        onCream && seg.emblemGlowOnCream,
       ]}
     />
   ) : null;
@@ -118,8 +134,8 @@ function SegmentEmblem({
   return (
     <View style={[seg.emblemSeat, !active && seg.emblemResting]}>
       {glow}
-      <View style={seg.emblemDisc} />
-      <View style={seg.emblemHeart} />
+      <View style={[seg.emblemDisc, onCream && seg.emblemDiscOnCream]} />
+      <View style={[seg.emblemHeart, onCream && seg.emblemHeartOnCream]} />
       <Image
         source={kind === 'flame' ? SEGMENT_FLAME : SEGMENT_BOOK}
         style={seg.emblemArt}
@@ -153,6 +169,14 @@ const seg = StyleSheet.create({
     borderRadius: 11,
     backgroundColor: '#FFF9E8',
   },
+  // On cream the disc is the one ring that has to be DARKER than its ground —
+  // a warm wash of the gold the whole spiritual register is set in. Held at
+  // 0.20 it is a seat, not a badge: strong enough to give the flame a rim to
+  // stand on, quiet enough that the plaque still reads as warm paper.
+  emblemDiscOnCream: { backgroundColor: 'rgba(197,160,89,0.20)' },
+  // And the heart runs the other way, near white, so the two rings show
+  // against each other instead of both dissolving into the plate.
+  emblemHeartOnCream: { backgroundColor: '#FFFDF7' },
   emblemArt: { width: 17, height: 17 },
   // On the light plaque the halo is a whitening, not a glow: it lifts the
   // emblem off the cream the way the doors' halo seats do.
@@ -164,6 +188,9 @@ const seg = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.72)',
   },
   emblemGlowWarm: { backgroundColor: 'rgba(255,252,244,0.8)' },
+  // A whitening on cream is nothing at all. What a flame casts is warmth, so
+  // on its own plaque the halo is a low amber bloom rather than a light.
+  emblemGlowOnCream: { backgroundColor: 'rgba(255,186,102,0.22)' },
   emblemGlowOnInk: {
     width: 42,
     height: 42,
@@ -471,6 +498,30 @@ function churchScheduleToConfig(schedule: ChallengeChurchScheduleDraft): Challen
   };
 }
 
+/**
+ * The category tag — the one coloured thing on a challenge card.
+ *
+ * Shape and voice are the achievement card's badge: a plain tinted pill, the
+ * word set in the serif at a size meant to be read, no dot and no 8pt tracked
+ * capitals. Colour is the card's own sorting tab, so a journal card carries
+ * the violet you filtered it with and a scripture card the gold.
+ *
+ * The tag colours the tag and nothing else. The icon, the rails, the border,
+ * the whisper frame and the progress gold are the app's material rather than a
+ * per-category signal — tint those and one shelf becomes four.
+ */
+const CHALLENGE_TAG_PALETTE = {
+  prayer: { label: 'Prayer', text: '#A76F16', bg: '#FDF3E1' },
+  scripture: { label: 'Scripture', text: '#8E6F2C', bg: '#FBF3E2' },
+  journal: { label: 'Journal', text: '#6D3FD4', bg: '#F3EDFE' },
+  church: { label: 'Church', text: '#227954', bg: '#E7F4EE' },
+} as const;
+
+function challengeTag(category: ChallengeRecord['category'] | ChallengeCatalogEntry['category']) {
+  return CHALLENGE_TAG_PALETTE[category as keyof typeof CHALLENGE_TAG_PALETTE]
+    ?? CHALLENGE_TAG_PALETTE.scripture;
+}
+
 function challengePanelTone(category: ChallengeRecord['category'] | ChallengeCatalogEntry['category']) {
   void category;
   return {
@@ -482,21 +533,34 @@ function challengePanelTone(category: ChallengeRecord['category'] | ChallengeCat
   };
 }
 
-function challengeIcon(icon: ChallengeIconKey, color: string, size = 18) {
-  const common = { s: size, c: color, w: 1.9 };
-  switch (icon) {
-    case 'sun': return <Sun {...common} />;
-    case 'moon': return <Moon {...common} />;
-    case 'sparkles': return <Sparkles {...common} />;
-    case 'book': return <Book {...common} />;
-    case 'openBook': return <OpenBook {...common} />;
-    case 'bookMarked': return <BookMarked {...common} />;
-    case 'calendarCheck': return <CalendarCheck {...common} />;
-    case 'feather': return <Feather {...common} />;
-    case 'notebook': return <Notebook {...common} />;
-    case 'cross': return <Cross {...common} />;
-    default: return <Sparkles {...common} />;
-  }
+/**
+ * The figure at the right of the foot row.
+ *
+ * Every challenge has one, but not every challenge has an end: a church
+ * rhythm and the daily lectionary run for as long as you keep them, so they
+ * carry `showBar: false` and `progressTotal: 0`. Those cards used to reach
+ * this row with nothing on the right at all, which left the foot lopsided and
+ * made two of the categories look like a different card from the rest.
+ * Open-ended or not, what has been done is a real figure — it is only the
+ * proportion that is missing.
+ */
+function challengeFigure(item: ChallengeRecord) {
+  return item.progressTotal
+    ? `${item.progressCurrent}/${item.progressTotal} ${item.progressUnit}`
+    : `${item.progressCurrent} ${item.progressUnit}`;
+}
+
+/** The card's inner divider: a gold hairline fading out at both ends. */
+function ChallengeRule() {
+  return (
+    <LinearGradient
+      pointerEvents="none"
+      colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.34)', 'rgba(197,160,89,0)']}
+      start={{ x: 0, y: 0.5 }}
+      end={{ x: 1, y: 0.5 }}
+      style={s.challengeRule}
+    />
+  );
 }
 
 function formatMonthlyDays(days: number[]) {
@@ -1215,14 +1279,23 @@ export default function SetAsTaskSheet({
                     <LinearGradient
                       colors={primaryFaceIsInk
                         ? ['#343A44', '#1F2937', '#141A22']
-                        : ['#FFFCF2', '#FFF4DC']}
+                        // Deeper at the foot than it was. Against the challenge
+                        // card's two heavy rails a flat cream wash read as the
+                        // weaker of the two faces; warm paper that actually
+                        // turns over stands up to it without borrowing them.
+                        : ['#FFFDF7', '#FFF0CE']}
                       locations={primaryFaceIsInk ? [0, 0.55, 1] : undefined}
                       start={primaryFaceIsInk ? { x: 0, y: 0 } : { x: 0, y: 0 }}
                       end={primaryFaceIsInk ? { x: 1, y: 1 } : { x: 0, y: 1 }}
                       style={StyleSheet.absoluteFill}
                     />
                     <View style={primaryFaceIsInk ? s.segmentFaceInk : s.segmentFaceSpiritual} />
-                    {primaryFaceIsInk && <View style={s.segmentInkSheen} />}
+                    {primaryFaceIsInk
+                      ? <View style={s.segmentInkSheen} />
+                      // The hairline of light every lifted plate in this app
+                      // catches along its top edge; the ink face had its sheen
+                      // and the cream one had nothing.
+                      : <View style={s.segmentFaceLit} />}
                   </Reanimated.View>
 
                   <Reanimated.View style={[StyleSheet.absoluteFill, segmentChallengeFaceStyle]}>
@@ -2019,10 +2092,15 @@ export function ChallengePanel({
 
   const seedActiveChallengeEditor = (item: ChallengeRecord) => {
     if (item.category === 'church') {
+      const savedFrequency = item.churchConfig?.frequency === 'monthly'
+        ? 'specific_days'
+        : item.churchConfig?.frequency ?? 'specific_days';
       onChurchScheduleChange?.({
         ...defaultChurchChallengeSchedule(item.time ?? '09:00'),
-        frequency: item.churchConfig?.frequency ?? 'specific_days',
-        selectedDays: item.churchConfig?.selectedDays?.length ? item.churchConfig.selectedDays : CHURCH_DEFAULT_DAYS,
+        frequency: savedFrequency,
+        selectedDays: savedFrequency === 'specific_days' && item.churchConfig?.selectedDays?.length
+          ? item.churchConfig.selectedDays
+          : CHURCH_DEFAULT_DAYS,
         monthlyDays: item.churchConfig?.monthlyDays?.length ? item.churchConfig.monthlyDays : [1],
         time: item.churchConfig?.time ?? item.time ?? '09:00',
         sameTimeEveryDay: item.churchConfig?.sameTimeEveryDay ?? true,
@@ -2171,6 +2249,7 @@ export function ChallengePanel({
             const expanded = expandedChallengeId === item.id;
             const recentlyStarted = item.templateId === recentlyStartedTemplateId;
             const tone = challengePanelTone(item.category);
+            const tag = challengeTag(item.category);
             const progressPct = item.showBar && item.progressTotal
               ? Math.min(100, Math.round((item.progressCurrent / item.progressTotal) * 100))
               : null;
@@ -2201,35 +2280,53 @@ export function ChallengePanel({
                   </View>
                   <View pointerEvents="none" style={s.challengeWhisperFrame} />
                   <View pointerEvents="none" style={s.challengeTopHighlight} />
-                  <View style={s.challengeTop}>
-                    <View style={[s.challengeBadge, { backgroundColor: tone.badgeBg, borderColor: tone.border }]}>
-                      <View style={[s.challengeBadgeDot, { backgroundColor: tone.accent }]} />
-                      <Text style={[s.challengeBadgeText, { color: tone.badgeText }]}>{item.category.toUpperCase()}</Text>
+                  {/* The head. The title starts the card, where the eye
+                      starts — it used to sit third, under a badge row that was
+                      mostly empty air, with the card's whole upper band spent
+                      on two small pills. The rule of the challenge is read
+                      directly beneath it, and the right column carries the two
+                      things that are not content: the tag that files the card
+                      and the handle that opens it. */}
+                  <View style={s.challengeHead}>
+                    <View style={s.challengeHeadCopy}>
+                      <Text style={s.challengeTitle} numberOfLines={2}>{item.title}</Text>
+                      {/* The time and the pace, read as a line. They were
+                          boxed in a bordered capsule — a box inside a framed
+                          card, for two words. */}
+                      <Text style={s.challengeMetaLine} numberOfLines={1}>
+                        {item.time || '--:--'}
+                        <Text style={s.challengeMetaSep}>{'   ·   '}</Text>
+                        {item.paceLabel || item.scheduleLabel}
+                      </Text>
                     </View>
-                    <ChallengeStreakPill count={item.streak} />
-                  </View>
 
-                  <View style={s.challengeTitleRow}>
-                    <Text style={s.challengeTitle}>{item.title}</Text>
-                    <SpinChevron expanded={expanded} shellStyle={s.challengeChevron} />
-                  </View>
-
-                  <View style={s.challengeMetaCapsule}>
-                    <Text style={s.challengeMetaText} numberOfLines={1}>
-                      {item.time || '--:--'}  ·  {item.paceLabel || item.scheduleLabel}
-                    </Text>
-                  </View>
-
-                  {progressPct !== null ? (
-                    <View style={s.challengeProgressBlock}>
-                      <View style={s.challengeProgressHeader}>
-                        <Text style={[s.challengeProgressLabel, { color: tone.meta }]} numberOfLines={1}>
-                          {item.headline || 'Progress'}
-                        </Text>
-                        <Text style={s.challengeProgressValue}>
-                          {item.progressCurrent}/{item.progressTotal} {item.progressUnit}
-                        </Text>
+                    <View style={s.challengeHeadAside}>
+                      <View style={[s.challengeTag, { backgroundColor: tag.bg }]}>
+                        <Text style={[s.challengeTagText, { color: tag.text }]}>{tag.label}</Text>
                       </View>
+                      <SpinChevron expanded={expanded} shellStyle={s.challengeChevron} />
+                    </View>
+                  </View>
+
+                  {/* The foot: the card's two figures on one line — how long
+                      the streak has run, and how far the challenge has got —
+                      over the bar that measures the second of them. */}
+                  <View style={s.challengeFoot}>
+                    <ChallengeRule />
+                    <View style={s.challengeFootRow}>
+                      <View style={s.challengeFootLead}>
+                        <ChallengeStreakPill count={item.streak} />
+                        {!!item.headline && (
+                          <Text style={[s.challengeFootLabel, { color: tone.meta }]} numberOfLines={1}>
+                            {item.headline}
+                          </Text>
+                        )}
+                      </View>
+                      <Text style={s.challengeFootValue} numberOfLines={1}>
+                        {challengeFigure(item)}
+                      </Text>
+                    </View>
+                    {progressPct !== null && (
                       <View style={s.challengeProgressTrack}>
                         <LinearGradient
                           colors={['#E7C77F', C.gold, '#A97925']}
@@ -2240,10 +2337,8 @@ export function ChallengePanel({
                           <View style={s.challengeProgressShine} />
                         </LinearGradient>
                       </View>
-                    </View>
-                  ) : (
-                    <View style={[s.challengeProgressTrack, s.challengeProgressTrackEmpty]} />
-                  )}
+                    )}
+                  </View>
                 </TouchableOpacity>
 
                 {expanded && (
@@ -2295,7 +2390,7 @@ export function ChallengePanel({
                     )}
 
                     {item.category === 'church' && churchSchedule && onChurchScheduleChange ? (
-                      <ScheduleEditor value={churchSchedule} onChange={onChurchScheduleChange} showFrequency />
+                      <ScheduleEditor value={churchSchedule} onChange={onChurchScheduleChange} showFrequency allowMonthly={false} />
                     ) : (
                       <>
                         <ChallengeTimeEditor value={challengeSchedule} onChange={onChallengeScheduleChange} />
@@ -2395,7 +2490,7 @@ export function ChallengePanel({
           <View style={s.challengeCardList}>
           {pausedItems.map(item => {
             const expanded = expandedChallengeId === item.id;
-            const tone = challengePanelTone(item.category);
+            const tag = challengeTag(item.category);
             const progressPct = item.showBar && item.progressTotal
               ? Math.min(100, Math.round((item.progressCurrent / item.progressTotal) * 100))
               : null;
@@ -2422,35 +2517,52 @@ export function ChallengePanel({
                   style={StyleSheet.absoluteFill}
                 />
                 <View pointerEvents="none" style={[s.challengeCardGlow, s.challengeCardGlowPaused]} />
+                {/* A paused card had no trophy at all, so it read as a
+                    different card rather than as the same card resting. The
+                    prize is still ghosted into the face, only fainter. */}
+                <View pointerEvents="none" style={[s.challengeTrophyWatermark, s.challengeTrophyWatermarkPaused]}>
+                  <StaticChallengeTrophy size={64} />
+                </View>
                 <View pointerEvents="none" style={[s.challengeWhisperFrame, s.challengeWhisperFramePaused]} />
                 <View pointerEvents="none" style={s.challengeTopHighlight} />
-                <View style={s.challengeTop}>
-                  <View style={[s.challengeBadgeMuted, { backgroundColor: tone.badgeBg, borderColor: tone.border }]}>
-                    <View style={[s.challengeBadgeDot, s.challengeBadgeDotPaused, { backgroundColor: tone.accent }]} />
-                    <Text style={[s.challengeBadgeMutedText, { color: tone.badgeText }]}>{item.category.toUpperCase()}</Text>
+                {/* The live card's skeleton, resting. Same head, same foot —
+                    only the state pill takes the streak's seat, because a
+                    paused challenge's streak is not running. */}
+                <View style={s.challengeHead}>
+                  <View style={s.challengeHeadCopy}>
+                    <Text style={[s.challengeTitle, s.challengeTitlePaused]} numberOfLines={2}>{item.title}</Text>
+                    <Text style={[s.challengeMetaLine, s.challengeMetaLinePaused]} numberOfLines={1}>
+                      {item.time || '--:--'}
+                      <Text style={s.challengeMetaSep}>{'   ·   '}</Text>
+                      {item.paceLabel || item.scheduleLabel}
+                    </Text>
                   </View>
-                  <View style={s.challengePausedPill}>
-                    <Pause s={10} c="#8A7F6C" />
-                    <Text style={s.challengePausedText}>PAUSED</Text>
+
+                  <View style={s.challengeHeadAside}>
+                    <View style={[s.challengeTag, s.challengeTagPaused, { backgroundColor: tag.bg }]}>
+                      <Text style={[s.challengeTagText, { color: tag.text }]}>{tag.label}</Text>
+                    </View>
+                    <SpinChevron expanded={expanded} tint="#BEB6A8" shellStyle={[s.challengeChevron, s.challengeChevronPaused]} />
                   </View>
                 </View>
-                <View style={s.challengeTitleRow}>
-                  <Text style={[s.challengeTitle, s.challengeTitlePaused]}>{item.title}</Text>
-                  <SpinChevron expanded={expanded} tint="#BEB6A8" shellStyle={[s.challengeChevron, s.challengeChevronPaused]} />
-                </View>
-                <View style={[s.challengeMetaCapsule, s.challengeMetaCapsulePaused]}>
-                  <Text style={[s.challengeMetaText, s.challengeMetaTextPaused]} numberOfLines={1}>
-                    {item.time || '--:--'}  ·  {item.paceLabel || item.scheduleLabel}
-                  </Text>
-                </View>
-                {progressPct !== null ? (
-                  <View style={s.challengeProgressBlock}>
-                    <View style={s.challengeProgressHeader}>
-                      <Text style={[s.challengeProgressLabel, s.challengeProgressLabelPaused]}>Saved progress</Text>
-                      <Text style={[s.challengeProgressValue, s.challengeProgressValuePaused]}>
-                        {item.progressCurrent}/{item.progressTotal} {item.progressUnit}
+
+                <View style={s.challengeFoot}>
+                  <ChallengeRule />
+                  <View style={s.challengeFootRow}>
+                    <View style={s.challengeFootLead}>
+                      <View style={s.challengePausedPill}>
+                        <Pause s={10} c="#8A7F6C" />
+                        <Text style={s.challengePausedText}>PAUSED</Text>
+                      </View>
+                      <Text style={[s.challengeFootLabel, s.challengeFootLabelPaused]} numberOfLines={1}>
+                        Saved progress
                       </Text>
                     </View>
+                    <Text style={[s.challengeFootValue, s.challengeFootValuePaused]} numberOfLines={1}>
+                      {challengeFigure(item)}
+                    </Text>
+                  </View>
+                  {progressPct !== null && (
                     <View style={[s.challengeProgressTrack, s.challengeProgressTrackPaused]}>
                       <View
                         style={[
@@ -2460,10 +2572,8 @@ export function ChallengePanel({
                         ]}
                       />
                     </View>
-                  </View>
-                ) : (
-                  <View style={[s.challengeProgressTrack, s.challengeProgressTrackPaused, s.challengeProgressTrackEmpty]} />
-                )}
+                  )}
+                </View>
               </TouchableOpacity>
               {expanded && (
                 <Reanimated.View entering={FadeIn.duration(240)} style={s.challengeEditor}>
@@ -2521,7 +2631,7 @@ export function ChallengePanel({
                   )}
 
                   {item.category === 'church' && churchSchedule && onChurchScheduleChange ? (
-                    <ScheduleEditor value={churchSchedule} onChange={onChurchScheduleChange} showFrequency />
+                    <ScheduleEditor value={churchSchedule} onChange={onChurchScheduleChange} showFrequency allowMonthly={false} />
                   ) : (
                     <>
                       <ChallengeTimeEditor value={challengeSchedule} onChange={onChallengeScheduleChange} />
@@ -2681,6 +2791,51 @@ function SpinChevron({
   );
 }
 
+/**
+ * The face of a challenge that has not been started yet.
+ *
+ * Two things a first pass got wrong. It gave this card the live card's foot —
+ * a pill, a schedule and a figure over a rule — which made a shelf of things
+ * you have never touched read as a shelf of paused ones, and which stated a
+ * schedule and a size you are about to choose for yourself two taps later.
+ * And it set that foot in the tracked sans, the app's voice for labels on a
+ * card whose whole job is to be read.
+ *
+ * So: no foot. An unstarted challenge is a name and what it is, set entirely
+ * in the serif, with the tag and the handle in the same column at the same
+ * edge as everywhere else. The rule and the figures below it are what a
+ * challenge earns by being started — they are the mark of a card with a
+ * history, and this card has none yet. What it shares with its live siblings
+ * is the shell, the rails, the frame, the tag and the head; what it does not
+ * share is the part that reports.
+ */
+function ChallengeStartFace({
+  entry,
+  expanded,
+  title,
+}: {
+  entry: ChallengeCatalogEntry;
+  expanded: boolean;
+  title?: string;
+}) {
+  const tag = challengeTag(entry.category);
+  return (
+    <View style={s.challengeHead}>
+      <View style={s.challengeHeadCopy}>
+        <Text style={s.challengeTitle} numberOfLines={2}>{title ?? entry.title}</Text>
+        <Text style={s.challengeStartBody} numberOfLines={expanded ? 4 : 2}>{entry.description}</Text>
+      </View>
+
+      <View style={s.challengeHeadAside}>
+        <View style={[s.challengeTag, { backgroundColor: tag.bg }]}>
+          <Text style={[s.challengeTagText, { color: tag.text }]}>{tag.label}</Text>
+        </View>
+        <SpinChevron expanded={expanded} shellStyle={s.challengeChevron} />
+      </View>
+    </View>
+  );
+}
+
 function ChallengeStreakPill({ count }: { count: number }) {
   return (
     <View style={s.challengeFlame}>
@@ -2769,22 +2924,22 @@ function ScriptureCatalogEntryCard({
   const displayTitle = entry.id === 'lectionary_daily' ? `${entry.title} — 365 Days` : entry.title;
 
   return (
-    <View style={[s.scriptureStartCard, expanded && s.scriptureStartCardExpanded]}>
-      <TouchableOpacity {...guideEntryBinding} onPress={onToggle} activeOpacity={0.84} style={s.scriptureStartCardTap}>
-        <View style={s.scriptureStartTopRow}>
-          <View style={s.scriptureStartMain}>
-            <View style={s.scriptureStartIconWrap}>
-              {entry.id === 'lectionary_daily'
-                ? challengeIcon(entry.icon, '#C5A059', 16)
-                : <OpenBook s={16} c="#C5A059" w={1.9} />}
-            </View>
-            <View style={s.scriptureStartCopy}>
-              <Text style={s.scriptureStartTitle} numberOfLines={2}>{displayTitle}</Text>
-              <Text style={s.scriptureStartBody} numberOfLines={expanded ? 3 : 2}>{entry.description}</Text>
-            </View>
-          </View>
-          <SpinChevron expanded={expanded} shellStyle={[s.startChevronCircle, expanded && s.startChevronCircleExpanded]} />
+    <View style={[s.challengeCardShell, expanded && s.challengeCardShellStarted]}>
+      <TouchableOpacity {...guideEntryBinding} onPress={onToggle} activeOpacity={0.84} style={s.challengeCard}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['#FFF8EA', '#FFFDF7', '#FFFFFF']}
+          start={{ x: 0.04, y: 0 }}
+          end={{ x: 0.94, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View pointerEvents="none" style={s.challengeCardGlow} />
+        <View pointerEvents="none" style={s.challengeTrophyWatermarkStart}>
+          <StaticChallengeTrophy size={104} />
         </View>
+        <View pointerEvents="none" style={s.challengeWhisperFrame} />
+        <View pointerEvents="none" style={s.challengeTopHighlight} />
+        <ChallengeStartFace entry={entry} expanded={expanded} title={displayTitle} />
       </TouchableOpacity>
 
       {expanded && (
@@ -2831,8 +2986,11 @@ function ScriptureCatalogEntryCard({
           <PrimaryButton label="Start Challenge" onPress={onStart} targetBinding={guideStartBinding} />
         </Reanimated.View>
       )}
-      <View pointerEvents="none" style={[s.challengeRail, s.challengeRailSlim, s.challengeRailLeft, !expanded && s.challengeRailStart]} />
-      <View pointerEvents="none" style={[s.challengeRail, s.challengeRailSlim, s.challengeRailRight, !expanded && s.challengeRailStart]} />
+      {/* The same 5pt rails as every other card in the stack — this one used
+          to run 4pt, which read as a slightly narrower card rather than as a
+          deliberate difference. */}
+      <View pointerEvents="none" style={[s.challengeRail, s.challengeRailLeft, !expanded && s.challengeRailStart]} />
+      <View pointerEvents="none" style={[s.challengeRail, s.challengeRailRight, !expanded && s.challengeRailStart]} />
     </View>
   );
 }
@@ -2882,36 +3040,24 @@ function ChallengeCatalogEntryCard({
 }) {
   const tone = challengePanelTone(entry.category);
   return (
-    <View style={[s.catalogStartCard, { borderColor: tone.border }, expanded && s.catalogStartCardExpanded]}>
-      <LinearGradient
-        pointerEvents="none"
-        colors={['#FFF8EA', '#FFFDF7', '#FFFFFF']}
-        start={{ x: 0.04, y: 0 }}
-        end={{ x: 0.96, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <View pointerEvents="none" style={s.catalogStartGlow} />
-      <View pointerEvents="none" style={s.challengeWhisperFrame} />
-      <View pointerEvents="none" style={s.challengeTopHighlight} />
-      <TouchableOpacity {...guideEntryBinding} onPress={onToggle} activeOpacity={0.84} style={s.catalogStartTap}>
-        <View style={s.catalogStartTopRow}>
-          <View style={s.catalogStartMain}>
-            <View style={[s.catalogStartIconWrap, { backgroundColor: tone.badgeBg, borderColor: tone.border }]}>
-              {challengeIcon(entry.icon, tone.accent, 19)}
-            </View>
-            <View style={s.catalogStartCopy}>
-              <View style={s.catalogStartEyebrow}>
-                <View style={[s.catalogStartCategory, { backgroundColor: tone.badgeBg, borderColor: tone.border }]}>
-                  <View style={[s.catalogStartCategoryDot, { backgroundColor: tone.accent }]} />
-                  <Text style={[s.catalogStartCategoryText, { color: tone.badgeText }]}>{entry.category}</Text>
-                </View>
-              </View>
-              <Text style={s.catalogStartTitle} numberOfLines={2}>{entry.title}</Text>
-              <Text style={s.catalogStartBody} numberOfLines={expanded ? 3 : 2}>{entry.description}</Text>
-            </View>
-          </View>
-          <SpinChevron expanded={expanded} shellStyle={[s.startChevronCircle, expanded && s.startChevronCircleExpanded]} />
+    <View style={[s.challengeCardShell, { borderColor: tone.border }, expanded && s.challengeCardShellStarted]}>
+      <TouchableOpacity {...guideEntryBinding} onPress={onToggle} activeOpacity={0.84} style={s.challengeCard}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['#FFF8EA', '#FFFDF7', '#FFFFFF']}
+          start={{ x: 0.04, y: 0 }}
+          end={{ x: 0.94, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View pointerEvents="none" style={s.challengeCardGlow} />
+        {/* The prize is on the face here too, at a whisper — what the card is
+            for, before there is anything to show for it. */}
+        <View pointerEvents="none" style={s.challengeTrophyWatermarkStart}>
+          <StaticChallengeTrophy size={104} />
         </View>
+        <View pointerEvents="none" style={s.challengeWhisperFrame} />
+        <View pointerEvents="none" style={s.challengeTopHighlight} />
+        <ChallengeStartFace entry={entry} expanded={expanded} />
       </TouchableOpacity>
 
       {expanded && (
@@ -2966,7 +3112,7 @@ function ChallengeCatalogEntryCard({
           )}
 
           {entry.category === 'church' && churchSchedule && onChurchScheduleChange ? (
-            <ScheduleEditor value={churchSchedule} onChange={onChurchScheduleChange} showFrequency />
+            <ScheduleEditor value={churchSchedule} onChange={onChurchScheduleChange} showFrequency allowMonthly={false} />
           ) : (
             <>
               <View style={s.catalogScheduleShell}>
@@ -2997,11 +3143,13 @@ function ScheduleEditor({
   onChange,
   showFrequency,
   accent = C.gold,
+  allowMonthly = true,
 }: {
   value: ScheduleDraft;
   onChange: (value: ScheduleDraft) => void;
   showFrequency: boolean;
   accent?: string;
+  allowMonthly?: boolean;
 }) {
   const [gridWidth, setGridWidth] = useState(0);
   const activeDayIndexes = useMemo(() => {
@@ -3037,7 +3185,7 @@ function ScheduleEditor({
         {showFrequency && (
           <>
             <View style={s.frequencyWrap}>
-              {FULL_FREQUENCY_OPTIONS.map(option => {
+              {FULL_FREQUENCY_OPTIONS.filter(option => allowMonthly || option.value !== 'monthly').map(option => {
                 const active = value.frequency === option.value;
                 return (
                   <FrequencyChoice
@@ -3108,7 +3256,7 @@ function ScheduleEditor({
               </View>
             )}
 
-            {value.frequency === 'monthly' && (
+            {allowMonthly && value.frequency === 'monthly' && (
               <View
                 style={s.monthlyGridWrap}
                 onLayout={event => setGridWidth(Math.floor(event.nativeEvent.layout.width))}
@@ -3702,6 +3850,14 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
   },
+  segmentFaceLit: {
+    position: 'absolute',
+    top: 1,
+    left: 16,
+    right: 16,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
   segmentInkSheen: {
     position: 'absolute',
     top: 5,
@@ -3757,7 +3913,10 @@ const s = StyleSheet.create({
   stack: { gap: 16 },
   challengeCatalogStack: { gap: 9 },
   scriptureChallengeGroup: { gap: 7 },
-  challengeCardList: {},
+  // The cards carry a 6/18 drop shadow and sat 5pt apart, so each one's shadow
+  // fell on the card below and the stack read as one shaded slab. They stand
+  // apart now, and the spacing lives on the list rather than on the card.
+  challengeCardList: { gap: 12 },
   stackTight: { gap: 10 },
   rowGap10: { gap: 10 },
   cardBlock: {
@@ -4780,7 +4939,6 @@ const s = StyleSheet.create({
     borderColor: 'rgba(158,120,50,0.40)',
     backgroundColor: '#FFFFFF',
     overflow: 'hidden',
-    marginBottom: 5,
     boxShadow: '0 6px 18px rgba(92,67,25,0.10)',
   },
   challengeCardShellStarted: {
@@ -4821,18 +4979,22 @@ const s = StyleSheet.create({
     borderLeftColor: 'rgba(146,108,40,0.32)',
     borderRightColor: 'rgba(146,108,40,0.32)',
   },
-  challengeRailSlim: {
-    width: 4,
-  },
   challengeCardPaused: {
     backgroundColor: 'transparent',
   },
+  // The card wears two frames: a 5pt rail down each side and a hairline
+  // whisper frame floating 9pt inside the face. The content used to be set
+  // 15/11/13 from the edge — 6pt inside that whisper frame at the sides and
+  // 2pt at the top, which is not a margin, it is a collision. Everything now
+  // clears the frame on all four sides, so the frame reads as a frame and the
+  // card has an inside — but the title needs less room over it than the sides
+  // need beside it, so the vertical inset is the tighter of the two.
   challengeCard: {
     position: 'relative',
     overflow: 'hidden',
-    paddingHorizontal: 15,
-    paddingTop: 11,
-    paddingBottom: 13,
+    paddingHorizontal: 19,
+    paddingTop: 15,
+    paddingBottom: 15,
   },
   challengeCardGlow: {
     position: 'absolute',
@@ -4860,14 +5022,37 @@ const s = StyleSheet.create({
   challengeWhisperFramePaused: {
     borderColor: 'rgba(160,146,118,0.12)',
   },
-  // The prize itself, ghosted into the face of a live challenge — pulled in
-  // from the edge so the chevron never crosses it.
+  // The prize itself, ghosted into the face of a live challenge — held at the
+  // card's own mid-height, pulled in from the edge so the chevron never
+  // crosses it. It was tried up in the corner at half strength and lost: the
+  // trophy wants to sit in the middle of the face, where it reads as the card
+  // being watermarked rather than as a mark stamped on one corner of it.
   challengeTrophyWatermark: {
     position: 'absolute',
     right: 40,
-    top: 24,
+    top: 40,
     opacity: 0.34,
     transform: [{ rotate: '10deg' }],
+  },
+  challengeTrophyWatermarkPaused: { opacity: 0.16 },
+  // The unstarted card's trophy is ornament, not status.
+  //
+  // Sharing the live card's position made it the one thing that still read as
+  // a paused challenge: a small trophy sitting whole in the middle of the
+  // face, at a low opacity, is exactly what a resting card looks like. A mark
+  // cropped by the card's own edge cannot be mistaken for a badge — it is
+  // bigger, it leans the other way, and only its lower edge is cut, so it
+  // reads as printing on the card rather than as something placed on it.
+  //
+  // It stands alone rather than layering over the live card's watermark: that
+  // one anchors from the top, this one from the bottom, and cancelling a
+  // `top` by overriding it with undefined is a trick that reads as a mistake.
+  challengeTrophyWatermarkStart: {
+    position: 'absolute',
+    right: 54,
+    bottom: -22,
+    opacity: 0.15,
+    transform: [{ rotate: '-12deg' }],
   },
   challengeTopHighlight: {
     position: 'absolute',
@@ -4878,58 +5063,91 @@ const s = StyleSheet.create({
     borderRadius: 1,
     backgroundColor: 'rgba(255,255,255,0.82)',
   },
-  challengeTop: {
+  /* — the head: title + rule of the challenge | tag over handle — */
+  // No icon plate here on purpose: at 44pt plus its gap it took 56pt off a
+  // ~320pt line, and the title is the one thing on this card that needs the
+  // width. The card already carries the trophy watermark for texture.
+  challengeHead: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  challengeHeadCopy: { flex: 1, minWidth: 0, paddingTop: 1 },
+  // The tag files the card and the handle opens it — neither is content, so
+  // both live in one column at the far edge, clear of the title.
+  challengeHeadAside: { alignItems: 'flex-end', gap: 9, flexShrink: 0 },
+  // The achievement card's badge, brought over: a plain tinted pill with the
+  // word set in the serif, no dot and no tracked capitals.
+  challengeTag: {
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+  },
+  challengeTagPaused: { opacity: 0.72 },
+  challengeTagText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 12,
+    lineHeight: 15,
+    letterSpacing: 0.2,
+  },
+  challengeMetaLine: {
+    marginTop: 4,
+    fontFamily: F.sansBold,
+    fontSize: 10.5,
+    lineHeight: 14,
+    letterSpacing: 0.6,
+    color: '#B49B67',
+  },
+  challengeMetaLinePaused: { color: '#A8A29E' },
+  challengeMetaSep: { color: '#D9CBAC' },
+  // The unstarted card's second line is a sentence about the challenge, so it
+  // is set in the serif the card's title is set in — the app's reading voice,
+  // at the size the history card reads its own prose at. It was 12.5pt Inter,
+  // which is the voice this app uses for controls, not for description.
+  challengeStartBody: {
+    marginTop: 5,
+    fontFamily: F.serif,
+    fontSize: 14.5,
+    lineHeight: 19.5,
+    color: '#87806F',
+  },
+
+  /* — the foot: the two figures, over the bar — */
+  // The head and the rule were 15pt apart with 12 under it — 27pt of air in
+  // the middle of a card whose whole content is four lines. The rule needs
+  // only enough room to read as a division; the card tightens by 9.
+  challengeFoot: { marginTop: 10 },
+  challengeRule: { height: 1, marginBottom: 8 },
+  challengeFootRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 3,
+    gap: 10,
+    marginBottom: 8,
   },
-  challengeBadge: {
-    alignSelf: 'flex-start',
-    borderRadius: 999,
-    borderWidth: 1,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+  challengeFootLead: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 9,
   },
-  challengeBadgeDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-  },
-  challengeBadgeDotPaused: {
-    opacity: 0.64,
-  },
-  challengeBadgeText: {
+  challengeFootLabel: {
+    flexShrink: 1,
     fontFamily: F.sansBold,
-    fontSize: 8,
-    lineHeight: 10,
-    letterSpacing: 1.25,
-    color: '#3B82F6',
+    fontSize: 9.4,
+    letterSpacing: 1.1,
     textTransform: 'uppercase',
   },
-  challengeBadgeMuted: {
-    alignSelf: 'flex-start',
-    borderRadius: 999,
-    borderWidth: 1,
-    backgroundColor: '#F5F5F4',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
+  challengeFootLabelPaused: { color: '#A8A29E' },
+  challengeFootValue: {
+    flexShrink: 0,
+    fontFamily: F.serifSemiBold,
+    fontSize: 13.5,
+    lineHeight: 17,
+    color: '#4A423A',
   },
-  challengeBadgeMutedText: {
-    fontFamily: F.sansBold,
-    fontSize: 8,
-    lineHeight: 10,
-    letterSpacing: 1.25,
-    color: '#A8A29E',
-    textTransform: 'uppercase',
-  },
+  challengeFootValuePaused: { color: '#8C857B' },
   challengeFlame: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -4964,14 +5182,7 @@ const s = StyleSheet.create({
     includeFontPadding: false,
     fontVariant: ['tabular-nums'],
   },
-  challengeTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
   challengeTitle: {
-    flex: 1,
     fontFamily: F.serifMedium,
     fontSize: 20,
     lineHeight: 25,
@@ -4994,30 +5205,6 @@ const s = StyleSheet.create({
   challengeChevronPaused: {
     borderColor: '#E7E1D7',
     backgroundColor: 'rgba(255,255,255,0.72)',
-  },
-  challengeMetaCapsule: {
-    alignSelf: 'flex-start',
-    maxWidth: '100%',
-    marginTop: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.22)',
-    backgroundColor: '#FBF6EA',
-    paddingHorizontal: 9,
-    paddingVertical: 3.5,
-  },
-  challengeMetaCapsulePaused: {
-    opacity: 0.9,
-  },
-  challengeMetaText: {
-    fontFamily: F.sansBold,
-    fontSize: 9.6,
-    lineHeight: 12,
-    letterSpacing: 0.8,
-    color: '#B49B67',
-  },
-  challengeMetaTextPaused: {
-    color: '#A8A29E',
   },
   challengePausedPill: {
     borderRadius: 999,
@@ -5045,10 +5232,6 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(197,160,89,0.15)',
     overflow: 'hidden',
   },
-  challengeProgressTrackEmpty: {
-    marginTop: 10,
-    opacity: 0.44,
-  },
   challengeProgressTrackPaused: {
     backgroundColor: '#EBE5D8',
   },
@@ -5071,37 +5254,6 @@ const s = StyleSheet.create({
     height: 2,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.42)',
-  },
-  challengeProgressBlock: {
-    marginTop: 11,
-  },
-  challengeProgressHeader: {
-    marginBottom: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  challengeProgressLabel: {
-    flex: 1,
-    fontFamily: F.sansBold,
-    fontSize: 8.6,
-    letterSpacing: 1.15,
-    textTransform: 'uppercase',
-    color: '#A8884C',
-  },
-  challengeProgressLabelPaused: {
-    color: '#9B9489',
-  },
-  challengeProgressValue: {
-    fontFamily: F.sansBold,
-    fontSize: 10.2,
-    letterSpacing: 0.4,
-    color: '#75633F',
-    fontVariant: ['tabular-nums'],
-  },
-  challengeProgressValuePaused: {
-    color: '#8F887C',
   },
   challengeEditor: {
     paddingHorizontal: 18,
@@ -5325,116 +5477,6 @@ const s = StyleSheet.create({
     lineHeight: 15,
     color: '#9CA3AF',
   },
-  // The start card wears the same construction as its active sibling — one
-  // uniform hairline around the shell, rails quieter until it is opened.
-  catalogStartCard: {
-    position: 'relative',
-    borderRadius: 22,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: 'rgba(158,120,50,0.34)',
-    backgroundColor: '#FFFDF9',
-    overflow: 'hidden',
-    boxShadow: '0 5px 16px rgba(77,57,27,0.075)',
-  },
-  catalogStartCardExpanded: {
-    borderColor: 'rgba(158,120,50,0.52)',
-    backgroundColor: '#FFFCF4',
-    boxShadow: '0 9px 24px rgba(92,67,25,0.13)',
-  },
-  catalogStartGlow: {
-    position: 'absolute',
-    width: 108,
-    height: 62,
-    borderRadius: 54,
-    right: -32,
-    top: -35,
-    backgroundColor: 'rgba(197,160,89,0.085)',
-    transform: [{ rotate: '-10deg' }],
-  },
-  catalogStartTap: {
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-  },
-  catalogStartTopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 9,
-  },
-  catalogStartMain: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  catalogStartIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    borderCurve: 'continuous',
-    backgroundColor: '#FBF4E7',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  catalogStartCopy: {
-    flex: 1,
-    minWidth: 0,
-    paddingTop: 0,
-  },
-  catalogStartEyebrow: {
-    minHeight: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 3,
-  },
-  catalogStartCategory: {
-    maxWidth: '100%',
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  catalogStartCategoryDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-  },
-  catalogStartCategoryText: {
-    fontFamily: F.sansBold,
-    fontSize: 7.2,
-    lineHeight: 9,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-  catalogStartTitle: {
-    fontFamily: F.serifMedium,
-    fontSize: 18,
-    lineHeight: 22.5,
-    letterSpacing: -0.2,
-    color: '#1A1714',
-  },
-  catalogStartBody: {
-    marginTop: 3,
-    fontFamily: F.sans,
-    fontSize: 12,
-    lineHeight: 16.5,
-    color: '#8A8177',
-  },
-  catalogStartMeta: {
-    marginTop: 8,
-    fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 1.3,
-    color: '#B08A47',
-  },
   catalogSetupInline: {
     borderTopWidth: 1,
     borderTopColor: 'rgba(197,160,89,0.18)',
@@ -5472,70 +5514,6 @@ const s = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: '#8B8E96',
-  },
-  scriptureStartCard: {
-    position: 'relative',
-    borderRadius: 22,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: 'rgba(158,120,50,0.30)',
-    backgroundColor: '#FFFDFB',
-    overflow: 'hidden',
-    shadowColor: '#C5A059',
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 5 },
-    shadowRadius: 12,
-    elevation: 1,
-  },
-  scriptureStartCardExpanded: {
-    borderColor: 'rgba(158,120,50,0.50)',
-    backgroundColor: '#FFFDF7',
-  },
-  scriptureStartCardTap: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  scriptureStartTopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  scriptureStartMain: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  scriptureStartIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 13,
-    backgroundColor: '#FBF4E7',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.16)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scriptureStartCopy: {
-    flex: 1,
-    minWidth: 0,
-    paddingTop: 0,
-  },
-  scriptureStartTitle: {
-    fontFamily: F.serifMedium,
-    fontSize: 17.5,
-    lineHeight: 22,
-    letterSpacing: -0.2,
-    color: '#1A1714',
-  },
-  scriptureStartBody: {
-    marginTop: 3,
-    fontFamily: F.sans,
-    fontSize: 12,
-    lineHeight: 16.5,
-    color: '#8A8177',
   },
   scriptureSetupInline: {
     borderTopWidth: 1,
@@ -5657,21 +5635,6 @@ const s = StyleSheet.create({
     color: '#A8A29E',
     textTransform: 'uppercase',
     marginBottom: -1,
-  },
-  startChevronCircle: {
-    width: 27,
-    height: 27,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.16)',
-    backgroundColor: 'rgba(255,248,232,0.62)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  startChevronCircleExpanded: {
-    borderColor: 'rgba(197,160,89,0.30)',
-    backgroundColor: '#FFF6E4',
   },
   primaryBtn: {
     minHeight: 52,
