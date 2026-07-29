@@ -12,11 +12,29 @@ import { Modal,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import Reanimated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
+import Reanimated, {
+  Easing,
+  FadeInDown,
+  interpolate,
+  interpolateColor,
+  runOnJS,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { Sun, Utensils, Moon, Sparkles, Heart, Play, X, Settings, CheckSmall, OrthodoxCross } from '@/components/icons/Icons';
+import { Sun, Utensils, Moon, Sparkles, Heart, X, Settings, CheckSmall, ChevronLeft, OrthodoxCross } from '@/components/icons/Icons';
 import ConfirmModal from '@/components/shared/ConfirmModal';
+import MyRulePage from '@/components/prayer/MyRulePage';
+import MyRuleStartDock, { MY_RULE_DOCK_SCRIM } from '@/components/prayer/MyRuleStartDock';
+import OrthodoxPlaque, { plaqueAlpha, plaqueInk } from '@/components/prayer/OrthodoxPlaque';
+import PrayerBookSwitch, { PrayerBookMode } from '@/components/prayer/PrayerBookSwitch';
+import { MINE_ACCENT } from '@/components/prayer/myRuleTone';
 import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
 import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
 import { useAppSettings } from '@/components/settings/SettingsContext';
@@ -26,10 +44,11 @@ import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskRetur
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
+import { ReadableText } from '@/components/shared/typographyScale';
 
 import {
   getPrayerOptions,
-  PERSONAL_RULE_PREVIEW,
+  PRAYER_ACTION_LABELS,
   PRAYER_LANGUAGES,
   PrayerBlock,
   PrayerCategory,
@@ -68,13 +87,19 @@ function normalizePrayerLanguage(value: string | undefined): PrayerLanguage {
 }
 
 function defaultOptionId(options: PrayerOption[]) {
-  return options.find(option => option.id === 'personal')?.id
-    ?? options.find(option => option.id === 'standard')?.id
+  return options.find(option => option.id === 'standard')?.id
     ?? options[0]?.id
     ?? 'standard';
 }
 
-function isPersonalRuleOption(category: PrayerCategory, optionId?: string) {
+/**
+ * My Rule used to be a pill among the Orthodox morning and evening rules, so a
+ * launch could still arrive carrying it. It is now a book of its own, one level
+ * up — this is the only thing that still recognises the old id, and it does so
+ * to route such a launch to the right side rather than to open a rule that no
+ * longer exists.
+ */
+function isPersonalRuleLaunch(category: PrayerCategory | undefined, optionId?: string) {
   return optionId === 'personal' && (category === 'morning' || category === 'evening');
 }
 
@@ -86,10 +111,14 @@ const CAT_THEMES: Record<PrayerCategory, CatTheme> = {
   other: { accent: '#10B981', bg: '#ECFDF5', border: '#6EE7B7' },
 };
 
+// Full words. MORN and EVE were not a choice — at 9pt over 1.6 of tracking
+// "MORNING" needs 53.8pt and the button gave 52.0, so it was cut to fit.
+// Easing the type to 8.5 over 1.3 and reclaiming the button's dead side
+// padding leaves 6.4pt to spare; the row's gutters and colours never move.
 const CATEGORIES: { id: PrayerCategory; label: string; Icon: React.ComponentType<any> }[] = [
-  { id: 'morning', label: 'MORN', Icon: Sun },
+  { id: 'morning', label: 'MORNING', Icon: Sun },
   { id: 'meal', label: 'MEALS', Icon: Utensils },
-  { id: 'evening', label: 'EVE', Icon: Moon },
+  { id: 'evening', label: 'EVENING', Icon: Moon },
   { id: 'jesus', label: 'JESUS', Icon: Sparkles },
   { id: 'other', label: 'OTHER', Icon: Heart },
 ];
@@ -108,6 +137,16 @@ const PREVIEW_CATEGORY_TITLES: Record<PrayerLanguage, Partial<Record<PrayerCateg
     evening: 'Вечерние молитвы',
   },
 };
+
+/** The page turning under the switch: a rise of ten, no longer than the
+ *  plaque's own travel, so the two read as one movement rather than two.
+ *
+ *  ⚠ FadeInDown, not FadeIn with an initial transform. FadeIn animates opacity
+ *  only, so a translateY handed to it as an initial value has nothing driving
+ *  it back to zero and the page would sit ten points low forever. */
+const BOOK_ENTER = FadeInDown
+  .duration(260)
+  .withInitialValues({ opacity: 0, transform: [{ translateY: 10 }] });
 
 const PAGE_WORD_LIMIT = 320;
 const LONG_TEXT_WORD_LIMIT = 190;
@@ -368,16 +407,6 @@ function splitExaminationStep(content: string) {
   };
 }
 
-function isShortEveningRuleTitle(title: string) {
-  const clean = title.trim().toLocaleLowerCase();
-
-  return (
-    clean === 'short evening rule'
-    || clean === '\u043a\u0440\u0430\u0442\u043a\u043e \u0432\u0435\u0447\u0435\u0440\u045a\u0435 \u043f\u0440\u0430\u0432\u0438\u043b\u043e'
-    || clean === '\u043a\u0440\u0430\u0442\u043a\u043e\u0435 \u0432\u0435\u0447\u0435\u0440\u043d\u0435\u0435 \u043f\u0440\u0430\u0432\u0438\u043b\u043e'
-  );
-}
-
 function stripParentheticalTitle(title: string) {
   return title.replace(/\s*\([^()]+\)\s*$/, '').trim();
 }
@@ -386,22 +415,24 @@ function hasRulePreviewSubtitle(category: PrayerCategory) {
   return category === 'morning' || category === 'evening';
 }
 
-function mergeShortEveningOpeningSlides(section: PrayerSection, slides: PrayerSlide[]) {
-  if (!isShortEveningRuleTitle(section.title) || slides.length < 2) return slides;
-
-  const [firstSlide, secondSlide, ...restSlides] = slides;
-  return [
-    {
-      title: firstSlide.title,
-      parts: [
-        ...firstSlide.parts,
-        { type: 'title' as const, content: secondSlide.title },
-        ...secondSlide.parts,
-      ],
-    },
-    ...restSlides,
-  ];
-}
+/* ⚠ REMOVED: `mergeShortEveningOpeningSlides`.
+ *
+ * It folded the first two pages of the SHORT EVENING rule into one, so the
+ * Lord's Prayer and "O Theotokos and Virgin" shared a page and the rule came
+ * out at two pages where the morning's identical rule came out at three. The
+ * two are the same rule of St. Seraphim said at a different hour — the data
+ * is block-for-block the same, only the opening rubric differs — so there was
+ * never anything for the evening to do differently.
+ *
+ * The pages are now, at both hours and in all three languages:
+ *   1. The Lord's Prayer (3×)
+ *   2. O Theotokos and Virgin (3×)
+ *   3. The Symbol of Faith (once)
+ *   4. — morning only — Explanation of the Rule
+ *
+ * No group comes near `PAGE_WORD_LIMIT` (the largest is the English Creed at
+ * 213 of 320), so none of them splits further.
+ */
 
 function pushGroupSlides(slides: PrayerSlide[], title: string, parts: PrayerSlidePart[]) {
   if (isPsalm50Title(title) || isStJohnDamasceneTitle(title)) {
@@ -515,7 +546,188 @@ function buildPrayerSlides(section: PrayerSection): PrayerSlide[] {
   });
 
   flushCurrentGroup();
-  return mergeShortEveningOpeningSlides(section, slides);
+  return slides;
+}
+
+/**
+ * One hour of the day, in the Prayer Book's own bright register.
+ *
+ * The five colours are the point of this row and are left exactly as they
+ * are; what changes here is how an hour ARRIVES. It used to swap states on
+ * one frame — tint on, tint off — which is the cheapest thing a selector can
+ * do. Now the tint washes in, the ink warms from grey into the hour's colour,
+ * and the little symbol hops once and settles, the way the app's own task
+ * checks land.
+ *
+ * The app's standing rule is kept: nothing scales, so small Android views
+ * never resample. The hop is a translate and everything else is opacity or
+ * colour.
+ */
+function CategoryButton({
+  cat,
+  theme,
+  active,
+  onPress,
+}: {
+  cat: { id: PrayerCategory; label: string; Icon: React.ComponentType<any> };
+  theme: CatTheme;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const reduceMotion = useReducedMotion();
+  const on = useSharedValue(active ? 1 : 0);
+  const hop = useSharedValue(0);
+  const press = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      on.value = active ? 1 : 0;
+      return;
+    }
+    on.value = withTiming(active ? 1 : 0, {
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+    });
+    // Only the arriving hour hops — a row of five bouncing at once would be
+    // noise rather than delight.
+    if (active) {
+      hop.value = withSequence(
+        withTiming(-5, { duration: 140, easing: Easing.out(Easing.quad) }),
+        withSpring(0, { damping: 9, stiffness: 300, mass: 0.6 }),
+      );
+    }
+  }, [active, reduceMotion, on, hop]);
+
+  // The tint, washing in over the resting paper.
+  const seatStyle = useAnimatedStyle(() => ({ opacity: on.value }));
+  // The hour's own symbol, fading up over the grey one beneath it.
+  const litIconStyle = useAnimatedStyle(() => ({ opacity: on.value }));
+  const restIconStyle = useAnimatedStyle(() => ({ opacity: 1 - on.value }));
+  // The hop, plus a touch of give under the finger.
+  const liftStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: hop.value + press.value * 1.5 }],
+  }));
+  const labelStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(on.value, [0, 1], ['#B5ADA0', theme.accent]),
+    // The name firms up as its hour is chosen.
+    opacity: interpolate(on.value, [0, 1], [0.9, 1]),
+  }));
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.9}
+      onPressIn={() => {
+        press.value = withTiming(1, { duration: 90 });
+      }}
+      onPressOut={() => {
+        press.value = withTiming(0, { duration: 190 });
+      }}
+      style={s.catBtn}
+    >
+      <Reanimated.View
+        pointerEvents="none"
+        style={[
+          s.catSeat,
+          {
+            backgroundColor: theme.bg,
+            borderColor: theme.border,
+            shadowColor: theme.accent,
+          },
+          seatStyle,
+        ]}
+      />
+
+      <Reanimated.View style={liftStyle}>
+        <View style={s.catIcon}>
+          <Reanimated.View style={restIconStyle}>
+            <cat.Icon s={21} c="#C4BAA8" w={1.6} />
+          </Reanimated.View>
+          <Reanimated.View style={[s.catIconLit, litIconStyle]}>
+            <cat.Icon s={21} c={theme.accent} w={2} />
+          </Reanimated.View>
+        </View>
+      </Reanimated.View>
+
+      <Reanimated.Text style={[s.catLabel, labelStyle]} numberOfLines={1}>
+        {cat.label}
+      </Reanimated.Text>
+    </TouchableOpacity>
+  );
+}
+
+/**
+ * One rule within an hour — the sub-selection under the category row.
+ *
+ * It was a flat pill that swapped border and colour on a single frame, and a
+ * plain round dot appeared beside the chosen one. It now arrives the way the
+ * hour above it does: the tint washes in, the ink warms, and the marker is
+ * the app's own struck diamond, turning as it lands.
+ */
+function RulePill({
+  label,
+  theme,
+  active,
+  onPress,
+}: {
+  label: string;
+  theme: CatTheme;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const reduceMotion = useReducedMotion();
+  const on = useSharedValue(active ? 1 : 0);
+  const press = useSharedValue(0);
+
+  useEffect(() => {
+    on.value = reduceMotion
+      ? active ? 1 : 0
+      : withTiming(active ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) });
+  }, [active, reduceMotion, on]);
+
+  const seatStyle = useAnimatedStyle(() => ({ opacity: on.value }));
+  const liftStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: press.value * 1.5 }],
+  }));
+  const labelStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(on.value, [0, 1], ['#78716C', theme.accent]),
+  }));
+  // The diamond opens out of nothing and settles square — it never scales,
+  // it grows its own width, so small Android views never resample.
+  const markStyle = useAnimatedStyle(() => ({
+    opacity: on.value,
+    width: interpolate(on.value, [0, 1], [0, 6]),
+    marginRight: interpolate(on.value, [0, 1], [0, 8]),
+    transform: [{ rotate: `${interpolate(on.value, [0, 1], [0, 45])}deg` }],
+  }));
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.9}
+      onPressIn={() => {
+        press.value = withTiming(1, { duration: 90 });
+      }}
+      onPressOut={() => {
+        press.value = withTiming(0, { duration: 190 });
+      }}
+    >
+      <Reanimated.View style={[s.rulePill, liftStyle]}>
+        <Reanimated.View
+          pointerEvents="none"
+          style={[
+            s.ruleSeat,
+            { backgroundColor: theme.bg, borderColor: theme.accent },
+            seatStyle,
+          ]}
+        />
+        <Reanimated.View style={[s.ruleMark, { backgroundColor: theme.accent }, markStyle]} />
+        <Reanimated.Text style={[s.ruleTxt, labelStyle]} numberOfLines={1}>
+          {label}
+        </Reanimated.Text>
+      </Reanimated.View>
+    </TouchableOpacity>
+  );
 }
 
 export default function PrayerBookView({
@@ -548,6 +760,13 @@ export default function PrayerBookView({
   const { settings, updateSettings } = useAppSettings();
   const prayerLanguage = normalizePrayerLanguage(settings.prayerLang);
   const initialCategory = launchedCategory ?? 'morning';
+  // The Prayer Book holds two books. It opens on My Rule unless a launch is
+  // carrying the reader somewhere in the Orthodox one.
+  const [book, setBook] = useState<PrayerBookMode>(
+    launchedCategory && !isPersonalRuleLaunch(launchedCategory, launchedOptionId)
+      ? 'orthodox'
+      : 'mine',
+  );
   const [category, setCategory] = useState<PrayerCategory>(initialCategory);
   const [optionId, setOptionId] = useState(
     launchedOptionId ?? defaultOptionId(getPrayerOptions(prayerLanguage, initialCategory)),
@@ -581,19 +800,43 @@ export default function PrayerBookView({
   const canChooseRule = options.length > 1;
   const previewTitle = PREVIEW_CATEGORY_TITLES[prayerLanguage][category] ?? stripParentheticalTitle(section.title);
   const previewRuleSubtitle = hasRulePreviewSubtitle(category) ? selectedOption.label : '';
-  const isOrthodoxRule = (category === 'morning' || category === 'evening')
-    && (selectedOption?.id === 'standard' || selectedOption?.id === 'medium' || selectedOption?.id === 'short');
+  // Everything in this book is a received Orthodox text and says so at the head
+  // of its page — the meal graces and the occasional prayers no less than the
+  // morning and evening rules. The mark used to be limited to those two only
+  // because My Rule sat among their pills and had to be told apart from them;
+  // My Rule is a book of its own now, so that limit means nothing.
+  //
+  // ⚠ The Jesus Prayer is the exception. It is one sentence, said by Christians
+  // far outside this tradition, and stamping ORTH. on it would claim it.
+  const isOrthodoxRule = category !== 'jesus';
+  const isMyRule = book === 'mine';
+  // The colour the screen's furniture takes: the hour's, or My Rule's own.
+  const bookAccent = isMyRule ? MINE_ACCENT : theme.accent;
+  const actionLabels = PRAYER_ACTION_LABELS[prayerLanguage];
+  // Only the first spoken block is illuminated — a versal on every paragraph
+  // is a pattern, and a pattern is not an opening.
+  const firstTextBlockIndex = section.blocks.findIndex(block => block.type === 'text');
 
   useEffect(() => {
     if (!launchedAutoStart || !launchedCategory) return;
+
+    // A launch still carrying the retired `personal` id belongs to the other
+    // book entirely — it lands on My Rule instead of opening a reader.
+    if (isPersonalRuleLaunch(launchedCategory, launchedOptionId)) {
+      setBook('mine');
+      setIsReaderActive(false);
+      return;
+    }
+
     const nextOptions = getPrayerOptions(prayerLanguage, launchedCategory);
     const nextOption = nextOptions.some(option => option.id === launchedOptionId)
       ? launchedOptionId
       : defaultOptionId(nextOptions);
 
+    setBook('orthodox');
     setCategory(launchedCategory);
     setOptionId(nextOption ?? 'standard');
-    setIsReaderActive(!isPersonalRuleOption(launchedCategory, nextOption));
+    setIsReaderActive(true);
   }, [launchedAutoStart, launchedCategory, launchedOptionId, prayerLanguage, taskInstanceId]);
 
   const closeReader = useCallback(() => {
@@ -642,13 +885,15 @@ export default function PrayerBookView({
     setIsReaderActive(false);
   };
 
-  const openPersonalRule = useCallback((titleOverride?: string) => {
+  // My Rule is no longer bound to an hour, so it opens its timer plainly: no
+  // prayerType, which is what gives PersonalRuleTaskView its own gold register
+  // and drops the morning/evening rule switcher it has nothing to switch.
+  const openPersonalRule = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     const route = {
       pathname: '/personal-rule',
       params: {
-        title: titleOverride ?? selectedOption?.label ?? 'My Rule',
-        prayerType: category,
+        title: 'My Rule',
         isTask: isTaskLaunch ? 'true' : 'false',
         taskInstanceId: taskInstanceId ?? '',
         taskDate,
@@ -662,32 +907,43 @@ export default function PrayerBookView({
 
     setIsReaderActive(false);
     router.push(route);
-  }, [category, isTaskLaunch, router, selectedOption?.label, taskDate, taskInstanceId]);
+  }, [isTaskLaunch, router, taskDate, taskInstanceId]);
+
+  const openJesusPrayer = useCallback((title?: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    router.push({
+      pathname: '/jesus-prayer',
+      params: {
+        title: title ?? 'The Jesus Prayer',
+        mode: 'duration',
+        duration: '10',
+        count: '100',
+        isTask: 'false',
+      },
+    } as any);
+  }, [router]);
 
   const handleOptionChange = useCallback((id: string) => {
     setOptionId(id);
   }, []);
 
+  const handleBookChange = useCallback((next: PrayerBookMode) => {
+    // During the tour the screen is a stage the guide dresses itself.
+    if (isGuided) return;
+    setBook(next);
+    setIsReaderActive(false);
+  }, [isGuided]);
+
   const handleStartPrayer = () => {
     // During the tour the screen is a stage — starting a prayer would leave it.
     if (isGuided) return;
-    if (isPersonalRuleOption(category, selectedOption?.id)) {
+    if (isMyRule) {
       openPersonalRule();
       return;
     }
 
     if (category === 'jesus') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-      router.push({
-        pathname: '/jesus-prayer',
-        params: {
-          title: selectedOption?.label ?? 'The Jesus Prayer',
-          mode: 'duration',
-          duration: '10',
-          count: '100',
-          isTask: 'false',
-        },
-      } as any);
+      openJesusPrayer(selectedOption?.label);
       return;
     }
 
@@ -695,17 +951,24 @@ export default function PrayerBookView({
     setIsReaderActive(true);
   };
 
-  // The tour dresses the stage itself: Orthodox rules want the loaded morning
-  // rule in view, My Rule wants the personal option's calm preview. Both
-  // switches run only inside the guided session — normal use never sees them.
+  // The tour dresses the stage itself. The categories and the Jesus tab live in
+  // the Orthodox book, so the beats that spotlight them turn to it; the My Rule
+  // beat turns the switch the other way and lets that page's hero be the card.
+  // All of this runs only inside the guided session — normal use never sees it.
   useEffect(() => {
     if (!isGuided) return;
-    if (guidePhase === 'prayerOrthodox') {
+    // The flip happens a beat EARLY, on prayerTimes, so the category row is
+    // long mounted and measured by the time the next beat spotlights the Jesus
+    // tab inside it. Flipping and spotlighting in the same commit would ask the
+    // guide to measure a row that had not laid out yet.
+    if (guidePhase === 'prayerTimes' || guidePhase === 'prayerCategories' || guidePhase === 'prayerJesus') {
+      setBook('orthodox');
+    } else if (guidePhase === 'prayerOrthodox') {
+      setBook('orthodox');
       setCategory('morning');
       setOptionId(defaultOptionId(getPrayerOptions(prayerLanguage, 'morning')));
     } else if (guidePhase === 'prayerMyRule') {
-      setCategory('morning');
-      setOptionId('personal');
+      setBook('mine');
     }
   }, [guidePhase, isGuided, prayerLanguage]);
 
@@ -841,6 +1104,8 @@ export default function PrayerBookView({
         bottomInset={insets.bottom}
         canChooseRule={canChooseRule}
         deferFinishFeedback={isTaskLaunch}
+        continueLabel={actionLabels.continue}
+        finishLabel={actionLabels.finish}
         onClose={closeReader}
         onFinish={finishReader}
         onOptionChange={handleOptionChange}
@@ -891,17 +1156,17 @@ export default function PrayerBookView({
                     style={[
                       s.languageOption,
                       active
-                        ? { backgroundColor: theme.bg, borderColor: theme.border }
+                        ? { backgroundColor: isMyRule ? '#EEF4FA' : theme.bg, borderColor: isMyRule ? '#D5E1EE' : theme.border }
                         : s.languageOptionInactive,
                     ]}
                   >
                     <View style={s.languageCopy}>
-                      <Text style={[s.languageName, { color: active ? theme.accent : C.text }]}>
+                      <Text style={[s.languageName, { color: active ? bookAccent : C.text }]}>
                         {language.name}
                       </Text>
                       <Text style={s.languageCode}>{language.label}</Text>
                     </View>
-                    {active && <CheckSmall s={18} c={theme.accent} w={2.4} />}
+                    {active && <CheckSmall s={18} c={bookAccent} w={2.4} />}
                   </TouchableOpacity>
                 );
               })}
@@ -912,9 +1177,20 @@ export default function PrayerBookView({
 
       <ScrollView
         ref={guideScrollRef}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+        // Room for whichever action is showing. The dock is a real bar with a
+        // scrim above it, so its room is measured from its own parts rather
+        // than from a constant that happened to be right on one phone.
+        contentContainerStyle={{
+          paddingBottom: isMyRule
+            ? 56 + Math.max(insets.bottom, 10) + 8 + MY_RULE_DOCK_SCRIM + 12
+            : insets.bottom + 100,
+        }}
         showsVerticalScrollIndicator={false}
       >
+        {/* Set as Daily Task belongs to NEITHER book — the same sheet, offering
+            the same hours, whichever side is showing. So it stands above the
+            switch: everything below the switch changes with it, and this does
+            not. Sitting under it, it read as something the choice governed. */}
         <View
           style={s.bannerWrap}
           collapsable={false}
@@ -930,139 +1206,171 @@ export default function PrayerBookView({
           />
         </View>
 
-        <View style={s.catGrid}>
-          {CATEGORIES.map(cat => {
-            const active = category === cat.id;
-            const t = CAT_THEMES[cat.id];
-
-            const button = (
-              <TouchableOpacity
-                key={cat.id === 'jesus' ? undefined : cat.id}
-                onPress={() => handleCategoryChange(cat.id)}
-                activeOpacity={0.78}
-                style={[
-                  s.catBtn,
-                  active
-                    ? {
-                      backgroundColor: t.bg,
-                      borderColor: t.border,
-                      shadowColor: t.accent,
-                      shadowOpacity: 0.14,
-                      shadowOffset: { width: 0, height: 3 },
-                      shadowRadius: 8,
-                      elevation: 2,
-                    }
-                    : s.catInactive,
-                ]}
-              >
-                <cat.Icon s={21} c={active ? t.accent : '#C4BAA8'} w={active ? 2 : 1.6} />
-                <Text style={[s.catLabel, { color: active ? t.accent : '#B5ADA0' }]}>{cat.label}</Text>
-              </TouchableOpacity>
-            );
-
-            // The JESUS tab is a spotlight anchor during the onboarding tour.
-            if (cat.id === 'jesus') {
-              return (
-                <View
-                  key={cat.id}
-                  style={{ flex: 1 }}
-                  collapsable={false}
-                  ref={jesusTabTarget.ref}
-                  onLayout={jesusTabTarget.onLayout}
-                >
-                  {button}
-                </View>
-              );
-            }
-            return button;
-          })}
+        {/* Which of the two books. Everything under it belongs to one side. */}
+        <View style={s.switchWrap}>
+          <PrayerBookSwitch value={book} onChange={handleBookChange} lang={prayerLanguage} />
         </View>
 
-        {canChooseRule && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.ruleScroll}
+        {/* The page turns: what the switch chose rises into place rather than
+            appearing. One key, so a change of book is one movement. */}
+        <Reanimated.View key={book} entering={BOOK_ENTER}>
+        {isMyRule ? (
+          <View
+            collapsable={false}
+            onLayout={event => { guideCardYRef.current = event.nativeEvent.layout.y; }}
           >
-            {options.map(option => {
-              const active = option.id === selectedOption.id;
+            <MyRulePage
+              lang={prayerLanguage}
+              onStartMyRule={() => {
+                if (isGuided) return;
+                openPersonalRule();
+              }}
+              onOpenJesusPrayer={() => {
+                if (isGuided) return;
+                openJesusPrayer();
+              }}
+              heroRef={cardTarget.ref}
+              onHeroLayout={cardTarget.onLayout}
+            />
+          </View>
+        ) : (
+          <>
+          <View style={s.catGrid}>
+            {CATEGORIES.map(cat => {
+              const active = category === cat.id;
+              const t = CAT_THEMES[cat.id];
 
-              return (
-                  <TouchableOpacity
-                    key={option.id}
-                    onPress={() => handleOptionChange(option.id)}
-                    activeOpacity={0.8}
-                  style={[
-                    s.rulePill,
-                    active
-                      ? { backgroundColor: theme.bg, borderColor: theme.accent, borderWidth: 1.5 }
-                      : s.rulePillInactive,
-                  ]}
-                >
-                  {active && <View style={[s.ruleDot, { backgroundColor: theme.accent }]} />}
-                  <Text style={[s.ruleTxt, { color: active ? theme.accent : '#78716C' }]}>{option.label}</Text>
-                </TouchableOpacity>
+              const button = (
+                <CategoryButton
+                  key={cat.id === 'jesus' ? undefined : cat.id}
+                  cat={cat}
+                  theme={t}
+                  active={active}
+                  onPress={() => handleCategoryChange(cat.id)}
+                />
               );
+
+              // The JESUS tab is a spotlight anchor during the onboarding tour.
+              if (cat.id === 'jesus') {
+                return (
+                  <View
+                    key={cat.id}
+                    style={{ flex: 1 }}
+                    collapsable={false}
+                    ref={jesusTabTarget.ref}
+                    onLayout={jesusTabTarget.onLayout}
+                  >
+                    {button}
+                  </View>
+                );
+              }
+              return button;
             })}
-          </ScrollView>
-        )}
+          </View>
 
-        <View
-          style={s.cardWrap}
-          collapsable={false}
-          ref={cardTarget.ref}
-          onLayout={event => {
-            guideCardYRef.current = event.nativeEvent.layout.y;
-            cardTarget.onLayout(event);
-          }}
-        >
-          <View style={[s.prayerCard, { backgroundColor: theme.bg, borderColor: theme.border }]}>
-            {isOrthodoxRule && (
-              <View style={s.orthodoxBadge} pointerEvents="none">
-                <OrthodoxCross s={12} c={theme.accent} w={1.35} />
-                <Text style={[s.orthodoxLabel, { color: theme.accent }]}>ORTH.</Text>
-              </View>
-            )}
-            <Text style={[s.prayerCat, { color: theme.accent }]}>
-              {category === 'jesus' ? 'JESUS PRAYER' : CATEGORIES.find(c => c.id === category)?.label}
-            </Text>
-            <Text style={s.prayerTitle}>{previewTitle}</Text>
-            {previewRuleSubtitle && (
-              <Text style={[s.prayerRuleSubtitle, { color: theme.accent }]}>
-                {previewRuleSubtitle}
+          {canChooseRule && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.ruleScroll}
+            >
+              {options.map(option => (
+                <RulePill
+                  key={option.id}
+                  label={option.label}
+                  theme={theme}
+                  active={option.id === selectedOption.id}
+                  onPress={() => handleOptionChange(option.id)}
+                />
+              ))}
+            </ScrollView>
+          )}
+
+          <View
+            style={s.cardWrap}
+            collapsable={false}
+            ref={cardTarget.ref}
+            onLayout={event => {
+              guideCardYRef.current = event.nativeEvent.layout.y;
+              cardTarget.onLayout(event);
+            }}
+          >
+            <View style={[s.prayerCard, { borderColor: theme.border, shadowColor: theme.accent }]}>
+              {/* The card's own light, in the register the app's finest cards
+                  use: the ground gathers light at the head, where the title
+                  stands, and settles into the hour's colour down the page. A
+                  white hairline catches the top edge. Flat tint alone made this
+                  the plainest surface in an app full of lit ones. */}
+              <LinearGradient
+                colors={['#FFFFFF', theme.bg]}
+                locations={[0, 0.42]}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              />
+              <View pointerEvents="none" style={s.prayerCardLit} />
+
+              {isOrthodoxRule && (
+                <View style={s.orthodoxBadge} pointerEvents="none">
+                  <OrthodoxCross s={12} c={theme.accent} w={1.35} />
+                  <Text style={[s.orthodoxLabel, { color: theme.accent }]}>ORTH.</Text>
+                </View>
+              )}
+              <Text style={[s.prayerCat, { color: theme.accent }]}>
+                {category === 'jesus' ? 'JESUS PRAYER' : CATEGORIES.find(c => c.id === category)?.label}
               </Text>
-            )}
-            <View style={[s.divider, { backgroundColor: theme.accent, opacity: 0.4 }]} />
+              <ReadableText style={s.prayerTitle}>{previewTitle}</ReadableText>
+              {previewRuleSubtitle && (
+                <ReadableText style={[s.prayerRuleSubtitle, { color: theme.accent }]}>
+                  {previewRuleSubtitle}
+                </ReadableText>
+              )}
 
-            {isPersonalRuleOption(category, selectedOption?.id) ? (
-              <PersonalRulePreview lang={prayerLanguage} accent={theme.accent} />
-            ) : (
+              {/* The one thing both books keep, so the two pages stay one book:
+                  a rule, a struck diamond at its waist, a rule. */}
+              <View style={s.ornamentRow}>
+                <View style={[s.ornamentLine, { backgroundColor: theme.accent }]} />
+                <View style={[s.ornamentDiamond, { backgroundColor: theme.accent }]} />
+                <View style={[s.ornamentLine, { backgroundColor: theme.accent }]} />
+              </View>
+
               <View style={s.blockStack}>
                 {section.blocks.map((block, index) => (
                   <PrayerBlockView
                     key={`${block.type}-${index}`}
                     block={block}
-                    accent={theme.accent}
+                    theme={theme}
+                    opening={index === firstTextBlockIndex}
                   />
                 ))}
               </View>
-            )}
+            </View>
           </View>
-        </View>
+          </>
+        )}
+        </Reanimated.View>
       </ScrollView>
 
-      <View style={[s.startWrap, { bottom: insets.bottom + 20 }]} pointerEvents="box-none">
-        <TouchableOpacity
-          style={[s.startBtn, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
-          activeOpacity={0.85}
+      {/* Two books, two actions, and deliberately not the same object. The
+          received text is started by a lozenge of gold FLOATING over the page;
+          My Rule is started by a bar DOCKED to its foot. See the headers on
+          both files for why each is drawn the way it is. */}
+      {isMyRule ? (
+        <MyRuleStartDock
+          label={actionLabels.startPrayer}
+          bottomInset={insets.bottom}
           onPress={handleStartPrayer}
-        >
-          <View style={s.playCircle}>
-            <Play s={12} c="#fff" />
-          </View>
-          <Text style={s.startTxt}>START PRAYER</Text>
-        </TouchableOpacity>
-      </View>
+        />
+      ) : (
+        <View style={[s.startWrap, { bottom: insets.bottom + 20 }]} pointerEvents="box-none">
+          <OrthodoxPlaque
+            accent={theme.accent}
+            label={actionLabels.startPrayer}
+            onPress={handleStartPrayer}
+          />
+        </View>
+      )}
 
       <SetAsTaskSheet
         visible={showTaskSheet}
@@ -1076,42 +1384,87 @@ export default function PrayerBookView({
   );
 }
 
-function PersonalRulePreview({ lang, accent }: { lang: PrayerLanguage; accent: string }) {
-  const content = PERSONAL_RULE_PREVIEW[lang];
-
-  return (
-    <View style={s.personalPreviewWrap}>
-      <Text style={s.personalIntro}>{content.intro}</Text>
-
-      <Text style={s.personalListHeading}>{content.listHeading}</Text>
-
-      <View style={s.personalListStack}>
-        {content.listItems.map((item, index) => (
-          <View key={index} style={s.personalListRow}>
-            <Text style={[s.personalBullet, { color: accent }]}>•</Text>
-            <Text style={s.personalListItem}>{item}</Text>
-          </View>
-        ))}
-      </View>
-
-      <Text style={s.personalStart}>{content.startLine}</Text>
-
-      <View style={[s.personalNoteDivider, { backgroundColor: accent, opacity: 0.25 }]} />
-      <Text style={s.personalNote}>{content.note}</Text>
-    </View>
-  );
-}
-
-function PrayerBlockView({ block, accent }: { block: PrayerBlock; accent: string }) {
+/**
+ * One block of a received prayer, set the way a prayer book sets it.
+ *
+ * A prayer book has two voices on the page and prints them differently: the
+ * prayer itself, and the rubric — the book telling you what to do. Here all
+ * three block kinds were plain centred paragraphs, so the two voices ran
+ * together. Now a heading is flanked by rules, and a rubric sits in its own
+ * tinted slip, which is what the red ink does in a printed book.
+ */
+function PrayerBlockView({
+  block,
+  theme,
+  opening = false,
+}: {
+  block: PrayerBlock;
+  theme: CatTheme;
+  /** The first spoken words on the card — they take the versal. */
+  opening?: boolean;
+}) {
   if (block.type === 'title') {
-    return <Text style={[s.blockTitle, { color: accent }]}>{block.content}</Text>;
+    return (
+      <View style={s.blockTitleWrap}>
+        <ReadableText style={[s.blockTitle, { color: theme.accent }]}>{block.content}</ReadableText>
+        <View style={s.blockTitleOrnament}>
+          <View style={[s.blockTitleRule, { backgroundColor: theme.accent }]} />
+          <View style={[s.blockTitleDiamond, { backgroundColor: theme.accent }]} />
+          <View style={[s.blockTitleRule, { backgroundColor: theme.accent }]} />
+        </View>
+      </View>
+    );
   }
 
   if (block.type === 'instruction') {
-    return <Text style={[s.prayerInstr, { color: accent }]}>{block.content}</Text>;
+    // The rubric — the book's own voice. Held between two hairlines rather
+    // than boxed: in a printed prayer book a rubric is set apart by colour
+    // and rule, never by a panel, and a panel here made the lightest voice
+    // on the page the heaviest object on it.
+    return (
+      <View style={s.rubric}>
+        <View style={[s.rubricRule, { backgroundColor: theme.accent }]} />
+        <ReadableText style={[s.prayerInstr, { color: theme.accent }]}>{block.content}</ReadableText>
+        <View style={[s.rubricRule, { backgroundColor: theme.accent }]} />
+      </View>
+    );
   }
 
-  return <Text style={s.prayerText}>{block.content}</Text>;
+  // The illuminated opening. A prayer book raises the first letter of the
+  // first prayer, and it is the one flourish that says "book" before a word
+  // is read. Nested Text keeps it on the same baseline and in the same flow,
+  // so it survives every language and every line break.
+  const versal = opening ? takeVersal(block.content) : null;
+
+  if (versal) {
+    return (
+      <ReadableText style={s.prayerText}>
+        <ReadableText style={[s.prayerVersal, { color: theme.accent }]}>{versal.initial}</ReadableText>
+        {versal.rest}
+      </ReadableText>
+    );
+  }
+
+  return <ReadableText style={s.prayerText}>{block.content}</ReadableText>;
+}
+
+/**
+ * Split the opening letter off a prayer, if it can carry a versal.
+ *
+ * Only a real letter takes one — a text opening on a quotation mark, an
+ * ellipsis or a rubric bracket would give a raised piece of punctuation, which
+ * is worse than no flourish at all. Short lines are left alone too: a versal
+ * on three words reads as a mistake rather than an opening.
+ */
+function takeVersal(content: string): { initial: string; rest: string } | null {
+  const text = content.trimStart();
+  if (text.length < 24) return null;
+  const initial = text.slice(0, 1);
+  // A letter is the one character whose case changes. Cheaper and safer than
+  // a \p{L} regex, which needs Unicode property escapes that Hermes has not
+  // always carried — and this works for Cyrillic exactly as it does for Latin.
+  if (initial.toUpperCase() === initial.toLowerCase()) return null;
+  return { initial, rest: text.slice(1) };
 }
 
 function ReaderSlideTitle({ title }: { title: string }) {
@@ -1120,12 +1473,12 @@ function ReaderSlideTitle({ title }: { title: string }) {
 
   return (
     <View style={s.readerSlideTitleWrap}>
-      <Text style={s.readerSlideTitle}>{commaTitle.title}</Text>
+      <ReadableText style={s.readerSlideTitle}>{commaTitle.title}</ReadableText>
       {commaTitle.subtitle && (
-        <Text style={s.readerSlideTitleSubtitle}>{commaTitle.subtitle}</Text>
+        <ReadableText style={s.readerSlideTitleSubtitle}>{commaTitle.subtitle}</ReadableText>
       )}
       {splitTitle.repeatNote && (
-        <Text style={s.readerSlideTitleNote}>{splitTitle.repeatNote}</Text>
+        <ReadableText style={s.readerSlideTitleNote}>{splitTitle.repeatNote}</ReadableText>
       )}
     </View>
   );
@@ -1137,12 +1490,12 @@ function ReaderInlineTitle({ title }: { title: string }) {
 
   return (
     <View style={s.readerInlineTitleWrap}>
-      <Text style={s.readerInlineTitle}>{commaTitle.title}</Text>
+      <ReadableText style={s.readerInlineTitle}>{commaTitle.title}</ReadableText>
       {commaTitle.subtitle && (
-        <Text style={s.readerInlineTitleSubtitle}>{commaTitle.subtitle}</Text>
+        <ReadableText style={s.readerInlineTitleSubtitle}>{commaTitle.subtitle}</ReadableText>
       )}
       {splitTitle.repeatNote && (
-        <Text style={s.readerInlineTitleNote}>{splitTitle.repeatNote}</Text>
+        <ReadableText style={s.readerInlineTitleNote}>{splitTitle.repeatNote}</ReadableText>
       )}
     </View>
   );
@@ -1152,14 +1505,14 @@ function ReaderExaminationInstruction({ content }: { content: string }) {
   const step = splitExaminationStep(content);
 
   if (!step) {
-    return <Text style={s.readerExaminationText}>{content}</Text>;
+    return <ReadableText style={s.readerExaminationText}>{content}</ReadableText>;
   }
 
   return (
-    <Text style={s.readerExaminationText}>
-      <Text style={s.readerExaminationStep}>{step.label}</Text>
+    <ReadableText style={s.readerExaminationText}>
+      <ReadableText style={s.readerExaminationStep}>{step.label}</ReadableText>
       {`: ${step.body}`}
-    </Text>
+    </ReadableText>
   );
 }
 
@@ -1173,6 +1526,8 @@ function PrayerReader({
   bottomInset,
   canChooseRule,
   deferFinishFeedback,
+  continueLabel,
+  finishLabel,
   onClose,
   onFinish,
   onOptionChange,
@@ -1186,6 +1541,8 @@ function PrayerReader({
   bottomInset: number;
   canChooseRule: boolean;
   deferFinishFeedback: boolean;
+  continueLabel: string;
+  finishLabel: string;
   onClose: () => void;
   onFinish: () => void | Promise<void>;
   onOptionChange: (id: string) => void;
@@ -1225,9 +1582,13 @@ function PrayerReader({
   }, [progress, progressGlowMotion, progressMotion]);
 
   useEffect(() => {
+    // 430 on a quintic ease-out: the page leaves fast and arrives slowly, the
+    // way a leaf falls flat rather than sliding to a stop. Cubic over 390 was
+    // even enough to read as a carousel. Reanimated's `Easing` has no `quint`,
+    // so it comes from `poly(5)` — the same curve by its general name.
     pageMotion.value = withTiming(1, {
-      duration: 390,
-      easing: Easing.out(Easing.cubic),
+      duration: 430,
+      easing: Easing.out(Easing.poly(5)),
     }, () => {
       runOnJS(releaseTransitionLock)();
     });
@@ -1237,19 +1598,39 @@ function PrayerReader({
     width: `${Math.max(0, Math.min(100, progressMotion.value))}%`,
   }));
 
-  const progressSheenStyle = useAnimatedStyle(() => ({
-    opacity: 0.18 + progressGlowMotion.value * 0.48,
-    transform: [{ translateX: progressGlowMotion.value * 18 }],
+  // The rubricator's mark at the head of the ink. It is always solid — the
+  // old sheen rested at 0.18, which is right for a highlight sliding along a
+  // bar and wrong for a mark that says where the reading has reached. What
+  // moves is a strike: it swells as the page turns and settles again.
+  const progressMarkStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + progressGlowMotion.value * 0.34 }],
   }));
 
-  const pageMotionStyle = useAnimatedStyle(() => ({
-    opacity: 0.46 + pageMotion.value * 0.54,
-    transform: [
-      { translateX: (1 - pageMotion.value) * 18 * pageDirection.value },
-      { translateY: (1 - pageMotion.value) * 4 },
-      { scale: 0.99 + pageMotion.value * 0.01 },
-    ],
-  }));
+  /**
+   * The page settling into place.
+   *
+   * ⚠ THE INK ARRIVES BEFORE THE PAGE STOPS. Opacity runs at 1.7x the clock
+   * and is finished about three-fifths of the way through, so the words are
+   * fully black while the leaf is still coming to rest. Fading and moving on
+   * the same curve is what makes a transition read as a slide — the eye
+   * follows a translating ghost — and this is a book, not a carousel.
+   *
+   * The drift is 13 rather than 18, and the scale opens from 0.985: a page
+   * being laid down settles more than it travels. It starts at 0.34 rather
+   * than 0 because a page that vanishes completely flickers on Android's
+   * first composited frame.
+   */
+  const pageMotionStyle = useAnimatedStyle(() => {
+    const p = pageMotion.value;
+    return {
+      opacity: Math.min(1, 0.34 + p * 1.7),
+      transform: [
+        { translateX: (1 - p) * 13 * pageDirection.value },
+        { translateY: (1 - p) * 5 },
+        { scale: 0.985 + p * 0.015 },
+      ],
+    };
+  });
 
   const backButtonMotionStyle = useAnimatedStyle(() => ({
     transform: [{ scale: backPressMotion.value }],
@@ -1349,20 +1730,25 @@ function PrayerReader({
   if (!slide) {
     return (
       <View style={s.readerScreen}>
+        {/* The empty rule still gets its head-band, so a book with nothing in
+            it does not flash a different design on its way to having one. */}
         <View style={[s.readerHeader, { paddingTop: topInset + 2 }]}>
           <View style={s.readerHeaderRow}>
             <View style={s.readerIconSpacer} />
-            <View style={[s.readerCounterPill, { borderColor: C.goldLight, backgroundColor: C.goldBg }]}>
-              <Text style={s.readerCounter}>0 / 0</Text>
+            <View style={s.readerFolio}>
+              <Text style={[s.readerFolioFigure, { color: plaqueInk(C.gold, 30) }]}>0</Text>
+              <View style={[s.readerFolioDiamond, { backgroundColor: plaqueAlpha(C.gold, 0.5) }]} />
+              <Text style={[s.readerFolioTotal, { color: plaqueAlpha(C.gold, 0.62) }]}>0</Text>
             </View>
-            <TouchableOpacity onPress={requestExit} style={[s.readerIconBtn, { borderColor: C.goldLight, backgroundColor: C.goldBg }]} activeOpacity={0.82}>
-              <X s={14} c={C.goldDark} w={2.35} />
+            <TouchableOpacity onPress={requestExit} activeOpacity={0.82} style={s.readerRoundel}>
+              <View pointerEvents="none" style={[s.readerRoundelFace, { borderColor: plaqueAlpha(C.gold, 0.42) }]} />
+              <View pointerEvents="none" style={s.readerRoundelCatch} />
+              <X s={13} c={plaqueInk(C.gold, 32)} w={2.2} />
             </TouchableOpacity>
           </View>
-          <View style={s.readerProgressTrack}>
-            <Reanimated.View style={[s.readerProgressFill, progressFillStyle, { backgroundColor: C.gold }]}>
-              <Reanimated.View style={[s.readerProgressSheen, progressSheenStyle]} />
-            </Reanimated.View>
+          <View style={s.readerRuleChannel}>
+            <View style={[s.readerRuleTrack, { backgroundColor: plaqueAlpha(C.gold, 0.16) }]} />
+            <View style={s.readerRuleCatch} />
           </View>
         </View>
         <ConfirmModal
@@ -1383,22 +1769,49 @@ function PrayerReader({
 
   return (
     <View style={s.readerScreen}>
+      {/* ── THE HEAD-BAND ────────────────────────────────────────────────
+          A bound book's page is closed at the head and the foot by a rule,
+          not by a hairline border and a rounded pill. So: the folio set in
+          the book's own face with a struck diamond between its figures, the
+          exit cut into a roundel of the same stone the plaque is cut from,
+          and a ruled channel under both with the rubricator's diamond riding
+          at the head of the ink. */}
       <View style={[s.readerHeader, { paddingTop: topInset + 2 }]}>
         <View style={s.readerHeaderRow}>
           <View style={s.readerIconSpacer} />
-          <View style={[s.readerCounterPill, { borderColor: theme.border, backgroundColor: theme.bg }]}>
-            <Text style={[s.readerCounter, { color: theme.accent }]}>
-              {boundedIndex + 1} / {slides.length}
+          <View style={s.readerFolio}>
+            <Text style={[s.readerFolioFigure, { color: plaqueInk(theme.accent, 30) }]}>
+              {boundedIndex + 1}
+            </Text>
+            <View style={[s.readerFolioDiamond, { backgroundColor: plaqueAlpha(theme.accent, 0.5) }]} />
+            <Text style={[s.readerFolioTotal, { color: plaqueAlpha(theme.accent, 0.62) }]}>
+              {slides.length}
             </Text>
           </View>
-          <TouchableOpacity onPress={requestExit} style={[s.readerIconBtn, { borderColor: theme.border, backgroundColor: theme.bg }]} activeOpacity={0.82}>
-            <X s={14} c={theme.accent} w={2.35} />
+          <TouchableOpacity onPress={requestExit} activeOpacity={0.82} style={s.readerRoundel}>
+            <View pointerEvents="none" style={[s.readerRoundelFace, { borderColor: plaqueAlpha(theme.accent, 0.42) }]} />
+            <View pointerEvents="none" style={s.readerRoundelCatch} />
+            <X s={13} c={plaqueInk(theme.accent, 32)} w={2.2} />
           </TouchableOpacity>
         </View>
-        <View style={s.readerProgressTrack}>
-          <Reanimated.View style={[s.readerProgressFill, progressFillStyle, { backgroundColor: theme.accent }]}>
-            <Reanimated.View style={[s.readerProgressSheen, progressSheenStyle]} />
+
+        <View style={s.readerRuleChannel}>
+          <View style={[s.readerRuleTrack, { backgroundColor: plaqueAlpha(theme.accent, 0.16) }]} />
+          <Reanimated.View style={[s.readerRuleInk, progressFillStyle]}>
+            <View style={[s.readerRuleInkLine, { backgroundColor: theme.accent }]} />
+            {/* The mark the rubricator leaves at the head of the ink. It rides
+                the fill rather than sliding on its own clock, so the page and
+                the mark can never disagree about where the reading is. */}
+            <Reanimated.View style={[s.readerRuleMark, progressMarkStyle]}>
+              <View style={[s.readerRuleMarkDiamond, { backgroundColor: theme.accent }]} />
+            </Reanimated.View>
           </Reanimated.View>
+          <View style={s.readerRuleCatch} />
+          {/* A ruled line in a manuscript is stopped at both ends by a short
+              serif, not left to fade out. They also give the empty rule and
+              the finished one something to be measured between. */}
+          <View pointerEvents="none" style={[s.readerRuleSerif, s.readerRuleSerifStart, { backgroundColor: plaqueAlpha(theme.accent, 0.4) }]} />
+          <View pointerEvents="none" style={[s.readerRuleSerif, s.readerRuleSerifEnd, { backgroundColor: plaqueAlpha(theme.accent, 0.4) }]} />
         </View>
       </View>
 
@@ -1416,10 +1829,15 @@ function PrayerReader({
                 setShowRuleSelector(true);
               }}
               activeOpacity={0.76}
-              style={[s.readerRulePill, { borderColor: theme.border, backgroundColor: theme.bg }]}
+              style={s.readerRulePill}
             >
-              <Text style={[s.readerRuleText, { color: theme.accent }]}>{selectedOption.label}</Text>
-              <Settings s={12} c={theme.accent} w={2} />
+              <View pointerEvents="none" style={[s.readerRulePillFace, { borderColor: plaqueAlpha(theme.accent, 0.4) }]} />
+              <View pointerEvents="none" style={s.readerRulePillCatch} />
+              <Text style={[s.readerRuleText, { color: plaqueInk(theme.accent, 30) }]} numberOfLines={1}>
+                {selectedOption.label}
+              </Text>
+              <View style={[s.readerRuleDiamond, { backgroundColor: plaqueAlpha(theme.accent, 0.5) }]} />
+              <Settings s={13} c={plaqueInk(theme.accent, 36)} w={1.9} />
             </TouchableOpacity>
           )}
 
@@ -1438,7 +1856,7 @@ function PrayerReader({
               }
 
               return (
-                <Text
+                <ReadableText
                   key={`${part.type}-${index}`}
                   style={[
                     part.type === 'instruction'
@@ -1451,37 +1869,62 @@ function PrayerReader({
                   ]}
                 >
                   {part.content}
-                </Text>
+                </ReadableText>
               );
             })}
           </View>
         </Reanimated.View>
       </ScrollView>
 
+      {/* ── THE FOOT ─────────────────────────────────────────────────────
+          The head-band's mirror: the same double rule, catch-light above the
+          cut this time because the light still comes from the top. The plaque
+          stands CENTRED and alone — it is the one thing this bar is for — and
+          the way back is a roundel at the margin, answering the exit roundel
+          at the head. */}
       <View style={[s.readerNav, { paddingBottom: Math.max(bottomInset + 8, 18) }]}>
-        <TouchableOpacity
-          onPress={goPrev}
-          onPressIn={() => { backPressMotion.value = withTiming(0.97, { duration: 80 }); }}
-          onPressOut={() => { backPressMotion.value = withTiming(1, { duration: 120 }); }}
-          disabled={isFirst}
-          activeOpacity={1}
-          style={isFirst && s.readerNavDisabled}
-        >
-          <Reanimated.View style={[s.readerBackBtn, backButtonMotionStyle]}>
-            <Text style={s.readerBackText}>BACK</Text>
-          </Reanimated.View>
-        </TouchableOpacity>
+        <View pointerEvents="none" style={[s.readerNavRule, { backgroundColor: plaqueAlpha(theme.accent, 0.3) }]} />
+        <View pointerEvents="none" style={s.readerNavRuleCatch} />
 
-        <TouchableOpacity
-          onPress={goNext}
-          onPressIn={() => { nextPressMotion.value = withTiming(0.975, { duration: 80 }); }}
-          onPressOut={() => { nextPressMotion.value = withTiming(1, { duration: 120 }); }}
-          activeOpacity={1}
-        >
-          <Reanimated.View style={[s.readerNextBtn, { backgroundColor: theme.accent, shadowColor: theme.accent }, nextButtonMotionStyle]}>
-            <Text style={s.readerNextText}>{isLast ? 'FINISH' : 'CONTINUE'}</Text>
+        {/* Three cells, not an absolute margin control: a side, the centre,
+            and a matching side. It is the only layout that puts the way back
+            on the plaque's own baseline AND keeps the plaque on the screen's
+            axis. Held absolutely, the roundel centred itself in the padding
+            box — safe-area included — so it sat low, and the bar had to grow
+            to hide it. */}
+        <View style={s.readerNavSide}>
+          <TouchableOpacity
+            onPress={goPrev}
+            onPressIn={() => { backPressMotion.value = withTiming(0.97, { duration: 80 }); }}
+            onPressOut={() => { backPressMotion.value = withTiming(1, { duration: 120 }); }}
+            disabled={isFirst}
+            activeOpacity={1}
+            style={isFirst && s.readerNavDisabled}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Reanimated.View style={[s.readerBackRoundel, backButtonMotionStyle]}>
+              <View pointerEvents="none" style={[s.readerBackFace, { borderColor: plaqueAlpha(theme.accent, 0.42) }]} />
+              <View pointerEvents="none" style={s.readerBackCatch} />
+              <ChevronLeft s={19} c={plaqueInk(theme.accent, 30)} w={2} />
+            </Reanimated.View>
+          </TouchableOpacity>
+        </View>
+
+        <View style={s.readerNavCentre}>
+          <Reanimated.View style={nextButtonMotionStyle}>
+            <OrthodoxPlaque
+              accent={theme.accent}
+              size="compact"
+              label={isLast ? finishLabel : continueLabel}
+              onPress={goNext}
+              onPressIn={() => { nextPressMotion.value = withTiming(0.975, { duration: 80 }); }}
+              onPressOut={() => { nextPressMotion.value = withTiming(1, { duration: 120 }); }}
+            />
           </Reanimated.View>
-        </TouchableOpacity>
+        </View>
+
+        {/* The side the roundel does not occupy, so the centre stays centred. */}
+        <View style={s.readerNavSide} pointerEvents="none" />
       </View>
 
       <Modal
@@ -1592,21 +2035,88 @@ const s = StyleSheet.create({
   languageName: { fontFamily: F.serifMedium, fontSize: 18, lineHeight: 22 },
   languageCode: { marginTop: 1, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.5, color: '#A8A29E' },
 
-  bannerWrap: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10 },
+  bannerWrap: { paddingHorizontal: 14, paddingTop: 12 },
+  switchWrap: { paddingHorizontal: 14, paddingTop: 16, paddingBottom: 4 },
 
   catGrid: { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingTop: 6, paddingBottom: 0 },
-  catBtn: { flex: 1, borderRadius: 18, paddingVertical: 13, paddingHorizontal: 4, alignItems: 'center', gap: 7, borderWidth: 1 },
-  catInactive: { backgroundColor: '#F8F6F2', borderColor: '#EDE8DF' },
-  catLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.6 },
+  // The resting paper the hour sits on. The tinted seat fades in over it, so
+  // the button itself never changes — only what is laid on top of it.
+  catBtn: {
+    flex: 1,
+    borderRadius: 18,
+    paddingVertical: 13,
+    // 2, not 4: the content is centred anyway, so the padding was doing
+    // nothing except taking the room the full words need.
+    paddingHorizontal: 2,
+    alignItems: 'center',
+    gap: 7,
+    borderWidth: 1,
+    backgroundColor: '#F8F6F2',
+    borderColor: '#EDE8DF',
+  },
+  catSeat: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 18,
+    borderWidth: 1,
+    shadowOpacity: 0.14,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  // Both symbols occupy one 21pt square, the lit one stacked over the grey.
+  catIcon: { width: 21, height: 21, alignItems: 'center', justifyContent: 'center' },
+  catIconLit: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  catLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.3 },
 
-  ruleScroll: { gap: 8, paddingHorizontal: 14, paddingTop: 14, paddingBottom: 6 },
-  rulePill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 12, borderWidth: 1 },
-  rulePillInactive: { backgroundColor: '#FFFFFF', borderColor: '#E8E3DA' },
-  ruleDot: { width: 6, height: 6, borderRadius: 3 },
-  ruleTxt: { fontFamily: F.serifMedium, fontSize: 14, letterSpacing: 0.2 },
+  ruleScroll: { gap: 8, paddingHorizontal: 14, paddingTop: 14, paddingBottom: 8 },
+  // The pill at rest. The chosen seat fades in over it, so the pill itself
+  // never redraws — only what is laid on top of it.
+  rulePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 40,
+    paddingHorizontal: 17,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E8E3DA',
+    overflow: 'hidden',
+  },
+  ruleSeat: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    borderWidth: 1.5,
+  },
+  // The app's struck diamond, as it marks a chosen thing everywhere else.
+  ruleMark: { height: 6, borderRadius: 1 },
+  ruleTxt: { fontFamily: F.serifMedium, fontSize: 15, letterSpacing: 0.2 },
 
   cardWrap: { padding: 14, paddingBottom: 16 },
-  prayerCard: { padding: 22, paddingBottom: 28, borderRadius: 26, borderWidth: 1, alignItems: 'center' },
+  prayerCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    padding: 22,
+    paddingBottom: 28,
+    borderRadius: 26,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    alignItems: 'center',
+    // Lifted off the page in its own colour, the way the app's best cards are.
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.13,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  prayerCardLit: {
+    position: 'absolute',
+    top: 1,
+    left: 26,
+    right: 26,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
   orthodoxBadge: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1624,38 +2134,62 @@ const s = StyleSheet.create({
   prayerCat: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, textTransform: 'uppercase' },
   prayerTitle: { fontFamily: F.serifMedium, fontSize: 30, lineHeight: 35, color: C.text, marginTop: 8, textAlign: 'center' },
   prayerRuleSubtitle: { marginTop: 8, fontFamily: F.sansBold, fontSize: 10, lineHeight: 14, letterSpacing: 1.8, textAlign: 'center', textTransform: 'uppercase' },
-  divider: { marginTop: 16, width: 44, height: 1 },
-  blockStack: { width: '100%', marginTop: 20, gap: 16 },
+  ornamentRow: { flexDirection: 'row', alignItems: 'center', marginTop: 18 },
+  ornamentLine: { width: 30, height: 1, opacity: 0.42 },
+  ornamentDiamond: {
+    width: 5.5,
+    height: 5.5,
+    marginHorizontal: 8,
+    borderRadius: 1,
+    opacity: 0.85,
+    transform: [{ rotate: '45deg' }],
+  },
+  // 22, not 16: on a devotional page the air between voices is what makes it
+  // read as a page rather than a stack of paragraphs.
+  blockStack: { width: '100%', marginTop: 22, gap: 22 },
+  blockTitleWrap: { width: '100%', alignItems: 'center' },
   blockTitle: { fontFamily: F.serifSemiBold, fontSize: 23, lineHeight: 28, marginTop: 8, textAlign: 'center' },
-  prayerInstr: { fontFamily: F.serifMediumItalic, fontSize: 17, lineHeight: 26, textAlign: 'center' },
-  prayerText: { fontFamily: F.serifMedium, fontSize: 19, lineHeight: 29, color: C.text, textAlign: 'center' },
-
-  personalPreviewWrap: { width: '100%', marginTop: 22, paddingHorizontal: 4 },
-  personalIntro: { fontFamily: F.serifMedium, fontSize: 16, lineHeight: 24, color: C.text, textAlign: 'center', marginBottom: 22 },
-  personalListHeading: { fontFamily: F.serifSemiBold, fontSize: 16, lineHeight: 22, color: C.text, textAlign: 'left', marginBottom: 12 },
-  personalListStack: { width: '100%', gap: 8, marginBottom: 22 },
-  personalListRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingRight: 4 },
-  personalBullet: { fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22 },
-  personalListItem: { flex: 1, fontFamily: F.serifMedium, fontSize: 15, lineHeight: 22, color: C.text, textAlign: 'left' },
-  personalStart: { fontFamily: F.serifMedium, fontSize: 15, lineHeight: 22, color: C.text, textAlign: 'center', marginBottom: 18 },
-  personalNoteDivider: { width: '40%', height: 1, alignSelf: 'center', marginBottom: 12 },
-  personalNote: { fontFamily: F.serifMedium, fontSize: 13, lineHeight: 19, color: 'rgba(60, 47, 31, 0.55)', textAlign: 'center' },
+  // A heading in a prayer book is closed by a mark, not left hanging.
+  blockTitleOrnament: { flexDirection: 'row', alignItems: 'center', marginTop: 9 },
+  blockTitleRule: { width: 22, height: 1, opacity: 0.34 },
+  blockTitleDiamond: {
+    width: 4,
+    height: 4,
+    marginHorizontal: 6,
+    borderRadius: 1,
+    opacity: 0.7,
+    transform: [{ rotate: '45deg' }],
+  },
+  // The rubric — the book's own voice, telling you what to do. In print it is
+  // set in red and stands apart from the prayer; here it takes a tinted slip,
+  // so the two voices on the page are never mistaken for one another.
+  rubric: { width: '100%', alignItems: 'center', gap: 11, paddingHorizontal: 10 },
+  rubricRule: { width: 26, height: 1, opacity: 0.3 },
+  prayerInstr: { fontFamily: F.serifMediumItalic, fontSize: 16.5, lineHeight: 24, textAlign: 'center' },
+  // 25 over 19, down from 31 in two passes. A devotional page IS leaded wider
+  // than a screen of copy, but at 31 — and still at 27 — a preview of a full
+  // morning rule read as a column of separate lines rather than as a prayer,
+  // and the card grew tall enough to push the rules above it out of reach.
+  // 1.32 is the app's own body density; the prayer now sets as a block of
+  // text, which is what a printed rule looks like.
+  prayerText: { fontFamily: F.serifMedium, fontSize: 19, lineHeight: 25, color: C.text, textAlign: 'center' },
+  // The versal: a raised initial, not a sunken drop cap — the form that
+  // survives centred text and every script the app carries.
+  //
+  // ⚠ No line height of its own, so a nested Text inherits the parent's — and
+  // anything taller than that is CLIPPED AT THE TOP on Android. This is why it
+  // must follow the leading down every time the leading moves: 30 under 31,
+  // then 24 under 25, where the cap stands about 16pt inside the line. Weight
+  // and the accent colour carry it more than size does at this scale.
+  prayerVersal: { fontFamily: F.serifSemiBold, fontSize: 24 },
 
   startWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center', pointerEvents: 'box-none' },
-  startBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 16, paddingHorizontal: 32, borderRadius: 9999, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.45, shadowRadius: 12, elevation: 8 },
-  playCircle: { width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
-  startTxt: { fontFamily: F.sansBold, fontSize: 13, letterSpacing: 2.2, color: '#fff' },
 
   readerScreen: { flex: 1, backgroundColor: '#FDFBF5' },
-  readerProgressTrack: { height: 3, borderRadius: 999, backgroundColor: 'rgba(197,160,89,0.13)', overflow: 'hidden', marginHorizontal: 14, marginTop: 5 },
-  readerProgressFill: { height: '100%', borderRadius: 999, overflow: 'hidden' },
-  readerProgressSheen: { position: 'absolute', top: 0, right: -10, bottom: 0, width: 34, backgroundColor: 'rgba(255,255,255,0.34)' },
   readerHeader: {
     paddingHorizontal: 18,
-    paddingBottom: 11,
+    paddingBottom: 12,
     backgroundColor: '#FDFBF5',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(197,160,89,0.12)',
   },
   readerHeaderRow: {
     height: 38,
@@ -1663,25 +2197,93 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  readerIconBtn: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, alignItems: 'center', justifyContent: 'center', shadowColor: '#1C1917', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.045, shadowRadius: 8, elevation: 1 },
   readerIconSpacer: { width: 34, height: 34 },
-  readerCounterPill: { minWidth: 68, height: 28, borderRadius: 14, paddingHorizontal: 12, borderWidth: 1, borderColor: 'rgba(197,160,89,0.18)', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  readerCounter: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.2, color: '#78716C' },
+
+  // ── The folio ─────────────────────────────────────────────────────────
+  // Where a page number goes in a printed book: set in the book's own face,
+  // the leaf in ink and the count behind it, with a struck diamond between.
+  // It was a tracked-capitals pill, which is the app's LABEL voice and made
+  // the count read as a status chip rather than as a page.
+  readerFolio: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  readerFolioFigure: { fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 24 },
+  readerFolioDiamond: { width: 4, height: 4, borderRadius: 1, transform: [{ rotate: '45deg' }] },
+  readerFolioTotal: { fontFamily: F.serif, fontSize: 17, lineHeight: 24 },
+
+  // ── The roundels ──────────────────────────────────────────────────────
+  // Cut from the same stone as the plaque, by the same means: a hairline of
+  // the hour's colour with a white catch-light immediately inside it.
+  readerRoundel: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8F3E8',
+  },
+  readerRoundelFace: { ...StyleSheet.absoluteFillObject, borderRadius: 17, borderWidth: 1 },
+  readerRoundelCatch: {
+    position: 'absolute',
+    top: 1, left: 1, right: 1, bottom: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.85)',
+  },
+
+  // ── The ruled channel ─────────────────────────────────────────────────
+  // Not a progress bar with a sliding sheen — a rule cut across the head of
+  // the page, filling with ink as the rule is read, with the rubricator's
+  // diamond riding at the head of it.
+  readerRuleChannel: { height: 9, marginTop: 10, marginHorizontal: 3, justifyContent: 'center' },
+  readerRuleTrack: { position: 'absolute', left: 0, right: 0, height: 1.5, borderRadius: 1 },
+  readerRuleInk: { position: 'absolute', left: 0, height: 9, justifyContent: 'center' },
+  // 2.25 against the track's 1.5. What has been read is a line the pen has
+  // gone over; an unread rule is the ruling underneath it, and they should
+  // not weigh the same.
+  readerRuleInkLine: { height: 2.25, borderRadius: 1.2 },
+  readerRuleMark: { position: 'absolute', right: -3.5, alignItems: 'center', justifyContent: 'center' },
+  readerRuleMarkDiamond: { width: 5.5, height: 5.5, borderRadius: 1, transform: [{ rotate: '45deg' }] },
+  readerRuleSerif: { position: 'absolute', width: 1.2, height: 7, borderRadius: 0.6 },
+  readerRuleSerifStart: { left: 0 },
+  readerRuleSerifEnd: { right: 0 },
+  // The light caught under the cut, which is what makes it a rule in a page
+  // rather than a bar on a screen.
+  readerRuleCatch: {
+    position: 'absolute',
+    left: 0, right: 0,
+    top: '50%',
+    marginTop: 2,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
   readerScroll: { flex: 1 },
   readerContent: { paddingHorizontal: 28, paddingTop: 18, paddingBottom: 32, alignItems: 'center' },
   readerPageMotion: { width: '100%', alignItems: 'center' },
+  // The slip that names which rule is open. It was a tinted pill with tracked
+  // capitals and a gear — the app's own furniture, standing at the head of a
+  // page of prayers. Now it is cut from the plaque's stone by the plaque's
+  // means: an incised hairline of the hour's colour with the light caught
+  // inside it, and the rule's name set in the book's own face.
   readerRulePill: {
-    minHeight: 34,
+    minHeight: 36,
     maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    borderWidth: 1,
-    borderRadius: 17,
-    paddingHorizontal: 14,
+    gap: 9,
+    borderRadius: 18,
+    paddingHorizontal: 16,
     marginBottom: 24,
+    backgroundColor: '#F8F3E8',
   },
-  readerRuleText: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' },
+  readerRulePillFace: { ...StyleSheet.absoluteFillObject, borderRadius: 18, borderWidth: 1 },
+  readerRulePillCatch: {
+    position: 'absolute',
+    top: 1, left: 1, right: 1, bottom: 1,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.85)',
+  },
+  readerRuleText: { flexShrink: 1, fontFamily: F.serifMedium, fontSize: 15.5, lineHeight: 20, textAlign: 'center' },
+  readerRuleDiamond: { width: 3.5, height: 3.5, borderRadius: 1, transform: [{ rotate: '45deg' }] },
   readerSlideTitleWrap: { maxWidth: '100%', alignItems: 'center', marginBottom: 22 },
   readerSlideTitle: { fontFamily: F.serifSemiBold, fontSize: 27, lineHeight: 32, letterSpacing: 0, color: C.red, textAlign: 'center' },
   readerSlideTitleSubtitle: { fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 23, letterSpacing: 0, color: C.red, textAlign: 'center', marginTop: 3 },
@@ -1698,15 +2300,13 @@ const s = StyleSheet.create({
   readerExaminationText: { width: '100%', fontFamily: F.serifMedium, fontSize: 20, lineHeight: 29, letterSpacing: 0, color: '#1C1917', textAlign: 'left' },
   readerExaminationStep: { fontFamily: F.serifSemiBold, color: '#1C1917' },
   readerNav: {
-    minHeight: 76,
-    paddingHorizontal: 24,
-    paddingTop: 9,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(197,160,89,0.12)',
+    paddingHorizontal: 20,
+    // 11, down from 14: with the roundel grown to the plaque's own height the
+    // bar no longer has to carry a control that sat below the type's baseline,
+    // so the air above can come in and the whole foot is shorter.
+    paddingTop: 11,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
     backgroundColor: '#FFFDF8',
     shadowColor: '#1C1917',
     shadowOffset: { width: 0, height: -8 },
@@ -1714,22 +2314,38 @@ const s = StyleSheet.create({
     shadowRadius: 18,
     elevation: 8,
   },
-  readerBackBtn: { height: 44, minWidth: 86, borderRadius: 22, borderWidth: 1, borderColor: '#E7E0D3', backgroundColor: 'rgba(255,255,255,0.78)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  // The head-band's rule, mirrored — catch-light ABOVE the cut this time,
+  // because the light still falls from the top of the page.
+  readerNavRule: { position: 'absolute', top: 0, left: 0, right: 0, height: 1 },
+  readerNavRuleCatch: {
+    position: 'absolute',
+    top: 1, left: 0, right: 0,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  // Both sides are the roundel's width, so the centre cell is centred on the
+  // screen and not merely between two unequal neighbours.
+  readerNavSide: { width: 46, alignItems: 'flex-start' },
+  readerNavCentre: { flex: 1, alignItems: 'center' },
   readerNavDisabled: { opacity: 0 },
-  readerBackText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.7, color: '#A8A29E' },
-  readerNextBtn: {
-    height: 44,
-    minWidth: 126,
-    borderRadius: 22,
+  // 46: the compact plaque's own height. At 34 it read as a smaller class of
+  // thing sitting off the plaque's baseline; matched, the two are one row.
+  readerBackRoundel: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 18,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    elevation: 4,
+    backgroundColor: '#F8F3E8',
   },
-  readerNextText: { fontFamily: F.sansBold, fontSize: 10, letterSpacing: 1.7, color: '#FFFFFF' },
+  readerBackFace: { ...StyleSheet.absoluteFillObject, borderRadius: 23, borderWidth: 1 },
+  readerBackCatch: {
+    position: 'absolute',
+    top: 1, left: 1, right: 1, bottom: 1,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.85)',
+  },
 
   selectorOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(28,25,23,0.24)' },
   selectorSheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 10, paddingHorizontal: 18, shadowColor: '#000', shadowOpacity: 0.18, shadowOffset: { width: 0, height: -10 }, shadowRadius: 28, elevation: 18 },

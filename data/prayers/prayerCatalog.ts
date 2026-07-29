@@ -122,14 +122,29 @@ const JESUS_PRAYER: Record<PrayerLanguage, { title: string; standard: string; sh
   },
 };
 
+/**
+ * The two halves of a meal grace — before the table and after it — as one rule.
+ *
+ * ⚠ The wrapper's own title is only injected when the half does not already
+ * open with one. Every meal in all three books does: `before.title` is
+ * "Before Breakfast" and `before.blocks[0]` is the heading "Prayer Before
+ * Breakfast", so injecting unconditionally printed both, one under the other,
+ * eighteen times over. The block's heading is the one the book actually prints,
+ * so it is the one that stays.
+ */
+function mealHalfBlocks(section: PrayerSection): PrayerBlock[] {
+  const opensWithTitle = section.blocks[0]?.type === 'title';
+  return opensWithTitle
+    ? section.blocks
+    : [{ type: 'title', content: section.title }, ...section.blocks];
+}
+
 function buildMealSection(title: string, section: MealSection): PrayerSection {
   return {
     title,
     blocks: [
-      { type: 'title', content: section.before.title },
-      ...section.before.blocks,
-      { type: 'title', content: section.after.title },
-      ...section.after.blocks,
+      ...mealHalfBlocks(section.before),
+      ...mealHalfBlocks(section.after),
     ],
   };
 }
@@ -148,6 +163,19 @@ function buildJesusSection(lang: PrayerLanguage): PrayerSection {
 export type PersonalRulePreviewContent = {
   intro: string;
   listHeading: string;
+  /**
+   * ⚠ FIVE items, each a NOUN PHRASE, each starting with a capital, each
+   * short enough to hold ONE LINE at every phone width in every language.
+   *
+   * They were six lower-case fragments completing the heading's colon —
+   * "Use this for: prayer from a physical prayer book" — which read as a
+   * form field's help text, wrapped to two lines on a 360pt phone, and made
+   * the one element on this page that had to stand beside two lifted cards
+   * look like the leftovers. A capital and one line each is most of the fix;
+   * dropping the sixth (a devotional, which the prayer book already covers)
+   * is the rest. Widths are checked offline against the bundled EB Garamond
+   * metrics — see the `anasta-font-fit-check` note.
+   */
   listItems: string[];
   startLine: string;
   note: string;
@@ -156,62 +184,167 @@ export type PersonalRulePreviewContent = {
 export const PERSONAL_RULE_PREVIEW: Record<PrayerLanguage, PersonalRulePreviewContent> = {
   en: {
     intro: 'For Christians of every tradition — Catholic, Protestant, Orthodox, non-denominational, and any other.',
-    listHeading: 'No preset prayer text. Use this for:',
+    listHeading: 'Made for the way you already pray:',
     listItems: [
-      'prayer from a physical prayer book',
-      'a daily devotional',
-      'prayer with a rosary, prayer rope, or prayer beads',
-      'memorized prayers',
-      'prayer in your own words',
-      '… or any other way you pray',
+      'A prayer book in your hands',
+      'Prayers you know by heart',
+      'A prayer rope or rosary',
+      'Your own words',
+      'Any other way you pray',
     ],
     startLine: 'Start Prayer opens a quiet timer that runs while you pray.',
     note: 'The other Morning and Evening rules in the app (Standard, Shortened, St. Seraphim) follow the Orthodox tradition.',
   },
   sr: {
     intro: 'За хришћане сваке традиције — католике, протестанте, православне, неденоминационе хришћане и сваке друге.',
-    listHeading: 'Без унапред задатих молитава. Користите ово за:',
+    listHeading: 'За начин на који се већ молите:',
     listItems: [
-      'молитву из физичког молитвеника',
-      'дневни девоционал',
-      'молитву уз бројаницу или крунички',
-      'молитве које знате напамет',
-      'молитву сопственим речима',
-      '… или било који други начин молитве',
+      'Молитвеник у вашим рукама',
+      'Молитве које знате напамет',
+      'Бројаница или круница',
+      'Својим речима',
+      'Било који други начин',
     ],
     startLine: 'Притиском на Start Prayer отвара се тих тајмер док се молите.',
     note: 'Остала јутарња и вечерња правила у апликацији (Стандардно, Скраћено, Светог Серафима) су из православне традиције.',
   },
   ru: {
     intro: 'Для христиан любой традиции — католиков, протестантов, евангелистов, пятидесятников, англикан, православных, внеконфессиональных и любых других.',
-    listHeading: 'Без предустановленных молитв. Используйте это для:',
+    listHeading: 'Для того, как вы уже молитесь:',
     listItems: [
-      'молитвы по физическому молитвослову',
-      'ежедневного духовного чтения',
-      'молитвы с чётками или розарием',
-      'заученных молитв',
-      'молитвы своими словами',
-      '… или любого другого вида молитвы',
+      'Молитвослов у вас в руках',
+      'Молитвы, знакомые наизусть',
+      'Чётки или розарий',
+      'Своими словами',
+      'Любой другой способ',
     ],
     startLine: 'Нажмите Start Prayer — откроется тихий таймер на время вашей молитвы.',
     note: 'Другие утренние и вечерние правила в приложении (Стандартное, Сокращённое, Святого Серафима) — из православной традиции.',
   },
 };
 
-function buildPersonalRuleSection(label: string): PrayerSection {
-  return {
-    title: label,
-    blocks: [],
-  };
-}
+/**
+ * The headings on the My Rule page.
+ *
+ * They live here with the rest of the prayer copy because the page's body —
+ * intro, list, note — is already localized from PERSONAL_RULE_PREVIEW, and a
+ * card whose sentence follows the chosen language while its title does not is
+ * worse than one that never translated at all.
+ */
+/**
+ * The Start action, in the book's own voice.
+ *
+ * ⚠ ONE label for both books. The two buttons are different objects — one
+ * floats, one docks — but they do the same thing, and naming the same action
+ * two ways ("Start Prayer" / "Start My Rule") made the switch above them look
+ * like it changed what the button did rather than which book it belongs to.
+ *
+ * ⚠ Sentence case, not the tracked capitals used elsewhere on this screen.
+ * MORNING, MEALS and ORTH. are LABELS — they name a thing. This asks you to do
+ * one, and both buttons set it in the serif, where capitals would shout.
+ * `MY_RULE_PAGE_LABELS.startAction` is the capitals version, and it stays that
+ * way because the plinth it sits in is a small tracked row, not a button face.
+ */
+export const PRAYER_ACTION_LABELS: Record<PrayerLanguage, {
+  startPrayer: string;
+  continue: string;
+  finish: string;
+}> = {
+  en: { startPrayer: 'Start Prayer', continue: 'Continue', finish: 'Finish' },
+  sr: { startPrayer: 'Почни молитву', continue: 'Настави', finish: 'Заврши' },
+  ru: { startPrayer: 'Начать молитву', continue: 'Далее', finish: 'Завершить' },
+};
+
+/**
+ * The line under the switch: what the chosen book actually is.
+ *
+ * ⚠ IT STATES, IT DOES NOT SELL. Each line says what is on that side and
+ * nothing else — who it is for, and what is in it. No promises about how it
+ * will feel, no adjectives doing work a noun could do.
+ *
+ * ⚠ AND IT MUST STAY TRUE TO THE CATALOGUE. Every claim on the Orthodox side
+ * is checkable in this file: morning and evening prayers (three rules each),
+ * `meals` carrying a `before` AND an `after` for breakfast, lunch and dinner,
+ * `JESUS_PRAYER`, and `other`. The word "others" is the OTHER tab, which holds
+ * three prayers today. If the catalogue loses a category, this line is wrong
+ * and has to change with it.
+ *
+ * ⚠ MY RULE IS NOT "your own words". That is ONE of the five ways in
+ * `PERSONAL_RULE_PREVIEW.listItems` — a prayer book in hand, memorised
+ * prayers, a rope or rosary, your own words, any other way — so the line says
+ * "your own way", which covers all five. Narrowing it to words would exclude
+ * four of them and contradict the page directly beneath it.
+ */
+export const PRAYER_BOOK_SWITCH_NOTES: Record<PrayerLanguage, {
+  mine: string;
+  orthodox: string;
+}> = {
+  en: {
+    mine: 'For Christians of every tradition. Nothing is set for you here — you pray your own way, and a timer keeps the time.',
+    orthodox: 'The full Orthodox prayer book — morning and evening prayers, prayers before and after meals, the Jesus Prayer, and others.',
+  },
+  sr: {
+    mine: 'За хришћане сваке традиције. Овде ништа није унапред задато — молите се на свој начин, а тајмер мери време.',
+    orthodox: 'Цео православни молитвеник — јутарње и вечерње молитве, молитве пре и после јела, Исусова молитва и друге.',
+  },
+  ru: {
+    mine: 'Для христиан любой традиции. Здесь ничего не задано — вы молитесь по-своему, а таймер отсчитывает время.',
+    orthodox: 'Полный православный молитвослов — утренние и вечерние молитвы, молитвы до и после еды, Иисусова молитва и другие.',
+  },
+};
+
+export const MY_RULE_PAGE_LABELS: Record<PrayerLanguage, {
+  eyebrow: string;
+  title: string;
+  /** The plinth at the card's foot — the card itself is the button. */
+  startAction: string;
+  /** One short line beside it. `PERSONAL_RULE_PREVIEW.startLine` says the same
+   *  thing in a full sentence and names the button, which a button cannot do. */
+  startHint: string;
+  jesusEyebrow: string;
+  jesusTitle: string;
+  jesusDescription: string;
+}> = {
+  en: {
+    eyebrow: 'FOR EVERY TRADITION',
+    title: 'My Rule',
+    startAction: 'START MY RULE',
+    startHint: 'A quiet timer, running while you pray',
+    jesusEyebrow: 'PRAYER OF THE HEART',
+    jesusTitle: 'Jesus Prayer',
+    jesusDescription: 'One prayer, said over and over — kept by the rope or by the clock.',
+  },
+  sr: {
+    eyebrow: 'ЗА СВАКУ ТРАДИЦИЈУ',
+    title: 'Моје правило',
+    startAction: 'ПОКРЕНИ ПРАВИЛО',
+    startHint: 'Тих тајмер, ради док се молите',
+    jesusEyebrow: 'МОЛИТВА СРЦА',
+    jesusTitle: 'Исусова молитва',
+    jesusDescription: 'Једна молитва, изнова и изнова — уз бројаницу или уз сат.',
+  },
+  ru: {
+    eyebrow: 'ДЛЯ ЛЮБОЙ ТРАДИЦИИ',
+    title: 'Моё правило',
+    startAction: 'НАЧАТЬ ПРАВИЛО',
+    startHint: 'Тихий таймер, идёт пока вы молитесь',
+    jesusEyebrow: 'МОЛИТВА СЕРДЦА',
+    jesusTitle: 'Иисусова молитва',
+    jesusDescription: 'Одна молитва, снова и снова — по чёткам или по часам.',
+  },
+};
 
 export function getPrayerOptions(lang: PrayerLanguage, category: PrayerCategory): PrayerOption[] {
   const book = PRAYER_BOOKS[lang];
   const labels = RULE_LABELS[lang];
 
+  // ⚠ No `personal` option here. My Rule used to sit as the first pill among the
+  // morning and evening rules; it is now a book of its own, chosen one level up
+  // by the Prayer Book's My Rule / Orthodox switch. Everything this function
+  // returns is a received Orthodox rule, which is what lets the pill row, the
+  // preview card and the reader stop asking whether the selection has any text.
   if (category === 'morning') {
     return [
-      { id: 'personal', label: labels.personal, section: buildPersonalRuleSection(labels.personal) },
       { id: 'standard', label: labels.standard, section: book.standard_rule.morning },
       { id: 'medium', label: labels.medium, section: book.medium_rule.morning },
       { id: 'short', label: labels.short, section: book.short_rule.morning },
@@ -220,7 +353,6 @@ export function getPrayerOptions(lang: PrayerLanguage, category: PrayerCategory)
 
   if (category === 'evening') {
     return [
-      { id: 'personal', label: labels.personal, section: buildPersonalRuleSection(labels.personal) },
       { id: 'standard', label: labels.standard, section: book.standard_rule.evening },
       { id: 'medium', label: labels.medium, section: book.medium_rule.evening },
       { id: 'short', label: labels.short, section: book.short_rule.evening },
