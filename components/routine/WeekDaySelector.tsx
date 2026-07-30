@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
@@ -9,22 +9,26 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import { C, F } from '@/constants/tokens';
+import Bloom from '@/components/focus-watch/Bloom';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 
-// The week is one engraved plate, not seven loose chips: all seven days sit on
-// a single parchment band (no horizontal scrolling), the chosen day wears the
-// app's struck-gold plate, and that plate glides between days on the UI thread.
+// The week is one recessed track, not seven loose chips: all seven days sit in
+// a single warm band (no horizontal scrolling), the chosen day stands lit in
+// it, and that light glides between days on the UI thread.
 
 const PLATE_INSET = 5;
 const PLATE_GAP = 2;
-const CELL_HEIGHT = 50;
+const CELL_HEIGHT = 52;
 
-const GOLD_FACE = ['#E2BD75', '#C5A059', '#A87E33'] as const;
-const GOLD_FACE_STOPS = [0, 0.55, 1] as const;
+// The chosen day is not a struck bronze slab — it is an ivory cartouche
+// standing in a pool of warm light, the way a seal sits lit on the Scripture
+// screens. Light carries the selection; the gold is only its frame.
+const FACE_FILL = ['#FFFFFF', '#FFF8E9'] as const;
+const BLOOM_COLOR = '#E6C074';
 
 const IDLE_LABEL = '#8E877C';
 const TODAY_LABEL = '#A9853B';
-const ACTIVE_LABEL = '#FFFFFF';
+const ACTIVE_LABEL = '#8B6B2F';
 
 // Matches the app's established spring tone (~25% overshoot).
 const SLIDE_SPRING = { damping: 15, stiffness: 160, mass: 1 } as const;
@@ -80,43 +84,29 @@ export default function WeekDaySelector({
     transform: [{ translateX: slide.value + PLATE_GAP }],
   }));
 
-  const separators = useMemo(
-    () => Array.from({ length: Math.max(0, count - 1) }, (_, index) => index + 1),
-    [count],
-  );
-
   return (
     <View style={s.plate} onLayout={handleLayout}>
-      <LinearGradient
-        colors={['#FFFDF8', '#FBF5E8']}
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
       <View pointerEvents="none" style={s.plateRim} />
-
-      {cellWidth > 0 && separators.map(index => (
-        <View
-          key={`rule-${index}`}
-          pointerEvents="none"
-          style={[s.cellRule, { left: PLATE_INSET + index * cellWidth }]}
-        />
-      ))}
 
       {cellWidth > 0 && (
         <Reanimated.View
           pointerEvents="none"
-          style={[s.dayPlate, { width: Math.max(0, cellWidth - PLATE_GAP * 2) }, plateStyle]}
+          style={[s.dayPlateLayer, { width: Math.max(0, cellWidth - PLATE_GAP * 2) }, plateStyle]}
         >
-          <LinearGradient
-            colors={[...GOLD_FACE]}
-            locations={[...GOLD_FACE_STOPS]}
-            start={{ x: 0.15, y: 0 }}
-            end={{ x: 0.85, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <View pointerEvents="none" style={s.dayPlateSheen} />
-          <View pointerEvents="none" style={s.dayPlateRim} />
+          <View pointerEvents="none" style={s.dayPlateBloom}>
+            <Bloom color={BLOOM_COLOR} opacity={0.62} />
+          </View>
+          <View pointerEvents="none" style={s.dayPlateFace}>
+            <LinearGradient
+              colors={[...FACE_FILL]}
+              start={{ x: 0.2, y: 0 }}
+              end={{ x: 0.8, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View pointerEvents="none" style={s.dayPlateSheen} />
+            <View pointerEvents="none" style={s.dayPlateRim} />
+            <View pointerEvents="none" style={s.dayPlateChase} />
+          </View>
         </Reanimated.View>
       )}
 
@@ -158,11 +148,8 @@ function DayCell({
   }));
 
   const markStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(
-      progress.value,
-      [0, 1],
-      [C.gold, 'rgba(255,255,255,0.9)'],
-    ),
+    // The lit face is ivory, so today's mark deepens rather than turning white.
+    backgroundColor: interpolateColor(progress.value, [0, 1], [C.gold, '#8B6B2F']),
   }));
 
   return (
@@ -216,59 +203,69 @@ export function DayHead({ title, meta }: { title: string; meta: string }) {
 
 const s = StyleSheet.create({
   plate: {
+    // A recessed warm track. Solid fill, so the band needs no clipping and the
+    // chosen day's light may spill a little past its edge.
     position: 'relative',
-    borderRadius: 22,
+    borderRadius: 21,
     padding: PLATE_INSET,
-    overflow: 'hidden',
-    shadowColor: '#8B6B2F',
-    shadowOpacity: 0.07,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
+    backgroundColor: '#F5F0E4',
   },
   plateRim: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 22,
+    borderRadius: 21,
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.24)',
+    borderColor: 'rgba(160,132,74,0.10)',
   },
-  cellRule: {
-    position: 'absolute',
-    top: PLATE_INSET + 15,
-    width: 1,
-    height: CELL_HEIGHT - 30,
-    backgroundColor: 'rgba(160,132,74,0.16)',
-  },
-  dayPlate: {
-    // Seated in the band rather than filling it: parchment breathes above and
-    // below the struck plate, which keeps it a coin instead of a slab.
+  dayPlateLayer: {
     position: 'absolute',
     left: 0,
     top: PLATE_INSET + 3,
     height: CELL_HEIGHT - 6,
-    borderRadius: 15,
-    overflow: 'hidden',
     zIndex: 2,
     elevation: 2,
+  },
+  dayPlateBloom: {
+    position: 'absolute',
+    left: -10,
+    right: -10,
+    top: -7,
+    bottom: -7,
+  },
+  dayPlateFace: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 15,
+    overflow: 'hidden',
     shadowColor: '#A87E33',
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.18,
     shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 10,
+    shadowRadius: 11,
   },
   dayPlateSheen: {
     position: 'absolute',
     top: 1,
     left: 1,
     right: 1,
-    height: '46%',
+    height: '44%',
     borderTopLeftRadius: 14,
     borderTopRightRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.62)',
   },
   dayPlateRim: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 15,
     borderWidth: 1,
-    borderColor: 'rgba(150,108,40,0.32)',
+    borderColor: 'rgba(197,160,89,0.44)',
+  },
+  dayPlateChase: {
+    // The chased inner frame: the craft you only notice up close.
+    position: 'absolute',
+    top: 3.5,
+    left: 3.5,
+    right: 3.5,
+    bottom: 3.5,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.20)',
   },
   cellRow: {
     flexDirection: 'row',
@@ -294,7 +291,7 @@ const s = StyleSheet.create({
   },
   todayMark: {
     position: 'absolute',
-    bottom: 10,
+    bottom: 9,
     width: 13,
     height: 1.5,
     borderRadius: 1,
