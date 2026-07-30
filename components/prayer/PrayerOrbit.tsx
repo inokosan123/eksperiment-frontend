@@ -1,6 +1,6 @@
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Svg, { Circle, Defs, Ellipse, Path, RadialGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 import Reanimated, {
   cancelAnimation,
   Easing,
@@ -14,11 +14,12 @@ import Reanimated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import {
-  ORBIT_BLUSH_MUL,
+  ORBIT_HALO_MUL,
   orbitGeometry,
   orbitPoint,
   type OrbitRing,
 } from '@/components/prayer/prayerOrbitGeometry';
+import { MINE_ACCENT } from '@/components/prayer/myRuleTone';
 
 /* ─────────────────────────────────────────────────────────────
  * THE ORBIT — what the prayer timer does while it runs.
@@ -62,7 +63,6 @@ import {
 const TAU = Math.PI * 2;
 const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
 const AnimatedPath = Reanimated.createAnimatedComponent(Path);
-const AnimatedEllipse = Reanimated.createAnimatedComponent(Ellipse);
 
 /** How long one lap takes. Slow: this is a prayer, not a stopwatch. */
 const LAP_MS = { outer: 7400, inner: 11900 } as const;
@@ -93,35 +93,38 @@ export function useIgnition(running: boolean): SharedValue<number> {
 }
 
 /**
- * WHAT THE ORBIT IS DRAWN IN — its own colours, never the hour's.
+ * WHAT THE ORBIT IS DRAWN IN — its own colour, never the hour's.
  *
  * ⚠ THIS IS THE FIX FOR GOLD ON GOLD. The orbit used to take the same
- * accent the reading warms into, so on the default hour a gold ring sat
+ * accent the reading warms into, so on the default hour a gold ring lay
  * over gold digits and the two dissolved into each other. Tying it to
  * the theme could only ever move that collision to another hour.
  *
- * So the orbit owns a colour and keeps it: CINNABAR, the red a
- * rubricator reddens a manuscript with. It has stood beside gold for a
- * thousand years, it is the pairing the icon at the top of this very
- * screen is painted in, and it separates cleanly from all three hours —
- * gold, morning's amber and evening's violet.
+ * It is MY RULE'S OWN DOVE BLUE — `MINE_ACCENT`, the colour this app
+ * already assigned to this exact rule, and the colour of the page this
+ * screen is launched from. Three things follow from it and all three
+ * are the point:
  *
- * ⚠ It is deliberately NOT the app's `C.red` (#BE123C), which means
- * destructive — the Exit dialog on this screen is drawn in it — nor its
- * oxblood (#A24351), which is reserved for a day you struck out. A
- * third red, for a third meaning.
+ *   · it is COOL, against warm paper and gold digits, so nothing has to
+ *     fight for the same part of the spectrum;
+ *   · it is CALM. A prayer screen is not a place to be alerted;
+ *   · and it already belongs here, so the orbit reads as part of My Rule
+ *     rather than as an effect laid on top of it.
  *
- * The planet takes gold for its glow and near-white for its core, so
- * what travels the ring reads as a lit body rather than a red dot: a
- * red blush at the outside, gold light within it, the body, and a white
- * heart that only kindles as it swings to the front.
+ * ⚠ IT WAS CINNABAR FOR ONE REVISION AND THAT WAS WRONG. Red beside gold
+ * is a beautiful manuscript pairing and a bad idea here: red is the
+ * app's own colour for destructive things — the Exit dialog on this very
+ * screen is drawn in it — and more simply, a red light circling the
+ * numbers while you pray is an alarm. Do not go back to it.
+ *
+ * The bead keeps a cool halo and a white heart, so what travels the ring
+ * reads as a small pearl of light rather than as a coloured dot.
  */
 const ORBIT = {
-  ring: '#A63A2E',
-  body: '#B8422F',
-  blush: '#C4553F',
-  halo: '#E8BE79',
-  core: '#FFF4E2',
+  ring: MINE_ACCENT,
+  body: '#6E8DAF',
+  halo: '#AFC6DC',
+  core: '#FFFFFF',
 } as const;
 
 /** One circle riding the ring, and where in the stack it sits. */
@@ -140,26 +143,24 @@ type DotSpec = {
   hot?: boolean;
 };
 
-/* Painted in order, so the first is furthest back. The blush is the
- * outermost layer, and `orbitBlushReach` is what the box is measured
- * against — see the geometry module. */
+/* Painted in order, so the first is furthest back. The halo is the
+ * outermost layer, and `orbitSpill` is what the box is measured against
+ * — see the geometry module.
+ *
+ * ⚠ THREE LAYERS, NOT SIX. A revision of this had a wide red blush
+ * outside the halo and two dots trailing the bead like a comet. Every
+ * one of them was defensible on its own and together they made a small
+ * solar system under an icon. What is left is a pearl: a soft halo, a
+ * body, and a heart that kindles as it swings to the front. */
 const HERO_NEAR: DotSpec[] = [
-  { lag: 0, rMul: ORBIT_BLUSH_MUL, peak: 0.20, fill: ORBIT.blush },
-  // Two dots trailing a fraction of a lap behind. Not decoration: it is
-  // what makes a travelling point read as travelling rather than as
-  // jumping between frames. Kept to two — each one is a worklet and an
-  // SVG property update on every frame.
-  { lag: 0.022, rMul: 0.62, peak: 0.22, fill: ORBIT.body },
-  { lag: 0.011, rMul: 0.86, peak: 0.38, fill: ORBIT.body },
-  { lag: 0, rMul: 3.2, peak: 0.34, fill: ORBIT.halo },
-  { lag: 0, rMul: 1, peak: 0.95, fill: ORBIT.body },
-  { lag: 0, rMul: 0.44, peak: 1, fill: ORBIT.core, hot: true },
+  { lag: 0, rMul: ORBIT_HALO_MUL, peak: 0.3, fill: ORBIT.halo },
+  { lag: 0, rMul: 1, peak: 0.85, fill: ORBIT.body },
+  { lag: 0, rMul: 0.44, peak: 0.9, fill: ORBIT.core, hot: true },
 ];
 
 const QUIET_NEAR: DotSpec[] = [
-  { lag: 0, rMul: 2.6, peak: 0.22, fill: ORBIT.halo },
-  { lag: 0, rMul: 1, peak: 0.8, fill: ORBIT.body },
-  { lag: 0, rMul: 0.42, peak: 0.9, fill: ORBIT.core, hot: true },
+  { lag: 0, rMul: 2.4, peak: 0.18, fill: ORBIT.halo },
+  { lag: 0, rMul: 1, peak: 0.6, fill: ORBIT.body },
 ];
 
 /* Behind the numbers there is no glow at all: light spilling off
@@ -167,7 +168,7 @@ const QUIET_NEAR: DotSpec[] = [
  * them, which is the one thing that would break the illusion the whole
  * figure exists for. Just the body, dim. */
 const FAR: DotSpec[] = [
-  { lag: 0, rMul: 0.9, peak: 0.34, fill: ORBIT.ring },
+  { lag: 0, rMul: 0.9, peak: 0.26, fill: ORBIT.ring },
 ];
 
 export default function PrayerOrbit({
@@ -220,25 +221,12 @@ export default function PrayerOrbit({
         height={geometry.boxH}
         style={StyleSheet.absoluteFill}
       >
-        <Defs>
-          <RadialGradient id="prayerOrbitBloom" cx="50%" cy="50%" r="50%">
-            <Stop offset="0" stopColor={ORBIT.blush} stopOpacity={0.19} />
-            <Stop offset="0.55" stopColor={ORBIT.blush} stopOpacity={0.07} />
-            <Stop offset="1" stopColor={ORBIT.blush} stopOpacity={0} />
-          </RadialGradient>
-        </Defs>
-
-        {/* The warmth the reading stands in once it runs. Red, so the
-            gold of the digits has something to be gold AGAINST — a gold
-            reading in a gold pool was half of the original fault. */}
-        <Bloom
-          cx={geometry.cx}
-          cy={geometry.cy}
-          rx={geometry.boxW / 2}
-          ry={geometry.boxH / 2}
-          life={life}
-        />
-
+        {/* ⚠ NO POOL OF LIGHT UNDER THE READING. There was one, and it
+            was one thing too many: the reading already warms into the
+            hour's colour when the prayer starts, the rings already
+            brighten, and a wash behind the digits on top of that was
+            simply more to look at on a screen that is trying to be
+            quiet. Two signals for one event is enough. */}
         {geometry.rings.map((ring, index) => (
           <Arc key={`far-${index}`} d={geometry.paths[index].far} base={ring.ink.far} width={1} life={life} />
         ))}
@@ -312,38 +300,6 @@ function Arc({
       stroke={ORBIT.ring}
       strokeWidth={width}
       strokeLinecap="round"
-      animatedProps={animatedProps}
-    />
-  );
-}
-
-/**
- * The pool of light the reading stands in.
- *
- * ⚠ AN ELLIPSE FITTED TO THE BOX, not a circle. react-native-svg clips
- * its children to the surface, and a round bloom sized to the box's
- * WIDTH is still at nearly a tenth of its strength where the box's much
- * shorter height cuts it — which draws a hard horizontal line across
- * the reading, exactly the edge a glow must not have. Fitted to both
- * axes it reaches nothing at every edge it meets.
- */
-function Bloom({
-  cx, cy, rx, ry, life,
-}: {
-  cx: number;
-  cy: number;
-  rx: number;
-  ry: number;
-  life: SharedValue<number>;
-}) {
-  const animatedProps = useAnimatedProps(() => ({ opacity: life.value }));
-  return (
-    <AnimatedEllipse
-      cx={cx}
-      cy={cy}
-      rx={rx}
-      ry={ry}
-      fill="url(#prayerOrbitBloom)"
       animatedProps={animatedProps}
     />
   );

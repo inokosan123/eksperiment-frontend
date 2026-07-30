@@ -65,7 +65,7 @@ export type OrbitRingSpec = {
  * purpose: the rings live inside the reading's own band, and every point
  * this box takes vertically is a point off the icon above it.
  */
-export const ORBIT_BOX = { padX: 128, padY: 34 } as const;
+export const ORBIT_BOX = { padX: 112, padY: 34 } as const;
 
 /**
  * How far each ring reaches, as a share of the reading's half-height, and
@@ -75,9 +75,15 @@ export const ORBIT_BOX = { padX: 128, padY: 34 } as const;
  * middle, so the two crossings are read as two separate hoops rather
  * than as one thick line.
  */
+/*
+ * ⚠ THE INKS ARE HALF WHAT THEY WERE, ON PURPOSE. This figure sits below
+ * a gilded icon on warm paper and its whole job is to say quietly that
+ * the prayer is running. At full strength it competed with the icon,
+ * which is the one thing on this screen allowed to be looked at.
+ */
 export const ORBIT_RINGS = {
-  outer: { spread: 42, reach: 0.62, tiltShare: -0.55, phase: 0, beadR: 2.3, ink: { near: 0.52, far: 0.2 } },
-  inner: { spread: 24, reach: 0.40, tiltShare: 0.62, phase: 0.37, beadR: 1.6, ink: { near: 0.3, far: 0.12 } },
+  outer: { spread: 42, reach: 0.62, tiltShare: -0.55, phase: 0, beadR: 2.2, ink: { near: 0.3, far: 0.13 } },
+  inner: { spread: 24, reach: 0.40, tiltShare: 0.62, phase: 0.37, beadR: 1.5, ink: { near: 0.17, far: 0.07 } },
 } as const;
 
 /** The smallest reading the geometry will build for, so an unmeasured
@@ -177,17 +183,18 @@ export function orbitGeometry(readout: { width: number; height: number }) {
   };
 }
 
-/** How far a bead's gold halo spills past the ring it rides. */
-export function orbitHaloReach(ring: OrbitRing) {
-  return ring.beadR * 3.4;
-}
-
 /**
- * How far the red blush around the bead spills — the outermost thing the
- * figure draws, and therefore the one the box has to be measured against.
+ * The bead's halo, as a multiple of its own radius — and, since the halo
+ * is the outermost thing the figure draws, the number the box has to be
+ * measured against.
+ *
+ * ⚠ IT IS THE OUTERMOST LAYER AND MUST STAY SO. A wider blush lived
+ * outside it for one revision; it was removed for being loud on a screen
+ * that has to stay quiet, and if anything is ever put back beyond the
+ * halo, this constant and `orbitSpill` are what the box is sized from.
  */
-export const ORBIT_BLUSH_MUL = 6.2;
+export const ORBIT_HALO_MUL = 3.2;
 
-export function orbitBlushReach(ring: OrbitRing) {
-  return ring.beadR * ORBIT_BLUSH_MUL;
+export function orbitSpill(ring: OrbitRing) {
+  return ring.beadR * ORBIT_HALO_MUL;
 }

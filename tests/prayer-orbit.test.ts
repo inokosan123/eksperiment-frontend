@@ -4,9 +4,8 @@ import {
   ORBIT_BOX,
   makeOrbitRing,
   orbitGeometry,
-  orbitBlushReach,
-  orbitHaloReach,
   orbitPoint,
+  orbitSpill,
   type OrbitRing,
 } from '../components/prayer/prayerOrbitGeometry';
 
@@ -124,8 +123,7 @@ test('nothing, out to the bead\'s outermost blush, escapes the box', () => {
     const g = orbitGeometry(reading);
     for (const ring of g.rings) {
       const { maxAbsX, maxAbsY } = survey(ring);
-      const spill = orbitBlushReach(ring);
-      assert.ok(spill > orbitHaloReach(ring), 'the blush must be the outermost layer');
+      const spill = orbitSpill(ring);
       assert.ok(
         maxAbsX + spill <= g.boxW / 2,
         `${reading.label}: needs ${(maxAbsX + spill).toFixed(1)} across, box gives ${(g.boxW / 2).toFixed(1)}`,
