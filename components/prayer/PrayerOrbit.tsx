@@ -17,27 +17,38 @@ import {
   ORBIT_HALO_MUL,
   orbitGeometry,
   orbitPoint,
+  type OrbitPreset,
   type OrbitRing,
 } from '@/components/prayer/prayerOrbitGeometry';
 import { MINE_ACCENT } from '@/components/prayer/myRuleTone';
 
 /* ─────────────────────────────────────────────────────────────
- * THE ORBIT — what the prayer timer does while it runs.
+ * THE ORBIT — what the prayer screen does while it runs.
  *
  * Starting a prayer used to change one colour and nothing else, on a
- * screen whose whole subject is that something has begun. So the
- * reading now sits inside an orbit: a hairline ellipse, tilted, with a
- * bead of light travelling it.
+ * screen whose whole subject is that something has begun. So it now
+ * turns inside an orbit: hairline ellipses, tilted against each other,
+ * each with a bead of light travelling it.
  *
  * WHAT MAKES IT READ AS DEPTH, AND IT IS ONE IDEA
  *
- * The ring is drawn TWICE, in two layers, with the numbers between
- * them. The far half of the ellipse is painted in the layer BEHIND the
- * digits; the near half in the layer IN FRONT. The bead crosses from
- * one to the other as it goes round. Nothing here is really
- * three-dimensional — there is no projection and no z — but the eye is
- * given the one cue it actually uses, which is occlusion, and it
- * supplies the rest.
+ * Each hoop is drawn TWICE, in two layers, with the CHILDREN BETWEEN
+ * THEM. The far half is painted in the layer behind; the near half in
+ * the layer in front. The bead crosses from one to the other as it goes
+ * round. Nothing here is really three-dimensional — there is no
+ * projection and no z — but the eye is given the one cue it actually
+ * uses, which is occlusion, and it supplies the rest.
+ *
+ * ⚠ SO WHATEVER IS ORBITED MUST BE PASSED AS CHILDREN. Stacking two
+ * orbits around a thing would give it two independent clocks, and their
+ * beads would drift apart within a minute.
+ *
+ * ⚠ AND IT COMES IN TWO SCALES, WHICH IS NOT A LUXURY. `stage` puts the
+ * great hoops round the standing cross or icon; `readout` keeps the
+ * small pair round the clock. One hoop cannot do both, because for a
+ * tilted ellipse maxX ≤ a ⟺ reach ≤ a — a hoop tall enough to span the
+ * object and the reading together must escape sideways past its own
+ * width, where it is clipped. The proof is in the geometry module.
  *
  * ⚠ THE ARITHMETIC IS NOT HERE. It lives in `prayerOrbitGeometry`,
  * which `tests/prayer-orbit.test.ts` checks at every reading this screen
@@ -64,8 +75,19 @@ const TAU = Math.PI * 2;
 const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
 const AnimatedPath = Reanimated.createAnimatedComponent(Path);
 
-/** How long one lap takes. Slow: this is a prayer, not a stopwatch. */
-const LAP_MS = { outer: 7400, inner: 11900 } as const;
+/**
+ * How long one lap takes. Slow: this is a prayer, not a stopwatch.
+ *
+ * The great hoops turn slower than the small ones, because a wider orbit
+ * covering the same ground in the same time would read as faster — and
+ * because nothing here should draw the eye at a pace the screen does not
+ * have. The two rings in each pair are also never harmonically related,
+ * so their beads only realign every few minutes.
+ */
+const LAP_MS = {
+  stage: { outer: 15200, inner: 22600 },
+  readout: { outer: 7400, inner: 11900 },
+} as const;
 
 /** How long the orbit takes to kindle when the prayer begins. */
 const IGNITION_MS = 620;
@@ -172,21 +194,25 @@ const FAR: DotSpec[] = [
 ];
 
 export default function PrayerOrbit({
-  /** The measured size of the reading this orbits. */
-  readout,
+  /** The measured size of whatever this orbits. */
+  content,
+  preset = 'stage',
   running,
   ignition,
+  /** Laps, per preset: the great hoops turn slower than the small ones. */
   children,
 }: {
-  readout: { width: number; height: number };
+  content: { width: number; height: number };
+  preset?: OrbitPreset;
   running: boolean;
   ignition: SharedValue<number>;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   const reduceMotion = useReducedMotion();
   const spin = useSharedValue(0);
   const spinInner = useSharedValue(0);
   const life = ignition;
+  const lap = LAP_MS[preset];
 
   useEffect(() => {
     if (!running || reduceMotion) {
@@ -199,16 +225,16 @@ export default function PrayerOrbit({
     // one lap on — so cancelling mid-lap and re-arming from the new value
     // is seamless, and the worklet only ever reads the fraction.
     spin.value = withRepeat(
-      withTiming(spin.value + 1, { duration: LAP_MS.outer, easing: Easing.linear }), -1, false);
+      withTiming(spin.value + 1, { duration: lap.outer, easing: Easing.linear }), -1, false);
     spinInner.value = withRepeat(
-      withTiming(spinInner.value + 1, { duration: LAP_MS.inner, easing: Easing.linear }), -1, false);
+      withTiming(spinInner.value + 1, { duration: lap.inner, easing: Easing.linear }), -1, false);
     return () => {
       cancelAnimation(spin);
       cancelAnimation(spinInner);
     };
-  }, [reduceMotion, running, spin, spinInner]);
+  }, [lap, reduceMotion, running, spin, spinInner]);
 
-  const geometry = useMemo(() => orbitGeometry(readout), [readout]);
+  const geometry = useMemo(() => orbitGeometry(content, preset), [content, preset]);
   const spins = [spin, spinInner];
   const nearDots = [HERO_NEAR, QUIET_NEAR];
 

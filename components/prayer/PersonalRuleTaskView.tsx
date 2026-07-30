@@ -159,7 +159,7 @@ export default function PersonalRuleTaskView({
   // this screen carries a title bar, sometimes a rule pill, an epigraph, a
   // readout, a control deck and a door, and no constant survives all the
   // combinations of those across every phone.
-  const [iconRoom, setIconRoom] = useState(0);
+  const [iconRoom, setIconRoom] = useState({ width: 0, height: 0 });
   // The orbit is built around the reading, so it has to know how big the
   // reading came out — which changes with the font, the language and
   // whether an hour has passed.
@@ -186,7 +186,9 @@ export default function PersonalRuleTaskView({
   // The board is 84 by 45.5, so height is what constrains it. 380 is where
   // it stops growing on a tall phone: past that the controls start to look
   // like they fell off the bottom.
-  const panelHeight = iconRoom > 0 ? Math.max(150, Math.min(iconRoom - 10, 380)) : 0;
+  const panelHeight = iconRoom.height > 0
+    ? Math.max(150, Math.min(iconRoom.height - 10, 380))
+    : 0;
   // The pool reaches well outside whatever is standing in it; a glow that
   // stops at the object's edge is a rectangle of light, which is not what
   // a lamp makes. Capped to the screen so it is never clipped.
@@ -233,8 +235,12 @@ export default function PersonalRuleTaskView({
   }, [running, showAbout, showExit, showFinish, showRuleSelector]);
 
   const onIconRoomLayout = useCallback((event: LayoutChangeEvent) => {
-    const measured = event.nativeEvent.layout.height;
-    setIconRoom(current => (Math.abs(current - measured) < 1 ? current : measured));
+    const { width, height } = event.nativeEvent.layout;
+    setIconRoom(current => (
+      Math.abs(current.width - width) < 1 && Math.abs(current.height - height) < 1
+        ? current
+        : { width, height }
+    ));
   }, []);
 
   const onReadoutLayout = useCallback((event: LayoutChangeEvent) => {
@@ -397,15 +403,24 @@ export default function PersonalRuleTaskView({
                 — see PrayerLamp — because the whole point of the change
                 is that the light stays lit and the thing in it changes. */}
             <PrayerLamp size={lampSize} light={ignition} swap={swap} />
-            <Reanimated.View style={[s.stage, crossStyle]} pointerEvents="none">
-              <StandingCross height={panelHeight} />
-            </Reanimated.View>
-            <Reanimated.View style={[s.stage, iconStyle]} pointerEvents="none">
-              {/* The icon has no frame; it fades into the page at its own
-                  edges, so it has to be told which page. GROUND[1] is the
-                  screen's colour at the height the icon stands. */}
-              <PantocratorPanel height={panelHeight} ground={GROUND[1]} />
-            </Reanimated.View>
+
+            {/* THE GREAT HOOPS, round whatever is standing here.
+                ⚠ The object goes INSIDE the orbit, not beside it: the
+                component draws the far arcs, then its children, then the
+                near arcs, and that sandwich IS the occlusion. Two
+                separate orbits stacked around it would also have two
+                separate clocks, and their beads would drift apart. */}
+            <PrayerOrbit content={iconRoom} running={running} ignition={ignition}>
+              <Reanimated.View style={[s.stage, crossStyle]} pointerEvents="none">
+                <StandingCross height={panelHeight} />
+              </Reanimated.View>
+              <Reanimated.View style={[s.stage, iconStyle]} pointerEvents="none">
+                {/* The icon has no frame; it fades into the page at its own
+                    edges, so it has to be told which page. GROUND[1] is the
+                    screen's colour at the height the icon stands. */}
+                <PantocratorPanel height={panelHeight} ground={GROUND[1]} />
+              </Reanimated.View>
+            </PrayerOrbit>
           </>
         )}
       </View>
@@ -420,7 +435,8 @@ export default function PersonalRuleTaskView({
             digits was the fault, and theming it could only move that
             collision to another hour. */}
         <PrayerOrbit
-          readout={readoutSize}
+          content={readoutSize}
+          preset="readout"
           running={running}
           ignition={ignition}
         >
@@ -654,12 +670,15 @@ const s = StyleSheet.create({
   // The object takes what is left, and it is the only thing on this
   // screen that flexes — everything else is worth exactly what it
   // measures.
+  // ⚠ NO PADDING. The orbit is built to the measured size of this box and
+  // laid inside it, so any padding here would size the figure to the outer
+  // width and then draw it in the narrower inner one — overflowing by
+  // exactly the padding. The hoops keep their own clearance from the edge
+  // instead (see ORBIT_PRESETS), which is where that decision belongs.
   iconRoom: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 14,
   },
   // Both objects stand on the same seat, absolutely, so the exchange
   // between them moves nothing else on the screen.
