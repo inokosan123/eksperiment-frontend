@@ -30,8 +30,12 @@ import { F } from '@/constants/tokens';
  *   · THE PLATE IS STRUCK IN ITS OWN TONE, corner to corner, so it is
  *     an object under light rather than a white card with a tint on
  *     it — and then a pane of white light is laid over the shoulder.
- *   · THE MARK STILL STANDS IN A POOL OF LIGHT, now brighter, because
- *     it has to lift off a ground that carries colour of its own.
+ *   · IT IS LIT FROM ONE SIDE AND SHADED ON THE OTHER. A lamp pools
+ *     beside the mark; the tone gathers into the far bottom corner the
+ *     light cannot reach. Two opposed radials, and that is what makes
+ *     the plate read as moulded rather than filled.
+ *   · THE MARK STILL STANDS IN A POOL OF LIGHT, brighter than the
+ *     ground, because it has to lift off colour of its own.
  *   · ONE RING, NOT THREE. The seat carries a single hairline; the
  *     pool behind it does the rest.
  *   · THE MARK CARRIES THE MEANING — `BeadLoop`, `ScriptureBook` and
@@ -88,7 +92,9 @@ export default function SpiritualTypeDoor({
 }) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   // Keyed per instance: two radial gradients sharing an id collide on Android.
-  const washId = `spiritual-wash-${useId().replace(/:/g, '')}`;
+  const gradientKey = useId().replace(/:/g, '');
+  const washId = `spiritual-wash-${gradientKey}`;
+  const shadeId = `spiritual-shade-${gradientKey}`;
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
@@ -111,13 +117,13 @@ export default function SpiritualTypeDoor({
       activeOpacity={0.86}
       accessibilityRole="button"
       accessibilityLabel={`${title}. ${body}`}
-      style={[s.door, { borderColor: litTone(tint, 78, 42) }]}
+      style={[s.door, { borderColor: litTone(tint, 72, 46) }]}
     >
       {/* The plate itself, struck in the subject's own tone and running corner
           to corner so it reads as an object under light, not as a tint. */}
       <LinearGradient
-        colors={[litTone(tint, 98, 38), litTone(tint, 93, 42), litTone(tint, 87, 46)]}
-        locations={[0, 0.5, 1]}
+        colors={[litTone(tint, 95, 44), litTone(tint, 89, 48), litTone(tint, 81, 52)]}
+        locations={[0, 0.48, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={s.ground}
@@ -127,19 +133,31 @@ export default function SpiritualTypeDoor({
         <Svg width={w} height={h} style={StyleSheet.absoluteFill} pointerEvents="none">
           <Defs>
             <RadialGradient id={washId} cx="50%" cy="50%" rx="50%" ry="50%">
-              <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.95} />
-              <Stop offset="0.44" stopColor={litTone(tint, 95, 44)} stopOpacity={0.72} />
-              <Stop offset="1" stopColor={litTone(tint, 92, 44)} stopOpacity={0} />
+              <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.96} />
+              <Stop offset="0.44" stopColor={litTone(tint, 95, 46)} stopOpacity={0.7} />
+              <Stop offset="1" stopColor={litTone(tint, 92, 46)} stopOpacity={0} />
+            </RadialGradient>
+            <RadialGradient id={shadeId} cx="50%" cy="50%" rx="50%" ry="50%">
+              <Stop offset="0" stopColor={litTone(tint, 46, 54)} stopOpacity={0.24} />
+              <Stop offset="1" stopColor={litTone(tint, 46, 54)} stopOpacity={0} />
             </RadialGradient>
           </Defs>
 
-          {/* The lamp set beside the mark, so the emblem still stands in light
-              now that the plate around it carries colour of its own. */}
+          {/* Light on one side and shade on the other is what gives the plate
+              form: the lamp stands beside the mark, and the tone gathers into
+              the far corner it cannot reach. */}
+          <Ellipse
+            cx={w * 1.02}
+            cy={h * 1.05}
+            rx={w * 0.6}
+            ry={h * 0.95}
+            fill={`url(#${shadeId})`}
+          />
           <Ellipse
             cx={SEAT_LEFT + SEAT / 2}
             cy={h / 2}
-            rx={92}
-            ry={50}
+            rx={98}
+            ry={54}
             fill={`url(#${washId})`}
           />
         </Svg>
@@ -148,8 +166,8 @@ export default function SpiritualTypeDoor({
       {/* The pane of light on the shoulder — transparent well before it ends,
           so it never rules a line across the plate. */}
       <LinearGradient
-        colors={['rgba(255,255,255,0.5)', 'rgba(255,255,255,0)']}
-        locations={[0, 0.6]}
+        colors={['rgba(255,255,255,0.34)', 'rgba(255,255,255,0)']}
+        locations={[0, 0.52]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={s.ground}
@@ -176,12 +194,12 @@ export default function SpiritualTypeDoor({
 
 const s = StyleSheet.create({
   door: {
-    minHeight: 92,
+    minHeight: 84,
     borderRadius: 21,
     borderWidth: 1,
     backgroundColor: '#FFFDF8',
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 9,
     justifyContent: 'center',
     overflow: 'hidden',
     position: 'relative',
