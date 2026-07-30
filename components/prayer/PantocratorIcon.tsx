@@ -1,10 +1,9 @@
 import { useMemo } from 'react';
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Image as ExpoImage, type ImageSource } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import Reanimated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
-import { F } from '@/constants/tokens';
 
 /* ─────────────────────────────────────────────────────────────
  * THE SINAI PANTOCRATOR — the panel, and the two faces in it.
@@ -249,6 +248,9 @@ export function PantocratorFace({
 
   const half = width / 2;
 
+  // An empty field, and nothing written on it. The panel says nothing when
+  // its image is missing either, and it is the caller — which knows why the
+  // reader is looking at this — that should do the explaining.
   if (!PANTOCRATOR_IMAGE) {
     return (
       <View style={[s.faceBox, { width, height: g.boxH }, style]}>
@@ -258,9 +260,6 @@ export function PantocratorFace({
           end={{ x: 0.8, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <Text style={s.facePlaceholder}>
-          The icon is not in the app yet
-        </Text>
       </View>
     );
   }
@@ -399,12 +398,5 @@ const s = StyleSheet.create({
     left: '50%',
     width: 1,
     backgroundColor: 'rgba(255,255,255,0.22)',
-  },
-  facePlaceholder: {
-    fontFamily: F.serifItalic,
-    fontSize: 13.5,
-    color: 'rgba(88,68,36,0.6)',
-    textAlign: 'center',
-    paddingHorizontal: 20,
   },
 });
