@@ -6,11 +6,9 @@ import Reanimated, {
   Easing,
   FadeInDown,
   useAnimatedProps,
-  useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withDelay,
-  withRepeat,
   withTiming,
 } from 'react-native-reanimated';
 
@@ -19,7 +17,8 @@ import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import FocusSheetHeader from './FocusSheetHeader';
 import { ChevronLeft, ChevronRight, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import { StaticChallengeTrophy } from '@/components/challenges/ChallengeTrophy';
+import { FocusMedallionMark, MEDALLION } from '@/components/focus-watch/FocusMedallion';
+import MedalDayInProgress from '@/components/focus-watch/MedalDayInProgress';
 import { C, F } from '@/constants/tokens';
 import { dateKey, useDayPlan } from './dayPlanStore';
 import type {
@@ -119,6 +118,7 @@ function CountUp({
         editable={false}
         caretHidden
         allowFontScaling={false}
+        maxFontSizeMultiplier={1}
         underlineColorAndroid="transparent"
         defaultValue="0"
         animatedProps={animatedProps}
@@ -180,32 +180,6 @@ function LaurelSprig({ flip = false }: { flip?: boolean }) {
   );
 }
 
-/* ── Today ring ───────────────────────────────────────────── */
-// The one live pulse in the grid — an outer ring breathing around today,
-// opacity only.
-function TodayPulse() {
-  const reduceMotion = useReducedMotion();
-  const t = useSharedValue(0);
-
-  useEffect(() => {
-    if (reduceMotion) {
-      t.value = 0.5;
-      return;
-    }
-    t.value = 0;
-    t.value = withRepeat(
-      withTiming(1, { duration: 1900, easing: Easing.inOut(Easing.sin) }),
-      -1,
-      true,
-    );
-    return () => cancelAnimation(t);
-  }, [reduceMotion, t]);
-
-  const pulse = useAnimatedStyle(() => ({ opacity: 0.18 + t.value * 0.5 }));
-
-  return <Reanimated.View pointerEvents="none" style={[s.todayPulse, pulse]} />;
-}
-
 /* ── Day marks ────────────────────────────────────────────── */
 // Struck-coin grammar, straight from the week bands of Home and Focus,
 // grown to nearly fill the cell.
@@ -214,12 +188,12 @@ function DayMark({ cell }: { cell: CellState }) {
     return (
       <View style={s.keptCoin}>
         <LinearGradient
-          colors={['#FFF7DE', '#F7E0A8']}
+          colors={['#F8F1FA', '#EDE0F1']}
           start={{ x: 0.2, y: 0 }}
           end={{ x: 0.8, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <StaticChallengeTrophy size={24} />
+        <FocusMedallionMark size={28} />
         <View style={s.coinSheen} pointerEvents="none" />
       </View>
     );
@@ -232,14 +206,9 @@ function DayMark({ cell }: { cell: CellState }) {
     );
   }
   if (cell === 'today') {
-    return (
-      <View style={s.todayCoin}>
-        <TodayPulse />
-        <View style={s.todayGhost}>
-          <StaticChallengeTrophy size={22} />
-        </View>
-      </View>
-    );
+    // The same day-in-progress the Medal Streak card's week strip mounts. The
+    // two used to be two copies of one idea kept in step by hand.
+    return <MedalDayInProgress size={36} />;
   }
   if (cell === 'off') {
     return (
@@ -413,7 +382,7 @@ export function SharedTrophyCalendarSheet({
                 under them. */}
             <View style={[s.subValueRow, s.subValueRowCenter]}>
               <CountUp value={model.trophies} delay={540} textStyle={s.subValue} />
-              <StaticChallengeTrophy size={23} />
+              <FocusMedallionMark size={23} />
             </View>
             <Text style={s.subLabel}>TROPHIES EARNED</Text>
           </View>
@@ -505,7 +474,7 @@ export function SharedTrophyCalendarSheet({
               end={{ x: 0.8, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
-            <StaticChallengeTrophy size={13} />
+            <FocusMedallionMark size={13} />
           </View>
           <Text style={s.legendText}>kept</Text>
         </View>
@@ -750,19 +719,20 @@ const s = StyleSheet.create({
   },
 
   /* Day marks */
+  // The gold hairline ring is gone: the medallion wears its own scalloped rim,
+  // and a ring around a rim is two rings in two colours fighting for the same
+  // edge. What is left is the ground the medal sits on, lit in its own violet.
   keptCoin: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    borderWidth: 1.2,
-    borderColor: '#D2A755',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    shadowColor: C.gold,
+    shadowColor: MEDALLION.rimDeep,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.32,
-    shadowRadius: 4,
+    shadowOpacity: 0.24,
+    shadowRadius: 5,
     elevation: 2,
   },
   coinSheen: {
@@ -785,29 +755,8 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  todayCoin: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: C.gold,
-    backgroundColor: '#FFFBEF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  todayPulse: {
-    position: 'absolute',
-    top: -5,
-    left: -5,
-    right: -5,
-    bottom: -5,
-    borderRadius: 23,
-    borderWidth: 1.5,
-    borderColor: C.gold,
-  },
-  todayGhost: {
-    opacity: 0.34,
-  },
+  // Today's seat, ring, warmth and spark all live in MedalDayInProgress now —
+  // the one object this calendar and the Medal Streak card's strip both mount.
   restRing: {
     width: 24,
     height: 24,
@@ -860,8 +809,6 @@ const s = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#D2A755',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',

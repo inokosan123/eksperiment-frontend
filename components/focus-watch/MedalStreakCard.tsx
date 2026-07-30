@@ -3,10 +3,10 @@ import { StyleSheet, Text, View, type LayoutChangeEvent, type ViewStyle } from '
 import { LinearGradient } from 'expo-linear-gradient';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { ChevronRight, X } from '@/components/icons/Icons';
-import { C, F } from '@/constants/tokens';
+import { F } from '@/constants/tokens';
 import { BANKED, BankedGlint, LedgerRail, RestSeal } from '@/components/shared/BankedEmber';
-import RadiantTodayPulse from '@/components/shared/RadiantTodayPulse';
-import { FocusMedalCoin, FocusMedallionMark } from './FocusMedallion';
+import { FocusMedalCoin } from './FocusMedallion';
+import MedalDayInProgress from './MedalDayInProgress';
 import DayGauge from './DayGauge';
 import { RadiantTrophy, StreakMedallion, TrophyShineBackdrop } from './TrophyRadiance';
 import { fuseMedalStreakWeek, type MedalStreakWeekCell } from './medalStreakWeek';
@@ -73,19 +73,6 @@ const FIELD = ['#FAEAC1', '#FEF6E1', '#FFFDF6'] as const;
 /* Deeper than the app's shared gold ink by one step, to hold its contrast
    against a field that is now a shade richer under it. */
 const INK = '#7A5C25';
-
-// Today's marker in the week strip. Active, it wears the shared radiant
-// pulse (a warm breathing bloom); banked, it is held to a single still
-// ashen ring — nothing on a resting card moves but the ember.
-function TodayRing({ banked = false }: { banked?: boolean }) {
-  if (banked) {
-    return <View pointerEvents="none" style={[s.todayRing, s.todayRingBanked, s.todayRingHeld]} />;
-  }
-  // Sized to the mark it surrounds: at 34 its rings stood a clear 6pt off the
-  // coin they were waiting for, which read as a target rather than as a seat.
-  // Seated, because the cell it rings now wears a gold rim of its own.
-  return <RadiantTodayPulse size={MARK} seated />;
-}
 
 /**
  * The rule that divides one register of the streak card from the next.
@@ -286,45 +273,18 @@ const MedalStreakCard = forwardRef<ComponentRef<typeof TouchableOpacity>, MedalS
                           came out visibly larger than a day that was won —
                           the row read as its failures. The seat is empty air
                           now and the mark is the object. */}
-                      <View style={[
-                        s.weekDot,
-                        cell.status === 'kept' && s.weekDotKept,
-                        cell.status === 'today' && (todayBanked ? s.weekDotTodayBanked : s.weekDotToday),
-                      ]}>
-                        {cell.status === 'today' && <TodayRing banked={todayBanked} />}
+                      <View style={s.weekDot}>
+                        {/* Today is the one shared object on this strip: the
+                            same day-in-progress the monthly calendar mounts,
+                            so the two rooms cannot drift apart again. */}
+                        {cell.status === 'today' && (
+                          <MedalDayInProgress
+                            size={MARK}
+                            banked={todayBanked}
+                            active={motionEnabled}
+                          />
+                        )}
                         {cell.status === 'kept' && <FocusMedalCoin size={MARK} />}
-                        {cell.status === 'today' && (todayBanked ? (
-                          <View style={s.todayEmber} />
-                        ) : (
-                          <View style={s.todayMedalWaiting}>
-                            {/* THE DAY IN PROGRESS.
-
-                                This was the plain coin struck in ash, filling
-                                its whole cell — and with the seat under it
-                                gone, an ash disc on a gold plate is simply a
-                                blank. Nothing about it said "today"; it said
-                                "image failed to load".
-
-                                The sheet has had the right answer since its own
-                                redesign, so today is drawn the sheet's way
-                                here: the medallion's DISC — rim, struck rings
-                                and numeral, all of it in ash — sitting SMALLER
-                                than its cell inside a lit seat with a gold rim.
-                                The seat is what makes it read as a die waiting
-                                to be struck rather than as a hole in the row,
-                                and the numeral is what makes it recognisably
-                                the same medal the other days already won.
-
-                                Sized to sit just inside the seat's rim rather
-                                than to some fraction of the cell. In the sheet
-                                a won day and today are 28 and 24 in the same
-                                36 seat — barely a step apart — and the first
-                                port here made today two thirds of its
-                                neighbours, which reads as a day that matters
-                                less rather than as one not finished yet. */}
-                            <FocusMedallionMark size={MARK - 4} muted />
-                          </View>
-                        ))}
                         {cell.status === 'broken' && (
                           <View style={s.markBroken}>
                             <X s={11} c="#B45360" w={2.5} />
@@ -500,15 +460,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // A won day is the coin and nothing else — no plate, no cast shadow.
-  // A pale violet disc behind every one of them made five wins read as five
-  // stickers; a View shadow made it worse, because the platform shadows the
-  // VIEW and put a square of blur behind a round object. A drawn shadow was
-  // the third try and it sat under each coin like a little grey shelf, since
-  // vector shapes take no blur. The coin has a graded face and a struck rim of
-  // its own; on a light plate that is already an object, and the honest answer
-  // was to stop adding things underneath it.
-  weekDotKept: {},
   // A day lost is a rose token the size of the coin it did not become.
   // The rose token has to hold its own against a plate that is now gold on
   // every side of it — at the old hairline it dissolved into the card.
@@ -533,37 +484,9 @@ const s = StyleSheet.create({
     borderColor: 'rgba(186,146,72,0.62)',
     borderStyle: 'dashed',
   },
-  // Today's seat, lifted from the sheet's calendar so the day in progress
-  // reads the same in both rooms: a lit cream face inside a solid gold rim.
-  // The rim was dropped once, on the reasoning that the living pulse already
-  // draws rings round the cell — but the pulse breathes, and a mark whose only
-  // edge comes and goes has no edge. The rim is what the ash medallion sits
-  // IN; the pulse is the light around it.
-  weekDotToday: {
-    backgroundColor: '#FFFBEF',
-    borderWidth: 1.5,
-    borderColor: C.gold,
-  },
-  weekDotTodayBanked: {
-    borderWidth: 1.5,
-    borderColor: BANKED.ash,
-    borderStyle: 'dashed',
-    backgroundColor: '#FBF8F0',
-  },
-  todayMedalWaiting: { position: 'absolute', opacity: 0.85 },
-  todayEmber: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: BANKED.ember },
-  todayRing: {
-    position: 'absolute',
-    top: -4,
-    left: -4,
-    right: -4,
-    bottom: -4,
-    borderRadius: MARK / 2 + 4,
-    borderWidth: 1.5,
-    borderColor: C.gold,
-  },
-  todayRingBanked: { borderColor: BANKED.ashLine },
-  todayRingHeld: { opacity: 0.55 },
+  // Today's seat, its rim, its warmth and its spark all live in
+  // MedalDayInProgress now — the one object this strip and the monthly
+  // calendar both mount.
   seal: { marginTop: 12 },
   // 19, not 13: the mount hangs 12pt below the hero row it stands in, and at
   // the old margin the sentence started exactly where the roundel ended.
