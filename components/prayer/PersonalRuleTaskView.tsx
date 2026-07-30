@@ -30,6 +30,7 @@ import PrayerFocusSwitch, { type PrayerFocus } from '@/components/prayer/PrayerF
 import StandingCross, { CROSS_ASPECT } from '@/components/prayer/StandingCross';
 import { useIgnition, useReadoutInk } from '@/components/prayer/prayerMotion';
 import PrayerRoom from '@/components/prayer/PrayerRoom';
+import PrayerStartHalo from '@/components/prayer/PrayerStartHalo';
 import { useAppSettings } from '@/components/settings/SettingsContext';
 import { ArrowLeft, CheckSmall, ChevronDown, OpenBook, OrthodoxCross, Pause, Play, RotateCcw, X } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
@@ -51,35 +52,56 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
  * About sheet under it is what makes that framing explicit rather than
  * assumed: history and craft, told so it is useful to anyone.
  *
- * THE ORDER OF THE SCREEN, AND WHY
+ * THE ORDER OF THE SCREEN, TOP TO BOTTOM
  *
- *   the object    the hero — the cross or the icon, given whatever
- *                 height the screen has left
- *   the switch    which of the two, directly under the thing it changes
- *   the reading   the elapsed time, quieter than the object
- *   the controls  reset · start/pause · finish, unchanged in behaviour
- *   About         the door to the seven pages
+ *   the title
+ *   the epigraph    "pray without ceasing" — never dimmed, in any state
+ *   the object      the cross or the icon, given all the room left over
+ *   About the icon  the icon's own footnote, directly beneath it
+ *   the seat        the switch and the reading, sharing one fixed height
+ *   the controls    reset · start/pause · finish, on the floor
+ *
+ * ⚠ THE CONTROLS ARE THE LAST ROW, with nothing under them but the home
+ * indicator's inset. They were lowered by MOVING WHAT WAS BELOW THEM
+ * ABOVE THEM — the reading and the About door both belong further up —
+ * rather than by shaving margins, which is what had been tried before
+ * and did not work.
+ *
+ * THE THREE PHASES
+ *
+ *   IDLE     no reading on the screen at all. A row of zeroes is a
+ *            stopwatch waiting; this screen offers a choice instead.
+ *   RUNNING  the reading at full size, the switch withdrawn, the object
+ *            grown, the room dark at its edges.
+ *   PAUSED   the reading small, the switch back, the object small. The
+ *            reading giving up its room is what lets the switch return,
+ *            so you can change what you are praying in front of and go
+ *            on.
  *
  * ⚠ WHAT PRESSING START DOES, AND WHAT IT NO LONGER DOES.
  *
  * It used to draw LINES: hoops turning round the object and round the
- * clock, near halves in front and far halves behind. They were the best
- * drawing on the screen and they were the wrong instinct — a thing that
- * moves asks to be watched, and this is a screen you are meant to be
- * looking THROUGH rather than at. Every one of them is gone.
+ * clock. They were the best drawing on the screen and they were the
+ * wrong instinct — a thing that moves asks to be watched, and this is a
+ * screen you are meant to be looking THROUGH rather than at.
  *
- * What happens instead is light and scale, on one shared ignition:
+ * What happens instead is light and scale, all on one ignition:
  *
+ *   the switch    steps back, and is gone by 62% of the way
+ *   the reading   rises into its place from 34%, so the two overlap by a
+ *                 quarter and read as ONE gesture rather than a crossfade
  *   the object    grows into its full size
- *   the room      darkens at its edges, so the object is the only lit
- *                 part of the page (see PrayerRoom)
- *   the lamp      comes up behind it
- *   the reading   warms into the hour's colour
- *   the switch    withdraws — you are not choosing what to pray in
- *                 front of any more, you are praying
- *   the button    takes a slow breath of its own light
+ *   the room      darkens at its edges (PrayerRoom)
+ *   the lamp      comes up behind the object
+ *   the button    is struck like a bell and then breathes
  *
  * Nothing counts, nothing ticks, nothing travels.
+ *
+ * ⚠ AND NOTHING IS EVER LAID OUT TWICE. Every row that can empty — the
+ * About door, the switch, the reading — keeps its height whether it is
+ * showing or not, and its occupants are absolute inside it. That single
+ * decision is what makes this screen feel smooth; the easing is only
+ * what makes it feel considered.
  *
  * ⚠ THE GROUND IS WARM, NOT WHITE. A low warm glow over pure white
  * reads as a stain; over warm paper it reads as light. And the room's
@@ -106,6 +128,33 @@ const GROUND = ['#FFFDF9', '#FDF8EF', '#FAF3E6'] as const;
  * not a card flipping. The change has to be felt more than watched.
  */
 const REST_SCALE = 0.88;
+
+/**
+ * How small the reading stands when the prayer is paused.
+ *
+ * Same rule as the object, for the same reason: the figures are laid out
+ * at their RUNNING size and sampled down here, so the state you actually
+ * pray in is type at its own size rather than type enlarged. It also
+ * means the shrink is what frees the room the switch comes back into,
+ * which is exactly what it should look like.
+ */
+const READING_REST_SCALE = 0.52;
+
+/**
+ * The seat the switch and the reading share, and how they sit in it.
+ *
+ * `height` is fixed and reserved always — see the note on `switchStyle`.
+ * The other two are the PAUSED arrangement: how far the switch rises
+ * when a reading is present beneath it, and how far that reading sits
+ * below centre while it is small. Both go to zero at the ends of the
+ * range, where each occupant is alone and centred.
+ *
+ * ⚠ THEY ARE SHARES OF THE SEAT, NOT POINTS. Fixed offsets were tried
+ * and the compact seat pushed the switch four points off its own top
+ * edge — invisible on the phone this was written on, obvious on a small
+ * one. Proportions cannot fall out of the box when the box changes.
+ */
+const SEAT = { height: 104, compactHeight: 100, liftShare: 0.22, dropShare: 0.29 } as const;
 
 export type PersonalPrayerRuleChoice = 'personal' | 'standard' | 'short' | 'seraphim';
 
@@ -204,8 +253,27 @@ export default function PersonalRuleTaskView({
   // 0 = the cross is standing, 1 = the icon is. The exchange between them
   // is the one animation on this screen that has to be worth watching.
   const swap = useSharedValue(focus === 'icon' ? 1 : 0);
-  // The slow breath in the button's light. See mainHaloStyle.
+  // The slow breath in the button's light.
   const breath = useSharedValue(0);
+  /**
+   * THE THREE PHASES, IN TWO VALUES.
+   *
+   *   IDLE     nothing begun. No reading on the screen at all — a row of
+   *            zeroes is a stopwatch waiting, and this screen should be
+   *            offering a choice instead. `reveal` 0, `ignition` 0.
+   *   RUNNING  the reading at full size, the switch withdrawn, the object
+   *            grown. `reveal` 1, `ignition` 1.
+   *   PAUSED   the reading small, the switch back, the object small. The
+   *            reading SHRINKING is what makes the room the switch
+   *            returns into. `reveal` 1, `ignition` 0.
+   *
+   * Everything on the screen reads its state off this pair rather than
+   * off React, so nothing can be a frame out of step with anything else.
+   */
+  const timerShown = running || elapsedSecs > 0;
+  const reveal = useSharedValue(timerShown ? 1 : 0);
+  /** 0 → 1 once each time the prayer is started. The bell. */
+  const strike = useSharedValue(0);
 
   const isCompactHeight = height < 720;
   const hasHours = elapsedSecs >= 3600;
@@ -252,6 +320,26 @@ export default function PersonalRuleTaskView({
       timerRef.current = null;
     };
   }, [running]);
+
+  useEffect(() => {
+    // Arriving is slower than leaving, and eases out rather than in and
+    // out: a reading appearing should feel like it settles, and one
+    // clearing should simply be gone.
+    reveal.value = withTiming(timerShown ? 1 : 0, {
+      duration: timerShown ? 520 : 340,
+      easing: timerShown ? Easing.out(Easing.cubic) : Easing.inOut(Easing.quad),
+    });
+  }, [reveal, timerShown]);
+
+  useEffect(() => {
+    if (!running) return;
+    if (reduceMotion) return;
+    // Struck once, on the way up only. ⚠ Restarted from zero rather than
+    // resumed: pressing start twice in quick succession should ring
+    // twice, not carry on from where the last one had got to.
+    strike.value = 0;
+    strike.value = withTiming(1, { duration: 1300, easing: Easing.out(Easing.cubic) });
+  }, [reduceMotion, running, strike]);
 
   useEffect(() => {
     if (!running || reduceMotion) {
@@ -340,6 +428,12 @@ export default function PersonalRuleTaskView({
   const screenTitle = titleForPrayer(prayerType, title);
   const canSwitchRules = canSwitchPrayerRule(prayerType);
 
+  // Resolved here, in plain numbers, because a worklet reading
+  // `isCompactHeight` would be closing over React state on the UI thread.
+  const seatHeight = isCompactHeight ? SEAT.compactHeight : SEAT.height;
+  const seatLift = seatHeight * SEAT.liftShare;
+  const seatDrop = seatHeight * SEAT.dropShare;
+
   // The reading warms into the hour's colour on the same curve the orbit
   // kindles on, rather than flipping the instant `running` changes.
   const readoutInk = useReadoutInk(ignition, C.text, theme.accent);
@@ -349,23 +443,6 @@ export default function PersonalRuleTaskView({
   const mainControlStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(ignition.value, [0, 1], [C.text, theme.accent]),
   }), [theme.accent]);
-  /**
-   * The button's own light, and the one thing on this screen that keeps
-   * moving while the prayer runs.
-   *
-   * ⚠ IT BREATHES; IT DOES NOT TICK. A pulse on the second would make the
-   * button a clock, and the whole redesign is the argument that this
-   * screen is not one. Six seconds a cycle is about the pace of a slow
-   * breath, and the swing is small — 0.24 to 0.34 — so it is felt at the
-   * edge of vision rather than watched.
-   *
-   * ⚠ Opacity only, no scale. This is a small view, and scaling small
-   * views on Android resamples their bitmaps every frame; here that would
-   * be every frame for as long as somebody prays.
-   */
-  const mainHaloStyle = useAnimatedStyle(() => ({
-    opacity: ignition.value * (0.24 + breath.value * 0.1),
-  }));
   // The two glyphs cross-fade in place and pass each other vertically.
   // ⚠ No scale on the swap: this is a small view, and scaling small views
   // on Android resamples their bitmaps.
@@ -430,20 +507,57 @@ export default function PersonalRuleTaskView({
     transform: [{ scale: REST_SCALE + (1 - REST_SCALE) * ignition.value }],
   }));
 
-  // The switch withdraws rather than vanishing: it fades and settles a
-  // few points, so it reads as stepping back. ⚠ Its strip keeps its
-  // height either way — collapsing it would jump the whole screen at the
-  // exact moment the prayer begins.
-  const switchStyle = useAnimatedStyle(() => ({
-    opacity: 1 - ignition.value,
-    transform: [{ translateY: ignition.value * 6 }],
-  }));
+  /* ── THE SWITCH AND THE READING SHARE ONE SEAT ──────────────────────
+   *
+   * ⚠ AND THEY ARE BOTH ABSOLUTE INSIDE IT, WHICH IS THE WHOLE REASON
+   * THIS SCREEN FEELS SMOOTH. The seat is a fixed height that never
+   * changes, so a reading appearing, a switch withdrawing and the pair
+   * rearranging around each other move NOTHING else: not the object
+   * above, not the controls below, not the page. Nothing on this screen
+   * is ever laid out twice. A transition whose easing is perfect but
+   * which reflows the page underneath can never feel calm.
+   *
+   * Where each of them sits:
+   *
+   *   IDLE     switch alone, centred in the seat
+   *   RUNNING  reading alone, centred, at full size
+   *   PAUSED   switch lifted to the top of the seat, reading beneath it
+   *            and small — the reading giving up its room is what lets
+   *            the switch come back
+   *
+   * THE TWO MOVES ARE STAGGERED, not simultaneous. The switch is gone by
+   * 62% of the ignition and the reading does not begin arriving until
+   * 34%, so they overlap by a quarter and the eye reads one gesture —
+   * something stepping back, and something else taking its place —
+   * rather than two things crossfading.
+   */
+  const switchStyle = useAnimatedStyle(() => {
+    const out = Math.min(1, ignition.value / 0.62);
+    return {
+      opacity: 1 - out,
+      transform: [
+        { translateY: -seatLift * reveal.value + out * 8 },
+        // It steps back as well as away: a shade smaller reads as
+        // withdrawing, where fading alone reads as switching off.
+        { scale: 1 - out * 0.05 },
+      ],
+    };
+  }, [seatLift]);
 
-  // And the epigraph steps back with it, to a half-light. It is the
-  // instruction; once you are following it, it has said its piece.
-  const epigraphStyle = useAnimatedStyle(() => ({
-    opacity: 1 - ignition.value * 0.55,
-  }));
+  const readingStyle = useAnimatedStyle(() => {
+    const arrive = Math.max(0, (ignition.value - 0.34) / 0.66);
+    return {
+      opacity: reveal.value,
+      transform: [
+        // Below the switch when paused, centred when running.
+        { translateY: seatDrop * (1 - arrive) },
+        // ⚠ DRAWN LARGE AND SCALED DOWN, never up — the same rule the
+        // object follows. The running state, which is the one you pray
+        // in, lands on exactly 1 and is therefore type at its own size.
+        { scale: READING_REST_SCALE + (1 - READING_REST_SCALE) * arrive },
+      ],
+    };
+  }, [seatDrop]);
 
   return (
     <View style={s.screen}>
@@ -481,14 +595,21 @@ export default function PersonalRuleTaskView({
         </TouchableOpacity>
       )}
 
-      {/* The epigraph steps aside entirely on a short phone. It is the one
-          thing here that can go without breaking anything, and it costs
-          the object fifty points it needs more. */}
+      {/* ⚠ THE EPIGRAPH IS NOT DIMMED WHILE THE PRAYER RUNS. It was faded
+          to a half-light on the reasoning that it had said its piece —
+          which was wrong twice over: "pray without ceasing" is exactly
+          the thing worth having in front of you WHILE you pray, and
+          dimming type is how a screen tells you something has been
+          disabled. It reads the same in both states.
+
+          It steps aside entirely on a short phone, which is different:
+          that is the one thing here that can go without breaking
+          anything, and it costs the object fifty points it needs more. */}
       {!isCompactHeight && (
-        <Reanimated.View style={epigraphStyle} pointerEvents="none">
+        <View pointerEvents="none">
           <Text style={s.quote}>{QUOTE}</Text>
           <Text style={s.quoteRef}>{QUOTE_REF}</Text>
-        </Reanimated.View>
+        </View>
       )}
 
       {/* ── The object, in its light ────────────────────────────────── */}
@@ -513,41 +634,72 @@ export default function PersonalRuleTaskView({
         )}
       </View>
 
-      {/* ── What stands in front of you ──────────────────────────────
-          ⚠ BELOW THE OBJECT, NOT ABOVE IT. Above, it was the first thing
-          on the page and the thing keeping the deck from dropping; here
-          it sits directly under what it changes, which is also where a
-          control belongs. The strip is a fixed height so the screen
-          never jumps as it withdraws. */}
-      <View style={s.focusWrap} pointerEvents={running ? 'none' : 'auto'}>
-        <Reanimated.View style={switchStyle}>
-          <PrayerFocusSwitch
-            value={focus}
-            onChange={next => updateSettings({ prayerFocus: next })}
-          />
+      {/* ── The door to the seven pages ──────────────────────────────
+          ⚠ DIRECTLY UNDER THE ICON, which is where it was asked to be and
+          where it belongs: it is the icon's own footnote, and down among
+          the controls it read as a fourth control. It keeps its row
+          whether the cross or the icon is standing, so the exchange
+          between them moves nothing. */}
+      <View style={s.aboutRow}>
+        <Reanimated.View style={aboutStyle} pointerEvents={focus === 'icon' ? 'auto' : 'none'}>
+          <TouchableOpacity
+            onPress={() => setShowAbout(true)}
+            activeOpacity={0.76}
+            haptic="selection"
+            style={s.about}
+            accessibilityRole="button"
+            accessibilityLabel="About the icon"
+            accessibilityElementsHidden={focus !== 'icon'}
+            importantForAccessibility={focus === 'icon' ? 'auto' : 'no-hide-descendants'}
+          >
+            <OpenBook s={14} c={C.goldDark} w={1.6} />
+            <Text style={s.aboutText}>About the icon</Text>
+          </TouchableOpacity>
         </Reanimated.View>
       </View>
 
-      {/* ── The reading, the controls, the door ─────────────────────── */}
-      {/* ⚠ THE DECK SITS AS LOW AS THE PHONE ALLOWS. Every point it gives
-          back goes to the flexible room above it. Nothing is added under
-          the safe area: the home indicator's own inset is the floor. */}
-      <View style={[s.deck, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <View style={s.readout}>
-          <Reanimated.Text style={[s.timeText, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
-            {display.main}
-          </Reanimated.Text>
-          <Reanimated.Text style={[s.colonText, readoutInk, { fontSize: colonFont }]}>:</Reanimated.Text>
-          {/* ⚠ THE SECONDS ARE SET LIGHTER THAN THE MINUTES, not smaller.
-              A clock face distinguishes the figure you read from the one
-              that is merely running, and doing it by weight keeps the
-              reading on one baseline at one size — where doing it by size
-              would make the pair jump every time an hour appeared. */}
-          <Reanimated.Text style={[s.timeText, s.timeTail, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
-            {display.tail}
-          </Reanimated.Text>
-        </View>
+      {/* ── The seat the switch and the reading share ────────────────
+          Both absolute inside a height that never changes — see the note
+          on `switchStyle`. This is the piece that keeps the whole screen
+          still while its state changes. */}
+      <View style={[s.seat, isCompactHeight && s.seatCompact]}>
+        <Reanimated.View
+          style={[s.seatItem, switchStyle]}
+          pointerEvents={running ? 'none' : 'auto'}
+        >
+          <View style={s.switchWrap}>
+            <PrayerFocusSwitch
+              value={focus}
+              onChange={next => updateSettings({ prayerFocus: next })}
+            />
+          </View>
+        </Reanimated.View>
 
+        <Reanimated.View style={[s.seatItem, readingStyle]} pointerEvents="none">
+          <View style={s.readout}>
+            <Reanimated.Text style={[s.timeText, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
+              {display.main}
+            </Reanimated.Text>
+            <Reanimated.Text style={[s.colonText, readoutInk, { fontSize: colonFont }]}>:</Reanimated.Text>
+            {/* ⚠ THE SECONDS ARE SET LIGHTER THAN THE MINUTES, not smaller.
+                A clock face distinguishes the figure you read from the one
+                that is merely running, and doing it by weight keeps the
+                reading on one baseline at one size — where doing it by size
+                would make the pair jump every time an hour appeared. */}
+            <Reanimated.Text style={[s.timeText, s.timeTail, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
+              {display.tail}
+            </Reanimated.Text>
+          </View>
+        </Reanimated.View>
+      </View>
+
+      {/* ── The controls, on the floor ────────────────────────────────
+          ⚠ THE LAST ROW ON THE SCREEN, with nothing but the home
+          indicator's own inset beneath it. Everything that used to sit
+          under here — the reading, the About door — has moved up to where
+          it belongs, which is what actually lowered these rather than
+          shaving margins off them. */}
+      <View style={[s.deck, { paddingBottom: Math.max(insets.bottom, 10) }]}>
         <View style={[s.controlsDeck, isCompactHeight && s.controlsDeckCompact]}>
           <TouchableOpacity
             onPress={handleReset}
@@ -559,15 +711,16 @@ export default function PersonalRuleTaskView({
           </TouchableOpacity>
 
           <View style={s.mainWrap}>
-            {/* The button's own light, behind it. */}
-            <Reanimated.View
-              pointerEvents="none"
-              style={[
-                s.mainHalo,
-                isCompactHeight && s.mainHaloCompact,
-                { backgroundColor: theme.accent },
-                mainHaloStyle,
-              ]}
+            {/* The strike, the standing ring and the pool — see
+                PrayerStartHalo. It is drawn behind the button and takes
+                no touches, so it can never steal the press it exists to
+                celebrate. */}
+            <PrayerStartHalo
+              size={isCompactHeight ? 58 : 66}
+              tint={theme.accent}
+              ignition={ignition}
+              breath={breath}
+              strike={strike}
             />
             <TouchableOpacity
               onPress={() => setRunning(value => !value)}
@@ -607,26 +760,6 @@ export default function PersonalRuleTaskView({
             <Text style={s.smallLabel}>Finish</Text>
           </TouchableOpacity>
         </View>
-
-        {/* The door to the seven pages. An open book rather than an info
-            glyph, because what is behind it IS a book — and it opens
-            without touching the clock: the prayer keeps its time while
-            you read. */}
-        <Reanimated.View style={aboutStyle} pointerEvents={focus === 'icon' ? 'auto' : 'none'}>
-          <TouchableOpacity
-            onPress={() => setShowAbout(true)}
-            activeOpacity={0.76}
-            haptic="selection"
-            style={s.about}
-            accessibilityRole="button"
-            accessibilityLabel="About the icon"
-            accessibilityElementsHidden={focus !== 'icon'}
-            importantForAccessibility={focus === 'icon' ? 'auto' : 'no-hide-descendants'}
-          >
-            <OpenBook s={15} c={C.goldDark} w={1.6} />
-            <Text style={s.aboutText}>About the icon</Text>
-          </TouchableOpacity>
-        </Reanimated.View>
       </View>
 
       <PantocratorAboutSheet visible={showAbout} onClose={() => setShowAbout(false)} />
@@ -763,15 +896,30 @@ const s = StyleSheet.create({
   },
 
   /**
-   * The switch's strip, under the object.
+   * The icon's footnote, in its own reserved row directly under it.
    *
-   * ⚠ IT KEEPS ITS ROOM WHETHER THE SWITCH IS SHOWING OR NOT. The switch
-   * withdraws when the prayer starts, and if the strip collapsed with it
-   * the reading and the controls would leap upward at the exact moment
-   * you pressed start — which is the one moment on this screen that has
-   * to be calm.
+   * The row is held whether the cross or the icon is standing, so the
+   * exchange between the two moves nothing below it.
    */
-  focusWrap: { paddingHorizontal: 40, paddingTop: 10, paddingBottom: 4 },
+  aboutRow: { height: 44, alignItems: 'center', justifyContent: 'center' },
+
+  /**
+   * The seat the switch and the reading share.
+   *
+   * ⚠ ITS HEIGHT NEVER CHANGES, whatever is in it. Both occupants are
+   * absolute, so appearing, withdrawing and rearranging are pure
+   * transform work on the UI thread and nothing above or below is ever
+   * laid out a second time. This is the single decision that makes the
+   * screen feel smooth; the easing is only what makes it feel considered.
+   */
+  seat: { height: SEAT.height, justifyContent: 'center' },
+  seatCompact: { height: SEAT.compactHeight },
+  seatItem: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  switchWrap: { alignSelf: 'stretch', paddingHorizontal: 40 },
 
   // The object takes what is left, and it is the only thing on this
   // screen that flexes — everything else is worth exactly what it
@@ -863,16 +1011,6 @@ const s = StyleSheet.create({
     elevation: 10,
   },
   mainControlCompact: { width: 58, height: 58, borderRadius: 29 },
-  // Wider than the button and behind it, so what shows is a rim of light
-  // around the edge rather than a disc under it.
-  mainHalo: {
-    position: 'absolute',
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    opacity: 0,
-  },
-  mainHaloCompact: { width: 84, height: 84, borderRadius: 42 },
   mainGlyph: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   smallControl: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
   smallControlCompact: { width: 46, height: 46, borderRadius: 23 },
