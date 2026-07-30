@@ -265,8 +265,8 @@ export function TrophyShineBackdrop({
               <Stop offset="1" stopColor={VIOLET} stopOpacity={0} />
             </RadialGradient>
             <RadialGradient id="medalFoot" cx="50%" cy="50%" r="50%">
-              <Stop offset="0" stopColor="#D9AE64" stopOpacity={0.66} />
-              <Stop offset="0.5" stopColor="#E2BC79" stopOpacity={0.36} />
+              <Stop offset="0" stopColor="#C79245" stopOpacity={0.7} />
+              <Stop offset="0.44" stopColor="#D9AC60" stopOpacity={0.4} />
               <Stop offset="1" stopColor="#EBCD95" stopOpacity={0} />
             </RadialGradient>
             <RadialGradient id="medalLight" cx="50%" cy="50%" r="50%">
@@ -282,17 +282,20 @@ export function TrophyShineBackdrop({
               bright AGAINST. Bled in from off the edge: a pool with a
               visible rim on this surface would be a second medallion. */}
           <Ellipse cx={-8} cy={62} rx={box.w * 0.66} ry={142} fill="url(#medalHaze)" />
-          {/* The card's foot. The gauge that ends the card is a WHITE bar, and
-              a white bar laid on cream is a bar you have to look for — so the
-              gold deepens under its left half, where the reading starts and
-              where the empty track is widest. Anchored off the bottom-left
-              corner and kept low, under the bar rather than over the marks
-              above it, which are gold themselves and need the pale ground. */}
+          {/* THE FOOT — the card's one dark corner, and the only place the
+              deep gold is spent. The gauge that ends the card is a WHITE bar,
+              and a white bar laid on cream is a bar you have to look for. So
+              the gold banks into the bottom-LEFT corner, where the reading
+              starts and the empty track is widest, and is gone again by the
+              middle of the card: anchored off the corner itself rather than
+              spread along the foot, kept low so it passes under the bar and
+              not over the gold marks above it, and short enough that the week
+              strip stands on light plate. */}
           <Ellipse
-            cx={box.w * 0.1}
-            cy={box.h + 14}
-            rx={box.w * 0.62}
-            ry={94}
+            cx={box.w * -0.04}
+            cy={box.h + 10}
+            rx={box.w * 0.52}
+            ry={118}
             fill="url(#medalFoot)"
           />
           {/* The warm pool the medal is lit by, seated exactly on it. */}
@@ -464,14 +467,17 @@ export function StreakMedallion({
                 been: two presented objects on a gold plate, a plaque that
                 carries the count and a medal that carries the day. The edge is
                 now the point instead of the flaw. */}
+            {/* Straight down, and faint. Offset sideways as well it smeared a
+                mauve fringe along the plaque's left edge, which on a light
+                plate reads as dirt rather than as depth. */}
             <Rect
-              x={plaque.x + 1.5}
-              y={plaque.y + 2.5}
+              x={plaque.x}
+              y={plaque.y + 3}
               width={plaque.w}
               height={plaque.h}
               rx={plaque.r}
               fill={VIOLET}
-              opacity={0.13}
+              opacity={0.1}
             />
             <Rect
               x={plaque.x}

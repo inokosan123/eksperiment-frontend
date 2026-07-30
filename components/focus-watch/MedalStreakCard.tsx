@@ -51,17 +51,24 @@ const CREST_SIZE = 76;
 
 const STRIKE_RIGHT = CARD_PAD_H + HERO_PAD_RIGHT + CREST_SIZE / 2;
 
-/* The live field, and the card's real problem for a long time.
-   Every warm thing on this surface — the plate, the light, the bloom, the
-   seats under the coins — sat inside one narrow band of pale yellow, so
-   nothing on it could read as figure against ground. A bloom cannot be bright
-   if the field is already nearly white.
-   So the plate has VALUE now: a true honey gold at the left, where the reading
-   needs something to be bright against, running to a cream that never quite
-   reaches white, because a streak card that ends in white has given up its
-   metal. The light runs the way the card is lit — almost level, palest where
-   the medal stands. */
-const FIELD = ['#EBCA83', '#F9E4B4', '#FFFAEC'] as const;
+/** Every mark in the week strip is one coin wide — won, lost, resting or due. */
+const MARK = 27;
+
+/* The live field.
+
+   It needed value, and for one pass it got value everywhere: a honey gold deep
+   enough to hold a white plaque, run across the whole plate. That is one
+   correction too many. The mounted objects carry their own contrast — a gold
+   rim and a violet shadow apiece — so the plate does not have to darken to
+   make them legible, and a card that darkens all over loses the light that
+   made it worth looking at.
+
+   So the plate is the app's LIGHT gold nearly everywhere, and the deep gold is
+   spent in exactly one place: pooled into the bottom-left corner, under the
+   white instrument that ends the card, where it is the difference between a
+   bar you read and a bar you look for. One dark corner on a light plate is
+   composition; darkness everywhere is just a heavier card. */
+const FIELD = ['#FAEAC1', '#FEF6E1', '#FFFDF6'] as const;
 
 /* Deeper than the app's shared gold ink by one step, to hold its contrast
    against a field that is now a shade richer under it. */
@@ -74,7 +81,9 @@ function TodayRing({ banked = false }: { banked?: boolean }) {
   if (banked) {
     return <View pointerEvents="none" style={[s.todayRing, s.todayRingBanked, s.todayRingHeld]} />;
   }
-  return <RadiantTodayPulse size={34} />;
+  // Sized to the mark it surrounds: at 34 its rings stood a clear 6pt off the
+  // coin they were waiting for, which read as a target rather than as a seat.
+  return <RadiantTodayPulse size={MARK} />;
 }
 
 /**
@@ -270,23 +279,19 @@ const MedalStreakCard = forwardRef<ComponentRef<typeof TouchableOpacity>, MedalS
                           style={[s.chain, s.chainRight, cell.softRight && s.chainSoft, banked && s.chainBanked]}
                         />
                       )}
+                      {/* Every mark on this strip is the coin's size. They
+                          used to sit in 34pt seats whose own borders and fills
+                          WERE the mark, so a day at rest and a day lost both
+                          came out visibly larger than a day that was won —
+                          the row read as its failures. The seat is empty air
+                          now and the mark is the object. */}
                       <View style={[
                         s.weekDot,
                         cell.status === 'kept' && s.weekDotKept,
-                        cell.status === 'broken' && s.weekDotBroken,
                         cell.status === 'today' && (todayBanked ? s.weekDotTodayBanked : s.weekDotToday),
-                        cell.status === 'rest' && s.weekDotRest,
                       ]}>
                         {cell.status === 'today' && <TodayRing banked={todayBanked} />}
-                        {/* A struck socket, not a flat disc: the seat catches
-                            a white hairline along its top and pools its own
-                            shade at the bottom, so the medal sits IN it. */}
-                        {cell.status === 'kept' && (
-                          <>
-                            <View pointerEvents="none" style={s.weekSeatShade} />
-                            <FocusMedalCoin size={27} style={s.weekSeatMedal} />
-                          </>
-                        )}
+                        {cell.status === 'kept' && <FocusMedalCoin size={MARK} />}
                         {cell.status === 'today' && (todayBanked ? (
                           <View style={s.todayEmber} />
                         ) : (
@@ -295,11 +300,15 @@ const MedalStreakCard = forwardRef<ComponentRef<typeof TouchableOpacity>, MedalS
                                 opacity read as a rendering fault; the same
                                 coin unstruck reads as a die waiting for the
                                 day to be won. */}
-                            <FocusMedalCoin size={21} muted />
+                            <FocusMedalCoin size={MARK} muted />
                           </View>
                         ))}
-                        {cell.status === 'broken' && <X s={11} c="#B45360" w={2.5} />}
-                        {cell.status === 'rest' && <View style={s.restDot} />}
+                        {cell.status === 'broken' && (
+                          <View style={s.markBroken}>
+                            <X s={11} c="#B45360" w={2.5} />
+                          </View>
+                        )}
+                        {cell.status === 'rest' && <View style={s.markRest} />}
                       </View>
                     </View>
                   </View>
@@ -455,43 +464,47 @@ const s = StyleSheet.create({
   weekLetterToday: { color: INK },
   weekLetterTodayBanked: { color: BANKED.inkMuted },
   weekDot: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: MARK,
+    height: MARK,
+    borderRadius: MARK / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // The coin wears its own scalloped rim, so the seat adds no ring of its own —
-  // only the shadow it casts and the light it stands in.
-  weekSeatMedal: {
-    shadowColor: '#5E3A70',
-    shadowOffset: { width: 0, height: 1.5 },
-    shadowOpacity: 0.26,
-    shadowRadius: 3,
-    elevation: 3,
+  // A won day is the coin and nothing else — no plate, no cast shadow.
+  // A pale violet disc behind every one of them made five wins read as five
+  // stickers; a View shadow made it worse, because the platform shadows the
+  // VIEW and put a square of blur behind a round object. A drawn shadow was
+  // the third try and it sat under each coin like a little grey shelf, since
+  // vector shapes take no blur. The coin has a graded face and a struck rim of
+  // its own; on a light plate that is already an object, and the honest answer
+  // was to stop adding things underneath it.
+  weekDotKept: {},
+  // A day lost is a rose token the size of the coin it did not become.
+  markBroken: {
+    width: MARK,
+    height: MARK,
+    borderRadius: MARK / 2,
+    borderWidth: 1,
+    borderColor: '#E9C0C7',
+    backgroundColor: '#FBEDEF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  weekSeatShade: {
-    position: 'absolute',
-    bottom: 3,
-    left: 6,
-    right: 6,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: 'rgba(122,78,140,0.14)',
+  // A day with no target was ruled in a cold grey that belongs to no other
+  // surface on this card. It is the card's own gold now, held faint: an empty
+  // seat waiting, not a disabled control.
+  markRest: {
+    width: MARK,
+    height: MARK,
+    borderRadius: MARK / 2,
+    borderWidth: 1.4,
+    borderColor: 'rgba(186,146,72,0.62)',
+    borderStyle: 'dashed',
   },
-  // A won day needs no plate under it: the coin IS the object, and a pale
-  // violet disc behind every one of them was what made five wins read as five
-  // stickers. What is left is a whisper of light the coin sits in.
-  weekDotKept: { backgroundColor: 'rgba(255,251,240,0.55)' },
-  weekDotBroken: { backgroundColor: '#FBEDEF', borderWidth: 1, borderColor: '#EBC7CD' },
   // Today's seat carries no border of its own: the living pulse already draws
   // two rings round it, and a third concentric circle turned the cell into a
   // target. What is left under the pulse is the pale seat the coin will land in.
   weekDotToday: { backgroundColor: 'rgba(255,253,246,0.8)' },
-  // A day with no target was ruled in a cold grey that belongs to no other
-  // surface on this card. It is the card's own gold now, held faint: an empty
-  // seat waiting, not a disabled control.
-  weekDotRest: { borderWidth: 1.4, borderColor: 'rgba(197,160,89,0.42)', borderStyle: 'dashed', backgroundColor: 'transparent' },
   weekDotTodayBanked: {
     borderWidth: 1.5,
     borderColor: BANKED.ash,
@@ -500,14 +513,13 @@ const s = StyleSheet.create({
   },
   todayMedalWaiting: { position: 'absolute', opacity: 0.85 },
   todayEmber: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: BANKED.ember },
-  restDot: { width: 4.5, height: 4.5, borderRadius: 3, backgroundColor: 'rgba(197,160,89,0.45)' },
   todayRing: {
     position: 'absolute',
-    top: -5,
-    left: -5,
-    right: -5,
-    bottom: -5,
-    borderRadius: 22,
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
+    borderRadius: MARK / 2 + 4,
     borderWidth: 1.5,
     borderColor: C.gold,
   },
