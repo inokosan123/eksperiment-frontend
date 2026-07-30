@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BackHandler,
+  LayoutChangeEvent,
   Modal,
   Platform,
   Pressable,
@@ -9,26 +10,56 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import Reanimated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
-} from 'react-native-reanimated';
-import Svg, { Circle } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSharedValue, withTiming } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import FocusLottie from '@/components/focus/FocusLottie';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { ArrowLeft, CheckSmall, ChevronDown, OrthodoxCross, Pause, Play, RotateCcw, X } from '@/components/icons/Icons';
+import PantocratorAboutSheet from '@/components/prayer/PantocratorAboutSheet';
+import { PantocratorPanel } from '@/components/prayer/PantocratorIcon';
+import { ArrowLeft, CheckSmall, ChevronDown, OpenBook, OrthodoxCross, Pause, Play, RotateCcw, X } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+/* ─────────────────────────────────────────────────────────────
+ * MY RULE — the screen you pray on.
+ *
+ * It used to be a stopwatch: a large dial, the elapsed time inside it,
+ * and a small animated book. That is a fine instrument and it is the
+ * wrong object, because the thing you are doing while it runs is not
+ * timing something. The timer is the least of what happens here.
+ *
+ * So the centre is now the SINAI PANTOCRATOR — the oldest surviving
+ * icon of Christ, painted in hot wax in the sixth century and kept in
+ * the Sinai desert ever since. It is here as the oldest face, which is
+ * a thing every Christian tradition can stand in front of, and the
+ * About sheet under it is what makes that framing explicit rather than
+ * assumed: history and craft, told so it is useful to anyone.
+ *
+ * THE ORDER OF THE SCREEN, AND WHY
+ *
+ *   the icon      the hero, given whatever height the screen has left
+ *   the reading   the elapsed time, under it and quieter than it
+ *   the controls  reset · start/pause · finish, unchanged in behaviour
+ *   About         the door to the seven pages
+ *
+ * THE LAMP. A lamp burns before an icon, and that is the whole
+ * animation: running, the light lives; paused, it banks rather than
+ * dies, because a prayer that is paused is still a prayer that was
+ * begun. The pulse rings, the glow disc and the meru-book Lottie are
+ * gone — they were the dial's dress, and there is no dial.
+ *
+ * ⚠ THE GROUND IS WARM, NOT WHITE. A low warm glow over pure white
+ * reads as a stain; over warm paper it reads as light. That is the
+ * only reason the background changed.
+ * ───────────────────────────────────────────────────────────── */
+
 const QUOTE = '"Pray without ceasing."';
 const QUOTE_REF = '1 Thessalonians 5:17';
-const VB_R = 45;
+
+/** Warm paper, so the lamp has something to be light against. */
+const GROUND = ['#FFFDF9', '#FDF8EF', '#FAF3E6'] as const;
 
 export type PersonalPrayerRuleChoice = 'personal' | 'standard' | 'short' | 'seraphim';
 
@@ -105,23 +136,26 @@ export default function PersonalRuleTaskView({
   onRuleChange,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
+  const { height } = useWindowDimensions();
   const [elapsedSecs, setElapsedSecs] = useState(0);
   const [running, setRunning] = useState(false);
   const [showExit, setShowExit] = useState(false);
   const [showFinish, setShowFinish] = useState(false);
   const [showRuleSelector, setShowRuleSelector] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
+  // What the icon actually has to stand in, measured rather than guessed:
+  // this screen carries a title bar, sometimes a rule pill, an epigraph, a
+  // readout, a control deck and a door, and no constant survives all the
+  // combinations of those across every phone.
+  const [iconRoom, setIconRoom] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finishLockRef = useRef(false);
-  const bookMotion = useSharedValue(0);
-  const pulseMotion = useSharedValue(0);
+  const lampMotion = useSharedValue(0);
 
   const isCompactHeight = height < 720;
-  const diameter = Math.min(width - (isCompactHeight ? 56 : 20), isCompactHeight ? 314 : 370);
-  const bookSize = isCompactHeight ? 154 : 188;
   const hasHours = elapsedSecs >= 3600;
-  const timeFont = hasHours ? (isCompactHeight ? 58 : 68) : (isCompactHeight ? 86 : 102);
-  const colonFont = hasHours ? (isCompactHeight ? 22 : 28) : (isCompactHeight ? 32 : 38);
+  const timeFont = hasHours ? (isCompactHeight ? 38 : 44) : (isCompactHeight ? 50 : 58);
+  const colonFont = timeFont * 0.42;
   const display = formatElapsed(elapsedSecs);
   const theme = prayerType === 'evening'
     ? PERSONAL_RULE_THEMES.evening
@@ -129,6 +163,10 @@ export default function PersonalRuleTaskView({
       ? PERSONAL_RULE_THEMES.morning
       : PERSONAL_RULE_THEMES.default;
   const selectedRuleOption = RULE_OPTIONS.find(rule => rule.id === selectedRule) ?? RULE_OPTIONS[0];
+  // The board is 84 by 45.5, so height is what constrains it. 380 is where
+  // it stops growing on a tall phone: past that the controls start to look
+  // like they fell off the bottom.
+  const panelHeight = iconRoom > 0 ? Math.max(150, Math.min(iconRoom - 10, 380)) : 0;
 
   useEffect(() => {
     if (!running) return;
@@ -144,21 +182,16 @@ export default function PersonalRuleTaskView({
   }, [running]);
 
   useEffect(() => {
-    bookMotion.value = withTiming(running ? 1 : 0, { duration: running ? 260 : 160 });
-    pulseMotion.value = running
-      ? withRepeat(
-        withSequence(
-          withTiming(1, { duration: 1150 }),
-          withTiming(0, { duration: 1150 }),
-        ),
-        -1,
-        false,
-      )
-      : withTiming(0, { duration: 180 });
-  }, [bookMotion, pulseMotion, running]);
+    lampMotion.value = withTiming(running ? 1 : 0, { duration: running ? 420 : 260 });
+  }, [lampMotion, running]);
 
   useEffect(() => {
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+      // Anything presented over the screen answers back on its own —
+      // every one of these is a real Modal with an onRequestClose. The
+      // screen only has to keep out of the way, or closing the About
+      // sheet would also ask you to abandon your prayer.
+      if (showAbout || showExit || showFinish || showRuleSelector) return true;
       if (running) {
         setShowExit(true);
         return true;
@@ -167,34 +200,12 @@ export default function PersonalRuleTaskView({
     });
 
     return () => handler.remove();
-  }, [running]);
+  }, [running, showAbout, showExit, showFinish, showRuleSelector]);
 
-  const bookStyle = useAnimatedStyle(() => ({
-    opacity: bookMotion.value,
-    transform: [
-      { translateY: 18 - 18 * bookMotion.value },
-      { scale: 0.82 + 0.18 * bookMotion.value },
-    ],
-  }));
-
-  const bookAuraStyle = useAnimatedStyle(() => ({
-    opacity: 0.10 + bookMotion.value * 0.12,
-    transform: [{ scale: 0.9 + bookMotion.value * 0.1 }],
-  }));
-
-  const glowStyle = useAnimatedStyle(() => ({
-    opacity: 0.08 + bookMotion.value * 0.12,
-  }));
-
-  const pulseRingStyle = useAnimatedStyle(() => ({
-    opacity: running ? 0.38 * (1 - pulseMotion.value) : 0,
-    transform: [{ scale: 0.96 + pulseMotion.value * 0.12 }],
-  }));
-
-  const pulseRingOuterStyle = useAnimatedStyle(() => ({
-    opacity: running ? 0.22 * pulseMotion.value : 0,
-    transform: [{ scale: 1 + pulseMotion.value * 0.10 }],
-  }));
+  const onIconRoomLayout = useCallback((event: LayoutChangeEvent) => {
+    const measured = event.nativeEvent.layout.height;
+    setIconRoom(current => (Math.abs(current - measured) < 1 ? current : measured));
+  }, []);
 
   const handleReset = useCallback(() => {
     setRunning(false);
@@ -234,11 +245,21 @@ export default function PersonalRuleTaskView({
 
   return (
     <View style={s.screen}>
+      <LinearGradient
+        colors={GROUND}
+        locations={[0, 0.55, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+
       <ScreenTitleBar
         title={screenTitle}
         showBack
         onBackOverride={running ? () => setShowExit(true) : undefined}
         compactBottom
+        bg="transparent"
       />
 
       {canSwitchRules && (
@@ -255,41 +276,31 @@ export default function PersonalRuleTaskView({
         </TouchableOpacity>
       )}
 
-      <Text style={s.quote}>{QUOTE}</Text>
-      <Text style={s.quoteRef}>{QUOTE_REF}</Text>
+      {/* The epigraph steps aside on a short phone. It is the one thing
+          here that can go without breaking anything, and it costs the
+          icon eighty points it needs more. */}
+      {!isCompactHeight && (
+        <>
+          <Text style={s.quote}>{QUOTE}</Text>
+          <Text style={s.quoteRef}>{QUOTE_REF}</Text>
+        </>
+      )}
 
-      <View style={[s.center, isCompactHeight && s.centerCompact]}>
-        <View style={[s.timerWrap, isCompactHeight && s.timerWrapCompact, { width: diameter, height: diameter }]}>
-          <Reanimated.View pointerEvents="none" style={[s.pulseRing, { width: diameter * 1.01, height: diameter * 1.01, borderRadius: diameter * 0.505, borderColor: `${theme.accent}66` }, pulseRingStyle]} />
-          <Reanimated.View pointerEvents="none" style={[s.pulseRingOuter, { width: diameter * 1.10, height: diameter * 1.10, borderRadius: diameter * 0.55, borderColor: `${theme.accent}44` }, pulseRingOuterStyle]} />
-          <Reanimated.View pointerEvents="none" style={[s.glow, { width: diameter * 0.82, height: diameter * 0.82, borderRadius: diameter * 0.41, backgroundColor: theme.accent }, glowStyle]} />
-          <Svg
-            width={diameter}
-            height={diameter}
-            viewBox="0 0 100 100"
-            style={StyleSheet.absoluteFill}
-          >
-            <Circle
-              cx="50"
-              cy="50"
-              r={VB_R}
-              strokeWidth={1.45}
-              fill="none"
-              stroke={running ? `${theme.accent}77` : '#E2DED8'}
-              strokeLinecap="round"
-            />
-          </Svg>
+      {/* ── The icon ────────────────────────────────────────────────── */}
+      <View style={s.iconRoom} onLayout={onIconRoomLayout}>
+        {panelHeight > 0 && <PantocratorPanel height={panelHeight} light={lampMotion} />}
+      </View>
 
-          <Reanimated.View style={s.timerTextWrap}>
-            <Text style={[s.timeText, { color: activeColor, fontSize: timeFont, lineHeight: timeFont + 4 }]}>{display.main}</Text>
-            <Text style={[s.colonText, { color: activeColor, fontSize: colonFont }]}>:</Text>
-            <Text style={[s.timeText, { color: activeColor, fontSize: timeFont, lineHeight: timeFont + 4 }]}>{display.tail}</Text>
-          </Reanimated.View>
-
-          <Reanimated.View style={[s.bookWrap, bookStyle]}>
-            <Reanimated.View pointerEvents="none" style={[s.bookAura, bookAuraStyle]} />
-            <FocusLottie name="meru-book" loop autoplay={running} speed={0.55} style={[s.bookLottie, { width: bookSize, height: bookSize }]} />
-          </Reanimated.View>
+      {/* ── The reading, the controls, the door ─────────────────────── */}
+      <View style={[s.deck, { paddingBottom: Math.max(insets.bottom, 10) + 6 }]}>
+        <View style={s.readout}>
+          <Text style={[s.timeText, { color: activeColor, fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
+            {display.main}
+          </Text>
+          <Text style={[s.colonText, { color: activeColor, fontSize: colonFont }]}>:</Text>
+          <Text style={[s.timeText, { color: activeColor, fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
+            {display.tail}
+          </Text>
         </View>
 
         <View style={[s.controlsDeck, isCompactHeight && s.controlsDeckCompact]}>
@@ -298,7 +309,7 @@ export default function PersonalRuleTaskView({
             activeOpacity={0.78}
             style={[s.smallControl, isCompactHeight && s.smallControlCompact]}
           >
-            <RotateCcw s={isCompactHeight ? 18 : 21} c="rgba(28,25,23,0.38)" w={1.8} />
+            <RotateCcw s={isCompactHeight ? 18 : 20} c="rgba(28,25,23,0.38)" w={1.8} />
             <Text style={s.smallLabel}>Reset</Text>
           </TouchableOpacity>
 
@@ -311,7 +322,7 @@ export default function PersonalRuleTaskView({
               { backgroundColor: running ? theme.accent : C.text, shadowColor: running ? theme.accent : C.text },
             ]}
           >
-            {running ? <Pause s={isCompactHeight ? 26 : 30} c="#FFFFFF" /> : <Play s={isCompactHeight ? 26 : 30} c="#FFFFFF" />}
+            {running ? <Pause s={isCompactHeight ? 24 : 27} c="#FFFFFF" /> : <Play s={isCompactHeight ? 24 : 27} c="#FFFFFF" />}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -319,11 +330,29 @@ export default function PersonalRuleTaskView({
             activeOpacity={0.78}
             style={[s.smallControl, isCompactHeight && s.smallControlCompact]}
           >
-            <CheckSmall s={isCompactHeight ? 19 : 22} c="rgba(28,25,23,0.38)" w={1.8} />
+            <CheckSmall s={isCompactHeight ? 19 : 21} c="rgba(28,25,23,0.38)" w={1.8} />
             <Text style={s.smallLabel}>Finish</Text>
           </TouchableOpacity>
         </View>
+
+        {/* The door to the seven pages. An open book rather than an info
+            glyph, because what is behind it IS a book — and it opens
+            without touching the clock: the prayer keeps its time while
+            you read. */}
+        <TouchableOpacity
+          onPress={() => setShowAbout(true)}
+          activeOpacity={0.76}
+          haptic="selection"
+          style={s.about}
+          accessibilityRole="button"
+          accessibilityLabel="About the icon"
+        >
+          <OpenBook s={15} c={C.goldDark} w={1.6} />
+          <Text style={s.aboutText}>About the icon</Text>
+        </TouchableOpacity>
       </View>
+
+      <PantocratorAboutSheet visible={showAbout} onClose={() => setShowAbout(false)} />
 
       <ConfirmModal
         visible={showExit}
@@ -361,7 +390,7 @@ export default function PersonalRuleTaskView({
         onRequestClose={() => setShowRuleSelector(false)}
       >
         <View style={s.selectorOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowRuleSelector(false)} />
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowRuleSelector(false)} />
           <View style={[s.selectorSheet, { paddingBottom: insets.bottom + 24 }]}>
             <View style={s.selectorHandle} />
             <View style={s.selectorHeader}>
@@ -421,7 +450,7 @@ export default function PersonalRuleTaskView({
 }
 
 const s = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#FFFFFF', overflow: 'hidden' },
+  screen: { flex: 1, backgroundColor: '#FFFDF9', overflow: 'hidden' },
   readerRulePill: {
     minHeight: 34,
     maxWidth: '88%',
@@ -438,93 +467,73 @@ const s = StyleSheet.create({
   readerRuleText: { flexShrink: 1, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' },
   quote: {
     fontFamily: F.serifItalic,
-    fontSize: 20,
-    lineHeight: 30,
+    fontSize: 19,
+    lineHeight: 27,
     letterSpacing: 0.2,
     color: 'rgba(94,71,42,0.9)',
     textAlign: 'center',
     paddingHorizontal: 26,
-    marginTop: 24,
-    marginBottom: 8,
+    marginTop: 14,
   },
   quoteRef: {
+    marginTop: 6,
     fontFamily: F.sansBold,
-    fontSize: 10,
+    fontSize: 9.5,
     letterSpacing: 2.2,
     color: 'rgba(197,160,89,0.78)',
     textTransform: 'uppercase',
     textAlign: 'center',
-    marginBottom: 9,
-    marginTop: 4,
   },
-  center: {
+
+  // The icon takes what is left, and it is the only thing on this screen
+  // that flexes — everything else is worth exactly what it measures.
+  iconRoom: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingHorizontal: 14,
-    paddingBottom: 74,
-    paddingTop: 10,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 14,
   },
-  centerCompact: {
-    paddingBottom: 18,
-    paddingTop: 8,
+
+  deck: { alignItems: 'center', paddingHorizontal: 16 },
+  readout: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center' },
+  timeText: {
+    fontFamily: F.serifBold,
+    // Tabular figures, so a second ticking over does not shove the whole
+    // reading sideways. It did, every second, for as long as this screen
+    // has existed.
+    fontVariant: ['tabular-nums', 'lining-nums'],
+    includeFontPadding: false,
   },
-  timerWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center', marginTop: 18 },
-  timerWrapCompact: { marginTop: 2 },
-  pulseRing: {
-    position: 'absolute',
-    borderWidth: 2,
-    borderColor: 'rgba(197,160,89,0.32)',
+  colonText: {
+    fontFamily: F.serifBold,
+    opacity: 0.3,
+    marginHorizontal: 3,
+    includeFontPadding: false,
   },
-  pulseRingOuter: {
-    position: 'absolute',
-    borderWidth: 1.5,
-    borderColor: 'rgba(197,160,89,0.22)',
-  },
-  glow: {
-    position: 'absolute',
-    backgroundColor: C.gold,
-  },
-  timerTextWrap: { ...StyleSheet.absoluteFillObject, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  timeText: { fontFamily: F.serifBold },
-  colonText: { fontFamily: F.serifBold, opacity: 0.35, marginHorizontal: 3 },
-  bookWrap: { position: 'absolute', top: '55%', left: 0, right: 0, alignItems: 'center', justifyContent: 'center' },
-  bookAura: {
-    position: 'absolute',
-    width: 86,
-    height: 30,
-    borderRadius: 999,
-    backgroundColor: 'rgba(197,160,89,0.24)',
-    top: 61,
-  },
-  bookLottie: { width: 168, height: 168 },
+
   controlsDeck: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 20,
-    marginTop: 54,
+    gap: 18,
+    marginTop: 14,
     backgroundColor: '#FFFFFF',
-    padding: 10,
-    paddingHorizontal: 14,
+    padding: 9,
+    paddingHorizontal: 13,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(28,25,23,0.06)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.08,
-    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.07,
+    shadowRadius: 26,
     elevation: 9,
   },
-  controlsDeckCompact: {
-    gap: 16,
-    marginTop: 26,
-    padding: 8,
-    paddingHorizontal: 12,
-  },
+  controlsDeckCompact: { gap: 15, marginTop: 10, padding: 7, paddingHorizontal: 11 },
   mainControl: {
-    width: 74,
-    height: 74,
-    borderRadius: 37,
+    width: 66,
+    height: 66,
+    borderRadius: 33,
     alignItems: 'center',
     justifyContent: 'center',
     shadowOffset: { width: 0, height: 8 },
@@ -532,10 +541,29 @@ const s = StyleSheet.create({
     shadowRadius: 18,
     elevation: 10,
   },
-  mainControlCompact: { width: 64, height: 64, borderRadius: 32 },
-  smallControl: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
-  smallControlCompact: { width: 48, height: 48, borderRadius: 24 },
+  mainControlCompact: { width: 58, height: 58, borderRadius: 29 },
+  smallControl: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
+  smallControlCompact: { width: 46, height: 46, borderRadius: 23 },
   smallLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 0.8, color: 'rgba(28,25,23,0.32)', marginTop: 2, textTransform: 'uppercase' },
+
+  about: {
+    marginTop: 12,
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 15,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.34)',
+    backgroundColor: 'rgba(255,255,255,0.6)',
+  },
+  aboutText: {
+    fontFamily: F.serif,
+    fontSize: 14.5,
+    color: C.goldDark,
+  },
+
   selectorOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(28,25,23,0.24)' },
   selectorSheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 10, paddingHorizontal: 18, shadowColor: '#000', shadowOpacity: 0.18, shadowOffset: { width: 0, height: -10 }, shadowRadius: 28, elevation: 18 },
   selectorHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: '#E7E5E4', alignSelf: 'center', marginBottom: 12 },
