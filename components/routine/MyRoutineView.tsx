@@ -1992,26 +1992,30 @@ function SpiritualTypePickerSheet({
       overlayChildren={isGuided ? <GuidedOverlayHost /> : undefined}
     >
           <View style={s.sheetHandle} />
-          <View style={s.typeSheetCloseRow}>
+          {/* The head IS the title bar: the close button rides the same row as
+              the title rather than sitting on a strip of its own, and an equal
+              spacer on the right keeps the ornament centred on the sheet. */}
+          <View style={s.typeSheetBar}>
             <TouchableOpacity onPress={onClose} activeOpacity={0.84} style={s.typeSheetClose}>
               <X s={20} c="#9CA3AF" />
             </TouchableOpacity>
-          </View>
-          <View style={s.typeSheetHead}>
-            {/* The same ornament head the day wears upstairs, so the sheet
-                reads as a room of the screen it opened from. */}
-            <View style={s.typeSheetTitleRow}>
-              <View style={s.typeSheetWing}>
-                <View style={s.typeSheetRule} />
-                <View style={s.typeSheetDiamond} />
+            <View style={s.typeSheetHead}>
+              {/* The same ornament the day wears upstairs, so the sheet reads
+                  as a room of the screen it opened from. */}
+              <View style={s.typeSheetTitleRow}>
+                <View style={s.typeSheetWing}>
+                  <View style={s.typeSheetRule} />
+                  <View style={s.typeSheetDiamond} />
+                </View>
+                <Text style={s.typeSheetTitle}>A Spiritual Task</Text>
+                <View style={s.typeSheetWing}>
+                  <View style={s.typeSheetDiamond} />
+                  <View style={s.typeSheetRule} />
+                </View>
               </View>
-              <Text style={s.typeSheetTitle}>A Spiritual Task</Text>
-              <View style={s.typeSheetWing}>
-                <View style={s.typeSheetDiamond} />
-                <View style={s.typeSheetRule} />
-              </View>
+              <Text style={s.typeSheetMeta}>CHOOSE WHAT KIND</Text>
             </View>
-            <Text style={s.typeSheetMeta}>CHOOSE WHAT KIND</Text>
+            <View style={s.typeSheetClose} pointerEvents="none" />
           </View>
           <ScrollView contentContainerStyle={s.typeSheetContent} showsVerticalScrollIndicator={false}>
             {SPIRITUAL_TYPES.map(item => (
@@ -3006,9 +3010,9 @@ const s = StyleSheet.create({
   sheetHeaderSpacer: { width: 38 },
   challengeEditorSheetContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 24 },
   typeSheetContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 22, gap: 10 },
-  typeSheetCloseRow: { paddingHorizontal: 12 },
+  typeSheetBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 2, columnGap: 6 },
   typeSheetClose: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
-  typeSheetHead: { alignItems: 'center', paddingHorizontal: 20, paddingTop: 2, rowGap: 3 },
+  typeSheetHead: { flex: 1, alignItems: 'center', rowGap: 3 },
   typeSheetTitleRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', columnGap: 10 },
   typeSheetWing: { flex: 1, flexDirection: 'row', alignItems: 'center', columnGap: 7 },
   typeSheetRule: { flex: 1, height: 1, backgroundColor: 'rgba(197,160,89,0.32)' },
