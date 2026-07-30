@@ -146,10 +146,13 @@ export const FocusMedalCoin = React.memo(function FocusMedalCoin({
     <View pointerEvents="none" style={[{ width: size, height: size }, style]}>
       <Svg width={size} height={size} viewBox={DISC_BOX}>
         <Defs>
-          <RadialGradient id={muted ? 'coinFaceAsh' : 'coinFace'} cx="42%" cy="34%" r="76%">
-            <Stop offset="0" stopColor={muted ? '#F3EDDF' : '#FFF7DD'} />
-            <Stop offset="0.55" stopColor={muted ? '#DFD5BE' : '#F4DA9C'} />
-            <Stop offset="1" stopColor={muted ? '#C9BEA3' : '#E2BC6E'} />
+          {/* The face has to carry gold on a plate that is ALSO gold, so its
+              fall runs further than a lit disc normally would: near-white
+              where the light lands, down to a true metal at the lower rim. */}
+          <RadialGradient id={muted ? 'coinFaceAsh' : 'coinFace'} cx="40%" cy="32%" r="78%">
+            <Stop offset="0" stopColor={muted ? '#F3EDDF' : '#FFF9E4'} />
+            <Stop offset="0.52" stopColor={muted ? '#DFD5BE' : '#F3D48C'} />
+            <Stop offset="1" stopColor={muted ? '#C9BEA3' : '#D4A754'} />
           </RadialGradient>
         </Defs>
         <Path fill={muted ? c.rimDeep : '#8C5A9C'} d={FOCUS_MEDALLION_SCALLOP} />

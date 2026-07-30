@@ -100,10 +100,12 @@ export default function DayGauge({
     : goalPx;
 
   // Anchor points for the floating labels, kept inside the card. The goal
-  // anchor carries the medallion's center axis, so it sits exactly on the tick.
+  // anchor carries the coin's centre axis, so it sits exactly on the tick.
   const goalAnchor = clamp(goalPx, 12, Math.max(12, trackWidth - 64));
+  // The goal mark is a coin with GOAL set to its right, so the tolerance
+  // reading has to clear BOTH — at 58 the two ran together into "GOAL+30m".
   const toleranceAnchor = clamp(
-    Math.max(toleranceCenterPx, goalAnchor + 58),
+    Math.max(toleranceCenterPx, goalAnchor + 74),
     30,
     Math.max(30, trackWidth - 34)
   );
@@ -125,11 +127,19 @@ export default function DayGauge({
         <View style={s.markerLayer}>
           <View style={[s.goalTick, { left: goalPx - 0.75, backgroundColor: accent }]} />
           <View style={[s.markerAnchor, { left: goalAnchor }]}>
-            {/* The goal mark. It used to be the medallion itself at 15pt,
-                where five colours collapse into mud and the badge's numeral is
-                a single unreadable smudge — so it is the coin the day earns
-                instead, one violet edge round one gold face. */}
-            <FocusMedalCoin size={15} />
+            {/* THE GOAL MARK — the one place on the bar where the day's prize
+                is named, so it has to be a coin you can actually see.
+
+                It was the medallion at 15pt, where five colours collapse into
+                mud; then the coin at 15pt, which on a pale plate is a small
+                pale disc on a small pale card. It is 19 now, seated in its own
+                white pool so it stands off whatever it crosses, and its label
+                is set in the app's gold rather than the gauge's grey — the
+                same weight the coin has. */}
+            <View style={s.goalMark}>
+              <View style={s.goalMarkPool} />
+              <FocusMedalCoin size={19} />
+            </View>
             <Text style={[s.goalLabelText, { color: labelColor }]}>GOAL</Text>
           </View>
           {toleranceSpan > 0 && (
@@ -210,12 +220,23 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  goalMark: { alignItems: 'center', justifyContent: 'center' },
+  // The coin's own ground. Kept just wider than the coin and nearly clear —
+  // a bigger, whiter disc reads as a white ring drawn round the mark rather
+  // than as the mark standing off its background.
+  goalMarkPool: {
+    position: 'absolute',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,252,242,0.5)',
+  },
   goalLabelText: {
     position: 'absolute',
-    left: 10.5,
-    top: 4,
+    left: 13,
+    top: 3.5,
     fontFamily: F.sansBold,
-    fontSize: 8,
+    fontSize: 8.5,
     letterSpacing: 1.1,
   },
   toleranceText: {

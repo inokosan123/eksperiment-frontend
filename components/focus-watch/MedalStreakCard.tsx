@@ -331,7 +331,11 @@ const MedalStreakCard = forwardRef<ComponentRef<typeof TouchableOpacity>, MedalS
               toleranceEndMinutes={toleranceEndMinutes}
               usedMinutes={usedMinutes}
               accent="#8A5A1A"
-              labelColor="#A9863F"
+              // The gauge's own label ink, set to the card's kicker gold: at
+              // the shared #A9863F the GOAL caption was a full step lighter
+              // than TODAY'S LIMIT beside it, and the instrument read as two
+              // labels from two different cards.
+              labelColor="#8A6A2C"
               height={10}
             />
           </View>
@@ -453,8 +457,12 @@ const s = StyleSheet.create({
     position: 'absolute',
     top: 9,
     height: 9,
-    backgroundColor: 'rgba(226,188,110,0.5)',
+    backgroundColor: 'rgba(222,180,98,0.55)',
   },
+  // Each half runs to its own cell border so neighbours meet seamlessly there.
+  // Insetting them to hide the ribbon behind the coins was tried and it simply
+  // cut the run into disconnected stubs: the gap between two coins is WIDER
+  // than either inset, so what the ribbon has to do is cross it.
   chainLeft: { left: 0, right: '50%' },
   chainRight: { left: '50%', right: 0 },
   // The bridge tone: a run carried across a rest day, or reaching into today.
@@ -480,13 +488,15 @@ const s = StyleSheet.create({
   // was to stop adding things underneath it.
   weekDotKept: {},
   // A day lost is a rose token the size of the coin it did not become.
+  // The rose token has to hold its own against a plate that is now gold on
+  // every side of it — at the old hairline it dissolved into the card.
   markBroken: {
     width: MARK,
     height: MARK,
     borderRadius: MARK / 2,
-    borderWidth: 1,
-    borderColor: '#E9C0C7',
-    backgroundColor: '#FBEDEF',
+    borderWidth: 1.2,
+    borderColor: '#E2AEB7',
+    backgroundColor: '#FCF1F2',
     alignItems: 'center',
     justifyContent: 'center',
   },

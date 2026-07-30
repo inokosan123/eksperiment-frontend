@@ -9,7 +9,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { useFocusMainMotion } from './focus-main-motion';
-import { FocusMedallion, FOCUS_MEDALLION_RATIO, MEDALLION } from '@/components/focus-watch/FocusMedallion';
+import { FocusMedalCoin, FocusMedallion, FOCUS_MEDALLION_RATIO, MEDALLION } from '@/components/focus-watch/FocusMedallion';
 import {
   pingPongPhase,
   useContinuousAnimationClock,
@@ -46,7 +46,13 @@ const GOLD_DEEP = '#A9782C';
 // around it and the metal in it are the same two colours.
 const VIOLET = MEDALLION.rim;
 
-const SPARKLE_PATH = 'M12 0 C13.2 7.4 16.6 10.8 24 12 C16.6 13.2 13.2 16.6 12 24 C10.8 16.6 7.4 13.2 0 12 C7.4 10.8 10.8 7.4 12 0 Z';
+// The app's shared four-point sparkle is a fairly round-shouldered star: its
+// arms swell to a third of its width before they taper, which at 9pt on a gold
+// plate reads as a small flower. This card's stars are drawn a stop sharper —
+// the same four-point silhouette with its waist pulled in, so each arm leaves
+// the centre as a needle and the mark reads as a GLINT off metal, which is
+// what a plate of struck gold should be throwing.
+const SPARKLE_PATH = 'M12 0 C12.7 8.2 15.8 11.3 24 12 C15.8 12.7 12.7 15.8 12 24 C11.3 15.8 8.2 12.7 0 12 C8.2 11.3 11.3 8.2 12 0 Z';
 
 /* ── Dust ─────────────────────────────────────────────────── */
 // Home's streak card dresses its field with three shapes on one clock: struck
@@ -79,36 +85,62 @@ const MOTE_TONES: Record<MoteTone, string> = {
   violet: VIOLET,
 };
 
-// Dust belongs in the air AROUND the instruments, never on their faces — so
-// nothing here stands in the hero row's middle, on the number, on the medal,
-// across the headline or over the week strip. What is left is the margins,
-// the two top corners, the header's own gap, and the band under the gauge.
+// THE CONSTELLATION.
+//
+// The old dust was scattered for a different card: it had a diamond sitting
+// against the MEDAL STREAK kicker with a dot overlapping it, a star in the
+// header's gap, and marks down both flanks at heights that were open card then
+// and are now the plaque's edge and the medal's mount. Dust that touches type
+// or crosses a mounted edge does not read as light — it reads as specks on the
+// lens.
+//
+// Rules this set is built on, and they are the design:
+//   · nothing within reach of type, the plaque, the mount, the strip or the
+//     bar — dust lives in the AIR between the objects, never on them;
+//   · the four gutters that are genuinely empty on this composition: above
+//     and beside the plaque, the wedge under the medal, the two outer margins
+//     beside the week strip, and the band under the gauge;
+//   · sizes fall as they leave the light: the biggest star sits top-left where
+//     the plate is deepest, the smallest motes sit in the lit right half;
+//   · one tone rule — pale gold in the deep left, DEEP gold anywhere the plate
+//     has gone pale, violet only where the mounted objects' own shadow falls,
+//     so the dust belongs to the two metals the card is already made of.
 const MEDAL_DUST: MoteSpec[] = [
-  /* Top-left corner — the deepest gold on the card, and the far side the
-     medal's own light never reaches, so the biggest star lives here. */
-  { kind: 'star', size: 11, style: { left: 13, top: 17 }, cycle: 2900, peak: 0.42, sharp: true, quiet: true },
-  { kind: 'dot', size: 2.5, style: { left: 32, top: 41 }, still: true, peak: 0.26 },
-  { kind: 'diamond', size: 3, style: { left: 7, top: 57 }, tone: 'violet', still: true, peak: 0.34 },
+  /* The top band, ABOVE the plaque and clear of both header texts: the kicker
+     ends around x 150 and the calendar link begins around x 215, and this band
+     sits under both of them rather than beside either. */
+  { kind: 'star', size: 9, style: { left: 20, top: 44 }, cycle: 2900, peak: 0.4, sharp: true, quiet: true },
+  { kind: 'dot', size: 2.5, style: { left: 46, top: 34 }, still: true, peak: 0.24 },
+  // Set on the plaque's own axis rather than floating between it and the
+  // kicker: at 40 the diamond sat in the 8pt of card between the two and read
+  // as a speck caught in a seam.
+  { kind: 'diamond', size: 3.5, style: { left: 172, top: 36 }, tone: 'violet', still: true, peak: 0.3 },
 
-  /* The header's gap, between the kicker and the calendar link. */
-  { kind: 'star', size: 6, style: { left: 122, top: 3 }, cycle: 3400, delay: 900, peak: 0.3 },
+  /* The wedge between the plaque and the mount — the emptiest gutter on the
+     card, and the one the eye crosses on its way from the count to the medal. */
+  { kind: 'star', size: 7, style: { left: 196, top: 96 }, cycle: 3400, delay: 900, peak: 0.32 },
+  { kind: 'dot', size: 2, style: { left: 214, top: 118 }, still: true, peak: 0.2 },
 
-  /* The left flank, running down past the signature to the strip. */
-  { kind: 'dot', size: 3, style: { left: 6, top: 99 }, tone: 'deep', still: true, peak: 0.3, quiet: true },
-  { kind: 'star', size: 7, style: { left: 19, top: 133 }, tone: 'violet', cycle: 4200, delay: 1700, peak: 0.3 },
-  { kind: 'diamond', size: 4, style: { left: 8, top: 184 }, tone: 'deep', still: true, peak: 0.26 },
+  /* The left margin, running down past the plaque to the strip. Deep gold:
+     this flank is where the plate is palest below the plaque. */
+  { kind: 'dot', size: 3, style: { left: 7, top: 104 }, tone: 'deep', still: true, peak: 0.28, quiet: true },
+  { kind: 'star', size: 6, style: { left: 16, top: 152 }, tone: 'violet', cycle: 4200, delay: 1700, peak: 0.28 },
 
-  /* The right flank, clear of the medal's blades. */
-  { kind: 'diamond', size: 3.5, style: { right: 8, top: 64 }, still: true, peak: 0.26, quiet: true },
-  { kind: 'star', size: 8, style: { right: 12, top: 121 }, cycle: 2600, delay: 2400, peak: 0.4, sharp: true },
-  { kind: 'dot', size: 2.5, style: { right: 17, top: 176 }, tone: 'deep', cycle: 5600, delay: 3100, peak: 0.24, quiet: true },
+  /* Under the mount, in the wedge between it and the headline. */
+  { kind: 'diamond', size: 3, style: { right: 34, top: 148 }, tone: 'deep', still: true, peak: 0.26, quiet: true },
+  { kind: 'star', size: 7.5, style: { right: 13, top: 168 }, tone: 'deep', cycle: 2600, delay: 2400, peak: 0.36, sharp: true },
 
-  /* The band under the gauge — the card's last inch of parchment, which
-     had nothing in it at all. Anchored to the BOTTOM so a rest day, which
-     drops the week strip and shortens the card, keeps its constellation. */
-  { kind: 'star', size: 6.5, style: { left: 38, bottom: 9 }, tone: 'deep', cycle: 3800, delay: 1200, peak: 0.26 },
-  { kind: 'dot', size: 2, style: { left: 88, bottom: 15 }, tone: 'deep', still: true, peak: 0.2 },
-  { kind: 'diamond', size: 3, style: { right: 58, bottom: 11 }, tone: 'deep', still: true, peak: 0.22, quiet: true },
+  /* The two outer margins beside the week strip, which is inset from the
+     card's edges — these sit in that inset, never over a mark. */
+  { kind: 'dot', size: 2.5, style: { left: 6, bottom: 108 }, tone: 'deep', cycle: 5600, delay: 3100, peak: 0.22, quiet: true },
+  { kind: 'diamond', size: 2.5, style: { right: 7, bottom: 112 }, tone: 'deep', still: true, peak: 0.22 },
+
+  /* The band under the gauge — the card's last inch of plate. Anchored to the
+     BOTTOM so a rest day, which drops the week strip and shortens the card,
+     keeps its constellation. */
+  { kind: 'star', size: 6, style: { left: 30, bottom: 8 }, tone: 'deep', cycle: 3800, delay: 1200, peak: 0.24 },
+  { kind: 'dot', size: 2, style: { left: 74, bottom: 13 }, tone: 'deep', still: true, peak: 0.18 },
+  { kind: 'diamond', size: 3, style: { right: 46, bottom: 9 }, tone: 'deep', still: true, peak: 0.22, quiet: true },
 ];
 
 // THE GROUND, and what it learned the hard way.
@@ -269,6 +301,14 @@ export function TrophyShineBackdrop({
               <Stop offset="0.44" stopColor="#D9AC60" stopOpacity={0.4} />
               <Stop offset="1" stopColor="#EBCD95" stopOpacity={0} />
             </RadialGradient>
+            {/* The far corner: the same gold, held back — the light on this
+                card falls from the left, so the right foot is where the ground
+                is thinning out rather than a second source of shade. */}
+            <RadialGradient id="medalFootFar" cx="50%" cy="50%" r="50%">
+              <Stop offset="0" stopColor="#CE9C4C" stopOpacity={0.44} />
+              <Stop offset="0.46" stopColor="#DDB068" stopOpacity={0.26} />
+              <Stop offset="1" stopColor="#EBCD95" stopOpacity={0} />
+            </RadialGradient>
             <RadialGradient id="medalLight" cx="50%" cy="50%" r="50%">
               <Stop offset="0" stopColor="#FFF9E6" stopOpacity={0.88} />
               <Stop offset="0.42" stopColor="#FFF2CE" stopOpacity={0.5} />
@@ -282,21 +322,33 @@ export function TrophyShineBackdrop({
               bright AGAINST. Bled in from off the edge: a pool with a
               visible rim on this surface would be a second medallion. */}
           <Ellipse cx={-8} cy={62} rx={box.w * 0.66} ry={142} fill="url(#medalHaze)" />
-          {/* THE FOOT — the card's one dark corner, and the only place the
-              deep gold is spent. The gauge that ends the card is a WHITE bar,
-              and a white bar laid on cream is a bar you have to look for. So
-              the gold banks into the bottom-LEFT corner, where the reading
-              starts and the empty track is widest, and is gone again by the
-              middle of the card: anchored off the corner itself rather than
-              spread along the foot, kept low so it passes under the bar and
-              not over the gold marks above it, and short enough that the week
-              strip stands on light plate. */}
+          {/* THE FOOT — the card's dark ground, and the only place the deep
+              gold is spent. The gauge that ends the card is a WHITE bar, and a
+              white bar laid on cream is a bar you have to look for.
+
+              It began as a single pool banked into the bottom-LEFT corner, and
+              it stopped by the middle of the card — which left the bar's own
+              right half, the tolerance zone and the essentials cap, standing on
+              pale plate again. So the foot runs the whole width now: the deep
+              pool still sits in the left corner, where the reading starts and
+              the empty track is widest, and a second, shallower one carries it
+              out to the right corner so the instrument is on ground from end to
+              end. Both are kept low, passing under the bar rather than over the
+              gold marks above it, and short enough that the week strip stands
+              on light plate. */}
           <Ellipse
             cx={box.w * -0.04}
-            cy={box.h + 10}
-            rx={box.w * 0.52}
-            ry={118}
+            cy={box.h + 12}
+            rx={box.w * 0.56}
+            ry={124}
             fill="url(#medalFoot)"
+          />
+          <Ellipse
+            cx={box.w * 1.02}
+            cy={box.h + 22}
+            rx={box.w * 0.5}
+            ry={104}
+            fill="url(#medalFootFar)"
           />
           {/* The warm pool the medal is lit by, seated exactly on it. */}
           {strike && (
@@ -399,6 +451,9 @@ export function StreakMedallion({
     r: 20,
   };
 
+  /** The stud's whole field — coin, its seat of light, and its cast shadow. */
+  const studBox = size * 0.5;
+
   return (
     <View style={{ width, height }}>
       {/* The bloom the reading stands in.
@@ -486,8 +541,8 @@ export function StreakMedallion({
               height={plaque.h}
               rx={plaque.r}
               fill="url(#signatureBloom)"
-              stroke="#D8B778"
-              strokeOpacity={0.5}
+              stroke="#CBA45F"
+              strokeOpacity={0.72}
               strokeWidth={1}
             />
             {/* The white the plaque's upper lip catches, and the violet its
@@ -614,14 +669,60 @@ export function StreakMedallion({
         <View style={[medallionStyles.copyRule, banked && medallionStyles.copyRuleBanked]} />
       </View>
 
-      {/* The signature used to hang a second medallion here, tilted, forty
-          points from the hero — the same five-colour object printed twice on
-          one card, and the single thing that most made this surface look
-          cheap. It is gone. The reading is a READING: a number, its caption,
-          and the engraving under it. The medal stands alone on the right,
-          which is what makes it a medal. */}
+      {/* THE STUD — the plaque's own maker's mark, pinned through its
+          bottom-right corner.
+
+          A second FULL medallion used to hang here, tilted, forty points from
+          the hero: the same five-colour object printed twice on one card, and
+          the single thing that most made this surface look cheap. That is not
+          what this is. It is the COIN — one violet rim round one gold face,
+          the same currency the week strip is paid in — struck small, set at an
+          angle, and pinned half over the plaque's edge so it reads as hardware
+          holding the plate down rather than as a picture printed on it. The
+          angle is what sells it: something laid ON the plaque rather than laid
+          OUT with it.
+
+          Everything under it is drawn as one Svg so the shadow follows the
+          coin's round edge instead of the square View that carries it. */}
+      {!banked && (
+        <View
+          pointerEvents="none"
+          style={[
+            medallionStyles.stud,
+            {
+              // Pinned to the plaque's own bottom-right corner, in the
+              // signature's coordinates. The plaque is drawn on a canvas that
+              // begins 0.15 of a width to the LEFT of this view and 0.45 of a
+              // height above it, so its corner has to be brought back into
+              // these coordinates or the stud floats in open card — which is
+              // exactly what it did on the first pass. Half the coin hangs
+              // past the edge, which is what makes it read as pinned THROUGH
+              // the plate rather than resting on it.
+              left: plaque.x - width * 0.15 + plaque.w - studBox * 0.62,
+              top: plaque.y - height * 0.45 + plaque.h - studBox * 0.56,
+              width: studBox,
+              height: studBox,
+            },
+          ]}
+        >
+          <Svg width={studBox} height={studBox} viewBox="0 0 100 100">
+            {/* Cast, not haloed. The stud first got a wide pool of light
+                behind it, which on a card whose plaque is ALREADY near-white
+                simply bleached the coin into it — a white ring round a pale
+                object on a pale plate. What a pinned mark actually needs is
+                the opposite: a soft violet shadow thrown down and to the
+                right, and nothing else. Drawn as vector so the shadow follows
+                the coin's round edge rather than the square view carrying it. */}
+            <Circle cx={56} cy={58} r={30} fill={VIOLET} opacity={0.16} />
+            <Circle cx={53} cy={55} r={28} fill={VIOLET} opacity={0.14} />
+          </Svg>
+          <View style={medallionStyles.studTilt}>
+            <FocusMedalCoin size={studBox * 0.66} />
+          </View>
+        </View>
+      )}
+
       <View pointerEvents="none" style={[medallionStyles.glint, { right: size * 0.16, top: height * 0.1 }, banked && medallionStyles.glintBanked]} />
-      <View pointerEvents="none" style={[medallionStyles.glintSmall, { right: size * 0.34, top: height * 0.74 }, banked && medallionStyles.glintBanked]} />
     </View>
   );
 }
@@ -684,6 +785,15 @@ const medallionStyles = StyleSheet.create({
   copyRuleBanked: {
     backgroundColor: BANKED.ashLine,
   },
+  stud: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  // Struck at an angle, the way a mark is set by hand. Rotation is safe on a
+  // vector; it is SCALE that resamples a small Android view.
+  studTilt: { position: 'absolute', transform: [{ rotate: '-14deg' }] },
   glintBanked: {
     backgroundColor: BANKED.ashLine,
   },
